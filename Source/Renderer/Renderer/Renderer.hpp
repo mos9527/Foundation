@@ -1,10 +1,12 @@
 #pragma once
 #include "../RHI/RHI.hpp"
 using namespace RHI;
-class Renderer {
+class Renderer {	
 	std::unique_ptr<Device> m_Device;
 public:
-	void Init(Device::DeviceConfig const&, Swapchain::SwapchainConfig const&);
+	bool bVsync = true;
+	void Init(Device::DeviceDesc const&, Swapchain::SwapchainDesc const&);
+	void ResizeViewport(UINT width, UINT height);
 	void BeginFrame();
 	void RunFrame();
 	void EndFrame();

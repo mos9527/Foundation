@@ -1,5 +1,5 @@
 #pragma once
-#include "../RHICommon.hpp"
+#include "../Common.hpp"
 #include "D3D12Swapchain.hpp"
 #include "D3D12CommandQueue.hpp"
 #include "D3D12DescriptorHeap.hpp"
@@ -11,38 +11,41 @@
 namespace RHI {
 	class Device {
 	public:
-		struct DeviceConfig {
+		struct DeviceDesc {
 			UINT AdapterIndex{ 0 };
 		};
-		Device(DeviceConfig cfg);
+		Device(DeviceDesc cfg);
 		Device(Device&) = delete;
 		Device(const Device&&) = delete;
-		~Device() = default;
+		~Device();
 
-		Descriptor CreateRenderTargetView(Texture* tex);
-		void CreateSwapchainAndBackbuffers(Swapchain::SwapchainConfig const& cfg);
+		DescriptorHandle CreateRenderTargetView(Texture* tex);
+		void CreateSwapchainAndBackbuffers(Swapchain::SwapchainDesc const& cfg);
 
 		void BeginFrame();
-		void EndFrame();
+		void EndFrame(bool vsync);
 
 		void WaitForGPU();
 
-		inline auto GetNativeDevice() { return m_Device; }
+		inline auto GetDXGIFactory() { return m_Factory; }
 		inline auto GetSwapchain() { return m_SwapChain.get(); }
 		inline auto GetCommandQueue() { return m_CommandQueue.get(); }
 		inline auto GetCommandList(CommandList::CommandListType type) { return m_CommandLists[type].get(); }
-		inline auto GetCpuAllocator(DescriptorHeap::HeapType type) { return m_DescriptorHeapAllocators[type].get(); }
+		inline auto GetCpuAllocator(DescriptorHeap::HeapType type) { return m_DescriptorHeaps[type].get(); }
+		inline auto GetAllocator() { return m_Allocator.Get(); }
 
-		inline auto GetDXGIFactory() { return m_Factory; }
-
+		inline auto GetNativeDevice() { return m_Device; }
 		inline operator ID3D12Device* () { return m_Device.Get(); }
 	private:
+		ComPtr<IDXGIAdapter1> m_Adapter;
 		ComPtr<ID3D12Device5> m_Device;
 		ComPtr<IDXGIFactory6> m_Factory;
+		ComPtr<D3D12MA::Allocator> m_Allocator;
+
 		std::unique_ptr<Swapchain> m_SwapChain;
 		std::unique_ptr<CommandQueue> m_CommandQueue;
 		std::vector<std::unique_ptr<CommandList>> m_CommandLists;
-		std::vector<std::unique_ptr<DescriptorHeapAllocator>> m_DescriptorHeapAllocators;
+		std::vector<std::unique_ptr<DescriptorHeap>> m_DescriptorHeaps;
 		
 		std::unique_ptr<MarkerFence> m_MarkerFence;
 	};

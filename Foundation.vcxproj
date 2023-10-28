@@ -75,7 +75,7 @@
     <IncludePath>$(ProjectDir)include\directx;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>$(IncludePath)</IncludePath>
+    <IncludePath>Dependencies\D3D12MemoryAllocator;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Label="Vcpkg">
     <VcpkgEnableManifest>true</VcpkgEnableManifest>
@@ -144,9 +144,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Dependencies\D3D12MemoryAllocator\D3D12MemAlloc.cpp" />
+    <ClCompile Include="Source\IO\Image.cpp" />
     <ClCompile Include="Source\Main.cpp" />
     <ClCompile Include="Source\pch.cpp" />
     <ClCompile Include="Source\Renderer\Renderer\Renderer.cpp" />
+    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Buffer.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12CommandList.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12CommandQueue.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12DescriptorHeap.cpp" />
@@ -154,16 +157,21 @@
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Fence.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Swapchain.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Texture.cpp" />
+    <ClCompile Include="Source\Renderer\RHI\TextureManager.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Dependencies\D3D12MemoryAllocator\D3D12MemAlloc.h" />
+    <ClInclude Include="Source\stb_image.h" />
     <ClInclude Include="Source\Common\Handle.hpp" />
+    <ClInclude Include="Source\IO\Image.hpp" />
     <ClInclude Include="Source\pch.hpp" />
     <ClInclude Include="Source\Renderer\Helpers.hpp" />
     <ClInclude Include="Source\Renderer\Renderer\Renderer.hpp" />
+    <ClInclude Include="Source\Renderer\RHI\ResourceTypes.hpp" />
+    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Buffer.hpp" />
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12CommandList.hpp" />
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12CommandQueue.hpp" />
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12DescriptorHeap.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Descriptor.hpp" />
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Device.hpp" />
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Fence.hpp" />
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Pch.h" />
@@ -171,7 +179,8 @@
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Swapchain.hpp" />
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Texture.hpp" />
     <ClInclude Include="Source\Renderer\RHI\RHI.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\RHICommon.hpp" />
+    <ClInclude Include="Source\Renderer\RHI\Common.hpp" />
+    <ClInclude Include="Source\Renderer\RHI\TextureManager.hpp" />
     <ClInclude Include="Source\Win32\BaseWindow.hpp" />
     <ClInclude Include="Source\Win32\ViewportWindow.hpp" />
   </ItemGroup>

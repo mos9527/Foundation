@@ -1,3 +1,4 @@
+#pragma once
 #include "../../pch.hpp"
 #include "../../Common/Handle.hpp"
-#pragma once
+namespace RHI {}

@@ -1,5 +1,5 @@
 #pragma once
-#include "../RHICommon.hpp"
+#include "../Common.hpp"
 namespace RHI {
 	class Device;
 	class CommandQueue;

@@ -1,7 +1,6 @@
 {
   "dependencies": [
     "directx-headers",
-    "d3d12-memory-allocator",
     "directxmath",
     "glog"
   ]

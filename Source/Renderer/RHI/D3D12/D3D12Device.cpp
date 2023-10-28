@@ -27,12 +27,13 @@ static void D3DGetHardwareAdapter(IDXGIFactory1* pFactory, IDXGIAdapter1** ppAda
     abort();
 }
 namespace RHI {
-    Descriptor Device::CreateRenderTargetView(Texture* tex) {
+    DescriptorHandle Device::CreateRenderTargetView(Texture* tex) {
         auto handle = GetCpuAllocator(DescriptorHeap::HeapType::RTV)->Allocate();
-        m_Device->CreateRenderTargetView(*tex, nullptr, handle.cpu_handle);
-        return handle;
+        auto desc = GetCpuAllocator(DescriptorHeap::HeapType::RTV)->GetDescriptor(handle);
+        m_Device->CreateRenderTargetView(*tex, nullptr, desc.cpu_handle);
+        return desc;
     }
-    void Device::CreateSwapchainAndBackbuffers(Swapchain::SwapchainConfig const& cfg) {
+    void Device::CreateSwapchainAndBackbuffers(Swapchain::SwapchainDesc const& cfg) {
         m_SwapChain = std::make_unique<Swapchain>(this, cfg);
         m_SwapChain->Resize(this, cfg.InitWidth, cfg.InitHeight);
         m_CommandLists[CommandList::CommandListType::DIRECT] = std::make_unique<CommandList>(
@@ -41,7 +42,7 @@ namespace RHI {
             cfg.BackBufferCount
         );
     }
-    Device::Device(DeviceConfig cfg) {
+    Device::Device(DeviceDesc cfg) {
 #ifdef _DEBUG    
         ComPtr<ID3D12Debug> debugInterface;
         CHECK_HR(D3D12GetDebugInterface(IID_PPV_ARGS(&debugInterface)));
@@ -53,33 +54,40 @@ namespace RHI {
 #else
         CreateDXGIFactory2(NULL, IID_PPV_ARGS(&dxgiFactory));
 #endif
-        ComPtr<IDXGIAdapter1> hardwareAdapter;
-        D3DGetHardwareAdapter(m_Factory.Get(), &hardwareAdapter, cfg.AdapterIndex);
-        CHECK_HR(D3D12CreateDevice(hardwareAdapter.Get(), D3D_MIN_FEATURE_LEVEL, IID_PPV_ARGS(&m_Device)));
+        D3DGetHardwareAdapter(m_Factory.Get(), &m_Adapter, cfg.AdapterIndex);
+        CHECK_HR(D3D12CreateDevice(m_Adapter.Get(), D3D_MIN_FEATURE_LEVEL, IID_PPV_ARGS(&m_Device)));
         m_CommandQueue = std::make_unique<CommandQueue>(this);
-        m_DescriptorHeapAllocators.resize(DescriptorHeap::HeapType::NUM_TYPES);
-        m_DescriptorHeapAllocators[DescriptorHeap::HeapType::RTV] = std::make_unique<DescriptorHeapAllocator>(
+        m_DescriptorHeaps.resize(DescriptorHeap::HeapType::NUM_TYPES);
+        m_DescriptorHeaps[DescriptorHeap::HeapType::RTV] = std::make_unique<DescriptorHeap>(
             this,
-            DescriptorHeap::DescriptorHeapConfig{
-            .ShaderVisible = false,
-                .DescriptorCount = ALLOC_SIZE_DESC_HEAP,
-                .Type = DescriptorHeap::HeapType::RTV
+            DescriptorHeap::DescriptorHeapDesc{
+            .shaderVisible = false,
+                .descriptorCount = ALLOC_SIZE_DESC_HEAP,
+                .heapType = DescriptorHeap::HeapType::RTV
         });
         m_CommandLists.resize(CommandList::CommandListType::NUM_TYPES);
         m_MarkerFence = std::make_unique<MarkerFence>(this);
+        D3D12MA::ALLOCATOR_DESC allocatorDesc;
+        allocatorDesc.pDevice = m_Device.Get();
+        allocatorDesc.pAdapter = m_Adapter.Get();
+        D3D12MA::CreateAllocator(&allocatorDesc, &m_Allocator);
     }
     void Device::BeginFrame() {
         auto directList = GetCommandList(CommandList::DIRECT);
         directList->ResetAllocator(m_SwapChain->nBackbufferIndex);
         directList->Begin(m_SwapChain->nBackbufferIndex);
     }
-    void Device::EndFrame() {
+    void Device::EndFrame(bool vsync) {
         auto list = GetCommandList(CommandList::DIRECT);
         list->End();
         m_CommandQueue->Execute(list);
-        m_SwapChain->PresentAndMoveToNextFrame(m_CommandQueue.get(), 0);
+        m_SwapChain->PresentAndMoveToNextFrame(m_CommandQueue.get(), vsync);
     }
     void Device::WaitForGPU() {
         m_MarkerFence->MarkAndWait(m_CommandQueue.get());
+    }
+
+    Device::~Device() {
+        m_Factory->Release();        
     }
 }

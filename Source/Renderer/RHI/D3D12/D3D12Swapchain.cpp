@@ -1,7 +1,7 @@
 #include "D3D12Swapchain.hpp"
 #include "D3D12Device.hpp"
 namespace RHI {
-    Swapchain::Swapchain(Device* device, SwapchainConfig const& cfg) {
+    Swapchain::Swapchain(Device* device, SwapchainDesc const& cfg) {
         DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
         swapChainDesc.BufferCount = cfg.BackBufferCount;
         swapChainDesc.Width = cfg.InitWidth;
@@ -22,7 +22,7 @@ namespace RHI {
         DXGI_SWAP_CHAIN_DESC desc = {};
         m_Swapchain->GetDesc(&desc);
         for (UINT i = 0; i < desc.BufferCount; i++) {
-            Texture::GpuTextureDesc desc{};
+            Texture::TextureDesc desc{};
             ComPtr<ID3D12Resource> backbuffer;
             CHECK_HR(m_Swapchain->GetBuffer(i, IID_PPV_ARGS(backbuffer.GetAddressOf())));
             m_Backbuffers.push_back(std::make_unique<Texture>(desc, std::move(backbuffer)));            
@@ -33,7 +33,7 @@ namespace RHI {
     void Swapchain::CreateRenderTargetViews(Device* device) {
         // Free previous RTVs (if any)
         for (auto& handle : m_BackbufferRTVs) {
-            device->GetCpuAllocator(DescriptorHeap::HeapType::RTV)->Free(handle.handle);
+            device->GetCpuAllocator(DescriptorHeap::HeapType::RTV)->Free(handle.heap_handle);
         }
         m_BackbufferRTVs.clear();
         for (auto& backbuffer : m_Backbuffers) {

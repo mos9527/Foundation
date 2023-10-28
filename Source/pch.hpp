@@ -6,7 +6,10 @@
 #include <string>
 #include <stdexcept>
 #include <memory>
+#include <queue>
 #include <unordered_map>
+#include <concepts>
+#include <numeric>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOGDI

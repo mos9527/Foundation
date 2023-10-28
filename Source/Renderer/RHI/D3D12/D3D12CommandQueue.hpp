@@ -1,5 +1,5 @@
 #pragma once
-#include "../RHICommon.hpp"
+#include "../Common.hpp"
 #include "D3D12CommandList.hpp"
 #include "D3D12Fence.hpp"
 namespace RHI {

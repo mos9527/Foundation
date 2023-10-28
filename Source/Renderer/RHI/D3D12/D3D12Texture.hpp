@@ -1,28 +1,37 @@
 #pragma once
-#include "../RHICommon.hpp"
+#include "../Common.hpp"
+#include "D3D12Buffer.hpp"
 namespace RHI {
-	class Device;
-	class Texture {
-	public:
-		struct GpuTextureDesc {
-			enum GpuTextureType {
-				Texture1D,
-				Texture1DArray,
-				Texture2D,
-				Texture2DArray,
-				Cubemap,
-				CubemapArray,
-				Texture3D,
-				Texture3DArray
+	struct SubresourceData {
+		const void* pSysMem;
+		UINT rowPitch;
+		UINT slicePitch;
+		operator const D3D12_SUBRESOURCE_DATA() const {
+			return D3D12_SUBRESOURCE_DATA{
+				.pData = pSysMem,
+				.RowPitch = rowPitch,
+				.SlicePitch = slicePitch
 			};
-		};
-		Texture(GpuTextureDesc const& desc, ComPtr<ID3D12Resource>&& backbuffer);
-		~Texture() = default;
-		inline operator ID3D12Resource* () { return m_Texture.Get(); }
-		inline void Reset() { m_Texture.Reset(); }
-		inline GpuTextureDesc GetDesc() { return m_Desc; }
-	private:
-		const GpuTextureDesc m_Desc;
-		ComPtr<ID3D12Resource> m_Texture;
+		}
+	};
+	class Device;
+	class Texture : Buffer {
+	public:
+		typedef Buffer::BufferDesc TextureDesc;
+		using Buffer::GetState;
+		using Buffer::SetState;
+		using Buffer::GetNativeBuffer;
+		using Buffer::Reset;
+		using Buffer::operator ID3D12Resource*;
+		Texture(TextureDesc const& desc, ComPtr<ID3D12Resource>&& texture) : Buffer(desc, std::move(texture)) {};
+		Texture(Device* device, TextureDesc const& desc);
+		Texture(Device* device, TextureDesc const& desc, CommandList* cmdList, SubresourceData* data, UINT count);
+
+	protected:
+		using Buffer::m_Desc;
+		using Buffer::m_State;
+		using Buffer::m_Resource;
+		using Buffer::m_Allocation;
+		using Buffer::pMappedData;
 	};
 }
