@@ -20,3 +20,5 @@ using Microsoft::WRL::ComPtr;
 namespace RHI {
 	typedef std::basic_string<wchar_t> name_t;
 }
+
+typedef uint32_t uint;

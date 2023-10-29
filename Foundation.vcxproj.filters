@@ -57,6 +57,12 @@
     <ClCompile Include="Source\IO\Image.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Renderer\RHI\GeometryManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12CommandSignature.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Renderer\RHI\Common.hpp">
@@ -126,6 +132,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\IO\IO.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\IO\Mesh.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Renderer\RHI\GeometryManager.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12CommandSignature.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

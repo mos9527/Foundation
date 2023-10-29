@@ -1,7 +1,7 @@
 #include "D3D12Device.hpp"
 #include "../../Helpers.hpp"
 #ifdef RHI_D3D12_USE_AGILITY
-extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = 4; }
+extern "C" { __declspec(dllexport) extern const uint D3D12SDKVersion = 4; }
 extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = ".\\D3D12\\"; }
 #endif
 namespace RHI {
@@ -22,7 +22,7 @@ namespace RHI {
         ComPtr<IDXGIAdapter3> adapter3;
         if (SUCCEEDED(adapter->QueryInterface(IID_PPV_ARGS(&adapter3))))
         {        
-            for (UINT groupIndex = 0; groupIndex < 2; ++groupIndex)
+            for (uint groupIndex = 0; groupIndex < 2; ++groupIndex)
             {
                 const DXGI_MEMORY_SEGMENT_GROUP group = groupIndex == 0 ? DXGI_MEMORY_SEGMENT_GROUP_LOCAL : DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL;
                 const char* const groupName = groupIndex == 0 ? "DXGI_MEMORY_SEGMENT_GROUP_LOCAL" : "DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL";
@@ -49,13 +49,27 @@ namespace RHI {
         LOG(INFO) << "  D3D12 Budget: " << size_to_str(budget.BudgetBytes);
     }
 #pragma endregion
+    static void CheckDeviceCapabilities(ID3D12Device* device) {
+        D3D12_FEATURE_DATA_SHADER_MODEL shaderModel = { D3D_SHADER_MODEL_6_5 };
+        if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shaderModel, sizeof(shaderModel)))
+            || (shaderModel.HighestShaderModel < D3D_SHADER_MODEL_6_5))
+        {
+            LOG(FATAL) << "ERROR: Shader Model 6.5 is not supported on this device";            
+        }
 
-    static ComPtr<IDXGIAdapter1> GetHardwareAdapter(IDXGIFactory1* pFactory, UINT adapterIndex = 0) {
+        D3D12_FEATURE_DATA_D3D12_OPTIONS7 features = {};
+        if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &features, sizeof(features)))
+            || (features.MeshShaderTier == D3D12_MESH_SHADER_TIER_NOT_SUPPORTED))
+        {
+            LOG(FATAL) << "ERROR: Mesh Shaders aren't supported on this device";
+        }
+    }
+    static ComPtr<IDXGIAdapter1> GetHardwareAdapter(IDXGIFactory1* pFactory, uint adapterIndex = 0) {
         ComPtr<IDXGIAdapter1> adapter;
         ComPtr<IDXGIFactory6> factory6;
         CHECK_HR(pFactory->QueryInterface(IID_PPV_ARGS(&factory6)));
         for (
-            UINT index = 0, count = 0;
+            uint index = 0, count = 0;
             SUCCEEDED(factory6->EnumAdapterByGpuPreference(index, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,IID_PPV_ARGS(&adapter)));
             index++
         ) {
@@ -75,8 +89,8 @@ namespace RHI {
         return {};
     }
 
-    DescriptorHandle Device::CreateRenderTargetView(Texture* tex) {
-        auto handle = GetCpuAllocator(DescriptorHeap::HeapType::RTV)->Allocate();
+    DescriptorHandle Device::GetRenderTargetView(Texture* tex) {
+        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::RTV)->Allocate();
         m_Device->CreateRenderTargetView(*tex, nullptr, handle.cpu_handle);
         return handle;
     }
@@ -86,7 +100,7 @@ namespace RHI {
         srvDesc.Format = (DXGI_FORMAT)buf->GetDesc().format;
         srvDesc.ViewDimension = (D3D12_SRV_DIMENSION)view;
         srvDesc.Texture2D.MipLevels = buf->GetDesc().mipLevels;
-        auto handle = GetCpuAllocator(DescriptorHeap::HeapType::CBV_SRV_UAV)->Allocate();
+        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::CBV_SRV_UAV)->Allocate();
         m_Device->CreateShaderResourceView(*buf, &srvDesc, handle.cpu_handle);
         return handle;
     }
@@ -95,7 +109,7 @@ namespace RHI {
         D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc{};
         cbvDesc.BufferLocation = buf->GetGPUAddress();
         cbvDesc.SizeInBytes = buf->GetDesc().width;
-        auto handle = GetCpuAllocator(DescriptorHeap::HeapType::CBV_SRV_UAV)->Allocate();
+        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::CBV_SRV_UAV)->Allocate();
         m_Device->CreateConstantBufferView(&cbvDesc, handle.cpu_handle);
         return handle;
     }
@@ -122,6 +136,7 @@ namespace RHI {
 #endif
         m_Adapter = GetHardwareAdapter(m_Factory.Get(), cfg.AdapterIndex);
         CHECK_HR(D3D12CreateDevice(m_Adapter.Get(), D3D_MIN_FEATURE_LEVEL, IID_PPV_ARGS(&m_Device)));
+        CheckDeviceCapabilities(m_Device.Get());
         LOG(INFO) << "D3D12 Device created";
         LogDeviceInformation(m_Device.Get());
         m_CommandQueue = std::make_unique<CommandQueue>(this);
@@ -142,6 +157,9 @@ namespace RHI {
         });
         m_CommandLists.resize(CommandList::CommandListType::NUM_TYPES);
         m_MarkerFence = std::make_unique<MarkerFence>(this);
+        m_CommandSignatures.resize(CommandSignature::IndirectArgumentType::NUM_TYPES);
+        m_CommandSignatures[CommandSignature::IndirectArgumentType::DISPATCH_MESH] =
+            std::make_unique<CommandSignature>(this, CommandSignature::IndirectArgumentType::DISPATCH_MESH);
         D3D12MA::ALLOCATOR_DESC allocatorDesc{};
         allocatorDesc.pDevice = m_Device.Get();
         allocatorDesc.pAdapter = m_Adapter.Get();
@@ -159,10 +177,10 @@ namespace RHI {
         m_CommandQueue->Execute(list);
         m_SwapChain->PresentAndMoveToNextFrame(m_CommandQueue.get(), vsync);
     }
-    void Device::WaitForGPU() {
+    void Device::Wait() {
         m_MarkerFence->MarkAndWait(m_CommandQueue.get());
     }
-    std::shared_ptr<Buffer> Device::AllocateIntermediateBuffer(Buffer::BufferDesc desc) {
+    std::shared_ptr<Buffer> Device::AllocateIntermediateBuffer(Buffer::BufferDesc const& desc) {
         auto buffer = std::make_shared<Buffer>(this, desc);
         m_IntermediateBuffers.push_back(buffer);
         buffer->SetName(std::format(L"Intermediate Buffer #{}", m_IntermediateBuffers.size()));

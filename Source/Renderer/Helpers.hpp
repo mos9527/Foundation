@@ -1,6 +1,6 @@
 #pragma once
 #include "../pch.hpp"
-static std::wstring utf8_to_wstring(const char* src)
+static inline std::wstring utf8_to_wstring(const char* src)
 {
 	const int size_needed = MultiByteToWideChar(CP_UTF8, 0, src, (int)strlen(src), NULL, 0);
 	if (size_needed <= 0)
@@ -13,7 +13,7 @@ static std::wstring utf8_to_wstring(const char* src)
 	return result;
 }
 
-static std::string wstring_to_utf8(const wchar_t* src)
+static inline std::string wstring_to_utf8(const wchar_t* src)
 {
 	const int size_needed = WideCharToMultiByte(CP_UTF8, 0, src, (int)wcslen(src), NULL, 0, NULL, NULL);
 	if (size_needed <= 0)
@@ -24,7 +24,7 @@ static std::string wstring_to_utf8(const wchar_t* src)
 	WideCharToMultiByte(CP_UTF8, 0, src, (int)wcslen(src), &result.at(0), size_needed, NULL, NULL);
 	return result;
 }
-static std::string size_to_str(size_t size)
+static inline std::string size_to_str(size_t size)
 {
     if (size == 0)
         return "0";
@@ -49,6 +49,9 @@ static std::string size_to_str(size_t size)
     else
         sprintf_s(result, "%llu B", size);
     return result;
+}
+static inline size_t size_in_bytes(auto c) {
+    return c.size() * sizeof(decltype(c)::value_type);
 }
 #define CHECK_ENUM_FLAG(x) { CHECK((size_t)(x) > 0); }
 #define CHECK_HR(hr) { HRESULT _result = hr; if (FAILED(_result)) { LOG_SYSRESULT(_result); LOG(FATAL) << "FATAL APPLICATION ERROR HRESULT 0x" << std::hex << _result;  abort(); } }

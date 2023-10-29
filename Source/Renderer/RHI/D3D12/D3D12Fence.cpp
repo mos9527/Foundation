@@ -19,6 +19,10 @@ namespace RHI {
 			WaitForSingleObjectEx(m_FenceEvent, INFINITE, FALSE);
 		}
 	}
+	
+	MarkerFence::MarkerFence(Device* device) : Fence(device) {
+		SetName(L"Sync Fence");
+	}
 
 	void MarkerFence::MarkAndWait(CommandQueue* queue) {
 	{

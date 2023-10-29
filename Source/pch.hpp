@@ -1,4 +1,7 @@
 #pragma once
+#pragma warning( disable : 4267 ) // Ignore size-mismatch errors
+#pragma warning( disable : 4244 )
+
 #include <ctype.h>
 #include <vector>
 #include <algorithm>
@@ -14,11 +17,13 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define NOGDI
+#define NOMINMAX
 #include <Windows.h>
 #include <wrl.h>
 
 #include <glog/logging.h>
 #include <DirectXMath.h>
+#include <directxtk/SimpleMath.h>
 
 #define RHI_USE_D3D12
 #define RHI_D3D12_USE_AGILITY

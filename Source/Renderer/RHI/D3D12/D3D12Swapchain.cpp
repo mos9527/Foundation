@@ -21,7 +21,7 @@ namespace RHI {
         m_Backbuffers.clear();
         DXGI_SWAP_CHAIN_DESC desc = {};
         m_Swapchain->GetDesc(&desc);
-        for (UINT i = 0; i < desc.BufferCount; i++) {
+        for (uint i = 0; i < desc.BufferCount; i++) {
             Texture::TextureDesc desc{};
             ComPtr<ID3D12Resource> backbuffer;
             CHECK_HR(m_Swapchain->GetBuffer(i, IID_PPV_ARGS(backbuffer.GetAddressOf())));
@@ -33,11 +33,11 @@ namespace RHI {
     void Swapchain::CreateRenderTargetViews(Device* device) {
         // Free previous RTVs (if any)
         for (auto& handle : m_BackbufferRTVs) {
-            device->GetCpuAllocator(DescriptorHeap::HeapType::RTV)->Free(handle);
+            device->GetDescriptorHeap(DescriptorHeap::HeapType::RTV)->Free(handle);
         }
         m_BackbufferRTVs.clear();
         for (auto& backbuffer : m_Backbuffers) {
-            m_BackbufferRTVs.push_back(device->CreateRenderTargetView(backbuffer.get()));
+            m_BackbufferRTVs.push_back(device->GetRenderTargetView(backbuffer.get()));
         }
     }
     void Swapchain::Present(bool vsync) {
@@ -54,10 +54,10 @@ namespace RHI {
         // Increment the fence value which should be monotonously increasing upon any backbuffers' completion    
         nFenceValues[nBackbufferIndex] = ++nFenceValue;
     }
-    void Swapchain::Resize(Device* device, UINT width, UINT height) {
-        UINT buffers = (UINT)m_Backbuffers.size();
+    void Swapchain::Resize(Device* device, uint width, uint height) {
+        uint buffers = (UINT)m_Backbuffers.size();
         // Reset BBs and their fence values
-        for (UINT i = 0; i < buffers; i++) {
+        for (uint i = 0; i < buffers; i++) {
             m_Backbuffers[i]->Reset();
             nFenceValues[i] = nFenceValue;
         }

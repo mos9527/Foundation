@@ -23,7 +23,7 @@ namespace RHI {
 	class MarkerFence : public Fence {
 		size_t nMarker{ 0 };
 	public:		
-		using Fence::Fence;
+		MarkerFence(Device* device);
 		void MarkAndWait(CommandQueue* queue);
 	};
 }

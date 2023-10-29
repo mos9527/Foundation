@@ -6,7 +6,7 @@ namespace RHI {
 		handle_type heap_handle;
 		D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle{};
 		D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle{};
-		inline void Increment(size_t offset, UINT heapIncrement) {
+		inline void Increment(size_t offset, uint heapIncrement) {
 			heap_handle += offset;
 			cpu_handle.ptr += offset * heapIncrement;
 			if (gpu_handle.ptr) gpu_handle.ptr += offset * heapIncrement;			
@@ -18,15 +18,15 @@ namespace RHI {
 	class DescriptorHeap {
 	public:
 		enum HeapType {
-			CBV_SRV_UAV = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-			SAMPLER = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER,
-			RTV = D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-			DSV = D3D12_DESCRIPTOR_HEAP_TYPE_DSV,
-			NUM_TYPES = 4
+			CBV_SRV_UAV = 0,
+			SAMPLER = 1,
+			RTV = 2,
+			DSV = 3,
+			NUM_TYPES = 4			
 		};
 		struct DescriptorHeapDesc {
 			bool shaderVisible;
-			UINT descriptorCount;
+			uint descriptorCount;
 			HeapType heapType;
 		};
 		
@@ -34,8 +34,8 @@ namespace RHI {
 		~DescriptorHeap() = default;
 		inline void SetName(name_t name) { m_Name = name; m_DescriptorHeap->SetName((const wchar_t*)name.c_str()); }
 		
-		DescriptorHandle Allocate() { return GetDescriptor(m_HandleQueue.Pop()); }
-		inline void Free(DescriptorHandle handle) { m_HandleQueue.Return(handle.heap_handle); };
+		DescriptorHandle Allocate() { return GetDescriptor(m_HandleQueue.pop()); }
+		inline void Free(DescriptorHandle handle) { m_HandleQueue.push(handle.heap_handle); };
 
 		DescriptorHandle GetDescriptor(handle_type heap_handle);
 		inline bool CheckHandle(handle_type heap_handle) { return heap_handle < m_Config.descriptorCount; };
@@ -50,8 +50,8 @@ namespace RHI {
 
 		ComPtr<ID3D12DescriptorHeap> m_DescriptorHeap;
 		DescriptorHandle m_HeadHandle{};
-		UINT m_HeapIncrementSize{};
+		uint m_HeapIncrementSize{};
 
-		HandleQueue m_HandleQueue;
+		handle_queue m_HandleQueue;
 	};	
 }

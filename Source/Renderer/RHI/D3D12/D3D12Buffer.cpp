@@ -29,7 +29,7 @@ namespace RHI {
 		));
 	}
 
-	void Buffer::SetState(CommandList* cmdList, ResourceState state, UINT subresource) {
+	void Buffer::SetState(CommandList* cmdList, ResourceState state, uint subresource) {
 		auto const transistion = CD3DX12_RESOURCE_BARRIER::Transition(
 			m_Resource.Get(),
 			(D3D12_RESOURCE_STATES)m_State,
@@ -52,8 +52,9 @@ namespace RHI {
 	}
 
 	void Buffer::Update(const void* data, size_t size, size_t offset) {
+		CHECK(offset + size <= m_Desc.width);
 		if (pMappedData == nullptr) Map();
-		memcpy((char*)pMappedData + offset, data, size);
+		memcpy((unsigned char*)pMappedData + offset, data, size);
 	}
 
 	Buffer::Buffer(Device* device, BufferDesc const& desc, const void* data, size_t size, size_t offset) :

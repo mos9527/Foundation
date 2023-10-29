@@ -2,6 +2,9 @@
   "dependencies": [
     "directx-headers",
     "directxmath",
-    "glog"
+    "directxtk",
+    "glog",
+    "assimp",
+    "meshoptimizer"
   ]
 }

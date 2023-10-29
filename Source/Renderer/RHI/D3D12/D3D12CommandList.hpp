@@ -10,19 +10,19 @@ namespace RHI {
 	public:
 		enum CommandListType
 		{
-			DIRECT = D3D12_COMMAND_LIST_TYPE_DIRECT,
-			COMPUTE = D3D12_COMMAND_LIST_TYPE_COMPUTE,
-			COPY = D3D12_COMMAND_LIST_TYPE_COPY,
+			DIRECT = 0,
+			COMPUTE = 1,
+			COPY = 2,
 			NUM_TYPES = 3
 		};
-		CommandList(Device* gpuDevice, CommandListType type, UINT numAllocators = 1);
+		CommandList(Device* gpuDevice, CommandListType type, uint numAllocators = 1);
 		~CommandList() = default;
 		inline void SetName(name_t name) { m_Name = name; m_CommandList->SetName((const wchar_t*)name.c_str()); }
-		inline void ResetAllocator(UINT allocatorIndex) {
+		inline void ResetAllocator(uint allocatorIndex) {
 			DCHECK(allocatorIndex < m_CommandAllocators.size());
 			CHECK_HR(m_CommandAllocators[allocatorIndex]->Reset());
 		};
-		inline void Begin(UINT allocatorIndex = 0) {
+		inline void Begin(uint allocatorIndex = 0) {
 			DCHECK(allocatorIndex < m_CommandAllocators.size());
 			CHECK_HR(m_CommandList->Reset(m_CommandAllocators[allocatorIndex].Get(), nullptr));
 		};

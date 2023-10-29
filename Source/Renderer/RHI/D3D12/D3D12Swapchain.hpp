@@ -16,23 +16,23 @@ namespace RHI {
 		void Present(bool vsync);
 	public:
 		/* The backbuffer we are currently drawing to */
-		UINT nBackbufferIndex{ 0 };
+		uint nBackbufferIndex{ 0 };
 		BOOL bIsFullscreen{ false };
 		struct SwapchainDesc {
 			int InitWidth;
 			int InitHeight;
-			UINT BackBufferCount;
+			uint BackBufferCount;
 			HWND Window;
 		};
 		Swapchain(Device* device, SwapchainDesc const& cfg);
 		~Swapchain() = default;
 		
-		inline auto GetBackbuffer(UINT index) { return m_Backbuffers[index].get(); }
-		inline auto GetBackbufferRTV(UINT index) { return m_BackbufferRTVs[index]; }
+		inline auto GetBackbuffer(uint index) { return m_Backbuffers[index].get(); }
+		inline auto GetBackbufferRTV(uint index) { return m_BackbufferRTVs[index]; }
 
 		void CreateBackBuffers(Device* device);
 		void CreateRenderTargetViews(Device* device);
-		void Resize(Device* device, UINT width, UINT height);
+		void Resize(Device* device, uint width, uint height);
 		void PresentAndMoveToNextFrame(CommandQueue* signalQueue, bool vsync);
 
 		inline auto GetNativeSwapchain() { return m_Swapchain.Get(); }

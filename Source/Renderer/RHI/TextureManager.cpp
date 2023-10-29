@@ -1,21 +1,21 @@
 #include "TextureManager.hpp"
 namespace RHI {
 	TextureManager::TextureManager() {
-		m_HandleQueue.Setup(MAX_NUM_TEXTURES);
+		m_HandleQueue.setup(MAX_NUM_TEXTURES);
 		m_Textures.resize(MAX_NUM_TEXTURES);
-		m_TextureDescriptors.resize(MAX_NUM_TEXTURES);
+		m_TextureSRVs.resize(MAX_NUM_TEXTURES);
 	}
 
 	void TextureManager::Free(handle_type handle) {
 		m_Textures[handle].reset();
-		m_HandleQueue.Return(handle);
+		m_HandleQueue.push(handle);
 	}
 
-	handle_type TextureManager::LoadTexture(Device* device, CommandList* cmdList, IO::Bitmap8bpp& bmp) {
+	handle_type TextureManager::LoadTexture(Device* device, CommandList* cmdList, IO::bitmap8bpp& bmp) {
 		SubresourceData subresource{
 			.pSysMem = bmp.data,
-			.rowPitch = bmp.width * sizeof(*bmp.data) * 4,
-			.slicePitch = bmp.width * sizeof(*bmp.data) * 4 * bmp.height
+			.rowPitch = bmp.width * 4u,
+			.slicePitch = bmp.width * bmp.height * 4u
 		};
 		auto desc = Texture::TextureDesc::GetTextureBufferDesc(
 			ResourceFormat::R8G8B8A8_UNORM,
@@ -33,10 +33,10 @@ namespace RHI {
 		);
 		texture->SetState(cmdList, ResourceState::PixelShaderResource);
 		auto srv = device->GetShaderResourceView(texture.get(), ResourceDimensionSRV::Texture2D);
-		auto handle = m_HandleQueue.Pop();
+		auto handle = m_HandleQueue.pop();
+		texture->SetName(std::format(L"Texture #{}", handle));
 		m_Textures[handle] = std::move(texture);
-		m_TextureDescriptors[handle] = srv;
-		LogD3D12MABudget(device->GetAllocator());
+		m_TextureSRVs[handle] = srv;
 		return handle;
 	}
 }

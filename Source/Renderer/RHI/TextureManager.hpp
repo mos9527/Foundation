@@ -7,10 +7,10 @@ namespace RHI {
 	public:
 		TextureManager();
 		
-		handle_type LoadTexture(Device* device, CommandList* cmdList, IO::Bitmap8bpp& bmp);
+		handle_type LoadTexture(Device* device, CommandList* cmdList, IO::bitmap8bpp& bmp);
 		
 		inline Texture* GetTexture(handle_type handle) { return m_Textures[handle].get(); }
-		inline DescriptorHandle GetTextureSRV(handle_type handle) { return m_TextureDescriptors[handle]; }
+		inline DescriptorHandle GetTextureSRV(handle_type handle) { return m_TextureSRVs[handle]; }
 
 		void Free(handle_type);
 		inline bool CheckHandle(handle_type handle) { 
@@ -21,7 +21,7 @@ namespace RHI {
 
 	private:
 		std::vector<std::unique_ptr<Texture>> m_Textures;
-		std::vector<DescriptorHandle> m_TextureDescriptors;
-		HandleQueue m_HandleQueue;
+		std::vector<DescriptorHandle> m_TextureSRVs;
+		handle_queue m_HandleQueue;
 	};
 }

@@ -28,7 +28,7 @@ namespace RHI {
 			IID_PPV_ARGS(&m_Resource)
 		));
 	}
-	Texture::Texture(Device* device, TextureDesc const& desc, CommandList* cmdList, SubresourceData* data, UINT count):
+	Texture::Texture(Device* device, TextureDesc const& desc, CommandList* cmdList, SubresourceData* data, uint count):
 		Texture(device,desc) {
 		DCHECK_ENUM_FLAG(m_State & ResourceState::CopyDest);
 		const D3D12_RESOURCE_DESC resourceDesc = desc;
@@ -39,7 +39,7 @@ namespace RHI {
 		auto bufDesc = Buffer::BufferDesc::GetGenericBufferDesc(intermediateSize);
 		auto intermediate = device->AllocateIntermediateBuffer(bufDesc);		
 		std::vector<D3D12_SUBRESOURCE_DATA> arrData;
-		for (UINT i = 0; i < count; i++) arrData.push_back(data[i]);
+		for (uint i = 0; i < count; i++) arrData.push_back(data[i]);
 		UpdateSubresources(
 			cmdList->GetNativeCommandList(),
 			*this,

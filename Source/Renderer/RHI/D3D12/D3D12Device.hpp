@@ -7,6 +7,7 @@
 #include "D3D12Resource.hpp"
 #include "D3D12CommandList.hpp"
 #include "D3D12Fence.hpp"
+#include "D3D12CommandSignature.hpp"
 #define ALLOC_SIZE_DESC_HEAP 1024
 namespace RHI {
 	void LogDeviceInformation(ID3D12Device* device);
@@ -15,18 +16,18 @@ namespace RHI {
 	class Device {
 	public:
 		struct DeviceDesc {
-			UINT AdapterIndex{ 0 };
+			uint AdapterIndex{ 0 };
 		};
 		Device(DeviceDesc cfg);
 		Device(Device&) = delete;
 		Device(const Device&&) = delete;
 		~Device();
 
-		DescriptorHandle CreateRenderTargetView(Texture* tex);
+		DescriptorHandle GetRenderTargetView(Texture* tex);
 		DescriptorHandle GetShaderResourceView(Buffer* buf, ResourceDimensionSRV view);
 		DescriptorHandle GetConstantBufferView(Buffer* buf);
 
-		std::shared_ptr<Buffer> AllocateIntermediateBuffer(Buffer::BufferDesc desc);
+		std::shared_ptr<Buffer> AllocateIntermediateBuffer(Buffer::BufferDesc const& desc);
 		void FlushIntermediateBuffers();
 
 		void CreateSwapchainAndBackbuffers(Swapchain::SwapchainDesc const& cfg);
@@ -34,13 +35,14 @@ namespace RHI {
 		void BeginFrame();
 		void EndFrame(bool vsync);
 
-		void WaitForGPU();
+		void Wait();
 
 		inline auto GetDXGIFactory() { return m_Factory; }
 		inline auto GetSwapchain() { return m_SwapChain.get(); }
 		inline auto GetCommandQueue() { return m_CommandQueue.get(); }
 		inline auto GetCommandList(CommandList::CommandListType type) { return m_CommandLists[type].get(); }
-		inline auto GetCpuAllocator(DescriptorHeap::HeapType type) { return m_DescriptorHeaps[type].get(); }
+		inline auto GetDescriptorHeap(DescriptorHeap::HeapType type) { return m_DescriptorHeaps[type].get(); }
+		inline auto GetCommandSignature(CommandSignature::IndirectArgumentType type) { return m_CommandSignatures[type].get(); }
 		inline auto GetAllocator() { return m_Allocator.Get(); }
 
 		inline auto GetNativeDevice() { return m_Device; }
@@ -56,6 +58,7 @@ namespace RHI {
 		std::vector<std::unique_ptr<CommandList>> m_CommandLists;
 		std::vector<std::unique_ptr<DescriptorHeap>> m_DescriptorHeaps;		
 		std::vector<std::shared_ptr<Buffer>> m_IntermediateBuffers;
+		std::vector<std::unique_ptr<CommandSignature>> m_CommandSignatures;
 		std::unique_ptr<MarkerFence> m_MarkerFence;
 	};
 }

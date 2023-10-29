@@ -152,11 +152,13 @@
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Buffer.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12CommandList.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12CommandQueue.cpp" />
+    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12CommandSignature.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12DescriptorHeap.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Device.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Fence.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Swapchain.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Texture.cpp" />
+    <ClCompile Include="Source\Renderer\RHI\GeometryManager.cpp" />
     <ClCompile Include="Source\Renderer\RHI\TextureManager.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -164,9 +166,12 @@
     <ClInclude Include="Source\Common\Handle.hpp" />
     <ClInclude Include="Source\IO\Image.hpp" />
     <ClInclude Include="Source\IO\IO.hpp" />
+    <ClInclude Include="Source\IO\Mesh.hpp" />
     <ClInclude Include="Source\pch.hpp" />
     <ClInclude Include="Source\Renderer\Helpers.hpp" />
     <ClInclude Include="Source\Renderer\Renderer\Renderer.hpp" />
+    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12CommandSignature.hpp" />
+    <ClInclude Include="Source\Renderer\RHI\GeometryManager.hpp" />
     <ClInclude Include="Source\Renderer\RHI\ResourceTypes.hpp" />
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Buffer.hpp" />
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12CommandList.hpp" />

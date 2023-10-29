@@ -16,11 +16,11 @@ namespace RHI {
 			UINT64 alignment{ 0 };
 			UINT64 stride{ 0 }; /* For Buffers, width/stride will be its No. of elements */
 			UINT64 width{ 0 }; /* For Buffers, this will be its size in bytes*/
-			UINT height{ 0 };
+			uint height{ 0 };
 			UINT16 mipLevels{ 1 };
 			UINT16 arraySize{ 1 };
-			UINT sampleCount{ 1 };
-			UINT sampleQuality{ 0 };
+			uint sampleCount{ 1 };
+			uint sampleQuality{ 0 };
 			TextureLayout layout{ TextureLayout::Unknown };
 			ResourceFlags flags{ ResourceFlags::None };
 			ResourceState initialState{ ResourceState::Common };
@@ -51,11 +51,11 @@ namespace RHI {
 				ResourceFormat format,
 				ResourceDimension dimension,
 				UINT64 width,
-				UINT height,
+				uint height,
 				UINT16 mipLevels,
 				UINT16 arraySize,
-				UINT sampleCount = 1,
-				UINT sampleQuality = 0,
+				uint sampleCount = 1,
+				uint sampleQuality = 0,
 				ResourceFlags flags = ResourceFlags::None,
 				ResourceUsage usage = ResourceUsage::Default,
 				ResourceState initialState = ResourceState::CopyDest
@@ -104,7 +104,7 @@ namespace RHI {
 		inline BufferDesc const& GetDesc() { return m_Desc;  }
 		
 		inline ResourceState GetState() { return m_State; }
-		void SetState(CommandList* cmdList, ResourceState state, UINT subresource = RESOURCE_BARRIER_ALL_SUBRESOURCES);
+		void SetState(CommandList* cmdList, ResourceState state, uint subresource = RESOURCE_BARRIER_ALL_SUBRESOURCES);
 		
 		inline size_t GetGPUAddress() { return m_Resource->GetGPUVirtualAddress(); }
 		inline auto GetNativeBuffer() { return m_Resource.Get(); }
