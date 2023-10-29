@@ -94,7 +94,20 @@ namespace RHI {
         m_Device->CreateRenderTargetView(*tex, nullptr, handle.cpu_handle);
         return handle;
     }
-    DescriptorHandle Device::GetShaderResourceView(Buffer* buf, ResourceDimensionSRV view) {
+    DescriptorHandle Device::GetBufferShaderResourceView(Buffer* buf, ResourceFormat format) {
+        bool is_raw = buf->GetDesc().format == ResourceFormat::Unknown;
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.Format = is_raw ? DXGI_FORMAT_R32_TYPELESS : (DXGI_FORMAT)buf->GetDesc().format;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        srvDesc.Buffer.StructureByteStride = is_raw ? 0 : buf->GetDesc().stride;
+        srvDesc.Buffer.NumElements = buf->GetDesc().width / (is_raw ? sizeof(float) : buf->GetDesc().stride);
+        if (is_raw) srvDesc.Buffer.Flags |= D3D12_BUFFER_SRV_FLAG_RAW;
+        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::CBV_SRV_UAV)->Allocate();
+        m_Device->CreateShaderResourceView(*buf, &srvDesc, handle.cpu_handle);
+        return handle;
+    }
+    DescriptorHandle Device::GetTexture2DShaderResourceView(Buffer* buf, ResourceDimensionSRV view) {
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srvDesc.Format = (DXGI_FORMAT)buf->GetDesc().format;

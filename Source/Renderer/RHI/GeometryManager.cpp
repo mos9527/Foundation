@@ -102,7 +102,7 @@ namespace RHI {
 			buffer->QueueCopy(cmdList, intermediate.get(), 0, 0, alloc_size);
 			buffer->SetName(std::format(L"Geo Buffer #{}", handle));
 			
-			m_GeoBufferSRVs[handle] = device->GetShaderResourceView(buffer.get(), ResourceDimensionSRV::Buffer);
+			m_GeoBufferSRVs[handle] = device->GetBufferShaderResourceView(buffer.get());
 			geo.heap_handle = m_GeoBufferSRVs[handle].heap_handle;
 
 			m_GeometryHandles[handle] = std::move(geo);

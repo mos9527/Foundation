@@ -12,10 +12,10 @@ namespace RHI {
 			ClearValue clearValue{};
 			ResourceUsage usage{ ResourceUsage::Default };
 			ResourceFormat format{ ResourceFormat::Unknown };
-			ResourceDimension dimension{ ResourceDimension::Unknown };
+			ResourceDimension dimension{ ResourceDimension::Unknown }; /* Set to Unknown if you want Raw Buffers. */
 			UINT64 alignment{ 0 };
-			UINT64 stride{ 0 }; /* For Buffers, width/stride will be its No. of elements */
-			UINT64 width{ 0 }; /* For Buffers, this will be its size in bytes*/
+			UINT64 stride{ 0 }; /* For Buffers, width/stride will be its No. of elements. */
+			UINT64 width{ 0 }; /* For Buffers, this will be its size in bytes. For textures, this will be the image's dimension. */
 			uint height{ 0 };
 			UINT16 mipLevels{ 1 };
 			UINT16 arraySize{ 1 };
@@ -26,7 +26,7 @@ namespace RHI {
 			ResourceState initialState{ ResourceState::Common };
 			static const BufferDesc GetGenericBufferDesc(
 				UINT64 size, 
-				UINT64 stride = sizeof(size_t),
+				UINT64 stride = sizeof(float),
 				ResourceState initialState = ResourceState::CopySource,
 				ResourceUsage usage = ResourceUsage::Upload, 
 				ResourceFlags flags = ResourceFlags::None

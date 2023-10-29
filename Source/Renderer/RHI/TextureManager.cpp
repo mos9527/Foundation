@@ -32,7 +32,7 @@ namespace RHI {
 			1
 		);
 		texture->SetState(cmdList, ResourceState::PixelShaderResource);
-		auto srv = device->GetShaderResourceView(texture.get(), ResourceDimensionSRV::Texture2D);
+		auto srv = device->GetTexture2DShaderResourceView(texture.get(), ResourceDimensionSRV::Texture2D);
 		auto handle = m_HandleQueue.pop();
 		texture->SetName(std::format(L"Texture #{}", handle));
 		m_Textures[handle] = std::move(texture);

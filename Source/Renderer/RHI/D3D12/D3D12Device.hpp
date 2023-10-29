@@ -24,7 +24,8 @@ namespace RHI {
 		~Device();
 
 		DescriptorHandle GetRenderTargetView(Texture* tex);
-		DescriptorHandle GetShaderResourceView(Buffer* buf, ResourceDimensionSRV view);
+		DescriptorHandle GetBufferShaderResourceView(Buffer* buf, ResourceFormat format = ResourceFormat::Unknown);
+		DescriptorHandle GetTexture2DShaderResourceView(Buffer* buf, ResourceDimensionSRV view);
 		DescriptorHandle GetConstantBufferView(Buffer* buf);
 
 		std::shared_ptr<Buffer> AllocateIntermediateBuffer(Buffer::BufferDesc const& desc);
