@@ -7,7 +7,7 @@ namespace RHI {
 	public:
 		TextureManager();
 		
-		handle_type LoadTexture(Device* device, Bitmap8bpp bmp);
+		handle_type LoadTexture(Device* device, CommandList* cmdList, IO::Bitmap8bpp& bmp);
 		
 		inline Texture* GetTexture(handle_type handle) { return m_Textures[handle].get(); }
 		inline DescriptorHandle GetTextureSRV(handle_type handle) { return m_TextureDescriptors[handle]; }

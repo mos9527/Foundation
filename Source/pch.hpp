@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <concepts>
 #include <numeric>
+#include <filesystem>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOGDI

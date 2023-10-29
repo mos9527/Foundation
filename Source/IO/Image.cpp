@@ -3,16 +3,18 @@
 #include "../../Dependencies/stb_image.h"
 #include "../Renderer/RHI/ResourceTypes.hpp"
 #include "Image.hpp"
-
-static Bitmap8bpp LoadBitmap(FILE* f) {
-	Bitmap8bpp bmp;
-	bmp.data = stbi_load_from_file(f, &bmp.width, &bmp.height, &bmp.channels, STBI_rgb_alpha);
-	CHECK(bmp.data);
-}
-static Bitmap8bpp LoadBitmap(const char* filepath) {
-	FILE* f = stbi__fopen(filepath, "rb");
-	CHECK(f);
-	Bitmap8bpp bmp = LoadBitmap(f);
-	fclose(f);
-	return bmp;
+namespace IO {
+	Bitmap8bpp LoadBitmap8bpp(const char* filepath) {
+		path_t fullpath = FileAbsolutePath(filepath);
+		CHECK(FileExisits(fullpath));
+		return LoadBitmap8bpp(fullpath);
+	}
+	Bitmap8bpp LoadBitmap8bpp(path_t filepath) {
+		FILE* f; _wfopen_s(&f, (const wchar_t*)filepath.u16string().c_str(), L"rb");
+		CHECK(f);
+		Bitmap8bpp bmp;
+		bmp.data = stbi_load_from_file(f, &bmp.width, &bmp.height, &bmp.channels, STBI_rgb_alpha);
+		CHECK(bmp.data);
+		return bmp;
+	}
 }

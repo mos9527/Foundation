@@ -33,7 +33,7 @@ namespace RHI {
     void Swapchain::CreateRenderTargetViews(Device* device) {
         // Free previous RTVs (if any)
         for (auto& handle : m_BackbufferRTVs) {
-            device->GetCpuAllocator(DescriptorHeap::HeapType::RTV)->Free(handle.heap_handle);
+            device->GetCpuAllocator(DescriptorHeap::HeapType::RTV)->Free(handle);
         }
         m_BackbufferRTVs.clear();
         for (auto& backbuffer : m_Backbuffers) {

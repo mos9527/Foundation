@@ -1,6 +1,7 @@
 #pragma once
 #include "../Common.hpp"
 #include "D3D12Resource.hpp"
+#include "../../Helpers.hpp"
 #define RESOURCE_BARRIER_ALL_SUBRESOURCES D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES 
 namespace RHI {
 	class Device;
@@ -13,8 +14,8 @@ namespace RHI {
 			ResourceFormat format{ ResourceFormat::Unknown };
 			ResourceDimension dimension{ ResourceDimension::Unknown };
 			UINT64 alignment{ 0 };
-			UINT64 stride{ 0 };
-			UINT64 width{ 0 };
+			UINT64 stride{ 0 }; /* For Buffers, width/stride will be its No. of elements */
+			UINT64 width{ 0 }; /* For Buffers, this will be its size in bytes*/
 			UINT height{ 0 };
 			UINT16 mipLevels{ 1 };
 			UINT16 arraySize{ 1 };
@@ -100,19 +101,27 @@ namespace RHI {
 		// creation w/ initial data
 		Buffer(Device* device, BufferDesc const& desc, const void* data, size_t size, size_t offset = 0LL);
 		~Buffer() = default;
+		inline BufferDesc const& GetDesc() { return m_Desc;  }
+		
 		inline ResourceState GetState() { return m_State; }
 		void SetState(CommandList* cmdList, ResourceState state, UINT subresource = RESOURCE_BARRIER_ALL_SUBRESOURCES);
+		
+		inline size_t GetGPUAddress() { return m_Resource->GetGPUVirtualAddress(); }
 		inline auto GetNativeBuffer() { return m_Resource.Get(); }
+
+		inline void SetName(name_t name) { m_Name = name; m_Resource->SetName((const wchar_t*)name.c_str());}
+		
 		inline operator ID3D12Resource* () { return m_Resource.Get(); }
-		inline void Reset() { m_Resource.Reset(); }
-		/* Buffer dimension exclusive (since these only handle subresource #0) */
+		inline void Reset() { m_Resource.Reset(); }		
+
 		// Map and immediately update the buffer content (when usage is Upload & Readback)
 		void Update(const void* data, size_t size, size_t offset);
 		// Queues a copy from srcBuffer to this buffer on the command list
 		void QueueCopy(CommandList* cmdList, Buffer* srcBuffer, size_t srcOffset, size_t dstOffset, size_t size);		
 		void Map();
-		void Unmap();
+		void Unmap();		
 	protected:
+		name_t m_Name;
 		const BufferDesc m_Desc;
 		ResourceState m_State{ ResourceState::Common };
 		ComPtr<ID3D12Resource> m_Resource;

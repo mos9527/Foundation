@@ -32,17 +32,19 @@ namespace RHI {
 		
 		DescriptorHeap(Device* device, DescriptorHeapDesc const& cfg);
 		~DescriptorHeap() = default;
+		inline void SetName(name_t name) { m_Name = name; m_DescriptorHeap->SetName((const wchar_t*)name.c_str()); }
 		
-		handle_type Allocate() { return m_HandleQueue.Pop(); }
-		inline void Free(handle_type handle) { m_HandleQueue.Return(handle); };
+		DescriptorHandle Allocate() { return GetDescriptor(m_HandleQueue.Pop()); }
+		inline void Free(DescriptorHandle handle) { m_HandleQueue.Return(handle.heap_handle); };
 
-		DescriptorHandle GetDescriptor(handle_type);
-		inline bool CheckHandle(handle_type handle) { return handle < m_Config.descriptorCount; };
+		DescriptorHandle GetDescriptor(handle_type heap_handle);
+		inline bool CheckHandle(handle_type heap_handle) { return heap_handle < m_Config.descriptorCount; };
 		inline handle_type GetDescriptorCount() { return m_Config.descriptorCount; };
 
 		inline auto GetNativeHeap() { return m_DescriptorHeap.Get(); }
 		inline operator ID3D12DescriptorHeap* () { return m_DescriptorHeap.Get(); }
 	protected:
+		name_t m_Name;
 		const DescriptorHeapDesc m_Config;
 		Device* const pDevice;
 

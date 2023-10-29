@@ -37,7 +37,7 @@ namespace RHI {
 			&resourceDesc, 0, count, 0, NULL, NULL, NULL, &intermediateSize
 		);
 		auto bufDesc = Buffer::BufferDesc::GetGenericBufferDesc(intermediateSize);
-		std::unique_ptr<Buffer> intermediate = std::make_unique<Buffer>(device, bufDesc);
+		auto intermediate = device->AllocateIntermediateBuffer(bufDesc);		
 		std::vector<D3D12_SUBRESOURCE_DATA> arrData;
 		for (UINT i = 0; i < count; i++) arrData.push_back(data[i]);
 		UpdateSubresources(

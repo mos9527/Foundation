@@ -22,9 +22,9 @@ namespace RHI {
 
 	void MarkerFence::MarkAndWait(CommandQueue* queue) {
 	{
-		queue->Signal(this, nMarker);
-		Fence::Wait(nMarker);
 		nMarker++;
+		queue->Signal(this, nMarker);
+		Fence::Wait(nMarker);		
 	}
 	}
 }

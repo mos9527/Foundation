@@ -4,7 +4,7 @@ namespace RHI {
 		Unknown = D3D12_TEXTURE_LAYOUT_UNKNOWN,
 		RowMajor = D3D12_TEXTURE_LAYOUT_ROW_MAJOR
 	};
-	DEFINE_ENUM_FLAG_OPERATORS(TextureLayout);
+	// DEFINE_ENUM_FLAG_OPERATORS(TextureLayout);
 	enum class ResourceDimension {
 		Unknown = D3D12_RESOURCE_DIMENSION_UNKNOWN,
 		Buffer = D3D12_RESOURCE_DIMENSION_BUFFER,
@@ -12,7 +12,15 @@ namespace RHI {
 		Texture2D = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
 		Texture3D = D3D12_RESOURCE_DIMENSION_TEXTURE3D
 	};
-	DEFINE_ENUM_FLAG_OPERATORS(ResourceDimension);
+	// DEFINE_ENUM_FLAG_OPERATORS(ResourceDimension);
+	enum class ResourceDimensionSRV {
+		Buffer = D3D12_SRV_DIMENSION_BUFFER,
+		Texture2D = D3D12_SRV_DIMENSION_TEXTURE2D,
+	};
+	enum class ResourceDimensionUAV {
+		Buffer = D3D12_UAV_DIMENSION_BUFFER,
+		Texture2D = D3D12_UAV_DIMENSION_TEXTURE2D,
+	};	
 	enum class ResourceFlags {
 		None = D3D12_RESOURCE_FLAG_NONE,
 		NoShaderResource = D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE,
@@ -65,7 +73,7 @@ namespace RHI {
 		UINT8 stencil;
 	};
 	struct ClearValue {
-		bool clear{ true };
+		bool clear{ false };
 		union {
 			FLOAT color[4];
 			DepthStencilValue depthStencil;

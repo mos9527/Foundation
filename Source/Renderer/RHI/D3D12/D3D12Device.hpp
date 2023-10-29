@@ -9,6 +9,9 @@
 #include "D3D12Fence.hpp"
 #define ALLOC_SIZE_DESC_HEAP 1024
 namespace RHI {
+	void LogDeviceInformation(ID3D12Device* device);
+	void LogAdapterInformation(IDXGIAdapter1* adapter);
+	void LogD3D12MABudget(D3D12MA::Allocator* allocator);
 	class Device {
 	public:
 		struct DeviceDesc {
@@ -20,6 +23,12 @@ namespace RHI {
 		~Device();
 
 		DescriptorHandle CreateRenderTargetView(Texture* tex);
+		DescriptorHandle GetShaderResourceView(Buffer* buf, ResourceDimensionSRV view);
+		DescriptorHandle GetConstantBufferView(Buffer* buf);
+
+		std::shared_ptr<Buffer> AllocateIntermediateBuffer(Buffer::BufferDesc desc);
+		void FlushIntermediateBuffers();
+
 		void CreateSwapchainAndBackbuffers(Swapchain::SwapchainDesc const& cfg);
 
 		void BeginFrame();
@@ -45,8 +54,8 @@ namespace RHI {
 		std::unique_ptr<Swapchain> m_SwapChain;
 		std::unique_ptr<CommandQueue> m_CommandQueue;
 		std::vector<std::unique_ptr<CommandList>> m_CommandLists;
-		std::vector<std::unique_ptr<DescriptorHeap>> m_DescriptorHeaps;
-		
+		std::vector<std::unique_ptr<DescriptorHeap>> m_DescriptorHeaps;		
+		std::vector<std::shared_ptr<Buffer>> m_IntermediateBuffers;
 		std::unique_ptr<MarkerFence> m_MarkerFence;
 	};
 }

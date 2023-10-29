@@ -15,9 +15,9 @@ namespace RHI {
         m_HandleQueue.Setup(cfg.descriptorCount);
     }
 
-    DescriptorHandle DescriptorHeap::GetDescriptor(handle_type handle) {
+    DescriptorHandle DescriptorHeap::GetDescriptor(handle_type heap_handle) {
         DescriptorHandle new_handle = m_HeadHandle;
-        new_handle.Increment(handle, m_HeapIncrementSize);
+        new_handle.Increment(heap_handle, m_HeapIncrementSize);
         return new_handle;
     };
 }

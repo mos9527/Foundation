@@ -1,14 +1,15 @@
 #pragma once
 #include "../RHI/RHI.hpp"
+#include "../RHI/TextureManager.hpp"
 using namespace RHI;
 class Renderer {	
 	std::unique_ptr<Device> m_Device;
+	std::unique_ptr<TextureManager> m_TextureMananger;
 public:
 	bool bVsync = true;
-	void Init(Device::DeviceDesc const&, Swapchain::SwapchainDesc const&);
+	Renderer(Device::DeviceDesc const&, Swapchain::SwapchainDesc const&);
+	void LoadResources();
 	void ResizeViewport(UINT width, UINT height);
-	void BeginFrame();
-	void RunFrame();
-	void EndFrame();
+	void Render();
 	auto GetDevice() { return m_Device.get(); }
 };

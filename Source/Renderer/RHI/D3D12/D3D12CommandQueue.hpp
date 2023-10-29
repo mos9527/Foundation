@@ -5,10 +5,12 @@
 namespace RHI {
 	class Device;
 	class CommandQueue {
+		name_t m_Name;
 		ComPtr<ID3D12CommandQueue> m_CommandQueue;
 	public:
 		CommandQueue(Device* device);
 		~CommandQueue() = default;
+		inline void SetName(name_t name) { m_Name = name; m_CommandQueue->SetName((const wchar_t*)name.c_str()); }
 		void Execute(CommandList*);
 		void Execute(std::vector<CommandList*>);
 		inline operator ID3D12CommandQueue* () { return m_CommandQueue.Get(); }
