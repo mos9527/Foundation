@@ -122,7 +122,7 @@ namespace RHI {
 		inline void SetName(name_t name) { 
 			m_Name = name;
 			m_Resource->SetName((const wchar_t*)name.c_str());
-			m_Allocation->SetName((const wchar_t*)name.c_str());
+			if (m_Allocation.Get()) m_Allocation->SetName((const wchar_t*)name.c_str());
 		}
 		
 		inline operator ID3D12Resource* () { return m_Resource.Get(); }

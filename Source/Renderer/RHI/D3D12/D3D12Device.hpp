@@ -32,23 +32,15 @@ namespace RHI {
 		std::shared_ptr<Buffer> AllocateIntermediateBuffer(Buffer::BufferDesc const& desc);
 		void FlushIntermediateBuffers();
 
-		void CreateSwapchainAndBackbuffers(Swapchain::SwapchainDesc const& cfg);
-
-		void BeginFrame();
-		void EndFrame(bool vsync);
-
-		void Wait();
-
 		inline auto GetDXGIFactory() { return m_Factory; }
-		inline auto GetSwapchain() { return m_SwapChain.get(); }
-		inline auto GetCommandQueue() { return m_CommandQueue.get(); }
-		inline auto GetCommandList(CommandList::CommandListType type) { return m_CommandLists[type].get(); }
+		inline auto GetNativeDevice() { return m_Device; }
+		
+		inline auto GetCommandQueue(CommandListType type) { return m_CommandQueues[VALUE_OF(type)].get(); }
 		inline auto GetDescriptorHeap(DescriptorHeap::HeapType type) { return m_DescriptorHeaps[type].get(); }
 		inline auto GetRootSignature() { return m_RootSignature.Get(); }
 		inline auto GetCommandSignature(CommandSignature::IndirectArgumentType type) { return m_CommandSignatures[type].get(); }
 		inline auto GetAllocator() { return m_Allocator.Get(); }
-		inline auto GetAllocatorPool(ResourcePoolType type) { return m_AllocatorPools[(size_t)type].Get(); }
-		inline auto GetNativeDevice() { return m_Device; }
+		inline auto GetAllocatorPool(ResourcePoolType type) { return m_AllocatorPools[VALUE_OF(type)].Get(); }
 		inline operator ID3D12Device* () { return m_Device.Get(); }
 	private:
 		ComPtr<IDXGIAdapter1> m_Adapter;
@@ -58,12 +50,9 @@ namespace RHI {
 		ComPtr<ID3D12RootSignature> m_RootSignature;
 
 		std::vector<ComPtr<D3D12MA::Pool>> m_AllocatorPools;
-		std::unique_ptr<Swapchain> m_SwapChain;
-		std::unique_ptr<CommandQueue> m_CommandQueue;
-		std::vector<std::unique_ptr<CommandList>> m_CommandLists;
+		std::vector<std::unique_ptr<CommandQueue>> m_CommandQueues;
 		std::vector<std::unique_ptr<DescriptorHeap>> m_DescriptorHeaps;		
 		std::vector<std::shared_ptr<Buffer>> m_IntermediateBuffers;
 		std::vector<std::unique_ptr<CommandSignature>> m_CommandSignatures;
-		std::unique_ptr<MarkerFence> m_MarkerFence;
 	};
 }

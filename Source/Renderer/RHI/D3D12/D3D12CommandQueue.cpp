@@ -3,11 +3,11 @@
 #include "D3D12Device.hpp"
 #include "D3D12Fence.hpp"
 namespace RHI {
-	CommandQueue::CommandQueue(Device* device) {
+	CommandQueue::CommandQueue(Device* device, CommandListType type) : m_Type(type) {
 		D3D12_COMMAND_QUEUE_DESC queueDesc = {};
 		queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-		queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-		CHECK_HR(device->GetNativeDevice()->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_CommandQueue)));
+		queueDesc.Type = CommandListTypeToD3DType(type);
+		CHECK_HR(device->GetNativeDevice()->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_CommandQueue)));		
 	}
 	void CommandQueue::Execute(CommandList* cmdList) {
 		ID3D12CommandList* ppCommandLists[] = { *cmdList };

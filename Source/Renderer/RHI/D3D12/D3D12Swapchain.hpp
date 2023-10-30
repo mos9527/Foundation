@@ -7,7 +7,8 @@
 namespace RHI {
 	class Device;
 	class Swapchain {
-		size_t nFenceValue;
+		/* The backbuffer we are currently drawing to */
+		uint nBackbufferIndex{ 0 };	
 		std::vector<size_t> nFenceValues;
 		std::unique_ptr<Fence> m_FrameFence;
 		std::vector<std::unique_ptr<Texture>> m_Backbuffers;
@@ -15,8 +16,6 @@ namespace RHI {
 		ComPtr<IDXGISwapChain3> m_Swapchain;
 		void Present(bool vsync);
 	public:
-		/* The backbuffer we are currently drawing to */
-		uint nBackbufferIndex{ 0 };
 		BOOL bIsFullscreen{ false };
 		struct SwapchainDesc {
 			int InitWidth;
@@ -24,15 +23,16 @@ namespace RHI {
 			uint BackBufferCount;
 			HWND Window;
 		};
-		Swapchain(Device* device, SwapchainDesc const& cfg);
+		Swapchain(Device* device, CommandQueue* cmdQueue, SwapchainDesc const& cfg);
 		~Swapchain() = default;
 		
 		inline auto GetBackbuffer(uint index) { return m_Backbuffers[index].get(); }
 		inline auto GetBackbufferRTV(uint index) { return m_BackbufferRTVs[index]; }
 
+		inline auto GetCurrentBackbuffer() { return nBackbufferIndex; }
 		void CreateBackBuffers(Device* device);
 		void CreateRenderTargetViews(Device* device);
-		void Resize(Device* device, uint width, uint height);
+		void Resize(Device* device, CommandQueue* cmdQueue, uint width, uint height);
 		void PresentAndMoveToNextFrame(CommandQueue* signalQueue, bool vsync);
 
 		inline auto GetNativeSwapchain() { return m_Swapchain.Get(); }

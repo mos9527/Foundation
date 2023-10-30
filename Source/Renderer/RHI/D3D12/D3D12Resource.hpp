@@ -1,5 +1,6 @@
 #pragma once
 namespace RHI {
+#define VALUE_OF(X) (size_t)(X) 
 	enum class TextureLayout {
 		Unknown = D3D12_TEXTURE_LAYOUT_UNKNOWN,
 		RowMajor = D3D12_TEXTURE_LAYOUT_ROW_MAJOR
@@ -83,6 +84,26 @@ namespace RHI {
 		Intermediate = 1, /* resources can only be uploaded here by the CPU (TYPE_UPLOAD). its contents are managed linearly since they are expected to be all freed at once */
 		NUM_TYPES = 2
 	};
+	enum class CommandListType
+	{
+		Direct = 0,
+		Compute = 1,
+		Copy = 2,
+		NUM_TYPES = 3
+	};
+	static inline D3D12_COMMAND_LIST_TYPE CommandListTypeToD3DType(CommandListType type) {
+		switch (type)
+		{
+		case CommandListType::Direct:
+			return D3D12_COMMAND_LIST_TYPE_DIRECT;
+		case CommandListType::Compute:
+			return D3D12_COMMAND_LIST_TYPE_COMPUTE;
+		case CommandListType::Copy:
+			return D3D12_COMMAND_LIST_TYPE_COPY;
+		default:
+			return (D3D12_COMMAND_LIST_TYPE)-1;
+		}
+	}
 	struct DepthStencilValue {
 		FLOAT depth;
 		UINT8 stencil;

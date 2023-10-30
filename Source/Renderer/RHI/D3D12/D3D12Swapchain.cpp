@@ -1,7 +1,7 @@
 #include "D3D12Swapchain.hpp"
 #include "D3D12Device.hpp"
 namespace RHI {
-    Swapchain::Swapchain(Device* device, SwapchainDesc const& cfg) {
+    Swapchain::Swapchain(Device* device, CommandQueue* cmdQueue, SwapchainDesc const& cfg) {
         DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
         swapChainDesc.BufferCount = cfg.BackBufferCount;
         swapChainDesc.Width = cfg.InitWidth;
@@ -12,10 +12,11 @@ namespace RHI {
         swapChainDesc.SampleDesc.Count = 1;
         ComPtr<IDXGISwapChain1> swapChain;
         CHECK_HR(device->GetDXGIFactory()->CreateSwapChainForHwnd(
-            *device->GetCommandQueue(), cfg.Window, &swapChainDesc, nullptr, nullptr, &swapChain
+            *cmdQueue, cfg.Window, &swapChainDesc, nullptr, nullptr, &swapChain
         ));
         CHECK_HR(device->GetDXGIFactory()->MakeWindowAssociation(cfg.Window, DXGI_MWA_NO_ALT_ENTER));
         CHECK_HR(swapChain.As(&m_Swapchain));
+        Resize(device, cmdQueue, cfg.InitWidth, cfg.InitHeight);
     }
     void Swapchain::CreateBackBuffers(Device* device) {        
         m_Backbuffers.clear();
@@ -25,10 +26,12 @@ namespace RHI {
             Texture::TextureDesc desc{};
             ComPtr<ID3D12Resource> backbuffer;
             CHECK_HR(m_Swapchain->GetBuffer(i, IID_PPV_ARGS(backbuffer.GetAddressOf())));
-            m_Backbuffers.push_back(std::make_unique<Texture>(desc, std::move(backbuffer)));            
+            m_Backbuffers.push_back(std::make_unique<Texture>(desc, std::move(backbuffer)));
+            m_Backbuffers.back()->SetName(std::format(L"Backbuffer #{}", i));
         }
         nFenceValues.resize(desc.BufferCount);
         m_FrameFence = std::make_unique<Fence>(device);
+        m_FrameFence->SetName(L"Swap Fence");
     }
     void Swapchain::CreateRenderTargetViews(Device* device) {
         // Free previous RTVs (if any)
@@ -52,14 +55,15 @@ namespace RHI {
         // Wait for the next BB to be ready
         m_FrameFence->Wait(nFenceValues[nBackbufferIndex]);
         // Increment the fence value which should be monotonously increasing upon any backbuffers' completion    
-        nFenceValues[nBackbufferIndex] = ++nFenceValue;
+        nFenceValues[nBackbufferIndex] = signalQueue->GetUniqueFenceValue();
     }
-    void Swapchain::Resize(Device* device, uint width, uint height) {
-        uint buffers = (UINT)m_Backbuffers.size();
+    void Swapchain::Resize(Device* device, CommandQueue* cmdQueue, uint width, uint height) {
+        uint buffers = (UINT)m_Backbuffers.size();        
         // Reset BBs and their fence values
+        size_t resetFenceValue = cmdQueue->GetUniqueFenceValue();
         for (uint i = 0; i < buffers; i++) {
             m_Backbuffers[i]->Reset();
-            nFenceValues[i] = nFenceValue;
+            nFenceValues[i] = resetFenceValue;
         }
         DXGI_SWAP_CHAIN_DESC desc = {};
         m_Swapchain->GetDesc(&desc);

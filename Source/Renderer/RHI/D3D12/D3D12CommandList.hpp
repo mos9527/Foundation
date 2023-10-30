@@ -1,20 +1,16 @@
 #pragma once
 #include "../Common.hpp"
+#include "D3D12Resource.hpp"
 namespace RHI {
 	class Device;
 	class CommandList
 	{
 		name_t m_Name;
+		CommandListType m_Type;
 		ComPtr<ID3D12GraphicsCommandList6> m_CommandList;
 		std::vector<ComPtr<ID3D12CommandAllocator>> m_CommandAllocators;
 	public:
-		enum CommandListType
-		{
-			DIRECT = 0,
-			COMPUTE = 1,
-			COPY = 2,
-			NUM_TYPES = 3
-		};
+
 		CommandList(Device* gpuDevice, CommandListType type, uint numAllocators = 1);
 		~CommandList() = default;
 		inline void SetName(name_t name) { m_Name = name; m_CommandList->SetName((const wchar_t*)name.c_str()); }

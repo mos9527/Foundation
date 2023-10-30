@@ -138,15 +138,7 @@ namespace RHI {
         m_Device->CreateConstantBufferView(&cbvDesc, handle.cpu_handle);
         return handle;
     }
-    void Device::CreateSwapchainAndBackbuffers(Swapchain::SwapchainDesc const& cfg) {
-        m_SwapChain = std::make_unique<Swapchain>(this, cfg);
-        m_SwapChain->Resize(this, cfg.InitWidth, cfg.InitHeight);
-        m_CommandLists[CommandList::CommandListType::DIRECT] = std::make_unique<CommandList>(
-            this,
-            CommandList::CommandListType::DIRECT,
-            cfg.BackBufferCount
-        );
-    }
+
     Device::Device(DeviceDesc cfg) {
 #ifdef _DEBUG    
         ComPtr<ID3D12Debug> debugInterface;
@@ -165,7 +157,10 @@ namespace RHI {
         LOG(INFO) << "D3D12 Device created";
         LogDeviceInformation(m_Device.Get());
         // create the command queue
-        m_CommandQueue = std::make_unique<CommandQueue>(this);
+        m_CommandQueues.resize(VALUE_OF(CommandListType::NUM_TYPES));
+        m_CommandQueues[VALUE_OF(CommandListType::Direct)] = std::make_unique<CommandQueue>(this, CommandListType::Direct);
+        m_CommandQueues[VALUE_OF(CommandListType::Copy)] = std::make_unique<CommandQueue>(this, CommandListType::Copy);
+        m_CommandQueues[VALUE_OF(CommandListType::Compute)] = std::make_unique<CommandQueue>(this, CommandListType::Compute);
         // initialize descriptor heaps we'll be using
         m_DescriptorHeaps.resize(DescriptorHeap::HeapType::NUM_TYPES);
         m_DescriptorHeaps[DescriptorHeap::HeapType::RTV] = std::make_unique<DescriptorHeap>(
@@ -175,6 +170,7 @@ namespace RHI {
                 .descriptorCount = ALLOC_SIZE_DESC_HEAP,
                 .heapType = DescriptorHeap::HeapType::RTV
         });
+        m_DescriptorHeaps[DescriptorHeap::HeapType::RTV]->SetName(L"RTV Heap");
         m_DescriptorHeaps[DescriptorHeap::HeapType::CBV_SRV_UAV] = std::make_unique<DescriptorHeap>(
             this,
             DescriptorHeap::DescriptorHeapDesc{
@@ -182,9 +178,12 @@ namespace RHI {
             .descriptorCount = ALLOC_SIZE_DESC_HEAP,
             .heapType = DescriptorHeap::HeapType::CBV_SRV_UAV
         });
-        m_MarkerFence = std::make_unique<MarkerFence>(this);
-        m_CommandLists.resize(CommandList::CommandListType::NUM_TYPES);
+        m_DescriptorHeaps[DescriptorHeap::HeapType::CBV_SRV_UAV]->SetName(L"CBV-SRV-UAV Heap");        
         m_CommandSignatures.resize(CommandSignature::IndirectArgumentType::NUM_TYPES);
+        m_CommandSignatures[CommandSignature::IndirectArgumentType::DARW] =
+            std::make_unique<CommandSignature>(this, CommandSignature::IndirectArgumentType::DARW);
+        m_CommandSignatures[CommandSignature::IndirectArgumentType::DISPATCH] =
+            std::make_unique<CommandSignature>(this, CommandSignature::IndirectArgumentType::DISPATCH);
         m_CommandSignatures[CommandSignature::IndirectArgumentType::DISPATCH_MESH] =
             std::make_unique<CommandSignature>(this, CommandSignature::IndirectArgumentType::DISPATCH_MESH);
         // allocators
@@ -193,21 +192,20 @@ namespace RHI {
         allocatorDesc.pAdapter = m_Adapter.Get();
         allocatorDesc.PreferredBlockSize = 0;
         D3D12MA::CreateAllocator(&allocatorDesc, &m_Allocator);
-        m_AllocatorPools.resize((size_t)ResourcePoolType::NUM_TYPES);
+        m_AllocatorPools.resize(VALUE_OF(ResourcePoolType::NUM_TYPES));
         // default pool is just nullptr
-        m_AllocatorPools[(size_t)ResourcePoolType::Default].Reset();
+        m_AllocatorPools[VALUE_OF(ResourcePoolType::Default)].Reset();
         // create the intermediate pool
-        auto& intermediate = m_AllocatorPools[(size_t)ResourcePoolType::Intermediate];
+        auto& intermediate = m_AllocatorPools[VALUE_OF(ResourcePoolType::Intermediate)];
         D3D12MA::POOL_DESC poolDesc{};
         poolDesc.HeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
         poolDesc.Flags = D3D12MA::POOL_FLAG_ALGORITHM_LINEAR;        
         m_Allocator->CreatePool(&poolDesc, intermediate.GetAddressOf());
         intermediate->SetName(L"Intermediate Pool");
-        // root signatures (TODO)
-        // xxx
+        // root signatures
         CD3DX12_ROOT_PARAMETER rootParams[1]{};
         rootParams[0].InitAsConstants(1, 0);
-        CD3DX12_STATIC_SAMPLER_DESC staticSamplers[1];
+        CD3DX12_STATIC_SAMPLER_DESC staticSamplers[1]{};
         staticSamplers[0].Init(0);
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC desc{};
         desc.Init_1_0(
@@ -223,20 +221,7 @@ namespace RHI {
             &desc, D3D_ROOT_SIGNATURE_VERSION_1_1, signature.GetAddressOf(), error.GetAddressOf()
         ));
         CHECK_HR(m_Device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_RootSignature)));
-    }
-    void Device::BeginFrame() {
-        auto directList = GetCommandList(CommandList::DIRECT);
-        directList->ResetAllocator(m_SwapChain->nBackbufferIndex);
-        directList->Begin(m_SwapChain->nBackbufferIndex);
-    }
-    void Device::EndFrame(bool vsync) {
-        auto list = GetCommandList(CommandList::DIRECT);
-        list->End();
-        m_CommandQueue->Execute(list);
-        m_SwapChain->PresentAndMoveToNextFrame(m_CommandQueue.get(), vsync);
-    }
-    void Device::Wait() {
-        m_MarkerFence->MarkAndWait(m_CommandQueue.get());
+        m_RootSignature->SetName(L"Global Root Signature");
     }
     std::shared_ptr<Buffer> Device::AllocateIntermediateBuffer(Buffer::BufferDesc const& desc) {
         DCHECK(desc.poolType == ResourcePoolType::Intermediate);
