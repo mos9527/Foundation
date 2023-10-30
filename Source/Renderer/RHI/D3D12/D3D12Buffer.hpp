@@ -3,6 +3,7 @@
 #include "D3D12Resource.hpp"
 #include "../../Helpers.hpp"
 #define RESOURCE_BARRIER_ALL_SUBRESOURCES D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES 
+#define RAW_BUFFER_STRIDE 0u
 namespace RHI {
 	class Device;
 	class CommandList;
@@ -12,9 +13,9 @@ namespace RHI {
 			ClearValue clearValue{};
 			ResourceUsage usage{ ResourceUsage::Default };
 			ResourceFormat format{ ResourceFormat::Unknown };
-			ResourceDimension dimension{ ResourceDimension::Unknown }; /* Set to Unknown if you want Raw Buffers. */
+			ResourceDimension dimension{ ResourceDimension::Unknown };
 			UINT64 alignment{ 0 };
-			UINT64 stride{ 0 }; /* For Buffers, width/stride will be its No. of elements. */
+			UINT64 stride{ 0 }; /* For Buffers, width / stride will be its No. of elements. For Raw Buffers, this value must be 0. */
 			UINT64 width{ 0 }; /* For Buffers, this will be its size in bytes. For textures, this will be the image's dimension. */
 			uint height{ 0 };
 			UINT16 mipLevels{ 1 };
@@ -24,12 +25,14 @@ namespace RHI {
 			TextureLayout layout{ TextureLayout::Unknown };
 			ResourceFlags flags{ ResourceFlags::None };
 			ResourceState initialState{ ResourceState::Common };
+			ResourcePoolType poolType{ ResourcePoolType::Default };
 			static const BufferDesc GetGenericBufferDesc(
 				UINT64 size, 
-				UINT64 stride = sizeof(float),
+				UINT64 stride = 0, /* Set to 0 for Raw Buffers. Non-zero values indicates a Structured Buffer */
 				ResourceState initialState = ResourceState::CopySource,
 				ResourceUsage usage = ResourceUsage::Upload, 
-				ResourceFlags flags = ResourceFlags::None
+				ResourceFlags flags = ResourceFlags::None,
+				ResourcePoolType poolType = ResourcePoolType::Default
 			) {
 				return BufferDesc{
 					.usage = usage,
@@ -44,7 +47,8 @@ namespace RHI {
 					.sampleQuality = 0,
 					.layout = TextureLayout::RowMajor,
 					.flags = flags,
-					.initialState = initialState
+					.initialState = initialState,
+					.poolType = poolType
 				};
 			}
 			static const BufferDesc GetTextureBufferDesc(
@@ -58,9 +62,11 @@ namespace RHI {
 				uint sampleQuality = 0,
 				ResourceFlags flags = ResourceFlags::None,
 				ResourceUsage usage = ResourceUsage::Default,
-				ResourceState initialState = ResourceState::CopyDest
+				ResourceState initialState = ResourceState::CopyDest,
+				ResourcePoolType poolType = ResourcePoolType::Default
 			) {
 				return BufferDesc{
+					.usage = usage,
 					.format = format,
 					.dimension = dimension,					
 					.width = width,
@@ -71,7 +77,8 @@ namespace RHI {
 					.sampleQuality = sampleQuality,
 					.layout = TextureLayout::Unknown,
 					.flags = flags,
-					.initialState = initialState
+					.initialState = initialState,
+					.poolType = poolType
 				};
 			}
 			operator const D3D12_RESOURCE_DESC() const {
@@ -91,6 +98,9 @@ namespace RHI {
 					.Flags = (D3D12_RESOURCE_FLAGS)flags
 				};
 			}
+			inline bool IsRawBuffer() {
+				return stride == 0;
+			}
 		};
 		// creation w/ descriptor only. useful for inherited classes
 		Buffer(BufferDesc const& desc) : m_Desc(desc) {};
@@ -109,7 +119,11 @@ namespace RHI {
 		inline size_t GetGPUAddress() { return m_Resource->GetGPUVirtualAddress(); }
 		inline auto GetNativeBuffer() { return m_Resource.Get(); }
 
-		inline void SetName(name_t name) { m_Name = name; m_Resource->SetName((const wchar_t*)name.c_str());}
+		inline void SetName(name_t name) { 
+			m_Name = name;
+			m_Resource->SetName((const wchar_t*)name.c_str());
+			m_Allocation->SetName((const wchar_t*)name.c_str());
+		}
 		
 		inline operator ID3D12Resource* () { return m_Resource.Get(); }
 		inline void Reset() { m_Resource.Reset(); }		

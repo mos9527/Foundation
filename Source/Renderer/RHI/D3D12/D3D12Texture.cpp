@@ -4,18 +4,9 @@ namespace RHI {
 	Texture::Texture(Device* device, TextureDesc const& desc) : Buffer(desc) {
 		m_State = desc.initialState;
 		D3D12MA::ALLOCATION_DESC allocationDesc{};		
-		switch (desc.usage) {
-		case ResourceUsage::Upload:
-			allocationDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;			
-			break;
-		case ResourceUsage::Readback:
-			allocationDesc.HeapType = D3D12_HEAP_TYPE_READBACK;			
-			break;
-		default:
-		case ResourceUsage::Default:
-			allocationDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;			
-			break;
-		};
+		allocationDesc.CustomPool = device->GetAllocatorPool(desc.poolType);
+		allocationDesc.HeapType = ResourceUsageToD3DHeapType(desc.usage);
+
 		const D3D12_RESOURCE_DESC resourceDesc = desc;
 		D3D12_CLEAR_VALUE clearValue = desc.clearValue;		
 		auto allocator = device->GetAllocator();		
@@ -37,6 +28,7 @@ namespace RHI {
 			&resourceDesc, 0, count, 0, NULL, NULL, NULL, &intermediateSize
 		);
 		auto bufDesc = Buffer::BufferDesc::GetGenericBufferDesc(intermediateSize);
+		bufDesc.poolType = ResourcePoolType::Intermediate;
 		auto intermediate = device->AllocateIntermediateBuffer(bufDesc);		
 		std::vector<D3D12_SUBRESOURCE_DATA> arrData;
 		for (uint i = 0; i < count; i++) arrData.push_back(data[i]);

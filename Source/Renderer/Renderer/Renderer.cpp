@@ -21,10 +21,11 @@ void Renderer::LoadResources() {
 	
 	LOG(INFO) << "Pre GC";
 	LogD3D12MABudget(m_Device->GetAllocator());
-	
+	LogD3D12MAPoolStatistics(m_Device->GetAllocatorPool(ResourcePoolType::Intermediate));
 	m_Device->FlushIntermediateBuffers();
 	LOG(INFO) << "Post GC";
 	LogD3D12MABudget(m_Device->GetAllocator());
+
 }
 
 void Renderer::ResizeViewport(UINT width, UINT height) {
@@ -56,16 +57,8 @@ void Renderer::Render() {
 	ID3D12DescriptorHeap* const heap = *m_Device->GetDescriptorHeap(DescriptorHeap::CBV_SRV_UAV);
 	cmdList->SetDescriptorHeaps(1, &heap);
 
-	cmdList->SetGraphicsRootShaderResourceView(0, m_GeometryMananger->GetGeometryHandleBuffer()->GetGPUAddress());
-	
-	cmdList->ExecuteIndirect(
-		*m_Device->GetCommandSignature(CommandSignature::IndirectArgumentType::DISPATCH_MESH),
-		1,
-		NULL,
-		0,
-		NULL,
-		0
-	);
+	cmdList->SetGraphicsRootSignature(m_Device->GetRootSignature());
+	cmdList->SetGraphicsRoot32BitConstant(0, m_GeometryMananger->GetGeometryHandleBuffer()->GetGPUAddress(),0);
 
 	// Indicate that the back buffer will now be used to present.
 	barrier = CD3DX12_RESOURCE_BARRIER::Transition(

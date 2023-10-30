@@ -5,18 +5,9 @@ namespace RHI {
 	Buffer::Buffer(Device* device, BufferDesc const& desc) : m_Desc(desc) {
 		m_State = desc.initialState;
 		D3D12MA::ALLOCATION_DESC allocationDesc{};		
-		switch (desc.usage) {
-		case ResourceUsage::Upload:
-			allocationDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
-			break;
-		case ResourceUsage::Readback:
-			allocationDesc.HeapType = D3D12_HEAP_TYPE_READBACK;
-			break;
-		default:
-		case ResourceUsage::Default:
-			allocationDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
-			break;
-		};
+		allocationDesc.CustomPool = device->GetAllocatorPool(desc.poolType);
+		allocationDesc.HeapType = ResourceUsageToD3DHeapType(desc.usage);
+
 		const D3D12_RESOURCE_DESC resourceDesc = desc;
 		auto allocator = device->GetAllocator();
 		CHECK_HR(allocator->CreateResource(

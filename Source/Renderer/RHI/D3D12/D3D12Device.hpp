@@ -13,6 +13,7 @@ namespace RHI {
 	void LogDeviceInformation(ID3D12Device* device);
 	void LogAdapterInformation(IDXGIAdapter1* adapter);
 	void LogD3D12MABudget(D3D12MA::Allocator* allocator);
+	void LogD3D12MAPoolStatistics(D3D12MA::Pool* pool);
 	class Device {
 	public:
 		struct DeviceDesc {
@@ -43,9 +44,10 @@ namespace RHI {
 		inline auto GetCommandQueue() { return m_CommandQueue.get(); }
 		inline auto GetCommandList(CommandList::CommandListType type) { return m_CommandLists[type].get(); }
 		inline auto GetDescriptorHeap(DescriptorHeap::HeapType type) { return m_DescriptorHeaps[type].get(); }
+		inline auto GetRootSignature() { return m_RootSignature.Get(); }
 		inline auto GetCommandSignature(CommandSignature::IndirectArgumentType type) { return m_CommandSignatures[type].get(); }
 		inline auto GetAllocator() { return m_Allocator.Get(); }
-
+		inline auto GetAllocatorPool(ResourcePoolType type) { return m_AllocatorPools[(size_t)type].Get(); }
 		inline auto GetNativeDevice() { return m_Device; }
 		inline operator ID3D12Device* () { return m_Device.Get(); }
 	private:
@@ -53,7 +55,9 @@ namespace RHI {
 		ComPtr<ID3D12Device5> m_Device;
 		ComPtr<IDXGIFactory6> m_Factory;
 		ComPtr<D3D12MA::Allocator> m_Allocator;
+		ComPtr<ID3D12RootSignature> m_RootSignature;
 
+		std::vector<ComPtr<D3D12MA::Pool>> m_AllocatorPools;
 		std::unique_ptr<Swapchain> m_SwapChain;
 		std::unique_ptr<CommandQueue> m_CommandQueue;
 		std::vector<std::unique_ptr<CommandList>> m_CommandLists;

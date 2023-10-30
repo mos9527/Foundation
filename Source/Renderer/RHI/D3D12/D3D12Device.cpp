@@ -36,17 +36,29 @@ namespace RHI {
             }
         }
     }
-
     void LogD3D12MABudget(D3D12MA::Allocator* allocator) {
-        D3D12MA::Budget budget;
-        allocator->GetBudget(&budget, NULL);
-        LOG(INFO) << "Allocator Statisitics";
-        LOG(INFO) << "  Allocations: " << budget.Stats.AllocationCount;
-        LOG(INFO) << "  Allocation size: " << size_to_str(budget.Stats.AllocationBytes);
-        LOG(INFO) << "  Blocks: " << budget.Stats.BlockCount;
-        LOG(INFO) << "  Block total size: " << size_to_str(budget.Stats.BlockBytes);
-        LOG(INFO) << "  D3D12 Usage: " << size_to_str(budget.UsageBytes);
-        LOG(INFO) << "  D3D12 Budget: " << size_to_str(budget.BudgetBytes);
+        if (allocator) {
+            D3D12MA::Budget budget;
+            allocator->GetBudget(&budget, NULL);        
+            LOG(INFO) << "[ Allocator ]";
+            LOG(INFO) << "  Allocations: " << budget.Stats.AllocationCount;
+            LOG(INFO) << "  Allocation size: " << size_to_str(budget.Stats.AllocationBytes);
+            LOG(INFO) << "  Blocks: " << budget.Stats.BlockCount;
+            LOG(INFO) << "  Block total size: " << size_to_str(budget.Stats.BlockBytes);
+            LOG(INFO) << "  D3D12 Usage: " << size_to_str(budget.UsageBytes);
+            LOG(INFO) << "  D3D12 Budget: " << size_to_str(budget.BudgetBytes);
+        }
+    }
+    void LogD3D12MAPoolStatistics(D3D12MA::Pool* pool) {
+        if (pool) {
+            D3D12MA::Statistics stats;
+            pool->GetStatistics(&stats);
+            LOG(INFO) << "[ Pool '" << wstring_to_utf8(pool->GetName()).c_str() << "' ]";
+            LOG(INFO) << "  Allocations: " << stats.AllocationCount;
+            LOG(INFO) << "  Allocation size: " << size_to_str(stats.AllocationBytes);
+            LOG(INFO) << "  Blocks: " << stats.BlockCount;
+            LOG(INFO) << "  Block total size: " << size_to_str(stats.BlockBytes);
+        }
     }
 #pragma endregion
     static void CheckDeviceCapabilities(ID3D12Device* device) {
@@ -152,7 +164,9 @@ namespace RHI {
         CheckDeviceCapabilities(m_Device.Get());
         LOG(INFO) << "D3D12 Device created";
         LogDeviceInformation(m_Device.Get());
+        // create the command queue
         m_CommandQueue = std::make_unique<CommandQueue>(this);
+        // initialize descriptor heaps we'll be using
         m_DescriptorHeaps.resize(DescriptorHeap::HeapType::NUM_TYPES);
         m_DescriptorHeaps[DescriptorHeap::HeapType::RTV] = std::make_unique<DescriptorHeap>(
             this,
@@ -168,16 +182,47 @@ namespace RHI {
             .descriptorCount = ALLOC_SIZE_DESC_HEAP,
             .heapType = DescriptorHeap::HeapType::CBV_SRV_UAV
         });
-        m_CommandLists.resize(CommandList::CommandListType::NUM_TYPES);
         m_MarkerFence = std::make_unique<MarkerFence>(this);
+        m_CommandLists.resize(CommandList::CommandListType::NUM_TYPES);
         m_CommandSignatures.resize(CommandSignature::IndirectArgumentType::NUM_TYPES);
         m_CommandSignatures[CommandSignature::IndirectArgumentType::DISPATCH_MESH] =
             std::make_unique<CommandSignature>(this, CommandSignature::IndirectArgumentType::DISPATCH_MESH);
+        // allocators
         D3D12MA::ALLOCATOR_DESC allocatorDesc{};
         allocatorDesc.pDevice = m_Device.Get();
         allocatorDesc.pAdapter = m_Adapter.Get();
         allocatorDesc.PreferredBlockSize = 0;
         D3D12MA::CreateAllocator(&allocatorDesc, &m_Allocator);
+        m_AllocatorPools.resize((size_t)ResourcePoolType::NUM_TYPES);
+        // default pool is just nullptr
+        m_AllocatorPools[(size_t)ResourcePoolType::Default].Reset();
+        // create the intermediate pool
+        auto& intermediate = m_AllocatorPools[(size_t)ResourcePoolType::Intermediate];
+        D3D12MA::POOL_DESC poolDesc{};
+        poolDesc.HeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
+        poolDesc.Flags = D3D12MA::POOL_FLAG_ALGORITHM_LINEAR;        
+        m_Allocator->CreatePool(&poolDesc, intermediate.GetAddressOf());
+        intermediate->SetName(L"Intermediate Pool");
+        // root signatures (TODO)
+        // xxx
+        CD3DX12_ROOT_PARAMETER rootParams[1]{};
+        rootParams[0].InitAsConstants(1, 0);
+        CD3DX12_STATIC_SAMPLER_DESC staticSamplers[1];
+        staticSamplers[0].Init(0);
+        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC desc{};
+        desc.Init_1_0(
+            ARRAYSIZE(rootParams),
+            rootParams, 
+            ARRAYSIZE(staticSamplers), 
+            staticSamplers,
+            D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
+        );
+        ComPtr<ID3DBlob> signature;
+        ComPtr<ID3DBlob> error;
+        CHECK_HR(D3DX12SerializeVersionedRootSignature(
+            &desc, D3D_ROOT_SIGNATURE_VERSION_1_1, signature.GetAddressOf(), error.GetAddressOf()
+        ));
+        CHECK_HR(m_Device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_RootSignature)));
     }
     void Device::BeginFrame() {
         auto directList = GetCommandList(CommandList::DIRECT);
@@ -194,6 +239,8 @@ namespace RHI {
         m_MarkerFence->MarkAndWait(m_CommandQueue.get());
     }
     std::shared_ptr<Buffer> Device::AllocateIntermediateBuffer(Buffer::BufferDesc const& desc) {
+        DCHECK(desc.poolType == ResourcePoolType::Intermediate);
+
         auto buffer = std::make_shared<Buffer>(this, desc);
         m_IntermediateBuffers.push_back(buffer);
         buffer->SetName(std::format(L"Intermediate Buffer #{}", m_IntermediateBuffers.size()));

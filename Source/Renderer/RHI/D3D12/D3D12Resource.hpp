@@ -49,7 +49,17 @@ namespace RHI {
 		Upload,
 		Readback
 	};
-	DEFINE_ENUM_FLAG_OPERATORS(ResourceUsage);
+	inline static D3D12_HEAP_TYPE ResourceUsageToD3DHeapType(ResourceUsage usage) {
+		switch (usage) {
+		case ResourceUsage::Upload:
+			return D3D12_HEAP_TYPE_UPLOAD;			
+		case ResourceUsage::Readback:
+			return D3D12_HEAP_TYPE_READBACK;		
+		default:
+		case ResourceUsage::Default:
+			return D3D12_HEAP_TYPE_DEFAULT;			
+		};
+	}
 	enum class ResourceFormat {
 		Unknown = DXGI_FORMAT_UNKNOWN,
 		R8G8B8A8_UNORM = DXGI_FORMAT_R8G8B8A8_UNORM,
@@ -68,6 +78,11 @@ namespace RHI {
 			return -1;		
 		}
 	}
+	enum class ResourcePoolType {
+		Default = 0,
+		Intermediate = 1, /* resources can only be uploaded here by the CPU (TYPE_UPLOAD). its contents are managed linearly since they are expected to be all freed at once */
+		NUM_TYPES = 2
+	};
 	struct DepthStencilValue {
 		FLOAT depth;
 		UINT8 stencil;

@@ -9,10 +9,11 @@ namespace RHI {
 			device, Buffer::BufferDesc::GetGenericBufferDesc(
 				::size_in_bytes(m_GeometryHandles),
 				sizeof(GeometryGPUHandle),
-				RHI::ResourceState::Common,
-				RHI::ResourceUsage::Upload
+				ResourceState::Common,
+				ResourceUsage::Upload
 			)
 		);
+		m_GeometryHandleBuffer->SetName(L"Geometry Handles");
 	}
 	/* Updates a section of the GeometryGPUHandleBuffer */
 	void GeometryManager::SyncGeometryHandleBuffer(handle_type handle) {
@@ -38,15 +39,14 @@ namespace RHI {
 			// Create the buffer that GPU reads
 			auto buffer = std::make_unique<Buffer>(device, Buffer::BufferDesc::GetGenericBufferDesc(
 				alloc_size,
-				sizeof(float),
+				RAW_BUFFER_STRIDE,
 				ResourceState::CopyDest,
 				ResourceUsage::Default
 			));
 			// Create the intermediate buffer
-			auto intermediate = device->AllocateIntermediateBuffer(Buffer::BufferDesc::GetGenericBufferDesc(
-				alloc_size,
-				sizeof(float)
-			));
+			auto desc = Buffer::BufferDesc::GetGenericBufferDesc(alloc_size);
+			desc.poolType = ResourcePoolType::Intermediate;
+			auto intermediate = device->AllocateIntermediateBuffer(desc);
 			// Load the data onto the intermediate buffer
 			GeometryGPUHandle geo{};
 
