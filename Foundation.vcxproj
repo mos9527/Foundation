@@ -163,6 +163,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Dependencies\D3D12MemoryAllocator\D3D12MemAlloc.h" />
+    <ClInclude Include="Dependencies\stb_image.h" />
+    <ClInclude Include="Source\Common\Task.hpp" />
+    <ClInclude Include="x64\Graveyard\Coroutine.hpp" />
     <ClInclude Include="Source\Common\Handle.hpp" />
     <ClInclude Include="Source\IO\Image.hpp" />
     <ClInclude Include="Source\IO\IO.hpp" />

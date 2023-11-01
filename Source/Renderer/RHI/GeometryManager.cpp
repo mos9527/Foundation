@@ -16,7 +16,7 @@ namespace RHI {
 		m_GeometryHandleBuffer->SetName(L"Geometry Handles");
 	}
 	/* Updates a section of the GeometryGPUHandleBuffer */
-	void GeometryManager::SyncGeometryHandleBuffer(handle_type handle) {
+	void GeometryManager::SyncGeometryHandleBuffer(handle handle) {
 		m_GeometryHandleBuffer->Update(
 			&m_GeometryHandles[handle], sizeof(GeometryGPUHandle), sizeof(GeometryGPUHandle) * handle
 		);
@@ -95,7 +95,7 @@ namespace RHI {
 			// blendWeights
 			// blendIndices
 			
-			handle_type handle = m_HandleQueue.pop();
+			handle handle = m_HandleQueue.pop();
 			geo.manager_handle = handle;
 
 			// Schedule a copy

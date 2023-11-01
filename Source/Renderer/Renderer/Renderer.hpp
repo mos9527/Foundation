@@ -9,11 +9,14 @@ class Renderer {
 	std::unique_ptr<GeometryManager> m_GeometryMananger;
 	std::unique_ptr<Swapchain> m_Swapchain;
 	std::vector<std::unique_ptr<CommandList>> m_CommandLists;
+	std::vector<size_t> m_FenceValues;
 	std::vector<std::unique_ptr<Fence>> m_Fences;	
 	void BeginFrame();
 	void EndFrame();
 	void Wait(CommandQueue* queue, Fence* fence);
 	void Wait(CommandListType type);
+	bool IsFenceCompleted(CommandListType type);
+	bool bLoading = false;
 public:
 	bool bVsync = true;
 	Renderer(Device::DeviceDesc const&, Swapchain::SwapchainDesc const&);

@@ -9,9 +9,9 @@ namespace RHI {
 	};
 	struct GeometryGPUHandle {
 		// index into the manager
-		handle_type manager_handle;
+		handle manager_handle;
 		// geobuffer srv index into the device descriptor heap
-		handle_type heap_handle;
+		handle heap_handle;
 		
 		/* these are relative to the big geo buffers unique per geo */
 		uint indices_offset;
@@ -48,11 +48,11 @@ namespace RHI {
 		void LoadMeshes(Device* device, CommandList* cmdList, const scene_t* scene);
 		inline void UnmapHandleBuffer() { m_GeometryHandleBuffer->Unmap(); }
 
-		inline GeometryGPUHandle const& GetGeometryHandle(handle_type handle) { return m_GeometryHandles[handle]; }
-		inline Buffer* GetGeometryBuffer(handle_type handle) { return m_GeoBuffers[handle].get(); }
+		inline GeometryGPUHandle const& GetGeometryHandle(handle handle) { return m_GeometryHandles[handle]; }
+		inline Buffer* GetGeometryBuffer(handle handle) { return m_GeoBuffers[handle].get(); }
 		inline Buffer* GetGeometryHandleBuffer() { return m_GeometryHandleBuffer.get(); }
 	private:
-		void SyncGeometryHandleBuffer(handle_type index);
+		void SyncGeometryHandleBuffer(handle index);
 		handle_queue m_HandleQueue;
 		
 		std::vector<GeometryGPUHandle> m_GeometryHandles;

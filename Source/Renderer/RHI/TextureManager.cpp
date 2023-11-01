@@ -6,12 +6,12 @@ namespace RHI {
 		m_TextureSRVs.resize(MAX_NUM_TEXTURES);
 	}
 
-	void TextureManager::Free(handle_type handle) {
+	void TextureManager::Free(handle handle) {
 		m_Textures[handle].reset();
 		m_HandleQueue.push(handle);
 	}
 
-	handle_type TextureManager::LoadTexture(Device* device, CommandList* cmdList, IO::bitmap8bpp& bmp) {
+	handle TextureManager::LoadTexture(Device* device, CommandList* cmdList, IO::bitmap8bpp& bmp) {
 		SubresourceData subresource{
 			.pSysMem = bmp.data,
 			.rowPitch = bmp.width * 4u,

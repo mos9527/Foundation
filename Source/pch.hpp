@@ -14,6 +14,9 @@
 #include <concepts>
 #include <numeric>
 #include <filesystem>
+#include <thread>
+#include <future>
+#include <stack>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOGDI

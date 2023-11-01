@@ -3,7 +3,7 @@
 namespace RHI {
 	class Device;
 	struct DescriptorHandle {
-		handle_type heap_handle;
+		handle heap_handle;
 		D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle{};
 		D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle{};
 		inline void Increment(size_t offset, uint heapIncrement) {
@@ -37,9 +37,9 @@ namespace RHI {
 		DescriptorHandle Allocate() { return GetDescriptor(m_HandleQueue.pop()); }
 		inline void Free(DescriptorHandle handle) { m_HandleQueue.push(handle.heap_handle); };
 
-		DescriptorHandle GetDescriptor(handle_type heap_handle);
-		inline bool CheckHandle(handle_type heap_handle) { return heap_handle < m_Config.descriptorCount; };
-		inline handle_type GetDescriptorCount() { return m_Config.descriptorCount; };
+		DescriptorHandle GetDescriptor(handle heap_handle);
+		inline bool CheckHandle(handle heap_handle) { return heap_handle < m_Config.descriptorCount; };
+		inline handle GetDescriptorCount() { return m_Config.descriptorCount; };
 
 		inline auto GetNativeHeap() { return m_DescriptorHeap.Get(); }
 		inline operator ID3D12DescriptorHeap* () { return m_DescriptorHeap.Get(); }

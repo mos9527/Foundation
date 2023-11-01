@@ -8,12 +8,17 @@ Renderer::Renderer(Device::DeviceDesc const& deviceCfg, Swapchain::SwapchainDesc
 	
 	m_CommandLists.resize(VALUE_OF(CommandListType::NUM_TYPES));
 	m_Fences.resize(VALUE_OF(CommandListType::NUM_TYPES));
+	m_FenceValues.resize(VALUE_OF(CommandListType::NUM_TYPES));
 
 	m_CommandLists[VALUE_OF(CommandListType::Direct)] = std::make_unique<CommandList>(m_Device.get(), CommandListType::Direct, swapchainCfg.BackBufferCount); /* for n-buffering, n allocators are necessary to avoid premptive destruction of command lists */
+	m_CommandLists[VALUE_OF(CommandListType::Direct)]->SetName(L"Direct Command List");
 	m_Fences[VALUE_OF(CommandListType::Direct)] = std::make_unique<Fence>(m_Device.get());
+	m_Fences[VALUE_OF(CommandListType::Direct)]->SetName(L"Direct Queue Fence");
 
 	m_CommandLists[VALUE_OF(CommandListType::Copy)] = std::make_unique<CommandList>(m_Device.get(), CommandListType::Copy);
+	m_CommandLists[VALUE_OF(CommandListType::Copy)]->SetName(L"Copy Command List");
 	m_Fences[VALUE_OF(CommandListType::Copy)] = std::make_unique<Fence>(m_Device.get());
+	m_Fences[VALUE_OF(CommandListType::Direct)]->SetName(L"Copy Queue Fence");
 }
 void Renderer::Wait(CommandQueue* queue, Fence* fence) {
 	size_t fenceValue = queue->GetUniqueFenceValue();
@@ -21,9 +26,19 @@ void Renderer::Wait(CommandQueue* queue, Fence* fence) {
 	fence->Wait(fenceValue);
 }
 void Renderer::Wait(CommandListType type) {
-	Wait(m_Device->GetCommandQueue(type), m_Fences[VALUE_OF(type)].get());
+	auto queue = m_Device->GetCommandQueue(type);	
+	auto fence = m_Fences[VALUE_OF(type)].get();
+	size_t fenceValue = queue->GetUniqueFenceValue();
+	m_FenceValues[VALUE_OF(type)] = fenceValue;
+	queue->Signal(fence, fenceValue);
+	fence->Wait(fenceValue);
+}
+bool Renderer::IsFenceCompleted(CommandListType type) {
+	auto fence = m_Fences[VALUE_OF(type)].get();
+	return fence->IsCompleted(m_FenceValues[VALUE_OF(type)]);
 }
 void Renderer::LoadResources() {
+	bLoading = true;
 	auto cmdList = m_CommandLists[VALUE_OF(CommandListType::Copy)].get();
 	Assimp::Importer importer;
 	auto path = get_absolute_path("./x64/Resources/glTF-Sample-Models/2.0/DamagedHelmet/glTF/DamagedHelmet.gltf");
@@ -36,6 +51,7 @@ void Renderer::LoadResources() {
 	
 	LOG(INFO) << "Executing copy";
 	Wait(CommandListType::Copy);
+	std::this_thread::sleep_for(std::chrono::seconds(4));
 	LOG(INFO) << "Done";
 
 	LOG(INFO) << "Pre GC";
@@ -45,6 +61,7 @@ void Renderer::LoadResources() {
 	LOG(INFO) << "Post GC";
 	LogD3D12MABudget(m_Device->GetAllocator());
 	LogD3D12MAPoolStatistics(m_Device->GetAllocatorPool(ResourcePoolType::Intermediate));
+	bLoading = false;
 }
 
 void Renderer::ResizeViewport(UINT width, UINT height) {
@@ -80,9 +97,16 @@ void Renderer::Render() {
 
 	auto rtvHandle = swapChain->GetBackbufferRTV(bbIndex);
 	cmdList->OMSetRenderTargets(1, &rtvHandle.cpu_handle, FALSE, nullptr);
-
-	const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
-	cmdList->ClearRenderTargetView(rtvHandle.cpu_handle, clearColor, 0, nullptr);
+	
+	if (!bLoading) {
+		const float clearColor[] = { 0.0f, 1.0f,0.0f, 1.0f };
+		cmdList->ClearRenderTargetView(rtvHandle.cpu_handle, clearColor, 0, nullptr);
+	}
+	else {
+		LOG(INFO) << "loading...";
+		const float clearColor[] = { 1.0f, 0.0f,0.0f, 1.0f };
+		cmdList->ClearRenderTargetView(rtvHandle.cpu_handle, clearColor, 0, nullptr);	
+	}
 
 	ID3D12DescriptorHeap* const heap = *m_Device->GetDescriptorHeap(DescriptorHeap::CBV_SRV_UAV);
 	cmdList->SetDescriptorHeaps(1, &heap);
