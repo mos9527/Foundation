@@ -6,9 +6,9 @@
 #include "D3D12DescriptorHeap.hpp"
 namespace RHI {
 	class Device;
-	class Swapchain {
-		/* The backbuffer we are currently drawing to */
-		uint nBackbufferIndex{ 0 };	
+	class Swapchain : public RHIObject {
+		using RHIObject::m_Name;
+		uint nBackbufferIndex{ 0 };	 /* The backbuffer we are currently drawing to */
 		std::vector<size_t> nFenceValues;
 		std::unique_ptr<Fence> m_FrameFence;
 		std::vector<std::unique_ptr<Texture>> m_Backbuffers;
@@ -37,5 +37,10 @@ namespace RHI {
 
 		inline auto GetNativeSwapchain() { return m_Swapchain.Get(); }
 		inline operator IDXGISwapChain3* () { return m_Swapchain.Get(); }
+
+		using RHIObject::GetName;
+		inline void SetName(name_t name) {
+			m_Name = name;			
+		}
 	};
 }

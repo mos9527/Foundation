@@ -54,7 +54,7 @@ static inline size_t size_in_bytes(auto c) {
     return c.size() * sizeof(decltype(c)::value_type);
 }
 #define CHECK_ENUM_FLAG(x) { CHECK((size_t)(x) > 0); }
-#define CHECK_HR(hr) { HRESULT _result = hr; if (FAILED(_result)) { LOG_SYSRESULT(_result); LOG(FATAL) << "FATAL APPLICATION ERROR HRESULT 0x" << std::hex << _result;  abort(); } }
+#define CHECK_HR(hr) { HRESULT _result = hr; if (FAILED(_result)) { LOG_SYSRESULT(_result); LOG(FATAL) << "FATAL APPLICATION ERROR HRESULT 0x" << std::hex << _result; } }
 #ifdef _DEBUG
 #define DCHECK_HR CHECK_HR
 #define DCHECK_ENUM_FLAG CHECK_ENUM_FLAG

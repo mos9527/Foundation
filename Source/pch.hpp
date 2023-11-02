@@ -17,6 +17,7 @@
 #include <thread>
 #include <future>
 #include <stack>
+#include <fstream>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOGDI

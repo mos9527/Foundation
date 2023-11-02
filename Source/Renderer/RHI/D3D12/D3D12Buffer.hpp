@@ -1,13 +1,13 @@
 #pragma once
 #include "../Common.hpp"
-#include "D3D12Resource.hpp"
+#include "D3D12Types.hpp"
 #include "../../Helpers.hpp"
 #define RESOURCE_BARRIER_ALL_SUBRESOURCES D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES 
 #define RAW_BUFFER_STRIDE 0u
 namespace RHI {
 	class Device;
 	class CommandList;
-	class Buffer {
+	class Buffer : public RHIObject {
 	public:
 		struct BufferDesc {
 			ClearValue clearValue{};
@@ -119,12 +119,6 @@ namespace RHI {
 		inline size_t GetGPUAddress() { return m_Resource->GetGPUVirtualAddress(); }
 		inline auto GetNativeBuffer() { return m_Resource.Get(); }
 
-		inline void SetName(name_t name) { 
-			m_Name = name;
-			m_Resource->SetName((const wchar_t*)name.c_str());
-			if (m_Allocation.Get()) m_Allocation->SetName((const wchar_t*)name.c_str());
-		}
-		
 		inline operator ID3D12Resource* () { return m_Resource.Get(); }
 		inline void Reset() { m_Resource.Reset(); }		
 
@@ -134,8 +128,16 @@ namespace RHI {
 		void QueueCopy(CommandList* cmdList, Buffer* srcBuffer, size_t srcOffset, size_t dstOffset, size_t size);		
 		void Map();
 		void Unmap();		
+
+		using RHIObject::GetName;
+		inline void SetName(name_t name) { 
+			m_Name = name;
+			m_Resource->SetName((const wchar_t*)name.c_str());
+			if (m_Allocation.Get()) m_Allocation->SetName((const wchar_t*)name.c_str());
+		}
+		
 	protected:
-		name_t m_Name;
+		using RHIObject::m_Name;
 		const BufferDesc m_Desc;
 		ResourceState m_State{ ResourceState::Common };
 		ComPtr<ID3D12Resource> m_Resource;

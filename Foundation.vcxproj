@@ -156,6 +156,7 @@
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12DescriptorHeap.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Device.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Fence.cpp" />
+    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Shader.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Swapchain.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Texture.cpp" />
     <ClCompile Include="Source\Renderer\RHI\GeometryManager.cpp" />
@@ -165,6 +166,7 @@
     <ClInclude Include="Dependencies\D3D12MemoryAllocator\D3D12MemAlloc.h" />
     <ClInclude Include="Dependencies\stb_image.h" />
     <ClInclude Include="Source\Common\Task.hpp" />
+    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Shader.hpp" />
     <ClInclude Include="x64\Graveyard\Coroutine.hpp" />
     <ClInclude Include="Source\Common\Handle.hpp" />
     <ClInclude Include="Source\IO\Image.hpp" />
@@ -183,7 +185,7 @@
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Device.hpp" />
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Fence.hpp" />
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Pch.h" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Resource.hpp" />
+    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Types.hpp" />
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Swapchain.hpp" />
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Texture.hpp" />
     <ClInclude Include="Source\Renderer\RHI\RHI.hpp" />

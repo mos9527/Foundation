@@ -14,9 +14,6 @@ namespace RHI {
 		handle heap_handle;
 		
 		/* these are relative to the big geo buffers unique per geo */
-		uint indices_offset;
-		uint indices_count;
-
 		uint position_offset;
 		uint position_count;
 
@@ -28,19 +25,21 @@ namespace RHI {
 
 		uint uv_offset;
 		uint uv_count;
-
-		uint meshlet_offset;
-		uint meshlet_bound_offset;
-		uint meshlet_vertices_offset;		
-		uint meshlet_triangles_offset;		
-		uint meshlet_count;
-
-		// TODO
-		uint blendweights_offset;
-		uint blendweights_count;
-		// TODO
-		uint blendindices_offset;
-		uint blendindices_count;
+		
+		struct GeometryGPULod {
+			uint meshlet_offset;
+			uint meshlet_bound_offset;
+			uint meshlet_vertices_offset;		
+			uint meshlet_triangles_offset;
+			uint meshlet_count;
+		};
+		GeometryGPULod lods[mesh_lod_num_levels];
+		//// TODO
+		//uint blendweights_offset;
+		//uint blendweights_count;
+		//// TODO
+		//uint blendindices_offset;
+		//uint blendindices_count;
 	};
 	class GeometryManager {
 	public:

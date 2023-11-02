@@ -15,7 +15,7 @@ namespace RHI {
 		operator D3D12_CPU_DESCRIPTOR_HANDLE() { return cpu_handle; }		
 		inline bool operator==(DescriptorHandle lhs) { return lhs.cpu_handle.ptr == cpu_handle.ptr; }
 	};
-	class DescriptorHeap {
+	class DescriptorHeap : public RHIObject {
 	public:
 		enum HeapType {
 			CBV_SRV_UAV = 0,
@@ -32,7 +32,6 @@ namespace RHI {
 		
 		DescriptorHeap(Device* device, DescriptorHeapDesc const& cfg);
 		~DescriptorHeap() = default;
-		inline void SetName(name_t name) { m_Name = name; m_DescriptorHeap->SetName((const wchar_t*)name.c_str()); }
 		
 		DescriptorHandle Allocate() { return GetDescriptor(m_HandleQueue.pop()); }
 		inline void Free(DescriptorHandle handle) { m_HandleQueue.push(handle.heap_handle); };
@@ -43,8 +42,14 @@ namespace RHI {
 
 		inline auto GetNativeHeap() { return m_DescriptorHeap.Get(); }
 		inline operator ID3D12DescriptorHeap* () { return m_DescriptorHeap.Get(); }
+		
+		using RHIObject::GetName;
+		inline void SetName(name_t name) { 
+			m_Name = name; 
+			m_DescriptorHeap->SetName((const wchar_t*)name.c_str()); 
+		}
 	protected:
-		name_t m_Name;
+		using RHIObject::m_Name;
 		const DescriptorHeapDesc m_Config;
 		Device* const pDevice;
 

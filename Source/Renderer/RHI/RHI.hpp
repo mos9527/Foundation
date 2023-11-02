@@ -9,5 +9,6 @@
 #include "D3D12/D3D12Buffer.hpp"
 #include "D3D12/D3D12Texture.hpp"
 #include "D3D12/D3D12DescriptorHeap.hpp"
-#include "D3D12/D3D12Resource.hpp"
+#include "D3D12/D3D12Types.hpp"
+#include "D3D12/D3D12Shader.hpp"
 #endif

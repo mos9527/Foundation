@@ -63,6 +63,9 @@
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12CommandSignature.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Shader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Renderer\RHI\Common.hpp">
@@ -95,7 +98,7 @@
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12DescriptorHeap.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Resource.hpp">
+    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Types.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Texture.hpp">
@@ -143,13 +146,16 @@
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12CommandSignature.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Common\TaskManager.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="x64\Graveyard\Coroutine.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Dependencies\stb_image.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Common\Task.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Shader.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
