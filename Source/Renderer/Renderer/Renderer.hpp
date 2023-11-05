@@ -1,5 +1,6 @@
 #pragma once
 #include "../RHI/RHI.hpp"
+#include "../Scene/Scene.hpp"
 using namespace RHI;
 class Renderer {	
 	std::unique_ptr<Device> device;
@@ -10,10 +11,12 @@ class Renderer {
 	std::vector<std::unique_ptr<Fence>> fences;
 
 	/* testing */
-	std::unique_ptr<Texture> testDepthStencil;
+	std::unique_ptr<RHI::Texture> testDepthStencil;
 	std::unique_ptr<PipelineState> testPso;
 	std::unique_ptr<ShaderBlob> testAS, testMS, testPS;
 	std::unique_ptr<RootSignature> testRootSig;
+
+	SceneGraph scene;
 
 	void begin_frame();
 	void end_frame();

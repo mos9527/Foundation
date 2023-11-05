@@ -4,6 +4,7 @@
 
 #define WAVE_SIZE 32 // TODO: move this to the compiler defines
 #define ROOT_SIG \
+    "RootFlags(SAMPLER_HEAP_DIRECTLY_INDEXED | CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED)," \
     "RootConstants(b0, num32BitConstants = 1)"
 struct test_constants
 {

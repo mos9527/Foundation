@@ -1,14 +1,5 @@
 #include "../Common.hlsli"
-template<typename T>
-T read_buffer(uint geo_handle, uint offset, uint index)
-{
-    ByteAddressBuffer geoBuffer = ResourceDescriptorHeap[geo_handle];
-    return geoBuffer.Load <T> (offset + index * sizeof(T));
-}
-uint3 get_primitive(uint geo_handle)
-{
-    
-}
+
 [RootSignature(ROOT_SIG)]
 [NumThreads(MS_GROUP_SIZE, 1, 1)]
 [OutputTopology("triangle")]
@@ -23,13 +14,9 @@ void main(
     GeometryGPUHandle h0 = handles[0];
     GeometryGPULod lod0 = h0.lods[0];    
     uint meshlet_index = min(gtid, lod0.meshlet_count);
-    meshlet m = read_buffer<meshlet>(h0.heap_handle, lod0.meshlet_offset, meshlet_index);
     
-    SetMeshOutputCounts(m.vertex_count, m.triangle_count);
-    if (gtid < m.vertex_count)
-    {
-        verts[gtid] = triangles_unpack()
-    }
+    SetMeshOutputCounts(0,0);
+    verts[gtid] = (ms_ps_payload) 0;
 
     
 }

@@ -125,8 +125,13 @@ entt::entity GeometryManager::LoadMesh(Device* device, CommandList* cmdList, mes
 
 	// Schedule a copy
 	buffer->QueueCopy(cmdList, intermediate.get(), 0, 0, alloc_size);
-
+	
+	Geometry geometry{
+		.name = "Geometry",
+		.geometry_buffer = std::move(buffer)
+	};
 	auto entity = registery.create();
-	registery.emplace<std::unique_ptr<Buffer>>(entity, std::move(buffer));
+	registery.emplace<Geometry>(entity, std::move(geometry));
+	registery.emplace<Tag>(entity, Tag::Geometry);
 	return entity;
 }

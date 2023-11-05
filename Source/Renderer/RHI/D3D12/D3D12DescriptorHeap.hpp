@@ -1,5 +1,6 @@
 #pragma once
 #include "../Common.hpp"
+#include "D3D12Types.hpp"
 namespace RHI {
 	class Device;
 	class DescriptorHeap;
@@ -41,17 +42,10 @@ namespace RHI {
 	class DescriptorHeap : public RHIObject {
 		friend struct Descriptor;
 	public:
-		enum HeapType {
-			CBV_SRV_UAV = 0,
-			SAMPLER = 1,
-			RTV = 2,
-			DSV = 3,
-			NUM_TYPES = 4			
-		};
 		struct DescriptorHeapDesc {
 			bool shaderVisible;
 			uint descriptorCount;
-			HeapType heapType;
+			DescriptorHeapType heapType;
 		};
 		
 		DescriptorHeap(Device* device, DescriptorHeapDesc const& cfg);

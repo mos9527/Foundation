@@ -3,20 +3,22 @@
 Renderer::Renderer(Device::DeviceDesc const& deviceCfg, Swapchain::SwapchainDesc const& swapchainCfg) {
 	device = std::make_unique<Device>(deviceCfg);	
 	swapChain = std::make_unique<Swapchain>(device.get(), device->GetCommandQueue(CommandListType::Direct), swapchainCfg);
-	
-	commandLists.resize(VALUE_OF(CommandListType::NUM_TYPES));
-	fences.resize(VALUE_OF(CommandListType::NUM_TYPES));
-	fenceValues.resize(VALUE_OF(CommandListType::NUM_TYPES));
+	{
+		using enum CommandListType;
+		commandLists.resize(+NUM_TYPES);
+		fences.resize(+NUM_TYPES);
+		fenceValues.resize(+NUM_TYPES);
 
-	commandLists[VALUE_OF(CommandListType::Direct)] = std::make_unique<CommandList>(device.get(), CommandListType::Direct, swapchainCfg.BackBufferCount); /* for n-buffering, n allocators are necessary to avoid premptive destruction of command lists */
-	commandLists[VALUE_OF(CommandListType::Direct)]->SetName(L"Direct Command List");
-	fences[VALUE_OF(CommandListType::Direct)] = std::make_unique<Fence>(device.get());
-	fences[VALUE_OF(CommandListType::Direct)]->SetName(L"Direct Queue Fence");
+		commandLists[+Direct] = std::make_unique<CommandList>(device.get(), Direct, swapchainCfg.BackBufferCount); /* for n-buffering, n allocators are necessary to avoid premptive destruction of command lists */
+		commandLists[+Direct]->SetName(L"Direct Command List");
+		fences[+Direct] = std::make_unique<Fence>(device.get());
+		fences[+Direct]->SetName(L"Direct Queue Fence");
 
-	commandLists[VALUE_OF(CommandListType::Copy)] = std::make_unique<CommandList>(device.get(), CommandListType::Copy);
-	commandLists[VALUE_OF(CommandListType::Copy)]->SetName(L"Copy Command List");
-	fences[VALUE_OF(CommandListType::Copy)] = std::make_unique<Fence>(device.get());
-	fences[VALUE_OF(CommandListType::Direct)]->SetName(L"Copy Queue Fence");
+		commandLists[+Copy] = std::make_unique<CommandList>(device.get(), Copy);
+		commandLists[+Copy]->SetName(L"Copy Command List");
+		fences[+Copy] = std::make_unique<Fence>(device.get());
+		fences[+Direct]->SetName(L"Copy Queue Fence");
+	}
 
 	resize_buffers(swapchainCfg.InitWidth, swapchainCfg.InitHeight);
 }
@@ -27,9 +29,9 @@ void Renderer::wait(CommandQueue* queue, Fence* fence) {
 }
 void Renderer::wait(CommandListType type) {
 	auto queue = device->GetCommandQueue(type);	
-	auto fence = fences[VALUE_OF(type)].get();
+	auto fence = fences[+type].get();
 	size_t fenceValue = queue->GetUniqueFenceValue();
-	fenceValues[VALUE_OF(type)] = fenceValue;
+	fenceValues[+type] = fenceValue;
 	queue->Signal(fence, fenceValue);
 	fence->Wait(fenceValue);
 }
@@ -60,7 +62,6 @@ void Renderer::load_resources() {
 	psoDesc.SampleDesc = DefaultSampleDesc();
 
 	auto meshStreamDesc = CD3DX12_PIPELINE_MESH_STATE_STREAM(psoDesc);
-
 	// Point to our populated stream desc
 	D3D12_PIPELINE_STATE_STREAM_DESC streamDesc = {};
 	streamDesc.SizeInBytes = sizeof(meshStreamDesc);
@@ -68,30 +69,39 @@ void Renderer::load_resources() {
 	ComPtr<ID3D12PipelineState> pso;
 	CHECK_HR(device->GetNativeDevice()->CreatePipelineState(&streamDesc, IID_PPV_ARGS(&pso)));
 	testPso = std::make_unique<PipelineState>(std::move(pso));
+	{
+		using enum CommandListType;
+		auto cmdList = commandLists[+Copy].get();
 
-	auto cmdList = commandLists[VALUE_OF(CommandListType::Copy)].get();
-	
-	cmdList->Begin();
+		Assimp::Importer importer;
+		auto path = IO::get_absolute_path("../Resources/glTF-Sample-Models/2.0/DamagedHelmet/glTF/DamagedHelmet.gltf");
+		auto import_scene = importer.ReadFile((const char*)path.u8string().c_str(), aiProcess_ConvertToLeftHanded);
+		
+		cmdList->Begin();
+		scene.load_from_aiScene(device.get(), cmdList, import_scene);
+		scene.log_scene_hierarchy();
+		cmdList->End();
 
-	cmdList->End();
-	device->GetCommandQueue(CommandListType::Copy)->Execute(cmdList);
-	
-	LOG(INFO) << "Executing copy";
-	wait(CommandListType::Copy);
-	LOG(INFO) << "Done";
-
-	LOG(INFO) << "Pre GC";
-	LogD3D12MABudget(device->GetAllocator());
-	LogD3D12MAPoolStatistics(device->GetAllocatorPool(ResourcePoolType::Intermediate));
-	device->FlushIntermediateBuffers();
-	LOG(INFO) << "Post GC";
-	LogD3D12MABudget(device->GetAllocator());
-	LogD3D12MAPoolStatistics(device->GetAllocatorPool(ResourcePoolType::Intermediate));
-	bLoading = false;
+		LOG(INFO) << "Executing copy";
+		device->GetCommandQueue(Copy)->Execute(cmdList);
+		wait(Copy);
+		LOG(INFO) << "Done";
+	}
+	{
+		using enum ResourcePoolType;
+		LOG(INFO) << "Pre GC";
+		LogD3D12MABudget(device->GetAllocator());
+		LogD3D12MAPoolStatistics(device->GetAllocatorPool(Intermediate));
+		device->FlushIntermediateBuffers();
+		LOG(INFO) << "Post GC";
+		LogD3D12MABudget(device->GetAllocator());
+		LogD3D12MAPoolStatistics(device->GetAllocatorPool(Intermediate));
+		bLoading = false;
+	}
 }
 
 void Renderer::resize_buffers(UINT width, UINT height) {
-	testDepthStencil = std::make_unique<Texture>(device.get(), Texture::TextureDesc::GetTextureBufferDesc(
+	testDepthStencil = std::make_unique<RHI::Texture>(device.get(), RHI::Texture::TextureDesc::GetTextureBufferDesc(
 		ResourceFormat::R32_FLOAT,
 		ResourceDimension::Texture2D,
 		width,
@@ -107,20 +117,23 @@ void Renderer::resize_viewport(UINT width, UINT height) {
 }
 
 void Renderer::begin_frame() {
-	commandLists[VALUE_OF(CommandListType::Direct)]->ResetAllocator(swapChain->GetCurrentBackbuffer());
-	commandLists[VALUE_OF(CommandListType::Direct)]->Begin(swapChain->GetCurrentBackbuffer());
+	using enum CommandListType;
+	commandLists[+Direct]->ResetAllocator(swapChain->GetCurrentBackbuffer());
+	commandLists[+Direct]->Begin(swapChain->GetCurrentBackbuffer());
 }
 
 void Renderer::end_frame() {
-	commandLists[VALUE_OF(CommandListType::Direct)]->End();
-	device->GetCommandQueue(CommandListType::Direct)->Execute(commandLists[VALUE_OF(CommandListType::Direct)].get());
-	swapChain->PresentAndMoveToNextFrame(device->GetCommandQueue(CommandListType::Direct), bVsync);
+	using enum CommandListType;
+	commandLists[+Direct]->End();
+	device->GetCommandQueue(Direct)->Execute(commandLists[+Direct].get());
+	swapChain->PresentAndMoveToNextFrame(device->GetCommandQueue(Direct), bVsync);
 }
 
 void Renderer::render() {
 	begin_frame();
 	// Populate command list
-	auto cmdList = commandLists[VALUE_OF(CommandListType::Direct)]->GetNativeCommandList();
+	using enum CommandListType;
+	auto cmdList = commandLists[+Direct]->GetNativeCommandList();
 	auto bbIndex = swapChain->GetCurrentBackbuffer();
 	
 	// Indicate that the back buffer will be used as a render target.
@@ -140,7 +153,7 @@ void Renderer::render() {
 	else {
 		const float clearColor[] = { 0.0f, 1.0f,0.0f, 1.0f };
 		cmdList->ClearRenderTargetView(rtvHandle->get_cpu_handle(), clearColor, 0, nullptr);
-		ID3D12DescriptorHeap* const heap = *device->GetDescriptorHeap(DescriptorHeap::CBV_SRV_UAV);
+		ID3D12DescriptorHeap* const heap = *device->GetDescriptorHeap(DescriptorHeapType::CBV_SRV_UAV);
 	
 		cmdList->SetGraphicsRootSignature(*testRootSig);
 		cmdList->SetDescriptorHeaps(1, &heap); // srv heap

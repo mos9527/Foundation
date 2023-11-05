@@ -1,7 +1,7 @@
 #pragma once
+#include "Common.hpp"
 #include "../RHI/RHI.hpp"
 #include "../../IO/Mesh.hpp"
-
 struct GeometryGPUHandle {
 	// index into the manager
 	uint manager_handle;
@@ -35,6 +35,10 @@ struct GeometryGPUHandle {
 	//// TODO
 	//uint blendindices_offset;
 	//uint blendindices_count;
+};
+struct Geometry {
+	std::string name;
+	std::unique_ptr<RHI::Buffer> geometry_buffer;
 };
 class GeometryManager {
 public:

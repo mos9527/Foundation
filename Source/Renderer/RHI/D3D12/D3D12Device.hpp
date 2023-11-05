@@ -35,11 +35,11 @@ namespace RHI {
 		inline auto GetDXGIFactory() { return m_Factory; }
 		inline auto GetNativeDevice() { return m_Device; }
 		
-		inline auto GetCommandQueue(CommandListType type) { return m_CommandQueues[VALUE_OF(type)].get(); }
-		inline auto GetDescriptorHeap(DescriptorHeap::HeapType type) { return m_DescriptorHeaps[type].get(); }		
-		inline auto GetCommandSignature(CommandSignature::IndirectArgumentType type) { return m_CommandSignatures[type].get(); }
+		inline auto GetCommandQueue(CommandListType type) { return m_CommandQueues[+type].get(); }
+		inline auto GetDescriptorHeap(DescriptorHeapType type) { return m_DescriptorHeaps[+type].get(); }		
+		inline auto GetCommandSignature(IndirectArgumentType type) { return m_CommandSignatures[+type].get(); }
 		inline auto GetAllocator() { return m_Allocator.Get(); }
-		inline auto GetAllocatorPool(ResourcePoolType type) { return m_AllocatorPools[VALUE_OF(type)].Get(); }
+		inline auto GetAllocatorPool(ResourcePoolType type) { return m_AllocatorPools[+type].Get(); }
 		inline operator ID3D12Device* () { return m_Device.Get(); }
 
 		using RHIObject::GetName;

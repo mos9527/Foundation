@@ -5,12 +5,7 @@ namespace RHI {
 	class Device;
 	class CommandSignature : public RHIObject {
 	public:
-		enum IndirectArgumentType {			
-			DARW = 0,
-			DISPATCH = 1,
-			DISPATCH_MESH = 2,
-			NUM_TYPES = 3
-		};
+
 		CommandSignature(Device* device, IndirectArgumentType indirectType);
 		IndirectArgumentType const& GetType() { return m_Type; }
 		auto GetNativeSignature() { return m_Signature.Get(); }

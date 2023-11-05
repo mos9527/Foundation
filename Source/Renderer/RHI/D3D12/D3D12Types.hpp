@@ -1,11 +1,12 @@
 #pragma once
 namespace RHI {
-#define VALUE_OF(X) (size_t)(X) 
+#define DEFINE_PLUS_TO_VALUE(T) inline constexpr unsigned int operator+(T const v) { return static_cast<unsigned int>(v); }
 	enum class TextureLayout {
 		Unknown = D3D12_TEXTURE_LAYOUT_UNKNOWN,
 		RowMajor = D3D12_TEXTURE_LAYOUT_ROW_MAJOR
 	};
 	// DEFINE_ENUM_FLAG_OPERATORS(TextureLayout);
+	DEFINE_PLUS_TO_VALUE(TextureLayout);
 	enum class ResourceDimension {
 		Unknown = D3D12_RESOURCE_DIMENSION_UNKNOWN,
 		Buffer = D3D12_RESOURCE_DIMENSION_BUFFER,
@@ -14,14 +15,17 @@ namespace RHI {
 		Texture3D = D3D12_RESOURCE_DIMENSION_TEXTURE3D
 	};
 	// DEFINE_ENUM_FLAG_OPERATORS(ResourceDimension);
+	DEFINE_PLUS_TO_VALUE(ResourceDimension);
 	enum class ResourceDimensionSRV {
 		Buffer = D3D12_SRV_DIMENSION_BUFFER,
 		Texture2D = D3D12_SRV_DIMENSION_TEXTURE2D,
 	};
+	DEFINE_PLUS_TO_VALUE(ResourceDimensionSRV);
 	enum class ResourceDimensionUAV {
 		Buffer = D3D12_UAV_DIMENSION_BUFFER,
 		Texture2D = D3D12_UAV_DIMENSION_TEXTURE2D,
 	};	
+	DEFINE_PLUS_TO_VALUE(ResourceDimensionUAV);
 	enum class ResourceFlags {
 		None = D3D12_RESOURCE_FLAG_NONE,
 		NoShaderResource = D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE,
@@ -31,6 +35,7 @@ namespace RHI {
 		Unbound
 	};
 	DEFINE_ENUM_FLAG_OPERATORS(ResourceFlags);
+	DEFINE_PLUS_TO_VALUE(ResourceFlags);
 	enum class ResourceState {
 		Common = D3D12_RESOURCE_STATE_COMMON,
 		CopyDest = D3D12_RESOURCE_STATE_COPY_DEST,
@@ -45,11 +50,13 @@ namespace RHI {
 		GenericRead = D3D12_RESOURCE_STATE_GENERIC_READ
 	};
 	DEFINE_ENUM_FLAG_OPERATORS(ResourceState);
+	DEFINE_PLUS_TO_VALUE(ResourceState);
 	enum class ResourceUsage {
-		Default,
-		Upload,
-		Readback
+		Default = 0,
+		Upload = 1,
+		Readback = 2
 	};
+	DEFINE_PLUS_TO_VALUE(ResourceUsage);
 	inline static D3D12_HEAP_TYPE ResourceUsageToD3DHeapType(ResourceUsage usage) {
 		switch (usage) {
 		case ResourceUsage::Upload:
@@ -67,6 +74,7 @@ namespace RHI {
 		R16G16B16A16_UNORM = DXGI_FORMAT_R16G16B16A16_UNORM,
 		R32_FLOAT = DXGI_FORMAT_R32_FLOAT
 	};
+	DEFINE_PLUS_TO_VALUE(ResourceFormat);
 	inline static DXGI_FORMAT ResourceFormatToD3DFormat(ResourceFormat format) {
 		return (DXGI_FORMAT)format;
 	}
@@ -87,6 +95,7 @@ namespace RHI {
 		Intermediate = 1, /* resources can only be uploaded here by the CPU (TYPE_UPLOAD). its contents are managed linearly since they are expected to be all freed at once */
 		NUM_TYPES = 2
 	};
+	DEFINE_PLUS_TO_VALUE(ResourcePoolType);
 	enum class CommandListType
 	{
 		Direct = 0,
@@ -94,6 +103,7 @@ namespace RHI {
 		Copy = 2,
 		NUM_TYPES = 3
 	};
+	DEFINE_PLUS_TO_VALUE(CommandListType);
 	static inline D3D12_COMMAND_LIST_TYPE CommandListTypeToD3DType(CommandListType type) {
 		switch (type)
 		{
@@ -105,6 +115,62 @@ namespace RHI {
 			return D3D12_COMMAND_LIST_TYPE_COPY;
 		default:
 			return (D3D12_COMMAND_LIST_TYPE)-1;
+		}
+	}
+	enum class DescriptorHeapType {
+		CBV_SRV_UAV = 0,
+		SAMPLER = 1,
+		RTV = 2,
+		DSV = 3,
+		NUM_TYPES = 4
+	};
+	DEFINE_PLUS_TO_VALUE(DescriptorHeapType);
+	static D3D12_DESCRIPTOR_HEAP_TYPE DescriptorHeapTypeToD3DType(DescriptorHeapType type) {
+		switch (type)
+		{
+		case DescriptorHeapType::CBV_SRV_UAV:
+			return D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		case DescriptorHeapType::SAMPLER:
+			return D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+		case DescriptorHeapType::RTV:
+			return D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+		case DescriptorHeapType::DSV:
+			return D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+		default:
+			return (D3D12_DESCRIPTOR_HEAP_TYPE)-1;
+		}
+	}
+	enum class IndirectArgumentType {
+		DARW = 0,
+		DISPATCH = 1,
+		DISPATCH_MESH = 2,
+		NUM_TYPES = 3
+	};
+	DEFINE_PLUS_TO_VALUE(IndirectArgumentType);
+	static D3D12_INDIRECT_ARGUMENT_TYPE IndirectArgumentToD3DType(IndirectArgumentType indirectType) {
+		switch (indirectType)
+		{
+		case IndirectArgumentType::DARW:
+			return D3D12_INDIRECT_ARGUMENT_TYPE_DRAW;
+		case IndirectArgumentType::DISPATCH:
+			return D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH;
+		case IndirectArgumentType::DISPATCH_MESH:
+			return D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH_MESH;
+		default:
+			return (D3D12_INDIRECT_ARGUMENT_TYPE)-1;
+		}
+	}
+	static size_t IndirectArgumentToSize(IndirectArgumentType indirectType) {
+		switch (indirectType)
+		{
+		case IndirectArgumentType::DARW:
+			return sizeof(D3D12_DRAW_ARGUMENTS);
+		case IndirectArgumentType::DISPATCH:
+			return sizeof(D3D12_DISPATCH_ARGUMENTS);
+		case IndirectArgumentType::DISPATCH_MESH:
+			return sizeof(D3D12_DISPATCH_MESH_ARGUMENTS);
+		default:
+			return 0;
 		}
 	}
 	struct DepthStencilValue {

@@ -102,7 +102,7 @@ namespace RHI {
     }
 
     std::shared_ptr<Descriptor> Device::GetRenderTargetView(Texture* tex) {
-        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::RTV)->GetDescriptor();
+        auto handle = GetDescriptorHeap(DescriptorHeapType::RTV)->GetDescriptor();
         m_Device->CreateRenderTargetView(*tex, nullptr, handle->get_cpu_handle());
         return handle;
     }
@@ -115,7 +115,7 @@ namespace RHI {
         srvDesc.Buffer.StructureByteStride = buf->GetDesc().stride;
         srvDesc.Buffer.NumElements = buf->GetDesc().width / (is_raw ? sizeof(float) : buf->GetDesc().stride);
         if (is_raw) srvDesc.Buffer.Flags |= D3D12_BUFFER_SRV_FLAG_RAW;
-        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::CBV_SRV_UAV)->GetDescriptor();
+        auto handle = GetDescriptorHeap(DescriptorHeapType::CBV_SRV_UAV)->GetDescriptor();
         m_Device->CreateShaderResourceView(*buf, &srvDesc, handle->get_cpu_handle());
         return handle;
     }
@@ -125,7 +125,7 @@ namespace RHI {
         srvDesc.Format = ResourceFormatToD3DFormat(buf->GetDesc().format);
         srvDesc.ViewDimension = (D3D12_SRV_DIMENSION)view;
         srvDesc.Texture2D.MipLevels = buf->GetDesc().mipLevels;
-        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::CBV_SRV_UAV)->GetDescriptor();
+        auto handle = GetDescriptorHeap(DescriptorHeapType::CBV_SRV_UAV)->GetDescriptor();
         m_Device->CreateShaderResourceView(*buf, &srvDesc, handle->get_cpu_handle());
         return handle;
     }
@@ -134,7 +134,7 @@ namespace RHI {
         D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc{};
         cbvDesc.BufferLocation = buf->GetGPUAddress();
         cbvDesc.SizeInBytes = buf->GetDesc().width;
-        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::CBV_SRV_UAV)->GetDescriptor();
+        auto handle = GetDescriptorHeap(DescriptorHeapType::CBV_SRV_UAV)->GetDescriptor();
         m_Device->CreateConstantBufferView(&cbvDesc, handle->get_cpu_handle());
         return handle;
     }
@@ -156,52 +156,61 @@ namespace RHI {
         CheckDeviceCapabilities(m_Device.Get());
         LOG(INFO) << "D3D12 Device created";
         LogDeviceInformation(m_Device.Get());
-        // create the command queues
-        m_CommandQueues.resize(VALUE_OF(CommandListType::NUM_TYPES));
-        m_CommandQueues[VALUE_OF(CommandListType::Direct)] = std::make_unique<CommandQueue>(this, CommandListType::Direct);
-        m_CommandQueues[VALUE_OF(CommandListType::Copy)] = std::make_unique<CommandQueue>(this, CommandListType::Copy);
-        m_CommandQueues[VALUE_OF(CommandListType::Compute)] = std::make_unique<CommandQueue>(this, CommandListType::Compute);
-        // initialize descriptor heaps we'll be using
-        m_DescriptorHeaps.resize(DescriptorHeap::HeapType::NUM_TYPES);
-        m_DescriptorHeaps[DescriptorHeap::HeapType::RTV] = std::make_unique<DescriptorHeap>(
-            this,
-            DescriptorHeap::DescriptorHeapDesc{
-            .shaderVisible = false,
-                .descriptorCount = ALLOC_SIZE_DESC_HEAP,
-                .heapType = DescriptorHeap::HeapType::RTV
-        });
-        m_DescriptorHeaps[DescriptorHeap::HeapType::RTV]->SetName(L"RTV Heap");
-        m_DescriptorHeaps[DescriptorHeap::HeapType::CBV_SRV_UAV] = std::make_unique<DescriptorHeap>(
-            this,
-            DescriptorHeap::DescriptorHeapDesc{
-            .shaderVisible = true,
-            .descriptorCount = ALLOC_SIZE_DESC_HEAP,
-            .heapType = DescriptorHeap::HeapType::CBV_SRV_UAV
-        });
-        m_DescriptorHeaps[DescriptorHeap::HeapType::CBV_SRV_UAV]->SetName(L"CBV-SRV-UAV Heap");        
-        m_CommandSignatures.resize(CommandSignature::IndirectArgumentType::NUM_TYPES);
-        m_CommandSignatures[CommandSignature::IndirectArgumentType::DARW] =
-            std::make_unique<CommandSignature>(this, CommandSignature::IndirectArgumentType::DARW);
-        m_CommandSignatures[CommandSignature::IndirectArgumentType::DISPATCH] =
-            std::make_unique<CommandSignature>(this, CommandSignature::IndirectArgumentType::DISPATCH);
-        m_CommandSignatures[CommandSignature::IndirectArgumentType::DISPATCH_MESH] =
-            std::make_unique<CommandSignature>(this, CommandSignature::IndirectArgumentType::DISPATCH_MESH);
+        {
+            using enum CommandListType;
+            // create the command queues
+            m_CommandQueues.resize(+NUM_TYPES);
+            m_CommandQueues[+Direct] = std::make_unique<CommandQueue>(this, Direct);
+            m_CommandQueues[+Copy] = std::make_unique<CommandQueue>(this, Copy);
+            m_CommandQueues[+Compute] = std::make_unique<CommandQueue>(this, Compute);
+        }
+        {
+            using enum DescriptorHeapType;
+            // initialize descriptor heaps we'll be using
+            m_DescriptorHeaps.resize(+NUM_TYPES);
+            m_DescriptorHeaps[+RTV] = std::make_unique<DescriptorHeap>(
+                this,
+                DescriptorHeap::DescriptorHeapDesc{
+                .shaderVisible = false,
+                    .descriptorCount = ALLOC_SIZE_DESC_HEAP,
+                    .heapType = RTV
+            });
+            m_DescriptorHeaps[+RTV]->SetName(L"RTV Heap");
+            m_DescriptorHeaps[+CBV_SRV_UAV] = std::make_unique<DescriptorHeap>(
+                this,
+                DescriptorHeap::DescriptorHeapDesc{
+                .shaderVisible = true,
+                    .descriptorCount = ALLOC_SIZE_DESC_HEAP,
+                    .heapType = CBV_SRV_UAV
+            });
+            m_DescriptorHeaps[+CBV_SRV_UAV]->SetName(L"CBV-SRV-UAV Heap");
+        }
+        {
+            using enum IndirectArgumentType;
+            m_CommandSignatures.resize(+NUM_TYPES);
+            m_CommandSignatures[+DARW] = std::make_unique<CommandSignature>(this, DARW);
+            m_CommandSignatures[+DISPATCH] = std::make_unique<CommandSignature>(this, DISPATCH);
+            m_CommandSignatures[+DISPATCH_MESH] = std::make_unique<CommandSignature>(this, DISPATCH_MESH);
+        }
         // allocators
         D3D12MA::ALLOCATOR_DESC allocatorDesc{};
         allocatorDesc.pDevice = m_Device.Get();
         allocatorDesc.pAdapter = m_Adapter.Get();
         allocatorDesc.PreferredBlockSize = 0;
         D3D12MA::CreateAllocator(&allocatorDesc, &m_Allocator);
-        m_AllocatorPools.resize(VALUE_OF(ResourcePoolType::NUM_TYPES));
-        // default pool is just nullptr
-        m_AllocatorPools[VALUE_OF(ResourcePoolType::Default)].Reset();
-        // create the intermediate pool
-        auto& intermediate = m_AllocatorPools[VALUE_OF(ResourcePoolType::Intermediate)];
-        D3D12MA::POOL_DESC poolDesc{};
-        poolDesc.HeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
-        poolDesc.Flags = D3D12MA::POOL_FLAG_ALGORITHM_LINEAR;        
-        m_Allocator->CreatePool(&poolDesc, intermediate.GetAddressOf());
-        intermediate->SetName(L"Intermediate Pool");
+        {
+            using enum ResourcePoolType;
+            m_AllocatorPools.resize(+NUM_TYPES);
+            // default pool is just nullptr
+            m_AllocatorPools[+Default].Reset();
+            // create the intermediate pool
+            auto& intermediate = m_AllocatorPools[+Intermediate];
+            D3D12MA::POOL_DESC poolDesc{};
+            poolDesc.HeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
+            poolDesc.Flags = D3D12MA::POOL_FLAG_ALGORITHM_LINEAR;        
+            m_Allocator->CreatePool(&poolDesc, intermediate.GetAddressOf());
+            intermediate->SetName(L"Intermediate Pool");
+        }
     }
     std::shared_ptr<Buffer> Device::AllocateIntermediateBuffer(Buffer::BufferDesc const& desc) {
         DCHECK(desc.poolType == ResourcePoolType::Intermediate);
