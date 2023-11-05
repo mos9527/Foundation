@@ -12,7 +12,7 @@ namespace RHI {
 		std::vector<size_t> nFenceValues;
 		std::unique_ptr<Fence> m_FrameFence;
 		std::vector<std::unique_ptr<Texture>> m_Backbuffers;
-		std::vector<DescriptorHandle> m_BackbufferRTVs;
+		std::vector<std::shared_ptr<Descriptor>> m_BackbufferRTVs;
 		ComPtr<IDXGISwapChain3> m_Swapchain;
 		void Present(bool vsync);
 	public:

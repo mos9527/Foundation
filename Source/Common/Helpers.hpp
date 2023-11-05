@@ -53,6 +53,31 @@ static inline std::string size_to_str(size_t size)
 static inline size_t size_in_bytes(auto c) {
     return c.size() * sizeof(decltype(c)::value_type);
 }
+template<std::integral T> class numeric_queue {
+	T max_handle = 0;
+	std::vector<T> queue;
+public:
+	typedef T elem_type;
+	numeric_queue() = default;
+	void setup(T _max_handle) {
+		CHECK(max_handle == 0);
+		max_handle = _max_handle;
+		queue.resize(max_handle);
+		std::iota(queue.begin(), queue.end(), 0);
+		std::reverse(queue.begin(), queue.end());
+	}
+	void push(T one) {
+		queue.push_back(one);
+	}
+	T pop() {
+		T one = queue.back();
+		queue.pop_back();
+		return one;
+	}
+	T size() {
+		return queue.size();
+	}
+};
 #define CHECK_ENUM_FLAG(x) { CHECK((size_t)(x) > 0); }
 #define CHECK_HR(hr) { HRESULT _result = hr; if (FAILED(_result)) { LOG_SYSRESULT(_result); LOG(FATAL) << "FATAL APPLICATION ERROR HRESULT 0x" << std::hex << _result; } }
 #ifdef _DEBUG

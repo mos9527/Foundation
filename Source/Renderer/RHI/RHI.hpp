@@ -11,4 +11,6 @@
 #include "D3D12/D3D12DescriptorHeap.hpp"
 #include "D3D12/D3D12Types.hpp"
 #include "D3D12/D3D12Shader.hpp"
+#include "D3D12/D3D12PipelineState.hpp"
+#include "D3D12/D3D12RootSignature.hpp"
 #endif

@@ -1,7 +1,7 @@
 #pragma once
 #include "../Common.hpp"
 #include "D3D12Types.hpp"
-#include "../../Helpers.hpp"
+
 #define RESOURCE_BARRIER_ALL_SUBRESOURCES D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES 
 #define RAW_BUFFER_STRIDE 0u
 namespace RHI {
@@ -89,7 +89,7 @@ namespace RHI {
 					.Height = height,
 					.DepthOrArraySize = arraySize,
 					.MipLevels = mipLevels,
-					.Format = (DXGI_FORMAT)format,
+					.Format = ResourceFormatToD3DFormat(format),
 					.SampleDesc = DXGI_SAMPLE_DESC{
 						.Count = sampleCount,
 						.Quality = sampleQuality

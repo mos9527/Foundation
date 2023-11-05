@@ -24,10 +24,10 @@ namespace RHI {
 		Device(const Device&&) = delete;
 		~Device();
 
-		DescriptorHandle GetRenderTargetView(Texture* tex);
-		DescriptorHandle GetBufferShaderResourceView(Buffer* buf, ResourceFormat format = ResourceFormat::Unknown);
-		DescriptorHandle GetTexture2DShaderResourceView(Buffer* buf, ResourceDimensionSRV view);
-		DescriptorHandle GetConstantBufferView(Buffer* buf);
+		std::shared_ptr<Descriptor> GetRenderTargetView(Texture* tex);
+		std::shared_ptr<Descriptor> GetBufferShaderResourceView(Buffer* buf, ResourceFormat format = ResourceFormat::Unknown);
+		std::shared_ptr<Descriptor> GetTexture2DShaderResourceView(Buffer* buf, ResourceDimensionSRV view);
+		std::shared_ptr<Descriptor> GetConstantBufferView(Buffer* buf);
 
 		std::shared_ptr<Buffer> AllocateIntermediateBuffer(Buffer::BufferDesc const& desc);
 		void FlushIntermediateBuffers();
@@ -36,8 +36,7 @@ namespace RHI {
 		inline auto GetNativeDevice() { return m_Device; }
 		
 		inline auto GetCommandQueue(CommandListType type) { return m_CommandQueues[VALUE_OF(type)].get(); }
-		inline auto GetDescriptorHeap(DescriptorHeap::HeapType type) { return m_DescriptorHeaps[type].get(); }
-		inline auto GetRootSignature() { return m_RootSignature.Get(); }
+		inline auto GetDescriptorHeap(DescriptorHeap::HeapType type) { return m_DescriptorHeaps[type].get(); }		
 		inline auto GetCommandSignature(CommandSignature::IndirectArgumentType type) { return m_CommandSignatures[type].get(); }
 		inline auto GetAllocator() { return m_Allocator.Get(); }
 		inline auto GetAllocatorPool(ResourcePoolType type) { return m_AllocatorPools[VALUE_OF(type)].Get(); }
@@ -53,8 +52,7 @@ namespace RHI {
 		ComPtr<IDXGIAdapter1> m_Adapter;
 		ComPtr<ID3D12Device5> m_Device;
 		ComPtr<IDXGIFactory6> m_Factory;
-		ComPtr<D3D12MA::Allocator> m_Allocator;
-		ComPtr<ID3D12RootSignature> m_RootSignature;
+		ComPtr<D3D12MA::Allocator> m_Allocator;		
 
 		std::vector<ComPtr<D3D12MA::Pool>> m_AllocatorPools;
 		std::vector<std::unique_ptr<CommandQueue>> m_CommandQueues;

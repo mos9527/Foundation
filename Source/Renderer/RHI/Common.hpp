@@ -1,6 +1,6 @@
 #pragma once
 #include "../../pch.hpp"
-#include "../../Common/Handle.hpp"
+
 namespace RHI {
 	typedef std::basic_string<wchar_t> name_t;
 	class RHIObject {

@@ -1,5 +1,5 @@
 #include "D3D12Device.hpp"
-#include "../../Helpers.hpp"
+
 #ifdef RHI_D3D12_USE_AGILITY
 extern "C" { __declspec(dllexport) extern const uint D3D12SDKVersion = 4; }
 extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = ".\\D3D12\\"; }
@@ -62,11 +62,11 @@ namespace RHI {
     }
 #pragma endregion
     static void CheckDeviceCapabilities(ID3D12Device* device) {
-        D3D12_FEATURE_DATA_SHADER_MODEL shaderModel = { D3D_SHADER_MODEL_6_5 };
+        D3D12_FEATURE_DATA_SHADER_MODEL shaderModel = { D3D_SHADER_MODEL_6_6 };
         if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shaderModel, sizeof(shaderModel)))
-            || (shaderModel.HighestShaderModel < D3D_SHADER_MODEL_6_5))
+            || (shaderModel.HighestShaderModel < D3D_SHADER_MODEL_6_6))
         {
-            LOG(FATAL) << "ERROR: Shader Model 6.5 is not supported on this device";            
+            LOG(FATAL) << "ERROR: Shader Model 6.6 is not supported on this device";            
         }
 
         D3D12_FEATURE_DATA_D3D12_OPTIONS7 features = {};
@@ -101,41 +101,41 @@ namespace RHI {
         return {};
     }
 
-    DescriptorHandle Device::GetRenderTargetView(Texture* tex) {
-        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::RTV)->Allocate();
-        m_Device->CreateRenderTargetView(*tex, nullptr, handle.cpu_handle);
+    std::shared_ptr<Descriptor> Device::GetRenderTargetView(Texture* tex) {
+        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::RTV)->GetDescriptor();
+        m_Device->CreateRenderTargetView(*tex, nullptr, handle->get_cpu_handle());
         return handle;
     }
-    DescriptorHandle Device::GetBufferShaderResourceView(Buffer* buf, ResourceFormat format) {
-        bool is_raw = buf->GetDesc().format == ResourceFormat::Unknown;
+    std::shared_ptr<Descriptor> Device::GetBufferShaderResourceView(Buffer* buf, ResourceFormat format) {
+        bool is_raw = buf->GetDesc().stride == 0;
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Format = is_raw ? DXGI_FORMAT_R32_TYPELESS : (DXGI_FORMAT)buf->GetDesc().format;
+        srvDesc.Format = is_raw ? DXGI_FORMAT_R32_TYPELESS : ResourceFormatToD3DFormat(buf->GetDesc().format);
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-        srvDesc.Buffer.StructureByteStride = is_raw ? 0 : buf->GetDesc().stride;
+        srvDesc.Buffer.StructureByteStride = buf->GetDesc().stride;
         srvDesc.Buffer.NumElements = buf->GetDesc().width / (is_raw ? sizeof(float) : buf->GetDesc().stride);
         if (is_raw) srvDesc.Buffer.Flags |= D3D12_BUFFER_SRV_FLAG_RAW;
-        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::CBV_SRV_UAV)->Allocate();
-        m_Device->CreateShaderResourceView(*buf, &srvDesc, handle.cpu_handle);
+        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::CBV_SRV_UAV)->GetDescriptor();
+        m_Device->CreateShaderResourceView(*buf, &srvDesc, handle->get_cpu_handle());
         return handle;
     }
-    DescriptorHandle Device::GetTexture2DShaderResourceView(Buffer* buf, ResourceDimensionSRV view) {
+    std::shared_ptr<Descriptor> Device::GetTexture2DShaderResourceView(Buffer* buf, ResourceDimensionSRV view) {
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Format = (DXGI_FORMAT)buf->GetDesc().format;
+        srvDesc.Format = ResourceFormatToD3DFormat(buf->GetDesc().format);
         srvDesc.ViewDimension = (D3D12_SRV_DIMENSION)view;
         srvDesc.Texture2D.MipLevels = buf->GetDesc().mipLevels;
-        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::CBV_SRV_UAV)->Allocate();
-        m_Device->CreateShaderResourceView(*buf, &srvDesc, handle.cpu_handle);
+        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::CBV_SRV_UAV)->GetDescriptor();
+        m_Device->CreateShaderResourceView(*buf, &srvDesc, handle->get_cpu_handle());
         return handle;
     }
-    DescriptorHandle Device::GetConstantBufferView(Buffer* buf) {
+    std::shared_ptr<Descriptor> Device::GetConstantBufferView(Buffer* buf) {
         CHECK(buf->GetDesc().dimension == ResourceDimension::Buffer);
         D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc{};
         cbvDesc.BufferLocation = buf->GetGPUAddress();
         cbvDesc.SizeInBytes = buf->GetDesc().width;
-        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::CBV_SRV_UAV)->Allocate();
-        m_Device->CreateConstantBufferView(&cbvDesc, handle.cpu_handle);
+        auto handle = GetDescriptorHeap(DescriptorHeap::HeapType::CBV_SRV_UAV)->GetDescriptor();
+        m_Device->CreateConstantBufferView(&cbvDesc, handle->get_cpu_handle());
         return handle;
     }
 
@@ -156,7 +156,7 @@ namespace RHI {
         CheckDeviceCapabilities(m_Device.Get());
         LOG(INFO) << "D3D12 Device created";
         LogDeviceInformation(m_Device.Get());
-        // create the command queue
+        // create the command queues
         m_CommandQueues.resize(VALUE_OF(CommandListType::NUM_TYPES));
         m_CommandQueues[VALUE_OF(CommandListType::Direct)] = std::make_unique<CommandQueue>(this, CommandListType::Direct);
         m_CommandQueues[VALUE_OF(CommandListType::Copy)] = std::make_unique<CommandQueue>(this, CommandListType::Copy);
@@ -202,26 +202,6 @@ namespace RHI {
         poolDesc.Flags = D3D12MA::POOL_FLAG_ALGORITHM_LINEAR;        
         m_Allocator->CreatePool(&poolDesc, intermediate.GetAddressOf());
         intermediate->SetName(L"Intermediate Pool");
-        // root signatures
-        CD3DX12_ROOT_PARAMETER rootParams[1]{};
-        rootParams[0].InitAsConstants(1, 0);
-        CD3DX12_STATIC_SAMPLER_DESC staticSamplers[1]{};
-        staticSamplers[0].Init(0);
-        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC desc{};
-        desc.Init_1_0(
-            ARRAYSIZE(rootParams),
-            rootParams, 
-            ARRAYSIZE(staticSamplers), 
-            staticSamplers,
-            D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
-        );
-        ComPtr<ID3DBlob> signature;
-        ComPtr<ID3DBlob> error;
-        CHECK_HR(D3DX12SerializeVersionedRootSignature(
-            &desc, D3D_ROOT_SIGNATURE_VERSION_1_1, signature.GetAddressOf(), error.GetAddressOf()
-        ));
-        CHECK_HR(m_Device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_RootSignature)));
-        m_RootSignature->SetName(L"Global Root Signature");
     }
     std::shared_ptr<Buffer> Device::AllocateIntermediateBuffer(Buffer::BufferDesc const& desc) {
         DCHECK(desc.poolType == ResourcePoolType::Intermediate);

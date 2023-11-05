@@ -4,14 +4,11 @@
 #include <meshoptimizer.h>
 #include <assimp/postprocess.h>
 #include "IO.hpp"
-#define MESHLET_MAX_VERTICES 64u // https://developer.nvidia.com/blog/introduction-turing-mecacsh-shaders/
-#define MESHLET_MAX_PRIMITIVES 124u // 4b aligned
+
 namespace IO {
 	typedef aiScene scene_t;
 	typedef meshopt_Meshlet meshlet;
-	typedef meshopt_Bounds meshlet_bound;
-	const float mesh_lod_levels[] = {1.0f, 0.8f,0.5f,0.2f};
-	constexpr size_t mesh_lod_num_levels = ARRAYSIZE(mesh_lod_levels);
+	typedef meshopt_Bounds meshlet_bound;		
 	struct meshlet_triangle_u32 { UINT V0 : 10, V1 : 10, V2 : 10, : 2; /* 3 8-bits packed into 32-bit bitfields */ };
 	struct mesh_lod {
 		std::vector<UINT> indices;
@@ -35,7 +32,7 @@ namespace IO {
 		std::vector<Vector2> uv;
 		std::vector<UINT> indices;
 
-		mesh_lod lods[mesh_lod_num_levels];		
+		mesh_lod lods[LOD_COUNT];		
 
 		/* private data */
 		aiMesh* p_aiMesh;
@@ -97,9 +94,9 @@ namespace IO {
 			meshopt_optimizeVertexFetchRemap(remapping.data(), mesh.indices.data(), mesh.indices.size(), num_vertices);
 			mesh.remap(remapping);
 			// LOD
-			for (size_t lod = 0; lod < mesh_lod_num_levels; lod++) {				
+			for (size_t lod = 0; lod < LOD_COUNT; lod++) {				
 				const float target_error = 0.01f;
-				size_t target_index_count = mesh.indices.size() * mesh_lod_levels[lod];
+				size_t target_index_count = mesh.indices.size() * LOD_GET_RATIO(lod);
 				auto& mesh_lod = mesh.lods[lod];
 				mesh_lod.indices.resize(mesh.indices.size());
 				float output_error = 0.0f;

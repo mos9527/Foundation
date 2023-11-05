@@ -1,7 +1,6 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_WINDOWS_UTF8
 #include "../../Dependencies/stb_image.h"
-#include "../Renderer/RHI/ResourceTypes.hpp"
 #include "Image.hpp"
 namespace IO {
 	bitmap8bpp load_bitmap_8bpp(path_t filepath) {

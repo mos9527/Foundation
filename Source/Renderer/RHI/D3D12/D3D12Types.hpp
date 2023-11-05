@@ -64,9 +64,12 @@ namespace RHI {
 	enum class ResourceFormat {
 		Unknown = DXGI_FORMAT_UNKNOWN,
 		R8G8B8A8_UNORM = DXGI_FORMAT_R8G8B8A8_UNORM,
-		R16G16B16A16_UNORM = DXGI_FORMAT_R16G16B16A16_UNORM
+		R16G16B16A16_UNORM = DXGI_FORMAT_R16G16B16A16_UNORM,
+		R32_FLOAT = DXGI_FORMAT_R32_FLOAT
 	};
-	DEFINE_ENUM_FLAG_OPERATORS(ResourceFormat);
+	inline static DXGI_FORMAT ResourceFormatToD3DFormat(ResourceFormat format) {
+		return (DXGI_FORMAT)format;
+	}
 	constexpr size_t GetResourceFormatWidth(ResourceFormat format) {
 		switch (format)
 		{

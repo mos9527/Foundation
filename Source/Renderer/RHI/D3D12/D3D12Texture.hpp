@@ -22,7 +22,7 @@ namespace RHI {
 		Texture(TextureDesc const& desc, ComPtr<ID3D12Resource>&& texture) : Buffer(desc, std::move(texture)) {};
 		Texture(Device* device, TextureDesc const& desc);
 		Texture(Device* device, TextureDesc const& desc, CommandList* cmdList, SubresourceData* data, uint count);
-
+		~Texture() = default;
 	protected:
 		using Buffer::m_Name;
 		using Buffer::m_Desc;

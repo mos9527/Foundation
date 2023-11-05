@@ -3,7 +3,7 @@
 #include "D3D12Types.hpp"
 namespace RHI {
 	class Device;
-	class CommandList : RHIObject
+	class CommandList : public RHIObject
 	{
 		using RHIObject::m_Name;
 		CommandListType m_Type;

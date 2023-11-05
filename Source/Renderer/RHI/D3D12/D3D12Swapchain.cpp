@@ -34,10 +34,7 @@ namespace RHI {
         m_FrameFence->SetName(L"Swap Fence");
     }
     void Swapchain::CreateRenderTargetViews(Device* device) {
-        // Free previous RTVs (if any)
-        for (auto& handle : m_BackbufferRTVs) {
-            device->GetDescriptorHeap(DescriptorHeap::HeapType::RTV)->Free(handle);
-        }
+        // Free previous RTVs (if any)        
         m_BackbufferRTVs.clear();
         for (auto& backbuffer : m_Backbuffers) {
             m_BackbufferRTVs.push_back(device->GetRenderTargetView(backbuffer.get()));

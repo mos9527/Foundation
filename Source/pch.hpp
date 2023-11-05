@@ -25,13 +25,17 @@
 #include <Windows.h>
 #include <wrl.h>
 
+#define ENTT_ID_TYPE uint64_t
+#include "../Dependencies/entt/entt.hpp"
+
 #include <glog/logging.h>
 #include <DirectXMath.h>
 #include <directxtk/SimpleMath.h>
 
-#define RHI_USE_D3D12
-#define RHI_D3D12_USE_AGILITY
+#include "defines.hpp"
 
 #ifdef RHI_USE_D3D12
 #include "Renderer/RHI/D3D12/D3D12Pch.h"
 #endif
+
+#include "Common/Helpers.hpp"

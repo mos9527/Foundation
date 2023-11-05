@@ -1,5 +1,6 @@
 #pragma once
 #include "../pch.hpp"
+
 using namespace DirectX::SimpleMath;
 namespace IO {
 	typedef std::filesystem::path path_t;
