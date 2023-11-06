@@ -100,45 +100,6 @@ namespace RHI {
         LOG(FATAL) << "No available D3D12 hardware found!";    
         return {};
     }
-
-    std::shared_ptr<Descriptor> Device::GetRenderTargetView(Texture* tex) {
-        auto handle = GetDescriptorHeap(DescriptorHeapType::RTV)->GetDescriptor();
-        m_Device->CreateRenderTargetView(*tex, nullptr, handle->get_cpu_handle());
-        return handle;
-    }
-    std::shared_ptr<Descriptor> Device::GetBufferShaderResourceView(Buffer* buf, ResourceFormat format) {
-        bool is_raw = buf->GetDesc().stride == 0;
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Format = is_raw ? DXGI_FORMAT_R32_TYPELESS : ResourceFormatToD3DFormat(buf->GetDesc().format);
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-        srvDesc.Buffer.StructureByteStride = buf->GetDesc().stride;
-        srvDesc.Buffer.NumElements = buf->GetDesc().width / (is_raw ? sizeof(float) : buf->GetDesc().stride);
-        if (is_raw) srvDesc.Buffer.Flags |= D3D12_BUFFER_SRV_FLAG_RAW;
-        auto handle = GetDescriptorHeap(DescriptorHeapType::CBV_SRV_UAV)->GetDescriptor();
-        m_Device->CreateShaderResourceView(*buf, &srvDesc, handle->get_cpu_handle());
-        return handle;
-    }
-    std::shared_ptr<Descriptor> Device::GetTexture2DShaderResourceView(Buffer* buf, ResourceDimensionSRV view) {
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Format = ResourceFormatToD3DFormat(buf->GetDesc().format);
-        srvDesc.ViewDimension = (D3D12_SRV_DIMENSION)view;
-        srvDesc.Texture2D.MipLevels = buf->GetDesc().mipLevels;
-        auto handle = GetDescriptorHeap(DescriptorHeapType::CBV_SRV_UAV)->GetDescriptor();
-        m_Device->CreateShaderResourceView(*buf, &srvDesc, handle->get_cpu_handle());
-        return handle;
-    }
-    std::shared_ptr<Descriptor> Device::GetConstantBufferView(Buffer* buf) {
-        CHECK(buf->GetDesc().dimension == ResourceDimension::Buffer);
-        D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc{};
-        cbvDesc.BufferLocation = buf->GetGPUAddress();
-        cbvDesc.SizeInBytes = buf->GetDesc().width;
-        auto handle = GetDescriptorHeap(DescriptorHeapType::CBV_SRV_UAV)->GetDescriptor();
-        m_Device->CreateConstantBufferView(&cbvDesc, handle->get_cpu_handle());
-        return handle;
-    }
-
     Device::Device(DeviceDesc cfg) {
 #ifdef _DEBUG    
         ComPtr<ID3D12Debug> debugInterface;
@@ -163,27 +124,6 @@ namespace RHI {
             m_CommandQueues[+Direct] = std::make_unique<CommandQueue>(this, Direct);
             m_CommandQueues[+Copy] = std::make_unique<CommandQueue>(this, Copy);
             m_CommandQueues[+Compute] = std::make_unique<CommandQueue>(this, Compute);
-        }
-        {
-            using enum DescriptorHeapType;
-            // initialize descriptor heaps we'll be using
-            m_DescriptorHeaps.resize(+NUM_TYPES);
-            m_DescriptorHeaps[+RTV] = std::make_unique<DescriptorHeap>(
-                this,
-                DescriptorHeap::DescriptorHeapDesc{
-                .shaderVisible = false,
-                    .descriptorCount = ALLOC_SIZE_DESC_HEAP,
-                    .heapType = RTV
-            });
-            m_DescriptorHeaps[+RTV]->SetName(L"RTV Heap");
-            m_DescriptorHeaps[+CBV_SRV_UAV] = std::make_unique<DescriptorHeap>(
-                this,
-                DescriptorHeap::DescriptorHeapDesc{
-                .shaderVisible = true,
-                    .descriptorCount = ALLOC_SIZE_DESC_HEAP,
-                    .heapType = CBV_SRV_UAV
-            });
-            m_DescriptorHeaps[+CBV_SRV_UAV]->SetName(L"CBV-SRV-UAV Heap");
         }
         {
             using enum IndirectArgumentType;

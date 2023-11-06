@@ -1,7 +1,7 @@
 #include "D3D12Swapchain.hpp"
 #include "D3D12Device.hpp"
 namespace RHI {
-    Swapchain::Swapchain(Device* device, CommandQueue* cmdQueue, SwapchainDesc const& cfg) {
+    Swapchain::Swapchain(Device* device, CommandQueue* cmdQueue, DescriptorHeap* descHeap, SwapchainDesc const& cfg) {
         DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
         swapChainDesc.BufferCount = cfg.BackBufferCount;
         swapChainDesc.Width = cfg.InitWidth;
@@ -16,9 +16,12 @@ namespace RHI {
         ));
         CHECK_HR(device->GetDXGIFactory()->MakeWindowAssociation(cfg.Window, DXGI_MWA_NO_ALT_ENTER));
         CHECK_HR(swapChain.As(&m_Swapchain));
-        Resize(device, cmdQueue, cfg.InitWidth, cfg.InitHeight);
+        m_FrameFence = std::make_unique<Fence>(device);
+        m_FrameFence->SetName(L"Swap Fence");
+        nFenceValues.resize(cfg.BackBufferCount);
+        Resize(device, cmdQueue, descHeap, cfg.InitWidth, cfg.InitHeight);
     }
-    void Swapchain::CreateBackBuffers(Device* device) {        
+    void Swapchain::BindBackBuffers(Device* device) {        
         m_Backbuffers.clear();
         DXGI_SWAP_CHAIN_DESC desc = {};
         m_Swapchain->GetDesc(&desc);
@@ -28,16 +31,15 @@ namespace RHI {
             CHECK_HR(m_Swapchain->GetBuffer(i, IID_PPV_ARGS(backbuffer.GetAddressOf())));
             m_Backbuffers.push_back(std::make_unique<Texture>(desc, std::move(backbuffer)));
             m_Backbuffers.back()->SetName(std::format(L"Backbuffer #{}", i));
-        }
-        nFenceValues.resize(desc.BufferCount);
-        m_FrameFence = std::make_unique<Fence>(device);
-        m_FrameFence->SetName(L"Swap Fence");
+        }       
     }
-    void Swapchain::CreateRenderTargetViews(Device* device) {
+    void Swapchain::CreateRenderTargetViews(Device* device, DescriptorHeap* descHeap) {
         // Free previous RTVs (if any)        
         m_BackbufferRTVs.clear();
         for (auto& backbuffer : m_Backbuffers) {
-            m_BackbufferRTVs.push_back(device->GetRenderTargetView(backbuffer.get()));
+            auto desc = descHeap->AllocateDescriptor();
+            device->GetNativeDevice()->CreateRenderTargetView(*backbuffer, nullptr, *(desc.get()));
+            m_BackbufferRTVs.push_back(std::move(desc));
         }
     }
     void Swapchain::Present(bool vsync) {
@@ -54,7 +56,7 @@ namespace RHI {
         // Increment the fence value which should be monotonously increasing upon any backbuffers' completion    
         nFenceValues[nBackbufferIndex] = signalQueue->GetUniqueFenceValue();
     }
-    void Swapchain::Resize(Device* device, CommandQueue* cmdQueue, uint width, uint height) {
+    void Swapchain::Resize(Device* device, CommandQueue* cmdQueue, DescriptorHeap* descHeap, uint width, uint height) {
         uint buffers = (UINT)m_Backbuffers.size();        
         // Reset BBs and their fence values
         size_t resetFenceValue = cmdQueue->GetUniqueFenceValue();
@@ -68,7 +70,7 @@ namespace RHI {
         CHECK_HR(m_Swapchain->GetFullscreenState(&bIsFullscreen, nullptr));
         nBackbufferIndex = m_Swapchain->GetCurrentBackBufferIndex();
         // Recreate the BBs & RTVs
-        CreateBackBuffers(device);
-        CreateRenderTargetViews(device);
+        BindBackBuffers(device);
+        CreateRenderTargetViews(device, descHeap);
     }
 }

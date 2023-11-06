@@ -8,7 +8,7 @@
 #include "D3D12CommandList.hpp"
 #include "D3D12Fence.hpp"
 #include "D3D12CommandSignature.hpp"
-#define ALLOC_SIZE_DESC_HEAP 1024
+
 namespace RHI {
 	void LogDeviceInformation(ID3D12Device* device);
 	void LogAdapterInformation(IDXGIAdapter1* adapter);
@@ -24,19 +24,13 @@ namespace RHI {
 		Device(const Device&&) = delete;
 		~Device();
 
-		std::shared_ptr<Descriptor> GetRenderTargetView(Texture* tex);
-		std::shared_ptr<Descriptor> GetBufferShaderResourceView(Buffer* buf, ResourceFormat format = ResourceFormat::Unknown);
-		std::shared_ptr<Descriptor> GetTexture2DShaderResourceView(Buffer* buf, ResourceDimensionSRV view);
-		std::shared_ptr<Descriptor> GetConstantBufferView(Buffer* buf);
-
 		std::shared_ptr<Buffer> AllocateIntermediateBuffer(Buffer::BufferDesc const& desc);
 		void FlushIntermediateBuffers();
 
 		inline auto GetDXGIFactory() { return m_Factory; }
-		inline auto GetNativeDevice() { return m_Device; }
+		inline auto GetNativeDevice() { return m_Device; } // TODO : Reduce the usage of GetNative*()
 		
-		inline auto GetCommandQueue(CommandListType type) { return m_CommandQueues[+type].get(); }
-		inline auto GetDescriptorHeap(DescriptorHeapType type) { return m_DescriptorHeaps[+type].get(); }		
+		inline auto GetCommandQueue(CommandListType type) { return m_CommandQueues[+type].get(); }	
 		inline auto GetCommandSignature(IndirectArgumentType type) { return m_CommandSignatures[+type].get(); }
 		inline auto GetAllocator() { return m_Allocator.Get(); }
 		inline auto GetAllocatorPool(ResourcePoolType type) { return m_AllocatorPools[+type].Get(); }
@@ -56,7 +50,6 @@ namespace RHI {
 
 		std::vector<ComPtr<D3D12MA::Pool>> m_AllocatorPools;
 		std::vector<std::unique_ptr<CommandQueue>> m_CommandQueues;
-		std::vector<std::unique_ptr<DescriptorHeap>> m_DescriptorHeaps;		
 		std::vector<std::shared_ptr<Buffer>> m_IntermediateBuffers;
 		std::vector<std::unique_ptr<CommandSignature>> m_CommandSignatures;
 	};

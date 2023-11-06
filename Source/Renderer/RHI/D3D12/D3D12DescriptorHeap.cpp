@@ -21,8 +21,8 @@ namespace RHI {
         m_IndexQueue.setup(cfg.descriptorCount);
     }
 
-    std::shared_ptr<Descriptor> DescriptorHeap::GetDescriptor() {
-        auto new_handle = std::make_shared<Descriptor>(m_HeadHandle);
+    std::unique_ptr<Descriptor> DescriptorHeap::AllocateDescriptor() {
+        auto new_handle = std::make_unique<Descriptor>(m_HeadHandle);
         auto heap_handle = m_IndexQueue.pop();
         new_handle->Increment(heap_handle, m_HeapIncrementSize);
         return new_handle;

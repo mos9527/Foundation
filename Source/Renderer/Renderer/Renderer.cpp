@@ -2,7 +2,49 @@
 #include "../../IO/Image.hpp"
 Renderer::Renderer(Device::DeviceDesc const& deviceCfg, Swapchain::SwapchainDesc const& swapchainCfg) {
 	device = std::make_unique<Device>(deviceCfg);	
-	swapChain = std::make_unique<Swapchain>(device.get(), device->GetCommandQueue(CommandListType::Direct), swapchainCfg);
+	// descriptor heaps that will be bound to the GPU are created here
+	{
+		using enum DescriptorHeapType;
+		boundDescHeaps.resize(+NUM_TYPES);
+		boundDescHeaps[+RTV] = std::make_unique<DescriptorHeap>(
+			device.get(),
+			DescriptorHeap::DescriptorHeapDesc{
+			.shaderVisible = false,
+				.descriptorCount = ALLOC_SIZE_BOUND_DESCHEAP,
+				.heapType = RTV
+		});
+		boundDescHeaps[+RTV]->SetName(L"RTV Heap");
+		boundDescHeapsD3D[+RTV] = boundDescHeaps[+RTV]->GetNativeHeap();
+		boundDescHeaps[+DSV] = std::make_unique<DescriptorHeap>(
+			device.get(),
+			DescriptorHeap::DescriptorHeapDesc{
+			.shaderVisible = true,
+				.descriptorCount = ALLOC_SIZE_BOUND_DESCHEAP,
+				.heapType = DSV
+		});
+		boundDescHeaps[+DSV]->SetName(L"DSV Heap");
+		boundDescHeapsD3D[+DSV] = boundDescHeaps[+DSV]->GetNativeHeap();
+		boundDescHeaps[+CBV_SRV_UAV] = std::make_unique<DescriptorHeap>(
+			device.get(),
+			DescriptorHeap::DescriptorHeapDesc{
+			.shaderVisible = true,
+				.descriptorCount = ALLOC_SIZE_BOUND_DESCHEAP,
+				.heapType = CBV_SRV_UAV
+		});
+		boundDescHeaps[+CBV_SRV_UAV]->SetName(L"CBV-SRV-UAV Heap");
+		boundDescHeapsD3D[+CBV_SRV_UAV] = boundDescHeaps[+CBV_SRV_UAV]->GetNativeHeap();
+		storageDescHeap = std::make_unique<DescriptorHeap>(
+			device.get(), 
+			DescriptorHeap::DescriptorHeapDesc {
+			.shaderVisible = false, /* MSDN: shader-visible descriptor heaps may be created in WRITE_COMBINE memory or GPU local memory, which is prohibitively slow to read from. */
+				.descriptorCount = ALLOC_SIZE_STORE_DESCHEAP,
+				.heapType = CBV_SRV_UAV
+		});
+		storageDescHeap->SetName(L"Storage Heap");
+	}
+	// swapchain
+	swapChain = std::make_unique<Swapchain>(device.get(), device->GetCommandQueue(CommandListType::Direct), boundDescHeaps[+DescriptorHeapType::RTV].get(),swapchainCfg);
+	// command lists
 	{
 		using enum CommandListType;
 		commandLists.resize(+NUM_TYPES);
@@ -19,7 +61,6 @@ Renderer::Renderer(Device::DeviceDesc const& deviceCfg, Swapchain::SwapchainDesc
 		fences[+Copy] = std::make_unique<Fence>(device.get());
 		fences[+Direct]->SetName(L"Copy Queue Fence");
 	}
-
 	resize_buffers(swapchainCfg.InitWidth, swapchainCfg.InitHeight);
 }
 void Renderer::wait(CommandQueue* queue, Fence* fence) {
@@ -112,14 +153,14 @@ void Renderer::resize_buffers(UINT width, UINT height) {
 }
 void Renderer::resize_viewport(UINT width, UINT height) {
 	wait(CommandListType::Direct);
-	swapChain->Resize(device.get(), device->GetCommandQueue(CommandListType::Direct), width, height);
+	swapChain->Resize(device.get(), device->GetCommandQueue(CommandListType::Direct), boundDescHeaps[+DescriptorHeapType::RTV].get(), width, height);
 	LOG(INFO) << "Viewport resized to " << width << 'x' << height;
 }
 
 void Renderer::begin_frame() {
 	using enum CommandListType;
-	commandLists[+Direct]->ResetAllocator(swapChain->GetCurrentBackbuffer());
-	commandLists[+Direct]->Begin(swapChain->GetCurrentBackbuffer());
+	commandLists[+Direct]->ResetAllocator(swapChain->GetCurrentBackbufferIndex());
+	commandLists[+Direct]->Begin(swapChain->GetCurrentBackbufferIndex());
 }
 
 void Renderer::end_frame() {
@@ -134,7 +175,7 @@ void Renderer::render() {
 	// Populate command list
 	using enum CommandListType;
 	auto cmdList = commandLists[+Direct]->GetNativeCommandList();
-	auto bbIndex = swapChain->GetCurrentBackbuffer();
+	auto bbIndex = swapChain->GetCurrentBackbufferIndex();
 	
 	// Indicate that the back buffer will be used as a render target.
 	auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
@@ -153,10 +194,9 @@ void Renderer::render() {
 	else {
 		const float clearColor[] = { 0.0f, 1.0f,0.0f, 1.0f };
 		cmdList->ClearRenderTargetView(rtvHandle->get_cpu_handle(), clearColor, 0, nullptr);
-		ID3D12DescriptorHeap* const heap = *device->GetDescriptorHeap(DescriptorHeapType::CBV_SRV_UAV);
-	
+
 		cmdList->SetGraphicsRootSignature(*testRootSig);
-		cmdList->SetDescriptorHeaps(1, &heap); // srv heap
+		cmdList->SetDescriptorHeaps(ARRAYSIZE(boundDescHeapsD3D), &boundDescHeapsD3D[0]); // srv heap
 		cmdList->SetGraphicsRoot32BitConstant(0, 0, 0); // b0[0] geo handle buffer
 		cmdList->SetPipelineState(*testPso);
 		cmdList->DispatchMesh(1, 1, 1); // testing : draw one geo

@@ -5,6 +5,12 @@ using namespace RHI;
 class Renderer {	
 	std::unique_ptr<Device> device;
 	std::unique_ptr<Swapchain> swapChain;
+	
+	std::vector<std::unique_ptr<DescriptorHeap>> boundDescHeaps;
+	ID3D12DescriptorHeap* boundDescHeapsD3D[+DescriptorHeapType::NUM_TYPES];
+	// storage descriptor heap for storing maybe-used CBV-SRV-UAV descriptors
+	// which should be copied at runtime when necessary
+	std::unique_ptr<DescriptorHeap> storageDescHeap;
 
 	std::vector<std::unique_ptr<CommandList>> commandLists;
 	std::vector<size_t> fenceValues;

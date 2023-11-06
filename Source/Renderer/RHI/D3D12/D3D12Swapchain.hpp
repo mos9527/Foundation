@@ -12,9 +12,11 @@ namespace RHI {
 		std::vector<size_t> nFenceValues;
 		std::unique_ptr<Fence> m_FrameFence;
 		std::vector<std::unique_ptr<Texture>> m_Backbuffers;
-		std::vector<std::shared_ptr<Descriptor>> m_BackbufferRTVs;
+		std::vector<std::unique_ptr<Descriptor>> m_BackbufferRTVs;
 		ComPtr<IDXGISwapChain3> m_Swapchain;
 		void Present(bool vsync);
+		void BindBackBuffers(Device* device);
+		void CreateRenderTargetViews(Device* device, DescriptorHeap* descHeap);
 	public:
 		BOOL bIsFullscreen{ false };
 		struct SwapchainDesc {
@@ -23,16 +25,14 @@ namespace RHI {
 			uint BackBufferCount;
 			HWND Window;
 		};
-		Swapchain(Device* device, CommandQueue* cmdQueue, SwapchainDesc const& cfg);
+		Swapchain(Device* device, CommandQueue* cmdQueue, DescriptorHeap* descHeap, SwapchainDesc const& cfg);
 		~Swapchain() = default;
 		
 		inline auto GetBackbuffer(uint index) { return m_Backbuffers[index].get(); }
-		inline auto GetBackbufferRTV(uint index) { return m_BackbufferRTVs[index]; }
+		inline auto GetBackbufferRTV(uint index) { return m_BackbufferRTVs[index].get(); }
+		inline auto GetCurrentBackbufferIndex() { return nBackbufferIndex; }
 
-		inline auto GetCurrentBackbuffer() { return nBackbufferIndex; }
-		void CreateBackBuffers(Device* device);
-		void CreateRenderTargetViews(Device* device);
-		void Resize(Device* device, CommandQueue* cmdQueue, uint width, uint height);
+		void Resize(Device* device, CommandQueue* cmdQueue, DescriptorHeap* descHeap, uint width, uint height);
 		void PresentAndMoveToNextFrame(CommandQueue* signalQueue, bool vsync);
 
 		inline auto GetNativeSwapchain() { return m_Swapchain.Get(); }

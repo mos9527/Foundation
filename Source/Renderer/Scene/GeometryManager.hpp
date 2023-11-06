@@ -39,6 +39,7 @@ struct GeometryGPUHandle {
 struct Geometry {
 	std::string name;
 	std::unique_ptr<RHI::Buffer> geometry_buffer;
+	std::unique_ptr<RHI::Descriptor> geometry_descriptor;
 };
 class GeometryManager {
 public:

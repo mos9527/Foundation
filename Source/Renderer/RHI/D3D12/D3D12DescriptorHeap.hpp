@@ -51,7 +51,7 @@ namespace RHI {
 		DescriptorHeap(Device* device, DescriptorHeapDesc const& cfg);
 		~DescriptorHeap() = default;
 		
-		std::shared_ptr<Descriptor> GetDescriptor();
+		std::unique_ptr<Descriptor> AllocateDescriptor();
 		inline heap_handle_type GetCurrentDescriptorCount() { return m_IndexQueue.size(); }
 		inline heap_handle_type GetMaxDescriptorCount() { return m_Config.descriptorCount; };
 
