@@ -1,6 +1,6 @@
 #include "MaterialManager.hpp"
 
-entt::entity MaterialManager::LoadTexture(RHI::Device* device, RHI::CommandList* cmdList, IO::bitmap8bpp& bmp) {
+entt::entity MaterialManager::LoadTexture(RHI::Device* device, RHI::CommandList* cmdList, RHI::DescriptorHeap* destHeap, IO::bitmap8bpp& bmp) {
 	RHI::SubresourceData subresource{
 		.pSysMem = bmp.data,
 		.rowPitch = bmp.width * 4u,
@@ -24,8 +24,9 @@ entt::entity MaterialManager::LoadTexture(RHI::Device* device, RHI::CommandList*
 		.name = "Texture",
 		.texture_buffer = std::move(buffer)
 	};
-	auto entity = registery.create();		
-	registery.emplace<Material>(entity, std::move(material));
-	registery.emplace<Tag>(entity, Tag::Texture);
+	
+	auto entity = registry.create();
+	registry.emplace<Material>(entity, std::move(material));
+	registry.emplace<Tag>(entity, Tag::Texture);
 	return entity;
 }

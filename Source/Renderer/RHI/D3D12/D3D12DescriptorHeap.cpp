@@ -27,4 +27,12 @@ namespace RHI {
         new_handle->Increment(heap_handle, m_HeapIncrementSize);
         return new_handle;
     };
+
+    void DescriptorHeap::CopyInto(Device* device, Descriptor* descriptorSrc, Descriptor* descriptorDst) {
+        CHECK(descriptorSrc->heap_ref.m_Config.heapType == descriptorDst->heap_ref.m_Config.heapType);
+        CHECK(descriptorSrc->heap_ref.m_Config.shaderVisible == false);
+        device->GetNativeDevice()->CopyDescriptorsSimple(
+            1, descriptorDst->cpu_handle, descriptorSrc->cpu_handle, DescriptorHeapTypeToD3DType(descriptorSrc->heap_ref.m_Config.heapType)
+        );
+    }
 }

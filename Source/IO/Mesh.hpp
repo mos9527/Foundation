@@ -60,6 +60,7 @@ namespace IO {
 				mesh.position[i].x = srcMesh->mVertices[i].x;
 				mesh.position[i].y = srcMesh->mVertices[i].y;
 				mesh.position[i].z = srcMesh->mVertices[i].z;
+				
 			}
 			if (srcMesh->mNormals) {
 				mesh.normal[i].x = srcMesh->mNormals[i].x;

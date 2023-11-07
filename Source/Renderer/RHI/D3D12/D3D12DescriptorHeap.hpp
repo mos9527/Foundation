@@ -54,7 +54,7 @@ namespace RHI {
 		std::unique_ptr<Descriptor> AllocateDescriptor();
 		inline heap_handle_type GetCurrentDescriptorCount() { return m_IndexQueue.size(); }
 		inline heap_handle_type GetMaxDescriptorCount() { return m_Config.descriptorCount; };
-
+		void CopyInto(Device* device, Descriptor* descriptorSrc, Descriptor* descriptorDst);
 		inline auto GetNativeHeap() { return m_DescriptorHeap.Get(); }
 		inline operator ID3D12DescriptorHeap* () { return m_DescriptorHeap.Get(); }
 		

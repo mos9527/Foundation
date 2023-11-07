@@ -1,5 +1,7 @@
 #include "Renderer.hpp"
 #include "../../IO/Image.hpp"
+#include "Structs.hpp"
+
 Renderer::Renderer(Device::DeviceDesc const& deviceCfg, Swapchain::SwapchainDesc const& swapchainCfg) {
 	device = std::make_unique<Device>(deviceCfg);	
 	// descriptor heaps that will be bound to the GPU are created here
@@ -14,7 +16,6 @@ Renderer::Renderer(Device::DeviceDesc const& deviceCfg, Swapchain::SwapchainDesc
 				.heapType = RTV
 		});
 		boundDescHeaps[+RTV]->SetName(L"RTV Heap");
-		boundDescHeapsD3D[+RTV] = boundDescHeaps[+RTV]->GetNativeHeap();
 		boundDescHeaps[+DSV] = std::make_unique<DescriptorHeap>(
 			device.get(),
 			DescriptorHeap::DescriptorHeapDesc{
@@ -23,7 +24,6 @@ Renderer::Renderer(Device::DeviceDesc const& deviceCfg, Swapchain::SwapchainDesc
 				.heapType = DSV
 		});
 		boundDescHeaps[+DSV]->SetName(L"DSV Heap");
-		boundDescHeapsD3D[+DSV] = boundDescHeaps[+DSV]->GetNativeHeap();
 		boundDescHeaps[+CBV_SRV_UAV] = std::make_unique<DescriptorHeap>(
 			device.get(),
 			DescriptorHeap::DescriptorHeapDesc{
@@ -32,7 +32,6 @@ Renderer::Renderer(Device::DeviceDesc const& deviceCfg, Swapchain::SwapchainDesc
 				.heapType = CBV_SRV_UAV
 		});
 		boundDescHeaps[+CBV_SRV_UAV]->SetName(L"CBV-SRV-UAV Heap");
-		boundDescHeapsD3D[+CBV_SRV_UAV] = boundDescHeaps[+CBV_SRV_UAV]->GetNativeHeap();
 		storageDescHeap = std::make_unique<DescriptorHeap>(
 			device.get(), 
 			DescriptorHeap::DescriptorHeapDesc {
@@ -62,6 +61,8 @@ Renderer::Renderer(Device::DeviceDesc const& deviceCfg, Swapchain::SwapchainDesc
 		fences[+Direct]->SetName(L"Copy Queue Fence");
 	}
 	resize_buffers(swapchainCfg.InitWidth, swapchainCfg.InitHeight);
+	// scene buffers
+	instanceBuffer.create(device.get(), INSTANCE_MAX_NUM_INSTANCES);
 }
 void Renderer::wait(CommandQueue* queue, Fence* fence) {
 	size_t fenceValue = queue->GetUniqueFenceValue();
@@ -75,6 +76,23 @@ void Renderer::wait(CommandListType type) {
 	fenceValues[+type] = fenceValue;
 	queue->Signal(fence, fenceValue);
 	fence->Wait(fenceValue);
+}
+void Renderer::update_scene_buffer() {
+	std::unordered_map<entt::entity, uint> geo_index_mapping;	
+	uint instance_index{}, geo_index{};
+	for (auto geo : registry.view<Geometry>()) {
+		geo_index_mapping[geo] = geo_index++;
+	}
+	for (auto node : registry.view<SceneNode>()) {
+		auto& geo = registry.get<Geometry>(node);		
+		InstanceData instance;
+		instance.instance_index = instance_index++;
+		instance.geometry_index = geo_index_mapping[node];
+		instance.material_index = -1; // xxx
+		instance.obb_center = geo.aabb.Center;
+		instance.obb_extends = geo.aabb.Extents;
+		instance.transform = Matrix::Identity;
+	}
 }
 void Renderer::load_resources() {
 	bLoading = true;
@@ -120,7 +138,6 @@ void Renderer::load_resources() {
 		
 		cmdList->Begin();
 		scene.load_from_aiScene(device.get(), cmdList, import_scene);
-		scene.log_scene_hierarchy();
 		cmdList->End();
 
 		LOG(INFO) << "Executing copy";
@@ -194,9 +211,9 @@ void Renderer::render() {
 	else {
 		const float clearColor[] = { 0.0f, 1.0f,0.0f, 1.0f };
 		cmdList->ClearRenderTargetView(rtvHandle->get_cpu_handle(), clearColor, 0, nullptr);
-
+		auto srvHeap = boundDescHeaps[+DescriptorHeapType::CBV_SRV_UAV]->GetNativeHeap();
 		cmdList->SetGraphicsRootSignature(*testRootSig);
-		cmdList->SetDescriptorHeaps(ARRAYSIZE(boundDescHeapsD3D), &boundDescHeapsD3D[0]); // srv heap
+		cmdList->SetDescriptorHeaps(1, &srvHeap);
 		cmdList->SetGraphicsRoot32BitConstant(0, 0, 0); // b0[0] geo handle buffer
 		cmdList->SetPipelineState(*testPso);
 		cmdList->DispatchMesh(1, 1, 1); // testing : draw one geo

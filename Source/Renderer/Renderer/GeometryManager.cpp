@@ -1,25 +1,14 @@
 #include "GeometryManager.hpp"
+#include "Structs.hpp"
 using namespace RHI;
 using namespace IO;
 
-GeometryManager::GeometryManager(entt::registry& _registery) : registery(_registery) {};
-typedef UINT meshlet_triangles_swizzled;
 static void SwizzleMeshletTriangles(std::vector<unsigned char> const& inTris, std::vector<meshlet_triangles_swizzled>& outTris) {
 	for (size_t i = 0; i < inTris.size() - 3; i += 3) {
 		constexpr meshlet_triangles_swizzled b10 = 0b1111111111;
 		outTris.push_back(((b10 & inTris[i]) << 20) | ((b10 & inTris[i + 1]) << 10) | ((b10 & inTris[i + 2])));
 	}
 }
-struct meshlet_bounds_swizzled {
-	/* bounding sphere, useful for frustum and occlusion culling */
-	float center[3];
-	float radius;
-
-	/* normal cone, useful for backface culling */
-	float cone_apex[3];
-	float cone_axis[3];
-	float cone_cutoff; /* = cos(angle/2) */
-};
 static void SwizzleMeshletBounds(std::vector<meshlet_bound> const& inBouds, std::vector<meshlet_bounds_swizzled>& outBounds) {
 	for (size_t i = 0; i < inBouds.size(); i++) {
 		meshlet_bounds_swizzled swizzled;
@@ -40,7 +29,7 @@ static void SwizzleMeshletBounds(std::vector<meshlet_bound> const& inBouds, std:
 		outBounds.push_back(swizzled);
 	}
 }
-entt::entity GeometryManager::LoadMesh(Device* device, CommandList* cmdList, mesh_static const& mesh) {
+entt::entity GeometryManager::LoadMesh(Device* device, CommandList* cmdList, RHI::DescriptorHeap* destHeap, mesh_static const& mesh) {
 	// there's no planned support for vertex shading path
 	// so the mesh indices buffer will be omitted entirely
 	size_t alloc_size = ::size_in_bytes(mesh.position) +
@@ -65,7 +54,7 @@ entt::entity GeometryManager::LoadMesh(Device* device, CommandList* cmdList, mes
 	desc.poolType = ResourcePoolType::Intermediate;
 	auto intermediate = device->AllocateIntermediateBuffer(desc);
 	// Load the data onto the intermediate buffer
-	GeometryGPUHandle geo{};
+	GeometryData geo{};
 
 	size_t offset = 0;
 	auto upload = [&](auto data) {
@@ -98,7 +87,7 @@ entt::entity GeometryManager::LoadMesh(Device* device, CommandList* cmdList, mes
 		auto& mesh_lod = mesh.lods[lod];
 		SwizzleMeshletTriangles(mesh_lod.meshlet_triangles, swizzled_tris_buffer);
 		SwizzleMeshletBounds(mesh_lod.meshlet_bounds, swizzled_bounds_buffer);
-		std::vector<meshlet> lod_meshlet = mesh_lod.meshlets;
+		std::vector<IO::meshlet> lod_meshlet = mesh_lod.meshlets;
 		// meshlet u8 triangle offset -> u32 offset
 		{
 			size_t tri_offset = 0;
@@ -125,13 +114,33 @@ entt::entity GeometryManager::LoadMesh(Device* device, CommandList* cmdList, mes
 
 	// Schedule a copy
 	buffer->QueueCopy(cmdList, intermediate.get(), 0, 0, alloc_size);
-	
 	Geometry geometry{
 		.name = "Geometry",
-		.geometry_buffer = std::move(buffer)
+		.geometry_buffer = std::move(buffer),		
 	};
-	auto entity = registery.create();
-	registery.emplace<Geometry>(entity, std::move(geometry));
-	registery.emplace<Tag>(entity, Tag::Geometry);
+	DirectX::BoundingBox::CreateFromPoints(
+		geometry.aabb,
+		mesh.position.size(),
+		mesh.position.data(),
+		sizeof(XMFLOAT3)
+	);
+	geometry.geometry_properties = geo;
+	geometry.geometry_descriptor = destHeap->AllocateDescriptor();
+	// create a raw SRV for the geo buffer
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Format = DXGI_FORMAT_R32_TYPELESS;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	srvDesc.Buffer.StructureByteStride = 0;
+	srvDesc.Buffer.NumElements = alloc_size / sizeof(float);
+	device->GetNativeDevice()->CreateShaderResourceView(
+		geometry.geometry_buffer->GetNativeBuffer(),
+		&srvDesc,
+		geometry.geometry_descriptor->get_cpu_handle()
+	);
+	// place it on the registry
+	auto entity = registry.create();
+	registry.emplace<Geometry>(entity, std::move(geometry));
+	registry.emplace<Tag>(entity, Tag::Geometry);
 	return entity;
 }
