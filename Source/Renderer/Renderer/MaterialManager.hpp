@@ -9,7 +9,7 @@ struct Material {
 class MaterialManager {
 public:
 	MaterialManager(entt::registry& _registry) : registry(_registry) {};
-	entt::entity LoadTexture(RHI::Device* device, RHI::CommandList* cmdList, RHI::DescriptorHeap* destHeap, IO::bitmap8bpp& bmp);
+	entt::entity LoadTexture(RHI::Device* device, RHI::CommandList* cmdList, RHI::DescriptorHeap* storageHeap, IO::bitmap8bpp& bmp);
 
 private:
 	entt::registry& registry;

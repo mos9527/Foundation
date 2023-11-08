@@ -62,7 +62,10 @@ Renderer::Renderer(Device::DeviceDesc const& deviceCfg, Swapchain::SwapchainDesc
 	}
 	resize_buffers(swapchainCfg.InitWidth, swapchainCfg.InitHeight);
 	// scene buffers
-	instanceBuffer.create(device.get(), INSTANCE_MAX_NUM_INSTANCES);
+	using enum DescriptorHeapType;
+	instanceBuffer.create(device.get(), boundDescHeaps[+CBV_SRV_UAV].get(), INSTANCE_MAX_NUM_INSTANCES, L"Instance Buffer");
+	geometryBuffer.create(device.get(), boundDescHeaps[+CBV_SRV_UAV].get(), INSTANCE_MAX_NUM_INSTANCES, L"Geometry Index Buffer");
+	cameraCBV.create(device.get(), boundDescHeaps[+CBV_SRV_UAV].get(), L"Camera");
 }
 void Renderer::wait(CommandQueue* queue, Fence* fence) {
 	size_t fenceValue = queue->GetUniqueFenceValue();
@@ -80,19 +83,36 @@ void Renderer::wait(CommandListType type) {
 void Renderer::update_scene_buffer() {
 	std::unordered_map<entt::entity, uint> geo_index_mapping;	
 	uint instance_index{}, geo_index{};
-	for (auto geo : registry.view<Geometry>()) {
-		geo_index_mapping[geo] = geo_index++;
+	auto bound_heap = boundDescHeaps[+DescriptorHeapType::CBV_SRV_UAV].get();	
+	for (auto ent : registry.view<Geometry>()) {
+		auto& geo = registry.get<Geometry>(ent);
+		if (!geo.geometry_bound_descriptor) {
+			geo.geometry_bound_descriptor = bound_heap->AllocateDescriptor();
+			geo.geometry_properties.heap_index = geo.geometry_bound_descriptor->get_heap_handle();
+		}
+		bound_heap->CopyInto(device.get(), geo.geometry_storage_descriptor.get(), geo.geometry_bound_descriptor.get());		
+		geo_index_mapping[ent] = geo_index;
+		geometryBuffer.update_upload_buffer(&geo.geometry_properties, geo_index);
+		geo_index++;
 	}
-	for (auto node : registry.view<SceneNode>()) {
-		auto& geo = registry.get<Geometry>(node);		
+	numGeometry = geo_index;
+	for (auto ent : registry.view<SceneNode>()) { 
+		auto& geo = registry.get<Geometry>(ent);
 		InstanceData instance;
 		instance.instance_index = instance_index++;
-		instance.geometry_index = geo_index_mapping[node];
+		instance.geometry_index = geo_index_mapping[ent];
 		instance.material_index = -1; // xxx
-		instance.obb_center = geo.aabb.Center;
-		instance.obb_extends = geo.aabb.Extents;
-		instance.transform = Matrix::Identity;
+		instance.transform = Matrix::Identity;		
+		BoundingSphere aabb_sphere; // sphere aabb for LOD calculation
+		BoundingSphere::CreateFromBoundingBox(aabb_sphere, geo.aabb);
+		instance.aabb_sphere_center_radius.x = aabb_sphere.Center.x;
+		instance.aabb_sphere_center_radius.y = aabb_sphere.Center.y;
+		instance.aabb_sphere_center_radius.z = aabb_sphere.Center.z;
+		instance.aabb_sphere_center_radius.w = aabb_sphere.Radius;
+		instanceBuffer.update_upload_buffer(&instance, instance_index);
 	}
+	numInstances = instance_index;
+	cameraCBV.update();
 }
 void Renderer::load_resources() {
 	bLoading = true;
@@ -103,7 +123,7 @@ void Renderer::load_resources() {
 	testMS = std::make_unique<ShaderBlob>(data->data(), data->size());
 	data = IO::read_data(IO::get_absolute_path("MeshletPS.cso"));
 	testPS = std::make_unique<ShaderBlob>(data->data(), data->size());	
-	// root sig
+	// root sig pulled from AS
 	testRootSig = std::make_unique<RootSignature>(device.get(), testAS.get());
 	// pso
 	D3DX12_MESH_SHADER_PIPELINE_STATE_DESC psoDesc = {};
@@ -113,7 +133,7 @@ void Renderer::load_resources() {
 	psoDesc.PS = { testPS->GetData(), testPS->GetSize() };
 	psoDesc.NumRenderTargets = 1;
 	psoDesc.RTVFormats[0] = swapChain->GetBackbuffer(0)->GetNativeBuffer()->GetDesc().Format;
-	psoDesc.DSVFormat = ResourceFormatToD3DFormat(testDepthStencil->GetDesc().format);
+	psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);      // CW front; cull back
 	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);                // Opaque
 	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT); // Less-equal depth test w/ writes; no stencil
@@ -136,11 +156,13 @@ void Renderer::load_resources() {
 		auto path = IO::get_absolute_path("../Resources/glTF-Sample-Models/2.0/DamagedHelmet/glTF/DamagedHelmet.gltf");
 		auto import_scene = importer.ReadFile((const char*)path.u8string().c_str(), aiProcess_ConvertToLeftHanded);
 		
+		LOG(INFO) << "Loading...";		
 		cmdList->Begin();
-		scene.load_from_aiScene(device.get(), cmdList, import_scene);
+		scene.load_from_aiScene(device.get(), cmdList, storageDescHeap.get(), import_scene);
+		instanceBuffer.update_dest_buffer(cmdList);
+		geometryBuffer.update_dest_buffer(cmdList);
 		cmdList->End();
-
-		LOG(INFO) << "Executing copy";
+		LOG(INFO) << "Uploading...";
 		device->GetCommandQueue(Copy)->Execute(cmdList);
 		wait(Copy);
 		LOG(INFO) << "Done";
@@ -159,14 +181,7 @@ void Renderer::load_resources() {
 }
 
 void Renderer::resize_buffers(UINT width, UINT height) {
-	testDepthStencil = std::make_unique<RHI::Texture>(device.get(), RHI::Texture::TextureDesc::GetTextureBufferDesc(
-		ResourceFormat::R32_FLOAT,
-		ResourceDimension::Texture2D,
-		width,
-		height,
-		1, 1, 1, 0,
-		ResourceFlags::DepthStencil
-	));
+	testDepthStencil.resize(device.get(), boundDescHeaps[+DescriptorHeapType::DSV].get(), width, height);
 }
 void Renderer::resize_viewport(UINT width, UINT height) {
 	wait(CommandListType::Direct);
@@ -189,7 +204,7 @@ void Renderer::end_frame() {
 
 void Renderer::render() {
 	begin_frame();
-	// Populate command list
+	// Populate gfx command list
 	using enum CommandListType;
 	auto cmdList = commandLists[+Direct]->GetNativeCommandList();
 	auto bbIndex = swapChain->GetCurrentBackbufferIndex();
@@ -202,8 +217,7 @@ void Renderer::render() {
 	cmdList->ResourceBarrier(1, &barrier);
 
 	auto rtvHandle = swapChain->GetBackbufferRTV(bbIndex);
-	cmdList->OMSetRenderTargets(1, &rtvHandle->get_cpu_handle(), FALSE, nullptr);
-
+	cmdList->OMSetRenderTargets(1, &rtvHandle->get_cpu_handle(), FALSE, &testDepthStencil.depthStencilView->get_cpu_handle());	
 	if (bLoading) {
 		const float clearColor[] = { 1.0f, 0.0f,0.0f, 1.0f };
 		cmdList->ClearRenderTargetView(rtvHandle->get_cpu_handle(), clearColor, 0, nullptr);
@@ -211,13 +225,25 @@ void Renderer::render() {
 	else {
 		const float clearColor[] = { 0.0f, 1.0f,0.0f, 1.0f };
 		cmdList->ClearRenderTargetView(rtvHandle->get_cpu_handle(), clearColor, 0, nullptr);
+		cmdList->ClearDepthStencilView(testDepthStencil.depthStencilView->get_cpu_handle(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+
 		auto srvHeap = boundDescHeaps[+DescriptorHeapType::CBV_SRV_UAV]->GetNativeHeap();
 		cmdList->SetGraphicsRootSignature(*testRootSig);
 		cmdList->SetDescriptorHeaps(1, &srvHeap);
-		cmdList->SetGraphicsRoot32BitConstant(0, 0, 0); // b0[0] geo handle buffer
+		// b0 : bindless indices
+		cmdList->SetGraphicsRoot32BitConstant(0, instanceBuffer.dest_bound_desc->get_heap_handle(), 0);
+		cmdList->SetGraphicsRoot32BitConstant(0, geometryBuffer.dest_bound_desc->get_heap_handle(), 1);
+		cmdList->SetGraphicsRoot32BitConstant(0, cameraCBV.bound_desc->get_heap_handle(), 2);		
 		cmdList->SetPipelineState(*testPso);
-		cmdList->DispatchMesh(1, 1, 1); // testing : draw one geo
-
+		
+		uint numDispatches = DivRoundUp(numInstances, DISPATCH_GROUP_COUNT);
+		for (uint i = 0; i < numDispatches; i++) {
+			uint offset = numDispatches * i;
+			uint count = std::min(numInstances - offset, numDispatches);
+			cmdList->SetGraphicsRoot32BitConstant(1, offset, 0);
+			cmdList->SetGraphicsRoot32BitConstant(1, count, 1);
+			cmdList->DispatchMesh(count, 1, 1);
+		}
 	}
 	// Indicate that the back buffer will now be used to present.
 	barrier = CD3DX12_RESOURCE_BARRIER::Transition(

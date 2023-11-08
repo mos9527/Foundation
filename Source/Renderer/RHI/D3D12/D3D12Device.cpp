@@ -68,13 +68,14 @@ namespace RHI {
         {
             LOG(FATAL) << "ERROR: Shader Model 6.6 is not supported on this device";            
         }
-
+#ifdef RHI_USE_D3D12_MESH_SHADER
         D3D12_FEATURE_DATA_D3D12_OPTIONS7 features = {};
         if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &features, sizeof(features)))
             || (features.MeshShaderTier == D3D12_MESH_SHADER_TIER_NOT_SUPPORTED))
         {
             LOG(FATAL) << "ERROR: Mesh Shaders aren't supported on this device";
         }
+#endif
     }
     static ComPtr<IDXGIAdapter1> GetHardwareAdapter(IDXGIFactory1* pFactory, uint adapterIndex = 0) {
         ComPtr<IDXGIAdapter1> adapter;
@@ -166,4 +167,38 @@ namespace RHI {
     Device::~Device() {
         m_Factory->Release();        
     }
+    /* Helper functions */
+    void Device::CreateRawBufferShaderResourceView(Buffer* buffer, Descriptor* desc) {        
+        CHECK(buffer->GetDesc().isRawBuffer());
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.Format = DXGI_FORMAT_R32_TYPELESS;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        srvDesc.Buffer.StructureByteStride = 0;
+        srvDesc.Buffer.NumElements = buffer->GetDesc().width / sizeof(float);
+        srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
+        m_Device->CreateShaderResourceView(*buffer, &srvDesc, desc->get_cpu_handle());
+    }
+    void Device::CreateStructedBufferShaderResourceView(Buffer* buffer, Descriptor* desc) {
+        CHECK(!buffer->GetDesc().isRawBuffer());
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;        
+        srvDesc.Buffer.StructureByteStride = buffer->GetDesc().stride;;
+        srvDesc.Buffer.NumElements = buffer->GetDesc().width / buffer->GetDesc().stride;       
+        m_Device->CreateShaderResourceView(*buffer, &srvDesc, desc->get_cpu_handle());
+    }
+    void Device::CreateDepthStencilView(Texture* texture, Descriptor* desciptor) {
+        D3D12_DEPTH_STENCIL_VIEW_DESC desc{};
+        desc.Format = DXGI_FORMAT_D32_FLOAT;
+        desc.Texture2D.MipSlice = 0;
+        m_Device->CreateDepthStencilView(*texture, &desc, desciptor->get_cpu_handle());
+    }
+    void Device::CreateConstantBufferView(Buffer* buffer, Descriptor* descriptor) {
+        D3D12_CONSTANT_BUFFER_VIEW_DESC desc{};
+        desc.BufferLocation = buffer->GetGPUAddress();
+        desc.SizeInBytes = buffer->GetDesc().sizeInBytes();
+        m_Device->CreateConstantBufferView(&desc, descriptor->get_cpu_handle());
+    };
 }

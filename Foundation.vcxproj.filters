@@ -189,4 +189,9 @@
     <None Include="Source\Shaders\Common.hlsli" />
     <None Include="Source\defines.hpp" />
   </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Source\Shaders\Mesh\MeshletAS.hlsl" />
+    <FxCompile Include="Source\Shaders\Mesh\MeshletMS.hlsl" />
+    <FxCompile Include="Source\Shaders\Mesh\MeshletPS.hlsl" />
+  </ItemGroup>
 </Project>

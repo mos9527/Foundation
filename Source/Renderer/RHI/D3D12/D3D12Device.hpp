@@ -30,6 +30,11 @@ namespace RHI {
 		inline auto GetDXGIFactory() { return m_Factory; }
 		inline auto GetNativeDevice() { return m_Device; } // TODO : Reduce the usage of GetNative*()
 		
+		void CreateRawBufferShaderResourceView(Buffer* buffer, Descriptor* descriptor);
+		void CreateStructedBufferShaderResourceView(Buffer* buffer, Descriptor* descriptor);
+		void CreateDepthStencilView(Texture* texture, Descriptor* desciptor);
+		void CreateConstantBufferView(Buffer* buffer, Descriptor* descriptor);
+		
 		inline auto GetCommandQueue(CommandListType type) { return m_CommandQueues[+type].get(); }	
 		inline auto GetCommandSignature(IndirectArgumentType type) { return m_CommandSignatures[+type].get(); }
 		inline auto GetAllocator() { return m_Allocator.Get(); }

@@ -47,7 +47,9 @@ namespace RHI {
 		NonPixelShaderResoruce = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
 		PixelShaderResource = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
 		// VertexAndConstantBuffer + IndexBuffer + SRV + IndirectArgument + Copy
-		GenericRead = D3D12_RESOURCE_STATE_GENERIC_READ
+		GenericRead = D3D12_RESOURCE_STATE_GENERIC_READ,
+		DepthWrite = D3D12_RESOURCE_STATE_DEPTH_WRITE,
+		DepthRead = D3D12_RESOURCE_STATE_DEPTH_READ
 	};
 	DEFINE_ENUM_FLAG_OPERATORS(ResourceState);
 	DEFINE_PLUS_TO_VALUE(ResourceState);

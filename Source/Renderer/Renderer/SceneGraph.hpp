@@ -37,5 +37,5 @@ public:
 	void add_link(entt::entity lhs, entt::entity rhs) {		
 		DAG::add_edge(lhs, rhs);
 	}
-	void load_from_aiScene(RHI::Device* device, RHI::CommandList* cmdList, const aiScene* scene);	
+	void load_from_aiScene(RHI::Device* device, RHI::CommandList* cmdList, RHI::DescriptorHeap* storageHeap, const aiScene* scene);
 };

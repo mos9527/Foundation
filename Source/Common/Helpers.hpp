@@ -78,6 +78,19 @@ public:
 		return queue.size();
 	}
 };
+template <typename T, typename U>
+T GetAlignedSize(T size, U alignment)
+{
+	const T alignedSize = (size + alignment - 1) & ~(alignment - 1);
+	return alignedSize;
+}
+// An integer version of ceil(value / divisor)
+template <typename T, typename U>
+T DivRoundUp(T num, U denom)
+{
+	return (num + denom - 1) / denom;
+}
+
 #define CHECK_ENUM_FLAG(x) { CHECK((size_t)(x) > 0); }
 #define CHECK_HR(hr) { HRESULT _result = hr; if (FAILED(_result)) { LOG_SYSRESULT(_result); LOG(FATAL) << "FATAL APPLICATION ERROR HRESULT 0x" << std::hex << _result; } }
 #ifdef _DEBUG

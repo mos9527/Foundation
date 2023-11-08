@@ -45,10 +45,10 @@ typedef UINT uint;
 typedef XMUINT2 uint2;
 typedef XMUINT3 uint3;
 typedef XMUINT4 uint4;
-typedef XMFLOAT2 float2;
-typedef XMFLOAT3 float3;
-typedef XMFLOAT4 float4;
-typedef XMMATRIX matrix;
+typedef SimpleMath::Vector2 float2;
+typedef SimpleMath::Vector3 float3;
+typedef SimpleMath::Vector4 float4;
+typedef SimpleMath::Matrix matrix; // row-major in XMMATH, col-major in HLSL
 // Straddles elements to Base boundaries
 template<typename Base, typename ToPad> struct padded_elem {
     Base data{};

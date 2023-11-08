@@ -208,6 +208,20 @@
     <None Include="Source\Shaders\Common.hlsli" />
     <None Include="vcpkg.json" />
   </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Source\Shaders\Mesh\MeshletAS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Amplification</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.6</ShaderModel>
+    </FxCompile>
+    <FxCompile Include="Source\Shaders\Mesh\MeshletMS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Mesh</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.6</ShaderModel>
+    </FxCompile>
+    <FxCompile Include="Source\Shaders\Mesh\MeshletPS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.6</ShaderModel>
+    </FxCompile>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

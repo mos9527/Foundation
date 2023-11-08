@@ -6,15 +6,17 @@
 struct Geometry {
 	std::string name;
 	std::unique_ptr<RHI::Buffer> geometry_buffer;
-	std::unique_ptr<RHI::Descriptor> geometry_descriptor;
+	std::unique_ptr<RHI::Descriptor> geometry_storage_descriptor;
+	std::unique_ptr<RHI::Descriptor> geometry_bound_descriptor;
 
 	DirectX::BoundingBox aabb;
+	
 	GeometryData geometry_properties;
 };
 class GeometryManager {
 public:
 	GeometryManager(entt::registry& _registry) : registry(_registry) {};
-	entt::entity LoadMesh(RHI::Device* device, RHI::CommandList* cmdList, RHI::DescriptorHeap* destHeap, IO::mesh_static const& mesh);
+	entt::entity LoadMesh(RHI::Device* device, RHI::CommandList* cmdList, RHI::DescriptorHeap* storageHeap, IO::mesh_static const& mesh);
 
 private:
 	entt::registry& registry;

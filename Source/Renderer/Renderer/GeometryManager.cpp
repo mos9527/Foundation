@@ -29,14 +29,13 @@ static void SwizzleMeshletBounds(std::vector<meshlet_bound> const& inBouds, std:
 		outBounds.push_back(swizzled);
 	}
 }
-entt::entity GeometryManager::LoadMesh(Device* device, CommandList* cmdList, RHI::DescriptorHeap* destHeap, mesh_static const& mesh) {
-	// there's no planned support for vertex shading path
-	// so the mesh indices buffer will be omitted entirely
+entt::entity GeometryManager::LoadMesh(Device* device, CommandList* cmdList, RHI::DescriptorHeap* storageHeap, mesh_static const& mesh) {
 	size_t alloc_size = ::size_in_bytes(mesh.position) +
 		::size_in_bytes(mesh.normal) +
 		::size_in_bytes(mesh.tangent) +
 		::size_in_bytes(mesh.uv);
 	for (size_t lod = 0; lod < LOD_COUNT; lod++) {
+		alloc_size += ::size_in_bytes(mesh.lods[lod].indices);
 		alloc_size += ::size_in_bytes(mesh.lods[lod].meshlets); // float2
 		alloc_size += mesh.lods[lod].meshlet_bounds.size() * sizeof(meshlet_bounds_swizzled);
 		alloc_size += (mesh.lods[lod].meshlet_triangles.size() / 3) * sizeof(meshlet_triangles_swizzled); // u8 * 3 -> u32
@@ -97,6 +96,9 @@ entt::entity GeometryManager::LoadMesh(Device* device, CommandList* cmdList, RHI
 			}
 		}
 		auto& handle_lod = geo.lods[lod];
+		handle_lod.index_count = mesh_lod.indices.size();
+		offset += upload(mesh_lod.indices);
+
 		handle_lod.meshlet_count = lod_meshlet.size();
 
 		handle_lod.meshlet_vertices_offset = offset;
@@ -125,19 +127,9 @@ entt::entity GeometryManager::LoadMesh(Device* device, CommandList* cmdList, RHI
 		sizeof(XMFLOAT3)
 	);
 	geometry.geometry_properties = geo;
-	geometry.geometry_descriptor = destHeap->AllocateDescriptor();
+	geometry.geometry_storage_descriptor = storageHeap->AllocateDescriptor();
 	// create a raw SRV for the geo buffer
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc.Format = DXGI_FORMAT_R32_TYPELESS;
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-	srvDesc.Buffer.StructureByteStride = 0;
-	srvDesc.Buffer.NumElements = alloc_size / sizeof(float);
-	device->GetNativeDevice()->CreateShaderResourceView(
-		geometry.geometry_buffer->GetNativeBuffer(),
-		&srvDesc,
-		geometry.geometry_descriptor->get_cpu_handle()
-	);
+	device->CreateRawBufferShaderResourceView(geometry.geometry_buffer.get(), geometry.geometry_storage_descriptor.get());
 	// place it on the registry
 	auto entity = registry.create();
 	registry.emplace<Geometry>(entity, std::move(geometry));

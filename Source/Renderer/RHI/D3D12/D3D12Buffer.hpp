@@ -63,9 +63,11 @@ namespace RHI {
 				ResourceFlags flags = ResourceFlags::None,
 				ResourceUsage usage = ResourceUsage::Default,
 				ResourceState initialState = ResourceState::CopyDest,
-				ResourcePoolType poolType = ResourcePoolType::Default
+				ResourcePoolType poolType = ResourcePoolType::Default,
+				ClearValue clearValue = ClearValue{}
 			) {
 				return BufferDesc{
+					.clearValue = clearValue,
 					.usage = usage,
 					.format = format,
 					.dimension = dimension,					
@@ -98,8 +100,12 @@ namespace RHI {
 					.Flags = (D3D12_RESOURCE_FLAGS)flags
 				};
 			}
-			inline bool IsRawBuffer() {
+			inline bool isRawBuffer() const {
 				return stride == 0;
+			}
+			inline size_t sizeInBytes() const {
+				CHECK(dimension == ResourceDimension::Buffer);
+				return width;
 			}
 		};
 		// creation w/ descriptor only. useful for inherited classes
@@ -116,7 +122,7 @@ namespace RHI {
 		inline ResourceState GetState() { return m_State; }
 		void SetState(CommandList* cmdList, ResourceState state, uint subresource = RESOURCE_BARRIER_ALL_SUBRESOURCES);
 		
-		inline size_t GetGPUAddress() { return m_Resource->GetGPUVirtualAddress(); }
+		inline auto GetGPUAddress() { return m_Resource->GetGPUVirtualAddress(); }
 		inline auto GetNativeBuffer() { return m_Resource.Get(); }
 
 		inline operator ID3D12Resource* () { return m_Resource.Get(); }

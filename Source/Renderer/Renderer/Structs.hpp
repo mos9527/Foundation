@@ -1,4 +1,5 @@
-#pragma once
+#ifndef HLSL_CPP_STRUCTS
+#define HLSL_CPP_STRUCTS
 #ifdef __cplusplus
 #include "../../pch.hpp"
 #endif
@@ -25,6 +26,8 @@ struct meshlet
 };
 struct GeometryGPULod
 {
+    uint index_offset;
+    uint index_count;
     uint meshlet_offset;
     uint meshlet_bound_offset;
     uint meshlet_vertices_offset;
@@ -55,7 +58,18 @@ struct InstanceData {
 	uint geometry_index;
 	uint material_index;
 
-	float3 obb_center;
-	float3 obb_extends;
+    float4 aabb_sphere_center_radius;
 	matrix transform;
 };
+
+struct CameraData {
+    float4 position;
+    float4 direction;
+    float4 FovAspectNearZFarZ;
+    float4 clipPlanes[6];
+
+    matrix view;
+    matrix projection;
+    matrix viewProjection;
+};
+#endif

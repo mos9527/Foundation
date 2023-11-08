@@ -1,10 +1,10 @@
 #include "SceneGraph.hpp"
-void SceneGraph::load_from_aiScene(RHI::Device* device, RHI::CommandList* cmdList, const aiScene* scene) {
+void SceneGraph::load_from_aiScene(RHI::Device* device, RHI::CommandList* cmdList, RHI::DescriptorHeap* storageHeap, const aiScene* scene) {
 	// loading meshes
 	std::unordered_map<uint, entt::entity> mesh_mapping;
 	for (UINT i = 0; i < scene->mNumMeshes; i++) {
 		IO::mesh_static mesh = IO::load_static_mesh(scene->mMeshes[i]);
-		auto entity = geometry_manager.LoadMesh(device, cmdList, mesh);
+		auto entity = geometry_manager.LoadMesh(device, cmdList, storageHeap, mesh);
 		registry.get<Geometry>(entity).name = scene->mMeshes[i]->mName.C_Str();
 		mesh_mapping[i] = entity;
 	}

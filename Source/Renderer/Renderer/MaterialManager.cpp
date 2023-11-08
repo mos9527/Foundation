@@ -1,6 +1,6 @@
 #include "MaterialManager.hpp"
 
-entt::entity MaterialManager::LoadTexture(RHI::Device* device, RHI::CommandList* cmdList, RHI::DescriptorHeap* destHeap, IO::bitmap8bpp& bmp) {
+entt::entity MaterialManager::LoadTexture(RHI::Device* device, RHI::CommandList* cmdList, RHI::DescriptorHeap* storageHeap, IO::bitmap8bpp& bmp) {
 	RHI::SubresourceData subresource{
 		.pSysMem = bmp.data,
 		.rowPitch = bmp.width * 4u,
