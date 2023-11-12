@@ -1,6 +1,5 @@
 #pragma once
 #include "../Common.hpp"
-#include "D3D12Swapchain.hpp"
 #include "D3D12CommandQueue.hpp"
 #include "D3D12DescriptorHeap.hpp"
 #include "D3D12Texture.hpp"
@@ -10,10 +9,12 @@
 #include "D3D12CommandSignature.hpp"
 
 namespace RHI {
+	class Device;
 	void LogDeviceInformation(ID3D12Device* device);
 	void LogAdapterInformation(IDXGIAdapter1* adapter);
 	void LogD3D12MABudget(D3D12MA::Allocator* allocator);
 	void LogD3D12MAPoolStatistics(D3D12MA::Pool* pool);
+	void CHECK_DEVICE_REMOVAL(Device* device, HRESULT hr);
 	class Device : public RHIObject {
 	public:
 		struct DeviceDesc {
@@ -58,4 +59,5 @@ namespace RHI {
 		std::vector<std::shared_ptr<Buffer>> m_IntermediateBuffers;
 		std::vector<std::unique_ptr<CommandSignature>> m_CommandSignatures;
 	};
+	
 }

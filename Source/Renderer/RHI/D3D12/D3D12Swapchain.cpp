@@ -42,15 +42,16 @@ namespace RHI {
             m_BackbufferRTVs.push_back(std::move(desc));
         }
     }
-    void Swapchain::Present(bool vsync) {
-        CHECK_HR(m_Swapchain->Present(vsync, 0));
+    void Swapchain::Present(Device* device, bool vsync) {
+        HRESULT hr = m_Swapchain->Present(vsync, 0);
+        CHECK_DEVICE_REMOVAL(device, hr);
         nBackbufferIndex = m_Swapchain->GetCurrentBackBufferIndex();
     }    
-    void Swapchain::PresentAndMoveToNextFrame(CommandQueue* signalQueue, bool vsync) {
+    void Swapchain::PresentAndMoveToNextFrame(Device* device, CommandQueue* signalQueue, bool vsync) {
         // Signal after this command queue is executed, i.e. this backbuffer is available again
         signalQueue->Signal(m_FrameFence.get(), nFenceValues[nBackbufferIndex]);
         // Flip to the next BB for our next command list
-        Present(vsync);
+        Present(device, vsync);
         // Wait for the next BB to be ready
         m_FrameFence->Wait(nFenceValues[nBackbufferIndex]);
         // Increment the fence value which should be monotonously increasing upon any backbuffers' completion    

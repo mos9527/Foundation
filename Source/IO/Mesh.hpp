@@ -8,8 +8,7 @@
 namespace IO {
 	typedef aiScene scene_t;
 	typedef meshopt_Meshlet meshlet;
-	typedef meshopt_Bounds meshlet_bound;		
-	struct meshlet_triangle_u32 { UINT V0 : 10, V1 : 10, V2 : 10, : 2; /* 3 8-bits packed into 32-bit bitfields */ };
+	typedef meshopt_Bounds meshlet_bound;	
 	struct mesh_lod {
 		std::vector<UINT> indices;
 		/* mesh shading */

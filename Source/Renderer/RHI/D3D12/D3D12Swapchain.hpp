@@ -14,7 +14,7 @@ namespace RHI {
 		std::vector<std::unique_ptr<Texture>> m_Backbuffers;
 		std::vector<std::unique_ptr<Descriptor>> m_BackbufferRTVs;
 		ComPtr<IDXGISwapChain3> m_Swapchain;
-		void Present(bool vsync);
+		void Present(Device* device, bool vsync);
 		void BindBackBuffers(Device* device);
 		void CreateRenderTargetViews(Device* device, DescriptorHeap* descHeap);
 	public:
@@ -33,7 +33,7 @@ namespace RHI {
 		inline auto GetCurrentBackbufferIndex() { return nBackbufferIndex; }
 
 		void Resize(Device* device, CommandQueue* cmdQueue, DescriptorHeap* descHeap, uint width, uint height);
-		void PresentAndMoveToNextFrame(CommandQueue* signalQueue, bool vsync);
+		void PresentAndMoveToNextFrame(Device* device, CommandQueue* signalQueue, bool vsync);
 
 		inline auto GetNativeSwapchain() { return m_Swapchain.Get(); }
 		inline operator IDXGISwapChain3* () { return m_Swapchain.Get(); }

@@ -55,6 +55,19 @@ public:
 			}
 		}
 		return graphT;
+	}	
+	std::unordered_map<vertex, uint> get_depths(std::vector<vertex>& topsorted, auto comp = std::max) {
+		std::unordered_map<vertex, uint> depths;
+		for (vertex& v : topsorted) {
+			for (vertex& next : graph[v]) {
+				depths[next] = comp(depth[next], depth[v] + 1);
+			}
+		}
+		return depths;
+	}
+	std::unordered_map<vertex, uint> get_depths(auto comp = std::max) {
+		auto topsorted = topological_sort();
+		return get_depths(topsorted, comp);
 	}
 	// all edeges within this graph. ordering is not guaranteed
 	std::vector<std::pair<vertex, vertex>> unordered_edges() {
@@ -79,6 +92,11 @@ public:
 		}
 		return true;
 	}
+	// reset
+	void reset() {
+		graph.clear();
+	}
+	table_type<tree_type> & get_graph() { return graph; }
 protected:
 	table_type<tree_type> graph;
 };

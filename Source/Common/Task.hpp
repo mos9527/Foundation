@@ -1,8 +1,20 @@
 #pragma once
 #include "../pch.hpp"
+/* functional utilties*/
+typedef std::function<void()> void_function_type;
+typedef std::shared_ptr<void_function_type> void_function_ptr_type;
+void_function_ptr_type make_function_ptr(auto func, auto&&... args) {
+	typedef decltype(func(args...)) return_type;
+	static_assert(std::is_void_v(return_type));
+	return std::make_shared<std::function<return_type()>>(std::bind(func, args...));
+}
 /* task typedefs */
 typedef std::packaged_task<void()> void_task_type;
 typedef std::shared_ptr<void_task_type> void_task_ptr_type;
+void_task_ptr_type make_task_ptr(auto func, auto&&... args) {
+	typedef decltype(func(args...)) return_type;	
+	return std::make_shared<std::packaged_task<return_type()>>(std::bind(func, args...));
+}
 /* task concepts */
 template<typename T> concept void_task_container = requires(T t) {
 	{ t.push(void_task_ptr_type()) };
@@ -22,7 +34,7 @@ public:
 	typedef _Tc container_type;
 	auto push(auto func, auto&&... args) {
 		typedef decltype(func(args...)) return_type;
-		auto task = std::make_shared<std::packaged_task<return_type()>>(std::bind(func, args...));
+		auto task = make_task_ptr(func, args...);
 		auto future = task->get_future();
 		tasks.push(std::make_shared<void_task_type>([task = std::move(task)]() { (*task)(); /* task dtor */ }));
 		/* task in this scope is no longer valid. ownership is now transfered to the smart pointer */

@@ -3,5 +3,7 @@ enum class Tag {
 	Root,
 	SceneNode,
 	Geometry,
-	Texture
+	Texture,
+	Material,
+	Buffer
 };

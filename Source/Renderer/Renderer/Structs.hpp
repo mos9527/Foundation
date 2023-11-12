@@ -2,55 +2,44 @@
 #define HLSL_CPP_STRUCTS
 #ifdef __cplusplus
 #include "../../pch.hpp"
+#pragma pack(push,1)
 #endif
 typedef uint meshlet_triangles_swizzled;
-struct meshlet_bounds_swizzled {
+struct meshlet
+{    
+    uint vertex_offset;
+    uint vertex_count;
+    
+    uint triangle_offset;
+    uint triangle_count;
+
     /* bounding sphere, useful for frustum and occlusion culling */
     float center[3];
     float radius;
 
     /* normal cone, useful for backface culling */
     float cone_apex[3];
-    float cone_axis[3];
-    float cone_cutoff; /* = cos(angle/2) */
+    uint cone_axis_cutoff;
 };
-struct meshlet
-{
-    /* offsets within meshlet_vertices and meshlet_triangles arrays with meshlet data */
-    uint vertex_offset;
-    uint triangle_offset;
-
-    /* number of vertices and triangles used in the meshlet; data is stored in consecutive range defined by offset and count */
-    uint vertex_count;
-    uint triangle_count;
-};
-struct GeometryGPULod
+struct geometry_lod
 {
     uint index_offset;
     uint index_count;
     uint meshlet_offset;
-    uint meshlet_bound_offset;
-    uint meshlet_vertices_offset;
-    uint meshlet_triangles_offset;
     uint meshlet_count;
 };
-struct GeometryData
-{    
-    uint heap_index;
+struct vertex_static {
+    float3 position;
+    float3 normal;
+    float3 tangent;
+    float2 uv;
+};
+struct GeometryBufferOffsets
+{
+    uint vertex_offset;
+    uint vertex_count;
 
-    uint position_offset;
-    uint position_count;
-
-    uint normal_offset;
-    uint normal_count;
-
-    uint tangent_offset;
-    uint tangent_count;
-
-    uint uv_offset;
-    uint uv_count;
-
-    GeometryGPULod lods[LOD_COUNT];
+    geometry_lod lods[LOD_COUNT];
 };
 
 struct InstanceData {
@@ -72,4 +61,7 @@ struct CameraData {
     matrix projection;
     matrix viewProjection;
 };
+#ifdef __cplusplus
+#pragma pack(pop)
+#endif
 #endif

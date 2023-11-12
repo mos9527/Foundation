@@ -101,15 +101,38 @@ namespace RHI {
         LOG(FATAL) << "No available D3D12 hardware found!";    
         return {};
     }
+    void CHECK_DEVICE_REMOVAL(Device* device, HRESULT hr) {
+        if (hr == DXGI_ERROR_DEVICE_REMOVED) {
+            auto pDevice = device->GetNativeDevice();
+#ifdef _DEBUG
+            ComPtr<ID3D12DeviceRemovedExtendedData1> pDred;
+            CHECK_HR(pDevice->QueryInterface(IID_PPV_ARGS(&pDred)));
+
+            D3D12_DRED_AUTO_BREADCRUMBS_OUTPUT1 DredAutoBreadcrumbsOutput;
+            D3D12_DRED_PAGE_FAULT_OUTPUT DredPageFaultOutput;
+            CHECK_HR(pDred->GetAutoBreadcrumbsOutput1(&DredAutoBreadcrumbsOutput));
+            CHECK_HR(pDred->GetPageFaultAllocationOutput(&DredPageFaultOutput));
+            __debugbreak();
+#endif            
+            LOG(ERROR) << "Device removal (TDR) has been detected. Reason:";
+            LOG_SYSRESULT(pDevice->GetDeviceRemovedReason());            
+            return;
+        } 
+        CHECK_HR(hr);
+    }
     Device::Device(DeviceDesc cfg) {
 #ifdef _DEBUG    
         ComPtr<ID3D12Debug> debugInterface;
         CHECK_HR(D3D12GetDebugInterface(IID_PPV_ARGS(&debugInterface)));
         debugInterface->EnableDebugLayer();
-#endif
-
-#ifdef _DEBUG
         CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&m_Factory));
+
+        ComPtr<ID3D12DeviceRemovedExtendedDataSettings1> pDredSettings;
+        CHECK_HR(D3D12GetDebugInterface(IID_PPV_ARGS(&pDredSettings)));
+
+        // Turn on AutoBreadcrumbs and Page Fault reporting
+        pDredSettings->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+        pDredSettings->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
 #else
         CreateDXGIFactory2(NULL, IID_PPV_ARGS(&dxgiFactory));
 #endif
@@ -123,8 +146,11 @@ namespace RHI {
             // create the command queues
             m_CommandQueues.resize(+NUM_TYPES);
             m_CommandQueues[+Direct] = std::make_unique<CommandQueue>(this, Direct);
+            m_CommandQueues[+Direct]->SetName(L"Direct Command Queue");
             m_CommandQueues[+Copy] = std::make_unique<CommandQueue>(this, Copy);
+            m_CommandQueues[+Copy]->SetName(L"Copy Command Queue");
             m_CommandQueues[+Compute] = std::make_unique<CommandQueue>(this, Compute);
+            m_CommandQueues[+Compute]->SetName(L"Compute Command Queue");
         }
         {
             using enum IndirectArgumentType;
@@ -162,6 +188,9 @@ namespace RHI {
         return m_IntermediateBuffers.back();
     }
     void Device::FlushIntermediateBuffers() {
+        for (auto& buffer : m_IntermediateBuffers) {
+            CHECK(buffer.use_count() == 1); // ensure intermediate buffers are un-refed before release
+        }
         m_IntermediateBuffers.clear();
     }
     Device::~Device() {
@@ -192,6 +221,7 @@ namespace RHI {
     void Device::CreateDepthStencilView(Texture* texture, Descriptor* desciptor) {
         D3D12_DEPTH_STENCIL_VIEW_DESC desc{};
         desc.Format = DXGI_FORMAT_D32_FLOAT;
+        desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
         desc.Texture2D.MipSlice = 0;
         m_Device->CreateDepthStencilView(*texture, &desc, desciptor->get_cpu_handle());
     }

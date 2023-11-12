@@ -21,14 +21,16 @@ namespace RHI {
 	}
 
 	void Buffer::SetState(CommandList* cmdList, ResourceState state, uint subresource) {
-		auto const transistion = CD3DX12_RESOURCE_BARRIER::Transition(
-			m_Resource.Get(),
-			(D3D12_RESOURCE_STATES)m_State,
-			(D3D12_RESOURCE_STATES)state,
-			subresource
-		);
-		cmdList->GetNativeCommandList()->ResourceBarrier(1, &transistion);
-		m_State = state;
+		if (m_State != state) {
+			auto const transistion = CD3DX12_RESOURCE_BARRIER::Transition(
+				m_Resource.Get(),
+				(D3D12_RESOURCE_STATES)m_State,
+				(D3D12_RESOURCE_STATES)state,
+				subresource
+			);
+			cmdList->GetNativeCommandList()->ResourceBarrier(1, &transistion);
+			m_State = state;
+		}
 	}
 
 	void Buffer::Map() {

@@ -149,6 +149,7 @@
     <ClCompile Include="Source\Main.cpp" />
     <ClCompile Include="Source\pch.cpp" />
     <ClCompile Include="Source\Renderer\Renderer\Renderer.cpp" />
+    <ClCompile Include="Source\Renderer\Renderer\RenderPass\RenderGraph.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Buffer.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12CommandList.cpp" />
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12CommandQueue.cpp" />
@@ -170,6 +171,8 @@
     <ClInclude Include="Dependencies\stb_image.h" />
     <ClInclude Include="Source\Common\Graph.hpp" />
     <ClInclude Include="Source\Common\Task.hpp" />
+    <ClInclude Include="Source\Renderer\Renderer\RenderPass\CullInstance.hpp" />
+    <ClInclude Include="Source\Renderer\Renderer\RenderPass\RenderGraph.hpp" />
     <ClInclude Include="Source\Renderer\Renderer\Structs.hpp" />
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12PipelineState.hpp" />
     <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12RootSignature.hpp" />

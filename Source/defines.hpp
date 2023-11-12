@@ -12,11 +12,14 @@
 #define TEX_MAX_NUM_TEXS 0xffff
 #define DISPATCH_GROUP_COUNT 0xffff
 
+#define VERTEX_TYPE_STATIC 0
+#define VERTEX_TYPE_SKINNED 1
+
 #define MESHLET_MAX_VERTICES 64u // https://developer.nvidia.com/blog/introduction-turing-mecacsh-shaders/
 #define MESHLET_MAX_PRIMITIVES 124u // 4b aligned
 
 #define LOD_COUNT 8
-#define LOD_GET_RATIO(lod) ((float)lod / LOD_COUNT)
+#define LOD_GET_RATIO(lod) ((float)(LOD_COUNT - lod) / LOD_COUNT)
 
 #define THREADS_PER_WAVE 32 // Assumes availability of wave size of 32 threads
 // Pre-defined threadgroup sizes for AS & MS stages

@@ -141,13 +141,16 @@ namespace RHI {
 			m_Resource->SetName((const wchar_t*)name.c_str());
 			if (m_Allocation.Get()) m_Allocation->SetName((const wchar_t*)name.c_str());
 		}
-		
+		auto& RefStorageDescriptorPtr() { return m_storageDescriptor; }
+		auto& RefBoundDescriptorPtr() { return m_boundDescriptor; }
 	protected:
 		using RHIObject::m_Name;
 		const BufferDesc m_Desc;
 		ResourceState m_State{ ResourceState::Common };
 		ComPtr<ID3D12Resource> m_Resource;
 		ComPtr<D3D12MA::Allocation> m_Allocation;
+		std::unique_ptr<Descriptor> m_storageDescriptor, m_boundDescriptor;
+
 		void* pMappedData{ nullptr };
 	};
 }

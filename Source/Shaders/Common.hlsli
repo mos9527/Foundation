@@ -27,11 +27,7 @@ inline uint3 triangles_unpack(uint primitive)
 
 struct AS2MSPayload
 {
-    uint s_instances[THREADS_PER_WAVE]; // splat instance lists for each LOD
-    uint s_meshletGroupOffsets[LOD_COUNT];
-    // s_lod* indexes into s_instances
-    uint s_lodCounts[LOD_COUNT]; // No. of instances in each LOD 
-    uint s_lodOffsets[LOD_COUNT];
+    uint indices[THREADS_PER_WAVE];
 };
 
 struct Vertex

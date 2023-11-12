@@ -10,6 +10,7 @@ namespace RHI {
 		const D3D12_RESOURCE_DESC resourceDesc = desc;
 		D3D12_CLEAR_VALUE clearValue = desc.clearValue;		
 		auto allocator = device->GetAllocator();		
+		clearValue.Format = ResourceFormatToD3DFormat(desc.format);
 		CHECK_HR(allocator->CreateResource(
 			&allocationDesc,
 			&resourceDesc,
