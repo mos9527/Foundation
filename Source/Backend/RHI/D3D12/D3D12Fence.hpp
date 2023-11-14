@@ -31,9 +31,9 @@ namespace RHI {
 		Fence* fence;
 		size_t value;
 		SyncFence(Fence* fence, size_t value) : fence(fence), value(value) {};
-		inline bool IsCompleted() { return fence->IsCompleted(value); }
+		inline bool IsCompleted() { return fence && fence->IsCompleted(value); }
 		inline size_t GetValue() { return value; }
-		inline void Wait() { fence->Wait(value); }
+		inline void Wait() { if (fence) fence->Wait(value); }
 	};
 
 	template<Releaseable T> class DeferredSyncedReleaseQueue {

@@ -6,9 +6,21 @@
 namespace RHI {
 	class Device;
 	class CommandList;
-	class Buffer : public DeviceChild {
+	struct Subresource {
+		const void* pSysMem;
+		uint rowPitch;
+		uint slicePitch;
+		operator const D3D12_SUBRESOURCE_DATA() const {
+			return D3D12_SUBRESOURCE_DATA{
+				.pData = pSysMem,
+				.RowPitch = rowPitch,
+				.SlicePitch = slicePitch
+			};
+		}
+	};	
+	class Resource : public DeviceChild {
 	public:
-		struct BufferDesc {
+		struct ResourceDesc {
 			ClearValue clearValue{};
 			ResourceUsage usage{ ResourceUsage::Default };
 			ResourceFormat format{ ResourceFormat::Unknown };
@@ -24,8 +36,8 @@ namespace RHI {
 			TextureLayout layout{ TextureLayout::Unknown };
 			ResourceFlags flags{ ResourceFlags::None };
 			ResourceState initialState{ ResourceState::Common };
-			ResourcePoolType poolType{ ResourcePoolType::Default };
-			static const BufferDesc GetGenericBufferDesc(
+
+			static const ResourceDesc GetGenericBufferDesc(
 				UINT64 size, 
 				UINT64 stride = 0, /* Set to 0 for Raw Buffers. Non-zero values indicates a Structured Buffer */
 				ResourceState initialState = ResourceState::CopySource,
@@ -33,7 +45,7 @@ namespace RHI {
 				ResourceFlags flags = ResourceFlags::None,
 				ResourcePoolType poolType = ResourcePoolType::Default
 			) {
-				return BufferDesc{
+				return ResourceDesc{
 					.usage = usage,
 					.format = ResourceFormat::Unknown,
 					.dimension = ResourceDimension::Buffer,
@@ -46,11 +58,10 @@ namespace RHI {
 					.sampleQuality = 0,
 					.layout = TextureLayout::RowMajor,
 					.flags = flags,
-					.initialState = initialState,
-					.poolType = poolType
+					.initialState = initialState			
 				};
 			}
-			static const BufferDesc GetTextureBufferDesc(
+			static const ResourceDesc GetTextureBufferDesc(
 				ResourceFormat format,
 				ResourceDimension dimension,
 				UINT64 width,
@@ -65,7 +76,7 @@ namespace RHI {
 				ResourcePoolType poolType = ResourcePoolType::Default,
 				ClearValue clearValue = ClearValue{}
 			) {
-				return BufferDesc{
+				return ResourceDesc{
 					.clearValue = clearValue,
 					.usage = usage,
 					.format = format,
@@ -78,8 +89,7 @@ namespace RHI {
 					.sampleQuality = sampleQuality,
 					.layout = TextureLayout::Unknown,
 					.flags = flags,
-					.initialState = initialState,
-					.poolType = poolType
+					.initialState = initialState					
 				};
 			}
 			operator const D3D12_RESOURCE_DESC() const {
@@ -108,28 +118,28 @@ namespace RHI {
 			}
 		};
 		// creation w/ exisiting d3d12 buffer. i.e. a backbuffer.
-		Buffer(Device* device, BufferDesc const& desc, ComPtr<ID3D12Resource>&& texture) : DeviceChild(device), m_Desc(desc),m_Resource(texture) {};
+		Resource(Device* device, ResourceDesc const& desc, ComPtr<ID3D12Resource>&& texture) : DeviceChild(device), m_Desc(desc),m_Resource(texture) {};
 		// creation w/o any initial data
-		Buffer(Device* device, BufferDesc const& desc);
+		Resource(Device* device, ResourceDesc const& desc);
 		// creation w/ initial data
-		Buffer(Device* device, BufferDesc const& desc, const void* data, size_t size, size_t offset = 0LL);
-		~Buffer() = default;
-		inline BufferDesc const& GetDesc() { return m_Desc;  }
+		Resource(Device* device, ResourceDesc const& desc, const void* data, size_t size, size_t offset = 0LL);
+		~Resource() = default;
+		inline ResourceDesc const& GetDesc() { return m_Desc;  }
 		
 		inline ResourceState GetState() { return m_State; }
 		void SetState(CommandList* cmdList, ResourceState state, uint subresource = RESOURCE_BARRIER_ALL_SUBRESOURCES);
 		
 		inline auto GetGPUAddress() { return m_Resource->GetGPUVirtualAddress(); }
-		inline auto GetNativeBuffer() { return m_Resource.Get(); }
+		inline auto GetNativeResource() { return m_Resource.Get(); }
 
 		inline operator ID3D12Resource* () { return m_Resource.Get(); }
 		inline void Reset() { m_Resource.Reset(); }		
 
-		// Map and immediately update the buffer content (when usage is Upload & Readback)
-		void Update(const void* data, size_t size, size_t offset);
-		// Queues a copy from srcBuffer to this buffer on the command list
-		void QueueCopy(CommandList* cmdList, Buffer* srcBuffer, size_t srcOffset, size_t dstOffset, size_t size);		
+		/* Upload & Readback only! */
+		void Update(const void* data, size_t size, size_t offset);	
+		/* Upload & Readback only! */
 		void Map();
+		/* Upload & Readback only! */
 		void Unmap();		
 
 		inline auto const& GetName() { return m_Name; }
@@ -142,11 +152,20 @@ namespace RHI {
 	protected:
 		name_t m_Name;
 
-		const BufferDesc m_Desc;
+		const ResourceDesc m_Desc;
 		ResourceState m_State{ ResourceState::Common };
 		ComPtr<ID3D12Resource> m_Resource;
 		ComPtr<D3D12MA::Allocation> m_Allocation;	
 
 		void* pMappedData{ nullptr };
+	};
+	typedef Resource Buffer;
+	typedef Resource Texture;
+	struct DeferredDeleteResource {
+		std::unique_ptr<Resource> resource;
+		operator Resource* () { return resource.get(); }
+		void Release() {
+			resource.reset();
+		}
 	};
 }

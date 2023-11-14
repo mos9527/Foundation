@@ -145,78 +145,74 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Dependencies\D3D12MemoryAllocator\D3D12MemAlloc.cpp" />
-    <ClCompile Include="Source\IO\Image.cpp" />
-    <ClCompile Include="Source\Main.cpp" />
+    <ClCompile Include="Source\Backend\IO\Image.cpp" />
+    <ClCompile Include="Source\Frontend\Main.cpp" />
     <ClCompile Include="Source\pch.cpp" />
-    <ClCompile Include="Source\Renderer\Renderer\Renderer.cpp" />
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Buffer.cpp" />
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12CommandList.cpp" />
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12CommandQueue.cpp" />
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12CommandSignature.cpp" />
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12DescriptorHeap.cpp" />
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Device.cpp" />
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Fence.cpp" />
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12PipelineState.cpp" />
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12RootSignature.cpp" />
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Shader.cpp" />
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Swapchain.cpp" />
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Texture.cpp" />
-    <ClCompile Include="Source\Renderer\Renderer\SceneGraph\Geometry.cpp" />
-    <ClCompile Include="Source\Renderer\Renderer\SceneGraph\SceneGraph.cpp" />
+    <ClCompile Include="Source\Backend\Renderer\Renderer_\Renderer.cpp" />
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12Resource.cpp" />
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12CommandList.cpp" />
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12CommandQueue.cpp" />
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12CommandSignature.cpp" />
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12DescriptorHeap.cpp" />
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12Device.cpp" />
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12Fence.cpp" />
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12PipelineState.cpp" />
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12RootSignature.cpp" />
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12Shader.cpp" />
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12Swapchain.cpp" />
+    <ClCompile Include="Source\Backend\Renderer\Renderer_\SceneGraph\Geometry.cpp" />
+    <ClCompile Include="Source\Backend\Renderer\Renderer_\SceneGraph\SceneGraph.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Dependencies\D3D12MemoryAllocator\D3D12MemAlloc.h" />
     <ClInclude Include="Dependencies\stb_image.h" />
     <ClInclude Include="Source\Common\Graph.hpp" />
     <ClInclude Include="Source\Common\Task.hpp" />
-    <ClInclude Include="Source\Renderer\Renderer\RenderGraph\RenderGraph.hpp" />
-    <ClInclude Include="Source\Renderer\Renderer\Structs.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12PipelineState.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12RootSignature.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Shader.hpp" />
-    <ClInclude Include="Source\Renderer\Common.hpp" />
-    <ClInclude Include="Source\Renderer\Renderer\SceneGraph\Geometry.hpp" />
-    <ClInclude Include="Source\Renderer\Renderer\SceneGraph\SceneGraph.hpp" />
+    <ClInclude Include="Source\Backend\RHI\RenderGraph.hpp" />
+    <ClInclude Include="Source\Backend\Renderer\Renderer_\Structs.hpp" />
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12PipelineState.hpp" />
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12RootSignature.hpp" />
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12Shader.hpp" />
+    <ClInclude Include="Source\Backend\Renderer\Renderer_\SceneGraph\Geometry.hpp" />
+    <ClInclude Include="Source\Backend\Renderer\Renderer_\SceneGraph\SceneGraph.hpp" />
     <ClInclude Include="x64\Graveyard\Coroutine.hpp" />
-    <ClInclude Include="Source\IO\Image.hpp" />
-    <ClInclude Include="Source\IO\IO.hpp" />
-    <ClInclude Include="Source\IO\Mesh.hpp" />
+    <ClInclude Include="Source\Backend\IO\Image.hpp" />
+    <ClInclude Include="Source\Backend\IO\IO.hpp" />
+    <ClInclude Include="Source\Backend\IO\Mesh.hpp" />
     <ClInclude Include="Source\pch.hpp" />
     <ClInclude Include="Source\Common\Helpers.hpp" />
-    <ClInclude Include="Source\Renderer\Renderer\Renderer.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12CommandSignature.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Buffer.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12CommandList.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12CommandQueue.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12DescriptorHeap.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Device.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Fence.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Pch.h" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Types.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Swapchain.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Texture.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\RHI.hpp" />
-    <ClInclude Include="Source\Renderer\RHI\Common.hpp" />
-    <ClInclude Include="Source\Win32\BaseWindow.hpp" />
-    <ClInclude Include="Source\Win32\ViewportWindow.hpp" />
+    <ClInclude Include="Source\Backend\Renderer\Renderer_\Renderer.hpp" />
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12CommandSignature.hpp" />
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12Resource.hpp" />
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12CommandList.hpp" />
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12CommandQueue.hpp" />
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12DescriptorHeap.hpp" />
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12Device.hpp" />
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12Fence.hpp" />
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12Pch.h" />
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12Types.hpp" />
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12Swapchain.hpp" />
+    <ClInclude Include="Source\Backend\RHI\RHI.hpp" />
+    <ClInclude Include="Source\Frontend\Win32\BaseWindow.hpp" />
+    <ClInclude Include="Source\Frontend\ViewportWindow.hpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitattributes" />
     <None Include=".gitignore" />
     <None Include="Source\defines.hpp" />
-    <None Include="Source\Shaders\Common.hlsli" />
+    <None Include="Source\Backend\Shaders\Common.hlsli" />
     <None Include="vcpkg.json" />
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Source\Shaders\Mesh\MeshletAS.hlsl">
+    <FxCompile Include="Source\Backend\Shaders\Mesh\MeshletAS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Amplification</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.6</ShaderModel>
     </FxCompile>
-    <FxCompile Include="Source\Shaders\Mesh\MeshletMS.hlsl">
+    <FxCompile Include="Source\Backend\Shaders\Mesh\MeshletMS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Mesh</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.6</ShaderModel>
     </FxCompile>
-    <FxCompile Include="Source\Shaders\Mesh\MeshletPS.hlsl">
+    <FxCompile Include="Source\Backend\Shaders\Mesh\MeshletPS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.6</ShaderModel>
     </FxCompile>

@@ -1,4 +1,5 @@
 #include "D3D12CommandList.hpp"
+#include "D3D12Resource.hpp"
 #include "D3D12Device.hpp"
 namespace RHI {
 	CommandList::CommandList(Device* device, CommandListType type, uint numAllocators) : DeviceChild(device), m_Type(type) {
@@ -12,4 +13,7 @@ namespace RHI {
 		// Closed by default
 		End();
 	}
+	void CommandList::CopyBufferRegion(Resource* src, Resource* dst, size_t srcOffset, size_t dstOffset, size_t size) {
+		GetNativeCommandList()->CopyBufferRegion(*dst, dstOffset, *src, srcOffset, size);
+	};
 }

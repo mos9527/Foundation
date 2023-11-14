@@ -15,129 +15,69 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Source\Main.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Device.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Source\pch.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Swapchain.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12CommandQueue.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12DescriptorHeap.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Texture.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12CommandList.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Fence.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\Renderer\Renderer\Renderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Dependencies\D3D12MemoryAllocator\D3D12MemAlloc.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Buffer.cpp">
+    <ClCompile Include="Source\Backend\IO\Image.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\IO\Image.cpp">
+    <ClCompile Include="Source\Frontend\Main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12CommandSignature.cpp">
+    <ClCompile Include="Source\Backend\Renderer\Renderer_\Renderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12Shader.cpp">
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12Resource.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12RootSignature.cpp">
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12CommandList.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12PipelineState.cpp">
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12CommandQueue.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Renderer\Renderer\SceneGraph\Geometry.cpp">
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12CommandSignature.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Renderer\Renderer\SceneGraph\SceneGraph.cpp">
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12DescriptorHeap.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12Device.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12Fence.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12PipelineState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12RootSignature.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12Shader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Backend\RHI\D3D12\D3D12Swapchain.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Backend\Renderer\Renderer_\SceneGraph\Geometry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Backend\Renderer\Renderer_\SceneGraph\SceneGraph.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Source\Renderer\RHI\Common.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Source\pch.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Common\Helpers.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Device.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Pch.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Win32\BaseWindow.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Swapchain.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12CommandQueue.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\RHI.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12DescriptorHeap.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Types.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Texture.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12CommandList.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Fence.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\Renderer\Renderer.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Win32\ViewportWindow.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Dependencies\D3D12MemoryAllocator\D3D12MemAlloc.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Buffer.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\IO\Image.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\IO\IO.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\IO\Mesh.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12CommandSignature.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="x64\Graveyard\Coroutine.hpp">
@@ -149,31 +89,79 @@
     <ClInclude Include="Source\Common\Task.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12Shader.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12PipelineState.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\RHI\D3D12\D3D12RootSignature.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Source\Common\Graph.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Renderer\Common.hpp">
+    <ClInclude Include="Source\Backend\RHI\RenderGraph.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Renderer\Renderer\SceneGraph\Geometry.hpp">
+    <ClInclude Include="Source\Backend\Renderer\Renderer_\Structs.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Renderer\Renderer\SceneGraph\SceneGraph.hpp">
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12PipelineState.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Renderer\Renderer\Structs.hpp">
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12RootSignature.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Renderer\Renderer\RenderGraph\RenderGraph.hpp">
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12Shader.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\Renderer\Renderer_\SceneGraph\Geometry.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\Renderer\Renderer_\SceneGraph\SceneGraph.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\IO\Image.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\IO\IO.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\IO\Mesh.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\Renderer\Renderer_\Renderer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12CommandSignature.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12Resource.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12CommandList.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12CommandQueue.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12DescriptorHeap.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12Device.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12Fence.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12Pch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12Types.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12Swapchain.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\RHI\RHI.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Frontend\Win32\BaseWindow.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Frontend\ViewportWindow.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -183,12 +171,12 @@
     </None>
     <None Include=".gitignore" />
     <None Include=".gitattributes" />
-    <None Include="Source\Shaders\Common.hlsli" />
     <None Include="Source\defines.hpp" />
+    <None Include="Source\Backend\Shaders\Common.hlsli" />
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Source\Shaders\Mesh\MeshletAS.hlsl" />
-    <FxCompile Include="Source\Shaders\Mesh\MeshletMS.hlsl" />
-    <FxCompile Include="Source\Shaders\Mesh\MeshletPS.hlsl" />
+    <FxCompile Include="Source\Backend\Shaders\Mesh\MeshletAS.hlsl" />
+    <FxCompile Include="Source\Backend\Shaders\Mesh\MeshletMS.hlsl" />
+    <FxCompile Include="Source\Backend\Shaders\Mesh\MeshletPS.hlsl" />
   </ItemGroup>
 </Project>

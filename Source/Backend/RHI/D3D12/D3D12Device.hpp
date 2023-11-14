@@ -1,7 +1,7 @@
 #pragma once
 #include "D3D12CommandQueue.hpp"
 #include "D3D12DescriptorHeap.hpp"
-#include "D3D12Texture.hpp"
+#include "D3D12Resource.hpp"
 #include "D3D12Types.hpp"
 #include "D3D12CommandList.hpp"
 #include "D3D12Fence.hpp"
@@ -23,13 +23,13 @@ namespace RHI {
 		Device(const Device&&) = delete;
 		~Device();
 
-		inline auto GetDXGIFactory() { return m_Factory; }
-		inline auto GetNativeDevice() { return m_Device; } // TODO : Reduce the usage of GetNative*()
+		inline auto GetDXGIFactory() { return m_Factory.Get(); }
+		inline auto GetNativeDevice() { return m_Device.Get(); } // TODO : Reduce the usage of GetNative*()
 		
-		Descriptor CreateRawBufferShaderResourceView(Buffer* buffer);
-		Descriptor CreateStructedBufferShaderResourceView(Buffer* buffer);
+		Descriptor CreateRawBufferShaderResourceView(Resource* buffer);
+		Descriptor CreateStructedBufferShaderResourceView(Resource* buffer);
 		Descriptor CreateDepthStencilView(Texture* texture);
-		Descriptor CreateConstantBufferView(Buffer* buffer);
+		Descriptor CreateConstantBufferView(Resource* buffer);
 
 		CommandQueue* GetCommandQueue(CommandListType type) {
 			using CommandListType;
@@ -54,7 +54,7 @@ namespace RHI {
 			if (type == RTV)return m_RTVHeap.get();
 			if (type == SAMPLER)return m_SamplerHeap.get();
 			return nullptr;
-		}
+		}		
 
 		template<DescriptorHeapType type> DescriptorHeap* GetDescriptorHeap() {
 			using DescriptorHeapType;
@@ -65,6 +65,11 @@ namespace RHI {
 			return nullptr;
 		}
 
+		void BeginUpload(CommandList* cmd);
+		void Upload(Resource* dst, Subresource* data, uint count);
+		void Upload(Resource* dst, void* data, size_t sizeInBytes);
+		void CommitUpload();
+
 		inline auto GetAllocator() { return m_Allocator.Get(); }
 		inline operator ID3D12Device* () { return m_Device.Get(); }
 
@@ -73,6 +78,20 @@ namespace RHI {
 		ComPtr<ID3D12Device5> m_Device;
 		ComPtr<IDXGIFactory6> m_Factory;
 		ComPtr<D3D12MA::Allocator> m_Allocator;		
+		DeferredSyncedReleaseQueue<DeferredDeleteDescriptor> m_DeferredDeleteDescriptors;
+
+		struct UploadContext {
+			CommandList* cmd;
+			std::vector<std::unique_ptr<Resource>> intermediates;
+			SyncFence uploadFence;
+
+			void Open(CommandList* _cmd) { cmd = _cmd; Clean(); }
+			bool IsOpen() { return cmd != nullptr; }
+			void RecordIntermediate(std::unique_ptr<Resource>&& intermediate) { intermediates.push_back(intermediate); }
+			void UploadAndClose() { uploadFence = cmd->Execute(); cmd = nullptr; }
+			void Clean() { if (uploadFence.IsCompleted()) intermediates.clear(); }
+		} m_UploadContext;
+		
 		std::unique_ptr<CommandQueue> 
 			m_DirectQueue, 
 			m_CopyQueue, 

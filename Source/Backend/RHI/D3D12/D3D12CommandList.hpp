@@ -21,6 +21,9 @@ namespace RHI {
 			CHECK_HR(m_CommandList->Reset(m_CommandAllocators[allocatorIndex].Get(), nullptr));
 		};
 		inline void End() { CHECK_HR(m_CommandList->Close()); };
+
+		void CopyBufferRegion(Resource* src, Resource* dst, size_t srcOffset, size_t dstOffset, size_t size);
+
 		inline void ExecuteBundle(CommandList* bundle) { m_CommandList->ExecuteBundle(*bundle); }
 		inline auto Execute() { return m_Device->GetCommandQueue(m_Type)->Execute(this); }
 		inline auto GetNativeCommandList() { return m_CommandList.Get(); }

@@ -180,7 +180,7 @@ namespace RHI {
         m_Factory->Release();        
     }
     /* Helper functions */
-    Descriptor Device::CreateRawBufferShaderResourceView(Buffer* buffer) {
+    Descriptor Device::CreateRawBufferShaderResourceView(Resource* buffer) {
         CHECK(buffer->GetDesc().isRawBuffer());
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -193,7 +193,7 @@ namespace RHI {
         m_Device->CreateShaderResourceView(*buffer, &srvDesc, desc.get_cpu_handle());
         return desc;
     }
-    Descriptor Device::CreateStructedBufferShaderResourceView(Buffer* buffer) {
+    Descriptor Device::CreateStructedBufferShaderResourceView(Resource* buffer) {
         CHECK(!buffer->GetDesc().isRawBuffer());
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -214,7 +214,7 @@ namespace RHI {
         m_Device->CreateDepthStencilView(*texture, &desc, dsvDesc.get_cpu_handle());
         return dsvDesc;
     }
-    Descriptor Device::CreateConstantBufferView(Buffer* buffer) {
+    Descriptor Device::CreateConstantBufferView(Resource* buffer) {
         D3D12_CONSTANT_BUFFER_VIEW_DESC desc{};
         desc.BufferLocation = buffer->GetGPUAddress();
         desc.SizeInBytes = buffer->GetDesc().sizeInBytes();
@@ -222,4 +222,42 @@ namespace RHI {
         m_Device->CreateConstantBufferView(&desc, cbvDesc.get_cpu_handle());
         return cbvDesc;
     };
+    // Uploading
+    // These `Upload()` will require some sort of intermediate buffers to work.
+    // Thus we manage it in Device. The intermediates are GCed per upload attempts
+    // and are only deleted when they are definiently no longer used.
+    void Device::BeginUpload(CommandList* cmd) {
+       m_UploadContext.Open(cmd);
+    }
+    void Device::Upload(Resource* dst, Subresource* data, uint count) {
+        CHECK(m_UploadContext.IsOpen());
+        CHECK_ENUM_FLAG(dst->GetState() & ResourceState::CopyDest);
+        const D3D12_RESOURCE_DESC resourceDesc = dst->GetDesc();
+        size_t intermediateSize;
+        m_Device->GetCopyableFootprints(
+            &resourceDesc, 0, count, 0, NULL, NULL, NULL, &intermediateSize
+        );
+        auto bufDesc = Resource::ResourceDesc::GetGenericBufferDesc(intermediateSize);        
+        auto intermediate = std::make_unique<Resource>(this, bufDesc);
+        std::vector<D3D12_SUBRESOURCE_DATA> arrData;
+        for (uint i = 0; i < count; i++) arrData.push_back(data[i]);
+        UpdateSubresources(
+            *m_UploadContext.cmd,
+            *dst,
+            *intermediate,
+            0, 0, count, arrData.data()
+        );
+        m_UploadContext.RecordIntermediate(std::move(intermediate));
+    };
+    void Device::Upload(Resource* dst, void* data, size_t sizeInBytes) {
+        Subresource subresource{
+            .pSysMem = data,
+            .rowPitch = sizeInBytes,
+            .slicePitch = sizeInBytes
+        };
+        Upload(dst, data, sizeInBytes);
+    }
+    void Device::CommitUpload() {        
+        m_UploadContext.UploadAndClose();
+    }
 }
