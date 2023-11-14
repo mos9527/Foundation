@@ -13,6 +13,7 @@ typedef void_function_ptr_type rg_function_ptr;
 
 struct rg_resource {
 	enum rg_resource_types {
+		Unknown,
 		Resource,
 		ResourceViewSRV,
 		ResourceViewUAV,
@@ -28,6 +29,13 @@ struct rg_resource {
 	rg_resource_flags flag;
 	entt::entity resource;
 	inline operator entt::entity() const { return resource; }
+
+	template<typename T> constexpr rg_resource_types get_resource_type() { return Unknown;  }
+	template<> constexpr rg_resource_types get_resource_type<RHI::Resource>() { return Resource; }
+	template<> constexpr rg_resource_types get_resource_type<RHI::ShaderResourceView>() { return ResourceViewSRV; }
+	template<> constexpr rg_resource_types get_resource_type<RHI::UnorderedAccessView>() { return ResourceViewUAV; }
+	template<> constexpr rg_resource_types get_resource_type<RHI::RenderTargetView>() { return ResourceViewRTV; }
+	template<> constexpr rg_resource_types get_resource_type<RHI::DepthStencilView>() { return ResourceViewDSV; }
 };
 template<> struct std::hash<rg_resource> {
 	inline entt::entity operator()(const rg_resource& resource) const { return resource; }
@@ -73,15 +81,13 @@ public:
 	bool writes_to(rg_resource resource) { return writes.contains(resource); }
 };
 
-typedef RHI::Resource* rg_imported_resource;
-typedef RHI::Resource rg_created_resource;
-
 class RenderGraph : DAG<entt::entity> {
 	RHI::Device* device;
 	entt::registry registry;
 	
 	std::vector<entt::entity> rnd_passes;
 	std::vector<std::vector<entt::entity>> rg_layers;
+	
 public:	
 	RenderGraph(RHI::Device* device) : device(device) {};
 	RenderPass& add_pass() {		
@@ -90,21 +96,40 @@ public:
 		rnd_passes.push_back(rg_entity);
 		return registry.get<RenderPass>(rg_entity);
 	}
-	template<typename T> rg_resource create(auto... desc) {
-		static_assert(false || "Not implemented.");
-	};	
-	template<> rg_resource create<RHI::Resource>(RHI::Resource::ResourceDesc desc);
-	template<> rg_resource create<RHI::ResourceView>(RHI::Resource* resource);
 
-	template<typename T> rg_resource reference(auto... resource) {
-		static_assert(false || "Not implemented.");
+	template<typename T> rg_resource create(auto... args) {
+		static_assert(rg_resource::get_resource_type<T>() != rg_resource::Unknown);
+		auto entity = registry.create();
+		registry.emplace<T>(entity, args...);
+		return rg_resource{
+			.version = 0,
+			.type = rg_resource::get_resource_type<T>(),
+			.flag = rg_resource::Created,
+			.resource = entity
+		};
 	};
-	template<> rg_resource reference<RHI::Resource>(RHI::Resource* resource);
+
+	template<typename T> rg_resource reference(T* resource) {
+		static_assert(rg_resource::get_resource_type<T>() != rg_resource::Unknown);
+		auto entity = registry.create();
+		registry.emplace<T*>(entity, resource);
+		return rg_resource{
+			.version = 0,
+			.type = rg_resource::get_resource_type<T>(),
+			.flag = rg_resource::Imported,
+			.resource = entity
+		};
+	};
 
 	template<typename T> T* resolve(rg_resource resource) { 
-		static_assert(false || "Not implemented.");
+		static_assert(rg_resource::get_resource_type<T>() != rg_resource::Unknown);
+		if (resource.flag & rg_resource::Imported) {
+			auto ptr = registry.try_get<RHI::Resource*>(resource);
+			return ptr ? *ptr : nullptr;
+		}
+		if (resource.flag & rg_resource::Created)
+			return registry.try_get<RHI::Resource>(resource);
 	};
-	template<> RHI::Resource* resolve<RHI::Resource>(rg_resource resource);
 
 	void bulid() {
 		reset();

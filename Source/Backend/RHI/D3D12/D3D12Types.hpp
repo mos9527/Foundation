@@ -193,6 +193,10 @@ namespace RHI {
 			return value;
 		}
 	};
+	typedef D3D12_SHADER_RESOURCE_VIEW_DESC ShaderResourceViewDesc; // xxx Do RHI implementations for these as well
+	typedef D3D12_DEPTH_STENCIL_VIEW_DESC DepthStencilViewDesc;
+	typedef D3D12_RENDER_TARGET_VIEW_DESC RenderTargetViewDesc;
+	typedef D3D12_UNORDERED_ACCESS_VIEW_DESC UnorderedAccessViewDesc;
 
 	class Device;
 	class DeviceChild {
@@ -203,5 +207,5 @@ namespace RHI {
 		Device* GetParent() { return m_Device; }
 	};
 
-	template<typename T> concept Releaseable = requires(T obj) { obj.Release(); }
+	template<typename T> concept Releaseable = requires(T obj) { obj.Release(); };
 }

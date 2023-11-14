@@ -14,14 +14,15 @@ namespace RHI {
         m_HeapIncrementSize = device->GetNativeDevice()->GetDescriptorHandleIncrementSize(DescriptorHeapTypeToD3DType(m_Config.heapType));
         m_IndexQueue.setup(cfg.descriptorCount);
     }
-
-    Descriptor DescriptorHeap::AllocateDescriptor() {
+    Descriptor DescriptorHeap::GetDescriptor(uint handle) {
         auto new_handle = m_HeadHandle;
-        auto heap_handle = m_IndexQueue.pop();
-        new_handle.Increment(heap_handle, m_HeapIncrementSize);
+        new_handle.Increment(handle, m_HeapIncrementSize);
         return new_handle;
+    }
+    Descriptor DescriptorHeap::AllocateDescriptor() {        
+        auto heap_handle = m_IndexQueue.pop();        
+        return GetDescriptor(heap_handle);
     };
-
     void DescriptorHeap::FreeDescriptor(uint handle) { 
         m_IndexQueue.push(handle); 
     };

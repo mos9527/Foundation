@@ -1,5 +1,6 @@
 #pragma once
 #include "D3D12Types.hpp"
+#include "D3D12Resource.hpp"
 namespace RHI {
 	class Device;
 	class DescriptorHeap;
@@ -7,6 +8,8 @@ namespace RHI {
 	struct Descriptor {
 		friend class DescriptorHeap;
 	public:
+		Descriptor(DescriptorHeap* heap) : owner(heap) {};
+
 		auto const& get_heap_handle() { return heap_handle; }
 		auto const& get_cpu_handle() { return cpu_handle; }
 		auto const& get_gpu_handle() { return gpu_handle; }
@@ -15,23 +18,52 @@ namespace RHI {
 		operator D3D12_CPU_DESCRIPTOR_HANDLE() { return cpu_handle; }		
 		inline bool operator==(Descriptor lhs) { return lhs.cpu_handle.ptr == cpu_handle.ptr; }
 		inline bool IsValid() { return heap_handle != INVALID_HEAP_HANDLE; }
-	private:
+		void Release() { if (owner) owner->FreeDescriptor(heap_handle); }
+	protected:
+		DescriptorHeap* owner;
+
 		uint heap_handle{ INVALID_HEAP_HANDLE };
 		D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle{};
 		D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle{};
-
 		inline void Increment(size_t offset, uint heapIncrement) {
 			heap_handle += offset;
 			cpu_handle.ptr += offset * heapIncrement;
 			if (gpu_handle.ptr) gpu_handle.ptr += offset * heapIncrement;
 		}
 	};
-	struct DeferredDeleteDescriptor {
+	template<typename Desc> struct ResourceView {
+		const Desc viewDesc;
+		const Resource* resource;
 		Descriptor descriptor;
-		DescriptorHeap* owner;
-		void Release() {
-			if (owner)
-				owner->FreeDescriptor(descriptor);
+
+		ResourceView(Resource* resource, Desc const& viewDesc) : descriptor(descriptor), viewDesc(viewDesc), resource(resource) {};
+	};
+	struct ShaderResourceView : public ResourceView<ShaderResourceViewDesc> {
+		ShaderResourceView(Resource* resource, ShaderResourceViewDesc const& desc) : ResourceView(resource, desc) {
+			auto device = resource->GetParent();
+			descriptor = device->GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
+			device->GetNativeDevice()->CreateShaderResourceView(*resource, &desc, descriptor.get_cpu_handle());
+		}
+	};
+	struct UnorderedAccessView : public ResourceView<UnorderedAccessViewDesc> {
+		UnorderedAccessView(Resource* resource, UnorderedAccessViewDesc const& desc) : ResourceView(resource, desc) {
+			auto device = resource->GetParent();
+			descriptor = device->GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
+			device->GetNativeDevice()->CreateUnorderedAccessView(*resource, NULL, &desc, descriptor.get_cpu_handle()); // xxx Counter Resource?
+		}
+	};
+	struct RenderTargetView : public ResourceView<RenderTargetViewDesc> {
+		RenderTargetView(Resource* resource, RenderTargetViewDesc const& desc) : ResourceView(resource, desc) {
+			auto device = resource->GetParent();
+			descriptor = device->GetDescriptorHeap<DescriptorHeapType::RTV>()->AllocateDescriptor();
+			device->GetNativeDevice()->CreateRenderTargetView(*resource, &desc, descriptor.get_cpu_handle());
+		}
+	};
+	struct DepthStencilView : public ResourceView<DepthStencilViewDesc> {
+		DepthStencilView(Resource* resource, DepthStencilViewDesc const& desc) : ResourceView(resource, desc) {
+			auto device = resource->GetParent();
+			descriptor = device->GetDescriptorHeap<DescriptorHeapType::DSV>()->AllocateDescriptor();
+			device->GetNativeDevice()->CreateDepthStencilView(*resource, &desc, descriptor.get_cpu_handle());
 		}
 	};
 	class DescriptorHeap : public DeviceChild {
@@ -46,6 +78,7 @@ namespace RHI {
 		DescriptorHeap(Device* device, DescriptorHeapDesc const& cfg);
 		~DescriptorHeap() = default;
 		
+		Descriptor GetDescriptor(uint handle);
 		Descriptor AllocateDescriptor();
 		void FreeDescriptor(uint handle);
 		void FreeDescriptor(Descriptor desc);
@@ -66,9 +99,9 @@ namespace RHI {
 		const DescriptorHeapDesc m_Config;
 
 		ComPtr<ID3D12DescriptorHeap> m_DescriptorHeap;
-		Descriptor m_HeadHandle;
+		Descriptor m_HeadHandle{ this };
 		uint m_HeapIncrementSize{};
 
 		numeric_queue<uint> m_IndexQueue;
-	};
+	};		
 }

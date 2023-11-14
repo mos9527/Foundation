@@ -26,11 +26,6 @@ namespace RHI {
 		inline auto GetDXGIFactory() { return m_Factory.Get(); }
 		inline auto GetNativeDevice() { return m_Device.Get(); } // TODO : Reduce the usage of GetNative*()
 		
-		Descriptor CreateRawBufferShaderResourceView(Resource* buffer);
-		Descriptor CreateStructedBufferShaderResourceView(Resource* buffer);
-		Descriptor CreateDepthStencilView(Texture* texture);
-		Descriptor CreateConstantBufferView(Resource* buffer);
-
 		CommandQueue* GetCommandQueue(CommandListType type) {
 			using CommandListType;
 			if (type == Direct)return m_DirectQueue.get();
@@ -78,7 +73,7 @@ namespace RHI {
 		ComPtr<ID3D12Device5> m_Device;
 		ComPtr<IDXGIFactory6> m_Factory;
 		ComPtr<D3D12MA::Allocator> m_Allocator;		
-		DeferredSyncedReleaseQueue<DeferredDeleteDescriptor> m_DeferredDeleteDescriptors;
+		DeferredSyncedReleaseQueue<Descriptor> m_DeferredDeleteDescriptors;
 
 		struct UploadContext {
 			CommandList* cmd;
