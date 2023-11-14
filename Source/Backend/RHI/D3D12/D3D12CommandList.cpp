@@ -1,0 +1,15 @@
+#include "D3D12CommandList.hpp"
+#include "D3D12Device.hpp"
+namespace RHI {
+	CommandList::CommandList(Device* device, CommandListType type, uint numAllocators) : DeviceChild(device), m_Type(type) {
+		DCHECK(numAllocators > 0);
+		m_CommandAllocators.resize(numAllocators);
+		for (uint i = 0; i < numAllocators; i++) {
+			CHECK_HR(device->GetNativeDevice()->CreateCommandAllocator(CommandListTypeToD3DType(type), IID_PPV_ARGS(&m_CommandAllocators[i])));
+		}
+		//
+		CHECK_HR(device->GetNativeDevice()->CreateCommandList(0, CommandListTypeToD3DType(type), m_CommandAllocators[0].Get(), nullptr, IID_PPV_ARGS(&m_CommandList)));
+		// Closed by default
+		End();
+	}
+}

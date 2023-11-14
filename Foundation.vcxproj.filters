@@ -66,16 +66,10 @@
     <ClCompile Include="Source\Renderer\RHI\D3D12\D3D12PipelineState.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Renderer\Renderer\GeometryManager.cpp">
+    <ClCompile Include="Source\Renderer\Renderer\SceneGraph\Geometry.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Renderer\Renderer\SceneGraph.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\Renderer\Renderer\MaterialManager.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\Renderer\Renderer\RenderPass\RenderGraph.cpp">
+    <ClCompile Include="Source\Renderer\Renderer\SceneGraph\SceneGraph.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -170,22 +164,16 @@
     <ClInclude Include="Source\Renderer\Common.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Renderer\Renderer\GeometryManager.hpp">
+    <ClInclude Include="Source\Renderer\Renderer\SceneGraph\Geometry.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Renderer\Renderer\SceneGraph.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\Renderer\MaterialManager.hpp">
+    <ClInclude Include="Source\Renderer\Renderer\SceneGraph\SceneGraph.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Renderer\Renderer\Structs.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Renderer\Renderer\RenderPass\CullInstance.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Renderer\Renderer\RenderPass\RenderGraph.hpp">
+    <ClInclude Include="Source\Renderer\Renderer\RenderGraph\RenderGraph.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
