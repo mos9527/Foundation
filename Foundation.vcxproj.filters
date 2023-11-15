@@ -21,13 +21,10 @@
     <ClCompile Include="Dependencies\D3D12MemoryAllocator\D3D12MemAlloc.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Backend\IO\Image.cpp">
+    <ClCompile Include="Source\Backend\IO\ImageImporter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Frontend\Main.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\Backend\Renderer\Renderer_\Renderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Backend\RHI\D3D12\D3D12Resource.cpp">
@@ -63,10 +60,16 @@
     <ClCompile Include="Source\Backend\RHI\D3D12\D3D12Swapchain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Backend\Renderer\Renderer_\SceneGraph\Geometry.cpp">
+    <ClCompile Include="Source\Backend\RHI\RenderGraph.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Backend\Renderer\Renderer_\SceneGraph\SceneGraph.cpp">
+    <ClCompile Include="Source\Backend\IO\AssetManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Backend\Renderer\DeferredRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Backend\Scene\SceneGraph.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -95,9 +98,6 @@
     <ClInclude Include="Source\Backend\RHI\RenderGraph.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Backend\Renderer\Renderer_\Structs.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Source\Backend\RHI\D3D12\D3D12PipelineState.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -107,22 +107,13 @@
     <ClInclude Include="Source\Backend\RHI\D3D12\D3D12Shader.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Backend\Renderer\Renderer_\SceneGraph\Geometry.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Backend\Renderer\Renderer_\SceneGraph\SceneGraph.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Backend\IO\Image.hpp">
+    <ClInclude Include="Source\Backend\IO\ImageImporter.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Backend\IO\IO.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Backend\IO\Mesh.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Backend\Renderer\Renderer_\Renderer.hpp">
+    <ClInclude Include="Source\Backend\IO\MeshImporter.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Backend\RHI\D3D12\D3D12CommandSignature.hpp">
@@ -164,6 +155,42 @@
     <ClInclude Include="Source\Frontend\ViewportWindow.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Backend\IO\AssetManager.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\IO\MeshAsset.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\IO\Types.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\Renderer\DeferredRenderer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\Renderer\Renderer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\Scene\SceneGraph.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\Scene\Component.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\Scene\Components\Camera.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\Scene\Components\StaticMesh.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Common\Math.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\RHI\D3D12\D3D12ResourceView.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Backend\Scene\SceneGraphView.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json">
@@ -172,11 +199,6 @@
     <None Include=".gitignore" />
     <None Include=".gitattributes" />
     <None Include="Source\defines.hpp" />
-    <None Include="Source\Backend\Shaders\Common.hlsli" />
-  </ItemGroup>
-  <ItemGroup>
-    <FxCompile Include="Source\Backend\Shaders\Mesh\MeshletAS.hlsl" />
-    <FxCompile Include="Source\Backend\Shaders\Mesh\MeshletMS.hlsl" />
-    <FxCompile Include="Source\Backend\Shaders\Mesh\MeshletPS.hlsl" />
+    <None Include="Source\Backend\Scene\SceneGraphViewStructs.h" />
   </ItemGroup>
 </Project>

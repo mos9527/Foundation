@@ -1,13 +1,15 @@
 #pragma once
 #include "D3D12Types.hpp"
-namespace RHI {
-	class Device;
+#include "D3D12Fence.hpp"
+namespace RHI {	
+	class Resource;
 	class CommandList : public DeviceChild
 	{
 		name_t m_Name;
 		CommandListType m_Type;
 		ComPtr<ID3D12GraphicsCommandList6> m_CommandList;
 		std::vector<ComPtr<ID3D12CommandAllocator>> m_CommandAllocators;
+		bool m_HasBegun = false;
 	public:
 
 		CommandList(Device* device, CommandListType type, uint numAllocators = 1);
@@ -19,13 +21,15 @@ namespace RHI {
 		inline void Begin(uint allocatorIndex = 0) {
 			DCHECK(allocatorIndex < m_CommandAllocators.size());
 			CHECK_HR(m_CommandList->Reset(m_CommandAllocators[allocatorIndex].Get(), nullptr));
+			m_HasBegun = true;
 		};
-		inline void End() { CHECK_HR(m_CommandList->Close()); };
+		inline void End() { CHECK_HR(m_CommandList->Close()); m_HasBegun = false; };
+		inline bool IsOpen() const { return m_HasBegun; }
 
 		void CopyBufferRegion(Resource* src, Resource* dst, size_t srcOffset, size_t dstOffset, size_t size);
 
+		SyncFence Execute();
 		inline void ExecuteBundle(CommandList* bundle) { m_CommandList->ExecuteBundle(*bundle); }
-		inline auto Execute() { return m_Device->GetCommandQueue(m_Type)->Execute(this); }
 		inline auto GetNativeCommandList() { return m_CommandList.Get(); }
 		operator ID3D12GraphicsCommandList6* () { return m_CommandList.Get(); }
 

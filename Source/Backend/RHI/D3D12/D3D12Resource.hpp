@@ -1,6 +1,7 @@
 #pragma once
+#include "D3D12Device.hpp"
 #include "D3D12Types.hpp"
-
+#include "D3D12DescriptorHeap.hpp"
 #define RESOURCE_BARRIER_ALL_SUBRESOURCES D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES 
 #define RAW_BUFFER_STRIDE 0u
 namespace RHI {
@@ -21,13 +22,13 @@ namespace RHI {
 	class Resource : public DeviceChild {
 	public:
 		struct ResourceDesc {
-			ClearValue clearValue{};
+			std::optional<ClearValue> clearValue;
 			ResourceUsage usage{ ResourceUsage::Default };
 			ResourceFormat format{ ResourceFormat::Unknown };
 			ResourceDimension dimension{ ResourceDimension::Unknown };
 			UINT64 alignment{ 0 };
-			UINT64 stride{ 0 }; /* For Buffers, width / stride will be its No. of elements. For Raw Buffers, this value must be 0. */
-			UINT64 width{ 0 }; /* For Buffers, this will be its size in bytes. For textures, this will be the image's dimension. */
+			UINT64 stride{ 0 };
+			UINT64 width{ 0 };
 			uint height{ 0 };
 			UINT16 mipLevels{ 1 };
 			UINT16 arraySize{ 1 };
@@ -40,10 +41,9 @@ namespace RHI {
 			static const ResourceDesc GetGenericBufferDesc(
 				UINT64 size, 
 				UINT64 stride = 0, /* Set to 0 for Raw Buffers. Non-zero values indicates a Structured Buffer */
-				ResourceState initialState = ResourceState::CopySource,
+				ResourceState initialState = ResourceState::Common,
 				ResourceUsage usage = ResourceUsage::Upload, 
-				ResourceFlags flags = ResourceFlags::None,
-				ResourcePoolType poolType = ResourcePoolType::Default
+				ResourceFlags flags = ResourceFlags::None			
 			) {
 				return ResourceDesc{
 					.usage = usage,
@@ -72,9 +72,8 @@ namespace RHI {
 				uint sampleQuality = 0,
 				ResourceFlags flags = ResourceFlags::None,
 				ResourceUsage usage = ResourceUsage::Default,
-				ResourceState initialState = ResourceState::CopyDest,
-				ResourcePoolType poolType = ResourcePoolType::Default,
-				ClearValue clearValue = ClearValue{}
+				ResourceState initialState = ResourceState::Common,
+				std::optional<ClearValue> clearValue = {}
 			) {
 				return ResourceDesc{
 					.clearValue = clearValue,
@@ -109,10 +108,19 @@ namespace RHI {
 					.Flags = (D3D12_RESOURCE_FLAGS)flags
 				};
 			}
-			inline bool isRawBuffer() const {
-				return stride == 0;
+			inline bool isBuffer() const {
+				return dimension == ResourceDimension::Buffer;
 			}
-			inline size_t sizeInBytes() const {
+			inline bool isRawBuffer() const {
+				return isBuffer() && stride == 0;
+			}
+			inline bool isTexture() const {
+				return !isBuffer();
+			}
+			inline bool isUnorderedAccess() const {
+				return +flags & +ResourceFlags::UnorderedAccess;
+			}
+			inline size_t sizeInBytes() const {				
 				CHECK(dimension == ResourceDimension::Buffer);
 				return width;
 			}
@@ -135,7 +143,7 @@ namespace RHI {
 		inline operator ID3D12Resource* () { return m_Resource.Get(); }
 		inline void Reset() { m_Resource.Reset(); }		
 
-		/* Upload & Readback only! */
+		/* Upload & Readback only! */		
 		void Update(const void* data, size_t size, size_t offset);	
 		/* Upload & Readback only! */
 		void Map();
@@ -167,5 +175,5 @@ namespace RHI {
 		void Release() {
 			resource.reset();
 		}
-	};
+	};	
 }

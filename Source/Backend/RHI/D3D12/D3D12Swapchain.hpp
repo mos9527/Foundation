@@ -1,9 +1,10 @@
 #pragma once
 #include "D3D12Types.hpp"
-#include "D3D12Texture.hpp"
+#include "D3D12Resource.hpp"
 #include "D3D12Fence.hpp"
 #include "D3D12CommandQueue.hpp"
 #include "D3D12DescriptorHeap.hpp"
+#include "D3D12ResourceView.hpp"
 namespace RHI {
 	class Device;
 	class Swapchain : public DeviceChild {
@@ -13,28 +14,27 @@ namespace RHI {
 		std::vector<size_t> nFenceValues;
 		std::unique_ptr<Fence> m_FrameFence;
 		std::vector<std::unique_ptr<Texture>> m_Backbuffers;
-		std::vector<std::unique_ptr<Descriptor>> m_BackbufferRTVs;
+		std::vector<RenderTargetView> m_BackbufferRTVs;
 		ComPtr<IDXGISwapChain3> m_Swapchain;
-		void Present(bool vsync);
-		void BindBackBuffers();
-		void CreateRenderTargetViews(DescriptorHeap* descHeap);
+		void Present(bool vsync);		
 	public:
 		BOOL bIsFullscreen{ false };
 		struct SwapchainDesc {
 			int InitWidth;
 			int InitHeight;
+			ResourceFormat Format;
 			uint BackBufferCount;
 			HWND Window;
 		};
-		Swapchain(Device* device, CommandQueue* cmdQueue, DescriptorHeap* descHeap, SwapchainDesc const& cfg);
+		Swapchain(Device* device, SwapchainDesc const& cfg);
 		~Swapchain() = default;
 		
 		inline auto GetBackbuffer(uint index) { return m_Backbuffers[index].get(); }
-		inline auto GetBackbufferRTV(uint index) { return m_BackbufferRTVs[index].get(); }
+		inline auto GetBackbufferRTV(uint index) { return m_BackbufferRTVs[index]; }
 		inline auto GetCurrentBackbufferIndex() { return nBackbufferIndex; }
 
-		void Resize(CommandQueue* cmdQueue, DescriptorHeap* descHeap, uint width, uint height);
-		void PresentAndMoveToNextFrame(CommandQueue* signalQueue, bool vsync);
+		void Resize( uint width, uint height);
+		void PresentAndMoveToNextFrame(bool vsync);
 
 		inline auto GetNativeSwapchain() { return m_Swapchain.Get(); }
 		inline operator IDXGISwapChain3* () { return m_Swapchain.Get(); }

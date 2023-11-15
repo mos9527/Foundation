@@ -56,11 +56,11 @@ public:
 		}
 		return graphT;
 	}	
-	std::unordered_map<vertex, uint> get_depths(std::vector<vertex>& topsorted, auto comp = std::max) {
+	std::unordered_map<vertex, uint> get_depths(std::vector<vertex>& topsorted) {
 		std::unordered_map<vertex, uint> depths;
-		for (vertex& v : topsorted) {
-			for (vertex& next : graph[v]) {
-				depths[next] = comp(depth[next], depth[v] + 1);
+		for (vertex v : topsorted) {
+			for (vertex next : graph[v]) {
+				depths[next] = std::max(depths[next], depths[v] + 1);
 			}
 		}
 		return depths;

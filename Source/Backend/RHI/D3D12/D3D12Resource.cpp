@@ -38,16 +38,14 @@ namespace RHI {
 		D3D12MA::ALLOCATION_DESC allocationDesc{};				
 		allocationDesc.HeapType = ResourceUsageToD3DHeapType(desc.usage);
 
-
 		const D3D12_RESOURCE_DESC resourceDesc = desc;
-		D3D12_CLEAR_VALUE clearValue = desc.clearValue;
-		auto allocator = device->GetAllocator();
-		clearValue.Format = ResourceFormatToD3DFormat(desc.format);
+		D3D12_CLEAR_VALUE clearValue = desc.clearValue.has_value() ? desc.clearValue.value().ToD3D12ClearValue(desc.format) : D3D12_CLEAR_VALUE();
+		auto allocator = device->GetAllocator();		
 		CHECK_HR(allocator->CreateResource(
 			&allocationDesc,
 			&resourceDesc,
 			(D3D12_RESOURCE_STATES)m_State,
-			desc.clearValue.clear ? &clearValue : nullptr,
+			desc.clearValue.has_value() ? &clearValue : NULL,
 			&m_Allocation,
 			IID_PPV_ARGS(&m_Resource)
 		));

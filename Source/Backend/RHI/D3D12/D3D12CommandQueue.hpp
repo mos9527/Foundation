@@ -1,14 +1,14 @@
 #pragma once
-#include "D3D12CommandList.hpp"
 #include "D3D12Fence.hpp"
 namespace RHI {
 	class Device;
+	class CommandList;
 	class CommandQueue : public DeviceChild {
 		name_t m_Name;
 		CommandListType m_Type;
 		ComPtr<ID3D12CommandQueue> m_CommandQueue;
 		std::unique_ptr<Fence> m_Fence;		
-		std::atomic<size_t> m_FenceValue;
+		std::atomic<size_t> m_FenceValue = 1;
 	public:
 		CommandQueue(Device* device, CommandListType type = CommandListType::Direct);
 		~CommandQueue() = default;

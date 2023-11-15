@@ -29,8 +29,8 @@ struct rg_resource {
 	rg_resource_flags flag;
 	entt::entity resource;
 	inline operator entt::entity() const { return resource; }
-
-	template<typename T> constexpr rg_resource_types get_resource_type() { return Unknown;  }
+	rg_resource_types get_resource_type() { return type; }
+	template<typename T> static constexpr rg_resource_types get_resource_type() { return Unknown;  }
 	template<> constexpr rg_resource_types get_resource_type<RHI::Resource>() { return Resource; }
 	template<> constexpr rg_resource_types get_resource_type<RHI::ShaderResourceView>() { return ResourceViewSRV; }
 	template<> constexpr rg_resource_types get_resource_type<RHI::UnorderedAccessView>() { return ResourceViewUAV; }

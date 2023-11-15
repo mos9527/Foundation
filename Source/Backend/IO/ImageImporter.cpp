@@ -1,7 +1,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_WINDOWS_UTF8
 #include "../../Dependencies/stb_image.h"
-#include "Image.hpp"
+#include "ImageImporter.hpp"
 namespace IO {
 	bitmap8bpp load_bitmap_8bpp(path_t filepath) {
 		filepath = get_absolute_path(filepath);

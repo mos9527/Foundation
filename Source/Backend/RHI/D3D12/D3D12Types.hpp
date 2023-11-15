@@ -50,7 +50,8 @@ namespace RHI {
 		// VertexAndConstantBuffer + IndexBuffer + SRV + IndirectArgument + Copy
 		GenericRead = D3D12_RESOURCE_STATE_GENERIC_READ,
 		DepthWrite = D3D12_RESOURCE_STATE_DEPTH_WRITE,
-		DepthRead = D3D12_RESOURCE_STATE_DEPTH_READ
+		DepthRead = D3D12_RESOURCE_STATE_DEPTH_READ,
+		AccleartionStruct = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE
 	};
 	DEFINE_ENUM_FLAG_OPERATORS(ResourceState);
 	DEFINE_PLUS_TO_VALUE(ResourceState);
@@ -181,14 +182,14 @@ namespace RHI {
 		FLOAT depth;
 		UINT8 stencil;
 	};
-	struct ClearValue {
-		bool clear{ false };
+	struct ClearValue {		
 		union {
 			FLOAT color[4];
 			DepthStencilValue depthStencil;
 		};
-		operator D3D12_CLEAR_VALUE() const {
-			D3D12_CLEAR_VALUE value{ .Format = DXGI_FORMAT_UNKNOWN };
+
+		const D3D12_CLEAR_VALUE ToD3D12ClearValue(ResourceFormat format) const {
+			D3D12_CLEAR_VALUE value{ .Format = ResourceFormatToD3DFormat(format)};
 			memcpy_s(&value.Color, sizeof(value.Color), &color, sizeof(color));
 			return value;
 		}
@@ -207,5 +208,5 @@ namespace RHI {
 		Device* GetParent() { return m_Device; }
 	};
 
-	template<typename T> concept Releaseable = requires(T obj) { obj.Release(); };
+	template<typename T> concept Releaseable = requires(T obj) { obj.release(); };
 }

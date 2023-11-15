@@ -1,5 +1,6 @@
 #include "D3D12Device.hpp"
-
+#include "D3D12Resource.hpp"
+#include "D3D12CommandList.hpp"
 #ifdef RHI_D3D12_USE_AGILITY
 extern "C" { __declspec(dllexport) extern const uint D3D12SDKVersion = 4; }
 extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = ".\\D3D12\\"; }
@@ -120,6 +121,22 @@ namespace RHI {
         } 
         CHECK_HR(hr);
     }
+    void Device::UploadContext::RecordIntermediate(std::unique_ptr<Resource>&& intermediate) { 
+        intermediates.push_back(std::move(intermediate));
+    }
+    SyncFence Device::UploadContext::UploadAndClose() { 
+        uploadFence = cmd->Execute(); 
+        cmd = nullptr; 
+        return uploadFence; 
+    }
+    bool Device::UploadContext::Clean() { 
+        if (uploadFence.IsCompleted())
+        {
+            intermediates.clear();
+            return true;
+        }
+        return false;
+    }
     Device::Device(DeviceDesc cfg) {
 #ifdef _DEBUG    
         ComPtr<ID3D12Debug> debugInterface;
@@ -160,13 +177,23 @@ namespace RHI {
                 .heapType = DescriptorHeapType::DSV
         });
         m_SRVHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
-            .shaderVisible = true,
+            .shaderVisible = false,
                 .descriptorCount = ALLOC_SIZE_DESCHEAP,
                 .heapType = DescriptorHeapType::CBV_SRV_UAV
         });
         m_SamplerHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
-            .shaderVisible = true,
+            .shaderVisible = false,
                 .descriptorCount = ALLOC_SIZE_DESCHEAP,
+                .heapType = DescriptorHeapType::SAMPLER
+        });
+        m_OnlineSRVHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
+            .shaderVisible = true,
+                .descriptorCount = ALLOC_SIZE_SHADER_VISIBLE_DESCHEAP,
+                .heapType = DescriptorHeapType::CBV_SRV_UAV
+        });
+        m_OnlineSamplerHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
+            .shaderVisible = true,
+                .descriptorCount = ALLOC_SIZE_SHADER_VISIBLE_DESCHEAP,
                 .heapType = DescriptorHeapType::SAMPLER
         });
         // D3D12MA
@@ -178,50 +205,7 @@ namespace RHI {
     }
     Device::~Device() {
         m_Factory->Release();        
-    }
-    /* Helper functions */
-    Descriptor Device::CreateRawBufferShaderResourceView(Resource* buffer) {
-        CHECK(buffer->GetDesc().isRawBuffer());
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Format = DXGI_FORMAT_R32_TYPELESS;
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-        srvDesc.Buffer.StructureByteStride = 0;
-        srvDesc.Buffer.NumElements = buffer->GetDesc().width / sizeof(float);
-        srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
-        auto desc = GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
-        m_Device->CreateShaderResourceView(*buffer, &srvDesc, desc.get_cpu_handle());
-        return desc;
-    }
-    Descriptor Device::CreateStructedBufferShaderResourceView(Resource* buffer) {
-        CHECK(!buffer->GetDesc().isRawBuffer());
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;        
-        srvDesc.Buffer.StructureByteStride = buffer->GetDesc().stride;;
-        srvDesc.Buffer.NumElements = buffer->GetDesc().width / buffer->GetDesc().stride;       
-        auto desc = GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
-        m_Device->CreateShaderResourceView(*buffer, &srvDesc, desc.get_cpu_handle());
-        return desc;
-    }
-    Descriptor Device::CreateDepthStencilView(Texture* texture) {
-        D3D12_DEPTH_STENCIL_VIEW_DESC desc{};
-        desc.Format = DXGI_FORMAT_D32_FLOAT;
-        desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-        desc.Texture2D.MipSlice = 0;
-        auto dsvDesc = GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
-        m_Device->CreateDepthStencilView(*texture, &desc, dsvDesc.get_cpu_handle());
-        return dsvDesc;
-    }
-    Descriptor Device::CreateConstantBufferView(Resource* buffer) {
-        D3D12_CONSTANT_BUFFER_VIEW_DESC desc{};
-        desc.BufferLocation = buffer->GetGPUAddress();
-        desc.SizeInBytes = buffer->GetDesc().sizeInBytes();
-        auto cbvDesc = GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
-        m_Device->CreateConstantBufferView(&desc, cbvDesc.get_cpu_handle());
-        return cbvDesc;
-    };
+    }    
     // Uploading
     // These `Upload()` will require some sort of intermediate buffers to work.
     // Thus we manage it in Device. The intermediates are GCed per upload attempts
@@ -231,7 +215,6 @@ namespace RHI {
     }
     void Device::Upload(Resource* dst, Subresource* data, uint count) {
         CHECK(m_UploadContext.IsOpen());
-        CHECK_ENUM_FLAG(dst->GetState() & ResourceState::CopyDest);
         const D3D12_RESOURCE_DESC resourceDesc = dst->GetDesc();
         size_t intermediateSize;
         m_Device->GetCopyableFootprints(
@@ -249,15 +232,18 @@ namespace RHI {
         );
         m_UploadContext.RecordIntermediate(std::move(intermediate));
     };
-    void Device::Upload(Resource* dst, void* data, size_t sizeInBytes) {
+    void Device::Upload(Resource* dst, void* data, uint sizeInBytes) {
         Subresource subresource{
             .pSysMem = data,
             .rowPitch = sizeInBytes,
             .slicePitch = sizeInBytes
         };
-        Upload(dst, data, sizeInBytes);
+        Upload(dst, &subresource, 1);
     }
-    void Device::CommitUpload() {        
-        m_UploadContext.UploadAndClose();
+    SyncFence Device::CommitUpload() {
+        return m_UploadContext.UploadAndClose();
+    }
+    bool Device::Clean() {
+        return m_UploadContext.Clean();
     }
 }

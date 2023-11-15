@@ -1,8 +1,8 @@
 #pragma once
-#include "../pch.hpp"
-
+#include "../../pch.hpp"
+#include "Types.hpp"
 using namespace DirectX::SimpleMath;
-namespace IO {
+namespace IO {		
 	typedef std::filesystem::path path_t;
 	inline bool check_file_exisits(path_t path) {
 		return std::filesystem::exists(path);

@@ -11,6 +11,7 @@ namespace RHI {
 		m_Fence = std::make_unique<Fence>(device);		
 	}
 	SyncFence CommandQueue::Execute(CommandList* cmdList) {
+		CHECK(!cmdList->IsOpen());
 		SyncFence fence(m_Fence.get(), GetUniqueFenceValue());
 		ID3D12CommandList* ppCommandLists[] = { *cmdList };
 		m_CommandQueue->ExecuteCommandLists(1, ppCommandLists);

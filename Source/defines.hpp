@@ -5,20 +5,15 @@
 #define RHI_USE_D3D12_MESH_SHADER
 
 #define ALLOC_SIZE_DESCHEAP 0xffff
-
-#define INSTANCE_MAX_NUM_INSTANCES 0xffff
-#define GEO_MAX_NUM_GEOS 0xffff
-#define TEX_MAX_NUM_TEXS 0xffff
+#define ALLOC_SIZE_SHADER_VISIBLE_DESCHEAP 2048
+#define MAX_INSTANCE_COUNT 0xffff
 #define DISPATCH_GROUP_COUNT 0xffff
-
-#define VERTEX_TYPE_STATIC 0
-#define VERTEX_TYPE_SKINNED 1
 
 #define MESHLET_MAX_VERTICES 64u // https://developer.nvidia.com/blog/introduction-turing-mecacsh-shaders/
 #define MESHLET_MAX_PRIMITIVES 124u // 4b aligned
 
-#define LOD_COUNT 8
-#define LOD_GET_RATIO(lod) ((float)(LOD_COUNT - lod) / LOD_COUNT)
+#define MAX_LOD_COUNT 8
+#define LOD_GET_RATIO(lod) ((float)(MAX_LOD_COUNT - lod) / MAX_LOD_COUNT)
 
 #define THREADS_PER_WAVE 32 // Assumes availability of wave size of 32 threads
 // Pre-defined threadgroup sizes for AS & MS stages

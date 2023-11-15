@@ -12,7 +12,9 @@ namespace RHI {
 		Fence(Device* device);
 		~Fence();
 
-		inline bool IsCompleted(size_t value) { return GetCompletedValue() == value; }
+		inline bool IsCompleted(size_t value) { 			
+			return GetCompletedValue() >= value;
+		}
 		inline size_t GetCompletedValue() { return m_Fence->GetCompletedValue(); }
 		/* CPU Side fencing */
 		inline void Signal(size_t value) { m_Fence->Signal(value); }
@@ -28,12 +30,16 @@ namespace RHI {
 	};
 
 	struct SyncFence {
-		Fence* fence;
+		Fence* fence = nullptr;
 		size_t value;
+		SyncFence() = default;
 		SyncFence(Fence* fence, size_t value) : fence(fence), value(value) {};
 		inline bool IsCompleted() { return fence && fence->IsCompleted(value); }
 		inline size_t GetValue() { return value; }
-		inline void Wait() { if (fence) fence->Wait(value); }
+		inline void Wait() { 
+			if (fence) 
+				fence->Wait(value);
+		}
 	};
 
 	template<Releaseable T> class DeferredSyncedReleaseQueue {
@@ -53,7 +59,7 @@ namespace RHI {
 		void push(Entry&& entry) { m_Entries.push(entry); }
 		template<typename... Pack> void push(T resource,Pack&&... syncFences) {
 			push(Entry{
-				.syncFences = { std::forward<Pack>(sync)... },
+				.syncFences = { std::forward<Pack>(syncFences)... },
 				.resource = resource
 			});
 		}

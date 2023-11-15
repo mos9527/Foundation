@@ -4,24 +4,19 @@
 #include <meshoptimizer.h>
 #include <assimp/postprocess.h>
 #include "IO.hpp"
-
 namespace IO {
 	typedef aiScene scene_t;
-	typedef meshopt_Meshlet meshlet;
-	typedef meshopt_Bounds meshlet_bound;	
 	struct mesh_lod {
 		std::vector<UINT> indices;
 		/* mesh shading */
 		std::vector<meshlet> meshlets; // offsets within meshlet_vertices , meshlet_bounds & meshlet_triangles
-		std::vector<meshlet_bound> meshlet_bounds;
-		std::vector<unsigned char> meshlet_triangles; // primitive indices (3 verts i.e. i,i+1,i+2) into meshlet_vertices
-		std::vector<UINT> meshlet_vertices; // indexes to mesh_static::{position,normal,tangent,uv}
+		std::vector<meshlet_triangle> meshlet_triangles; // primitive indices (3 verts i.e. i,i+1,i+2) into meshlet_vertices
+		std::vector<UINT> meshlet_vertices; // indexes to mesh_static::{position,normal,tangent,uv}		
 
 		void resize_max_meshlets(size_t maxMeshlets) {
-			meshlets.resize(maxMeshlets);
-			meshlet_bounds.resize(maxMeshlets);
+			meshlets.resize(maxMeshlets);			
 			meshlet_vertices.resize(maxMeshlets * MESHLET_MAX_VERTICES);
-			meshlet_triangles.resize(maxMeshlets * MESHLET_MAX_PRIMITIVES * 3);
+			meshlet_triangles.resize(maxMeshlets * MESHLET_MAX_PRIMITIVES);
 		}
 	};
 	struct mesh_static {
@@ -31,7 +26,7 @@ namespace IO {
 		std::vector<Vector2> uv;
 		std::vector<UINT> indices;
 
-		mesh_lod lods[LOD_COUNT];		
+		mesh_lod lods[MAX_LOD_COUNT];		
 
 		void resize_vertices(size_t verts) {
 			position.resize(verts);
@@ -89,7 +84,9 @@ namespace IO {
 		meshopt_optimizeVertexFetchRemap(remapping.data(), mesh.indices.data(), mesh.indices.size(), num_vertices);
 		mesh.remap(remapping);
 		// LOD
-		for (size_t lod = 0; lod < LOD_COUNT; lod++) {
+		std::vector<unsigned char> meshlet_triangles; // buffer to store u8 triangles
+		std::vector<meshopt_Meshlet> meshlets; // buffer to store meshlets
+		for (size_t lod = 0; lod < MAX_LOD_COUNT; lod++) {
 			const float target_error = 0.01f;
 			size_t target_index_count = mesh.indices.size() * LOD_GET_RATIO(lod);
 			auto& mesh_lod = mesh.lods[lod];
@@ -103,31 +100,48 @@ namespace IO {
 			mesh_lod.indices.resize(output_index_count);
 			/* mesh shading */
 			// Meshlet generation
-			size_t max_meshlets = meshopt_buildMeshletsBound(mesh_lod.indices.size(), MESHLET_MAX_VERTICES, MESHLET_MAX_PRIMITIVES);
+			size_t max_meshlets = meshopt_buildMeshletsBound(mesh_lod.indices.size(), MESHLET_MAX_VERTICES, MESHLET_MAX_PRIMITIVES);						
+			meshlet_triangles.resize(max_meshlets * MESHLET_MAX_PRIMITIVES * 3);
+			meshlets.resize(max_meshlets);
 			mesh_lod.resize_max_meshlets(max_meshlets);
 			size_t meshlet_count = meshopt_buildMeshlets(
-				mesh_lod.meshlets.data(), mesh_lod.meshlet_vertices.data(), mesh_lod.meshlet_triangles.data(),
+				meshlets.data(), mesh_lod.meshlet_vertices.data(), meshlet_triangles.data(),
 				mesh_lod.indices.data(), mesh_lod.indices.size(), (const float*)mesh.position.data(),
 				num_vertices, sizeof(decltype(mesh.position)::value_type), MESHLET_MAX_VERTICES, MESHLET_MAX_PRIMITIVES, 0.0f
 			);
 			// Meshlet trimming
-			const meshlet& last = mesh_lod.meshlets[meshlet_count - 1];
-			mesh_lod.meshlet_vertices.resize(last.vertex_offset + last.vertex_count);
-			mesh_lod.meshlet_triangles.resize((last.triangle_offset + ((last.triangle_count * 3 + 3) & ~3)));
-			mesh_lod.meshlet_bounds.resize(meshlet_count);
+			const auto& last = meshlets[meshlet_count - 1];
+			mesh_lod.meshlet_vertices.resize((last.vertex_offset + last.vertex_count));
+			meshlet_triangles.resize((last.triangle_offset + ((last.triangle_count * 3 + 3) & ~3)));			
 			mesh_lod.meshlets.resize(meshlet_count);
-			// Meshlet bounds
 			for (size_t i = 0; i < mesh_lod.meshlets.size(); i++) {
 				meshlet& meshlet = mesh_lod.meshlets[i];
+				// Meshlet
+				meshlet.triangle_count = meshlets[i].triangle_count;
+				meshlet.triangle_offset = meshlets[i].triangle_offset;
+				meshlet.vertex_count = meshlets[i].vertex_count;
+				meshlet.vertex_offset = meshlets[i].vertex_offset;
+				// Meshlet bounds
 				meshopt_Bounds bounds = meshopt_computeMeshletBounds(
 					&mesh_lod.meshlet_vertices[meshlet.vertex_offset],
-					&mesh_lod.meshlet_triangles[meshlet.triangle_offset],
+					&meshlet_triangles[meshlet.triangle_offset],
 					meshlet.triangle_count,
 					(const float*)mesh.position.data(),
 					mesh.position.size(),
 					sizeof(decltype(mesh.position)::value_type)
 				);
-				mesh_lod.meshlet_bounds[i] = bounds;
+				meshlet.center[0] = bounds.center[0];
+				meshlet.center[1] = bounds.center[1];
+				meshlet.center[2] = bounds.center[2];
+				meshlet.cone_apex[0] = bounds.cone_apex[0];
+				meshlet.cone_apex[1] = bounds.cone_apex[1];
+				meshlet.cone_apex[2] = bounds.cone_apex[2];
+				meshlet.radius = bounds.radius;
+				meshlet.cone_axis_cutoff = bounds.cone_cutoff_s8 << 24 | bounds.cone_axis_s8[2] << 16 | bounds.cone_axis_s8[1] << 8 | bounds.cone_axis_s8[0];
+			}
+			// Swizzle triangles to u32 boundaries
+			for (size_t i = 0; i < meshlet_triangles.size() - 3; i += 3) {
+				mesh_lod.meshlet_triangles.push_back({ meshlet_triangles[i] ,meshlet_triangles[i + 1], meshlet_triangles[i + 2] });
 			}
 		}
 		return mesh;

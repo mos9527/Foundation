@@ -1,8 +1,7 @@
 #pragma once
 #include "D3D12Types.hpp"
-#include "D3D12Resource.hpp"
-namespace RHI {
-	class Device;
+
+namespace RHI {	
 	class DescriptorHeap;
 	constexpr uint INVALID_HEAP_HANDLE = -1;
 	struct Descriptor {
@@ -17,8 +16,8 @@ namespace RHI {
 		operator D3D12_GPU_DESCRIPTOR_HANDLE() { return gpu_handle; }
 		operator D3D12_CPU_DESCRIPTOR_HANDLE() { return cpu_handle; }		
 		inline bool operator==(Descriptor lhs) { return lhs.cpu_handle.ptr == cpu_handle.ptr; }
-		inline bool IsValid() { return heap_handle != INVALID_HEAP_HANDLE; }
-		void Release() { if (owner) owner->FreeDescriptor(heap_handle); }
+		inline bool is_valid() { return heap_handle != INVALID_HEAP_HANDLE; }
+		void release();
 	protected:
 		DescriptorHeap* owner;
 
@@ -29,41 +28,6 @@ namespace RHI {
 			heap_handle += offset;
 			cpu_handle.ptr += offset * heapIncrement;
 			if (gpu_handle.ptr) gpu_handle.ptr += offset * heapIncrement;
-		}
-	};
-	template<typename Desc> struct ResourceView {
-		const Desc viewDesc;
-		const Resource* resource;
-		Descriptor descriptor;
-
-		ResourceView(Resource* resource, Desc const& viewDesc) : descriptor(descriptor), viewDesc(viewDesc), resource(resource) {};
-	};
-	struct ShaderResourceView : public ResourceView<ShaderResourceViewDesc> {
-		ShaderResourceView(Resource* resource, ShaderResourceViewDesc const& desc) : ResourceView(resource, desc) {
-			auto device = resource->GetParent();
-			descriptor = device->GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
-			device->GetNativeDevice()->CreateShaderResourceView(*resource, &desc, descriptor.get_cpu_handle());
-		}
-	};
-	struct UnorderedAccessView : public ResourceView<UnorderedAccessViewDesc> {
-		UnorderedAccessView(Resource* resource, UnorderedAccessViewDesc const& desc) : ResourceView(resource, desc) {
-			auto device = resource->GetParent();
-			descriptor = device->GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
-			device->GetNativeDevice()->CreateUnorderedAccessView(*resource, NULL, &desc, descriptor.get_cpu_handle()); // xxx Counter Resource?
-		}
-	};
-	struct RenderTargetView : public ResourceView<RenderTargetViewDesc> {
-		RenderTargetView(Resource* resource, RenderTargetViewDesc const& desc) : ResourceView(resource, desc) {
-			auto device = resource->GetParent();
-			descriptor = device->GetDescriptorHeap<DescriptorHeapType::RTV>()->AllocateDescriptor();
-			device->GetNativeDevice()->CreateRenderTargetView(*resource, &desc, descriptor.get_cpu_handle());
-		}
-	};
-	struct DepthStencilView : public ResourceView<DepthStencilViewDesc> {
-		DepthStencilView(Resource* resource, DepthStencilViewDesc const& desc) : ResourceView(resource, desc) {
-			auto device = resource->GetParent();
-			descriptor = device->GetDescriptorHeap<DescriptorHeapType::DSV>()->AllocateDescriptor();
-			device->GetNativeDevice()->CreateDepthStencilView(*resource, &desc, descriptor.get_cpu_handle());
 		}
 	};
 	class DescriptorHeap : public DeviceChild {
@@ -103,5 +67,5 @@ namespace RHI {
 		uint m_HeapIncrementSize{};
 
 		numeric_queue<uint> m_IndexQueue;
-	};		
+	};
 }

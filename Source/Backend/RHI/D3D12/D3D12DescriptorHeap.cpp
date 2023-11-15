@@ -1,8 +1,15 @@
 #include "D3D12DescriptorHeap.hpp"
 #include "D3D12Device.hpp"
+#include "D3D12Resource.hpp"
 namespace RHI {
+    void Descriptor::release() { 
+        if (owner) 
+            owner->FreeDescriptor(heap_handle);
+        heap_handle = INVALID_HEAP_HANDLE;
+    }
     /* Heap */
     DescriptorHeap::DescriptorHeap(Device* device, DescriptorHeapDesc const& cfg) : DeviceChild(device), m_Config(cfg) {
+        CHECK(cfg.descriptorCount <= 2048 || !cfg.shaderVisible);
         D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
         rtvHeapDesc.NumDescriptors = m_Config.descriptorCount;
         rtvHeapDesc.Type = DescriptorHeapTypeToD3DType(m_Config.heapType);
