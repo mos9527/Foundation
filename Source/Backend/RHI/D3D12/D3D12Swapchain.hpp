@@ -39,6 +39,7 @@ namespace RHI {
 		inline auto GetFrameIndex() const { return nFrameIndex; }
 		inline auto GetFormat() const { return m_BackbufferFormat; }
 		inline auto GetWidth() const { return nWidth; }
+		inline auto GetAspect() const { return nWidth / (float)nHeight; }
 		inline auto GetHeight() const { return nHeight; }
 
 		void Resize( uint width, uint height);

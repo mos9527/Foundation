@@ -11,6 +11,8 @@ struct CameraComponent : public SceneComponent {
 	matrix projection;
 	matrix viewProjection;
 	
+	bool orthographic = false;
+
 	CameraComponent() {
 		localTransform.translation = { 0,0,-1 };
 		localTransform.rotation.SetRotationPitchYawRoll({ 0,0,0 });
@@ -24,9 +26,27 @@ struct CameraComponent : public SceneComponent {
 		view = XMMatrixLookToLH(
 			globalTransform.translation, globalTransform.rotation.GetDirectionVector(), XMVector3Rotate({ 0,1,0 }, globalTransform.rotation)
 		);
-		projection = XMMatrixPerspectiveFovLH(
-			fov, aspect, nearZ, farZ
-		);
+		if (orthographic) {
+			projection = XMMatrixOrthographicLH(
+				2 * tan(fov / 2) * aspect,
+				2 * tan(fov / 2),
+#ifdef INVERSE_Z
+				farZ, nearZ
+#else
+				nearZ, farZ
+#endif
+			);
+		}
+		else {
+			projection = XMMatrixPerspectiveFovLH(
+				fov, aspect, 
+#ifdef INVERSE_Z
+				farZ, nearZ
+#else
+				nearZ, farZ
+#endif
+			);
+		}
 		viewProjection = view * projection;
 		// 6 clipping planes
 		// https://github.com/microsoft/DirectX-Graphics-Samples/blob/master/Samples/Desktop/D3D12MeshShaders/src/DynamicLOD/D3D12DynamicLOD.cpp#L475
