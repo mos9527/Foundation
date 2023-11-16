@@ -1,16 +1,16 @@
 #include "../pch.hpp"
 #include "ViewportWindow.hpp"
 
-#include "../Backend/RHI/RHI.hpp"
-#include "../Backend/AssetRegistry/AssetRegistry.hpp"
-#include "../Backend/SceneGraph/SceneGraph.hpp"
-#include "../Backend/SceneGraph/SceneGraphView.hpp"
+#include "../Engine/RHI/RHI.hpp"
+#include "../Engine/AssetRegistry/AssetRegistry.hpp"
+#include "../Engine/SceneGraph/SceneGraph.hpp"
+#include "../Engine/SceneGraph/SceneGraphView.hpp"
 
 #include "../../Dependencies/imgui/imgui.h"
 #include "../../Dependencies/imgui/backends/imgui_impl_dx12.h"
 #include "../../Dependencies/imgui/backends/imgui_impl_win32.h"
 
-#include "Renderer/Deferred.hpp"
+#include "../Renderer/Deferred.hpp"
 using namespace RHI;
 // Forward declare message handler from imgui_impl_win32.cpp
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);

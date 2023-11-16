@@ -1,5 +1,5 @@
 #pragma once
-#include "Win32/BaseWindow.hpp"
+#include "Win32/Window.hpp"
 #include "../Common/Task.hpp"
 class ViewportWindow : public BaseWindow {
 private:
