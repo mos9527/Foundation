@@ -55,23 +55,30 @@ namespace RHI {
 	};
 	DEFINE_ENUM_FLAG_OPERATORS(ResourceState);
 	DEFINE_PLUS_TO_VALUE(ResourceState);
-	enum class ResourceUsage {
+	enum class ResourceHeapType {
 		Default = 0,
 		Upload = 1,
 		Readback = 2
 	};
-	DEFINE_PLUS_TO_VALUE(ResourceUsage);
-	inline static D3D12_HEAP_TYPE ResourceUsageToD3DHeapType(ResourceUsage usage) {
+	DEFINE_PLUS_TO_VALUE(ResourceHeapType);
+	inline static D3D12_HEAP_TYPE ResourceHeapTypeToD3DHeapType(ResourceHeapType usage) {
 		switch (usage) {
-		case ResourceUsage::Upload:
+		case ResourceHeapType::Upload:
 			return D3D12_HEAP_TYPE_UPLOAD;			
-		case ResourceUsage::Readback:
+		case ResourceHeapType::Readback:
 			return D3D12_HEAP_TYPE_READBACK;		
 		default:
-		case ResourceUsage::Default:
+		case ResourceHeapType::Default:
 			return D3D12_HEAP_TYPE_DEFAULT;			
 		};
 	}
+	enum class ResourceUsage {
+		ShaderResource = 1 << 0,
+		UnorderedAccess = 1 << 1,
+		RenderTarget = 1 << 2,
+		DepthStencil = 1 << 3
+	};
+	DEFINE_ENUM_FLAG_OPERATORS(ResourceUsage);
 	enum class ResourceFormat {
 		Unknown = DXGI_FORMAT_UNKNOWN,
 		R8G8B8A8_UNORM = DXGI_FORMAT_R8G8B8A8_UNORM,

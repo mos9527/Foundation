@@ -165,6 +165,10 @@ namespace RHI {
         m_CopyQueue->SetName(L"Copy Command Queue");
         m_ComputeQueue = std::make_unique<CommandQueue>(this, CommandListType::Compute);
         m_ComputeQueue->SetName(L"Compute Command Queue");
+        // Command lists
+        m_DirectCmd = std::make_unique<CommandList>(this, CommandListType::Direct, RHI_DEFAULT_DIRECT_COMMAND_ALLOCATOR_COUNT);
+        m_CopyCmd = std::make_unique<CommandList>(this, CommandListType::Copy, RHI_DEFAULT_COPY_COMMAND_ALLOCATOR_COUNT);
+        m_ComputeCmd = std::make_unique<CommandList>(this, CommandListType::Compute, RHI_DEFAULT_COMPUTE_COMMAND_ALLOCATOR_COUNT);
         // Descriptor heaps
         m_RTVHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
             .shaderVisible = false,

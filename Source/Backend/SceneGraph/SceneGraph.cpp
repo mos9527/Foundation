@@ -1,17 +1,17 @@
-#include "../IO/IO.hpp"
-#include "../IO/MeshAsset.hpp"
-#include "../IO/MeshImporter.hpp"
+#include "../AssetRegistry/IO.hpp"
+#include "../AssetRegistry/AssetRegistry.hpp"
+#include "../AssetRegistry/MeshAsset.hpp"
+#include "../AssetRegistry/MeshImporter.hpp"
 #include "SceneGraph.hpp"
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-using namespace IO;
 void SceneGraph::load_from_aiScene(const aiScene* scene) {
 	// load meshes onto the asset_manager
 	std::unordered_map<uint, entt::entity> mesh_mapping;
 	for (UINT i = 0; i < scene->mNumMeshes; i++) {
-		mesh_static mesh = IO::load_static_mesh(scene->mMeshes[i]);
+		mesh_static mesh = load_static_mesh(scene->mMeshes[i]);
 		auto asset = assets.load<StaticMeshAsset, mesh_static>(mesh);		
 		auto entity = registry.create();
 		StaticMeshComponent staticMesh;

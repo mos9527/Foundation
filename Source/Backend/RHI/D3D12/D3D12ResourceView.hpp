@@ -7,19 +7,20 @@ namespace RHI {
 		const Resource* resource;
 		Descriptor descriptor;
 
+		inline Desc const& GetDesc() { return viewDesc; }
 		ResourceView(Resource* resource, Desc const& viewDesc) : descriptor(descriptor), viewDesc(viewDesc), resource(resource) {};
 	};
 	struct ShaderResourceView : public ResourceView<ShaderResourceViewDesc> {
 		ShaderResourceView(Resource* resource, ShaderResourceViewDesc const& desc) : ResourceView(resource, desc) {
 			auto device = resource->GetParent();
-			descriptor = device->GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
+			descriptor = device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor(); // xxx Online only? enough for now but...
 			device->GetNativeDevice()->CreateShaderResourceView(*resource, &desc, descriptor.get_cpu_handle());
 		}
 	};
 	struct UnorderedAccessView : public ResourceView<UnorderedAccessViewDesc> {
 		UnorderedAccessView(Resource* resource, UnorderedAccessViewDesc const& desc) : ResourceView(resource, desc) {
 			auto device = resource->GetParent();
-			descriptor = device->GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
+			descriptor = device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
 			device->GetNativeDevice()->CreateUnorderedAccessView(*resource, NULL, &desc, descriptor.get_cpu_handle()); // xxx Counter Resource?
 		}
 	};

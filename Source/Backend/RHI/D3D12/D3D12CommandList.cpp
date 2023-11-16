@@ -17,6 +17,6 @@ namespace RHI {
 		GetNativeCommandList()->CopyBufferRegion(*dst, dstOffset, *src, srcOffset, size);
 	};
 	SyncFence CommandList::Execute() { 
-		return m_Device->GetCommandQueue(m_Type)->Execute(this); 
+		return GetCommandQueue()->Execute(this);
 	}
 }

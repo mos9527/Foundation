@@ -4,7 +4,6 @@
 
 #include "Components/StaticMesh.hpp"
 #include "Components/Camera.hpp"
-#include "../IO/MeshAsset.hpp"
 
 class SceneGraphView {
 	SceneGraph& graph;
@@ -16,7 +15,7 @@ public:
 		instancesBuffer = std::make_unique<RHI::Buffer>(device, RHI::Resource::ResourceDesc::GetGenericBufferDesc(MAX_INSTANCE_COUNT * sizeof(SceneMesh), sizeof(SceneMesh)));		
 	};
 	void update() {
-		std::unordered_map<entt::entity, Matrix> global_transforms;
+		std::unordered_map<entt::entity, SimpleMath::Matrix> global_transforms;
 		// calculate global transforms
 		auto dfs_nodes = [&](auto& func, entt::entity entity, entt::entity parent) -> void {
 			auto ptr = graph.try_get_base_ptr(entity);
@@ -31,7 +30,7 @@ public:
 		std::vector<SceneMesh> meshes;
 		// xxx skinned meshes
 		for (auto& mesh : graph.registry.storage<StaticMeshComponent>()) {
-			auto& asset = graph.assets.get<IO::StaticMeshAsset>(mesh.mesh_resource);
+			auto& asset = graph.assets.get<StaticMeshAsset>(mesh.mesh_resource);
 			SceneMesh sceneMesh;
 			// xxx materials
 			sceneMesh.type = MESH_STATIC;

@@ -9,8 +9,9 @@ namespace RHI {
 	class Device;
 	class Swapchain : public DeviceChild {
 		name_t m_Name;
-
+		BOOL bIsFullscreen{ false };
 		uint nBackbufferIndex{ 0 };	 /* The backbuffer we are currently drawing to */
+		uint nFrameIndex{ 0 };
 		std::vector<size_t> nFenceValues;
 		std::unique_ptr<Fence> m_FrameFence;
 		std::vector<std::unique_ptr<Texture>> m_Backbuffers;
@@ -18,20 +19,21 @@ namespace RHI {
 		ComPtr<IDXGISwapChain3> m_Swapchain;
 		void Present(bool vsync);		
 	public:
-		BOOL bIsFullscreen{ false };
 		struct SwapchainDesc {
+			HWND Window;
 			int InitWidth;
 			int InitHeight;
 			ResourceFormat Format;
-			uint BackBufferCount;
-			HWND Window;
+			uint BackBufferCount = RHI_DEFAULT_SWAPCHAIN_BACKBUFFER_COUNT;
 		};
 		Swapchain(Device* device, SwapchainDesc const& cfg);
 		~Swapchain() = default;
 		
 		inline auto GetBackbuffer(uint index) { return m_Backbuffers[index].get(); }
 		inline auto GetBackbufferRTV(uint index) { return m_BackbufferRTVs[index]; }
-		inline auto GetCurrentBackbufferIndex() { return nBackbufferIndex; }
+		inline auto GetCurrentBackbufferIndex() const { return nBackbufferIndex; }
+		inline auto GetBackbufferCount() const { return m_Backbuffers.size(); }
+		inline auto GetFrameIndex() const { return nFrameIndex; }
 
 		void Resize( uint width, uint height);
 		void PresentAndMoveToNextFrame(bool vsync);

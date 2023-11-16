@@ -1,8 +1,7 @@
 #pragma once
-#include "../RHI/RHI.hpp"
 #include "../../Common/Graph.hpp"
-#include "../IO/AssetManager.hpp"
-
+#include "../AssetRegistry/AssetRegistry.hpp"
+#include "../RHI/RHI.hpp"
 #include "Component.hpp"
 #include "Components/StaticMesh.hpp"
 #include "Components/Camera.hpp"
@@ -13,6 +12,7 @@ enum class SceneComponentTag {
 	Camera,
 	StaticMesh
 };
+class AssetRegistry;
 class SceneGraphView;
 /* a rooted graph representing the scene hierarchy */
 class SceneGraph : DAG<entt::entity> {
@@ -20,9 +20,9 @@ class SceneGraph : DAG<entt::entity> {
 	using DAG::graph;
 	entt::entity root;
 	entt::registry registry;	
-	IO::AssetManager& assets;
+	AssetRegistry& assets;
 public:
-	SceneGraph(IO::AssetManager& assets) : assets(assets) {
+	SceneGraph(AssetRegistry& assets) : assets(assets) {
 		root = registry.create();
 		registry.emplace<SceneComponentTag>(root, SceneComponentTag::Root);
 	};

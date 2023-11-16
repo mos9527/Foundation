@@ -23,7 +23,7 @@ namespace RHI {
 	public:
 		struct ResourceDesc {
 			std::optional<ClearValue> clearValue;
-			ResourceUsage usage{ ResourceUsage::Default };
+			ResourceHeapType heapType{ ResourceHeapType::Default };
 			ResourceFormat format{ ResourceFormat::Unknown };
 			ResourceDimension dimension{ ResourceDimension::Unknown };
 			UINT64 alignment{ 0 };
@@ -37,16 +37,15 @@ namespace RHI {
 			TextureLayout layout{ TextureLayout::Unknown };
 			ResourceFlags flags{ ResourceFlags::None };
 			ResourceState initialState{ ResourceState::Common };
-
 			static const ResourceDesc GetGenericBufferDesc(
 				UINT64 size, 
 				UINT64 stride = 0, /* Set to 0 for Raw Buffers. Non-zero values indicates a Structured Buffer */
 				ResourceState initialState = ResourceState::Common,
-				ResourceUsage usage = ResourceUsage::Upload, 
-				ResourceFlags flags = ResourceFlags::None			
+				ResourceHeapType heapType = ResourceHeapType::Upload, 
+				ResourceFlags flags = ResourceFlags::None
 			) {
 				return ResourceDesc{
-					.usage = usage,
+					.heapType = heapType,
 					.format = ResourceFormat::Unknown,
 					.dimension = ResourceDimension::Buffer,
 					.stride = stride,
@@ -58,7 +57,7 @@ namespace RHI {
 					.sampleQuality = 0,
 					.layout = TextureLayout::RowMajor,
 					.flags = flags,
-					.initialState = initialState			
+					.initialState = initialState,
 				};
 			}
 			static const ResourceDesc GetTextureBufferDesc(
@@ -71,13 +70,13 @@ namespace RHI {
 				uint sampleCount = 1,
 				uint sampleQuality = 0,
 				ResourceFlags flags = ResourceFlags::None,
-				ResourceUsage usage = ResourceUsage::Default,
+				ResourceHeapType heapType = ResourceHeapType::Default,
 				ResourceState initialState = ResourceState::Common,
 				std::optional<ClearValue> clearValue = {}
 			) {
 				return ResourceDesc{
 					.clearValue = clearValue,
-					.usage = usage,
+					.heapType = heapType,
 					.format = format,
 					.dimension = dimension,					
 					.width = width,
@@ -88,7 +87,7 @@ namespace RHI {
 					.sampleQuality = sampleQuality,
 					.layout = TextureLayout::Unknown,
 					.flags = flags,
-					.initialState = initialState					
+					.initialState = initialState,
 				};
 			}
 			operator const D3D12_RESOURCE_DESC() const {
@@ -117,8 +116,17 @@ namespace RHI {
 			inline bool isTexture() const {
 				return !isBuffer();
 			}
-			inline bool isUnorderedAccess() const {
-				return +flags & +ResourceFlags::UnorderedAccess;
+			inline bool allowUnorderedAccess() const {
+				return +(flags & ResourceFlags::UnorderedAccess);
+			}
+			inline bool allowShaderResourceView() const {
+				return !+(flags & ResourceFlags::NoShaderResource);
+			}
+			inline bool allowRenderTarget() const {
+				return +(flags & ResourceFlags::RenderTarget);
+			}
+			inline bool allowDepthStencil() const {
+				return +(flags & ResourceFlags::DepthStencil);
 			}
 			inline size_t sizeInBytes() const {				
 				CHECK(dimension == ResourceDimension::Buffer);
@@ -135,7 +143,7 @@ namespace RHI {
 		inline ResourceDesc const& GetDesc() { return m_Desc;  }
 		
 		inline ResourceState GetState() { return m_State; }
-		void SetState(CommandList* cmdList, ResourceState state, uint subresource = RESOURCE_BARRIER_ALL_SUBRESOURCES);
+		void SetBarrier(CommandList* cmd, ResourceState state, uint subresource = RESOURCE_BARRIER_ALL_SUBRESOURCES);
 		
 		inline auto GetGPUAddress() { return m_Resource->GetGPUVirtualAddress(); }
 		inline auto GetNativeResource() { return m_Resource.Get(); }
@@ -167,8 +175,12 @@ namespace RHI {
 
 		void* pMappedData{ nullptr };
 	};
-	typedef Resource Buffer;
-	typedef Resource Texture;
+	class Buffer : public Resource {
+		using Resource::Resource;
+	};
+	class Texture : public Resource {
+		using Resource::Resource;
+	};
 	struct DeferredDeleteResource {
 		std::unique_ptr<Resource> resource;
 		operator Resource* () { return resource.get(); }

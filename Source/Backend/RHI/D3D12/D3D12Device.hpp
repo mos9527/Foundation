@@ -41,6 +41,20 @@ namespace RHI {
 			return nullptr;
 		}
 
+		CommandList* GetCommandList(CommandListType type) {
+			if (type == CommandListType::Direct)return m_DirectCmd.get();
+			if (type == CommandListType::Compute)return m_ComputeCmd.get();
+			if (type == CommandListType::Copy)return m_CopyCmd.get();
+			return nullptr;
+		}
+
+		template<CommandListType type> CommandList* GetCommandList() {
+			if constexpr (type == CommandListType::Direct)return m_DirectCmd.get();
+			if constexpr (type == CommandListType::Compute)return m_ComputeCmd.get();
+			if constexpr (type == CommandListType::Copy)return m_CopyCmd.get();
+			return nullptr;
+		}
+
 		DescriptorHeap* GetDescriptorHeap(DescriptorHeapType type) {			
 			if (type == DescriptorHeapType::CBV_SRV_UAV)return m_SRVHeap.get();
 			if (type == DescriptorHeapType::DSV)return m_DSVHeap.get();
@@ -101,6 +115,10 @@ namespace RHI {
 			m_DirectQueue, 
 			m_CopyQueue, 
 			m_ComputeQueue;
+		std::unique_ptr<CommandList>
+			m_DirectCmd,
+			m_CopyCmd,
+			m_ComputeCmd;
 		std::unique_ptr<DescriptorHeap> m_OnlineSRVHeap, m_OnlineSamplerHeap;
 		std::unique_ptr<DescriptorHeap>
 			m_RTVHeap,

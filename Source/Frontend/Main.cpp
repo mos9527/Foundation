@@ -2,10 +2,11 @@
 #include "ViewportWindow.hpp"
 
 #include "../Backend/RHI/RHI.hpp"
-#include "../Backend/IO/AssetManager.hpp"
-#include "../Backend/Scene/SceneGraph.hpp"
-#include "../Backend/Scene/SceneGraphView.hpp"
-using namespace IO;
+#include "../Backend/AssetRegistry/AssetRegistry.hpp"
+#include "../Backend/SceneGraph/SceneGraph.hpp"
+#include "../Backend/SceneGraph/SceneGraphView.hpp"
+
+#include "../../Dependencies/imgui/imgui.h"
 using namespace RHI;
 
 int main(int argc, char* argv[]) {    
@@ -20,22 +21,22 @@ int main(int argc, char* argv[]) {
 
     RHI::Device device(Device::DeviceDesc{.AdapterIndex = 0});
     RHI::Swapchain swapchain(&device, Swapchain::SwapchainDesc {
-        1600,1000, ResourceFormat::R8G8B8A8_UNORM, 2, vp.m_hWnd
+        vp.m_hWnd, 1600,1000, ResourceFormat::R8G8B8A8_UNORM
     });
 
-    AssetManager assets;
+    AssetRegistry assets;
     SceneGraph scene{ assets };
     SceneGraphView sceneView(&device, scene);
 
     Assimp::Importer importer;   
     auto imported = importer.ReadFile("..\\Resources\\DefaultCube.glb", aiProcess_Triangulate | aiProcess_ConvertToLeftHanded);
     scene.load_from_aiScene(imported);
-    CommandList uploadCmd(&device, CommandListType::Copy, 1);
+    CommandList* uploadCmd = device.GetCommandList<CommandListType::Copy>();
     
-    uploadCmd.Begin();
-    device.BeginUpload(&uploadCmd);
+    uploadCmd->Begin();
+    device.BeginUpload(uploadCmd);
     assets.upload_all<StaticMeshAsset>(&device);
-    uploadCmd.End();
+    uploadCmd->End();
     LogD3D12MABudget(device.GetAllocator());
     device.CommitUpload().Wait();
     LOG(INFO) << "Resources uploaded";
@@ -53,6 +54,9 @@ int main(int argc, char* argv[]) {
             // Translate and dispatch the message
             TranslateMessage(&msg);
             DispatchMessage(&msg);            
-        }        
+        }
+        else {
+            // Render!
+        }
     }
 }

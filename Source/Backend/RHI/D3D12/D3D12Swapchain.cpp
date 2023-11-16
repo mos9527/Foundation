@@ -25,6 +25,7 @@ namespace RHI {
         HRESULT hr = m_Swapchain->Present(vsync, 0);
         CHECK_DEVICE_REMOVAL(m_Device, hr);
         nBackbufferIndex = m_Swapchain->GetCurrentBackBufferIndex();
+        nFrameIndex++;
     }    
     void Swapchain::PresentAndMoveToNextFrame(bool vsync) {
         // Signal after this command queue is executed, i.e. this backbuffer is available again
