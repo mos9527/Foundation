@@ -29,8 +29,8 @@ namespace RHI {
 		void CopyBufferRegion(Resource* src, Resource* dst, size_t srcOffset, size_t dstOffset, size_t size);
 
 		SyncFence Execute();
+		auto GetCommandQueue();
 		inline void ExecuteBundle(CommandList* bundle) { m_CommandList->ExecuteBundle(*bundle); }
-		inline auto GetCommandQueue() { return m_Device->GetCommandQueue(m_Type); }
 		inline auto GetNativeCommandList() { return m_CommandList.Get(); }
 		operator ID3D12GraphicsCommandList6* () { return m_CommandList.Get(); }
 

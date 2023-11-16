@@ -26,7 +26,7 @@
 #include <wrl.h>
 
 #define ENTT_ID_TYPE uint32_t
-#include "../Dependencies/entt/entt.hpp"
+#include "../Dependencies/entt/single_include/entt/entt.hpp"
 
 #include <glog/logging.h>
 #include <DirectXMath.h>

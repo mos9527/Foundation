@@ -75,7 +75,7 @@
     <IncludePath>$(ProjectDir)include\directx;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>Dependencies\D3D12MemoryAllocator;$(IncludePath)</IncludePath>
+    <IncludePath>Dependencies\imgui;Dependencies\D3D12MemoryAllocator;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Label="Vcpkg">
     <VcpkgEnableManifest>true</VcpkgEnableManifest>
@@ -148,6 +148,9 @@
     <ClCompile Include="Dependencies\imgui\backends\imgui_impl_dx12.cpp" />
     <ClCompile Include="Dependencies\imgui\backends\imgui_impl_win32.cpp" />
     <ClCompile Include="Dependencies\imgui\imgui.cpp" />
+    <ClCompile Include="Dependencies\imgui\imgui_draw.cpp" />
+    <ClCompile Include="Dependencies\imgui\imgui_tables.cpp" />
+    <ClCompile Include="Dependencies\imgui\imgui_widgets.cpp" />
     <ClCompile Include="Source\Backend\AssetRegistry\AssetRegistry.cpp" />
     <ClCompile Include="Source\Backend\AssetRegistry\ImageImporter.cpp" />
     <ClCompile Include="Source\Backend\RenderGraph\RenderGraph.cpp" />
@@ -173,6 +176,10 @@
     <ClInclude Include="Dependencies\imgui\backends\imgui_impl_dx12.h" />
     <ClInclude Include="Dependencies\imgui\backends\imgui_impl_win32.h" />
     <ClInclude Include="Dependencies\imgui\imgui.h" />
+    <ClInclude Include="Dependencies\imgui\imgui_internal.h" />
+    <ClInclude Include="Dependencies\imgui\imstb_rectpack.h" />
+    <ClInclude Include="Dependencies\imgui\imstb_textedit.h" />
+    <ClInclude Include="Dependencies\imgui\imstb_truetype.h" />
     <ClInclude Include="Dependencies\stb_image.h" />
     <ClInclude Include="Source\Backend\AssetRegistry\AssetRegistry.hpp" />
     <ClInclude Include="Source\Backend\AssetRegistry\MeshAsset.hpp" />
