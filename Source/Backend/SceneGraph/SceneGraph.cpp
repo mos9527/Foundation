@@ -18,18 +18,17 @@ void SceneGraph::load_from_aiScene(const aiScene* scene) {
 		staticMesh.entity = entity;
 		staticMesh.mesh_resource = asset;
 		staticMesh.name = scene->mMeshes[i]->mName.C_Str();
-		registry.emplace<StaticMeshComponent>(entity, staticMesh);
-		registry.emplace<SceneComponentTag>(entity, SceneComponentTag::StaticMesh);		
+		emplace<StaticMeshComponent>(entity, staticMesh);		
 		mesh_mapping[i] = entity;
 	}
 	// build scene hierarchy
 	auto dfs_nodes = [&](auto& func, aiNode* node, entt::entity parent) -> void {
 		auto entity = registry.create();
-		ComponentCollection component;
+		CollectionComponent component;
 		component.entity = entity;
 		component.name = node->mName.C_Str();		
-		registry.emplace<ComponentCollection>(entity, component);
-		registry.emplace<SceneComponentTag>(entity, SceneComponentTag::Collection);		
+		emplace<CollectionComponent>(entity, component);
+
 		add_link(parent, entity);
 		for (UINT i = 0; i < node->mNumMeshes; i++) {
 			add_link(entity, mesh_mapping[node->mMeshes[i]]);
@@ -42,21 +41,21 @@ void SceneGraph::load_from_aiScene(const aiScene* scene) {
 
 void SceneGraph::log_entites() {
 	auto dfs_nodes = [&](auto& func, entt::entity entity) -> void {
-		SceneComponentTag tag = registry.get<SceneComponentTag>(entity);
+		SceneComponentType tag = registry.get<SceneComponentType>(entity);
 		switch (tag)
 		{
-		case SceneComponentTag::Root:
+		case SceneComponentType::Root:
 			LOG(INFO) << "[ Scene Root ]";
 			break;
-		case SceneComponentTag::Camera:
+		case SceneComponentType::Camera:
 			LOG(INFO) << "[ Camera ]";
 			LOG(INFO) << " Name: " << registry.get<CameraComponent>(entity).name;
 			break;
-		case SceneComponentTag::Collection:
+		case SceneComponentType::Collection:
 			LOG(INFO) << "[ Collection ]";
-			LOG(INFO) << " Name: " << registry.get<ComponentCollection>(entity).name;
+			LOG(INFO) << " Name: " << registry.get<CollectionComponent>(entity).name;
 			break;
-		case SceneComponentTag::StaticMesh:
+		case SceneComponentType::StaticMesh:
 			LOG(INFO) << "[ Static Mesh ]";
 			LOG(INFO) << " Name: " << registry.get<StaticMeshComponent>(entity).name;		
 			break;

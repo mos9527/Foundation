@@ -6,3 +6,7 @@
 struct StaticMeshComponent : public SceneComponent {
 	asset_handle mesh_resource;
 };
+
+template<> struct SceneComponentTraits<StaticMeshComponent> {
+	static constexpr SceneComponentType type = SceneComponentType::StaticMesh;
+};

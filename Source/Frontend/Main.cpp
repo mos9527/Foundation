@@ -34,9 +34,9 @@ int main(int argc, char* argv[]) {
     SceneGraph scene{ assets };
     SceneGraphView sceneView(&device, scene);
     DeferredRenderer renderer(assets, scene, &device, &swapchain);
-
+    scene.set_active_camera(scene.create_child_of<CameraComponent>(scene.get_root()));
+    auto& camera = scene.get_active_camera();
     
-
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui_ImplWin32_Init(vp.m_hWnd);

@@ -1,7 +1,6 @@
 #pragma once
 #include "../Component.hpp"
 
-
 struct CameraComponent : public SceneComponent {	
 	float fov;
 	float aspect;
@@ -20,7 +19,7 @@ struct CameraComponent : public SceneComponent {
 		nearZ = 0.01f;
 		farZ = 100.0f;
 	}
-	SceneCamera get_scene_camera(Transform globalTransform) {
+	SceneCamera get_struct(Transform globalTransform) {
 		SceneCamera camera;
 		view = XMMatrixLookToLH(
 			globalTransform.translation, globalTransform.rotation.GetDirectionVector(), XMVector3Rotate({ 0,1,0 }, globalTransform.rotation)
@@ -53,4 +52,8 @@ struct CameraComponent : public SceneComponent {
 		camera.farZ = farZ;
 		return camera;
 	}	
+};
+
+template<> struct SceneComponentTraits<CameraComponent> {
+	static constexpr SceneComponentType type = SceneComponentType::Camera;
 };

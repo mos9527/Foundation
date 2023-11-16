@@ -59,7 +59,7 @@ public:
 		if (scene.registry.any_of<CameraComponent>(scene.active_camera)) {
 			auto& camera = scene.get<CameraComponent>(scene.active_camera);
 			auto transform = Transform(global_transforms[scene.active_camera]);
-			stats.camera = camera.get_scene_camera(transform);
+			stats.camera = camera.get_struct(transform);
 		}
 		else {
 			LOG(ERROR) << "No active camera set!";
