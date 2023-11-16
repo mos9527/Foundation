@@ -8,10 +8,10 @@
 #include "../../Backend/RenderGraph/RenderGraphResourceCache.hpp"
 class Renderer {
 public:
-	Renderer(AssetRegistry& assets, SceneGraph& scene, RHI::Device* device, RHI::Swapchain* swapChain) : assets(assets), scene(scene), device(device), swapchain(swapchain);	virtual void Render() = 0;
+	Renderer(AssetRegistry& assets, SceneGraph& scene, RHI::Device* device) : assets(assets), scene(scene), device(device) {};
+	virtual void Render() = 0;
 protected:
 	AssetRegistry& assets;
 	SceneGraph& scene;	
 	RHI::Device* device;
-	RHI::Swapchain* swapchain;	
 };

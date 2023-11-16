@@ -2,9 +2,10 @@
 #include "Renderer.hpp"
 class DeferredRenderer : public Renderer {
 public:
-	DeferredRenderer(AssetRegistry& assets, SceneGraph& scene, RHI::Device* device, RHI::Swapchain* swapChain) : Renderer(assets, scene, device, swapChain) {
+	DeferredRenderer(AssetRegistry& assets, SceneGraph& scene, RHI::Device* device) : Renderer(assets, scene, device) {
 		sceneView = std::make_unique<SceneGraphView>(device, scene);
 	};
+	virtual void Render();
 private:	
 	std::unique_ptr<SceneGraphView> sceneView;
 };

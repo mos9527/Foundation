@@ -78,7 +78,7 @@ namespace RHI {
 		}
 
 		template<DescriptorHeapType type> DescriptorHeap* GetOnlineDescriptorHeap() {
-			if constexpr (type == DescriptorHeapType::CBV_SRV_UAV)return m_SRVHeap.get();
+			if constexpr (type == DescriptorHeapType::CBV_SRV_UAV)return m_OnlineSRVHeap.get();
 			if constexpr (type == DescriptorHeapType::SAMPLER)return m_OnlineSamplerHeap.get();
 			return nullptr;
 		}

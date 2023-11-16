@@ -7,7 +7,13 @@
 #include "../Backend/SceneGraph/SceneGraphView.hpp"
 
 #include "../../Dependencies/imgui/imgui.h"
+#include "../../Dependencies/imgui/backends/imgui_impl_dx12.h"
+#include "../../Dependencies/imgui/backends/imgui_impl_win32.h"
+
+#include "Renderer/Deferred.hpp"
 using namespace RHI;
+// Forward declare message handler from imgui_impl_win32.cpp
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 int main(int argc, char* argv[]) {    
     FLAGS_alsologtostderr = true;
@@ -27,12 +33,23 @@ int main(int argc, char* argv[]) {
     AssetRegistry assets;
     SceneGraph scene{ assets };
     SceneGraphView sceneView(&device, scene);
+    DeferredRenderer renderer(assets, scene, &device);
 
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui_ImplWin32_Init(vp.m_hWnd);
+    auto pSrvHeap = device.GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap();
+    ImGui_ImplDX12_Init(device.GetNativeDevice(), RHI_DEFAULT_SWAPCHAIN_BACKBUFFER_COUNT,
+        DXGI_FORMAT_R8G8B8A8_UNORM, pSrvHeap,
+        pSrvHeap->GetCPUDescriptorHandleForHeapStart(),
+        pSrvHeap->GetGPUDescriptorHandleForHeapStart());
+    vp.SetCallback([&](HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+        ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam);
+    });
     Assimp::Importer importer;   
     auto imported = importer.ReadFile("..\\Resources\\DefaultCube.glb", aiProcess_Triangulate | aiProcess_ConvertToLeftHanded);
     scene.load_from_aiScene(imported);
-    CommandList* uploadCmd = device.GetCommandList<CommandListType::Copy>();
-    
+    CommandList* uploadCmd = device.GetCommandList<CommandListType::Copy>();    
     uploadCmd->Begin();
     device.BeginUpload(uploadCmd);
     assets.upload_all<StaticMeshAsset>(&device);
@@ -47,6 +64,37 @@ int main(int argc, char* argv[]) {
     scene.log_entites();
     sceneView.update();
 
+    bool vsync = false;
+    auto cmd = device.GetCommandList<CommandListType::Direct>();
+    auto render = [&]() {
+        ImGui_ImplDX12_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
+        ImGui::ShowDemoWindow();
+        ImGui::Render();
+        uint bbIndex = swapchain.GetCurrentBackbufferIndex();
+        cmd->ResetAllocator(bbIndex);
+        cmd->Begin(bbIndex);
+        swapchain.GetBackbuffer(bbIndex)->SetBarrier(cmd, ResourceState::RenderTarget);
+        auto rtv = swapchain.GetBackbufferRTV(bbIndex);
+        /* FRAME BEGIN */
+        // Render
+        renderer.Render();
+        // ImGui
+        cmd->GetNativeCommandList()->OMSetRenderTargets(1, &rtv.descriptor.get_cpu_handle(), FALSE, nullptr);
+        const float clearColor[] = { 0.0f, 0.0f,0.0f, 1.0f };
+        cmd->GetNativeCommandList()->ClearRenderTargetView(rtv.descriptor.get_cpu_handle(), clearColor, 0, nullptr);
+        auto const srvHeap = device.GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap();
+        cmd->GetNativeCommandList()->SetDescriptorHeaps(1, &srvHeap);
+        ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd->GetNativeCommandList());
+        /* FRAME END */
+        swapchain.GetBackbuffer(bbIndex)->SetBarrier(cmd, ResourceState::Present);
+        cmd->End();
+        cmd->Execute();
+        swapchain.PresentAndMoveToNextFrame(false);
+    };
+
+    // win32 message pump
     MSG  msg{};
     while (1) {
         if (PeekMessage(&msg, NULL, 0U, 0U, PM_REMOVE) != 0)
@@ -57,6 +105,7 @@ int main(int argc, char* argv[]) {
         }
         else {
             // Render!
+            render();
         }
     }
 }
