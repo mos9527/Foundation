@@ -17,6 +17,9 @@ namespace RHI {
 		std::vector<std::unique_ptr<Texture>> m_Backbuffers;
 		std::vector<RenderTargetView> m_BackbufferRTVs;
 		ComPtr<IDXGISwapChain3> m_Swapchain;
+
+		ResourceFormat m_BackbufferFormat;
+		uint nWidth, nHeight;
 		void Present(bool vsync);		
 	public:
 		struct SwapchainDesc {
@@ -34,6 +37,9 @@ namespace RHI {
 		inline auto GetCurrentBackbufferIndex() const { return nBackbufferIndex; }
 		inline auto GetBackbufferCount() const { return m_Backbuffers.size(); }
 		inline auto GetFrameIndex() const { return nFrameIndex; }
+		inline auto GetFormat() const { return m_BackbufferFormat; }
+		inline auto GetWidth() const { return nWidth; }
+		inline auto GetHeight() const { return nHeight; }
 
 		void Resize( uint width, uint height);
 		void PresentAndMoveToNextFrame(bool vsync);

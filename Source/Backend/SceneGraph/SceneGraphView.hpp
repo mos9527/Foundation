@@ -6,31 +6,31 @@
 #include "Components/Camera.hpp"
 
 class SceneGraphView {
-	SceneGraph& graph;
-	std::unique_ptr<RHI::Buffer> statsBuffer;
+	SceneGraph& scene;
+	std::unique_ptr<RHI::Buffer> globalBuffer;
 	std::unique_ptr<RHI::Buffer> instancesBuffer;	
 public:
-	SceneGraphView(RHI::Device* device, SceneGraph& graph) : graph(graph) {
-		statsBuffer = std::make_unique<RHI::Buffer>(device, RHI::Resource::ResourceDesc::GetGenericBufferDesc(sizeof(SceneStats), sizeof(SceneStats)));
+	SceneGraphView(RHI::Device* device, SceneGraph& scene) : scene(scene) {
+		globalBuffer = std::make_unique<RHI::Buffer>(device, RHI::Resource::ResourceDesc::GetGenericBufferDesc(sizeof(SceneGlobals), sizeof(SceneGlobals)));
 		instancesBuffer = std::make_unique<RHI::Buffer>(device, RHI::Resource::ResourceDesc::GetGenericBufferDesc(MAX_INSTANCE_COUNT * sizeof(SceneMesh), sizeof(SceneMesh)));		
 	};
 	void update() {
 		std::unordered_map<entt::entity, SimpleMath::Matrix> global_transforms;
 		// calculate global transforms
 		auto dfs_nodes = [&](auto& func, entt::entity entity, entt::entity parent) -> void {
-			auto ptr = graph.try_get_base_ptr(entity);
+			auto ptr = scene.try_get_base_ptr(entity);
 			if (ptr)
 				global_transforms[entity] = global_transforms[parent] * ptr->localTransform;			
-			for (auto child : graph.graph[entity])
+			for (auto child : scene.graph[entity])
 				func(func, child, entity);
 		};
-		dfs_nodes(dfs_nodes, graph.root, graph.root);
+		dfs_nodes(dfs_nodes, scene.root, scene.root);
 		// updates for static mesh view
 		uint mesh_index = 0;
 		std::vector<SceneMesh> meshes;
 		// xxx skinned meshes
-		for (auto& mesh : graph.registry.storage<StaticMeshComponent>()) {
-			auto& asset = graph.assets.get<StaticMeshAsset>(mesh.mesh_resource);
+		for (auto& mesh : scene.registry.storage<StaticMeshComponent>()) {
+			auto& asset = scene.assets.get<StaticMeshAsset>(mesh.mesh_resource);
 			SceneMesh sceneMesh;
 			// xxx materials
 			sceneMesh.type = MESH_STATIC;
@@ -52,8 +52,18 @@ public:
 			mesh_index++;
 		}
 		instancesBuffer->Update(meshes.data(), ::size_in_bytes(meshes), 0);
-		SceneStats stats{};
+		// update scene globals
+		SceneGlobals stats{};
 		stats.numMeshes = mesh_index;
-		statsBuffer->Update(&stats, sizeof(stats), 0);
+		// scene camera
+		if (scene.registry.any_of<CameraComponent>(scene.active_camera)) {
+			auto& camera = scene.get<CameraComponent>(scene.active_camera);
+			auto transform = Transform(global_transforms[scene.active_camera]);
+			stats.camera = camera.get_scene_camera(transform);
+		}
+		else {
+			LOG(ERROR) << "No active camera set!";
+		}
+		globalBuffer->Update(&stats, sizeof(stats), 0);
 	}
 };

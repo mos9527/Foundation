@@ -1,6 +1,6 @@
 #pragma once
 #include "../RHI/RHI.hpp"
-enum class rg_resource_types {
+enum class RgResourceType {
 	Unknown,
 	Buffer,
 	Texture,
@@ -9,104 +9,104 @@ enum class rg_resource_types {
 	ResourceViewRTV,
 	ResourceViewDSV
 };
-enum class rg_resource_flags {
+enum class RgResourceFlag {
 	Imported,
 	Created
 };
 
-struct rg_handle {
+struct RgHandle {
 	uint version;
-	rg_resource_types type;
-	rg_resource_flags flag;
+	RgResourceType type;
+	RgResourceFlag flag;
 	entt::entity entity; // entity within RenderGraph's registry. indexes `rg_handle`. may index `rg_resource` deriviatives
 	inline operator entt::entity() const { return entity; }
-	bool is_imported() { return flag == rg_resource_flags::Imported; }
+	bool is_imported() { return flag == RgResourceFlag::Imported; }
 };
-template<> struct std::hash<rg_handle> {
-	inline entt::entity operator()(const rg_handle& resource) const { return resource; }
+template<> struct std::hash<RgHandle> {
+	inline entt::entity operator()(const RgHandle& resource) const { return resource; }
 };
 
-struct rg_resource {
+struct RgResource {
 	entt::entity entity;
 };
-struct rg_buffer : public rg_resource {
+struct RgBuffer : public RgResource {
 	RHI::Resource::ResourceDesc desc;
 };
-struct rg_texture : public rg_resource {
+struct RgTexture : public RgResource {
 	RHI::Resource::ResourceDesc desc;
 };
-struct rg_srv : public rg_resource {
+struct RgSRV : public RgResource {
 	struct view_desc {
 		RHI::ShaderResourceViewDesc viewDesc;
 		entt::entity viewed; // the viewed resource		
 	} desc;	
 };
-struct rg_rtv : public rg_resource {
+struct RgRTV : public RgResource {
 	struct view_desc {
 		RHI::RenderTargetViewDesc viewDesc;
 		entt::entity viewed; // the viewed resource		
 	} desc;
 };
-struct rg_dsv : public rg_resource {
+struct RgDSV : public RgResource {
 	struct view_desc {
 		RHI::DepthStencilViewDesc viewDesc;
 		entt::entity viewed; // the viewed resource		
 	} desc;
 };
-struct rg_uav : public rg_resource {
+struct RgUAV : public RgResource {
 	struct view_desc {
 		RHI::UnorderedAccessViewDesc viewDesc;
 		entt::entity viewed; // the viewed resource		
 	} desc;
 };
 
-template<typename T> struct rg_resource_traits {
-	static constexpr rg_resource_types type_enum = rg_resource_types::Unknown;
+template<typename T> struct RgResourceTraits {
+	static constexpr RgResourceType type_enum = RgResourceType::Unknown;
 	using type = void;
 	using rhi_type = void;
 	using desc_type = void;
 };
 
-template<> struct rg_resource_traits<RHI::Texture> {
-	static constexpr rg_resource_types type_enum = rg_resource_types::Texture;
-	using type = rg_texture;
+template<> struct RgResourceTraits<RHI::Texture> {
+	static constexpr RgResourceType type_enum = RgResourceType::Texture;
+	using type = RgTexture;
 	using rhi_type = RHI::Texture;
-	using desc_type = decltype(rg_texture::desc);
+	using desc_type = decltype(RgTexture::desc);
 };
 
-template<> struct rg_resource_traits<RHI::Buffer> {
-	static constexpr rg_resource_types type_enum = rg_resource_types::Buffer;
-	using type = rg_buffer;
+template<> struct RgResourceTraits<RHI::Buffer> {
+	static constexpr RgResourceType type_enum = RgResourceType::Buffer;
+	using type = RgBuffer;
 	using rhi_type = RHI::Buffer;
-	using desc_type = decltype(rg_buffer::desc);
+	using desc_type = decltype(RgBuffer::desc);
 };
 
-template<> struct rg_resource_traits<RHI::ShaderResourceView> {
-	static constexpr rg_resource_types type_enum = rg_resource_types::ResourceViewSRV;
-	using type = rg_srv;
+template<> struct RgResourceTraits<RHI::ShaderResourceView> {
+	static constexpr RgResourceType type_enum = RgResourceType::ResourceViewSRV;
+	using type = RgSRV;
 	using rhi_type = RHI::ShaderResourceView;
-	using desc_type = decltype(rg_srv::desc);
+	using desc_type = decltype(RgSRV::desc);
 };
 
-template<> struct rg_resource_traits<RHI::RenderTargetView> {
-	static constexpr rg_resource_types type_enum = rg_resource_types::ResourceViewRTV;
-	using type = rg_rtv;
+template<> struct RgResourceTraits<RHI::RenderTargetView> {
+	static constexpr RgResourceType type_enum = RgResourceType::ResourceViewRTV;
+	using type = RgRTV;
 	using rhi_type = RHI::RenderTargetView;
-	using desc_type = decltype(rg_rtv::desc);
+	using desc_type = decltype(RgRTV::desc);
 };
 
-template<> struct rg_resource_traits<RHI::DepthStencilView> {
-	static constexpr rg_resource_types type_enum = rg_resource_types::ResourceViewDSV;
-	using type = rg_dsv;
+template<> struct RgResourceTraits<RHI::DepthStencilView> {
+	static constexpr RgResourceType type_enum = RgResourceType::ResourceViewDSV;
+	using type = RgDSV;
 	using rhi_type = RHI::DepthStencilView;
-	using desc_type = decltype(rg_dsv::desc);
+	using desc_type = decltype(RgDSV::desc);
 };
 
-template<> struct rg_resource_traits<RHI::UnorderedAccessView> {
-	static constexpr rg_resource_types type_enum = rg_resource_types::ResourceViewUAV;
-	using type = rg_uav;
+template<> struct RgResourceTraits<RHI::UnorderedAccessView> {
+	static constexpr RgResourceType type_enum = RgResourceType::ResourceViewUAV;
+	using type = RgUAV;
 	using rhi_type = RHI::UnorderedAccessView;
-	using desc_type = decltype(rg_uav::desc);
+	using desc_type = decltype(RgUAV::desc);
 };
 
-template<typename T> concept rg_defined_resource = !std::is_void_v<typename rg_resource_traits<T>::type>;
+template<typename T> concept RgDefinedResource = !std::is_void_v<typename RgResourceTraits<T>::type>;

@@ -89,7 +89,7 @@ namespace RHI {
 		SyncFence CommitUpload();
 		// Releases all temporary allocations that will never be used again		
 		bool Clean();
-
+		void Wait();
 		inline auto GetAllocator() { return m_Allocator.Get(); }
 		inline operator ID3D12Device* () { return m_Device.Get(); }
 

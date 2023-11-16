@@ -1,5 +1,5 @@
 #ifndef SCENE_STRUCTS
-#define SCENE_STRCUTS
+#define SCENE_STRUCTS
 #include "../../defines.hpp"
 #ifdef __cplusplus
 #include "../../pch.hpp"
@@ -26,7 +26,27 @@ struct D3D12_INDEX_BUFFER_VIEW
 	uint					  Format;
 };
 #endif
-struct SceneStats {
+struct SceneCamera {
+	float4 position;
+
+	float fov;
+	float aspect;
+	float nearZ;
+	float farZ;
+	
+	float4 clipPlanes[6];
+
+	matrix view;
+	matrix projection;
+	matrix viewProjection;
+
+	matrix invView;
+	matrix invProjection;
+	matrix invViewProjection;
+};
+struct SceneGlobals {
+	SceneCamera camera;
+
 	uint numMeshes;
 	uint3 _pad;
 };

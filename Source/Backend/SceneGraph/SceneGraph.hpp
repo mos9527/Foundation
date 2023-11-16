@@ -19,7 +19,10 @@ class SceneGraph : DAG<entt::entity> {
 	friend class SceneGraphView;
 	using DAG::graph;
 	entt::entity root;
-	entt::registry registry;	
+	entt::registry registry;
+
+	entt::entity active_camera = entt::tombstone;
+
 	AssetRegistry& assets;
 public:
 	SceneGraph(AssetRegistry& assets) : assets(assets) {
@@ -31,6 +34,12 @@ public:
 	}
 	template<typename T> T* try_get(entt::entity entity) {
 		return registry.try_get<T>(entity);
+	}
+	template<typename T> entt::entity emplace(entt::entity parent, auto&& args...) {
+		auto entity = registry.create();
+		registry.emplace<T>(entity, std::forward<decltype(args)>(args)...);
+		add_link(parent, entity);
+		return entity;
 	}
 	SceneComponent* try_get_base_ptr(entt::entity entity) {
 		SceneComponentTag type = get<SceneComponentTag>(entity);

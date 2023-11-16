@@ -1,49 +1,49 @@
 #pragma once
 #include "../pch.hpp"
 /* functional utilties*/
-typedef std::function<void()> void_function_type;
-typedef std::shared_ptr<void_function_type> void_function_ptr_type;
-void_function_ptr_type make_function_ptr(auto func, auto&&... args) {
+typedef std::function<void()> VoidFunction;
+typedef std::shared_ptr<VoidFunction> VoidFunctionPtr;
+VoidFunctionPtr make_function_ptr(auto func, auto&&... args) {
 	typedef decltype(func(args...)) return_type;
 	static_assert(std::is_void_v(return_type));
 	return std::make_shared<std::function<return_type()>>(std::bind(func, args...));
 }
 /* task typedefs */
-typedef std::packaged_task<void()> void_task_type;
-typedef std::shared_ptr<void_task_type> void_task_ptr_type;
-void_task_ptr_type make_task_ptr(auto func, auto&&... args) {
+typedef std::packaged_task<void()> VoidTask;
+typedef std::shared_ptr<VoidTask> VoidTaskPtr;
+VoidTaskPtr make_task_ptr(auto func, auto&&... args) {
 	typedef decltype(func(args...)) return_type;	
 	return std::make_shared<std::packaged_task<return_type()>>(std::bind(func, args...));
 }
 /* task concepts */
-template<typename T> concept void_task_container = requires(T t) {
-	{ t.push(void_task_ptr_type()) };
+template<typename T> concept VoidTaskContainer = requires(T t) {
+	{ t.push(VoidTaskPtr()) };
 	{ t.pop() };
-	{ t.front() } -> std::convertible_to<void_task_ptr_type>;
+	{ t.front() } -> std::convertible_to<VoidTaskPtr>;
 };
 /* container types */
-typedef std::queue<void_task_ptr_type> task_queue_container_fifo;
-class task_queue_container_lifo : public std::stack<void_task_ptr_type> {
+typedef std::queue<VoidTaskPtr> TaskQueueFIFOContainer;
+class TaskQueueLIFOContainer : public std::stack<VoidTaskPtr> {
 public:
-	using std::stack<void_task_ptr_type>::stack;
+	using std::stack<VoidTaskPtr>::stack;
 	auto& front() { return top(); }
 };
 /* task queue */
-template<void_task_container _Tc> class task_queue {
+template<VoidTaskContainer _Tc> class TaskQueue {
 public:
 	typedef _Tc container_type;
 	auto push(auto func, auto&&... args) {
 		typedef decltype(func(args...)) return_type;
 		auto task = make_task_ptr(func, args...);
 		auto future = task->get_future();
-		tasks.push(std::make_shared<void_task_type>([task = std::move(task)]() { (*task)(); /* task dtor */ }));
+		tasks.push(std::make_shared<VoidTask>([task = std::move(task)]() { (*task)(); /* task dtor */ }));
 		/* task in this scope is no longer valid. ownership is now transfered to the smart pointer */
 		return future;
 	}
 protected:
-	std::optional<void_task_ptr_type> pop() {
+	std::optional<VoidTaskPtr> pop() {
 		if (tasks.size()) {
-			void_task_ptr_type ptr = std::move(tasks.front()); /* actual dtor will be handled by caller */
+			VoidTaskPtr ptr = std::move(tasks.front()); /* actual dtor will be handled by caller */
 			tasks.pop();
 			return ptr;
 		}
@@ -53,16 +53,16 @@ private:
 	container_type tasks;
 };
 /* task threadpool */
-template<void_task_container _Tc> class task_threadpool : public task_queue<_Tc> {
+template<VoidTaskContainer _Tc> class TaskThreadPool : public TaskQueue<_Tc> {
 public:
-	typedef task_queue<_Tc> queue_type;
+	typedef TaskQueue<_Tc> queue_type;
 	using queue_type::container_type;
 
-	task_threadpool(size_t num_threads = -1) {
+	TaskThreadPool(size_t num_threads = -1) {
 		if (num_threads == -1)
 			num_threads = std::thread::hardware_concurrency();
 		threads.resize(num_threads);
-		for (auto& thread : threads) thread = std::jthread(std::bind(&task_threadpool<_Tc>::worker_job, this));
+		for (auto& thread : threads) thread = std::jthread(std::bind(&TaskThreadPool<_Tc>::worker_job, this));
 	}	
 	auto push(auto&& func, auto&&... args) {
 		{
@@ -76,7 +76,7 @@ public:
 		new_task_cv.notify_all();
 		for (auto& thread : threads) if (thread.joinable()) thread.join();
 	}
-	~task_threadpool() {
+	~TaskThreadPool() {
 		stop_and_join();
 	}
 private:

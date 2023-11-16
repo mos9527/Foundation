@@ -3,11 +3,11 @@
 
 void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 	auto& rg_registry = graph.registry;
-	std::unordered_map<rg_handle, bool> resource_dirty;
+	std::unordered_map<RgHandle, bool> resource_dirty;
 	// imported resources are left as is since we'd expect them to be usable at all times within the registry	
 	// created resources may mutate over different graph iterations (i.e. changed buffer sizes) so we'd watch them here:
-	for (auto& buffer : rg_registry.storage<rg_buffer>()) {
-		auto& handle = rg_registry.get<rg_handle>(buffer.entity);		
+	for (auto& buffer : rg_registry.storage<RgBuffer>()) {
+		auto& handle = rg_registry.get<RgHandle>(buffer.entity);		
 		if (!cache_contains<RHI::Buffer>(handle) || get_cached<RHI::Buffer>(handle).GetDesc() != buffer.desc)
 		{
 			// rebuild : resource is dirty
@@ -16,8 +16,8 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 			DLOG(INFO) << "Rebuilt buffer " << entt::to_integral(handle.entity);
 		}
 	}
-	for (auto& texture : rg_registry.storage<rg_texture>()) {
-		auto& handle = rg_registry.get<rg_handle>(texture.entity);
+	for (auto& texture : rg_registry.storage<RgTexture>()) {
+		auto& handle = rg_registry.get<RgHandle>(texture.entity);
 		if (!cache_contains<RHI::Texture>(handle) || get_cached<RHI::Texture>(handle).GetDesc() != texture.desc) {
 			textureCache.erase(handle);
 			emplace_or_replace<RHI::Texture>(handle, device, texture.desc);
@@ -27,13 +27,13 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 	}
 	// resource views
 	auto build_view = [&]<typename Cache>(auto & view, Cache& cache) -> void {
-		auto& viewing_handle = rg_registry.get<rg_handle>(view.entity);
-		auto& viewed_handle = rg_registry.get<rg_handle>(view.desc.viewed);
+		auto& viewing_handle = rg_registry.get<RgHandle>(view.entity);
+		auto& viewed_handle = rg_registry.get<RgHandle>(view.desc.viewed);
 		RHI::Resource* ptr = nullptr;
 		switch (viewed_handle.type) {
-		case rg_resource_types::Buffer:
+		case RgResourceType::Buffer:
 			ptr = viewed_handle.is_imported() ? graph.get_imported<RHI::Buffer>(viewed_handle) : &get_cached<RHI::Buffer>(viewed_handle);
-		case rg_resource_types::Texture:
+		case RgResourceType::Texture:
 			ptr = viewed_handle.is_imported() ? graph.get_imported<RHI::Texture>(viewed_handle) : &get_cached<RHI::Texture>(viewed_handle);
 		}
 		using view_type = Cache::mapped_type;		
@@ -48,8 +48,8 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 		}
 	};
 
-	for (auto& srv : rg_registry.storage<rg_srv>()) build_view(srv, srvCache);
-	for (auto& rtv : rg_registry.storage<rg_rtv>()) build_view(rtv, rtvCache);
-	for (auto& dsv : rg_registry.storage<rg_dsv>()) build_view(dsv, dsvCache);
-	for (auto& uav : rg_registry.storage<rg_uav>()) build_view(uav, uavCache);
+	for (auto& srv : rg_registry.storage<RgSRV>()) build_view(srv, srvCache);
+	for (auto& rtv : rg_registry.storage<RgRTV>()) build_view(rtv, rtvCache);
+	for (auto& dsv : rg_registry.storage<RgDSV>()) build_view(dsv, dsvCache);
+	for (auto& uav : rg_registry.storage<RgUAV>()) build_view(uav, uavCache);
 }

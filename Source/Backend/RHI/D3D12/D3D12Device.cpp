@@ -250,4 +250,9 @@ namespace RHI {
     bool Device::Clean() {
         return m_UploadContext.Clean();
     }
+    void Device::Wait() {
+        m_DirectQueue->Wait();
+        m_CopyQueue->Wait();
+        m_ComputeQueue->Wait();
+    }
 }

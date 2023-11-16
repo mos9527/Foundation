@@ -33,19 +33,34 @@ int main(int argc, char* argv[]) {
     AssetRegistry assets;
     SceneGraph scene{ assets };
     SceneGraphView sceneView(&device, scene);
-    DeferredRenderer renderer(assets, scene, &device);
+    DeferredRenderer renderer(assets, scene, &device, &swapchain);
+
+    
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui_ImplWin32_Init(vp.m_hWnd);
     auto pSrvHeap = device.GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap();
     ImGui_ImplDX12_Init(device.GetNativeDevice(), RHI_DEFAULT_SWAPCHAIN_BACKBUFFER_COUNT,
-        DXGI_FORMAT_R8G8B8A8_UNORM, pSrvHeap,
+        ResourceFormatToD3DFormat(swapchain.GetFormat()), pSrvHeap,
         pSrvHeap->GetCPUDescriptorHandleForHeapStart(),
         pSrvHeap->GetGPUDescriptorHandleForHeapStart());
     vp.SetCallback([&](HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
         ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam);
+        if (message == WM_SIZE) {
+            device.Wait();
+            swapchain.Resize(std::max((WORD)128u, LOWORD(lParam)), std::max((WORD)128u, HIWORD(lParam)));
+        }
     });
+    float baseFontSize = 16.0f * ImGui_ImplWin32_GetDpiScaleForHwnd(vp.m_hWnd);       
+    ImGui::GetIO().Fonts->AddFontFromFileTTF(
+        "../Resources/Fonts/DroidSansFallback.ttf",
+        baseFontSize,
+        NULL,
+        ImGui::GetIO().Fonts->GetGlyphRangesChineseFull()
+    );
+    ImGui::StyleColorsLight();
+
     Assimp::Importer importer;   
     auto imported = importer.ReadFile("..\\Resources\\DefaultCube.glb", aiProcess_Triangulate | aiProcess_ConvertToLeftHanded);
     scene.load_from_aiScene(imported);
@@ -78,12 +93,12 @@ int main(int argc, char* argv[]) {
         swapchain.GetBackbuffer(bbIndex)->SetBarrier(cmd, ResourceState::RenderTarget);
         auto rtv = swapchain.GetBackbufferRTV(bbIndex);
         /* FRAME BEGIN */
+        const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
+        cmd->GetNativeCommandList()->ClearRenderTargetView(rtv.descriptor.get_cpu_handle(), clearColor, 0, nullptr);
         // Render
         renderer.Render();
         // ImGui
         cmd->GetNativeCommandList()->OMSetRenderTargets(1, &rtv.descriptor.get_cpu_handle(), FALSE, nullptr);
-        const float clearColor[] = { 0.0f, 0.0f,0.0f, 1.0f };
-        cmd->GetNativeCommandList()->ClearRenderTargetView(rtv.descriptor.get_cpu_handle(), clearColor, 0, nullptr);
         auto const srvHeap = device.GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap();
         cmd->GetNativeCommandList()->SetDescriptorHeaps(1, &srvHeap);
         ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd->GetNativeCommandList());

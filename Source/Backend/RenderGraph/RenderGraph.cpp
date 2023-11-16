@@ -2,18 +2,18 @@
 #include "RenderGraphResourceCache.hpp"
 
 using namespace RHI;
-template<rg_defined_resource T> T* RenderGraph::get_created(rg_handle handle) {
+template<RgDefinedResource T> T* RenderGraph::get_created(RgHandle handle) {
 	return &cache.get_cached<T>(handle);
 }
 
 void RenderGraph::execute(RenderGraphResourceCache& cache, RHI::CommandList* cmd) {
-	rg_context context{ .graph = this, .cmd = cmd };
+	RgContext context{ .graph = this, .cmd = cmd };
 	Device* device = cmd->GetParent();
 	cache.update(*this, device);
 	build_graph();
 	for (auto& layer : rg_layers) {
 		// setup resource barriers
-		rg_resources reads, writes, readwrites;
+		RgResources reads, writes, readwrites;
 		for (auto entity : layer) {
 			RenderPass& pass = registry.get<RenderPass>(entity);
 			reads.insert(pass.reads.begin(), pass.reads.end());

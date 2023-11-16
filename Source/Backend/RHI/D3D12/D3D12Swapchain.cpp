@@ -19,6 +19,7 @@ namespace RHI {
         m_FrameFence = std::make_unique<Fence>(device);
         m_FrameFence->SetName(L"Swap Fence");
         nFenceValues.resize(cfg.BackBufferCount);
+        m_BackbufferFormat = cfg.Format;
         Resize(cfg.InitWidth, cfg.InitHeight);
     }
     void Swapchain::Present(bool vsync) {
@@ -39,6 +40,8 @@ namespace RHI {
         nFenceValues[nBackbufferIndex] = gfxQueue->GetUniqueFenceValue();
     }
     void Swapchain::Resize(uint width, uint height) {
+        nWidth = width;
+        nHeight = height;
         uint buffers = (UINT)m_Backbuffers.size();        
         // Reset BBs and their fence values
         size_t resetFenceValue = m_Device->GetCommandQueue<CommandListType::Direct>()->GetUniqueFenceValue();
@@ -65,6 +68,6 @@ namespace RHI {
         m_BackbufferRTVs.clear();
         for (auto& backbuffer : m_Backbuffers) {            
             m_BackbufferRTVs.push_back(RenderTargetView(backbuffer.get()));
-        }
+        }        
     }
 }

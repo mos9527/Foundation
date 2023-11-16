@@ -2,6 +2,8 @@
 #include "../RHI/RHI.hpp"
 #include "../../Common/Graph.hpp"
 #include "../../Common/Math.hpp"
+#include "SceneGraphViewStructs.h"
+
 struct SceneComponent {
 	entt::entity entity;
 
@@ -10,3 +12,4 @@ struct SceneComponent {
 };
 
 typedef SceneComponent ComponentCollection;
+template<typename T> struct SceneComponentTraits {};

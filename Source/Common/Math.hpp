@@ -116,14 +116,16 @@ public:
 
 struct Transform
 {
-    XMVECTOR translation;
+    SimpleMath::Vector3 translation;
     Rotation rotation;
-    XMVECTOR scale;
+    SimpleMath::Vector3 scale;
 
-    void SetTransforms(SimpleMath::Matrix transform) {
-        XMVECTOR rotationQuaternion;
-        XMMatrixDecompose(&scale, &rotationQuaternion, &translation, transform);
-        rotation.SetRotationQuaternion(rotationQuaternion);
+    void SetTransforms(SimpleMath::Matrix transform) {        
+        XMVECTOR Scale, RotationQuaternion, Translation;
+        XMMatrixDecompose(&Scale, &RotationQuaternion, &Translation, transform);
+        scale = Scale; 
+        rotation.SetRotationQuaternion(RotationQuaternion);
+        translation = Translation;
     }
     SimpleMath::Matrix GetTransforms() const {
         return XMMatrixAffineTransformation(scale, { 0,0,0 }, rotation.GetRotationQuaternion(), translation);

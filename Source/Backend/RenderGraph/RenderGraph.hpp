@@ -6,14 +6,14 @@
 #include "RenderGraphResource.hpp"
 
 class RenderGraph;
-struct rg_context {
+struct RgContext {
 	RenderGraph* graph;
 	RHI::CommandList* cmd;
 };
-template<typename T> concept rg_function_type = requires(T func, rg_context& renderContext) { func(renderContext); };
-typedef void_function_ptr_type rg_function_ptr;
+template<typename T> concept RgFunctionType = requires(T func, RgContext& renderContext) { func(renderContext); };
+typedef VoidFunctionPtr RgFunctionPtr;
 
-typedef std::unordered_set<rg_handle> rg_resources;
+typedef std::unordered_set<RgHandle> RgResources;
 
 class RenderGraph;
 struct RenderPass {
@@ -22,36 +22,36 @@ private:
 	entt::entity rg_entity;
 public:
 	// r/w/rws for Created resources
-	rg_resources reads, writes, readwrites;	
+	RgResources reads, writes, readwrites;	
 	// function callback for actual rendering work
-	rg_function_ptr executes;
+	RgFunctionPtr executes;
 
 	RenderPass(entt::entity entity) : rg_entity(entity) {};
-	RenderPass& write(rg_handle& resource) {
+	RenderPass& write(RgHandle& resource) {
 		CHECK(!resource.is_imported());
 		resource.version++;
 		writes.insert(resource); 
 		return *this; 
 	}
-	RenderPass& readwrite(rg_handle& resource) {
+	RenderPass& readwrite(RgHandle& resource) {
 		CHECK(!resource.is_imported());
 		resource.version++;
 		readwrites.insert(resource);
 		return *this;
 	}
-	RenderPass& read(rg_handle resource) {
+	RenderPass& read(RgHandle resource) {
 		CHECK(!resource.is_imported());
 		reads.insert(resource);
 		return *this;
 	}
-	template<typename T> RenderPass& execute(T func) requires rg_function_type<T> {
+	template<typename T> RenderPass& execute(T func) requires RgFunctionType<T> {
 		executes = make_task_ptr(func); 
 		return *this;
 	}
 	bool has_execute() { return executes.get() != nullptr; }
 	bool has_dependencies() { return reads.size() > 0 || readwrites.size() > 0; }
-	bool reads_from(rg_handle resource) { return reads.contains(resource) || readwrites.contains(resource); }
-	bool writes_to(rg_handle resource) { return writes.contains(resource); }
+	bool reads_from(RgHandle resource) { return reads.contains(resource) || readwrites.contains(resource); }
+	bool writes_to(RgHandle resource) { return writes.contains(resource); }
 };
 class RenderGraphResourceCache;
 // DAG Graph for managing rendering work
@@ -101,55 +101,55 @@ public:
 	}
 	// created resources -> stored as handles
 	// note: resource object itself is cached. see RenderGraphResourceCache	
-	template<rg_defined_resource T> rg_handle create(rg_resource_traits<T>::desc_type const& desc){
-		using traits = rg_resource_traits<T>;
+	template<RgDefinedResource T> RgHandle create(RgResourceTraits<T>::desc_type const& desc){
+		using traits = RgResourceTraits<T>;
 		auto entity = registry.create();
 		auto resource = traits::type();		
 		resource.desc = desc;
 		resource.entity = entity;
 		registry.emplace<traits::type>(entity, resource);
-		rg_handle handle{
+		RgHandle handle{
 			.version = 0,
 			.type = traits::type_enum,
-			.flag = rg_resource_flags::Created,
+			.flag = RgResourceFlag::Created,
 			.entity = entity
 		};
-		registry.emplace<rg_handle>(entity, handle);
+		registry.emplace<RgHandle>(entity, handle);
 		return handle;
 	};
 	// imported resources -> stored as pointers
 	// imported resoures can only be read.
-	template<rg_defined_resource T> rg_handle import(T* resource) {
+	template<RgDefinedResource T> RgHandle import(T* resource) {
 		auto entity = registry.create();
 		registry.emplace<T*>(entity, resource);
-		rg_handle handle {
+		RgHandle handle {
 			.version = 0,
-			.type = rg_resource_traits<T>::type,
-			.flag = rg_resource_flags::Imported,
+			.type = RgResourceTraits<T>::type,
+			.flag = RgResourceFlag::Imported,
 			.entity = entity
 		};
-		registry.emplace<rg_handle>(entity, handle);
+		registry.emplace<RgHandle>(entity, handle);
 		return handle;
 	};
 	// retrives imported RHI object pointer
 	// its validity is not guaranteed.
-	template<rg_defined_resource T> T* get_imported(rg_handle handle) {
+	template<RgDefinedResource T> T* get_imported(RgHandle handle) {
 		return registry.get<T*>(handle);
 	}
 	// retrives created RHI object pointer
 	// its validity is guaranteed post cache build
-	template<rg_defined_resource T> T* get_created(rg_handle handle);
+	template<RgDefinedResource T> T* get_created(RgHandle handle);
 	// retrives imported / created RHI object pointer
-	template<rg_defined_resource T> T* get(rg_handle handle) {
+	template<RgDefinedResource T> T* get(RgHandle handle) {
 		if (handle.is_imported()) return get_imported<T>(handle);
 		return get_created<T>(handle);
 	}
 	// retrives imported / created RHI object as Resource*
 	// if not convertible, nullptr is returned
 	// * applicalbe to Buffer & Texture
-	RHI::Resource* get_as_resource(rg_handle handle) {
-		if (handle.type == rg_resource_types::Buffer) return static_cast<RHI::Resource*>(get<RHI::Buffer>(handle));
-		if (handle.type == rg_resource_types::Texture) return  static_cast<RHI::Resource*>(get<RHI::Texture>(handle));
+	RHI::Resource* get_as_resource(RgHandle handle) {
+		if (handle.type == RgResourceType::Buffer) return static_cast<RHI::Resource*>(get<RHI::Buffer>(handle));
+		if (handle.type == RgResourceType::Texture) return  static_cast<RHI::Resource*>(get<RHI::Texture>(handle));
 		return nullptr;
 	}
 	RenderPass& get_pass(entt::entity pass) {
