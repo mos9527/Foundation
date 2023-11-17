@@ -5,6 +5,8 @@
 #include "Component.hpp"
 #include "Components/StaticMesh.hpp"
 #include "Components/Camera.hpp"
+#include "Components/Material.hpp"
+
 struct aiScene;
 class AssetRegistry;
 class SceneGraphView;
@@ -18,7 +20,6 @@ class SceneGraph : DAG<entt::entity> {
 	entt::entity active_camera = entt::tombstone;
 
 	AssetRegistry& assets;
-
 public:
 	SceneGraph(AssetRegistry& assets) : assets(assets) {
 		root = registry.create();

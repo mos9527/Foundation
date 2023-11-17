@@ -2,17 +2,18 @@
 #include "../AssetRegistry/AssetRegistry.hpp"
 #include "../AssetRegistry/MeshAsset.hpp"
 #include "../AssetRegistry/MeshImporter.hpp"
+#include "../AssetRegistry/ImageImporter.hpp"
+#include "../AssetRegistry/ImageAsset.hpp"
+
 #include "SceneGraph.hpp"
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-void SceneGraph::load_from_aiScene(const aiScene* scene) {
-	// load meshes onto the asset_manager
+void SceneGraph::load_from_aiScene(const aiScene* scene) {	
 	std::unordered_map<uint, entt::entity> mesh_mapping;
 	for (UINT i = 0; i < scene->mNumMeshes; i++) {
-		mesh_static mesh = load_static_mesh(scene->mMeshes[i]);
-		auto asset = assets.import(mesh);
+		auto asset = assets.import(load_static_mesh(scene->mMeshes[i]));
 		auto entity = registry.create();
 		StaticMeshComponent staticMesh;
 		staticMesh.entity = entity;
@@ -21,6 +22,42 @@ void SceneGraph::load_from_aiScene(const aiScene* scene) {
 		emplace<StaticMeshComponent>(entity, staticMesh);		
 		mesh_mapping[i] = entity;
 	}
+	std::unordered_map<std::string, AssetHandle> texture_mapping;
+	for (UINT i = 0; i < scene->mNumTextures; i++) {
+		auto texture = scene->mTextures[i];
+		AssetHandle asset;
+		if (scene->GetEmbeddedTexture(texture->mFilename.C_Str()))			
+			asset = assets.import(load_bitmap_8bpp(reinterpret_cast<uint8_t*>(texture->pcData), texture->mWidth));
+		else
+			asset = assets.import(load_bitmap_8bpp(path_t(texture->mFilename.C_Str()))); // texture is a file		
+		texture_mapping[texture->mFilename.C_Str()] = asset;
+	}
+	std::unordered_map<uint, entt::entity> material_mapping;
+	for (UINT i = 0; i < scene->mNumMaterials; i++) {
+		auto material = scene->mMaterials[i];
+		auto entity = registry.create();
+		MaterialComponet materialComponet;
+		materialComponet.entity = entity;
+		materialComponet.name = material->GetName().C_Str();
+		for (UINT j = 0; j < material->GetTextureCount(aiTextureType_BASE_COLOR) && j < 1; j++) {
+			aiString path; material->GetTexture(aiTextureType_BASE_COLOR, j, &path);
+			materialComponet.albedoImage = texture_mapping[path.C_Str()];
+		}
+		for (UINT j = 0; j < material->GetTextureCount(aiTextureType_NORMALS) && j < 1; j++) {
+			aiString path; material->GetTexture(aiTextureType_NORMALS, j, &path);
+			materialComponet.normalMapImage = texture_mapping[path.C_Str()];
+		}
+		for (UINT j = 0; j < material->GetTextureCount(aiTextureType_METALNESS) && j < 1; j++) {
+			aiString path; material->GetTexture(aiTextureType_METALNESS, j, &path);
+			materialComponet.pbrMapImage = texture_mapping[path.C_Str()]; // one map (RGBA) for metal-roughness PBR pipeline (like glTF)
+		}
+		for (UINT j = 0; j < material->GetTextureCount(aiTextureType_EMISSIVE) && j < 1; j++) {
+			aiString path; material->GetTexture(aiTextureType_EMISSIVE, j, &path);
+			materialComponet.emissiveMapImage = texture_mapping[path.C_Str()];
+		}
+		material_mapping[i] = entity;
+		emplace<MaterialComponet>(entity, materialComponet);
+	}
 	// build scene hierarchy
 	auto dfs_nodes = [&](auto& func, aiNode* node, entt::entity parent) -> void {
 		auto entity = registry.create();
@@ -28,10 +65,11 @@ void SceneGraph::load_from_aiScene(const aiScene* scene) {
 		component.entity = entity;
 		component.name = node->mName.C_Str();		
 		emplace<CollectionComponent>(entity, component);
-
-		add_link(parent, entity);
+		add_link(parent, entity);		
 		for (UINT i = 0; i < node->mNumMeshes; i++) {
 			add_link(entity, mesh_mapping[node->mMeshes[i]]);
+			auto mesh = scene->mMeshes[node->mMeshes[i]];
+			add_link(mesh_mapping[node->mMeshes[i]], material_mapping[mesh->mMaterialIndex]);
 		}
 		for (UINT i = 0; i < node->mNumChildren; i++)
 			func(func, node->mChildren[i], entity);
@@ -58,6 +96,10 @@ void SceneGraph::log_entites() {
 		case SceneComponentType::StaticMesh:
 			LOG(INFO) << "[ Static Mesh ]";
 			LOG(INFO) << " Name: " << registry.get<StaticMeshComponent>(entity).name;		
+			break;
+		case SceneComponentType::Material:
+			LOG(INFO) << "[ Material ]";
+			LOG(INFO) << " Name: " << registry.get<MaterialComponet>(entity).name;
 			break;
 		}
 		for (auto child : graph[entity])

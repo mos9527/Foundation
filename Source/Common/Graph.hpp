@@ -1,11 +1,13 @@
 #pragma once
 #include "../pch.hpp"
+#include "../Common/Allocator.hpp"
 /* adjacency list DAG */
 template<typename T> class DAG {
+	template<typename T> using Allocator = DefaultAllocator<T>;
 public:
 	using vertex = T;
-	using tree_type = std::unordered_set<vertex>;
-	template<typename Elem> using table_type = std::unordered_map<vertex, Elem>;
+	using tree_type = unordered_set<vertex, DefaultAllocator<vertex>>;
+	template<typename Elem> using table_type = unordered_map<vertex, Elem, Allocator<std::pair<const vertex, Elem>>>;
 	// removes a vertex and all its connecting links. O(V + E)
 	void remove_vertex(vertex V) {
 		auto graphT = transpose();

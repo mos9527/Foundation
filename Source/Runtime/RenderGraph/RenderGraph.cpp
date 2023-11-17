@@ -7,7 +7,7 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 	Device* device = cmd->GetParent();
 	cache.update(*this, device);
 	build_graph();
-	for (auto& layer : rg_layers) {
+	for (auto& layer : layers) {
 		// setup resource barriers
 		RgResources reads, writes, readwrites;
 		for (auto entity : layer) {

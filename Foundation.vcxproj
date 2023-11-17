@@ -154,6 +154,7 @@
     <ClCompile Include="Dependencies\imgui\imgui_tables.cpp" />
     <ClCompile Include="Dependencies\imgui\imgui_widgets.cpp" />
     <ClCompile Include="Source\Runtime\AssetRegistry\AssetRegistry.cpp" />
+    <ClCompile Include="Source\Runtime\AssetRegistry\ImageAsset.cpp" />
     <ClCompile Include="Source\Runtime\AssetRegistry\ImageImporter.hpp" />
     <ClCompile Include="Source\Runtime\AssetRegistry\MeshAsset.cpp" />
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraph.cpp" />
@@ -184,6 +185,7 @@
     <ClInclude Include="Dependencies\imgui\imstb_textedit.h" />
     <ClInclude Include="Dependencies\imgui\imstb_truetype.h" />
     <ClInclude Include="Dependencies\stb_image.h" />
+    <ClInclude Include="Source\Common\Allocator.hpp" />
     <ClInclude Include="Source\Editor\Win32\Window.hpp" />
     <ClInclude Include="Source\Runtime\AssetRegistry\Asset.hpp" />
     <ClInclude Include="Source\Runtime\AssetRegistry\AssetRegistry.hpp" />
@@ -193,6 +195,7 @@
     <ClInclude Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.hpp" />
     <ClInclude Include="Source\Runtime\SceneGraph\Component.hpp" />
     <ClInclude Include="Source\Runtime\SceneGraph\Components\Camera.hpp" />
+    <ClInclude Include="Source\Runtime\SceneGraph\Components\Material.hpp" />
     <ClInclude Include="Source\Runtime\SceneGraph\Components\StaticMesh.hpp" />
     <ClInclude Include="Source\Runtime\SceneGraph\SceneGraphView.hpp" />
     <ClInclude Include="Source\Runtime\SceneGraph\SceneGraph.hpp" />

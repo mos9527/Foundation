@@ -3,13 +3,17 @@
 #include "Asset.hpp"
 #include "../RHI/RHI.hpp"
 #include "../../Runtime/Renderer/Shaders/Shared.h"
+#include "../../Common/Allocator.hpp"
+#include "MeshAsset.hpp"
+#include "ImageAsset.hpp"
 
 class AssetRegistry {
-	entt::registry registry;
+	template<typename T> using Allocator = DefaultAllocator<T>;
+	entt::basic_registry<entt::entity, Allocator <entt::entity>> registry;
 public:
-	template<typename T> AssetHandle import(T& import) {
+	template<typename T> AssetHandle import(T&& import) {
 		auto handle = create(Asset<T>::type);
-		emplace_or_replace<Asset<T>>(handle, import);
+		emplace_or_replace<Asset<T>>(handle, std::move(import));
 		return handle;
 	}
 	template<AssetRegistryDefined T> void upload(AssetHandle handle, RHI::Device* device) {

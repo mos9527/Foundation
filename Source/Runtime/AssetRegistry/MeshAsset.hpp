@@ -50,7 +50,6 @@ template<> struct Asset<mesh_static> {
 	uint numVertices;
 	std::vector<Vertex> vertexInitialData;
 	std::unique_ptr<RHI::Buffer> vertexBuffer;
-	std::unique_ptr<RHI::ShaderResourceView> vertexSrv;
 	MeshLod lods[MAX_LOD_COUNT];		
 	void clean() {
 		vertexInitialData = {};
@@ -61,7 +60,7 @@ template<> struct Asset<mesh_static> {
 			lods[i].meshletVertexInitialData = {};
 		}
 	}
-	Asset(mesh_static&);
+	Asset(mesh_static&&);
 	void upload(RHI::Device*);
 };
 

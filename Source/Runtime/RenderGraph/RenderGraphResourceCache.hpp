@@ -1,15 +1,17 @@
 #pragma once
 #include "../RHI/RHI.hpp"
 #include "RenderGraphResource.hpp"
+#include "../../Common/Allocator.hpp"
 class RenderGraph;
-// RHI resource cache for Created resources in RenderGraph
+// RHI resource cache for Created resources in RenderGraph 
 class RenderGraphResourceCache {	
-	std::unordered_map<RgHandle, RHI::Buffer> bufferCache;
-	std::unordered_map<RgHandle, RHI::Texture> textureCache;
-	std::unordered_map<RgHandle, RHI::ShaderResourceView> srvCache;
-	std::unordered_map<RgHandle, RHI::RenderTargetView> rtvCache;
-	std::unordered_map<RgHandle, RHI::DepthStencilView> dsvCache;
-	std::unordered_map<RgHandle, RHI::UnorderedAccessView> uavCache;
+	template<typename T> using Allocator = DefaultAllocator<T>;	
+	unordered_map<RgHandle, RHI::Buffer, Allocator<std::pair<const RgHandle, RHI::Buffer>>> bufferCache;
+	unordered_map<RgHandle, RHI::Texture, Allocator<std::pair<const RgHandle, RHI::Texture>>> textureCache;
+	unordered_map<RgHandle, RHI::ShaderResourceView, Allocator<std::pair<const RgHandle, RHI::ShaderResourceView>>> srvCache;
+	unordered_map<RgHandle, RHI::RenderTargetView, Allocator<std::pair<const RgHandle, RHI::RenderTargetView>>> rtvCache;
+	unordered_map<RgHandle, RHI::DepthStencilView, Allocator<std::pair<const RgHandle, RHI::DepthStencilView>>> dsvCache;
+	unordered_map<RgHandle, RHI::UnorderedAccessView, Allocator<std::pair<const RgHandle, RHI::UnorderedAccessView>>> uavCache;
 public:
 	void clear() {
 		bufferCache.clear();

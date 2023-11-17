@@ -2,18 +2,20 @@
 // https://levelup.gitconnected.com/organizing-gpu-work-with-directed-acyclic-graphs-f3fd5f2c2af3
 #include "../../Common/Graph.hpp"
 #include "../../Common/Task.hpp"
+#include "../../Common/Allocator.hpp"
 #include "../RHI/RHI.hpp"
 #include "RenderGraphResource.hpp"
 #include "RenderGraphResourceCache.hpp"
-
 class RenderGraph;
 struct RgContext {
 	RenderGraph* graph;
 	RenderGraphResourceCache* cache;
 	RHI::CommandList* cmd;
 };
+
 typedef std::function<void(RgContext&)> RgFunction;
-typedef std::unordered_set<RgHandle> RgResources;
+typedef unordered_set<RgHandle, DefaultAllocator<RgHandle>> RgResources;
+typedef vector<entt::entity, DefaultAllocator<entt::entity>> RgRndPasses;
 
 class RenderGraph;
 struct RenderPass {
@@ -57,21 +59,24 @@ public:
 // DAG Graph for managing rendering work
 // * RenderGraph is meant to be created / destroyed every frame for execution. Which by itself is pretty cheap.
 // * To releive resource creation costs, RenderGraphResourceCache caches them so it can be reused when applicable
-class RenderGraph : DAG<entt::entity> {
+class RenderGraph : DAG<entt::entity> {	
 	friend class RenderGraphResourceCache;
-	entt::registry registry;
-	RenderGraphResourceCache& cache;
+	template<typename T> using Allocator = DefaultAllocator<T>;
+	
+	RenderGraphResourceCache& cache;	
+	entt::basic_registry<entt::entity, Allocator <entt::entity>> registry;		
+	entt::entity epiloguePass;
+	
+	RgRndPasses passes;
+	vector<RgRndPasses, Allocator <RgRndPasses>> layers;	
 
-	entt::entity prologue_pass, epilogue_pass;
-	std::vector<entt::entity> rnd_passes;
-	std::vector<std::vector<entt::entity>> rg_layers;
 	void build_graph() {
-		rg_layers.clear();
-		for (entt::entity current : rnd_passes) {
+		layers.clear();
+		for (entt::entity current : passes) {
 			auto& pass = registry.get<RenderPass>(current);
 			// create adjacency list from read-writes
 			if (pass.has_dependencies()) {
-				for (auto& other : rnd_passes) {
+				for (auto& other : passes) {
 					if (other != current) {
 						auto& other_pass = registry.get<RenderPass>(other);
 						for (auto& write : other_pass.writes) {
@@ -88,19 +93,19 @@ class RenderGraph : DAG<entt::entity> {
 		auto depths = get_depths(topsorted);
 		uint max_depth = 0;
 		for (auto& [node, depth] : depths) max_depth = std::max(max_depth, depth);
-		rg_layers.resize(max_depth + 1);
-		for (auto& [node, depth] : depths) rg_layers[depth].push_back(node);
+		layers.resize(max_depth + 1);
+		for (auto& [node, depth] : depths) layers[depth].push_back(node);
 	}
 public:	
 	RenderGraph(RenderGraphResourceCache& cache) : cache(cache) {
-		epilogue_pass = registry.create();
-		registry.emplace<RenderPass>(epilogue_pass, epilogue_pass);
-		rnd_passes.push_back(epilogue_pass);
+		epiloguePass = registry.create();
+		registry.emplace<RenderPass>(epiloguePass, epiloguePass);
+		passes.push_back(epiloguePass);
 	};
 	RenderPass& add_pass() {		
 		entt::entity rg_entity = registry.create();
 		registry.emplace<RenderPass>(rg_entity,rg_entity);
-		rnd_passes.push_back(rg_entity);
+		passes.push_back(rg_entity);
 		return registry.get<RenderPass>(rg_entity);
 	}
 	// created resources -> stored as handles
@@ -162,7 +167,7 @@ public:
 		return registry.get<RenderPass>(pass);
 	}
 	RenderPass& get_epilogue_pass() {
-		return get_pass(epilogue_pass);
+		return get_pass(epiloguePass);
 	}	
 	void execute(RHI::CommandList* cmd);	
 };
