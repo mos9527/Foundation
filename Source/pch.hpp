@@ -39,6 +39,11 @@
 #include "Runtime/RHI/D3D12/D3D12Pch.h"
 #endif
 
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_STATIC
+#define STBI_WINDOWS_UTF8
+#include "../Dependencies/stb_image.h"
+
 #include "Common/Helpers.hpp"
 
 // HLSL typenames

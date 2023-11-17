@@ -3,18 +3,17 @@
 #include "../../Common/Graph.hpp"
 #include "../../Common/Math.hpp"
 
-struct SceneComponent {
-	entt::entity entity;
-
-	std::string name;
-	AffineTransform localTransform;
-};
 enum class SceneComponentType {
 	Unknown,
 	Root,
 	Collection,
 	Camera,
 	StaticMesh
+};
+struct SceneComponent {
+	entt::entity entity;
+	std::string name;
+	AffineTransform localTransform;
 };
 struct CollectionComponent : public SceneComponent {};
 

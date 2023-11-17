@@ -6,6 +6,22 @@
 #include "IO.hpp"
 
 #include "../../Runtime/Renderer/Shaders/Shared.h"
+struct Meshlet {
+	uint vertex_offset;
+	uint vertex_count;
+
+	uint triangle_offset;
+	uint triangle_count;
+
+	/* bounding sphere, useful for frustum and occlusion culling */
+	float center[3];
+	float radius;
+
+	/* normal cone, useful for backface culling */
+	float cone_apex[3];
+	uint cone_axis_cutoff; // cutoff | z | y | x
+};
+struct MeshletTriangle { UINT V0 : 10, V1 : 10, V2 : 10, : 2; };
 struct mesh_lod {
 	std::vector<UINT> indices;
 	/* mesh shading */

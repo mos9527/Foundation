@@ -5,6 +5,8 @@
 
 #include "../RHI/RHI.hpp"
 #include "../../Runtime/Renderer/Shaders/Shared.h"
+#include "../AssetRegistry/MeshAsset.hpp"
+
 class SceneGraphView {
 	SceneGraph& scene;
 	std::unique_ptr<RHI::Buffer> globalBuffer;
@@ -53,15 +55,15 @@ public:
 			sceneMesh.numVertices = asset.numVertices;
 			for (int i = 0; i < MAX_LOD_COUNT; i++) {
 				sceneMesh.lods[i].indices = D3D12_INDEX_BUFFER_VIEW{
-					.BufferLocation = asset.lod_buffers[i].indexBuffer->GetGPUAddress(),
-					.SizeInBytes = (UINT)asset.lod_buffers[i].indexBuffer->GetDesc().sizeInBytes(),
+					.BufferLocation = asset.lods[i].indexBuffer->GetGPUAddress(),
+					.SizeInBytes = (UINT)asset.lods[i].indexBuffer->GetDesc().sizeInBytes(),
 					.Format = DXGI_FORMAT_R32_UINT
 				};
-				sceneMesh.lods[i].meshlets = asset.lod_buffers[i].meshletBuffer->GetGPUAddress();
-				sceneMesh.lods[i].meshletVertices = asset.lod_buffers[i].meshletVertexBuffer->GetGPUAddress();
-				sceneMesh.lods[i].meshletTriangles = asset.lod_buffers[i].meshletTriangleBuffer->GetGPUAddress();
-				sceneMesh.lods[i].numIndices = asset.lod_buffers[i].numIndices;
-				sceneMesh.lods[i].numMeshlets = asset.lod_buffers[i].numMeshlets;
+				sceneMesh.lods[i].meshlets = asset.lods[i].meshletBuffer->GetGPUAddress();
+				sceneMesh.lods[i].meshletVertices = asset.lods[i].meshletVertexBuffer->GetGPUAddress();
+				sceneMesh.lods[i].meshletTriangles = asset.lods[i].meshletTriangleBuffer->GetGPUAddress();
+				sceneMesh.lods[i].numIndices = asset.lods[i].numIndices;
+				sceneMesh.lods[i].numMeshlets = asset.lods[i].numMeshlets;
 			}
 			// xxx meshlets
 			meshes.push_back(sceneMesh);

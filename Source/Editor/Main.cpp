@@ -115,7 +115,7 @@ int main(int argc, char* argv[]) {
         else {
             // Render!
             render();
-            camera.localTransform.rotation.AddRotationPitchYawRoll({ 0,0,1e-3 });
+            camera.localTransform.rotation.AddRotationPitchYawRoll({ 0,0,0.001f });
         }
     }
 }

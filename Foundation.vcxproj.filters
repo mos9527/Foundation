@@ -45,7 +45,7 @@
     <ClCompile Include="Source\Runtime\AssetRegistry\AssetRegistry.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\AssetRegistry\ImageImporter.cpp">
+    <ClCompile Include="Source\Runtime\AssetRegistry\ImageImporter.hpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraph.cpp">
@@ -94,6 +94,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Swapchain.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Runtime\AssetRegistry\MeshAsset.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -197,7 +200,7 @@
     <ClInclude Include="Source\Runtime\Renderer\Renderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\AssetRegistry\ImageImporter.hpp">
+    <ClInclude Include="Source\Runtime\AssetRegistry\ImageAsset.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\AssetRegistry\IO.hpp">
@@ -240,6 +243,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\ViewportWindow.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\AssetRegistry\Asset.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

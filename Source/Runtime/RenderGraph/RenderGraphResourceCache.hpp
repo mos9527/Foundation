@@ -32,10 +32,10 @@ public:
 		auto& storage = get_cache_storage<T>();
 		return storage.find(handle) != storage.end();
 	}
-	template<typename T, typename... Args> void emplace_or_replace(RgHandle handle, Args &&... args) {
+	template<typename T, typename... Args> auto emplace_or_replace(RgHandle handle, Args &&... args) {
 		auto& storage = get_cache_storage<T>();
 		if (cache_contains<T>(handle)) storage.erase(handle); // emplace, try_emplace does nothing if the key already exisits
-		storage.try_emplace(handle, std::forward<decltype(args)>(args)...);
+		return storage.try_emplace(handle, std::forward<decltype(args)>(args)...);
 	}
 	template<typename T> auto& get_cached(RgHandle handle) {		
 		return get_cache_storage<T>().at(handle);

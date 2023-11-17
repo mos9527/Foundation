@@ -12,7 +12,7 @@ void SceneGraph::load_from_aiScene(const aiScene* scene) {
 	std::unordered_map<uint, entt::entity> mesh_mapping;
 	for (UINT i = 0; i < scene->mNumMeshes; i++) {
 		mesh_static mesh = load_static_mesh(scene->mMeshes[i]);
-		auto asset = assets.load<StaticMeshAsset, mesh_static>(mesh);		
+		auto asset = assets.import(mesh);
 		auto entity = registry.create();
 		StaticMeshComponent staticMesh;
 		staticMesh.entity = entity;

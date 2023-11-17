@@ -1,54 +1,39 @@
 #pragma once
 #include "IO.hpp"
+#include "Asset.hpp"
 #include "../RHI/RHI.hpp"
-#include "MeshAsset.hpp"
-#include "MeshImporter.hpp"
-
 #include "../../Runtime/Renderer/Shaders/Shared.h"
-template<typename T> concept Cleanable = requires(T obj) { obj.clean(); };
-class AssetRegistry;
-struct asset_handle {
-	friend AssetRegistry;
-	enum asset_type {
-		Unknown,
-		Texture,
-		StaticMesh
-	};
-
-	asset_type get_resource_type() { return type; }
-	template<typename T> static constexpr asset_type get_resource_type() { return Unknown; }
-	template<> static constexpr asset_type get_resource_type<void>() { return Texture; } // xxx
-	template<> static constexpr asset_type get_resource_type<StaticMeshAsset>() { return StaticMesh; }
-	asset_handle() {};
-	asset_handle(entt::entity resource, asset_type type) : resource(resource), type(type) {};
-private:
-	asset_type type = Unknown;
-	entt::entity resource = entt::tombstone;
-};
 
 class AssetRegistry {
 	entt::registry registry;
 public:
-	template<typename T, typename Src> asset_handle load(Src& src) {};
-	template<> asset_handle load<StaticMeshAsset>(mesh_static& mesh);
-
-	template<typename T> void upload(RHI::Device* device, T* resource) {};
-	template<> void upload<StaticMeshAsset>(RHI::Device* device, StaticMeshAsset* resource);
-
-	template<typename T> void upload_all(RHI::Device* device) {
+	template<typename T> AssetHandle import(T& import) {
+		auto handle = create(Asset<T>::type);
+		emplace_or_replace<Asset<T>>(handle, import);
+		return handle;
+	}
+	template<AssetRegistryDefined T> void upload(AssetHandle handle, RHI::Device* device) {
+		get<T>(handle).upload(device);
+	}
+	template<AssetRegistryDefined T> void upload_all(RHI::Device* device) {
 		for (auto& obj : registry.storage<T>())
-			upload<T>(device, &obj);
+			obj.upload(device);
 	};
-
-	template<Cleanable T> void clean() {
+	template<AssetRegistryDefined T> void clean() {
 		for (auto& obj : registry.storage<T>())
 			obj.clean();
 	}
-	template<typename T> T& get(asset_handle resource) {
-		return registry.get<T>(resource.resource);
+	template<AssetRegistryDefined T> T& get(AssetHandle resource) {
+		return registry.get<T>(resource.entity);
 	}
 
-	template<typename T> T* try_get(asset_handle resource) {
-		return registry.try_get<T>(resource.resource);
+	template<AssetRegistryDefined T> T* try_get(AssetHandle resource) {
+		return registry.try_get<T>(resource.entity);
+	}
+	template<AssetRegistryDefined T, typename ...Args> T& emplace_or_replace(AssetHandle handle, Args &&...args) {
+		return registry.emplace_or_replace<T>(handle, std::forward<decltype(args)>(args)...);
+	}
+	AssetHandle create(AssetType type) {
+		return AssetHandle{ type, registry.create() };
 	}
 };

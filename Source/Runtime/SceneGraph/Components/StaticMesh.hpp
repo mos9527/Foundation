@@ -4,7 +4,7 @@
 #include "../../AssetRegistry/AssetRegistry.hpp"
 
 struct StaticMeshComponent : public SceneComponent {
-	asset_handle mesh_resource;
+	AssetHandle mesh_resource;
 };
 
 template<> struct SceneComponentTraits<StaticMeshComponent> {

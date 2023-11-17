@@ -154,7 +154,8 @@
     <ClCompile Include="Dependencies\imgui\imgui_tables.cpp" />
     <ClCompile Include="Dependencies\imgui\imgui_widgets.cpp" />
     <ClCompile Include="Source\Runtime\AssetRegistry\AssetRegistry.cpp" />
-    <ClCompile Include="Source\Runtime\AssetRegistry\ImageImporter.cpp" />
+    <ClCompile Include="Source\Runtime\AssetRegistry\ImageImporter.hpp" />
+    <ClCompile Include="Source\Runtime\AssetRegistry\MeshAsset.cpp" />
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraph.cpp" />
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.cpp" />
     <ClCompile Include="Source\Runtime\SceneGraph\SceneGraph.cpp" />
@@ -184,6 +185,7 @@
     <ClInclude Include="Dependencies\imgui\imstb_truetype.h" />
     <ClInclude Include="Dependencies\stb_image.h" />
     <ClInclude Include="Source\Editor\Win32\Window.hpp" />
+    <ClInclude Include="Source\Runtime\AssetRegistry\Asset.hpp" />
     <ClInclude Include="Source\Runtime\AssetRegistry\AssetRegistry.hpp" />
     <ClInclude Include="Source\Runtime\AssetRegistry\MeshAsset.hpp" />
     <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12ResourceView.hpp" />
@@ -204,7 +206,7 @@
     <ClInclude Include="Source\Runtime\Renderer\Deferred.hpp" />
     <ClInclude Include="Source\Runtime\Renderer\Renderer.hpp" />
     <ClInclude Include="x64\Graveyard\Coroutine.hpp" />
-    <ClInclude Include="Source\Runtime\AssetRegistry\ImageImporter.hpp" />
+    <ClInclude Include="Source\Runtime\AssetRegistry\ImageAsset.hpp" />
     <ClInclude Include="Source\Runtime\AssetRegistry\IO.hpp" />
     <ClInclude Include="Source\Runtime\AssetRegistry\MeshImporter.hpp" />
     <ClInclude Include="Source\pch.hpp" />
