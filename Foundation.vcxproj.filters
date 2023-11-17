@@ -42,58 +42,58 @@
     <ClCompile Include="Dependencies\imgui\imgui_demo.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\AssetRegistry\AssetRegistry.cpp">
+    <ClCompile Include="Source\Runtime\AssetRegistry\AssetRegistry.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\AssetRegistry\ImageImporter.cpp">
+    <ClCompile Include="Source\Runtime\AssetRegistry\ImageImporter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\RenderGraph\RenderGraph.cpp">
+    <ClCompile Include="Source\Runtime\RenderGraph\RenderGraph.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\RenderGraph\RenderGraphResourceCache.cpp">
+    <ClCompile Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\SceneGraph\SceneGraph.cpp">
+    <ClCompile Include="Source\Runtime\SceneGraph\SceneGraph.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Editor\Main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Renderer\Deferred.cpp">
+    <ClCompile Include="Source\Runtime\Renderer\Deferred.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\RHI\D3D12\D3D12Resource.cpp">
+    <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Resource.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\RHI\D3D12\D3D12CommandList.cpp">
+    <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12CommandList.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\RHI\D3D12\D3D12CommandQueue.cpp">
+    <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12CommandQueue.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\RHI\D3D12\D3D12CommandSignature.cpp">
+    <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12CommandSignature.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\RHI\D3D12\D3D12DescriptorHeap.cpp">
+    <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12DescriptorHeap.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\RHI\D3D12\D3D12Device.cpp">
+    <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Device.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\RHI\D3D12\D3D12Fence.cpp">
+    <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Fence.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\RHI\D3D12\D3D12PipelineState.cpp">
+    <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12PipelineState.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\RHI\D3D12\D3D12RootSignature.cpp">
+    <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12RootSignature.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\RHI\D3D12\D3D12Shader.cpp">
+    <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Shader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Engine\RHI\D3D12\D3D12Swapchain.cpp">
+    <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Swapchain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -149,94 +149,94 @@
     <ClInclude Include="Source\Editor\Win32\Window.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\AssetRegistry\AssetRegistry.hpp">
+    <ClInclude Include="Source\Runtime\AssetRegistry\AssetRegistry.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\AssetRegistry\MeshAsset.hpp">
+    <ClInclude Include="Source\Runtime\AssetRegistry\MeshAsset.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RHI\D3D12\D3D12ResourceView.hpp">
+    <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12ResourceView.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RenderGraph\RenderGraphResource.hpp">
+    <ClInclude Include="Source\Runtime\RenderGraph\RenderGraphResource.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RenderGraph\RenderGraphResourceCache.hpp">
+    <ClInclude Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\SceneGraph\Component.hpp">
+    <ClInclude Include="Source\Runtime\SceneGraph\Component.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\SceneGraph\Components\Camera.hpp">
+    <ClInclude Include="Source\Runtime\SceneGraph\Components\Camera.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\SceneGraph\Components\StaticMesh.hpp">
+    <ClInclude Include="Source\Runtime\SceneGraph\Components\StaticMesh.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\SceneGraph\SceneGraphView.hpp">
+    <ClInclude Include="Source\Runtime\SceneGraph\SceneGraphView.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\SceneGraph\SceneGraph.hpp">
+    <ClInclude Include="Source\Runtime\SceneGraph\SceneGraph.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RenderGraph\RenderGraph.hpp">
+    <ClInclude Include="Source\Runtime\RenderGraph\RenderGraph.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RHI\D3D12\D3D12PipelineState.hpp">
+    <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12PipelineState.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RHI\D3D12\D3D12RootSignature.hpp">
+    <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12RootSignature.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RHI\D3D12\D3D12Shader.hpp">
+    <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12Shader.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Renderer\Deferred.hpp">
+    <ClInclude Include="Source\Runtime\Renderer\Deferred.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Renderer\Renderer.hpp">
+    <ClInclude Include="Source\Runtime\Renderer\Renderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\AssetRegistry\ImageImporter.hpp">
+    <ClInclude Include="Source\Runtime\AssetRegistry\ImageImporter.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\AssetRegistry\IO.hpp">
+    <ClInclude Include="Source\Runtime\AssetRegistry\IO.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\AssetRegistry\MeshImporter.hpp">
+    <ClInclude Include="Source\Runtime\AssetRegistry\MeshImporter.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RHI\D3D12\D3D12CommandSignature.hpp">
+    <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12CommandSignature.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RHI\D3D12\D3D12Resource.hpp">
+    <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12Resource.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RHI\D3D12\D3D12CommandList.hpp">
+    <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12CommandList.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RHI\D3D12\D3D12CommandQueue.hpp">
+    <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12CommandQueue.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RHI\D3D12\D3D12DescriptorHeap.hpp">
+    <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12DescriptorHeap.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RHI\D3D12\D3D12Device.hpp">
+    <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12Device.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RHI\D3D12\D3D12Fence.hpp">
+    <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12Fence.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RHI\D3D12\D3D12Pch.h">
+    <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12Pch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RHI\D3D12\D3D12Types.hpp">
+    <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12Types.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RHI\D3D12\D3D12Swapchain.hpp">
+    <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12Swapchain.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Engine\RHI\RHI.hpp">
+    <ClInclude Include="Source\Runtime\RHI\RHI.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\ViewportWindow.hpp">
@@ -250,11 +250,10 @@
     <None Include=".gitignore" />
     <None Include=".gitattributes" />
     <None Include="Source\defines.hpp" />
-    <None Include="Source\Engine\SceneGraph\SceneGraphViewStructs.h">
-      <Filter>Header Files</Filter>
-    </None>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Renderer\Shaders\InstanceLODCullCS.hlsl" />
+    <Text Include="Source\Runtime\Renderer\Shaders\InstanceCull.hlsl" />
+    <Text Include="Source\Runtime\Renderer\Shaders\GBuffer.hlsl" />
+    <Text Include="Source\Runtime\Renderer\Shaders\Shared.h" />
   </ItemGroup>
 </Project>

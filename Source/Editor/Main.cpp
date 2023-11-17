@@ -1,16 +1,16 @@
 #include "../pch.hpp"
 #include "ViewportWindow.hpp"
 
-#include "../Engine/RHI/RHI.hpp"
-#include "../Engine/AssetRegistry/AssetRegistry.hpp"
-#include "../Engine/SceneGraph/SceneGraph.hpp"
-#include "../Engine/SceneGraph/SceneGraphView.hpp"
+#include "../Runtime/RHI/RHI.hpp"
+#include "../Runtime/AssetRegistry/AssetRegistry.hpp"
+#include "../Runtime/SceneGraph/SceneGraph.hpp"
+#include "../Runtime/SceneGraph/SceneGraphView.hpp"
 
 #include "../../Dependencies/imgui/imgui.h"
 #include "../../Dependencies/imgui/backends/imgui_impl_dx12.h"
 #include "../../Dependencies/imgui/backends/imgui_impl_win32.h"
 
-#include "../Renderer/Deferred.hpp"
+#include "../Runtime/Renderer/Deferred.hpp"
 using namespace RHI;
 // Forward declare message handler from imgui_impl_win32.cpp
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -62,7 +62,7 @@ int main(int argc, char* argv[]) {
     ImGui::StyleColorsLight();
 
     Assimp::Importer importer;   
-    auto imported = importer.ReadFile("..\\Resources\\DefaultCube.glb", aiProcess_Triangulate | aiProcess_ConvertToLeftHanded);
+    auto imported = importer.ReadFile("..\\Resources\\glTF-Sample-Models\\2.0\\FlightHelmet\\glTF\\FlightHelmet.gltf", aiProcess_Triangulate | aiProcess_ConvertToLeftHanded);
     scene.load_from_aiScene(imported);
     scene.log_entites();
 
@@ -88,13 +88,13 @@ int main(int argc, char* argv[]) {
         auto rtv = swapchain.GetBackbufferRTV(bbIndex);
         /* FRAME BEGIN */
         const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
+        auto const srvHeap = device.GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap();
+        cmd->GetNativeCommandList()->SetDescriptorHeaps(1, &srvHeap);
         cmd->GetNativeCommandList()->ClearRenderTargetView(rtv.descriptor.get_cpu_handle(), clearColor, 0, nullptr);
         // Render
         renderer.Render();
         // ImGui
         cmd->GetNativeCommandList()->OMSetRenderTargets(1, &rtv.descriptor.get_cpu_handle(), FALSE, nullptr);
-        auto const srvHeap = device.GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap();
-        cmd->GetNativeCommandList()->SetDescriptorHeaps(1, &srvHeap);
         ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd->GetNativeCommandList());
         /* FRAME END */
         swapchain.GetBackbuffer(bbIndex)->SetBarrier(cmd, ResourceState::Present);
@@ -115,6 +115,7 @@ int main(int argc, char* argv[]) {
         else {
             // Render!
             render();
+            camera.localTransform.rotation.AddRotationPitchYawRoll({ 0,0,1e-3 });
         }
     }
 }

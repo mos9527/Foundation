@@ -36,7 +36,7 @@
 #include "defines.hpp"
 
 #ifdef RHI_USE_D3D12
-#include "Engine/RHI/D3D12/D3D12Pch.h"
+#include "Runtime/RHI/D3D12/D3D12Pch.h"
 #endif
 
 #include "Common/Helpers.hpp"

@@ -106,6 +106,7 @@ public:
             AddRotationQuaternion(lhs.RotationQuaternion);
         else if (RotationMode == RotationType::PitchYawRoll)
             AddRotationPitchYawRoll(lhs.RotationPitchYawRoll);
+        return *this;
     }
     Rotation operator +(Rotation lhs) {
         Rotation ret = *this;
@@ -114,7 +115,7 @@ public:
     }
 };
 
-struct Transform
+struct AffineTransform
 {
     SimpleMath::Vector3 translation;
     Rotation rotation;
@@ -130,7 +131,14 @@ struct Transform
     SimpleMath::Matrix GetTransforms() const {
         return XMMatrixAffineTransformation(scale, { 0,0,0 }, rotation.GetRotationQuaternion(), translation);
     }
-    Transform() = default;    
-    Transform(SimpleMath::Matrix transform) { SetTransforms(transform); }
+    AffineTransform() = default;    
+    AffineTransform(SimpleMath::Matrix transform) { SetTransforms(transform); }
     inline operator SimpleMath::Matrix() const { return GetTransforms(); }
+    friend AffineTransform operator* (const AffineTransform& lhs, const AffineTransform& rhs) {        
+        AffineTransform new_transform = lhs;
+        new_transform.translation += rhs.translation;
+        new_transform.rotation += rhs.rotation;
+        new_transform.scale *= rhs.scale;
+        return new_transform;
+    }
 };
