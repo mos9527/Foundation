@@ -7,8 +7,8 @@
 struct mesh_lod {
 	std::vector<UINT> indices;
 	/* mesh shading */
-	std::vector<meshlet> meshlets; // offsets within meshlet_vertices , meshlet_bounds & meshlet_triangles
-	std::vector<meshlet_triangle> meshlet_triangles; // primitive indices (3 verts i.e. i,i+1,i+2) into meshlet_vertices
+	std::vector<Meshlet> meshlets; // offsets within meshlet_vertices , meshlet_bounds & meshlet_triangles
+	std::vector<MeshletTriangle> meshlet_triangles; // primitive indices (3 verts i.e. i,i+1,i+2) into meshlet_vertices
 	std::vector<UINT> meshlet_vertices; // indexes to mesh_static::{position,normal,tangent,uv}		
 
 	void resize_max_meshlets(size_t maxMeshlets) {
@@ -113,7 +113,7 @@ static inline mesh_static load_static_mesh(aiMesh* srcMesh) {
 		meshlet_triangles.resize((last.triangle_offset + ((last.triangle_count * 3 + 3) & ~3)));			
 		mesh_lod.meshlets.resize(meshlet_count);
 		for (size_t i = 0; i < mesh_lod.meshlets.size(); i++) {
-			meshlet& meshlet = mesh_lod.meshlets[i];
+			Meshlet& meshlet = mesh_lod.meshlets[i];
 			// Meshlet
 			meshlet.triangle_count = meshlets[i].triangle_count;
 			meshlet.triangle_offset = meshlets[i].triangle_offset;

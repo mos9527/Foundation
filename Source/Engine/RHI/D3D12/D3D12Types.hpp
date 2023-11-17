@@ -1,7 +1,7 @@
 #pragma once
 #include "../../../pch.hpp"
 namespace RHI {
-#define DEFINE_PLUS_TO_VALUE(T) inline constexpr unsigned int operator+(T const v) { return static_cast<unsigned int>(v); }
+#define DEFINE_PLUS_TO_VALUE(T) inline const unsigned int operator+(T const v) { return static_cast<unsigned int>(v); }
 	enum class TextureLayout {
 		Unknown = D3D12_TEXTURE_LAYOUT_UNKNOWN,
 		RowMajor = D3D12_TEXTURE_LAYOUT_ROW_MAJOR
@@ -62,7 +62,7 @@ namespace RHI {
 		Readback = 2
 	};
 	DEFINE_PLUS_TO_VALUE(ResourceHeapType);
-	inline static D3D12_HEAP_TYPE ResourceHeapTypeToD3DHeapType(ResourceHeapType usage) {
+	inline const D3D12_HEAP_TYPE ResourceHeapTypeToD3DHeapType(ResourceHeapType usage) {
 		switch (usage) {
 		case ResourceHeapType::Upload:
 			return D3D12_HEAP_TYPE_UPLOAD;			
@@ -84,14 +84,17 @@ namespace RHI {
 		Unknown = DXGI_FORMAT_UNKNOWN,
 		R8G8B8A8_UNORM = DXGI_FORMAT_R8G8B8A8_UNORM,
 		R16G16B16A16_UNORM = DXGI_FORMAT_R16G16B16A16_UNORM,
+		R32G32B32A32_FLOAT = DXGI_FORMAT_R32G32B32A32_FLOAT,
+		R32G32B32_FLOAT = DXGI_FORMAT_R32G32B32_FLOAT,
+		R32G32_FLOAT = DXGI_FORMAT_R32G32_FLOAT,
 		R32_FLOAT = DXGI_FORMAT_R32_FLOAT,
 		D32_FLOAT = DXGI_FORMAT_D32_FLOAT
 	};
 	DEFINE_PLUS_TO_VALUE(ResourceFormat);
-	inline static DXGI_FORMAT ResourceFormatToD3DFormat(ResourceFormat format) {
+	inline const DXGI_FORMAT ResourceFormatToD3DFormat(ResourceFormat format) {
 		return (DXGI_FORMAT)format;
 	}
-	constexpr size_t GetResourceFormatWidth(ResourceFormat format) {
+	const size_t GetResourceFormatWidth(ResourceFormat format) {
 		switch (format)
 		{
 		case ResourceFormat::R8G8B8A8_UNORM:
@@ -117,7 +120,7 @@ namespace RHI {
 		NUM_TYPES = 3
 	};
 	DEFINE_PLUS_TO_VALUE(CommandListType);
-	static inline D3D12_COMMAND_LIST_TYPE CommandListTypeToD3DType(CommandListType type) {
+	inline const D3D12_COMMAND_LIST_TYPE CommandListTypeToD3DType(CommandListType type) {
 		switch (type)
 		{
 		case CommandListType::Direct:
@@ -138,7 +141,7 @@ namespace RHI {
 		NUM_TYPES = 4
 	};
 	DEFINE_PLUS_TO_VALUE(DescriptorHeapType);
-	static D3D12_DESCRIPTOR_HEAP_TYPE DescriptorHeapTypeToD3DType(DescriptorHeapType type) {
+	inline const D3D12_DESCRIPTOR_HEAP_TYPE DescriptorHeapTypeToD3DType(DescriptorHeapType type) {
 		switch (type)
 		{
 		case DescriptorHeapType::CBV_SRV_UAV:
@@ -152,40 +155,7 @@ namespace RHI {
 		default:
 			return (D3D12_DESCRIPTOR_HEAP_TYPE)-1;
 		}
-	}
-	enum class IndirectArgumentType {
-		DARW = 0,
-		DISPATCH = 1,
-		DISPATCH_MESH = 2,
-		NUM_TYPES = 3
-	};
-	DEFINE_PLUS_TO_VALUE(IndirectArgumentType);
-	static D3D12_INDIRECT_ARGUMENT_TYPE IndirectArgumentToD3DType(IndirectArgumentType indirectType) {
-		switch (indirectType)
-		{
-		case IndirectArgumentType::DARW:
-			return D3D12_INDIRECT_ARGUMENT_TYPE_DRAW;
-		case IndirectArgumentType::DISPATCH:
-			return D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH;
-		case IndirectArgumentType::DISPATCH_MESH:
-			return D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH_MESH;
-		default:
-			return (D3D12_INDIRECT_ARGUMENT_TYPE)-1;
-		}
-	}
-	static size_t IndirectArgumentToSize(IndirectArgumentType indirectType) {
-		switch (indirectType)
-		{
-		case IndirectArgumentType::DARW:
-			return sizeof(D3D12_DRAW_ARGUMENTS);
-		case IndirectArgumentType::DISPATCH:
-			return sizeof(D3D12_DISPATCH_ARGUMENTS);
-		case IndirectArgumentType::DISPATCH_MESH:
-			return sizeof(D3D12_DISPATCH_MESH_ARGUMENTS);
-		default:
-			return 0;
-		}
-	}
+	}	
 	struct DepthStencilValue {
 		FLOAT depth;
 		UINT8 stencil;
@@ -202,11 +172,103 @@ namespace RHI {
 			return value;
 		}
 	};
-	typedef D3D12_SHADER_RESOURCE_VIEW_DESC ShaderResourceViewDesc; // xxx Do RHI implementations for these as well
-	typedef D3D12_DEPTH_STENCIL_VIEW_DESC DepthStencilViewDesc;
-	typedef D3D12_RENDER_TARGET_VIEW_DESC RenderTargetViewDesc;
-	typedef D3D12_UNORDERED_ACCESS_VIEW_DESC UnorderedAccessViewDesc;
-
+	struct ShaderResourceViewDesc {
+		D3D12_SHADER_RESOURCE_VIEW_DESC desc;
+		operator D3D12_SHADER_RESOURCE_VIEW_DESC() const {
+			return desc;
+		}		
+		friend bool operator== (const ShaderResourceViewDesc& lhs, const ShaderResourceViewDesc& rhs) {
+			return true; // xxx implement operator
+		}
+		static const ShaderResourceViewDesc GetStructuredBufferDesc(
+			UINT64                 FirstElement,
+			UINT                   NumElements,
+			UINT                   StructureByteStride
+		) {
+			D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+			desc.Format = DXGI_FORMAT_UNKNOWN;
+			desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+			desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			desc.Buffer.FirstElement = FirstElement;
+			desc.Buffer.NumElements = NumElements;
+			desc.Buffer.StructureByteStride = StructureByteStride;
+			desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+			return { desc };
+		}
+		static const ShaderResourceViewDesc GetRawBufferDesc(
+			UINT64                 FirstElement,
+			UINT                   NumElements		
+		) {
+			D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+			desc.Format = DXGI_FORMAT_UNKNOWN;
+			desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+			desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			desc.Buffer.FirstElement = FirstElement;
+			desc.Buffer.NumElements = NumElements;
+			desc.Buffer.StructureByteStride = 0;
+			desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
+			return { desc };
+		}
+	};
+	struct DepthStencilViewDesc {
+		D3D12_DEPTH_STENCIL_VIEW_DESC desc;
+		operator D3D12_DEPTH_STENCIL_VIEW_DESC() const {
+			return desc;
+		}
+		friend bool operator== (const DepthStencilViewDesc& lhs, const DepthStencilViewDesc& rhs) {
+			return true;
+		}
+	};
+	struct RenderTargetViewDesc {	
+		D3D12_RENDER_TARGET_VIEW_DESC desc;
+		operator D3D12_RENDER_TARGET_VIEW_DESC() const {
+			return desc;
+		}
+		friend bool operator== (const RenderTargetViewDesc& lhs, const RenderTargetViewDesc& rhs) {
+			return true;
+		}
+	};
+	struct UnorderedAccessViewDesc {
+		D3D12_UNORDERED_ACCESS_VIEW_DESC desc;
+		operator D3D12_UNORDERED_ACCESS_VIEW_DESC() const {
+			return desc;
+		}
+		friend bool operator== (const UnorderedAccessViewDesc& lhs, const UnorderedAccessViewDesc& rhs) {
+			return true;
+		}
+		static const UnorderedAccessViewDesc GetStructuredBufferDesc(
+			UINT64                 FirstElement,
+			UINT                   NumElements,
+			UINT                   StructureByteStride,
+			UINT				   CounterOffsetInBytes
+		) {
+			D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
+			desc.Format = DXGI_FORMAT_UNKNOWN;
+			desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;			
+			desc.Buffer.FirstElement = FirstElement;
+			desc.Buffer.NumElements = NumElements;
+			desc.Buffer.StructureByteStride = StructureByteStride;
+			desc.Buffer.CounterOffsetInBytes = CounterOffsetInBytes;
+			desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+			return { desc };
+		}
+		static const UnorderedAccessViewDesc GetRawBufferDesc(
+			UINT64                 FirstElement,
+			UINT                   NumElements,
+			UINT				   CounterOffsetInBytes
+		) {
+			D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
+			desc.Format = DXGI_FORMAT_UNKNOWN;
+			desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+			desc.Buffer.FirstElement = FirstElement;
+			desc.Buffer.NumElements = NumElements;
+			desc.Buffer.StructureByteStride = 0;
+			desc.Buffer.CounterOffsetInBytes = CounterOffsetInBytes;
+			desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
+			return { desc };
+		}
+	};
+	
 	class Device;
 	class DeviceChild {
 	protected:
@@ -215,6 +277,6 @@ namespace RHI {
 		DeviceChild(Device* device) : m_Device(device) {};
 		Device* GetParent() { return m_Device; }
 	};
-
+	
 	template<typename T> concept Releaseable = requires(T obj) { obj.release(); };
 }

@@ -7,6 +7,7 @@ namespace RHI {
 	struct Descriptor {
 		friend class DescriptorHeap;
 	public:
+		Descriptor() {};
 		Descriptor(DescriptorHeap* heap) : owner(heap) {};
 
 		auto const& get_heap_handle() { return heap_handle; }

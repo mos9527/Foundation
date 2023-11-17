@@ -78,19 +78,27 @@ public:
 		return queue.size();
 	}
 };
+// From D3D12ExecuteIndirect
 template <typename T, typename U>
-T GetAlignedSize(T size, U alignment)
+const T GetAlignedSize(T size, U alignment)
 {
 	const T alignedSize = (size + alignment - 1) & ~(alignment - 1);
 	return alignedSize;
 }
 // An integer version of ceil(value / divisor)
 template <typename T, typename U>
-T DivRoundUp(T num, U denom)
+const T DivRoundUp(T num, U denom)
 {
 	return (num + denom - 1) / denom;
 }
-
+// We pack the UAV counter into the same buffer as the commands rather than create
+// a separate 64K resource/heap for it. The counter must be aligned on 4K boundaries,
+// so we pad the command buffer (if necessary) such that the counter will be placed
+// at a valid location in the buffer.
+static inline const UINT AlignForUavCounter(UINT bufferSize)
+{
+	return GetAlignedSize(bufferSize, D3D12_UAV_COUNTER_PLACEMENT_ALIGNMENT);	
+}
 #define CHECK_ENUM_FLAG(x) { CHECK((size_t)(x) > 0); }
 #define CHECK_HR(hr) { HRESULT _result = hr; if (FAILED(_result)) { LOG_SYSRESULT(_result); LOG(FATAL) << "FATAL APPLICATION ERROR HRESULT 0x" << std::hex << _result; } }
 #ifdef _DEBUG

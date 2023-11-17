@@ -4,6 +4,7 @@
 
 #include <ctype.h>
 #include <vector>
+#include <array>
 #include <algorithm>
 #include <cassert>
 #include <string>

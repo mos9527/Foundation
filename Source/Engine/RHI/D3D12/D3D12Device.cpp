@@ -125,6 +125,8 @@ namespace RHI {
         intermediates.push_back(std::move(intermediate));
     }
     SyncFence Device::UploadContext::UploadAndClose() { 
+        CHECK(cmd->IsOpen());
+        cmd->End();
         uploadFence = cmd->Execute(); 
         cmd = nullptr; 
         return uploadFence; 
@@ -244,7 +246,7 @@ namespace RHI {
         };
         Upload(dst, &subresource, 1);
     }
-    SyncFence Device::CommitUpload() {
+    SyncFence Device::EndUpload() {
         return m_UploadContext.UploadAndClose();
     }
     bool Device::Clean() {

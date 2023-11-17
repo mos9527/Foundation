@@ -39,7 +39,7 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 		using view_type = Cache::mapped_type;		
 		if (
 			!cache_contains<view_type>(viewing_handle) || 
-			/*cache[viewing_handle].GetDesc() != view.desc.viewDesc ||*/ // xxx resource view comp
+			get_cached<view_type>(viewing_handle).GetDesc() != view.desc.viewDesc ||			
 			resource_dirty.find(viewed_handle) != resource_dirty.end()
 		) {
 			// rebuild : view (or resource) is dirty			

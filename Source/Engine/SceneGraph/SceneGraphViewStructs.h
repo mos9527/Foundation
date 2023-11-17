@@ -50,14 +50,17 @@ struct SceneGlobals {
 	uint numMeshes;
 	uint3 _pad;
 };
-#define MESH_STATIC 0
-#define MESH_SKINNED 1
-struct SceneMesh {
-	uint type;
+struct SceneMeshLod {
+	D3D12_INDEX_BUFFER_VIEW indices;
+	D3D12_GPU_VIRTUAL_ADDRESS meshlets;
+	D3D12_GPU_VIRTUAL_ADDRESS meshletTriangles;
+	D3D12_GPU_VIRTUAL_ADDRESS meshletVertices;
+};
+struct SceneMeshInstance {
 	matrix transform;
 
 	D3D12_VERTEX_BUFFER_VIEW vertices;
-	D3D12_INDEX_BUFFER_VIEW indicesLod[MAX_LOD_COUNT];
+	SceneMeshLod lods[MAX_LOD_COUNT];
 	// xxx meshlets
 };
 #endif

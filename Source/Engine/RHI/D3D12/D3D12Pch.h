@@ -2,11 +2,13 @@
 #pragma comment(lib,"dxgi.lib")
 #pragma comment(lib,"d3d12.lib")
 #pragma comment(lib,"d3dcompiler.lib")
+#pragma comment(lib,"dxcompiler.lib")
 
 #include <directx/d3dx12.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <d3dcompiler.h>
+#include <dxcapi.h>
 
 #define D3D12MA_D3D12_HEADERS_ALREADY_INCLUDED
 #include "D3D12MemAlloc.h"

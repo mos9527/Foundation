@@ -8,7 +8,7 @@ namespace RHI {
 
 	public:
 		PipelineState(Device* device, ComPtr<ID3D12PipelineState>&& state) : DeviceChild(device) { m_PipelineState = state; } /* TODO */
-
+		// xxx custom ctor for abstracted RHI pipeline state type
 		inline auto GetNativePipelineState() { return m_PipelineState.Get(); }
 		inline operator ID3D12PipelineState* () { return m_PipelineState.Get(); }
 

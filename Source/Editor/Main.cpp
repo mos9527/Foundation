@@ -64,23 +64,17 @@ int main(int argc, char* argv[]) {
     Assimp::Importer importer;   
     auto imported = importer.ReadFile("..\\Resources\\DefaultCube.glb", aiProcess_Triangulate | aiProcess_ConvertToLeftHanded);
     scene.load_from_aiScene(imported);
-    CommandList* uploadCmd = device.GetCommandList<CommandListType::Copy>();    
-    uploadCmd->Begin();
-    device.BeginUpload(uploadCmd);
-    assets.upload_all<StaticMeshAsset>(&device);
-    uploadCmd->End();
-    LogD3D12MABudget(device.GetAllocator());
-    device.CommitUpload().Wait();
-    LOG(INFO) << "Resources uploaded";
-    device.Clean();
-    LogD3D12MABudget(device.GetAllocator());
-    LOG(INFO) << "Cleaned...let's do it.";
-
     scene.log_entites();
-    sceneView.update();
 
-    bool vsync = false;
-    auto cmd = device.GetCommandList<CommandListType::Direct>();
+    CommandList* cmd = device.GetCommandList<CommandListType::Copy>();    
+    device.BeginUpload(cmd);
+    assets.upload_all<StaticMeshAsset>(&device);    
+    device.EndUpload().Wait();
+    device.Clean();    
+    assets.clean<StaticMeshAsset>();
+    
+    bool vsync = true;
+    cmd = device.GetCommandList<CommandListType::Direct>();
     auto render = [&]() {
         ImGui_ImplDX12_NewFrame();
         ImGui_ImplWin32_NewFrame();

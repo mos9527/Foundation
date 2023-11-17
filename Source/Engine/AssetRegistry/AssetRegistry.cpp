@@ -8,9 +8,9 @@ template<> asset_handle AssetRegistry::load<StaticMeshAsset>(mesh_static& mesh) 
 	registry.emplace<StaticMeshAsset>(entity);
 	auto& asset = registry.get<StaticMeshAsset>(entity);
 		
-	std::vector<static_vertex> vertices(mesh.position.size());
+	std::vector<StaticVertex> vertices(mesh.position.size());
 	for (uint i = 0; i < mesh.position.size(); i++) {
-		static_vertex& vertex = vertices[i];
+		StaticVertex& vertex = vertices[i];
 		vertex.position = mesh.position[i];
 		vertex.normal = mesh.normal[i];
 		vertex.tangent = mesh.tangent[i];

@@ -86,7 +86,7 @@ namespace RHI {
 		void BeginUpload(CommandList* cmd);
 		void Upload(Resource* dst, Subresource* data, uint count);
 		void Upload(Resource* dst, void* data, uint sizeInBytes);
-		SyncFence CommitUpload();
+		SyncFence EndUpload();
 		// Releases all temporary allocations that will never be used again		
 		bool Clean();
 		void Wait();
@@ -104,7 +104,12 @@ namespace RHI {
 			std::vector<std::unique_ptr<Resource>> intermediates;
 			SyncFence uploadFence;
 
-			void Open(CommandList* _cmd) { CHECK(_cmd && _cmd->IsOpen()); cmd = _cmd; Clean(); }
+			void Open(CommandList* _cmd) {
+				CHECK(_cmd && !_cmd->IsOpen()); 
+				cmd = _cmd;
+				Clean(); 
+				cmd->Begin();
+			}
 			bool IsOpen() { return cmd != nullptr; }
 			void RecordIntermediate(std::unique_ptr<Resource>&& intermediate);
 			SyncFence UploadAndClose();
