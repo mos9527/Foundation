@@ -29,7 +29,7 @@ public:
 	auto const& get_SceneGlobals() { return stats; }
 	auto const& get_SceneInstances() { return meshes; }
 	auto const& get_SceneMaterials() { return materials; }
-	void update(uint frameIndex) {
+	void update(uint viewportWidth, uint viewportHeight, uint frameIndex) {
 		std::unordered_map<entt::entity, AffineTransform> global_transforms;
 		// calculate global transforms
 		auto dfs_nodes = [&](auto& func, entt::entity entity, entt::entity parent) -> void {
@@ -104,6 +104,8 @@ public:
 			LOG(ERROR) << "No active camera set!";
 		}
 		stats.frameIndex = frameIndex;
+		stats.frameDimension.x = viewportWidth;
+		stats.frameDimension.y = viewportHeight;
 		globalBuffer->Update(&stats, sizeof(stats), 0);
 	}
 };

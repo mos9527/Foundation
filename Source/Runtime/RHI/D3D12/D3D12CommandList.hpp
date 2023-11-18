@@ -14,12 +14,11 @@ namespace RHI {
 
 		CommandList(Device* device, CommandListType type, uint numAllocators = 1);
 		~CommandList() = default;
-		inline void ResetAllocator(uint allocatorIndex) {
+		inline void ResetAllocator(uint allocatorIndex=0) {
 			DCHECK(allocatorIndex < m_CommandAllocators.size());
 			CHECK_HR(m_CommandAllocators[allocatorIndex]->Reset());
 		};
 		inline void Begin(uint allocatorIndex = 0) {
-			ResetAllocator(allocatorIndex);
 			DCHECK(allocatorIndex < m_CommandAllocators.size());
 			CHECK_HR(m_CommandList->Reset(m_CommandAllocators[allocatorIndex].Get(), nullptr));
 			m_HasBegun = true;

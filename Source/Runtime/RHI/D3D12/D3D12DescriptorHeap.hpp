@@ -16,6 +16,7 @@ namespace RHI {
 		operator D3D12_GPU_DESCRIPTOR_HANDLE() { return gpu_handle; }
 		operator D3D12_CPU_DESCRIPTOR_HANDLE() { return cpu_handle; }		
 		inline bool operator==(Descriptor lhs) { return lhs.cpu_handle.ptr == cpu_handle.ptr; }
+		inline void invalidate() { heap_handle = INVALID_HEAP_HANDLE; }
 		inline bool is_valid() { return heap_handle != INVALID_HEAP_HANDLE; }
 		void release();
 	protected:

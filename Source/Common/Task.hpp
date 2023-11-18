@@ -40,6 +40,9 @@ public:
 		/* task in this scope is no longer valid. ownership is now transfered to the smart pointer */
 		return future;
 	}
+	size_t size() {
+		return tasks.size();
+	}
 protected:
 	std::optional<VoidTaskPtr> pop() {
 		if (tasks.size()) {
@@ -65,29 +68,34 @@ public:
 		for (auto& thread : threads) thread = std::jthread(std::bind(&TaskThreadPool<_Tc>::worker_job, this));
 	}	
 	auto push(auto&& func, auto&&... args) {
-		{
-			std::lock_guard lock(worker_mutex);
-			queue_type::push(func, args...);
-		}
+		std::scoped_lock lock(worker_mutex);
+		auto future = queue_type::push(func, args...);		
 		new_task_cv.notify_one();
+		return future;
+	}
+	void wait_and_join() {
+		wait_for_jobs = true, running = false;
+		new_task_cv.notify_all();
+		for (auto& thread : threads) if (thread.joinable()) thread.join();
 	}
 	void stop_and_join() {
-		running = false;
+		wait_for_jobs = running = false;
 		new_task_cv.notify_all();
 		for (auto& thread : threads) if (thread.joinable()) thread.join();
 	}
 	~TaskThreadPool() {
-		stop_and_join();
+		wait_and_join();
 	}
 private:
 	std::mutex worker_mutex;
 	std::vector<std::jthread> threads;
 	std::condition_variable new_task_cv;
 	bool running = true;
+	bool wait_for_jobs = true;
 	void worker_job() {
-		while (running) {
+		while (running || (wait_for_jobs && queue_type::size() > 0)) {
 			std::unique_lock lock(worker_mutex);
-			new_task_cv.wait(lock);
+			new_task_cv.wait(lock, [this] { return !running || queue_type::size() > 0; });
 			auto task = queue_type::pop();
 			lock.unlock();
 			if (task.has_value()) (*task.value())();

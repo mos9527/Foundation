@@ -11,7 +11,7 @@ namespace RHI {
 		name_t m_Name;
 		BOOL bIsFullscreen{ false };
 		uint nBackbufferIndex{ 0 };	 /* The backbuffer we are currently drawing to */
-		uint nFrameIndex{ 0 };
+		uint nFrameCount{ 0 };
 		std::vector<size_t> nFenceValues;
 		std::unique_ptr<Fence> m_FrameFence;
 		std::vector<std::unique_ptr<Texture>> m_Backbuffers;
@@ -33,10 +33,10 @@ namespace RHI {
 		~Swapchain() = default;
 		
 		inline auto GetBackbuffer(uint index) { return m_Backbuffers[index].get(); }
-		inline auto GetBackbufferRTV(uint index) { return m_BackbufferRTVs[index]; }
+		inline auto& GetBackbufferRTV(uint index) { return m_BackbufferRTVs[index]; }
 		inline auto GetCurrentBackbufferIndex() const { return nBackbufferIndex; }
 		inline auto GetBackbufferCount() const { return m_Backbuffers.size(); }
-		inline auto GetFrameIndex() const { return nFrameIndex; }
+		inline auto GetFrameIndex() const { return nFrameCount; }
 		inline auto GetFormat() const { return m_BackbufferFormat; }
 		inline auto GetWidth() const { return nWidth; }
 		inline auto GetAspect() const { return nWidth / (float)nHeight; }

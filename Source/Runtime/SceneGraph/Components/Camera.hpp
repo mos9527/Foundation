@@ -14,7 +14,7 @@ struct CameraComponent : public SceneComponent {
 	bool orthographic = false;
 
 	CameraComponent() {
-		localTransform.translation = { 0,0,-5 };
+		localTransform.translation = { 0,0,-1 };
 		localTransform.rotation.SetRotationPitchYawRoll({ 0,0,0 });
 		fov = XM_PIDIV4;
 		aspect = 1.0f;

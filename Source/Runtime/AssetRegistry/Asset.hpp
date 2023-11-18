@@ -22,7 +22,6 @@ template<typename Imports> struct Asset {
 	void upload(RHI::Device* device) {};
 };
 
-/* task concepts */
 template<typename T> concept AssetRegistryDefined = requires(T t,typename T::imported_type&& imported, RHI::Device * device) {
 	T(std::move(imported));
 	t.upload(device);	

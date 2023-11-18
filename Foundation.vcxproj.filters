@@ -54,9 +54,6 @@
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\SceneGraph\SceneGraph.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Source\Editor\Main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -100,6 +97,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Runtime\AssetRegistry\ImageAsset.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Runtime\SceneGraph\SceneGraph.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -265,10 +265,13 @@
     <None Include=".gitignore" />
     <None Include=".gitattributes" />
     <None Include="Source\defines.hpp" />
+    <None Include="Source\Runtime\Renderer\Shaders\Common.hlsli" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="Source\Runtime\Renderer\Shaders\InstanceCull.hlsl" />
     <Text Include="Source\Runtime\Renderer\Shaders\GBuffer.hlsl" />
     <Text Include="Source\Runtime\Renderer\Shaders\Shared.h" />
+    <Text Include="Source\Runtime\Renderer\Shaders\Lighting.hlsl" />
+    <Text Include="Source\Runtime\Renderer\Shaders\Tonemap.hlsl" />
   </ItemGroup>
 </Project>

@@ -159,7 +159,6 @@
     <ClCompile Include="Source\Runtime\AssetRegistry\MeshAsset.cpp" />
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraph.cpp" />
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.cpp" />
-    <ClCompile Include="Source\Runtime\SceneGraph\SceneGraph.cpp" />
     <ClCompile Include="Source\Editor\Main.cpp" />
     <ClCompile Include="Source\Runtime\Renderer\Deferred.cpp" />
     <ClCompile Include="Source\pch.cpp" />
@@ -174,6 +173,7 @@
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12RootSignature.cpp" />
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Shader.cpp" />
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Swapchain.cpp" />
+    <ClCompile Include="Source\Runtime\SceneGraph\SceneGraph.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Dependencies\D3D12MemoryAllocator\D3D12MemAlloc.h" />
@@ -235,6 +235,7 @@
     <Text Include="Source\Runtime\Renderer\Shaders\Shared.h">
       <FileType>Document</FileType>
     </Text>
+    <None Include="Source\Runtime\Renderer\Shaders\Common.hlsli" />
     <None Include="vcpkg.json" />
   </ItemGroup>
   <ItemGroup>
@@ -260,6 +261,24 @@
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
+      <FileType>Document</FileType>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Source\Runtime\Renderer\Shaders\Lighting.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
+      <FileType>Document</FileType>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Source\Runtime\Renderer\Shaders\Tonemap.hlsl">
       <FileType>Document</FileType>
     </Text>
   </ItemGroup>

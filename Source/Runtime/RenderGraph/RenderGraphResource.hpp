@@ -2,6 +2,7 @@
 #include "../RHI/RHI.hpp"
 enum class RgResourceType {
 	Unknown,
+	Dummy,
 	Buffer,
 	Texture,
 	ResourceViewSRV,
@@ -21,6 +22,8 @@ struct RgHandle {
 	entt::entity entity; // entity within RenderGraph's registry. indexes `rg_handle`. may index `rg_resource` deriviatives
 	inline operator entt::entity() const { return entity; }
 	bool is_imported() { return flag == RgResourceFlag::Imported; }
+
+	friend bool operator==(const RgHandle& lhs, const RgHandle& rhs) { return lhs.entity == rhs.entity; }
 };
 template<> struct std::hash<RgHandle> {
 	inline entt::entity operator()(const RgHandle& resource) const { return resource; }
@@ -57,7 +60,13 @@ struct RgUAV : public RgResource {
 	struct view_desc {
 		RHI::UnorderedAccessViewDesc viewDesc;
 		entt::entity viewed; // the viewed resource
-		entt::entity viewedCounter; // UAV specialization : counter resource associated with `viewed`. usually (if any) is the resource itself
+		entt::entity viewedCounter = entt::tombstone; // UAV specialization : counter resource associated with `viewed`. usually (if any) is the resource itself
+	} desc;
+};
+// Dummy placeholder. Useful for directing intransient resources / graph flow
+struct Dummy {};
+struct RgDummy : public RgResource {
+	struct view_desc{
 	} desc;
 };
 
@@ -110,4 +119,10 @@ template<> struct RgResourceTraits<RHI::UnorderedAccessView> {
 	using desc_type = decltype(RgUAV::desc);
 };
 
+template<> struct RgResourceTraits<Dummy> {
+	static constexpr RgResourceType type_enum = RgResourceType::Dummy;
+	using type = RgDummy;
+	using rhi_type = Dummy;
+	using desc_type = decltype(RgDummy::desc);
+};
 template<typename T> concept RgDefinedResource = !std::is_void_v<typename RgResourceTraits<T>::type>;

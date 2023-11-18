@@ -34,7 +34,8 @@ namespace RHI {
 		size_t value;
 		SyncFence() = default;
 		SyncFence(Fence* fence, size_t value) : fence(fence), value(value) {};
-		inline bool IsCompleted() { return fence && fence->IsCompleted(value); }
+		inline bool Valid() { return fence != nullptr; }
+		inline bool IsCompleted() { return Valid() && fence->IsCompleted(value); }
 		inline size_t GetValue() { return value; }
 		inline void Wait() { 
 			if (fence) 

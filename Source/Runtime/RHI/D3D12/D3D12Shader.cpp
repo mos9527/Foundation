@@ -51,7 +51,7 @@ namespace RHI {
         arguments.push_back(DXC_ARG_DEBUG); // -Zi
         arguments.push_back(DXC_ARG_DEBUG_NAME_FOR_SOURCE); // -Zss
         arguments.push_back(DXC_ARG_SKIP_OPTIMIZATIONS); // no optimizations
-        arguments.push_back(L"-Qstrip_debug"); // strip pdb to a seperate file
+        arguments.push_back(L"-Qembed_debug");
         arguments.push_back(L"-Fd"); // output pdb path
         auto pdb_path = path_t(sourcePath).replace_extension(L".pdb");
         arguments.push_back(pdb_path.c_str());        

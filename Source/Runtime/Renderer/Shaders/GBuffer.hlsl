@@ -9,6 +9,7 @@
 //
 //*********************************************************
 #include "Shared.h"
+#include "Common.hlsli"
 
 cbuffer IndirectData : register(b0, space0)
 {
@@ -43,16 +44,35 @@ PSInput vs_main(VSInput vertex)
     result.uv = vertex.uv;
     return result;
 }
-
-float4 ps_main(PSInput input) : SV_TARGET
+struct MRT
+{
+    float4 AlbedoMask : SV_Target0;
+    float4 Normal : SV_Target1;
+    float4 Material : SV_Target2;
+};
+MRT ps_main(PSInput input)
 {
     SceneMeshInstance mesh = g_SceneMeshInstances[g_MeshIndex];
     SceneMaterial material = g_Materials[mesh.materialIndex];
-    float4 albedo = material.albedo;
+    MRT output;
+    output.AlbedoMask = material.albedo;
     if (material.albedoMap != INVALID_HEAP_HANDLE)
     {
         Texture2D albedoMap = ResourceDescriptorHeap[material.albedoMap];
-        albedo = albedoMap.Sample(g_Sampler, input.uv);
+        output.AlbedoMask = albedoMap.Sample(g_Sampler, input.uv);
     }
-    return albedo;
+    float3 N = input.normal;
+    if (material.normalMap != INVALID_HEAP_HANDLE)
+    {
+        Texture2D normalMap = ResourceDescriptorHeap[material.normalMap];        
+        N = decodeTangetNormalMap(normalMap.Sample(g_Sampler, input.uv).rgb, input.tangent, input.normal);
+    }
+    output.Normal = float4(encodeSpheremapNormal(N), .0f, .0f);
+    output.Material = material.pbr;
+    if (material.pbrMap != INVALID_HEAP_HANDLE)
+    {
+        Texture2D pbrMap = ResourceDescriptorHeap[material.pbrMap];
+        output.Material = pbrMap.Sample(g_Sampler, input.uv);
+    }
+    return output;
 }

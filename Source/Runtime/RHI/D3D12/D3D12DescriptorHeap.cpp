@@ -35,7 +35,8 @@ namespace RHI {
     };
 
     void DescriptorHeap::FreeDescriptor(Descriptor desc) {
-        FreeDescriptor(desc.heap_handle);
+        if (desc.is_valid())
+            FreeDescriptor(desc.heap_handle);
     };
 
     void DescriptorHeap::CopyInto(Descriptor descriptorSrc, Descriptor descriptorDst) {

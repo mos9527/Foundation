@@ -85,7 +85,7 @@ const T GetAlignedSize(T size, U alignment)
 	const T alignedSize = (size + alignment - 1) & ~(alignment - 1);
 	return alignedSize;
 }
-// An integer version of ceil(value / divisor)
+// An integer version of ceil(num / denom)
 template <typename T, typename U>
 const T DivRoundUp(T num, U denom)
 {

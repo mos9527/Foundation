@@ -1,6 +1,8 @@
 #ifndef FOUNDATION_DEFINES
 #define FOUNDATION_DEFINES
 
+#define IMGUI_ENABLED
+
 #define INVERSE_Z
 
 #define RHI_USE_D3D12

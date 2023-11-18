@@ -23,12 +23,13 @@ struct RenderPass {
 private:
 	entt::entity rg_entity;
 public:
+	const wchar_t* name = nullptr;
 	// r/w/rws for Created resources
 	RgResources reads, writes, readwrites;	
 	// function callback for actual rendering work
 	RgFunction executes;
 
-	RenderPass(entt::entity entity) : rg_entity(entity) {};
+	RenderPass(entt::entity entity, const wchar_t* name) : rg_entity(entity), name(name) {};
 	RenderPass& write(RgHandle& resource) {
 		CHECK(!resource.is_imported());
 		resource.version++;
@@ -99,14 +100,13 @@ class RenderGraph : DAG<entt::entity> {
 public:	
 	RenderGraph(RenderGraphResourceCache& cache) : cache(cache) {
 		epiloguePass = registry.create();
-		registry.emplace<RenderPass>(epiloguePass, epiloguePass);
+		registry.emplace<RenderPass>(epiloguePass, epiloguePass, L"Epilogue");
 		passes.push_back(epiloguePass);
 	};
-	RenderPass& add_pass() {		
+	RenderPass& add_pass(const wchar_t* name=L"<unamed>") {
 		entt::entity rg_entity = registry.create();
-		registry.emplace<RenderPass>(rg_entity,rg_entity);
 		passes.push_back(rg_entity);
-		return registry.get<RenderPass>(rg_entity);
+		return registry.emplace<RenderPass>(rg_entity,rg_entity,name);		
 	}
 	// created resources -> stored as handles
 	// note: resource object itself is cached. see RenderGraphResourceCache	

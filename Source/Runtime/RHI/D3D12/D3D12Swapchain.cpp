@@ -8,13 +8,13 @@ namespace RHI {
         swapChainDesc.Height = cfg.InitHeight;
         swapChainDesc.Format = ResourceFormatToD3DFormat(cfg.Format);
         swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
         swapChainDesc.SampleDesc.Count = 1;
         ComPtr<IDXGISwapChain1> swapChain;
         CHECK_HR(device->GetDXGIFactory()->CreateSwapChainForHwnd(
             *device->GetCommandQueue<CommandListType::Direct>(), cfg.Window, &swapChainDesc, nullptr, nullptr, &swapChain
         ));
-        CHECK_HR(device->GetDXGIFactory()->MakeWindowAssociation(cfg.Window, DXGI_MWA_NO_ALT_ENTER));
+        CHECK_HR(device->GetDXGIFactory()->MakeWindowAssociation(cfg.Window, NULL));
         CHECK_HR(swapChain.As(&m_Swapchain));
         m_FrameFence = std::make_unique<Fence>(device);
         m_FrameFence->SetName(L"Swap Fence");
@@ -25,15 +25,16 @@ namespace RHI {
     void Swapchain::Present(bool vsync) {
         HRESULT hr = m_Swapchain->Present(vsync, 0);
         CHECK_DEVICE_REMOVAL(m_Device, hr);
-        nBackbufferIndex = m_Swapchain->GetCurrentBackBufferIndex();
-        nFrameIndex++;
     }    
     void Swapchain::PresentAndMoveToNextFrame(bool vsync) {
+        // Flip to the next BB for our next command list
+        Present(vsync);
         // Signal after this command queue is executed, i.e. this backbuffer is available again
         auto gfxQueue = m_Device->GetCommandQueue<CommandListType::Direct>();
         gfxQueue->Signal(m_FrameFence.get(), nFenceValues[nBackbufferIndex]);
-        // Flip to the next BB for our next command list
-        Present(vsync);
+        // Update the frame index
+        nBackbufferIndex = m_Swapchain->GetCurrentBackBufferIndex();
+        nFrameCount++;
         // Wait for the next BB to be ready
         m_FrameFence->Wait(nFenceValues[nBackbufferIndex]);
         // Increment the fence value which should be monotonously increasing upon any backbuffers' completion    
@@ -51,7 +52,7 @@ namespace RHI {
         }
         DXGI_SWAP_CHAIN_DESC desc = {};
         m_Swapchain->GetDesc(&desc);
-        CHECK_HR(m_Swapchain->ResizeBuffers(buffers, width, height, desc.BufferDesc.Format, desc.Flags));
+        CHECK_HR(m_Swapchain->ResizeBuffers(buffers, nWidth, nHeight, desc.BufferDesc.Format, desc.Flags));
         CHECK_HR(m_Swapchain->GetFullscreenState(&bIsFullscreen, nullptr));
         nBackbufferIndex = m_Swapchain->GetCurrentBackBufferIndex();
         // Recreate the BBs

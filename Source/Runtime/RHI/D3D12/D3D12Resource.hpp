@@ -179,10 +179,15 @@ namespace RHI {
 		void* pMappedData{ nullptr };
 	};
 	class Buffer : public Resource {
+	public:
 		using Resource::Resource;
 	};
 	class Texture : public Resource {
+	public:
 		using Resource::Resource;
+		ClearValue const& GetClearValue() const {
+			return m_Desc.clearValue.value();
+		}
 	};
 	struct DeferredDeleteResource {
 		std::unique_ptr<Resource> resource;

@@ -3,7 +3,7 @@
 class DeferredRenderer : public Renderer {
 public:
 	DeferredRenderer(AssetRegistry& assets, SceneGraph& scene, RHI::Device* device, RHI::Swapchain* swapchain);
-	virtual void Render();
+	virtual RHI::ShaderResourceView* Render();
 private:
 	void ResetCounter(RHI::CommandList* cmd,RHI::Resource* resource, size_t counterOffset);
 	struct IndirectCommand {
@@ -25,9 +25,14 @@ private:
 	std::unique_ptr<RHI::RootSignature> gBufferRS;
 	std::unique_ptr<RHI::PipelineState> gBufferPSO;
 	std::unique_ptr<RHI::CommandSignature> gBufferIndirectCommandSig;
-
+	
 	std::unique_ptr<RHI::Buffer> resetBuffer; // a buffer that can be used to reset the UAV counters and initialize it 0
 	std::unique_ptr<RHI::Buffer> indirectCmdBuffer;
 	std::unique_ptr<RHI::UnorderedAccessView> indirectCmdBufferUAV;
-	RenderGraphResourceCache cache;
+
+	std::unique_ptr<RHI::Shader> lightingCS;
+	std::unique_ptr<RHI::RootSignature> lightingRS;
+	std::unique_ptr<RHI::PipelineState> lightingPSO;
+
+	RenderGraphResourceCache cache; // xxx multiple command lists?
 };

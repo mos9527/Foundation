@@ -32,7 +32,7 @@ public:
 	template<> auto& get_cache_storage<RHI::UnorderedAccessView>() { return uavCache; }
 	template<typename T> bool cache_contains(RgHandle handle) {
 		auto& storage = get_cache_storage<T>();
-		return storage.find(handle) != storage.end();
+		return storage.contains(handle);
 	}
 	template<typename T, typename... Args> auto emplace_or_replace(RgHandle handle, Args &&... args) {
 		auto& storage = get_cache_storage<T>();
@@ -42,4 +42,7 @@ public:
 	template<typename T> auto& get_cached(RgHandle handle) {		
 		return get_cache_storage<T>().at(handle);
 	}
+	RenderGraphResourceCache() {};
+	RenderGraphResourceCache(const RenderGraphResourceCache&) = delete;
+	RenderGraphResourceCache(RenderGraphResourceCache&&) = default;
 };

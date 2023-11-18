@@ -84,10 +84,12 @@ namespace RHI {
 	enum class ResourceFormat {
 		Unknown = DXGI_FORMAT_UNKNOWN,
 		R8G8B8A8_UNORM = DXGI_FORMAT_R8G8B8A8_UNORM,
+		R8G8B8A8_UINT = DXGI_FORMAT_R8G8B8A8_UINT,
 		R16G16B16A16_UNORM = DXGI_FORMAT_R16G16B16A16_UNORM,
 		R32G32B32A32_FLOAT = DXGI_FORMAT_R32G32B32A32_FLOAT,
 		R32G32B32_FLOAT = DXGI_FORMAT_R32G32B32_FLOAT,
 		R32G32_FLOAT = DXGI_FORMAT_R32G32_FLOAT,
+		R16G16_FLOAT = DXGI_FORMAT_R16G16_FLOAT,
 		R32_FLOAT = DXGI_FORMAT_R32_FLOAT,
 		D32_FLOAT = DXGI_FORMAT_D32_FLOAT
 	};
@@ -222,7 +224,7 @@ namespace RHI {
 		static const ShaderResourceViewDesc GetTexture2DDesc(
 			ResourceFormat viewFormat,
 			UINT MostDetailedMip,
-			UINT MipLevels			
+			UINT MipLevels
 		) {
 			D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
 			desc.Format = ResourceFormatToD3DFormat(viewFormat);
@@ -310,6 +312,18 @@ namespace RHI {
 			desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
 			return { desc };
 		}
+		static const UnorderedAccessViewDesc GetTexture2DDesc(
+			ResourceFormat viewFormat,
+			UINT MipSlice,
+			UINT PlaneSlice
+		) {
+			D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
+			desc.Format = ResourceFormatToD3DFormat(viewFormat);
+			desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+			desc.Texture2D.MipSlice = MipSlice;
+			desc.Texture2D.PlaneSlice = PlaneSlice;			
+			return { desc };
+		}
 	};
 	struct SamplerDesc {
 		D3D12_SAMPLER_DESC desc;
@@ -342,6 +356,9 @@ namespace RHI {
 	public:
 		DeviceChild(Device* device) : m_Device(device) {};
 		Device* GetParent() { return m_Device; }
+
+		DeviceChild(DeviceChild&&) = default;
+		DeviceChild(const DeviceChild&) = delete;
 	};
 	
 	template<typename T> concept Releaseable = requires(T obj) { obj.release(); };

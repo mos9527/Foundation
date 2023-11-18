@@ -10,12 +10,13 @@
 #define MAX_LOD_COUNT 8
 #define LOD_GET_RATIO(lod) ((float)(MAX_LOD_COUNT - lod) / MAX_LOD_COUNT)
 
-#define THREADS_PER_WAVE 32 // Assumes availability of wave size of 32 threads
+#define THREADS_PER_WAVE 64 // Assumes availability of wave size of 32 threads
 // Pre-defined threadgroup sizes for AS & MS stages
 #define MAX(x, y) (x > y ? x : y)
 #define ROUNDUP(x, y) ((x + y - 1) & ~(y - 1))
 
 #define RENDERER_INSTANCE_CULL_THREADS THREADS_PER_WAVE
+#define RENDERER_FULLSCREEN_THREADS 8 // 8 * 8 -> 64
 #ifdef __cplusplus
 #include "../../../pch.hpp"
 #else // HLSL
@@ -67,7 +68,7 @@ struct SceneGlobals
 
     uint numMeshInstances;
     uint frameIndex;
-    uint2 pad_;
+    uint2 frameDimension;
 };
 struct SceneMeshLod
 {
