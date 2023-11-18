@@ -207,7 +207,7 @@ namespace RHI {
 		}
 		static const ShaderResourceViewDesc GetRawBufferDesc(
 			UINT64                 FirstElement,
-			UINT                   NumElements		
+			UINT                   NumElements
 		) {
 			D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
 			desc.Format = DXGI_FORMAT_UNKNOWN;
@@ -217,6 +217,19 @@ namespace RHI {
 			desc.Buffer.NumElements = NumElements;
 			desc.Buffer.StructureByteStride = 0;
 			desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
+			return { desc };
+		}
+		static const ShaderResourceViewDesc GetTexture2DDesc(
+			ResourceFormat viewFormat,
+			UINT MostDetailedMip,
+			UINT MipLevels			
+		) {
+			D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+			desc.Format = ResourceFormatToD3DFormat(viewFormat);
+			desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+			desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			desc.Texture2D.MostDetailedMip = MostDetailedMip;
+			desc.Texture2D.MipLevels = MipLevels;
 			return { desc };
 		}
 	};
@@ -298,7 +311,30 @@ namespace RHI {
 			return { desc };
 		}
 	};
-	
+	struct SamplerDesc {
+		D3D12_SAMPLER_DESC desc;
+		operator D3D12_SAMPLER_DESC() const {
+			return desc;
+		}
+		friend bool operator== (const SamplerDesc& lhs, const SamplerDesc& rhs) {
+			return true;
+		}
+		static const SamplerDesc GetTextureSamplerDesc(
+			uint MaxAnisotropy
+		) {
+			D3D12_SAMPLER_DESC desc;
+			desc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+			desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			desc.MinLOD = 0;
+			desc.MaxLOD = D3D12_FLOAT32_MAX;
+			desc.MipLODBias = 0.0f;
+			desc.MaxAnisotropy = MaxAnisotropy;
+			desc.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+			return { desc };
+		}
+	};
 	class Device;
 	class DeviceChild {
 	protected:

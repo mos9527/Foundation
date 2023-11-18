@@ -2,12 +2,17 @@
 #include "../../pch.hpp"
 
 typedef std::filesystem::path path_t;
-inline bool check_file_exisits(path_t path) {
-	return std::filesystem::exists(path);
-}
 inline path_t get_absolute_path(path_t path) {
 	std::filesystem::path p = path;
 	return std::filesystem::absolute(p);
+}
+template<typename... Paths> inline std::optional<path_t> find_file(path_t filename, Paths&&... paths) {
+	filename = filename.filename();
+	for (auto& path : { paths... }) {
+		if (std::filesystem::exists(path / filename))
+			return path / filename;
+	}
+	return {};
 }
 inline std::unique_ptr<std::vector<unsigned char>> read_data(path_t path) {
 	path = get_absolute_path(path);

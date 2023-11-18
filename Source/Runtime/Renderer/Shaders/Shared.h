@@ -1,7 +1,8 @@
 #ifndef COMMON_INCLUDE
 #define COMMON_INCLUDE
+#define INVALID_HEAP_HANDLE ((uint)-1)
 #define MAX_INSTANCE_COUNT 0xffff
-#define DISPATCH_GROUP_COUNT 0xffff
+#define MAX_MATERIAL_COUNT 1024
 
 #define MESHLET_MAX_VERTICES 64u // https://developer.nvidia.com/blog/introduction-turing-mecacsh-shaders/
 #define MESHLET_MAX_PRIMITIVES 124u // 4b aligned
@@ -85,11 +86,30 @@ struct SceneMeshLod
 struct SceneMeshInstance
 {
     uint numVertices; // 4
-    uint3 _pad1;
+    uint materialIndex; //4
+    uint2 pad_;
+
     matrix transform; // 16 * 4
+    matrix transformInvTranspose; // xxx transform is sufficent for affine transformations
 
     D3D12_VERTEX_BUFFER_VIEW vertices; // 16
     SceneMeshLod lods[MAX_LOD_COUNT];
 	// xxx meshlets
+};
+struct SceneMaterial {
+    // bindless handles within ResourceDescriptorHeap
+    uint albedoMap; 
+    uint normalMap;
+    uint pbrMap;
+    uint emissiveMap; // 4
+
+    // plain old data
+    float4 albedo;
+    float4 pbr;
+    float4 emissive;
+};
+struct IndirectConstant
+{
+    uint MeshIndex;
 };
 #endif

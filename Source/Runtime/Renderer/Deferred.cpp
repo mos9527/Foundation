@@ -11,9 +11,9 @@ DeferredRenderer::DeferredRenderer(AssetRegistry& assets, SceneGraph& scene, RHI
 	cullPassRS = std::make_unique<RootSignature>(
 		device,
 		RootSignatureDesc()			
-			.AddConstantBufferView(0,0) // c0 s0 : SceneGlobals	
-			.AddShaderResourceView(0,0) // t0 s0 : SceneMeshInstance[s]
-			.AddUnorderedAccessViewWithCounter(0,0)// u0 s0 : Indirect Commandlists
+			.AddConstantBufferView(0,0) // b0 space0 : SceneGlobals	
+			.AddShaderResourceView(0,0) // t0 space0 : SceneMeshInstance
+			.AddUnorderedAccessViewWithCounter(0,0)// u0 space0 : Indirect Commandlists
 	);
 	cullPassRS->SetName(L"Indirect Cull & LOD Classification");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
@@ -29,8 +29,12 @@ DeferredRenderer::DeferredRenderer(AssetRegistry& assets, SceneGraph& scene, RHI
 		device,
 		RootSignatureDesc()
 		.SetAllowInputAssembler()
-		.SetDirectlyIndexed() // xxx textures?
-		.AddConstantBufferView(0, 0) // c0 s0 : SceneGlobals			
+		.SetDirectlyIndexed()
+		.AddConstant(0,0,1) // b0 space0 : MeshIndex constant (Indirect)
+		.AddConstantBufferView(1, 0) // b1 space0 : SceneGlobals		
+		.AddShaderResourceView(0, 0) // t0 space0 : SceneMeshInstances
+		.AddShaderResourceView(1, 0) // t1 space0 : SceneMaterials
+		.AddStaticSampler(0, 0) // s0 space0 : Texture Sampler
 	);
 	gBufferRS->SetName(L"GBuffer generation");
 	// Define the vertex input layout.
@@ -60,8 +64,9 @@ DeferredRenderer::DeferredRenderer(AssetRegistry& assets, SceneGraph& scene, RHI
 	// indirect command buffer
 	gBufferIndirectCommandSig = std::make_unique<CommandSignature>(
 		device,
-		nullptr,
+		gBufferRS.get(),
 		CommandSignatureDesc(sizeof(IndirectCommand))
+			.AddConstant(0, 0, 1)
 			.AddVertexBufferView(0)
 			.AddIndexBufferView()
 			.AddDrawIndexed()			
@@ -88,20 +93,22 @@ void DeferredRenderer::Render() {
 	{	
 		auto compute = device->GetCommandList<CommandListType::Compute>();
 		compute->Begin();
+		PIXBeginEvent(compute->GetNativeCommandList(), 0, L"Culling & LOD");
 		auto native = compute->GetNativeCommandList();
 		native->SetPipelineState(*cullPassPSO);
 		auto heap = device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap();
 		native->SetDescriptorHeaps(1, &heap);
 		native->SetComputeRootSignature(*cullPassRS);
-		native->SetComputeRootConstantBufferView(0, sceneView->get_SceneGlobals()->GetGPUAddress());
-		native->SetComputeRootShaderResourceView(1, sceneView->get_SceneMeshInstances()->GetGPUAddress());
+		native->SetComputeRootConstantBufferView(0, sceneView->get_SceneGlobalsBuffer()->GetGPUAddress());
+		native->SetComputeRootShaderResourceView(1, sceneView->get_SceneMeshInstancesBuffer()->GetGPUAddress());
 		native->SetComputeRootDescriptorTable(2, indirectCmdBufferUAV->descriptor.get_gpu_handle());
 		indirectCmdBuffer->SetBarrier(compute, ResourceState::CopyDest);
 		ResetCounter(compute, indirectCmdBuffer.get(), CommandBufferCounterOffset);
 		indirectCmdBuffer->SetBarrier(compute, ResourceState::UnorderedAccess);
 		// dispatch compute to cull on the gpu
-		native->Dispatch(DivRoundUp(sceneView->get_SceneStats().numMeshInstances, RENDERER_INSTANCE_CULL_THREADS), 1, 1);
+		native->Dispatch(DivRoundUp(sceneView->get_SceneGlobals().numMeshInstances, RENDERER_INSTANCE_CULL_THREADS), 1, 1);
 		indirectCmdBuffer->SetBarrier(compute, ResourceState::IndirectArgument);
+		PIXEndEvent(compute->GetNativeCommandList());
 		compute->End();
 		compute->Execute().Wait();		
 	}
@@ -145,7 +152,10 @@ void DeferredRenderer::Render() {
 				auto native = ctx.cmd->GetNativeCommandList();
 				native->SetPipelineState(*gBufferPSO);
 				native->SetGraphicsRootSignature(*gBufferRS);
-				native->SetGraphicsRootConstantBufferView(0, sceneView->get_SceneGlobals()->GetGPUAddress());
+				// b0 used by indirect command
+				native->SetGraphicsRootConstantBufferView(1, sceneView->get_SceneGlobalsBuffer()->GetGPUAddress());
+				native->SetGraphicsRootShaderResourceView(2, sceneView->get_SceneMeshInstancesBuffer()->GetGPUAddress());
+				native->SetGraphicsRootShaderResourceView(3, sceneView->get_SceneMeshMaterialsBuffer()->GetGPUAddress());
 				CD3DX12_VIEWPORT viewport(.0f, .0f, swapchain->GetWidth(), swapchain->GetHeight(), .0f, 1.0f);
 				CD3DX12_RECT scissorRect(0, 0, swapchain->GetWidth(), swapchain->GetHeight());
 				native->RSSetViewports(1, &viewport);

@@ -1,9 +1,8 @@
 #pragma once
 #include "D3D12Types.hpp"
-
+#define INVALID_HEAP_HANDLE ((uint)-1)
 namespace RHI {	
 	class DescriptorHeap;
-	constexpr uint INVALID_HEAP_HANDLE = -1;
 	struct Descriptor {
 		friend class DescriptorHeap;
 	public:

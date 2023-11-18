@@ -4,10 +4,60 @@
 namespace RHI {
 	class Device;
 	class Blob;
+	struct DescriptorTable {
+		auto& AddSRVRange(
+			UINT						 BaseShaderRegister,
+			UINT						 RegisterSpace,
+			UINT						 NumDescriptors,
+			D3D12_DESCRIPTOR_RANGE_FLAGS Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+			UINT						 OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND) {
+			CD3DX12_DESCRIPTOR_RANGE1& Range = ranges.emplace_back();
+			Range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, NumDescriptors, BaseShaderRegister, RegisterSpace, Flags);
+			return *this;
+		}
+
+		auto& AddUAVRange(
+			UINT						 BaseShaderRegister,
+			UINT						 RegisterSpace,
+			UINT						 NumDescriptors,
+			D3D12_DESCRIPTOR_RANGE_FLAGS Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE,
+			UINT						 OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND) {
+			CD3DX12_DESCRIPTOR_RANGE1& Range = ranges.emplace_back();
+			Range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, NumDescriptors, BaseShaderRegister, RegisterSpace, Flags);
+			return *this;
+		}
+
+		auto& AddCBVRange(
+			UINT						 BaseShaderRegister,
+			UINT						 RegisterSpace,
+			UINT						 NumDescriptors,
+			D3D12_DESCRIPTOR_RANGE_FLAGS Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+			UINT						 OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND) {
+			CD3DX12_DESCRIPTOR_RANGE1& Range = ranges.emplace_back();
+			Range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, NumDescriptors, BaseShaderRegister, RegisterSpace, Flags);
+			return *this;
+		}
+
+		auto& AddSamplerRange(
+			UINT						 BaseShaderRegister,
+			UINT						 RegisterSpace,
+			UINT						 NumDescriptors,
+			D3D12_DESCRIPTOR_RANGE_FLAGS Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+			UINT						 OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND) {
+			CD3DX12_DESCRIPTOR_RANGE1& Range = ranges.emplace_back();
+			Range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, NumDescriptors, BaseShaderRegister, RegisterSpace, Flags);
+			return *this;
+		}
+
+		uint GetNumRanges() { return ranges.size(); }
+		const CD3DX12_DESCRIPTOR_RANGE1* GetRanges() { return ranges.data(); }
+	private:
+		std::vector<CD3DX12_DESCRIPTOR_RANGE1> ranges;
+	};
 	struct RootSignatureDesc {
-		auto& Add32BitConstants(UINT num32BitValues,
-			UINT shaderRegister,
-			UINT registerSpace = 0)
+		auto& AddConstant(UINT shaderRegister,
+			UINT registerSpace,
+			UINT num32BitValues)
 		{
 			CD3DX12_ROOT_PARAMETER1 Parameter = {};
 			Parameter.InitAsConstants(num32BitValues, shaderRegister, registerSpace);
@@ -23,7 +73,6 @@ namespace RHI {
 			Parameter.InitAsConstantBufferView(shaderRegister, registerSpace, flags);
 			return add(Parameter);
 		}
-
 
 		auto& AddShaderResourceView(
 			UINT shaderRegister,
@@ -44,36 +93,51 @@ namespace RHI {
 			Parameter.InitAsUnorderedAccessView(shaderRegister, registerSpace, flags);
 			return add(Parameter);
 		}
+
+		auto& AddDescriptorTable(
+			DescriptorTable& table
+		) {
+			CD3DX12_ROOT_PARAMETER1 Parameter = {}; // HACK : placeholder parameter. see comment below...
+			descriptorTables.push_back({ parameters.size(), table});  
+			return add(Parameter); // descriptor tables are realized deferred. since its memory address may change due to reallocation			
+		}
+
 		// Different from AddUnorderedAccessView, Counted resources
-		// are mapped with Descriptor Tables
+		// are mapped with Descriptor Tables. This function creates one and adds it to the list
 		auto& AddUnorderedAccessViewWithCounter(
 			UINT shaderRegister,
 			UINT registerSpace = 0,
 			D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE
 		) {
-			CD3DX12_DESCRIPTOR_RANGE1 Range;
-			Range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE);
-			CD3DX12_ROOT_PARAMETER1 Parameter = {};
-			Parameter.InitAsDescriptorTable(1, &Range);
-			return add(Parameter);
+			DescriptorTable table;
+			table.AddCBVRange(shaderRegister, registerSpace, 1);
+			AddDescriptorTable(table);
+			return *this;
 		}
 
-		auto& AddSampler(
+		auto& AddStaticSampler(
 			UINT shaderRegister,
-			D3D12_FILTER filter = D3D12_FILTER_ANISOTROPIC,
-			D3D12_TEXTURE_ADDRESS_MODE addressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-			D3D12_TEXTURE_ADDRESS_MODE addressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-			D3D12_TEXTURE_ADDRESS_MODE addressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-			FLOAT mipLODBias = 0,
-			UINT maxAnisotropy = 16,
-			D3D12_COMPARISON_FUNC comparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL,
-			D3D12_STATIC_BORDER_COLOR borderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE,
-			FLOAT minLOD = 0.f,
-			FLOAT maxLOD = D3D12_FLOAT32_MAX
+			UINT registerSpace,
+			SamplerDesc desc = SamplerDesc::GetTextureSamplerDesc(8),
+			D3D12_STATIC_BORDER_COLOR borderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE
 		)
 		{
 			CD3DX12_STATIC_SAMPLER_DESC& Desc = staticSamplers.emplace_back();
-			Desc.Init(shaderRegister, filter, addressU, addressV, addressW, mipLODBias, maxAnisotropy, comparisonFunc, borderColor, minLOD, maxLOD);			
+			Desc.Init(
+				shaderRegister,
+				desc.desc.Filter, 
+				desc.desc.AddressU,
+				desc.desc.AddressV, 
+				desc.desc.AddressW, 
+				desc.desc.MipLODBias, 
+				desc.desc.MaxAnisotropy, 
+				desc.desc.ComparisonFunc,
+				borderColor,
+				desc.desc.MinLOD, 
+				desc.desc.MaxLOD,
+				D3D12_SHADER_VISIBILITY_ALL,
+				registerSpace
+			);
 			return *this;
 		}
 
@@ -88,7 +152,13 @@ namespace RHI {
 			return *this;
 		}
 
-		operator D3D12_ROOT_SIGNATURE_DESC1() const {
+		operator D3D12_ROOT_SIGNATURE_DESC1() {
+			for (auto& [index, table] : descriptorTables) {
+				// deferred realize descriptor tables
+				CD3DX12_ROOT_PARAMETER1 Parameter = {};
+				Parameter.InitAsDescriptorTable(table.GetNumRanges(), table.GetRanges());
+				parameters[index] = Parameter;
+			}
 			return D3D12_ROOT_SIGNATURE_DESC1{
 				.NumParameters = (UINT)parameters.size(),
 				.pParameters = parameters.data(),
@@ -105,6 +175,7 @@ namespace RHI {
 		D3D12_ROOT_SIGNATURE_FLAGS flags{};
 		std::vector<CD3DX12_ROOT_PARAMETER1> parameters;
 		std::vector<CD3DX12_STATIC_SAMPLER_DESC> staticSamplers;
+		std::vector<std::pair<uint,DescriptorTable>> descriptorTables;
 	};
 	class RootSignature : public DeviceChild {
 		name_t m_Name;
@@ -114,7 +185,7 @@ namespace RHI {
 		/* pulls root signature from a shader blob */
 		RootSignature(Device* device, Blob* blob);
 		/* build from locally created root signature*/
-		RootSignature(Device* device, RootSignatureDesc const& desc);
+		RootSignature(Device* device, RootSignatureDesc& desc);
 
 		inline auto GetNativeRootSignature() { return m_RootSignature.Get(); }
 		inline operator ID3D12RootSignature* () { return m_RootSignature.Get(); }

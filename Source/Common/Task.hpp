@@ -11,9 +11,9 @@ VoidFunctionPtr make_function_ptr(auto func, auto&&... args) {
 /* task typedefs */
 typedef std::packaged_task<void()> VoidTask;
 typedef std::shared_ptr<VoidTask> VoidTaskPtr;
-VoidTaskPtr make_task_ptr(auto func, auto&&... args) {
+VoidTaskPtr make_task_ptr(auto&& func, auto&&... args) {
 	typedef decltype(func(args...)) return_type;	
-	return std::make_shared<std::packaged_task<return_type()>>(std::bind(func, args...));
+	return std::make_shared<std::packaged_task<return_type()>>(std::bind(std::move(func), args...));
 }
 /* task concepts */
 template<typename T> concept VoidTaskContainer = requires(T t) {
@@ -32,7 +32,7 @@ public:
 template<VoidTaskContainer _Tc> class TaskQueue {
 public:
 	typedef _Tc container_type;
-	auto push(auto func, auto&&... args) {
+	auto push(auto&& func, auto&&... args) {
 		typedef decltype(func(args...)) return_type;
 		auto task = make_task_ptr(func, args...);
 		auto future = task->get_future();
@@ -94,3 +94,5 @@ private:
 		}
 	}
 };
+
+typedef TaskThreadPool<TaskQueueFIFOContainer> DefaultTaskThreadPool;

@@ -3,6 +3,7 @@ ConstantBuffer<SceneGlobals> g_SceneGlobals : register(b0, space0);
 StructuredBuffer<SceneMeshInstance> g_SceneMeshInstances : register(t0, space0);
 struct IndirectCommand
 {
+    uint MeshIndex;
     D3D12_VERTEX_BUFFER_VIEW VertexBuffer;
     D3D12_INDEX_BUFFER_VIEW IndexBuffer;
     D3D12_DRAW_INDEXED_ARGUMENTS DrawIndexedArguments;
@@ -18,6 +19,7 @@ void main( uint index : SV_DispatchThreadID )
         SceneMeshLod lod = g_SceneMeshInstances[index].lods[0];
         cmd.IndexBuffer = lod.indices;
         cmd.VertexBuffer = g_SceneMeshInstances[index].vertices;
+        cmd.MeshIndex = index;
         cmd.DrawIndexedArguments.BaseVertexLocation = 0;
         cmd.DrawIndexedArguments.IndexCountPerInstance = lod.numIndices;
         cmd.DrawIndexedArguments.InstanceCount = 1;

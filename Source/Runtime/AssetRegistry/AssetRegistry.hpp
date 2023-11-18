@@ -30,9 +30,11 @@ public:
 	template<AssetRegistryDefined T> T& get(AssetHandle resource) {
 		return registry.get<T>(resource.entity);
 	}
-
 	template<AssetRegistryDefined T> T* try_get(AssetHandle resource) {
 		return registry.try_get<T>(resource.entity);
+	}
+	template<typename As, typename Type> As* try_get_base_ptr(AssetHandle resource) {
+		return registry.try_get<Type>(resource.entity);		
 	}
 	template<AssetRegistryDefined T, typename ...Args> T& emplace_or_replace(AssetHandle handle, Args &&...args) {
 		return registry.emplace_or_replace<T>(handle, std::forward<decltype(args)>(args)...);
@@ -40,4 +42,9 @@ public:
 	AssetHandle create(AssetType type) {
 		return AssetHandle{ type, registry.create() };
 	}
+	/* Helpers */
+	ImageAsset* try_get_base_image_asset(AssetHandle resource) {
+		return try_get_base_ptr<ImageAsset, SDRImageAsset>(resource);
+	}
+	// xxx MeshAsset*
 };

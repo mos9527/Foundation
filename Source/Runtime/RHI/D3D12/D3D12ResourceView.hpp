@@ -48,4 +48,7 @@ namespace RHI {
 			device->GetNativeDevice()->CreateDepthStencilView(*resource, &dsvDesc, descriptor.get_cpu_handle());
 		}
 	};
+	struct Sampler : public ResourceView<SamplerDesc> {
+
+	};
 }

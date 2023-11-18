@@ -5,19 +5,20 @@
 #include "ImageImporter.hpp"
 
 #include "../../Runtime/Renderer/Shaders/Shared.h"
-template<> struct Asset<Bitmap8bpp> {
-	using imported_type = Bitmap8bpp;
-	static constexpr AssetType type = AssetType::Image;
-	
-	Bitmap8bpp initialData;
-
+struct ImageAsset {
 	std::unique_ptr<RHI::Texture> texture;
 	std::unique_ptr<RHI::ShaderResourceView> textureSrv;
+};
+template<> struct Asset<Bitmap32bpp> : public ImageAsset {
+	using imported_type = Bitmap32bpp;
+	static constexpr AssetType type = AssetType::Image;
+	
+	Bitmap32bpp initialData;
 
-	Asset(Bitmap8bpp&&);
+	Asset(Bitmap32bpp&&);
 	void upload(RHI::Device*);
 	void clean() {
-		if (initialData.data) ::free(initialData.data);
+		initialData.free();
 	}
 };
-typedef Asset<Bitmap8bpp> SDRImageAsset;
+typedef Asset<Bitmap32bpp> SDRImageAsset;

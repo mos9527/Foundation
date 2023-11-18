@@ -1,3 +1,4 @@
+#include "../../Common/Task.hpp"
 #include "../AssetRegistry/IO.hpp"
 #include "../AssetRegistry/AssetRegistry.hpp"
 #include "../AssetRegistry/MeshAsset.hpp"
@@ -10,61 +11,63 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-void SceneGraph::load_from_aiScene(const aiScene* scene) {	
+void SceneGraph::load_from_aiScene(const aiScene* scene, path_t sceneFolder) {	
+	DefaultTaskThreadPool pool;
 	std::unordered_map<uint, entt::entity> mesh_mapping;
 	for (UINT i = 0; i < scene->mNumMeshes; i++) {
-		auto asset = assets.import(load_static_mesh(scene->mMeshes[i]));
 		auto entity = registry.create();
-		StaticMeshComponent staticMesh;
+		StaticMeshComponent& staticMesh = emplace<StaticMeshComponent>(entity);
 		staticMesh.entity = entity;
-		staticMesh.mesh_resource = asset;
 		staticMesh.name = scene->mMeshes[i]->mName.C_Str();
-		emplace<StaticMeshComponent>(entity, staticMesh);		
 		mesh_mapping[i] = entity;
+		pool.push([&](auto meshPtr) {
+			staticMesh.mesh_resource = assets.import(load_static_mesh(meshPtr));
+		}, scene->mMeshes[i]);
 	}
-	std::unordered_map<std::string, AssetHandle> texture_mapping;
-	for (UINT i = 0; i < scene->mNumTextures; i++) {
-		auto texture = scene->mTextures[i];
-		AssetHandle asset;
-		if (scene->GetEmbeddedTexture(texture->mFilename.C_Str()))			
-			asset = assets.import(load_bitmap_8bpp(reinterpret_cast<uint8_t*>(texture->pcData), texture->mWidth));
-		else
-			asset = assets.import(load_bitmap_8bpp(path_t(texture->mFilename.C_Str()))); // texture is a file		
-		texture_mapping[texture->mFilename.C_Str()] = asset;
-	}
+	auto load_texture = [&](const char* filename) {
+		if (scene->GetEmbeddedTexture(filename)) {
+			LOG(INFO) << "Loading embeded texture " << filename;
+			return assets.import(load_bitmap_32bpp(reinterpret_cast<uint8_t*>(scene->GetEmbeddedTexture(filename)->pcData), scene->GetEmbeddedTexture(filename)->mWidth));
+		}
+		else {
+			LOG(INFO) << "Loading filesystem texture " << filename;
+			auto realized_path = find_file(filename, sceneFolder);
+			CHECK(realized_path.has_value());
+			return assets.import(load_bitmap_32bpp(realized_path.value())); // texture is a file					
+		}
+	};
 	std::unordered_map<uint, entt::entity> material_mapping;
 	for (UINT i = 0; i < scene->mNumMaterials; i++) {
 		auto material = scene->mMaterials[i];
 		auto entity = registry.create();
-		MaterialComponet materialComponet;
+		MaterialComponet& materialComponet = emplace<MaterialComponet>(entity);
+		material_mapping[i] = entity;
 		materialComponet.entity = entity;
 		materialComponet.name = material->GetName().C_Str();
 		for (UINT j = 0; j < material->GetTextureCount(aiTextureType_BASE_COLOR) && j < 1; j++) {
 			aiString path; material->GetTexture(aiTextureType_BASE_COLOR, j, &path);
-			materialComponet.albedoImage = texture_mapping[path.C_Str()];
+			pool.push([&](auto path) { materialComponet.albedoImage = load_texture(path); }, path.C_Str());
 		}
 		for (UINT j = 0; j < material->GetTextureCount(aiTextureType_NORMALS) && j < 1; j++) {
 			aiString path; material->GetTexture(aiTextureType_NORMALS, j, &path);
-			materialComponet.normalMapImage = texture_mapping[path.C_Str()];
+			pool.push([&](auto path) { materialComponet.normalMapImage = load_texture(path); }, path.C_Str());
 		}
 		for (UINT j = 0; j < material->GetTextureCount(aiTextureType_METALNESS) && j < 1; j++) {
 			aiString path; material->GetTexture(aiTextureType_METALNESS, j, &path);
-			materialComponet.pbrMapImage = texture_mapping[path.C_Str()]; // one map (RGBA) for metal-roughness PBR pipeline (like glTF)
+			pool.push([&](auto path) { materialComponet.pbrMapImage = load_texture(path); }, path.C_Str());
+			// one map (RGBA) for metal-roughness PBR pipeline (like glTF)
 		}
 		for (UINT j = 0; j < material->GetTextureCount(aiTextureType_EMISSIVE) && j < 1; j++) {
 			aiString path; material->GetTexture(aiTextureType_EMISSIVE, j, &path);
-			materialComponet.emissiveMapImage = texture_mapping[path.C_Str()];
+			pool.push([&](auto path) { materialComponet.emissiveMapImage = load_texture(path); }, path.C_Str());
 		}
-		material_mapping[i] = entity;
-		emplace<MaterialComponet>(entity, materialComponet);
 	}
 	// build scene hierarchy
 	auto dfs_nodes = [&](auto& func, aiNode* node, entt::entity parent) -> void {
 		auto entity = registry.create();
-		CollectionComponent component;
+		CollectionComponent& component = emplace<CollectionComponent>(entity);
 		component.entity = entity;
-		component.name = node->mName.C_Str();		
-		emplace<CollectionComponent>(entity, component);
+		component.name = node->mName.C_Str();
 		add_link(parent, entity);		
 		for (UINT i = 0; i < node->mNumMeshes; i++) {
 			add_link(entity, mesh_mapping[node->mMeshes[i]]);
@@ -77,33 +80,36 @@ void SceneGraph::load_from_aiScene(const aiScene* scene) {
 	dfs_nodes(dfs_nodes, scene->mRootNode, root);
 }
 
-void SceneGraph::log_entites() {
-	auto dfs_nodes = [&](auto& func, entt::entity entity) -> void {
+void SceneGraph::log_entites() {	
+	auto dfs_nodes = [&](auto& func, entt::entity entity, uint depth) -> void {
+		std::string padding;
+		for (uint i = 0; i < depth; i++)
+			padding += "\t";		
 		SceneComponentType tag = registry.get<SceneComponentType>(entity);
 		switch (tag)
 		{
 		case SceneComponentType::Root:
-			LOG(INFO) << "[ Scene Root ]";
+			LOG(INFO) << padding << "[ Scene Root ]";
 			break;
 		case SceneComponentType::Camera:
-			LOG(INFO) << "[ Camera ]";
-			LOG(INFO) << " Name: " << registry.get<CameraComponent>(entity).name;
+			LOG(INFO) << padding << "[ Camera ]";
+			LOG(INFO) << padding << " Name: " << registry.get<CameraComponent>(entity).name;
 			break;
 		case SceneComponentType::Collection:
-			LOG(INFO) << "[ Collection ]";
-			LOG(INFO) << " Name: " << registry.get<CollectionComponent>(entity).name;
+			LOG(INFO) << padding << "[ Collection ]";
+			LOG(INFO) << padding << " Name: " << registry.get<CollectionComponent>(entity).name;
 			break;
 		case SceneComponentType::StaticMesh:
-			LOG(INFO) << "[ Static Mesh ]";
-			LOG(INFO) << " Name: " << registry.get<StaticMeshComponent>(entity).name;		
+			LOG(INFO) << padding << "[ Static Mesh ]";
+			LOG(INFO) << padding << " Name: " << registry.get<StaticMeshComponent>(entity).name;
 			break;
 		case SceneComponentType::Material:
-			LOG(INFO) << "[ Material ]";
-			LOG(INFO) << " Name: " << registry.get<MaterialComponet>(entity).name;
+			LOG(INFO) << padding << "[ Material ]";
+			LOG(INFO) << padding << " Name: " << registry.get<MaterialComponet>(entity).name;
 			break;
-		}
+		}		
 		for (auto child : graph[entity])
-			func(func, child);
+			func(func, child, depth+1);
 	};
-	dfs_nodes(dfs_nodes, root);
+	dfs_nodes(dfs_nodes, root, 0);
 }

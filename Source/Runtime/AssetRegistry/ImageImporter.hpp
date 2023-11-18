@@ -1,8 +1,8 @@
 #pragma once
 #include "IO.hpp"
 
-struct Bitmap8bpp {
-	uint8_t* data;
+struct Bitmap32bpp {
+	uint8_t* data = nullptr;
 	int width;
 	int height;
 	int channels;
@@ -10,17 +10,20 @@ struct Bitmap8bpp {
 	const size_t size_in_bytes() const {
 		return width * height * texel;
 	}
-	~Bitmap8bpp() {
-		if (data) ::free(data);
+	void free() {
+		if (data) {
+			stbi_image_free(data);
+			data = nullptr;
+		}
 	}
 };
-inline Bitmap8bpp load_bitmap_8bpp(uint8_t* mem, size_t length) {
+inline Bitmap32bpp load_bitmap_32bpp(uint8_t* mem, size_t length) {
 	int width, height, channels;
 	uint8_t* data = stbi_load_from_memory(mem, length, &width, &height, &channels, STBI_rgb_alpha);
 	CHECK(data);
-	return { data, width, height, channels }; // mandatory RVO
+	return Bitmap32bpp(data, width, height, channels);
 };
-inline Bitmap8bpp load_bitmap_8bpp(path_t filepath) {
+inline Bitmap32bpp load_bitmap_32bpp(path_t filepath) {
 	filepath = get_absolute_path(filepath);
 	FILE* f; 
 	_wfopen_s(&f, filepath.c_str(), L"rb");
@@ -28,5 +31,5 @@ inline Bitmap8bpp load_bitmap_8bpp(path_t filepath) {
 	int width, height, channels;
 	uint8_t* data = stbi_load_from_file(f, &width, &height, &channels, STBI_rgb_alpha);
 	CHECK(data);
-	return { data, width, height, channels };
+	return Bitmap32bpp(data, width, height, channels);
 }

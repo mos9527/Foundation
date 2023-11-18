@@ -31,17 +31,24 @@ public:
 	template<typename T> T* try_get(const entt::entity entity) {
 		return registry.try_get<T>(entity);
 	}
-	template<typename T, typename... Args> void emplace(const entt::entity entity, Args&&... args) {
+	template<typename T, typename... Args> auto& emplace(const entt::entity entity, Args&&... args) {
 		auto type = SceneComponentTraits<T>::type;
 		CHECK(type != SceneComponentType::Unknown && "Unsupported type.");
 		registry.emplace<SceneComponentType>(entity, type);		
-		registry.emplace<T>(entity, std::forward<decltype(args)>(args)...);
+		return registry.emplace<T>(entity, std::forward<decltype(args)>(args)...);
 	}	
 	template<typename T, typename... Args> entt::entity create_child_of(const entt::entity parent, Args&&... args) {
 		auto entity = registry.create();
 		emplace<T>(entity, std::forward<decltype(args)>(args)...);
 		add_link(parent, entity);
 		return entity;
+	}
+	template<typename T> T* try_get_first_child_of(const entt::entity parent) {
+		for (auto child : graph[parent]) {
+			auto ptr = registry.try_get<T>(child);
+			if (ptr) return ptr;
+		}
+		return nullptr;
 	}
 	const entt::entity get_root() { return root; }
 	SceneComponent* try_get_base_ptr(const entt::entity entity) {
@@ -76,6 +83,6 @@ public:
 	void add_link(const entt::entity lhs, const entt::entity rhs) {
 		DAG::add_edge(lhs, rhs);
 	}
-	void load_from_aiScene(const aiScene* scene);
+	void load_from_aiScene(const aiScene* scene, path_t scenePath);
 	void log_entites();		
 };

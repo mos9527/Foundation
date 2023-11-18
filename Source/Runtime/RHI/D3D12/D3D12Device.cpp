@@ -184,31 +184,37 @@ namespace RHI {
                 .descriptorCount = ALLOC_SIZE_DESCHEAP,
                 .heapType = DescriptorHeapType::RTV
         });
+        m_RTVHeap->SetName(L"RTV Heap");
         m_DSVHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
             .shaderVisible = false,
                 .descriptorCount = ALLOC_SIZE_DESCHEAP,
                 .heapType = DescriptorHeapType::DSV
         });
+        m_DSVHeap->SetName(L"DSV Heap");
         m_SRVHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
             .shaderVisible = false,
                 .descriptorCount = ALLOC_SIZE_DESCHEAP,
                 .heapType = DescriptorHeapType::CBV_SRV_UAV
         });
+        m_SRVHeap->SetName(L"OFFLINE CBV_SRV_UAV Heap");
         m_SamplerHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
             .shaderVisible = false,
                 .descriptorCount = ALLOC_SIZE_DESCHEAP,
                 .heapType = DescriptorHeapType::SAMPLER
         });
+        m_SamplerHeap->SetName(L"OFFLINE Sampler Heap");
         m_OnlineSRVHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
             .shaderVisible = true,
                 .descriptorCount = ALLOC_SIZE_SHADER_VISIBLE_DESCHEAP,
                 .heapType = DescriptorHeapType::CBV_SRV_UAV
         });
+        m_OnlineSRVHeap->SetName(L"CBV_SRV_UAV Heap");
         m_OnlineSamplerHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
             .shaderVisible = true,
                 .descriptorCount = ALLOC_SIZE_SHADER_VISIBLE_DESCHEAP,
                 .heapType = DescriptorHeapType::SAMPLER
         });
+        m_OnlineSamplerHeap->SetName(L"Sampler Heap");
         // D3D12MA
         D3D12MA::ALLOCATOR_DESC allocatorDesc{};
         allocatorDesc.pDevice = m_Device.Get();

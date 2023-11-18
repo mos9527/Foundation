@@ -7,7 +7,7 @@ namespace RHI {
 			0, blob->GetData(), blob->GetSize(), IID_PPV_ARGS(&m_RootSignature)
 		));
 	}
-	RootSignature::RootSignature(Device* device, RootSignatureDesc const& desc) : DeviceChild(device) {
+	RootSignature::RootSignature(Device* device, RootSignatureDesc& desc) : DeviceChild(device) {
 		D3D12_ROOT_SIGNATURE_DESC1 cdesc = desc;
 		D3D12_VERSIONED_ROOT_SIGNATURE_DESC versionedDesc = {
 			.Version  = D3D_ROOT_SIGNATURE_VERSION_1_1,

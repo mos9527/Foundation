@@ -40,11 +40,14 @@ int main(int argc, char* argv[]) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui_ImplWin32_Init(vp.m_hWnd);
-    auto pSrvHeap = device.GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap();
+
+    Descriptor ImGuiFontDescriptor = device.GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
     ImGui_ImplDX12_Init(device.GetNativeDevice(), RHI_DEFAULT_SWAPCHAIN_BACKBUFFER_COUNT,
-        ResourceFormatToD3DFormat(swapchain.GetFormat()), pSrvHeap,
-        pSrvHeap->GetCPUDescriptorHandleForHeapStart(),
-        pSrvHeap->GetGPUDescriptorHandleForHeapStart());
+        ResourceFormatToD3DFormat(swapchain.GetFormat()), *device.GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>(),
+        ImGuiFontDescriptor,
+        ImGuiFontDescriptor
+    ); // ImGui won't use more than this one descriptor
+
     vp.SetCallback([&](HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
         ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam);
         if (message == WM_SIZE) {
@@ -61,18 +64,22 @@ int main(int argc, char* argv[]) {
     );
     ImGui::StyleColorsLight();
 
-    Assimp::Importer importer;   
-    auto imported = importer.ReadFile("..\\Resources\\glTF-Sample-Models\\2.0\\FlightHelmet\\glTF\\FlightHelmet.gltf", aiProcess_Triangulate | aiProcess_ConvertToLeftHanded);
-    scene.load_from_aiScene(imported);
+    Assimp::Importer importer;  
+    path_t filepath = L"..\\Resources\\glTF-Sample-Models\\2.0\\FlightHelmet\\glTF\\FlightHelmet.gltf";
+    std::string u8path = (const char*) filepath.u8string().c_str();
+    auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded);
+    scene.load_from_aiScene(imported, filepath.parent_path());
     scene.log_entites();
 
     CommandList* cmd = device.GetCommandList<CommandListType::Copy>();    
     device.BeginUpload(cmd);
-    assets.upload_all<StaticMeshAsset>(&device);    
+    assets.upload_all<StaticMeshAsset>(&device);
+    assets.upload_all<SDRImageAsset>(&device);
     device.EndUpload().Wait();
     device.Clean();    
     assets.clean<StaticMeshAsset>();
-    
+    assets.clean<SDRImageAsset>();
+
     bool vsync = true;
     cmd = device.GetCommandList<CommandListType::Direct>();
     auto render = [&]() {
@@ -88,8 +95,11 @@ int main(int argc, char* argv[]) {
         auto rtv = swapchain.GetBackbufferRTV(bbIndex);
         /* FRAME BEGIN */
         const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
-        auto const srvHeap = device.GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap();
-        cmd->GetNativeCommandList()->SetDescriptorHeaps(1, &srvHeap);
+        ID3D12DescriptorHeap* const heaps[] = {
+            device.GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap()
+            /*device.GetOnlineDescriptorHeap<DescriptorHeapType::SAMPLER>()->GetNativeHeap()*/ // xxx do we really need more than static samplers?
+        };
+        cmd->GetNativeCommandList()->SetDescriptorHeaps(1, heaps);
         cmd->GetNativeCommandList()->ClearRenderTargetView(rtv.descriptor.get_cpu_handle(), clearColor, 0, nullptr);
         // Render
         renderer.Render();
