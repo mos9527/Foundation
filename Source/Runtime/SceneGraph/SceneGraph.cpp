@@ -19,7 +19,7 @@ void SceneGraph::load_from_aiScene(const aiScene* scene, path_t sceneFolder) {
 		auto entity = registry.create();
 		StaticMeshComponent& staticMesh = emplace<StaticMeshComponent>(entity);
 		staticMesh.entity = entity;
-		staticMesh.name = scene->mMeshes[i]->mName.C_Str();
+		staticMesh.name = scene->mMeshes[i]->mName.C_Str();		
 		mesh_mapping[i] = entity;
 		pool.push([&](auto meshPtr) {
 			LOG(INFO) << "Loading mesh " << meshPtr->mName.C_Str();
@@ -82,6 +82,7 @@ void SceneGraph::load_from_aiScene(const aiScene* scene, path_t sceneFolder) {
 		CollectionComponent& component = emplace<CollectionComponent>(entity);
 		component.entity = entity;
 		component.name = node->mName.C_Str();
+		component.localTransform = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1));
 		add_link(parent, entity);		
 		for (UINT i = 0; i < node->mNumMeshes; i++) {
 			add_link(entity, mesh_mapping[node->mMeshes[i]]);
@@ -91,7 +92,10 @@ void SceneGraph::load_from_aiScene(const aiScene* scene, path_t sceneFolder) {
 		for (UINT i = 0; i < node->mNumChildren; i++)
 			func(func, node->mChildren[i], entity);
 	};
-	dfs_nodes(dfs_nodes, scene->mRootNode, root);
+	dfs_nodes(dfs_nodes, scene->mRootNode, root);	
+	pool.wait_and_join(); // ensure pool work is done before finally destructing import_mutex
+	LOG(INFO) << "Scene loaded";
+	// ~import_mutex(); // implictly called
 }
 
 #ifdef IMGUI_ENABLED
@@ -101,7 +105,16 @@ void SceneGraph::OnImGui() {
 		SceneComponent* componet = try_get_base_ptr(entity);
 		uint stack_count = 0;
 		if (ImGui::TreeNode(componet->get_name())) {
+
+			ImGui::SeparatorText("Transforms");
+			ImGui::DragFloat3("Position", (float*)&componet->localTransform.translation, 0.001f);
+			auto euler_rotation = componet->localTransform.rotation.GetRotationPitchYawRoll();
+			ImGui::DragFloat3("Euler Rotation", (float*)&euler_rotation, 0.01f);
+			componet->localTransform.rotation.SetRotationPitchYawRoll(euler_rotation);
+
+			ImGui::SeparatorText("Component");
 			componet->OnImGui();
+
 			stack_count++;
 			std::vector<entt::entity> entity_ordered(graph[entity].begin(), graph[entity].end()); 
 			std::sort(entity_ordered.begin(), entity_ordered.end(), [&](entt::entity lhs, entt::entity rhs) {

@@ -82,7 +82,7 @@ int main(int argc, char* argv[]) {
     taskpool.push([&] {
         LOG(INFO) << "Loading scene";
         Assimp::Importer importer;
-        path_t filepath = L"..\\Resources\\glTF-Sample-Models\\2.0\\FlightHelmet\\glTF\\FlightHelmet.gltf";
+        path_t filepath = L"..\\Resources\\glTF-Sample-Models\\2.0\\Sponza\\glTF\\Sponza.gltf";
         std::string u8path = (const char*)filepath.u8string().c_str();
         auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded);
         scene.load_from_aiScene(imported, filepath.parent_path());        

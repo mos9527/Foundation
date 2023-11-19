@@ -11,10 +11,6 @@ struct StaticMeshComponent : public SceneComponent {
 	int lodOverride = -1;
 #ifdef IMGUI_ENABLED
 	virtual void OnImGui() {
-		ImGui::DragFloat3("Position", (float*)&localTransform.translation);
-		auto euler_rotation = localTransform.rotation.GetRotationPitchYawRoll();
-		ImGui::DragFloat3("Euler Rotation", (float*)&euler_rotation);
-		localTransform.rotation.SetRotationPitchYawRoll(euler_rotation);		
 		ImGui::SliderInt("LOD Override", &lodOverride, -1, MAX_LOD_COUNT);
 	}
 #endif
@@ -22,4 +18,5 @@ struct StaticMeshComponent : public SceneComponent {
 
 template<> struct SceneComponentTraits<StaticMeshComponent> {
 	static constexpr SceneComponentType type = SceneComponentType::StaticMesh;
+	const char* name = "Static Mesh";
 };

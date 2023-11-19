@@ -130,15 +130,11 @@ struct AffineTransform
     }
     SimpleMath::Matrix GetTransforms() const {
         return XMMatrixAffineTransformation(scale, { 0,0,0 }, rotation.GetRotationQuaternion(), translation);
-    }
+    }   
     AffineTransform(SimpleMath::Matrix transform) { SetTransforms(transform); }
     AffineTransform() : AffineTransform(SimpleMath::Matrix::Identity) {}
     inline operator SimpleMath::Matrix() const { return GetTransforms(); }
     friend AffineTransform operator* (const AffineTransform& lhs, const AffineTransform& rhs) {        
-        AffineTransform new_transform = lhs;
-        new_transform.translation += rhs.translation;
-        new_transform.rotation += rhs.rotation;
-        new_transform.scale *= rhs.scale;
-        return new_transform;
+        return lhs.GetTransforms() * rhs.GetTransforms();
     }
 };

@@ -38,7 +38,7 @@ PSInput vs_main(VSInput vertex)
 {
     PSInput result;
     SceneMeshInstance mesh = g_SceneMeshInstances[g_MeshIndex];
-    result.position = mul(mul(mesh.transform,float4(vertex.position, 1.0f)), g_SceneGlobals.camera.viewProjection);
+    result.position = mul(mul(float4(vertex.position, 1.0f), mesh.transform), g_SceneGlobals.camera.viewProjection);
     result.normal = mul(vertex.normal, (float3x3) mesh.transformInvTranspose);
     result.tangent = mul(vertex.tangent, (float3x3) mesh.transformInvTranspose);
     result.uv = vertex.uv;

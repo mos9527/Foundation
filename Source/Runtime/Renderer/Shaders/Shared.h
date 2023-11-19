@@ -24,6 +24,7 @@
 #define RENDERER_FULLSCREEN_THREADS 8 // 8 * 8 -> 64
 #ifdef __cplusplus
 #include "../../../pch.hpp"
+#pragma pack(push, 4)
 #else // HLSL
 
 typedef uint2 D3D12_GPU_VIRTUAL_ADDRESS;
@@ -48,6 +49,13 @@ struct D3D12_INDEX_BUFFER_VIEW
     uint Format;
 };
 #endif
+struct IndirectCommand
+{
+    uint MeshIndex; // 1
+    D3D12_VERTEX_BUFFER_VIEW VertexBuffer; // 4
+    D3D12_INDEX_BUFFER_VIEW IndexBuffer; // 4
+    D3D12_DRAW_INDEXED_ARGUMENTS DrawIndexedArguments; // 5
+};
 struct SceneCamera // ! align for CB
 {
     float4 position; // 16
@@ -82,18 +90,20 @@ struct SceneMeshLod
 {
     uint numIndices;
     uint numMeshlets;
-    
+    uint2 _pad;
+
     D3D12_INDEX_BUFFER_VIEW indices; // 16
     D3D12_GPU_VIRTUAL_ADDRESS meshlets; // 8
     D3D12_GPU_VIRTUAL_ADDRESS meshletTriangles;
     D3D12_GPU_VIRTUAL_ADDRESS meshletVertices;
+    uint2 _pad2;
 };
 struct SceneMeshInstance
 {    
     uint numVertices; // 4
     uint materialIndex; //4
     int lodOverride; // 4
-    uint pad_;
+    uint _pad;
 
     matrix transform; // 16 * 4
     matrix transformInvTranspose; // xxx transform is sufficent for affine transformations
@@ -127,4 +137,7 @@ struct IndirectConstant
 {
     uint MeshIndex;
 };
+#ifdef __cplusplus
+#pragma pack(pop)
+#endif
 #endif

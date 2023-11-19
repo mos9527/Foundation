@@ -21,11 +21,7 @@ struct CameraComponent : public SceneComponent {
 	}
 #ifdef IMGUI_ENABLED
 	virtual void OnImGui() {
-		ImGui::DragFloat3("Position", (float*)&localTransform.translation, 0.001f);
-		auto euler_rotation = localTransform.rotation.GetRotationPitchYawRoll();
-		ImGui::DragFloat3("Euler Rotation", (float*)&euler_rotation, 0.01f);
-		localTransform.rotation.SetRotationPitchYawRoll(euler_rotation);
-		ImGui::SliderFloat("FOV", &fov, 0.0f, 100.0f);
+		ImGui::SliderFloat("FOV", &fov, 0.0f, XM_PIDIV2);
 		ImGui::SliderFloat("Near Z", &nearZ, 0.0f, 100.0f);
 		ImGui::SliderFloat("Far Z", &farZ, 0.0f, 100.0f);
 		ImGui::Checkbox("Orthograhpic", &orthographic);					
@@ -88,4 +84,5 @@ struct CameraComponent : public SceneComponent {
 
 template<> struct SceneComponentTraits<CameraComponent> {
 	static constexpr SceneComponentType type = SceneComponentType::Camera;
+	const char* name = "Camera";
 };

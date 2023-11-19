@@ -22,4 +22,5 @@ struct LightComponent : public SceneComponent {
 
 template<> struct SceneComponentTraits<LightComponent> {
 	static constexpr SceneComponentType type = SceneComponentType::Light;
+	const char* name = "Light";
 };

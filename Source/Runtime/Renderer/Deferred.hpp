@@ -11,11 +11,6 @@ public:
 	uint2 GetViewportSize() { return viewportSize; }
 private:
 	void ResetCounter(RHI::CommandList* cmd,RHI::Resource* resource, size_t counterOffset);
-	struct IndirectCommand {
-		D3D12_VERTEX_BUFFER_VIEW	 VertexBuffer;
-		D3D12_INDEX_BUFFER_VIEW		 IndexBuffer;
-		D3D12_DRAW_INDEXED_ARGUMENTS DrawIndexedArguments;
-	};
 	const UINT CommandSizePerFrame = MAX_INSTANCE_COUNT * sizeof(IndirectCommand);
 	const UINT CommandBufferCounterOffset = AlignForUavCounter(CommandSizePerFrame);
 	const UINT CommandBufferSize = CommandBufferCounterOffset + sizeof(UINT); // including a UAV Counter	

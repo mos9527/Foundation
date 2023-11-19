@@ -33,4 +33,5 @@ struct MaterialComponet : public SceneComponent {
 
 template<> struct SceneComponentTraits<MaterialComponet> {
 	static constexpr SceneComponentType type = SceneComponentType::Material;
+	const char* name = "Material";
 };

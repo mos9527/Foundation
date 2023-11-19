@@ -45,7 +45,9 @@ void main(uint2 DTid : SV_DispatchThreadID)
     float Zview = ClipZ2ViewZ(Zss, g_SceneGlobals.camera.nearZ, g_SceneGlobals.camera.farZ);
     float3 P = UV2WorldSpace(UV, Zss, g_SceneGlobals.camera.invViewProjection);
     float3 V = normalize(g_SceneGlobals.camera.position.xyz - P);    
-    
+    frameBuffer[DTid] = albedoSmp;
+    // float4(Zview, Zview, Zview, 1.0f);
+    return;
     if (Zview >= g_SceneGlobals.camera.farZ) // Discard far plane pixels
     {
         frameBuffer[DTid] = float4(0, 0, 0, 0);
@@ -78,5 +80,6 @@ void main(uint2 DTid : SV_DispatchThreadID)
         specular += k * NoL * BRDF_GGX_Specular(F0, splat3(1), VoH, NoL, NoV, NoH, alphaRoughness);
     }
     float3 finalColor = diffuse + specular;
-    frameBuffer[DTid] = float4(finalColor,1.0f);
+    frameBuffer[DTid] = albedoSmp;
+
 }
