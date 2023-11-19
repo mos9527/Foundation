@@ -12,7 +12,7 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 		// setup resource barriers
 		RgResources reads, writes, readwrites;
 		for (auto entity : layer) {
-			RenderPass& pass = registry.get<RenderPass>(entity);
+			RenderGraphPass& pass = registry.get<RenderGraphPass>(entity);
 			reads.insert(pass.reads.begin(), pass.reads.end());
 			writes.insert(pass.writes.begin(), pass.writes.end());
 			readwrites.insert(pass.readwrites.begin(), pass.readwrites.end());
@@ -57,7 +57,7 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 		// all resources barriers & states are ready at this point		
 		PIXBeginEvent(cmd->GetNativeCommandList(), 0, L"RenderGraph Layer");
 		for (auto entity : layer) {
-			RenderPass& pass = registry.get<RenderPass>(entity);
+			RenderGraphPass& pass = registry.get<RenderGraphPass>(entity);
 			PIXBeginEvent(cmd->GetNativeCommandList(), 0, pass.name);				
 			// invoke!
 			if (pass.has_execute()) {

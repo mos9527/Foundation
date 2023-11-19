@@ -2,45 +2,39 @@
 #include "../RHI/RHI.hpp"
 #include "RenderGraphResource.hpp"
 #include "../../Common/Allocator.hpp"
+
 class RenderGraph;
-// RHI resource cache for Created resources in RenderGraph 
+// RHI resource cache for Created resources in RenderGraph
+// Basically, a stripped down (and much dumbified) version of entt::registry
+// * We're not using entt::registry since its entity management does not allow random insertion
 class RenderGraphResourceCache {	
-	template<typename T> using Allocator = DefaultAllocator<T>;	
-	unordered_map<RgHandle, RHI::Buffer, Allocator<std::pair<const RgHandle, RHI::Buffer>>> bufferCache;
-	unordered_map<RgHandle, RHI::Texture, Allocator<std::pair<const RgHandle, RHI::Texture>>> textureCache;
-	unordered_map<RgHandle, RHI::ShaderResourceView, Allocator<std::pair<const RgHandle, RHI::ShaderResourceView>>> srvCache;
-	unordered_map<RgHandle, RHI::RenderTargetView, Allocator<std::pair<const RgHandle, RHI::RenderTargetView>>> rtvCache;
-	unordered_map<RgHandle, RHI::DepthStencilView, Allocator<std::pair<const RgHandle, RHI::DepthStencilView>>> dsvCache;
-	unordered_map<RgHandle, RHI::UnorderedAccessView, Allocator<std::pair<const RgHandle, RHI::UnorderedAccessView>>> uavCache;
+	template<typename T> using Allocator = DefaultAllocator<T>;		
+	unordered_map<ref_type_info, entt::basic_any<>, Allocator<std::pair<const ref_type_info, entt::basic_any<>>>> storages;
+	template<RgDefinedResource T> using storage_type = unordered_map<RgHandle, std::shared_ptr<T>, Allocator<std::pair<const RgHandle, std::shared_ptr<T>>>>;
+
 public:
-	void clear() {
-		bufferCache.clear();
-		textureCache.clear();
-		srvCache.clear();
-		rtvCache.clear();
-		dsvCache.clear();
-		uavCache.clear();
-	}
 	void update(RenderGraph& graph, RHI::Device* device);
-	
-	template<typename T> auto& get_cache_storage() {}
-	template<> auto& get_cache_storage<RHI::Buffer>() { return bufferCache; }
-	template<> auto& get_cache_storage<RHI::Texture>() { return textureCache; }
-	template<> auto& get_cache_storage<RHI::ShaderResourceView>() { return srvCache; }
-	template<> auto& get_cache_storage<RHI::RenderTargetView>() { return rtvCache; }
-	template<> auto& get_cache_storage<RHI::DepthStencilView>() { return dsvCache; }
-	template<> auto& get_cache_storage<RHI::UnorderedAccessView>() { return uavCache; }
-	template<typename T> bool cache_contains(RgHandle handle) {
-		auto& storage = get_cache_storage<T>();
-		return storage.contains(handle);
+	void clear() { storages.clear(); }
+	template<RgDefinedResource T> storage_type<T>& storage() {
+		auto& any_ptr = storages[typeid(storage_type<T>)];
+		if (!any_ptr) any_ptr.emplace<storage_type<T>>();
+		auto* final_ptr = reinterpret_cast<storage_type<T>*>(any_ptr.data());		
+		return *final_ptr;
 	}
-	template<typename T, typename... Args> auto emplace_or_replace(RgHandle handle, Args &&... args) {
-		auto& storage = get_cache_storage<T>();
-		if (cache_contains<T>(handle)) storage.erase(handle); // emplace, try_emplace does nothing if the key already exisits
-		return storage.try_emplace(handle, std::forward<decltype(args)>(args)...);
+	template<RgDefinedResource T> bool contains(RgHandle handle) {
+		auto& storage_ = storage<T>();
+		return storage_.contains(handle);
 	}
-	template<typename T> auto& get_cached(RgHandle handle) {		
-		return get_cache_storage<T>().at(handle);
+	template<RgDefinedResource T, typename... Args> auto& emplace_or_replace(RgHandle handle, Args &&... args) {
+		auto& storage_ = storage<T>();		
+		storage_[handle] = std::make_shared<T>(std::forward<decltype(args)>(args)...);
+		return *storage_[handle];
+	}
+	template<RgDefinedResource T> void erase(RgHandle handle) {
+		storage<T>().erase(handle);
+	}
+	template<RgDefinedResource T> T& get(RgHandle handle) {
+		return *(storage<T>()[handle].get());
 	}
 	RenderGraphResourceCache() {};
 	RenderGraphResourceCache(const RenderGraphResourceCache&) = delete;

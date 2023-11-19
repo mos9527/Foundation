@@ -190,6 +190,8 @@
     <ClInclude Include="Source\Runtime\AssetRegistry\Asset.hpp" />
     <ClInclude Include="Source\Runtime\AssetRegistry\AssetRegistry.hpp" />
     <ClInclude Include="Source\Runtime\AssetRegistry\MeshAsset.hpp" />
+    <ClInclude Include="Source\Runtime\Renderer\RenderPass\GBuffer.hpp" />
+    <ClInclude Include="Source\Runtime\Renderer\RenderPass\RenderPass.hpp" />
     <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12ResourceView.hpp" />
     <ClInclude Include="Source\Runtime\RenderGraph\RenderGraphResource.hpp" />
     <ClInclude Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.hpp" />

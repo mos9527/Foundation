@@ -7,41 +7,41 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 	// created resources may mutate over different graph iterations (i.e. changed buffer sizes) so we'd watch them here:
 	for (auto& buffer : rg_registry.storage<RgBuffer>()) {
 		auto& handle = rg_registry.get<RgHandle>(buffer.entity);		
-		if (!cache_contains<RHI::Buffer>(handle) || get_cached<RHI::Buffer>(handle).GetDesc() != buffer.desc)
+		if (!contains<RHI::Buffer>(handle) || get<RHI::Buffer>(handle).GetDesc() != buffer.desc)
 		{
 			// rebuild : resource is dirty
 			emplace_or_replace<RHI::Buffer>(handle, device, buffer.desc);
 			resource_dirty[handle] = true;
-			auto name = get_cached<RHI::Buffer>(handle).GetName();
+			auto name = get<RHI::Buffer>(handle).GetName();
 			DLOG(INFO) << "Rebuilt buffer " << wstring_to_utf8(name ? name : L"<unamed>");
 		}
 	}
 	for (auto& texture : rg_registry.storage<RgTexture>()) {
 		auto& handle = rg_registry.get<RgHandle>(texture.entity);
-		if (!cache_contains<RHI::Texture>(handle) || get_cached<RHI::Texture>(handle).GetDesc() != texture.desc) {
-			device->Wait();
-			textureCache.erase(handle);
+		if (!contains<RHI::Texture>(handle) || get<RHI::Texture>(handle).GetDesc() != texture.desc) {
+			device->Wait();			
 			emplace_or_replace<RHI::Texture>(handle, device, texture.desc);
 			resource_dirty[handle] = true;
-			auto name = get_cached<RHI::Texture>(handle).GetName();
+			auto name = get<RHI::Texture>(handle).GetName();
 			// DLOG(INFO) << "Rebuilt texture " <<  wstring_to_utf8(name ? name : L"<unamed>");
 		}
 	}
 	// resource views
 	auto build_view = [&]<typename Cache>(auto & view, Cache& cache) -> void {
+		using view_type = Cache::mapped_type::element_type;
+
 		auto& viewing_handle = rg_registry.get<RgHandle>(view.entity);
 		auto& viewed_handle = rg_registry.get<RgHandle>(view.desc.viewed);
 		RHI::Resource* ptr = nullptr;
 		switch (viewed_handle.type) {
 		case RgResourceType::Buffer:
-			ptr = viewed_handle.is_imported() ? graph.get_imported<RHI::Buffer>(viewed_handle) : &get_cached<RHI::Buffer>(viewed_handle);
+			ptr = viewed_handle.is_imported() ? graph.get_imported<RHI::Buffer>(viewed_handle) : &get<RHI::Buffer>(viewed_handle);
 		case RgResourceType::Texture:
-			ptr = viewed_handle.is_imported() ? graph.get_imported<RHI::Texture>(viewed_handle) : &get_cached<RHI::Texture>(viewed_handle);
+			ptr = viewed_handle.is_imported() ? graph.get_imported<RHI::Texture>(viewed_handle) : &get<RHI::Texture>(viewed_handle);
 		}
-		using view_type = Cache::mapped_type;		
 		if (
-			!cache_contains<view_type>(viewing_handle) || 
-			get_cached<view_type>(viewing_handle).GetDesc() != view.desc.viewDesc ||			
+			!contains<view_type>(viewing_handle) || 
+			get<view_type>(viewing_handle).GetDesc() != view.desc.viewDesc ||			
 			resource_dirty.find(viewed_handle) != resource_dirty.end()
 		) {
 			// rebuild : view (or resource) is dirty			
@@ -52,9 +52,9 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 					auto& viewed_counter_handle = rg_registry.get<RgHandle>(view.desc.viewedCounter);
 					switch (viewed_counter_handle.type) {
 					case RgResourceType::Buffer:
-						counter_ptr = viewed_counter_handle.is_imported() ? graph.get_imported<RHI::Buffer>(viewed_counter_handle) : &get_cached<RHI::Buffer>(viewed_counter_handle);
+						counter_ptr = viewed_counter_handle.is_imported() ? graph.get_imported<RHI::Buffer>(viewed_counter_handle) : &get<RHI::Buffer>(viewed_counter_handle);
 					case RgResourceType::Texture:
-						counter_ptr = viewed_counter_handle.is_imported() ? graph.get_imported<RHI::Texture>(viewed_counter_handle) : &get_cached<RHI::Texture>(viewed_counter_handle);
+						counter_ptr = viewed_counter_handle.is_imported() ? graph.get_imported<RHI::Texture>(viewed_counter_handle) : &get<RHI::Texture>(viewed_counter_handle);
 					}
 				}
 				emplace_or_replace<view_type>(viewing_handle, ptr, counter_ptr, view.desc.viewDesc);
@@ -66,8 +66,8 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 		}
 	};
 
-	for (auto& srv : rg_registry.storage<RgSRV>()) build_view(srv, srvCache);
-	for (auto& rtv : rg_registry.storage<RgRTV>()) build_view(rtv, rtvCache);
-	for (auto& dsv : rg_registry.storage<RgDSV>()) build_view(dsv, dsvCache);
-	for (auto& uav : rg_registry.storage<RgUAV>()) build_view(uav, uavCache);
+	for (auto& srv : rg_registry.storage<RgSRV>()) build_view(srv, storage<RHI::ShaderResourceView>());
+	for (auto& rtv : rg_registry.storage<RgRTV>()) build_view(rtv, storage<RHI::RenderTargetView>());
+	for (auto& dsv : rg_registry.storage<RgDSV>()) build_view(dsv, storage<RHI::DepthStencilView>());
+	for (auto& uav : rg_registry.storage<RgUAV>()) build_view(uav, storage<RHI::UnorderedAccessView>());
 }

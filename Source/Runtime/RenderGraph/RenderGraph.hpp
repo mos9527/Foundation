@@ -18,7 +18,7 @@ typedef unordered_set<RgHandle, DefaultAllocator<RgHandle>> RgResources;
 typedef vector<entt::entity, DefaultAllocator<entt::entity>> RgRndPasses;
 
 class RenderGraph;
-struct RenderPass {
+struct RenderGraphPass {
 	friend class RenderGraph;
 private:
 	entt::entity rg_entity;
@@ -29,25 +29,25 @@ public:
 	// function callback for actual rendering work
 	RgFunction executes;
 
-	RenderPass(entt::entity entity, const wchar_t* name) : rg_entity(entity), name(name) {};
-	RenderPass& write(RgHandle& resource) {
+	RenderGraphPass(entt::entity entity, const wchar_t* name) : rg_entity(entity), name(name) {};
+	RenderGraphPass& write(RgHandle& resource) {
 		CHECK(!resource.is_imported());
 		resource.version++;
 		writes.insert(resource); 
 		return *this; 
 	}
-	RenderPass& readwrite(RgHandle& resource) {
+	RenderGraphPass& readwrite(RgHandle& resource) {
 		CHECK(!resource.is_imported());
 		resource.version++;
 		readwrites.insert(resource);
 		return *this;
 	}
-	RenderPass& read(RgHandle resource) {
+	RenderGraphPass& read(RgHandle resource) {
 		CHECK(!resource.is_imported());
 		reads.insert(resource);
 		return *this;
 	}
-    RenderPass& execute(RgFunction&& func) {
+    RenderGraphPass& execute(RgFunction&& func) {
 		executes = std::move(func);
 		return *this;
 	}
@@ -74,12 +74,12 @@ class RenderGraph : DAG<entt::entity> {
 	void build_graph() {
 		layers.clear();
 		for (entt::entity current : passes) {
-			auto& pass = registry.get<RenderPass>(current);
+			auto& pass = registry.get<RenderGraphPass>(current);
 			// create adjacency list from read-writes
 			if (pass.has_dependencies()) {
 				for (auto& other : passes) {
 					if (other != current) {
-						auto& other_pass = registry.get<RenderPass>(other);
+						auto& other_pass = registry.get<RenderGraphPass>(other);
 						for (auto& write : other_pass.writes) {
 							if (pass.reads_from(write)) {
 								add_edge(other, current);
@@ -105,13 +105,13 @@ class RenderGraph : DAG<entt::entity> {
 public:	
 	RenderGraph(RenderGraphResourceCache& cache) : cache(cache) {
 		epiloguePass = registry.create();
-		registry.emplace<RenderPass>(epiloguePass, epiloguePass, L"Epilogue");
+		registry.emplace<RenderGraphPass>(epiloguePass, epiloguePass, L"Epilogue");
 		passes.push_back(epiloguePass);
 	};
-	RenderPass& add_pass(const wchar_t* name=L"<unamed>") {
+	RenderGraphPass& add_pass(const wchar_t* name=L"<unamed>") {
 		entt::entity rg_entity = registry.create();
 		passes.push_back(rg_entity);
-		return registry.emplace<RenderPass>(rg_entity,rg_entity,name);		
+		return registry.emplace<RenderGraphPass>(rg_entity,rg_entity,name);		
 	}
 	// created resources -> stored as handles
 	// note: resource object itself is cached. see RenderGraphResourceCache	
@@ -153,7 +153,7 @@ public:
 	// retrives created RHI object pointer
 	// its validity is guaranteed post cache build
 	template<RgDefinedResource T> T* get_created(RgHandle handle) {
-		return &cache.get_cached<T>(handle);
+		return &cache.get<T>(handle);
 	}
 	// retrives imported / created RHI object pointer
 	template<RgDefinedResource T> T* get(RgHandle handle) {
@@ -168,10 +168,10 @@ public:
 		if (handle.type == RgResourceType::Texture) return  static_cast<RHI::Resource*>(get<RHI::Texture>(handle));
 		return nullptr;
 	}
-	RenderPass& get_pass(entt::entity pass) {
-		return registry.get<RenderPass>(pass);
+	RenderGraphPass& get_pass(entt::entity pass) {
+		return registry.get<RenderGraphPass>(pass);
 	}
-	RenderPass& get_epilogue_pass() {
+	RenderGraphPass& get_epilogue_pass() {
 		return get_pass(epiloguePass);
 	}	
 	void execute(RHI::CommandList* cmd);	

@@ -260,6 +260,12 @@
     <ClInclude Include="Source\Runtime\SceneGraph\Components\Light.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Runtime\Renderer\RenderPass\RenderPass.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\Renderer\RenderPass\GBuffer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json">
