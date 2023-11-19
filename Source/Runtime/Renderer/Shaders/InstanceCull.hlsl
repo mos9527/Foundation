@@ -1,4 +1,6 @@
 #include "Shared.h"
+#include "Common.hlsli"
+
 ConstantBuffer<SceneGlobals> g_SceneGlobals : register(b0, space0);
 StructuredBuffer<SceneMeshInstance> g_SceneMeshInstances : register(t0, space0);
 struct IndirectCommand
@@ -16,10 +18,28 @@ void main( uint index : SV_DispatchThreadID )
     if (index < g_SceneGlobals.numMeshInstances)
     {
         IndirectCommand cmd;
-        SceneMeshLod lod = g_SceneMeshInstances[index].lods[0];
+        SceneMeshInstance instance = g_SceneMeshInstances[index];
+        SceneCamera camera = g_SceneGlobals.camera;
+        float3 center = instance.bbCenter.xyz;
+        center = mul(float4(center, 1.0f), instance.transform).xyz;
+        // Frustum cull
+        if (!intersectAABBToFrustum(
+                center,
+                instance.bbExtentsRadius.xyz,
+                camera.clipPlanes[0], camera.clipPlanes[1], camera.clipPlanes[2], camera.clipPlanes[3], camera.clipPlanes[4], camera.clipPlanes[5]))
+        {
+            return;
+        }
+        // LOD
+        float Rss = sphereScreenSpaceRadius(center, instance.bbExtentsRadius.w, camera.position.xyz, camera.fov);
+        int lodIndex = max(ceil((MAX_LOD_COUNT - 1) * Rss), instance.lodOverride); // 0 is the most detailed
+        lodIndex = clamp(lodIndex, 0, MAX_LOD_COUNT - 1);        
+        SceneMeshLod lod = instance.lods[lodIndex];
+       
         cmd.IndexBuffer = lod.indices;
-        cmd.VertexBuffer = g_SceneMeshInstances[index].vertices;
+        cmd.VertexBuffer = instance.vertices;
         cmd.MeshIndex = index;
+        // xxx batching
         cmd.DrawIndexedArguments.BaseVertexLocation = 0;
         cmd.DrawIndexedArguments.IndexCountPerInstance = lod.numIndices;
         cmd.DrawIndexedArguments.InstanceCount = 1;

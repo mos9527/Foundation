@@ -45,10 +45,15 @@ void SceneGraph::load_from_aiScene(const aiScene* scene, path_t sceneFolder) {
 		}
 	};
 	std::unordered_map<uint, entt::entity> material_mapping;
+	auto ent = registry.create();
+	CollectionComponent & materialCollection = emplace<CollectionComponent>(ent);
+	materialCollection.set_name("[Materials]");
+	add_link(root, materialCollection.get_entity());
 	for (UINT i = 0; i < scene->mNumMaterials; i++) {
 		auto material = scene->mMaterials[i];
 		auto entity = registry.create();
-		MaterialComponet& materialComponet = emplace<MaterialComponet>(entity);
+		MaterialComponet& materialComponet = emplace<MaterialComponet>(entity);		
+		add_link(materialCollection.get_entity(), materialComponet.get_entity());
 		material_mapping[i] = entity;
 		materialComponet.entity = entity;
 		materialComponet.name = material->GetName().C_Str();
@@ -81,7 +86,7 @@ void SceneGraph::load_from_aiScene(const aiScene* scene, path_t sceneFolder) {
 		for (UINT i = 0; i < node->mNumMeshes; i++) {
 			add_link(entity, mesh_mapping[node->mMeshes[i]]);
 			auto mesh = scene->mMeshes[node->mMeshes[i]];
-			add_link(mesh_mapping[node->mMeshes[i]], material_mapping[mesh->mMaterialIndex]);
+			get<StaticMeshComponent>(mesh_mapping[node->mMeshes[i]]).material = material_mapping[mesh->mMaterialIndex];
 		}
 		for (UINT i = 0; i < node->mNumChildren; i++)
 			func(func, node->mChildren[i], entity);
@@ -89,36 +94,25 @@ void SceneGraph::load_from_aiScene(const aiScene* scene, path_t sceneFolder) {
 	dfs_nodes(dfs_nodes, scene->mRootNode, root);
 }
 
-void SceneGraph::log_entites() {	
+#ifdef IMGUI_ENABLED
+void SceneGraph::OnImGui() {	
 	auto dfs_nodes = [&](auto& func, entt::entity entity, uint depth) -> void {
-		std::string padding;
-		for (uint i = 0; i < depth; i++)
-			padding += "\t";		
 		SceneComponentType tag = registry.get<SceneComponentType>(entity);
-		switch (tag)
-		{
-		case SceneComponentType::Root:
-			LOG(INFO) << padding << "[ Scene Root ]";
-			break;
-		case SceneComponentType::Camera:
-			LOG(INFO) << padding << "[ Camera ]";
-			LOG(INFO) << padding << " Name: " << registry.get<CameraComponent>(entity).name;
-			break;
-		case SceneComponentType::Collection:
-			LOG(INFO) << padding << "[ Collection ]";
-			LOG(INFO) << padding << " Name: " << registry.get<CollectionComponent>(entity).name;
-			break;
-		case SceneComponentType::StaticMesh:
-			LOG(INFO) << padding << "[ Static Mesh ]";
-			LOG(INFO) << padding << " Name: " << registry.get<StaticMeshComponent>(entity).name;
-			break;
-		case SceneComponentType::Material:
-			LOG(INFO) << padding << "[ Material ]";
-			LOG(INFO) << padding << " Name: " << registry.get<MaterialComponet>(entity).name;
-			break;
+		SceneComponent* componet = try_get_base_ptr(entity);
+		uint stack_count = 0;
+		if (ImGui::TreeNode(componet->get_name())) {
+			componet->OnImGui();
+			stack_count++;
+			std::vector<entt::entity> entity_ordered(graph[entity].begin(), graph[entity].end()); 
+			std::sort(entity_ordered.begin(), entity_ordered.end(), [&](entt::entity lhs, entt::entity rhs) {
+				// sort in lexicographicaly descending order
+				return strcmp(try_get_base_ptr(lhs)->get_name(), try_get_base_ptr(rhs)->get_name()) <= 0;
+			});;
+			for (auto child : entity_ordered)
+				func(func, child, depth + 1);		
 		}		
-		for (auto child : graph[entity])
-			func(func, child, depth+1);
+		while(stack_count--) ImGui::TreePop();
 	};
 	dfs_nodes(dfs_nodes, root, 0);
-}
+};
+#endif

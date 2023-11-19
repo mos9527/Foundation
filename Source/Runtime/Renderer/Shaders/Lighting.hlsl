@@ -78,5 +78,5 @@ void main(uint2 DTid : SV_DispatchThreadID)
         specular += k * NoL * BRDF_GGX_Specular(F0, splat3(1), VoH, NoL, NoV, NoH, alphaRoughness);
     }
     float3 finalColor = diffuse + specular;
-    frameBuffer[DTid] = float4(finalColor, 1.0f);
+    frameBuffer[DTid] = float4(finalColor,1.0f);
 }

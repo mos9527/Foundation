@@ -11,6 +11,8 @@ struct AssetHandle {
 	AssetType type = AssetType::Unknown;
 	entt::entity entity = entt::tombstone;
 	inline operator entt::entity() { return entity; }
+	inline bool is_valid() { return entity != entt::tombstone; }
+	inline void invalidate() { entity = entt::tombstone; }
 };
 template<typename Imports> struct Asset {
 	using imported_type = Imports;

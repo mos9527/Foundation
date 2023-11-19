@@ -44,6 +44,13 @@
 #define STBI_WINDOWS_UTF8
 #include "../Dependencies/stb_image.h"
 
+#ifdef IMGUI_ENABLED
+#define IMGUI_DEFINE_MATH_OPERATORS
+#include "../../Dependencies/imgui/imgui.h"
+#include "../../Dependencies/imgui/backends/imgui_impl_dx12.h"
+#include "../../Dependencies/imgui/backends/imgui_impl_win32.h"
+#endif
+
 #include "Common/Helpers.hpp"
 
 // HLSL typenames

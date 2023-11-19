@@ -3,6 +3,8 @@
 
 Asset<mesh_static>::Asset(mesh_static&& mesh) {
 	std::vector<StaticMeshAsset::Vertex> vertices(mesh.position.size());
+	DirectX::BoundingBox::CreateFromPoints(aabb, mesh.position.size(), mesh.position.data(), sizeof(float3));
+	DirectX::BoundingSphere::CreateFromBoundingBox(boundingSphere, aabb);
 	for (uint i = 0; i < mesh.position.size(); i++) {
 		auto& vertex = vertices[i];
 		vertex.position = mesh.position[i];

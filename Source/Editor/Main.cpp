@@ -6,12 +6,6 @@
 #include "../Runtime/SceneGraph/SceneGraph.hpp"
 #include "../Runtime/SceneGraph/SceneGraphView.hpp"
 
-#ifdef IMGUI_ENABLED
-#include "../../Dependencies/imgui/imgui.h"
-#include "../../Dependencies/imgui/backends/imgui_impl_dx12.h"
-#include "../../Dependencies/imgui/backends/imgui_impl_win32.h"
-#endif
-
 #include "../Runtime/Renderer/Deferred.hpp"
 using namespace RHI;
 #ifdef IMGUI_ENABLED
@@ -42,13 +36,14 @@ int main(int argc, char* argv[]) {
     
     scene.set_active_camera(scene.create_child_of<CameraComponent>(scene.get_root()));
     auto& camera = scene.get_active_camera();
-    
+    camera.set_name("Camera");
+
     auto lightEntity = scene.create_child_of<LightComponent>(scene.get_root());
     auto& light = scene.get<LightComponent>(lightEntity);
+    light.set_name("Spot Light");
     light.localTransform.translation = { 0,1,0 };
     light.intensity = 1.0f;
     light.color = { 1,1,1,1 };
-    light.name = "Spot Light";
     light.radius = 100.0f;
 
 #ifdef IMGUI_ENABLED
@@ -70,6 +65,7 @@ int main(int argc, char* argv[]) {
         ImGui::GetIO().Fonts->GetGlyphRangesChineseFull()
     );
     ImGui::StyleColorsLight();
+    ImGui::GetStyle().WindowPadding = ImVec2(0, 0);
 #endif
     vp.SetCallback([&](HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 #ifdef IMGUI_ENABLED
@@ -89,8 +85,7 @@ int main(int argc, char* argv[]) {
         path_t filepath = L"..\\Resources\\glTF-Sample-Models\\2.0\\FlightHelmet\\glTF\\FlightHelmet.gltf";
         std::string u8path = (const char*)filepath.u8string().c_str();
         auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded);
-        scene.load_from_aiScene(imported, filepath.parent_path());
-        scene.log_entites();
+        scene.load_from_aiScene(imported, filepath.parent_path());        
         LOG(INFO) << "Requesting upload";
         std::scoped_lock lock(renderMutex);
         CommandList* cmd = device.GetCommandList<CommandListType::Copy>();
@@ -128,10 +123,14 @@ int main(int argc, char* argv[]) {
         if (uploadFence.IsCompleted())
             pSrv = renderer.Render();
 #ifdef IMGUI_ENABLED
-        ImGui::Begin("Viewport");
+        ImGui::Begin("Viewport", 0, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         if (pSrv) 
-            ImGui::Image((ImTextureID)pSrv->descriptor.get_gpu_handle().ptr, ImVec2(swapchain.GetWidth(),swapchain.GetHeight()));
-        pSrv = nullptr;
+            ImGui::Image((ImTextureID)pSrv->descriptor.get_gpu_handle().ptr, ImVec2(renderer.GetViewportSize().x, renderer.GetViewportSize().y));
+        auto wndSize = (ImGui::GetWindowContentRegionMax() - ImGui::GetWindowContentRegionMin());
+        renderer.SetViewportSize(wndSize.x, wndSize.y);
+        ImGui::End();
+        ImGui::Begin("Scene Graph");
+        scene.OnImGui();
         ImGui::End();
 #endif
         // ImGui
@@ -161,7 +160,6 @@ int main(int argc, char* argv[]) {
         else {
             // Render!
             render();
-            camera.localTransform.rotation.AddRotationPitchYawRoll({ 0,0,0.001f });
         }
     }
 }

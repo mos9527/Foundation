@@ -19,11 +19,12 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 	for (auto& texture : rg_registry.storage<RgTexture>()) {
 		auto& handle = rg_registry.get<RgHandle>(texture.entity);
 		if (!cache_contains<RHI::Texture>(handle) || get_cached<RHI::Texture>(handle).GetDesc() != texture.desc) {
+			device->Wait();
 			textureCache.erase(handle);
 			emplace_or_replace<RHI::Texture>(handle, device, texture.desc);
 			resource_dirty[handle] = true;
 			auto name = get_cached<RHI::Texture>(handle).GetName();
-			DLOG(INFO) << "Rebuilt texture " <<  wstring_to_utf8(name ? name : L"<unamed>");
+			// DLOG(INFO) << "Rebuilt texture " <<  wstring_to_utf8(name ? name : L"<unamed>");
 		}
 	}
 	// resource views
@@ -61,7 +62,7 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 			else {
 				emplace_or_replace<view_type>(viewing_handle, ptr, view.desc.viewDesc);
 			}
-			DLOG(INFO) << "Rebuilt view #" << entt::to_integral(viewing_handle.entity) << ". Which views " << wstring_to_utf8(ptr->GetName() ? ptr->GetName() : L"<unamed>");
+			// DLOG(INFO) << "Rebuilt view #" << entt::to_integral(viewing_handle.entity) << ". Which views " << wstring_to_utf8(ptr->GetName() ? ptr->GetName() : L"<unamed>");
 		}
 	};
 

@@ -74,7 +74,7 @@ public:
 				sceneMesh.lods[i].numMeshlets = asset.lods[i].numMeshlets;
 			}			
 			// materials
-			auto pMaterial = scene.try_get_first_child_of<MaterialComponet>(mesh.entity);
+			auto pMaterial = scene.try_get<MaterialComponet>(mesh.material);
 			if (pMaterial) {
 				SceneMaterial material;		
 				auto try_set_heap_handle = [&](auto handle, auto& dest) {
@@ -94,6 +94,16 @@ public:
 				sceneMesh.materialIndex = materials.size();
 				materials.push_back(material);
 			}
+			
+			sceneMesh.bbCenter.x = asset.aabb.Center.x;
+			sceneMesh.bbCenter.y = asset.aabb.Center.y;
+			sceneMesh.bbCenter.z = asset.aabb.Center.z;
+			sceneMesh.bbExtentsRadius.x = asset.aabb.Extents.x;
+			sceneMesh.bbExtentsRadius.y = asset.aabb.Extents.y;
+			sceneMesh.bbExtentsRadius.z = asset.aabb.Extents.z;
+			sceneMesh.bbExtentsRadius.w = asset.boundingSphere.Radius;
+
+			sceneMesh.lodOverride = mesh.lodOverride;
 			meshes.push_back(sceneMesh);
 		}
 		meshInstancesBuffer->Update(meshes.data(), ::size_in_bytes(meshes), 0);
@@ -121,7 +131,7 @@ public:
 		if (scene.registry.any_of<CameraComponent>(scene.active_camera)) {
 			auto& camera = scene.get<CameraComponent>(scene.active_camera);
 			auto transform = AffineTransform(global_transforms[scene.active_camera]);
-			stats.camera = camera.get_struct(transform);
+			stats.camera = camera.get_struct(viewportWidth / (float)viewportHeight, transform);
 		}
 		else {
 			LOG(ERROR) << "No active camera set!";

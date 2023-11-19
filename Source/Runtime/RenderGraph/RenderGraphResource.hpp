@@ -19,11 +19,12 @@ struct RgHandle {
 	uint version;
 	RgResourceType type;
 	RgResourceFlag flag;
-	entt::entity entity; // entity within RenderGraph's registry. indexes `rg_handle`. may index `rg_resource` deriviatives
+	entt::entity entity = entt::tombstone; // entity within RenderGraph's registry. indexes `rg_handle`. may index `rg_resource` deriviatives
 	inline operator entt::entity() const { return entity; }
-	bool is_imported() { return flag == RgResourceFlag::Imported; }
-
 	friend bool operator==(const RgHandle& lhs, const RgHandle& rhs) { return lhs.entity == rhs.entity; }
+	bool is_imported() { return flag == RgResourceFlag::Imported; }
+	inline bool is_valid() { return entity != entt::tombstone; }
+	inline void invalidate() { entity = entt::tombstone; }
 };
 template<> struct std::hash<RgHandle> {
 	inline entt::entity operator()(const RgHandle& resource) const { return resource; }

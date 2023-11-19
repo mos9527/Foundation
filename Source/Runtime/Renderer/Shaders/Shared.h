@@ -57,7 +57,7 @@ struct SceneCamera // ! align for CB
     float nearZ;
     float farZ; // 16
 	
-    float4 clipPlanes[6]; // 16 * 6
+    float4 clipPlanes[6]; // Left, Right, Bottom, Top, Near, Far
 
     matrix view; 
     matrix projection;
@@ -82,19 +82,24 @@ struct SceneMeshLod
 {
     uint numIndices;
     uint numMeshlets;
-
+    
     D3D12_INDEX_BUFFER_VIEW indices; // 16
     D3D12_GPU_VIRTUAL_ADDRESS meshlets; // 8
     D3D12_GPU_VIRTUAL_ADDRESS meshletTriangles;
     D3D12_GPU_VIRTUAL_ADDRESS meshletVertices;
 };
 struct SceneMeshInstance
-{
+{    
     uint numVertices; // 4
     uint materialIndex; //4
+    int lodOverride; // 4
+    uint pad_;
 
     matrix transform; // 16 * 4
     matrix transformInvTranspose; // xxx transform is sufficent for affine transformations
+
+    float4 bbCenter; // xyz. aabb/sphere share the same center
+    float4 bbExtentsRadius; // xyz[extents] w[radius]        
 
     D3D12_VERTEX_BUFFER_VIEW vertices; // 16
     SceneMeshLod lods[MAX_LOD_COUNT];

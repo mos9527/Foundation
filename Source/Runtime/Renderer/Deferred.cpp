@@ -107,9 +107,8 @@ DeferredRenderer::DeferredRenderer(AssetRegistry& assets, SceneGraph& scene, RHI
 	uint resetValue = 0;
 	resetBuffer->Update(&resetValue, sizeof(resetValue), 0);
 };
-ShaderResourceView* DeferredRenderer::Render() {	
-	scene.get_active_camera().aspect = swapchain->GetAspect();
-	UINT width = swapchain->GetWidth(), height = swapchain->GetHeight();
+ShaderResourceView* DeferredRenderer::Render() {		
+	UINT width = viewportSize.x, height = viewportSize.y;
 	UINT frame = swapchain->GetFrameIndex();
 	sceneView->update(width, height, frame);
 	// pass 1 : cull & classify LOD (intransient)
@@ -195,8 +194,8 @@ ShaderResourceView* DeferredRenderer::Render() {
 			native->SetGraphicsRootConstantBufferView(1, sceneView->get_SceneGlobalsBuffer()->GetGPUAddress());
 			native->SetGraphicsRootShaderResourceView(2, sceneView->get_SceneMeshInstancesBuffer()->GetGPUAddress());
 			native->SetGraphicsRootShaderResourceView(3, sceneView->get_SceneMeshMaterialsBuffer()->GetGPUAddress());
-			CD3DX12_VIEWPORT viewport(.0f, .0f, swapchain->GetWidth(), swapchain->GetHeight(), .0f, 1.0f);
-			CD3DX12_RECT scissorRect(0, 0, swapchain->GetWidth(), swapchain->GetHeight());
+			CD3DX12_VIEWPORT viewport(.0f, .0f, width, height, .0f, 1.0f);
+			CD3DX12_RECT scissorRect(0, 0, width, height);
 			native->RSSetViewports(1, &viewport);
 			native->RSSetScissorRects(1, &scissorRect);
 			native->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

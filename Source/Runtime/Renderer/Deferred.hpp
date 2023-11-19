@@ -4,6 +4,11 @@ class DeferredRenderer : public Renderer {
 public:
 	DeferredRenderer(AssetRegistry& assets, SceneGraph& scene, RHI::Device* device, RHI::Swapchain* swapchain);
 	virtual RHI::ShaderResourceView* Render();
+	void SetViewportSize(uint width, uint height) {
+		viewportSize.x = std::max(128u,width);
+		viewportSize.y = std::max(128u,height);
+	}
+	uint2 GetViewportSize() { return viewportSize; }
 private:
 	void ResetCounter(RHI::CommandList* cmd,RHI::Resource* resource, size_t counterOffset);
 	struct IndirectCommand {
@@ -14,6 +19,7 @@ private:
 	const UINT CommandSizePerFrame = MAX_INSTANCE_COUNT * sizeof(IndirectCommand);
 	const UINT CommandBufferCounterOffset = AlignForUavCounter(CommandSizePerFrame);
 	const UINT CommandBufferSize = CommandBufferCounterOffset + sizeof(UINT); // including a UAV Counter	
+	uint2 viewportSize{ 128, 128 };
 
 	std::unique_ptr<SceneGraphView> sceneView;
 

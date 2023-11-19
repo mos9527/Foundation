@@ -24,32 +24,26 @@ class SceneGraph : DAG<entt::entity> {
 public:
 	SceneGraph(AssetRegistry& assets) : assets(assets) {
 		root = registry.create();
-		registry.emplace<SceneComponentType>(root, SceneComponentType::Root);
+		auto& root_collection = emplace<CollectionComponent>(root);
+		root_collection.set_name("Scene Root");
 	};
-	template<typename T> T& get(const entt::entity entity) {
+	template<SceneComponentDefined T> T& get(const entt::entity entity) {
 		return registry.get<T>(entity);
 	}
-	template<typename T> T* try_get(const entt::entity entity) {
+	template<SceneComponentDefined T> T* try_get(const entt::entity entity) {
 		return registry.try_get<T>(entity);
 	}
-	template<typename T, typename... Args> auto& emplace(const entt::entity entity, Args&&... args) {
+	template<SceneComponentDefined T> auto& emplace(const entt::entity entity) {
 		auto type = SceneComponentTraits<T>::type;
 		CHECK(type != SceneComponentType::Unknown && "Unsupported type.");
 		registry.emplace<SceneComponentType>(entity, type);		
-		return registry.emplace<T>(entity, std::forward<decltype(args)>(args)...);
+		return registry.emplace<T>(entity, entity);
 	}	
-	template<typename T, typename... Args> entt::entity create_child_of(const entt::entity parent, Args&&... args) {
+	template<SceneComponentDefined T> entt::entity create_child_of(const entt::entity parent) {
 		auto entity = registry.create();
-		emplace<T>(entity, std::forward<decltype(args)>(args)...);
+		emplace<T>(entity);
 		add_link(parent, entity);
 		return entity;
-	}
-	template<typename T> T* try_get_first_child_of(const entt::entity parent) {
-		for (auto child : graph[parent]) {
-			auto ptr = registry.try_get<T>(child);
-			if (ptr) return ptr;
-		}
-		return nullptr;
 	}
 	const entt::entity get_root() { return root; }
 	SceneComponent* try_get_base_ptr(const entt::entity entity) {
@@ -62,8 +56,11 @@ public:
 			return try_get<CameraComponent>(entity);
 		case SceneComponentType::StaticMesh:
 			return try_get<StaticMeshComponent>(entity);
+		case SceneComponentType::Light:
+			return try_get<LightComponent>(entity);
+		case SceneComponentType::Material:
+			return try_get<MaterialComponet>(entity);		
 		default:
-		case SceneComponentType::Root:
 			return nullptr;			
 		}
 	}
@@ -82,8 +79,11 @@ public:
 		DAG::remove_edge(lhs, rhs);
 	}
 	void add_link(const entt::entity lhs, const entt::entity rhs) {
+		CHECK(rhs != root); // xxx enforce strict cylic dependency via topsort?
 		DAG::add_edge(lhs, rhs);
 	}
-	void load_from_aiScene(const aiScene* scene, path_t scenePath);
-	void log_entites();		
+	void load_from_aiScene(const aiScene* scene, path_t scenePath);	
+#ifdef IMGUI_ENABLED
+	void OnImGui();
+#endif
 };

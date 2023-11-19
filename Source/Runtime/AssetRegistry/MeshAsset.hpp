@@ -31,7 +31,6 @@ struct MeshLod {
 template<> struct Asset<mesh_static> {
 	using imported_type = mesh_static;
 	static constexpr AssetType type = AssetType::StaticMesh;
-
 	struct Vertex {
 		float3 position;
 		float3 normal;
@@ -47,9 +46,12 @@ template<> struct Asset<mesh_static> {
 		}
 	};
 	uint numVertices;
+	DirectX::BoundingBox aabb;
+	DirectX::BoundingSphere boundingSphere;
+
 	std::vector<Vertex> vertexInitialData;
 	std::unique_ptr<RHI::Buffer> vertexBuffer;
-	MeshLod lods[MAX_LOD_COUNT];		
+	MeshLod lods[MAX_LOD_COUNT];	
 	void clean() {
 		vertexInitialData = {};
 		for (int i = 0; i < MAX_LOD_COUNT; i++) {
