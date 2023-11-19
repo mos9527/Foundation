@@ -47,6 +47,7 @@
 #ifdef IMGUI_ENABLED
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "../../Dependencies/imgui/imgui.h"
+#include "../../Dependencies/imgui/imgui_internal.h"
 #include "../../Dependencies/imgui/backends/imgui_impl_dx12.h"
 #include "../../Dependencies/imgui/backends/imgui_impl_win32.h"
 #endif

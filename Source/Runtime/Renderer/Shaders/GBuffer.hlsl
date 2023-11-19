@@ -49,6 +49,7 @@ struct MRT
     float4 AlbedoMask : SV_Target0;
     float4 Normal : SV_Target1;
     float4 Material : SV_Target2;
+    float4 Emissive : SV_Target3;
 };
 MRT ps_main(PSInput input)
 {
@@ -73,6 +74,12 @@ MRT ps_main(PSInput input)
     {
         Texture2D pbrMap = ResourceDescriptorHeap[material.pbrMap];
         output.Material = pbrMap.Sample(g_Sampler, input.uv);
+    }
+    output.Emissive = material.emissive;
+    if (material.emissiveMap != INVALID_HEAP_HANDLE)
+    {
+        Texture2D emissiveMap = ResourceDescriptorHeap[material.emissiveMap];
+        output.Emissive = emissiveMap.Sample(g_Sampler, input.uv);
     }
     return output;
 }

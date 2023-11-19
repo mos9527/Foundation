@@ -119,7 +119,10 @@ void SceneGraph::OnImGui() {
 			std::vector<entt::entity> entity_ordered(graph[entity].begin(), graph[entity].end()); 
 			std::sort(entity_ordered.begin(), entity_ordered.end(), [&](entt::entity lhs, entt::entity rhs) {
 				// sort in lexicographicaly descending order
-				return strcmp(try_get_base_ptr(lhs)->get_name(), try_get_base_ptr(rhs)->get_name()) <= 0;
+				int lex = strcmp(try_get_base_ptr(lhs)->get_name(), try_get_base_ptr(rhs)->get_name());
+				if (lex != 0) return lex < 0;
+				// same name. to enforce strict weak ordering, entity id is then used instead
+				return lhs < rhs;
 			});;
 			for (auto child : entity_ordered)
 				func(func, child, depth + 1);		

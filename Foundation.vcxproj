@@ -157,6 +157,8 @@
     <ClCompile Include="Source\Runtime\AssetRegistry\ImageAsset.cpp" />
     <ClCompile Include="Source\Runtime\AssetRegistry\ImageImporter.hpp" />
     <ClCompile Include="Source\Runtime\AssetRegistry\MeshAsset.cpp" />
+    <ClCompile Include="Source\Runtime\Renderer\RenderPass\DeferredLighting.cpp" />
+    <ClCompile Include="Source\Runtime\Renderer\RenderPass\GBuffer.cpp" />
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraph.cpp" />
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.cpp" />
     <ClCompile Include="Source\Editor\Main.cpp" />
@@ -238,6 +240,7 @@
     <Text Include="Source\Runtime\Renderer\Shaders\Shared.h">
       <FileType>Document</FileType>
     </Text>
+    <None Include="Source\Runtime\Renderer\RenderPass\DeferredLighting.hpp" />
     <None Include="Source\Runtime\Renderer\Shaders\BRDF.hlsli" />
     <None Include="Source\Runtime\Renderer\Shaders\Common.hlsli" />
     <None Include="vcpkg.json" />

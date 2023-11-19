@@ -8,6 +8,7 @@ cbuffer MRTHandles : register(b1, space0)
     uint albedoHandle;
     uint normalHandle;
     uint materialHandle;
+    uint emissiveHandle;
     uint depthHandle;
     uint frameBufferHandle;
 }
@@ -22,12 +23,14 @@ void main(uint2 DTid : SV_DispatchThreadID)
     Texture2D albedoTex = ResourceDescriptorHeap[albedoHandle];
     Texture2D normalTex = ResourceDescriptorHeap[normalHandle];
     Texture2D materialTex = ResourceDescriptorHeap[materialHandle];
-    Texture2D depthTex = ResourceDescriptorHeap[depthHandle];
+    Texture2D emissiveTex = ResourceDescriptorHeap[emissiveHandle];
+    Texture2D depthTex = ResourceDescriptorHeap[depthHandle];    
     RWTexture2D<float4> frameBuffer = ResourceDescriptorHeap[frameBufferHandle];
     
     float4 albedoSmp = albedoTex[DTid];
     float4 normalSmp = normalTex[DTid];
     float4 materialSmp = materialTex[DTid];
+    float4 emissiveSmp = emissiveTex[DTid];
     float4 depthSmp = depthTex[DTid];
     
     float3 PBR = materialSmp.rgb;
@@ -77,6 +80,6 @@ void main(uint2 DTid : SV_DispatchThreadID)
         diffuse += k * NoL * BRDF_Lambertian(c_diffuse);
         specular += k * NoL * BRDF_GGX_Specular(F0, splat3(1), VoH, NoL, NoV, NoH, alphaRoughness);
     }
-    float3 finalColor = diffuse + specular;
+    float3 finalColor = diffuse + specular + emissiveSmp.rgb;
     frameBuffer[DTid] = float4(finalColor, 1.0f);
 }

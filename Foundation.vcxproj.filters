@@ -102,6 +102,12 @@
     <ClCompile Include="Source\Runtime\SceneGraph\SceneGraph.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Runtime\Renderer\RenderPass\GBuffer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Runtime\Renderer\RenderPass\DeferredLighting.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">
@@ -276,6 +282,7 @@
     <None Include="Source\defines.hpp" />
     <None Include="Source\Runtime\Renderer\Shaders\Common.hlsli" />
     <None Include="Source\Runtime\Renderer\Shaders\BRDF.hlsli" />
+    <None Include="Source\Runtime\Renderer\RenderPass\DeferredLighting.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="Source\Runtime\Renderer\Shaders\InstanceCull.hlsl" />

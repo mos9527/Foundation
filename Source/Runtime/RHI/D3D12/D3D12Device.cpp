@@ -69,7 +69,7 @@ namespace RHI {
         {
             LOG(FATAL) << "ERROR: Shader Model 6.6 is not supported on this device";            
         }
-#ifdef RHI_USE_D3D12_MESH_SHADER
+#ifdef RHI_USE_MESH_SHADER
         D3D12_FEATURE_DATA_D3D12_OPTIONS7 features = {};
         if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &features, sizeof(features)))
             || (features.MeshShaderTier == D3D12_MESH_SHADER_TIER_NOT_SUPPORTED))
@@ -181,37 +181,37 @@ namespace RHI {
         // Descriptor heaps
         m_RTVHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
             .shaderVisible = false,
-                .descriptorCount = ALLOC_SIZE_DESCHEAP,
+                .descriptorCount = RHI_ALLOC_SIZE_DESCHEAP,
                 .heapType = DescriptorHeapType::RTV
         });
         m_RTVHeap->SetName(L"RTV Heap");
         m_DSVHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
             .shaderVisible = false,
-                .descriptorCount = ALLOC_SIZE_DESCHEAP,
+                .descriptorCount = RHI_ALLOC_SIZE_DESCHEAP,
                 .heapType = DescriptorHeapType::DSV
         });
         m_DSVHeap->SetName(L"DSV Heap");
         m_SRVHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
             .shaderVisible = false,
-                .descriptorCount = ALLOC_SIZE_DESCHEAP,
+                .descriptorCount = RHI_ALLOC_SIZE_DESCHEAP,
                 .heapType = DescriptorHeapType::CBV_SRV_UAV
         });
         m_SRVHeap->SetName(L"OFFLINE CBV_SRV_UAV Heap");
         m_SamplerHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
             .shaderVisible = false,
-                .descriptorCount = ALLOC_SIZE_DESCHEAP,
+                .descriptorCount = RHI_ALLOC_SIZE_DESCHEAP,
                 .heapType = DescriptorHeapType::SAMPLER
         });
         m_SamplerHeap->SetName(L"OFFLINE Sampler Heap");
         m_OnlineSRVHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
             .shaderVisible = true,
-                .descriptorCount = ALLOC_SIZE_SHADER_VISIBLE_DESCHEAP,
+                .descriptorCount = RHI_ALLOC_SIZE_SHADER_VISIBLE_DESCHEAP,
                 .heapType = DescriptorHeapType::CBV_SRV_UAV
         });
         m_OnlineSRVHeap->SetName(L"CBV_SRV_UAV Heap");
         m_OnlineSamplerHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
             .shaderVisible = true,
-                .descriptorCount = ALLOC_SIZE_SHADER_VISIBLE_DESCHEAP,
+                .descriptorCount = RHI_ALLOC_SIZE_SHADER_VISIBLE_DESCHEAP,
                 .heapType = DescriptorHeapType::SAMPLER
         });
         m_OnlineSamplerHeap->SetName(L"Sampler Heap");

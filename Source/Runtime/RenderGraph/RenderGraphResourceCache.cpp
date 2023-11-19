@@ -13,7 +13,7 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 			emplace_or_replace<RHI::Buffer>(handle, device, buffer.desc);
 			resource_dirty[handle] = true;
 			auto name = get<RHI::Buffer>(handle).GetName();
-			DLOG(INFO) << "Rebuilt buffer " << wstring_to_utf8(name ? name : L"<unamed>");
+			// DLOG(INFO) << "Rebuilt buffer " << wstring_to_utf8(name ? name : L"<unamed>");
 		}
 	}
 	for (auto& texture : rg_registry.storage<RgTexture>()) {

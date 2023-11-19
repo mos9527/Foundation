@@ -58,8 +58,10 @@ public:
 };
 
 // DAG Graph for managing rendering work
-// * RenderGraph is meant to be created / destroyed every frame for execution. Which by itself is pretty cheap.
+// * RenderGraph handles (RgHandles) has deterministic hash value (i.e. entity value) per RenderGraph instance
+// * Thus, RenderGraph is meant to be created / destroyed every frame for execution. Which by itself is pretty cheap.
 // * To releive resource creation costs, RenderGraphResourceCache caches them so it can be reused when applicable
+// xxx Optionaly support baking command bundles?
 class RenderGraph : DAG<entt::entity> {	
 	friend class RenderGraphResourceCache;
 	template<typename T> using Allocator = DefaultAllocator<T>;
