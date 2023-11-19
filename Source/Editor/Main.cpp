@@ -66,6 +66,7 @@ int main(int argc, char* argv[]) {
         ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam);
 #endif
         if (message == WM_SIZE) {
+            std::scoped_lock lock(renderMutex);
             device.Wait();
             swapchain.Resize(std::max((WORD)128u, LOWORD(lParam)), std::max((WORD)128u, HIWORD(lParam)));
         }
@@ -124,9 +125,9 @@ int main(int argc, char* argv[]) {
         ImGui::End();
 #endif
         // ImGui
-        ImGui::Render();
         cmd->GetNativeCommandList()->OMSetRenderTargets(1, &rtv.descriptor.get_cpu_handle(), FALSE, nullptr);
 #ifdef IMGUI_ENABLED
+        ImGui::Render();
         PIXBeginEvent(cmd->GetNativeCommandList(), 0, L"ImGui");
         ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd->GetNativeCommandList());
         PIXEndEvent(cmd->GetNativeCommandList());

@@ -23,9 +23,9 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 			if (!res) continue;
 
 			auto const& desc = res->GetDesc();
-			ResourceState state = ResourceState::Common;
+			ResourceState state = ResourceState::PixelShaderResource;
 			if (desc.allowUnorderedAccess()) 
-				state |= ResourceState::UnorderedAccess;
+				state |= ResourceState::NonPixelShaderResoruce;
 			if (state != ResourceState::Common)
 				res->SetBarrier(cmd, state);
 		}
@@ -58,12 +58,12 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 		PIXBeginEvent(cmd->GetNativeCommandList(), 0, L"RenderGraph Layer");
 		for (auto entity : layer) {
 			RenderPass& pass = registry.get<RenderPass>(entity);
+			PIXBeginEvent(cmd->GetNativeCommandList(), 0, pass.name);				
 			// invoke!
 			if (pass.has_execute()) {
-				PIXBeginEvent(cmd->GetNativeCommandList(), 0, pass.name);				
 				(pass.executes)(ctx);
-				PIXEndEvent(cmd->GetNativeCommandList());
 			}
+			PIXEndEvent(cmd->GetNativeCommandList());
 		}		
 		PIXEndEvent(cmd->GetNativeCommandList());
 	}

@@ -130,7 +130,7 @@ ShaderResourceView* DeferredRenderer::Render() {
 			indirectCmdBuffer->SetBarrier(ctx.cmd, ResourceState::UnorderedAccess);
 			// dispatch compute to cull on the gpu
 			native->Dispatch(DivRoundUp(sceneView->get_SceneGlobals().numMeshInstances, RENDERER_INSTANCE_CULL_THREADS), 1, 1);
-			indirectCmdBuffer->SetBarrier(ctx.cmd, ResourceState::IndirectArgument);		
+			indirectCmdBuffer->SetBarrier(ctx.cmd, ResourceState::IndirectArgument);			
 	});
 	// pass 2 : gbuffer generation
 	// resources
@@ -308,5 +308,5 @@ ShaderResourceView* DeferredRenderer::Render() {
 	// epilouge : output
 	rg.get_epilogue_pass().read(frameBuffer);
 	rg.execute(device->GetCommandList<CommandListType::Direct>());
-	return rg.get<ShaderResourceView>(albedo_srv);
+	return rg.get<ShaderResourceView>(fb_srv);
 }

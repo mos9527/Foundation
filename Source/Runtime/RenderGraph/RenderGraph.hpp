@@ -85,6 +85,11 @@ class RenderGraph : DAG<entt::entity> {
 								add_edge(other, current);
 							}
 						}
+						for (auto& readwrite : other_pass.readwrites) {
+							if (pass.reads_from(readwrite)) {
+								add_edge(other, current);
+							}
+						}
 					}
 				}
 			}

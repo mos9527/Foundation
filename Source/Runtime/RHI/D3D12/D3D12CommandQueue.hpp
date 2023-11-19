@@ -22,7 +22,7 @@ namespace RHI {
 		inline void Wait() { 
 			auto this_value = GetUniqueFenceValue();
 			Signal(m_Fence.get(), this_value);
-			Wait(m_Fence.get(), this_value);
+			m_Fence->Wait(this_value);
 		}
 		inline size_t GetUniqueFenceValue() { return m_FenceValue++; }
 		inline auto const& GetName() { return m_Name; }
