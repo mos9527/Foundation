@@ -9,7 +9,8 @@ enum class SceneComponentType {
 	Collection,
 	Camera,
 	StaticMesh,	
-	Material
+	Material,
+	Light
 };
 struct SceneComponent {
 	entt::entity entity;

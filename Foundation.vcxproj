@@ -195,6 +195,7 @@
     <ClInclude Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.hpp" />
     <ClInclude Include="Source\Runtime\SceneGraph\Component.hpp" />
     <ClInclude Include="Source\Runtime\SceneGraph\Components\Camera.hpp" />
+    <ClInclude Include="Source\Runtime\SceneGraph\Components\Light.hpp" />
     <ClInclude Include="Source\Runtime\SceneGraph\Components\Material.hpp" />
     <ClInclude Include="Source\Runtime\SceneGraph\Components\StaticMesh.hpp" />
     <ClInclude Include="Source\Runtime\SceneGraph\SceneGraphView.hpp" />
@@ -235,6 +236,7 @@
     <Text Include="Source\Runtime\Renderer\Shaders\Shared.h">
       <FileType>Document</FileType>
     </Text>
+    <None Include="Source\Runtime\Renderer\Shaders\BRDF.hlsli" />
     <None Include="Source\Runtime\Renderer\Shaders\Common.hlsli" />
     <None Include="vcpkg.json" />
   </ItemGroup>

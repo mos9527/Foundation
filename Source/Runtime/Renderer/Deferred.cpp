@@ -83,7 +83,7 @@ DeferredRenderer::DeferredRenderer(AssetRegistry& assets, SceneGraph& scene, RHI
 		.SetDirectlyIndexed()
 		.AddConstantBufferView(0, 0) // b0 space0 : SceneGlobals	
 		.AddConstant(1, 0, 5) // b1 space0 : MRT handles + FB UAV
-		.AddUnorderedAccessViewWithCounter(0, 0)// u0 space0 : Framebuffer (RWTexture2D)
+		.AddShaderResourceView(0, 0) // s0 space0 : Lights
 	);
 	lightingRS->SetName(L"Lighting");
 	computePsoDesc = {};
@@ -289,7 +289,6 @@ ShaderResourceView* DeferredRenderer::Render() {
 			auto native = ctx.cmd->GetNativeCommandList();
 			native->SetPipelineState(*lightingPSO);;
 			native->SetComputeRootSignature(*lightingRS);
-			native->SetComputeRootConstantBufferView(0, sceneView->get_SceneGlobalsBuffer()->GetGPUAddress());
 			auto* r_albedo_srv = ctx.graph->get<ShaderResourceView>(albedo_srv);
 			auto* r_normal_srv = ctx.graph->get<ShaderResourceView>(normal_srv);
 			auto* r_material_srv = ctx.graph->get<ShaderResourceView>(material_srv);
@@ -302,7 +301,9 @@ ShaderResourceView* DeferredRenderer::Render() {
 				r_depth_srv->descriptor.get_heap_handle(),
 				r_fb_uav->descriptor.get_heap_handle()
 			};
+			native->SetComputeRootConstantBufferView(0, sceneView->get_SceneGlobalsBuffer()->GetGPUAddress());
 			native->SetComputeRoot32BitConstants(1, 5, mrtHandles, 0);
+			native->SetComputeRootShaderResourceView(2, sceneView->get_SceneLightBuffer()->GetGPUAddress());
 			native->Dispatch(DivRoundUp(width, RENDERER_FULLSCREEN_THREADS), DivRoundUp(height, RENDERER_FULLSCREEN_THREADS), 1);				
 	});
 	// epilouge : output

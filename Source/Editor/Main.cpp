@@ -39,8 +39,18 @@ int main(int argc, char* argv[]) {
     SceneGraph scene{ assets };
     SceneGraphView sceneView(&device, scene);
     DeferredRenderer renderer(assets, scene, &device, &swapchain);
+    
     scene.set_active_camera(scene.create_child_of<CameraComponent>(scene.get_root()));
     auto& camera = scene.get_active_camera();
+    
+    auto lightEntity = scene.create_child_of<LightComponent>(scene.get_root());
+    auto& light = scene.get<LightComponent>(lightEntity);
+    light.localTransform.translation = { 0,1,0 };
+    light.intensity = 1.0f;
+    light.color = { 1,1,1,1 };
+    light.name = "Spot Light";
+    light.radius = 100.0f;
+
 #ifdef IMGUI_ENABLED
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();

@@ -6,6 +6,7 @@
 #include "Components/StaticMesh.hpp"
 #include "Components/Camera.hpp"
 #include "Components/Material.hpp"
+#include "Components/Light.hpp"
 
 struct aiScene;
 class AssetRegistry;

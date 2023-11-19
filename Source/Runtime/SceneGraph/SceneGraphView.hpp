@@ -12,23 +12,29 @@ class SceneGraphView {
 	std::unique_ptr<RHI::Buffer> globalBuffer;
 	std::unique_ptr<RHI::Buffer> meshInstancesBuffer;
 	std::unique_ptr<RHI::Buffer> meshMaterialsBuffer;
+	std::unique_ptr<RHI::Buffer> lightBuffer;
 
 	SceneGlobals stats{};
 	std::vector<SceneMeshInstance> meshes;
 	std::vector<SceneMaterial> materials;
+	std::vector<SceneLight> lights;
 public:
 	SceneGraphView(RHI::Device* device, SceneGraph& scene) : scene(scene) {
 		globalBuffer = std::make_unique<RHI::Buffer>(device, RHI::Resource::ResourceDesc::GetGenericBufferDesc(sizeof(SceneGlobals), sizeof(SceneGlobals)));
 		meshInstancesBuffer = std::make_unique<RHI::Buffer>(device, RHI::Resource::ResourceDesc::GetGenericBufferDesc(MAX_INSTANCE_COUNT * sizeof(SceneMeshInstance), sizeof(SceneMeshInstance)));				
 		meshMaterialsBuffer = std::make_unique<RHI::Buffer>(device, RHI::Resource::ResourceDesc::GetGenericBufferDesc(MAX_MATERIAL_COUNT * sizeof(SceneMaterial), sizeof(SceneMaterial)));
+		lightBuffer = std::make_unique<RHI::Buffer>(device, RHI::Resource::ResourceDesc::GetGenericBufferDesc(MAX_LIGHT_COUNT * sizeof(SceneLight), sizeof(SceneLight)));
 	};
 
 	auto get_SceneGlobalsBuffer() { return globalBuffer.get(); }
 	auto get_SceneMeshInstancesBuffer() { return meshInstancesBuffer.get(); }
 	auto get_SceneMeshMaterialsBuffer() { return meshMaterialsBuffer.get(); }
+	auto get_SceneLightBuffer() { return lightBuffer.get(); }
 	auto const& get_SceneGlobals() { return stats; }
 	auto const& get_SceneInstances() { return meshes; }
 	auto const& get_SceneMaterials() { return materials; }
+	auto const& get_SceneLights() { return lights; }
+
 	void update(uint viewportWidth, uint viewportHeight, uint frameIndex) {
 		std::unordered_map<entt::entity, AffineTransform> global_transforms;
 		// calculate global transforms
@@ -92,8 +98,25 @@ public:
 		}
 		meshInstancesBuffer->Update(meshes.data(), ::size_in_bytes(meshes), 0);
 		meshMaterialsBuffer->Update(materials.data(), ::size_in_bytes(materials), 0);
+		// lights
+		lights.clear();
+		for (auto& light : scene.registry.storage<LightComponent>()) {
+			SceneLight sceneLight{};
+			auto& transform = global_transforms[light.entity];
+			sceneLight.position.x = transform.translation.x;
+			sceneLight.position.y = transform.translation.y;
+			sceneLight.position.z = transform.translation.z;
+			sceneLight.position.w = 1;
+			sceneLight.color = light.color;
+			sceneLight.type = (UINT)light.type;
+			sceneLight.intensity = light.intensity;
+			sceneLight.radius = light.radius;
+			lights.push_back(sceneLight);
+		}
+		lightBuffer->Update(lights.data(), ::size_in_bytes(lights), 0);
 		// update scene globals		
 		stats.numMeshInstances = meshes.size();
+		stats.numLights = lights.size();
 		// scene camera
 		if (scene.registry.any_of<CameraComponent>(scene.active_camera)) {
 			auto& camera = scene.get<CameraComponent>(scene.active_camera);

@@ -3,8 +3,6 @@
 
 #define IMGUI_ENABLED
 
-#define INVERSE_Z
-
 #define RHI_USE_D3D12
 #define RHI_D3D12_USE_AGILITY
 // #define RHI_USE_D3D12_MESH_SHADER

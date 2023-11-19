@@ -2,7 +2,12 @@
 #define COMMON_INCLUDE
 #define INVALID_HEAP_HANDLE ((uint)-1)
 #define MAX_INSTANCE_COUNT 0xffff
-#define MAX_MATERIAL_COUNT 1024
+#define MAX_LIGHT_COUNT 16
+#define MAX_MATERIAL_COUNT 0xffff
+
+// xxx some of these can be moved to compiler defines
+// ...let's do that sometimes?
+#define INVERSE_Z
 
 #define MESHLET_MAX_VERTICES 64u // https://developer.nvidia.com/blog/introduction-turing-mecacsh-shaders/
 #define MESHLET_MAX_PRIMITIVES 124u // 4b aligned
@@ -43,7 +48,7 @@ struct D3D12_INDEX_BUFFER_VIEW
     uint Format;
 };
 #endif
-struct SceneCamera
+struct SceneCamera // ! align for CB
 {
     float4 position; // 16
 
@@ -62,11 +67,14 @@ struct SceneCamera
     matrix invProjection;
     matrix invViewProjection;
 };
-struct SceneGlobals
+struct SceneGlobals // ! align for CB
 {
     SceneCamera camera;
 
     uint numMeshInstances;
+    uint numLights;
+    uint2 _pad;
+
     uint frameIndex;
     uint2 frameDimension;
 };
@@ -74,28 +82,22 @@ struct SceneMeshLod
 {
     uint numIndices;
     uint numMeshlets;
-    uint2 _pad1;
 
     D3D12_INDEX_BUFFER_VIEW indices; // 16
     D3D12_GPU_VIRTUAL_ADDRESS meshlets; // 8
-    uint2 _pad2;
     D3D12_GPU_VIRTUAL_ADDRESS meshletTriangles;
-    uint2 _pad3;
     D3D12_GPU_VIRTUAL_ADDRESS meshletVertices;
-    uint2 _pad4;
 };
 struct SceneMeshInstance
 {
     uint numVertices; // 4
     uint materialIndex; //4
-    uint2 pad_;
 
     matrix transform; // 16 * 4
     matrix transformInvTranspose; // xxx transform is sufficent for affine transformations
 
     D3D12_VERTEX_BUFFER_VIEW vertices; // 16
     SceneMeshLod lods[MAX_LOD_COUNT];
-	// xxx meshlets
 };
 struct SceneMaterial {
     // bindless handles within ResourceDescriptorHeap
@@ -108,6 +110,13 @@ struct SceneMaterial {
     float4 albedo;
     float4 pbr;
     float4 emissive;
+};
+struct SceneLight {
+    uint type;
+    float intensity;
+    float radius;
+    float4 position;
+    float4 color;    
 };
 struct IndirectConstant
 {
