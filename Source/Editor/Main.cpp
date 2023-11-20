@@ -45,7 +45,7 @@ int main(int argc, char* argv[]) {
     auto lightEntity = scene.create_child_of<LightComponent>(scene.get_root());
     auto& light = scene.get<LightComponent>(lightEntity);
     light.set_name("Spot Light");
-    light.localTransform.translation = { 0,1,0 };
+    light.localTransform.Translation({0,1,0});
     light.intensity = 1.0f;
     light.color = { 1,1,1,1 };
     light.radius = 100.0f;
@@ -84,10 +84,11 @@ int main(int argc, char* argv[]) {
     });
 
     SyncFence upload;
-    taskpool.push([&] {
+    taskpool.push([&] {        
         LOG(INFO) << "Loading scene";
         Assimp::Importer importer;
-        path_t filepath = L"..\\Resources\\glTF-Sample-Models\\2.0\\Sponza\\glTF\\Sponza.gltf";
+#define GLTF_SAMPLE L"MetalRoughSpheres"
+        path_t filepath = L"..\\Resources\\glTF-Sample-Models\\2.0\\" GLTF_SAMPLE "\\glTF\\" GLTF_SAMPLE ".gltf";
         std::string u8path = (const char*)filepath.u8string().c_str();
         auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded);
         scene.load_from_aiScene(imported, filepath.parent_path());        
@@ -103,7 +104,7 @@ int main(int argc, char* argv[]) {
     bool vsync = false;
     auto cmd = device.GetCommandList<CommandListType::Direct>();
     auto render = [&]() {
-        std::scoped_lock lock(renderMutex);
+        std::scoped_lock lock(renderMutex);        
 #ifdef IMGUI_ENABLED
         ImGui_ImplDX12_NewFrame();
         ImGui_ImplWin32_NewFrame();
@@ -161,12 +162,13 @@ int main(int argc, char* argv[]) {
 #endif
         uint viewportWidth = swapchain.GetWidth(), viewportHeight = swapchain.GetHeight();
 #ifdef IMGUI_ENABLED
-        ImGui::Begin("Viewport", 0, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        bool viewport_Begin = ImGui::Begin("Viewport", 0, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         auto viewportSize = (ImGui::GetWindowContentRegionMax() - ImGui::GetWindowContentRegionMin());
         viewportWidth = viewportSize.x, viewportHeight = viewportSize.y;
 #endif
         ShaderResourceView* pSrv = nullptr;
         if (upload.IsCompleted()) {
+            scene.update();
             sceneView.update(viewportWidth, viewportHeight, swapchain.GetFrameIndex());
             pSrv = renderer.Render(&sceneView);
         }
@@ -183,16 +185,28 @@ int main(int argc, char* argv[]) {
 #ifdef IMGUI_ENABLED
         if (pSrv) 
             ImGui::Image((ImTextureID)pSrv->descriptor.get_gpu_handle().ptr, viewportSize);
-        ImGui::End(); // Viewport
+        if (viewport_Begin) ImGui::End(); // Viewport
 #else        
         // xxx blit image to backbuffer
 #endif
-#ifdef IMGUI_ENABLED
-        if (upload.IsCompleted()) {
-            ImGui::Begin("Scene Graph");
+#ifdef IMGUI_ENABLED        
+        if (ImGui::Begin("Scene Graph")) {
             scene.OnImGui();
+            scene.update();
             ImGui::End();
-        }        
+        }       
+#endif
+#ifdef IMGUI_ENABLED
+        if (ImGui::Begin("Renderer")) {
+            static bool debug_ViewAlbedo = false, debug_ViewLod = false;            
+            ImGui::Checkbox("View LOD", &debug_ViewLod);
+            ImGui::Checkbox("View Albedo", &debug_ViewAlbedo);
+            UINT frameFlags = 0;
+            if (debug_ViewAlbedo) frameFlags |= FRAME_FLAG_VIEW_ALBEDO;
+            if (debug_ViewLod) frameFlags = FRAME_FLAG_DEBUG_VIEW_LOD;
+            sceneView.set_frame_flag(frameFlags);
+            ImGui::End();
+        }
 #endif
 #ifdef IMGUI_ENABLED
         ImGui::End(); // DockSpace

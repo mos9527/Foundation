@@ -13,8 +13,7 @@ struct CameraComponent : public SceneComponent {
 	bool orthographic = false;
 
 	CameraComponent(entt::entity ent) : SceneComponent(ent) {
-		localTransform.translation = { 0,0,-1 };
-		localTransform.rotation.SetRotationPitchYawRoll({ 0,0,0 });
+		localTransform = AffineTransform::Identity;
 		fov = XM_PIDIV4;
 		nearZ = 0.01f;
 		farZ = 100.0f;
@@ -29,10 +28,10 @@ struct CameraComponent : public SceneComponent {
 #endif
 	SceneCamera get_struct(float aspect, AffineTransform globalTransform) {
 		SceneCamera camera;
-		auto help = globalTransform.rotation.GetDirectionVector();
-		view = XMMatrixLookToLH(
-			globalTransform.translation, globalTransform.rotation.GetDirectionVector(), XMVector3Rotate({ 0,1,0 }, globalTransform.rotation)
-		);
+		Vector3 lookDirection{0,0,1}, upDirection{0,1,0};
+		Vector3::Transform(lookDirection, globalTransform);
+		Vector3::Transform(upDirection, globalTransform);
+		view = XMMatrixLookToLH(globalTransform.Translation(), lookDirection , upDirection);
 		fov = std::max(fov, 0.01f);
 		if (orthographic) {
 			projection = XMMatrixOrthographicLH(
@@ -72,8 +71,9 @@ struct CameraComponent : public SceneComponent {
 		camera.invView = view.Invert().Transpose();
 		camera.invProjection = projection.Invert().Transpose();
 		camera.invViewProjection = viewProjection.Invert().Transpose();
-		// others
-		camera.position = { globalTransform.translation.x,globalTransform.translation.y,globalTransform.translation.z, 1 };
+		// others		
+		Vector3 translation = globalTransform.Translation();
+		camera.position = { translation.x, translation.y,translation.z,1 };
 		camera.fov = fov;
 		camera.aspect = aspect;
 		camera.nearZ = nearZ;

@@ -38,7 +38,7 @@ GBufferPass::GBufferPass(Device* device) {
 		RootSignatureDesc()
 		.SetAllowInputAssembler()
 		.SetDirectlyIndexed()
-		.AddConstant(0, 0, 1) // b0 space0 : MeshIndex constant (Indirect)
+		.AddConstant(0, 0, 2) // b0 space0 : MeshIndex,LodIndex constant (Indirect)
 		.AddConstantBufferView(1, 0) // b1 space0 : SceneGlobals		
 		.AddShaderResourceView(0, 0) // t0 space0 : SceneMeshInstances
 		.AddShaderResourceView(1, 0) // t1 space0 : SceneMaterials
@@ -77,7 +77,7 @@ GBufferPass::GBufferPass(Device* device) {
 		device,
 		gBufferRS.get(),
 		CommandSignatureDesc(sizeof(IndirectCommand))
-		.AddConstant(0, 0, 1)
+		.AddConstant(0, 0, 2) // b0 space0 : MeshIndex,LodIndex constant (Indirect)
 		.AddVertexBufferView(0)
 		.AddIndexBufferView()
 		.AddDrawIndexed()

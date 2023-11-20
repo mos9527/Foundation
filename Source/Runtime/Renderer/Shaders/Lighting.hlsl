@@ -1,4 +1,3 @@
-#include "Shared.h"
 #include "Common.hlsli"
 #include "BRDF.hlsli"
 
@@ -28,6 +27,12 @@ void main(uint2 DTid : SV_DispatchThreadID)
     RWTexture2D<float4> frameBuffer = ResourceDescriptorHeap[frameBufferHandle];
     
     float4 albedoSmp = albedoTex[DTid];
+    if (g_SceneGlobals.frameFlags & FRAME_FLAG_VIEW_ALBEDO)
+    {
+        frameBuffer[DTid] = float4(albedoSmp.rgb, 1);
+        return;
+    }
+    
     float4 normalSmp = normalTex[DTid];
     float4 materialSmp = materialTex[DTid];
     float4 emissiveSmp = emissiveTex[DTid];
@@ -45,7 +50,7 @@ void main(uint2 DTid : SV_DispatchThreadID)
     float2 UV = DTid / float2(g_SceneGlobals.frameDimension);
     
     float Zss = depthSmp.r;
-    float Zview = ClipZ2ViewZ(Zss, g_SceneGlobals.camera.nearZ, g_SceneGlobals.camera.farZ);
+    float Zview = clipZ2ViewZ(Zss, g_SceneGlobals.camera.nearZ, g_SceneGlobals.camera.farZ);
     float3 P = UV2WorldSpace(UV, Zss, g_SceneGlobals.camera.invViewProjection);
     float3 V = normalize(g_SceneGlobals.camera.position.xyz - P);
     

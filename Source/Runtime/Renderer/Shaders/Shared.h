@@ -1,5 +1,5 @@
-#ifndef COMMON_INCLUDE
-#define COMMON_INCLUDE
+#ifndef SHARED_INCLUDE
+#define SHARED_INCLUDE
 #define INVALID_HEAP_HANDLE ((uint)-1)
 #define MAX_INSTANCE_COUNT 0xffff
 #define MAX_LIGHT_COUNT 16
@@ -22,11 +22,15 @@
 
 #define RENDERER_INSTANCE_CULL_THREADS THREADS_PER_WAVE
 #define RENDERER_FULLSCREEN_THREADS 8 // 8 * 8 -> 64
+
+#define FRAME_FLAG_VIEW_ALBEDO (1 << 0)
+#define FRAME_FLAG_GBUFFER_ALBEDO_AS_LOD (1 << 1)
+#define FRAME_FLAG_DEBUG_VIEW_LOD (FRAME_FLAG_VIEW_ALBEDO | FRAME_FLAG_GBUFFER_ALBEDO_AS_LOD)
 #ifdef __cplusplus
 #include "../../../pch.hpp"
-#pragma pack(push, 4)
-#else // HLSL
-
+#pragma pack(push, 4) // otherwise it's 8 on 64-bit systems
+#else
+// DirectX Types
 typedef uint2 D3D12_GPU_VIRTUAL_ADDRESS;
 struct D3D12_DRAW_INDEXED_ARGUMENTS
 {
@@ -52,6 +56,7 @@ struct D3D12_INDEX_BUFFER_VIEW
 struct IndirectCommand
 {
     uint MeshIndex; // 1
+    uint LodIndex; // 1
     D3D12_VERTEX_BUFFER_VIEW VertexBuffer; // 4
     D3D12_INDEX_BUFFER_VIEW IndexBuffer; // 4
     D3D12_DRAW_INDEXED_ARGUMENTS DrawIndexedArguments; // 5
@@ -65,7 +70,7 @@ struct SceneCamera // ! align for CB
     float nearZ;
     float farZ; // 16
 	
-    float4 clipPlanes[6]; // Left, Right, Bottom, Top, Near, Far
+    Plane clipPlanes[6];
 
     matrix view; 
     matrix projection;
@@ -83,33 +88,34 @@ struct SceneGlobals // ! align for CB
     uint numLights;
     uint2 _pad;
 
+    uint frameFlags;
     uint frameIndex;
     uint2 frameDimension;
+
+    uint sceneVersion;
+    uint3 _pad2;
 };
 struct SceneMeshLod
 {
     uint numIndices;
     uint numMeshlets;
-    uint2 _pad;
 
     D3D12_INDEX_BUFFER_VIEW indices; // 16
     D3D12_GPU_VIRTUAL_ADDRESS meshlets; // 8
     D3D12_GPU_VIRTUAL_ADDRESS meshletTriangles;
     D3D12_GPU_VIRTUAL_ADDRESS meshletVertices;
-    uint2 _pad2;
 };
 struct SceneMeshInstance
 {    
     uint numVertices; // 4
     uint materialIndex; //4
     int lodOverride; // 4
-    uint _pad;
 
     matrix transform; // 16 * 4
     matrix transformInvTranspose; // xxx transform is sufficent for affine transformations
 
-    float4 bbCenter; // xyz. aabb/sphere share the same center
-    float4 bbExtentsRadius; // xyz[extents] w[radius]        
+    BoundingBox boundingBox;
+    BoundingSphere boundingSphere;    
 
     D3D12_VERTEX_BUFFER_VIEW vertices; // 16
     SceneMeshLod lods[MAX_LOD_COUNT];

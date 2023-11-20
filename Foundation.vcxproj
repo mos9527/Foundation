@@ -243,6 +243,7 @@
     <None Include="Source\Runtime\Renderer\RenderPass\DeferredLighting.hpp" />
     <None Include="Source\Runtime\Renderer\Shaders\BRDF.hlsli" />
     <None Include="Source\Runtime\Renderer\Shaders\Common.hlsli" />
+    <None Include="Source\Runtime\Renderer\Shaders\Math.hlsli" />
     <None Include="vcpkg.json" />
   </ItemGroup>
   <ItemGroup>

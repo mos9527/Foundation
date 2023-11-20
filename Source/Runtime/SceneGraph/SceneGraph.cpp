@@ -11,6 +11,21 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
+void SceneGraph::update(entt::entity entity, entt::entity parent) {
+	SceneComponent* entity_ptr = try_get_base_ptr(entity);
+	SceneComponent* parent_ptr = try_get_base_ptr(parent);	
+	CHECK(entity_ptr && parent_ptr);
+	entity_ptr->version = version;
+	if (entity != parent)
+		entity_ptr->globalTransform = parent_ptr->globalTransform * entity_ptr->localTransform;
+	else
+	{		
+		CHECK(entity == root && "Circular dependecy detected");		
+		entity_ptr->globalTransform = entity_ptr->localTransform;
+	}	
+	for (auto child : graph[entity])
+		update(child, entity);
+}
 void SceneGraph::load_from_aiScene(const aiScene* scene, path_t sceneFolder) {	
 	DefaultTaskThreadPool pool;
 	std::mutex import_mutex;
@@ -107,11 +122,23 @@ void SceneGraph::OnImGui() {
 		if (ImGui::TreeNode(componet->get_name())) {
 
 			ImGui::SeparatorText("Transforms");
-			ImGui::DragFloat3("Position", (float*)&componet->localTransform.translation, 0.001f);
-			auto euler_rotation = componet->localTransform.rotation.GetRotationPitchYawRoll();
-			ImGui::DragFloat3("Euler Rotation", (float*)&euler_rotation, 0.01f);
-			componet->localTransform.rotation.SetRotationPitchYawRoll(euler_rotation);
-
+			auto transform_ui = [&](AffineTransform transform) {
+				Vector3 translation;
+				Quaternion rotationQuaternion;
+				Vector3 scale;
+				Vector3 eulers;
+				transform.Decompose(scale, rotationQuaternion, translation);
+				eulers = rotationQuaternion.ToEuler();
+				ImGui::DragFloat3("Position", (float*)&translation, 0.001f);
+				ImGui::DragFloat3("Euler Rotation", (float*)&eulers, 0.01f);
+				ImGui::DragFloat3("Scale", (float*)&scale, 0.01f);
+				rotationQuaternion = rotationQuaternion.CreateFromYawPitchRoll(eulers);
+				return AffineTransform(translation, rotationQuaternion, scale);
+			};
+			ImGui::SeparatorText("Local");
+			componet->localTransform = transform_ui(componet->localTransform);
+			ImGui::SeparatorText("Global");
+			transform_ui(componet->get_global_transform());
 			ImGui::SeparatorText("Component");
 			componet->OnImGui();
 

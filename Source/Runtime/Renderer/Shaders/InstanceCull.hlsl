@@ -1,4 +1,3 @@
-#include "Shared.h"
 #include "Common.hlsli"
 ConstantBuffer<SceneGlobals> g_SceneGlobals : register(b0, space0);
 StructuredBuffer<SceneMeshInstance> g_SceneMeshInstances : register(t0, space0);
@@ -11,26 +10,22 @@ void main( uint index : SV_DispatchThreadID )
     {
         IndirectCommand cmd;
         SceneMeshInstance instance = g_SceneMeshInstances[index];
-        SceneCamera camera = g_SceneGlobals.camera;
-        float3 center = instance.bbCenter.xyz;
-        center = mul(float4(center, 1.0f), instance.transform).xyz;
+        SceneCamera camera = g_SceneGlobals.camera;     
+        BoundingBox bbBox = instance.boundingBox.Transform(instance.transform);
+        BoundingSphere bbSphere = instance.boundingSphere.Transform(instance.transform);
         // Frustum cull
-        if (intersectAABBToFrustum(
-                center,
-                instance.bbExtentsRadius.xyz,
-                camera.clipPlanes[0], camera.clipPlanes[1], camera.clipPlanes[2], camera.clipPlanes[3], camera.clipPlanes[4], camera.clipPlanes[5]) == INTERSECT_VOLUMES_DISJOINT)
-        {
-            return;
-        }
+        if (bbBox.Intersect(camera.clipPlanes[0], camera.clipPlanes[1], camera.clipPlanes[2], camera.clipPlanes[3], camera.clipPlanes[4], camera.clipPlanes[5]) == INTERSECT_VOLUMES_DISJOINT)
+            return;        
         // LOD
-        float Rss = sphereScreenSpaceRadius(center, instance.bbExtentsRadius.w, camera.position.xyz, camera.fov);
+        float Rss = sphereScreenSpaceRadius(bbSphere.Center, bbSphere.Radius, camera.position.xyz, camera.fov);
         int lodIndex = max(ceil((MAX_LOD_COUNT - 1) * Rss), instance.lodOverride); // 0 is the most detailed
         lodIndex = clamp(lodIndex, 0, MAX_LOD_COUNT - 1);        
         SceneMeshLod lod = instance.lods[lodIndex];
        
+        cmd.MeshIndex = index;
+        cmd.LodIndex = lodIndex;
         cmd.IndexBuffer = lod.indices;
         cmd.VertexBuffer = instance.vertices;
-        cmd.MeshIndex = index;
         // xxx batching
         cmd.DrawIndexedArguments.BaseVertexLocation = 0;
         cmd.DrawIndexedArguments.IndexCountPerInstance = lod.numIndices;

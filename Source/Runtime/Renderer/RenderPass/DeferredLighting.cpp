@@ -23,7 +23,7 @@ DeferredLightingPass::DeferredLightingPass(Device* device) {
 void DeferredLightingPass::insert(RenderGraph& rg, SceneGraphView* sceneView, DeferredLightingPassHandles& handles) {
 	rg.add_pass(L"Lighting")
 		.readwrite(handles.frameBuffer)
-		.read(handles.depth).read(handles.albedo).read(handles.normal).read(handles.material)
+		.read(handles.depth).read(handles.albedo).read(handles.normal).read(handles.material).read(handles.emissive)
 		.execute([=](RgContext& ctx) {
 			UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
 			auto native = ctx.cmd->GetNativeCommandList();

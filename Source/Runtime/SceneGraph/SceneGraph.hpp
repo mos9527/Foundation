@@ -12,6 +12,7 @@ struct aiScene;
 class AssetRegistry;
 class SceneGraphView;
 /* a rooted graph representing the scene hierarchy */
+typedef size_t scene_version;
 class SceneGraph : DAG<entt::entity> {
 	friend class SceneGraphView;
 	using DAG::graph;
@@ -21,12 +22,21 @@ class SceneGraph : DAG<entt::entity> {
 	entt::entity active_camera = entt::tombstone;
 
 	AssetRegistry& assets;
+
+	scene_version version = 0;
+	void update(entt::entity entity, entt::entity parent);
 public:
 	SceneGraph(AssetRegistry& assets) : assets(assets) {
 		root = registry.create();
 		auto& root_collection = emplace<CollectionComponent>(root);
 		root_collection.set_name("Scene Root");
 	};
+	// updates componets' Global Transform and (xxx) their hierarchical bounding boxes
+	void update() {
+		version++;
+		update(root, root); 
+	}
+	size_t get_version() { return version; }
 	template<SceneComponentDefined T> T& get(const entt::entity entity) {
 		return registry.get<T>(entity);
 	}
@@ -79,7 +89,7 @@ public:
 		DAG::remove_edge(lhs, rhs);
 	}
 	void add_link(const entt::entity lhs, const entt::entity rhs) {
-		CHECK(rhs != root); // xxx enforce strict cylic dependency via topsort?
+		CHECK(rhs != root && "Attempting to create a circular depndency (Connecting to Root)");
 		DAG::add_edge(lhs, rhs);
 	}
 	void load_from_aiScene(const aiScene* scene, path_t scenePath);	

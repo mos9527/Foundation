@@ -17,11 +17,18 @@
 
 #define D3D_MIN_FEATURE_LEVEL D3D_FEATURE_LEVEL_12_1
 
-using namespace DirectX;
 using Microsoft::WRL::ComPtr;
-
+using namespace DirectX;
+using namespace SimpleMath;
 namespace RHI {
 	typedef const wchar_t* name_t;
 }
-
-typedef uint32_t uint;
+// HLSL typenames
+typedef UINT uint;
+typedef XMUINT2 uint2;
+typedef XMUINT3 uint3;
+typedef XMUINT4 uint4;
+typedef Vector2 float2;
+typedef Vector3 float3;
+typedef Vector4 float4;
+typedef Matrix matrix; // row-major in XMMATH, col-major in HLSL (by default)

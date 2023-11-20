@@ -34,27 +34,17 @@ public:
 	auto const& get_SceneInstances() { return meshes; }
 	auto const& get_SceneMaterials() { return materials; }
 	auto const& get_SceneLights() { return lights; }
-
+	void set_frame_flag(uint flag) { stats.frameFlags = flag; }
 	void update(uint viewportWidth, uint viewportHeight, uint frameIndex) {
-		std::unordered_map<entt::entity, AffineTransform> global_transforms;
-		// calculate global transforms
-		auto dfs_nodes = [&](auto& func, entt::entity entity, entt::entity parent) -> void {
-			auto ptr = scene.try_get_base_ptr(entity);
-			if (ptr)
-				global_transforms[entity] = global_transforms[parent] * ptr->localTransform;			
-			for (auto child : scene.graph[entity])
-				func(func, child, entity);
-		};
-		dfs_nodes(dfs_nodes, scene.root, scene.root);
 		// updates for static mesh view	
 		// xxx skinned meshes 
 		meshes.clear(); materials.clear();
 		for (auto& mesh : scene.registry.storage<StaticMeshComponent>()) {
 			auto& asset = scene.assets.get<StaticMeshAsset>(mesh.mesh_resource);
 			SceneMeshInstance sceneMesh{};					
-			auto& transform = global_transforms[mesh.entity];
-			sceneMesh.transform = transform.GetTransforms().Transpose();
-			sceneMesh.transformInvTranspose = transform.GetTransforms().Invert()/*.Transpose().Transpose()*/;
+			AffineTransform transform = mesh.get_global_transform();
+			sceneMesh.transform = transform.Transpose();
+			sceneMesh.transformInvTranspose = transform.Invert()/*.Transpose().Transpose()*/;
 			sceneMesh.vertices = D3D12_VERTEX_BUFFER_VIEW{
 				.BufferLocation = asset.vertexBuffer->GetGPUAddress(),
 				.SizeInBytes = (UINT)asset.vertexBuffer->GetDesc().sizeInBytes(),
@@ -94,14 +84,8 @@ public:
 				sceneMesh.materialIndex = materials.size();
 				materials.push_back(material);
 			}
-			
-			sceneMesh.bbCenter.x = asset.aabb.Center.x;
-			sceneMesh.bbCenter.y = asset.aabb.Center.y;
-			sceneMesh.bbCenter.z = asset.aabb.Center.z;
-			sceneMesh.bbExtentsRadius.x = asset.aabb.Extents.x;
-			sceneMesh.bbExtentsRadius.y = asset.aabb.Extents.y;
-			sceneMesh.bbExtentsRadius.z = asset.aabb.Extents.z;
-			sceneMesh.bbExtentsRadius.w = asset.boundingSphere.Radius;
+			sceneMesh.boundingBox = asset.aabb;
+			sceneMesh.boundingSphere = asset.boundingSphere;
 
 			sceneMesh.lodOverride = mesh.lodOverride;
 			meshes.push_back(sceneMesh);
@@ -112,10 +96,11 @@ public:
 		lights.clear();
 		for (auto& light : scene.registry.storage<LightComponent>()) {
 			SceneLight sceneLight{};
-			auto& transform = global_transforms[light.entity];
-			sceneLight.position.x = transform.translation.x;
-			sceneLight.position.y = transform.translation.y;
-			sceneLight.position.z = transform.translation.z;
+			AffineTransform transform = light.get_global_transform();
+			Vector3 translation = transform.Translation();
+			sceneLight.position.x = translation.x;
+			sceneLight.position.y = translation.y;
+			sceneLight.position.z = translation.z;
 			sceneLight.position.w = 1;
 			sceneLight.color = light.color;
 			sceneLight.type = (UINT)light.type;
@@ -130,7 +115,7 @@ public:
 		// scene camera
 		if (scene.registry.any_of<CameraComponent>(scene.active_camera)) {
 			auto& camera = scene.get<CameraComponent>(scene.active_camera);
-			auto transform = AffineTransform(global_transforms[scene.active_camera]);
+			AffineTransform transform = camera.get_global_transform();
 			stats.camera = camera.get_struct(viewportWidth / (float)viewportHeight, transform);
 		}
 		else {
@@ -139,6 +124,7 @@ public:
 		stats.frameIndex = frameIndex;
 		stats.frameDimension.x = viewportWidth;
 		stats.frameDimension.y = viewportHeight;
+		stats.sceneVersion = scene.get_version();
 		globalBuffer->Update(&stats, sizeof(stats), 0);
 	}
 };

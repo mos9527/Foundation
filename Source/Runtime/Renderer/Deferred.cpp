@@ -10,7 +10,7 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
 		ResourceFlags::RenderTarget, ResourceHeapType::Default,
 		ResourceState::RenderTarget, ClearValue(0, 0, 0, 0),
 		L"GBuffer Albedo"
-	));
+	));	
 	auto normal = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
 		ResourceFormat::R16G16_FLOAT, ResourceDimension::Texture2D,
 		width, height, 1, 1, 1, 0,

@@ -1,19 +1,9 @@
-//*********************************************************
-//
-// Copyright (c) Microsoft. All rights reserved.
-// This code is licensed under the MIT License (MIT).
-// THIS CODE IS PROVIDED *AS IS* WITHOUT WARRANTY OF
-// ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING ANY
-// IMPLIED WARRANTIES OF FITNESS FOR A PARTICULAR
-// PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT.
-//
-//*********************************************************
-#include "Shared.h"
 #include "Common.hlsli"
 
 cbuffer IndirectData : register(b0, space0)
 {
     uint g_MeshIndex;
+    uint g_LodIndex;
 };
 ConstantBuffer<SceneGlobals> g_SceneGlobals : register(b1, space0);
 StructuredBuffer<SceneMeshInstance> g_SceneMeshInstances : register(t0, space0);
@@ -56,6 +46,16 @@ MRT ps_main(PSInput input)
     SceneMeshInstance mesh = g_SceneMeshInstances[g_MeshIndex];
     SceneMaterial material = g_Materials[mesh.materialIndex];
     MRT output;
+    if (g_SceneGlobals.frameFlags & FRAME_FLAG_GBUFFER_ALBEDO_AS_LOD)
+    {
+        float lod = (float) g_LodIndex / MAX_LOD_COUNT;
+        float3 ramp = colorRamp(lod);
+        output.AlbedoMask = float4(ramp, 1);
+        output.Normal = float4(1,1,1,1);
+        output.Emissive = float4(0, 0, 0, 0);
+        output.Material = float4(0, 0, 0, 0);
+        return output;
+    }
     output.AlbedoMask = material.albedo;
     if (material.albedoMap != INVALID_HEAP_HANDLE)
     {

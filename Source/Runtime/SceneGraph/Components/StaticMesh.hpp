@@ -5,10 +5,10 @@
 
 struct StaticMeshComponent : public SceneComponent {
 	using SceneComponent::SceneComponent;
-
 	AssetHandle mesh_resource;
 	entt::entity material = entt::tombstone;
 	int lodOverride = -1;
+
 #ifdef IMGUI_ENABLED
 	virtual void OnImGui() {
 		ImGui::SliderInt("LOD Override", &lodOverride, -1, MAX_LOD_COUNT);
