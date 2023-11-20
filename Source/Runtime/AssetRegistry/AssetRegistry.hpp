@@ -10,9 +10,13 @@
 class AssetRegistry {
 	template<typename T> using Allocator = DefaultAllocator<T>;
 	entt::basic_registry<entt::entity, Allocator <entt::entity>> registry;
-public:
-	template<typename T> AssetHandle import(T&& import) {
-		auto handle = create(Asset<T>::type);
+public:	
+	template<AssetRegistryDefined T> AssetHandle create() {
+		static_assert(T::type != AssetType::Unknown);
+		return AssetHandle{ T::type, registry.create() };
+	}
+	template<typename T> AssetHandle import(AssetHandle handle, T&& import) {	
+		DCHECK(handle.type == Asset<T>::type);
 		emplace_or_replace<Asset<T>>(handle, std::move(import));
 		return handle;
 	}
@@ -39,12 +43,4 @@ public:
 	template<AssetRegistryDefined T, typename ...Args> T& emplace_or_replace(AssetHandle handle, Args &&...args) {
 		return registry.emplace_or_replace<T>(handle, std::forward<decltype(args)>(args)...);
 	}
-	AssetHandle create(AssetType type) {
-		return AssetHandle{ type, registry.create() };
-	}
-	/* Helpers */
-	ImageAsset* try_get_base_image_asset(AssetHandle resource) {
-		return try_get_base_ptr<ImageAsset, SDRImageAsset>(resource);
-	}
-	// xxx MeshAsset*
 };

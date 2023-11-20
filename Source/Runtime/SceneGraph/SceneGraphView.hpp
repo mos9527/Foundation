@@ -78,7 +78,7 @@ public:
 			if (pMaterial) {
 				SceneMaterial material;		
 				auto try_set_heap_handle = [&](auto handle, auto& dest) {
-					auto ptr = scene.assets.try_get_base_image_asset(handle);
+					auto ptr = scene.assets.try_get_base_ptr<ImageAsset, SDRImageAsset>(handle);
 					if (ptr && ptr->textureSrv)
 						dest = ptr->textureSrv->descriptor.get_heap_handle();
 					else

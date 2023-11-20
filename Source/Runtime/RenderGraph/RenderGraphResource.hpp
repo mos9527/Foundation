@@ -20,6 +20,7 @@ struct RgHandle {
 	RgResourceType type;
 	RgResourceFlag flag;
 	entt::entity entity = entt::tombstone; // entity within RenderGraph's registry. indexes `rg_handle`. may index `rg_resource` deriviatives
+
 	inline operator entt::entity() const { return entity; }
 	friend bool operator==(const RgHandle& lhs, const RgHandle& rhs) { return lhs.entity == rhs.entity; }
 	bool is_imported() { return flag == RgResourceFlag::Imported; }
