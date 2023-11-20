@@ -93,24 +93,39 @@ struct BoundingSphere // wraps BoundingSphere { float3, float }
         return INTERSECT_VOLUMES_INTERSECT;        
     }
 };
+static const float3 BoxCornerOffset[] = {
+    { -1.0f, -1.0f,  1.0f },
+    {  1.0f, -1.0f,  1.0f },
+    {  1.0f,  1.0f,  1.0f },
+    { -1.0f,  1.0f,  1.0f },
+    { -1.0f, -1.0f, -1.0f },
+    {  1.0f, -1.0f, -1.0f },
+    {  1.0f,  1.0f, -1.0f },
+    { -1.0f,  1.0f, -1.0f }
+};
 struct BoundingBox // wraps BoundingBox { float3, float3 }
 {
     float3 Center;
     float3 Extents;
+    // Previously the one from https://github.com/kcloudy0717/Kaguya/blob/master/Source/Application/Kaguya/Shaders/Math.hlsli#L179
+    // was used. Which was incorrect. Extents are not transformed correctly by rotation as it's simply rotated/scaled
+    // This implementation once again comes from DirectXCollision
     BoundingBox Transform(matrix m)
     {
-        float3 t = m[3].xyz;
         BoundingBox b;
-        b.Center = t;
-        b.Extents = float3(0.0f, 0.0f, 0.0f);
-        for (int i = 0; i < 3; ++i)
+        float3 Corner = Extents * BoxCornerOffset[0] + Center;
+        Corner = mul(float4(Corner, 1.0f), m).xyz;
+        float3 Min = Corner, Max = Corner;
+        for (int i = 0; i < 8; i++)
         {
-            for (int j = 0; j < 3; ++j)
-            {
-                b.Center[i] += m[i][j] * Center[j];
-                b.Extents[i] += abs(m[i][j]) * Extents[j];
-            }
+            Corner = Extents * BoxCornerOffset[i] + Center;
+            Corner = mul(float4(Corner, 1.0f), m).xyz;
+            
+            Min = min(Min, Corner);
+            Max = max(Max, Corner);
         }
+        b.Center = (Min + Max) / 2;
+        b.Extents = (Max - Min) / 2;
         return b;
     }
     bool Intersects(BoundingBox Other)
@@ -121,7 +136,7 @@ struct BoundingBox // wraps BoundingBox { float3, float3 }
         float3 minB = Other.Center - Other.Extents;
         float3 maxB = Other.Center + Other.Extents;
 
-		// for each i in (x, y, z) if a_min(i) > b_max(i) or b_min(i) > a_max(i) then return false
+        // for each i in (x, y, z) if a_min(i) > b_max(i) or b_min(i) > a_max(i) then return false
         return maxA.x >= minB.x && minA.x <= maxB.x &&
 			   maxA.y >= minB.y && minA.y <= maxB.y &&
 			   maxA.z >= minB.z && minA.z <= maxB.z;
@@ -134,7 +149,7 @@ struct BoundingBox // wraps BoundingBox { float3, float3 }
         float3 minB = Other.Center - Other.Extents;
         float3 maxB = Other.Center + Other.Extents;
 
-		// for each i in (x, y, z) if a_min(i) <= b_min(i) and b_max(i) <= a_max(i) then A contains B
+        // for each i in (x, y, z) if a_min(i) <= b_min(i) and b_max(i) <= a_max(i) then A contains B
         return minA.x <= minB.x && maxB.x <= maxA.x &&
 			   minA.y <= minB.y && maxB.y <= maxA.y &&
 			   minA.z <= minB.z && maxB.z <= maxA.z;
@@ -148,7 +163,7 @@ struct BoundingBox // wraps BoundingBox { float3, float3 }
     // taking the maximum projected distance (in abs value) yeilds the max distance of all vertices to this plane:
     // = Ex * |Nx| + Ey * |Ny| + Ez * |Nz|
     // * see also https://github.com/kcloudy0717/Kaguya/blob/master/Source/Application/Kaguya/Shaders/Math.hlsli#L236
-    // * see also DirectXColision::FastIntersectAxisAlignedBoxPlane
+    // * see also DirectXCollision::FastIntersectAxisAlignedBoxPlane
     int Intersect(Plane Other)
     {
         float dist = dot(Center, Other.Normal) + Other.Offset;

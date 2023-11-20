@@ -12,7 +12,6 @@ struct aiScene;
 class AssetRegistry;
 class SceneGraphView;
 /* a rooted graph representing the scene hierarchy */
-typedef size_t scene_version;
 class SceneGraph : DAG<entt::entity> {
 	friend class SceneGraphView;
 	using DAG::graph;
@@ -23,8 +22,8 @@ class SceneGraph : DAG<entt::entity> {
 
 	AssetRegistry& assets;
 
-	scene_version version = 0;
-	void update(entt::entity entity, entt::entity parent);
+	size_t version = 0;
+	void update_global_transform(entt::entity entity, entt::entity parent);
 public:
 	SceneGraph(AssetRegistry& assets) : assets(assets) {
 		root = registry.create();
@@ -34,7 +33,7 @@ public:
 	// updates componets' Global Transform and (xxx) their hierarchical bounding boxes
 	void update() {
 		version++;
-		update(root, root); 
+		update_global_transform(root, root);
 	}
 	size_t get_version() { return version; }
 	template<SceneComponentDefined T> T& get(const entt::entity entity) {

@@ -46,7 +46,7 @@ template<> struct Asset<mesh_static> {
 		}
 	};
 	uint numVertices;
-	DirectX::BoundingBox aabb;
+	DirectX::BoundingBox boundingBox;
 	DirectX::BoundingSphere boundingSphere;
 
 	std::vector<Vertex> vertexInitialData;

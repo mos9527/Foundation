@@ -35,4 +35,9 @@ struct AffineTransform : public SimpleMath::Matrix
     using SimpleMath::Matrix::Matrix; 
     AffineTransform(Vector3& translation, Quaternion& rotationQuat, Vector3& scale) : 
         SimpleMath::Matrix::Matrix(XMMatrixAffineTransformation(scale, { 0,0,0 }, rotationQuat, translation)) {};
+    Quaternion Quaternion() {
+        XMVECTOR T, R, S;
+        XMMatrixDecompose(&S, &R, &T, *this);
+        return R;
+    }
 };

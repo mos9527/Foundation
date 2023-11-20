@@ -11,7 +11,7 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-void SceneGraph::update(entt::entity entity, entt::entity parent) {
+void SceneGraph::update_global_transform(entt::entity entity, entt::entity parent) {	
 	SceneComponent* entity_ptr = try_get_base_ptr(entity);
 	SceneComponent* parent_ptr = try_get_base_ptr(parent);	
 	CHECK(entity_ptr && parent_ptr);
@@ -24,7 +24,7 @@ void SceneGraph::update(entt::entity entity, entt::entity parent) {
 		entity_ptr->globalTransform = entity_ptr->localTransform;
 	}	
 	for (auto child : graph[entity])
-		update(child, entity);
+		update_global_transform(child, entity);
 }
 void SceneGraph::load_from_aiScene(const aiScene* scene, path_t sceneFolder) {	
 	DefaultTaskThreadPool pool;
@@ -122,23 +122,25 @@ void SceneGraph::OnImGui() {
 		if (ImGui::TreeNode(componet->get_name())) {
 
 			ImGui::SeparatorText("Transforms");
-			auto transform_ui = [&](AffineTransform transform) {
+			auto transform_ui = [&](const char** names, AffineTransform transform) {
 				Vector3 translation;
 				Quaternion rotationQuaternion;
 				Vector3 scale;
 				Vector3 eulers;
 				transform.Decompose(scale, rotationQuaternion, translation);
 				eulers = rotationQuaternion.ToEuler();
-				ImGui::DragFloat3("Position", (float*)&translation, 0.001f);
-				ImGui::DragFloat3("Euler Rotation", (float*)&eulers, 0.01f);
-				ImGui::DragFloat3("Scale", (float*)&scale, 0.01f);
+				ImGui::DragFloat3(names[0], (float*)&translation, 0.001f);
+				ImGui::DragFloat3(names[1], (float*)&eulers, XM_PI / 360.0f, -XM_PIDIV2 + 0.0001f, XM_PIDIV2 - 0.0001f);
+				ImGui::DragFloat3(names[2], (float*)&scale, 0.01f);
 				rotationQuaternion = rotationQuaternion.CreateFromYawPitchRoll(eulers);
 				return AffineTransform(translation, rotationQuaternion, scale);
 			};
 			ImGui::SeparatorText("Local");
-			componet->localTransform = transform_ui(componet->localTransform);
+			const char* localNames[3] = {"Local Translation","Local Euler","Local Scale"};
+			const char* globalNames[3] = {"Global Translation","Global Euler", "Global Scale"};
+			componet->localTransform = transform_ui(localNames, componet->localTransform);
 			ImGui::SeparatorText("Global");
-			transform_ui(componet->get_global_transform());
+			transform_ui(globalNames,componet->get_global_transform());
 			ImGui::SeparatorText("Component");
 			componet->OnImGui();
 

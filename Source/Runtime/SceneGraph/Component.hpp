@@ -18,7 +18,7 @@ struct SceneComponent {
 	friend class SceneGraphView;
 private:
 	/* Versioned members begin */
-	scene_version version;
+	size_t version;
 	AffineTransform globalTransform;
 	BoundingBox boundingBox;
 	/* Versioned members end */
@@ -33,7 +33,7 @@ public:
 	AffineTransform const& get_global_transform() { return globalTransform; }
 	const char* get_name() { return name.c_str(); }
 	entt::entity get_entity() { return entity; }
-	scene_version get_version() { return version; }
+	size_t get_version() { return version; }
 	void set_name(std::string name_) {name = name_;}
 #ifdef IMGUI_ENABLED
 	virtual void OnImGui() = 0;

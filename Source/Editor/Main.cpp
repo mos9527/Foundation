@@ -87,7 +87,7 @@ int main(int argc, char* argv[]) {
     taskpool.push([&] {        
         LOG(INFO) << "Loading scene";
         Assimp::Importer importer;
-#define GLTF_SAMPLE L"MetalRoughSpheres"
+#define GLTF_SAMPLE L"Sponza"
         path_t filepath = L"..\\Resources\\glTF-Sample-Models\\2.0\\" GLTF_SAMPLE "\\glTF\\" GLTF_SAMPLE ".gltf";
         std::string u8path = (const char*)filepath.u8string().c_str();
         auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded);
@@ -168,7 +168,6 @@ int main(int argc, char* argv[]) {
 #endif
         ShaderResourceView* pSrv = nullptr;
         if (upload.IsCompleted()) {
-            scene.update();
             sceneView.update(viewportWidth, viewportHeight, swapchain.GetFrameIndex());
             pSrv = renderer.Render(&sceneView);
         }
@@ -195,6 +194,8 @@ int main(int argc, char* argv[]) {
             scene.update();
             ImGui::End();
         }       
+#else
+        scene.update();
 #endif
 #ifdef IMGUI_ENABLED
         if (ImGui::Begin("Renderer")) {

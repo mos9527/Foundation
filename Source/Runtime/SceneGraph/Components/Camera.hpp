@@ -28,9 +28,9 @@ struct CameraComponent : public SceneComponent {
 #endif
 	SceneCamera get_struct(float aspect, AffineTransform globalTransform) {
 		SceneCamera camera;
-		Vector3 lookDirection{0,0,1}, upDirection{0,1,0};
-		Vector3::Transform(lookDirection, globalTransform);
-		Vector3::Transform(upDirection, globalTransform);
+		Vector3 lookDirection{0,0,1}, upDirection{0,1,0};		
+		lookDirection = Vector3::Transform(lookDirection, globalTransform.Quaternion());
+		upDirection = Vector3::Transform(upDirection, globalTransform.Quaternion());		
 		view = XMMatrixLookToLH(globalTransform.Translation(), lookDirection , upDirection);
 		fov = std::max(fov, 0.01f);
 		if (orthographic) {

@@ -84,7 +84,7 @@ public:
 				sceneMesh.materialIndex = materials.size();
 				materials.push_back(material);
 			}
-			sceneMesh.boundingBox = asset.aabb;
+			sceneMesh.boundingBox = asset.boundingBox;
 			sceneMesh.boundingSphere = asset.boundingSphere;
 
 			sceneMesh.lodOverride = mesh.lodOverride;
