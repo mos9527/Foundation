@@ -73,6 +73,11 @@ void SceneGraph::load_from_aiScene(const aiScene* scene, path_t sceneFolder) {
 		materialComponet.entity = entity;
 		materialComponet.name = material->GetName().C_Str();
 		LOG(INFO) << "Loading material " << materialComponet.name;
+		aiColor4D color;
+		material->Get(AI_MATKEY_COLOR_DIFFUSE, color);
+		materialComponet.albedo = { color.r,color.g,color.b,color.a };
+		material->Get(AI_MATKEY_COLOR_EMISSIVE, color);
+		materialComponet.emissive = { color.r,color.g,color.b,color.a };
 		for (UINT j = 0; j < material->GetTextureCount(aiTextureType_BASE_COLOR) && j < 1; j++) {
 			aiString path; material->GetTexture(aiTextureType_BASE_COLOR, j, &path);	
 			pool.push([&,path](AssetHandle handle){ materialComponet.albedoImage = load_texture(handle, path.C_Str()); }, assets.create<SDRImageAsset>());
@@ -97,7 +102,7 @@ void SceneGraph::load_from_aiScene(const aiScene* scene, path_t sceneFolder) {
 		CollectionComponent& component = emplace<CollectionComponent>(entity);
 		component.entity = entity;
 		component.name = node->mName.C_Str();
-		component.localTransform = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1));
+		component.localTransform = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1)).Transpose(); // assimp is again, column major
 		add_link(parent, entity);		
 		for (UINT i = 0; i < node->mNumMeshes; i++) {
 			add_link(entity, mesh_mapping[node->mMeshes[i]]);
@@ -130,7 +135,7 @@ void SceneGraph::OnImGui() {
 				transform.Decompose(scale, rotationQuaternion, translation);
 				eulers = rotationQuaternion.ToEuler();
 				ImGui::DragFloat3(names[0], (float*)&translation, 0.001f);
-				ImGui::DragFloat3(names[1], (float*)&eulers, XM_PI / 360.0f, -XM_PIDIV2 + 0.0001f, XM_PIDIV2 - 0.0001f);
+				ImGui::DragFloat3(names[1], (float*)&eulers, XM_PI / 360.0f);
 				ImGui::DragFloat3(names[2], (float*)&scale, 0.01f);
 				rotationQuaternion = rotationQuaternion.CreateFromYawPitchRoll(eulers);
 				return AffineTransform(translation, rotationQuaternion, scale);

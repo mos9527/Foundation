@@ -278,6 +278,12 @@ namespace RHI {
 		operator D3D12_UNORDERED_ACCESS_VIEW_DESC() const {
 			return desc;
 		}
+		size_t GetCounterOffsetInBytes() const {
+			return desc.Buffer.CounterOffsetInBytes;
+		}
+		bool HasCountedResource() const {
+			return GetCounterOffsetInBytes() != 0;
+		}
 		friend bool operator== (const UnorderedAccessViewDesc& lhs, const UnorderedAccessViewDesc& rhs) {
 			return true;
 		}

@@ -8,7 +8,6 @@
 #include "../AssetRegistry/MeshAsset.hpp"
 
 class SceneGraphView {
-	SceneGraph& scene;
 	std::unique_ptr<RHI::Buffer> globalBuffer;
 	std::unique_ptr<RHI::Buffer> meshInstancesBuffer;
 	std::unique_ptr<RHI::Buffer> meshMaterialsBuffer;
@@ -19,7 +18,15 @@ class SceneGraphView {
 	std::vector<SceneMaterial> materials;
 	std::vector<SceneLight> lights;
 public:
-	SceneGraphView(RHI::Device* device, SceneGraph& scene) : scene(scene) {
+	struct FrameData {
+		SceneGraph* scene;
+		uint viewportWidth;
+		uint viewportHeight;
+		uint frameIndex;
+		uint frameFlags;
+		uint backBufferIndex;
+	};
+	SceneGraphView(RHI::Device* device) {
 		globalBuffer = std::make_unique<RHI::Buffer>(device, RHI::Resource::ResourceDesc::GetGenericBufferDesc(sizeof(SceneGlobals), sizeof(SceneGlobals)));
 		meshInstancesBuffer = std::make_unique<RHI::Buffer>(device, RHI::Resource::ResourceDesc::GetGenericBufferDesc(MAX_INSTANCE_COUNT * sizeof(SceneMeshInstance), sizeof(SceneMeshInstance)));				
 		meshMaterialsBuffer = std::make_unique<RHI::Buffer>(device, RHI::Resource::ResourceDesc::GetGenericBufferDesc(MAX_MATERIAL_COUNT * sizeof(SceneMaterial), sizeof(SceneMaterial)));
@@ -34,13 +41,12 @@ public:
 	auto const& get_SceneInstances() { return meshes; }
 	auto const& get_SceneMaterials() { return materials; }
 	auto const& get_SceneLights() { return lights; }
-	void set_frame_flag(uint flag) { stats.frameFlags = flag; }
-	void update(uint viewportWidth, uint viewportHeight, uint frameIndex) {
+	void update(FrameData frame) {
 		// updates for static mesh view	
 		// xxx skinned meshes 
 		meshes.clear(); materials.clear();
-		for (auto& mesh : scene.registry.storage<StaticMeshComponent>()) {
-			auto& asset = scene.assets.get<StaticMeshAsset>(mesh.mesh_resource);
+		for (auto& mesh : frame.scene->registry.storage<StaticMeshComponent>()) {
+			auto& asset = frame.scene->assets.get<StaticMeshAsset>(mesh.mesh_resource);
 			SceneMeshInstance sceneMesh{};					
 			AffineTransform transform = mesh.get_global_transform();
 			sceneMesh.transform = transform.Transpose();
@@ -64,11 +70,11 @@ public:
 				sceneMesh.lods[i].numMeshlets = asset.lods[i].numMeshlets;
 			}			
 			// materials
-			auto pMaterial = scene.try_get<MaterialComponet>(mesh.material);
+			auto pMaterial = frame.scene->try_get<MaterialComponet>(mesh.material);
 			if (pMaterial) {
 				SceneMaterial material;		
 				auto try_set_heap_handle = [&](auto handle, auto& dest) {
-					auto ptr = scene.assets.try_get_base_ptr<ImageAsset, SDRImageAsset>(handle);
+					auto ptr = frame.scene->assets.try_get_base_ptr<ImageAsset, SDRImageAsset>(handle);
 					if (ptr && ptr->textureSrv)
 						dest = ptr->textureSrv->descriptor.get_heap_handle();
 					else
@@ -94,14 +100,19 @@ public:
 		meshMaterialsBuffer->Update(materials.data(), ::size_in_bytes(materials), 0);
 		// lights
 		lights.clear();
-		for (auto& light : scene.registry.storage<LightComponent>()) {
+		for (auto& light : frame.scene->registry.storage<LightComponent>()) {
 			SceneLight sceneLight{};
 			AffineTransform transform = light.get_global_transform();
 			Vector3 translation = transform.Translation();
+			Vector3 direction = Vector3::Transform({ 0,-1,0 }, transform.Quaternion());
 			sceneLight.position.x = translation.x;
 			sceneLight.position.y = translation.y;
 			sceneLight.position.z = translation.z;
 			sceneLight.position.w = 1;
+			sceneLight.direction.x = direction.x;
+			sceneLight.direction.y = direction.y;
+			sceneLight.direction.z = direction.z;
+			sceneLight.direction.w = 1;
 			sceneLight.color = light.color;
 			sceneLight.type = (UINT)light.type;
 			sceneLight.intensity = light.intensity;
@@ -113,18 +124,20 @@ public:
 		stats.numMeshInstances = meshes.size();
 		stats.numLights = lights.size();
 		// scene camera
-		if (scene.registry.any_of<CameraComponent>(scene.active_camera)) {
-			auto& camera = scene.get<CameraComponent>(scene.active_camera);
+		if (frame.scene->registry.any_of<CameraComponent>(frame.scene->active_camera)) {
+			auto& camera = frame.scene->get<CameraComponent>(frame.scene->active_camera);
 			AffineTransform transform = camera.get_global_transform();
-			stats.camera = camera.get_struct(viewportWidth / (float)viewportHeight, transform);
+			stats.camera = camera.get_struct(frame.viewportWidth / (float)frame.viewportHeight, transform);
 		}
 		else {
 			LOG(ERROR) << "No active camera set!";
 		}
-		stats.frameIndex = frameIndex;
-		stats.frameDimension.x = viewportWidth;
-		stats.frameDimension.y = viewportHeight;
-		stats.sceneVersion = scene.get_version();
+		stats.frameIndex = frame.frameIndex;
+		stats.frameDimension.x = frame.viewportWidth;
+		stats.frameDimension.y = frame.viewportHeight;
+		stats.frameFlags = frame.frameFlags;
+		stats.backBufferIndex = frame.backBufferIndex;
+		stats.sceneVersion = frame.scene->get_version();
 		globalBuffer->Update(&stats, sizeof(stats), 0);
 	}
 };

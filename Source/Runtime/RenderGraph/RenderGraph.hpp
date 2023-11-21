@@ -22,12 +22,12 @@ struct RenderGraphPass {
 	friend class RenderGraph;
 private:
 	entt::entity rg_entity;
-public:
-	const wchar_t* name = nullptr;
 	// r/w/rws for Created resources
-	RgResources reads, writes, readwrites;	
+	RgResources reads, writes, readwrites, indirectArguments;	
 	// function callback for actual rendering work
 	RgFunction executes;
+public:
+	const wchar_t* name = nullptr;
 
 	RenderGraphPass(entt::entity entity, const wchar_t* name) : rg_entity(entity), name(name) {};
 	RenderGraphPass& write(RgHandle& resource) {
@@ -47,14 +47,19 @@ public:
 		reads.insert(resource);
 		return *this;
 	}
+	RenderGraphPass& indirect_argument(RgHandle resource) {
+		CHECK(!resource.is_imported());
+		indirectArguments.insert(resource);
+		return *this;
+	}
     RenderGraphPass& execute(RgFunction&& func) {
 		executes = std::move(func);
 		return *this;
 	}
 	bool has_execute() { return executes != nullptr; }
-	bool has_dependencies() { return reads.size() > 0 || readwrites.size() > 0; }
-	bool reads_from(RgHandle resource) { return reads.contains(resource) || readwrites.contains(resource); }
-	bool writes_to(RgHandle resource) { return writes.contains(resource); }
+	bool has_dependencies() { return reads.size() > 0 || readwrites.size() > 0 || indirectArguments.size() > 0; }
+	bool reads_from(RgHandle resource) { return reads.contains(resource) || readwrites.contains(resource) || indirectArguments.contains(resource); }
+	bool writes_to(RgHandle resource) { return writes.contains(resource) || readwrites.contains(resource); }
 };
 
 // DAG Graph for managing rendering work

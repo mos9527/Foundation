@@ -68,7 +68,7 @@ MRT ps_main(PSInput input)
         Texture2D normalMap = ResourceDescriptorHeap[material.normalMap];        
         N = decodeTangetNormalMap(normalMap.Sample(g_Sampler, input.uv).rgb, input.tangent, input.normal);
     }
-    output.Normal = float4(encodeSpheremapNormal(N), .0f, .0f);
+    output.Normal = float4(encodeSpheremapNormal(normalize(N)), .0f, .0f);
     output.Material = material.pbr;
     if (material.pbrMap != INVALID_HEAP_HANDLE)
     {

@@ -13,7 +13,7 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 			emplace_or_replace<RHI::Buffer>(handle, device, buffer.desc);
 			resource_dirty[handle] = true;
 			auto name = get<RHI::Buffer>(handle).GetName();
-			// DLOG(INFO) << "Rebuilt buffer " << wstring_to_utf8(name ? name : L"<unamed>");
+			DLOG(INFO) << "Rebuilt buffer " << wstring_to_utf8(name ? name : L"<unamed>");
 		}
 	}
 	for (auto& texture : rg_registry.storage<RgTexture>()) {
@@ -23,7 +23,7 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 			emplace_or_replace<RHI::Texture>(handle, device, texture.desc);
 			resource_dirty[handle] = true;
 			auto name = get<RHI::Texture>(handle).GetName();
-			// DLOG(INFO) << "Rebuilt texture " <<  wstring_to_utf8(name ? name : L"<unamed>");
+			DLOG(INFO) << "Rebuilt texture " <<  wstring_to_utf8(name ? name : L"<unamed>");
 		}
 	}
 	// resource views
@@ -36,8 +36,10 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 		switch (viewed_handle.type) {
 		case RgResourceType::Buffer:
 			ptr = viewed_handle.is_imported() ? graph.get_imported<RHI::Buffer>(viewed_handle) : &get<RHI::Buffer>(viewed_handle);
+			break;
 		case RgResourceType::Texture:
 			ptr = viewed_handle.is_imported() ? graph.get_imported<RHI::Texture>(viewed_handle) : &get<RHI::Texture>(viewed_handle);
+			break;
 		}
 		if (
 			!contains<view_type>(viewing_handle) || 
@@ -53,8 +55,10 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 					switch (viewed_counter_handle.type) {
 					case RgResourceType::Buffer:
 						counter_ptr = viewed_counter_handle.is_imported() ? graph.get_imported<RHI::Buffer>(viewed_counter_handle) : &get<RHI::Buffer>(viewed_counter_handle);
+						break;
 					case RgResourceType::Texture:
 						counter_ptr = viewed_counter_handle.is_imported() ? graph.get_imported<RHI::Texture>(viewed_counter_handle) : &get<RHI::Texture>(viewed_counter_handle);
+						break;
 					}
 				}
 				emplace_or_replace<view_type>(viewing_handle, ptr, counter_ptr, view.desc.viewDesc);
@@ -62,7 +66,7 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 			else {
 				emplace_or_replace<view_type>(viewing_handle, ptr, view.desc.viewDesc);
 			}
-			// DLOG(INFO) << "Rebuilt view #" << entt::to_integral(viewing_handle.entity) << ". Which views " << wstring_to_utf8(ptr->GetName() ? ptr->GetName() : L"<unamed>");
+			DLOG(INFO) << "Rebuilt view #" << entt::to_integral(viewing_handle.entity) << ". Which views " << wstring_to_utf8(ptr->GetName() ? ptr->GetName() : L"<unamed>");
 		}
 	};
 

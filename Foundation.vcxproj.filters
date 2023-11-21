@@ -108,6 +108,12 @@
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\DeferredLighting.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Runtime\Renderer\RenderPass\FFXSPD.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Runtime\Renderer\RenderPass\IndirectLODCull.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">
@@ -272,6 +278,12 @@
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\GBuffer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Runtime\Renderer\RenderPass\FFXSPD.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\Renderer\RenderPass\IndirectLODCull.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json">
@@ -286,7 +298,7 @@
     <None Include="Source\Runtime\Renderer\Shaders\Math.hlsli" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Runtime\Renderer\Shaders\InstanceCull.hlsl" />
+    <Text Include="Source\Runtime\Renderer\Shaders\IndirectLODCull.hlsl" />
     <Text Include="Source\Runtime\Renderer\Shaders\GBuffer.hlsl" />
     <Text Include="Source\Runtime\Renderer\Shaders\Shared.h" />
     <Text Include="Source\Runtime\Renderer\Shaders\Lighting.hlsl" />

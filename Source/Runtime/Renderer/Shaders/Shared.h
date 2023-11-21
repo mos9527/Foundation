@@ -26,6 +26,7 @@
 #define FRAME_FLAG_VIEW_ALBEDO (1 << 0)
 #define FRAME_FLAG_GBUFFER_ALBEDO_AS_LOD (1 << 1)
 #define FRAME_FLAG_DEBUG_VIEW_LOD (FRAME_FLAG_VIEW_ALBEDO | FRAME_FLAG_GBUFFER_ALBEDO_AS_LOD)
+#define FRAME_FLAG_WIREFRAME (1 << 2)
 #ifdef __cplusplus
 #include "../../../pch.hpp"
 #pragma pack(push, 4) // otherwise it's 8 on 64-bit systems
@@ -93,7 +94,8 @@ struct SceneGlobals // ! align for CB
     uint2 frameDimension;
 
     uint sceneVersion;
-    uint3 _pad2;
+    uint backBufferIndex;
+    uint2 _pad2;
 };
 struct SceneMeshLod
 {
@@ -132,11 +134,14 @@ struct SceneMaterial {
     float4 pbr;
     float4 emissive;
 };
+#define SCENE_LIGHT_TYPE_POINT 0
+#define SCENE_LIGHT_TYPE_DIRECTIONAL 1
 struct SceneLight {
     uint type;
     float intensity;
     float radius;
     float4 position;
+    float4 direction;
     float4 color;    
 };
 struct IndirectConstant

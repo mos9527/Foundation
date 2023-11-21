@@ -66,12 +66,21 @@ void main(uint2 DTid : SV_DispatchThreadID)
     {
         SceneLight light = g_Lights[i];
         // Spot lights
-        float3 Point2Light = light.position.xyz - P;
-        float distance = length(Point2Light);
-        float radius = light.radius;
-        float attenuation = max(min(1.0 - pow(distance / radius, 4.0), 1.0), 0.0) / pow(distance, 2.0);
+        float attenuation = 1.0f;
+        float3 L = splat3(0); 
+        if (light.type == SCENE_LIGHT_TYPE_DIRECTIONAL)
+        {
+            L = light.direction.xyz;
+        }
+        else
+        {            
+            float3 Point2Light = light.position.xyz - P;
+            L = normalize(Point2Light);        
+            float distance = length(Point2Light);
+            float radius = light.radius;
+            attenuation = max(min(1.0 - pow(distance / radius, 4.0), 1.0), 0.0) / pow(distance, 2.0);
+        }
         
-        float3 L = normalize(Point2Light);
         float3 H = normalize(L + V);
     
         float NoL = clampedDot(N, L);

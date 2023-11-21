@@ -80,14 +80,14 @@ public:
 };
 // From D3D12ExecuteIndirect
 template <typename T, typename U>
-const T GetAlignedSize(T size, U alignment)
+constexpr T GetAlignedSize(T size, U alignment)
 {
 	const T alignedSize = (size + alignment - 1) & ~(alignment - 1);
 	return alignedSize;
 }
 // An integer version of ceil(num / denom)
 template <typename T, typename U>
-const T DivRoundUp(T num, U denom)
+constexpr T DivRoundUp(T num, U denom)
 {
 	return (num + denom - 1) / denom;
 }
@@ -95,7 +95,7 @@ const T DivRoundUp(T num, U denom)
 // a separate 64K resource/heap for it. The counter must be aligned on 4K boundaries,
 // so we pad the command buffer (if necessary) such that the counter will be placed
 // at a valid location in the buffer.
-static inline const UINT AlignForUavCounter(UINT bufferSize)
+constexpr UINT AlignForUavCounter(UINT bufferSize)
 {
 	return GetAlignedSize(bufferSize, D3D12_UAV_COUNTER_PLACEMENT_ALIGNMENT);	
 }

@@ -10,12 +10,13 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 	PIXBeginEvent(cmd->GetNativeCommandList(), 0, L"RenderGraph Execution");
 	for (auto& layer : layers) {
 		// setup resource barriers
-		RgResources reads, writes, readwrites;
+		RgResources reads, writes, readwrites, indirectArgs;
 		for (auto entity : layer) {
 			RenderGraphPass& pass = registry.get<RenderGraphPass>(entity);
 			reads.insert(pass.reads.begin(), pass.reads.end());
 			writes.insert(pass.writes.begin(), pass.writes.end());
 			readwrites.insert(pass.readwrites.begin(), pass.readwrites.end());
+			indirectArgs.insert(pass.indirectArguments.begin(), pass.indirectArguments.end());
 		}
 		for (auto& read : reads) {
 			if (readwrites.contains(read)) continue;
@@ -53,6 +54,13 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 
 			CHECK(res->GetDesc().allowUnorderedAccess());
 			res->SetBarrier(cmd, ResourceState::UnorderedAccess);
+		}
+
+		for (auto& indirectArg : indirectArgs) {
+			auto res = get_as_resource(indirectArg);
+			if (!res) continue;
+
+			res->SetBarrier(cmd, ResourceState::IndirectArgument);
 		}
 		// all resources barriers & states are ready at this point		
 		PIXBeginEvent(cmd->GetNativeCommandList(), 0, L"RenderGraph Layer");

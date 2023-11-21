@@ -4,6 +4,13 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
 {
 	UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
 	RenderGraph rg(cache);
+	auto indirectCmds = rg.create<Buffer>(pass_IndirectCull.GetCountedIndirectCmdBufferDesc());
+	auto indirectCmdsUAV = rg.create<UnorderedAccessView>(pass_IndirectCull.GetCountedIndirectCmdBufferUAVDesc(indirectCmds));
+	auto indirectCullHandles = IndirectLODCullPass::IndirectLODCullPassHandles{
+		.indirectCmdBuffer = indirectCmds,
+		.indirectCmdBufferUAV = indirectCmdsUAV
+	};
+	pass_IndirectCull.insert(rg, sceneView, indirectCullHandles);
 	auto albedo = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
 		ResourceFormat::R8G8B8A8_UNORM, ResourceDimension::Texture2D,
 		width, height, 1, 1, 1, 0,
@@ -65,6 +72,8 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
 		.viewed = emissive
 	});
 	auto gbufferHandles = GBufferPass::GBufferPassHandles{
+		.indirectCommands = indirectCmds,
+		.indirectCommandsUAV = indirectCmdsUAV,
 		.depth = depth,
 		.albedo = albedo,
 		.normal = normal,

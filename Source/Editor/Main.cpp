@@ -35,18 +35,22 @@ int main(int argc, char* argv[]) {
     DefaultTaskThreadPool taskpool;
     AssetRegistry assets;
     SceneGraph scene{ assets };
-    SceneGraphView sceneView(&device, scene);
+    std::vector<SceneGraphView> sceneViews;
+    for (int i=0;i < swapchain.GetBackbufferCount();i++) 
+        sceneViews.emplace_back(&device);
     DeferredRenderer renderer(&device);
     
     scene.set_active_camera(scene.create_child_of<CameraComponent>(scene.get_root()));
     auto& camera = scene.get_active_camera();
     camera.set_name("Camera");
+    camera.localTransform = AffineTransform::CreateTranslation({ 0,0,-20 });
 
     auto lightEntity = scene.create_child_of<LightComponent>(scene.get_root());
     auto& light = scene.get<LightComponent>(lightEntity);
     light.set_name("Spot Light");
-    light.localTransform.Translation({0,1,0});
-    light.intensity = 1.0f;
+    light.localTransform = AffineTransform::CreateFromYawPitchRoll(0,-XM_PIDIV4,XM_PI);
+    light.type = LightComponent::LightType::Directional;
+    light.intensity = 3.0f;    
     light.color = { 1,1,1,1 };
     light.radius = 100.0f;
 
@@ -87,10 +91,10 @@ int main(int argc, char* argv[]) {
     taskpool.push([&] {        
         LOG(INFO) << "Loading scene";
         Assimp::Importer importer;
-#define GLTF_SAMPLE L"Sponza"
+#define GLTF_SAMPLE L"Custom" // DepthOcclusionTest
         path_t filepath = L"..\\Resources\\glTF-Sample-Models\\2.0\\" GLTF_SAMPLE "\\glTF\\" GLTF_SAMPLE ".gltf";
         std::string u8path = (const char*)filepath.u8string().c_str();
-        auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded);
+        auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace);
         scene.load_from_aiScene(imported, filepath.parent_path());        
         LOG(INFO) << "Requesting upload";
         CommandList* cmd = device.GetCommandList<CommandListType::Copy>();
@@ -166,10 +170,39 @@ int main(int argc, char* argv[]) {
         auto viewportSize = (ImGui::GetWindowContentRegionMax() - ImGui::GetWindowContentRegionMin());
         viewportWidth = viewportSize.x, viewportHeight = viewportSize.y;
 #endif
+#ifdef IMGUI_ENABLED        
+        if (ImGui::Begin("Scene Graph")) {
+            scene.OnImGui();
+            scene.update();
+            ImGui::End();
+        }
+#else
+        scene.update();
+#endif
+        UINT frameFlags = 0;
+#ifdef IMGUI_ENABLED
+        if (ImGui::Begin("Renderer")) {
+            static bool debug_ViewAlbedo = false, debug_ViewLod = false, debug_Wireframe = false;
+            ImGui::Checkbox("View LOD", &debug_ViewLod);
+            ImGui::Checkbox("View Albedo", &debug_ViewAlbedo);
+            ImGui::Checkbox("Wireframe", &debug_Wireframe);
+            if (debug_ViewAlbedo) frameFlags |= FRAME_FLAG_VIEW_ALBEDO;
+            if (debug_ViewLod) frameFlags |= FRAME_FLAG_DEBUG_VIEW_LOD;
+            if (debug_Wireframe) frameFlags |= FRAME_FLAG_WIREFRAME;
+            ImGui::End();
+        }
+#endif
         ShaderResourceView* pSrv = nullptr;
         if (upload.IsCompleted()) {
-            sceneView.update(viewportWidth, viewportHeight, swapchain.GetFrameIndex());
-            pSrv = renderer.Render(&sceneView);
+            sceneViews[bbIndex].update(SceneGraphView::FrameData{
+                .scene = &scene,
+                .viewportWidth = viewportWidth,
+                .viewportHeight = viewportHeight,
+                .frameIndex = swapchain.GetFrameIndex(),
+                .frameFlags = frameFlags,
+                .backBufferIndex = bbIndex
+            });
+            pSrv = renderer.Render(&sceneViews[bbIndex]);
         }
         else {
 #ifdef IMGUI_ENABLED
@@ -187,27 +220,6 @@ int main(int argc, char* argv[]) {
         if (viewport_Begin) ImGui::End(); // Viewport
 #else        
         // xxx blit image to backbuffer
-#endif
-#ifdef IMGUI_ENABLED        
-        if (ImGui::Begin("Scene Graph")) {
-            scene.OnImGui();
-            scene.update();
-            ImGui::End();
-        }       
-#else
-        scene.update();
-#endif
-#ifdef IMGUI_ENABLED
-        if (ImGui::Begin("Renderer")) {
-            static bool debug_ViewAlbedo = false, debug_ViewLod = false;            
-            ImGui::Checkbox("View LOD", &debug_ViewLod);
-            ImGui::Checkbox("View Albedo", &debug_ViewAlbedo);
-            UINT frameFlags = 0;
-            if (debug_ViewAlbedo) frameFlags |= FRAME_FLAG_VIEW_ALBEDO;
-            if (debug_ViewLod) frameFlags = FRAME_FLAG_DEBUG_VIEW_LOD;
-            sceneView.set_frame_flag(frameFlags);
-            ImGui::End();
-        }
 #endif
 #ifdef IMGUI_ENABLED
         ImGui::End(); // DockSpace
