@@ -1,15 +1,17 @@
 #pragma once
 #include "../RHI/RHI.hpp"
 enum class RgResourceType {
-	Unknown,
-	Dummy,
-	Buffer,
-	Texture,
-	ResourceViewSRV,
-	ResourceViewUAV,
-	ResourceViewRTV,
-	ResourceViewDSV
+	Unknown = 0,
+	Dummy = 1,
+	Buffer = 2,
+	Texture = 3,
+	ResourceView = 0xf0,
+	ResourceViewSRV = 0xf1,
+	ResourceViewUAV = 0xf2,
+	ResourceViewRTV = 0xf3,
+	ResourceViewDSV = 0xf4
 };
+DEFINE_ENUM_FLAG_OPERATORS(RgResourceType);
 enum class RgResourceFlag {
 	Imported,
 	Created
@@ -17,16 +19,20 @@ enum class RgResourceFlag {
 
 struct RgHandle {
 	uint version;
-	RgResourceType type;
-	entt::entity entity = entt::tombstone; // entity within RenderGraph's registry. indexes `rg_handle`. may index `rg_resource` deriviatives
+	RgResourceType type; 
+	entt::entity entity = entt::tombstone; // entity within RenderGraph's registry. indexes `RgHandle`. may index `RgResource`
 
 	inline operator entt::entity() const { return entity; }
-	friend bool operator==(const RgHandle& lhs, const RgHandle& rhs) { return lhs.entity == rhs.entity; }
+	friend bool operator==(const RgHandle& lhs, const RgHandle& rhs) { 
+		// since each entity has only one assigned type, we don't compare type since entity comparision will suffice
+		// this also applies to the hash function
+		return lhs.entity == rhs.entity && lhs.version == rhs.version;
+	}
 	inline bool is_valid() { return entity != entt::tombstone; }
 	inline void invalidate() { entity = entt::tombstone; }
 };
 template<> struct std::hash<RgHandle> {
-	inline entt::entity operator()(const RgHandle& resource) const { return resource; }
+	inline uint64_t operator()(const RgHandle& resource) const { return entt::to_integral(resource.entity) | ((uint64_t)resource.version << 32); }
 };
 
 struct RgResource {

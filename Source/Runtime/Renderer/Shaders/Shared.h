@@ -84,6 +84,7 @@ struct SceneCamera // ! align for CB
 struct SceneGlobals // ! align for CB
 {
     SceneCamera camera;
+    SceneCamera cameraPrev; // previous frame
 
     uint numMeshInstances;
     uint numLights;
@@ -96,6 +97,9 @@ struct SceneGlobals // ! align for CB
     uint sceneVersion;
     uint backBufferIndex;
     uint2 _pad2;
+
+    float frameTimePrev;
+    float3 _pad3;
 };
 struct SceneMeshLod
 {
@@ -115,6 +119,9 @@ struct SceneMeshInstance
 
     matrix transform; // 16 * 4
     matrix transformInvTranspose; // xxx transform is sufficent for affine transformations
+
+    matrix transformPrev; // again, previous frame
+    matrix transformInvTransposePrev; 
 
     BoundingBox boundingBox;
     BoundingSphere boundingSphere;    

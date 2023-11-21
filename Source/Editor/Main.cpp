@@ -200,7 +200,8 @@ int main(int argc, char* argv[]) {
                 .viewportHeight = viewportHeight,
                 .frameIndex = swapchain.GetFrameIndex(),
                 .frameFlags = frameFlags,
-                .backBufferIndex = bbIndex
+                .backBufferIndex = bbIndex,
+                .frameTimePrev = ImGui::GetIO().DeltaTime
             });
             pSrv = renderer.Render(&sceneViews[bbIndex]);
         }

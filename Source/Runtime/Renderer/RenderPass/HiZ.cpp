@@ -22,11 +22,9 @@ HierarchalDepthPass::HierarchalDepthPass(Device* device) : spdPass(device) {
 }
 
 RenderGraphPass& HierarchalDepthPass::insert(RenderGraph& rg, SceneGraphView* sceneView, HierarchalDepthPassHandles& handles) {
-	auto dummy = rg.create<Dummy>({}); // Ensure HiZ pass has order from SampleToTexture -> Downsample
 	rg.add_pass(L"Hierarchal Depth Sample To Texture")
 		.read(handles.depth)
 		.readwrite(handles.hizTexture)
-		.write(dummy)
 		.execute([=](RgContext& ctx) -> void {
 			auto* r_depth = ctx.graph->get<Texture>(handles.depth);
 			auto* r_depth_srv = ctx.graph->get<ShaderResourceView>(handles.depthSRV);
@@ -48,5 +46,5 @@ RenderGraphPass& HierarchalDepthPass::insert(RenderGraph& rg, SceneGraphView* sc
 		.dstTexture = handles.hizTexture,
 		.dstMipUAVs = handles.hizUAVs
 	};
-	return spdPass.insert(rg, sceneView, spdHandles).read(dummy);
+	return spdPass.insert(rg, sceneView, spdHandles);
 }

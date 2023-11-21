@@ -33,12 +33,8 @@ FFXSPDPass::FFXSPDPass(RHI::Device* device) {
 }
 RenderGraphPass& FFXSPDPass::insert(RenderGraph& rg, SceneGraphView* sceneView, FFXSPDPassHandles& handles) {
 	RenderGraphPass& pass = rg.add_pass(L"FFX SPD Downsample");
-	if (handles.srcTexture == handles.dstTexture)
-		pass.readwrite(handles.dstTexture);
-	else {
-		pass.read(handles.srcTexture);
-		pass.readwrite(handles.dstTexture);
-	}
+	pass.read(handles.srcTexture);
+	pass.readwrite(handles.dstTexture);
 	return pass.execute([=](RgContext& ctx) -> void {			
 			auto* r_dst_texture = ctx.graph->get<Texture>(handles.dstTexture);
 			auto* r_src_texture = ctx.graph->get<Texture>(handles.srcTexture);

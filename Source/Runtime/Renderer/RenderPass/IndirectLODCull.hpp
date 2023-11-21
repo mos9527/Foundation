@@ -10,16 +10,26 @@ class IndirectLODCullPass {
 	std::unique_ptr<RHI::RootSignature> depthSampleRS;
 	std::unique_ptr<RHI::PipelineState> depthSamplePSO;
 
-	std::unique_ptr<RHI::Shader> cullPassCS;
+	std::unique_ptr<RHI::Shader> cullPassEarlyCS, cullPassLateCS;
 	std::unique_ptr<RHI::RootSignature> cullPassRS;
-	std::unique_ptr<RHI::PipelineState> cullPassPSO;
+	std::unique_ptr<RHI::PipelineState> cullPassEarlyPSO, cullPassLatePSO;
 
+	void insert_execute(RenderGraphPass& pass, SceneGraphView* sceneView, auto& handles);
 public:
-	struct IndirectLODCullPassHandles {
+	struct IndirectLODEarlyCullPassHandles {
+		RgHandle& visibilityBuffer;
+
+		RgHandle& indirectCmdBuffer; // see GetCountedIndirectCmdBufferDesc
+		RgHandle& indirectCmdBufferUAV; // see GetCountedIndirectCmdBufferUAVDesc		
+	};
+	struct IndirectLODLateCullPassHandles {
+		RgHandle& visibilityBuffer;
+
 		RgHandle& indirectCmdBuffer; // see GetCountedIndirectCmdBufferDesc
 		RgHandle& indirectCmdBufferUAV; // see GetCountedIndirectCmdBufferUAVDesc
-		// xxx reading culled mesh indices from command buffer seems like a hack...is it bad though?
-		RgHandle& HiZ;
+
+		RgHandle& hizTexture;
+		RgHandle& hizSRV; // must covers all mips
 	};
 	static const RHI::Resource::ResourceDesc GetCountedIndirectCmdBufferDesc() {
 		return RHI::Resource::ResourceDesc::GetGenericBufferDesc(
@@ -34,5 +44,6 @@ public:
 		};
 	}
 	IndirectLODCullPass(RHI::Device* device);
-	RenderGraphPass& insert(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODCullPassHandles& handles);
+	RenderGraphPass& insert_earlycull(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODEarlyCullPassHandles& handles);
+	RenderGraphPass& insert_latecull(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODLateCullPassHandles& handles);
 };

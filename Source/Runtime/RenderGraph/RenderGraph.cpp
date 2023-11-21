@@ -15,7 +15,6 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 			RenderGraphPass& pass = registry.get<RenderGraphPass>(entity);
 			/* reads */
 			reads.insert(pass.reads.begin(), pass.reads.end());
-			reads.insert(pass.imports.begin(), pass.imports.end());
 			/* writes */
 			writes.insert(pass.writes.begin(), pass.writes.end());
 			/* readwrites */

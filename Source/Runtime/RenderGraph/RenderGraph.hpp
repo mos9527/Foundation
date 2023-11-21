@@ -24,35 +24,32 @@ private:
 	entt::entity rg_entity;
 	RgResources reads, writes, readwrites;
 	// r/w/rws for Created resources
-	RgResources imports; 
-	// What's different from Created resources is that...
-	// * imports do not participate in dependency resolution 
-	// * imports cannot have write-barriers set on. Though reads should work on them.
 	RgFunction executes;
 	// function callback for actual rendering work
+	static inline bool check_handle(RgHandle& resource) {
+		return (resource.type == RgResourceType::Texture || resource.type == RgResourceType::Buffer || resource.type == RgResourceType::Dummy);
+	}
 public:
 	const wchar_t* name = nullptr;
-
 	RenderGraphPass(entt::entity entity, const wchar_t* name) : rg_entity(entity), name(name) {};
 	RenderGraphPass& write(RgHandle& resource) {
+		CHECK(check_handle(resource));
 		resource.version++;
 		writes.insert(resource); 
 		return *this; 
 	}
 	RenderGraphPass& readwrite(RgHandle& resource) {
+		CHECK(check_handle(resource));
 		resource.version++;
 		readwrites.insert(resource);
 		return *this;
 	}
 	RenderGraphPass& read(RgHandle& resource) {
+		CHECK(check_handle(resource));
 		reads.insert(resource);
 		return *this;
 	}
-	RenderGraphPass& import(RgHandle& resource) {
-		imports.insert(resource);
-		return *this;
-	}
-    RenderGraphPass& execute(RgFunction&& func) {
+    RenderGraphPass& execute(RgFunction&& func) {		
 		executes = std::move(func);
 		return *this;
 	}
@@ -60,7 +57,6 @@ public:
 	bool has_dependencies() { return reads.size() > 0; }
 	bool reads_from(RgHandle resource) { return reads.contains(resource); }
 	bool writes_to(RgHandle resource) { return writes.contains(resource) || readwrites.contains(resource); }
-	bool imports_from(RgHandle resource) { return imports.contains(resource); }
 };
 
 // DAG Graph for managing rendering work
@@ -104,7 +100,29 @@ class RenderGraph : DAG<entt::entity> {
 		}
 		// seperate passes into layers		
 		auto topsorted = topological_sort();
-		CHECK(topsorted.size() && "Cyclic dependency in RenderGraph. Consider using import().");
+		if (!topsorted.size() && graph.size()) {
+			// cyclic dependency
+			LOG(ERROR) << "Cyclic dependency in RenderGraph. Consider using import().";
+			LOG(INFO) << "Current Dependency Graph";
+			table_type<bool> visited;
+			auto dfs_nodes = [&](auto& func, vertex current, uint depth) -> void {
+				auto& pass = registry.get<RenderGraphPass>(current);
+				std::string prefix; for (uint i = 0; i < depth; i++) prefix += '\t';
+				LOG(INFO) << prefix << wstring_to_utf8(pass.name);
+				if (visited[current]) {
+					LOG(ERROR) << prefix << " ^ Potential loop here.";
+					return;
+				}
+				visited[current] = true;
+				for (auto child : graph[current])
+					func(func, child, depth+1);
+			};
+			for (auto& [vtx, tree] : graph)
+				dfs_nodes(dfs_nodes, vtx, 0);
+#ifdef _DEBUG
+			__debugbreak();
+#endif
+		}		
 		auto depths = get_depths(topsorted);
 		uint max_depth = 0;
 		for (auto& [node, depth] : depths) max_depth = std::max(max_depth, depth);
@@ -124,7 +142,7 @@ public:
 	}
 	// created resources -> stored as handles
 	// note: resource object itself is cached. see RenderGraphResourceCache	
-	template<RgDefinedResource T> RgHandle create(RgResourceTraits<T>::desc_type const& desc){
+	template<RgDefinedResource T> RgHandle& create(RgResourceTraits<T>::desc_type const& desc){
 		using traits = RgResourceTraits<T>;
 		auto entity = registry.create();
 		auto resource = traits::type();		
@@ -135,20 +153,19 @@ public:
 			.version = 0,
 			.type = traits::type_enum,			
 			.entity = entity
-		};
-		registry.emplace<RgHandle>(entity, handle);
-		return handle;
+		};		
+		return registry.emplace<RgHandle>(entity, handle);;
 	};
 	// retrives imported / created RHI object pointer
-	template<RgDefinedResource T> T* get(RgHandle handle) {
-		return &cache.get<T>(handle);
+	template<RgDefinedResource T> T* get(RgHandle handle) {		
+		return cache.get<T>(handle);
 	}
 	// retrives imported / created RHI object as Resource*
 	// if not convertible, nullptr is returned
 	// * applicalbe to Buffer & Texture
 	RHI::Resource* get_as_resource(RgHandle handle) {
 		if (handle.type == RgResourceType::Buffer) return static_cast<RHI::Resource*>(get<RHI::Buffer>(handle));
-		if (handle.type == RgResourceType::Texture) return  static_cast<RHI::Resource*>(get<RHI::Texture>(handle));
+		if (handle.type == RgResourceType::Texture) return static_cast<RHI::Resource*>(get<RHI::Texture>(handle));
 		return nullptr;
 	}
 	RenderGraphPass& get_pass(entt::entity pass) {

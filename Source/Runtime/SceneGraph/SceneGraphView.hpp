@@ -25,6 +25,7 @@ public:
 		uint frameIndex;
 		uint frameFlags;
 		uint backBufferIndex;
+		float frameTimePrev;
 	};
 	SceneGraphView(RHI::Device* device) {
 		globalBuffer = std::make_unique<RHI::Buffer>(device, RHI::Resource::ResourceDesc::GetGenericBufferDesc(sizeof(SceneGlobals), sizeof(SceneGlobals)));
@@ -49,6 +50,8 @@ public:
 			auto& asset = frame.scene->assets.get<StaticMeshAsset>(mesh.mesh_resource);
 			SceneMeshInstance sceneMesh{};					
 			AffineTransform transform = mesh.get_global_transform();
+			sceneMesh.transformPrev = sceneMesh.transform;
+			sceneMesh.transformInvTransposePrev = sceneMesh.transformInvTransposePrev;
 			sceneMesh.transform = transform.Transpose();
 			sceneMesh.transformInvTranspose = transform.Invert()/*.Transpose().Transpose()*/;
 			sceneMesh.vertices = D3D12_VERTEX_BUFFER_VIEW{
@@ -126,7 +129,8 @@ public:
 		// scene camera
 		if (frame.scene->registry.any_of<CameraComponent>(frame.scene->active_camera)) {
 			auto& camera = frame.scene->get<CameraComponent>(frame.scene->active_camera);
-			AffineTransform transform = camera.get_global_transform();
+			AffineTransform transform = camera.get_global_transform();			
+			stats.cameraPrev = stats.camera;
 			stats.camera = camera.get_struct(frame.viewportWidth / (float)frame.viewportHeight, transform);
 		}
 		else {
@@ -137,6 +141,7 @@ public:
 		stats.frameDimension.y = frame.viewportHeight;
 		stats.frameFlags = frame.frameFlags;
 		stats.backBufferIndex = frame.backBufferIndex;
+		stats.frameTimePrev = frame.frameTimePrev;
 		stats.sceneVersion = frame.scene->get_version();
 		globalBuffer->Update(&stats, sizeof(stats), 0);
 	}

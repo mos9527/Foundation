@@ -2,27 +2,27 @@
 
 void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 	auto& rg_registry = graph.registry;
-	std::unordered_map<RgHandle, bool> resource_dirty;
+	std::unordered_map<entt::entity, bool> resource_dirty;
 	// imported resources are left as is since we'd expect them to be usable at all times within the registry	
 	// created resources may mutate over different graph iterations (i.e. changed buffer sizes) so we'd watch them here:
 	for (auto& buffer : rg_registry.storage<RgBuffer>()) {
-		auto& handle = rg_registry.get<RgHandle>(buffer.entity);		
-		if (!contains<RHI::Buffer>(handle) || get<RHI::Buffer>(handle).GetDesc() != buffer.desc)
+		auto handle = buffer.entity;
+		if (!contains<RHI::Buffer>(handle) || get<RHI::Buffer>(handle)->GetDesc() != buffer.desc)
 		{
 			// rebuild : resource is dirty
 			emplace_or_replace<RHI::Buffer>(handle, device, buffer.desc);
 			resource_dirty[handle] = true;
-			auto name = get<RHI::Buffer>(handle).GetName();
+			auto name = get<RHI::Buffer>(handle)->GetName();
 			DLOG(INFO) << "Rebuilt buffer " << wstring_to_utf8(name ? name : L"<unamed>");
 		}
 	}
 	for (auto& texture : rg_registry.storage<RgTexture>()) {
-		auto& handle = rg_registry.get<RgHandle>(texture.entity);
-		if (!contains<RHI::Texture>(handle) || get<RHI::Texture>(handle).GetDesc() != texture.desc) {
+		auto handle = texture.entity;
+		if (!contains<RHI::Texture>(handle) || get<RHI::Texture>(handle)->GetDesc() != texture.desc) {
 			device->Wait();			
 			emplace_or_replace<RHI::Texture>(handle, device, texture.desc);
 			resource_dirty[handle] = true;
-			auto name = get<RHI::Texture>(handle).GetName();
+			auto name = get<RHI::Texture>(handle)->GetName();
 			DLOG(INFO) << "Rebuilt texture " <<  wstring_to_utf8(name ? name : L"<unamed>");
 		}
 	}
@@ -35,15 +35,15 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 		RHI::Resource* ptr = nullptr;
 		switch (viewed_handle.type) {
 		case RgResourceType::Buffer:
-			ptr = &get<RHI::Buffer>(viewed_handle);
+			ptr = get<RHI::Buffer>(viewed_handle);
 			break;
 		case RgResourceType::Texture:
-			ptr = &get<RHI::Texture>(viewed_handle);
+			ptr = get<RHI::Texture>(viewed_handle);
 			break;
 		}
 		if (
 			!contains<view_type>(viewing_handle) || 
-			get<view_type>(viewing_handle).GetDesc() != view.desc.viewDesc ||			
+			get<view_type>(viewing_handle)->GetDesc() != view.desc.viewDesc ||
 			resource_dirty.find(viewed_handle) != resource_dirty.end()
 		) {
 			// rebuild : view (or resource) is dirty			
@@ -54,10 +54,10 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 					auto& viewed_counter_handle = rg_registry.get<RgHandle>(view.desc.viewedCounter);
 					switch (viewed_counter_handle.type) {
 					case RgResourceType::Buffer:
-						counter_ptr = &get<RHI::Buffer>(viewed_counter_handle);
+						counter_ptr = get<RHI::Buffer>(viewed_counter_handle);
 						break;
 					case RgResourceType::Texture:
-						counter_ptr = &get<RHI::Texture>(viewed_counter_handle);
+						counter_ptr = get<RHI::Texture>(viewed_counter_handle);
 						break;
 					}
 				}

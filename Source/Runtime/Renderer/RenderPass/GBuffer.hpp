@@ -2,10 +2,6 @@
 #include "RenderPass.hpp"
 
 class GBufferPass {
-	std::unique_ptr<RHI::Shader> gBufferVS, gBufferPS;
-	std::unique_ptr<RHI::RootSignature> gBufferRS;
-	std::unique_ptr<RHI::PipelineState> gBufferPSO, gBufferPSOWireframe;
-	std::unique_ptr<RHI::CommandSignature> gBufferIndirectCommandSig;
 public:
 	struct GBufferPassHandles {
 		RgHandle& indirectCommands;
@@ -25,6 +21,16 @@ public:
 		RgHandle& material_rtv;
 		RgHandle& emissive_rtv;
 	};
+private:
+	std::unique_ptr<RHI::Shader> gBufferVS, gBufferPS;
+	std::unique_ptr<RHI::RootSignature> gBufferRS;
+	std::unique_ptr<RHI::PipelineState> gBufferPSO, gBufferPSOWireframe;
+	std::unique_ptr<RHI::CommandSignature> gBufferIndirectCommandSig;
+
+	void insert_execute(RenderGraphPass& pass, SceneGraphView* sceneView, GBufferPassHandles& handles);
+public:
+
 	GBufferPass(RHI::Device* device);
-	RenderGraphPass& insert(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles& handles);
+	RenderGraphPass& insert_earlydraw(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles& handles);
+	RenderGraphPass& insert_latedraw(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles& handles);
 };

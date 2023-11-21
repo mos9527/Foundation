@@ -11,7 +11,7 @@ class HierarchalDepthPass {
 	FFXSPDPass spdPass;
 public:
 	struct HierarchalDepthPassHandles {
-		RgHandle& depth; // imported. depth from previous frame
+		RgHandle& depth; 
 		RgHandle& depthSRV;
 
 		RgHandle& hizTexture;
