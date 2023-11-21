@@ -31,7 +31,7 @@ FFXSPDPass::FFXSPDPass(RHI::Device* device) {
 	cmd->End();
 	cmd->Execute().Wait();	
 }
-RenderGraphPass& FFXSPDPass::insert(RenderGraph& rg, SceneGraphView* sceneView, FFXSPDPassHandles& handles) {
+RenderGraphPass& FFXSPDPass::insert(RenderGraph& rg, SceneGraphView* sceneView, FFXSPDPassHandles&& handles) {
 	RenderGraphPass& pass = rg.add_pass(L"FFX SPD Downsample");
 	pass.read(handles.srcTexture);
 	pass.readwrite(handles.dstTexture);

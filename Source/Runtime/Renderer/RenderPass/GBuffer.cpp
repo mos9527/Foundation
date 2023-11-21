@@ -59,7 +59,7 @@ GBufferPass::GBufferPass(Device* device) {
 	);
 }
 
-void GBufferPass::insert_execute(RenderGraphPass& pass, SceneGraphView* sceneView, GBufferPassHandles& handles) {
+void GBufferPass::insert_execute(RenderGraphPass& pass, SceneGraphView* sceneView, GBufferPassHandles&& handles) {
 	pass.execute([=](RgContext& ctx) -> void {
 		UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
 		// fetches from registry
@@ -140,19 +140,19 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneGraphView* sceneVie
 	});
 }
 // see IndirectLODCull
-RenderGraphPass& GBufferPass::insert_earlydraw(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles& handles) {
+RenderGraphPass& GBufferPass::insert_earlydraw(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles&& handles) {
 	auto& pass = rg.add_pass(L"GBuffer Early Generation")
 		.read(handles.indirectCommands)
 		.write(handles.depth)
 		.write(handles.albedo).write(handles.normal).write(handles.material).write(handles.emissive);
-	insert_execute(pass, sceneView, handles);
+	insert_execute(pass, sceneView, std::move(handles));
 	return pass;
 }
-RenderGraphPass& GBufferPass::insert_latedraw(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles& handles) {
+RenderGraphPass& GBufferPass::insert_latedraw(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles&& handles) {
 	auto& pass = rg.add_pass(L"GBuffer Late Generation")
 		.read(handles.indirectCommands)
 		.write(handles.depth)
 		.write(handles.albedo).write(handles.normal).write(handles.material).write(handles.emissive);
-	insert_execute(pass, sceneView, handles);
+	insert_execute(pass, sceneView, std::move(handles));
 	return pass;
 }

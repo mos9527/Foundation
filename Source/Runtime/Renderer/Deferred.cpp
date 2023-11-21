@@ -112,16 +112,22 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
 		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R32_FLOAT, 0,Resource::ResourceDesc::numMipsOfDimension(width, height)),
 		.viewed = hiz_buffer
 	});
+	std::vector<RgHandle> hiz_uavs;
+	for (uint i = 0; i < Resource::ResourceDesc::numMipsOfDimension(width, height); i++)
+		hiz_uavs.push_back(rg.create<UnorderedAccessView>({
+			.viewDesc = UnorderedAccessViewDesc::GetTexture2DDesc(ResourceFormat::R32_FLOAT, i,0),
+			.viewed = hiz_buffer
+		}));	
 	auto& fb_srv = rg.create<ShaderResourceView>({
 		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R8G8B8A8_UNORM, 0, 1),
 		.viewed = frameBuffer
 	});
-	IndirectLODCullPass::IndirectLODEarlyCullPassHandles earlyCullHandles{
+	auto& p1 = pass_IndirectCull.insert_earlycull(rg, sceneView, {
 		.visibilityBuffer = instanceVisibility,
 		.indirectCmdBuffer = indirectCmds,
 		.indirectCmdBufferUAV = indirectCmdsUAV
-	};
-	auto gbufferEarlyHandles = GBufferPass::GBufferPassHandles{
+	});
+	auto& p2 = pass_GBuffer.insert_earlydraw(rg, sceneView, {
 		.indirectCommands = indirectCmds,
 		.indirectCommandsUAV = indirectCmdsUAV,
 		.depth = depth,
@@ -134,26 +140,21 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
 		.normal_rtv = normal_rtv,
 		.material_rtv = material_rtv,
 		.emissive_rtv = emissive_rtv
-	};
-	HierarchalDepthPass::HierarchalDepthPassHandles hizHandles {
+	});
+	auto& p3 = pass_HiZ.insert(rg, sceneView, {
 		.depth = depth,
 		.depthSRV = depth_srv,
-		.hizTexture = hiz_buffer
-	};
-	for (uint i = 0; i < Resource::ResourceDesc::numMipsOfDimension(width, height); i++) {
-		hizHandles.hizUAVs.push_back(rg.create<UnorderedAccessView>({
-			.viewDesc = UnorderedAccessViewDesc::GetTexture2DDesc(ResourceFormat::R32_FLOAT, i,0),
-			.viewed = hiz_buffer
-		}));
-	}	
-	IndirectLODCullPass::IndirectLODLateCullPassHandles lateCullHandles{
+		.hizTexture = hiz_buffer,
+		.hizUAVs = hiz_uavs
+	});
+	auto& p4 = pass_IndirectCull.insert_latecull(rg, sceneView, {
 		.visibilityBuffer = instanceVisibility,
 		.indirectCmdBuffer = indirectCmds,
 		.indirectCmdBufferUAV = indirectCmdsUAV,
 		.hizTexture = hiz_buffer,
 		.hizSRV = hiz_srv
-	};
-	auto gbufferLateHandles = GBufferPass::GBufferPassHandles{
+	});
+	auto& p5 = pass_GBuffer.insert_latedraw(rg, sceneView, {
 		.indirectCommands = indirectCmds,
 		.indirectCommandsUAV = indirectCmdsUAV,
 		.depth = depth,
@@ -166,8 +167,8 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
 		.normal_rtv = normal_rtv,
 		.material_rtv = material_rtv,
 		.emissive_rtv = emissive_rtv
-	};
-	auto lightingHandles = DeferredLightingPass::DeferredLightingPassHandles{
+	});
+	auto& p6 = pass_Lighting.insert(rg, sceneView, {
 		.frameBuffer = frameBuffer,
 		.depth = depth,
 		.albedo = albedo,
@@ -180,16 +181,7 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
 		.material_srv = material_srv,
 		.emissive_srv = emissive_srv,
 		.fb_uav = fb_uav
-	};
-	// xxx ugh this is not pretty to look at
-	// maybe let's put these handles into the argument stack instead?
-	auto& p1 = pass_IndirectCull.insert_earlycull(rg, sceneView, earlyCullHandles);
-	auto& p2 = pass_GBuffer.insert_earlydraw(rg, sceneView, gbufferEarlyHandles);
-	auto& p3 = pass_HiZ.insert(rg, sceneView, hizHandles);
-	auto& p4 = pass_IndirectCull.insert_latecull(rg, sceneView, lateCullHandles);
-	auto& p5 = pass_GBuffer.insert_latedraw(rg, sceneView, gbufferLateHandles);
-	auto& p6 = pass_Lighting.insert(rg, sceneView, lightingHandles);
-
+	});
 	rg.get_epilogue_pass().read(frameBuffer);
 	rg.execute(device->GetCommandList<CommandListType::Direct>());
 	return rg.get<ShaderResourceView>(fb_srv);

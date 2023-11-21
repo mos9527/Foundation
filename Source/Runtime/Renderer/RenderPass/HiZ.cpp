@@ -21,13 +21,15 @@ HierarchalDepthPass::HierarchalDepthPass(Device* device) : spdPass(device) {
 	));
 }
 
-RenderGraphPass& HierarchalDepthPass::insert(RenderGraph& rg, SceneGraphView* sceneView, HierarchalDepthPassHandles& handles) {
+RenderGraphPass& HierarchalDepthPass::insert(RenderGraph& rg, SceneGraphView* sceneView, HierarchalDepthPassHandles&& handles) {
 	rg.add_pass(L"Hierarchal Depth Sample To Texture")
 		.read(handles.depth)
 		.readwrite(handles.hizTexture)
 		.execute([=](RgContext& ctx) -> void {
 			auto* r_depth = ctx.graph->get<Texture>(handles.depth);
 			auto* r_depth_srv = ctx.graph->get<ShaderResourceView>(handles.depthSRV);
+			auto* r_hiz = ctx.graph->get<Texture>(handles.hizTexture);
+			CHECK(handles.hizUAVs.size() == r_hiz->GetDesc().mipLevels);
 			auto* r_hiz_uav = ctx.graph->get<UnorderedAccessView>(handles.hizUAVs[0]);
 			DepthSampleToTextureConstant constants{
 				.depthSRVHeapIndex = r_depth_srv->descriptor.get_heap_handle(),
@@ -41,10 +43,9 @@ RenderGraphPass& HierarchalDepthPass::insert(RenderGraph& rg, SceneGraphView* sc
 			native->SetComputeRootConstantBufferView(0, depthSampleConstants->GetGPUAddress());
 			native->Dispatch(DivRoundUp(constants.dimensions.x, RENDERER_FULLSCREEN_THREADS), DivRoundUp(constants.dimensions.y, RENDERER_FULLSCREEN_THREADS), 1);
 		});
-	FFXSPDPass::FFXSPDPassHandles spdHandles{
+	return spdPass.insert(rg, sceneView, {
 		.srcTexture = handles.hizTexture,
 		.dstTexture = handles.hizTexture,
 		.dstMipUAVs = handles.hizUAVs
-	};
-	return spdPass.insert(rg, sceneView, spdHandles);
+	});
 }

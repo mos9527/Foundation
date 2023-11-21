@@ -19,5 +19,5 @@ public:
 	};
 	
 	HierarchalDepthPass(RHI::Device* device);
-	RenderGraphPass& insert(RenderGraph& rg, SceneGraphView* sceneView, HierarchalDepthPassHandles& handles);
+	RenderGraphPass& insert(RenderGraph& rg, SceneGraphView* sceneView, HierarchalDepthPassHandles&& handles);
 };

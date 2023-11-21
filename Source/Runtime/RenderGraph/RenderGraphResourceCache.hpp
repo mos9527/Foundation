@@ -35,7 +35,7 @@ public:
 	}
 	template<RgDefinedResource T> T* get(entt::entity handle) {
 		T* ptr = storage<T>()[handle].get();
-		CHECK(ptr && "Resource does not exist.");
+		CHECK(ptr && "Resource does not exist. Did you read from the cache before RenderGraph's execute()?");
 		return ptr;
 	}
 	RenderGraphResourceCache() {};

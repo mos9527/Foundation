@@ -16,5 +16,5 @@ public:
 		std::vector<RgHandle> dstMipUAVs;
 	};
 	FFXSPDPass(RHI::Device* device);
-	RenderGraphPass& insert(RenderGraph& rg, SceneGraphView* sceneView, FFXSPDPassHandles& handles);
+	RenderGraphPass& insert(RenderGraph& rg, SceneGraphView* sceneView, FFXSPDPassHandles&& handles);
 };

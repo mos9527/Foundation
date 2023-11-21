@@ -24,7 +24,7 @@ IndirectLODCullPass::IndirectLODCullPass(Device* device) {
 	CHECK_HR(device->GetNativeDevice()->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(&pso)));
 	cullPassLatePSO = std::make_unique<PipelineState>(device, std::move(pso));
 }
-void IndirectLODCullPass::insert_execute(RenderGraphPass& pass, SceneGraphView* sceneView, auto& handles) {
+void IndirectLODCullPass::insert_execute(RenderGraphPass& pass, SceneGraphView* sceneView, auto&& handles) {
 	pass.execute([=](RgContext& ctx) -> void {
 		auto* r_visibility_buffer = ctx.graph->get<Buffer>(handles.visibilityBuffer);
 		auto* r_indirect_cmd_buffer = ctx.graph->get<Buffer>(handles.indirectCmdBuffer);
@@ -47,7 +47,7 @@ void IndirectLODCullPass::insert_execute(RenderGraphPass& pass, SceneGraphView* 
 		native->Dispatch(DivRoundUp(sceneView->get_SceneGlobals().numMeshInstances, RENDERER_INSTANCE_CULL_THREADS), 1, 1);
 	});
 }
-RenderGraphPass& IndirectLODCullPass::insert_earlycull(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODEarlyCullPassHandles& handles) {
+RenderGraphPass& IndirectLODCullPass::insert_earlycull(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODEarlyCullPassHandles&& handles) {
 	auto& pass = rg.add_pass(L"Early Indirect Cull & LOD") // { mesh | mesh.visiblePrevFrame && mesh.frustumCullPassed }
 		.readwrite(handles.visibilityBuffer)
 		.readwrite(handles.indirectCmdBuffer);
@@ -55,7 +55,7 @@ RenderGraphPass& IndirectLODCullPass::insert_earlycull(RenderGraph& rg, SceneGra
 	return pass;
 }
 
-RenderGraphPass& IndirectLODCullPass::insert_latecull(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODLateCullPassHandles& handles) {
+RenderGraphPass& IndirectLODCullPass::insert_latecull(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODLateCullPassHandles&& handles) {
 	auto& pass = rg.add_pass(L"Late Indirect Cull & LOD") // { mesh | !mesh.visiblePrevFrame && mesh.frustumCullPassed && mesh.occlusionCullPassed }, then sets visibility buffer
 		.read(handles.hizTexture)
 		.readwrite(handles.visibilityBuffer)
