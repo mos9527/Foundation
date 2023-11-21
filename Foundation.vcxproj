@@ -160,6 +160,7 @@
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\DeferredLighting.cpp" />
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\FFXSpd.cpp" />
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\GBuffer.cpp" />
+    <ClCompile Include="Source\Runtime\Renderer\RenderPass\HiZ.cpp" />
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\IndirectLODCull.cpp" />
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraph.cpp" />
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.cpp" />
@@ -196,6 +197,7 @@
     <ClInclude Include="Source\Runtime\AssetRegistry\MeshAsset.hpp" />
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\FFXSpd.hpp" />
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\GBuffer.hpp" />
+    <ClInclude Include="Source\Runtime\Renderer\RenderPass\HiZ.hpp" />
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\IndirectLODCull.hpp" />
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\RenderPass.hpp" />
     <ClInclude Include="Source\Runtime\Renderer\Shaders\ffx-spd\ffx_a.h" />
@@ -298,6 +300,11 @@
   </ItemGroup>
   <ItemGroup>
     <Text Include="Source\Runtime\Renderer\Shaders\FFXSpd.hlsl">
+      <FileType>Document</FileType>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Source\Runtime\Renderer\Shaders\DepthSampleToTexture.hlsl">
       <FileType>Document</FileType>
     </Text>
   </ItemGroup>

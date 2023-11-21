@@ -3,12 +3,19 @@ using namespace RHI;
 RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
 {
 	UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
-	RenderGraph rg(cache);
+	RenderGraph rg(cache);	
+	auto HiZ = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
+		ResourceFormat::R32_FLOAT, ResourceDimension::Texture2D,
+		width, height, Resource::ResourceDesc::numMipsOfDimension(width, height), 1, 1, 0,
+		ResourceFlags::UnorderedAccess, ResourceHeapType::Default,
+		ResourceState::UnorderedAccess, {},L"Hierarchal Z Buffer"
+	));
 	auto indirectCmds = rg.create<Buffer>(pass_IndirectCull.GetCountedIndirectCmdBufferDesc());
 	auto indirectCmdsUAV = rg.create<UnorderedAccessView>(pass_IndirectCull.GetCountedIndirectCmdBufferUAVDesc(indirectCmds));
 	auto indirectCullHandles = IndirectLODCullPass::IndirectLODCullPassHandles{
 		.indirectCmdBuffer = indirectCmds,
-		.indirectCmdBufferUAV = indirectCmdsUAV
+		.indirectCmdBufferUAV = indirectCmdsUAV,
+		.HiZ = HiZ // imported
 	};
 	pass_IndirectCull.insert(rg, sceneView, indirectCullHandles);
 	auto albedo = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
@@ -41,7 +48,7 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
 	));
 	auto depth = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
 		ResourceFormat::D32_FLOAT, ResourceDimension::Texture2D,
-		width, height, Resource::ResourceDesc::numMipsOfDimension(width,height), 1, 1, 0,
+		width, height, 1, 1, 1, 0,
 		ResourceFlags::DepthStencil, ResourceHeapType::Default,
 		ResourceState::DepthWrite,
 #ifdef INVERSE_Z			
@@ -50,7 +57,7 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
 		ClearValue(1.0f, 0),
 #endif
 		L"GBuffer Depth"
-	));
+	));	
 	auto depth_dsv = rg.create<DepthStencilView>({
 		.viewDesc = DepthStencilViewDesc::GetTexture2DDepthBufferDesc(ResourceFormat::D32_FLOAT, 0),
 		.viewed = depth
@@ -74,7 +81,7 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
 	auto gbufferHandles = GBufferPass::GBufferPassHandles{
 		.indirectCommands = indirectCmds,
 		.indirectCommandsUAV = indirectCmdsUAV,
-		.depth = depth,
+		.depth = depth,		
 		.albedo = albedo,
 		.normal = normal,
 		.material = material,
@@ -85,7 +92,7 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
 		.material_rtv = material_rtv,
 		.emissive_rtv = emissive_rtv
 	};
-	pass_GBuffer.insert(rg, sceneView, gbufferHandles);
+	pass_GBuffer.insert(rg, sceneView, gbufferHandles);	
 	auto frameBuffer = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
 		ResourceFormat::R8G8B8A8_UNORM, ResourceDimension::Texture2D,
 		width, height, 1, 1, 1, 0,
@@ -131,12 +138,24 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
 		.emissive_srv = emissive_srv,
 		.fb_uav = fb_uav
 	};
+	HierarchalDepthPass::HierarchalDepthPassHandles hizHandles {
+		.depth = depth,
+		.depthSRV = depth_srv,
+		.hizTexture = HiZ
+	};
+	for (uint i = 0; i < Resource::ResourceDesc::numMipsOfDimension(width, height); i++) {
+		hizHandles.hizUAVs.push_back(rg.create<UnorderedAccessView>({
+			.viewDesc = UnorderedAccessViewDesc::GetTexture2DDesc(ResourceFormat::R32_FLOAT, i,0),
+			.viewed = HiZ
+		}));
+	}
+	pass_HiZ.insert(rg, sceneView, hizHandles);
 	pass_Lighting.insert(rg, sceneView, lightingHandles);
 	auto fb_srv = rg.create<ShaderResourceView>({
 		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R8G8B8A8_UNORM, 0, 1),
 		.viewed = frameBuffer
 	});
-	rg.get_epilogue_pass().read(frameBuffer);
+	rg.get_epilogue_pass().read(frameBuffer).read(HiZ);
 	rg.execute(device->GetCommandList<CommandListType::Direct>());
 	return rg.get<ShaderResourceView>(fb_srv);
 }

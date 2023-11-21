@@ -59,9 +59,9 @@ GBufferPass::GBufferPass(Device* device) {
 	);
 }
 
-void GBufferPass::insert(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles& handles) {	
-	rg.add_pass(L"GBuffer Generation")
-		.indirect_argument(handles.indirectCommands)
+RenderGraphPass& GBufferPass::insert(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles& handles) {
+	return rg.add_pass(L"GBuffer Generation")
+		.read(handles.indirectCommands)
 		.write(handles.depth)
 		.write(handles.albedo).write(handles.normal).write(handles.material).write(handles.emissive)
 		.execute([=](RgContext& ctx) -> void {
@@ -132,6 +132,7 @@ void GBufferPass::insert(RenderGraph& rg, SceneGraphView* sceneView, GBufferPass
 				1, &scissorRect
 			);
 			CHECK(r_indirect_commands_uav->GetDesc().HasCountedResource() && "Invalid Command Buffer!");
+			r_indirect_commands->SetBarrier(ctx.cmd, ResourceState::IndirectArgument);
 			native->ExecuteIndirect(
 				*gBufferIndirectCommandSig,
 				MAX_INSTANCE_COUNT,
@@ -139,6 +140,6 @@ void GBufferPass::insert(RenderGraph& rg, SceneGraphView* sceneView, GBufferPass
 				0,
 				r_indirect_commands->GetNativeResource(),
 				r_indirect_commands_uav->GetDesc().GetCounterOffsetInBytes()
-		);
+			);
 	});
 }

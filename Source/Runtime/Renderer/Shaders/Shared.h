@@ -148,12 +148,18 @@ struct IndirectConstant
 {
     uint MeshIndex;
 };
-struct FFXSpdConstant { // ! align for CB
-    uint4 mipViewHeapIndex[12];
+struct FFXSpdConstant { // ! align for CB    
+    uint4 dstMipHeapIndex[12]; // fill mip0 with src
     uint atomicCounterHeapIndex;
     uint numMips;
     uint numWorkGroups;
-    uint _pad;
+    uint pad_;
+    uint2 dimensions;
+};
+struct DepthSampleToTextureConstant {
+    uint depthSRVHeapIndex;
+    uint hizMip0UavHeapIndex;
+    uint2 dimensions;    
 };
 #ifdef __cplusplus
 #pragma pack(pop)

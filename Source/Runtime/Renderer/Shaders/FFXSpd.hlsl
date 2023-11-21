@@ -6,21 +6,28 @@
 #include "Common.hlsli"
 groupshared AU1 spd_counter; // store current global atomic counter for all threads within the thread group
 groupshared AF4 spd_intermediate[16][16]; // intermediate data storage for inter-mip exchange
-ConstantBuffer<FFXSpdConstant> g_SpdConstant : register(b2);
+ConstantBuffer<FFXSpdConstant> g_SpdConstant : register(b0);
 
 AF4 SpdLoadSourceImage(ASU2 p, AU1 slice)
 {
-    RWTexture2D<float> mip0 = ResourceDescriptorHeap[g_SpdConstant.mipViewHeapIndex[0].x];
+    if (any(p > g_SpdConstant.dimensions))
+        return splat4(0);
+    RWTexture2D<float> mip0 = ResourceDescriptorHeap[g_SpdConstant.dstMipHeapIndex[0].x];
     return mip0[p];
 }
 AF4 SpdLoad(ASU2 p, AU1 slice)
-{
-    RWTexture2D<float> mip5 = ResourceDescriptorHeap[g_SpdConstant.mipViewHeapIndex[5].x];
+{    
+    if (any(p > g_SpdConstant.dimensions))
+        return splat4(0);
+    RWTexture2D<float> mip5 = ResourceDescriptorHeap[g_SpdConstant.dstMipHeapIndex[5 + 1].x];
     return mip5[p];
-} // load from output MIP 5
+} // load from output MIP 5 (offset by 1 since mip 0 is the source image)
+// same for below
 void SpdStore(ASU2 p, AF4 value, AU1 mip, AU1 slice)
 {
-    RWTexture2D<float> mipN = ResourceDescriptorHeap[g_SpdConstant.mipViewHeapIndex[mip].x];
+    if (any(p > g_SpdConstant.dimensions))
+        return;
+    RWTexture2D<float> mipN = ResourceDescriptorHeap[g_SpdConstant.dstMipHeapIndex[mip + 1].x];
     mipN[p] = value;
 }
 void SpdIncreaseAtomicCounter(AU1 slice)
@@ -32,7 +39,7 @@ AU1 SpdGetAtomicCounter()
 {
     return spd_counter;
 }
-Void SpdResetAtomicCounter(AU1 slice)
+void SpdResetAtomicCounter(AU1 slice)
 {
     globallycoherent RWBuffer<uint> globalAtomicCounter = ResourceDescriptorHeap[g_SpdConstant.atomicCounterHeapIndex];
     globalAtomicCounter[slice] = 0;

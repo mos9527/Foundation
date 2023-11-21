@@ -35,10 +35,10 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 		RHI::Resource* ptr = nullptr;
 		switch (viewed_handle.type) {
 		case RgResourceType::Buffer:
-			ptr = viewed_handle.is_imported() ? graph.get_imported<RHI::Buffer>(viewed_handle) : &get<RHI::Buffer>(viewed_handle);
+			ptr = &get<RHI::Buffer>(viewed_handle);
 			break;
 		case RgResourceType::Texture:
-			ptr = viewed_handle.is_imported() ? graph.get_imported<RHI::Texture>(viewed_handle) : &get<RHI::Texture>(viewed_handle);
+			ptr = &get<RHI::Texture>(viewed_handle);
 			break;
 		}
 		if (
@@ -54,10 +54,10 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 					auto& viewed_counter_handle = rg_registry.get<RgHandle>(view.desc.viewedCounter);
 					switch (viewed_counter_handle.type) {
 					case RgResourceType::Buffer:
-						counter_ptr = viewed_counter_handle.is_imported() ? graph.get_imported<RHI::Buffer>(viewed_counter_handle) : &get<RHI::Buffer>(viewed_counter_handle);
+						counter_ptr = &get<RHI::Buffer>(viewed_counter_handle);
 						break;
 					case RgResourceType::Texture:
-						counter_ptr = viewed_counter_handle.is_imported() ? graph.get_imported<RHI::Texture>(viewed_counter_handle) : &get<RHI::Texture>(viewed_counter_handle);
+						counter_ptr = &get<RHI::Texture>(viewed_counter_handle);
 						break;
 					}
 				}

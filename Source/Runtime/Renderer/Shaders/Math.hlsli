@@ -3,6 +3,7 @@
 #define M_PI 3.1415926535897932384626433832795
 #define EPISILON 0.000001f
 #define splat3(X) float3(X,X,X)
+#define splat4(X) float4(X,X,X,X)
 /* MATRIX OPERATIONS */
 float3 transformToScalePow2(matrix m)
 {

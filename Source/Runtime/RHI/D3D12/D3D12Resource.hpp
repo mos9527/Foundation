@@ -38,9 +38,10 @@ namespace RHI {
 			ResourceFlags flags{ ResourceFlags::None };
 			ResourceState initialState{ ResourceState::Common };
 			const wchar_t* resourceName{ nullptr };
+
 			static const ResourceDesc GetGenericBufferDesc(
 				UINT64 size, 
-				UINT64 stride = 0, /* Set to 0 for Raw Buffers. Non-zero values indicates a Structured Buffer */
+				UINT64 stride = RAW_BUFFER_STRIDE,
 				ResourceState initialState = ResourceState::Common,
 				ResourceHeapType heapType = ResourceHeapType::Upload, 
 				ResourceFlags flags = ResourceFlags::None,
@@ -116,7 +117,7 @@ namespace RHI {
 				return dimension == ResourceDimension::Buffer;
 			}
 			inline bool isRawBuffer() const {
-				return isBuffer() && stride == 0;
+				return isBuffer() && stride == RAW_BUFFER_STRIDE;
 			}
 			inline bool isTexture() const {
 				return !isBuffer();
@@ -138,19 +139,29 @@ namespace RHI {
 				uint res = std::max(width, height);
 				return static_cast<uint>(std::floor(std::log2(res)));
 			}
-		};
-		// creation w/ exisiting d3d12 buffer. i.e. a backbuffer.
-		Resource(Device* device, ResourceDesc const& desc, ComPtr<ID3D12Resource>&& texture) : DeviceChild(device), m_Desc(desc),m_Resource(texture) {};
-		// creation w/o any initial data
-		Resource(Device* device, ResourceDesc const& desc);
-		// creation w/ initial data
-		Resource(Device* device, ResourceDesc const& desc, const void* data, size_t size, size_t offset = 0LL);
+			static inline uint indexSubresource(UINT MipSlice, UINT ArraySlice, UINT PlaneSlice, UINT MipLevels, UINT ArraySize)
+			{
+				return MipSlice + (ArraySlice * MipLevels) + (PlaneSlice * MipLevels * ArraySize);
+			}
+			inline uint indexSubresource(UINT MipSlice, UINT ArraySlice, UINT PlaneSlice = 0) const {
+				return indexSubresource(MipSlice, ArraySlice, PlaneSlice, mipLevels, arraySize);
+			}
+			inline uint numSubresources() const {
+				UINT planes = 1; // xxx DepthStencil & some formats have 2 planes
+				return indexSubresource(0, arraySize, planes - 1, mipLevels, arraySize); // arraysize * miplevels * planes
+			}
+		};		
+		Resource(Device* device, ComPtr<ID3D12Resource>&& texture, name_t name = nullptr);
+		Resource(Device* device, ResourceDesc const& desc);		
 		~Resource() = default;
 		inline ResourceDesc const& GetDesc() { return m_Desc;  }
 		
-		inline ResourceState GetState() { return m_State; }
-		void SetBarrier(CommandList* cmd, ResourceState state, uint subresource = RESOURCE_BARRIER_ALL_SUBRESOURCES);
+		inline ResourceState GetState(UINT subresource=0) { return m_States[subresource]; }		
 		
+		void SetBarrier(CommandList* cmd, ResourceState state, uint subresource);
+		void SetBarrier(CommandList* cmd, ResourceState state, std::vector<UINT>&& subresources);
+		void SetBarrier(CommandList* cmd, ResourceState state);
+
 		inline auto GetGPUAddress() { return m_Resource->GetGPUVirtualAddress(); }
 		inline auto GetNativeResource() { return m_Resource.Get(); }
 
@@ -176,7 +187,8 @@ namespace RHI {
 		name_t m_Name;
 
 		const ResourceDesc m_Desc;
-		ResourceState m_State{ ResourceState::Common };
+		std::vector<ResourceState> m_States; // States for every subresource
+
 		ComPtr<ID3D12Resource> m_Resource;
 		ComPtr<D3D12MA::Allocation> m_Allocation;	
 

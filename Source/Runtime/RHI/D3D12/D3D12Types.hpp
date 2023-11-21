@@ -60,7 +60,8 @@ namespace RHI {
 	enum class ResourceHeapType {
 		Default = 0,
 		Upload = 1,
-		Readback = 2
+		Readback = 2,
+		Unknown = -1
 	};
 	DEFINE_PLUS_TO_VALUE(ResourceHeapType);
 	inline const D3D12_HEAP_TYPE ResourceHeapTypeToD3DHeapType(ResourceHeapType usage) {
@@ -91,6 +92,7 @@ namespace RHI {
 		R32G32_FLOAT = DXGI_FORMAT_R32G32_FLOAT,
 		R16G16_FLOAT = DXGI_FORMAT_R16G16_FLOAT,
 		R32_FLOAT = DXGI_FORMAT_R32_FLOAT,
+		R32_TYPELESS = DXGI_FORMAT_R32_TYPELESS,
 		D32_FLOAT = DXGI_FORMAT_D32_FLOAT
 	};
 	DEFINE_PLUS_TO_VALUE(ResourceFormat);
@@ -309,7 +311,7 @@ namespace RHI {
 			UINT				   CounterOffsetInBytes
 		) {
 			D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
-			desc.Format = DXGI_FORMAT_UNKNOWN;
+			desc.Format = DXGI_FORMAT_R32_TYPELESS;
 			desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
 			desc.Buffer.FirstElement = FirstElement;
 			desc.Buffer.NumElements = NumElements;

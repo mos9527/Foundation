@@ -41,7 +41,7 @@ namespace RHI {
         utils->CreateDefaultIncludeHandler(includeHandler.GetAddressOf());
 
         std::vector<const wchar_t*> arguments; 
-        arguments.push_back(DXC_ARG_WARNINGS_ARE_ERRORS);
+        // arguments.push_back(DXC_ARG_WARNINGS_ARE_ERRORS);
         arguments.push_back(L"-I");
         auto parent_path = get_absolute_path(sourcePath).parent_path();
         arguments.push_back(parent_path.c_str());

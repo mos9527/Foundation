@@ -26,5 +26,5 @@ public:
 		RgHandle& emissive_rtv;
 	};
 	GBufferPass(RHI::Device* device);
-	void insert(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles& handles);
+	RenderGraphPass& insert(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles& handles);
 };

@@ -17,8 +17,9 @@ IndirectLODCullPass::IndirectLODCullPass(Device* device) {
 	CHECK_HR(device->GetNativeDevice()->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(&pso)));
 	cullPassPSO = std::make_unique<PipelineState>(device, std::move(pso));	
 }
-void IndirectLODCullPass::insert(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODCullPassHandles& handles) {
-	rg.add_pass(L"Indirect Cull & LOD")
+RenderGraphPass& IndirectLODCullPass::insert(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODCullPassHandles& handles) {
+	return rg.add_pass(L"Indirect Cull & LOD")
+		.import(handles.HiZ)
 		.readwrite(handles.indirectCmdBuffer)		
 		.execute([=](RgContext& ctx) -> void {
 			auto* r_indirect_cmd_buffer = ctx.graph->get<Buffer>(handles.indirectCmdBuffer);

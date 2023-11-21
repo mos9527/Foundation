@@ -59,9 +59,8 @@ namespace RHI {
         for (uint i = 0; i < desc.BufferCount; i++) {            
             ComPtr<ID3D12Resource> backbuffer;
             CHECK_HR(m_Swapchain->GetBuffer(i, IID_PPV_ARGS(backbuffer.GetAddressOf())));
-            m_Backbuffers.push_back(std::make_unique<Texture>(m_Device, Texture::ResourceDesc{}, std::move(backbuffer)));
             auto name = std::format(L"Backbuffer #{}", i);
-            m_Backbuffers.back()->SetName(name.c_str());
+            m_Backbuffers.push_back(std::make_unique<Texture>(m_Device, std::move(backbuffer), name.c_str()));            
         }        
         // RTVs
         // Free previous RTVs (if any)

@@ -17,6 +17,7 @@ namespace RHI {
 		GetNativeCommandList()->CopyBufferRegion(*dst, dstOffset, *src, srcOffset, size);
 	};
 	void CommandList::ZeroBufferRegion(Resource* dst, size_t dstOffset, size_t size) {
+		CHECK(dst->GetState() == ResourceState::CopyDest);
 		const size_t zeroBlock = m_Device->GetZeroBuffer()->GetDesc().sizeInBytes();
 		size_t written = 0;
 		while (written < size) {
@@ -24,6 +25,18 @@ namespace RHI {
 			CopyBufferRegion(m_Device->GetZeroBuffer(), dst, 0, dstOffset, toWrite);
 			written += toWrite;
 		}
+	}
+	void CommandList::CopySubresource(Resource* src, uint srcSsubresource, Resource* dst, uint dstSubresource) {
+		CHECK(src->GetState() == ResourceState::CopySource);
+		CHECK(dst->GetState() == ResourceState::CopyDest);
+		D3D12_TEXTURE_COPY_LOCATION srcLocation, dstLocation;
+		srcLocation.pResource = *src;
+		srcLocation.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+		srcLocation.SubresourceIndex = srcSsubresource;
+		dstLocation.pResource = *dst;
+		dstLocation.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+		dstLocation.SubresourceIndex = dstSubresource;
+		m_CommandList->CopyTextureRegion(&dstLocation, 0, 0, 0, &srcLocation, nullptr);
 	}
 	CommandQueue* CommandList::GetCommandQueue() { return m_Device->GetCommandQueue(m_Type); }
 	SyncFence CommandList::Execute() { 

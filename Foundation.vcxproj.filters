@@ -114,6 +114,9 @@
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\IndirectLODCull.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Runtime\Renderer\RenderPass\HiZ.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">
@@ -290,6 +293,9 @@
     <ClInclude Include="Source\Runtime\Renderer\Shaders\ffx-spd\ffx_spd.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Runtime\Renderer\RenderPass\HiZ.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json">
@@ -310,5 +316,6 @@
     <Text Include="Source\Runtime\Renderer\Shaders\Lighting.hlsl" />
     <Text Include="Source\Runtime\Renderer\Shaders\Tonemap.hlsl" />
     <Text Include="Source\Runtime\Renderer\Shaders\FFXSpd.hlsl" />
+    <Text Include="Source\Runtime\Renderer\Shaders\DepthSampleToTexture.hlsl" />
   </ItemGroup>
 </Project>

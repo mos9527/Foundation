@@ -22,34 +22,34 @@ struct RenderGraphPass {
 	friend class RenderGraph;
 private:
 	entt::entity rg_entity;
+	RgResources reads, writes, readwrites;
 	// r/w/rws for Created resources
-	RgResources reads, writes, readwrites, indirectArguments;	
-	// function callback for actual rendering work
+	RgResources imports; 
+	// What's different from Created resources is that...
+	// * imports do not participate in dependency resolution 
+	// * imports cannot have write-barriers set on. Though reads should work on them.
 	RgFunction executes;
+	// function callback for actual rendering work
 public:
 	const wchar_t* name = nullptr;
 
 	RenderGraphPass(entt::entity entity, const wchar_t* name) : rg_entity(entity), name(name) {};
 	RenderGraphPass& write(RgHandle& resource) {
-		CHECK(!resource.is_imported());
 		resource.version++;
 		writes.insert(resource); 
 		return *this; 
 	}
 	RenderGraphPass& readwrite(RgHandle& resource) {
-		CHECK(!resource.is_imported());
 		resource.version++;
 		readwrites.insert(resource);
 		return *this;
 	}
-	RenderGraphPass& read(RgHandle resource) {
-		CHECK(!resource.is_imported());
+	RenderGraphPass& read(RgHandle& resource) {
 		reads.insert(resource);
 		return *this;
 	}
-	RenderGraphPass& indirect_argument(RgHandle resource) {
-		CHECK(!resource.is_imported());
-		indirectArguments.insert(resource);
+	RenderGraphPass& import(RgHandle& resource) {
+		imports.insert(resource);
 		return *this;
 	}
     RenderGraphPass& execute(RgFunction&& func) {
@@ -57,9 +57,10 @@ public:
 		return *this;
 	}
 	bool has_execute() { return executes != nullptr; }
-	bool has_dependencies() { return reads.size() > 0 || readwrites.size() > 0 || indirectArguments.size() > 0; }
-	bool reads_from(RgHandle resource) { return reads.contains(resource) || readwrites.contains(resource) || indirectArguments.contains(resource); }
+	bool has_dependencies() { return reads.size() > 0; }
+	bool reads_from(RgHandle resource) { return reads.contains(resource); }
 	bool writes_to(RgHandle resource) { return writes.contains(resource) || readwrites.contains(resource); }
+	bool imports_from(RgHandle resource) { return imports.contains(resource); }
 };
 
 // DAG Graph for managing rendering work
@@ -103,6 +104,7 @@ class RenderGraph : DAG<entt::entity> {
 		}
 		// seperate passes into layers		
 		auto topsorted = topological_sort();
+		CHECK(topsorted.size() && "Cyclic dependency in RenderGraph. Consider using import().");
 		auto depths = get_depths(topsorted);
 		uint max_depth = 0;
 		for (auto& [node, depth] : depths) max_depth = std::max(max_depth, depth);
@@ -131,41 +133,15 @@ public:
 		registry.emplace<typename traits::type>(entity, resource);
 		RgHandle handle{
 			.version = 0,
-			.type = traits::type_enum,
-			.flag = RgResourceFlag::Created,
+			.type = traits::type_enum,			
 			.entity = entity
 		};
 		registry.emplace<RgHandle>(entity, handle);
 		return handle;
 	};
-	// imported resources -> stored as pointers
-	// imported resoures can only be read.
-	template<RgDefinedResource T> RgHandle import(T* resource) {
-		auto entity = registry.create();
-		registry.emplace<T*>(entity, resource);
-		RgHandle handle {
-			.version = 0,
-			.type = RgResourceTraits<T>::type,
-			.flag = RgResourceFlag::Imported,
-			.entity = entity
-		};
-		registry.emplace<RgHandle>(entity, handle);
-		return handle;
-	};
-	// retrives imported RHI object pointer
-	// its validity is not guaranteed.
-	template<RgDefinedResource T> T* get_imported(RgHandle handle) {
-		return registry.get<T*>(handle);
-	}
-	// retrives created RHI object pointer
-	// its validity is guaranteed post cache build
-	template<RgDefinedResource T> T* get_created(RgHandle handle) {
-		return &cache.get<T>(handle);
-	}
 	// retrives imported / created RHI object pointer
 	template<RgDefinedResource T> T* get(RgHandle handle) {
-		if (handle.is_imported()) return get_imported<T>(handle);
-		return get_created<T>(handle);
+		return &cache.get<T>(handle);
 	}
 	// retrives imported / created RHI object as Resource*
 	// if not convertible, nullptr is returned

@@ -11,9 +11,10 @@ class FFXSPDPass {
 	std::unique_ptr<RHI::UnorderedAccessView> ffxPassCounterUAV;
 public:
 	struct FFXSPDPassHandles {
-		RgHandle& texture;
-		std::vector<RgHandle*> mipUAVs;
+		RgHandle& srcTexture;		
+		RgHandle& dstTexture;
+		std::vector<RgHandle> dstMipUAVs;
 	};
 	FFXSPDPass(RHI::Device* device);
-	void insert(RenderGraph& rg, SceneGraphView* sceneView, FFXSPDPassHandles& handles);
+	RenderGraphPass& insert(RenderGraph& rg, SceneGraphView* sceneView, FFXSPDPassHandles& handles);
 };

@@ -6,6 +6,10 @@ class IndirectLODCullPass {
 	static const UINT CommandBufferCounterOffset = AlignForUavCounter(CommandSizePerFrame);
 	static const UINT CommandBufferSize = CommandBufferCounterOffset + sizeof(UINT); // including a UAV Counter	
 
+	std::unique_ptr<RHI::Shader> depthSampleCS;
+	std::unique_ptr<RHI::RootSignature> depthSampleRS;
+	std::unique_ptr<RHI::PipelineState> depthSamplePSO;
+
 	std::unique_ptr<RHI::Shader> cullPassCS;
 	std::unique_ptr<RHI::RootSignature> cullPassRS;
 	std::unique_ptr<RHI::PipelineState> cullPassPSO;
@@ -15,6 +19,7 @@ public:
 		RgHandle& indirectCmdBuffer; // see GetCountedIndirectCmdBufferDesc
 		RgHandle& indirectCmdBufferUAV; // see GetCountedIndirectCmdBufferUAVDesc
 		// xxx reading culled mesh indices from command buffer seems like a hack...is it bad though?
+		RgHandle& HiZ;
 	};
 	static const RHI::Resource::ResourceDesc GetCountedIndirectCmdBufferDesc() {
 		return RHI::Resource::ResourceDesc::GetGenericBufferDesc(
@@ -29,5 +34,5 @@ public:
 		};
 	}
 	IndirectLODCullPass(RHI::Device* device);
-	void insert(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODCullPassHandles& handles);
+	RenderGraphPass& insert(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODCullPassHandles& handles);
 };

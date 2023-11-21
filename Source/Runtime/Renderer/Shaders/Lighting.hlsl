@@ -16,7 +16,7 @@ StructuredBuffer<SceneLight> g_Lights : register(t0, space0);
 [numthreads(RENDERER_FULLSCREEN_THREADS, RENDERER_FULLSCREEN_THREADS, 1)]
 void main(uint2 DTid : SV_DispatchThreadID)
 {
-    if (any(DTid > g_SceneGlobals.frameDimension)) // Does this crash the shader??
+    if (any(DTid > g_SceneGlobals.frameDimension))
         return;
     
     Texture2D albedoTex = ResourceDescriptorHeap[albedoHandle];

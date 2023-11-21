@@ -29,7 +29,7 @@ namespace RHI {
 
 		void CopyBufferRegion(Resource* src, Resource* dst, size_t srcOffset, size_t dstOffset, size_t size);
 		void ZeroBufferRegion(Resource* dst, size_t dstOffset, size_t size);
-
+		void CopySubresource(Resource* src, uint srcSsubresource, Resource* dst, uint dstSubresource);
 		SyncFence Execute();
 		CommandQueue* GetCommandQueue();
 		inline void ExecuteBundle(CommandList* bundle) { m_CommandList->ExecuteBundle(*bundle); }
