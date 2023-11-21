@@ -16,6 +16,15 @@ namespace RHI {
 	void CommandList::CopyBufferRegion(Resource* src, Resource* dst, size_t srcOffset, size_t dstOffset, size_t size) {
 		GetNativeCommandList()->CopyBufferRegion(*dst, dstOffset, *src, srcOffset, size);
 	};
+	void CommandList::ZeroBufferRegion(Resource* dst, size_t dstOffset, size_t size) {
+		const size_t zeroBlock = m_Device->GetZeroBuffer()->GetDesc().sizeInBytes();
+		size_t written = 0;
+		while (written < size) {
+			size_t toWrite = std::min(zeroBlock, size - written);
+			CopyBufferRegion(m_Device->GetZeroBuffer(), dst, 0, dstOffset, toWrite);
+			written += toWrite;
+		}
+	}
 	CommandQueue* CommandList::GetCommandQueue() { return m_Device->GetCommandQueue(m_Type); }
 	SyncFence CommandList::Execute() { 
 		return GetCommandQueue()->Execute(this);

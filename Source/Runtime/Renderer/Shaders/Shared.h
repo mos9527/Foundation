@@ -148,6 +148,13 @@ struct IndirectConstant
 {
     uint MeshIndex;
 };
+struct FFXSpdConstant { // ! align for CB
+    uint4 mipViewHeapIndex[12];
+    uint atomicCounterHeapIndex;
+    uint numMips;
+    uint numWorkGroups;
+    uint _pad;
+};
 #ifdef __cplusplus
 #pragma pack(pop)
 #endif

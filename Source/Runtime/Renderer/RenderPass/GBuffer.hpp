@@ -12,14 +12,14 @@ public:
 		RgHandle& indirectCommandsUAV;
 
 		RgHandle& depth;
-				
+
 		RgHandle& albedo;
 		RgHandle& normal;
 		RgHandle& material;
 		RgHandle& emissive;
-				
+
 		RgHandle& depth_dsv;
-				
+
 		RgHandle& albedo_rtv;
 		RgHandle& normal_rtv;
 		RgHandle& material_rtv;

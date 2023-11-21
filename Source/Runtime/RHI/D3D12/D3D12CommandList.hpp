@@ -19,6 +19,7 @@ namespace RHI {
 			CHECK_HR(m_CommandAllocators[allocatorIndex]->Reset());
 		};
 		inline void Begin(uint allocatorIndex = 0) {
+			CHECK(!m_HasBegun && "Attempting to start an already recording CommandList");
 			DCHECK(allocatorIndex < m_CommandAllocators.size());
 			CHECK_HR(m_CommandList->Reset(m_CommandAllocators[allocatorIndex].Get(), nullptr));
 			m_HasBegun = true;
@@ -27,6 +28,7 @@ namespace RHI {
 		inline bool IsOpen() const { return m_HasBegun; }
 
 		void CopyBufferRegion(Resource* src, Resource* dst, size_t srcOffset, size_t dstOffset, size_t size);
+		void ZeroBufferRegion(Resource* dst, size_t dstOffset, size_t size);
 
 		SyncFence Execute();
 		CommandQueue* GetCommandQueue();

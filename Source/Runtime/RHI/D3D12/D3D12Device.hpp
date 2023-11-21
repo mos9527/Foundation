@@ -13,6 +13,7 @@ namespace RHI {
 	void CHECK_DEVICE_REMOVAL(Device* device, HRESULT hr);	
 	class CommandList;
 	class Resource;
+	class Buffer;
 	struct Subresource;
 	class Device {
 	public:
@@ -83,13 +84,15 @@ namespace RHI {
 			return nullptr;
 		}
 
+		auto* GetZeroBuffer() { return m_ZeroBuffer.get(); }
+
 		void BeginUpload(CommandList* cmd);
 		void Upload(Resource* dst, Subresource* data, uint count);
 		void Upload(Resource* dst, void* data, uint sizeInBytes);
 		SyncFence EndUpload();
 		// Releases all temporary allocations that will never be used again		
 		bool Clean();
-		void Wait();
+		void Wait();		
 		inline auto GetAllocator() { return m_Allocator.Get(); }
 		inline operator ID3D12Device* () { return m_Device.Get(); }
 
@@ -115,7 +118,8 @@ namespace RHI {
 			SyncFence UploadAndClose();
 			bool Clean();
 		} m_UploadContext;
-		
+		std::unique_ptr<Buffer>
+			m_ZeroBuffer;
 		std::unique_ptr<CommandQueue> 
 			m_DirectQueue, 
 			m_CopyQueue, 

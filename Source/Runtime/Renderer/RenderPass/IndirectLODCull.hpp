@@ -10,7 +10,6 @@ class IndirectLODCullPass {
 	std::unique_ptr<RHI::RootSignature> cullPassRS;
 	std::unique_ptr<RHI::PipelineState> cullPassPSO;
 
-	std::unique_ptr<RHI::Buffer> resetBuffer; // a buffer that can be used to reset the UAV counters and initialize it 0
 public:
 	struct IndirectLODCullPassHandles {
 		RgHandle& indirectCmdBuffer; // see GetCountedIndirectCmdBufferDesc

@@ -108,7 +108,7 @@
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\DeferredLighting.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\Renderer\RenderPass\FFXSPD.cpp">
+    <ClCompile Include="Source\Runtime\Renderer\RenderPass\FFXSpd.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\IndirectLODCull.cpp">
@@ -278,10 +278,16 @@
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\GBuffer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Renderer\RenderPass\FFXSPD.hpp">
+    <ClInclude Include="Source\Runtime\Renderer\RenderPass\FFXSpd.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\IndirectLODCull.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\Renderer\Shaders\ffx-spd\ffx_a.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\Renderer\Shaders\ffx-spd\ffx_spd.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -303,5 +309,6 @@
     <Text Include="Source\Runtime\Renderer\Shaders\Shared.h" />
     <Text Include="Source\Runtime\Renderer\Shaders\Lighting.hlsl" />
     <Text Include="Source\Runtime\Renderer\Shaders\Tonemap.hlsl" />
+    <Text Include="Source\Runtime\Renderer\Shaders\FFXSpd.hlsl" />
   </ItemGroup>
 </Project>

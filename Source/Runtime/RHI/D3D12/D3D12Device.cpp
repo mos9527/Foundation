@@ -220,7 +220,13 @@ namespace RHI {
         allocatorDesc.pDevice = m_Device.Get();
         allocatorDesc.pAdapter = m_Adapter.Get();
         allocatorDesc.PreferredBlockSize = 0;
-        D3D12MA::CreateAllocator(&allocatorDesc, &m_Allocator);        
+        D3D12MA::CreateAllocator(&allocatorDesc, &m_Allocator);
+        /* Utilities */
+        // Zero(reset) buffer
+        m_ZeroBuffer = std::make_unique<Buffer>(this, Resource::ResourceDesc::GetGenericBufferDesc(sizeof(uint) * RHI_ZERO_BUFFER_SIZE, sizeof(uint)));
+        m_ZeroBuffer->SetName(L"Zero buffer");
+        std::vector<uint> zeros(RHI_ZERO_BUFFER_SIZE);
+        m_ZeroBuffer->Update(zeros.data(), sizeof(uint) * RHI_ZERO_BUFFER_SIZE, 0);
     }
     Device::~Device() {
         m_Factory->Release();        

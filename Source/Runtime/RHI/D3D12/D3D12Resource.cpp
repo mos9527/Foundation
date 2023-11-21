@@ -41,7 +41,7 @@ namespace RHI {
 		allocationDesc.HeapType = ResourceHeapTypeToD3DHeapType(desc.heapType);
 
 		const D3D12_RESOURCE_DESC resourceDesc = desc;
-		CHECK(!desc.clearValue.has_value() || (desc.dimension == ResourceDimension::Buffer || +(desc.flags & ResourceFlags::RenderTarget) || +(desc.flags & ResourceFlags::DepthStencil)));
+		CHECK(!desc.clearValue.has_value() || (+(desc.flags & ResourceFlags::RenderTarget) || +(desc.flags & ResourceFlags::DepthStencil)) && "Clear value only applicable to RenderTargets and DepthStencils");
 		D3D12_CLEAR_VALUE clearValue = desc.clearValue.has_value() ? desc.clearValue.value().ToD3D12ClearValue(desc.format) : D3D12_CLEAR_VALUE();
 		auto allocator = device->GetAllocator();		
 		CHECK_HR(allocator->CreateResource(

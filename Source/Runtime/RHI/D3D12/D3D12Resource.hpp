@@ -134,6 +134,10 @@ namespace RHI {
 				CHECK(dimension == ResourceDimension::Buffer);
 				return width;
 			}
+			static inline uint numMipsOfDimension(uint width, uint height) {
+				uint res = std::max(width, height);
+				return static_cast<uint>(std::floor(std::log2(res)));
+			}
 		};
 		// creation w/ exisiting d3d12 buffer. i.e. a backbuffer.
 		Resource(Device* device, ResourceDesc const& desc, ComPtr<ID3D12Resource>&& texture) : DeviceChild(device), m_Desc(desc),m_Resource(texture) {};

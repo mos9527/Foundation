@@ -22,7 +22,9 @@ namespace RHI {
     static Microsoft::WRL::ComPtr<IDxcBlob> CompileShaderDXC(
         const wchar_t* sourcePath,
         const wchar_t* entrypoint,
-        const wchar_t* targetProfile)
+        const wchar_t* targetProfile,
+        std::vector<const wchar_t*>&& defines = {}
+    )
     {
         LOG(INFO) << "Compiling shader " << wstring_to_utf8(targetProfile) << ", " << wstring_to_utf8(sourcePath) << " @ " << wstring_to_utf8(entrypoint);
 
@@ -47,6 +49,10 @@ namespace RHI {
         arguments.push_back(entrypoint);
         arguments.push_back(L"-T"); // target profile
         arguments.push_back(targetProfile);
+        for (auto& define : defines) {
+            arguments.push_back(L"-D");
+            arguments.push_back(define);
+        }
 #ifdef _DEBUG
         arguments.push_back(DXC_ARG_DEBUG); // -Zi
         arguments.push_back(DXC_ARG_DEBUG_NAME_FOR_SOURCE); // -Zss

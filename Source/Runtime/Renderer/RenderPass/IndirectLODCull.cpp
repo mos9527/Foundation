@@ -15,14 +15,10 @@ IndirectLODCullPass::IndirectLODCullPass(Device* device) {
 	computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(cullPassCS->GetData(), cullPassCS->GetSize());
 	ComPtr<ID3D12PipelineState> pso;
 	CHECK_HR(device->GetNativeDevice()->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(&pso)));
-	cullPassPSO = std::make_unique<PipelineState>(device, std::move(pso));
-	resetBuffer = std::make_unique<Buffer>(device, Resource::ResourceDesc::GetGenericBufferDesc(sizeof(uint), sizeof(uint)));
-	resetBuffer->SetName(L"Zero buffer");
-	uint resetValue = 0;
-	resetBuffer->Update(&resetValue, sizeof(resetValue), 0);
+	cullPassPSO = std::make_unique<PipelineState>(device, std::move(pso));	
 }
 void IndirectLODCullPass::insert(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODCullPassHandles& handles) {
-	rg.add_pass(L"Indirect Cull & LOD Indirect")
+	rg.add_pass(L"Indirect Cull & LOD")
 		.readwrite(handles.indirectCmdBuffer)		
 		.execute([=](RgContext& ctx) -> void {
 			auto* r_indirect_cmd_buffer = ctx.graph->get<Buffer>(handles.indirectCmdBuffer);
@@ -34,7 +30,7 @@ void IndirectLODCullPass::insert(RenderGraph& rg, SceneGraphView* sceneView, Ind
 			native->SetComputeRootShaderResourceView(1, sceneView->get_SceneMeshInstancesBuffer()->GetGPUAddress());
 			native->SetComputeRootDescriptorTable(2, r_indirect_cmd_buffer_uav->descriptor);
 			r_indirect_cmd_buffer->SetBarrier(ctx.cmd, ResourceState::CopyDest);
-			native->CopyBufferRegion(r_indirect_cmd_buffer->GetNativeResource(), CommandBufferCounterOffset, *resetBuffer.get(), 0, sizeof(UINT)); // Resets UAV counter
+			ctx.cmd->ZeroBufferRegion(r_indirect_cmd_buffer, CommandBufferCounterOffset, sizeof(UINT));			
 			r_indirect_cmd_buffer->SetBarrier(ctx.cmd, ResourceState::UnorderedAccess);
 			// dispatch compute to cull on the gpu
 			native->Dispatch(DivRoundUp(sceneView->get_SceneGlobals().numMeshInstances, RENDERER_INSTANCE_CULL_THREADS), 1, 1);

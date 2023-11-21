@@ -41,7 +41,7 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
 	));
 	auto depth = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
 		ResourceFormat::D32_FLOAT, ResourceDimension::Texture2D,
-		width, height, 1, 1, 1, 0,
+		width, height, Resource::ResourceDesc::numMipsOfDimension(width,height), 1, 1, 0,
 		ResourceFlags::DepthStencil, ResourceHeapType::Default,
 		ResourceState::DepthWrite,
 #ifdef INVERSE_Z			
