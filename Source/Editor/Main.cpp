@@ -183,12 +183,17 @@ int main(int argc, char* argv[]) {
 #ifdef IMGUI_ENABLED
         if (ImGui::Begin("Renderer")) {
             static bool debug_ViewAlbedo = false, debug_ViewLod = false, debug_Wireframe = false;
+            static bool debug_FrustumCull = true, debug_OcclusionCull = true;
             ImGui::Checkbox("View LOD", &debug_ViewLod);
             ImGui::Checkbox("View Albedo", &debug_ViewAlbedo);
             ImGui::Checkbox("Wireframe", &debug_Wireframe);
+            ImGui::Checkbox("Frustum Cull", &debug_FrustumCull);
+            ImGui::Checkbox("Occlusion Cull", &debug_OcclusionCull);
             if (debug_ViewAlbedo) frameFlags |= FRAME_FLAG_VIEW_ALBEDO;
             if (debug_ViewLod) frameFlags |= FRAME_FLAG_DEBUG_VIEW_LOD;
             if (debug_Wireframe) frameFlags |= FRAME_FLAG_WIREFRAME;
+            if (!debug_FrustumCull) frameFlags |= FRAME_FLAG_NO_FRUSTUM_CULL;
+            if (!debug_OcclusionCull) frameFlags |= FRAME_FLAG_NO_OCCLUSION_CULL;
             ImGui::End();
         }
 #endif

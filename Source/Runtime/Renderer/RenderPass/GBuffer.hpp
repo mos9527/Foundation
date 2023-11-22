@@ -27,7 +27,7 @@ private:
 	std::unique_ptr<RHI::PipelineState> gBufferPSO, gBufferPSOWireframe;
 	std::unique_ptr<RHI::CommandSignature> gBufferIndirectCommandSig;
 
-	void insert_execute(RenderGraphPass& pass, SceneGraphView* sceneView, GBufferPassHandles&& handles);
+	void insert_execute(RenderGraphPass& pass, SceneGraphView* sceneView, GBufferPassHandles&& handles, bool late);
 public:
 
 	GBufferPass(RHI::Device* device);

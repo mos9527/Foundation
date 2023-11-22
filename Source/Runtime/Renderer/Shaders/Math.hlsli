@@ -39,7 +39,8 @@ struct BoundingSphere // wraps BoundingSphere { float3, float }
     BoundingSphere Transform(matrix m)
     {
         BoundingSphere s;
-        s.Center = mul(float4(Center, 1.0f), m).xyz;
+        float4 Center4 = mul(float4(Center, 1.0f), m);
+        s.Center = Center4.xyz / Center4.w;
         float3 scales = transformToScalePow2(m);
         s.Radius = Radius * sqrt(max(scales.x, max(scales.y, scales.z)));
         return s;
@@ -114,13 +115,15 @@ struct BoundingBox // wraps BoundingBox { float3, float3 }
     BoundingBox Transform(matrix m)
     {
         BoundingBox b;
-        float3 Corner = Extents * BoxCornerOffset[0] + Center;
-        Corner = mul(float4(Corner, 1.0f), m).xyz;
+        float3 Corner = Extents * BoxCornerOffset[0] + Center;   
+        float4 Corner4 = mul(float4(Corner, 1.0f), m);
+        Corner = Corner4.xyz / Corner4.w;
         float3 Min = Corner, Max = Corner;
-        for (int i = 0; i < 8; i++)
+        for (int i = 1; i < 8; i++)
         {
             Corner = Extents * BoxCornerOffset[i] + Center;
-            Corner = mul(float4(Corner, 1.0f), m).xyz;
+            Corner4 = mul(float4(Corner, 1.0f), m);
+            Corner = Corner4.xyz / Corner4.w;
             
             Min = min(Min, Corner);
             Max = max(Max, Corner);
@@ -234,6 +237,10 @@ float clipZ2ViewZ(float Zss, float zNear, float zFar)
     return 2.0 * zNear * zFar / (zFar + zNear - (Zss * 2 - 1) * (zNear - zFar));
 #endif
     return 2.0 * zNear * zFar / (zFar + zNear - (Zss * 2 - 1) * (zFar - zNear));
+}
+float2 clip2UV(float2 clip)
+{
+    return float2(0.5f, 0.5f) + clip * float2(0.5f, -0.5f);
 }
 float2 UV2Clip(float2 UV)
 {

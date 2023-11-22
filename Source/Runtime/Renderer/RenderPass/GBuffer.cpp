@@ -43,7 +43,7 @@ GBufferPass::GBufferPass(Device* device) {
 	ComPtr<ID3D12PipelineState> pso;
 	CHECK_HR(device->GetNativeDevice()->CreateGraphicsPipelineState(&gbufferPsoDesc, IID_PPV_ARGS(&pso)));
 	gBufferPSO = std::make_unique<PipelineState>(device, std::move(pso));
-	// Wireframe PSO
+	// Wireframe PSO	
 	gbufferPsoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
 	CHECK_HR(device->GetNativeDevice()->CreateGraphicsPipelineState(&gbufferPsoDesc, IID_PPV_ARGS(&pso)));
 	gBufferPSOWireframe = std::make_unique<PipelineState>(device, std::move(pso));
@@ -59,8 +59,9 @@ GBufferPass::GBufferPass(Device* device) {
 	);
 }
 
-void GBufferPass::insert_execute(RenderGraphPass& pass, SceneGraphView* sceneView, GBufferPassHandles&& handles) {
+void GBufferPass::insert_execute(RenderGraphPass& pass, SceneGraphView* sceneView, GBufferPassHandles&& handles, bool late) {
 	pass.execute([=](RgContext& ctx) -> void {
+		bool wireframe = sceneView->get_SceneGlobals().frameFlags & FRAME_FLAG_WIREFRAME;
 		UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
 		// fetches from registry
 		auto* r_albedo_rtv = ctx.graph->get<RenderTargetView>(handles.albedo_rtv);
@@ -71,64 +72,72 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneGraphView* sceneVie
 		auto* r_depthStencil = ctx.graph->get<Texture>(handles.depth);
 		auto* r_indirect_commands = ctx.graph->get<Buffer>(handles.indirectCommands);
 		auto* r_indirect_commands_uav = ctx.graph->get<UnorderedAccessView>(handles.indirectCommandsUAV);
-
-		auto native = ctx.cmd->GetNativeCommandList();
-		if (sceneView->get_SceneGlobals().frameFlags & FRAME_FLAG_WIREFRAME)
-			native->SetPipelineState(*gBufferPSOWireframe);
-		else
-			native->SetPipelineState(*gBufferPSO);
-		native->SetGraphicsRootSignature(*gBufferRS);
-		// b0 used by indirect command
-		native->SetGraphicsRootConstantBufferView(1, sceneView->get_SceneGlobalsBuffer()->GetGPUAddress());
-		native->SetGraphicsRootShaderResourceView(2, sceneView->get_SceneMeshInstancesBuffer()->GetGPUAddress());
-		native->SetGraphicsRootShaderResourceView(3, sceneView->get_SceneMeshMaterialsBuffer()->GetGPUAddress());
 		CD3DX12_VIEWPORT viewport(.0f, .0f, width, height, .0f, 1.0f);
 		CD3DX12_RECT scissorRect(0, 0, width, height);
-		native->RSSetViewports(1, &viewport);
-		native->RSSetScissorRects(1, &scissorRect);
-		native->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+		auto native = ctx.cmd->GetNativeCommandList();
+		auto setupPSO = [&]() {
+			native->SetGraphicsRootSignature(*gBufferRS);
+			// b0 used by indirect command
+			native->SetGraphicsRootConstantBufferView(1, sceneView->get_SceneGlobalsBuffer()->GetGPUAddress());
+			native->SetGraphicsRootShaderResourceView(2, sceneView->get_SceneMeshInstancesBuffer()->GetGPUAddress());
+			native->SetGraphicsRootShaderResourceView(3, sceneView->get_SceneMeshMaterialsBuffer()->GetGPUAddress());
+			native->RSSetViewports(1, &viewport);
+			native->RSSetScissorRects(1, &scissorRect);
+			native->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		};
+		if (wireframe){
+			native->SetPipelineState(*gBufferPSOWireframe);
+			setupPSO();
+		} else {
+			native->SetPipelineState(*gBufferPSO);
+			setupPSO();
+		}
 		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[4] = {
 			r_albedo_rtv->descriptor,
 			r_normal_rtv->descriptor,
 			r_material_rtv->descriptor,
 			r_emissive_rtv->descriptor
 		};
+		if (!late) {
+			// Only perform clears in the early pass
+			native->ClearDepthStencilView(
+				r_dsv->descriptor.get_cpu_handle(),
+				D3D12_CLEAR_FLAG_DEPTH,
+				r_depthStencil->GetClearValue().depthStencil.depth,
+				r_depthStencil->GetClearValue().depthStencil.stencil,
+				1, &scissorRect
+			);
+			const FLOAT clearColor[4] = { .0f ,.0f ,.0f ,.0f };
+			native->ClearRenderTargetView(
+				r_albedo_rtv->descriptor,
+				clearColor,
+				1, &scissorRect
+			);
+			native->ClearRenderTargetView(
+				r_normal_rtv->descriptor,
+				clearColor,
+				1, &scissorRect
+			);
+			native->ClearRenderTargetView(
+				r_material_rtv->descriptor,
+				clearColor,
+				1, &scissorRect
+			);
+			native->ClearRenderTargetView(
+				r_emissive_rtv->descriptor,
+				clearColor,
+				1, &scissorRect
+			);
+		}
+		CHECK(r_indirect_commands_uav->GetDesc().HasCountedResource() && "Invalid Command Buffer!");
+		r_indirect_commands->SetBarrier(ctx.cmd, ResourceState::IndirectArgument);
 		native->OMSetRenderTargets(
 			4,
 			rtvHandles,
 			FALSE,
 			&r_dsv->descriptor.get_cpu_handle()
 		);
-		native->ClearDepthStencilView(
-			r_dsv->descriptor.get_cpu_handle(),
-			D3D12_CLEAR_FLAG_DEPTH,
-			r_depthStencil->GetClearValue().depthStencil.depth,
-			r_depthStencil->GetClearValue().depthStencil.stencil,
-			1, &scissorRect
-		);
-		const FLOAT clearColor[4] = { .0f ,.0f ,.0f ,.0f };
-		native->ClearRenderTargetView(
-			r_albedo_rtv->descriptor,
-			clearColor,
-			1, &scissorRect
-		);
-		native->ClearRenderTargetView(
-			r_normal_rtv->descriptor,
-			clearColor,
-			1, &scissorRect
-		);
-		native->ClearRenderTargetView(
-			r_material_rtv->descriptor,
-			clearColor,
-			1, &scissorRect
-		);
-		native->ClearRenderTargetView(
-			r_emissive_rtv->descriptor,
-			clearColor,
-			1, &scissorRect
-		);
-		CHECK(r_indirect_commands_uav->GetDesc().HasCountedResource() && "Invalid Command Buffer!");
-		r_indirect_commands->SetBarrier(ctx.cmd, ResourceState::IndirectArgument);
 		native->ExecuteIndirect(
 			*gBufferIndirectCommandSig,
 			MAX_INSTANCE_COUNT,
@@ -136,7 +145,27 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneGraphView* sceneVie
 			0,
 			r_indirect_commands->GetNativeResource(),
 			r_indirect_commands_uav->GetDesc().GetCounterOffsetInBytes()
-		);
+		);	
+		if (wireframe) {
+			native->SetPipelineState(*gBufferPSO);
+			// Ensure Solid Depth is always rendered in the end regardless of wireframe flag
+			// Useful for debugging some rendering features, like Occlusion Culling
+			// PSO is in solid renderstate as of now:
+			native->OMSetRenderTargets(
+				0,
+				NULL,
+				FALSE,
+				&r_dsv->descriptor.get_cpu_handle()
+			);
+			native->ExecuteIndirect(
+				*gBufferIndirectCommandSig,
+				MAX_INSTANCE_COUNT,
+				r_indirect_commands->GetNativeResource(),
+				0,
+				r_indirect_commands->GetNativeResource(),
+				r_indirect_commands_uav->GetDesc().GetCounterOffsetInBytes()
+			);
+		}
 	});
 }
 // see IndirectLODCull
@@ -145,7 +174,7 @@ RenderGraphPass& GBufferPass::insert_earlydraw(RenderGraph& rg, SceneGraphView* 
 		.read(handles.indirectCommands)
 		.write(handles.depth)
 		.write(handles.albedo).write(handles.normal).write(handles.material).write(handles.emissive);
-	insert_execute(pass, sceneView, std::move(handles));
+	insert_execute(pass, sceneView, std::move(handles),false /* late */);
 	return pass;
 }
 RenderGraphPass& GBufferPass::insert_latedraw(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles&& handles) {
@@ -153,6 +182,6 @@ RenderGraphPass& GBufferPass::insert_latedraw(RenderGraph& rg, SceneGraphView* s
 		.read(handles.indirectCommands)
 		.write(handles.depth)
 		.write(handles.albedo).write(handles.normal).write(handles.material).write(handles.emissive);
-	insert_execute(pass, sceneView, std::move(handles));
+	insert_execute(pass, sceneView, std::move(handles),true /* late */);
 	return pass;
 }

@@ -16,6 +16,9 @@ class IndirectLODCullPass {
 
 	void insert_execute(RenderGraphPass& pass, SceneGraphView* sceneView, auto&& handles);
 public:
+	struct IndirectLODClearPassHandles {
+		RgHandle& visibilityBuffer;
+	};
 	struct IndirectLODEarlyCullPassHandles {
 		RgHandle& visibilityBuffer;
 
@@ -44,6 +47,7 @@ public:
 		};
 	}
 	IndirectLODCullPass(RHI::Device* device);
+	RenderGraphPass& insert_clear(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODClearPassHandles&& handles);
 	RenderGraphPass& insert_earlycull(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODEarlyCullPassHandles&& handles);
 	RenderGraphPass& insert_latecull(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODLateCullPassHandles&& handles);
 };
