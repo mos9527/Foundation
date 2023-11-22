@@ -3,8 +3,11 @@
 #include "../Shaders/ffx-spd/ffx_a.h"
 #include "../Shaders/ffx-spd/ffx_spd.h"
 using namespace RHI;
-FFXSPDPass::FFXSPDPass(RHI::Device* device) {
-	ffxPassCS = std::make_unique<Shader>(L"Shaders/FFXSpd.hlsl", L"main", L"cs_6_6");
+FFXSPDPass::FFXSPDPass(RHI::Device* device, const wchar_t* reduce) {
+	CHECK(reduce && "Reduction function undefined.");
+	std::wstring reduce_define = L"SPD_REDUCTION_FUNCTION=";
+	reduce_define += reduce;
+	ffxPassCS = std::make_unique<Shader>(L"Shaders/FFXSpd.hlsl", L"main", L"cs_6_6", std::vector<const wchar_t*>{ reduce_define.c_str() });
 	ffxPassRS = std::make_unique<RootSignature>(
 		device,
 		RootSignatureDesc()

@@ -91,7 +91,7 @@ int main(int argc, char* argv[]) {
     taskpool.push([&] {        
         LOG(INFO) << "Loading scene";
         Assimp::Importer importer;
-#define GLTF_SAMPLE L"Custom" // DepthOcclusionTest
+#define GLTF_SAMPLE L"Sponza" // DepthOcclusionTest
         path_t filepath = L"..\\Resources\\glTF-Sample-Models\\2.0\\" GLTF_SAMPLE "\\glTF\\" GLTF_SAMPLE ".gltf";
         std::string u8path = (const char*)filepath.u8string().c_str();
         auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace | aiProcess_SplitLargeMeshes);

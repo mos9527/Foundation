@@ -1,13 +1,17 @@
 #include "HiZ.hpp"
 using namespace RHI;
-
-HierarchalDepthPass::HierarchalDepthPass(Device* device) : spdPass(device) {
+#ifdef INVERSE_Z // The closer the greater the depth. Do min reduction to avoid over-occluding geometries
+#define REDUCTION_FUNCTION L"min(min(min(v0,v1), v2), v3)"
+#else
+#define REDUCTION_FUNCTION L"max(max(max(v0,v1), v2), v3)" // same goes for this except depth is reversed
+#endif // INVERSE_Z
+HierarchalDepthPass::HierarchalDepthPass(Device* device) : spdPass(device, REDUCTION_FUNCTION) {
 	depthSampleCS = std::make_unique<Shader>(L"Shaders/DepthSampleToTexture.hlsl", L"main", L"cs_6_6");
 	depthSampleRS = std::make_unique<RootSignature>(
 		device,
 		RootSignatureDesc()
 		.SetDirectlyIndexed()
-		.AddConstantBufferView(0, 0) // b0 space0 : DepthSampleToTextureConstant			
+		.AddConstantBufferView(0, 0) // b0 space0 : DepthSampleToTextureConstant
 	);
 	depthSampleRS->SetName(L"Depth Sample to Texture");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};

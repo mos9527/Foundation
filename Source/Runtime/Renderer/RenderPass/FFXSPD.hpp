@@ -15,6 +15,6 @@ public:
 		RgHandle& dstTexture;
 		std::vector<RgHandle> dstMipUAVs;
 	};
-	FFXSPDPass(RHI::Device* device);
+	FFXSPDPass(RHI::Device* device, const wchar_t* reduce=L"(v0 + v1 + v2 + v3) * 0.25");
 	RenderGraphPass& insert(RenderGraph& rg, SceneGraphView* sceneView, FFXSPDPassHandles&& handles);
 };

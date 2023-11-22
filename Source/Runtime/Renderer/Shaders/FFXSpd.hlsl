@@ -27,6 +27,12 @@ void SpdStore(ASU2 p, AF4 value, AU1 mip, AU1 slice)
 {
     if (any(p > g_SpdConstant.dimensions))
         return;
+    if (mip == 5)
+    {
+        globallycoherent RWTexture2D<float> mip6 = ResourceDescriptorHeap[g_SpdConstant.dstMipHeapIndex[6].x]; // must be synced
+        mip6[p] = value;
+        return;
+    }
     RWTexture2D<float> mipN = ResourceDescriptorHeap[g_SpdConstant.dstMipHeapIndex[mip + 1].x];
     mipN[p] = value;
 }
@@ -52,9 +58,13 @@ void SpdStoreIntermediate(AU1 x, AU1 y, AF4 value)
 {
     spd_intermediate[x][y] = value;
 }
+// Compiler defined reduction function
+#ifndef SPD_REDUCTION_FUNCTION
+#define SPD_REDUCTION_FUNCTION (v0+v1+v2+v3)*0.25f
+#endif
 AF4 SpdReduce4(AF4 v0, AF4 v1, AF4 v2, AF4 v3)
 {
-    return (v0 + v1 + v2 + v3) * 0.25;
+    return SPD_REDUCTION_FUNCTION;
 }
 // #define SPD_LINEAR_SAMPLER
 #include "ffx-spd/ffx_spd.h"

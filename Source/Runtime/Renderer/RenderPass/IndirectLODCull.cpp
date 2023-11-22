@@ -12,7 +12,13 @@ IndirectLODCullPass::IndirectLODCullPass(Device* device) {
 		.AddUnorderedAccessViewWithCounter(0, 0)// u0 space0 : Indirect Commandlists
 		.AddUnorderedAccessView(1, 0) // u1 space0 : Instance Visibility
 		.AddConstant(1,0,2) // b1 space0 : HIZ srv heap handle, HIZ mips
-		.AddStaticSampler(0,0) // s0 space0 : HIZ sampler
+		.AddStaticSampler(0,0, SamplerDesc::GetDepthReduceSamplerDesc(
+#ifdef INVERSE_Z
+			true
+#else
+			false
+#endif
+		)) // s0 space0 : POINT sampler. MIN reduce if inverse Z. MAX otherwise
 	);
 	cullPassRS->SetName(L"Indirect Cull & LOD Classification");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};

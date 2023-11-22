@@ -77,30 +77,27 @@ void main_late(uint index : SV_DispatchThreadID)
         // see https://www.rastergrid.com/blog/2010/10/hierarchical-z-map-based-occlusion-culling/
         // see https://github.com/zeux/niagara/blob/master/src/shaders/drawcull.comp.glsl
         Texture2D<float4> hiz = ResourceDescriptorHeap[hizHeapHandle];
-
         BoundingBox bbBoxss = bbBox.Transform(g_SceneGlobals.camera.viewProjection); // Screen space bounding box
-        float4 bbBoxRect = float4((bbBoxss.Center + bbBoxss.Extents).xy, (bbBoxss.Center - bbBoxss.Extents).xy);
-        float4 bbBoxRectUV = float4(clip2UV(bbBoxRect.xy), clip2UV(bbBoxRect.zw)); // max, min
+        float2 bbMinSS = (bbBoxss.Center - bbBoxss.Extents).xy;
+        float2 bbMaxSS = (bbBoxss.Center + bbBoxss.Extents).xy;
+        float4 bbBoxRectUV = float4(saturate(clip2UV(bbMaxSS)), saturate(clip2UV(bbMinSS))); // max, min
         float2 bbBoxRectSize = bbBoxss.Extents.xy * 2 * g_SceneGlobals.frameDimension; // extents are half-widths of the axis
-        uint hizLOD = ceil(log2(max(bbBoxRectSize.x, bbBoxRectSize.y)));
+        uint hizLOD = floor(log2(max(bbBoxRectSize.x, bbBoxRectSize.y)));
+        // Increase LOD level (decrease MIP) if the sample size doesn't even cover a 2x2 footprint
+        // see https://github.com/mateeeeeee/Adria-DX12/blob/master/Adria/Resources/NewShaders/GpuDrivenRendering/GpuDrivenRendering.hlsli#L148        
         hizLOD = clamp(hizLOD, 0, hizMips);
-        float4 depths =
-        {
-            hiz.SampleLevel(g_HIZSampler, bbBoxRectUV.xy, hizLOD).r, // max
-            hiz.SampleLevel(g_HIZSampler, bbBoxRectUV.zw, hizLOD).r, // min
-            hiz.SampleLevel(g_HIZSampler, bbBoxRectUV.zy, hizLOD).r, // the other two corners
-            hiz.SampleLevel(g_HIZSampler, bbBoxRectUV.xw, hizLOD).r
-        };
-        float minDepth = bbBoxss.Center.z - bbBoxss.Extents.z;
-        float maxDepth = bbBoxss.Center.z + bbBoxss.Extents.z;
-        float smpDepth = max(depths.x, max(depths.y, max(depths.z, depths.w)));
-        bool occluded = false;
+        if (min(g_SceneGlobals.frameDimension.x, g_SceneGlobals.frameDimension.y) >> hizLOD < 2)
+            hizLOD = max(0, hizLOD - 1);
+        float2 smpCoord = (bbBoxRectUV.xy + bbBoxRectUV.zw) * 0.5f;
+        float smpDepth = hiz.SampleLevel(g_HIZSampler,smpCoord, hizLOD).r; // sample at the centre
 #ifdef INVERSE_Z        
-        occluded = smpDepth > maxDepth;
+        float minDepth = bbBoxss.Center.z + bbBoxss.Extents.z;  // Center + Extent -> Max. With Inverse Z higher Z value means closer to POV.
+        bool occluded = minDepth < smpDepth; // Something is closer to POV than this instance...
 #else
-        occluded = smpDepth < minDepth;
-#endif
-        // Occluded. Reject.
+        float minDepth = bbBoxss.Center.z - bbBoxss.Extents.z;
+        bool occluded = minDepth >   smpDepth;
+#endif       
+        // Meaning it's Occluded. Reject.
         if (instance.occlusion_occludee() && occluded)
         {
             SET_CULLED(index);

@@ -27,7 +27,8 @@ namespace RHI {
     )
     {
         LOG(INFO) << "Compiling shader " << wstring_to_utf8(targetProfile) << ", " << wstring_to_utf8(sourcePath) << " @ " << wstring_to_utf8(entrypoint);
-
+        for (auto define : defines)
+            LOG(INFO) << "  -D " << wstring_to_utf8(define);
         ComPtr<IDxcLibrary> library;
         CHECK_HR(DxcCreateInstance(CLSID_DxcLibrary, IID_PPV_ARGS(&library)));
         
@@ -119,8 +120,8 @@ namespace RHI {
         m_Data.resize(size);
         memcpy(m_Data.data(), csoData, size);
     }
-    Shader::Shader(const wchar_t* sourcePath, const wchar_t* entrypoint, const wchar_t* targetProfile) {
-        auto blob = CompileShaderDXC(sourcePath, entrypoint, targetProfile);
+    Shader::Shader(const wchar_t* sourcePath, const wchar_t* entrypoint, const wchar_t* targetProfile, std::vector<const wchar_t*>&& defines) {
+        auto blob = CompileShaderDXC(sourcePath, entrypoint, targetProfile, std::move(defines));
         if (blob) {
             m_Data.resize(blob->GetBufferSize());
             memcpy(m_Data.data(), blob->GetBufferPointer(), m_Data.size());

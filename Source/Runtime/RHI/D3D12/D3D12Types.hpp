@@ -356,6 +356,37 @@ namespace RHI {
 			desc.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
 			return { desc };
 		}
+		// CompareGreaterOrLess true->D3D12_COMPARISON_FUNC_GREATER_EQUAL false->D3D12_COMPARISON_FUNC_LESS_EQUAL
+		static const SamplerDesc GetDepthSamplerDesc(
+			bool CompareGreaterOrLess = true
+		) {
+			D3D12_SAMPLER_DESC desc;
+			desc.Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
+			desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			desc.MinLOD = 0;
+			desc.MaxLOD = D3D12_FLOAT32_MAX;
+			desc.MipLODBias = 0.0f;
+			desc.MaxAnisotropy = 16;
+			desc.ComparisonFunc = CompareGreaterOrLess ? D3D12_COMPARISON_FUNC_GREATER_EQUAL : D3D12_COMPARISON_FUNC_LESS_EQUAL;
+			return { desc };
+		}
+		static const SamplerDesc GetDepthReduceSamplerDesc(
+			bool CompareMinReduceOrMaxReduce = true
+		) {
+			D3D12_SAMPLER_DESC desc;
+			desc.Filter = CompareMinReduceOrMaxReduce ? D3D12_FILTER_MINIMUM_MIN_MAG_MIP_POINT : D3D12_FILTER_MAXIMUM_MIN_MAG_MIP_POINT;
+			desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			desc.MinLOD = 0;
+			desc.MaxLOD = D3D12_FLOAT32_MAX;
+			desc.MipLODBias = 0.0f;
+			desc.MaxAnisotropy = 16;
+			desc.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+			return { desc };
+		}
 	};
 	class Device;
 	class DeviceChild {
