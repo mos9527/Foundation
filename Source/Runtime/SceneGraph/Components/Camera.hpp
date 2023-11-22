@@ -34,9 +34,10 @@ struct CameraComponent : public SceneComponent {
 		view = XMMatrixLookToLH(globalTransform.Translation(), lookDirection , upDirection);
 		fov = std::max(fov, 0.01f);
 		if (orthographic) {
+			float viewLength = std::abs(globalTransform.Translation().Dot(lookDirection));
 			projection = XMMatrixOrthographicLH(
-				2 * tan(fov / 2) * aspect,
-				2 * tan(fov / 2),
+				2 * viewLength * tan(fov / 2) * aspect,
+				2 * viewLength * tan(fov / 2),
 #ifdef INVERSE_Z
 				farZ, nearZ
 #else
