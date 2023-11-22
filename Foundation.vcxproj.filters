@@ -117,6 +117,9 @@
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\HiZ.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Runtime\AssetRegistry\AssetUploadManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">
@@ -294,6 +297,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\HiZ.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\AssetRegistry\AssetUploadManager.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

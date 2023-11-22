@@ -7,18 +7,7 @@
 namespace RHI {
 	class Device;
 	class CommandList;
-	struct Subresource {
-		const void* pSysMem;
-		uint rowPitch;
-		uint slicePitch;
-		operator const D3D12_SUBRESOURCE_DATA() const {
-			return D3D12_SUBRESOURCE_DATA{
-				.pData = pSysMem,
-				.RowPitch = rowPitch,
-				.SlicePitch = slicePitch
-			};
-		}
-	};	
+	typedef D3D12_SUBRESOURCE_DATA Subresource;
 	class Resource : public DeviceChild {
 	public:
 		struct ResourceDesc {
@@ -135,6 +124,10 @@ namespace RHI {
 				CHECK(dimension == ResourceDimension::Buffer);
 				return width;
 			}
+			inline size_t numElements() const {
+				CHECK(dimension == ResourceDimension::Buffer);
+				return width / stride == 0 ? 4 : stride;
+			}
 			static inline uint numMipsOfDimension(uint width, uint height) {
 				uint res = std::max(width, height);
 				return static_cast<uint>(std::floor(std::log2(res)));
@@ -144,22 +137,30 @@ namespace RHI {
 				return MipSlice + (ArraySlice * MipLevels) + (PlaneSlice * MipLevels * ArraySize);
 			}
 			inline uint indexSubresource(UINT MipSlice, UINT ArraySlice, UINT PlaneSlice = 0) const {
+				if (dimension == ResourceDimension::Buffer) return 0;
 				return indexSubresource(MipSlice, ArraySlice, PlaneSlice, mipLevels, arraySize);
 			}
 			inline uint numSubresources() const {
+				if (dimension == ResourceDimension::Buffer) return 1;
 				UINT planes = 1; // xxx DepthStencil & some formats have 2 planes
 				return indexSubresource(0, arraySize, planes - 1, mipLevels, arraySize); // arraysize * miplevels * planes
 			}
 		};		
 		Resource(Device* device, ComPtr<ID3D12Resource>&& texture, name_t name = nullptr);
 		Resource(Device* device, ResourceDesc const& desc);		
-		~Resource() = default;
+		~Resource() {
+			for (uint i = 0; i < m_MappedSubresources.size(); i++)
+				if (m_MappedSubresources[i])
+					Unmap(i);
+			m_Resource.Reset();
+			m_Allocation.Reset();
+		}
 		inline ResourceDesc const& GetDesc() { return m_Desc;  }
 		
 		inline ResourceState GetState(UINT subresource=0) { return m_States[subresource]; }		
 		
 		void SetBarrier(CommandList* cmd, ResourceState state, uint subresource);
-		void SetBarrier(CommandList* cmd, ResourceState state, std::vector<UINT>&& subresources);
+		void SetBarrier(CommandList* cmd, ResourceState state, const uint* subresources, uint numSubresources);
 		void SetBarrier(CommandList* cmd, ResourceState state);
 
 		inline auto GetGPUAddress() { return m_Resource->GetGPUVirtualAddress(); }
@@ -169,12 +170,11 @@ namespace RHI {
 		inline void Reset() { m_Resource.Reset(); }		
 
 		/* Upload & Readback only! */		
-		void Update(const void* data, size_t size, size_t offset);	
+		void Update(uint subresource, const void* data, size_t size, size_t offset);
 		/* Upload & Readback only! */
-		void Map(size_t read_begin, size_t read_end);
-		void Map() { Map(0, 0); }
+		void* Map(uint subresource);		
 		/* Upload & Readback only! */
-		void Unmap();		
+		void Unmap(uint subresource);
 
 		inline auto const& GetName() { return m_Name; }
 		inline void SetName(name_t name) { 
@@ -187,20 +187,24 @@ namespace RHI {
 		name_t m_Name;
 
 		const ResourceDesc m_Desc;
+		
 		std::vector<ResourceState> m_States; // States for every subresource
+		std::vector<uint> m_SubresourceRange; // array of uint [0,numSubresources]		
+		std::vector<void*> m_MappedSubresources;
 
 		ComPtr<ID3D12Resource> m_Resource;
 		ComPtr<D3D12MA::Allocation> m_Allocation;	
-
-		void* pMappedData{ nullptr };
 	};
 	class Buffer : public Resource {
 	public:
 		using Resource::Resource;
+		using Resource::~Resource;
 	};
 	class Texture : public Resource {
 	public:
 		using Resource::Resource;
+		using Resource::~Resource;
+
 		ClearValue const& GetClearValue() const {
 			return m_Desc.clearValue.value();
 		}

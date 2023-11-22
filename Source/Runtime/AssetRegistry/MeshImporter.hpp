@@ -82,7 +82,7 @@ static inline mesh_static load_static_mesh(aiMesh* srcMesh) {
 			mesh.tangent[i].y = srcMesh->mTangents[i].y;
 			mesh.tangent[i].z = srcMesh->mTangents[i].z;
 		}
-		if (srcMesh->mTextureCoords) {
+		if (srcMesh->mTextureCoords[0]) {
 			mesh.uv[i].x = srcMesh->mTextureCoords[0][i].x;
 			mesh.uv[i].y = srcMesh->mTextureCoords[0][i].y;
 		}

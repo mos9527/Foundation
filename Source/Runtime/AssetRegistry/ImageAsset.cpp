@@ -13,7 +13,7 @@ void SDRImageAsset::upload(RHI::Device* device) {
 		.pSysMem = initialData.data,
 		.rowPitch = (uint)initialData.width * 4,
 		.slicePitch = 0
-	};	
+	};
 	device->Upload(texture.get(), &subresource, 1);
 	textureSrv = std::make_unique<RHI::ShaderResourceView>(texture.get(), RHI::ShaderResourceViewDesc::GetTexture2DDesc(
 		RHI::ResourceFormat::R8G8B8A8_UNORM, 0, 1

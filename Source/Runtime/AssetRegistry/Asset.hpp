@@ -15,11 +15,14 @@ struct AssetHandle {
 	inline bool is_valid() { return entity != entt::tombstone; }
 	inline void invalidate() { entity = entt::tombstone; }
 };
+
 template<typename Imports> struct Asset {
 	using imported_type = Imports;
 	static constexpr AssetType type = AssetType::Unknown;
 	entt::entity entity;
 	std::string name;
+
+	std::unique_ptr<RHI::Resource> resource;
 };
 
 template<typename T> concept AssetRegistryDefined = requires(T t,typename T::imported_type&& imported, RHI::Device * device) {

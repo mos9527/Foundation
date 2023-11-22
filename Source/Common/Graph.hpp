@@ -7,7 +7,7 @@ template<typename T> class DAG {
 public:
 	using vertex = T;
 	using tree_type = unordered_set<vertex, DefaultAllocator<vertex>>;
-	template<typename Elem> using table_type = unordered_map<vertex, Elem, Allocator<std::pair<const vertex, Elem>>>;
+	template<typename Elem> using table_type = std::unordered_map<vertex, Elem>;
 	// removes a vertex and all its connecting links. O(V + E)
 	void remove_vertex(vertex V) {
 		auto graphT = transpose();

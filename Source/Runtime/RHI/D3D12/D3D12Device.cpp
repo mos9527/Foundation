@@ -231,46 +231,7 @@ namespace RHI {
     Device::~Device() {
         m_Factory->Release();        
     }    
-    // Uploading
-    // These `Upload()` will require some sort of intermediate buffers to work.
-    // Thus we manage it in Device. The intermediates are GCed per upload attempts
-    // and are only deleted when they are definiently no longer used.
-    void Device::BeginUpload(CommandList* cmd) {
-       m_UploadContext.Open(cmd);
-    }
-    void Device::Upload(Resource* dst, Subresource* data, uint count) {
-        CHECK(m_UploadContext.IsOpen());
-        const D3D12_RESOURCE_DESC resourceDesc = dst->GetDesc();
-        size_t intermediateSize;
-        m_Device->GetCopyableFootprints(
-            &resourceDesc, 0, count, 0, NULL, NULL, NULL, &intermediateSize
-        );
-        auto bufDesc = Resource::ResourceDesc::GetGenericBufferDesc(intermediateSize);        
-        auto intermediate = std::make_unique<Resource>(this, bufDesc);
-        std::vector<D3D12_SUBRESOURCE_DATA> arrData;
-        for (uint i = 0; i < count; i++) arrData.push_back(data[i]);
-        UpdateSubresources(
-            *m_UploadContext.cmd,
-            *dst,
-            *intermediate,
-            0, 0, count, arrData.data()
-        );
-        m_UploadContext.RecordIntermediate(std::move(intermediate));
-    };
-    void Device::Upload(Resource* dst, void* data, uint sizeInBytes) {
-        Subresource subresource{
-            .pSysMem = data,
-            .rowPitch = sizeInBytes,
-            .slicePitch = sizeInBytes
-        };
-        Upload(dst, &subresource, 1);
-    }
-    SyncFence Device::EndUpload() {
-        return m_UploadContext.UploadAndClose();
-    }
-    bool Device::Clean() {
-        return m_UploadContext.Clean();
-    }
+
     void Device::Wait() {
         m_DirectQueue->Wait();
         m_CopyQueue->Wait();

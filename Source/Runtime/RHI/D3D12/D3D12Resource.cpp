@@ -14,9 +14,10 @@ namespace RHI {
 			m_States[subresource] = state;
 		}
 	}
-	void Resource::SetBarrier(CommandList* cmd, ResourceState state, std::vector<UINT>&& subresources) {
+	void Resource::SetBarrier(CommandList* cmd, ResourceState state, const uint* subresources, uint numSubresources) {
 		std::vector<CD3DX12_RESOURCE_BARRIER> transitions;
-		for (UINT subresource : subresources) {
+		for (uint i = 0; i < numSubresources;i++) {
+			uint subresource = *(subresource + (uint*)i);
 			if (m_States[subresource] != state) {
 				transitions.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
 					m_Resource.Get(),
@@ -31,31 +32,32 @@ namespace RHI {
 			cmd->GetNativeCommandList()->ResourceBarrier(transitions.size(), transitions.data());
 	}
 	void Resource::SetBarrier(CommandList* cmd, ResourceState state) {
-		std::vector<UINT> subresources(m_Desc.numSubresources());
-		std::iota(subresources.begin(), subresources.end(), 0);
-		SetBarrier(cmd, state, std::move(subresources));
+		std::vector<UINT> subresources(m_Desc.numSubresources());		
+		SetBarrier(cmd, state, m_AllSubresources.data(), m_AllSubresources.size());
 	}
-	void Resource::Map(size_t read_begin, size_t read_end) {
+	void* Resource::Map(uint subresource) {
 		CHECK(m_Desc.heapType != ResourceHeapType::Default);
-		D3D12_RANGE read_range{ .Begin = read_begin, .End = read_end };
-		CHECK_HR(m_Resource->Map(0, &read_range, &pMappedData));
+		if (!m_MappedSubresources[subresource])
+			CHECK_HR(m_Resource->Map(0, nullptr, &m_MappedSubresources[subresource]));					
+		return m_MappedSubresources[subresource];
 	}
-
-	void Resource::Unmap() {
+	void Resource::Unmap(uint subresource) {
 		CHECK(m_Desc.heapType != ResourceHeapType::Default);
-		m_Resource->Unmap(0, nullptr);
-		pMappedData = nullptr;
+		if (m_MappedSubresources[subresource])
+			m_Resource->Unmap(subresource, nullptr);		
+		m_MappedSubresources[subresource] = nullptr;
 	}
-
-	void Resource::Update(const void* data, size_t size, size_t offset) {
+	void Resource::Update(uint subresource, const void* data, size_t size, size_t offset) {
 		CHECK(m_Desc.heapType != ResourceHeapType::Default);
 		CHECK(offset + size <= m_Desc.width);
-		if (pMappedData == nullptr) Map();
-		memcpy((unsigned char*)pMappedData + offset, data, size);
+		memcpy((unsigned char*)Map(subresource) + offset, data, size);
 	}
-
 	Resource::Resource(Device* device, ResourceDesc const& desc) : DeviceChild(device), m_Desc(desc) {
 		m_States.resize(desc.numSubresources());
+		m_MappedSubresources.resize(desc.numSubresources());
+		m_SubresourceRange.resize(desc.numSubresources());
+		std::iota(m_SubresourceRange.begin(), m_SubresourceRange.end(), 0);
+
 		for (auto& state : m_States) state = desc.initialState;
 		D3D12MA::ALLOCATION_DESC allocationDesc{};
 		allocationDesc.HeapType = ResourceHeapTypeToD3DHeapType(desc.heapType);
@@ -98,5 +100,4 @@ namespace RHI {
 			SetName(name);
 		m_States.resize(m_Desc.numSubresources());
 	}
-
 }

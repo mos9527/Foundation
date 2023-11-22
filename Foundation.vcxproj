@@ -157,6 +157,7 @@
     <ClCompile Include="Source\Runtime\AssetRegistry\ImageAsset.cpp" />
     <ClCompile Include="Source\Runtime\AssetRegistry\ImageImporter.hpp" />
     <ClCompile Include="Source\Runtime\AssetRegistry\MeshAsset.cpp" />
+    <ClCompile Include="Source\Runtime\AssetRegistry\AssetUploadManager.cpp" />
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\DeferredLighting.cpp" />
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\FFXSpd.cpp" />
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\GBuffer.cpp" />
@@ -195,6 +196,7 @@
     <ClInclude Include="Source\Runtime\AssetRegistry\Asset.hpp" />
     <ClInclude Include="Source\Runtime\AssetRegistry\AssetRegistry.hpp" />
     <ClInclude Include="Source\Runtime\AssetRegistry\MeshAsset.hpp" />
+    <ClInclude Include="Source\Runtime\AssetRegistry\AssetUploadManager.hpp" />
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\FFXSpd.hpp" />
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\GBuffer.hpp" />
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\HiZ.hpp" />

@@ -86,22 +86,39 @@ int main(int argc, char* argv[]) {
             swapchain.Resize(std::max((WORD)128u, LOWORD(lParam)), std::max((WORD)128u, HIWORD(lParam)));
         }
     });
-
-    SyncFence upload;
+    
+    struct UploadStatus {
+        std::atomic<bool> complete;
+        std::atomic<uint> numUploaded;
+        std::atomic<uint> numToUpload;
+    };
+    UploadStatus upload;
     taskpool.push([&] {        
         LOG(INFO) << "Loading scene";
         Assimp::Importer importer;
-#define GLTF_SAMPLE L"MetalRoughSpheres" // DepthOcclusionTest
+#define GLTF_SAMPLE L"Bistro" // DepthOcclusionTest
         path_t filepath = L"..\\Resources\\glTF-Sample-Models\\2.0\\" GLTF_SAMPLE "\\glTF\\" GLTF_SAMPLE ".gltf";
         std::string u8path = (const char*)filepath.u8string().c_str();
-        auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace | aiProcess_SplitLargeMeshes);
+        auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace);
         scene.load_from_aiScene(imported, filepath.parent_path());        
         LOG(INFO) << "Requesting upload";
         CommandList* cmd = device.GetCommandList<CommandListType::Copy>();
-        device.BeginUpload(cmd);
-        assets.upload_all<StaticMeshAsset>(&device);
-        assets.upload_all<SDRImageAsset>(&device);
-        upload = device.EndUpload();
+        auto upload_batch = [&]<typename T>(T & storage) {            
+            auto it = storage.begin(), it_end = storage.end();
+            const uint batchSize = 16;
+            upload.numToUpload += storage.size();
+            while (it != it_end) {
+                device.BeginUpload(cmd);
+                auto result = assets.upload_batch<typename T::value_type>(&device, it, batchSize);
+                it = result.first;
+                upload.numUploaded += result.second;
+                device.ExecuteUpload().Wait();
+            }
+        };
+        upload_batch(assets.storage<StaticMeshAsset>());
+        upload_batch(assets.storage<SDRImageAsset>());
+        upload.complete = true;
+        device.Clean();
     });
     // xxx cleaning
 
@@ -171,7 +188,7 @@ int main(int argc, char* argv[]) {
         viewportWidth = viewportSize.x, viewportHeight = viewportSize.y;
 #endif
 #ifdef IMGUI_ENABLED        
-        if (ImGui::Begin("Scene Graph")) {
+        if (upload.complete && ImGui::Begin("Scene Graph")) {
             scene.OnImGui();
             scene.update();
             ImGui::End();
@@ -198,7 +215,7 @@ int main(int argc, char* argv[]) {
         }
 #endif
         ShaderResourceView* pSrv = nullptr;
-        if (upload.IsCompleted()) {
+        if (upload.complete) {
             sceneViews[bbIndex].update(SceneGraphView::FrameData{
                 .scene = &scene,
                 .viewportWidth = viewportWidth,
@@ -212,7 +229,7 @@ int main(int argc, char* argv[]) {
         }
         else {
 #ifdef IMGUI_ENABLED
-            ImGui::Text("Loading...");
+            ImGui::Text("Loading... %d/%d", upload.numUploaded.load(), upload.numToUpload.load());
 #endif
         }
         swapchain.GetBackbuffer(bbIndex)->SetBarrier(cmd, ResourceState::RenderTarget);

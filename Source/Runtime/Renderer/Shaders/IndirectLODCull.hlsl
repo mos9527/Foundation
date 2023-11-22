@@ -96,7 +96,7 @@ void main_late(uint index : SV_DispatchThreadID)
 #else
         float minDepth = bbBoxss.Center.z - bbBoxss.Extents.z;
         bool occluded = minDepth >   smpDepth;
-#endif       
+#endif
         // Meaning it's Occluded. Reject.
         if (instance.occlusion_occludee() && occluded)
         {

@@ -27,6 +27,20 @@ public:
 		for (auto& obj : registry.storage<T>())
 			obj.upload(device);
 	};
+	template<AssetRegistryDefined T> auto& storage() {
+		return registry.storage<T>();
+	}
+	// returns {iterator for the next object, num of objects uploaded}
+	template<AssetRegistryDefined T> std::pair<typename entt::storage<T>::iterator,uint> upload_batch(RHI::Device* device, typename entt::storage<T>::iterator begin, uint numObjs) {
+		auto& storage_ = storage<T>();
+		uint batched = 0;
+		typename entt::storage<T>::iterator i = begin;
+		for (;batched < numObjs && i != storage_.end(); i++) {
+			i->upload(device);
+			batched++;
+		}
+		return { i, batched };
+	}
 	template<AssetRegistryDefined T> void clean() {
 		for (auto& obj : registry.storage<T>())
 			obj.clean();
