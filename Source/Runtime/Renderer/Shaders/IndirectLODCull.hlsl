@@ -16,9 +16,7 @@ cbuffer HIZData : register(b1, space0)
 // Each thread of the CS operates on one of the indirect commands
 [numthreads(RENDERER_INSTANCE_CULL_THREADS, 1, 1)]
 void main_early(uint index : SV_DispatchThreadID)
-{
-    bool frustum_cull = !(g_SceneGlobals.frameFlags & FRAME_FLAG_NO_FRUSTUM_CULL);
-    bool occlusion_cull = !(g_SceneGlobals.frameFlags & FRAME_FLAG_NO_OCCLUSION_CULL);
+{    
     if (index < g_SceneGlobals.numMeshInstances)
     {
         IndirectCommand cmd;
@@ -27,11 +25,13 @@ void main_early(uint index : SV_DispatchThreadID)
         BoundingBox bbBox = instance.boundingBox.Transform(instance.transform);
         BoundingSphere bbSphere = instance.boundingSphere.Transform(instance.transform);
         // Only DRAW instances that were visible last frame
+        if (!instance.visible())
+            return;
         bool visible = VISIBLE(index);
-        if (occlusion_cull && !visible)
+        if (g_SceneGlobals.occlusion_cull() && instance.occlusion_occludee() && !visible)
             return;
         // Frustum cull
-        if (frustum_cull && bbBox.Intersect(camera.clipPlanes[0], camera.clipPlanes[1], camera.clipPlanes[2], camera.clipPlanes[3], camera.clipPlanes[4], camera.clipPlanes[5]) == INTERSECT_VOLUMES_DISJOINT)
+        if (g_SceneGlobals.frustum_cull() && bbBox.Intersect(camera.clipPlanes[0], camera.clipPlanes[1], camera.clipPlanes[2], camera.clipPlanes[3], camera.clipPlanes[4], camera.clipPlanes[5]) == INTERSECT_VOLUMES_DISJOINT)
             return;
         // Assgin LODs and draw
         // xxx seems screen space spread heuristic is prone to LOD pop-ins?
@@ -55,17 +55,18 @@ void main_early(uint index : SV_DispatchThreadID)
 
 [numthreads(RENDERER_INSTANCE_CULL_THREADS, 1, 1)]
 void main_late(uint index : SV_DispatchThreadID)
-{    
-    bool occlusion_cull = !(g_SceneGlobals.frameFlags & FRAME_FLAG_NO_OCCLUSION_CULL);
-    if (occlusion_cull && index < g_SceneGlobals.numMeshInstances)
+{        
+    if (g_SceneGlobals.occlusion_cull() && index < g_SceneGlobals.numMeshInstances)
     {
         IndirectCommand cmd;
         SceneMeshInstance instance = g_SceneMeshInstances[index];
         SceneCamera camera = g_SceneGlobals.camera;
         BoundingBox bbBox = instance.boundingBox.Transform(instance.transform);
         BoundingSphere bbSphere = instance.boundingSphere.Transform(instance.transform);
+        if (!instance.visible())
+            return;
         // Frustum cull
-        if (bbBox.Intersect(camera.clipPlanes[0], camera.clipPlanes[1], camera.clipPlanes[2], camera.clipPlanes[3], camera.clipPlanes[4], camera.clipPlanes[5]) == INTERSECT_VOLUMES_DISJOINT)
+        if (g_SceneGlobals.frustum_cull() && bbBox.Intersect(camera.clipPlanes[0], camera.clipPlanes[1], camera.clipPlanes[2], camera.clipPlanes[3], camera.clipPlanes[4], camera.clipPlanes[5]) == INTERSECT_VOLUMES_DISJOINT)
         {
             SET_CULLED(index);
             return;
@@ -76,11 +77,12 @@ void main_late(uint index : SV_DispatchThreadID)
         // see https://www.rastergrid.com/blog/2010/10/hierarchical-z-map-based-occlusion-culling/
         // see https://github.com/zeux/niagara/blob/master/src/shaders/drawcull.comp.glsl
         Texture2D<float4> hiz = ResourceDescriptorHeap[hizHeapHandle];
+
         BoundingBox bbBoxss = bbBox.Transform(g_SceneGlobals.camera.viewProjection); // Screen space bounding box
         float4 bbBoxRect = float4((bbBoxss.Center + bbBoxss.Extents).xy, (bbBoxss.Center - bbBoxss.Extents).xy);
         float4 bbBoxRectUV = float4(clip2UV(bbBoxRect.xy), clip2UV(bbBoxRect.zw)); // max, min
-        float2 bbBoxRectSize = bbBoxss.Extents.xy * g_SceneGlobals.frameDimension;
-        uint hizLOD = ceil(log2(max(bbBoxRectSize.x, bbBoxRectSize.y))); // extents are half-widths of the axis
+        float2 bbBoxRectSize = bbBoxss.Extents.xy * 2 * g_SceneGlobals.frameDimension; // extents are half-widths of the axis
+        uint hizLOD = ceil(log2(max(bbBoxRectSize.x, bbBoxRectSize.y)));
         hizLOD = clamp(hizLOD, 0, hizMips);
         float4 depths =
         {
@@ -92,13 +94,14 @@ void main_late(uint index : SV_DispatchThreadID)
         float minDepth = bbBoxss.Center.z - bbBoxss.Extents.z;
         float maxDepth = bbBoxss.Center.z + bbBoxss.Extents.z;
         float smpDepth = max(depths.x, max(depths.y, max(depths.z, depths.w)));
+        bool occluded = false;
 #ifdef INVERSE_Z        
-        bool occluded = smpDepth > maxDepth;
+        occluded = smpDepth > maxDepth;
 #else
-        bool occluded = smpDepth < minDepth;
+        occluded = smpDepth < minDepth;
 #endif
         // Occluded. Reject.
-        if (occluded)
+        if (instance.occlusion_occludee() && occluded)
         {
             SET_CULLED(index);
             return;

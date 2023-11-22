@@ -27,9 +27,15 @@
 #define FRAME_FLAG_GBUFFER_ALBEDO_AS_LOD DEFBIT(1)
 #define FRAME_FLAG_DEBUG_VIEW_LOD (FRAME_FLAG_VIEW_ALBEDO | FRAME_FLAG_GBUFFER_ALBEDO_AS_LOD)
 #define FRAME_FLAG_WIREFRAME DEFBIT(2)
+#define FRAME_FLAG_FRUSTUM_CULL DEFBIT(3)
+#define FRAME_FLAG_OCCLUSION_CULL DEFBIT(4)
 
-#define FRAME_FLAG_NO_FRUSTUM_CULL DEFBIT(3)
-#define FRAME_FLAG_NO_OCCLUSION_CULL DEFBIT(4)
+#define INSTANCE_FLAG_OCCLUDER DEFBIT(0) // occludes other geometry
+#define INSTANCE_FLAG_OCCLUDEE DEFBIT(1) // can be occluded
+#define INSTANCE_FLAG_VISIBLE DEFBIT(2)
+#define INSTANCE_FLAG_DRAW_BOUNDS DEFBIT(3)
+
+#define FRAME_FLAG_DEFAULT (FRAME_FLAG_FRUSTUM_CULL | FRAME_FLAG_OCCLUSION_CULL)
 #ifdef __cplusplus
 #include "../../../pch.hpp"
 #pragma pack(push, 4) // otherwise it's 8 on 64-bit systems
@@ -103,6 +109,13 @@ struct SceneGlobals // ! align for CB
 
     float frameTimePrev;
     float3 _pad3;
+
+    bool frustum_cull() {
+        return frameFlags & FRAME_FLAG_FRUSTUM_CULL;
+    }
+    bool occlusion_cull() {
+        return frameFlags & FRAME_FLAG_OCCLUSION_CULL;
+    }
 };
 struct SceneMeshLod
 {
@@ -118,6 +131,7 @@ struct SceneMeshInstance
 {    
     uint numVertices; // 4
     uint materialIndex; //4
+    uint instanceFlags; // 4
     int lodOverride; // 4
 
     matrix transform; // 16 * 4
@@ -131,6 +145,20 @@ struct SceneMeshInstance
 
     D3D12_VERTEX_BUFFER_VIEW vertices; // 16
     SceneMeshLod lods[MAX_LOD_COUNT];
+
+    bool visible() {
+        return instanceFlags & INSTANCE_FLAG_VISIBLE;
+    }
+    bool occlusion_occluder() {
+        // We don't have a Z-prepass so every geometry would be a occluder
+        return true;
+    }
+    bool occlusion_occludee() {
+        return instanceFlags & INSTANCE_FLAG_OCCLUDEE;
+    }
+    bool draw_bounds() {
+        return instanceFlags & INSTANCE_FLAG_DRAW_BOUNDS;
+    }
 };
 struct SceneMaterial {
     // bindless handles within ResourceDescriptorHeap

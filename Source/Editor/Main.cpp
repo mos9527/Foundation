@@ -94,7 +94,7 @@ int main(int argc, char* argv[]) {
 #define GLTF_SAMPLE L"Custom" // DepthOcclusionTest
         path_t filepath = L"..\\Resources\\glTF-Sample-Models\\2.0\\" GLTF_SAMPLE "\\glTF\\" GLTF_SAMPLE ".gltf";
         std::string u8path = (const char*)filepath.u8string().c_str();
-        auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace);
+        auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace | aiProcess_SplitLargeMeshes);
         scene.load_from_aiScene(imported, filepath.parent_path());        
         LOG(INFO) << "Requesting upload";
         CommandList* cmd = device.GetCommandList<CommandListType::Copy>();
@@ -192,8 +192,8 @@ int main(int argc, char* argv[]) {
             if (debug_ViewAlbedo) frameFlags |= FRAME_FLAG_VIEW_ALBEDO;
             if (debug_ViewLod) frameFlags |= FRAME_FLAG_DEBUG_VIEW_LOD;
             if (debug_Wireframe) frameFlags |= FRAME_FLAG_WIREFRAME;
-            if (!debug_FrustumCull) frameFlags |= FRAME_FLAG_NO_FRUSTUM_CULL;
-            if (!debug_OcclusionCull) frameFlags |= FRAME_FLAG_NO_OCCLUSION_CULL;
+            if (debug_FrustumCull) frameFlags |= FRAME_FLAG_FRUSTUM_CULL;
+            if (debug_OcclusionCull) frameFlags |= FRAME_FLAG_OCCLUSION_CULL;
             ImGui::End();
         }
 #endif

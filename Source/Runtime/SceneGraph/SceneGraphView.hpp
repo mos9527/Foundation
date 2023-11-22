@@ -13,7 +13,9 @@ class SceneGraphView {
 	std::unique_ptr<RHI::Buffer> meshMaterialsBuffer;
 	std::unique_ptr<RHI::Buffer> lightBuffer;
 
-	SceneGlobals stats{};
+	SceneGlobals stats{
+		.frameFlags = FRAME_FLAG_DEFAULT
+	};
 	std::vector<SceneMeshInstance> meshes;
 	std::vector<SceneMaterial> materials;
 	std::vector<SceneLight> lights;
@@ -95,8 +97,12 @@ public:
 			}
 			sceneMesh.boundingBox = asset.boundingBox;
 			sceneMesh.boundingSphere = asset.boundingSphere;
-
 			sceneMesh.lodOverride = mesh.lodOverride;
+			sceneMesh.instanceFlags = 0;
+			if (mesh.isOccludee) sceneMesh.instanceFlags |= INSTANCE_FLAG_OCCLUDEE;
+			if (mesh.visible) sceneMesh.instanceFlags |= INSTANCE_FLAG_VISIBLE;
+			if (mesh.drawBoundingBox) sceneMesh.instanceFlags |= INSTANCE_FLAG_DRAW_BOUNDS;
+			// if (sceneMesh.isOccluder) sceneMesh.instanceFlags |= INSTANCE_FLAG_OCCLUDER;
 			meshes.push_back(sceneMesh);
 		}
 		meshInstancesBuffer->Update(meshes.data(), ::size_in_bytes(meshes), 0);
