@@ -29,7 +29,8 @@ struct Texture2DContainer : public RHI::Resource {
 	using RHI::Resource::IsValid;
 	Texture2DContainer(RHI::Device* device, RHI::ResourceFormat format, uint width, uint height, uint numMips = 1, uint numSlices = 1) : RHI::Resource(
 		device, RHI::Resource::ResourceDesc::GetTextureBufferDesc(
-			format, RHI::ResourceDimension::Texture2D, width, height, numMips, numSlices
+			format, RHI::ResourceDimension::Texture2D, width, height, numMips, numSlices, 1, 0,
+			RHI::ResourceFlags::None, RHI::ResourceHeapType::Upload
 		)
 	) {};	
 	const uint NumMips() { return m_Desc.mipLevels; }

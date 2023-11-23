@@ -20,7 +20,7 @@ DeferredLightingPass::DeferredLightingPass(Device* device) {
 	lightingPSO = std::make_unique<PipelineState>(device, std::move(pso));
 }
 
-RenderGraphPass& DeferredLightingPass::insert(RenderGraph& rg, SceneGraphView* sceneView, DeferredLightingPassHandles&& handles) {
+RenderGraphPass& DeferredLightingPass::insert(RenderGraph& rg, SceneView* sceneView, DeferredLightingPassHandles&& handles) {
 	return rg.add_pass(L"Lighting")
 		.readwrite(handles.frameBuffer)
 		.read(handles.depth)

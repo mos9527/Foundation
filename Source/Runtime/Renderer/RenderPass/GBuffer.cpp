@@ -59,7 +59,7 @@ GBufferPass::GBufferPass(Device* device) {
 	);
 }
 
-void GBufferPass::insert_execute(RenderGraphPass& pass, SceneGraphView* sceneView, GBufferPassHandles&& handles, bool late) {
+void GBufferPass::insert_execute(RenderGraphPass& pass, SceneView* sceneView, GBufferPassHandles&& handles, bool late) {
 	pass.execute([=](RgContext& ctx) -> void {
 		bool wireframe = sceneView->get_SceneGlobals().frameFlags & FRAME_FLAG_WIREFRAME;
 		UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
@@ -131,7 +131,8 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneGraphView* sceneVie
 			);
 		}
 		CHECK(r_indirect_commands_uav->GetDesc().HasCountedResource() && "Invalid Command Buffer!");
-		r_indirect_commands->SetBarrier(ctx.cmd, ResourceState::IndirectArgument);
+		ctx.cmd->Barrier(r_indirect_commands, ResourceState::IndirectArgument);
+		ctx.cmd->FlushBarriers();
 		native->OMSetRenderTargets(
 			4,
 			rtvHandles,
@@ -169,7 +170,7 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneGraphView* sceneVie
 	});
 }
 // see IndirectLODCull
-RenderGraphPass& GBufferPass::insert_earlydraw(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles&& handles) {
+RenderGraphPass& GBufferPass::insert_earlydraw(RenderGraph& rg, SceneView* sceneView, GBufferPassHandles&& handles) {
 	auto& pass = rg.add_pass(L"GBuffer Early Generation")
 		.read(handles.indirectCommands)
 		.write(handles.depth)
@@ -177,7 +178,7 @@ RenderGraphPass& GBufferPass::insert_earlydraw(RenderGraph& rg, SceneGraphView* 
 	insert_execute(pass, sceneView, std::move(handles),false /* late */);
 	return pass;
 }
-RenderGraphPass& GBufferPass::insert_latedraw(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles&& handles) {
+RenderGraphPass& GBufferPass::insert_latedraw(RenderGraph& rg, SceneView* sceneView, GBufferPassHandles&& handles) {
 	auto& pass = rg.add_pass(L"GBuffer Late Generation")
 		.read(handles.indirectCommands)
 		.write(handles.depth)

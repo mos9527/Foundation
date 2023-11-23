@@ -25,5 +25,5 @@ public:
 		RgHandle& fb_uav;		
 	};
 	DeferredLightingPass(RHI::Device* device);
-	RenderGraphPass& insert(RenderGraph& rg, SceneGraphView* sceneView, DeferredLightingPassHandles&& handles);
+	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, DeferredLightingPassHandles&& handles);
 };

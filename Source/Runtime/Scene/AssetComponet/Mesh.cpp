@@ -1,9 +1,9 @@
-#include "../SceneGraph.hpp"
-#include "../../AssetRegistry/AssetRegistry.hpp"
+#include "../Scene.hpp"
+#include "../../Asset/AssetRegistry.hpp"
 #include "Mesh.hpp"
 #ifdef IMGUI_ENABLED
-void MeshAssetComponent::OnImGui() {
-	auto& asset = parent.get_asset_registry().get<MeshAsset>(mesh);
+void AssetMeshComponent::OnImGui() {	
+	auto& asset = parent.get<MeshAsset>(mesh);
 	ImGui::Text("Vertices: %d", asset.vertexBuffer->numVertices);
 	for (uint i = 0; i < MAX_LOD_COUNT; i++) {
 		ImGui::Text("LOD #%d", i);

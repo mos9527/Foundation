@@ -1,9 +1,9 @@
 #pragma once
-#include "IO.hpp"
 #include "Asset.hpp"
 #include "../RHI/RHI.hpp"
 #include "../../Runtime/Renderer/Shaders/Shared.h"
 #include "../../Common/Allocator.hpp"
+
 #include "UploadContext.hpp"
 #include "TextureAsset.hpp"
 #include "MeshAsset.hpp"
@@ -21,10 +21,9 @@ public:
 	template<Asset T> AssetHandle create() {		
 		return AssetHandle{ T::type, registry.create() };
 	}
-	template<Importable T> AssetHandle import(AssetHandle handle, RHI::Device* device, T* import) {	
+	template<Importable T> auto& import(AssetHandle handle, RHI::Device* device, T* import) {	
 		DCHECK(handle.type == ImportedAssetTraits<T>::type && "Importing asset onto a incompatible handle");
-		emplace_or_replace<typename ImportedAssetTraits<T>::imported_by>(handle, device, import);
-		return handle;
+		return emplace<typename ImportedAssetTraits<T>::imported_by>(handle, device, import);		
 	}
 	template<Asset T> void upload(AssetHandle handle, UploadContext* ctx) {
 		get<T>(handle).Upload(ctx);
@@ -50,7 +49,7 @@ public:
 		registry.remove<T>(resource);
 	}
 private:
-	template<Asset T, typename ...Args> T& emplace_or_replace(AssetHandle handle, Args &&...args) {
-		return registry.emplace_or_replace<T>(handle, std::forward<decltype(args)>(args)...);
+	template<Asset T, typename ...Args> T& emplace(AssetHandle handle, Args &&...args) {
+		return registry.emplace<T>(handle, std::forward<decltype(args)>(args)...);
 	}
 };

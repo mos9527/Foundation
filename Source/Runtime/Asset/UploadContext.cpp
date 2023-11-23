@@ -6,7 +6,7 @@ void UploadContext::QueueUpload(Resource* dst, Subresource* data, uint FirstSubr
     const D3D12_RESOURCE_DESC Desc = dst->GetDesc();
     size_t RequiredSize;    
     m_Device->GetNativeDevice()->GetCopyableFootprints(&Desc, FirstSubresource, NumSubresources, 0, NULL, NULL, NULL, &RequiredSize);
-    auto& intermediate = m_IntermediateBuffers.emplace_back(std::make_unique<Resource>(this, Resource::ResourceDesc::GetGenericBufferDesc(RequiredSize)));
+    auto& intermediate = m_IntermediateBuffers.emplace_back(std::make_unique<Resource>(this->GetParent(), Resource::ResourceDesc::GetGenericBufferDesc(RequiredSize)));
     UpdateSubresources(
         *this,
         *dst,

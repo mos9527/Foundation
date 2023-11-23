@@ -1,9 +1,9 @@
 #pragma once
 #include "AssetComponent.hpp"
 
-struct MaterialAssetComponet : public AssetComponent {	
+struct AssetMaterialComponent : public AssetComponent {	
 	static const AssetComponentType type = AssetComponentType::Material;
-	MaterialAssetComponet(SceneGraph& parent, entt::entity entity) : AssetComponent(parent, entity, type) {};
+	AssetMaterialComponent(Scene& parent, entt::entity entity) : AssetComponent(parent, entity, type) {};
 
 	float4 albedo;
 	float4 pbr;

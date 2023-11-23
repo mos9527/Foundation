@@ -1,6 +1,6 @@
 #include "Deferred.hpp"
 using namespace RHI;
-RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
+RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 {
 	UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
 	RenderGraph rg(cache);	

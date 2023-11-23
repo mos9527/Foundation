@@ -208,7 +208,7 @@ namespace RHI {
         m_ZeroBuffer = std::make_unique<Buffer>(this, Resource::ResourceDesc::GetGenericBufferDesc(sizeof(uint) * RHI_ZERO_BUFFER_SIZE, sizeof(uint)));
         m_ZeroBuffer->SetName(L"Zero buffer");
         std::vector<uint> zeros(RHI_ZERO_BUFFER_SIZE);
-        m_ZeroBuffer->Update(0, zeros.data(), sizeof(uint) * RHI_ZERO_BUFFER_SIZE, 0);
+        m_ZeroBuffer->Update(zeros.data(), sizeof(uint) * RHI_ZERO_BUFFER_SIZE);
     }
     Device::~Device() {
         m_Factory->Release();        

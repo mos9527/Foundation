@@ -12,7 +12,7 @@ struct SceneCameraComponent : public SceneComponent {
 	
 	bool orthographic = false;
 	static const SceneComponentType type = SceneComponentType::Camera;
-	SceneCameraComponent(SceneGraph& graph, entt::entity ent) : SceneComponent(graph, ent, type) {
+	SceneCameraComponent(Scene& scene, entt::entity ent) : SceneComponent(scene, ent, type) {
 		fov = XM_PIDIV4;
 		nearZ = 0.01f;
 		farZ = 100.0f;

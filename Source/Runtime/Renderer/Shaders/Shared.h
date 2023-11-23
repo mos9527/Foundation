@@ -129,6 +129,7 @@ struct SceneMeshLod
 };
 struct SceneMeshInstance
 {    
+    uint instanceIndex;
     uint numVertices; // 4
     uint materialIndex; //4
     uint instanceFlags; // 4

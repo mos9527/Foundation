@@ -25,7 +25,7 @@ HierarchalDepthPass::HierarchalDepthPass(Device* device) : spdPass(device, REDUC
 	));
 }
 
-RenderGraphPass& HierarchalDepthPass::insert(RenderGraph& rg, SceneGraphView* sceneView, HierarchalDepthPassHandles&& handles) {
+RenderGraphPass& HierarchalDepthPass::insert(RenderGraph& rg, SceneView* sceneView, HierarchalDepthPassHandles&& handles) {
 	rg.add_pass(L"Hierarchal Depth Sample To Texture")
 		.read(handles.depth)
 		.readwrite(handles.hizTexture)

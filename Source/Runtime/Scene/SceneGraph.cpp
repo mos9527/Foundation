@@ -1,37 +1,40 @@
 #include "SceneGraph.hpp"
 #include "Scene.hpp"
-
 SceneGraph::SceneGraph(Scene& scene) : scene(scene) {
-	root = scene.create();
-	auto& root_collection = emplace_or_replace<SceneCollectionComponent>(root);
+	root = scene.create<SceneComponent>();
+	auto& root_collection = scene.emplace<SceneCollectionComponent>(root);
 	root_collection.set_name("Scene Root");
-	add_link(entt::tombstone, root);
 };
-SceneComponent* SceneGraph::try_get_base(const entt::entity entity) {
-	return scene.try_get_base<SceneComponent>(entity);	
+Scene& SceneGraph::get_scene() {
+	return scene;
 }
-template<IsSceneComponent T> T& SceneGraph::get(const entt::entity entity) {
-	return scene.get<T>(entity);
+void SceneGraph::update_parent_child(SceneComponent* parent, SceneComponent* child) {
+	if (parent && child) {
+		child->version = get_scene().version;
+		parent->version = get_scene().version;
+		child->globalTransform = parent->globalTransform * child->localTransform;
+	}
+	else if (child) {
+		child->version = get_scene().version;
+		child->globalTransform = child->localTransform;
+	}
 }
-template<IsSceneComponent T> T* SceneGraph::try_get(const entt::entity entity) {
-	return scene.try_get<T>(entity);
+void SceneGraph::update(const entt::entity entity) {
+	scene.version++;
+	reduce(entity, [&](entt::entity current, entt::entity parent) -> void {
+		SceneComponent* parentComponent = get_base(parent);
+		SceneComponent* childComponent = get_base(current);
+		update_parent_child(parentComponent, childComponent);
+	});
 }
-template<IsSceneComponent T> auto& SceneGraph::emplace_or_replace(const entt::entity entity) {
-	scene.emplace_or_replace<SceneComponentType>(entity, T::type);
-	return scene.emplace_or_replace<T>(entity, *this, entity);
+SceneComponent* SceneGraph::get_base(const entt::entity entity) {
+	return scene.get_base<SceneComponent>(entity);	
 }
-template<IsSceneComponent T> entt::entity SceneGraph::create_child_of(const entt::entity parent) {
-	auto entity = scene.registry.create();
-	emplace<T>(entity);
-	add_link(parent, entity);
-	return entity;
-}
-
 #ifdef IMGUI_ENABLED
 void SceneGraph::OnImGui() {
 	auto dfs_nodes = [&](auto& func, entt::entity entity, uint depth) -> void {
-		SceneComponentType tag = get<SceneComponentType>(entity);
-		SceneComponent* componet = try_get_base_ptr(entity);
+		SceneComponentType tag = scene.get_type<SceneComponentType>(entity);
+		SceneComponent* componet = scene.get_base<SceneComponent>(entity);
 		uint stack_count = 0;
 		if (ImGui::TreeNode(componet->get_name())) {
 			ImGui::SeparatorText("Transforms");
@@ -62,7 +65,7 @@ void SceneGraph::OnImGui() {
 			std::vector<entt::entity> child_sorted(children.begin(), children.end());
 			std::sort(child_sorted.begin(), child_sorted.end(), [&](entt::entity lhs, entt::entity rhs) {
 				// sort in lexicographicaly descending order
-				int lex = strcmp(try_get_base_ptr(lhs)->get_name(), try_get_base_ptr(rhs)->get_name());
+				int lex = strcmp(scene.get_base<SceneComponent>(lhs)->get_name(), scene.get_base<SceneComponent>(rhs)->get_name());
 				if (lex != 0) return lex < 0;
 				// same name. to enforce strict weak ordering, entity id is then used instead
 				return lhs < rhs;

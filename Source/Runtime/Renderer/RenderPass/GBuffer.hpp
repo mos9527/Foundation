@@ -27,10 +27,10 @@ private:
 	std::unique_ptr<RHI::PipelineState> gBufferPSO, gBufferPSOWireframe;
 	std::unique_ptr<RHI::CommandSignature> gBufferIndirectCommandSig;
 
-	void insert_execute(RenderGraphPass& pass, SceneGraphView* sceneView, GBufferPassHandles&& handles, bool late);
+	void insert_execute(RenderGraphPass& pass, SceneView* sceneView, GBufferPassHandles&& handles, bool late);
 public:
 
 	GBufferPass(RHI::Device* device);
-	RenderGraphPass& insert_earlydraw(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles&& handles);
-	RenderGraphPass& insert_latedraw(RenderGraph& rg, SceneGraphView* sceneView, GBufferPassHandles&& handles);
+	RenderGraphPass& insert_earlydraw(RenderGraph& rg, SceneView* sceneView, GBufferPassHandles&& handles);
+	RenderGraphPass& insert_latedraw(RenderGraph& rg, SceneView* sceneView, GBufferPassHandles&& handles);
 };

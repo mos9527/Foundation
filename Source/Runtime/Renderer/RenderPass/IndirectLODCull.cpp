@@ -33,7 +33,7 @@ IndirectLODCullPass::IndirectLODCullPass(Device* device) {
 	cullPassLatePSO = std::make_unique<PipelineState>(device, std::move(pso));	
 	cullPassLatePSO->SetName(L"Late Cull");
 }
-void IndirectLODCullPass::insert_execute(RenderGraphPass& pass, SceneGraphView* sceneView, auto&& handles) {
+void IndirectLODCullPass::insert_execute(RenderGraphPass& pass, SceneView* sceneView, auto&& handles) {
 	pass.execute([=](RgContext& ctx) -> void {
 		auto* r_visibility_buffer = ctx.graph->get<Buffer>(handles.visibilityBuffer);
 		auto* r_indirect_cmd_buffer = ctx.graph->get<Buffer>(handles.indirectCmdBuffer);
@@ -54,27 +54,31 @@ void IndirectLODCullPass::insert_execute(RenderGraphPass& pass, SceneGraphView* 
 		native->SetComputeRootConstantBufferView(0, sceneView->get_SceneGlobalsBuffer()->GetGPUAddress());
 		native->SetComputeRootShaderResourceView(1, sceneView->get_SceneMeshInstancesBuffer()->GetGPUAddress());
 		native->SetComputeRootDescriptorTable(2, r_indirect_cmd_buffer_uav->descriptor);
-		native->SetComputeRootUnorderedAccessView(3, r_visibility_buffer->GetGPUAddress()); // b0 space0			
-		r_indirect_cmd_buffer->SetBarrier(ctx.cmd, ResourceState::CopyDest);
+		native->SetComputeRootUnorderedAccessView(3, r_visibility_buffer->GetGPUAddress()); // b0 space0
+		ctx.cmd->Barrier(r_indirect_cmd_buffer, ResourceState::CopyDest);
+		ctx.cmd->FlushBarriers();
 		ctx.cmd->ZeroBufferRegion(r_indirect_cmd_buffer, CommandBufferCounterOffset, sizeof(UINT));
-		r_indirect_cmd_buffer->SetBarrier(ctx.cmd, ResourceState::UnorderedAccess);
+		ctx.cmd->Barrier(r_indirect_cmd_buffer, ResourceState::UnorderedAccess);
+		ctx.cmd->FlushBarriers();
 		// dispatch compute to cull on the gpu
 		native->Dispatch(DivRoundUp(sceneView->get_SceneGlobals().numMeshInstances, RENDERER_INSTANCE_CULL_THREADS), 1, 1);
 	});
 }
 // xxx decided when to actually perform the clear
-RenderGraphPass& IndirectLODCullPass::insert_clear(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODClearPassHandles&& handles) {
+RenderGraphPass& IndirectLODCullPass::insert_clear(RenderGraph& rg, SceneView* sceneView, IndirectLODClearPassHandles&& handles) {
 	return rg.add_pass(L"Indirect Cull Clear Visiblity Buffer")
 		.readwrite(handles.visibilityBuffer)
 		.execute([=](RgContext& ctx) -> void {
 			auto* r_visibility_buffer = ctx.graph->get<Buffer>(handles.visibilityBuffer);
 			auto state_prev = r_visibility_buffer->GetSubresourceState();
-			r_visibility_buffer->SetBarrier(ctx.cmd, ResourceState::CopyDest);
+			ctx.cmd->Barrier(r_visibility_buffer, ResourceState::CopyDest);
+			ctx.cmd->FlushBarriers();			
 			ctx.cmd->ZeroBufferRegion(r_visibility_buffer, 0, r_visibility_buffer->GetDesc().sizeInBytes());
-			r_visibility_buffer->SetBarrier(ctx.cmd, state_prev);
+			ctx.cmd->Barrier(r_visibility_buffer, state_prev);
+			ctx.cmd->FlushBarriers();
 	});
 }
-RenderGraphPass& IndirectLODCullPass::insert_earlycull(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODEarlyCullPassHandles&& handles) {
+RenderGraphPass& IndirectLODCullPass::insert_earlycull(RenderGraph& rg, SceneView* sceneView, IndirectLODEarlyCullPassHandles&& handles) {
 	auto& pass = rg.add_pass(L"Early Indirect Cull & LOD") // { mesh | mesh.visiblePrevFrame && mesh.frustumCullPassed }
 		.readwrite(handles.visibilityBuffer)
 		.readwrite(handles.indirectCmdBuffer);
@@ -82,7 +86,7 @@ RenderGraphPass& IndirectLODCullPass::insert_earlycull(RenderGraph& rg, SceneGra
 	return pass;
 }
 
-RenderGraphPass& IndirectLODCullPass::insert_latecull(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODLateCullPassHandles&& handles) {
+RenderGraphPass& IndirectLODCullPass::insert_latecull(RenderGraph& rg, SceneView* sceneView, IndirectLODLateCullPassHandles&& handles) {
 	auto& pass = rg.add_pass(L"Late Indirect Cull & LOD") // { mesh | !mesh.visiblePrevFrame && mesh.frustumCullPassed && mesh.occlusionCullPassed }, then sets visibility buffer
 		.read(handles.hizTexture)
 		.readwrite(handles.visibilityBuffer)

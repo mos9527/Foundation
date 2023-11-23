@@ -14,7 +14,7 @@ class IndirectLODCullPass {
 	std::unique_ptr<RHI::RootSignature> cullPassRS;
 	std::unique_ptr<RHI::PipelineState> cullPassEarlyPSO, cullPassLatePSO;
 
-	void insert_execute(RenderGraphPass& pass, SceneGraphView* sceneView, auto&& handles);
+	void insert_execute(RenderGraphPass& pass, SceneView* sceneView, auto&& handles);
 public:
 	struct IndirectLODClearPassHandles {
 		RgHandle& visibilityBuffer;
@@ -47,7 +47,7 @@ public:
 		};
 	}
 	IndirectLODCullPass(RHI::Device* device);
-	RenderGraphPass& insert_clear(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODClearPassHandles&& handles);
-	RenderGraphPass& insert_earlycull(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODEarlyCullPassHandles&& handles);
-	RenderGraphPass& insert_latecull(RenderGraph& rg, SceneGraphView* sceneView, IndirectLODLateCullPassHandles&& handles);
+	RenderGraphPass& insert_clear(RenderGraph& rg, SceneView* sceneView, IndirectLODClearPassHandles&& handles);
+	RenderGraphPass& insert_earlycull(RenderGraph& rg, SceneView* sceneView, IndirectLODEarlyCullPassHandles&& handles);
+	RenderGraphPass& insert_latecull(RenderGraph& rg, SceneView* sceneView, IndirectLODLateCullPassHandles&& handles);
 };

@@ -1,11 +1,10 @@
 #pragma once
 #include "SceneComponent.hpp"
-#include "../../AssetRegistry/IO.hpp"
-#include "../../AssetRegistry/AssetRegistry.hpp"
+#include "../../Asset/AssetRegistry.hpp"
 
 struct SceneMeshComponent : public SceneComponent {
 	static const SceneComponentType type = SceneComponentType::Mesh;
-	SceneMeshComponent(SceneGraph& graph, entt::entity ent) : SceneComponent(graph, ent, type) {};
+	SceneMeshComponent(Scene& scene, entt::entity ent) : SceneComponent(scene, ent, type) {};
 
 	entt::entity meshAsset = entt::tombstone;
 	entt::entity materialAsset = entt::tombstone;

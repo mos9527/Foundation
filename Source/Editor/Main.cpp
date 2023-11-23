@@ -2,10 +2,11 @@
 #include "ViewportWindow.hpp"
 
 #include "../Runtime/RHI/RHI.hpp"
-#include "../Runtime/AssetRegistry/AssetRegistry.hpp"
-#include "../Runtime/SceneGraph/SceneGraph.hpp"
-#include "../Runtime/SceneGraph/SceneGraphView.hpp"
-
+#include "../Runtime/Asset/AssetRegistry.hpp"
+#include "../Runtime/Scene/Scene.hpp"
+#include "../Runtime/Scene/SceneView.hpp"
+#include "../Runtime/Scene/SceneGraph.hpp"
+#include "../Runtime/Scene/SceneImporter.hpp"
 #include "../Runtime/Renderer/Deferred.hpp"
 using namespace RHI;
 #ifdef IMGUI_ENABLED
@@ -27,29 +28,29 @@ int main(int argc, char* argv[]) {
     ShowWindow(vp.m_hWnd, SW_SHOW);
 #endif
     std::mutex renderMutex;
+
     RHI::Device device(Device::DeviceDesc{.AdapterIndex = 0});
     RHI::Swapchain swapchain(&device, Swapchain::SwapchainDesc {
         vp.m_hWnd, 1600,1000, ResourceFormat::R8G8B8A8_UNORM
     });
 
-    DefaultTaskThreadPool taskpool;
-    AssetRegistry assets;
-    SceneGraph scene{ assets };
-    std::vector<SceneGraphView> sceneViews;
-    for (int i=0;i < swapchain.GetBackbufferCount();i++) 
-        sceneViews.emplace_back(&device);
+    Scene scene;
+    SceneGraph& graph = scene.graph;
+    DefaultTaskThreadPool taskpool;   
     DeferredRenderer renderer(&device);
-    
-    scene.set_active_camera(scene.create_child_of<CameraComponent>(scene.get_root()));
-    auto& camera = scene.get_active_camera();
-    camera.set_name("Camera");
-    camera.localTransform = AffineTransform::CreateTranslation({ 0,0,-20 });
+    // Create N-buffered scene views
+    std::vector<std::unique_ptr<SceneView>> sceneViews(swapchain.GetBackbufferCount());
+    for (auto& view : sceneViews)
+        view = std::make_unique<SceneView>(&device);
 
-    auto lightEntity = scene.create_child_of<LightComponent>(scene.get_root());
-    auto& light = scene.get<LightComponent>(lightEntity);
+    SceneCameraComponent& camera = graph.emplace_child_of<SceneCameraComponent>(graph.get_root());    
+    camera.set_name("Camera");
+    camera.set_local_transform(AffineTransform::CreateTranslation({ 0,0,-20 }));    
+
+    SceneLightComponent& light = graph.emplace_child_of<SceneLightComponent>(graph.get_root());
     light.set_name("Spot Light");
-    light.localTransform = AffineTransform::CreateFromYawPitchRoll(0,-XM_PIDIV4,XM_PI);
-    light.type = LightComponent::LightType::Directional;
+    light.set_local_transform(AffineTransform::CreateFromYawPitchRoll(0, -XM_PIDIV4, XM_PI));
+    light.lightType = SceneLightComponent::LightType::Directional;
     light.intensity = 3.0f;    
     light.color = { 1,1,1,1 };
     light.radius = 100.0f;
@@ -58,7 +59,7 @@ int main(int argc, char* argv[]) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui_ImplWin32_Init(vp.m_hWnd);
-
+    // Load ImGui resources
     Descriptor ImGuiFontDescriptor = device.GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
     ImGui_ImplDX12_Init(device.GetNativeDevice(), RHI_DEFAULT_SWAPCHAIN_BACKBUFFER_COUNT,
         ResourceFormatToD3DFormat(swapchain.GetFormat()), *device.GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>(),
@@ -86,41 +87,18 @@ int main(int argc, char* argv[]) {
             swapchain.Resize(std::max((WORD)128u, LOWORD(lParam)), std::max((WORD)128u, HIWORD(lParam)));
         }
     });
-    
-    struct UploadStatus {
-        std::atomic<bool> complete;
-        std::atomic<uint> numUploaded;
-        std::atomic<uint> numToUpload;
-    };
-    UploadStatus upload;
+    // Start async upload on the taskpool
+    SceneImporter::SceneImporterAtomicStatus uploadStatus;
     taskpool.push([&] {        
         LOG(INFO) << "Loading scene";
         Assimp::Importer importer;
-#define GLTF_SAMPLE L"Bistro" // DepthOcclusionTest
+#define GLTF_SAMPLE L"Sponza" // DepthOcclusionTest
         path_t filepath = L"..\\Resources\\glTF-Sample-Models\\2.0\\" GLTF_SAMPLE "\\glTF\\" GLTF_SAMPLE ".gltf";
         std::string u8path = (const char*)filepath.u8string().c_str();
+        UploadContext ctx(&device);
         auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace);
-        scene.load_from_aiScene(imported, filepath.parent_path());        
-        LOG(INFO) << "Requesting upload";
-        CommandList* cmd = device.GetDefaultCommandList<CommandListType::Copy>();
-        auto upload_batch = [&]<typename T>(T & storage) {            
-            auto it = storage.begin(), it_end = storage.end();
-            const uint batchSize = 16;
-            upload.numToUpload += storage.size();
-            while (it != it_end) {
-                device.BeginUpload(cmd);
-                auto result = assets.upload_batch<typename T::value_type>(&device, it, batchSize);
-                it = result.first;
-                upload.numUploaded += result.second;
-                device.ExecuteUpload().Wait();
-            }
-        };
-        upload_batch(assets.storage<MeshAsset>());
-        upload_batch(assets.storage<SDRImageAsset>());
-        upload.complete = true;
-        device.Clean();
+        SceneImporter::load_aiScene(&ctx, uploadStatus, scene, imported, filepath.parent_path());        
     });
-    // xxx cleaning
 
     bool vsync = false;
     auto cmd = device.GetDefaultCommandList<CommandListType::Direct>();
@@ -188,9 +166,8 @@ int main(int argc, char* argv[]) {
         viewportWidth = viewportSize.x, viewportHeight = viewportSize.y;
 #endif
 #ifdef IMGUI_ENABLED        
-        if (upload.complete && ImGui::Begin("Scene Graph")) {
-            scene.OnImGui();
-            scene.update();
+        if (uploadStatus.complete && ImGui::Begin("Scene Graph")) {
+            graph.OnImGui();            
             ImGui::End();
         }
 #else
@@ -215,9 +192,9 @@ int main(int argc, char* argv[]) {
         }
 #endif
         ShaderResourceView* pSrv = nullptr;
-        if (upload.complete) {
-            sceneViews[bbIndex].update(SceneGraphView::FrameData{
-                .scene = &scene,
+        if (uploadStatus.complete) {
+            /* RENDER BEGIN */
+            sceneViews[bbIndex]->update(scene, camera, SceneView::FrameData{
                 .viewportWidth = viewportWidth,
                 .viewportHeight = viewportHeight,
                 .frameIndex = swapchain.GetFrameIndex(),
@@ -225,14 +202,16 @@ int main(int argc, char* argv[]) {
                 .backBufferIndex = bbIndex,
                 .frameTimePrev = ImGui::GetIO().DeltaTime
             });
-            pSrv = renderer.Render(&sceneViews[bbIndex]);
+            pSrv = renderer.Render(sceneViews[bbIndex].get());
+            /* RENDER END */
         }
         else {
 #ifdef IMGUI_ENABLED
-            ImGui::Text("Loading... %d/%d", upload.numUploaded.load(), upload.numToUpload.load());
+            ImGui::Text("Loading... %d/%d", uploadStatus.numUploaded.load(), uploadStatus.numToUpload.load());
 #endif
         }
-        swapchain.GetBackbuffer(bbIndex)->SetBarrier(cmd, ResourceState::RenderTarget);
+        cmd->Barrier(swapchain.GetBackbuffer(bbIndex), ResourceState::RenderTarget);
+        cmd->FlushBarriers();
         auto& rtv = swapchain.GetBackbufferRTV(bbIndex);
         const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
         cmd->GetNativeCommandList()->ClearRenderTargetView(rtv.descriptor.get_cpu_handle(), clearColor, 0, nullptr);
@@ -252,7 +231,7 @@ int main(int argc, char* argv[]) {
         PIXEndEvent(cmd->GetNativeCommandList());
 #endif
         /* FRAME END */
-        swapchain.GetBackbuffer(bbIndex)->SetBarrier(cmd, ResourceState::Present);
+        cmd->Barrier(swapchain.GetBackbuffer(bbIndex), ResourceState::Present);
         cmd->Close();
         cmd->Execute();
         swapchain.PresentAndMoveToNextFrame(vsync);

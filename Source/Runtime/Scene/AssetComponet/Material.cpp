@@ -1,6 +1,6 @@
 #include "Material.hpp"
 #ifdef IMGUI_ENABLED
-void MaterialAssetComponet::OnImGui() {
+void AssetMaterialComponent::OnImGui() {
 	if (!albedoImage.is_valid())
 		ImGui::ColorEdit4("Albedo", (float*)&albedo);
 	else

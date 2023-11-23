@@ -177,7 +177,7 @@ namespace RHI {
 		inline operator ID3D12Resource* () { return m_Resource.Get(); }
 
 		/* Upload & Readback only! */		
-		void Update(uint subresource, const void* data, size_t size, size_t offset);
+		void Update(const void* data, size_t size, size_t offset = 0, uint subresource = 0);
 		/* Upload & Readback only! */
 		void* Map(uint subresource);		
 		/* Upload & Readback only! */

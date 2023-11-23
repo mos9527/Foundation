@@ -1,20 +1,19 @@
 #pragma once
 #include "../Component.hpp"
-#include "../../AssetRegistry/Asset.hpp"
+#include "../../Asset/Asset.hpp"
 
 enum class AssetComponentType {	
 	Unknown,
 	Mesh,
 	Material
 };
-class SceneGraph;
-class SceneGraphView;
 struct AssetComponent : public Component {
+	friend class Scene;
 	friend class SceneGraph;
-	friend class SceneGraphView;	
+	friend class SceneView;	
 	const AssetComponentType type;
 public:	
-	AssetComponent(SceneGraph& parent, entt::entity entity, AssetComponentType type) : Component(parent, entity, ComponentType::Asset), type(type) {};
+	AssetComponent(Scene& parent, entt::entity entity, AssetComponentType type) : Component(parent, entity, ComponentType::Asset), type(type) {};
 
 #ifdef IMGUI_ENABLED
 	virtual void OnImGui() = 0;

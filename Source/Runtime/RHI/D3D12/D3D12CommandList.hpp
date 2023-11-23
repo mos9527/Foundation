@@ -27,7 +27,7 @@ namespace RHI {
 			m_Closed = false;
 		};
 		inline void Close() { CHECK_HR(m_CommandList->Close()); m_Closed = true; };
-		inline bool IsOpen() const { return m_Closed; }
+		inline bool IsOpen() const { return !m_Closed; }
 
 		void Barrier(Resource* res, ResourceState state, const uint* subresources, uint numSubresources);
 		void Barrier(Resource* res, ResourceState state, uint subresource) { Barrier(res, state, &subresource, 1); }

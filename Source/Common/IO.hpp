@@ -1,5 +1,5 @@
 #pragma once
-#include "../../pch.hpp"
+#include "../pch.hpp"
 
 typedef std::filesystem::path path_t;
 inline path_t get_absolute_path(path_t path) {

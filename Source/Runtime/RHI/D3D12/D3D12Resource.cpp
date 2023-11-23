@@ -14,7 +14,7 @@ namespace RHI {
 			m_Resource->Unmap(subresource, nullptr);		
 		m_MappedSubresources[subresource] = nullptr;
 	}
-	void Resource::Update(uint subresource, const void* data, size_t size, size_t offset) {
+	void Resource::Update(const void* data, size_t size, size_t offset, uint subresource) {
 		CHECK(m_Desc.heapType != ResourceHeapType::Default);
 		CHECK(offset + size <= m_Desc.width);
 		memcpy((unsigned char*)Map(subresource) + offset, data, size);

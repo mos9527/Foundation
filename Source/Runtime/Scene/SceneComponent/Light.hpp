@@ -1,15 +1,14 @@
 #pragma once
 #include "SceneComponent.hpp"
-#include "../../AssetRegistry/IO.hpp"
-#include "../../AssetRegistry/AssetRegistry.hpp"
+#include "../../Asset/AssetRegistry.hpp"
 struct SceneLightComponent : public SceneComponent {
 	static const SceneComponentType type = SceneComponentType::Light;
-	SceneLightComponent(SceneGraph& graph, entt::entity ent) : SceneComponent(graph, ent, type) {};
+	SceneLightComponent(Scene& scene, entt::entity ent) : SceneComponent(scene, ent, type) {};
 
 	enum class LightType {
 		Point = 0,
 		Directional = 1
-	} type;
+	} lightType;
 	float4 color;
 	float intensity;
 	float radius;

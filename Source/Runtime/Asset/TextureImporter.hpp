@@ -1,5 +1,5 @@
 #pragma once
-#include "IO.hpp"
+#include "../../Common/IO.hpp"
 
 struct Bitmap32bpp {
 	uint8_t* data = nullptr;

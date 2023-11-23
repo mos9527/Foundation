@@ -1,5 +1,5 @@
 #pragma once
-
+#include "../../pch.hpp"
 enum class AssetType {
 	Unknown,
 	Texture,

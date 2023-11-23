@@ -145,10 +145,10 @@ public:
 	template<RgDefinedResource T> RgHandle& create(RgResourceTraits<T>::desc_type const& desc){
 		using traits = RgResourceTraits<T>;
 		auto entity = registry.create();
-		auto resource = traits::type();		
+		auto resource = traits::resource_type();
 		resource.desc = desc;
 		resource.entity = entity;
-		registry.emplace<typename traits::type>(entity, resource);
+		registry.emplace<typename traits::resource_type>(entity, resource);
 		RgHandle handle{
 			.version = 0,
 			.type = traits::type_enum,			

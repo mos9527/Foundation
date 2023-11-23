@@ -1,5 +1,6 @@
 #include "D3D12Shader.hpp"
-#include "../../AssetRegistry/IO.hpp"
+#include "../../../Common/IO.hpp"
+
 namespace RHI {
     // https://asawicki.info/news_1719_two_shader_compilers_of_direct3d_12
     [[deprecated]] static Microsoft::WRL::ComPtr<ID3DBlob> CompileShaderFXC(

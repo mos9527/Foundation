@@ -3,7 +3,6 @@
 #include <assimp/scene.h>           // Output data structure
 #include <meshoptimizer.h>
 #include <assimp/postprocess.h>
-#include "IO.hpp"
 
 #include "../../Runtime/Renderer/Shaders/Shared.h"
 struct Meshlet {

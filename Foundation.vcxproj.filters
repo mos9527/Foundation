@@ -42,10 +42,7 @@
     <ClCompile Include="Dependencies\imgui\imgui_demo.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\AssetRegistry\AssetRegistry.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\Runtime\AssetRegistry\ImageImporter.hpp">
+    <ClCompile Include="Source\Runtime\Asset\TextureImporter.hpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraph.cpp">
@@ -93,13 +90,13 @@
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Swapchain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\AssetRegistry\MeshAsset.cpp">
+    <ClCompile Include="Source\Runtime\Asset\MeshAsset.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\AssetRegistry\TextureAsset.cpp">
+    <ClCompile Include="Source\Runtime\Asset\TextureAsset.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\SceneGraph\SceneGraph.cpp">
+    <ClCompile Include="Source\Runtime\Scene\SceneGraph.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\GBuffer.cpp">
@@ -117,13 +114,16 @@
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\HiZ.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\AssetRegistry\UploadContext.cpp">
+    <ClCompile Include="Source\Runtime\Asset\UploadContext.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\SceneGraph\SceneComponent\SceneComponent.cpp">
+    <ClCompile Include="Source\Runtime\Scene\SceneComponent\SceneComponent.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\SceneGraph\AssetComponet\Mesh.cpp">
+    <ClCompile Include="Source\Runtime\Scene\AssetComponet\Mesh.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Runtime\Scene\AssetComponet\Material.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -179,10 +179,10 @@
     <ClInclude Include="Source\Editor\Win32\Window.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\AssetRegistry\AssetRegistry.hpp">
+    <ClInclude Include="Source\Runtime\Asset\AssetRegistry.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\AssetRegistry\MeshAsset.hpp">
+    <ClInclude Include="Source\Runtime\Asset\MeshAsset.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12ResourceView.hpp">
@@ -194,19 +194,19 @@
     <ClInclude Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\SceneGraph\SceneComponent\SceneComponent.hpp">
+    <ClInclude Include="Source\Runtime\Scene\SceneComponent\SceneComponent.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\SceneGraph\SceneComponent\Camera.hpp">
+    <ClInclude Include="Source\Runtime\Scene\SceneComponent\Camera.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\SceneGraph\SceneComponent\Mesh.hpp">
+    <ClInclude Include="Source\Runtime\Scene\SceneComponent\Mesh.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\SceneGraph\SceneGraphView.hpp">
+    <ClInclude Include="Source\Runtime\Scene\SceneView.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\SceneGraph\SceneGraph.hpp">
+    <ClInclude Include="Source\Runtime\Scene\SceneGraph.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\RenderGraph\RenderGraph.hpp">
@@ -227,13 +227,13 @@
     <ClInclude Include="Source\Runtime\Renderer\Renderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\AssetRegistry\TextureAsset.hpp">
+    <ClInclude Include="Source\Runtime\Asset\TextureAsset.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\AssetRegistry\IO.hpp">
+    <ClInclude Include="Source\Common\IO.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\AssetRegistry\MeshImporter.hpp">
+    <ClInclude Include="Source\Runtime\Asset\MeshImporter.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12CommandSignature.hpp">
@@ -272,13 +272,13 @@
     <ClInclude Include="Source\Editor\ViewportWindow.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\AssetRegistry\Asset.hpp">
+    <ClInclude Include="Source\Runtime\Asset\Asset.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Common\Allocator.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\SceneGraph\SceneComponent\Light.hpp">
+    <ClInclude Include="Source\Runtime\Scene\SceneComponent\Light.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\RenderPass.hpp">
@@ -302,22 +302,28 @@
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\HiZ.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\AssetRegistry\ResourceContainer.hpp">
+    <ClInclude Include="Source\Runtime\Asset\ResourceContainer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\AssetRegistry\UploadContext.hpp">
+    <ClInclude Include="Source\Runtime\Asset\UploadContext.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\SceneGraph\AssetComponet\Material.hpp">
+    <ClInclude Include="Source\Runtime\Scene\AssetComponet\Material.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\SceneGraph\AssetComponet\AssetComponent.hpp">
+    <ClInclude Include="Source\Runtime\Scene\AssetComponet\AssetComponent.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\SceneGraph\Component.hpp">
+    <ClInclude Include="Source\Runtime\Scene\Component.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\SceneGraph\AssetComponet\Mesh.hpp">
+    <ClInclude Include="Source\Runtime\Scene\AssetComponet\Mesh.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\Scene\Scene.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\Scene\SceneImporter.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

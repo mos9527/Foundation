@@ -12,7 +12,7 @@ public:
 		viewportSize.y = std::max(128u,height);
 	}
 	uint2 GetViewportSize() { return viewportSize; }
-	RHI::ShaderResourceView* Render(SceneGraphView* sceneView);
+	RHI::ShaderResourceView* Render(SceneView* sceneView);
 private:	
 	RHI::Device* const device;
 
