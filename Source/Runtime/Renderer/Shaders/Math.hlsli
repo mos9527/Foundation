@@ -159,7 +159,7 @@ struct BoundingBox // wraps BoundingBox { float3, float3 }
 			   minA.z <= minB.z && maxB.z <= maxA.z;
     }
     // given AABB center C extents Ex,Ey,Ez, with U1(1,0,0) U2(0,1,0) U3(0,0,1) as axis...
-    // the 6 vertices Vi = { E * U | E of {Ex,Ey,Ez}, U of {U1,U2,U3} }
+    // the 8 vertices Vi = { E * U | E of {Ex,Ey,Ez}, U of {U1,U2,U3} }
     // projecting Vi to plane normal ( Vi - C ) dot N is simply
     // = { ... } * N
     // = Ex +- (U0 * N) + Ey +- (U1 * N) + Ez +- (U2 * N) 

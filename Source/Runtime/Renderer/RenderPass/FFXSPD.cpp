@@ -31,7 +31,7 @@ FFXSPDPass::FFXSPDPass(RHI::Device* device, const wchar_t* reduce) {
 	cmd->Begin();
 	cmd->ZeroBufferRegion(ffxPassCounter.get(), 0, ffxPassCounter->GetDesc().sizeInBytes());
 	ffxPassCounter->SetBarrier(cmd, ResourceState::UnorderedAccess);
-	cmd->End();
+	cmd->Close();
 	cmd->Execute().Wait();	
 }
 RenderGraphPass& FFXSPDPass::insert(RenderGraph& rg, SceneGraphView* sceneView, FFXSPDPassHandles&& handles) {
@@ -65,7 +65,7 @@ RenderGraphPass& FFXSPDPass::insert(RenderGraph& rg, SceneGraphView* sceneView, 
 			ffxPassConstants->Update(&constants, sizeof(FFXSpdConstant), 0);
 			if (r_src_texture != r_dst_texture) {
 				// When different src-dst is used, MIP 0 is directly copied from src to dst
-				auto src_original_state = r_src_texture->GetState(0);
+				auto src_original_state = r_src_texture->GetSubresourceState(0);
 				r_src_texture->SetBarrier(ctx.cmd, ResourceState::CopySource, 0);
 				r_dst_texture->SetBarrier(ctx.cmd, ResourceState::CopyDest, 0);
 				ctx.cmd->CopySubresource(r_src_texture, r_src_texture->GetDesc().indexSubresource(0, 0, 0), r_dst_texture, r_dst_texture->GetDesc().indexSubresource(0, 0, 0));			

@@ -126,7 +126,7 @@ namespace RHI {
     }
     SyncFence Device::UploadContext::UploadAndClose() { 
         CHECK(cmd->IsOpen());
-        cmd->End();
+        cmd->Close();
         uploadFence = cmd->Execute(); 
         cmd = nullptr; 
         return uploadFence; 

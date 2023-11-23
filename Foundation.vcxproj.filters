@@ -117,7 +117,7 @@
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\HiZ.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\AssetRegistry\AssetUploadManager.cpp">
+    <ClCompile Include="Source\Runtime\RHI\UploadContext.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -299,7 +299,10 @@
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\HiZ.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\AssetRegistry\AssetUploadManager.hpp">
+    <ClInclude Include="Source\Runtime\RHI\ResourceContainer.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\RHI\UploadContext.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

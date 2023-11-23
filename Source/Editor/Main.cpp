@@ -253,7 +253,7 @@ int main(int argc, char* argv[]) {
 #endif
         /* FRAME END */
         swapchain.GetBackbuffer(bbIndex)->SetBarrier(cmd, ResourceState::Present);
-        cmd->End();
+        cmd->Close();
         cmd->Execute();
         swapchain.PresentAndMoveToNextFrame(vsync);
     };

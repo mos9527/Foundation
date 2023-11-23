@@ -9,6 +9,8 @@ namespace RHI {
 	class CommandList;
 	typedef D3D12_SUBRESOURCE_DATA Subresource;
 	class Resource : public DeviceChild {
+		friend class CommandList;
+		friend class Device;
 	public:
 		struct ResourceDesc {
 			std::optional<ClearValue> clearValue;
@@ -145,7 +147,7 @@ namespace RHI {
 				UINT planes = 1; // xxx DepthStencil & some formats have 2 planes
 				return indexSubresource(0, arraySize, planes - 1, mipLevels, arraySize); // arraysize * miplevels * planes
 			}
-		};		
+		};
 		Resource(Device* device, ComPtr<ID3D12Resource>&& texture, name_t name = nullptr);
 		Resource(Device* device, ResourceDesc const& desc);		
 		~Resource() {
@@ -155,15 +157,13 @@ namespace RHI {
 			m_Resource.Reset();
 			m_Allocation.Reset();
 		}
-		inline ResourceDesc const& GetDesc() { return m_Desc;  }
+		inline ResourceDesc const& GetDesc() { return m_Desc;  }		
+		inline ResourceState GetSubresourceState(UINT subresource=0) { return m_States[subresource]; }		
 		
-		inline ResourceState GetState(UINT subresource=0) { return m_States[subresource]; }		
-		
-		void SetBarrier(CommandList* cmd, ResourceState state, uint subresource);
-		void SetBarrier(CommandList* cmd, ResourceState state, const uint* subresources, uint numSubresources);
-		void SetBarrier(CommandList* cmd, ResourceState state);
-
-		inline auto GetGPUAddress() { return m_Resource->GetGPUVirtualAddress(); }
+		inline auto GetGPUAddress() { 
+			CHECK(m_Desc.dimension == ResourceDimension::Buffer);
+			return m_Resource->GetGPUVirtualAddress(); 
+		}
 		inline auto GetNativeResource() { return m_Resource.Get(); }
 
 		inline operator ID3D12Resource* () { return m_Resource.Get(); }
@@ -185,13 +185,13 @@ namespace RHI {
 
 	protected:
 		name_t m_Name;
-
 		const ResourceDesc m_Desc;
-		
+
+	private:
 		std::vector<ResourceState> m_States; // States for every subresource
 		std::vector<uint> m_SubresourceRange; // array of uint [0,numSubresources]		
 		std::vector<void*> m_MappedSubresources;
-
+		
 		ComPtr<ID3D12Resource> m_Resource;
 		ComPtr<D3D12MA::Allocation> m_Allocation;	
 	};

@@ -68,7 +68,7 @@ RenderGraphPass& IndirectLODCullPass::insert_clear(RenderGraph& rg, SceneGraphVi
 		.readwrite(handles.visibilityBuffer)
 		.execute([=](RgContext& ctx) -> void {
 			auto* r_visibility_buffer = ctx.graph->get<Buffer>(handles.visibilityBuffer);
-			auto state_prev = r_visibility_buffer->GetState();
+			auto state_prev = r_visibility_buffer->GetSubresourceState();
 			r_visibility_buffer->SetBarrier(ctx.cmd, ResourceState::CopyDest);
 			ctx.cmd->ZeroBufferRegion(r_visibility_buffer, 0, r_visibility_buffer->GetDesc().sizeInBytes());
 			r_visibility_buffer->SetBarrier(ctx.cmd, state_prev);

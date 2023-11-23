@@ -8,8 +8,10 @@ namespace RHI {
 		name_t m_Name;
 		CommandListType m_Type;
 		ComPtr<ID3D12GraphicsCommandList6> m_CommandList;
-		std::vector<ComPtr<ID3D12CommandAllocator>> m_CommandAllocators;
-		bool m_HasBegun = false;
+		std::vector<ComPtr<ID3D12CommandAllocator>> m_CommandAllocators;	
+		std::vector<CD3DX12_RESOURCE_BARRIER> m_QueuedBarriers;
+
+		bool m_Closed = false;
 	public:
 
 		CommandList(Device* device, CommandListType type, uint numAllocators = 1);
@@ -19,19 +21,26 @@ namespace RHI {
 			CHECK_HR(m_CommandAllocators[allocatorIndex]->Reset());
 		};
 		inline void Begin(uint allocatorIndex = 0) {
-			CHECK(!m_HasBegun && "Attempting to start an already recording CommandList");
+			CHECK(m_Closed && "Attempting to start an already recording CommandList");
 			DCHECK(allocatorIndex < m_CommandAllocators.size());
 			CHECK_HR(m_CommandList->Reset(m_CommandAllocators[allocatorIndex].Get(), nullptr));
-			m_HasBegun = true;
+			m_Closed = false;
 		};
-		inline void End() { CHECK_HR(m_CommandList->Close()); m_HasBegun = false; };
-		inline bool IsOpen() const { return m_HasBegun; }
+		inline void Close() { CHECK_HR(m_CommandList->Close()); m_Closed = true; };
+		inline bool IsOpen() const { return m_Closed; }
+
+		void Barrier(Resource* res, ResourceState state, const uint* subresources, uint numSubresources);
+		void Barrier(Resource* res, ResourceState state, uint subresource) { Barrier(res, state, &subresource, 1); }
+		void Barrier(Resource* res, ResourceState state);
+		inline void FlushBarriers() { m_CommandList->ResourceBarrier(m_QueuedBarriers.size(), m_QueuedBarriers.data()); m_QueuedBarriers.clear(); };
 
 		void CopyBufferRegion(Resource* src, Resource* dst, size_t srcOffset, size_t dstOffset, size_t size);
 		void ZeroBufferRegion(Resource* dst, size_t dstOffset, size_t size);
 		void CopySubresource(Resource* src, uint srcSsubresource, Resource* dst, uint dstSubresource);
+
 		SyncFence Execute();
 		CommandQueue* GetCommandQueue();
+
 		inline void ExecuteBundle(CommandList* bundle) { m_CommandList->ExecuteBundle(*bundle); }
 		inline auto GetNativeCommandList() { return m_CommandList.Get(); }
 		operator ID3D12GraphicsCommandList6* () { return m_CommandList.Get(); }
