@@ -38,7 +38,7 @@ namespace RHI {
 	}
 	void CommandList::Barrier(Resource* res, ResourceState state, const uint* subresources, uint numSubresources) {
 		for (uint i = 0; i < numSubresources; i++) {
-			uint subresource = *(subresource + (uint*)i);
+			uint subresource = *(subresources + i);
 			if (res->m_States[subresource] != state) {
 				m_QueuedBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
 					res->GetNativeResource(),
@@ -54,7 +54,8 @@ namespace RHI {
 		Barrier(res, state, res->m_SubresourceRange.data(), res->m_SubresourceRange.size());
 	}
 	CommandQueue* CommandList::GetCommandQueue() { return m_Device->GetCommandQueue(m_Type); }
-	SyncFence CommandList::Execute() { 
+	SyncFence CommandList::Execute() {
+		FlushBarriers();
 		return GetCommandQueue()->Execute(this);
 	}
 }

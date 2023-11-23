@@ -32,11 +32,16 @@ namespace RHI {
 		void Barrier(Resource* res, ResourceState state, const uint* subresources, uint numSubresources);
 		void Barrier(Resource* res, ResourceState state, uint subresource) { Barrier(res, state, &subresource, 1); }
 		void Barrier(Resource* res, ResourceState state);
-		inline void FlushBarriers() { m_CommandList->ResourceBarrier(m_QueuedBarriers.size(), m_QueuedBarriers.data()); m_QueuedBarriers.clear(); };
+		inline void FlushBarriers() { 
+			if (m_QueuedBarriers.size()) {
+				m_CommandList->ResourceBarrier(m_QueuedBarriers.size(), m_QueuedBarriers.data());
+				m_QueuedBarriers.clear(); 
+			}
+		};
 
-		void CopyBufferRegion(Resource* src, Resource* dst, size_t srcOffset, size_t dstOffset, size_t size);
-		void ZeroBufferRegion(Resource* dst, size_t dstOffset, size_t size);
-		void CopySubresource(Resource* src, uint srcSsubresource, Resource* dst, uint dstSubresource);
+		void CopyBufferRegion(Resource* src, Resource* dst, size_t srcOffsetInBytes, size_t dstOffsetInBytes, size_t sizeInBytes);
+		void ZeroBufferRegion(Resource* dst, size_t dstOffsetInBytes, size_t sizeInBytes);
+		void CopySubresource(Resource* src, uint srcSubresource, Resource* dst, uint dstSubresource);
 
 		SyncFence Execute();
 		CommandQueue* GetCommandQueue();

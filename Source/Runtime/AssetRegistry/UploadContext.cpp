@@ -29,6 +29,7 @@ void UploadContext::QueueUpload(Resource* dst, void* data, uint sizeInBytes) {
     QueueUpload(dst, &subresource, 1);
 }
 SyncFence UploadContext::End() {
+    CommandList::FlushBarriers();
     CommandList::Close();
     return CommandList::Execute();
 }

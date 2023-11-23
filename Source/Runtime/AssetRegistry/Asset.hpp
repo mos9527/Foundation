@@ -1,13 +1,14 @@
 #pragma once
-#include "../RHI/RHI.hpp"
+
 enum class AssetType {
 	Unknown,
-	Image,
+	Texture,
 	StaticMesh
 };
 class AssetRegistry;
 struct AssetHandle {
 	friend AssetRegistry;
+
 	AssetType type = AssetType::Unknown;
 	entt::entity entity = entt::tombstone;
 	
@@ -16,16 +17,7 @@ struct AssetHandle {
 	inline void invalidate() { entity = entt::tombstone; }
 };
 
-template<typename Imports> struct Asset {
-	using imported_type = Imports;
+template<typename T> struct ImportedAssetTraits {
+	using imported_by = void;
 	static constexpr AssetType type = AssetType::Unknown;
-	entt::entity entity;
-	std::string name;
-
-	std::unique_ptr<RHI::Resource> resource;
-};
-
-template<typename T> concept AssetRegistryDefined = requires(T t,typename T::imported_type&& imported, RHI::Device * device) {
-	T(std::move(imported));
-	t.upload(device);	
 };

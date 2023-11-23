@@ -1,7 +1,7 @@
 #pragma once
-#include "../Component.hpp"
-
-struct CameraComponent : public SceneComponent {	
+#include "SceneComponent.hpp"
+#include "../../Renderer/Shaders/Shared.h"
+struct SceneCameraComponent : public SceneComponent {
 	float fov;
 	float nearZ;
 	float farZ;
@@ -11,9 +11,8 @@ struct CameraComponent : public SceneComponent {
 	matrix viewProjection;
 	
 	bool orthographic = false;
-
-	CameraComponent(entt::entity ent) : SceneComponent(ent) {
-		localTransform = AffineTransform::Identity;
+	static const SceneComponentType type = SceneComponentType::Camera;
+	SceneCameraComponent(SceneGraph& graph, entt::entity ent) : SceneComponent(graph, ent, type) {
 		fov = XM_PIDIV4;
 		nearZ = 0.01f;
 		farZ = 100.0f;
@@ -26,8 +25,10 @@ struct CameraComponent : public SceneComponent {
 		ImGui::Checkbox("Orthograhpic", &orthographic);					
 	}
 #endif
-	SceneCamera get_struct(float aspect, AffineTransform globalTransform) {
+	SceneCamera get_struct(float aspect) {
 		SceneCamera camera;
+		AffineTransform globalTransform = get_global_transform();
+
 		Vector3 lookDirection{0,0,1}, upDirection{0,1,0};		
 		lookDirection = Vector3::TransformNormal(lookDirection, globalTransform);
 		upDirection = Vector3::TransformNormal(upDirection, globalTransform);
@@ -81,9 +82,4 @@ struct CameraComponent : public SceneComponent {
 		camera.farZ = farZ;
 		return camera;
 	}	
-};
-
-template<> struct SceneComponentTraits<CameraComponent> {
-	static constexpr SceneComponentType type = SceneComponentType::Camera;
-	const char* name = "Camera";
 };

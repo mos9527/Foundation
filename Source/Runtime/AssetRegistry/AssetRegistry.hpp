@@ -4,57 +4,53 @@
 #include "../RHI/RHI.hpp"
 #include "../../Runtime/Renderer/Shaders/Shared.h"
 #include "../../Common/Allocator.hpp"
+#include "UploadContext.hpp"
+#include "TextureAsset.hpp"
 #include "MeshAsset.hpp"
-#include "ImageAsset.hpp"
-
+template<typename T> concept Importable = !std::is_void_v<typename ImportedAssetTraits<T>::imported_by>;
+template<typename T> concept Asset = requires (T a, RHI::Device * device, UploadContext * ctx) {
+	T::type; // Has a type member
+	T(device, nullptr); // Also takes a resource pointer
+	a.Upload(ctx); // Can be uploaded via UploadContext
+	a.Clean(); // Can be cleaned
+};
 class AssetRegistry {
 	template<typename T> using Allocator = DefaultAllocator<T>;
 	entt::basic_registry<entt::entity, Allocator <entt::entity>> registry;
 public:	
-	template<AssetRegistryDefined T> AssetHandle create() {
-		static_assert(T::type != AssetType::Unknown);
+	template<Asset T> AssetHandle create() {		
 		return AssetHandle{ T::type, registry.create() };
 	}
-	template<typename T> AssetHandle import(AssetHandle handle, T&& import) {	
-		DCHECK(handle.type == Asset<T>::type);
-		emplace_or_replace<Asset<T>>(handle, std::move(import));
+	template<Importable T> AssetHandle import(AssetHandle handle, RHI::Device* device, T* import) {	
+		DCHECK(handle.type == ImportedAssetTraits<T>::type && "Importing asset onto a incompatible handle");
+		emplace_or_replace<typename ImportedAssetTraits<T>::imported_by>(handle, device, import);
 		return handle;
 	}
-	template<AssetRegistryDefined T> void upload(AssetHandle handle, RHI::Device* device) {
-		get<T>(handle).upload(device);
+	template<Asset T> void upload(AssetHandle handle, UploadContext* ctx) {
+		get<T>(handle).Upload(ctx);
 	}
-	template<AssetRegistryDefined T> void upload_all(RHI::Device* device) {
+	template<Asset T> void upload_all(UploadContext* ctx) {
 		for (auto& obj : registry.storage<T>())
-			obj.upload(device);
+			obj.Upload(ctx);
 	};
-	template<AssetRegistryDefined T> auto& storage() {
+	template<Asset T> auto& storage() {
 		return registry.storage<T>();
 	}
-	// returns {iterator for the next object, num of objects uploaded}
-	template<AssetRegistryDefined T> std::pair<typename entt::storage<T>::iterator,uint> upload_batch(RHI::Device* device, typename entt::storage<T>::iterator begin, uint numObjs) {
-		auto& storage_ = storage<T>();
-		uint batched = 0;
-		typename entt::storage<T>::iterator i = begin;
-		for (;batched < numObjs && i != storage_.end(); i++) {
-			i->upload(device);
-			batched++;
-		}
-		return { i, batched };
-	}
-	template<AssetRegistryDefined T> void clean() {
+	template<Asset T> void clean() {
 		for (auto& obj : registry.storage<T>())
-			obj.clean();
+			obj.Clean();
 	}
-	template<AssetRegistryDefined T> T& get(AssetHandle resource) {
+	template<Asset T> T& get(AssetHandle resource) {
 		return registry.get<T>(resource.entity);
 	}
-	template<AssetRegistryDefined T> T* try_get(AssetHandle resource) {
+	template<Asset T> T* try_get(AssetHandle resource) {
 		return registry.try_get<T>(resource.entity);
 	}
-	template<typename As, typename Type> As* try_get_base_ptr(AssetHandle resource) {
-		return registry.try_get<Type>(resource.entity);		
+	template<Asset T> void remove(AssetHandle resource) {
+		registry.remove<T>(resource);
 	}
-	template<AssetRegistryDefined T, typename ...Args> T& emplace_or_replace(AssetHandle handle, Args &&...args) {
+private:
+	template<Asset T, typename ...Args> T& emplace_or_replace(AssetHandle handle, Args &&...args) {
 		return registry.emplace_or_replace<T>(handle, std::forward<decltype(args)>(args)...);
 	}
 };

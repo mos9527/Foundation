@@ -27,7 +27,7 @@ FFXSPDPass::FFXSPDPass(RHI::Device* device, const wchar_t* reduce) {
 	));
 	ffxPassCounterUAV = std::make_unique<UnorderedAccessView>(ffxPassCounter.get(), UnorderedAccessViewDesc::GetRawBufferDesc(0, SPD_MAX_NUM_SLICES, 0));
 	// perform the initial clear
-	auto* cmd = device->GetCommandList<CommandListType::Compute>();
+	auto* cmd = device->GetDefaultCommandList<CommandListType::Compute>();
 	cmd->Begin();
 	cmd->ZeroBufferRegion(ffxPassCounter.get(), 0, ffxPassCounter->GetDesc().sizeInBytes());
 	ffxPassCounter->SetBarrier(cmd, ResourceState::UnorderedAccess);

@@ -22,7 +22,7 @@ struct Meshlet {
 	uint cone_axis_cutoff; // cutoff | z | y | x
 };
 struct MeshletTriangle { UINT V0 : 10, V1 : 10, V2 : 10, : 2; };
-struct mesh_lod {
+struct MeshLod {
 	std::vector<UINT> indices;
 	/* mesh shading */
 	std::vector<Meshlet> meshlets; // offsets within meshlet_vertices , meshlet_bounds & meshlet_triangles
@@ -35,14 +35,15 @@ struct mesh_lod {
 		meshlet_triangles.resize(maxMeshlets * MESHLET_MAX_PRIMITIVES);
 	}
 };
-struct mesh_static {
+
+struct StaticMesh {
 	std::vector<float3> position;
 	std::vector<float3> normal;
 	std::vector<float3> tangent;
 	std::vector<float2> uv;
 	std::vector<UINT> indices;
 
-	mesh_lod lods[MAX_LOD_COUNT];		
+	MeshLod lods[MAX_LOD_COUNT];		
 
 	void resize_vertices(size_t verts) {
 		position.resize(verts);
@@ -57,13 +58,13 @@ struct mesh_static {
 		meshopt_remapVertexBuffer(tangent.data(), tangent.data(), tangent.size(), sizeof(decltype(tangent)::value_type), remapping.data());
 		meshopt_remapVertexBuffer(uv.data(), uv.data(), uv.size(), sizeof(decltype(uv)::value_type), remapping.data());
 	}
-	mesh_static() = default;
-	~mesh_static() = default;
+	StaticMesh() = default;
+	~StaticMesh() = default;
 };
 
-static inline mesh_static load_static_mesh(aiMesh* srcMesh) {
+static inline StaticMesh load_static_mesh(aiMesh* srcMesh) {
 	UINT num_vertices = srcMesh->mNumVertices;
-	mesh_static mesh;
+	StaticMesh mesh;
 	mesh.resize_vertices(num_vertices);
 	for (UINT i = 0; i < num_vertices; i++) {
 		if (srcMesh->mVertices) {

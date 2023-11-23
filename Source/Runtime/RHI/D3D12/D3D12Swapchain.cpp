@@ -43,12 +43,10 @@ namespace RHI {
         nWidth = width;
         nHeight = height;
         uint buffers = (UINT)m_Backbuffers.size();        
-        // Reset BBs and their fence values
+        // Reset fence values
         size_t resetFenceValue = m_Device->GetCommandQueue<CommandListType::Direct>()->GetUniqueFenceValue();
-        for (uint i = 0; i < buffers; i++) {
-            m_Backbuffers[i]->Reset();
-            nFenceValues[i] = resetFenceValue;
-        }
+        for (uint i = 0; i < buffers; i++)
+            nFenceValues[i] = resetFenceValue;        
         DXGI_SWAP_CHAIN_DESC desc = {};
         m_Swapchain->GetDesc(&desc);
         CHECK_HR(m_Swapchain->ResizeBuffers(buffers, nWidth, nHeight, desc.BufferDesc.Format, desc.Flags));

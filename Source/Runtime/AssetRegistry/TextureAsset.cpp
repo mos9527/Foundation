@@ -1,0 +1,17 @@
+#include "TextureAsset.hpp"
+TextureAsset::TextureAsset(RHI::Device* device, Bitmap32bpp* bitmap) : texture(device, RHI::ResourceFormat::R8G8B8A8_UNORM, bitmap->width, bitmap->height) {
+	texture.loadImageBuffer.WriteSubresource(bitmap->data, bitmap->row_pitch(), bitmap->height, 0, 0);
+}
+
+void TextureAsset::Upload(UploadContext* ctx) {	
+	auto const& desc = texture.texture.GetDesc();
+	for (uint i = 0; i < desc.numSubresources(); i++)
+		ctx->CopySubresource(&texture.loadImageBuffer, i, &texture.texture, i);
+	ctx->Barrier(&texture.texture, RHI::ResourceState::Common);
+	// xxx texture2darray support
+	textureSRV = std::make_unique<RHI::ShaderResourceView>(&texture.texture, RHI::ShaderResourceViewDesc::GetTexture2DDesc(
+		desc.format,
+		0,
+		desc.mipLevels
+	));
+}

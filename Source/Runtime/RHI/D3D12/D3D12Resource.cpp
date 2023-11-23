@@ -2,39 +2,6 @@
 #include "D3D12Device.hpp"
 #include "D3D12CommandList.hpp"
 namespace RHI {
-	void Resource::SetBarrier(CommandList* cmd, ResourceState state, uint subresource) {
-		if (m_States[subresource] != state) {
-			auto const transistion = CD3DX12_RESOURCE_BARRIER::Transition(
-				m_Resource.Get(),
-				(D3D12_RESOURCE_STATES)m_States[subresource],
-				(D3D12_RESOURCE_STATES)state,
-				subresource
-			);
-			cmd->GetNativeCommandList()->ResourceBarrier(1, &transistion);
-			m_States[subresource] = state;
-		}
-	}
-	void Resource::SetBarrier(CommandList* cmd, ResourceState state, const uint* subresources, uint numSubresources) {
-		std::vector<CD3DX12_RESOURCE_BARRIER> transitions;
-		for (uint i = 0; i < numSubresources;i++) {
-			uint subresource = *(subresource + (uint*)i);
-			if (m_States[subresource] != state) {
-				transitions.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
-					m_Resource.Get(),
-					(D3D12_RESOURCE_STATES)m_States[subresource],
-					(D3D12_RESOURCE_STATES)state,
-					subresource
-				));
-				m_States[subresource] = state;
-			}
-		}
-		if (transitions.size())
-			cmd->GetNativeCommandList()->ResourceBarrier(transitions.size(), transitions.data());
-	}
-	void Resource::SetBarrier(CommandList* cmd, ResourceState state) {
-		std::vector<UINT> subresources(m_Desc.numSubresources());		
-		SetBarrier(cmd, state, m_AllSubresources.data(), m_AllSubresources.size());
-	}
 	void* Resource::Map(uint subresource) {
 		CHECK(m_Desc.heapType != ResourceHeapType::Default);
 		if (!m_MappedSubresources[subresource])

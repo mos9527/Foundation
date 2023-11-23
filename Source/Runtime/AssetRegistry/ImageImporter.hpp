@@ -10,11 +10,17 @@ struct Bitmap32bpp {
 	const size_t size_in_bytes() const {
 		return width * height * texel;
 	}
-	void free() {
+	const size_t row_pitch() {
+		return width * texel;
+	}
+	void free_data() {
 		if (data) {
 			stbi_image_free(data);
 			data = nullptr;
 		}
+	}
+	~Bitmap32bpp() {
+		free_data();
 	}
 };
 inline Bitmap32bpp load_bitmap_32bpp(uint8_t* mem, size_t length) {

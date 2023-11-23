@@ -121,24 +121,6 @@ namespace RHI {
         } 
         CHECK_HR(hr);
     }
-    void Device::UploadContext::RecordIntermediate(std::unique_ptr<Resource>&& intermediate) { 
-        intermediates.push_back(std::move(intermediate));
-    }
-    SyncFence Device::UploadContext::UploadAndClose() { 
-        CHECK(cmd->IsOpen());
-        cmd->Close();
-        uploadFence = cmd->Execute(); 
-        cmd = nullptr; 
-        return uploadFence; 
-    }
-    bool Device::UploadContext::Clean() { 
-        if (uploadFence.IsCompleted())
-        {
-            intermediates.clear();
-            return true;
-        }
-        return false;
-    }
     Device::Device(DeviceDesc cfg) {
 #ifdef _DEBUG    
         ComPtr<ID3D12Debug> debugInterface;
@@ -226,7 +208,7 @@ namespace RHI {
         m_ZeroBuffer = std::make_unique<Buffer>(this, Resource::ResourceDesc::GetGenericBufferDesc(sizeof(uint) * RHI_ZERO_BUFFER_SIZE, sizeof(uint)));
         m_ZeroBuffer->SetName(L"Zero buffer");
         std::vector<uint> zeros(RHI_ZERO_BUFFER_SIZE);
-        m_ZeroBuffer->Update(zeros.data(), sizeof(uint) * RHI_ZERO_BUFFER_SIZE, 0);
+        m_ZeroBuffer->Update(0, zeros.data(), sizeof(uint) * RHI_ZERO_BUFFER_SIZE, 0);
     }
     Device::~Device() {
         m_Factory->Release();        

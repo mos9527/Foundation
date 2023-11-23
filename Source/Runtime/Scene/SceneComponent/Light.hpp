@@ -1,9 +1,11 @@
 #pragma once
-#include "../Component.hpp"
+#include "SceneComponent.hpp"
 #include "../../AssetRegistry/IO.hpp"
 #include "../../AssetRegistry/AssetRegistry.hpp"
-struct LightComponent : public SceneComponent {
-	using SceneComponent::SceneComponent;
+struct SceneLightComponent : public SceneComponent {
+	static const SceneComponentType type = SceneComponentType::Light;
+	SceneLightComponent(SceneGraph& graph, entt::entity ent) : SceneComponent(graph, ent, type) {};
+
 	enum class LightType {
 		Point = 0,
 		Directional = 1
@@ -11,7 +13,6 @@ struct LightComponent : public SceneComponent {
 	float4 color;
 	float intensity;
 	float radius;
-
 #ifdef IMGUI_ENABLED
 	virtual void OnImGui() {
 		ImGui::ColorEdit4("Color", (float*) & color, ImGuiColorEditFlags_HDR);
@@ -21,9 +22,4 @@ struct LightComponent : public SceneComponent {
 		ImGui::DragFloat3("Direction", (float*)&direction);
 	}
 #endif
-};
-
-template<> struct SceneComponentTraits<LightComponent> {
-	static constexpr SceneComponentType type = SceneComponentType::Light;
-	const char* name = "Light";
 };

@@ -102,7 +102,7 @@ int main(int argc, char* argv[]) {
         auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace);
         scene.load_from_aiScene(imported, filepath.parent_path());        
         LOG(INFO) << "Requesting upload";
-        CommandList* cmd = device.GetCommandList<CommandListType::Copy>();
+        CommandList* cmd = device.GetDefaultCommandList<CommandListType::Copy>();
         auto upload_batch = [&]<typename T>(T & storage) {            
             auto it = storage.begin(), it_end = storage.end();
             const uint batchSize = 16;
@@ -115,7 +115,7 @@ int main(int argc, char* argv[]) {
                 device.ExecuteUpload().Wait();
             }
         };
-        upload_batch(assets.storage<StaticMeshAsset>());
+        upload_batch(assets.storage<MeshAsset>());
         upload_batch(assets.storage<SDRImageAsset>());
         upload.complete = true;
         device.Clean();
@@ -123,7 +123,7 @@ int main(int argc, char* argv[]) {
     // xxx cleaning
 
     bool vsync = false;
-    auto cmd = device.GetCommandList<CommandListType::Direct>();
+    auto cmd = device.GetDefaultCommandList<CommandListType::Direct>();
     auto render = [&]() {
         std::scoped_lock lock(renderMutex);        
 #ifdef IMGUI_ENABLED

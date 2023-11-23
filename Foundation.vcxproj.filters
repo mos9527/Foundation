@@ -96,7 +96,7 @@
     <ClCompile Include="Source\Runtime\AssetRegistry\MeshAsset.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\AssetRegistry\ImageAsset.cpp">
+    <ClCompile Include="Source\Runtime\AssetRegistry\TextureAsset.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Runtime\SceneGraph\SceneGraph.cpp">
@@ -117,7 +117,13 @@
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\HiZ.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\RHI\UploadContext.cpp">
+    <ClCompile Include="Source\Runtime\AssetRegistry\UploadContext.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Runtime\SceneGraph\SceneComponent\SceneComponent.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Runtime\SceneGraph\AssetComponet\Mesh.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -188,13 +194,13 @@
     <ClInclude Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\SceneGraph\Component.hpp">
+    <ClInclude Include="Source\Runtime\SceneGraph\SceneComponent\SceneComponent.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\SceneGraph\Components\Camera.hpp">
+    <ClInclude Include="Source\Runtime\SceneGraph\SceneComponent\Camera.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\SceneGraph\Components\StaticMesh.hpp">
+    <ClInclude Include="Source\Runtime\SceneGraph\SceneComponent\Mesh.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\SceneGraph\SceneGraphView.hpp">
@@ -221,7 +227,7 @@
     <ClInclude Include="Source\Runtime\Renderer\Renderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\AssetRegistry\ImageAsset.hpp">
+    <ClInclude Include="Source\Runtime\AssetRegistry\TextureAsset.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\AssetRegistry\IO.hpp">
@@ -272,10 +278,7 @@
     <ClInclude Include="Source\Common\Allocator.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\SceneGraph\Components\Material.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Runtime\SceneGraph\Components\Light.hpp">
+    <ClInclude Include="Source\Runtime\SceneGraph\SceneComponent\Light.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\RenderPass.hpp">
@@ -299,10 +302,22 @@
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\HiZ.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\RHI\ResourceContainer.hpp">
+    <ClInclude Include="Source\Runtime\AssetRegistry\ResourceContainer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\RHI\UploadContext.hpp">
+    <ClInclude Include="Source\Runtime\AssetRegistry\UploadContext.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\SceneGraph\AssetComponet\Material.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\SceneGraph\AssetComponet\AssetComponent.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\SceneGraph\Component.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Runtime\SceneGraph\AssetComponet\Mesh.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

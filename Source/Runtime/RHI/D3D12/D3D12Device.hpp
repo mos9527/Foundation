@@ -14,7 +14,6 @@ namespace RHI {
 	class CommandList;
 	class Resource;
 	class Buffer;
-	struct Subresource;
 	class Device {
 	public:
 		struct DeviceDesc {
@@ -42,14 +41,14 @@ namespace RHI {
 			return nullptr;
 		}
 
-		CommandList* GetCommandList(CommandListType type) {
+		CommandList* GetDefaultCommandList(CommandListType type) {
 			if (type == CommandListType::Direct)return m_DirectCmd.get();
 			if (type == CommandListType::Compute)return m_ComputeCmd.get();
 			if (type == CommandListType::Copy)return m_CopyCmd.get();
 			return nullptr;
 		}
 
-		template<CommandListType type> CommandList* GetCommandList() {
+		template<CommandListType type> CommandList* GetDefaultCommandList() {
 			if constexpr (type == CommandListType::Direct)return m_DirectCmd.get();
 			if constexpr (type == CommandListType::Compute)return m_ComputeCmd.get();
 			if constexpr (type == CommandListType::Copy)return m_CopyCmd.get();
@@ -83,15 +82,7 @@ namespace RHI {
 			if constexpr (type == DescriptorHeapType::SAMPLER)return m_OnlineSamplerHeap.get();
 			return nullptr;
 		}
-
 		auto* GetZeroBuffer() { return m_ZeroBuffer.get(); }
-
-		void BeginUpload(CommandList* cmd);
-		void Upload(Resource* dst, Subresource* data, uint count);
-		void Upload(Resource* dst, void* data, uint sizeInBytes);
-		SyncFence EndUpload();
-		// Releases all temporary allocations that will never be used again		
-		bool Clean();
 		void Wait();		
 		inline auto GetAllocator() { return m_Allocator.Get(); }
 		inline operator ID3D12Device* () { return m_Device.Get(); }
@@ -101,23 +92,7 @@ namespace RHI {
 		ComPtr<ID3D12Device5> m_Device;
 		ComPtr<IDXGIFactory6> m_Factory;
 		ComPtr<D3D12MA::Allocator> m_Allocator;		
-
-		struct UploadContext {
-			CommandList* cmd;
-			std::vector<std::unique_ptr<Resource>> intermediates;
-			SyncFence uploadFence;
-
-			void Open(CommandList* _cmd) {
-				CHECK(_cmd && !_cmd->IsOpen()); 
-				cmd = _cmd;
-				cmd->Begin();
-				Clean(); 				
-			}
-			bool IsOpen() { return cmd != nullptr; }
-			void RecordIntermediate(std::unique_ptr<Resource>&& intermediate);
-			SyncFence UploadAndClose();
-			bool Clean();
-		} m_UploadContext;
+		
 		std::unique_ptr<Buffer>
 			m_ZeroBuffer;
 		std::unique_ptr<CommandQueue> 

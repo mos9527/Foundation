@@ -1,53 +1,39 @@
 #include "AssetRegistry.hpp"
 #include "MeshAsset.hpp"
 
-Asset<mesh_static>::Asset(mesh_static&& mesh) {
-	std::vector<StaticMeshAsset::Vertex> vertices(mesh.position.size());
-	DirectX::BoundingBox::CreateFromPoints(boundingBox, mesh.position.size(), mesh.position.data(), sizeof(float3));
+MeshAsset::MeshAsset(RHI::Device* device, StaticMesh* data) {
+	DirectX::BoundingBox::CreateFromPoints(boundingBox, data->position.size(), data->position.data(), sizeof(float3));
 	DirectX::BoundingSphere::CreateFromBoundingBox(boundingSphere, boundingBox);
-	for (uint i = 0; i < mesh.position.size(); i++) {
-		auto& vertex = vertices[i];
-		vertex.position = mesh.position[i];
-		vertex.normal = mesh.normal[i];
-		vertex.tangent = mesh.tangent[i];
-		vertex.uv = mesh.uv[i];
-		vertexInitialData.push_back(vertex);
+	vertexBuffer = std::make_unique<MeshVertexBuffer<Vertex>>(device, data->position.size());
+	for (uint i = 0; i < data->position.size(); i++) {
+		auto* vertex = vertexBuffer->loadBuffer.DataAt(i);
+		vertex->position = data->position[i];
+		vertex->normal = data->normal[i];
+		vertex->tangent = data->tangent[i];
+		vertex->uv = data->uv[i];
 	}
-	numVertices = vertexInitialData.size();
 	for (uint i = 0; i < MAX_LOD_COUNT; i++) {
-		auto& buffer = lods[i];
-		buffer.indexInitialData = mesh.lods[i].indices;
-		buffer.meshletInitialData = mesh.lods[i].meshlets;
-		buffer.meshletVertexInitialData = mesh.lods[i].meshlet_vertices;
-		buffer.meshletTriangleInitialData = mesh.lods[i].meshlet_triangles;
-		buffer.numIndices = buffer.indexInitialData.size();
-		buffer.numMeshlets = buffer.meshletInitialData.size();
+		lodBuffers[i] = std::make_unique<MeshLODBuffers>(device, data->lods[i].indices.size(), data->lods[i].meshlets.size(), data->lods[i].meshlet_vertices.size(), data->lods[i].meshlet_triangles.size());
+		auto* lod = lodBuffers[i].get();
+		lod->loadIndexBuffer.WriteData(data->lods[i].indices.data(), 0, data->lods[i].indices.size(), 0);
+		lod->loadMeshletBuffer.WriteData(data->lods[i].meshlets.data(), 0, data->lods[i].meshlets.size(), 0);
+		lod->loadMeshletVertexBuffer.WriteData(data->lods[i].meshlet_vertices.data(), 0, data->lods[i].meshlet_vertices.size(), 0);
+		lod->loadMeshletTriangleBuffer.WriteData(data->lods[i].meshlet_triangles.data(), 0, data->lods[i].meshlet_triangles.size(), 0);
 	}
 }
 
-void StaticMeshAsset::upload(RHI::Device* device) {
-	auto create_buffer_desc = [&](auto buffer) {
-		return RHI::Resource::ResourceDesc::GetGenericBufferDesc(
-			::size_in_bytes(buffer), sizeof(decltype(buffer)::value_type),
-			RHI::ResourceState::Common, RHI::ResourceHeapType::Default,
-			RHI::ResourceFlags::None
-		);
-	};
-	auto upload_buffer = [&](auto buffer, auto dst) {
-		device->Upload(dst, (void*)buffer.data(), ::size_in_bytes(buffer));
-	};
-	vertexBuffer = std::make_unique<RHI::Buffer>(device, create_buffer_desc(vertexInitialData));	
-	upload_buffer(vertexInitialData, vertexBuffer.get());
+void MeshAsset::Upload(UploadContext* ctx){
+	ctx->CopyBufferRegion(&vertexBuffer->loadBuffer, &vertexBuffer->buffer, 0, 0, vertexBuffer->buffer.GetDesc().sizeInBytes());
+	ctx->Barrier(&vertexBuffer->loadBuffer, RHI::ResourceState::VertexAndConstantBuffer);	
 	for (uint i = 0; i < MAX_LOD_COUNT; i++) {
-		auto& buffer = lods[i];
-		buffer.indexBuffer = std::make_unique<RHI::Buffer>(device, create_buffer_desc(buffer.indexInitialData));
-		buffer.meshletBuffer = std::make_unique<RHI::Buffer>(device, create_buffer_desc(buffer.meshletInitialData));
-		buffer.meshletTriangleBuffer = std::make_unique<RHI::Buffer>(device, create_buffer_desc(buffer.meshletTriangleInitialData));
-		buffer.meshletVertexBuffer = std::make_unique<RHI::Buffer>(device, create_buffer_desc(buffer.meshletVertexInitialData));
-
-		upload_buffer(buffer.indexInitialData, buffer.indexBuffer.get());
-		upload_buffer(buffer.meshletInitialData, buffer.meshletBuffer.get());
-		upload_buffer(buffer.meshletTriangleInitialData, buffer.meshletTriangleBuffer.get());
-		upload_buffer(buffer.meshletVertexInitialData, buffer.meshletVertexBuffer.get());
+		auto* lod = lodBuffers[i].get();
+		ctx->CopyBufferRegion(&lod->loadIndexBuffer, &lod->indexBuffer, 0, 0, lod->indexBuffer.GetDesc().sizeInBytes());
+		ctx->CopyBufferRegion(&lod->meshletBuffer, &lod->indexBuffer, 0, 0, lod->loadMeshletBuffer.GetDesc().sizeInBytes());
+		ctx->CopyBufferRegion(&lod->loadMeshletVertexBuffer, &lod->indexBuffer, 0, 0, lod->loadMeshletVertexBuffer.GetDesc().sizeInBytes());
+		ctx->CopyBufferRegion(&lod->loadMeshletTriangleBuffer, &lod->indexBuffer, 0, 0, lod->loadMeshletTriangleBuffer.GetDesc().sizeInBytes());
+		ctx->Barrier(&lod->loadIndexBuffer, RHI::ResourceState::IndexBuffer);
+		ctx->Barrier(&lod->meshletBuffer, RHI::ResourceState::Common);
+		ctx->Barrier(&lod->loadMeshletVertexBuffer, RHI::ResourceState::Common);
+		ctx->Barrier(&lod->loadMeshletTriangleBuffer, RHI::ResourceState::Common);
 	}
 }

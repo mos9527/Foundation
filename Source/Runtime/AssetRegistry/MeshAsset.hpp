@@ -1,10 +1,14 @@
 #pragma once
 #include "IO.hpp"
-#include "../RHI/RHI.hpp"
 
 #include "Asset.hpp"
 #include "MeshImporter.hpp"
 #include "../../Runtime/Renderer/Shaders/Shared.h"
+
+#include "../RHI/RHI.hpp"
+#include "ResourceContainer.hpp"
+#include "UploadContext.hpp"
+
 struct VertexLayoutElement {
 	const char* semantic;
 	const RHI::ResourceFormat format;
@@ -16,21 +20,64 @@ inline constexpr std::vector<D3D12_INPUT_ELEMENT_DESC> VertexLayoutToD3DIADesc(c
 		out.push_back({elem.semantic, 0, ResourceFormatToD3DFormat(elem.format), 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 });
 	return out;
 }
-struct MeshLod {
-	uint numIndices;
-	uint numMeshlets;
 
-	std::vector<UINT> indexInitialData;
-	std::vector<Meshlet> meshletInitialData;
-	std::vector<MeshletTriangle> meshletTriangleInitialData;
-	std::vector<UINT> meshletVertexInitialData;
-			
-	std::unique_ptr<RHI::Buffer> indexBuffer;
-	std::unique_ptr<RHI::Buffer> meshletBuffer, meshletTriangleBuffer, meshletVertexBuffer;
+template<typename Elem> static const RHI::Resource::ResourceDesc GetDefaultMeshBufferDesc(uint numElements) {
+	return RHI::Resource::ResourceDesc::GetGenericBufferDesc(
+		numElements * sizeof(Elem), sizeof(Elem),
+		RHI::ResourceState::CopyDest, RHI::ResourceHeapType::Default,
+		RHI::ResourceFlags::None
+	);
+}
+
+struct MeshAsset;
+struct MeshLODBuffers {
+	friend struct MeshAsset;
+private:
+	// Upload heap
+	BufferContainer<UINT> loadIndexBuffer;
+	BufferContainer<UINT> loadMeshletVertexBuffer;
+	BufferContainer<Meshlet> loadMeshletBuffer;
+	BufferContainer<MeshletTriangle> loadMeshletTriangleBuffer;
+public:
+	const uint numIndices, numMeshlets, numMeshletVertices, numMeshletTriangles;
+	// Default heap
+	RHI::Buffer indexBuffer, meshletVertexBuffer, meshletBuffer, meshletTriangleBuffer;	
+	MeshLODBuffers(RHI::Device* device, uint numIndices, uint numMeshlets, uint numMeshletVertices, uint numMeshletTriangles) :
+		numIndices(numIndices),
+		numMeshlets(numMeshlets),
+		numMeshletVertices(numMeshletVertices),
+		numMeshletTriangles(numMeshletTriangles),
+		loadIndexBuffer(device, numIndices),
+		loadMeshletBuffer(device, numMeshlets),
+		loadMeshletVertexBuffer(device, numMeshletVertices),
+		loadMeshletTriangleBuffer(device, numMeshletTriangles),
+		indexBuffer(device, GetDefaultMeshBufferDesc<UINT>(numIndices)),
+		meshletBuffer(device, GetDefaultMeshBufferDesc<UINT>(numMeshlets)),
+		meshletVertexBuffer(device, GetDefaultMeshBufferDesc<UINT>(numMeshletVertices)),
+		meshletTriangleBuffer(device, GetDefaultMeshBufferDesc<UINT>(numMeshletTriangles)) {};
+	void Clean() {
+		loadIndexBuffer.Release();
+		loadMeshletVertexBuffer.Release();
+		loadMeshletBuffer.Release();
+		loadMeshletTriangleBuffer.Release();
+	}
 };
-template<> struct Asset<mesh_static> {
-	using imported_type = mesh_static;
-	static constexpr AssetType type = AssetType::StaticMesh;
+
+template<typename VertexType> struct MeshVertexBuffer {
+	friend struct MeshAsset;
+private:
+	BufferContainer<VertexType> loadBuffer;
+public:
+	RHI::Buffer buffer;
+	const uint numVertices;
+	MeshVertexBuffer(RHI::Device* device, uint numVertices) :
+		loadBuffer(device, numVertices), buffer(device, GetDefaultMeshBufferDesc<VertexType>(numVertices)), numVertices(numVertices) {};
+	void Clean() { loadBuffer.Release(); }
+};
+
+struct MeshAsset {
+public:
+	const static AssetType type = AssetType::StaticMesh;
 	struct Vertex {
 		float3 position;
 		float3 normal;
@@ -44,25 +91,23 @@ template<> struct Asset<mesh_static> {
 				{ "TEXCOORD" ,RHI::ResourceFormat::R32G32_FLOAT }
 			};
 		}
-	};
-	uint numVertices;
+	};	
+public:
 	DirectX::BoundingBox boundingBox;
-	DirectX::BoundingSphere boundingSphere;
-
-	std::vector<Vertex> vertexInitialData;
-	std::unique_ptr<RHI::Buffer> vertexBuffer;
-	MeshLod lods[MAX_LOD_COUNT];	
-	void clean() {
-		vertexInitialData = {};
-		for (int i = 0; i < MAX_LOD_COUNT; i++) {
-			lods[i].indexInitialData = {};
-			lods[i].meshletInitialData = {};
-			lods[i].meshletTriangleInitialData = {};
-			lods[i].meshletVertexInitialData = {};
-		}
+	DirectX::BoundingSphere boundingSphere;	
+	std::unique_ptr<MeshLODBuffers> lodBuffers[MAX_LOD_COUNT];	
+	std::unique_ptr<MeshVertexBuffer<Vertex>> vertexBuffer;
+	
+	MeshAsset(RHI::Device* device, StaticMesh* data);	
+	void Upload(UploadContext* ctx);
+	void Clean() {
+		vertexBuffer->Clean();
+		for (uint i = 0; i < MAX_LOD_COUNT; i++)
+			lodBuffers[i]->Clean();
 	}
-	Asset(mesh_static&&);
-	void upload(RHI::Device*);
 };
 
-typedef Asset<mesh_static> StaticMeshAsset;
+template<> struct ImportedAssetTraits<StaticMesh> {
+	using imported_by = MeshAsset;
+	static constexpr AssetType type = AssetType::StaticMesh;
+};

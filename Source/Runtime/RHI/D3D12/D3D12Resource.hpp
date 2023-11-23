@@ -148,15 +148,23 @@ namespace RHI {
 				return indexSubresource(0, arraySize, planes - 1, mipLevels, arraySize); // arraysize * miplevels * planes
 			}
 		};
+
 		Resource(Device* device, ComPtr<ID3D12Resource>&& texture, name_t name = nullptr);
-		Resource(Device* device, ResourceDesc const& desc);		
-		~Resource() {
-			for (uint i = 0; i < m_MappedSubresources.size(); i++)
-				if (m_MappedSubresources[i])
-					Unmap(i);
-			m_Resource.Reset();
-			m_Allocation.Reset();
+		Resource(Device* device, ResourceDesc const& desc);	
+		void Release() {
+			if (IsValid()) {
+				for (uint i = 0; i < m_MappedSubresources.size(); i++)
+					if (m_MappedSubresources[i])
+						Unmap(i);
+				m_Resource.Reset();
+				m_Allocation.Reset();
+			}
 		}
+		~Resource() {
+			Release();
+		}
+		inline bool IsValid() { return this && m_Resource; }
+
 		inline ResourceDesc const& GetDesc() { return m_Desc;  }		
 		inline ResourceState GetSubresourceState(UINT subresource=0) { return m_States[subresource]; }		
 		
@@ -167,7 +175,6 @@ namespace RHI {
 		inline auto GetNativeResource() { return m_Resource.Get(); }
 
 		inline operator ID3D12Resource* () { return m_Resource.Get(); }
-		inline void Reset() { m_Resource.Reset(); }		
 
 		/* Upload & Readback only! */		
 		void Update(uint subresource, const void* data, size_t size, size_t offset);
@@ -198,12 +205,10 @@ namespace RHI {
 	class Buffer : public Resource {
 	public:
 		using Resource::Resource;
-		using Resource::~Resource;
 	};
 	class Texture : public Resource {
 	public:
 		using Resource::Resource;
-		using Resource::~Resource;
 
 		ClearValue const& GetClearValue() const {
 			return m_Desc.clearValue.value();

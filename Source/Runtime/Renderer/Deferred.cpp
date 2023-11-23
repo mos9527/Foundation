@@ -183,6 +183,6 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneGraphView* sceneView)
 		.fb_uav = fb_uav
 	});
 	rg.get_epilogue_pass().read(frameBuffer);
-	rg.execute(device->GetCommandList<CommandListType::Direct>());
+	rg.execute(device->GetDefaultCommandList<CommandListType::Direct>());
 	return rg.get<ShaderResourceView>(fb_srv);
 }

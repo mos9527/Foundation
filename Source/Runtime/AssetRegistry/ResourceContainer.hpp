@@ -4,37 +4,36 @@
 template<typename T> concept PodDataType = requires (T a) {
 	std::is_trivially_copyable<T>::value;
 };
-template<PodDataType Type, bool IsRawBuffer = false> struct BufferContainer : private RHI::Buffer{
-	using RHI::Buffer::~Buffer;
-	BufferUploadContainer(RHI::Device* device, size_t numElements = 1) : RHI::Buffer(device, Resource::ResourceDesc::GetGenericBufferDesc(
+template<PodDataType Type, bool IsRawBuffer = false> struct BufferContainer : public RHI::Resource {
+	using RHI::Resource::GetNativeResource;
+	using RHI::Resource::Release;
+	using RHI::Resource::IsValid;
+	BufferContainer(RHI::Device* device, uint numElements = 1) : RHI::Resource(device, Resource::ResourceDesc::GetGenericBufferDesc(
 		sizeof(Type)* numElements, IsRawBuffer ? RAW_BUFFER_STRIDE : sizeof(Type)
 	)) {
 		pMappedData = Map(0); // Buffers only have one subresource
 	}
-	const size_t SizeInBytes() const { return m_Desc.sizeInBytes(); }
-	const size_t NumElements() const { return m_Desc.numElements(); }
-	const inline Type* Data() const { return reinterpret_cast<Type*>(pMappedData); }	
-	const Type* operator->() { return Data(); }
-	Type* inline At(size_t index) { return(data() + (Type*)index); }
-	Type& inline operator[](size_t index) {
-		assert(index < size());
-		return *At(index);
-	}
-	const inline Type& operator[](size_t index) const {
-		return *At(index);
-	}
+	const uint SizeInBytes() const { return m_Desc.sizeInBytes(); }
+	const uint NumElements() const { return m_Desc.numElements(); }
+	inline Type* Data() const { return reinterpret_cast<Type*>(pMappedData); }
+	inline Type* DataAt(uint index) { return Data() + index; }
+	void WriteData(Type* srcData, uint srcElemOffset = 0, uint srcNumElements = 1, uint dstElemOffset = 0) {
+		memcpy(Data() + dstElemOffset, srcData + srcElemOffset, srcNumElements * sizeof(Type));
+	};
 private:
 	void* pMappedData;
 };
-struct Texture2DContainer : private RHI::Texture {
-	using RHI::Texture::~Texture;
-	Texture2DContainer(RHI::Device* device, RHI::ResourceFormat format, uint width, uint height, uint numMips = 1, uint numSlices = 1) : RHI::Texture(
+struct Texture2DContainer : public RHI::Resource {
+	using RHI::Resource::GetNativeResource;
+	using RHI::Resource::Release;
+	using RHI::Resource::IsValid;
+	Texture2DContainer(RHI::Device* device, RHI::ResourceFormat format, uint width, uint height, uint numMips = 1, uint numSlices = 1) : RHI::Resource(
 		device, RHI::Resource::ResourceDesc::GetTextureBufferDesc(
 			format, RHI::ResourceDimension::Texture2D, width, height, numMips, numSlices
 		)
 	) {};	
-	const size_t NumMips() { return m_Desc.mipLevels; }
-	const size_t NumSlices() { return m_Desc.arraySize; }	
+	const uint NumMips() { return m_Desc.mipLevels; }
+	const uint NumSlices() { return m_Desc.arraySize; }	
 	void* MapSubresource(uint arraySlice, uint mipSlice) {
 		uint subresource = m_Desc.indexSubresource(arraySlice, mipSlice);
 		return Map(subresource);
@@ -57,6 +56,7 @@ struct Texture2DContainer : private RHI::Texture {
 			.RowPitch = srcPitch,
 			.SlicePitch = 0
 		};
+		NumRows = std::min(NumRows, srcHeight);
 		MemcpySubresource(&dest, &src, RowSizeInBytes, NumRows, 1);
 	}
 }; 

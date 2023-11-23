@@ -78,57 +78,57 @@ struct RgDummy : public RgResource {
 
 template<typename T> struct RgResourceTraits {
 	static constexpr RgResourceType type_enum = RgResourceType::Unknown;
-	using type = void;
+	using resource_type = void;
 	using rhi_type = void;
 	using desc_type = void;
 };
 
 template<> struct RgResourceTraits<RHI::Texture> {
 	static constexpr RgResourceType type_enum = RgResourceType::Texture;
-	using type = RgTexture;
+	using resource_type = RgTexture;
 	using rhi_type = RHI::Texture;
 	using desc_type = decltype(RgTexture::desc);
 };
 
 template<> struct RgResourceTraits<RHI::Buffer> {
 	static constexpr RgResourceType type_enum = RgResourceType::Buffer;
-	using type = RgBuffer;
+	using resource_type = RgBuffer;
 	using rhi_type = RHI::Buffer;
 	using desc_type = decltype(RgBuffer::desc);
 };
 
 template<> struct RgResourceTraits<RHI::ShaderResourceView> {
 	static constexpr RgResourceType type_enum = RgResourceType::ResourceViewSRV;
-	using type = RgSRV;
+	using resource_type = RgSRV;
 	using rhi_type = RHI::ShaderResourceView;
 	using desc_type = decltype(RgSRV::desc);
 };
 
 template<> struct RgResourceTraits<RHI::RenderTargetView> {
 	static constexpr RgResourceType type_enum = RgResourceType::ResourceViewRTV;
-	using type = RgRTV;
+	using resource_type = RgRTV;
 	using rhi_type = RHI::RenderTargetView;
 	using desc_type = decltype(RgRTV::desc);
 };
 
 template<> struct RgResourceTraits<RHI::DepthStencilView> {
 	static constexpr RgResourceType type_enum = RgResourceType::ResourceViewDSV;
-	using type = RgDSV;
+	using resource_type = RgDSV;
 	using rhi_type = RHI::DepthStencilView;
 	using desc_type = decltype(RgDSV::desc);
 };
 
 template<> struct RgResourceTraits<RHI::UnorderedAccessView> {
 	static constexpr RgResourceType type_enum = RgResourceType::ResourceViewUAV;
-	using type = RgUAV;
+	using resource_type = RgUAV;
 	using rhi_type = RHI::UnorderedAccessView;
 	using desc_type = decltype(RgUAV::desc);
 };
 
 template<> struct RgResourceTraits<Dummy> {
 	static constexpr RgResourceType type_enum = RgResourceType::Dummy;
-	using type = RgDummy;
+	using resource_type = RgDummy;
 	using rhi_type = Dummy;
 	using desc_type = decltype(RgDummy::desc);
 };
-template<typename T> concept RgDefinedResource = !std::is_void_v<typename RgResourceTraits<T>::type>;
+template<typename T> concept RgDefinedResource = !std::is_void_v<typename RgResourceTraits<T>::resource_type>;

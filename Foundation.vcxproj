@@ -154,10 +154,10 @@
     <ClCompile Include="Dependencies\imgui\imgui_tables.cpp" />
     <ClCompile Include="Dependencies\imgui\imgui_widgets.cpp" />
     <ClCompile Include="Source\Runtime\AssetRegistry\AssetRegistry.cpp" />
-    <ClCompile Include="Source\Runtime\AssetRegistry\ImageAsset.cpp" />
+    <ClCompile Include="Source\Runtime\AssetRegistry\TextureAsset.cpp" />
     <ClCompile Include="Source\Runtime\AssetRegistry\ImageImporter.hpp" />
     <ClCompile Include="Source\Runtime\AssetRegistry\MeshAsset.cpp" />
-    <ClCompile Include="Source\Runtime\RHI\UploadContext.cpp" />
+    <ClCompile Include="Source\Runtime\AssetRegistry\UploadContext.cpp" />
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\DeferredLighting.cpp" />
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\FFXSpd.cpp" />
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\GBuffer.cpp" />
@@ -179,6 +179,8 @@
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12RootSignature.cpp" />
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Shader.cpp" />
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Swapchain.cpp" />
+    <ClCompile Include="Source\Runtime\SceneGraph\AssetComponet\Mesh.cpp" />
+    <ClCompile Include="Source\Runtime\SceneGraph\SceneComponent\SceneComponent.cpp" />
     <ClCompile Include="Source\Runtime\SceneGraph\SceneGraph.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -203,16 +205,19 @@
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\RenderPass.hpp" />
     <ClInclude Include="Source\Runtime\Renderer\Shaders\ffx-spd\ffx_a.h" />
     <ClInclude Include="Source\Runtime\Renderer\Shaders\ffx-spd\ffx_spd.h" />
-    <ClInclude Include="Source\Runtime\RHI\UploadContext.hpp" />
+    <ClInclude Include="Source\Runtime\AssetRegistry\UploadContext.hpp" />
     <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12ResourceView.hpp" />
     <ClInclude Include="Source\Runtime\RenderGraph\RenderGraphResource.hpp" />
     <ClInclude Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.hpp" />
-    <ClInclude Include="Source\Runtime\RHI\ResourceContainer.hpp" />
+    <ClInclude Include="Source\Runtime\AssetRegistry\ResourceContainer.hpp" />
+    <ClInclude Include="Source\Runtime\SceneGraph\AssetComponet\AssetComponent.hpp" />
+    <ClInclude Include="Source\Runtime\SceneGraph\AssetComponet\Material.hpp" />
+    <ClInclude Include="Source\Runtime\SceneGraph\AssetComponet\Mesh.hpp" />
     <ClInclude Include="Source\Runtime\SceneGraph\Component.hpp" />
-    <ClInclude Include="Source\Runtime\SceneGraph\Components\Camera.hpp" />
-    <ClInclude Include="Source\Runtime\SceneGraph\Components\Light.hpp" />
-    <ClInclude Include="Source\Runtime\SceneGraph\Components\Material.hpp" />
-    <ClInclude Include="Source\Runtime\SceneGraph\Components\StaticMesh.hpp" />
+    <ClInclude Include="Source\Runtime\SceneGraph\SceneComponent\SceneComponent.hpp" />
+    <ClInclude Include="Source\Runtime\SceneGraph\SceneComponent\Camera.hpp" />
+    <ClInclude Include="Source\Runtime\SceneGraph\SceneComponent\Light.hpp" />
+    <ClInclude Include="Source\Runtime\SceneGraph\SceneComponent\Mesh.hpp" />
     <ClInclude Include="Source\Runtime\SceneGraph\SceneGraphView.hpp" />
     <ClInclude Include="Source\Runtime\SceneGraph\SceneGraph.hpp" />
     <ClInclude Include="Source\Common\Graph.hpp" />
@@ -225,7 +230,7 @@
     <ClInclude Include="Source\Runtime\Renderer\Deferred.hpp" />
     <ClInclude Include="Source\Runtime\Renderer\Renderer.hpp" />
     <ClInclude Include="x64\Graveyard\Coroutine.hpp" />
-    <ClInclude Include="Source\Runtime\AssetRegistry\ImageAsset.hpp" />
+    <ClInclude Include="Source\Runtime\AssetRegistry\TextureAsset.hpp" />
     <ClInclude Include="Source\Runtime\AssetRegistry\IO.hpp" />
     <ClInclude Include="Source\Runtime\AssetRegistry\MeshImporter.hpp" />
     <ClInclude Include="Source\pch.hpp" />
