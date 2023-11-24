@@ -6,11 +6,11 @@
 class RenderGraph;
 // RHI resource cache for Created resources in RenderGraph
 // Basically, a stripped down (and much dumbified) version of entt::registry
-// * We're not using entt::registry since its entity management does not allow random insertion
+// * xxx use entt::resource_cache
 class RenderGraphResourceCache {	
 	template<typename T> using Allocator = DefaultAllocator<T>;		
-	unordered_map<ref_type_info, entt::basic_any<>, Allocator<std::pair<const ref_type_info, entt::basic_any<>>>> storages;
-	template<RgDefinedResource T> using storage_type = unordered_map<entt::entity, std::shared_ptr<T>, Allocator<std::pair<const entt::entity, std::shared_ptr<T>>>>;
+	std::unordered_map<ref_type_info, entt::basic_any<>> storages;	
+	template<RgDefinedResource T> using storage_type = std::unordered_map<entt::entity, std::shared_ptr<T>>;
 	// storages only cares about the entity ID. their versions does not matter.
 public:
 	void update(RenderGraph& graph, RHI::Device* device);

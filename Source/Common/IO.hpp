@@ -30,3 +30,10 @@ inline void write_data(path_t path, uint8_t* data, size_t size) {
 	std::basic_ofstream<uint8_t> file(path, std::ios::binary);
 	file.write(data, size);
 }
+inline uint64_t hires_nanos() {
+	auto now = std::chrono::high_resolution_clock::now().time_since_epoch();
+	return std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
+}
+inline double hires_millis() {
+	return hires_nanos() / 1e6;
+}

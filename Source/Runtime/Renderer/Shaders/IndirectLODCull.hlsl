@@ -83,11 +83,7 @@ void main_late(uint index : SV_DispatchThreadID)
         float4 bbBoxRectUV = float4(saturate(clip2UV(bbMaxSS)), saturate(clip2UV(bbMinSS))); // max, min
         float2 bbBoxRectSize = bbBoxss.Extents.xy * 2 * g_SceneGlobals.frameDimension; // extents are half-widths of the axis
         uint hizLOD = floor(log2(max(bbBoxRectSize.x, bbBoxRectSize.y)));
-        // Increase LOD level (decrease MIP) if the sample size doesn't even cover a 2x2 footprint
-        // see https://github.com/mateeeeeee/Adria-DX12/blob/master/Adria/Resources/NewShaders/GpuDrivenRendering/GpuDrivenRendering.hlsli#L148        
         hizLOD = clamp(hizLOD, 0, hizMips);
-        if (min(g_SceneGlobals.frameDimension.x, g_SceneGlobals.frameDimension.y) >> hizLOD < 2)
-            hizLOD = max(0, hizLOD - 1);
         float2 smpCoord = (bbBoxRectUV.xy + bbBoxRectUV.zw) * 0.5f;
         float smpDepth = hiz.SampleLevel(g_HIZSampler,smpCoord, hizLOD).r; // sample at the centre
 #ifdef INVERSE_Z        

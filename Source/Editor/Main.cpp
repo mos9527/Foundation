@@ -92,7 +92,7 @@ int main(int argc, char* argv[]) {
     taskpool.push([&] {        
         LOG(INFO) << "Loading scene";
         Assimp::Importer importer;
-#define GLTF_SAMPLE L"Sponza" // DepthOcclusionTest
+#define GLTF_SAMPLE L"Custom" // DepthOcclusionTest
         path_t filepath = L"..\\Resources\\glTF-Sample-Models\\2.0\\" GLTF_SAMPLE "\\glTF\\" GLTF_SAMPLE ".gltf";
         std::string u8path = (const char*)filepath.u8string().c_str();
         UploadContext ctx(&device);
@@ -181,10 +181,13 @@ int main(int argc, char* argv[]) {
         scene.update();
 #endif
         UINT frameFlags = 0;
+        static double debug_RenderCPUTime = 0.0f;
 #ifdef IMGUI_ENABLED
         if (ImGui::Begin("Renderer")) {
+            ImGui::Text("RenderGraph CPU Time : %3lf ms", debug_RenderCPUTime);
+            ImGui::Text("Renderer    Frametime: %3f ms", ImGui::GetIO().DeltaTime * 1000);
             static bool debug_ViewAlbedo = false, debug_ViewLod = false, debug_Wireframe = false;
-            static bool debug_FrustumCull = false, debug_OcclusionCull = false;
+            static bool debug_FrustumCull = true, debug_OcclusionCull = true;
             ImGui::Checkbox("View LOD", &debug_ViewLod);
             ImGui::Checkbox("View Albedo", &debug_ViewAlbedo);
             ImGui::Checkbox("Wireframe", &debug_Wireframe);
@@ -209,7 +212,9 @@ int main(int argc, char* argv[]) {
                 .backBufferIndex = bbIndex,
                 .frameTimePrev = ImGui::GetIO().DeltaTime
             });
+            double begin = hires_millis();
             pSrv = renderer.Render(sceneViews[bbIndex].get());
+            debug_RenderCPUTime = hires_millis() - begin;
             /* RENDER END */
         }
         else {

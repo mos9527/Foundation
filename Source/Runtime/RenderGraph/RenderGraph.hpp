@@ -13,9 +13,10 @@ struct RgContext {
 	RHI::CommandList* cmd;
 };
 
+typedef basic_DAG<entt::entity, entt::entity> graph_type;
 typedef std::function<void(RgContext&)> RgFunction;
-typedef unordered_set<RgHandle, DefaultAllocator<RgHandle>> RgResources;
-typedef vector<entt::entity, DefaultAllocator<entt::entity>> RgRndPasses;
+typedef std::set<RgHandle> RgResources;
+typedef std::vector<entt::entity> RgRndPasses;
 
 class RenderGraph;
 struct RenderGraphPass {
@@ -64,16 +65,14 @@ public:
 // * Thus, RenderGraph is meant to be created / destroyed every frame for execution. Which by itself is pretty cheap.
 // * To releive resource creation costs, RenderGraphResourceCache caches them so it can be reused when applicable
 // xxx Optionaly support baking command bundles?
-class RenderGraph : DAG<entt::entity> {	
-	friend class RenderGraphResourceCache;
-	template<typename T> using Allocator = DefaultAllocator<T>;
-	
+class RenderGraph : graph_type {	
+	friend class RenderGraphResourceCache;	
 	RenderGraphResourceCache& cache;	
-	entt::basic_registry<entt::entity, Allocator <entt::entity>> registry;		
+	entt::registry registry;		
 	entt::entity epiloguePass;
 	
 	RgRndPasses passes;
-	vector<RgRndPasses, Allocator <RgRndPasses>> layers;	
+	std::vector<RgRndPasses> layers;	
 
 	void build_graph() {
 		layers.clear();
@@ -104,16 +103,16 @@ class RenderGraph : DAG<entt::entity> {
 			// cyclic dependency
 			LOG(ERROR) << "Cyclic dependency in RenderGraph. Consider using import().";
 			LOG(INFO) << "Current Dependency Graph";
-			table_type<bool> visited;
-			auto dfs_nodes = [&](auto& func, vertex current, uint depth) -> void {
+			set_type visited;
+			auto dfs_nodes = [&](auto& func, vertex_type current, uint depth) -> void {
 				auto& pass = registry.get<RenderGraphPass>(current);
 				std::string prefix; for (uint i = 0; i < depth; i++) prefix += '\t';
 				LOG(INFO) << prefix << wstring_to_utf8(pass.name);
-				if (visited[current]) {
+				if (visited.contains(current)) {
 					LOG(ERROR) << prefix << " ^ Potential loop here.";
 					return;
 				}
-				visited[current] = true;
+				visited.insert(current);
 				for (auto child : graph[current])
 					func(func, child, depth+1);
 			};

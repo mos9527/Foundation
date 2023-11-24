@@ -13,8 +13,8 @@ class SceneGraph {
 	friend class SceneView;
 	entt::entity root;
 
-	DAG<entt::entity> sceneForwardGraph;
-	DAG<entt::entity> sceneBackwardGraph; // or sceneForwardGraph transposed
+	unorderded_DAG<entt::entity,entt::entity> sceneForwardGraph;
+	unorderded_DAG<entt::entity,entt::entity> sceneBackwardGraph; // or sceneForwardGraph transposed
 
 	Scene& scene;
 	void add_link(const entt::entity lhs, const entt::entity rhs) {
@@ -77,7 +77,7 @@ public:
 	bool has_child(const entt::entity entity) {
 		return sceneForwardGraph.get_graph().contains(entity) && child_of(entity).size() > 0;
 	}
-	DAG<entt::entity>::tree_type& child_of(const entt::entity entity) {
+	unorderded_DAG<entt::entity, entt::entity>::set_type& child_of(const entt::entity entity) {
 		return sceneForwardGraph.get_graph().at(entity);		
 	}
 #ifdef IMGUI_ENABLED
