@@ -2,16 +2,18 @@
 /* Implements RHI::Resource Containers on CPU Heaps (Upload Heaps) */
 #include "../RHI/RHI.hpp"
 template<typename T> concept PodDataType = std::is_trivially_copyable<T>::value;
-template<PodDataType Type, bool IsRawBuffer = false> struct BufferContainer : public RHI::Resource {
+template<PodDataType Type, bool IsRawBuffer = false, bool Read = false> struct BufferContainer : public RHI::Resource {
 	using RHI::Resource::GetNativeResource;
 	using RHI::Resource::Release;
 	using RHI::Resource::IsValid;
 	BufferContainer(RHI::Device* device, uint numElements = 1, RHI::name_t name = nullptr) : RHI::Resource(device, Resource::ResourceDesc::GetGenericBufferDesc(
 		sizeof(Type)* numElements, IsRawBuffer ? RAW_BUFFER_STRIDE : sizeof(Type)
 	)) {
-		pMappedData = Map(0); // Buffers only have one subresource
 		SetName(name ? name : L"<Buffer>");
+		Map();
 	}
+	void Map() { pMappedData = RHI::Resource::Map(0); }
+	void Unmap() { RHI::Resource::Unmap(0); pMappedData = nullptr; }
 	const uint SizeInBytes() const { return m_Desc.sizeInBytes(); }
 	const uint NumElements() const { return m_Desc.numElements(); }
 	inline Type* Data() const { return reinterpret_cast<Type*>(pMappedData); }

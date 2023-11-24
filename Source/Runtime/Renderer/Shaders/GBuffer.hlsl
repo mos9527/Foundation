@@ -11,14 +11,16 @@ StructuredBuffer<SceneMaterial> g_Materials : register(t1, space0);
 SamplerState g_Sampler : register(s0, space0);
 struct VSInput
 {
-    float3 position : POSITION;
+    float3 position : POSITION;    
     float3 normal : NORMAL;
     float3 tangent : TANGENT;
     float2 uv : TEXCOORD;
 };
 struct PSInput
-{
-    float4 position : SV_POSITION;
+{    
+    float4 position : SV_POSITION; // Pixel coordinates
+    float4 clipPosition : SS_CLIPPOSITION; // Clip space (w/o div by w)
+    float4 prevClipPosition : SS_PREVCLIPPOSITION; // Clip space (w/o div by w)
     float3 normal : NORMAL;
     float3 tangent : TANGENT;
     float2 uv : TEXCOORD;
@@ -28,7 +30,9 @@ PSInput vs_main(VSInput vertex)
 {
     PSInput result;
     SceneMeshInstance mesh = g_SceneMeshInstances[g_MeshIndex];
-    result.position = mul(mul(float4(vertex.position, 1.0f), mesh.transform), g_SceneGlobals.camera.viewProjection);
+    result.clipPosition = mul(mul(float4(vertex.position, 1.0f), mesh.transform), g_SceneGlobals.camera.viewProjection);
+    result.prevClipPosition = mul(mul(float4(vertex.position, 1.0f), mesh.transformPrev), g_SceneGlobals.cameraPrev.viewProjection);
+    result.position = result.clipPosition;
     result.normal = mul(vertex.normal, (float3x3) mesh.transformInvTranspose);
     result.tangent = mul(vertex.tangent, (float3x3) mesh.transformInvTranspose);
     result.uv = vertex.uv;
@@ -36,16 +40,20 @@ PSInput vs_main(VSInput vertex)
 }
 struct MRT
 {
-    float4 AlbedoMask : SV_Target0;
-    float4 Normal : SV_Target1;
-    float4 Material : SV_Target2;
-    float4 Emissive : SV_Target3;
+    float4 AlbedoMask : SV_Target0; // i.e. Basecolor
+    float4 Normal : SV_Target1; // Spheremeap encoded normal
+    float4 Material : SV_Target2; // PBR props & ...
+    float4 Emissive : SV_Target3; // Emissive materials
+    float4 Velocity : SV_Target4; // Screen space velocity
 };
 MRT ps_main(PSInput input)
 {
     SceneMeshInstance mesh = g_SceneMeshInstances[g_MeshIndex];
     SceneMaterial material = g_Materials[mesh.materialIndex];
     MRT output;
+    float2 ssClip = input.clipPosition.xy / input.clipPosition.w;
+    float2 ssClipPrev = input.prevClipPosition.xy / input.prevClipPosition.w;
+    output.Velocity = float4((ssClip - ssClipPrev), 0, 0);    
     if (g_SceneGlobals.frameFlags & FRAME_FLAG_GBUFFER_ALBEDO_AS_LOD)
     {
         float lod = (float) g_LodIndex / MAX_LOD_COUNT;
@@ -53,7 +61,7 @@ MRT ps_main(PSInput input)
         output.AlbedoMask = float4(ramp, 1);
         output.Normal = float4(1,1,1,1);
         output.Emissive = float4(0, 0, 0, 0);
-        output.Material = float4(0, 0, 0, 0);
+        output.Material = float4(0, 0, 0, 0);        
         return output;
     }
     output.AlbedoMask = material.albedo;

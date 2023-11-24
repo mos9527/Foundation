@@ -25,6 +25,13 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		ResourceState::RenderTarget, ClearValue(0, 0, 0, 0),
 		L"Normal Buffer"
 	));
+	auto& velocity = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
+		ResourceFormat::R16G16_FLOAT, ResourceDimension::Texture2D,
+		width, height, 1, 1, 1, 0,
+		ResourceFlags::RenderTarget, ResourceHeapType::Default,
+		ResourceState::RenderTarget, ClearValue(0, 0, 0, 0),
+		L"Veloctiy Buffer"
+	));
 	auto& material = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
 		ResourceFormat::R8G8B8A8_UNORM, ResourceDimension::Texture2D,
 		width, height, 1, 1, 1, 0,
@@ -75,6 +82,10 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		.viewDesc = RenderTargetViewDesc::GetTexture2DRenderTargetDesc(ResourceFormat::R8G8B8A8_UNORM, 0),
 		.viewed = emissive
 	});
+	auto& velocity_rtv = rg.create<RenderTargetView>({
+		.viewDesc = RenderTargetViewDesc::GetTexture2DRenderTargetDesc(ResourceFormat::R16G16_FLOAT, 0),
+		.viewed = velocity
+	});
 	auto& hiz_buffer = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
 		ResourceFormat::R32_FLOAT, ResourceDimension::Texture2D,
 		width, height, Resource::ResourceDesc::numMipsOfDimension(width, height), 1, 1, 0,
@@ -103,6 +114,10 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 	auto& emissive_srv = rg.create<ShaderResourceView>({
 		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R8G8B8A8_UNORM, 0, 1),
 		.viewed = emissive
+	});
+	auto& velocity_srv = rg.create<ShaderResourceView>({
+		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R16G16_FLOAT, 0, 1),
+		.viewed = velocity
 	});
 	auto& fb_uav = rg.create<UnorderedAccessView>({
 		.viewDesc = UnorderedAccessViewDesc::GetTexture2DDesc(ResourceFormat::R8G8B8A8_UNORM,0,0),
@@ -135,11 +150,13 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		.normal = normal,
 		.material = material,
 		.emissive = emissive,
+		.velocity = velocity,
 		.depth_dsv = depth_dsv,
 		.albedo_rtv = albedo_rtv,
 		.normal_rtv = normal_rtv,
 		.material_rtv = material_rtv,
-		.emissive_rtv = emissive_rtv
+		.emissive_rtv = emissive_rtv,
+		.velocity_rtv = velocity_rtv
 	});
 	auto& p3 = pass_HiZ.insert(rg, sceneView, {
 		.depth = depth,
@@ -162,11 +179,13 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		.normal = normal,
 		.material = material,
 		.emissive = emissive,
+		.velocity = velocity,
 		.depth_dsv = depth_dsv,
 		.albedo_rtv = albedo_rtv,
 		.normal_rtv = normal_rtv,
 		.material_rtv = material_rtv,
-		.emissive_rtv = emissive_rtv
+		.emissive_rtv = emissive_rtv,
+		.velocity_rtv = velocity_rtv
 	});
 	auto& p6 = pass_Lighting.insert(rg, sceneView, {
 		.frameBuffer = frameBuffer,
@@ -182,7 +201,7 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		.emissive_srv = emissive_srv,
 		.fb_uav = fb_uav
 	});
-	rg.get_epilogue_pass().read(frameBuffer);
+	rg.get_epilogue_pass().read(frameBuffer).read(velocity);
 	rg.execute(device->GetDefaultCommandList<CommandListType::Direct>());
-	return rg.get<ShaderResourceView>(fb_srv);
+	return rg.get<ShaderResourceView>(velocity_srv);
 }

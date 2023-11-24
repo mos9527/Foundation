@@ -5,7 +5,7 @@ namespace RHI {
 	void* Resource::Map(uint subresource) {
 		CHECK(m_Desc.heapType != ResourceHeapType::Default);
 		if (!m_MappedSubresources[subresource])
-			CHECK_HR(m_Resource->Map(0, nullptr, &m_MappedSubresources[subresource]));					
+			CHECK_HR(m_Resource->Map(subresource, nullptr, &m_MappedSubresources[subresource]));
 		return m_MappedSubresources[subresource];
 	}
 	void Resource::Unmap(uint subresource) {

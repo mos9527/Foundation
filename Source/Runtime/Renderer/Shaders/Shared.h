@@ -128,7 +128,8 @@ struct SceneMeshLod
     D3D12_GPU_VIRTUAL_ADDRESS meshletVertices;
 };
 struct SceneMeshInstance
-{    
+{
+    uint version;
     uint instanceIndex;
     uint numVertices; // 4
     uint materialIndex; //4
@@ -139,7 +140,6 @@ struct SceneMeshInstance
     matrix transformInvTranspose; // xxx transform is sufficent for affine transformations
 
     matrix transformPrev; // again, previous frame
-    matrix transformInvTransposePrev; 
 
     BoundingBox boundingBox;
     BoundingSphere boundingSphere;    

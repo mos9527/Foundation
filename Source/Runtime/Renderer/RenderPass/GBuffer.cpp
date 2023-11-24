@@ -33,11 +33,12 @@ GBufferPass::GBufferPass(Device* device) {
 #endif
 	gbufferPsoDesc.SampleMask = UINT_MAX;
 	gbufferPsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	gbufferPsoDesc.NumRenderTargets = 4; // ALBEDO[RGB+Mask], NORMAL, MATERIAL[metallic,roughness,[packed uint16]], EMISSIVE
+	gbufferPsoDesc.NumRenderTargets = 5; // ALBEDO[RGB+Mask], NORMAL, MATERIAL[metallic,roughness,[packed uint16]], EMISSIVE, VELOCITY
 	gbufferPsoDesc.RTVFormats[0] = ResourceFormatToD3DFormat(ResourceFormat::R8G8B8A8_UNORM);
 	gbufferPsoDesc.RTVFormats[1] = ResourceFormatToD3DFormat(ResourceFormat::R16G16_FLOAT); // see Shared.h
 	gbufferPsoDesc.RTVFormats[2] = ResourceFormatToD3DFormat(ResourceFormat::R8G8B8A8_UNORM);
 	gbufferPsoDesc.RTVFormats[3] = ResourceFormatToD3DFormat(ResourceFormat::R8G8B8A8_UNORM);
+	gbufferPsoDesc.RTVFormats[4] = ResourceFormatToD3DFormat(ResourceFormat::R16G16_FLOAT);
 	gbufferPsoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 	gbufferPsoDesc.SampleDesc.Count = 1;
 	ComPtr<ID3D12PipelineState> pso;
@@ -68,6 +69,7 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneView* sceneView, GB
 		auto* r_normal_rtv = ctx.graph->get<RenderTargetView>(handles.normal_rtv);
 		auto* r_material_rtv = ctx.graph->get<RenderTargetView>(handles.material_rtv);
 		auto* r_emissive_rtv = ctx.graph->get<RenderTargetView>(handles.emissive_rtv);
+		auto* r_velocity_rtv = ctx.graph->get<RenderTargetView>(handles.velocity_rtv);
 		auto* r_dsv = ctx.graph->get<DepthStencilView>(handles.depth_dsv);
 		auto* r_depthStencil = ctx.graph->get<Texture>(handles.depth);
 		auto* r_indirect_commands = ctx.graph->get<Buffer>(handles.indirectCommands);
@@ -93,11 +95,12 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneView* sceneView, GB
 			native->SetPipelineState(*gBufferPSO);
 			setupPSO();
 		}
-		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[4] = {
+		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[5] = {
 			r_albedo_rtv->descriptor,
 			r_normal_rtv->descriptor,
 			r_material_rtv->descriptor,
-			r_emissive_rtv->descriptor
+			r_emissive_rtv->descriptor,
+			r_velocity_rtv->descriptor
 		};
 		if (!late) {
 			// Only perform clears in the early pass
@@ -129,12 +132,17 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneView* sceneView, GB
 				clearColor,
 				1, &scissorRect
 			);
+			native->ClearRenderTargetView(
+				r_velocity_rtv->descriptor,
+				clearColor,
+				1, &scissorRect
+			);
 		}
 		CHECK(r_indirect_commands_uav->GetDesc().HasCountedResource() && "Invalid Command Buffer!");
 		ctx.cmd->Barrier(r_indirect_commands, ResourceState::IndirectArgument);
 		ctx.cmd->FlushBarriers();
 		native->OMSetRenderTargets(
-			4,
+			5,
 			rtvHandles,
 			FALSE,
 			&r_dsv->descriptor.get_cpu_handle()
@@ -174,7 +182,7 @@ RenderGraphPass& GBufferPass::insert_earlydraw(RenderGraph& rg, SceneView* scene
 	auto& pass = rg.add_pass(L"GBuffer Early Generation")
 		.read(handles.indirectCommands)
 		.write(handles.depth)
-		.write(handles.albedo).write(handles.normal).write(handles.material).write(handles.emissive);
+		.write(handles.albedo).write(handles.normal).write(handles.material).write(handles.velocity).write(handles.emissive);
 	insert_execute(pass, sceneView, std::move(handles),false /* late */);
 	return pass;
 }
@@ -182,7 +190,7 @@ RenderGraphPass& GBufferPass::insert_latedraw(RenderGraph& rg, SceneView* sceneV
 	auto& pass = rg.add_pass(L"GBuffer Late Generation")
 		.read(handles.indirectCommands)
 		.write(handles.depth)
-		.write(handles.albedo).write(handles.normal).write(handles.material).write(handles.emissive);
+		.write(handles.albedo).write(handles.normal).write(handles.material).write(handles.velocity).write(handles.emissive);
 	insert_execute(pass, sceneView, std::move(handles),true /* late */);
 	return pass;
 }

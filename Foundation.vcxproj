@@ -255,7 +255,7 @@
   <ItemGroup>
     <None Include=".gitattributes" />
     <None Include=".gitignore" />
-    <None Include="Source\defines.hpp" />
+    <ClInclude Include="Source\defines.hpp" />
     <Text Include="Source\Runtime\Renderer\Shaders\Shared.h">
       <FileType>Document</FileType>
     </Text>

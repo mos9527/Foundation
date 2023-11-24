@@ -13,6 +13,7 @@ public:
 		RgHandle& normal;
 		RgHandle& material;
 		RgHandle& emissive;
+		RgHandle& velocity;
 
 		RgHandle& depth_dsv;
 
@@ -20,6 +21,8 @@ public:
 		RgHandle& normal_rtv;
 		RgHandle& material_rtv;
 		RgHandle& emissive_rtv;
+		RgHandle& velocity_rtv;
+
 	};
 private:
 	std::unique_ptr<RHI::Shader> gBufferVS, gBufferPS;

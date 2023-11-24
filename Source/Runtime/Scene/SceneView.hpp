@@ -59,10 +59,11 @@ public:
 				AssetMeshComponent& assetComponent = scene.get<AssetMeshComponent>(mesh.meshAsset);
 				MeshAsset& asset = scene.get<MeshAsset>(assetComponent.mesh);
 				// Create HLSL data for update
-				SceneMeshInstance sceneMesh{};
-				AffineTransform transform = mesh.get_global_transform();
-				sceneMesh.transformPrev = sceneMesh.transform;
-				sceneMesh.transformInvTransposePrev = sceneMesh.transformInvTransposePrev;
+				uint meshIndex = instances.index(mesh.get_entity());
+				SceneMeshInstance sceneMesh = *meshInstancesBuffer.DataAt(meshIndex);
+				AffineTransform transform = mesh.get_global_transform();				
+				sceneMesh.transformPrev = sceneMesh.version == 0 ? transform.Transpose() : sceneMesh.transform;
+				sceneMesh.version = mesh.get_version();
 				sceneMesh.transform = transform.Transpose();
 				sceneMesh.transformInvTranspose = transform.Invert()/*.Transpose().Transpose()*/;
 				sceneMesh.vertices = D3D12_VERTEX_BUFFER_VIEW{
@@ -103,7 +104,7 @@ public:
 				// Write the update
 				*meshMaterialsBuffer.DataAt(sceneMesh.materialIndex) = material;
 				// More data with the mesh
-				sceneMesh.instanceIndex = instances.index(mesh.get_entity());
+				sceneMesh.instanceIndex = meshIndex;
 				sceneMesh.boundingBox = asset.boundingBox;
 				sceneMesh.boundingSphere = asset.boundingSphere;
 				sceneMesh.lodOverride = mesh.lodOverride;
