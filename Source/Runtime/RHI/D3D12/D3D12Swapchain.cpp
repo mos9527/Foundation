@@ -49,11 +49,11 @@ namespace RHI {
             nFenceValues[i] = resetFenceValue;        
         DXGI_SWAP_CHAIN_DESC desc = {};
         m_Swapchain->GetDesc(&desc);
+        m_Backbuffers.clear(); // Release all pre-exisiting buffers
         CHECK_HR(m_Swapchain->ResizeBuffers(buffers, nWidth, nHeight, desc.BufferDesc.Format, desc.Flags));
         CHECK_HR(m_Swapchain->GetFullscreenState(&bIsFullscreen, nullptr));
         nBackbufferIndex = m_Swapchain->GetCurrentBackBufferIndex();
-        // Recreate the BBs
-        m_Backbuffers.clear();
+        // Recreate the BBs        
         for (uint i = 0; i < desc.BufferCount; i++) {            
             ComPtr<ID3D12Resource> backbuffer;
             CHECK_HR(m_Swapchain->GetBuffer(i, IID_PPV_ARGS(backbuffer.GetAddressOf())));

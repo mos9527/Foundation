@@ -13,14 +13,16 @@ struct SceneComponent : public Component {
 	friend class SceneGraph;	
 	friend struct SceneImporter;
 private:
-	AffineTransform localTransform;
-	AffineTransform globalTransform;
+	AffineTransform localTransform = AffineTransform::Identity;
+	AffineTransform globalTransform = AffineTransform::Identity;
 	const SceneComponentType type;
 	size_t version = 0;
 public:
 	SceneComponent(Scene& parent, entt::entity ent, SceneComponentType type) : Component(parent, ent, ComponentType::Scene), type(type) {};
 	
+	void update(bool associative = false);
 	void set_local_transform(AffineTransform T);
+	inline AffineTransform get_local_transform() { return localTransform; }
 	inline AffineTransform get_global_transform() { return globalTransform; }
 
 	const size_t get_version() { return version; }

@@ -23,17 +23,12 @@ MeshAsset::MeshAsset(RHI::Device* device, StaticMesh* data) {
 }
 
 void MeshAsset::Upload(UploadContext* ctx){
-	ctx->CopyBufferRegion(&vertexBuffer->loadBuffer, &vertexBuffer->buffer, 0, 0, vertexBuffer->buffer.GetDesc().sizeInBytes());
-	ctx->Barrier(&vertexBuffer->loadBuffer, RHI::ResourceState::VertexAndConstantBuffer);	
+	ctx->CopyBufferRegion(&vertexBuffer->loadBuffer, &vertexBuffer->buffer, 0, 0, vertexBuffer->buffer.GetDesc().sizeInBytes());	
 	for (uint i = 0; i < MAX_LOD_COUNT; i++) {
 		auto* lod = lodBuffers[i].get();
 		ctx->CopyBufferRegion(&lod->loadIndexBuffer, &lod->indexBuffer, 0, 0, lod->indexBuffer.GetDesc().sizeInBytes());
-		ctx->CopyBufferRegion(&lod->meshletBuffer, &lod->indexBuffer, 0, 0, lod->loadMeshletBuffer.GetDesc().sizeInBytes());
-		ctx->CopyBufferRegion(&lod->loadMeshletVertexBuffer, &lod->indexBuffer, 0, 0, lod->loadMeshletVertexBuffer.GetDesc().sizeInBytes());
-		ctx->CopyBufferRegion(&lod->loadMeshletTriangleBuffer, &lod->indexBuffer, 0, 0, lod->loadMeshletTriangleBuffer.GetDesc().sizeInBytes());
-		ctx->Barrier(&lod->loadIndexBuffer, RHI::ResourceState::IndexBuffer);
-		ctx->Barrier(&lod->meshletBuffer, RHI::ResourceState::Common);
-		ctx->Barrier(&lod->loadMeshletVertexBuffer, RHI::ResourceState::Common);
-		ctx->Barrier(&lod->loadMeshletTriangleBuffer, RHI::ResourceState::Common);
+		ctx->CopyBufferRegion(&lod->loadMeshletBuffer, &lod->meshletBuffer, 0, 0, lod->meshletBuffer.GetDesc().sizeInBytes());
+		ctx->CopyBufferRegion(&lod->loadMeshletVertexBuffer, &lod->meshletVertexBuffer, 0, 0, lod->meshletVertexBuffer.GetDesc().sizeInBytes());
+		ctx->CopyBufferRegion(&lod->loadMeshletTriangleBuffer, &lod->meshletTriangleBuffer, 0, 0, lod->meshletTriangleBuffer.GetDesc().sizeInBytes());
 	}
 }

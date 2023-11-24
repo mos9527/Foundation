@@ -180,6 +180,7 @@
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Swapchain.cpp" />
     <ClCompile Include="Source\Runtime\Scene\AssetComponet\Material.cpp" />
     <ClCompile Include="Source\Runtime\Scene\AssetComponet\Mesh.cpp" />
+    <ClCompile Include="Source\Runtime\Scene\SceneComponent\SceneMeshComponent.cpp" />
     <ClCompile Include="Source\Runtime\Scene\SceneComponent\SceneComponent.cpp" />
     <ClCompile Include="Source\Runtime\Scene\SceneGraph.cpp" />
   </ItemGroup>

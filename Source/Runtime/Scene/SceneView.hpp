@@ -54,8 +54,7 @@ public:
 			for (auto& mesh : instances) {
 				// Only update instances that got updated
 				if (mesh.get_version() == scenecomponent_versions[mesh.get_entity()]) continue;
-				scenecomponent_versions[mesh.get_entity()] = mesh.get_version();
-				LOG(INFO) << "Update MESH " << " Version " << mesh.get_version() << " of " << mesh.get_name();
+				scenecomponent_versions[mesh.get_entity()] = mesh.get_version();				
 				// SceneMeshComponent -> AssetMeshComponent -> MeshAsset
 				AssetMeshComponent& assetComponent = scene.get<AssetMeshComponent>(mesh.meshAsset);
 				MeshAsset& asset = scene.get<MeshAsset>(assetComponent.mesh);
@@ -114,12 +113,13 @@ public:
 				if (mesh.drawBoundingBox) sceneMesh.instanceFlags |= INSTANCE_FLAG_DRAW_BOUNDS;
 				// Write the update
 				*meshInstancesBuffer.DataAt(sceneMesh.instanceIndex) = sceneMesh;
+				LOG(INFO) << "Update MESH ver " << mesh.get_version() << " of " << sceneMesh.instanceIndex;
 			}
-			// lights
-			lights.clear();
+			// lights			
 			for (auto& light : lights) {
 				if (scenecomponent_versions[light.get_entity()] == light.get_version()) continue;
 				scenecomponent_versions[light.get_entity()] = light.get_version();
+				LOG(INFO) << "Update LIGHT ver " << light.get_version() << " of " << light.get_name();
 				SceneLight sceneLight{};
 				AffineTransform transform = light.get_global_transform();
 				Vector3 translation = transform.Translation();
@@ -133,7 +133,7 @@ public:
 				sceneLight.direction.z = direction.z;
 				sceneLight.direction.w = 1;
 				sceneLight.color = light.color;
-				sceneLight.type = (UINT)light.type;
+				sceneLight.type = (UINT)light.lightType;
 				sceneLight.intensity = light.intensity;
 				sceneLight.radius = light.radius;
 				*lightBuffer.DataAt(lights.index(light.get_entity())) = sceneLight;

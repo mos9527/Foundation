@@ -66,5 +66,8 @@ namespace RHI {
 		if (name) 
 			SetName(name);
 		m_States.resize(m_Desc.numSubresources());
+		m_MappedSubresources.resize(m_Desc.numSubresources());
+		m_SubresourceRange.resize(m_Desc.numSubresources());
+		std::iota(m_SubresourceRange.begin(), m_SubresourceRange.end(), 0);
 	}
 }

@@ -13,6 +13,7 @@ namespace RHI {
 	}
 	void CommandList::CopyBufferRegion(Resource* src, Resource* dst, size_t srcOffset, size_t dstOffset, size_t size) {
 		CHECK(dst->GetSubresourceState() == ResourceState::CopyDest);
+		CHECK(dst->GetDesc().dimension == ResourceDimension::Buffer);
 		GetNativeCommandList()->CopyBufferRegion(*dst, dstOffset, *src, srcOffset, size);
 	};
 	void CommandList::ZeroBufferRegion(Resource* dst, size_t dstOffset, size_t size) {
@@ -38,6 +39,8 @@ namespace RHI {
 		m_CommandList->CopyTextureRegion(&dstLocation, 0, 0, 0, &srcLocation, nullptr);
 	}
 	void CommandList::Barrier(Resource* res, ResourceState state, const uint* subresources, uint numSubresources) {
+		// Barrier type check
+		CHECK(CommandListCanBarrier(m_Type, state) && "Invalid use of CommandList barrier. This type of command list cannot barrier such states");
 		for (uint i = 0; i < numSubresources; i++) {
 			uint subresource = *(subresources + i);
 			if (res->m_States[subresource] != state) {
@@ -56,7 +59,7 @@ namespace RHI {
 	}
 	CommandQueue* CommandList::GetCommandQueue() { return m_Device->GetCommandQueue(m_Type); }
 	SyncFence CommandList::Execute() {
-		FlushBarriers();
+		CHECK(!IsOpen());
 		return GetCommandQueue()->Execute(this);
 	}
 }

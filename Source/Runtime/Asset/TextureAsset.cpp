@@ -5,9 +5,7 @@ TextureAsset::TextureAsset(RHI::Device* device, Bitmap32bpp* bitmap) : texture(d
 
 void TextureAsset::Upload(UploadContext* ctx) {	
 	auto const& desc = texture.texture.GetDesc();
-	for (uint i = 0; i < desc.numSubresources(); i++)
-		ctx->CopySubresource(&texture.loadImageBuffer, i, &texture.texture, i);
-	ctx->Barrier(&texture.texture, RHI::ResourceState::Common);
+	ctx->QueueUpload(&texture.texture, &texture.loadImageBuffer, 0, texture.texture.GetDesc().numSubresources());		
 	// xxx texture2darray support
 	textureSRV = std::make_unique<RHI::ShaderResourceView>(&texture.texture, RHI::ShaderResourceViewDesc::GetTexture2DDesc(
 		desc.format,

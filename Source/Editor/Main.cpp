@@ -96,8 +96,14 @@ int main(int argc, char* argv[]) {
         path_t filepath = L"..\\Resources\\glTF-Sample-Models\\2.0\\" GLTF_SAMPLE "\\glTF\\" GLTF_SAMPLE ".gltf";
         std::string u8path = (const char*)filepath.u8string().c_str();
         UploadContext ctx(&device);
+        ctx.Begin();
         auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace);
-        SceneImporter::load_aiScene(&ctx, uploadStatus, scene, imported, filepath.parent_path());        
+        SceneImporter::load_aiScene(&ctx, uploadStatus, scene, imported, filepath.parent_path()); 
+        ctx.End();
+        ctx.Execute().Wait();
+        uploadStatus.uploadComplete = true;
+        scene.clean<MeshAsset>();
+        scene.clean<TextureAsset>();
     });
 
     bool vsync = false;
@@ -166,8 +172,9 @@ int main(int argc, char* argv[]) {
         viewportWidth = viewportSize.x, viewportHeight = viewportSize.y;
 #endif
 #ifdef IMGUI_ENABLED        
-        if (uploadStatus.complete && ImGui::Begin("Scene Graph")) {
-            graph.OnImGui();            
+        if (uploadStatus.uploadComplete && ImGui::Begin("Scene Graph")) {
+            graph.OnImGui();
+            graph.OnImGuiEntityWindow(graph.ImGui_selected_entity);
             ImGui::End();
         }
 #else
@@ -177,7 +184,7 @@ int main(int argc, char* argv[]) {
 #ifdef IMGUI_ENABLED
         if (ImGui::Begin("Renderer")) {
             static bool debug_ViewAlbedo = false, debug_ViewLod = false, debug_Wireframe = false;
-            static bool debug_FrustumCull = true, debug_OcclusionCull = true;
+            static bool debug_FrustumCull = false, debug_OcclusionCull = false;
             ImGui::Checkbox("View LOD", &debug_ViewLod);
             ImGui::Checkbox("View Albedo", &debug_ViewAlbedo);
             ImGui::Checkbox("Wireframe", &debug_Wireframe);
@@ -192,7 +199,7 @@ int main(int argc, char* argv[]) {
         }
 #endif
         ShaderResourceView* pSrv = nullptr;
-        if (uploadStatus.complete) {
+        if (uploadStatus.uploadComplete) {
             /* RENDER BEGIN */
             sceneViews[bbIndex]->update(scene, camera, SceneView::FrameData{
                 .viewportWidth = viewportWidth,
@@ -232,6 +239,7 @@ int main(int argc, char* argv[]) {
 #endif
         /* FRAME END */
         cmd->Barrier(swapchain.GetBackbuffer(bbIndex), ResourceState::Present);
+        cmd->FlushBarriers();
         cmd->Close();
         cmd->Execute();
         swapchain.PresentAndMoveToNextFrame(vsync);

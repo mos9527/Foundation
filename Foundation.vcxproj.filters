@@ -126,6 +126,9 @@
     <ClCompile Include="Source\Runtime\Scene\AssetComponet\Material.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Runtime\Scene\SceneComponent\SceneMeshComponent.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">

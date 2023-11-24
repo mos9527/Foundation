@@ -78,6 +78,9 @@ public:
 	template<Asset T> T* try_get(AssetHandle resource) {
 		return assetRegistry.try_get<T>(resource);
 	}
+	template<Asset T> void clean() {
+		assetRegistry.clean<T>();
+	}
 private:
 	template<Asset T> AssetHandle create() {
 		return assetRegistry.create<T>();

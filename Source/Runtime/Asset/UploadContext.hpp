@@ -14,7 +14,8 @@ class UploadContext : public RHI::CommandList {
 	RHI::SyncFence m_CopyFence;
 public:
 	UploadContext(RHI::Device* device) : RHI::CommandList(device, RHI::CommandListType::Copy, 1) {};
-	using RHI::CommandList::Begin;
+	using RHI::CommandList::Begin;	
+	void QueueUpload(RHI::Resource* dst, RHI::Resource* intermediate, uint firstSubresource = 0, uint subresourceCount = 1);
 	void QueueUpload(RHI::Resource* dst, RHI::Subresource* data, uint firstSubresource = 0, uint subresourceCount = 1);
 	void QueueUpload(RHI::Resource* dst, void* data, uint sizeInBytes);
 	using RHI::CommandList::CopyBufferRegion;

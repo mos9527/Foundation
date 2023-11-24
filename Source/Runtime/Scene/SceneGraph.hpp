@@ -47,14 +47,16 @@ public:
 		auto entity = get_scene().create<T>();
 		add_link(parent, entity);
 		T& componet = get_scene().emplace<T>(entity);
-		update(entity); // ensure the component's associative states are correct upon creation
+		update(entity, true); // ensure the component's associative states are correct upon creation
 		return componet;
 	};
-	// Updates associative properties for this subtree of component
+	// Updates a selected component, and therefore scene.
+	// [associative]
+	// When true, updates associative properties for this subtree of component
 	// These properites are:
 	// * Transformation
 	// Finally, their `version` are also updated.
-	void update(const entt::entity entity);
+	void update(const entt::entity entity, bool associative = false);
 	// UNTESETED. perhaps testing will never be done on these things...
 	//template<typename T> void remove_component(const entt::entity entity) {
 	//	remove<T>(entity);
@@ -66,19 +68,21 @@ public:
 	//	sceneBackwardGraph.remove_edge(rhs, lhs);
 	//}
 	bool contains(const entt::entity entity) {
-		return sceneForwardGraph.get_graph().contains(entity);
+		return sceneForwardGraph.get_graph().contains(entity) || sceneBackwardGraph.get_graph().contains(entity);
 	}	
 	entt::entity parent_of(const entt::entity entity) {		
 		CHECK(entity != root && "Attemtping to get Root's parent");
 		return *sceneBackwardGraph.get_graph().at(entity).begin();
 	}
 	bool has_child(const entt::entity entity) {
-		return contains(entity) && child_of(entity).size() > 0;
+		return sceneForwardGraph.get_graph().contains(entity) && child_of(entity).size() > 0;
 	}
 	DAG<entt::entity>::tree_type& child_of(const entt::entity entity) {
 		return sceneForwardGraph.get_graph().at(entity);		
 	}
 #ifdef IMGUI_ENABLED
+	entt::entity ImGui_selected_entity = entt::tombstone;
+	void OnImGuiEntityWindow(entt::entity entity);
 	void OnImGui();
 #endif
 };

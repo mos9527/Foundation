@@ -7,7 +7,8 @@
 #include <assimp/postprocess.h>
 struct SceneImporter {
 	struct SceneImporterAtomicStatus {
-		std::atomic<bool> complete;
+		std::atomic<bool> uploadComplete;
+		std::atomic<bool> loadComplete;
 		std::atomic<uint> numUploaded;
 		std::atomic<uint> numToUpload;
 		// xxx are there alernative ways for cross-threaed syncs?
@@ -20,18 +21,19 @@ struct SceneImporter {
 		statusOut.numToUpload += scene->mNumMeshes;
 		for (UINT i = 0; i < scene->mNumMeshes; i++) {
 			auto entity = sceneOut.create<AssetMeshComponent>();
+			auto handle = sceneOut.create<MeshAsset>();
 			AssetMeshComponent& mesh_asset = sceneOut.emplace<AssetMeshComponent>(entity);
 			mesh_asset.set_name(scene->mMeshes[i]->mName.C_Str());
+			mesh_asset.mesh = handle;
 			mesh_mapping[i] = entity;
 			pool.push([&](AssetHandle meshHandle, auto meshPtr) {
 				LOG(INFO) << "Loading mesh " << meshPtr->mName.C_Str();
 				StaticMesh mesh = load_static_mesh(meshPtr);
 				std::scoped_lock lock(import_mutex);
-				mesh_asset.mesh = meshHandle;
 				auto& asset = sceneOut.import_asset(meshHandle, device, &mesh);
 				asset.Upload(ctx);
 				statusOut.numUploaded++;
-			}, sceneOut.create<MeshAsset>(), scene->mMeshes[i]);
+			}, handle, scene->mMeshes[i]);
 		}
 		auto load_texture = [&](AssetHandle handle, const char* filename) {			
 			if (scene->GetEmbeddedTexture(filename)) {
@@ -95,7 +97,6 @@ struct SceneImporter {
 			auto entity = sceneOut.create<SceneCollectionComponent>();
 			SceneCollectionComponent& component = sceneOut.emplace<SceneCollectionComponent>(entity);
 			component.set_name(node->mName.C_Str());
-			component.localTransform = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1)).Transpose();
 			// localTransforms are not updated here. This gets invoked in the end of the graph build.
 			sceneOut.graph.add_link(parent, entity);
 			for (UINT i = 0; i < node->mNumMeshes; i++) {
@@ -103,14 +104,15 @@ struct SceneImporter {
 				auto meshEntity = sceneOut.create<SceneCollectionComponent>();
 				SceneMeshComponent& meshComponent = sceneOut.emplace<SceneMeshComponent>(meshEntity);
 				sceneOut.graph.add_link(entity, meshEntity);
+				meshComponent.localTransform = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1)).Transpose();
 				meshComponent.materialAsset = material_mapping[mesh->mMaterialIndex];
-				meshComponent.meshAsset = mesh_mapping[i];				
+				meshComponent.meshAsset = mesh_mapping[node->mMeshes[i]];
 			}
 			for (UINT i = 0; i < node->mNumChildren; i++)
 				func(func, node->mChildren[i], entity);
 		};
 		dfs_nodes(dfs_nodes, scene->mRootNode, sceneOut.graph.get_root());
-		sceneOut.graph.update(sceneOut.graph.get_root()); // Compute global transforms once
+		sceneOut.graph.update(sceneOut.graph.get_root(), true); // Compute global transforms once
 		pool.wait_and_join(); // ensure pool work is done before finally destructing import_mutex
 		LOG(INFO) << "Scene loaded";
 		statusOut.numToUpload = true;

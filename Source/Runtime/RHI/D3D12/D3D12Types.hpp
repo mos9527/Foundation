@@ -100,15 +100,27 @@ namespace RHI {
 		return (DXGI_FORMAT)format;
 	}
 	inline const size_t GetResourceFormatWidth(ResourceFormat format) {
+		using enum ResourceFormat;
 		switch (format)
 		{
-		case ResourceFormat::R8G8B8A8_UNORM:
+		case D32_FLOAT:
+		case R32_TYPELESS:
+		case R32_FLOAT:
+		case R16G16_FLOAT:
+		case R8G8B8A8_UINT:
+		case R8G8B8A8_UNORM:
 			return 4;
-		case ResourceFormat::R16G16B16A16_UNORM:
+		case R32G32_FLOAT:
+		case R16G16B16A16_UNORM:
 			return 8;
-		case ResourceFormat::Unknown:
+		case R32G32B32_FLOAT:
+			return 12;
+		case R32G32B32A32_FLOAT:
+			return 16;
+		case Unknown:
 		default:
-			return -1;		
+			assert(false && "This shouldn't happen");
+			return 0;
 		}
 	}
 	enum class ResourcePoolType {
@@ -137,6 +149,21 @@ namespace RHI {
 		default:
 			return (D3D12_COMMAND_LIST_TYPE)-1;
 		}
+	}
+	inline bool CommandListCanBarrier(CommandListType type, ResourceState state) {
+		using enum ResourceState;
+		const ResourceState copyInvalidStates = DepthWrite | RenderTarget | UnorderedAccess;
+		const ResourceState computeInvalidStates = DepthWrite | RenderTarget;
+		switch (type)
+		{
+		case RHI::CommandListType::Direct:
+			return true;
+		case RHI::CommandListType::Copy:
+			return !+ (copyInvalidStates & state);
+		case RHI::CommandListType::Compute:
+			return !+ (computeInvalidStates & state);;
+		}
+		return false;
 	}
 	enum class DescriptorHeapType {
 		CBV_SRV_UAV = 0,
