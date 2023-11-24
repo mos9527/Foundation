@@ -3,9 +3,9 @@
 #include "FFXSpd.hpp"
 
 class HierarchalDepthPass {	
-	std::unique_ptr<RHI::Shader> depthSampleCS;
-	std::unique_ptr<RHI::RootSignature> depthSampleRS;
-	std::unique_ptr<RHI::PipelineState> depthSamplePSO;
+	std::unique_ptr<RHI::Shader> CS;
+	std::unique_ptr<RHI::RootSignature> RS;
+	std::unique_ptr<RHI::PipelineState> PSO;
 
 	std::unique_ptr<RHI::Buffer> depthSampleConstants;
 	FFXSPDPass spdPass;

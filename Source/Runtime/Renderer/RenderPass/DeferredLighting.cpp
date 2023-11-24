@@ -2,8 +2,8 @@
 using namespace RHI;
 
 DeferredLightingPass::DeferredLightingPass(Device* device) {
-	lightingCS = std::make_unique<Shader>(L"Shaders/Lighting.hlsl", L"main", L"cs_6_6");
-	lightingRS = std::make_unique<RootSignature>(
+	CS = std::make_unique<Shader>(L"Shaders/DeferredLighting.hlsl", L"main", L"cs_6_6");
+	RS = std::make_unique<RootSignature>(
 		device,
 		RootSignatureDesc()
 		.SetDirectlyIndexed()
@@ -11,13 +11,13 @@ DeferredLightingPass::DeferredLightingPass(Device* device) {
 		.AddConstant(1, 0, 6) // b1 space0 : MRT handles + FB UAV
 		.AddShaderResourceView(0, 0) // s0 space0 : Lights
 	);
-	lightingRS->SetName(L"Lighting");
+	RS->SetName(L"Lighting");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
-	computePsoDesc.pRootSignature = *lightingRS;
-	computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(lightingCS->GetData(), lightingCS->GetSize());
+	computePsoDesc.pRootSignature = *RS;
+	computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(CS->GetData(), CS->GetSize());
 	ComPtr<ID3D12PipelineState> pso;
 	CHECK_HR(device->GetNativeDevice()->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(&pso)));
-	lightingPSO = std::make_unique<PipelineState>(device, std::move(pso));
+	PSO = std::make_unique<PipelineState>(device, std::move(pso));
 }
 
 RenderGraphPass& DeferredLightingPass::insert(RenderGraph& rg, SceneView* sceneView, DeferredLightingPassHandles&& handles) {
@@ -31,8 +31,8 @@ RenderGraphPass& DeferredLightingPass::insert(RenderGraph& rg, SceneView* sceneV
 		.execute([=](RgContext& ctx) {
 			UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
 			auto native = ctx.cmd->GetNativeCommandList();
-			native->SetPipelineState(*lightingPSO);;
-			native->SetComputeRootSignature(*lightingRS);
+			native->SetPipelineState(*PSO);;
+			native->SetComputeRootSignature(*RS);
 			auto* r_albedo_srv = ctx.graph->get<ShaderResourceView>(handles.albedo_srv);
 			auto* r_normal_srv = ctx.graph->get<ShaderResourceView>(handles.normal_srv);
 			auto* r_material_srv = ctx.graph->get<ShaderResourceView>(handles.material_srv);

@@ -7,20 +7,20 @@ FFXSPDPass::FFXSPDPass(RHI::Device* device, const wchar_t* reduce) {
 	CHECK(reduce && "Reduction function undefined.");
 	std::wstring reduce_define = L"SPD_REDUCTION_FUNCTION=";
 	reduce_define += reduce;
-	ffxPassCS = std::make_unique<Shader>(L"Shaders/FFXSpd.hlsl", L"main", L"cs_6_6", std::vector<const wchar_t*>{ reduce_define.c_str() });
-	ffxPassRS = std::make_unique<RootSignature>(
+	CS = std::make_unique<Shader>(L"Shaders/FFXSpd.hlsl", L"main", L"cs_6_6", std::vector<const wchar_t*>{ reduce_define.c_str() });
+	RS = std::make_unique<RootSignature>(
 		device,
 		RootSignatureDesc()
 		.SetDirectlyIndexed()
 		.AddConstantBufferView(0, 0) // b0 space0 : FFXSpdConstant
 	);
-	ffxPassRS->SetName(L"FFX SPD Downsample");
+	RS->SetName(L"FFX SPD Downsample");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
-	computePsoDesc.pRootSignature = *ffxPassRS;
-	computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(ffxPassCS->GetData(), ffxPassCS->GetSize());
+	computePsoDesc.pRootSignature = *RS;
+	computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(CS->GetData(), CS->GetSize());
 	ComPtr<ID3D12PipelineState> pso;
 	CHECK_HR(device->GetNativeDevice()->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(&pso)));
-	ffxPassPSO = std::make_unique<PipelineState>(device, std::move(pso));
+	PSO = std::make_unique<PipelineState>(device, std::move(pso));
 	ffxPassConstants = std::make_unique<Buffer>(device, Buffer::ResourceDesc::GetGenericBufferDesc(sizeof(FFXSpdConstant), sizeof(FFXSpdConstant)));
 	ffxPassCounter = std::make_unique<Buffer>(device, Buffer::ResourceDesc::GetGenericBufferDesc(
 		sizeof(uint) * SPD_MAX_NUM_SLICES, 0 , ResourceState::CopyDest, ResourceHeapType::Default , ResourceFlags::UnorderedAccess
@@ -77,8 +77,8 @@ RenderGraphPass& FFXSPDPass::insert(RenderGraph& rg, SceneView* sceneView, FFXSP
 			}
 			// otherwise, assume dst texture has its mip[0] set as downsample starting point
 			auto native = ctx.cmd->GetNativeCommandList();
-			native->SetPipelineState(*ffxPassPSO);
-			native->SetComputeRootSignature(*ffxPassRS);
+			native->SetPipelineState(*PSO);
+			native->SetComputeRootSignature(*RS);
 			native->SetComputeRootConstantBufferView(0, ffxPassConstants->GetGPUAddress());
 			native->Dispatch(dispatchThreadGroupCountXY[0], dispatchThreadGroupCountXY[1], numSlices);
 		});

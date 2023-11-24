@@ -1,7 +1,8 @@
 #include "Common.hlsli"
-#include "BRDF.hlsli"
+#include "LightingCommon.hlsli"
 
 ConstantBuffer<SceneGlobals> g_SceneGlobals : register(b0, space0);
+StructuredBuffer<SceneLight> g_Lights : register(t0, space0);
 cbuffer MRTHandles : register(b1, space0)
 {
     uint albedoHandle;
@@ -11,7 +12,6 @@ cbuffer MRTHandles : register(b1, space0)
     uint depthHandle;
     uint frameBufferHandle;
 }
-StructuredBuffer<SceneLight> g_Lights : register(t0, space0);
 
 [numthreads(RENDERER_FULLSCREEN_THREADS, RENDERER_FULLSCREEN_THREADS, 1)]
 void main(uint2 DTid : SV_DispatchThreadID)
@@ -27,7 +27,7 @@ void main(uint2 DTid : SV_DispatchThreadID)
     RWTexture2D<float4> frameBuffer = ResourceDescriptorHeap[frameBufferHandle];
     
     float4 albedoSmp = albedoTex[DTid];
-    if (g_SceneGlobals.frameFlags & FRAME_FLAG_VIEW_ALBEDO)
+    if (g_SceneGlobals.debug_view_albedo() || g_SceneGlobals.debug_view_lod() /* see GBuffer.hlsl */)
     {
         frameBuffer[DTid] = float4(albedoSmp.rgb, 1);
         return;
@@ -45,8 +45,8 @@ void main(uint2 DTid : SV_DispatchThreadID)
     float rough = PBR.g;
     float metal = PBR.b;
     float alphaRoughness = rough * rough;
-    
     float3 N = decodeSpheremapNormal(normalSmp.rg);
+    
     float2 UV = DTid / float2(g_SceneGlobals.frameDimension);
     
     float Zss = depthSmp.r;
@@ -80,19 +80,8 @@ void main(uint2 DTid : SV_DispatchThreadID)
             float radius = light.radius;
             attenuation = max(min(1.0 - pow(distance / radius, 4.0), 1.0), 0.0) / pow(distance, 2.0);
         }
-        
-        float3 H = normalize(L + V);
-    
-        float NoL = clampedDot(N, L);
-        float VoH = clampedDot(V, H);
-        float NoH = clampedDot(N, H);
-        float NoV = clampedDot(N, V);
-        
-        float3 F0 = lerp(0.5f * splat3(DIELECTRIC_SPECULAR), baseColor, metal);
-        float3 c_diffuse = lerp(baseColor, splat3(0), metal);
         float3 k = light.color.rgb * light.intensity * attenuation;
-        diffuse += k * NoL * BRDF_Lambertian(c_diffuse);
-        specular += k * NoL * BRDF_GGX_Specular(F0, splat3(1), VoH, NoL, NoV, NoH, alphaRoughness);
+        shade_direct(L, V, N, baseColor, metal, alphaRoughness, k, diffuse, specular);
     }
     float3 finalColor = diffuse + specular + emissiveSmp.rgb;
     frameBuffer[DTid] = float4(finalColor, 1.0f);

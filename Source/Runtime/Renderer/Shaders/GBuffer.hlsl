@@ -1,5 +1,4 @@
 #include "Common.hlsli"
-
 cbuffer IndirectData : register(b0, space0)
 {
     uint g_MeshIndex;
@@ -54,14 +53,14 @@ MRT ps_main(PSInput input)
     float2 ssClip = input.clipPosition.xy / input.clipPosition.w;
     float2 ssClipPrev = input.prevClipPosition.xy / input.prevClipPosition.w;
     output.Velocity = float4((ssClip - ssClipPrev), 0, 0);    
-    if (g_SceneGlobals.frameFlags & FRAME_FLAG_GBUFFER_ALBEDO_AS_LOD)
+    if (g_SceneGlobals.debug_view_lod())
     {
         float lod = (float) g_LodIndex / MAX_LOD_COUNT;
         float3 ramp = colorRamp(lod);
         output.AlbedoMask = float4(ramp, 1);
-        output.Normal = float4(1,1,1,1);
+        output.Normal = float4(1, 1, 1, 1);
         output.Emissive = float4(0, 0, 0, 0);
-        output.Material = float4(0, 0, 0, 0);        
+        output.Material = float4(0, 0, 0, 0);
         return output;
     }
     output.AlbedoMask = material.albedo;

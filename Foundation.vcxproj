@@ -162,6 +162,7 @@
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\GBuffer.cpp" />
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\HiZ.cpp" />
     <ClCompile Include="Source\Runtime\Renderer\RenderPass\IndirectLODCull.cpp" />
+    <ClCompile Include="Source\Runtime\Renderer\RenderPass\Transparency.cpp" />
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraph.cpp" />
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.cpp" />
     <ClCompile Include="Source\Editor\Main.cpp" />
@@ -204,6 +205,7 @@
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\HiZ.hpp" />
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\IndirectLODCull.hpp" />
     <ClInclude Include="Source\Runtime\Renderer\RenderPass\RenderPass.hpp" />
+    <ClInclude Include="Source\Runtime\Renderer\RenderPass\Transparency.hpp" />
     <ClInclude Include="Source\Runtime\Renderer\Shaders\ffx-spd\ffx_a.h" />
     <ClInclude Include="Source\Runtime\Renderer\Shaders\ffx-spd\ffx_spd.h" />
     <ClInclude Include="Source\Runtime\Asset\UploadContext.hpp" />
@@ -292,7 +294,7 @@
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Runtime\Renderer\Shaders\Lighting.hlsl">
+    <Text Include="Source\Runtime\Renderer\Shaders\DeferredLighting.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
@@ -316,6 +318,43 @@
   </ItemGroup>
   <ItemGroup>
     <Text Include="Source\Runtime\Renderer\Shaders\DepthSampleToTexture.hlsl">
+      <FileType>Document</FileType>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Source\Runtime\Renderer\Shaders\Transparency.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
+      <FileType>Document</FileType>
+    </Text>
+    <Text Include="Source\Runtime\Renderer\Shaders\TransparencyBlend.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
+      <FileType>Document</FileType>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Source\Runtime\Renderer\Shaders\LightingCommon.hlsli">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
       <FileType>Document</FileType>
     </Text>
   </ItemGroup>

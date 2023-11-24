@@ -25,10 +25,10 @@ public:
 	inline AffineTransform get_local_transform() { return localTransform; }
 	inline AffineTransform get_global_transform() { return globalTransform; }
 
-	const size_t get_version() { return version; }
 	void set_name(std::string name_) {name = name_;}
-	const char* get_name() { return name.c_str(); }
-	entt::entity get_entity() { return entity; }	
+	const size_t get_version() const { return version; }
+	const char* get_name() const { return name.c_str(); }
+	entt::entity get_entity() const { return entity; }	
 
 #ifdef IMGUI_ENABLED
 	virtual void OnImGui() = 0;

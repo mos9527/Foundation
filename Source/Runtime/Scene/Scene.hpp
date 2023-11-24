@@ -39,6 +39,9 @@ private:
 	template<IsSceneComponent T> void remove(entt::entity entity) {
 		sceneComponentRegistry.remove<T>(entity);
 	}
+	template<IsSceneComponent T> void sort(auto&& comp) {
+		return sceneComponentRegistry.sort<T>(comp);
+	}
 	template<IsSceneComponent T> auto& storage() {
 		return sceneComponentRegistry.storage<T>();
 	}

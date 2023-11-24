@@ -8,10 +8,10 @@ IndirectLODCullPass::IndirectLODCullPass(Device* device) {
 		RootSignatureDesc()
 		.SetDirectlyIndexed()
 		.AddConstantBufferView(0, 0) // b0 space0 : SceneGlobals	
-		.AddShaderResourceView(0, 0) // t0 space0 : SceneMeshInstance
-		.AddUnorderedAccessViewWithCounter(0, 0)// u0 space0 : Indirect Commandlists
-		.AddUnorderedAccessView(1, 0) // u1 space0 : Instance Visibility
-		.AddConstant(1,0,2) // b1 space0 : HIZ srv heap handle, HIZ mips
+		.AddShaderResourceView(0, 0) // t0 space0 : SceneMeshInstance		
+		.AddUnorderedAccessView(0, 0) // u0 space0 : Instance visibility
+		.AddConstant(1,0,2) // b1 space0 : indirect CMD UAV heap, transparency indirect CMD UAV heap		
+		.AddConstant(2,0,2) // b2 space0 : HIZ srv heap handle, HIZ mips
 		.AddStaticSampler(0,0, SamplerDesc::GetDepthReduceSamplerDesc(
 #ifdef INVERSE_Z
 			true
@@ -39,22 +39,30 @@ void IndirectLODCullPass::insert_execute(RenderGraphPass& pass, SceneView* scene
 		auto* r_indirect_cmd_buffer = ctx.graph->get<Buffer>(handles.indirectCmdBuffer);
 		auto* r_indirect_cmd_buffer_uav = ctx.graph->get<UnorderedAccessView>(handles.indirectCmdBufferUAV);		
 		auto native = ctx.cmd->GetNativeCommandList();
-		if constexpr (std::is_same_v<decltype(handles), IndirectLODLateCullPassHandles&>) {			
+		if constexpr (std::is_same_v<decltype(handles), IndirectLODLateCullPassHandles&>) {	
+			auto* r_transparency_indirect_cmd_buffer = ctx.graph->get<Buffer>(handles.transparencyIndirectCmdBuffer);
+			auto* r_transparency_indirect_cmd_buffer_uav = ctx.graph->get<UnorderedAccessView>(handles.transparencyIndirectCmdBufferUAV);
 			native->SetPipelineState(*cullPassLatePSO);
 			native->SetComputeRootSignature(*cullPassRS);
 			auto* r_hiz_srv = ctx.graph->get<ShaderResourceView>(handles.hizSRV);
 			auto* r_hiz = ctx.graph->get<Texture>(handles.hizTexture);
-			native->SetComputeRoot32BitConstant(4, r_hiz_srv->descriptor.get_heap_handle(), 0); // b1 space0
-			native->SetComputeRoot32BitConstant(4, r_hiz->GetDesc().mipLevels, 1); // b1 space0
+			native->SetComputeRoot32BitConstant(3, r_indirect_cmd_buffer_uav->descriptor.get_heap_handle(), 0);
+			native->SetComputeRoot32BitConstant(3, r_transparency_indirect_cmd_buffer_uav->descriptor.get_heap_handle(), 1);
+			native->SetComputeRoot32BitConstant(4, r_hiz_srv->descriptor.get_heap_handle(), 0);
+			native->SetComputeRoot32BitConstant(4, r_hiz->GetDesc().mipLevels, 1);
+			ctx.cmd->Barrier(r_transparency_indirect_cmd_buffer, ResourceState::CopyDest);
+			ctx.cmd->FlushBarriers();
+			ctx.cmd->ZeroBufferRegion(r_transparency_indirect_cmd_buffer, CommandBufferCounterOffset, sizeof(UINT));
+			ctx.cmd->Barrier(r_transparency_indirect_cmd_buffer, ResourceState::UnorderedAccess);
 		}
 		else {
 			native->SetPipelineState(*cullPassEarlyPSO);
 			native->SetComputeRootSignature(*cullPassRS);
+			native->SetComputeRoot32BitConstant(3, r_indirect_cmd_buffer_uav->descriptor.get_heap_handle(), 0);
 		}
 		native->SetComputeRootConstantBufferView(0, sceneView->get_SceneGlobalsBuffer()->GetGPUAddress());
 		native->SetComputeRootShaderResourceView(1, sceneView->get_SceneMeshInstancesBuffer()->GetGPUAddress());
-		native->SetComputeRootDescriptorTable(2, r_indirect_cmd_buffer_uav->descriptor);
-		native->SetComputeRootUnorderedAccessView(3, r_visibility_buffer->GetGPUAddress()); // b0 space0
+		native->SetComputeRootUnorderedAccessView(2, r_visibility_buffer->GetGPUAddress()); // u0 space0
 		ctx.cmd->Barrier(r_indirect_cmd_buffer, ResourceState::CopyDest);
 		ctx.cmd->FlushBarriers();
 		ctx.cmd->ZeroBufferRegion(r_indirect_cmd_buffer, CommandBufferCounterOffset, sizeof(UINT));
@@ -90,7 +98,8 @@ RenderGraphPass& IndirectLODCullPass::insert_latecull(RenderGraph& rg, SceneView
 	auto& pass = rg.add_pass(L"Late Indirect Cull & LOD") // { mesh | !mesh.visiblePrevFrame && mesh.frustumCullPassed && mesh.occlusionCullPassed }, then sets visibility buffer
 		.read(handles.hizTexture)
 		.readwrite(handles.visibilityBuffer)
-		.readwrite(handles.indirectCmdBuffer);
+		.readwrite(handles.indirectCmdBuffer)
+		.readwrite(handles.transparencyIndirectCmdBuffer);
 	insert_execute(pass, sceneView, handles);
 	return pass;
 }

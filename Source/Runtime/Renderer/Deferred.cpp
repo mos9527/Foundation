@@ -5,8 +5,10 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 	UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
 	RenderGraph rg(cache);	
 	/* Resources */
-	auto& indirectCmds = rg.create<Buffer>(pass_IndirectCull.GetCountedIndirectCmdBufferDesc());
+	auto& indirectCmds = rg.create<Buffer>(pass_IndirectCull.GetCountedIndirectCmdBufferDesc(L"Opaque GBuffer CMD"));
 	auto& indirectCmdsUAV = rg.create<UnorderedAccessView>(pass_IndirectCull.GetCountedIndirectCmdBufferUAVDesc(indirectCmds));
+	auto& transparencyIndirectCmds = rg.create<Buffer>(pass_IndirectCull.GetCountedIndirectCmdBufferDesc(L"Transparency CMD"));
+	auto& transparencyIndirectCmdsUAV = rg.create<UnorderedAccessView>(pass_IndirectCull.GetCountedIndirectCmdBufferUAVDesc(transparencyIndirectCmds));
 	auto& instanceVisibility = rg.create<Buffer>(Resource::ResourceDesc::GetGenericBufferDesc(
 		MAX_INSTANCE_COUNT, RAW_BUFFER_STRIDE, ResourceState::CopyDest, ResourceHeapType::Default,
 		ResourceFlags::UnorderedAccess, L"Instance Visibilties"
@@ -92,8 +94,38 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		ResourceFlags::UnorderedAccess, ResourceHeapType::Default,
 		ResourceState::UnorderedAccess, {}, L"Hierarchal Z Buffer"
 	));
+	auto& accumalation_buffer = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
+		ResourceFormat::R16G16B16A16_FLOAT, ResourceDimension::Texture2D,
+		width, height, 1, 1, 1, 0,
+		ResourceFlags::RenderTarget, ResourceHeapType::Default,
+		ResourceState::RenderTarget, ClearValue(0, 0, 0, 0),
+		L"Transparency Accumalation Buffer"
+	));
+	auto& revealage_buffer = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
+		ResourceFormat::R16_FLOAT, ResourceDimension::Texture2D,
+		width, height, 1, 1, 1, 0,
+		ResourceFlags::RenderTarget, ResourceHeapType::Default,
+		ResourceState::RenderTarget, ClearValue(1, 1, 1, 1), // // !IMPORTANT. Revealage is dst * prod(1-a)
+		L"Transparency Revealage Buffer"
+	));
+	auto& accumalation_buffer_rtv = rg.create<RenderTargetView>({
+		.viewDesc = RenderTargetViewDesc::GetTexture2DRenderTargetDesc(ResourceFormat::R16G16B16A16_FLOAT, 0),
+		.viewed = accumalation_buffer
+		});
+	auto& accumalation_buffer_srv = rg.create<ShaderResourceView>({
+		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R16G16B16A16_FLOAT, 0, 1),
+		.viewed = accumalation_buffer
+	});
+	auto& revealage_buffer_rtv = rg.create<RenderTargetView>({
+		.viewDesc = RenderTargetViewDesc::GetTexture2DRenderTargetDesc(ResourceFormat::R16_FLOAT, 0),
+		.viewed = revealage_buffer
+	});
+	auto& revealage_buffer_srv = rg.create<ShaderResourceView>({
+		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R16_FLOAT, 0, 1),
+		.viewed = revealage_buffer
+	});
 	auto& frameBuffer = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
-		ResourceFormat::R8G8B8A8_UNORM, ResourceDimension::Texture2D,
+		ResourceFormat::R16G16B16A16_FLOAT, ResourceDimension::Texture2D,
 		width, height, 1, 1, 1, 0,
 		ResourceFlags::UnorderedAccess, ResourceHeapType::Default,
 		ResourceState::UnorderedAccess, {},
@@ -120,7 +152,7 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		.viewed = velocity
 	});
 	auto& fb_uav = rg.create<UnorderedAccessView>({
-		.viewDesc = UnorderedAccessViewDesc::GetTexture2DDesc(ResourceFormat::R8G8B8A8_UNORM,0,0),
+		.viewDesc = UnorderedAccessViewDesc::GetTexture2DDesc(ResourceFormat::R16G16B16A16_FLOAT,0,0),
 		.viewed = frameBuffer
 	});	
 	auto& hiz_srv = rg.create<ShaderResourceView>({
@@ -134,7 +166,7 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 			.viewed = hiz_buffer
 		}));	
 	auto& fb_srv = rg.create<ShaderResourceView>({
-		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R8G8B8A8_UNORM, 0, 1),
+		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R16G16B16A16_FLOAT, 0, 1),
 		.viewed = frameBuffer
 	});
 	auto& p1 = pass_IndirectCull.insert_earlycull(rg, sceneView, {
@@ -168,6 +200,8 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		.visibilityBuffer = instanceVisibility,
 		.indirectCmdBuffer = indirectCmds,
 		.indirectCmdBufferUAV = indirectCmdsUAV,
+		.transparencyIndirectCmdBuffer = transparencyIndirectCmds,
+		.transparencyIndirectCmdBufferUAV = transparencyIndirectCmdsUAV,
 		.hizTexture = hiz_buffer,
 		.hizSRV = hiz_srv
 	});
@@ -201,7 +235,21 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		.emissive_srv = emissive_srv,
 		.fb_uav = fb_uav
 	});
-	rg.get_epilogue_pass().read(frameBuffer).read(velocity);
+	auto& p7 = pass_Transparency.insert(rg, sceneView, {
+		.transparencyIndirectCommands = transparencyIndirectCmds,
+		.transparencyIndirectCommandsUAV = transparencyIndirectCmdsUAV,
+		.accumalationBuffer = accumalation_buffer,
+		.revealageBuffer = revealage_buffer,
+		.accumalationBuffer_rtv = accumalation_buffer_rtv,
+		.accumalationBuffer_srv = accumalation_buffer_srv,
+		.revealageBuffer_rtv = revealage_buffer_rtv,
+		.revealageBuffer_srv = revealage_buffer_srv,
+		.depth = depth,
+		.depth_dsv = depth_dsv,
+		.framebuffer = frameBuffer,
+		.fb_uav = fb_uav
+	});
+	rg.get_epilogue_pass().read(frameBuffer);
 	rg.execute(device->GetDefaultCommandList<CommandListType::Direct>());
-	return rg.get<ShaderResourceView>(velocity_srv);
+	return rg.get<ShaderResourceView>(fb_srv);
 }

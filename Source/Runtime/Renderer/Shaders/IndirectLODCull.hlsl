@@ -1,14 +1,19 @@
 #include "Common.hlsli"
 ConstantBuffer<SceneGlobals> g_SceneGlobals : register(b0, space0);
 StructuredBuffer<SceneMeshInstance> g_SceneMeshInstances : register(t0, space0);
-AppendStructuredBuffer<IndirectCommand> g_Commands : register(u0, space0);
-RWByteAddressBuffer g_Visibility : register(u1, space0);
+RWByteAddressBuffer g_Visibility : register(u0, space0);
 SamplerState g_HIZSampler : register(s0, space0);
-cbuffer HIZData : register(b1, space0)
+cbuffer CMDHeapHandles : register(b1, space0)
+{
+    uint indirectCMDHeapHandle;
+    uint transparencyIndirectCMDHeapHandle;
+}
+cbuffer HIZData : register(b2, space0)
 {
     uint hizHeapHandle;
     uint hizMips;
 }
+
 #define VISIBLE(index) (g_Visibility.Load(index * 4) == 0) // clears set these to 0
 #define SET_VISIBLE(index) (g_Visibility.Store(index * 4,0))
 #define SET_CULLED(index) (g_Visibility.Store(index * 4,1))
@@ -19,16 +24,15 @@ void main_early(uint index : SV_DispatchThreadID)
 {    
     if (index < g_SceneGlobals.numMeshInstances)
     {
-        IndirectCommand cmd;
         SceneMeshInstance instance = g_SceneMeshInstances[index];
+        if (!instance.enabled() || instance.has_transparency()) // Handle transparency in the late pass
+            return;
         SceneCamera camera = g_SceneGlobals.camera;     
         BoundingBox bbBox = instance.boundingBox.Transform(instance.transform);
         BoundingSphere bbSphere = instance.boundingSphere.Transform(instance.transform);
-        // Only DRAW instances that were visible last frame
-        if (!instance.visible())
-            return;
+        // Only DRAW instances that were visible last frame        
         bool visible = VISIBLE(index);
-        if (g_SceneGlobals.occlusion_cull() && instance.occlusion_occludee() && !visible)
+        if (!visible)
             return;
         // Frustum cull
         if (g_SceneGlobals.frustum_cull() && bbBox.Intersect(camera.clipPlanes[0], camera.clipPlanes[1], camera.clipPlanes[2], camera.clipPlanes[3], camera.clipPlanes[4], camera.clipPlanes[5]) == INTERSECT_VOLUMES_DISJOINT)
@@ -39,6 +43,7 @@ void main_early(uint index : SV_DispatchThreadID)
         int lodIndex = max(ceil((MAX_LOD_COUNT - 1) * Rss), instance.lodOverride); // 0 is the most detailed
         lodIndex = clamp(lodIndex, 0, MAX_LOD_COUNT - 1);        
         SceneMeshLod lod = instance.lods[lodIndex];
+        IndirectCommand cmd;
         cmd.MeshIndex = index;
         cmd.LodIndex = lodIndex;
         cmd.IndexBuffer = lod.indices;
@@ -49,22 +54,22 @@ void main_early(uint index : SV_DispatchThreadID)
         cmd.DrawIndexedArguments.InstanceCount = 1;
         cmd.DrawIndexedArguments.StartInstanceLocation = 0;
         cmd.DrawIndexedArguments.StartIndexLocation = 0;
-        g_Commands.Append(cmd);
+        AppendStructuredBuffer<IndirectCommand> commands = ResourceDescriptorHeap[indirectCMDHeapHandle];
+        commands.Append(cmd);
     }
 }
 
 [numthreads(RENDERER_INSTANCE_CULL_THREADS, 1, 1)]
 void main_late(uint index : SV_DispatchThreadID)
 {        
-    if (g_SceneGlobals.occlusion_cull() && index < g_SceneGlobals.numMeshInstances)
+    if (index < g_SceneGlobals.numMeshInstances)
     {
-        IndirectCommand cmd;
         SceneMeshInstance instance = g_SceneMeshInstances[index];
+        if (!instance.enabled())
+            return;        
         SceneCamera camera = g_SceneGlobals.camera;
         BoundingBox bbBox = instance.boundingBox.Transform(instance.transform);
         BoundingSphere bbSphere = instance.boundingSphere.Transform(instance.transform);
-        if (!instance.visible())
-            return;
         // Frustum cull
         if (g_SceneGlobals.frustum_cull() && bbBox.Intersect(camera.clipPlanes[0], camera.clipPlanes[1], camera.clipPlanes[2], camera.clipPlanes[3], camera.clipPlanes[4], camera.clipPlanes[5]) == INTERSECT_VOLUMES_DISJOINT)
         {
@@ -99,16 +104,24 @@ void main_late(uint index : SV_DispatchThreadID)
             SET_CULLED(index);
             return;
         }
-        // Only DRAW instances that were NOT visible last frame
-        bool visible = VISIBLE(index);
-        if (visible)
-            return;
+        if (!instance.has_transparency())
+        {
+            // Only DRAW opaque instances that were NOT visible last frame
+            bool visible = VISIBLE(index);
+            if (visible)
+                return;            
+        } 
         // Assgin LODs and draw
+        // At this stage the instance is either Opaque, passed all tests, but not drawn (queued) in the first pass
+        // or Transparent, passed frustum cull. These are only drawn (queued) here.
+        // As transparency objects needs another pass to be drawn POST opaque draw & shade.
+        // This LOD though...
         // xxx seems screen space spread heuristic is prone to LOD pop-ins?
         float Rss = sphereScreenSpaceRadius(bbSphere.Center, bbSphere.Radius, camera.position.xyz, camera.fov);
         int lodIndex = max(ceil((MAX_LOD_COUNT - 1) * Rss), instance.lodOverride); // 0 is the most detailed
         lodIndex = clamp(lodIndex, 0, MAX_LOD_COUNT - 1);
         SceneMeshLod lod = instance.lods[lodIndex];
+        IndirectCommand cmd;
         cmd.MeshIndex = index;
         cmd.LodIndex = lodIndex;
         cmd.IndexBuffer = lod.indices;
@@ -119,7 +132,16 @@ void main_late(uint index : SV_DispatchThreadID)
         cmd.DrawIndexedArguments.InstanceCount = 1;
         cmd.DrawIndexedArguments.StartInstanceLocation = 0;
         cmd.DrawIndexedArguments.StartIndexLocation = 0;
-        g_Commands.Append(cmd);
+        if (instance.has_transparency())
+        {
+            AppendStructuredBuffer<IndirectCommand> transparencyCommands = ResourceDescriptorHeap[transparencyIndirectCMDHeapHandle];
+            transparencyCommands.Append(cmd);            
+        }
+        else
+        {
+            AppendStructuredBuffer<IndirectCommand> commands = ResourceDescriptorHeap[indirectCMDHeapHandle];
+            commands.Append(cmd);            
+        }
         // Update visbility
         SET_VISIBLE(index);
     }

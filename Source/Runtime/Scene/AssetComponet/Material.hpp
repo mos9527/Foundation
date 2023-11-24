@@ -5,6 +5,8 @@ struct AssetMaterialComponent : public AssetComponent {
 	static const AssetComponentType type = AssetComponentType::Material;
 	AssetMaterialComponent(Scene& parent, entt::entity entity) : AssetComponent(parent, entity, type) {};
 
+	bool alphaMapped = false; // assumes albedo alpha channel packs alpha map
+
 	float4 albedo;
 	float4 pbr;
 	float4 emissive;
@@ -13,6 +15,9 @@ struct AssetMaterialComponent : public AssetComponent {
 	AssetHandle normalMapImage;
 	AssetHandle pbrMapImage;
 	AssetHandle emissiveMapImage;
+	bool has_alpha() {
+		return alphaMapped || (!albedoImage.is_valid() && albedo.w != 1);
+	}
 #ifdef IMGUI_ENABLED
 	virtual void OnImGui();
 #endif

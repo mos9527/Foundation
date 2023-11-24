@@ -1,6 +1,7 @@
 #include "Material.hpp"
 #ifdef IMGUI_ENABLED
 void AssetMaterialComponent::OnImGui() {
+	ImGui::Text("Alpha Mode: %d", has_alpha());
 	if (!albedoImage.is_valid())
 		ImGui::ColorEdit4("Albedo", (float*)&albedo);
 	else

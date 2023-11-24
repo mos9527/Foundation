@@ -109,6 +109,7 @@ public:
 				sceneMesh.boundingSphere = asset.boundingSphere;
 				sceneMesh.lodOverride = mesh.lodOverride;
 				sceneMesh.instanceFlags = 0;
+				if (materialComponent.has_alpha()) sceneMesh.instanceFlags |= INSTANCE_FLAG_TRANSPARENCY; // xxx REMOVE AT ONCE!!!
 				if (mesh.isOccludee) sceneMesh.instanceFlags |= INSTANCE_FLAG_OCCLUDEE;
 				if (mesh.visible) sceneMesh.instanceFlags |= INSTANCE_FLAG_VISIBLE;
 				if (mesh.drawBoundingBox) sceneMesh.instanceFlags |= INSTANCE_FLAG_DRAW_BOUNDS;

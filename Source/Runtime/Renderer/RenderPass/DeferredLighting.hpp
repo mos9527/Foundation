@@ -2,9 +2,9 @@
 #include "RenderPass.hpp"
 
 class DeferredLightingPass {
-	std::unique_ptr<RHI::Shader> lightingCS;
-	std::unique_ptr<RHI::RootSignature> lightingRS;
-	std::unique_ptr<RHI::PipelineState> lightingPSO;
+	std::unique_ptr<RHI::Shader> CS;
+	std::unique_ptr<RHI::RootSignature> RS;
+	std::unique_ptr<RHI::PipelineState> PSO;
 public:
 	struct DeferredLightingPassHandles {
 		RgHandle& frameBuffer;

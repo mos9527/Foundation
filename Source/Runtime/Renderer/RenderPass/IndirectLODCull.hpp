@@ -31,12 +31,15 @@ public:
 		RgHandle& indirectCmdBuffer; // see GetCountedIndirectCmdBufferDesc
 		RgHandle& indirectCmdBufferUAV; // see GetCountedIndirectCmdBufferUAVDesc
 
+		RgHandle& transparencyIndirectCmdBuffer;
+		RgHandle& transparencyIndirectCmdBufferUAV;
+
 		RgHandle& hizTexture;
 		RgHandle& hizSRV; // must covers all mips
 	};
-	static const RHI::Resource::ResourceDesc GetCountedIndirectCmdBufferDesc() {
+	static const RHI::Resource::ResourceDesc GetCountedIndirectCmdBufferDesc(RHI::name_t name) {
 		return RHI::Resource::ResourceDesc::GetGenericBufferDesc(
-			CommandBufferSize, sizeof(IndirectCommand), RHI::ResourceState::CopyDest, RHI::ResourceHeapType::Default, RHI::ResourceFlags::UnorderedAccess, L"Indirect CMD Buffer"
+			CommandBufferSize, sizeof(IndirectCommand), RHI::ResourceState::CopyDest, RHI::ResourceHeapType::Default, RHI::ResourceFlags::UnorderedAccess, name
 		);
 	}
 	static const RgUAV::view_desc GetCountedIndirectCmdBufferUAVDesc(RgHandle indirectBuffer) {

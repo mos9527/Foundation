@@ -25,10 +25,10 @@ public:
 
 	};
 private:
-	std::unique_ptr<RHI::Shader> gBufferVS, gBufferPS;
-	std::unique_ptr<RHI::RootSignature> gBufferRS;
-	std::unique_ptr<RHI::PipelineState> gBufferPSO, gBufferPSOWireframe;
-	std::unique_ptr<RHI::CommandSignature> gBufferIndirectCommandSig;
+	std::unique_ptr<RHI::Shader> VS, PS;
+	std::unique_ptr<RHI::RootSignature> RS;
+	std::unique_ptr<RHI::PipelineState> PSO, PSO_Wireframe;
+	std::unique_ptr<RHI::CommandSignature> IndirectCmdSig;
 
 	void insert_execute(RenderGraphPass& pass, SceneView* sceneView, GBufferPassHandles&& handles, bool late);
 public:

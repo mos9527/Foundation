@@ -23,9 +23,8 @@
 #define RENDERER_INSTANCE_CULL_THREADS THREADS_PER_WAVE
 #define RENDERER_FULLSCREEN_THREADS 8 // 8 * 8 -> 64
 #define DEFBIT(I) (1 << I)
-#define FRAME_FLAG_VIEW_ALBEDO DEFBIT(0)
-#define FRAME_FLAG_GBUFFER_ALBEDO_AS_LOD DEFBIT(1)
-#define FRAME_FLAG_DEBUG_VIEW_LOD (FRAME_FLAG_VIEW_ALBEDO | FRAME_FLAG_GBUFFER_ALBEDO_AS_LOD)
+#define FRAME_FLAG_DEBUG_VIEW_ALBEDO DEFBIT(0)
+#define FRAME_FLAG_DEBUG_VIEW_LOD DEFBIT(1)
 #define FRAME_FLAG_WIREFRAME DEFBIT(2)
 #define FRAME_FLAG_FRUSTUM_CULL DEFBIT(3)
 #define FRAME_FLAG_OCCLUSION_CULL DEFBIT(4)
@@ -34,6 +33,7 @@
 #define INSTANCE_FLAG_OCCLUDEE DEFBIT(1) // can be occluded
 #define INSTANCE_FLAG_VISIBLE DEFBIT(2)
 #define INSTANCE_FLAG_DRAW_BOUNDS DEFBIT(3)
+#define INSTANCE_FLAG_TRANSPARENCY DEFBIT(4)
 
 #define FRAME_FLAG_DEFAULT (FRAME_FLAG_FRUSTUM_CULL | FRAME_FLAG_OCCLUSION_CULL)
 #ifdef __cplusplus
@@ -109,7 +109,12 @@ struct SceneGlobals // ! align for CB
 
     float frameTimePrev;
     float3 _pad3;
-
+    bool debug_view_albedo() {
+        return frameFlags & FRAME_FLAG_DEBUG_VIEW_ALBEDO;
+    }
+    bool debug_view_lod() {
+        return frameFlags & FRAME_FLAG_DEBUG_VIEW_LOD;
+    }
     bool frustum_cull() {
         return frameFlags & FRAME_FLAG_FRUSTUM_CULL;
     }
@@ -146,8 +151,10 @@ struct SceneMeshInstance
 
     D3D12_VERTEX_BUFFER_VIEW vertices; // 16
     SceneMeshLod lods[MAX_LOD_COUNT];
-
-    bool visible() {
+    bool has_transparency() {
+        return instanceFlags & INSTANCE_FLAG_TRANSPARENCY;
+    }
+    bool enabled() {
         return instanceFlags & INSTANCE_FLAG_VISIBLE;
     }
     bool occlusion_occluder() {

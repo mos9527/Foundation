@@ -4,14 +4,13 @@
 #include "RenderPass/GBuffer.hpp"
 #include "RenderPass/DeferredLighting.hpp"
 #include "RenderPass/HiZ.hpp"
+#include "RenderPass/Transparency.hpp"
 class DeferredRenderer {
 public:
-	DeferredRenderer(RHI::Device* device) : device(device), pass_IndirectCull(device), pass_GBuffer(device), pass_HiZ(device), pass_Lighting(device) {};
-	void SetViewportSize(uint width, uint height) {
-		viewportSize.x = std::max(128u,width);
-		viewportSize.y = std::max(128u,height);
-	}
-	uint2 GetViewportSize() { return viewportSize; }
+	DeferredRenderer(RHI::Device* device) : 
+		device(device), pass_IndirectCull(device), pass_GBuffer(device), pass_HiZ(device), pass_Lighting(device),
+		pass_Transparency(device)
+	{};	
 	RHI::ShaderResourceView* Render(SceneView* sceneView);
 private:	
 	RHI::Device* const device;
@@ -24,4 +23,5 @@ private:
 	GBufferPass pass_GBuffer;
 	HierarchalDepthPass pass_HiZ;
 	DeferredLightingPass pass_Lighting;
+	TransparencyPass pass_Transparency;
 };

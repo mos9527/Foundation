@@ -1,9 +1,9 @@
 #include "GBuffer.hpp"
 using namespace RHI;
 GBufferPass::GBufferPass(Device* device) {
-	gBufferPS = std::make_unique<Shader>(L"Shaders/GBuffer.hlsl", L"ps_main", L"ps_6_6");
-	gBufferVS = std::make_unique<Shader>(L"Shaders/GBuffer.hlsl", L"vs_main", L"vs_6_6");
-	gBufferRS = std::make_unique<RootSignature>(
+	PS = std::make_unique<Shader>(L"Shaders/GBuffer.hlsl", L"ps_main", L"ps_6_6");
+	VS = std::make_unique<Shader>(L"Shaders/GBuffer.hlsl", L"vs_main", L"vs_6_6");
+	RS = std::make_unique<RootSignature>(
 		device,
 		RootSignatureDesc()
 		.SetAllowInputAssembler()
@@ -14,15 +14,15 @@ GBufferPass::GBufferPass(Device* device) {
 		.AddShaderResourceView(1, 0) // t1 space0 : SceneMaterials
 		.AddStaticSampler(0, 0) // s0 space0 : Texture Sampler
 	);
-	gBufferRS->SetName(L"GBuffer generation");
+	RS->SetName(L"GBuffer generation");
 	// Define the vertex input layout.
 	auto iaLayout = VertexLayoutToD3DIADesc(MeshAsset::Vertex::get_layout());
 	// Describe and create the graphics pipeline state objects (PSO).
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC gbufferPsoDesc = {};
 	gbufferPsoDesc.InputLayout = { iaLayout.data(), (UINT)iaLayout.size() };
-	gbufferPsoDesc.pRootSignature = *gBufferRS;
-	gbufferPsoDesc.VS = CD3DX12_SHADER_BYTECODE(gBufferVS->GetData(), gBufferVS->GetSize());
-	gbufferPsoDesc.PS = CD3DX12_SHADER_BYTECODE(gBufferPS->GetData(), gBufferPS->GetSize());
+	gbufferPsoDesc.pRootSignature = *RS;
+	gbufferPsoDesc.VS = CD3DX12_SHADER_BYTECODE(VS->GetData(), VS->GetSize());
+	gbufferPsoDesc.PS = CD3DX12_SHADER_BYTECODE(PS->GetData(), PS->GetSize());
 	gbufferPsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);	
 	gbufferPsoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	gbufferPsoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
@@ -43,15 +43,15 @@ GBufferPass::GBufferPass(Device* device) {
 	gbufferPsoDesc.SampleDesc.Count = 1;
 	ComPtr<ID3D12PipelineState> pso;
 	CHECK_HR(device->GetNativeDevice()->CreateGraphicsPipelineState(&gbufferPsoDesc, IID_PPV_ARGS(&pso)));
-	gBufferPSO = std::make_unique<PipelineState>(device, std::move(pso));
+	PSO = std::make_unique<PipelineState>(device, std::move(pso));
 	// Wireframe PSO	
 	gbufferPsoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
 	CHECK_HR(device->GetNativeDevice()->CreateGraphicsPipelineState(&gbufferPsoDesc, IID_PPV_ARGS(&pso)));
-	gBufferPSOWireframe = std::make_unique<PipelineState>(device, std::move(pso));
+	PSO_Wireframe = std::make_unique<PipelineState>(device, std::move(pso));
 	// indirect command buffer
-	gBufferIndirectCommandSig = std::make_unique<CommandSignature>(
+	IndirectCmdSig = std::make_unique<CommandSignature>(
 		device,
-		gBufferRS.get(),
+		RS.get(),
 		CommandSignatureDesc(sizeof(IndirectCommand))
 		.AddConstant(0, 0, 2) // b0 space0 : MeshIndex,LodIndex constant (Indirect)
 		.AddVertexBufferView(0)
@@ -79,7 +79,7 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneView* sceneView, GB
 
 		auto native = ctx.cmd->GetNativeCommandList();
 		auto setupPSO = [&]() {
-			native->SetGraphicsRootSignature(*gBufferRS);
+			native->SetGraphicsRootSignature(*RS);
 			// b0 used by indirect command
 			native->SetGraphicsRootConstantBufferView(1, sceneView->get_SceneGlobalsBuffer()->GetGPUAddress());
 			native->SetGraphicsRootShaderResourceView(2, sceneView->get_SceneMeshInstancesBuffer()->GetGPUAddress());
@@ -89,10 +89,10 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneView* sceneView, GB
 			native->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		};
 		if (wireframe){
-			native->SetPipelineState(*gBufferPSOWireframe);
+			native->SetPipelineState(*PSO_Wireframe);
 			setupPSO();
 		} else {
-			native->SetPipelineState(*gBufferPSO);
+			native->SetPipelineState(*PSO);
 			setupPSO();
 		}
 		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[5] = {
@@ -148,7 +148,7 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneView* sceneView, GB
 			&r_dsv->descriptor.get_cpu_handle()
 		);
 		native->ExecuteIndirect(
-			*gBufferIndirectCommandSig,
+			*IndirectCmdSig,
 			MAX_INSTANCE_COUNT,
 			r_indirect_commands->GetNativeResource(),
 			0,
@@ -156,7 +156,7 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneView* sceneView, GB
 			r_indirect_commands_uav->GetDesc().GetCounterOffsetInBytes()
 		);	
 		if (wireframe) {
-			native->SetPipelineState(*gBufferPSO);
+			native->SetPipelineState(*PSO);
 			// Ensure Solid Depth is always rendered in the end regardless of wireframe flag
 			// Useful for debugging some rendering features, like Occlusion Culling
 			// PSO is in solid renderstate as of now:
@@ -167,7 +167,7 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneView* sceneView, GB
 				&r_dsv->descriptor.get_cpu_handle()
 			);
 			native->ExecuteIndirect(
-				*gBufferIndirectCommandSig,
+				*IndirectCmdSig,
 				MAX_INSTANCE_COUNT,
 				r_indirect_commands->GetNativeResource(),
 				0,
