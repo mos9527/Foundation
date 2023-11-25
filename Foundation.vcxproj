@@ -153,6 +153,8 @@
     <ClCompile Include="Dependencies\imgui\imgui_draw.cpp" />
     <ClCompile Include="Dependencies\imgui\imgui_tables.cpp" />
     <ClCompile Include="Dependencies\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="Source\Editor\Editor.cpp" />
+    <ClCompile Include="Source\Editor\GlobalContext.cpp" />
     <ClCompile Include="Source\Runtime\Asset\TextureAsset.cpp" />
     <ClCompile Include="Source\Runtime\Asset\TextureImporter.hpp" />
     <ClCompile Include="Source\Runtime\Asset\MeshAsset.cpp" />
@@ -189,6 +191,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Dependencies\D3D12MemoryAllocator\D3D12MemAlloc.h" />
+    <ClInclude Include="Dependencies\IconsFontAwesome6.h" />
     <ClInclude Include="Dependencies\imgui\backends\imgui_impl_dx12.h" />
     <ClInclude Include="Dependencies\imgui\backends\imgui_impl_win32.h" />
     <ClInclude Include="Dependencies\imgui\imgui.h" />
@@ -199,6 +202,8 @@
     <ClInclude Include="Dependencies\stb_image.h" />
     <ClInclude Include="Source\Common\Allocator.hpp" />
     <ClInclude Include="Source\Common\Defines.hpp" />
+    <ClInclude Include="Source\Editor\Editor.hpp" />
+    <ClInclude Include="Source\Editor\GlobalContext.hpp" />
     <ClInclude Include="Source\Editor\Win32\Window.hpp" />
     <ClInclude Include="Source\Runtime\Asset\Asset.hpp" />
     <ClInclude Include="Source\Runtime\Asset\AssetRegistry.hpp" />
@@ -255,7 +260,6 @@
     <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12Swapchain.hpp" />
     <ClInclude Include="Source\Runtime\RHI\RHI.hpp" />
     <ClInclude Include="Source\Frontend\Win32\BaseWindow.hpp" />
-    <ClInclude Include="Source\Editor\ViewportWindow.hpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitattributes" />

@@ -6,7 +6,7 @@ class BaseWindow {
 public:
     HWND m_hWnd{};
     virtual void WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) = 0;
-    HWND Create(int width, int height, const wchar_t* szClassName, const wchar_t* szTitle) {
+    BaseWindow(int width, int height, const wchar_t* szClassName, const wchar_t* szTitle) {
         RECT rect{};
         SetRect(&rect, 0, 0, width,height);
         AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, false); // Calculate viewport size from client size        
@@ -36,8 +36,7 @@ public:
         ShowWindow(
             m_hWnd,
             SW_SHOWNORMAL
-        );        
-        return m_hWnd;
+        );
     }
 
 private:
