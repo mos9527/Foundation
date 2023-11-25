@@ -1,45 +1,11 @@
 #ifndef SHARED_INCLUDE
 #define SHARED_INCLUDE
-#define INVALID_HEAP_HANDLE ((uint)-1)
-#define MAX_INSTANCE_COUNT 0xffff
-#define MAX_LIGHT_COUNT 16
-#define MAX_MATERIAL_COUNT 0xffff
-
-// xxx some of these can be moved to compiler defines
-// ...let's do that sometimes?
-#define INVERSE_Z
-
-#define MESHLET_MAX_VERTICES 64u // https://developer.nvidia.com/blog/introduction-turing-mecacsh-shaders/
-#define MESHLET_MAX_PRIMITIVES 124u // 4b aligned
-
-#define MAX_LOD_COUNT 8
-#define LOD_GET_RATIO(lod) ((float)(MAX_LOD_COUNT - lod) / MAX_LOD_COUNT)
-
-#define THREADS_PER_WAVE 64 // Assumes availability of wave size of 32 threads
-// Pre-defined threadgroup sizes for AS & MS stages
-#define MAX(x, y) (x > y ? x : y)
-#define ROUNDUP(x, y) ((x + y - 1) & ~(y - 1))
-
-#define RENDERER_INSTANCE_CULL_THREADS THREADS_PER_WAVE
-#define RENDERER_FULLSCREEN_THREADS 8 // 8 * 8 -> 64
-#define DEFBIT(I) (1 << I)
-#define FRAME_FLAG_DEBUG_VIEW_ALBEDO DEFBIT(0)
-#define FRAME_FLAG_DEBUG_VIEW_LOD DEFBIT(1)
-#define FRAME_FLAG_WIREFRAME DEFBIT(2)
-#define FRAME_FLAG_FRUSTUM_CULL DEFBIT(3)
-#define FRAME_FLAG_OCCLUSION_CULL DEFBIT(4)
-
-#define INSTANCE_FLAG_OCCLUDER DEFBIT(0) // occludes other geometry
-#define INSTANCE_FLAG_OCCLUDEE DEFBIT(1) // can be occluded
-#define INSTANCE_FLAG_VISIBLE DEFBIT(2)
-#define INSTANCE_FLAG_DRAW_BOUNDS DEFBIT(3)
-#define INSTANCE_FLAG_TRANSPARENCY DEFBIT(4)
-
-#define FRAME_FLAG_DEFAULT (FRAME_FLAG_FRUSTUM_CULL | FRAME_FLAG_OCCLUSION_CULL)
 #ifdef __cplusplus
+#include "../../../Common/Defines.hpp"
 #include "../../../pch.hpp"
 #pragma pack(push, 4) // otherwise it's 8 on 64-bit systems
 #else
+#include "Defines.hpp"
 // DirectX Types
 typedef uint2 D3D12_GPU_VIRTUAL_ADDRESS;
 struct D3D12_DRAW_INDEXED_ARGUMENTS

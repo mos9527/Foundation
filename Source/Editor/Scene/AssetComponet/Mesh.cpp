@@ -1,6 +1,6 @@
 #include "../Scene.hpp"
-#include "../../Asset/AssetRegistry.hpp"
 #include "Mesh.hpp"
+
 #ifdef IMGUI_ENABLED
 void AssetMeshComponent::OnImGui() {	
 	auto& asset = parent.get<MeshAsset>(mesh);

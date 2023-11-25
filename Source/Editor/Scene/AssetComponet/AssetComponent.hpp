@@ -1,6 +1,6 @@
 #pragma once
 #include "../Component.hpp"
-#include "../../Asset/Asset.hpp"
+#include "../../../Runtime/Asset/Asset.hpp"
 
 enum class AssetComponentType {	
 	Unknown,

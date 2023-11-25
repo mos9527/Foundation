@@ -2,7 +2,8 @@
 /* Implements RHI::Resource Containers on CPU Heaps (Upload Heaps) */
 #include "../RHI/RHI.hpp"
 template<typename T> concept PodDataType = std::is_trivially_copyable<T>::value;
-template<PodDataType Type, bool IsRawBuffer = false, bool Read = false> struct BufferContainer : public RHI::Resource {
+// Persistently mapped CPU-Heap buffer
+template<PodDataType Type, bool IsRawBuffer = false> struct BufferContainer : public RHI::Resource {
 	using RHI::Resource::GetNativeResource;
 	using RHI::Resource::Release;
 	using RHI::Resource::IsValid;

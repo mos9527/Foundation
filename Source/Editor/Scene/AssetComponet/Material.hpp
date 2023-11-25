@@ -16,7 +16,7 @@ struct AssetMaterialComponent : public AssetComponent {
 	AssetHandle pbrMapImage;
 	AssetHandle emissiveMapImage;
 	bool has_alpha() {
-		return alphaMapped || (!albedoImage.is_valid() && albedo.w != 1);
+		return alphaMapped || albedo.w != 1;
 	}
 #ifdef IMGUI_ENABLED
 	virtual void OnImGui();

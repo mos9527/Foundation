@@ -1,10 +1,10 @@
 #pragma once
+#include "../../pch.hpp"
 #include <assimp/Importer.hpp>      // C++ importer interface
 #include <assimp/scene.h>           // Output data structure
 #include <meshoptimizer.h>
 #include <assimp/postprocess.h>
 
-#include "../../Runtime/Renderer/Shaders/Shared.h"
 struct Meshlet {
 	uint vertex_offset;
 	uint vertex_count;

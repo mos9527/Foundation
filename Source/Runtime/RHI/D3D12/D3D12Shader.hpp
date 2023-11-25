@@ -19,6 +19,6 @@ namespace RHI {
 	};
 	class Shader : public Blob {
 	public:
-		Shader(const wchar_t* sourcePath, const wchar_t* entrypoint, const wchar_t* target, std::vector<const wchar_t*>&& defines = {});
+		Shader(const wchar_t* sourcePath, const wchar_t* entrypoint, const wchar_t* target, std::vector<const wchar_t*>&& defines = {}, std::vector<const wchar_t*>&& extraIncludes = {});
 	};
 }

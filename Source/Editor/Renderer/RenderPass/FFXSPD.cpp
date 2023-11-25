@@ -7,7 +7,7 @@ FFXSPDPass::FFXSPDPass(RHI::Device* device, const wchar_t* reduce) {
 	CHECK(reduce && "Reduction function undefined.");
 	std::wstring reduce_define = L"SPD_REDUCTION_FUNCTION=";
 	reduce_define += reduce;
-	CS = std::make_unique<Shader>(L"Shaders/FFXSpd.hlsl", L"main", L"cs_6_6", std::vector<const wchar_t*>{ reduce_define.c_str() });
+	CS = BuildShader(L"FFXSpd", L"main", L"cs_6_6", std::vector<const wchar_t*>{ reduce_define.c_str() });
 	RS = std::make_unique<RootSignature>(
 		device,
 		RootSignatureDesc()

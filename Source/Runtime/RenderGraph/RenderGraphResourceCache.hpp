@@ -1,7 +1,7 @@
 #pragma once
-#include "../RHI/RHI.hpp"
 #include "RenderGraphResource.hpp"
 #include "../../Common/Allocator.hpp"
+#include "../RHI/RHI.hpp"
 
 class RenderGraph;
 // RHI resource cache for Created resources in RenderGraph

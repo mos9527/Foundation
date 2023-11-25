@@ -1,8 +1,8 @@
 #include "GBuffer.hpp"
 using namespace RHI;
 GBufferPass::GBufferPass(Device* device) {
-	PS = std::make_unique<Shader>(L"Shaders/GBuffer.hlsl", L"ps_main", L"ps_6_6");
-	VS = std::make_unique<Shader>(L"Shaders/GBuffer.hlsl", L"vs_main", L"vs_6_6");
+	PS = BuildShader(L"GBuffer", L"ps_main", L"ps_6_6");
+	VS = BuildShader(L"GBuffer", L"vs_main", L"vs_6_6");
 	RS = std::make_unique<RootSignature>(
 		device,
 		RootSignatureDesc()

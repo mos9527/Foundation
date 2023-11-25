@@ -1,7 +1,6 @@
 #pragma once
 #include "Asset.hpp"
 #include "../RHI/RHI.hpp"
-#include "../../Runtime/Renderer/Shaders/Shared.h"
 #include "../../Common/Allocator.hpp"
 
 #include "UploadContext.hpp"

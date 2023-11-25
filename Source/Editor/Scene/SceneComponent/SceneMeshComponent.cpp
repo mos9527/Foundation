@@ -1,5 +1,4 @@
 #include "Mesh.hpp"
-#include "../../Asset/AssetRegistry.hpp"
 #include "../AssetComponet/Mesh.hpp"
 #include "../AssetComponet/Material.hpp"
 #include "../Scene.hpp"

@@ -1,6 +1,6 @@
 #pragma once
 #include "SceneComponent.hpp"
-#include "../../Asset/AssetRegistry.hpp"
+
 struct SceneLightComponent : public SceneComponent {
 	static const SceneComponentType type = SceneComponentType::Light;
 	SceneLightComponent(Scene& scene, entt::entity ent) : SceneComponent(scene, ent, type) {};

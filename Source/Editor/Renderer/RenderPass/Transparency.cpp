@@ -1,9 +1,9 @@
 #include "Transparency.hpp"
 using namespace RHI;
 TransparencyPass::TransparencyPass(Device* device) {
-	PS = std::make_unique<Shader>(L"Shaders/Transparency.hlsl", L"ps_main", L"ps_6_6");
-	VS = std::make_unique<Shader>(L"Shaders/Transparency.hlsl", L"vs_main", L"vs_6_6");
-	blendCS = std::make_unique<Shader>(L"Shaders/TransparencyBlend.hlsl", L"main", L"cs_6_6");
+	PS = BuildShader(L"Transparency", L"ps_main", L"ps_6_6");
+	VS = BuildShader(L"Transparency", L"vs_main", L"vs_6_6");
+	blendCS = BuildShader(L"TransparencyBlend", L"main", L"cs_6_6");
 	RS = std::make_unique<RootSignature>(
 		device,
 		RootSignatureDesc()

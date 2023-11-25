@@ -6,7 +6,7 @@ using namespace RHI;
 #define REDUCTION_FUNCTION L"max(max(max(v0,v1), v2), v3)" // same goes for this except depth is reversed
 #endif // INVERSE_Z
 HierarchalDepthPass::HierarchalDepthPass(Device* device) : spdPass(device, REDUCTION_FUNCTION) {
-	CS = std::make_unique<Shader>(L"Shaders/DepthSampleToTexture.hlsl", L"main", L"cs_6_6");
+	CS = BuildShader(L"DepthSampleToTexture", L"main", L"cs_6_6");
 	RS = std::make_unique<RootSignature>(
 		device,
 		RootSignatureDesc()

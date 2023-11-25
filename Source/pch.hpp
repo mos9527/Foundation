@@ -33,7 +33,7 @@
 #include <DirectXMath.h>
 #include <directxtk/SimpleMath.h>
 
-#include "defines.hpp"
+#include "Common/Defines.hpp"
 
 #ifdef RHI_USE_D3D12
 #include "Runtime/RHI/D3D12/D3D12Pch.h"

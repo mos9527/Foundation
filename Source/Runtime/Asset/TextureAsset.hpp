@@ -1,11 +1,9 @@
 #pragma once
 #include "Asset.hpp"
-#include "../../Runtime/Renderer/Shaders/Shared.h"
-
-#include "../RHI/RHI.hpp"
 #include "ResourceContainer.hpp"
 #include "UploadContext.hpp"
 #include "TextureImporter.hpp"
+#include "../RHI/RHI.hpp"
 static const RHI::Resource::ResourceDesc GetDefaultTextureBufferDesc(RHI::ResourceFormat format, uint width, uint height, uint numMips, uint numSlices, RHI::name_t name = nullptr) {
 	return RHI::Resource::ResourceDesc::GetTextureBufferDesc(
 		format, RHI::ResourceDimension::Texture2D, width, height, numMips, numSlices, 1, 0, RHI::ResourceFlags::None, RHI::ResourceHeapType::Default, RHI::ResourceState::CopyDest, {}, name

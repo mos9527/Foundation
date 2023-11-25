@@ -24,7 +24,8 @@ namespace RHI {
         const wchar_t* sourcePath,
         const wchar_t* entrypoint,
         const wchar_t* targetProfile,
-        std::vector<const wchar_t*>&& defines = {}
+        std::vector<const wchar_t*>&& defines,
+        std::vector<const wchar_t*>&& extraIncludes
     )
     {
         LOG(INFO) << "Compiling shader " << wstring_to_utf8(targetProfile) << ", " << wstring_to_utf8(sourcePath) << " @ " << wstring_to_utf8(entrypoint);
@@ -44,9 +45,10 @@ namespace RHI {
 
         std::vector<const wchar_t*> arguments; 
         // arguments.push_back(DXC_ARG_WARNINGS_ARE_ERRORS);
-        arguments.push_back(L"-I");
-        auto parent_path = get_absolute_path(sourcePath).parent_path();
-        arguments.push_back(parent_path.c_str());
+        for (auto extraInclude : extraIncludes) {
+            arguments.push_back(L"-I");
+            arguments.push_back(extraInclude);
+        }
         arguments.push_back(L"-E"); // entry point
         arguments.push_back(entrypoint);
         arguments.push_back(L"-T"); // target profile
@@ -71,8 +73,8 @@ namespace RHI {
         ComPtr<IDxcBlobEncoding> sourceBlob;
         utils->LoadFile(sourcePath, &codePage, &sourceBlob);        
         DxcBuffer sourceBuffer;
+        CHECK(sourceBlob && "Shader did not load!");
         sourceBuffer.Ptr = sourceBlob->GetBufferPointer();
-        CHECK(sourceBuffer.Ptr && "Shader did not load!");
         sourceBuffer.Size = sourceBlob->GetBufferSize();
         sourceBuffer.Encoding = DXC_CP_UTF8;
 
@@ -121,8 +123,8 @@ namespace RHI {
         m_Data.resize(size);
         memcpy(m_Data.data(), csoData, size);
     }
-    Shader::Shader(const wchar_t* sourcePath, const wchar_t* entrypoint, const wchar_t* targetProfile, std::vector<const wchar_t*>&& defines) {
-        auto blob = CompileShaderDXC(sourcePath, entrypoint, targetProfile, std::move(defines));
+    Shader::Shader(const wchar_t* sourcePath, const wchar_t* entrypoint, const wchar_t* targetProfile, std::vector<const wchar_t*>&& defines, std::vector<const wchar_t*>&& extraIncludes) {
+        auto blob = CompileShaderDXC(sourcePath, entrypoint, targetProfile, std::move(defines), std::move(extraIncludes));
         if (blob) {
             m_Data.resize(blob->GetBufferSize());
             memcpy(m_Data.data(), blob->GetBufferPointer(), m_Data.size());

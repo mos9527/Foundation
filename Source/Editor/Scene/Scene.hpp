@@ -1,5 +1,5 @@
 #pragma once
-#include "../Asset/AssetRegistry.hpp"
+#include "../../Runtime/Asset/AssetRegistry.hpp"
 #include "SceneComponent/SceneComponent.hpp"
 #include "AssetComponet/AssetComponent.hpp"
 #include "SceneComponent/Camera.hpp"

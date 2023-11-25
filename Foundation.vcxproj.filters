@@ -54,7 +54,7 @@
     <ClCompile Include="Source\Editor\Main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\Renderer\Deferred.cpp">
+    <ClCompile Include="Source\Editor\Renderer\Deferred.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Resource.cpp">
@@ -96,40 +96,46 @@
     <ClCompile Include="Source\Runtime\Asset\TextureAsset.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\Scene\SceneGraph.cpp">
+    <ClCompile Include="Source\Editor\Scene\SceneGraph.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\Renderer\RenderPass\GBuffer.cpp">
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\GBuffer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\Renderer\RenderPass\DeferredLighting.cpp">
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\DeferredLighting.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\Renderer\RenderPass\FFXSpd.cpp">
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\FFXSpd.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\Renderer\RenderPass\IndirectLODCull.cpp">
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\IndirectLODCull.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\Renderer\RenderPass\HiZ.cpp">
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\HiZ.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Runtime\Asset\UploadContext.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\Scene\SceneComponent\SceneComponent.cpp">
+    <ClCompile Include="Source\Editor\Scene\SceneComponent\SceneComponent.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\Scene\AssetComponet\Mesh.cpp">
+    <ClCompile Include="Source\Editor\Scene\AssetComponet\Mesh.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\Scene\AssetComponet\Material.cpp">
+    <ClCompile Include="Source\Editor\Scene\AssetComponet\Material.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\Scene\SceneComponent\SceneMeshComponent.cpp">
+    <ClCompile Include="Source\Editor\Scene\SceneComponent\SceneMeshComponent.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Runtime\Renderer\RenderPass\Transparency.cpp">
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\Transparency.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Editor\Scene\SceneImporter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Editor\Scene\SceneView.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -200,19 +206,19 @@
     <ClInclude Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Scene\SceneComponent\SceneComponent.hpp">
+    <ClInclude Include="Source\Editor\Scene\SceneComponent\SceneComponent.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Scene\SceneComponent\Camera.hpp">
+    <ClInclude Include="Source\Editor\Scene\SceneComponent\Camera.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Scene\SceneComponent\Mesh.hpp">
+    <ClInclude Include="Source\Editor\Scene\SceneComponent\Mesh.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Scene\SceneView.hpp">
+    <ClInclude Include="Source\Editor\Scene\SceneView.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Scene\SceneGraph.hpp">
+    <ClInclude Include="Source\Editor\Scene\SceneGraph.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\RenderGraph\RenderGraph.hpp">
@@ -227,10 +233,10 @@
     <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12Shader.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Renderer\Deferred.hpp">
+    <ClInclude Include="Source\Editor\Renderer\Deferred.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Renderer\Renderer.hpp">
+    <ClInclude Include="Source\Editor\Renderer\Renderer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\Asset\TextureAsset.hpp">
@@ -284,28 +290,28 @@
     <ClInclude Include="Source\Common\Allocator.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Scene\SceneComponent\Light.hpp">
+    <ClInclude Include="Source\Editor\Scene\SceneComponent\Light.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Renderer\RenderPass\RenderPass.hpp">
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\RenderPass.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Renderer\RenderPass\GBuffer.hpp">
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\GBuffer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Renderer\RenderPass\FFXSpd.hpp">
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\FFXSpd.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Renderer\RenderPass\IndirectLODCull.hpp">
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\IndirectLODCull.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Renderer\Shaders\ffx-spd\ffx_a.h">
+    <ClInclude Include="Source\Editor\Renderer\Shaders\ffx-spd\ffx_a.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Renderer\Shaders\ffx-spd\ffx_spd.h">
+    <ClInclude Include="Source\Editor\Renderer\Shaders\ffx-spd\ffx_spd.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Renderer\RenderPass\HiZ.hpp">
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\HiZ.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Runtime\Asset\ResourceContainer.hpp">
@@ -314,28 +320,28 @@
     <ClInclude Include="Source\Runtime\Asset\UploadContext.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Scene\AssetComponet\Material.hpp">
+    <ClInclude Include="Source\Editor\Scene\AssetComponet\Material.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Scene\AssetComponet\AssetComponent.hpp">
+    <ClInclude Include="Source\Editor\Scene\AssetComponet\AssetComponent.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Scene\Component.hpp">
+    <ClInclude Include="Source\Editor\Scene\Component.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Scene\AssetComponet\Mesh.hpp">
+    <ClInclude Include="Source\Editor\Scene\AssetComponet\Mesh.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Scene\Scene.hpp">
+    <ClInclude Include="Source\Editor\Scene\Scene.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Scene\SceneImporter.hpp">
+    <ClInclude Include="Source\Editor\Scene\SceneImporter.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\defines.hpp">
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\Transparency.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Runtime\Renderer\RenderPass\Transparency.hpp">
+    <ClInclude Include="Source\Common\Defines.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -345,21 +351,21 @@
     </None>
     <None Include=".gitignore" />
     <None Include=".gitattributes" />
-    <None Include="Source\Runtime\Renderer\Shaders\Common.hlsli" />
-    <None Include="Source\Runtime\Renderer\Shaders\BRDF.hlsli" />
-    <None Include="Source\Runtime\Renderer\RenderPass\DeferredLighting.hpp" />
-    <None Include="Source\Runtime\Renderer\Shaders\Math.hlsli" />
+    <None Include="Source\Editor\Renderer\Shaders\Common.hlsli" />
+    <None Include="Source\Editor\Renderer\Shaders\BRDF.hlsli" />
+    <None Include="Source\Editor\Renderer\RenderPass\DeferredLighting.hpp" />
+    <None Include="Source\Editor\Renderer\Shaders\Math.hlsli" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Runtime\Renderer\Shaders\IndirectLODCull.hlsl" />
-    <Text Include="Source\Runtime\Renderer\Shaders\GBuffer.hlsl" />
-    <Text Include="Source\Runtime\Renderer\Shaders\Shared.h" />
-    <Text Include="Source\Runtime\Renderer\Shaders\DeferredLighting.hlsl" />
-    <Text Include="Source\Runtime\Renderer\Shaders\Tonemap.hlsl" />
-    <Text Include="Source\Runtime\Renderer\Shaders\FFXSpd.hlsl" />
-    <Text Include="Source\Runtime\Renderer\Shaders\DepthSampleToTexture.hlsl" />
-    <Text Include="Source\Runtime\Renderer\Shaders\Transparency.hlsl" />
-    <Text Include="Source\Runtime\Renderer\Shaders\TransparencyBlend.hlsl" />
-    <Text Include="Source\Runtime\Renderer\Shaders\LightingCommon.hlsli" />
+    <Text Include="Source\Editor\Renderer\Shaders\IndirectLODCull.hlsl" />
+    <Text Include="Source\Editor\Renderer\Shaders\GBuffer.hlsl" />
+    <Text Include="Source\Editor\Renderer\Shaders\Shared.h" />
+    <Text Include="Source\Editor\Renderer\Shaders\DeferredLighting.hlsl" />
+    <Text Include="Source\Editor\Renderer\Shaders\Tonemap.hlsl" />
+    <Text Include="Source\Editor\Renderer\Shaders\FFXSpd.hlsl" />
+    <Text Include="Source\Editor\Renderer\Shaders\DepthSampleToTexture.hlsl" />
+    <Text Include="Source\Editor\Renderer\Shaders\Transparency.hlsl" />
+    <Text Include="Source\Editor\Renderer\Shaders\TransparencyBlend.hlsl" />
+    <Text Include="Source\Editor\Renderer\Shaders\LightingCommon.hlsli" />
   </ItemGroup>
 </Project>

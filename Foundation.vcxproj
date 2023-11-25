@@ -157,16 +157,16 @@
     <ClCompile Include="Source\Runtime\Asset\TextureImporter.hpp" />
     <ClCompile Include="Source\Runtime\Asset\MeshAsset.cpp" />
     <ClCompile Include="Source\Runtime\Asset\UploadContext.cpp" />
-    <ClCompile Include="Source\Runtime\Renderer\RenderPass\DeferredLighting.cpp" />
-    <ClCompile Include="Source\Runtime\Renderer\RenderPass\FFXSpd.cpp" />
-    <ClCompile Include="Source\Runtime\Renderer\RenderPass\GBuffer.cpp" />
-    <ClCompile Include="Source\Runtime\Renderer\RenderPass\HiZ.cpp" />
-    <ClCompile Include="Source\Runtime\Renderer\RenderPass\IndirectLODCull.cpp" />
-    <ClCompile Include="Source\Runtime\Renderer\RenderPass\Transparency.cpp" />
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\DeferredLighting.cpp" />
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\FFXSpd.cpp" />
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\GBuffer.cpp" />
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\HiZ.cpp" />
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\IndirectLODCull.cpp" />
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\Transparency.cpp" />
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraph.cpp" />
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.cpp" />
     <ClCompile Include="Source\Editor\Main.cpp" />
-    <ClCompile Include="Source\Runtime\Renderer\Deferred.cpp" />
+    <ClCompile Include="Source\Editor\Renderer\Deferred.cpp" />
     <ClCompile Include="Source\pch.cpp" />
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Resource.cpp" />
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12CommandList.cpp" />
@@ -179,11 +179,13 @@
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12RootSignature.cpp" />
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Shader.cpp" />
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Swapchain.cpp" />
-    <ClCompile Include="Source\Runtime\Scene\AssetComponet\Material.cpp" />
-    <ClCompile Include="Source\Runtime\Scene\AssetComponet\Mesh.cpp" />
-    <ClCompile Include="Source\Runtime\Scene\SceneComponent\SceneMeshComponent.cpp" />
-    <ClCompile Include="Source\Runtime\Scene\SceneComponent\SceneComponent.cpp" />
-    <ClCompile Include="Source\Runtime\Scene\SceneGraph.cpp" />
+    <ClCompile Include="Source\Editor\Scene\AssetComponet\Material.cpp" />
+    <ClCompile Include="Source\Editor\Scene\AssetComponet\Mesh.cpp" />
+    <ClCompile Include="Source\Editor\Scene\SceneComponent\SceneMeshComponent.cpp" />
+    <ClCompile Include="Source\Editor\Scene\SceneComponent\SceneComponent.cpp" />
+    <ClCompile Include="Source\Editor\Scene\SceneGraph.cpp" />
+    <ClCompile Include="Source\Editor\Scene\SceneImporter.cpp" />
+    <ClCompile Include="Source\Editor\Scene\SceneView.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Dependencies\D3D12MemoryAllocator\D3D12MemAlloc.h" />
@@ -196,35 +198,36 @@
     <ClInclude Include="Dependencies\imgui\imstb_truetype.h" />
     <ClInclude Include="Dependencies\stb_image.h" />
     <ClInclude Include="Source\Common\Allocator.hpp" />
+    <ClInclude Include="Source\Common\Defines.hpp" />
     <ClInclude Include="Source\Editor\Win32\Window.hpp" />
     <ClInclude Include="Source\Runtime\Asset\Asset.hpp" />
     <ClInclude Include="Source\Runtime\Asset\AssetRegistry.hpp" />
     <ClInclude Include="Source\Runtime\Asset\MeshAsset.hpp" />
-    <ClInclude Include="Source\Runtime\Renderer\RenderPass\FFXSpd.hpp" />
-    <ClInclude Include="Source\Runtime\Renderer\RenderPass\GBuffer.hpp" />
-    <ClInclude Include="Source\Runtime\Renderer\RenderPass\HiZ.hpp" />
-    <ClInclude Include="Source\Runtime\Renderer\RenderPass\IndirectLODCull.hpp" />
-    <ClInclude Include="Source\Runtime\Renderer\RenderPass\RenderPass.hpp" />
-    <ClInclude Include="Source\Runtime\Renderer\RenderPass\Transparency.hpp" />
-    <ClInclude Include="Source\Runtime\Renderer\Shaders\ffx-spd\ffx_a.h" />
-    <ClInclude Include="Source\Runtime\Renderer\Shaders\ffx-spd\ffx_spd.h" />
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\FFXSpd.hpp" />
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\GBuffer.hpp" />
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\HiZ.hpp" />
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\IndirectLODCull.hpp" />
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\RenderPass.hpp" />
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\Transparency.hpp" />
+    <ClInclude Include="Source\Editor\Renderer\Shaders\ffx-spd\ffx_a.h" />
+    <ClInclude Include="Source\Editor\Renderer\Shaders\ffx-spd\ffx_spd.h" />
     <ClInclude Include="Source\Runtime\Asset\UploadContext.hpp" />
     <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12ResourceView.hpp" />
     <ClInclude Include="Source\Runtime\RenderGraph\RenderGraphResource.hpp" />
     <ClInclude Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.hpp" />
     <ClInclude Include="Source\Runtime\Asset\ResourceContainer.hpp" />
-    <ClInclude Include="Source\Runtime\Scene\AssetComponet\AssetComponent.hpp" />
-    <ClInclude Include="Source\Runtime\Scene\AssetComponet\Material.hpp" />
-    <ClInclude Include="Source\Runtime\Scene\AssetComponet\Mesh.hpp" />
-    <ClInclude Include="Source\Runtime\Scene\Component.hpp" />
-    <ClInclude Include="Source\Runtime\Scene\Scene.hpp" />
-    <ClInclude Include="Source\Runtime\Scene\SceneComponent\SceneComponent.hpp" />
-    <ClInclude Include="Source\Runtime\Scene\SceneComponent\Camera.hpp" />
-    <ClInclude Include="Source\Runtime\Scene\SceneComponent\Light.hpp" />
-    <ClInclude Include="Source\Runtime\Scene\SceneComponent\Mesh.hpp" />
-    <ClInclude Include="Source\Runtime\Scene\SceneImporter.hpp" />
-    <ClInclude Include="Source\Runtime\Scene\SceneView.hpp" />
-    <ClInclude Include="Source\Runtime\Scene\SceneGraph.hpp" />
+    <ClInclude Include="Source\Editor\Scene\AssetComponet\AssetComponent.hpp" />
+    <ClInclude Include="Source\Editor\Scene\AssetComponet\Material.hpp" />
+    <ClInclude Include="Source\Editor\Scene\AssetComponet\Mesh.hpp" />
+    <ClInclude Include="Source\Editor\Scene\Component.hpp" />
+    <ClInclude Include="Source\Editor\Scene\Scene.hpp" />
+    <ClInclude Include="Source\Editor\Scene\SceneComponent\SceneComponent.hpp" />
+    <ClInclude Include="Source\Editor\Scene\SceneComponent\Camera.hpp" />
+    <ClInclude Include="Source\Editor\Scene\SceneComponent\Light.hpp" />
+    <ClInclude Include="Source\Editor\Scene\SceneComponent\Mesh.hpp" />
+    <ClInclude Include="Source\Editor\Scene\SceneImporter.hpp" />
+    <ClInclude Include="Source\Editor\Scene\SceneView.hpp" />
+    <ClInclude Include="Source\Editor\Scene\SceneGraph.hpp" />
     <ClInclude Include="Source\Common\Graph.hpp" />
     <ClInclude Include="Source\Common\Math.hpp" />
     <ClInclude Include="Source\Common\Task.hpp" />
@@ -232,8 +235,8 @@
     <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12PipelineState.hpp" />
     <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12RootSignature.hpp" />
     <ClInclude Include="Source\Runtime\RHI\D3D12\D3D12Shader.hpp" />
-    <ClInclude Include="Source\Runtime\Renderer\Deferred.hpp" />
-    <ClInclude Include="Source\Runtime\Renderer\Renderer.hpp" />
+    <ClInclude Include="Source\Editor\Renderer\Deferred.hpp" />
+    <ClInclude Include="Source\Editor\Renderer\Renderer.hpp" />
     <ClInclude Include="x64\Graveyard\Coroutine.hpp" />
     <ClInclude Include="Source\Runtime\Asset\TextureAsset.hpp" />
     <ClInclude Include="Source\Common\IO.hpp" />
@@ -257,18 +260,17 @@
   <ItemGroup>
     <None Include=".gitattributes" />
     <None Include=".gitignore" />
-    <ClInclude Include="Source\defines.hpp" />
-    <Text Include="Source\Runtime\Renderer\Shaders\Shared.h">
+    <Text Include="Source\Editor\Renderer\Shaders\Shared.h">
       <FileType>Document</FileType>
     </Text>
-    <None Include="Source\Runtime\Renderer\RenderPass\DeferredLighting.hpp" />
-    <None Include="Source\Runtime\Renderer\Shaders\BRDF.hlsli" />
-    <None Include="Source\Runtime\Renderer\Shaders\Common.hlsli" />
-    <None Include="Source\Runtime\Renderer\Shaders\Math.hlsli" />
+    <None Include="Source\Editor\Renderer\RenderPass\DeferredLighting.hpp" />
+    <None Include="Source\Editor\Renderer\Shaders\BRDF.hlsli" />
+    <None Include="Source\Editor\Renderer\Shaders\Common.hlsli" />
+    <None Include="Source\Editor\Renderer\Shaders\Math.hlsli" />
     <None Include="vcpkg.json" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Runtime\Renderer\Shaders\IndirectLODCull.hlsl">
+    <Text Include="Source\Editor\Renderer\Shaders\IndirectLODCull.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
@@ -281,7 +283,7 @@
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Runtime\Renderer\Shaders\GBuffer.hlsl">
+    <Text Include="Source\Editor\Renderer\Shaders\GBuffer.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
@@ -294,7 +296,7 @@
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Runtime\Renderer\Shaders\DeferredLighting.hlsl">
+    <Text Include="Source\Editor\Renderer\Shaders\DeferredLighting.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
@@ -307,22 +309,22 @@
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Runtime\Renderer\Shaders\Tonemap.hlsl">
+    <Text Include="Source\Editor\Renderer\Shaders\Tonemap.hlsl">
       <FileType>Document</FileType>
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Runtime\Renderer\Shaders\FFXSpd.hlsl">
+    <Text Include="Source\Editor\Renderer\Shaders\FFXSpd.hlsl">
       <FileType>Document</FileType>
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Runtime\Renderer\Shaders\DepthSampleToTexture.hlsl">
+    <Text Include="Source\Editor\Renderer\Shaders\DepthSampleToTexture.hlsl">
       <FileType>Document</FileType>
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Runtime\Renderer\Shaders\Transparency.hlsl">
+    <Text Include="Source\Editor\Renderer\Shaders\Transparency.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
@@ -333,7 +335,7 @@
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
       <FileType>Document</FileType>
     </Text>
-    <Text Include="Source\Runtime\Renderer\Shaders\TransparencyBlend.hlsl">
+    <Text Include="Source\Editor\Renderer\Shaders\TransparencyBlend.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
@@ -346,7 +348,7 @@
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Runtime\Renderer\Shaders\LightingCommon.hlsli">
+    <Text Include="Source\Editor\Renderer\Shaders\LightingCommon.hlsli">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>

@@ -1,13 +1,14 @@
 #include "../pch.hpp"
 #include "ViewportWindow.hpp"
 
+
 #include "../Runtime/RHI/RHI.hpp"
 #include "../Runtime/Asset/AssetRegistry.hpp"
-#include "../Runtime/Scene/Scene.hpp"
-#include "../Runtime/Scene/SceneView.hpp"
-#include "../Runtime/Scene/SceneGraph.hpp"
-#include "../Runtime/Scene/SceneImporter.hpp"
-#include "../Runtime/Renderer/Deferred.hpp"
+#include "Scene/Scene.hpp"
+#include "Scene/SceneView.hpp"
+#include "Scene/SceneGraph.hpp"
+#include "Scene/SceneImporter.hpp"
+#include "Renderer/Deferred.hpp"
 using namespace RHI;
 #ifdef IMGUI_ENABLED
 // Forward declare message handler from imgui_impl_win32.cpp
@@ -69,7 +70,7 @@ int main(int argc, char* argv[]) {
     float baseFontSize = 16.0f * ImGui_ImplWin32_GetDpiScaleForHwnd(vp.m_hWnd);    
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     ImGui::GetIO().Fonts->AddFontFromFileTTF(
-        "../Resources/Fonts/DroidSansFallback.ttf",
+        "Resources/Fonts/DroidSansFallback.ttf",
         baseFontSize,
         NULL,
         ImGui::GetIO().Fonts->GetGlyphRangesChineseFull()
@@ -87,20 +88,17 @@ int main(int argc, char* argv[]) {
             swapchain.Resize(std::max((WORD)128u, LOWORD(lParam)), std::max((WORD)128u, HIWORD(lParam)));
         }
     });
+
     // Start async upload on the taskpool
     SceneImporter::SceneImporterAtomicStatus uploadStatus;
-    taskpool.push([&] {        
-        LOG(INFO) << "Loading scene";
-        Assimp::Importer importer;
-#define GLTF_SAMPLE L"Custom" // DepthOcclusionTest
-        path_t filepath = L"..\\Resources\\glTF-Sample-Models\\2.0\\" GLTF_SAMPLE "\\glTF\\" GLTF_SAMPLE ".gltf";
-        std::string u8path = (const char*)filepath.u8string().c_str();
+    taskpool.push([&] {                        
+#define GLTF_SAMPLE L"Sponza" // DepthOcclusionTest
+        path_t filepath = L"Resources\\glTF-Sample-Models\\2.0\\" GLTF_SAMPLE "\\glTF\\" GLTF_SAMPLE ".glb";        
         UploadContext ctx(&device);
         ctx.Begin();
-        auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace);
-        SceneImporter::load_aiScene(&ctx, uploadStatus, scene, imported, filepath.parent_path()); 
+        SceneImporter::load(&ctx, uploadStatus, scene, filepath);
         ctx.End();
-        ctx.Execute().Wait();
+        ctx.Execute().Wait();        
         uploadStatus.uploadComplete = true;
         scene.clean<MeshAsset>();
         scene.clean<TextureAsset>();
@@ -201,20 +199,20 @@ int main(int argc, char* argv[]) {
             ImGui::End();
         }
 #endif
-        ShaderResourceView* pSrv = nullptr;
+        static ShaderResourceView* pSrv;
         if (uploadStatus.uploadComplete) {
             /* RENDER BEGIN */
-            sceneViews[bbIndex]->update(scene, camera, SceneView::FrameData{
-                .viewportWidth = viewportWidth,
-                .viewportHeight = viewportHeight,
-                .frameIndex = swapchain.GetFrameIndex(),
-                .frameFlags = frameFlags,
-                .backBufferIndex = bbIndex,
-                .frameTimePrev = ImGui::GetIO().DeltaTime
+            bool needRefresh = sceneViews[bbIndex]->update(scene, camera, SceneView::FrameData{
+                    .viewportWidth = std::max(viewportWidth,128u),
+                    .viewportHeight = std::max(viewportHeight, 128u),
+                    .frameIndex = swapchain.GetFrameIndex(),
+                    .frameFlags = frameFlags,
+                    .backBufferIndex = bbIndex,
+                    .frameTimePrev = ImGui::GetIO().DeltaTime
             });
             double begin = hires_millis();
             pSrv = renderer.Render(sceneViews[bbIndex].get());
-            debug_RenderCPUTime = hires_millis() - begin;
+            debug_RenderCPUTime = hires_millis() - begin;            
             /* RENDER END */
         }
         else {

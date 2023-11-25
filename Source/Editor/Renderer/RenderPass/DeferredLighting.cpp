@@ -2,7 +2,7 @@
 using namespace RHI;
 
 DeferredLightingPass::DeferredLightingPass(Device* device) {
-	CS = std::make_unique<Shader>(L"Shaders/DeferredLighting.hlsl", L"main", L"cs_6_6");
+	CS = ::BuildShader(L"DeferredLighting", L"main", L"cs_6_6");
 	RS = std::make_unique<RootSignature>(
 		device,
 		RootSignatureDesc()

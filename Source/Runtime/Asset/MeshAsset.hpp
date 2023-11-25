@@ -1,11 +1,9 @@
 #pragma once
 #include "Asset.hpp"
 #include "MeshImporter.hpp"
-#include "../../Runtime/Renderer/Shaders/Shared.h"
-
-#include "../RHI/RHI.hpp"
 #include "ResourceContainer.hpp"
 #include "UploadContext.hpp"
+#include "../RHI/RHI.hpp"
 struct VertexLayoutElement {
 	const char* semantic;
 	const RHI::ResourceFormat format;

@@ -15,6 +15,8 @@ struct SceneComponent : public Component {
 private:
 	AffineTransform localTransform = AffineTransform::Identity;
 	AffineTransform globalTransform = AffineTransform::Identity;
+	BoundingBox boundingBox;
+
 	const SceneComponentType type;
 	size_t version = 0;
 public:
@@ -24,7 +26,7 @@ public:
 	void set_local_transform(AffineTransform T);
 	inline AffineTransform get_local_transform() { return localTransform; }
 	inline AffineTransform get_global_transform() { return globalTransform; }
-
+	inline BoundingBox get_bounding_box() { return boundingBox; }
 	void set_name(std::string name_) {name = name_;}
 	const size_t get_version() const { return version; }
 	const char* get_name() const { return name.c_str(); }

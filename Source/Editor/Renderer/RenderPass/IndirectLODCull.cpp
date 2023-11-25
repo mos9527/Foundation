@@ -1,8 +1,8 @@
 #include "IndirectLODCull.hpp"
 using namespace RHI;
 IndirectLODCullPass::IndirectLODCullPass(Device* device) {
-	cullPassEarlyCS = std::make_unique<Shader>(L"Shaders/IndirectLODCull.hlsl", L"main_early", L"cs_6_6");
-	cullPassLateCS = std::make_unique<Shader>(L"Shaders/IndirectLODCull.hlsl", L"main_late", L"cs_6_6");
+	cullPassEarlyCS = BuildShader(L"IndirectLODCull", L"main_early", L"cs_6_6");
+	cullPassLateCS = BuildShader(L"IndirectLODCull", L"main_late", L"cs_6_6");
 	cullPassRS = std::make_unique<RootSignature>(
 		device,
 		RootSignatureDesc()
