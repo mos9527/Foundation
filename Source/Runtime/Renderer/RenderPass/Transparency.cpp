@@ -160,6 +160,7 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 		);
 	});
 	return rg.add_pass(L"Transparency Blending")
+		.read(handles.framebuffer) // ! IMPORTANT. Since FB will be read again, barrier to read for any unordered access to be flushed before doing another set of RWs.
 		.readwrite(handles.framebuffer)
 		.read(handles.accumalationBuffer)
 		.read(handles.revealageBuffer)
@@ -171,11 +172,14 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 			auto native = ctx.cmd->GetNativeCommandList();
 			native->SetPipelineState(*PSO_Blend);
 			native->SetComputeRootSignature(*blendRS);
-			native->SetComputeRoot32BitConstant(0, r_fb_uav->descriptor.get_heap_handle(), 0);
-			native->SetComputeRoot32BitConstant(0, r_acc_srv->descriptor.get_heap_handle(), 1);
-			native->SetComputeRoot32BitConstant(0, r_rev_srv->descriptor.get_heap_handle(), 2);
-			native->SetComputeRoot32BitConstant(0, width, 3);
-			native->SetComputeRoot32BitConstant(0, height, 4);
+			UINT constants[5] = {
+				r_fb_uav->descriptor.get_heap_handle(),
+				r_acc_srv->descriptor.get_heap_handle(),
+				r_rev_srv->descriptor.get_heap_handle(),
+				width,
+				height
+			};
+			native->SetComputeRoot32BitConstants(0, 5, constants, 0);
 			native->Dispatch(DivRoundUp(width, RENDERER_FULLSCREEN_THREADS), DivRoundUp(height, RENDERER_FULLSCREEN_THREADS), 1);
 		});
 }
