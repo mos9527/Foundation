@@ -159,6 +159,9 @@
     <ClCompile Include="Source\Editor\Widgets\AssetMeshComponentWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\Input\KBMCamera.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">
@@ -387,6 +390,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\Widgets\AssetWidgets.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\Input\KBMCamera.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

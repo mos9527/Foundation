@@ -22,7 +22,6 @@ void SceneGraph::update_parent_child(SceneComponent* parent, SceneComponent* chi
 void SceneGraph::update(const entt::entity entity, bool associative) {
 	scene.version++;	
 	get_base(entity)->version = scene.version;
-	LOG(INFO) << "Scene version " << scene.version;
 	if (associative)
 		reduce(entity, [&](entt::entity current, entt::entity parent) -> void {
 			SceneComponent* parentComponent = get_base(parent);

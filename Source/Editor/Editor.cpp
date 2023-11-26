@@ -2,6 +2,7 @@
 #include "Editor.hpp"
 #include <commdlg.h>
 #include <wingdi.h>
+#include "Input/KBMCamera.hpp"
 using namespace RHI;
 using namespace EditorGlobalContext;
 #define IMGUI_DEFAULT_FONT "Resources/Fonts/DroidSansFallback.ttf"
@@ -41,6 +42,7 @@ void Setup_ImGui() {
     icons_config.GlyphMinAdvanceX = iconFontSize;
     io.Fonts->AddFontFromFileTTF(IMGUI_GLYPH_FONT, iconFontSize, &icons_config, icons_ranges);
 }
+static KBMCameraController g_cameraController;
 void Setup_Scene() {
     auto& camera = scene.scene->graph->emplace_at_root<SceneCameraComponent>();
     camera.set_name("Camera");
@@ -54,6 +56,8 @@ void Setup_Scene() {
     light.intensity = 3.0f;
     light.color = { 1,1,1,1 };
     light.radius = 100.0f;
+
+    g_cameraController.reset();
 }
 void Reset_Scene() {
     scene.scene->reset();    
@@ -80,6 +84,7 @@ void EditorWindow::Setup() {
     editor.state.transition(EditorEvents::OnSetup);
     Setup_ImGui();
     Setup_Scene();
+    g_cameraController.Win32RawInput_Setup(m_hWnd);
 }
 void Draw_InvalidState() {}
 void Draw_RunningState() {
@@ -162,9 +167,8 @@ void EditorWindow::Run() {
     ImGui::NewFrame();
     Run_ImGui();
     if (ImGui::IsAnyItemActive() || ImGui::IsMouseReleased(ImGuiMouseButton_Left))
-        scene.scene->graph->update();
+        scene.scene->graph->update();        
     ImGui::Render();
-
     uint bbIndex = swapchain->GetCurrentBackbufferIndex();
     CommandList* cmd = device->GetDefaultCommandList<CommandListType::Direct>();
     cmd->ResetAllocator(bbIndex);
@@ -176,6 +180,7 @@ void EditorWindow::Run() {
         SceneView* sceneView = scene.views[bbIndex];
         auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
         CHECK(camera && "No camera");
+        g_cameraController.update_camera(camera);
         sceneView->update(*scene.scene, *camera, SceneView::FrameData{
             .viewportWidth  = std::max(viewport.width,  128u),
             .viewportHeight = std::max(viewport.height, 128u),
@@ -214,6 +219,7 @@ void EditorWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
         swapchain->Resize(std::max((WORD)128u, LOWORD(lParam)), std::max((WORD)128u, HIWORD(lParam)));
     };
     ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam);
+    g_cameraController.Win32_WndProcHandler(hWnd, message, wParam, lParam);
 	switch (message)
 	{
 	case WM_SIZE:

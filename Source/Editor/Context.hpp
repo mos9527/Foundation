@@ -78,7 +78,69 @@ struct EditorContext {
     SceneImporter::SceneImporterAtomicStatus importStatus;
 };
     
+
+enum class ViewportManipulationEvents {
+    HoverWithoutGizmo,
+    HoverWithGizmo,
+    MouseDown,
+    MouseRelease,
+    MouseLeave,
+    ShiftDown,
+    ShiftRelease
+};
+enum class ViewportManipulationState {
+    Nothing,
+    HoverOnCamera,
+    HoverOnGizmo,
+    UsingCamera,
+    UsingCameraOffsetView,
+    UsingGizmo
+};
+
+struct ViewportManipulationStates : public FSM::EFSM<ViewportManipulationState, ViewportManipulationEvents, ViewportManipulationState::Nothing> {
+public:
+    void fail(ViewportManipulationEvents event) {
+        /* do nothing. state is simply not transitioned. */
+    }
+    ViewportManipulationState transition(ViewportManipulationEvents event) {
+        using enum ViewportManipulationState;
+        using enum ViewportManipulationEvents;
+        switch (event)
+        {
+        case HoverWithoutGizmo:
+            if (state == Nothing) state = HoverOnCamera;
+            else fail(event);
+            break;
+        case HoverWithGizmo:
+            if (state == Nothing) state = HoverOnGizmo;
+            else fail(event);
+            break;
+        case MouseDown:
+            if (state == HoverOnCamera) state = UsingCamera;
+            else if (state == HoverOnGizmo) state = UsingGizmo;
+            else fail(event);
+            break;
+        case ShiftDown:
+            if (state == UsingCamera) state = UsingCameraOffsetView;
+            else fail(event);
+            break;
+        case ShiftRelease:
+            if (state == UsingCameraOffsetView) state = UsingCamera;
+            else fail(event);
+            break;
+        case MouseRelease:
+        case MouseLeave:
+            state = Nothing;
+            break;
+        default:
+            fail(event);
+        }
+        return state;
+    }
+};
+
 struct ViewportContext {
+    ViewportManipulationStates state;
     RHI::ShaderResourceView* frame = nullptr;
     entt::entity camera;
     bool vsync = false;

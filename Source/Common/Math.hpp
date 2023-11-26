@@ -33,7 +33,7 @@ inline XMVECTOR XMQuaternionToPitchYawRoll(XMVECTOR Q) {
 struct AffineTransform : public SimpleMath::Matrix
 {
     using SimpleMath::Matrix::Matrix; 
-    AffineTransform(Vector3& translation, Quaternion& rotationQuat, Vector3& scale) : 
+    AffineTransform(const Vector3& translation, const Quaternion& rotationQuat, const Vector3& scale) :
         SimpleMath::Matrix::Matrix(XMMatrixAffineTransformation(scale, { 0,0,0 }, rotationQuat, translation)) {};
     Quaternion Quaternion() const {
         XMVECTOR T, R, S;

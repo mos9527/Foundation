@@ -157,6 +157,7 @@
     <ClCompile Include="Dependencies\imgui\imgui_widgets.cpp" />
     <ClCompile Include="Source\Editor\Editor.cpp" />
     <ClCompile Include="Source\Editor\Globals.cpp" />
+    <ClCompile Include="Source\Editor\Input\KBMCamera.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\Clear.cpp" />
     <ClCompile Include="Source\Editor\Widgets\AssetMeshComponentWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\LoadingScreenWidget.cpp" />
@@ -213,6 +214,7 @@
     <ClInclude Include="Source\Editor\Editor.hpp" />
     <ClInclude Include="Source\Editor\Context.hpp" />
     <ClInclude Include="Source\Editor\Globals.hpp" />
+    <ClInclude Include="Source\Editor\Input\KBMCamera.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\Clear.hpp" />
     <ClInclude Include="Source\Editor\Widgets\AssetWidgets.hpp" />
     <ClInclude Include="Source\Editor\Widgets\SceneGraphWidgets.hpp" />
