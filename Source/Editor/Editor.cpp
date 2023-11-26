@@ -1,4 +1,3 @@
-#include "../../Dependencies/IconsFontAwesome6.h"
 #include "Widgets/Widgets.hpp"
 #include "Editor.hpp"
 
@@ -56,11 +55,12 @@ void Setup_Scene() {
     light.radius = 100.0f;
 }
 void Reset_Scene() {
-    scene.scene->reset();
+    scene.scene->reset();    
     Setup_Scene();
 }
 void Load_Scene(path_t path) {
     CHECK(editor.state != EditorStates::Loading && "Attempted to load new assets while previous load is not finished.");
+    editor.importStatus.reset();
     taskpool.push([](path_t filepath) {
         editor.state.transition(EditorEvents::OnLoad);
         UploadContext ctx(device);
@@ -84,6 +84,8 @@ void Draw_InvalidState() {}
 void Draw_RunningState() {
     OnImGui_ViewportWidget();
     OnImGui_RendererWidget();
+    OnImGui_SceneGraphWidget();
+    OnImGui_SceneComponentWidget();
 }
 void Draw_LoadingState() {
     OnImGui_LoadingWidget();
@@ -115,24 +117,25 @@ void Run_ImGui() {
     window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
 
     ImGuiID dockspace_id = ImGui::GetID("Editor");
-    ImGui::Begin("Dockspace", 0, window_flags);
-    ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
-    ImGui::PopStyleVar(2);
+    if (ImGui::Begin("Dockspace", 0, window_flags)) {
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
+        ImGui::PopStyleVar(2);
 
-    if (ImGui::BeginMenuBar()) {
-        if (ImGui::MenuItem("Load")) {
+        if (ImGui::BeginMenuBar()) {
+            if (ImGui::MenuItem("Load")) {
 #define GLTF_SAMPLE L"Sponza" // DepthOcclusionTest
-            path_t filepath = L"Resources\\glTF-Sample-Models\\2.0\\" GLTF_SAMPLE "\\glTF\\" GLTF_SAMPLE ".glb";
-            Load_Scene(filepath);
+                path_t filepath = L"Resources\\glTF-Sample-Models\\2.0\\" GLTF_SAMPLE "\\glTF\\" GLTF_SAMPLE ".glb";
+                Load_Scene(filepath);
+            }
+            if (ImGui::MenuItem("Clear")) {
+                Reset_Scene();
+            }
+            ImGui::EndMenuBar();
         }
-        if (ImGui::MenuItem("Clear")) {
-            Reset_Scene();
-        }
-        ImGui::EndMenuBar();
-    }
 
-    Draw_ImGuiWidgets();
-    ImGui::End();
+        Draw_ImGuiWidgets();
+        ImGui::End();
+    }
 }
 
 void Run_UpdateTitle() {
@@ -148,6 +151,8 @@ void EditorWindow::Run() {
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
     Run_ImGui();
+    if (ImGui::IsAnyItemActive() || ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+        scene.scene->graph->update();
     ImGui::Render();
 
     uint bbIndex = swapchain->GetCurrentBackbufferIndex();
@@ -173,11 +178,8 @@ void EditorWindow::Run() {
     }
 
     cmd->Barrier(swapchain->GetBackbuffer(bbIndex), ResourceState::RenderTarget);
-    cmd->FlushBarriers();        
-    const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
-    cmd->GetNativeCommandList()->ClearRenderTargetView(swapchain->GetBackbufferRTV(bbIndex).descriptor.get_cpu_handle(), clearColor, 0, nullptr);
+    cmd->FlushBarriers();
     cmd->GetNativeCommandList()->OMSetRenderTargets(1, &swapchain->GetBackbufferRTV(bbIndex).descriptor.get_cpu_handle(), FALSE, nullptr);
-
     PIXBeginEvent(cmd->GetNativeCommandList(), 0, L"ImGui");
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd->GetNativeCommandList());
     PIXEndEvent(cmd->GetNativeCommandList());

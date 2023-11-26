@@ -28,8 +28,7 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 	RHI::Device* device = ctx->GetParent();
 	DefaultTaskThreadPool pool;
 	std::mutex import_mutex;
-	std::unordered_map<uint, entt::entity> mesh_mapping;
-	statusOut.reset();
+	std::unordered_map<uint, entt::entity> mesh_mapping;	
 	statusOut.numToUpload += scene->mNumMeshes;
 	for (UINT i = 0; i < scene->mNumMeshes; i++) {
 		auto entity = sceneOut.create<AssetMeshComponent>();

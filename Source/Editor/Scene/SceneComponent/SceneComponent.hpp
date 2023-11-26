@@ -19,7 +19,10 @@ private:
 
 	const SceneComponentType type;
 	size_t version = 0;
+
 public:
+	bool enabled = true;
+
 	SceneComponent(Scene& parent, entt::entity ent, SceneComponentType type) : Component(parent, ent, ComponentType::Scene), type(type) {};
 	
 	void update(bool associative = false);
@@ -33,7 +36,7 @@ public:
 
 	const size_t get_version() const { return version; }
 	const char* get_name() const { return name.c_str(); }
-	entt::entity get_entity() const { return entity; }	
+	entt::entity get_entity() const { return entity; }		
 };
 
 struct SceneCollectionComponent : public SceneComponent {

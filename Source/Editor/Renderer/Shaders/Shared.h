@@ -121,8 +121,8 @@ struct SceneMeshInstance
     bool has_transparency() {
         return instanceFlags & INSTANCE_FLAG_TRANSPARENCY;
     }
-    bool enabled() {
-        return instanceFlags & INSTANCE_FLAG_VISIBLE;
+    bool invisible() {
+        return instanceFlags & INSTANCE_FLAG_INVISIBLE;
     }
     bool occlusion_occluder() {
         // We don't have a Z-prepass so every geometry would be a occluder

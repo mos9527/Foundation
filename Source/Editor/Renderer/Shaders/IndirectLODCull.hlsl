@@ -25,7 +25,7 @@ void main_early(uint index : SV_DispatchThreadID)
     if (index < g_SceneGlobals.numMeshInstances)
     {
         SceneMeshInstance instance = g_SceneMeshInstances[index];
-        if (!instance.enabled() || instance.has_transparency()) // Handle transparency in the late pass
+        if (instance.invisible() || instance.has_transparency()) // Handle transparency in the late pass
             return;
         SceneCamera camera = g_SceneGlobals.camera;     
         BoundingBox bbBox = instance.boundingBox.Transform(instance.transform);
@@ -65,7 +65,7 @@ void main_late(uint index : SV_DispatchThreadID)
     if (index < g_SceneGlobals.numMeshInstances)
     {
         SceneMeshInstance instance = g_SceneMeshInstances[index];
-        if (!instance.enabled())
+        if (instance.invisible())
             return;        
         SceneCamera camera = g_SceneGlobals.camera;
         BoundingBox bbBox = instance.boundingBox.Transform(instance.transform);

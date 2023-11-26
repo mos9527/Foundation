@@ -17,6 +17,6 @@ void OnImGui_RendererWidget() {
         if (debug_FrustumCull) frameFlags |= FRAME_FLAG_FRUSTUM_CULL;
         if (debug_OcclusionCull) frameFlags |= FRAME_FLAG_OCCLUSION_CULL;
         viewport.frameFlags = frameFlags;
-        ImGui::End();
     }
+    ImGui::End();
 }

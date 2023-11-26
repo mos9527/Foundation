@@ -11,8 +11,5 @@ struct SceneMeshComponent : public SceneComponent {
 	int lodOverride = -1;
 
 	bool isOccludee = true; // can be occluded by other geometry
-	bool visible = true;
-	bool drawBoundingBox = true;
-	[[deprecated]] bool isOccluder = true; // occludes other geometry
-	// ^ more like not-implemented :(
+	bool enabled = true;
 };

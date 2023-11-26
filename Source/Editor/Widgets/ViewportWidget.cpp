@@ -9,7 +9,7 @@ void OnImGui_ViewportWidget() {
         viewport.width = viewportSize.x, viewport.height = viewportSize.y;
         if (viewport.frame)
             ImGui::Image((ImTextureID)viewport.frame->descriptor.get_gpu_handle().ptr, viewportSize);
-        ImGui::End();
     }
+    ImGui::End();
     ImGui::PopStyleVar(2);
 }

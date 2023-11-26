@@ -62,6 +62,7 @@ public:
 	// * Transformation
 	// Finally, their `version` are also updated.
 	void update(const entt::entity entity, bool associative = false);
+	void update(bool associative = false) { update(root, associative); };
 	// UNTESETED. perhaps testing will never be done on these things...
 	//template<typename T> void remove_component(const entt::entity entity) {
 	//	remove<T>(entity);

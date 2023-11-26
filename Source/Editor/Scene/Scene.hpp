@@ -109,7 +109,18 @@ private:
 		return assetRegistry.import(handle, device, import);
 	}
 public:
-	/* Helpers */	
+	/* Helpers */
+	// Retrives whether the entity's has a valid Type, or exists at all
+	// T : Either SceneComponentType, or AssetComponentType
+	// returns false for invalid type / non-existing entity. true otherwise.
+	template<typename T> bool valid(entt::entity entity) {
+		if constexpr (std::is_same_v<T, SceneComponentType>) {
+			return sceneComponentRegistry.valid(entity) && get_type<SceneComponentType>(entity) != SceneComponentType::Unknown;
+		}
+		else if constexpr (std::is_same_v<T, AssetComponentType>) {
+			return assetComponentRegistry.valid(entity) && get_type<AssetComponentType>(entity) != AssetComponentType::Unknown;
+		}
+	}
 	// Retrives the type of the SceneComponet or AssetComponent bound to entity
 	// T : Either SceneComponentType, or AssetComponentType
 	// uhh also see https://stackoverflow.com/questions/38304847/constexpr-if-and-static-assert

@@ -18,7 +18,6 @@ private:
 	BufferContainer<SceneLight> lightBuffer;	
 	BufferContainer<SceneGlobals> globalBuffer;
 
-	std::unordered_map<entt::entity, size_t> scenecomponent_versions;
 	size_t current_scene_version = 0;
 public:
 	struct FrameData {
@@ -44,6 +43,6 @@ public:
 	RHI::Resource* get_SceneMeshInstancesBuffer() { return &meshInstancesBuffer; }
 	RHI::Resource* get_SceneMeshMaterialsBuffer() { return &meshMaterialsBuffer; }
 	RHI::Resource* get_SceneLightBuffer() { return &lightBuffer; }
-	
+		
 	bool update(Scene& scene, SceneCameraComponent& camera, FrameData&& frame);
 };
