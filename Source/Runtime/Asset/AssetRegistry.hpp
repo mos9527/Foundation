@@ -17,6 +17,9 @@ class AssetRegistry {
 	template<typename T> using Allocator = DefaultAllocator<T>;
 	entt::basic_registry<entt::entity, Allocator <entt::entity>> registry;
 public:	
+	template<typename ...Types> void clear(Types ...types) {
+		registry.clear<types...>();
+	}
 	template<Asset T> AssetHandle create() {		
 		return AssetHandle{ T::type, registry.create() };
 	}

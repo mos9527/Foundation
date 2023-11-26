@@ -26,6 +26,14 @@ private:
 	/* Scene Components */
 	// Create an entity in the SceneComponent registry
 public:
+	// Resets the Scene to a fresh state	
+	void reset() {
+		sceneComponentRegistry.clear();
+		assetComponentRegistry.clear();
+		assetRegistry.clear();
+		graph.reset(new SceneGraph(*this));
+	}
+public:
 	template<IsSceneComponent T> T& get(entt::entity entity) {
 		return sceneComponentRegistry.get<T>(entity);
 	}
@@ -147,12 +155,14 @@ public:
 			return nullptr;
 		}
 	}
-	Scene() {};
+	Scene() {
+		graph = std::make_unique<SceneGraph>(*this);
+	};
 	Scene(const Scene&) = delete;
 	Scene(Scene&&) = default;
 private:
 	size_t version = 0;
 public:
 	const size_t get_version() { return version; }
-	SceneGraph graph{ *this };
+	std::unique_ptr<SceneGraph> graph;
 };

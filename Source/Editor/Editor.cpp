@@ -40,13 +40,14 @@ void Setup_ImGui() {
     icons_config.PixelSnapH = true;
     icons_config.GlyphMinAdvanceX = iconFontSize;
     io.Fonts->AddFontFromFileTTF(IMGUI_GLYPH_FONT, iconFontSize, &icons_config, icons_ranges);
-    // Scene Setup
-    auto& camera = scene.scene->graph.emplace_at_root<SceneCameraComponent>();
+}
+void Setup_Scene() {
+    auto& camera = scene.scene->graph->emplace_at_root<SceneCameraComponent>();
     camera.set_name("Camera");
     camera.set_local_transform(AffineTransform::CreateTranslation({ 0,0,-20 }));
     viewport.camera = camera.get_entity();
 
-    auto& light = scene.scene->graph.emplace_at_root<SceneLightComponent>();
+    auto& light = scene.scene->graph->emplace_at_root<SceneLightComponent>();
     light.set_name("Spot Light");
     light.set_local_transform(AffineTransform::CreateFromYawPitchRoll(0, -XM_PIDIV4, XM_PI));
     light.lightType = SceneLightComponent::LightType::Directional;
@@ -54,7 +55,10 @@ void Setup_ImGui() {
     light.color = { 1,1,1,1 };
     light.radius = 100.0f;
 }
-
+void Reset_Scene() {
+    scene.scene->reset();
+    Setup_Scene();
+}
 void Load_Scene(path_t path) {
     CHECK(editor.state != EditorStates::Loading && "Attempted to load new assets while previous load is not finished.");
     taskpool.push([](path_t filepath) {
@@ -74,13 +78,15 @@ void Load_Scene(path_t path) {
 void EditorWindow::Setup() {
     editor.state.transition(EditorEvents::OnSetup);
     Setup_ImGui();
+    Setup_Scene();
 }
 void Draw_InvalidState() {}
 void Draw_RunningState() {
     OnImGui_ViewportWidget();
+    OnImGui_RendererWidget();
 }
 void Draw_LoadingState() {
-    ImGui::ProgressBar(editor.importStatus.numUploaded / std::max(editor.importStatus.numToUpload + editor.importStatus.numToUpload, 1u));
+    OnImGui_LoadingWidget();
 }
 void Draw_ImGuiWidgets() {
     switch (editor.state.get_state())
@@ -118,6 +124,9 @@ void Run_ImGui() {
 #define GLTF_SAMPLE L"Sponza" // DepthOcclusionTest
             path_t filepath = L"Resources\\glTF-Sample-Models\\2.0\\" GLTF_SAMPLE "\\glTF\\" GLTF_SAMPLE ".glb";
             Load_Scene(filepath);
+        }
+        if (ImGui::MenuItem("Clear")) {
+            Reset_Scene();
         }
         ImGui::EndMenuBar();
     }

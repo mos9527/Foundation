@@ -12,6 +12,7 @@ class SceneGraph {
 	friend Scene;
 	friend SceneImporter;
 	friend SceneView;
+
 	entt::entity root;
 
 	unordered_DAG<entt::entity,entt::entity> sceneForwardGraph;
@@ -37,8 +38,8 @@ class SceneGraph {
 		};
 		dfs(dfs, entity, entity);
 	}
-	SceneGraph(Scene& scene);
 public:
+	SceneGraph(Scene& scene);
 	// Getters
 	const entt::entity get_root() { return root; }
 	Scene& get_scene();
@@ -83,5 +84,5 @@ public:
 	}
 	unordered_DAG<entt::entity, entt::entity>::set_type& child_of(const entt::entity entity) {
 		return sceneForwardGraph.get_graph().at(entity);		
-	}
+	}	
 };

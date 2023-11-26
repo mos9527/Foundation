@@ -29,6 +29,7 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 	DefaultTaskThreadPool pool;
 	std::mutex import_mutex;
 	std::unordered_map<uint, entt::entity> mesh_mapping;
+	statusOut.reset();
 	statusOut.numToUpload += scene->mNumMeshes;
 	for (UINT i = 0; i < scene->mNumMeshes; i++) {
 		auto entity = sceneOut.create<AssetMeshComponent>();
@@ -111,12 +112,12 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 		SceneCollectionComponent& component = sceneOut.emplace<SceneCollectionComponent>(entity);
 		component.set_name(node->mName.C_Str());
 		// localTransforms are not updated here. This gets invoked in the end of the graph build.
-		sceneOut.graph.add_link(parent, entity);
+		sceneOut.graph->add_link(parent, entity);
 		for (UINT i = 0; i < node->mNumMeshes; i++) {
 			auto mesh = scene->mMeshes[node->mMeshes[i]];
 			auto meshEntity = sceneOut.create<SceneCollectionComponent>();
 			SceneMeshComponent& meshComponent = sceneOut.emplace<SceneMeshComponent>(meshEntity);
-			sceneOut.graph.add_link(entity, meshEntity);
+			sceneOut.graph->add_link(entity, meshEntity);
 			meshComponent.localTransform = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1)).Transpose();
 			meshComponent.materialAsset = material_mapping[mesh->mMaterialIndex];
 			meshComponent.meshAsset = mesh_mapping[node->mMeshes[i]];
@@ -124,8 +125,8 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 		for (UINT i = 0; i < node->mNumChildren; i++)
 			func(func, node->mChildren[i], entity);
 	};
-	dfs_nodes(dfs_nodes, scene->mRootNode, sceneOut.graph.get_root());
-	sceneOut.graph.update(sceneOut.graph.get_root(), true); // Compute global transforms once
+	dfs_nodes(dfs_nodes, scene->mRootNode, sceneOut.graph->get_root());
+	sceneOut.graph->update(sceneOut.graph->get_root(), true); // Compute global transforms once
 	pool.wait_and_join(); // ensure pool work is done before finally destructing import_mutex
 	LOG(INFO) << "Scene loaded";
 	statusOut.numToUpload = true;

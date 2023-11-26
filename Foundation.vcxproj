@@ -157,6 +157,8 @@
     <ClCompile Include="Dependencies\imgui\imgui_widgets.cpp" />
     <ClCompile Include="Source\Editor\Editor.cpp" />
     <ClCompile Include="Source\Editor\Globals.cpp" />
+    <ClCompile Include="Source\Editor\Widgets\LoadingScreenWidget.cpp" />
+    <ClCompile Include="Source\Editor\Widgets\RendererWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\ViewportWidget.cpp" />
     <ClCompile Include="Source\Runtime\Asset\TextureAsset.cpp" />
     <ClCompile Include="Source\Runtime\Asset\TextureImporter.hpp" />

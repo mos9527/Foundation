@@ -138,6 +138,12 @@
     <ClCompile Include="Source\Editor\Widgets\ViewportWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\Widgets\RendererWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Editor\Widgets\LoadingScreenWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">

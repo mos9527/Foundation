@@ -12,6 +12,12 @@ public:
 		std::atomic<uint> numUploaded;
 		std::atomic<uint> numToUpload;
 		// xxx are there alernative ways for cross-threaed syncs?
+		void reset() {
+			uploadComplete = false;
+			loadComplete = false;
+			numUploaded = 0;
+			numToUpload = 0;
+		}
 	};
 private:
 	static void load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& statusOut, Scene& sceneOut, const aiScene* scene, path_t sceneFolder);

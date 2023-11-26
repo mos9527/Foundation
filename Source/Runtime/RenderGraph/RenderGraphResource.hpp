@@ -27,9 +27,7 @@ struct RgHandle {
 	// this also applies to the hash function
 	inline uint64_t hash() const { return entt::to_integral(entity) | ((uint64_t)version << 32); }
 	friend bool operator<(const RgHandle& lhs, const RgHandle& rhs) { return lhs.hash() < rhs.hash(); }
-	friend bool operator==(const RgHandle& lhs, const RgHandle& rhs) { return lhs.hash() == rhs.hash(); }		
-	inline bool is_valid() { return entity != entt::tombstone; }
-	inline void invalidate() { entity = entt::tombstone; }
+	friend bool operator==(const RgHandle& lhs, const RgHandle& rhs) { return lhs.hash() == rhs.hash(); }
 };
 template<> struct std::hash<RgHandle> {
 	inline uint64_t operator()(const RgHandle& resource) const { return resource.hash(); }
