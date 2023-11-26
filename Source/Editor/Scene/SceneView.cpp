@@ -129,8 +129,6 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 	globalBuffer.Data()->sceneVersion = scene.get_version();
 	if (scene.get_version() != current_scene_version) {
 		current_scene_version = scene.get_version();
-		LOG(INFO) << "Updated view " << frame.backBufferIndex << " with scene version " << scene.version;
-		LOG(INFO) << "No. Instances: " << meshInstanceCount;
 		return true;
 	}
 	return false;
