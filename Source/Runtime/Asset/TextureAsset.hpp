@@ -29,6 +29,8 @@ struct TextureAsset {
 
 	// Creates a texture of 1 slice, 1 mip, in RGBA8UNORM format, for this bitmap
 	TextureAsset(RHI::Device* device, Bitmap32bpp* bitmap);
+	// Creates a texture of 1 slice, 1 mip, in RGBA32FLOAT format. Only used for HDRI probes.
+	TextureAsset(RHI::Device* device, BitmapRGBA32F* bitmap);
 	void Upload(UploadContext* ctx);
 	void Clean() {
 		texture.Clean();
@@ -36,6 +38,11 @@ struct TextureAsset {
 };
 
 template<> struct ImportedAssetTraits<Bitmap32bpp> {
+	using imported_by = TextureAsset;
+	static constexpr AssetType type = AssetType::Texture;
+};
+
+template<> struct ImportedAssetTraits<BitmapRGBA32F> {
 	using imported_by = TextureAsset;
 	static constexpr AssetType type = AssetType::Texture;
 };

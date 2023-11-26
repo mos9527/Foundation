@@ -276,6 +276,13 @@ float3 UV2XYZ(float2 uv, uint face)
     }
     return R;
 }
+float2 XYZToPanoUV(float3 dir)
+{
+    // tan(elevation) = z / x
+    // cos(azimuth) = y
+    // take the inverse and map into UV space
+    return float2(0.5f + 0.5f * atan2(dir.z,dir.x) / M_PI, 1.f - acos(dir.y) / M_PI);
+}
 float3 UV2WorldSpace(float2 UV, float Zss, matrix inverseViewProjection)
 {
     float2 clipXY = UV2Clip(UV);

@@ -8,8 +8,7 @@
 #include "MeshAsset.hpp"
 template<typename T> concept Importable = !std::is_void_v<typename ImportedAssetTraits<T>::imported_by>;
 template<typename T> concept Asset = requires (T a, RHI::Device * device, UploadContext * ctx) {
-	T::type; // Has a type member
-	T(device, nullptr); // Also takes a resource pointer
+	T::type; // Has a type member	
 	a.Upload(ctx); // Can be uploaded via UploadContext
 	a.Clean(); // Can be cleaned
 };

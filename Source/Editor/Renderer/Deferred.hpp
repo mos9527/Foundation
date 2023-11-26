@@ -17,8 +17,6 @@ private:
 	RHI::Device* const device;
 
 	RenderGraphResourceCache cache;
-
-	uint2 viewportSize{ 128, 128 };
 	
 	ClearPass pass_Clear;
 	IndirectLODCullPass pass_IndirectCull;
