@@ -8,7 +8,10 @@ SceneGraph::SceneGraph(Scene& scene) : scene(scene) {
 Scene& SceneGraph::get_scene() {
 	return scene;
 }
-void SceneGraph::update_parent_child(SceneComponent* parent, SceneComponent* child) {
+void SceneGraph::update_transform(SceneComponent* parent, SceneComponent* child) {
+	if (parent == child && parent->entity != root) {
+		parent = get_base(parent_of(parent->entity));
+	}
 	if (parent && child) {
 		child->version = get_scene().version;
 		parent->version = get_scene().version;
@@ -22,11 +25,14 @@ void SceneGraph::update_parent_child(SceneComponent* parent, SceneComponent* chi
 void SceneGraph::update(const entt::entity entity, bool associative) {
 	scene.version++;	
 	get_base(entity)->version = scene.version;
+	SceneComponent* thisComponent = get_base(entity);
 	if (associative)
 		reduce(entity, [&](entt::entity current, entt::entity parent) -> void {
 			SceneComponent* parentComponent = get_base(parent);
 			SceneComponent* childComponent = get_base(current);
-			update_parent_child(parentComponent, childComponent);
+			update_transform(parentComponent, childComponent);
+			parentComponent->enabled = thisComponent->enabled;
+			childComponent->enabled = thisComponent->enabled;
 		});
 }
 SceneComponent* SceneGraph::get_base(const entt::entity entity) {

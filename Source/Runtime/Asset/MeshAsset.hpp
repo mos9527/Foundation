@@ -30,31 +30,43 @@ struct MeshLODBuffers {
 private:
 	// Upload heap
 	BufferContainer<UINT> loadIndexBuffer;
+#ifdef RHI_USE_MESH_SHADER
 	BufferContainer<UINT> loadMeshletVertexBuffer;
 	BufferContainer<Meshlet> loadMeshletBuffer;
 	BufferContainer<MeshletTriangle> loadMeshletTriangleBuffer;
+#endif
 public:
 	const uint numIndices, numMeshlets, numMeshletVertices, numMeshletTriangles;
 	// Default heap
-	RHI::Buffer indexBuffer, meshletVertexBuffer, meshletBuffer, meshletTriangleBuffer;	
+	RHI::Buffer indexBuffer;
+#ifdef RHI_USE_MESH_SHADER
+	RHI::Buffer meshletVertexBuffer, meshletBuffer, meshletTriangleBuffer;
 	MeshLODBuffers(RHI::Device* device, uint numIndices, uint numMeshlets, uint numMeshletVertices, uint numMeshletTriangles) :
+#else
+	MeshLODBuffers(RHI::Device* device, uint numIndices) :
+#endif
 		numIndices(numIndices),
 		numMeshlets(numMeshlets),
 		numMeshletVertices(numMeshletVertices),
 		numMeshletTriangles(numMeshletTriangles),
 		loadIndexBuffer(device, numIndices),
-		loadMeshletBuffer(device, numMeshlets),
+		indexBuffer(device, GetDefaultMeshBufferDesc<UINT>(numIndices)) 
+#ifdef RHI_USE_MESH_SHADER
+		,loadMeshletBuffer(device, numMeshlets),
 		loadMeshletVertexBuffer(device, numMeshletVertices),
 		loadMeshletTriangleBuffer(device, numMeshletTriangles),
-		indexBuffer(device, GetDefaultMeshBufferDesc<UINT>(numIndices)),
 		meshletBuffer(device, GetDefaultMeshBufferDesc<UINT>(numMeshlets)),
 		meshletVertexBuffer(device, GetDefaultMeshBufferDesc<UINT>(numMeshletVertices)),
-		meshletTriangleBuffer(device, GetDefaultMeshBufferDesc<UINT>(numMeshletTriangles)) {};
+		meshletTriangleBuffer(device, GetDefaultMeshBufferDesc<UINT>(numMeshletTriangles))
+#endif		
+		{};
 	void Clean() {
 		loadIndexBuffer.Release();
+#ifdef RHI_USE_MESH_SHADER
 		loadMeshletVertexBuffer.Release();
 		loadMeshletBuffer.Release();
 		loadMeshletTriangleBuffer.Release();
+#endif
 	}
 };
 

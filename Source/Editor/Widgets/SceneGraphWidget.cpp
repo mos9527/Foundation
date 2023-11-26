@@ -62,6 +62,8 @@ void OnImGui_SceneGraphWidget() {
 			ImGui::SetCursorPosX(cursorX + offset);
 			ImGui::PushID((void*)id);
 			ImGui::Checkbox("#", &(componet->enabled));
+			if (ImGui::IsItemEdited())
+				scene.scene->graph->update(entity, true);
 			ImGui::PopID();
 			ImGui::SameLine();
 			ImGui::SetCursorPosX(cursorX);

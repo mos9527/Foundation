@@ -9,7 +9,5 @@ struct SceneMeshComponent : public SceneComponent {
 	entt::entity materialAsset = entt::tombstone;
 
 	int lodOverride = -1;
-
 	bool isOccludee = true; // can be occluded by other geometry
-	bool enabled = true;
 };

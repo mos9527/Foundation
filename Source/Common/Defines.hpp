@@ -34,8 +34,7 @@
 
 #define MESHLET_MAX_VERTICES 64u // https://developer.nvidia.com/blog/introduction-turing-mecacsh-shaders/
 #define MESHLET_MAX_PRIMITIVES 124u // 4b aligned
-#define MAX_LOD_COUNT 8
-#define LOD_GET_RATIO(lod) ((float)(MAX_LOD_COUNT - lod) / MAX_LOD_COUNT)
+#define MAX_LOD_COUNT 4
 #define THREADS_PER_WAVE 64
 
 #define RENDERER_INSTANCE_CULL_THREADS THREADS_PER_WAVE

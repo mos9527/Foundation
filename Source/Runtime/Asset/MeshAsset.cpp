@@ -13,12 +13,18 @@ MeshAsset::MeshAsset(RHI::Device* device, StaticMesh* data) {
 		vertex->uv = data->uv[i];
 	}
 	for (uint i = 0; i < MAX_LOD_COUNT; i++) {
+#ifdef RHI_USE_MESH_SHADER
 		lodBuffers[i] = std::make_unique<MeshLODBuffers>(device, data->lods[i].indices.size(), data->lods[i].meshlets.size(), data->lods[i].meshlet_vertices.size(), data->lods[i].meshlet_triangles.size());
+#else
+		lodBuffers[i] = std::make_unique<MeshLODBuffers>(device, data->lods[i].indices.size());
+#endif
 		auto* lod = lodBuffers[i].get();
 		lod->loadIndexBuffer.WriteData(data->lods[i].indices.data(), 0, data->lods[i].indices.size(), 0);
+#ifdef RHI_USE_MESH_SHADER
 		lod->loadMeshletBuffer.WriteData(data->lods[i].meshlets.data(), 0, data->lods[i].meshlets.size(), 0);
 		lod->loadMeshletVertexBuffer.WriteData(data->lods[i].meshlet_vertices.data(), 0, data->lods[i].meshlet_vertices.size(), 0);
 		lod->loadMeshletTriangleBuffer.WriteData(data->lods[i].meshlet_triangles.data(), 0, data->lods[i].meshlet_triangles.size(), 0);
+#endif
 	}
 }
 
@@ -27,8 +33,10 @@ void MeshAsset::Upload(UploadContext* ctx){
 	for (uint i = 0; i < MAX_LOD_COUNT; i++) {
 		auto* lod = lodBuffers[i].get();
 		ctx->CopyBufferRegion(&lod->loadIndexBuffer, &lod->indexBuffer, 0, 0, lod->indexBuffer.GetDesc().sizeInBytes());
+#ifdef RHI_USE_MESH_SHADER
 		ctx->CopyBufferRegion(&lod->loadMeshletBuffer, &lod->meshletBuffer, 0, 0, lod->meshletBuffer.GetDesc().sizeInBytes());
 		ctx->CopyBufferRegion(&lod->loadMeshletVertexBuffer, &lod->meshletVertexBuffer, 0, 0, lod->meshletVertexBuffer.GetDesc().sizeInBytes());
 		ctx->CopyBufferRegion(&lod->loadMeshletTriangleBuffer, &lod->meshletTriangleBuffer, 0, 0, lod->meshletTriangleBuffer.GetDesc().sizeInBytes());
+#endif
 	}
 }

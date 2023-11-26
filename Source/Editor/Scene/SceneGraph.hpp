@@ -24,13 +24,11 @@ class SceneGraph {
 		sceneBackwardGraph.add_edge(rhs, lhs);
 	}
 	// xxx this needs to be a memebr function because of friend declartions...
-	void update_parent_child(SceneComponent* parent, SceneComponent* child);
+	void update_transform(SceneComponent* parent, SceneComponent* child);
 	// Depth-first-search reduction
 	// calls func(entity component, entity parent) on every component encountered. Ordered from parent to children.
 	void reduce(const entt::entity entity, auto&& func) {
 		auto dfs = [&](auto& dfs_func, entt::entity component, entt::entity parent) -> void {
-			if (component == parent && component != root) // look for the actual parent with the first iteration
-				parent = parent_of(component); // xxx possible circular dependency detection? though impossible to create with SceneGraph apis alone.
 			func(component,parent);
 			if (has_child(component))
 				for (entt::entity child : child_of(component))

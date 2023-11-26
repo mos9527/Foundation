@@ -52,7 +52,7 @@ void Setup_Scene() {
     auto& light = scene.scene->graph->emplace_at_root<SceneLightComponent>();
     light.set_name("Spot Light");
     light.set_local_transform(AffineTransform::CreateFromYawPitchRoll(0, -XM_PIDIV4, XM_PI));
-    light.lightType = SceneLightComponent::LightType::Directional;
+    light.lightType = SceneLightComponent::LightType::Point;
     light.intensity = 3.0f;
     light.color = { 1,1,1,1 };
     light.radius = 100.0f;
@@ -165,9 +165,7 @@ void EditorWindow::Run() {
     ImGui_ImplDX12_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
-    Run_ImGui();
-    if (ImGui::IsAnyItemActive() || ImGui::IsMouseReleased(ImGuiMouseButton_Left))
-        scene.scene->graph->update();        
+    Run_ImGui();       
     ImGui::Render();
     uint bbIndex = swapchain->GetCurrentBackbufferIndex();
     CommandList* cmd = device->GetDefaultCommandList<CommandListType::Direct>();

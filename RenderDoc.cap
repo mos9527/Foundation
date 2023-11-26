@@ -5,9 +5,9 @@
         "commandLine": "",
         "environment": [
         ],
-        "executable": "C:\\Users\\mos9527\\Desktop\\Foundation\\x64\\Debug\\Foundation.exe",
+        "executable": "C:\\Users\\mos9527\\Foundation\\x64\\Debug\\Foundation.exe",
         "inject": false,
-        "numQueuedFrames": 1,
+        "numQueuedFrames": 0,
         "options": {
             "allowFullscreen": true,
             "allowVSync": true,
@@ -23,6 +23,6 @@
             "verifyBufferAccess": false
         },
         "queuedFrameCap": 0,
-        "workingDir": "C:/Users/mos9527/Desktop/Foundation"
+        "workingDir": "C:/Users/mos9527/Foundation"
     }
 }

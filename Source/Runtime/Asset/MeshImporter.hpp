@@ -103,9 +103,11 @@ static inline StaticMesh load_static_mesh(aiMesh* srcMesh) {
 	// LOD
 	std::vector<unsigned char> meshlet_triangles; // buffer to store u8 triangles
 	std::vector<meshopt_Meshlet> meshlets; // buffer to store meshlets
+	float ratio = 1.0f;
 	for (size_t lod = 0; lod < MAX_LOD_COUNT; lod++) {
 		const float target_error = 0.01f;
-		size_t target_index_count = mesh.indices.size() * LOD_GET_RATIO(lod);
+		size_t target_index_count = mesh.indices.size() * ratio;
+		ratio *= 0.75f;
 		auto& mesh_lod = mesh.lods[lod];
 		mesh_lod.indices.resize(mesh.indices.size());
 		float output_error = 0.0f;
@@ -115,6 +117,7 @@ static inline StaticMesh load_static_mesh(aiMesh* srcMesh) {
 			target_index_count, target_error, 0, &output_error
 		);
 		mesh_lod.indices.resize(output_index_count);
+#ifdef RHI_USE_MESH_SHADER
 		/* mesh shading */
 		// Meshlet generation
 		size_t max_meshlets = meshopt_buildMeshletsBound(mesh_lod.indices.size(), MESHLET_MAX_VERTICES, MESHLET_MAX_PRIMITIVES);						
@@ -160,6 +163,7 @@ static inline StaticMesh load_static_mesh(aiMesh* srcMesh) {
 		for (size_t i = 0; i < meshlet_triangles.size() - 3; i += 3) {
 			mesh_lod.meshlet_triangles.push_back({ meshlet_triangles[i] ,meshlet_triangles[i + 1], meshlet_triangles[i + 2] });
 		}
+#endif
 	}
 	return mesh;
 }

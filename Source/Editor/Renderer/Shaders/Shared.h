@@ -131,9 +131,6 @@ struct SceneMeshInstance
     bool occlusion_occludee() {
         return instanceFlags & INSTANCE_FLAG_OCCLUDEE;
     }
-    bool draw_bounds() {
-        return instanceFlags & INSTANCE_FLAG_DRAW_BOUNDS;
-    }
 };
 struct SceneMaterial {
     // bindless handles within ResourceDescriptorHeap

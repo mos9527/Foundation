@@ -18,6 +18,18 @@ cbuffer HIZData : register(b2, space0)
 #define SET_VISIBLE(index) (g_Visibility.Store(index * 4,0))
 #define SET_CULLED(index) (g_Visibility.Store(index * 4,1))
 
+void screenspaceBoundingBox(BoundingBox bbBox, out BoundingBox bbBoxss, out float4 bbBoxRectUV, out uint hizLOD, out uint LOD)
+{
+    bbBoxss = bbBox.Transform(g_SceneGlobals.camera.viewProjection); // Screen space bounding box
+    float2 bbMinSS = (bbBoxss.Center - bbBoxss.Extents).xy;
+    float2 bbMaxSS = (bbBoxss.Center + bbBoxss.Extents).xy;
+    bbBoxRectUV = float4(saturate(clip2UV(bbMaxSS)), saturate(clip2UV(bbMinSS))); // max, min
+    float2 bbBoxRectSize = bbBoxss.Extents.xy * 2 * g_SceneGlobals.frameDimension; // extents are half-widths of the axis
+    hizLOD = floor(log2(max(bbBoxRectSize.x, bbBoxRectSize.y)));
+    float bbArea = bbBoxss.Extents.x * bbBoxss.Extents.y / 4;
+    LOD = (MAX_LOD_COUNT - 1) * clamp(-0.5 * log2(bbArea), 0, 1);
+}
+
 // Each thread of the CS operates on one of the indirect commands
 [numthreads(RENDERER_INSTANCE_CULL_THREADS, 1, 1)]
 void main_early(uint index : SV_DispatchThreadID)
@@ -25,11 +37,11 @@ void main_early(uint index : SV_DispatchThreadID)
     if (index < g_SceneGlobals.numMeshInstances)
     {
         SceneMeshInstance instance = g_SceneMeshInstances[index];
-        if (instance.invisible() || instance.has_transparency()) // Handle transparency in the late pass
+        bool inv = instance.instanceFlags & INSTANCE_FLAG_INVISIBLE;
+        if (inv || instance.has_transparency()) // Handle transparency in the late pass
             return;
         SceneCamera camera = g_SceneGlobals.camera;     
         BoundingBox bbBox = instance.boundingBox.Transform(instance.transform);
-        BoundingSphere bbSphere = instance.boundingSphere.Transform(instance.transform);
         // Only DRAW instances that were visible last frame        
         bool visible = VISIBLE(index);
         if (!visible)
@@ -39,9 +51,10 @@ void main_early(uint index : SV_DispatchThreadID)
             return;
         // Assgin LODs and draw
         // xxx seems screen space spread heuristic is prone to LOD pop-ins?
-        float Rss = sphereScreenSpaceRadius(bbSphere.Center, bbSphere.Radius, camera.position.xyz, camera.fov);
-        int lodIndex = max(ceil((MAX_LOD_COUNT - 1) * Rss), instance.lodOverride); // 0 is the most detailed
-        lodIndex = clamp(lodIndex, 0, MAX_LOD_COUNT - 1);        
+        BoundingBox bbBoxss;
+        float4 bbBoxRectUV;
+        uint hizLOD, lodIndex;
+        screenspaceBoundingBox(bbBox, bbBoxss, bbBoxRectUV, hizLOD, lodIndex);
         SceneMeshLod lod = instance.lods[lodIndex];
         IndirectCommand cmd;
         cmd.MeshIndex = index;
@@ -69,7 +82,10 @@ void main_late(uint index : SV_DispatchThreadID)
             return;        
         SceneCamera camera = g_SceneGlobals.camera;
         BoundingBox bbBox = instance.boundingBox.Transform(instance.transform);
-        BoundingSphere bbSphere = instance.boundingSphere.Transform(instance.transform);
+        BoundingBox bbBoxss;
+        float4 bbBoxRectUV;
+        uint hizLOD, lodIndex;
+        screenspaceBoundingBox(bbBox, bbBoxss, bbBoxRectUV, hizLOD, lodIndex);
         // Frustum cull
         if (g_SceneGlobals.frustum_cull() && bbBox.Intersect(camera.clipPlanes[0], camera.clipPlanes[1], camera.clipPlanes[2], camera.clipPlanes[3], camera.clipPlanes[4], camera.clipPlanes[5]) == INTERSECT_VOLUMES_DISJOINT)
         {
@@ -84,13 +100,6 @@ void main_late(uint index : SV_DispatchThreadID)
         // see https://www.rastergrid.com/blog/2010/10/hierarchical-z-map-based-occlusion-culling/
         // see https://github.com/zeux/niagara/blob/master/src/shaders/drawcull.comp.glsl
             Texture2D<float4> hiz = ResourceDescriptorHeap[hizHeapHandle];
-            BoundingBox bbBoxss = bbBox.Transform(g_SceneGlobals.camera.viewProjection); // Screen space bounding box
-            float2 bbMinSS = (bbBoxss.Center - bbBoxss.Extents).xy;
-            float2 bbMaxSS = (bbBoxss.Center + bbBoxss.Extents).xy;
-            float4 bbBoxRectUV = float4(saturate(clip2UV(bbMaxSS)), saturate(clip2UV(bbMinSS))); // max, min
-            float2 bbBoxRectSize = bbBoxss.Extents.xy * 2 * g_SceneGlobals.frameDimension; // extents are half-widths of the axis
-            uint hizLOD = floor(log2(max(bbBoxRectSize.x, bbBoxRectSize.y)));
-            hizLOD = clamp(hizLOD, 0, hizMips);
             float2 smpCoord = (bbBoxRectUV.xy + bbBoxRectUV.zw) * 0.5f;
             float smpDepth = hiz.SampleLevel(g_HIZSampler, smpCoord, hizLOD).r; // sample at the centre
 #ifdef INVERSE_Z        
@@ -98,7 +107,7 @@ void main_late(uint index : SV_DispatchThreadID)
             bool occluded = minDepth < smpDepth; // Something is closer to POV than this instance...
 #else
         float minDepth = bbBoxss.Center.z - bbBoxss.Extents.z;
-        bool occluded = minDepth >   smpDepth;
+        bool occluded = minDepth > smpDepth;
 #endif
         // Meaning it's Occluded. Reject.
             if (instance.occlusion_occludee() && occluded)
@@ -119,10 +128,7 @@ void main_late(uint index : SV_DispatchThreadID)
         // or Transparent, passed frustum cull. These are only drawn (queued) here.
         // As transparency objects needs another pass to be drawn POST opaque draw & shade.
         // This LOD though...
-        // xxx seems screen space spread heuristic is prone to LOD pop-ins?
-        float Rss = sphereScreenSpaceRadius(bbSphere.Center, bbSphere.Radius, camera.position.xyz, camera.fov);
-        int lodIndex = max(ceil((MAX_LOD_COUNT - 1) * Rss), instance.lodOverride); // 0 is the most detailed
-        lodIndex = clamp(lodIndex, 0, MAX_LOD_COUNT - 1);
+        // xxx seems screen space spread heuristic is prone to LOD pop-ins?        
         SceneMeshLod lod = instance.lods[lodIndex];
         IndirectCommand cmd;
         cmd.MeshIndex = index;

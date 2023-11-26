@@ -15,9 +15,10 @@ public:
 private:
 	BufferContainer<SceneMeshInstance> meshInstancesBuffer;
 	BufferContainer<SceneMaterial> meshMaterialsBuffer;
-	BufferContainer<SceneLight> lightBuffer;	
+	BufferContainer<SceneLight> lightBuffer;
 	BufferContainer<SceneGlobals> globalBuffer;
 
+	std::unordered_map<entt::entity, size_t> scenecomponent_versions;
 	size_t current_scene_version = 0;
 public:
 	struct FrameData {
@@ -33,8 +34,8 @@ public:
 	SceneView(RHI::Device* device) :
 		meshInstancesBuffer(device, MAX_INSTANCE_COUNT),
 		meshMaterialsBuffer(device, MAX_MATERIAL_COUNT),
-		lightBuffer(device,MAX_LIGHT_COUNT),
-		globalBuffer(device, 1)	
+		lightBuffer(device, MAX_LIGHT_COUNT),
+		globalBuffer(device, 1)
 	{
 		globalBuffer.Data()->frameFlags = FRAME_FLAG_DEFAULT;
 	};
@@ -43,6 +44,6 @@ public:
 	RHI::Resource* get_SceneMeshInstancesBuffer() { return &meshInstancesBuffer; }
 	RHI::Resource* get_SceneMeshMaterialsBuffer() { return &meshMaterialsBuffer; }
 	RHI::Resource* get_SceneLightBuffer() { return &lightBuffer; }
-		
+
 	bool update(Scene& scene, SceneCameraComponent& camera, FrameData&& frame);
 };
