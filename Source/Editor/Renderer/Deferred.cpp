@@ -242,22 +242,20 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 			.emissive_srv = emissive_srv,
 			.fb_uav = fb_uav
 			});
-		if (sceneView->get_SceneGlobals().numTransparencyMeshInstances) {
-			auto& p7 = pass_Transparency.insert(rg, sceneView, {
-				.transparencyIndirectCommands = transparencyIndirectCmds,
-				.transparencyIndirectCommandsUAV = transparencyIndirectCmdsUAV,
-				.accumalationBuffer = accumalation_buffer,
-				.revealageBuffer = revealage_buffer,
-				.accumalationBuffer_rtv = accumalation_buffer_rtv,
-				.accumalationBuffer_srv = accumalation_buffer_srv,
-				.revealageBuffer_rtv = revealage_buffer_rtv,
-				.revealageBuffer_srv = revealage_buffer_srv,
-				.depth = depth,
-				.depth_dsv = depth_dsv,
-				.framebuffer = frameBuffer,
-				.fb_uav = fb_uav
-			});
-		}
+		auto& p7 = pass_Transparency.insert(rg, sceneView, {
+			.transparencyIndirectCommands = transparencyIndirectCmds,
+			.transparencyIndirectCommandsUAV = transparencyIndirectCmdsUAV,
+			.accumalationBuffer = accumalation_buffer,
+			.revealageBuffer = revealage_buffer,
+			.accumalationBuffer_rtv = accumalation_buffer_rtv,
+			.accumalationBuffer_srv = accumalation_buffer_srv,
+			.revealageBuffer_rtv = revealage_buffer_rtv,
+			.revealageBuffer_srv = revealage_buffer_srv,
+			.depth = depth,
+			.depth_dsv = depth_dsv,
+			.framebuffer = frameBuffer,
+			.fb_uav = fb_uav
+		});	
 	}
 	rg.get_epilogue_pass().read(frameBuffer);
 	rg.execute(device->GetDefaultCommandList<CommandListType::Direct>());

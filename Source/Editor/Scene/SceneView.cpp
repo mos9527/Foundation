@@ -5,11 +5,9 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 		auto& instances = scene.storage<SceneMeshComponent>();
 		auto& materials = scene.storage<AssetMaterialComponent>();
 		auto& lights = scene.storage<SceneLightComponent>();
-		uint numTransparencyMeshes = 0;
 		for (auto& mesh : instances) {
 			// Only update instances that got updated
 			if (mesh.get_version() == scenecomponent_versions[mesh.get_entity()]) continue;
-			LOG(INFO) << "Update MESH v." << scene.get_version();
 			scenecomponent_versions[mesh.get_entity()] = mesh.get_version();
 			// SceneMeshComponent -> AssetMeshComponent -> MeshAsset
 			AssetMeshComponent& assetComponent = scene.get<AssetMeshComponent>(mesh.meshAsset);
@@ -67,10 +65,7 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 			sceneMesh.boundingSphere = asset.boundingSphere;
 			sceneMesh.lodOverride = mesh.lodOverride;
 			sceneMesh.instanceFlags = 0;
-			if (materialComponent.has_alpha()) {
-				sceneMesh.instanceFlags |= INSTANCE_FLAG_TRANSPARENCY;
-				numTransparencyMeshes++;
-			}
+			if (materialComponent.has_alpha()) sceneMesh.instanceFlags |= INSTANCE_FLAG_TRANSPARENCY;
 			if (mesh.isOccludee)
 				sceneMesh.instanceFlags |= INSTANCE_FLAG_OCCLUDEE;
 			if (!mesh.enabled) 
@@ -102,7 +97,6 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 		}
 		// Scene info
 		globalBuffer.Data()->numMeshInstances = instances.size();
-		globalBuffer.Data()->numTransparencyMeshInstances = numTransparencyMeshes;
 		globalBuffer.Data()->numLights = lights.size();
 	}
 	// These are updated every frame...
