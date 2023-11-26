@@ -9,7 +9,7 @@ namespace RHI {
 		CommandListType m_Type;
 		ComPtr<ID3D12GraphicsCommandList6> m_CommandList;
 		std::vector<ComPtr<ID3D12CommandAllocator>> m_CommandAllocators;	
-		std::vector<CD3DX12_RESOURCE_BARRIER> m_QueuedBarriers;
+		std::vector<D3D12_RESOURCE_BARRIER> m_QueuedBarriers;
 
 		bool m_Closed = false;
 	public:

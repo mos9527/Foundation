@@ -33,6 +33,14 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 				cmd->Barrier(res, state);
 		}
 		cmd->FlushBarriers();
+		for (auto& rw : readwrites) {
+			auto res = get_as_resource(rw);
+			if (!res) continue;
+
+			CHECK(res->GetDesc().allowUnorderedAccess());
+			cmd->Barrier(res, ResourceState::UnorderedAccess);
+		}
+		cmd->FlushBarriers();
 		for (auto& write : writes) {
 			if (readwrites.contains(write)) continue;
 			auto res = get_as_resource(write);
@@ -40,22 +48,12 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 
 			auto const& desc = res->GetDesc();
 			ResourceState state = ResourceState::Common;
-			if (desc.allowUnorderedAccess())
-				state |= ResourceState::UnorderedAccess;
 			if (desc.allowRenderTarget()) 
 				state |= ResourceState::RenderTarget;
 			if (desc.allowDepthStencil()) 
 				state |= ResourceState::DepthWrite;
 			if (state != ResourceState::Common) 
 				cmd->Barrier(res, state);
-		}
-		cmd->FlushBarriers();
-		for (auto& rw : readwrites) {
-			auto res = get_as_resource(rw);
-			if (!res) continue;
-
-			CHECK(res->GetDesc().allowUnorderedAccess());
-			cmd->Barrier(res, ResourceState::UnorderedAccess);
 		}
 		cmd->FlushBarriers();
 		// all resources barriers & states are ready at this point		

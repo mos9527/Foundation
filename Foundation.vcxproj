@@ -157,6 +157,7 @@
     <ClCompile Include="Dependencies\imgui\imgui_widgets.cpp" />
     <ClCompile Include="Source\Editor\Editor.cpp" />
     <ClCompile Include="Source\Editor\Globals.cpp" />
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\Clear.cpp" />
     <ClCompile Include="Source\Editor\Widgets\LoadingScreenWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\RendererWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\ViewportWidget.cpp" />
@@ -208,6 +209,7 @@
     <ClInclude Include="Source\Editor\Editor.hpp" />
     <ClInclude Include="Source\Editor\Context.hpp" />
     <ClInclude Include="Source\Editor\Globals.hpp" />
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\Clear.hpp" />
     <ClInclude Include="Source\Editor\Widgets\Widgets.hpp" />
     <ClInclude Include="Source\Editor\Win32\Window.hpp" />
     <ClInclude Include="Source\Runtime\Asset\Asset.hpp" />

@@ -144,6 +144,9 @@
     <ClCompile Include="Source\Editor\Widgets\LoadingScreenWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\Clear.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">
@@ -363,6 +366,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\Globals.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\Clear.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

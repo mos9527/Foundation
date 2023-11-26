@@ -69,23 +69,23 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		.viewed = depth
 	});
 	auto& albedo_rtv = rg.create<RenderTargetView>({
-		.viewDesc = RenderTargetViewDesc::GetTexture2DRenderTargetDesc(ResourceFormat::R8G8B8A8_UNORM, 0),
+		.viewDesc = RenderTargetViewDesc::GetTexture2DDesc(ResourceFormat::R8G8B8A8_UNORM, 0),
 		.viewed = albedo
 	});
 	auto& normal_rtv = rg.create<RenderTargetView>({
-		.viewDesc = RenderTargetViewDesc::GetTexture2DRenderTargetDesc(ResourceFormat::R16G16_FLOAT, 0),
+		.viewDesc = RenderTargetViewDesc::GetTexture2DDesc(ResourceFormat::R16G16_FLOAT, 0),
 		.viewed = normal
 	});
 	auto& material_rtv = rg.create<RenderTargetView>({
-		.viewDesc = RenderTargetViewDesc::GetTexture2DRenderTargetDesc(ResourceFormat::R8G8B8A8_UNORM, 0),
+		.viewDesc = RenderTargetViewDesc::GetTexture2DDesc(ResourceFormat::R8G8B8A8_UNORM, 0),
 		.viewed = material
 	});
 	auto& emissive_rtv = rg.create<RenderTargetView>({
-		.viewDesc = RenderTargetViewDesc::GetTexture2DRenderTargetDesc(ResourceFormat::R8G8B8A8_UNORM, 0),
+		.viewDesc = RenderTargetViewDesc::GetTexture2DDesc(ResourceFormat::R8G8B8A8_UNORM, 0),
 		.viewed = emissive
 	});
 	auto& velocity_rtv = rg.create<RenderTargetView>({
-		.viewDesc = RenderTargetViewDesc::GetTexture2DRenderTargetDesc(ResourceFormat::R16G16_FLOAT, 0),
+		.viewDesc = RenderTargetViewDesc::GetTexture2DDesc(ResourceFormat::R16G16_FLOAT, 0),
 		.viewed = velocity
 	});
 	auto& hiz_buffer = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
@@ -109,7 +109,7 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		L"Transparency Revealage Buffer"
 	));
 	auto& accumalation_buffer_rtv = rg.create<RenderTargetView>({
-		.viewDesc = RenderTargetViewDesc::GetTexture2DRenderTargetDesc(ResourceFormat::R16G16B16A16_FLOAT, 0),
+		.viewDesc = RenderTargetViewDesc::GetTexture2DDesc(ResourceFormat::R16G16B16A16_FLOAT, 0),
 		.viewed = accumalation_buffer
 		});
 	auto& accumalation_buffer_srv = rg.create<ShaderResourceView>({
@@ -117,7 +117,7 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		.viewed = accumalation_buffer
 	});
 	auto& revealage_buffer_rtv = rg.create<RenderTargetView>({
-		.viewDesc = RenderTargetViewDesc::GetTexture2DRenderTargetDesc(ResourceFormat::R16_FLOAT, 0),
+		.viewDesc = RenderTargetViewDesc::GetTexture2DDesc(ResourceFormat::R16_FLOAT, 0),
 		.viewed = revealage_buffer
 	});
 	auto& revealage_buffer_srv = rg.create<ShaderResourceView>({
@@ -127,8 +127,8 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 	auto& frameBuffer = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
 		ResourceFormat::R16G16B16A16_FLOAT, ResourceDimension::Texture2D,
 		width, height, 1, 1, 1, 0,
-		ResourceFlags::UnorderedAccess, ResourceHeapType::Default,
-		ResourceState::UnorderedAccess, {},
+		ResourceFlags::UnorderedAccess | ResourceFlags::RenderTarget, ResourceHeapType::Default,
+		ResourceState::UnorderedAccess, ClearValue(0, 0, 0, 0),
 		L"Frame Buffer"
 	));
 	auto& albedo_srv = rg.create<ShaderResourceView>({
@@ -169,6 +169,12 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R16G16B16A16_FLOAT, 0, 1),
 		.viewed = frameBuffer
 	});
+	auto& fb_rtv = rg.create<RenderTargetView>({
+		.viewDesc = RenderTargetViewDesc::GetTexture2DDesc(ResourceFormat::R16G16B16A16_FLOAT, 0),
+		.viewed = frameBuffer
+	});
+	pass_Clear.insert_dsv(rg, sceneView, { &depth }, { &depth_dsv });
+	pass_Clear.insert_rtv(rg, sceneView, { &frameBuffer, &albedo, &normal, &material, &emissive, &velocity }, { &fb_rtv, &albedo_rtv, &normal_rtv, &material_rtv, &emissive_rtv, &velocity_rtv });
 	if (sceneView->get_SceneGlobals().numMeshInstances) {
 		auto& p1 = pass_IndirectCull.insert_earlycull(rg, sceneView, {
 			.visibilityBuffer = instanceVisibility,

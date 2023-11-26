@@ -159,6 +159,11 @@ public:
 	template<RgDefinedResource T> T* get(RgHandle handle) {		
 		return cache.get<T>(handle);
 	}
+	// retrives in-graph object reference
+	// RenderGraph contains RgHandle, and RgResource dervied objects
+	template<typename T> T& get(RgHandle handle) {
+		return registry.get<T>(handle);
+	}
 	// retrives imported / created RHI object as Resource*
 	// if not convertible, nullptr is returned
 	// * applicalbe to Buffer & Texture

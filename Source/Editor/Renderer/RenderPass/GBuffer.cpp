@@ -101,43 +101,7 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneView* sceneView, GB
 			r_material_rtv->descriptor,
 			r_emissive_rtv->descriptor,
 			r_velocity_rtv->descriptor
-		};
-		if (!late) {
-			// Only perform clears in the early pass
-			native->ClearDepthStencilView(
-				r_dsv->descriptor.get_cpu_handle(),
-				D3D12_CLEAR_FLAG_DEPTH,
-				r_depthStencil->GetClearValue().depthStencil.depth,
-				r_depthStencil->GetClearValue().depthStencil.stencil,
-				1, &scissorRect
-			);
-			const FLOAT clearColor[4] = { .0f ,.0f ,.0f ,.0f };
-			native->ClearRenderTargetView(
-				r_albedo_rtv->descriptor,
-				clearColor,
-				1, &scissorRect
-			);
-			native->ClearRenderTargetView(
-				r_normal_rtv->descriptor,
-				clearColor,
-				1, &scissorRect
-			);
-			native->ClearRenderTargetView(
-				r_material_rtv->descriptor,
-				clearColor,
-				1, &scissorRect
-			);
-			native->ClearRenderTargetView(
-				r_emissive_rtv->descriptor,
-				clearColor,
-				1, &scissorRect
-			);
-			native->ClearRenderTargetView(
-				r_velocity_rtv->descriptor,
-				clearColor,
-				1, &scissorRect
-			);
-		}
+		};		
 		CHECK(r_indirect_commands_uav->GetDesc().HasCountedResource() && "Invalid Command Buffer!");
 		ctx.cmd->Barrier(r_indirect_commands, ResourceState::IndirectArgument);
 		ctx.cmd->FlushBarriers();
@@ -180,7 +144,9 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneView* sceneView, GB
 // see IndirectLODCull
 RenderGraphPass& GBufferPass::insert_earlydraw(RenderGraph& rg, SceneView* sceneView, GBufferPassHandles&& handles) {
 	auto& pass = rg.add_pass(L"GBuffer Early Generation")
-		.read(handles.indirectCommands)
+		.read(handles.indirectCommands)		
+		.read(handles.depth)
+		.read(handles.albedo).read(handles.normal).read(handles.material).read(handles.velocity).read(handles.emissive) // Ensures clear is complete
 		.write(handles.depth)
 		.write(handles.albedo).write(handles.normal).write(handles.material).write(handles.velocity).write(handles.emissive);
 	insert_execute(pass, sceneView, std::move(handles),false /* late */);

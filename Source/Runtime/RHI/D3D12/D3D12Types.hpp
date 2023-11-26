@@ -293,7 +293,7 @@ namespace RHI {
 		friend bool operator== (const RenderTargetViewDesc& lhs, const RenderTargetViewDesc& rhs) {
 			return true;
 		}
-		static const RenderTargetViewDesc GetTexture2DRenderTargetDesc(
+		static const RenderTargetViewDesc GetTexture2DDesc(
 			ResourceFormat viewFormat,
 			UINT mipSlice
 		) {
