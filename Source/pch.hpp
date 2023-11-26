@@ -22,10 +22,10 @@
 #include <variant>
 
 #define WIN32_LEAN_AND_MEAN
-#define NOGDI
 #define NOMINMAX
 #include <Windows.h>
 #include <wrl.h>
+#undef ERROR // Hack for GLOG's abbervatived error levels. GDI defines this macro.
 
 #define ENTT_ID_TYPE uint32_t
 #include "../Dependencies/entt/single_include/entt/entt.hpp"

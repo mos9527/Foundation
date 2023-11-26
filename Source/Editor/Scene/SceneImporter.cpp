@@ -139,6 +139,6 @@ void SceneImporter::load(UploadContext* ctx, SceneImporterAtomicStatus& statusOu
 	CHECK(std::filesystem::exists(sceneFile) && "File does not exisit!");
 	std::string u8path = (const char*)sceneFile.u8string().c_str();
 	auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace);
-	CHECK(imported && "Failed to import file as a assimp scene!");
+	CHECK(imported && "Failed to import file as an assimp scene!");
 	SceneImporter::load_aiScene(ctx, statusOut, sceneOut, imported, sceneFile.parent_path());
 }

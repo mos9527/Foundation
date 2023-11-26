@@ -1,6 +1,7 @@
 #include "Widgets/Widgets.hpp"
 #include "Editor.hpp"
-
+#include <commdlg.h>
+#include <wingdi.h>
 using namespace RHI;
 using namespace EditorGlobalContext;
 #define IMGUI_DEFAULT_FONT "Resources/Fonts/DroidSansFallback.ttf"
@@ -122,12 +123,21 @@ void Run_ImGui() {
         ImGui::PopStyleVar(2);
 
         if (ImGui::BeginMenuBar()) {
-            if (ImGui::MenuItem("Load")) {
-#define GLTF_SAMPLE L"Sponza" // DepthOcclusionTest
-                path_t filepath = L"Resources\\glTF-Sample-Models\\2.0\\" GLTF_SAMPLE "\\glTF\\" GLTF_SAMPLE ".glb";
-                Load_Scene(filepath);
+            if (ImGui::MenuItem("Open")) {
+                OPENFILENAME ofn{};
+                std::wstring pathBuffer;
+                pathBuffer.resize(2048);
+                ofn.lpstrFile = (LPWSTR)pathBuffer.c_str();
+                ofn.lStructSize = sizeof(ofn);
+                ofn.hwndOwner = window;
+                ofn.lpstrFilter = L"All Files (*.*)\0*.*\0";                
+                ofn.nMaxFile = pathBuffer.size();
+                ofn.lpstrTitle = L"Load a Scene File";
+                ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+                CHECK_HR(GetOpenFileName(&ofn));
+                Load_Scene(pathBuffer);
             }
-            if (ImGui::MenuItem("Clear")) {
+            if (ImGui::MenuItem("Reset")) {
                 Reset_Scene();
             }
             ImGui::EndMenuBar();
