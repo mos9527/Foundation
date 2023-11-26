@@ -9,8 +9,15 @@ namespace RHI {
 		CommandListType m_Type;
 		ComPtr<ID3D12GraphicsCommandList6> m_CommandList;
 		std::vector<ComPtr<ID3D12CommandAllocator>> m_CommandAllocators;	
-		std::vector<D3D12_RESOURCE_BARRIER> m_QueuedBarriers;
-
+		struct SubresourceTransitionBarrier : public D3D12_RESOURCE_BARRIER {
+			SubresourceTransitionBarrier(const D3D12_RESOURCE_BARRIER& o) : D3D12_RESOURCE_BARRIER(o) {};
+			friend inline bool operator< (const SubresourceTransitionBarrier& lhs, const SubresourceTransitionBarrier& rhs) {
+				if (lhs.Transition.pResource != rhs.Transition.pResource) return lhs.Transition.pResource < rhs.Transition.pResource;
+				return lhs.Transition.Subresource < rhs.Transition.Subresource;
+			}
+		};
+		std::set<SubresourceTransitionBarrier> m_QueuedBarriers;
+		std::vector<SubresourceTransitionBarrier> m_FinalBarriers;
 		bool m_Closed = false;
 	public:
 
@@ -34,7 +41,12 @@ namespace RHI {
 		void Barrier(Resource* res, ResourceState state);
 		inline void FlushBarriers() { 
 			if (m_QueuedBarriers.size()) {
-				m_CommandList->ResourceBarrier(m_QueuedBarriers.size(), m_QueuedBarriers.data());
+				m_FinalBarriers.clear();
+				for (auto& barrier : m_QueuedBarriers) {
+					if (barrier.Transition.StateBefore != barrier.Transition.StateAfter) m_FinalBarriers.push_back(barrier);
+				}
+				if (m_FinalBarriers.size())
+					m_CommandList->ResourceBarrier(m_FinalBarriers.size(), m_FinalBarriers.data());
 				m_QueuedBarriers.clear(); 
 			}
 		};

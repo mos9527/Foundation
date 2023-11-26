@@ -32,7 +32,6 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 			if (state != ResourceState::Common)
 				cmd->Barrier(res, state);
 		}
-		cmd->FlushBarriers();
 		for (auto& rw : readwrites) {
 			auto res = get_as_resource(rw);
 			if (!res) continue;
@@ -40,7 +39,6 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 			CHECK(res->GetDesc().allowUnorderedAccess());
 			cmd->Barrier(res, ResourceState::UnorderedAccess);
 		}
-		cmd->FlushBarriers();
 		for (auto& write : writes) {
 			if (readwrites.contains(write)) continue;
 			auto res = get_as_resource(write);

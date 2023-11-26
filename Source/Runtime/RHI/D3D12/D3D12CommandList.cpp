@@ -44,12 +44,19 @@ namespace RHI {
 		for (uint i = 0; i < numSubresources; i++) {
 			uint subresource = *(subresources + i);
 			if (res->m_States[subresource] != state) {
-				m_QueuedBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(
+				SubresourceTransitionBarrier transition = CD3DX12_RESOURCE_BARRIER::Transition(
 					res->GetNativeResource(),
 					(D3D12_RESOURCE_STATES)res->GetSubresourceState(subresource),
 					(D3D12_RESOURCE_STATES)state,
 					subresource
-				));
+				);
+				auto it = m_QueuedBarriers.find(transition);
+				if (it != m_QueuedBarriers.end()) {
+					const_cast<SubresourceTransitionBarrier*>(&*it)->Transition.StateAfter = (D3D12_RESOURCE_STATES)state;
+				}
+				else {
+					m_QueuedBarriers.insert(transition);
+				}
 				res->m_States[subresource] = state;
 			}
 		}
