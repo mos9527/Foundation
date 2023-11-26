@@ -18,7 +18,4 @@ struct AssetMaterialComponent : public AssetComponent {
 	bool has_alpha() {
 		return alphaMapped || albedo.w != 1;
 	}
-#ifdef IMGUI_ENABLED
-	virtual void OnImGui();
-#endif
 };

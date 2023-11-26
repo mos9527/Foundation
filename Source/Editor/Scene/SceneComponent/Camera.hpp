@@ -17,14 +17,6 @@ struct SceneCameraComponent : public SceneComponent {
 		nearZ = 0.01f;
 		farZ = 100.0f;
 	}
-#ifdef IMGUI_ENABLED
-	virtual void OnImGui() {
-		ImGui::SliderFloat("FOV", &fov, 0.0f, XM_PIDIV2);
-		ImGui::SliderFloat("Near Z", &nearZ, 0.0f, 100.0f);
-		ImGui::SliderFloat("Far Z", &farZ, 0.0f, 100.0f);
-		ImGui::Checkbox("Orthograhpic", &orthographic);					
-	}
-#endif
 	SceneCamera get_struct(float aspect) {
 		SceneCamera camera;
 		AffineTransform globalTransform = get_global_transform();

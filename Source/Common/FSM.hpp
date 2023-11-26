@@ -28,7 +28,19 @@ namespace FSM {
 		const State& get_state() { return state; }
 	};
 
-	// #1. Enum-based FSM.
-	// xxx it's late. take this to tommorow.
-	// xxx it's already 'tomorrow'.
+	// #1. Enum-based FSM. Also thread safe.
+	// Simple as. Used in many times in this project.
+	template<typename States, typename Events, States InitialState> struct EFSM {
+		using value_type = std::underlying_type<States>::type;
+	protected:
+		std::atomic<States> state = InitialState;
+	public:
+		void fail(Events event) { throw std::exception{" no implementation" }; }
+		States transition(Events event) { throw std::exception{" no implementation" }; }
+		
+		const States get_state() { return state.load(); }
+
+		operator States() { return get_state(); }
+		operator value_type() { return static_cast<value_type>(state.load()); }
+	};
 }

@@ -25,10 +25,6 @@ public:
 	void set_name(std::string name_) { name = name_; }
 	const char* get_name() { return name.c_str(); }
 	entt::entity get_entity() { return entity; }
-
-#ifdef IMGUI_ENABLED
-	virtual void OnImGui() = 0;
-#endif
 };
 
 template<typename T> concept IsComponet = std::is_base_of<Component, T>::value;

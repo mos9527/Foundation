@@ -147,6 +147,9 @@ public:
 			return nullptr;
 		}
 	}
+	Scene() {};
+	Scene(const Scene&) = delete;
+	Scene(Scene&&) = default;
 private:
 	size_t version = 0;
 public:

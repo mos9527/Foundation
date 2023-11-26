@@ -122,6 +122,8 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <Optimization>Disabled</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -154,7 +156,8 @@
     <ClCompile Include="Dependencies\imgui\imgui_tables.cpp" />
     <ClCompile Include="Dependencies\imgui\imgui_widgets.cpp" />
     <ClCompile Include="Source\Editor\Editor.cpp" />
-    <ClCompile Include="Source\Editor\GlobalContext.cpp" />
+    <ClCompile Include="Source\Editor\Globals.cpp" />
+    <ClCompile Include="Source\Editor\Widgets\ViewportWidget.cpp" />
     <ClCompile Include="Source\Runtime\Asset\TextureAsset.cpp" />
     <ClCompile Include="Source\Runtime\Asset\TextureImporter.hpp" />
     <ClCompile Include="Source\Runtime\Asset\MeshAsset.cpp" />
@@ -181,9 +184,6 @@
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12RootSignature.cpp" />
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Shader.cpp" />
     <ClCompile Include="Source\Runtime\RHI\D3D12\D3D12Swapchain.cpp" />
-    <ClCompile Include="Source\Editor\Scene\AssetComponet\Material.cpp" />
-    <ClCompile Include="Source\Editor\Scene\AssetComponet\Mesh.cpp" />
-    <ClCompile Include="Source\Editor\Scene\SceneComponent\SceneMeshComponent.cpp" />
     <ClCompile Include="Source\Editor\Scene\SceneComponent\SceneComponent.cpp" />
     <ClCompile Include="Source\Editor\Scene\SceneGraph.cpp" />
     <ClCompile Include="Source\Editor\Scene\SceneImporter.cpp" />
@@ -202,8 +202,11 @@
     <ClInclude Include="Dependencies\stb_image.h" />
     <ClInclude Include="Source\Common\Allocator.hpp" />
     <ClInclude Include="Source\Common\Defines.hpp" />
+    <ClInclude Include="Source\Common\FSM.hpp" />
     <ClInclude Include="Source\Editor\Editor.hpp" />
-    <ClInclude Include="Source\Editor\GlobalContext.hpp" />
+    <ClInclude Include="Source\Editor\Context.hpp" />
+    <ClInclude Include="Source\Editor\Globals.hpp" />
+    <ClInclude Include="Source\Editor\Widgets\Widgets.hpp" />
     <ClInclude Include="Source\Editor\Win32\Window.hpp" />
     <ClInclude Include="Source\Runtime\Asset\Asset.hpp" />
     <ClInclude Include="Source\Runtime\Asset\AssetRegistry.hpp" />

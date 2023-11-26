@@ -6,7 +6,4 @@ struct AssetMeshComponent : public AssetComponent {
 	AssetMeshComponent(Scene& parent, entt::entity entity) : AssetComponent(parent, entity, type) {};
 
 	AssetHandle mesh;
-#ifdef IMGUI_ENABLED
-	virtual void OnImGui();
-#endif
 };

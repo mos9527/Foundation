@@ -87,4 +87,4 @@ protected:
 };
 
 template<typename T, typename vertex> using basic_DAG = DAG<T, vertex, std::set<vertex>, std::map<vertex, std::set<vertex>>>;
-template<typename T, typename vertex> using unorderded_DAG = DAG<T, vertex, std::unordered_set<vertex>, std::unordered_map<vertex, std::unordered_set<vertex>>>;
+template<typename T, typename vertex> using unordered_DAG = DAG<T, vertex, std::unordered_set<vertex>, std::unordered_map<vertex, std::unordered_set<vertex>>>;

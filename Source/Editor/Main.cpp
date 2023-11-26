@@ -1,9 +1,16 @@
 #include "../pch.hpp"
 #include "Editor.hpp"
-#include "GlobalContext.hpp"
+#include "Globals.hpp"
 
-int main() {
-	EditorWindow editor(1600,900,L"Editor",L"Foundation | Editor");
+int main(int argc, char* argv[]) {
+    FLAGS_alsologtostderr = true;
+    google::InitGoogleLogging(argv[0]);
+
+    CHECK(SetProcessDPIAware());
+    CHECK(SetConsoleOutputCP(65001));
+
+    EditorWindow editor;
+    editor.Create(1600, 1000, L"Editor", L"Foundation | Editor");
 	EditorGlobalContext::SetupContext(editor.m_hWnd, RHI::ResourceFormat::R8G8B8A8_UNORM);
     editor.Setup();
     while (1) {

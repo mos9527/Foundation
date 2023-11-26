@@ -13,9 +13,9 @@ struct RgContext {
 	RHI::CommandList* cmd;
 };
 
-typedef basic_DAG<entt::entity, entt::entity> graph_type;
+typedef unordered_DAG<entt::entity, entt::entity> graph_type;
 typedef std::function<void(RgContext&)> RgFunction;
-typedef std::set<RgHandle> RgResources;
+typedef std::unordered_set<RgHandle> RgResources;
 typedef std::vector<entt::entity> RgRndPasses;
 
 class RenderGraph;

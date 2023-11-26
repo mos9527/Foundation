@@ -14,10 +14,6 @@ struct AssetComponent : public Component {
 	const AssetComponentType type;
 public:	
 	AssetComponent(Scene& parent, entt::entity entity, AssetComponentType type) : Component(parent, entity, ComponentType::Asset), type(type) {};
-
-#ifdef IMGUI_ENABLED
-	virtual void OnImGui() = 0;
-#endif
 };
 
 template<typename T> concept IsAssetComponent = std::is_base_of<AssetComponent, T>::value;

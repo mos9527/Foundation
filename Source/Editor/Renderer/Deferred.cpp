@@ -169,86 +169,90 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R16G16B16A16_FLOAT, 0, 1),
 		.viewed = frameBuffer
 	});
-	auto& p1 = pass_IndirectCull.insert_earlycull(rg, sceneView, {
-		.visibilityBuffer = instanceVisibility,
-		.indirectCmdBuffer = indirectCmds,
-		.indirectCmdBufferUAV = indirectCmdsUAV
-	});
-	auto& p2 = pass_GBuffer.insert_earlydraw(rg, sceneView, {
-		.indirectCommands = indirectCmds,
-		.indirectCommandsUAV = indirectCmdsUAV,
-		.depth = depth,
-		.albedo = albedo,
-		.normal = normal,
-		.material = material,
-		.emissive = emissive,
-		.velocity = velocity,
-		.depth_dsv = depth_dsv,
-		.albedo_rtv = albedo_rtv,
-		.normal_rtv = normal_rtv,
-		.material_rtv = material_rtv,
-		.emissive_rtv = emissive_rtv,
-		.velocity_rtv = velocity_rtv
-	});
-	auto& p3 = pass_HiZ.insert(rg, sceneView, {
-		.depth = depth,
-		.depthSRV = depth_srv,
-		.hizTexture = hiz_buffer,
-		.hizUAVs = hiz_uavs
-	});
-	auto& p4 = pass_IndirectCull.insert_latecull(rg, sceneView, {
-		.visibilityBuffer = instanceVisibility,
-		.indirectCmdBuffer = indirectCmds,
-		.indirectCmdBufferUAV = indirectCmdsUAV,
-		.transparencyIndirectCmdBuffer = transparencyIndirectCmds,
-		.transparencyIndirectCmdBufferUAV = transparencyIndirectCmdsUAV,
-		.hizTexture = hiz_buffer,
-		.hizSRV = hiz_srv
-	});
-	auto& p5 = pass_GBuffer.insert_latedraw(rg, sceneView, {
-		.indirectCommands = indirectCmds,
-		.indirectCommandsUAV = indirectCmdsUAV,
-		.depth = depth,
-		.albedo = albedo,
-		.normal = normal,
-		.material = material,
-		.emissive = emissive,
-		.velocity = velocity,
-		.depth_dsv = depth_dsv,
-		.albedo_rtv = albedo_rtv,
-		.normal_rtv = normal_rtv,
-		.material_rtv = material_rtv,
-		.emissive_rtv = emissive_rtv,
-		.velocity_rtv = velocity_rtv
-	});
-	auto& p6 = pass_Lighting.insert(rg, sceneView, {
-		.frameBuffer = frameBuffer,
-		.depth = depth,
-		.albedo = albedo,
-		.normal = normal,
-		.material = material,
-		.emissive = emissive,
-		.depth_srv = depth_srv,
-		.albedo_srv = albedo_srv,
-		.normal_srv = normal_srv,
-		.material_srv = material_srv,
-		.emissive_srv = emissive_srv,
-		.fb_uav = fb_uav
-	});
-	auto& p7 = pass_Transparency.insert(rg, sceneView, {
-		.transparencyIndirectCommands = transparencyIndirectCmds,
-		.transparencyIndirectCommandsUAV = transparencyIndirectCmdsUAV,
-		.accumalationBuffer = accumalation_buffer,
-		.revealageBuffer = revealage_buffer,
-		.accumalationBuffer_rtv = accumalation_buffer_rtv,
-		.accumalationBuffer_srv = accumalation_buffer_srv,
-		.revealageBuffer_rtv = revealage_buffer_rtv,
-		.revealageBuffer_srv = revealage_buffer_srv,
-		.depth = depth,
-		.depth_dsv = depth_dsv,
-		.framebuffer = frameBuffer,
-		.fb_uav = fb_uav
-	});
+	if (sceneView->get_SceneGlobals().numMeshInstances) {
+		auto& p1 = pass_IndirectCull.insert_earlycull(rg, sceneView, {
+			.visibilityBuffer = instanceVisibility,
+			.indirectCmdBuffer = indirectCmds,
+			.indirectCmdBufferUAV = indirectCmdsUAV
+			});
+		auto& p2 = pass_GBuffer.insert_earlydraw(rg, sceneView, {
+			.indirectCommands = indirectCmds,
+			.indirectCommandsUAV = indirectCmdsUAV,
+			.depth = depth,
+			.albedo = albedo,
+			.normal = normal,
+			.material = material,
+			.emissive = emissive,
+			.velocity = velocity,
+			.depth_dsv = depth_dsv,
+			.albedo_rtv = albedo_rtv,
+			.normal_rtv = normal_rtv,
+			.material_rtv = material_rtv,
+			.emissive_rtv = emissive_rtv,
+			.velocity_rtv = velocity_rtv
+			});
+		auto& p3 = pass_HiZ.insert(rg, sceneView, {
+			.depth = depth,
+			.depthSRV = depth_srv,
+			.hizTexture = hiz_buffer,
+			.hizUAVs = hiz_uavs
+			});
+		auto& p4 = pass_IndirectCull.insert_latecull(rg, sceneView, {
+			.visibilityBuffer = instanceVisibility,
+			.indirectCmdBuffer = indirectCmds,
+			.indirectCmdBufferUAV = indirectCmdsUAV,
+			.transparencyIndirectCmdBuffer = transparencyIndirectCmds,
+			.transparencyIndirectCmdBufferUAV = transparencyIndirectCmdsUAV,
+			.hizTexture = hiz_buffer,
+			.hizSRV = hiz_srv
+			});
+		auto& p5 = pass_GBuffer.insert_latedraw(rg, sceneView, {
+			.indirectCommands = indirectCmds,
+			.indirectCommandsUAV = indirectCmdsUAV,
+			.depth = depth,
+			.albedo = albedo,
+			.normal = normal,
+			.material = material,
+			.emissive = emissive,
+			.velocity = velocity,
+			.depth_dsv = depth_dsv,
+			.albedo_rtv = albedo_rtv,
+			.normal_rtv = normal_rtv,
+			.material_rtv = material_rtv,
+			.emissive_rtv = emissive_rtv,
+			.velocity_rtv = velocity_rtv
+			});
+		auto& p6 = pass_Lighting.insert(rg, sceneView, {
+			.frameBuffer = frameBuffer,
+			.depth = depth,
+			.albedo = albedo,
+			.normal = normal,
+			.material = material,
+			.emissive = emissive,
+			.depth_srv = depth_srv,
+			.albedo_srv = albedo_srv,
+			.normal_srv = normal_srv,
+			.material_srv = material_srv,
+			.emissive_srv = emissive_srv,
+			.fb_uav = fb_uav
+			});
+		if (sceneView->get_SceneGlobals().numTransparencyMeshInstances) {
+			auto& p7 = pass_Transparency.insert(rg, sceneView, {
+				.transparencyIndirectCommands = transparencyIndirectCmds,
+				.transparencyIndirectCommandsUAV = transparencyIndirectCmdsUAV,
+				.accumalationBuffer = accumalation_buffer,
+				.revealageBuffer = revealage_buffer,
+				.accumalationBuffer_rtv = accumalation_buffer_rtv,
+				.accumalationBuffer_srv = accumalation_buffer_srv,
+				.revealageBuffer_rtv = revealage_buffer_rtv,
+				.revealageBuffer_srv = revealage_buffer_srv,
+				.depth = depth,
+				.depth_dsv = depth_dsv,
+				.framebuffer = frameBuffer,
+				.fb_uav = fb_uav
+			});
+		}
+	}
 	rg.get_epilogue_pass().read(frameBuffer);
 	rg.execute(device->GetDefaultCommandList<CommandListType::Direct>());
 	return rg.get<ShaderResourceView>(fb_srv);

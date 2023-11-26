@@ -15,7 +15,4 @@ struct SceneMeshComponent : public SceneComponent {
 	bool drawBoundingBox = true;
 	[[deprecated]] bool isOccluder = true; // occludes other geometry
 	// ^ more like not-implemented :(
-#ifdef IMGUI_ENABLED
-	virtual void OnImGui();
-#endif
 };

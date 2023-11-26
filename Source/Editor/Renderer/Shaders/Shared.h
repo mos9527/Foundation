@@ -61,9 +61,10 @@ struct SceneGlobals // ! align for CB
     SceneCamera camera;
     SceneCamera cameraPrev; // previous frame
 
-    uint numMeshInstances;
+    uint numMeshInstances; // Opaque + Transparent
+    uint numTransparencyMeshInstances;
     uint numLights;
-    uint2 _pad;
+    uint _pad;
 
     uint frameFlags;
     uint frameIndex;

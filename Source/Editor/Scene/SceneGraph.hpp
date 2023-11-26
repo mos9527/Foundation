@@ -9,12 +9,13 @@ class SceneView;
 struct SceneImporter;
 /* a rooted graph representing the scene hierarchy */
 class SceneGraph {
-	friend struct SceneImporter;
-	friend class SceneView;
+	friend Scene;
+	friend SceneImporter;
+	friend SceneView;
 	entt::entity root;
 
-	unorderded_DAG<entt::entity,entt::entity> sceneForwardGraph;
-	unorderded_DAG<entt::entity,entt::entity> sceneBackwardGraph; // or sceneForwardGraph transposed
+	unordered_DAG<entt::entity,entt::entity> sceneForwardGraph;
+	unordered_DAG<entt::entity,entt::entity> sceneBackwardGraph; // or sceneForwardGraph transposed
 
 	Scene& scene;
 	void add_link(const entt::entity lhs, const entt::entity rhs) {
@@ -36,8 +37,8 @@ class SceneGraph {
 		};
 		dfs(dfs, entity, entity);
 	}
-public:
 	SceneGraph(Scene& scene);
+public:
 	// Getters
 	const entt::entity get_root() { return root; }
 	Scene& get_scene();
@@ -50,6 +51,9 @@ public:
 		update(entity, true); // ensure the component's associative states are correct upon creation
 		return componet;
 	};
+	template<IsSceneComponent T> T& emplace_at_root() {
+		return emplace_child_of<T>(root);
+	}
 	// Updates a selected component, and therefore scene.
 	// [associative]
 	// When true, updates associative properties for this subtree of component
@@ -77,12 +81,7 @@ public:
 	bool has_child(const entt::entity entity) {
 		return sceneForwardGraph.get_graph().contains(entity) && child_of(entity).size() > 0;
 	}
-	unorderded_DAG<entt::entity, entt::entity>::set_type& child_of(const entt::entity entity) {
+	unordered_DAG<entt::entity, entt::entity>::set_type& child_of(const entt::entity entity) {
 		return sceneForwardGraph.get_graph().at(entity);		
 	}
-#ifdef IMGUI_ENABLED
-	entt::entity ImGui_selected_entity = entt::tombstone;
-	void OnImGuiEntityWindow(entt::entity entity);
-	void OnImGui();
-#endif
 };

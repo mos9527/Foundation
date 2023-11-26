@@ -23,28 +23,22 @@ public:
 	SceneComponent(Scene& parent, entt::entity ent, SceneComponentType type) : Component(parent, ent, ComponentType::Scene), type(type) {};
 	
 	void update(bool associative = false);
+
+	void set_name(std::string name_) {name = name_;}
 	void set_local_transform(AffineTransform T);
+
 	inline AffineTransform get_local_transform() { return localTransform; }
 	inline AffineTransform get_global_transform() { return globalTransform; }
 	inline BoundingBox get_bounding_box() { return boundingBox; }
-	void set_name(std::string name_) {name = name_;}
+
 	const size_t get_version() const { return version; }
 	const char* get_name() const { return name.c_str(); }
 	entt::entity get_entity() const { return entity; }	
-
-#ifdef IMGUI_ENABLED
-	virtual void OnImGui() = 0;
-#endif
 };
 
 struct SceneCollectionComponent : public SceneComponent {
 	static const SceneComponentType type = SceneComponentType::Collection;
 	SceneCollectionComponent(Scene& parent, entt::entity ent) : SceneComponent(parent, ent, type) {};
-#ifdef IMGUI_ENABLED
-	virtual void OnImGui() {
-		// Nothing for Collection
-	};
-#endif
 };
 
 template<typename T> concept IsSceneComponent = std::is_base_of<SceneComponent, T>::value;
