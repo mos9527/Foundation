@@ -54,10 +54,10 @@ public:
 		executes = std::move(func);
 		return *this;
 	}
-	bool has_execute() { return executes != nullptr; }
-	bool has_dependencies() { return reads.size() > 0; }
-	bool reads_from(RgHandle resource) { return reads.contains(resource); }
-	bool writes_to(RgHandle resource) { return writes.contains(resource) || readwrites.contains(resource); }
+	inline bool has_execute() { return executes != nullptr; }
+	inline bool has_dependencies() { return reads.size() > 0 || readwrites.size() > 0; }
+	inline bool reads_from(RgHandle resource) { return reads.contains(resource); }
+	inline bool writes_to(RgHandle resource) { return writes.contains(resource) || readwrites.contains(resource); }
 };
 
 // DAG Graph for managing rendering work
@@ -74,7 +74,7 @@ class RenderGraph : graph_type {
 	RgRndPasses passes;
 	std::vector<RgRndPasses> layers;	
 
-	void build_graph() {
+	inline void build_graph() {
 		layers.clear();
 		for (entt::entity current : passes) {
 			auto& pass = registry.get<RenderGraphPass>(current);
@@ -134,14 +134,14 @@ public:
 		registry.emplace<RenderGraphPass>(epiloguePass, epiloguePass, L"Epilogue");
 		passes.push_back(epiloguePass);
 	};
-	RenderGraphPass& add_pass(const wchar_t* name=L"<unamed>") {
+	inline RenderGraphPass& add_pass(const wchar_t* name=L"<unamed>") {
 		entt::entity rg_entity = registry.create();
 		passes.push_back(rg_entity);
 		return registry.emplace<RenderGraphPass>(rg_entity,rg_entity,name);		
 	}
 	// created/transient resources -> stored as handles	
 	// note: resource object itself is cached. see RenderGraphResourceCache	
-	template<RgDefinedResource T> RgHandle& create(RgResourceTraits<T>::desc_type const& desc){
+	template<RgDefinedResource T> inline RgHandle& create(RgResourceTraits<T>::desc_type const& desc){
 		using traits = RgResourceTraits<T>;
 		auto entity = registry.create();
 		auto resource = traits::resource_type();
@@ -156,7 +156,7 @@ public:
 		return registry.emplace<RgHandle>(entity, handle);;
 	};
 	// imported resources -> stored as pointers
-	template<RgDefinedResource T> RgHandle& import(RgResourceTraits<T>::rhi_type* imported) {
+	template<RgDefinedResource T> inline RgHandle& import(RgResourceTraits<T>::rhi_type* imported) {
 		using traits = RgResourceTraits<T>;
 		auto entity = registry.create();
 		registry.emplace<typename RgResourceTraits<T>::rhi_type*>(entity, imported);
@@ -169,7 +169,7 @@ public:
 		return registry.emplace<RgHandle>(entity, handle);;
 	}
 	// retrives imported / created RHI object pointer
-	template<RgDefinedResource T> T* get(RgHandle handle) {	
+	template<RgDefinedResource T> inline T* get(RgHandle handle) {
 		if (!handle.imported) // created objects are stored in the cache
 			return cache.get<T>(handle);
 		else // pointers are stored as data in RG registry
@@ -177,21 +177,21 @@ public:
 	}
 	// retrives in-graph object reference
 	// RenderGraph contains RgHandle, and RgResource dervied objects
-	template<typename T> T& get(RgHandle handle) {
+	template<typename T> inline  T& get(RgHandle handle) {
 		return registry.get<T>(handle);
 	}
 	// retrives imported / created RHI object as Resource*
 	// if not convertible, nullptr is returned
 	// * applicalbe to Buffer & Texture
-	RHI::Resource* get_as_resource(RgHandle handle) {
+	inline RHI::Resource* get_as_resource(RgHandle handle) {
 		if (handle.type == RgResourceType::Buffer) return static_cast<RHI::Resource*>(get<RHI::Buffer>(handle));
 		if (handle.type == RgResourceType::Texture) return static_cast<RHI::Resource*>(get<RHI::Texture>(handle));
 		return nullptr;
 	}
-	RenderGraphPass& get_pass(entt::entity pass) {
+	inline RenderGraphPass& get_pass(entt::entity pass) {
 		return registry.get<RenderGraphPass>(pass);
 	}
-	RenderGraphPass& get_epilogue_pass() {
+	inline RenderGraphPass& get_epilogue_pass() {
 		return get_pass(epiloguePass);
 	}	
 	void execute(RHI::CommandList* cmd);	

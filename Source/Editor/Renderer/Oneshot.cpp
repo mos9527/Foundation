@@ -19,20 +19,21 @@ void OneshotPass<IBLPrefilterPass>::Process(TextureAsset* srcImage) {
 			cubeMap.get(), UnorderedAccessViewDesc::GetTexture2DArrayDesc(ResourceFormat::R32G32B32A32_FLOAT, i, 0, 6, 0)
 		));	
 	RenderGraph rg(cache);
-	std::vector<RgHandle*> rgCubemapUAV;
+	std::vector<RgHandle> rgCubemapUAV;
 	for (uint i = 0; i < numMips; i++)
-		rgCubemapUAV.push_back(&rg.import<UnorderedAccessView>(cubeMapUAV[i].get()));	
+		rgCubemapUAV.push_back(rg.import<UnorderedAccessView>(cubeMapUAV[i].get()));	
 	// Finalize handles	
 	proc_Prefilter.insert(rg, {
 		.panoSrv = rg.import<ShaderResourceView>(srcImage->textureSRV.get()),
 		.cubemapOut = rg.import<Texture>(cubeMap.get()),
-		.cubemapOutUAV = *rgCubemapUAV[0],
-		.radianceOut = *rgCubemapUAV[0], /* stub */
-		.irradianceOut = *rgCubemapUAV[0] /* stub */
+		.cubemapOutUAV = rgCubemapUAV[0],
+		.cubemapOutUAVs = rgCubemapUAV,
+		.radianceOut = rgCubemapUAV[0], /* stub */
+		.irradianceOut = rgCubemapUAV[0] /* stub */
 	});
 	// Acquire a free Direct context
-	auto* cmd = device->GetDefaultCommandList<CommandListType::Direct>();
-	CHECK(!cmd->IsOpen() && "The Default Direct Command list is in use!");
+	auto* cmd = device->GetDefaultCommandList<CommandListType::Compute>();
+	CHECK(!cmd->IsOpen() && "The Default Compute Command list is in use!");
 	PIXCaptureParameters captureParams = {};
 	captureParams.GpuCaptureParameters.FileName = (PWSTR)L"IBLPrefilter-Capture.wpix";
 

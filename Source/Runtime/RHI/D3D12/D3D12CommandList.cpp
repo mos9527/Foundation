@@ -38,31 +38,22 @@ namespace RHI {
 		dstLocation.SubresourceIndex = dstSubresource;
 		m_CommandList->CopyTextureRegion(&dstLocation, 0, 0, 0, &srcLocation, nullptr);
 	}
-	void CommandList::Barrier(Resource* res, ResourceState state, const uint* subresources, uint numSubresources) {
+	void CommandList::QueueTransitionBarrier(Resource* res, ResourceState state, const uint* subresources, uint numSubresources) {
 		// Barrier type check
 		CHECK(CommandListCanBarrier(m_Type, state) && "Invalid use of CommandList barrier. This type of command list cannot barrier such states");
 		for (uint i = 0; i < numSubresources; i++) {
 			uint subresource = *(subresources + i);
-			if (res->m_States[subresource] != state) {
-				SubresourceTransitionBarrier transition = CD3DX12_RESOURCE_BARRIER::Transition(
-					res->GetNativeResource(),
-					(D3D12_RESOURCE_STATES)res->GetSubresourceState(subresource),
-					(D3D12_RESOURCE_STATES)state,
-					subresource
-				);
-				auto it = m_QueuedBarriers.find(transition);
-				if (it != m_QueuedBarriers.end()) {
-					const_cast<SubresourceTransitionBarrier*>(&*it)->Transition.StateAfter = (D3D12_RESOURCE_STATES)state;
-				}
-				else {
-					m_QueuedBarriers.insert(transition);
-				}
-				res->m_States[subresource] = state;
-			}
+			m_Barriers.QueueTransition(res, subresource, state, (uint)res->m_States[subresource]);
 		}
 	}
-	void CommandList::Barrier(Resource* res, ResourceState state) {
-		Barrier(res, state, res->m_SubresourceRange.data(), res->m_SubresourceRange.size());
+	void CommandList::QueueTransitionBarrier(Resource* res, ResourceState state) {
+		QueueTransitionBarrier(res, state, res->m_SubresourceRange.data(), res->m_SubresourceRange.size());
+	}
+	void CommandList::QueueUAVBarrier(Resource* res) {
+		m_Barriers.QueueUAV(res);
+	}
+	void CommandList::QueueAliasingBarrier(Resource* before, Resource* after) {
+		m_Barriers.QueueAliasing(before, after);
 	}
 	CommandQueue* CommandList::GetCommandQueue() { return m_Device->GetCommandQueue(m_Type); }
 	SyncFence CommandList::Execute() {

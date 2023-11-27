@@ -442,6 +442,6 @@
     <Text Include="Source\Editor\Renderer\Shaders\Transparency.hlsl" />
     <Text Include="Source\Editor\Renderer\Shaders\TransparencyBlend.hlsl" />
     <Text Include="Source\Editor\Renderer\Shaders\LightingCommon.hlsli" />
-    <Text Include="Source\Editor\Renderer\Shaders\HDRI2Cubemap.hlsl" />
+    <Text Include="Source\Editor\Renderer\Shaders\HDRIProbe.hlsl" />
   </ItemGroup>
 </Project>

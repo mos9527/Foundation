@@ -190,14 +190,14 @@ void EditorWindow::Run() {
         viewport.frame = render.renderer->Render(sceneView);
     }
 
-    cmd->Barrier(swapchain->GetBackbuffer(bbIndex), ResourceState::RenderTarget);
+    cmd->QueueTransitionBarrier(swapchain->GetBackbuffer(bbIndex), ResourceState::RenderTarget);
     cmd->FlushBarriers();
     cmd->GetNativeCommandList()->OMSetRenderTargets(1, &swapchain->GetBackbufferRTV(bbIndex).descriptor.get_cpu_handle(), FALSE, nullptr);
     PIXBeginEvent(cmd->GetNativeCommandList(), 0, L"ImGui");
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd->GetNativeCommandList());
     PIXEndEvent(cmd->GetNativeCommandList());
 
-    cmd->Barrier(swapchain->GetBackbuffer(bbIndex), ResourceState::Present);
+    cmd->QueueTransitionBarrier(swapchain->GetBackbuffer(bbIndex), ResourceState::Present);
     cmd->FlushBarriers();
     cmd->Close();
     cmd->Execute();

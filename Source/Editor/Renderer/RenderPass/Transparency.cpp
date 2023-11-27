@@ -137,8 +137,8 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 		native->ClearRenderTargetView(r_acc_rtv->descriptor.get_cpu_handle(), r_acc->GetClearValue().color, 1, &scissorRect);		
 		native->ClearRenderTargetView(r_rev_rtv->descriptor.get_cpu_handle(), r_rev->GetClearValue().color, 1, &scissorRect);
 		CHECK(r_indirect_commands_uav->GetDesc().HasCountedResource() && "Invalid Command Buffer!");
-		ctx.cmd->Barrier(r_indirect_commands, ResourceState::IndirectArgument);
-		ctx.cmd->Barrier(r_depth, ResourceState::DepthRead);
+		ctx.cmd->QueueTransitionBarrier(r_indirect_commands, ResourceState::IndirectArgument);
+		ctx.cmd->QueueTransitionBarrier(r_depth, ResourceState::DepthRead);
 		ctx.cmd->FlushBarriers();
 		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[2] = {
 			r_acc_rtv->descriptor.get_cpu_handle(),
@@ -159,8 +159,7 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 			r_indirect_commands_uav->GetDesc().GetCounterOffsetInBytes()
 		);
 	});
-	return rg.add_pass(L"Transparency Blending")
-		.read(handles.framebuffer) // ! IMPORTANT. Since FB will be read again, barrier to read for any unordered access to be flushed before doing another set of RWs.
+	return rg.add_pass(L"Transparency Blending")		
 		.readwrite(handles.framebuffer)
 		.read(handles.accumalationBuffer)
 		.read(handles.revealageBuffer)

@@ -30,7 +30,7 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 			if (desc.allowUnorderedAccess()) 
 				state |= ResourceState::NonPixelShaderResoruce;
 			if (state != ResourceState::Common)
-				cmd->Barrier(res, state);
+				cmd->QueueTransitionBarrier(res, state);
 		}
 		cmd->FlushBarriers();
 		for (auto& rw : readwrites) {
@@ -38,7 +38,7 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 			if (!res) continue;
 
 			CHECK(res->GetDesc().allowUnorderedAccess());
-			cmd->Barrier(res, ResourceState::UnorderedAccess);
+			cmd->QueueUAVBarrier(res);
 		}
 		cmd->FlushBarriers();
 		for (auto& write : writes) {
@@ -53,7 +53,7 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 			if (desc.allowDepthStencil()) 
 				state |= ResourceState::DepthWrite;
 			if (state != ResourceState::Common) 
-				cmd->Barrier(res, state);
+				cmd->QueueTransitionBarrier(res, state);
 		}
 		cmd->FlushBarriers();
 		// all resources barriers & states are ready at this point		

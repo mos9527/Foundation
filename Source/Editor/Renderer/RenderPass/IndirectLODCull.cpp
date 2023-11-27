@@ -50,10 +50,10 @@ void IndirectLODCullPass::insert_execute(RenderGraphPass& pass, SceneView* scene
 			native->SetComputeRoot32BitConstant(3, r_transparency_indirect_cmd_buffer_uav->descriptor.get_heap_handle(), 1);
 			native->SetComputeRoot32BitConstant(4, r_hiz_srv->descriptor.get_heap_handle(), 0);
 			native->SetComputeRoot32BitConstant(4, r_hiz->GetDesc().mipLevels, 1);
-			ctx.cmd->Barrier(r_transparency_indirect_cmd_buffer, ResourceState::CopyDest);
+			ctx.cmd->QueueTransitionBarrier(r_transparency_indirect_cmd_buffer, ResourceState::CopyDest);
 			ctx.cmd->FlushBarriers();
 			ctx.cmd->ZeroBufferRegion(r_transparency_indirect_cmd_buffer, CommandBufferCounterOffset, sizeof(UINT));
-			ctx.cmd->Barrier(r_transparency_indirect_cmd_buffer, ResourceState::UnorderedAccess);
+			ctx.cmd->QueueTransitionBarrier(r_transparency_indirect_cmd_buffer, ResourceState::UnorderedAccess);
 		}
 		else {
 			native->SetPipelineState(*cullPassEarlyPSO);
@@ -63,10 +63,10 @@ void IndirectLODCullPass::insert_execute(RenderGraphPass& pass, SceneView* scene
 		native->SetComputeRootConstantBufferView(0, sceneView->get_SceneGlobalsBuffer()->GetGPUAddress());
 		native->SetComputeRootShaderResourceView(1, sceneView->get_SceneMeshInstancesBuffer()->GetGPUAddress());
 		native->SetComputeRootUnorderedAccessView(2, r_visibility_buffer->GetGPUAddress()); // u0 space0
-		ctx.cmd->Barrier(r_indirect_cmd_buffer, ResourceState::CopyDest);
+		ctx.cmd->QueueTransitionBarrier(r_indirect_cmd_buffer, ResourceState::CopyDest);
 		ctx.cmd->FlushBarriers();
 		ctx.cmd->ZeroBufferRegion(r_indirect_cmd_buffer, CommandBufferCounterOffset, sizeof(UINT));
-		ctx.cmd->Barrier(r_indirect_cmd_buffer, ResourceState::UnorderedAccess);
+		ctx.cmd->QueueTransitionBarrier(r_indirect_cmd_buffer, ResourceState::UnorderedAccess);
 		ctx.cmd->FlushBarriers();
 		// dispatch compute to cull on the gpu
 		native->Dispatch(DivRoundUp(sceneView->get_SceneGlobals().numMeshInstances, RENDERER_INSTANCE_CULL_THREADS), 1, 1);
@@ -79,10 +79,10 @@ RenderGraphPass& IndirectLODCullPass::insert_clear(RenderGraph& rg, SceneView* s
 		.execute([=](RgContext& ctx) -> void {
 			auto* r_visibility_buffer = ctx.graph->get<Buffer>(handles.visibilityBuffer);
 			auto state_prev = r_visibility_buffer->GetSubresourceState();
-			ctx.cmd->Barrier(r_visibility_buffer, ResourceState::CopyDest);
+			ctx.cmd->QueueTransitionBarrier(r_visibility_buffer, ResourceState::CopyDest);
 			ctx.cmd->FlushBarriers();			
 			ctx.cmd->ZeroBufferRegion(r_visibility_buffer, 0, r_visibility_buffer->GetDesc().sizeInBytes());
-			ctx.cmd->Barrier(r_visibility_buffer, state_prev);
+			ctx.cmd->QueueTransitionBarrier(r_visibility_buffer, state_prev);
 			ctx.cmd->FlushBarriers();
 	});
 }

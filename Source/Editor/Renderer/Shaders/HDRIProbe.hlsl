@@ -9,7 +9,7 @@ cbuffer Constants : register(b0, space0)
 SamplerState g_PanoSampler : register(s0, space0);
 // see https://github.com/KhronosGroup/glTF-IBL-Sampler/blob/master/lib/source/shaders/filter.frag
 [numthreads(RENDERER_FULLSCREEN_THREADS, RENDERER_FULLSCREEN_THREADS, 6)]
-void main(uint3 DTid : SV_DispatchThreadID)
+void main_pano2cube(uint3 DTid : SV_DispatchThreadID)
 {
     if (any(DTid.xy > uint2(width, height)))
         return;

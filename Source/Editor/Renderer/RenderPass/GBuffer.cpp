@@ -103,7 +103,7 @@ void GBufferPass::insert_execute(RenderGraphPass& pass, SceneView* sceneView, GB
 			r_velocity_rtv->descriptor
 		};		
 		CHECK(r_indirect_commands_uav->GetDesc().HasCountedResource() && "Invalid Command Buffer!");
-		ctx.cmd->Barrier(r_indirect_commands, ResourceState::IndirectArgument);
+		ctx.cmd->QueueTransitionBarrier(r_indirect_commands, ResourceState::IndirectArgument);
 		ctx.cmd->FlushBarriers();
 		native->OMSetRenderTargets(
 			5,

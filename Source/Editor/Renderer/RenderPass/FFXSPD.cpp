@@ -30,18 +30,23 @@ FFXSPDPass::FFXSPDPass(RHI::Device* device, const wchar_t* reduce) {
 	auto* cmd = device->GetDefaultCommandList<CommandListType::Compute>();
 	cmd->Begin();
 	cmd->ZeroBufferRegion(ffxPassCounter.get(), 0, ffxPassCounter->GetDesc().sizeInBytes());
-	cmd->Barrier(ffxPassCounter.get(), ResourceState::UnorderedAccess);
+	cmd->QueueTransitionBarrier(ffxPassCounter.get(), ResourceState::UnorderedAccess);
 	cmd->FlushBarriers();
 	cmd->Close();
 	cmd->Execute().Wait();	
 }
-RenderGraphPass& FFXSPDPass::insert(RenderGraph& rg, SceneView* sceneView, FFXSPDPassHandles&& handles) {
+RenderGraphPass& FFXSPDPass::insert(RenderGraph& rg, FFXSPDPassHandles&& handles) {
 	RenderGraphPass& pass = rg.add_pass(L"FFX SPD Downsample");
-	pass.read(handles.srcTexture);
-	pass.readwrite(handles.dstTexture);
+	if (handles.srcTexture != handles.dstTexture) {
+		pass.read(handles.srcTexture);
+		pass.readwrite(handles.dstTexture);
+	}
+	else {
+		pass.readwrite(handles.dstTexture);
+	}
 	return pass.execute([=](RgContext& ctx) -> void {			
-			auto* r_dst_texture = ctx.graph->get<Texture>(handles.dstTexture);
 			auto* r_src_texture = ctx.graph->get<Texture>(handles.srcTexture);
+			auto* r_dst_texture = ctx.graph->get<Texture>(handles.dstTexture);
 
 			uint numMips = r_dst_texture->GetDesc().mipLevels;
 			uint numSlices = r_dst_texture->GetDesc().arraySize;
@@ -67,12 +72,12 @@ RenderGraphPass& FFXSPDPass::insert(RenderGraph& rg, SceneView* sceneView, FFXSP
 			if (r_src_texture != r_dst_texture) {
 				// When different src-dst is used, MIP 0 is directly copied from src to dst
 				auto src_original_state = r_src_texture->GetSubresourceState(0);
-				ctx.cmd->Barrier(r_src_texture, ResourceState::CopySource, 0);
-				ctx.cmd->Barrier(r_dst_texture, ResourceState::CopyDest, 0);
+				ctx.cmd->QueueTransitionBarrier(r_src_texture, ResourceState::CopySource, 0);
+				ctx.cmd->QueueTransitionBarrier(r_dst_texture, ResourceState::CopyDest, 0);
 				ctx.cmd->FlushBarriers();
 				ctx.cmd->CopySubresource(r_src_texture, r_src_texture->GetDesc().indexSubresource(0, 0, 0), r_dst_texture, r_dst_texture->GetDesc().indexSubresource(0, 0, 0));			
-				ctx.cmd->Barrier(r_src_texture, src_original_state, 0);
-				ctx.cmd->Barrier(r_dst_texture, ResourceState::UnorderedAccess, 0);
+				ctx.cmd->QueueTransitionBarrier(r_src_texture, src_original_state, 0);
+				ctx.cmd->QueueTransitionBarrier(r_dst_texture, ResourceState::UnorderedAccess, 0);
 				ctx.cmd->FlushBarriers();
 			}
 			// otherwise, assume dst texture has its mip[0] set as downsample starting point

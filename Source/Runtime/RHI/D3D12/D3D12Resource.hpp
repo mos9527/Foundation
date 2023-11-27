@@ -1,7 +1,5 @@
 #pragma once
-#include "D3D12Device.hpp"
 #include "D3D12Types.hpp"
-#include "D3D12DescriptorHeap.hpp"
 #define RESOURCE_BARRIER_ALL_SUBRESOURCES D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES 
 #define RAW_BUFFER_STRIDE 0u
 namespace RHI {

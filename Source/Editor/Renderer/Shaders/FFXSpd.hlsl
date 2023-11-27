@@ -12,15 +12,15 @@ AF4 SpdLoadSourceImage(ASU2 p, AU1 slice)
 {
     if (any(p > g_SpdConstant.dimensions))
         return splat4(0);
-    RWTexture2D<float> mip0 = ResourceDescriptorHeap[g_SpdConstant.dstMipHeapIndex[0].x];
-    return mip0[p];
+    RWTexture2DArray<float4> mip0 = ResourceDescriptorHeap[g_SpdConstant.dstMipHeapIndex[0].x];
+    return mip0[uint3(p, slice)];
 }
 AF4 SpdLoad(ASU2 p, AU1 slice)
 {    
     if (any(p > g_SpdConstant.dimensions))
         return splat4(0);
-    RWTexture2D<float> mip5 = ResourceDescriptorHeap[g_SpdConstant.dstMipHeapIndex[5 + 1].x];
-    return mip5[p];
+    RWTexture2DArray<float4> mip5 = ResourceDescriptorHeap[g_SpdConstant.dstMipHeapIndex[5 + 1].x];
+    return mip5[uint3(p, slice)];
 } // load from output MIP 5 (offset by 1 since mip 0 is the source image)
 // same for below
 void SpdStore(ASU2 p, AF4 value, AU1 mip, AU1 slice)
@@ -29,12 +29,12 @@ void SpdStore(ASU2 p, AF4 value, AU1 mip, AU1 slice)
         return;
     if (mip == 5)
     {
-        globallycoherent RWTexture2D<float> mip6 = ResourceDescriptorHeap[g_SpdConstant.dstMipHeapIndex[6].x]; // must be synced
-        mip6[p] = value;
+        globallycoherent RWTexture2DArray<float4> mip6 = ResourceDescriptorHeap[g_SpdConstant.dstMipHeapIndex[6].x]; // must be synced
+        mip6[uint3(p, slice)] = value;
         return;
     }
-    RWTexture2D<float> mipN = ResourceDescriptorHeap[g_SpdConstant.dstMipHeapIndex[mip + 1].x];
-    mipN[p] = value;
+    RWTexture2DArray<float4> mipN = ResourceDescriptorHeap[g_SpdConstant.dstMipHeapIndex[mip + 1].x];
+    mipN[uint3(p, slice)] = value;
 }
 void SpdIncreaseAtomicCounter(AU1 slice)
 {

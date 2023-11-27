@@ -47,7 +47,7 @@ RenderGraphPass& HierarchalDepthPass::insert(RenderGraph& rg, SceneView* sceneVi
 			native->SetComputeRootConstantBufferView(0, depthSampleConstants->GetGPUAddress());
 			native->Dispatch(DivRoundUp(constants.dimensions.x, RENDERER_FULLSCREEN_THREADS), DivRoundUp(constants.dimensions.y, RENDERER_FULLSCREEN_THREADS), 1);
 		});
-	return spdPass.insert(rg, sceneView, {
+	return spdPass.insert(rg, {
 		.srcTexture = handles.hizTexture,
 		.dstTexture = handles.hizTexture,
 		.dstMipUAVs = handles.hizUAVs

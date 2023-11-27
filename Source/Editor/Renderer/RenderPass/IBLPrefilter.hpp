@@ -3,9 +3,9 @@
 #include "FFXSpd.hpp"
 
 class IBLPrefilterPass {
-	std::unique_ptr<RHI::Shader> HDRI2CubemapCS;
-	std::unique_ptr<RHI::RootSignature> HDRI2CubemapRS;
-	std::unique_ptr<RHI::PipelineState> HDRI2CubemapPSO;
+	std::unique_ptr<RHI::Shader> Probe2CubemapCS;
+	std::unique_ptr<RHI::RootSignature> RS;
+	std::unique_ptr<RHI::PipelineState> Probe2CubemapPSO;
 
 	FFXSPDPass spdPass;
 public:
@@ -13,7 +13,8 @@ public:
 		RgHandle& panoSrv; // Orignial HDRI imported ShaderResourceView
 
 		RgHandle& cubemapOut; // Original HDRI + Mips
-		RgHandle& cubemapOutUAV;
+		RgHandle& cubemapOutUAV; // MIP0 UAV
+		std::vector<RgHandle> cubemapOutUAVs; // UAVs for all mips
 
 		RgHandle& radianceOut; // Specular prefilter
 		RgHandle& irradianceOut; // Diffuse prefilter

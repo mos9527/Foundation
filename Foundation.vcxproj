@@ -388,7 +388,7 @@
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Editor\Renderer\Shaders\HDRI2Cubemap.hlsl">
+    <Text Include="Source\Editor\Renderer\Shaders\HDRIProbe.hlsl">
       <FileType>Document</FileType>
     </Text>
   </ItemGroup>
