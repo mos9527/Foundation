@@ -358,7 +358,23 @@ namespace RHI {
 			desc.Format = ResourceFormatToD3DFormat(viewFormat);
 			desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 			desc.Texture2D.MipSlice = MipSlice;
-			desc.Texture2D.PlaneSlice = PlaneSlice;			
+			desc.Texture2D.PlaneSlice = PlaneSlice;
+			return { desc };
+		}
+		static const UnorderedAccessViewDesc GetTexture2DArrayDesc(
+			ResourceFormat viewFormat,
+			uint MipSlice,
+			uint FirstArraySlice,
+			uint ArraySize,
+			uint PlaneSlice
+		) {
+			D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
+			desc.Format = ResourceFormatToD3DFormat(viewFormat);
+			desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
+			desc.Texture2DArray.MipSlice = MipSlice;
+			desc.Texture2DArray.FirstArraySlice = FirstArraySlice;
+			desc.Texture2DArray.ArraySize = ArraySize;
+			desc.Texture2DArray.PlaneSlice = PlaneSlice;
 			return { desc };
 		}
 	};

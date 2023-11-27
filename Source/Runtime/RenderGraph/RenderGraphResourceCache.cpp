@@ -5,7 +5,7 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 	std::unordered_map<entt::entity, bool> resource_dirty;
 	// imported resources are left as is since we'd expect them to be usable at all times within the registry	
 	// created resources may mutate over different graph iterations (i.e. changed buffer sizes) so we'd watch them here:
-	for (auto& buffer : rg_registry.storage<RgBuffer>()) {
+	for (auto& buffer : rg_registry.storage<RgBuffer>()) {		
 		auto handle = buffer.entity;
 		if (!contains<RHI::Buffer>(handle) || get<RHI::Buffer>(handle)->GetDesc() != buffer.desc)
 		{
@@ -32,6 +32,7 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 
 		auto& viewing_handle = rg_registry.get<RgHandle>(view.entity);
 		auto& viewed_handle = rg_registry.get<RgHandle>(view.desc.viewed);
+		CHECK(!viewed_handle.imported && "Imported assets does not support automatic resoruce view build!");
 		RHI::Resource* ptr = nullptr;
 		switch (viewed_handle.type) {
 		case RgResourceType::Buffer:

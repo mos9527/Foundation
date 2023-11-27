@@ -10,14 +10,15 @@ class IBLPrefilterPass {
 	FFXSPDPass spdPass;
 public:
 	struct IBLPrefilterPassHandles {
-		RHI::ShaderResourceView* HDRI;
+		RgHandle& panoSrv; // Orignial HDRI imported ShaderResourceView
+
 		RgHandle& cubemapOut; // Original HDRI + Mips
 		RgHandle& cubemapOutUAV;
 
 		RgHandle& radianceOut; // Specular prefilter
-		RgHandle& irridianceOut; // Diffuse prefilter
+		RgHandle& irradianceOut; // Diffuse prefilter
 	};
 
 	IBLPrefilterPass(RHI::Device* device);
-	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, IBLPrefilterPassHandles&& handles);
+	RenderGraphPass& insert(RenderGraph& rg, IBLPrefilterPassHandles&& handles);
 };

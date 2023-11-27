@@ -209,6 +209,10 @@ namespace RHI {
         m_ZeroBuffer->SetName(L"Zero buffer");
         std::vector<uint> zeros(RHI_ZERO_BUFFER_SIZE);
         m_ZeroBuffer->Update(zeros.data(), sizeof(uint) * RHI_ZERO_BUFFER_SIZE);
+#ifdef _DEBUG
+        PIXLoadLatestWinPixGpuCapturerLibrary();
+#endif 
+
     }
     Device::~Device() {
         m_Factory->Release();        

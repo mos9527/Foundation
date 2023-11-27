@@ -1,8 +1,7 @@
 #include "Widgets/Widgets.hpp"
 #include "Editor.hpp"
-#include <commdlg.h>
-#include <wingdi.h>
 #include "Input/KBMCamera.hpp"
+#include "Win32/Win32IO.hpp"
 using namespace RHI;
 using namespace EditorGlobalContext;
 #define IMGUI_DEFAULT_FONT "Resources/Fonts/DroidSansFallback.ttf"
@@ -129,21 +128,22 @@ void Run_ImGui() {
 
         if (ImGui::BeginMenuBar()) {
             if (ImGui::MenuItem("Open")) {
-                OPENFILENAME ofn{};
-                std::wstring pathBuffer;
-                pathBuffer.resize(2048);
-                ofn.lpstrFile = (LPWSTR)pathBuffer.c_str();
-                ofn.lStructSize = sizeof(ofn);
-                ofn.hwndOwner = window;
-                ofn.lpstrFilter = L"All Files (*.*)\0*.*\0";                
-                ofn.nMaxFile = pathBuffer.size();
-                ofn.lpstrTitle = L"Load a Scene File";
-                ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
-                CHECK_HR(GetOpenFileName(&ofn));
-                Load_Scene(pathBuffer);
+                auto pathName = Win32_GetOpenFileNameSimple(window);
+                if (pathName.size())
+                    Load_Scene(pathName);
             }
             if (ImGui::MenuItem("Reset")) {
-                Reset_Scene();
+                Reset_Scene();                
+            }
+            {
+                static bool isOpen = false;
+                if (ImGui::MenuItem("[TEST] Prefilter Process")) {
+                    isOpen = true;
+                }
+                if (ImGui::Begin("Prefilter", &isOpen)){
+                    OnImGui_PrefilterProcessWidget();
+                }
+                ImGui::End();
             }
             ImGui::EndMenuBar();
         }

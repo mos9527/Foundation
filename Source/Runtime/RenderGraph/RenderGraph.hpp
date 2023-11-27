@@ -139,7 +139,7 @@ public:
 		passes.push_back(rg_entity);
 		return registry.emplace<RenderGraphPass>(rg_entity,rg_entity,name);		
 	}
-	// created resources -> stored as handles
+	// created/transient resources -> stored as handles	
 	// note: resource object itself is cached. see RenderGraphResourceCache	
 	template<RgDefinedResource T> RgHandle& create(RgResourceTraits<T>::desc_type const& desc){
 		using traits = RgResourceTraits<T>;
@@ -155,9 +155,25 @@ public:
 		};		
 		return registry.emplace<RgHandle>(entity, handle);;
 	};
+	// imported resources -> stored as pointers
+	template<RgDefinedResource T> RgHandle& import(RgResourceTraits<T>::rhi_type* imported) {
+		using traits = RgResourceTraits<T>;
+		auto entity = registry.create();
+		registry.emplace<typename RgResourceTraits<T>::rhi_type*>(entity, imported);
+		RgHandle handle{
+			.version = 0,
+			.type = traits::type_enum,
+			.entity = entity,
+			.imported = true
+		};
+		return registry.emplace<RgHandle>(entity, handle);;
+	}
 	// retrives imported / created RHI object pointer
-	template<RgDefinedResource T> T* get(RgHandle handle) {		
-		return cache.get<T>(handle);
+	template<RgDefinedResource T> T* get(RgHandle handle) {	
+		if (!handle.imported) // created objects are stored in the cache
+			return cache.get<T>(handle);
+		else // pointers are stored as data in RG registry
+			return registry.get<T*>(handle);
 	}
 	// retrives in-graph object reference
 	// RenderGraph contains RgHandle, and RgResource dervied objects

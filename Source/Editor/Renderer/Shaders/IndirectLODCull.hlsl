@@ -24,7 +24,7 @@ void screenspaceBoundingBox(BoundingBox bbBox, out BoundingBox bbBoxss, out floa
     float2 bbMinSS = (bbBoxss.Center - bbBoxss.Extents).xy;
     float2 bbMaxSS = (bbBoxss.Center + bbBoxss.Extents).xy;
     bbBoxRectUV = float4(saturate(clip2UV(bbMaxSS)), saturate(clip2UV(bbMinSS))); // max, min
-    float2 bbBoxRectSize = bbBoxss.Extents.xy * 2 * g_SceneGlobals.frameDimension; // extents are half-widths of the axis
+    float2 bbBoxRectSize = bbBoxss.Extents.xy * 4 * g_SceneGlobals.frameDimension; // extents are half-widths of the axis
     hizLOD = floor(log2(max(bbBoxRectSize.x, bbBoxRectSize.y)));
     float bbArea = bbBoxss.Extents.x * bbBoxss.Extents.y / 4;
     LOD = (MAX_LOD_COUNT - 1) * clamp(-0.5 * log2(bbArea), 0, 1);

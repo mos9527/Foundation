@@ -92,7 +92,6 @@ public:
 	template<Asset T> void clean() {
 		assetRegistry.clean<T>();
 	}
-private:
 	template<Asset T> AssetHandle create() {
 		return assetRegistry.create<T>();
 	}

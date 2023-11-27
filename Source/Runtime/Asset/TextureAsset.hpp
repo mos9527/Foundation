@@ -23,10 +23,13 @@ public:
 };
 
 struct TextureAsset {
+private:
+	bool isUploaded = false;
+public:
 	const static AssetType type = AssetType::Texture;
 	TextureBuffer texture;
 	std::unique_ptr<RHI::ShaderResourceView> textureSRV;
-
+	bool IsUploaded() { return isUploaded; }
 	// Creates a texture of 1 slice, 1 mip, in RGBA8UNORM format, for this bitmap
 	TextureAsset(RHI::Device* device, Bitmap32bpp* bitmap);
 	// Creates a texture of 1 slice, 1 mip, in RGBA32FLOAT format. Only used for HDRI probes.

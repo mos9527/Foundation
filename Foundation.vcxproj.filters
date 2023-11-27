@@ -171,6 +171,12 @@
     <ClCompile Include="Source\Editor\Widgets\TransformWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\Widgets\PrefilterProcessWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Editor\Win32\Win32IO.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">
@@ -408,6 +414,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\Renderer\Oneshot.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\Win32\Win32IO.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -29,6 +29,7 @@ MeshAsset::MeshAsset(RHI::Device* device, StaticMesh* data) {
 }
 
 void MeshAsset::Upload(UploadContext* ctx){
+	CHECK(!isUploaded);
 	ctx->CopyBufferRegion(&vertexBuffer->loadBuffer, &vertexBuffer->buffer, 0, 0, vertexBuffer->buffer.GetDesc().sizeInBytes());	
 	for (uint i = 0; i < MAX_LOD_COUNT; i++) {
 		auto* lod = lodBuffers[i].get();
@@ -39,4 +40,5 @@ void MeshAsset::Upload(UploadContext* ctx){
 		ctx->CopyBufferRegion(&lod->loadMeshletTriangleBuffer, &lod->meshletTriangleBuffer, 0, 0, lod->meshletTriangleBuffer.GetDesc().sizeInBytes());
 #endif
 	}
+	isUploaded = true;
 }

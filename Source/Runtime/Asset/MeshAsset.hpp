@@ -98,7 +98,9 @@ public:
 				{ "TEXCOORD" ,RHI::ResourceFormat::R32G32_FLOAT }
 			};
 		}
-	};	
+	};
+private:
+	bool isUploaded = false;
 public:
 	DirectX::BoundingBox boundingBox;
 	DirectX::BoundingSphere boundingSphere;	
@@ -106,6 +108,7 @@ public:
 	std::unique_ptr<MeshVertexBuffer<Vertex>> vertexBuffer;
 	
 	MeshAsset(RHI::Device* device, StaticMesh* data);	
+	bool IsUploaded() { return isUploaded; }
 	void Upload(UploadContext* ctx);
 	void Clean() {
 		vertexBuffer->Clean();

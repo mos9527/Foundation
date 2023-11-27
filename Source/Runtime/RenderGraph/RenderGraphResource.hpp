@@ -21,6 +21,7 @@ struct RgHandle {
 	uint version;
 	RgResourceType type; 
 	entt::entity entity = entt::tombstone; // entity within RenderGraph's registry. indexes `RgHandle`. may index `RgResource`
+	bool imported = false;
 
 	inline operator entt::entity() const { return entity; }
 	// since each entity has only one assigned type, we don't compare type since entity comparision will suffice

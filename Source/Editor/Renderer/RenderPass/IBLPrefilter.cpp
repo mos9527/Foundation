@@ -18,11 +18,11 @@ IBLPrefilterPass::IBLPrefilterPass(RHI::Device* device) : spdPass(device) {
 	HDRI2CubemapPSO = std::make_unique<PipelineState>(device, std::move(pso));
 };
 
-RenderGraphPass& IBLPrefilterPass::insert(RenderGraph& rg, SceneView* sceneView, IBLPrefilterPassHandles&& handles) {
-	return rg.add_pass(L"HDRI To Cubemap")
+RenderGraphPass& IBLPrefilterPass::insert(RenderGraph& rg, IBLPrefilterPassHandles&& handles) {
+	auto& pass = rg.add_pass(L"HDRI To Cubemap")
 		.readwrite(handles.cubemapOut)
 		.execute([=](RgContext& ctx) {
-		auto* r_hdri_srv = handles.HDRI;
+		auto* r_hdri_srv = ctx.graph->get<ShaderResourceView>(handles.panoSrv);
 		auto* r_cubemap = ctx.graph->get<Texture>(handles.cubemapOut);
 		auto* r_cubemap_uav = ctx.graph->get<UnorderedAccessView>(handles.cubemapOutUAV);		
 		auto native = ctx.cmd->GetNativeCommandList();
@@ -34,4 +34,6 @@ RenderGraphPass& IBLPrefilterPass::insert(RenderGraph& rg, SceneView* sceneView,
 		native->SetComputeRoot32BitConstant(0, r_cubemap->GetDesc().height, 3);
 		native->Dispatch(DivRoundUp(r_cubemap->GetDesc().width, RENDERER_FULLSCREEN_THREADS), DivRoundUp(r_cubemap->GetDesc().height, RENDERER_FULLSCREEN_THREADS), 1);
 	});
+	rg.get_epilogue_pass().read(handles.cubemapOut);
+	return pass;
 }

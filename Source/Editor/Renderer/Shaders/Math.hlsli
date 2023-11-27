@@ -254,7 +254,7 @@ float3 UV2XYZ(float2 uv, uint face)
     float3 R;
     switch (face)
     {
-        // ** https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-resources-textures-intro
+        // see https://github.com/KhronosGroup/glTF-IBL-Sampler/blob/master/lib/source/shaders/filter.frag
         case 0: // +x
             R = float3(1.0, uv.y, -uv.x);
             break;
@@ -281,7 +281,7 @@ float2 XYZToPanoUV(float3 dir)
     // tan(elevation) = z / x
     // cos(azimuth) = y
     // take the inverse and map into UV space
-    return float2(0.5f + 0.5f * atan2(dir.z,dir.x) / M_PI, 1.f - acos(dir.y) / M_PI);
+    return float2(0.5f + 0.5f * atan2(dir.z,dir.x) / M_PI, acos(dir.y) / M_PI);
 }
 float3 UV2WorldSpace(float2 UV, float Zss, matrix inverseViewProjection)
 {

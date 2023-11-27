@@ -17,4 +17,5 @@ void TextureAsset::Upload(UploadContext* ctx) {
 		0,
 		desc.mipLevels
 	));
+	isUploaded = true;
 }

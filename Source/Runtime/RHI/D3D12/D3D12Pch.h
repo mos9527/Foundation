@@ -10,6 +10,7 @@
 #include <dxgi1_6.h>
 #include <d3dcompiler.h>
 #include <dxcapi.h>
+#define USE_PIX
 #include <pix3.h>
 
 #define D3D12MA_D3D12_HEADERS_ALREADY_INCLUDED
