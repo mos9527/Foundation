@@ -10,12 +10,17 @@ Scene& SceneGraph::get_scene() {
 }
 void SceneGraph::update_transform(SceneComponent* parent, SceneComponent* child) {	
 	child->version = get_scene().version;
-	child->globalTransform = parent->globalTransform * child->localTransform;
+	if (parent != child) {
+		child->globalTransform = parent->globalTransform * child->localTransform;
+	}
+	else {
+		child->globalTransform = child->localTransform;
+	}
 }
 void SceneGraph::update_transform(const entt::entity entity) {		
 	update();
 	reduce(entity, [&](entt::entity current, entt::entity parent) -> void {
-		if (current == parent && current != root) {			
+		if (current == parent && current != root) {
 			parent = parent_of(current);
 		}
 		SceneComponent* parentComponent = get_base(parent);

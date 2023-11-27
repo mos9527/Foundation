@@ -109,6 +109,7 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 	auto dfs_nodes = [&](auto& func, aiNode* node, entt::entity parent) -> void {
 		auto entity = sceneOut.create<SceneCollectionComponent>();
 		SceneCollectionComponent& component = sceneOut.emplace<SceneCollectionComponent>(entity);
+		component.localTransform = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1)).Transpose();
 		component.set_name(node->mName.C_Str());
 		// localTransforms are not updated here. This gets invoked in the end of the graph build.
 		sceneOut.graph->add_link(parent, entity);
@@ -116,10 +117,9 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 			auto mesh = scene->mMeshes[node->mMeshes[i]];
 			auto meshEntity = sceneOut.create<SceneCollectionComponent>();
 			SceneMeshComponent& meshComponent = sceneOut.emplace<SceneMeshComponent>(meshEntity);
-			sceneOut.graph->add_link(entity, meshEntity);
-			meshComponent.localTransform = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1)).Transpose();
+			sceneOut.graph->add_link(entity, meshEntity);			
 			meshComponent.materialAsset = material_mapping[mesh->mMaterialIndex];
-			meshComponent.meshAsset = mesh_mapping[node->mMeshes[i]];
+			meshComponent.meshAsset = mesh_mapping[node->mMeshes[i]];			
 		}
 		for (UINT i = 0; i < node->mNumChildren; i++)
 			func(func, node->mChildren[i], entity);

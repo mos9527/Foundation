@@ -167,6 +167,7 @@
     <ClCompile Include="Source\Editor\Widgets\RendererWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\SceneGraphWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\SceneMeshComponentWidget.cpp" />
+    <ClCompile Include="Source\Editor\Widgets\TransformWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\ViewportWidget.cpp" />
     <ClCompile Include="Source\Runtime\Asset\TextureAsset.cpp" />
     <ClCompile Include="Source\Runtime\Asset\TextureImporter.hpp" />

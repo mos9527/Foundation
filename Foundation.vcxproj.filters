@@ -168,6 +168,9 @@
     <ClCompile Include="Source\Editor\Renderer\Oneshot.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\Widgets\TransformWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">

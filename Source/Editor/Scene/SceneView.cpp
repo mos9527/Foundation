@@ -1,6 +1,5 @@
 #include "SceneView.hpp"
 bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& frame) {
-	// Only update scene when it's updated	
 	auto& instances = scene.storage<SceneMeshComponent>();
 	auto& materials = scene.storage<AssetMaterialComponent>();
 	auto& lights = scene.storage<SceneLightComponent>();

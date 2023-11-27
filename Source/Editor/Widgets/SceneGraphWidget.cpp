@@ -28,6 +28,8 @@ void OnImGui_SceneComponentWidget() {
 			SceneComponentType type = scene.scene->get_type<SceneComponentType>(selected);
 			SceneComponent* componet = scene.scene->get_base<SceneComponent>(selected);
 			ImGui::Text("Version: %d", componet->get_version());
+			if (selected != scene.scene->graph->get_root())
+				OnImGui_SceneComponent_TransformWidget(componet);
 			switch (type)
 			{
 				case Collection:
