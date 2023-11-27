@@ -443,5 +443,6 @@
     <Text Include="Source\Editor\Renderer\Shaders\TransparencyBlend.hlsl" />
     <Text Include="Source\Editor\Renderer\Shaders\LightingCommon.hlsli" />
     <Text Include="Source\Editor\Renderer\Shaders\HDRIProbe.hlsl" />
+    <Text Include="Source\Editor\Renderer\Shaders\IBL.hlsli" />
   </ItemGroup>
 </Project>

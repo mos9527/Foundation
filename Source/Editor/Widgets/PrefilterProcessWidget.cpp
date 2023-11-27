@@ -9,7 +9,7 @@ void OnImGui_PrefilterProcessWidget() {
 	static AssetHandle loadedAsset;
 	static std::unique_ptr<OneshotPass<IBLPrefilterPass>> filterPass;
 	if (filterPass.get() == nullptr) 
-		filterPass = std::make_unique<OneshotPass<IBLPrefilterPass>>(device);
+		filterPass = std::make_unique<OneshotPass<IBLPrefilterPass>>(device, 512);
 	ImGui::Text("File:%s", selectedFile.c_str());
 	ImGui::SameLine();
 	if (ImGui::Button("Open")) {

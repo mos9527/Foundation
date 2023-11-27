@@ -265,6 +265,37 @@ namespace RHI {
 			desc.Texture2D.MipLevels = MipLevels;
 			return { desc };
 		}
+		static const ShaderResourceViewDesc GetTextureCubeDesc(
+			ResourceFormat viewFormat,
+			UINT MostDetailedMip,
+			UINT MipLevels
+		) {
+			D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+			desc.Format = ResourceFormatToD3DFormat(viewFormat);
+			desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+			desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			desc.TextureCube.MipLevels = MipLevels;
+			desc.TextureCube.MostDetailedMip = MostDetailedMip;
+			desc.TextureCube.ResourceMinLODClamp = 0;
+			return { desc };
+		}
+		static const ShaderResourceViewDesc GetTextureCubeArrayDesc(
+			ResourceFormat viewFormat,
+			UINT MostDetailedMip,
+			UINT MipLevels,
+			UINT First2DArrayFace,
+			UINT NumCubes
+		) {
+			D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+			desc.Format = ResourceFormatToD3DFormat(viewFormat);
+			desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBEARRAY;
+			desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			desc.TextureCubeArray.First2DArrayFace = First2DArrayFace;
+			desc.TextureCubeArray.MostDetailedMip = MostDetailedMip;
+			desc.TextureCubeArray.MipLevels = MipLevels;
+			desc.TextureCubeArray.NumCubes = NumCubes;
+			return { desc };
+		}
 	};
 	struct DepthStencilViewDesc {
 		D3D12_DEPTH_STENCIL_VIEW_DESC desc;

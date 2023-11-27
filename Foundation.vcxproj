@@ -293,6 +293,9 @@
     <None Include="Source\Editor\Renderer\RenderPass\DeferredLighting.hpp" />
     <None Include="Source\Editor\Renderer\Shaders\BRDF.hlsli" />
     <None Include="Source\Editor\Renderer\Shaders\Common.hlsli" />
+    <Text Include="Source\Editor\Renderer\Shaders\IBL.hlsli">
+      <FileType>Document</FileType>
+    </Text>
     <None Include="Source\Editor\Renderer\Shaders\Math.hlsli" />
     <None Include="vcpkg.json" />
   </ItemGroup>
