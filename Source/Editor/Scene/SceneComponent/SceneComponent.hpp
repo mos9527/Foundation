@@ -20,23 +20,25 @@ private:
 	const SceneComponentType type;
 	size_t version = 0;
 
-public:
 	bool enabled = true;
+public:
 
 	SceneComponent(Scene& parent, entt::entity ent, SceneComponentType type) : Component(parent, ent, ComponentType::Scene), type(type) {};
 	
-	void update(bool associative = false);
+	void update();
 
 	void set_name(std::string name_) {name = name_;}
 	void set_local_transform(AffineTransform T);
+	void set_enabled(bool enabled);
 
 	inline AffineTransform get_local_transform() { return localTransform; }
 	inline AffineTransform get_global_transform() { return globalTransform; }
 	inline BoundingBox get_bounding_box() { return boundingBox; }
 
-	const size_t get_version() const { return version; }
-	const char* get_name() const { return name.c_str(); }
-	entt::entity get_entity() const { return entity; }		
+	inline const size_t get_version() const { return version; }
+	inline const char* get_name() const { return name.c_str(); }
+	inline entt::entity get_entity() const { return entity; }		
+	inline bool get_enabled() const { return enabled; }
 };
 
 struct SceneCollectionComponent : public SceneComponent {

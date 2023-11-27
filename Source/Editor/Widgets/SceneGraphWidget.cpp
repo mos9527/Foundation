@@ -27,6 +27,7 @@ void OnImGui_SceneComponentWidget() {
 		if (scene.scene->valid<SceneComponentType>(selected)) {
 			SceneComponentType type = scene.scene->get_type<SceneComponentType>(selected);
 			SceneComponent* componet = scene.scene->get_base<SceneComponent>(selected);
+			ImGui::Text("Version: %d", componet->get_version());
 			switch (type)
 			{
 				case Collection:
@@ -48,7 +49,7 @@ void OnImGui_SceneComponentWidget() {
 }
 void OnImGui_SceneGraphWidget() {
 	if (ImGui::Begin("Scene")) {
-		auto dfs_nodes = [&](auto& func, entt::entity entity, uint depth, bool enabled) -> void {
+		auto dfs_nodes = [&](auto& func, entt::entity entity, uint depth) -> void {
 			SceneComponentType type = scene.scene->get_type<SceneComponentType>(entity);
 			SceneComponent* componet = scene.scene->get_base<SceneComponent>(entity);
 			uint stack_count = 0;
@@ -56,14 +57,17 @@ void OnImGui_SceneGraphWidget() {
 			if (selected == entity)
 				flags |= ImGuiTreeNodeFlags_Selected;
 			size_t id = entt::to_integral(entity);
-			ImGui::PushStyleColor(ImGuiCol_Text, enabled ? IM_COL32_WHITE : IM_COL32(127, 127, 127, 127));
+			ImGui::PushStyleColor(ImGuiCol_Text, componet->get_enabled() ? IM_COL32_WHITE : IM_COL32(127, 127, 127, 127));
 			float offset = ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2.5f;
 			float cursorX = ImGui::GetCursorPosX();
 			ImGui::SetCursorPosX(cursorX + offset);
 			ImGui::PushID((void*)id);
-			ImGui::Checkbox("#", &(componet->enabled));
-			if (ImGui::IsItemEdited())
-				scene.scene->graph->update(entity, true);
+			{
+				bool enabled = componet->get_enabled();
+				ImGui::Checkbox("#", &enabled);
+				if (ImGui::IsItemEdited())
+					componet->set_enabled(enabled);
+			}			
 			ImGui::PopID();
 			ImGui::SameLine();
 			ImGui::SetCursorPosX(cursorX);
@@ -84,7 +88,7 @@ void OnImGui_SceneGraphWidget() {
 						return lhs < rhs;
 					});;
 					for (auto child : child_sorted)
-						func(func, child, depth + 1, std::min(enabled, componet->enabled));
+						func(func, child, depth + 1);
 				}
 			}
 			while (stack_count--) ImGui::TreePop();
@@ -92,7 +96,7 @@ void OnImGui_SceneGraphWidget() {
 		};
 		auto root = scene.scene->graph->get_root();
 		SceneComponent* componet = scene.scene->get_base<SceneComponent>(root);
-		dfs_nodes(dfs_nodes, root, 0, componet->enabled);
+		dfs_nodes(dfs_nodes, root, 0);
 	}
 	ImGui::End();
 }

@@ -22,9 +22,10 @@ class SceneGraph {
 	void add_link(const entt::entity lhs, const entt::entity rhs) {
 		sceneForwardGraph.add_edge(lhs, rhs);
 		sceneBackwardGraph.add_edge(rhs, lhs);
-	}
-	// xxx this needs to be a memebr function because of friend declartions...
+	}	
 	void update_transform(SceneComponent* parent, SceneComponent* child);
+	void update_enabled(SceneComponent* src, SceneComponent* component);
+	void update();
 	// Depth-first-search reduction
 	// calls func(entity component, entity parent) on every component encountered. Ordered from parent to children.
 	void reduce(const entt::entity entity, auto&& func) {
@@ -46,8 +47,8 @@ public:
 	template<IsSceneComponent T> T& emplace_child_of(const entt::entity parent) {
 		auto entity = get_scene().create<T>();
 		add_link(parent, entity);
-		T& componet = get_scene().emplace<T>(entity);
-		update(entity, true); // ensure the component's associative states are correct upon creation
+		T& componet = get_scene().emplace<T>(entity);		
+		update();
 		return componet;
 	};
 	template<IsSceneComponent T> T& emplace_at_root() {
@@ -59,8 +60,9 @@ public:
 	// These properites are:
 	// * Transformation
 	// Finally, their `version` are also updated.
-	void update(const entt::entity entity, bool associative = false);
-	void update(bool associative = false) { update(root, associative); };
+	void update_transform(const entt::entity entity);
+	void update_enabled(const entt::entity entity);
+	void update(const entt::entity entity);
 	// UNTESETED. perhaps testing will never be done on these things...
 	//template<typename T> void remove_component(const entt::entity entity) {
 	//	remove<T>(entity);

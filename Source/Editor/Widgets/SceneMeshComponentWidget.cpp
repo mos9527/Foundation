@@ -17,5 +17,5 @@ void OnImGui_SceneGraphWidget_SceneMeshComponent(SceneMeshComponent* mesh) {
 		}
 		ImGui::EndTabBar();
 	}	
-	scene.scene->graph->update(mesh->get_entity());
+	mesh->update();
 }

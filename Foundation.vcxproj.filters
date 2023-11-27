@@ -165,6 +165,9 @@
     <ClCompile Include="Source\Editor\Renderer\RenderPass\IBLPrefilter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\Renderer\Oneshot.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">
@@ -401,6 +404,9 @@
     <ClInclude Include="Source\Editor\Renderer\RenderPass\IBLPrefilter.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Editor\Renderer\Oneshot.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json">
@@ -424,5 +430,6 @@
     <Text Include="Source\Editor\Renderer\Shaders\Transparency.hlsl" />
     <Text Include="Source\Editor\Renderer\Shaders\TransparencyBlend.hlsl" />
     <Text Include="Source\Editor\Renderer\Shaders\LightingCommon.hlsli" />
+    <Text Include="Source\Editor\Renderer\Shaders\HDRI2Cubemap.hlsl" />
   </ItemGroup>
 </Project>

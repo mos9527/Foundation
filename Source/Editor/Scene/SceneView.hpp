@@ -19,7 +19,6 @@ private:
 	BufferContainer<SceneGlobals> globalBuffer;
 
 	std::unordered_map<entt::entity, size_t> scenecomponent_versions;
-	size_t current_scene_version = 0;
 public:
 	struct FrameData {
 		uint viewportWidth;

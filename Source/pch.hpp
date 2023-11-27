@@ -20,6 +20,7 @@
 #include <stack>
 #include <fstream>
 #include <variant>
+#include <execution>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX

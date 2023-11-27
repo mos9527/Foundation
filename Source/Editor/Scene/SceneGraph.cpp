@@ -8,32 +8,41 @@ SceneGraph::SceneGraph(Scene& scene) : scene(scene) {
 Scene& SceneGraph::get_scene() {
 	return scene;
 }
-void SceneGraph::update_transform(SceneComponent* parent, SceneComponent* child) {
-	if (parent == child && parent->entity != root) {
-		parent = get_base(parent_of(parent->entity));
-	}
-	if (parent && child) {
-		child->version = get_scene().version;
-		parent->version = get_scene().version;
-		child->globalTransform = parent->globalTransform * child->localTransform;
-	}
-	else if (child) {
-		child->version = get_scene().version;
-		child->globalTransform = child->localTransform;
-	}
+void SceneGraph::update_transform(SceneComponent* parent, SceneComponent* child) {	
+	child->version = get_scene().version;
+	child->globalTransform = parent->globalTransform * child->localTransform;
 }
-void SceneGraph::update(const entt::entity entity, bool associative) {
-	scene.version++;	
-	get_base(entity)->version = scene.version;
+void SceneGraph::update_transform(const entt::entity entity) {		
+	update();
+	reduce(entity, [&](entt::entity current, entt::entity parent) -> void {
+		if (current == parent && current != root) {			
+			parent = parent_of(current);
+		}
+		SceneComponent* parentComponent = get_base(parent);
+		SceneComponent* childComponent = get_base(current);
+		update_transform(parentComponent, childComponent);		
+	});
+}
+void SceneGraph::update_enabled(SceneComponent* src, SceneComponent* component) {
+	component->version = scene.version;
+	src->version = scene.version;
+	component->enabled = src->enabled;
+}
+void SceneGraph::update_enabled(const entt::entity entity) {
+	update();
 	SceneComponent* thisComponent = get_base(entity);
-	if (associative)
-		reduce(entity, [&](entt::entity current, entt::entity parent) -> void {
-			SceneComponent* parentComponent = get_base(parent);
-			SceneComponent* childComponent = get_base(current);
-			update_transform(parentComponent, childComponent);
-			parentComponent->enabled = thisComponent->enabled;
-			childComponent->enabled = thisComponent->enabled;
-		});
+	reduce(entity, [&](entt::entity current, entt::entity parent) -> void {
+		SceneComponent* childComponent = get_base(current);
+		update_enabled(thisComponent, childComponent);
+	});
+}
+void SceneGraph::update() {
+	scene.version++;
+}
+void SceneGraph::update(const entt::entity entity) {
+	SceneComponent* thisComponent = get_base(entity);
+	update();
+	thisComponent->version = scene.version;
 }
 SceneComponent* SceneGraph::get_base(const entt::entity entity) {
 	return scene.get_base<SceneComponent>(entity);	

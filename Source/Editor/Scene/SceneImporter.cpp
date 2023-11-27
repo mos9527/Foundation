@@ -125,7 +125,7 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 			func(func, node->mChildren[i], entity);
 	};
 	dfs_nodes(dfs_nodes, scene->mRootNode, sceneOut.graph->get_root());
-	sceneOut.graph->update(sceneOut.graph->get_root(), true); // Compute global transforms once
+	sceneOut.graph->update_transform(sceneOut.graph->get_root()); // Calculate global transforms after everything's in place
 	pool.wait_and_join(); // ensure pool work is done before finally destructing import_mutex
 	LOG(INFO) << "Scene loaded";
 	statusOut.numToUpload = true;

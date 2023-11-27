@@ -158,6 +158,7 @@
     <ClCompile Include="Source\Editor\Editor.cpp" />
     <ClCompile Include="Source\Editor\Globals.cpp" />
     <ClCompile Include="Source\Editor\Input\KBMCamera.cpp" />
+    <ClCompile Include="Source\Editor\Renderer\Oneshot.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\Clear.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\IBLPrefilter.cpp" />
     <ClCompile Include="Source\Editor\Widgets\AssetMeshComponentWidget.cpp" />
@@ -216,6 +217,7 @@
     <ClInclude Include="Source\Editor\Context.hpp" />
     <ClInclude Include="Source\Editor\Globals.hpp" />
     <ClInclude Include="Source\Editor\Input\KBMCamera.hpp" />
+    <ClInclude Include="Source\Editor\Renderer\Oneshot.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\Clear.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\IBLPrefilter.hpp" />
     <ClInclude Include="Source\Editor\Widgets\AssetWidgets.hpp" />
@@ -378,6 +380,11 @@
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">4.0</ShaderModel>
+      <FileType>Document</FileType>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Source\Editor\Renderer\Shaders\HDRI2Cubemap.hlsl">
       <FileType>Document</FileType>
     </Text>
   </ItemGroup>
