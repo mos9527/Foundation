@@ -5,7 +5,10 @@
 #include "../../pch.hpp"
 #pragma pack(push, 4) // otherwise it's 8 on 64-bit systems
 #else
+#ifndef SHARED_DEFINES
+#define SHARED_DEFINES
 #include "Defines.hpp"
+#endif
 // DirectX Types
 typedef uint2 D3D12_GPU_VIRTUAL_ADDRESS;
 struct D3D12_DRAW_INDEXED_ARGUMENTS

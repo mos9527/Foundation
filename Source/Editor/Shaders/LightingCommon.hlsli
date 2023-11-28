@@ -2,6 +2,8 @@
 #define LIGHTING_COMMON
 #include "BRDF.hlsli"
 #include "Shared.h"
+#define DIELECTRIC_SPECULAR 0.08 // Influenced by Specular (which starts at 0.5)
+
 /* IBL */
 // Ported from https://github.com/KhronosGroup/glTF-Sample-Viewer/blob/main/source/Renderer/shaders/ibl.glsl
 float4 getDiffuseLight(SceneIBLProbe probe, float3 n)

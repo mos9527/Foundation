@@ -55,12 +55,11 @@ void main(uint2 DTid : SV_DispatchThreadID)
     float Zview = clipZ2ViewZ(Zss, g_SceneGlobals.camera.nearZ, g_SceneGlobals.camera.farZ);
     float3 P = UV2WorldSpace(UV, Zss, g_SceneGlobals.camera.invViewProjection);
     float3 V = normalize(g_SceneGlobals.camera.position.xyz - P);
-    
-    if (Zview >= g_SceneGlobals.camera.farZ) // Discard far plane pixels
+    if (Zview >= g_SceneGlobals.camera.farZ - 1.0f /*offset to compensate for precision*/) // Discard far plane pixels
     {
         frameBuffer[DTid] = float4(0, 0, 0, 0);
         return;
-    }
+    }    
     float3 diffuse = float3(0, 0, 0);
     float3 specular = float3(0, 0, 0);
     [unroll(MAX_LIGHT_COUNT)]

@@ -1,8 +1,12 @@
 #ifndef COMMON_INCLUDE_HLSL
 #define COMMON_INCLUDE_HLSL
+#ifndef SHARED_DEFINES
+#define SHARED_DEFINES
+#include "Defines.hpp"
+#endif
 #include "Math.hlsli"
 #include "Shared.h"
-#define DIELECTRIC_SPECULAR 0.08 // Influenced by Specular (which starts at 0.5)
+
 float3 colorRamp(float v)
 {
     static const float3 RGBcolors[] =

@@ -288,7 +288,7 @@ float3 UV2WorldSpace(float2 UV, float Zss, matrix inverseViewProjection)
     float2 clipXY = UV2Clip(UV);
     float4 PositionProj = float4(clipXY, Zss, 1);
     float4 PositionWS = mul(PositionProj, inverseViewProjection);
-    PositionWS /= PositionWS.w;
+    PositionWS.xyz /= PositionWS.w;
     return PositionWS.xyz;
 }
 // from https://github.com/microsoft/DirectX-Graphics-Samples/blob/master/Samples/Desktop/D3D12MeshShaders/src/DynamicLOD
