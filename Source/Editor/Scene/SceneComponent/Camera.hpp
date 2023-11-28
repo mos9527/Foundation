@@ -1,6 +1,6 @@
 #pragma once
 #include "SceneComponent.hpp"
-#include "../../Renderer/Shaders/Shared.h"
+#include "../../Shaders/Shared.h"
 struct SceneCameraComponent : public SceneComponent {
 	float fov;
 	float nearZ;

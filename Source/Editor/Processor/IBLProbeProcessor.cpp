@@ -1,9 +1,9 @@
-#include "Oneshot.hpp"
+#include "IBLProbeProcessor.hpp"
 using namespace RHI;
 #define IRRIDANCE_MAP_DIMENSION 64	
 #define NUM_RADIANCE_CUBEMAPS 2 // GGX & Charile
-#define NUM_LUTS 2 // GGX & Charlie
-OneshotPass<IBLPrefilterPass>::OneshotPass(Device* device, uint dimension_) :
+#define NUM_LUTS 1 // Slice 0 -> GGX (rg) & Charlie (b). see https://bruop.github.io/ibl/#split_sum_approximation
+IBLProbeProcessor::IBLProbeProcessor(Device* device, uint dimension_) :
 	device(device), proc_Prefilter(device) {		
 	// Ensure the image dimension is in the power of 2
 	dimension = 1 << (uint)floor(std::log2(dimension_));	
@@ -14,7 +14,7 @@ OneshotPass<IBLPrefilterPass>::OneshotPass(Device* device, uint dimension_) :
 		6, /* a cubemap! */
 		1, 0,
 		ResourceFlags::UnorderedAccess, ResourceHeapType::Default,
-		ResourceState::UnorderedAccess
+		ResourceState::UnorderedAccess, {}, L"Cubemap Source"
 	));	
 	for (uint i = 0; i < numMips; i++) {
 		cubeMapUAVs.push_back(std::make_unique<UnorderedAccessView>(
@@ -32,11 +32,15 @@ OneshotPass<IBLPrefilterPass>::OneshotPass(Device* device, uint dimension_) :
 		6,
 		1, 0,
 		ResourceFlags::UnorderedAccess, ResourceHeapType::Default,
-		ResourceState::UnorderedAccess
+		ResourceState::UnorderedAccess, {}, L"IBL Irridance Cube"
 	));
-	irridanceMapUAV = std::make_unique<UnorderedAccessView>(
+	irridanceCubeUAV = std::make_unique<UnorderedAccessView>(
 		irridanceMap.get(),
 		UnorderedAccessViewDesc::GetTexture2DArrayDesc(ResourceFormat::R16G16B16A16_FLOAT, 0, 0, 6, 0)
+	);
+	irridanceCubeSRV = std::make_unique<ShaderResourceView>(
+		irridanceMap.get(),
+		ShaderResourceViewDesc::GetTextureCubeDesc(ResourceFormat::R16G16B16A16_FLOAT, 0, 1)
 	);
 	// RADIANCE
 	radianceMapArray = std::make_unique<Texture>(device, Resource::ResourceDesc::GetTextureBufferDesc(
@@ -45,7 +49,7 @@ OneshotPass<IBLPrefilterPass>::OneshotPass(Device* device, uint dimension_) :
 		6 * NUM_RADIANCE_CUBEMAPS,
 		1, 0,
 		ResourceFlags::UnorderedAccess, ResourceHeapType::Default,
-		ResourceState::UnorderedAccess
+		ResourceState::UnorderedAccess, {} , L"IBL Radiance Cube"
 	));
 	for (uint j = 0; j < NUM_RADIANCE_CUBEMAPS; j++) {
 		for (uint i = 0; i < numMips; i++) {
@@ -64,25 +68,26 @@ OneshotPass<IBLPrefilterPass>::OneshotPass(Device* device, uint dimension_) :
 	);
 	// LUT
 	lutArray = std::make_unique<Texture>(device, Resource::ResourceDesc::GetTextureBufferDesc(
-		ResourceFormat::R16G16_FLOAT, ResourceDimension::Texture2D, dimension, dimension,
+		ResourceFormat::R16G16B16A16_FLOAT, ResourceDimension::Texture2D, dimension, dimension,
 		1,
 		NUM_LUTS,
 		1, 0,
 		ResourceFlags::UnorderedAccess, ResourceHeapType::Default,
-		ResourceState::UnorderedAccess
+		ResourceState::UnorderedAccess, {}, L"IBL Split Sum LUT"
 	));	
 	lutArrayUAV = std::make_unique<UnorderedAccessView>(
 		lutArray.get(),
-		UnorderedAccessViewDesc::GetTexture2DArrayDesc(ResourceFormat::R16G16_FLOAT, 0, 0, NUM_LUTS,0)
+		UnorderedAccessViewDesc::GetTexture2DArrayDesc(ResourceFormat::R16G16B16A16_FLOAT, 0, 0, NUM_LUTS,0)
 	);
 	lutArraySRV = std::make_unique<ShaderResourceView>(
 		lutArray.get(),
 		ShaderResourceViewDesc::GetTexture2DDesc(
-			ResourceFormat::R16G16_FLOAT, 0, 1
+			ResourceFormat::R16G16B16A16_FLOAT, 0, 1
 		)
 	);
 }
-void OneshotPass<IBLPrefilterPass>::Process(TextureAsset* srcImage) {	
+
+void IBLProbeProcessor::Process(TextureAsset* srcImage) {
 	auto fill_handles = [&](RenderGraph& rg) {
 		std::vector<RgHandle> rg_CubemapUAVs, rg_RadianceCubeArrayUAVs;
 		for (auto& uav : cubeMapUAVs) rg_CubemapUAVs.push_back(rg.import<UnorderedAccessView>(uav.get()));
@@ -99,7 +104,7 @@ void OneshotPass<IBLPrefilterPass>::Process(TextureAsset* srcImage) {
 			.radianceCubeArraySRV = rg.import<ShaderResourceView>(radianceCubeArraySRV.get()),
 
 			.irradianceCube = rg.import<Texture>(irridanceMap.get()),
-			.irradianceCubeUAV = rg.import<UnorderedAccessView>(irridanceMapUAV.get()),
+			.irradianceCubeUAV = rg.import<UnorderedAccessView>(irridanceCubeUAV.get()),
 			.irradianceCubeSRV = rg.import<ShaderResourceView>(irridanceCubeSRV.get()),
 
 			.lutArray = rg.import<Texture>(lutArray.get()),
@@ -110,7 +115,7 @@ void OneshotPass<IBLPrefilterPass>::Process(TextureAsset* srcImage) {
 	auto execute_graph = [&](RenderGraph& rg) {
 		// Acquire a free Compute context
 		auto* cmd = device->GetDefaultCommandList<CommandListType::Compute>();
-		CHECK(!cmd->IsOpen() && "The Default Compute Command list is in use!");	
+		CHECK(!cmd->IsOpen() && "The Default Compute Command list is in use!");			
 		cmd->Begin();	
 		static ID3D12DescriptorHeap* const heaps[] = { device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap() };
 		cmd->GetNativeCommandList()->SetDescriptorHeaps(1, heaps);
@@ -122,33 +127,85 @@ void OneshotPass<IBLPrefilterPass>::Process(TextureAsset* srcImage) {
 		RenderGraph rg(cache);
 		auto handles = fill_handles(rg);
 		proc_Prefilter.insert_pano2cube(rg, handles);
+		rg.get_epilogue_pass().read(handles.cubemap);
 		execute_graph(rg);
 	};
 	auto subproc_diffuse_prefilter = [&]() {
 		RenderGraph rg(cache);
 		auto handles = fill_handles(rg);
 		proc_Prefilter.insert_diffuse_prefilter(rg, handles);
+		rg.get_epilogue_pass().read(handles.irradianceCube);
 		execute_graph(rg);
 	};
 	auto subproc_specular_prefilter = [&](uint mipIndex, uint cubeIndex) {
 		RenderGraph rg(cache);
 		auto handles = fill_handles(rg);
 		proc_Prefilter.insert_specular_prefilter(rg, handles, mipIndex, numMips,cubeIndex);
+		rg.get_epilogue_pass().read(handles.radianceCubeArray);		
 		execute_graph(rg);
 	};
 	auto subproc_lut = [&]() {
 		RenderGraph rg(cache);
 		auto handles = fill_handles(rg);
 		proc_Prefilter.insert_lut(rg, handles);
+		rg.get_epilogue_pass().read(handles.lutArray);
 		execute_graph(rg);
 	};
+	state.transition(IBLProbeProcessorEvents{ .type = IBLProbeProcessorEvents::Type::Begin });
+	state.transition(IBLProbeProcessorEvents{ 
+		.type = IBLProbeProcessorEvents::Type::Process,
+		.proceesEvent = {
+			.processName = "Panorama to Cubemap",
+			.newNumProcessed = 0,
+			.newNumToProcess = 1
+		}
+	});
 	subproc_pano2cube();
-	subproc_diffuse_prefilter();
-	return; // testing...
+	state.transition(IBLProbeProcessorEvents{
+		.type = IBLProbeProcessorEvents::Type::Process,
+		.proceesEvent = {
+			.processName = "Irridance IS Prefilter",
+			.newNumProcessed = 1,
+			.newNumToProcess = 1
+		}
+	});
+	subproc_diffuse_prefilter();	
+	state.transition(IBLProbeProcessorEvents{
+		.type = IBLProbeProcessorEvents::Type::Process,
+		.proceesEvent = {
+			.processName = "Radiance IS Prefilter",
+			.newNumProcessed = 1,
+			.newNumToProcess = NUM_RADIANCE_CUBEMAPS * numMips
+		}
+	});
 	for (uint j = 0; j < NUM_RADIANCE_CUBEMAPS; j++) {
 		for (uint i = 0; i < numMips; i++) {
 			subproc_specular_prefilter(i, j);
+			state.transition(IBLProbeProcessorEvents{
+				.type = IBLProbeProcessorEvents::Type::Process,
+				.proceesEvent = {
+					.processName = "Radiance IS Prefilter",
+					.newNumProcessed = 1,
+					.newNumToProcess = 0
+				}
+			});
 		}
 	}
+	state.transition(IBLProbeProcessorEvents{
+		.type = IBLProbeProcessorEvents::Type::Process,
+		.proceesEvent = {
+			.processName = "Split Sum LUT",
+			.newNumProcessed = 0,
+			.newNumToProcess = 1
+		}
+	});
 	subproc_lut();
+	state.transition({ .type = IBLProbeProcessorEvents::Type::End });
 };
+
+void IBLProbeProcessor::ProcessAsync(TextureAsset* srcImage) {
+	CHECK(state != IBLProbeProcessorStates::Processing && "Already processing");
+	taskpool.push([&](TextureAsset* src) {
+		Process(src);
+	}, srcImage);
+}

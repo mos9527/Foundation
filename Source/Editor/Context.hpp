@@ -6,8 +6,10 @@
 #include "Scene/Scene.hpp"
 #include "Scene/SceneView.hpp"
 #include "Scene/SceneGraph.hpp"
-#include "Renderer/Deferred.hpp"
 #include "Scene/SceneImporter.hpp"
+#include "Renderer/Deferred.hpp"
+#include "Processor/IBLProbeProcessor.hpp"
+
 enum class EditorEvents {
     OnSetup,
     OnLoad,
@@ -71,6 +73,9 @@ struct RenderContext {
     DeferredRenderer* renderer;
     std::mutex renderMutex;
     std::mutex loadMutex;
+
+    /* DATA / PROCESSERS */
+    IBLProbeProcessor* iblProbe;
 };
     
 struct EditorContext {

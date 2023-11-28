@@ -33,30 +33,30 @@ private:
 public:
 	const wchar_t* name = nullptr;
 	RenderGraphPass(entt::entity entity, const wchar_t* name) : rg_entity(entity), name(name) {};
-	RenderGraphPass& write(RgHandle& resource) {
+	inline RenderGraphPass& write(RgHandle& resource) {
 		CHECK(check_handle(resource));
 		resource.version++;
 		writes.insert(resource); 
 		return *this; 
 	}
-	RenderGraphPass& readwrite(RgHandle& resource) {
+	inline RenderGraphPass& readwrite(RgHandle& resource) {
 		CHECK(check_handle(resource));
 		resource.version++;
 		readwrites.insert(resource);
 		return *this;
 	}
-	RenderGraphPass& read(RgHandle& resource) {
+	inline RenderGraphPass& read(RgHandle& resource) {
 		CHECK(check_handle(resource));
 		reads.insert(resource);
 		return *this;
 	}
-    RenderGraphPass& execute(RgFunction&& func) {		
+	inline RenderGraphPass& execute(RgFunction&& func) {
 		executes = std::move(func);
 		return *this;
 	}
 	inline bool has_execute() { return executes != nullptr; }
 	inline bool has_dependencies() { return reads.size() > 0 || readwrites.size() > 0; }
-	inline bool reads_from(RgHandle resource) { return reads.contains(resource); }
+	inline bool reads_from(RgHandle resource) { return reads.contains(resource) || readwrites.contains(resource); }
 	inline bool writes_to(RgHandle resource) { return writes.contains(resource) || readwrites.contains(resource); }
 };
 
@@ -74,60 +74,7 @@ class RenderGraph : graph_type {
 	RgRndPasses passes;
 	std::vector<RgRndPasses> layers;	
 
-	inline void build_graph() {
-		layers.clear();
-		for (entt::entity current : passes) {
-			auto& pass = registry.get<RenderGraphPass>(current);
-			// create adjacency list from read-writes
-			if (pass.has_dependencies()) {
-				for (auto& other : passes) {
-					if (other != current) {
-						auto& other_pass = registry.get<RenderGraphPass>(other);
-						for (auto& write : other_pass.writes) {
-							if (pass.reads_from(write)) {
-								add_edge(other, current);
-							}
-						}
-						for (auto& readwrite : other_pass.readwrites) {
-							if (pass.reads_from(readwrite)) {
-								add_edge(other, current);
-							}
-						}
-					}
-				}
-			}
-		}
-		// seperate passes into layers		
-		auto topsorted = topological_sort();
-		if (!topsorted.size() && graph.size()) {
-			// cyclic dependency
-			LOG(ERROR) << "Cyclic dependency in RenderGraph. Consider using import().";
-			LOG(INFO) << "Current Dependency Graph";
-			set_type visited;
-			auto dfs_nodes = [&](auto& func, vertex_type current, uint depth) -> void {
-				auto& pass = registry.get<RenderGraphPass>(current);
-				std::string prefix; for (uint i = 0; i < depth; i++) prefix += '\t';
-				LOG(INFO) << prefix << wstring_to_utf8(pass.name);
-				if (visited.contains(current)) {
-					LOG(ERROR) << prefix << " ^ Potential loop here.";
-					return;
-				}
-				visited.insert(current);
-				for (auto child : graph[current])
-					func(func, child, depth+1);
-			};
-			for (auto& [vtx, tree] : graph)
-				dfs_nodes(dfs_nodes, vtx, 0);
-#ifdef _DEBUG
-			__debugbreak();
-#endif
-		}		
-		auto depths = get_depths(topsorted);
-		uint max_depth = 0;
-		for (auto& [node, depth] : depths) max_depth = std::max(max_depth, depth);
-		layers.resize(max_depth + 1);
-		for (auto& [node, depth] : depths) layers[depth].push_back(node);
-	}
+	void build_graph();
 public:	
 	RenderGraph(RenderGraphResourceCache& cache) : cache(cache) {
 		epiloguePass = registry.create();

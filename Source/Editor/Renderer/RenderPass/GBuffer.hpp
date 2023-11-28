@@ -1,6 +1,5 @@
 #pragma once
-#include "RenderPass.hpp"
-
+#include "../Renderer.hpp"
 class GBufferPass {
 public:
 	struct GBufferPassHandles {

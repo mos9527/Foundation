@@ -1,6 +1,5 @@
 #pragma once
-#include "RenderPass.hpp"
-
+#include "../Renderer.hpp"
 class DeferredLightingPass {
 	std::unique_ptr<RHI::Shader> CS;
 	std::unique_ptr<RHI::RootSignature> RS;

@@ -1,7 +1,7 @@
 #include "FFXSpd.hpp"
 #define A_CPU
-#include "../Shaders/ffx-spd/ffx_a.h"
-#include "../Shaders/ffx-spd/ffx_spd.h"
+#include "../../Shaders/ffx-spd/ffx_a.h"
+#include "../../Shaders/ffx-spd/ffx_spd.h"
 using namespace RHI;
 FFXSPDPass::FFXSPDPass(RHI::Device* device, const wchar_t* reduce) {
 	CHECK(reduce && "Reduction function undefined.");
@@ -36,14 +36,9 @@ FFXSPDPass::FFXSPDPass(RHI::Device* device, const wchar_t* reduce) {
 	cmd->Execute().Wait();	
 }
 RenderGraphPass& FFXSPDPass::insert(RenderGraph& rg, FFXSPDPassHandles&& handles) {
-	RenderGraphPass& pass = rg.add_pass(L"FFX SPD Downsample");
-	if (handles.srcTexture != handles.dstTexture) {
-		pass.read(handles.srcTexture);
-		pass.readwrite(handles.dstTexture);
-	}
-	else {
-		pass.readwrite(handles.dstTexture);
-	}
+	RenderGraphPass& pass = rg.add_pass(L"FFX SPD Downsample");	
+	pass.read(handles.srcTexture);
+	pass.readwrite(handles.dstTexture);	
 	return pass.execute([=](RgContext& ctx) -> void {			
 			auto* r_src_texture = ctx.graph->get<Texture>(handles.srcTexture);
 			auto* r_dst_texture = ctx.graph->get<Texture>(handles.dstTexture);

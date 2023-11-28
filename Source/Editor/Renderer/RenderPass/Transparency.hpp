@@ -1,6 +1,5 @@
 #pragma once
-#include "RenderPass.hpp"
-
+#include "../Renderer.hpp"
 class TransparencyPass {
 	std::unique_ptr<RHI::Shader> VS, PS, blendCS;
 	std::unique_ptr<RHI::RootSignature> RS, blendRS;

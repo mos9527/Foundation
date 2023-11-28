@@ -90,6 +90,7 @@ namespace RHI {
 			DCHECK(allocatorIndex < m_CommandAllocators.size());
 			CHECK_HR(m_CommandAllocators[allocatorIndex]->Reset());
 		};
+		inline const CommandListType GetType() { return m_Type; }
 		inline void Begin(uint allocatorIndex = 0) {
 			CHECK(m_Closed && "Attempting to start an already recording CommandList");
 			DCHECK(allocatorIndex < m_CommandAllocators.size());
@@ -98,7 +99,6 @@ namespace RHI {
 		};
 		inline void Close() { FlushBarriers(); CHECK_HR(m_CommandList->Close()); m_Closed = true; };
 		inline bool IsOpen() const { return !m_Closed; }
-
 		inline void QueueTransitionBarrier(Resource* res, ResourceState state, uint subresource) { QueueTransitionBarrier(res, state, &subresource, 1); }
 		void QueueTransitionBarrier(Resource* res, ResourceState state, const uint* subresources, uint numSubresources);
 		void QueueTransitionBarrier(Resource* res, ResourceState state);

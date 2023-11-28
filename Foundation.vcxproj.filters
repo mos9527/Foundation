@@ -162,10 +162,10 @@
     <ClCompile Include="Source\Editor\Input\KBMCamera.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Editor\Renderer\RenderPass\IBLPrefilter.cpp">
+    <ClCompile Include="Source\Editor\Processor\ProcessPass\IBLPrefilter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Editor\Renderer\Oneshot.cpp">
+    <ClCompile Include="Source\Editor\Processor\IBLProbeProcessor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Editor\Widgets\TransformWidget.cpp">
@@ -329,9 +329,6 @@
     <ClInclude Include="Source\Editor\Scene\SceneComponent\Light.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Editor\Renderer\RenderPass\RenderPass.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Source\Editor\Renderer\RenderPass\GBuffer.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -341,10 +338,10 @@
     <ClInclude Include="Source\Editor\Renderer\RenderPass\IndirectLODCull.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Editor\Renderer\Shaders\ffx-spd\ffx_a.h">
+    <ClInclude Include="Source\Editor\Shaders\ffx-spd\ffx_a.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Editor\Renderer\Shaders\ffx-spd\ffx_spd.h">
+    <ClInclude Include="Source\Editor\Shaders\ffx-spd\ffx_spd.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\Renderer\RenderPass\HiZ.hpp">
@@ -410,13 +407,19 @@
     <ClInclude Include="Source\Editor\Input\KBMCamera.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Editor\Renderer\RenderPass\IBLPrefilter.hpp">
+    <ClInclude Include="Source\Editor\Processor\ProcessPass\IBLPrefilter.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Editor\Renderer\Oneshot.hpp">
+    <ClInclude Include="Source\Editor\Processor\Processor.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\Win32\Win32IO.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\Processor\IBLProbeProcessor.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\Shaders\Shaders.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -426,23 +429,23 @@
     </None>
     <None Include=".gitignore" />
     <None Include=".gitattributes" />
-    <None Include="Source\Editor\Renderer\Shaders\Common.hlsli" />
-    <None Include="Source\Editor\Renderer\Shaders\BRDF.hlsli" />
+    <None Include="Source\Editor\Shaders\Common.hlsli" />
+    <None Include="Source\Editor\Shaders\BRDF.hlsli" />
     <None Include="Source\Editor\Renderer\RenderPass\DeferredLighting.hpp" />
-    <None Include="Source\Editor\Renderer\Shaders\Math.hlsli" />
+    <None Include="Source\Editor\Shaders\Math.hlsli" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Editor\Renderer\Shaders\IndirectLODCull.hlsl" />
-    <Text Include="Source\Editor\Renderer\Shaders\GBuffer.hlsl" />
-    <Text Include="Source\Editor\Renderer\Shaders\Shared.h" />
-    <Text Include="Source\Editor\Renderer\Shaders\DeferredLighting.hlsl" />
-    <Text Include="Source\Editor\Renderer\Shaders\Tonemap.hlsl" />
-    <Text Include="Source\Editor\Renderer\Shaders\FFXSpd.hlsl" />
-    <Text Include="Source\Editor\Renderer\Shaders\DepthSampleToTexture.hlsl" />
-    <Text Include="Source\Editor\Renderer\Shaders\Transparency.hlsl" />
-    <Text Include="Source\Editor\Renderer\Shaders\TransparencyBlend.hlsl" />
-    <Text Include="Source\Editor\Renderer\Shaders\LightingCommon.hlsli" />
-    <Text Include="Source\Editor\Renderer\Shaders\HDRIProbe.hlsl" />
-    <Text Include="Source\Editor\Renderer\Shaders\IBL.hlsli" />
+    <Text Include="Source\Editor\Shaders\IndirectLODCull.hlsl" />
+    <Text Include="Source\Editor\Shaders\GBuffer.hlsl" />
+    <Text Include="Source\Editor\Shaders\Shared.h" />
+    <Text Include="Source\Editor\Shaders\DeferredLighting.hlsl" />
+    <Text Include="Source\Editor\Shaders\Tonemap.hlsl" />
+    <Text Include="Source\Editor\Shaders\FFXSpd.hlsl" />
+    <Text Include="Source\Editor\Shaders\DepthSampleToTexture.hlsl" />
+    <Text Include="Source\Editor\Shaders\Transparency.hlsl" />
+    <Text Include="Source\Editor\Shaders\TransparencyBlend.hlsl" />
+    <Text Include="Source\Editor\Shaders\LightingCommon.hlsli" />
+    <Text Include="Source\Editor\Shaders\HDRIProbe.hlsl" />
+    <Text Include="Source\Editor\Shaders\IBL.hlsli" />
   </ItemGroup>
 </Project>

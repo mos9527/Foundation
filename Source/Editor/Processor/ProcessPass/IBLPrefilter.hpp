@@ -1,6 +1,6 @@
 #pragma once
-#include "RenderPass.hpp"
-#include "FFXSpd.hpp"
+#include "../Processor.hpp"
+#include "../../Renderer/RenderPass/FFXSpd.hpp"
 
 class IBLPrefilterPass {
 	std::unique_ptr<RHI::Shader> Probe2CubemapCS, PrefilterCS, LUTCS;

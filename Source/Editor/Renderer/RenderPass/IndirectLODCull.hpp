@@ -1,6 +1,5 @@
 #pragma once
-#include "RenderPass.hpp"
-
+#include "../Renderer.hpp"
 class IndirectLODCullPass {
 	static const UINT CommandSizePerFrame = MAX_INSTANCE_COUNT * sizeof(IndirectCommand);
 	static const UINT CommandBufferCounterOffset = AlignForUavCounter(CommandSizePerFrame);

@@ -1,5 +1,5 @@
 #pragma once
-#include "RenderPass.hpp"
+#include "../Renderer.hpp"
 #define SPD_MAX_NUM_SLICES 0xffff
 class FFXSPDPass {	
 	std::unique_ptr<RHI::Shader> CS;

@@ -1,7 +1,7 @@
 #pragma once
 #include "../../Runtime/RHI/RHI.hpp"
 #include "../../Runtime/Asset/ResourceContainer.hpp"
-#include "../Renderer/Shaders/Shared.h"
+#include "../Shaders/Shared.h"
 
 #include "Scene.hpp"
 #include "SceneComponent/Mesh.hpp"

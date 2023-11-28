@@ -1,7 +1,6 @@
 #pragma once
-#include "RenderPass.hpp"
+#include "../Renderer.hpp"
 #include "FFXSpd.hpp"
-
 class HierarchalDepthPass {	
 	std::unique_ptr<RHI::Shader> CS;
 	std::unique_ptr<RHI::RootSignature> RS;

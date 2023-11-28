@@ -1,8 +1,8 @@
 #ifndef SHARED_INCLUDE
 #define SHARED_INCLUDE
 #ifdef __cplusplus
-#include "../../../Common/Defines.hpp"
-#include "../../../pch.hpp"
+#include "../../Common/Defines.hpp"
+#include "../../pch.hpp"
 #pragma pack(push, 4) // otherwise it's 8 on 64-bit systems
 #else
 #include "Defines.hpp"
