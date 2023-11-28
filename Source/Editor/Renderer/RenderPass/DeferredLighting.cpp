@@ -10,6 +10,7 @@ DeferredLightingPass::DeferredLightingPass(Device* device) {
 		.AddConstantBufferView(0, 0) // b0 space0 : SceneGlobals	
 		.AddConstant(1, 0, 6) // b1 space0 : MRT handles + FB UAV
 		.AddShaderResourceView(0, 0) // s0 space0 : Lights
+		.AddStaticSampler(0,0, SamplerDesc::GetTextureSamplerDesc(16))
 	);
 	RS->SetName(L"Lighting");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};

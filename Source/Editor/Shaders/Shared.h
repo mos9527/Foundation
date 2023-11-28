@@ -56,10 +56,29 @@ struct SceneCamera // ! align for CB
     matrix invProjection;
     matrix invViewProjection;
 };
+#define IBL_PROBE_SPECULAR_GGX 0
+#define IBL_PROBE_SPECULAR_SHEEN 1
+struct SceneIBLProbe {
+    uint cubemapHeapIndex;
+    uint radianceHeapIndex;
+    uint irradianceHeapIndex;
+    uint lutHeapIndex;
+
+    uint mips;
+    uint enabled;    
+    uint2 _pad;
+
+    float diffuseIntensity;
+    float specularIntensity;
+    float occlusionStrength;
+    float _pad2;
+};
 struct SceneGlobals // ! align for CB
 {
     SceneCamera camera;
     SceneCamera cameraPrev; // previous frame
+
+    SceneIBLProbe probe; 
 
     uint numMeshInstances; // Opaque + Transparent
     uint numLights;
@@ -75,6 +94,7 @@ struct SceneGlobals // ! align for CB
 
     float frameTimePrev;
     float3 _pad3;
+
     bool debug_view_albedo() {
         return frameFlags & FRAME_FLAG_DEBUG_VIEW_ALBEDO;
     }
@@ -146,6 +166,7 @@ struct SceneMaterial {
 #define SCENE_LIGHT_TYPE_POINT 0
 #define SCENE_LIGHT_TYPE_DIRECTIONAL 1
 struct SceneLight {
+    uint enabled;
     uint type;
     float intensity;
     float radius;

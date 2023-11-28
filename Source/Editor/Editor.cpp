@@ -133,15 +133,16 @@ void Run_ImGui() {
                     Load_Scene(pathName);
             }
             if (ImGui::MenuItem("Reset")) {
+                device->Wait();
                 Reset_Scene();                
             }
             {
                 static bool isOpen = false;
-                if (ImGui::MenuItem("[TEST] Prefilter Process")) {
-                    isOpen = true;
+                if (ImGui::MenuItem("Probe")) {
+                    isOpen = !isOpen;
                 }
-                if (ImGui::Begin("Prefilter", &isOpen)){
-                    OnImGui_PrefilterProcessWidget();
+                if (ImGui::Begin("Probe", &isOpen)){
+                    OnImGui_IBLProbeWidget();
                 }
                 ImGui::End();
             }
@@ -179,13 +180,25 @@ void EditorWindow::Run() {
         auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
         CHECK(camera && "No camera");
         g_cameraController.update_camera(camera);
-        sceneView->update(*scene.scene, *camera, SceneView::FrameData{
-            .viewportWidth  = std::max(viewport.width,  128u),
-            .viewportHeight = std::max(viewport.height, 128u),
-            .frameIndex = swapchain->GetFrameIndex(),
-            .frameFlags = viewport.frameFlags,
-            .backBufferIndex = bbIndex,
-            .frameTimePrev = ImGui::GetIO().DeltaTime
+        sceneView->update(
+            *scene.scene,
+            *camera,
+            SceneView::FrameData{
+                .viewportWidth  = std::max(viewport.width,  128u),
+                .viewportHeight = std::max(viewport.height, 128u),
+                .frameIndex = swapchain->GetFrameIndex(),
+                .frameFlags = viewport.frameFlags,
+                .backBufferIndex = bbIndex,
+                .frameTimePrev = ImGui::GetIO().DeltaTime
+            }, 
+            SceneView::ShaderData{
+                .probe = SceneView::ShaderData::IBLProbeData{
+                .use = editor.iblProbeParam.use,
+                .probe = editor.iblProbe,
+                .diffuseIntensity = editor.iblProbeParam.diffuseIntensity,
+                .specularIntensity = editor.iblProbeParam.specularIntensity,
+                .occlusionStrength = editor.iblProbeParam.occlusionStrength
+            }
         });
         viewport.frame = render.renderer->Render(sceneView);
     }

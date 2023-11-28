@@ -43,9 +43,9 @@ void main_prefilter(uint3 DTid : SV_DispatchThreadID)
     }
     if (flags & IBL_FILTER_FLAG_RADIANCE)
     {
-        if (cubeIndex == 0) 
+        if (cubeIndex == IBL_PROBE_SPECULAR_GGX) 
             distribution = USE_GGX;
-        if (cubeIndex == 1)
+        if (cubeIndex == IBL_PROBE_SPECULAR_SHEEN)
             distribution = USE_CHARLIE;
     }
     float3 color = splat3(0);

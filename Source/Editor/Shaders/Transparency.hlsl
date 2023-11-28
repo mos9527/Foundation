@@ -1,5 +1,4 @@
 #include "Common.hlsli"
-#include "LightingCommon.hlsli"
 cbuffer IndirectData : register(b0, space0)
 {
     uint g_MeshIndex;
@@ -10,6 +9,7 @@ StructuredBuffer<SceneMeshInstance> g_SceneMeshInstances : register(t0, space0);
 StructuredBuffer<SceneMaterial> g_Materials : register(t1, space0);
 StructuredBuffer<SceneLight> g_Lights : register(t2, space0);
 SamplerState g_Sampler : register(s0, space0);
+#include "LightingCommon.hlsli"
 struct VSInput
 {
     float3 position : POSITION;
@@ -101,6 +101,8 @@ MRT ps_main(PSInput input) : SV_Target
         for (uint i = 0; i < g_SceneGlobals.numLights; i++)
         {
             SceneLight light = g_Lights[i];
+            if (!light.enabled)
+                continue;
             // Spot lights
             float attenuation = 1.0f;
             float3 L = splat3(0);
@@ -119,6 +121,10 @@ MRT ps_main(PSInput input) : SV_Target
             float3 k = light.color.rgb * light.intensity * attenuation;
             shade_direct(L, V, N, baseColor, metal, alphaRoughness, k, diffuse, specular);
         }   
+        if (g_SceneGlobals.probe.enabled)
+        {
+            shade_indirect(g_SceneGlobals.probe, V, N, baseColor, metal, rough, ao, diffuse, specular);
+        }
         finalColor = diffuse + specular + emissive.rgb;        
     }
     else

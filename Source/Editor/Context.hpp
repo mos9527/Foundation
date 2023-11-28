@@ -73,14 +73,21 @@ struct RenderContext {
     DeferredRenderer* renderer;
     std::mutex renderMutex;
     std::mutex loadMutex;
-
-    /* DATA / PROCESSERS */
-    IBLProbeProcessor* iblProbe;
 };
     
 struct EditorContext {
     EdtitorState state;
     SceneImporter::SceneImporterAtomicStatus importStatus;
+
+    /* DATA / PROCESSERS */
+    IBLProbeProcessor* iblProbe;
+    struct {
+        bool use = true;
+
+        float diffuseIntensity = 1.0f;
+        float specularIntensity = 1.0f;
+        float occlusionStrength = 1.0f;
+    } iblProbeParam;
 };
     
 

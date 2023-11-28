@@ -10,6 +10,7 @@
 #include "AssetComponet/Material.hpp"
 #include "AssetComponet/Mesh.hpp"
 
+class IBLProbeProcessor;
 class SceneView {
 public:
 private:
@@ -20,6 +21,16 @@ private:
 
 	std::unordered_map<entt::entity, size_t> scenecomponent_versions;
 public:
+	struct ShaderData {
+		struct IBLProbeData {
+			bool use = true;
+			IBLProbeProcessor* probe = nullptr;
+
+			float diffuseIntensity = 1.0f;
+			float specularIntensity = 1.0f;
+			float occlusionStrength = 1.0f;
+		} probe;
+	};
 	struct FrameData {
 		uint viewportWidth;
 		uint viewportHeight;
@@ -44,5 +55,5 @@ public:
 	RHI::Resource* get_SceneMeshMaterialsBuffer() { return &meshMaterialsBuffer; }
 	RHI::Resource* get_SceneLightBuffer() { return &lightBuffer; }
 
-	bool update(Scene& scene, SceneCameraComponent& camera, FrameData&& frame);
+	bool update(Scene& scene, SceneCameraComponent& camera, FrameData&& frame, ShaderData&& shader);
 };

@@ -17,7 +17,7 @@ namespace EditorGlobalContext {
         swapchain = new RHI::Swapchain(device, { presentWindow, 1600, 1000, presentFormat });
         scene.scene = new ::Scene;
         render.renderer = new ::DeferredRenderer(device);
-        render.iblProbe = new ::IBLProbeProcessor(device, 512);
+        editor.iblProbe = new ::IBLProbeProcessor(device, 512);
         for (uint i = 0; i < ARRAYSIZE(scene.views); i++) {
             scene.views[i] = new ::SceneView(device);
         }

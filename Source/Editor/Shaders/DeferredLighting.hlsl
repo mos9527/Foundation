@@ -1,8 +1,10 @@
 #include "Common.hlsli"
-#include "LightingCommon.hlsli"
 
 ConstantBuffer<SceneGlobals> g_SceneGlobals : register(b0, space0);
 StructuredBuffer<SceneLight> g_Lights : register(t0, space0);
+SamplerState g_Sampler : register(s0, space0);
+#include "LightingCommon.hlsli"
+
 cbuffer MRTHandles : register(b1, space0)
 {
     uint albedoHandle;
@@ -65,6 +67,8 @@ void main(uint2 DTid : SV_DispatchThreadID)
     for (uint i = 0; i < g_SceneGlobals.numLights; i++)
     {
         SceneLight light = g_Lights[i];
+        if (!light.enabled)
+            continue;
         // Spot lights
         float attenuation = 1.0f;
         float3 L = splat3(0); 
@@ -82,6 +86,10 @@ void main(uint2 DTid : SV_DispatchThreadID)
         }
         float3 k = light.color.rgb * light.intensity * attenuation;
         shade_direct(L, V, N, baseColor, metal, alphaRoughness, k, diffuse, specular);
+    }
+    if (g_SceneGlobals.probe.enabled)
+    {
+        shade_indirect(g_SceneGlobals.probe, V, N, baseColor, metal, rough, ao, diffuse, specular);
     }
     float3 finalColor = diffuse + specular + emissiveSmp.rgb;
     frameBuffer[DTid] = float4(finalColor, 1.0f);

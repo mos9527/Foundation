@@ -5,7 +5,7 @@
 #include "../Processor/IBLProbeProcessor.hpp"
 
 using namespace EditorGlobalContext;
-void OnImGui_PrefilterProcessWidget() {
+void OnImGui_IBLProbeWidget() {
 	static std::string selectedFile;
 	static AssetHandle loadedAsset;		
 	ImGui::Text("File:%s", selectedFile.c_str());
@@ -35,36 +35,39 @@ void OnImGui_PrefilterProcessWidget() {
 		float aspect = (float)asset->texture.texture.GetDesc().width / asset->texture.texture.GetDesc().height;
 		ImGui::Image((ImTextureID)asset->textureSRV->descriptor.get_gpu_handle().ptr, ImVec2{ 256 * aspect, 256 });
 		ImGui::SeparatorText("Processor");
-		if (render.iblProbe->state != IBLProbeProcessorStates::Processing) {
-			if (render.iblProbe->state == IBLProbeProcessorStates::IdleNoProbe)
+		if (editor.iblProbe->state != IBLProbeProcessorStates::Processing) {
+			if (editor.iblProbe->state == IBLProbeProcessorStates::IdleNoProbe)
 				ImGui::Text("No probe loaded.");
-			if (render.iblProbe->state == IBLProbeProcessorStates::IdleWithProbe) {
+			if (editor.iblProbe->state == IBLProbeProcessorStates::IdleWithProbe) {
 				ImGui::Text("Probe loaded.");
+				ImGui::SliderFloat("Diffuse Strength", &editor.iblProbeParam.diffuseIntensity, 0, 1);
+				ImGui::SliderFloat("Specular Strength", &editor.iblProbeParam.specularIntensity, 0, 1);
+				ImGui::SliderFloat("Occlusion Strength", &editor.iblProbeParam.occlusionStrength, 0, 1);
 				if (ImGui::BeginTabBar("##IBLPreview")) {
 					if (ImGui::BeginTabItem("Split Sum LUT")) {
-						ImGui::Image((ImTextureID)render.iblProbe->lutArrayUAV->descriptor.get_gpu_handle().ptr, ImVec2{ 128,128 });
+						ImGui::Image((ImTextureID)editor.iblProbe->lutArrayUAV->descriptor.get_gpu_handle().ptr, ImVec2{ 128,128 });
 						ImGui::EndTabItem();
 					}
 					if (ImGui::BeginTabItem("Irridance")) {
-						ImGui::Image((ImTextureID)render.iblProbe->irridanceCubeUAV->descriptor.get_gpu_handle().ptr, ImVec2{ 128,128 });
+						ImGui::Image((ImTextureID)editor.iblProbe->irridanceCubeUAV->descriptor.get_gpu_handle().ptr, ImVec2{ 128,128 });
 						ImGui::EndTabItem();
 					}
 					if (ImGui::BeginTabItem("Radiance")) {
 						static int mipLevel = 0;
-						ImGui::Image((ImTextureID)render.iblProbe->radianceCubeArrayUAVs[mipLevel]->descriptor.get_gpu_handle().ptr, ImVec2{128,128});
-						ImGui::SliderInt("Mip", &mipLevel, 0, render.iblProbe->numMips - 1);
+						ImGui::Image((ImTextureID)editor.iblProbe->radianceCubeArrayUAVs[mipLevel]->descriptor.get_gpu_handle().ptr, ImVec2{128,128});
+						ImGui::SliderInt("Mip", &mipLevel, 0, editor.iblProbe->numMips - 1);
 						ImGui::EndTabItem();
 					}
 					// xxx add *actual* probe visualizers
 					ImGui::EndTabBar();
 				}
 			}
-			if (ImGui::Button("Process")) render.iblProbe->ProcessAsync(asset);
+			if (ImGui::Button("Process")) editor.iblProbe->ProcessAsync(asset);
 		}
 		else {
 			ImGui::Text("Processing...");
-			ImGui::Text("%s", render.iblProbe->state.currentProcess);
-			ImGui::ProgressBar((float)render.iblProbe->state.numProcessed / (render.iblProbe->state.numProcessed + render.iblProbe->state.numToProcess));
+			ImGui::Text("%s", editor.iblProbe->state.currentProcess);
+			ImGui::ProgressBar((float)editor.iblProbe->state.numProcessed / (editor.iblProbe->state.numProcessed + editor.iblProbe->state.numToProcess));
 		}
 	}
 	else {

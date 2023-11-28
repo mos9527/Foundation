@@ -1,10 +1,12 @@
 #include "SceneView.hpp"
-bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& frame) {
+
+#include "../Processor/IBLProbeProcessor.hpp"
+bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& frame, ShaderData&& shader) {
 	auto& instances = scene.storage<SceneMeshComponent>();
 	auto& materials = scene.storage<AssetMaterialComponent>();
 	auto& lights = scene.storage<SceneLightComponent>();
 	std::mutex write_mutex;
-	// instances
+	// Instances
 	std::for_each(std::execution::seq, instances.begin(), instances.end(), [&](SceneMeshComponent& mesh) {
 		// Only update instances that got updated
 		if (mesh.get_version() == scenecomponent_versions[mesh.get_entity()]) return;			
@@ -74,13 +76,14 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 			scenecomponent_versions[mesh.get_entity()] = mesh.get_version();
 			*meshInstancesBuffer.DataAt(sceneMesh.instanceIndex) = sceneMesh;
 		});
-	// lights
+	// Lights
 	std::for_each(std::execution::par, lights.begin(), lights.end(), [&](SceneLightComponent& light) {
 		if (scenecomponent_versions[light.get_entity()] == light.get_version()) return;
 		SceneLight sceneLight{};
 		AffineTransform transform = light.get_global_transform();
 		Vector3 translation = transform.Translation();
 		Vector3 direction = Vector3::Transform({ 0,-1,0 }, transform.Quaternion());
+		sceneLight.enabled = light.get_enabled();
 		sceneLight.position.x = translation.x;
 		sceneLight.position.y = translation.y;
 		sceneLight.position.z = translation.z;
@@ -98,10 +101,27 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 		scenecomponent_versions[light.get_entity()] = light.get_version();
 		*lightBuffer.DataAt(lights.index(light.get_entity())) = sceneLight;
 	});
+	// These are updated every frame...
+	// Probe
+	if (shader.probe.probe != nullptr && shader.probe.probe->state == IBLProbeProcessorStates::IdleWithProbe) {
+		SceneIBLProbe probe{};
+		probe.enabled = shader.probe.use;
+		probe.cubemapHeapIndex = shader.probe.probe->cubemapSRV->descriptor.get_heap_handle();
+		probe.radianceHeapIndex = shader.probe.probe->radianceCubeArraySRV->descriptor.get_heap_handle();
+		probe.irradianceHeapIndex = shader.probe.probe->irridanceCubeSRV->descriptor.get_heap_handle();
+		probe.lutHeapIndex = shader.probe.probe->lutArraySRV->descriptor.get_heap_handle();
+		probe.mips = shader.probe.probe->numMips;
+		probe.diffuseIntensity = shader.probe.diffuseIntensity;
+		probe.specularIntensity = shader.probe.specularIntensity;
+		probe.occlusionStrength = shader.probe.occlusionStrength;
+		globalBuffer.Data()->probe = probe;
+	}
+	else {
+		globalBuffer.Data()->probe.enabled = false;
+	}
 	// Scene info
 	globalBuffer.Data()->numMeshInstances = instances.size();
 	globalBuffer.Data()->numLights = lights.size();
-	// These are updated every frame...
 	// Camera
 	globalBuffer.Data()->cameraPrev = globalBuffer.Data()->camera;
 	globalBuffer.Data()->camera = camera.get_struct(frame.viewportWidth / (float)frame.viewportHeight);
