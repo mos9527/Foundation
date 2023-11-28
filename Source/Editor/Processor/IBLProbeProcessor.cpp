@@ -56,7 +56,7 @@ IBLProbeProcessor::IBLProbeProcessor(Device* device, uint dimension_) :
 			// [mip 0-N map 1] [mip 0-M map 2] ...
 			radianceCubeArrayUAVs.push_back(std::make_unique<UnorderedAccessView>(
 				radianceMapArray.get(),
-				UnorderedAccessViewDesc::GetTexture2DArrayDesc(ResourceFormat::R16G16B16A16_FLOAT, i, 0, 6, 0)
+				UnorderedAccessViewDesc::GetTexture2DArrayDesc(ResourceFormat::R16G16B16A16_FLOAT, i, j * 6, 6, 0)
 			));
 		}
 	}
@@ -150,7 +150,7 @@ void IBLProbeProcessor::Process(TextureAsset* srcImage) {
 		proc_Prefilter.insert_lut(rg, handles);
 		rg.get_epilogue_pass().read(handles.lutArray);
 		execute_graph(rg);
-	};
+	};	
 	state.transition(IBLProbeProcessorEvents{ .type = IBLProbeProcessorEvents::Type::Begin });
 	state.transition(IBLProbeProcessorEvents{ 
 		.type = IBLProbeProcessorEvents::Type::Process,
@@ -177,10 +177,10 @@ void IBLProbeProcessor::Process(TextureAsset* srcImage) {
 			.newNumProcessed = 1,
 			.newNumToProcess = NUM_RADIANCE_CUBEMAPS * numMips
 		}
-	});
+	});	
 	for (uint j = 0; j < NUM_RADIANCE_CUBEMAPS; j++) {
 		for (uint i = 0; i < numMips; i++) {
-			subproc_specular_prefilter(i, j);
+			subproc_specular_prefilter(i, j);			
 			state.transition(IBLProbeProcessorEvents{
 				.type = IBLProbeProcessorEvents::Type::Process,
 				.proceesEvent = {
@@ -190,7 +190,7 @@ void IBLProbeProcessor::Process(TextureAsset* srcImage) {
 				}
 			});
 		}
-	}
+	}	
 	state.transition(IBLProbeProcessorEvents{
 		.type = IBLProbeProcessorEvents::Type::Process,
 		.proceesEvent = {
@@ -200,7 +200,7 @@ void IBLProbeProcessor::Process(TextureAsset* srcImage) {
 		}
 	});
 	subproc_lut();
-	state.transition({ .type = IBLProbeProcessorEvents::Type::End });
+	state.transition({ .type = IBLProbeProcessorEvents::Type::End });	
 };
 
 void IBLProbeProcessor::ProcessAsync(TextureAsset* srcImage) {

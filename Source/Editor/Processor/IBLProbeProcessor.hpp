@@ -33,7 +33,10 @@ struct IBLProbeProcesserState : public FSM::EFSM<IBLProbeProcessorStates, IBLPro
 		switch (event.type)
 		{
 		case Begin:
-			if (state == IdleNoProbe || state == IdleWithProbe) state = Processing;
+			if (state == IdleNoProbe || state == IdleWithProbe) {
+				state = Processing;
+				numProcessed = numToProcess = 0;
+			}
 			else fail(event);
 			break;
 		case Process:

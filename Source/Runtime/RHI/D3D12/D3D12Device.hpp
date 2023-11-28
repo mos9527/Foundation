@@ -27,6 +27,9 @@ namespace RHI {
 		inline auto GetDXGIFactory() { return m_Factory.Get(); }
 		inline auto GetNativeDevice() { return m_Device.Get(); } // TODO : Reduce the usage of GetNative*()
 		
+		void BeginCapture(const wchar_t* name);
+		void EndCapture();
+
 		CommandQueue* GetCommandQueue(CommandListType type) {			
 			if (type == CommandListType::Direct)return m_DirectQueue.get();
 			if (type == CommandListType::Compute)return m_ComputeQueue.get();

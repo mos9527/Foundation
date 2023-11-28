@@ -223,4 +223,16 @@ namespace RHI {
         m_CopyQueue->Wait();
         m_ComputeQueue->Wait();
     }
+
+    void Device::BeginCapture(const wchar_t* name) {
+        PIXCaptureParameters params{};
+        params.GpuCaptureParameters.FileName = name;        
+        PIXBeginCapture(PIX_CAPTURE_GPU, &params);
+        LOG(INFO) << "Capturing GPU. Recording to:" << wstring_to_utf8(name);
+    }
+
+    void Device::EndCapture() {
+        PIXEndCapture(FALSE);
+        LOG(INFO) << "Capture ended.";
+    }
 }

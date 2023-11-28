@@ -23,11 +23,9 @@ void screenspaceBoundingBox(BoundingBox bbBox, out BoundingBox bbBoxss, out floa
     bbBoxss = bbBox.Transform(g_SceneGlobals.camera.viewProjection); // Screen space bounding box
     float2 bbMinSS = (bbBoxss.Center - bbBoxss.Extents).xy;
     float2 bbMaxSS = (bbBoxss.Center + bbBoxss.Extents).xy;
-    bbBoxRectUV = float4(saturate(clip2UV(bbMaxSS)), saturate(clip2UV(bbMinSS))).xwzy; // max, min
+    bbBoxRectUV = float4(saturate(clip2UV(bbMaxSS)), saturate(clip2UV(bbMinSS))); // max, min
     float2 bbBoxRectSize = 2 * bbBoxss.Extents.xy * g_SceneGlobals.frameDimension; // extents are half-widths of the axis
-    hizLOD = ceil(log2(max(bbBoxRectSize.x, bbBoxRectSize.y)));
-    if ((min(g_SceneGlobals.frameDimension.x, g_SceneGlobals.frameDimension.y) >> hizLOD) < 2)
-        hizLOD--;
+    hizLOD = floor(log2(max(bbBoxRectSize.x, bbBoxRectSize.y)));    
     float bbArea = bbBoxss.Extents.x * bbBoxss.Extents.y * 4;
     LOD = (MAX_LOD_COUNT - 1) * clamp(-0.5 * log2(bbArea), 0, 1);
 }
@@ -105,8 +103,8 @@ void main_late(uint index : SV_DispatchThreadID)
             float2 smpCoord = (bbBoxRectUV.xy + bbBoxRectUV.zw) * 0.5f;
             float smpDepth = hiz.SampleLevel(g_HIZSampler, smpCoord, hizLOD).r; // sample at the centre
 #ifdef INVERSE_Z        
-            float minDepth = bbBoxss.Center.z + bbBoxss.Extents.z; // Center + Extent -> Max. With Inverse Z higher Z value means closer to POV.
-            bool occluded = minDepth < smpDepth; // Something is closer to POV than this instance...
+        float minDepth = bbBoxss.Center.z + bbBoxss.Extents.z; // Center + Extent -> Max. With Inverse Z higher Z value means closer to POV.
+        bool occluded = minDepth < smpDepth; // Something is closer to POV than this instance...
 #else
         float minDepth = bbBoxss.Center.z - bbBoxss.Extents.z;
         bool occluded = minDepth > smpDepth;

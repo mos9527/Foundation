@@ -8,10 +8,10 @@ IBLPrefilterPass::IBLPrefilterPass(RHI::Device* device) : spdPass(device) {
 		device,
 		RootSignatureDesc()
 		.SetDirectlyIndexed()
-		.AddConstant(0, 0, 6) 
-		//               0                      1              2              3                   4                    5
+		.AddConstant(0, 0, 7) 
+		//               0                      1              2              3                   4                    5		    6
 		// * pano2cube : Out Cubemap Dimension, HDRI SRV,      Cubemap UAV
-		// * prefilter : In  Cubemap Dimension, Out [...],     Cubemap SRV,   Prefilter UAV,      Dispatch Cube Index, Filter Flags
+		// * prefilter : In  Cubemap Dimension, Out [...],     Cubemap SRV,   Prefilter UAV,      Dispatch Cube Index, Filter Flags,Mip Index
 		// * lut :       LUT Dimension,         LUT Array UAV, Num of LUTs
 		.AddStaticSampler(0, 0, SamplerDesc::GetTextureSamplerDesc(16))
 	);
@@ -62,16 +62,20 @@ RenderGraphPass& IBLPrefilterPass::insert_specular_prefilter(RenderGraph& rg, IB
 			auto* r_radiance_uav = ctx.graph->get<UnorderedAccessView>(handles.radianceCubeArrayUAVs[cubeIndex * mipLevels + mipIndex]); // a mip of a cube's 6 faces
 			auto* r_cubemap = ctx.graph->get<Texture>(handles.cubemap);			
 			auto native = ctx.cmd->GetNativeCommandList();
+			std::wstring event = std::format(L"Specular IS Filter Cube{} Mip{} UAV{}", cubeIndex, mipIndex, cubeIndex * mipLevels + mipIndex);
+			PIXBeginEvent(native, 0, (LPWSTR)event.c_str());
 			native->SetPipelineState(*PrefilterPSO);
 			native->SetComputeRootSignature(*RS);
-			uint destDimension = r_cubemap->GetDesc().width >> mipIndex;			
+			uint destDimension = r_cubemap->GetDesc().width >> mipIndex;
 			native->SetComputeRoot32BitConstant(0, r_cubemap->GetDesc().width, 0);
 			native->SetComputeRoot32BitConstant(0, destDimension, 1);
 			native->SetComputeRoot32BitConstant(0, r_cubemap_srv->descriptor.get_heap_handle(), 2);
 			native->SetComputeRoot32BitConstant(0, r_radiance_uav->descriptor.get_heap_handle(), 3);
 			native->SetComputeRoot32BitConstant(0, cubeIndex,4);			
 			native->SetComputeRoot32BitConstant(0, IBL_FILTER_FLAG_RADIANCE, 5);
+			native->SetComputeRoot32BitConstant(0, mipIndex, 6);
 			native->Dispatch(DivRoundUp(destDimension, RENDERER_FULLSCREEN_THREADS), DivRoundUp(destDimension, RENDERER_FULLSCREEN_THREADS), 1);
+			PIXEndEvent(native);
 		});
 }
 // Diffuse / irradiance sampling

@@ -30,11 +30,13 @@ void main_pano2cube(uint3 DTid : SV_DispatchThreadID)
 [numthreads(RENDERER_FULLSCREEN_THREADS, RENDERER_FULLSCREEN_THREADS, 6)]
 void main_prefilter(uint3 DTid : SV_DispatchThreadID)
 {
-    uint cubemapDimension = u0, destDimension = u1, source = u2, dest = u3,  cubeIndex = u4, flags = u5;
+    uint cubemapDimension = u0, destDimension = u1, source = u2, dest = u3, cubeIndex = u4, flags = u5, mipIndex = u6;    
+    if (any(DTid.xy > uint2(destDimension, destDimension)))
+        return;
     TextureCube cubemap = ResourceDescriptorHeap[source];
     RWTexture2DArray<float4> cubemapOut = ResourceDescriptorHeap[dest];    
-    
-    float roughness = (float) destDimension / cubemapDimension;
+    float roughness = mipIndex / (log2(cubemapDimension) - 1);
+
     uint distribution = 0;
     float3 N = normalize(UV2XYZ(DTid.xy / float2(destDimension, destDimension), DTid.z));
     if (flags & IBL_FILTER_FLAG_IRRADIANCE)
@@ -53,7 +55,7 @@ void main_prefilter(uint3 DTid : SV_DispatchThreadID)
 
     for (int i = 0; i < SAMPLE_COUNT; i++)
     {
-        float4 importanceSample = getImportanceSample(distribution, i, SAMPLE_COUNT, N, roughness);
+        float4 importanceSample = getImportanceSample(distribution, i, SAMPLE_COUNT, N, max(roughness, EPISILON));
         // NOTE: roughness is irrelavent for Lambertian intergal
         
         float3 H = float3(importanceSample.xyz);

@@ -174,10 +174,10 @@ float4 getImportanceSample(int distribution, int sampleIndex, int sampleCount, f
 float computeLod(float pdf, uint dimension, uint sampleCount)
 {
     // // Solid angle of current sample -- bigger for less likely samples
-    // float omegaS = 1.0 / (float(FilterParameters.sampleCoun) * pdf);
+    // float omegaS = 1.0 / (float(sampleCount) * pdf);
     // // Solid angle of texel
     // // note: the factor of 4.0 * UX3D_MATH_PI 
-    // float omegaP = 4.0 * UX3D_MATH_PI / (6.0 * float(pFilterParameters.width) * float(pFilterParameters.width));
+    // float omegaP = 4.0 * M_PI / (6.0 * float(dimension) * float(dimension));
     // // Mip level is determined by the ratio of our sample's solid angle to a texel's solid angle 
     // // note that 0.5 * log2 is equivalent to log4
     // float lod = 0.5 * log2(omegaS / omegaP);
