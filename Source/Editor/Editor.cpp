@@ -132,15 +132,13 @@ void Run_ImGui() {
                 device->Wait();
                 Reset_Scene();                
             }
-            {
-                static bool isOpen = false;
-                if (ImGui::MenuItem("Probe")) {
-                    isOpen = !isOpen;
-                }
-                if (ImGui::Begin("Probe", &isOpen)){
+            {            
+                if (ImGui::MenuItem("Probe"))
+                    ImGui::OpenPopup("HDRI Probe");                
+                if (ImGui::BeginPopupModal("HDRI Probe")){
                     OnImGui_IBLProbeWidget();
-                }
-                ImGui::End();
+                    ImGui::EndPopup();
+                }                
             }
             ImGui::EndMenuBar();
         }

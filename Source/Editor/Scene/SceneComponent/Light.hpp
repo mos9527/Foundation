@@ -8,13 +8,18 @@ struct SceneLightComponent : public SceneComponent {
 
 	enum LightType {
 		Point = SCENE_LIGHT_TYPE_POINT,
-		Spot = SCENE_LIGHT_TYPE_DIRECTIONAL,
+		Spot = SCENE_LIGHT_TYPE_SPOT,
 		Directional = SCENE_LIGHT_TYPE_DIRECTIONAL,
 		AreaQuad = SCENE_LIGHT_TYPE_AREA_QUAD,
 		AreaLine = SCENE_LIGHT_TYPE_AREA_LINE,
 		AreaDisk = SCENE_LIGHT_TYPE_AREA_DISK
 	} lightType;
-
+	inline const float3 get_global_translation() {
+		return get_global_transform().Translation();
+	}
+	inline const float3 get_direction_vector() {
+		return Vector3::TransformNormal(Vector3{ 0,-1,0 }, get_global_transform());
+	}
 	float intensity = 1.0f;
 	float4 color = { 1,1,1,1 };
 	/* Spot / Point Light */

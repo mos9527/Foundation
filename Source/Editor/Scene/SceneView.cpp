@@ -86,9 +86,9 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 	std::for_each(std::execution::par, lights.begin(), lights.end(), [&](SceneLightComponent& light) {
 		if (scenecomponent_versions[light.get_entity()] == light.get_version()) return;
 		SceneLight sceneLight{};
-		AffineTransform transform = light.get_global_transform();
-		Vector3 translation = transform.Translation();
-		Vector3 direction = Vector3::Transform({ 0,-1,0 }, transform.Quaternion());
+
+		Vector3 translation = light.get_global_translation();
+		Vector3 direction = light.get_direction_vector();
 		sceneLight.enabled = light.get_enabled();
 		sceneLight.position.x = translation.x;
 		sceneLight.position.y = translation.y;

@@ -3,9 +3,8 @@
 #include "Globals.hpp"
 
 int main(int argc, char* argv[]) {
-    FLAGS_alsologtostderr = true;
-    google::InitGoogleLogging(argv[0]);
-
+    FLAGS_alsologtostderr = true;    
+    google::InitGoogleLogging(argv[0]);    
     CHECK(SetProcessDPIAware());
     CHECK(SetConsoleOutputCP(65001));
 

@@ -8,7 +8,7 @@ using namespace EditorGlobalContext;
 void OnImGui_IBLProbeWidget() {
 	static std::string selectedFile;
 	static AssetHandle loadedAsset;		
-	ImGui::Text("File:%s", selectedFile.c_str());
+	ImGui::Text("File: %s", selectedFile.c_str());
 	ImGui::SameLine();
 	if (ImGui::Button("Open")) {
 		auto path = Win32_GetOpenFileNameSimple(window);
@@ -71,6 +71,6 @@ void OnImGui_IBLProbeWidget() {
 	}
 	else {
 		if (editor.state == EditorStates::Loading)
-			ImGui::Text("Loading...");
+			ImGui::Text("Loading...");			
 	}
 }

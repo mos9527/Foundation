@@ -112,7 +112,7 @@ void shade_ltc(SceneLight light, float3 baseColor, float metal, float roughness,
 /* Infinitesimal light sources */
 void attenuate_directional_light(SceneLight light, out float3 L, out float3 attenuation)
 {
-    L = light.direction.xyz;
+    L = normalize(-light.direction.xyz);
     attenuation = light.color.rgb * light.intensity;
 }
 void attenuate_point_light(SceneLight light, float3 P, out float3 L, out float3 attenuation)
