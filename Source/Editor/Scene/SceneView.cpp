@@ -9,8 +9,11 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 	std::mutex write_mutex;
 	// Instances
 	std::for_each(std::execution::par, instances.begin(), instances.end(), [&](SceneMeshComponent& mesh) {
-		// Only update instances that got updated
-		if (mesh.get_version() == scenecomponent_versions[mesh.get_entity()]) return;			
+		{
+			std::scoped_lock write_lock(write_mutex);
+			// Only update instances that got updated
+			if (mesh.get_version() == scenecomponent_versions[mesh.get_entity()]) return;
+		}
 		// SceneMeshComponent -> AssetMeshComponent -> MeshAsset
 		AssetMeshComponent& assetComponent = scene.get<AssetMeshComponent>(mesh.meshAsset);
 		MeshAsset& asset = scene.get<MeshAsset>(assetComponent.mesh);
@@ -73,9 +76,11 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 			if (!mesh.get_enabled())
 				sceneMesh.instanceFlags |= INSTANCE_FLAG_INVISIBLE;
 			// Write the update
-			std::scoped_lock write_lock(write_mutex);
-			scenecomponent_versions[mesh.get_entity()] = mesh.get_version();
-			*meshInstancesBuffer.DataAt(sceneMesh.instanceIndex) = sceneMesh;
+			{
+				std::scoped_lock write_lock(write_mutex);
+				scenecomponent_versions[mesh.get_entity()] = mesh.get_version();
+				*meshInstancesBuffer.DataAt(sceneMesh.instanceIndex) = sceneMesh;
+			}
 		});
 	// Lights
 	std::for_each(std::execution::par, lights.begin(), lights.end(), [&](SceneLightComponent& light) {
