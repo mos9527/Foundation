@@ -9,7 +9,7 @@ StructuredBuffer<SceneMeshInstance> g_SceneMeshInstances : register(t0, space0);
 StructuredBuffer<SceneMaterial> g_Materials : register(t1, space0);
 StructuredBuffer<SceneLight> g_Lights : register(t2, space0);
 SamplerState g_Sampler : register(s0, space0);
-#include "LightingCommon.hlsli"
+#include "Shading.hlsli"
 struct VSInput
 {
     float3 position : POSITION;
@@ -85,7 +85,7 @@ MRT ps_main(PSInput input) : SV_Target
     float3 P = input.positionWS.xyz;
     float viewDepth = input.position.w;
     float3 V = normalize(g_SceneGlobals.camera.position.xyz - P);
-    
+    N = normalize(N);
     float3 baseColor = albedo.rgb;
     float ao = PBR.r;
     float rough = PBR.g;

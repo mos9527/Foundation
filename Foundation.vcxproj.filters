@@ -463,7 +463,7 @@
     <Text Include="Source\Editor\Shaders\DepthSampleToTexture.hlsl" />
     <Text Include="Source\Editor\Shaders\Transparency.hlsl" />
     <Text Include="Source\Editor\Shaders\TransparencyBlend.hlsl" />
-    <Text Include="Source\Editor\Shaders\LightingCommon.hlsli" />
+    <Text Include="Source\Editor\Shaders\Shading.hlsli" />
     <Text Include="Source\Editor\Shaders\HDRIProbe.hlsl" />
     <Text Include="Source\Editor\Shaders\IBL.hlsli" />
   </ItemGroup>

@@ -1,9 +1,8 @@
 #include "Common.hlsli"
-
 ConstantBuffer<SceneGlobals> g_SceneGlobals : register(b0, space0);
 StructuredBuffer<SceneLight> g_Lights : register(t0, space0);
 SamplerState g_Sampler : register(s0, space0);
-#include "LightingCommon.hlsli"
+#include "Shading.hlsli"
 
 cbuffer MRTHandles : register(b1, space0)
 {

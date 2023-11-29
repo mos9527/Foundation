@@ -386,7 +386,7 @@
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Editor\Shaders\LightingCommon.hlsli">
+    <Text Include="Source\Editor\Shaders\Shading.hlsli">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>
