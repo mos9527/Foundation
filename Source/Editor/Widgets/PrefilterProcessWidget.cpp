@@ -8,8 +8,7 @@ using namespace EditorGlobalContext;
 void OnImGui_IBLProbeWidget() {
 	static std::string selectedFile;
 	static AssetHandle loadedAsset;		
-	ImGui::Text("File: %s", selectedFile.c_str());
-	ImGui::SameLine();
+	ImGui::SetNextWindowSize(ImVec2(512, 512));
 	if (ImGui::Button("Open")) {
 		auto path = Win32_GetOpenFileNameSimple(window);
 		if (path.size()) {			
@@ -28,6 +27,8 @@ void OnImGui_IBLProbeWidget() {
 			}, path, loadedAsset);
 		}
 	}
+	ImGui::SameLine();
+	ImGui::Text("File: %s", selectedFile.c_str());
 	auto* asset = scene.scene->try_get<TextureAsset>(loadedAsset);
 	if (asset && asset->IsUploaded()) {
 		ImGui::SeparatorText("Preview");

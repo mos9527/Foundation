@@ -14,7 +14,7 @@ void main(uint2 DTid : SV_DispatchThreadID)
         return;
     Texture2D<float4> accTex = ResourceDescriptorHeap[accumalationSrvHandle];
     Texture2D<float4> revTex = ResourceDescriptorHeap[revealageSrvHandle];
-    RWTexture2D<float4> framebuffer = ResourceDescriptorHeap[framebufferUavHandle];
+    RWTexture2D<float3> framebuffer = ResourceDescriptorHeap[framebufferUavHandle];
     float3 C0 = framebuffer[DTid].rgb;
     float4 acc = accTex[DTid];
     float rev = revTex[DTid].r;
@@ -23,5 +23,5 @@ void main(uint2 DTid : SV_DispatchThreadID)
     float ai_sum = clamp(acc.a, 1e-4, 5e4);
     float inv_ai_prod = rev;
     float3 Cf = (Ci_sum / ai_sum) * (1 - inv_ai_prod) + C0 * inv_ai_prod;    
-    framebuffer[DTid] = float4(Cf, 1.0f);
+    framebuffer[DTid] = Cf;
 }

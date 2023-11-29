@@ -33,7 +33,7 @@ GBufferPass::GBufferPass(Device* device) {
 #endif
 	gbufferPsoDesc.SampleMask = UINT_MAX;
 	gbufferPsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	gbufferPsoDesc.NumRenderTargets = 5; // ALBEDO[RGB+Mask], NORMAL, MATERIAL[metallic,roughness,[packed uint16]], EMISSIVE, VELOCITY
+	gbufferPsoDesc.NumRenderTargets = 5; // ALBEDO[RGB+AO], NORMAL, MATERIAL[metallic,roughness,[uint16 instance ID]], EMISSIVE[mask?], VELOCITY
 	gbufferPsoDesc.RTVFormats[0] = ResourceFormatToD3DFormat(ResourceFormat::R8G8B8A8_UNORM);
 	gbufferPsoDesc.RTVFormats[1] = ResourceFormatToD3DFormat(ResourceFormat::R16G16_FLOAT); // see Shared.h
 	gbufferPsoDesc.RTVFormats[2] = ResourceFormatToD3DFormat(ResourceFormat::R8G8B8A8_UNORM);

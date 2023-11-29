@@ -148,6 +148,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Dependencies\D3D12MemoryAllocator\D3D12MemAlloc.cpp" />
+    <ClCompile Include="Dependencies\ImGuizmo\GraphEditor.cpp" />
+    <ClCompile Include="Dependencies\ImGuizmo\ImCurveEdit.cpp" />
+    <ClCompile Include="Dependencies\ImGuizmo\ImGradient.cpp" />
+    <ClCompile Include="Dependencies\ImGuizmo\ImGuizmo.cpp" />
+    <ClCompile Include="Dependencies\ImGuizmo\ImSequencer.cpp" />
     <ClCompile Include="Dependencies\imgui\backends\imgui_impl_dx12.cpp" />
     <ClCompile Include="Dependencies\imgui\backends\imgui_impl_win32.cpp" />
     <ClCompile Include="Dependencies\imgui\imgui.cpp" />
@@ -164,6 +169,7 @@
     <ClCompile Include="Source\Editor\Processor\ProcessPass\IBLPrefilter.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\Tonemapping.cpp" />
     <ClCompile Include="Source\Editor\Widgets\AssetMeshComponentWidget.cpp" />
+    <ClCompile Include="Source\Editor\Widgets\ImGuizmoWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\LoadingScreenWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\AssetMaterialComponentWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\PrefilterProcessWidget.cpp" />
@@ -208,6 +214,12 @@
   <ItemGroup>
     <ClInclude Include="Dependencies\D3D12MemoryAllocator\D3D12MemAlloc.h" />
     <ClInclude Include="Dependencies\IconsFontAwesome6.h" />
+    <ClInclude Include="Dependencies\ImGuizmo\GraphEditor.h" />
+    <ClInclude Include="Dependencies\ImGuizmo\ImCurveEdit.h" />
+    <ClInclude Include="Dependencies\ImGuizmo\ImGradient.h" />
+    <ClInclude Include="Dependencies\ImGuizmo\ImGuizmo.h" />
+    <ClInclude Include="Dependencies\ImGuizmo\ImSequencer.h" />
+    <ClInclude Include="Dependencies\ImGuizmo\ImZoomSlider.h" />
     <ClInclude Include="Dependencies\imgui\backends\imgui_impl_dx12.h" />
     <ClInclude Include="Dependencies\imgui\backends\imgui_impl_win32.h" />
     <ClInclude Include="Dependencies\imgui\imgui.h" />
@@ -232,6 +244,7 @@
     <ClInclude Include="Source\Editor\Shaders\Shaders.hpp" />
     <ClInclude Include="Source\Editor\Widgets\AssetWidgets.hpp" />
     <ClInclude Include="Source\Editor\Widgets\SceneGraphWidgets.hpp" />
+    <ClInclude Include="Source\Editor\Widgets\ViewportWidgets.hpp" />
     <ClInclude Include="Source\Editor\Widgets\Widgets.hpp" />
     <ClInclude Include="Source\Editor\Win32\Win32IO.hpp" />
     <ClInclude Include="Source\Editor\Win32\Window.hpp" />

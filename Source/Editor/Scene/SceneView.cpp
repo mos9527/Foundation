@@ -7,10 +7,10 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 	auto& materials = scene.storage<AssetMaterialComponent>();
 	auto& lights = scene.storage<SceneLightComponent>();
 	std::mutex write_mutex;
-	// Instances
+	// Instances	
 	std::for_each(std::execution::par, instances.begin(), instances.end(), [&](SceneMeshComponent& mesh) {
 		{
-			std::scoped_lock write_lock(write_mutex);
+			std::scoped_lock write_lock(write_mutex);			
 			// Only update instances that got updated
 			if (mesh.get_version() == scenecomponent_versions[mesh.get_entity()]) return;
 		}

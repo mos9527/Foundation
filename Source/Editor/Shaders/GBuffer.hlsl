@@ -1,4 +1,5 @@
 #include "Common.hlsli"
+#include "Math.hlsli"
 cbuffer IndirectData : register(b0, space0)
 {
     uint g_MeshIndex;
@@ -39,9 +40,9 @@ PSInput vs_main(VSInput vertex)
 }
 struct MRT
 {
-    float4 AlbedoMask : SV_Target0; // i.e. Basecolor
+    float4 Albedo : SV_Target0; // i.e. Basecolor & alpha
     float4 Normal : SV_Target1; // Spheremeap encoded normal
-    float4 Material : SV_Target2; // PBR props & ...
+    float4 Material : SV_Target2; // PBR props & Instance ID
     float4 Emissive : SV_Target3; // Emissive materials
     float4 Velocity : SV_Target4; // Screen space velocity
 };
@@ -57,18 +58,20 @@ MRT ps_main(PSInput input)
     {
         float lod = (float) g_LodIndex / MAX_LOD_COUNT;
         float3 ramp = colorRamp(lod);
-        output.AlbedoMask = float4(ramp, 1);
+        output.Albedo = float4(ramp, 1);
         output.Normal = float4(1, 1, 1, 1);
         output.Emissive = float4(0, 0, 0, 0);
         output.Material = float4(0, 0, 0, 0);
         return output;
     }
-    output.AlbedoMask = material.albedo;
+    output.Albedo = material.albedo;
     if (material.albedoMap != INVALID_HEAP_HANDLE)
     {
         Texture2D albedoMap = ResourceDescriptorHeap[material.albedoMap];
-        output.AlbedoMask = albedoMap.Sample(g_Sampler, input.uv);
+        output.Albedo = albedoMap.Sample(g_Sampler, input.uv);
     }
+    if (output.Albedo.a <= EPISILON) // Curde alpha testing. Works only for (partially) completely transparent materials
+        discard;
     float3 N = input.normal;
     if (material.normalMap != INVALID_HEAP_HANDLE)
     {
@@ -88,5 +91,10 @@ MRT ps_main(PSInput input)
         Texture2D emissiveMap = ResourceDescriptorHeap[material.emissiveMap];
         output.Emissive = emissiveMap.Sample(g_Sampler, input.uv);
     }
+    // Swizzling
+    
+    output.Albedo.a = output.Material.r; // Albedo Alpha -> AO
+    output.Material.rg = output.Material.gb; // Material RG -> Roughness, Metal
+    output.Material.ba = pack16toUnorm8(g_MeshIndex); // Material BA -> Instance ID
     return output;
 }

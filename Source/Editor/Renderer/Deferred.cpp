@@ -1,5 +1,22 @@
-#include "Deferred.hpp"
+﻿#include "Deferred.hpp"
 using namespace RHI;
+/*
+* Deferred Rendering Pipeline
+* :: GBuffer Layout ::
+* ┌──────────────────┬────────────┬──────────┬───────────────────┐
+* │ RT0    Albedo R  │  Albedo G  │ Abledo B │  Ambient Occlusion│ [R8G8B8A8UNROM]
+* │ RT1       World.Normal        │        World.Normal          │ [R16G16FLOAT]
+* │ RT2     Roughness│  Metallic  │      Instance Index          │ [R8G8B8A8UNORM]
+* │ RT3    Emissive R│ Emissive G │Emissive B│         -----     │ [R8G8B8A8UNORM]
+* │ RT4        Velocity           │        Velocity              │ [R16G16FLOAT]
+* └───────────────────────────────┴──────────────────────────────┘
+* <----------------------------32 Bits--------------------------->
+* [ FB ] RGB16 Linear HDR Image
+* :: Note on Transparency ::
+* - Weight-Blended order-independent transparency is implemented for order stochastic transparency
+* - However, if WBOIT is not used, the reset of the pipeline can still handle material parts with complete transparency (alpha=0) by
+*   discarding those pixels at Gbuffer generation.
+*/
 RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 {
 	UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
@@ -125,7 +142,7 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		.viewed = revealage_buffer
 	});
 	auto& frameBuffer = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
-		ResourceFormat::R16G16B16A16_FLOAT, ResourceDimension::Texture2D,
+		ResourceFormat::R11G11B10_FLOAT, ResourceDimension::Texture2D,
 		width, height, 1, 1, 1, 0,
 		ResourceFlags::UnorderedAccess | ResourceFlags::RenderTarget, ResourceHeapType::Default,
 		ResourceState::UnorderedAccess, ClearValue(0, 0, 0, 0),
@@ -152,7 +169,7 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 		.viewed = velocity
 	});
 	auto& fb_uav = rg.create<UnorderedAccessView>({
-		.viewDesc = UnorderedAccessViewDesc::GetTexture2DDesc(ResourceFormat::R16G16B16A16_FLOAT,0,0),
+		.viewDesc = UnorderedAccessViewDesc::GetTexture2DDesc(ResourceFormat::R11G11B10_FLOAT,0,0),
 		.viewed = frameBuffer
 	});	
 	auto& hiz_srv = rg.create<ShaderResourceView>({
@@ -166,11 +183,11 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 			.viewed = hiz_buffer
 		}));	
 	auto& fb_srv = rg.create<ShaderResourceView>({
-		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R16G16B16A16_FLOAT, 0, 1),
+		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R11G11B10_FLOAT, 0, 1),
 		.viewed = frameBuffer
 	});
 	auto& fb_rtv = rg.create<RenderTargetView>({
-		.viewDesc = RenderTargetViewDesc::GetTexture2DDesc(ResourceFormat::R16G16B16A16_FLOAT, 0),
+		.viewDesc = RenderTargetViewDesc::GetTexture2DDesc(ResourceFormat::R11G11B10_FLOAT, 0),
 		.viewed = frameBuffer
 	});
 	pass_Clear.insert_dsv(rg, sceneView, { &depth }, { &depth_dsv });

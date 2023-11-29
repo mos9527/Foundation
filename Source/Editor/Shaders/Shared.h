@@ -87,8 +87,9 @@ struct SceneGlobals // ! align for CB
     uint3 _pad0;
 
     uint numMeshInstances; // Opaque + Transparent
+    uint numTransparentMeshInstances;
     uint numLights;
-    uint2 _pad1;
+    uint _pad1;
 
     uint frameFlags;
     uint frameIndex;

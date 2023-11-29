@@ -231,6 +231,18 @@ float3 decodeTangetNormalMap(float3 sample, float3 Tv, float3 Nv)
     N = normalize(tN.x * T + tN.y * B + tN.z * N);
     return N;
 }
+float2 pack16toUnorm8(uint value)
+{
+    value = value & 0xffff;
+    uint hi = value >> 8;
+    uint low = value & 0xff;
+    return clamp(float2(hi, low) / 255.0f, 0, 1);
+}
+uint unpackUnorm8to16(float2 value)
+{
+    uint2 packed = uint2(round(saturate(value) * 255.0));
+    return packed.x << 8 | packed.y;
+}
 float clipZ2ViewZ(float Zss, float zNear, float zFar)
 {
 #ifdef INVERSE_Z

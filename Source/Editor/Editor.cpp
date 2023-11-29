@@ -2,6 +2,7 @@
 #include "Editor.hpp"
 #include "Input/KBMCamera.hpp"
 #include "Win32/Win32IO.hpp"
+#include "../../Dependencies/IconsFontAwesome6.h"
 using namespace RHI;
 using namespace EditorGlobalContext;
 #define IMGUI_DEFAULT_FONT "Resources/Fonts/DroidSansFallback.ttf"
@@ -49,7 +50,7 @@ void Setup_Scene() {
 
     auto& light = scene.scene->graph->emplace_at_root<SceneLightComponent>();
     light.set_name("Spot Light");
-    light.set_local_transform(AffineTransform::CreateFromYawPitchRoll(0, XM_PIDIV2, 0) * AffineTransform::CreateTranslation({0,1,0}));
+    light.set_local_transform(AffineTransform::CreateTranslation({0,1,0}));
     light.lightType = SceneLightComponent::LightType::Spot;
     light.intensity = 1.0f;
     light.color = { 1,1,1,1 };
@@ -137,6 +138,9 @@ void Run_ImGui() {
                     ImGui::OpenPopup("HDRI Probe");                
                 if (ImGui::BeginPopupModal("HDRI Probe")){
                     OnImGui_IBLProbeWidget();
+                    ImGui::Separator();
+                    if (ImGui::Button("Close"))
+                        ImGui::CloseCurrentPopup();
                     ImGui::EndPopup();
                 }                
             }

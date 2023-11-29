@@ -25,21 +25,22 @@ void main(uint2 DTid : SV_DispatchThreadID)
     Texture2D materialTex = ResourceDescriptorHeap[materialHandle];
     Texture2D emissiveTex = ResourceDescriptorHeap[emissiveHandle];
     Texture2D depthTex = ResourceDescriptorHeap[depthHandle];    
-    RWTexture2D<float4> frameBuffer = ResourceDescriptorHeap[frameBufferHandle];
+    RWTexture2D<float3> frameBuffer = ResourceDescriptorHeap[frameBufferHandle];
     
     float4 albedoSmp = albedoTex[DTid];
-    if (g_SceneGlobals.debug_view_albedo() || g_SceneGlobals.debug_view_lod() /* see GBuffer.hlsl */)
-    {
-        frameBuffer[DTid] = float4(albedoSmp.rgb, 1);
-        return;
-    }
-    
     float4 normalSmp = normalTex[DTid];
     float4 materialSmp = materialTex[DTid];
     float4 emissiveSmp = emissiveTex[DTid];
     float4 depthSmp = depthTex[DTid];
     
-    float3 PBR = materialSmp.rgb;
+    float3 PBR = float3(albedoSmp.a,materialSmp.rg);  // AO, rough, metal
+    uint instance = unpackUnorm8to16(materialSmp.ba); // Instance ID
+    
+    if (g_SceneGlobals.debug_view_albedo() || g_SceneGlobals.debug_view_lod() /* see GBuffer.hlsl */)
+    {
+        frameBuffer[DTid] = float4(albedoSmp.rgb, instance);
+        return;
+    }
     
     float3 baseColor = albedoSmp.rgb;
     float ao = PBR.r;
@@ -74,5 +75,5 @@ void main(uint2 DTid : SV_DispatchThreadID)
         shade_indirect(g_SceneGlobals.probe, V, N, baseColor, metal, rough, ao, diffuse, specular);
     }
     float3 finalColor = diffuse + specular + emissiveSmp.rgb;
-    frameBuffer[DTid] = float4(finalColor, 1.0f);
+    frameBuffer[DTid] = finalColor;
 }

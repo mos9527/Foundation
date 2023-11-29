@@ -1,5 +1,6 @@
 #include "Widgets.hpp"
 #include "SceneGraphWidgets.hpp"
+#include "../../Dependencies/IconsFontAwesome6.h"
 
 using namespace EditorGlobalContext;
 const char* GetGlyphByType(SceneComponentType type) {
