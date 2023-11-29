@@ -170,26 +170,30 @@ struct SceneMaterial {
     float4 emissive;
 };
 #define SCENE_LIGHT_TYPE_POINT 0
-#define SCENE_LIGHT_TYPE_DIRECTIONAL 1
-#define SCENE_LIGHT_TYPE_AREA_QUAD 2
-#define SCENE_LIGHT_TYPE_AREA_LINE 3
-#define SCENE_LIGHT_TYPE_AREA_DISK 4
+#define SCENE_LIGHT_TYPE_SPOT 1
+#define SCENE_LIGHT_TYPE_DIRECTIONAL 2
+#define SCENE_LIGHT_TYPE_AREA_QUAD 3
+#define SCENE_LIGHT_TYPE_AREA_LINE 4
+#define SCENE_LIGHT_TYPE_AREA_DISK 5
 struct SceneLight {
     uint enabled;
-    uint type;
-    float intensity;
-    float radius;
+    uint type;    
     float4 position;
     float4 direction;
+    float intensity;
     float4 color;
-
+    /* Spot / Point Light */
+    float spot_point_radius;
+    /* Spot Light */
+    float spot_size_rad;   // outer
+    float spot_size_blend; // inner = size * blend
     /* Quad/Disk Area Light */
-    float2 area_Extents;
-    uint area_TwoSided;
+    float2 area_quad_disk_extents;
+    uint area_quad_disk_twoSided;
     /* Line Area Light */
-    float line_Length;    
-    float line_Radius;
-    uint  line_Caps;
+    float area_line_length;    
+    float area_line_radius;
+    uint  area_line_caps;
 };
 struct IndirectConstant
 {

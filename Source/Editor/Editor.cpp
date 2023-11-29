@@ -50,14 +50,9 @@ void Setup_Scene() {
     auto& light = scene.scene->graph->emplace_at_root<SceneLightComponent>();
     light.set_name("Spot Light");
     light.set_local_transform(AffineTransform::CreateFromYawPitchRoll(0, XM_PIDIV2, 0) * AffineTransform::CreateTranslation({0,1,0}));
-    light.lightType = SceneLightComponent::LightType::AreaLine;
+    light.lightType = SceneLightComponent::LightType::Spot;
     light.intensity = 1.0f;
     light.color = { 1,1,1,1 };
-    light.radius = 100.0f;
-    light.area_Extents = { 1,1 };
-    light.area_TwoSided = true;
-    light.line_Length = 1.0f;
-    light.line_Radius = 1.0f;
     g_cameraController.reset();
 }
 void Reset_Scene() {

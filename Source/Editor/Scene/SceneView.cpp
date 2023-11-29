@@ -98,23 +98,27 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 		sceneLight.direction.y = direction.y;
 		sceneLight.direction.z = direction.z;
 		sceneLight.direction.w = 1;
-		sceneLight.color = light.color;
 
 		sceneLight.type = (UINT)light.lightType;
-
 		sceneLight.intensity = light.intensity;
-		sceneLight.radius = light.radius;
+		sceneLight.color = light.color;
 
-		sceneLight.area_Extents = light.area_Extents;
-		sceneLight.area_TwoSided = light.area_TwoSided;
+		sceneLight.spot_point_radius = light.spot_point_radius;
+		sceneLight.spot_size_rad = light.spot_size_rad;
+		sceneLight.spot_size_blend = light.spot_size_blend;
 
-		sceneLight.line_Length = light.line_Length;
-		sceneLight.line_Caps = light.line_Caps;
-		sceneLight.line_Radius = light.line_Radius;
+		sceneLight.area_quad_disk_extents = light.area_quad_disk_extents;
+		sceneLight.area_quad_disk_twoSided = light.area_quad_disk_twoSided;
+
+		sceneLight.area_line_length = light.area_line_length;
+		sceneLight.area_line_caps = light.area_line_caps;
+		sceneLight.area_line_radius = light.area_line_radius;
 		// Write the update
-		std::scoped_lock write_lock(write_mutex);
-		scenecomponent_versions[light.get_entity()] = light.get_version();
-		*lightBuffer.DataAt(lights.index(light.get_entity())) = sceneLight;
+		{
+			std::scoped_lock write_lock(write_mutex);
+			scenecomponent_versions[light.get_entity()] = light.get_version();
+			*lightBuffer.DataAt(lights.index(light.get_entity())) = sceneLight;
+		}
 	});
 	// These are updated every frame...
 	// LTC Table

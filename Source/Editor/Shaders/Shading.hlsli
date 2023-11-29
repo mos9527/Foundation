@@ -32,32 +32,34 @@ float4 getLUT(SceneIBLProbe probe, float NoV, float roughness)
     Texture2D lut = ResourceDescriptorHeap[probe.lutHeapIndex];
     return lut.SampleLevel(g_Sampler, float2(NoV, roughness), 0);
 }
+/* IBL shading */
 #define IBL_SHADING
 #include "IBL.hlsli"
 #define DIELECTRIC_SPECULAR 0.04
+/* LTC area light sources */
 void shade_ltc_quad(SceneLight light, float4 t1, float4 t2, float3x3 Minv, float3 F0, float3 c_diffuse , float3 P, float3 V, float3 N, inout float3 diffuse, inout float3 specular)
 {
     float3 b1, b2;
     buildOrthonormalBasis(light.direction.xyz, b1, b2);
     
     float3 points[4];
-    points[0] = light.position.xyz - b1 * light.area_Extents.x - b2 * light.area_Extents.y;
-    points[1] = light.position.xyz + b1 * light.area_Extents.x - b2 * light.area_Extents.y;
-    points[2] = light.position.xyz + b1 * light.area_Extents.x + b2 * light.area_Extents.y;
-    points[3] = light.position.xyz - b1 * light.area_Extents.x + b2 * light.area_Extents.y;
+    points[0] = light.position.xyz - b1 * light.area_quad_disk_extents.x - b2 * light.area_quad_disk_extents.y;
+    points[1] = light.position.xyz + b1 * light.area_quad_disk_extents.x - b2 * light.area_quad_disk_extents.y;
+    points[2] = light.position.xyz + b1 * light.area_quad_disk_extents.x + b2 * light.area_quad_disk_extents.y;
+    points[3] = light.position.xyz - b1 * light.area_quad_disk_extents.x + b2 * light.area_quad_disk_extents.y;
     
-    diffuse += c_diffuse * LTC_EvaluateQuad(N, V, P, float3x3(float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1)), points, light.area_TwoSided) * light.intensity * light.color.rgb;
-    specular += (F0 * t2.x + (splat3(1) - F0) * t2.y) * LTC_EvaluateQuad(N, V, P, Minv, points, light.area_TwoSided) * light.intensity * light.color.rgb;    
+    diffuse += c_diffuse * LTC_EvaluateQuad(N, V, P, float3x3(float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1)), points, light.area_quad_disk_twoSided) * light.intensity * light.color.rgb;
+    specular += (F0 * t2.x + (splat3(1) - F0) * t2.y) * LTC_EvaluateQuad(N, V, P, Minv, points, light.area_quad_disk_twoSided) * light.intensity * light.color.rgb;
 }
 void shade_ltc_line(SceneLight light, float4 t1, float4 t2, float3x3 Minv, float3 F0, float3 c_diffuse, float3 P, float3 V, float3 N, inout float3 diffuse, inout float3 specular)
 {
     float3 b1, b2;
     buildOrthonormalBasis(light.direction.xyz, b1, b2);
     
-    float3 P1 = light.position.xyz + b1 * light.line_Length / -2;
-    float3 P2 = light.position.xyz + b1 * light.line_Length /  2;
-    float R = light.line_Radius;
-    uint endCaps = light.line_Caps;
+    float3 P1 = light.position.xyz + b1 * light.area_line_length / -2;
+    float3 P2 = light.position.xyz + b1 * light.area_line_length / 2;
+    float R = light.area_line_radius;
+    uint endCaps = light.area_line_caps;
     diffuse += c_diffuse * LTC_EvaluateLine(N, V, P, float3x3(float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1)),P1,P2,R,endCaps) * light.intensity * light.color.rgb;
     specular += (F0 * t2.x + (splat3(1) - F0) * t2.y) * LTC_EvaluateLine(N, V, P, Minv, P1, P2, R, endCaps) * light.intensity * light.color.rgb;
 }
@@ -67,13 +69,13 @@ void shade_ltc_disk(SceneLight light, float4 t1, float4 t2, float3x3 Minv, float
     buildOrthonormalBasis(light.direction.xyz, b1, b2);
     
     float3 points[4];
-    points[0] = light.position.xyz - b1 * light.area_Extents.x - b2 * light.area_Extents.y;
-    points[1] = light.position.xyz + b1 * light.area_Extents.x - b2 * light.area_Extents.y;
-    points[2] = light.position.xyz + b1 * light.area_Extents.x + b2 * light.area_Extents.y;
-    points[3] = light.position.xyz - b1 * light.area_Extents.x + b2 * light.area_Extents.y;
+    points[0] = light.position.xyz - b1 * light.area_quad_disk_extents.x - b2 * light.area_quad_disk_extents.y;
+    points[1] = light.position.xyz + b1 * light.area_quad_disk_extents.x - b2 * light.area_quad_disk_extents.y;
+    points[2] = light.position.xyz + b1 * light.area_quad_disk_extents.x + b2 * light.area_quad_disk_extents.y;
+    points[3] = light.position.xyz - b1 * light.area_quad_disk_extents.x + b2 * light.area_quad_disk_extents.y;
     
-    diffuse += c_diffuse * LTC_EvaluateDisk(N, V, P, float3x3(float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1)), points, light.area_TwoSided) * light.intensity * light.color.rgb;
-    specular += (F0 * t2.x + (splat3(1) - F0) * t2.y) * LTC_EvaluateDisk(N, V, P, Minv, points, light.area_TwoSided) * light.intensity * light.color.rgb;
+    diffuse += c_diffuse * LTC_EvaluateDisk(N, V, P, float3x3(float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1)), points, light.area_quad_disk_twoSided) * light.intensity * light.color.rgb;
+    specular += (F0 * t2.x + (splat3(1) - F0) * t2.y) * LTC_EvaluateDisk(N, V, P, Minv, points, light.area_quad_disk_twoSided) * light.intensity * light.color.rgb;
 }
 void shade_ltc(SceneLight light, float3 baseColor, float metal, float roughness, float3 P, float3 V, float3 N, inout float3 diffuse, inout float3 specular)
 {
@@ -107,6 +109,32 @@ void shade_ltc(SceneLight light, float3 baseColor, float metal, float roughness,
             break;
     }   
 }
+/* Infinitesimal light sources */
+void attenuate_directional_light(SceneLight light, out float3 L, out float3 attenuation)
+{
+    L = light.direction.xyz;
+    attenuation = light.color.rgb * light.intensity;
+}
+void attenuate_point_light(SceneLight light, float3 P, out float3 L, out float3 attenuation)
+{
+    float3 l = light.position.xyz - P;
+    L = normalize(l);  
+    float distance = length(l);
+    float radius = light.spot_point_radius;
+    attenuation = max(min(1.0 - pow(distance / radius, 4.0), 1.0), 0.0) / pow(distance, 2.0) * light.color.rgb * light.intensity;    
+}
+void attenuate_spot_light(SceneLight light, float3 P, out float3 L, out float3 attenuation)
+{
+    float3 l = light.position.xyz - P;
+    L = normalize(l);
+    float distance = length(l);
+    float radius = light.spot_point_radius;    
+    float cosAngle = dot(normalize(light.direction.xyz), -L);
+    float innerCos = cos(light.spot_size_rad * (1 - light.spot_size_blend));
+    float outerCos = cos(light.spot_size_rad);
+    float angAtt = saturate((cosAngle - outerCos) / (innerCos - outerCos));
+    attenuation = angAtt * max(min(1.0 - pow(distance / radius, 4.0), 1.0), 0.0) / pow(distance, 2.0) * light.color.rgb * light.intensity;
+}
 void shade_direct_brdf(float3 L, float3 V, float3 N, float3 baseColor, float metal, float alphaRoughness, float3 attenuation, inout float3 diffuse, inout float3 specular)
 {
     float3 H = normalize(L + V);
@@ -121,19 +149,6 @@ void shade_direct_brdf(float3 L, float3 V, float3 N, float3 baseColor, float met
     diffuse += attenuation * NoL * BRDF_Lambertian(c_diffuse);
     specular += attenuation * NoL * BRDF_GGX_Specular(F0, splat3(1), VoH, NoL, NoV, NoH, alphaRoughness);
 }
-void shade_directional_light(SceneLight light, out float3 L, out float3 attenuation)
-{
-    L = light.direction.xyz;
-    attenuation = light.color.rgb * light.intensity;
-}
-void shade_point_light(SceneLight light, float3 P, out float3 L, out float3 attenuation)
-{
-    float3 l = light.position.xyz - P;
-    float distance = length(l);
-    L = normalize(l);
-    float radius = light.radius;
-    attenuation = max(min(1.0 - pow(distance / radius, 4.0), 1.0), 0.0) / pow(distance, 2.0) * light.color.rgb * light.intensity;
-}
 /* SHADER ENTRY POINT */
 void shade_direct(SceneLight light, float3 P, float3 V, float3 N, float3 baseColor, float metal, float alphaRoughness, inout float3 diffuse, inout float3 specular)
 {
@@ -142,13 +157,17 @@ void shade_direct(SceneLight light, float3 P, float3 V, float3 N, float3 baseCol
     switch (light.type)
     {
         case SCENE_LIGHT_TYPE_POINT:
-            shade_point_light(light, P, L, attenuation);
+            attenuate_point_light(light, P, L, attenuation);
             shade_direct_brdf(L, V, N, baseColor, metal, alphaRoughness, attenuation, diffuse, specular);
             break;
         case SCENE_LIGHT_TYPE_DIRECTIONAL:
-            shade_directional_light(light, L, attenuation);
+            attenuate_directional_light(light, L, attenuation);
             shade_direct_brdf(L, V, N, baseColor, metal, alphaRoughness, attenuation, diffuse, specular);
-            break;    
+            break;
+        case SCENE_LIGHT_TYPE_SPOT:
+            attenuate_spot_light(light, P, L, attenuation);
+            shade_direct_brdf(L, V, N, baseColor, metal, alphaRoughness, attenuation, diffuse, specular);
+            break;
         case SCENE_LIGHT_TYPE_AREA_QUAD:
         case SCENE_LIGHT_TYPE_AREA_LINE:
         case SCENE_LIGHT_TYPE_AREA_DISK:

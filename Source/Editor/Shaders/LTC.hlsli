@@ -276,12 +276,13 @@ float3 LTC_EvaluateDisk(float3 N, float3 V, float3 P, float3x3 Minv, float3 poin
     // rotate area light in (T1, T2, N) basis
     Minv = mul(transpose(float3x3(T1, T2, N)), Minv);
 
-    // polygon (allocate 5 vertices for clipping)
-    float3 L_[3];
+    // polygon
+    float3 L_[4];
     L_[0] = mul(points[0] - P, Minv);
     L_[1] = mul(points[1] - P, Minv);
     L_[2] = mul(points[2] - P, Minv);
-
+    L_[3] = mul(points[3] - P, Minv);
+    
     float3 Lo_i = splat3(0);
 
     // init ellipse
@@ -289,7 +290,7 @@ float3 LTC_EvaluateDisk(float3 N, float3 V, float3 P, float3x3 Minv, float3 poin
     float3 V1 = 0.5 * (L_[1] - L_[2]);
     float3 V2 = 0.5 * (L_[1] - L_[0]);
 
-    if(!twoSided && dot(cross(V1, V2), C) < 0.0)
+    if(!twoSided && dot(cross(V1, V2), C) > 0.0)
         return splat3(0.0);
 
     // compute eigenvectors of ellipse
