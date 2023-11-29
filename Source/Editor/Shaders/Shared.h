@@ -81,11 +81,14 @@ struct SceneGlobals // ! align for CB
     SceneCamera camera;
     SceneCamera cameraPrev; // previous frame
 
-    SceneIBLProbe probe; 
+    SceneIBLProbe probe;   
+
+    uint ltcLutHeapIndex;
+    uint3 _pad0;
 
     uint numMeshInstances; // Opaque + Transparent
     uint numLights;
-    uint2 _pad;
+    uint2 _pad1;
 
     uint frameFlags;
     uint frameIndex;
@@ -168,6 +171,9 @@ struct SceneMaterial {
 };
 #define SCENE_LIGHT_TYPE_POINT 0
 #define SCENE_LIGHT_TYPE_DIRECTIONAL 1
+#define SCENE_LIGHT_TYPE_AREA_QUAD 2
+#define SCENE_LIGHT_TYPE_AREA_LINE 3
+#define SCENE_LIGHT_TYPE_AREA_DISK 4
 struct SceneLight {
     uint enabled;
     uint type;
@@ -175,7 +181,15 @@ struct SceneLight {
     float radius;
     float4 position;
     float4 direction;
-    float4 color;    
+    float4 color;
+
+    /* Quad/Disk Area Light */
+    float2 area_Extents;
+    uint area_TwoSided;
+    /* Line Area Light */
+    float line_Length;    
+    float line_Radius;
+    uint  line_Caps;
 };
 struct IndirectConstant
 {

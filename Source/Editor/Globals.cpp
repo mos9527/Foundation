@@ -18,6 +18,7 @@ namespace EditorGlobalContext {
         scene.scene = new ::Scene;
         render.renderer = new ::DeferredRenderer(device);
         editor.iblProbe = new ::IBLProbeProcessor(device, 512);
+        editor.ltcTable = new ::LTCTableProcessor(device);
         for (uint i = 0; i < ARRAYSIZE(scene.views); i++) {
             scene.views[i] = new ::SceneView(device);
         }

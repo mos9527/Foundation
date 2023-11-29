@@ -159,14 +159,17 @@
     <ClCompile Include="Source\Editor\Globals.cpp" />
     <ClCompile Include="Source\Editor\Input\KBMCamera.cpp" />
     <ClCompile Include="Source\Editor\Processor\IBLProbeProcessor.cpp" />
+    <ClCompile Include="Source\Editor\Processor\LTCTableProcessor.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\Clear.cpp" />
     <ClCompile Include="Source\Editor\Processor\ProcessPass\IBLPrefilter.cpp" />
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\Tonemapping.cpp" />
     <ClCompile Include="Source\Editor\Widgets\AssetMeshComponentWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\LoadingScreenWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\AssetMaterialComponentWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\PrefilterProcessWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\RendererWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\SceneGraphWidget.cpp" />
+    <ClCompile Include="Source\Editor\Widgets\SceneLightComponentWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\SceneMeshComponentWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\TransformWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\ViewportWidget.cpp" />
@@ -221,9 +224,11 @@
     <ClInclude Include="Source\Editor\Globals.hpp" />
     <ClInclude Include="Source\Editor\Input\KBMCamera.hpp" />
     <ClInclude Include="Source\Editor\Processor\IBLProbeProcessor.hpp" />
+    <ClInclude Include="Source\Editor\Processor\LTCTableProcessor.hpp" />
     <ClInclude Include="Source\Editor\Processor\Processor.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\Clear.hpp" />
     <ClInclude Include="Source\Editor\Processor\ProcessPass\IBLPrefilter.hpp" />
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\Tonemapping.hpp" />
     <ClInclude Include="Source\Editor\Shaders\Shaders.hpp" />
     <ClInclude Include="Source\Editor\Widgets\AssetWidgets.hpp" />
     <ClInclude Include="Source\Editor\Widgets\SceneGraphWidgets.hpp" />
@@ -291,12 +296,14 @@
     <Text Include="Source\Editor\Shaders\Shared.h">
       <FileType>Document</FileType>
     </Text>
+    <None Include="Source\Editor\Processor\Data\LTC.h" />
     <None Include="Source\Editor\Renderer\RenderPass\DeferredLighting.hpp" />
     <None Include="Source\Editor\Shaders\BRDF.hlsli" />
     <None Include="Source\Editor\Shaders\Common.hlsli" />
     <Text Include="Source\Editor\Shaders\IBL.hlsli">
       <FileType>Document</FileType>
     </Text>
+    <None Include="Source\Editor\Shaders\LTC.hlsli" />
     <None Include="Source\Editor\Shaders\Math.hlsli" />
     <None Include="vcpkg.json" />
   </ItemGroup>

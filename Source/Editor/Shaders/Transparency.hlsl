@@ -103,24 +103,8 @@ MRT ps_main(PSInput input) : SV_Target
             SceneLight light = g_Lights[i];
             if (!light.enabled)
                 continue;
-            // Spot lights
-            float attenuation = 1.0f;
-            float3 L = splat3(0);
-            if (light.type == SCENE_LIGHT_TYPE_DIRECTIONAL)
-            {
-                L = light.direction.xyz;
-            }
-            else
-            {
-                float3 Point2Light = light.position.xyz - P;
-                L = normalize(Point2Light);
-                float distance = length(Point2Light);
-                float radius = light.radius;
-                attenuation = max(min(1.0 - pow(distance / radius, 4.0), 1.0), 0.0) / pow(distance, 2.0);
-            }
-            float3 k = light.color.rgb * light.intensity * attenuation;
-            shade_direct(L, V, N, baseColor, metal, alphaRoughness, k, diffuse, specular);
-        }   
+            shade_direct(light, P, V, N, baseColor, metal, alphaRoughness, diffuse, specular);
+        }
         if (g_SceneGlobals.probe.enabled)
         {
             shade_indirect(g_SceneGlobals.probe, V, N, baseColor, metal, rough, ao, diffuse, specular);

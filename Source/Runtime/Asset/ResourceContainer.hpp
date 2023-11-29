@@ -29,7 +29,17 @@ struct Texture2DContainer : public RHI::Resource {
 	using RHI::Resource::GetNativeResource;
 	using RHI::Resource::Release;
 	using RHI::Resource::IsValid;
-private:
+private:	
+	std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> footprints;
+	std::vector<UINT> numRows;
+	std::vector<UINT64> rowSizes;
+
+	void PrepareTempBuffers(uint numSubresource) {
+		footprints.resize(numSubresource);
+		rowSizes.resize(numSubresource);
+		numRows.resize(numSubresource);
+	}
+
 	RHI::Resource::ResourceDesc DstDesc;
 	void* pMappedData;
 	static size_t GetCopyableFootprintRequiredSize(ID3D12Device* device, D3D12_RESOURCE_DESC Desc, uint FirstSubresource, uint NumSubresources) {
@@ -45,27 +55,25 @@ public:
 		) {
 		pMappedData = Map(0);
 		SetName(name ? name : L"<Texture Upload Buffer>");
+		PrepareTempBuffers(DstDesc.numSubresources());
+		const D3D12_RESOURCE_DESC Desc = DstDesc;
+		m_Device->GetNativeDevice()->GetCopyableFootprints(&Desc, 0, DstDesc.numSubresources(), 0, footprints.data(), numRows.data(), rowSizes.data(), NULL);
 	};	
 	RHI::Resource::ResourceDesc const& GetDestTextureDesc() { return DstDesc; }
 	const uint NumMips() { return m_Desc.mipLevels; }
 	const uint NumSlices() { return m_Desc.arraySize; }	
 	void WriteSubresource(void* srcData, uint srcPitch, uint srcHeight, uint dstArraySlice = 0, uint dstMipSlice = 0) {
 		const D3D12_RESOURCE_DESC Desc = DstDesc;
-		UINT SubresourceIndex = DstDesc.indexSubresource(dstArraySlice, dstMipSlice);
-		D3D12_PLACED_SUBRESOURCE_FOOTPRINT Layout;
-		UINT NumRows;
-		UINT64 RowSizeInBytes;
-		UINT64 TotalBytes;
-		m_Device->GetNativeDevice()->GetCopyableFootprints(&Desc, SubresourceIndex, 1, 0, &Layout, &NumRows, &RowSizeInBytes, &TotalBytes);
+		CHECK(dstArraySlice < Desc.DepthOrArraySize && dstMipSlice < Desc.MipLevels);
+		UINT SubresourceIndex = DstDesc.indexSubresource(dstArraySlice, dstMipSlice);				
 		D3D12_MEMCPY_DEST dest = { 
-			(BYTE*)pMappedData + Layout.Offset, Layout.Footprint.RowPitch, SIZE_T(Layout.Footprint.RowPitch) * SIZE_T(NumRows)
+			(BYTE*)pMappedData + footprints[SubresourceIndex].Offset, footprints[SubresourceIndex].Footprint.RowPitch, SIZE_T(footprints[SubresourceIndex].Footprint.RowPitch)* SIZE_T(numRows[SubresourceIndex])
 		};		
 		D3D12_SUBRESOURCE_DATA src{
 			.pData = srcData,
 			.RowPitch = srcPitch,
 			.SlicePitch = 0
-		};
-		NumRows = std::min(NumRows, srcHeight);
-		MemcpySubresource(&dest, &src, RowSizeInBytes, NumRows, 1);
+		};		
+		MemcpySubresource(&dest, &src, rowSizes[SubresourceIndex], std::min(numRows[SubresourceIndex], srcHeight), 1);
 	}
 }; 

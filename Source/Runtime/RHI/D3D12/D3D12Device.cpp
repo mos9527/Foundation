@@ -122,6 +122,9 @@ namespace RHI {
         CHECK_HR(hr);
     }
     Device::Device(DeviceDesc cfg) {
+#ifdef _DEBUG
+        PIXLoadLatestWinPixGpuCapturerLibrary();
+#endif 
 #ifdef _DEBUG    
         ComPtr<ID3D12Debug> debugInterface;
         CHECK_HR(D3D12GetDebugInterface(IID_PPV_ARGS(&debugInterface)));
@@ -209,9 +212,6 @@ namespace RHI {
         m_ZeroBuffer->SetName(L"Zero buffer");
         std::vector<uint> zeros(RHI_ZERO_BUFFER_SIZE);
         m_ZeroBuffer->Update(zeros.data(), sizeof(uint) * RHI_ZERO_BUFFER_SIZE);
-#ifdef _DEBUG
-        PIXLoadLatestWinPixGpuCapturerLibrary();
-#endif 
 
     }
     Device::~Device() {

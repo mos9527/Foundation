@@ -177,6 +177,15 @@
     <ClCompile Include="Source\Editor\Win32\Win32IO.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\Tonemapping.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Editor\Widgets\SceneLightComponentWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Editor\Processor\LTCTableProcessor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">
@@ -422,6 +431,12 @@
     <ClInclude Include="Source\Editor\Shaders\Shaders.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\Tonemapping.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\Processor\LTCTableProcessor.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json">
@@ -433,6 +448,10 @@
     <None Include="Source\Editor\Shaders\BRDF.hlsli" />
     <None Include="Source\Editor\Renderer\RenderPass\DeferredLighting.hpp" />
     <None Include="Source\Editor\Shaders\Math.hlsli" />
+    <None Include="Source\Editor\Processor\Data\LTC.h">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="Source\Editor\Shaders\LTC.hlsli" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="Source\Editor\Shaders\IndirectLODCull.hlsl" />

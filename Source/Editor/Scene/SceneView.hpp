@@ -11,6 +11,7 @@
 #include "AssetComponet/Mesh.hpp"
 
 class IBLProbeProcessor;
+class LTCTableProcessor;
 class SceneView {
 public:
 private:
@@ -30,6 +31,7 @@ public:
 			float specularIntensity = 1.0f;
 			float occlusionStrength = 1.0f;
 		} probe;
+		LTCTableProcessor* ltcTable;
 	};
 	struct FrameData {
 		uint viewportWidth;

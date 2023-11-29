@@ -1,6 +1,7 @@
 #pragma once
 #pragma warning( disable : 4267 ) // Ignore size-mismatch errors
 #pragma warning( disable : 4244 )
+#pragma warning( disable : 4305 )
 
 #include <ctype.h>
 #include <vector>

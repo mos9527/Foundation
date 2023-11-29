@@ -9,7 +9,7 @@
 #include "Scene/SceneImporter.hpp"
 #include "Renderer/Deferred.hpp"
 #include "Processor/IBLProbeProcessor.hpp"
-
+#include "Processor/LTCTableProcessor.hpp"
 enum class EditorEvents {
     OnSetup,
     OnLoad,
@@ -88,6 +88,7 @@ struct EditorContext {
         float specularIntensity = 1.0f;
         float occlusionStrength = 1.0f;
     } iblProbeParam;
+    LTCTableProcessor* ltcTable;
 };
     
 

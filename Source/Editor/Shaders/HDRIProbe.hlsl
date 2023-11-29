@@ -1,4 +1,5 @@
 #include "Common.hlsli"
+#define IBL_SAMPLER
 #include "IBL.hlsli"
 cbuffer Constants : register(b0, space0)
 {

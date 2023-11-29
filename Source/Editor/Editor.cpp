@@ -44,18 +44,20 @@ void Setup_ImGui() {
 static KBMCameraController g_cameraController;
 void Setup_Scene() {
     auto& camera = scene.scene->graph->emplace_at_root<SceneCameraComponent>();
-    camera.set_name("Camera");
-    camera.set_local_transform(AffineTransform::CreateTranslation({ 0,0,-20 }));
+    camera.set_name("Camera");    
     viewport.camera = camera.get_entity();
 
     auto& light = scene.scene->graph->emplace_at_root<SceneLightComponent>();
     light.set_name("Spot Light");
-    light.set_local_transform(AffineTransform::CreateFromYawPitchRoll(0, -XM_PIDIV4, XM_PI));
-    light.lightType = SceneLightComponent::LightType::Point;
-    light.intensity = 3.0f;
+    light.set_local_transform(AffineTransform::CreateFromYawPitchRoll(0, XM_PIDIV2, 0) * AffineTransform::CreateTranslation({0,1,0}));
+    light.lightType = SceneLightComponent::LightType::AreaLine;
+    light.intensity = 1.0f;
     light.color = { 1,1,1,1 };
     light.radius = 100.0f;
-
+    light.area_Extents = { 1,1 };
+    light.area_TwoSided = true;
+    light.line_Length = 1.0f;
+    light.line_Radius = 1.0f;
     g_cameraController.reset();
 }
 void Reset_Scene() {
@@ -70,8 +72,7 @@ void Load_Scene(path_t path) {
         UploadContext ctx(device);
         ctx.Begin();
         SceneImporter::load(&ctx, editor.importStatus, *scene.scene, filepath);
-        ctx.End();
-        ctx.Execute().Wait();
+        ctx.End().Wait();
         editor.importStatus.uploadComplete = true;
         editor.state.transition(EditorEvents::OnLoadComplete);
         scene.scene->clean<MeshAsset>();
@@ -193,12 +194,13 @@ void EditorWindow::Run() {
             }, 
             SceneView::ShaderData{
                 .probe = SceneView::ShaderData::IBLProbeData{
-                .use = editor.iblProbeParam.use,
-                .probe = editor.iblProbe,
-                .diffuseIntensity = editor.iblProbeParam.diffuseIntensity,
-                .specularIntensity = editor.iblProbeParam.specularIntensity,
-                .occlusionStrength = editor.iblProbeParam.occlusionStrength
-            }
+                    .use = editor.iblProbeParam.use,
+                    .probe = editor.iblProbe,
+                    .diffuseIntensity = editor.iblProbeParam.diffuseIntensity,
+                    .specularIntensity = editor.iblProbeParam.specularIntensity,
+                    .occlusionStrength = editor.iblProbeParam.occlusionStrength
+                },
+                .ltcTable = editor.ltcTable
         });
         viewport.frame = render.renderer->Render(sceneView);
     }

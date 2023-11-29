@@ -23,8 +23,7 @@ void OnImGui_IBLProbeWidget() {
 				UploadContext ctx(device);
 				ctx.Begin();
 				asset.Upload(&ctx);
-				ctx.Close();
-				ctx.Execute().Wait();
+				ctx.End().Wait();
 				editor.state.transition(EditorEvents::OnLoadComplete);				
 			}, path, loadedAsset);
 		}

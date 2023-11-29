@@ -265,6 +265,25 @@ namespace RHI {
 			desc.Texture2D.MipLevels = MipLevels;
 			return { desc };
 		}
+		static const ShaderResourceViewDesc GetTexture2DArrayDesc(
+			ResourceFormat viewFormat,
+			UINT MostDetailedMip,
+			UINT MipLevels,
+			UINT FirstArraySlice,
+			UINT ArraySize,
+			UINT PlaneSlice
+		) {
+			D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+			desc.Format = ResourceFormatToD3DFormat(viewFormat);
+			desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+			desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			desc.Texture2DArray.MostDetailedMip = MostDetailedMip;
+			desc.Texture2DArray.MipLevels = MipLevels;
+			desc.Texture2DArray.FirstArraySlice = FirstArraySlice;
+			desc.Texture2DArray.ArraySize = ArraySize;
+			desc.Texture2DArray.PlaneSlice = PlaneSlice;											
+			return { desc };
+		}
 		static const ShaderResourceViewDesc GetTextureCubeDesc(
 			ResourceFormat viewFormat,
 			UINT MostDetailedMip,

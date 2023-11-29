@@ -1,13 +1,14 @@
 #include "SceneView.hpp"
 
 #include "../Processor/IBLProbeProcessor.hpp"
+#include "../Processor/LTCTableProcessor.hpp"
 bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& frame, ShaderData&& shader) {
 	auto& instances = scene.storage<SceneMeshComponent>();
 	auto& materials = scene.storage<AssetMaterialComponent>();
 	auto& lights = scene.storage<SceneLightComponent>();
 	std::mutex write_mutex;
 	// Instances
-	std::for_each(std::execution::seq, instances.begin(), instances.end(), [&](SceneMeshComponent& mesh) {
+	std::for_each(std::execution::par, instances.begin(), instances.end(), [&](SceneMeshComponent& mesh) {
 		// Only update instances that got updated
 		if (mesh.get_version() == scenecomponent_versions[mesh.get_entity()]) return;			
 		// SceneMeshComponent -> AssetMeshComponent -> MeshAsset
@@ -93,15 +94,26 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 		sceneLight.direction.z = direction.z;
 		sceneLight.direction.w = 1;
 		sceneLight.color = light.color;
+
 		sceneLight.type = (UINT)light.lightType;
+
 		sceneLight.intensity = light.intensity;
 		sceneLight.radius = light.radius;
+
+		sceneLight.area_Extents = light.area_Extents;
+		sceneLight.area_TwoSided = light.area_TwoSided;
+
+		sceneLight.line_Length = light.line_Length;
+		sceneLight.line_Caps = light.line_Caps;
+		sceneLight.line_Radius = light.line_Radius;
 		// Write the update
 		std::scoped_lock write_lock(write_mutex);
 		scenecomponent_versions[light.get_entity()] = light.get_version();
 		*lightBuffer.DataAt(lights.index(light.get_entity())) = sceneLight;
 	});
 	// These are updated every frame...
+	// LTC Table
+	globalBuffer.Data()->ltcLutHeapIndex = shader.ltcTable->ltcSRV->descriptor.get_heap_handle();
 	// Probe
 	if (shader.probe.probe != nullptr && shader.probe.probe->state == IBLProbeProcessorStates::IdleWithProbe) {
 		SceneIBLProbe probe{};
