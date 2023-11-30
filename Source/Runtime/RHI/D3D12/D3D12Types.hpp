@@ -390,7 +390,7 @@ namespace RHI {
 		static const UnorderedAccessViewDesc GetRawBufferDesc(
 			UINT64                 FirstElement,
 			UINT                   NumElements,
-			UINT				   CounterOffsetInBytes
+			UINT				   CounterOffsetInBytes = 0 /* set to 0 if no Counter is used */
 		) {
 			D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
 			desc.Format = DXGI_FORMAT_R32_TYPELESS;

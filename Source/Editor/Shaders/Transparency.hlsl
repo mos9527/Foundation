@@ -52,7 +52,7 @@ struct MRT
     float4 Accumalation : SV_Target0; // Blend: sum of Ci.rgb,Ci.a
     float4 Revealage : SV_Target1; // Blend: prod of 1 - Ci.a
 };
-MRT ps_main(PSInput input) : SV_Target
+MRT ps_main(PSInput input)
 {
     SceneMeshInstance mesh = g_SceneMeshInstances[g_MeshIndex];
     SceneMaterial material = g_Materials[mesh.materialIndex];
@@ -118,5 +118,22 @@ MRT ps_main(PSInput input) : SV_Target
     float weight = w(viewDepth, alpha);
     output.Accumalation = float4(finalColor * weight, alpha * weight);
     output.Revealage = float4(alpha, 0, 0, 0);
+    return output;
+}
+// Only writes the instance ID
+// Also, blending is disabled on this pass
+float4 ps_main_material(PSInput input) : SV_Target
+{
+    SceneMeshInstance mesh = g_SceneMeshInstances[g_MeshIndex];
+    SceneMaterial material = g_Materials[mesh.materialIndex];    
+    float4 albedo = material.albedo;
+    if (material.albedoMap != INVALID_HEAP_HANDLE)
+    {
+        Texture2D albedoMap = ResourceDescriptorHeap[material.albedoMap];
+        albedo = albedoMap.Sample(g_Sampler, input.uv);
+    }
+    if (albedo.a <= EPISILON) // Again, rough alpha test to discard invisible parts.
+        discard;
+    float4 output = float4(1, 1, pack16toUnorm8(g_MeshIndex + 1)); // RG component no longer used. BA stores instance ID + 1 (since 0 is clear value)
     return output;
 }

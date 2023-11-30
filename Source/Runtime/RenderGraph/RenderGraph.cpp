@@ -88,7 +88,8 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 					cmd->QueueTransitionBarrier(res, state);
 			}
 			else if (cmd->GetType() == CommandListType::Compute) {
-				cmd->QueueUAVBarrier(res);
+				if (res->GetDesc().allowUnorderedAccess())
+					cmd->QueueUAVBarrier(res);
 			}
 			else if (cmd->GetType() == CommandListType::Copy) {
 				CHECK(false && "Not implemented");

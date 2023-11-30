@@ -49,10 +49,12 @@ void Setup_Scene() {
     viewport.camera = camera.get_entity();
 
     auto& light = scene.scene->graph->emplace_at_root<SceneLightComponent>();
-    light.set_name("Spot Light");
-    light.set_local_transform(AffineTransform::CreateTranslation({0,1,0}));
-    light.lightType = SceneLightComponent::LightType::Spot;
-    light.intensity = 1.0f;
+    light.set_name("Light");
+    light.set_local_transform(AffineTransform::CreateTranslation({0,3,0}));
+    light.lightType = SceneLightComponent::LightType::AreaLine;
+    light.spot_point_radius = 100.0f;
+    light.intensity = 3.0f;
+    light.area_line_length = 10.0f;
     light.color = { 1,1,1,1 };
     g_cameraController.reset();
 }
@@ -198,8 +200,8 @@ void EditorWindow::Run() {
                     .occlusionStrength = editor.iblProbeParam.occlusionStrength
                 },
                 .ltcTable = editor.ltcTable
-        });
-        viewport.frame = render.renderer->Render(sceneView);
+        });        
+        render.renderer->Render(sceneView);
     }
 
     cmd->QueueTransitionBarrier(swapchain->GetBackbuffer(bbIndex), ResourceState::RenderTarget);

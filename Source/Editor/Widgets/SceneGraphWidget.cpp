@@ -60,8 +60,15 @@ void OnImGui_SceneGraphWidget() {
 			ImGuiTreeNodeFlags flags = 0;
 			if (selected == entity)
 				flags |= ImGuiTreeNodeFlags_Selected;
+			bool sselected = false;
+			if (type == SceneComponentType::Mesh) {
+				uint index = scene.scene->storage<SceneMeshComponent>().index(entity);
+				if (editor.meshSelection->GetSelected(index))
+					sselected = true;
+			}
+
 			size_t id = entt::to_integral(entity);
-			ImGui::PushStyleColor(ImGuiCol_Text, componet->get_enabled() ? IM_COL32_WHITE : IM_COL32(127, 127, 127, 127));
+			ImGui::PushStyleColor(ImGuiCol_Text, sselected ? IM_COL32_WHITE : IM_COL32(127, 127, 127, 127));
 			float offset = ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2.5f;
 			float cursorX = ImGui::GetCursorPosX();
 			ImGui::SetCursorPosX(cursorX + offset);

@@ -204,6 +204,12 @@
     <ClCompile Include="Dependencies\ImGuizmo\ImSequencer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\Processor\MeshSelectionProcessor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Editor\Processor\ProcessPass\AreaReduce.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">
@@ -476,6 +482,12 @@
     <ClInclude Include="Dependencies\ImGuizmo\ImZoomSlider.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Editor\Processor\MeshSelectionProcessor.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\Processor\ProcessPass\AreaReduce.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json">
@@ -487,7 +499,7 @@
     <None Include="Source\Editor\Shaders\BRDF.hlsli" />
     <None Include="Source\Editor\Renderer\RenderPass\DeferredLighting.hpp" />
     <None Include="Source\Editor\Shaders\Math.hlsli" />
-    <None Include="Source\Editor\Processor\Data\LTC.h">
+    <None Include="Source\Editor\Processor\Data\LTC.hpp">
       <Filter>Header Files</Filter>
     </None>
     <None Include="Source\Editor\Shaders\LTC.hlsli" />
@@ -505,5 +517,6 @@
     <Text Include="Source\Editor\Shaders\Shading.hlsli" />
     <Text Include="Source\Editor\Shaders\HDRIProbe.hlsl" />
     <Text Include="Source\Editor\Shaders\IBL.hlsli" />
+    <Text Include="Source\Editor\Shaders\AreaReduce.hlsl" />
   </ItemGroup>
 </Project>

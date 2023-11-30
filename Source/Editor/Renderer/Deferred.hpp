@@ -8,11 +8,13 @@
 #include "RenderPass/Transparency.hpp"
 class DeferredRenderer {
 public:
+	RHI::ShaderResourceView* r_frameBufferSRV, * r_materialBufferSRV;
+	RHI::Texture* r_frameBufferTex, * r_materialBufferTex;
 	DeferredRenderer(RHI::Device* device) : 
 		device(device), pass_Clear(device), pass_IndirectCull(device), pass_GBuffer(device), pass_HiZ(device), pass_Lighting(device),
 		pass_Transparency(device)
 	{};	
-	RHI::ShaderResourceView* Render(SceneView* sceneView);
+	void Render(SceneView* sceneView);
 private:	
 	RHI::Device* const device;
 

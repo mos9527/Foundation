@@ -17,7 +17,7 @@ using namespace RHI;
 * - However, if WBOIT is not used, the reset of the pipeline can still handle material parts with complete transparency (alpha=0) by
 *   discarding those pixels at Gbuffer generation.
 */
-RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
+void DeferredRenderer::Render(SceneView* sceneView)
 {
 	UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
 	RenderGraph rg(cache);	
@@ -271,10 +271,16 @@ RHI::ShaderResourceView* DeferredRenderer::Render(SceneView* sceneView)
 			.depth = depth,
 			.depth_dsv = depth_dsv,
 			.framebuffer = frameBuffer,
-			.fb_uav = fb_uav
+			.fb_uav = fb_uav,
+			.material_rtv = material_rtv,
+			.material = material
 		});	
 	}
-	rg.get_epilogue_pass().read(frameBuffer);
+	rg.get_epilogue_pass().read(frameBuffer).read(material);
 	rg.execute(device->GetDefaultCommandList<CommandListType::Direct>());
-	return rg.get<ShaderResourceView>(fb_srv);
+	r_materialBufferSRV = rg.get<ShaderResourceView>(material_srv);
+	r_materialBufferTex = rg.get<Texture>(material);
+	r_frameBufferSRV = rg.get<ShaderResourceView>(fb_srv);
+	r_frameBufferTex = rg.get<Texture>(frameBuffer);
+
 }

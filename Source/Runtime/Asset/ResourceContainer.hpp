@@ -3,12 +3,12 @@
 #include "../RHI/RHI.hpp"
 template<typename T> concept PodDataType = std::is_trivially_copyable<T>::value;
 // Persistently mapped CPU-Heap buffer
-template<PodDataType Type, bool IsRawBuffer = false> struct BufferContainer : public RHI::Resource {
+template<PodDataType Type, bool IsRawBuffer = false, bool IsReadback = false> struct BufferContainer : public RHI::Resource {
 	using RHI::Resource::GetNativeResource;
 	using RHI::Resource::Release;
 	using RHI::Resource::IsValid;
 	BufferContainer(RHI::Device* device, uint numElements = 1, RHI::name_t name = nullptr) : RHI::Resource(device, Resource::ResourceDesc::GetGenericBufferDesc(
-		sizeof(Type)* numElements, IsRawBuffer ? RAW_BUFFER_STRIDE : sizeof(Type)
+		sizeof(Type)* numElements, IsRawBuffer ? RAW_BUFFER_STRIDE : sizeof(Type), RHI::ResourceState::Common, IsReadback ? RHI::ResourceHeapType::Readback : RHI::ResourceHeapType::Upload
 	)) {
 		SetName(name ? name : L"<Buffer>");
 		Map();

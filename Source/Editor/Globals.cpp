@@ -19,9 +19,10 @@ namespace EditorGlobalContext {
         render.renderer = new ::DeferredRenderer(device);
         editor.iblProbe = new ::IBLProbeProcessor(device, 512);
         editor.ltcTable = new ::LTCTableProcessor(device);
+        editor.meshSelection = new ::MeshSelectionProcessor(device);
         for (uint i = 0; i < ARRAYSIZE(scene.views); i++) {
             scene.views[i] = new ::SceneView(device);
-        }
+        }        
     }
 
     void DestroyContext(void) {

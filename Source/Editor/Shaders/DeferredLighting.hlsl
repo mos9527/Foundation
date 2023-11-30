@@ -34,7 +34,7 @@ void main(uint2 DTid : SV_DispatchThreadID)
     float4 depthSmp = depthTex[DTid];
     
     float3 PBR = float3(albedoSmp.a,materialSmp.rg);  // AO, rough, metal
-    uint instance = unpackUnorm8to16(materialSmp.ba); // Instance ID
+    uint instance = unpackUnorm8to16(materialSmp.ba) - 1; // Instance ID. (ID + 1 is stored)
     
     if (g_SceneGlobals.debug_view_albedo() || g_SceneGlobals.debug_view_lod() /* see GBuffer.hlsl */)
     {

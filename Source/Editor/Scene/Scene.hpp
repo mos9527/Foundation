@@ -40,6 +40,9 @@ public:
 	template<IsSceneComponent T> T* try_get(entt::entity entity) {
 		return sceneComponentRegistry.try_get<T>(entity);
 	}
+	template<IsSceneComponent T> auto& storage() {
+		return sceneComponentRegistry.storage<T>();
+	}
 private:
 	template<IsSceneComponent T> entt::entity create() {
 		return sceneComponentRegistry.create();
@@ -49,9 +52,6 @@ private:
 	}
 	template<IsSceneComponent T> void sort(auto&& comp) {
 		return sceneComponentRegistry.sort<T>(comp);
-	}
-	template<IsSceneComponent T> auto& storage() {
-		return sceneComponentRegistry.storage<T>();
 	}
 	template<IsSceneComponent T> T& emplace(entt::entity entity) {
 		sceneComponentRegistry.emplace<SceneComponentType>(entity, T::type);

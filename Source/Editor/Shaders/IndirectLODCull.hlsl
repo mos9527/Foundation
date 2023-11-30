@@ -13,7 +13,9 @@ cbuffer HIZData : register(b2, space0)
     uint hizHeapHandle;
     uint hizMips;
 }
-
+// see https://learn.microsoft.com/en-us/windows/win32/direct3d11/direct3d-11-advanced-stages-cs-resources#byte-address-buffer
+// TL;DR: ...uses a byte value offset from the beginning of the buffer to access data. 
+//        The byte value must be a multiple of four so that it is DWORD aligned. If any other value is provided, behavior is undefined
 #define VISIBLE(index) (g_Visibility.Load(index * 4) == 0) // clears set these to 0
 #define SET_VISIBLE(index) (g_Visibility.Store(index * 4,0))
 #define SET_CULLED(index) (g_Visibility.Store(index * 4,1))

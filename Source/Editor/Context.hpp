@@ -10,6 +10,8 @@
 #include "Renderer/Deferred.hpp"
 #include "Processor/IBLProbeProcessor.hpp"
 #include "Processor/LTCTableProcessor.hpp"
+#include "Processor/MeshSelectionProcessor.hpp"
+
 enum class EditorEvents {
     OnSetup,
     OnLoad,
@@ -89,6 +91,7 @@ struct EditorContext {
         float occlusionStrength = 1.0f;
     } iblProbeParam;
     LTCTableProcessor* ltcTable;
+    MeshSelectionProcessor* meshSelection;
 };
     
 
@@ -154,7 +157,6 @@ public:
 
 struct ViewportContext {
     ViewportManipulationStates state;
-    RHI::ShaderResourceView* frame = nullptr;
     entt::entity camera;
     bool vsync = false;
     uint frameFlags = 0;

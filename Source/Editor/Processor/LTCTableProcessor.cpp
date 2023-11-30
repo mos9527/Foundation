@@ -1,5 +1,5 @@
 #include "LTCTableProcessor.hpp"
-#include "Data/LTC.h"
+#include "Data/LTC.hpp"
 
 using namespace RHI;
 LTCTableProcessor::LTCTableProcessor(Device* device) : device(device) {

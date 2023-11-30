@@ -95,6 +95,6 @@ MRT ps_main(PSInput input)
     
     output.Albedo.a = output.Material.r; // Albedo Alpha -> AO
     output.Material.rg = output.Material.gb; // Material RG -> Roughness, Metal
-    output.Material.ba = pack16toUnorm8(g_MeshIndex); // Material BA -> Instance ID
+    output.Material.ba = pack16toUnorm8(g_MeshIndex + 1); // Material BA -> Instance ID + 1
     return output;
 }

@@ -50,6 +50,7 @@ namespace RHI {
 		QueueTransitionBarrier(res, state, res->m_SubresourceRange.data(), res->m_SubresourceRange.size());
 	}
 	void CommandList::QueueUAVBarrier(Resource* res) {
+		CHECK(res->GetDesc().allowUnorderedAccess());
 		m_Barriers.QueueUAV(res);
 	}
 	void CommandList::QueueAliasingBarrier(Resource* before, Resource* after) {
