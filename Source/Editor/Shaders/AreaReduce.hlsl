@@ -13,6 +13,9 @@ groupshared uint instances[RENDERER_FULLSCREEN_THREADS * RENDERER_FULLSCREEN_THR
 [numthreads(RENDERER_FULLSCREEN_THREADS, RENDERER_FULLSCREEN_THREADS, 1)]
 void main_reduce_instance(uint2 DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex)
 {    
+    // clear groupshared mem first
+    instances[gid] = 0;
+    GroupMemoryBarrierWithGroupSync();
     uint2 offset = uint2(g_X0, g_Y0) + DTid;    
     if (any(offset >= uint2(g_X0 + g_Width, g_Y0 + g_Height)))
         return;
@@ -27,13 +30,11 @@ void main_reduce_instance(uint2 DTid : SV_DispatchThreadID, uint gid : SV_GroupI
         [unroll]
         for (uint i = 0; i < RENDERER_FULLSCREEN_THREADS * RENDERER_FULLSCREEN_THREADS; i++)
         {
-            uint instace = instances[i];
-            if (instace >= 1) // Instance ID + 1 is stored. Clear otherwise.
-            {
-                instace--;
-                output.Store(instace * 4, 1); // Mark in-range
+            uint instance = instances[i];
+            if (instance >= 1) // Instance ID + 1 is stored. Clear otherwise.
+            {                
+                output.Store((instance - 1) * 4, instance); // Mark in-range
             }
         }
     }
-
 }

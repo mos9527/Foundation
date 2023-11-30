@@ -43,6 +43,9 @@ public:
 	template<IsSceneComponent T> auto& storage() {
 		return sceneComponentRegistry.storage<T>();
 	}
+	template<IsSceneComponent T> size_t index(entt::entity entity) {
+		return storage<T>().index(entity);
+	}
 private:
 	template<IsSceneComponent T> entt::entity create() {
 		return sceneComponentRegistry.create();

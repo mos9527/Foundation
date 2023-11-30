@@ -19,12 +19,20 @@ void OnImGui_ViewportWidget() {
             viewport.state.transition(ViewportManipulationEvents::ShiftDown);
         if (ImGui::IsKeyReleased(ImGuiKey_LeftShift))
             viewport.state.transition(ViewportManipulationEvents::ShiftRelease);
-        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Right)) {
-            // TEST: Selection            
+        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             ImVec2 pos = ImGui::GetMousePos();
             uint2 upos = { (UINT)pos.x, (UINT)pos.y };
-            LOG(INFO) << "READ POS " << upos.x << "," << upos.y;
-            editor.meshSelection->UpdateByMaterialBufferAndRect(render.renderer->r_materialBufferTex, render.renderer->r_materialBufferSRV, upos, { 1,1 });
+            auto& selected = editor.meshSelection->GetSelectedMaterialBufferAndRect(render.renderer->r_materialBufferTex, render.renderer->r_materialBufferSRV, upos, { 1,1 });
+            if (!ImGui::IsKeyDown(ImGuiKey_LeftShift)) {
+                // Unselect all.
+                for (auto& mesh : scene.scene->storage<SceneMeshComponent>()) mesh.set_selected(false);
+            }
+            // Select the picked mesh component
+            for (uint selectedIndex : selected) {
+                auto entity = scene.scene->storage<SceneMeshComponent>().at(selectedIndex);
+                auto& mesh = scene.scene->get<SceneMeshComponent>(entity);
+                mesh.set_selected(true);
+            }
         }
     }
     ImGui::End();

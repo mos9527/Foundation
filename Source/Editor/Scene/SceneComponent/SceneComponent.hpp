@@ -21,6 +21,7 @@ private:
 	size_t version = 0;
 
 	bool enabled = true;
+	bool selected = false;
 public:
 
 	SceneComponent(Scene& parent, entt::entity ent, SceneComponentType type) : Component(parent, ent, ComponentType::Scene), type(type) {};
@@ -30,6 +31,7 @@ public:
 	void set_name(std::string name_) {name = name_;}
 	void set_local_transform(AffineTransform T);
 	void set_enabled(bool enabled);
+	void set_selected(bool selected);
 
 	inline AffineTransform get_local_transform() { return localTransform; }
 	inline AffineTransform get_global_transform() { return globalTransform; }
@@ -38,6 +40,8 @@ public:
 	inline const size_t get_version() const { return version; }
 	inline const char* get_name() const { return name.c_str(); }
 	inline entt::entity get_entity() const { return entity; }		
+
+	inline bool get_selected() { return selected; }
 	inline bool get_enabled() const { return enabled; }
 };
 

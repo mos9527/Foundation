@@ -158,7 +158,7 @@ public:
 struct ViewportContext {
     ViewportManipulationStates state;
     entt::entity camera;
-    bool vsync = false;
+    bool vsync = true;
     uint frameFlags = 0;
     uint width = 0;
     uint height = 0;

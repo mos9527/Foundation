@@ -157,6 +157,9 @@ struct SceneMeshInstance
     bool occlusion_occludee() {
         return instanceFlags & INSTANCE_FLAG_OCCLUDEE;
     }
+    bool highlight() {
+        return instanceFlags & INSTANCE_FLAG_HIGHLIGHT;
+    }
 };
 struct SceneMaterial {
     // bindless handles within ResourceDescriptorHeap

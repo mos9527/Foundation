@@ -5,19 +5,12 @@
 class MeshSelectionProcessor {
 public:
 	MeshSelectionProcessor(RHI::Device* device);
-
-	std::vector<bool>& UpdateByMaterialBufferAndRect(RHI::Texture* texture, RHI::ShaderResourceView* resourceSRV, uint2 point, uint2 extent, bool multiSelect = false);
-
-	inline std::vector<bool>& GetSelection() { return instanceSelected; };	
-	inline bool GetSelected(UINT instanceIndex) { return instanceSelected[instanceIndex]; }
-	inline void SetSelected(UINT instanceIndex, bool selected) { instanceSelected[instanceIndex] = selected; }	
+	std::vector<uint> const & GetSelectedMaterialBufferAndRect(RHI::Texture* texture, RHI::ShaderResourceView* resourceSRV, uint2 point, uint2 extent);
 private:
-	std::vector<bool> instanceSelected;
+	std::vector<uint> instanceSelected;
 
 	std::unique_ptr<RHI::Buffer> instanceSelectionMask, readbackInstanceSelectionMask;
 	std::unique_ptr<RHI::UnorderedAccessView> instanceSelectionMaskUAV;
-
-	void* pMappedData;
 
 	RHI::Device* const device;
 

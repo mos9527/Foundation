@@ -22,7 +22,7 @@ namespace RHI {
 		size_t written = 0;
 		while (written < size) {
 			size_t toWrite = std::min(zeroBlock, size - written);
-			CopyBufferRegion(m_Device->GetZeroBuffer(), dst, 0, dstOffset, toWrite);
+			CopyBufferRegion(m_Device->GetZeroBuffer(), dst, 0, dstOffset + written, toWrite);
 			written += toWrite;
 		}
 	}

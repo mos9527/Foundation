@@ -3,7 +3,7 @@ using namespace RHI;
 
 MeshSelectionProcessor::MeshSelectionProcessor(Device* device) : device(device), proc_reduce(device) {
 	instanceSelectionMask = std::make_unique<Buffer>(device, Resource::ResourceDesc::GetGenericBufferDesc(
-		MAX_INSTANCE_COUNT * sizeof(UINT), RAW_BUFFER_STRIDE, ResourceState::UnorderedAccess, ResourceHeapType::Default,
+		(MAX_INSTANCE_COUNT) * sizeof(UINT), RAW_BUFFER_STRIDE, ResourceState::UnorderedAccess, ResourceHeapType::Default,
 		ResourceFlags::UnorderedAccess
 	));
 	instanceSelectionMask->SetName(L"Instance Selection Mask");
@@ -12,14 +12,12 @@ MeshSelectionProcessor::MeshSelectionProcessor(Device* device) : device(device),
 		UnorderedAccessViewDesc::GetRawBufferDesc(0, MAX_INSTANCE_COUNT)
 	);
 	readbackInstanceSelectionMask = std::make_unique<Buffer>(device, Resource::ResourceDesc::GetGenericBufferDesc(
-		MAX_INSTANCE_COUNT * sizeof(UINT), RAW_BUFFER_STRIDE, ResourceState::CopyDest, ResourceHeapType::Readback
+		(MAX_INSTANCE_COUNT) * sizeof(UINT), RAW_BUFFER_STRIDE, ResourceState::CopyDest, ResourceHeapType::Readback
 	));
-	readbackInstanceSelectionMask->SetName(L"Readback Instance Selection Mask");
-	pMappedData = readbackInstanceSelectionMask->Map(0);
-	instanceSelected.resize(MAX_INSTANCE_COUNT);
+	readbackInstanceSelectionMask->SetName(L"Readback Instance Selection Mask");	
 }
 
-std::vector<bool>& MeshSelectionProcessor::UpdateByMaterialBufferAndRect(RHI::Texture* texture, RHI::ShaderResourceView* resourceSRV, uint2 point, uint2 extent, bool multiSelect) {
+std::vector<uint> const & MeshSelectionProcessor::GetSelectedMaterialBufferAndRect(RHI::Texture* texture, RHI::ShaderResourceView* resourceSRV, uint2 point, uint2 extent) {
 	RenderGraph rg(cache);
 	auto& output = rg.import<Buffer>(instanceSelectionMask.get());
 	proc_reduce.insert_reduce_material_instance(
@@ -30,10 +28,10 @@ std::vector<bool>& MeshSelectionProcessor::UpdateByMaterialBufferAndRect(RHI::Te
 			.outputUAV = rg.import<UnorderedAccessView>(instanceSelectionMaskUAV.get())
 		}, point, extent
 	);
-	auto* cmd = device->GetDefaultCommandList<CommandListType::Compute>();	
+	auto* cmd = device->GetDefaultCommandList<CommandListType::Direct>();	
 	CHECK(!cmd->IsOpen() && "The Default Compute Command list is in use!");	
 	// Zero previous buffer first
-	cmd->Begin();
+	cmd->Begin();	
 	cmd->QueueTransitionBarrier(instanceSelectionMask.get(), ResourceState::CopyDest);
 	cmd->FlushBarriers();
 	cmd->ZeroBufferRegion(instanceSelectionMask.get(), 0, instanceSelectionMask->GetDesc().width);
@@ -48,9 +46,14 @@ std::vector<bool>& MeshSelectionProcessor::UpdateByMaterialBufferAndRect(RHI::Te
 	cmd->CopyBufferRegion(instanceSelectionMask.get(), readbackInstanceSelectionMask.get(), 0, 0, instanceSelectionMask->GetDesc().width);
 	cmd->Close();
 	cmd->Execute().Wait();	
+	void* pMappedData = readbackInstanceSelectionMask->Map(0);
+	instanceSelected.clear();
 	for (uint i = 0; i < MAX_INSTANCE_COUNT; i++) {
-		bool selected = *reinterpret_cast<UINT*>((reinterpret_cast<BYTE*>(pMappedData) + i * 4));
-		instanceSelected[i] = multiSelect ? (instanceSelected[i] | selected) : selected;
+		UINT selected = *reinterpret_cast<UINT*>((reinterpret_cast<BYTE*>(pMappedData) + i * 4));
+		if (selected) {
+			instanceSelected.push_back(i);
+		}
 	}
+	readbackInstanceSelectionMask->Unmap(0);
 	return instanceSelected;
 }

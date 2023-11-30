@@ -173,8 +173,7 @@ void EditorWindow::Run() {
     cmd->ResetAllocator(bbIndex);
     cmd->Begin(bbIndex);
     static ID3D12DescriptorHeap* const heaps[] = { device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap() };
-    cmd->GetNativeCommandList()->SetDescriptorHeaps(1, heaps);
-
+    cmd->GetNativeCommandList()->SetDescriptorHeaps(1, heaps);    
     if (editor.state == EditorStates::Running) {
         SceneView* sceneView = scene.views[bbIndex];
         auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
