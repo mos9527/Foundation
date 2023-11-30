@@ -27,11 +27,15 @@ public:
 			bool use = true;
 			IBLProbeProcessor* probe = nullptr;
 
-			float diffuseIntensity = 1.0f;
-			float specularIntensity = 1.0f;
-			float occlusionStrength = 1.0f;
+			float diffuseIntensity;
+			float specularIntensity;
+			float occlusionStrength;
 		} probe;
 		LTCTableProcessor* ltcTable;
+		struct SilhouetteParams {
+			float  edgeThreshold;
+			float3 edgeColor;
+		} silhouette;
 	};
 	struct FrameData {
 		uint viewportWidth;

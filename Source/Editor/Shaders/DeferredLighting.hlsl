@@ -25,7 +25,7 @@ void main(uint2 DTid : SV_DispatchThreadID)
     Texture2D materialTex = ResourceDescriptorHeap[materialHandle];
     Texture2D emissiveTex = ResourceDescriptorHeap[emissiveHandle];
     Texture2D depthTex = ResourceDescriptorHeap[depthHandle];    
-    RWTexture2D<float3> frameBuffer = ResourceDescriptorHeap[frameBufferHandle];
+    RWTexture2D<float4> frameBuffer = ResourceDescriptorHeap[frameBufferHandle];
     
     float4 albedoSmp = albedoTex[DTid];
     float4 normalSmp = normalTex[DTid];
@@ -75,5 +75,5 @@ void main(uint2 DTid : SV_DispatchThreadID)
         shade_indirect(g_SceneGlobals.probe, V, N, baseColor, metal, rough, ao, diffuse, specular);
     }
     float3 finalColor = diffuse + specular + emissiveSmp.rgb;
-    frameBuffer[DTid] = finalColor;
+    frameBuffer[DTid] = float4(finalColor, 1.0f);
 }

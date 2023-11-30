@@ -7,6 +7,7 @@ cbuffer CMDHeapHandles : register(b1, space0)
 {
     uint indirectCMDHeapHandle;
     uint transparencyIndirectCMDHeapHandle;
+    uint silhouetteIndirectCMDHeapHandle;
 }
 cbuffer HIZData : register(b2, space0)
 {
@@ -40,7 +41,7 @@ void main_early(uint index : SV_DispatchThreadID)
     {
         SceneMeshInstance instance = g_SceneMeshInstances[index];
         bool inv = instance.instanceFlags & INSTANCE_FLAG_INVISIBLE;
-        if (inv || instance.has_transparency()) // Handle transparency in the late pass
+        if (inv || instance.has_transparency() || instance.silhouette()) // Handle silhouette/transparency in the late pass
             return;
         SceneCamera camera = g_SceneGlobals.camera;     
         BoundingBox bbBox = instance.boundingBox.Transform(instance.transform);
@@ -118,7 +119,7 @@ void main_late(uint index : SV_DispatchThreadID)
                 return;
             }
         }
-        if (!instance.has_transparency())
+        if (!instance.has_transparency() && !instance.silhouette())
         {
             // Only DRAW opaque instances that were NOT visible last frame
             bool visible = VISIBLE(index);
@@ -152,6 +153,11 @@ void main_late(uint index : SV_DispatchThreadID)
         {
             AppendStructuredBuffer<IndirectCommand> commands = ResourceDescriptorHeap[indirectCMDHeapHandle];
             commands.Append(cmd);            
+        }
+        if (instance.silhouette())
+        {
+            AppendStructuredBuffer<IndirectCommand> silhouetteCommands = ResourceDescriptorHeap[silhouetteIndirectCMDHeapHandle];
+            silhouetteCommands.Append(cmd);
         }
         // Update visbility
         SET_VISIBLE(index);

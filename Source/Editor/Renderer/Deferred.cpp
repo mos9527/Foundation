@@ -22,10 +22,16 @@ void DeferredRenderer::Render(SceneView* sceneView)
 	UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
 	RenderGraph rg(cache);	
 	/* Resources */
+	// Opaque / GBuffer
 	auto& indirectCmds = rg.create<Buffer>(pass_IndirectCull.GetCountedIndirectCmdBufferDesc(L"Opaque GBuffer CMD"));
 	auto& indirectCmdsUAV = rg.create<UnorderedAccessView>(pass_IndirectCull.GetCountedIndirectCmdBufferUAVDesc(indirectCmds));
+	// WBOIT
 	auto& transparencyIndirectCmds = rg.create<Buffer>(pass_IndirectCull.GetCountedIndirectCmdBufferDesc(L"Transparency CMD"));
 	auto& transparencyIndirectCmdsUAV = rg.create<UnorderedAccessView>(pass_IndirectCull.GetCountedIndirectCmdBufferUAVDesc(transparencyIndirectCmds));
+	// Silhouette
+	auto& silhouetteIndirectCmds = rg.create<Buffer>(pass_IndirectCull.GetCountedIndirectCmdBufferDesc(L"Silhouette CMD"));
+	auto& silhouetteIndirectCmdsUAV = rg.create<UnorderedAccessView>(pass_IndirectCull.GetCountedIndirectCmdBufferUAVDesc(silhouetteIndirectCmds));
+	// Helper buffer for Culling
 	auto& instanceVisibility = rg.create<Buffer>(Resource::ResourceDesc::GetGenericBufferDesc(
 		MAX_INSTANCE_COUNT, RAW_BUFFER_STRIDE, ResourceState::CopyDest, ResourceHeapType::Default,
 		ResourceFlags::UnorderedAccess, L"Instance Visibilties"
@@ -84,6 +90,26 @@ void DeferredRenderer::Render(SceneView* sceneView)
 	auto& depth_srv = rg.create<ShaderResourceView>({
 		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R32_FLOAT, 0, 1),
 		.viewed = depth
+	});
+	auto& silhouetteDepth = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
+		ResourceFormat::D32_FLOAT, ResourceDimension::Texture2D,
+		width, height, 1, 1, 1, 0,
+		ResourceFlags::DepthStencil, ResourceHeapType::Default,
+		ResourceState::DepthWrite,
+#ifdef INVERSE_Z			
+		ClearValue(0.0f, 0),
+#else
+		ClearValue(1.0f, 0),
+#endif
+		L"Silhouette Depth"
+	));
+	auto& silhouetteDepth_dsv = rg.create<DepthStencilView>({
+		.viewDesc = DepthStencilViewDesc::GetTexture2DDepthBufferDesc(ResourceFormat::D32_FLOAT, 0),
+		.viewed = silhouetteDepth
+	});
+	auto& silhouetteDepth_srv = rg.create<ShaderResourceView>({
+		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R32_FLOAT, 0, 1),
+		.viewed = silhouetteDepth
 	});
 	auto& albedo_rtv = rg.create<RenderTargetView>({
 		.viewDesc = RenderTargetViewDesc::GetTexture2DDesc(ResourceFormat::R8G8B8A8_UNORM, 0),
@@ -190,7 +216,7 @@ void DeferredRenderer::Render(SceneView* sceneView)
 		.viewDesc = RenderTargetViewDesc::GetTexture2DDesc(ResourceFormat::R11G11B10_FLOAT, 0),
 		.viewed = frameBuffer
 	});
-	pass_Clear.insert_dsv(rg, sceneView, { &depth }, { &depth_dsv });
+	pass_Clear.insert_dsv(rg, sceneView, { &depth, &silhouetteDepth }, { &depth_dsv, &silhouetteDepth_dsv });
 	pass_Clear.insert_rtv(rg, sceneView, { &frameBuffer, &albedo, &normal, &material, &emissive, &velocity }, { &fb_rtv, &albedo_rtv, &normal_rtv, &material_rtv, &emissive_rtv, &velocity_rtv });
 	if (sceneView->get_SceneGlobals().numMeshInstances) {
 		auto& p1 = pass_IndirectCull.insert_earlycull(rg, sceneView, {
@@ -226,6 +252,8 @@ void DeferredRenderer::Render(SceneView* sceneView)
 			.indirectCmdBufferUAV = indirectCmdsUAV,
 			.transparencyIndirectCmdBuffer = transparencyIndirectCmds,
 			.transparencyIndirectCmdBufferUAV = transparencyIndirectCmdsUAV,
+			.silhouetteIndirectCmdBuffer = silhouetteIndirectCmds,
+			.silhouetteIndirectCmdBufferUAV = silhouetteIndirectCmdsUAV,
 			.hizTexture = hiz_buffer,
 			.hizSRV = hiz_srv
 			});
@@ -275,6 +303,15 @@ void DeferredRenderer::Render(SceneView* sceneView)
 			.material_rtv = material_rtv,
 			.material = material
 		});	
+		auto& p8 = pass_Silhouette.insert(rg, sceneView, {
+			.silhouetteCMD = silhouetteIndirectCmds,
+			.silhouetteCMDUAV = silhouetteIndirectCmdsUAV,
+			.silhouetteDepth = silhouetteDepth,
+			.silhouetteDepthDSV = silhouetteDepth_dsv,
+			.silhouetteDepthSRV = silhouetteDepth_srv,
+			.frameBuffer = frameBuffer,
+			.frameBufferUAV = fb_uav
+		});
 	}
 	rg.get_epilogue_pass().read(frameBuffer).read(material);
 	rg.execute(device->GetDefaultCommandList<CommandListType::Direct>());

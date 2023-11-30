@@ -33,6 +33,9 @@ public:
 		RgHandle& transparencyIndirectCmdBuffer;
 		RgHandle& transparencyIndirectCmdBufferUAV;
 
+		RgHandle& silhouetteIndirectCmdBuffer;
+		RgHandle& silhouetteIndirectCmdBufferUAV;
+
 		RgHandle& hizTexture;
 		RgHandle& hizSRV; // must covers all mips
 	};

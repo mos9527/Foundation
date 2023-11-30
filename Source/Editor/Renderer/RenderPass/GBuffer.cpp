@@ -24,6 +24,7 @@ GBufferPass::GBufferPass(Device* device) {
 	gbufferPsoDesc.VS = CD3DX12_SHADER_BYTECODE(VS->GetData(), VS->GetSize());
 	gbufferPsoDesc.PS = CD3DX12_SHADER_BYTECODE(PS->GetData(), PS->GetSize());
 	gbufferPsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);	
+	gbufferPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK; // Backface culling
 	gbufferPsoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	gbufferPsoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 #ifdef INVERSE_Z
@@ -46,6 +47,7 @@ GBufferPass::GBufferPass(Device* device) {
 	PSO = std::make_unique<PipelineState>(device, std::move(pso));
 	// Wireframe PSO	
 	gbufferPsoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+	gbufferPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE; // No culling
 	CHECK_HR(device->GetNativeDevice()->CreateGraphicsPipelineState(&gbufferPsoDesc, IID_PPV_ARGS(&pso)));
 	PSO_Wireframe = std::make_unique<PipelineState>(device, std::move(pso));
 	// indirect command buffer

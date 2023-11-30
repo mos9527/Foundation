@@ -21,15 +21,14 @@ const char* GetGlyphByType(SceneComponentType type) {
 	}
 }
 
-static entt::entity selected;
 void OnImGui_SceneComponentWidget() {
 	using enum SceneComponentType;
 	if (ImGui::Begin("Component")) {
-		if (scene.scene->valid<SceneComponentType>(selected)) {
-			SceneComponentType type = scene.scene->get_type<SceneComponentType>(selected);
-			SceneComponent* componet = scene.scene->get_base<SceneComponent>(selected);
+		if (scene.scene->valid<SceneComponentType>(editor.editingComponent)) {
+			SceneComponentType type = scene.scene->get_type<SceneComponentType>(editor.editingComponent);
+			SceneComponent* componet = scene.scene->get_base<SceneComponent>(editor.editingComponent);
 			ImGui::Text("Version: %d", componet->get_version());
-			if (selected != scene.scene->graph->get_root())
+			if (editor.editingComponent != scene.scene->graph->get_root())
 				OnImGui_SceneComponent_TransformWidget(componet);
 			switch (type)
 			{
@@ -58,7 +57,7 @@ void OnImGui_SceneGraphWidget() {
 			SceneComponent* componet = scene.scene->get_base<SceneComponent>(entity);
 			uint stack_count = 0;
 			ImGuiTreeNodeFlags flags = 0;
-			if (selected == entity)
+			if (editor.editingComponent == entity)
 				flags |= ImGuiTreeNodeFlags_Selected;
 			size_t id = entt::to_integral(entity);
 			ImGui::PushStyleColor(ImGuiCol_Text, componet->get_enabled() ? IM_COL32_WHITE : IM_COL32(127, 127, 127, 127));
@@ -79,7 +78,7 @@ void OnImGui_SceneGraphWidget() {
 			if (!hasChild) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 			if (ImGui::TreeNodeEx((void*)id, flags, "%s %s", GetGlyphByType(type), componet->get_name())) {				
 				if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
-					selected = entity;
+					editor.editingComponent = entity;
 				if (hasChild) {
 					stack_count++;
 					auto& children = scene.scene->graph->child_of(entity);

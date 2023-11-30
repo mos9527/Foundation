@@ -83,6 +83,9 @@ struct SceneGlobals // ! align for CB
 
     SceneIBLProbe probe;   
 
+    float edgeThreshold;
+    float3 edgeColor;
+
     uint ltcLutHeapIndex;
     uint3 _pad0;
 
@@ -157,8 +160,8 @@ struct SceneMeshInstance
     bool occlusion_occludee() {
         return instanceFlags & INSTANCE_FLAG_OCCLUDEE;
     }
-    bool highlight() {
-        return instanceFlags & INSTANCE_FLAG_HIGHLIGHT;
+    bool silhouette() {
+        return instanceFlags & INSTANCE_FLAG_SILHOUETTE;
     }
 };
 struct SceneMaterial {

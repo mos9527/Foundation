@@ -10,7 +10,7 @@ IndirectLODCullPass::IndirectLODCullPass(Device* device) {
 		.AddConstantBufferView(0, 0) // b0 space0 : SceneGlobals	
 		.AddShaderResourceView(0, 0) // t0 space0 : SceneMeshInstance		
 		.AddUnorderedAccessView(0, 0) // u0 space0 : Instance visibility
-		.AddConstant(1,0,2) // b1 space0 : indirect CMD UAV heap, transparency indirect CMD UAV heap		
+		.AddConstant(1,0,3) // b1 space0 : indirect CMD UAV heap, transparency indirect CMD UAV heap, silhouette indirect CMD UAV heap	
 		.AddConstant(2,0,2) // b2 space0 : HIZ srv heap handle, HIZ mips
 		.AddStaticSampler(0,0, SamplerDesc::GetDepthReduceSamplerDesc(
 #ifdef INVERSE_Z
@@ -42,18 +42,24 @@ void IndirectLODCullPass::insert_execute(RenderGraphPass& pass, SceneView* scene
 		if constexpr (std::is_same_v<decltype(handles), IndirectLODLateCullPassHandles&>) {	
 			auto* r_transparency_indirect_cmd_buffer = ctx.graph->get<Buffer>(handles.transparencyIndirectCmdBuffer);
 			auto* r_transparency_indirect_cmd_buffer_uav = ctx.graph->get<UnorderedAccessView>(handles.transparencyIndirectCmdBufferUAV);
+			auto* r_silhouette_indirect_cmd_buffer = ctx.graph->get<Buffer>(handles.silhouetteIndirectCmdBuffer);
+			auto* r_silhouette_indirect_cmd_buffer_uav = ctx.graph->get<UnorderedAccessView>(handles.silhouetteIndirectCmdBufferUAV);
 			native->SetPipelineState(*cullPassLatePSO);
 			native->SetComputeRootSignature(*cullPassRS);
 			auto* r_hiz_srv = ctx.graph->get<ShaderResourceView>(handles.hizSRV);
 			auto* r_hiz = ctx.graph->get<Texture>(handles.hizTexture);
 			native->SetComputeRoot32BitConstant(3, r_indirect_cmd_buffer_uav->descriptor.get_heap_handle(), 0);
 			native->SetComputeRoot32BitConstant(3, r_transparency_indirect_cmd_buffer_uav->descriptor.get_heap_handle(), 1);
+			native->SetComputeRoot32BitConstant(3, r_silhouette_indirect_cmd_buffer_uav->descriptor.get_heap_handle(), 2);
 			native->SetComputeRoot32BitConstant(4, r_hiz_srv->descriptor.get_heap_handle(), 0);
 			native->SetComputeRoot32BitConstant(4, r_hiz->GetDesc().mipLevels, 1);
 			ctx.cmd->QueueTransitionBarrier(r_transparency_indirect_cmd_buffer, ResourceState::CopyDest);
+			ctx.cmd->QueueTransitionBarrier(r_silhouette_indirect_cmd_buffer, ResourceState::CopyDest);
 			ctx.cmd->FlushBarriers();
 			ctx.cmd->ZeroBufferRegion(r_transparency_indirect_cmd_buffer, CommandBufferCounterOffset, sizeof(UINT));
+			ctx.cmd->ZeroBufferRegion(r_silhouette_indirect_cmd_buffer, CommandBufferCounterOffset, sizeof(UINT));
 			ctx.cmd->QueueTransitionBarrier(r_transparency_indirect_cmd_buffer, ResourceState::UnorderedAccess);
+			ctx.cmd->QueueTransitionBarrier(r_silhouette_indirect_cmd_buffer, ResourceState::UnorderedAccess);
 		}
 		else {
 			native->SetPipelineState(*cullPassEarlyPSO);
@@ -99,7 +105,8 @@ RenderGraphPass& IndirectLODCullPass::insert_latecull(RenderGraph& rg, SceneView
 		.read(handles.hizTexture)
 		.readwrite(handles.visibilityBuffer)
 		.readwrite(handles.indirectCmdBuffer)
-		.readwrite(handles.transparencyIndirectCmdBuffer);
+		.readwrite(handles.transparencyIndirectCmdBuffer)
+		.readwrite(handles.silhouetteIndirectCmdBuffer);
 	insert_execute(pass, sceneView, handles);
 	return pass;
 }

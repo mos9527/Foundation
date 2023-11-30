@@ -1,10 +1,11 @@
 #include "Widgets.hpp"
 using namespace EditorGlobalContext;
-void OnImGui_RendererWidget() {
+void OnImGui_RendererParamsWidget() {
     if (ImGui::Begin("Renderer")) {
         ImGui::Text("Frametime: %3f ms", ImGui::GetIO().DeltaTime * 1000);
+        ImGui::SeparatorText("Debug");
         static bool debug_ViewAlbedo = false, debug_ViewLod = false, debug_Wireframe = false;
-        static bool debug_FrustumCull = true, debug_OcclusionCull = false /* not much of use as it seems? */;
+        static bool debug_FrustumCull = true, debug_OcclusionCull = true /* not much of use as it seems? */;
         ImGui::Checkbox("View LOD", &debug_ViewLod);
         ImGui::Checkbox("View Albedo", &debug_ViewAlbedo);
         ImGui::Checkbox("Wireframe", &debug_Wireframe);

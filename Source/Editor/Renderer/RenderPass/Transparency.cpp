@@ -27,6 +27,7 @@ TransparencyPass::TransparencyPass(Device* device) {
 	transparencyPsoDesc.VS = CD3DX12_SHADER_BYTECODE(VS->GetData(), VS->GetSize());
 	transparencyPsoDesc.PS = CD3DX12_SHADER_BYTECODE(PS->GetData(), PS->GetSize());
 	transparencyPsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);	
+	transparencyPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE; // No culling
 	transparencyPsoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	transparencyPsoDesc.BlendState.IndependentBlendEnable = TRUE;
 	// Accumlation Buffer : Sum of (RGB*w A*w). RGBA16F

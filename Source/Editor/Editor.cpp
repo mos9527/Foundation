@@ -87,7 +87,8 @@ void EditorWindow::Setup() {
 void Draw_InvalidState() {}
 void Draw_RunningState() {
     OnImGui_ViewportWidget();
-    OnImGui_RendererWidget();
+    OnImGui_RendererParamsWidget();
+    OnImGui_EditorParamsWidget();
     OnImGui_SceneGraphWidget();
     OnImGui_SceneComponentWidget();
 }
@@ -134,18 +135,7 @@ void Run_ImGui() {
             if (ImGui::MenuItem("Reset")) {
                 device->Wait();
                 Reset_Scene();                
-            }
-            {            
-                if (ImGui::MenuItem("Probe"))
-                    ImGui::OpenPopup("HDRI Probe");                
-                if (ImGui::BeginPopupModal("HDRI Probe")){
-                    OnImGui_IBLProbeWidget();
-                    ImGui::Separator();
-                    if (ImGui::Button("Close"))
-                        ImGui::CloseCurrentPopup();
-                    ImGui::EndPopup();
-                }                
-            }
+            }            
             ImGui::EndMenuBar();
         }
 
@@ -198,7 +188,11 @@ void EditorWindow::Run() {
                     .specularIntensity = editor.iblProbeParam.specularIntensity,
                     .occlusionStrength = editor.iblProbeParam.occlusionStrength
                 },
-                .ltcTable = editor.ltcTable
+                .ltcTable = editor.ltcTable,
+                .silhouette = {
+                    .edgeThreshold = editor.silhouetteParam.edgeThreshold,
+                    .edgeColor = editor.silhouetteParam.edgeColor
+                }
         });        
         render.renderer->Render(sceneView);
     }

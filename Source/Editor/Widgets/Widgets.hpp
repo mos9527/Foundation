@@ -2,7 +2,8 @@
 #include "../Globals.hpp"
 
 void OnImGui_ViewportWidget();
-void OnImGui_RendererWidget();
+void OnImGui_RendererParamsWidget();
+void OnImGui_EditorParamsWidget();
 void OnImGui_LoadingWidget();
 void OnImGui_SceneGraphWidget();
 void OnImGui_SceneComponentWidget();

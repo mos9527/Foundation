@@ -210,6 +210,12 @@
     <ClCompile Include="Source\Editor\Processor\ProcessPass\AreaReduce.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\SilhouettePass.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Editor\Widgets\EditorWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">
@@ -488,6 +494,9 @@
     <ClInclude Include="Source\Editor\Processor\ProcessPass\AreaReduce.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\SilhouettePass.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json">
@@ -518,5 +527,7 @@
     <Text Include="Source\Editor\Shaders\HDRIProbe.hlsl" />
     <Text Include="Source\Editor\Shaders\IBL.hlsli" />
     <Text Include="Source\Editor\Shaders\AreaReduce.hlsl" />
+    <Text Include="Source\Editor\Shaders\SilhouettePassBlend.hlsl" />
+    <Text Include="Source\Editor\Shaders\SilhouettePass.hlsl" />
   </ItemGroup>
 </Project>

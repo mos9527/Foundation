@@ -91,7 +91,6 @@ MRT ps_main(PSInput input)
         Texture2D emissiveMap = ResourceDescriptorHeap[material.emissiveMap];
         output.Emissive = emissiveMap.Sample(g_Sampler, input.uv);
     }
-    output.Emissive += mesh.highlight() * float4(0.5, 0.5, 0.5, 0);
     // Swizzling    
     output.Albedo.a = output.Material.r; // Albedo Alpha -> AO
     output.Material.rg = output.Material.gb; // Material RG -> Roughness, Metal

@@ -76,7 +76,7 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 			if (!mesh.get_enabled())
 				sceneMesh.instanceFlags |= INSTANCE_FLAG_INVISIBLE;
 			if (mesh.get_selected())
-				sceneMesh.instanceFlags |= INSTANCE_FLAG_HIGHLIGHT;
+				sceneMesh.instanceFlags |= INSTANCE_FLAG_SILHOUETTE;
 			// Write the update
 			{
 				std::scoped_lock write_lock(write_mutex);
@@ -142,6 +142,9 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 	else {
 		globalBuffer.Data()->probe.enabled = false;
 	}
+	// Silhouette
+	globalBuffer.Data()->edgeThreshold = shader.silhouette.edgeThreshold;
+	globalBuffer.Data()->edgeColor = shader.silhouette.edgeColor;
 	// Scene info
 	globalBuffer.Data()->numMeshInstances = instances.size();
 	globalBuffer.Data()->numLights = lights.size();
