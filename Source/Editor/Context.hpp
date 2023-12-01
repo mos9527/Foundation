@@ -88,11 +88,14 @@ struct EditorContext {
 
         float diffuseIntensity = 1.0f;
         float specularIntensity = 1.0f;
-        float occlusionStrength = 1.0f;
+        float occlusionStrength = 0.0f;
+
+        float skyboxLod = 0.0f;
+        float skyboxIntensity = 1.0f;
     } iblProbeParam;
     LTCTableProcessor* ltcTable;
     struct {
-        float  edgeThreshold = 1.0f;
+        float  edgeThreshold = 5.0f;
         float3 edgeColor = float3(232 / 255.0f, 125 / 255.0f, 13 / 255.0f);
     } silhouetteParam;
 
@@ -164,7 +167,7 @@ public:
 struct ViewportContext {
     ViewportManipulationStates state;
     entt::entity camera;
-    bool vsync = true;
+    bool vsync = false;
     uint frameFlags = 0;
     uint width = 0;
     uint height = 0;

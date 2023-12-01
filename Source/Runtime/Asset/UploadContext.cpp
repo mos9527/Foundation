@@ -23,7 +23,9 @@ void UploadContext::QueueUploadBuffer(Resource* dst, void* data, uint sizeInByte
     CHECK(dst->GetDesc().dimension == ResourceDimension::Buffer);
     std::scoped_lock lock(m_UploadMutex);
     PrepareTempBuffers(1);
-    size_t RequiredSize = GetRequiredIntermediateSize(*dst, 0, 1);
+    const D3D12_RESOURCE_DESC Desc = dst->GetDesc();
+    size_t RequiredSize;
+    m_Device->GetNativeDevice()->GetCopyableFootprints(&Desc, 0, 1, 0, m_FootprintBuffer.data(), m_RowsBuffer.data(), m_RowSizesBuffer.data(), &RequiredSize);
     auto& intermediate = m_IntermediateBuffers.emplace_back(std::make_unique<Resource>(this->GetParent(), Resource::ResourceDesc::GetGenericBufferDesc(RequiredSize)));
     Subresource subresource{
         .pData = data,

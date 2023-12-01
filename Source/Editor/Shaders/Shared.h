@@ -75,6 +75,10 @@ struct SceneIBLProbe {
     float specularIntensity;
     float occlusionStrength;
     float _pad2;
+
+    float skyboxLod;
+    float skyboxIntensity;
+    float2 _pad3;
 };
 struct SceneGlobals // ! align for CB
 {

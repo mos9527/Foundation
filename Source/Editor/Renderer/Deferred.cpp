@@ -168,7 +168,7 @@ void DeferredRenderer::Render(SceneView* sceneView)
 		.viewed = revealage_buffer
 	});
 	auto& frameBuffer = rg.create<Texture>(Resource::ResourceDesc::GetTextureBufferDesc(
-		ResourceFormat::R11G11B10_FLOAT, ResourceDimension::Texture2D,
+		ResourceFormat::R16G16B16A16_FLOAT, ResourceDimension::Texture2D,
 		width, height, 1, 1, 1, 0,
 		ResourceFlags::UnorderedAccess | ResourceFlags::RenderTarget, ResourceHeapType::Default,
 		ResourceState::UnorderedAccess, ClearValue(0, 0, 0, 0),
@@ -195,7 +195,7 @@ void DeferredRenderer::Render(SceneView* sceneView)
 		.viewed = velocity
 	});
 	auto& fb_uav = rg.create<UnorderedAccessView>({
-		.viewDesc = UnorderedAccessViewDesc::GetTexture2DDesc(ResourceFormat::R11G11B10_FLOAT,0,0),
+		.viewDesc = UnorderedAccessViewDesc::GetTexture2DDesc(ResourceFormat::R16G16B16A16_FLOAT,0,0),
 		.viewed = frameBuffer
 	});	
 	auto& hiz_srv = rg.create<ShaderResourceView>({
@@ -209,22 +209,22 @@ void DeferredRenderer::Render(SceneView* sceneView)
 			.viewed = hiz_buffer
 		}));	
 	auto& fb_srv = rg.create<ShaderResourceView>({
-		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R11G11B10_FLOAT, 0, 1),
+		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R16G16B16A16_FLOAT, 0, 1),
 		.viewed = frameBuffer
 	});
 	auto& fb_rtv = rg.create<RenderTargetView>({
-		.viewDesc = RenderTargetViewDesc::GetTexture2DDesc(ResourceFormat::R11G11B10_FLOAT, 0),
+		.viewDesc = RenderTargetViewDesc::GetTexture2DDesc(ResourceFormat::R16G16B16A16_FLOAT, 0),
 		.viewed = frameBuffer
 	});
 	pass_Clear.insert_dsv(rg, sceneView, { &depth, &silhouetteDepth }, { &depth_dsv, &silhouetteDepth_dsv });
 	pass_Clear.insert_rtv(rg, sceneView, { &frameBuffer, &albedo, &normal, &material, &emissive, &velocity }, { &fb_rtv, &albedo_rtv, &normal_rtv, &material_rtv, &emissive_rtv, &velocity_rtv });
 	if (sceneView->get_SceneGlobals().numMeshInstances) {
-		auto& p1 = pass_IndirectCull.insert_earlycull(rg, sceneView, {
+		pass_IndirectCull.insert_earlycull(rg, sceneView, {
 			.visibilityBuffer = instanceVisibility,
 			.indirectCmdBuffer = indirectCmds,
 			.indirectCmdBufferUAV = indirectCmdsUAV
 			});
-		auto& p2 = pass_GBuffer.insert_earlydraw(rg, sceneView, {
+		pass_GBuffer.insert_earlydraw(rg, sceneView, {
 			.indirectCommands = indirectCmds,
 			.indirectCommandsUAV = indirectCmdsUAV,
 			.depth = depth,
@@ -240,13 +240,13 @@ void DeferredRenderer::Render(SceneView* sceneView)
 			.emissive_rtv = emissive_rtv,
 			.velocity_rtv = velocity_rtv
 			});
-		auto& p3 = pass_HiZ.insert(rg, sceneView, {
+		pass_HiZ.insert(rg, sceneView, {
 			.depth = depth,
 			.depthSRV = depth_srv,
 			.hizTexture = hiz_buffer,
 			.hizUAVs = hiz_uavs
 			});
-		auto& p4 = pass_IndirectCull.insert_latecull(rg, sceneView, {
+		pass_IndirectCull.insert_latecull(rg, sceneView, {
 			.visibilityBuffer = instanceVisibility,
 			.indirectCmdBuffer = indirectCmds,
 			.indirectCmdBufferUAV = indirectCmdsUAV,
@@ -257,7 +257,7 @@ void DeferredRenderer::Render(SceneView* sceneView)
 			.hizTexture = hiz_buffer,
 			.hizSRV = hiz_srv
 			});
-		auto& p5 = pass_GBuffer.insert_latedraw(rg, sceneView, {
+		pass_GBuffer.insert_latedraw(rg, sceneView, {
 			.indirectCommands = indirectCmds,
 			.indirectCommandsUAV = indirectCmdsUAV,
 			.depth = depth,
@@ -273,7 +273,7 @@ void DeferredRenderer::Render(SceneView* sceneView)
 			.emissive_rtv = emissive_rtv,
 			.velocity_rtv = velocity_rtv
 			});
-		auto& p6 = pass_Lighting.insert(rg, sceneView, {
+		pass_Lighting.insert(rg, sceneView, {
 			.frameBuffer = frameBuffer,
 			.depth = depth,
 			.albedo = albedo,
@@ -287,7 +287,13 @@ void DeferredRenderer::Render(SceneView* sceneView)
 			.emissive_srv = emissive_srv,
 			.fb_uav = fb_uav
 			});
-		auto& p7 = pass_Transparency.insert(rg, sceneView, {
+		pass_Skybox.insert(rg, sceneView, {
+			.depth = depth,
+			.depthDSV = depth_dsv,
+			.frameBuffer = frameBuffer,
+			.frameBufferRTV = fb_rtv
+		});
+		pass_Transparency.insert(rg, sceneView, {
 			.transparencyIndirectCommands = transparencyIndirectCmds,
 			.transparencyIndirectCommandsUAV = transparencyIndirectCmdsUAV,
 			.accumalationBuffer = accumalation_buffer,
@@ -303,7 +309,7 @@ void DeferredRenderer::Render(SceneView* sceneView)
 			.material_rtv = material_rtv,
 			.material = material
 		});	
-		auto& p8 = pass_Silhouette.insert(rg, sceneView, {
+		pass_Silhouette.insert(rg, sceneView, {
 			.silhouetteCMD = silhouetteIndirectCmds,
 			.silhouetteCMDUAV = silhouetteIndirectCmdsUAV,
 			.silhouetteDepth = silhouetteDepth,

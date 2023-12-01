@@ -216,6 +216,9 @@
     <ClCompile Include="Source\Editor\Widgets\EditorWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\Skybox.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">
@@ -497,6 +500,12 @@
     <ClInclude Include="Source\Editor\Renderer\RenderPass\SilhouettePass.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\Skybox.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\Renderer\Data\CubeMesh.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json">
@@ -529,5 +538,6 @@
     <Text Include="Source\Editor\Shaders\AreaReduce.hlsl" />
     <Text Include="Source\Editor\Shaders\SilhouettePassBlend.hlsl" />
     <Text Include="Source\Editor\Shaders\SilhouettePass.hlsl" />
+    <Text Include="Source\Editor\Shaders\SkyboxPass.hlsl" />
   </ItemGroup>
 </Project>

@@ -188,7 +188,9 @@ void EditorWindow::Run() {
                     .probe = editor.iblProbe,
                     .diffuseIntensity = editor.iblProbeParam.diffuseIntensity,
                     .specularIntensity = editor.iblProbeParam.specularIntensity,
-                    .occlusionStrength = editor.iblProbeParam.occlusionStrength
+                    .occlusionStrength = editor.iblProbeParam.occlusionStrength,      
+                    .skyboxLod = editor.iblProbeParam.skyboxLod,
+                    .skyboxIntensity = editor.iblProbeParam.skyboxIntensity
                 },
                 .ltcTable = editor.ltcTable,
                 .silhouette = {

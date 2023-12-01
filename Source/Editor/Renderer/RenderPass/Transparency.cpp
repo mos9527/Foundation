@@ -213,7 +213,8 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 		setup_material(ctx);
 		render(ctx);
 	});
-	return rg.add_pass(L"Transparency Blending")		
+	return rg.add_pass(L"Transparency Blending")	
+		.read(handles.framebuffer)
 		.readwrite(handles.framebuffer)
 		.read(handles.accumalationBuffer)
 		.read(handles.revealageBuffer)

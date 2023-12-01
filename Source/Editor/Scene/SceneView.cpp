@@ -137,6 +137,8 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 		probe.diffuseIntensity = shader.probe.diffuseIntensity;
 		probe.specularIntensity = shader.probe.specularIntensity;
 		probe.occlusionStrength = shader.probe.occlusionStrength;
+		probe.skyboxLod = shader.probe.skyboxLod;
+		probe.skyboxIntensity = shader.probe.skyboxIntensity;
 		globalBuffer.Data()->probe = probe;
 	}
 	else {

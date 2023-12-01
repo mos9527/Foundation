@@ -30,6 +30,8 @@ public:
 			float diffuseIntensity;
 			float specularIntensity;
 			float occlusionStrength;
+			float skyboxLod;
+			float skyboxIntensity;
 		} probe;
 		LTCTableProcessor* ltcTable;
 		struct SilhouetteParams {

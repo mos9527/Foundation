@@ -43,6 +43,9 @@ void OnImGui_IBLProbeWidget() {
 				ImGui::SliderFloat("Diffuse Strength", &editor.iblProbeParam.diffuseIntensity, 0, 1);
 				ImGui::SliderFloat("Specular Strength", &editor.iblProbeParam.specularIntensity, 0, 1);
 				ImGui::SliderFloat("Occlusion Strength", &editor.iblProbeParam.occlusionStrength, 0, 1);
+				ImGui::SeparatorText("Skybox");
+				ImGui::SliderFloat("Skybox LOD", &editor.iblProbeParam.skyboxLod, 0, editor.iblProbe->numMips - 1);
+				ImGui::SliderFloat("Skybox Intensity", &editor.iblProbeParam.skyboxIntensity, 0, 1);
 				if (ImGui::BeginTabBar("##IBLPreview")) {
 					if (ImGui::BeginTabItem("Split Sum LUT")) {
 						ImGui::Image((ImTextureID)editor.iblProbe->lutArrayUAV->descriptor.get_gpu_handle().ptr, ImVec2{ 128,128 });

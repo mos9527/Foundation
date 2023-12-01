@@ -170,6 +170,7 @@
     <ClCompile Include="Source\Editor\Renderer\RenderPass\Clear.cpp" />
     <ClCompile Include="Source\Editor\Processor\ProcessPass\IBLPrefilter.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\SilhouettePass.cpp" />
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\Skybox.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\Tonemapping.cpp" />
     <ClCompile Include="Source\Editor\Widgets\AssetMeshComponentWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\EditorWidget.cpp" />
@@ -244,9 +245,11 @@
     <ClInclude Include="Source\Editor\Processor\MeshSelectionProcessor.hpp" />
     <ClInclude Include="Source\Editor\Processor\Processor.hpp" />
     <ClInclude Include="Source\Editor\Processor\ProcessPass\AreaReduce.hpp" />
+    <ClInclude Include="Source\Editor\Renderer\Data\CubeMesh.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\Clear.hpp" />
     <ClInclude Include="Source\Editor\Processor\ProcessPass\IBLPrefilter.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\SilhouettePass.hpp" />
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\Skybox.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\Tonemapping.hpp" />
     <ClInclude Include="Source\Editor\Shaders\Shaders.hpp" />
     <ClInclude Include="Source\Editor\Widgets\AssetWidgets.hpp" />
@@ -433,6 +436,11 @@
       <FileType>Document</FileType>
     </Text>
     <Text Include="Source\Editor\Shaders\SilhouettePassBlend.hlsl">
+      <FileType>Document</FileType>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Source\Editor\Shaders\SkyboxPass.hlsl">
       <FileType>Document</FileType>
     </Text>
   </ItemGroup>
