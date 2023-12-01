@@ -56,8 +56,8 @@ void shade_ltc_line(SceneLight light, float4 t1, float4 t2, float3x3 Minv, float
     float3 b1, b2;
     buildOrthonormalBasis(light.direction.xyz, b1, b2);
     
-    float3 P1 = light.position.xyz + b1 * light.area_line_length / -2;
-    float3 P2 = light.position.xyz + b1 * light.area_line_length / 2;
+    float3 P1 = light.position.xyz + b2 * light.area_line_length / -2;
+    float3 P2 = light.position.xyz + b2 * light.area_line_length / 2;
     float R = light.area_line_radius;
     uint endCaps = light.area_line_caps;
     diffuse += c_diffuse * LTC_EvaluateLine(N, V, P, float3x3(float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1)),P1,P2,R,endCaps) * light.intensity * light.color.rgb;

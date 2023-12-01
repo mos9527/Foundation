@@ -22,21 +22,6 @@ float IntegrateEdge(float3 v1, float3 v2)
 {
     return IntegrateEdgeVec(v1, v2).z;
 }
-// code from [Frisvad2012]
-void buildOrthonormalBasis(
-in float3 n, out float3 b1, out float3 b2)
-{
-    if (n.z < -0.9999999)
-    {
-        b1 = float3(0.0, -1.0, 0.0);
-        b2 = float3(-1.0, 0.0, 0.0);
-        return;
-    }
-    float a = 1.0 / (1.0 + n.z);
-    float b = -n.x * n.y * a;
-    b1 = float3(1.0 - n.x * n.x * a, b, -n.x);
-    b2 = float3(b, 1.0 - n.y * n.y * a, -n.y);
-}
 float D(float3 w, float3x3 Minv)
 {
     float3 wo = mul(w, Minv);

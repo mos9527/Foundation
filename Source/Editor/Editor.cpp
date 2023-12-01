@@ -3,6 +3,7 @@
 #include "Input/KBMCamera.hpp"
 #include "Win32/Win32IO.hpp"
 #include "../../Dependencies/IconsFontAwesome6.h"
+
 using namespace RHI;
 using namespace EditorGlobalContext;
 #define IMGUI_DEFAULT_FONT "Resources/Fonts/DroidSansFallback.ttf"
@@ -156,6 +157,7 @@ void EditorWindow::Run() {
     ImGui_ImplDX12_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
+    ImGuizmo::BeginFrame();
     Run_ImGui();       
     ImGui::Render();
     uint bbIndex = swapchain->GetCurrentBackbufferIndex();

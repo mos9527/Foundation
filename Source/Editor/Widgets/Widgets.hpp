@@ -1,5 +1,6 @@
 #pragma once
 #include "../Globals.hpp"
+#include "../../../Dependencies/ImGuizmo/ImGuizmo.h"
 
 void OnImGui_ViewportWidget();
 void OnImGui_RendererParamsWidget();

@@ -62,6 +62,7 @@ public:
 	// Finally, their `version` are also updated.
 	void update_transform(const entt::entity entity);
 	void update_enabled(const entt::entity entity);
+	void update_all();
 	void update(const entt::entity entity);
 	// UNTESETED. perhaps testing will never be done on these things...
 	//template<typename T> void remove_component(const entt::entity entity) {

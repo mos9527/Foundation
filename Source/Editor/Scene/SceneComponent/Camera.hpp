@@ -17,6 +17,11 @@ struct SceneCameraComponent : public SceneComponent {
 		nearZ = 0.01f;
 		farZ = 100.0f;
 	}
+	float2 project_to_uv(float3 p0) {
+		float4 pss = float4::Transform(float4{ p0.x ,p0.y,p0.z,1 }, viewProjection);		
+		float2 ndc = { pss.x / pss.w ,pss.y / pss.w };
+		return float2{ 0.5f,0.5f } + float2{ndc.x * 0.5f, ndc.y * -0.5f};
+	}
 	SceneCamera get_struct(float aspect) {
 		SceneCamera camera;
 		AffineTransform globalTransform = get_global_transform();

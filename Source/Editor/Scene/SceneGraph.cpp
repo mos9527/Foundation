@@ -44,6 +44,11 @@ void SceneGraph::update_enabled(const entt::entity entity) {
 void SceneGraph::update() {
 	scene.version++;
 }
+void SceneGraph::update_all() {
+	update();
+	update_transform(root);
+	update_enabled(root);
+}
 void SceneGraph::update(const entt::entity entity) {
 	SceneComponent* thisComponent = get_base(entity);
 	update();

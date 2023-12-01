@@ -39,6 +39,7 @@ public:
 
 	inline const size_t get_version() const { return version; }
 	inline const char* get_name() const { return name.c_str(); }
+	inline const SceneComponentType get_type() { return type; }
 	inline entt::entity get_entity() const { return entity; }		
 
 	inline bool get_selected() { return selected; }

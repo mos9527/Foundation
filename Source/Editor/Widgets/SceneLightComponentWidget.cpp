@@ -22,7 +22,7 @@ void OnImGui_SceneGraphWidget_SceneLightComponentWidget(SceneLightComponent* lig
 			ImGui::SliderFloat("Intensity", &light->intensity, 0, 100);
 			ImGui::Separator();
 			ImGui::SliderFloat("Radius", &light->spot_point_radius, 0, 100);			
-			ImGui::SliderAngle("Angle", &light->spot_size_rad, 0, 360.0f);
+			ImGui::SliderAngle("Angle", &light->spot_size_rad, 0, 90.0f);
 			ImGui::SliderFloat("Blend", &light->spot_size_blend, 0, 1);
 			ImGui::EndTabItem();
 		}

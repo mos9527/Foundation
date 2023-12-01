@@ -310,4 +310,19 @@ float sphereScreenSpaceRadius(float3 center, float radius, float3 eye, float fov
     float Rss = rcp(tan(fov / 2)) * radius / sqrt(dot(V, V) - radius * radius);
     return min(Rss, 1.0f);
 }
+// code from [Frisvad2012]
+void buildOrthonormalBasis(
+in float3 n, out float3 b1, out float3 b2)
+{
+    if (n.z < -0.9999999)
+    {
+        b1 = float3(0.0, -1.0, 0.0);
+        b2 = float3(-1.0, 0.0, 0.0);
+        return;
+    }
+    float a = 1.0 / (1.0 + n.z);
+    float b = -n.x * n.y * a;
+    b1 = float3(1.0 - n.x * n.x * a, b, -n.x);
+    b2 = float3(b, 1.0 - n.y * n.y * a, -n.y);
+}
 #endif
