@@ -8,13 +8,14 @@
 #include "RenderPass/Transparency.hpp"
 #include "RenderPass/SilhouettePass.hpp"
 #include "RenderPass/Skybox.hpp"
+#include "RenderPass/Tonemapping.hpp"
 class DeferredRenderer {
 public:
 	RHI::ShaderResourceView* r_frameBufferSRV, * r_materialBufferSRV;
 	RHI::Texture* r_frameBufferTex, * r_materialBufferTex;
 	DeferredRenderer(RHI::Device* device) : 
 		device(device), pass_Clear(device), pass_IndirectCull(device), pass_GBuffer(device), pass_HiZ(device), pass_Lighting(device),
-		pass_Transparency(device), pass_Silhouette(device), pass_Skybox(device)
+		pass_Transparency(device), pass_Silhouette(device), pass_Skybox(device), pass_Tonemapping(device)
 	{};	
 	void Render(SceneView* sceneView);
 private:	
@@ -29,5 +30,6 @@ private:
 	DeferredLightingPass pass_Lighting;
 	SkyboxPass pass_Skybox;
 	TransparencyPass pass_Transparency;
+	TonemappingPass pass_Tonemapping;
 	SilhouettePass pass_Silhouette;
 };

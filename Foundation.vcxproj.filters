@@ -219,6 +219,9 @@
     <ClCompile Include="Source\Editor\Renderer\RenderPass\Skybox.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\Widgets\SceneCameraComponentWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">
@@ -527,7 +530,7 @@
     <Text Include="Source\Editor\Shaders\GBuffer.hlsl" />
     <Text Include="Source\Editor\Shaders\Shared.h" />
     <Text Include="Source\Editor\Shaders\DeferredLighting.hlsl" />
-    <Text Include="Source\Editor\Shaders\Tonemap.hlsl" />
+    <Text Include="Source\Editor\Shaders\Tonemapping.hlsl" />
     <Text Include="Source\Editor\Shaders\FFXSpd.hlsl" />
     <Text Include="Source\Editor\Shaders\DepthSampleToTexture.hlsl" />
     <Text Include="Source\Editor\Shaders\Transparency.hlsl" />

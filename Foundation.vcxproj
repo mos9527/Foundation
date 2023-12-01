@@ -179,6 +179,7 @@
     <ClCompile Include="Source\Editor\Widgets\AssetMaterialComponentWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\PrefilterProcessWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\RendererWidget.cpp" />
+    <ClCompile Include="Source\Editor\Widgets\SceneCameraComponentWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\SceneGraphWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\SceneLightComponentWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\SceneMeshComponentWidget.cpp" />
@@ -370,7 +371,7 @@
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Editor\Shaders\Tonemap.hlsl">
+    <Text Include="Source\Editor\Shaders\Tonemapping.hlsl">
       <FileType>Document</FileType>
     </Text>
   </ItemGroup>

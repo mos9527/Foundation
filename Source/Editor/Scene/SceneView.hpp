@@ -37,7 +37,7 @@ public:
 		struct SilhouetteParams {
 			float  edgeThreshold;
 			float3 edgeColor;
-		} silhouette;
+		} silhouette;		
 	};
 	struct FrameData {
 		uint viewportWidth;

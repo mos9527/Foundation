@@ -58,6 +58,11 @@ struct SceneCamera // ! align for CB
     matrix invView;
     matrix invProjection;
     matrix invViewProjection;
+
+    float logLuminaceMin; // in EV scale
+    float logLuminanceRange;
+    float luminaceAdaptRate;
+    float _pad;
 };
 #define IBL_PROBE_SPECULAR_GGX 0
 #define IBL_PROBE_SPECULAR_SHEEN 1

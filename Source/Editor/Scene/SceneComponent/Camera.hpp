@@ -6,6 +6,10 @@ struct SceneCameraComponent : public SceneComponent {
 	float nearZ;
 	float farZ;
 
+	float logLuminanceMin = -10.0f;
+	float logLuminanceRange = 12.0f;
+	float luminanceAdaptRate = 1.1f;
+
 	matrix view;
 	matrix projection;
 	matrix viewProjection;
@@ -85,6 +89,9 @@ struct SceneCameraComponent : public SceneComponent {
 		camera.aspect = aspect;
 		camera.nearZ = nearZ;
 		camera.farZ = farZ;
+		camera.logLuminaceMin = logLuminanceMin;
+		camera.logLuminanceRange = logLuminanceRange;
+		camera.luminaceAdaptRate = luminanceAdaptRate;
 		return camera;
 	}	
 };

@@ -25,6 +25,7 @@ class SceneGraph {
 	}	
 	void update_transform(SceneComponent* parent, SceneComponent* child);
 	void update_enabled(SceneComponent* src, SceneComponent* component);
+	void update_version(SceneComponent* component);
 	void update();
 	// Depth-first-search reduction
 	// calls func(entity component, entity parent) on every component encountered. Ordered from parent to children.
@@ -62,7 +63,7 @@ public:
 	// Finally, their `version` are also updated.
 	void update_transform(const entt::entity entity);
 	void update_enabled(const entt::entity entity);
-	void update_all();
+	void update_version(const entt::entity entity);
 	void update(const entt::entity entity);
 	// UNTESETED. perhaps testing will never be done on these things...
 	//template<typename T> void remove_component(const entt::entity entity) {

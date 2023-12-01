@@ -35,9 +35,10 @@ void OnImGui_SceneComponentWidget() {
 				case Collection:
 					break;
 				case Camera:
+					OnImGui_SceneGraphWidget_SceneCameraComponentWidget(static_cast<SceneCameraComponent*>(componet));
 					break;
 				case Mesh:
-					OnImGui_SceneGraphWidget_SceneMeshComponent(static_cast<SceneMeshComponent*>(componet));
+					OnImGui_SceneGraphWidget_SceneMeshComponentWidget(static_cast<SceneMeshComponent*>(componet));
 					break;
 				case Light:
 					OnImGui_SceneGraphWidget_SceneLightComponentWidget(static_cast<SceneLightComponent*>(componet));

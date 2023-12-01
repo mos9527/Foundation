@@ -309,6 +309,10 @@ void DeferredRenderer::Render(SceneView* sceneView)
 			.material_rtv = material_rtv,
 			.material = material
 		});	
+		pass_Tonemapping.insert(rg, sceneView, {
+			.frameBuffer = frameBuffer,
+			.frameBufferUAV = fb_uav
+		});
 		pass_Silhouette.insert(rg, sceneView, {
 			.silhouetteCMD = silhouetteIndirectCmds,
 			.silhouetteCMDUAV = silhouetteIndirectCmdsUAV,

@@ -152,7 +152,7 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& f
 	globalBuffer.Data()->numLights = lights.size();
 	// Camera
 	globalBuffer.Data()->cameraPrev = globalBuffer.Data()->camera;
-	globalBuffer.Data()->camera = camera.get_struct(frame.viewportWidth / (float)frame.viewportHeight);
+	globalBuffer.Data()->camera = camera.get_struct(frame.viewportWidth / (float)frame.viewportHeight);	
 	// Frame
 	globalBuffer.Data()->frameIndex = frame.frameIndex;
 	globalBuffer.Data()->frameDimension.x = frame.viewportWidth;
