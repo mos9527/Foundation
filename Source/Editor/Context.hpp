@@ -92,7 +92,7 @@ struct EditorContext {
     } iblProbeParam;
     LTCTableProcessor* ltcTable;
     struct {
-        float  edgeThreshold = 0.001f;
+        float  edgeThreshold = 1.0f;
         float3 edgeColor = float3(232 / 255.0f, 125 / 255.0f, 13 / 255.0f);
     } silhouetteParam;
 

@@ -11,7 +11,7 @@ void OnImGui_EditorParamsWidget() {
 				ImGui::EndTabItem();
 			}
 			if (ImGui::BeginTabItem("Silhouette")) {
-				ImGui::SliderFloat("Threshold", &editor.silhouetteParam.edgeThreshold, 0.0f, 0.01f);
+				ImGui::SliderFloat("Threshold", &editor.silhouetteParam.edgeThreshold, 0.0f, 1.0f);
 				ImGui::ColorEdit3("Color", (float*)&editor.silhouetteParam.edgeColor);
 				ImGui::EndTabItem();
 			}

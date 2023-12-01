@@ -34,7 +34,7 @@ void main(uint2 DTid : SV_DispatchThreadID)
     {
         for (uint y = 0; y < 3; y++)
         {
-            A[x][y] = depthTex[DTid + int2(x - 1,y - 1)].r;
+            A[x][y] = clipZ2ViewZ(depthTex[DTid + int2(x - 1, y - 1)].r, g_SceneGlobals.camera.nearZ, g_SceneGlobals.camera.farZ);
         }
     }
     float Gx = dot(sx[0], A[0]) + dot(sx[1], A[1]) + dot(sx[2], A[2]);
