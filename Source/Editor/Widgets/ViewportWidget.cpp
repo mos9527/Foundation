@@ -8,29 +8,81 @@ static ImVec2 uv_to_pixel(float2 uv) {
 static ImU32 col4_to_u32(float4 color) {
     return IM_COL32(color.x * 255, color.y * 255, color.z * 255, color.w * 255);
 }
-void Viewport_Light_Spot_Gizmo(SceneLightComponent* light) {
+void Viewport_DirectionGizmo(SceneLightComponent* light, float length=1.0f) {
     auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
     float3 b1, b2;
     BuildOrthonormalBasis(light->get_direction_vector(), b1, b2);
+    float3 p0 = light->get_global_translation();
+    float3 p1 = light->get_global_translation() + light->get_direction_vector() * length;
+    float2 u0 = camera->project_to_uv(p0);
+    float2 u1 = camera->project_to_uv(p1);
+    constexpr float triangleSize = 0.1f;
+    float2 t0 = camera->project_to_uv(p1 - b1 * 0.5 * triangleSize);
+    float2 t1 = camera->project_to_uv(p1 + b1 * 0.5 * triangleSize);
+    float2 t2 = camera->project_to_uv(p1 + light->get_direction_vector() * triangleSize);
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    draw_list->AddLine(uv_to_pixel(u0), uv_to_pixel(u1), 0xffffffff);
+    draw_list->AddCircleFilled(uv_to_pixel(u0), 8.0f, 0xffffffff);    
+    draw_list->AddTriangleFilled(uv_to_pixel(t0), uv_to_pixel(t1), uv_to_pixel(t2), 0xff00ffff);
+}
+void Viewport_Light_Point_Gizmo(SceneLightComponent* light) {
+    auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
+    float3 p0 = light->get_global_translation();
+    float2 u0 = camera->project_to_uv(p0);
+    float rSS = SphereScreenSpaceRadius(p0, light->spot_point_radius, camera->get_global_translation(), camera->fov);
+    float rSSpx = rSS * std::max(viewport.width, viewport.height);
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    draw_list->AddCircleFilled(uv_to_pixel(u0), 8.0f, 0xffffffff);
+    draw_list->AddCircle(uv_to_pixel(u0), rSSpx, 0xffffffff);
+}
+void Viewport_Light_Directional_Gizmo(SceneLightComponent* light) {
+    Viewport_DirectionGizmo(light, 1.0f);
+}
+void Viewport_Light_Spot_Gizmo(SceneLightComponent* light) {
+    Viewport_DirectionGizmo(light, cosf(light->spot_size_rad));
+    auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
+    float3 b1, b2, b3;
+    BuildOrthonormalBasis(light->get_direction_vector(), b1, b2);
+    b3 = light->get_direction_vector().Cross(camera->get_look_direction()); // Parallel to view 
     constexpr uint points = 36;
-    float3 o = light->get_global_translation() + light->get_direction_vector();
+    float3 o = light->get_global_translation() + light->get_direction_vector() * cosf(light->spot_size_rad);
     ImVec2 outerPoints[points], innerPoints[points];
+    float dotMin = 1, dotMax = 0;
+    ImVec2 epMin{}, epMax{};
     for (uint i = 0; i < points; i++) {
         float rad = XM_2PI * i / points;
-        float cosTheta = cosf(rad)/* length(direction_vector) */;
+        float cosTheta = cosf(rad);
         float sinTheta = sinf(rad);
         float outerRadius = sinf(light->spot_size_rad);
         float innerRadius = sinf(light->spot_size_rad * (1 - light->spot_size_blend));
-        float3 outerPoint = o + b1 * cosTheta * outerRadius + b2 * sinTheta * outerRadius;
+        float3 outerOffset = b1 * cosTheta * outerRadius + b2 * sinTheta * outerRadius;
+        float dot = outerOffset.Dot(b3);
+        float3 outerPoint = o + outerOffset;
         float3 innerPoint = o + b1 * cosTheta * innerRadius + b2 * sinTheta * innerRadius;
         outerPoints[i] = uv_to_pixel(camera->project_to_uv(outerPoint));
         innerPoints[i] = uv_to_pixel(camera->project_to_uv(innerPoint));
+        // Finds the point with the min/max angle offset to the basis
+        // created from LightDir x ViewDir.
+        // This ensures the frustum always faces perpendicular to the camera and
+        // the two frustum lines does not occlude each other.
+        // ...similar to what Blender does
+        if (dot < dotMin) {
+            dotMin = dot;
+            epMin = outerPoints[i];
+        }
+        if (dot > dotMax) {
+            dotMax = dot;
+            epMax = outerPoints[i];
+        }
     }
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     draw_list->AddPolyline(outerPoints, points, col4_to_u32(light->color), ImDrawFlags_Closed, 1.0f);
     draw_list->AddPolyline(innerPoints, points, col4_to_u32(light->color), ImDrawFlags_Closed, 1.0f);
+    draw_list->AddLine(uv_to_pixel(camera->project_to_uv(light->get_global_translation())), epMin, col4_to_u32(light->color), 1.0f);
+    draw_list->AddLine(uv_to_pixel(camera->project_to_uv(light->get_global_translation())), epMax, col4_to_u32(light->color), 1.0f);
 }
 void Viewport_Light_AreaDisk_Gizmo(SceneLightComponent* light) {
+    Viewport_DirectionGizmo(light);
     auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
     float3 b1, b2;
     BuildOrthonormalBasis(light->get_direction_vector(), b1, b2);
@@ -41,13 +93,14 @@ void Viewport_Light_AreaDisk_Gizmo(SceneLightComponent* light) {
         float cosTheta = cosf(rad);
         float sinTheta = sinf(rad);
         float3 p1 = cosTheta * light->area_quad_disk_extents.x * b1;
-        float3 p2 = sinTheta * light->area_quad_disk_extents.x * b2;
+        float3 p2 = sinTheta * light->area_quad_disk_extents.y * b2;
         diskPoints[i] = uv_to_pixel(camera->project_to_uv(p1 + p2 + light->get_global_translation()));
     }
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    draw_list->AddConvexPolyFilled(diskPoints, points, col4_to_u32(light->color));
+    draw_list->AddPolyline(diskPoints, points, col4_to_u32(light->color), ImDrawFlags_Closed, 1.0f);
 }
 void Viewport_Light_AreaQuad_Gizmo(SceneLightComponent* light) {
+    Viewport_DirectionGizmo(light);
     auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
     float3 b1, b2;
     BuildOrthonormalBasis(light->get_direction_vector(), b1, b2);
@@ -60,9 +113,11 @@ void Viewport_Light_AreaQuad_Gizmo(SceneLightComponent* light) {
     float2 u3 = camera->project_to_uv(p3);
     float2 u4 = camera->project_to_uv(p4);    
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    draw_list->AddQuadFilled(uv_to_pixel(u1), uv_to_pixel(u2), uv_to_pixel(u3), uv_to_pixel(u4), col4_to_u32(light->color));
+    ImVec2 points[] = { uv_to_pixel(u1), uv_to_pixel(u2), uv_to_pixel(u3), uv_to_pixel(u4) };
+    draw_list->AddPolyline(points, 4, col4_to_u32(light->color), ImDrawFlags_Closed, 1.0f);
 }
 void Viewport_Light_AreaLine_Gizmo(SceneLightComponent* light) {
+    Viewport_DirectionGizmo(light);
     auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
     float3 b1, b2;
     BuildOrthonormalBasis(light->get_direction_vector(), b1, b2);
@@ -75,14 +130,13 @@ void Viewport_Light_AreaLine_Gizmo(SceneLightComponent* light) {
 }
 void Viewport_Light_Gizmo(SceneLightComponent* light) {
     auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
-    // Draw a line for direction
-    float3 p0 = light->get_global_translation();
-    float3 p1 = light->get_global_translation() + light->get_direction_vector();
-    float2 u0 = camera->project_to_uv(p0);
-    float2 u1 = camera->project_to_uv(p1);    
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();    
-    draw_list->AddLine(uv_to_pixel(u0),uv_to_pixel(u1), 0xffffffff);
     switch (light->lightType) {
+    case SceneLightComponent::Point:
+        Viewport_Light_Point_Gizmo(light);
+        break;
+    case SceneLightComponent::Directional:
+        Viewport_Light_Directional_Gizmo(light);
+        break;
     case SceneLightComponent::Spot:
         Viewport_Light_Spot_Gizmo(light);
         break;
@@ -99,6 +153,16 @@ void Viewport_Light_Gizmo(SceneLightComponent* light) {
 }
 
 void Viewport_Gizmo(SceneComponent* component) {
+    // Per-type Gizmos
+    switch (component->get_type())
+    {
+    case SceneComponentType::Light:
+        Viewport_Light_Gizmo(static_cast<SceneLightComponent*>(component));
+        break;
+    default:
+        break;
+    }
+    // Transfrom -> ImGuizmo
     static ImGuizmo::OPERATION gizmoOperation = ImGuizmo::TRANSLATE;
     if (ImGui::IsKeyPressed(ImGuiKey_T))
         gizmoOperation = ImGuizmo::TRANSLATE;
@@ -106,7 +170,6 @@ void Viewport_Gizmo(SceneComponent* component) {
         gizmoOperation = ImGuizmo::ROTATE;
     if (ImGui::IsKeyPressed(ImGuiKey_S))
         gizmoOperation = ImGuizmo::SCALE;
-
     AffineTransform worldMatrix = component->get_global_transform();
     auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
     auto viewMatrix = camera->view;
@@ -124,16 +187,6 @@ void Viewport_Gizmo(SceneComponent* component) {
         AffineTransform localMatrix = component->get_local_transform();
         localMatrix = localMatrix * deltaTransform;
         component->set_local_transform(localMatrix);
-    }
-
-    // Additional Gizmos
-    switch (component->get_type())
-    {
-    case SceneComponentType::Light:
-        Viewport_Light_Gizmo(static_cast<SceneLightComponent*>(component));
-        break;
-    default:
-        break;
     }
 }
 void OnImGui_ViewportWidget() {

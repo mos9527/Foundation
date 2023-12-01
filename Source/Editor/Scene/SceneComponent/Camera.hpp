@@ -22,6 +22,14 @@ struct SceneCameraComponent : public SceneComponent {
 		float2 ndc = { pss.x / pss.w ,pss.y / pss.w };
 		return float2{ 0.5f,0.5f } + float2{ndc.x * 0.5f, ndc.y * -0.5f};
 	}
+	float3 get_global_translation() const {
+		return get_global_transform().Translation();
+	}
+	float3 get_look_direction() const {
+		Vector3 lookDirection{ 0,0,1 };
+		lookDirection = Vector3::TransformNormal(lookDirection, get_global_transform());
+		return lookDirection;
+	}
 	SceneCamera get_struct(float aspect) {
 		SceneCamera camera;
 		AffineTransform globalTransform = get_global_transform();

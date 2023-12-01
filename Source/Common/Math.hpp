@@ -45,6 +45,12 @@ inline void BuildOrthonormalBasis(
     b1 = float3(1.0 - n.x * n.x * a, b, -n.x);
     b2 = float3(b, 1.0 - n.y * n.y * a, -n.y);
 }
+inline float SphereScreenSpaceRadius(float3 center, float radius, float3 eye, float fov)
+{
+    float3 V = center - eye;
+    float Rss = 1 / (tan(fov / 2)) * radius / sqrt(V.Dot(V) - radius * radius);
+    return std::min(Rss, 1.0f);
+}
 struct AffineTransform : public SimpleMath::Matrix
 {
     using SimpleMath::Matrix::Matrix; 

@@ -52,7 +52,7 @@ void Setup_Scene() {
     auto& light = scene.scene->graph->emplace_at_root<SceneLightComponent>();
     light.set_name("Light");
     light.set_local_transform(AffineTransform::CreateTranslation({0,3,0}));
-    light.lightType = SceneLightComponent::LightType::AreaLine;
+    light.lightType = SceneLightComponent::LightType::Spot;
     light.spot_point_radius = 100.0f;
     light.intensity = 3.0f;
     light.area_line_length = 10.0f;

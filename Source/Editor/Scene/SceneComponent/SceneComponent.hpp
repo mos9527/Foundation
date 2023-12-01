@@ -33,16 +33,16 @@ public:
 	void set_enabled(bool enabled);
 	void set_selected(bool selected);
 
-	inline AffineTransform get_local_transform() { return localTransform; }
-	inline AffineTransform get_global_transform() { return globalTransform; }
-	inline BoundingBox get_bounding_box() { return boundingBox; }
+	inline AffineTransform get_local_transform() const { return localTransform; }
+	inline AffineTransform get_global_transform() const { return globalTransform; }
+	inline BoundingBox get_bounding_box() const { return boundingBox; }
 
 	inline const size_t get_version() const { return version; }
 	inline const char* get_name() const { return name.c_str(); }
-	inline const SceneComponentType get_type() { return type; }
+	inline const SceneComponentType get_type() const { return type; }
 	inline entt::entity get_entity() const { return entity; }		
 
-	inline bool get_selected() { return selected; }
+	inline bool get_selected() const { return selected; }
 	inline bool get_enabled() const { return enabled; }
 };
 
