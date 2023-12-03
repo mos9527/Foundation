@@ -228,10 +228,10 @@
     <ClCompile Include="Source\Editor\Processor\SkinnedMeshBufferProcessor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Editor\Scene\SceneComponent\SkinnedMesh.cpp">
+    <ClCompile Include="Source\Editor\Processor\StaticMeshBufferProcessor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Editor\Processor\StaticMeshBufferProcessor.cpp">
+    <ClCompile Include="Source\Editor\Scene\AssetComponet\SkinnedMeshTransform.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -531,6 +531,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\Processor\StaticMeshBufferProcessor.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\Scene\AssetComponet\SkinnedMeshTransform.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

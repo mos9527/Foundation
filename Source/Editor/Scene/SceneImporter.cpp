@@ -147,7 +147,7 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 				SceneSkinnedMeshComponent& meshComponent = sceneOut.emplace<SceneSkinnedMeshComponent>(meshEntity);
 				sceneOut.graph->add_link(entity, meshEntity);
 				meshComponent.materialAsset = material_mapping[mesh->mMaterialIndex];
-				meshComponent.import_skinned_mesh(device, mesh_mapping[node->mMeshes[i]]);
+				meshComponent.meshAsset = mesh_mapping[node->mMeshes[i]];
 			}
 		}
 		for (UINT i = 0; i < node->mNumChildren; i++)

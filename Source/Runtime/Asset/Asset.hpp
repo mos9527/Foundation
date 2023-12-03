@@ -7,6 +7,7 @@ enum class AssetType {
 	SkinnedMesh
 };
 class AssetRegistry;
+// -> RHI Asset
 struct AssetHandle {
 	friend AssetRegistry;
 

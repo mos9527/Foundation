@@ -92,12 +92,14 @@ public:
 	const static AssetType type = AssetType::StaticMesh;
 	struct Vertex {
 		float3 position;
+		float3 prevPosition; // Used to generate motion buffer
 		float3 normal;
 		float3 tangent;
 		float2 uv;
 		static constexpr VertexLayout get_layout() {
 			return {
 				{ "POSITION" ,RHI::ResourceFormat::R32G32B32_FLOAT },
+				{ "PREVPOSITION" ,RHI::ResourceFormat::R32G32B32_FLOAT },
 				{ "NORMAL" ,RHI::ResourceFormat::R32G32B32_FLOAT },
 				{ "TANGENT" ,RHI::ResourceFormat::R32G32B32_FLOAT },
 				{ "TEXCOORD" ,RHI::ResourceFormat::R32G32_FLOAT }

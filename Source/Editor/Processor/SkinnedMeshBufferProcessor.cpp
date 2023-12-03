@@ -49,6 +49,7 @@ void SkinnedMeshBufferProcessor::RegisterOrUpdate(RHI::CommandList* ctx, SceneSk
 	size_t index = mesh->parent.index<SceneSkinnedMeshComponent>(mesh->get_entity());
 	AssetSkinnedMeshComponent& assetComponent = mesh->parent.get<AssetSkinnedMeshComponent>(mesh->meshAsset);
 	SkinnedMeshAsset& asset = mesh->parent.get<SkinnedMeshAsset>(assetComponent.mesh);
+	SkinnedMeshTransform* transform = mesh->parent.try_get<SkinnedMeshTransform>(mesh->transformAsset);
 	// Make a dedicated vertex buffer for this mesh
 	const size_t minVertexBufferSize = asset.vertexBuffer->numElements * sizeof(StaticMeshAsset::Vertex);
 	if (!TransformedVertBuffers[index].get() || TransformedVertBuffers[index]->GetDesc().sizeInBytes() < minVertexBufferSize) {
@@ -61,8 +62,16 @@ void SkinnedMeshBufferProcessor::RegisterOrUpdate(RHI::CommandList* ctx, SceneSk
 	auto native = ctx->GetNativeCommandList();
 	SkinConstants->DataAt(index)->meshBufferIndex = index;
 	SkinConstants->DataAt(index)->numVertices = asset.vertexBuffer->numElements;
-	SkinConstants->DataAt(index)->numBones = asset.boneNames.size();
-	SkinConstants->DataAt(index)->numShapeKeys = asset.keyShapeNames.size();
+	if (transform) {
+		SkinConstants->DataAt(index)->numBones = asset.boneNames.size();
+		SkinConstants->DataAt(index)->numShapeKeys = asset.keyShapeNames.size();
+	}
+	else {
+		// No transform set.
+		// The mesh will be effectively the same as a Static mesh
+		SkinConstants->DataAt(index)->numBones = 0;
+		SkinConstants->DataAt(index)->numShapeKeys = 0;
+	}
 	// Fill in buffer index data to let CS copy onto the Default heap
 	SkinConstants->DataAt(index)->VB = D3D12_VERTEX_BUFFER_VIEW{
 		.BufferLocation = TransformedVertBuffers[index]->GetGPUAddress(),
@@ -90,8 +99,8 @@ void SkinnedMeshBufferProcessor::RegisterOrUpdate(RHI::CommandList* ctx, SceneSk
 	// native->SetComputeRootUnorderedAccessView(1, sceneMeshBuffer->GetGPUAddress());
 	native->SetComputeRootShaderResourceView(2, SkinConstants->GetGPUAddress());
 	native->SetComputeRootShaderResourceView(3, asset.vertexBuffer->buffer.GetGPUAddress());
-	if (SkinConstants->DataAt(index)->numBones) native->SetComputeRootShaderResourceView(4, mesh->boneSpaceMatrices->GetGPUAddress());
-	if (SkinConstants->DataAt(index)->numShapeKeys) native->SetComputeRootShaderResourceView(5, mesh->keyshapeWeights->GetGPUAddress());
+	if (transform && SkinConstants->DataAt(index)->numBones) native->SetComputeRootShaderResourceView(4, transform->boneSpaceMatrices->GetGPUAddress());
+	if (transform && SkinConstants->DataAt(index)->numShapeKeys) native->SetComputeRootShaderResourceView(5, transform->keyshapeWeights->GetGPUAddress());
 	native->SetComputeRootShaderResourceView(6, asset.keyShapeBuffer->buffer.GetGPUAddress());
 	native->SetComputeRootShaderResourceView(7, asset.keyShapeOffsetBuffer->buffer.GetGPUAddress());
 	native->SetComputeRoot32BitConstant(8, index, 0);

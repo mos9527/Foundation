@@ -1,7 +1,9 @@
 #include "Common.hlsli"
+// see MeshAsset.hpp
 struct StaticVertex
 {
     float3 position;
+    float3 prevPosition;
     float3 normal;
     float3 tangent;
     float2 uv;
@@ -37,7 +39,8 @@ void main_skinning(uint DTid : SV_DispatchThreadID)
     if (DTid >= constants.numVertices)
         return;
     SkinningVertex input = g_InVertices[DTid];
-    StaticVertex output;    
+    StaticVertex output = g_OutVertices[DTid];
+    output.prevPosition = output.position;
     output.position = input.position;
     output.normal = input.normal;
     output.tangent = input.tangent;

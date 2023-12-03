@@ -8,6 +8,7 @@ StaticMeshAsset::StaticMeshAsset(RHI::Device* device, StaticMesh* data) {
 	for (uint i = 0; i < data->num_vertices(); i++) {
 		auto* vertex = vertexBuffer->loadBuffer.DataAt(i);
 		vertex->position = data->position[i];
+		vertex->prevPosition = vertex->position;
 		vertex->normal = data->normal[i];
 		vertex->tangent = data->tangent[i];
 		vertex->uv = data->uv[i];

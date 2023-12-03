@@ -9,6 +9,8 @@
 #include "AssetComponet/Material.hpp"
 #include "AssetComponet/StaticMesh.hpp"
 #include "AssetComponet/SkinnedMesh.hpp"
+#include "AssetComponet/SkinnedMeshTransform.hpp"
+
 #include "SceneGraph.hpp"
 template<typename T> using Allocator = DefaultAllocator<T>;
 typedef entt::basic_registry<entt::entity, Allocator <entt::entity>> SceneComponetRegistry;

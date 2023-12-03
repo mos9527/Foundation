@@ -7,7 +7,7 @@ enum class AssetComponentType {
 	StaticMesh,
 	SkinnedMesh,
 	Material,
-	BoneTransform
+	Data
 };
 struct AssetComponent : public Component {
 	friend class Scene;

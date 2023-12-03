@@ -24,16 +24,11 @@ void OnImGui_SceneGraphWidget_SceneStaticMeshComponentWidget(SceneStaticMeshComp
 void OnImGui_SceneGraphWidget_SceneSkinnedMeshComponentWidget(SceneSkinnedMeshComponent* mesh) {
 	ImGui::SeparatorText("Skinned Mesh");
 	ImGui::Text("Name: %s", mesh->get_name());
-	ImGui::SliderInt("LOD Override", &mesh->lodOverride, -1, MAX_LOD_COUNT);
-	AssetSkinnedMeshComponent& assetComponent = mesh->parent.get<AssetSkinnedMeshComponent>(mesh->get_mesh_asset());
+	AssetSkinnedMeshComponent& assetComponent = mesh->parent.get<AssetSkinnedMeshComponent>(mesh->meshAsset);
 	SkinnedMeshAsset& asset = mesh->parent.get<SkinnedMeshAsset>(assetComponent.mesh);
-	uint i = 0;
-	for (auto& name : asset.keyShapeNames) {
-		ImGui::SliderFloat(name.c_str(), mesh->keyshapeWeights->DataAt(i++), 0, 1);
-	}
 	if (ImGui::BeginTabBar("##SceneMesh")) {
 		if (ImGui::BeginTabItem("Mesh")) {
-			OnImGui_AssetWidget_AssetSkinnedMeshComponent(&scene.scene->get<AssetSkinnedMeshComponent>(mesh->get_mesh_asset()));
+			OnImGui_AssetWidget_AssetSkinnedMeshComponent(&scene.scene->get<AssetSkinnedMeshComponent>(mesh->meshAsset));
 			ImGui::EndTabItem();
 		}
 		if (ImGui::BeginTabItem("Material")) {
