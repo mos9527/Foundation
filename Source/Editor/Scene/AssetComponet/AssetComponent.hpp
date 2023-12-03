@@ -4,8 +4,10 @@
 
 enum class AssetComponentType {	
 	Unknown,
-	Mesh,
-	Material
+	StaticMesh,
+	SkinnedMesh,
+	Material,
+	BoneTransform
 };
 struct AssetComponent : public Component {
 	friend class Scene;

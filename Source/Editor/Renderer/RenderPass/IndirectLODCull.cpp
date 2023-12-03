@@ -1,4 +1,6 @@
 #include "IndirectLODCull.hpp"
+#include "../../Processor/StaticMeshBufferProcessor.hpp"
+#include "../../Processor/SkinnedMeshBufferProcessor.hpp"
 using namespace RHI;
 IndirectLODCullPass::IndirectLODCullPass(Device* device) {
 	cullPassEarlyCS = BuildShader(L"IndirectLODCull", L"main_early", L"cs_6_6");
@@ -7,11 +9,13 @@ IndirectLODCullPass::IndirectLODCullPass(Device* device) {
 		device,
 		RootSignatureDesc()
 		.SetDirectlyIndexed()
-		.AddConstantBufferView(0, 0) // b0 space0 : SceneGlobals	
-		.AddShaderResourceView(0, 0) // t0 space0 : SceneMeshInstance		
-		.AddUnorderedAccessView(0, 0) // u0 space0 : Instance visibility
-		.AddConstant(1,0,3) // b1 space0 : indirect CMD UAV heap, transparency indirect CMD UAV heap, silhouette indirect CMD UAV heap	
-		.AddConstant(2,0,2) // b2 space0 : HIZ srv heap handle, HIZ mips
+		.AddConstantBufferView(0, 0) // 0 - b0 space0 : SceneGlobals	
+		.AddShaderResourceView(0, 0) // 1 - t0 space0 : SceneMeshInstance
+		.AddUnorderedAccessView(0, 0) // 2 - u0 space0 : Instance visibility
+		.AddConstant(1,0,3) // 3 - b1 space0 : indirect CMD UAV heap, transparency indirect CMD UAV heap, silhouette indirect CMD UAV heap	
+		.AddConstant(2,0,2) // 4 - b2 space0 : HIZ srv heap handle, HIZ mips
+		.AddShaderResourceView(1, 0) // 5 - t1 space0 : StaticMesh MeshBuffers 
+		.AddShaderResourceView(2, 0) // 6 - t2 space0 : SkinnedMesh MeshBuffers
 		.AddStaticSampler(0,0, SamplerDesc::GetDepthReduceSamplerDesc(
 #ifdef INVERSE_Z
 			true
@@ -68,7 +72,9 @@ void IndirectLODCullPass::insert_execute(RenderGraphPass& pass, SceneView* scene
 		}
 		native->SetComputeRootConstantBufferView(0, sceneView->get_SceneGlobalsBuffer()->GetGPUAddress());
 		native->SetComputeRootShaderResourceView(1, sceneView->get_SceneMeshInstancesBuffer()->GetGPUAddress());
-		native->SetComputeRootUnorderedAccessView(2, r_visibility_buffer->GetGPUAddress()); // u0 space0
+		native->SetComputeRootUnorderedAccessView(2, r_visibility_buffer->GetGPUAddress());
+		native->SetComputeRootShaderResourceView(5, sceneView->get_StaticMeshBuffer()->GetGPUAddress());
+		native->SetComputeRootShaderResourceView(6, sceneView->get_SkinnedMeshBuffer()->GetGPUAddress());
 		ctx.cmd->QueueTransitionBarrier(r_indirect_cmd_buffer, ResourceState::CopyDest);
 		ctx.cmd->FlushBarriers();
 		ctx.cmd->ZeroBufferRegion(r_indirect_cmd_buffer, CommandBufferCounterOffset, sizeof(UINT));

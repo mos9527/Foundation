@@ -5,7 +5,7 @@ cbuffer IndirectData : register(b0, space0)
     uint g_LodIndex;
 };
 ConstantBuffer<SceneGlobals> g_SceneGlobals : register(b1, space0);
-StructuredBuffer<SceneMeshInstance> g_SceneMeshInstances : register(t0, space0);
+StructuredBuffer<SceneMeshInstanceData> g_SceneMeshInstances : register(t0, space0);
 StructuredBuffer<SceneMaterial> g_Materials : register(t1, space0);
 StructuredBuffer<SceneLight> g_Lights : register(t2, space0);
 SamplerState g_Sampler : register(s0, space0);
@@ -29,7 +29,7 @@ struct PSInput
 PSInput vs_main(VSInput vertex)
 {
     PSInput result;
-    SceneMeshInstance mesh = g_SceneMeshInstances[g_MeshIndex];
+    SceneMeshInstanceData mesh = g_SceneMeshInstances[g_MeshIndex];
     result.positionWS = mul(float4(vertex.position, 1.0f), mesh.transform);
     result.position = mul(result.positionWS, g_SceneGlobals.camera.viewProjection);
     result.normal = mul(vertex.normal, (float3x3) mesh.transformInvTranspose);
@@ -54,8 +54,8 @@ struct MRT
 };
 MRT ps_main(PSInput input)
 {
-    SceneMeshInstance mesh = g_SceneMeshInstances[g_MeshIndex];
-    SceneMaterial material = g_Materials[mesh.materialIndex];
+    SceneMeshInstanceData mesh = g_SceneMeshInstances[g_MeshIndex];
+    SceneMaterial material = g_Materials[mesh.instanceMaterialIndex];
     MRT output;    
     float4 albedo = material.albedo;
     if (material.albedoMap != INVALID_HEAP_HANDLE)
@@ -124,15 +124,15 @@ MRT ps_main(PSInput input)
 // Also, blending is disabled on this pass
 float4 ps_main_material(PSInput input) : SV_Target
 {
-    SceneMeshInstance mesh = g_SceneMeshInstances[g_MeshIndex];
-    SceneMaterial material = g_Materials[mesh.materialIndex];    
+    SceneMeshInstanceData mesh = g_SceneMeshInstances[g_MeshIndex];
+    SceneMaterial material = g_Materials[mesh.instanceMaterialIndex];    
     float4 albedo = material.albedo;
     if (material.albedoMap != INVALID_HEAP_HANDLE)
     {
         Texture2D albedoMap = ResourceDescriptorHeap[material.albedoMap];
         albedo = albedoMap.Sample(g_Sampler, input.uv);
     }
-    if (albedo.a <= EPISILON) // Again, rough alpha test to discard invisible parts.
+    if (albedo.a <= EPSILON) // Again, rough alpha test to discard invisible parts.
         discard;
     float4 output = float4(1, 1, pack16toUnorm8(g_MeshIndex + 1)); // RG component no longer used. BA stores instance ID + 1 (since 0 is clear value)
     return output;

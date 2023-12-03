@@ -126,7 +126,7 @@ namespace RHI {
 			}
 			inline size_t numElements() const {
 				CHECK(dimension == ResourceDimension::Buffer);
-				return width / stride == 0 ? 4 : stride;
+				return width / (stride == 0 ? 4 : stride);
 			}
 			static inline uint numMipsOfDimension(uint width, uint height) {
 				uint res = std::max(width, height);

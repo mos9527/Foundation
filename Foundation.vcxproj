@@ -166,12 +166,15 @@
     <ClCompile Include="Source\Editor\Processor\IBLProbeProcessor.cpp" />
     <ClCompile Include="Source\Editor\Processor\LTCTableProcessor.cpp" />
     <ClCompile Include="Source\Editor\Processor\MeshSelectionProcessor.cpp" />
+    <ClCompile Include="Source\Editor\Processor\SkinnedMeshBufferProcessor.cpp" />
     <ClCompile Include="Source\Editor\Processor\ProcessPass\AreaReduce.cpp" />
+    <ClCompile Include="Source\Editor\Processor\StaticMeshBufferProcessor.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\Clear.cpp" />
     <ClCompile Include="Source\Editor\Processor\ProcessPass\IBLPrefilter.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\SilhouettePass.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\Skybox.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\Tonemapping.cpp" />
+    <ClCompile Include="Source\Editor\Scene\SceneComponent\SkinnedMesh.cpp" />
     <ClCompile Include="Source\Editor\Widgets\AssetMeshComponentWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\EditorWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\ImGuizmoWidget.cpp" />
@@ -186,6 +189,7 @@
     <ClCompile Include="Source\Editor\Widgets\TransformWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\ViewportWidget.cpp" />
     <ClCompile Include="Source\Editor\Win32\Win32IO.cpp" />
+    <ClCompile Include="Source\Runtime\Asset\MeshImporter.cpp" />
     <ClCompile Include="Source\Runtime\Asset\TextureAsset.cpp" />
     <ClCompile Include="Source\Runtime\Asset\TextureImporter.hpp" />
     <ClCompile Include="Source\Runtime\Asset\MeshAsset.cpp" />
@@ -244,14 +248,18 @@
     <ClInclude Include="Source\Editor\Processor\IBLProbeProcessor.hpp" />
     <ClInclude Include="Source\Editor\Processor\LTCTableProcessor.hpp" />
     <ClInclude Include="Source\Editor\Processor\MeshSelectionProcessor.hpp" />
+    <ClInclude Include="Source\Editor\Processor\SkinnedMeshBufferProcessor.hpp" />
     <ClInclude Include="Source\Editor\Processor\Processor.hpp" />
     <ClInclude Include="Source\Editor\Processor\ProcessPass\AreaReduce.hpp" />
+    <ClInclude Include="Source\Editor\Processor\StaticMeshBufferProcessor.hpp" />
     <ClInclude Include="Source\Editor\Renderer\Data\CubeMesh.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\Clear.hpp" />
     <ClInclude Include="Source\Editor\Processor\ProcessPass\IBLPrefilter.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\SilhouettePass.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\Skybox.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\Tonemapping.hpp" />
+    <ClInclude Include="Source\Editor\Scene\AssetComponet\SkinnedMesh.hpp" />
+    <ClInclude Include="Source\Editor\Scene\SceneComponent\SkinnedMesh.hpp" />
     <ClInclude Include="Source\Editor\Shaders\Shaders.hpp" />
     <ClInclude Include="Source\Editor\Widgets\AssetWidgets.hpp" />
     <ClInclude Include="Source\Editor\Widgets\SceneGraphWidgets.hpp" />
@@ -276,13 +284,13 @@
     <ClInclude Include="Source\Runtime\Asset\ResourceContainer.hpp" />
     <ClInclude Include="Source\Editor\Scene\AssetComponet\AssetComponent.hpp" />
     <ClInclude Include="Source\Editor\Scene\AssetComponet\Material.hpp" />
-    <ClInclude Include="Source\Editor\Scene\AssetComponet\Mesh.hpp" />
+    <ClInclude Include="Source\Editor\Scene\AssetComponet\StaticMesh.hpp" />
     <ClInclude Include="Source\Editor\Scene\Component.hpp" />
     <ClInclude Include="Source\Editor\Scene\Scene.hpp" />
     <ClInclude Include="Source\Editor\Scene\SceneComponent\SceneComponent.hpp" />
     <ClInclude Include="Source\Editor\Scene\SceneComponent\Camera.hpp" />
     <ClInclude Include="Source\Editor\Scene\SceneComponent\Light.hpp" />
-    <ClInclude Include="Source\Editor\Scene\SceneComponent\Mesh.hpp" />
+    <ClInclude Include="Source\Editor\Scene\SceneComponent\StaticMesh.hpp" />
     <ClInclude Include="Source\Editor\Scene\SceneImporter.hpp" />
     <ClInclude Include="Source\Editor\Scene\SceneView.hpp" />
     <ClInclude Include="Source\Editor\Scene\SceneGraph.hpp" />
@@ -442,6 +450,11 @@
   </ItemGroup>
   <ItemGroup>
     <Text Include="Source\Editor\Shaders\SkyboxPass.hlsl">
+      <FileType>Document</FileType>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Source\Editor\Shaders\MeshSkinning.hlsl">
       <FileType>Document</FileType>
     </Text>
   </ItemGroup>

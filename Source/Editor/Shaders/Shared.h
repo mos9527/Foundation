@@ -99,7 +99,6 @@ struct SceneGlobals // ! align for CB
     uint3 _pad0;
 
     uint numMeshInstances; // Opaque + Transparent
-    uint numTransparentMeshInstances;
     uint numLights;
     uint _pad1;
 
@@ -132,42 +131,43 @@ struct SceneMeshLod
     uint numIndices;
     uint numMeshlets;
 
-    D3D12_INDEX_BUFFER_VIEW indices; // 16
-    D3D12_GPU_VIRTUAL_ADDRESS meshlets; // 8
+    D3D12_INDEX_BUFFER_VIEW indices;
+    D3D12_GPU_VIRTUAL_ADDRESS meshlets;
     D3D12_GPU_VIRTUAL_ADDRESS meshletTriangles;
     D3D12_GPU_VIRTUAL_ADDRESS meshletVertices;
 };
-struct SceneMeshInstance
+struct SkinningConstants {
+    uint numBones;
+    uint numVertices;
+    uint numShapeKeys;
+    uint meshBufferIndex;
+    D3D12_VERTEX_BUFFER_VIEW VB;
+    SceneMeshLod IB[MAX_LOD_COUNT];
+};
+struct SceneMeshBuffer {
+    BoundingBox boundingBox;
+
+    D3D12_VERTEX_BUFFER_VIEW VB;
+    SceneMeshLod IB[MAX_LOD_COUNT];
+};
+struct SceneMeshInstanceData
 {
     uint version;
-    uint instanceIndex;
-    uint numVertices; // 4
-    uint materialIndex; //4
-    uint instanceFlags; // 4
-    int lodOverride; // 4
+    uint instanceMeshLocalIndex; // VB/IB Buffer Index in Skinned/Static buffers
+    uint instanceMeshGlobalIndex; // Mesh global index (static -> index in static storage. skinned -> static storage size + index in skinned storage)
+    uint instanceMeshType;  // Skinned / Static
+    uint instanceMaterialIndex; // Material index in Material buffers
+    uint instanceFlags; 
 
-    matrix transform; // 16 * 4
-    matrix transformInvTranspose; // xxx transform is sufficent for affine transformations
+    matrix transform;
+    matrix transformInvTranspose;
+    matrix transformPrev; // Transform from previous frame
 
-    matrix transformPrev; // again, previous frame
-
-    BoundingBox boundingBox;
-    BoundingSphere boundingSphere;    
-
-    D3D12_VERTEX_BUFFER_VIEW vertices; // 16
-    SceneMeshLod lods[MAX_LOD_COUNT];
     bool has_transparency() {
         return instanceFlags & INSTANCE_FLAG_TRANSPARENCY;
     }
     bool invisible() {
         return instanceFlags & INSTANCE_FLAG_INVISIBLE;
-    }
-    bool occlusion_occluder() {
-        // We don't have a Z-prepass so every geometry would be a occluder
-        return true;
-    }
-    bool occlusion_occludee() {
-        return instanceFlags & INSTANCE_FLAG_OCCLUDEE;
     }
     bool silhouette() {
         return instanceFlags & INSTANCE_FLAG_SILHOUETTE;

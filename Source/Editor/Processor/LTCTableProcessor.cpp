@@ -26,6 +26,7 @@ void LTCTableProcessor::UploadPrecomputed() {
 	intermediate->WriteSubresource((void*)&g_ltc_2, 64 * sizeof(float) * 4, 64, 1, 0);
 	ctx.QueueUploadTexture(ltcLUT.get(), intermediate, 0, 2);
 	ctx.End().Wait();
+	ctx.ResetAllocator();
 }
 
 // void LTCTableProcessor::Compute();

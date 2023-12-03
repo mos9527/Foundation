@@ -30,21 +30,42 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 	std::mutex import_mutex;
 	std::unordered_map<uint, entt::entity> mesh_mapping;	
 	statusOut.numToUpload += scene->mNumMeshes;
+	auto is_mesh_static = [](aiMesh* mesh) {return mesh->mNumBones == 0 && mesh->mNumAnimMeshes == 0; };
 	for (UINT i = 0; i < scene->mNumMeshes; i++) {
-		auto entity = sceneOut.create<AssetMeshComponent>();
-		auto handle = sceneOut.create<MeshAsset>();
-		AssetMeshComponent& mesh_asset = sceneOut.emplace<AssetMeshComponent>(entity);
-		mesh_asset.set_name(scene->mMeshes[i]->mName.C_Str());
-		mesh_asset.mesh = handle;
-		mesh_mapping[i] = entity;
-		pool.push([&](AssetHandle meshHandle, auto meshPtr) {
-			LOG(INFO) << "Loading mesh " << meshPtr->mName.C_Str();
-			StaticMesh mesh = load_static_mesh(meshPtr);
-			std::scoped_lock lock(import_mutex);
-			auto& asset = sceneOut.import_asset(meshHandle, device, &mesh);
-			asset.Upload(ctx);
-			statusOut.numUploaded++;
+		if (is_mesh_static(scene->mMeshes[i])) {
+			// Static
+			auto entity = sceneOut.create<AssetStaticMeshComponent>();
+			auto handle = sceneOut.create<StaticMeshAsset>();
+			AssetStaticMeshComponent& mesh_asset = sceneOut.emplace<AssetStaticMeshComponent>(entity);
+			mesh_asset.set_name(scene->mMeshes[i]->mName.C_Str());
+			mesh_asset.mesh = handle;
+			mesh_mapping[i] = entity;
+			pool.push([&](AssetHandle meshHandle, auto meshPtr) {
+				LOG(INFO) << "Loading Static Mesh " << meshPtr->mName.C_Str();
+				StaticMesh mesh = load_static_mesh(meshPtr, true);
+				std::scoped_lock lock(import_mutex);
+				auto& asset = sceneOut.import_asset(meshHandle, device, &mesh);
+				asset.Upload(ctx);
+				statusOut.numUploaded++;
 			}, handle, scene->mMeshes[i]);
+		}
+		else {
+			// Skinned and/or has Keyshapes
+			auto entity = sceneOut.create<AssetSkinnedMeshComponent>();
+			auto handle = sceneOut.create<SkinnedMeshAsset>();
+			AssetSkinnedMeshComponent& mesh_asset = sceneOut.emplace<AssetSkinnedMeshComponent>(entity);
+			mesh_asset.set_name(scene->mMeshes[i]->mName.C_Str());
+			mesh_asset.mesh = handle;
+			mesh_mapping[i] = entity;
+			pool.push([&](AssetHandle meshHandle, auto meshPtr) {
+				LOG(INFO) << "Loading Skinned Mesh " << meshPtr->mName.C_Str();
+				SkinnedMesh mesh = load_skinned_mesh(meshPtr);
+				std::scoped_lock lock(import_mutex);
+				auto& asset = sceneOut.import_asset(meshHandle, device, &mesh);
+				asset.Upload(ctx);
+				statusOut.numUploaded++;
+			}, handle, scene->mMeshes[i]);
+		}
 	}
 	auto load_texture = [&](AssetHandle handle, const char* filename) {
 		if (scene->GetEmbeddedTexture(filename)) {
@@ -115,18 +136,26 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 		sceneOut.graph->add_link(parent, entity);
 		for (UINT i = 0; i < node->mNumMeshes; i++) {
 			auto mesh = scene->mMeshes[node->mMeshes[i]];
-			auto meshEntity = sceneOut.create<SceneCollectionComponent>();
-			SceneMeshComponent& meshComponent = sceneOut.emplace<SceneMeshComponent>(meshEntity);
-			sceneOut.graph->add_link(entity, meshEntity);			
-			meshComponent.materialAsset = material_mapping[mesh->mMaterialIndex];
-			meshComponent.meshAsset = mesh_mapping[node->mMeshes[i]];			
+			auto meshEntity = sceneOut.create<SceneStaticMeshComponent>();
+			if (is_mesh_static(mesh)) {
+				SceneStaticMeshComponent& meshComponent = sceneOut.emplace<SceneStaticMeshComponent>(meshEntity);
+				sceneOut.graph->add_link(entity, meshEntity);			
+				meshComponent.materialAsset = material_mapping[mesh->mMaterialIndex];
+				meshComponent.meshAsset = mesh_mapping[node->mMeshes[i]];			
+			}
+			else {
+				SceneSkinnedMeshComponent& meshComponent = sceneOut.emplace<SceneSkinnedMeshComponent>(meshEntity);
+				sceneOut.graph->add_link(entity, meshEntity);
+				meshComponent.materialAsset = material_mapping[mesh->mMaterialIndex];
+				meshComponent.import_skinned_mesh(device, mesh_mapping[node->mMeshes[i]]);
+			}
 		}
 		for (UINT i = 0; i < node->mNumChildren; i++)
 			func(func, node->mChildren[i], entity);
 	};
+	pool.wait_and_join(); // ensure pool work is done & components are constructed
 	dfs_nodes(dfs_nodes, scene->mRootNode, sceneOut.graph->get_root());
 	sceneOut.graph->update_transform(sceneOut.graph->get_root()); // Calculate global transforms after everything's in place
-	pool.wait_and_join(); // ensure pool work is done before finally destructing import_mutex
 	LOG(INFO) << "Scene loaded";
 	statusOut.numToUpload = true;
 	// ~import_mutex(); // implictly called
@@ -138,7 +167,7 @@ void SceneImporter::load(UploadContext* ctx, SceneImporterAtomicStatus& statusOu
 	LOG(INFO) << "Loading " << sceneFile;
 	CHECK(std::filesystem::exists(sceneFile) && "File does not exisit!");
 	std::string u8path = (const char*)sceneFile.u8string().c_str();
-	auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace);
+	auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace | aiProcess_LimitBoneWeights);
 	CHECK(imported && "Failed to import file as an assimp scene!");
 	SceneImporter::load_aiScene(ctx, statusOut, sceneOut, imported, sceneFile.parent_path());
 }

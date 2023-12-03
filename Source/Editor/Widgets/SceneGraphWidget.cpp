@@ -11,8 +11,10 @@ const char* GetGlyphByType(SceneComponentType type) {
 		return ICON_FA_BOX;
 	case Camera:
 		return ICON_FA_CAMERA;
-	case Mesh:
+	case StaticMesh:
 		return ICON_FA_CUBE;
+	case SkinnedMesh:
+		return ICON_FA_PERSON;
 	case Light:
 		return ICON_FA_LIGHTBULB;
 	default:
@@ -37,8 +39,11 @@ void OnImGui_SceneComponentWidget() {
 				case Camera:
 					OnImGui_SceneGraphWidget_SceneCameraComponentWidget(static_cast<SceneCameraComponent*>(componet));
 					break;
-				case Mesh:
-					OnImGui_SceneGraphWidget_SceneMeshComponentWidget(static_cast<SceneMeshComponent*>(componet));
+				case StaticMesh:
+					OnImGui_SceneGraphWidget_SceneStaticMeshComponentWidget(static_cast<SceneStaticMeshComponent*>(componet));
+					break;
+				case SkinnedMesh:
+					OnImGui_SceneGraphWidget_SceneSkinnedMeshComponentWidget(static_cast<SceneSkinnedMeshComponent*>(componet));
 					break;
 				case Light:
 					OnImGui_SceneGraphWidget_SceneLightComponentWidget(static_cast<SceneLightComponent*>(componet));
@@ -77,9 +82,22 @@ void OnImGui_SceneGraphWidget() {
 			ImGui::SetCursorPosX(cursorX);
 			bool hasChild = scene.scene->graph->has_child(entity);
 			if (!hasChild) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-			if (ImGui::TreeNodeEx((void*)id, flags, "%s %s", GetGlyphByType(type), componet->get_name())) {				
+			if (ImGui::TreeNodeEx((void*)id, flags, "%s %s", GetGlyphByType(type), componet->get_name())) {
 				if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
 					editor.editingComponent = entity;
+				ImGui::PushID((void*)id);
+				{
+					if (ImGui::IsItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Right))
+						ImGui::OpenPopup("#");
+					if (ImGui::BeginPopup("#")) {
+						ImGui::SeparatorText("Add...");
+						if (ImGui::Selectable("Light")) {
+							scene.scene->graph->emplace_child_of<SceneLightComponent>(entity);
+						}
+						ImGui::EndPopup();
+					}
+				}
+				ImGui::PopID();
 				if (hasChild) {
 					stack_count++;
 					auto& children = scene.scene->graph->child_of(entity);
@@ -100,7 +118,8 @@ void OnImGui_SceneGraphWidget() {
 		};
 		auto root = scene.scene->graph->get_root();
 		SceneComponent* componet = scene.scene->get_base<SceneComponent>(root);
-		dfs_nodes(dfs_nodes, root, 0);
+		dfs_nodes(dfs_nodes, root, 0);	
 	}
+
 	ImGui::End();
 }

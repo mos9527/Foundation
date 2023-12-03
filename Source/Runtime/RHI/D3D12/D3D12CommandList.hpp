@@ -82,6 +82,7 @@ namespace RHI {
 			}
 		} m_Barriers;
 		bool m_Closed = false;
+		bool m_Reseted = true;
 	public:
 
 		CommandList(Device* device, CommandListType type, uint numAllocators = 1);
@@ -89,13 +90,19 @@ namespace RHI {
 		inline void ResetAllocator(uint allocatorIndex=0) {
 			DCHECK(allocatorIndex < m_CommandAllocators.size());
 			CHECK_HR(m_CommandAllocators[allocatorIndex]->Reset());
+			m_Reseted = true;
 		};
 		inline const CommandListType GetType() { return m_Type; }
 		inline void Begin(uint allocatorIndex = 0) {
+#if 0			
+			if (!m_Reseted) 
+				LOG(WARNING) << "Potential Command Allocator leak detected!";
+#endif
 			CHECK(m_Closed && "Attempting to start an already recording CommandList");
 			DCHECK(allocatorIndex < m_CommandAllocators.size());
 			CHECK_HR(m_CommandList->Reset(m_CommandAllocators[allocatorIndex].Get(), nullptr));
 			m_Closed = false;
+			m_Reseted = false;
 		};
 		inline void Close() { FlushBarriers(); CHECK_HR(m_CommandList->Close()); m_Closed = true; };
 		inline bool IsOpen() const { return !m_Closed; }

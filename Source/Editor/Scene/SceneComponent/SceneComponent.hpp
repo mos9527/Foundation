@@ -4,7 +4,8 @@ enum class SceneComponentType {
 	Unknown,
 	Collection,
 	Camera,
-	Mesh,
+	StaticMesh,
+	SkinnedMesh,
 	Light
 };
 struct SceneImporter;
@@ -32,7 +33,7 @@ public:
 	void set_local_transform(AffineTransform T);
 	void set_enabled(bool enabled);
 	void set_selected(bool selected);
-
+	
 	inline AffineTransform get_local_transform() const { return localTransform; }
 	inline AffineTransform get_global_transform() const { return globalTransform; }
 	inline BoundingBox get_bounding_box() const { return boundingBox; }

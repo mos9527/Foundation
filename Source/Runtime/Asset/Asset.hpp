@@ -3,7 +3,8 @@
 enum class AssetType {
 	Unknown,
 	Texture,
-	StaticMesh
+	StaticMesh,
+	SkinnedMesh
 };
 class AssetRegistry;
 struct AssetHandle {

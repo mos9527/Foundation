@@ -12,6 +12,7 @@ namespace EditorGlobalContext {
     ViewportContext viewport;
 
     void SetupContext(HWND presentWindow, RHI::ResourceFormat presentFormat) {
+        LOG(INFO) << "Setting up...";
         window = presentWindow;
         device = new RHI::Device({ .AdapterIndex = 0 });
         swapchain = new RHI::Swapchain(device, { presentWindow, 1600, 1000, presentFormat });
@@ -23,6 +24,7 @@ namespace EditorGlobalContext {
         for (uint i = 0; i < ARRAYSIZE(scene.views); i++) {
             scene.views[i] = new ::SceneView(device);
         }        
+        LOG(INFO) << "Setup OK!";
     }
 
     void DestroyContext(void) {

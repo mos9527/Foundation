@@ -69,10 +69,10 @@ void main_avg(uint2 DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex)
         float avgL = exp2((avgLogL / 254.0f) * g_SceneGlobals.camera.logLuminanceRange + g_SceneGlobals.camera.logLuminaceMin);
         RWTexture2D<float> avgBuffer = ResourceDescriptorHeap[avgLuminaceUAV];
         float avgLlastFrame = avgBuffer[uint2(0, 0)];
-        if (isnan(avgLlastFrame) || isinf(avgLlastFrame))
+        if (g_SceneGlobals.camera.luminaceAdaptRate <= EPSILON || isnan(avgLlastFrame) || isinf(avgLlastFrame) || avgLlastFrame == 0)
         {
             avgBuffer[uint2(0, 0)] = avgL;
-            return; // xxx this should not happen
+            return;
         }
         float adaptedL = avgLlastFrame + (avgL - avgLlastFrame) * (1 - exp(-g_SceneGlobals.frameTimePrev * g_SceneGlobals.camera.luminaceAdaptRate));;
         avgBuffer[uint2(0, 0)] = adaptedL;
@@ -151,7 +151,7 @@ void main_tonemap(uint2 DTid : SV_DispatchThreadID)
     // take q=0.65, S=100 (canceled), K=12.5
     // you'd get Lmax = 9.6 * Lavg
     // thus L/Lmax -> mapping luminance to [0,1] range
-    Yxy.x = Yxy.x / (9.6 * lum + EPISILON);
+    Yxy.x = Yxy.x / (9.6 * lum + EPSILON);
     rgb = convertYxy2RGB(Yxy);
     rgb.r = Tonemap_ACES(rgb.r);
     rgb.g = Tonemap_ACES(rgb.g);

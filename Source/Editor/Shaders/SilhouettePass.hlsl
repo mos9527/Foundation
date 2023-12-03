@@ -5,7 +5,7 @@ cbuffer IndirectData : register(b0, space0)
     uint g_LodIndex;
 };
 ConstantBuffer<SceneGlobals> g_SceneGlobals : register(b1, space0);
-StructuredBuffer<SceneMeshInstance> g_SceneMeshInstances : register(t0, space0);
+StructuredBuffer<SceneMeshInstanceData> g_SceneMeshInstances : register(t0, space0);
 struct VSInput
 {
     float3 position : POSITION;
@@ -21,7 +21,7 @@ struct PSInput
 PSInput vs_main(VSInput vertex)
 {
     PSInput result;
-    SceneMeshInstance mesh = g_SceneMeshInstances[g_MeshIndex];    
+    SceneMeshInstanceData mesh = g_SceneMeshInstances[g_MeshIndex];
     result.position = mul(mul(float4(vertex.position, 1.0f), mesh.transform), g_SceneGlobals.camera.viewProjection);
     return result;
 }

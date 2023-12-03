@@ -11,7 +11,8 @@
 #include "Processor/IBLProbeProcessor.hpp"
 #include "Processor/LTCTableProcessor.hpp"
 #include "Processor/MeshSelectionProcessor.hpp"
-
+#include "Processor/StaticMeshBufferProcessor.hpp"
+#include "Processor/SkinnedMeshBufferProcessor.hpp"
 enum class EditorEvents {
     OnSetup,
     OnLoad,
@@ -80,7 +81,6 @@ struct RenderContext {
 struct EditorContext {
     EdtitorState state;
     SceneImporter::SceneImporterAtomicStatus importStatus;
-
     /* DATA / PROCESSERS */
     IBLProbeProcessor* iblProbe;
     struct {

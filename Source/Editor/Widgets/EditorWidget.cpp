@@ -3,7 +3,7 @@
 using namespace EditorGlobalContext;
 void OnImGui_EditorParamsWidget() {
 	if (ImGui::Begin("Editor")) {
-		ImGui::Text("Mesh Instances: %d", scene.scene->storage<SceneMeshComponent>().size());
+		ImGui::Text("Mesh Instances: %d", scene.scene->storage<SceneStaticMeshComponent>().size());
 		ImGui::SeparatorText("Params");
 		if (ImGui::BeginTabBar("##EditorParams")) {
 			if (ImGui::BeginTabItem("HDRI Probe")) {

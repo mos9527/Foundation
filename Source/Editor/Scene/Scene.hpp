@@ -4,9 +4,11 @@
 #include "AssetComponet/AssetComponent.hpp"
 #include "SceneComponent/Camera.hpp"
 #include "SceneComponent/Light.hpp"
-#include "SceneComponent/Mesh.hpp"
+#include "SceneComponent/StaticMesh.hpp"
+#include "SceneComponent/SkinnedMesh.hpp"
 #include "AssetComponet/Material.hpp"
-#include "AssetComponet/Mesh.hpp"
+#include "AssetComponet/StaticMesh.hpp"
+#include "AssetComponet/SkinnedMesh.hpp"
 #include "SceneGraph.hpp"
 template<typename T> using Allocator = DefaultAllocator<T>;
 typedef entt::basic_registry<entt::entity, Allocator <entt::entity>> SceneComponetRegistry;
@@ -145,8 +147,10 @@ public:
 				return &get<SceneCollectionComponent>(entity);
 			case SceneComponentType::Camera:
 				return &get<SceneCameraComponent>(entity);
-			case SceneComponentType::Mesh:
-				return &get<SceneMeshComponent>(entity);
+			case SceneComponentType::StaticMesh:
+				return &get<SceneStaticMeshComponent>(entity);
+			case SceneComponentType::SkinnedMesh:
+				return &get<SceneSkinnedMeshComponent>(entity);
 			case SceneComponentType::Light:
 				return &get<SceneLightComponent>(entity);
 			default:
@@ -156,8 +160,10 @@ public:
 		else if constexpr (std::is_same_v<AssetComponent, T>) {
 			switch (get_type<AssetComponentType>(entity))
 			{
-			case AssetComponentType::Mesh:
-				return &get<AssetMeshComponent>(entity);
+			case AssetComponentType::StaticMesh:
+				return &get<AssetStaticMeshComponent>(entity);
+			case AssetComponentType::SkinnedMesh:
+				return &get<AssetSkinnedMeshComponent>(entity);
 			case AssetComponentType::Material:
 				return &get<AssetMaterialComponent>(entity);
 			default:

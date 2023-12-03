@@ -3,7 +3,8 @@
 #include "SceneComponent/SceneComponent.hpp"
 #include "SceneComponent/Camera.hpp"
 #include "SceneComponent/Light.hpp"
-#include "SceneComponent/Mesh.hpp"
+#include "SceneComponent/StaticMesh.hpp"
+#include "SceneComponent/SkinnedMesh.hpp"
 class Scene;
 class SceneView;
 struct SceneImporter;

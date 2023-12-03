@@ -222,6 +222,18 @@
     <ClCompile Include="Source\Editor\Widgets\SceneCameraComponentWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Runtime\Asset\MeshImporter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Editor\Processor\SkinnedMeshBufferProcessor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Editor\Scene\SceneComponent\SkinnedMesh.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Editor\Processor\StaticMeshBufferProcessor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">
@@ -296,7 +308,7 @@
     <ClInclude Include="Source\Editor\Scene\SceneComponent\Camera.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Editor\Scene\SceneComponent\Mesh.hpp">
+    <ClInclude Include="Source\Editor\Scene\SceneComponent\StaticMesh.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\Scene\SceneView.hpp">
@@ -407,7 +419,7 @@
     <ClInclude Include="Source\Editor\Scene\Component.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Editor\Scene\AssetComponet\Mesh.hpp">
+    <ClInclude Include="Source\Editor\Scene\AssetComponet\StaticMesh.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\Scene\Scene.hpp">
@@ -509,6 +521,18 @@
     <ClInclude Include="Source\Editor\Renderer\Data\CubeMesh.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Editor\Scene\SceneComponent\SkinnedMesh.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\Scene\AssetComponet\SkinnedMesh.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\Processor\SkinnedMeshBufferProcessor.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\Processor\StaticMeshBufferProcessor.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json">
@@ -542,5 +566,6 @@
     <Text Include="Source\Editor\Shaders\SilhouettePassBlend.hlsl" />
     <Text Include="Source\Editor\Shaders\SilhouettePass.hlsl" />
     <Text Include="Source\Editor\Shaders\SkyboxPass.hlsl" />
+    <Text Include="Source\Editor\Shaders\MeshSkinning.hlsl" />
   </ItemGroup>
 </Project>

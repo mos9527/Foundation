@@ -6,7 +6,7 @@ cbuffer IndirectData : register(b0, space0)
     uint g_LodIndex;
 };
 ConstantBuffer<SceneGlobals> g_SceneGlobals : register(b1, space0);
-StructuredBuffer<SceneMeshInstance> g_SceneMeshInstances : register(t0, space0);
+StructuredBuffer<SceneMeshInstanceData> g_SceneMeshInstances : register(t0, space0);
 StructuredBuffer<SceneMaterial> g_Materials : register(t1, space0);
 SamplerState g_Sampler : register(s0, space0);
 struct VSInput
@@ -29,7 +29,7 @@ struct PSInput
 PSInput vs_main(VSInput vertex)
 {
     PSInput result;
-    SceneMeshInstance mesh = g_SceneMeshInstances[g_MeshIndex];
+    SceneMeshInstanceData mesh = g_SceneMeshInstances[g_MeshIndex];
     result.clipPosition = mul(mul(float4(vertex.position, 1.0f), mesh.transform), g_SceneGlobals.camera.viewProjection);
     result.prevClipPosition = mul(mul(float4(vertex.position, 1.0f), mesh.transformPrev), g_SceneGlobals.cameraPrev.viewProjection);
     result.position = result.clipPosition;
@@ -48,8 +48,8 @@ struct MRT
 };
 MRT ps_main(PSInput input)
 {
-    SceneMeshInstance mesh = g_SceneMeshInstances[g_MeshIndex];
-    SceneMaterial material = g_Materials[mesh.materialIndex];
+    SceneMeshInstanceData mesh = g_SceneMeshInstances[g_MeshIndex];
+    SceneMaterial material = g_Materials[mesh.instanceMaterialIndex];
     MRT output;
     float2 ssClip = input.clipPosition.xy / input.clipPosition.w;
     float2 ssClipPrev = input.prevClipPosition.xy / input.prevClipPosition.w;
@@ -70,7 +70,7 @@ MRT ps_main(PSInput input)
         Texture2D albedoMap = ResourceDescriptorHeap[material.albedoMap];
         output.Albedo = albedoMap.Sample(g_Sampler, input.uv);
     }
-    if (output.Albedo.a <= EPISILON) // Curde alpha testing. Works only for (partially) completely transparent materials
+    if (output.Albedo.a <= EPSILON) // Curde alpha testing. Works only for (partially) completely transparent materials
         discard;
     float3 N = input.normal;
     if (material.normalMap != INVALID_HEAP_HANDLE)

@@ -3,6 +3,8 @@
 #include "Input/KBMCamera.hpp"
 #include "Win32/Win32IO.hpp"
 #include "../../Dependencies/IconsFontAwesome6.h"
+#include "Processor/StaticMeshBufferProcessor.hpp"
+#include "Processor/SkinnedMeshBufferProcessor.hpp"
 
 using namespace RHI;
 using namespace EditorGlobalContext;
@@ -51,11 +53,9 @@ void Setup_Scene() {
 
     auto& light = scene.scene->graph->emplace_at_root<SceneLightComponent>();
     light.set_name("Light");
-    light.set_local_transform(AffineTransform::CreateTranslation({0,3,0}));
-    light.lightType = SceneLightComponent::LightType::Spot;
-    light.spot_point_radius = 100.0f;
-    light.intensity = 3.0f;
-    light.area_line_length = 10.0f;
+    light.set_local_transform(AffineTransform::CreateTranslation({0,1.7,0}));
+    light.lightType = SceneLightComponent::LightType::AreaDisk;    
+    light.intensity = 3.0f;    
     light.color = { 1,1,1,1 };
     g_cameraController.reset();
 }
@@ -74,7 +74,7 @@ void Load_Scene(path_t path) {
         ctx.End().Wait();
         editor.importStatus.uploadComplete = true;
         editor.state.transition(EditorEvents::OnLoadComplete);
-        scene.scene->clean<MeshAsset>();
+        scene.scene->clean<StaticMeshAsset>();
         scene.scene->clean<TextureAsset>();
     }, path);
 }
@@ -149,16 +149,19 @@ void Run_UpdateTitle() {
     std::wstring title = std::format(L"Foundation Editor | v" FOUNDATION_VERSION_STRING " | FPS: {}", ImGui::GetIO().Framerate);
     SetWindowText(window, title.c_str());
 }
-
+void Run_Update() {
+    ImGuizmo::BeginFrame();
+    Run_ImGui();
+}
 void EditorWindow::Run() {
     std::scoped_lock lock(render.renderMutex);
     editor.state.transition(EditorEvents::OnRunFrame);
-
     ImGui_ImplDX12_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
-    ImGuizmo::BeginFrame();
-    Run_ImGui();       
+    // Editor updates
+    Run_Update();
+    // Running frames
     ImGui::Render();
     uint bbIndex = swapchain->GetCurrentBackbufferIndex();
     CommandList* cmd = device->GetDefaultCommandList<CommandListType::Direct>();

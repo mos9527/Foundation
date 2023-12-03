@@ -23,10 +23,11 @@ template<typename Elem> static const RHI::Resource::ResourceDesc GetDefaultMeshB
 		RHI::ResourceFlags::None
 	);
 }
-
-struct MeshAsset;
+struct StaticMeshAsset;
+struct SkinnedMeshAsset;
 struct MeshLODBuffers {
-	friend struct MeshAsset;
+	friend StaticMeshAsset;
+	friend SkinnedMeshAsset;
 private:
 	// Upload heap
 	BufferContainer<UINT> loadIndexBuffer;
@@ -36,7 +37,10 @@ private:
 	BufferContainer<MeshletTriangle> loadMeshletTriangleBuffer;
 #endif
 public:
-	const uint numIndices, numMeshlets, numMeshletVertices, numMeshletTriangles;
+#ifdef RHI_USE_MESH_SHADER
+	const uint numMeshlets, numMeshletVertices, numMeshletTriangles;
+#endif
+	const uint numIndices;
 	// Default heap
 	RHI::Buffer indexBuffer;
 #ifdef RHI_USE_MESH_SHADER
@@ -46,13 +50,13 @@ public:
 	MeshLODBuffers(RHI::Device* device, uint numIndices) :
 #endif
 		numIndices(numIndices),
-		numMeshlets(numMeshlets),
-		numMeshletVertices(numMeshletVertices),
-		numMeshletTriangles(numMeshletTriangles),
 		loadIndexBuffer(device, numIndices),
 		indexBuffer(device, GetDefaultMeshBufferDesc<UINT>(numIndices)) 
 #ifdef RHI_USE_MESH_SHADER
-		,loadMeshletBuffer(device, numMeshlets),
+		,numMeshlets(numMeshlets),
+		numMeshletVertices(numMeshletVertices),
+		numMeshletTriangles(numMeshletTriangles),
+		loadMeshletBuffer(device, numMeshlets),
 		loadMeshletVertexBuffer(device, numMeshletVertices),
 		loadMeshletTriangleBuffer(device, numMeshletTriangles),
 		meshletBuffer(device, GetDefaultMeshBufferDesc<UINT>(numMeshlets)),
@@ -70,19 +74,20 @@ public:
 	}
 };
 
-template<typename VertexType> struct MeshVertexBuffer {
-	friend struct MeshAsset;
+template<typename Elem> struct MeshBuffer {
+	friend StaticMeshAsset;
+	friend SkinnedMeshAsset;
 private:
-	BufferContainer<VertexType> loadBuffer;
+	BufferContainer<Elem> loadBuffer;
 public:
 	RHI::Buffer buffer;
-	const uint numVertices;
-	MeshVertexBuffer(RHI::Device* device, uint numVertices) :
-		loadBuffer(device, numVertices), buffer(device, GetDefaultMeshBufferDesc<VertexType>(numVertices)), numVertices(numVertices) {};
+	const uint numElements;
+	MeshBuffer(RHI::Device* device, uint numVertices) :
+		loadBuffer(device, numVertices), buffer(device, GetDefaultMeshBufferDesc<Elem>(numVertices)), numElements(numVertices) {};
 	void Clean() { loadBuffer.Release(); }
 };
 
-struct MeshAsset {
+struct StaticMeshAsset {
 public:
 	const static AssetType type = AssetType::StaticMesh;
 	struct Vertex {
@@ -100,17 +105,19 @@ public:
 		}
 	};
 private:
+	std::string name;
 	bool isUploaded = false;
 public:
 	DirectX::BoundingBox boundingBox;
 	DirectX::BoundingSphere boundingSphere;	
 	std::unique_ptr<MeshLODBuffers> lodBuffers[MAX_LOD_COUNT];	
-	std::unique_ptr<MeshVertexBuffer<Vertex>> vertexBuffer;
+	std::unique_ptr<MeshBuffer<Vertex>> vertexBuffer;
 	
-	MeshAsset(RHI::Device* device, StaticMesh* data);	
-	bool IsUploaded() { return isUploaded; }
+	StaticMeshAsset(RHI::Device* device, StaticMesh* data);	
+	inline const char* GetName() { return name.c_str(); }
+	inline bool IsUploaded() { return isUploaded; }
 	void Upload(UploadContext* ctx);
-	void Clean() {
+	inline void Clean() {
 		vertexBuffer->Clean();
 		for (uint i = 0; i < MAX_LOD_COUNT; i++)
 			lodBuffers[i]->Clean();
@@ -118,6 +125,66 @@ public:
 };
 
 template<> struct ImportedAssetTraits<StaticMesh> {
-	using imported_by = MeshAsset;
+	using imported_by = StaticMeshAsset;
 	static constexpr AssetType type = AssetType::StaticMesh;
+};
+
+struct SkinnedMeshAsset {
+public:
+	const static AssetType type = AssetType::SkinnedMesh;
+	struct Vertex {
+		float3 position;
+		float3 normal;
+		float3 tangent;
+		float2 uv;
+		uint4 boneIndices;
+		float4 boneWeights;
+		static constexpr VertexLayout get_layout() { /* UNUSED */
+			return {
+				{ "POSITION" ,RHI::ResourceFormat::R32G32B32_FLOAT },
+				{ "NORMAL" ,RHI::ResourceFormat::R32G32B32_FLOAT },
+				{ "TANGENT" ,RHI::ResourceFormat::R32G32B32_FLOAT },
+				{ "TEXCOORD" ,RHI::ResourceFormat::R32G32_FLOAT },
+				{ "BONEINDICES",RHI::ResourceFormat::R32G32B32A32_UINT },
+				{ "BONEWEIGHTS",RHI::ResourceFormat::R32G32B32A32_FLOAT }
+			};
+		}
+	};
+private:
+	std::string name;
+	bool isUploaded = false;
+public:
+	// No longer applicable. These are to be computed per update
+	// DirectX::BoundingBox boundingBox;
+	// DirectX::BoundingSphere boundingSphere;
+	std::unique_ptr<MeshBuffer<Vertex>> vertexBuffer;
+	std::unique_ptr<MeshBuffer<StaticMeshAsset::Vertex>> keyShapeBuffer; // All keyshapes' vertices stored linearly in order...
+	std::unique_ptr<MeshBuffer<UINT>> keyShapeOffsetBuffer; // indexed by this buffer.
+	std::unique_ptr<MeshLODBuffers> lodBuffers[MAX_LOD_COUNT];	
+
+	// Name-index mappings
+	std::vector<std::string> boneNames;
+	std::unordered_map<std::string, uint> invBoneNames;
+	std::vector<std::string> keyShapeNames;
+	std::unordered_map<std::string, uint> invKeyShapeNames;
+
+	// Bind transforms
+	std::vector<matrix> invBindMatrices;
+
+	SkinnedMeshAsset(RHI::Device* device, SkinnedMesh* data);
+	inline const char* GetName() { return name.c_str(); }
+	inline bool IsUploaded() { return isUploaded; }
+	void Upload(UploadContext* ctx);
+	inline void Clean() {
+		vertexBuffer->Clean();
+		keyShapeBuffer->Clean();
+		keyShapeOffsetBuffer->Clean();
+		for (uint i = 0; i < MAX_LOD_COUNT; i++)
+			lodBuffers[i]->Clean();
+	}
+};
+
+template<> struct ImportedAssetTraits<SkinnedMesh> {
+	using imported_by = SkinnedMeshAsset;
+	static constexpr AssetType type = AssetType::SkinnedMesh;
 };

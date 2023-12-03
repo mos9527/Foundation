@@ -17,9 +17,9 @@ float D_GGX(float NoH, float roughness)
 {
     NoH = saturate(NoH);
     float ag2 = roughness * roughness;
-    ag2 = clamp(ag2, EPISILON, 1.0f);
+    ag2 = clamp(ag2, EPSILON, 1.0f);
     float denom = M_PI * pow(1 + NoH * NoH * (ag2 - 1), 2);
-    return NoH * ag2 * rcp(max(denom, EPISILON));
+    return NoH * ag2 * rcp(max(denom, EPSILON));
 
 }
 
@@ -27,12 +27,12 @@ float D_GGX(float NoH, float roughness)
 float Vis_GGX_SmithCorrelated(float NoV, float NoL, float roughness)
 {        
     float ag2 = roughness * roughness;
-    ag2 = clamp(ag2, EPISILON, 1.0f);
+    ag2 = clamp(ag2, EPSILON, 1.0f);
     float uo = saturate(NoV);
     float ui = saturate(NoL);
     float GGXV = uo * sqrt(ui * ui * (1.0 - ag2) + ag2); // u0 = n*l+
     float GGXL = ui * sqrt(uo * uo * (1.0 - ag2) + ag2); // ui = n*v+
-    return 0.5 * rcp(max(EPISILON, GGXV + GGXL));
+    return 0.5 * rcp(max(EPSILON, GGXV + GGXL));
 }
 // ** https://blog.selfshadow.com/publications/s2017-shading-course/imageworks/s2017_pbs_imageworks_sheen.pdf
 float D_Charlie(float roughness, float NoH)

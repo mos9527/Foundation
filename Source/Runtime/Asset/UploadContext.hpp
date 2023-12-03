@@ -25,6 +25,7 @@ public:
 
 	using RHI::CommandList::CopyBufferRegion;
 	using RHI::CommandList::CopySubresource;
+	using RHI::CommandList::ResetAllocator;
 	RHI::SyncFence End();
 	void Flush() {
 		CHECK(!m_CopyFence.Valid() || m_CopyFence.IsCompleted() && "Attempting to flush a in-flight or UploadContext");

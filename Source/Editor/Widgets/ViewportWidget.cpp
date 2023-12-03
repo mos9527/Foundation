@@ -1,9 +1,14 @@
 #include "Widgets.hpp"
+#include "../../../Dependencies/IconsFontAwesome6.h"
+
 using namespace EditorGlobalContext;
 static ImVec2 viewportScreenPos;
 static ImVec2 viewportSize;
+static ImVec2 uv_to_cursor(float2 uv) {
+    return ImVec2{uv.x, uv.y} *viewportSize;
+};
 static ImVec2 uv_to_pixel(float2 uv) {
-    return viewportScreenPos + ImVec2{uv.x, uv.y} *viewportSize; 
+    return viewportScreenPos + uv_to_cursor(uv);
 };
 static ImU32 col4_to_u32(float4 color) {
     return IM_COL32(color.x * 255, color.y * 255, color.z * 255, color.w * 255);
@@ -222,22 +227,54 @@ void OnImGui_ViewportWidget() {
             auto& selected = editor.meshSelection->GetSelectedMaterialBufferAndRect(render.renderer->r_materialBufferTex, render.renderer->r_materialBufferSRV, upos, { 1,1 });            
             if (!ImGui::IsKeyDown(ImGuiKey_LeftShift)) {
                 // Unselect all.
-                for (auto& mesh : scene.scene->storage<SceneMeshComponent>()) mesh.set_selected(false);
+                for (auto& mesh : scene.scene->storage<SceneStaticMeshComponent>()) mesh.set_selected(false);
+                for (auto& mesh : scene.scene->storage<SceneSkinnedMeshComponent>()) mesh.set_selected(false);
             }
             // Select the picked mesh component
             for (uint selectedIndex : selected) {
-                auto entity = scene.scene->storage<SceneMeshComponent>().at(selectedIndex);
-                auto& mesh = scene.scene->get<SceneMeshComponent>(entity);
-                mesh.set_selected(true);
+                // HACK: cont.
+                // see SceneView for details
+                entt::entity selectedEntity = entt::tombstone;
+                if (selectedIndex >= scene.scene->storage<SceneStaticMeshComponent>().size()) {
+                    // selected Skinned
+                    auto entity = scene.scene->storage<SceneSkinnedMeshComponent>().at(selectedIndex - scene.scene->storage<SceneStaticMeshComponent>().size());
+                    auto& mesh = scene.scene->get<SceneSkinnedMeshComponent>(entity);
+                    mesh.set_selected(true);
+                    selectedEntity = mesh.get_entity();
+                }
+                else {
+                    // selected Static
+                    auto entity = scene.scene->storage<SceneStaticMeshComponent>().at(selectedIndex);
+                    auto& mesh = scene.scene->get<SceneStaticMeshComponent>(entity);
+                    mesh.set_selected(true);
+                    selectedEntity = mesh.get_entity();
+                }
                 // Bring this instance to the editing window                
                 if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                    editor.editingComponent = mesh.get_entity();
+                    editor.editingComponent = selectedEntity;
                 }
             }
         }
         if (scene.scene->valid<SceneComponentType>(editor.editingComponent)) {
             SceneComponent* selectedComponent = scene.scene->get_base<SceneComponent>(editor.editingComponent);
             Viewport_Gizmo(selectedComponent);
+        }
+        auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
+        // Glyphs for all non-mesh components
+        for (auto& light : scene.scene->storage<SceneLightComponent>()) {
+            if (editor.editingComponent == light.get_entity())
+                continue;
+            auto p = uv_to_cursor(camera->project_to_uv(light.get_global_translation()));
+            ImGui::SetCursorPos(p);
+            ImGui::PushID(entt::to_integral(light.get_entity()));
+            {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0,0,0,0 });
+                if (ImGui::Button(ICON_FA_LIGHTBULB "###")) {
+                    editor.editingComponent = light.get_entity();
+                }
+                ImGui::PopStyleColor();
+            }
+            ImGui::PopID();
         }
     }
     ImGui::End();

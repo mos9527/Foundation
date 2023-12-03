@@ -15,7 +15,7 @@ SilhouettePass::SilhouettePass(Device* device) {
 	);
 	RS->SetName(L"Silhouette");
 	// Define the vertex input layout.
-	auto iaLayout = VertexLayoutToD3DIADesc(MeshAsset::Vertex::get_layout());
+	auto iaLayout = VertexLayoutToD3DIADesc(StaticMeshAsset::Vertex::get_layout());
 	// Describe and create the graphics pipeline state objects (PSO).
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
 	psoDesc.InputLayout = { iaLayout.data(), (UINT)iaLayout.size() };

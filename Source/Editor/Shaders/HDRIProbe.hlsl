@@ -56,7 +56,7 @@ void main_prefilter(uint3 DTid : SV_DispatchThreadID)
 
     for (int i = 0; i < SAMPLE_COUNT; i++)
     {
-        float4 importanceSample = getImportanceSample(distribution, i, SAMPLE_COUNT, N, max(roughness, EPISILON));
+        float4 importanceSample = getImportanceSample(distribution, i, SAMPLE_COUNT, N, max(roughness, EPSILON));
         // NOTE: roughness is irrelavent for Lambertian intergal
         
         float3 H = float3(importanceSample.xyz);
