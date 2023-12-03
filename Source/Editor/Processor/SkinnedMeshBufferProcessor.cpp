@@ -3,7 +3,7 @@
 #include "../Scene/Scene.hpp"
 
 using namespace RHI;
-SkinnedMeshBufferProcessor::SkinnedMeshBufferProcessor(Device* device) : device(device), ctx(device, CommandListType::Compute) {
+SkinnedMeshBufferProcessor::SkinnedMeshBufferProcessor(Device* device) : device(device) {
 	SkinCS = BuildShader(L"MeshSkinning", L"main_skinning", L"cs_6_6");
 	ReduceCS = BuildShader(L"MeshSkinning", L"main_reduce", L"cs_6_6");
 	RS = std::make_unique<RootSignature>(
@@ -45,13 +45,7 @@ SkinnedMeshBufferProcessor::SkinnedMeshBufferProcessor(Device* device) : device(
 	));
 	TransformedVertBuffers.resize(MAX_INSTANCE_COUNT);
 };
-void SkinnedMeshBufferProcessor::BeginProcess() {	
-	CHECK(!ctx.IsOpen() && "Processing context already open!");
-	ctx.Begin();
-	numToUpdate = 0;
-}
-void SkinnedMeshBufferProcessor::RegisterOrUpdate(SceneSkinnedMeshComponent* mesh) {
-	CHECK(ctx.IsOpen() && "Did you call BeginProcess()?");
+void SkinnedMeshBufferProcessor::RegisterOrUpdate(RHI::CommandList* ctx, SceneSkinnedMeshComponent* mesh) {	
 	size_t index = mesh->parent.index<SceneSkinnedMeshComponent>(mesh->get_entity());
 	AssetSkinnedMeshComponent& assetComponent = mesh->parent.get<AssetSkinnedMeshComponent>(mesh->meshAsset);
 	SkinnedMeshAsset& asset = mesh->parent.get<SkinnedMeshAsset>(assetComponent.mesh);
@@ -64,7 +58,7 @@ void SkinnedMeshBufferProcessor::RegisterOrUpdate(SceneSkinnedMeshComponent* mes
 		));
 		LOG(INFO) << "Allocated new vertex buffer for " << mesh->name << " #" << index;
 	}
-	auto native = ctx.GetNativeCommandList();
+	auto native = ctx->GetNativeCommandList();
 	SkinConstants->DataAt(index)->meshBufferIndex = index;
 	SkinConstants->DataAt(index)->numVertices = asset.vertexBuffer->numElements;
 	SkinConstants->DataAt(index)->numBones = asset.boneNames.size();
@@ -102,12 +96,12 @@ void SkinnedMeshBufferProcessor::RegisterOrUpdate(SceneSkinnedMeshComponent* mes
 	native->SetComputeRootShaderResourceView(7, asset.keyShapeOffsetBuffer->buffer.GetGPUAddress());
 	native->SetComputeRoot32BitConstant(8, index, 0);
 	native->SetComputeRootUnorderedAccessView(9, reductionBuffer->GetGPUAddress());
-	ctx.QueueTransitionBarrier(sceneMeshBuffer.get(), ResourceState::UnorderedAccess);
-	ctx.QueueTransitionBarrier(TransformedVertBuffers[index].get(), ResourceState::UnorderedAccess);
-	ctx.FlushBarriers();
+	ctx->QueueTransitionBarrier(sceneMeshBuffer.get(), ResourceState::UnorderedAccess);
+	ctx->QueueTransitionBarrier(TransformedVertBuffers[index].get(), ResourceState::UnorderedAccess);
+	ctx->FlushBarriers();
 	native->Dispatch(DivRoundUp(asset.vertexBuffer->numElements, EDITOR_SKINNING_THREADS), 1, 1);
-	ctx.QueueUAVBarrier(TransformedVertBuffers[index].get());
-	ctx.FlushBarriers();
+	ctx->QueueUAVBarrier(TransformedVertBuffers[index].get());
+	ctx->FlushBarriers();
 	// Reduce
 	native->SetPipelineState(*ReducePSO);
 	native->SetComputeRootSignature(*RS);
@@ -116,23 +110,15 @@ void SkinnedMeshBufferProcessor::RegisterOrUpdate(SceneSkinnedMeshComponent* mes
 	native->SetComputeRootShaderResourceView(2, SkinConstants->GetGPUAddress());
 	native->SetComputeRoot32BitConstant(8, 0, 1); // early
 	native->Dispatch(1, 1, 1);
-	ctx.QueueUAVBarrier(reductionBuffer.get());
-	ctx.FlushBarriers();
+	ctx->QueueUAVBarrier(reductionBuffer.get());
+	ctx->FlushBarriers();
 	native->SetComputeRoot32BitConstant(8, 1, 1); // mid
 	native->Dispatch(DivRoundUp(asset.vertexBuffer->numElements, EDITOR_SKINNING_THREADS), 1, 1);
-	ctx.QueueUAVBarrier(reductionBuffer.get());
-	ctx.FlushBarriers();
+	ctx->QueueUAVBarrier(reductionBuffer.get());
+	ctx->FlushBarriers();
 	native->SetComputeRoot32BitConstant(8, 2, 1); // late
 	native->Dispatch(1, 1, 1);
-	ctx.QueueUAVBarrier(sceneMeshBuffer.get());
-	ctx.QueueTransitionBarrier(TransformedVertBuffers[index].get(), ResourceState::VertexAndConstantBuffer);
-	ctx.FlushBarriers();	
-	numToUpdate++;
-}
-void SkinnedMeshBufferProcessor::EndProcess() {
-	ctx.Close();
-	if (numToUpdate) {				
-		ctx.Execute().Wait();	
-	}
-	ctx.ResetAllocator();
+	ctx->QueueUAVBarrier(sceneMeshBuffer.get());
+	ctx->QueueTransitionBarrier(TransformedVertBuffers[index].get(), ResourceState::VertexAndConstantBuffer);
+	ctx->FlushBarriers();	
 }

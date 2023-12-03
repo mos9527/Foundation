@@ -3,7 +3,7 @@
 #include "../Processor/IBLProbeProcessor.hpp"
 #include "../Processor/LTCTableProcessor.hpp"
 
-bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& _frameData, ShaderData&& _shaderData) {
+bool SceneView::update(RHI::CommandList* ctx,Scene& scene, SceneCameraComponent& camera, FrameData&& _frameData, ShaderData&& _shaderData) {
 	frameData = _frameData;
 	shaderData = _shaderData;
 	auto& static_meshes = scene.storage<SceneStaticMeshComponent>();
@@ -69,7 +69,7 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& _
 			}
 			if constexpr (std::is_same_v<T, SceneSkinnedMeshComponent>) {
 				sceneMesh.instanceMeshType = INSTANCE_MESH_TYPE_SKINNED;
-				skinnedMeshBuffers.RegisterOrUpdate(&mesh);
+				skinnedMeshBuffers.RegisterOrUpdate(ctx, &mesh);
 			}
 			*meshMaterialsBuffer.DataAt(sceneMesh.instanceMaterialIndex) = material;
 			*meshInstancesBuffer.DataAt(sceneMesh.instanceMeshGlobalIndex) = sceneMesh;
@@ -79,9 +79,7 @@ bool SceneView::update(Scene& scene, SceneCameraComponent& camera, FrameData&& _
 	// Static Meshes
 	std::for_each(std::execution::par, static_meshes.begin(), static_meshes.end(), update_mesh);
 	// Skinned Meshes
-	skinnedMeshBuffers.BeginProcess(); // Additional setup requried for GPU skinning
-	std::for_each(std::execution::par, skinned_meshes.begin(), skinned_meshes.end(), update_mesh);
-	skinnedMeshBuffers.EndProcess();
+	std::for_each(std::execution::par, skinned_meshes.begin(), skinned_meshes.end(), update_mesh);	
 	// Lights
 	std::for_each(std::execution::par, lights.begin(), lights.end(), [&](SceneLightComponent& light) {
 		{

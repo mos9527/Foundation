@@ -77,5 +77,5 @@ public:
 
 	inline FrameData const& get_FrameData() { return frameData; }
 	inline ShaderData const& get_ShaderData() { return shaderData; }
-	bool update(Scene& scene, SceneCameraComponent& camera, FrameData&& frame, ShaderData&& shader);
+	bool update(RHI::CommandList* ctx, Scene& scene, SceneCameraComponent& camera, FrameData&& frame, ShaderData&& shader);
 };

@@ -175,6 +175,7 @@ void EditorWindow::Run() {
         CHECK(camera && "No camera");
         g_cameraController.update_camera(camera);
         sceneView->update(
+            cmd,
             *scene.scene,
             *camera,
             SceneView::FrameData{
