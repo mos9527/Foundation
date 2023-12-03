@@ -8,7 +8,7 @@ struct SceneCameraComponent : public SceneComponent {
 
 	float logLuminanceMin = -10.0f;
 	float logLuminanceRange = 12.0f;
-	float luminanceAdaptRate = 0.0f; // 0 -> no 'adaptation'
+	float luminanceAdaptRate = 2.0f; // 0 -> no 'adaptation'
 
 	matrix view;
 	matrix projection;

@@ -129,6 +129,7 @@ void main_reduce_mid(uint DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex)
             pMin = min(pMin, groupPositions[i]);
             pMax = max(pMax, groupPositions[i]);
         }
+        GroupMemoryBarrierWithGroupSync();
         // Do minmax reduction globally        
         g_ReductionBuffer.InterlockedMin(4 * (g_MeshIndex + 0), asuint_signed(pMin.x));
         g_ReductionBuffer.InterlockedMin(4 * (g_MeshIndex + 1), asuint_signed(pMin.y));
