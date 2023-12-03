@@ -6,11 +6,11 @@
 #include "SceneComponent/Light.hpp"
 #include "SceneComponent/StaticMesh.hpp"
 #include "SceneComponent/SkinnedMesh.hpp"
+#include "SceneComponent/Armature.hpp"
 #include "AssetComponet/Material.hpp"
 #include "AssetComponet/StaticMesh.hpp"
 #include "AssetComponet/SkinnedMesh.hpp"
 #include "AssetComponet/SkinnedMeshTransform.hpp"
-
 #include "SceneGraph.hpp"
 template<typename T> using Allocator = DefaultAllocator<T>;
 typedef entt::basic_registry<entt::entity, Allocator <entt::entity>> SceneComponetRegistry;
@@ -37,7 +37,6 @@ public:
 		assetRegistry.clear();
 		graph.reset(new SceneGraph(*this));
 	}
-public:
 	template<IsSceneComponent T> T& get(entt::entity entity) {
 		return sceneComponentRegistry.get<T>(entity);
 	}
@@ -50,7 +49,6 @@ public:
 	template<IsSceneComponent T> size_t index(entt::entity entity) {
 		return storage<T>().index(entity);
 	}
-private:
 	template<IsSceneComponent T> entt::entity create() {
 		return sceneComponentRegistry.create();
 	}
@@ -66,14 +64,12 @@ private:
 	}
 	/* Asset Components */
 	// Create an entity in the AssetComponent registry
-public:
 	template<IsAssetComponent T> T& get(entt::entity entity) {
 		return assetComponentRegistry.get<T>(entity);
 	}
 	template<IsAssetComponent T> T* try_get(entt::entity entity) {
 		return assetComponentRegistry.try_get<T>(entity);
 	}
-private:
 	template<IsAssetComponent T> entt::entity create() {
 		return assetComponentRegistry.create();
 	}
@@ -89,7 +85,6 @@ private:
 	}
 	/* Assets */
 	// Create an AssetHandle in the asset registry.	
-public:
 	template<Asset T> T& get(AssetHandle resource) {
 		return assetRegistry.get<T>(resource);
 	}

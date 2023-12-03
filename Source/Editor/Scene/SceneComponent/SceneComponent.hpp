@@ -6,7 +6,8 @@ enum class SceneComponentType {
 	Camera,
 	StaticMesh,
 	SkinnedMesh,
-	Light
+	Light,
+	Armature
 };
 struct SceneImporter;
 struct SceneComponent : public Component {	

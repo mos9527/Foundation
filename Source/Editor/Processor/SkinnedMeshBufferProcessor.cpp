@@ -49,7 +49,7 @@ void SkinnedMeshBufferProcessor::RegisterOrUpdate(RHI::CommandList* ctx, SceneSk
 	size_t index = mesh->parent.index<SceneSkinnedMeshComponent>(mesh->get_entity());
 	AssetSkinnedMeshComponent& assetComponent = mesh->parent.get<AssetSkinnedMeshComponent>(mesh->meshAsset);
 	SkinnedMeshAsset& asset = mesh->parent.get<SkinnedMeshAsset>(assetComponent.mesh);
-	SkinnedMeshTransform* transform = mesh->parent.try_get<SkinnedMeshTransform>(mesh->transformAsset);
+	AssetSkinnedMeshTransformComponent* transform = mesh->parent.try_get<AssetSkinnedMeshTransformComponent>(mesh->transformAsset);
 	// Make a dedicated vertex buffer for this mesh
 	const size_t minVertexBufferSize = asset.vertexBuffer->numElements * sizeof(StaticMeshAsset::Vertex);
 	if (!TransformedVertBuffers[index].get() || TransformedVertBuffers[index]->GetDesc().sizeInBytes() < minVertexBufferSize) {
@@ -63,8 +63,8 @@ void SkinnedMeshBufferProcessor::RegisterOrUpdate(RHI::CommandList* ctx, SceneSk
 	SkinConstants->DataAt(index)->meshBufferIndex = index;
 	SkinConstants->DataAt(index)->numVertices = asset.vertexBuffer->numElements;
 	if (transform) {
-		SkinConstants->DataAt(index)->numBones = asset.boneNames.size();
-		SkinConstants->DataAt(index)->numShapeKeys = asset.keyShapeNames.size();
+		SkinConstants->DataAt(index)->numBones = transform->get_bone_count();
+		SkinConstants->DataAt(index)->numShapeKeys = transform->get_keyshape_count();
 	}
 	else {
 		// No transform set.

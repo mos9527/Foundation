@@ -3,14 +3,19 @@
 #include "../../../Runtime/Asset/ResourceContainer.hpp"
 #include "../../../Runtime/Asset/MeshAsset.hpp"
 
-struct SkinnedMeshTransform : public AssetComponent {
+struct AssetSkinnedMeshTransformComponent : public AssetComponent {
 	static const AssetComponentType type = AssetComponentType::Data;
-	SkinnedMeshTransform(Scene& parent, entt::entity entity) : AssetComponent(parent, entity, type) {};
+	AssetSkinnedMeshTransformComponent(Scene& parent, entt::entity entity) : AssetComponent(parent, entity, type) {};
 
-	void setup_with_asset(RHI::Device* device, SkinnedMeshAsset& asset);
+	void setup(RHI::Device* device, uint boneCount = 0, uint keyshapeCount = 0);
 
-	std::vector<matrix> boneLocalMatrices;
-	std::vector<matrix> boneGlobalMatrices;
 	std::unique_ptr<BufferContainer<matrix>> boneSpaceMatrices;
 	std::unique_ptr<BufferContainer<float>> keyshapeWeights;
+
+	const bool valid() { return boneSpaceMatrices.get() && keyshapeWeights.get(); }
+	const uint get_bone_count() { return boneCount; }
+	const uint get_keyshape_count() { return keyshapeCount; }
+private:
+	uint boneCount = -1;
+	uint keyshapeCount = -1;
 };

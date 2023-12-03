@@ -234,6 +234,9 @@
     <ClCompile Include="Source\Editor\Scene\AssetComponet\SkinnedMeshTransform.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\Scene\SceneComponent\Armature.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">
@@ -534,6 +537,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\Scene\AssetComponet\SkinnedMeshTransform.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\Scene\SceneComponent\Armature.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -42,7 +42,7 @@ class SceneGraph {
 public:
 	SceneGraph(Scene& scene);
 	// Getters
-	const entt::entity get_root() { return root; }
+	const entt::entity get_root() { return root; }	
 	Scene& get_scene();
 	// Registry operations
 	SceneComponent* get_base(const entt::entity entitiy);
