@@ -173,7 +173,7 @@ SkinnedMesh load_skinned_mesh(aiMesh* srcMesh) {
 		mesh.boneNames.push_back(bone->mName.C_Str());
 		mesh.boneInvBindMatrices.push_back(XMMatrixTranspose(XMMATRIX(&bone->mOffsetMatrix.a1)));
 		for (UINT j = 0; j < bone->mNumWeights; j++) {
-			aiVertexWeight weight = bone->mWeights[j];
+			aiVertexWeight weight = bone->mWeights[j];			
 			auto write_xyzw_by_index = [](uint index, auto value, auto& to) {
 				if (index == 0) to.x = value;
 				else if (index == 1) to.y = value;

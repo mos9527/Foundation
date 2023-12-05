@@ -26,7 +26,7 @@ void AssimpLogger::try_attach() {
 // func -> bool. return false to cut the DFS branch
 void aiScene_Reduce(const aiScene* scene, auto func) {
 	auto dfs = [&](auto& dfs_, aiNode* node) {
-		if (!func(node)) return;;
+		if (!func(node)) return;
 		for (UINT i = 0; i < node->mNumChildren; i++)
 			dfs_(dfs_, node->mChildren[i]);
 	};
@@ -141,6 +141,7 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 		}
 	}	
 	// Scene Hiearchy
+	pool.wait_and_join(); // ensure pool work is done & components are constructed
 	/*Armatures*/
 	// * 1 * Search through all meshes and mark bone names
 	std::set<std::string> bone_set;
@@ -163,8 +164,8 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 				armature_set.insert(node);
 				return false;
 			}
-			return true;
 		}
+		return true;
 	});
 	// * 3 * Begin adding onto the scene
 	std::map<aiNode*, entt::entity> entity_mapping;	
@@ -238,10 +239,10 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 					// Build the hierarchy
 					auto dfs_bones = [&](auto& dfs_bones_, aiNode* bone) -> void {		
 						armature.set_bone_local_transform(bone->mName.C_Str(), SimpleMath::Matrix(XMMATRIX(&bone->mTransformation.a1)).Transpose());
-						for (uint j = 0; j < node->mNumChildren; j++) {
-							armature.add_bone_hierarchy(bone->mName.C_Str(), node->mChildren[j]->mName.C_Str());
-							armature.set_bone_local_transform(node->mChildren[j]->mName.C_Str(), SimpleMath::Matrix(XMMATRIX(&node->mChildren[j]->mTransformation.a1)).Transpose());
-							dfs_bones_(dfs_bones_, node->mChildren[j]);
+						for (uint j = 0; j < bone->mNumChildren; j++) {
+							armature.add_bone_hierarchy(bone->mName.C_Str(), bone->mChildren[j]->mName.C_Str());
+							armature.set_bone_local_transform(bone->mChildren[j]->mName.C_Str(), SimpleMath::Matrix(XMMATRIX(&bone->mChildren[j]->mTransformation.a1)).Transpose());
+							dfs_bones_(dfs_bones_, bone->mChildren[j]);
 						}
 					};
 					dfs_bones(dfs_bones, rootBone);
@@ -249,6 +250,7 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 			}
 			entity_mapping[node] = entity;
 			sceneOut.graph->add_link(entity_mapping[node->mParent], entity);
+			armature.update();
 			return false;
 		}
 		// Other grouping -> SceneCollectionComponent to handle collections
@@ -284,7 +286,6 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 		for (UINT i = 0; i < node->mNumChildren; i++)
 			func(func, node->mChildren[i], entity);
 	};
-	pool.wait_and_join(); // ensure pool work is done & components are constructed
 	dfs_nodes(dfs_nodes, scene->mRootNode, sceneOut.graph->get_root());
 	sceneOut.graph->update_transform(sceneOut.graph->get_root()); // Calculate global transforms after everything's in place
 	LOG(INFO) << "Scene loaded";
@@ -298,7 +299,7 @@ void SceneImporter::load(UploadContext* ctx, SceneImporterAtomicStatus& statusOu
 	LOG(INFO) << "Loading " << sceneFile;
 	CHECK(std::filesystem::exists(sceneFile) && "File does not exisit!");
 	std::string u8path = (const char*)sceneFile.u8string().c_str();
-	auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace | aiProcess_LimitBoneWeights /*| aiProcess_PopulateArmatureData */);
+	auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace | aiProcess_LimitBoneWeights | aiProcess_PopulateArmatureData);
 	CHECK(imported && "Failed to import file as an assimp scene!");
 	SceneImporter::load_aiScene(ctx, statusOut, sceneOut, imported, sceneFile.parent_path());
 }
