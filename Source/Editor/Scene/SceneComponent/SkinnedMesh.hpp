@@ -9,7 +9,8 @@ struct SceneSkinnedMeshComponent : public SceneComponent {
 	static const SceneComponentType type = SceneComponentType::SkinnedMesh;
 	SceneSkinnedMeshComponent(Scene& scene, entt::entity ent) : SceneComponent(scene, ent, type) {};
 	
-	entt::entity materialAsset = entt::tombstone;
-	entt::entity meshAsset = entt::tombstone;	
-	entt::entity transformAsset = entt::tombstone;	
+	AssetHandle meshAsset;
+	entt::entity materialComponent = entt::tombstone;	
+	entt::entity boneTransformComponent = entt::tombstone;
+	entt::entity keyshapeTransformComponent = entt::tombstone;
 };

@@ -217,7 +217,7 @@ void OnImGui_ViewportWidget() {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Middle) || ImGui::IsKeyDown(ImGuiKey_LeftAlt))
             viewport.state.transition(ViewportManipulationEvents::MouseDown);
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Middle) || ImGui::IsKeyReleased(ImGuiKey_LeftAlt))
-            viewport.state.transition(ViewportManipulationEvents::MouseRelease);
+            viewport.state.transition(ViewportManipulationEvents::MouseRelease);        
         if (ImGui::IsKeyDown(ImGuiKey_LeftShift))
             viewport.state.transition(ViewportManipulationEvents::ShiftDown);
         if (ImGui::IsKeyReleased(ImGuiKey_LeftShift))

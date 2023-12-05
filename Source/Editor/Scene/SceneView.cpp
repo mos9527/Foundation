@@ -16,7 +16,7 @@ bool SceneView::update(RHI::CommandList* ctx,Scene& scene, SceneCameraComponent&
 			std::scoped_lock lock(rwMutex);
 			if (viewedComponentVersions[mesh.get_entity()] == mesh.get_version())
 				return;
-		}
+		}		 
 		uint localIndex = scene.index<T>(mesh.get_entity()); // the index in Skinned or Static mesh storage		
 		// HACK: Since the static/skinned storages are seperate
 		// we use the static's size as the offset for the skinned instances
@@ -40,7 +40,7 @@ bool SceneView::update(RHI::CommandList* ctx,Scene& scene, SceneCameraComponent&
 		if (mesh.get_selected())
 			sceneMesh.instanceFlags |= INSTANCE_FLAG_SILHOUETTE;		
 		// Material
-		AssetMaterialComponent& materialComponent = scene.get<AssetMaterialComponent>(mesh.materialAsset);
+		AssetMaterialComponent& materialComponent = scene.get<AssetMaterialComponent>(mesh.materialComponent);
 		SceneMaterial material;
 		auto try_set_heap_handle = [&](TextureAsset* ptr, auto& dest) {
 			if (ptr && ptr->textureSRV)
@@ -55,7 +55,7 @@ bool SceneView::update(RHI::CommandList* ctx,Scene& scene, SceneCameraComponent&
 		material.albedo = materialComponent.albedo;
 		material.pbr = materialComponent.pbr;
 		material.emissive = materialComponent.emissive;
-		sceneMesh.instanceMaterialIndex = materials.index(mesh.materialAsset);		
+		sceneMesh.instanceMaterialIndex = materials.index(mesh.materialComponent);		
 		// More Flags
 		if (materialComponent.has_alpha()) 
 			sceneMesh.instanceFlags |= INSTANCE_FLAG_TRANSPARENCY;

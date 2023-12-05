@@ -70,31 +70,26 @@ SkinnedMeshAsset::SkinnedMeshAsset(RHI::Device* device, SkinnedMesh* data) {
 		lod->loadMeshletTriangleBuffer.WriteData(data->lods[i].meshlet_triangles.data(), 0, data->lods[i].meshlet_triangles.size(), 0);
 #endif
 	}
-	boneNames = data->boneNames;
-	for (uint i = 0; i < data->boneNames.size(); i++) {		
-		invBoneNames[data->boneNames[i]] = i;
-	}
-	uint totalKeyShapeVertices = 0;
-	for (auto& keyshape : data->keyShapes) 
-		totalKeyShapeVertices += keyshape.num_vertices();	
-	keyShapeBuffer = std::make_unique<MeshBuffer<StaticMeshAsset::Vertex>>(device, totalKeyShapeVertices);
-	keyShapeOffsetBuffer = std::make_unique<MeshBuffer<UINT>>(device, data->keyShapes.size());
-	uint keyShapeVertexOffset = 0;
-	for (uint k = 0; k < data->keyShapes.size(); k++) {
-		keyShapeNames.push_back(data->keyShapes[k].name);
-		invKeyShapeNames[data->keyShapes[k].name] = k;
-
-		for (uint i = 0; i < data->keyShapes[k].num_vertices(); i++) {
-			auto* vertex = keyShapeBuffer->loadBuffer.DataAt(i + keyShapeVertexOffset);
-			vertex->position = data->keyShapes[k].position[i];
-			vertex->normal = data->keyShapes[k].normal[i];
-			vertex->tangent = data->keyShapes[k].tangent[i];
-			vertex->uv = data->keyShapes[k].uv[i];
+	if (data->keyShapes.size()) {
+		uint totalKeyShapeVertices = 0;
+		for (auto& keyshape : data->keyShapes) 
+			totalKeyShapeVertices += keyshape.num_vertices();	
+		keyShapeBuffer = std::make_unique<MeshBuffer<StaticMeshAsset::Vertex>>(device, totalKeyShapeVertices);
+		keyShapeOffsetBuffer = std::make_unique<MeshBuffer<UINT>>(device, data->keyShapes.size());
+		uint keyShapeVertexOffset = 0;
+		for (uint k = 0; k < data->keyShapes.size(); k++) {
+		
+			for (uint i = 0; i < data->keyShapes[k].num_vertices(); i++) {
+				auto* vertex = keyShapeBuffer->loadBuffer.DataAt(i + keyShapeVertexOffset);
+				vertex->position = data->keyShapes[k].position[i];
+				vertex->normal = data->keyShapes[k].normal[i];
+				vertex->tangent = data->keyShapes[k].tangent[i];
+				vertex->uv = data->keyShapes[k].uv[i];
+			}
+			*keyShapeOffsetBuffer->loadBuffer.DataAt(k) = keyShapeVertexOffset;
+			keyShapeVertexOffset += data->keyShapes[k].num_vertices();
 		}
-		*keyShapeOffsetBuffer->loadBuffer.DataAt(k) = keyShapeVertexOffset;
-		keyShapeVertexOffset += data->keyShapes[k].num_vertices();
 	}
-	invBindMatrices = data->boneInvBindMatrices;
 	name = data->name;
 }
 
@@ -110,7 +105,7 @@ void SkinnedMeshAsset::Upload(UploadContext* ctx){
 		ctx->CopyBufferRegion(&lod->loadMeshletTriangleBuffer, &lod->meshletTriangleBuffer, 0, 0, lod->meshletTriangleBuffer.GetDesc().sizeInBytes());
 #endif
 	}
-	ctx->CopyBufferRegion(&keyShapeBuffer->loadBuffer, &keyShapeBuffer->buffer, 0, 0, keyShapeBuffer->buffer.GetDesc().sizeInBytes());
-	ctx->CopyBufferRegion(&keyShapeOffsetBuffer->loadBuffer, &keyShapeOffsetBuffer->buffer, 0, 0, keyShapeOffsetBuffer->buffer.GetDesc().sizeInBytes());
+	if (keyShapeBuffer) ctx->CopyBufferRegion(&keyShapeBuffer->loadBuffer, &keyShapeBuffer->buffer, 0, 0, keyShapeBuffer->buffer.GetDesc().sizeInBytes());
+	if (keyShapeOffsetBuffer) ctx->CopyBufferRegion(&keyShapeOffsetBuffer->loadBuffer, &keyShapeOffsetBuffer->buffer, 0, 0, keyShapeOffsetBuffer->buffer.GetDesc().sizeInBytes());
 	isUploaded = true;
 }

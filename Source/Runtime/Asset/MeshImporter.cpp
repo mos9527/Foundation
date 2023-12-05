@@ -135,7 +135,7 @@ StaticMesh load_static_mesh(aiMesh* srcMesh, bool optimize) {
 	return mesh;
 }
 
-SkinnedMesh load_skinned_mesh(aiMesh* srcMesh) {
+SkinnedMesh load_skinned_mesh(aiMesh* srcMesh, std::unordered_map<std::string, uint> boneIDMapping, std::unordered_map<std::string, uint> keyshapeIDMapping) {
 	SkinnedMesh mesh;
 	UINT num_vertices = srcMesh->mNumVertices;
 	mesh.resize_vertices(num_vertices);
@@ -169,9 +169,7 @@ SkinnedMesh load_skinned_mesh(aiMesh* srcMesh) {
 	generate_lod(mesh);
 	std::vector<char> boneWeightCount(mesh.position.size());
 	for (UINT i = 0; i < srcMesh->mNumBones; i++) {
-		aiBone* bone = srcMesh->mBones[i];
-		mesh.boneNames.push_back(bone->mName.C_Str());
-		mesh.boneInvBindMatrices.push_back(XMMatrixTranspose(XMMATRIX(&bone->mOffsetMatrix.a1)));
+		aiBone* bone = srcMesh->mBones[i];		
 		for (UINT j = 0; j < bone->mNumWeights; j++) {
 			aiVertexWeight weight = bone->mWeights[j];			
 			auto write_xyzw_by_index = [](uint index, auto value, auto& to) {
@@ -181,14 +179,18 @@ SkinnedMesh load_skinned_mesh(aiMesh* srcMesh) {
 				else if (index == 3) to.w = value;
 				else assert(false && "OOB");
 			};
-			write_xyzw_by_index(boneWeightCount[weight.mVertexId], i, mesh.boneIndices[weight.mVertexId]);
-			write_xyzw_by_index(boneWeightCount[weight.mVertexId], weight.mWeight, mesh.boneWeights[weight.mVertexId]);
-			boneWeightCount[weight.mVertexId]++;			
+			auto it = boneIDMapping.find(bone->mName.C_Str());
+			if (it != boneIDMapping.end()) {
+				write_xyzw_by_index(boneWeightCount[weight.mVertexId], it->second, mesh.boneIndices[weight.mVertexId]);
+				write_xyzw_by_index(boneWeightCount[weight.mVertexId], weight.mWeight, mesh.boneWeights[weight.mVertexId]);
+				boneWeightCount[weight.mVertexId]++;			
+			}
 		}
 	}
+	mesh.keyShapes.resize(srcMesh->mNumAnimMeshes);
 	for (UINT i = 0; i < srcMesh->mNumAnimMeshes; i++) {
 		aiAnimMesh* animMesh = srcMesh->mAnimMeshes[i];
-		StaticMesh& keyShape = mesh.keyShapes.emplace_back();
+		StaticMesh& keyShape = mesh.keyShapes[keyshapeIDMapping[animMesh->mName.C_Str()]];
 		keyShape.resize_vertices(animMesh->mNumVertices);
 		for (UINT j = 0; j < animMesh->mNumVertices; j++) {
 			if (animMesh->mVertices) {

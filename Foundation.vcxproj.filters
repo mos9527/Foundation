@@ -156,9 +156,6 @@
     <ClCompile Include="Source\Editor\Widgets\AssetMaterialComponentWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Editor\Widgets\AssetMeshComponentWidget.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Source\Editor\Input\KBMCamera.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -229,9 +226,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Editor\Processor\StaticMeshBufferProcessor.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\Editor\Scene\AssetComponet\SkinnedMeshTransform.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Editor\Scene\SceneComponent\Armature.cpp">
@@ -422,9 +416,6 @@
     <ClInclude Include="Source\Editor\Scene\Component.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Editor\Scene\AssetComponet\StaticMesh.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Source\Editor\Scene\Scene.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -527,19 +518,19 @@
     <ClInclude Include="Source\Editor\Scene\SceneComponent\SkinnedMesh.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Editor\Scene\AssetComponet\SkinnedMesh.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Source\Editor\Processor\SkinnedMeshBufferProcessor.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\Processor\StaticMeshBufferProcessor.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Editor\Scene\AssetComponet\SkinnedMeshTransform.hpp">
+    <ClInclude Include="Source\Editor\Scene\SceneComponent\Armature.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Editor\Scene\SceneComponent\Armature.hpp">
+    <ClInclude Include="Source\Editor\Scene\AssetComponet\BoneTransform.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\Scene\AssetComponet\KeyshapeTransform.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

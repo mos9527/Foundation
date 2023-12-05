@@ -9,8 +9,6 @@
 #include "SceneComponent/Camera.hpp"
 #include "SceneComponent/Light.hpp"
 #include "AssetComponet/Material.hpp"
-#include "AssetComponet/StaticMesh.hpp"
-#include "AssetComponet/SkinnedMesh.hpp"
 
 #include "../Processor/StaticMeshBufferProcessor.hpp"
 #include "../Processor/SkinnedMeshBufferProcessor.hpp"

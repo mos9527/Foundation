@@ -29,9 +29,8 @@ void OnImGui_SceneComponentWidget() {
 		if (scene.scene->valid<SceneComponentType>(editor.editingComponent)) {
 			SceneComponentType type = scene.scene->get_type<SceneComponentType>(editor.editingComponent);
 			SceneComponent* componet = scene.scene->get_base<SceneComponent>(editor.editingComponent);
-			ImGui::Text("Version: %d", componet->get_version());
-			if (editor.editingComponent != scene.scene->graph->get_root())
-				OnImGui_SceneComponent_TransformWidget(componet);
+			ImGui::Text("Version: %d", componet->get_version());			
+			OnImGui_SceneComponent_TransformWidget(componet);
 			switch (type)
 			{
 				case Collection:

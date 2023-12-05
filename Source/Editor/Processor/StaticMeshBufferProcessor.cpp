@@ -6,9 +6,8 @@ StaticMeshBufferProcessor::StaticMeshBufferProcessor(Device* device) : device(de
 	sceneMeshBuffer = std::make_unique<BufferContainer<SceneMeshBuffer>>(device, MAX_INSTANCE_COUNT);
 };
 void StaticMeshBufferProcessor::RegisterOrUpdate(SceneStaticMeshComponent* mesh) {
-	size_t index = mesh->parent.index<SceneStaticMeshComponent>(mesh->get_entity());
-	AssetStaticMeshComponent& assetComponent = mesh->parent.get<AssetStaticMeshComponent>(mesh->meshAsset);
-	StaticMeshAsset& asset = mesh->parent.get<StaticMeshAsset>(assetComponent.mesh);
+	size_t index = mesh->parent.index<SceneStaticMeshComponent>(mesh->get_entity());	
+	StaticMeshAsset& asset = mesh->parent.get<StaticMeshAsset>(mesh->meshAsset);
 	// Everything about the vertices is Static.
 	// We can simply copy these through the CPU to the upload heap
 	// and use as-is.

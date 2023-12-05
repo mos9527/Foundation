@@ -24,63 +24,47 @@ void AssimpLogger::try_attach() {
 	}
 }
 // func -> bool. return false to cut the DFS branch
-void aiScene_Reduce(const aiScene* scene, auto func) {
+void aiNode_Reduce(aiNode* node, auto func) {
 	auto dfs = [&](auto& dfs_, aiNode* node) {
 		if (!func(node)) return;
 		for (UINT i = 0; i < node->mNumChildren; i++)
 			dfs_(dfs_, node->mChildren[i]);
 	};
-	dfs(dfs, scene->mRootNode);
+	dfs(dfs, node);
+}
+void aiScene_Reduce(const aiScene* scene, auto func) {
+	aiNode_Reduce(scene->mRootNode, func);
 }
 
 void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& statusOut, Scene& sceneOut, const aiScene* scene, path_t sceneFolder) {
 	RHI::Device* device = ctx->GetParent();
 	DefaultTaskThreadPool pool;
 	std::mutex import_mutex;
-	/*Queue asset parsing & loading*/
-	// Meshes
-	// (Static & Skinned)
-	statusOut.numToUpload += scene->mNumMeshes;
-	auto is_mesh_static = [](aiMesh* mesh) {return mesh->mNumBones == 0 && mesh->mNumAnimMeshes == 0; };
-	std::unordered_map<uint, entt::entity> mesh_mapping;	
-	for (UINT i = 0; i < scene->mNumMeshes; i++) {
-		if (is_mesh_static(scene->mMeshes[i])) {
-			// Static
-			auto entity = sceneOut.create<AssetStaticMeshComponent>();
-			auto handle = sceneOut.create<StaticMeshAsset>();
-			AssetStaticMeshComponent& mesh_asset = sceneOut.emplace<AssetStaticMeshComponent>(entity);
-			mesh_asset.set_name(scene->mMeshes[i]->mName.C_Str());
-			mesh_asset.mesh = handle;
-			mesh_mapping[i] = entity;
-			pool.push([&](AssetHandle meshHandle, auto meshPtr) {
-				LOG(INFO) << "Loading Static Mesh " << meshPtr->mName.C_Str();
-				StaticMesh mesh = load_static_mesh(meshPtr, true);
-				std::scoped_lock lock(import_mutex);
-				auto& asset = sceneOut.import_asset(meshHandle, device, &mesh);
-				asset.Upload(ctx);
-				statusOut.numUploaded++;
-			}, handle, scene->mMeshes[i]);
+	// Parse aiScene hierarchy and build handles	
+	std::map<aiNode*, entt::entity> entity_map;
+	// Assign root node to graph root
+	entity_map[scene->mRootNode] = sceneOut.graph->get_root();
+	sceneOut.get<SceneCollectionComponent>(entity_map[scene->mRootNode]).set_name("Asset Importer Scene Root");
+	// * 1 * Collect all armatures		
+	// Also collects inverse bind transforms of bones.
+	std::set<aiNode*> armature_set;
+	std::unordered_map<aiNode*, std::unordered_map<std::string, matrix>> boneInvTransforms;
+	aiScene_Reduce(scene, [&](aiNode* node) {
+		for (UINT i = 0; i < node->mNumMeshes; i++) {
+			auto mesh = scene->mMeshes[node->mMeshes[i]];
+			if (mesh->HasBones()) {
+				aiNode* armature = mesh->mBones[0]->mArmature;
+				armature_set.insert(armature);
+				for (uint j = 0; j < mesh->mNumBones; j++) {
+					aiBone* bone = mesh->mBones[j];
+					boneInvTransforms[armature][bone->mName.C_Str()] = SimpleMath::Matrix(XMMATRIX(&bone->mOffsetMatrix.a1)).Transpose();
+				}
+			}
 		}
-		else {
-			// Skinned and/or has Keyshapes
-			auto entity = sceneOut.create<AssetSkinnedMeshComponent>();
-			auto handle = sceneOut.create<SkinnedMeshAsset>();
-			AssetSkinnedMeshComponent& mesh_asset = sceneOut.emplace<AssetSkinnedMeshComponent>(entity);
-			mesh_asset.set_name(scene->mMeshes[i]->mName.C_Str());
-			mesh_asset.mesh = handle;
-			mesh_mapping[i] = entity;
-			pool.push([&](AssetHandle meshHandle, auto meshPtr) {
-				LOG(INFO) << "Loading Skinned Mesh " << meshPtr->mName.C_Str();
-				SkinnedMesh mesh = load_skinned_mesh(meshPtr);
-				std::scoped_lock lock(import_mutex);
-				auto& asset = sceneOut.import_asset(meshHandle, device, &mesh);
-				asset.Upload(ctx);
-				statusOut.numUploaded++;
-			}, handle, scene->mMeshes[i]);
-		}
-	}
-	// Image textures
-	// And materials
+		return true;
+	});
+	// * 2 * Create collection per node types
+	// * 2.1 * Image Textures & Materials
 	auto load_texture = [&](AssetHandle handle, const char* filename) {
 		if (scene->GetEmbeddedTexture(filename)) {
 			LOG(INFO) << "Loading embeded texture " << filename;
@@ -102,15 +86,15 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 			statusOut.numUploaded++;
 			return handle;
 		}
-	};	
-	std::unordered_map<uint, entt::entity> material_mapping;
+	};
+	std::unordered_map<uint, entt::entity> material_map;
 	for (UINT i = 0; i < scene->mNumMaterials; i++) {
 		auto material = scene->mMaterials[i];
 		auto entity = sceneOut.create<AssetMaterialComponent>();
 		AssetMaterialComponent& materialComponet = sceneOut.emplace<AssetMaterialComponent>(entity);
-		material_mapping[i] = entity;
+		material_map[i] = entity;
 		materialComponet.set_name(material->GetName().C_Str());
-		LOG(INFO) << "Loading material " << materialComponet.get_name();
+		LOG(INFO) << "Loading Material " << materialComponet.get_name();
 		aiColor4D color;
 		material->Get(AI_MATKEY_COLOR_DIFFUSE, color);
 		materialComponet.albedo = { color.r,color.g,color.b,color.a };
@@ -139,167 +123,189 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 			pool.push([&, path](AssetHandle handle) { materialComponet.emissiveMapImage = load_texture(handle, path.C_Str()); }, sceneOut.create<TextureAsset>());
 			statusOut.numToUpload++;
 		}
-	}	
-	// Scene Hiearchy
-	pool.wait_and_join(); // ensure pool work is done & components are constructed
-	/*Armatures*/
-	// * 1 * Search through all meshes and mark bone names
-	std::set<std::string> bone_set;
-	aiScene_Reduce(scene, [&](aiNode* node) {
-		for (UINT i = 0; i < node->mNumMeshes; i++) {
-			auto mesh = scene->mMeshes[node->mMeshes[i]];
-			if (mesh->HasBones()) {
-				for (UINT j = 0; j < mesh->mNumBones; j++)
-					bone_set.insert(mesh->mBones[j]->mName.C_Str());
-			}
+	}
+	// * 2.2 * Static/Keyshape-only meshes
+	std::map<uint, AssetHandle> mesh_map;
+	aiScene_Reduce(scene, [&](aiNode* node) {			
+		if (armature_set.contains(node)) return false; // Cut this branch! Dealt with seperately
+		if (!entity_map.contains(node)) {
+			// Generic collection for non-armature collections
+			LOG(INFO) << "New node " << node->mName.C_Str();
+			entity_map[node] = sceneOut.create<SceneCollectionComponent>();
+			auto& collection = sceneOut.emplace<SceneCollectionComponent>(entity_map[node]);
+			collection.set_name(node->mName.C_Str());
 		}
+		/* Static/Skinned(see below) Meshes */
+		// Bone-less meshes are also added here
+		// Though boned meshes should only appear in Armature nodes (as per filled by aiProcess_PopulateArmatureData)
+		// Note that Meshes are always leaf nodes. So they don't go into the entity_map
+		for (uint i = 0; i < node->mNumMeshes; i++) {
+			aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+			if (mesh->HasBones()) continue;
+			else if (mesh->mNumAnimMeshes) {
+				// Keyshape Only mesh
+				// Consider this as a skinned mesh too. Though without bone transforms.
+				
+				// Use the ordering given by the importer to order keyshapes
+				std::unordered_map<std::string, uint> keyshapeNames;
+				for (uint j = 0; j < mesh->mNumAnimMeshes; j++)
+					keyshapeNames[mesh->mAnimMeshes[j]->mName.C_Str()] = j;		
+
+				if (!mesh_map.contains(node->mMeshes[i])) {
+					auto meshAsset = sceneOut.create<SkinnedMeshAsset>();
+					mesh_map[node->mMeshes[i]] = meshAsset;
+
+					statusOut.numToUpload++;
+					pool.push([&](AssetHandle meshHandle, aiMesh* mesh_, std::unordered_map<std::string, uint> keyshapeNames) {
+						LOG(INFO) << "Loading Keyshaped Mesh " << mesh_->mName.C_Str();
+						SkinnedMesh mesh = load_skinned_mesh(mesh_, {}, keyshapeNames);
+						std::scoped_lock lock(import_mutex);
+						auto& asset = sceneOut.import_asset(meshHandle, device, &mesh);
+						asset.Upload(ctx);
+						statusOut.numUploaded++;
+					}, meshAsset, mesh, keyshapeNames);
+				}				
+				auto keyshapeWeightEntity = sceneOut.create<AssetKeyshapeTransformComponent>();
+				auto& keyshapeWeights = sceneOut.emplace<AssetKeyshapeTransformComponent>(keyshapeWeightEntity);											
+				keyshapeWeights.setup(device, keyshapeNames);
+
+				auto skinnedMeshEntity = sceneOut.create<SceneSkinnedMeshComponent>();
+				auto& skinnedMesh = sceneOut.emplace<SceneSkinnedMeshComponent>(skinnedMeshEntity);
+				skinnedMesh.set_name(mesh->mName.C_Str());
+				skinnedMesh.meshAsset = mesh_map[node->mMeshes[i]];
+				skinnedMesh.materialComponent = material_map[mesh->mMaterialIndex];
+				skinnedMesh.keyshapeTransformComponent = keyshapeWeightEntity;
+				sceneOut.graph->add_link(entity_map[node], skinnedMeshEntity);
+			}
+			else {
+				// Static mesh
+				if (!mesh_map.contains(node->mMeshes[i])) {
+					auto meshAsset = sceneOut.create<StaticMeshAsset>();
+					mesh_map[node->mMeshes[i]] = meshAsset;
+
+					statusOut.numToUpload++;
+					pool.push([&](AssetHandle meshHandle, aiMesh* mesh_) {
+						LOG(INFO) << "Loading Static Mesh " << mesh_->mName.C_Str();
+						StaticMesh mesh = load_static_mesh(mesh_, true);
+						std::scoped_lock lock(import_mutex);
+						auto& asset = sceneOut.import_asset(meshHandle, device, &mesh);
+						asset.Upload(ctx);
+						statusOut.numUploaded++;
+					}, meshAsset, mesh);
+				}
+
+				auto staticMeshEntity = sceneOut.create<SceneStaticMeshComponent>();
+				auto& staticMesh = sceneOut.emplace<SceneStaticMeshComponent>(staticMeshEntity);				
+				staticMesh.set_name(mesh->mName.C_Str());
+				staticMesh.meshAsset = mesh_map[node->mMeshes[i]];
+				staticMesh.materialComponent = material_map[mesh->mMaterialIndex];
+				sceneOut.graph->add_link(entity_map[node], staticMeshEntity);
+			}
+		}		
+		if (node != scene->mRootNode)
+			sceneOut.graph->add_link(entity_map[node->mParent], entity_map[node]);		
 		return true;
 	});
-	// * 2 * Find any node that has a depth=1 children that is a bone (matched by name -> bone_set)
-	// These would be Armatures		
-	std::set<aiNode*> armature_set;
-	aiScene_Reduce(scene, [&](aiNode* node) {
-		for (UINT i = 0; i < node->mNumChildren; i++) {
-			if (bone_set.contains(node->mChildren[i]->mName.C_Str())) {
-				armature_set.insert(node);
-				return false;
-			}
+	// * 2.3 * Armature
+	for (aiNode* armature : armature_set) {
+		// [seems like] assimp's imported armature nodes
+		// have and only have two children:
+		// * one is for the mesh
+		// * and the other is for the bone hierarchy
+		// So far this has been correct for the glTF models I've tested.
+		// For now, this will work.
+		entity_map[armature] = sceneOut.create<SceneArmatureComponent>();
+		auto& component = sceneOut.emplace<SceneArmatureComponent>(entity_map[armature]);		
+		component.set_name(armature->mName.C_Str());
+		aiNode* bones = nullptr, *meshes = nullptr;
+		for (uint i = 0; i < armature->mNumChildren; i++) {
+			auto child = armature->mChildren[i];
+			if (child->mNumMeshes) meshes = child;
+			else if (child->mChildren) bones = child;
 		}
-		return true;
-	});
-	// * 3 * Begin adding onto the scene
-	std::map<aiNode*, entt::entity> entity_mapping;	
-	entity_mapping[scene->mRootNode] = sceneOut.graph->get_root();
-	sceneOut.get<SceneCollectionComponent>(sceneOut.graph->get_root()).set_name("Asset Importer Scene Root");
-	auto create_skinned_transforms = [&](AssetSkinnedMeshComponent & meshAssetComponent) {
-		auto transformEnitity = sceneOut.create<AssetSkinnedMeshTransformComponent>();
-		AssetSkinnedMeshTransformComponent& transformComponent = sceneOut.emplace<AssetSkinnedMeshTransformComponent>(transformEnitity);	
-		SkinnedMeshAsset& meshAsset = sceneOut.get<SkinnedMeshAsset>(meshAssetComponent.mesh);
-		transformComponent.setup(device, meshAsset.boneNames.size(), meshAsset.keyShapeNames.size());
-		return transformEnitity;
-	};
-	auto add_static_mesh = [&](entt::entity parent, aiNode* node, uint nodeMeshIndex) -> SceneStaticMeshComponent& {
-		aiMesh* mesh = scene->mMeshes[node->mMeshes[nodeMeshIndex]];
-		CHECK(is_mesh_static(mesh));
-		auto meshEntity = sceneOut.create<SceneStaticMeshComponent>();
-		SceneStaticMeshComponent& meshComponent = sceneOut.emplace<SceneStaticMeshComponent>(meshEntity);
-		meshComponent.materialAsset = material_mapping[mesh->mMaterialIndex];
-		meshComponent.meshAsset = mesh_mapping[node->mMeshes[nodeMeshIndex]];
-		return meshComponent;
-	};
-	auto add_skinned_mesh = [&](entt::entity parent, aiNode* node, uint nodeMeshIndex) -> SceneSkinnedMeshComponent& {
-		aiMesh* mesh = scene->mMeshes[node->mMeshes[nodeMeshIndex]];
-		CHECK(!is_mesh_static(mesh));
-		auto meshEntity = sceneOut.create<SceneStaticMeshComponent>();
-		SceneSkinnedMeshComponent& meshComponent = sceneOut.emplace<SceneSkinnedMeshComponent>(meshEntity);
-		auto transformEnitity = sceneOut.create<AssetSkinnedMeshTransformComponent>();
-		meshComponent.materialAsset = material_mapping[mesh->mMaterialIndex];
-		meshComponent.meshAsset = mesh_mapping[node->mMeshes[nodeMeshIndex]];
-		return meshComponent;
-	};
-	aiScene_Reduce(scene, [&](aiNode* node) {
-		// Visit Root's children
-		if (node == scene->mRootNode) {
+		CHECK(bones && meshes && "Bad armature hierarchy.");		
+		aiMesh* mesh0 = scene->mMeshes[meshes->mMeshes[0]];
+		// Build Keyshape names
+		// Armatures binds to one mesh
+		// Assimp seperates the mesh with multiple materials
+		// But they still share the same keyshape / animMesh namings
+		std::unordered_map<std::string, uint> keyshapeNames;
+		for (uint j = 0; j < mesh0->mNumAnimMeshes; j++)
+			keyshapeNames[mesh0->mAnimMeshes[j]->mName.C_Str()] = j;
+		// Build bone names		
+		// Also collectes bone local transforms
+		std::unordered_map<std::string, uint> boneNames;
+		std::unordered_map<std::string, matrix> localMatrices;
+		uint boneIndex = 0;
+		aiNode_Reduce(bones, [&](aiNode* node) {			
+			boneNames[node->mName.C_Str()] = boneIndex++;
+			localMatrices[node->mName.C_Str()] = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1)).Transpose();
 			return true;
-		}
-		// Armature -> Armature Component for the collection	
-		if (armature_set.contains(node)) {
-			auto entity = sceneOut.create<SceneArmatureComponent>();
-			SceneArmatureComponent& armature = sceneOut.emplace<SceneArmatureComponent>(entity);
-			armature.localTransform = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1)).Transpose();
-			for (UINT i = 0; i < node->mNumChildren; i++) {
-				// Both Bones are Meshes are at depth=1
-				// Add the meshes
-				if (node->mChildren[i]->mNumMeshes) {
-					aiNode* armMeshes = node->mChildren[i];					
-					for (UINT j = 0; j < armMeshes->mNumMeshes; j++) {
-						auto& meshComponent = add_skinned_mesh(entity, armMeshes, j);
-						if (j == 0) {
-							// It's guaranteed all the child meshes of the armature
-							// share the same set & count of bones / keyshapes						
-							AssetSkinnedMeshComponent& meshAssetComponent = sceneOut.get<AssetSkinnedMeshComponent>(meshComponent.meshAsset);		
-							SkinnedMeshAsset& meshAsset = sceneOut.get<SkinnedMeshAsset>(meshAssetComponent.mesh);
-							armature.setup(device, meshAsset);
-						}						
-						// Let all the meshes share armature's transform set
-						meshComponent.transformAsset = armature.get_transform_asset();
-						sceneOut.graph->add_link(armature.get_entity(), meshComponent.get_entity());
-					}
-					break;
-				}
-			}
-			for (UINT i = 0; i < node->mNumChildren; i++) {
-				// Add the bones
-				// We don't use the scene graph for the bone hierarchy
-				// Those goes to the armature
-				if (bone_set.contains(node->mChildren[i]->mName.C_Str())) {
-					// Must be the root bone
-					aiNode* rootBone = node->mChildren[i];
-					armature.set_root_bone(rootBone->mName.C_Str());
-					// Build the hierarchy
-					auto dfs_bones = [&](auto& dfs_bones_, aiNode* bone) -> void {		
-						armature.set_bone_local_transform(bone->mName.C_Str(), SimpleMath::Matrix(XMMATRIX(&bone->mTransformation.a1)).Transpose());
-						for (uint j = 0; j < bone->mNumChildren; j++) {
-							armature.add_bone_hierarchy(bone->mName.C_Str(), bone->mChildren[j]->mName.C_Str());
-							armature.set_bone_local_transform(bone->mChildren[j]->mName.C_Str(), SimpleMath::Matrix(XMMATRIX(&bone->mChildren[j]->mTransformation.a1)).Transpose());
-							dfs_bones_(dfs_bones_, bone->mChildren[j]);
-						}
-					};
-					dfs_bones(dfs_bones, rootBone);
-				}
-			}
-			entity_mapping[node] = entity;
-			sceneOut.graph->add_link(entity_mapping[node->mParent], entity);
-			armature.update();
-			return false;
-		}
-		// Other grouping -> SceneCollectionComponent to handle collections
-		else {
-			auto entity = sceneOut.create<SceneCollectionComponent>();
-			SceneCollectionComponent& component = sceneOut.emplace<SceneCollectionComponent>(entity);
-			component.localTransform = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1)).Transpose();
-			// Non-armature component meshes
-			for (UINT i = 0; i < node->mNumMeshes; i++) {
-				if (is_mesh_static(scene->mMeshes[node->mMeshes[i]])) {
-					auto& component = add_static_mesh(entity, node, i);
-					sceneOut.graph->add_link(entity, component.get_entity());
-				}
-				else {
-					auto& component = add_skinned_mesh(entity, node, i);
-					AssetSkinnedMeshComponent& meshAssetComponent = sceneOut.get<AssetSkinnedMeshComponent>(component.meshAsset);
-					component.transformAsset = create_skinned_transforms(meshAssetComponent);
-					sceneOut.graph->add_link(entity, component.get_entity());
-				}
-			}
-			entity_mapping[node] = entity;
-			sceneOut.graph->add_link(entity_mapping[node->mParent], entity);
+		});		
+		// Setup the Component
+		component.setup(device, boneNames, keyshapeNames);
+		// Build bone hierarchy		
+		aiNode_Reduce(bones, [&](aiNode* node) {
+			if (node == bones) return true;
+			component.add_bone_hierarchy(node->mParent->mName.C_Str(), node->mName.C_Str());
 			return true;
+		});
+		// Transforms
+		auto& invBindMatrices = boneInvTransforms[armature];
+		component.setup_inv_bind_matrices(invBindMatrices);
+		component.setup_local_matrices(localMatrices);
+		// Finishing it up
+		component.build();		
+		// Adding the meshes
+		for (uint j = 0; j < meshes->mNumMeshes; j++) {
+			aiMesh* mesh = scene->mMeshes[meshes->mMeshes[j]];
+			if (!mesh_map.contains(meshes->mMeshes[j])) {
+				auto meshAsset = sceneOut.create<SkinnedMeshAsset>();
+				mesh_map[meshes->mMeshes[j]] = meshAsset;
+
+				statusOut.numToUpload++;
+				pool.push([&](AssetHandle meshHandle, aiMesh* srcMesh, std::unordered_map<std::string, uint> boneNames_, std::unordered_map<std::string, uint> keyNames_) {
+					LOG(INFO) << "Loading Skinned Mesh " << srcMesh->mName.C_Str() << " For Armature " << armature->mName.C_Str();
+					SkinnedMesh mesh = load_skinned_mesh(srcMesh, boneNames_, keyNames_);
+					std::scoped_lock lock(import_mutex);
+					auto& asset = sceneOut.import_asset(meshHandle, device, &mesh);
+					asset.Upload(ctx);
+					statusOut.numUploaded++;
+				}, meshAsset, mesh, boneNames, keyshapeNames);
+			}
+			auto skinnedMeshEntity = sceneOut.create<SceneSkinnedMeshComponent>();
+			auto& skinnedMesh = sceneOut.emplace<SceneSkinnedMeshComponent>(skinnedMeshEntity);
+			skinnedMesh.set_name(mesh->mName.C_Str());
+			skinnedMesh.meshAsset = mesh_map[meshes->mMeshes[j]];
+			skinnedMesh.materialComponent = material_map[mesh->mMaterialIndex];
+			skinnedMesh.keyshapeTransformComponent = component.get_keyshape_transforms();
+			skinnedMesh.boneTransformComponent = component.get_bone_transforms();
+			sceneOut.graph->add_link(entity_map[armature], skinnedMeshEntity);
 		}
-	});
-	auto dfs_nodes = [&](auto& func, aiNode* node, entt::entity parent) -> void {
-		auto entity = sceneOut.create<SceneCollectionComponent>();
-		SceneCollectionComponent& component = sceneOut.emplace<SceneCollectionComponent>(entity);
-		component.localTransform = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1)).Transpose();
-		component.set_name(node->mName.C_Str());		
-		LOG(INFO) << node->mName.C_Str();
-		sceneOut.graph->add_link(parent, entity);		
-		for (UINT i = 0; i < node->mNumChildren; i++)
-			func(func, node->mChildren[i], entity);
-	};
-	dfs_nodes(dfs_nodes, scene->mRootNode, sceneOut.graph->get_root());
-	sceneOut.graph->update_transform(sceneOut.graph->get_root()); // Calculate global transforms after everything's in place
-	LOG(INFO) << "Scene loaded";
-	statusOut.numToUpload = true;
-	// ~import_mutex(); // implictly called
+		// Initial update post-build
+		component.update();
+		sceneOut.graph->add_link(entity_map[armature->mParent], entity_map[armature]);
+	}
+	// Set local transforms
+	for (auto& [node, entity] : entity_map) {
+		if (node == scene->mRootNode) continue; // mRootNode somehow has incorrect transforms...
+		auto* component = sceneOut.get_base<SceneComponent>(entity);
+		component->localTransform = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1)).Transpose();	
+	}
+	sceneOut.graph->update_transform(sceneOut.graph->get_root());
+	pool.wait_and_join(); // Ensure the pool is destructed before the mutex. Since there could be unfinished jobs.
 }
 
 void SceneImporter::load(UploadContext* ctx, SceneImporterAtomicStatus& statusOut, Scene& sceneOut, path_t sceneFile) {
 	AssimpLogger::try_attach();
 	Assimp::Importer importer;
-	LOG(INFO) << "Loading " << sceneFile;
+	LOG(INFO) << "Reading " << sceneFile;
 	CHECK(std::filesystem::exists(sceneFile) && "File does not exisit!");
 	std::string u8path = (const char*)sceneFile.u8string().c_str();
-	auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace | aiProcess_LimitBoneWeights | aiProcess_PopulateArmatureData);
+	LOG(INFO) << "Importing...";
+	auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace | aiProcess_LimitBoneWeights | aiProcess_PopulateArmatureData);	
 	CHECK(imported && "Failed to import file as an assimp scene!");
+	LOG(INFO) << "Loading...";
 	SceneImporter::load_aiScene(ctx, statusOut, sceneOut, imported, sceneFile.parent_path());
+	LOG(INFO) << "Scene loaded!";
 }

@@ -62,18 +62,15 @@ struct StaticMesh {
 
 struct SkinnedMesh {
 	std::string name = "<unamed>";
-
+	/*Vertex Data*/
 	std::vector<float3> position;
 	std::vector<float3> normal;
 	std::vector<float3> tangent;
 	std::vector<float2> uv;
 	std::vector<uint4> boneIndices;
-	std::vector<float4> boneWeights;
+	std::vector<float4> boneWeights;	
 	
 	std::vector<UINT> indices;
-
-	std::vector<matrix> boneInvBindMatrices;
-	std::vector<std::string> boneNames;	
 
 	std::vector<StaticMesh> keyShapes;
 
@@ -99,4 +96,4 @@ struct SkinnedMesh {
 };
 struct aiMesh;
 StaticMesh load_static_mesh(aiMesh* srcMesh, bool optimize = true);
-SkinnedMesh load_skinned_mesh(aiMesh* srcMesh);
+SkinnedMesh load_skinned_mesh(aiMesh* srcMesh, std::unordered_map<std::string, uint> boneIDMapping = {}, std::unordered_map<std::string, uint> keyshapeIDMapping = {});

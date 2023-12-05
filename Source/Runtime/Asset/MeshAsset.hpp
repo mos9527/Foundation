@@ -116,6 +116,7 @@ public:
 	std::unique_ptr<MeshBuffer<Vertex>> vertexBuffer;
 	
 	StaticMeshAsset(RHI::Device* device, StaticMesh* data);	
+	inline void SetName(const char* name_) { name = name_; }
 	inline const char* GetName() { return name.c_str(); }
 	inline bool IsUploaded() { return isUploaded; }
 	void Upload(UploadContext* ctx);
@@ -160,20 +161,12 @@ public:
 	// DirectX::BoundingBox boundingBox;
 	// DirectX::BoundingSphere boundingSphere;
 	std::unique_ptr<MeshBuffer<Vertex>> vertexBuffer;
-	std::unique_ptr<MeshBuffer<StaticMeshAsset::Vertex>> keyShapeBuffer; // All keyshapes' vertices stored linearly in order...
+	std::unique_ptr<MeshBuffer<StaticMeshAsset::Vertex>> keyShapeBuffer; // All keyshapes' vertices stored linearly in order given by SkinnedMesh's import
 	std::unique_ptr<MeshBuffer<UINT>> keyShapeOffsetBuffer; // indexed by this buffer.
 	std::unique_ptr<MeshLODBuffers> lodBuffers[MAX_LOD_COUNT];	
 
-	// Name-index mappings
-	std::vector<std::string> boneNames;
-	std::unordered_map<std::string, uint> invBoneNames;
-	std::vector<std::string> keyShapeNames;
-	std::unordered_map<std::string, uint> invKeyShapeNames;
-
-	// Bind transforms
-	std::vector<matrix> invBindMatrices;
-
 	SkinnedMeshAsset(RHI::Device* device, SkinnedMesh* data);
+	inline void SetName(const char* name_) { name = name_; }
 	inline const char* GetName() { return name.c_str(); }
 	inline bool IsUploaded() { return isUploaded; }
 	void Upload(UploadContext* ctx);

@@ -174,9 +174,7 @@
     <ClCompile Include="Source\Editor\Renderer\RenderPass\SilhouettePass.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\Skybox.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\Tonemapping.cpp" />
-    <ClCompile Include="Source\Editor\Scene\AssetComponet\SkinnedMeshTransform.cpp" />
     <ClCompile Include="Source\Editor\Scene\SceneComponent\Armature.cpp" />
-    <ClCompile Include="Source\Editor\Widgets\AssetMeshComponentWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\EditorWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\ImGuizmoWidget.cpp" />
     <ClCompile Include="Source\Editor\Widgets\LoadingScreenWidget.cpp" />
@@ -259,8 +257,8 @@
     <ClInclude Include="Source\Editor\Renderer\RenderPass\SilhouettePass.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\Skybox.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\Tonemapping.hpp" />
-    <ClInclude Include="Source\Editor\Scene\AssetComponet\SkinnedMesh.hpp" />
-    <ClInclude Include="Source\Editor\Scene\AssetComponet\SkinnedMeshTransform.hpp" />
+    <ClInclude Include="Source\Editor\Scene\AssetComponet\BoneTransform.hpp" />
+    <ClInclude Include="Source\Editor\Scene\AssetComponet\KeyshapeTransform.hpp" />
     <ClInclude Include="Source\Editor\Scene\SceneComponent\Armature.hpp" />
     <ClInclude Include="Source\Editor\Scene\SceneComponent\SkinnedMesh.hpp" />
     <ClInclude Include="Source\Editor\Shaders\Shaders.hpp" />
@@ -287,7 +285,6 @@
     <ClInclude Include="Source\Runtime\Asset\ResourceContainer.hpp" />
     <ClInclude Include="Source\Editor\Scene\AssetComponet\AssetComponent.hpp" />
     <ClInclude Include="Source\Editor\Scene\AssetComponet\Material.hpp" />
-    <ClInclude Include="Source\Editor\Scene\AssetComponet\StaticMesh.hpp" />
     <ClInclude Include="Source\Editor\Scene\Component.hpp" />
     <ClInclude Include="Source\Editor\Scene\Scene.hpp" />
     <ClInclude Include="Source\Editor\Scene\SceneComponent\SceneComponent.hpp" />

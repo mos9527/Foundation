@@ -20,10 +20,6 @@ class SceneGraph {
 	unordered_DAG<entt::entity,entt::entity> sceneBackwardGraph; // or sceneForwardGraph transposed
 
 	Scene& scene;
-	void add_link(const entt::entity lhs, const entt::entity rhs) {
-		sceneForwardGraph.add_edge(lhs, rhs);
-		sceneBackwardGraph.add_edge(rhs, lhs);
-	}	
 	void update_transform(SceneComponent* parent, SceneComponent* child);
 	void update_enabled(SceneComponent* src, SceneComponent* component);
 	void update_version(SceneComponent* component);
@@ -53,6 +49,10 @@ public:
 		update();
 		return componet;
 	};
+	void add_link(const entt::entity lhs, const entt::entity rhs) {
+		sceneForwardGraph.add_edge(lhs, rhs);
+		sceneBackwardGraph.add_edge(rhs, lhs);
+	}
 	template<IsSceneComponent T> T& emplace_at_root() {
 		return emplace_child_of<T>(root);
 	}

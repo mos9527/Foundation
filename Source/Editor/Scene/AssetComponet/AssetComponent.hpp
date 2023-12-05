@@ -4,8 +4,6 @@
 
 enum class AssetComponentType {	
 	Unknown,
-	StaticMesh,
-	SkinnedMesh,
 	Material,
 	Data
 };

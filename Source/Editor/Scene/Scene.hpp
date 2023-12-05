@@ -8,9 +8,8 @@
 #include "SceneComponent/SkinnedMesh.hpp"
 #include "SceneComponent/Armature.hpp"
 #include "AssetComponet/Material.hpp"
-#include "AssetComponet/StaticMesh.hpp"
-#include "AssetComponet/SkinnedMesh.hpp"
-#include "AssetComponet/SkinnedMeshTransform.hpp"
+#include "AssetComponet/BoneTransform.hpp"
+#include "AssetComponet/KeyshapeTransform.hpp"
 #include "SceneGraph.hpp"
 template<typename T> using Allocator = DefaultAllocator<T>;
 typedef entt::basic_registry<entt::entity, Allocator <entt::entity>> SceneComponetRegistry;
@@ -148,6 +147,8 @@ public:
 				return &get<SceneStaticMeshComponent>(entity);
 			case SceneComponentType::SkinnedMesh:
 				return &get<SceneSkinnedMeshComponent>(entity);
+			case SceneComponentType::Armature:
+				return &get<SceneArmatureComponent>(entity);
 			case SceneComponentType::Light:
 				return &get<SceneLightComponent>(entity);
 			default:
@@ -156,11 +157,7 @@ public:
 		}
 		else if constexpr (std::is_same_v<AssetComponent, T>) {
 			switch (get_type<AssetComponentType>(entity))
-			{
-			case AssetComponentType::StaticMesh:
-				return &get<AssetStaticMeshComponent>(entity);
-			case AssetComponentType::SkinnedMesh:
-				return &get<AssetSkinnedMeshComponent>(entity);
+			{			
 			case AssetComponentType::Material:
 				return &get<AssetMaterialComponent>(entity);
 			default:

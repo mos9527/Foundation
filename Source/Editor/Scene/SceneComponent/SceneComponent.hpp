@@ -1,5 +1,7 @@
 #pragma once
 #include "../Component.hpp"
+#include "../../../Runtime/Asset/Asset.hpp"
+
 enum class SceneComponentType {
 	Unknown,
 	Collection,

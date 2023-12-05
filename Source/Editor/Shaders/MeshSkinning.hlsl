@@ -131,6 +131,7 @@ void main_reduce_mid(uint DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex)
         {
             pMin = min(pMin, groupPositions[i]);
             pMax = max(pMax, groupPositions[i]);
+            // xxx Accomplish this with Wave Intrisics
         }
         GroupMemoryBarrierWithGroupSync();
         // Do minmax reduction globally        
