@@ -18,7 +18,7 @@ AssimpLogger* AssimpLogger::instance;
 void AssimpLogger::try_attach() {
 	if (!instance) {
 		instance = new AssimpLogger;
-		auto serverity = Assimp::Logger::NORMAL;
+		auto serverity = Assimp::Logger::VERBOSE;
 		Assimp::DefaultLogger::create("", serverity);
 		Assimp::DefaultLogger::get()->attachStream(instance, serverity);
 	}
@@ -295,7 +295,7 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 	}
 	// Set local transforms
 	for (auto& [node, entity] : entity_map) {
-		if (node == scene->mRootNode) continue; // mRootNode somehow has incorrect transforms...
+		if (!node || node == scene->mRootNode) continue; // mRootNode somehow has incorrect transforms...
 		auto* component = sceneOut.get_base<SceneComponent>(entity);
 		component->localTransform = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1)).Transpose();	
 	}

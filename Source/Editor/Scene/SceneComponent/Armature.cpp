@@ -75,5 +75,6 @@ void SceneArmatureComponent::update() {
 		matrix bonespaceMatrix = invBindMatrices[child] * globalMatrices[child];
 		tempBoneTransforms[child] = bonespaceMatrix.Transpose();
 	}
-	final.set_bone_matrix(0, tempBoneTransforms.size(), tempBoneTransforms.data());
+	final.set_bone_matrix(0, tempBoneTransforms.size(), tempBoneTransforms.data());	
+	parent.graph->update_all_version(entity);
 }

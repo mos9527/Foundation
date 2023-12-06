@@ -1,7 +1,8 @@
 #include "Widgets.hpp"
 #include "../../../Dependencies/IconsFontAwesome6.h"
-
 using namespace EditorGlobalContext;
+static ImGuizmo::OPERATION gizmoOperation = ImGuizmo::TRANSLATE;
+
 static ImVec2 viewportScreenPos;
 static ImVec2 viewportSize;
 static ImVec2 uv_to_cursor(float2 uv) {
@@ -159,15 +160,25 @@ void Viewport_Light_Gizmo(SceneLightComponent* light) {
 void Viewport_Armature_Gizmo(SceneArmatureComponent* armature) {
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
-
+    static uint active_bone = -1;
     auto dfs = [&](auto& dfs_,uint bone) -> void {
         uint parent = armature->get_parent_bone(bone);
         if (parent != armature->root) {
             matrix mParent = armature->get_global_bone_matrices()[parent] * armature->get_global_transform();
             matrix mChild = armature->get_global_bone_matrices()[bone] * armature->get_global_transform();
+            float3 dir = mChild.Translation() - mParent.Translation();
             ImVec2 u1 = uv_to_pixel(camera->project_to_uv(mParent.Translation()));
             ImVec2 u2 = uv_to_pixel(camera->project_to_uv(mChild.Translation()));
             draw_list->AddLine(u1, u2, 0xFFFF00FF, 5.0f);
+            ImGui::PushID(bone);
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0,0,0,0 });
+            auto p = uv_to_cursor(camera->project_to_uv(mChild.Translation()));
+            ImGui::SetCursorPos(p);
+            if (ImGui::Button(ICON_FA_BONE "###")) {
+                active_bone = bone;
+            }
+            ImGui::PopStyleColor();
+            ImGui::PopID();
         }
         for (uint child : armature->get_child_bones(bone))
             dfs_(dfs_, child);
@@ -175,9 +186,38 @@ void Viewport_Armature_Gizmo(SceneArmatureComponent* armature) {
     for (uint root : armature->get_root_bones()) {
         dfs(dfs, root);
     }
+    if (active_bone != -1 && armature->boneInvMap.size() > active_bone){
+        auto viewMatrix = camera->view;
+        auto projectionMatrix = camera->projection;
+        AffineTransform globalTransform = armature->get_global_bone_matrices()[active_bone] * armature->get_global_transform();
+        ImGuizmo::Manipulate(
+            (float*)&viewMatrix.m,
+            (float*)&projectionMatrix.m,
+            gizmoOperation,
+            ImGuizmo::WORLD,
+            (float*)&globalTransform.m
+        );
+        if (ImGuizmo::IsUsing()){
+            uint parent = armature->get_parent_bone(active_bone);
+            globalTransform = globalTransform * armature->get_global_transform().Invert();
+            if (parent != armature->root)
+                globalTransform = globalTransform * armature->get_global_bone_matrices()[parent].Invert();
+
+            armature->localMatrices[active_bone] = globalTransform;
+            armature->update();
+        }
+    }
 }
 void Viewport_Gizmo(SceneComponent* component) {
+    // TRS
+    if (ImGui::IsKeyPressed(ImGuiKey_T))
+        gizmoOperation = ImGuizmo::TRANSLATE;
+    if (ImGui::IsKeyPressed(ImGuiKey_R))
+        gizmoOperation = ImGuizmo::ROTATE;
+    if (ImGui::IsKeyPressed(ImGuiKey_S))
+        gizmoOperation = ImGuizmo::SCALE;
     // Per-type Gizmos
+    bool disableTransform = false;
     switch (component->get_type())
     {
     case SceneComponentType::Light:
@@ -185,35 +225,31 @@ void Viewport_Gizmo(SceneComponent* component) {
         break;
     case SceneComponentType::Armature:
         Viewport_Armature_Gizmo(static_cast<SceneArmatureComponent*>(component));
+        disableTransform = true;
         break;
     default:
         break;
     }
-    // Transfrom -> ImGuizmo
-    static ImGuizmo::OPERATION gizmoOperation = ImGuizmo::TRANSLATE;
-    if (ImGui::IsKeyPressed(ImGuiKey_T))
-        gizmoOperation = ImGuizmo::TRANSLATE;
-    if (ImGui::IsKeyPressed(ImGuiKey_R))
-        gizmoOperation = ImGuizmo::ROTATE;
-    if (ImGui::IsKeyPressed(ImGuiKey_S))
-        gizmoOperation = ImGuizmo::SCALE;
-    AffineTransform worldMatrix = component->get_global_transform();
-    auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
-    auto viewMatrix = camera->view;
-    auto projectionMatrix = camera->projection;
-    AffineTransform deltaTransform;
-    ImGuizmo::Manipulate(
-        (float*)&viewMatrix.m,
-        (float*)&projectionMatrix.m,
-        gizmoOperation,
-        ImGuizmo::WORLD,
-        (float*)&worldMatrix.m,
-        (float*)&deltaTransform.m
-    );
-    if (ImGuizmo::IsUsing()) {
-        AffineTransform localMatrix = component->get_local_transform();
-        localMatrix = localMatrix * deltaTransform;
-        component->set_local_transform(localMatrix);
+    if (!disableTransform) {
+        // Transfrom -> ImGuizmo    
+        AffineTransform worldMatrix = component->get_global_transform();
+        auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
+        auto viewMatrix = camera->view;
+        auto projectionMatrix = camera->projection;
+        AffineTransform deltaTransform;
+        ImGuizmo::Manipulate(
+            (float*)&viewMatrix.m,
+            (float*)&projectionMatrix.m,
+            gizmoOperation,
+            ImGuizmo::WORLD,
+            (float*)&worldMatrix.m,
+            (float*)&deltaTransform.m
+        );
+        if (ImGuizmo::IsUsing()) {
+            AffineTransform localMatrix = component->get_local_transform();
+            localMatrix = localMatrix * deltaTransform;
+            component->set_local_transform(localMatrix);
+        }
     }
 }
 void OnImGui_ViewportWidget() {
