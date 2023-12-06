@@ -12,6 +12,12 @@ void OnImGui_SceneComponent_TransformWidget(SceneComponent* componet) {
 	transform |= ImGui::IsItemEdited();
 	ImGui::DragFloat4("Quaternion", (float*)&quat, 0.01f);
 	transform |= ImGui::IsItemEdited();
+	Vector3 euler = quat.ToEuler();
+	ImGui::SliderFloat3("Euler", (float*)&euler, -XM_PI, XM_PI);
+	if (ImGui::IsItemEdited()) {
+		quat = Quaternion::CreateFromYawPitchRoll(euler);
+		transform |= true;
+	}
 	if (transform)
 		componet->set_local_transform(AffineTransform(translation, quat, scale));
 }

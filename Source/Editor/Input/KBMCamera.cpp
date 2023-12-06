@@ -62,7 +62,7 @@ void KBMCameraController::Win32_WndProcHandler(HWND hWnd, UINT message, WPARAM w
         switch (rawInput.data.keyboard.VKey) {
         case ' ':
             reset();
-            break;
+            break;        
         }
     };
     switch (rawInput.header.dwType) {

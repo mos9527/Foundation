@@ -11,7 +11,7 @@ Scene& SceneGraph::get_scene() {
 void SceneGraph::update_transform(SceneComponent* parent, SceneComponent* child) {	
 	child->version = get_scene().version;
 	if (parent != child) {
-		child->globalTransform = parent->globalTransform * child->localTransform;
+		child->globalTransform = child->localTransform * parent->globalTransform;
 	}
 	else {
 		child->globalTransform = child->localTransform;

@@ -5,10 +5,11 @@ constexpr float MAX_DISTANCE = 1e3f;
 constexpr float ROTATION_NOTCH = 1e-1f * XM_2PI / 365;
 constexpr float OFFSET_NOTCH = 1e-2f;
 class KBMCameraController {
-	Vector3 origin{ 0,0,0 };
-	Vector3 translation{ 0,0,-1 };
-	Vector3 eulerRotation{ 0,0,0 };
+	Vector3 origin{};
+	Vector3 translation{};
+	Vector3 eulerRotation{};
 public:
+	bool active = true;
 	AffineTransform get_transform() {
 		AffineTransform T = XMMatrixTranslation(translation.x, translation.y, translation.z);
 		T *= AffineTransform::CreateFromYawPitchRoll(eulerRotation);
@@ -18,7 +19,8 @@ public:
 	void update_camera(SceneCameraComponent* camera) {		
 		// Assuming camera's parent has only indentity transform:
 		// Identity transform on camera yields Position{0,0,0} LookDirection{0,0,1} (+z)				
-		camera->set_local_transform(get_transform());
+		if (active)
+			camera->set_local_transform(get_transform());
 	}
 	void reset() {
 		origin = { 0,0,0 };

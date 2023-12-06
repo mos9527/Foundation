@@ -71,7 +71,7 @@ void SceneArmatureComponent::update() {
 		uint child = armatureTopsorted[i];
 		uint parent = invArmature[child];
 
-		globalMatrices[child] = parent == root ? localMatrices[child] : (localMatrices[child] * globalMatrices[parent]); // Local * global for the bones...why? but this works??
+		globalMatrices[child] = parent == root ? localMatrices[child] : (localMatrices[child] * globalMatrices[parent]);
 		matrix bonespaceMatrix = invBindMatrices[child] * globalMatrices[child];
 		tempBoneTransforms[child] = bonespaceMatrix.Transpose();
 	}
