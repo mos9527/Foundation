@@ -3,7 +3,7 @@ TextureAsset::TextureAsset(RHI::Device* device, Bitmap32bpp* bitmap) :
 	/* Most if not all 8bit image formats are in sRGB space. stb_image loads them this way too. The textures should be linear but with sRGB
 	* format we don't have to do the (inverse) gamma correction by ourselves.
 	*/
-	texture(device, RHI::ResourceFormat::R8G8B8A8_UNORM_SRGB, bitmap->width, bitmap->height) {
+	texture(device, bitmap->linear ? RHI::ResourceFormat::R8G8B8A8_UNORM : RHI::ResourceFormat::R8G8B8A8_UNORM_SRGB, bitmap->width, bitmap->height) {
 	texture.loadImageBuffer.WriteSubresource(bitmap->data, bitmap->row_pitch(), bitmap->height, 0, 0);
 }
 TextureAsset::TextureAsset(RHI::Device* device, BitmapRGBA32F* bitmap) : 

@@ -65,10 +65,11 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 	});
 	// * 2 * Create collection per node types
 	// * 2.1 * Image Textures & Materials
-	auto load_texture = [&](AssetHandle handle, const char* filename) {
+	auto load_texture = [&](AssetHandle handle, const char* filename, bool linear = false) {
 		if (scene->GetEmbeddedTexture(filename)) {
 			LOG(INFO) << "Loading embeded texture " << filename;
 			Bitmap32bpp bmp = load_bitmap_32bpp(reinterpret_cast<uint8_t*>(scene->GetEmbeddedTexture(filename)->pcData), scene->GetEmbeddedTexture(filename)->mWidth);
+			bmp.linear = linear;
 			std::scoped_lock lock(import_mutex);
 			auto& asset = sceneOut.import_asset(handle, device, &bmp); // texture is embeded
 			asset.Upload(ctx);
@@ -80,6 +81,7 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 			auto realized_path = find_file(filename, sceneFolder);
 			CHECK(realized_path.has_value());
 			auto bmp = load_bitmap_32bpp(realized_path.value());
+			bmp.linear = linear;
 			std::scoped_lock lock(import_mutex);
 			auto& asset = sceneOut.import_asset(handle, device, &bmp); // texture is a file			
 			asset.Upload(ctx);
@@ -104,23 +106,23 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 		if (numAlphaMap) materialComponet.alphaMapped = true;
 		for (UINT j = 0; j < material->GetTextureCount(aiTextureType_BASE_COLOR) && j < 1; j++) {
 			aiString path; material->GetTexture(aiTextureType_BASE_COLOR, j, &path);
-			pool.push([&, path](AssetHandle handle) { materialComponet.albedoImage = load_texture(handle, path.C_Str()); }, sceneOut.create<TextureAsset>());
+			pool.push([&, path](AssetHandle handle) { materialComponet.albedoImage = load_texture(handle, path.C_Str(),false); }, sceneOut.create<TextureAsset>());
 			statusOut.numToUpload++;
 		}
 		for (UINT j = 0; j < material->GetTextureCount(aiTextureType_NORMALS) && j < 1; j++) {
 			aiString path; material->GetTexture(aiTextureType_NORMALS, j, &path);
-			pool.push([&, path](AssetHandle handle) { materialComponet.normalMapImage = load_texture(handle, path.C_Str()); }, sceneOut.create<TextureAsset>());
+			pool.push([&, path](AssetHandle handle) { materialComponet.normalMapImage = load_texture(handle, path.C_Str(),true /* normal maps are -ususally- linear! */); }, sceneOut.create<TextureAsset>());
 			statusOut.numToUpload++;
 		}
 		for (UINT j = 0; j < material->GetTextureCount(aiTextureType_METALNESS) && j < 1; j++) {
 			aiString path; material->GetTexture(aiTextureType_METALNESS, j, &path);
-			pool.push([&, path](AssetHandle handle) { materialComponet.pbrMapImage = load_texture(handle, path.C_Str()); }, sceneOut.create<TextureAsset>());
+			pool.push([&, path](AssetHandle handle) { materialComponet.pbrMapImage = load_texture(handle, path.C_Str(), true /* https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html */); }, sceneOut.create<TextureAsset>());
 			statusOut.numToUpload++;
 			// one map (RGBA) for metal-roughness PBR pipeline (like glTF)
 		}
 		for (UINT j = 0; j < material->GetTextureCount(aiTextureType_EMISSIVE) && j < 1; j++) {
 			aiString path; material->GetTexture(aiTextureType_EMISSIVE, j, &path);
-			pool.push([&, path](AssetHandle handle) { materialComponet.emissiveMapImage = load_texture(handle, path.C_Str()); }, sceneOut.create<TextureAsset>());
+			pool.push([&, path](AssetHandle handle) { materialComponet.emissiveMapImage = load_texture(handle, path.C_Str(),false); }, sceneOut.create<TextureAsset>());
 			statusOut.numToUpload++;
 		}
 	}

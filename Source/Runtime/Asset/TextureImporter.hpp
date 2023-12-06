@@ -6,6 +6,7 @@ struct Bitmap32bpp {
 	int width;
 	int height;
 	int channels;
+	bool linear = false;
 	const static size_t texel = 4 * 1;
 	const size_t size_in_bytes() const {
 		return width * height * texel;
