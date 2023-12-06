@@ -231,6 +231,9 @@
     <ClCompile Include="Source\Editor\Scene\SceneComponent\Armature.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\Widgets\SceneArmatureComponentWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\pch.hpp">

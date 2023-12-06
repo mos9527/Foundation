@@ -47,6 +47,9 @@ void OnImGui_SceneComponentWidget() {
 				case Light:
 					OnImGui_SceneGraphWidget_SceneLightComponentWidget(static_cast<SceneLightComponent*>(componet));
 					break;
+				case Armature:
+					OnImGui_SceneGraphWidget_SceneArmatureComponentWidget(static_cast<SceneArmatureComponent*>(componet));
+					break;
 				default:
 				case Unknown:
 					break;

@@ -135,12 +135,12 @@ void main_reduce_mid(uint DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex)
         }
         GroupMemoryBarrierWithGroupSync();
         // Do minmax reduction globally        
-        g_ReductionBuffer.InterlockedMin(4 * (g_MeshIndex + 0), asuint_signed(pMin.x));
-        g_ReductionBuffer.InterlockedMin(4 * (g_MeshIndex + 1), asuint_signed(pMin.y));
-        g_ReductionBuffer.InterlockedMin(4 * (g_MeshIndex + 2), asuint_signed(pMin.z));
-        g_ReductionBuffer.InterlockedMax(4 * (g_MeshIndex + 3), asuint_signed(pMax.x));
-        g_ReductionBuffer.InterlockedMax(4 * (g_MeshIndex + 4), asuint_signed(pMax.y));
-        g_ReductionBuffer.InterlockedMax(4 * (g_MeshIndex + 5), asuint_signed(pMax.z));
+        g_ReductionBuffer.InterlockedMin(4 * (g_MeshIndex * 6 + 0), asuint_signed(pMin.x));
+        g_ReductionBuffer.InterlockedMin(4 * (g_MeshIndex * 6 + 1), asuint_signed(pMin.y));
+        g_ReductionBuffer.InterlockedMin(4 * (g_MeshIndex * 6 + 2), asuint_signed(pMin.z));
+        g_ReductionBuffer.InterlockedMax(4 * (g_MeshIndex * 6 + 3), asuint_signed(pMax.x));
+        g_ReductionBuffer.InterlockedMax(4 * (g_MeshIndex * 6 + 4), asuint_signed(pMax.y));
+        g_ReductionBuffer.InterlockedMax(4 * (g_MeshIndex * 6 + 5), asuint_signed(pMax.z));
     }
 }
 
@@ -153,12 +153,12 @@ void main_reduce_late(uint DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex)
         SceneMeshBuffer MB;
         SkinningConstants constants = g_SkinningConstants[g_MeshIndex];
         float3 pMin, pMax;
-        pMin.x = asfloat_signed(g_ReductionBuffer.Load(4 * (g_MeshIndex + 0)));
-        pMin.y = asfloat_signed(g_ReductionBuffer.Load(4 * (g_MeshIndex + 1)));
-        pMin.z = asfloat_signed(g_ReductionBuffer.Load(4 * (g_MeshIndex + 2)));
-        pMax.x = asfloat_signed(g_ReductionBuffer.Load(4 * (g_MeshIndex + 3)));
-        pMax.y = asfloat_signed(g_ReductionBuffer.Load(4 * (g_MeshIndex + 4)));
-        pMax.z = asfloat_signed(g_ReductionBuffer.Load(4 * (g_MeshIndex + 5)));
+        pMin.x = asfloat_signed(g_ReductionBuffer.Load(4 * (g_MeshIndex * 6 + 0)));
+        pMin.y = asfloat_signed(g_ReductionBuffer.Load(4 * (g_MeshIndex * 6 + 1)));
+        pMin.z = asfloat_signed(g_ReductionBuffer.Load(4 * (g_MeshIndex * 6 + 2)));
+        pMax.x = asfloat_signed(g_ReductionBuffer.Load(4 * (g_MeshIndex * 6 + 3)));
+        pMax.y = asfloat_signed(g_ReductionBuffer.Load(4 * (g_MeshIndex * 6 + 4)));
+        pMax.z = asfloat_signed(g_ReductionBuffer.Load(4 * (g_MeshIndex * 6 + 5)));
         MB.VB = constants.VB;
         MB.IB = constants.IB;
         MB.boundingBox.Center = (pMin + pMax) / 2;

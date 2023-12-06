@@ -32,6 +32,11 @@ struct SceneArmatureComponent : public SceneComponent {
 	std::vector<std::string> keyShapeInvMap;
 
 	std::vector<matrix> localMatrices;
+	inline auto const& get_global_bone_matrices() { return globalMatrices; }
+	
+	inline auto const& get_child_bones(uint boneIndex) { return armature.get_graph()[boneIndex]; }
+	inline const uint get_parent_bone(uint boneIndex) { return invArmature[boneIndex]; }
+	inline auto const& get_root_bones() { return armature.get_graph()[root]; }
 
 	inline uint index_bone_name(std::string const& name) { return boneMap[name]; }
 	inline const entt::entity get_bone_transforms() { return boneTransforms; }

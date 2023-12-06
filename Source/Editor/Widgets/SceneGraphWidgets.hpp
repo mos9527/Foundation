@@ -4,4 +4,5 @@ void OnImGui_SceneGraphWidget_SceneStaticMeshComponentWidget(SceneStaticMeshComp
 void OnImGui_SceneGraphWidget_SceneSkinnedMeshComponentWidget(SceneSkinnedMeshComponent*);
 void OnImGui_SceneGraphWidget_SceneLightComponentWidget(SceneLightComponent*);
 void OnImGui_SceneGraphWidget_SceneCameraComponentWidget(SceneCameraComponent*);
+void OnImGui_SceneGraphWidget_SceneArmatureComponentWidget(SceneArmatureComponent* armature);
 

@@ -156,13 +156,35 @@ void Viewport_Light_Gizmo(SceneLightComponent* light) {
         break;
     }    
 }
+void Viewport_Armature_Gizmo(SceneArmatureComponent* armature) {
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
 
+    auto dfs = [&](auto& dfs_,uint bone) -> void {
+        uint parent = armature->get_parent_bone(bone);
+        if (parent != armature->root) {
+            matrix mParent = armature->get_global_bone_matrices()[parent] * armature->get_global_transform();
+            matrix mChild = armature->get_global_bone_matrices()[bone] * armature->get_global_transform();
+            ImVec2 u1 = uv_to_pixel(camera->project_to_uv(mParent.Translation()));
+            ImVec2 u2 = uv_to_pixel(camera->project_to_uv(mChild.Translation()));
+            draw_list->AddLine(u1, u2, 0xFFFF00FF, 5.0f);
+        }
+        for (uint child : armature->get_child_bones(bone))
+            dfs_(dfs_, child);
+    };
+    for (uint root : armature->get_root_bones()) {
+        dfs(dfs, root);
+    }
+}
 void Viewport_Gizmo(SceneComponent* component) {
     // Per-type Gizmos
     switch (component->get_type())
     {
     case SceneComponentType::Light:
         Viewport_Light_Gizmo(static_cast<SceneLightComponent*>(component));
+        break;
+    case SceneComponentType::Armature:
+        Viewport_Armature_Gizmo(static_cast<SceneArmatureComponent*>(component));
         break;
     default:
         break;
