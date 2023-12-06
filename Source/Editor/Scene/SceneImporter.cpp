@@ -217,13 +217,14 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 		entity_map[armature] = sceneOut.create<SceneArmatureComponent>();
 		auto& component = sceneOut.emplace<SceneArmatureComponent>(entity_map[armature]);		
 		component.set_name(armature->mName.C_Str());
-		aiNode* bones = nullptr, *meshes = nullptr;
+		aiNode *meshes = nullptr;
+		std::vector<aiNode*> boneRoots;
 		for (uint i = 0; i < armature->mNumChildren; i++) {
 			auto child = armature->mChildren[i];
 			if (child->mNumMeshes) meshes = child;
-			else if (child->mChildren) bones = child;
+			else boneRoots.push_back(child);
 		}
-		CHECK(bones && meshes && "Bad armature hierarchy.");		
+		CHECK(boneRoots.size() && meshes && "Bad armature hierarchy.");
 		aiMesh* mesh0 = scene->mMeshes[meshes->mMeshes[0]];
 		// Build Keyshape names
 		// Armatures binds to one mesh
@@ -237,19 +238,23 @@ void SceneImporter::load_aiScene(UploadContext* ctx, SceneImporterAtomicStatus& 
 		std::unordered_map<std::string, uint> boneNames;
 		std::unordered_map<std::string, matrix> localMatrices;
 		uint boneIndex = 0;
-		aiNode_Reduce(bones, [&](aiNode* node) {			
-			boneNames[node->mName.C_Str()] = boneIndex++;
-			localMatrices[node->mName.C_Str()] = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1)).Transpose();
-			return true;
-		});		
+		for (auto bones : boneRoots) {
+			aiNode_Reduce(bones, [&](aiNode* node) {			
+				boneNames[node->mName.C_Str()] = boneIndex++;
+				localMatrices[node->mName.C_Str()] = SimpleMath::Matrix(XMMATRIX(&node->mTransformation.a1)).Transpose();
+				return true;
+			});
+		}
 		// Setup the Component
 		component.setup(device, boneNames, keyshapeNames);
-		// Build bone hierarchy		
-		aiNode_Reduce(bones, [&](aiNode* node) {
-			if (node == bones) return true;
-			component.add_bone_hierarchy(node->mParent->mName.C_Str(), node->mName.C_Str());
-			return true;
-		});
+		// Build bone hierarchy
+		for (auto bones : boneRoots) {
+			aiNode_Reduce(bones, [&](aiNode* node) {
+				if (node == bones) component.add_root_bone(node->mName.C_Str());
+				else component.add_bone_hierarchy(node->mParent->mName.C_Str(), node->mName.C_Str());
+				return true;
+			});
+		}
 		// Transforms
 		auto& invBindMatrices = boneInvTransforms[armature];
 		component.setup_inv_bind_matrices(invBindMatrices);

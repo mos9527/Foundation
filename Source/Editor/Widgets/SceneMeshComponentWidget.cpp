@@ -25,6 +25,7 @@ void OnImGui_SceneGraphWidget_SceneSkinnedMeshComponentWidget(SceneSkinnedMeshCo
 	ImGui::SeparatorText("Skinned Mesh");
 	ImGui::Text("Name: %s", mesh->get_name());	
 	SkinnedMeshAsset& asset = mesh->parent.get<SkinnedMeshAsset>(mesh->meshAsset);
+	bool edited = false;
 	if (ImGui::BeginTabBar("##SceneMesh")) {
 		if (ImGui::BeginTabItem("Mesh")) {			
 			ImGui::Text("Asset Name: %s", asset.GetName());
@@ -39,10 +40,13 @@ void OnImGui_SceneGraphWidget_SceneSkinnedMeshComponentWidget(SceneSkinnedMeshCo
 			AssetKeyshapeTransformComponent& keyTransforms = scene.scene->get<AssetKeyshapeTransformComponent>(mesh->keyshapeTransformComponent);
 			for (auto& [name,id] : keyTransforms.get_keyshape_mapping()) {
 				ImGui::SliderFloat(name.c_str(), keyTransforms.data()->DataAt(id),0,1);
+				edited |= ImGui::IsItemEdited();
 			}
 			ImGui::EndTabItem();
 		}
 		ImGui::EndTabBar();
 	}
+	if (edited)
+		scene.scene->graph->update_all_version(scene.scene->graph->parent_of(mesh->get_entity()));
 	mesh->update();
 }

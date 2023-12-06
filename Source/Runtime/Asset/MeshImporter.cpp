@@ -180,11 +180,12 @@ SkinnedMesh load_skinned_mesh(aiMesh* srcMesh, std::unordered_map<std::string, u
 				else assert(false && "OOB");
 			};
 			auto it = boneIDMapping.find(bone->mName.C_Str());
-			if (it != boneIDMapping.end()) {
-				write_xyzw_by_index(boneWeightCount[weight.mVertexId], it->second, mesh.boneIndices[weight.mVertexId]);
-				write_xyzw_by_index(boneWeightCount[weight.mVertexId], weight.mWeight, mesh.boneWeights[weight.mVertexId]);
-				boneWeightCount[weight.mVertexId]++;			
-			}
+			if (it == boneIDMapping.end()) {
+				LOG(FATAL) << "Cannot find bone " << bone->mName.C_Str();
+			}			
+			write_xyzw_by_index(boneWeightCount[weight.mVertexId], it->second, mesh.boneIndices[weight.mVertexId]);
+			write_xyzw_by_index(boneWeightCount[weight.mVertexId], weight.mWeight, mesh.boneWeights[weight.mVertexId]);
+			boneWeightCount[weight.mVertexId]++;						
 		}
 	}
 	mesh.keyShapes.resize(srcMesh->mNumAnimMeshes);

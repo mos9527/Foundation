@@ -13,11 +13,11 @@ bool SceneView::update(RHI::CommandList* ctx,Scene& scene, SceneCameraComponent&
 	std::mutex rwMutex;
 	auto update_mesh = [&]<typename T>(T& mesh) {		
 		{
-			std::scoped_lock lock(rwMutex);
+			std::scoped_lock lock(rwMutex);			
 			if (viewedComponentVersions[mesh.get_entity()] == mesh.get_version())
 				return;
-		}		 
-		uint localIndex = scene.index<T>(mesh.get_entity()); // the index in Skinned or Static mesh storage		
+		}
+		uint localIndex = scene.index<T>(mesh.get_entity()); // the index in Skinned or Static mesh storage			
 		// HACK: Since the static/skinned storages are seperate
 		// we use the static's size as the offset for the skinned instances
 		// so we can express them in one value.

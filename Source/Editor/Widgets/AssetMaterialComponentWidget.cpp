@@ -49,7 +49,7 @@ void OnImGui_AssetWidget_AssetMaterialComponent(AssetMaterialComponent* material
 			ImGui::EndTabItem();
 		}
 		if (edited) 
-			scene.scene->graph->update_version(scene.scene->graph->get_root());
+			scene.scene->graph->update_all_version(scene.scene->graph->get_root());
 		ImGui::EndTabBar();
 	}
 }

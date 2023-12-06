@@ -56,15 +56,13 @@ public:
 	template<IsSceneComponent T> T& emplace_at_root() {
 		return emplace_child_of<T>(root);
 	}
-	// Updates a selected component, and therefore scene.
-	// [associative]
-	// When true, updates associative properties for this subtree of component
-	// These properites are:
-	// * Transformation
-	// Finally, their `version` are also updated.
+	// Updates a component and all its children's transform	
 	void update_transform(const entt::entity entity);
+	// Updates a component and all its children's Enable status
 	void update_enabled(const entt::entity entity);
-	void update_version(const entt::entity entity);
+	// Updates a component and all its children's version
+	void update_all_version(const entt::entity entity);
+	// Updates a component itself's version
 	void update(const entt::entity entity);
 	// UNTESETED. perhaps testing will never be done on these things...
 	//template<typename T> void remove_component(const entt::entity entity) {

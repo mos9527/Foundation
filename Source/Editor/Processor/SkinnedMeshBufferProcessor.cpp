@@ -47,7 +47,7 @@ SkinnedMeshBufferProcessor::SkinnedMeshBufferProcessor(Device* device) : device(
 };
 void SkinnedMeshBufferProcessor::RegisterOrUpdate(RHI::CommandList* ctx, SceneSkinnedMeshComponent* mesh) {	
 	size_t index = mesh->parent.index<SceneSkinnedMeshComponent>(mesh->get_entity());	
-	SkinnedMeshAsset& asset = mesh->parent.get<SkinnedMeshAsset>(mesh->meshAsset);
+	SkinnedMeshAsset& asset = mesh->parent.get<SkinnedMeshAsset>(mesh->meshAsset);	
 	AssetBoneTransformComponent* boneTransform = mesh->parent.try_get<AssetBoneTransformComponent>(mesh->boneTransformComponent);
 	AssetKeyshapeTransformComponent* keyshapeTransform = mesh->parent.try_get<AssetKeyshapeTransformComponent>(mesh->keyshapeTransformComponent);
 	// Make a dedicated vertex buffer for this mesh

@@ -22,7 +22,7 @@ public:
 	}
 	void reset() {
 		origin = { 0,0,0 };
-		translation = { 0,0,-10 };
+		translation = { 0,1,-5 };
 		eulerRotation = { XM_PIDIV4,0,0 };
 	}
 	void Win32RawInput_Setup(HWND hwnd);

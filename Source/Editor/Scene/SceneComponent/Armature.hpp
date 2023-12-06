@@ -8,6 +8,7 @@
 
 struct SceneArmatureComponent : public SceneComponent {	
 	static const SceneComponentType type = SceneComponentType::Armature;
+	static const uint root = -1; // Not actuallly in the bone list!
 	SceneArmatureComponent(Scene& scene, entt::entity ent) : SceneComponent(scene, ent, type) {};
 
 	
@@ -19,6 +20,7 @@ struct SceneArmatureComponent : public SceneComponent {
 	};
 
 	void setup(RHI::Device* device, std::unordered_map<std::string, uint> const& boneMap = {}, std::unordered_map<std::string, uint> const& keyShapeMap = {});
+	void add_root_bone(const char* child);
 	void add_bone_hierarchy(const char* parent, const char* child);
 	void build();
 	void update();
@@ -36,7 +38,6 @@ struct SceneArmatureComponent : public SceneComponent {
 	inline const entt::entity get_keyshape_transforms() { return keyshapeTransforms; }
 private:
 	bool built = false;
-	uint rootBone = -1;
 	
 	unordered_DAG<uint, uint> armature;
 	std::vector<uint> invArmature;

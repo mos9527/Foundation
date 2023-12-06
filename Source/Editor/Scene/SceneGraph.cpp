@@ -34,7 +34,7 @@ void SceneGraph::update_enabled(SceneComponent* src, SceneComponent* component) 
 	component->enabled = src->enabled;
 }
 void SceneGraph::update_version(SceneComponent* component) {
-	component->version = scene.version;	
+	component->version = scene.version;		
 }
 void SceneGraph::update_enabled(const entt::entity entity) {
 	update();
@@ -47,12 +47,13 @@ void SceneGraph::update_enabled(const entt::entity entity) {
 void SceneGraph::update() {
 	scene.version++;
 }
-void SceneGraph::update_version(const entt::entity entity) {
+void SceneGraph::update_all_version(const entt::entity entity) {
 	update();
 	SceneComponent* thisComponent = get_base(entity);
+	update_version(thisComponent);
 	reduce(entity, [&](entt::entity current, entt::entity parent) -> void {
-		SceneComponent* childComponent = get_base(current);
-		update_version(thisComponent);
+		SceneComponent* childComponent = get_base(current);		
+		update_version(childComponent);
 	});
 }
 void SceneGraph::update(const entt::entity entity) {

@@ -29,6 +29,12 @@ void SceneArmatureComponent::setup(RHI::Device* device, std::unordered_map<std::
 	globalMatrices.resize(boneMap.size());
 	tempBoneTransforms.resize(boneMap.size());
 };
+void SceneArmatureComponent::add_root_bone(const char* child) {
+	CHECK(!built && "Hierarchy Already built");
+	CHECK(boneMap.contains(child));
+	LOG(INFO) << "Root bone " << child;
+	armature.add_edge(root, boneMap[child]);
+};
 void SceneArmatureComponent::add_bone_hierarchy(const char* parent, const char* child) {
 	CHECK(!built && "Hierarchy Already built");
 	LOG(INFO) << parent << "->" << child;
@@ -49,7 +55,8 @@ void SceneArmatureComponent::build() {
 		// Use topsort to update global transforms.
 		// With rooted graphs this essentially is a BFS
 		armatureTopsorted = armature.topological_sort();
-		CHECK(armatureTopsorted.size() && "Bad armature...how?");		
+		CHECK(armatureTopsorted[0] == root && "Armature is not rooted. Add top-level bones to .root's hierarchy!");
+		CHECK(armatureTopsorted.size() && "Bad armature...how?");
 		built = true;
 	}
 	else {
@@ -60,15 +67,13 @@ void SceneArmatureComponent::build() {
 void SceneArmatureComponent::update() {
 	CHECK(built && "Armature not built. Did you call build()?");	
 	auto& final = parent.get<AssetBoneTransformComponent>(boneTransforms);
-	uint root = armatureTopsorted[0];
-	globalMatrices[root] = localMatrices[root];
-	tempBoneTransforms[root] = (invBindMatrices[root] * globalMatrices[root]).Transpose();
-	for (uint i = 1; i < armatureTopsorted.size(); i++) {
+	for (uint i = 1; i < armatureTopsorted.size(); i++) { // 0 is the root, which does not exisit in armatures matrices
 		uint child = armatureTopsorted[i];
 		uint parent = invArmature[child];
 
-		globalMatrices[child] = globalMatrices[parent] * localMatrices[child];
-		tempBoneTransforms[child] = (invBindMatrices[child] * globalMatrices[child]).Transpose();
+		globalMatrices[child] = parent == root ? localMatrices[child] : (localMatrices[child] * globalMatrices[parent]); // Local * global for the bones...why? but this works??
+		matrix bonespaceMatrix = invBindMatrices[child] * globalMatrices[child];
+		tempBoneTransforms[child] = bonespaceMatrix.Transpose();
 	}
 	final.set_bone_matrix(0, tempBoneTransforms.size(), tempBoneTransforms.data());
 }

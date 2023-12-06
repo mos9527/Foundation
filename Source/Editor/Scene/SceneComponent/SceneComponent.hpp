@@ -31,7 +31,7 @@ public:
 	SceneComponent(Scene& parent, entt::entity ent, SceneComponentType type) : Component(parent, ent, ComponentType::Scene), type(type) {};
 	
 	void update();
-
+	
 	void set_name(std::string name_) {name = name_;}
 	void set_local_transform(AffineTransform T);
 	void set_enabled(bool enabled);
