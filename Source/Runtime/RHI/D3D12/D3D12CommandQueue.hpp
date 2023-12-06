@@ -10,11 +10,14 @@ namespace RHI {
 		std::unique_ptr<Fence> m_Fence;		
 		std::atomic<size_t> m_FenceValue = 1;
 	public:
+		TracyD3D12Ctx TRACY_CTX;
+
 		CommandQueue(Device* device, CommandListType type = CommandListType::Direct);
-		~CommandQueue() = default;
+		~CommandQueue();
 		SyncFence Execute(CommandList*);
 		SyncFence Execute(std::vector<CommandList*>);
 		inline operator ID3D12CommandQueue* () { return m_CommandQueue.Get(); }
+		inline ID3D12CommandQueue* GetNativeQueue () { return m_CommandQueue.Get(); }
 		inline void Signal(Fence* fence, size_t value) { m_CommandQueue->Signal(*fence, value); }
 		inline void Signal(SyncFence sfence) { Signal(sfence.fence, sfence.value); }
 		inline void Wait(Fence* fence, size_t value) { m_CommandQueue->Wait(*fence, value); }

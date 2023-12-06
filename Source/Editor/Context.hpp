@@ -74,8 +74,8 @@ struct SceneContext {
 
 struct RenderContext {
     DeferredRenderer* renderer;
-    std::mutex renderMutex;
-    std::mutex loadMutex;
+    TracyLockable(std::mutex, renderMutex);
+    TracyLockable(std::mutex, loadMutex);    
 };
     
 struct EditorContext {

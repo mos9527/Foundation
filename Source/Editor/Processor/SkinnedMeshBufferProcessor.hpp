@@ -10,7 +10,7 @@ public:
 	SkinnedMeshBufferProcessor(RHI::Device* device);
 
 	void RegisterOrUpdate(RHI::CommandList* ctx, SceneSkinnedMeshComponent* mesh);	
-private:		
+private:
 	std::unique_ptr<BufferContainer<SkinningConstants>> SkinConstants;
 	std::unique_ptr<RHI::Shader> SkinCS, ReduceCS;
 	std::unique_ptr<RHI::RootSignature> RS;

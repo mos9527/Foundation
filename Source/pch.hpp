@@ -38,6 +38,10 @@
 
 #include "Common/Defines.hpp"
 
+#ifdef TRACY_ENABLE
+#include "../Dependencies/tracy/public/tracy/Tracy.hpp"
+#endif
+
 #ifdef RHI_USE_D3D12
 #include "Runtime/RHI/D3D12/D3D12Pch.h"
 #endif
@@ -54,5 +58,6 @@
 #include "../../Dependencies/imgui/backends/imgui_impl_dx12.h"
 #include "../../Dependencies/imgui/backends/imgui_impl_win32.h"
 #endif
+
 
 #include "Common/Helpers.hpp"

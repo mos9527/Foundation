@@ -1,6 +1,7 @@
 #include "RenderGraph.hpp"
 
 void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
+	ZoneScopedN("RenderGraphCache Update");
 	auto& rg_registry = graph.registry;
 	std::unordered_map<entt::entity, bool> resource_dirty;
 	// imported resources are left as is since we'd expect them to be usable at all times within the registry	

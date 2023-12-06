@@ -18,6 +18,10 @@
 
 #define D3D_MIN_FEATURE_LEVEL D3D_FEATURE_LEVEL_12_1
 
+#ifdef TRACY_ENABLE
+#include "../../../../Dependencies/tracy/public/tracy/TracyD3D12.hpp"
+#endif
+
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 using namespace SimpleMath;

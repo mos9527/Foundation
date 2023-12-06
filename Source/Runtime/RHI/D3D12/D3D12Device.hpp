@@ -28,7 +28,7 @@ namespace RHI {
 		inline auto GetNativeDevice() { return m_Device.Get(); } // TODO : Reduce the usage of GetNative*()
 		
 		void BeginCapture(const wchar_t* name);
-		void EndCapture();
+		void EndCapture();		
 
 		CommandQueue* GetCommandQueue(CommandListType type) {			
 			if (type == CommandListType::Direct)return m_DirectQueue.get();
@@ -88,8 +88,7 @@ namespace RHI {
 		auto* GetZeroBuffer() { return m_ZeroBuffer.get(); }
 		void Wait();		
 		inline auto GetAllocator() { return m_Allocator.Get(); }
-		inline operator ID3D12Device* () { return m_Device.Get(); }
-
+		inline operator ID3D12Device* () { return m_Device.Get(); }		
 	private:
 		ComPtr<IDXGIAdapter1> m_Adapter;
 		ComPtr<ID3D12Device5> m_Device;

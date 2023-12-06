@@ -150,7 +150,7 @@ namespace RHI {
         LOG(INFO) << "D3D12 Device created";
         LogDeviceInformation(m_Device.Get());
         // Command queues
-        m_DirectQueue = std::make_unique<CommandQueue>(this, CommandListType::Direct);
+        m_DirectQueue = std::make_unique<CommandQueue>(this, CommandListType::Direct);        
         m_DirectQueue->SetName(L"Direct Command Queue");
         m_CopyQueue = std::make_unique<CommandQueue>(this, CommandListType::Copy);
         m_CopyQueue->SetName(L"Copy Command Queue");

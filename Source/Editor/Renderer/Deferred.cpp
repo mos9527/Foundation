@@ -19,6 +19,7 @@ using namespace RHI;
 */
 void DeferredRenderer::Render(SceneView* sceneView)
 {
+	ZoneScoped;
 	UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
 	RenderGraph rg(cache);	
 	/* Resources */

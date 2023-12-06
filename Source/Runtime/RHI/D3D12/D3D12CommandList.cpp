@@ -56,6 +56,12 @@ namespace RHI {
 	void CommandList::QueueAliasingBarrier(Resource* before, Resource* after) {
 		m_Barriers.QueueAliasing(before, after);
 	}
+	void CommandList::BeginEvent(const wchar_t* name){
+		PIXBeginEvent(m_CommandList.Get(), 0, name);
+	};
+	void CommandList::EndEvent() {		
+		PIXEndEvent(m_CommandList.Get());
+	};
 	CommandQueue* CommandList::GetCommandQueue() { return m_Device->GetCommandQueue(m_Type); }
 	SyncFence CommandList::Execute() {
 		CHECK(!IsOpen());

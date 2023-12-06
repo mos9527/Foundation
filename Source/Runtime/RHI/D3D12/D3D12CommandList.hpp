@@ -135,6 +135,9 @@ namespace RHI {
 				m_CommandList->ResourceBarrier(m_Barriers.BarrierBuffer.size(), m_Barriers.BarrierBuffer.data());
 		};
 
+		void BeginEvent(const wchar_t* name);
+		void EndEvent();
+
 		void CopyBufferRegion(Resource* src, Resource* dst, size_t srcOffsetInBytes, size_t dstOffsetInBytes, size_t sizeInBytes);
 		void ZeroBufferRegion(Resource* dst, size_t dstOffsetInBytes, size_t sizeInBytes);
 		void CopySubresource(Resource* src, uint srcSubresource, Resource* dst, uint dstSubresource);

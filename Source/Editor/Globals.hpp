@@ -2,7 +2,7 @@
 #include "Context.hpp"
 namespace EditorGlobalContext {
     extern HWND window;
-
+   
     extern RHI::Device* device;
     extern RHI::Swapchain* swapchain;
     extern DefaultTaskThreadPool taskpool;

@@ -1,7 +1,7 @@
 #include "Context.hpp"
 namespace EditorGlobalContext {
     HWND window;
-
+    
     RHI::Device* device;
     RHI::Swapchain* swapchain;
     DefaultTaskThreadPool taskpool;
@@ -23,7 +23,7 @@ namespace EditorGlobalContext {
         editor.meshSelection = new ::MeshSelectionProcessor(device);
         for (uint i = 0; i < ARRAYSIZE(scene.views); i++) {
             scene.views[i] = new ::SceneView(device);
-        }        
+        }
         LOG(INFO) << "Setup OK!";
     }
 

@@ -4,19 +4,21 @@
 #include "../Processor/LTCTableProcessor.hpp"
 
 bool SceneView::update(RHI::CommandList* ctx,Scene& scene, SceneCameraComponent& camera, FrameData&& _frameData, ShaderData&& _shaderData) {
+	ZoneScopedN("SceneView Update");
 	frameData = _frameData;
 	shaderData = _shaderData;
 	auto& static_meshes = scene.storage<SceneStaticMeshComponent>();
 	auto& skinned_meshes = scene.storage<SceneSkinnedMeshComponent>();
 	auto& materials = scene.storage<AssetMaterialComponent>();
 	auto& lights = scene.storage<SceneLightComponent>();	
-	std::mutex rwMutex;
+	auto validate_version = [&]<typename T>(T & mesh) -> bool {
+		if (viewedComponentVersions.contains(mesh.get_entity()) && viewedComponentVersions.at(mesh.get_entity()) == mesh.get_version())
+			return false;
+		return true;
+	};
+	auto update_version = [&]<typename T>(T & component) { viewedComponentVersions[component.get_entity()] = component.get_version(); };	
 	auto update_mesh = [&]<typename T>(T& mesh) {		
-		{
-			// std::scoped_lock lock(rwMutex);			
-			if (viewedComponentVersions[mesh.get_entity()] == mesh.get_version())
-				return;
-		}
+		if (!validate_version(mesh)) return;		
 		uint localIndex = scene.index<T>(mesh.get_entity()); // the index in Skinned or Static mesh storage			
 		// HACK: Since the static/skinned storages are seperate
 		// we use the static's size as the offset for the skinned instances
@@ -61,7 +63,6 @@ bool SceneView::update(RHI::CommandList* ctx,Scene& scene, SceneCameraComponent&
 			sceneMesh.instanceFlags |= INSTANCE_FLAG_TRANSPARENCY;
 		// Write the update
 		{
-			// std::scoped_lock lock(rwMutex);
 			// Buffer Indices
 			if constexpr (std::is_same_v<T, SceneStaticMeshComponent>) {
 				sceneMesh.instanceMeshType = INSTANCE_MESH_TYPE_STATIC;
@@ -73,20 +74,16 @@ bool SceneView::update(RHI::CommandList* ctx,Scene& scene, SceneCameraComponent&
 			}
 			*meshMaterialsBuffer.DataAt(sceneMesh.instanceMaterialIndex) = material;
 			*meshInstancesBuffer.DataAt(sceneMesh.instanceMeshGlobalIndex) = sceneMesh;
-			viewedComponentVersions[mesh.get_entity()] = mesh.get_version();
 		}
 	};
+	
 	// Static Meshes
-	std::for_each(std::execution::seq, static_meshes.begin(), static_meshes.end(), update_mesh);
+	std::for_each(std::execution::par_unseq, static_meshes.begin(), static_meshes.end(), update_mesh);
 	// Skinned Meshes
 	std::for_each(std::execution::seq, skinned_meshes.begin(), skinned_meshes.end(), update_mesh);
 	// Lights
-	std::for_each(std::execution::seq, lights.begin(), lights.end(), [&](SceneLightComponent& light) {
-		{
-			// std::scoped_lock lock(rwMutex);
-			if (viewedComponentVersions[light.get_entity()] == light.get_version())
-				return;
-		}
+	std::for_each(std::execution::par_unseq, lights.begin(), lights.end(), [&](SceneLightComponent& light) {
+		if (!validate_version(light)) return;
 		SceneLight sceneLight{};
 
 		Vector3 translation = light.get_global_translation();
@@ -117,11 +114,13 @@ bool SceneView::update(RHI::CommandList* ctx,Scene& scene, SceneCameraComponent&
 		sceneLight.area_line_radius = light.area_line_radius;
 		// Write the update
 		{
-			// std::scoped_lock lock(rwMutex);
-			viewedComponentVersions[light.get_entity()] = light.get_version();
 			*lightBuffer.DataAt(lights.index(light.get_entity())) = sceneLight;
 		}
 	});
+	// Update versions
+	std::for_each(std::execution::seq, static_meshes.begin(), static_meshes.end(), update_version);
+	std::for_each(std::execution::seq, skinned_meshes.begin(), skinned_meshes.end(), update_version);
+	std::for_each(std::execution::seq, lights.begin(), lights.end(), update_version);
 	// These are updated every frameData...
 	// LTC Table
 	globalBuffer.Data()->ltcLutHeapIndex = shaderData.ltcTable->ltcSRV->descriptor.get_heap_handle();

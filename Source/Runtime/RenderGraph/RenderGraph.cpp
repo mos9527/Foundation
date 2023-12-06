@@ -3,6 +3,7 @@
 
 using namespace RHI;
 void RenderGraph::build_graph() {	
+	ZoneScopedN("RenderGraph Building");
 	layers.clear();
 	for (entt::entity current : passes) {
 		auto& pass = registry.get<RenderGraphPass>(current);
@@ -57,11 +58,12 @@ void RenderGraph::build_graph() {
 	for (auto& [node, depth] : depths) layers[depth].push_back(node);
 }
 void RenderGraph::execute(RHI::CommandList* cmd) {
+	ZoneScopedN("RenderGraph Execution");
 	RgContext ctx{ .graph = this,.cache = &cache,.cmd = cmd };
 	Device* device = cmd->GetParent();
 	cache.update(*this, device);
 	build_graph();
-	PIXBeginEvent(cmd->GetNativeCommandList(), 0, L"RenderGraph Execution");
+	cmd->BeginEvent(L"RenderGraph Execution");
 	for (auto& layer : layers) {
 		// setup resource barriers
 		RgResources reads, writes, readwrites;
@@ -120,17 +122,17 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 		}
 		cmd->FlushBarriers();
 		// all resources barriers & states are ready at this point		
-		PIXBeginEvent(cmd->GetNativeCommandList(), 0, L"RenderGraph Layer");
+		cmd->BeginEvent(L"RenderGraph Layer");
 		for (auto entity : layer) {
 			RenderGraphPass& pass = registry.get<RenderGraphPass>(entity);
-			PIXBeginEvent(cmd->GetNativeCommandList(), 0, pass.name);
+			cmd->BeginEvent(pass.name);
 			// invoke!
 			if (pass.has_execute()) {
 				(pass.executes)(ctx);
 			}
-			PIXEndEvent(cmd->GetNativeCommandList());
-		}		
-		PIXEndEvent(cmd->GetNativeCommandList());
+			cmd->EndEvent();
+		}
+		cmd->EndEvent();
 	}
-	PIXEndEvent(cmd->GetNativeCommandList());
+	cmd->EndEvent();
 }

@@ -16,11 +16,13 @@ int main(int argc, char* argv[]) {
         MSG msg;
         if (PeekMessage(&msg, NULL, 0U, 0U, PM_REMOVE))
         {
+            ZoneScopedN("Win32 Event");
             // Translate and dispatch the message
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
         else {
+            ZoneScopedN("Editor Run");
             editor.Run();
         }
     }

@@ -63,7 +63,7 @@ RenderGraphPass& IBLPrefilterPass::insert_specular_prefilter(RenderGraph& rg, IB
 			auto* r_cubemap = ctx.graph->get<Texture>(handles.cubemap);			
 			auto native = ctx.cmd->GetNativeCommandList();
 			std::wstring event = std::format(L"Specular IS Filter Cube{} Mip{} UAV{}", cubeIndex, mipIndex, cubeIndex * mipLevels + mipIndex);
-			PIXBeginEvent(native, 0, (LPWSTR)event.c_str());
+			ctx.cmd->BeginEvent(event.c_str());			
 			native->SetPipelineState(*PrefilterPSO);
 			native->SetComputeRootSignature(*RS);
 			uint destDimension = r_cubemap->GetDesc().width >> mipIndex;
@@ -75,7 +75,7 @@ RenderGraphPass& IBLPrefilterPass::insert_specular_prefilter(RenderGraph& rg, IB
 			native->SetComputeRoot32BitConstant(0, IBL_FILTER_FLAG_RADIANCE, 5);
 			native->SetComputeRoot32BitConstant(0, mipIndex, 6);
 			native->Dispatch(DivRoundUp(destDimension, RENDERER_FULLSCREEN_THREADS), DivRoundUp(destDimension, RENDERER_FULLSCREEN_THREADS), 1);
-			PIXEndEvent(native);
+			ctx.cmd->EndEvent();
 		});
 }
 // Diffuse / irradiance sampling

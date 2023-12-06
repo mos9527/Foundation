@@ -46,6 +46,7 @@ SkinnedMeshBufferProcessor::SkinnedMeshBufferProcessor(Device* device) : device(
 	TransformedVertBuffers.resize(MAX_INSTANCE_COUNT);
 };
 void SkinnedMeshBufferProcessor::RegisterOrUpdate(RHI::CommandList* ctx, SceneSkinnedMeshComponent* mesh) {	
+	ZoneScopedN("Skinning CPU Dispatch");
 	size_t index = mesh->parent.index<SceneSkinnedMeshComponent>(mesh->get_entity());	
 	SkinnedMeshAsset& asset = mesh->parent.get<SkinnedMeshAsset>(mesh->meshAsset);	
 	AssetBoneTransformComponent* boneTransform = mesh->parent.try_get<AssetBoneTransformComponent>(mesh->boneTransformComponent);

@@ -78,12 +78,11 @@ void Load_Scene(path_t path) {
         scene.scene->clean<TextureAsset>();
     }, path);
 }
-
 void EditorWindow::Setup() {
     editor.state.transition(EditorEvents::OnSetup);
     Setup_ImGui();
     Setup_Scene();
-    g_cameraController.Win32RawInput_Setup(m_hWnd);
+    g_cameraController.Win32RawInput_Setup(m_hWnd);    
 }
 void Draw_InvalidState() {}
 void Draw_RunningState() {
@@ -150,32 +149,41 @@ void Run_UpdateTitle() {
     SetWindowText(window, title.c_str());
 }
 void Run_Update() {
+    ZoneScopedN("Editor Update");
     ImGuizmo::BeginFrame();
     Run_ImGui();
 }
 void EditorWindow::Run() {
+    ZoneScopedN("Run Frame");
     std::scoped_lock lock(render.renderMutex);
     editor.state.transition(EditorEvents::OnRunFrame);
-    ImGui_ImplDX12_NewFrame();
-    ImGui_ImplWin32_NewFrame();
-    ImGui::NewFrame();
+    {
+        ZoneScopedN("ImGui NewFrame");
+        ImGui_ImplDX12_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
+    }
     // Editor updates
     Run_Update();
     // Running frames
     ImGui::Render();
     uint bbIndex = swapchain->GetCurrentBackbufferIndex();
-    CommandList* cmd = device->GetDefaultCommandList<CommandListType::Direct>();
-    cmd->ResetAllocator(bbIndex);
-    cmd->Begin(bbIndex);
+    CommandList* gfx = device->GetDefaultCommandList<CommandListType::Direct>();    
+    TracyD3D12NewFrame(gfx->GetCommandQueue()->TRACY_CTX);
+
+    gfx->ResetAllocator(bbIndex);
+    gfx->Begin(bbIndex);
+
     static ID3D12DescriptorHeap* const heaps[] = { device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap() };
-    cmd->GetNativeCommandList()->SetDescriptorHeaps(1, heaps);    
+    gfx->GetNativeCommandList()->SetDescriptorHeaps(1, heaps);
+
     if (editor.state == EditorStates::Running) {
         SceneView* sceneView = scene.views[bbIndex];
         auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
         CHECK(camera && "No camera");
         g_cameraController.update_camera(camera);
         sceneView->update(
-            cmd,
+            gfx,
             *scene.scene,
             *camera,
             SceneView::FrameData{
@@ -201,24 +209,27 @@ void EditorWindow::Run() {
                     .edgeThreshold = editor.silhouetteParam.edgeThreshold,
                     .edgeColor = editor.silhouetteParam.edgeColor
                 }
-        });        
+        });  
         render.renderer->Render(sceneView);
     }
 
-    cmd->QueueTransitionBarrier(swapchain->GetBackbuffer(bbIndex), ResourceState::RenderTarget);
-    cmd->FlushBarriers();
-    cmd->GetNativeCommandList()->OMSetRenderTargets(1, &swapchain->GetBackbufferRTV(bbIndex).descriptor.get_cpu_handle(), FALSE, nullptr);
-    PIXBeginEvent(cmd->GetNativeCommandList(), 0, L"ImGui");
-    ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd->GetNativeCommandList());
-    PIXEndEvent(cmd->GetNativeCommandList());
+    gfx->QueueTransitionBarrier(swapchain->GetBackbuffer(bbIndex), ResourceState::RenderTarget);
+    gfx->FlushBarriers();
+    gfx->GetNativeCommandList()->OMSetRenderTargets(1, &swapchain->GetBackbufferRTV(bbIndex).descriptor.get_cpu_handle(), FALSE, nullptr);
+    gfx->BeginEvent(L"ImGui");
+    ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), gfx->GetNativeCommandList());
+    gfx->EndEvent();    
 
-    cmd->QueueTransitionBarrier(swapchain->GetBackbuffer(bbIndex), ResourceState::Present);
-    cmd->FlushBarriers();
-    cmd->Close();
-    cmd->Execute();
-    swapchain->PresentAndMoveToNextFrame(viewport.vsync);
-
-    // Run_UpdateTitle();
+    gfx->QueueTransitionBarrier(swapchain->GetBackbuffer(bbIndex), ResourceState::Present);
+    gfx->FlushBarriers();
+    gfx->Close();
+    gfx->Execute();
+    {
+        ZoneScopedN("Waiting for GPU");
+        swapchain->PresentAndMoveToNextFrame(viewport.vsync);
+    }
+    FrameMark;
+    Run_UpdateTitle();
 }
 
 void EditorWindow::Destroy() {
