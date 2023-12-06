@@ -13,7 +13,7 @@ bool SceneView::update(RHI::CommandList* ctx,Scene& scene, SceneCameraComponent&
 	std::mutex rwMutex;
 	auto update_mesh = [&]<typename T>(T& mesh) {		
 		{
-			std::scoped_lock lock(rwMutex);			
+			// std::scoped_lock lock(rwMutex);			
 			if (viewedComponentVersions[mesh.get_entity()] == mesh.get_version())
 				return;
 		}
@@ -61,7 +61,7 @@ bool SceneView::update(RHI::CommandList* ctx,Scene& scene, SceneCameraComponent&
 			sceneMesh.instanceFlags |= INSTANCE_FLAG_TRANSPARENCY;
 		// Write the update
 		{
-			std::scoped_lock lock(rwMutex);
+			// std::scoped_lock lock(rwMutex);
 			// Buffer Indices
 			if constexpr (std::is_same_v<T, SceneStaticMeshComponent>) {
 				sceneMesh.instanceMeshType = INSTANCE_MESH_TYPE_STATIC;
@@ -77,13 +77,13 @@ bool SceneView::update(RHI::CommandList* ctx,Scene& scene, SceneCameraComponent&
 		}
 	};
 	// Static Meshes
-	std::for_each(std::execution::par, static_meshes.begin(), static_meshes.end(), update_mesh);
+	std::for_each(std::execution::seq, static_meshes.begin(), static_meshes.end(), update_mesh);
 	// Skinned Meshes
-	std::for_each(std::execution::par, skinned_meshes.begin(), skinned_meshes.end(), update_mesh);	
+	std::for_each(std::execution::seq, skinned_meshes.begin(), skinned_meshes.end(), update_mesh);
 	// Lights
-	std::for_each(std::execution::par, lights.begin(), lights.end(), [&](SceneLightComponent& light) {
+	std::for_each(std::execution::seq, lights.begin(), lights.end(), [&](SceneLightComponent& light) {
 		{
-			std::scoped_lock lock(rwMutex);
+			// std::scoped_lock lock(rwMutex);
 			if (viewedComponentVersions[light.get_entity()] == light.get_version())
 				return;
 		}
@@ -117,7 +117,7 @@ bool SceneView::update(RHI::CommandList* ctx,Scene& scene, SceneCameraComponent&
 		sceneLight.area_line_radius = light.area_line_radius;
 		// Write the update
 		{
-			std::scoped_lock lock(rwMutex);
+			// std::scoped_lock lock(rwMutex);
 			viewedComponentVersions[light.get_entity()] = light.get_version();
 			*lightBuffer.DataAt(lights.index(light.get_entity())) = sceneLight;
 		}

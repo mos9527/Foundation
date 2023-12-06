@@ -567,5 +567,7 @@
     <Text Include="Source\Editor\Shaders\SilhouettePass.hlsl" />
     <Text Include="Source\Editor\Shaders\SkyboxPass.hlsl" />
     <Text Include="Source\Editor\Shaders\MeshSkinning.hlsl" />
+    <Text Include="Source\Editor\Shaders\ShadingNPR.hlsli" />
+    <Text Include="Source\Editor\Shaders\ShadingPBR.hlsli" />
   </ItemGroup>
 </Project>

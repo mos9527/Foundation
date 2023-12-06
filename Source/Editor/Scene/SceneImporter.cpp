@@ -18,7 +18,7 @@ AssimpLogger* AssimpLogger::instance;
 void AssimpLogger::try_attach() {
 	if (!instance) {
 		instance = new AssimpLogger;
-		auto serverity = Assimp::Logger::VERBOSE;
+		auto serverity = Assimp::Logger::NORMAL;
 		Assimp::DefaultLogger::create("", serverity);
 		Assimp::DefaultLogger::get()->attachStream(instance, serverity);
 	}

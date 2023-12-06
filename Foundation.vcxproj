@@ -337,6 +337,12 @@
     </Text>
     <None Include="Source\Editor\Shaders\LTC.hlsli" />
     <None Include="Source\Editor\Shaders\Math.hlsli" />
+    <Text Include="Source\Editor\Shaders\ShadingNPR.hlsli">
+      <FileType>Document</FileType>
+    </Text>
+    <Text Include="Source\Editor\Shaders\ShadingPBR.hlsli">
+      <FileType>Document</FileType>
+    </Text>
     <None Include="vcpkg.json" />
   </ItemGroup>
   <ItemGroup>

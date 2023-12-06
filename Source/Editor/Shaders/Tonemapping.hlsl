@@ -152,5 +152,5 @@ void main_tonemap(uint2 DTid : SV_DispatchThreadID)
     rgb.r = Tonemap_ACES(rgb.r);
     rgb.g = Tonemap_ACES(rgb.g);
     rgb.b = Tonemap_ACES(rgb.b);
-    frameBuffer[DTid] = float4(pow(rgb, 1/2.2), 1.0f); // to sRGB space
+    frameBuffer[DTid] = float4(pow(rgb, 1/2.2), 1.0f); // to sRGB space    
 }
