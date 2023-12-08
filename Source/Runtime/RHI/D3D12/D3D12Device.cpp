@@ -123,7 +123,7 @@ namespace RHI {
     }
     Device::Device(DeviceDesc cfg) {
 #ifdef _DEBUG
-        PIXLoadLatestWinPixGpuCapturerLibrary();
+        // PIXLoadLatestWinPixGpuCapturerLibrary();
 #endif 
 #ifdef _DEBUG    
         ComPtr<ID3D12Debug> debugInterface;

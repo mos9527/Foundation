@@ -105,12 +105,12 @@ void main_reduce_early(uint DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex
 {
     if (DTid == 0)
     {        
-        g_ReductionBuffer.Store(4 * (g_MeshIndex + 0), asuint_signed(+1e10));
-        g_ReductionBuffer.Store(4 * (g_MeshIndex + 1), asuint_signed(+1e10));
-        g_ReductionBuffer.Store(4 * (g_MeshIndex + 2), asuint_signed(+1e10));
-        g_ReductionBuffer.Store(4 * (g_MeshIndex + 3), asuint_signed(-1e10));
-        g_ReductionBuffer.Store(4 * (g_MeshIndex + 4), asuint_signed(-1e10));
-        g_ReductionBuffer.Store(4 * (g_MeshIndex + 5), asuint_signed(-1e10));
+        g_ReductionBuffer.Store(4 * (g_MeshIndex * 6 + 0), asuint_signed(+1e10));
+        g_ReductionBuffer.Store(4 * (g_MeshIndex * 6 + 1), asuint_signed(+1e10));
+        g_ReductionBuffer.Store(4 * (g_MeshIndex * 6 + 2), asuint_signed(+1e10));
+        g_ReductionBuffer.Store(4 * (g_MeshIndex * 6 + 3), asuint_signed(-1e10));
+        g_ReductionBuffer.Store(4 * (g_MeshIndex * 6 + 4), asuint_signed(-1e10));
+        g_ReductionBuffer.Store(4 * (g_MeshIndex * 6 + 5), asuint_signed(-1e10));
     }
 }
 
