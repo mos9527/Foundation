@@ -230,24 +230,25 @@ void Viewport_Gizmo(SceneComponent* component) {
     default:
         break;
     }
+    if (component->get_entity() == scene.scene->graph->get_root())
+        disableTransform = true;
     if (!disableTransform) {
         // Transfrom -> ImGuizmo    
         AffineTransform worldMatrix = component->get_global_transform();
         auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
         auto viewMatrix = camera->view;
-        auto projectionMatrix = camera->projection;
-        AffineTransform deltaTransform;
+        auto projectionMatrix = camera->projection;        
         ImGuizmo::Manipulate(
             (float*)&viewMatrix.m,
             (float*)&projectionMatrix.m,
             gizmoOperation,
-            ImGuizmo::WORLD,
-            (float*)&worldMatrix.m,
-            (float*)&deltaTransform.m
+            ImGuizmo::LOCAL,
+            (float*)&worldMatrix.m
         );
         if (ImGuizmo::IsUsing()) {
-            AffineTransform localMatrix = component->get_local_transform();
-            localMatrix = localMatrix * deltaTransform;
+            auto parent = scene.scene->graph->parent_of(component->get_entity());
+            auto parentTransform = scene.scene->get_base<SceneComponent>(parent)->get_global_transform();
+            AffineTransform localMatrix = worldMatrix * parentTransform.Invert();
             component->set_local_transform(localMatrix);
         }
     }

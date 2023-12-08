@@ -32,69 +32,6 @@ struct Plane // wraps XMFLOAT4 { .xyz = Normal, .w = Offset }
     float3 Normal;
     float Offset;
 };
-struct BoundingSphere // wraps BoundingSphere { float3, float }
-{
-    float3 Center;
-    float Radius;
-    BoundingSphere Transform(matrix m)
-    {
-        BoundingSphere s;
-        float4 Center4 = mul(float4(Center, 1.0f), m);
-        s.Center = Center4.xyz / Center4.w;
-        float3 scales = transformToScalePow2(m);
-        s.Radius = Radius * sqrt(max(scales.x, max(scales.y, scales.z)));
-        return s;
-    }
-    bool Contains(BoundingSphere Other)
-    {
-        float3 d = Center - Other.Center;
-        float dist2 = dot(d, d);
-        float radiusDiff = Radius - Other.Radius;
-        return radiusDiff > 0 && dist2 <= radiusDiff * radiusDiff;
-    }
-    bool Intersects(BoundingSphere Other)
-    {
-        float3 d = Center - Other.Center;
-        float dist2 = dot(d, d);
-        float radiusSum = Radius + Other.Radius;
-        return dist2 <= radiusSum * radiusSum;
-    }
-    int Intersect(Plane Other)
-    {
-        float dist = dot(Center, Other.Normal) + Other.Offset;
-        if (dist > Radius)
-            return INTERSECT_PLANE_POSITIVE_HS;
-        if (dist < -Radius)
-            return INTERSECT_PLANE_NEGATIVE_HS;
-        return INTERSECT_PLANE_INTERSECTION;
-    }
-    int Intersect(Plane left, Plane right, Plane bottom, Plane top, Plane near, Plane far)
-    {
-        int i0 = Intersect(left);
-        int i1 = Intersect(right);
-        int i2 = Intersect(bottom);;
-        int i3 = Intersect(top);
-        int i4 = Intersect(near);
-        int i5 = Intersect(far);
-        int outside = i0 == INTERSECT_PLANE_NEGATIVE_HS;
-        outside += i1 == INTERSECT_PLANE_NEGATIVE_HS;
-        outside += i2 == INTERSECT_PLANE_NEGATIVE_HS;
-        outside += i3 == INTERSECT_PLANE_NEGATIVE_HS;
-        outside += i4 == INTERSECT_PLANE_NEGATIVE_HS;
-        outside += i5 == INTERSECT_PLANE_NEGATIVE_HS;
-        int inside = i0 == INTERSECT_PLANE_POSITIVE_HS;
-        inside += i1 == INTERSECT_PLANE_POSITIVE_HS;
-        inside += i2 == INTERSECT_PLANE_POSITIVE_HS;
-        inside += i3 == INTERSECT_PLANE_POSITIVE_HS;
-        inside += i4 == INTERSECT_PLANE_POSITIVE_HS;
-        inside += i5 == INTERSECT_PLANE_POSITIVE_HS;
-        if (outside != 0)
-            return INTERSECT_VOLUMES_DISJOINT;
-        if (inside == 6)
-            return INTERSECT_VOLUMES_CONTAIN;
-        return INTERSECT_VOLUMES_INTERSECT;        
-    }
-};
 static const float3 BoxCornerOffset[] = {
     { -1.0f, -1.0f,  1.0f },
     {  1.0f, -1.0f,  1.0f },
@@ -176,6 +113,97 @@ struct BoundingBox // wraps BoundingBox { float3, float3 }
         if (dist > radius)
             return INTERSECT_PLANE_POSITIVE_HS;
         if (dist < -radius)
+            return INTERSECT_PLANE_NEGATIVE_HS;
+        return INTERSECT_PLANE_INTERSECTION;
+    }
+    int Intersect(Plane left, Plane right, Plane bottom, Plane top, Plane near, Plane far)
+    {
+        int i0 = Intersect(left);
+        int i1 = Intersect(right);
+        int i2 = Intersect(bottom);;
+        int i3 = Intersect(top);
+        int i4 = Intersect(near);
+        int i5 = Intersect(far);
+        int outside = i0 == INTERSECT_PLANE_NEGATIVE_HS;
+        outside += i1 == INTERSECT_PLANE_NEGATIVE_HS;
+        outside += i2 == INTERSECT_PLANE_NEGATIVE_HS;
+        outside += i3 == INTERSECT_PLANE_NEGATIVE_HS;
+        outside += i4 == INTERSECT_PLANE_NEGATIVE_HS;
+        outside += i5 == INTERSECT_PLANE_NEGATIVE_HS;
+        int inside = i0 == INTERSECT_PLANE_POSITIVE_HS;
+        inside += i1 == INTERSECT_PLANE_POSITIVE_HS;
+        inside += i2 == INTERSECT_PLANE_POSITIVE_HS;
+        inside += i3 == INTERSECT_PLANE_POSITIVE_HS;
+        inside += i4 == INTERSECT_PLANE_POSITIVE_HS;
+        inside += i5 == INTERSECT_PLANE_POSITIVE_HS;
+        if (outside != 0)
+            return INTERSECT_VOLUMES_DISJOINT;
+        if (inside == 6)
+            return INTERSECT_VOLUMES_CONTAIN;
+        return INTERSECT_VOLUMES_INTERSECT;
+    }
+};
+struct BoundingSphere // wraps BoundingSphere { float3, float }
+{
+    float3 Center;
+    float Radius;
+    // https://jcgt.org/published/0002/02/05/
+    // https://github.com/zeux/niagara/blob/master/src/shaders/math.h#L2
+    bool ProjectRect(float nearZ, float p00, float p11, out float2 ndcXYMin, out float2 ndcXYMax)
+    {
+        if ((Center.z + Radius) < nearZ)
+            return false;
+        float3 cr = Center * Radius;
+        float czr2 = Center.z * Center.z - Radius * Radius;
+
+        float vx = sqrt(Center.x * Center.x + czr2);
+        float minx = (vx * Center.x - cr.z) / (vx * Center.z + cr.x);
+        float maxx = (vx * Center.x + cr.z) / (vx * Center.z - cr.x);
+
+        float vy = sqrt(Center.y * Center.y + czr2);
+        float miny = (vy * Center.y - cr.z) / (vy * Center.z + cr.y);
+        float maxy = (vy * Center.y + cr.z) / (vy * Center.z - cr.y);
+
+        ndcXYMin = float2(minx * p00, miny * p11);
+        ndcXYMax = float2(maxx * p00, maxy * p11);
+        return true;
+    }
+    BoundingSphere FromBox(BoundingBox box)
+    {
+        BoundingSphere sphere;
+        sphere.Center = box.Center;
+        sphere.Radius = length(box.Extents);
+        return sphere;
+    }
+    BoundingSphere Transform(matrix m)
+    {
+        BoundingSphere s;
+        float4 Center4 = mul(float4(Center, 1.0f), m);
+        s.Center = Center4.xyz / Center4.w;
+        float3 scales = transformToScalePow2(m);
+        s.Radius = Radius * sqrt(max(scales.x, max(scales.y, scales.z)));
+        return s;
+    }
+    bool Contains(BoundingSphere Other)
+    {
+        float3 d = Center - Other.Center;
+        float dist2 = dot(d, d);
+        float radiusDiff = Radius - Other.Radius;
+        return radiusDiff > 0 && dist2 <= radiusDiff * radiusDiff;
+    }
+    bool Intersects(BoundingSphere Other)
+    {
+        float3 d = Center - Other.Center;
+        float dist2 = dot(d, d);
+        float radiusSum = Radius + Other.Radius;
+        return dist2 <= radiusSum * radiusSum;
+    }
+    int Intersect(Plane Other)
+    {
+        float dist = dot(Center, Other.Normal) + Other.Offset;
+        if (dist > Radius)
+            return INTERSECT_PLANE_POSITIVE_HS;
+        if (dist < -Radius)
             return INTERSECT_PLANE_NEGATIVE_HS;
         return INTERSECT_PLANE_INTERSECTION;
     }
