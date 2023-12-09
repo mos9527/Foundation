@@ -1,15 +1,14 @@
 #pragma once
 #include "../Renderer.hpp"
 #include "FFXSpd.hpp"
-class HierarchalDepthPass {	
+struct HierarchalDepthPass : public IRenderPass {	
 	std::unique_ptr<RHI::Shader> CS;
-	std::unique_ptr<RHI::RootSignature> RS;
 	std::unique_ptr<RHI::PipelineState> PSO;
 
-	std::unique_ptr<RHI::Buffer> depthSampleConstants;
+	std::unique_ptr<BufferContainer<DepthSampleToTextureConstant>> constants;
 	FFXSPDPass spdPass;
 public:
-	struct HierarchalDepthPassHandles {
+	struct Handles {
 		RgHandle& depth; 
 		RgHandle& depthSRV;
 
@@ -17,6 +16,8 @@ public:
 		std::vector<RgHandle> hizUAVs;
 	};
 	
-	HierarchalDepthPass(RHI::Device* device);
-	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, HierarchalDepthPassHandles&& handles);
+	HierarchalDepthPass(RHI::Device* device) : IRenderPass(device), spdPass(device) {};
+	virtual void setup();
+
+	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles);
 };

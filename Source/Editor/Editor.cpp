@@ -7,7 +7,7 @@
 #include "Processor/SkinnedMeshBufferProcessor.hpp"
 
 using namespace RHI;
-using namespace EditorGlobalContext;
+using namespace EditorGlobals;
 #define IMGUI_DEFAULT_FONT "Resources/Fonts/DroidSansFallback.ttf"
 #define IMGUI_GLYPH_FONT   "Resources/Fonts/fa-solid-900.ttf"
 /* ImGui Extern */
@@ -176,6 +176,8 @@ void EditorWindow::Run() {
 
     static ID3D12DescriptorHeap* const heaps[] = { device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap() };
     gfx->GetNativeCommandList()->SetDescriptorHeaps(1, heaps);
+    gfx->GetNativeCommandList()->SetGraphicsRootSignature(*g_RHI.rootSig);
+    gfx->GetNativeCommandList()->SetComputeRootSignature(*g_RHI.rootSig);
 
     if (editor.state == EditorStates::Running) {
         SceneView* sceneView = scene.views[bbIndex];

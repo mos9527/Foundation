@@ -40,6 +40,19 @@ struct IndirectCommand
     D3D12_INDEX_BUFFER_VIEW IndexBuffer; // 4
     D3D12_DRAW_INDEXED_ARGUMENTS DrawIndexedArguments; // 5
 };
+struct IndirectCullCmdList { // ! align for CB
+    uint cmdIndex;
+    uint instanceMask;
+    uint2 _pad;
+};
+struct InstanceCullConstant { // ! align for CB
+    IndirectCullCmdList cmds[INSTANCE_CULL_MAX_CMDS];
+    uint meshBufferIndices[4]; // padded
+    
+    uint hizIndex;
+    uint hizMips;
+    uint2 pad_;
+};
 struct SceneCamera // ! align for CB
 {
     float4 position; // 16
@@ -80,51 +93,61 @@ struct SceneIBLProbe {
     float specularIntensity;
     float occlusionStrength;
     float _pad2;
-
+};
+struct SkyboxConstants {
+    uint enabled;
+    uint radianceHeapIndex;
     float skyboxLod;
-    float skyboxIntensity;
-    float2 _pad3;
+    float skyboxIntensity;    
+};
+struct SilhouetteConstants {
+    float edgeThreshold;
+    float3 edgeColor;
+
+    uint frameBufferUAV;
+    uint depthSRV;
+    uint2 _pad;
+};
+struct ShadingConstants { // ! align for CB
+    SceneIBLProbe iblProbe;
+
+    uint ltcLutHeapIndex;
+    uint3 _pad;
+
+    uint tangentFrameSrv;
+    uint gradientSrv;
+    uint materialSrv;
+    uint depthSrv;
+
+    uint framebufferUav;
+    uint3 _pad;
+};
+struct TonemappingConstants { // ! align for CB
+    uint hisotrgramUav;
+    uint framebufferUav;
+    uint avgLumUav;
+    uint _pad;
 };
 struct SceneGlobals // ! align for CB
 {
     SceneCamera camera;
-    SceneCamera cameraPrev; // previous frame
+    SceneCamera cameraPrev; // Two frame camera constant
 
-    SceneIBLProbe probe;   
+    uint meshNumInstances;
+    uint meshHeapIndex;
 
-    float edgeThreshold;
-    float3 edgeColor;
+    uint lightNumInstances;
+    uint lightHeapIndex;
 
-    uint ltcLutHeapIndex;
-    uint3 _pad0;
-
-    uint numMeshInstances; // Opaque + Transparent
-    uint numLights;
-    uint _pad1;
-
-    uint frameFlags;
-    uint frameIndex;
+    uint2 viewportDimension;
     uint2 frameDimension;
 
     uint sceneVersion;
     uint backBufferIndex;
     uint2 _pad2;
 
-    float frameTimePrev;
+    float frameTime;
     float3 _pad3;
-
-    bool debug_view_albedo() {
-        return frameFlags & FRAME_FLAG_DEBUG_VIEW_ALBEDO;
-    }
-    bool debug_view_lod() {
-        return frameFlags & FRAME_FLAG_DEBUG_VIEW_LOD;
-    }
-    bool frustum_cull() {
-        return frameFlags & FRAME_FLAG_FRUSTUM_CULL;
-    }
-    bool occlusion_cull() {
-        return frameFlags & FRAME_FLAG_OCCLUSION_CULL;
-    }
 };
 struct SceneMeshLod
 {
@@ -153,9 +176,8 @@ struct SceneMeshBuffer {
 struct SceneMeshInstanceData
 {
     uint version;
-    uint instanceMeshLocalIndex; // VB/IB Buffer Index in Skinned/Static buffers
-    uint instanceMeshGlobalIndex; // Mesh global index (static -> index in static storage. skinned -> static storage size + index in skinned storage)
-    uint instanceMeshType;  // Skinned / Static
+    uint instanceMeshLocalIndex; // VB/IB Buffer Index in Mesh buffers
+    uint instanceMeshType;  // INSTANCE_MESH_TYPE_...
     uint instanceMaterialIndex; // Material index in Material buffers
     uint instanceFlags; 
 

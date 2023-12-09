@@ -1,18 +1,26 @@
 #pragma once
 #include "../Common/FSM.hpp"
-#include "../Common/Task.hpp"
 #include "../Runtime/RHI/RHI.hpp"
-#include "../Runtime/Asset/AssetRegistry.hpp"
-#include "Scene/Scene.hpp"
-#include "Scene/SceneView.hpp"
-#include "Scene/SceneGraph.hpp"
-#include "Scene/SceneImporter.hpp"
-#include "Renderer/Deferred.hpp"
-#include "Processor/IBLProbeProcessor.hpp"
-#include "Processor/LTCTableProcessor.hpp"
-#include "Processor/MeshSelectionProcessor.hpp"
-#include "Processor/StaticMeshBufferProcessor.hpp"
-#include "Processor/SkinnedMeshBufferProcessor.hpp"
+/* RHI */
+struct RHIContext {
+    RHI::Device* device;
+    RHI::RootSignature* rootSig;
+    RHI::Swapchain* swapchain;
+
+    static const UINT ROOTSIG_CB_EDITOR_GLOBAL = 0;
+    static const UINT ROOTSIG_CB_SHADER_GLOBAL = 1;
+    static const UINT ROOTSIG_SAMPLER_TEXTURE = 2;
+    static const UINT ROOTSIG_SAMPLER_DEPTH_COMP = 3;
+    static const UINT ROOTSIG_SAMPLER_DEPTH_REDUCE = 4;
+
+    ~RHIContext() {
+        delete device;
+        delete rootSig;
+        delete swapchain;
+    }
+};
+
+/* EDITOR */
 enum class EditorEvents {
     OnSetup,
     OnLoad,
@@ -28,7 +36,6 @@ enum class EditorStates {
     Running,
     Destroyed
 };
-
 struct EdtitorState : public FSM::EFSM<EditorStates, EditorEvents, EditorStates::Uninitialized> {
 public:
     void fail(EditorEvents event) { 
@@ -66,23 +73,10 @@ public:
         return state;
     }
 };
-
-struct SceneContext {
-    Scene* scene;
-    SceneView* views[RHI_DEFAULT_SWAPCHAIN_BACKBUFFER_COUNT];
-};
-
-struct RenderContext {
-    DeferredRenderer* renderer;
-    TracyLockable(std::mutex, renderMutex);
-    TracyLockable(std::mutex, loadMutex);    
-};
-    
 struct EditorContext {
-    EdtitorState state;
-    SceneImporter::SceneImporterAtomicStatus importStatus;
-    /* DATA / PROCESSERS */
-    IBLProbeProcessor* iblProbe;
+    EdtitorState state;    
+    entt::entity activeCamera = entt::tombstone;
+    entt::entity editingComponent = entt::tombstone;
     struct {
         bool use = true;
 
@@ -92,83 +86,20 @@ struct EditorContext {
 
         float skyboxLod = 0.0f;
         float skyboxIntensity = 1.0f;
-    } iblProbeParam;
-    LTCTableProcessor* ltcTable;
+    } iblProbe;
     struct {
         float  edgeThreshold = 5.0f;
         float3 edgeColor = float3(232 / 255.0f, 125 / 255.0f, 13 / 255.0f);
-    } silhouetteParam;
-
-    entt::entity editingComponent = entt::tombstone;
-    MeshSelectionProcessor* meshSelection;
-};
-    
-
-enum class ViewportManipulationEvents {
-    HoverWithoutGizmo,
-    HoverWithGizmo,
-    MouseDown,
-    MouseRelease,
-    MouseLeave,
-    ShiftDown,
-    ShiftRelease
-};
-enum class ViewportManipulationState {
-    Nothing,
-    HoverOnCamera,
-    HoverOnGizmo,
-    UsingCamera,
-    UsingCameraOffsetView,
-    UsingGizmo
-};
-
-struct ViewportManipulationStates : public FSM::EFSM<ViewportManipulationState, ViewportManipulationEvents, ViewportManipulationState::Nothing> {
-public:
-    void fail(ViewportManipulationEvents event) {
-        /* do nothing. state is simply not transitioned. */
-    }
-    ViewportManipulationState transition(ViewportManipulationEvents event) {
-        using enum ViewportManipulationState;
-        using enum ViewportManipulationEvents;
-        switch (event)
-        {
-        case HoverWithoutGizmo:
-            if (state == Nothing) state = HoverOnCamera;
-            else fail(event);
-            break;
-        case HoverWithGizmo:
-            if (state == Nothing) state = HoverOnGizmo;
-            else fail(event);
-            break;
-        case MouseDown:
-            if (state == HoverOnCamera) state = UsingCamera;
-            else if (state == HoverOnGizmo) state = UsingGizmo;
-            else fail(event);
-            break;
-        case ShiftDown:
-            if (state == UsingCamera) state = UsingCameraOffsetView;
-            else fail(event);
-            break;
-        case ShiftRelease:
-            if (state == UsingCameraOffsetView) state = UsingCamera;
-            else fail(event);
-            break;
-        case MouseRelease:
-        case MouseLeave:
-            state = Nothing;
-            break;
-        default:
-            fail(event);
-        }
-        return state;
-    }
-};
-
-struct ViewportContext {
-    ViewportManipulationStates state;
-    entt::entity camera;
-    bool vsync = false;
-    uint frameFlags = 0;
-    uint width = 0;
-    uint height = 0;
+    } pickerSilhouette;
+    struct {
+        bool vsync = false;
+        uint frameFlags = 0;
+        uint width = 0;
+        uint height = 0;
+    } viewport;
+    struct {
+        uint width = 0;
+        uint height = 0;
+        bool wireframe = false;
+    } render;
 };

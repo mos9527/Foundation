@@ -50,7 +50,6 @@ uint CalculateLOD(BoundingBox bbBox, matrix model)
 bool OcclusionCull(BoundingBox bbBox, matrix model)
 {    
     // Uses depth pyramid from the early pass as a occlusion heuristic
-    // Works really well when the camera/scene is mostly static
     // see https://www.rastergrid.com/blog/2010/10/hierarchical-z-map-based-occlusion-culling/
     // see https://github.com/zeux/niagara/blob/master/src/shaders/drawcull.comp.glsl
     SceneCamera camera = g_SceneGlobals.camera;

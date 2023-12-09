@@ -1,7 +1,6 @@
 #pragma once
 #include "../../Runtime/RHI/RHI.hpp"
 #include "../../Common/IO.hpp"
-
 inline std::unique_ptr<RHI::Shader> BuildShader(const wchar_t* sourceName, const wchar_t* entrypoint, const wchar_t* target, std::vector<const wchar_t*>&& defines = {}) {
 #ifdef _DEBUG
 	path_t shaderAbsPath = std::format(L"Source/Editor/Shaders/{}.hlsl", sourceName);

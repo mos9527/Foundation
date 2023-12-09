@@ -1,28 +1,19 @@
 #pragma once
 #include "../Renderer.hpp"
-class DeferredLightingPass {
+class DeferredLightingPass : public IRenderPass {
 	std::unique_ptr<RHI::Shader> CS;
-	std::unique_ptr<RHI::RootSignature> RS;
 	std::unique_ptr<RHI::PipelineState> PSO;
+	std::unique_ptr<BufferContainer<ShadingConstants>> constants;
 public:
-	struct DeferredLightingPassHandles {
-		RgHandle& frameBuffer;
-				
-		RgHandle& depth;
-				
-		RgHandle& albedo;
-		RgHandle& normal;
-		RgHandle& material;
-		RgHandle& emissive;
-				
-		RgHandle& depth_srv;
-		RgHandle& albedo_srv;
-		RgHandle& normal_srv;
-		RgHandle& material_srv;
-		RgHandle& emissive_srv;
-
-		RgHandle& fb_uav;		
+	struct Handles {
+		std::pair<RgHandle*, RgHandle*> tangentframe_srv;
+		std::pair<RgHandle*, RgHandle*> gradient_srv;
+		std::pair<RgHandle*, RgHandle*> material_srv;
+		std::pair<RgHandle*, RgHandle*> depth_srv;
+		std::pair<RgHandle*, RgHandle*> framebuffer_uav;		
 	};
-	DeferredLightingPass(RHI::Device* device);
-	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, DeferredLightingPassHandles&& handles);
+	DeferredLightingPass(RHI::Device* device) : IRenderPass(device, "Deferred Shading") {};
+	virtual void setup();
+
+	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles);
 };

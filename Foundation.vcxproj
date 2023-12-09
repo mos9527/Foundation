@@ -201,7 +201,7 @@
     <ClCompile Include="Source\Editor\Renderer\RenderPass\FFXSpd.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\GBuffer.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\HiZ.cpp" />
-    <ClCompile Include="Source\Editor\Renderer\RenderPass\IndirectLODCull.cpp" />
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\InstanceCull.cpp" />
     <ClCompile Include="Source\Editor\Renderer\RenderPass\Transparency.cpp" />
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraph.cpp" />
     <ClCompile Include="Source\Runtime\RenderGraph\RenderGraphResourceCache.cpp" />
@@ -256,6 +256,7 @@
     <ClInclude Include="Source\Editor\Processor\ProcessPass\AreaReduce.hpp" />
     <ClInclude Include="Source\Editor\Processor\StaticMeshBufferProcessor.hpp" />
     <ClInclude Include="Source\Editor\Renderer\Data\CubeMesh.hpp" />
+    <ClInclude Include="Source\Editor\Renderer\RenderPass.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\Clear.hpp" />
     <ClInclude Include="Source\Editor\Processor\ProcessPass\IBLPrefilter.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\SilhouettePass.hpp" />
@@ -278,7 +279,7 @@
     <ClInclude Include="Source\Editor\Renderer\RenderPass\FFXSpd.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\GBuffer.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\HiZ.hpp" />
-    <ClInclude Include="Source\Editor\Renderer\RenderPass\IndirectLODCull.hpp" />
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\InstanceCull.hpp" />
     <ClInclude Include="Source\Editor\Renderer\RenderPass\Transparency.hpp" />
     <ClInclude Include="Source\Editor\Shaders\ffx-spd\ffx_a.h" />
     <ClInclude Include="Source\Editor\Shaders\ffx-spd\ffx_spd.h" />
@@ -350,7 +351,7 @@
     <None Include="vcpkg.json" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Editor\Shaders\IndirectLODCull.hlsl">
+    <Text Include="Source\Editor\Shaders\InstanceCull.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">4.0</ShaderModel>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Compute</ShaderType>

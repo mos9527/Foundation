@@ -9,6 +9,8 @@
 #include "RenderPass/SilhouettePass.hpp"
 #include "RenderPass/Skybox.hpp"
 #include "RenderPass/Tonemapping.hpp"
+using namespace EditorGlobals;
+
 class DeferredRenderer {
 public:
 	RHI::ShaderResourceView* r_frameBufferSRV, * r_materialBufferSRV;

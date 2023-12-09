@@ -269,18 +269,18 @@ void OnImGui_ViewportWidget() {
         }
         if (ImGui::IsItemHovered()) {
             if (!ImGuizmo::IsOver())
-                viewport.state.transition(ViewportManipulationEvents::HoverWithoutGizmo);
+                viewport.state.transition(EditorViewportManipulationEvents::HoverWithoutGizmo);
             else
-                viewport.state.transition(ViewportManipulationEvents::HoverWithGizmo);
+                viewport.state.transition(EditorViewportManipulationEvents::HoverWithGizmo);
         }
         if (ImGui::IsMouseDown(ImGuiMouseButton_Middle) || ImGui::IsKeyDown(ImGuiKey_LeftAlt))
-            viewport.state.transition(ViewportManipulationEvents::MouseDown);
+            viewport.state.transition(EditorViewportManipulationEvents::MouseDown);
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Middle) || ImGui::IsKeyReleased(ImGuiKey_LeftAlt))
-            viewport.state.transition(ViewportManipulationEvents::MouseRelease);        
+            viewport.state.transition(EditorViewportManipulationEvents::MouseRelease);        
         if (ImGui::IsKeyDown(ImGuiKey_LeftShift))
-            viewport.state.transition(ViewportManipulationEvents::ShiftDown);
+            viewport.state.transition(EditorViewportManipulationEvents::ShiftDown);
         if (ImGui::IsKeyReleased(ImGuiKey_LeftShift))
-            viewport.state.transition(ViewportManipulationEvents::ShiftRelease);
+            viewport.state.transition(EditorViewportManipulationEvents::ShiftRelease);
         if (ImGui::IsItemHovered() && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))) {
             uint2 upos = { (UINT)viewportMouse.x, (UINT)viewportMouse.y };
             auto& selected = editor.meshSelection->GetSelectedMaterialBufferAndRect(render.renderer->r_materialBufferTex, render.renderer->r_materialBufferSRV, upos, { 1,1 });            

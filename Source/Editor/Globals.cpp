@@ -1,38 +1,34 @@
 #include "Context.hpp"
-namespace EditorGlobalContext {
-    HWND window;
-    
-    RHI::Device* device;
-    RHI::Swapchain* swapchain;
-    DefaultTaskThreadPool taskpool;
-
-    SceneContext scene;
-    RenderContext render;
-    EditorContext editor;
-    ViewportContext viewport;
+namespace EditorGlobals {    
+    HWND g_Window;    
+    RHIContext g_RHI;
+    EditorContext g_Editor;
 
     void SetupContext(HWND presentWindow, RHI::ResourceFormat presentFormat) {
         LOG(INFO) << "Setting up...";
-        window = presentWindow;
-        device = new RHI::Device({ .AdapterIndex = 0 });
-        swapchain = new RHI::Swapchain(device, { presentWindow, 1600, 1000, presentFormat });
-        scene.scene = new ::Scene;
-        render.renderer = new ::DeferredRenderer(device);
-        editor.iblProbe = new ::IBLProbeProcessor(device, 512);
-        editor.ltcTable = new ::LTCTableProcessor(device);
-        editor.meshSelection = new ::MeshSelectionProcessor(device);
-        for (uint i = 0; i < ARRAYSIZE(scene.views); i++) {
-            scene.views[i] = new ::SceneView(device);
-        }
+        g_Window = presentWindow;
+        g_RHI.device = new RHI::Device({ .AdapterIndex = 0 });
+        g_RHI.swapchain = new RHI::Swapchain(g_RHI.device, { presentWindow, 1600, 1000, presentFormat });
+        g_RHI.rootSig = new RHI::RootSignature(g_RHI.device, RHI::RootSignatureDesc()
+            .SetDirectlyIndexed()
+            .SetAllowInputAssembler()
+            .AddConstantBufferView(0, 0) // Constant b0 space0 : Editor Global
+            .AddConstantBufferView(1, 0) // Constant b1 space0 : Shader Global (Optional)
+            .AddStaticSampler(0, 0, RHI::SamplerDesc::GetTextureSamplerDesc(16)) // Sampler s0 space0 : Texture Sampler
+            .AddStaticSampler(0, 0, RHI::SamplerDesc::GetDepthSamplerDesc(       // Sampler s1 space0 : Depth Comp sampler
+#ifdef INVERSE_Z
+                true
+#else
+                false
+#endif
+            ))
+            .AddStaticSampler(0, 0, RHI::SamplerDesc::GetDepthReduceSamplerDesc( // Sampler s2 space0 : Depth Reduce sampler
+#ifdef INVERSE_Z
+                true
+#else
+                false
+#endif
+            )));
         LOG(INFO) << "Setup OK!";
-    }
-
-    void DestroyContext(void) {
-        delete scene.scene;
-        for (uint i = 0; i < ARRAYSIZE(scene.views); i++)
-            delete scene.views[i];
-        delete render.renderer;
-        delete swapchain;
-        delete device;
-    }
+    }    
 }

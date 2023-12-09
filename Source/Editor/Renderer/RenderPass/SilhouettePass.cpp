@@ -1,89 +1,79 @@
 #include "SilhouettePass.hpp"
 using namespace RHI;
-SilhouettePass::SilhouettePass(Device* device) {
+using namespace EditorGlobals;
+
+void SilhouettePass::setup() {
 	PS = BuildShader(L"SilhouettePass", L"ps_main", L"ps_6_6");
 	VS = BuildShader(L"SilhouettePass", L"vs_main", L"vs_6_6");
-	CS = BuildShader(L"SilhouettePassBlend", L"main", L"cs_6_6");
-	RS = std::make_unique<RootSignature>( // Draw the selected meshes' depth in viewspace. Similar to shadow mapping
-		device,
-		RootSignatureDesc()
-		.SetAllowInputAssembler()
-		.SetDirectlyIndexed()
-		.AddConstant(0, 0, 2) // b0 space0 : MeshIndex,LodIndex constant (Indirect)
-		.AddConstantBufferView(1, 0) // b1 space0 : SceneGlobals		
-		.AddShaderResourceView(0, 0) // t0 space0 : SceneMeshInstances		
-	);
-	RS->SetName(L"Silhouette");
-	// Define the vertex input layout.
+	CS = BuildShader(L"SilhouettePassBlend", L"main", L"cs_6_6");	
 	auto iaLayout = VertexLayoutToD3DIADesc(StaticMeshAsset::Vertex::get_layout());
-	// Describe and create the graphics pipeline state objects (PSO).
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-	psoDesc.InputLayout = { iaLayout.data(), (UINT)iaLayout.size() };
-	psoDesc.pRootSignature = *RS;
-	psoDesc.VS = CD3DX12_SHADER_BYTECODE(VS->GetData(), VS->GetSize());
-	psoDesc.PS = CD3DX12_SHADER_BYTECODE(PS->GetData(), PS->GetSize());
-	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-	psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
-	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);	
-	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-	psoDesc.DepthStencilState.DepthEnable = TRUE;
-	psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
+	desc.InputLayout = { iaLayout.data(), (UINT)iaLayout.size() };
+	desc.pRootSignature = *g_RHI.rootSig;
+	desc.VS = CD3DX12_SHADER_BYTECODE(VS->GetData(), VS->GetSize());
+	desc.PS = CD3DX12_SHADER_BYTECODE(PS->GetData(), PS->GetSize());
+	desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	desc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+	desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);	
+	desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	desc.DepthStencilState.DepthEnable = TRUE;
+	desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
 #ifdef INVERSE_Z
-	psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_GREATER;
+	desc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_GREATER;
 #else
-	psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_LESS;
+	desc.DepthStencilState.DepthFunc = D3D12_COMPARISON_LESS;
 #endif
-	psoDesc.SampleMask = UINT_MAX;
-	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	psoDesc.NumRenderTargets = 0;	
-	psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-	psoDesc.SampleDesc.Count = 1;
+	desc.SampleMask = UINT_MAX;
+	desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	desc.NumRenderTargets = 0;	
+	desc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+	desc.SampleDesc.Count = 1;
 	ComPtr<ID3D12PipelineState> pso;
-	CHECK_HR(device->GetNativeDevice()->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pso)));
+	CHECK_HR(device->GetNativeDevice()->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pso)));
 	PSO = std::make_unique<PipelineState>(device, std::move(pso));	
 	// Command for draws
 	IndirectCmdSig = std::make_unique<CommandSignature>(
 		device,
-		RS.get(),
+		g_RHI.rootSig,
 		CommandSignatureDesc(sizeof(IndirectCommand))
 		.AddConstant(0, 0, 2) // b0 space0 : MeshIndex,LodIndex constant (Indirect)
 		.AddVertexBufferView(0)
 		.AddIndexBufferView()
 		.AddDrawIndexed()
 	);
-	// Compute Edge detection + Blit to framebuffer
-	blendRS = std::make_unique<RootSignature>(
-		device,
-		RootSignatureDesc()
-		.SetDirectlyIndexed()
-		.AddConstant(0, 0, 4) // Constants: width,height,framebuffer UAV,depth SRV
-		.AddConstantBufferView(1,0) // b1 space0 : SceneGlobals		
-	);
-	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
-	computePsoDesc.pRootSignature = *blendRS;
-	computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(CS->GetData(), CS->GetSize());
-	CHECK_HR(device->GetNativeDevice()->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(&pso)));
+	D3D12_COMPUTE_PIPELINE_STATE_DESC computedesc = {};
+	computedesc.pRootSignature = *g_RHI.rootSig;
+	computedesc.CS = CD3DX12_SHADER_BYTECODE(CS->GetData(), CS->GetSize());
+	CHECK_HR(device->GetNativeDevice()->CreateComputePipelineState(&computedesc, IID_PPV_ARGS(&pso)));
 	PSO_Blend = std::make_unique<PipelineState>(device, std::move(pso));
+	constants = std::make_unique<BufferContainer<SilhouetteConstants>>(device, 1, L"Silhouette Constants");
 }
 RenderGraphPass& SilhouettePass::insert(RenderGraph& rg, SceneView* sceneView, SilhouettePassHandles&& handles) {
 	rg.add_pass(L"Silhouette Depth Rendering")
-		.read(handles.silhouetteDepth)
-		.write(handles.silhouetteDepth)
-		.read(handles.silhouetteCMD)
+		.read(*std::get<0>(handles.silhouette_dsv_srv)) // Ensure cleared
+		.write(*std::get<0>(handles.silhouette_dsv_srv))
+		.read(*handles.cmd_uav.first)
 		.execute([=](RgContext& ctx) {
-			UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
+			UINT width = g_Editor.render.width, height = g_Editor.render.height;
+			auto* native = ctx.cmd->GetNativeCommandList();
+
 			CD3DX12_VIEWPORT viewport(.0f, .0f, width, height, .0f, 1.0f);
 			CD3DX12_RECT scissorRect(0, 0, width, height);			
-			auto* r_dsv = ctx.graph->get<DepthStencilView>(handles.silhouetteDepthDSV);
-			auto* r_cmd_uav = ctx.graph->get<UnorderedAccessView>(handles.silhouetteCMDUAV);
-			auto* r_cmd = ctx.graph->get<Buffer>(handles.silhouetteCMD);
-			auto native = ctx.cmd->GetNativeCommandList();
+			auto* r_dsv = ctx.graph->get<DepthStencilView>(*std::get<1>(handles.silhouette_dsv_srv));			
+			
+			auto* r_cmd = ctx.graph->get<Buffer>(*handles.cmd_uav.first);
+			auto* r_cmd_uav = ctx.graph->get<UnorderedAccessView>(*handles.cmd_uav.second);
+
 			ctx.cmd->QueueTransitionBarrier(r_cmd, ResourceState::IndirectArgument);
 			ctx.cmd->FlushBarriers();
+
+			constants->Data()->edgeColor = sceneView->get_shader_data().silhouette.edgeColor;
+			constants->Data()->edgeThreshold = sceneView->get_shader_data().silhouette.edgeThreshold;
+
 			native->SetPipelineState(*PSO);
-			native->SetGraphicsRootSignature(*RS);
-			native->SetGraphicsRootConstantBufferView(1, sceneView->get_SceneGlobalsBuffer()->GetGPUAddress());
-			native->SetGraphicsRootShaderResourceView(2, sceneView->get_SceneMeshInstancesBuffer()->GetGPUAddress());
+			native->SetGraphicsRootSignature(*g_RHI.rootSig);
+			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->get_editor_globals_buffer()->GetGPUAddress());
+			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
 			native->RSSetViewports(1, &viewport);
 			native->RSSetScissorRects(1, &scissorRect);
 			native->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -103,21 +93,24 @@ RenderGraphPass& SilhouettePass::insert(RenderGraph& rg, SceneView* sceneView, S
 			);
 	});
 	return rg.add_pass(L"Silhouette Blending")
-		.read(handles.frameBuffer)
-		.readwrite(handles.frameBuffer)
-		.read(handles.silhouetteDepth)
+		.read(*handles.frameBuffer_uav.first)
+		.readwrite(*handles.frameBuffer_uav.first)
+		.read(*std::get<0>(handles.silhouette_dsv_srv))
 		.execute([=](RgContext& ctx) {
-			UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
-			auto* r_depth_srv = ctx.graph->get<ShaderResourceView>(handles.silhouetteDepthSRV);
-			auto* r_fb_uav = ctx.graph->get<UnorderedAccessView>(handles.frameBufferUAV);			
+			UINT width = g_Editor.render.width, height = g_Editor.render.height;
+			auto* native = ctx.cmd->GetNativeCommandList();
+
+			auto* r_depth_srv = ctx.graph->get<ShaderResourceView>(*std::get<2>(handles.silhouette_dsv_srv));
+			auto* r_fb_uav = ctx.graph->get<UnorderedAccessView>(*handles.frameBuffer_uav.second);
+			
+			constants->Data()->frameBufferUAV = r_fb_uav->descriptor.get_heap_handle();
+			constants->Data()->depthSRV = r_depth_srv->descriptor.get_heap_handle();
+
 			auto native = ctx.cmd->GetNativeCommandList();
 			native->SetPipelineState(*PSO_Blend);
-			native->SetComputeRootSignature(*blendRS);
-			native->SetComputeRoot32BitConstant(0, width, 0);
-			native->SetComputeRoot32BitConstant(0, height, 1);
-			native->SetComputeRoot32BitConstant(0, r_fb_uav->descriptor.get_heap_handle(), 2);
-			native->SetComputeRoot32BitConstant(0, r_depth_srv->descriptor.get_heap_handle(), 3);
-			native->SetComputeRootConstantBufferView(1, sceneView->get_SceneGlobalsBuffer()->GetGPUAddress());
+			native->SetGraphicsRootSignature(*g_RHI.rootSig);
+			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->get_editor_globals_buffer()->GetGPUAddress());
+			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
 			native->Dispatch(DivRoundUp(width, RENDERER_FULLSCREEN_THREADS), DivRoundUp(height, RENDERER_FULLSCREEN_THREADS), 1);
 		});
 }

@@ -108,7 +108,7 @@
     <ClCompile Include="Source\Editor\Renderer\RenderPass\FFXSpd.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Editor\Renderer\RenderPass\IndirectLODCull.cpp">
+    <ClCompile Include="Source\Editor\Renderer\RenderPass\InstanceCull.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Source\Editor\Renderer\RenderPass\HiZ.cpp">
@@ -395,7 +395,7 @@
     <ClInclude Include="Source\Editor\Renderer\RenderPass\FFXSpd.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Editor\Renderer\RenderPass\IndirectLODCull.hpp">
+    <ClInclude Include="Source\Editor\Renderer\RenderPass\InstanceCull.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\Shaders\ffx-spd\ffx_a.h">
@@ -539,6 +539,9 @@
     <ClInclude Include="Source\Editor\Scene\AssetComponet\KeyshapeTransform.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Editor\Renderer\RenderPass.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="vcpkg.json">
@@ -556,7 +559,7 @@
     <None Include="Source\Editor\Shaders\LTC.hlsli" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Source\Editor\Shaders\IndirectLODCull.hlsl" />
+    <Text Include="Source\Editor\Shaders\InstanceCull.hlsl" />
     <Text Include="Source\Editor\Shaders\GBuffer.hlsl" />
     <Text Include="Source\Editor\Shaders\Shared.h" />
     <Text Include="Source\Editor\Shaders\DeferredLighting.hlsl" />

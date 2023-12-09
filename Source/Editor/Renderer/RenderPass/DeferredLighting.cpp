@@ -1,56 +1,41 @@
 #include "DeferredLighting.hpp"
 using namespace RHI;
-
-DeferredLightingPass::DeferredLightingPass(Device* device) {
+using namespace EditorGlobals;
+void DeferredLightingPass::setup() {
 	CS = ::BuildShader(L"DeferredLighting", L"main", L"cs_6_6");
-	RS = std::make_unique<RootSignature>(
-		device,
-		RootSignatureDesc()
-		.SetDirectlyIndexed()
-		.AddConstantBufferView(0, 0) // b0 space0 : SceneGlobals	
-		.AddConstant(1, 0, 6) // b1 space0 : MRT handles + FB UAV
-		.AddShaderResourceView(0, 0) // s0 space0 : Lights
-		.AddStaticSampler(0,0, SamplerDesc::GetTextureSamplerDesc(16))
-	);
-	RS->SetName(L"Lighting");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
-	computePsoDesc.pRootSignature = *RS;
+	computePsoDesc.pRootSignature = *g_RHI.rootSig;
 	computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(CS->GetData(), CS->GetSize());
 	ComPtr<ID3D12PipelineState> pso;
 	CHECK_HR(device->GetNativeDevice()->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(&pso)));
 	PSO = std::make_unique<PipelineState>(device, std::move(pso));
+	constants = std::make_unique<BufferContainer<ShadingConstants>>(device, 1, L"Shading Constants");
 }
 
-RenderGraphPass& DeferredLightingPass::insert(RenderGraph& rg, SceneView* sceneView, DeferredLightingPassHandles&& handles) {
+RenderGraphPass& DeferredLightingPass::insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles) {
 	return rg.add_pass(L"Lighting")
-		.readwrite(handles.frameBuffer)
-		.read(handles.depth)
-		.read(handles.albedo)
-		.read(handles.normal)
-		.read(handles.material)
-		.read(handles.emissive)
+		.readwrite(*handles.framebuffer_uav.first)
+		.read(*handles.depth_srv.first)
+		.read(*handles.tangentframe_srv.first)
+		.read(*handles.material_srv.first)
+		.read(*handles.gradient_srv.first)		
 		.execute([=](RgContext& ctx) {
-			UINT width = sceneView->get_SceneGlobals().frameDimension.x, height = sceneView->get_SceneGlobals().frameDimension.y;
-			auto native = ctx.cmd->GetNativeCommandList();
-			native->SetPipelineState(*PSO);;
-			native->SetComputeRootSignature(*RS);
-			auto* r_albedo_srv = ctx.graph->get<ShaderResourceView>(handles.albedo_srv);
-			auto* r_normal_srv = ctx.graph->get<ShaderResourceView>(handles.normal_srv);
-			auto* r_material_srv = ctx.graph->get<ShaderResourceView>(handles.material_srv);
-			auto* r_emissive_srv = ctx.graph->get<ShaderResourceView>(handles.emissive_srv);
-			auto* r_depth_srv = ctx.graph->get<ShaderResourceView>(handles.depth_srv);
-			auto* r_fb_uav = ctx.graph->get<UnorderedAccessView>(handles.fb_uav);
-			UINT mrtHandles[6] = {
-				r_albedo_srv->descriptor.get_heap_handle(),
-				r_normal_srv->descriptor.get_heap_handle(),
-				r_material_srv->descriptor.get_heap_handle(),
-				r_emissive_srv->descriptor.get_heap_handle(),
-				r_depth_srv->descriptor.get_heap_handle(),
-				r_fb_uav->descriptor.get_heap_handle()
-			};
-			native->SetComputeRootConstantBufferView(0, sceneView->get_SceneGlobalsBuffer()->GetGPUAddress());
-			native->SetComputeRoot32BitConstants(1, 6, mrtHandles, 0);
-			native->SetComputeRootShaderResourceView(2, sceneView->get_SceneLightBuffer()->GetGPUAddress());
+			UINT width = g_Editor.render.width, height = g_Editor.render.height;			
+			auto* native = ctx.cmd->GetNativeCommandList();
+			
+			constants->Data()->framebufferUav = ctx.graph->get<UnorderedAccessView>(*handles.framebuffer_uav.second)->descriptor.get_heap_handle();
+			constants->Data()->depthSrv = ctx.graph->get<ShaderResourceView>(*handles.depth_srv.second)->descriptor.get_heap_handle();
+			constants->Data()->tangentFrameSrv = ctx.graph->get<ShaderResourceView>(*handles.tangentframe_srv.second)->descriptor.get_heap_handle();
+			constants->Data()->gradientSrv = ctx.graph->get<ShaderResourceView>(*handles.gradient_srv.second)->descriptor.get_heap_handle();
+			constants->Data()->materialSrv = ctx.graph->get<ShaderResourceView>(*handles.material_srv.second)->descriptor.get_heap_handle();		
+			
+			constants->Data()->ltcLutHeapIndex = sceneView->get_shader_data().ltc.get_heap_handle();
+			constants->Data()->iblProbe = sceneView->get_shader_data().probe.to_hlsl();
+
+			native->SetPipelineState(*PSO);;			
+			native->SetComputeRootSignature(*g_RHI.rootSig);
+			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->get_editor_globals_buffer()->GetGPUAddress());
+			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
 			native->Dispatch(DivRoundUp(width, RENDERER_FULLSCREEN_THREADS), DivRoundUp(height, RENDERER_FULLSCREEN_THREADS), 1);
 		});
 }

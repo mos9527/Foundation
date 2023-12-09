@@ -1,17 +1,10 @@
 #pragma once
 #include "Context.hpp"
-namespace EditorGlobalContext {
-    extern HWND window;
-   
-    extern RHI::Device* device;
-    extern RHI::Swapchain* swapchain;
-    extern DefaultTaskThreadPool taskpool;
 
-    extern SceneContext scene;
-    extern RenderContext render;
-    extern EditorContext editor;
-    extern ViewportContext viewport;
+namespace EditorGlobals {
+    extern HWND g_Window;
+    extern RHIContext g_RHI;
+    extern EditorContext g_Editor;
 
     extern void SetupContext(HWND presentWindow, RHI::ResourceFormat presentFormat);
-    extern void DestroyContext();
 };

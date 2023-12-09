@@ -12,8 +12,8 @@
 
 #include "../Processor/StaticMeshBufferProcessor.hpp"
 #include "../Processor/SkinnedMeshBufferProcessor.hpp"
-class IBLProbeProcessor;
-class LTCTableProcessor;
+#include "../Processor/IBLProbeProcessor.hpp"
+#include "../Processor/LTCTableProcessor.hpp"
 class SceneView {
 public:
 private:
@@ -37,10 +37,29 @@ public:
 			float occlusionStrength;
 			float skyboxLod;
 			float skyboxIntensity;
+
+			SceneIBLProbe to_hlsl() const {
+				SceneIBLProbe hlsl{};
+				hlsl.enabled = use;
+				hlsl.cubemapHeapIndex = probe->cubemapSRV->descriptor.get_heap_handle();
+				hlsl.radianceHeapIndex = probe->radianceCubeArraySRV->descriptor.get_heap_handle();
+				hlsl.irradianceHeapIndex = probe->irridanceCubeSRV->descriptor.get_heap_handle();
+				hlsl.lutHeapIndex = probe->lutArraySRV->descriptor.get_heap_handle();
+				hlsl.mips = probe->numMips;
+				hlsl.diffuseIntensity = diffuseIntensity;
+				hlsl.specularIntensity = specularIntensity;
+				hlsl.occlusionStrength = occlusionStrength;
+				return hlsl;
+			}
 		} probe;
-		LTCTableProcessor* ltcTable;
+		struct LTCData {
+			LTCTableProcessor* ltcTable;			
+			const uint get_heap_handle() const {
+				return ltcTable ? ltcTable->ltcSRV->descriptor.get_heap_handle() : INVALID_HEAP_HANDLE;
+			}
+		} ltc;
 		struct SilhouetteParams {
-			float  edgeThreshold;
+			float edgeThreshold;
 			float3 edgeColor;
 		} silhouette;
 	} shaderData;
@@ -61,19 +80,15 @@ public:
 		globalBuffer(device, 1),
 		staticMeshBuffers(device),
 		skinnedMeshBuffers(device)
-	{
-		globalBuffer.Data()->frameFlags = FRAME_FLAG_DEFAULT;
-	};
-	inline SceneGlobals const& get_SceneGlobals() { return *globalBuffer.Data(); }
-	inline RHI::Resource* get_SceneGlobalsBuffer() { return &globalBuffer; }
-	inline RHI::Resource* get_SceneMeshInstancesBuffer() { return &meshInstancesBuffer; }
-	inline RHI::Resource* get_SceneMeshMaterialsBuffer() { return &meshMaterialsBuffer; }
-	inline RHI::Resource* get_SceneLightBuffer() { return &lightBuffer; }
+	{};
 
-	inline RHI::Resource* get_StaticMeshBuffer() { return staticMeshBuffers.sceneMeshBuffer.get(); }
-	inline RHI::Resource* get_SkinnedMeshBuffer() { return skinnedMeshBuffers.sceneMeshBuffer.get(); }
+	inline SceneGlobals const* get_editor_globals_data() { return globalBuffer.Data(); }
+	inline RHI::Resource* get_editor_globals_buffer() { return &globalBuffer; }
 
-	inline FrameData const& get_FrameData() { return frameData; }
-	inline ShaderData const& get_ShaderData() { return shaderData; }
+	inline RHI::Resource* get_meshbuffer_static() { return staticMeshBuffers.sceneMeshBuffer.get(); }
+	inline RHI::Resource* get_meshbuffer_skinned() { return skinnedMeshBuffers.sceneMeshBuffer.get(); }
+
+	inline FrameData const& get_frame_data() { return frameData; }
+	inline ShaderData const& get_shader_data() { return shaderData; }
 	bool update(RHI::CommandList* ctx, Scene& scene, SceneCameraComponent& camera, FrameData&& frame, ShaderData&& shader);
 };

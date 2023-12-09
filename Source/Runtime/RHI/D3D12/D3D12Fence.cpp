@@ -18,4 +18,4 @@ namespace RHI {
 			WaitForSingleObjectEx(m_FenceEvent, INFINITE, FALSE);
 		}
 	}
-}
+}	

@@ -1,9 +1,8 @@
 #pragma once
 #include "../Renderer.hpp"
 
-class TonemappingPass {
+struct TonemappingPass : public IRenderPass {
 	std::unique_ptr<RHI::Shader> CS_Histogram, CS_Avg, CS_Tonemap;
-	std::unique_ptr<RHI::RootSignature> RS;
 	std::unique_ptr<RHI::PipelineState> PSO_Histogram, PSO_Avg, PSO_Tonemap;
 
 	std::unique_ptr<RHI::Buffer> histogramBuffer;
@@ -12,13 +11,13 @@ class TonemappingPass {
 	std::unique_ptr<RHI::Texture> luminanceBuffer;
 	std::unique_ptr<RHI::UnorderedAccessView> luminanceBufferUAV;
 
-	RHI::Device* const device;
+	std::unique_ptr<BufferContainer<TonemappingConstants>> constants;
 public:
-	struct TonemappingPassHandles {
-		RgHandle& frameBuffer;
-		RgHandle& frameBufferUAV;
+	struct Handles {
+		std::pair<RgHandle*, RgHandle*> frameBuffer_uav;
 	};
 
-	TonemappingPass(RHI::Device* device);
-	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, TonemappingPassHandles&& handles);
+	TonemappingPass(RHI::Device* device) : IRenderPass(device, "Tonemapping") {};
+	virtual void setup();
+	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles);
 };

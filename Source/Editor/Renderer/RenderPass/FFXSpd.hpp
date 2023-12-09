@@ -1,20 +1,22 @@
 #pragma once
 #include "../Renderer.hpp"
 #define SPD_MAX_NUM_SLICES 0xffff
-class FFXSPDPass {	
+struct FFXSPDPass : public IRenderPass {	
 	std::unique_ptr<RHI::Shader> CS;
-	std::unique_ptr<RHI::RootSignature> RS;
 	std::unique_ptr<RHI::PipelineState> PSO;
 
-	std::unique_ptr<RHI::Buffer> ffxPassConstants;
+	std::unique_ptr<BufferContainer<FFXSpdConstant>> ffxPassConstants;
 	std::unique_ptr<RHI::Buffer> ffxPassCounter;
 	std::unique_ptr<RHI::UnorderedAccessView> ffxPassCounterUAV;
+
 public:
-	struct FFXSPDPassHandles {
+	struct Handles {
 		RgHandle& srcTexture;		
 		RgHandle& dstTexture;
 		std::vector<RgHandle> dstMipUAVs;
 	};
-	FFXSPDPass(RHI::Device* device, const wchar_t* reduce=L"(v0 + v1 + v2 + v3) * 0.25");
-	RenderGraphPass& insert(RenderGraph& rg, FFXSPDPassHandles&& handles);
+	std::wstring reduce_func = L"(v0 + v1 + v2 + v3) * 0.25";
+	FFXSPDPass(RHI::Device* device) : IRenderPass(device, "FFX SPD") {};
+	virtual void setup();
+	RenderGraphPass& insert(RenderGraph& rg, Handles const& handles);
 };

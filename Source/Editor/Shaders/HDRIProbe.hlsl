@@ -72,7 +72,7 @@ void main_prefilter(uint3 DTid : SV_DispatchThreadID)
         {
             // sample lambertian at a lower resolution to avoid fireflies
             float3 lambertian = cubemap.SampleLevel(g_Sampler, H, lod).rgb;            
-
+            
             //// the below operations cancel each other out
             // lambertian *= NdotH; // lamberts law
             // lambertian /= pdf; // invert bias from importance sampling
