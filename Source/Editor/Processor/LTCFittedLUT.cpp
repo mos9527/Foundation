@@ -1,8 +1,8 @@
-#include "LTCTableProcessor.hpp"
+#include "LTCFittedLUT.hpp"
 #include "Data/LTC.hpp"
 
 using namespace RHI;
-LTCTableProcessor::LTCTableProcessor(Device* device) : device(device) {
+LTCFittedLUT::LTCFittedLUT(Device* device) : device(device) {
 	ltcLUT = std::make_unique<Texture>(
 		device, Resource::ResourceDesc::GetTextureBufferDesc(
 			ResourceFormat::R32G32B32A32_FLOAT, ResourceDimension::Texture2D,
@@ -17,7 +17,7 @@ LTCTableProcessor::LTCTableProcessor(Device* device) : device(device) {
 	UploadPrecomputed();
 }
 
-void LTCTableProcessor::UploadPrecomputed() {
+void LTCFittedLUT::UploadPrecomputed() {
 	device->Wait();
 	UploadContext ctx(device);
 	ctx.Begin();
@@ -29,4 +29,4 @@ void LTCTableProcessor::UploadPrecomputed() {
 	ctx.ResetAllocator();
 }
 
-// void LTCTableProcessor::Compute();
+// void LTCFittedLUT::Compute();

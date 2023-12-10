@@ -1,5 +1,6 @@
 #pragma once
 #include "../Globals.hpp"
+
 constexpr float MIN_DISTANCE = 1e-3f;
 constexpr float MAX_DISTANCE = 1e3f;
 constexpr float ROTATION_NOTCH = 1e-1f * XM_2PI / 365;

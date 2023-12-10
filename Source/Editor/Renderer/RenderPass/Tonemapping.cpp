@@ -40,13 +40,13 @@ void TonemappingPass::reset() {
 
 RenderGraphPass& TonemappingPass::insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles) {
 	return rg.add_pass(L"Tonemapping")
-		.read(*handles.frameBuffer_uav.first) // Ensures....clear. ugh
-		.read(*handles.frameBuffer_uav.first)
+		.read(*handles.framebuffer_uav.first) // Ensures....clear. ugh
+		.read(*handles.framebuffer_uav.first)
 		.execute([=](RgContext& ctx) {
 			UINT width = g_Editor.render.width, height = g_Editor.render.height;
 			auto native = ctx.cmd->GetNativeCommandList();
 
-			auto* r_fb_uav = ctx.graph->get<UnorderedAccessView>(*handles.frameBuffer_uav.second);			
+			auto* r_fb_uav = ctx.graph->get<UnorderedAccessView>(*handles.framebuffer_uav.second);			
 			constants->Data()->framebufferUav = r_fb_uav->descriptor.get_heap_handle();
 			constants->Data()->hisotrgramUav = histogramBufferUAV->descriptor.get_heap_handle();
 			constants->Data()->avgLumUav = luminanceBufferUAV->descriptor.get_heap_handle();

@@ -3,8 +3,7 @@
 #include "Input/KBMCamera.hpp"
 #include "Win32/Win32IO.hpp"
 #include "../../Dependencies/IconsFontAwesome6.h"
-#include "Processor/StaticMeshBufferProcessor.hpp"
-#include "Processor/SkinnedMeshBufferProcessor.hpp"
+#include "Renderer/Deferred.hpp"
 
 using namespace RHI;
 using namespace EditorGlobals;
@@ -16,18 +15,18 @@ void Setup_ImGui() {
     // Boilerplate setup
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGui_ImplWin32_Init(window); 
-    static Descriptor ImGuiFontDescriptor = device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();    
+    ImGui_ImplWin32_Init(g_Window);
+    static Descriptor ImGuiFontDescriptor = g_RHI.device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();    
     ImGui_ImplDX12_Init(
-        device->GetNativeDevice(),
+        g_RHI.device->GetNativeDevice(),
         RHI_DEFAULT_SWAPCHAIN_BACKBUFFER_COUNT,
-        ResourceFormatToD3DFormat(swapchain->GetFormat()),
-        *device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>(),
+        ResourceFormatToD3DFormat(g_RHI.swapchain->GetFormat()),
+        *g_RHI.device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>(),
         ImGuiFontDescriptor,
         ImGuiFontDescriptor
     );
     // Display font
-    static const float baseFontSize = 16.0f * ImGui_ImplWin32_GetDpiScaleForHwnd(window);
+    static const float baseFontSize = 16.0f * ImGui_ImplWin32_GetDpiScaleForHwnd(g_Window);
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.Fonts->AddFontFromFileTTF(
@@ -47,11 +46,11 @@ void Setup_ImGui() {
 }
 static KBMCameraController g_cameraController;
 void Setup_Scene() {
-    auto& camera = scene.scene->graph->emplace_at_root<SceneCameraComponent>();
+    auto& camera = g_Scene.scene->graph->emplace_at_root<SceneCameraComponent>();
     camera.set_name("Camera");    
-    viewport.camera = camera.get_entity();
+    g_Editor.activeCamera = camera.get_entity();
 
-    auto& light = scene.scene->graph->emplace_at_root<SceneLightComponent>();
+    auto& light = g_Scene.scene->graph->emplace_at_root<SceneLightComponent>();
     light.set_name("Light");
     light.set_local_transform(AffineTransform::CreateTranslation({0,1.7,0}));
     light.lightType = SceneLightComponent::LightType::AreaDisk;    
@@ -60,29 +59,32 @@ void Setup_Scene() {
     g_cameraController.reset();
 }
 void Reset_Scene() {
-    scene.scene->reset();    
+    g_Scene.scene->reset();
     Setup_Scene();
 }
+static DefaultTaskThreadPool taskpool;
 void Load_Scene(path_t path) {
-    CHECK(editor.state != EditorStates::Loading && "Attempted to load new assets while previous load is not finished.");
-    editor.importStatus.reset();
+    CHECK(g_Editor.state != EditorStates::Loading && "Attempted to load new assets while previous load is not finished.");
+    g_Editor.importStatus.reset();
     taskpool.push([](path_t filepath) {
-        editor.state.transition(EditorEvents::OnLoad);
-        UploadContext ctx(device);
+        g_Editor.state.transition(EditorEvents::OnLoad);
+        UploadContext ctx(g_RHI.device);
         ctx.Begin();
-        SceneImporter::load(&ctx, editor.importStatus, *scene.scene, filepath);
+        SceneImporter::load(&ctx, g_Editor.importStatus, *g_Scene.scene, filepath);
         ctx.End().Wait();
-        editor.importStatus.uploadComplete = true;
-        editor.state.transition(EditorEvents::OnLoadComplete);
-        scene.scene->clean<StaticMeshAsset>();
-        scene.scene->clean<TextureAsset>();
+        g_Editor.importStatus.uploadComplete = true;
+        g_Editor.state.transition(EditorEvents::OnLoadComplete);
+        g_Scene.scene->clean<StaticMeshAsset>();
+        g_Scene.scene->clean<TextureAsset>();
     }, path);
 }
+static DeferredRenderer* renderer;
 void EditorWindow::Setup() {
-    editor.state.transition(EditorEvents::OnSetup);
+    g_Editor.state.transition(EditorEvents::OnSetup);
     Setup_ImGui();
     Setup_Scene();
     g_cameraController.Win32RawInput_Setup(m_hWnd);    
+    renderer = new ::DeferredRenderer(g_RHI.device);
 }
 void Draw_InvalidState() {}
 void Draw_RunningState() {
@@ -96,7 +98,7 @@ void Draw_LoadingState() {
     OnImGui_LoadingWidget();
 }
 void Draw_ImGuiWidgets() {
-    switch (editor.state.get_state())
+    switch (g_Editor.state.get_state())
     {
     case EditorStates::Running:
         Draw_RunningState();
@@ -128,12 +130,12 @@ void Run_ImGui() {
 
         if (ImGui::BeginMenuBar()) {
             if (ImGui::MenuItem("Open")) {
-                auto pathName = Win32_GetOpenFileNameSimple(window);
+                auto pathName = Win32_GetOpenFileNameSimple(g_Window);
                 if (pathName.size())
                     Load_Scene(pathName);
             }
             if (ImGui::MenuItem("Reset")) {
-                device->Wait();
+                g_RHI.device->Wait();
                 Reset_Scene();                
             }            
             ImGui::EndMenuBar();
@@ -146,7 +148,7 @@ void Run_ImGui() {
 
 void Run_UpdateTitle() {
     std::wstring title = std::format(L"Foundation Editor | v" FOUNDATION_VERSION_STRING " | FPS: {}", ImGui::GetIO().Framerate);
-    SetWindowText(window, title.c_str());
+    SetWindowText(g_Window, title.c_str());
 }
 void Run_Update() {
     ZoneScopedN("Editor Update");
@@ -155,8 +157,7 @@ void Run_Update() {
 }
 void EditorWindow::Run() {
     ZoneScopedN("Run Frame");
-    std::scoped_lock lock(render.renderMutex);
-    editor.state.transition(EditorEvents::OnRunFrame);
+    g_Editor.state.transition(EditorEvents::OnRunFrame);
     {
         ZoneScopedN("ImGui NewFrame");
         ImGui_ImplDX12_NewFrame();
@@ -167,82 +168,80 @@ void EditorWindow::Run() {
     Run_Update();
     // Running frames
     ImGui::Render();
-    uint bbIndex = swapchain->GetCurrentBackbufferIndex();
-    CommandList* gfx = device->GetDefaultCommandList<CommandListType::Direct>();    
+    uint bbIndex = g_RHI.swapchain->GetCurrentBackbufferIndex();
+    CommandList* gfx = g_RHI.device->GetDefaultCommandList<CommandListType::Direct>();
     TracyD3D12NewFrame(gfx->GetCommandQueue()->TRACY_CTX);
 
     gfx->ResetAllocator(bbIndex);
     gfx->Begin(bbIndex);
 
-    static ID3D12DescriptorHeap* const heaps[] = { device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap() };
+    static ID3D12DescriptorHeap* const heaps[] = { g_RHI.device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap() };
     gfx->GetNativeCommandList()->SetDescriptorHeaps(1, heaps);
     gfx->GetNativeCommandList()->SetGraphicsRootSignature(*g_RHI.rootSig);
     gfx->GetNativeCommandList()->SetComputeRootSignature(*g_RHI.rootSig);
 
-    if (editor.state == EditorStates::Running) {
-        SceneView* sceneView = scene.views[bbIndex];
-        auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
+    if (g_Editor.state == EditorStates::Running) {
+        SceneView* sceneView = g_Scene.views[bbIndex];
+        auto* camera = g_Scene.scene->try_get<SceneCameraComponent>(g_Editor.activeCamera);
         CHECK(camera && "No camera");
         g_cameraController.update_camera(camera);
         sceneView->update(
             gfx,
-            *scene.scene,
+            *g_Scene.scene,
             *camera,
             SceneView::FrameData{
-                .viewportWidth  = std::max(viewport.width,  128u),
-                .viewportHeight = std::max(viewport.height, 128u),
-                .frameIndex = swapchain->GetFrameIndex(),
-                .frameFlags = viewport.frameFlags,
+                .viewportWidth  = std::max(g_Editor.viewport.width,  128u),
+                .viewportHeight = std::max(g_Editor.viewport.height, 128u),
+                .frameIndex = g_RHI.swapchain->GetFrameIndex(),
                 .backBufferIndex = bbIndex,
-                .frameTimePrev = ImGui::GetIO().DeltaTime
+                .frameTime = ImGui::GetIO().DeltaTime
             }, 
             SceneView::ShaderData{
                 .probe = SceneView::ShaderData::IBLProbeData{
-                    .use = editor.iblProbeParam.use,
-                    .probe = editor.iblProbe,
-                    .diffuseIntensity = editor.iblProbeParam.diffuseIntensity,
-                    .specularIntensity = editor.iblProbeParam.specularIntensity,
-                    .occlusionStrength = editor.iblProbeParam.occlusionStrength,      
-                    .skyboxLod = editor.iblProbeParam.skyboxLod,
-                    .skyboxIntensity = editor.iblProbeParam.skyboxIntensity
+                    .use = g_Editor.iblProbe.use,
+                    .probe = nullptr, /* !! */
+                    .diffuseIntensity = g_Editor.iblProbe.diffuseIntensity,
+                    .specularIntensity = g_Editor.iblProbe.specularIntensity,
+                    .occlusionStrength = g_Editor.iblProbe.occlusionStrength,
+                    .skyboxLod = g_Editor.iblProbe.skyboxLod,
+                    .skyboxIntensity = g_Editor.iblProbe.skyboxIntensity
                 },
-                .ltcTable = editor.ltcTable,
+                .ltc = nullptr, /* !! */
                 .silhouette = {
-                    .edgeThreshold = editor.silhouetteParam.edgeThreshold,
-                    .edgeColor = editor.silhouetteParam.edgeColor
+                    .edgeThreshold = g_Editor.pickerSilhouette.edgeThreshold,
+                    .edgeColor = g_Editor.pickerSilhouette.edgeColor
                 }
         });  
-        render.renderer->Render(sceneView);
+        renderer->Render(sceneView, gfx);
     }
 
-    gfx->QueueTransitionBarrier(swapchain->GetBackbuffer(bbIndex), ResourceState::RenderTarget);
+    gfx->QueueTransitionBarrier(g_RHI.swapchain->GetBackbuffer(bbIndex), ResourceState::RenderTarget);
     gfx->FlushBarriers();
-    gfx->GetNativeCommandList()->OMSetRenderTargets(1, &swapchain->GetBackbufferRTV(bbIndex).descriptor.get_cpu_handle(), FALSE, nullptr);
+    gfx->GetNativeCommandList()->OMSetRenderTargets(1, &g_RHI.swapchain->GetBackbufferRTV(bbIndex).descriptor.get_cpu_handle(), FALSE, nullptr);
     gfx->BeginEvent(L"ImGui");
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), gfx->GetNativeCommandList());
     gfx->EndEvent();    
 
-    gfx->QueueTransitionBarrier(swapchain->GetBackbuffer(bbIndex), ResourceState::Present);
+    gfx->QueueTransitionBarrier(g_RHI.swapchain->GetBackbuffer(bbIndex), ResourceState::Present);
     gfx->FlushBarriers();
     gfx->Close();
     gfx->Execute();
     {
         ZoneScopedN("Waiting for GPU");
-        swapchain->PresentAndMoveToNextFrame(viewport.vsync);
+        g_RHI.swapchain->PresentAndMoveToNextFrame(g_Editor.render.vsync);
     }
     FrameMark;
     Run_UpdateTitle();
 }
 
 void EditorWindow::Destroy() {
-    editor.state.transition(EditorEvents::OnDestroy);
+    g_Editor.state.transition(EditorEvents::OnDestroy);
 }
 
 void EditorWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     auto resize_swapchain = [&]() {
-        std::scoped_lock lock(render.renderMutex);
-        device->Wait();
-        swapchain->Resize(std::max((WORD)128u, LOWORD(lParam)), std::max((WORD)128u, HIWORD(lParam)));
+        g_RHI.device->Wait();
+        g_RHI.swapchain->Resize(std::max((WORD)128u, LOWORD(lParam)), std::max((WORD)128u, HIWORD(lParam)));
     };
     ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam);
     g_cameraController.Win32_WndProcHandler(hWnd, message, wParam, lParam);
@@ -250,9 +249,9 @@ void EditorWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
 	{
 	case WM_SIZE:
         if (
-            editor.state != EditorStates::Uninitialized &&
-            editor.state != EditorStates::Setup &&
-            editor.state != EditorStates::Destroyed
+            g_Editor.state != EditorStates::Uninitialized &&
+            g_Editor.state != EditorStates::Setup &&
+            g_Editor.state != EditorStates::Destroyed
         ) resize_swapchain();
 		break;
 	case WM_CLOSE:

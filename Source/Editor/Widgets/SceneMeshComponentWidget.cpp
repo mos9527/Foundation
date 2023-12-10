@@ -1,7 +1,7 @@
 #include "SceneGraphWidgets.hpp"
 #include "AssetWidgets.hpp"
 
-using namespace EditorGlobalContext;
+using namespace EditorGlobals;
 void OnImGui_SceneGraphWidget_SceneStaticMeshComponentWidget(SceneStaticMeshComponent* mesh) {
 	ImGui::SeparatorText("Mesh");
 	ImGui::Text("Name: %s", mesh->get_name());
@@ -13,7 +13,7 @@ void OnImGui_SceneGraphWidget_SceneStaticMeshComponentWidget(SceneStaticMeshComp
 			ImGui::EndTabItem();
 		}
 		if (ImGui::BeginTabItem("Material")) {
-			OnImGui_AssetWidget_AssetMaterialComponent(&scene.scene->get<AssetMaterialComponent>(mesh->materialComponent));
+			OnImGui_AssetWidget_AssetMaterialComponent(&g_Scene.scene->get<AssetMaterialComponent>(mesh->materialComponent));
 			ImGui::EndTabItem();
 		}
 		ImGui::EndTabBar();
@@ -33,11 +33,11 @@ void OnImGui_SceneGraphWidget_SceneSkinnedMeshComponentWidget(SceneSkinnedMeshCo
 			ImGui::EndTabItem();
 		}
 		if (ImGui::BeginTabItem("Material")) {
-			OnImGui_AssetWidget_AssetMaterialComponent(&scene.scene->get<AssetMaterialComponent>(mesh->materialComponent));
+			OnImGui_AssetWidget_AssetMaterialComponent(&g_Scene.scene->get<AssetMaterialComponent>(mesh->materialComponent));
 			ImGui::EndTabItem();
 		}
 		if (ImGui::BeginTabItem("Keyshapes")) {
-			AssetKeyshapeTransformComponent& keyTransforms = scene.scene->get<AssetKeyshapeTransformComponent>(mesh->keyshapeTransformComponent);
+			AssetKeyshapeTransformComponent& keyTransforms = g_Scene.scene->get<AssetKeyshapeTransformComponent>(mesh->keyshapeTransformComponent);
 			for (auto& [name,id] : keyTransforms.get_keyshape_mapping()) {
 				ImGui::SliderFloat(name.c_str(), keyTransforms.data()->DataAt(id),0,1);
 				edited |= ImGui::IsItemEdited();
@@ -47,6 +47,6 @@ void OnImGui_SceneGraphWidget_SceneSkinnedMeshComponentWidget(SceneSkinnedMeshCo
 		ImGui::EndTabBar();
 	}
 	if (edited)
-		scene.scene->graph->update_all_version(scene.scene->graph->parent_of(mesh->get_entity()));
+		g_Scene.scene->graph->update_all_version(g_Scene.scene->graph->parent_of(mesh->get_entity()));
 	mesh->update();
 }

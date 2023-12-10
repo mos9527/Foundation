@@ -42,12 +42,12 @@ struct IndirectCommand
 };
 struct IndirectCullCmdList { // ! align for CB
     uint cmdIndex;
-    uint instanceMask;
-    uint2 _pad;
+    uint instanceAllowMask;
+    uint instanceRejectMask;
+    uint _pad;
 };
 struct InstanceCullConstant { // ! align for CB
     IndirectCullCmdList cmds[INSTANCE_CULL_MAX_CMDS];
-    uint meshBufferIndices[4]; // padded
     
     uint hizIndex;
     uint hizMips;
@@ -120,7 +120,7 @@ struct ShadingConstants { // ! align for CB
     uint depthSrv;
 
     uint framebufferUav;
-    uint3 _pad;
+    uint3 _pad2;
 };
 struct TonemappingConstants { // ! align for CB
     uint hisotrgramUav;
@@ -184,16 +184,6 @@ struct SceneMeshInstanceData
     matrix transform;
     matrix transformInvTranspose;
     matrix transformPrev; // Transform from previous frame
-
-    bool has_transparency() {
-        return instanceFlags & INSTANCE_FLAG_TRANSPARENCY;
-    }
-    bool invisible() {
-        return instanceFlags & INSTANCE_FLAG_INVISIBLE;
-    }
-    bool silhouette() {
-        return instanceFlags & INSTANCE_FLAG_SILHOUETTE;
-    }
 };
 struct SceneMaterial {
     // bindless handles within ResourceDescriptorHeap

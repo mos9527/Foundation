@@ -19,7 +19,7 @@ public:
 		device(device), pass_Clear(device), pass_IndirectCull(device), pass_GBuffer(device), pass_HiZ(device), pass_Lighting(device),
 		pass_Transparency(device), pass_Silhouette(device), pass_Skybox(device), pass_Tonemapping(device)
 	{};	
-	void Render(SceneView* sceneView);
+	void Render(SceneView* sceneView, RHI::CommandList* ctx);
 private:	
 	RHI::Device* const device;
 

@@ -67,7 +67,7 @@ void TransparencyPass::reset() {
 	// Command for draws
 	IndirectCmdSig = std::make_unique<CommandSignature>(
 		device,
-		*g_RHI.rootSig,
+		g_RHI.rootSig,
 		CommandSignatureDesc(sizeof(IndirectCommand))
 		.AddConstant(0, 0, 2) // b0 space0 : MeshIndex,LodIndex constant (Indirect)
 		.AddVertexBufferView(0)
@@ -111,8 +111,6 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 		auto* r_rev_rtv = ctx.graph->get<RenderTargetView>(*std::get<1>(handles.revealage_rtv_srv));
 
 		auto native = ctx.cmd->GetNativeCommandList();
-		native->ClearRenderTargetView(r_acc_rtv->descriptor.get_cpu_handle(), r_acc->GetClearValue().color, 1, &scissorRect);
-		native->ClearRenderTargetView(r_rev_rtv->descriptor.get_cpu_handle(), r_rev->GetClearValue().color, 1, &scissorRect);		
 		ctx.cmd->QueueTransitionBarrier(r_depth, ResourceState::DepthRead);
 		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[2] = {
 			r_acc_rtv->descriptor.get_cpu_handle(),
@@ -143,8 +141,8 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 		);
 	};
 	auto render = [=](RgContext& ctx) {
-		auto* r_indirect_commands = ctx.graph->get<Buffer>(*handles.cmd_uav.first);
-		auto* r_indirect_commands_uav = ctx.graph->get<UnorderedAccessView>(*handles.cmd_uav.second);
+		auto* r_indirect_commands = ctx.graph->get<Buffer>(*handles.command_uav.first);
+		auto* r_indirect_commands_uav = ctx.graph->get<UnorderedAccessView>(*handles.command_uav.second);
 		ctx.cmd->QueueTransitionBarrier(r_indirect_commands, ResourceState::IndirectArgument);
 		ctx.cmd->FlushBarriers();
 		auto native = ctx.cmd->GetNativeCommandList();
@@ -158,10 +156,12 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 		);
 	};
 	rg.add_pass(L"Transparency Rendering")
+		.read(*std::get<0>(handles.accumaltion_rtv_srv))
+		.read(*std::get<0>(handles.revealage_rtv_srv))
 		.write(*std::get<0>(handles.accumaltion_rtv_srv))
 		.write(*std::get<0>(handles.revealage_rtv_srv))
 		.read(*handles.depth_dsv.first)
-		.read(*handles.cmd_uav.first)
+		.read(*handles.command_uav.first)
 		.execute([=](RgContext& ctx) {
 		auto native = ctx.cmd->GetNativeCommandList();
 		native->SetPipelineState(*PSO);
@@ -173,7 +173,7 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 		.read(*handles.material_srv.first)
 		.write(*handles.material_srv.first)
 		.write(*handles.depth_dsv.first)
-		.read(*handles.cmd_uav.first)
+		.read(*handles.command_uav.first)
 		.execute([=](RgContext& ctx) {
 		auto native = ctx.cmd->GetNativeCommandList();
 		native->SetPipelineState(*PSO_Material);
@@ -182,13 +182,13 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 		render(ctx);
 	});
 	return rg.add_pass(L"Transparency Blending")	
-		.read(*handles.fb_uav.first)
-		.readwrite(*handles.fb_uav.first)
+		.read(*handles.framebuffer_uav.first)
+		.readwrite(*handles.framebuffer_uav.first)
 		.read(*std::get<0>(handles.accumaltion_rtv_srv))
 		.read(*std::get<0>(handles.revealage_rtv_srv))
 		.execute([=](RgContext& ctx) {
 			UINT width = g_Editor.render.width, height = g_Editor.render.height;
-			auto* r_fb_uav = ctx.graph->get<UnorderedAccessView>(*handles.fb_uav.second);
+			auto* r_fb_uav = ctx.graph->get<UnorderedAccessView>(*handles.framebuffer_uav.second);
 			auto* r_acc_srv = ctx.graph->get<ShaderResourceView>(*std::get<2>(handles.accumaltion_rtv_srv));
 			auto * r_rev_srv = ctx.graph->get<ShaderResourceView>(*std::get<2>(handles.revealage_rtv_srv));
 			auto native = ctx.cmd->GetNativeCommandList();

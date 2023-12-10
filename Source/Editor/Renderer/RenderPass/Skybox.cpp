@@ -1,5 +1,6 @@
 #include "Skybox.hpp"
 #include "../Data/CubeMesh.hpp"
+#include "../../Processor/HDRIProbe.hpp"
 using namespace RHI;
 using namespace EditorGlobals;
 void SkyboxPass::reset() {
@@ -43,7 +44,7 @@ void SkyboxPass::reset() {
 	));
 	// Upload the data
 	UploadCubeMesh();
-	constants = std::make_unique<BufferContainer<SkyboxConstants>>(device, 1, "Skybox Constants");
+	constants = std::make_unique<BufferContainer<SkyboxConstants>>(device, 1, L"Skybox Constants");
 }
 void SkyboxPass::UploadCubeMesh() {
 	device->Wait();
@@ -55,15 +56,15 @@ void SkyboxPass::UploadCubeMesh() {
 }
 RenderGraphPass& SkyboxPass::insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles) {
 	return rg.add_pass(L"Skybox")		
-		.read(handles.frameBuffer)
-		.write(handles.frameBuffer)
-		.read(handles.depth)		
+		.read(*handles.framebuffer_rtv.first)
+		.write(*handles.framebuffer_rtv.first)
+		.read(*handles.depth_dsv.first)		
 		.execute([=](RgContext& ctx) {			
 			UINT width = g_Editor.render.width, height = g_Editor.render.height;
 			auto* native = ctx.cmd->GetNativeCommandList();
-			auto* r_fb_rtv = ctx.graph->get<RenderTargetView>(handles.frameBufferRTV);
-			auto* r_depth_dsv = ctx.graph->get<DepthStencilView>(handles.depthDSV);
-			auto* r_depth = ctx.graph->get<Texture>(handles.depth);
+			auto* r_fb_rtv = ctx.graph->get<RenderTargetView>(*handles.framebuffer_rtv.second);
+			auto* r_depth_dsv = ctx.graph->get<DepthStencilView>(*handles.depth_dsv.second);
+			auto* r_depth = ctx.graph->get<Texture>(*handles.depth_dsv.first);
 			CD3DX12_VIEWPORT viewport(.0f, .0f, width, height, .0f, 1.0f);
 			CD3DX12_RECT scissorRect(0, 0, width, height);						
 

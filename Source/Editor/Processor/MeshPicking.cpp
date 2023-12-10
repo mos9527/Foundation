@@ -1,7 +1,7 @@
-#include "MeshSelectionProcessor.hpp"
+#include "MeshPicking.hpp"
 using namespace RHI;
 
-MeshSelectionProcessor::MeshSelectionProcessor(Device* device) : device(device), proc_reduce(device) {
+MeshPicking::MeshPicking(Device* device) : device(device), proc_reduce(device) {
 	instanceSelectionMask = std::make_unique<Buffer>(device, Resource::ResourceDesc::GetGenericBufferDesc(
 		(MAX_INSTANCE_COUNT) * sizeof(UINT), RAW_BUFFER_STRIDE, ResourceState::UnorderedAccess, ResourceHeapType::Default,
 		ResourceFlags::UnorderedAccess
@@ -17,7 +17,7 @@ MeshSelectionProcessor::MeshSelectionProcessor(Device* device) : device(device),
 	readbackInstanceSelectionMask->SetName(L"Readback Instance Selection Mask");	
 }
 
-std::vector<uint> const & MeshSelectionProcessor::GetSelectedMaterialBufferAndRect(RHI::Texture* texture, RHI::ShaderResourceView* resourceSRV, uint2 point, uint2 extent) {
+std::vector<uint> const & MeshPicking::GetSelectedMaterialBufferAndRect(RHI::Texture* texture, RHI::ShaderResourceView* resourceSRV, uint2 point, uint2 extent) {
 	RenderGraph rg(cache);
 	auto& output = rg.import<Buffer>(instanceSelectionMask.get());
 	proc_reduce.insert_reduce_material_instance(

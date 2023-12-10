@@ -1,9 +1,9 @@
-#include "SkinnedMeshBufferProcessor.hpp"
+#include "MeshSkinning.hpp"
 #include "../Shaders/Shared.h"
 #include "../Scene/Scene.hpp"
 
 using namespace RHI;
-SkinnedMeshBufferProcessor::SkinnedMeshBufferProcessor(Device* device) : device(device) {
+MeshSkinning::MeshSkinning(Device* device) : device(device) {
 	SkinCS = BuildShader(L"MeshSkinning", L"main_skinning", L"cs_6_6");
 	ReduceCS = BuildShader(L"MeshSkinning", L"main_reduce", L"cs_6_6");
 	RS = std::make_unique<RootSignature>(
@@ -45,7 +45,7 @@ SkinnedMeshBufferProcessor::SkinnedMeshBufferProcessor(Device* device) : device(
 	));
 	TransformedVertBuffers.resize(MAX_INSTANCE_COUNT);
 };
-void SkinnedMeshBufferProcessor::RegisterOrUpdate(RHI::CommandList* ctx, SceneSkinnedMeshComponent* mesh) {	
+void MeshSkinning::RegisterOrUpdate(RHI::CommandList* ctx, SceneSkinnedMeshComponent* mesh) {	
 	ZoneScopedN("Skinning CPU Dispatch");
 	size_t index = mesh->parent.index<SceneSkinnedMeshComponent>(mesh->get_entity());	
 	SkinnedMeshAsset& asset = mesh->parent.get<SkinnedMeshAsset>(mesh->meshAsset);	

@@ -1,9 +1,9 @@
-#include "IBLProbeProcessor.hpp"
+#include "HDRIProbe.hpp"
 using namespace RHI;
 #define IRRIDANCE_MAP_DIMENSION 64	
 #define NUM_RADIANCE_CUBEMAPS 2 // GGX & Charile
 #define NUM_LUTS 1 // Slice 0 -> GGX (rg) & Charlie (b). see https://bruop.github.io/ibl/#split_sum_approximation
-IBLProbeProcessor::IBLProbeProcessor(Device* device, uint dimension_) :
+HDRIProbe::HDRIProbe(Device* device, uint dimension_) :
 	device(device), proc_Prefilter(device) {		
 	// Ensure the image dimension is in the power of 2
 	dimension = 1 << (uint)floor(std::log2(dimension_));	
@@ -87,11 +87,11 @@ IBLProbeProcessor::IBLProbeProcessor(Device* device, uint dimension_) :
 	);
 }
 
-void IBLProbeProcessor::Process(TextureAsset* srcImage) {
+void HDRIProbe::Process(TextureAsset* srcImage) {
 	auto fill_handles = [&](RenderGraph& rg) {
-		std::vector<RgHandle> rg_CubemapUAVs, rg_RadianceCubeArrayUAVs;
-		for (auto& uav : cubeMapUAVs) rg_CubemapUAVs.push_back(rg.import<UnorderedAccessView>(uav.get()));
-		for (auto& uav : radianceCubeArrayUAVs) rg_RadianceCubeArrayUAVs.push_back(rg.import<UnorderedAccessView>(uav.get()));
+		std::array<RgHandle*, 16> rg_CubemapUAVs, rg_RadianceCubeArrayUAVs;
+		for (uint i = 0; i < cubeMapUAVs.size(); i++) rg_CubemapUAVs[i] = &rg.import<UnorderedAccessView>(cubeMapUAVs[i].get());
+		for (uint i = 0; i < radianceCubeArrayUAVs.size(); i++) rg_RadianceCubeArrayUAVs[i] = &rg.import<UnorderedAccessView>(radianceCubeArrayUAVs[i].get());
 		return IBLPrefilterPass::IBLPrefilterPassHandles{
 			.panoSrv = rg.import<ShaderResourceView>(srcImage->textureSRV.get()),
 
@@ -151,9 +151,9 @@ void IBLProbeProcessor::Process(TextureAsset* srcImage) {
 		rg.get_epilogue_pass().read(handles.lutArray);
 		execute_graph(rg);
 	};	
-	state.transition(IBLProbeProcessorEvents{ .type = IBLProbeProcessorEvents::Type::Begin });
-	state.transition(IBLProbeProcessorEvents{ 
-		.type = IBLProbeProcessorEvents::Type::Process,
+	state.transition(HDRIProbeProcessorEvents{ .type = HDRIProbeProcessorEvents::Type::Begin });
+	state.transition(HDRIProbeProcessorEvents{ 
+		.type = HDRIProbeProcessorEvents::Type::Process,
 		.proceesEvent = {
 			.processName = "Panorama to Cubemap",
 			.newNumProcessed = 0,
@@ -161,8 +161,8 @@ void IBLProbeProcessor::Process(TextureAsset* srcImage) {
 		}
 	});
 	subproc_pano2cube();
-	state.transition(IBLProbeProcessorEvents{
-		.type = IBLProbeProcessorEvents::Type::Process,
+	state.transition(HDRIProbeProcessorEvents{
+		.type = HDRIProbeProcessorEvents::Type::Process,
 		.proceesEvent = {
 			.processName = "Irridance IS Prefilter",
 			.newNumProcessed = 1,
@@ -170,8 +170,8 @@ void IBLProbeProcessor::Process(TextureAsset* srcImage) {
 		}
 	});
 	subproc_diffuse_prefilter();	
-	state.transition(IBLProbeProcessorEvents{
-		.type = IBLProbeProcessorEvents::Type::Process,
+	state.transition(HDRIProbeProcessorEvents{
+		.type = HDRIProbeProcessorEvents::Type::Process,
 		.proceesEvent = {
 			.processName = "Radiance IS Prefilter",
 			.newNumProcessed = 1,
@@ -181,8 +181,8 @@ void IBLProbeProcessor::Process(TextureAsset* srcImage) {
 	for (uint j = 0; j < NUM_RADIANCE_CUBEMAPS; j++) {
 		for (uint i = 0; i < numMips; i++) {
 			subproc_specular_prefilter(i, j);			
-			state.transition(IBLProbeProcessorEvents{
-				.type = IBLProbeProcessorEvents::Type::Process,
+			state.transition(HDRIProbeProcessorEvents{
+				.type = HDRIProbeProcessorEvents::Type::Process,
 				.proceesEvent = {
 					.processName = "Radiance IS Prefilter",
 					.newNumProcessed = 1,
@@ -191,8 +191,8 @@ void IBLProbeProcessor::Process(TextureAsset* srcImage) {
 			});
 		}
 	}	
-	state.transition(IBLProbeProcessorEvents{
-		.type = IBLProbeProcessorEvents::Type::Process,
+	state.transition(HDRIProbeProcessorEvents{
+		.type = HDRIProbeProcessorEvents::Type::Process,
 		.proceesEvent = {
 			.processName = "Split Sum LUT",
 			.newNumProcessed = 0,
@@ -200,11 +200,11 @@ void IBLProbeProcessor::Process(TextureAsset* srcImage) {
 		}
 	});
 	subproc_lut();
-	state.transition({ .type = IBLProbeProcessorEvents::Type::End });	
+	state.transition({ .type = HDRIProbeProcessorEvents::Type::End });	
 };
 
-void IBLProbeProcessor::ProcessAsync(TextureAsset* srcImage) {
-	CHECK(state != IBLProbeProcessorStates::Processing && "Already processing");
+void HDRIProbe::ProcessAsync(TextureAsset* srcImage) {
+	CHECK(state != HDRIProbeProbeProcessorStates::Processing && "Already processing");
 	taskpool.push([&](TextureAsset* src) {
 		Process(src);
 	}, srcImage);

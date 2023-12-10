@@ -9,14 +9,14 @@ class IBLPrefilterPass {
 	FFXSPDPass spdPass;
 public:
 	struct IBLPrefilterPassHandles {
-		RgHandle& panoSrv; // Orignial HDRI imported ShaderResourceView
+		RgHandle& panoSrv; // Orignial HDRIProbe imported ShaderResourceView
 
 		RgHandle& cubemap;
-		std::vector<RgHandle> cubemapUAVs;
+		std::array<RgHandle*, 16> cubemapUAVs;
 		RgHandle& cubemapSRV;
 
 		RgHandle& radianceCubeArray;
-		std::vector<RgHandle> radianceCubeArrayUAVs;
+		std::array<RgHandle*,16> radianceCubeArrayUAVs;
 		RgHandle& radianceCubeArraySRV;
 
 		RgHandle& irradianceCube;
@@ -29,8 +29,8 @@ public:
 	};
 
 	IBLPrefilterPass(RHI::Device* device);
-	RenderGraphPass& insert_pano2cube(RenderGraph& rg, IBLPrefilterPassHandles& handles);
-	RenderGraphPass& insert_diffuse_prefilter(RenderGraph& rg, IBLPrefilterPassHandles& handles);
-	RenderGraphPass& insert_specular_prefilter(RenderGraph& rg, IBLPrefilterPassHandles& handles, uint mipIndex, uint mipLevels, uint cubeIndex);
-	RenderGraphPass& insert_lut(RenderGraph& rg, IBLPrefilterPassHandles& handles);
+	RenderGraphPass& insert_pano2cube(RenderGraph& rg, IBLPrefilterPassHandles const& handles);
+	RenderGraphPass& insert_diffuse_prefilter(RenderGraph& rg, IBLPrefilterPassHandles const& handles);
+	RenderGraphPass& insert_specular_prefilter(RenderGraph& rg, IBLPrefilterPassHandles const& handles, uint mipIndex, uint mipLevels, uint cubeIndex);
+	RenderGraphPass& insert_lut(RenderGraph& rg, IBLPrefilterPassHandles const& handles);
 };

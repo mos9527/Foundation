@@ -1,4 +1,6 @@
 #include "DeferredLighting.hpp"
+#include "../../Processor/HDRIProbe.hpp"
+
 using namespace RHI;
 using namespace EditorGlobals;
 void DeferredLightingPass::reset() {
@@ -29,8 +31,20 @@ RenderGraphPass& DeferredLightingPass::insert(RenderGraph& rg, SceneView* sceneV
 			constants->Data()->gradientSrv = ctx.graph->get<ShaderResourceView>(*handles.gradient_srv.second)->descriptor.get_heap_handle();
 			constants->Data()->materialSrv = ctx.graph->get<ShaderResourceView>(*handles.material_srv.second)->descriptor.get_heap_handle();		
 			
-			constants->Data()->ltcLutHeapIndex = sceneView->get_shader_data().ltc.get_heap_handle();
-			constants->Data()->iblProbe = sceneView->get_shader_data().probe.to_hlsl();
+			SceneIBLProbe probeHLSL{};
+			{
+				auto probe = sceneView->get_shader_data().probe.probe;
+				probeHLSL.enabled = sceneView->get_shader_data().probe.use;
+				probeHLSL.cubemapHeapIndex = probe->cubemapSRV->descriptor.get_heap_handle();
+				probeHLSL.radianceHeapIndex = probe->radianceCubeArraySRV->descriptor.get_heap_handle();
+				probeHLSL.irradianceHeapIndex = probe->irridanceCubeSRV->descriptor.get_heap_handle();
+				probeHLSL.lutHeapIndex = probe->lutArraySRV->descriptor.get_heap_handle();
+				probeHLSL.mips = probe->numMips;
+				probeHLSL.diffuseIntensity = sceneView->get_shader_data().probe.diffuseIntensity;
+				probeHLSL.specularIntensity = sceneView->get_shader_data().probe.specularIntensity;
+				probeHLSL.occlusionStrength = sceneView->get_shader_data().probe.occlusionStrength;
+			}
+			constants->Data()->iblProbe = probeHLSL;
 
 			native->SetPipelineState(*PSO);;			
 			native->SetComputeRootSignature(*g_RHI.rootSig);

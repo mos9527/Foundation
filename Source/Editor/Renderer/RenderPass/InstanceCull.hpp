@@ -13,7 +13,7 @@ struct InstanceCull : public IRenderPass {
 public:
 	struct Handles {
 		std::pair<RgHandle*, RgHandle*> hiz_srv;
-		std::array<std::tuple<RgHandle*, RgHandle*, UINT>, INSTANCE_CULL_MAX_CMDS> cmd_uav_instanceMaskValue;
+		std::array<std::tuple<RgHandle*, RgHandle*, int, int>, INSTANCE_CULL_MAX_CMDS> cmd_uav_instanceMaskAllow_instanceMaskRejcect;
 	};	
 	static const RHI::Resource::ResourceDesc GetCountedIndirectCmdBufferDesc(RHI::name_t name) {
 		return RHI::Resource::ResourceDesc::GetGenericBufferDesc(

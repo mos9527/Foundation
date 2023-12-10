@@ -3,9 +3,9 @@
 #include "../../../Runtime/Asset/ResourceContainer.hpp"
 #include "../../../Runtime/Asset/MeshAsset.hpp"
 
-class SkinnedMeshBufferProcessor;
+class MeshSkinning;
 struct SceneSkinnedMeshComponent : public SceneComponent {
-	friend SkinnedMeshBufferProcessor;
+	friend MeshSkinning;
 	static const SceneComponentType type = SceneComponentType::SkinnedMesh;
 	SceneSkinnedMeshComponent(Scene& scene, entt::entity ent) : SceneComponent(scene, ent, type) {};
 	

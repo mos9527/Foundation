@@ -2,79 +2,39 @@
 #include "../Win32/Win32IO.hpp"
 #include "../../Common/IO.hpp"
 
-#include "../Processor/IBLProbeProcessor.hpp"
+#include "../Processor/HDRIProbe.hpp"
 
-using namespace EditorGlobalContext;
+using namespace EditorGlobals;
+
+static DefaultTaskThreadPool taskpool;
 void OnImGui_IBLProbeWidget() {
 	static std::string selectedFile;
 	static AssetHandle loadedAsset;		
 	ImGui::SetNextWindowSize(ImVec2(512, 512));
 	if (ImGui::Button("Open")) {
-		auto path = Win32_GetOpenFileNameSimple(window);
+		auto path = Win32_GetOpenFileNameSimple(g_Window);
 		if (path.size()) {			
 			selectedFile = wstring_to_utf8(path.c_str());
-			editor.state.transition(EditorEvents::OnLoad);
-			editor.importStatus.reset();
-			loadedAsset = scene.scene->create<TextureAsset>();
+			g_Editor.state.transition(EditorEvents::OnLoad);
+			g_Editor.importStatus.reset();
+			loadedAsset = g_Scene.scene->create<TextureAsset>();
 			taskpool.push([&](path_t path, AssetHandle handle) -> void {				
 				auto image = load_bitmap_RGBA32F(path);
-				auto& asset = scene.scene->import_asset(handle, device, &image);
-				UploadContext ctx(device);
+				auto& asset = g_Scene.scene->import_asset(handle, g_RHI.device, &image);
+				UploadContext ctx(g_RHI.device);
 				ctx.Begin();
 				asset.Upload(&ctx);
 				ctx.End().Wait();
-				editor.state.transition(EditorEvents::OnLoadComplete);				
+				g_Editor.state.transition(EditorEvents::OnLoadComplete);				
 			}, path, loadedAsset);
 		}
 	}
 	ImGui::SameLine();
 	ImGui::Text("File: %s", selectedFile.c_str());
-	auto* asset = scene.scene->try_get<TextureAsset>(loadedAsset);
+	auto* asset = g_Scene.scene->try_get<TextureAsset>(loadedAsset);
 	if (asset && asset->IsUploaded()) {
 		ImGui::SeparatorText("Preview");
 		float aspect = (float)asset->texture.texture.GetDesc().width / asset->texture.texture.GetDesc().height;
 		ImGui::Image((ImTextureID)asset->textureSRV->descriptor.get_gpu_handle().ptr, ImVec2{ 256 * aspect, 256 });
-		ImGui::SeparatorText("Processor");
-		if (editor.iblProbe->state != IBLProbeProcessorStates::Processing) {
-			if (editor.iblProbe->state == IBLProbeProcessorStates::IdleNoProbe)
-				ImGui::Text("No probe loaded.");
-			if (editor.iblProbe->state == IBLProbeProcessorStates::IdleWithProbe) {
-				ImGui::Text("Probe loaded.");
-				ImGui::SliderFloat("Diffuse Strength", &editor.iblProbeParam.diffuseIntensity, 0, 1);
-				ImGui::SliderFloat("Specular Strength", &editor.iblProbeParam.specularIntensity, 0, 1);
-				ImGui::SliderFloat("Occlusion Strength", &editor.iblProbeParam.occlusionStrength, 0, 1);
-				ImGui::SeparatorText("Skybox");
-				ImGui::SliderFloat("Skybox LOD", &editor.iblProbeParam.skyboxLod, 0, editor.iblProbe->numMips - 1);
-				ImGui::SliderFloat("Skybox Intensity", &editor.iblProbeParam.skyboxIntensity, 0, 1);
-				if (ImGui::BeginTabBar("##IBLPreview")) {
-					if (ImGui::BeginTabItem("Split Sum LUT")) {
-						ImGui::Image((ImTextureID)editor.iblProbe->lutArrayUAV->descriptor.get_gpu_handle().ptr, ImVec2{ 128,128 });
-						ImGui::EndTabItem();
-					}
-					if (ImGui::BeginTabItem("Irridance")) {
-						ImGui::Image((ImTextureID)editor.iblProbe->irridanceCubeUAV->descriptor.get_gpu_handle().ptr, ImVec2{ 128,128 });
-						ImGui::EndTabItem();
-					}
-					if (ImGui::BeginTabItem("Radiance")) {
-						static int mipLevel = 0;
-						ImGui::Image((ImTextureID)editor.iblProbe->radianceCubeArrayUAVs[mipLevel]->descriptor.get_gpu_handle().ptr, ImVec2{128,128});
-						ImGui::SliderInt("Mip", &mipLevel, 0, editor.iblProbe->numMips - 1);
-						ImGui::EndTabItem();
-					}
-					// xxx add *actual* probe visualizers
-					ImGui::EndTabBar();
-				}
-			}
-			if (ImGui::Button("Process")) editor.iblProbe->ProcessAsync(asset);
-		}
-		else {
-			ImGui::Text("Processing...");
-			ImGui::Text("%s", editor.iblProbe->state.currentProcess);
-			ImGui::ProgressBar((float)editor.iblProbe->state.numProcessed / (editor.iblProbe->state.numProcessed + editor.iblProbe->state.numToProcess));
-		}
-	}
-	else {
-		if (editor.state == EditorStates::Loading)
-			ImGui::Text("Loading...");			
 	}
 }

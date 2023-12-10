@@ -21,14 +21,13 @@ void HierarchalDepthPass::reset() {
 
 RenderGraphPass& HierarchalDepthPass::insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles) {
 	rg.add_pass(L"Hierarchal Depth Sample To Texture")
-		.read(handles.depth)
-		.readwrite(handles.hizTexture)
+		.read(*handles.depth_srv.first)
+		.readwrite(*handles.depthPyramid_MipUavs.first)
 		.execute([=](RgContext& ctx) -> void {
-			auto* r_depth = ctx.graph->get<Texture>(handles.depth);
-			auto* r_depth_srv = ctx.graph->get<ShaderResourceView>(handles.depthSRV);
-			auto* r_hiz = ctx.graph->get<Texture>(handles.hizTexture);
-			CHECK(handles.hizUAVs.size() == r_hiz->GetDesc().mipLevels);
-			auto* r_hiz_uav = ctx.graph->get<UnorderedAccessView>(handles.hizUAVs[0]);
+			auto* r_depth = ctx.graph->get<Texture>(*handles.depth_srv.first);
+			auto* r_depth_srv = ctx.graph->get<ShaderResourceView>(*handles.depth_srv.second);
+			auto* r_hiz = ctx.graph->get<Texture>(*handles.depthPyramid_MipUavs.first);
+			auto* r_hiz_uav = ctx.graph->get<UnorderedAccessView>(*handles.depthPyramid_MipUavs.second[0]);
 			DepthSampleToTextureConstant data{
 				.depthSRVHeapIndex = r_depth_srv->descriptor.get_heap_handle(),
 				.hizMip0UavHeapIndex = r_hiz_uav->descriptor.get_heap_handle(),
@@ -42,8 +41,8 @@ RenderGraphPass& HierarchalDepthPass::insert(RenderGraph& rg, SceneView* sceneVi
 			native->Dispatch(DivRoundUp(data.dimensions.x, RENDERER_FULLSCREEN_THREADS), DivRoundUp(data.dimensions.y, RENDERER_FULLSCREEN_THREADS), 1);
 		});
 	return spdPass.insert(rg, {
-		.srcTexture = handles.hizTexture,
-		.dstTexture = handles.hizTexture,
-		.dstMipUAVs = handles.hizUAVs
+		.srcTexture = *handles.depth_srv.first,
+		.dstTexture = *handles.depthPyramid_MipUavs.first,
+		.dstMipUAVs = handles.depthPyramid_MipUavs.second
 	});
 }

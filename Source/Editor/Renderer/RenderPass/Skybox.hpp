@@ -1,6 +1,5 @@
 #pragma once
 #include "../Renderer.hpp"
-
 struct SkyboxPass : public IRenderPass {
 	std::unique_ptr<RHI::Shader> VS,PS;
 	std::unique_ptr<RHI::PipelineState> PSO;
@@ -9,11 +8,8 @@ struct SkyboxPass : public IRenderPass {
 	void UploadCubeMesh();
 public:
 	struct Handles {
-		RgHandle& depth; // pre-transparency
-		RgHandle& depthDSV;
-
-		RgHandle& frameBuffer;
-		RgHandle& frameBufferRTV;		
+		std::pair<RgHandle*, RgHandle*> depth_dsv;
+		std::pair<RgHandle*, RgHandle*> framebuffer_rtv;
 	};
 
 	SkyboxPass(RHI::Device* device) : IRenderPass(device, "Skybox") { reset(); };

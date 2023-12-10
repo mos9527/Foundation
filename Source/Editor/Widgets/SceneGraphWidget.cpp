@@ -2,7 +2,7 @@
 #include "SceneGraphWidgets.hpp"
 #include "../../Dependencies/IconsFontAwesome6.h"
 
-using namespace EditorGlobalContext;
+using namespace EditorGlobals;
 const char* GetGlyphByType(SceneComponentType type) {
 	using enum SceneComponentType;
 	switch (type)
@@ -26,9 +26,9 @@ const char* GetGlyphByType(SceneComponentType type) {
 void OnImGui_SceneComponentWidget() {
 	using enum SceneComponentType;
 	if (ImGui::Begin("Component")) {
-		if (scene.scene->valid<SceneComponentType>(editor.editingComponent)) {
-			SceneComponentType type = scene.scene->get_type<SceneComponentType>(editor.editingComponent);
-			SceneComponent* componet = scene.scene->get_base<SceneComponent>(editor.editingComponent);
+		if (g_Scene.scene->valid<SceneComponentType>(g_Editor.editingComponent)) {
+			SceneComponentType type = g_Scene.scene->get_type<SceneComponentType>(g_Editor.editingComponent);
+			SceneComponent* componet = g_Scene.scene->get_base<SceneComponent>(g_Editor.editingComponent);
 			ImGui::Text("Version: %d", componet->get_version());			
 			OnImGui_SceneComponent_TransformWidget(componet);
 			switch (type)
@@ -61,11 +61,11 @@ void OnImGui_SceneComponentWidget() {
 void OnImGui_SceneGraphWidget() {
 	if (ImGui::Begin("Scene")) {
 		auto dfs_nodes = [&](auto& func, entt::entity entity, uint depth) -> void {
-			SceneComponentType type = scene.scene->get_type<SceneComponentType>(entity);
-			SceneComponent* componet = scene.scene->get_base<SceneComponent>(entity);
+			SceneComponentType type = g_Scene.scene->get_type<SceneComponentType>(entity);
+			SceneComponent* componet = g_Scene.scene->get_base<SceneComponent>(entity);
 			uint stack_count = 0;
 			ImGuiTreeNodeFlags flags = 0;
-			if (editor.editingComponent == entity)
+			if (g_Editor.editingComponent == entity)
 				flags |= ImGuiTreeNodeFlags_Selected;
 			size_t id = entt::to_integral(entity);
 			ImGui::PushStyleColor(ImGuiCol_Text, componet->get_enabled() ? IM_COL32_WHITE : IM_COL32(127, 127, 127, 127));
@@ -82,11 +82,11 @@ void OnImGui_SceneGraphWidget() {
 			ImGui::PopID();
 			ImGui::SameLine();
 			ImGui::SetCursorPosX(cursorX);
-			bool hasChild = scene.scene->graph->has_child(entity);
+			bool hasChild = g_Scene.scene->graph->has_child(entity);
 			if (!hasChild) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 			if (ImGui::TreeNodeEx((void*)id, flags, "%s %s", GetGlyphByType(type), componet->get_name())) {
 				if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
-					editor.editingComponent = entity;
+					g_Editor.editingComponent = entity;
 				ImGui::PushID((void*)id);
 				{
 					if (ImGui::IsItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Right))
@@ -94,7 +94,7 @@ void OnImGui_SceneGraphWidget() {
 					if (ImGui::BeginPopup("#")) {
 						ImGui::SeparatorText("Add...");
 						if (ImGui::Selectable("Light")) {
-							scene.scene->graph->emplace_child_of<SceneLightComponent>(entity);
+							g_Scene.scene->graph->emplace_child_of<SceneLightComponent>(entity);
 						}
 						ImGui::EndPopup();
 					}
@@ -102,11 +102,11 @@ void OnImGui_SceneGraphWidget() {
 				ImGui::PopID();
 				if (hasChild) {
 					stack_count++;
-					auto& children = scene.scene->graph->child_of(entity);
+					auto& children = g_Scene.scene->graph->child_of(entity);
 					std::vector<entt::entity> child_sorted(children.begin(), children.end());
 					std::sort(child_sorted.begin(), child_sorted.end(), [&](entt::entity lhs, entt::entity rhs) {
 						// sort in lexicographicaly descending order
-						int lex = strcmp(scene.scene->get_base<SceneComponent>(lhs)->get_name(), scene.scene->get_base<SceneComponent>(rhs)->get_name());
+						int lex = strcmp(g_Scene.scene->get_base<SceneComponent>(lhs)->get_name(), g_Scene.scene->get_base<SceneComponent>(rhs)->get_name());
 						if (lex != 0) return lex < 0;
 						// same name. to enforce strict weak ordering, entity id is then used instead
 						return lhs < rhs;
@@ -118,8 +118,8 @@ void OnImGui_SceneGraphWidget() {
 			while (stack_count--) ImGui::TreePop();
 			ImGui::PopStyleColor();
 		};
-		auto root = scene.scene->graph->get_root();
-		SceneComponent* componet = scene.scene->get_base<SceneComponent>(root);
+		auto root = g_Scene.scene->graph->get_root();
+		SceneComponent* componet = g_Scene.scene->get_base<SceneComponent>(root);
 		dfs_nodes(dfs_nodes, root, 0);	
 	}
 

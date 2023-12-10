@@ -3,11 +3,11 @@
 #include "../Scene/SceneComponent/SkinnedMesh.hpp"
 #include "../../Runtime/Asset/ResourceContainer.hpp"
 #include "../Shaders/Shared.h"
-class SkinnedMeshBufferProcessor {
+class MeshSkinning {
 public:
 	std::unique_ptr<RHI::Buffer> sceneMeshBuffer; // SceneMeshBuffer[MAX_INSTANCE_COUNT]. Index -> index in registry storage of SceneSkinnedMeshComponent
 
-	SkinnedMeshBufferProcessor(RHI::Device* device);
+	MeshSkinning(RHI::Device* device);
 
 	void RegisterOrUpdate(RHI::CommandList* ctx, SceneSkinnedMeshComponent* mesh);	
 private:

@@ -1,7 +1,7 @@
 #include "KBMCamera.hpp"
 #include <windowsx.h>
 #include <hidusage.h>
-
+using namespace EditorGlobals;
 void KBMCameraController::Win32RawInput_Setup(HWND hwnd)
 {
 	RAWINPUTDEVICE Rid[2];
@@ -23,7 +23,6 @@ void KBMCameraController::Win32_WndProcHandler(HWND hWnd, UINT message, WPARAM w
         if (rawInput.data.mouse.usButtonFlags & (RI_MOUSE_WHEEL | RI_MOUSE_HWHEEL)) {
             // Scroll wheel event
             // Active when mouse is hovering on the viewport
-            if (EditorGlobalContext::viewport.state == ViewportManipulationState::Nothing) return;
             Vector3 moveDirection = -translation;
             moveDirection.Normalize();
             float camAbsDistance = std::abs(translation.Length());
@@ -35,28 +34,7 @@ void KBMCameraController::Win32_WndProcHandler(HWND hWnd, UINT message, WPARAM w
             if (wheel > 0 && camAbsDistance <= MIN_DISTANCE) return;
             if (wheel < 0 && camAbsDistance >= MAX_DISTANCE) return;
             translation += moveDirection * delta * (wheel > 0 ? 1 : -1);
-        }
-        {
-            // Relative movement
-            // Active only when the viewport is in UsingCamera state.
-            LONG dX = rawInput.data.mouse.lLastX, dY = rawInput.data.mouse.lLastY;
-            if (EditorGlobalContext::viewport.state == ViewportManipulationState::UsingCamera) {
-                // Arcball camera control
-                eulerRotation.y += dX * ROTATION_NOTCH;
-                eulerRotation.x += dY * ROTATION_NOTCH;
-            }
-            else if (EditorGlobalContext::viewport.state == ViewportManipulationState::UsingCameraOffsetView) {
-                // Moves viewpoint center
-                AffineTransform T = get_transform();
-                Vector3 Up = { 0,1,0 };
-                Vector3 Front = { 0,0,1 };
-                Up = Vector3::TransformNormal(Up, T);
-                Front = Vector3::TransformNormal(Front, T);
-                Vector3 Right = Up.Cross(Front);
-                origin += dX * Right * OFFSET_NOTCH;
-                origin += dY * Up * OFFSET_NOTCH;
-            }
-        }
+        }        
     };
     auto handle_keyboard = [&](RAWINPUT& rawInput) {      
         switch (rawInput.data.keyboard.VKey) {

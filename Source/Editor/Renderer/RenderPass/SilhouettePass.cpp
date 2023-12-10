@@ -48,11 +48,11 @@ void SilhouettePass::reset() {
 	PSO_Blend = std::make_unique<PipelineState>(device, std::move(pso));
 	constants = std::make_unique<BufferContainer<SilhouetteConstants>>(device, 1, L"Silhouette Constants");
 }
-RenderGraphPass& SilhouettePass::insert(RenderGraph& rg, SceneView* sceneView, SilhouettePassHandles&& handles) {
+RenderGraphPass& SilhouettePass::insert(RenderGraph& rg, SceneView* sceneView, SilhouettePassHandles const& handles) {
 	rg.add_pass(L"Silhouette Depth Rendering")
 		.read(*std::get<0>(handles.silhouette_dsv_srv)) // Ensure cleared
 		.write(*std::get<0>(handles.silhouette_dsv_srv))
-		.read(*handles.cmd_uav.first)
+		.read(*handles.command_uav.first)
 		.execute([=](RgContext& ctx) {
 			UINT width = g_Editor.render.width, height = g_Editor.render.height;
 			auto* native = ctx.cmd->GetNativeCommandList();
@@ -61,8 +61,8 @@ RenderGraphPass& SilhouettePass::insert(RenderGraph& rg, SceneView* sceneView, S
 			CD3DX12_RECT scissorRect(0, 0, width, height);			
 			auto* r_dsv = ctx.graph->get<DepthStencilView>(*std::get<1>(handles.silhouette_dsv_srv));			
 			
-			auto* r_cmd = ctx.graph->get<Buffer>(*handles.cmd_uav.first);
-			auto* r_cmd_uav = ctx.graph->get<UnorderedAccessView>(*handles.cmd_uav.second);
+			auto* r_cmd = ctx.graph->get<Buffer>(*handles.command_uav.first);
+			auto* r_cmd_uav = ctx.graph->get<UnorderedAccessView>(*handles.command_uav.second);
 
 			ctx.cmd->QueueTransitionBarrier(r_cmd, ResourceState::IndirectArgument);
 			ctx.cmd->FlushBarriers();
@@ -93,20 +93,19 @@ RenderGraphPass& SilhouettePass::insert(RenderGraph& rg, SceneView* sceneView, S
 			);
 	});
 	return rg.add_pass(L"Silhouette Blending")
-		.read(*handles.frameBuffer_uav.first)
-		.readwrite(*handles.frameBuffer_uav.first)
+		.read(*handles.framebuffer_uav.first)
+		.readwrite(*handles.framebuffer_uav.first)
 		.read(*std::get<0>(handles.silhouette_dsv_srv))
 		.execute([=](RgContext& ctx) {
 			UINT width = g_Editor.render.width, height = g_Editor.render.height;
 			auto* native = ctx.cmd->GetNativeCommandList();
 
 			auto* r_depth_srv = ctx.graph->get<ShaderResourceView>(*std::get<2>(handles.silhouette_dsv_srv));
-			auto* r_fb_uav = ctx.graph->get<UnorderedAccessView>(*handles.frameBuffer_uav.second);
+			auto* r_fb_uav = ctx.graph->get<UnorderedAccessView>(*handles.framebuffer_uav.second);
 			
 			constants->Data()->frameBufferUAV = r_fb_uav->descriptor.get_heap_handle();
 			constants->Data()->depthSRV = r_depth_srv->descriptor.get_heap_handle();
 
-			auto native = ctx.cmd->GetNativeCommandList();
 			native->SetPipelineState(*PSO_Blend);
 			native->SetGraphicsRootSignature(*g_RHI.rootSig);
 			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->get_editor_globals_buffer()->GetGPUAddress());

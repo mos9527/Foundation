@@ -38,7 +38,7 @@ void GBufferPass::reset() {
 	// indirect command buffer
 	IndirectCmdSig = std::make_unique<CommandSignature>(
 		device,
-		*g_RHI.rootSig,
+		g_RHI.rootSig,
 		CommandSignatureDesc(sizeof(IndirectCommand))
 		.AddConstant(0, 0, 2) // b0 space0 : Mesh Index,LOD Index
 		.AddVertexBufferView(0)

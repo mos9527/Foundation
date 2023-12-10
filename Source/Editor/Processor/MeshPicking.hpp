@@ -2,9 +2,9 @@
 #include "Processor.hpp"
 #include "ProcessPass/AreaReduce.hpp"
 #include "../../Runtime/Asset/ResourceContainer.hpp"
-class MeshSelectionProcessor {
+class MeshPicking {
 public:
-	MeshSelectionProcessor(RHI::Device* device);
+	MeshPicking(RHI::Device* device);
 	std::vector<uint> const & GetSelectedMaterialBufferAndRect(RHI::Texture* texture, RHI::ShaderResourceView* resourceSRV, uint2 point, uint2 extent);
 private:
 	std::vector<uint> instanceSelected;

@@ -9,11 +9,8 @@ struct HierarchalDepthPass : public IRenderPass {
 	FFXSPDPass spdPass;
 public:
 	struct Handles {
-		RgHandle& depth; 
-		RgHandle& depthSRV;
-
-		RgHandle& hizTexture;
-		std::vector<RgHandle> hizUAVs;
+		std::pair<RgHandle*, RgHandle*> depth_srv;
+		std::pair<RgHandle*, std::array<RgHandle*, 16>> depthPyramid_MipUavs;
 	};
 	
 	HierarchalDepthPass(RHI::Device* device) : IRenderPass(device), spdPass(device) { reset(); };

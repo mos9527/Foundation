@@ -1,7 +1,7 @@
 #pragma once
 #include "Processor.hpp"
 #include "ProcessPass/IBLPrefilter.hpp"
-struct IBLProbeProcessorEvents {
+struct HDRIProbeProcessorEvents {
 	enum class Type {
 		Begin,
 		Process,
@@ -16,20 +16,20 @@ struct IBLProbeProcessorEvents {
 		} proceesEvent;
 	};
 };
-enum class IBLProbeProcessorStates {
+enum class HDRIProbeProbeProcessorStates {
 	IdleNoProbe,
 	Processing,
 	IdleWithProbe
 };
-struct IBLProbeProcesserState : public FSM::EFSM<IBLProbeProcessorStates, IBLProbeProcessorEvents, IBLProbeProcessorStates::IdleNoProbe> {
+struct HDRIProbeProbeProcesserState : public FSM::EFSM<HDRIProbeProbeProcessorStates, HDRIProbeProcessorEvents, HDRIProbeProbeProcessorStates::IdleNoProbe> {
 	const char* currentProcess = nullptr;
 	uint numProcessed = 0;
 	uint numToProcess = 0;
 
-	void fail(IBLProbeProcessorEvents event) {};
-	IBLProbeProcessorStates transition(IBLProbeProcessorEvents event) {
-		using enum IBLProbeProcessorEvents::Type;
-		using enum IBLProbeProcessorStates;
+	void fail(HDRIProbeProcessorEvents event) {};
+	HDRIProbeProbeProcessorStates transition(HDRIProbeProcessorEvents event) {
+		using enum HDRIProbeProcessorEvents::Type;
+		using enum HDRIProbeProbeProcessorStates;
 		switch (event.type)
 		{
 		case Begin:
@@ -55,7 +55,7 @@ struct IBLProbeProcesserState : public FSM::EFSM<IBLProbeProcessorStates, IBLPro
 		return state;
 	}
 };
-class IBLProbeProcessor {
+class HDRIProbe {
 public:
 	uint dimension, numMips;
 	std::unique_ptr<RHI::Texture> cubeMap, irridanceMap, radianceMapArray, lutArray;
@@ -63,8 +63,8 @@ public:
 	std::unique_ptr<RHI::UnorderedAccessView> irridanceCubeUAV, lutArrayUAV;
 	std::unique_ptr<RHI::ShaderResourceView> cubemapSRV, irridanceCubeSRV, radianceCubeArraySRV, lutArraySRV;
 
-	IBLProbeProcesserState state;
-	IBLProbeProcessor(RHI::Device* device, uint dimesnion);	
+	HDRIProbeProbeProcesserState state;
+	HDRIProbe(RHI::Device* device, uint dimesnion);	
 	void ProcessAsync(TextureAsset* srcImage);
 private:
 	void Process(TextureAsset* srcImage);

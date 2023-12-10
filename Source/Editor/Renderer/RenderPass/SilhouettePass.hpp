@@ -9,12 +9,12 @@ struct SilhouettePass : public IRenderPass {
 	std::unique_ptr<BufferContainer<SilhouetteConstants>> constants;
 public:
 	struct SilhouettePassHandles {
-		std::pair<RgHandle*, RgHandle*> cmd_uav;
+		std::pair<RgHandle*, RgHandle*> command_uav;
 		std::tuple<RgHandle*, RgHandle*, RgHandle*> silhouette_dsv_srv;
-		std::pair<RgHandle*, RgHandle*> frameBuffer_uav;		
+		std::pair<RgHandle*, RgHandle*> framebuffer_uav;		
 	};
 
 	SilhouettePass(RHI::Device* device) : IRenderPass(device, "Silouette Drawing") { reset(); };
 	virtual void reset();
-	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, SilhouettePassHandles&& handles);
+	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, SilhouettePassHandles const& handles);
 };

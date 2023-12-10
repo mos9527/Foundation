@@ -10,7 +10,7 @@ IBLPrefilterPass::IBLPrefilterPass(RHI::Device* device) : spdPass(device) {
 		.SetDirectlyIndexed()
 		.AddConstant(0, 0, 7) 
 		//               0                      1              2              3                   4                    5		    6
-		// * pano2cube : Out Cubemap Dimension, HDRI SRV,      Cubemap UAV
+		// * pano2cube : Out Cubemap Dimension, HDRIProbe SRV,      Cubemap UAV
 		// * prefilter : In  Cubemap Dimension, Out [...],     Cubemap SRV,   Prefilter UAV,      Dispatch Cube Index, Filter Flags,Mip Index
 		// * lut :       LUT Dimension,         LUT Array UAV, Num of LUTs
 		.AddStaticSampler(0, 0, SamplerDesc::GetTextureSamplerDesc(16))
@@ -29,13 +29,13 @@ IBLPrefilterPass::IBLPrefilterPass(RHI::Device* device) : spdPass(device) {
 	CHECK_HR(device->GetNativeDevice()->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(&pso)));
 	LUTPSO = std::make_unique<PipelineState>(device, std::move(pso));
 };
-// Samples HDRI probe image to Cubemap, and performs downsampling to cover all mips
-RenderGraphPass& IBLPrefilterPass::insert_pano2cube(RenderGraph& rg, IBLPrefilterPassHandles& handles) {
+// Samples HDRIProbe probe image to Cubemap, and performs downsampling to cover all mips
+RenderGraphPass& IBLPrefilterPass::insert_pano2cube(RenderGraph& rg, IBLPrefilterPassHandles const& handles) {
 	rg.add_pass(L"HDRI Probe To Cubemap")
 		.readwrite(handles.cubemap)
 		.execute([=](RgContext& ctx) {
 		auto* r_hdri_srv = ctx.graph->get<ShaderResourceView>(handles.panoSrv);
-		auto* r_cubemap_uav = ctx.graph->get<UnorderedAccessView>(handles.cubemapUAVs[0]);
+		auto* r_cubemap_uav = ctx.graph->get<UnorderedAccessView>(*handles.cubemapUAVs[0]);
 		auto* r_cubemap = ctx.graph->get<Texture>(handles.cubemap);
 		uint dimension = r_cubemap->GetDesc().width;
 		auto native = ctx.cmd->GetNativeCommandList();
@@ -53,13 +53,13 @@ RenderGraphPass& IBLPrefilterPass::insert_pano2cube(RenderGraph& rg, IBLPrefilte
 	});	
 }
 
-RenderGraphPass& IBLPrefilterPass::insert_specular_prefilter(RenderGraph& rg, IBLPrefilterPassHandles& handles, uint mipIndex, uint mipLevels, uint cubeIndex) {
+RenderGraphPass& IBLPrefilterPass::insert_specular_prefilter(RenderGraph& rg, IBLPrefilterPassHandles const& handles, uint mipIndex, uint mipLevels, uint cubeIndex) {
 	return rg.add_pass(L"Specular Importance Sample")
 		.read(handles.cubemap)
 		.readwrite(handles.radianceCubeArray)
 		.execute([=](RgContext& ctx) {
 			auto* r_cubemap_srv = ctx.graph->get<ShaderResourceView>(handles.cubemapSRV);
-			auto* r_radiance_uav = ctx.graph->get<UnorderedAccessView>(handles.radianceCubeArrayUAVs[cubeIndex * mipLevels + mipIndex]); // a mip of a cube's 6 faces
+			auto* r_radiance_uav = ctx.graph->get<UnorderedAccessView>(*handles.radianceCubeArrayUAVs[cubeIndex * mipLevels + mipIndex]); // a mip of a cube's 6 faces
 			auto* r_cubemap = ctx.graph->get<Texture>(handles.cubemap);			
 			auto native = ctx.cmd->GetNativeCommandList();
 			std::wstring event = std::format(L"Specular IS Filter Cube{} Mip{} UAV{}", cubeIndex, mipIndex, cubeIndex * mipLevels + mipIndex);
@@ -79,7 +79,7 @@ RenderGraphPass& IBLPrefilterPass::insert_specular_prefilter(RenderGraph& rg, IB
 		});
 }
 // Diffuse / irradiance sampling
-RenderGraphPass& IBLPrefilterPass::insert_diffuse_prefilter(RenderGraph& rg, IBLPrefilterPassHandles& handles) {
+RenderGraphPass& IBLPrefilterPass::insert_diffuse_prefilter(RenderGraph& rg, IBLPrefilterPassHandles const& handles) {
 	return rg.add_pass(L"Irradiance Importance Sample")
 		.read(handles.cubemap)
 		.readwrite(handles.irradianceCube)
@@ -100,7 +100,7 @@ RenderGraphPass& IBLPrefilterPass::insert_diffuse_prefilter(RenderGraph& rg, IBL
 			native->Dispatch(DivRoundUp(destDimension, RENDERER_FULLSCREEN_THREADS), DivRoundUp(destDimension, RENDERER_FULLSCREEN_THREADS), 1);
 		});
 };
-RenderGraphPass& IBLPrefilterPass::insert_lut(RenderGraph& rg, IBLPrefilterPassHandles& handles) {
+RenderGraphPass& IBLPrefilterPass::insert_lut(RenderGraph& rg, IBLPrefilterPassHandles const& handles) {
 	return rg.add_pass(L"Split Sum LUT")
 		.read(handles.cubemap)
 		.readwrite(handles.lutArray)

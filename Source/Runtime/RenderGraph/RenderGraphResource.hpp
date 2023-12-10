@@ -29,8 +29,6 @@ struct RgHandle {
 	inline uint64_t hash() const { return entt::to_integral(entity) | ((uint64_t)version << 32); }
 	friend bool operator<(const RgHandle& lhs, const RgHandle& rhs) { return lhs.hash() < rhs.hash(); }
 	friend bool operator==(const RgHandle& lhs, const RgHandle& rhs) { return lhs.hash() == rhs.hash(); }
-
-	RgHandle(const RgHandle&) = delete;
 };
 template<> struct std::hash<RgHandle> {
 	inline uint64_t operator()(const RgHandle& resource) const { return resource.hash(); }

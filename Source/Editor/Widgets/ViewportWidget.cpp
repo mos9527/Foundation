@@ -1,6 +1,6 @@
 #include "Widgets.hpp"
 #include "../../../Dependencies/IconsFontAwesome6.h"
-using namespace EditorGlobalContext;
+using namespace EditorGlobals;
 static ImGuizmo::OPERATION gizmoOperation = ImGuizmo::TRANSLATE;
 
 static ImVec2 viewportScreenPos;
@@ -15,7 +15,7 @@ static ImU32 col4_to_u32(float4 color) {
     return IM_COL32(color.x * 255, color.y * 255, color.z * 255, color.w * 255);
 }
 void Viewport_DirectionGizmo(SceneLightComponent* light, float length=1.0f) {
-    auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
+    auto* camera = g_Scene.scene->try_get<SceneCameraComponent>(g_Editor.activeCamera);
     float3 b1, b2;
     BuildOrthonormalBasis(light->get_direction_vector(), b1, b2);
     float3 p0 = light->get_global_translation();
@@ -32,11 +32,11 @@ void Viewport_DirectionGizmo(SceneLightComponent* light, float length=1.0f) {
     draw_list->AddTriangleFilled(uv_to_pixel(t0), uv_to_pixel(t1), uv_to_pixel(t2), 0xff00ffff);
 }
 void Viewport_Light_Point_Gizmo(SceneLightComponent* light) {
-    auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
+    auto* camera = g_Scene.scene->try_get<SceneCameraComponent>(g_Editor.activeCamera);
     float3 p0 = light->get_global_translation();
     float2 u0 = camera->project_to_uv(p0);
     float rSS = SphereScreenSpaceRadius(p0, light->spot_point_radius, camera->get_global_translation(), camera->fov);
-    float rSSpx = rSS * std::max(viewport.width, viewport.height);
+    float rSSpx = rSS * std::max(g_Editor.viewport.width, g_Editor.viewport.height);
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     draw_list->AddCircleFilled(uv_to_pixel(u0), 8.0f, 0xffffffff);
     draw_list->AddCircle(uv_to_pixel(u0), rSSpx, 0xffffffff);
@@ -46,7 +46,7 @@ void Viewport_Light_Directional_Gizmo(SceneLightComponent* light) {
 }
 void Viewport_Light_Spot_Gizmo(SceneLightComponent* light) {
     Viewport_DirectionGizmo(light, cosf(light->spot_size_rad));
-    auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
+    auto* camera = g_Scene.scene->try_get<SceneCameraComponent>(g_Editor.activeCamera);
     float3 b1, b2, b3;
     BuildOrthonormalBasis(light->get_direction_vector(), b1, b2);
     b3 = light->get_direction_vector().Cross(camera->get_look_direction()); // Parallel to view 
@@ -89,7 +89,7 @@ void Viewport_Light_Spot_Gizmo(SceneLightComponent* light) {
 }
 void Viewport_Light_AreaDisk_Gizmo(SceneLightComponent* light) {
     Viewport_DirectionGizmo(light);
-    auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
+    auto* camera = g_Scene.scene->try_get<SceneCameraComponent>(g_Editor.activeCamera);
     float3 b1, b2;
     BuildOrthonormalBasis(light->get_direction_vector(), b1, b2);
     constexpr uint points = 36;
@@ -107,7 +107,7 @@ void Viewport_Light_AreaDisk_Gizmo(SceneLightComponent* light) {
 }
 void Viewport_Light_AreaQuad_Gizmo(SceneLightComponent* light) {
     Viewport_DirectionGizmo(light);
-    auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
+    auto* camera = g_Scene.scene->try_get<SceneCameraComponent>(g_Editor.activeCamera);
     float3 b1, b2;
     BuildOrthonormalBasis(light->get_direction_vector(), b1, b2);
     float3 p1 = light->get_global_translation() - b1 * light->area_quad_disk_extents.x - b2 * light->area_quad_disk_extents.y;
@@ -124,7 +124,7 @@ void Viewport_Light_AreaQuad_Gizmo(SceneLightComponent* light) {
 }
 void Viewport_Light_AreaLine_Gizmo(SceneLightComponent* light) {
     Viewport_DirectionGizmo(light);
-    auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
+    auto* camera = g_Scene.scene->try_get<SceneCameraComponent>(g_Editor.activeCamera);
     float3 b1, b2;
     BuildOrthonormalBasis(light->get_direction_vector(), b1, b2);
     float3 p1 = light->get_global_translation() + b2 * light->area_line_length / -2;
@@ -135,7 +135,7 @@ void Viewport_Light_AreaLine_Gizmo(SceneLightComponent* light) {
     draw_list->AddLine(uv_to_pixel(u1), uv_to_pixel(u2), col4_to_u32(light->color), light->area_line_radius);
 }
 void Viewport_Light_Gizmo(SceneLightComponent* light) {
-    auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
+    auto* camera = g_Scene.scene->try_get<SceneCameraComponent>(g_Editor.activeCamera);
     switch (light->lightType) {
     case SceneLightComponent::Point:
         Viewport_Light_Point_Gizmo(light);
@@ -159,7 +159,7 @@ void Viewport_Light_Gizmo(SceneLightComponent* light) {
 }
 void Viewport_Armature_Gizmo(SceneArmatureComponent* armature) {
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
+    auto* camera = g_Scene.scene->try_get<SceneCameraComponent>(g_Editor.activeCamera);
     static uint active_bone = -1;
     auto dfs = [&](auto& dfs_,uint bone) -> void {
         uint parent = armature->get_parent_bone(bone);
@@ -230,12 +230,12 @@ void Viewport_Gizmo(SceneComponent* component) {
     default:
         break;
     }
-    if (component->get_entity() == scene.scene->graph->get_root())
+    if (component->get_entity() == g_Scene.scene->graph->get_root())
         disableTransform = true;
     if (!disableTransform) {
         // Transfrom -> ImGuizmo    
         AffineTransform worldMatrix = component->get_global_transform();
-        auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
+        auto* camera = g_Scene.scene->try_get<SceneCameraComponent>(g_Editor.activeCamera);
         auto viewMatrix = camera->view;
         auto projectionMatrix = camera->projection;        
         ImGuizmo::Manipulate(
@@ -246,8 +246,8 @@ void Viewport_Gizmo(SceneComponent* component) {
             (float*)&worldMatrix.m
         );
         if (ImGuizmo::IsUsing()) {
-            auto parent = scene.scene->graph->parent_of(component->get_entity());
-            auto parentTransform = scene.scene->get_base<SceneComponent>(parent)->get_global_transform();
+            auto parent = g_Scene.scene->graph->parent_of(component->get_entity());
+            auto parentTransform = g_Scene.scene->get_base<SceneComponent>(parent)->get_global_transform();
             AffineTransform localMatrix = worldMatrix * parentTransform.Invert();
             component->set_local_transform(localMatrix);
         }
@@ -260,81 +260,9 @@ void OnImGui_ViewportWidget() {
         viewportScreenPos = ImGui::GetCursorScreenPos();
         ImGuizmo::SetDrawlist();
         viewportSize = (ImGui::GetWindowContentRegionMax() - ImGui::GetWindowContentRegionMin());
-        viewport.width = viewportSize.x, viewport.height = viewportSize.y;
-        ImGuizmo::SetRect(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y, viewport.width, viewport.height);
+        g_Editor.viewport.width = viewportSize.x, g_Editor.viewport.height = viewportSize.y;
+        ImGuizmo::SetRect(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y, g_Editor.viewport.width, g_Editor.viewport.height);
         ImVec2 viewportMouse{ 0,0 };
-        if (render.renderer->r_frameBufferSRV) {
-            ImGui::Image((ImTextureID)render.renderer->r_frameBufferSRV->descriptor.get_gpu_handle().ptr, viewportSize);
-            viewportMouse = ImGui::GetMousePos() - ImGui::GetItemRectMin();
-        }
-        if (ImGui::IsItemHovered()) {
-            if (!ImGuizmo::IsOver())
-                viewport.state.transition(EditorViewportManipulationEvents::HoverWithoutGizmo);
-            else
-                viewport.state.transition(EditorViewportManipulationEvents::HoverWithGizmo);
-        }
-        if (ImGui::IsMouseDown(ImGuiMouseButton_Middle) || ImGui::IsKeyDown(ImGuiKey_LeftAlt))
-            viewport.state.transition(EditorViewportManipulationEvents::MouseDown);
-        if (ImGui::IsMouseReleased(ImGuiMouseButton_Middle) || ImGui::IsKeyReleased(ImGuiKey_LeftAlt))
-            viewport.state.transition(EditorViewportManipulationEvents::MouseRelease);        
-        if (ImGui::IsKeyDown(ImGuiKey_LeftShift))
-            viewport.state.transition(EditorViewportManipulationEvents::ShiftDown);
-        if (ImGui::IsKeyReleased(ImGuiKey_LeftShift))
-            viewport.state.transition(EditorViewportManipulationEvents::ShiftRelease);
-        if (ImGui::IsItemHovered() && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))) {
-            uint2 upos = { (UINT)viewportMouse.x, (UINT)viewportMouse.y };
-            auto& selected = editor.meshSelection->GetSelectedMaterialBufferAndRect(render.renderer->r_materialBufferTex, render.renderer->r_materialBufferSRV, upos, { 1,1 });            
-            if (!ImGui::IsKeyDown(ImGuiKey_LeftShift)) {
-                // Unselect all.
-                for (auto& mesh : scene.scene->storage<SceneStaticMeshComponent>()) mesh.set_selected(false);
-                for (auto& mesh : scene.scene->storage<SceneSkinnedMeshComponent>()) mesh.set_selected(false);
-            }
-            // Select the picked mesh component
-            for (uint selectedIndex : selected) {
-                // HACK: cont.
-                // see SceneView for details
-                entt::entity selectedEntity = entt::tombstone;
-                if (selectedIndex >= scene.scene->storage<SceneStaticMeshComponent>().size()) {
-                    // selected Skinned
-                    auto entity = scene.scene->storage<SceneSkinnedMeshComponent>().at(selectedIndex - scene.scene->storage<SceneStaticMeshComponent>().size());
-                    auto& mesh = scene.scene->get<SceneSkinnedMeshComponent>(entity);
-                    mesh.set_selected(true);
-                    selectedEntity = mesh.get_entity();
-                }
-                else {
-                    // selected Static
-                    auto entity = scene.scene->storage<SceneStaticMeshComponent>().at(selectedIndex);
-                    auto& mesh = scene.scene->get<SceneStaticMeshComponent>(entity);
-                    mesh.set_selected(true);
-                    selectedEntity = mesh.get_entity();
-                }
-                // Bring this instance to the editing window                
-                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                    editor.editingComponent = selectedEntity;
-                }
-            }
-        }
-        if (scene.scene->valid<SceneComponentType>(editor.editingComponent)) {
-            SceneComponent* selectedComponent = scene.scene->get_base<SceneComponent>(editor.editingComponent);
-            Viewport_Gizmo(selectedComponent);
-        }
-        auto* camera = scene.scene->try_get<SceneCameraComponent>(viewport.camera);
-        // Glyphs for all non-mesh components
-        for (auto& light : scene.scene->storage<SceneLightComponent>()) {
-            if (editor.editingComponent == light.get_entity())
-                continue;
-            auto p = uv_to_cursor(camera->project_to_uv(light.get_global_translation()));
-            ImGui::SetCursorPos(p);
-            ImGui::PushID(entt::to_integral(light.get_entity()));
-            {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0,0,0,0 });
-                if (ImGui::Button(ICON_FA_LIGHTBULB "###")) {
-                    editor.editingComponent = light.get_entity();
-                }
-                ImGui::PopStyleColor();
-            }
-            ImGui::PopID();
-        }
     }
     ImGui::End();
     ImGui::PopStyleVar(2);

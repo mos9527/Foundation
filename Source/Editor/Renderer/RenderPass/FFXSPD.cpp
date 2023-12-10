@@ -14,7 +14,7 @@ void FFXSPDPass::reset() {
 	ComPtr<ID3D12PipelineState> pso;
 	CHECK_HR(device->GetNativeDevice()->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(&pso)));
 	PSO = std::make_unique<PipelineState>(device, std::move(pso));
-	ffxPassConstants = std::make_unique<BufferContainer<FFXSpdConstant>>(device, 1, "FFX SPD Constants");
+	ffxPassConstants = std::make_unique<BufferContainer<FFXSpdConstant>>(device, 1, L"FFX SPD Constants");
 	ffxPassCounter = std::make_unique<Buffer>(device, Buffer::ResourceDesc::GetGenericBufferDesc(
 		sizeof(uint) * SPD_MAX_NUM_SLICES, 0 , ResourceState::CopyDest, ResourceHeapType::Default , ResourceFlags::UnorderedAccess
 	));
@@ -51,7 +51,7 @@ RenderGraphPass& FFXSPDPass::insert(RenderGraph& rg, Handles const& handles) {
 			constants.numMips = numWorkGroupsAndMips[1];
 			CHECK(constants.numMips == numMips && constants.numMips == handles.dstMipUAVs.size() && "Bad mip count!");			
 			for (uint i = 0; i < constants.numMips; i++) {
-				UnorderedAccessView* r_uav = ctx.graph->get<UnorderedAccessView>(handles.dstMipUAVs[i]);
+				UnorderedAccessView* r_uav = ctx.graph->get<UnorderedAccessView>(*handles.dstMipUAVs[i]);
 				constants.dstMipHeapIndex[i].x = r_uav->descriptor.get_heap_handle(); // for alignment uint4 is used to store one uint
 			}
 			constants.dimensions.x = rectInfo[2];

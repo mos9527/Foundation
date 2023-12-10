@@ -8,41 +8,41 @@ private:
 public:
 	static const RHI::Resource::ResourceDesc GetTangentFrameDesc(uint width, uint height) {
 		return RHI::Resource::ResourceDesc::GetTextureBufferDesc(
-			ResourceFormat::R10G10B10A2_UNORM, ResourceDimension::Texture2D,
+			RHI::ResourceFormat::R10G10B10A2_UNORM, RHI::ResourceDimension::Texture2D,
 			width, height, 1, 1, 1, 0,
-			ResourceFlags::RenderTarget, ResourceHeapType::Default,
-			ResourceState::RenderTarget, ClearValue(0, 0, 0, 0),
+			RHI::ResourceFlags::RenderTarget, RHI::ResourceHeapType::Default,
+			RHI::ResourceState::RenderTarget, RHI::ClearValue(0, 0, 0, 0),
 			L"Tangent Frame"
 		);
 	}	
 	static const RHI::Resource::ResourceDesc GetGradientDesc(uint width, uint height) {
 		return RHI::Resource::ResourceDesc::GetTextureBufferDesc(
-			ResourceFormat::R16G16B16A16_SNORM, ResourceDimension::Texture2D,
+			RHI::ResourceFormat::R16G16B16A16_SNORM, RHI::ResourceDimension::Texture2D,
 			width, height, 1, 1, 1, 0,
-			ResourceFlags::RenderTarget, ResourceHeapType::Default,
-			ResourceState::RenderTarget, ClearValue(0, 0, 0, 0),
+			RHI::ResourceFlags::RenderTarget, RHI::ResourceHeapType::Default,
+			RHI::ResourceState::RenderTarget, RHI::ClearValue(0, 0, 0, 0),
 			L"UV/Depth Gradient"
 		);
 	}
 	static const RHI::Resource::ResourceDesc GetMaterialDesc(uint width, uint height) {
 		return RHI::Resource::ResourceDesc::GetTextureBufferDesc(
-			ResourceFormat::R16G16B16A16_UNORM, ResourceDimension::Texture2D,
+			RHI::ResourceFormat::R16G16B16A16_UNORM, RHI::ResourceDimension::Texture2D,
 			width, height, 1, 1, 1, 0,
-			ResourceFlags::RenderTarget, ResourceHeapType::Default,
-			ResourceState::RenderTarget, ClearValue(0, 0, 0, 0),
+			RHI::ResourceFlags::RenderTarget, RHI::ResourceHeapType::Default,
+			RHI::ResourceState::RenderTarget, RHI::ClearValue(0, 0, 0, 0),
 			L"Material ID/UV"
 		);
 	}
 	static const RHI::Resource::ResourceDesc GetDepthDesc(uint width, uint height) {
 		return RHI::Resource::ResourceDesc::GetTextureBufferDesc(
-			ResourceFormat::D32_FLOAT, ResourceDimension::Texture2D,
+			RHI::ResourceFormat::D32_FLOAT, RHI::ResourceDimension::Texture2D,
 			width, height, 1, 1, 1, 0,
-			ResourceFlags::DepthStencil, ResourceHeapType::Default,
-			ResourceState::DepthWrite,
+			RHI::ResourceFlags::DepthStencil, RHI::ResourceHeapType::Default,
+			RHI::ResourceState::DepthWrite,
 #ifdef INVERSE_Z			
-			ClearValue(0.0f, 0),
+			RHI::ClearValue(0.0f, 0),
 #else
-			ClearValue(1.0f, 0),
+			RHI::ClearValue(1.0f, 0),
 #endif
 			L"GBuffer Depth"
 		);

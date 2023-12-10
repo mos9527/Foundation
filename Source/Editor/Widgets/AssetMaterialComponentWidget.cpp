@@ -1,5 +1,5 @@
 #include "AssetWidgets.hpp"
-using namespace EditorGlobalContext;
+using namespace EditorGlobals;
 
 void DrawOneImage(TextureAsset* asset) {
 	ImVec2 size{ 128,128 };
@@ -11,10 +11,10 @@ void OnImGui_AssetWidget_AssetMaterialComponent(AssetMaterialComponent* material
 	ImGui::Text("Material Name: %s", material->get_name());
 	ImGui::Checkbox("Alpha Mapped", &material->alphaMapped);	
 	if (ImGui::IsItemEdited()) edited |= true;
-	auto* pAlbedo = scene.scene->try_get<TextureAsset>(material->albedoImage);
-	auto* pPBR = scene.scene->try_get<TextureAsset>(material->pbrMapImage);
-	auto* pEmissive = scene.scene->try_get<TextureAsset>(material->emissiveMapImage);
-	auto* pNormal = scene.scene->try_get<TextureAsset>(material->normalMapImage);
+	auto* pAlbedo = g_Scene.scene->try_get<TextureAsset>(material->albedoImage);
+	auto* pPBR = g_Scene.scene->try_get<TextureAsset>(material->pbrMapImage);
+	auto* pEmissive = g_Scene.scene->try_get<TextureAsset>(material->emissiveMapImage);
+	auto* pNormal = g_Scene.scene->try_get<TextureAsset>(material->normalMapImage);
 	if (ImGui::BeginTabBar("##Materials")) {
 		if (ImGui::BeginTabItem("Albedo")) {
 			if (!pAlbedo)
@@ -49,7 +49,7 @@ void OnImGui_AssetWidget_AssetMaterialComponent(AssetMaterialComponent* material
 			ImGui::EndTabItem();
 		}
 		if (edited) 
-			scene.scene->graph->update_all_version(scene.scene->graph->get_root());
+			g_Scene.scene->graph->update_all_version(g_Scene.scene->graph->get_root());
 		ImGui::EndTabBar();
 	}
 }

@@ -1,10 +1,10 @@
 #pragma once
 #include "Processor.hpp"
-class LTCTableProcessor {
+class LTCFittedLUT {
 public:
 	std::unique_ptr<RHI::Texture> ltcLUT;
 	std::unique_ptr<RHI::ShaderResourceView> ltcSRV;
-	LTCTableProcessor(RHI::Device* device);	
+	LTCFittedLUT(RHI::Device* device);	
 private:
 	void UploadPrecomputed();
 

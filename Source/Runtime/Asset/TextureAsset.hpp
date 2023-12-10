@@ -32,7 +32,7 @@ public:
 	bool IsUploaded() { return isUploaded; }
 	// Creates a texture of 1 slice, 1 mip, in RGBA8UNORM format, for this bitmap
 	TextureAsset(RHI::Device* device, Bitmap32bpp* bitmap);
-	// Creates a texture of 1 slice, 1 mip, in RGBA32FLOAT format. Only used for HDRI probes.
+	// Creates a texture of 1 slice, 1 mip, in RGBA32FLOAT format. Only used for HDRIProbe probes.
 	TextureAsset(RHI::Device* device, BitmapRGBA32F* bitmap);
 	void Upload(UploadContext* ctx);
 	void Clean() {

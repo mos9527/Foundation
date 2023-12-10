@@ -1,7 +1,7 @@
 #include "SceneGraphWidgets.hpp"
 #include "AssetWidgets.hpp"
 
-using namespace EditorGlobalContext;
+using namespace EditorGlobals;
 void OnImGui_SceneGraphWidget_SceneLightComponentWidget(SceneLightComponent* light) {
 	ImGui::SeparatorText("Light");
 	float3 direction = light->get_direction_vector();

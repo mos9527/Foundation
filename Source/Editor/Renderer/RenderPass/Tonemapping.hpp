@@ -14,7 +14,7 @@ struct TonemappingPass : public IRenderPass {
 	std::unique_ptr<BufferContainer<TonemappingConstants>> constants;
 public:
 	struct Handles {
-		std::pair<RgHandle*, RgHandle*> frameBuffer_uav;
+		std::pair<RgHandle*, RgHandle*> framebuffer_uav;
 	};
 
 	TonemappingPass(RHI::Device* device) : IRenderPass(device, "Tonemapping") { reset(); };

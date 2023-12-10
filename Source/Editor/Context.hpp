@@ -1,6 +1,10 @@
 #pragma once
 #include "../Common/FSM.hpp"
 #include "../Runtime/RHI/RHI.hpp"
+#include "Scene/Scene.hpp"
+#include "Scene/SceneView.hpp"
+#include "Scene/SceneImporter.hpp"
+
 /* RHI */
 struct RHIContext {
     RHI::Device* device;
@@ -75,6 +79,8 @@ public:
 };
 struct EditorContext {
     EdtitorState state;    
+    SceneImporter::SceneImporterAtomicStatus importStatus;
+
     entt::entity activeCamera = entt::tombstone;
     entt::entity editingComponent = entt::tombstone;
     struct {
@@ -92,14 +98,18 @@ struct EditorContext {
         float3 edgeColor = float3(232 / 255.0f, 125 / 255.0f, 13 / 255.0f);
     } pickerSilhouette;
     struct {
-        bool vsync = false;
-        uint frameFlags = 0;
         uint width = 0;
         uint height = 0;
     } viewport;
     struct {
+        bool vsync = false;        
         uint width = 0;
         uint height = 0;
         bool wireframe = false;
     } render;
+};
+
+struct SceneContext {
+    Scene* scene;
+    SceneView* views[RHI_DEFAULT_SWAPCHAIN_BACKBUFFER_COUNT];
 };

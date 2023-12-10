@@ -1,7 +1,7 @@
 #include "SceneGraphWidgets.hpp"
 #include "AssetWidgets.hpp"
 
-using namespace EditorGlobalContext;
+using namespace EditorGlobals;
 void OnImGui_SceneGraphWidget_SceneCameraComponentWidget(SceneCameraComponent* camera) {
 	ImGui::SeparatorText("Camera");
 	ImGui::SliderAngle("FOV", &camera->fov, 0.01f, XM_PIDIV2);

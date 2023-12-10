@@ -56,8 +56,8 @@ public:
 	}
 	inline bool has_execute() { return executes != nullptr; }
 	inline bool has_dependencies() { return reads.size() > 0 || readwrites.size() > 0; }
-	inline bool reads_from(RgHandle resource) { return reads.contains(resource) || readwrites.contains(resource); }
-	inline bool writes_to(RgHandle resource) { return writes.contains(resource) || readwrites.contains(resource); }
+	inline bool reads_from(RgHandle const& resource) { return reads.contains(resource) || readwrites.contains(resource); }
+	inline bool writes_to(RgHandle const& resource) { return writes.contains(resource) || readwrites.contains(resource); }
 };
 
 // DAG Graph for managing rendering work

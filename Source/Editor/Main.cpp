@@ -10,7 +10,7 @@ int main(int argc, char* argv[]) {
     CHECK(SetConsoleOutputCP(65001));    
     EditorWindow editor;
     editor.Create(1600, 1000, L"Editor", L"Foundation | Editor");
-	EditorGlobalContext::SetupContext(editor.m_hWnd, RHI::ResourceFormat::R8G8B8A8_UNORM);
+    EditorGlobals::SetupContext(editor.m_hWnd, RHI::ResourceFormat::R8G8B8A8_UNORM);
     editor.Setup();
     while (1) {
         MSG msg;
@@ -27,5 +27,5 @@ int main(int argc, char* argv[]) {
         }
     }
     editor.Destroy();
-    EditorGlobalContext::DestroyContext();
+    EditorGlobals::DestroyContext();
 }
