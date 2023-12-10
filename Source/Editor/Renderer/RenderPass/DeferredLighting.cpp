@@ -1,7 +1,7 @@
 #include "DeferredLighting.hpp"
 using namespace RHI;
 using namespace EditorGlobals;
-void DeferredLightingPass::setup() {
+void DeferredLightingPass::reset() {
 	CS = ::BuildShader(L"DeferredLighting", L"main", L"cs_6_6");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
 	computePsoDesc.pRootSignature = *g_RHI.rootSig;

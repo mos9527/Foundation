@@ -5,7 +5,7 @@ using namespace RHI;
 #else
 #define REDUCTION_FUNCTION L"max(max(max(v0,v1), v2), v3)" // same goes for this except depth is reversed
 #endif // INVERSE_Z
-void HierarchalDepthPass::setup() {
+void HierarchalDepthPass::reset() {
 	CS = BuildShader(L"DepthSampleToTexture", L"main", L"cs_6_6");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
 	computePsoDesc.pRootSignature = *EditorGlobals::g_RHI.rootSig;
@@ -16,7 +16,7 @@ void HierarchalDepthPass::setup() {
 	constants = std::make_unique<BufferContainer<DepthSampleToTextureConstant>>(device, 1, L"Depth Sample Constants");
 	
 	spdPass.reduce_func = REDUCTION_FUNCTION;
-	spdPass.setup();
+	spdPass.reset();
 }
 
 RenderGraphPass& HierarchalDepthPass::insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles) {

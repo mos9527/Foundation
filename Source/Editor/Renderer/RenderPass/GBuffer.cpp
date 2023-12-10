@@ -5,7 +5,7 @@
 #include "GBuffer.hpp"
 using namespace RHI;
 using namespace EditorGlobals;
-void GBufferPass::setup() {
+void GBufferPass::reset() {
 	PS = BuildShader(L"GBuffer", L"ps_main", L"ps_6_6");
 	VS = BuildShader(L"GBuffer", L"vs_main", L"vs_6_6");
 	auto iaLayout = VertexLayoutToD3DIADesc(StaticMeshAsset::Vertex::get_layout());

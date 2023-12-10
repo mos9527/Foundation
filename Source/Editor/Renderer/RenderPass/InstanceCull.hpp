@@ -20,15 +20,15 @@ public:
 			CommandBufferSize, sizeof(IndirectCommand), RHI::ResourceState::CopyDest, RHI::ResourceHeapType::Default, RHI::ResourceFlags::UnorderedAccess, name
 		);
 	}
-	static const RgUAV::view_desc GetCountedIndirectCmdBufferUAVDesc(RgHandle indirectBuffer) {
+	static const RgUAV::view_desc GetCountedIndirectCmdBufferUAVDesc(RgHandle const& indirectBuffer) {
 		return RgUAV::view_desc{
 			 .viewDesc = RHI::UnorderedAccessViewDesc::GetStructuredBufferDesc(0, MAX_INSTANCE_COUNT, sizeof(IndirectCommand), CommandBufferCounterOffset),
 			 .viewed = indirectBuffer,
 			 .viewedCounter = indirectBuffer
 		};
 	}
-	InstanceCull(RHI::Device* device) : IRenderPass(device, "Mesh Culling") {};	
+	InstanceCull(RHI::Device* device) : IRenderPass(device, "Mesh Culling") { reset(); };
 	
-	virtual void setup();
+	virtual void reset();
 	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles, bool late = false);	
 };

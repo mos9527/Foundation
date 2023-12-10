@@ -2,7 +2,7 @@
 using namespace RHI;
 using namespace EditorGlobals;
 
-void SilhouettePass::setup() {
+void SilhouettePass::reset() {
 	PS = BuildShader(L"SilhouettePass", L"ps_main", L"ps_6_6");
 	VS = BuildShader(L"SilhouettePass", L"vs_main", L"vs_6_6");
 	CS = BuildShader(L"SilhouettePassBlend", L"main", L"cs_6_6");	

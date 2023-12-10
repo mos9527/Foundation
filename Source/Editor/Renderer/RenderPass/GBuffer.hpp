@@ -33,6 +33,20 @@ public:
 			L"Material ID/UV"
 		);
 	}
+	static const RHI::Resource::ResourceDesc GetDepthDesc(uint width, uint height) {
+		return RHI::Resource::ResourceDesc::GetTextureBufferDesc(
+			ResourceFormat::D32_FLOAT, ResourceDimension::Texture2D,
+			width, height, 1, 1, 1, 0,
+			ResourceFlags::DepthStencil, ResourceHeapType::Default,
+			ResourceState::DepthWrite,
+#ifdef INVERSE_Z			
+			ClearValue(0.0f, 0),
+#else
+			ClearValue(1.0f, 0),
+#endif
+			L"GBuffer Depth"
+		);
+	}
 	struct Handles {
 		std::pair<RgHandle*, RgHandle*> command_uav;
 		std::pair<RgHandle*, RgHandle*> tangentframe_rtv;
@@ -40,7 +54,7 @@ public:
 		std::pair<RgHandle*, RgHandle*> material_rtv;
 		std::pair<RgHandle*, RgHandle*> depth_dsv;		
 	};
-	GBufferPass(RHI::Device* device) : IRenderPass(device, "GBuffer Generation") {};
-	virtual void setup();
+	GBufferPass(RHI::Device* device) : IRenderPass(device, "GBuffer Generation") { reset(); };
+	virtual void reset();
 	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles);	
 };

@@ -1,7 +1,7 @@
 #include "Tonemapping.hpp"
 using namespace RHI;
 using namespace EditorGlobals;
-void TonemappingPass::setup() {
+void TonemappingPass::reset() {
 	CS_Histogram = BuildShader(L"Tonemapping", L"main_histogram", L"cs_6_6");
 	CS_Avg = BuildShader(L"Tonemapping", L"main_avg", L"cs_6_6");
 	CS_Tonemap = BuildShader(L"Tonemapping", L"main_tonemap", L"cs_6_6");	

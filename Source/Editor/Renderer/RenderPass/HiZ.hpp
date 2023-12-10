@@ -16,8 +16,8 @@ public:
 		std::vector<RgHandle> hizUAVs;
 	};
 	
-	HierarchalDepthPass(RHI::Device* device) : IRenderPass(device), spdPass(device) {};
-	virtual void setup();
+	HierarchalDepthPass(RHI::Device* device) : IRenderPass(device), spdPass(device) { reset(); };
+	virtual void reset();
 
 	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles);
 };

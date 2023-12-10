@@ -2,7 +2,7 @@
 #include "../../Processor/StaticMeshBufferProcessor.hpp"
 #include "../../Processor/SkinnedMeshBufferProcessor.hpp"
 using namespace RHI;
-void InstanceCull::setup() {
+void InstanceCull::reset() {
 	CS_Early = BuildShader(L"InstanceCull", L"main_early", L"cs_6_6");
 	CS_Late = BuildShader(L"InstanceCull", L"main_late", L"cs_6_6");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC desc{};

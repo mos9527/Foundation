@@ -1,7 +1,7 @@
 #pragma once
 #include "Renderer.hpp"
 #include "RenderPass/Clear.hpp"
-#include "RenderPass/IndirectLODCull.hpp"
+#include "RenderPass/InstanceCull.hpp"
 #include "RenderPass/GBuffer.hpp"
 #include "RenderPass/DeferredLighting.hpp"
 #include "RenderPass/HiZ.hpp"
@@ -26,7 +26,7 @@ private:
 	RenderGraphResourceCache cache;
 	
 	ClearPass pass_Clear;
-	IndirectLODCullPass pass_IndirectCull;
+	InstanceCull pass_IndirectCull;
 	GBufferPass pass_GBuffer;
 	HierarchalDepthPass pass_HiZ;
 	DeferredLightingPass pass_Lighting;

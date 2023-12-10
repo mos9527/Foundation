@@ -15,8 +15,25 @@ public:
 		std::pair<RgHandle*, RgHandle*> fb_uav;
 		std::pair<RgHandle*, RgHandle*> material_srv;		
 	};
-
-	TransparencyPass(RHI::Device* device) : IRenderPass(device) {};
-	virtual void setup();
+	static const RHI::Resource::ResourceDesc GetAccumalationDesc(uint width, uint height) {
+		return RHI::Resource::ResourceDesc::GetTextureBufferDesc(
+			ResourceFormat::R16G16B16A16_FLOAT, ResourceDimension::Texture2D,
+			width, height, 1, 1, 1, 0,
+			ResourceFlags::RenderTarget, ResourceHeapType::Default,
+			ResourceState::RenderTarget, ClearValue(0, 0, 0, 0),
+			L"Transparency Accumalation Buffer"
+		);
+	}
+	static const RHI::Resource::ResourceDesc GetRevealgeDesc(uint width, uint height) {
+		return RHI::Resource::ResourceDesc::GetTextureBufferDesc(
+			ResourceFormat::R16_FLOAT, ResourceDimension::Texture2D,
+			width, height, 1, 1, 1, 0,
+			ResourceFlags::RenderTarget, ResourceHeapType::Default,
+			ResourceState::RenderTarget, ClearValue(1, 1, 1, 1), // // !IMPORTANT. Revealage is dst * prod(1-a)
+			L"Transparency Revealage Buffer"
+		);
+	}
+	TransparencyPass(RHI::Device* device) : IRenderPass(device) { reset(); };
+	virtual void reset();
 	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles);
 };

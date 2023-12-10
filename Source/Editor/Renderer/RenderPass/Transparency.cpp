@@ -1,7 +1,7 @@
 #include "Transparency.hpp"
 using namespace RHI;
 using namespace EditorGlobals;
-void TransparencyPass::setup() {
+void TransparencyPass::reset() {
 	PS = BuildShader(L"Transparency", L"ps_main", L"ps_6_6");
 	materialPS = BuildShader(L"Transparency", L"ps_main_material", L"ps_6_6");
 	VS = BuildShader(L"Transparency", L"vs_main", L"vs_6_6");

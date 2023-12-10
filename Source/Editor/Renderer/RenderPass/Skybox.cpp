@@ -2,7 +2,7 @@
 #include "../Data/CubeMesh.hpp"
 using namespace RHI;
 using namespace EditorGlobals;
-void SkyboxPass::setup() {
+void SkyboxPass::reset() {
 	PS = BuildShader(L"SkyboxPass", L"ps_main", L"ps_6_6");
 	VS = BuildShader(L"SkyboxPass", L"vs_main", L"vs_6_6");	
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};

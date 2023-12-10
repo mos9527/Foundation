@@ -116,7 +116,7 @@ public:
 		return registry.emplace<RgHandle>(entity, handle);;
 	}
 	// retrives imported / created RHI object pointer
-	template<RgDefinedResource T> inline T* get(RgHandle handle) {
+	template<RgDefinedResource T> inline T* get(RgHandle const& handle) {
 		if (!handle.imported) // created objects are stored in the cache
 			return cache.get<T>(handle);
 		else // pointers are stored as data in RG registry
@@ -124,13 +124,13 @@ public:
 	}
 	// retrives in-graph object reference
 	// RenderGraph contains RgHandle, and RgResource dervied objects
-	template<typename T> inline  T& get(RgHandle handle) {
+	template<typename T> inline  T& get(RgHandle const& handle) {
 		return registry.get<T>(handle);
 	}
 	// retrives imported / created RHI object as Resource*
 	// if not convertible, nullptr is returned
 	// * applicalbe to Buffer & Texture
-	inline RHI::Resource* get_as_resource(RgHandle handle) {
+	inline RHI::Resource* get_as_resource(RgHandle const& handle) {
 		if (handle.type == RgResourceType::Buffer) return static_cast<RHI::Resource*>(get<RHI::Buffer>(handle));
 		if (handle.type == RgResourceType::Texture) return static_cast<RHI::Resource*>(get<RHI::Texture>(handle));
 		return nullptr;

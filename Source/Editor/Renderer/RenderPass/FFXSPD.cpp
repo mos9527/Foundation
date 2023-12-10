@@ -3,7 +3,7 @@
 #include "../../Shaders/ffx-spd/ffx_a.h"
 #include "../../Shaders/ffx-spd/ffx_spd.h"
 using namespace RHI;
-void FFXSPDPass::setup() {
+void FFXSPDPass::reset() {
 	CHECK(reduce_func.size() && "Reduction function undefined.");
 	std::wstring reduce_define = L"SPD_REDUCTION_FUNCTION=";
 	reduce_define += reduce_func;

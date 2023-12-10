@@ -17,7 +17,7 @@ public:
 		std::pair<RgHandle*, RgHandle*> frameBuffer_uav;
 	};
 
-	TonemappingPass(RHI::Device* device) : IRenderPass(device, "Tonemapping") {};
-	virtual void setup();
+	TonemappingPass(RHI::Device* device) : IRenderPass(device, "Tonemapping") { reset(); };
+	virtual void reset();
 	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles);
 };

@@ -16,7 +16,7 @@ public:
 		RgHandle& frameBufferRTV;		
 	};
 
-	SkyboxPass(RHI::Device* device) : IRenderPass(device, "Skybox") {};
-	virtual void setup();
+	SkyboxPass(RHI::Device* device) : IRenderPass(device, "Skybox") { reset(); };
+	virtual void reset();
 	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles);
 };

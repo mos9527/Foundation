@@ -6,5 +6,5 @@ struct IRenderPass {
 	RHI::Device* const device;
 
 	IRenderPass(RHI::Device* device, const char* name = "<to be filled>", const char* desc = "<to be filled>") : device(device), name(name), desc(desc) {};
-	virtual void setup() = 0;
+	virtual void reset() = 0;
 };
