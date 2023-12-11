@@ -1,6 +1,4 @@
 #pragma once
-#include "DirectXMath.h"
-#include <directxtk/SimpleMath.h>
 using namespace DirectX;
 // ** https://github.com/microsoft/DirectXTK/pull/298    
 inline XMVECTOR XMQuaternionToPitchYawRoll(XMVECTOR Q) {

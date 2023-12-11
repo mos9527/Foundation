@@ -363,3 +363,10 @@ MigrationBackup/
 FodyWeavers.xsd
 /vcpkg_installed/*
 /Resources
+
+# CLion Files
+.idea/
+
+# Cmake Files
+build/
+cmake-*/

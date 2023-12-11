@@ -2,8 +2,8 @@
 #include "Editor.hpp"
 #include "Input/KBMCamera.hpp"
 #include "Win32/Win32IO.hpp"
-#include "../../Dependencies/IconsFontAwesome6.h"
 #include "Renderer/Deferred.hpp"
+#include "../../Dependencies/IconsFontAwesome6.h"
 
 using namespace RHI;
 using namespace EditorGlobals;

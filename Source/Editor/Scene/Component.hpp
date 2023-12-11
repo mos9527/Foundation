@@ -1,5 +1,4 @@
 #pragma once
-#include "../../pch.hpp"
 #include "../../Common/Math.hpp"
 class Scene;
 class SceneGraph;

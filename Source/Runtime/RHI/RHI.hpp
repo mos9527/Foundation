@@ -1,5 +1,4 @@
 #pragma once
-#include "../../pch.hpp"
 
 #ifdef RHI_USE_D3D12
 #include "D3D12/D3D12Device.hpp"

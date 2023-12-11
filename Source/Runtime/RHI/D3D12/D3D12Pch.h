@@ -1,9 +1,4 @@
 #pragma once
-#pragma comment(lib,"dxgi.lib")
-#pragma comment(lib,"d3d12.lib")
-#pragma comment(lib,"d3dcompiler.lib")
-#pragma comment(lib,"dxcompiler.lib")
-#pragma comment(lib,"WinPixEventRuntime.lib")
 
 #include <directx/d3dx12.h>
 #include <d3d12.h>
@@ -18,9 +13,8 @@
 
 #define D3D_MIN_FEATURE_LEVEL D3D_FEATURE_LEVEL_12_1
 
-#ifdef TRACY_ENABLE
-#include "../../../../Dependencies/tracy/public/tracy/TracyD3D12.hpp"
-#endif
+#define TRACY_ENABLE
+#include "tracy/TracyD3D12.hpp"
 
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;

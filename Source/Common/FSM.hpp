@@ -1,5 +1,4 @@
 #pragma once
-#include "../pch.hpp"
 namespace FSM {
 	// #0. Variant based FSM
 	// from https://www.cppstories.com/2023/finite-state-machines-variant-cpp/

@@ -1,5 +1,4 @@
 #pragma once
-#include "../pch.hpp"
 static inline std::wstring utf8_to_wstring(const char* src)
 {
 	const int size_needed = MultiByteToWideChar(CP_UTF8, 0, src, (int)strlen(src), NULL, 0);

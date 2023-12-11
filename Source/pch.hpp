@@ -27,10 +27,14 @@
 #define NOMINMAX
 #include <Windows.h>
 #include <wrl.h>
+#include <windowsx.h>
+#include <hidusage.h>
+#include <commdlg.h>
+#include <wingdi.h>
 #undef ERROR // Hack for GLOG's abbervatived error levels. GDI defines this macro.
 
 #define ENTT_ID_TYPE uint32_t
-#include "../Dependencies/entt/single_include/entt/entt.hpp"
+#include "entt/entt.hpp"
 
 #include <glog/logging.h>
 #include <DirectXMath.h>
@@ -39,7 +43,7 @@
 #include "Common/Defines.hpp"
 
 #ifdef TRACY_ENABLE
-#include "../Dependencies/tracy/public/tracy/Tracy.hpp"
+#include "tracy/Tracy.hpp"
 #endif
 
 #ifdef RHI_USE_D3D12
@@ -59,5 +63,13 @@
 #include "../../Dependencies/imgui/backends/imgui_impl_win32.h"
 #endif
 
+#include <assimp/Importer.hpp>      // C++ importer interface
+#include <assimp/scene.h>           // Output data structure
+#include <assimp/postprocess.h>
+#include "assimp/Logger.hpp"
+#include "assimp/DefaultLogger.hpp"
+#include "assimp/LogStream.hpp"
+#include <meshoptimizer.h>
 
+#include "Common/Defines.hpp"
 #include "Common/Helpers.hpp"

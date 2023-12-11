@@ -1,5 +1,5 @@
 #pragma once
-#include "../../../pch.hpp"
+
 namespace RHI {
 #define DEFINE_PLUS_TO_VALUE(T) inline const unsigned int operator+(T const v) { return static_cast<unsigned int>(v); }
 	enum class TextureLayout {

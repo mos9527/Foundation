@@ -1,4 +1,3 @@
-#include "../pch.hpp"
 #include "Editor.hpp"
 #include "Globals.hpp"
 

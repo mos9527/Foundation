@@ -1,5 +1,4 @@
 #pragma once
-#include "../pch.hpp"
 #include "Win32/Window.hpp"
 #include "Globals.hpp"
 

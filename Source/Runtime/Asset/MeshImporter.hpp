@@ -1,5 +1,5 @@
 #pragma once
-#include "../../pch.hpp"
+
 #ifdef RHI_USE_MESH_SHADER
 struct Meshlet {
 	uint vertex_offset;

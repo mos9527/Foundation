@@ -11,3 +11,6 @@
 [submodule "Dependencies/tracy"]
 	path = Dependencies/tracy
 	url = https://github.com/wolfpld/tracy
+[submodule "Dependencies/glog"]
+	path = Dependencies/glog
+	url = https://github.com/google/glog

@@ -1,6 +1,5 @@
 #include "KBMCamera.hpp"
-#include <windowsx.h>
-#include <hidusage.h>
+
 using namespace EditorGlobals;
 void KBMCameraController::Win32RawInput_Setup(HWND hwnd)
 {

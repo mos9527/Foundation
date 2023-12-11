@@ -1,11 +1,4 @@
 #include "SceneImporter.hpp"
-
-#include <assimp/Importer.hpp>      // C++ importer interface
-#include <assimp/scene.h>           // Output data structure
-#include <assimp/postprocess.h>
-#include "assimp/Logger.hpp"
-#include "assimp/DefaultLogger.hpp"
-#include "assimp/LogStream.hpp"
 class AssimpLogger : public Assimp::LogStream {
 public:
 	void write(const char* message) {

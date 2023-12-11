@@ -1,5 +1,5 @@
 #pragma once
-#include "../../pch.hpp"
+
 typedef void (*WndCallbackPtr) (HWND, UINT, WPARAM, LPARAM);
 typedef std::function<void(HWND, UINT, WPARAM, LPARAM)> WndCallbackFunction;
 class BaseWindow {          
@@ -17,7 +17,7 @@ public:
         windowClass.lpfnWndProc = StaticWndProc;
         windowClass.hInstance = NULL;
         windowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
-        windowClass.lpszClassName = szClassName;
+            windowClass.lpszClassName = szClassName;
         RegisterClassEx(&windowClass);        
         // Create the window
         m_hWnd = CreateWindowW(

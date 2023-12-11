@@ -1,8 +1,4 @@
 #include "MeshImporter.hpp"
-#include <assimp/Importer.hpp>      // C++ importer interface
-#include <assimp/scene.h>           // Output data structure
-#include <assimp/postprocess.h>
-#include <meshoptimizer.h>
 
 void StaticMesh::remap_vertices(std::vector<UINT>& remapping) {
 	meshopt_remapVertexBuffer(position.data(), position.data(), position.size(), sizeof(decltype(position)::value_type), remapping.data());

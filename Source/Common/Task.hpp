@@ -1,5 +1,4 @@
 #pragma once
-#include "../pch.hpp"
 /* functional utilties*/
 typedef std::function<void()> VoidFunction;
 typedef std::shared_ptr<VoidFunction> VoidFunctionPtr;

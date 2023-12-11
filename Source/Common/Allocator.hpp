@@ -1,5 +1,4 @@
 #pragma once
-#include "../pch.hpp"
 template<typename T> using DefaultAllocator = std::allocator<T>;
 // ...here's hoping this won't be necessary
 
