@@ -1,4 +1,6 @@
 #include "Globals.hpp"
+#include "Scene/SceneView.hpp"
+#include "Processor/LTCFittedLUT.hpp"
 
 namespace EditorGlobals {    
     HWND g_Window;    
@@ -15,22 +17,25 @@ namespace EditorGlobals {
             .SetDirectlyIndexed()
             .SetAllowInputAssembler()
             .AddConstantBufferView(0, 0) // Constant b0 space0 : Editor Global
-            .AddConstantBufferView(1, 0) // Constant b1 space0 : Shader Global (Optional)
+            .AddConstantBufferView(1, 0) // Constant b1 space0 : Shader Global
+            .AddConstant(2,0,8)          // Constant b2 space0 : 32-bit values * 8
             .AddStaticSampler(0, 0, RHI::SamplerDesc::GetTextureSamplerDesc(16)) // Sampler s0 space0 : Texture Sampler
-            .AddStaticSampler(0, 0, RHI::SamplerDesc::GetDepthSamplerDesc(       // Sampler s1 space0 : Depth Comp sampler
+            .AddStaticSampler(1, 0, RHI::SamplerDesc::GetDepthSamplerDesc(       // Sampler s1 space0 : Depth Comp sampler
 #ifdef INVERSE_Z
                 true
 #else
                 false
 #endif
             ))
-            .AddStaticSampler(0, 0, RHI::SamplerDesc::GetDepthReduceSamplerDesc( // Sampler s2 space0 : Depth Reduce sampler
+            .AddStaticSampler(2, 0, RHI::SamplerDesc::GetDepthReduceSamplerDesc( // Sampler s2 space0 : Depth Reduce sampler
 #ifdef INVERSE_Z
                 true
 #else
                 false
 #endif
             )));
+        g_RHI.data_LTCLUT = new ::LTCFittedLUT(g_RHI.device);
+
         g_Scene.scene = new ::Scene;
         for (uint i = 0; i < ARRAYSIZE(g_Scene.views); i++) {
             g_Scene.views[i] = new ::SceneView(g_RHI.device);

@@ -55,19 +55,19 @@ struct HDRIProbeProbeProcesserState : public FSM::EFSM<HDRIProbeProbeProcessorSt
 		return state;
 	}
 };
-class HDRIProbe {
+class HDRIProbeProcessor {
 public:
 	uint dimension, numMips;
-	std::unique_ptr<RHI::Texture> cubeMap, irridanceMap, radianceMapArray, lutArray;
+	std::unique_ptr<RHI::Texture> cubeMap, irridanceMap, radianceMapArray;
 	std::vector<std::unique_ptr<RHI::UnorderedAccessView>> cubeMapUAVs, radianceCubeArrayUAVs;
-	std::unique_ptr<RHI::UnorderedAccessView> irridanceCubeUAV, lutArrayUAV;
-	std::unique_ptr<RHI::ShaderResourceView> cubemapSRV, irridanceCubeSRV, radianceCubeArraySRV, lutArraySRV;
+	std::unique_ptr<RHI::UnorderedAccessView> irridanceCubeUAV;
+	std::unique_ptr<RHI::ShaderResourceView> cubemapSRV, irridanceCubeSRV, radianceCubeArraySRV;
 
 	HDRIProbeProbeProcesserState state;
-	HDRIProbe(RHI::Device* device, uint dimesnion);	
+	HDRIProbeProcessor(RHI::Device* device, uint dimesnion);	
 	void ProcessAsync(TextureAsset* srcImage);
-private:
 	void Process(TextureAsset* srcImage);
+private:
 	
 	RHI::Device* const device;
 	

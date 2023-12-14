@@ -68,14 +68,15 @@ RenderGraphPass& SkyboxPass::insert(RenderGraph& rg, SceneView* sceneView, Handl
 			CD3DX12_VIEWPORT viewport(.0f, .0f, width, height, .0f, 1.0f);
 			CD3DX12_RECT scissorRect(0, 0, width, height);						
 
-			constants->Data()->enabled = sceneView->get_shader_data().probe.use;
-			constants->Data()->radianceHeapIndex = sceneView->get_shader_data().probe.probe->radianceCubeArraySRV->descriptor.get_heap_handle();
-			constants->Data()->skyboxIntensity = sceneView->get_shader_data().probe.skyboxIntensity;
-			constants->Data()->skyboxLod = sceneView->get_shader_data().probe.skyboxLod;
+			// xxx
+			//constants->Data()->enabled = sceneView->get_shader_data().probe.use;
+			//constants->Data()->radianceHeapIndex = sceneView->get_shader_data().probe.probe->radianceCubeArraySRV->allocate_online_descriptor().get_heap_handle();
+			//constants->Data()->skyboxIntensity = sceneView->get_shader_data().probe.skyboxIntensity;
+			//constants->Data()->skyboxLod = sceneView->get_shader_data().probe.skyboxLod;
 
 			native->SetPipelineState(*PSO);
 			native->SetGraphicsRootSignature(*g_RHI.rootSig);
-			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->get_editor_globals_buffer()->GetGPUAddress());
+			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->GetGlobalsBuffer().GetGPUAddress());
 			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
 			native->RSSetViewports(1, &viewport);
 			native->RSSetScissorRects(1, &scissorRect);
@@ -84,9 +85,9 @@ RenderGraphPass& SkyboxPass::insert(RenderGraph& rg, SceneView* sceneView, Handl
 			ctx.cmd->FlushBarriers();
 			native->OMSetRenderTargets(
 				1,
-				&r_fb_rtv->descriptor.get_cpu_handle(),
+				&r_fb_rtv->get_descriptor().get_cpu_handle(),
 				FALSE,
-				&r_depth_dsv->descriptor.get_cpu_handle()
+				&r_depth_dsv->get_descriptor().get_cpu_handle()
 			);
 			const D3D12_VERTEX_BUFFER_VIEW vbView{
 				VB->GetGPUAddress(),

@@ -67,12 +67,12 @@ RenderGraphPass& SilhouettePass::insert(RenderGraph& rg, SceneView* sceneView, S
 			ctx.cmd->QueueTransitionBarrier(r_cmd, ResourceState::IndirectArgument);
 			ctx.cmd->FlushBarriers();
 
-			constants->Data()->edgeColor = sceneView->get_shader_data().silhouette.edgeColor;
-			constants->Data()->edgeThreshold = sceneView->get_shader_data().silhouette.edgeThreshold;
+			constants->Data()->edgeColor = EditorGlobals::g_Editor.pickerSilhouette.edgeColor;
+			constants->Data()->edgeThreshold = EditorGlobals::g_Editor.pickerSilhouette.edgeThreshold;
 
 			native->SetPipelineState(*PSO);
 			native->SetGraphicsRootSignature(*g_RHI.rootSig);
-			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->get_editor_globals_buffer()->GetGPUAddress());
+			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->GetGlobalsBuffer().GetGPUAddress());
 			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
 			native->RSSetViewports(1, &viewport);
 			native->RSSetScissorRects(1, &scissorRect);
@@ -81,7 +81,7 @@ RenderGraphPass& SilhouettePass::insert(RenderGraph& rg, SceneView* sceneView, S
 				0,
 				nullptr,
 				FALSE,
-				&r_dsv->descriptor.get_cpu_handle()
+				&r_dsv->get_descriptor().get_cpu_handle()
 			);
 			native->ExecuteIndirect(
 				*IndirectCmdSig,
@@ -103,12 +103,12 @@ RenderGraphPass& SilhouettePass::insert(RenderGraph& rg, SceneView* sceneView, S
 			auto* r_depth_srv = ctx.graph->get<ShaderResourceView>(*std::get<2>(handles.silhouette_dsv_srv));
 			auto* r_fb_uav = ctx.graph->get<UnorderedAccessView>(*handles.framebuffer_uav.second);
 			
-			constants->Data()->frameBufferUAV = r_fb_uav->descriptor.get_heap_handle();
-			constants->Data()->depthSRV = r_depth_srv->descriptor.get_heap_handle();
+			constants->Data()->frameBufferUAV = r_fb_uav->allocate_online_descriptor().get_heap_handle();
+			constants->Data()->depthSRV = r_depth_srv->allocate_online_descriptor().get_heap_handle();
 
 			native->SetPipelineState(*PSO_Blend);
 			native->SetGraphicsRootSignature(*g_RHI.rootSig);
-			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->get_editor_globals_buffer()->GetGPUAddress());
+			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->GetGlobalsBuffer().GetGPUAddress());
 			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
 			native->Dispatch(DivRoundUp(width, RENDERER_FULLSCREEN_THREADS), DivRoundUp(height, RENDERER_FULLSCREEN_THREADS), 1);
 		});

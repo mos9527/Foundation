@@ -22,10 +22,8 @@ std::vector<uint> const & MeshPicking::GetSelectedMaterialBufferAndRect(RHI::Tex
 	auto& output = rg.import<Buffer>(instanceSelectionMask.get());
 	proc_reduce.insert_reduce_material_instance(
 		rg, {
-			.texture = rg.import<Texture>(texture),
-			.textureSRV = rg.import<ShaderResourceView>(resourceSRV),
-			.output = output,
-			.outputUAV = rg.import<UnorderedAccessView>(instanceSelectionMaskUAV.get())
+			.material_srv = { &rg.import<Texture>(texture), &rg.import<ShaderResourceView>(resourceSRV) },
+			.selection_uav = { &output, &rg.import<UnorderedAccessView>(instanceSelectionMaskUAV.get()) }
 		}, point, extent
 	);
 	auto* cmd = device->GetDefaultCommandList<CommandListType::Direct>();	

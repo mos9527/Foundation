@@ -1,5 +1,6 @@
 #include "D3D12Swapchain.hpp"
 #include "D3D12Device.hpp"
+#include "../../../Common/IO.hpp"
 namespace RHI {
     Swapchain::Swapchain(Device* device, SwapchainDesc const& cfg) : DeviceChild(device) {
         DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
@@ -38,6 +39,8 @@ namespace RHI {
         m_FrameFence->Wait(nFenceValues[nBackbufferIndex]);
         // Increment the fence value which should be monotonously increasing upon any backbuffers' completion    
         nFenceValues[nBackbufferIndex] = gfxQueue->GetUniqueFenceValue();
+        m_PrevFrameTime = hires_seconds() - m_PrevPresentTick;
+        m_PrevPresentTick = hires_seconds();
     }
     void Swapchain::Resize(uint width, uint height) {
         nWidth = width;
@@ -60,9 +63,7 @@ namespace RHI {
             auto name = std::format(L"Backbuffer #{}", i);
             m_Backbuffers.push_back(std::make_unique<Texture>(m_Device, std::move(backbuffer), name.c_str()));            
         }        
-        // RTVs
-        // Free previous RTVs (if any)
-        for (auto& rtv : m_BackbufferRTVs) rtv.descriptor.release();        
+        // RTVs 
         m_BackbufferRTVs.clear();
         for (auto& backbuffer : m_Backbuffers) {            
             m_BackbufferRTVs.push_back(RenderTargetView(backbuffer.get()));

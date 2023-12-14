@@ -43,4 +43,3 @@ target_link_libraries(PCH PUBLIC dxcompiler.lib)
 add_subdirectory(Runtime)
 add_subdirectory(Editor)
 add_subdirectory(Common)
-

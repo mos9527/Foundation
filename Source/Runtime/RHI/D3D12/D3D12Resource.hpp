@@ -212,11 +212,4 @@ namespace RHI {
 			return m_Desc.clearValue.value();
 		}
 	};
-	struct DeferredDeleteResource {
-		std::unique_ptr<Resource> resource;
-		operator Resource* () { return resource.get(); }
-		void Release() {
-			resource.reset();
-		}
-	};	
 }

@@ -64,12 +64,12 @@ RenderGraphPass& GBufferPass::insert(RenderGraph& rg, SceneView* sceneView, Hand
 			native->RSSetViewports(1, &viewport);
 			native->RSSetScissorRects(1, &scissorRect);
 			native->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->get_editor_globals_buffer()->GetGPUAddress());
+			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->GetGlobalsBuffer().GetGPUAddress());
 
 			D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[3] = {
-				ctx.graph->get<RenderTargetView>(*handles.tangentframe_rtv.first)->descriptor,
-				ctx.graph->get<RenderTargetView>(*handles.gradient_rtv.first)->descriptor,
-				ctx.graph->get<RenderTargetView>(*handles.material_rtv.first)->descriptor
+				ctx.graph->get<RenderTargetView>(*handles.tangentframe_rtv.first)->get_descriptor(),
+				ctx.graph->get<RenderTargetView>(*handles.gradient_rtv.first)->get_descriptor(),
+				ctx.graph->get<RenderTargetView>(*handles.material_rtv.first)->get_descriptor()
 			};
 			auto* r_dsv = ctx.graph->get<DepthStencilView>(*handles.depth_dsv.second);
 			auto* r_indirect_commands = ctx.graph->get<Buffer>(*handles.command_uav.first);
@@ -81,7 +81,7 @@ RenderGraphPass& GBufferPass::insert(RenderGraph& rg, SceneView* sceneView, Hand
 				3,
 				rtvHandles,
 				FALSE,
-				&r_dsv->descriptor.get_cpu_handle()
+				&r_dsv->get_descriptor().get_cpu_handle()
 			);
 			native->ExecuteIndirect(
 				*IndirectCmdSig,

@@ -5,18 +5,22 @@
 #include "../Shaders/Shared.h"
 class MeshSkinning {
 public:
-	std::unique_ptr<RHI::Buffer> sceneMeshBuffer; // SceneMeshBuffer[MAX_INSTANCE_COUNT]. Index -> index in registry storage of SceneSkinnedMeshComponent
-
 	MeshSkinning(RHI::Device* device);
 
-	void RegisterOrUpdate(RHI::CommandList* ctx, SceneSkinnedMeshComponent* mesh);	
-private:
-	std::unique_ptr<BufferContainer<SkinningConstants>> SkinConstants;
-	std::unique_ptr<RHI::Shader> SkinCS, ReduceCS;
-	std::unique_ptr<RHI::RootSignature> RS;
-	std::unique_ptr<RHI::PipelineState> SkinPSO, ReducePSO;
+	const std::pair<RHI::Buffer*, RHI::UnorderedAccessView*> GetSkinnedVertexBuffer(SceneSkinnedMeshComponent* mesh);
 
-	std::vector<std::unique_ptr<RHI::Buffer>> TransformedVertBuffers;
-	std::unique_ptr<RHI::Buffer> reductionBuffer;
+	void Begin(RHI::CommandList* ctx);
+	void Update(RHI::CommandList* ctx, SceneSkinnedMeshComponent* mesh);		
+	void End(RHI::CommandList* ctx);
+private:
+	const uint AllocateOrReuseSkinnedVertexBuffer(SceneSkinnedMeshComponent* mesh);
+
+	uint taskCounter = 0;
+	std::pair<std::unique_ptr<BufferContainer<MeshSkinningTask>>,std::unique_ptr<RHI::ShaderResourceView>> meshSkinningTasks;
+	
+	std::unique_ptr<RHI::Shader> CS;
+	std::unique_ptr<RHI::PipelineState> PSO;
+
+	std::vector<std::pair<std::unique_ptr<RHI::Buffer>, std::unique_ptr<RHI::UnorderedAccessView>>> transformedVertexBuffers;
 	RHI::Device* const device;
 };

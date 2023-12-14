@@ -35,6 +35,6 @@ void OnImGui_IBLProbeWidget() {
 	if (asset && asset->IsUploaded()) {
 		ImGui::SeparatorText("Preview");
 		float aspect = (float)asset->texture.texture.GetDesc().width / asset->texture.texture.GetDesc().height;
-		ImGui::Image((ImTextureID)asset->textureSRV->descriptor.get_gpu_handle().ptr, ImVec2{ 256 * aspect, 256 });
+		ImGui::Image((ImTextureID)asset->textureSRV->allocate_online_descriptor().get_gpu_handle().ptr, ImVec2{256 * aspect, 256});
 	}
 }

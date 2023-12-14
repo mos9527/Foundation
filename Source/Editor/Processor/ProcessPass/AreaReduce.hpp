@@ -2,16 +2,15 @@
 #include "../Processor.hpp"
 
 class AreaReducePass {
-	std::unique_ptr<RHI::Shader> CS;
-	std::unique_ptr<RHI::RootSignature> RS;
+	std::unique_ptr<RHI::Shader> CS;	
 	std::unique_ptr<RHI::PipelineState> PSO;	
+
+	std::unique_ptr<BufferContainer<AreaReduceConstant>> constants;
 public:
 	struct AreaReducePassHandles {
-		RgHandle& texture;
-		RgHandle& textureSRV;
-		RgHandle& output;
-		RgHandle& outputUAV;
+		std::pair<RgHandle*, RgHandle*> material_srv;
+		std::pair<RgHandle*, RgHandle*> selection_uav;		
 	};
 	AreaReducePass(RHI::Device*);
-	RenderGraphPass& insert_reduce_material_instance(RenderGraph& rg, AreaReducePassHandles&& handles, uint2 point, uint2 extent);
+	RenderGraphPass& insert_reduce_material_instance(RenderGraph& rg, AreaReducePassHandles const& handles, uint2 point, uint2 extent);
 };

@@ -35,3 +35,6 @@ inline uint64_t hires_nanos() {
 inline double hires_millis() {
 	return hires_nanos() / 1e6;
 }
+inline double hires_seconds() {
+	return hires_nanos() / 1e9;
+}

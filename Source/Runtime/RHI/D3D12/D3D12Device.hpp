@@ -74,15 +74,13 @@ namespace RHI {
 			return nullptr;
 		}
 
-		DescriptorHeap* GetOnlineDescriptorHeap(DescriptorHeapType type) {
+		OnlineDescriptorHeap* GetOnlineDescriptorHeap(DescriptorHeapType type) {
 			if (type == DescriptorHeapType::CBV_SRV_UAV)return m_OnlineSRVHeap.get();
-			if (type == DescriptorHeapType::SAMPLER)return m_OnlineSamplerHeap.get();
 			return nullptr;
 		}
 
-		template<DescriptorHeapType type> DescriptorHeap* GetOnlineDescriptorHeap() {
+		template<DescriptorHeapType type> OnlineDescriptorHeap* GetOnlineDescriptorHeap() {
 			if constexpr (type == DescriptorHeapType::CBV_SRV_UAV)return m_OnlineSRVHeap.get();
-			if constexpr (type == DescriptorHeapType::SAMPLER)return m_OnlineSamplerHeap.get();
 			return nullptr;
 		}
 		auto* GetZeroBuffer() { return m_ZeroBuffer.get(); }
@@ -105,7 +103,7 @@ namespace RHI {
 			m_DirectCmd,
 			m_CopyCmd,
 			m_ComputeCmd;
-		std::unique_ptr<DescriptorHeap> m_OnlineSRVHeap, m_OnlineSamplerHeap;
+		std::unique_ptr<OnlineDescriptorHeap> m_OnlineSRVHeap;
 		std::unique_ptr<DescriptorHeap>
 			m_RTVHeap,
 			m_DSVHeap,

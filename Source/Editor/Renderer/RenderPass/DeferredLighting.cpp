@@ -1,6 +1,4 @@
 #include "DeferredLighting.hpp"
-#include "../../Processor/HDRIProbe.hpp"
-
 using namespace RHI;
 using namespace EditorGlobals;
 void DeferredLightingPass::reset() {
@@ -11,7 +9,6 @@ void DeferredLightingPass::reset() {
 	ComPtr<ID3D12PipelineState> pso;
 	CHECK_HR(device->GetNativeDevice()->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(&pso)));
 	PSO = std::make_unique<PipelineState>(device, std::move(pso));
-	constants = std::make_unique<BufferContainer<ShadingConstants>>(device, 1, L"Shading Constants");
 }
 
 RenderGraphPass& DeferredLightingPass::insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles) {
@@ -24,32 +21,18 @@ RenderGraphPass& DeferredLightingPass::insert(RenderGraph& rg, SceneView* sceneV
 		.execute([=](RgContext& ctx) {
 			UINT width = g_Editor.render.width, height = g_Editor.render.height;			
 			auto* native = ctx.cmd->GetNativeCommandList();
-			
-			constants->Data()->framebufferUav = ctx.graph->get<UnorderedAccessView>(*handles.framebuffer_uav.second)->descriptor.get_heap_handle();
-			constants->Data()->depthSrv = ctx.graph->get<ShaderResourceView>(*handles.depth_srv.second)->descriptor.get_heap_handle();
-			constants->Data()->tangentFrameSrv = ctx.graph->get<ShaderResourceView>(*handles.tangentframe_srv.second)->descriptor.get_heap_handle();
-			constants->Data()->gradientSrv = ctx.graph->get<ShaderResourceView>(*handles.gradient_srv.second)->descriptor.get_heap_handle();
-			constants->Data()->materialSrv = ctx.graph->get<ShaderResourceView>(*handles.material_srv.second)->descriptor.get_heap_handle();		
-			
-			SceneIBLProbe probeHLSL{};
-			{
-				auto probe = sceneView->get_shader_data().probe.probe;
-				probeHLSL.enabled = sceneView->get_shader_data().probe.use;
-				probeHLSL.cubemapHeapIndex = probe->cubemapSRV->descriptor.get_heap_handle();
-				probeHLSL.radianceHeapIndex = probe->radianceCubeArraySRV->descriptor.get_heap_handle();
-				probeHLSL.irradianceHeapIndex = probe->irridanceCubeSRV->descriptor.get_heap_handle();
-				probeHLSL.lutHeapIndex = probe->lutArraySRV->descriptor.get_heap_handle();
-				probeHLSL.mips = probe->numMips;
-				probeHLSL.diffuseIntensity = sceneView->get_shader_data().probe.diffuseIntensity;
-				probeHLSL.specularIntensity = sceneView->get_shader_data().probe.specularIntensity;
-				probeHLSL.occlusionStrength = sceneView->get_shader_data().probe.occlusionStrength;
-			}
-			constants->Data()->iblProbe = probeHLSL;
-
+			const DeferredShadingConstants constants{
+				.tangentFrameSrv = ctx.graph->get<ShaderResourceView>(*handles.tangentframe_srv.second)->allocate_online_descriptor().get_heap_handle(),
+				.gradientSrv = ctx.graph->get<ShaderResourceView>(*handles.gradient_srv.second)->allocate_online_descriptor().get_heap_handle(),
+				.materialSrv = ctx.graph->get<ShaderResourceView>(*handles.material_srv.second)->allocate_online_descriptor().get_heap_handle(),
+				.depthSrv = ctx.graph->get<ShaderResourceView>(*handles.depth_srv.second)->allocate_online_descriptor().get_heap_handle(),
+				.framebufferUav = ctx.graph->get<UnorderedAccessView>(*handles.framebuffer_uav.second)->allocate_online_descriptor().get_heap_handle()
+			};
 			native->SetPipelineState(*PSO);;			
 			native->SetComputeRootSignature(*g_RHI.rootSig);
-			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->get_editor_globals_buffer()->GetGPUAddress());
-			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
+			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->GetGlobalsBuffer().GetGPUAddress());
+			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, sceneView->GetShadingBuffer().GetGPUAddress());
+			native->SetComputeRoot32BitConstants(RHIContext::ROOTSIG_CB_8_CONSTANTS, 5, &constants, 0);
 			native->Dispatch(DivRoundUp(width, RENDERER_FULLSCREEN_THREADS), DivRoundUp(height, RENDERER_FULLSCREEN_THREADS), 1);
 		});
 }

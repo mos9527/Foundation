@@ -34,7 +34,7 @@ struct SceneCameraComponent : public SceneComponent {
 		lookDirection = Vector3::TransformNormal(lookDirection, get_global_transform());
 		return lookDirection;
 	}
-	SceneCamera get_struct(float aspect) {
+	SceneCamera get_hlsl(float aspect) {
 		SceneCamera camera;
 		AffineTransform globalTransform = get_global_transform();
 

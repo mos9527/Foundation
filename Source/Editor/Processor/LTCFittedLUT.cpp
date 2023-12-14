@@ -16,7 +16,7 @@ LTCFittedLUT::LTCFittedLUT(Device* device) : device(device) {
 	);
 	UploadPrecomputed();
 }
-
+// xxx replace sampling with analytic approximation
 void LTCFittedLUT::UploadPrecomputed() {
 	device->Wait();
 	UploadContext ctx(device);

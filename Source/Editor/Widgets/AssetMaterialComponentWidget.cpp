@@ -3,7 +3,7 @@ using namespace EditorGlobals;
 
 void DrawOneImage(TextureAsset* asset) {
 	ImVec2 size{ 128,128 };
-	ImGui::Image((ImTextureID)asset->textureSRV->descriptor.get_gpu_handle().ptr,size);
+	ImGui::Image((ImTextureID)asset->textureSRV->allocate_online_descriptor().get_gpu_handle().ptr, size);
 }
 
 void OnImGui_AssetWidget_AssetMaterialComponent(AssetMaterialComponent* material) {
@@ -48,8 +48,10 @@ void OnImGui_AssetWidget_AssetMaterialComponent(AssetMaterialComponent* material
 			if (ImGui::IsItemEdited()) edited |= true;
 			ImGui::EndTabItem();
 		}
-		if (edited) 
+		if (edited) {
+			material->update();
 			g_Scene.scene->graph->update_all_version(g_Scene.scene->graph->get_root());
+		}
 		ImGui::EndTabBar();
 	}
 }

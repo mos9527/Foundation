@@ -93,7 +93,8 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 		CD3DX12_RECT scissorRect(0, 0, width, height);
 		auto native = ctx.cmd->GetNativeCommandList();
 		native->SetGraphicsRootSignature(*g_RHI.rootSig);
-		native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->get_editor_globals_buffer()->GetGPUAddress());
+		native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->GetGlobalsBuffer().GetGPUAddress());
+		native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, sceneView->GetShadingBuffer().GetGPUAddress());
 		native->RSSetViewports(1, &viewport);
 		native->RSSetScissorRects(1, &scissorRect);
 		native->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);		
@@ -113,14 +114,14 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 		auto native = ctx.cmd->GetNativeCommandList();
 		ctx.cmd->QueueTransitionBarrier(r_depth, ResourceState::DepthRead);
 		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[2] = {
-			r_acc_rtv->descriptor.get_cpu_handle(),
-			r_rev_rtv->descriptor.get_cpu_handle()
+			r_acc_rtv->get_descriptor().get_cpu_handle(),
+			r_rev_rtv->get_descriptor().get_cpu_handle()
 		};
 		native->OMSetRenderTargets(
 			2,
 			rtvHandles,
 			FALSE,
-			&r_dsv->descriptor.get_cpu_handle()
+			&r_dsv->get_descriptor().get_cpu_handle()
 		);
 	};
 	auto setup_material = [=](RgContext& ctx) {
@@ -135,9 +136,9 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 		ctx.cmd->QueueTransitionBarrier(r_depth, ResourceState::DepthWrite);
 		native->OMSetRenderTargets(
 			1,
-			&r_material_rtv->descriptor.get_cpu_handle(),
+			&r_material_rtv->get_descriptor().get_cpu_handle(),
 			FALSE,
-			&r_dsv->descriptor.get_cpu_handle()
+			&r_dsv->get_descriptor().get_cpu_handle()
 		);
 	};
 	auto render = [=](RgContext& ctx) {
@@ -195,13 +196,13 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 			native->SetPipelineState(*PSO_Blend);
 			native->SetComputeRootSignature(*g_RHI.rootSig);
 			UINT constants[5] = {
-				r_fb_uav->descriptor.get_heap_handle(),
-				r_acc_srv->descriptor.get_heap_handle(),
-				r_rev_srv->descriptor.get_heap_handle(),
+				r_fb_uav->allocate_online_descriptor().get_heap_handle(),
+				r_acc_srv->allocate_online_descriptor().get_heap_handle(),
+				r_rev_srv->allocate_online_descriptor().get_heap_handle(),
 				width,
 				height
 			};
-			native->SetComputeRoot32BitConstants(0, 5, constants, 0);
+			native->SetComputeRoot32BitConstants(RHIContext::ROOTSIG_CB_8_CONSTANTS, 5, constants, 0);
 			native->Dispatch(DivRoundUp(width, RENDERER_FULLSCREEN_THREADS), DivRoundUp(height, RENDERER_FULLSCREEN_THREADS), 1);
 		});
 }

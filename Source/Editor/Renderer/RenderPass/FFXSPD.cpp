@@ -46,13 +46,13 @@ RenderGraphPass& FFXSPDPass::insert(RenderGraph& rg, Handles const& handles) {
 			SpdSetup(dispatchThreadGroupCountXY, workGroupOffset, numWorkGroupsAndMips, rectInfo);
 			
 			FFXSpdConstant constants{};
-			constants.atomicCounterHeapIndex = ffxPassCounterUAV->descriptor.get_heap_handle();
+			constants.atomicCounterHeapIndex = ffxPassCounterUAV->allocate_online_descriptor().get_heap_handle();
 			constants.numWorkGroups = numWorkGroupsAndMips[0];
 			constants.numMips = numWorkGroupsAndMips[1];
 			CHECK(constants.numMips == numMips && constants.numMips == handles.dstMipUAVs.size() && "Bad mip count!");			
 			for (uint i = 0; i < constants.numMips; i++) {
 				UnorderedAccessView* r_uav = ctx.graph->get<UnorderedAccessView>(*handles.dstMipUAVs[i]);
-				constants.dstMipHeapIndex[i].x = r_uav->descriptor.get_heap_handle(); // for alignment uint4 is used to store one uint
+				constants.dstMipHeapIndex[i].x = r_uav->allocate_online_descriptor().get_heap_handle(); // for alignment uint4 is used to store one uint
 			}
 			constants.dimensions.x = rectInfo[2];
 			constants.dimensions.y = rectInfo[3];

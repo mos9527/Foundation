@@ -1,65 +1,68 @@
 #pragma once
-#include "../../Runtime/RHI/RHI.hpp"
+#include "../Context.hpp"
+#include "../Scene/SceneComponent/SkinnedMesh.hpp"
 #include "../../Runtime/Asset/ResourceContainer.hpp"
 #include "../Shaders/Shared.h"
+#include "../Processor/MeshSkinning.hpp"
 
-#include "Scene.hpp"
-#include "SceneComponent/StaticMesh.hpp"
-#include "SceneComponent/SkinnedMesh.hpp"
-#include "SceneComponent/Camera.hpp"
-#include "SceneComponent/Light.hpp"
-#include "AssetComponet/Material.hpp"
-
-class MeshSkinning;
-class HDRIProbe;
-class LTCFittedLUT;
 class SceneView {
-public:
-private:
+	MeshSkinning skinnedMeshVertexBuffer;
+	// Default
+	RHI::Buffer sceneBuffer;
+	std::unique_ptr<RHI::ShaderResourceView> sceneBufferSrv;
+	// Upload
 	BufferContainer<SceneMeshInstanceData> meshInstancesBuffer;
-	BufferContainer<SceneMaterial> meshMaterialsBuffer;
-	BufferContainer<SceneLight> lightBuffer;
-	BufferContainer<SceneGlobals> globalBuffer;
+	BufferContainer<SceneMaterial> materialsBuffer;
+	BufferContainer<SceneLight> lightsBuffer;
+	// Constants (Upload)
+	BufferContainer<SceneGlobals> constGlobalsBuffer;
+	BufferContainer<ShadingConstants> constShadingBuffer;
 
-	MeshSkinning* meshSkinning;
-
-	std::unordered_map<entt::entity, size_t> viewedComponentVersions;
+	// Versioning
+	std::unordered_map<entt::entity, size_t> viewingSceneComponentVersions, viewingAssetComponentVersions;
+	template<IsSceneComponent T> bool ValidateVersion(T& component) {
+		if (viewingSceneComponentVersions.contains(component.get_entity()) && viewingSceneComponentVersions.at(component.get_entity()) == component.get_version())
+			return false;
+		return true;
+	}
+	template<IsAssetComponent T> bool ValidateVersion(T& component) {
+		if (viewingAssetComponentVersions.contains(component.get_entity()) && viewingAssetComponentVersions.at(component.get_entity()) == component.get_version())
+			return false;
+		return true;
+	}
+	template<IsSceneComponent T> void UpdateVersion(T& component) {
+		viewingSceneComponentVersions[component.get_entity()] = component.get_version();
+	}
+	template<IsAssetComponent T> void UpdateVersion(T& component) {
+		viewingAssetComponentVersions[component.get_entity()] = component.get_version();
+	}
 public:
-	struct ShaderData {
-		struct IBLProbeData {
-			bool use = true;
-			HDRIProbe* probe = nullptr;
-
-			float diffuseIntensity;
-			float specularIntensity;
-			float occlusionStrength;
-			float skyboxLod;
-			float skyboxIntensity;
-		} probe;
-		struct LTCData {
-			LTCFittedLUT* ltcTable;
-		} ltc;
-		struct SilhouetteParams {
-			float edgeThreshold;
-			float3 edgeColor;
-		} silhouette;
-	} shaderData;
-	struct FrameData {
-		uint viewportWidth;
-		uint viewportHeight;
-		uint frameIndex;
-		uint backBufferIndex;
-		float frameTime;
-	} frameData;
-	SceneView(const SceneView&) = delete;
-	SceneView(SceneView&&) = default;
 	SceneView(RHI::Device* device);
-	~SceneView();
-
-	inline SceneGlobals const* get_editor_globals_data() { return globalBuffer.Data(); }
-	inline RHI::Resource* get_editor_globals_buffer() { return &globalBuffer; }
-
-	inline FrameData const& get_frame_data() { return frameData; }
-	inline ShaderData const& get_shader_data() { return shaderData; }
-	bool update(RHI::CommandList* ctx, Scene& scene, SceneCameraComponent& camera, FrameData&& frame, ShaderData&& shader);
+	// 0 -- numStatic -- numStatic + numSkinned -- numStatic + numSkinned + ...
+	inline static SceneComponent* DecodeMeshInstanceIndex(Scene* scene, uint index) {
+		auto const& skinnedMeshStorage = scene->storage<SceneSkinnedMeshComponent>();
+		auto const& staticMeshStorage = scene->storage<SceneStaticMeshComponent>();
+		if (index >= staticMeshStorage.size() + 0) {
+			return scene->get_base<SceneComponent>(skinnedMeshStorage.at(index - staticMeshStorage.size()));
+		}
+		if (index >= 0) {
+			return scene->get_base<SceneComponent>(staticMeshStorage.at(index));
+		}
+		CHECK(false && "Instance not found");
+	}
+	inline static uint EncodeMeshInstanceIndex(SceneComponent* mesh) {
+		auto const& skinnedMeshStorage = mesh->parent.storage<SceneSkinnedMeshComponent>();
+		auto const& staticMeshStorage = mesh->parent.storage<SceneStaticMeshComponent>();
+		if (mesh->get_type() == SceneComponentType::SkinnedMesh) {
+			return staticMeshStorage.size() + skinnedMeshStorage.index(mesh->get_entity());
+		}
+		if (mesh->get_type() == SceneComponentType::StaticMesh) {
+			return staticMeshStorage.index(mesh->get_entity());
+		}
+		CHECK(false && "Invalid component. Must be SceneStaticMeshComponent / SceneSkinnedMeshComponent");
+		return -1;
+	};
+	void Update(RHI::CommandList* ctx, RHIContext* rhiCtx, SceneContext* sceneCtx, EditorContext* editorCtx);
+	auto& GetGlobalsBuffer() { return constGlobalsBuffer; }
+	auto& GetShadingBuffer() { return constShadingBuffer; }
 };

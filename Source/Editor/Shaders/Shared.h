@@ -82,11 +82,11 @@ struct SceneIBLProbe {
     uint cubemapHeapIndex;
     uint radianceHeapIndex;
     uint irradianceHeapIndex;
-    uint lutHeapIndex;
+    uint _pad0;
 
     uint mips;
     uint enabled;    
-    uint2 _pad;
+    uint2 _pad1;
 
     float diffuseIntensity;
     float specularIntensity;
@@ -109,17 +109,15 @@ struct SilhouetteConstants {
 };
 struct ShadingConstants { // ! align for CB
     SceneIBLProbe iblProbe;
-
-    uint ltcLutHeapIndex;
-    uint3 _pad;
-
+    uint ltcLut;
+    uint3 pad_;
+};
+struct DeferredShadingConstants { // -> 8 constants
     uint tangentFrameSrv;
     uint gradientSrv;
     uint materialSrv;
     uint depthSrv;
-
     uint framebufferUav;
-    uint3 _pad2;
 };
 struct TonemappingConstants { // ! align for CB
     uint hisotrgramUav;
@@ -127,26 +125,29 @@ struct TonemappingConstants { // ! align for CB
     uint avgLumUav;
     uint _pad;
 };
+struct SceneBufferMetadata {
+    uint heapIndex;
+    /* --- */
+    uint stride;
+    uint byteOffset;
+    uint count;
+};
 struct SceneGlobals // ! align for CB
 {
     SceneCamera camera;
     SceneCamera cameraPrev; // Two frame camera constant
 
-    uint meshNumInstances;
-    uint meshHeapIndex;
-
-    uint lightNumInstances;
-    uint lightHeapIndex;
-
-    uint2 viewportDimension;
-    uint2 frameDimension;
+    SceneBufferMetadata meshInstances;
+    SceneBufferMetadata materials;
+    SceneBufferMetadata lights;
 
     uint sceneVersion;
     uint backBufferIndex;
-    uint2 _pad2;
-
+    uint frameIndex;
     float frameTime;
-    float3 _pad3;
+
+    uint2 renderDimension;
+    uint2 viewportDimension;
 };
 struct SceneMeshLod
 {
@@ -158,34 +159,28 @@ struct SceneMeshLod
     D3D12_GPU_VIRTUAL_ADDRESS meshletTriangles;
     D3D12_GPU_VIRTUAL_ADDRESS meshletVertices;
 };
-struct SkinningConstants {
-    uint numBones;
-    uint numVertices;
-    uint numShapeKeys;
-    uint meshBufferIndex;
-    D3D12_VERTEX_BUFFER_VIEW VB;
-    SceneMeshLod IB[MAX_LOD_COUNT];
-};
-struct SceneMeshBuffer {
+struct SceneMeshBuffer {    
     BoundingBox boundingBox;
 
+    uint numVertices;
     D3D12_VERTEX_BUFFER_VIEW VB;
-    SceneMeshLod IB[MAX_LOD_COUNT];
+    SceneMeshLod LOD[MAX_LOD_COUNT];
 };
+#define INSTANCE_FLAG_ENABLED DEFBIT(0)
+#define INSTANCE_FLAG_OPAQUE DEFBIT(1)
+#define INSTANCE_FLAG_TRANSPARENT DEFBIT(2)
+#define INSTANCE_FLAG_SILHOUETTE DEFBIT(3)
 struct SceneMeshInstanceData
 {
-    uint version;
-    uint instanceMeshLocalIndex; // VB/IB Buffer Index in Mesh buffers
-    uint instanceMeshType;  // INSTANCE_MESH_TYPE_...
-    uint instanceMaterialIndex; // Material index in Material buffers
-    uint instanceFlags; 
+    uint materialIndex;    
+    uint instanceFlags;
+    SceneMeshBuffer meshBuffer;
 
     matrix transform;
     matrix transformInvTranspose;
     matrix transformPrev; // Transform from previous frame
 };
-struct SceneMaterial {
-    // bindless handles within ResourceDescriptorHeap
+struct SceneMaterial {    
     uint albedoMap; 
     uint normalMap;
     uint pbrMap;
@@ -238,6 +233,50 @@ struct DepthSampleToTextureConstant {
     uint depthSRVHeapIndex;
     uint hizMip0UavHeapIndex;
     uint2 dimensions;    
+};
+#define IBL_FILTER_FLAG_IRRADIANCE DEFBIT(0)
+#define IBL_FILTER_FLAG_RADIANCE DEFBIT(1)
+#define IBL_FILTER_FLAG_LUT DEFBIT(2)
+struct IBLPrefilterConstant {    
+    uint hdriSourceSrv;
+    uint hdriDestUav;
+    uint hdriDestDimension;
+
+    uint prefilterFlag;
+    uint prefilterSourceSize;
+    uint prefilterDestSize;
+    uint prefilterSourceSrv;
+    uint prefilterDestUav;
+    uint prefilterCubeIndex;
+    uint prefilterCubeMipIndex;
+    
+    uint2 _pad;
+};
+struct AreaReduceConstant {
+    uint2 point;
+    uint2 extent;
+    uint2 sourceDimension;
+    uint sourceSrv;
+    uint outBufferUav;
+};
+struct MeshSkinningTask {
+    uint numBones;
+    uint boneMatricesSrv;
+
+    uint numShapeKeys;
+    uint keyshapeWeightsSrv;
+    uint keyshapeVerticesSrv;
+    uint keyshapeOffsetsSrv;
+    
+    uint destBufferUav;
+};
+#define SKINNING_PHASE_SKIN 0
+#define SKINNING_PHASE_REDUCE_EARLY 1
+#define SKINNING_PHASE_REDUCE_MID 2
+#define SKINNING_PHASE_REDUCE_LATE 3
+struct MeshSkinningConstant {    // -> 4 of 8 Constants    
+    uint tasksSrv;
+    uint taskIndex;
 };
 #ifdef __cplusplus
 #pragma pack(pop)

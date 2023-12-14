@@ -10,6 +10,7 @@
 #include "AssetComponet/Material.hpp"
 #include "AssetComponet/BoneTransform.hpp"
 #include "AssetComponet/KeyshapeTransform.hpp"
+#include "AssetComponet/HDRIProbe.hpp"
 #include "SceneGraph.hpp"
 template<typename T> using Allocator = DefaultAllocator<T>;
 typedef entt::basic_registry<entt::entity, Allocator <entt::entity>> SceneComponetRegistry;
@@ -68,6 +69,9 @@ public:
 	}
 	template<IsAssetComponent T> T* try_get(entt::entity entity) {
 		return assetComponentRegistry.try_get<T>(entity);
+	}
+	template<IsAssetComponent T> size_t index(entt::entity entity) {
+		return storage<T>().index(entity);
 	}
 	template<IsAssetComponent T> entt::entity create() {
 		return assetComponentRegistry.create();

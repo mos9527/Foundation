@@ -21,6 +21,8 @@ namespace RHI {
 		ResourceFormat m_BackbufferFormat;
 		uint nWidth, nHeight;
 		void Present(bool vsync);		
+		double m_PrevPresentTick{};
+		double m_PrevFrameTime{};
 	public:
 		struct SwapchainDesc {
 			HWND Window;
@@ -41,7 +43,7 @@ namespace RHI {
 		inline auto GetWidth() const { return nWidth; }
 		inline auto GetAspect() const { return nWidth / (float)nHeight; }
 		inline auto GetHeight() const { return nHeight; }
-
+		inline double GetPrevFrametime() { return m_PrevFrameTime; }
 		void Resize( uint width, uint height);
 		void PresentAndMoveToNextFrame(bool vsync);
 

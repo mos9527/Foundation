@@ -39,7 +39,7 @@ void OnImGui_SceneGraphWidget_SceneSkinnedMeshComponentWidget(SceneSkinnedMeshCo
 		if (ImGui::BeginTabItem("Keyshapes")) {
 			AssetKeyshapeTransformComponent& keyTransforms = g_Scene.scene->get<AssetKeyshapeTransformComponent>(mesh->keyshapeTransformComponent);
 			for (auto& [name,id] : keyTransforms.get_keyshape_mapping()) {
-				ImGui::SliderFloat(name.c_str(), keyTransforms.data()->DataAt(id),0,1);
+				ImGui::SliderFloat(name.c_str(), keyTransforms.data().first->DataAt(id),0,1);
 				edited |= ImGui::IsItemEdited();
 			}
 			ImGui::EndTabItem();

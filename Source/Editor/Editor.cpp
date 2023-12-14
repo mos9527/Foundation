@@ -185,39 +185,18 @@ void EditorWindow::Run() {
         auto* camera = g_Scene.scene->try_get<SceneCameraComponent>(g_Editor.activeCamera);
         CHECK(camera && "No camera");
         g_cameraController.update_camera(camera);
-        sceneView->update(
+        sceneView->Update(
             gfx,
-            *g_Scene.scene,
-            *camera,
-            SceneView::FrameData{
-                .viewportWidth  = std::max(g_Editor.viewport.width,  128u),
-                .viewportHeight = std::max(g_Editor.viewport.height, 128u),
-                .frameIndex = g_RHI.swapchain->GetFrameIndex(),
-                .backBufferIndex = bbIndex,
-                .frameTime = ImGui::GetIO().DeltaTime
-            }, 
-            SceneView::ShaderData{
-                .probe = SceneView::ShaderData::IBLProbeData{
-                    .use = g_Editor.iblProbe.use,
-                    .probe = nullptr, /* !! */
-                    .diffuseIntensity = g_Editor.iblProbe.diffuseIntensity,
-                    .specularIntensity = g_Editor.iblProbe.specularIntensity,
-                    .occlusionStrength = g_Editor.iblProbe.occlusionStrength,
-                    .skyboxLod = g_Editor.iblProbe.skyboxLod,
-                    .skyboxIntensity = g_Editor.iblProbe.skyboxIntensity
-                },
-                .ltc = nullptr, /* !! */
-                .silhouette = {
-                    .edgeThreshold = g_Editor.pickerSilhouette.edgeThreshold,
-                    .edgeColor = g_Editor.pickerSilhouette.edgeColor
-                }
-        });  
+            &g_RHI,
+            &g_Scene,
+            &g_Editor
+        );  
         renderer->Render(sceneView, gfx);
     }
 
     gfx->QueueTransitionBarrier(g_RHI.swapchain->GetBackbuffer(bbIndex), ResourceState::RenderTarget);
     gfx->FlushBarriers();
-    gfx->GetNativeCommandList()->OMSetRenderTargets(1, &g_RHI.swapchain->GetBackbufferRTV(bbIndex).descriptor.get_cpu_handle(), FALSE, nullptr);
+    gfx->GetNativeCommandList()->OMSetRenderTargets(1, &g_RHI.swapchain->GetBackbufferRTV(bbIndex).get_descriptor().get_cpu_handle(), FALSE, nullptr);
     gfx->BeginEvent(L"ImGui");
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), gfx->GetNativeCommandList());
     gfx->EndEvent();    

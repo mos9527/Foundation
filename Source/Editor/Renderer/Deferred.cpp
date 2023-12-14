@@ -154,7 +154,7 @@ void DeferredRenderer::Render(SceneView* sceneView, CommandList* ctx)
 		{ &oitAccumalation,&oitAccumalationRtv } ,
 		{ &oitRevelage, &oitRevelageRtv }
 	});
-	if (sceneView->get_editor_globals_data()->meshNumInstances) {
+	if (sceneView->GetGlobalsBuffer().Data()->meshInstances.count) {
 		pass_IndirectCull.insert(rg, sceneView, {
 			.cmd_uav_instanceMaskAllow_instanceMaskRejcect = {{
 				{ &gbufferCmds,&gbufferCmdsUav, INSTANCE_FLAG_ENABLED | INSTANCE_FLAG_OPAQUE, 0 }

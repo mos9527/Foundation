@@ -2,21 +2,24 @@
 #include "../Common/FSM.hpp"
 #include "../Runtime/RHI/RHI.hpp"
 #include "Scene/Scene.hpp"
-#include "Scene/SceneView.hpp"
 #include "Scene/SceneImporter.hpp"
 
 /* RHI */
+class LTCFittedLUT;
 struct RHIContext {
     RHI::Device* device;
     RHI::RootSignature* rootSig;
     RHI::Swapchain* swapchain;
 
-    static const UINT ROOTSIG_CB_EDITOR_GLOBAL = 0;
-    static const UINT ROOTSIG_CB_SHADER_GLOBAL = 1;
-    static const UINT ROOTSIG_SAMPLER_TEXTURE = 2;
-    static const UINT ROOTSIG_SAMPLER_DEPTH_COMP = 3;
-    static const UINT ROOTSIG_SAMPLER_DEPTH_REDUCE = 4;
+    static const UINT ROOTSIG_CB_EDITOR_GLOBAL = 0; // b0
+    static const UINT ROOTSIG_CB_SHADER_GLOBAL = 1; // b1
+    static const UINT ROOTSIG_CB_8_CONSTANTS = 2;   // b2
+    static const UINT ROOTSIG_SAMPLER_TEXTURE = 3;
+    static const UINT ROOTSIG_SAMPLER_DEPTH_COMP = 4;
+    static const UINT ROOTSIG_SAMPLER_DEPTH_REDUCE = 5;
 
+    // Const data resources
+    LTCFittedLUT* data_LTCLUT;
     ~RHIContext() {
         delete device;
         delete rootSig;
@@ -80,8 +83,8 @@ public:
 struct EditorContext {
     EdtitorState state;    
     SceneImporter::SceneImporterAtomicStatus importStatus;
-
     entt::entity activeCamera = entt::tombstone;
+    entt::entity editorHDRI = entt::tombstone;
     entt::entity editingComponent = entt::tombstone;
     struct {
         bool use = true;
@@ -92,6 +95,7 @@ struct EditorContext {
 
         float skyboxLod = 0.0f;
         float skyboxIntensity = 1.0f;
+       
     } iblProbe;
     struct {
         float  edgeThreshold = 5.0f;
@@ -108,7 +112,7 @@ struct EditorContext {
         bool wireframe = false;
     } render;
 };
-
+class SceneView;
 struct SceneContext {
     Scene* scene;
     SceneView* views[RHI_DEFAULT_SWAPCHAIN_BACKBUFFER_COUNT];

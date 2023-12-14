@@ -16,6 +16,7 @@ protected:
 	entt::entity entity{ entt::tombstone };
 	std::string name{ "<unamed>" };
 	const ComponentType type;
+	size_t version = 0;
 public:
 	Scene& parent;
 
@@ -24,6 +25,8 @@ public:
 	void set_name(std::string name_) { name = name_; }
 	const char* get_name() { return name.c_str(); }
 	entt::entity get_entity() { return entity; }
+
+	inline const size_t get_version() const { return version; }
 };
 
 template<typename T> concept IsComponet = std::is_base_of<Component, T>::value;

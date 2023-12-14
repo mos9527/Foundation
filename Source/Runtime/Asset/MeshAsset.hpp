@@ -81,9 +81,13 @@ private:
 	BufferContainer<Elem> loadBuffer;
 public:
 	RHI::Buffer buffer;
+	std::unique_ptr<RHI::ShaderResourceView> srv;
+
 	const uint numElements;
-	MeshBuffer(RHI::Device* device, uint numVertices) :
-		loadBuffer(device, numVertices), buffer(device, GetDefaultMeshBufferDesc<Elem>(numVertices)), numElements(numVertices) {};
+	MeshBuffer(RHI::Device* device, uint numVertices) : loadBuffer(device, numVertices), buffer(device, GetDefaultMeshBufferDesc<Elem>(numVertices)), numElements(numVertices) 
+	{
+		srv = std::make_unique<RHI::ShaderResourceView>(&buffer, RHI::ShaderResourceViewDesc::GetStructuredBufferDesc(0, numVertices, sizeof(Elem)));
+	};
 	void Clean() { loadBuffer.Release(); }
 };
 

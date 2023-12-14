@@ -3,7 +3,7 @@ using namespace RHI;
 #define IRRIDANCE_MAP_DIMENSION 64	
 #define NUM_RADIANCE_CUBEMAPS 2 // GGX & Charile
 #define NUM_LUTS 1 // Slice 0 -> GGX (rg) & Charlie (b). see https://bruop.github.io/ibl/#split_sum_approximation
-HDRIProbe::HDRIProbe(Device* device, uint dimension_) :
+HDRIProbeProcessor::HDRIProbeProcessor(Device* device, uint dimension_) :
 	device(device), proc_Prefilter(device) {		
 	// Ensure the image dimension is in the power of 2
 	dimension = 1 << (uint)floor(std::log2(dimension_));	
@@ -65,29 +65,10 @@ HDRIProbe::HDRIProbe(Device* device, uint dimension_) :
 		ShaderResourceViewDesc::GetTextureCubeArrayDesc(
 			ResourceFormat::R16G16B16A16_FLOAT, 0, numMips, 0, NUM_RADIANCE_CUBEMAPS
 		)
-	);
-	// LUT
-	lutArray = std::make_unique<Texture>(device, Resource::ResourceDesc::GetTextureBufferDesc(
-		ResourceFormat::R16G16B16A16_FLOAT, ResourceDimension::Texture2D, dimension, dimension,
-		1,
-		NUM_LUTS,
-		1, 0,
-		ResourceFlags::UnorderedAccess, ResourceHeapType::Default,
-		ResourceState::UnorderedAccess, {}, L"IBL Split Sum LUT"
-	));	
-	lutArrayUAV = std::make_unique<UnorderedAccessView>(
-		lutArray.get(),
-		UnorderedAccessViewDesc::GetTexture2DArrayDesc(ResourceFormat::R16G16B16A16_FLOAT, 0, 0, NUM_LUTS,0)
-	);
-	lutArraySRV = std::make_unique<ShaderResourceView>(
-		lutArray.get(),
-		ShaderResourceViewDesc::GetTexture2DDesc(
-			ResourceFormat::R16G16B16A16_FLOAT, 0, 1
-		)
-	);
+	);	
 }
 
-void HDRIProbe::Process(TextureAsset* srcImage) {
+void HDRIProbeProcessor::Process(TextureAsset* srcImage) {
 	auto fill_handles = [&](RenderGraph& rg) {
 		std::array<RgHandle*, 16> rg_CubemapUAVs, rg_RadianceCubeArrayUAVs;
 		for (uint i = 0; i < cubeMapUAVs.size(); i++) rg_CubemapUAVs[i] = &rg.import<UnorderedAccessView>(cubeMapUAVs[i].get());
@@ -105,11 +86,7 @@ void HDRIProbe::Process(TextureAsset* srcImage) {
 
 			.irradianceCube = rg.import<Texture>(irridanceMap.get()),
 			.irradianceCubeUAV = rg.import<UnorderedAccessView>(irridanceCubeUAV.get()),
-			.irradianceCubeSRV = rg.import<ShaderResourceView>(irridanceCubeSRV.get()),
-
-			.lutArray = rg.import<Texture>(lutArray.get()),
-			.lutArrayUAV = rg.import<UnorderedAccessView>(lutArrayUAV.get()),
-			.lutArraySRV = rg.import<ShaderResourceView>(lutArraySRV.get())
+			.irradianceCubeSRV = rg.import<ShaderResourceView>(irridanceCubeSRV.get())		
 		};		
 	};
 	auto execute_graph = [&](RenderGraph& rg) {
@@ -121,7 +98,7 @@ void HDRIProbe::Process(TextureAsset* srcImage) {
 		cmd->GetNativeCommandList()->SetDescriptorHeaps(1, heaps);
 		rg.execute(cmd);
 		cmd->Close();		
-		cmd->Execute().Wait();		
+		cmd->Execute().Wait();
 	};
 	auto subproc_pano2cube = [&]() {
 		RenderGraph rg(cache);
@@ -142,13 +119,6 @@ void HDRIProbe::Process(TextureAsset* srcImage) {
 		auto handles = fill_handles(rg);
 		proc_Prefilter.insert_specular_prefilter(rg, handles, mipIndex, numMips,cubeIndex);
 		rg.get_epilogue_pass().read(handles.radianceCubeArray);		
-		execute_graph(rg);
-	};
-	auto subproc_lut = [&]() {
-		RenderGraph rg(cache);
-		auto handles = fill_handles(rg);
-		proc_Prefilter.insert_lut(rg, handles);
-		rg.get_epilogue_pass().read(handles.lutArray);
 		execute_graph(rg);
 	};	
 	state.transition(HDRIProbeProcessorEvents{ .type = HDRIProbeProcessorEvents::Type::Begin });
@@ -191,19 +161,10 @@ void HDRIProbe::Process(TextureAsset* srcImage) {
 			});
 		}
 	}	
-	state.transition(HDRIProbeProcessorEvents{
-		.type = HDRIProbeProcessorEvents::Type::Process,
-		.proceesEvent = {
-			.processName = "Split Sum LUT",
-			.newNumProcessed = 0,
-			.newNumToProcess = 1
-		}
-	});
-	subproc_lut();
 	state.transition({ .type = HDRIProbeProcessorEvents::Type::End });	
 };
 
-void HDRIProbe::ProcessAsync(TextureAsset* srcImage) {
+void HDRIProbeProcessor::ProcessAsync(TextureAsset* srcImage) {
 	CHECK(state != HDRIProbeProbeProcessorStates::Processing && "Already processing");
 	taskpool.push([&](TextureAsset* src) {
 		Process(src);

@@ -52,30 +52,33 @@ static inline std::string size_to_str(size_t size)
 static inline size_t size_in_bytes(auto c) {
     return c.size() * sizeof(decltype(c)::value_type);
 }
-template<std::integral T> class numeric_queue {
-	T max_handle = 0;
-	std::vector<T> queue;
+template<std::integral T> class free_list : private std::vector<T> {
+	using Container = std::vector<T>;
 public:
 	typedef T elem_type;
-	numeric_queue() = default;
-	void setup(T _max_handle) {
-		CHECK(max_handle == 0);
-		max_handle = _max_handle;
-		queue.resize(max_handle);
-		std::iota(queue.begin(), queue.end(), 0);
-		std::reverse(queue.begin(), queue.end());
+	free_list() {};
+	free_list(T size, size_t initial_value = 0) { reset(size, initial_value); }
+	inline void reset(T size, size_t initial_value = 0) {
+		Container::resize(size);
+		std::iota(Container::rbegin(), Container::rend(), initial_value);
 	}
-	void push(T one) {
-		queue.push_back(one);
+	inline void push(T one) {
+		Container::push_back(one);
 	}
-	T pop() {
-		T one = queue.back();
-		queue.pop_back();
+	inline void push(T* values, size_t count) {
+		Container::insert(Container::end(), values, values + count);
+	}
+	inline void push(free_list<T> const& other) {
+		Container::insert(Container::end(), other.begin(), other.end());
+	}
+	inline T pop() {
+		T one = Container::back();
+		Container::pop_back();
 		return one;
 	}
-	T size() {
-		return queue.size();
-	}
+	inline T size() {
+		return Container::size();
+	}	
 };
 // From D3D12ExecuteIndirect
 template <typename T, typename U>

@@ -47,27 +47,27 @@ RenderGraphPass& TonemappingPass::insert(RenderGraph& rg, SceneView* sceneView, 
 			auto native = ctx.cmd->GetNativeCommandList();
 
 			auto* r_fb_uav = ctx.graph->get<UnorderedAccessView>(*handles.framebuffer_uav.second);			
-			constants->Data()->framebufferUav = r_fb_uav->descriptor.get_heap_handle();
-			constants->Data()->hisotrgramUav = histogramBufferUAV->descriptor.get_heap_handle();
-			constants->Data()->avgLumUav = luminanceBufferUAV->descriptor.get_heap_handle();
+			constants->Data()->framebufferUav = r_fb_uav->allocate_online_descriptor().get_heap_handle();
+			constants->Data()->hisotrgramUav = histogramBufferUAV->allocate_online_descriptor().get_heap_handle();
+			constants->Data()->avgLumUav = luminanceBufferUAV->allocate_online_descriptor().get_heap_handle();
 
 			native->SetPipelineState(*PSO_Histogram);
 			native->SetComputeRootSignature(*g_RHI.rootSig);		
-			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->get_editor_globals_buffer()->GetGPUAddress());
+			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->GetGlobalsBuffer().GetGPUAddress());
 			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
 			native->Dispatch(DivRoundUp(width, RENDERER_TONEMAPPING_THREADS), DivRoundUp(height, RENDERER_TONEMAPPING_THREADS), 1);
 			ctx.cmd->QueueUAVBarrier(histogramBuffer.get());
 			ctx.cmd->FlushBarriers();
 			native->SetPipelineState(*PSO_Avg);
 			native->SetComputeRootSignature(*g_RHI.rootSig);			
-			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->get_editor_globals_buffer()->GetGPUAddress());
+			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->GetGlobalsBuffer().GetGPUAddress());
 			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
 			native->Dispatch(1, 1, 1);
 			ctx.cmd->QueueUAVBarrier(luminanceBuffer.get());
 			ctx.cmd->FlushBarriers();
 			native->SetPipelineState(*PSO_Tonemap);
 			native->SetComputeRootSignature(*g_RHI.rootSig);			
-			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->get_editor_globals_buffer()->GetGPUAddress());
+			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->GetGlobalsBuffer().GetGPUAddress());
 			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
 			native->Dispatch(DivRoundUp(width, RENDERER_FULLSCREEN_THREADS), DivRoundUp(height, RENDERER_FULLSCREEN_THREADS), 1);
 		});;

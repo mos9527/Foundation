@@ -42,7 +42,7 @@ RenderGraphPass& InstanceCull::insert(RenderGraph& rg, SceneView* sceneView, Han
 			auto native = ctx.cmd->GetNativeCommandList();
 			for (int i = 0;i < INSTANCE_CULL_MAX_CMDS; i++){				
 				auto p_uav = std::get<1>(handles.cmd_uav_instanceMaskAllow_instanceMaskRejcect[i]);
-				constants->Data()->cmds[i].cmdIndex = p_uav ? ctx.graph->get<UnorderedAccessView>(*p_uav)->descriptor.get_heap_handle() : INVALID_HEAP_HANDLE;
+				constants->Data()->cmds[i].cmdIndex = p_uav ? ctx.graph->get<UnorderedAccessView>(*p_uav)->allocate_online_descriptor().get_heap_handle() : INVALID_HEAP_HANDLE;
 				auto p_cmd = std::get<0>(handles.cmd_uav_instanceMaskAllow_instanceMaskRejcect[i]);
 				if (p_cmd) {
 					// Clear counters
@@ -56,9 +56,9 @@ RenderGraphPass& InstanceCull::insert(RenderGraph& rg, SceneView* sceneView, Han
 			}
 			native->SetPipelineState(*PSO_Early);
 			native->SetComputeRootSignature(*EditorGlobals::g_RHI.rootSig);
-			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->get_editor_globals_buffer()->GetGPUAddress());
+			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->GetGlobalsBuffer().GetGPUAddress());
 			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
-			native->Dispatch(DivRoundUp(sceneView->get_editor_globals_data()->meshNumInstances, RENDERER_INSTANCE_CULL_THREADS), 1, 1);
+			native->Dispatch(DivRoundUp(sceneView->GetGlobalsBuffer().Data()->meshInstances.count, RENDERER_INSTANCE_CULL_THREADS), 1, 1);
 		});
 		return pass;
 	}
@@ -72,7 +72,7 @@ RenderGraphPass& InstanceCull::insert(RenderGraph& rg, SceneView* sceneView, Han
 			auto native = ctx.cmd->GetNativeCommandList();
 			for (int i = 0; i < INSTANCE_CULL_MAX_CMDS; i++) {
 				auto p_uav = std::get<1>(handles.cmd_uav_instanceMaskAllow_instanceMaskRejcect[i]);
-				constants->Data()->cmds[i].cmdIndex = p_uav ? ctx.graph->get<UnorderedAccessView>(*p_uav)->descriptor.get_heap_handle() : INVALID_HEAP_HANDLE;
+				constants->Data()->cmds[i].cmdIndex = p_uav ? ctx.graph->get<UnorderedAccessView>(*p_uav)->allocate_online_descriptor().get_heap_handle() : INVALID_HEAP_HANDLE;
 				auto p_cmd = std::get<0>(handles.cmd_uav_instanceMaskAllow_instanceMaskRejcect[i]);
 				if (p_cmd) {
 					// Clear counters
@@ -86,14 +86,14 @@ RenderGraphPass& InstanceCull::insert(RenderGraph& rg, SceneView* sceneView, Han
 			}
 			auto* r_hiz = ctx.graph->get<Texture>(*handles.hiz_srv.first);
 			auto* r_hiz_srv = ctx.graph->get<ShaderResourceView>(*handles.hiz_srv.second);
-			constants->Data()->hizIndex = r_hiz_srv->descriptor.get_heap_handle();
+			constants->Data()->hizIndex = r_hiz_srv->allocate_online_descriptor().get_heap_handle();
 			constants->Data()->hizMips = r_hiz->GetDesc().mipLevels;
 
 			native->SetPipelineState(*PSO_Late);
 			native->SetComputeRootSignature(*EditorGlobals::g_RHI.rootSig);
-			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->get_editor_globals_buffer()->GetGPUAddress());
+			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->GetGlobalsBuffer().GetGPUAddress());
 			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
-			native->Dispatch(DivRoundUp(sceneView->get_editor_globals_data()->meshNumInstances, RENDERER_INSTANCE_CULL_THREADS), 1, 1);
+			native->Dispatch(DivRoundUp(sceneView->GetGlobalsBuffer().Data()->meshInstances.count, RENDERER_INSTANCE_CULL_THREADS), 1, 1);
 		});
 		return pass;
 	}

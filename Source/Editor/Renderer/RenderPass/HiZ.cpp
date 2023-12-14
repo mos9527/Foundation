@@ -29,8 +29,8 @@ RenderGraphPass& HierarchalDepthPass::insert(RenderGraph& rg, SceneView* sceneVi
 			auto* r_hiz = ctx.graph->get<Texture>(*handles.depthPyramid_MipUavs.first);
 			auto* r_hiz_uav = ctx.graph->get<UnorderedAccessView>(*handles.depthPyramid_MipUavs.second[0]);
 			DepthSampleToTextureConstant data{
-				.depthSRVHeapIndex = r_depth_srv->descriptor.get_heap_handle(),
-				.hizMip0UavHeapIndex = r_hiz_uav->descriptor.get_heap_handle(),
+				.depthSRVHeapIndex = r_depth_srv->allocate_online_descriptor().get_heap_handle(),
+				.hizMip0UavHeapIndex = r_hiz_uav->allocate_online_descriptor().get_heap_handle(),
 				.dimensions = uint2{ (uint)r_depth->GetDesc().width, (uint)r_depth->GetDesc().height },
 			};
 			constants->Update(&data, sizeof(data), 0);

@@ -10,7 +10,7 @@ RenderGraphPass& ClearPass::insert_rtv(RenderGraph& rg, SceneView* sceneView, st
 			auto* r_texture = ctx.graph->get<RHI::Texture>(*texture_rtv[i].first);
 			auto* r_rtv = ctx.graph->get<RHI::RenderTargetView>(*texture_rtv[i].second);
 			CD3DX12_RECT scissorRect(0, 0, r_texture->GetDesc().width, r_texture->GetDesc().height);
-			native->ClearRenderTargetView(r_rtv->descriptor.get_cpu_handle(), r_texture->GetClearValue().color, 1, &scissorRect);
+			native->ClearRenderTargetView(r_rtv->get_descriptor().get_cpu_handle(), r_texture->GetClearValue().color, 1, &scissorRect);
 		}
 		});
 	return pass;
@@ -26,7 +26,7 @@ RenderGraphPass& ClearPass::insert_dsv(RenderGraph& rg, SceneView* sceneView, st
 			auto* r_texture = ctx.graph->get<RHI::Texture>(*texture_dsv[i].first);
 			auto* r_dsv = ctx.graph->get<RHI::DepthStencilView>(*texture_dsv[i].second);
 			CD3DX12_RECT scissorRect(0, 0, r_texture->GetDesc().width, r_texture->GetDesc().height);
-			native->ClearDepthStencilView(r_dsv->descriptor.get_cpu_handle(), D3D12_CLEAR_FLAG_DEPTH, r_texture->GetClearValue().depthStencil.depth, r_texture->GetClearValue().depthStencil.stencil, 1, &scissorRect);
+			native->ClearDepthStencilView(r_dsv->get_descriptor().get_cpu_handle(), D3D12_CLEAR_FLAG_DEPTH, r_texture->GetClearValue().depthStencil.depth, r_texture->GetClearValue().depthStencil.stencil, 1, &scissorRect);
 		}
 		});
 	return pass;

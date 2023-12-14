@@ -188,18 +188,12 @@ namespace RHI {
                 .heapType = DescriptorHeapType::SAMPLER
         });
         m_SamplerHeap->SetName(L"OFFLINE Sampler Heap");
-        m_OnlineSRVHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
+        m_OnlineSRVHeap = std::make_unique<OnlineDescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
             .shaderVisible = true,
                 .descriptorCount = RHI_ALLOC_SIZE_SHADER_VISIBLE_DESCHEAP,
                 .heapType = DescriptorHeapType::CBV_SRV_UAV
-        });
+        }, RHI_ALLOC_SIZE_SHADER_VISIBLE_DESCHEAP_PAGE);
         m_OnlineSRVHeap->SetName(L"CBV_SRV_UAV Heap");
-        m_OnlineSamplerHeap = std::make_unique<DescriptorHeap>(this, DescriptorHeap::DescriptorHeapDesc{
-            .shaderVisible = true,
-                .descriptorCount = RHI_ALLOC_SIZE_SHADER_VISIBLE_DESCHEAP,
-                .heapType = DescriptorHeapType::SAMPLER
-        });
-        m_OnlineSamplerHeap->SetName(L"Sampler Heap");
         // D3D12MA
         D3D12MA::ALLOCATOR_DESC allocatorDesc{};
         allocatorDesc.pDevice = m_Device.Get();
