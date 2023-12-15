@@ -2,8 +2,8 @@
 
 using namespace RHI;
 void InstanceCull::reset() {
-	CS_Early = BuildShader(L"InstanceCull", L"main_early", L"cs_6_6");
-	CS_Late = BuildShader(L"InstanceCull", L"main_late", L"cs_6_6");
+	CS_Early = build_shader(0, L"main_early", L"cs_6_6");
+	CS_Late = build_shader(0, L"main_late", L"cs_6_6");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC desc{};
 	desc.pRootSignature = *EditorGlobals::g_RHI.rootSig;
 	desc.CS = CD3DX12_SHADER_BYTECODE(CS_Early->GetData(), CS_Early->GetSize());

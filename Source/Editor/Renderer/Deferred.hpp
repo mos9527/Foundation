@@ -18,9 +18,28 @@ public:
 	DeferredRenderer(RHI::Device* device) : 
 		device(device), pass_Clear(device), pass_IndirectCull(device), pass_GBuffer(device), pass_HiZ(device), pass_Lighting(device),
 		pass_Transparency(device), pass_Silhouette(device), pass_Skybox(device), pass_Tonemapping(device)
-	{};	
+	{
+		lastCheckTick = hires_seconds();
+	};	
 	void Render(SceneView* sceneView, RHI::CommandList* ctx);
+	void CheckAndResetPassIfNecessary() {
+#define DOCHECK(X) if (!X.is_all_shader_uptodate()) X.reset();
+		if (hires_seconds() - lastCheckTick >= 1.0) {
+			DOCHECK(pass_Clear);
+			DOCHECK(pass_IndirectCull);
+			DOCHECK(pass_GBuffer);
+			DOCHECK(pass_HiZ);
+			DOCHECK(pass_Lighting);
+			DOCHECK(pass_Skybox);
+			DOCHECK(pass_Transparency);
+			DOCHECK(pass_Tonemapping);
+			DOCHECK(pass_Silhouette);
+			lastCheckTick = hires_seconds();
+		}
+	}
 private:	
+	double lastCheckTick{};
+
 	RHI::Device* const device;
 
 	RenderGraphResourceCache cache;

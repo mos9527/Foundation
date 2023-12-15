@@ -2,9 +2,9 @@
 using namespace RHI;
 using namespace EditorGlobals;
 void TonemappingPass::reset() {
-	CS_Histogram = BuildShader(L"Tonemapping", L"main_histogram", L"cs_6_6");
-	CS_Avg = BuildShader(L"Tonemapping", L"main_avg", L"cs_6_6");
-	CS_Tonemap = BuildShader(L"Tonemapping", L"main_tonemap", L"cs_6_6");	
+	CS_Histogram = build_shader(0, L"main_histogram", L"cs_6_6");
+	CS_Avg = build_shader(0, L"main_avg", L"cs_6_6");
+	CS_Tonemap = build_shader(0, L"main_tonemap", L"cs_6_6");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
 	computePsoDesc.pRootSignature = *g_RHI.rootSig;
 	

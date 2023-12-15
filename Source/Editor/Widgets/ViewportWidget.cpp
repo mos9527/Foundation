@@ -260,7 +260,7 @@ void OnImGui_ViewportWidget() {
         viewportScreenPos = ImGui::GetCursorScreenPos();
         ImGuizmo::SetDrawlist();
         viewportSize = (ImGui::GetWindowContentRegionMax() - ImGui::GetWindowContentRegionMin());
-        g_Editor.viewport.width = viewportSize.x, g_Editor.viewport.height = viewportSize.y;
+        g_Editor.set_viewport_dimension(viewportSize.x, viewportSize.y);        
         ImGuizmo::SetRect(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y, g_Editor.viewport.width, g_Editor.viewport.height);
         ImVec2 viewportMouse{ 0,0 };
     }

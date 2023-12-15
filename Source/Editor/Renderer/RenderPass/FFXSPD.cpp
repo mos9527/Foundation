@@ -7,7 +7,7 @@ void FFXSPDPass::reset() {
 	CHECK(reduce_func.size() && "Reduction function undefined.");
 	std::wstring reduce_define = L"SPD_REDUCTION_FUNCTION=";
 	reduce_define += reduce_func;
-	CS = BuildShader(L"FFXSpd", L"main", L"cs_6_6", std::vector<const wchar_t*>{ reduce_define.c_str() });
+	CS = build_shader(0, L"main", L"cs_6_6", std::vector<const wchar_t*>{ reduce_define.c_str() });
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
 	computePsoDesc.pRootSignature = *EditorGlobals::g_RHI.rootSig;
 	computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(CS->GetData(), CS->GetSize());

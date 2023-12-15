@@ -27,7 +27,7 @@ public:
 			 .viewedCounter = indirectBuffer
 		};
 	}
-	InstanceCull(RHI::Device* device) : IRenderPass(device, "Mesh Culling") { reset(); };
+	InstanceCull(RHI::Device* device) : IRenderPass(device, { L"InstanceCull" }, "Instance Culling") { reset(); };
 	
 	virtual void reset();
 	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles, bool late = false);	

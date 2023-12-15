@@ -54,7 +54,7 @@ public:
 		std::pair<RgHandle*, RgHandle*> material_rtv;
 		std::pair<RgHandle*, RgHandle*> depth_dsv;		
 	};
-	GBufferPass(RHI::Device* device) : IRenderPass(device, "GBuffer Generation") { reset(); };
+	GBufferPass(RHI::Device* device) : IRenderPass(device, { L"GBuffer" }, "GBuffer Generation") { reset(); };
 	virtual void reset();
 	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles);	
 };

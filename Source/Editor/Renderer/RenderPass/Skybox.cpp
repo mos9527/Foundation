@@ -4,8 +4,8 @@
 using namespace RHI;
 using namespace EditorGlobals;
 void SkyboxPass::reset() {
-	PS = BuildShader(L"SkyboxPass", L"ps_main", L"ps_6_6");
-	VS = BuildShader(L"SkyboxPass", L"vs_main", L"vs_6_6");	
+	PS = build_shader(0, L"ps_main", L"ps_6_6");
+	VS = build_shader(0, L"vs_main", L"vs_6_6");	
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
 	auto iaLayout = VertexLayoutToD3DIADesc({{ "POSITION" ,RHI::ResourceFormat::R32G32B32_FLOAT }});	
 	desc.InputLayout = { iaLayout.data(), (UINT)iaLayout.size() };
@@ -67,12 +67,11 @@ RenderGraphPass& SkyboxPass::insert(RenderGraph& rg, SceneView* sceneView, Handl
 			auto* r_depth = ctx.graph->get<Texture>(*handles.depth_dsv.first);
 			CD3DX12_VIEWPORT viewport(.0f, .0f, width, height, .0f, 1.0f);
 			CD3DX12_RECT scissorRect(0, 0, width, height);						
-
-			// xxx
-			//constants->Data()->enabled = sceneView->get_shader_data().probe.use;
-			//constants->Data()->radianceHeapIndex = sceneView->get_shader_data().probe.probe->radianceCubeArraySRV->allocate_online_descriptor().get_heap_handle();
-			//constants->Data()->skyboxIntensity = sceneView->get_shader_data().probe.skyboxIntensity;
-			//constants->Data()->skyboxLod = sceneView->get_shader_data().probe.skyboxLod;
+		
+			constants->Data()->enabled = g_Editor.iblProbe.use;
+			constants->Data()->radianceHeapIndex = sceneView->GetShadingBuffer().Data()->iblProbe.radianceHeapIndex;
+			constants->Data()->skyboxIntensity = g_Editor.iblProbe.skyboxIntensity;
+			constants->Data()->skyboxLod = g_Editor.iblProbe.skyboxLod;
 
 			native->SetPipelineState(*PSO);
 			native->SetGraphicsRootSignature(*g_RHI.rootSig);

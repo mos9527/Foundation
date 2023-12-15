@@ -2,7 +2,7 @@
 using namespace RHI;
 using namespace EditorGlobals;
 void DeferredLightingPass::reset() {
-	CS = ::BuildShader(L"DeferredLighting", L"main", L"cs_6_6");
+	CS = build_shader(0, L"main", L"cs_6_6");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
 	computePsoDesc.pRootSignature = *g_RHI.rootSig;
 	computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(CS->GetData(), CS->GetSize());

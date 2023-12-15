@@ -2,10 +2,10 @@
 using namespace RHI;
 using namespace EditorGlobals;
 void TransparencyPass::reset() {
-	PS = BuildShader(L"Transparency", L"ps_main", L"ps_6_6");
-	materialPS = BuildShader(L"Transparency", L"ps_main_material", L"ps_6_6");
-	VS = BuildShader(L"Transparency", L"vs_main", L"vs_6_6");
-	blendCS = BuildShader(L"TransparencyBlend", L"main", L"cs_6_6");
+	PS = build_shader(0, L"ps_main", L"ps_6_6");
+	materialPS = build_shader(0, L"ps_main_material", L"ps_6_6");
+	VS = build_shader(0, L"vs_main", L"vs_6_6");
+	blendCS = build_shader(1, L"main", L"cs_6_6");
 	// Define the vertex input layout.
 	auto iaLayout = VertexLayoutToD3DIADesc(StaticMeshAsset::Vertex::get_layout());
 	// Describe and create the graphics pipeline state objects (PSO).

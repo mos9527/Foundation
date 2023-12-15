@@ -9,7 +9,6 @@ add_compile_options(/Zc:__cplusplus /W3 /MP)
 add_definitions(-DUNICODE)
 add_definitions(-D_UNICODE)
 
-
 file(GLOB DEPENDS_SOURCES_D3D "${DEPENDS}/D3D12MemoryAllocator/*.cpp" "${DEPENDS}/tracy/public/*.cpp")
 file(GLOB DEPENDS_SOURCES_IMGUI "${DEPENDS}/imgui/imgui*.cpp" "${DEPENDS}/imgui/backends/imgui_impl_win32.cpp" "${DEPENDS}/imgui/backends/imgui_impl_dx12.cpp" "${DEPENDS}/ImGuizmo/*.cpp")
 

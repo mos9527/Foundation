@@ -6,5 +6,4 @@
 #include "../../Runtime/RenderGraph/RenderGraphResource.hpp"
 #include "../../Runtime/RenderGraph/RenderGraphResourceCache.hpp"
 #include "../Scene/SceneView.hpp"
-#include "../Shaders/Shaders.hpp"
 #include "RenderPass.hpp"

@@ -13,7 +13,7 @@ public:
 		std::pair<RgHandle*, std::array<RgHandle*, 16>> depthPyramid_MipUavs;
 	};
 	
-	HierarchalDepthPass(RHI::Device* device) : IRenderPass(device), spdPass(device) { reset(); };
+	HierarchalDepthPass(RHI::Device* device) : IRenderPass(device, {L"DepthSampleToTexture"}, "HiZ"), spdPass(device) { reset(); };
 	virtual void reset();
 
 	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles);

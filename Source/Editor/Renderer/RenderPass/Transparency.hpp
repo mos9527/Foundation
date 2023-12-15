@@ -33,7 +33,7 @@ public:
 			L"Transparency Revealage Buffer"
 		);
 	}
-	TransparencyPass(RHI::Device* device) : IRenderPass(device) { reset(); };
+	TransparencyPass(RHI::Device* device) : IRenderPass(device, {L"Transparency",L"TransparencyBlend"},"WBOIT") { reset(); };
 	virtual void reset();
 	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles);
 };

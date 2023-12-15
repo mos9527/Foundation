@@ -14,7 +14,7 @@ public:
 		std::pair<RgHandle*, RgHandle*> framebuffer_uav;		
 	};
 
-	SilhouettePass(RHI::Device* device) : IRenderPass(device, "Silouette Drawing") { reset(); };
+	SilhouettePass(RHI::Device* device) : IRenderPass(device, { L"SilhouettePass",L"SilhouettePassBlend" }, "Silouette Drawing") { reset(); };
 	virtual void reset();
 	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, SilhouettePassHandles const& handles);
 };

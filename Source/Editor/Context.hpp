@@ -102,15 +102,19 @@ struct EditorContext {
         float3 edgeColor = float3(232 / 255.0f, 125 / 255.0f, 13 / 255.0f);
     } pickerSilhouette;
     struct {
-        uint width = 0;
-        uint height = 0;
+        uint width = 1600;
+        uint height = 1000;
     } viewport;
     struct {
         bool vsync = false;        
-        uint width = 0;
-        uint height = 0;
+        uint width = 1600;
+        uint height = 1000;
         bool wireframe = false;
     } render;
+    void set_viewport_dimension(uint width, uint height) {
+        viewport.width = render.width = width;
+        viewport.height = render.height = height;
+    }
 };
 class SceneView;
 struct SceneContext {

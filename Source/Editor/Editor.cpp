@@ -166,6 +166,8 @@ void EditorWindow::Run() {
     }
     // Editor updates
     Run_Update();
+    // Watch shader edits on RenderPass-es
+    renderer->CheckAndResetPassIfNecessary();
     // Running frames
     ImGui::Render();
     uint bbIndex = g_RHI.swapchain->GetCurrentBackbufferIndex();

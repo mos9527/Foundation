@@ -12,7 +12,7 @@ public:
 		std::pair<RgHandle*, RgHandle*> framebuffer_rtv;
 	};
 
-	SkyboxPass(RHI::Device* device) : IRenderPass(device, "Skybox") { reset(); };
+	SkyboxPass(RHI::Device* device) : IRenderPass(device, { L"Skybox" }, "Skybox") { reset(); };
 	virtual void reset();
 	RenderGraphPass& insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles);
 };

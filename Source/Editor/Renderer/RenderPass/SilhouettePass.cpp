@@ -3,9 +3,9 @@ using namespace RHI;
 using namespace EditorGlobals;
 
 void SilhouettePass::reset() {
-	PS = BuildShader(L"SilhouettePass", L"ps_main", L"ps_6_6");
-	VS = BuildShader(L"SilhouettePass", L"vs_main", L"vs_6_6");
-	CS = BuildShader(L"SilhouettePassBlend", L"main", L"cs_6_6");	
+	PS = build_shader(0, L"ps_main", L"ps_6_6");
+	VS = build_shader(0, L"vs_main", L"vs_6_6");
+	CS = build_shader(1, L"main", L"cs_6_6");	
 	auto iaLayout = VertexLayoutToD3DIADesc(StaticMeshAsset::Vertex::get_layout());
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
 	desc.InputLayout = { iaLayout.data(), (UINT)iaLayout.size() };
