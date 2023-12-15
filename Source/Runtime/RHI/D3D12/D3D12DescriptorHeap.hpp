@@ -30,6 +30,7 @@ namespace RHI {
 	};
 	class DescriptorHeap : public DeviceChild {
 		friend Descriptor;
+		std::mutex alloc_mutex;
 	public:
 		struct DescriptorHeapDesc {
 			bool shaderVisible;
@@ -83,10 +84,11 @@ namespace RHI {
 		DescriptorHeap m_Heap;
 
 		std::vector<OnlineDescriptorPage> m_Pages;
+		free_list<uint> m_FreePages;
 		std::vector<uint> m_FilledPages;
 		std::deque<std::pair<SyncFence, uint>> m_PagesToFree;
 
-		free_list<uint> m_FreePages;
+		free_list<uint> m_PersistentFreeDescriptors;
 
 		uint m_CurrentPage = -1;
 
@@ -110,19 +112,37 @@ namespace RHI {
 	public:
 		Descriptor GetDescriptor(uint handle) { return m_Heap.GetDescriptor(handle); }
 
-		OnlineDescriptorHeap(Device* device, DescriptorHeap::DescriptorHeapDesc const& cfg, uint pageSize = 128) : DeviceChild(device), m_Heap(device, cfg) {
-			CHECK(cfg.descriptorCount % pageSize == 0 && "descriptorCount must be multiple of pageSize");
-			const uint numPages = cfg.descriptorCount / pageSize;
+		OnlineDescriptorHeap(Device* device, DescriptorHeap::DescriptorHeapDesc const& cfg, uint pageSize = 128, uint persistentCount = 128) : DeviceChild(device), m_Heap(device, cfg) {			
+			const uint transientCount = cfg.descriptorCount - persistentCount;		
+			CHECK(transientCount % pageSize == 0 && "descriptorCount - presistentCount must be multiple of pageSize");
+			const uint numPages = transientCount / pageSize;
 			for (uint i = 0; i < numPages; i++) {
 				m_Pages.push_back({ i * pageSize, (i + 1) * pageSize,0 });
 			}
 			m_FreePages.reset(numPages);
 			m_FilledPages.reserve(numPages);
+			m_CurrentPage = AllocatePage();
+			m_PersistentFreeDescriptors.reset(persistentCount, transientCount); // persistent descriptors lays after the transitent ones
+			LOG(INFO) << "Created online heap. Pages=" << numPages << " PageSize=" << pageSize << " PesistentSize=" << persistentCount;
 		}
 
-		inline Descriptor AllocateDescriptor() {
+		inline Descriptor AllocatePersistentDescriptor() {
 			std::scoped_lock lock(alloc_mutex);
-			if (m_CurrentPage == -1 || m_Pages[m_CurrentPage].IsFull()) {
+			uint handle = m_PersistentFreeDescriptors.pop();
+			return m_Heap.GetDescriptor(handle);
+		}
+
+		inline void FreePersistentDescriptor(Descriptor& descriptor) {
+			std::scoped_lock lock(alloc_mutex);
+			if (descriptor.is_valid()) {
+				m_PersistentFreeDescriptors.push(descriptor.get_heap_handle());
+				descriptor.invalidate();
+			}
+		}
+
+		inline Descriptor AllocateTransitentDescriptor() {
+			std::scoped_lock lock(alloc_mutex);
+			if (m_Pages[m_CurrentPage].IsFull()) {
 				m_FilledPages.push_back(m_CurrentPage);
 				m_CurrentPage = AllocatePage();
 			}

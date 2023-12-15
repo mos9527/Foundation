@@ -252,8 +252,8 @@ struct IBLPrefilterConstant {
     
     uint2 _pad;
 };
-struct AreaReduceConstant {
-    uint2 point;
+struct AreaReduceConstant {    
+    uint2 positition;
     uint2 extent;
     uint2 sourceDimension;
     uint sourceSrv;
@@ -268,6 +268,8 @@ struct MeshSkinningTask {
     uint keyshapeVerticesSrv;
     uint keyshapeOffsetsSrv;
     
+    uint srcBufferSrv;
+    uint srcNumVertices;
     uint destBufferUav;
 };
 #define SKINNING_PHASE_SKIN 0

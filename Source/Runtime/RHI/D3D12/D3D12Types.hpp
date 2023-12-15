@@ -250,7 +250,7 @@ namespace RHI {
 			UINT                   NumElements
 		) {
 			D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
-			desc.Format = DXGI_FORMAT_UNKNOWN;
+			desc.Format = DXGI_FORMAT_R32_TYPELESS;
 			desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
 			desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 			desc.Buffer.FirstElement = FirstElement;

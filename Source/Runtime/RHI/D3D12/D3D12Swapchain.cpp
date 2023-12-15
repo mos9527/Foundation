@@ -52,21 +52,18 @@ namespace RHI {
             nFenceValues[i] = resetFenceValue;        
         DXGI_SWAP_CHAIN_DESC desc = {};
         m_Swapchain->GetDesc(&desc);
+        m_BackbufferRTVs.clear();
         m_Backbuffers.clear(); // Release all pre-exisiting buffers
         CHECK_HR(m_Swapchain->ResizeBuffers(buffers, nWidth, nHeight, desc.BufferDesc.Format, desc.Flags));
         CHECK_HR(m_Swapchain->GetFullscreenState(&bIsFullscreen, nullptr));
-        nBackbufferIndex = m_Swapchain->GetCurrentBackBufferIndex();
+        nBackbufferIndex = m_Swapchain->GetCurrentBackBufferIndex();        
         // Recreate the BBs        
-        for (uint i = 0; i < desc.BufferCount; i++) {            
+        for (uint i = 0; i < desc.BufferCount; i++) {
             ComPtr<ID3D12Resource> backbuffer;
             CHECK_HR(m_Swapchain->GetBuffer(i, IID_PPV_ARGS(backbuffer.GetAddressOf())));
             auto name = std::format(L"Backbuffer #{}", i);
-            m_Backbuffers.push_back(std::make_unique<Texture>(m_Device, std::move(backbuffer), name.c_str()));            
-        }        
-        // RTVs 
-        m_BackbufferRTVs.clear();
-        for (auto& backbuffer : m_Backbuffers) {            
-            m_BackbufferRTVs.push_back(RenderTargetView(backbuffer.get()));
-        }        
+            m_Backbuffers.push_back(std::make_unique<Texture>(m_Device, std::move(backbuffer), name.c_str()));
+            m_BackbufferRTVs.emplace_back(m_Backbuffers[i].get());
+        }
     }
 }

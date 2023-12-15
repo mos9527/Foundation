@@ -24,7 +24,8 @@ public:
 	void Render(SceneView* sceneView, RHI::CommandList* ctx);
 	void CheckAndResetPassIfNecessary() {
 #define DOCHECK(X) if (!X.is_all_shader_uptodate()) X.reset();
-		if (hires_seconds() - lastCheckTick >= 1.0) {
+		constexpr double CHECK_INTERVAL = 1.0;
+		if (hires_seconds() - lastCheckTick >= CHECK_INTERVAL) {
 			DOCHECK(pass_Clear);
 			DOCHECK(pass_IndirectCull);
 			DOCHECK(pass_GBuffer);

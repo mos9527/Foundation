@@ -26,7 +26,7 @@ RenderGraphPass& AreaReducePass::insert_reduce_material_instance(RenderGraph& rg
 			native->SetComputeRootSignature(*EditorGlobals::g_RHI.rootSig);
 			constants->Data()->sourceSrv = r_in_srv->allocate_online_descriptor().get_heap_handle();
 			constants->Data()->outBufferUav = r_out_uav->allocate_online_descriptor().get_heap_handle();
-			constants->Data()->point = point;
+			constants->Data()->positition = point;
 			constants->Data()->extent = extent;
 			constants->Data()->sourceDimension.x = width;
 			constants->Data()->sourceDimension.y = height;

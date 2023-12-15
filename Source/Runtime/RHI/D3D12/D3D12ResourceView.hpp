@@ -16,7 +16,7 @@ namespace RHI {
 	public:
 		inline Descriptor const& get_storage_descriptor() { return descriptor;  }
 		inline const Descriptor allocate_online_descriptor() {
-			auto online_descriptor = m_Device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
+			auto online_descriptor = m_Device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateTransitentDescriptor();
 			m_Device->GetNativeDevice()->CopyDescriptorsSimple(1, online_descriptor.get_cpu_handle(), descriptor.get_cpu_handle(), DescriptorHeapTypeToD3DType(DescriptorHeapType::CBV_SRV_UAV));
 			return online_descriptor;
 		}
@@ -24,18 +24,21 @@ namespace RHI {
 			descriptor = m_Device->GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
 			const D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = desc;
 			m_Device->GetNativeDevice()->CreateShaderResourceView(*resource, &srvDesc, descriptor.get_cpu_handle());
+			return;
 		}
 		~ShaderResourceView() {
 			m_Device->GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->FreeDescriptor(descriptor);
 			descriptor.invalidate();
 		}
-		ShaderResourceView(ShaderResourceView&& other) noexcept: ResourceView(std::move(other)) {};
+		ShaderResourceView(ShaderResourceView&& other) noexcept: ResourceView(std::move(other)) {
+			other.descriptor.invalidate();
+		};
 	};
 	struct UnorderedAccessView : public ResourceView<UnorderedAccessViewDesc> {
 	public:
 		inline Descriptor const& get_storage_descriptor() { return descriptor; }
 		inline const Descriptor allocate_online_descriptor() {
-			auto online_descriptor = m_Device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
+			auto online_descriptor = m_Device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateTransitentDescriptor();
 			m_Device->GetNativeDevice()->CopyDescriptorsSimple(1, online_descriptor.get_cpu_handle(), descriptor.get_cpu_handle(), DescriptorHeapTypeToD3DType(DescriptorHeapType::CBV_SRV_UAV));
 			return online_descriptor;
 		}
@@ -49,7 +52,9 @@ namespace RHI {
 			m_Device->GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->FreeDescriptor(descriptor);
 			descriptor.invalidate();
 		}
-		UnorderedAccessView(UnorderedAccessView&& other) noexcept: ResourceView(std::move(other)) {};
+		UnorderedAccessView(UnorderedAccessView&& other) noexcept: ResourceView(std::move(other)) {
+			other.descriptor.invalidate();
+		};
 	};
 	struct RenderTargetView : public ResourceView<RenderTargetViewDesc> {
 		inline Descriptor const& get_descriptor() { return descriptor; }
@@ -66,7 +71,9 @@ namespace RHI {
 			m_Device->GetDescriptorHeap<DescriptorHeapType::RTV>()->FreeDescriptor(descriptor);
 			descriptor.invalidate();
 		}
-		RenderTargetView(RenderTargetView&& other) noexcept: ResourceView(std::move(other)) {};
+		RenderTargetView(RenderTargetView&& other) noexcept: ResourceView(std::move(other)) {
+			other.descriptor.invalidate();
+		};
 	};
 	struct DepthStencilView : public ResourceView<DepthStencilViewDesc> {
 		inline Descriptor const& get_descriptor() { return descriptor; }
@@ -79,7 +86,9 @@ namespace RHI {
 			m_Device->GetDescriptorHeap<DescriptorHeapType::DSV>()->FreeDescriptor(descriptor);
 			descriptor.invalidate();
 		}
-		DepthStencilView(DepthStencilView&& other) noexcept: ResourceView(std::move(other)) {};
+		DepthStencilView(DepthStencilView&& other) noexcept: ResourceView(std::move(other)) {
+			other.descriptor.invalidate();
+		};
 	};
 	struct Sampler : public ResourceView<SamplerDesc> {
 

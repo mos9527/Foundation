@@ -20,11 +20,13 @@ namespace RHI {
         new_handle.Increment(handle, m_HeapIncrementSize);
         return new_handle;
     }
-    Descriptor DescriptorHeap::AllocateDescriptor() {        
+    Descriptor DescriptorHeap::AllocateDescriptor() {       
+        std::scoped_lock lock(alloc_mutex);        
         auto heap_handle = m_FreeList.pop();
         return GetDescriptor(heap_handle);
     };
     void DescriptorHeap::FreeDescriptor(uint handle) {
+        std::scoped_lock lock(alloc_mutex);
         m_FreeList.push(handle);
     }
     void DescriptorHeap::FreeDescriptor(Descriptor desc) {

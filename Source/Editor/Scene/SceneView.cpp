@@ -19,7 +19,7 @@ SceneView::SceneView(Device* device) :
 	constShadingBuffer(device, 1, L"Shading")
 {
 	sceneBufferSrv = std::make_unique<ShaderResourceView>(&sceneBuffer, ShaderResourceViewDesc::GetRawBufferDesc(
-		0, sceneBuffer.GetDesc().sizeInBytes()
+		0, sceneBuffer.GetDesc().numElements()
 	));
 }
 SceneMaterial DumpMaterialData(AssetMaterialComponent* materialComponent) {
@@ -241,6 +241,8 @@ void SceneView::Update(RHI::CommandList* ctx, RHIContext* rhiCtx, SceneContext* 
 	};
 	offset += numLights * sizeof(SceneLight);
 	// Upload to GPU
+	ctx->QueueTransitionBarrier(&sceneBuffer, ResourceState::CopyDest);
+	ctx->FlushBarriers();
 	ctx->CopyBufferRegion(&meshInstancesBuffer, &sceneBuffer, 0, constGlobalsBuffer.Data()->meshInstances.byteOffset, numMeshInstances * sizeof(SceneMeshInstanceData));
 	ctx->CopyBufferRegion(&materialsBuffer, &sceneBuffer, 0, constGlobalsBuffer.Data()->materials.byteOffset, numMaterials * sizeof(SceneMaterial));
 	ctx->CopyBufferRegion(&lightsBuffer, &sceneBuffer, 0, constGlobalsBuffer.Data()->lights.byteOffset, numLights * sizeof(SceneLight));

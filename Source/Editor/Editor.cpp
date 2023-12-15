@@ -7,8 +7,8 @@
 
 using namespace RHI;
 using namespace EditorGlobals;
-#define IMGUI_DEFAULT_FONT "Resources/Fonts/DroidSansFallback.ttf"
-#define IMGUI_GLYPH_FONT   "Resources/Fonts/fa-solid-900.ttf"
+#define IMGUI_DEFAULT_FONT  CONCATENATE(SOURCE_DIR,"/../Resources/Fonts/DroidSansFallback.ttf")
+#define IMGUI_GLYPH_FONT    CONCATENATE(SOURCE_DIR,"/../Resources/Fonts/fa-solid-900.ttf")
 /* ImGui Extern */
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 void Setup_ImGui() {
@@ -16,7 +16,8 @@ void Setup_ImGui() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui_ImplWin32_Init(g_Window);
-    static Descriptor ImGuiFontDescriptor = g_RHI.device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();    
+    static Descriptor ImGuiFontDescriptor = g_RHI.device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocatePersistentDescriptor();    
+    // We're not expecting to free this
     ImGui_ImplDX12_Init(
         g_RHI.device->GetNativeDevice(),
         RHI_DEFAULT_SWAPCHAIN_BACKBUFFER_COUNT,
@@ -78,13 +79,13 @@ void Load_Scene(path_t path) {
         g_Scene.scene->clean<TextureAsset>();
     }, path);
 }
-static DeferredRenderer* renderer;
+static DeferredRenderer* renderer{};
 void EditorWindow::Setup() {
     g_Editor.state.transition(EditorEvents::OnSetup);
     Setup_ImGui();
     Setup_Scene();
     g_cameraController.Win32RawInput_Setup(m_hWnd);    
-    renderer = new ::DeferredRenderer(g_RHI.device);
+    // renderer = new ::DeferredRenderer(g_RHI.device);
 }
 void Draw_InvalidState() {}
 void Draw_RunningState() {
@@ -167,7 +168,8 @@ void EditorWindow::Run() {
     // Editor updates
     Run_Update();
     // Watch shader edits on RenderPass-es
-    renderer->CheckAndResetPassIfNecessary();
+    if (renderer)
+        renderer->CheckAndResetPassIfNecessary();
     // Running frames
     ImGui::Render();
     uint bbIndex = g_RHI.swapchain->GetCurrentBackbufferIndex();
@@ -193,11 +195,12 @@ void EditorWindow::Run() {
             &g_Scene,
             &g_Editor
         );  
-        renderer->Render(sceneView, gfx);
+        if (renderer)
+            renderer->Render(sceneView, gfx);
     }
 
     gfx->QueueTransitionBarrier(g_RHI.swapchain->GetBackbuffer(bbIndex), ResourceState::RenderTarget);
-    gfx->FlushBarriers();
+    gfx->FlushBarriers();        
     gfx->GetNativeCommandList()->OMSetRenderTargets(1, &g_RHI.swapchain->GetBackbufferRTV(bbIndex).get_descriptor().get_cpu_handle(), FALSE, nullptr);
     gfx->BeginEvent(L"ImGui");
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), gfx->GetNativeCommandList());

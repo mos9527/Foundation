@@ -67,6 +67,8 @@ void MeshSkinning::Update(CommandList* ctx, SceneSkinnedMeshComponent* mesh) {
 		.keyshapeWeightsSrv = keyshapeTransform ? keyshapeTransform->data().second->allocate_online_descriptor().get_heap_handle() : INVALID_HEAP_HANDLE,
 		.keyshapeOffsetsSrv = asset.keyShapeOffsetBuffer ? asset.keyShapeOffsetBuffer->srv->allocate_online_descriptor().get_heap_handle() : INVALID_HEAP_HANDLE,
 
+		.srcBufferSrv = asset.vertexBuffer->srv->allocate_online_descriptor().get_heap_handle(),
+		.srcNumVertices = asset.vertexBuffer->numElements,
 		.destBufferUav = transformedBuffer.second->allocate_online_descriptor().get_heap_handle()
 	};
 	*meshSkinningTasks.first->DataAt(taskCounter) = task;
