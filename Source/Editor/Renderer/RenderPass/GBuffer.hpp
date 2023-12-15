@@ -21,7 +21,7 @@ public:
 			width, height, 1, 1, 1, 0,
 			RHI::ResourceFlags::RenderTarget, RHI::ResourceHeapType::Default,
 			RHI::ResourceState::RenderTarget, RHI::ClearValue(0, 0, 0, 0),
-			L"UV/Depth Gradient"
+			L"UV Gradient"
 		);
 	}
 	static const RHI::Resource::ResourceDesc GetMaterialDesc(uint width, uint height) {
@@ -29,7 +29,7 @@ public:
 			RHI::ResourceFormat::R16G16B16A16_UNORM, RHI::ResourceDimension::Texture2D,
 			width, height, 1, 1, 1, 0,
 			RHI::ResourceFlags::RenderTarget, RHI::ResourceHeapType::Default,
-			RHI::ResourceState::RenderTarget, RHI::ClearValue(0, 0, 0, 0),
+			RHI::ResourceState::RenderTarget, RHI::ClearValue(1, 1, 1, 1),
 			L"Material ID/UV"
 		);
 	}

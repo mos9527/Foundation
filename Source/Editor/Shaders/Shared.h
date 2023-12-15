@@ -48,9 +48,10 @@ struct IndirectCullCmdList { // ! align for CB
 struct InstanceCullConstant { // ! align for CB
     IndirectCullCmdList cmds[INSTANCE_CULL_MAX_CMDS];
     
+    uint visibilityIndex;
     uint hizIndex;
     uint hizMips;
-    uint2 pad_;
+    uint pad_;
 };
 struct SceneCamera // ! align for CB
 {
@@ -126,11 +127,9 @@ struct TonemappingConstants { // ! align for CB
     uint _pad;
 };
 struct SceneBufferMetadata {
-    uint heapIndex;
-    /* --- */
-    uint stride;
-    uint byteOffset;
+    uint heapIndex;    
     uint count;
+    uint2 _pad;
 };
 struct SceneGlobals // ! align for CB
 {
@@ -172,6 +171,7 @@ struct SceneMeshBuffer {
 #define INSTANCE_FLAG_SILHOUETTE DEFBIT(3)
 struct SceneMeshInstanceData
 {
+    uint meshIndex;
     uint materialIndex;    
     uint instanceFlags;
     SceneMeshBuffer meshBuffer;

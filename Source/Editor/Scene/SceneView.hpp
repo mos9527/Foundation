@@ -8,8 +8,9 @@
 class SceneView {
 	MeshSkinning skinnedMeshVertexBuffer;
 	// Default
-	RHI::Buffer sceneBuffer;
-	std::unique_ptr<RHI::ShaderResourceView> sceneBufferSrv;
+	std::pair<std::unique_ptr<RHI::Buffer>, std::unique_ptr<RHI::ShaderResourceView>> sceneMeshInstancesBuffer;
+	std::pair<std::unique_ptr<RHI::Buffer>, std::unique_ptr<RHI::ShaderResourceView>> sceneMaterialsBuffer;
+	std::pair<std::unique_ptr<RHI::Buffer>, std::unique_ptr<RHI::ShaderResourceView>> sceneLightsBuffer;	
 	// Upload
 	BufferContainer<SceneMeshInstanceData> meshInstancesBuffer;
 	BufferContainer<SceneMaterial> materialsBuffer;

@@ -1,5 +1,4 @@
 #include "InstanceCull.hpp"
-
 using namespace RHI;
 void InstanceCull::reset() {
 	CS_Early = build_shader(0, L"main_early", L"cs_6_6");
@@ -25,13 +24,12 @@ void InstanceCull::reset() {
 
 RenderGraphPass& InstanceCull::insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles, bool late) {
 	const auto setup_pass = [=](RenderGraphPass& pass) {
-		for (auto const& cmd : handles.cmd_uav_instanceMaskAllow_instanceMaskRejcect) {
+		for (int i = 0; i < INSTANCE_CULL_MAX_CMDS; i++) {
+			auto const& cmd = handles.cmd_uav_instanceMaskAllow_instanceMaskRejcect[i];
 			auto p_cmd = std::get<0>(cmd);
-			if (p_cmd) pass.readwrite(*p_cmd);			
-			for (int i = 0; i < INSTANCE_CULL_MAX_CMDS; i++) {
-				constants->Data()->cmds[i].instanceAllowMask = std::get<2>(cmd);
-				constants->Data()->cmds[i].instanceRejectMask = std::get<3>(cmd);
-			}
+			if (p_cmd) pass.readwrite(*p_cmd);
+			constants->Data()->cmds[i].instanceAllowMask = std::get<2>(cmd);
+			constants->Data()->cmds[i].instanceRejectMask = std::get<3>(cmd);
 		}
 	};
 	if (!late) {

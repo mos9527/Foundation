@@ -1,16 +1,9 @@
 #include "Common.hlsli"
-#include "Shared.h"
+#define SHADER_CONSTANT_TYPE TonemappingConstants
+#include "Bindless.hlsli"
+
 // see https://bruop.github.io/exposure/
 //     https://www.alextardif.com/HistogramLuminance.html
-cbuffer Constants : register(b0, space0)
-{
-    uint width;    
-    uint height;
-    uint histogramUAV;
-    uint framebufferUAV;
-    uint avgLuminaceUAV;
-}
-ConstantBuffer<SceneGlobals> g_SceneGlobals : register(b1, space0);
 float RGB2Luminance(float3 color)
 {
     return dot(color, float3(0.2127f, 0.7152f, 0.0722f));
@@ -31,15 +24,15 @@ void main_histogram(uint2 DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex)
 {
     HistogramShared[gid] = 0;
     GroupMemoryBarrierWithGroupSync();
-    if (all(DTid < g_SceneGlobals.frameDimension))
+    if (all(DTid < g_Scene.renderDimension))
     {
-        Texture2D<float4> frameBuffer = ResourceDescriptorHeap[framebufferUAV];
+        Texture2D<float4> frameBuffer = ResourceDescriptorHeap[g_Shader.framebufferUav];
         float4 color = frameBuffer[DTid];
-        uint bin = RGB2Bin(color.rgb, g_SceneGlobals.camera.logLuminaceMin, g_SceneGlobals.camera.logLuminanceRange);
+        uint bin = RGB2Bin(color.rgb, g_Scene.camera.logLuminaceMin, g_Scene.camera.logLuminanceRange);
         InterlockedAdd(HistogramShared[bin], 1);        
     }
     GroupMemoryBarrierWithGroupSync(); // Finish group reads
-    RWByteAddressBuffer histogram = ResourceDescriptorHeap[histogramUAV];
+    RWByteAddressBuffer histogram = ResourceDescriptorHeap[g_Shader.hisotrgramUav];
     histogram.InterlockedAdd(gid * 4, HistogramShared[gid]);
 }
 
@@ -47,7 +40,7 @@ void main_histogram(uint2 DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex)
 [numthreads(RENDERER_TONEMAPPING_THREADS, RENDERER_TONEMAPPING_THREADS, 1)]
 void main_avg(uint2 DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex)
 {
-    RWByteAddressBuffer histogram = ResourceDescriptorHeap[histogramUAV];
+    RWByteAddressBuffer histogram = ResourceDescriptorHeap[g_Shader.framebufferUav];
     uint count = histogram.Load(gid * 4);
     HistogramShared[gid] = count * gid;
     
@@ -66,11 +59,11 @@ void main_avg(uint2 DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex)
     // Store average
     if (gid == 0)
     {
-        float avgLogL = (float) HistogramShared[0] / max(width * height - count, 1) - 1; // count[gid=0] is for L=0 pixels
-        float avgL = exp2((avgLogL / 254.0f) * g_SceneGlobals.camera.logLuminanceRange + g_SceneGlobals.camera.logLuminaceMin);
-        RWTexture2D<float> avgBuffer = ResourceDescriptorHeap[avgLuminaceUAV];
+        float avgLogL = (float) HistogramShared[0] / max(g_Scene.renderDimension.x * g_Scene.renderDimension.y - count, 1) - 1; // count[gid=0] is for L=0 pixels
+        float avgL = exp2((avgLogL / 254.0f) * g_Scene.camera.logLuminanceRange + g_Scene.camera.logLuminaceMin);
+        RWTexture2D<float> avgBuffer = ResourceDescriptorHeap[g_Shader.avgLumUav];
         float avgLlastFrame = avgBuffer[uint2(0, 0)];
-        float adaptedL = avgLlastFrame + (avgL - avgLlastFrame) * (1 - exp(-g_SceneGlobals.frameTimePrev * g_SceneGlobals.camera.luminaceAdaptRate));;
+        float adaptedL = avgLlastFrame + (avgL - avgLlastFrame) * (1 - exp(-g_Scene.frameTime * g_Scene.camera.luminaceAdaptRate));;
         avgBuffer[uint2(0, 0)] = adaptedL;
     }
 }
@@ -132,10 +125,10 @@ float Tonemap_ACES(float x)
 [numthreads(RENDERER_FULLSCREEN_THREADS, RENDERER_FULLSCREEN_THREADS, 6)]
 void main_tonemap(uint2 DTid : SV_DispatchThreadID)
 {
-    if (any(DTid > g_SceneGlobals.frameDimension))
+    if (any(DTid > g_Scene.renderDimension))
         return;
-    RWTexture2D<float4> frameBuffer = ResourceDescriptorHeap[framebufferUAV];
-    Texture2D avgBuffer = ResourceDescriptorHeap[avgLuminaceUAV];
+    RWTexture2D<float4> frameBuffer = ResourceDescriptorHeap[g_Shader.framebufferUav];
+    Texture2D avgBuffer = ResourceDescriptorHeap[g_Shader.avgLumUav];
     float3 rgb = frameBuffer[DTid].rgb;    
     float lum = avgBuffer[uint2(0, 0)].r;
     // Y -> luminance

@@ -85,7 +85,7 @@ void EditorWindow::Setup() {
     Setup_ImGui();
     Setup_Scene();
     g_cameraController.Win32RawInput_Setup(m_hWnd);    
-    // renderer = new ::DeferredRenderer(g_RHI.device);
+    renderer = new ::DeferredRenderer(g_RHI.device);
 }
 void Draw_InvalidState() {}
 void Draw_RunningState() {
@@ -167,9 +167,9 @@ void EditorWindow::Run() {
     }
     // Editor updates
     Run_Update();
-    // Watch shader edits on RenderPass-es
-    if (renderer)
-        renderer->CheckAndResetPassIfNecessary();
+    // Watch shader edits on RenderPass-es    
+    CHECK(renderer && "Don't");
+    renderer->CheckAndResetPassIfNecessary();
     // Running frames
     ImGui::Render();
     uint bbIndex = g_RHI.swapchain->GetCurrentBackbufferIndex();
@@ -195,8 +195,7 @@ void EditorWindow::Run() {
             &g_Scene,
             &g_Editor
         );  
-        if (renderer)
-            renderer->Render(sceneView, gfx);
+        renderer->Render(sceneView, gfx);
     }
 
     gfx->QueueTransitionBarrier(g_RHI.swapchain->GetBackbuffer(bbIndex), ResourceState::RenderTarget);

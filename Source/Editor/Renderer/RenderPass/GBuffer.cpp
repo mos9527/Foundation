@@ -40,12 +40,13 @@ void GBufferPass::reset() {
 		device,
 		g_RHI.rootSig,
 		CommandSignatureDesc(sizeof(IndirectCommand))
-		.AddConstant(0, 0, 2) // b0 space0 : Mesh Index,LOD Index
+		.AddConstant(2, 0, 2) // b2 space0 : Mesh Index,LOD Index
 		.AddVertexBufferView(0)
 		.AddIndexBufferView()
 		.AddDrawIndexed()
 	);
 }
+// xxx texture feedback loading via Readback culled commannd list?
 RenderGraphPass& GBufferPass::insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles){
 	return rg.add_pass(L"GBuffer Generation")
 		.read(*handles.command_uav.first)

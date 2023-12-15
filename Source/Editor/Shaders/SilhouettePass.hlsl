@@ -1,11 +1,12 @@
 #include "Common.hlsli"
-cbuffer IndirectData : register(b0, space0)
+#define SHADER_CONSTANT_TYPE SilhouetteConstants
+#include "Bindless.hlsli"
+
+cbuffer IndirectData : register(b2, space0)
 {
     uint g_MeshIndex;
     uint g_LodIndex;
 };
-ConstantBuffer<SceneGlobals> g_SceneGlobals : register(b1, space0);
-StructuredBuffer<SceneMeshInstanceData> g_SceneMeshInstances : register(t0, space0);
 struct VSInput
 {
     float3 position : POSITION;
@@ -22,8 +23,8 @@ struct PSInput
 PSInput vs_main(VSInput vertex)
 {
     PSInput result;
-    SceneMeshInstanceData mesh = g_SceneMeshInstances[g_MeshIndex];
-    result.position = mul(mul(float4(vertex.position, 1.0f), mesh.transform), g_SceneGlobals.camera.viewProjection);
+    SceneMeshInstanceData mesh = GetSceneMeshInstance(g_MeshIndex);
+    result.position = mul(mul(float4(vertex.position, 1.0f), mesh.transform), g_Scene.camera.viewProjection);
     return result;
 }
 float4 ps_main(PSInput input) : SV_Target

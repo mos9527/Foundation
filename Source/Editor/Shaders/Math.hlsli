@@ -259,6 +259,7 @@ float3 decodeTangetNormalMap(float3 sample, float3 Tv, float3 Nv)
     N = normalize(tN.x * T + tN.y * B + tN.z * N);
     return N;
 }
+// https://github.com/KhronosGroup/SPIRV-Cross/blob/main/reference/shaders-hlsl/frag/unorm-snorm-packing.frag
 float2 pack16toUnorm8(uint value)
 {
     value = value & 0xffff;
@@ -270,6 +271,17 @@ uint unpackUnorm8to16(float2 value)
 {
     uint2 packed = uint2(round(saturate(value) * 255.0));
     return packed.x << 8 | packed.y;
+}
+float2 unpackUnorm2x16(uint value)
+{
+    uint2 Packed = uint2(value & 0xffff, value >> 16);
+    return float2(Packed) / 65535.0;
+}
+
+uint packSnorm2x16(float2 value)
+{
+    int2 Packed = int2(round(clamp(value, -1.0, 1.0) * 32767.0)) & 0xffff;
+    return uint(Packed.x | (Packed.y << 16));
 }
 float clipZ2ViewZ(float Zss, float zNear, float zFar)
 {

@@ -1,79 +1,44 @@
 #include "Common.hlsli"
-ConstantBuffer<SceneGlobals> g_SceneGlobals : register(b0, space0);
-StructuredBuffer<SceneLight> g_Lights : register(t0, space0);
-SamplerState g_Sampler : register(s0, space0);
+#define SHADER_CONSTANT_TYPE ShadingConstants
+#define SHADER_CONSTANT_32_8_TYPE DeferredShadingConstants
+#include "Bindless.hlsli"
 #include "Shading.hlsli"
-
-cbuffer MRTHandles : register(b1, space0)
-{
-    uint albedoHandle;
-    uint normalHandle;
-    uint materialHandle;
-    uint emissiveHandle;
-    uint depthHandle;
-    uint frameBufferHandle;
-}
 
 [numthreads(RENDERER_FULLSCREEN_THREADS, RENDERER_FULLSCREEN_THREADS, 1)]
 void main(uint2 DTid : SV_DispatchThreadID)
 {
-    if (any(DTid > g_SceneGlobals.frameDimension))
+    if (any(DTid > g_Scene.renderDimension))
         return;
     
-    Texture2D albedoTex = ResourceDescriptorHeap[albedoHandle];
-    Texture2D normalTex = ResourceDescriptorHeap[normalHandle];
-    Texture2D materialTex = ResourceDescriptorHeap[materialHandle];
-    Texture2D emissiveTex = ResourceDescriptorHeap[emissiveHandle];
-    Texture2D depthTex = ResourceDescriptorHeap[depthHandle];    
-    RWTexture2D<float4> frameBuffer = ResourceDescriptorHeap[frameBufferHandle];
+    Texture2D tangentFrameTex = ResourceDescriptorHeap[g_Shader32.tangentFrameSrv];
+    Texture2D gradientTex = ResourceDescriptorHeap[g_Shader32.gradientSrv];
+    Texture2D materialTex = ResourceDescriptorHeap[g_Shader32.materialSrv];    
+    Texture2D depthTex = ResourceDescriptorHeap[g_Shader32.depthSrv];    
+    RWTexture2D<float4> frameBuffer = ResourceDescriptorHeap[g_Shader32.framebufferUav];
     
-    float4 albedoSmp = albedoTex[DTid];
-    float4 normalSmp = normalTex[DTid];
+    float4 tangentFrameSmp = tangentFrameTex[DTid];
+    float4 graidentSmp = gradientTex[DTid];
     float4 materialSmp = materialTex[DTid];
-    float4 emissiveSmp = emissiveTex[DTid];
     float4 depthSmp = depthTex[DTid];
     
-    float3 PBR = float3(albedoSmp.a,materialSmp.rg);  // AO, rough, metal
-    uint instance = unpackUnorm8to16(materialSmp.ba) - 1; // Instance ID. (ID + 1 is stored)
+    uint meshIndex = packSnorm2x16(materialSmp.rg);
+    float3x3 TBN = QuatTo3x3(UnpackQuaternion(tangentFrameSmp));
+    float2 ddx = graidentSmp.rg;
+    float2 ddy = graidentSmp.ba;
+    float2 UV = materialSmp.ba;
     
-    if (g_SceneGlobals.debug_view_albedo() || g_SceneGlobals.debug_view_lod() /* see GBuffer.hlsl */)
+    SceneMeshInstanceData mesh = GetSceneMeshInstance(meshIndex);
+    SceneMaterial material = GetSceneMaterial(mesh.materialIndex);
+    
+    float3 baseColor = material.albedo.rgb;
+    float alpha = material.albedo.a;
+    
+    if (material.albedoMap != INVALID_HEAP_HANDLE)
     {
-        frameBuffer[DTid] = float4(albedoSmp.rgb, instance);
-        return;
-    }
-    
-    float3 baseColor = albedoSmp.rgb;
-    float ao = PBR.r;
-    float rough = PBR.g;
-    float metal = PBR.b;
-    float alphaRoughness = rough * rough;
-    float3 N = decodeSpheremapNormal(normalSmp.rg);
-    
-    float2 UV = DTid / float2(g_SceneGlobals.frameDimension);
-    
-    float Zss = depthSmp.r;
-    float Zview = clipZ2ViewZ(Zss, g_SceneGlobals.camera.nearZ, g_SceneGlobals.camera.farZ);
-    float3 P = UV2WorldSpace(UV, Zss, g_SceneGlobals.camera.invViewProjection);
-    float3 V = normalize(g_SceneGlobals.camera.position.xyz - P);
-    if (Zview >= g_SceneGlobals.camera.farZ - 1.0f /*offset to compensate for precision*/) // Discard far plane pixels
-    {
-        frameBuffer[DTid] = float4(0, 0, 0, 0);
-        return;
+        Texture2D albedo = ResourceDescriptorHeap[material.albedoMap];
+        float4 smp = albedo.SampleGrad(g_TextureSampler, (float2) DTid / g_Scene.renderDimension, ddx, ddy);
+        baseColor = smp.rgb;
+        alpha = smp.a;
     }    
-    float3 diffuse = float3(0, 0, 0);
-    float3 specular = float3(0, 0, 0);
-    [unroll(MAX_LIGHT_COUNT)]
-    for (uint i = 0; i < g_SceneGlobals.numLights; i++)
-    {
-        SceneLight light = g_Lights[i];
-        if (!light.enabled)
-            continue;     
-        shade_direct(light, P, V, N, baseColor, metal, alphaRoughness, diffuse, specular);
-    }
-    if (g_SceneGlobals.probe.enabled)
-    {
-        shade_indirect(g_SceneGlobals.probe, V, N, baseColor, metal, rough, ao, diffuse, specular);
-    }
-    float3 finalColor = diffuse + specular + emissiveSmp.rgb;
-    frameBuffer[DTid] = float4(finalColor, 1.0f);
+    frameBuffer[DTid] = float4(baseColor, 1.0f);
 }

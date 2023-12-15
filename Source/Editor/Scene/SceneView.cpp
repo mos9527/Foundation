@@ -4,23 +4,46 @@
 using namespace RHI;
 
 SceneView::SceneView(Device* device) :
-	skinnedMeshVertexBuffer(device),
-	sceneBuffer(device, Resource::ResourceDesc::GetGenericBufferDesc(
-		/* Allocate a buffer large enough to hold everything */
-		MAX_INSTANCE_COUNT * sizeof(SceneMeshInstanceData) +
-		MAX_MATERIAL_COUNT * sizeof(SceneMaterial) +
-		MAX_LIGHT_COUNT * sizeof(SceneLight), 0, /* raw */
-		ResourceState::Common, ResourceHeapType::Default, ResourceFlags::None, L"Scene Buffer"
-	)),
+	skinnedMeshVertexBuffer(device),	
 	meshInstancesBuffer(device, MAX_INSTANCE_COUNT, L"Upload Instances"),
 	materialsBuffer(device, MAX_MATERIAL_COUNT, L"Upload Materials"),
 	lightsBuffer(device, MAX_LIGHT_COUNT, L"Upload Lights"),
 	constGlobalsBuffer(device, 1, L"Globals"),
 	constShadingBuffer(device, 1, L"Shading")
 {
-	sceneBufferSrv = std::make_unique<ShaderResourceView>(&sceneBuffer, ShaderResourceViewDesc::GetRawBufferDesc(
-		0, sceneBuffer.GetDesc().numElements()
-	));
+	sceneMeshInstancesBuffer.first = std::make_unique<Buffer>(
+		device,
+		Resource::ResourceDesc::GetGenericBufferDesc(
+			MAX_INSTANCE_COUNT * sizeof(SceneMeshInstanceData), sizeof(SceneMeshInstanceData),
+			ResourceState::Common, ResourceHeapType::Default, ResourceFlags::None, L"Scene Instances"
+		));
+	sceneMeshInstancesBuffer.second = std::make_unique<ShaderResourceView>(
+		sceneMeshInstancesBuffer.first.get(),
+		ShaderResourceViewDesc::GetStructuredBufferDesc(0, MAX_INSTANCE_COUNT, sizeof(SceneMeshInstanceData))
+	);
+
+	sceneMaterialsBuffer.first = std::make_unique<Buffer>(
+		device,
+		Resource::ResourceDesc::GetGenericBufferDesc(
+			MAX_MATERIAL_COUNT * sizeof(SceneMaterial), sizeof(SceneMaterial),
+			ResourceState::Common, ResourceHeapType::Default, ResourceFlags::None, L"Scene Materials"
+		));
+	sceneMaterialsBuffer.second = std::make_unique<ShaderResourceView>(
+		sceneMaterialsBuffer.first.get(),
+		ShaderResourceViewDesc::GetStructuredBufferDesc(0, MAX_MATERIAL_COUNT, sizeof(SceneMaterial))
+	);
+
+	sceneLightsBuffer.first = std::make_unique<Buffer>(
+		device,
+		Resource::ResourceDesc::GetGenericBufferDesc(
+			MAX_LIGHT_COUNT * sizeof(SceneLight), sizeof(SceneLight),
+			ResourceState::Common, ResourceHeapType::Default, ResourceFlags::None, L"Scene Instances"
+		));
+	sceneLightsBuffer.second = std::make_unique<ShaderResourceView>(
+		sceneLightsBuffer.first.get(),
+		ShaderResourceViewDesc::GetStructuredBufferDesc(0, MAX_LIGHT_COUNT, sizeof(SceneLight))
+	);
+
 }
 SceneMaterial DumpMaterialData(AssetMaterialComponent* materialComponent) {
 	SceneMaterial material;
@@ -40,7 +63,7 @@ SceneMaterial DumpMaterialData(AssetMaterialComponent* materialComponent) {
 	material.emissive = materialComponent->emissive;
 	return material;
 }
-template<typename T> SceneMeshInstanceData DumpMeshInstanceData(MeshSkinning* meshSkinningBuffer, SceneMeshInstanceData* data, T* mesh) {
+template<typename T> SceneMeshInstanceData DumpMeshInstanceData(MeshSkinning* meshSkinningBuffer, SceneMeshInstanceData* data, T* mesh, uint meshIndex) {
 	AffineTransform transform = mesh->get_global_transform();
 	Scene& scene = mesh->parent;
 	// Instance Data
@@ -100,6 +123,7 @@ template<typename T> SceneMeshInstanceData DumpMeshInstanceData(MeshSkinning* me
 		};
 		write_lod(asset);
 	}
+	sceneMesh.meshIndex = meshIndex;
 	return sceneMesh;
 }
 SceneLight DumpLightData(SceneLightComponent* light) {
@@ -170,7 +194,7 @@ void SceneView::Update(RHI::CommandList* ctx, RHIContext* rhiCtx, SceneContext* 
 		if (!ValidateVersion(mesh)) return;
 		auto index = EncodeMeshInstanceIndex(&mesh);
 		SceneMeshInstanceData* instance = meshInstancesBuffer.DataAt(index);
-		SceneMeshInstanceData data = DumpMeshInstanceData(&skinnedMeshVertexBuffer, instance, &mesh);
+		SceneMeshInstanceData data = DumpMeshInstanceData(&skinnedMeshVertexBuffer, instance, &mesh, index);
 		memcpy(instance, &data, sizeof(data));
 	};
 	std::for_each(static_meshes.begin(), static_meshes.end(), update_mesh);
@@ -217,33 +241,24 @@ void SceneView::Update(RHI::CommandList* ctx, RHIContext* rhiCtx, SceneContext* 
 	constShadingBuffer.Data()->iblProbe = probeHLSL;
 	constShadingBuffer.Data()->ltcLut = rhiCtx->data_LTCLUT->ltcSRV->allocate_online_descriptor().get_heap_handle();
 	// Buffer Metadatas
-	auto bufferSrv = sceneBufferSrv->allocate_online_descriptor();
-	uint offset = 0;
 	constGlobalsBuffer.Data()->meshInstances = {
-		.heapIndex = bufferSrv.get_heap_handle(),
-		.stride = sizeof(SceneMeshInstanceData),
-		.byteOffset = offset,
+		.heapIndex = sceneMeshInstancesBuffer.second->allocate_online_descriptor().get_heap_handle(),
 		.count = numMeshInstances
-	};
-	offset += numMeshInstances * sizeof(SceneMeshInstanceData);
+	};	
 	constGlobalsBuffer.Data()->materials = {
-		.heapIndex = bufferSrv.get_heap_handle(),
-		.stride = sizeof(SceneMaterial),
-		.byteOffset = offset,
+		.heapIndex = sceneMaterialsBuffer.second->allocate_online_descriptor().get_heap_handle(),
 		.count = numMaterials
-	};
-	offset += numMaterials * sizeof(SceneMaterial);
+	};	
 	constGlobalsBuffer.Data()->lights = {
-		.heapIndex = bufferSrv.get_heap_handle(),
-		.stride = sizeof(SceneLight),
-		.byteOffset = offset,
+		.heapIndex = sceneLightsBuffer.second->allocate_online_descriptor().get_heap_handle(),
 		.count = numLights
 	};
-	offset += numLights * sizeof(SceneLight);
 	// Upload to GPU
-	ctx->QueueTransitionBarrier(&sceneBuffer, ResourceState::CopyDest);
+	ctx->QueueTransitionBarrier(sceneMeshInstancesBuffer.first.get(), ResourceState::CopyDest);
+	ctx->QueueTransitionBarrier(sceneMaterialsBuffer.first.get(), ResourceState::CopyDest);
+	ctx->QueueTransitionBarrier(sceneLightsBuffer.first.get(), ResourceState::CopyDest);
 	ctx->FlushBarriers();
-	ctx->CopyBufferRegion(&meshInstancesBuffer, &sceneBuffer, 0, constGlobalsBuffer.Data()->meshInstances.byteOffset, numMeshInstances * sizeof(SceneMeshInstanceData));
-	ctx->CopyBufferRegion(&materialsBuffer, &sceneBuffer, 0, constGlobalsBuffer.Data()->materials.byteOffset, numMaterials * sizeof(SceneMaterial));
-	ctx->CopyBufferRegion(&lightsBuffer, &sceneBuffer, 0, constGlobalsBuffer.Data()->lights.byteOffset, numLights * sizeof(SceneLight));
+	ctx->CopyBufferRegion(&meshInstancesBuffer, sceneMeshInstancesBuffer.first.get(), 0, 0, numMeshInstances * sizeof(SceneMeshInstanceData));
+	ctx->CopyBufferRegion(&materialsBuffer, sceneMaterialsBuffer.first.get(), 0, 0, numMaterials * sizeof(SceneMaterial));
+	ctx->CopyBufferRegion(&lightsBuffer, sceneLightsBuffer.first.get(), 0, 0, numLights * sizeof(SceneLight));
 }
