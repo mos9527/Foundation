@@ -25,7 +25,8 @@ namespace RHI {
         const wchar_t* entrypoint,
         const wchar_t* targetProfile,
         std::vector<const wchar_t*>&& defines,
-        std::vector<const wchar_t*>&& extraIncludes
+        std::vector<const wchar_t*>&& extraIncludes,
+        std::string& errorBuffer
     )
     {
         LOG(INFO) << "Compiling shader " << wstring_to_utf8(targetProfile) << ", " << wstring_to_utf8(sourcePath) << " @ " << wstring_to_utf8(entrypoint);
@@ -73,7 +74,11 @@ namespace RHI {
         ComPtr<IDxcBlobEncoding> sourceBlob;
         utils->LoadFile(sourcePath, &codePage, &sourceBlob);        
         DxcBuffer sourceBuffer;
-        CHECK(sourceBlob && "Shader did not load!");
+        if (!sourceBlob) {
+            errorBuffer = std::format("Failed to load shader. Path={}", wstring_to_utf8(sourcePath));
+            LOG(ERROR) << errorBuffer;
+            return {};
+        }
         sourceBuffer.Ptr = sourceBlob->GetBufferPointer();
         sourceBuffer.Size = sourceBlob->GetBufferSize();
         sourceBuffer.Encoding = DXC_CP_UTF8;
@@ -94,10 +99,9 @@ namespace RHI {
             {
                 LOG(ERROR) << "Shader Compilation Error!";
                 LOG(ERROR) << (const char*)errorsBlob->GetBufferPointer();
-            }           
-#ifdef _DEBUG
-            __debugbreak();
-#endif
+                errorBuffer = (const char*)errorsBlob->GetBufferPointer();
+                return {};
+            }
         }
         else {
             ComPtr<IDxcBlob> code;
@@ -124,10 +128,11 @@ namespace RHI {
         memcpy(m_Data.data(), csoData, size);
     }
     Shader::Shader(const wchar_t* sourcePath, const wchar_t* entrypoint, const wchar_t* targetProfile, std::vector<const wchar_t*>&& defines, std::vector<const wchar_t*>&& extraIncludes) {
-        auto blob = CompileShaderDXC(sourcePath, entrypoint, targetProfile, std::move(defines), std::move(extraIncludes));
+        auto blob = CompileShaderDXC(sourcePath, entrypoint, targetProfile, std::move(defines), std::move(extraIncludes), m_ErrorBuffer);
         if (blob) {
             m_Data.resize(blob->GetBufferSize());
             memcpy(m_Data.data(), blob->GetBufferPointer(), m_Data.size());
+            m_Loaded = true;
         }
         SetName(sourcePath);
     }

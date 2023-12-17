@@ -46,6 +46,6 @@
 
 #define EDITOR_SKINNING_THREADS 64
 
-#define DEFBIT(I) (1 << I)
+#define DEFBIT(I) (uint)(1 << I)
 
 #define INSTANCE_CULL_MAX_CMDS 4

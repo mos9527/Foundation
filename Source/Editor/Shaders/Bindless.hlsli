@@ -17,6 +17,7 @@ ConstantBuffer<SHADER_CONSTANT_32_8_TYPE> g_Shader32 : register(b2, space0);
 SamplerState g_TextureSampler : register(s0, space0);
 SamplerState g_DepthCompSampler : register(s1, space0);
 SamplerState g_DepthReduceSampler : register(s2, space0);
+SamplerState g_LinearSampler : register(s3, space0);
 
 // SceneGlobals helpers
 uint GetSceneMeshInstanceCount()

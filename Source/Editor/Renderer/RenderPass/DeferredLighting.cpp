@@ -2,7 +2,7 @@
 using namespace RHI;
 using namespace EditorGlobals;
 void DeferredLightingPass::reset() {
-	CS = build_shader(0, L"main", L"cs_6_6");
+	build_shader(CS, 0, L"main", L"cs_6_6");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
 	computePsoDesc.pRootSignature = *g_RHI.rootSig;
 	computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(CS->GetData(), CS->GetSize());
@@ -22,11 +22,11 @@ RenderGraphPass& DeferredLightingPass::insert(RenderGraph& rg, SceneView* sceneV
 			UINT width = g_Editor.render.width, height = g_Editor.render.height;			
 			auto* native = ctx.cmd->GetNativeCommandList();
 			const DeferredShadingConstants constants{
-				.tangentFrameSrv = ctx.graph->get<ShaderResourceView>(*handles.tangentframe_srv.second)->allocate_online_descriptor().get_heap_handle(),
-				.gradientSrv = ctx.graph->get<ShaderResourceView>(*handles.gradient_srv.second)->allocate_online_descriptor().get_heap_handle(),
-				.materialSrv = ctx.graph->get<ShaderResourceView>(*handles.material_srv.second)->allocate_online_descriptor().get_heap_handle(),
-				.depthSrv = ctx.graph->get<ShaderResourceView>(*handles.depth_srv.second)->allocate_online_descriptor().get_heap_handle(),
-				.framebufferUav = ctx.graph->get<UnorderedAccessView>(*handles.framebuffer_uav.second)->allocate_online_descriptor().get_heap_handle()
+				.tangentFrameSrv = ctx.graph->get<ShaderResourceView>(*handles.tangentframe_srv.second)->allocate_transient_descriptor(ctx.cmd).get_heap_handle(),
+				.gradientSrv = ctx.graph->get<ShaderResourceView>(*handles.gradient_srv.second)->allocate_transient_descriptor(ctx.cmd).get_heap_handle(),
+				.materialSrv = ctx.graph->get<ShaderResourceView>(*handles.material_srv.second)->allocate_transient_descriptor(ctx.cmd).get_heap_handle(),
+				.depthSrv = ctx.graph->get<ShaderResourceView>(*handles.depth_srv.second)->allocate_transient_descriptor(ctx.cmd).get_heap_handle(),
+				.framebufferUav = ctx.graph->get<UnorderedAccessView>(*handles.framebuffer_uav.second)->allocate_transient_descriptor(ctx.cmd).get_heap_handle()
 			};
 			native->SetPipelineState(*PSO);;			
 			native->SetComputeRootSignature(*g_RHI.rootSig);

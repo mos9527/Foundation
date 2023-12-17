@@ -3,15 +3,14 @@ using namespace RHI;
 using namespace EditorGlobals;
 
 void SilhouettePass::reset() {
-	PS = build_shader(0, L"ps_main", L"ps_6_6");
-	VS = build_shader(0, L"vs_main", L"vs_6_6");
-	CS = build_shader(1, L"main", L"cs_6_6");	
+	build_shader(VS, 0, L"vs_main", L"vs_6_6");
+	build_shader(CS, 1, L"main", L"cs_6_6");	
 	auto iaLayout = VertexLayoutToD3DIADesc(StaticMeshAsset::Vertex::get_layout());
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
 	desc.InputLayout = { iaLayout.data(), (UINT)iaLayout.size() };
 	desc.pRootSignature = *g_RHI.rootSig;
 	desc.VS = CD3DX12_SHADER_BYTECODE(VS->GetData(), VS->GetSize());
-	desc.PS = CD3DX12_SHADER_BYTECODE(PS->GetData(), PS->GetSize());
+	desc.PS = CD3DX12_SHADER_BYTECODE(nullptr, 0);
 	desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 	desc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
 	desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);	
@@ -103,13 +102,13 @@ RenderGraphPass& SilhouettePass::insert(RenderGraph& rg, SceneView* sceneView, S
 			auto* r_depth_srv = ctx.graph->get<ShaderResourceView>(*std::get<2>(handles.silhouette_dsv_srv));
 			auto* r_fb_uav = ctx.graph->get<UnorderedAccessView>(*handles.framebuffer_uav.second);
 			
-			constants->Data()->frameBufferUAV = r_fb_uav->allocate_online_descriptor().get_heap_handle();
-			constants->Data()->depthSRV = r_depth_srv->allocate_online_descriptor().get_heap_handle();
+			constants->Data()->frameBufferUAV = r_fb_uav->allocate_transient_descriptor(ctx.cmd).get_heap_handle();
+			constants->Data()->depthSRV = r_depth_srv->allocate_transient_descriptor(ctx.cmd).get_heap_handle();
 
 			native->SetPipelineState(*PSO_Blend);
-			native->SetGraphicsRootSignature(*g_RHI.rootSig);
-			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->GetGlobalsBuffer().GetGPUAddress());
-			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
+			native->SetComputeRootSignature(*g_RHI.rootSig);
+			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->GetGlobalsBuffer().GetGPUAddress());
+			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
 			native->Dispatch(DivRoundUp(width, RENDERER_FULLSCREEN_THREADS), DivRoundUp(height, RENDERER_FULLSCREEN_THREADS), 1);
 		});
 }

@@ -66,11 +66,30 @@ HDRIProbeProcessor::HDRIProbeProcessor(Device* device, uint dimension_) :
 			ResourceFormat::R16G16B16A16_FLOAT, 0, numMips, 0, NUM_RADIANCE_CUBEMAPS
 		)
 	);	
+	// LUT
+	lutArray = std::make_unique<Texture>(device, Resource::ResourceDesc::GetTextureBufferDesc(
+		ResourceFormat::R16G16B16A16_FLOAT, ResourceDimension::Texture2D, dimension, dimension,
+		1,
+		NUM_LUTS,
+		1, 0,
+		ResourceFlags::UnorderedAccess, ResourceHeapType::Default,
+		ResourceState::UnorderedAccess, {}, L"IBL Split Sum LUT"
+	));
+	lutArrayUAV = std::make_unique<UnorderedAccessView>(
+		lutArray.get(),
+		UnorderedAccessViewDesc::GetTexture2DArrayDesc(ResourceFormat::R16G16B16A16_FLOAT, 0, 0, NUM_LUTS, 0)
+	);
+	lutArraySRV = std::make_unique<ShaderResourceView>(
+		lutArray.get(),
+		ShaderResourceViewDesc::GetTexture2DDesc(
+			ResourceFormat::R16G16B16A16_FLOAT, 0, 1
+		)
+	);
 }
 
 void HDRIProbeProcessor::Process(TextureAsset* srcImage) {
-	auto fill_handles = [&](RenderGraph& rg) {
-		std::array<RgHandle*, 16> rg_CubemapUAVs, rg_RadianceCubeArrayUAVs;
+	const auto fill_handles = [&](RenderGraph& rg) {
+		std::array<RgHandle*, 32> rg_CubemapUAVs, rg_RadianceCubeArrayUAVs;
 		for (uint i = 0; i < cubeMapUAVs.size(); i++) rg_CubemapUAVs[i] = &rg.import<UnorderedAccessView>(cubeMapUAVs[i].get());
 		for (uint i = 0; i < radianceCubeArrayUAVs.size(); i++) rg_RadianceCubeArrayUAVs[i] = &rg.import<UnorderedAccessView>(radianceCubeArrayUAVs[i].get());
 		return IBLPrefilterPass::IBLPrefilterPassHandles{
@@ -86,10 +105,14 @@ void HDRIProbeProcessor::Process(TextureAsset* srcImage) {
 
 			.irradianceCube = rg.import<Texture>(irridanceMap.get()),
 			.irradianceCubeUAV = rg.import<UnorderedAccessView>(irridanceCubeUAV.get()),
-			.irradianceCubeSRV = rg.import<ShaderResourceView>(irridanceCubeSRV.get())		
+			.irradianceCubeSRV = rg.import<ShaderResourceView>(irridanceCubeSRV.get()),
+
+			.lutArray = rg.import<Texture>(lutArray.get()),
+			.lutArrayUAV = rg.import<UnorderedAccessView>(lutArrayUAV.get()),
+			.lutArraySRV = rg.import<ShaderResourceView>(lutArraySRV.get())
 		};		
 	};
-	auto execute_graph = [&](RenderGraph& rg) {
+	const auto execute_graph = [&](RenderGraph& rg) {
 		// Acquire a free Compute context
 		auto* cmd = device->GetDefaultCommandList<CommandListType::Compute>();
 		CHECK(!cmd->IsOpen() && "The Default Compute Command list is in use!");			
@@ -100,27 +123,34 @@ void HDRIProbeProcessor::Process(TextureAsset* srcImage) {
 		cmd->Close();		
 		cmd->Execute().Wait();
 	};
-	auto subproc_pano2cube = [&]() {
+	const auto subproc_pano2cube = [&]() {
 		RenderGraph rg(cache);
 		auto handles = fill_handles(rg);
 		proc_Prefilter.insert_pano2cube(rg, handles);
 		rg.get_epilogue_pass().read(handles.cubemap);
 		execute_graph(rg);
 	};
-	auto subproc_diffuse_prefilter = [&]() {
+	const auto subproc_diffuse_prefilter = [&]() {
 		RenderGraph rg(cache);
 		auto handles = fill_handles(rg);
 		proc_Prefilter.insert_diffuse_prefilter(rg, handles);
 		rg.get_epilogue_pass().read(handles.irradianceCube);
 		execute_graph(rg);
 	};
-	auto subproc_specular_prefilter = [&](uint mipIndex, uint cubeIndex) {
+	const auto subproc_specular_prefilter = [&](uint mipIndex, uint cubeIndex) {
 		RenderGraph rg(cache);
 		auto handles = fill_handles(rg);
 		proc_Prefilter.insert_specular_prefilter(rg, handles, mipIndex, numMips,cubeIndex);
 		rg.get_epilogue_pass().read(handles.radianceCubeArray);		
 		execute_graph(rg);
 	};	
+	const auto subproc_lut = [&]() {
+		RenderGraph rg(cache);
+		auto handles = fill_handles(rg);
+		proc_Prefilter.insert_lut(rg, handles);
+		rg.get_epilogue_pass().read(handles.lutArray);
+		execute_graph(rg);
+	};
 	state.transition(HDRIProbeProcessorEvents{ .type = HDRIProbeProcessorEvents::Type::Begin });
 	state.transition(HDRIProbeProcessorEvents{ 
 		.type = HDRIProbeProcessorEvents::Type::Process,
@@ -161,11 +191,20 @@ void HDRIProbeProcessor::Process(TextureAsset* srcImage) {
 			});
 		}
 	}	
+	state.transition(HDRIProbeProcessorEvents{
+		.type = HDRIProbeProcessorEvents::Type::Process,
+		.proceesEvent = {
+			.processName = "Split Sum LUT",
+			.newNumProcessed = 0,
+			.newNumToProcess = 1
+		}
+		});
+	subproc_lut();
 	state.transition({ .type = HDRIProbeProcessorEvents::Type::End });	
 };
 
 void HDRIProbeProcessor::ProcessAsync(TextureAsset* srcImage) {
-	CHECK(state != HDRIProbeProbeProcessorStates::Processing && "Already processing");
+	CHECK(state != HDRIProbeProcessorStates::Processing && "Already processing");
 	taskpool.push([&](TextureAsset* src) {
 		Process(src);
 	}, srcImage);

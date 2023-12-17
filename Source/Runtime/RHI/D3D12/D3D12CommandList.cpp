@@ -66,7 +66,7 @@ namespace RHI {
 	SyncFence CommandList::Execute() {
 		CHECK(!IsOpen());
 		const auto sync = GetCommandQueue()->Execute(this);
-		m_Device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->SetCleanupSyncPoint(sync);
+		GetParent()->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->SetCleanupSyncPoint(sync);
 		return sync;
 	}
 }

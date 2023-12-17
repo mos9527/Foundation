@@ -444,11 +444,11 @@ namespace RHI {
 		friend bool operator== (const SamplerDesc& lhs, const SamplerDesc& rhs) {
 			return true;
 		}
-		static const SamplerDesc GetTextureSamplerDesc(
+		static const SamplerDesc GetAnisotropicSamplerDesc(
 			uint MaxAnisotropy
 		) {
 			D3D12_SAMPLER_DESC desc;
-			desc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+			desc.Filter = D3D12_FILTER_ANISOTROPIC;
 			desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 			desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 			desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
@@ -457,6 +457,21 @@ namespace RHI {
 			desc.MipLODBias = 0.0f;
 			desc.MaxAnisotropy = MaxAnisotropy;
 			desc.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+			desc.BorderColor[0] = desc.BorderColor[1] = desc.BorderColor[2] = desc.BorderColor[3] = 0;
+			return { desc };
+		}
+		static const SamplerDesc GetLinearSamplerDesc() {
+			D3D12_SAMPLER_DESC desc;
+			desc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+			desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+			desc.MinLOD = 0;
+			desc.MaxLOD = D3D12_FLOAT32_MAX;
+			desc.MipLODBias = 0.0f;
+			desc.MaxAnisotropy = 0;
+			desc.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+			desc.BorderColor[0] = desc.BorderColor[1] = desc.BorderColor[2] = desc.BorderColor[3] = 0;
 			return { desc };
 		}
 		// CompareGreaterOrLess true->D3D12_COMPARISON_FUNC_GREATER_EQUAL false->D3D12_COMPARISON_FUNC_LESS_EQUAL

@@ -83,7 +83,7 @@ struct SceneIBLProbe {
     uint cubemapHeapIndex;
     uint radianceHeapIndex;
     uint irradianceHeapIndex;
-    uint _pad0;
+    uint lutHeapIndex;
 
     uint mips;
     uint enabled;    
@@ -222,7 +222,7 @@ struct IndirectConstant
     uint MeshIndex;
 };
 struct FFXSpdConstant { // ! align for CB    
-    uint4 dstMipHeapIndex[12]; // fill mip0 with src
+    uint4 dstMipHeapIndex[1 + 12]; // fill mip0 with src
     uint atomicCounterHeapIndex;
     uint numMips;
     uint numWorkGroups;
@@ -233,6 +233,13 @@ struct DepthSampleToTextureConstant {
     uint depthSRVHeapIndex;
     uint hizMip0UavHeapIndex;
     uint2 dimensions;    
+};
+struct TransparencyBlendConstant {
+    uint framebufferUavHandle;
+    uint accumalationSrvHandle;
+    uint revealageSrvHandle;
+    uint width;    
+    uint height;
 };
 #define IBL_FILTER_FLAG_IRRADIANCE DEFBIT(0)
 #define IBL_FILTER_FLAG_RADIANCE DEFBIT(1)
@@ -253,7 +260,7 @@ struct IBLPrefilterConstant {
     uint2 _pad;
 };
 struct AreaReduceConstant {    
-    uint2 positition;
+    uint2 position;
     uint2 extent;
     uint2 sourceDimension;
     uint sourceSrv;

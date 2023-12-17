@@ -1,8 +1,8 @@
 #include "InstanceCull.hpp"
 using namespace RHI;
 void InstanceCull::reset() {
-	CS_Early = build_shader(0, L"main_early", L"cs_6_6");
-	CS_Late = build_shader(0, L"main_late", L"cs_6_6");
+	build_shader(CS_Early, 0, L"main_early", L"cs_6_6");
+	build_shader(CS_Late, 0, L"main_late", L"cs_6_6");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC desc{};
 	desc.pRootSignature = *EditorGlobals::g_RHI.rootSig;
 	desc.CS = CD3DX12_SHADER_BYTECODE(CS_Early->GetData(), CS_Early->GetSize());
@@ -15,17 +15,19 @@ void InstanceCull::reset() {
 	PSO_Late = std::make_unique<PipelineState>(device, std::move(pso));	
 	PSO_Late->SetName(L"Late Cull");
 
-	visibility = std::make_unique<Buffer>(device, Resource::ResourceDesc::GetGenericBufferDesc(
+	visibility.first = std::make_unique<Buffer>(device, Resource::ResourceDesc::GetGenericBufferDesc(
 		MAX_INSTANCE_COUNT, RAW_BUFFER_STRIDE, ResourceState::CopyDest, ResourceHeapType::Default,
 		ResourceFlags::UnorderedAccess, L"Instance Visibilties"
 	));
+	visibility.second = std::make_unique<UnorderedAccessView>(visibility.first.get(), UnorderedAccessViewDesc::GetRawBufferDesc(0, visibility.first->GetDesc().numElements(), 0));
 	constants = std::make_unique<BufferContainer<InstanceCullConstant>>(device, 1, L"Indirect Constants");
+	constants->Data()->visibilityIndex = visibility.second->get_persistent_descriptor().get_heap_handle();
 }
 
 RenderGraphPass& InstanceCull::insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles, bool late) {
 	const auto setup_pass = [=](RenderGraphPass& pass) {
 		for (int i = 0; i < INSTANCE_CULL_MAX_CMDS; i++) {
-			auto const& cmd = handles.cmd_uav_instanceMaskAllow_instanceMaskRejcect[i];
+			auto const& cmd = handles.cmd_uav_instanceMaskAllow_instanceMaskRejcectClearCounter[i];
 			auto p_cmd = std::get<0>(cmd);
 			if (p_cmd) pass.readwrite(*p_cmd);
 			constants->Data()->cmds[i].instanceAllowMask = std::get<2>(cmd);
@@ -39,10 +41,10 @@ RenderGraphPass& InstanceCull::insert(RenderGraph& rg, SceneView* sceneView, Han
 		pass.execute([=](RgContext& ctx) {
 			auto native = ctx.cmd->GetNativeCommandList();
 			for (int i = 0;i < INSTANCE_CULL_MAX_CMDS; i++){				
-				auto p_uav = std::get<1>(handles.cmd_uav_instanceMaskAllow_instanceMaskRejcect[i]);
-				constants->Data()->cmds[i].cmdIndex = p_uav ? ctx.graph->get<UnorderedAccessView>(*p_uav)->allocate_online_descriptor().get_heap_handle() : INVALID_HEAP_HANDLE;
-				auto p_cmd = std::get<0>(handles.cmd_uav_instanceMaskAllow_instanceMaskRejcect[i]);
-				if (p_cmd) {
+				auto p_uav = std::get<1>(handles.cmd_uav_instanceMaskAllow_instanceMaskRejcectClearCounter[i]);
+				constants->Data()->cmds[i].cmdIndex = p_uav ? ctx.graph->get<UnorderedAccessView>(*p_uav)->allocate_transient_descriptor(ctx.cmd).get_heap_handle() : INVALID_HEAP_HANDLE;
+				auto p_cmd = std::get<0>(handles.cmd_uav_instanceMaskAllow_instanceMaskRejcectClearCounter[i]);
+				if (p_cmd && std::get<4>(handles.cmd_uav_instanceMaskAllow_instanceMaskRejcectClearCounter[i])) {
 					// Clear counters
 					auto r_cmd = ctx.graph->get<Buffer>(*p_cmd);
 					ctx.cmd->QueueTransitionBarrier(r_cmd, ResourceState::CopyDest);					
@@ -69,10 +71,10 @@ RenderGraphPass& InstanceCull::insert(RenderGraph& rg, SceneView* sceneView, Han
 		pass.execute([=](RgContext& ctx) {
 			auto native = ctx.cmd->GetNativeCommandList();
 			for (int i = 0; i < INSTANCE_CULL_MAX_CMDS; i++) {
-				auto p_uav = std::get<1>(handles.cmd_uav_instanceMaskAllow_instanceMaskRejcect[i]);
-				constants->Data()->cmds[i].cmdIndex = p_uav ? ctx.graph->get<UnorderedAccessView>(*p_uav)->allocate_online_descriptor().get_heap_handle() : INVALID_HEAP_HANDLE;
-				auto p_cmd = std::get<0>(handles.cmd_uav_instanceMaskAllow_instanceMaskRejcect[i]);
-				if (p_cmd) {
+				auto p_uav = std::get<1>(handles.cmd_uav_instanceMaskAllow_instanceMaskRejcectClearCounter[i]);
+				constants->Data()->cmds[i].cmdIndex = p_uav ? ctx.graph->get<UnorderedAccessView>(*p_uav)->allocate_transient_descriptor(ctx.cmd).get_heap_handle() : INVALID_HEAP_HANDLE;
+				auto p_cmd = std::get<0>(handles.cmd_uav_instanceMaskAllow_instanceMaskRejcectClearCounter[i]);
+				if (p_cmd && std::get<4>(handles.cmd_uav_instanceMaskAllow_instanceMaskRejcectClearCounter[i])) {
 					// Clear counters
 					auto r_cmd = ctx.graph->get<Buffer>(*p_cmd);
 					ctx.cmd->QueueTransitionBarrier(r_cmd, ResourceState::CopyDest);
@@ -84,7 +86,7 @@ RenderGraphPass& InstanceCull::insert(RenderGraph& rg, SceneView* sceneView, Han
 			}
 			auto* r_hiz = ctx.graph->get<Texture>(*handles.hiz_srv.first);
 			auto* r_hiz_srv = ctx.graph->get<ShaderResourceView>(*handles.hiz_srv.second);
-			constants->Data()->hizIndex = r_hiz_srv->allocate_online_descriptor().get_heap_handle();
+			constants->Data()->hizIndex = r_hiz_srv->allocate_transient_descriptor(ctx.cmd).get_heap_handle();
 			constants->Data()->hizMips = r_hiz->GetDesc().mipLevels;
 
 			native->SetPipelineState(*PSO_Late);

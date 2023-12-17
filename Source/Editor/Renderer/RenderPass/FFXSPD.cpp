@@ -7,7 +7,7 @@ void FFXSPDPass::reset() {
 	CHECK(reduce_func.size() && "Reduction function undefined.");
 	std::wstring reduce_define = L"SPD_REDUCTION_FUNCTION=";
 	reduce_define += reduce_func;
-	CS = build_shader(0, L"main", L"cs_6_6", std::vector<const wchar_t*>{ reduce_define.c_str() });
+	build_shader(CS, 0, L"main", L"cs_6_6", std::vector<const wchar_t*>{ reduce_define.c_str() });
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
 	computePsoDesc.pRootSignature = *EditorGlobals::g_RHI.rootSig;
 	computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(CS->GetData(), CS->GetSize());
@@ -46,13 +46,12 @@ RenderGraphPass& FFXSPDPass::insert(RenderGraph& rg, Handles const& handles) {
 			SpdSetup(dispatchThreadGroupCountXY, workGroupOffset, numWorkGroupsAndMips, rectInfo);
 			
 			FFXSpdConstant constants{};
-			constants.atomicCounterHeapIndex = ffxPassCounterUAV->allocate_online_descriptor().get_heap_handle();
+			constants.atomicCounterHeapIndex = ffxPassCounterUAV->allocate_transient_descriptor(ctx.cmd).get_heap_handle();
 			constants.numWorkGroups = numWorkGroupsAndMips[0];
-			constants.numMips = numWorkGroupsAndMips[1];
-			CHECK(constants.numMips == numMips && constants.numMips == handles.dstMipUAVs.size() && "Bad mip count!");			
+			constants.numMips = numWorkGroupsAndMips[1];	
 			for (uint i = 0; i < constants.numMips; i++) {
 				UnorderedAccessView* r_uav = ctx.graph->get<UnorderedAccessView>(*handles.dstMipUAVs[i]);
-				constants.dstMipHeapIndex[i].x = r_uav->allocate_online_descriptor().get_heap_handle(); // for alignment uint4 is used to store one uint
+				constants.dstMipHeapIndex[i].x = r_uav->allocate_transient_descriptor(ctx.cmd).get_heap_handle(); // for alignment uint4 is used to store one uint
 			}
 			constants.dimensions.x = rectInfo[2];
 			constants.dimensions.y = rectInfo[3];

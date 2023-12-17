@@ -50,7 +50,7 @@ SceneMaterial DumpMaterialData(AssetMaterialComponent* materialComponent) {
 	Scene& scene = materialComponent->parent;
 	auto try_set_heap_handle = [&](TextureAsset* ptr, auto& dest) {
 		if (ptr && ptr->textureSRV)
-			dest = ptr->textureSRV->allocate_online_descriptor().get_heap_handle();
+			dest = ptr->textureSRV->allocate_transient_descriptor(CommandListType::Direct).get_heap_handle();
 		else
 			dest = INVALID_HEAP_HANDLE;
 	};
@@ -68,6 +68,7 @@ template<typename T> SceneMeshInstanceData DumpMeshInstanceData(MeshSkinning* me
 	Scene& scene = mesh->parent;
 	// Instance Data
 	SceneMeshInstanceData sceneMesh;
+	sceneMesh.meshIndex = meshIndex;
 	// Transforms
 	sceneMesh.transformPrev = data->transform; // Copies previous transform data
 	sceneMesh.transform = transform.Transpose();
@@ -76,6 +77,7 @@ template<typename T> SceneMeshInstanceData DumpMeshInstanceData(MeshSkinning* me
 	sceneMesh.materialIndex = scene.index<AssetMaterialComponent>(mesh->materialComponent);
 	// Flags
 	AssetMaterialComponent& materialComponent = scene.get<AssetMaterialComponent>(mesh->materialComponent);
+	sceneMesh.instanceFlags = 0u;
 	if (mesh->get_enabled())
 		sceneMesh.instanceFlags |= INSTANCE_FLAG_ENABLED;
 	if (mesh->get_selected())
@@ -123,7 +125,6 @@ template<typename T> SceneMeshInstanceData DumpMeshInstanceData(MeshSkinning* me
 		};
 		write_lod(asset);
 	}
-	sceneMesh.meshIndex = meshIndex;
 	return sceneMesh;
 }
 SceneLight DumpLightData(SceneLightComponent* light) {
@@ -154,8 +155,9 @@ SceneLight DumpLightData(SceneLightComponent* light) {
 	return sceneLight;
 }
 void SceneView::Update(RHI::CommandList* ctx, RHIContext* rhiCtx, SceneContext* sceneCtx, EditorContext* editorCtx) {
+	ZoneScopedN("Scene View Update");
 	Scene* scene = sceneCtx->scene;
-
+	CHECK(ctx->GetType() == CommandListType::Direct && "Cannot run Update on anything but Direct command list/queue!");
 	auto& static_meshes = scene->storage<SceneStaticMeshComponent>();
 	auto& skinned_meshes = scene->storage<SceneSkinnedMeshComponent>();
 	auto& materials = scene->storage<AssetMaterialComponent>();
@@ -166,7 +168,6 @@ void SceneView::Update(RHI::CommandList* ctx, RHIContext* rhiCtx, SceneContext* 
 	uint numLights = lights.size();
 	// Materials
 	const auto update_material = [&](AssetMaterialComponent& material) {
-		if (!ValidateVersion(material)) return;
 		auto index = materials.index(material.get_entity());
 		SceneMaterial data = DumpMaterialData(&material);
 		memcpy(materialsBuffer.DataAt(index), &data, sizeof(data));
@@ -201,7 +202,6 @@ void SceneView::Update(RHI::CommandList* ctx, RHIContext* rhiCtx, SceneContext* 
 	std::for_each(skinned_meshes.begin(), skinned_meshes.end(), update_mesh);
 	// Versions
 	const auto update_version = [&](auto& component) -> void { UpdateVersion(component); };
-	std::for_each(materials.begin(), materials.end(), update_version);
 	std::for_each(lights.begin(), lights.end(), update_version);
 	std::for_each(static_meshes.begin(), static_meshes.end(), update_version);
 	std::for_each(skinned_meshes.begin(), skinned_meshes.end(), update_version);
@@ -223,12 +223,13 @@ void SceneView::Update(RHI::CommandList* ctx, RHIContext* rhiCtx, SceneContext* 
 	SceneIBLProbe probeHLSL{};
 	{
 		auto* probeComponent = sceneCtx->scene->try_get<AssetHDRIProbeComponent>(editorCtx->editorHDRI);
-		if (probeComponent) {
-			auto probe = probeComponent->probe;
+		if (probeComponent && probeComponent->get_probe()->state == HDRIProbeProcessorStates::IdleWithProbe) {
+			auto probe = probeComponent->get_probe();
 			probeHLSL.enabled = true;
-			probeHLSL.cubemapHeapIndex = probe->cubemapSRV->allocate_online_descriptor().get_heap_handle();
-			probeHLSL.radianceHeapIndex = probe->radianceCubeArraySRV->allocate_online_descriptor().get_heap_handle();
-			probeHLSL.irradianceHeapIndex = probe->irridanceCubeSRV->allocate_online_descriptor().get_heap_handle();
+			probeHLSL.cubemapHeapIndex = probe->cubemapSRV->allocate_transient_descriptor(ctx).get_heap_handle();
+			probeHLSL.radianceHeapIndex = probe->radianceCubeArraySRV->allocate_transient_descriptor(ctx).get_heap_handle();
+			probeHLSL.irradianceHeapIndex = probe->irridanceCubeSRV->allocate_transient_descriptor(ctx).get_heap_handle();
+			probeHLSL.lutHeapIndex = probe->lutArraySRV->allocate_transient_descriptor(ctx).get_heap_handle();
 			probeHLSL.mips = probe->numMips;
 			probeHLSL.diffuseIntensity = editorCtx->iblProbe.diffuseIntensity;
 			probeHLSL.specularIntensity = editorCtx->iblProbe.specularIntensity;
@@ -239,18 +240,18 @@ void SceneView::Update(RHI::CommandList* ctx, RHIContext* rhiCtx, SceneContext* 
 		}
 	}
 	constShadingBuffer.Data()->iblProbe = probeHLSL;
-	constShadingBuffer.Data()->ltcLut = rhiCtx->data_LTCLUT->ltcSRV->allocate_online_descriptor().get_heap_handle();
+	constShadingBuffer.Data()->ltcLut = rhiCtx->data_LTCLUT->ltcSRV->allocate_transient_descriptor(ctx).get_heap_handle();
 	// Buffer Metadatas
 	constGlobalsBuffer.Data()->meshInstances = {
-		.heapIndex = sceneMeshInstancesBuffer.second->allocate_online_descriptor().get_heap_handle(),
+		.heapIndex = sceneMeshInstancesBuffer.second->allocate_transient_descriptor(ctx).get_heap_handle(),
 		.count = numMeshInstances
 	};	
 	constGlobalsBuffer.Data()->materials = {
-		.heapIndex = sceneMaterialsBuffer.second->allocate_online_descriptor().get_heap_handle(),
+		.heapIndex = sceneMaterialsBuffer.second->allocate_transient_descriptor(ctx).get_heap_handle(),
 		.count = numMaterials
 	};	
 	constGlobalsBuffer.Data()->lights = {
-		.heapIndex = sceneLightsBuffer.second->allocate_online_descriptor().get_heap_handle(),
+		.heapIndex = sceneLightsBuffer.second->allocate_transient_descriptor(ctx).get_heap_handle(),
 		.count = numLights
 	};
 	// Upload to GPU

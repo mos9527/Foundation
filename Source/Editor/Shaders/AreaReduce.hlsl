@@ -1,28 +1,22 @@
 #include "Common.hlsli"
-cbuffer Constants : register(b0, space0)
-{
-    uint g_X0;
-    uint g_Y0;
-    uint g_Width;
-    uint g_Height;
-    uint g_Input;
-    uint g_Output;
-}
+#define SHADER_CONSTANT_TYPE AreaReduceConstant
+#include "Bindless.hlsli"
 groupshared uint instances[RENDERER_FULLSCREEN_THREADS * RENDERER_FULLSCREEN_THREADS];
 
 [numthreads(RENDERER_FULLSCREEN_THREADS, RENDERER_FULLSCREEN_THREADS, 1)]
-void main_reduce_instance(uint2 DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex)
+void main_reduce_instance(uint2 DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex, uint tid : SV_DispatchThreadIDS)
 {    
+    RWByteAddressBuffer output = ResourceDescriptorHeap[g_Shader.outBufferUav];
     // clear groupshared mem first
-    instances[gid] = 0;
+    instances[gid] = 0xffff;
     GroupMemoryBarrierWithGroupSync();
-    uint2 offset = uint2(g_X0, g_Y0) + DTid;    
-    if (any(offset >= uint2(g_X0 + g_Width, g_Y0 + g_Height)))
-        return;
-    Texture2D tex = ResourceDescriptorHeap[g_Input];
-    RWByteAddressBuffer output = ResourceDescriptorHeap[g_Output];
-    float4 smp = tex[offset];
-    instances[gid] = unpackUnorm8to16(smp.ba);
+    uint2 offset = g_Shader.position + DTid;
+    if (all(offset < g_Shader.position + g_Shader.extent))
+    {
+        Texture2D tex = ResourceDescriptorHeap[g_Shader.sourceSrv];
+        float4 smp = tex[offset];
+        instances[gid] = packUnorm2x16(smp.ba);
+    }
     // Sync reads
     GroupMemoryBarrierWithGroupSync();
     if (gid == 0)
@@ -31,10 +25,7 @@ void main_reduce_instance(uint2 DTid : SV_DispatchThreadID, uint gid : SV_GroupI
         for (uint i = 0; i < RENDERER_FULLSCREEN_THREADS * RENDERER_FULLSCREEN_THREADS; i++)
         {
             uint instance = instances[i];
-            if (instance >= 1) // Instance ID + 1 is stored. Clear otherwise.
-            {                
-                output.Store((instance - 1) * 4, instance); // Mark in-range
-            }
+            output.Store((instance) * 4, instance);
         }
     }
 }

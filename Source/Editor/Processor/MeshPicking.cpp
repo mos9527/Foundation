@@ -18,6 +18,7 @@ MeshPicking::MeshPicking(Device* device) : device(device), proc_reduce(device) {
 }
 
 std::vector<uint> const & MeshPicking::GetSelectedMaterialBufferAndRect(RHI::Texture* texture, RHI::ShaderResourceView* resourceSRV, uint2 point, uint2 extent) {
+	device->BeginCapture(L"PICK");
 	RenderGraph rg(cache);
 	auto& output = rg.import<Buffer>(instanceSelectionMask.get());
 	proc_reduce.insert_reduce_material_instance(
@@ -53,5 +54,6 @@ std::vector<uint> const & MeshPicking::GetSelectedMaterialBufferAndRect(RHI::Tex
 		}
 	}
 	readbackInstanceSelectionMask->Unmap(0);
+	device->EndCapture();
 	return instanceSelected;
 }

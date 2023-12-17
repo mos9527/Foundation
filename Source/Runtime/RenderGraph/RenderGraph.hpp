@@ -117,6 +117,7 @@ public:
 	}
 	// retrives imported / created RHI object pointer
 	template<RgDefinedResource T> inline T* get(RgHandle const& handle) {
+		CHECK(RgResourceTraits<T>::type_enum == handle.type && "Bad resource type!");
 		if (!handle.imported) // created objects are stored in the cache
 			return cache.get<T>(handle);
 		else // pointers are stored as data in RG registry
@@ -124,7 +125,7 @@ public:
 	}
 	// retrives in-graph object reference
 	// RenderGraph contains RgHandle, and RgResource dervied objects
-	template<typename T> inline  T& get(RgHandle const& handle) {
+	template<typename T> inline T& get(RgHandle const& handle) {
 		return registry.get<T>(handle);
 	}
 	// retrives imported / created RHI object as Resource*

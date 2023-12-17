@@ -1,29 +1,20 @@
 #include "Common.hlsli"
 #define IBL_SAMPLER
 #include "IBL.hlsli"
-cbuffer Constants : register(b0, space0)
-{
-    uint u0;
-    uint u1;
-    uint u2;
-    uint u3;
-    uint u4;
-    uint u5;
-    uint u6;
-}
-SamplerState g_Sampler : register(s0, space0);
+#define SHADER_CONSTANT_TYPE IBLPrefilterConstant
+#include "Bindless.hlsli"
 // see https://github.com/KhronosGroup/glTF-IBL-Sampler/blob/master/lib/source/shaders/filter.frag
 [numthreads(RENDERER_FULLSCREEN_THREADS, RENDERER_FULLSCREEN_THREADS, 6)]
 void main_pano2cube(uint3 DTid : SV_DispatchThreadID)
 {
-    uint dimension = u0, source = u1, cubemap = u2;
+    uint dimension = g_Shader.hdriDestDimension, source = g_Shader.hdriSourceSrv, cubemap = g_Shader.hdriDestUav;
     if (any(DTid.xy > uint2(dimension, dimension)))
         return;
     Texture2D<float4> hdriMap = ResourceDescriptorHeap[source];
     RWTexture2DArray<float4> cubemapOut = ResourceDescriptorHeap[cubemap];
     float3 N = normalize(UV2XYZ(DTid.xy / float2(dimension, dimension), DTid.z));
     float2 uv = XYZToPanoUV(N);
-    cubemapOut[DTid.xyz] = hdriMap.SampleLevel(g_Sampler, uv, 0);
+    cubemapOut[DTid.xyz] = hdriMap.SampleLevel(g_TextureSampler, uv, 0);
 }
 // Ported from https://github.com/KhronosGroup/glTF-IBL-Sampler/blob/master/lib/source/shaders/filter.frag
 #define SAMPLE_COUNT 1024
@@ -31,7 +22,7 @@ void main_pano2cube(uint3 DTid : SV_DispatchThreadID)
 [numthreads(RENDERER_FULLSCREEN_THREADS, RENDERER_FULLSCREEN_THREADS, 6)]
 void main_prefilter(uint3 DTid : SV_DispatchThreadID)
 {
-    uint cubemapDimension = u0, destDimension = u1, source = u2, dest = u3, cubeIndex = u4, flags = u5, mipIndex = u6;    
+    uint cubemapDimension = g_Shader.prefilterSourceSize, destDimension = g_Shader.prefilterDestSize, source = g_Shader.prefilterSourceSrv, dest = g_Shader.prefilterDestUav, cubeIndex = g_Shader.prefilterCubeIndex, flags = g_Shader.prefilterFlag, mipIndex = g_Shader.prefilterCubeMipIndex;
     if (any(DTid.xy > uint2(destDimension, destDimension)))
         return;
     TextureCube cubemap = ResourceDescriptorHeap[source];
@@ -71,7 +62,7 @@ void main_prefilter(uint3 DTid : SV_DispatchThreadID)
         if (distribution == USE_LAMBERTIAN)
         {
             // sample lambertian at a lower resolution to avoid fireflies
-            float3 lambertian = cubemap.SampleLevel(g_Sampler, H, lod).rgb;            
+            float3 lambertian = cubemap.SampleLevel(g_TextureSampler, H, lod).rgb;            
             
             //// the below operations cancel each other out
             // lambertian *= NdotH; // lamberts law
@@ -94,7 +85,7 @@ void main_prefilter(uint3 DTid : SV_DispatchThreadID)
                     // without this the roughness=0 lod is too high
                     lod = SAMPLE_BIAS;
                 }
-                float3 sampleColor = cubemap.SampleLevel(g_Sampler, H, lod).rgb;
+                float3 sampleColor = cubemap.SampleLevel(g_TextureSampler, H, lod).rgb;
                 color += sampleColor * NdotL;
                 weight += NdotL;
             }
@@ -111,11 +102,10 @@ void main_prefilter(uint3 DTid : SV_DispatchThreadID)
     }
     cubemapOut[DTid] = float4(color, 1.0f);
 }
-
 [numthreads(RENDERER_FULLSCREEN_THREADS, RENDERER_FULLSCREEN_THREADS, 1)]
 void main_lut(uint3 DTid : SV_DispatchThreadID)
 {
-    uint dimension = u0, lut = u1;
+    uint dimension = g_Shader.prefilterDestSize, lut = g_Shader.prefilterDestUav;
     float2 uv = (DTid.xy + 1) / float2(dimension, dimension);
     
     RWTexture2D<float3> lutOut = ResourceDescriptorHeap[lut];

@@ -8,12 +8,12 @@ struct InstanceCull : public IRenderPass {
 	std::unique_ptr<RHI::Shader> CS_Early, CS_Late;
 	std::unique_ptr<RHI::PipelineState> PSO_Early, PSO_Late;
 
-	std::unique_ptr<RHI::Buffer> visibility;
+	std::pair<std::unique_ptr<RHI::Buffer>, std::unique_ptr<RHI::UnorderedAccessView>> visibility;
 	std::unique_ptr<BufferContainer<InstanceCullConstant>> constants;
 public:
 	struct Handles {
 		std::pair<RgHandle*, RgHandle*> hiz_srv;
-		std::array<std::tuple<RgHandle*, RgHandle*, int, int>, INSTANCE_CULL_MAX_CMDS> cmd_uav_instanceMaskAllow_instanceMaskRejcect;
+		std::array<std::tuple<RgHandle*, RgHandle*, int, int, bool>, INSTANCE_CULL_MAX_CMDS> cmd_uav_instanceMaskAllow_instanceMaskRejcectClearCounter;
 	};	
 	static const RHI::Resource::ResourceDesc GetCountedIndirectCmdBufferDesc(RHI::name_t name) {
 		return RHI::Resource::ResourceDesc::GetGenericBufferDesc(

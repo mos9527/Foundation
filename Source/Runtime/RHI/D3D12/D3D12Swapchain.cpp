@@ -45,6 +45,7 @@ namespace RHI {
     void Swapchain::Resize(uint width, uint height) {
         nWidth = width;
         nHeight = height;
+        m_Device->Wait();
         uint buffers = (UINT)m_Backbuffers.size();        
         // Reset fence values
         size_t resetFenceValue = m_Device->GetCommandQueue<CommandListType::Direct>()->GetUniqueFenceValue();

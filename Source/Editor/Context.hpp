@@ -80,6 +80,67 @@ public:
         return state;
     }
 };
+
+enum class ViewportManipulationEvents {
+    HoverWithoutGizmo,
+    HoverWithGizmo,
+    MouseDown,
+    MouseRelease,
+    MouseLeave,
+    ShiftDown,
+    ShiftRelease
+};
+enum class ViewportManipulationState {
+    Nothing,
+    HoverOnCamera,
+    HoverOnGizmo,
+    UsingCamera,
+    UsingCameraOffsetView,
+    UsingGizmo
+};
+
+struct ViewportManipulationStates : public FSM::EFSM<ViewportManipulationState, ViewportManipulationEvents, ViewportManipulationState::Nothing> {
+public:
+    void fail(ViewportManipulationEvents event) {
+        /* do nothing. state is simply not transitioned. */
+    }
+    ViewportManipulationState transition(ViewportManipulationEvents event) {
+        using enum ViewportManipulationState;
+        using enum ViewportManipulationEvents;
+        switch (event)
+        {
+        case HoverWithoutGizmo:
+            if (state == Nothing) state = HoverOnCamera;
+            else fail(event);
+            break;
+        case HoverWithGizmo:
+            if (state == Nothing) state = HoverOnGizmo;
+            else fail(event);
+            break;
+        case MouseDown:
+            if (state == HoverOnCamera) state = UsingCamera;
+            else if (state == HoverOnGizmo) state = UsingGizmo;
+            else fail(event);
+            break;
+        case ShiftDown:
+            if (state == UsingCamera) state = UsingCameraOffsetView;
+            else fail(event);
+            break;
+        case ShiftRelease:
+            if (state == UsingCameraOffsetView) state = UsingCamera;
+            else fail(event);
+            break;
+        case MouseRelease:
+        case MouseLeave:
+            state = Nothing;
+            break;
+        default:
+            fail(event);
+        }
+        return state;
+    }
+};
+class MeshPicking;
 struct EditorContext {
     EdtitorState state;    
     SceneImporter::SceneImporterAtomicStatus importStatus;
@@ -102,6 +163,9 @@ struct EditorContext {
         float3 edgeColor = float3(232 / 255.0f, 125 / 255.0f, 13 / 255.0f);
     } pickerSilhouette;
     struct {
+        MeshPicking* meshPicker;
+
+        ViewportManipulationStates state;
         uint width = 1600;
         uint height = 1000;
     } viewport;
@@ -110,6 +174,8 @@ struct EditorContext {
         uint width = 1600;
         uint height = 1000;
         bool wireframe = false;
+        std::pair<RHI::Texture*, RHI::ShaderResourceView*> materialBuffer{};
+        ImTextureID image = nullptr;
     } render;
     void set_viewport_dimension(uint width, uint height) {
         viewport.width = render.width = width;

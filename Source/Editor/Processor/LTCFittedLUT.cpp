@@ -18,7 +18,6 @@ LTCFittedLUT::LTCFittedLUT(Device* device) : device(device) {
 }
 // xxx replace sampling with analytic approximation
 void LTCFittedLUT::UploadPrecomputed() {
-	device->Wait();
 	UploadContext ctx(device);
 	ctx.Begin();
 	auto intermediate = ctx.CreateIntermediateTexture2DContainer(ltcLUT.get());
@@ -26,7 +25,6 @@ void LTCFittedLUT::UploadPrecomputed() {
 	intermediate->WriteSubresource((void*)&g_ltc_2, 64 * sizeof(float) * 4, 64, 1, 0);
 	ctx.QueueUploadTexture(ltcLUT.get(), intermediate, 0, 2);
 	ctx.End().Wait();
-	ctx.ResetAllocator();
 }
 
 // void LTCFittedLUT::Compute();

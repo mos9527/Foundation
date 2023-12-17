@@ -18,7 +18,11 @@ namespace RHI {
 		}
 	};
 	class Shader : public Blob {
+		std::string m_ErrorBuffer;
+		bool m_Loaded = false;
 	public:
 		Shader(const wchar_t* sourcePath, const wchar_t* entrypoint, const wchar_t* target, std::vector<const wchar_t*>&& defines = {}, std::vector<const wchar_t*>&& extraIncludes = {});
+		inline bool IsLoaded() { return m_Loaded; }
+		inline std::string const& GetErrorMessage() { return m_ErrorBuffer; }
 	};
 }

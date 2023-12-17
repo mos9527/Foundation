@@ -33,7 +33,7 @@ public:
 			L"Material ID/UV"
 		);
 	}
-	static const RHI::Resource::ResourceDesc GetDepthDesc(uint width, uint height) {
+	static const RHI::Resource::ResourceDesc GetDepthDesc(uint width, uint height, const wchar_t* name = L"GBuffer Depth") {
 		return RHI::Resource::ResourceDesc::GetTextureBufferDesc(
 			RHI::ResourceFormat::D32_FLOAT, RHI::ResourceDimension::Texture2D,
 			width, height, 1, 1, 1, 0,
@@ -44,7 +44,7 @@ public:
 #else
 			RHI::ClearValue(1.0f, 0),
 #endif
-			L"GBuffer Depth"
+			name
 		);
 	}
 	struct Handles {

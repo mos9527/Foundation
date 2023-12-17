@@ -7,11 +7,9 @@ namespace RHI {
 	struct Descriptor {
 		friend class DescriptorHeap;
 	public:
-		Descriptor() {};
-
-		auto const& get_heap_handle() const { return heap_handle; }
-		auto const& get_cpu_handle()  const { return cpu_handle; }
-		auto const& get_gpu_handle()  const { return gpu_handle; }
+		UINT const& get_heap_handle() const { return heap_handle; }
+		D3D12_CPU_DESCRIPTOR_HANDLE const& get_cpu_handle()  const { return cpu_handle; }
+		D3D12_GPU_DESCRIPTOR_HANDLE const& get_gpu_handle()  const { return gpu_handle; }
 
 		operator D3D12_GPU_DESCRIPTOR_HANDLE() const { return gpu_handle; }
 		operator D3D12_CPU_DESCRIPTOR_HANDLE() const { return cpu_handle; }		
@@ -68,7 +66,8 @@ namespace RHI {
 	};
 
 	class OnlineDescriptorHeap;
-	struct OnlineDescriptorPage {
+	struct TransientDescriptorPage;
+	struct TransientDescriptorPage {
 		uint start, end, allocated;
 		inline bool IsFull() const { return start + allocated >= end; }
 		inline uint AllocateDescriptor() {
@@ -83,79 +82,29 @@ namespace RHI {
 
 		DescriptorHeap m_Heap;
 
-		std::vector<OnlineDescriptorPage> m_Pages;
+		std::vector<TransientDescriptorPage> m_Pages;
 		free_list<uint> m_FreePages;
 		std::vector<uint> m_FilledPages;
 		std::deque<std::pair<SyncFence, uint>> m_PagesToFree;
 
 		free_list<uint> m_PersistentFreeDescriptors;
 
-		uint m_CurrentPage = -1;
+		std::vector<uint> m_CurrentPage;
 
-		inline void TryCleanPages() {
-			for (auto it = m_PagesToFree.begin(); it != m_PagesToFree.end();) {
-				if (it->first.IsCompleted()) {
-					m_Pages[it->second].Reset();
-					m_FreePages.push(it->second);
-					it = m_PagesToFree.erase(it);
-				}
-			}
-		}
-		inline uint AllocatePage() {
-			TryCleanPages();
-			CHECK(m_FreePages.size() && "No more free page! Did you call SetCleanupSyncPoint(sync)?");
-			const uint pageIndex = m_FreePages.pop();
-			return pageIndex;
-		}
+		void TryCleanPages();
+		uint AllocatePage();
 
 		std::mutex alloc_mutex;
 	public:
 		Descriptor GetDescriptor(uint handle) { return m_Heap.GetDescriptor(handle); }
+		OnlineDescriptorHeap(Device* device, DescriptorHeap::DescriptorHeapDesc const& cfg, uint pageSize = 128, uint persistentCount = 128);
 
-		OnlineDescriptorHeap(Device* device, DescriptorHeap::DescriptorHeapDesc const& cfg, uint pageSize = 128, uint persistentCount = 128) : DeviceChild(device), m_Heap(device, cfg) {			
-			const uint transientCount = cfg.descriptorCount - persistentCount;		
-			CHECK(transientCount % pageSize == 0 && "descriptorCount - presistentCount must be multiple of pageSize");
-			const uint numPages = transientCount / pageSize;
-			for (uint i = 0; i < numPages; i++) {
-				m_Pages.push_back({ i * pageSize, (i + 1) * pageSize,0 });
-			}
-			m_FreePages.reset(numPages);
-			m_FilledPages.reserve(numPages);
-			m_CurrentPage = AllocatePage();
-			m_PersistentFreeDescriptors.reset(persistentCount, transientCount); // persistent descriptors lays after the transitent ones
-			LOG(INFO) << "Created online heap. Pages=" << numPages << " PageSize=" << pageSize << " PesistentSize=" << persistentCount;
-		}
+		Descriptor AllocatePersistentDescriptor();
+		void FreePersistentDescriptor(Descriptor& descriptor);
 
-		inline Descriptor AllocatePersistentDescriptor() {
-			std::scoped_lock lock(alloc_mutex);
-			uint handle = m_PersistentFreeDescriptors.pop();
-			return m_Heap.GetDescriptor(handle);
-		}
+		Descriptor AllocateTransitentDescriptor(CommandListType ctxType);
 
-		inline void FreePersistentDescriptor(Descriptor& descriptor) {
-			std::scoped_lock lock(alloc_mutex);
-			if (descriptor.is_valid()) {
-				m_PersistentFreeDescriptors.push(descriptor.get_heap_handle());
-				descriptor.invalidate();
-			}
-		}
-
-		inline Descriptor AllocateTransitentDescriptor() {
-			std::scoped_lock lock(alloc_mutex);
-			if (m_Pages[m_CurrentPage].IsFull()) {
-				m_FilledPages.push_back(m_CurrentPage);
-				m_CurrentPage = AllocatePage();
-			}
-			uint handle = m_Pages[m_CurrentPage].AllocateDescriptor();
-			return m_Heap.GetDescriptor(handle);
-		}
-
-		inline void SetCleanupSyncPoint(SyncFence const& sync) {
-			std::scoped_lock lock(alloc_mutex);
-			for (auto& page : m_FilledPages)
-				m_PagesToFree.push_back({ sync, page });
-			m_FilledPages.clear();
-		}
+		void SetCleanupSyncPoint(SyncFence const& sync);
 
 		inline auto GetNativeHeap() { return m_Heap.GetNativeHeap(); }
 		inline operator ID3D12DescriptorHeap* () { return GetNativeHeap(); }

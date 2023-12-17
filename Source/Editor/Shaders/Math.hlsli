@@ -250,6 +250,12 @@ float3 decodeSpheremapNormal(float2 G)
     N.xy = normalize(G.xy) * sqrt(1 - N.z * N.z);
     return N;
 }
+float3 decodeTangetNormalMap(float3 sample, float3x3 TBN)
+{
+    float3 tN = sample * 2 - 1;
+    tN.z = sqrt(1 - saturate(tN.x * tN.x + tN.y * tN.y));
+    return normalize(mul(tN, TBN));
+}
 float3 decodeTangetNormalMap(float3 sample, float3 Tv, float3 Nv)
 {
     float3 N = normalize(Nv);
@@ -277,7 +283,11 @@ float2 unpackUnorm2x16(uint value)
     uint2 Packed = uint2(value & 0xffff, value >> 16);
     return float2(Packed) / 65535.0;
 }
-
+uint packUnorm2x16(float2 value)
+{
+    uint2 Packed = uint2(round(saturate(value) * 65535.0));
+    return Packed.x | (Packed.y << 16);
+}
 uint packSnorm2x16(float2 value)
 {
     int2 Packed = int2(round(clamp(value, -1.0, 1.0) * 32767.0)) & 0xffff;
@@ -335,9 +345,9 @@ float2 XYZToPanoUV(float3 dir)
     // take the inverse and map into UV space
     return float2(0.5f + 0.5f * atan2(dir.z,dir.x) / M_PI, acos(dir.y) / M_PI);
 }
-float3 UV2WorldSpace(float2 UV, float Zss, matrix inverseViewProjection)
+float3 UV2WorldSpace(float2 Pss, float Zss, matrix inverseViewProjection)
 {
-    float2 clipXY = UV2Clip(UV);
+    float2 clipXY = UV2Clip(Pss);
     float4 PositionProj = float4(clipXY, Zss, 1);
     float4 PositionWS = mul(PositionProj, inverseViewProjection);
     PositionWS.xyz /= PositionWS.w;

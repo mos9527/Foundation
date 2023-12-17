@@ -65,7 +65,7 @@ void PushCommand(IndirectCommand cmd, uint instanceFlags)
         if (g_Shader.cmds[i].cmdIndex != INVALID_HEAP_HANDLE)
         {
             AppendStructuredBuffer<IndirectCommand> CMD = ResourceDescriptorHeap[g_Shader.cmds[i].cmdIndex];
-            if ((instanceFlags & g_Shader.cmds[i].instanceAllowMask) != 0 && (instanceFlags & g_Shader.cmds[i].instanceRejectMask) == 0)
+            if ((instanceFlags & g_Shader.cmds[i].instanceAllowMask) == g_Shader.cmds[i].instanceAllowMask && (instanceFlags & g_Shader.cmds[i].instanceRejectMask) == 0)
                 CMD.Append(cmd);
         }
 

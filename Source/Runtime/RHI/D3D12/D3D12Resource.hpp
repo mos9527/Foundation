@@ -29,7 +29,7 @@ namespace RHI {
 			const wchar_t* resourceName{ nullptr };
 
 			static const ResourceDesc GetGenericBufferDesc(
-				UINT64 size, 
+				UINT64 sizeInBytes, 
 				UINT64 stride = RAW_BUFFER_STRIDE,
 				ResourceState initialState = ResourceState::Common,
 				ResourceHeapType heapType = ResourceHeapType::Upload, 
@@ -41,7 +41,7 @@ namespace RHI {
 					.format = ResourceFormat::Unknown,
 					.dimension = ResourceDimension::Buffer,
 					.stride = stride,
-					.width = size,
+					.width = sizeInBytes,
 					.height = 1,
 					.mipLevels = 1,
 					.arraySize = 1,

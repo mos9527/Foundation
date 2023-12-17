@@ -1,5 +1,6 @@
 #include "D3D12Device.hpp"
 #include "D3D12Resource.hpp"
+#include "D3D12CommandList.hpp"
 
 namespace RHI {
 	template<typename Desc> struct ResourceView : public DeviceChild {
@@ -11,14 +12,35 @@ namespace RHI {
 
 		inline Desc const& GetDesc() { return viewDesc; }		
 		ResourceView(Resource* resource, Desc const& viewDesc) : DeviceChild(resource->GetParent()), viewDesc(viewDesc), resource(resource) {};
+		ResourceView(ResourceView const&) = delete;
+		ResourceView(ResourceView&&) = default;
 	};
 	struct ShaderResourceView : public ResourceView<ShaderResourceViewDesc> {
+	private:
+		Descriptor persistent_descriptor;
 	public:
 		inline Descriptor const& get_storage_descriptor() { return descriptor;  }
-		inline const Descriptor allocate_online_descriptor() {
-			auto online_descriptor = m_Device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateTransitentDescriptor();
-			m_Device->GetNativeDevice()->CopyDescriptorsSimple(1, online_descriptor.get_cpu_handle(), descriptor.get_cpu_handle(), DescriptorHeapTypeToD3DType(DescriptorHeapType::CBV_SRV_UAV));
-			return online_descriptor;
+		inline const Descriptor allocate_transient_descriptor(CommandListType ctxType) {
+			const auto transitent = m_Device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateTransitentDescriptor(ctxType);
+			m_Device->GetNativeDevice()->CopyDescriptorsSimple(1, transitent.get_cpu_handle(), descriptor.get_cpu_handle(), DescriptorHeapTypeToD3DType(DescriptorHeapType::CBV_SRV_UAV));
+			return transitent;
+		}
+		inline const Descriptor allocate_transient_descriptor(CommandList* ctx) {
+			return allocate_transient_descriptor(ctx->GetType());
+		}
+		inline const Descriptor allocate_transient_descriptor(CommandQueue* ctx) {
+			return allocate_transient_descriptor(ctx->GetType());
+		}
+		inline const Descriptor get_persistent_descriptor() {
+			if (!persistent_descriptor.is_valid()) {
+				persistent_descriptor = m_Device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocatePersistentDescriptor();
+				m_Device->GetNativeDevice()->CopyDescriptorsSimple(1, persistent_descriptor.get_cpu_handle(), descriptor.get_cpu_handle(), DescriptorHeapTypeToD3DType(DescriptorHeapType::CBV_SRV_UAV));
+			}
+			return persistent_descriptor;
+		}
+		inline void free_persistent_descriptor() {
+			m_Device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->FreePersistentDescriptor(persistent_descriptor);
+			persistent_descriptor.invalidate();
 		}
 		ShaderResourceView(Resource* resource, ShaderResourceViewDesc const& desc) : ResourceView(resource, desc) {
 			descriptor = m_Device->GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
@@ -28,19 +50,41 @@ namespace RHI {
 		}
 		~ShaderResourceView() {
 			m_Device->GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->FreeDescriptor(descriptor);
+			m_Device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->FreePersistentDescriptor(persistent_descriptor);
 			descriptor.invalidate();
+			persistent_descriptor.invalidate();
 		}
 		ShaderResourceView(ShaderResourceView&& other) noexcept: ResourceView(std::move(other)) {
 			other.descriptor.invalidate();
+			other.persistent_descriptor.invalidate();
 		};
 	};
 	struct UnorderedAccessView : public ResourceView<UnorderedAccessViewDesc> {
+	private:
+		Descriptor persistent_descriptor;
 	public:
 		inline Descriptor const& get_storage_descriptor() { return descriptor; }
-		inline const Descriptor allocate_online_descriptor() {
-			auto online_descriptor = m_Device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateTransitentDescriptor();
-			m_Device->GetNativeDevice()->CopyDescriptorsSimple(1, online_descriptor.get_cpu_handle(), descriptor.get_cpu_handle(), DescriptorHeapTypeToD3DType(DescriptorHeapType::CBV_SRV_UAV));
-			return online_descriptor;
+		inline const Descriptor allocate_transient_descriptor(CommandListType ctxType) {
+			const auto transitent = m_Device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateTransitentDescriptor(ctxType);
+			m_Device->GetNativeDevice()->CopyDescriptorsSimple(1, transitent.get_cpu_handle(), descriptor.get_cpu_handle(), DescriptorHeapTypeToD3DType(DescriptorHeapType::CBV_SRV_UAV));
+			return transitent;
+		}
+		inline const Descriptor allocate_transient_descriptor(CommandList* ctx) {
+			return allocate_transient_descriptor(ctx->GetType());
+		}
+		inline const Descriptor allocate_transient_descriptor(CommandQueue* ctx) {
+			return allocate_transient_descriptor(ctx->GetType());
+		}
+		inline const Descriptor get_persistent_descriptor() {
+			if (!persistent_descriptor.is_valid()) {
+				persistent_descriptor = m_Device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocatePersistentDescriptor();
+				m_Device->GetNativeDevice()->CopyDescriptorsSimple(1, persistent_descriptor.get_cpu_handle(), descriptor.get_cpu_handle(), DescriptorHeapTypeToD3DType(DescriptorHeapType::CBV_SRV_UAV));
+			}
+			return persistent_descriptor;
+		}
+		inline void free_persistent_descriptor() {
+			m_Device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->FreePersistentDescriptor(persistent_descriptor);
+			persistent_descriptor.invalidate();
 		}
 		UnorderedAccessView(Resource* resource, Resource* counterResource, UnorderedAccessViewDesc const& desc) : ResourceView(resource, desc) {
 			descriptor = m_Device->GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->AllocateDescriptor();
@@ -50,10 +94,13 @@ namespace RHI {
 		UnorderedAccessView(Resource* resource, UnorderedAccessViewDesc const& desc) : UnorderedAccessView(resource, nullptr, desc) {};
 		~UnorderedAccessView() {
 			m_Device->GetDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->FreeDescriptor(descriptor);
+			m_Device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->FreePersistentDescriptor(persistent_descriptor);
 			descriptor.invalidate();
+			persistent_descriptor.invalidate();
 		}
 		UnorderedAccessView(UnorderedAccessView&& other) noexcept: ResourceView(std::move(other)) {
 			other.descriptor.invalidate();
+			other.persistent_descriptor.invalidate();
 		};
 	};
 	struct RenderTargetView : public ResourceView<RenderTargetViewDesc> {

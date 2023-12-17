@@ -85,8 +85,9 @@ void OnImGui_SceneGraphWidget() {
 			bool hasChild = g_Scene.scene->graph->has_child(entity);
 			if (!hasChild) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 			if (ImGui::TreeNodeEx((void*)id, flags, "%s %s", GetGlyphByType(type), componet->get_name())) {
-				if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
-					g_Editor.editingComponent = entity;
+				if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+					g_Editor.editingComponent = entity;					
+				}
 				ImGui::PushID((void*)id);
 				{
 					if (ImGui::IsItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Right))

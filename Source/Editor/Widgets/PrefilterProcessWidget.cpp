@@ -25,7 +25,7 @@ void OnImGui_IBLProbeWidget() {
 				ctx.Begin();
 				asset.Upload(&ctx);
 				ctx.End().Wait();
-				g_Editor.state.transition(EditorEvents::OnLoadComplete);				
+				g_Editor.state.transition(EditorEvents::OnLoadComplete);
 			}, path, loadedAsset);
 		}
 	}
@@ -35,6 +35,11 @@ void OnImGui_IBLProbeWidget() {
 	if (asset && asset->IsUploaded()) {
 		ImGui::SeparatorText("Preview");
 		float aspect = (float)asset->texture.texture.GetDesc().width / asset->texture.texture.GetDesc().height;
-		ImGui::Image((ImTextureID)asset->textureSRV->allocate_online_descriptor().get_gpu_handle().ptr, ImVec2{256 * aspect, 256});
+		ImGui::Image((ImTextureID)asset->textureSRV->allocate_transient_descriptor(RHI::CommandListType::Direct).get_gpu_handle().ptr, ImVec2{256 * aspect, 256});
+		auto& component = g_Scene.scene->get<AssetHDRIProbeComponent>(g_Editor.editorHDRI);
+		ImGui::Text("STATE: %d", (uint)component.get_probe()->state);
+		if (ImGui::Button("Process")) {
+			component.load(loadedAsset);
+		}
 	}
 }

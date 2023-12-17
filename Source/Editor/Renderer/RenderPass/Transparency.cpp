@@ -2,10 +2,10 @@
 using namespace RHI;
 using namespace EditorGlobals;
 void TransparencyPass::reset() {
-	PS = build_shader(0, L"ps_main", L"ps_6_6");
-	materialPS = build_shader(0, L"ps_main_material", L"ps_6_6");
-	VS = build_shader(0, L"vs_main", L"vs_6_6");
-	blendCS = build_shader(1, L"main", L"cs_6_6");
+	build_shader(PS, 0, L"ps_main", L"ps_6_6");
+	build_shader(materialPS, 0, L"ps_main_material", L"ps_6_6");
+	build_shader(VS, 0, L"vs_main", L"vs_6_6");
+	build_shader(blendCS, 1, L"main", L"cs_6_6");
 	// Define the vertex input layout.
 	auto iaLayout = VertexLayoutToD3DIADesc(StaticMeshAsset::Vertex::get_layout());
 	// Describe and create the graphics pipeline state objects (PSO).
@@ -60,7 +60,7 @@ void TransparencyPass::reset() {
 	desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL; // Write to depth & test
 	desc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
 	desc.NumRenderTargets = 1;
-	desc.RTVFormats[0] = ResourceFormatToD3DFormat(ResourceFormat::R8G8B8A8_UNORM); // -> Material buffer
+	desc.RTVFormats[0] = ResourceFormatToD3DFormat(ResourceFormat::R16G16B16A16_UNORM); // -> Material buffer
 	desc.RTVFormats[1] = DXGI_FORMAT_UNKNOWN;
 	CHECK_HR(device->GetNativeDevice()->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pso)));
 	PSO_Material = std::make_unique<PipelineState>(device, std::move(pso));
@@ -87,7 +87,7 @@ void TransparencyPass::reset() {
 // transparent objects that are occluded by opaque ones
 // or that failed the frustum test.
 RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles) {	
-	auto setup_pso = [=](RgContext& ctx) {
+	const auto setup_pso = [=](RgContext& ctx) {
 		UINT width = g_Editor.render.width, height = g_Editor.render.height;
 		CD3DX12_VIEWPORT viewport(.0f, .0f, width, height, .0f, 1.0f);
 		CD3DX12_RECT scissorRect(0, 0, width, height);
@@ -99,7 +99,7 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 		native->RSSetScissorRects(1, &scissorRect);
 		native->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);		
 	};
-	auto setup_wboit = [=](RgContext& ctx) {
+	const auto setup_wboit = [=](RgContext& ctx) {
 		UINT width = g_Editor.render.width, height = g_Editor.render.height;
 		CD3DX12_VIEWPORT viewport(.0f, .0f, width, height, .0f, 1.0f);
 		CD3DX12_RECT scissorRect(0, 0, width, height);
@@ -124,14 +124,14 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 			&r_dsv->get_descriptor().get_cpu_handle()
 		);
 	};
-	auto setup_material = [=](RgContext& ctx) {
+	const auto setup_material = [=](RgContext& ctx) {
 		UINT width = g_Editor.render.width, height = g_Editor.render.height;
 		CD3DX12_VIEWPORT viewport(.0f, .0f, width, height, .0f, 1.0f);
 		CD3DX12_RECT scissorRect(0, 0, width, height);
 
 		auto* r_depth = ctx.graph->get<Texture>(*handles.depth_dsv.first);
 		auto* r_dsv = ctx.graph->get<DepthStencilView>(*handles.depth_dsv.second);
-		auto* r_material_rtv = ctx.graph->get<RenderTargetView>(*handles.material_srv.second);
+		auto* r_material_rtv = ctx.graph->get<RenderTargetView>(*std::get<1>(handles.material_rtv_srv));
 		auto native = ctx.cmd->GetNativeCommandList();
 		ctx.cmd->QueueTransitionBarrier(r_depth, ResourceState::DepthWrite);
 		native->OMSetRenderTargets(
@@ -141,7 +141,7 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 			&r_dsv->get_descriptor().get_cpu_handle()
 		);
 	};
-	auto render = [=](RgContext& ctx) {
+	const auto render = [=](RgContext& ctx) {
 		auto* r_indirect_commands = ctx.graph->get<Buffer>(*handles.command_uav.first);
 		auto* r_indirect_commands_uav = ctx.graph->get<UnorderedAccessView>(*handles.command_uav.second);
 		ctx.cmd->QueueTransitionBarrier(r_indirect_commands, ResourceState::IndirectArgument);
@@ -171,8 +171,8 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 		render(ctx);
 	});	
 	rg.add_pass(L"Transparency Material Buffer Append")
-		.read(*handles.material_srv.first)
-		.write(*handles.material_srv.first)
+		.read(*std::get<0>(handles.material_rtv_srv))
+		.write(*std::get<0>(handles.material_rtv_srv))
 		.write(*handles.depth_dsv.first)
 		.read(*handles.command_uav.first)
 		.execute([=](RgContext& ctx) {
@@ -195,14 +195,14 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 			auto native = ctx.cmd->GetNativeCommandList();
 			native->SetPipelineState(*PSO_Blend);
 			native->SetComputeRootSignature(*g_RHI.rootSig);
-			UINT constants[5] = {
-				r_fb_uav->allocate_online_descriptor().get_heap_handle(),
-				r_acc_srv->allocate_online_descriptor().get_heap_handle(),
-				r_rev_srv->allocate_online_descriptor().get_heap_handle(),
-				width,
-				height
+			TransparencyBlendConstant constants {
+				.framebufferUavHandle = r_fb_uav->allocate_transient_descriptor(ctx.cmd).get_heap_handle(),
+				.accumalationSrvHandle = r_acc_srv->allocate_transient_descriptor(ctx.cmd).get_heap_handle(),
+				.revealageSrvHandle = r_rev_srv->allocate_transient_descriptor(ctx.cmd).get_heap_handle(),
+				.width = width,
+				.height = height
 			};
-			native->SetComputeRoot32BitConstants(RHIContext::ROOTSIG_CB_8_CONSTANTS, 5, constants, 0);
+			native->SetComputeRoot32BitConstants(RHIContext::ROOTSIG_CB_8_CONSTANTS, 5, &constants, 0);
 			native->Dispatch(DivRoundUp(width, RENDERER_FULLSCREEN_THREADS), DivRoundUp(height, RENDERER_FULLSCREEN_THREADS), 1);
 		});
 }

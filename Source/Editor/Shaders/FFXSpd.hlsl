@@ -27,6 +27,8 @@ void SpdStore(ASU2 p, AF4 value, AU1 mip, AU1 slice)
 {
     if (any(p > g_SpdConstant.dimensions))
         return;
+    if (mip + 1 >= g_SpdConstant.numMips)
+        return;
     if (mip == 5)
     {
         globallycoherent RWTexture2DArray<float4> mip6 = ResourceDescriptorHeap[g_SpdConstant.dstMipHeapIndex[6].x]; // must be synced

@@ -6,8 +6,8 @@
 using namespace RHI;
 using namespace EditorGlobals;
 void GBufferPass::reset() {
-	PS = build_shader(0, L"ps_main", L"ps_6_6");
-	VS = build_shader(0, L"vs_main", L"vs_6_6");
+	build_shader(PS, 0, L"ps_main", L"ps_6_6");
+	build_shader(VS, 0, L"vs_main", L"vs_6_6");
 	auto iaLayout = VertexLayoutToD3DIADesc(StaticMeshAsset::Vertex::get_layout());
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
 	desc.InputLayout = { iaLayout.data(), (UINT)iaLayout.size() };
@@ -68,9 +68,9 @@ RenderGraphPass& GBufferPass::insert(RenderGraph& rg, SceneView* sceneView, Hand
 			native->SetGraphicsRootConstantBufferView(RHIContext::ROOTSIG_CB_EDITOR_GLOBAL, sceneView->GetGlobalsBuffer().GetGPUAddress());
 
 			D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[3] = {
-				ctx.graph->get<RenderTargetView>(*handles.tangentframe_rtv.first)->get_descriptor(),
-				ctx.graph->get<RenderTargetView>(*handles.gradient_rtv.first)->get_descriptor(),
-				ctx.graph->get<RenderTargetView>(*handles.material_rtv.first)->get_descriptor()
+				ctx.graph->get<RenderTargetView>(*handles.tangentframe_rtv.second)->get_descriptor(),
+				ctx.graph->get<RenderTargetView>(*handles.gradient_rtv.second)->get_descriptor(),
+				ctx.graph->get<RenderTargetView>(*handles.material_rtv.second)->get_descriptor()
 			};
 			auto* r_dsv = ctx.graph->get<DepthStencilView>(*handles.depth_dsv.second);
 			auto* r_indirect_commands = ctx.graph->get<Buffer>(*handles.command_uav.first);

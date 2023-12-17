@@ -27,7 +27,9 @@ PSInput vs_main(VSInput vertex)
     result.position = mul(mul(float4(vertex.position, 1.0f), mesh.transform), g_Scene.camera.viewProjection);
     return result;
 }
-float4 ps_main(PSInput input) : SV_Target
-{
-    return float4(1, 1, 1, 1); // We only wrote to depth
-}
+
+// We only wrote to depth
+// float4 ps_main(PSInput input) : SV_Target
+// {
+//     return float4(1, 1, 1, 1); 
+// }

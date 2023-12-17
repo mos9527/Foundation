@@ -43,6 +43,7 @@ void main(uint DTid : SV_DispatchThreadID)
         StructuredBuffer<uint> g_InKeyShapeOffsets = ResourceDescriptorHeap[task.keyshapeOffsetsSrv];
         StructuredBuffer<float> g_InKeyShapeWeights = ResourceDescriptorHeap[task.keyshapeWeightsSrv];
         StructuredBuffer<StaticVertex> g_InKeyShapes = ResourceDescriptorHeap[task.keyshapeVerticesSrv];
+        [loop]
         for (uint i = 0; i < task.numShapeKeys; i++)
         {
             uint offset = g_InKeyShapeOffsets[i];

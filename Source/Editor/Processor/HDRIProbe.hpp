@@ -16,20 +16,20 @@ struct HDRIProbeProcessorEvents {
 		} proceesEvent;
 	};
 };
-enum class HDRIProbeProbeProcessorStates {
+enum class HDRIProbeProcessorStates {
 	IdleNoProbe,
 	Processing,
 	IdleWithProbe
 };
-struct HDRIProbeProbeProcesserState : public FSM::EFSM<HDRIProbeProbeProcessorStates, HDRIProbeProcessorEvents, HDRIProbeProbeProcessorStates::IdleNoProbe> {
+struct HDRIProbeProcesserState : public FSM::EFSM<HDRIProbeProcessorStates, HDRIProbeProcessorEvents, HDRIProbeProcessorStates::IdleNoProbe> {
 	const char* currentProcess = nullptr;
 	uint numProcessed = 0;
 	uint numToProcess = 0;
 
 	void fail(HDRIProbeProcessorEvents event) {};
-	HDRIProbeProbeProcessorStates transition(HDRIProbeProcessorEvents event) {
+	HDRIProbeProcessorStates transition(HDRIProbeProcessorEvents event) {
 		using enum HDRIProbeProcessorEvents::Type;
-		using enum HDRIProbeProbeProcessorStates;
+		using enum HDRIProbeProcessorStates;
 		switch (event.type)
 		{
 		case Begin:
@@ -58,12 +58,12 @@ struct HDRIProbeProbeProcesserState : public FSM::EFSM<HDRIProbeProbeProcessorSt
 class HDRIProbeProcessor {
 public:
 	uint dimension, numMips;
-	std::unique_ptr<RHI::Texture> cubeMap, irridanceMap, radianceMapArray;
+	std::unique_ptr<RHI::Texture> cubeMap, irridanceMap, radianceMapArray, lutArray;
 	std::vector<std::unique_ptr<RHI::UnorderedAccessView>> cubeMapUAVs, radianceCubeArrayUAVs;
-	std::unique_ptr<RHI::UnorderedAccessView> irridanceCubeUAV;
-	std::unique_ptr<RHI::ShaderResourceView> cubemapSRV, irridanceCubeSRV, radianceCubeArraySRV;
+	std::unique_ptr<RHI::UnorderedAccessView> irridanceCubeUAV, lutArrayUAV;
+	std::unique_ptr<RHI::ShaderResourceView> cubemapSRV, irridanceCubeSRV, radianceCubeArraySRV, lutArraySRV;
 
-	HDRIProbeProbeProcesserState state;
+	HDRIProbeProcesserState state;
 	HDRIProbeProcessor(RHI::Device* device, uint dimesnion);	
 	void ProcessAsync(TextureAsset* srcImage);
 	void Process(TextureAsset* srcImage);

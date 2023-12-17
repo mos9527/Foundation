@@ -40,7 +40,7 @@ void main_histogram(uint2 DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex)
 [numthreads(RENDERER_TONEMAPPING_THREADS, RENDERER_TONEMAPPING_THREADS, 1)]
 void main_avg(uint2 DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex)
 {
-    RWByteAddressBuffer histogram = ResourceDescriptorHeap[g_Shader.framebufferUav];
+    RWByteAddressBuffer histogram = ResourceDescriptorHeap[g_Shader.hisotrgramUav];
     uint count = histogram.Load(gid * 4);
     HistogramShared[gid] = count * gid;
     

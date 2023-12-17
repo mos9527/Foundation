@@ -11,6 +11,7 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 		if (!contains<RHI::Buffer>(handle) || get<RHI::Buffer>(handle)->GetDesc() != buffer.desc)
 		{
 			// rebuild : resource is dirty
+			device->Wait();
 			emplace_or_replace<RHI::Buffer>(handle, device, buffer.desc);
 			resource_dirty[handle] = true;
 			auto name = get<RHI::Buffer>(handle)->GetName();
@@ -63,9 +64,11 @@ void RenderGraphResourceCache::update(RenderGraph& graph, RHI::Device* device) {
 						break;
 					}
 				}
+				device->Wait();
 				emplace_or_replace<view_type>(viewing_handle, ptr, counter_ptr, view.desc.viewDesc);
 			}
 			else {
+				device->Wait();
 				emplace_or_replace<view_type>(viewing_handle, ptr, view.desc.viewDesc);
 			}
 			// DLOG(INFO) << "Rebuilt view #" << entt::to_integral(viewing_handle.entity) << ". Which views " << wstring_to_utf8(ptr->GetName() ? ptr->GetName() : L"<unamed>");

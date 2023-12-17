@@ -29,12 +29,24 @@ public:
 		return true;
 	}
 protected:	
-	inline std::unique_ptr<RHI::Shader> build_shader(uint sourceIndex, const wchar_t* entrypoint, const wchar_t* target, std::vector<const wchar_t*>&& defines = {}) {
+	inline void build_shader(std::unique_ptr<RHI::Shader>& outShader, uint sourceIndex, const wchar_t* entrypoint, const wchar_t* target, std::vector<const wchar_t*>&& defines = {}) {
 		CHECK(sourceIndex < shaderSources.size() && "Source index OOB");
 		auto fullname = ::ExpandShaderPath(shaderSources[sourceIndex].c_str());
+		double buildBegin = hires_seconds();
 		auto ptr = ::BuildShader(shaderSources[sourceIndex].c_str(), entrypoint, target, std::move(defines));
+		double buildTime = hires_seconds() - buildBegin;
 		loadedShaderTimestamps[sourceIndex] = std::filesystem::last_write_time(fullname);
-		LOG(INFO) << "Built shader " << wstring_to_utf8(shaderSources[sourceIndex].c_str()) << " @ " << loadedShaderTimestamps[sourceIndex].time_since_epoch();
-		return ptr;
+		if (ptr->IsLoaded()) {
+			LOG(INFO) << "Built Shader " << wstring_to_utf8(shaderSources[sourceIndex].c_str()) << " @ " << wstring_to_utf8(entrypoint) << " in " << buildTime << "s";
+			std::swap(outShader, ptr);
+		}
+		else if (outShader) {
+			LOG(ERROR) << "Shader did not build. Not updating.";
+			LOG(ERROR) << "ERROR: " << ptr->GetErrorMessage();
+		}
+		else {
+			LOG(ERROR) << "Initial shader build failed.";
+			LOG(FATAL) << "ERROR: " << ptr->GetErrorMessage(); 
+		}
 	}
 };

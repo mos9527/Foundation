@@ -13,7 +13,7 @@ public:
 
 		std::pair<RgHandle*, RgHandle*> depth_dsv;
 		std::pair<RgHandle*, RgHandle*> framebuffer_uav;
-		std::pair<RgHandle*, RgHandle*> material_srv;		
+		std::tuple<RgHandle*, RgHandle*, RgHandle*> material_rtv_srv;
 	};
 	static const RHI::Resource::ResourceDesc GetAccumalationDesc(uint width, uint height) {
 		return RHI::Resource::ResourceDesc::GetTextureBufferDesc(

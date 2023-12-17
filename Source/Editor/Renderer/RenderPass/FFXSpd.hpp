@@ -13,7 +13,7 @@ public:
 	struct Handles {
 		RgHandle& srcTexture;		
 		RgHandle& dstTexture;
-		std::array<RgHandle*, 16> dstMipUAVs;
+		std::array<RgHandle*, 32> dstMipUAVs;
 	};
 	std::wstring reduce_func = L"(v0 + v1 + v2 + v3) * 0.25";
 	FFXSPDPass(RHI::Device* device) : IRenderPass(device, { L"FFXSpd" }, "FFX SPD") { reset(); };

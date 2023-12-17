@@ -14,21 +14,22 @@ namespace RHI {
 	CommandQueue::~CommandQueue() {
 		TracyD3D12Destroy(TRACY_CTX);
 	}
-	SyncFence CommandQueue::Execute(CommandList* cmdList) {
-		CHECK(!cmdList->IsOpen());
+	SyncFence CommandQueue::GetSyncPoint() {
 		SyncFence fence(m_Fence.get(), GetUniqueFenceValue());
-		ID3D12CommandList* ppCommandLists[] = { *cmdList };
-		m_CommandQueue->ExecuteCommandLists(1, ppCommandLists);
 		Signal(fence);
 		return fence;
 	}
+	SyncFence CommandQueue::Execute(CommandList* cmdList) {
+		CHECK(!cmdList->IsOpen());
+		ID3D12CommandList* ppCommandLists[] = { *cmdList };
+		m_CommandQueue->ExecuteCommandLists(1, ppCommandLists);
+		return GetSyncPoint();
+	}
 	SyncFence CommandQueue::Execute(std::vector<CommandList*> cmdLists) {
-		SyncFence fence(m_Fence.get(), GetUniqueFenceValue());
 		ID3D12CommandList** ppCommandLists = new ID3D12CommandList * [cmdLists.size()];
 		for (size_t i = 0; i < cmdLists.size(); i++) ppCommandLists[i] = *cmdLists[i];
 		m_CommandQueue->ExecuteCommandLists((UINT)cmdLists.size(), ppCommandLists);
 		delete[] ppCommandLists;
-		Signal(fence);
-		return fence;
+		return GetSyncPoint();
 	}
 }

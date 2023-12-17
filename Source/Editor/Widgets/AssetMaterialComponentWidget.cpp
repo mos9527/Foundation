@@ -3,7 +3,7 @@ using namespace EditorGlobals;
 
 void DrawOneImage(TextureAsset* asset) {
 	ImVec2 size{ 128,128 };
-	ImGui::Image((ImTextureID)asset->textureSRV->allocate_online_descriptor().get_gpu_handle().ptr, size);
+	ImGui::Image((ImTextureID)asset->textureSRV->allocate_transient_descriptor(RHI::CommandListType::Direct).get_gpu_handle().ptr, size);
 }
 
 void OnImGui_AssetWidget_AssetMaterialComponent(AssetMaterialComponent* material) {

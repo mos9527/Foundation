@@ -1,20 +1,14 @@
 #include "Common.hlsli"
-cbuffer BlendConstants : register(b0, space0)
-{
-    uint framebufferUavHandle;
-    uint accumalationSrvHandle;
-    uint revealageSrvHandle;
-    uint width;
-    uint height;
-}
+#define SHADER_CONSTANT_32_8_TYPE TransparencyBlendConstant
+#include "Bindless.hlsli"
 [numthreads(RENDERER_FULLSCREEN_THREADS, RENDERER_FULLSCREEN_THREADS, 1)]
 void main(uint2 DTid : SV_DispatchThreadID)
 {
-    if (any(DTid > uint2(width, height)))
+    if (any(DTid > uint2(g_Shader32.width, g_Shader32.height)))
         return;
-    Texture2D<float4> accTex = ResourceDescriptorHeap[accumalationSrvHandle];
-    Texture2D<float4> revTex = ResourceDescriptorHeap[revealageSrvHandle];
-    RWTexture2D<float4> framebuffer = ResourceDescriptorHeap[framebufferUavHandle];
+    Texture2D<float4> accTex = ResourceDescriptorHeap[g_Shader32.accumalationSrvHandle];
+    Texture2D<float4> revTex = ResourceDescriptorHeap[g_Shader32.revealageSrvHandle];
+    RWTexture2D<float4> framebuffer = ResourceDescriptorHeap[g_Shader32.framebufferUavHandle];
     float3 C0 = framebuffer[DTid].rgb;
     float4 acc = accTex[DTid];
     float rev = revTex[DTid].r;

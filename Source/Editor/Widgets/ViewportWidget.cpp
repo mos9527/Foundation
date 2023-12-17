@@ -1,10 +1,13 @@
 #include "Widgets.hpp"
 #include "../../../Dependencies/IconsFontAwesome6.h"
+#include "../Processor/MeshPicking.hpp"
+#include "../Scene/SceneView.hpp"
 using namespace EditorGlobals;
 static ImGuizmo::OPERATION gizmoOperation = ImGuizmo::TRANSLATE;
-
 static ImVec2 viewportScreenPos;
 static ImVec2 viewportSize;
+
+
 static ImVec2 uv_to_cursor(float2 uv) {
     return ImVec2{uv.x, uv.y} *viewportSize;
 };
@@ -263,6 +266,75 @@ void OnImGui_ViewportWidget() {
         g_Editor.set_viewport_dimension(viewportSize.x, viewportSize.y);        
         ImGuizmo::SetRect(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y, g_Editor.viewport.width, g_Editor.viewport.height);
         ImVec2 viewportMouse{ 0,0 };
+        if (g_Editor.render.image) {
+            ImGui::Image(g_Editor.render.image, viewportSize);
+            viewportMouse = ImGui::GetMousePos() - ImGui::GetItemRectMin();
+        }
+        if (ImGui::IsItemHovered()) {
+            if (!ImGuizmo::IsOver())
+                g_Editor.viewport.state.transition(ViewportManipulationEvents::HoverWithoutGizmo);
+            else
+                g_Editor.viewport.state.transition(ViewportManipulationEvents::HoverWithGizmo);
+            if (ImGui::IsMouseDown(ImGuiMouseButton_Middle) || ImGui::IsKeyDown(ImGuiKey_LeftAlt))
+                g_Editor.viewport.state.transition(ViewportManipulationEvents::MouseDown);
+            if (ImGui::IsMouseReleased(ImGuiMouseButton_Middle) || ImGui::IsKeyReleased(ImGuiKey_LeftAlt))
+                g_Editor.viewport.state.transition(ViewportManipulationEvents::MouseRelease);
+            if (ImGui::IsKeyDown(ImGuiKey_LeftShift))
+                g_Editor.viewport.state.transition(ViewportManipulationEvents::ShiftDown);
+            if (ImGui::IsKeyReleased(ImGuiKey_LeftShift))
+                g_Editor.viewport.state.transition(ViewportManipulationEvents::ShiftRelease);
+        }
+        else {
+            g_Editor.viewport.state.transition(ViewportManipulationEvents::MouseLeave);
+        }
+        // Picking
+        if (g_Editor.render.materialBuffer.first && g_Editor.render.materialBuffer.second) {
+            if (ImGui::IsItemHovered() && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))) {
+                uint2 upos = { (UINT)viewportMouse.x, (UINT)viewportMouse.y };
+                auto& selected = g_Editor.viewport.meshPicker->GetSelectedMaterialBufferAndRect(
+                    g_Editor.render.materialBuffer.first,
+                    g_Editor.render.materialBuffer.second, 
+                    upos, 
+                    { 1,1 }
+                );
+                if (!ImGui::IsKeyDown(ImGuiKey_LeftShift)) {
+                    // Unselect all.
+                    for (auto& mesh : g_Scene.scene->storage<SceneStaticMeshComponent>()) mesh.set_selected(false);
+                    for (auto& mesh : g_Scene.scene->storage<SceneSkinnedMeshComponent>()) mesh.set_selected(false);
+                }
+                // Select the picked mesh component
+                for (uint selectedIndex : selected) {
+                    auto mesh = SceneView::DecodeMeshInstanceIndex(g_Scene.scene, selectedIndex);
+                    // Bring this instance to the editing window                
+                    mesh->set_selected(true);
+                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                        g_Editor.editingComponent = mesh->get_entity();
+                    }
+                }
+            }
+        }
+
+        if (g_Scene.scene->valid<SceneComponentType>(g_Editor.editingComponent)) {
+            SceneComponent* selectedComponent = g_Scene.scene->get_base<SceneComponent>(g_Editor.editingComponent);
+            Viewport_Gizmo(selectedComponent);
+        }
+        auto* camera = g_Scene.scene->try_get<SceneCameraComponent>(g_Editor.activeCamera);
+        // Glyphs for all non-mesh components
+        for (auto& light : g_Scene.scene->storage<SceneLightComponent>()) {
+            if (g_Editor.editingComponent == light.get_entity())
+                continue;
+            auto p = uv_to_cursor(camera->project_to_uv(light.get_global_translation()));
+            ImGui::SetCursorPos(p);
+            ImGui::PushID(entt::to_integral(light.get_entity()));
+            {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0,0,0,0 });
+                if (ImGui::Button(ICON_FA_LIGHTBULB "###")) {
+                    g_Editor.editingComponent = light.get_entity();
+                }
+                ImGui::PopStyleColor();
+            }
+            ImGui::PopID();
+        }
     }
     ImGui::End();
     ImGui::PopStyleVar(2);

@@ -14,8 +14,10 @@ namespace RHI {
 
 		CommandQueue(Device* device, CommandListType type = CommandListType::Direct);
 		~CommandQueue();
+		SyncFence GetSyncPoint();
 		SyncFence Execute(CommandList*);
 		SyncFence Execute(std::vector<CommandList*>);
+		inline CommandListType const& GetType() { return m_Type; }
 		inline operator ID3D12CommandQueue* () { return m_CommandQueue.Get(); }
 		inline ID3D12CommandQueue* GetNativeQueue () { return m_CommandQueue.Get(); }
 		inline void Signal(Fence* fence, size_t value) { m_CommandQueue->Signal(*fence, value); }

@@ -209,7 +209,7 @@ namespace RHI {
 
     }
     Device::~Device() {
-        m_Factory->Release();        
+        m_ZeroBuffer->Release();
     }    
 
     void Device::Wait() {

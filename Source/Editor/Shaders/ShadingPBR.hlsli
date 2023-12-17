@@ -122,6 +122,7 @@ void shade_direct(SceneLight light, float3 P, float3 V, float3 N, float3 baseCol
 {
     float3 L = splat3(0);
     float3 attenuation = splat3(1.0f);
+    alphaRoughness = clamp(alphaRoughness, 0.001f, 0.999f);
     switch (light.type)
     {
         case SCENE_LIGHT_TYPE_POINT:

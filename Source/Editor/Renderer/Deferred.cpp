@@ -52,7 +52,7 @@ void DeferredRenderer::Render(SceneView* sceneView, CommandList* ctx)
 		L"Frame Buffer"
 	));
 	// Silhouette
-	auto& silhouetteDepth = rg.create<Texture>(GBufferPass::GetDepthDesc(width, height));
+	auto& silhouetteDepth = rg.create<Texture>(GBufferPass::GetDepthDesc(width, height, L"Silhouette Depth"));
 
 	/* RESOURCE VIEWS*/
 	// GBuffers
@@ -95,7 +95,7 @@ void DeferredRenderer::Render(SceneView* sceneView, CommandList* ctx)
 		.viewDesc = ShaderResourceViewDesc::GetTexture2DDesc(ResourceFormat::R32_FLOAT, 0,Resource::ResourceDesc::numMipsOfDimension(width, height)),
 		.viewed = gbufferDepthPyramid
 	});
-	std::array<RgHandle*, 16> gbufferDepthPyramidUavs;
+	std::array<RgHandle*, 32> gbufferDepthPyramidUavs;
 	for (uint i = 0; i < Resource::ResourceDesc::numMipsOfDimension(width, height); i++)
 		gbufferDepthPyramidUavs[i] = &rg.create<UnorderedAccessView>({
 			.viewDesc = UnorderedAccessViewDesc::GetTexture2DDesc(ResourceFormat::R32_FLOAT, i,0),
@@ -156,27 +156,29 @@ void DeferredRenderer::Render(SceneView* sceneView, CommandList* ctx)
 	});
 	if (sceneView->GetGlobalsBuffer().Data()->meshInstances.count) {
 		pass_IndirectCull.insert(rg, sceneView, {
-			.cmd_uav_instanceMaskAllow_instanceMaskRejcect = {{
-				{ &gbufferCmds,&gbufferCmdsUav, INSTANCE_FLAG_ENABLED | INSTANCE_FLAG_OPAQUE, 0 }
+			.cmd_uav_instanceMaskAllow_instanceMaskRejcectClearCounter = {{
+				{ &gbufferCmds,&gbufferCmdsUav, INSTANCE_FLAG_ENABLED | INSTANCE_FLAG_OPAQUE, 0, true },
+				{ &oitCmds,&oitCmdsUav, INSTANCE_FLAG_ENABLED | INSTANCE_FLAG_TRANSPARENT, 0, true },
+				{ &silhouetteCmds,&silhouetteCmdsUav, INSTANCE_FLAG_ENABLED | INSTANCE_FLAG_SILHOUETTE, 0, true }
 			}}
-		}, false);
+			}, false);
 		pass_GBuffer.insert(rg, sceneView, {
 			.command_uav = { &gbufferCmds,&gbufferCmdsUav },
 			.tangentframe_rtv = { &gbufferTangentFrame, &gbufferTangentFrameRtv },
 			.gradient_rtv = { &gbufferGradient, &gbufferGradientRtv },
 			.material_rtv = { &gbufferMaterial, &gbufferMaterialRtv  },
 			.depth_dsv = { &gbufferDepth, &gbufferDepthDsv }
-		});
+			});
 		pass_HiZ.insert(rg, sceneView, {
 			.depth_srv = { &gbufferDepth, &gbufferDepthSrv },
 			.depthPyramid_MipUavs = { &gbufferDepthPyramid, gbufferDepthPyramidUavs  }
 		});
 		pass_IndirectCull.insert(rg, sceneView, {
 			.hiz_srv = { &gbufferDepthPyramid, &gbufferDepthPyramidSrv },
-			.cmd_uav_instanceMaskAllow_instanceMaskRejcect = {{
-				{ &gbufferCmds,&gbufferCmdsUav, INSTANCE_FLAG_ENABLED | INSTANCE_FLAG_OPAQUE, 0 },
-				{ &oitCmds,&oitCmdsUav, INSTANCE_FLAG_ENABLED | INSTANCE_FLAG_TRANSPARENT, 0 },
-				{ &silhouetteCmds,&silhouetteCmdsUav, INSTANCE_FLAG_ENABLED | INSTANCE_FLAG_SILHOUETTE, 0 }
+			.cmd_uav_instanceMaskAllow_instanceMaskRejcectClearCounter = {{
+				{ &gbufferCmds,&gbufferCmdsUav, INSTANCE_FLAG_ENABLED | INSTANCE_FLAG_OPAQUE, 0, true },
+				{ &oitCmds,&oitCmdsUav, INSTANCE_FLAG_ENABLED | INSTANCE_FLAG_TRANSPARENT, 0, false },
+				{ &silhouetteCmds,&silhouetteCmdsUav, INSTANCE_FLAG_ENABLED | INSTANCE_FLAG_SILHOUETTE, 0, false }
 			}}
 		}, true);
 		pass_GBuffer.insert(rg, sceneView, {
@@ -203,7 +205,7 @@ void DeferredRenderer::Render(SceneView* sceneView, CommandList* ctx)
 			.revealage_rtv_srv = { &oitRevelage, &oitRevelageRtv, &oitRevelageSrv },
 			.depth_dsv = { &gbufferDepth, &gbufferDepthDsv },
 			.framebuffer_uav = { &frameBuffer, &frameBufferUav },
-			.material_srv = { &gbufferMaterial, &gbufferMaterialSrv }
+			.material_rtv_srv = { &gbufferMaterial, &gbufferMaterialRtv, &gbufferMaterialSrv }
 		});
 		pass_Tonemapping.insert(rg, sceneView, {
 			.framebuffer_uav = { &frameBuffer, &frameBufferUav }

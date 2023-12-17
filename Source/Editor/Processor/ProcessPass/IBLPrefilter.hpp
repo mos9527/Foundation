@@ -3,8 +3,8 @@
 #include "../../Renderer/RenderPass/FFXSpd.hpp"
 
 class IBLPrefilterPass {
-	std::unique_ptr<RHI::Shader> Probe2CubemapCS, PrefilterCS;	
-	std::unique_ptr<RHI::PipelineState> Probe2CubemapPSO, PrefilterPSO;	
+	std::unique_ptr<RHI::Shader> Probe2CubemapCS, PrefilterCS, LUTCS;	
+	std::unique_ptr<RHI::PipelineState> Probe2CubemapPSO, PrefilterPSO, LUTPSO;
 	FFXSPDPass spdPass;
 
 	std::unique_ptr<BufferContainer<IBLPrefilterConstant>> constants;
@@ -13,16 +13,20 @@ public:
 		RgHandle& panoSrv; // Orignial HDRI imported ShaderResourceView
 
 		RgHandle& cubemap;
-		std::array<RgHandle*, 16> cubemapUAVs;
+		std::array<RgHandle*, 32> cubemapUAVs;
 		RgHandle& cubemapSRV;
 
 		RgHandle& radianceCubeArray;
-		std::array<RgHandle*,16> radianceCubeArrayUAVs;
+		std::array<RgHandle*, 32> radianceCubeArrayUAVs;
 		RgHandle& radianceCubeArraySRV;
 
 		RgHandle& irradianceCube;
 		RgHandle& irradianceCubeUAV;
 		RgHandle& irradianceCubeSRV;
+
+		RgHandle& lutArray;
+		RgHandle& lutArrayUAV;
+		RgHandle& lutArraySRV;
 	};
 
 	IBLPrefilterPass(RHI::Device* device);

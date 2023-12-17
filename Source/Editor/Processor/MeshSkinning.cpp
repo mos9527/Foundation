@@ -25,15 +25,14 @@ const uint MeshSkinning::AllocateOrReuseSkinnedVertexBuffer(SceneSkinnedMeshComp
 	size_t index = mesh->parent.index<SceneSkinnedMeshComponent>(mesh->get_entity());
 	SkinnedMeshAsset& asset = mesh->parent.get<SkinnedMeshAsset>(mesh->meshAsset);
 	// Make or reuse a dedicated vertex buffer for this mesh
-	const size_t minVertexBufferSize = asset.vertexBuffer->numElements * sizeof(StaticMeshAsset::Vertex);
-	if (!transformedVertexBuffers[index].first.get() || transformedVertexBuffers[index].first->GetDesc().sizeInBytes() < minVertexBufferSize) {
+	if (!transformedVertexBuffers[index].first.get() || transformedVertexBuffers[index].first->GetDesc().numElements() < asset.vertexBuffer->numElements) {
 		transformedVertexBuffers[index].first = std::make_unique<Buffer>(device, Resource::ResourceDesc::GetGenericBufferDesc(
-			minVertexBufferSize, sizeof(StaticMeshAsset::Vertex), ResourceState::UnorderedAccess,
+			asset.vertexBuffer->numElements * sizeof(StaticMeshAsset::Vertex), sizeof(StaticMeshAsset::Vertex), ResourceState::UnorderedAccess,
 			ResourceHeapType::Default, ResourceFlags::UnorderedAccess, L"Transformed Instance Vertices"
 		));
 		transformedVertexBuffers[index].second = std::make_unique<UnorderedAccessView>(
 			transformedVertexBuffers[index].first.get(),
-			UnorderedAccessViewDesc::GetStructuredBufferDesc(0, minVertexBufferSize, sizeof(StaticMeshAsset::Vertex), 0)
+			UnorderedAccessViewDesc::GetStructuredBufferDesc(0, asset.vertexBuffer->numElements, sizeof(StaticMeshAsset::Vertex), 0)
 		);
 		LOG(INFO) << "Allocated new vertex buffer for skinned mesh " << mesh->name << " #" << index;
 	}
@@ -61,19 +60,20 @@ void MeshSkinning::Update(CommandList* ctx, SceneSkinnedMeshComponent* mesh) {
 	AssetKeyshapeTransformComponent* keyshapeTransform = mesh->parent.try_get<AssetKeyshapeTransformComponent>(mesh->keyshapeTransformComponent);
 	MeshSkinningTask task{
 		.numBones = boneTransform ? boneTransform->data().first->NumElements() : 0,
-		.boneMatricesSrv = boneTransform ? boneTransform->data().second->allocate_online_descriptor().get_heap_handle() : INVALID_HEAP_HANDLE,
+		.boneMatricesSrv = boneTransform ? boneTransform->data().second->allocate_transient_descriptor(ctx).get_heap_handle() : INVALID_HEAP_HANDLE,
 
 		.numShapeKeys = keyshapeTransform ? keyshapeTransform->data().first->NumElements() : 0,
-		.keyshapeWeightsSrv = keyshapeTransform ? keyshapeTransform->data().second->allocate_online_descriptor().get_heap_handle() : INVALID_HEAP_HANDLE,
-		.keyshapeOffsetsSrv = asset.keyShapeOffsetBuffer ? asset.keyShapeOffsetBuffer->srv->allocate_online_descriptor().get_heap_handle() : INVALID_HEAP_HANDLE,
+		.keyshapeWeightsSrv = keyshapeTransform ? keyshapeTransform->data().second->allocate_transient_descriptor(ctx).get_heap_handle() : INVALID_HEAP_HANDLE,
+		.keyshapeVerticesSrv = asset.keyShapeBuffer ? asset.keyShapeBuffer->srv->allocate_transient_descriptor(ctx).get_heap_handle() : INVALID_HEAP_HANDLE,
+		.keyshapeOffsetsSrv = asset.keyShapeOffsetBuffer ? asset.keyShapeOffsetBuffer->srv->allocate_transient_descriptor(ctx).get_heap_handle() : INVALID_HEAP_HANDLE,
 
-		.srcBufferSrv = asset.vertexBuffer->srv->allocate_online_descriptor().get_heap_handle(),
+		.srcBufferSrv = asset.vertexBuffer->srv->allocate_transient_descriptor(ctx).get_heap_handle(),
 		.srcNumVertices = asset.vertexBuffer->numElements,
-		.destBufferUav = transformedBuffer.second->allocate_online_descriptor().get_heap_handle()
+		.destBufferUav = transformedBuffer.second->allocate_transient_descriptor(ctx).get_heap_handle()
 	};
 	*meshSkinningTasks.first->DataAt(taskCounter) = task;
 	MeshSkinningConstant constants{
-		.tasksSrv = meshSkinningTasks.second->allocate_online_descriptor().get_heap_handle(),
+		.tasksSrv = meshSkinningTasks.second->allocate_transient_descriptor(ctx).get_heap_handle(),
 		.taskIndex = taskCounter,		
 	};
 	auto native = ctx->GetNativeCommandList();	

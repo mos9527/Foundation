@@ -58,6 +58,10 @@ void Setup_Scene() {
     light.intensity = 3.0f;    
     light.color = { 1,1,1,1 };
     g_cameraController.reset();
+
+    g_Editor.editorHDRI = g_Scene.scene->create<AssetHDRIProbeComponent>();
+    auto& probe = g_Scene.scene->emplace<AssetHDRIProbeComponent>(g_Editor.editorHDRI);
+    probe.setup(g_RHI.device, 512u);
 }
 void Reset_Scene() {
     g_Scene.scene->reset();
@@ -196,6 +200,8 @@ void EditorWindow::Run() {
             &g_Editor
         );  
         renderer->Render(sceneView, gfx);
+        g_Editor.render.image = (ImTextureID)renderer->r_frameBufferSRV->get_persistent_descriptor().get_gpu_handle().ptr;
+        g_Editor.render.materialBuffer = { renderer->r_materialBufferTex, renderer->r_materialBufferSRV };
     }
 
     gfx->QueueTransitionBarrier(g_RHI.swapchain->GetBackbuffer(bbIndex), ResourceState::RenderTarget);
@@ -208,7 +214,7 @@ void EditorWindow::Run() {
     gfx->QueueTransitionBarrier(g_RHI.swapchain->GetBackbuffer(bbIndex), ResourceState::Present);
     gfx->FlushBarriers();
     gfx->Close();
-    gfx->Execute();
+    auto sync = gfx->Execute();    
     {
         ZoneScopedN("Waiting for GPU");
         g_RHI.swapchain->PresentAndMoveToNextFrame(g_Editor.render.vsync);
@@ -219,11 +225,16 @@ void EditorWindow::Run() {
 
 void EditorWindow::Destroy() {
     g_Editor.state.transition(EditorEvents::OnDestroy);
+    g_RHI.device->Wait();
+    delete renderer;
+    ImGui_ImplDX12_Shutdown();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
+    EditorGlobals::DestroyContext();
 }
 
 void EditorWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     auto resize_swapchain = [&]() {
-        g_RHI.device->Wait();
         g_RHI.swapchain->Resize(std::max((WORD)128u, LOWORD(lParam)), std::max((WORD)128u, HIWORD(lParam)));
     };
     ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam);
@@ -238,6 +249,7 @@ void EditorWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
         ) resize_swapchain();
 		break;
 	case WM_CLOSE:
+        Destroy();
 		ExitProcess(0);
 		break;
 	}

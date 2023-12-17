@@ -15,6 +15,10 @@ struct AssetKeyshapeTransformComponent : public AssetComponent {
 		keyshapeWeights_srv.first = std::make_unique<BufferContainer<float>>(device, keyshapeIDMapping.size(), L"Keyshape Weights");
 		for (uint i = 0; i < keyshapeWeights_srv.first->NumElements(); i++) // Clear with 0 weights
 			*keyshapeWeights_srv.first->DataAt(i) = .0f;
+		keyshapeWeights_srv.second = std::make_unique<RHI::ShaderResourceView>(
+			keyshapeWeights_srv.first.get(), RHI::ShaderResourceViewDesc::GetStructuredBufferDesc(0, keyshapeWeights_srv.first->NumElements(), sizeof(float))
+		);
+		
 	};
 	inline auto& data() {
 		return keyshapeWeights_srv;

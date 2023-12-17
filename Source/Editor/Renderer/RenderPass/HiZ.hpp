@@ -10,7 +10,7 @@ struct HierarchalDepthPass : public IRenderPass {
 public:
 	struct Handles {
 		std::pair<RgHandle*, RgHandle*> depth_srv;
-		std::pair<RgHandle*, std::array<RgHandle*, 16>> depthPyramid_MipUavs;
+		std::pair<RgHandle*, std::array<RgHandle*, 32>> depthPyramid_MipUavs;
 	};
 	
 	HierarchalDepthPass(RHI::Device* device) : IRenderPass(device, {L"DepthSampleToTexture"}, "HiZ"), spdPass(device) { reset(); };

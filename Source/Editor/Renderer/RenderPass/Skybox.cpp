@@ -4,8 +4,8 @@
 using namespace RHI;
 using namespace EditorGlobals;
 void SkyboxPass::reset() {
-	PS = build_shader(0, L"ps_main", L"ps_6_6");
-	VS = build_shader(0, L"vs_main", L"vs_6_6");	
+	build_shader(PS, 0, L"ps_main", L"ps_6_6");
+	build_shader(VS, 0, L"vs_main", L"vs_6_6");	
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
 	auto iaLayout = VertexLayoutToD3DIADesc({{ "POSITION" ,RHI::ResourceFormat::R32G32B32_FLOAT }});	
 	desc.InputLayout = { iaLayout.data(), (UINT)iaLayout.size() };
@@ -68,7 +68,7 @@ RenderGraphPass& SkyboxPass::insert(RenderGraph& rg, SceneView* sceneView, Handl
 			CD3DX12_VIEWPORT viewport(.0f, .0f, width, height, .0f, 1.0f);
 			CD3DX12_RECT scissorRect(0, 0, width, height);						
 		
-			constants->Data()->enabled = g_Editor.iblProbe.use;
+			constants->Data()->enabled = sceneView->GetShadingBuffer().Data()->iblProbe.enabled;
 			constants->Data()->radianceHeapIndex = sceneView->GetShadingBuffer().Data()->iblProbe.radianceHeapIndex;
 			constants->Data()->skyboxIntensity = g_Editor.iblProbe.skyboxIntensity;
 			constants->Data()->skyboxLod = g_Editor.iblProbe.skyboxLod;

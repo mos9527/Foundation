@@ -20,22 +20,14 @@ class SceneView {
 	BufferContainer<ShadingConstants> constShadingBuffer;
 
 	// Versioning
-	std::unordered_map<entt::entity, size_t> viewingSceneComponentVersions, viewingAssetComponentVersions;
+	std::unordered_map<entt::entity, size_t> viewingSceneComponentVersions;
 	template<IsSceneComponent T> bool ValidateVersion(T& component) {
 		if (viewingSceneComponentVersions.contains(component.get_entity()) && viewingSceneComponentVersions.at(component.get_entity()) == component.get_version())
 			return false;
 		return true;
 	}
-	template<IsAssetComponent T> bool ValidateVersion(T& component) {
-		if (viewingAssetComponentVersions.contains(component.get_entity()) && viewingAssetComponentVersions.at(component.get_entity()) == component.get_version())
-			return false;
-		return true;
-	}
 	template<IsSceneComponent T> void UpdateVersion(T& component) {
 		viewingSceneComponentVersions[component.get_entity()] = component.get_version();
-	}
-	template<IsAssetComponent T> void UpdateVersion(T& component) {
-		viewingAssetComponentVersions[component.get_entity()] = component.get_version();
 	}
 public:
 	SceneView(RHI::Device* device);

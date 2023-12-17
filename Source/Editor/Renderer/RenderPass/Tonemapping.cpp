@@ -2,9 +2,9 @@
 using namespace RHI;
 using namespace EditorGlobals;
 void TonemappingPass::reset() {
-	CS_Histogram = build_shader(0, L"main_histogram", L"cs_6_6");
-	CS_Avg = build_shader(0, L"main_avg", L"cs_6_6");
-	CS_Tonemap = build_shader(0, L"main_tonemap", L"cs_6_6");
+	build_shader(CS_Histogram,0, L"main_histogram", L"cs_6_6");
+	build_shader(CS_Avg,0, L"main_avg", L"cs_6_6");
+	build_shader(CS_Tonemap, 0, L"main_tonemap", L"cs_6_6");
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
 	computePsoDesc.pRootSignature = *g_RHI.rootSig;
 	
@@ -41,15 +41,15 @@ void TonemappingPass::reset() {
 RenderGraphPass& TonemappingPass::insert(RenderGraph& rg, SceneView* sceneView, Handles const& handles) {
 	return rg.add_pass(L"Tonemapping")
 		.read(*handles.framebuffer_uav.first) // Ensures....clear. ugh
-		.read(*handles.framebuffer_uav.first)
+		.write(*handles.framebuffer_uav.first)
 		.execute([=](RgContext& ctx) {
 			UINT width = g_Editor.render.width, height = g_Editor.render.height;
 			auto native = ctx.cmd->GetNativeCommandList();
 
 			auto* r_fb_uav = ctx.graph->get<UnorderedAccessView>(*handles.framebuffer_uav.second);			
-			constants->Data()->framebufferUav = r_fb_uav->allocate_online_descriptor().get_heap_handle();
-			constants->Data()->hisotrgramUav = histogramBufferUAV->allocate_online_descriptor().get_heap_handle();
-			constants->Data()->avgLumUav = luminanceBufferUAV->allocate_online_descriptor().get_heap_handle();
+			constants->Data()->framebufferUav = r_fb_uav->allocate_transient_descriptor(ctx.cmd).get_heap_handle();
+			constants->Data()->hisotrgramUav = histogramBufferUAV->allocate_transient_descriptor(ctx.cmd).get_heap_handle();
+			constants->Data()->avgLumUav = luminanceBufferUAV->allocate_transient_descriptor(ctx.cmd).get_heap_handle();
 
 			native->SetPipelineState(*PSO_Histogram);
 			native->SetComputeRootSignature(*g_RHI.rootSig);		

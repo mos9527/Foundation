@@ -118,7 +118,7 @@ namespace RHI {
 		auto& AddStaticSampler(
 			UINT shaderRegister,
 			UINT registerSpace,
-			SamplerDesc desc = SamplerDesc::GetTextureSamplerDesc(8),
+			SamplerDesc desc = SamplerDesc::GetAnisotropicSamplerDesc(8),
 			D3D12_STATIC_BORDER_COLOR borderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE
 		)
 		{

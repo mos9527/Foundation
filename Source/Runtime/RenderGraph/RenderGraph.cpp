@@ -84,8 +84,10 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 			if (cmd->GetType() == CommandListType::Direct) {
 				auto const& desc = res->GetDesc();
 				ResourceState state = ResourceState::PixelShaderResource;
-				if (desc.allowUnorderedAccess()) 
+				if (desc.allowUnorderedAccess()) {
 					state |= ResourceState::NonPixelShaderResoruce;
+					cmd->QueueUAVBarrier(res);
+				}
 				if (state != ResourceState::Common)
 					cmd->QueueTransitionBarrier(res, state);
 			}

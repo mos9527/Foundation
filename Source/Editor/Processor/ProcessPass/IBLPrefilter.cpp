@@ -4,6 +4,7 @@ using namespace EditorGlobals;
 IBLPrefilterPass::IBLPrefilterPass(RHI::Device* device) : spdPass(device) {
 	Probe2CubemapCS = BuildShader(L"HDRIProbe", L"main_pano2cube", L"cs_6_6");
 	PrefilterCS = BuildShader(L"HDRIProbe", L"main_prefilter", L"cs_6_6");
+	LUTCS = BuildShader(L"HDRIProbe", L"main_lut", L"cs_6_6");
 
 	D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
 	computePsoDesc.pRootSignature = *g_RHI.rootSig;
@@ -14,6 +15,9 @@ IBLPrefilterPass::IBLPrefilterPass(RHI::Device* device) : spdPass(device) {
 	computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(PrefilterCS->GetData(), PrefilterCS->GetSize());
 	CHECK_HR(device->GetNativeDevice()->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(&pso)));
 	PrefilterPSO = std::make_unique<PipelineState>(device, std::move(pso));	
+	computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(LUTCS->GetData(), LUTCS->GetSize());
+	CHECK_HR(device->GetNativeDevice()->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(&pso)));
+	LUTPSO = std::make_unique<PipelineState>(device, std::move(pso));
 
 	constants = std::make_unique<BufferContainer<IBLPrefilterConstant>>(device, 1, L"Prefilter Constants");
 };
@@ -29,8 +33,8 @@ RenderGraphPass& IBLPrefilterPass::insert_pano2cube(RenderGraph& rg, IBLPrefilte
 		auto native = ctx.cmd->GetNativeCommandList();
 		native->SetPipelineState(*Probe2CubemapPSO);
 		native->SetComputeRootSignature(*g_RHI.rootSig);
-		constants->Data()->hdriSourceSrv = r_hdri_srv->allocate_online_descriptor().get_heap_handle();
-		constants->Data()->hdriDestUav = r_cubemap_uav->allocate_online_descriptor().get_heap_handle();
+		constants->Data()->hdriSourceSrv = r_hdri_srv->allocate_transient_descriptor(ctx.cmd).get_heap_handle();
+		constants->Data()->hdriDestUav = r_cubemap_uav->allocate_transient_descriptor(ctx.cmd).get_heap_handle();
 		constants->Data()->hdriDestDimension = dimension;
 		native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
 		native->Dispatch(DivRoundUp(dimension, RENDERER_FULLSCREEN_THREADS), DivRoundUp(dimension, RENDERER_FULLSCREEN_THREADS), 1);
@@ -59,8 +63,8 @@ RenderGraphPass& IBLPrefilterPass::insert_specular_prefilter(RenderGraph& rg, IB
 			constants->Data()->prefilterFlag = IBL_FILTER_FLAG_RADIANCE;
 			constants->Data()->prefilterSourceSize = r_cubemap->GetDesc().width;
 			constants->Data()->prefilterDestSize = destDimension;
-			constants->Data()->prefilterSourceSrv = r_cubemap_srv->allocate_online_descriptor().get_heap_handle();
-			constants->Data()->prefilterDestUav = r_radiance_uav->allocate_online_descriptor().get_heap_handle();
+			constants->Data()->prefilterSourceSrv = r_cubemap_srv->allocate_transient_descriptor(ctx.cmd).get_heap_handle();
+			constants->Data()->prefilterDestUav = r_radiance_uav->allocate_transient_descriptor(ctx.cmd).get_heap_handle();
 			constants->Data()->prefilterCubeIndex = cubeIndex;
 			constants->Data()->prefilterCubeMipIndex = mipIndex;
 			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
@@ -86,10 +90,30 @@ RenderGraphPass& IBLPrefilterPass::insert_diffuse_prefilter(RenderGraph& rg, IBL
 			constants->Data()->prefilterFlag = IBL_FILTER_FLAG_IRRADIANCE;
 			constants->Data()->prefilterSourceSize = r_cubemap->GetDesc().width;
 			constants->Data()->prefilterDestSize = destDimension;
-			constants->Data()->prefilterSourceSrv = r_cubemap_srv->allocate_online_descriptor().get_heap_handle();
-			constants->Data()->prefilterDestUav = r_diffuse_uav->allocate_online_descriptor().get_heap_handle();
+			constants->Data()->prefilterSourceSrv = r_cubemap_srv->allocate_transient_descriptor(ctx.cmd).get_heap_handle();
+			constants->Data()->prefilterDestUav = r_diffuse_uav->allocate_transient_descriptor(ctx.cmd).get_heap_handle();
 			constants->Data()->prefilterCubeIndex = 0;
 			constants->Data()->prefilterCubeMipIndex = 0;
+			native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
 			native->Dispatch(DivRoundUp(destDimension, RENDERER_FULLSCREEN_THREADS), DivRoundUp(destDimension, RENDERER_FULLSCREEN_THREADS), 1);
 		});
+};
+RenderGraphPass& IBLPrefilterPass::insert_lut(RenderGraph& rg, IBLPrefilterPassHandles const& handles) {
+	return rg.add_pass(L"Split Sum LUT")
+		.readwrite(handles.lutArray)
+		.execute([=](RgContext& ctx) {
+		auto* r_cubemap_srv = ctx.graph->get<ShaderResourceView>(handles.cubemapSRV);
+		auto* r_lutarray_uav = ctx.graph->get<UnorderedAccessView>(handles.lutArrayUAV);
+		auto* r_cubemap = ctx.graph->get<Texture>(handles.cubemap);
+		auto* r_lut = ctx.graph->get<Texture>(handles.lutArray);
+		uint dimension = r_lut->GetDesc().width;
+		auto native = ctx.cmd->GetNativeCommandList();
+		native->SetPipelineState(*LUTPSO);
+		native->SetComputeRootSignature(*g_RHI.rootSig);
+		constants->Data()->prefilterFlag = IBL_FILTER_FLAG_LUT;
+		constants->Data()->prefilterDestSize = dimension;
+		constants->Data()->prefilterDestUav = r_lutarray_uav->allocate_transient_descriptor(ctx.cmd).get_heap_handle();
+		native->SetComputeRootConstantBufferView(RHIContext::ROOTSIG_CB_SHADER_GLOBAL, constants->GetGPUAddress());
+		native->Dispatch(DivRoundUp(dimension, RENDERER_FULLSCREEN_THREADS), DivRoundUp(dimension, RENDERER_FULLSCREEN_THREADS), 1);
+	});
 };
