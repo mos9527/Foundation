@@ -8,13 +8,24 @@ AreaReducePass::AreaReducePass(Device* device) {
 	computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(CS->GetData(), CS->GetSize());
 	CHECK_HR(device->GetNativeDevice()->CreateComputePipelineState(&computePsoDesc, IID_PPV_ARGS(&pso)));
 	PSO = std::make_unique<PipelineState>(device, std::move(pso));
-
 	constants = std::make_unique<BufferContainer<AreaReduceConstant>>(device, 1, L"Area Reduce Constants");
 }
-
+RenderGraphPass& AreaReducePass::insert_clear(RenderGraph& rg, AreaReducePassHandles const& handles) {
+	return rg.add_pass(L"Area Reduce Clear")
+		.readwrite(*handles.selection_uav.first)
+		.execute([=](RgContext& ctx) {
+		auto* r_out = ctx.graph->get<Buffer>(*handles.selection_uav.first);
+		auto* r_out_uav = ctx.graph->get<UnorderedAccessView>(*handles.selection_uav.second);
+		auto native = ctx.cmd->GetNativeCommandList();
+		auto uav = r_out_uav->allocate_transient_descriptor(ctx.cmd);
+		const uint clearValue[4] = {-1,-1,-1,-1};
+		native->ClearUnorderedAccessViewUint(uav.get_gpu_handle(), uav.get_cpu_handle(), r_out->GetNativeResource(), clearValue, 0, NULL);
+	});
+}
 RenderGraphPass& AreaReducePass::insert_reduce_material_instance(RenderGraph& rg, AreaReducePassHandles const& handles, uint2 point, uint2 extent) {
 	return rg.add_pass(L"Area Reduce Unique Instances")
 		.read(*handles.material_srv.first)
+		.read(*handles.selection_uav.first)
 		.readwrite(*handles.selection_uav.first)
 		.execute([=](RgContext& ctx) {
 			auto* r_texture = ctx.graph->get<Texture>(*handles.material_srv.first);

@@ -18,27 +18,25 @@ MeshPicking::MeshPicking(Device* device) : device(device), proc_reduce(device) {
 }
 
 std::vector<uint> const & MeshPicking::GetSelectedMaterialBufferAndRect(RHI::Texture* texture, RHI::ShaderResourceView* resourceSRV, uint2 point, uint2 extent) {
-	device->BeginCapture(L"PICK");
 	RenderGraph rg(cache);
 	auto& output = rg.import<Buffer>(instanceSelectionMask.get());
+	auto& outputUav = rg.import<UnorderedAccessView>(instanceSelectionMaskUAV.get());
+	proc_reduce.insert_clear(rg, {
+		.selection_uav = { &output, &outputUav }
+	});
 	proc_reduce.insert_reduce_material_instance(
 		rg, {
 			.material_srv = { &rg.import<Texture>(texture), &rg.import<ShaderResourceView>(resourceSRV) },
-			.selection_uav = { &output, &rg.import<UnorderedAccessView>(instanceSelectionMaskUAV.get()) }
+			.selection_uav = { &output, &outputUav }
 		}, point, extent
 	);
 	auto* cmd = device->GetDefaultCommandList<CommandListType::Direct>();	
 	CHECK(!cmd->IsOpen() && "The Default Compute Command list is in use!");	
-	// Zero previous buffer first
 	cmd->Begin();	
-	cmd->QueueTransitionBarrier(instanceSelectionMask.get(), ResourceState::CopyDest);
-	cmd->FlushBarriers();
-	cmd->ZeroBufferRegion(instanceSelectionMask.get(), 0, instanceSelectionMask->GetDesc().width);
 	static ID3D12DescriptorHeap* const heaps[] = { device->GetOnlineDescriptorHeap<DescriptorHeapType::CBV_SRV_UAV>()->GetNativeHeap() };
 	cmd->GetNativeCommandList()->SetDescriptorHeaps(1, heaps);
 	rg.get_epilogue_pass().read(output);
 	rg.execute(cmd);
-	cmd->QueueUAVBarrier(instanceSelectionMask.get());
 	// Copy reduced buffer to readback
 	cmd->QueueTransitionBarrier(instanceSelectionMask.get(), ResourceState::CopySource);
 	cmd->FlushBarriers();
@@ -49,11 +47,10 @@ std::vector<uint> const & MeshPicking::GetSelectedMaterialBufferAndRect(RHI::Tex
 	instanceSelected.clear();
 	for (uint i = 0; i < MAX_INSTANCE_COUNT; i++) {
 		UINT selected = *reinterpret_cast<UINT*>((reinterpret_cast<BYTE*>(pMappedData) + i * 4));
-		if (selected) {
+		if (selected != 0xffffffff) {
 			instanceSelected.push_back(i);
 		}
 	}
 	readbackInstanceSelectionMask->Unmap(0);
-	device->EndCapture();
 	return instanceSelected;
 }

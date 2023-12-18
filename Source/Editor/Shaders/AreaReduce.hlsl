@@ -4,7 +4,7 @@
 groupshared uint instances[RENDERER_FULLSCREEN_THREADS * RENDERER_FULLSCREEN_THREADS];
 
 [numthreads(RENDERER_FULLSCREEN_THREADS, RENDERER_FULLSCREEN_THREADS, 1)]
-void main_reduce_instance(uint2 DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex, uint tid : SV_DispatchThreadIDS)
+void main_reduce_instance(uint2 DTid : SV_DispatchThreadID, uint gid : SV_GroupIndex)
 {    
     RWByteAddressBuffer output = ResourceDescriptorHeap[g_Shader.outBufferUav];
     // clear groupshared mem first
@@ -15,7 +15,8 @@ void main_reduce_instance(uint2 DTid : SV_DispatchThreadID, uint gid : SV_GroupI
     {
         Texture2D tex = ResourceDescriptorHeap[g_Shader.sourceSrv];
         float4 smp = tex[offset];
-        instances[gid] = packUnorm2x16(smp.ba);
+        uint instance = packUnorm2x16(smp.rg);
+        instances[gid] = instance;
     }
     // Sync reads
     GroupMemoryBarrierWithGroupSync();

@@ -42,6 +42,7 @@ public:
 			return scene->get_base<SceneComponent>(staticMeshStorage.at(index));
 		}
 		CHECK(false && "Instance not found");
+		return nullptr;
 	}
 	inline static uint EncodeMeshInstanceIndex(SceneComponent* mesh) {
 		auto const& skinnedMeshStorage = mesh->parent.storage<SceneSkinnedMeshComponent>();
