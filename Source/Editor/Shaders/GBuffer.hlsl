@@ -46,7 +46,7 @@ MRT ps_main(PSInput input)
     float3 T = normalize(input.tangent - dot(input.tangent, N) * N);
     float3 B = cross(N, T);
 
-    output.TangentFrame = PackQuaternion(QuatFrom3x3(float3x3(T, B, N)));
+    output.TangentFrame = float4(T, 1);
     output.Gradient = float4(ddx_fine(input.uv), ddy_fine(input.uv));
     output.Material = float4(unpackUnorm2x16(mesh.meshIndex), frac(input.uv / 2));
     return output;

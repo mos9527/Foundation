@@ -37,7 +37,7 @@ SceneView::SceneView(Device* device) :
 		device,
 		Resource::ResourceDesc::GetGenericBufferDesc(
 			MAX_LIGHT_COUNT * sizeof(SceneLight), sizeof(SceneLight),
-			ResourceState::Common, ResourceHeapType::Default, ResourceFlags::None, L"Scene Instances"
+			ResourceState::Common, ResourceHeapType::Default, ResourceFlags::None, L"Scene Lights"
 		));
 	sceneLightsBuffer.second = std::make_unique<ShaderResourceView>(
 		sceneLightsBuffer.first.get(),
@@ -85,7 +85,7 @@ template<typename T> SceneMeshInstanceData DumpMeshInstanceData(MeshSkinning* me
 	if (materialComponent.has_alpha())
 		sceneMesh.instanceFlags |= INSTANCE_FLAG_TRANSPARENT;
 	else
-		sceneMesh.instanceFlags |= INSTANCE_FLAG_OPAQUE;
+		sceneMesh.instanceFlags |= INSTANCE_FLAG_OPAQUE;	
 	// MeshBuffers (VB/LOD)
 	const auto write_lod = [&](auto& asset) {
 		for (int i = 0; i < MAX_LOD_COUNT; i++) {

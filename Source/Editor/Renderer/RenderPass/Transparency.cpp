@@ -171,6 +171,7 @@ RenderGraphPass& TransparencyPass::insert(RenderGraph& rg, SceneView* sceneView,
 		render(ctx);
 	});	
 	rg.add_pass(L"Transparency Material Buffer Append")
+		.read(*handles.framebuffer_uav.first)
 		.read(*std::get<0>(handles.material_rtv_srv))
 		.write(*std::get<0>(handles.material_rtv_srv))
 		.write(*handles.depth_dsv.first)

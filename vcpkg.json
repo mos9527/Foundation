@@ -4,7 +4,6 @@
     "directxmath",
     "directxtk",
     "glog",
-    "assimp",
     "meshoptimizer"
   ]
 }

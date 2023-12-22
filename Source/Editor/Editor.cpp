@@ -54,7 +54,7 @@ void Setup_Scene() {
     auto& light = g_Scene.scene->graph->emplace_at_root<SceneLightComponent>();
     light.set_name("Light");
     light.set_local_transform(AffineTransform::CreateTranslation({0,1.7,0}));
-    light.lightType = SceneLightComponent::LightType::AreaDisk;    
+    light.lightType = SceneLightComponent::LightType::AreaQuad;
     light.intensity = 3.0f;    
     light.color = { 1,1,1,1 };
     g_cameraController.reset();

@@ -10,10 +10,10 @@ void shade_ltc_quad(SceneLight light, float4 t1, float4 t2, float3x3 Minv, float
     buildOrthonormalBasis(light.direction.xyz, b1, b2);
     
     float3 points[4];
-    points[0] = light.position.xyz - b1 * light.area_quad_disk_extents.x - b2 * light.area_quad_disk_extents.y;
-    points[1] = light.position.xyz + b1 * light.area_quad_disk_extents.x - b2 * light.area_quad_disk_extents.y;
-    points[2] = light.position.xyz + b1 * light.area_quad_disk_extents.x + b2 * light.area_quad_disk_extents.y;
-    points[3] = light.position.xyz - b1 * light.area_quad_disk_extents.x + b2 * light.area_quad_disk_extents.y;
+    points[3] = light.position.xyz - b1 * light.area_quad_disk_extents.x - b2 * light.area_quad_disk_extents.y;
+    points[2] = light.position.xyz + b1 * light.area_quad_disk_extents.x - b2 * light.area_quad_disk_extents.y;
+    points[1] = light.position.xyz + b1 * light.area_quad_disk_extents.x + b2 * light.area_quad_disk_extents.y;
+    points[0] = light.position.xyz - b1 * light.area_quad_disk_extents.x + b2 * light.area_quad_disk_extents.y;
     
     diffuse += c_diffuse * LTC_EvaluateQuad(N, V, P, float3x3(float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1)), points, light.area_quad_disk_twoSided) * light.intensity * light.color.rgb;
     specular += (F0 * t2.x + (splat3(1) - F0) * t2.y) * LTC_EvaluateQuad(N, V, P, Minv, points, light.area_quad_disk_twoSided) * light.intensity * light.color.rgb;

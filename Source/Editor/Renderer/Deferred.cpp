@@ -10,13 +10,14 @@ void DeferredRenderer::Render(SceneView* sceneView, CommandList* ctx)
 {
 	// xxx small object allocation optimization
 	// Profiling shows the handle creatation process is taking ~1ms (!)
-	// RgHandles have known sizes thus implementing a pool allocator shouldn't be too much a hassle	
+	// RgHandles have known sizes thus implementing a pool allocator shouldn't be too much a hassle		
 	ZoneScoped;
-
+	TracyMessageL("RG Ctor");
 	RenderGraph rg(cache);		
 	UINT width = g_Editor.render.width, height = g_Editor.render.height;
 
 #pragma region Resource Handle Setup
+	TracyMessageL("Build Handles");
 	/* BUFFERS */
 	// Opaque / GBuffer
 	auto& gbufferCmds = rg.create<Buffer>(InstanceCull::GetCountedIndirectCmdBufferDesc(L"Opaque GBuffer CMD"));
@@ -144,7 +145,7 @@ void DeferredRenderer::Render(SceneView* sceneView, CommandList* ctx)
 		.viewed = silhouetteDepth
 	});
 #pragma endregion
-
+	TracyMessageL("Insert");
 	pass_Clear.insert_dsv(rg, sceneView, { { &gbufferDepth,&gbufferDepthDsv } , { &silhouetteDepth,&silhouetteDsv } });
 	pass_Clear.insert_rtv(rg, sceneView, { 
 		{ &frameBuffer, &frameBufferRtv }, 
@@ -216,6 +217,7 @@ void DeferredRenderer::Render(SceneView* sceneView, CommandList* ctx)
 			.framebuffer_uav = { &frameBuffer, &frameBufferUav }
 		});
 	}
+	TracyMessageL("Execute");
 	rg.get_epilogue_pass().read(frameBuffer).read(gbufferMaterial);
 	rg.execute(ctx);
 

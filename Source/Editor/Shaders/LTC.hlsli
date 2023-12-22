@@ -246,7 +246,7 @@ float3 LTC_EvaluateQuad(float3 N, float3 V, float3 P, float3x3 Minv, float3 poin
     float scale = LTC_SampleLut(uv, 1).w;
     
     float sum = len * scale;
-    if (!behind && !twoSided)
+    if (behind && !twoSided)
         sum = 0.0;
 
     return splat3(sum);
@@ -275,7 +275,7 @@ float3 LTC_EvaluateDisk(float3 N, float3 V, float3 P, float3x3 Minv, float3 poin
     float3 V1 = 0.5 * (L_[1] - L_[2]);
     float3 V2 = 0.5 * (L_[1] - L_[0]);
 
-    if(!twoSided && dot(cross(V1, V2), C) > 0.0)
+    if(!twoSided && dot(cross(V1, V2), C) < 0.0)
         return splat3(0.0);
 
     // compute eigenvectors of ellipse

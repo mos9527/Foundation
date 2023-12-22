@@ -61,6 +61,8 @@ namespace RHI {
                 m_Pages[it->second].Reset();
                 m_FreePages.push(it->second);
                 it = m_PagesToFree.erase(it);
+                if (it == m_PagesToFree.end())
+                    break;
             }
         }
     }

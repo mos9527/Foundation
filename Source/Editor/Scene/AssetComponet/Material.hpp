@@ -16,6 +16,6 @@ struct AssetMaterialComponent : public AssetComponent {
 	AssetHandle pbrMapImage;
 	AssetHandle emissiveMapImage;
 	bool has_alpha() {
-		return alphaMapped || albedo.w != 1;
+		return alphaMapped;
 	}
 };
