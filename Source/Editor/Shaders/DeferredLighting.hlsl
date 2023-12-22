@@ -43,8 +43,6 @@ void main(uint2 DTid : SV_DispatchThreadID)
     float3 T = TBN._11_12_13;
     float3 B = TBN._21_22_23;
     float3 N = TBN._31_32_33;
-    frameBuffer[DTid] = tangentFrameSmp;
-    return;
 
     float2 UVddx = graidentSmp.rg;
     float2 UVddy = graidentSmp.ba;

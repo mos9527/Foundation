@@ -13,7 +13,7 @@ void AssimpLogger::try_attach() {
 		instance = new AssimpLogger;
 		auto serverity = Assimp::Logger::VERBOSE;
 		Assimp::DefaultLogger::create("", serverity);
-		Assimp::DefaultLogger::get()->attachStream(instance, serverity);
+		Assimp::DefaultLogger::get()->attachStream(instance, 0xffff);
 	}
 }
 // func -> bool. return false to cut the DFS branch
@@ -328,7 +328,7 @@ void SceneImporter::load(UploadContext* ctx, SceneImporterAtomicStatus& statusOu
 	CHECK(std::filesystem::exists(sceneFile) && "File does not exisit!");
 	std::string u8path = (const char*)sceneFile.u8string().c_str();
 	LOG(INFO) << "Importing...";
-	auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace | aiProcess_LimitBoneWeights | aiProcess_PopulateArmatureData | aiProcess_GenNormals | aiProcess_GenUVCoords);	
+	auto imported = importer.ReadFile(u8path, aiProcess_Triangulate | aiProcess_ConvertToLeftHanded | aiProcess_CalcTangentSpace | aiProcess_LimitBoneWeights | aiProcess_PopulateArmatureData | aiProcess_GenNormals);	
 	CHECK(imported && "Failed to import file as an assimp scene!");
 	LOG(INFO) << "Loading...";
 	SceneImporter::load_aiScene(ctx, statusOut, sceneOut, imported, sceneFile.parent_path());

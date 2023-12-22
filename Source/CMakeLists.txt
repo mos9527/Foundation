@@ -15,7 +15,6 @@ file(GLOB DEPENDS_SOURCES_IMGUI "${DEPENDS}/imgui/imgui*.cpp" "${DEPENDS}/imgui/
 add_library(PCH STATIC "${PCH_FILE}.cpp" "${PCH_FILE}.hpp" ${DEPENDS_SOURCES_D3D} ${DEPENDS_SOURCES_IMGUI})
 target_precompile_headers(PCH PUBLIC "${PCH_FILE}.hpp")
 
-find_package(assimp CONFIG REQUIRED)
 target_link_libraries(PCH PUBLIC assimp::assimp)
 
 find_package(directx-headers CONFIG REQUIRED)

@@ -14,3 +14,6 @@
 [submodule "Dependencies/glog"]
 	path = Dependencies/glog
 	url = https://github.com/google/glog
+[submodule "Dependencies/assimp"]
+	path = Dependencies/assimp
+	url = https://github.com/assimp/assimp
