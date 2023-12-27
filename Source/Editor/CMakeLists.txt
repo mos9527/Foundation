@@ -12,14 +12,3 @@ target_include_directories(Editor PRIVATE Runtime)
 target_precompile_headers(Editor REUSE_FROM PCH)
 target_link_libraries(Editor PUBLIC PCH)
 target_link_libraries(Editor PUBLIC Runtime)
-
-# Additional DLLs
-add_custom_command(
-        TARGET Editor POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-        "${DEPENDS}/dxc/dxcompiler.dll"
-        "${DEPENDS}/dxc/dxil.dll"
-        "${DEPENDS}/winpixeventruntime/WinPixEventRuntime.dll"
-
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
-)

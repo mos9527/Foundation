@@ -1,5 +1,5 @@
 #pragma once
-#include "Processor.hpp"
+#include "Engine.hpp"
 #include "ProcessPass/IBLPrefilter.hpp"
 struct HDRIProbeProcessorEvents {
 	enum class Type {

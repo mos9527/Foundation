@@ -1,9 +1,9 @@
-#include "SceneView.hpp"
+#include "GPUScene.hpp"
 #include "../Processor/HDRIProbe.hpp"
 #include "../Processor/LTCFittedLUT.hpp"
 using namespace RHI;
 
-SceneView::SceneView(Device* device) :
+GPUScene::GPUScene(Device* device) :
 	skinnedMeshVertexBuffer(device),	
 	meshInstancesBuffer(device, MAX_INSTANCE_COUNT, L"Upload Instances"),
 	materialsBuffer(device, MAX_MATERIAL_COUNT, L"Upload Materials"),
@@ -154,7 +154,7 @@ SceneLight DumpLightData(SceneLightComponent* light) {
 	sceneLight.area_line_radius = light->area_line_radius;
 	return sceneLight;
 }
-void SceneView::Update(RHI::CommandList* ctx, RHIContext* rhiCtx, SceneContext* sceneCtx, EditorContext* editorCtx) {
+void GPUScene::Update(RHI::CommandList* ctx, RHIContext* rhiCtx, SceneContext* sceneCtx, EditorContext* editorCtx) {
 	ZoneScopedN("Scene View Update");
 	Scene* scene = sceneCtx->scene;
 	CHECK(ctx->GetType() == CommandListType::Direct && "Cannot run Update on anything but Direct command list/queue!");

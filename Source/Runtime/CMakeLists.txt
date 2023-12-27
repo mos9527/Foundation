@@ -10,3 +10,14 @@ target_precompile_headers(Runtime REUSE_FROM PCH)
 target_link_libraries(Runtime PUBLIC PCH)
 
 set_property(TARGET Runtime PROPERTY CXX_STANDARD 20)
+
+# Additional DLLs
+add_custom_command(
+        TARGET Runtime POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+        "${DEPENDS}/dxc/dxcompiler.dll"
+        "${DEPENDS}/dxc/dxil.dll"
+        "${DEPENDS}/winpixeventruntime/WinPixEventRuntime.dll"
+
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
+)

@@ -1,11 +1,10 @@
 #pragma once
-#include "../Context.hpp"
+#include "../../Shaders/Shared.h"
 #include "../Scene/SceneComponent/SkinnedMesh.hpp"
 #include "../../Runtime/Asset/ResourceContainer.hpp"
-#include "../Shaders/Shared.h"
 #include "../Processor/MeshSkinning.hpp"
 
-class SceneView {
+class GPUScene {
 	MeshSkinning skinnedMeshVertexBuffer;
 	// Default
 	std::pair<std::unique_ptr<RHI::Buffer>, std::unique_ptr<RHI::ShaderResourceView>> sceneMeshInstancesBuffer;

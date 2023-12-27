@@ -2,7 +2,7 @@
 #include "Editor.hpp"
 #include "Input/KBMCamera.hpp"
 #include "Win32/Win32IO.hpp"
-#include "Renderer/Deferred.hpp"
+#include "../Runtime/Renderer/Deferred.hpp"
 #include "../../Dependencies/IconsFontAwesome6.h"
 
 using namespace RHI;
