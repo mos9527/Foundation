@@ -13,10 +13,10 @@ struct RgContext {
 	RHI::CommandList* cmd;
 };
 
-typedef unordered_DAG<entt::entity, entt::entity> graph_type;
+typedef matrix_DAG<64LL, ENTT_ID_TYPE> graph_type;
 typedef std::function<void(RgContext&)> RgFunction;
 typedef std::unordered_set<RgHandle> RgResources;
-typedef std::vector<entt::entity> RgRndPasses;
+typedef std::vector<ENTT_ID_TYPE> RgRndPasses;
 
 class RenderGraph;
 struct RenderGraphPass {
@@ -60,6 +60,7 @@ public:
 	inline bool writes_to(RgHandle const& resource) { return writes.contains(resource) || readwrites.contains(resource); }
 };
 
+
 // DAG Graph for managing rendering work
 // * RenderGraph handles (RgHandles) has deterministic hash value (i.e. entity value) per RenderGraph instance
 // * Thus, RenderGraph is meant to be created / destroyed every frame for execution. Which by itself is pretty cheap.
@@ -79,11 +80,11 @@ public:
 	RenderGraph(RenderGraphResourceCache& cache) : cache(cache) {
 		epiloguePass = registry.create();
 		registry.emplace<RenderGraphPass>(epiloguePass, epiloguePass, L"Epilogue");
-		passes.push_back(epiloguePass);
+		passes.push_back(entt::to_integral(epiloguePass));
 	};
 	inline RenderGraphPass& add_pass(const wchar_t* name=L"<unamed>") {
 		entt::entity rg_entity = registry.create();
-		passes.push_back(rg_entity);
+		passes.push_back(entt::to_integral(rg_entity));
 		return registry.emplace<RenderGraphPass>(rg_entity,rg_entity,name);		
 	}
 	// created/transient resources -> stored as handles	

@@ -5,13 +5,13 @@ using namespace RHI;
 void RenderGraph::build_graph() {	
 	ZoneScopedN("RenderGraph Building");
 	layers.clear();
-	for (entt::entity current : passes) {
-		auto& pass = registry.get<RenderGraphPass>(current);
+	for (auto current : passes) {
+		auto& pass = registry.get<RenderGraphPass>(entt::entity(current));
 		// create adjacency list from read-writes
 		if (pass.has_dependencies()) {
 			for (auto& other : passes) {
 				if (other != current) {
-					auto& other_pass = registry.get<RenderGraphPass>(other);
+					auto& other_pass = registry.get<RenderGraphPass>(entt::entity(other));
 					for (auto& write : other_pass.writes) {
 						if (pass.reads_from(write)) {
 							add_edge(other, current);
@@ -27,35 +27,12 @@ void RenderGraph::build_graph() {
 		}
 	}
 	// seperate passes into layers		
-	auto topsorted = topological_sort();
-	if (!topsorted.size() && graph.size()) {
-		// cyclic dependency
-		LOG(ERROR) << "Cyclic dependency in RenderGraph. Consider using import().";
-		LOG(INFO) << "Current Dependency Graph";
-		set_type visited;
-		auto dfs_nodes = [&](auto& func, vertex_type current, uint depth) -> void {
-			auto& pass = registry.get<RenderGraphPass>(current);
-			std::string prefix; for (uint i = 0; i < depth; i++) prefix += '\t';
-			LOG(INFO) << prefix << wstring_to_utf8(pass.name);
-			if (visited.contains(current)) {
-				LOG(ERROR) << prefix << " ^ Potential loop here.";
-				return;
-			}
-			visited.insert(current);
-			for (auto child : graph[current])
-				func(func, child, depth + 1);
-		};
-		for (auto& [vtx, tree] : graph)
-			dfs_nodes(dfs_nodes, vtx, 0);
-#ifdef _DEBUG
-		__debugbreak();
-#endif
-	}
-	auto depths = get_depths(topsorted);
-	uint max_depth = 0;
-	for (auto& [node, depth] : depths) max_depth = std::max(max_depth, depth);
+	auto& topsorted = topological_sort();
+	auto& depths = get_depths(topsorted);
+	ENTT_ID_TYPE max_depth = 0;
+	for (auto depth : depths) max_depth = std::max(max_depth, depth);
 	layers.resize(max_depth + 1);
-	for (auto& [node, depth] : depths) layers[depth].push_back(node);
+	for (auto v : topsorted) layers[depths[v]].push_back(v);
 }
 void RenderGraph::execute(RHI::CommandList* cmd) {
 	ZoneScopedN("RenderGraph Execution");
@@ -68,7 +45,7 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 		// setup resource barriers
 		RgResources reads, writes, readwrites;
 		for (auto entity : layer) {
-			RenderGraphPass& pass = registry.get<RenderGraphPass>(entity);
+			RenderGraphPass& pass = registry.get<RenderGraphPass>(entt::entity(entity));
 			/* reads */
 			reads.insert(pass.reads.begin(), pass.reads.end());
 			/* writes */
@@ -126,7 +103,7 @@ void RenderGraph::execute(RHI::CommandList* cmd) {
 		// all resources barriers & states are ready at this point		
 		cmd->BeginEvent(L"RenderGraph Layer");
 		for (auto entity : layer) {
-			RenderGraphPass& pass = registry.get<RenderGraphPass>(entity);
+			RenderGraphPass& pass = registry.get<RenderGraphPass>(entt::entity(entity));
 			cmd->BeginEvent(pass.name);
 			// invoke!
 			if (pass.has_execute()) {

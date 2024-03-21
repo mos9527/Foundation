@@ -85,5 +85,52 @@ protected:
 	table_type graph;
 };
 
+
+
 template<typename T, typename vertex> using basic_DAG = DAG<T, vertex, std::set<vertex>, std::map<vertex, std::set<vertex>>>;
 template<typename T, typename vertex> using unordered_DAG = DAG<T, vertex, std::unordered_set<vertex>, std::unordered_map<vertex, std::unordered_set<vertex>>>;
+
+template<size_t Size, typename T> struct matrix_DAG {
+private:
+	bool graph[Size][Size]{};
+	size_t n;
+
+	std::vector<T> in, out;
+	std::vector<T> dp;
+	std::vector<T> topsorted;
+public:
+	matrix_DAG(size_t dimension = Size) : n(dimension), in(dimension + 1), out(dimension + 1), dp(dimension + 1), topsorted(dimension) {};
+	void add_edge(T from, T to) {
+		if (!graph[from][to]) {
+			graph[from][to] = 1;
+			out[from]++;
+			in[to]++;
+		}
+	}
+	std::vector<T> const & topological_sort() {
+		topsorted.clear();
+		std::queue<T> S;
+		T cnt = 0;
+		T ans = 0;
+		for (T i = 0; i <= n; i++) {
+			if (in[i] == 0 && out[i] != 0 /* hacky. lone root nodes won't work */) S.push(i), dp[i] = 1;
+		}
+		while (!S.empty()) {
+			T v = S.front(); S.pop();
+			topsorted.push_back(v);
+			for (T out = 0; out <= n; out++) {
+				if (graph[v][out]) {
+					if (--in[out] == 0)
+						S.push(out);
+					T dist = (dp[v] + 1);
+					dp[out] = std::max(dp[out], dist);
+				}
+			}
+		}
+		return topsorted;
+	}
+
+	std::vector<T> const& get_depths(auto&) const {
+		return dp;
+	}
+};
