@@ -1,13 +1,13 @@
-#include <Allocator/ArenaAllocator.hpp>
-#include <Allocator/DefaultAllocator.hpp>
-#include <Allocator/MimallocAllocator.hpp>
+#include <Core/Logging.hpp>
+#include <Core/Allocator/ArenaAllocator.hpp>
+#include <Core/Allocator/DefaultAllocator.hpp>
+#include <Core/Allocator/MimallocAllocator.hpp>
 
 using namespace Foundation::Core;
 constexpr size_t benchCount = 1e2;
 constexpr size_t allocCount = 1e6;
 constexpr size_t arenaSize = 128 * 1024 * 1024; // 128 MB
 
-#include <iostream>
 #include <vector>
 #include <chrono>
 using namespace std;
@@ -24,9 +24,14 @@ template<typename Func> void bench_many(const char* desc, Func&& func) {
 	for (size_t i = 0; i < benchCount; ++i) func();
 	chrono::steady_clock::time_point end = chrono::steady_clock::now();
 	auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);
-	cout << desc << " took " << duration.count() << " ms for " << benchCount << " iterations." << endl;
+    LOG_RUNTIME(Allocator, info, "{}: {} ms", desc, duration.count());
 }
+
+#include <spdlog/sinks/stdout_color_sinks.h>
 int main() {
+    LOG_GET_GLOBAL_SINK()->add_sink(        
+        std::make_shared<spdlog::sinks::stderr_color_sink_mt>()
+    );
 	vector<char> arena(arenaSize);
 	bench_many("Arena", [&]() {
 		ArenaAllocator arenaAllocator(arena.data(), arena.size());

@@ -1,5 +1,5 @@
 #pragma once
-#include <Core.hpp>
+#include <Core/Core.hpp>
 #include <atomic>
 #include <memory>
 #include <stdexcept>
@@ -17,10 +17,10 @@ namespace Foundation {
 			using size_type = std::size_t;
 			using pointer = void*;
 
-			virtual pointer allocate(size_type size) = 0;
-			virtual pointer allocate(size_type size, size_t alignment) = 0;
-			virtual void deallocate(pointer ptr) = 0;
-			virtual void deallocate(pointer ptr, size_type size) = 0;
+			virtual pointer Allocate(size_type size) = 0;
+			virtual pointer Allocate(size_type size, size_t alignment) = 0;
+			virtual void Deallocate(pointer ptr) = 0;
+			virtual void Deallocate(pointer ptr, size_type size) = 0;
 		};
 		
 		template<typename T>
@@ -42,13 +42,13 @@ namespace Foundation {
             StlAllocator(const StlAllocator<U>& other) noexcept : m_resource(other.m_resource) {}
 
             pointer allocate(size_type n) {
-                return static_cast<pointer>(m_resource->allocate(n * sizeof(T), alignof(T)));
+                return static_cast<pointer>(m_resource->Allocate(n * sizeof(T), alignof(T)));
             }
             void deallocate(pointer p, size_type n) noexcept {
-                m_resource->deallocate(p, n * sizeof(T));
+                m_resource->Deallocate(p, n * sizeof(T));
             }
             void deallocate(pointer p) noexcept { 
-                m_resource->deallocate(p, sizeof(T)); 
+                m_resource->Deallocate(p, sizeof(T)); 
             }
 			// Allocators are deemed equal if they point to the same resource
             friend bool operator==(const StlAllocator& lhs, const StlAllocator& rhs) noexcept {

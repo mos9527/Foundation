@@ -1,5 +1,5 @@
 #pragma once
-#include <Allocator/Allocator.hpp>
+#include <Core/Allocator/Allocator.hpp>
 #include <mimalloc.h>
 #include <string>
 
@@ -12,29 +12,29 @@ namespace Foundation {
 				if (m_count.load() > 0)
 					BugCheck(s_BugCheckMemoryLeak);
 			}
-			inline pointer allocate(size_type size) override {
+			inline pointer Allocate(size_type size) override {
 				m_size += size, m_count++;
 				return mi_malloc(size);
 			};
-			inline pointer allocate(size_type size, size_t alignment) override {
+			inline pointer Allocate(size_type size, size_t alignment) override {
 				m_size += size, m_count++;
 				return mi_malloc_aligned(size, alignment);
 			}
-			inline void deallocate(pointer ptr) override {
+			inline void Deallocate(pointer ptr) override {
 				mi_free(ptr);
 				m_count--;
 			}
-			inline void deallocate(pointer ptr, size_type size) override {
+			inline void Deallocate(pointer ptr, size_type size) override {
 				mi_free(ptr);
 				m_count--;
 			}
 			// Returns the total size of memory allocated by mimalloc
 			// Deallocation is not accounted for.
-			inline size_t get_allocated_size() {
+			inline size_t GetAllocatedSize() {
 				return m_size;
 			}
 			// Returns the total number of unreleased allocations made by mimalloc
-			inline size_t get_allocated_count()  {
+			inline size_t GetAllocatedCount()  {
 				return m_count;
 			}
 		private:

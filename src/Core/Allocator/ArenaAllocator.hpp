@@ -1,5 +1,5 @@
 #pragma once
-#include <Allocator/Allocator.hpp>
+#include <Core/Allocator/Allocator.hpp>
 
 namespace Foundation {
 	namespace Core {
@@ -9,16 +9,16 @@ namespace Foundation {
 				m_end = reinterpret_cast<pointer>(reinterpret_cast<char*>(memory) + size);
 			}
 
-			pointer allocate(size_type size) override;
-			pointer allocate(size_type size, size_type alignment) override;
+			pointer Allocate(size_type size) override;
+			pointer Allocate(size_type size, size_type alignment) override;
 
-			inline void deallocate(pointer ptr) { /* nop */ }
-			inline void deallocate(pointer ptr, size_type size) { /* nop */ }
+			inline void Deallocate(pointer ptr) { /* nop */ }
+			inline void Deallocate(pointer ptr, size_type size) { /* nop */ }
 
-			inline size_t get_allocated_size() {
+			inline size_t GetAllocatedSize() {
 				return reinterpret_cast<size_t>(m_current.load()) - reinterpret_cast<size_t>(m_memory);
 			}
-			inline size_t get_free_size() {
+			inline size_t GetFreeSize() {
 				return reinterpret_cast<size_t>(m_end) - reinterpret_cast<size_t>(m_current.load());
 			}
 		private:		
