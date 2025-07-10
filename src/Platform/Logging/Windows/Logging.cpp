@@ -1,6 +1,4 @@
-#pragma once
-#include <Platform/Logging.hpp>
-
+#include <Platform/Logging/Logging.hpp>
 #include <spdlog/sinks/msvc_sink.h>
 namespace Foundation {
     namespace Platform {

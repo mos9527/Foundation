@@ -1,15 +1,21 @@
 #include <Platform/Application.hpp>
-
+#include <Core/Logging.hpp>
 namespace Foundation {
-    namespace Platform {	
-        Application::Window::Window(int width, int height, const char* title) {
+    namespace Platform {
+        void glfw_error_callback(int error, const char* description)
+        {
+            LOG_RUNTIME(GLFW, critical, "GLFW Error: %s", description);
+            Core::BugCheck("GLFW Error");
+        }
+
+        Window::Window(int width, int height, const char* title) {
             glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
             m_window = glfwCreateWindow(width, height, title, NULL, NULL);
         }
-        Application::Window::~Window() {
+        Window::~Window() {
             glfwDestroyWindow(m_window);
         }
-        bool Application::Window::WindowShouldClose() {
+        bool Window::WindowShouldClose() {
             if (!glfwWindowShouldClose(m_window)) {
                 glfwPollEvents();
                 return false;

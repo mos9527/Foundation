@@ -1,20 +1,26 @@
 #include <Core/Logging.hpp>
 #include <Platform/Application.hpp>
-#include <Platform/Logging.hpp>
-#include <Renderer/VkApplication.hpp>
+#include <Platform/Logging/Logging.hpp>
+#include <Platform/RHI/Vulkan/VulkanApplication.hpp>
 using namespace Foundation::Platform;
-using namespace Foundation::Renderer;
 namespace Foundation {
     namespace Editor {
-        constexpr int s_EditorVersion = VK_MAKE_VERSION(
-            FOUNDATION_EDITOR_VERSION_MAJOR,
-            FOUNDATION_EDITOR_VERSION_MINOR,
-            FOUNDATION_EDITOR_VERSION_PATCH
-        );
         int StartApplication(Application& app) {
-            Application::Window window = app.CreateWindow(1920, 1080, "Editor Window");
+            Window window = app.CreateWindow(1920, 1080, "Editor Window");
             // Vulkan init
-            VkApplication vkApp("Editor", "Foundation", s_EditorVersion, VK_API_VERSION_1_3);
+            VulkanApplication vkApp("Editor", "Foundation", VK_API_VERSION_1_4);
+            // Create a Vulkan device
+            auto device = vkApp.EnumerateDevices().front();
+            LOG_RUNTIME(Editor, info, "Using Vulkan Device: {}", device.lock()->GetName());
+            device.lock()->Instantiate(&window);
+            // Create a swap chain
+            auto swapchain = device.lock()->CreateSwapchain(RHISwapchain::SwapchainDesc{
+                "Editor",
+                RHIResourceFormat::R8G8B8A8_UNORM,
+                1920, 1080,
+                3, // Triple buffering
+                RHISwapchain::SwapchainDesc::PresentMode::MAILBOX
+            });            
             while (!window.WindowShouldClose()) {
                 // Main Loop
             }

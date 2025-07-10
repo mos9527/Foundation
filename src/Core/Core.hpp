@@ -6,3 +6,9 @@ namespace Foundation {
 		extern void BugCheck(const char* why);
 	}
 } // namespace Foundation
+
+#ifdef _DEBUG
+#define DEBUG_RUN(expr) expr;   
+#else
+#define DEBUG_RUN(expr) (void)0
+#endif

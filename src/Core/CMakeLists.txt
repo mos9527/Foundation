@@ -31,18 +31,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(glm)
 
-add_library(
-	Foundation_Core 
-	"Allocator/MimallocAllocator.hpp"
-	"Allocator/DefaultAllocator.hpp"
-	"Allocator/Allocator.hpp" 
-	"Allocator/ArenaAllocator.cpp"
-	"Logging.hpp"
-	"Logging.cpp"
-	"Core.cpp"
-	"Math.hpp"
+file(
+    GLOB_RECURSE SOURCES 
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp" 
 )
-
+file(
+    GLOB_RECURSE INCLUDES 
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
+)
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
+add_library(Foundation_Core ${SOURCES} ${INCLUDES})
 target_link_libraries(Foundation_Core PUBLIC glm mimalloc-static fmt::fmt spdlog)
 target_include_directories(
 	Foundation_Core 

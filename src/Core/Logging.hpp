@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/Core.hpp>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/dist_sink.h>
 namespace Foundation {
