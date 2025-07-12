@@ -9,7 +9,7 @@ namespace Foundation {
 			DefaultAllocator() = default;
 			~DefaultAllocator() {
 				if (m_count.load() > 0)
-					BugCheck(s_BugCheckMemoryLeak);
+					BugCheck(sBugCheckMemoryLeak);
 			}
 			inline pointer Allocate(size_type size) override {
 				m_size += size, m_count++;
@@ -25,10 +25,10 @@ namespace Foundation {
 			}
 			inline void Deallocate(pointer ptr, size_type size) override {
 				free(ptr);
-				m_count--;
+                m_count--, m_size -= size;
 			}
 			// Returns the total size of memory allocated by malloc
-			// Deallocation is not accounted for.
+            // Deallocation with raw pointers is not tracked.
 			inline size_t GetAllocatedSize() {
 				return m_size;
 			}

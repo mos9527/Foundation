@@ -9,8 +9,8 @@ namespace Foundation {
 		public:
 			MimallocAllocator() = default;
 			~MimallocAllocator() {
-				if (m_count.load() > 0)
-					BugCheck(s_BugCheckMemoryLeak);
+                if (m_count.load() > 0)
+                    BugCheck(std::exception(sBugCheckMemoryLeak));
 			}
 			inline pointer Allocate(size_type size) override {
 				m_size += size, m_count++;
@@ -26,10 +26,10 @@ namespace Foundation {
 			}
 			inline void Deallocate(pointer ptr, size_type size) override {
 				mi_free(ptr);
-				m_count--;
+                m_count--, m_size -= size;
 			}
 			// Returns the total size of memory allocated by mimalloc
-			// Deallocation is not accounted for.
+			// Deallocation with raw pointers is not tracked.
 			inline size_t GetAllocatedSize() {
 				return m_size;
 			}

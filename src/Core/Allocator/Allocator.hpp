@@ -21,6 +21,8 @@ namespace Foundation {
 			virtual pointer Allocate(size_type size, size_t alignment) = 0;
 			virtual void Deallocate(pointer ptr) = 0;
 			virtual void Deallocate(pointer ptr, size_type size) = 0;
+            virtual size_type GetAllocatedSize() = 0;
+            virtual size_type GetAllocatedCount() = 0;
 		};
 		
 		template<typename T>
@@ -58,5 +60,48 @@ namespace Foundation {
                 return !(lhs == rhs);
             }          
         };
+
+        template<typename T>
+        struct StlDeleter {
+            Allocator* m_resource;
+            void operator()(T* ptr) noexcept {
+                if (ptr) {
+                    std::destroy_at(ptr);
+                    m_resource->Deallocate(ptr, sizeof(T));                
+                }
+            }
+        };
+
+        template<typename T>
+        using UniquePtr = std::unique_ptr<T, StlDeleter<T>>;
+
+        template<typename Base, typename Derived, typename ...Args>
+        UniquePtr<Base> ConstructUniqueBase(Allocator* resource, Args&& ...args) {
+            auto raw = resource->Allocate(sizeof(Derived), alignof(Derived));
+            try {
+                Derived* obj = std::construct_at(static_cast<Derived*>(raw), std::forward<Args>(args)...);
+                return UniquePtr<Base>(obj, StlDeleter<Base>{ resource });
+            }
+            catch (...) {
+                resource->Deallocate(raw, sizeof(Derived));
+                throw;
+            }
+        }
+        template<typename T, typename ...Args>
+        UniquePtr<T> ConstructUnique(Allocator* resource, Args&& ...args) {
+            return ConstructUniqueBase<T, T>(resource, std::forward<Args>(args)...);
+        }
+       
+        template<typename T>
+        using SharedPtr = std::shared_ptr<T>;
+        template<typename Base, typename Derived, typename ...Args>
+        SharedPtr<Base> ConstructSharedBase(Allocator* resource, Args&& ...args) {
+            auto up = ConstructUnique<Derived>(resource, std::forward<Args>(args)...);
+            return { up.release(), StlDeleter<Base>{ resource } };
+        }
+        template<typename T, typename ...Args>
+        SharedPtr<T> ConstructShared(Allocator* resource, Args&& ...args) {
+            return ConstructSharedBase<T, T>(resource, std::forward<Args>(args)...);
+        }
     }
 }

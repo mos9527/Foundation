@@ -4,8 +4,7 @@ namespace Foundation {
     namespace Platform {
         void glfw_error_callback(int error, const char* description)
         {
-            LOG_RUNTIME(GLFW, critical, "GLFW Error: %s", description);
-            Core::BugCheck("GLFW Error");
+            Core::BugCheck(std::runtime_error(description));
         }
 
         Window::Window(int width, int height, const char* title) {

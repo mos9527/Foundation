@@ -12,13 +12,14 @@ namespace Foundation {
 			pointer Allocate(size_type size) override;
 			pointer Allocate(size_type size, size_type alignment) override;
 
-			inline void Deallocate(pointer ptr) { /* nop */ }
-			inline void Deallocate(pointer ptr, size_type size) { /* nop */ }
+            inline void Deallocate(pointer ptr) { m_count--; }
+            inline void Deallocate(pointer ptr, size_type size) { m_count--; }
 
-			inline size_t GetAllocatedSize() {
+			inline size_type GetAllocatedSize() override {
 				return reinterpret_cast<size_t>(m_current.load()) - reinterpret_cast<size_t>(m_memory);
 			}
-			inline size_t GetFreeSize() {
+            inline size_type GetAllocatedCount() override { return m_count; }
+			inline size_type GetFreeSize() {
 				return reinterpret_cast<size_t>(m_end) - reinterpret_cast<size_t>(m_current.load());
 			}
 		private:		
@@ -26,6 +27,7 @@ namespace Foundation {
 			const pointer m_memory; // pointer to the start of the arena memory
 			pointer m_end; // pointer to the end of the arena memory
 			std::atomic<pointer> m_current; // top of the arena memory
+            std::atomic<size_type> m_count = 0; // number of allocations made in the arena
 		};
 	} // namespace Core::Allocator
 }

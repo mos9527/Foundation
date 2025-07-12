@@ -2,12 +2,20 @@
 #include <Core/Core.hpp>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/dist_sink.h>
+#include <spdlog/sinks/ringbuffer_sink.h>
+namespace Foundation {
+    namespace Platform {
+        extern spdlog::sink_ptr GetPlatformDebugLoggingSink();
+    }
+}
 namespace Foundation {
 	namespace Core {
 		namespace Logging {
             // Returns a pointer to the global logging sink.
             // dist_sink can be multiplexed to multiple loggers.
             extern std::shared_ptr<spdlog::sinks::dist_sink_mt> GetLoggingSink();
+            // Returns a pointer to the backtrace logging sink.
+            extern std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> GetBacktraceSink();
 			// Returns a logger with the given name, creating it if it does not exist.
 			// The lifetime of the logger is managed by spdlog, so you do not need to delete it.
             // By default, the logger will log to a ring buffer sink with a size of 1000 messages.
