@@ -9,18 +9,18 @@ namespace Foundation {
                 switch (topology) {
                     case POINT_LIST: return vk::PrimitiveTopology::ePointList;
                     case LINE_LIST: return vk::PrimitiveTopology::eLineList;
-                    case TRIANGLE_STRIP: return vk::PrimitiveTopology::eTriangleList;
+                    case TRIANGLE_STRIP: return vk::PrimitiveTopology::eTriangleStrip;
                     case TRIANGLE_LIST:
                     default:
-                        return vk::PrimitiveTopology::eTriangleStrip;
+                        return vk::PrimitiveTopology::eTriangleList;
                        
                 }
             }
             inline vk::PolygonMode GetVulkanPolygonModeFromDesc(RHIPipelineState::PipelineStateDesc::Rasterizer::FillMode mode) {
                 switch (mode) {
                     case RHIPipelineState::PipelineStateDesc::Rasterizer::FILL_WIREFRAME: return vk::PolygonMode::eLine;
+                    case RHIPipelineState::PipelineStateDesc::Rasterizer::FILL_SOLID: return vk::PolygonMode::eFill;
                     default:
-                        case RHIPipelineState::PipelineStateDesc::Rasterizer::FILL_SOLID: return vk::PolygonMode::eFill;
                         return vk::PolygonMode::ePoint;
                 }
             }

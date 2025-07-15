@@ -167,9 +167,10 @@ RHIDeviceQueue* VulkanDevice::GetDeviceQueue(RHIDeviceQueueType type) const {
         case RHIDeviceQueueType::Present:  return m_queues->Get(m_queues->present);        
         case RHIDeviceQueueType::Compute:  return m_queues->Get(m_queues->compute);
         case RHIDeviceQueueType::Transfer: return m_queues->Get(m_queues->transfer);
-        default:
         case RHIDeviceQueueType::Graphics: return m_queues->Get(m_queues->graphics);
+        default:break;
     }
+    return nullptr;
 }
 
 void VulkanDevice::Instantiate(Window* window) {

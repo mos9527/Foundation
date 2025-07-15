@@ -91,7 +91,7 @@ function(add_slang_shader TARGET)
 endfunction()
 
 set(SHADER_BUILD_DIR "${CMAKE_SOURCE_DIR}/.derived/shaders")
-file(MAKE_DIRECTORY SHADER_BUILD_DIR)
+file(MAKE_DIRECTORY ${SHADER_BUILD_DIR})
 add_slang_shader(
     Shader_Triangle
     SOURCE          "${CMAKE_CURRENT_LIST_DIR}/Triangle.slang"
