@@ -1,12 +1,12 @@
 #include <Core/Logging.hpp>
-#include <Core/Allocator/ArenaAllocator.hpp>
+#include <Core/Allocator/StackAllocator.hpp>
+#include <Core/Allocator/HeapAllocator.hpp>
 #include <Core/Allocator/DefaultAllocator.hpp>
-#include <Core/Allocator/MimallocAllocator.hpp>
 
 using namespace Foundation::Core;
-constexpr size_t benchCount = 1e2;
-constexpr size_t allocCount = 1e6;
-constexpr size_t arenaSize = 128 * 1024 * 1024; // 128 MB
+constexpr size_t benchCount = 5e1;
+constexpr size_t allocCount = 1e7;
+constexpr size_t arenaSize = 512 * 1024 * 1024; // 512 MB
 
 #include <vector>
 #include <chrono>
@@ -22,33 +22,29 @@ auto bench_one(Allocator* allocator) {
 template<typename Func> void bench_many(const char* desc, Func&& func) {
 	chrono::steady_clock::time_point start = chrono::steady_clock::now();
 	for (size_t i = 0; i < benchCount; ++i) func();
-	chrono::steady_clock::time_point end = chrono::steady_clock::now();
-	auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);
-    LOG_RUNTIME(Allocator, info, "{}: {} ms", desc, duration.count());
+    LOG_RUNTIME(Allocator, info, "{}: {} ms", desc,
+        chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count());
 }
 
 #include <spdlog/sinks/stdout_color_sinks.h>
+namespace Foundation::Platform {
+    spdlog::sink_ptr GetPlatformDebugLoggingSink() {
+        return std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
+    }
+}
 int main() {
-    LOG_GET_GLOBAL_SINK()->add_sink(        
-        std::make_shared<spdlog::sinks::stderr_color_sink_mt>()
-    );
-	vector<char> arena(arenaSize);
-	bench_many("Arena", [&]() {
-		ArenaAllocator arenaAllocator(arena.data(), arena.size());
-		bench_one(&arenaAllocator);
+    void* memory = _aligned_malloc(arenaSize, arenaSize); // 64 KiB alignment
+    Allocator::Arena arena(memory, arenaSize);
+	bench_many("Stack ST", [&]() {
+		StackAllocatorSingleThreaded alloc(arena);
+		bench_one(&alloc);
 	});
-	bench_many("Mimalloc", [&]() {
-		MimallocAllocator mimallocAllocator;
-		bench_one(&mimallocAllocator);
+	bench_many("Heap Arena", [&]() {
+        HeapAllocatorSingleThreaded alloc(arena);
+		bench_one(&alloc);
 	});
-	bench_many("Malloc", [&]() {
-		DefaultAllocator defaultAllocator;
-		bench_one(&defaultAllocator);
-	});
-	bench_many("STL", [&]() {	
-		vector<int> vec;
-		for (size_t i = 0; i < allocCount; ++i) {
-			vec.push_back(i);
-		}
+	bench_many("Heap Default", [&]() {
+        HeapAllocatorSingleThreaded alloc;
+		bench_one(&alloc);
 	});
 }

@@ -1,10 +1,12 @@
-#include <Platform/RHI/Vulkan/Details/Resource.hpp>
+#include <Platform/RHI/Vulkan/Resource.hpp>
 #include <Platform/RHI/Vulkan/Device.hpp>
 #include <Platform/RHI/Vulkan/Shader.hpp>
 #include <Platform/RHI/Vulkan/PipelineState.hpp>
+#include <Core/Allocator/StackAllocator.hpp>
 using namespace Foundation::Platform::RHI;
 VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineStateDesc const& desc)
     : RHIPipelineState(device, desc), m_device(device) {
+    Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
     vk::PipelineVertexInputStateCreateInfo vtx{}; // TODO: Binding
     vk::PipelineInputAssemblyStateCreateInfo ia{
         .topology = GetVulkanPrimitiveTopologyFromDesc(desc.topology),
@@ -26,10 +28,10 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
         .rasterizationSamples = GetVulkanSampleCountFromDesc(desc.multisample.sample_count),
         .sampleShadingEnable = desc.multisample.enabled,
     };
-    std::vector<vk::PipelineColorBlendAttachmentState> blend_attachments;
-    std::vector<vk::Format> color_attachment_formats;
+    std::vector<vk::PipelineColorBlendAttachmentState, Core::StlAllocator<vk::PipelineColorBlendAttachmentState>> blend_attachments(alloc.Ptr());
+    std::vector<vk::Format, Core::StlAllocator<vk::Format>> color_attachment_formats(alloc.Ptr());
     for (const auto& attachment : desc.attachments) {
-        color_attachment_formats.push_back(GetVulkanFormatFromRHIFormat(attachment.render_target.format));
+        color_attachment_formats.push_back(vkFormatFromRHIFormat(attachment.render_target.format));
         vk::PipelineColorBlendAttachmentState blend_attachment{
             .blendEnable = attachment.blending.enabled,
             .srcColorBlendFactor = GetVulkanBlendFactorFromDesc(attachment.blending.src_color_blend_factor),
@@ -54,14 +56,19 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
     auto pipeline_layout = vk::raii::PipelineLayout(m_device.GetVkDevice(), vk::PipelineLayoutCreateInfo{
         .setLayoutCount = 0, // No descriptor sets for now
         .pushConstantRangeCount = 0 // No push constants for now
-    });
+    }, m_device.GetVkAllocatorCallbacks());
     vk::PipelineRenderingCreateInfo rendering_create_info{
         .colorAttachmentCount = static_cast<uint32_t>(color_attachment_formats.size()),
         .pColorAttachmentFormats = color_attachment_formats.data()
     };
-    std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
+    std::vector<vk::PipelineShaderStageCreateInfo, Core::StlAllocator<vk::PipelineShaderStageCreateInfo>> shaderStages(alloc.Ptr());
     for (auto& shader : m_desc.shader_stages)
-        shaderStages.push_back(shader.Get<VulkanShaderPipelineModule>()->GetVkPipelineShaderStageCreateInfo());    
+        shaderStages.push_back({
+        .stage = GetVulkanShaderStageFromDesc(shader.desc.stage),
+        .module = shader.shader_module.Get<VulkanShaderModule>()->GetVkShaderModule(),
+        .pName = shader.desc.entry_point.c_str(),
+        .pSpecializationInfo = nullptr // TODO: !! handle specialization info
+    });
     vk::GraphicsPipelineCreateInfo pipelineInfo{ .pNext = &rendering_create_info,
         .stageCount = static_cast<uint32_t>(shaderStages.size()), .pStages = shaderStages.data(),
         .pVertexInputState = &vtx, .pInputAssemblyState = &ia,
@@ -69,5 +76,5 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
         .pMultisampleState = &multisampling, .pColorBlendState = &color_blending,
         .pDynamicState = &dynamic_state, .layout = pipeline_layout, .renderPass = nullptr };
 
-    m_pipeline = vk::raii::Pipeline(m_device.GetVkDevice(), nullptr, pipelineInfo);
+    m_pipeline = vk::raii::Pipeline(m_device.GetVkDevice(), nullptr, pipelineInfo, m_device.GetVkAllocatorCallbacks());
 }   

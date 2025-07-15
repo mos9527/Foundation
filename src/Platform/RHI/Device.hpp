@@ -1,13 +1,50 @@
 #pragma once
-#include <Platform/RHI/Details/Details.hpp>
 #include <Platform/RHI/PipelineState.hpp>
 #include <Platform/RHI/Shader.hpp>
 #include <Platform/RHI/Swapchain.hpp>
-
+#include <Platform/RHI/Command.hpp>
 namespace Foundation {
     namespace Platform {
         namespace RHI {
-            class RHIApplication;
+            class RHIApplication;            
+            class RHIDevice;
+            class RHIDeviceSemaphore;
+            class RHIDeviceFence;
+            class RHIDeviceQueue : public RHIObject {
+            protected:
+                const RHIDevice& m_device;
+            public:
+                RHIDeviceQueue(RHIDevice const& device) : m_device(device) {}
+
+                virtual void WaitIdle() const = 0;
+
+                struct SubmitDesc {
+                    RHIPipelineStage stages;
+                    std::span<const RHIDeviceObjectHandle<RHIDeviceSemaphore>> waits, signals;                    
+                    std::span<const RHICommandPoolHandle<RHICommandList>> cmd_lists;
+                    RHIDeviceObjectHandle<RHIDeviceFence> fence;
+                };
+                virtual void Submit(SubmitDesc const& desc) const = 0;
+
+                struct PresentDesc {
+                    uint32_t image_index;
+                    RHIDeviceObjectHandle<RHISwapchain> swapchain;
+                    std::span<const RHIDeviceObjectHandle<RHIDeviceSemaphore>> waits;
+                };
+                virtual void Present(PresentDesc const& desc) const = 0;
+            };
+            class RHIDeviceSemaphore : public RHIObject {
+            protected:
+                const RHIDevice& m_device;
+            public:
+                RHIDeviceSemaphore(RHIDevice const& device) : m_device(device) {}
+            };
+            class RHIDeviceFence : public RHIObject {
+            protected:
+                const RHIDevice& m_device;
+            public:
+                RHIDeviceFence(RHIDevice const& device) : m_device(device) {}
+            };
             class RHIDevice : public RHIObject {
             protected:
                 const RHIApplication& m_app;
@@ -15,14 +52,6 @@ namespace Foundation {
                 struct DeviceDesc {
                     uint32_t id;
                     std::string name;
-                    // Window to associate with the device, if any.
-                    // A Device without a Window is not guaranteed to support swapchains or presentation.
-                    Window* window = nullptr;
-
-                    inline DeviceDesc& SetWindow(Window* wnd) {
-                        window = wnd;
-                        return *this;
-                    }
                 };
                 RHIDevice(RHIApplication const& app) : m_app(app) {}
                 RHIDevice(RHIDevice const&) = delete;
@@ -39,10 +68,22 @@ namespace Foundation {
                 virtual RHIShaderModule* GetShaderModule(Handle handle) const = 0;
                 virtual void DestroyShaderModule(Handle handle) = 0;
 
-                virtual RHIDeviceScopedObjectHandle<RHIShaderPipelineModule> CreateShaderPipelineModule
-                (RHIShaderPipelineModule::ShaderPipelineModuleDesc const& desc, RHIDeviceObjectHandle<RHIShaderModule> shader_module) = 0;
-                virtual RHIShaderPipelineModule* GetShaderPipelineModule(Handle handle)  const = 0;
-                virtual void DestroyShaderPipelineModule(Handle handle) = 0;
+                virtual RHIDeviceScopedObjectHandle<RHICommandPool> CreateCommandPool(RHICommandPool::PoolDesc type) = 0;
+                virtual RHICommandPool* GetCommandPool(Handle handle) const = 0;
+                virtual void DestroyCommandPool(Handle handle) = 0;
+
+                virtual RHIDeviceQueue* GetDeviceQueue(RHIDeviceQueueType type) const = 0;
+
+                virtual RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> CreateSemaphore() = 0;
+                virtual RHIDeviceSemaphore* GetSemaphore(Handle handle) const = 0;
+                virtual void DestroySemaphore(Handle handle) = 0;
+
+                virtual RHIDeviceScopedObjectHandle<RHIDeviceFence> CreateFence(bool signaled = true) = 0;
+                virtual RHIDeviceFence* GetFence(Handle handle) const = 0;
+                virtual void DestroyFence(Handle handle) = 0;
+
+                virtual void ResetFences(std::span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) = 0;
+                virtual void WaitForFences(std::span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) = 0;
             };
 
             template<> struct RHIObjectTraits<RHISwapchain> {
@@ -69,12 +110,28 @@ namespace Foundation {
                     device->DestroyShaderModule(handle);
                 }
             };
-            template<> struct RHIObjectTraits<RHIShaderPipelineModule> {
-                static RHIShaderPipelineModule* Get(RHIDevice const* device, Handle handle) {
-                    return device->GetShaderPipelineModule(handle);
+            template<> struct RHIObjectTraits<RHICommandPool> {
+                static RHICommandPool* Get(RHIDevice const* device, Handle handle) {
+                    return device->GetCommandPool(handle);
                 }
                 static void Destroy(RHIDevice* device, Handle handle) {
-                    device->DestroyShaderPipelineModule(handle);
+                    device->DestroyCommandPool(handle);
+                }
+            };
+            template<> struct RHIObjectTraits<RHIDeviceSemaphore> {
+                static RHIDeviceSemaphore* Get(RHIDevice const* device, Handle handle) {
+                    return device->GetSemaphore(handle);
+                }
+                static void Destroy(RHIDevice* device, Handle handle) {
+                    device->DestroySemaphore(handle);
+                }
+            };
+            template<> struct RHIObjectTraits<RHIDeviceFence> {
+                static RHIDeviceFence* Get(RHIDevice const* device, Handle handle) {
+                    return device->GetFence(handle);
+                }
+                static void Destroy(RHIDevice* device, Handle handle) {
+                    device->DestroyFence(handle);
                 }
             };
         }

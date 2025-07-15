@@ -1,11 +1,13 @@
 #pragma once
-#include <Platform/RHI/Details/Details.hpp>
-#include <Platform/RHI/Details/Resource.hpp>
+#include <Platform/RHI/Common.hpp>
 
 namespace Foundation {
     namespace Platform {
         namespace RHI {
             class RHIDevice;
+            class RHIImage;
+            class RHIDeviceSemaphore;
+            class RHIDeviceFence;
             class RHISwapchain : public RHIObject {
             protected:
                 const RHIDevice& m_device;
@@ -13,7 +15,7 @@ namespace Foundation {
                 struct SwapchainDesc {
                     enum PresentMode {
                         FIFO, // V-Sync
-                        MAILBOX, // Triple buffering
+                        MAILBOX, // N buffering
                         IMMEDIATE // No V-Sync (tearing allowed)
                     };
                     std::string name;
@@ -27,8 +29,13 @@ namespace Foundation {
                     PresentMode present_mode;
                 };
                 const SwapchainDesc m_desc;
-
+                virtual std::span<RHIImage* const> GetImages() const = 0;
                 RHISwapchain(RHIDevice const& device, SwapchainDesc const& desc) : m_device(device), m_desc(desc) {}
+                virtual size_t GetNextImage(
+                    uint64_t timeout_ns,
+                    RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore,
+                    RHIDeviceObjectHandle<RHIDeviceFence> fence
+                ) = 0;
             };
         }
     }

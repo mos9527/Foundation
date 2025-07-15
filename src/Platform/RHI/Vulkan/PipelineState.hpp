@@ -85,6 +85,17 @@ namespace Foundation {
                         return vk::BlendOp::eReverseSubtract;
                 }
             }
+
+            inline vk::ShaderStageFlagBits GetVulkanShaderStageFromDesc(RHIPipelineState::PipelineStateDesc::ShaderStage::StageDesc::StageType stage) {
+                using enum RHIPipelineState::PipelineStateDesc::ShaderStage::StageDesc::StageType;
+                switch (stage) {
+                    case FRAGMENT: return vk::ShaderStageFlagBits::eFragment;
+                    case COMPUTE: return vk::ShaderStageFlagBits::eCompute;
+                    case VERTEX:
+                    default:
+                        return vk::ShaderStageFlagBits::eVertex;
+                }
+            }
             class VulkanDevice;
             class VulkanPipelineState : public RHIPipelineState {
                 const VulkanDevice& m_device;
@@ -95,6 +106,8 @@ namespace Foundation {
 
                 inline bool IsValid() const { return true;  } // TODO
                 inline const char* GetName() const { return m_desc.name.c_str(); }
+
+                inline auto const& GetVkPipeline() const { return m_pipeline; }
             };
         }
     }

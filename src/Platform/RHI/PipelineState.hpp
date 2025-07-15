@@ -1,7 +1,7 @@
 #pragma once
-#include <Platform/RHI/Details/Details.hpp>
-#include <Platform/RHI/Details/Resource.hpp>
+#include <Platform/RHI/Common.hpp>
 #include <Platform/RHI/Shader.hpp>
+
 namespace Foundation {
     namespace Platform {
         namespace RHI {
@@ -20,48 +20,48 @@ namespace Foundation {
                         POINT_LIST,
                         TRIANGLE_LIST,
                         TRIANGLE_STRIP
-                    } topology;
+                    } topology{ TRIANGLE_LIST };
                     // Viewport
                     struct Viewport {
-                        float x, y, width, height;
-                        float min_depth, max_depth;
-                    } viewport;
+                        float x = 0, y = 0, width, height;
+                        float min_depth = 0.0, max_depth = 1.0;
+                    } viewport{};
                     // Scissor
                     struct Scissor {
-                        int32_t x, y, width, height;
-                    } scissor;
+                        int32_t x = 0, y = 0, width, height;
+                    } scissor{};
                     // Rasterizer
                     struct Rasterizer {
                         enum FillMode {
                             FILL_WIREFRAME,
                             FILL_SOLID
-                        } fill_mode;
+                        } fill_mode{ FILL_SOLID };
                         enum CullMode {
                             CULL_NONE,
                             CULL_FRONT,
                             CULL_BACK
-                        } cull_mode;
+                        } cull_mode{ CULL_BACK };
                         enum FrontFace {
                             FF_COUNTER_CLOCKWISE,
                             FF_CLOCKWISE
-                        } front_face;
-                        bool enable_depth_bias;
-                        float depth_bias;
-                        float line_fill_width;
-                    } rasterizer;
+                        } front_face{ FF_CLOCKWISE };
+                        bool enable_depth_bias{ false };
+                        float depth_bias = 1.0;
+                        float line_fill_width = 1.0;
+                    } rasterizer{};
                     // MSAA
                     struct Multisample {
                         bool enabled;
                         enum Count {
                             e1, e2, e4, e8, e16
                         } sample_count; // 1, 2, 4, 8, etc.
-                    } multisample;
+                    } multisample{};
                     // Depth Stencil
                     // !! TODO
                     // Attachments/Alpha Blending
                     struct Attachment {
                         struct Blending {
-                            bool enabled;
+                            bool enabled{ false };
                             enum BlendFactor {
                                 ZERO,
                                 ONE,
@@ -79,15 +79,29 @@ namespace Foundation {
                                 SUBTRACT,
                                 REVERSE_SUBTRACT
                             } color_blend_op;
-                            float blend_constant[4]; // RGBA
+                            float blend_constant[4]{}; // RGBA
                         } blending;
                         struct RenderTarget {
-                            RHIResourceFormat format;
-                        } render_target;
+                            RHIResourceFormat format{ RHIResourceFormat::Undefined };
+                        } render_target{};
                     };
-                    std::vector<Attachment> attachments;
+                    std::span<const Attachment> attachments;
                     // Stages
-                    std::vector<RHIDeviceObjectHandle<RHIShaderPipelineModule>> shader_stages;
+                    struct ShaderStage {
+                        struct StageDesc {
+                            enum StageType {
+                                VERTEX,
+                                FRAGMENT,
+                                COMPUTE
+                            } stage;
+                            std::string entry_point;
+                            struct SpecializationInfo {
+                                // !! TODO
+                            } specialization_info;
+                        } desc;
+                        RHIDeviceObjectHandle<RHIShaderModule> shader_module;
+                    };
+                    std::span<const ShaderStage> shader_stages;
                 };
                 const PipelineStateDesc m_desc;
 

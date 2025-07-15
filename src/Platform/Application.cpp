@@ -1,5 +1,6 @@
 #include <Platform/Application.hpp>
 #include <Core/Logging.hpp>
+#include "Application.hpp"
 namespace Foundation {
     namespace Platform {
         void glfw_error_callback(int error, const char* description)

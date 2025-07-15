@@ -1,4 +1,5 @@
 #pragma once
+#include <span>
 #include <Platform/Application.hpp>
 #include <Core/Core.hpp>
 #include <Core/Bits/FreeList.hpp>
@@ -8,11 +9,18 @@ namespace Foundation {
     namespace Platform {
         namespace RHI {
             using Handle = uint64_t;
+            constexpr static Handle kInvalidHandle = static_cast<Handle>(-1);
+            /// <summary>
+            /// Base class for all RHI objects.
+            /// RHI Objects are non-copyable, and must be derived from this class.
+            /// </summary>
             class RHIObject {
             public:
                 RHIObject() = default;
                 RHIObject(RHIObject const&) = delete;
                 RHIObject& operator=(const RHIObject&) = delete;
+                RHIObject(RHIObject&&) = default;
+                RHIObject& operator=(RHIObject&&) = default;
                 /// <summary>
                 /// Checks whether the object is in a valid state.
                 /// </summary>
@@ -38,14 +46,15 @@ namespace Foundation {
             /// </summary>
             template<typename Factory, typename T> class RHIHandle {
             public:
-                constexpr static Handle kInvalidHandle = -1;
                 ///
                 Factory* m_factory{ nullptr };
                 Handle m_handle{ kInvalidHandle };
                 /// <summary>
-                /// Retrieves a pointer to a device object associated with the current handle.
-                /// </summary>               
-                template<std::derived_from<T> U = T> U* Get() const {
+                /// Retrives the underlying RHIObject pointer.
+                /// It is undefined behaviour to use the returned pointer after the underlying resource has been destroyed.                
+                /// </summary>
+                /// <typeparam name="U">Pointer type to retrive as. U is required to be castable from T</typeparam>                
+                template<typename U = T> U* Get() const {
                     auto ptr = RHIObjectTraits<T>::Get(m_factory, m_handle);
                     return static_cast<U*>(ptr);
                 }
@@ -57,6 +66,9 @@ namespace Foundation {
                 constexpr operator bool() const noexcept { return IsValid(); }
                 bool IsFrom(const Factory* factory) const { return m_factory == factory; }
                 void Invalidate() { m_handle = kInvalidHandle; }
+                bool operator==(const RHIHandle& other) const {
+                    return m_factory == other.m_factory && m_handle == other.m_handle;
+                }
             };
             /// <summary>
             /// Scoped move-only RAII handle wrapper for RHI Objects.
@@ -65,21 +77,46 @@ namespace Foundation {
                 Factory* m_factory{ nullptr };
                 RHIHandle<Factory, T> m_underlying{};
             public:
-                RHIScopedHandle(Factory* factory, Handle handle) : m_underlying{ factory, handle } {}
+                RHIScopedHandle() {};
+                RHIScopedHandle(Factory* factory, Handle handle) : m_factory(factory), m_underlying{ factory, handle } {}                
                 RHIScopedHandle(RHIScopedHandle&& other) noexcept
                     : m_factory(other.m_factory), m_underlying(std::move(other.m_underlying)) {
                     other.m_factory = nullptr;
                     other.m_underlying.Invalidate();
                 }
+                RHIScopedHandle& operator=(RHIScopedHandle&& other) noexcept {
+                    if (this != &other) {
+                        m_factory = other.m_factory;
+                        m_underlying = other.m_underlying;
+                        other.m_factory = nullptr;
+                        other.m_underlying.Invalidate();
+                    }
+                    return *this;
+                }
+                /// <summary>
+                /// Releases the underlying RHIHandle, invalidating the scoped handle.
+                /// The resource will never be destroyed, and the handle can be used independently.
+                /// </summary>               
+                RHIHandle<Factory, T> Release() {
+                    RHIHandle<Factory, T> handle = m_underlying;
+                    m_factory = nullptr, m_underlying.Invalidate();
+                    return handle;
+                }
                 /// <summary>
                 /// Constructs a RHIHandle as a view to the underlying RHIHandle
                 /// It is undefined behaviour to use the created handle after the RHIScopedHandle has been destroyed.            
                 /// </summary>
-                RHIHandle<Factory, T> Get() const {
+                RHIHandle<Factory, T> const& Get() const {
                     return m_underlying;
                 }
-                RHIHandle<Factory, T> operator()() const {
+                RHIHandle<Factory, T> const& operator()() const {
                     return Get();
+                }
+                T* GetPtr() const {
+                    return m_underlying.Get<T>();
+                }
+                T* operator->() const {
+                    return GetPtr();
                 }
                 RHIScopedHandle(const RHIScopedHandle&) = delete;
                 RHIScopedHandle& operator=(const RHIScopedHandle&) = delete;
@@ -91,35 +128,52 @@ namespace Foundation {
             /// <summary>
             /// Storage/Object dereference faclity for RHI Objects
             /// </summary>
-            class RHIObjectStorage {
+            template<typename Base = RHIObject> class RHIObjectStorage {
                 Core::Allocator* m_allocator;
-                Core::Bits::FreeDenseMap<Handle, RHIObject> m_objects;
+                Core::Bits::FreeDenseMap<Handle, Base> m_objects;
             public:
                 RHIObjectStorage(Core::Allocator* allocator) : m_allocator(allocator), m_objects(allocator) {};
+                RHIObjectStorage(Core::Allocator* allocator, size_t reserve_size) :
+                    m_allocator(allocator), m_objects(allocator, reserve_size) {};
                 /// <summary>
                 /// Creates specified RHIObject of derived type T and retrives its handle
                 /// </summary>
                 /// <returns>The newly allocated Handle of the said RHIObject.</returns>
-                template<typename T, typename ...Args> Handle CreateObject(Args&&... args) {
+                template<typename U, typename ...Args> Handle CreateObject(Args&&... args) {
                     auto handle = m_objects.pop();
                     auto& value = m_objects.at(handle);
-                    value = Core::ConstructUniqueBase<RHIObject, T>(m_allocator, std::forward<Args>(args)...);
+                    value = Core::ConstructUniqueBase<Base, U>(m_allocator, std::forward<Args>(args)...);
                     return handle;
                 }
                 /// <summary>
                 /// Retrives the raw pointer to the object within the storage.                
                 /// </summary>
-                /// <typeparam name="T">Pointer type to cast to.</typeparam>
+                /// <typeparam name="U">Pointer type to cast to.</typeparam>
                 /// <returns>The raw pointer.</returns>
-                template<std::derived_from<RHIObject> T> T* GetObjectPtr(Handle handle) const {
-                    return static_cast<T*>(m_objects.at(handle).get());
+                template<typename U = Base> U* GetObjectPtr(Handle handle) const {
+                    if (handle == kInvalidHandle)
+                        return nullptr;
+                    return static_cast<U*>(m_objects.at(handle).get());
                 }
                 /// <summary>
                 /// Destorys the object associated with the given handle, and frees the handle for reuse.
                 /// </summary>
                 /// <param name="handle"></param>
-                inline void DestoryObject(Handle handle) {
+                inline void DestroyObject(Handle handle) {
                     m_objects.erase(handle);
+                }
+                /// <summary>
+                /// Removes all elements from the m_objects container.
+                /// Using handles acquired earlier will result in undefined behaviour.
+                /// </summary>
+                inline void Clear() {
+                    m_objects.clear();
+                }
+                /// <summary>
+                /// Number of objects currently stored in the storage.
+                /// </summary>                
+                inline size_t Allocation() const {
+                    return m_objects.allocation() > 0;
                 }
             };
         }

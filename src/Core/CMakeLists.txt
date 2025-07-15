@@ -41,6 +41,14 @@ file(
 )
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 add_library(Foundation_Core ${SOURCES} ${INCLUDES})
+target_compile_definitions(
+	mimalloc-static
+	PRIVATE
+	MI_BUILD_RELEASE
+	# Always build in Release mode for mimalloc
+	# e.g. OOM Allocation in Release produces nullptr,
+	# but in Debug causes segfault due to asserts.
+)
 target_link_libraries(Foundation_Core PUBLIC glm mimalloc-static fmt::fmt spdlog)
 target_include_directories(
 	Foundation_Core 

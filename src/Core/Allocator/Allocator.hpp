@@ -6,26 +6,55 @@
 
 namespace Foundation {
 	namespace Core {		
-		inline void* AlignUp(void* value, size_t alignment) {
-			return reinterpret_cast<void*>((reinterpret_cast<size_t>(value) + alignment - 1) & ~(alignment - 1));
+		inline size_t AlignUp(size_t value, size_t alignment) {
+            return (value + alignment - 1) & ~(alignment - 1);
 		}
-		inline void* AlignDown(void* value, size_t alignment) {
-			return reinterpret_cast<void*>(reinterpret_cast<size_t>(value) & ~(alignment - 1));
+		inline size_t AlignDown(size_t value, size_t alignment) {
+			return (value) & ~(alignment - 1);
 		}
+        typedef size_t CounterSingleThreaded;
+        typedef std::atomic<size_t> CounterMultiThreaded;
 		class Allocator {			
 		public:
 			using size_type = std::size_t;
 			using pointer = void*;
+            struct Arena {
+                pointer memory;
+                size_type size;
+            };
 
 			virtual pointer Allocate(size_type size) = 0;
 			virtual pointer Allocate(size_type size, size_t alignment) = 0;
-			virtual void Deallocate(pointer ptr) = 0;
 			virtual void Deallocate(pointer ptr, size_type size) = 0;
-            virtual size_type GetAllocatedSize() = 0;
-            virtual size_type GetAllocatedCount() = 0;
+            virtual void Deallocate(pointer ptr) = 0;
+            virtual pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) = 0;
+
+            inline Arena AllocateArena(size_type size, size_t alignment) { return { Allocate(size, alignment), size }; }
+            inline Arena AllocateArena(size_type size) { return { Allocate(size), size }; }
+            inline void DeallocateArena(Arena arena) {
+                if (arena.memory) 
+                    Deallocate(arena.memory, arena.size);
+            }
+            virtual size_type GetUsedMemory() const noexcept = 0;
+
+            inline Allocator* Ptr() { return this; }
 		};
+        struct ScopedArena {
+            Allocator* resource{ nullptr };
+            Allocator::Arena arena;
+            ScopedArena(Allocator* res, size_t size, size_t alignment = alignof(std::max_align_t)) :
+                resource(res), arena(res->AllocateArena(size, alignment)) {};
+            ~ScopedArena() { resource->DeallocateArena(arena); }
+            constexpr operator Allocator::Arena() const { return arena; }
+            constexpr operator bool() const noexcept { return arena.memory != nullptr; }
+        };
+        constexpr size_t kDefaultStackArenaSize = 12 * 1024; // 12 KiB
+        template<size_t Size = kDefaultStackArenaSize> struct StackArena {
+            alignas(std::max_align_t) std::byte data[Size];
+            constexpr operator Allocator::Arena() { return { reinterpret_cast<void*>(data), Size }; }
+        };
 		
-		template<typename T>
+		template<typename T = void>
         class StlAllocator {
             Allocator* m_resource;
         public:
@@ -39,7 +68,7 @@ namespace Foundation {
 
             template<typename U> friend class StlAllocator; // Rebind ctor
             template<typename U> struct rebind { using other = StlAllocator<U>; };
-            StlAllocator(Allocator* resource) noexcept : m_resource(resource) {}
+            StlAllocator(Allocator* resource) noexcept : m_resource(resource) {}            
             template<typename U>
             StlAllocator(const StlAllocator<U>& other) noexcept : m_resource(other.m_resource) {}
 
@@ -102,6 +131,6 @@ namespace Foundation {
         template<typename T, typename ...Args>
         SharedPtr<T> ConstructShared(Allocator* resource, Args&& ...args) {
             return ConstructSharedBase<T, T>(resource, std::forward<Args>(args)...);
-        }
+        }        
     }
 }

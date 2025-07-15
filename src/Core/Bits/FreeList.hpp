@@ -10,7 +10,11 @@ namespace Foundation {
             template<typename T> class FreeList {
                 std::vector<T, StlAllocator<T>> m_free;
                 T m_top = 0;
+                size_t m_allocated{ 0 };
             public:
+                void reserve(size_t size) {
+                    m_free.reserve(size);
+                }
                 FreeList(Allocator* alloc) : m_free(StlAllocator<T>(alloc)) {}
                 /// <summary>
                 /// Pops a value from the free list.
@@ -19,13 +23,26 @@ namespace Foundation {
                 /// <returns></returns>
                 T pop() {
                     if (m_free.empty())
-                        push(m_top++);
+                        m_free.push_back(m_top++);
                     T value = m_free.back();
                     m_free.pop_back();
+                    m_allocated++;
                     return value;
                 }
                 void push(T value) {
                     m_free.push_back(value);
+                    m_allocated--;
+                }
+                size_t size() const {
+                    return m_free.size();
+                }
+                void clear() {
+                    m_free.clear();
+                    m_top = 0;
+                    m_allocated = 0;
+                }
+                size_t allocation() const {
+                    return m_allocated;
                 }
             };
 
@@ -44,7 +61,14 @@ namespace Foundation {
                         m_values.resize(key + 1);
                 }
             public:
+                void reserve(size_t size) {
+                    m_keys.reserve(size);
+                    m_values.reserve(size);
+                }
                 FreeDenseMap(Allocator* alloc) : m_keys(alloc), m_values(StlAllocator<value_type>(alloc)) {}
+                FreeDenseMap(Allocator* alloc, size_t reserve_size): FreeDenseMap(alloc) {
+                    reserve(reserve_size);
+                }
                 /// <summary>
                 /// Pops a Key from the free list and returns it.
                 /// If the free list is empty, a new key is allocated.
@@ -77,6 +101,16 @@ namespace Foundation {
                 void erase(K key) {
                     m_values[key].reset();
                     push(key);
+                }
+                size_t size() const {
+                    return m_keys.size();
+                }
+                void clear() {
+                    m_keys.clear();
+                    m_values.clear();
+                }
+                size_t allocation() const {
+                    return m_keys.allocation();
                 }
             };
         }
