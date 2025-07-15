@@ -150,7 +150,3 @@ void Renderer::Draw() {
         .waits = { &m_sync_draw.Get(), 1 }
         });
 }
-Renderer::~Renderer() {
-    // TODO: !!
-    m_queue->WaitIdle();
-}

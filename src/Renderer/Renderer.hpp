@@ -30,7 +30,6 @@ namespace Foundation {
         public:
             Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator* allocator);
             void Draw();
-            ~Renderer();
         };
     }
 }
