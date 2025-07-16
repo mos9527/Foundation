@@ -85,7 +85,7 @@ namespace Foundation {
                             RHIResourceFormat format{ RHIResourceFormat::Undefined };
                         } render_target{};
                     };
-                    std::span<const Attachment> attachments;
+                    Core::StlSpan<const Attachment> attachments;
                     // Stages
                     struct ShaderStage {
                         struct StageDesc {
@@ -101,7 +101,7 @@ namespace Foundation {
                         } desc;
                         RHIDeviceObjectHandle<RHIShaderModule> shader_module;
                     };
-                    std::span<const ShaderStage> shader_stages;
+                    Core::StlSpan<const ShaderStage> shader_stages;
                 };
                 const PipelineStateDesc m_desc;
 

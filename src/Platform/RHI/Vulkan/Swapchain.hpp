@@ -2,6 +2,7 @@
 #include <Platform/RHI/Swapchain.hpp>
 #include <Platform/RHI/Vulkan/Common.hpp>
 #include <Platform/RHI/Vulkan/Resource.hpp>
+#include <Core/Allocator/StlContainers.hpp>
 namespace Foundation {
     namespace Platform {
         namespace RHI {
@@ -23,12 +24,12 @@ namespace Foundation {
                 vk::SwapchainCreateInfoKHR GetSwapchainCreateInfo();
 
                 RHIObjectStorage<VulkanImage> m_images;
-                std::vector<RHIImage*, Core::StlAllocator<RHIImage*>> m_images_ptrs;
+                Core::StlVector<RHIImage*> m_images_ptrs;
                 void Instantiate();
             public:
                 VulkanSwapchain(const VulkanDevice& device, SwapchainDesc const& desc);
 
-                std::span<RHIImage* const> GetImages() const override;
+                Core::StlSpan<RHIImage* const> GetImages() const override;
                 inline bool IsValid() const override { return m_swapchain != nullptr; }
                 inline const char* GetName() const override { return m_desc.name.c_str(); }
 

@@ -110,8 +110,8 @@ namespace Foundation {
                 RHIDeviceFence* GetFence(Handle handle) const override;
                 void DestroyFence(Handle handle) override;
 
-                void ResetFences(std::span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) override;
-                void WaitForFences(std::span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) override;
+                void ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) override;
+                void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) override;
 
                 inline const char* GetName() const override { return m_properties.deviceName.data(); }
                 inline bool IsValid() const override { return m_device != nullptr; }

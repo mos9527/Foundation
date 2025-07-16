@@ -16,7 +16,7 @@ namespace Foundation {
                 VulkanApplication vkApp("Editor", "Foundation", VK_API_VERSION_1_4, &g_Allocator);
                 Window window = app.CreateWindow(1920, 1080, "Editor Window");
                 auto device = vkApp.CreateDevice(vkApp.EnumerateDevices()[0], &window);
-                Renderer::Renderer renderer(device.Get(), g_Allocator.Ptr());
+                Renderer::Renderer renderer(device, g_Allocator.Ptr());
                 while (!window.WindowShouldClose()) {
                     // Main Loop
                     renderer.Draw();

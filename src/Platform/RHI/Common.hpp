@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <Core/Bits/Enums.hpp>
+#include <Core/Allocator/StlContainers.hpp>
 #include <Platform/RHI/Details/Details.hpp>
 namespace Foundation {
     namespace Platform {

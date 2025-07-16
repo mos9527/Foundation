@@ -2,6 +2,7 @@
 #include <Platform/RHI/Vulkan/Device.hpp>
 #include <Platform/RHI/Vulkan/Shader.hpp>
 #include <Platform/RHI/Vulkan/PipelineState.hpp>
+#include <Core/Allocator/StlContainers.hpp>
 #include <Core/Allocator/StackAllocator.hpp>
 using namespace Foundation::Platform::RHI;
 VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineStateDesc const& desc)
@@ -28,8 +29,8 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
         .rasterizationSamples = GetVulkanSampleCountFromDesc(desc.multisample.sample_count),
         .sampleShadingEnable = desc.multisample.enabled,
     };
-    std::vector<vk::PipelineColorBlendAttachmentState, Core::StlAllocator<vk::PipelineColorBlendAttachmentState>> blend_attachments(alloc.Ptr());
-    std::vector<vk::Format, Core::StlAllocator<vk::Format>> color_attachment_formats(alloc.Ptr());
+    Core::StlVector<vk::PipelineColorBlendAttachmentState> blend_attachments(alloc.Ptr());
+    Core::StlVector<vk::Format> color_attachment_formats(alloc.Ptr());
     for (const auto& attachment : desc.attachments) {
         color_attachment_formats.push_back(vkFormatFromRHIFormat(attachment.render_target.format));
         vk::PipelineColorBlendAttachmentState blend_attachment{
@@ -61,7 +62,7 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
         .colorAttachmentCount = static_cast<uint32_t>(color_attachment_formats.size()),
         .pColorAttachmentFormats = color_attachment_formats.data()
     };
-    std::vector<vk::PipelineShaderStageCreateInfo, Core::StlAllocator<vk::PipelineShaderStageCreateInfo>> shaderStages(alloc.Ptr());
+    Core::StlVector<vk::PipelineShaderStageCreateInfo> shaderStages(alloc.Ptr());
     for (auto& shader : m_desc.shader_stages)
         shaderStages.push_back({
         .stage = GetVulkanShaderStageFromDesc(shader.desc.stage),

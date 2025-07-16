@@ -1,6 +1,7 @@
 #include <Platform/RHI/Vulkan/Application.hpp>
 #include <Platform/RHI/Vulkan/Device.hpp>
 #include <Core/Logging.hpp>
+using namespace Foundation;
 using namespace Foundation::Platform::RHI;
 const char* kVulkanInstanceExtensions[] = {
     VK_KHR_SURFACE_EXTENSION_NAME,
@@ -40,7 +41,8 @@ VulkanApplication::VulkanApplication(const char* appName, const char* engineName
     if (!extensions) {
         throw std::runtime_error("Failed to get required Vulkan instance extensions");
     }
-    std::vector<const char*> instanceExtensions(extensions, extensions + count);
+    Core::StlVector<const char*> instanceExtensions(m_allocator);
+    instanceExtensions.insert(instanceExtensions.end(), extensions, extensions + count);
     // Add our own extensions
     instanceExtensions.insert(
         instanceExtensions.end(),
@@ -71,7 +73,7 @@ VulkanApplication::VulkanApplication(const char* appName, const char* engineName
     });
 }
 
-std::span<const RHIDevice::DeviceDesc> VulkanApplication::EnumerateDevices() const {
+Core::StlSpan<const RHIDevice::DeviceDesc> VulkanApplication::EnumerateDevices() const {
     return { m_devices.begin(), m_devices.end() };
 }
 

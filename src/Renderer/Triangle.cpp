@@ -4,10 +4,10 @@
 using namespace Foundation::Platform::RHI;
 using namespace Foundation::Renderer;
 using namespace Foundation::Core;
-std::vector<char, StlAllocator<char>> ReadFile(std::filesystem::path const& path, Allocator* allocator) {
+StlVector<char> ReadFile(std::filesystem::path const& path, Allocator* allocator) {
     std::ifstream file(path, std::ios::ate | std::ios::binary);
     CHECK(file.good() && "failed to open file");
-    std::vector<char, StlAllocator<char>> data(allocator);
+    StlVector<char> data(allocator);
     data.resize(file.tellg());
     file.seekg(0, std::ios::beg);
     file.read(data.data(), static_cast<std::streamsize>(data.size()));
@@ -15,7 +15,8 @@ std::vector<char, StlAllocator<char>> ReadFile(std::filesystem::path const& path
     return data;
 }
 Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator* allocator)
-    : m_device(device), m_allocator(allocator), m_swapchain_imageviews(allocator) {
+    : m_device(device), m_allocator(allocator), m_swapchain_imageviews(allocator),
+    m_sync_present(allocator), m_sync_draw(allocator), m_fence_draw(allocator), m_cmd(allocator) {
     // Swapchain & sync primitives setup
     m_swapchain = m_device->CreateSwapchain(RHISwapchain::SwapchainDesc{
         .format = RHIResourceFormat::R8G8B8A8_UNORM,
@@ -24,11 +25,16 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
         .buffer_count = 3,
         .present_mode = RHISwapchain::SwapchainDesc::PresentMode::MAILBOX,
         });
-    m_sync_present = m_device->CreateSemaphore();
-    m_sync_draw = m_device->CreateSemaphore();
-    m_fence_draw = m_device->CreateFence(true /* signaled */);
     m_queue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
+    m_cmd_pool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
+        .queue = RHIDeviceQueueType::Graphics,
+        .type = RHICommandPoolType::Persistent
+    });
     for (auto const& image : m_swapchain->GetImages()) {
+        m_sync_present.push_back(m_device->CreateSemaphore());
+        m_sync_draw.push_back(m_device->CreateSemaphore());
+        m_fence_draw.push_back(m_device->CreateFence(true /* signaled */));
+        m_cmd.push_back(m_cmd_pool->CreateCommandList());
         m_swapchain_imageviews.push_back(
             image->CreateImageView(RHIImageViewDesc{
                 .format = RHIResourceFormat::R8G8B8A8_UNORM,
@@ -39,11 +45,6 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
                 })
         );
     }
-    m_cmd_pool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
-        .queue = RHIDeviceQueueType::Graphics,
-        .type = RHICommandPoolType::Persistent
-        });
-    m_cmd = m_cmd_pool->CreateCommandList();
     // Loading shaders
     auto shader_vert_data = ReadFile(".derived/shaders/Triangle_vertMain.spirv", m_allocator);
     m_shader_vert = m_device->CreateShaderModule(RHIShaderModule::ShaderModuleDesc{
@@ -62,11 +63,11 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
         {.desc = {
             .stage = RHIPipelineState::PipelineStateDesc::ShaderStage::StageDesc::VERTEX,
             .entry_point = "main"
-        }, .shader_module = m_shader_vert.Get()},
+        }, .shader_module = m_shader_vert },
         {.desc = {
             .stage = RHIPipelineState::PipelineStateDesc::ShaderStage::StageDesc::FRAGMENT,
             .entry_point = "main"
-        }, .shader_module = m_shader_frag.Get()}
+        }, .shader_module = m_shader_frag }
     };
     RHIPipelineState::PipelineStateDesc pipeline{
         .topology = RHIPipelineState::PipelineStateDesc::Topology::TRIANGLE_LIST,
@@ -99,7 +100,7 @@ void Renderer::Record(uint32_t image_index, RHICommandList* cmd) {
     );
     cmd->EndTransition();
     auto render_target = RHICommandList::GraphicsDesc::Attachment{
-                .image_view = m_swapchain_imageviews[image_index].GetPtr(),
+                .image_view = m_swapchain_imageviews[image_index].Get(),
                 .image_layout = RHIImageLayout::RenderTarget,
                 .clear_color = RHIClearColor{ 0.0f, 0.0f, 0.0f, 1.0f },
     };
@@ -109,7 +110,7 @@ void Renderer::Record(uint32_t image_index, RHICommandList* cmd) {
         .height = 1080
     });
     cmd->SetPipeline(RHICommandList::PipelineDesc{
-        .pipeline = m_pso.GetPtr(),
+        .pipeline = m_pso.Get(),
         .type = RHICommandList::PipelineDesc::PipelineType::Graphics
     });
     cmd->SetViewport(0.0f, 0.0f, 1920.0f, 1080.0f);
@@ -132,21 +133,23 @@ void Renderer::Record(uint32_t image_index, RHICommandList* cmd) {
     cmd->End();
 }
 void Renderer::Draw() {
-    m_queue->WaitIdle();
-    uint32_t image_index = m_swapchain->GetNextImage(-1, m_sync_present.Get(), {});
-    m_device->ResetFences({ &m_fence_draw.Get(), 1 });
-    Record(image_index, m_cmd.GetPtr());
+    m_device->WaitForFences(m_fence_draw[m_current_img], true, -1);
+    uint32_t image_index = m_swapchain->GetNextImage(-1, m_sync_present[m_current_img], {});
+    m_device->ResetFences(m_fence_draw[m_current_img]);
+    m_cmd[m_current_img]->Reset();
+    Record(image_index, m_cmd[m_current_img].Get());
     m_queue->Submit(RHIDeviceQueue::SubmitDesc{
         .stages = RHIPipelineStage::RenderTargetOutput,
-        .waits = { &m_sync_present.Get(), 1 },
-        .signals = { &m_sync_draw.Get(), 1 },
-        .cmd_lists = { &m_cmd.Get(), 1 },
-        .fence = m_fence_draw.Get()
-        });
-    m_device->WaitForFences({ &m_fence_draw.Get(), 1 }, true, -1);
+        .waits = m_sync_present[m_current_img],
+        .signals = m_sync_draw[m_current_img],
+        .cmd_lists = m_cmd[m_current_img],
+        .fence = m_fence_draw[m_current_img]
+    });
+    m_device->WaitForFences({ m_fence_draw[m_current_img] }, true, -1);
     m_queue->Present(RHIDeviceQueue::PresentDesc{
         .image_index = image_index,
-        .swapchain = m_swapchain.Get(),
-        .waits = { &m_sync_draw.Get(), 1 }
-        });
+        .swapchain = m_swapchain,
+        .waits = m_sync_draw[m_current_img]
+    });
+    m_current_img = (m_current_img + 1) % (m_cmd.size());
 }

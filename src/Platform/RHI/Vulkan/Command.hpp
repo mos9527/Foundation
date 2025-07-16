@@ -3,6 +3,7 @@
 #include <Platform/RHI/Vulkan/Common.hpp>
 #include <Platform/RHI/Vulkan/Resource.hpp>
 
+#include <Core/Allocator/StlContainers.hpp>
 #include <Core/Allocator/StackAllocator.hpp>
 namespace Foundation {
     namespace Platform {
@@ -34,8 +35,8 @@ namespace Foundation {
                 const VulkanCommandPool& m_commandPool;
                 vk::raii::CommandBuffer m_commandBuffer{ nullptr };
                 struct Barriers {
-                    std::vector<vk::ImageMemoryBarrier2, Core::StlAllocator<vk::ImageMemoryBarrier2>> image;
-                    std::vector<vk::BufferMemoryBarrier2, Core::StlAllocator<vk::BufferMemoryBarrier2>> buffer;
+                    Core::StlVector<vk::ImageMemoryBarrier2> image;
+                    Core::StlVector<vk::BufferMemoryBarrier2> buffer;
                     Barriers(Core::Allocator* allocator) : image(allocator), buffer(allocator) {};
                 };
                 Core::UniquePtr<Barriers> m_barriers;
@@ -66,6 +67,7 @@ namespace Foundation {
                 RHICommandList& EndGraphics() override;
 
                 void End() override;
+                void Reset() override;
             };
         }
     }

@@ -222,13 +222,8 @@ void VulkanDevice::Instantiate(Window* window) {
     }
     // Create the device
     // Gather all unique queues we'd need
-    std::vector<uint32_t> unique_queues{ graphics, compute, transfer, present };
-    std::sort(unique_queues.begin(), unique_queues.end());
-    unique_queues.erase(
-        std::unique(unique_queues.begin(), unique_queues.end()),
-        unique_queues.end()
-    );
-    std::vector<vk::DeviceQueueCreateInfo> queue_info;
+    Core::StlSet<uint32_t> unique_queues({ graphics, compute, transfer, present }, GetAllocator());
+    Core::StlVector<vk::DeviceQueueCreateInfo> queue_info(GetAllocator());
     float priority = 1.0f;
     for (auto i : unique_queues) {
         if (i == kInvalidQueueIndex)
@@ -363,19 +358,19 @@ void VulkanDevice::DestroyFence(Handle handle)
     m_storage.DestroyObject(handle);
 }
 
-void VulkanDevice::ResetFences(std::span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences)
+void VulkanDevice::ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences)
 {
     Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
-    std::vector<vk::Fence, Core::StlAllocator<vk::Fence>> vk_fences(alloc.Ptr());
+    Core::StlVector<vk::Fence> vk_fences(alloc.Ptr());
     vk_fences.reserve(fences.size());
     for (auto const& fence : fences)
         vk_fences.emplace_back(fence.Get<VulkanDeviceFence>()->GetVkFence());
     m_device.resetFences(vk_fences);
 }
-void VulkanDevice::WaitForFences(std::span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout)
+void VulkanDevice::WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout)
 {
     Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
-    std::vector<vk::Fence, Core::StlAllocator<vk::Fence>> vk_fences(alloc.Ptr());
+    Core::StlVector<vk::Fence> vk_fences(alloc.Ptr());
     vk_fences.reserve(fences.size());
     for (auto const& fence : fences)
         vk_fences.emplace_back(fence.Get<VulkanDeviceFence>()->GetVkFence());
@@ -388,8 +383,8 @@ void VulkanDeviceQueue::WaitIdle() const {
 }
 void VulkanDeviceQueue::Submit(SubmitDesc const& desc) const {
     Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
-    std::vector<vk::CommandBuffer, Core::StlAllocator<vk::CommandBuffer>> cmds(alloc.Ptr());
-    std::vector<vk::Semaphore, Core::StlAllocator<vk::Semaphore>>
+    Core::StlVector<vk::CommandBuffer> cmds(alloc.Ptr());
+    Core::StlVector<vk::Semaphore>
         swaits(alloc.Ptr()), ssignals(alloc.Ptr());
     cmds.reserve(desc.cmd_lists.size()), swaits.reserve(desc.waits.size()), ssignals.reserve(desc.signals.size());
     for (auto const& cmd_list : desc.cmd_lists)
@@ -416,7 +411,7 @@ void VulkanDeviceQueue::Present(PresentDesc const& desc) const {
     CHECK(m_device.GetDeviceQueue(RHIDeviceQueueType::Present) == this && "Present called on a queue that is not a present queue");
     Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
     vk::SwapchainKHR swapchain = desc.swapchain.Get<VulkanSwapchain>()->GetVkSwapchain();
-    std::vector<vk::Semaphore, Core::StlAllocator<vk::Semaphore>> swaits(alloc.Ptr());
+    Core::StlVector<vk::Semaphore> swaits(alloc.Ptr());
     swaits.reserve(desc.waits.size());
     for (auto const& wait : desc.waits)
         swaits.emplace_back(wait.Get<VulkanDeviceSemaphore>()->GetVkSemaphore());

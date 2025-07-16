@@ -11,7 +11,7 @@ namespace Foundation {
             public:
                 struct ShaderModuleDesc {
                     std::string name;
-                    std::span<char> source;
+                    Core::StlSpan<char> source;
                 };
                 const ShaderModuleDesc m_desc;
 

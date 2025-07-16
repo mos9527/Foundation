@@ -29,7 +29,7 @@ namespace Foundation {
                     PresentMode present_mode;
                 };
                 const SwapchainDesc m_desc;
-                virtual std::span<RHIImage* const> GetImages() const = 0;
+                virtual Core::StlSpan<RHIImage* const> GetImages() const = 0;
                 RHISwapchain(RHIDevice const& device, SwapchainDesc const& desc) : m_device(device), m_desc(desc) {}
                 virtual size_t GetNextImage(
                     uint64_t timeout_ns,

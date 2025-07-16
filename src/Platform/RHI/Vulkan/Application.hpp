@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/Core.hpp>
-#include <Core/Allocator/Allocator.hpp>
+#include <Core/Allocator/StlContainers.hpp>
 
 #include <Platform/RHI/Application.hpp>
 #include <Platform/RHI/Vulkan/Device.hpp>
@@ -32,8 +32,7 @@ namespace Foundation {
                 Core::Allocator* m_allocator;
                 RHIObjectStorage<> m_storage;
 
-                std::vector<RHIDevice::DeviceDesc, Core::StlAllocator<RHIDevice::DeviceDesc>> m_devices;
-
+                Core::StlVector<RHIDevice::DeviceDesc> m_devices;
                 vk::raii::DebugUtilsMessengerEXT m_debug_handler{ nullptr };
             public:
                 const std::string m_name;
@@ -44,7 +43,7 @@ namespace Foundation {
                 VulkanApplication(const char* appName, const char* engineName, const uint32_t apiVersion, Core::Allocator* allocator);
                 ~VulkanApplication();
 
-                std::span<const RHIDevice::DeviceDesc> EnumerateDevices() const override;
+                Core::StlSpan<const RHIDevice::DeviceDesc> EnumerateDevices() const override;
 
                 RHIApplicationScopedObjectHandle<RHIDevice> CreateDevice(const RHIDevice::DeviceDesc& desc, Window* window) override;
                 RHIDevice* GetDevice(Handle handle) const override;

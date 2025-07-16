@@ -82,10 +82,15 @@ namespace Foundation {
                 }
                 /// <summary>
                 /// Retrieves a reference to the value associated with the given key.
+                /// NOTE: Calling this function with a key that's not retrived from pop() is undefined behavior.
                 /// </summary>
                 value_type& at(K key) {
                     return m_values[key];
                 }
+                /// <summary>
+                /// Retrieves a const reference to the value associated with the given key.
+                /// NOTE: Calling this function with a key that's not retrived from pop() is undefined behavior.
+                /// </summary>
                 value_type const& at(K key) const {
                     return m_values[key];
                 }

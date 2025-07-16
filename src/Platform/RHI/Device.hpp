@@ -20,8 +20,8 @@ namespace Foundation {
 
                 struct SubmitDesc {
                     RHIPipelineStage stages;
-                    std::span<const RHIDeviceObjectHandle<RHIDeviceSemaphore>> waits, signals;                    
-                    std::span<const RHICommandPoolHandle<RHICommandList>> cmd_lists;
+                    Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceSemaphore>> waits, signals;                    
+                    Core::StlSpan<const RHICommandPoolHandle<RHICommandList>> cmd_lists;
                     RHIDeviceObjectHandle<RHIDeviceFence> fence;
                 };
                 virtual void Submit(SubmitDesc const& desc) const = 0;
@@ -29,7 +29,7 @@ namespace Foundation {
                 struct PresentDesc {
                     uint32_t image_index;
                     RHIDeviceObjectHandle<RHISwapchain> swapchain;
-                    std::span<const RHIDeviceObjectHandle<RHIDeviceSemaphore>> waits;
+                    Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceSemaphore>> waits;
                 };
                 virtual void Present(PresentDesc const& desc) const = 0;
             };
@@ -82,8 +82,8 @@ namespace Foundation {
                 virtual RHIDeviceFence* GetFence(Handle handle) const = 0;
                 virtual void DestroyFence(Handle handle) = 0;
 
-                virtual void ResetFences(std::span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) = 0;
-                virtual void WaitForFences(std::span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) = 0;
+                virtual void ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) = 0;
+                virtual void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) = 0;
             };
 
             template<> struct RHIObjectTraits<RHISwapchain> {

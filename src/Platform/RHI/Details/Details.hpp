@@ -61,36 +61,45 @@ namespace Foundation {
                 T* operator->() const {
                     return Get();
                 }
+
                 constexpr Handle operator()() const { return m_handle; }
-                bool IsValid() const { return m_handle != kInvalidHandle; }
                 constexpr operator bool() const noexcept { return IsValid(); }
+                bool operator==(const RHIHandle& other) const { return m_factory == other.m_factory && m_handle == other.m_handle; }
+
+                bool IsValid() const { return m_handle != kInvalidHandle; }
                 bool IsFrom(const Factory* factory) const { return m_factory == factory; }
-                void Invalidate() { m_handle = kInvalidHandle; }
-                bool operator==(const RHIHandle& other) const {
-                    return m_factory == other.m_factory && m_handle == other.m_handle;
-                }
+                void Invalidate() { m_factory = nullptr, m_handle = kInvalidHandle; }
             };
             /// <summary>
             /// Scoped move-only RAII handle wrapper for RHI Objects.
             /// </summary>           
-            template<typename Factory, typename T> class RHIScopedHandle {
-                Factory* m_factory{ nullptr };
-                RHIHandle<Factory, T> m_underlying{};
+            template<typename Factory, typename T> class RHIScopedHandle : public RHIHandle<Factory, T> {
             public:
+                using RHIHandle<Factory, T>::m_factory;
+                using RHIHandle<Factory, T>::m_handle;
+                using RHIHandle<Factory, T>::Get;
+                using RHIHandle<Factory, T>::IsValid;
+                using RHIHandle<Factory, T>::IsFrom;
+                using RHIHandle<Factory, T>::Invalidate;
+
                 RHIScopedHandle() {};
-                RHIScopedHandle(Factory* factory, Handle handle) : m_factory(factory), m_underlying{ factory, handle } {}                
+                RHIScopedHandle(Factory* factory, Handle handle) : RHIHandle<Factory, T>(factory, handle) {}
                 RHIScopedHandle(RHIScopedHandle&& other) noexcept
-                    : m_factory(other.m_factory), m_underlying(std::move(other.m_underlying)) {
-                    other.m_factory = nullptr;
-                    other.m_underlying.Invalidate();
+                    : RHIHandle<Factory, T>(std::move(other)) {
+                    other.Invalidate();
                 }
                 RHIScopedHandle& operator=(RHIScopedHandle&& other) noexcept {
                     if (this != &other) {
                         m_factory = other.m_factory;
-                        m_underlying = other.m_underlying;
-                        other.m_factory = nullptr;
-                        other.m_underlying.Invalidate();
+                        m_handle = other.m_handle;
+                        other.Invalidate();
                     }
+                    return *this;
+                }
+                /// <summary>
+                /// Returns a non-owning view of the underlying RHIHandle.
+                /// </summary>                
+                RHIHandle<Factory, T> View() const {
                     return *this;
                 }
                 /// <summary>
@@ -98,31 +107,16 @@ namespace Foundation {
                 /// The resource will never be destroyed, and the handle can be used independently.
                 /// </summary>               
                 RHIHandle<Factory, T> Release() {
-                    RHIHandle<Factory, T> handle = m_underlying;
-                    m_factory = nullptr, m_underlying.Invalidate();
+                    RHIHandle<Factory, T> handle = *this;
+                    Invalidate();
                     return handle;
                 }
-                /// <summary>
-                /// Constructs a RHIHandle as a view to the underlying RHIHandle
-                /// It is undefined behaviour to use the created handle after the RHIScopedHandle has been destroyed.            
-                /// </summary>
-                RHIHandle<Factory, T> const& Get() const {
-                    return m_underlying;
-                }
-                RHIHandle<Factory, T> const& operator()() const {
-                    return Get();
-                }
-                T* GetPtr() const {
-                    return m_underlying.Get<T>();
-                }
-                T* operator->() const {
-                    return GetPtr();
-                }
+
                 RHIScopedHandle(const RHIScopedHandle&) = delete;
                 RHIScopedHandle& operator=(const RHIScopedHandle&) = delete;
                 ~RHIScopedHandle() {
-                    if (m_factory && m_underlying)
-                        RHIObjectTraits<T>::Destroy(m_factory, m_underlying.m_handle);
+                    if (IsValid())
+                        RHIObjectTraits<T>::Destroy(m_factory, m_handle);
                 }
             };
             /// <summary>

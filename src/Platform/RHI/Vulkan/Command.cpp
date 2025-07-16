@@ -1,5 +1,6 @@
 #include <Platform/RHI/Vulkan/Command.hpp>
 #include <Platform/RHI/Vulkan/Device.hpp>
+#include <Core/Allocator/StlContainers.hpp>
 using namespace Foundation::Platform::RHI;
 VulkanCommandPool::VulkanCommandPool(const VulkanDevice& device, PoolDesc const& desc, Core::Allocator* allocator) :
     RHICommandPool(device, desc), m_device(device), m_allocator(allocator), m_storage(allocator, kCommandListReserveSize) {
@@ -10,6 +11,7 @@ VulkanCommandPool::VulkanCommandPool(const VulkanDevice& device, PoolDesc const&
     {
     case RHICommandPoolType::Transient:
         flag = vk::CommandPoolCreateFlagBits::eTransient;
+        break;
     default:
     case RHICommandPoolType::Persistent:
         flag = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
@@ -137,8 +139,8 @@ RHICommandList& VulkanCommandList::Draw(uint32_t vertex_count, uint32_t instance
 
 RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc) {
     CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
-    std::vector<vk::RenderingAttachmentInfo, Core::StlAllocator<vk::RenderingAttachmentInfo>>
-        attachments(&m_allocator);
+    
+    Core::StlVector<vk::RenderingAttachmentInfo> attachments(&m_allocator);
     attachments.reserve(desc.attachments.size());    
     for (auto const& attachment : desc.attachments) {        
         attachments.push_back(vk::RenderingAttachmentInfo{
@@ -169,4 +171,9 @@ void VulkanCommandList::End() {
     CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
     m_commandBuffer.end();
     m_allocator.Reset();
+}
+
+void VulkanCommandList::Reset() {
+    CHECK(!m_allocator && "Invalid command list states. Did you call End()?");
+    m_commandBuffer.reset();
 }

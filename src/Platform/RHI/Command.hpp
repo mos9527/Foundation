@@ -67,7 +67,7 @@ namespace Foundation {
                         RHIImageLayout image_layout;
                         RHIClearColor clear_color;
                     };
-                    std::span<const Attachment> attachments;
+                    Core::StlSpan<const Attachment> attachments;
                     uint32_t width, height;
                 };
                 virtual RHICommandList& BeginGraphics(GraphicsDesc const& desc) = 0;
@@ -76,6 +76,7 @@ namespace Foundation {
 #pragma region Tags
                 virtual RHICommandList& Begin() = 0;
                 virtual void End() = 0;
+                virtual void Reset() = 0;
 #pragma endregion
             };
 

@@ -1,6 +1,7 @@
 #include <Platform/RHI/Vulkan/Resource.hpp>
 #include <Platform/RHI/Vulkan/Device.hpp>
 #include <Platform/RHI/Vulkan/Swapchain.hpp>
+using namespace Foundation;
 using namespace Foundation::Platform::RHI;
 vk::SwapchainCreateInfoKHR VulkanSwapchain::GetSwapchainCreateInfo() {
     auto const& surface = m_device.GetVkSurface();
@@ -49,7 +50,7 @@ VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SwapchainDesc const
     : RHISwapchain(device, desc), m_device(device), m_images(device.GetAllocator()), m_images_ptrs(device.GetAllocator()) {
     Instantiate();
 }
-std::span<RHIImage* const> VulkanSwapchain::GetImages() const {
+Core::StlSpan<RHIImage* const> VulkanSwapchain::GetImages() const {
     return { m_images_ptrs.data(), m_images_ptrs.size() };
 }
 

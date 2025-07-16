@@ -1,8 +1,6 @@
 #pragma once
-#include <span>
 #include <Platform/Application.hpp>
 #include <Platform/RHI/Device.hpp>
-
 namespace Foundation {
     namespace Platform {
         namespace RHI {
@@ -12,7 +10,7 @@ namespace Foundation {
                 RHIApplication() = default;
                 RHIApplication(RHIApplication const&) = delete;
 
-                virtual std::span<const RHIDevice::DeviceDesc> EnumerateDevices() const = 0;
+                virtual Core::StlSpan<const RHIDevice::DeviceDesc> EnumerateDevices() const = 0;
 
                 /// <summary>
                 /// Create and instantiate a RHIDevice.                
