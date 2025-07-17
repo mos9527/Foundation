@@ -161,6 +161,22 @@ RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc) {
     return *this;
 }
 
+RHICommandList& VulkanCommandList::BindVertexBuffer(uint32_t index, Core::StlSpan<RHIBuffer* const> buffers, Core::StlSpan<const size_t> offsets) {
+    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(index < 8 && "Vulkan supports up to 8 vertex buffers.");
+    CHECK(buffers.size() == offsets.size() && "Buffers and offsets must have the same size.");
+    
+    Core::StlVector<vk::Buffer> vk_buffers(&m_allocator);
+    Core::StlVector<vk::DeviceSize> vk_offsets(&m_allocator);
+    for (size_t i = 0; i < buffers.size(); ++i) {
+        auto* buffer = static_cast<VulkanBuffer*>(buffers[i]);
+        vk_buffers.push_back(*buffer->GetVkBuffer());
+        vk_offsets.push_back(static_cast<vk::DeviceSize>(offsets[i]));
+    }
+    m_commandBuffer.bindVertexBuffers(index, vk_buffers, vk_offsets);
+    return *this;
+}
+
 RHICommandList& VulkanCommandList::EndGraphics() {
     CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
     m_commandBuffer.endRendering();

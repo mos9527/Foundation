@@ -8,7 +8,30 @@ using namespace Foundation::Platform::RHI;
 VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineStateDesc const& desc)
     : RHIPipelineState(device, desc), m_device(device) {
     Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
-    vk::PipelineVertexInputStateCreateInfo vtx{}; // TODO: Binding
+    Core::StlVector<vk::VertexInputBindingDescription> vtx_bindings(alloc.Ptr());
+    for (size_t i = 0;i < desc.vertex_input.bindings.size(); ++i) {
+        const auto& binding = desc.vertex_input.bindings[i];
+        vtx_bindings.emplace_back(vk::VertexInputBindingDescription{
+            .binding = static_cast<uint32_t>(i),
+            .stride = binding.stride,
+            .inputRate = binding.per_instance ? vk::VertexInputRate::eInstance : vk::VertexInputRate::eVertex
+        });
+    }
+    Core::StlVector<vk::VertexInputAttributeDescription> vtx_attrs(alloc.Ptr());
+    for (const auto& attr : desc.vertex_input.attributes) {
+        vtx_attrs.emplace_back(vk::VertexInputAttributeDescription{
+            .location = attr.location,
+            .binding = attr.binding,
+            .format = vkFormatFromRHIFormat(attr.format),
+            .offset = attr.offset
+        });
+    }
+    vk::PipelineVertexInputStateCreateInfo vtx{
+        .vertexBindingDescriptionCount = static_cast<uint32_t>(vtx_bindings.size()),
+        .pVertexBindingDescriptions = vtx_bindings.data(),
+        .vertexAttributeDescriptionCount = static_cast<uint32_t>(vtx_attrs.size()),
+        .pVertexAttributeDescriptions = vtx_attrs.data(),
+    };
     vk::PipelineInputAssemblyStateCreateInfo ia{
         .topology = GetVulkanPrimitiveTopologyFromDesc(desc.topology),
         .primitiveRestartEnable = VK_FALSE

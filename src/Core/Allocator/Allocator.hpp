@@ -6,10 +6,10 @@
 
 namespace Foundation {
 	namespace Core {		
-		inline size_t AlignUp(size_t value, size_t alignment) {
+		inline uintptr_t AlignUp(uintptr_t value, uintptr_t alignment) {
             return (value + alignment - 1) & ~(alignment - 1);
 		}
-		inline size_t AlignDown(size_t value, size_t alignment) {
+		inline uintptr_t AlignDown(uintptr_t value, uintptr_t alignment) {
 			return (value) & ~(alignment - 1);
 		}
         typedef size_t CounterSingleThreaded;

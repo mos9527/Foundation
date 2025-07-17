@@ -10,7 +10,13 @@ namespace Foundation {
             inline vk::Format vkFormatFromRHIFormat(RHIResourceFormat format) {
                 switch (format) {
                     case RHIResourceFormat::R8G8B8A8_UNORM: return vk::Format::eR8G8B8A8Unorm;
-                    default: return vk::Format::eUndefined;
+                    case RHIResourceFormat::R32_SIGNED_FLOAT: return vk::Format::eR32Sfloat;
+                    case RHIResourceFormat::R32G32_SIGNED_FLOAT: return vk::Format::eR32G32Sfloat;
+                    case RHIResourceFormat::R32G32B32_SIGNED_FLOAT: return vk::Format::eR32G32B32Sfloat;
+                    case RHIResourceFormat::R32G32B32A32_SIGNED_FLOAT: return vk::Format::eR32G32B32A32Sfloat;
+                    case RHIResourceFormat::Undefined:
+                    default:
+                        return vk::Format::eUndefined;
                 }
             }
             inline vk::BufferUsageFlags vkBufferUsageFromRHIBufferUsage(RHIBufferUsage usage) {
@@ -35,12 +41,13 @@ namespace Foundation {
 
             inline vk::ImageLayout vkImageLayoutFromRHIImageLayout(RHIImageLayout layout) {
                 switch (layout) {
-                    case RHIImageLayout::Undefined: return vk::ImageLayout::eUndefined;
                     case RHIImageLayout::General: return vk::ImageLayout::eGeneral;
                     case RHIImageLayout::RenderTarget: return vk::ImageLayout::eColorAttachmentOptimal;
                     case RHIImageLayout::DepthStencil: return vk::ImageLayout::eDepthStencilAttachmentOptimal;
                     case RHIImageLayout::Present: return vk::ImageLayout::ePresentSrcKHR;
-                    default: return vk::ImageLayout::eUndefined;
+                    case RHIImageLayout::Undefined:
+                    default:
+                        return vk::ImageLayout::eUndefined;
                 }
             }
 

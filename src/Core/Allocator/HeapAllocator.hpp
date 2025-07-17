@@ -75,6 +75,7 @@ namespace Foundation {
         /// (see also https://github.com/microsoft/mimalloc/issues/980)
         /// Allocations being made through this allocator are tracked.
         /// Allows for single-threaded allocations and custom Arena memory management.
+        /// Concurrent access is undefined behavior.
         /// </summary>
         using HeapAllocatorSingleThreaded = HeapAllocator<CounterSingleThreaded>;
         /// <summary>

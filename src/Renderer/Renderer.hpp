@@ -15,13 +15,13 @@ namespace Foundation {
             RHIDeviceScopedObjectHandle<RHIShaderModule> m_shader_vert, m_shader_frag;
             RHIDeviceScopedObjectHandle<RHISwapchain> m_swapchain;
 
-            RHIDeviceScopedObjectHandle<RHICommandPool> m_cmd_pool;
-
+            RHIDeviceScopedObjectHandle<RHICommandPool> m_cmd_pool;            
             Core::StlVector<RHIDeviceScopedObjectHandle<RHIDeviceSemaphore>> m_sync_present, m_sync_draw;
             Core::StlVector<RHIDeviceScopedObjectHandle<RHIDeviceFence>> m_fence_draw;
             Core::StlVector<RHICommandPoolScopedHandle<RHICommandList>> m_cmd;
 
             RHIDeviceScopedObjectHandle<RHIPipelineState> m_pso;
+            RHIDeviceScopedObjectHandle<RHIBuffer> m_vertex_buffer;
 
             Core::StlVector<RHIImageScopedHandle<RHIImageView>>
                 m_swapchain_imageviews;

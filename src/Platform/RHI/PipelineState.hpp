@@ -13,7 +13,20 @@ namespace Foundation {
                 struct PipelineStateDesc {
                     std::string name;
                     // Vertex Input
-                    // !! TODO
+                    struct VertexInput {
+                        struct Binding {
+                            uint32_t stride; // In bytes
+                            bool per_instance{ false }; // If true, this binding is per-instance data
+                        };
+                        Core::StlSpan<const Binding> bindings;
+                        struct Attribute {
+                            uint32_t location; // Index into shader input
+                            uint32_t binding; // 0-indexed index into bindings.
+                            uint32_t offset; // In bytes
+                            RHIResourceFormat format{ RHIResourceFormat::Undefined }; // Format on the GPU    
+                        };                        
+                        Core::StlSpan<const Attribute> attributes;
+                    } vertex_input{};
                     // Input Assembly
                     enum Topology {
                         LINE_LIST,

@@ -40,8 +40,13 @@ namespace Foundation
                 std::is_convertible_v<U*, T*>)
             StlSpan(U* data, size_t size) : std::span<T>(static_cast<T*>(data), size) {}
 
+            /// For initializer lists, see
+            /// https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p2447r4.html
+            /// For now you'll be making sandwhiches instead.
+            /// ( i.e. StlSpan<const T>({ { 1, 2, 3 } }), StlSpan<T* const>({ { look_ma_a_single_pointer } })
+            
             /// <summary>
-            /// Shorthand for single item
+            /// Shorthand for single l-value item
             /// </summary>           
             template<typename U> requires std::is_convertible_v<U*, T*>
             StlSpan(U& item) : StlSpan(&item, 1) {}

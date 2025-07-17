@@ -82,6 +82,14 @@ namespace Foundation {
                 virtual RHIDeviceFence* GetFence(Handle handle) const = 0;
                 virtual void DestroyFence(Handle handle) = 0;
 
+                virtual RHIDeviceScopedObjectHandle<RHIBuffer> CreateBuffer(RHIBufferDesc const& desc) = 0;
+                virtual RHIBuffer* GetBuffer(Handle handle) const = 0;
+                virtual void DestroyBuffer(Handle handle) = 0;
+
+                virtual RHIDeviceScopedObjectHandle<RHIImage> CreateImage(RHIImageDesc const& desc) = 0;
+                virtual RHIImage* GetImage(Handle handle) const = 0;
+                virtual void DestroyImage(Handle handle) = 0;
+
                 virtual void ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) = 0;
                 virtual void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) = 0;
             };
@@ -132,6 +140,22 @@ namespace Foundation {
                 }
                 static void Destroy(RHIDevice* device, Handle handle) {
                     device->DestroyFence(handle);
+                }
+            };
+            template<> struct RHIObjectTraits<RHIBuffer> {
+                static RHIBuffer* Get(RHIDevice const* device, Handle handle) {
+                    return device->GetBuffer(handle);
+                }
+                static void Destroy(RHIDevice* device, Handle handle) {
+                    device->DestroyBuffer(handle);
+                }
+            };
+            template<> struct RHIObjectTraits<RHIImage> {
+                static RHIImage* Get(RHIDevice const* device, Handle handle) {
+                    return device->GetImage(handle);
+                }
+                static void Destroy(RHIDevice* device, Handle handle) {
+                    device->DestroyImage(handle);
                 }
             };
         }

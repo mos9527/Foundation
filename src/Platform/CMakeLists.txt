@@ -29,12 +29,12 @@ FetchContent_MakeAvailable(VulkanMemoryAllocator)
 file(
     GLOB_RECURSE SOURCES
     "Application.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/${PLATFORM_DIR}/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/${PLATFORM_DIR}/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/RHI/*.cpp"
 )
 file(
     GLOB_RECURSE INCLUDES 
-    "${CMAKE_CURRENT_SOURCE_DIR}/${PLATFORM_DIR}/*.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/${PLATFORM_DIR}/*.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/RHI/*.hpp"
 )
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})

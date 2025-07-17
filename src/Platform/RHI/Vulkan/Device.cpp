@@ -425,3 +425,23 @@ void VulkanDeviceQueue::Present(PresentDesc const& desc) const {
     auto res = m_queue.presentKHR(present_info);
     // !! TODO
 }
+
+RHIDeviceScopedObjectHandle<RHIBuffer> VulkanDevice::CreateBuffer(RHIBufferDesc const& desc) {
+    return { this, m_storage.CreateObject<VulkanBuffer>(*this, desc) };
+}
+RHIBuffer* VulkanDevice::GetBuffer(Handle handle) const {
+    return m_storage.GetObjectPtr<RHIBuffer>(handle);
+}
+void VulkanDevice::DestroyBuffer(Handle handle) {
+    m_storage.DestroyObject(handle);
+}
+
+RHIDeviceScopedObjectHandle<RHIImage> VulkanDevice::CreateImage(RHIImageDesc const& desc) {
+    return { this, m_storage.CreateObject<VulkanImage>(*this, desc) };
+}
+RHIImage* VulkanDevice::GetImage(Handle handle) const {
+    return m_storage.GetObjectPtr<RHIImage>(handle);
+}
+void VulkanDevice::DestroyImage(Handle handle) {
+    m_storage.DestroyObject(handle);
+}

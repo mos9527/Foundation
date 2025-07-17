@@ -71,6 +71,7 @@ namespace Foundation {
                     uint32_t width, height;
                 };
                 virtual RHICommandList& BeginGraphics(GraphicsDesc const& desc) = 0;
+                virtual RHICommandList& BindVertexBuffer(uint32_t index, Core::StlSpan<RHIBuffer* const> buffers, Core::StlSpan<const size_t> offsets) = 0;
                 virtual RHICommandList& EndGraphics() = 0;
 #pragma endregion
 #pragma region Tags

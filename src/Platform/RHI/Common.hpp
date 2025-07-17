@@ -8,7 +8,11 @@ namespace Foundation {
         namespace RHI {
             enum class RHIResourceFormat {
                 Undefined = 0,
-                R8G8B8A8_UNORM
+                R8G8B8A8_UNORM,
+                R32_SIGNED_FLOAT,
+                R32G32_SIGNED_FLOAT,
+                R32G32B32_SIGNED_FLOAT,
+                R32G32B32A32_SIGNED_FLOAT,
             };
             enum class RHICommandPoolType {
                 // The command pool is persistent, meaning command buffers can be reused
@@ -35,6 +39,13 @@ namespace Foundation {
                 DepthStencil,
                 Present
             };
+
+            enum class RHIResourceHostAccess {
+                Invisible,
+                ReadWrite, // r/w are possible
+                WriteOnly // write only, reads are undefined
+            };
+
             BITMASK_ENUM_BEGIN(RHIResourceAccess, uint32_t)
                 Undefined = 0,
                 RenderTargetWrite = 1 << 0,

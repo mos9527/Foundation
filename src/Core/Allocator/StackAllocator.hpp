@@ -3,7 +3,8 @@
 namespace Foundation {
 	namespace Core {
 		/// <summary>
-        /// Enables fast, sequential memory allocation without frees from a pre-allocated memory block.        
+        /// Enables fast, sequential memory allocation without frees from a pre-allocated memory block.
+        /// Also known as an Arena or Bump Allocator.      
 		/// </summary>
         template<typename Counter> class StackAllocator : public Allocator {
 		public:
@@ -61,14 +62,14 @@ namespace Foundation {
             Counter m_used{};
 		};
         /// <summary>
-        /// Defines a type alias for HeapAllocator using CounterSingleThreaded as the counter type.
-        /// Allows for single-threaded allocations and custom Arena memory management.
+        /// Defines a type alias for StackAllocator using CounterSingleThreaded as the counter type.
+        /// Allows for single-threaded allocations. Concurrent access is undefined behavior.
         /// Allocations being made through this allocator are tracked.
         /// </summary>
         using StackAllocatorSingleThreaded = StackAllocator<CounterSingleThreaded>;
         /// <summary>
-        /// Defines a type alias for HeapAllocator that uses atomic counter.
-        /// Does NOT allow for custom Arena memory management as heaps are bound to threads.
+        /// Defines a type alias for StackAllocator that uses atomic counter.
+        /// Allows for multi-threaded allocations. Concurrent access is synchronized (atomic).
         /// Allocations being made through this allocator are tracked.
         /// </summary>
         using StackAllocatorMultiThreaded = StackAllocator<CounterMultiThreaded>;

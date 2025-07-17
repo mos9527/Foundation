@@ -63,7 +63,9 @@ namespace Foundation {
                 RHICommandList& SetViewport(float x, float y, float width, float height, float depth_min = 0.0, float depth_max = 1.0) override;
                 RHICommandList& SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override;
                 RHICommandList& Draw(uint32_t vertex_count, uint32_t instance_count = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0) override;
+
                 RHICommandList& BeginGraphics(GraphicsDesc const& desc) override;
+                RHICommandList& BindVertexBuffer(uint32_t index, Core::StlSpan<RHIBuffer* const> buffers, Core::StlSpan<const size_t> offsets) override;
                 RHICommandList& EndGraphics() override;
 
                 void End() override;

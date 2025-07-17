@@ -13,7 +13,7 @@ namespace Foundation {
         Core::HeapAllocatorMultiThreaded g_Allocator;
         int StartApplication(Application& app) {
             {
-                VulkanApplication vkApp("Editor", "Foundation", VK_API_VERSION_1_4, &g_Allocator);
+                VulkanApplication vkApp("Editor", "Foundation", VK_API_VERSION_1_3, &g_Allocator);
                 Window window = app.CreateWindow(1920, 1080, "Editor Window");
                 auto device = vkApp.CreateDevice(vkApp.EnumerateDevices()[0], &window);
                 Renderer::Renderer renderer(device, g_Allocator.Ptr());

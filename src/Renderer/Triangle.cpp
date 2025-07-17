@@ -1,6 +1,7 @@
 #include <fstream>
 #include <filesystem>
 #include <Renderer/Renderer.hpp>
+#include <Core/Math.hpp>
 using namespace Foundation::Platform::RHI;
 using namespace Foundation::Renderer;
 using namespace Foundation::Core;
@@ -14,6 +15,10 @@ StlVector<char> ReadFile(std::filesystem::path const& path, Allocator* allocator
     file.close();
     return data;
 }
+struct vertex_input {
+    glm::vec2 pos;
+    glm::vec3 color;
+};
 Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator* allocator)
     : m_device(device), m_allocator(allocator), m_swapchain_imageviews(allocator),
     m_sync_present(allocator), m_sync_draw(allocator), m_fence_draw(allocator), m_cmd(allocator) {
@@ -29,7 +34,7 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
     m_cmd_pool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
         .queue = RHIDeviceQueueType::Graphics,
         .type = RHICommandPoolType::Persistent
-    });
+        });
     for (auto const& image : m_swapchain->GetImages()) {
         m_sync_present.push_back(m_device->CreateSemaphore());
         m_sync_draw.push_back(m_device->CreateSemaphore());
@@ -69,7 +74,30 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
             .entry_point = "main"
         }, .shader_module = m_shader_frag }
     };
+    // Buffers
+    m_vertex_buffer = m_device->CreateBuffer(RHIBufferDesc{
+        .resource = {
+            .name = "Triangle Vertex Buffer",
+            .usage = RHIBufferUsage::VertexBuffer,
+            .host_access = RHIResourceHostAccess::ReadWrite,
+            .coherent = true,
+        },
+        .size = 1 << 20 // 1 MiB
+    });
+    auto span = m_vertex_buffer->MapSpan<vertex_input>(3);
+    span[0] = { {0.0f, -0.5f}, {1.0f, 0.0f, 0.0f} },
+        span[1] = { {0.5f, 0.5f}, {0.0f, 1.0f, 0.0f} },
+        span[2] = { {-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f} };
     RHIPipelineState::PipelineStateDesc pipeline{
+        .vertex_input = {
+            .bindings = {
+                {{.stride = sizeof(vertex_input) }}
+            },
+            .attributes = {{
+                {.location = 0, .binding = 0, .offset = offsetof(vertex_input, pos), .format = RHIResourceFormat::R32G32B32_SIGNED_FLOAT },
+                {.location = 1, .binding = 0, .offset = offsetof(vertex_input, color), .format = RHIResourceFormat::R32G32_SIGNED_FLOAT },
+            }}
+        },
         .topology = RHIPipelineState::PipelineStateDesc::Topology::TRIANGLE_LIST,
         .viewport = {.width = 1920, .height = 1080 },
         .scissor = {.width = 1920, .height = 1080 },
@@ -83,6 +111,7 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
         .shader_stages = stages
     };
     m_pso = m_device->CreatePipelineState(pipeline);
+
 }
 void Renderer::Record(uint32_t image_index, RHICommandList* cmd) {
     cmd->Begin();
@@ -108,11 +137,12 @@ void Renderer::Record(uint32_t image_index, RHICommandList* cmd) {
         .attachments = { &render_target , 1 },
         .width = 1920,
         .height = 1080
-    });
+        });
     cmd->SetPipeline(RHICommandList::PipelineDesc{
         .pipeline = m_pso.Get(),
         .type = RHICommandList::PipelineDesc::PipelineType::Graphics
-    });
+        });
+    cmd->BindVertexBuffer(0, { { m_vertex_buffer.Get() } }, { {0} });
     cmd->SetViewport(0.0f, 0.0f, 1920.0f, 1080.0f);
     cmd->SetScissor(0, 0, 1920, 1080);
     cmd->Draw(3);
@@ -144,12 +174,12 @@ void Renderer::Draw() {
         .signals = m_sync_draw[m_current_img],
         .cmd_lists = m_cmd[m_current_img],
         .fence = m_fence_draw[m_current_img]
-    });
+        });
     m_device->WaitForFences({ m_fence_draw[m_current_img] }, true, -1);
     m_queue->Present(RHIDeviceQueue::PresentDesc{
         .image_index = image_index,
         .swapchain = m_swapchain,
         .waits = m_sync_draw[m_current_img]
-    });
+        });
     m_current_img = (m_current_img + 1) % (m_cmd.size());
 }

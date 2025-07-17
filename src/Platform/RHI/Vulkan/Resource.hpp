@@ -6,46 +6,57 @@
 namespace Foundation {
     namespace Platform {
         namespace RHI {
+            inline VmaAllocationCreateFlags vmaAllocationFlagsFromRHIResourceHostAccess(RHIResourceHostAccess access) {
+                using enum RHIResourceHostAccess;
+                switch (access) {
+                    case ReadWrite: return VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+                    case WriteOnly: return VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+                    case Invisible:
+                    default:
+                        return {};
+                }
+            }
             class VulkanDevice;
-            class VulkanResource : public virtual RHIResource {
+
+            class VulkanBuffer : public RHIBuffer {
             protected:
                 VulkanDevice const& m_device;
                 VmaAllocation m_allocation{ nullptr };
-            public:
-                VulkanResource(VulkanDevice const& device, ResourceDesc const& desc);
-                inline bool IsValid() const override { return true; }
-                inline const char* GetName() const override { return m_desc.name.c_str(); }
-            };
+                void* m_mapped{ nullptr };
 
-            class VulkanBuffer : public VulkanResource, public RHIBuffer {
-            protected:
                 vk::raii::Buffer m_buffer{ nullptr };
             public:
-                VulkanBuffer(VulkanDevice const& device, BufferDesc const& desc);
+                VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc);
                 ~VulkanBuffer();
 
                 inline auto& GetVkBuffer() { return m_buffer; }
 
                 inline bool IsValid() const override { return m_buffer != nullptr; }
-                inline const char* GetName() const override { return m_desc.name.c_str(); }
+                inline const char* GetName() const override { return m_desc.resource.name.c_str(); }
+
+                void* Map() override;
+                void Flush(size_t offset, size_t size) override;
+                void Unmap() override;
             };
 
             class VulkanImageView;
-            class VulkanImage : public RHIImage, public VulkanResource {
+            class VulkanImage : public RHIImage {
             protected:
-                bool m_shared{ false };
-                vk::raii::Image m_image{ nullptr };
-
+                VulkanDevice const& m_device;
+                VmaAllocation m_allocation{ nullptr };
                 RHIObjectStorage<VulkanImageView> m_views;
+
+                vk::raii::Image m_image{ nullptr };
             public:
-                VulkanImage(VulkanDevice const& device, ImageDesc const& desc);
+                const bool m_shared{ false };
+                VulkanImage(VulkanDevice const& device, RHIImageDesc const& desc);
                 VulkanImage(VulkanDevice const& device, vk::raii::Image&& image, bool shared);                
                 ~VulkanImage();
 
                 inline auto& GetVkImage() const { return m_image; }
 
                 inline bool IsValid() const override { return m_image != nullptr; }
-                inline const char* GetName() const override { return m_desc.name.c_str(); }
+                inline const char* GetName() const override { return m_desc.resource.name.c_str(); }
 
                 RHIImageScopedHandle<RHIImageView> CreateImageView(RHIImageViewDesc const& desc) override;
                 RHIImageView* GetImageView(Handle handle) const override;

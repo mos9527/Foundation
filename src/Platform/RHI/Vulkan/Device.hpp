@@ -106,9 +106,18 @@ namespace Foundation {
                 RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> CreateSemaphore() override;
                 RHIDeviceSemaphore* GetSemaphore(Handle handle) const override;
                 void DestroySemaphore(Handle handle) override;
+
                 RHIDeviceScopedObjectHandle<RHIDeviceFence> CreateFence(bool signaled = false) override;
                 RHIDeviceFence* GetFence(Handle handle) const override;
                 void DestroyFence(Handle handle) override;
+
+                RHIDeviceScopedObjectHandle<RHIBuffer> CreateBuffer(RHIBufferDesc const& desc) override;
+                RHIBuffer* GetBuffer(Handle handle) const override;
+                void DestroyBuffer(Handle handle) override;
+
+                RHIDeviceScopedObjectHandle<RHIImage> CreateImage(RHIImageDesc const& desc) override;
+                RHIImage* GetImage(Handle handle) const override;
+                void DestroyImage(Handle handle) override;
 
                 void ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) override;
                 void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) override;
