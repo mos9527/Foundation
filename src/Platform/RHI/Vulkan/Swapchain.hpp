@@ -35,6 +35,7 @@ namespace Foundation {
 
                 inline auto const& GetVkSwapchain() const { return m_swapchain; }
 
+                std::pair<size_t, size_t> GetDimensions() const override;
                 size_t GetNextImage(
                     uint64_t timeout_ns,
                     RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore,

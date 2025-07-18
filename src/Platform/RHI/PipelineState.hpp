@@ -1,7 +1,7 @@
 #pragma once
 #include <Platform/RHI/Common.hpp>
 #include <Platform/RHI/Shader.hpp>
-
+#include <Platform/RHI/Descriptor.hpp>
 namespace Foundation {
     namespace Platform {
         namespace RHI {
@@ -102,11 +102,9 @@ namespace Foundation {
                     // Stages
                     struct ShaderStage {
                         struct StageDesc {
-                            enum StageType {
-                                VERTEX,
-                                FRAGMENT,
-                                COMPUTE
-                            } stage;
+                            // Stage this shader participates in
+                            // You can only speicify one stage per shader module.                                                      
+                            RHIShaderStage stage;
                             std::string entry_point;
                             struct SpecializationInfo {
                                 // !! TODO
@@ -115,6 +113,8 @@ namespace Foundation {
                         RHIDeviceObjectHandle<RHIShaderModule> shader_module;
                     };
                     Core::StlSpan<const ShaderStage> shader_stages;
+                    // Descriptors
+                    Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceDescriptorSetLayout>> descriptor_set_layouts;
                 };
                 const PipelineStateDesc m_desc;
 

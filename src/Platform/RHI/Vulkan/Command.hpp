@@ -42,6 +42,8 @@ namespace Foundation {
                 Core::UniquePtr<Barriers> m_barriers;
 
                 Core::ScopedArena m_arena;
+                // Stack allocator for temporary allocations during command list execution
+                // Only valid within Begin(), End() clause               
                 Core::StackAllocatorSingleThreaded m_allocator;
                 constexpr static size_t kArenaSize = 2LL * (1LL << 20); // 2 MB
             public:
@@ -60,12 +62,20 @@ namespace Foundation {
                 RHICommandList& EndTransition() override;
 
                 RHICommandList& SetPipeline(PipelineDesc const& desc) override;
+                RHICommandList& BindDescriptorSet(
+                    RHIDevicePipelineType bindpoint,
+                    RHIPipelineState* pipeline,                    
+                    Core::StlSpan<RHIDeviceDescriptorSet* const> sets,
+                    size_t first) override;
                 RHICommandList& SetViewport(float x, float y, float width, float height, float depth_min = 0.0, float depth_max = 1.0) override;
                 RHICommandList& SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override;
                 RHICommandList& Draw(uint32_t vertex_count, uint32_t instance_count = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0) override;
+                RHICommandList& DrawIndexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0, int32_t vertex_offset = 0, uint32_t first_instance = 0) override;
+                RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::StlSpan<const CopyBufferRegion> regions) override;
 
                 RHICommandList& BeginGraphics(GraphicsDesc const& desc) override;
                 RHICommandList& BindVertexBuffer(uint32_t index, Core::StlSpan<RHIBuffer* const> buffers, Core::StlSpan<const size_t> offsets) override;
+                RHICommandList& BindIndexBuffer(RHIBuffer* buffer, size_t offset, RHIResourceFormat format) override;
                 RHICommandList& EndGraphics() override;
 
                 void End() override;

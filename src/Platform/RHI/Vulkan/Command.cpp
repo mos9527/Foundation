@@ -103,17 +103,10 @@ RHICommandList& VulkanCommandList::EndTransition() {
 RHICommandList& VulkanCommandList::SetPipeline(PipelineDesc const& desc) {
     CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
     CHECK(desc.pipeline && "Pipeline is invalid.");
-    auto* pipeline = static_cast<VulkanPipelineState*>(desc.pipeline);
-    vk::PipelineBindPoint bindpoint = vk::PipelineBindPoint::eGraphics;
-    switch (desc.type) {
-    case PipelineDesc::PipelineType::Graphics:
-        bindpoint = vk::PipelineBindPoint::eGraphics;
-        break;
-    case PipelineDesc::PipelineType::Compute:
-        bindpoint = vk::PipelineBindPoint::eCompute;
-        break;
-    }
-    m_commandBuffer.bindPipeline(bindpoint, *pipeline->GetVkPipeline());
+    m_commandBuffer.bindPipeline(
+        vkPipelineBindPointFromRHIDevicePipelineType(desc.type),
+        *static_cast<VulkanPipelineState*>(desc.pipeline)->GetVkPipeline()
+    );
     return *this;
 }
 
@@ -134,6 +127,38 @@ RHICommandList& VulkanCommandList::SetScissor(uint32_t x, uint32_t y, uint32_t w
 RHICommandList& VulkanCommandList::Draw(uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance) {
     CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
     m_commandBuffer.draw(vertex_count, instance_count, first_vertex, first_instance);
+    return *this;
+}
+
+RHICommandList& VulkanCommandList::DrawIndexed(uint32_t index_count, uint32_t instance_count, uint32_t first_index, int32_t vertex_offset, uint32_t first_instance) {
+    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    m_commandBuffer.drawIndexed(index_count, instance_count, first_index, vertex_offset, first_instance);
+    return *this;
+}
+
+RHICommandList& VulkanCommandList::CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::StlSpan<const CopyBufferRegion> regions) {
+    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(src_buffer && dst_buffer && "Source and destination buffers must be valid.");
+    
+    auto* src_vulkan_buffer = static_cast<VulkanBuffer*>(src_buffer);
+    auto* dst_vulkan_buffer = static_cast<VulkanBuffer*>(dst_buffer);
+
+    Core::StlVector<vk::BufferCopy> vk_regions(&m_allocator);
+    for (auto const& region : regions) {
+        size_t size = region.size;
+        if (size == CopyBufferRegion::kEntireBuffer) {
+            size = std::min(
+                src_vulkan_buffer->m_desc.size - region.src_offset,
+                dst_vulkan_buffer->m_desc.size - region.dst_offset
+            );
+        }
+        vk_regions.push_back(vk::BufferCopy{
+            .srcOffset = static_cast<vk::DeviceSize>(region.src_offset),
+            .dstOffset = static_cast<vk::DeviceSize>(region.dst_offset),
+            .size = size
+        });
+    }    
+    m_commandBuffer.copyBuffer(*src_vulkan_buffer->GetVkBuffer(), *dst_vulkan_buffer->GetVkBuffer(), vk_regions);    
     return *this;
 }
 
@@ -163,7 +188,6 @@ RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc) {
 
 RHICommandList& VulkanCommandList::BindVertexBuffer(uint32_t index, Core::StlSpan<RHIBuffer* const> buffers, Core::StlSpan<const size_t> offsets) {
     CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
-    CHECK(index < 8 && "Vulkan supports up to 8 vertex buffers.");
     CHECK(buffers.size() == offsets.size() && "Buffers and offsets must have the same size.");
     
     Core::StlVector<vk::Buffer> vk_buffers(&m_allocator);
@@ -174,6 +198,49 @@ RHICommandList& VulkanCommandList::BindVertexBuffer(uint32_t index, Core::StlSpa
         vk_offsets.push_back(static_cast<vk::DeviceSize>(offsets[i]));
     }
     m_commandBuffer.bindVertexBuffers(index, vk_buffers, vk_offsets);
+    return *this;
+}
+
+RHICommandList& VulkanCommandList::BindIndexBuffer(RHIBuffer* buffer, size_t offset, RHIResourceFormat format) {
+    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(buffer && "Buffer must be valid.");
+    vk::IndexType type;
+    switch (format)
+    {
+    case RHIResourceFormat::R32_UINT:
+        type = vk::IndexType::eUint32; break;
+    case RHIResourceFormat::R16_UINT:
+        type = vk::IndexType::eUint16; break;
+    default:
+        throw std::runtime_error("unsupported index format");
+        break;
+    }
+    auto* vulkan_buffer = static_cast<VulkanBuffer*>(buffer);
+    m_commandBuffer.bindIndexBuffer(*vulkan_buffer->GetVkBuffer(), static_cast<vk::DeviceSize>(offset), type);
+    return *this;
+}
+
+#include <Platform/RHI/Vulkan/Descriptor.hpp>
+RHICommandList& VulkanCommandList::BindDescriptorSet(
+    RHIDevicePipelineType bindpoint,
+    RHIPipelineState* pipeline,    
+    Core::StlSpan<RHIDeviceDescriptorSet* const> sets,
+    size_t first
+) {
+    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");    
+    Core::StlVector<vk::DescriptorSet> vk_sets(&m_allocator);
+    for (auto* set : sets) {
+        CHECK(set && "Descriptor set must be valid.");
+        auto* vulkan_set = static_cast<VulkanDeviceDescriptorSet*>(set);
+        vk_sets.push_back(*(vulkan_set->GetVkDescriptorSet()));
+    }
+    m_commandBuffer.bindDescriptorSets(
+        vkPipelineBindPointFromRHIDevicePipelineType(bindpoint),
+        static_cast<VulkanPipelineState*>(pipeline)->GetVkPipelineLayout(),
+        static_cast<uint32_t>(first),
+        vk_sets,
+        {} // TODO? Dynamic offsets
+    );
     return *this;
 }
 

@@ -445,3 +445,47 @@ RHIImage* VulkanDevice::GetImage(Handle handle) const {
 void VulkanDevice::DestroyImage(Handle handle) {
     m_storage.DestroyObject(handle);
 }
+
+VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDevice& device, RHIDeviceDescriptorSetLayoutDesc const& desc)
+    : m_device(device), RHIDeviceDescriptorSetLayout(device, desc)
+{
+    Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
+    Core::StlVector<vk::DescriptorSetLayoutBinding> bindings(desc.bindings.size(), alloc.Ptr());
+    for (size_t i = 0; i < desc.bindings.size(); ++i) {
+        auto const& b = desc.bindings[i];
+        bindings[i] = vk::DescriptorSetLayoutBinding{
+            .binding = static_cast<uint32_t>(i),
+            .descriptorType = vkDescriptorTypeFromRHIDescriptorType(b.type),
+            .descriptorCount = b.count,
+            .stageFlags = vkShaderStageFlagsFromRHIShaderStage(b.stage)
+        };
+    }
+    m_layout = vk::raii::DescriptorSetLayout(
+        m_device.GetVkDevice(),
+        vk::DescriptorSetLayoutCreateInfo{
+            .bindingCount = static_cast<uint32_t>(bindings.size()),
+            .pBindings = bindings.data()
+        },
+        m_device.GetVkAllocatorCallbacks()
+    );
+}
+RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> VulkanDevice::CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc) {
+    return { this, m_storage.CreateObject<VulkanDeviceDescriptorSetLayout>(*this, desc) };
+}
+RHIDeviceDescriptorSetLayout* VulkanDevice::GetDescriptorSetLayout(Handle handle) const {
+    return m_storage.GetObjectPtr<RHIDeviceDescriptorSetLayout>(handle);
+}
+void VulkanDevice::DestroyDescriptorSetLayout(Handle handle) {
+    m_storage.DestroyObject(handle);
+}
+
+#include <Platform/RHI/Vulkan/Descriptor.hpp>
+RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> VulkanDevice::CreateDescriptorPool(RHIDeviceDescriptorPool::PoolDesc const& desc) {
+    return { this, m_storage.CreateObject<VulkanDeviceDescriptorPool>(*this, desc) };
+}
+RHIDeviceDescriptorPool* VulkanDevice::GetDescriptorPool(Handle handle) const {
+    return m_storage.GetObjectPtr<RHIDeviceDescriptorPool>(handle);
+}
+void VulkanDevice::DestroyDescriptorPool(Handle handle) {
+    m_storage.DestroyObject(handle);
+}

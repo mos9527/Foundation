@@ -3,6 +3,7 @@
 #include <Platform/RHI/Application.hpp>
 #include <Platform/RHI/Resource.hpp>
 #include <Platform/RHI/Device.hpp>
+#include <Platform/RHI/Descriptor.hpp>
 namespace Foundation {
     namespace Renderer {
         using namespace Platform::RHI;
@@ -11,6 +12,10 @@ namespace Foundation {
 
             RHIApplicationObjectHandle<RHIDevice> m_device;
             RHIDeviceQueue* m_queue{ nullptr };
+
+            RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_desc_pool;
+            RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> m_desc_layout;
+            Core::StlVector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> m_desc_set;
 
             RHIDeviceScopedObjectHandle<RHIShaderModule> m_shader_vert, m_shader_frag;
             RHIDeviceScopedObjectHandle<RHISwapchain> m_swapchain;
@@ -21,15 +26,16 @@ namespace Foundation {
             Core::StlVector<RHICommandPoolScopedHandle<RHICommandList>> m_cmd;
 
             RHIDeviceScopedObjectHandle<RHIPipelineState> m_pso;
-            RHIDeviceScopedObjectHandle<RHIBuffer> m_vertex_buffer;
+            RHIDeviceScopedObjectHandle<RHIBuffer> m_vertex_buffer, m_uniform_buffer;
 
             Core::StlVector<RHIImageScopedHandle<RHIImageView>>
                 m_swapchain_imageviews;
 
             uint32_t m_current_img{ 0 };
-            void Record(uint32_t image_index, RHICommandList* cmd);
+            void Record(uint32_t image_index, RHICommandList* cmd);            
         public:
             Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator* allocator);
+            ~Renderer();
             void Draw();
         };
     }

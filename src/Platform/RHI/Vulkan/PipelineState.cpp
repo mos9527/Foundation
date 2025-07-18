@@ -9,13 +9,13 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
     : RHIPipelineState(device, desc), m_device(device) {
     Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
     Core::StlVector<vk::VertexInputBindingDescription> vtx_bindings(alloc.Ptr());
-    for (size_t i = 0;i < desc.vertex_input.bindings.size(); ++i) {
+    for (size_t i = 0; i < desc.vertex_input.bindings.size(); ++i) {
         const auto& binding = desc.vertex_input.bindings[i];
         vtx_bindings.emplace_back(vk::VertexInputBindingDescription{
             .binding = static_cast<uint32_t>(i),
             .stride = binding.stride,
             .inputRate = binding.per_instance ? vk::VertexInputRate::eInstance : vk::VertexInputRate::eVertex
-        });
+            });
     }
     Core::StlVector<vk::VertexInputAttributeDescription> vtx_attrs(alloc.Ptr());
     for (const auto& attr : desc.vertex_input.attributes) {
@@ -24,7 +24,7 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
             .binding = attr.binding,
             .format = vkFormatFromRHIFormat(attr.format),
             .offset = attr.offset
-        });
+            });
     }
     vk::PipelineVertexInputStateCreateInfo vtx{
         .vertexBindingDescriptionCount = static_cast<uint32_t>(vtx_bindings.size()),
@@ -72,15 +72,11 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
         .attachmentCount = static_cast<uint32_t>(blend_attachments.size()),
         .pAttachments = blend_attachments.data(),
     };
-    vk::DynamicState dynamic_states[2] {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
+    vk::DynamicState dynamic_states[2]{ vk::DynamicState::eViewport, vk::DynamicState::eScissor };
     vk::PipelineDynamicStateCreateInfo dynamic_state{
         .dynamicStateCount = 2, // Viewport and Scissor
         .pDynamicStates = dynamic_states
     };
-    auto pipeline_layout = vk::raii::PipelineLayout(m_device.GetVkDevice(), vk::PipelineLayoutCreateInfo{
-        .setLayoutCount = 0, // No descriptor sets for now
-        .pushConstantRangeCount = 0 // No push constants for now
-    }, m_device.GetVkAllocatorCallbacks());
     vk::PipelineRenderingCreateInfo rendering_create_info{
         .colorAttachmentCount = static_cast<uint32_t>(color_attachment_formats.size()),
         .pColorAttachmentFormats = color_attachment_formats.data()
@@ -88,17 +84,28 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
     Core::StlVector<vk::PipelineShaderStageCreateInfo> shaderStages(alloc.Ptr());
     for (auto& shader : m_desc.shader_stages)
         shaderStages.push_back({
-        .stage = GetVulkanShaderStageFromDesc(shader.desc.stage),
+        .stage = vkShaderStageFlagBitFromRHIShaderStage(shader.desc.stage),
         .module = shader.shader_module.Get<VulkanShaderModule>()->GetVkShaderModule(),
         .pName = shader.desc.entry_point.c_str(),
         .pSpecializationInfo = nullptr // TODO: !! handle specialization info
-    });
+            });
+    Core::StlVector<vk::DescriptorSetLayout> p_set_layouts(desc.descriptor_set_layouts.size(), alloc.Ptr());
+    for (size_t i = 0; i < desc.descriptor_set_layouts.size(); ++i)
+        p_set_layouts[i] = desc.descriptor_set_layouts[i].Get<VulkanDeviceDescriptorSetLayout>()->GetVkLayout();
+
+    m_pipeline_layout = vk::raii::PipelineLayout(m_device.GetVkDevice(),
+        vk::PipelineLayoutCreateInfo{
+        .setLayoutCount = static_cast<uint32_t>(p_set_layouts.size()),
+        .pSetLayouts = p_set_layouts.data(),
+        .pushConstantRangeCount = 0, // TODO: handle push constants
+    }, m_device.GetVkAllocatorCallbacks());
+
     vk::GraphicsPipelineCreateInfo pipelineInfo{ .pNext = &rendering_create_info,
         .stageCount = static_cast<uint32_t>(shaderStages.size()), .pStages = shaderStages.data(),
         .pVertexInputState = &vtx, .pInputAssemblyState = &ia,
         .pViewportState = &viewport, .pRasterizationState = &rasterizer,
         .pMultisampleState = &multisampling, .pColorBlendState = &color_blending,
-        .pDynamicState = &dynamic_state, .layout = pipeline_layout, .renderPass = nullptr };
+        .pDynamicState = &dynamic_state, .layout = m_pipeline_layout, .renderPass = nullptr };
 
     m_pipeline = vk::raii::Pipeline(m_device.GetVkDevice(), nullptr, pipelineInfo, m_device.GetVkAllocatorCallbacks());
-}   
+}

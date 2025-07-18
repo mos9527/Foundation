@@ -24,7 +24,7 @@ namespace Foundation {
                 vk::BufferUsageFlags flags{};
                 if (usage & VertexBuffer) flags |= vk::BufferUsageFlagBits::eVertexBuffer;
                 if (usage & IndexBuffer) flags |= vk::BufferUsageFlagBits::eIndexBuffer;
-                if (usage & ConstantBuffer) flags |= vk::BufferUsageFlagBits::eUniformBuffer;
+                if (usage & UniformBuffer) flags |= vk::BufferUsageFlagBits::eUniformBuffer;
                 if (usage & StorageBuffer) flags |= vk::BufferUsageFlagBits::eStorageBuffer;
                 if (usage & IndirectBuffer) flags |= vk::BufferUsageFlagBits::eIndirectBuffer;
                 if (usage & TransferSource) flags |= vk::BufferUsageFlagBits::eTransferSrc;
@@ -67,6 +67,52 @@ namespace Foundation {
                 if (stage & RenderTargetOutput) flags |= vk::PipelineStageFlagBits2::eColorAttachmentOutput;
                 if (stage & BottomOfPipe) flags |= vk::PipelineStageFlagBits2::eBottomOfPipe;
                 return flags;
+            }
+
+            inline vk::ShaderStageFlags vkShaderStageFlagsFromRHIShaderStage(RHIShaderStage stage) {
+                using enum RHIShaderStage;
+                vk::ShaderStageFlags flags{};
+                if (stage == All) return vk::ShaderStageFlagBits::eAll;
+                if (stage & Vertex) flags |= vk::ShaderStageFlagBits::eVertex;
+                if (stage & Fragment) flags |= vk::ShaderStageFlagBits::eFragment;
+                if (stage & Compute) flags |= vk::ShaderStageFlagBits::eCompute;
+                return flags;
+            }
+
+            // XXX: Returns only the first matching flag bit. We don't have
+            // a 'bit' type per-se.
+            // Documentation has been explicitly stating that multiple bitmasks
+            // would result in UB - but programmers are stupid (I'm one of them)
+            // and shit like this would be impossible to debug.
+            // TODO: Bit types for singular flags.
+            inline vk::ShaderStageFlagBits vkShaderStageFlagBitFromRHIShaderStage(RHIShaderStage stage) {
+                using enum RHIShaderStage;
+                if (stage & Vertex) return vk::ShaderStageFlagBits::eVertex;
+                if (stage & Fragment) return vk::ShaderStageFlagBits::eFragment;
+                if (stage & Compute) return vk::ShaderStageFlagBits::eCompute;
+                return {};
+            }
+
+            inline vk::DescriptorType vkDescriptorTypeFromRHIDescriptorType(RHIDescriptorType type) {
+                using enum RHIDescriptorType;
+                switch (type)
+                {
+                case Sampler:                                    
+                    return vk::DescriptorType::eSampler;
+                case StorageBuffer:
+                    return vk::DescriptorType::eStorageBuffer;
+                default:
+                case UniformBuffer:
+                    return vk::DescriptorType::eUniformBuffer;
+                }
+            }
+
+            inline vk::PipelineBindPoint vkPipelineBindPointFromRHIDevicePipelineType(RHIDevicePipelineType type) {
+                switch (type) {
+                    case RHIDevicePipelineType::Compute:  return vk::PipelineBindPoint::eCompute;
+                    default:
+                    case RHIDevicePipelineType::Graphics: return vk::PipelineBindPoint::eGraphics;
+                }
             }
         }
     }

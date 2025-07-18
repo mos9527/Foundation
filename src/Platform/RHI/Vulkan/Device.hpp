@@ -63,6 +63,16 @@ namespace Foundation {
                 inline bool IsValid() const override { return m_fence != nullptr; }
                 inline const char* GetName() const override { return "VulkanDeviceFence"; }
             };
+            class VulkanDeviceDescriptorSetLayout : public RHIDeviceDescriptorSetLayout {
+                const VulkanDevice& m_device;
+                vk::raii::DescriptorSetLayout m_layout{ nullptr };
+            public:
+                VulkanDeviceDescriptorSetLayout(const VulkanDevice& device, RHIDeviceDescriptorSetLayoutDesc const& desc);
+
+                inline auto const& GetVkLayout() const { return m_layout; }
+                inline bool IsValid() const override { return m_layout != nullptr; }
+                inline const char* GetName() const override { return "VulkanDeviceDescriptorSetLayout"; }
+            };
             class VulkanDevice : public RHIDevice {
                 const VulkanApplication& m_app;
 
@@ -118,6 +128,15 @@ namespace Foundation {
                 RHIDeviceScopedObjectHandle<RHIImage> CreateImage(RHIImageDesc const& desc) override;
                 RHIImage* GetImage(Handle handle) const override;
                 void DestroyImage(Handle handle) override;
+
+                RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc) override;
+                RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout(Handle handle) const override;
+                void DestroyDescriptorSetLayout(Handle handle) override;
+
+                RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> CreateDescriptorPool(
+                    RHIDeviceDescriptorPool::PoolDesc const& desc) override;
+                RHIDeviceDescriptorPool* GetDescriptorPool(Handle handle) const override;
+                void DestroyDescriptorPool(Handle handle) override;
 
                 void ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) override;
                 void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) override;

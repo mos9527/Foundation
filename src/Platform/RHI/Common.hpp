@@ -6,6 +6,7 @@
 namespace Foundation {
     namespace Platform {
         namespace RHI {
+            constexpr static size_t kFullSize = -1;
             enum class RHIResourceFormat {
                 Undefined = 0,
                 R8G8B8A8_UNORM,
@@ -13,6 +14,8 @@ namespace Foundation {
                 R32G32_SIGNED_FLOAT,
                 R32G32B32_SIGNED_FLOAT,
                 R32G32B32A32_SIGNED_FLOAT,
+                R32_UINT,
+                R16_UINT
             };
             enum class RHICommandPoolType {
                 // The command pool is persistent, meaning command buffers can be reused
@@ -25,6 +28,10 @@ namespace Foundation {
                 Compute,
                 Transfer,
                 Present
+            };
+            enum class RHIDevicePipelineType {
+                Graphics,
+                Compute,                
             };
             enum class RHIDeviceHeapType {
                 Local,
@@ -46,6 +53,20 @@ namespace Foundation {
                 WriteOnly // write only, reads are undefined
             };
 
+            enum class RHIDescriptorType {
+                Sampler,                
+                UniformBuffer,
+                StorageBuffer
+            };
+
+            BITMASK_ENUM_BEGIN(RHIShaderStage, uint32_t)
+                Undefined = 0,
+                Vertex = 1 << 0,
+                Fragment = 1 << 1,
+                Compute = 1 << 2,
+                All = ~0u
+            BITMASK_ENUM_END()
+
             BITMASK_ENUM_BEGIN(RHIResourceAccess, uint32_t)
                 Undefined = 0,
                 RenderTargetWrite = 1 << 0,
@@ -62,7 +83,9 @@ namespace Foundation {
                 Undefined = 0,
                 VertexBuffer = 1 << 0,
                 IndexBuffer = 1 << 1,
-                ConstantBuffer = 1 << 2,
+                // i.e. Uniform Buffer
+                UniformBuffer = 1 << 2,
+                // i.e. Structured Buffer
                 StorageBuffer = 1 << 3,
                 IndirectBuffer = 1 << 4,
                 TransferSource = 1 << 5,

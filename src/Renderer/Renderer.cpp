@@ -19,9 +19,16 @@ struct vertex_input {
     glm::vec2 pos;
     glm::vec3 color;
 };
+struct uniform_buffer {
+    // col-major
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
+};
 Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator* allocator)
     : m_device(device), m_allocator(allocator), m_swapchain_imageviews(allocator),
-    m_sync_present(allocator), m_sync_draw(allocator), m_fence_draw(allocator), m_cmd(allocator) {
+    m_sync_present(allocator), m_sync_draw(allocator), m_fence_draw(allocator), m_cmd(allocator),
+    m_desc_set(allocator) {
     // Swapchain & sync primitives setup
     m_swapchain = m_device->CreateSwapchain(RHISwapchain::SwapchainDesc{
         .format = RHIResourceFormat::R8G8B8A8_UNORM,
@@ -66,28 +73,22 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
     };
     RHIPipelineState::PipelineStateDesc::ShaderStage stages[]{
         {.desc = {
-            .stage = RHIPipelineState::PipelineStateDesc::ShaderStage::StageDesc::VERTEX,
+            .stage = RHIShaderStage::Vertex,
             .entry_point = "main"
         }, .shader_module = m_shader_vert },
         {.desc = {
-            .stage = RHIPipelineState::PipelineStateDesc::ShaderStage::StageDesc::FRAGMENT,
+            .stage = RHIShaderStage::Fragment,
             .entry_point = "main"
         }, .shader_module = m_shader_frag }
     };
-    // Buffers
-    m_vertex_buffer = m_device->CreateBuffer(RHIBufferDesc{
-        .resource = {
-            .name = "Triangle Vertex Buffer",
-            .usage = RHIBufferUsage::VertexBuffer,
-            .host_access = RHIResourceHostAccess::ReadWrite,
-            .coherent = true,
-        },
-        .size = 1 << 20 // 1 MiB
+    m_desc_pool = device->CreateDescriptorPool(RHIDeviceDescriptorPool::PoolDesc{
+        .bindings = {{{.type = RHIDescriptorType::UniformBuffer, .max_count = 16 }}}
+        });
+    m_desc_layout = device->CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc{
+        .bindings = {{
+            {.type = RHIDescriptorType::UniformBuffer }
+        }}
     });
-    auto span = m_vertex_buffer->MapSpan<vertex_input>(3);
-    span[0] = { {0.0f, -0.5f}, {1.0f, 0.0f, 0.0f} },
-        span[1] = { {0.5f, 0.5f}, {0.0f, 1.0f, 0.0f} },
-        span[2] = { {-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f} };
     RHIPipelineState::PipelineStateDesc pipeline{
         .vertex_input = {
             .bindings = {
@@ -104,14 +105,74 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
         .rasterizer = {
             .fill_mode = RHIPipelineState::PipelineStateDesc::Rasterizer::FILL_SOLID,
             .cull_mode = RHIPipelineState::PipelineStateDesc::Rasterizer::CULL_BACK,
-            .front_face = RHIPipelineState::PipelineStateDesc::Rasterizer::FF_CLOCKWISE,
+            .front_face = RHIPipelineState::PipelineStateDesc::Rasterizer::FF_COUNTER_CLOCKWISE,
         },
         .multisample = {.enabled = false },
         .attachments = { &attachment, 1 },
-        .shader_stages = stages
+        .shader_stages = stages,
+        .descriptor_set_layouts = { m_desc_layout },
     };
     m_pso = m_device->CreatePipelineState(pipeline);
-
+    // Buffers
+    m_uniform_buffer = m_device->CreateBuffer(RHIBufferDesc{
+        .resource = {
+            .name = "Triangle Uniform Buffer",
+            .usage = (RHIBufferUsage)(RHIBufferUsage::UniformBuffer | RHIBufferUsage::TransferDestination),
+            .host_access = RHIResourceHostAccess::ReadWrite,
+            .coherent = true
+        },
+        .size = sizeof(uniform_buffer)
+    });
+    m_desc_set.resize(m_swapchain->GetImages().size());
+    for (auto& set : m_desc_set) {
+        set = m_desc_pool->CreateDescriptorSet(m_desc_layout);
+        set->Update(RHIDeviceDescriptorSet::UpdateDesc{
+            .type = RHIDescriptorType::UniformBuffer,
+            .buffers = {{
+                {.buffer = m_uniform_buffer.Get(), .offset = 0, .size = sizeof(uniform_buffer) }
+            }},
+        });
+    }
+    m_vertex_buffer = m_device->CreateBuffer(RHIBufferDesc{
+        .resource = {
+            .name = "Triangle Vertex Buffer",
+            .usage = (RHIBufferUsage)(RHIBufferUsage::VertexBuffer | RHIBufferUsage::TransferDestination),
+            .host_access = RHIResourceHostAccess::ReadWrite,
+        },
+        .size = 1 << 20 // 1 MiB
+    });
+    {
+        // Demo: Staging buffer upload
+        auto staging = m_device->CreateBuffer(RHIBufferDesc{
+            .resource = {
+                .name = "Triangle Vertex Staging Buffer",
+                .usage = RHIBufferUsage::TransferSource,
+                .host_access = RHIResourceHostAccess::ReadWrite,
+                .coherent = true,
+            },
+            .size = 3 * sizeof(vertex_input)
+            });
+        auto span = staging->MapSpan<vertex_input>(3);
+        span[0] = { {0.0f, -0.5f}, {1.0f, 0.0f, 0.0f} };
+        span[1] = { {0.5f, 0.5f}, {0.0f, 1.0f, 0.0f} };
+        span[2] = { {-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f} };
+        auto cmd = m_cmd_pool->CreateCommandList();
+        cmd->Begin();
+        cmd->CopyBuffer(
+            staging.Get(),
+            m_vertex_buffer.Get(),
+            { {RHICommandList::CopyBufferRegion{
+                .src_offset = 0,
+                .dst_offset = 0,
+                .size = 3 * sizeof(vertex_input)
+            }} }
+        );
+        cmd->End();
+        m_queue->Submit(RHIDeviceQueue::SubmitDesc{
+            .cmd_lists = cmd,
+            });
+        m_queue->WaitIdle();
+    }
 }
 void Renderer::Record(uint32_t image_index, RHICommandList* cmd) {
     cmd->Begin();
@@ -140,11 +201,16 @@ void Renderer::Record(uint32_t image_index, RHICommandList* cmd) {
         });
     cmd->SetPipeline(RHICommandList::PipelineDesc{
         .pipeline = m_pso.Get(),
-        .type = RHICommandList::PipelineDesc::PipelineType::Graphics
+        .type = RHIDevicePipelineType::Graphics
         });
     cmd->BindVertexBuffer(0, { { m_vertex_buffer.Get() } }, { {0} });
     cmd->SetViewport(0.0f, 0.0f, 1920.0f, 1080.0f);
     cmd->SetScissor(0, 0, 1920, 1080);
+    cmd->BindDescriptorSet(
+        RHIDevicePipelineType::Graphics,
+        m_pso.Get(),
+        { { m_desc_set[image_index].Get() }}
+    );
     cmd->Draw(3);
     cmd->EndGraphics();
     cmd->BeginTransition();
@@ -163,6 +229,20 @@ void Renderer::Record(uint32_t image_index, RHICommandList* cmd) {
     cmd->End();
 }
 void Renderer::Draw() {
+    // Update MVP
+    static auto startTime = std::chrono::high_resolution_clock::now();
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    float time = std::chrono::duration<float>(currentTime - startTime).count();
+    auto& ubo = m_uniform_buffer->MapSpan<uniform_buffer>()[0];
+    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.proj = glm::infinitePerspective(
+        glm::radians(45.0f), 
+        m_swapchain->GetAspectRatio(),
+        0.1f
+    );
+    ubo.proj[1][1] *= -1;
+
     m_device->WaitForFences(m_fence_draw[m_current_img], true, -1);
     uint32_t image_index = m_swapchain->GetNextImage(-1, m_sync_present[m_current_img], {});
     m_device->ResetFences(m_fence_draw[m_current_img]);
@@ -182,4 +262,9 @@ void Renderer::Draw() {
         .waits = m_sync_draw[m_current_img]
         });
     m_current_img = (m_current_img + 1) % (m_cmd.size());
+}
+Renderer::~Renderer() {
+    // Ensures that all commands are finished before destruction
+    // XXX: GUARDS? But we don't own them!
+    m_queue->WaitIdle();
 }

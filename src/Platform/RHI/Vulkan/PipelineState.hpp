@@ -12,8 +12,7 @@ namespace Foundation {
                     case TRIANGLE_STRIP: return vk::PrimitiveTopology::eTriangleStrip;
                     case TRIANGLE_LIST:
                     default:
-                        return vk::PrimitiveTopology::eTriangleList;
-                       
+                        return vk::PrimitiveTopology::eTriangleList;                       
                 }
             }
             inline vk::PolygonMode GetVulkanPolygonModeFromDesc(RHIPipelineState::PipelineStateDesc::Rasterizer::FillMode mode) {
@@ -86,21 +85,12 @@ namespace Foundation {
                 }
             }
 
-            inline vk::ShaderStageFlagBits GetVulkanShaderStageFromDesc(RHIPipelineState::PipelineStateDesc::ShaderStage::StageDesc::StageType stage) {
-                using enum RHIPipelineState::PipelineStateDesc::ShaderStage::StageDesc::StageType;
-                switch (stage) {
-                    case FRAGMENT: return vk::ShaderStageFlagBits::eFragment;
-                    case COMPUTE: return vk::ShaderStageFlagBits::eCompute;
-                    case VERTEX:
-                    default:
-                        return vk::ShaderStageFlagBits::eVertex;
-                }
-            }
             class VulkanDevice;
             class VulkanPipelineState : public RHIPipelineState {
                 const VulkanDevice& m_device;
 
                 vk::raii::Pipeline m_pipeline{ nullptr };
+                vk::raii::PipelineLayout m_pipeline_layout{ nullptr };
             public:
                 VulkanPipelineState(const VulkanDevice& device, PipelineStateDesc const& desc);
 
@@ -108,6 +98,7 @@ namespace Foundation {
                 inline const char* GetName() const { return m_desc.name.c_str(); }
 
                 inline auto const& GetVkPipeline() const { return m_pipeline; }
+                inline auto const& GetVkPipelineLayout() const { return m_pipeline_layout; }
             };
         }
     }

@@ -40,9 +40,6 @@ namespace Foundation {
                 RHIBuffer(RHIDevice const& device, RHIBufferDesc const& desc)
                     : m_device(device), m_desc(desc) {
                 }
-
-                constexpr static size_t kEntireRegion = -1;
-
                 /// <summary>
                 /// Maps the entire buffer to the host memory.
                 /// Alignment is implementation-defined.
@@ -55,7 +52,7 @@ namespace Foundation {
                 /// Flushes the mapped region to the device.
                 /// Depending on the implementation, this may be a no-op.                
                 /// </summary>
-                virtual void Flush(size_t offset = 0, size_t size = kEntireRegion) = 0;
+                virtual void Flush(size_t offset = 0, size_t size = kFullSize) = 0;
                 /// <summary>
                 /// Releases or unmaps a previously mapped resource.
                 /// Implementations MUST guarantee that Unmap() is called at destruction time
@@ -70,9 +67,9 @@ namespace Foundation {
                 /// For detailed mapping behaviour, <see cref="Map"/>
                 /// </summary>                
                 /// <param name="count">count of elements</param>                
-                template<typename T> Core::StlSpan<T> MapSpan(size_t count = kEntireRegion) {
+                template<typename T> Core::StlSpan<T> MapSpan(size_t count = kFullSize) {
                     void* p = Map();
-                    if (count == kEntireRegion)
+                    if (count == kFullSize)
                         count = m_desc.size / sizeof(T);
                     CHECK(count * sizeof(T) <= m_desc.size && "Buffer map range out of bounds");
                     return { static_cast<T*>(p) , count };

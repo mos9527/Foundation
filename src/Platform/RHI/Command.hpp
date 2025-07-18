@@ -3,6 +3,7 @@
 #include <Platform/RHI/Resource.hpp>
 #include <Platform/RHI/Swapchain.hpp>
 #include <Platform/RHI/PipelineState.hpp>
+#include <Platform/RHI/Descriptor.hpp>
 namespace Foundation {
     namespace Platform {
         namespace RHI {
@@ -48,17 +49,33 @@ namespace Foundation {
 #pragma region PSO
                 struct PipelineDesc {
                     RHIPipelineState* pipeline;
-                    enum class PipelineType {
-                        Graphics,
-                        Compute                        
-                    } type;
+                    RHIDevicePipelineType type;
                 };
-                virtual RHICommandList& SetPipeline(PipelineDesc const& desc) = 0;
+                virtual RHICommandList& SetPipeline(PipelineDesc const& desc) = 0;           
+                virtual RHICommandList& BindDescriptorSet(
+                    RHIDevicePipelineType bindpoint,
+                    RHIPipelineState* pipeline,
+                    Core::StlSpan<RHIDeviceDescriptorSet* const> sets,
+                    size_t first = 0) = 0;
 #pragma endregion
 #pragma region Rasterizer
                 virtual RHICommandList& SetViewport(float x, float y, float width, float height, float depth_min = 0.0, float depth_max = 1.0) = 0;
                 virtual RHICommandList& SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height) = 0;
                 virtual RHICommandList& Draw(uint32_t vertex_count, uint32_t instance_count = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0) = 0;
+                virtual RHICommandList& DrawIndexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0, int32_t vertex_offset = 0, uint32_t first_instance = 0) = 0;
+#pragma endregion
+#pragma region Transfer Queue
+                struct CopyBufferRegion {
+                    constexpr static size_t kEntireBuffer = -1;
+                    size_t src_offset = 0;
+                    size_t dst_offset = 0;
+                    /// Size of the region to copy.
+                    /// If size is kEntireBuffer, the maximum copiable region
+                    /// min(src_buffer.size - src_offset, dst_buffer.size - dst_offset)
+                    /// will be used.
+                    size_t size = kEntireBuffer;
+                };
+                virtual RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::StlSpan<const CopyBufferRegion> regions) = 0;
 #pragma endregion
 #pragma region Graphics Pipeline
                 struct GraphicsDesc {
@@ -72,6 +89,7 @@ namespace Foundation {
                 };
                 virtual RHICommandList& BeginGraphics(GraphicsDesc const& desc) = 0;
                 virtual RHICommandList& BindVertexBuffer(uint32_t index, Core::StlSpan<RHIBuffer* const> buffers, Core::StlSpan<const size_t> offsets) = 0;
+                virtual RHICommandList& BindIndexBuffer(RHIBuffer* buffer, size_t offset = 0, RHIResourceFormat format = RHIResourceFormat::R32_UINT) = 0;
                 virtual RHICommandList& EndGraphics() = 0;
 #pragma endregion
 #pragma region Tags

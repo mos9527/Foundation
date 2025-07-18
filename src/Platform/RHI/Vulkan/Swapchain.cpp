@@ -54,6 +54,12 @@ Core::StlSpan<RHIImage* const> VulkanSwapchain::GetImages() const {
     return { m_images_ptrs.data(), m_images_ptrs.size() };
 }
 
+std::pair<size_t, size_t> VulkanSwapchain::GetDimensions() const
+{
+    // !! TODO: swapchain recreation
+    return { m_desc.width, m_desc.height };
+}
+
 size_t VulkanSwapchain::GetNextImage(uint64_t timeout_ns, RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore, RHIDeviceObjectHandle<RHIDeviceFence> fence)
 {
     auto [result, index] = m_swapchain.acquireNextImage(

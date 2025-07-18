@@ -43,7 +43,7 @@ void* VulkanBuffer::Map() {
 void VulkanBuffer::Flush(size_t offset, size_t size) {
     if (m_desc.resource.coherent || !m_mapped)
         return;
-    if (size == kEntireRegion)
+    if (size == kFullSize)
         size = VK_WHOLE_SIZE;
     vmaFlushAllocation(m_device.GetVkAllocator(), m_allocation, offset, size);
 }

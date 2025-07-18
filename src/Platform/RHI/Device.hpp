@@ -3,6 +3,8 @@
 #include <Platform/RHI/Shader.hpp>
 #include <Platform/RHI/Swapchain.hpp>
 #include <Platform/RHI/Command.hpp>
+#include <Platform/RHI/Resource.hpp>
+#include <Platform/RHI/Descriptor.hpp>
 namespace Foundation {
     namespace Platform {
         namespace RHI {
@@ -44,6 +46,23 @@ namespace Foundation {
                 const RHIDevice& m_device;
             public:
                 RHIDeviceFence(RHIDevice const& device) : m_device(device) {}
+            };
+            struct RHIDeviceDescriptorSetLayoutDesc {
+                struct Binding {
+                    uint32_t count{ 1 }; // Array size for array access
+                    RHIShaderStage stage{ RHIShaderStage::All }; // Stage this binding is used in
+                    RHIDescriptorType type; // Type of this binding
+                };
+                Core::StlSpan<const Binding> bindings;
+            };
+            class RHIDeviceDescriptorSetLayout : public RHIObject {
+            protected:
+                const RHIDevice& m_device;
+            public:
+                const RHIDeviceDescriptorSetLayoutDesc m_desc;
+                RHIDeviceDescriptorSetLayout(RHIDevice const& device, RHIDeviceDescriptorSetLayoutDesc const& desc)
+                    : m_device(device), m_desc(desc) {
+                }
             };
             class RHIDevice : public RHIObject {
             protected:
@@ -89,6 +108,15 @@ namespace Foundation {
                 virtual RHIDeviceScopedObjectHandle<RHIImage> CreateImage(RHIImageDesc const& desc) = 0;
                 virtual RHIImage* GetImage(Handle handle) const = 0;
                 virtual void DestroyImage(Handle handle) = 0;
+
+                virtual RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc) = 0;
+                virtual RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout(Handle handle) const = 0;
+                virtual void DestroyDescriptorSetLayout(Handle handle) = 0;
+
+                virtual RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> CreateDescriptorPool(
+                    RHIDeviceDescriptorPool::PoolDesc const& desc) = 0;
+                virtual RHIDeviceDescriptorPool* GetDescriptorPool(Handle handle) const = 0;
+                virtual void DestroyDescriptorPool(Handle handle) = 0;
 
                 virtual void ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) = 0;
                 virtual void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) = 0;
@@ -156,6 +184,22 @@ namespace Foundation {
                 }
                 static void Destroy(RHIDevice* device, Handle handle) {
                     device->DestroyImage(handle);
+                }
+            };
+            template<> struct RHIObjectTraits<RHIDeviceDescriptorSetLayout> {
+                static RHIDeviceDescriptorSetLayout* Get(RHIDevice const* device, Handle handle) {
+                    return device->GetDescriptorSetLayout(handle);
+                }
+                static void Destroy(RHIDevice* device, Handle handle) {
+                    device->DestroyDescriptorSetLayout(handle);
+                }
+            };
+            template<> struct RHIObjectTraits<RHIDeviceDescriptorPool> {
+                static RHIDeviceDescriptorPool* Get(RHIDevice const* device, Handle handle) {
+                    return device->GetDescriptorPool(handle);
+                }
+                static void Destroy(RHIDevice* device, Handle handle) {
+                    device->DestroyDescriptorPool(handle);
                 }
             };
         }

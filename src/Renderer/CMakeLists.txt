@@ -61,7 +61,7 @@ function(add_slang_shader TARGET)
         list(GET ARG_ENTRY_POINTS ${I} SHADER_ENTRY)
 
         set(OUTPUT_FILENAME "${ARG_OUTPUT_DIR}/${ARG_OUTPUT_NAME}_${SHADER_ENTRY}.${SHADER_TARGET}")
-
+        # https://www.khronos.org/assets/uploads/developers/presentations/Vulkan_BOF_Using_Slang_with_Vulkan_SIGG24.pdf
         set(SLANGC_ARGS
             "${ARG_SOURCE}"
             -o "${OUTPUT_FILENAME}"
@@ -69,6 +69,7 @@ function(add_slang_shader TARGET)
             -profile ${SHADER_PROFILE}
             -entry ${SHADER_ENTRY}
             -emit-spirv-directly
+            -matrix-layout-column-major
         )
         foreach(DEFINE ${ARG_DEFINES})
             list(APPEND SLANGC_ARGS -D${DEFINE})
