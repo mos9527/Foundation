@@ -22,7 +22,7 @@ namespace Foundation {
                     // Name for the swap chain, used for debugging purposes.
                     RHIResourceFormat format;
                     // Swapchain buffer dimensions.
-                    uint32_t width, height;
+                    RHIExtent2D dimensions;
                     // Number of buffers in the swap chain. i.e. double buffering = 2, triple buffering = 3, etc.
                     uint32_t buffer_count;
                     // Present mode for the swap chain.

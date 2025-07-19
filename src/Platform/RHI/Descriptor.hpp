@@ -4,6 +4,8 @@ namespace Foundation {
     namespace Platform {
         namespace RHI {
             class RHIBuffer;
+            class RHIImageView;
+            class RHIDeviceSampler;
             class RHIDeviceDescriptorPool;
             class RHIDeviceDescriptorSetLayout;
             template<typename T> using RHIDeviceDescriptorPoolHandle = RHIHandle<RHIDeviceDescriptorPool, T>;
@@ -14,20 +16,26 @@ namespace Foundation {
             public:
                 RHIDeviceDescriptorSet(RHIDeviceDescriptorPool const& pool) : m_pool(pool) {}
                 struct UpdateDesc {                    
+                    size_t binding{ 0 }; // 0-indexed, first to update in the descriptor set
+                    RHIDescriptorType type{ RHIDescriptorType::UniformBuffer };
                     struct Buffer {
                         RHIBuffer* buffer{ nullptr }; // Buffer to bind
                         size_t offset{ 0 }; // Offset in bytes
                         size_t size{ kFullSize }; // Size in bytes
                     };
-                    size_t binding{ 0 }; // 0-indexed, first to update in the descriptor set
-                    // Type of descriptor to update
-                    // This also determines which of the next spans is used
-                    // to update the descriptors.
-                    // Implementations should guarantee that descriptor type updates within
-                    // a single call is homogenous.
-                    RHIDescriptorType type{ RHIDescriptorType::UniformBuffer };
-                    Core::StlSpan<const Buffer> buffers; // Buffers to update starting from `binding`
+                    Core::StlSpan<const Buffer> buffers; // Applies to type of UniformBuffer, StorageBuffer
+                    struct Image {
+                        RHIImageView* image_view{ nullptr }; // Image view to bind, can be null
+                        RHIDeviceSampler* sampler{ nullptr }; // Sampler to bind, can be null
+                        RHIImageLayout layout{ RHIImageLayout::Undefined }; // Layout of the image
+                    };
+                    Core::StlSpan<const Image> images; // Applies to type of Sampler, SampledImage
                 };
+                // NOTE: `desc.type` is used to determine which of the next spans is used                
+                // to update the descriptors.
+                // Implementations should guarantee that descriptor type updates within
+                // a single call is homogenous, and throw if type mismatches the spans given,
+                // or some spans are unused.
                 virtual void Update(UpdateDesc const& desc) = 0;
             };
             class RHIDeviceDescriptorPool : public RHIObject {

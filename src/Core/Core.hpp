@@ -13,13 +13,5 @@ namespace Foundation {
 	}
 } // namespace Foundation
 
-#ifdef _DEBUG
+// TODO: Exception handling
 #define CHECK(expr) if(!(expr)) Foundation::Core::BugCheck(std::runtime_error("Check Failed: " #expr)); 
-#else
-#define CHECK(expr) (void)0
-#endif
-
-#define RUNTIME_GUARD(expr, msg) \
-    if (!(expr)) { \
-        throw std::runtime_error(msg); \
-    }

@@ -73,6 +73,15 @@ namespace Foundation {
                 inline bool IsValid() const override { return m_layout != nullptr; }
                 inline const char* GetName() const override { return "VulkanDeviceDescriptorSetLayout"; }
             };
+            class VulkanDeviceSampler : public RHIDeviceSampler {
+                const VulkanDevice& m_device;
+                vk::raii::Sampler m_sampler{ nullptr };
+            public:
+                VulkanDeviceSampler(const VulkanDevice& device, RHIDeviceSampler::SamplerDesc const& desc);
+                inline auto const& GetVkSampler() const { return m_sampler; }
+                inline bool IsValid() const override { return m_sampler != nullptr; }
+                inline const char* GetName() const override { return "VulkanDeviceSampler"; }
+            };
             class VulkanDevice : public RHIDevice {
                 const VulkanApplication& m_app;
 
@@ -137,6 +146,10 @@ namespace Foundation {
                     RHIDeviceDescriptorPool::PoolDesc const& desc) override;
                 RHIDeviceDescriptorPool* GetDescriptorPool(Handle handle) const override;
                 void DestroyDescriptorPool(Handle handle) override;
+
+                RHIDeviceScopedObjectHandle<RHIDeviceSampler> CreateSampler(RHIDeviceSampler::SamplerDesc const& desc) override;
+                RHIDeviceSampler* GetSampler(Handle handle) const override;
+                void DestroySampler(Handle handle) override;
 
                 void ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) override;
                 void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) override;

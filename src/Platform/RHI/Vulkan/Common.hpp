@@ -36,6 +36,8 @@ namespace Foundation {
                 using enum RHIResourceAccess;
                 vk::AccessFlags2 flags{};
                 if (state & RenderTargetWrite) flags |= vk::AccessFlagBits2::eColorAttachmentWrite;
+                if (state & TransferWrite) flags |= vk::AccessFlagBits2::eTransferWrite;
+                if (state & ShaderRead) flags |= vk::AccessFlagBits2::eShaderRead;
                 return flags;
             }
 
@@ -45,6 +47,9 @@ namespace Foundation {
                     case RHIImageLayout::RenderTarget: return vk::ImageLayout::eColorAttachmentOptimal;
                     case RHIImageLayout::DepthStencil: return vk::ImageLayout::eDepthStencilAttachmentOptimal;
                     case RHIImageLayout::Present: return vk::ImageLayout::ePresentSrcKHR;
+                    case RHIImageLayout::TransferDst: return vk::ImageLayout::eTransferDstOptimal;
+                    case RHIImageLayout::TransferSrc: return vk::ImageLayout::eTransferSrcOptimal;
+                    case RHIImageLayout::ShaderReadOnly: return vk::ImageLayout::eShaderReadOnlyOptimal;
                     case RHIImageLayout::Undefined:
                     default:
                         return vk::ImageLayout::eUndefined;
@@ -56,6 +61,8 @@ namespace Foundation {
                 vk::PipelineStageFlags flags{};
                 if (stage & TopOfPipe) flags |= vk::PipelineStageFlagBits::eTopOfPipe;
                 if (stage & RenderTargetOutput) flags |= vk::PipelineStageFlagBits::eColorAttachmentOutput;
+                if (stage & Transfer) flags |= vk::PipelineStageFlagBits::eTransfer;
+                if (stage & FragmentShader) flags |= vk::PipelineStageFlagBits::eFragmentShader;
                 if (stage & BottomOfPipe) flags |= vk::PipelineStageFlagBits::eBottomOfPipe;
                 return flags;
             }
@@ -65,6 +72,8 @@ namespace Foundation {
                 vk::PipelineStageFlags2 flags{};
                 if (stage & TopOfPipe) flags |= vk::PipelineStageFlagBits2::eTopOfPipe;
                 if (stage & RenderTargetOutput) flags |= vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+                if (stage & Transfer) flags |= vk::PipelineStageFlagBits2::eTransfer;
+                if (stage & FragmentShader) flags |= vk::PipelineStageFlagBits2::eFragmentShader;
                 if (stage & BottomOfPipe) flags |= vk::PipelineStageFlagBits2::eBottomOfPipe;
                 return flags;
             }
@@ -79,12 +88,6 @@ namespace Foundation {
                 return flags;
             }
 
-            // XXX: Returns only the first matching flag bit. We don't have
-            // a 'bit' type per-se.
-            // Documentation has been explicitly stating that multiple bitmasks
-            // would result in UB - but programmers are stupid (I'm one of them)
-            // and shit like this would be impossible to debug.
-            // TODO: Bit types for singular flags.
             inline vk::ShaderStageFlagBits vkShaderStageFlagBitFromRHIShaderStage(RHIShaderStage stage) {
                 using enum RHIShaderStage;
                 if (stage & Vertex) return vk::ShaderStageFlagBits::eVertex;
@@ -99,6 +102,8 @@ namespace Foundation {
                 {
                 case Sampler:                                    
                     return vk::DescriptorType::eSampler;
+                case SampledImage:
+                    return vk::DescriptorType::eSampledImage;
                 case StorageBuffer:
                     return vk::DescriptorType::eStorageBuffer;
                 default:
@@ -114,6 +119,41 @@ namespace Foundation {
                     case RHIDevicePipelineType::Graphics: return vk::PipelineBindPoint::eGraphics;
                 }
             }
+
+            inline vk::ImageUsageFlags vkImageUsageFlagsFromRHIImageUsage(RHIImageUsage usage) {
+                using enum RHIImageUsage;
+                vk::ImageUsageFlags flags{};
+                if (usage & RenderTarget) flags |= vk::ImageUsageFlagBits::eColorAttachment;
+                if (usage & DepthStencil) flags |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
+                if (usage & SampledImage) flags |= vk::ImageUsageFlagBits::eSampled;
+                if (usage & StorageImage) flags |= vk::ImageUsageFlagBits::eStorage;
+                if (usage & TransferSource) flags |= vk::ImageUsageFlagBits::eTransferSrc;
+                if (usage & TransferDestination) flags |= vk::ImageUsageFlagBits::eTransferDst;
+                return flags;
+            }
+
+            inline vk::SampleCountFlagBits vkSampleCountFlagFromRHIMultisampleCount(RHIMultisampleCount count) {
+                using enum RHIMultisampleCount;
+                switch (count) {
+                case e2: return vk::SampleCountFlagBits::e2;
+                case e4: return vk::SampleCountFlagBits::e4;
+                case e8: return vk::SampleCountFlagBits::e8;
+                case e16: return vk::SampleCountFlagBits::e16;
+                case e1:
+                default:
+                    return vk::SampleCountFlagBits::e1;
+                }
+            }
+
+            inline vk::ImageAspectFlags vkImageAspectFlagFromRHIImageAspect(RHIImageAccessFlag aspect) {
+                using enum RHIImageAccessFlag;
+                vk::ImageAspectFlags flags{};
+                if (aspect & Color) flags |= vk::ImageAspectFlagBits::eColor;
+                if (aspect & Depth) flags |= vk::ImageAspectFlagBits::eDepth;
+                if (aspect & Stencil) flags |= vk::ImageAspectFlagBits::eStencil;
+                return flags;
+            }
+
         }
     }
 }

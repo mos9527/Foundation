@@ -11,7 +11,7 @@ vk::SwapchainCreateInfoKHR VulkanSwapchain::GetSwapchainCreateInfo() {
         .minImageCount = m_desc.buffer_count,
         .imageFormat = vkFormatFromRHIFormat(m_desc.format),
         .imageColorSpace = vk::ColorSpaceKHR::eSrgbNonlinear,
-        .imageExtent = vk::Extent2D(m_desc.width, m_desc.height),
+        .imageExtent = vk::Extent2D(m_desc.dimensions.x, m_desc.dimensions.y),
         .imageArrayLayers = 1, // 1 layer for 2D images
         .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
         .imageSharingMode = vk::SharingMode::eExclusive, // Exclusive mode by default
@@ -57,7 +57,7 @@ Core::StlSpan<RHIImage* const> VulkanSwapchain::GetImages() const {
 std::pair<size_t, size_t> VulkanSwapchain::GetDimensions() const
 {
     // !! TODO: swapchain recreation
-    return { m_desc.width, m_desc.height };
+    return { m_desc.dimensions.x, m_desc.dimensions.y };
 }
 
 size_t VulkanSwapchain::GetNextImage(uint64_t timeout_ns, RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore, RHIDeviceObjectHandle<RHIDeviceFence> fence)

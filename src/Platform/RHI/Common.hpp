@@ -1,5 +1,5 @@
 #pragma once
-#include <array>
+#include <Core/Math.hpp>
 #include <Core/Bits/Enums.hpp>
 #include <Core/Allocator/StlContainers.hpp>
 #include <Platform/RHI/Details/Details.hpp>
@@ -7,6 +7,14 @@ namespace Foundation {
     namespace Platform {
         namespace RHI {
             constexpr static size_t kFullSize = -1;
+            using RHIExtent1D = glm::vec<1, uint32_t>;
+            using RHIExtent2D = glm::vec<2, uint32_t>;
+            using RHIExtent3D = glm::vec<3, uint32_t>;
+            using RHIOffset1D = glm::vec<1, int32_t>;
+            using RHIOffset2D = glm::vec<2, int32_t>;
+            using RHIOffset3D = glm::vec<3, int32_t>;
+            using RHIClearColor = glm::vec<4, float>;
+
             enum class RHIResourceFormat {
                 Undefined = 0,
                 R8G8B8A8_UNORM,
@@ -42,9 +50,12 @@ namespace Foundation {
             enum class RHIImageLayout {
                 Undefined = 0,
                 General,
-                RenderTarget,
+                RenderTarget,   
                 DepthStencil,
-                Present
+                Present,
+                TransferDst,
+                TransferSrc,
+                ShaderReadOnly,
             };
 
             enum class RHIResourceHostAccess {
@@ -54,9 +65,19 @@ namespace Foundation {
             };
 
             enum class RHIDescriptorType {
-                Sampler,                
+                Sampler,
+                // XXX: In VK there's also CombinedImageSampler though no other APIs has it.
+                // See also: https://github.com/gpuweb/gpuweb/issues/770
+                SampledImage,
                 UniformBuffer,
                 StorageBuffer
+            };
+
+            enum class RHIMultisampleCount {
+                e1, e2, e4, e8, e16
+            };
+            enum class RHIImageDimension {
+                e1D, e2D, e3D
             };
 
             BITMASK_ENUM_BEGIN(RHIShaderStage, uint32_t)
@@ -70,12 +91,16 @@ namespace Foundation {
             BITMASK_ENUM_BEGIN(RHIResourceAccess, uint32_t)
                 Undefined = 0,
                 RenderTargetWrite = 1 << 0,
+                TransferWrite = 1 << 1,
+                ShaderRead = 1 << 2
             BITMASK_ENUM_END()
 
             BITMASK_ENUM_BEGIN(RHIPipelineStage, uint32_t)
                 Undefined = 0,
                 TopOfPipe = 1 << 0,
                 RenderTargetOutput = 1 << 1,
+                Transfer = 1 << 2,
+                FragmentShader = 1 << 3,
                 BottomOfPipe = 1 << 7
             BITMASK_ENUM_END()
 
@@ -92,13 +117,22 @@ namespace Foundation {
                 TransferDestination = 1 << 6
             BITMASK_ENUM_END()
 
-            struct RHIClearColor {
-                float r, g, b, a;
+            BITMASK_ENUM_BEGIN(RHIImageUsage, uint32_t)
+                Undefined = 0,
+                RenderTarget = 1 << 0,
+                DepthStencil = 1 << 1,
+                SampledImage = 1 << 2,
+                StorageImage = 1 << 3,
+                TransferSource = 1 << 4,
+                TransferDestination = 1 << 5
+            BITMASK_ENUM_END()
 
-                inline constexpr std::array<float, 4> ToArray() const {
-                    return { r,g,b,a };
-                }
-            };
+            BITMASK_ENUM_BEGIN(RHIImageAccessFlag, uint32_t)
+                Undefined = 0,
+                Color = 1 << 0,
+                Depth = 1 << 1,
+                Stencil = 1 << 2
+            BITMASK_ENUM_END();
         }
     }
 }

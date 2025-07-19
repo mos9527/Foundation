@@ -12,15 +12,15 @@ namespace Foundation {
             constexpr static Handle kInvalidHandle = static_cast<Handle>(-1);
             /// <summary>
             /// Base class for all RHI objects.
-            /// RHI Objects are non-copyable, and must be derived from this class.
+            /// RHI Objects are non-copyable, non-movable (pinned), and must be derived from this class.
             /// </summary>
             class RHIObject {
             public:
                 RHIObject() = default;
                 RHIObject(RHIObject const&) = delete;
                 RHIObject& operator=(const RHIObject&) = delete;
-                RHIObject(RHIObject&&) = default;
-                RHIObject& operator=(RHIObject&&) = default;
+                RHIObject(RHIObject&&) = delete;
+                RHIObject& operator=(RHIObject&&) = delete;
                 /// <summary>
                 /// Checks whether the object is in a valid state.
                 /// </summary>
@@ -36,10 +36,10 @@ namespace Foundation {
             template<std::derived_from<RHIObject> T>
             struct RHIObjectTraits;
             /// <summary>
-            /// Handle type for RHI Objects.
-            ///
+            /// Handle type for RHI Objects.  
+            /// 
             /// RHIHandle<Factory, T> are trivialy copiable objects that provide a view into the underlying RHIObject storage.
-            /// When a Factory goes out of scope, all Handles are invalidated, and the underlying RHIObjects are destroyed.
+            /// When a Factory goes out of scope, all underlying RHIObjects are destroyed.
             ///
             /// The behaviour is undefined to use a Handle after it's Factory has been destroyed or the resource
             /// it refers to has been destroyed.

@@ -22,6 +22,7 @@ VulkanCommandPool::VulkanCommandPool(const VulkanDevice& device, PoolDesc const&
         .queueFamilyIndex = queue->GetVkQueueIndex(),
     };
     m_commandPool = vk::raii::CommandPool(device.GetVkDevice(), pool_info, m_device.GetVkAllocatorCallbacks());
+    CHECK(m_commandPool != nullptr && "failed to create Vulkan command pool");
 }
 
 RHICommandPoolScopedHandle<RHICommandList> VulkanCommandPool::CreateCommandList() {
@@ -41,7 +42,8 @@ VulkanCommandList::VulkanCommandList(const VulkanCommandPool& commandPool) :
         .level = vk::CommandBufferLevel::ePrimary,
         .commandBufferCount = 1,
     };
-    m_commandBuffer = std::move(vk::raii::CommandBuffers(m_commandPool.GetDevice().GetVkDevice(), alloc_info).front());    
+    m_commandBuffer = std::move(vk::raii::CommandBuffers(m_commandPool.GetDevice().GetVkDevice(), alloc_info).front());
+    CHECK(m_commandBuffer != nullptr && "failed to allocate Vulkan command buffer");
 }
 
 RHICommandList& VulkanCommandList::Begin() {
@@ -58,7 +60,15 @@ RHICommandList& VulkanCommandList::BeginTransition() {
 RHICommandList& VulkanCommandList::SetBufferTransition(RHIBuffer* image, TransitionDesc const& desc) {
     CHECK(m_barriers && "Invalid barrier states. Did you call BeginTransition()?");
     auto* res = static_cast<VulkanBuffer*>(image);
-    // !! TODO
+    m_barriers->buffer.push_back(vk::BufferMemoryBarrier2{
+        .srcStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.src_stage),
+        .srcAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.src_access),
+        .dstStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.dst_stage),
+        .dstAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.dst_access),
+        .buffer = *res->GetVkBuffer(),
+        .offset = desc.src_buffer_offset,
+        .size = desc.src_buffer_size == kFullSize ? VK_WHOLE_SIZE : desc.src_buffer_size
+    });
     return *this;
 }
 RHICommandList& VulkanCommandList::SetImageTransition(RHIImage* image, TransitionDesc const& desc) {
@@ -75,11 +85,11 @@ RHICommandList& VulkanCommandList::SetImageTransition(RHIImage* image, Transitio
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .image = *res->GetVkImage(),
         .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
+            .aspectMask = vkImageAspectFlagFromRHIImageAspect(desc.src_img_range.layer.access),
+            .baseMipLevel = desc.src_img_range.layer.mip_level,
+            .levelCount = desc.src_img_range.mip_count,
+            .baseArrayLayer = desc.src_img_range.layer.base_array_layer,
+            .layerCount = desc.src_img_range.layer.layer_count
         }
     });
     return *this;
@@ -139,14 +149,14 @@ RHICommandList& VulkanCommandList::DrawIndexed(uint32_t index_count, uint32_t in
 RHICommandList& VulkanCommandList::CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::StlSpan<const CopyBufferRegion> regions) {
     CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
     CHECK(src_buffer && dst_buffer && "Source and destination buffers must be valid.");
-    
+
     auto* src_vulkan_buffer = static_cast<VulkanBuffer*>(src_buffer);
     auto* dst_vulkan_buffer = static_cast<VulkanBuffer*>(dst_buffer);
 
     Core::StlVector<vk::BufferCopy> vk_regions(&m_allocator);
     for (auto const& region : regions) {
         size_t size = region.size;
-        if (size == CopyBufferRegion::kEntireBuffer) {
+        if (size == kFullSize) {
             size = std::min(
                 src_vulkan_buffer->m_desc.size - region.src_offset,
                 dst_vulkan_buffer->m_desc.size - region.dst_offset
@@ -156,25 +166,100 @@ RHICommandList& VulkanCommandList::CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* 
             .srcOffset = static_cast<vk::DeviceSize>(region.src_offset),
             .dstOffset = static_cast<vk::DeviceSize>(region.dst_offset),
             .size = size
-        });
-    }    
-    m_commandBuffer.copyBuffer(*src_vulkan_buffer->GetVkBuffer(), *dst_vulkan_buffer->GetVkBuffer(), vk_regions);    
+            });
+    }
+    m_commandBuffer.copyBuffer(*src_vulkan_buffer->GetVkBuffer(), *dst_vulkan_buffer->GetVkBuffer(), vk_regions);
+    return *this;
+}
+
+RHICommandList& VulkanCommandList::CopyImage(RHIImage* src_image, RHIImageLayout src_layout, RHIImage* dst_image, RHIImageLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions)
+{
+    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(src_image && dst_image && "Source and destination images must be valid.");
+
+    auto* src_vulkan_image = static_cast<VulkanImage*>(src_image);
+    auto* dst_vulkan_image = static_cast<VulkanImage*>(dst_image);
+
+    Core::StlVector<vk::ImageCopy> vk_regions(&m_allocator);
+    vk_regions.reserve(regions.size());
+    for (auto const& region : regions) {
+        vk_regions.push_back(vk::ImageCopy{
+            .srcSubresource = {
+                .aspectMask = vkImageAspectFlagFromRHIImageAspect(region.src_layer.access),
+                .mipLevel = region.src_layer.mip_level,
+                .baseArrayLayer = region.src_layer.base_array_layer,
+                .layerCount = region.src_layer.layer_count
+            },
+            .srcOffset = { region.src_offset.x, region.src_offset.y, region.src_offset.z },
+            .dstSubresource = {
+                .aspectMask = vkImageAspectFlagFromRHIImageAspect(region.dst_layer.access),
+                .mipLevel = region.dst_layer.mip_level,
+                .baseArrayLayer = region.dst_layer.base_array_layer,
+                .layerCount = region.dst_layer.layer_count
+            },
+            .dstOffset = { region.dst_offset.x, region.dst_offset.y, region.dst_offset.z },
+            .extent = { region.extent.x, region.extent.y, region.extent.z }
+            });
+    }
+
+    m_commandBuffer.copyImage(
+        *src_vulkan_image->GetVkImage(), vkImageLayoutFromRHIImageLayout(src_layout),
+        *dst_vulkan_image->GetVkImage(), vkImageLayoutFromRHIImageLayout(dst_layout),
+        vk_regions
+    );
+
+    return *this;
+}
+
+RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHIImage* dst_image, RHIImageLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions)
+{
+    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(src_buffer && dst_image && "Source buffer and destination image must be valid.");
+
+    auto* src_vulkan_buffer = static_cast<VulkanBuffer*>(src_buffer);
+    auto* dst_vulkan_image = static_cast<VulkanImage*>(dst_image);
+
+    Core::StlVector<vk::BufferImageCopy> vk_regions(&m_allocator);
+    vk_regions.reserve(regions.size());
+    for (auto const& region : regions) {
+        vk_regions.push_back(vk::BufferImageCopy{
+            .bufferOffset = region.src_buffer_offset,
+            .bufferRowLength = 0, // Tightly packed
+            .bufferImageHeight = 0, // Tightly packed
+            .imageSubresource = {
+                .aspectMask = vkImageAspectFlagFromRHIImageAspect(region.dst_layer.access),
+                .mipLevel = region.dst_layer.mip_level,
+                .baseArrayLayer = region.dst_layer.base_array_layer,
+                .layerCount = region.dst_layer.layer_count
+            },
+            .imageOffset = { region.dst_offset.x, region.dst_offset.y, region.dst_offset.z },
+            .imageExtent = { region.extent.x, region.extent.y, region.extent.z }
+            });
+    }
+
+    m_commandBuffer.copyBufferToImage(
+        *src_vulkan_buffer->GetVkBuffer(),
+        *dst_vulkan_image->GetVkImage(),
+        vkImageLayoutFromRHIImageLayout(dst_layout),
+        vk_regions
+    );
+
     return *this;
 }
 
 RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc) {
     CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
-    
+
     Core::StlVector<vk::RenderingAttachmentInfo> attachments(&m_allocator);
-    attachments.reserve(desc.attachments.size());    
-    for (auto const& attachment : desc.attachments) {        
+    attachments.reserve(desc.attachments.size());
+    for (auto const& attachment : desc.attachments) {
         attachments.push_back(vk::RenderingAttachmentInfo{
             .imageView = static_cast<const VulkanImageView*>(attachment.image_view)->GetVkImageView(),
             .imageLayout = vkImageLayoutFromRHIImageLayout(attachment.image_layout),
             .loadOp = vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eStore,
-            .clearValue = vk::ClearColorValue(attachment.clear_color.ToArray())
-        });
+            .clearValue = vk::ClearColorValue(std::array{attachment.clear_color.r, attachment.clear_color.g, attachment.clear_color.b, attachment.clear_color.a})
+            });
     }
     vk::RenderingInfo renderingInfo{
         .renderArea = vk::Rect2D{ {0, 0}, vk::Extent2D{desc.width, desc.height} },
@@ -189,7 +274,7 @@ RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc) {
 RHICommandList& VulkanCommandList::BindVertexBuffer(uint32_t index, Core::StlSpan<RHIBuffer* const> buffers, Core::StlSpan<const size_t> offsets) {
     CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
     CHECK(buffers.size() == offsets.size() && "Buffers and offsets must have the same size.");
-    
+
     Core::StlVector<vk::Buffer> vk_buffers(&m_allocator);
     Core::StlVector<vk::DeviceSize> vk_offsets(&m_allocator);
     for (size_t i = 0; i < buffers.size(); ++i) {
@@ -223,11 +308,11 @@ RHICommandList& VulkanCommandList::BindIndexBuffer(RHIBuffer* buffer, size_t off
 #include <Platform/RHI/Vulkan/Descriptor.hpp>
 RHICommandList& VulkanCommandList::BindDescriptorSet(
     RHIDevicePipelineType bindpoint,
-    RHIPipelineState* pipeline,    
+    RHIPipelineState* pipeline,
     Core::StlSpan<RHIDeviceDescriptorSet* const> sets,
     size_t first
 ) {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");    
+    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
     Core::StlVector<vk::DescriptorSet> vk_sets(&m_allocator);
     for (auto* set : sets) {
         CHECK(set && "Descriptor set must be valid.");

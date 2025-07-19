@@ -10,8 +10,6 @@ namespace Foundation {
                 std::string name;
                 /// Which heap the resource is allocated in
                 RHIDeviceHeapType heap;
-                /// How the resource can be used by the device, initially
-                RHIBufferUsage usage;
                 /// How the resource can be accessed by the host (CPU)
                 RHIResourceHostAccess host_access;
                 /// Can be shared with other devices
@@ -22,15 +20,9 @@ namespace Foundation {
             };
             struct RHIBufferDesc {
                 RHIResourceDesc resource;
+                /// How the buffer can be used by the device, initially
+                RHIBufferUsage usage;
                 size_t size; // size in bytes
-            };
-            struct RHIImageDesc {
-                RHIResourceDesc resource;
-                uint32_t width;
-                uint32_t height;
-                RHIResourceFormat format;
-                uint32_t mip_levels;
-                uint32_t array_layers;
             };
             class RHIBuffer : public RHIObject {
             protected:
@@ -75,17 +67,36 @@ namespace Foundation {
                     return { static_cast<T*>(p) , count };
                 }
             };
-            struct RHIImageViewDesc {
+            struct RHIImageDesc {
+                RHIResourceDesc resource;
+                RHIImageDimension dimension { RHIImageDimension::e2D };
+                RHIImageUsage usage;
+                RHIExtent3D extent{ 1, 1, 1 }; // Width, height, depth of the image.
                 RHIResourceFormat format;
-                uint32_t base_mip;
-                uint32_t level_count;
-                uint32_t base_array_layer;
-                uint32_t layer_count;
+                RHIMultisampleCount sample_count{ RHIMultisampleCount::e1 }; // For MSAA
+                uint32_t mip_levels{ 1 };
+                uint32_t array_layers{ 1 }; // No. of images in a image array.
+                RHIImageLayout initial_layout{ RHIImageLayout::Undefined };
             };
             class RHIImage;
             class RHIImageView;
             template<typename T> using RHIImageScopedHandle = RHIScopedHandle<RHIImage, T>;
             template<typename T> using RHIImageHandle = RHIHandle<RHIImage, T>;
+            struct RHIImageSubresourceLayer {
+                RHIImageAccessFlag access{ RHIImageAccessFlag::Color };
+                uint32_t mip_level{ 0 };
+                uint32_t base_array_layer{ 0 };
+                uint32_t layer_count{ 1 };
+            };
+            struct RHIImageSubresourceRange {
+                RHIImageSubresourceLayer layer;
+                uint32_t mip_count{ 1 }; // Number of mip levels in the range
+            };
+            struct RHIImageViewDesc {
+                RHIResourceFormat format;
+                RHIImageDimension dimension{ RHIImageDimension::e2D };
+                RHIImageSubresourceRange range{};
+            };
             class RHIImage : public RHIObject {
             protected:
                 const RHIDevice& m_device;
@@ -94,11 +105,15 @@ namespace Foundation {
                 RHIImage(RHIDevice const& device, RHIImageDesc const& desc)
                     : m_device(device), m_desc(desc) {
                 }
+
+                virtual void* Map() = 0;
+                virtual void Flush(size_t offset, size_t size) = 0;
+                virtual void Unmap() = 0;
+
                 virtual RHIImageScopedHandle<RHIImageView> CreateImageView(RHIImageViewDesc const& desc) = 0;
                 virtual RHIImageView* GetImageView(Handle handle) const = 0;
                 virtual void DestroyImageView(Handle handle) = 0;
             };
-
             class RHIImageView : public RHIObject {
             protected:
                 const RHIImage& m_image;

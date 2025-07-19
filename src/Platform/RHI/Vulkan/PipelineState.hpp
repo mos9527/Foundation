@@ -43,19 +43,6 @@ namespace Foundation {
                 }
             }
 
-            inline vk::SampleCountFlagBits GetVulkanSampleCountFromDesc(RHIPipelineState::PipelineStateDesc::Multisample::Count count) {
-                using enum RHIPipelineState::PipelineStateDesc::Multisample::Count;
-                switch (count) {
-                    case e2: return vk::SampleCountFlagBits::e2;
-                    case e4: return vk::SampleCountFlagBits::e4;
-                    case e8: return vk::SampleCountFlagBits::e8;
-                    case e16: return vk::SampleCountFlagBits::e16;
-                    case e1: 
-                    default:
-                        return vk::SampleCountFlagBits::e1;
-                }
-            }
-
             inline vk::BlendFactor GetVulkanBlendFactorFromDesc(RHIPipelineState::PipelineStateDesc::Attachment::Blending::BlendFactor factor) {
                 using enum RHIPipelineState::PipelineStateDesc::Attachment::Blending::BlendFactor;
                 switch (factor) {

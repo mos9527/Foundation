@@ -65,9 +65,7 @@ namespace Foundation {
                     // MSAA
                     struct Multisample {
                         bool enabled;
-                        enum Count {
-                            e1, e2, e4, e8, e16
-                        } sample_count; // 1, 2, 4, 8, etc.
+                        RHIMultisampleCount sample_count; // 1, 2, 4, 8, etc.
                     } multisample{};
                     // Depth Stencil
                     // !! TODO

@@ -236,7 +236,7 @@ void VulkanDevice::Instantiate(Window* window) {
     }
     // TODO: hardcoded. from https://docs.vulkan.org/tutorial/latest/03_Drawing_a_triangle/04_Swap_chain_recreation.html
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
-        {},                                                     // vk::PhysicalDeviceFeatures2
+        { .features = {.samplerAnisotropy = true } },           // vk::PhysicalDeviceFeatures2
         {.synchronization2 = true, .dynamicRendering = true },  // vk::PhysicalDeviceVulkan13Features
         {.extendedDynamicState = true }                         // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
     };
@@ -249,6 +249,7 @@ void VulkanDevice::Instantiate(Window* window) {
             .ppEnabledExtensionNames = kVulkanDeviceExtensions
     };
     m_device = vk::raii::Device(m_physicalDevice, device_info, GetVkAllocatorCallbacks());
+    CHECK(m_device != nullptr && "failed to create Vulkan device");
     // Allocate the queues
     m_queues = Core::ConstructUnique<VulkanDeviceQueues>(GetAllocator(), GetAllocator());
     for (auto i : unique_queues) {
@@ -271,9 +272,7 @@ void VulkanDevice::Instantiate(Window* window) {
         .instance = *m_app.GetVkInstance(),
         .vulkanApiVersion = m_app.m_vulkanApiVersion
     };
-    if (vmaCreateAllocator(&allocator_info, &m_vkAllocator) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create VMA for Vulkan device");
-    }
+    CHECK(vmaCreateAllocator(&allocator_info, &m_vkAllocator) == VK_SUCCESS && "failed to create VMA for Vulkan device");    
     DebugLogAllocatorInfo();
 }
 
@@ -423,7 +422,7 @@ void VulkanDeviceQueue::Present(PresentDesc const& desc) const {
         .pImageIndices = &desc.image_index,
     };
     auto res = m_queue.presentKHR(present_info);
-    // !! TODO
+    // !! TODO error handling
 }
 
 RHIDeviceScopedObjectHandle<RHIBuffer> VulkanDevice::CreateBuffer(RHIBufferDesc const& desc) {
@@ -468,6 +467,7 @@ VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDev
         },
         m_device.GetVkAllocatorCallbacks()
     );
+    CHECK(m_layout != nullptr && "failed to create Vulkan descriptor set layout");
 }
 RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> VulkanDevice::CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc) {
     return { this, m_storage.CreateObject<VulkanDeviceDescriptorSetLayout>(*this, desc) };
@@ -487,5 +487,58 @@ RHIDeviceDescriptorPool* VulkanDevice::GetDescriptorPool(Handle handle) const {
     return m_storage.GetObjectPtr<RHIDeviceDescriptorPool>(handle);
 }
 void VulkanDevice::DestroyDescriptorPool(Handle handle) {
+    m_storage.DestroyObject(handle);
+}
+
+
+VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, RHIDeviceSampler::SamplerDesc const& desc):
+    RHIDeviceSampler(device, desc), m_device(device) {
+    auto vkFilterFromRHISamplerFilter = [](RHIDeviceSampler::SamplerDesc::Filter::Type filter) -> vk::Filter {
+        using enum RHIDeviceSampler::SamplerDesc::Filter::Type;
+        switch (filter) {
+            case NearestNeighbor: return vk::Filter::eNearest;
+            case Linear:  return vk::Filter::eLinear;
+            case Cubic: return vk::Filter::eCubicEXT; // TODO: check if supported
+            default: throw std::runtime_error("unsupported sampler filter");
+        }
+    };
+    auto vkSamplerAddressModeFromRHIAddressMode = [](RHIDeviceSampler::SamplerDesc::AddressMode::Mode mode) -> vk::SamplerAddressMode {
+        switch (mode) {
+            case RHIDeviceSampler::SamplerDesc::AddressMode::Repeat: return vk::SamplerAddressMode::eRepeat;
+            case RHIDeviceSampler::SamplerDesc::AddressMode::MirroredRepeat: return vk::SamplerAddressMode::eMirroredRepeat;
+            case RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge: return vk::SamplerAddressMode::eClampToEdge;
+            case RHIDeviceSampler::SamplerDesc::AddressMode::ClampToBorder: return vk::SamplerAddressMode::eClampToBorder;
+            case RHIDeviceSampler::SamplerDesc::AddressMode::MirrorClampToEdge: return vk::SamplerAddressMode::eMirrorClampToEdge;
+            default: throw std::runtime_error("unsupported sampler address mode");
+        }
+    };
+    m_sampler = vk::raii::Sampler(
+        m_device.GetVkDevice(),
+        vk::SamplerCreateInfo{
+            .magFilter = vkFilterFromRHISamplerFilter(desc.filter.mag_filter),
+            .minFilter = vkFilterFromRHISamplerFilter(desc.filter.min_filter),
+            .mipmapMode = desc.mipmap.mipmap_mode == RHIDeviceSampler::SamplerDesc::Mipmap::Linear
+                ? vk::SamplerMipmapMode::eLinear
+                : vk::SamplerMipmapMode::eNearest,
+            .addressModeU = vkSamplerAddressModeFromRHIAddressMode(desc.address_mode.u),
+            .addressModeV = vkSamplerAddressModeFromRHIAddressMode(desc.address_mode.v),
+            .addressModeW = vkSamplerAddressModeFromRHIAddressMode(desc.address_mode.w),
+            .mipLodBias = desc.mipmap.bias,
+            .anisotropyEnable = desc.anisotropy.enable,
+            .maxAnisotropy = desc.anisotropy.max_level,                                    
+            .minLod = desc.lod.min,
+            .maxLod = desc.lod.max
+        },
+        m_device.GetVkAllocatorCallbacks()
+    );
+    CHECK(m_sampler != nullptr && "failed to create Vulkan sampler");
+}
+RHIDeviceScopedObjectHandle<RHIDeviceSampler> VulkanDevice::CreateSampler(RHIDeviceSampler::SamplerDesc const& desc) {
+    return { this, m_storage.CreateObject<VulkanDeviceSampler>(*this, desc) };
+}
+RHIDeviceSampler* VulkanDevice::GetSampler(Handle handle) const {
+    return m_storage.GetObjectPtr<RHIDeviceSampler>(handle);
+}
+void VulkanDevice::DestroySampler(Handle handle) {
     m_storage.DestroyObject(handle);
 }

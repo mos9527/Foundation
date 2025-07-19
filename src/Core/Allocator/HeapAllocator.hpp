@@ -24,7 +24,7 @@ namespace Foundation {
                 if (reinterpret_cast<size_type>(arena.memory) % (1LL << 16) != 0) {
                     throw std::runtime_error("Arena memory must be aligned to 64 KiB");
                 }
-                RUNTIME_GUARD(mi_manage_os_memory_ex(
+                CHECK(mi_manage_os_memory_ex(
                     arena.memory,
                     arena.size,
                     true, /* comitted */
@@ -33,7 +33,7 @@ namespace Foundation {
                     -1,
                     true, /* exclusive */
                     &mi_arena /* arena id */
-                ), "mimalloc failed to reserve memory");
+                ) && "mimalloc failed to reserve memory");
                 m_heap = mi_heap_new_in_arena(mi_arena);
             }
             ~HeapAllocator() {

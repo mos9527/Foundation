@@ -71,7 +71,10 @@ namespace Foundation {
                 RHICommandList& SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override;
                 RHICommandList& Draw(uint32_t vertex_count, uint32_t instance_count = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0) override;
                 RHICommandList& DrawIndexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0, int32_t vertex_offset = 0, uint32_t first_instance = 0) override;
-                RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::StlSpan<const CopyBufferRegion> regions) override;
+
+                RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::StlSpan<const CopyBufferRegion> regions) override;                
+                RHICommandList& CopyImage(RHIImage* src_image, RHIImageLayout src_layout, RHIImage* dst_image, RHIImageLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions) override;
+                RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHIImage* dst_image, RHIImageLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions) override;
 
                 RHICommandList& BeginGraphics(GraphicsDesc const& desc) override;
                 RHICommandList& BindVertexBuffer(uint32_t index, Core::StlSpan<RHIBuffer* const> buffers, Core::StlSpan<const size_t> offsets) override;

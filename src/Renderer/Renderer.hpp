@@ -26,7 +26,11 @@ namespace Foundation {
             Core::StlVector<RHICommandPoolScopedHandle<RHICommandList>> m_cmd;
 
             RHIDeviceScopedObjectHandle<RHIPipelineState> m_pso;
-            RHIDeviceScopedObjectHandle<RHIBuffer> m_vertex_buffer, m_uniform_buffer;
+            RHIDeviceScopedObjectHandle<RHIBuffer> m_vertex_buffer, m_index_buffer;
+            Core::StlVector<RHIDeviceScopedObjectHandle<RHIBuffer>> m_uniform_buffer;
+            RHIDeviceScopedObjectHandle<RHIDeviceSampler> m_sampler;
+            RHIDeviceScopedObjectHandle<RHIImage> m_tex;
+            RHIImageScopedHandle<RHIImageView> m_tex_view;
 
             Core::StlVector<RHIImageScopedHandle<RHIImageView>>
                 m_swapchain_imageviews;

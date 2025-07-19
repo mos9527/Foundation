@@ -49,7 +49,7 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
         .lineWidth = desc.rasterizer.line_fill_width
     };
     vk::PipelineMultisampleStateCreateInfo multisampling{
-        .rasterizationSamples = GetVulkanSampleCountFromDesc(desc.multisample.sample_count),
+        .rasterizationSamples = vkSampleCountFlagFromRHIMultisampleCount(desc.multisample.sample_count),
         .sampleShadingEnable = desc.multisample.enabled,
     };
     Core::StlVector<vk::PipelineColorBlendAttachmentState> blend_attachments(alloc.Ptr());

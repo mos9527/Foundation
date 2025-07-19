@@ -64,6 +64,46 @@ namespace Foundation {
                     : m_device(device), m_desc(desc) {
                 }
             };
+            class RHIDeviceSampler : public RHIObject {
+            protected:
+                const RHIDevice& m_device;
+            public:
+                struct SamplerDesc {
+                    struct Anisotropy {
+                        bool enable{ false }; // Enable anisotropic filtering
+                        float max_level{ 16.0f }; // Max anisotropy level
+                    } anisotropy;                    
+                    struct AddressMode {
+                        enum Mode {
+                            Repeat,
+                            MirroredRepeat,
+                            ClampToEdge,
+                            ClampToBorder,
+                            MirrorClampToEdge
+                        } u{ Repeat }, v{ Repeat }, w{ Repeat }; // Address modes for U, V, W coordinates
+                    } address_mode;
+                    struct Mipmap {
+                        enum MipmapMode {
+                            Linear,
+                            Nearest
+                        } mipmap_mode{ Linear }; // Mipmap mode;
+                        float bias{ 0.0f }; // Mipmap LOD bias
+                    } mipmap;
+                    struct Filter {
+                        enum Type {
+                            NearestNeighbor,
+                            Linear,
+                            Cubic
+                        } min_filter{ Linear }, mag_filter{ Linear }; // Minification and magnification filters
+                    } filter;
+                    struct LOD {
+                        float min{ 0.0f }; // Minimum level of detail
+                        float max{ 16.0f }; // Maximum level of detail                        
+                    } lod; // Level of detail settings;
+                } const m_desc;
+                RHIDeviceSampler(RHIDevice const& device, SamplerDesc const& desc)
+                    : m_device(device), m_desc(desc) {}
+            };
             class RHIDevice : public RHIObject {
             protected:
                 const RHIApplication& m_app;
@@ -117,6 +157,11 @@ namespace Foundation {
                     RHIDeviceDescriptorPool::PoolDesc const& desc) = 0;
                 virtual RHIDeviceDescriptorPool* GetDescriptorPool(Handle handle) const = 0;
                 virtual void DestroyDescriptorPool(Handle handle) = 0;
+
+                virtual RHIDeviceScopedObjectHandle<RHIDeviceSampler> CreateSampler(
+                    RHIDeviceSampler::SamplerDesc const& desc) = 0;
+                virtual RHIDeviceSampler* GetSampler(Handle handle) const = 0;
+                virtual void DestroySampler(Handle handle) = 0;
 
                 virtual void ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) = 0;
                 virtual void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) = 0;
@@ -200,6 +245,14 @@ namespace Foundation {
                 }
                 static void Destroy(RHIDevice* device, Handle handle) {
                     device->DestroyDescriptorPool(handle);
+                }
+            };
+            template<> struct RHIObjectTraits<RHIDeviceSampler> {
+                static RHIDeviceSampler* Get(RHIDevice const* device, Handle handle) {
+                    return device->GetSampler(handle);
+                }
+                static void Destroy(RHIDevice* device, Handle handle) {
+                    device->DestroySampler(handle);
                 }
             };
         }

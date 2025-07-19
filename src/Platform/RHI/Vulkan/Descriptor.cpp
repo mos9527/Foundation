@@ -10,6 +10,21 @@ VulkanDeviceDescriptorSet::VulkanDeviceDescriptorSet(VulkanDeviceDescriptorPool 
 
 void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
 {
+    // Sanity check
+    size_t size_all = desc.buffers.size() + desc.images.size();
+    {
+        switch (desc.type)
+        {
+        case RHIDescriptorType::UniformBuffer:
+        case RHIDescriptorType::StorageBuffer:
+            CHECK(desc.buffers.size() == size_all && "Buffer descriptor type must have buffers only");
+            break;
+        case RHIDescriptorType::Sampler:
+        case RHIDescriptorType::SampledImage:
+            CHECK(desc.images.size() == size_all && "Image descriptor type must have images only");            
+            break;        
+        }
+    }
     Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
     Core::StlVector<vk::DescriptorBufferInfo> buffers(desc.buffers.size(), alloc.Ptr());
     for (size_t i = 0; i < desc.buffers.size(); ++i) {
@@ -20,12 +35,22 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
             .range = b.size == kFullSize ? VK_WHOLE_SIZE : b.size
         };
     }
+    Core::StlVector<vk::DescriptorImageInfo> images(desc.images.size(), alloc.Ptr());
+    for (size_t i = 0; i < desc.images.size(); ++i) {
+        auto const& img = desc.images[i];
+        images[i] = vk::DescriptorImageInfo{
+            .sampler = img.sampler ? *static_cast<VulkanDeviceSampler*>(img.sampler)->GetVkSampler() : nullptr,
+            .imageView = img.image_view ? *static_cast<VulkanImageView*>(img.image_view)->GetVkImageView() : nullptr,
+            .imageLayout = vkImageLayoutFromRHIImageLayout(img.layout)
+        };
+    }
     vk::WriteDescriptorSet writes{
         .dstSet = *m_set,
         .dstBinding = static_cast<uint32_t>(desc.binding),
-        .descriptorCount = static_cast<uint32_t>(desc.buffers.size()),
+        .descriptorCount = static_cast<uint32_t>(size_all),
         .descriptorType = vkDescriptorTypeFromRHIDescriptorType(desc.type),
-        .pBufferInfo = buffers.data()   
+        .pImageInfo = images.data(),
+        .pBufferInfo = buffers.data(),
     };
     m_pool.GetDevice().GetVkDevice().updateDescriptorSets(writes, {});
 }
@@ -53,6 +78,7 @@ VulkanDeviceDescriptorPool::VulkanDeviceDescriptorPool(const VulkanDevice& devic
         },
         m_device.GetVkAllocatorCallbacks()
     );
+    CHECK(m_pool != nullptr && "failed to create Vulkan descriptor pool");
 }
 RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> VulkanDeviceDescriptorPool::CreateDescriptorSet(
     RHIDeviceObjectHandle<RHIDeviceDescriptorSetLayout> layout) {

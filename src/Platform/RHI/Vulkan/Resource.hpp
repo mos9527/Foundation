@@ -47,6 +47,7 @@ namespace Foundation {
                 RHIObjectStorage<VulkanImageView> m_views;
 
                 vk::raii::Image m_image{ nullptr };
+                void* m_mapped{ nullptr };
             public:
                 const bool m_shared{ false };
                 VulkanImage(VulkanDevice const& device, RHIImageDesc const& desc);
@@ -57,6 +58,10 @@ namespace Foundation {
 
                 inline bool IsValid() const override { return m_image != nullptr; }
                 inline const char* GetName() const override { return m_desc.resource.name.c_str(); }
+
+                void* Map() override;
+                void Flush(size_t offset, size_t size) override;
+                void Unmap() override;
 
                 RHIImageScopedHandle<RHIImageView> CreateImageView(RHIImageViewDesc const& desc) override;
                 RHIImageView* GetImageView(Handle handle) const override;

@@ -39,7 +39,11 @@ namespace Foundation {
                 struct TransitionDesc {
                     RHIResourceAccess src_access, dst_access;
                     RHIPipelineStage src_stage, dst_stage;
+                    // Image
                     RHIImageLayout src_img_layout, dst_img_layout;
+                    RHIImageSubresourceRange src_img_range{};
+                    // Buffer
+                    size_t src_buffer_offset = 0, src_buffer_size = kFullSize;
                 };
                 virtual RHICommandList& BeginTransition() = 0;
                 virtual RHICommandList& SetBufferTransition(RHIBuffer* buffer, TransitionDesc const& desc) = 0;
@@ -66,16 +70,28 @@ namespace Foundation {
 #pragma endregion
 #pragma region Transfer Queue
                 struct CopyBufferRegion {
-                    constexpr static size_t kEntireBuffer = -1;
                     size_t src_offset = 0;
                     size_t dst_offset = 0;
                     /// Size of the region to copy.
-                    /// If size is kEntireBuffer, the maximum copiable region
+                    /// If size is kFullSize, the maximum copiable region
                     /// min(src_buffer.size - src_offset, dst_buffer.size - dst_offset)
                     /// will be used.
-                    size_t size = kEntireBuffer;
+                    size_t size = kFullSize;
                 };
                 virtual RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::StlSpan<const CopyBufferRegion> regions) = 0;
+                struct CopyImageRegion {
+                    uint32_t src_buffer_offset = 0; // Offset in the source buffer, used for CopyBufferToImage
+                    RHIImageSubresourceLayer src_layer;
+                    RHIOffset3D src_offset{ 0,0,0 };
+                    RHIImageSubresourceLayer dst_layer;
+                    RHIOffset3D dst_offset{ 0,0,0 };
+                    /// Extent of the region to copy.
+                    /// This MUST have a non-zero size (size=xyz)
+                    /// or the call to Copy(...)Image is invalid.
+                    RHIExtent3D extent{ 0,0,0 };
+                };
+                virtual RHICommandList& CopyImage(RHIImage* src_image, RHIImageLayout src_layout, RHIImage* dst_image, RHIImageLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions) = 0;
+                virtual RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHIImage* dst_image, RHIImageLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions) = 0;
 #pragma endregion
 #pragma region Graphics Pipeline
                 struct GraphicsDesc {
