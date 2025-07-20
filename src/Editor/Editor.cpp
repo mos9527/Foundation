@@ -1,30 +1,27 @@
-#include <Core/Logging.hpp>
-#include <Core/Bits/StringUtils.hpp>
-#include <Platform/Application.hpp>
-#include <Platform/RHI/Swapchain.hpp>
-#include <Platform/RHI/Vulkan/Application.hpp>
+#include <Core/Platform/Logging.hpp>
+#include <Bits/StringUtils.hpp>
+#include <Core/Platform/Application.hpp>
+#include <RHICore/Swapchain.hpp>
+#include <RHIVulkan/Application.hpp>
 #include <Core/Allocator/HeapAllocator.hpp>
 #include <Renderer/Renderer.hpp>
 using namespace Foundation::Core;
-using namespace Foundation::Platform;
-using namespace Foundation::Platform::RHI;
+using namespace Foundation::RHI;
 namespace Foundation {
-    namespace Editor {
-        Core::HeapAllocatorMultiThreaded g_Allocator;
-        int StartApplication(Application& app) {
-            {
-                VulkanApplication vkApp("Editor", "Foundation", VK_API_VERSION_1_3, &g_Allocator);
-                Window window = app.CreateWindow(1920, 1080, "Editor Window");
-                auto device = vkApp.CreateDevice(vkApp.EnumerateDevices()[0], &window);
-                Renderer::Renderer renderer(device, g_Allocator.Ptr());
-                while (!window.WindowShouldClose()) {
-                    // Main Loop
-                    renderer.Draw();
-                }
+    Core::HeapAllocatorMultiThreaded g_Allocator;
+    int StartApplication(Application& app) {
+        {
+            VulkanApplication vkApp("Editor", "Foundation", VK_API_VERSION_1_3, &g_Allocator);
+            Window window = app.CreateWindow(1920, 1080, "Editor Window");
+            auto device = vkApp.CreateDevice(vkApp.EnumerateDevices()[0], &window);
+            Renderer renderer(device, g_Allocator.Ptr());
+            while (!window.WindowShouldClose()) {
+                // Main Loop
+                renderer.Draw();
             }
-            LOG_RUNTIME(Editor, info, "Quitting. Memory Used: {}", Bits::ByteSizeToString(g_Allocator.GetUsedMemory()));
-            return 0;
         }
+        LOG_RUNTIME(Editor, info, "Quitting. Memory Used: {}", Bits::ByteSizeToString(g_Allocator.GetUsedMemory()));
+        return 0;
     }
 }
 
@@ -39,6 +36,6 @@ int main(int argc, char** argv) {
 
     }
 #else
-    return Foundation::Editor::StartApplication(app);
+    return Foundation::StartApplication(app);
 #endif
 }

@@ -1,14 +1,17 @@
+#include <array>
 #include <fstream>
 #include <filesystem>
-#include <Renderer/Renderer.hpp>
-#include <Core/Math.hpp>
+
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-#include <array>
-using namespace Foundation::Platform::RHI;
-using namespace Foundation::Renderer;
+#include <Math/Math.hpp>
+#include <Core/Platform/Logging.hpp>
+#include <RHICore/Device.hpp>
+
+#include "Renderer.hpp"
+using namespace Foundation;
 using namespace Foundation::Core;
 StlVector<char> ReadFile(std::filesystem::path const& path, Allocator* allocator) {
     std::ifstream file(path, std::ios::ate | std::ios::binary);

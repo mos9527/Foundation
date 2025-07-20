@@ -14,8 +14,7 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 add_library(
     Foundation_Renderer ${SOURCES} ${INCLUDES}
 )
-target_link_libraries(Foundation_Renderer PUBLIC Foundation_Core)
-target_link_libraries(Foundation_Renderer PUBLIC Foundation_Platform)
+target_link_libraries(Foundation_Renderer PRIVATE Foundation_Runtime)
 target_include_directories(
 	Foundation_Renderer 
 	PUBLIC
@@ -124,4 +123,9 @@ target_include_directories(
     Foundation_Renderer
     PRIVATE
     "${stb_SOURCE_DIR}"
+)
+target_include_directories(
+    Foundation_Renderer
+    PUBLIC
+    ..
 )
