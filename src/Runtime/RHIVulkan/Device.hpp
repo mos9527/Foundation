@@ -94,7 +94,6 @@ namespace Foundation::RHI {
         // Device Object storage
         // Lifetimes and handle dereferencing are managed by the device.
         RHIObjectStorage<> m_storage;
-        void Instantiate(Core::Window* win = nullptr);
     public:
         VulkanDevice(Core::Window* window, VulkanApplication const& app, const vk::raii::PhysicalDevice& physicalDevice);
         ~VulkanDevice();

@@ -7,6 +7,7 @@ add_subdirectory(Bits)
 add_subdirectory(Math)
 add_subdirectory(RHICore)
 add_subdirectory(RHIVulkan)
+add_subdirectory(Blobs)
 
 target_link_libraries(Foundation_Runtime
     INTERFACE
@@ -16,8 +17,5 @@ target_link_libraries(Foundation_Runtime
     Foundation_Math
     Foundation_RHICore
     Foundation_RHIVulkan
-)
-target_include_directories(Foundation_Runtime
-    INTERFACE
-    "${CMAKE_CURRENT_SOURCE_DIR}"
+    Foundation_Blobs
 )

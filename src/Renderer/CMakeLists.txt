@@ -17,8 +17,8 @@ add_library(
 target_link_libraries(Foundation_Renderer PRIVATE Foundation_Runtime)
 target_include_directories(
 	Foundation_Renderer 
-	PUBLIC
-	"${CMAKE_CURRENT_SOURCE_DIR}/.."
+	PRIVATE
+    ..
 )
 
 find_program(SLANGC_EXECUTABLE
@@ -29,7 +29,6 @@ find_program(SLANGC_EXECUTABLE
 if(NOT SLANGC_EXECUTABLE)
     message(FATAL_ERROR "slangc not found!")
 endif()
-
 
 function(add_slang_shader TARGET)
     set(options)
@@ -90,9 +89,9 @@ function(add_slang_shader TARGET)
     add_custom_target(${TARGET} ALL DEPENDS ${GENERATED_FILES})
 endfunction()
 
-set(DERIVED_DATA_DIR "${CMAKE_SOURCE_DIR}/.derived")
 set(SHADER_BUILD_DIR "${DERIVED_DATA_DIR}/shaders")
 file(MAKE_DIRECTORY ${SHADER_BUILD_DIR})
+
 add_slang_shader(
     Shader_Triangle
     SOURCE          "${CMAKE_CURRENT_LIST_DIR}/Triangle.slang"
@@ -102,30 +101,3 @@ add_slang_shader(
     ENTRY_POINTS    vertMain            fragMain
 )
 add_dependencies(Foundation_Renderer Shader_Triangle)
-
-include(FetchContent)
-
-FetchContent_Declare(
-    StatueImage
-    URL https://docs.vulkan.org/tutorial/latest/_images/images/texture.jpg
-    DOWNLOAD_DIR ${DERIVED_DATA_DIR}
-    DOWNLOAD_NO_EXTRACT TRUE
-)
-FetchContent_MakeAvailable(StatueImage)
-
-# XXX: Don't do STB here. Renderer should NOT handle derived data creation.
-FetchContent_Declare(
-    stb
-    GIT_REPOSITORY https://github.com/nothings/stb.git
-)
-FetchContent_MakeAvailable(stb)
-target_include_directories(
-    Foundation_Renderer
-    PRIVATE
-    "${stb_SOURCE_DIR}"
-)
-target_include_directories(
-    Foundation_Renderer
-    PUBLIC
-    ..
-)
