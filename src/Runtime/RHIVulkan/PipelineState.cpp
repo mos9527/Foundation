@@ -2,7 +2,6 @@
 #include "Device.hpp"
 #include "Shader.hpp"
 #include "PipelineState.hpp"
-#include <Core/Allocator/StlContainers.hpp>
 #include <Core/Allocator/StackAllocator.hpp>
 using namespace Foundation::RHI;
 VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineStateDesc const& desc)

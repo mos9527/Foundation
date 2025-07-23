@@ -1,5 +1,4 @@
 #pragma once
-#include <Core/Allocator/StlContainers.hpp>
 #include <RHICore/Application.hpp>
 
 #include "Common.hpp"
@@ -50,7 +49,5 @@ namespace Foundation::RHI {
         inline vk::AllocationCallbacks const& GetVkAllocatorCallbacks() const { return m_vkAllocatorCpuCallbacks; }
         inline auto const& GetVkInstance() const { return m_instance; }
 
-        inline bool IsValid() const override { return m_instance != nullptr; }
-        inline const char* GetName() const override { return m_name.c_str(); }
     };
 }

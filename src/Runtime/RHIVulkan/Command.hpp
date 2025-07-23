@@ -1,9 +1,7 @@
 #pragma once
-#include <RHICore/Command.hpp>
 #include "Common.hpp"
 #include "Resource.hpp"
-
-#include <Core/Allocator/StlContainers.hpp>
+#include <RHICore/Command.hpp>
 #include <Core/Allocator/StackAllocator.hpp>
 namespace Foundation::RHI {
     class VulkanDevice;
@@ -25,8 +23,6 @@ namespace Foundation::RHI {
         RHICommandList* GetCommandList(Handle handle) const override;
         void DestroyCommandList(Handle handle) override;
 
-        inline bool IsValid() const { return m_commandPool != nullptr; }
-        inline const char* GetName() const override { return "VulkanCommandPool"; }
     };
     class VulkanCommandList : public RHICommandList {
     protected:
@@ -49,14 +45,11 @@ namespace Foundation::RHI {
 
         inline auto const& GetVkCommandBuffer() const { return m_commandBuffer; }
 
-        inline bool IsValid() const { return m_commandBuffer != nullptr; }
-        inline const char* GetName() const override { return "VulkanCommandList"; }
-
         RHICommandList& Begin() override;
 
         RHICommandList& BeginTransition() override;
         RHICommandList& SetBufferTransition(RHIBuffer* image, TransitionDesc const& desc) override;
-        RHICommandList& SetImageTransition(RHIImage* image, TransitionDesc const& desc) override;
+        RHICommandList& SetImageTransition(RHITexture* image, TransitionDesc const& desc) override;
         RHICommandList& EndTransition() override;
 
         RHICommandList& SetPipeline(PipelineDesc const& desc) override;
@@ -71,8 +64,8 @@ namespace Foundation::RHI {
         RHICommandList& DrawIndexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0, int32_t vertex_offset = 0, uint32_t first_instance = 0) override;
 
         RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::StlSpan<const CopyBufferRegion> regions) override;
-        RHICommandList& CopyImage(RHIImage* src_image, RHIImageLayout src_layout, RHIImage* dst_image, RHIImageLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions) override;
-        RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHIImage* dst_image, RHIImageLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions) override;
+        RHICommandList& CopyImage(RHITexture* src_image, RHITextureLayout src_layout, RHITexture* dst_image, RHITextureLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions) override;
+        RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image, RHITextureLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions) override;
 
         RHICommandList& BeginGraphics(GraphicsDesc const& desc) override;
         RHICommandList& BindVertexBuffer(uint32_t index, Core::StlSpan<RHIBuffer* const> buffers, Core::StlSpan<const size_t> offsets) override;

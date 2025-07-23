@@ -1,12 +1,15 @@
 #pragma once
-#include <cstdint>
-#include <RHICore/Common.hpp>
-#include <RHICore/Resource.hpp>
-namespace Foundation::Blobs {
-    // Densely packed image data structure.
-    // Data layout MUST adhere to that of RHIImageDesc where applicable.    
-    struct Image {
-        RHI::RHIImageDesc desc;
-        const char* data{ nullptr };
+#include "Blobs.hpp"
+namespace Foundation::Blobs {  
+    struct Image : public Blob {
+        RHI::RHITextureDesc desc;
+        Core::StlSpan<const char> data{ };
+    public:
+        Image(RHI::RHITextureDesc const& desc, Core::StlSpan<const char> data) noexcept
+            : desc(desc), data(data) {}
+        constexpr operator bool() const noexcept { return data.size();  }
+        void Serialize(Stream& stream) override;
+        void Deserialize(Stream& stream) override;
     };
+
 }

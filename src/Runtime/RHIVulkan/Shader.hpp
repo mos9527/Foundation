@@ -9,9 +9,6 @@ namespace Foundation::RHI {
     public:
         VulkanShaderModule(const VulkanDevice& device, ShaderModuleDesc const& desc);
 
-        inline bool IsValid() const { return m_shaderModule != nullptr; }
-        inline const char* GetName() const { return m_desc.name.c_str(); }
-
         inline const vk::raii::ShaderModule& GetVkShaderModule() const { return m_shaderModule; }
     };
 }  

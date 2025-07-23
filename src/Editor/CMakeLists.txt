@@ -22,4 +22,5 @@ else()
 endif()
 
 target_sources(Foundation_Editor PRIVATE ${SOURCES} ${INCLUDES} "Editor.cpp")
-target_link_libraries(Foundation_Editor PRIVATE Foundation_Runtime Foundation_Renderer)
+target_link_libraries(Foundation_Editor PRIVATE Foundation_Runtime Foundation_Renderer Foundation_Cooking)
+target_include_directories(Foundation_Editor PUBLIC ..)

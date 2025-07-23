@@ -111,12 +111,7 @@ VulkanDevice::VulkanDevice(Window* window, VulkanApplication const& app, const v
     // Allocate the queues
     m_queues = Core::ConstructUnique<VulkanDeviceQueues>(GetAllocator(), GetAllocator());
     for (auto i : unique_queues) {
-        std::string name;
-        if (i == graphics) name += "Graphics";
-        if (i == compute) name += "Compute";
-        if (i == transfer) name += "Transfer";
-        if (i == present) name += "Present";
-        auto handle = m_queues->storage.CreateObject<VulkanDeviceQueue>(*this, i, name);
+        auto handle = m_queues->storage.CreateObject<VulkanDeviceQueue>(*this, i);
         if (i == graphics) m_queues->graphics = handle;
         if (i == compute) m_queues->compute = handle;
         if (i == transfer) m_queues->transfer = handle;
@@ -229,7 +224,7 @@ void VulkanDevice::DebugLogAllocatorInfo() const {
             ++lazilyAllocatedTypeCount;
     }
     LOG_RUNTIME(VulkanDevice, info,
-        "** Vulkan Allocator Stats for {} **\n"
+        "** Vulkan Allocator Stats **\n"
         "    deviceLocalHeapCount = {}\n"
         "    deviceLocalHeapSumSize = {}\n"
         "    hostVisibleHeapCount = {}\n"
@@ -240,7 +235,6 @@ void VulkanDevice::DebugLogAllocatorInfo() const {
         "    notDeviceLocalNotHostVisibleTypeCount = {}\n"
         "    amdSpecificTypeCount = {}\n"
         "    lazilyAllocatedTypeCount = {}",
-        GetName(),
         deviceLocalHeapCount,
         Bits::ByteSizeToString(deviceLocalHeapSumSize),
         hostVisibleHeapCount,
@@ -433,11 +427,11 @@ void VulkanDevice::DestroyBuffer(Handle handle) {
     m_storage.DestroyObject(handle);
 }
 
-RHIDeviceScopedObjectHandle<RHIImage> VulkanDevice::CreateImage(RHIImageDesc const& desc) {
-    return { this, m_storage.CreateObject<VulkanImage>(*this, desc) };
+RHIDeviceScopedObjectHandle<RHITexture> VulkanDevice::CreateImage(RHITextureDesc const& desc) {
+    return { this, m_storage.CreateObject<VulkanTexture>(*this, desc) };
 }
-RHIImage* VulkanDevice::GetImage(Handle handle) const {
-    return m_storage.GetObjectPtr<RHIImage>(handle);
+RHITexture* VulkanDevice::GetImage(Handle handle) const {
+    return m_storage.GetObjectPtr<RHITexture>(handle);
 }
 void VulkanDevice::DestroyImage(Handle handle) {
     m_storage.DestroyObject(handle);

@@ -1,7 +1,7 @@
 #pragma once
-#include <Bits/FreeList.hpp>
 #include <Core/Platform/Application.hpp>
 #include <Core/Allocator/Allocator.hpp>
+#include <Core/Container/FreeList.hpp>
 
 namespace Foundation::RHI {
     using Handle = uint64_t;
@@ -17,27 +17,21 @@ namespace Foundation::RHI {
         RHIObject& operator=(const RHIObject&) = delete;
         RHIObject(RHIObject&&) = delete;
         RHIObject& operator=(RHIObject&&) = delete;
-        /// <summary>
-        /// Checks whether the object is in a valid state.
-        /// </summary>
-        /// <returns>True if the object is valid; otherwise, false.</returns>
-        virtual bool IsValid() const = 0;
-        virtual const char* GetName() const = 0;
 
         virtual ~RHIObject() = default;
     };
     /// <summary>
     /// Provides type traits for types derived from RHIObject.
     /// </summary>            
-    template<std::derived_from<RHIObject> T>
+    template<typename Factory, std::derived_from<RHIObject> T>
     struct RHIObjectTraits;
     /// <summary>
     /// Handle type for RHI Objects.  
     /// 
-    /// RHIHandle<Factory, T> are trivialy copiable objects that provide a view into the underlying RHIObject storage.
+    /// RHIHandle<Factory, T> are trivially copiable objects that provide a view into the underlying RHIObject storage.
     /// When a Factory goes out of scope, all underlying RHIObjects are destroyed.
     ///
-    /// The behaviour is undefined to use a Handle after it's Factory has been destroyed or the resource
+    /// The behavior is undefined to use a Handle after it's Factory has been destroyed or the resource
     /// it refers to has been destroyed.
     /// </summary>
     template<typename Factory, typename T> class RHIHandle {
@@ -46,12 +40,12 @@ namespace Foundation::RHI {
         Factory* m_factory{ nullptr };
         Handle m_handle{ kInvalidHandle };
         /// <summary>
-        /// Retrives the underlying RHIObject pointer.
-        /// It is undefined behaviour to use the returned pointer after the underlying resource has been destroyed.                
+        /// Retrieves the underlying RHIObject pointer.
+        /// It is undefined behavior to use the returned pointer after the underlying resource has been destroyed.                
         /// </summary>
-        /// <typeparam name="U">Pointer type to retrive as. U is required to be castable from T</typeparam>                
+        /// <typeparam name="U">Pointer type to retrieve as. U is required to be castable from T</typeparam>                
         template<typename U = T> U* Get() const {
-            auto ptr = RHIObjectTraits<T>::Get(m_factory, m_handle);
+            auto ptr = RHIObjectTraits<Factory, T>::Get(m_factory, m_handle);
             return static_cast<U*>(ptr);
         }
         T* operator->() const {
@@ -112,32 +106,31 @@ namespace Foundation::RHI {
         RHIScopedHandle& operator=(const RHIScopedHandle&) = delete;
         ~RHIScopedHandle() {
             if (IsValid())
-                RHIObjectTraits<T>::Destroy(m_factory, m_handle);
+                RHIObjectTraits<Factory, T>::Destroy(m_factory, m_handle);
         }
     };
     /// <summary>
-    /// Storage/Object dereference faclity for RHI Objects
+    /// Storage/Object dereference facility for RHI Objects
     /// </summary>
     template<typename Base = RHIObject> class RHIObjectStorage {
         Core::Allocator* m_allocator;
-        Bits::FreeDenseMap<Handle, Base> m_objects;
+        Core::FreeDenseMap<Handle, Core::UniquePtr<Base>> m_objects;
     public:
         RHIObjectStorage(Core::Allocator* allocator) : m_allocator(allocator), m_objects(allocator) {};
         RHIObjectStorage(Core::Allocator* allocator, size_t reserve_size) :
             m_allocator(allocator), m_objects(allocator, reserve_size) {
         };
         /// <summary>
-        /// Creates specified RHIObject of derived type T and retrives its handle
+        /// Creates specified RHIObject of derived type T and retrieves its handle
         /// </summary>
         /// <returns>The newly allocated Handle of the said RHIObject.</returns>
         template<typename U, typename ...Args> Handle CreateObject(Args&&... args) {
-            auto handle = m_objects.pop();
-            auto& value = m_objects.at(handle);
+            auto [handle, value] = m_objects.allocate();
             value = Core::ConstructUniqueBase<Base, U>(m_allocator, std::forward<Args>(args)...);
             return handle;
         }
         /// <summary>
-        /// Retrives the raw pointer to the object within the storage.                
+        /// Retrieves the raw pointer to the object within the storage.
         /// </summary>
         /// <typeparam name="U">Pointer type to cast to.</typeparam>
         /// <returns>The raw pointer.</returns>
@@ -147,15 +140,15 @@ namespace Foundation::RHI {
             return static_cast<U*>(m_objects.at(handle).get());
         }
         /// <summary>
-        /// Destorys the object associated with the given handle, and frees the handle for reuse.
+        /// Destroys the object associated with the given handle, and frees the handle for reuse.
         /// </summary>
         /// <param name="handle"></param>
         inline void DestroyObject(Handle handle) {
-            m_objects.erase(handle);
+            m_objects.free(handle);
         }
         /// <summary>
         /// Removes all elements from the m_objects container.
-        /// Using handles acquired earlier will result in undefined behaviour.
+        /// Using handles acquired earlier will result in undefined behavior.
         /// </summary>
         inline void Clear() {
             m_objects.clear();

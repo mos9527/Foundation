@@ -42,7 +42,7 @@ void VulkanSwapchain::Instantiate() {
     auto images = m_swapchain.getImages();
     m_images.Clear(), m_images_ptrs.clear();
     for (auto& image : images) {
-        Handle handle = m_images.CreateObject<VulkanImage>(m_device, vk::raii::Image(device, image, m_device.GetVkAllocatorCallbacks()), true /* shared */);
+        Handle handle = m_images.CreateObject<VulkanTexture>(m_device, vk::raii::Image(device, image, m_device.GetVkAllocatorCallbacks()));
         m_images_ptrs.push_back(m_images.GetObjectPtr(handle));
     }
 }
@@ -50,7 +50,7 @@ VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SwapchainDesc const
     : RHISwapchain(device, desc), m_device(device), m_images(device.GetAllocator()), m_images_ptrs(device.GetAllocator()) {
     Instantiate();
 }
-Core::StlSpan<RHIImage* const> VulkanSwapchain::GetImages() const {
+Core::StlSpan<RHITexture* const> VulkanSwapchain::GetImages() const {
     return { m_images_ptrs.data(), m_images_ptrs.size() };
 }
 

@@ -1,5 +1,4 @@
 #pragma once
-#include <Core/Allocator/StlContainers.hpp>
 #include <RHICore/Swapchain.hpp>
 #include "Common.hpp"
 #include "Resource.hpp"
@@ -21,15 +20,13 @@ namespace Foundation::RHI {
         std::array<uint32_t, 2> m_queue_family_indices;
         vk::SwapchainCreateInfoKHR GetSwapchainCreateInfo();
 
-        RHIObjectStorage<VulkanImage> m_images;
-        Core::StlVector<RHIImage*> m_images_ptrs;
+        RHIObjectStorage<VulkanTexture> m_images;
+        Core::StlVector<RHITexture*> m_images_ptrs;
         void Instantiate();
     public:
         VulkanSwapchain(const VulkanDevice& device, SwapchainDesc const& desc);
 
-        Core::StlSpan<RHIImage* const> GetImages() const override;
-        inline bool IsValid() const override { return m_swapchain != nullptr; }
-        inline const char* GetName() const override { return m_desc.name.c_str(); }
+        Core::StlSpan<RHITexture* const> GetImages() const override;
 
         inline auto const& GetVkSwapchain() const { return m_swapchain; }
 

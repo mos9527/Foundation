@@ -1,7 +1,8 @@
 #pragma once
 #include <filesystem>
 #include <Runtime/Blobs/Image.hpp>
-#include <Runtime/Core/Allocator/StlContainers.hpp>
+#include <Runtime/Core/Container/Common.hpp>
+
 namespace Foundation::Cooking {
     using namespace Foundation::Blobs;
     using namespace Foundation::Core;
@@ -9,17 +10,13 @@ namespace Foundation::Cooking {
     template<typename T> class Cooker;
     template<typename T> class Cooked;
 
-    template<> class Cooked<Image> {
+    template<> struct Cooked<Image> {
+        RHI::RHITextureDesc desc{};    
         StlVector<char> data;
-        RHI::RHIImageDesc desc{};
-    public:   
-        const Image GetImage() const {
-            return {
-                .desc = desc,
-                .data = data.data()
-            };
+        const Image GetImage() const noexcept {
+            return { desc, data };
         }
-        constexpr Image operator()() const { return GetImage(); }
+        const Image operator()() const noexcept { return GetImage(); }
     };
 
     template<> class Cooker<Image> {

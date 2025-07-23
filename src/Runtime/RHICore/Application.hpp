@@ -18,7 +18,7 @@ namespace Foundation::RHI {
         virtual RHIDevice* GetDevice(Handle handle) const = 0;
         virtual void DestroyDevice(Handle handle) = 0;
     };
-    template<> struct RHIObjectTraits<RHIDevice> {
+    template<> struct RHIObjectTraits<RHIApplication, RHIDevice> {
         static RHIDevice* Get(RHIApplication const* app, Handle handle) {
             return app->GetDevice(handle);
         }

@@ -1,7 +1,6 @@
 #pragma once
 #include <Math/Math.hpp>
 #include <Bits/Enums.hpp>
-#include <Core/Allocator/StlContainers.hpp>
 #include "Details/Details.hpp"
 
 namespace Foundation::RHI {
@@ -46,7 +45,7 @@ namespace Foundation::RHI {
         Readback
     };
 
-    enum class RHIImageLayout {
+    enum class RHITextureLayout {
         Undefined = 0,
         General,
         RenderTarget,
@@ -75,7 +74,7 @@ namespace Foundation::RHI {
     enum class RHIMultisampleCount {
         e1, e2, e4, e8, e16
     };
-    enum class RHIImageDimension {
+    enum class RHITextureDimension {
         e1D, e2D, e3D
     };
 
@@ -116,7 +115,7 @@ namespace Foundation::RHI {
         TransferDestination = 1 << 6
     BITMASK_ENUM_END();
 
-    BITMASK_ENUM_BEGIN(RHIImageUsage, uint32_t)
+    BITMASK_ENUM_BEGIN(RHITextureUsage, uint32_t)
         Undefined = 0,
         RenderTarget = 1 << 0,
         DepthStencil = 1 << 1,
@@ -126,7 +125,7 @@ namespace Foundation::RHI {
         TransferDestination = 1 << 5
         BITMASK_ENUM_END();
 
-    BITMASK_ENUM_BEGIN(RHIImageAccessFlag, uint32_t)
+    BITMASK_ENUM_BEGIN(RHITextureAccessFlag, uint32_t)
         Undefined = 0,
         Color = 1 << 0,
         Depth = 1 << 1,

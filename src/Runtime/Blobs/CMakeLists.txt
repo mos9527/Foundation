@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.26)
 file(
-    GLOB_RECURSE INCLUDES 
+    GLOB_RECURSE SOURCES 
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
 )
 file(

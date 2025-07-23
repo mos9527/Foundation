@@ -1,5 +1,4 @@
 #pragma once
-#include <Core/Allocator/StlContainers.hpp>
 #include <RHICore/Application.hpp>
 #include <RHICore/Resource.hpp>
 #include <RHICore/Device.hpp>
@@ -29,10 +28,10 @@ namespace Foundation {
         RHIDeviceScopedObjectHandle<RHIBuffer> m_vertex_buffer, m_index_buffer;
         StlVector<RHIDeviceScopedObjectHandle<RHIBuffer>> m_uniform_buffer;
         RHIDeviceScopedObjectHandle<RHIDeviceSampler> m_sampler;
-        RHIDeviceScopedObjectHandle<RHIImage> m_tex;
-        RHIImageScopedHandle<RHIImageView> m_tex_view;
+        RHIDeviceScopedObjectHandle<RHITexture> m_tex;
+        RHITextureScopedHandle<RHITextureView> m_tex_view;
 
-        StlVector<RHIImageScopedHandle<RHIImageView>>
+        StlVector<RHITextureScopedHandle<RHITextureView>>
             m_swapchain_imageviews;
 
         uint32_t m_current_img{ 0 };

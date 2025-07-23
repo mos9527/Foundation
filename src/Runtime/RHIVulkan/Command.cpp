@@ -1,6 +1,5 @@
 #include "Command.hpp"
 #include "Device.hpp"
-#include <Core/Allocator/StlContainers.hpp>
 
 using namespace Foundation::RHI;
 VulkanCommandPool::VulkanCommandPool(const VulkanDevice& device, PoolDesc const& desc, Core::Allocator* allocator) :
@@ -72,21 +71,21 @@ RHICommandList& VulkanCommandList::SetBufferTransition(RHIBuffer* image, Transit
     });
     return *this;
 }
-RHICommandList& VulkanCommandList::SetImageTransition(RHIImage* image, TransitionDesc const& desc) {
+RHICommandList& VulkanCommandList::SetImageTransition(RHITexture* image, TransitionDesc const& desc) {
     CHECK(m_barriers && "Invalid barrier states. Did you call BeginTransition()?");
-    auto* res = static_cast<VulkanImage*>(image);
+    auto* res = static_cast<VulkanTexture*>(image);
     m_barriers->image.push_back(vk::ImageMemoryBarrier2{
         .srcStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.src_stage),
         .srcAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.src_access),
         .dstStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.dst_stage),
         .dstAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.dst_access),
-        .oldLayout = vkImageLayoutFromRHIImageLayout(desc.src_img_layout),
-        .newLayout = vkImageLayoutFromRHIImageLayout(desc.dst_img_layout),
+        .oldLayout = vkImageLayoutFromRHITextureLayout(desc.src_img_layout),
+        .newLayout = vkImageLayoutFromRHITextureLayout(desc.dst_img_layout),
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .image = *res->GetVkImage(),
         .subresourceRange = {
-            .aspectMask = vkImageAspectFlagFromRHIImageAspect(desc.src_img_range.layer.access),
+            .aspectMask = vkImageAspectFlagFromRHITextureAspect(desc.src_img_range.layer.access),
             .baseMipLevel = desc.src_img_range.layer.mip_level,
             .levelCount = desc.src_img_range.mip_count,
             .baseArrayLayer = desc.src_img_range.layer.base_array_layer,
@@ -173,27 +172,27 @@ RHICommandList& VulkanCommandList::CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* 
     return *this;
 }
 
-RHICommandList& VulkanCommandList::CopyImage(RHIImage* src_image, RHIImageLayout src_layout, RHIImage* dst_image, RHIImageLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions)
+RHICommandList& VulkanCommandList::CopyImage(RHITexture* src_image, RHITextureLayout src_layout, RHITexture* dst_image, RHITextureLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions)
 {
     CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
     CHECK(src_image && dst_image && "Source and destination images must be valid.");
 
-    auto* src_vulkan_image = static_cast<VulkanImage*>(src_image);
-    auto* dst_vulkan_image = static_cast<VulkanImage*>(dst_image);
+    auto* src_vulkan_image = static_cast<VulkanTexture*>(src_image);
+    auto* dst_vulkan_image = static_cast<VulkanTexture*>(dst_image);
 
     Core::StlVector<vk::ImageCopy> vk_regions(&m_allocator);
     vk_regions.reserve(regions.size());
     for (auto const& region : regions) {
         vk_regions.push_back(vk::ImageCopy{
             .srcSubresource = {
-                .aspectMask = vkImageAspectFlagFromRHIImageAspect(region.src_layer.access),
+                .aspectMask = vkImageAspectFlagFromRHITextureAspect(region.src_layer.access),
                 .mipLevel = region.src_layer.mip_level,
                 .baseArrayLayer = region.src_layer.base_array_layer,
                 .layerCount = region.src_layer.layer_count
             },
             .srcOffset = { region.src_offset.x, region.src_offset.y, region.src_offset.z },
             .dstSubresource = {
-                .aspectMask = vkImageAspectFlagFromRHIImageAspect(region.dst_layer.access),
+                .aspectMask = vkImageAspectFlagFromRHITextureAspect(region.dst_layer.access),
                 .mipLevel = region.dst_layer.mip_level,
                 .baseArrayLayer = region.dst_layer.base_array_layer,
                 .layerCount = region.dst_layer.layer_count
@@ -204,21 +203,21 @@ RHICommandList& VulkanCommandList::CopyImage(RHIImage* src_image, RHIImageLayout
     }
 
     m_commandBuffer.copyImage(
-        *src_vulkan_image->GetVkImage(), vkImageLayoutFromRHIImageLayout(src_layout),
-        *dst_vulkan_image->GetVkImage(), vkImageLayoutFromRHIImageLayout(dst_layout),
+        *src_vulkan_image->GetVkImage(), vkImageLayoutFromRHITextureLayout(src_layout),
+        *dst_vulkan_image->GetVkImage(), vkImageLayoutFromRHITextureLayout(dst_layout),
         vk_regions
     );
 
     return *this;
 }
 
-RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHIImage* dst_image, RHIImageLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions)
+RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image, RHITextureLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions)
 {
     CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
     CHECK(src_buffer && dst_image && "Source buffer and destination image must be valid.");
 
     auto* src_vulkan_buffer = static_cast<VulkanBuffer*>(src_buffer);
-    auto* dst_vulkan_image = static_cast<VulkanImage*>(dst_image);
+    auto* dst_vulkan_image = static_cast<VulkanTexture*>(dst_image);
 
     Core::StlVector<vk::BufferImageCopy> vk_regions(&m_allocator);
     vk_regions.reserve(regions.size());
@@ -228,7 +227,7 @@ RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHII
             .bufferRowLength = 0, // Tightly packed
             .bufferImageHeight = 0, // Tightly packed
             .imageSubresource = {
-                .aspectMask = vkImageAspectFlagFromRHIImageAspect(region.dst_layer.access),
+                .aspectMask = vkImageAspectFlagFromRHITextureAspect(region.dst_layer.access),
                 .mipLevel = region.dst_layer.mip_level,
                 .baseArrayLayer = region.dst_layer.base_array_layer,
                 .layerCount = region.dst_layer.layer_count
@@ -241,7 +240,7 @@ RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHII
     m_commandBuffer.copyBufferToImage(
         *src_vulkan_buffer->GetVkBuffer(),
         *dst_vulkan_image->GetVkImage(),
-        vkImageLayoutFromRHIImageLayout(dst_layout),
+        vkImageLayoutFromRHITextureLayout(dst_layout),
         vk_regions
     );
 
@@ -255,8 +254,8 @@ RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc) {
     attachments.reserve(desc.attachments.size());
     for (auto const& attachment : desc.attachments) {
         attachments.push_back(vk::RenderingAttachmentInfo{
-            .imageView = static_cast<const VulkanImageView*>(attachment.image_view)->GetVkImageView(),
-            .imageLayout = vkImageLayoutFromRHIImageLayout(attachment.image_layout),
+            .imageView = static_cast<const VulkanTextureView*>(attachment.image_view)->GetVkImageView(),
+            .imageLayout = vkImageLayoutFromRHITextureLayout(attachment.image_layout),
             .loadOp = vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eStore,
             .clearValue = vk::ClearColorValue(std::array{attachment.clear_color.r, attachment.clear_color.g, attachment.clear_color.b, attachment.clear_color.a})

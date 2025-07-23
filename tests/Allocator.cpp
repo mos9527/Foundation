@@ -1,4 +1,4 @@
-#include <Core/Logging.hpp>
+#include <Core/Platform/Logging.hpp>
 #include <Core/Allocator/StackAllocator.hpp>
 #include <Core/Allocator/HeapAllocator.hpp>
 #include <Core/Allocator/DefaultAllocator.hpp>
@@ -25,14 +25,9 @@ template<typename Func> void bench_many(const char* desc, Func&& func) {
     LOG_RUNTIME(Allocator, info, "{}: {} ms", desc,
         chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count());
 }
-
 #include <spdlog/sinks/stdout_color_sinks.h>
-namespace Foundation::Platform {
-    spdlog::sink_ptr GetPlatformDebugLoggingSink() {
-        return std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
-    }
-}
 int main() {
+    GetLoggingSink()->add_sink(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
     void* memory = _aligned_malloc(arenaSize, arenaSize); // 64 KiB alignment
     Allocator::Arena arena(memory, arenaSize);
 	bench_many("Stack ST", [&]() {

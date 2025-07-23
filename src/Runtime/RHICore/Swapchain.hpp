@@ -2,7 +2,7 @@
 #include "Common.hpp"
 namespace Foundation::RHI {
     class RHIDevice;
-    class RHIImage;
+    class RHITexture;
     class RHIDeviceSemaphore;
     class RHIDeviceFence;
     class RHISwapchain : public RHIObject {
@@ -14,8 +14,7 @@ namespace Foundation::RHI {
                 FIFO, // V-Sync
                 MAILBOX, // N buffering
                 IMMEDIATE // No V-Sync (tearing allowed)
-            };
-            std::string name;
+            };            
             // Name for the swap chain, used for debugging purposes.
             RHIResourceFormat format;
             // Swapchain buffer dimensions.
@@ -26,7 +25,7 @@ namespace Foundation::RHI {
             PresentMode present_mode;
         } const m_desc;
 
-        virtual Core::StlSpan<RHIImage* const> GetImages() const = 0;
+        virtual Core::StlSpan<RHITexture* const> GetImages() const = 0;
         RHISwapchain(RHIDevice const& device, SwapchainDesc const& desc) : m_device(device), m_desc(desc) {}
         virtual size_t GetNextImage(
             uint64_t timeout_ns,

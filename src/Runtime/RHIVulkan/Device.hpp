@@ -47,9 +47,6 @@ namespace Foundation::RHI {
     public:
         VulkanDeviceSemaphore(const VulkanDevice& device);
         inline auto const& GetVkSemaphore() const { return m_semaphore; }
-
-        inline bool IsValid() const override { return m_semaphore != nullptr; }
-        inline const char* GetName() const override { return "VulkanDeviceSemaphore"; }
     };
     class VulkanDeviceFence : public RHIDeviceFence {
         const VulkanDevice& m_device;
@@ -57,9 +54,6 @@ namespace Foundation::RHI {
     public:
         VulkanDeviceFence(const VulkanDevice& device, bool signaled);
         inline auto const& GetVkFence() const { return m_fence; }
-
-        inline bool IsValid() const override { return m_fence != nullptr; }
-        inline const char* GetName() const override { return "VulkanDeviceFence"; }
     };
     class VulkanDeviceDescriptorSetLayout : public RHIDeviceDescriptorSetLayout {
         const VulkanDevice& m_device;
@@ -68,8 +62,6 @@ namespace Foundation::RHI {
         VulkanDeviceDescriptorSetLayout(const VulkanDevice& device, RHIDeviceDescriptorSetLayoutDesc const& desc);
 
         inline auto const& GetVkLayout() const { return m_layout; }
-        inline bool IsValid() const override { return m_layout != nullptr; }
-        inline const char* GetName() const override { return "VulkanDeviceDescriptorSetLayout"; }
     };
     class VulkanDeviceSampler : public RHIDeviceSampler {
         const VulkanDevice& m_device;
@@ -77,8 +69,6 @@ namespace Foundation::RHI {
     public:
         VulkanDeviceSampler(const VulkanDevice& device, RHIDeviceSampler::SamplerDesc const& desc);
         inline auto const& GetVkSampler() const { return m_sampler; }
-        inline bool IsValid() const override { return m_sampler != nullptr; }
-        inline const char* GetName() const override { return "VulkanDeviceSampler"; }
     };
     class VulkanDevice : public RHIDevice {
         const VulkanApplication& m_app;
@@ -131,8 +121,8 @@ namespace Foundation::RHI {
         RHIBuffer* GetBuffer(Handle handle) const override;
         void DestroyBuffer(Handle handle) override;
 
-        RHIDeviceScopedObjectHandle<RHIImage> CreateImage(RHIImageDesc const& desc) override;
-        RHIImage* GetImage(Handle handle) const override;
+        RHIDeviceScopedObjectHandle<RHITexture> CreateImage(RHITextureDesc const& desc) override;
+        RHITexture* GetImage(Handle handle) const override;
         void DestroyImage(Handle handle) override;
 
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc) override;
@@ -151,9 +141,6 @@ namespace Foundation::RHI {
         void ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) override;
         void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) override;
 
-        inline const char* GetName() const override { return m_properties.deviceName.data(); }
-        inline bool IsValid() const override { return m_device != nullptr; }
-
         Core::Allocator* GetAllocator() const;
         vk::AllocationCallbacks const& GetVkAllocatorCallbacks() const;
 
@@ -167,11 +154,9 @@ namespace Foundation::RHI {
         const VulkanDevice& m_device;
         const uint32_t m_queue_index;
         vk::raii::Queue m_queue{ nullptr };
-
-        const std::string m_name;
     public:
-        VulkanDeviceQueue(const VulkanDevice& device, uint32_t queue_index, std::string const& name)
-            : RHIDeviceQueue(device), m_device(device), m_queue(device.GetVkDevice(), queue_index, 0), m_queue_index(queue_index), m_name(name) {
+        VulkanDeviceQueue(const VulkanDevice& device, uint32_t queue_index)
+            : RHIDeviceQueue(device), m_device(device), m_queue(device.GetVkDevice(), queue_index, 0), m_queue_index(queue_index) {
         };
 
         inline const VulkanDevice& GetVulkanDevice() const { return m_device; }
@@ -181,12 +166,5 @@ namespace Foundation::RHI {
         void WaitIdle() const override;
         void Submit(SubmitDesc const& desc) const override;
         void Present(PresentDesc const& desc) const override;
-
-        inline const char* GetName() const override {
-            return m_name.c_str();
-        }
-        inline bool IsValid() const override {
-            return m_queue != nullptr;
-        }
     };
 }

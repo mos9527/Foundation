@@ -12,10 +12,12 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(fmt)
 
 add_subdirectory(Allocator)
+add_subdirectory(Container)
 add_subdirectory(Platform)
 
 target_link_libraries(Foundation_Core
     INTERFACE
     Foundation_Allocator
+    Foundation_Container
     Foundation_Platform
 )

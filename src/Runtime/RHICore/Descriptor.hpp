@@ -2,7 +2,7 @@
 #include "Common.hpp"
 namespace Foundation::RHI {
     class RHIBuffer;
-    class RHIImageView;
+    class RHITextureView;
     class RHIDeviceSampler;
     class RHIDeviceDescriptorPool;
     class RHIDeviceDescriptorSetLayout;
@@ -23,9 +23,9 @@ namespace Foundation::RHI {
             };
             Core::StlSpan<const Buffer> buffers; // Applies to type of UniformBuffer, StorageBuffer
             struct Image {
-                RHIImageView* image_view{ nullptr }; // Image view to bind, can be null
+                RHITextureView* image_view{ nullptr }; // Image view to bind, can be null
                 RHIDeviceSampler* sampler{ nullptr }; // Sampler to bind, can be null
-                RHIImageLayout layout{ RHIImageLayout::Undefined }; // Layout of the image
+                RHITextureLayout layout{ RHITextureLayout::Undefined }; // Layout of the image
             };
             Core::StlSpan<const Image> images; // Applies to type of Sampler, SampledImage
         };
@@ -55,7 +55,7 @@ namespace Foundation::RHI {
         virtual RHIDeviceDescriptorSet* GetDescriptorSet(Handle handle) const = 0;
         virtual void DestroyDescriptorSet(Handle handle) = 0;
     };
-    template<> struct RHIObjectTraits<RHIDeviceDescriptorSet> {
+    template<> struct RHIObjectTraits<RHIDeviceDescriptorPool, RHIDeviceDescriptorSet> {
         static RHIDeviceDescriptorSet* Get(RHIDeviceDescriptorPool const* pool, Handle handle) {
             return pool->GetDescriptorSet(handle);
         }

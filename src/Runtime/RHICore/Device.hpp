@@ -109,7 +109,7 @@ namespace Foundation::RHI {
     public:
         struct DeviceDesc {
             uint32_t id;
-            std::string name;
+            const char* name;
         };
         RHIDevice(RHIApplication const& app) : m_app(app) {}
         RHIDevice(RHIDevice const&) = delete;
@@ -144,8 +144,8 @@ namespace Foundation::RHI {
         virtual RHIBuffer* GetBuffer(Handle handle) const = 0;
         virtual void DestroyBuffer(Handle handle) = 0;
 
-        virtual RHIDeviceScopedObjectHandle<RHIImage> CreateImage(RHIImageDesc const& desc) = 0;
-        virtual RHIImage* GetImage(Handle handle) const = 0;
+        virtual RHIDeviceScopedObjectHandle<RHITexture> CreateImage(RHITextureDesc const& desc) = 0;
+        virtual RHITexture* GetImage(Handle handle) const = 0;
         virtual void DestroyImage(Handle handle) = 0;
 
         virtual RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc) = 0;
@@ -166,7 +166,7 @@ namespace Foundation::RHI {
         virtual void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) = 0;
     };
 
-    template<> struct RHIObjectTraits<RHISwapchain> {
+    template<> struct RHIObjectTraits<RHIDevice, RHISwapchain> {
         static RHISwapchain* Get(RHIDevice const* device, Handle handle) {
             return device->GetSwapchain(handle);
         }
@@ -174,7 +174,7 @@ namespace Foundation::RHI {
             device->DestroySwapchain(handle);
         }
     };
-    template<> struct RHIObjectTraits<RHIPipelineState> {
+    template<> struct RHIObjectTraits<RHIDevice, RHIPipelineState> {
         static RHIPipelineState* Get(RHIDevice const* device, Handle handle) {
             return device->GetPipelineState(handle);
         }
@@ -182,7 +182,7 @@ namespace Foundation::RHI {
             device->DestroyPipelineState(handle);
         }
     };
-    template<> struct RHIObjectTraits<RHIShaderModule> {
+    template<> struct RHIObjectTraits<RHIDevice, RHIShaderModule> {
         static RHIShaderModule* Get(RHIDevice const* device, Handle handle) {
             return device->GetShaderModule(handle);
         }
@@ -190,7 +190,7 @@ namespace Foundation::RHI {
             device->DestroyShaderModule(handle);
         }
     };
-    template<> struct RHIObjectTraits<RHICommandPool> {
+    template<> struct RHIObjectTraits<RHIDevice, RHICommandPool> {
         static RHICommandPool* Get(RHIDevice const* device, Handle handle) {
             return device->GetCommandPool(handle);
         }
@@ -198,7 +198,7 @@ namespace Foundation::RHI {
             device->DestroyCommandPool(handle);
         }
     };
-    template<> struct RHIObjectTraits<RHIDeviceSemaphore> {
+    template<> struct RHIObjectTraits<RHIDevice, RHIDeviceSemaphore> {
         static RHIDeviceSemaphore* Get(RHIDevice const* device, Handle handle) {
             return device->GetSemaphore(handle);
         }
@@ -206,7 +206,7 @@ namespace Foundation::RHI {
             device->DestroySemaphore(handle);
         }
     };
-    template<> struct RHIObjectTraits<RHIDeviceFence> {
+    template<> struct RHIObjectTraits<RHIDevice, RHIDeviceFence> {
         static RHIDeviceFence* Get(RHIDevice const* device, Handle handle) {
             return device->GetFence(handle);
         }
@@ -214,7 +214,7 @@ namespace Foundation::RHI {
             device->DestroyFence(handle);
         }
     };
-    template<> struct RHIObjectTraits<RHIBuffer> {
+    template<> struct RHIObjectTraits<RHIDevice, RHIBuffer> {
         static RHIBuffer* Get(RHIDevice const* device, Handle handle) {
             return device->GetBuffer(handle);
         }
@@ -222,15 +222,15 @@ namespace Foundation::RHI {
             device->DestroyBuffer(handle);
         }
     };
-    template<> struct RHIObjectTraits<RHIImage> {
-        static RHIImage* Get(RHIDevice const* device, Handle handle) {
+    template<> struct RHIObjectTraits<RHIDevice, RHITexture> {
+        static RHITexture* Get(RHIDevice const* device, Handle handle) {
             return device->GetImage(handle);
         }
         static void Destroy(RHIDevice* device, Handle handle) {
             device->DestroyImage(handle);
         }
     };
-    template<> struct RHIObjectTraits<RHIDeviceDescriptorSetLayout> {
+    template<> struct RHIObjectTraits<RHIDevice, RHIDeviceDescriptorSetLayout> {
         static RHIDeviceDescriptorSetLayout* Get(RHIDevice const* device, Handle handle) {
             return device->GetDescriptorSetLayout(handle);
         }
@@ -238,7 +238,7 @@ namespace Foundation::RHI {
             device->DestroyDescriptorSetLayout(handle);
         }
     };
-    template<> struct RHIObjectTraits<RHIDeviceDescriptorPool> {
+    template<> struct RHIObjectTraits<RHIDevice, RHIDeviceDescriptorPool> {
         static RHIDeviceDescriptorPool* Get(RHIDevice const* device, Handle handle) {
             return device->GetDescriptorPool(handle);
         }
@@ -246,7 +246,7 @@ namespace Foundation::RHI {
             device->DestroyDescriptorPool(handle);
         }
     };
-    template<> struct RHIObjectTraits<RHIDeviceSampler> {
+    template<> struct RHIObjectTraits<RHIDevice, RHIDeviceSampler> {
         static RHIDeviceSampler* Get(RHIDevice const* device, Handle handle) {
             return device->GetSampler(handle);
         }

@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.26)
 
-
 file(
     GLOB_RECURSE SOURCES 
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
@@ -14,10 +13,11 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 add_library(
     Foundation_Renderer ${SOURCES} ${INCLUDES}
 )
-target_link_libraries(Foundation_Renderer PRIVATE Foundation_Runtime)
+target_link_libraries(Foundation_Renderer PUBLIC Foundation_Runtime Foundation_Cooking)
+# !! NO COOKING HERE. REMOVE THIS ASAP
 target_include_directories(
 	Foundation_Renderer 
-	PRIVATE
+	PUBLIC
     ..
 )
 
@@ -94,7 +94,7 @@ file(MAKE_DIRECTORY ${SHADER_BUILD_DIR})
 
 add_slang_shader(
     Shader_Triangle
-    SOURCE          "${CMAKE_CURRENT_LIST_DIR}/Triangle.slang"
+    SOURCE          "${CMAKE_CURRENT_LIST_DIR}/Shaders/Triangle.slang"
     OUTPUT_DIR      "${SHADER_BUILD_DIR}"
     TARGETS         spirv               spirv
     PROFILES        spirv_1_4           spirv_1_4 

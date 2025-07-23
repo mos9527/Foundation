@@ -15,8 +15,6 @@ namespace Foundation::RHI {
         void Update(UpdateDesc const& desc) override;
 
         inline auto const& GetVkDescriptorSet() const { return m_set; }
-        inline bool IsValid() const override { return m_set != nullptr; }
-        inline const char* GetName() const override { return "VulkanDeviceDescriptorSet"; }
     };
     class VulkanDeviceDescriptorPool : public RHIDeviceDescriptorPool {
         const VulkanDevice& m_device;
@@ -31,7 +29,5 @@ namespace Foundation::RHI {
         void DestroyDescriptorSet(Handle handle) override;
         inline auto const& GetDevice() const { return m_device; }
         inline auto const& GetVkDescriptorPool() const { return m_pool; }
-        inline bool IsValid() const override { return m_pool != nullptr; }
-        inline const char* GetName() const override { return "VulkanDeviceDescriptorPool"; }
     };
 }

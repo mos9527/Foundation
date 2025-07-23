@@ -8,6 +8,8 @@
 #include <RHICore/Device.hpp>
 
 #include "Renderer.hpp"
+
+#include <Cooking/Image.hpp>
 using namespace Foundation;
 using namespace Foundation::Core;
 StlVector<char> ReadFile(std::filesystem::path const& path, Allocator* allocator) {
@@ -53,7 +55,7 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
         m_fence_draw.push_back(m_device->CreateFence(true /* signaled */));
         m_cmd.push_back(m_cmd_pool->CreateCommandList());
         m_swapchain_imageviews.push_back(
-            image->CreateImageView(RHIImageViewDesc{
+            image->CreateImageView(RHITextureViewDesc{
                 .format = RHIResourceFormat::R8G8B8A8_UNORM,
                 .range = {
                     .layer = {
@@ -131,8 +133,7 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
     m_pso = m_device->CreatePipelineState(pipeline);
     // Buffers    
     m_vertex_buffer = m_device->CreateBuffer(RHIBufferDesc{
-        .resource = {
-            .name = "Triangle Vertex Buffer",
+        .resource = {            
             .host_access = RHIResourceHostAccess::ReadWrite,
         },
         .usage = (RHIBufferUsage)(RHIBufferUsage::VertexBuffer | RHIBufferUsage::TransferDestination),
@@ -177,7 +178,6 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
             span[0] = index;            
             m_index_buffer = m_device->CreateBuffer(RHIBufferDesc{
                 .resource = {
-                    .name = "Triangle Index Buffer",
                     .host_access = RHIResourceHostAccess::ReadWrite,
                 },
                 .usage = (RHIBufferUsage)(RHIBufferUsage::IndexBuffer | RHIBufferUsage::TransferDestination),
@@ -198,21 +198,19 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
     }
     // Images
     {
-        int w, h, ch;
-        stbi_uc* pixels = stbi_load(".derived/texture.jpg", &w, &h, &ch, STBI_rgb_alpha);
-        ch = 4; // XXX: ch is the reported channel count - stb WILL load the image as RGBARGBA... row major
-        CHECK(pixels && "Failed to load texture image");
-        m_tex = m_device->CreateImage(RHIImageDesc{
+        auto cooked = Cooking::Cooker<Blobs::Image>::sRGB32bpp_FromFile(".derived/texture.jpg", m_allocator);
+        auto image = cooked.GetImage();
+        CHECK(image && "Failed to load texture image");
+        m_tex = m_device->CreateImage(RHITextureDesc{
             .resource = {
-                .name = "Statue Texture",
                 .host_access = RHIResourceHostAccess::Invisible,
             },
-            .usage = (RHIImageUsage)(RHIImageUsage::SampledImage | RHIImageUsage::TransferDestination),
-            .extent = { w, h, 1 },
+            .usage = (RHITextureUsage)(RHITextureUsage::SampledImage | RHITextureUsage::TransferDestination),
+            .extent = image.desc.extent,
             .format = RHIResourceFormat::R8G8B8A8_UNORM,
-            .initial_layout = RHIImageLayout::Undefined,
+            .initial_layout = RHITextureLayout::Undefined,
             });
-        m_tex_view = m_tex->CreateImageView(RHIImageViewDesc{
+        m_tex_view = m_tex->CreateImageView(RHITextureViewDesc{
             .format = RHIResourceFormat::R8G8B8A8_UNORM,
             });
         // Staging again!
@@ -222,10 +220,9 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
                 .coherent = true,
             },
             .usage = RHIBufferUsage::TransferSource,
-            .size = static_cast<size_t>(w * h * ch)
-            });
-        memcpy(staging->Map(), pixels, static_cast<size_t>(w * h * ch));
-        stbi_image_free(pixels);
+            .size = image.data.size()
+        });
+        memcpy(staging->Map(), image.data.data(), image.data.size());
         auto cmd = m_cmd_pool->CreateCommandList();
         cmd->Begin();
         cmd->BeginTransition();
@@ -236,17 +233,17 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
                 .dst_access = RHIResourceAccess::TransferWrite,
                 .src_stage = RHIPipelineStage::TopOfPipe,
                 .dst_stage = RHIPipelineStage::Transfer,
-                .src_img_layout = RHIImageLayout::Undefined,
-                .dst_img_layout = RHIImageLayout::TransferDst
+                .src_img_layout = RHITextureLayout::Undefined,
+                .dst_img_layout = RHITextureLayout::TransferDst
             }
         );
         cmd->EndTransition();
         cmd->CopyBufferToImage(
             staging.Get(),
             m_tex.Get(),
-            RHIImageLayout::TransferDst,
+            RHITextureLayout::TransferDst,
             { {RHICommandList::CopyImageRegion{
-                .extent = { static_cast<uint32_t>(w), static_cast<uint32_t>(h), 1 }
+                .extent = image.desc.extent,
             }} }
         );
         cmd->BeginTransition();
@@ -257,8 +254,8 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
                 .dst_access = RHIResourceAccess::ShaderRead,
                 .src_stage = RHIPipelineStage::Transfer,
                 .dst_stage = RHIPipelineStage::FragmentShader,
-                .src_img_layout = RHIImageLayout::TransferDst,
-                .dst_img_layout = RHIImageLayout::ShaderReadOnly
+                .src_img_layout = RHITextureLayout::TransferDst,
+                .dst_img_layout = RHITextureLayout::ShaderReadOnly
             }
         );
         cmd->EndTransition();
@@ -279,7 +276,6 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
         set = m_desc_pool->CreateDescriptorSet(m_desc_layout);
         auto& buffer = m_uniform_buffer.emplace_back(m_device->CreateBuffer(RHIBufferDesc{
             .resource = {
-                .name = "Triangle Uniform Buffer",
                 .host_access = RHIResourceHostAccess::ReadWrite,
                 .coherent = true
             },
@@ -304,7 +300,7 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
             .binding = 2,
             .type = RHIDescriptorType::SampledImage,
             .images = {{
-                {.image_view = m_tex_view.Get(), .layout = RHIImageLayout::ShaderReadOnly }
+                {.image_view = m_tex_view.Get(), .layout = RHITextureLayout::ShaderReadOnly }
             }}
             });
     }
@@ -319,14 +315,14 @@ void Renderer::Record(uint32_t image_index, RHICommandList* cmd) {
             .dst_access = RHIResourceAccess::RenderTargetWrite,
             .src_stage = RHIPipelineStage::TopOfPipe,
             .dst_stage = RHIPipelineStage::RenderTargetOutput,
-            .src_img_layout = RHIImageLayout::Undefined,
-            .dst_img_layout = RHIImageLayout::RenderTarget
+            .src_img_layout = RHITextureLayout::Undefined,
+            .dst_img_layout = RHITextureLayout::RenderTarget
         }
     );
     cmd->EndTransition();
     auto render_target = RHICommandList::GraphicsDesc::Attachment{
                 .image_view = m_swapchain_imageviews[image_index].Get(),
-                .image_layout = RHIImageLayout::RenderTarget,
+                .image_layout = RHITextureLayout::RenderTarget,
                 .clear_color = RHIClearColor{ 0.0f, 0.0f, 0.0f, 1.0f },
     };
     cmd->BeginGraphics(RHICommandList::GraphicsDesc{
@@ -357,8 +353,8 @@ void Renderer::Record(uint32_t image_index, RHICommandList* cmd) {
             .dst_access = RHIResourceAccess::Undefined,
             .src_stage = RHIPipelineStage::RenderTargetOutput,
             .dst_stage = RHIPipelineStage::BottomOfPipe,
-            .src_img_layout = RHIImageLayout::RenderTarget,
-            .dst_img_layout = RHIImageLayout::Present
+            .src_img_layout = RHITextureLayout::RenderTarget,
+            .dst_img_layout = RHITextureLayout::Present
         }
     );
     cmd->EndTransition();

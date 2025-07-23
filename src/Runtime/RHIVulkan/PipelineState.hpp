@@ -79,9 +79,6 @@ namespace Foundation::RHI {
     public:
         VulkanPipelineState(const VulkanDevice& device, PipelineStateDesc const& desc);
 
-        inline bool IsValid() const { return true; } // TODO
-        inline const char* GetName() const { return m_desc.name.c_str(); }
-
         inline auto const& GetVkPipeline() const { return m_pipeline; }
         inline auto const& GetVkPipelineLayout() const { return m_pipeline_layout; }
     };

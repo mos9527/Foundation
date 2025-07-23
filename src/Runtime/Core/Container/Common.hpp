@@ -4,7 +4,7 @@
 #include <vector>
 #include <queue>
 #include <span>
-#include "Allocator.hpp"
+#include <Allocator/Allocator.hpp>
 namespace Foundation::Core {
     template<typename T>
     using StlVector = std::vector<T, StlAllocator<T>>;
@@ -19,7 +19,10 @@ namespace Foundation::Core {
     // They are the LEAST ABI stable containers in the STL and that's saying something.
     // If you need a hash map, think again until you don't need to.
 
-    template<typename T, typename Container = StlVector<T>>
+    template<typename T>
+    using StlDeque = std::deque<T, StlAllocator<T>>;
+
+    template<typename T, typename Container = StlDeque<T>>
     using StlQueue = std::queue<T, Container>;
 
     template<typename T, typename Predicate = std::less<T>, typename Container = StlVector<T>>

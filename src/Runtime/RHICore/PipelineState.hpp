@@ -8,8 +8,7 @@ namespace Foundation::RHI {
     protected:
         const RHIDevice& m_device;
     public:
-        struct PipelineStateDesc {
-            std::string name;
+        struct PipelineStateDesc {            
             // Vertex Input
             struct VertexInput {
                 struct Binding {
@@ -101,7 +100,7 @@ namespace Foundation::RHI {
                     // Stage this shader participates in
                     // You can only speicify one stage per shader module.                                                      
                     RHIShaderStage stage;
-                    std::string entry_point;
+                    const char* entry_point;
                     struct SpecializationInfo {
                         // !! TODO
                     } specialization_info;

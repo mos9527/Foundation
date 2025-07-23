@@ -3,23 +3,26 @@
 namespace Foundation::RHI {
     class RHIDevice;
     struct RHIResourceDesc {
-        std::string name;
+        bool is_alias{ false }; // If true, the resource is an alias of another resource.
         /// Which heap the resource is allocated in
-        RHIDeviceHeapType heap;
+        RHIDeviceHeapType heap{ RHIDeviceHeapType::Local };
         /// How the resource can be accessed by the host (CPU)
-        RHIResourceHostAccess host_access;
+        RHIResourceHostAccess host_access{ RHIResourceHostAccess::Invisible };
         /// Can be shared with other devices
-        bool shared;
+        bool shared{ false };
         /// Guarantees that the host can see the latest data written by the device without explicit flush
         /// On implementations that do not support this, exceptions will be thrown when trying to create such resources.            
-        bool coherent;
+        bool coherent{ false };
     };
     struct RHIBufferDesc {
-        RHIResourceDesc resource;
+        RHIResourceDesc resource{};
         /// How the buffer can be used by the device, initially
-        RHIBufferUsage usage;
-        size_t size; // size in bytes
+        RHIBufferUsage usage{ RHIBufferUsage::Undefined };
+        size_t size{}; // size in bytes
     };
+    class RHIBuffer;
+    template<typename T> using RHIBufferScopedHandle = RHIScopedHandle<RHIBuffer, T>;
+    template<typename T> using RHIBufferHandle = RHIHandle<RHIBuffer, T>;
     class RHIBuffer : public RHIObject {
     protected:
         const RHIDevice& m_device;
@@ -62,69 +65,93 @@ namespace Foundation::RHI {
             CHECK(count * sizeof(T) <= m_desc.size && "Buffer map range out of bounds");
             return { static_cast<T*>(p) , count };
         }
+
+        virtual RHIBufferScopedHandle<RHIBuffer> CreateAliasedBuffer(RHIBufferDesc const& desc, size_t offset = 0) = 0;
+        virtual RHIBuffer* GetAliasedBuffer(Handle handle) const = 0;
+        virtual void DestroyAliasedBuffer(Handle handle) = 0;
     };
-    struct RHIImageDesc {
-        RHIResourceDesc resource;
-        RHIImageDimension dimension{ RHIImageDimension::e2D };
-        RHIImageUsage usage;
+    struct RHITextureDesc {
+        RHIResourceDesc resource{};
+        RHITextureDimension dimension{ RHITextureDimension::e2D };
+        RHITextureUsage usage{ RHITextureUsage::Undefined };
         RHIExtent3D extent{ 1, 1, 1 }; // Width, height, depth of the image.
-        RHIResourceFormat format;
+        RHIResourceFormat format{ RHIResourceFormat::Undefined };
         RHIMultisampleCount sample_count{ RHIMultisampleCount::e1 }; // For MSAA
         uint32_t mip_levels{ 1 };
         uint32_t array_layers{ 1 }; // No. of images in a image array.
-        RHIImageLayout initial_layout{ RHIImageLayout::Undefined };
+        RHITextureLayout initial_layout{ RHITextureLayout::Undefined };
     };
-    class RHIImage;
-    class RHIImageView;
-    template<typename T> using RHIImageScopedHandle = RHIScopedHandle<RHIImage, T>;
-    template<typename T> using RHIImageHandle = RHIHandle<RHIImage, T>;
-    struct RHIImageSubresourceLayer {
-        RHIImageAccessFlag access{ RHIImageAccessFlag::Color };
+    class RHITexture;
+    class RHITextureView;
+    template<typename T> using RHITextureScopedHandle = RHIScopedHandle<RHITexture, T>;
+    template<typename T> using RHITextureHandle = RHIHandle<RHITexture, T>;
+    struct RHITextureSubresourceLayer {
+        RHITextureAccessFlag access{ RHITextureAccessFlag::Color };
         uint32_t mip_level{ 0 };
         uint32_t base_array_layer{ 0 };
         uint32_t layer_count{ 1 };
     };
-    struct RHIImageSubresourceRange {
-        RHIImageSubresourceLayer layer;
+    struct RHITextureSubresourceRange {
+        RHITextureSubresourceLayer layer;
         uint32_t mip_count{ 1 }; // Number of mip levels in the range
     };
-    struct RHIImageViewDesc {
+    struct RHITextureViewDesc {
         RHIResourceFormat format;
-        RHIImageDimension dimension{ RHIImageDimension::e2D };
-        RHIImageSubresourceRange range{};
+        RHITextureDimension dimension{ RHITextureDimension::e2D };
+        RHITextureSubresourceRange range{};
     };
-    class RHIImage : public RHIObject {
+    class RHITexture : public RHIObject {
     protected:
         const RHIDevice& m_device;
     public:
-        const RHIImageDesc m_desc;
-        RHIImage(RHIDevice const& device, RHIImageDesc const& desc)
+        const RHITextureDesc m_desc;
+        RHITexture(RHIDevice const& device, RHITextureDesc const& desc)
             : m_device(device), m_desc(desc) {
         }
 
         virtual void* Map() = 0;
         virtual void Flush(size_t offset, size_t size) = 0;
         virtual void Unmap() = 0;
-
-        virtual RHIImageScopedHandle<RHIImageView> CreateImageView(RHIImageViewDesc const& desc) = 0;
-        virtual RHIImageView* GetImageView(Handle handle) const = 0;
+        
+        virtual RHITextureScopedHandle<RHITextureView> CreateImageView(RHITextureViewDesc const& desc) = 0;
+        virtual RHITextureView* GetImageView(Handle handle) const = 0;
         virtual void DestroyImageView(Handle handle) = 0;
+
+        virtual RHITextureScopedHandle<RHITexture> CreateAliasedTexture(RHITextureDesc const& desc, size_t offset = 0) = 0;
+        virtual RHITexture* GetAliasedTexture(Handle handle) const = 0;
+        virtual void DestroyAliasedTexture(Handle handle) = 0;
     };
-    class RHIImageView : public RHIObject {
+    class RHITextureView : public RHIObject {
     protected:
-        const RHIImage& m_image;
-        const RHIImageViewDesc& m_desc;
+        const RHITexture& m_image;
+        const RHITextureViewDesc& m_desc;
     public:
-        RHIImageView(RHIImage const& image, RHIImageViewDesc const& desc)
+        RHITextureView(RHITexture const& image, RHITextureViewDesc const& desc)
             : m_image(image), m_desc(desc) {
         }
     };
-    template<> struct RHIObjectTraits<RHIImageView> {
-        static RHIImageView* Get(RHIImage const* image, Handle handle) {
+    template<> struct RHIObjectTraits<RHITexture, RHITextureView> {
+        static RHITextureView* Get(RHITexture const* image, Handle handle) {
             return image->GetImageView(handle);
         }
-        static void Destroy(RHIImage* image, Handle handle) {
+        static void Destroy(RHITexture* image, Handle handle) {
             image->DestroyImageView(handle);
+        }
+    };
+    template<> struct RHIObjectTraits<RHIBuffer, RHIBuffer> {
+        static RHIBuffer* Get(RHIBuffer const* buffer, Handle handle) {
+            return buffer->GetAliasedBuffer(handle);
+        }
+        static void Destroy(RHIBuffer* buffer, Handle handle) {
+            buffer->DestroyAliasedBuffer(handle);
+        }
+    };
+    template<> struct RHIObjectTraits<RHITexture, RHITexture> {
+        static RHITexture* Get(RHITexture const* texture, Handle handle) {
+            return texture->GetAliasedTexture(handle);
+        }
+        static void Destroy(RHITexture* texture, Handle handle) {
+            texture->DestroyAliasedTexture(handle);
         }
     };
 }

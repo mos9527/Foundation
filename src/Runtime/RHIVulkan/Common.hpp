@@ -5,6 +5,7 @@
 
 #include <RHICore/Common.hpp>
 #include <Core/Platform/Logging.hpp>
+#include <Core/Container/Common.hpp>
 namespace Foundation::RHI {
     inline vk::Format vkFormatFromRHIFormat(RHIResourceFormat format) {
         switch (format) {
@@ -40,16 +41,16 @@ namespace Foundation::RHI {
         return flags;
     }
 
-    inline vk::ImageLayout vkImageLayoutFromRHIImageLayout(RHIImageLayout layout) {
+    inline vk::ImageLayout vkImageLayoutFromRHITextureLayout(RHITextureLayout layout) {
         switch (layout) {
-        case RHIImageLayout::General: return vk::ImageLayout::eGeneral;
-        case RHIImageLayout::RenderTarget: return vk::ImageLayout::eColorAttachmentOptimal;
-        case RHIImageLayout::DepthStencil: return vk::ImageLayout::eDepthStencilAttachmentOptimal;
-        case RHIImageLayout::Present: return vk::ImageLayout::ePresentSrcKHR;
-        case RHIImageLayout::TransferDst: return vk::ImageLayout::eTransferDstOptimal;
-        case RHIImageLayout::TransferSrc: return vk::ImageLayout::eTransferSrcOptimal;
-        case RHIImageLayout::ShaderReadOnly: return vk::ImageLayout::eShaderReadOnlyOptimal;
-        case RHIImageLayout::Undefined:
+        case RHITextureLayout::General: return vk::ImageLayout::eGeneral;
+        case RHITextureLayout::RenderTarget: return vk::ImageLayout::eColorAttachmentOptimal;
+        case RHITextureLayout::DepthStencil: return vk::ImageLayout::eDepthStencilAttachmentOptimal;
+        case RHITextureLayout::Present: return vk::ImageLayout::ePresentSrcKHR;
+        case RHITextureLayout::TransferDst: return vk::ImageLayout::eTransferDstOptimal;
+        case RHITextureLayout::TransferSrc: return vk::ImageLayout::eTransferSrcOptimal;
+        case RHITextureLayout::ShaderReadOnly: return vk::ImageLayout::eShaderReadOnlyOptimal;
+        case RHITextureLayout::Undefined:
         default:
             return vk::ImageLayout::eUndefined;
         }
@@ -119,8 +120,8 @@ namespace Foundation::RHI {
         }
     }
 
-    inline vk::ImageUsageFlags vkImageUsageFlagsFromRHIImageUsage(RHIImageUsage usage) {
-        using enum RHIImageUsage;
+    inline vk::ImageUsageFlags vkImageUsageFlagsFromRHITextureUsage(RHITextureUsage usage) {
+        using enum RHITextureUsage;
         vk::ImageUsageFlags flags{};
         if (usage & RenderTarget) flags |= vk::ImageUsageFlagBits::eColorAttachment;
         if (usage & DepthStencil) flags |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
@@ -144,8 +145,8 @@ namespace Foundation::RHI {
         }
     }
 
-    inline vk::ImageAspectFlags vkImageAspectFlagFromRHIImageAspect(RHIImageAccessFlag aspect) {
-        using enum RHIImageAccessFlag;
+    inline vk::ImageAspectFlags vkImageAspectFlagFromRHITextureAspect(RHITextureAccessFlag aspect) {
+        using enum RHITextureAccessFlag;
         vk::ImageAspectFlags flags{};
         if (aspect & Color) flags |= vk::ImageAspectFlagBits::eColor;
         if (aspect & Depth) flags |= vk::ImageAspectFlagBits::eDepth;

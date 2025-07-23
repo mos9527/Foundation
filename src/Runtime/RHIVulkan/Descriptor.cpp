@@ -40,8 +40,8 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
         auto const& img = desc.images[i];
         images[i] = vk::DescriptorImageInfo{
             .sampler = img.sampler ? *static_cast<VulkanDeviceSampler*>(img.sampler)->GetVkSampler() : nullptr,
-            .imageView = img.image_view ? *static_cast<VulkanImageView*>(img.image_view)->GetVkImageView() : nullptr,
-            .imageLayout = vkImageLayoutFromRHIImageLayout(img.layout)
+            .imageView = img.image_view ? *static_cast<VulkanTextureView*>(img.image_view)->GetVkImageView() : nullptr,
+            .imageLayout = vkImageLayoutFromRHITextureLayout(img.layout)
         };
     }
     vk::WriteDescriptorSet writes{

@@ -37,7 +37,7 @@ namespace Foundation::Core {
         inline Allocator* Ptr() { return this; }
 	};
     struct ScopedArena {
-        Allocator* resource{ nullptr };
+        Allocator* resource;
         Allocator::Arena arena;
         ScopedArena(Allocator* res, size_t size, size_t alignment = alignof(std::max_align_t)) :
             resource(res), arena(res->AllocateArena(size, alignment)) {};
