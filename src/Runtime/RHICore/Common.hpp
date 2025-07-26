@@ -12,6 +12,7 @@ namespace Foundation::RHI {
     using RHIOffset2D = glm::vec<2, int32_t>;
     using RHIOffset3D = glm::vec<3, int32_t>;
     using RHIClearColor = glm::vec<4, float>;
+    using RHIClearDepthStencil = std::pair<float, uint32_t>;
 
     enum class RHIResourceFormat {
         Undefined = 0,
@@ -20,9 +21,22 @@ namespace Foundation::RHI {
         R32G32_SIGNED_FLOAT,
         R32G32B32_SIGNED_FLOAT,
         R32G32B32A32_SIGNED_FLOAT,
+        R16_SIGNED_FLOAT,
+        R16G16_SIGNED_FLOAT,
+        R16G16B16_SIGNED_FLOAT,
+        R16G16B16A16_SIGNED_FLOAT,
         R32_UINT,
-        R16_UINT
+        R16_UINT,
+        D32_SIGNED_FLOAT
     };
+
+    struct RHIVertexAttribute {
+        uint32_t location; // Index into shader input
+        uint32_t binding = 0; // 0-indexed index into bindings.
+        uint32_t offset; // In bytes
+        RHIResourceFormat format{ RHIResourceFormat::Undefined }; // Format on the GPU    
+    };
+
     enum class RHICommandPoolType {
         // The command pool is persistent, meaning command buffers can be reused
         Persistent,
@@ -89,8 +103,11 @@ namespace Foundation::RHI {
     BITMASK_ENUM_BEGIN(RHIResourceAccess, uint32_t)
         Undefined = 0,
         RenderTargetWrite = 1 << 0,
-        TransferWrite = 1 << 1,
-        ShaderRead = 1 << 2
+        RenderTargetRead = 1 << 1,
+        DepthStencilWrite = 1 << 2,
+        DepthStencilRead = 1 << 3,
+        TransferWrite = 1 << 4,
+        ShaderRead = 1 << 5
     BITMASK_ENUM_END();
 
     BITMASK_ENUM_BEGIN(RHIPipelineStage, uint32_t)
@@ -99,6 +116,8 @@ namespace Foundation::RHI {
         RenderTargetOutput = 1 << 1,
         Transfer = 1 << 2,
         FragmentShader = 1 << 3,
+        DepthStencilRead = 1 << 4,
+        DepthStencilWrite = 1 << 5,
         BottomOfPipe = 1 << 7
     BITMASK_ENUM_END();
 

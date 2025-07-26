@@ -7,14 +7,24 @@
 #include <Core/Platform/Logging.hpp>
 #include <Core/Container/Common.hpp>
 namespace Foundation::RHI {
+    // !! TODO: Properly handle bitmasks
+
     inline vk::Format vkFormatFromRHIFormat(RHIResourceFormat format) {
+        using enum RHIResourceFormat;
         switch (format) {
-        case RHIResourceFormat::R8G8B8A8_UNORM: return vk::Format::eR8G8B8A8Unorm;
-        case RHIResourceFormat::R32_SIGNED_FLOAT: return vk::Format::eR32Sfloat;
-        case RHIResourceFormat::R32G32_SIGNED_FLOAT: return vk::Format::eR32G32Sfloat;
-        case RHIResourceFormat::R32G32B32_SIGNED_FLOAT: return vk::Format::eR32G32B32Sfloat;
-        case RHIResourceFormat::R32G32B32A32_SIGNED_FLOAT: return vk::Format::eR32G32B32A32Sfloat;
-        case RHIResourceFormat::Undefined:
+        case R8G8B8A8_UNORM: return vk::Format::eR8G8B8A8Unorm;
+        case R32_SIGNED_FLOAT: return vk::Format::eR32Sfloat;
+        case R32G32_SIGNED_FLOAT: return vk::Format::eR32G32Sfloat;
+        case R32G32B32_SIGNED_FLOAT: return vk::Format::eR32G32B32Sfloat;
+        case R32G32B32A32_SIGNED_FLOAT: return vk::Format::eR32G32B32A32Sfloat;
+        case R16_SIGNED_FLOAT: return vk::Format::eR16Sfloat;
+        case R16G16_SIGNED_FLOAT: return vk::Format::eR16G16Sfloat;
+        case R16G16B16_SIGNED_FLOAT: return vk::Format::eR16G16B16Sfloat;
+        case R16G16B16A16_SIGNED_FLOAT: return vk::Format::eR16G16B16A16Sfloat;
+        case R32_UINT: return vk::Format::eR32Uint;
+        case R16_UINT: return vk::Format::eR16Uint;
+        case D32_SIGNED_FLOAT: return vk::Format::eD32Sfloat;
+        case Undefined:
         default:
             return vk::Format::eUndefined;
         }
@@ -36,6 +46,9 @@ namespace Foundation::RHI {
         using enum RHIResourceAccess;
         vk::AccessFlags2 flags{};
         if (state & RenderTargetWrite) flags |= vk::AccessFlagBits2::eColorAttachmentWrite;
+        if (state & RenderTargetRead) flags |= vk::AccessFlagBits2::eColorAttachmentRead;
+        if (state & DepthStencilWrite) flags |= vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
+        if (state & DepthStencilRead) flags |= vk::AccessFlagBits2::eDepthStencilAttachmentRead;
         if (state & TransferWrite) flags |= vk::AccessFlagBits2::eTransferWrite;
         if (state & ShaderRead) flags |= vk::AccessFlagBits2::eShaderRead;
         return flags;
@@ -64,6 +77,8 @@ namespace Foundation::RHI {
         if (stage & Transfer) flags |= vk::PipelineStageFlagBits::eTransfer;
         if (stage & FragmentShader) flags |= vk::PipelineStageFlagBits::eFragmentShader;
         if (stage & BottomOfPipe) flags |= vk::PipelineStageFlagBits::eBottomOfPipe;
+        if (stage & DepthStencilRead) flags |= vk::PipelineStageFlagBits::eEarlyFragmentTests;
+        if (stage & DepthStencilWrite) flags |= vk::PipelineStageFlagBits::eLateFragmentTests;
         return flags;
     }
 
@@ -75,6 +90,8 @@ namespace Foundation::RHI {
         if (stage & Transfer) flags |= vk::PipelineStageFlagBits2::eTransfer;
         if (stage & FragmentShader) flags |= vk::PipelineStageFlagBits2::eFragmentShader;
         if (stage & BottomOfPipe) flags |= vk::PipelineStageFlagBits2::eBottomOfPipe;
+        if (stage & DepthStencilRead) flags |= vk::PipelineStageFlagBits2::eEarlyFragmentTests;
+        if (stage & DepthStencilWrite) flags |= vk::PipelineStageFlagBits2::eLateFragmentTests;
         return flags;
     }
 

@@ -35,6 +35,33 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
         .topology = GetVulkanPrimitiveTopologyFromDesc(desc.topology),
         .primitiveRestartEnable = VK_FALSE
     };
+    vk::CompareOp depth_compare_op{ vk::CompareOp::eLess };
+    switch (desc.depth_stencil.depth_compare_op)
+    {
+    case PipelineStateDesc::DepthStencil::NEVER:
+        depth_compare_op = vk::CompareOp::eNever; break;
+    case PipelineStateDesc::DepthStencil::LESS:
+        depth_compare_op = vk::CompareOp::eLess; break;
+    case PipelineStateDesc::DepthStencil::EQUAL:
+        depth_compare_op = vk::CompareOp::eEqual; break;
+    case PipelineStateDesc::DepthStencil::LESS_EQUAL:
+        depth_compare_op = vk::CompareOp::eLessOrEqual; break;
+    case PipelineStateDesc::DepthStencil::GREATER:
+        depth_compare_op = vk::CompareOp::eGreater; break;
+    case PipelineStateDesc::DepthStencil::NOT_EQUAL:
+        depth_compare_op = vk::CompareOp::eNotEqual; break;
+    case PipelineStateDesc::DepthStencil::GREATER_EQUAL:
+        depth_compare_op = vk::CompareOp::eGreaterOrEqual; break;
+    case PipelineStateDesc::DepthStencil::ALWAYS:
+        depth_compare_op = vk::CompareOp::eAlways; break;
+    default:
+        break;
+    }
+    vk::PipelineDepthStencilStateCreateInfo depth_stencil{
+        .depthTestEnable = m_desc.depth_stencil.depth_test,
+        .depthWriteEnable = m_desc.depth_stencil.depth_write,
+        .depthCompareOp = depth_compare_op,        
+    };
     // We'll use dynamic viewport and scissor later
     vk::PipelineViewportStateCreateInfo viewport{ .viewportCount = 1, .scissorCount = 1 };
     vk::PipelineRasterizationStateCreateInfo rasterizer{
@@ -78,14 +105,16 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
     };
     vk::PipelineRenderingCreateInfo rendering_create_info{
         .colorAttachmentCount = static_cast<uint32_t>(color_attachment_formats.size()),
-        .pColorAttachmentFormats = color_attachment_formats.data()
+        .pColorAttachmentFormats = color_attachment_formats.data(),
+        .depthAttachmentFormat = vkFormatFromRHIFormat(desc.depth_stencil.depth_format),
+        .stencilAttachmentFormat = vkFormatFromRHIFormat(desc.depth_stencil.stencil_format),
     };
     Core::StlVector<vk::PipelineShaderStageCreateInfo> shaderStages(alloc.Ptr());
     for (auto& shader : m_desc.shader_stages)
         shaderStages.push_back({
         .stage = vkShaderStageFlagBitFromRHIShaderStage(shader.desc.stage),
         .module = shader.shader_module.Get<VulkanShaderModule>()->GetVkShaderModule(),
-        .pName = shader.desc.entry_point.c_str(),
+        .pName = shader.desc.entry_point,
         .pSpecializationInfo = nullptr // TODO: !! handle specialization info
             });
     Core::StlVector<vk::DescriptorSetLayout> p_set_layouts(desc.descriptor_set_layouts.size(), alloc.Ptr());
@@ -103,7 +132,7 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
         .stageCount = static_cast<uint32_t>(shaderStages.size()), .pStages = shaderStages.data(),
         .pVertexInputState = &vtx, .pInputAssemblyState = &ia,
         .pViewportState = &viewport, .pRasterizationState = &rasterizer,
-        .pMultisampleState = &multisampling, .pColorBlendState = &color_blending,
+        .pMultisampleState = &multisampling, .pDepthStencilState = &depth_stencil, .pColorBlendState = &color_blending,
         .pDynamicState = &dynamic_state, .layout = m_pipeline_layout, .renderPass = nullptr };
 
     m_pipeline = vk::raii::Pipeline(m_device.GetVkDevice(), nullptr, pipelineInfo, m_device.GetVkAllocatorCallbacks());

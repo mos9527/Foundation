@@ -31,7 +31,7 @@ namespace Foundation::RHI {
 
         VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc);
         // Thin wrapper for buffers created by swapchains or other external sources (e.g. aliasing)
-        VulkanBuffer(VulkanDevice const& device, vk::raii::Buffer&& buffer, bool shared = true);
+        VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc, vk::raii::Buffer&& buffer, bool shared = true);
         ~VulkanBuffer();
 
         inline auto& GetVkBuffer() { return m_buffer; }
@@ -61,7 +61,7 @@ namespace Foundation::RHI {
         const bool m_shared{ false };
         VulkanTexture(VulkanDevice const& device, RHITextureDesc const& desc);
         // Thin wrapper for textures created by swapchains or other external sources (e.g. aliasing)
-        VulkanTexture(VulkanDevice const& device, vk::raii::Image&& image, bool shared = true);
+        VulkanTexture(VulkanDevice const& device, RHITextureDesc const& desc, vk::raii::Image&& image, bool shared = true);
         ~VulkanTexture();
 
         inline auto& GetVkImage() const { return m_image; }
@@ -70,7 +70,7 @@ namespace Foundation::RHI {
         void Flush(size_t offset, size_t size) override;
         void Unmap() override;
 
-        RHITextureScopedHandle<RHITextureView> CreateImageView(RHITextureViewDesc const& desc) override;
+        RHITextureScopedHandle<RHITextureView> CreateTextureView(RHITextureViewDesc const& desc) override;
         RHITextureView* GetImageView(Handle handle) const override;
         void DestroyImageView(Handle handle) override;
 

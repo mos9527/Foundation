@@ -94,11 +94,21 @@ namespace Foundation::RHI {
 #pragma region Graphics Pipeline
         struct GraphicsDesc {
             struct Attachment {
-                RHITextureView* image_view;
-                RHITextureLayout image_layout;
-                RHIClearColor clear_color;
+                RHITextureView* image_view{ nullptr };
+                RHITextureLayout image_layout{ RHITextureLayout::Undefined };
+                // Clear values for the color attachment, if applicable.
+                // Either clear_color or clear_depth_stencil must be set.
+                std::optional<RHIClearColor> clear_color{};
+                // Clear values for depth and stencil attachments, if applicable.
+                // If both are set, the depth will be cleared first, then stencil.
+                std::optional<RHIClearDepthStencil> clear_depth_stencil{};
+                constexpr const bool IsValid() const {
+                    return image_view && image_layout != RHITextureLayout::Undefined;
+                }
             };
-            Core::StlSpan<const Attachment> attachments;
+            Core::StlSpan<const Attachment> color_attachments;
+            const Attachment depth_attachment{};
+            const Attachment stencil_attachment{};
             uint32_t width, height;
         };
         virtual RHICommandList& BeginGraphics(GraphicsDesc const& desc) = 0;

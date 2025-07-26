@@ -113,7 +113,7 @@ namespace Foundation::RHI {
         virtual void Flush(size_t offset, size_t size) = 0;
         virtual void Unmap() = 0;
         
-        virtual RHITextureScopedHandle<RHITextureView> CreateImageView(RHITextureViewDesc const& desc) = 0;
+        virtual RHITextureScopedHandle<RHITextureView> CreateTextureView(RHITextureViewDesc const& desc) = 0;
         virtual RHITextureView* GetImageView(Handle handle) const = 0;
         virtual void DestroyImageView(Handle handle) = 0;
 

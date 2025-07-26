@@ -16,13 +16,7 @@ namespace Foundation::RHI {
                     bool per_instance{ false }; // If true, this binding is per-instance data
                 };
                 Core::StlSpan<const Binding> bindings;
-                struct Attribute {
-                    uint32_t location; // Index into shader input
-                    uint32_t binding; // 0-indexed index into bindings.
-                    uint32_t offset; // In bytes
-                    RHIResourceFormat format{ RHIResourceFormat::Undefined }; // Format on the GPU    
-                };
-                Core::StlSpan<const Attribute> attributes;
+                Core::StlSpan<const RHIVertexAttribute> attributes;
             } vertex_input{};
             // Input Assembly
             enum Topology {
@@ -65,7 +59,22 @@ namespace Foundation::RHI {
                 RHIMultisampleCount sample_count; // 1, 2, 4, 8, etc.
             } multisample{};
             // Depth Stencil
-            // !! TODO
+            struct DepthStencil {
+                RHIResourceFormat depth_format{ RHIResourceFormat::Undefined };
+                RHIResourceFormat stencil_format{ RHIResourceFormat::Undefined };
+                bool depth_test{ false };
+                bool depth_write{ false };
+                enum CompareOp {
+                    NEVER,
+                    LESS,
+                    EQUAL,
+                    LESS_EQUAL,
+                    GREATER,
+                    NOT_EQUAL,
+                    GREATER_EQUAL,
+                    ALWAYS
+                } depth_compare_op{ LESS };
+            } depth_stencil{};
             // Attachments/Alpha Blending
             struct Attachment {
                 struct Blending {

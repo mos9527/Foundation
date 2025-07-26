@@ -93,8 +93,9 @@ VulkanDevice::VulkanDevice(Window* window, VulkanApplication const& app, const v
             });
     }
     // TODO: hardcoded. from https://docs.vulkan.org/tutorial/latest/03_Drawing_a_triangle/04_Swap_chain_recreation.html
-    vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
-        {.features = {.samplerAnisotropy = true } },           // vk::PhysicalDeviceFeatures2
+    vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
+        {.features = {.samplerAnisotropy = true } },            // vk::PhysicalDeviceFeatures2
+        {.shaderFloat16 = true},                                // vk::PhysicalDeviceVulkan12Features
         {.synchronization2 = true, .dynamicRendering = true },  // vk::PhysicalDeviceVulkan13Features
         {.extendedDynamicState = true }                         // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
     };
@@ -427,7 +428,7 @@ void VulkanDevice::DestroyBuffer(Handle handle) {
     m_storage.DestroyObject(handle);
 }
 
-RHIDeviceScopedObjectHandle<RHITexture> VulkanDevice::CreateImage(RHITextureDesc const& desc) {
+RHIDeviceScopedObjectHandle<RHITexture> VulkanDevice::CreateTexture(RHITextureDesc const& desc) {
     return { this, m_storage.CreateObject<VulkanTexture>(*this, desc) };
 }
 RHITexture* VulkanDevice::GetImage(Handle handle) const {

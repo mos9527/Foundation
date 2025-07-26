@@ -55,8 +55,8 @@ VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc
     CHECK(res == VK_SUCCESS && "failed to create Vulkan buffer");
     m_buffer = vk::raii::Buffer(device.GetVkDevice(), vk::Buffer(buffer), device.GetVkAllocatorCallbacks());   
 }
-VulkanBuffer::VulkanBuffer(VulkanDevice const& device, vk::raii::Buffer&& buffer, bool shared)
-    : RHIBuffer(device, {}), m_device(device), m_buffer(std::move(buffer)), m_aliases(device.GetAllocator()), m_shared(shared) {}
+VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc, vk::raii::Buffer&& buffer, bool shared)
+    : RHIBuffer(device, desc), m_device(device), m_buffer(std::move(buffer)), m_aliases(device.GetAllocator()), m_shared(shared) {}
 
 VulkanBuffer::~VulkanBuffer() {
     if (m_shared && m_buffer != nullptr) {
@@ -89,7 +89,7 @@ void VulkanBuffer::Unmap() {
 }
 
 VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& desc) :
-    RHITexture(device, desc), m_device(device), m_views(device.GetAllocator()), m_shared(false) {
+    RHITexture(device, desc), m_device(device), m_views(device.GetAllocator()), m_shared(false), m_aliases(device.GetAllocator()) {
     vk::ImageType type{};
     using enum RHITextureDimension;
     switch (desc.dimension)
@@ -121,8 +121,8 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
     m_image = vk::raii::Image(device.GetVkDevice(), vk::Image(image), device.GetVkAllocatorCallbacks());    
 }
 
-VulkanTexture::VulkanTexture(VulkanDevice const& device, vk::raii::Image&& image, bool shared) :
-    RHITexture(device, {}), m_device(device), m_image(std::move(image)), m_views(device.GetAllocator()), m_shared(shared) {
+VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& desc, vk::raii::Image&& image, bool shared) :
+    RHITexture(device, desc), m_device(device), m_image(std::move(image)), m_views(device.GetAllocator()), m_shared(shared), m_aliases(device.GetAllocator()) {
 }
 
 VulkanTexture::~VulkanTexture() {
@@ -151,7 +151,7 @@ void VulkanTexture::Unmap() {
     if (m_mapped)
         vmaUnmapMemory(m_device.GetVkAllocator(), m_allocation);
 }
-RHITextureScopedHandle<RHITextureView> VulkanTexture::CreateImageView(RHITextureViewDesc const& desc) {
+RHITextureScopedHandle<RHITextureView> VulkanTexture::CreateTextureView(RHITextureViewDesc const& desc) {
     auto const& device = m_device.GetVkDevice();
     using enum RHITextureDimension;
     vk::ImageViewType type{};
@@ -171,7 +171,7 @@ RHITextureScopedHandle<RHITextureView> VulkanTexture::CreateImageView(RHITexture
             .viewType = type,
             .format = vkFormatFromRHIFormat(desc.format),
             .subresourceRange = vk::ImageSubresourceRange{
-                .aspectMask = vkImageAspectFlagFromRHITextureAspect(desc.range.layer.access), // !! TODO
+                .aspectMask = vkImageAspectFlagFromRHITextureAspect(desc.range.layer.access),
                 .baseMipLevel = desc.range.layer.mip_level,
                 .levelCount = desc.range.mip_count,
                 .baseArrayLayer = desc.range.layer.base_array_layer,
@@ -202,7 +202,7 @@ RHIBufferScopedHandle<RHIBuffer> VulkanBuffer::CreateAliasedBuffer(RHIBufferDesc
         &*buffer_info,
         &aliased
     );
-    return { this, m_aliases.CreateObject<VulkanBuffer>(m_device, buffer_info, aliased, false /* shared=false */) };
+    return { this, m_aliases.CreateObject<VulkanBuffer>(m_device, desc, vk::raii::Buffer(m_device.GetVkDevice(), aliased), false /* shared=false */)};
 }
 RHIBuffer* VulkanBuffer::GetAliasedBuffer(Handle handle) const {
     return m_aliases.GetObjectPtr<RHIBuffer>(handle);
@@ -220,7 +220,7 @@ RHITextureScopedHandle<RHITexture> VulkanTexture::CreateAliasedTexture(RHITextur
         &*image_info,
         &aliased
     );
-    return { this, m_aliases.CreateObject<VulkanTexture>(m_device, image_info, aliased, false /* shared=false */) };
+    return { this, m_aliases.CreateObject<VulkanTexture>(m_device, desc, vk::raii::Image(m_device.GetVkDevice(), aliased), false /* shared=false */) };
 }
 RHITexture* VulkanTexture::GetAliasedTexture(Handle handle) const {
     return m_aliases.GetObjectPtr<RHITexture>(handle);

@@ -2,12 +2,6 @@ cmake_minimum_required(VERSION 3.26)
 
 include(FetchContent)
 
-FetchContent_Declare(
-  meshoptimizer
-  GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
-  GIT_TAG        e8879f358d9dccf3038dd194e99d2749347da1dd
-)
-FetchContent_MakeAvailable(meshoptimizer)
 
 FetchContent_Declare(
     stb
@@ -15,6 +9,13 @@ FetchContent_Declare(
     GIT_TAG 	  f58f558c120e9b32c217290b80bad1a0729fbb2c
 )
 FetchContent_MakeAvailable(stb)
+
+FetchContent_Declare(
+    fast_obj
+    GIT_REPOSITORY https://github.com/thisistherk/fast_obj
+    GIT_TAG d620667f10a548dee94dbc8c144bb22f79162176
+)
+FetchContent_MakeAvailable(fast_obj)
 
 file(
     GLOB_RECURSE SOURCES 
@@ -29,8 +30,8 @@ add_library(Foundation_Cooking ${SOURCES} ${INCLUDES})
 
 target_link_libraries(Foundation_Cooking
     PUBLIC
-    meshoptimizer
+    fast_obj
     Foundation_Runtime
 )
 target_include_directories(Foundation_Cooking PUBLIC ..)
-target_include_directories(Foundation_Cooking PRIVATE "${stb_SOURCE_DIR}")
+target_include_directories(Foundation_Cooking PRIVATE "${stb_SOURCE_DIR}" "${fast_obj_SOURCE_DIR}")

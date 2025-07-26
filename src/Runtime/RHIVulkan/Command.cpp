@@ -68,7 +68,7 @@ RHICommandList& VulkanCommandList::SetBufferTransition(RHIBuffer* image, Transit
         .buffer = *res->GetVkBuffer(),
         .offset = desc.src_buffer_offset,
         .size = desc.src_buffer_size == kFullSize ? VK_WHOLE_SIZE : desc.src_buffer_size
-    });
+        });
     return *this;
 }
 RHICommandList& VulkanCommandList::SetImageTransition(RHITexture* image, TransitionDesc const& desc) {
@@ -91,7 +91,7 @@ RHICommandList& VulkanCommandList::SetImageTransition(RHITexture* image, Transit
             .baseArrayLayer = desc.src_img_range.layer.base_array_layer,
             .layerCount = desc.src_img_range.layer.layer_count
         }
-    });
+        });
     return *this;
 }
 RHICommandList& VulkanCommandList::EndTransition() {
@@ -249,23 +249,46 @@ RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHIT
 
 RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc) {
     CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
-
-    Core::StlVector<vk::RenderingAttachmentInfo> attachments(&m_allocator);
-    attachments.reserve(desc.attachments.size());
-    for (auto const& attachment : desc.attachments) {
-        attachments.push_back(vk::RenderingAttachmentInfo{
-            .imageView = static_cast<const VulkanTextureView*>(attachment.image_view)->GetVkImageView(),
+    auto vkRenderingAttachmentInfoFromAttachment = [](const GraphicsDesc::Attachment& attachment) -> vk::RenderingAttachmentInfo {
+        vk::ClearValue clear_value{ .color = vk::ClearColorValue{} };
+        if (attachment.clear_color) {
+            clear_value.color = vk::ClearColorValue{
+                std::array{
+                    attachment.clear_color->r,
+                    attachment.clear_color->g,
+                    attachment.clear_color->b,
+                    attachment.clear_color->a
+                }
+            };
+        }
+        else if (attachment.clear_depth_stencil) {
+            clear_value.depthStencil = vk::ClearDepthStencilValue{
+                attachment.clear_depth_stencil->first,
+                attachment.clear_depth_stencil->second
+            };
+        }
+        return vk::RenderingAttachmentInfo{
+            .imageView = attachment.image_view ? static_cast<const VulkanTextureView*>(attachment.image_view)->GetVkImageView() : vk::ImageView{ nullptr },
             .imageLayout = vkImageLayoutFromRHITextureLayout(attachment.image_layout),
             .loadOp = vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eStore,
-            .clearValue = vk::ClearColorValue(std::array{attachment.clear_color.r, attachment.clear_color.g, attachment.clear_color.b, attachment.clear_color.a})
-            });
+            .clearValue = clear_value
+        };
+        };
+    Core::StlVector<vk::RenderingAttachmentInfo> attachments(&m_allocator);
+    attachments.reserve(desc.color_attachments.size());
+    for (auto const& attachment : desc.color_attachments) {
+        attachments.push_back(vkRenderingAttachmentInfoFromAttachment(attachment));
     }
+    vk::RenderingAttachmentInfo depth_attachment = vkRenderingAttachmentInfoFromAttachment(desc.depth_attachment);
+    vk::RenderingAttachmentInfo stencil_attachment = vkRenderingAttachmentInfoFromAttachment(desc.stencil_attachment);
     vk::RenderingInfo renderingInfo{
         .renderArea = vk::Rect2D{ {0, 0}, vk::Extent2D{desc.width, desc.height} },
         .layerCount = 1,
         .colorAttachmentCount = static_cast<uint32_t>(attachments.size()),
         .pColorAttachments = attachments.data(),
+        .pDepthAttachment = desc.depth_attachment.IsValid() ? &depth_attachment : nullptr,
+        .pStencilAttachment = desc.stencil_attachment.IsValid() ? &stencil_attachment : nullptr,
     };
     m_commandBuffer.beginRendering(renderingInfo);
     return *this;

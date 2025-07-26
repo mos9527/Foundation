@@ -144,7 +144,7 @@ namespace Foundation::RHI {
         virtual RHIBuffer* GetBuffer(Handle handle) const = 0;
         virtual void DestroyBuffer(Handle handle) = 0;
 
-        virtual RHIDeviceScopedObjectHandle<RHITexture> CreateImage(RHITextureDesc const& desc) = 0;
+        virtual RHIDeviceScopedObjectHandle<RHITexture> CreateTexture(RHITextureDesc const& desc) = 0;
         virtual RHITexture* GetImage(Handle handle) const = 0;
         virtual void DestroyImage(Handle handle) = 0;
 

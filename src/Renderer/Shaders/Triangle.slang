@@ -1,7 +1,10 @@
 struct VSInput {
-    float2 inPosition;
-    float3 inColor;
-    float2 inTexCoord;
+    float16_t3 pos; // fp16
+
+    uint16_t tp; // octa 8+8
+    uint32_t np; // normal packed [octa 15+15, bitangent sign 2]
+
+    float16_t2 texCoord; // fp16
 };
 
 struct UniformBuffer {
@@ -16,22 +19,27 @@ Texture2D texture;
 struct VSOutput
 {
     float4 pos : SV_Position;
-    float2 fragTexCoord;
-    float3 vertColor;
+    float3 normal;
+    float4 tangent; // T_BSign
 };
+
+module Math;
+__include Math;
 
 [shader("vertex")]
 VSOutput vertMain(VSInput input) {
     VSOutput output;
 
     float4x4 mvp = mul(ubo.proj, mul(ubo.view, ubo.model));
-    output.pos = mul(mvp, float4(input.inPosition, 0.0, 1.0));
-    output.fragTexCoord = input.inTexCoord;
-    output.vertColor = input.inColor;
+    float3 N; float4 T_BSign;
+    UnpackTBN(input.np, input.tp, N, T_BSign);
+    output.pos = mul(mvp, float4(input.pos, 1.0));
+    output.normal = normalize(mul(ubo.model, float4(N, 0.0)).xyz);
+    output.tangent = float4(normalize(mul(ubo.model, T_BSign)).xyz, T_BSign.w);
     return output;
 }
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
-    return texture.Sample(sampler, vertIn.fragTexCoord) * float4(vertIn.vertColor, 1.0);
+    return float4(dot(vertIn.normal,float3(0,0,1)));
 }

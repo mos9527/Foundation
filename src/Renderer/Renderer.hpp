@@ -20,21 +20,28 @@ namespace Foundation {
         RHIDeviceScopedObjectHandle<RHISwapchain> m_swapchain;
 
         RHIDeviceScopedObjectHandle<RHICommandPool> m_cmd_pool;
-        StlVector<RHIDeviceScopedObjectHandle<RHIDeviceSemaphore>> m_sync_present, m_sync_draw;
-        StlVector<RHIDeviceScopedObjectHandle<RHIDeviceFence>> m_fence_draw;
-        StlVector<RHICommandPoolScopedHandle<RHICommandList>> m_cmd;
+        struct PerSwapResources {
+            RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> m_sync_present, m_sync_draw;
+            RHIDeviceScopedObjectHandle<RHIDeviceFence> m_fence_draw;
+            RHICommandPoolScopedHandle<RHICommandList> m_cmd;
+            RHIDeviceScopedObjectHandle<RHIBuffer> m_uniform_buffer;
+            RHITextureScopedHandle<RHITextureView> m_swapchain_imageview;
+
+            RHIDeviceScopedObjectHandle<RHITexture> m_depth;
+            RHITextureScopedHandle<RHITextureView> m_depth_view;
+        };
+        StlVector<PerSwapResources> m_swaps;
+        uint32_t m_current_swap{ 0 };
+
+
 
         RHIDeviceScopedObjectHandle<RHIPipelineState> m_pso;
+        uint32_t m_num_indices{ 0 };
         RHIDeviceScopedObjectHandle<RHIBuffer> m_vertex_buffer, m_index_buffer;
-        StlVector<RHIDeviceScopedObjectHandle<RHIBuffer>> m_uniform_buffer;
         RHIDeviceScopedObjectHandle<RHIDeviceSampler> m_sampler;
         RHIDeviceScopedObjectHandle<RHITexture> m_tex;
         RHITextureScopedHandle<RHITextureView> m_tex_view;
 
-        StlVector<RHITextureScopedHandle<RHITextureView>>
-            m_swapchain_imageviews;
-
-        uint32_t m_current_img{ 0 };
         void Record(uint32_t image_index, RHICommandList* cmd);
     public:
         Renderer(RHIApplicationObjectHandle<RHIDevice> device, Allocator* allocator);

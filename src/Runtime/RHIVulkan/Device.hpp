@@ -121,7 +121,7 @@ namespace Foundation::RHI {
         RHIBuffer* GetBuffer(Handle handle) const override;
         void DestroyBuffer(Handle handle) override;
 
-        RHIDeviceScopedObjectHandle<RHITexture> CreateImage(RHITextureDesc const& desc) override;
+        RHIDeviceScopedObjectHandle<RHITexture> CreateTexture(RHITextureDesc const& desc) override;
         RHITexture* GetImage(Handle handle) const override;
         void DestroyImage(Handle handle) override;
 

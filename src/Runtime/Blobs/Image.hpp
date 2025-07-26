@@ -2,12 +2,14 @@
 #include "Blobs.hpp"
 namespace Foundation::Blobs {  
     struct Image : public Blob {
-        RHI::RHITextureDesc desc;
-        Core::StlSpan<const char> data{ };
-    public:
-        Image(RHI::RHITextureDesc const& desc, Core::StlSpan<const char> data) noexcept
-            : desc(desc), data(data) {}
-        constexpr operator bool() const noexcept { return data.size();  }
+        RHI::RHITextureDesc m_desc;
+        Core::Allocator* m_allocator;
+        Core::StlVector<char> m_data;
+
+        Image(RHI::RHITextureDesc const& desc, Core::Allocator* allocator, Core::StlSpan<const char> data = {}) noexcept
+            : m_desc(desc), m_allocator(allocator), m_data(data.begin(), data.end(), allocator) {}
+        constexpr operator bool() const noexcept { return m_data.size();  }
+
         void Serialize(Stream& stream) override;
         void Deserialize(Stream& stream) override;
     };
