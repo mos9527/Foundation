@@ -159,11 +159,11 @@ RHITextureScopedHandle<RHITextureView> VulkanTexture::CreateTextureView(RHITextu
     {
     case e1D:
         type = vk::ImageViewType::e1D; break;
-    case e3D:
-        type = vk::ImageViewType::e3D; break;
-    default:
     case e2D:
         type = vk::ImageViewType::e2D; break;
+    case e3D:
+    default:
+        type = vk::ImageViewType::e3D; break;
     }
     auto image_view = device.createImageView(
         vk::ImageViewCreateInfo{

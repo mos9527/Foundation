@@ -80,6 +80,16 @@ namespace Foundation::RHI {
         uint32_t mip_levels{ 1 };
         uint32_t array_layers{ 1 }; // No. of images in a image array.
         RHITextureLayout initial_layout{ RHITextureLayout::Undefined };
+
+        constexpr size_t GetTexels() const {
+            size_t size = 0;
+            RHIExtent3D e = extent;
+            for (uint32_t i = 0; i < mip_levels; ++i) {
+                size += std::max(e.x, 1u) * std::max(e.y, 1u) * std::max(e.z, 1u);
+                e.x >>= 1, e.y >>= 1, e.z >>= 1;
+            }
+            return size * array_layers;
+        }
     };
     class RHITexture;
     class RHITextureView;
@@ -112,7 +122,7 @@ namespace Foundation::RHI {
         virtual void* Map() = 0;
         virtual void Flush(size_t offset, size_t size) = 0;
         virtual void Unmap() = 0;
-        
+
         virtual RHITextureScopedHandle<RHITextureView> CreateTextureView(RHITextureViewDesc const& desc) = 0;
         virtual RHITextureView* GetImageView(Handle handle) const = 0;
         virtual void DestroyImageView(Handle handle) = 0;

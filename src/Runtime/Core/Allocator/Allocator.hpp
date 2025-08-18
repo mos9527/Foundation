@@ -3,6 +3,8 @@
 #include <memory>
 #include <stdexcept>
 namespace Foundation::Core {
+	using size_type = std::size_t;
+	using pointer = void*;
 	inline uintptr_t AlignUp(uintptr_t value, uintptr_t alignment) {
         return (value + alignment - 1) & ~(alignment - 1);
 	}
@@ -11,15 +13,12 @@ namespace Foundation::Core {
 	}
     typedef size_t CounterSingleThreaded;
     typedef std::atomic<size_t> CounterMultiThreaded;
+    struct Arena {
+        pointer memory;
+        size_type size;
+    };
 	class Allocator {			
 	public:
-		using size_type = std::size_t;
-		using pointer = void*;
-        struct Arena {
-            pointer memory;
-            size_type size;
-        };
-
 		virtual pointer Allocate(size_type size) = 0;
 		virtual pointer Allocate(size_type size, size_t alignment) = 0;
 		virtual void Deallocate(pointer ptr, size_type size) = 0;
@@ -38,17 +37,17 @@ namespace Foundation::Core {
 	};
     struct ScopedArena {
         Allocator* resource;
-        Allocator::Arena arena;
+        Arena arena;
         ScopedArena(Allocator* res, size_t size, size_t alignment = alignof(std::max_align_t)) :
             resource(res), arena(res->AllocateArena(size, alignment)) {};
         ~ScopedArena() { resource->DeallocateArena(arena); }
-        constexpr operator Allocator::Arena() const { return arena; }
+        constexpr operator Arena() const { return arena; }
         constexpr operator bool() const noexcept { return arena.memory != nullptr; }
     };
     constexpr size_t kDefaultStackArenaSize = 12 * 1024; // 12 KiB
     template<size_t Size = kDefaultStackArenaSize> struct StackArena {
         alignas(std::max_align_t) std::byte data[Size];
-        constexpr operator Allocator::Arena() { return { reinterpret_cast<void*>(data), Size }; }
+        constexpr operator Arena() { return { reinterpret_cast<void*>(data), Size }; }
     };
 		
 	template<typename T = void>
@@ -111,7 +110,7 @@ namespace Foundation::Core {
         catch (...) {
             resource->Deallocate(raw, sizeof(Derived));
             throw;
-        }
+        }       
     }
     template<typename T, typename ...Args>
     UniquePtr<T> ConstructUnique(Allocator* resource, Args&& ...args) {

@@ -2,7 +2,7 @@
 #include "StackAllocator.hpp"
 using namespace Foundation::Core;
 template<typename Counter>
-StackAllocator<Counter>::pointer StackAllocator<Counter>::Allocate(StackAllocator::size_type size, StackAllocator::size_type alignment) {
+pointer StackAllocator<Counter>::Allocate(size_type size, size_type alignment) {
     if (size == 0 || !m_memory) return nullptr;
 
     size_t start = AlignUp(m_current, alignment);
@@ -15,7 +15,7 @@ StackAllocator<Counter>::pointer StackAllocator<Counter>::Allocate(StackAllocato
     return reinterpret_cast<pointer>(start);
 };
 template<typename Counter>
-StackAllocator<Counter>::pointer StackAllocator<Counter>::Allocate(StackAllocator::size_type size) {
+pointer StackAllocator<Counter>::Allocate(size_type size) {
     if (size == 0 || !m_memory) return nullptr;
 
     size_t start = m_current;

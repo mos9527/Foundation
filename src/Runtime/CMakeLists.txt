@@ -17,7 +17,7 @@ target_link_libraries(Foundation_Runtime
     Foundation_Math
     Foundation_RHICore
     Foundation_RHIVulkan
-    Foundation_Blobs
+    Foundation_Blobs    
 )
 target_include_directories(Foundation_Runtime
     INTERFACE

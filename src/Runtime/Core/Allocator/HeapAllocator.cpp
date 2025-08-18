@@ -1,7 +1,7 @@
 #include "HeapAllocator.hpp"
 using namespace Foundation::Core;
 template<typename Counter>
-HeapAllocator<Counter>::pointer HeapAllocator<Counter>::Allocate(size_type size) {
+pointer HeapAllocator<Counter>::Allocate(size_type size) {
     void* p;
     if (!m_heap || size > kHeapMaxAllocation)
         p = mi_malloc(size);
@@ -11,7 +11,7 @@ HeapAllocator<Counter>::pointer HeapAllocator<Counter>::Allocate(size_type size)
     return p;
 }
 template<typename Counter>
-HeapAllocator<Counter>::pointer HeapAllocator<Counter>::Allocate(size_type size, size_t alignment) {
+pointer HeapAllocator<Counter>::Allocate(size_type size, size_t alignment) {
     void* p;
     if (!m_heap || size > kHeapMaxAllocation)
         p = mi_malloc_aligned(size, alignment);
@@ -21,7 +21,7 @@ HeapAllocator<Counter>::pointer HeapAllocator<Counter>::Allocate(size_type size,
     return p;
 }
 template<typename Counter>
-HeapAllocator<Counter>::pointer HeapAllocator<Counter>::Reallocate(pointer ptr, size_type new_size, size_t alignment) {
+pointer HeapAllocator<Counter>::Reallocate(pointer ptr, size_type new_size, size_t alignment) {
     size_t old_size = mi_usable_size(ptr);
     void* p; 
     if (!m_heap || new_size > kHeapMaxAllocation)
