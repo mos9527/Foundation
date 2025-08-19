@@ -41,11 +41,10 @@ namespace Foundation {
         RHIDeviceScopedObjectHandle<RHIDeviceSampler> m_sampler;
         RHIDeviceScopedObjectHandle<RHITexture> m_tex;
         RHITextureScopedHandle<RHITextureView> m_tex_view;
-
+        void CreateSwapchain(RHIExtent2D size);
         void Record(uint32_t image_index, RHICommandList* cmd);
     public:
-        Renderer(RHIApplicationObjectHandle<RHIDevice> device, Allocator* allocator);
-        ~Renderer();
-        void Draw();
+        Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIExtent2D initialSize, Allocator* allocator);
+        void Draw(RHIExtent2D currentSize);
     };
 }

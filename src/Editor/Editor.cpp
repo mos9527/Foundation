@@ -11,14 +11,14 @@ using namespace Foundation::RHI;
 namespace Foundation {
     Core::HeapAllocatorMultiThreaded g_Allocator;
     int StartApplication(Application& app) {
-        {
+        {            
             VulkanApplication vkApp("Editor", "Foundation", VK_API_VERSION_1_3, &g_Allocator);
             Window window = app.CreateWindow(1920, 1080, "Editor Window");
             auto device = vkApp.CreateDevice(vkApp.EnumerateDevices()[0], &window);
-            Renderer renderer(device, g_Allocator.Ptr());
+            Renderer renderer(device, RHIExtent2D(window.GetSize().first, window.GetSize().second), g_Allocator.Ptr());
             while (!window.WindowShouldClose()) {
                 // Main Loop
-                renderer.Draw();
+                renderer.Draw(RHIExtent2D(window.GetSize().first, window.GetSize().second));
             }
         }
         LOG_RUNTIME(Editor, info, "Quitting. Memory Used: {}", Bits::ByteSizeToString(g_Allocator.GetUsedMemory()));

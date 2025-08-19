@@ -79,11 +79,11 @@ namespace Foundation::RHI {
         vk::raii::SurfaceKHR m_surface{ nullptr };
 
         VmaAllocator m_vkAllocator{ nullptr };
-        // Queues
-        Core::UniquePtr<VulkanDeviceQueues> m_queues{ nullptr };
         // Device Object storage
         // Lifetimes and handle dereferencing are managed by the device.
         RHIObjectStorage<> m_storage;
+        // Queues
+        Core::UniquePtr<VulkanDeviceQueues> m_queues{ nullptr };
     public:
         VulkanDevice(Core::Window* window, VulkanApplication const& app, const vk::raii::PhysicalDevice& physicalDevice);
         ~VulkanDevice();

@@ -29,21 +29,19 @@ struct uniform_buffer {
     glm::mat4 view;
     glm::mat4 proj;
 };
-Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator* allocator)
-    : m_device(device), m_allocator(allocator), m_swaps(allocator), m_desc_set(allocator) {
-    // Swapchain & sync primitives setup
+void Renderer::CreateSwapchain(RHIExtent2D size) {
+    m_queue->WaitIdle();
+    m_swaps.clear(), m_desc_set.clear();
+    if (m_swapchain)
+        m_swapchain.Reset();
     m_swapchain = m_device->CreateSwapchain(RHISwapchain::SwapchainDesc{
         .format = RHIResourceFormat::R8G8B8A8_UNORM,
-        .dimensions = {1920, 1080},
+        .dimensions = size,
         .buffer_count = 3,
         .present_mode = RHISwapchain::SwapchainDesc::PresentMode::MAILBOX,
-        });
-    m_queue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
-    m_cmd_pool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
-        .queue = RHIDeviceQueueType::Graphics,
-        .type = RHICommandPoolType::Persistent
-        });
+    });
     m_swaps.resize(m_swapchain->GetImages().size());
+    m_desc_set.resize(m_swapchain->GetImages().size());
     for (size_t i = 0; i < m_swaps.size(); ++i) {
         auto& swap = m_swaps[i];
         auto const& image = m_swapchain->GetImages()[i];
@@ -69,7 +67,7 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
                 .shared = false
             },
             .usage = (RHITextureUsage)(RHITextureUsage::DepthStencil | RHITextureUsage::TransferDestination),
-            .extent = { 1920, 1080, 1 },
+            .extent = { size.x, size.y, 1 },
             .format = RHIResourceFormat::D32_SIGNED_FLOAT,
             .initial_layout = RHITextureLayout::Undefined,
             });
@@ -81,7 +79,33 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
                 }
             }
             });
+        // Per-swap states
+        auto& set = m_desc_set[i];
+        set = m_desc_pool->CreateDescriptorSet(m_desc_layout);
+        auto& buffer = m_swaps[i].m_uniform_buffer = m_device->CreateBuffer(RHIBufferDesc{
+            .resource = {
+                .host_access = RHIResourceHostAccess::ReadWrite,
+                .coherent = true
+            },
+            .usage = (RHIBufferUsage)(RHIBufferUsage::UniformBuffer | RHIBufferUsage::TransferDestination),
+            .size = sizeof(uniform_buffer)
+            });
+        set->Update(RHIDeviceDescriptorSet::UpdateDesc{
+            .binding = 0,
+            .type = RHIDescriptorType::UniformBuffer,
+            .buffers = {{
+                {.buffer = buffer.Get(), .offset = 0, .size = sizeof(uniform_buffer) }
+            }},
+            });
     }
+}
+Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIExtent2D initialSize, Core::Allocator* allocator)
+    : m_device(device), m_allocator(allocator), m_swaps(allocator), m_desc_set(allocator) {
+    m_queue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
+    m_cmd_pool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
+        .queue = RHIDeviceQueueType::Graphics,
+        .type = RHICommandPoolType::Persistent
+        });    
     // Loading shaders
     auto shader_vert_data = ReadFile(".derived/shaders/Triangle_vertMain.spirv", m_allocator);
     m_shader_vert = m_device->CreateShaderModule(RHIShaderModule::ShaderModuleDesc{
@@ -105,15 +129,11 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
     m_desc_pool = device->CreateDescriptorPool(RHIDeviceDescriptorPool::PoolDesc{
         .bindings = {{
             {.type = RHIDescriptorType::UniformBuffer, .max_count = 16 },
-            {.type = RHIDescriptorType::Sampler, .max_count = 16},
-            {.type = RHIDescriptorType::SampledImage, .max_count = 16}
         }}
         });
     m_desc_layout = device->CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc{
         .bindings = {{
             {.type = RHIDescriptorType::UniformBuffer },
-            {.type = RHIDescriptorType::Sampler },
-            {.type = RHIDescriptorType::SampledImage }
         }}
         });
     RHIPipelineState::PipelineStateDesc pipeline{
@@ -124,8 +144,6 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
             .attributes = Cooking::OBJAttributes
         },
         .topology = RHIPipelineState::PipelineStateDesc::Topology::TRIANGLE_LIST,
-        .viewport = {.width = 1920, .height = 1080 },
-        .scissor = {.width = 1920, .height = 1080 },
         .rasterizer = {
             .fill_mode = RHIPipelineState::PipelineStateDesc::Rasterizer::FILL_SOLID,
             .cull_mode = RHIPipelineState::PipelineStateDesc::Rasterizer::CULL_BACK,
@@ -194,116 +212,11 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, Core::Allocator
         copy_buffer(m_index_buffer.Get(), mesh.m_index_data.data(), mesh.m_index_data.size());
         m_num_indices = mesh.m_num_indices;
     }
-    // Images
-    {
-        auto image = Cooking::Cook<Blobs::Image>::sRGB32bpp_FromFile(".derived/texture.jpg", m_allocator);
-        CHECK(image && "Failed to load texture image");
-        m_tex = m_device->CreateTexture(RHITextureDesc{
-            .resource = {
-                .host_access = RHIResourceHostAccess::Invisible,
-            },
-            .usage = (RHITextureUsage)(RHITextureUsage::SampledImage | RHITextureUsage::TransferDestination),
-            .extent = image.m_desc.extent,
-            .format = RHIResourceFormat::R8G8B8A8_UNORM,
-            .initial_layout = RHITextureLayout::Undefined,
-            });
-        m_tex_view = m_tex->CreateTextureView(RHITextureViewDesc{
-            .format = RHIResourceFormat::R8G8B8A8_UNORM,
-            });
-        // Staging again!
-        auto staging = m_device->CreateBuffer(RHIBufferDesc{
-            .resource = {
-                .host_access = RHIResourceHostAccess::ReadWrite,
-                .coherent = true,
-            },
-            .usage = RHIBufferUsage::TransferSource,
-            .size = image.m_data.size()
-            });
-        memcpy(staging->Map(), image.m_data.data(), image.m_data.size());
-        auto cmd = m_cmd_pool->CreateCommandList();
-        cmd->Begin();
-        cmd->BeginTransition();
-        cmd->SetImageTransition(
-            m_tex.Get(),
-            RHICommandList::TransitionDesc{
-                .src_access = RHIResourceAccess::Undefined,
-                .dst_access = RHIResourceAccess::TransferWrite,
-                .src_stage = RHIPipelineStage::TopOfPipe,
-                .dst_stage = RHIPipelineStage::Transfer,
-                .src_img_layout = RHITextureLayout::Undefined,
-                .dst_img_layout = RHITextureLayout::TransferDst
-            }
-        );
-        cmd->EndTransition();
-        cmd->CopyBufferToImage(
-            staging.Get(),
-            m_tex.Get(),
-            RHITextureLayout::TransferDst,
-            { {RHICommandList::CopyImageRegion{
-                .extent = image.m_desc.extent,
-            }} }
-            );
-        cmd->BeginTransition();
-        cmd->SetImageTransition(
-            m_tex.Get(),
-            RHICommandList::TransitionDesc{
-                .src_access = RHIResourceAccess::TransferWrite,
-                .dst_access = RHIResourceAccess::ShaderRead,
-                .src_stage = RHIPipelineStage::Transfer,
-                .dst_stage = RHIPipelineStage::FragmentShader,
-                .src_img_layout = RHITextureLayout::TransferDst,
-                .dst_img_layout = RHITextureLayout::ShaderReadOnly
-            }
-        );
-        cmd->EndTransition();
-        cmd->End();
-        m_queue->Submit(RHIDeviceQueue::SubmitDesc{
-            .cmd_lists = cmd,
-            });
-        m_queue->WaitIdle();
-    }
-    m_desc_set.resize(m_swapchain->GetImages().size());
-    m_sampler = m_device->CreateSampler(RHIDeviceSampler::SamplerDesc{
-        .anisotropy = {
-            .enable = true,
-            .max_level = 16.0f
-        },
-        });
-    for (size_t i = 0; i < m_desc_set.size(); ++i) {
-        auto& set = m_desc_set[i];
-        set = m_desc_pool->CreateDescriptorSet(m_desc_layout);
-        auto& buffer = m_swaps[i].m_uniform_buffer = m_device->CreateBuffer(RHIBufferDesc{
-            .resource = {
-                .host_access = RHIResourceHostAccess::ReadWrite,
-                .coherent = true
-            },
-            .usage = (RHIBufferUsage)(RHIBufferUsage::UniformBuffer | RHIBufferUsage::TransferDestination),
-            .size = sizeof(uniform_buffer)
-            });
-        set->Update(RHIDeviceDescriptorSet::UpdateDesc{
-            .binding = 0,
-            .type = RHIDescriptorType::UniformBuffer,
-            .buffers = {{
-                {.buffer = buffer.Get(), .offset = 0, .size = sizeof(uniform_buffer) }
-            }},
-            });
-        set->Update(RHIDeviceDescriptorSet::UpdateDesc{
-            .binding = 1,
-            .type = RHIDescriptorType::Sampler,
-            .images = {{
-                {.sampler = m_sampler.Get(), }
-            }}
-            });
-        set->Update(RHIDeviceDescriptorSet::UpdateDesc{
-            .binding = 2,
-            .type = RHIDescriptorType::SampledImage,
-            .images = {{
-                {.image_view = m_tex_view.Get(), .layout = RHITextureLayout::ShaderReadOnly }
-            }}
-            });
-    }
+    // Swapchain
+    CreateSwapchain(initialSize);
 }
-void Renderer::Record(uint32_t image_index, RHICommandList* cmd) {
+void Renderer::Record(uint32_t image_index, RHICommandList* cmd) {    
+    auto image_wh = m_swapchain->GetDimensions();
     cmd->Begin();
     cmd->BeginTransition();
     cmd->SetImageTransition(
@@ -345,8 +258,8 @@ void Renderer::Record(uint32_t image_index, RHICommandList* cmd) {
             .image_layout = RHITextureLayout::DepthStencil,
             .clear_depth_stencil = RHIClearDepthStencil{ 1.0f, 0 },
         },
-        .width = 1920,
-        .height = 1080
+        .width = image_wh.x,
+        .height = image_wh.y
     });
     cmd->SetPipeline(RHICommandList::PipelineDesc{
         .pipeline = m_pso.Get(),
@@ -354,8 +267,9 @@ void Renderer::Record(uint32_t image_index, RHICommandList* cmd) {
         });
     cmd->BindVertexBuffer(0, { { m_vertex_buffer.Get() } }, { {0} });
     cmd->BindIndexBuffer(m_index_buffer.Get(), 0, RHIResourceFormat::R32_UINT);
-    cmd->SetViewport(0.0f, 0.0f, 1920.0f, 1080.0f);
-    cmd->SetScissor(0, 0, 1920, 1080);
+
+    cmd->SetViewport(0.0f, 0.0f, image_wh.x, image_wh.y);
+    cmd->SetScissor(0, 0, image_wh.x, image_wh.y);
     cmd->BindDescriptorSet(
         RHIDevicePipelineType::Graphics,
         m_pso.Get(),
@@ -378,7 +292,11 @@ void Renderer::Record(uint32_t image_index, RHICommandList* cmd) {
     cmd->EndTransition();
     cmd->End();
 }
-void Renderer::Draw() {
+void Renderer::Draw(RHIExtent2D currentSize) {
+    // Handle resize
+    if (currentSize != m_swapchain->GetDimensions()) {        
+        CreateSwapchain(currentSize);
+    }
     // Update MVP
     static auto startTime = std::chrono::high_resolution_clock::now();
     auto currentTime = std::chrono::high_resolution_clock::now();
@@ -394,7 +312,15 @@ void Renderer::Draw() {
     ubo.proj[1][1] *= -1;
 
     m_device->WaitForFences(m_swaps[m_current_swap].m_fence_draw, true, -1);
-    uint32_t image_index = m_swapchain->GetNextImage(-1, m_swaps[m_current_swap].m_sync_present, {});
+    uint32_t image_index = -1;
+    try {
+        image_index = m_swapchain->GetNextImage(-1, m_swaps[m_current_swap].m_sync_present, {});
+    }
+    catch (RHISwapchainResizeException const&) {
+        // Shouldn't happen. Resizes should be performed explicitly.
+        CreateSwapchain(currentSize);
+        return;
+    }
     m_device->ResetFences(m_swaps[m_current_swap].m_fence_draw);
     m_swaps[m_current_swap].m_cmd->Reset();
     Record(image_index, m_swaps[m_current_swap].m_cmd.Get());
@@ -412,9 +338,4 @@ void Renderer::Draw() {
         .waits = m_swaps[m_current_swap].m_sync_draw
         });
     m_current_swap = (m_current_swap + 1) % m_swaps.size();
-}
-Renderer::~Renderer() {
-    // Ensures that all commands are finished before destruction
-    // XXX: GUARDS? But we don't own them!
-    m_queue->WaitIdle();
 }

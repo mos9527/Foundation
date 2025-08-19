@@ -3,21 +3,21 @@
 #include "Swapchain.hpp"
 using namespace Foundation;
 using namespace Foundation::RHI;
-vk::SwapchainCreateInfoKHR VulkanSwapchain::GetSwapchainCreateInfo() {
+const vk::SwapchainCreateInfoKHR VulkanSwapchain::GetSwapchainCreateInfo(SwapchainDesc const& desc) {
     auto const& surface = m_device.GetVkSurface();
     auto surface_caps = m_device.GetVkPhysicalDevice().getSurfaceCapabilitiesKHR(surface);
     vk::SwapchainCreateInfoKHR create_info{
         .surface = surface,
-        .minImageCount = m_desc.buffer_count,
-        .imageFormat = vkFormatFromRHIFormat(m_desc.format),
+        .minImageCount = desc.buffer_count,
+        .imageFormat = vkFormatFromRHIFormat(desc.format),
         .imageColorSpace = vk::ColorSpaceKHR::eSrgbNonlinear,
-        .imageExtent = vk::Extent2D(m_desc.dimensions.x, m_desc.dimensions.y),
+        .imageExtent = vk::Extent2D(desc.dimensions.x, desc.dimensions.y),
         .imageArrayLayers = 1, // 1 layer for 2D images
         .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
         .imageSharingMode = vk::SharingMode::eExclusive, // Exclusive mode by default
         .preTransform = surface_caps.currentTransform,
         .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque, // Opaque composite alpha
-        .presentMode = GetVulkanPresentModeFromSwapchainDesc(m_desc.present_mode),
+        .presentMode = GetVulkanPresentModeFromSwapchainDesc(desc.present_mode),
         .clipped = VK_TRUE, // Clipped presentation
         .oldSwapchain = m_swapchain // No old swapchain
     };
@@ -37,10 +37,10 @@ void VulkanSwapchain::Instantiate() {
     if (!m_device.GetVkQueues() || !m_device.GetVkQueues()->CanPresent())
         throw std::runtime_error("invalid device or device does not support presentation");
     auto const& device = m_device.GetVkDevice();
-    auto create_info = GetSwapchainCreateInfo();
+    auto create_info = GetSwapchainCreateInfo(m_desc);
+    m_images.Clear(), m_images_ptrs.clear();
     m_swapchain = vk::raii::SwapchainKHR(device, create_info, m_device.GetVkAllocatorCallbacks());
     auto images = m_swapchain.getImages();
-    m_images.Clear(), m_images_ptrs.clear();
     for (auto& image : images) {
         Handle handle = m_images.CreateObject<VulkanTexture>(m_device, RHITextureDesc{}, vk::raii::Image(device, image, m_device.GetVkAllocatorCallbacks()), true /*shared=true*/);
         m_images_ptrs.push_back(m_images.GetObjectPtr(handle));
@@ -51,15 +51,12 @@ VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SwapchainDesc const
     Instantiate();
 }
 Core::StlSpan<RHITexture* const> VulkanSwapchain::GetImages() const {
-    return { m_images_ptrs.data(), m_images_ptrs.size() };
+    return m_images_ptrs;
 }
-
-std::pair<size_t, size_t> VulkanSwapchain::GetDimensions() const
+RHIExtent2D VulkanSwapchain::GetDimensions() const
 {
-    // !! TODO: swapchain recreation
-    return { m_desc.dimensions.x, m_desc.dimensions.y };
+    return m_desc.dimensions;
 }
-
 size_t VulkanSwapchain::GetNextImage(uint64_t timeout_ns, RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore, RHIDeviceObjectHandle<RHIDeviceFence> fence)
 {
     auto [result, index] = m_swapchain.acquireNextImage(
@@ -67,6 +64,14 @@ size_t VulkanSwapchain::GetNextImage(uint64_t timeout_ns, RHIDeviceObjectHandle<
         semaphore ? semaphore.Get<VulkanDeviceSemaphore>()->GetVkSemaphore() : vk::Semaphore(),
         fence ? fence.Get<VulkanDeviceFence>()->GetVkFence() : vk::Fence()
     );
-    // !! TODO handle errors
+    switch (result)
+    {
+    case vk::Result::eErrorOutOfDateKHR:
+    case vk::Result::eSuboptimalKHR:
+        // Swapchain resize        
+        throw RHISwapchainResizeException();
+    default:
+        break;
+    }
     return index;
 }

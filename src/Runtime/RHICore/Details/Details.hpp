@@ -45,6 +45,7 @@ namespace Foundation::RHI {
         /// </summary>
         /// <typeparam name="U">Pointer type to retrieve as. U is required to be castable from T</typeparam>                
         template<typename U = T> U* Get() const {
+            CHECK(IsValid() && "RHIHandle::Get called on an invalid handle");
             auto ptr = RHIObjectTraits<Factory, T>::Get(m_factory, m_handle);
             return static_cast<U*>(ptr);
         }
@@ -56,7 +57,7 @@ namespace Foundation::RHI {
         constexpr operator bool() const noexcept { return IsValid(); }
         bool operator==(const RHIHandle& other) const { return m_factory == other.m_factory && m_handle == other.m_handle; }
 
-        bool IsValid() const { return m_handle != kInvalidHandle; }
+        bool IsValid() const { return m_factory != nullptr && m_handle != kInvalidHandle; }
         bool IsFrom(const Factory* factory) const { return m_factory == factory; }
         void Invalidate() { m_factory = nullptr, m_handle = kInvalidHandle; }
     };
@@ -101,7 +102,15 @@ namespace Foundation::RHI {
             Invalidate();
             return handle;
         }
-
+        /// <summary>
+        /// Destructs the underlying RHIObject, if valid, and invalidates the scoped handle.
+        /// </summary>
+        void Reset() {
+            if (IsValid()) {
+                RHIObjectTraits<Factory, T>::Destroy(m_factory, m_handle);
+                Invalidate();
+            }            
+        }
         RHIScopedHandle(const RHIScopedHandle&) = delete;
         RHIScopedHandle& operator=(const RHIScopedHandle&) = delete;
         ~RHIScopedHandle() {

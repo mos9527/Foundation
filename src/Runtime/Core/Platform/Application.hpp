@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Logging.hpp"
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 #include <stdexcept>
@@ -20,6 +21,11 @@ namespace Foundation::Core {
         bool WindowShouldClose();
 
         GLFWwindow* GetNativeWindow() const { return m_window; }
+        std::pair<int, int> GetSize() const {
+            int width, height;
+            glfwGetWindowSize(m_window, &width, &height);
+            return { width, height };
+        }
     };
     extern void glfw_error_callback(int error, const char* description);
     class Application {

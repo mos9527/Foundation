@@ -5,6 +5,9 @@ namespace Foundation::RHI {
     class RHITexture;
     class RHIDeviceSemaphore;
     class RHIDeviceFence;
+    struct RHISwapchainResizeException : std::exception {
+        using std::exception::exception;
+    };
     class RHISwapchain : public RHIObject {
     protected:
         const RHIDevice& m_device;
@@ -23,22 +26,22 @@ namespace Foundation::RHI {
             uint32_t buffer_count;
             // Present mode for the swap chain.
             PresentMode present_mode;
-        } const m_desc;
-
+        } m_desc;
         virtual Core::StlSpan<RHITexture* const> GetImages() const = 0;
         RHISwapchain(RHIDevice const& device, SwapchainDesc const& desc) : m_device(device), m_desc(desc) {}
+        /// <summary>
+        /// Gets the next image in the swapchain.
+        /// Raises RHISwapchainResizeException if the swapchain needs to be resized.
+        /// </summary>        
         virtual size_t GetNextImage(
             uint64_t timeout_ns,
             RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore,
             RHIDeviceObjectHandle<RHIDeviceFence> fence
-        ) = 0;
-        /// <summary>
-        /// Retrives the [width, height] dimensions of the swapchain images.
-        /// </summary>                
-        virtual std::pair<size_t, size_t> GetDimensions() const = 0;
+        ) = 0;            
+        virtual RHIExtent2D GetDimensions() const = 0;
         inline float GetAspectRatio() const {
-            auto [width, height] = GetDimensions();
-            return static_cast<float>(width) / static_cast<float>(height);
+            auto xy = GetDimensions();
+            return static_cast<float>(xy.x) / static_cast<float>(xy.y);
         }
     };
 }
