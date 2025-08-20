@@ -1,17 +1,16 @@
-#include <crtdbg.h>
-#include <spdlog/sinks/msvc_sink.h>
-
+#include <stdio.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 namespace Foundation::Core {
     spdlog::sink_ptr GetPlatformDebugLoggingSink() {
-        return std::make_shared<spdlog::sinks::msvc_sink_mt>();
+        return std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     }
 
     void ExceptionHandler(const std::exception& e, std::vector<std::string> backtrace) {
-        OutputDebugStringA("*** RUNTIME EXCEPTION ***\n");
-        OutputDebugStringA(e.what());
-        OutputDebugStringA("\n*** BACKTRACE ***\n");
+        printf("*** RUNTIME EXCEPTION ***\n");
+        printf("%s\n", e.what());
+        printf("*** BACKTRACE ***\n");
         for (const auto& frame : backtrace)
-            OutputDebugStringA(frame.c_str());
-        _RPT0(_CRT_ERROR, e.what());
+            printf("%s\n", frame.c_str());
+        exit(-1);
     }
 }
