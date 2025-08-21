@@ -23,10 +23,7 @@ class ShadowCascadePass : public RenderPass {
 public:
     ResourceHandle m_shadowAtlas;
     int m_cascadeIndex;
-    char m_name[32];
-    ShadowCascadePass(ResourceHandle atlas, int index) : m_shadowAtlas(atlas), m_cascadeIndex(index) {
-        snprintf(m_name, sizeof(m_name), "ShadowCascade_%d", index);
-    }
+    ShadowCascadePass(ResourceHandle atlas, int index) : m_shadowAtlas(atlas), m_cascadeIndex(index) {}
     void Setup(Renderer& renderer) override {
         LOG_RUNTIME(ShadowCascadePass, info, "Setup");
         renderer.DeclareAccess(m_shadowAtlas, ResourceAccess::Write);
@@ -51,10 +48,7 @@ class HiZDownsamplePass : public RenderPass {
 public:
     ResourceHandle m_hiZBuffer; // The resource being mipped
     int m_mipLevel; // The mip level to generate
-    char m_name[32];
-    HiZDownsamplePass(ResourceHandle hiZ, int mip) : m_hiZBuffer(hiZ), m_mipLevel(mip) {
-        snprintf(m_name, sizeof(m_name), "HiZ_Mip_%d", mip);
-    }
+    HiZDownsamplePass(ResourceHandle hiZ, int mip) : m_hiZBuffer(hiZ), m_mipLevel(mip) {}
     void Setup(Renderer& renderer) override {
         LOG_RUNTIME(HiZDownsamplePass, info, "Setup");
         renderer.DeclareAccess(m_hiZBuffer, ResourceAccess::ReadWrite);
@@ -89,29 +83,20 @@ int main() {
     auto hiZBuffer = renderer.CreateResource("HiZBuffer", RHITextureDesc{});
     auto sceneColor = renderer.CreateResource("SceneColor", RHITextureDesc{});
     // Gbuffer & cascade are both graphics work - these should be serial
-    auto [_, gbufferPass] = renderer.CreateGraphicsPass<GBufferPass>("Depth", sceneDepth);
+    auto [_, gbufferPass] = renderer.CreatePass<GBufferPass>({ "GBuffer" }, sceneDepth);
     const int NUM_CASCADES = 4;
     for (int i = 0; i < NUM_CASCADES; ++i)
-        auto [__, pass] = renderer.CreateGraphicsPass<ShadowCascadePass>(fmt::format("Cascade{}", i).c_str(), shadowAtlas, i);
+        renderer.CreatePass<ShadowCascadePass>({ fmt::format("Cascade{}", i), PassType::Graphics }, shadowAtlas, i);
     // HiZ generation is compute. This should be parallel and eventually sync'd
-    renderer.CreateGraphicsPass<CopyPass>("CopyHiZ0", sceneDepth, hiZBuffer);
+    renderer.CreatePass<CopyPass>({ "CopyHiZ0", PassType::Graphics }, sceneDepth, hiZBuffer);
     const int NUM_MIPS = 8;
     for (int i = 1; i < NUM_MIPS; ++i)
-        auto [__, pass] = renderer.CreateGraphicsPass<HiZDownsamplePass>(fmt::format("DownSample{}", i).c_str(), hiZBuffer, i);
+        renderer.CreatePass<HiZDownsamplePass>({ fmt::format("DownSample{}", i), PassType::Compute }, hiZBuffer, i);
     // Epilouge lighting.
     // This should be the root for the topology, culling everything it's not using
-    renderer.CreateGraphicsPass<LightingPass>("Lighting", sceneDepth, shadowAtlas, hiZBuffer, sceneColor);
-    renderer.EndSetup();
-    // Output Graphviz
-    printf("digraph G {\n");
-    printf("    rankdir=TB;\n");
-    auto& graph = renderer.m_setupContext->graph;
-    auto& passes = renderer.m_renderPasses;
-    auto& resources = renderer.m_resourceDefines;
-    for (size_t u = 0; u < renderer.m_setupContext->graph.size(); u++) {
-        for (auto [v, w] : graph[u]) {
-            printf("    \"%s\" -> \"%s\" [label=\"%s\"];\n", passes[u].name, passes[v].name, resources[w].name);
-        }
-    }
-    printf("}\n");
+    auto [lightingPassIdx, __] = renderer.CreatePass<LightingPass>({ "Lighting", PassType::Compute }, sceneDepth, shadowAtlas, hiZBuffer, sceneColor);
+    renderer.EndSetup(lightingPassIdx);
+    printf(renderer.DbgDumpGraphviz().c_str());
+    printf("\nPasses\n");
+    printf(renderer.DbgDumpActivePasses().c_str());
 }
