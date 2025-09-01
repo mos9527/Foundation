@@ -21,18 +21,19 @@ namespace Foundation::RHI {
         struct SubmitDesc {
             RHIPipelineStage stages;
             // Semaphore(s) and the minimum values to wait on
-            Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> waits;
+            Core::StlSpan<const std::pair<RHIDeviceSemaphore*, size_t>> waits;
             // Semaphore(s) and the values to signal
-            Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> signals;
-            Core::StlSpan<const RHICommandPoolHandle<RHICommandList>> cmd_lists;
-            RHIDeviceObjectHandle<RHIDeviceFence> fence;
+            Core::StlSpan<const std::pair<RHIDeviceSemaphore*, size_t>> signals;
+            Core::StlSpan<RHICommandList*> cmd_lists;
+            RHIDeviceFence* fence;
         };
         virtual void Submit(SubmitDesc const& desc) const = 0;
 
         struct PresentDesc {
             uint32_t image_index;
-            RHIDeviceObjectHandle<RHISwapchain> swapchain;
-            Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceSemaphore>> waits;
+            RHISwapchain* swapchain;
+            // Semaphore(s) and the minimum values to wait on
+            Core::StlSpan<const std::pair<RHIDeviceSemaphore*, size_t>> waits;
         };
         virtual void Present(PresentDesc const& desc) const = 0;
     };

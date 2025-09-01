@@ -101,6 +101,8 @@ namespace Foundation {
             // All resources's life cycles to be used in the render graph
             // [index, {First used ord in activePasses, Last used ord in activePasses}]
             StlMap<ResourceHandle, std::pair<PassHandle, PassHandle>> activeResources;
+            // The final pass of the frame
+            PassHandle epiloguePass{ kInvalidHandle };
             void add_edge(PassHandle u, PassHandle v, ResourceHandle hdl) {
                 while (u >= graph.size()) graph.emplace_back(graph.get_allocator());
                 graph[u].emplace_back(v, hdl);

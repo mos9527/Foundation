@@ -26,7 +26,7 @@ void Renderer::CreateSwapchain(RHIExtent2D size) {
         .dimensions = size,
         .buffer_count = 3,
         .present_mode = RHISwapchain::SwapchainDesc::PresentMode::MAILBOX,
-    });
+        });
 }
 Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIExtent2D initialSize, Core::Allocator* allocator)
     : m_device(device), m_allocator(allocator) {
@@ -35,7 +35,7 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIExtent2D ini
     m_cmdPool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
         .queue = RHIDeviceQueueType::Graphics,
         .type = RHICommandPoolType::Persistent
-    });
+        });
     CreateSwapchain(initialSize);
 }
 
@@ -59,18 +59,18 @@ void Renderer::DeclareAccess(PassHandle pass, ResourceHandle handle, RHIResource
     using enum RHIResourceAccessBits;
     switch ((RHIResourceAccessBits)access)
     {
-        case RenderTargetWrite:
-        case DepthStencilWrite:
-        case TransferWrite:
-            resource.lastProducerPass = pass;
-            break;        
-    }    
+    case RenderTargetWrite:
+    case DepthStencilWrite:
+    case TransferWrite:
+        resource.lastProducerPass = pass;
+        break;
+    }
     m_setup->trackedPasses[pass].resources.emplace_back(handle);
 }
 ResourceHandle Renderer::CreateTextureView(
     PassHandle pass, ResourceHandle handle, RHITextureViewDesc const& desc, RHITextureLayout layout, RHIResourceAccess access) {
     CHECK(m_setup && "Setup context not initialized. Did you call BeginSetup()?");
-    auto& resource = m_setup->trackedResources[handle];    
+    auto& resource = m_setup->trackedResources[handle];
     RHITextureDesc rdesc = resource.desc.visit(
         [&](RHITextureDesc const& tex) { return tex; },
         [&](RHIDeviceObjectHandle<RHITexture> const& tex) { return tex->m_desc; },
@@ -92,11 +92,11 @@ void Renderer::CreateBufferAccess(PassHandle pass, ResourceHandle handle, RHIRes
         [](auto const&) -> RHIBufferDesc { throw std::runtime_error("Cannot create buffer access of non-buffer resource"); }
     );
     if (offset + size > bdesc.size)
-        throw std::out_of_range("Buffer access out of range");    
+        throw std::out_of_range("Buffer access out of range");
     DeclareAccess(pass, handle, access);
     m_setup->trackedPasses[pass].bufferRanges.emplace_back(handle, access, std::pair{ offset, offset + size });
 }
-void Renderer::EndSetup(PassHandle EpiloguePass) {
+void Renderer::EndSetup(PassHandle epiloguePass) {
     CHECK(m_setup && "Setup context not initialized. Did you call BeginSetup()?");
     for (PassHandle i = 0; i < m_setup->trackedPasses.size(); ++i) {
         m_setup->trackedPasses[i].pass->Setup(m_setup->trackedPasses[i].handle, *this);
@@ -104,35 +104,36 @@ void Renderer::EndSetup(PassHandle EpiloguePass) {
     StlVector<PassHandle>
         topo(m_allocator), // Topological sort
         vis(m_setup->trackedPasses.size(), m_allocator), // Visited
-        depth(m_setup->trackedPasses.size(), m_allocator); // Depth in graph from EpiloguePass
+        depth(m_setup->trackedPasses.size(), m_allocator); // Depth in graph from epiloguePass
     topo.reserve(m_setup->trackedPasses.size());
     auto dfs = [&](PassHandle u, PassHandle pa, auto&& dfs) -> void {
         vis[u] = 1;
         for (const auto& [v, _] : m_setup->graph[u]) {
             depth[v] = std::max(depth[u] + 1, depth[v]);
-            CHECK(vis[v] != 1 && "Cyclic dependency in graph.");            
-            if (vis[v] == 0) dfs(v, u, dfs);            
+            CHECK(vis[v] != 1 && "Cyclic dependency in graph.");
+            if (vis[v] == 0) dfs(v, u, dfs);
         }
         vis[u] = 2;
         m_setup->trackedPasses[u].used = true;
         topo.push_back(u);
-    };
-    dfs(EpiloguePass, -1, dfs);
+        };
+    dfs(epiloguePass, -1, dfs);
     std::stable_sort(topo.begin(), topo.end(), [&](PassHandle a, PassHandle b) {
         return depth[a] > depth[b];
         // Sort by longest path.
         // This should maintain topological order (albeit in reverse)
         // and prioritize passes that are deeper in the graph        
-    });
+        });
     m_setup->activePasses = topo;
+    m_setup->epiloguePass = epiloguePass;
     // Lifetime derived from execution order
     // Resource may be considered stale if it's not used by further passes
     // can may be released after the last use.
     for (PassHandle ord = 0; ord < m_setup->activePasses.size(); ord++) {
         auto& pass = m_setup->trackedPasses[m_setup->activePasses[ord]];
-        pass.ord = ord, pass.depth = depth[pass.handle];        
+        pass.ord = ord, pass.depth = depth[pass.handle];
         for (auto res : pass.resources) {
-            if (!m_setup->activeResources.contains(res))             
+            if (!m_setup->activeResources.contains(res))
                 m_setup->activeResources[res] = { ord, ord };
             else {
                 auto& [t_min, t_max] = m_setup->activeResources[res];
@@ -141,7 +142,7 @@ void Renderer::EndSetup(PassHandle EpiloguePass) {
             }
         }
     }
-    AllocateResources();    
+    AllocateResources();
 }
 void Renderer::AllocateResources() {
     CHECK(m_setup && "Setup context not initialized. Did you call BeginSetup()?");
@@ -158,7 +159,7 @@ void Renderer::AllocateResources() {
         auto& res = m_setup->trackedResources[handle];
         res.desc.visit(
             // Owned
-            [&](RHIBufferDesc const& desc)  { m_resources->resources[handle] = m_device->CreateBuffer(desc);   },
+            [&](RHIBufferDesc const& desc) { m_resources->resources[handle] = m_device->CreateBuffer(desc);   },
             [&](RHITextureDesc const& desc) { m_resources->resources[handle] = m_device->CreateTexture(desc); },
             // Borrowed
             [&](RHIDeviceObjectHandle<RHIBuffer> const& hdl) { m_resources->resources[handle] = hdl; },
@@ -194,7 +195,7 @@ void Renderer::PushPassBarriers(TrackedPass& pass, RHICommandList* cmd) {
     for (auto [hdl, access, layout] : pass.views) {
         auto [rhdl, vdesc] = m_setup->trackedViews[hdl];
         auto& tres = m_setup->trackedResources[rhdl];
-        auto& res = DereferenceResource(rhdl).Get<RHIDeviceObjectHandle<RHITexture>>();        
+        auto& res = DereferenceResource(rhdl).Get<RHIDeviceObjectHandle<RHITexture>>();
         cmd->SetImageTransition(
             res.Get(),
             {
@@ -238,17 +239,17 @@ void Renderer::SubmitPass(TrackedPass& pass, RHICommandList* cmd) {
     // needs manual synchronization. Timeline semaphores proved to be
     // extremely useful for this - RHI only provides such abstractions.
     // Deadlocks should be impossible since we only take acyclic graphs.
-    Core::StlVector<std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> waits(alloc);
+    Core::StlVector<std::pair<RHIDeviceSemaphore*, size_t>> waits(&alloc);
     auto check_wait = [&](std::optional<PassHandle> const& other) {
         if (other.has_value()) {
             auto& opass = m_setup->trackedPasses[other.value()];
             if (opass.type != pass.type) {
                 CHECK(opass.waitSemaphore.IsValid() && "Pass contains invalid wait semaphore");
                 // Wait on the producer pass's semaphore                
-                waits.emplace_back(opass.waitSemaphore, m_frame + opass.ord);
+                waits.emplace_back(opass.waitSemaphore.Get(), m_frame + opass.ord);
             }
         }
-    };
+        };
     // Textures
     for (auto [hdl, access, layout] : pass.views) {
         auto [rhdl, view] = m_setup->trackedViews[hdl];
@@ -264,28 +265,18 @@ void Renderer::SubmitPass(TrackedPass& pass, RHICommandList* cmd) {
     RHIDeviceQueue* queue = pass.type == PassType::Graphics ? m_gfxQueue : m_compQueue;
     queue->Submit({
         .waits = waits,
-        .signals = {{{ pass.waitSemaphore, m_frame + pass.ord }}},
+        .signals = {{{ pass.waitSemaphore.Get(), m_frame + pass.ord}}},
         .cmd_lists = { cmd },
-    });
+        });
 }
 #pragma endregion
 
 
 void Renderer::Execute(RHIExtent2D currentSize) {
-    // Handle resize
-    if (m_swapchain) {
-        if (currentSize != m_swapchain->GetDimensions())
-            CreateSwapchain(currentSize);
-        uint32_t swapIndex = m_swapchain->GetNextImage(-1, {}, {});
-        m_gfxQueue->Present({
-            .image_index = swapIndex,
-            .swapchain = m_swapchain
-            });
-        m_currentSwap = (m_currentSwap + 1) % m_swapchain->m_desc.buffer_count;
-    }
+
     // Reset states
     for (auto idx : m_setup->activePasses) {
-        auto& pass = m_setup->trackedPasses[idx];        
+        auto& pass = m_setup->trackedPasses[idx];
         for (auto hdl : pass.resources) {
             auto& res = m_setup->trackedResources[hdl];
             res.ResetExecuteStates();
@@ -298,65 +289,32 @@ void Renderer::Execute(RHIExtent2D currentSize) {
     auto& passes = m_setup->trackedPasses;
     for (size_t i = 0, j = 0; i < ords.size();) {
         for (; j < ords.size() && passes[ords[j]].depth == passes[ords[i]].depth; j++) {
-            auto& pass = passes[ords[j]];            
+            auto& pass = passes[ords[j]];
             auto cmd = m_cmdPool->CreateCommandList();
             PushPassBarriers(pass, cmd.Get());
             pass.pass->Record(pass.handle, *this, cmd.Get());
             SubmitPass(pass, cmd.Get());
         }
     }
+    // Handle resize    
+    if (currentSize != m_swapchain->GetDimensions())
+        CreateSwapchain(currentSize);
+    uint32_t swapIndex = m_swapchain->GetNextImage(-1, {}, {});
+    if (m_setup->epiloguePass != kInvalidHandle) {
+        auto& epilogue = passes[m_setup->epiloguePass];
+        RHIDeviceSemaphore* waitSem = epilogue.waitSemaphore.Get();
+        m_gfxQueue->Present({
+            .image_index = swapIndex,
+            .swapchain = m_swapchain.Get(),
+            .waits = {{{ waitSem, m_frame + epilogue.ord }}}
+        });
+    }
+    else {
+        m_gfxQueue->Present({
+        .image_index = swapIndex,
+        .swapchain = m_swapchain.Get()        
+        });
+    }
+    m_currentSwap = (m_currentSwap + 1) % m_swapchain->m_desc.buffer_count;
     m_frame++;
 }
-#pragma region Debugging
-std::string Renderer::DbgDumpGraphviz() const {
-    std::string out;
-    fmt::format_to(std::back_inserter(out), "digraph G {{\n");
-    fmt::format_to(std::back_inserter(out), "    rankdir=TB;\n");
-    auto& graph = m_setup->graph;
-    auto& passes = m_setup->trackedPasses;
-    auto& resources = m_setup->trackedResources;
-    for (auto& pass : passes) {
-        fmt::format_to(
-            std::back_inserter(out),
-            "    \"{}@{}\" [ shape=box style=filled fillcolor=\"{}\" ];\n",
-            pass.name,
-            pass.handle,
-            pass.type == PassType::Graphics ? "#d0e0f0" : "#f0d0e0");
-    }
-    // Dependencies
-    for (PassHandle u = 0; u < m_setup->graph.size(); u++) {
-        for (auto [v, w] : graph[u]) {
-            fmt::format_to(
-                std::back_inserter(out),
-                "    \"{}@{}\" -> \"{}@{}\" [label=\"{}\"];\n",
-                passes[u].name, u,
-                passes[v].name, v,
-                resources[w].name);
-        }
-    }
-    // Cross-queue sync points
-    for (auto& pass : passes) {
-        auto const& consumer = pass.firstConsumerPass;
-        if (consumer.has_value()) {
-            auto const& cpass = passes[consumer.value()];
-            if (cpass.type != pass.type)
-                fmt::format_to(
-                    std::back_inserter(out),
-                    "    \"{}@{}\" -> \"{}@{}\" [label=\"<x-queue syncs>\" style=dotted];\n",
-                    cpass.name, cpass.handle,
-                    pass.name, pass.handle);
-        }
-    }
-    fmt::format_to(std::back_inserter(out), "}}\n");
-    return out;
-}
-
-std::string Renderer::DbgDumpActivePasses() const {
-    std::string out;
-    for (const auto& idx : m_setup->activePasses) {
-        auto& pass = m_setup->trackedPasses[idx];
-        fmt::format_to(std::back_inserter(out), "{}: {}, dep={}, ord={}\n", pass.handle, pass.name, pass.depth, pass.ord);
-    }
-    return out;
-}
-#pragma endregion
