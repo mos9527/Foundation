@@ -25,7 +25,7 @@ namespace Foundation::RHI {
             struct Image {
                 RHITextureView* image_view{ nullptr }; // Image view to bind, can be null
                 RHIDeviceSampler* sampler{ nullptr }; // Sampler to bind, can be null
-                RHITextureLayout layout{ RHITextureLayout::Undefined }; // Layout of the image
+                RHITextureLayout layout{}; // Layout of the image
             };
             Core::StlSpan<const Image> images; // Applies to type of Sampler, SampledImage
         };

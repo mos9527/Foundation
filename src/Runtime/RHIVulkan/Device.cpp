@@ -256,6 +256,10 @@ VulkanDevice::~VulkanDevice() {
     }
 }
 
+void VulkanDevice::WaitIdle() const {
+    m_device.waitIdle();
+}
+
 VulkanDeviceQueue* VulkanDeviceQueues::Get(Handle handle) const { return storage.GetObjectPtr(handle); }
 RHIDeviceQueue* VulkanDevice::GetDeviceQueue(RHIDeviceQueueType type) const {
     switch (type) {
@@ -267,7 +271,6 @@ RHIDeviceQueue* VulkanDevice::GetDeviceQueue(RHIDeviceQueueType type) const {
     }
     return nullptr;
 }
-
 
 #include "Swapchain.hpp"
 RHIDeviceScopedObjectHandle<RHISwapchain> VulkanDevice::CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) {
@@ -315,8 +318,14 @@ void VulkanDevice::DestroyCommandPool(Handle handle) {
 }
 
 VulkanDeviceSemaphore::VulkanDeviceSemaphore(const VulkanDevice& device)
-    : RHIDeviceSemaphore(device), m_device(device),
-    m_semaphore(vk::raii::Semaphore(device.GetVkDevice(), vk::SemaphoreCreateInfo{}, device.GetVkAllocatorCallbacks())) {}
+    : RHIDeviceSemaphore(device), m_device(device) {
+    vk::SemaphoreCreateInfo info{};
+    vk::SemaphoreTypeCreateInfo tinfo{};
+    tinfo.semaphoreType = vk::SemaphoreType::eTimeline;
+    tinfo.initialValue = 0;
+    info.setPNext(&tinfo);
+    m_semaphore = vk::raii::Semaphore(m_device.GetVkDevice(), info, device.GetVkAllocatorCallbacks());
+}
 
 VulkanDeviceFence::VulkanDeviceFence(const VulkanDevice& device, bool signaled)
     : RHIDeviceFence(device), m_device(device),
@@ -370,6 +379,30 @@ void VulkanDevice::WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDe
     // !! TODO
 }
 
+void VulkanDevice::SignalSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) {
+    for (auto const& [signal, val] : semaphores) {
+        vk::SemaphoreSignalInfo info{
+            .semaphore = signal.Get<VulkanDeviceSemaphore>()->GetVkSemaphore(),
+            .value = val
+        };
+        m_device.signalSemaphore(info);
+    }
+}
+void VulkanDevice::WaitForSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) {
+    Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
+    Core::StlVector<vk::Semaphore> vk_semaphores(alloc.Ptr());
+    Core::StlVector<uint64_t> vk_values(alloc.Ptr());
+    vk_semaphores.reserve(semaphores.size()), vk_values.reserve(semaphores.size());
+    for (auto const& [wait, val] : semaphores) 
+        vk_semaphores.emplace_back(wait.Get<VulkanDeviceSemaphore>()->GetVkSemaphore()),
+        vk_values.emplace_back(val);
+    m_device.waitSemaphores(vk::SemaphoreWaitInfo{
+        .semaphoreCount = static_cast<uint32_t>(vk_semaphores.size()),
+        .pSemaphores = vk_semaphores.data(),
+        .pValues = vk_values.data()
+    }, timeout);
+}
+
 void VulkanDeviceQueue::WaitIdle() const {
     m_queue.waitIdle();
 }
@@ -378,24 +411,36 @@ void VulkanDeviceQueue::Submit(SubmitDesc const& desc) const {
     Core::StlVector<vk::CommandBuffer> cmds(alloc.Ptr());
     Core::StlVector<vk::Semaphore>
         swaits(alloc.Ptr()), ssignals(alloc.Ptr());
+    Core::StlVector<uint64_t>
+        wait_values(alloc.Ptr()), signal_values(alloc.Ptr());
     cmds.reserve(desc.cmd_lists.size()), swaits.reserve(desc.waits.size()), ssignals.reserve(desc.signals.size());
     for (auto const& cmd_list : desc.cmd_lists)
         cmds.emplace_back(cmd_list.Get<VulkanCommandList>()->GetVkCommandBuffer());
-    for (auto const& wait : desc.waits)
-        swaits.emplace_back(wait.Get<VulkanDeviceSemaphore>()->GetVkSemaphore());
-    for (auto const& signal : desc.signals)
-        ssignals.emplace_back(signal.Get<VulkanDeviceSemaphore>()->GetVkSemaphore());
+    for (auto const& [wait, val] : desc.waits)
+        swaits.emplace_back(wait.Get<VulkanDeviceSemaphore>()->GetVkSemaphore()),
+        wait_values.emplace_back(val);
+    for (auto const& [signal, val] : desc.signals)
+        ssignals.emplace_back(signal.Get<VulkanDeviceSemaphore>()->GetVkSemaphore()),
+        signal_values.emplace_back(val);
     vk::PipelineStageFlags mask = vkPipelineStageFlagsFromRHIPipelineStage(desc.stages);
+    vk::SubmitInfo info{
+        .waitSemaphoreCount = static_cast<uint32_t>(swaits.size()),
+        .pWaitSemaphores = swaits.data(),
+        .pWaitDstStageMask = &mask,
+        .commandBufferCount = static_cast<uint32_t>(cmds.size()),
+        .pCommandBuffers = cmds.data(),
+        .signalSemaphoreCount = static_cast<uint32_t>(ssignals.size()),
+        .pSignalSemaphores = ssignals.data()
+    };
+    vk::TimelineSemaphoreSubmitInfo tinfo{
+        .waitSemaphoreValueCount = static_cast<uint32_t>(wait_values.size()),
+        .pWaitSemaphoreValues = wait_values.data(),
+        .signalSemaphoreValueCount = static_cast<uint32_t>(signal_values.size()),
+        .pSignalSemaphoreValues = signal_values.data()
+    };
+    info.setPNext(&tinfo);
     m_queue.submit(
-        vk::SubmitInfo{
-            .waitSemaphoreCount = static_cast<uint32_t>(swaits.size()),
-            .pWaitSemaphores = swaits.data(),
-            .pWaitDstStageMask = &mask,
-            .commandBufferCount = static_cast<uint32_t>(cmds.size()),
-            .pCommandBuffers = cmds.data(),
-            .signalSemaphoreCount = static_cast<uint32_t>(ssignals.size()),
-            .pSignalSemaphores = ssignals.data()
-        },
+        info,
         desc.fence.IsValid() ? desc.fence.Get<VulkanDeviceFence>()->GetVkFence() : vk::Fence(nullptr)
     );
 }

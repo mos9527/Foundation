@@ -17,7 +17,7 @@ namespace Foundation::RHI {
     struct RHIBufferDesc {
         RHIResourceDesc resource{};
         /// How the buffer can be used by the device, initially
-        RHIBufferUsage usage{ RHIBufferUsage::Undefined };
+        RHIBufferUsage usage{};
         size_t size{}; // size in bytes
     };
     class RHIBuffer;
@@ -31,6 +31,43 @@ namespace Foundation::RHI {
         RHIBuffer(RHIDevice const& device, RHIBufferDesc const& desc)
             : m_device(device), m_desc(desc) {
         }
+        /// <summary>
+        /// Proxy object to provide generic sub-buffer allocation within a buffer.                
+        /// 
+        /// Implementations should guarantee thread-safety of the arena itself.          
+        /// </summary>
+        struct Arena : public RHIObject {
+            using Allocation = size_t;
+            /// <summary>
+            /// Allocates a sub-region of the buffer with the given size and alignment.            
+            /// </summary>
+            /// <returns>An opaque handle representing the allocated sub-region. kInvalidHandle if allocation fails.</returns>            
+            virtual Allocation Allocate(size_t size, size_t alignment) = 0;
+            /// <summary>
+            /// Frees a previously allocated sub-region of the buffer.
+            /// </summary>            
+            virtual void Free(Allocation allocation) = 0;
+            /// <summary>
+            /// Retrives the offset of a previously allocated sub-region of the buffer.
+            /// This is not a raw pointer - one may expect to use this in CPU copy commands
+            /// or GPU shader code, or an offest in mapped memory if the resource is CPU visible.
+            /// </summary>            
+            virtual size_t GetOffset(Allocation alloc) const = 0;
+            /// <summary>
+            /// Retrives the size of a previously allocated sub-region of the buffer.
+            /// </summary>            
+            virtual size_t GetSize(Allocation alloc) const = 0;
+            /// <summary>
+            /// Resets the arena, freeing all CPU-tracked allocations.
+            /// </summary>
+            virtual void Reset() = 0;
+            virtual ~Arena() = default;
+        };
+        /// <summary>
+        /// Sub-buffer allocation arena capable of generic alloc/free
+        /// operations.        
+        /// </summary>        
+        virtual Arena& GetArena() = 0;
         /// <summary>
         /// Maps the entire buffer to the host memory.
         /// Alignment is implementation-defined.
@@ -73,13 +110,13 @@ namespace Foundation::RHI {
     struct RHITextureDesc {
         RHIResourceDesc resource{};
         RHITextureDimension dimension{ RHITextureDimension::e2D };
-        RHITextureUsage usage{ RHITextureUsage::Undefined };
+        RHITextureUsage usage{};
         RHIExtent3D extent{ 1, 1, 1 }; // Width, height, depth of the image.
         RHIResourceFormat format{ RHIResourceFormat::Undefined };
         RHIMultisampleCount sample_count{ RHIMultisampleCount::e1 }; // For MSAA
         uint32_t mip_levels{ 1 };
         uint32_t array_layers{ 1 }; // No. of images in a image array.
-        RHITextureLayout initial_layout{ RHITextureLayout::Undefined };
+        RHITextureLayout initial_layout{};
 
         constexpr size_t GetTexels() const {
             size_t size = 0;
@@ -96,7 +133,7 @@ namespace Foundation::RHI {
     template<typename T> using RHITextureScopedHandle = RHIScopedHandle<RHITexture, T>;
     template<typename T> using RHITextureHandle = RHIHandle<RHITexture, T>;
     struct RHITextureSubresourceLayer {
-        RHITextureAccessFlag access{ RHITextureAccessFlag::Color };
+        RHITextureAccessFlag access{ RHITextureAccessFlagBits::Color };
         uint32_t mip_level{ 0 };
         uint32_t base_array_layer{ 0 };
         uint32_t layer_count{ 1 };

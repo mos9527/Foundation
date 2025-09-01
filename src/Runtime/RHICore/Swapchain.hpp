@@ -33,7 +33,7 @@ namespace Foundation::RHI {
         /// Gets the next image in the swapchain.
         /// Raises RHISwapchainResizeException if the swapchain needs to be resized.
         /// </summary>        
-        virtual size_t GetNextImage(
+        virtual uint32_t GetNextImage(
             uint64_t timeout_ns,
             RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore,
             RHIDeviceObjectHandle<RHIDeviceFence> fence

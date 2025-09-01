@@ -57,7 +57,7 @@ RHIExtent2D VulkanSwapchain::GetDimensions() const
 {
     return m_desc.dimensions;
 }
-size_t VulkanSwapchain::GetNextImage(uint64_t timeout_ns, RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore, RHIDeviceObjectHandle<RHIDeviceFence> fence)
+uint32_t VulkanSwapchain::GetNextImage(uint64_t timeout_ns, RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore, RHIDeviceObjectHandle<RHIDeviceFence> fence)
 {
     auto [result, index] = m_swapchain.acquireNextImage(
         timeout_ns,

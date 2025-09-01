@@ -141,6 +141,11 @@ namespace Foundation::RHI {
         void ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) override;
         void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) override;
 
+        void SignalSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) override;
+        void WaitForSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) override;
+
+        void WaitIdle() const override;
+
         Core::Allocator* GetAllocator() const;
         vk::AllocationCallbacks const& GetVkAllocatorCallbacks() const;
 

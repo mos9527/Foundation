@@ -52,9 +52,10 @@ namespace Foundation::Core {
     /// where allocation and deallocation of keys is done in a LIFO manner.
     /// </summary>
     template<typename K, typename V>
-    class FreeDenseMap {
+    class FreeList {
         FreeListCounter<K> m_keys;
         StlVector<V> m_values;
+        StlVector<bool> m_bitmap;
         /// <summary>
         /// Adds a key to the internal key container and resizes the value container if necessary.
         /// </summary>
@@ -62,15 +63,6 @@ namespace Foundation::Core {
             m_keys.push(key);
             if (key >= m_values.size())
                 m_values.resize(key + 1);
-        }
-    public:
-        void reserve(size_t size) {
-            m_keys.reserve(size);
-            m_values.reserve(size);
-        }
-        FreeDenseMap(Allocator* alloc) : m_keys(alloc), m_values(alloc) {}
-        FreeDenseMap(Allocator* alloc, size_t reserve_size) : FreeDenseMap(alloc) {
-            reserve(reserve_size);
         }
         /// <summary>
         /// Pops (allocates) a Key from the free list and returns it.
@@ -80,8 +72,19 @@ namespace Foundation::Core {
         K pop() {
             K key = m_keys.pop();
             if (key >= m_values.size())
-                m_values.resize(key + 1);
+                m_values.resize(key + 1),
+                m_bitmap.resize(key + 1);
             return key;
+        }
+    public:
+        void reserve(size_t size) {
+            m_keys.reserve(size);
+            m_values.reserve(size);
+            m_bitmap.reserve(size);
+        }
+        FreeList(Allocator* alloc) : m_keys(alloc), m_values(alloc), m_bitmap(alloc) {}
+        FreeList(Allocator* alloc, size_t reserve_size) : FreeList(alloc) {
+            reserve(reserve_size);
         }
         /// <summary>
         /// Retrieves a reference to the value associated with the given key.
@@ -101,13 +104,14 @@ namespace Foundation::Core {
         /// Checks if the specified key exists and has a value.
         /// </summary>
         bool contains(K key) const {
-            return key < m_values.size() && m_values[key].get() != nullptr;
+            return key < m_values.size() && m_bitmap[key];
         }
         /// <summary>
         /// Allocates a Key that returns a pair of key and value reference.
         /// </summary>        
         const std::pair<K, V&> allocate() {
             K key = pop();
+            m_bitmap[key] = true;
             return { key, m_values[key] };
         }
         /// <summary>
@@ -115,6 +119,7 @@ namespace Foundation::Core {
         /// </summary>
         void free(K key) {
             m_values[key] = {};
+            m_bitmap[key] = false;
             push(key);
         }
         size_t size() const {
@@ -123,6 +128,7 @@ namespace Foundation::Core {
         void clear() {
             m_keys.clear();
             m_values.clear();
+            m_bitmap.clear();
         }
         size_t allocation() const {
             return m_keys.allocation();

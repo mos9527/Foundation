@@ -12,11 +12,13 @@ class GBufferPass : public RenderPass {
 public:
     ResourceHandle m_depth;
     GBufferPass(ResourceHandle depth) : m_depth(depth) {}
-    void Setup(Renderer& renderer) override {
+    void Setup(PassHandle self, Renderer& renderer) override {
         LOG_RUNTIME(GBufferPass, info, "Setup");
-        renderer.DeclareAccess(m_depth, ResourceAccess::Write);
+        renderer.CreateTextureView(self, m_depth, {}, ResourceAccess::Write);
     }
-    void Record(RHICommandList* cmdList) override { /* Render scene to G-Buffer... */ }
+    void Record(PassHandle self, Renderer& renderer, RHICommandList* cmdList) override {
+        LOG_RUNTIME(GBufferPass, info, "Record!");
+    }
 };
 
 class ShadowCascadePass : public RenderPass {
@@ -24,11 +26,13 @@ public:
     ResourceHandle m_shadowAtlas;
     int m_cascadeIndex;
     ShadowCascadePass(ResourceHandle atlas, int index) : m_shadowAtlas(atlas), m_cascadeIndex(index) {}
-    void Setup(Renderer& renderer) override {
+    void Setup(PassHandle self, Renderer& renderer) override {
         LOG_RUNTIME(ShadowCascadePass, info, "Setup");
-        renderer.DeclareAccess(m_shadowAtlas, ResourceAccess::Write);
+        renderer.CreateTextureView(self, m_shadowAtlas, {}, ResourceAccess::Write);
     }
-    void Record(RHICommandList* cmdList) override { /* Render cascade depth... */ }
+    void Record(PassHandle self, Renderer& renderer, RHICommandList* cmdList) override {
+        LOG_RUNTIME(ShadowCascadePass, info, "Record!");
+    }
 };
 
 class CopyPass : public RenderPass {
@@ -36,12 +40,14 @@ public:
     ResourceHandle m_sourceDepth;
     ResourceHandle m_hiZBuffer;
     CopyPass(ResourceHandle source, ResourceHandle hiZ) : m_sourceDepth(source), m_hiZBuffer(hiZ) {}
-    void Setup(Renderer& renderer) override {
+    void Setup(PassHandle self, Renderer& renderer) override {
         LOG_RUNTIME(CopyPass, info, "Setup");
-        renderer.DeclareAccess(m_sourceDepth, ResourceAccess::Read);
-        renderer.DeclareAccess(m_hiZBuffer, ResourceAccess::Write);
+        renderer.CreateTextureView(self, m_sourceDepth, {}, ResourceAccess::Read);
+        renderer.CreateTextureView(self, m_hiZBuffer, {}, ResourceAccess::Write);
     }
-    void Record(RHICommandList* cmdList) override { /* Copy depth to Hi-Z mip 0... */ }
+    void Record(PassHandle self, Renderer& renderer, RHICommandList* cmdList) override {
+        LOG_RUNTIME(CopyPass, info, "Record!");
+    }
 };
 
 class HiZDownsamplePass : public RenderPass {
@@ -49,11 +55,13 @@ public:
     ResourceHandle m_hiZBuffer; // The resource being mipped
     int m_mipLevel; // The mip level to generate
     HiZDownsamplePass(ResourceHandle hiZ, int mip) : m_hiZBuffer(hiZ), m_mipLevel(mip) {}
-    void Setup(Renderer& renderer) override {
+    void Setup(PassHandle self, Renderer& renderer) override {
         LOG_RUNTIME(HiZDownsamplePass, info, "Setup");
-        renderer.DeclareAccess(m_hiZBuffer, ResourceAccess::ReadWrite);
+        renderer.CreateTextureView(self, m_hiZBuffer, {}, ResourceAccess::ReadWrite);
     }
-    void Record(RHICommandList* cmdList) override { /* Downsample previous mip... */ }
+    void Record(PassHandle self, Renderer& renderer, RHICommandList* cmdList) override {
+        LOG_RUNTIME(HiZDownsamplePass, info, "Record!");
+    }
 };
 
 class LightingPass : public RenderPass {
@@ -65,14 +73,14 @@ public:
     LightingPass(ResourceHandle d, ResourceHandle s, ResourceHandle h, ResourceHandle c)
         : m_depth(d), m_shadowAtlas(s), m_hiZBuffer(h), m_sceneColor(c) {
     }
-    void Setup(Renderer& renderer) override {
+    void Setup(PassHandle self, Renderer& renderer) override {
         LOG_RUNTIME(LightingPass, info, "Setup");
-        renderer.DeclareAccess(m_depth, ResourceAccess::Read);
-        renderer.DeclareAccess(m_shadowAtlas, ResourceAccess::Read);
-        renderer.DeclareAccess(m_hiZBuffer, ResourceAccess::Read);
-        renderer.DeclareAccess(m_sceneColor, ResourceAccess::Write);
+        renderer.CreateTextureView(self, m_depth, {}, ResourceAccess::Read);
+        renderer.CreateTextureView(self, m_shadowAtlas, {}, ResourceAccess::Read);
+        renderer.CreateTextureView(self, m_hiZBuffer, {}, ResourceAccess::Read);
+        renderer.CreateTextureView(self, m_sceneColor, {}, ResourceAccess::Write);
     }
-    void Record(RHICommandList* cmdList) override { /* Compute lighting... */ }
+    void Record(PassHandle self, Renderer& renderer, RHICommandList* cmdList) override { /* Compute lighting... */ }
 };
 
 int main() {
@@ -99,4 +107,5 @@ int main() {
     printf(renderer.DbgDumpGraphviz().c_str());
     printf("\nPasses\n");
     printf(renderer.DbgDumpActivePasses().c_str());
+    renderer.Execute({});
 }

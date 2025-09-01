@@ -112,11 +112,11 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
     Core::StlVector<vk::PipelineShaderStageCreateInfo> shaderStages(alloc.Ptr());
     for (auto& shader : m_desc.shader_stages)
         shaderStages.push_back({
-        .stage = vkShaderStageFlagBitFromRHIShaderStage(shader.desc.stage),
-        .module = shader.shader_module.Get<VulkanShaderModule>()->GetVkShaderModule(),
-        .pName = shader.desc.entry_point,
-        .pSpecializationInfo = nullptr // TODO: !! handle specialization info
-            });
+            .stage = vkFlagsToBits(vkShaderStageFlagsFromRHIShaderStage(shader.desc.stage)),
+            .module = shader.shader_module.Get<VulkanShaderModule>()->GetVkShaderModule(),
+            .pName = shader.desc.entry_point,
+            .pSpecializationInfo = nullptr // TODO: !! handle specialization info
+        });
     Core::StlVector<vk::DescriptorSetLayout> p_set_layouts(desc.descriptor_set_layouts.size(), alloc.Ptr());
     for (size_t i = 0; i < desc.descriptor_set_layouts.size(); ++i)
         p_set_layouts[i] = desc.descriptor_set_layouts[i].Get<VulkanDeviceDescriptorSetLayout>()->GetVkLayout();

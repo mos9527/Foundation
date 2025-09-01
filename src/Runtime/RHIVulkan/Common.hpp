@@ -7,8 +7,9 @@
 #include <Core/Platform/Logging.hpp>
 #include <Core/Container/Common.hpp>
 namespace Foundation::RHI {
-    // !! TODO: Properly handle bitmasks
-
+    template<typename Bits> inline Bits vkFlagsToBits(vk::Flags<Bits> flags) {
+        return static_cast<Bits>(static_cast<std::underlying_type_t<Bits>>(flags));
+    }
     inline vk::Format vkFormatFromRHIFormat(RHIResourceFormat format) {
         using enum RHIResourceFormat;
         switch (format) {
@@ -30,7 +31,7 @@ namespace Foundation::RHI {
         }
     }
     inline vk::BufferUsageFlags vkBufferUsageFromRHIBufferUsage(RHIBufferUsage usage) {
-        using enum RHIBufferUsage;
+        using enum RHIBufferUsageBits;
         vk::BufferUsageFlags flags{};
         if (usage & VertexBuffer) flags |= vk::BufferUsageFlagBits::eVertexBuffer;
         if (usage & IndexBuffer) flags |= vk::BufferUsageFlagBits::eIndexBuffer;
@@ -43,7 +44,7 @@ namespace Foundation::RHI {
     }
 
     inline vk::AccessFlags2 vkAccessFlagsFromRHIResourceAccess(RHIResourceAccess state) {
-        using enum RHIResourceAccess;
+        using enum RHIResourceAccessBits;
         vk::AccessFlags2 flags{};
         if (state & RenderTargetWrite) flags |= vk::AccessFlagBits2::eColorAttachmentWrite;
         if (state & RenderTargetRead) flags |= vk::AccessFlagBits2::eColorAttachmentRead;
@@ -63,54 +64,55 @@ namespace Foundation::RHI {
         case RHITextureLayout::TransferDst: return vk::ImageLayout::eTransferDstOptimal;
         case RHITextureLayout::TransferSrc: return vk::ImageLayout::eTransferSrcOptimal;
         case RHITextureLayout::ShaderReadOnly: return vk::ImageLayout::eShaderReadOnlyOptimal;
-        case RHITextureLayout::Undefined:
         default:
             return vk::ImageLayout::eUndefined;
         }
     }
 
     inline vk::PipelineStageFlags vkPipelineStageFlagsFromRHIPipelineStage(RHIPipelineStage stage) {
-        using enum RHIPipelineStage;
+        using enum RHIPipelineStageBits;
         vk::PipelineStageFlags flags{};
-        if (stage & TopOfPipe) flags |= vk::PipelineStageFlagBits::eTopOfPipe;
-        if (stage & RenderTargetOutput) flags |= vk::PipelineStageFlagBits::eColorAttachmentOutput;
-        if (stage & Transfer) flags |= vk::PipelineStageFlagBits::eTransfer;
+        if (stage & DrawIndirect) flags |= vk::PipelineStageFlagBits::eDrawIndirect;
         if (stage & FragmentShader) flags |= vk::PipelineStageFlagBits::eFragmentShader;
+        if (stage & VertexShader) flags |= vk::PipelineStageFlagBits::eVertexShader;
+        if (stage & ComputeShader) flags |= vk::PipelineStageFlagBits::eComputeShader;
+        if (stage & RayTracingShader) flags |= vk::PipelineStageFlagBits::eRayTracingShaderKHR;
+        if (stage & MeshShader) flags |= vk::PipelineStageFlagBits::eMeshShaderEXT;
+        if (stage & ColorAttachmentOutput) flags |= vk::PipelineStageFlagBits::eColorAttachmentOutput;
+        if (stage & Transfer) flags |= vk::PipelineStageFlagBits::eTransfer;
+        if (stage & EarlyFragmentTests) flags |= vk::PipelineStageFlagBits::eEarlyFragmentTests;
+        if (stage & LateFragmentTests) flags |= vk::PipelineStageFlagBits::eLateFragmentTests;
+        if (stage & TopOfPipe) flags |= vk::PipelineStageFlagBits::eTopOfPipe;
         if (stage & BottomOfPipe) flags |= vk::PipelineStageFlagBits::eBottomOfPipe;
-        if (stage & DepthStencilRead) flags |= vk::PipelineStageFlagBits::eEarlyFragmentTests;
-        if (stage & DepthStencilWrite) flags |= vk::PipelineStageFlagBits::eLateFragmentTests;
         return flags;
     }
 
     inline vk::PipelineStageFlags2 vkPipelineStageFlags2FromRHIPipelineStage(RHIPipelineStage stage) {
-        using enum RHIPipelineStage;
+        using enum RHIPipelineStageBits;
         vk::PipelineStageFlags2 flags{};
-        if (stage & TopOfPipe) flags |= vk::PipelineStageFlagBits2::eTopOfPipe;
-        if (stage & RenderTargetOutput) flags |= vk::PipelineStageFlagBits2::eColorAttachmentOutput;
-        if (stage & Transfer) flags |= vk::PipelineStageFlagBits2::eTransfer;
+        if (stage & DrawIndirect) flags |= vk::PipelineStageFlagBits2::eDrawIndirect;
         if (stage & FragmentShader) flags |= vk::PipelineStageFlagBits2::eFragmentShader;
+        if (stage & VertexShader) flags |= vk::PipelineStageFlagBits2::eVertexShader;
+        if (stage & ComputeShader) flags |= vk::PipelineStageFlagBits2::eComputeShader;
+        if (stage & RayTracingShader) flags |= vk::PipelineStageFlagBits2::eRayTracingShaderKHR;
+        if (stage & MeshShader) flags |= vk::PipelineStageFlagBits2::eMeshShaderEXT;
+        if (stage & ColorAttachmentOutput) flags |= vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+        if (stage & Transfer) flags |= vk::PipelineStageFlagBits2::eTransfer;
+        if (stage & EarlyFragmentTests) flags |= vk::PipelineStageFlagBits2::eEarlyFragmentTests;
+        if (stage & LateFragmentTests) flags |= vk::PipelineStageFlagBits2::eLateFragmentTests;
+        if (stage & TopOfPipe) flags |= vk::PipelineStageFlagBits2::eTopOfPipe;
         if (stage & BottomOfPipe) flags |= vk::PipelineStageFlagBits2::eBottomOfPipe;
-        if (stage & DepthStencilRead) flags |= vk::PipelineStageFlagBits2::eEarlyFragmentTests;
-        if (stage & DepthStencilWrite) flags |= vk::PipelineStageFlagBits2::eLateFragmentTests;
         return flags;
     }
 
     inline vk::ShaderStageFlags vkShaderStageFlagsFromRHIShaderStage(RHIShaderStage stage) {
-        using enum RHIShaderStage;
+        using enum RHIShaderStageBits;
         vk::ShaderStageFlags flags{};
         if (stage == All) return vk::ShaderStageFlagBits::eAll;
         if (stage & Vertex) flags |= vk::ShaderStageFlagBits::eVertex;
         if (stage & Fragment) flags |= vk::ShaderStageFlagBits::eFragment;
         if (stage & Compute) flags |= vk::ShaderStageFlagBits::eCompute;
         return flags;
-    }
-
-    inline vk::ShaderStageFlagBits vkShaderStageFlagBitFromRHIShaderStage(RHIShaderStage stage) {
-        using enum RHIShaderStage;
-        if (stage & Vertex) return vk::ShaderStageFlagBits::eVertex;
-        if (stage & Fragment) return vk::ShaderStageFlagBits::eFragment;
-        if (stage & Compute) return vk::ShaderStageFlagBits::eCompute;
-        return {};
     }
 
     inline vk::DescriptorType vkDescriptorTypeFromRHIDescriptorType(RHIDescriptorType type) {
@@ -138,7 +140,7 @@ namespace Foundation::RHI {
     }
 
     inline vk::ImageUsageFlags vkImageUsageFlagsFromRHITextureUsage(RHITextureUsage usage) {
-        using enum RHITextureUsage;
+        using enum RHITextureUsageBits;
         vk::ImageUsageFlags flags{};
         if (usage & RenderTarget) flags |= vk::ImageUsageFlagBits::eColorAttachment;
         if (usage & DepthStencil) flags |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
@@ -163,7 +165,7 @@ namespace Foundation::RHI {
     }
 
     inline vk::ImageAspectFlags vkImageAspectFlagFromRHITextureAspect(RHITextureAccessFlag aspect) {
-        using enum RHITextureAccessFlag;
+        using enum RHITextureAccessFlagBits;
         vk::ImageAspectFlags flags{};
         if (aspect & Color) flags |= vk::ImageAspectFlagBits::eColor;
         if (aspect & Depth) flags |= vk::ImageAspectFlagBits::eDepth;

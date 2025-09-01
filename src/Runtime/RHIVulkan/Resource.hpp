@@ -3,6 +3,7 @@
 #include "Common.hpp"
 
 #include <vma/vk_mem_alloc.h>
+#include <mutex>
 namespace Foundation::RHI {
     inline VmaAllocationCreateFlags vmaAllocationFlagsFromRHIResourceHostAccess(RHIResourceHostAccess access) {
         using enum RHIResourceHostAccess;
@@ -25,6 +26,56 @@ namespace Foundation::RHI {
         vk::raii::Buffer m_buffer{ nullptr };
 
         RHIObjectStorage<VulkanBuffer> m_aliases;
+
+        class Arena : public RHIBuffer::Arena {
+            const size_t m_size;
+            VmaVirtualBlock m_block{};
+            // [Allocation, {size, offset, VmaVirtualAllocation}]
+            Core::FreeList<Allocation, std::tuple<size_t, size_t, VmaVirtualAllocation>> m_allocs;
+
+            std::mutex m_mutex;
+        public:
+            Arena(Core::Allocator* alloc, size_t size) : m_allocs(alloc), m_size(size) {
+                const VmaVirtualBlockCreateInfo info{ .size = size };
+                vmaCreateVirtualBlock(&info, &m_block);
+            }
+            Allocation Allocate(size_t size, size_t alignment) override {
+                std::scoped_lock lock(m_mutex);
+                VmaVirtualAllocationCreateInfo info{ .size = size, .alignment = alignment };
+                VmaVirtualAllocation alloc{};
+                VkDeviceSize offset{};
+                VkResult ret = vmaVirtualAllocate(m_block, &info, &alloc, &offset);
+                if (ret == VK_ERROR_OUT_OF_DEVICE_MEMORY)
+                    return kInvalidHandle;
+                auto& [res, ainfo] = m_allocs.allocate();
+                auto& [sz, off, vmaAlloc] = ainfo;
+                sz = size, off = offset, vmaAlloc = alloc;
+                return res;
+            }
+            void Free(Allocation alloc) override {
+                std::scoped_lock lock(m_mutex);
+                auto& [sz, off, vmaAlloc] = m_allocs.at(alloc);
+                vmaVirtualFree(m_block, vmaAlloc);
+                m_allocs.free(alloc);
+            }
+            size_t GetOffset(Allocation alloc) const {
+                auto& [sz, off, vmaAlloc] = m_allocs.at(alloc);
+                return off;
+            }
+            size_t GetSize(Allocation alloc) const {
+                auto& [sz, off, vmaAlloc] = m_allocs.at(alloc);
+                return sz;
+            }
+            void Reset() override {
+                std::scoped_lock lock(m_mutex);
+                vmaClearVirtualBlock(m_block);
+                m_allocs.clear();
+            }
+            ~Arena() {
+                vmaClearVirtualBlock(m_block);
+                vmaDestroyVirtualBlock(m_block);
+            }
+        } m_arena;
     public:
         // Buffer created by other means.
         const bool m_shared{ false };
@@ -35,6 +86,8 @@ namespace Foundation::RHI {
         ~VulkanBuffer();
 
         inline auto& GetVkBuffer() { return m_buffer; }
+
+        Arena& GetArena() override { return m_arena; }
 
         void* Map() override;
         void Flush(size_t offset, size_t size) override;

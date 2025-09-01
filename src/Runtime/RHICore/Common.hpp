@@ -60,7 +60,6 @@ namespace Foundation::RHI {
     };
 
     enum class RHITextureLayout {
-        Undefined = 0,
         General,
         RenderTarget,
         DepthStencil,
@@ -93,7 +92,6 @@ namespace Foundation::RHI {
     };
 
     BITMASK_ENUM_BEGIN(RHIShaderStage, uint32_t)
-        Undefined = 0,
         Vertex = 1 << 0,
         Fragment = 1 << 1,
         Compute = 1 << 2,
@@ -101,7 +99,6 @@ namespace Foundation::RHI {
     BITMASK_ENUM_END();
 
     BITMASK_ENUM_BEGIN(RHIResourceAccess, uint32_t)
-        Undefined = 0,
         RenderTargetWrite = 1 << 0,
         RenderTargetRead = 1 << 1,
         DepthStencilWrite = 1 << 2,
@@ -110,19 +107,25 @@ namespace Foundation::RHI {
         ShaderRead = 1 << 5
     BITMASK_ENUM_END();
 
-    BITMASK_ENUM_BEGIN(RHIPipelineStage, uint32_t)
-        Undefined = 0,
-        TopOfPipe = 1 << 0,
-        RenderTargetOutput = 1 << 1,
-        Transfer = 1 << 2,
-        FragmentShader = 1 << 3,
-        DepthStencilRead = 1 << 4,
-        DepthStencilWrite = 1 << 5,
-        BottomOfPipe = 1 << 7
+    // https://gpuopen.com/learn/vulkan-barriers-explained/
+    // https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-pipeline-barriers   
+    BITMASK_ENUM_BEGIN(RHIPipelineStage, uint32_t)            
+        DrawIndirect            = 1 << 1,
+        VertexShader            = 1 << 2,
+        FragmentShader          = 1 << 3,
+        ComputeShader           = 1 << 4,
+        RayTracingShader        = 1 << 5,
+        MeshShader              = 1 << 6,
+        ColorAttachmentOutput   = 1 << 7,
+        Transfer                = 1 << 8,
+        EarlyFragmentTests      = 1 << 9,
+        LateFragmentTests       = 1 << 10,
+        // ---
+        TopOfPipe               = 1 << 29,
+        BottomOfPipe            = 1 << 30,
     BITMASK_ENUM_END();
 
     BITMASK_ENUM_BEGIN(RHIBufferUsage, uint32_t)
-        Undefined = 0,
         VertexBuffer = 1 << 0,
         IndexBuffer = 1 << 1,
         // i.e. Uniform Buffer
@@ -135,17 +138,15 @@ namespace Foundation::RHI {
     BITMASK_ENUM_END();
 
     BITMASK_ENUM_BEGIN(RHITextureUsage, uint32_t)
-        Undefined = 0,
         RenderTarget = 1 << 0,
         DepthStencil = 1 << 1,
         SampledImage = 1 << 2,
         StorageImage = 1 << 3,
         TransferSource = 1 << 4,
         TransferDestination = 1 << 5
-        BITMASK_ENUM_END();
+    BITMASK_ENUM_END();
 
     BITMASK_ENUM_BEGIN(RHITextureAccessFlag, uint32_t)
-        Undefined = 0,
         Color = 1 << 0,
         Depth = 1 << 1,
         Stencil = 1 << 2

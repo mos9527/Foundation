@@ -1,14 +1,5 @@
 cmake_minimum_required(VERSION 3.26)
 
-include(FetchContent)
-
-FetchContent_Declare(
-  mimalloc
-  GIT_REPOSITORY https://github.com/microsoft/mimalloc.git
-  GIT_TAG        v3.1.5
-)
-FetchContent_MakeAvailable(mimalloc)
-
 file(
     GLOB_RECURSE SOURCES 
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp" 
@@ -27,7 +18,7 @@ target_compile_definitions(
 	# e.g. OOM Allocation in Release produces nullptr,
 	# but in Debug causes segfault due to asserts.
 )
-target_link_libraries(Foundation_Allocator PUBLIC mimalloc-static)
+target_link_libraries(Foundation_Allocator PUBLIC mimalloc-static GPUOpen::VulkanMemoryAllocator)
 target_include_directories(
 	Foundation_Allocator
 	PRIVATE

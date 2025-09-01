@@ -20,7 +20,10 @@ namespace Foundation::RHI {
 
         struct SubmitDesc {
             RHIPipelineStage stages;
-            Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceSemaphore>> waits, signals;
+            // Semaphore(s) and the minimum values to wait on
+            Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> waits;
+            // Semaphore(s) and the values to signal
+            Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> signals;
             Core::StlSpan<const RHICommandPoolHandle<RHICommandList>> cmd_lists;
             RHIDeviceObjectHandle<RHIDeviceFence> fence;
         };
@@ -33,6 +36,9 @@ namespace Foundation::RHI {
         };
         virtual void Present(PresentDesc const& desc) const = 0;
     };
+    // https://docs.vulkan.org/samples/latest/samples/extensions/timeline_semaphore/README.html
+    // Semaphore implementations SHOULD be counter (timeline) semaphores if the backend supports it.
+    // Otherwise, emulation of such behaviors is required.
     class RHIDeviceSemaphore : public RHIObject {
     protected:
         const RHIDevice& m_device;
@@ -48,7 +54,7 @@ namespace Foundation::RHI {
     struct RHIDeviceDescriptorSetLayoutDesc {
         struct Binding {
             uint32_t count{ 1 }; // Array size for array access
-            RHIShaderStage stage{ RHIShaderStage::All }; // Stage this binding is used in
+            RHIShaderStage stage{ RHIShaderStageBits::All }; // Stage this binding is used in
             RHIDescriptorType type; // Type of this binding
         };
         Core::StlSpan<const Binding> bindings;
@@ -164,6 +170,11 @@ namespace Foundation::RHI {
 
         virtual void ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) = 0;
         virtual void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) = 0;
+
+        virtual void SignalSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) = 0;
+        virtual void WaitForSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) = 0;
+
+        virtual void WaitIdle() const = 0;
     };
 
     template<> struct RHIObjectTraits<RHIDevice, RHISwapchain> {

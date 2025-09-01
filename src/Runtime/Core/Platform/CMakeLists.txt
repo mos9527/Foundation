@@ -1,20 +1,4 @@
 cmake_minimum_required(VERSION 3.26)
-include(FetchContent)
-
-FetchContent_Declare(
-  GLFW
-  GIT_REPOSITORY https://github.com/glfw/glfw.git
-  GIT_TAG        506c11ba43b901dbcc4d90449f46de67cf000af4
-)
-FetchContent_MakeAvailable(GLFW)
-
-FetchContent_Declare(
-  spdlog
-  GIT_REPOSITORY https://github.com/gabime/spdlog.git
-  GIT_TAG v1.15.3
-)
-set(SPDLOG_FMT_EXTERNAL ON)
-FetchContent_MakeAvailable(spdlog)
 
 file(
     GLOB SOURCES
@@ -30,7 +14,7 @@ add_library(
     Foundation_Platform ${SOURCES} ${INCLUDES}    
  )
 
-target_link_libraries(Foundation_Platform PUBLIC spdlog::spdlog glfw)
+target_link_libraries(Foundation_Platform PUBLIC fmt::fmt spdlog::spdlog glfw)
 target_include_directories(Foundation_Platform PRIVATE "${GLFW_SOURCE_DIR}/include")
 
 if (WIN32)

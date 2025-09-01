@@ -1,19 +1,4 @@
 cmake_minimum_required(VERSION 3.26)
-include(FetchContent)
-
-FetchContent_Declare(
-  glm
-  GIT_REPOSITORY    
-  GIT_TAG        1.0.1
-)
-FetchContent_MakeAvailable(glm)
-
-FetchContent_Declare(
-  meshoptimizer
-  GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
-  GIT_TAG        e8879f358d9dccf3038dd194e99d2749347da1dd
-)
-FetchContent_MakeAvailable(meshoptimizer)
 
 file(
     GLOB_RECURSE SOURCES 

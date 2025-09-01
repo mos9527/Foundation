@@ -30,7 +30,7 @@ namespace Foundation::RHI {
 
         inline auto const& GetVkSwapchain() const { return m_swapchain; }
         RHIExtent2D GetDimensions() const override;
-        size_t GetNextImage(
+        uint32_t GetNextImage(
             uint64_t timeout_ns,
             RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore,
             RHIDeviceObjectHandle<RHIDeviceFence> fence

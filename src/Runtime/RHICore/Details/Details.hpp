@@ -41,7 +41,7 @@ namespace Foundation::RHI {
         Handle m_handle{ kInvalidHandle };
         /// <summary>
         /// Retrieves the underlying RHIObject pointer.
-        /// It is undefined behavior to use the returned pointer after the underlying resource has been destroyed.                
+        /// It is undefined behavior to use the returned pointer after the underlying resource has been destroyed.
         /// </summary>
         /// <typeparam name="U">Pointer type to retrieve as. U is required to be castable from T</typeparam>                
         template<typename U = T> U* Get() const {
@@ -123,7 +123,7 @@ namespace Foundation::RHI {
     /// </summary>
     template<typename Base = RHIObject> class RHIObjectStorage {
         Core::Allocator* m_allocator;
-        Core::FreeDenseMap<Handle, Core::UniquePtr<Base>> m_objects;
+        Core::FreeList<Handle, Core::UniquePtr<Base>> m_objects;
     public:
         RHIObjectStorage(Core::Allocator* allocator) : m_allocator(allocator), m_objects(allocator) {};
         RHIObjectStorage(Core::Allocator* allocator, size_t reserve_size) :
@@ -144,8 +144,8 @@ namespace Foundation::RHI {
         /// <typeparam name="U">Pointer type to cast to.</typeparam>
         /// <returns>The raw pointer.</returns>
         template<typename U = Base> U* GetObjectPtr(Handle handle) const {
-            if (handle == kInvalidHandle)
-                return nullptr;
+            if (!m_objects.contains(handle))
+                throw std::out_of_range("invalid handle");
             return static_cast<U*>(m_objects.at(handle).get());
         }
         /// <summary>

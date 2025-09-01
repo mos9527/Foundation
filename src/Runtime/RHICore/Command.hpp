@@ -95,7 +95,7 @@ namespace Foundation::RHI {
         struct GraphicsDesc {
             struct Attachment {
                 RHITextureView* image_view{ nullptr };
-                RHITextureLayout image_layout{ RHITextureLayout::Undefined };
+                RHITextureLayout image_layout{ };
                 // Clear values for the color attachment, if applicable.
                 // Either clear_color or clear_depth_stencil must be set.
                 std::optional<RHIClearColor> clear_color{};
@@ -103,7 +103,7 @@ namespace Foundation::RHI {
                 // If both are set, the depth will be cleared first, then stencil.
                 std::optional<RHIClearDepthStencil> clear_depth_stencil{};
                 constexpr const bool IsValid() const {
-                    return image_view && image_layout != RHITextureLayout::Undefined;
+                    return image_view;
                 }
             };
             Core::StlSpan<const Attachment> color_attachments;
