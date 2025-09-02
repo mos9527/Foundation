@@ -1,5 +1,5 @@
 #include "Renderer.hpp"
-
+using namespace Foundation;
 std::string Renderer::DbgDumpGraphviz() const {
     std::string out;
     fmt::format_to(std::back_inserter(out), "digraph G {{\n");

@@ -104,7 +104,9 @@ namespace Foundation::RHI {
         DepthStencilWrite = 1 << 2,
         DepthStencilRead = 1 << 3,
         TransferWrite = 1 << 4,
-        ShaderRead = 1 << 5
+        TransferRead = 1 << 5,
+        ShaderWrite = 1 << 6,
+        ShaderRead = 1 << 7,
     BITMASK_ENUM_END();
 
     // https://gpuopen.com/learn/vulkan-barriers-explained/

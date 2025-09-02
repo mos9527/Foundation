@@ -17,34 +17,27 @@
 using namespace Foundation;
 using namespace Foundation::Core;
 
-void Renderer::CreateSwapchain(RHIExtent2D size) {
-    m_gfxQueue->WaitIdle();
-    if (m_swapchain)
-        m_swapchain.Reset();
-    m_swapchain = m_device->CreateSwapchain(RHISwapchain::SwapchainDesc{
-        .format = RHIResourceFormat::R8G8B8A8_UNORM,
-        .dimensions = size,
-        .buffer_count = 3,
-        .present_mode = RHISwapchain::SwapchainDesc::PresentMode::MAILBOX,
-        });
-}
-Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIExtent2D initialSize, Core::Allocator* allocator)
-    : m_device(device), m_allocator(allocator) {
+// Semaphore counter
+#define SEM_COUNTER(ord) m_frame + ord
+
+Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Core::Allocator* allocator)
+    : m_device(device), m_allocator(allocator), m_swapchain(swapchain), m_state(State::Undefined) {
     m_gfxQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
     m_compQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Compute);
     m_cmdPool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
         .queue = RHIDeviceQueueType::Graphics,
         .type = RHICommandPoolType::Persistent
-        });
-    CreateSwapchain(initialSize);
+    });
 }
 
 #pragma region Render Graph Setup
 void Renderer::BeginSetup() {
+    CHECK(m_state == State::Undefined || m_state == State::PostSetup);
     m_setup = ConstructUnique<Setup>(m_allocator, m_allocator);
+    m_state = State::Setup;
 }
-void Renderer::DeclareAccess(PassHandle pass, ResourceHandle handle, RHIResourceAccess access) {
-    CHECK(m_setup && "Setup context not initialized. Did you call BeginSetup()?");
+void Renderer::DeclareAccessInternal(PassHandle pass, ResourceHandle handle, RHIResourceAccess access) {
+    CHECK(m_state == State::Setup);
     auto& resource = m_setup->trackedResources[handle];
     if (resource.lastProducerPass.has_value()) {
         if (pass == resource.lastProducerPass.value()) {
@@ -68,8 +61,8 @@ void Renderer::DeclareAccess(PassHandle pass, ResourceHandle handle, RHIResource
     m_setup->trackedPasses[pass].resources.emplace_back(handle);
 }
 ResourceHandle Renderer::CreateTextureView(
-    PassHandle pass, ResourceHandle handle, RHITextureViewDesc const& desc, RHITextureLayout layout, RHIResourceAccess access) {
-    CHECK(m_setup && "Setup context not initialized. Did you call BeginSetup()?");
+    PassHandle pass, ResourceHandle handle, RHITextureViewDesc const& desc) {
+    CHECK(m_state == State::Setup);
     auto& resource = m_setup->trackedResources[handle];
     RHITextureDesc rdesc = resource.desc.visit(
         [&](RHITextureDesc const& tex) { return tex; },
@@ -77,14 +70,30 @@ ResourceHandle Renderer::CreateTextureView(
         [](auto const&) -> RHITextureDesc { throw std::runtime_error("Cannot create texture view of non-texture resource"); }
     );
     // TODO: View validation
-    DeclareAccess(pass, handle, access);
     m_setup->trackedViews.emplace_back(handle, desc);
     ResourceHandle hdl = m_setup->trackedViews.size() - 1;
-    m_setup->trackedPasses[pass].views.emplace_back(hdl, access, layout);
+    m_setup->trackedPasses[pass].views.emplace_back(hdl);
     return hdl;
 }
-void Renderer::CreateBufferAccess(PassHandle pass, ResourceHandle handle, RHIResourceAccess access, size_t offset, size_t size) {
-    CHECK(m_setup && "Setup context not initialized. Did you call BeginSetup()?");
+void Renderer::DeclareTextureAccess(
+    PassHandle pass, ResourceHandle handle, RHIPipelineStage stage, RHITextureSubresourceRange range, RHIResourceAccess access, RHITextureLayout layout) {
+    CHECK(m_state == State::Setup);
+    // Check for overlap
+    // TODO: Investigate if allowing partial overlaps is beneficial
+    for (auto& [h, _, __, r, ___] : m_setup->trackedPasses[pass].textureUsages)
+        if (h == handle)
+            throw std::runtime_error("Overlapping texture access declared in the same pass. Access pattern must be unique per pass.");
+    auto& resource = m_setup->trackedResources[handle];
+    // TODO: Range checking
+    DeclareAccessInternal(pass, handle, access);
+    m_setup->trackedPasses[pass].textureUsages.emplace_back(handle, access, stage, range, layout);
+}
+void Renderer::AccessBuffer(PassHandle pass, ResourceHandle handle, RHIPipelineStage stage, RHIResourceAccess access, size_t offset, size_t size) {
+    CHECK(m_state == State::Setup);
+    // Check for overlap
+    for (auto& [h, _, __, range] : m_setup->trackedPasses[pass].bufferUsages)
+        if (h == handle)
+            throw std::runtime_error("Overlapping buffer access declared in the same pass. Access pattern must be unique per pass.");            
     auto& resource = m_setup->trackedResources[handle];
     RHIBufferDesc bdesc = resource.desc.visit(
         [&](RHIBufferDesc const& buf) { return buf; },
@@ -93,14 +102,86 @@ void Renderer::CreateBufferAccess(PassHandle pass, ResourceHandle handle, RHIRes
     );
     if (offset + size > bdesc.size)
         throw std::out_of_range("Buffer access out of range");
-    DeclareAccess(pass, handle, access);
-    m_setup->trackedPasses[pass].bufferRanges.emplace_back(handle, access, std::pair{ offset, offset + size });
+    DeclareAccessInternal(pass, handle, access);
+    m_setup->trackedPasses[pass].bufferUsages.emplace_back(handle, access, stage, std::pair{ offset, offset + size });
+}
+
+ResourceHandle Renderer::AccessTextureSRV(
+    PassHandle pass, ResourceHandle texture,
+    RHITextureViewDesc const& desc
+) {
+    DeclareTextureAccess(pass, texture,
+        kAllShaderStages,
+        desc.range,
+        RHIResourceAccessBits::ShaderRead,
+        RHITextureLayout::ShaderReadOnly
+    );
+    return CreateTextureView(pass, texture, desc);
+}
+ResourceHandle Renderer::AccessTextureUAV(
+    PassHandle pass, ResourceHandle texture,
+    RHITextureViewDesc const& desc
+) {
+    DeclareTextureAccess(pass, texture,
+        kAllShaderStages,
+        desc.range,
+        RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
+        RHITextureLayout::General
+    );
+    return CreateTextureView(pass, texture, desc);
+}
+ResourceHandle Renderer::AccessTextureRTV(
+    PassHandle pass, ResourceHandle texture,
+    RHITextureViewDesc const& desc
+) {
+    DeclareTextureAccess(pass, texture,
+        RHIPipelineStageBits::ColorAttachmentOutput,
+        desc.range,
+        RHIResourceAccessBits::RenderTargetWrite,
+        RHITextureLayout::RenderTarget
+    );
+    return CreateTextureView(pass, texture, desc);
+}
+ResourceHandle Renderer::AccessTextureDSV(
+    PassHandle pass, ResourceHandle texture,
+    RHITextureViewDesc const& desc
+) {
+    DeclareTextureAccess(pass, texture,
+        RHIPipelineStageBits::EarlyFragmentTests | RHIPipelineStageBits::LateFragmentTests,
+        desc.range,
+        RHIResourceAccessBits::DepthStencilRead | RHIResourceAccessBits::DepthStencilWrite,
+        RHITextureLayout::DepthStencil
+    );
+    return CreateTextureView(pass, texture, desc);
+}
+void Renderer::AccessTextureCopyDst(
+    PassHandle pass, ResourceHandle texture,
+    RHITextureSubresourceRange const& range
+) {
+    DeclareTextureAccess(pass, texture,
+        RHIPipelineStageBits::Transfer,
+        range,
+        RHIResourceAccessBits::TransferWrite,
+        RHITextureLayout::TransferDst
+    );
+}
+void Renderer::AccessTextureCopySrc(
+    PassHandle pass, ResourceHandle texture,
+    RHITextureSubresourceRange const& range
+) {
+    DeclareTextureAccess(pass, texture,
+        RHIPipelineStageBits::Transfer,
+        range,
+        RHIResourceAccessBits::TransferRead,
+        RHITextureLayout::TransferSrc
+    );
 }
 void Renderer::EndSetup(PassHandle epiloguePass) {
-    CHECK(m_setup && "Setup context not initialized. Did you call BeginSetup()?");
-    for (PassHandle i = 0; i < m_setup->trackedPasses.size(); ++i) {
+    CHECK(m_state == State::Setup);
+    // Setup all passes
+    for (PassHandle i = 0; i < m_setup->trackedPasses.size(); ++i)
         m_setup->trackedPasses[i].pass->Setup(m_setup->trackedPasses[i].handle, *this);
-    }
+    // Cull and do longest paths    
     StlVector<PassHandle>
         topo(m_allocator), // Topological sort
         vis(m_setup->trackedPasses.size(), m_allocator), // Visited
@@ -109,14 +190,14 @@ void Renderer::EndSetup(PassHandle epiloguePass) {
     auto dfs = [&](PassHandle u, PassHandle pa, auto&& dfs) -> void {
         vis[u] = 1;
         for (const auto& [v, _] : m_setup->graph[u]) {
-            depth[v] = std::max(depth[u] + 1, depth[v]);
+            depth[v] = std::max(depth[u] + 1, depth[v]);            
             CHECK(vis[v] != 1 && "Cyclic dependency in graph.");
             if (vis[v] == 0) dfs(v, u, dfs);
         }
         vis[u] = 2;
         m_setup->trackedPasses[u].used = true;
         topo.push_back(u);
-        };
+    };
     dfs(epiloguePass, -1, dfs);
     std::stable_sort(topo.begin(), topo.end(), [&](PassHandle a, PassHandle b) {
         return depth[a] > depth[b];
@@ -126,11 +207,10 @@ void Renderer::EndSetup(PassHandle epiloguePass) {
         });
     m_setup->activePasses = topo;
     m_setup->epiloguePass = epiloguePass;
-    // Lifetime derived from execution order
-    // Resource may be considered stale if it's not used by further passes
-    // can may be released after the last use.
     for (PassHandle ord = 0; ord < m_setup->activePasses.size(); ord++) {
         auto& pass = m_setup->trackedPasses[m_setup->activePasses[ord]];
+        // Derive lifetimes for resources from execution order
+        // AllocateResources() uses this to overlap resources.        
         pass.ord = ord, pass.depth = depth[pass.handle];
         for (auto res : pass.resources) {
             if (!m_setup->activeResources.contains(res))
@@ -143,18 +223,19 @@ void Renderer::EndSetup(PassHandle epiloguePass) {
         }
     }
     AllocateResources();
+    m_state = State::PostSetup;
 }
 void Renderer::AllocateResources() {
-    CHECK(m_setup && "Setup context not initialized. Did you call BeginSetup()?");
+    CHECK(m_state == State::Setup);
     m_resources = ConstructUnique<Resources>(m_allocator, m_allocator);
     m_resources->fit(m_setup->trackedResources.size());
     // Create semaphores for inter-queue synchronization
-    // Optionally used to be actually waited on, but will always be signaled
+    // Optionally used to be actually waited on (inter-queue, etc), but will always be signaled
     for (PassHandle ord = 0; ord < m_setup->activePasses.size(); ord++) {
         auto& pass = m_setup->trackedPasses[m_setup->activePasses[ord]];
         pass.waitSemaphore = m_device->CreateSemaphore();
     }
-    // TODO: Overlap transient resources with non-overlapping lifetimes
+    // !! TODO: Overlap transient resources to with non-overlapping lifetimes with aliasing
     for (auto& [handle, _] : m_setup->activeResources) {
         auto& res = m_setup->trackedResources[handle];
         res.desc.visit(
@@ -170,9 +251,10 @@ void Renderer::AllocateResources() {
     StlVector<ResourceHandle> activeViews(m_allocator);
     for (PassHandle ord = 0; ord < m_setup->activePasses.size(); ord++) {
         auto& pass = m_setup->trackedPasses[m_setup->activePasses[ord]];
-        for (auto [hdl, access, layout] : pass.views)
+        for (auto hdl : pass.views)
             activeViews.push_back(hdl);
     }
+    // Instantiate active ones only
     std::sort(activeViews.begin(), activeViews.end());
     activeViews.erase(std::unique(activeViews.begin(), activeViews.end()), activeViews.end());
     m_resources->fit(activeViews.size());
@@ -183,6 +265,7 @@ void Renderer::AllocateResources() {
     }
 }
 void Renderer::PushPassBarriers(TrackedPass& pass, RHICommandList* cmd) {
+    CHECK(m_state == State::Execute);
     // At this point the pass execution order has been determined
     // (activePasses) and so are the resources' access patterns.
     // Minimal synchronization barriers would always be the most
@@ -190,30 +273,28 @@ void Renderer::PushPassBarriers(TrackedPass& pass, RHICommandList* cmd) {
     // Inter-queue synchronization is handled separately at SubmitPass
     // where we wait on the producer pass's semaphore on the GPU
     cmd->BeginTransition();
-    RHIPipelineStage currentStage = pass.pass->GetPipelineStage();
     // Textures
-    for (auto [hdl, access, layout] : pass.views) {
-        auto [rhdl, vdesc] = m_setup->trackedViews[hdl];
-        auto& tres = m_setup->trackedResources[rhdl];
-        auto& res = DereferenceResource(rhdl).Get<RHIDeviceObjectHandle<RHITexture>>();
+    for (auto [hdl, access, stage, range, layout] : pass.textureUsages) {
+        auto& tres = m_setup->trackedResources[hdl];
+        auto& res = DereferenceResource(hdl).Get<RHIDeviceObjectHandle<RHITexture>>();
         cmd->SetImageTransition(
             res.Get(),
             {
                 .src_access = tres.lastAccess,
                 .dst_access = access,
                 .src_stage = tres.lastStage,
-                .dst_stage = currentStage,
+                .dst_stage = stage,
                 .src_img_layout = tres.lastLayout,
                 .dst_img_layout = layout,
-                .src_img_range = vdesc.range
+                .src_img_range = range
             }
         );
         tres.lastAccess = access;
-        tres.lastStage = currentStage;
+        tres.lastStage = stage;
         tres.lastLayout = layout;
     }
-    // Buffer ranges
-    for (auto [hdl, access, range] : pass.bufferRanges) {
+    // Buffers
+    for (auto [hdl, access, stage, range] : pass.bufferUsages) {
         auto& tres = m_setup->trackedResources[hdl];
         auto& res = DereferenceResource(hdl).Get<RHIDeviceObjectHandle<RHIBuffer>>();
         cmd->SetBufferTransition(
@@ -222,42 +303,45 @@ void Renderer::PushPassBarriers(TrackedPass& pass, RHICommandList* cmd) {
                 .src_access = tres.lastAccess,
                 .dst_access = access,
                 .src_stage = tres.lastStage,
-                .dst_stage = currentStage,
+                .dst_stage = stage,
                 .src_buffer_offset = range.first,
                 .src_buffer_size = range.second - range.first
             }
         );
         tres.lastAccess = access;
-        tres.lastStage = currentStage;
+        tres.lastStage = stage;
+        tres.lastBufferRange = range;
     }
     cmd->EndTransition();
 }
 
 void Renderer::SubmitPass(TrackedPass& pass, RHICommandList* cmd) {
+    CHECK(m_state == State::Execute);
     Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
     // Pass that depends on a producer pass that's on another queue
-    // needs manual synchronization. Timeline semaphores proved to be
+    // needs external synchronization. Timeline semaphores proved to be
     // extremely useful for this - RHI only provides such abstractions.
-    // Deadlocks should be impossible since we only take acyclic graphs.
+    // 
+    // Deadlocks should be impossible since we only produce acyclic graphs.    
     Core::StlVector<std::pair<RHIDeviceSemaphore*, size_t>> waits(&alloc);
     auto check_wait = [&](std::optional<PassHandle> const& other) {
         if (other.has_value()) {
             auto& opass = m_setup->trackedPasses[other.value()];
             if (opass.type != pass.type) {
                 CHECK(opass.waitSemaphore.IsValid() && "Pass contains invalid wait semaphore");
-                // Wait on the producer pass's semaphore                
-                waits.emplace_back(opass.waitSemaphore.Get(), m_frame + opass.ord);
+                // Wait on the producer pass's semaphore                       
+                waits.emplace_back(opass.waitSemaphore.Get(), SEM_COUNTER(opass.ord));
             }
         }
         };
     // Textures
-    for (auto [hdl, access, layout] : pass.views) {
+    for (auto [hdl, access, stage, range, layout] : pass.textureUsages) {
         auto [rhdl, view] = m_setup->trackedViews[hdl];
         auto& res = m_setup->trackedResources[rhdl];
         check_wait(res.lastProducerPass);
     }
     // Buffer ranges
-    for (auto [hdl, access, range] : pass.bufferRanges) {
+    for (auto [hdl, access, stage, range] : pass.bufferUsages) {
         auto& res = m_setup->trackedResources[hdl];
         check_wait(res.lastProducerPass);
     }
@@ -265,15 +349,16 @@ void Renderer::SubmitPass(TrackedPass& pass, RHICommandList* cmd) {
     RHIDeviceQueue* queue = pass.type == PassType::Graphics ? m_gfxQueue : m_compQueue;
     queue->Submit({
         .waits = waits,
-        .signals = {{{ pass.waitSemaphore.Get(), m_frame + pass.ord}}},
+        .signals = {{{ pass.waitSemaphore.Get(), SEM_COUNTER(pass.ord) }}},
         .cmd_lists = { cmd },
-        });
+    });
 }
 #pragma endregion
 
 
-void Renderer::Execute(RHIExtent2D currentSize) {
-
+void Renderer::Execute() {
+    CHECK(m_state == State::PostSetup && "Invalid state. Did you call EndSetup()?");    
+    m_state = State::Execute;
     // Reset states
     for (auto idx : m_setup->activePasses) {
         auto& pass = m_setup->trackedPasses[idx];
@@ -296,9 +381,6 @@ void Renderer::Execute(RHIExtent2D currentSize) {
             SubmitPass(pass, cmd.Get());
         }
     }
-    // Handle resize    
-    if (currentSize != m_swapchain->GetDimensions())
-        CreateSwapchain(currentSize);
     uint32_t swapIndex = m_swapchain->GetNextImage(-1, {}, {});
     if (m_setup->epiloguePass != kInvalidHandle) {
         auto& epilogue = passes[m_setup->epiloguePass];
@@ -306,15 +388,16 @@ void Renderer::Execute(RHIExtent2D currentSize) {
         m_gfxQueue->Present({
             .image_index = swapIndex,
             .swapchain = m_swapchain.Get(),
-            .waits = {{{ waitSem, m_frame + epilogue.ord }}}
-        });
+            .waits = {{{ waitSem, SEM_COUNTER(epilogue.ord) }}}
+            });
     }
     else {
         m_gfxQueue->Present({
         .image_index = swapIndex,
-        .swapchain = m_swapchain.Get()        
+        .swapchain = m_swapchain.Get()
         });
     }
     m_currentSwap = (m_currentSwap + 1) % m_swapchain->m_desc.buffer_count;
     m_frame++;
+    m_state = State::PostSetup;
 }

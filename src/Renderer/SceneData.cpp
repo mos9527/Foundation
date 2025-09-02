@@ -51,11 +51,11 @@ namespace Foundation {
     void SceneData::UpdateData(RHIBuffer* buffer, StagingList& staging, RHIBuffer::Arena::Allocation handle, StlSpan<const uint8_t> data)
     {
         auto size = buffer->GetArena().GetSize(handle);
-        CHECK(data.size() <= size && "New data cannot be larger than inital allocation");
+        CHECK(data.size() <= size && "New data cannot be larger than initial allocation");
         staging.emplace_back(m_staging.size(), buffer->GetArena().GetOffset(handle), data.size());
         m_staging.insert(m_staging.end(), data.begin(), data.end());
     }
-    void FreeData(RHIBuffer* buffer, RHIBuffer::Arena::Allocation alloc) {
+    void SceneData::FreeData(RHIBuffer* buffer, RHIBuffer::Arena::Allocation alloc) {
         buffer->GetArena().Free(alloc);
     }
     void SceneData::EndTransfer(RHICommandList* cmd) {
@@ -64,47 +64,13 @@ namespace Foundation {
         using enum RHIResourceAccessBits;
         using enum RHIPipelineStageBits;        
         cmd->Begin();
-        cmd->BeginTransition();
-        // Transitions
-        if (m_primitiveStaging.size())
-            cmd->SetBufferTransition(m_primitiveData.Get(), {
-                .src_access = ShaderRead,
-                .dst_access = TransferWrite,
-                .src_stage = TopOfPipe,
-                .dst_stage = Transfer,
-            });
-        if (m_instanceStaging.size())
-            cmd->SetBufferTransition(m_instanceData.Get(), {
-                .src_access = ShaderRead,
-                .dst_access = TransferWrite,
-                .src_stage = TopOfPipe,
-                .dst_stage = Transfer,
-            });
-        cmd->EndTransition();
         // Transfers
         if (m_primitiveStaging.size())
             cmd->CopyBuffer(m_stagingBuffer.Get(), m_primitiveData.Get(), m_primitiveStaging);
         if (m_instanceStaging.size())
             cmd->CopyBuffer(m_stagingBuffer.Get(), m_instanceData.Get(), m_instanceStaging);
-        // Transitions
-        cmd->BeginTransition();
-        if (m_primitiveStaging.size())
-            cmd->SetBufferTransition(m_primitiveData.Get(), {
-                .src_access = TransferWrite,
-                .dst_access = ShaderRead,
-                .src_stage = Transfer,
-                .dst_stage = BottomOfPipe,
-            });
-        if (m_instanceStaging.size())
-            cmd->SetBufferTransition(m_instanceData.Get(), {
-                .src_access = TransferWrite,
-                .dst_access = ShaderRead,
-                .src_stage = Transfer,
-                .dst_stage = BottomOfPipe,
-            });
-        cmd->EndTransition();
         cmd->End();
-        m_primitiveStaging.clear(), m_primitiveStaging.shrink_to_fit();
+        m_primitiveStaging.clear(), m_instanceStaging.clear();
     }
 
     bool SceneData::Update(RHICommandList* cmd) {

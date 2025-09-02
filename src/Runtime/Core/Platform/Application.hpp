@@ -21,7 +21,7 @@ namespace Foundation::Core {
         bool WindowShouldClose();
 
         GLFWwindow* GetNativeWindow() const { return m_window; }
-        std::pair<int, int> GetSize() const {
+        std::pair<int,int> GetSize() const {
             int width, height;
             glfwGetWindowSize(m_window, &width, &height);
             return { width, height };

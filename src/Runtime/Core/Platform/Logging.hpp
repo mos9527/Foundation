@@ -1,4 +1,5 @@
 #pragma once
+#include <exception>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/dist_sink.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
@@ -36,5 +37,5 @@ namespace Foundation::Core {
 
 #define CHECK(expr) if(!(expr)) { \
     LOG_RUNTIME(Core, err, "Check failed: {}", #expr); \
-    __debugbreak(); \
+    throw std::runtime_error( #expr ); \
 }

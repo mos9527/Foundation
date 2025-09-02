@@ -83,4 +83,17 @@ namespace Foundation {
             m_hasDirtyInstance = false;
         }
     }
+
+    ScenePass::ScenePass(Renderer& renderer, Scene& scene) : scene(scene) {
+        auto& data = scene.GetData();
+        m_global = renderer.CreateResource("Globals", data.GetGlobalDataBuffer());
+        m_instance = renderer.CreateResource("Instances", data.GetInstanceDataBuffer());
+        m_primitive = renderer.CreateResource("Primitives", data.GetPrimitiveDataBuffer());
+    }
+
+    void ScenePass::Setup(PassHandle self, Renderer& renderer) {        
+        renderer.AccessBuffer(self, m_global,    RHIPipelineStageBits::Transfer, RHIResourceAccessBits::TransferWrite);
+        renderer.AccessBuffer(self, m_instance,  RHIPipelineStageBits::Transfer, RHIResourceAccessBits::TransferWrite);
+        renderer.AccessBuffer(self, m_primitive, RHIPipelineStageBits::Transfer, RHIResourceAccessBits::TransferWrite);
+    }
 }

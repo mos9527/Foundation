@@ -29,7 +29,7 @@ namespace Foundation::RHI {
         Core::StlSpan<RHITexture* const> GetImages() const override;
 
         inline auto const& GetVkSwapchain() const { return m_swapchain; }
-        RHIExtent2D GetDimensions() const override;
+        RHIExtent2D GetExtents() const override;
         uint32_t GetNextImage(
             uint64_t timeout_ns,
             RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore,

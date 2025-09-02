@@ -3,6 +3,10 @@
 #include "Device.hpp"
 namespace Foundation::RHI {
     class RHIDevice;
+    /// <summary>
+    /// The root object of everything RHI.
+    /// Implementation of this class inherently defines the RHI backend.
+    /// </summary>
     class RHIApplication : public RHIObject {
     public:
         RHIApplication() = default;

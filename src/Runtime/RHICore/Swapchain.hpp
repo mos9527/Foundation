@@ -20,8 +20,8 @@ namespace Foundation::RHI {
             };            
             // Name for the swap chain, used for debugging purposes.
             RHIResourceFormat format;
-            // Swapchain buffer dimensions.
-            RHIExtent2D dimensions;
+            // Swapchain buffer sizes.
+            RHIExtent2D extents;
             // Number of buffers in the swap chain. i.e. double buffering = 2, triple buffering = 3, etc.
             uint32_t buffer_count;
             // Present mode for the swap chain.
@@ -38,9 +38,9 @@ namespace Foundation::RHI {
             RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore,
             RHIDeviceObjectHandle<RHIDeviceFence> fence
         ) = 0;            
-        virtual RHIExtent2D GetDimensions() const = 0;
+        virtual RHIExtent2D GetExtents() const = 0;
         inline float GetAspectRatio() const {
-            auto xy = GetDimensions();
+            auto xy = GetExtents();
             return static_cast<float>(xy.x) / static_cast<float>(xy.y);
         }
     };

@@ -9,6 +9,12 @@ namespace Foundation {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
     constexpr PassHandle kRendererMaxPasses = 1024; // Maximum number of render passes
+    const RHIPipelineStageBits kAllShaderStages =
+        RHIPipelineStageBits::FragmentShader |
+        RHIPipelineStageBits::ComputeShader |
+        RHIPipelineStageBits::VertexShader |
+        RHIPipelineStageBits::RayTracingShader |
+        RHIPipelineStageBits::MeshShader;
     struct TrackedResource {
         // Handle of the resource in the resource definitions vector
         ResourceHandle handle;
@@ -28,17 +34,23 @@ namespace Foundation {
         RHIPipelineStage lastStage{};
         // (Texture) Last known layout of this resource
         RHITextureLayout lastLayout{};
+        // (Texture) Last known subresource range of this resource
+        RHITextureSubresourceRange lastRange{};
+        // (Buffer) Last known offset range of this resource
+        std::pair<size_t, size_t> lastBufferRange{};
         inline void ResetExecuteStates() {
             lastAccess = {};
             lastStage = {};
             lastLayout = {};
+            lastRange = {};
+            lastBufferRange = {};
             lastProducerPass.reset();
         }
     };
     struct TrackedPass {
         struct CreationInfo {
             std::string const& name;
-            const PassType type;
+            const PassType type = PassType::Graphics;
         };
         // Handle of the pass in the render passes vector
         PassHandle handle;
@@ -60,13 +72,18 @@ namespace Foundation {
         // -> trackedResources
         StlVector<ResourceHandle> resources;
         // Texture views used by this pass
-        // [view handle, access, layout] -> trackedViews
-        StlVector<std::tuple<ResourceHandle, RHIResourceAccess, RHITextureLayout>> views;
+        // [view handle] -> trackedViews
+        StlVector<ResourceHandle> views;
+        // Texture ranges used by this pass
+        // Sorted by EndSetup()
+        // [resource handle, access, stage, range, layout] -> trackedResources
+        StlVector<std::tuple<ResourceHandle, RHIResourceAccess, RHIPipelineStage, RHITextureSubresourceRange, RHITextureLayout>> textureUsages;
         // Buffer ranges used by this pass
-        // [resource handle, access, {begin, end}] -> trackedResources
-        StlVector<std::tuple<ResourceHandle, RHIResourceAccess, std::pair<size_t, size_t>>> bufferRanges;
+        // Sorted by EndSetup()       
+        // [resource handle, access, stage, {begin, end}] -> trackedResources
+        StlVector<std::tuple<ResourceHandle, RHIResourceAccess, RHIPipelineStage, std::pair<size_t, size_t>>> bufferUsages;
         TrackedPass(Allocator* alloc, PassHandle handle, CreationInfo const& info, UniquePtr<RenderPass> renderPass)
-            : resources(alloc), views(alloc), bufferRanges(alloc), handle(handle), name(info.name), pass(std::move(renderPass)), type(info.type) {
+            : resources(alloc), views(alloc), bufferUsages(alloc), textureUsages(alloc), handle(handle), name(info.name), pass(std::move(renderPass)), type(info.type) {
         };
         const PassHandle GetHandle() const { return handle; }
         /* STATES */
@@ -76,14 +93,14 @@ namespace Foundation {
     class Renderer {
         Allocator* m_allocator{ nullptr };
 
-        RHIApplicationObjectHandle<RHIDevice> m_device;
-        RHIDeviceScopedObjectHandle<RHISwapchain> m_swapchain;
-        RHIDeviceScopedObjectHandle<RHICommandPool> m_cmdPool;
-        RHIDeviceQueue* m_gfxQueue{}, * m_compQueue{};
-
         uint32_t m_currentSwap{ 0 };
         uint64_t m_frame{ 0 };
-        void CreateSwapchain(RHIExtent2D size);
+
+        RHIApplicationObjectHandle<RHIDevice> m_device;
+        RHIDeviceObjectHandle<RHISwapchain> m_swapchain;
+
+        RHIDeviceScopedObjectHandle<RHICommandPool> m_cmdPool;
+        RHIDeviceQueue* m_gfxQueue{}, * m_compQueue{};
 
         struct Setup {
             // All allocated render passes
@@ -107,9 +124,19 @@ namespace Foundation {
                 while (u >= graph.size()) graph.emplace_back(graph.get_allocator());
                 graph[u].emplace_back(v, hdl);
             }
-            Setup(Allocator* allocator) : graph(allocator), trackedPasses(allocator), trackedResources(allocator), trackedViews(allocator), activePasses(allocator), activeResources(allocator) {}
+            Setup(Allocator* allocator) :
+                graph(allocator), trackedPasses(allocator), trackedResources(allocator),
+                trackedViews(allocator), activePasses(allocator), activeResources(allocator) {}
         };
         UniquePtr<Setup> m_setup;
+
+        enum class State {
+            Undefined,
+            Setup,
+            PostSetup,
+            Execute
+        } m_state;
+
         struct Resources {
             StlVector<Variant<
                 RHIDeviceObjectHandle<RHIBuffer>,
@@ -131,12 +158,25 @@ namespace Foundation {
         void AllocateResources();
         void PushPassBarriers(TrackedPass& pass, RHICommandList* cmd);
         void SubmitPass(TrackedPass& pass, RHICommandList* cmd);
-        void DeclareAccess(PassHandle pass, ResourceHandle res, RHIResourceAccess access);
+        // Access declaration helpers
+        void DeclareAccessInternal(PassHandle pass, ResourceHandle res, RHIResourceAccess access);
+        // Helpers to create views and access for textures
+        // Exported as helper functions to create DirectX/UE style SRV/UAV/RTV and co.
+        void DeclareTextureAccess(
+            PassHandle pass, ResourceHandle res,
+            RHIPipelineStage stage,
+            RHITextureSubresourceRange range = {},
+            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead,
+            RHITextureLayout layout = RHITextureLayout::ShaderReadOnly
+        );
+        ResourceHandle CreateTextureView(
+            PassHandle pass, ResourceHandle res,
+            RHITextureViewDesc const& desc
+        );
     public:
-        Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIExtent2D drawSize, Allocator* allocator);
-        Renderer(Allocator* allocator): m_allocator(allocator) {};
+        Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator);
 
-        void Execute(RHIExtent2D currentSize);
+        void Execute();
 
 #pragma region Render Graph Setup
         /// <summary>
@@ -150,7 +190,11 @@ namespace Foundation {
         /// 
         /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().       
         /// No allocation is performed until EndSetup() is called.
-        /// </summary>        
+        ///
+        /// All resources created by a pass that is not culled will be created, regardless of usage.
+        ///
+        /// Resources can be imported by passing in RHIDeviceObjectHandle<RHIBuffer> or RHIDeviceObjectHandle<RHITexture>.
+        /// </summary>
         template<typename T>
         ResourceHandle CreateResource(std::string const& name, T const& desc) {
             CHECK(m_setup && "Setup context not initialized. Did you call BeginSetup()?");
@@ -159,22 +203,83 @@ namespace Foundation {
             return m_setup->trackedResources.size() - 1;
         }
         /// <summary>
-        /// Create a view of an existing Texture.
-        /// No allocation is performed until EndSetup() is called.        
-        /// 
-        /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().        
-        /// Resource dependencies will be implcitly created.
-        /// </summary>                
-        ResourceHandle CreateTextureView(PassHandle pass, ResourceHandle res, RHITextureViewDesc const& desc, RHITextureLayout layout, RHIResourceAccess access = RHIResourceAccessBits::ShaderRead);
-        /// <summary>
         /// Declares that a pass will access a Buffer in a certain way.
-        /// Different from CreateTextureView, this merely affects the command buffer
-        /// and declares the access pattern of an existing resource.
+        /// This will be used to automatically place barriers in-between passes.
+        ///
+        /// Access to resources is unique per pass. Attempting to declare access to the same resource
+        /// multiple times in the same pass will result in an exception.
         /// 
         /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
+        ///
+        /// It's undefined behavior to derefence and use a resource without declaring correct access first.
+        /// 
         /// Resource dependencies will be implcitly created.        
         /// </summary>
-        void CreateBufferAccess(PassHandle pass, ResourceHandle res, RHIResourceAccess access = RHIResourceAccessBits::ShaderRead, size_t offset = 0, size_t size = kFullSize);
+        void AccessBuffer(PassHandle pass, ResourceHandle buffer,
+            RHIPipelineStage stage,
+            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead,
+            size_t offset = 0, size_t size = kFullSize
+        );
+        /// <summary>
+        /// Declares Shader Resource View (SRV/Read-Only) access for reading a texture in shaders.
+        ///
+        /// Access to resources is unique per pass. Attempting to declare access to the same resource
+        /// multiple times in the same pass will result in an exception.
+        /// </summary>
+        ResourceHandle AccessTextureSRV(
+            PassHandle pass, ResourceHandle texture,
+            RHITextureViewDesc const& desc = {}
+        );
+        /// <summary>
+        /// Declares Unordered Access View (UAV/Read-write) access for reading a texture in shaders.
+        ///
+        /// Access to resources is unique per pass. Attempting to declare access to the same resource
+        /// multiple times in the same pass will result in an exception.
+        /// </summary>        
+        ResourceHandle AccessTextureUAV(
+            PassHandle pass, ResourceHandle texture,
+            RHITextureViewDesc const& desc = {}
+        );
+        /// <summary>
+        /// Declares Render Target View (RTV/Write) access for reading a texture in shaders.
+        ///
+        /// Access to resources is unique per pass. Attempting to declare access to the same resource
+        /// multiple times in the same pass will result in an exception.
+        /// </summary>
+        ResourceHandle AccessTextureRTV(
+            PassHandle pass, ResourceHandle texture,
+            RHITextureViewDesc const& desc = {}
+        );
+        /// <summary>
+        /// Declares Depth-stencil view (DSV/Write, Fragment Read) access for reading a texture in shaders.
+        ///
+        /// Access to resources is unique per pass. Attempting to declare access to the same resource
+        /// multiple times in the same pass will result in an exception.
+        /// </summary>
+        ResourceHandle AccessTextureDSV(
+            PassHandle pass, ResourceHandle texture,
+            RHITextureViewDesc const& desc = {}
+        );
+        /// <summary>
+        /// Declares Copy Destination access for a texture.
+        /// 
+        /// Access to resources is unique per pass. Attempting to declare access to the same resource
+        /// multiple times in the same pass will result in an exception.
+        /// </summary>        
+        void AccessTextureCopyDst(
+            PassHandle pass, ResourceHandle texture,
+            RHITextureSubresourceRange const& range = {}
+        );
+        /// <summary>
+        /// Declares Copy Source access for a texture.
+        /// 
+        /// Access to resources is unique per pass. Attempting to declare access to the same resource
+        /// multiple times in the same pass will result in an exception.
+        /// </summary>
+        void AccessTextureCopySrc(
+            PassHandle pass, ResourceHandle texture,
+            RHITextureSubresourceRange const& range = {}
+        );
         /// <summary>
         /// Create a render pass and add it to the render graph.
         /// 
@@ -209,6 +314,7 @@ namespace Foundation {
         /// This should only be called inside a pass's Record() function, or after EndSetup().
         /// </summary>        
         inline Variant<RHIDeviceObjectHandle<RHIBuffer>, RHIDeviceObjectHandle<RHITexture>> DereferenceResource(ResourceHandle handle) {
+            CHECK(m_state == State::PostSetup || m_state == State::Execute);
             CHECK(m_resources && handle < m_resources->resources.size());
             using Tv = Variant<RHIDeviceObjectHandle<RHIBuffer>, RHIDeviceObjectHandle<RHITexture>>;
             return m_resources->resources[handle].visit(
@@ -224,6 +330,7 @@ namespace Foundation {
         /// This should only be called inside a pass's Record() function, or after EndSetup().
         /// </summary>       
         inline RHITextureHandle<RHITextureView> DereferenceTextureView(ResourceHandle handle) {
+            CHECK(m_state == State::PostSetup || m_state == State::Execute);
             CHECK(m_resources && handle < m_resources->views.size());
             using Tv = RHITextureHandle<RHITextureView>;
             return m_resources->views[handle].visit(
@@ -238,9 +345,15 @@ namespace Foundation {
         std::string DbgDumpActivePasses() const;
 #pragma endregion
 
-        RHIDevice* GetDevice() const { return m_device.Get(); }
-        RHICommandPool* GetCommandPool() const { return m_cmdPool.Get(); }
-        RHIDeviceQueue* GetGfxQueue() const { return m_gfxQueue; }
-        RHIDeviceQueue* GetComputeQueue() const { return m_compQueue; }
+#pragma region Device Resources
+        inline RHIExtent2D GetSwapchainExtent() const {
+            CHECK(m_swapchain && "Swapchain not initialized");
+            return m_swapchain->m_desc.extents;
+        }
+        inline RHIDevice* GetDevice() const { return m_device.Get(); }
+        inline RHICommandPool* GetCommandPool() const { return m_cmdPool.Get(); }
+        inline RHIDeviceQueue* GetGfxQueue() const { return m_gfxQueue; }
+        inline RHIDeviceQueue* GetComputeQueue() const { return m_compQueue; }
     };
+#pragma endregion
 }

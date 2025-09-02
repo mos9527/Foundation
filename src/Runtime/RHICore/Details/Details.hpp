@@ -95,7 +95,7 @@ namespace Foundation::RHI {
         }
         /// <summary>
         /// Releases the underlying RHIHandle, invalidating the scoped handle.
-        /// The resource will never be destroyed, and the handle can be used independently.
+        /// NOTE: This may leak the resource if not properly managed afterwards.
         /// </summary>               
         RHIHandle<Factory, T> Release() {
             RHIHandle<Factory, T> handle = *this;

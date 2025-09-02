@@ -51,6 +51,8 @@ namespace Foundation::RHI {
         if (state & DepthStencilWrite) flags |= vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
         if (state & DepthStencilRead) flags |= vk::AccessFlagBits2::eDepthStencilAttachmentRead;
         if (state & TransferWrite) flags |= vk::AccessFlagBits2::eTransferWrite;
+        if (state & TransferRead) flags |= vk::AccessFlagBits2::eTransferRead;
+        if (state & ShaderWrite) flags |= vk::AccessFlagBits2::eShaderWrite;
         if (state & ShaderRead) flags |= vk::AccessFlagBits2::eShaderRead;
         return flags;
     }

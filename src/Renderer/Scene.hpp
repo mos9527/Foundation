@@ -1,5 +1,6 @@
 #pragma once
 #include "SceneData.hpp"
+#include "RenderPass.hpp"
 namespace Foundation {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
@@ -48,8 +49,21 @@ namespace Foundation {
         template<typename Global>
         void UpdateGlobal(Global const& data);
 
+        inline SceneData& GetData() { return m_data; }
         inline bool Update(RHICommandList* cmd) {
             return m_data.Update(cmd);
+        }
+    };
+    struct ScenePass : public RenderPass {
+        Scene& scene;
+        // Resource handles for the global, instance, and primitive buffers
+        // These are declared as soon as the pass is constructed/created
+        ResourceHandle m_global{}, m_instance{}, m_primitive{};
+        ScenePass(Renderer& renderer, Scene& scene);
+
+        virtual void Setup(PassHandle self, Renderer& renderer) override;
+        virtual void Record(PassHandle self, Renderer&, RHICommandList* cmd) override {
+            scene.Update(cmd);
         }
     };
 }

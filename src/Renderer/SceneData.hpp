@@ -102,9 +102,9 @@ namespace Foundation {
         void FreeInstanceData(SceneHandle handle);
         std::pair<size_t, size_t> QueryInstanceDataSizeAndOffset(SceneHandle handle) const;
 
-        RHIBuffer const* GetPrimitiveDataBuffer() const { return m_primitiveData.Get(); }
-        RHIBuffer const* GetInstanceDataBuffer() const { return m_instanceData.Get(); }
-        RHIBuffer* GetGlobalDataBuffer() const { return m_globalData.Get(); }
+        RHIDeviceObjectHandle<RHIBuffer> GetPrimitiveDataBuffer() const { return m_primitiveData; }
+        RHIDeviceObjectHandle<RHIBuffer> GetInstanceDataBuffer() const { return m_instanceData; }
+        RHIDeviceObjectHandle<RHIBuffer> GetGlobalDataBuffer() const { return m_globalData; }
 
         /// <summary>
         /// Update GPU buffers with the latest data
