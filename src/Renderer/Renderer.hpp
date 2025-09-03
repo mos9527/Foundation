@@ -4,7 +4,7 @@
 #include <RHICore/Device.hpp>
 #include <RHICore/Descriptor.hpp>
 #include "RenderPass.hpp"
-#include <optional>
+#include <ranges>
 namespace Foundation {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
@@ -15,6 +15,11 @@ namespace Foundation {
         RHIPipelineStageBits::VertexShader |
         RHIPipelineStageBits::RayTracingShader |
         RHIPipelineStageBits::MeshShader;
+    const RHIResourceAccessBits kAllShaderWrites =
+        RHIResourceAccessBits::ShaderWrite |
+        RHIResourceAccessBits::RenderTargetWrite |
+        RHIResourceAccessBits::DepthStencilWrite |
+        RHIResourceAccessBits::TransferWrite;
     struct TrackedResource {
         // Handle of the resource in the resource definitions vector
         ResourceHandle handle;
@@ -22,30 +27,74 @@ namespace Foundation {
         std::string name;
         // The resource definition itself
         ResourceDefinition desc;
-        TrackedResource(ResourceHandle handle, std::string const& name, ResourceDefinition resourceDesc)
-            : handle(handle), name(name), desc(resourceDesc) {}
 
         /* STATES */
-        // Last pass that produced this resource
-        std::optional<PassHandle> lastProducerPass{};
-        // Last known access and stage of this resource
-        RHIResourceAccess lastAccess{};
-        // Last known pipeline stage of this resource
-        RHIPipelineStage lastStage{};
-        // (Texture) Last known layout of this resource
-        RHITextureLayout lastLayout{};
-        // (Texture) Last known subresource range of this resource
-        RHITextureSubresourceRange lastRange{};
-        // (Buffer) Last known offset range of this resource
-        std::pair<size_t, size_t> lastBufferRange{};
-        inline void ResetExecuteStates() {
-            lastAccess = {};
-            lastStage = {};
-            lastLayout = {};
-            lastRange = {};
-            lastBufferRange = {};
-            lastProducerPass.reset();
+        // (Texture) Per-subresource states
+        size_t textureLayers{ 0 }, textureMips{ 0 };
+        struct SubresourceState {
+            size_t layer{ 0 }, mip{ 0 };
+            PassHandle producer{ kInvalidHandle };
+            RHIResourceAccess access{};
+            RHIPipelineStage stage{};
+            RHITextureLayout layout{};
+            void reset() {
+                producer = kInvalidHandle;
+                access = {};
+                stage = {};
+                layout = {};
+            }
+        };
+        // [mip 0 array 0, mip 0 array 1, ..., mip 1 array 0, ...]
+        StlVector<SubresourceState> lastSubresourceStates;       
+        auto GetLastSubresourceStateOf(RHITextureSubresourceRange const& range) {
+            auto [mip_begin, mip_end] = range.GetMipLevelRange();
+            auto [layer_begin, layer_end] = range.GetArrayLayerRange();
+            CHECK(mip_begin <= mip_end && mip_end < textureMips);
+            return std::views::all(StlSpan<SubresourceState>{
+                lastSubresourceStates.begin() + textureLayers * mip_begin,
+                lastSubresourceStates.end()
+            }) | std::views::filter([=](SubresourceState const& state) {
+                return state.mip >= mip_begin && state.mip <= mip_end && state.layer >= layer_begin && state.layer <= layer_end;
+            });
         }
+        SubresourceState GetLastSubresourceStateOf(size_t mip, size_t layer) {
+            CHECK(mip < textureMips && layer < textureLayers);
+            return lastSubresourceStates[mip * textureLayers + layer];
+        }
+
+        // (Buffer) Last known state
+        // Transitions here are always global since granularity would be too fine. And seems
+        // like drivers don't really care?
+        // See Also: https://www.reddit.com/r/vulkan/comments/v2mswb/global_memory_barriers_vs_bufferimage_memory/
+        struct BufferState {
+            PassHandle producer{ kInvalidHandle };
+            RHIResourceAccess access{};
+            RHIPipelineStage stage{};
+            void reset() {
+                producer = kInvalidHandle;
+                access = {};
+                stage = {};
+            }
+        } lastBufferState{};
+
+        TrackedResource(ResourceHandle handle, std::string const& name, ResourceDefinition resourceDesc, Allocator* alloc)
+            : handle(handle), name(name), desc(resourceDesc), lastSubresourceStates(alloc) {
+            // Resize subresource states if texture
+            auto update_texture_desc = [&](RHITextureDesc const& desc) {
+                lastSubresourceStates.resize(desc.array_layers * desc.mip_levels);
+                textureLayers = desc.array_layers;
+                textureMips = desc.mip_levels;
+                for (size_t i = 0; i < lastSubresourceStates.size(); i++){
+                    auto& sta = lastSubresourceStates[i];
+                    sta.mip = i / desc.array_layers, sta.layer = i % desc.array_layers;
+                }
+            };
+            desc.visit(
+                [&](RHITextureDesc const& tex) { update_texture_desc(tex); },
+                [&](RHIDeviceObjectHandle<RHITexture> const& tex) { update_texture_desc(tex->m_desc); }
+            );
+        }
+
     };
     struct TrackedPass {
         struct CreationInfo {
@@ -60,15 +109,14 @@ namespace Foundation {
         UniquePtr<RenderPass> pass;
         // Type of the queue to run this pass on (Graphics or Compute)
         PassType type;
-        // First pass that consumes this resource
-        std::optional<PassHandle> firstConsumerPass{};
         // Is pass used
         bool used{ false };
         // Depth in the dependency graph, used for scheduling
         size_t depth{};
         // Execution order index
         size_t ord{};
-        // Resource handle referenced by this pass into tracked resources
+        // Unique resource handles referenced by this pass into tracked resources
+        // These will be used to decide resource creation and lifetime
         // -> trackedResources
         StlVector<ResourceHandle> resources;
         // Texture views used by this pass
@@ -158,10 +206,13 @@ namespace Foundation {
         void AllocateResources();
         void PushPassBarriers(TrackedPass& pass, RHICommandList* cmd);
         void SubmitPass(TrackedPass& pass, RHICommandList* cmd);
-        // Access declaration helpers
-        void DeclareAccessInternal(PassHandle pass, ResourceHandle res, RHIResourceAccess access);
         // Helpers to create views and access for textures
         // Exported as helper functions to create DirectX/UE style SRV/UAV/RTV and co.
+        void DeclareBufferAccess(PassHandle pass, ResourceHandle buffer,
+            RHIPipelineStage stage,
+            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead,
+            size_t offset = 0, size_t size = kFullSize
+        );
         void DeclareTextureAccess(
             PassHandle pass, ResourceHandle res,
             RHIPipelineStage stage,
@@ -169,6 +220,7 @@ namespace Foundation {
             RHIResourceAccess access = RHIResourceAccessBits::ShaderRead,
             RHITextureLayout layout = RHITextureLayout::ShaderReadOnly
         );
+
         ResourceHandle CreateTextureView(
             PassHandle pass, ResourceHandle res,
             RHITextureViewDesc const& desc
@@ -215,11 +267,13 @@ namespace Foundation {
         /// 
         /// Resource dependencies will be implcitly created.        
         /// </summary>
-        void AccessBuffer(PassHandle pass, ResourceHandle buffer,
+        inline void AccessBuffer(PassHandle pass, ResourceHandle buffer,
             RHIPipelineStage stage,
             RHIResourceAccess access = RHIResourceAccessBits::ShaderRead,
             size_t offset = 0, size_t size = kFullSize
-        );
+        ) {
+            DeclareBufferAccess(pass, buffer, stage, access, offset, size);
+        }
         /// <summary>
         /// Declares Shader Resource View (SRV/Read-Only) access for reading a texture in shaders.
         ///

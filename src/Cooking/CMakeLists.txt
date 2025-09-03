@@ -7,6 +7,7 @@ FetchContent_Declare(
     stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
     GIT_TAG 	  f58f558c120e9b32c217290b80bad1a0729fbb2c
+    GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(stb)
 
@@ -14,6 +15,7 @@ FetchContent_Declare(
     fast_obj
     GIT_REPOSITORY https://github.com/thisistherk/fast_obj
     GIT_TAG d620667f10a548dee94dbc8c144bb22f79162176
+    GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(fast_obj)
 

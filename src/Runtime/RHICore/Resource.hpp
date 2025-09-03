@@ -116,17 +116,7 @@ namespace Foundation::RHI {
         RHIMultisampleCount sample_count{ RHIMultisampleCount::e1 }; // For MSAA
         uint32_t mip_levels{ 1 };
         uint32_t array_layers{ 1 }; // No. of images in a image array.
-        RHITextureLayout initial_layout{};
-
-        constexpr size_t GetTexels() const {
-            size_t size = 0;
-            RHIExtent3D e = extent;
-            for (uint32_t i = 0; i < mip_levels; ++i) {
-                size += std::max(e.x, 1u) * std::max(e.y, 1u) * std::max(e.z, 1u);
-                e.x >>= 1, e.y >>= 1, e.z >>= 1;
-            }
-            return size * array_layers;
-        }
+        RHITextureLayout initial_layout{};        
     };
     class RHITexture;
     class RHITextureView;
@@ -141,6 +131,13 @@ namespace Foundation::RHI {
     struct RHITextureSubresourceRange {
         RHITextureSubresourceLayer layer;
         uint32_t mip_count{ 1 }; // Number of mip levels in the range
+
+        inline std::pair<uint32_t, uint32_t> GetMipLevelRange() const {
+            return { layer.mip_level, layer.mip_level + mip_count - 1 };
+        }
+        inline std::pair<uint32_t, uint32_t> GetArrayLayerRange() const {
+            return { layer.base_array_layer, layer.base_array_layer + layer.layer_count - 1 };
+        }
     };
     struct RHITextureViewDesc {
         RHIResourceFormat format;

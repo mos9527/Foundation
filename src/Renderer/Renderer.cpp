@@ -36,74 +36,63 @@ void Renderer::BeginSetup() {
     m_setup = ConstructUnique<Setup>(m_allocator, m_allocator);
     m_state = State::Setup;
 }
-void Renderer::DeclareAccessInternal(PassHandle pass, ResourceHandle handle, RHIResourceAccess access) {
-    CHECK(m_state == State::Setup);
-    auto& resource = m_setup->trackedResources[handle];
-    if (resource.lastProducerPass.has_value()) {
-        if (pass == resource.lastProducerPass.value()) {
-            // No need to add self-dependency
-            return;
-        }
-        m_setup->add_edge(pass, resource.lastProducerPass.value(), handle);
-        auto& fc = m_setup->trackedPasses[resource.lastProducerPass.value()].firstConsumerPass;
-        if (!fc.has_value())
-            fc = pass;
-    }
-    using enum RHIResourceAccessBits;
-    switch ((RHIResourceAccessBits)access)
-    {
-    case RenderTargetWrite:
-    case DepthStencilWrite:
-    case TransferWrite:
-        resource.lastProducerPass = pass;
-        break;
-    }
-    m_setup->trackedPasses[pass].resources.emplace_back(handle);
-}
 ResourceHandle Renderer::CreateTextureView(
     PassHandle pass, ResourceHandle handle, RHITextureViewDesc const& desc) {
     CHECK(m_state == State::Setup);
     auto& resource = m_setup->trackedResources[handle];
-    RHITextureDesc rdesc = resource.desc.visit(
-        [&](RHITextureDesc const& tex) { return tex; },
-        [&](RHIDeviceObjectHandle<RHITexture> const& tex) { return tex->m_desc; },
-        [](auto const&) -> RHITextureDesc { throw std::runtime_error("Cannot create texture view of non-texture resource"); }
-    );
-    // TODO: View validation
     m_setup->trackedViews.emplace_back(handle, desc);
     ResourceHandle hdl = m_setup->trackedViews.size() - 1;
     m_setup->trackedPasses[pass].views.emplace_back(hdl);
     return hdl;
 }
+void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPipelineStage stage, RHIResourceAccess access, size_t offset, size_t size) {
+    CHECK(m_state == State::Setup);
+    auto& resource = m_setup->trackedResources[handle];
+    // Check for overlap
+    for (auto& [h, _, __, ___] : m_setup->trackedPasses[pass].bufferUsages)
+        if (h == handle)
+            throw std::runtime_error("Overlap detected. Buffer access must be global.");            
+    // Add edge
+    if (resource.lastBufferState.producer != kInvalidHandle)
+        m_setup->add_edge(resource.lastBufferState.producer, pass, handle);
+    // Set producer
+    if (access & kAllShaderWrites)
+        resource.lastBufferState.producer = pass;
+    m_setup->trackedPasses[pass].bufferUsages.emplace_back(handle, access, stage, std::pair{ offset, offset + size });
+    m_setup->trackedPasses[pass].resources.emplace_back(handle);
+}
 void Renderer::DeclareTextureAccess(
     PassHandle pass, ResourceHandle handle, RHIPipelineStage stage, RHITextureSubresourceRange range, RHIResourceAccess access, RHITextureLayout layout) {
     CHECK(m_state == State::Setup);
-    // Check for overlap
-    // TODO: Investigate if allowing partial overlaps is beneficial
-    for (auto& [h, _, __, r, ___] : m_setup->trackedPasses[pass].textureUsages)
-        if (h == handle)
-            throw std::runtime_error("Overlapping texture access declared in the same pass. Access pattern must be unique per pass.");
     auto& resource = m_setup->trackedResources[handle];
-    // TODO: Range checking
-    DeclareAccessInternal(pass, handle, access);
+    // Check for overlap    
+    auto [mip_begin, mip_end] = range.GetMipLevelRange();
+    auto [layer_begin, layer_end] = range.GetArrayLayerRange();
+    for (auto& [h, _, __, r, ___] : m_setup->trackedPasses[pass].textureUsages) {
+        if (h == handle) {
+            auto [r_mip_begin, r_mip_end] = r.GetMipLevelRange();
+            auto [r_layer_begin, r_layer_end] = r.GetArrayLayerRange();
+            // Mip intersects
+            if (!(mip_end < r_mip_begin || mip_begin > r_mip_end)) {
+                // Layer intersects
+                if (!(layer_end < r_layer_begin || layer_begin > r_layer_end))
+                    throw std::runtime_error("Overlap detected. Texture access must be disjoint.");
+            }
+            break;
+        }
+    }
+    // Do this for all subresources in range
+    auto& resource = m_setup->trackedResources[handle];
+    for (auto& sta : resource.GetLastSubresourceStateOf(range)) {
+        // Add edge
+        if (sta.producer != kInvalidHandle)
+            m_setup->add_edge(sta.producer, pass, handle);
+        // Set producer
+        if (access & kAllShaderWrites)
+            sta.producer = pass;
+    }
     m_setup->trackedPasses[pass].textureUsages.emplace_back(handle, access, stage, range, layout);
-}
-void Renderer::AccessBuffer(PassHandle pass, ResourceHandle handle, RHIPipelineStage stage, RHIResourceAccess access, size_t offset, size_t size) {
-    CHECK(m_state == State::Setup);
-    // Check for overlap
-    for (auto& [h, _, __, range] : m_setup->trackedPasses[pass].bufferUsages)
-        if (h == handle)
-            throw std::runtime_error("Overlapping buffer access declared in the same pass. Access pattern must be unique per pass.");            
-    auto& resource = m_setup->trackedResources[handle];
-    RHIBufferDesc bdesc = resource.desc.visit(
-        [&](RHIBufferDesc const& buf) { return buf; },
-        [&](RHIDeviceObjectHandle<RHIBuffer> const& buf) { return buf->m_desc; },
-        [](auto const&) -> RHIBufferDesc { throw std::runtime_error("Cannot create buffer access of non-buffer resource"); }
-    );
-    if (offset + size > bdesc.size)
-        throw std::out_of_range("Buffer access out of range");
-    DeclareAccessInternal(pass, handle, access);
-    m_setup->trackedPasses[pass].bufferUsages.emplace_back(handle, access, stage, std::pair{ offset, offset + size });
+    m_setup->trackedPasses[pass].resources.emplace_back(handle);
 }
 
 ResourceHandle Renderer::AccessTextureSRV(
@@ -204,7 +193,7 @@ void Renderer::EndSetup(PassHandle epiloguePass) {
         // Sort by longest path.
         // This should maintain topological order (albeit in reverse)
         // and prioritize passes that are deeper in the graph        
-        });
+    });
     m_setup->activePasses = topo;
     m_setup->epiloguePass = epiloguePass;
     for (PassHandle ord = 0; ord < m_setup->activePasses.size(); ord++) {
@@ -212,7 +201,11 @@ void Renderer::EndSetup(PassHandle epiloguePass) {
         // Derive lifetimes for resources from execution order
         // AllocateResources() uses this to overlap resources.        
         pass.ord = ord, pass.depth = depth[pass.handle];
-        for (auto res : pass.resources) {
+        auto& resources = pass.resources;
+        // Sort then make unique
+        std::sort(resources.begin(), resources.end());
+        resources.erase(std::unique(resources.begin(), resources.end()), resources.end());
+        for (auto res : resources) {
             if (!m_setup->activeResources.contains(res))
                 m_setup->activeResources[res] = { ord, ord };
             else {
@@ -274,43 +267,46 @@ void Renderer::PushPassBarriers(TrackedPass& pass, RHICommandList* cmd) {
     // where we wait on the producer pass's semaphore on the GPU
     cmd->BeginTransition();
     // Textures
+    // These are always disjoint ranges
     for (auto [hdl, access, stage, range, layout] : pass.textureUsages) {
         auto& tres = m_setup->trackedResources[hdl];
         auto& res = DereferenceResource(hdl).Get<RHIDeviceObjectHandle<RHITexture>>();
-        cmd->SetImageTransition(
-            res.Get(),
-            {
-                .src_access = tres.lastAccess,
-                .dst_access = access,
-                .src_stage = tres.lastStage,
-                .dst_stage = stage,
-                .src_img_layout = tres.lastLayout,
-                .dst_img_layout = layout,
-                .src_img_range = range
-            }
-        );
-        tres.lastAccess = access;
-        tres.lastStage = stage;
-        tres.lastLayout = layout;
+        for (auto& sta : tres.GetLastSubresourceStateOf(range)) {
+            cmd->SetImageTransition(
+                res.Get(),
+                {
+                    .src_access = sta.access,
+                    .dst_access = access,
+                    .src_stage = sta.stage,
+                    .dst_stage = stage,
+                    .src_img_layout = sta.layout,
+                    .dst_img_layout = layout,
+                    .src_img_range = range
+                }
+            );
+            sta.access = access;
+            sta.stage = stage;
+            sta.layout = layout;
+        }        
     }
     // Buffers
+    // These are always global i.e. at most one per buffer per pass.
     for (auto [hdl, access, stage, range] : pass.bufferUsages) {
         auto& tres = m_setup->trackedResources[hdl];
         auto& res = DereferenceResource(hdl).Get<RHIDeviceObjectHandle<RHIBuffer>>();
         cmd->SetBufferTransition(
             res.Get(),
             {
-                .src_access = tres.lastAccess,
+                .src_access = tres.lastBufferState.access,
                 .dst_access = access,
-                .src_stage = tres.lastStage,
+                .src_stage = tres.lastBufferState.stage,
                 .dst_stage = stage,
                 .src_buffer_offset = range.first,
                 .src_buffer_size = range.second - range.first
             }
         );
-        tres.lastAccess = access;
-        tres.lastStage = stage;
-        tres.lastBufferRange = range;
+        tres.lastBufferState.access = access;
+        tres.lastBufferState.stage = stage;        
     }
     cmd->EndTransition();
 }
@@ -324,9 +320,9 @@ void Renderer::SubmitPass(TrackedPass& pass, RHICommandList* cmd) {
     // 
     // Deadlocks should be impossible since we only produce acyclic graphs.    
     Core::StlVector<std::pair<RHIDeviceSemaphore*, size_t>> waits(&alloc);
-    auto check_wait = [&](std::optional<PassHandle> const& other) {
-        if (other.has_value()) {
-            auto& opass = m_setup->trackedPasses[other.value()];
+    auto check_wait = [&](PassHandle other) {
+        if (other != kInvalidHandle) {
+            auto& opass = m_setup->trackedPasses[other];
             if (opass.type != pass.type) {
                 CHECK(opass.waitSemaphore.IsValid() && "Pass contains invalid wait semaphore");
                 // Wait on the producer pass's semaphore                       
@@ -338,12 +334,18 @@ void Renderer::SubmitPass(TrackedPass& pass, RHICommandList* cmd) {
     for (auto [hdl, access, stage, range, layout] : pass.textureUsages) {
         auto [rhdl, view] = m_setup->trackedViews[hdl];
         auto& res = m_setup->trackedResources[rhdl];
-        check_wait(res.lastProducerPass);
+        for (auto& sta : res.GetLastSubresourceStateOf(range)) {
+            check_wait(sta.producer);
+            if (access & kAllShaderWrites)
+                sta.producer = pass.handle;
+        }
     }
     // Buffer ranges
     for (auto [hdl, access, stage, range] : pass.bufferUsages) {
         auto& res = m_setup->trackedResources[hdl];
-        check_wait(res.lastProducerPass);
+        check_wait(res.lastBufferState.producer);
+        if (access & kAllShaderWrites)
+            res.lastBufferState.producer = pass.handle;
     }
     // Submit
     RHIDeviceQueue* queue = pass.type == PassType::Graphics ? m_gfxQueue : m_compQueue;
@@ -359,14 +361,6 @@ void Renderer::SubmitPass(TrackedPass& pass, RHICommandList* cmd) {
 void Renderer::Execute() {
     CHECK(m_state == State::PostSetup && "Invalid state. Did you call EndSetup()?");    
     m_state = State::Execute;
-    // Reset states
-    for (auto idx : m_setup->activePasses) {
-        auto& pass = m_setup->trackedPasses[idx];
-        for (auto hdl : pass.resources) {
-            auto& res = m_setup->trackedResources[hdl];
-            res.ResetExecuteStates();
-        }
-    }
     // Execute passes
     // Passes within the same depths may be recorded in parallel
     // TODO: Enable parallelism

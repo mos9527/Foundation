@@ -1,8 +1,5 @@
 cmake_minimum_required(VERSION 3.26)
 
-include(FetchContent)
-
-find_package(Vulkan REQUIRED)
 
 file(
     GLOB_RECURSE SOURCES 
@@ -12,6 +9,18 @@ file(
     GLOB_RECURSE INCLUDES 
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
 )
+
+include(FetchContent)
+
+find_package(Vulkan REQUIRED)
+
+FetchContent_Declare(
+  VulkanMemoryAllocator
+  GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+  GIT_TAG        v3.3.0
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(VulkanMemoryAllocator)
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 add_library(Foundation_RHIVulkan ${SOURCES} ${INCLUDES})
