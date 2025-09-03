@@ -23,6 +23,9 @@ struct VSOutput
     float4 tangent; // T_BSign
 };
 
+[[vk::push_constant]] float4 colorPC1;
+
+[[vk::push_constant]] float4 colorPC2;
 module Math;
 __include Math;
 
@@ -41,5 +44,7 @@ VSOutput vertMain(VSInput input) {
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
-    return float4(dot(vertIn.normal,float3(0,0,1)));
+
+    float4 smp = texture.Sample(sampler, vertIn.pos.xy);
+    return float4(smp * dot(vertIn.normal,float3(0,0,1))) + colorPC1 + colorPC2;
 }

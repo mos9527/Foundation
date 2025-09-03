@@ -213,8 +213,6 @@ void Renderer::EndSetup(PassHandle epiloguePass) {
 }
 void Renderer::AllocateResources() {
     CHECK(m_state == State::Setup);
-    if (!m_device) // XXX: Testing only
-        return;
     m_resources = ConstructUnique<Resources>(m_allocator, m_allocator);
     m_resources->fit(m_setup->trackedResources.size());
     // Create semaphores for inter-queue synchronization
