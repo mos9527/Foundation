@@ -43,6 +43,16 @@ namespace Foundation {
                 stage = {};
                 layout = {};
             }
+            RHITextureSubresourceRange ToRange() const {
+                return RHITextureSubresourceRange{
+                    .layer = {
+                        .mip_level = static_cast<uint32_t>(mip),
+                        .base_array_layer = static_cast<uint32_t>(layer),
+                        .layer_count = 1
+                    },
+                    .mip_count = 1
+                };
+            }
         };
         // [mip 0 array 0, mip 0 array 1, ..., mip 1 array 0, ...]
         StlVector<SubresourceState> lastSubresourceStates;       
@@ -53,7 +63,7 @@ namespace Foundation {
             return std::views::all(StlSpan<SubresourceState>{
                 lastSubresourceStates.begin() + textureLayers * mip_begin,
                 lastSubresourceStates.end()
-            }) | std::views::filter([=](SubresourceState const& state) {
+            }) | std::views::filter([=](SubresourceState& state) {
                 return state.mip >= mip_begin && state.mip <= mip_end && state.layer >= layer_begin && state.layer <= layer_end;
             });
         }
@@ -107,7 +117,7 @@ namespace Foundation {
         std::string name;
         // The render pass itself
         UniquePtr<RenderPass> pass;
-        // Type of the queue to run this pass on (Graphics or Compute)
+        // Type of the queue preferred to run this pass on (Graphics or Compute)
         PassType type;
         // Is pass used
         bool used{ false };
@@ -115,6 +125,8 @@ namespace Foundation {
         size_t depth{};
         // Execution order index
         size_t ord{};
+        // Priority of the pass, higher means earlier execution within the same depth
+        size_t pri{};
         // Unique resource handles referenced by this pass into tracked resources
         // These will be used to decide resource creation and lifetime
         // -> trackedResources
@@ -128,8 +140,8 @@ namespace Foundation {
         StlVector<std::tuple<ResourceHandle, RHIResourceAccess, RHIPipelineStage, RHITextureSubresourceRange, RHITextureLayout>> textureUsages;
         // Buffer ranges used by this pass
         // Sorted by EndSetup()       
-        // [resource handle, access, stage, {begin, end}] -> trackedResources
-        StlVector<std::tuple<ResourceHandle, RHIResourceAccess, RHIPipelineStage, std::pair<size_t, size_t>>> bufferUsages;
+        // [resource handle, access, stage] -> trackedResources
+        StlVector<std::tuple<ResourceHandle, RHIResourceAccess, RHIPipelineStage>> bufferUsages;
         TrackedPass(Allocator* alloc, PassHandle handle, CreationInfo const& info, UniquePtr<RenderPass> renderPass)
             : resources(alloc), views(alloc), bufferUsages(alloc), textureUsages(alloc), handle(handle), name(info.name), pass(std::move(renderPass)), type(info.type) {
         };
@@ -210,8 +222,7 @@ namespace Foundation {
         // Exported as helper functions to create DirectX/UE style SRV/UAV/RTV and co.
         void DeclareBufferAccess(PassHandle pass, ResourceHandle buffer,
             RHIPipelineStage stage,
-            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead,
-            size_t offset = 0, size_t size = kFullSize
+            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead
         );
         void DeclareTextureAccess(
             PassHandle pass, ResourceHandle res,
@@ -226,6 +237,10 @@ namespace Foundation {
             RHITextureViewDesc const& desc
         );
     public:
+        // Enable async compute for compute passes
+        bool m_enableAsyncCompute{ true };
+
+        Renderer(Allocator* allocator) : m_allocator(allocator), m_state(State::Undefined) {}
         Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator);
 
         void Execute();
@@ -251,14 +266,14 @@ namespace Foundation {
         ResourceHandle CreateResource(std::string const& name, T const& desc) {
             CHECK(m_setup && "Setup context not initialized. Did you call BeginSetup()?");
             ResourceHandle index = m_setup->trackedResources.size();
-            m_setup->trackedResources.emplace_back(index, name, desc);
+            m_setup->trackedResources.emplace_back(index, name, desc, m_allocator);
             return m_setup->trackedResources.size() - 1;
         }
         /// <summary>
         /// Declares that a pass will access a Buffer in a certain way.
         /// This will be used to automatically place barriers in-between passes.
         ///
-        /// Access to resources is unique per pass. Attempting to declare access to the same resource
+        /// Access to *buffer* is unique per pass. Attempting to declare access to the same buffer
         /// multiple times in the same pass will result in an exception.
         /// 
         /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
@@ -269,15 +284,14 @@ namespace Foundation {
         /// </summary>
         inline void AccessBuffer(PassHandle pass, ResourceHandle buffer,
             RHIPipelineStage stage,
-            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead,
-            size_t offset = 0, size_t size = kFullSize
+            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead
         ) {
-            DeclareBufferAccess(pass, buffer, stage, access, offset, size);
+            DeclareBufferAccess(pass, buffer, stage, access);
         }
         /// <summary>
         /// Declares Shader Resource View (SRV/Read-Only) access for reading a texture in shaders.
         ///
-        /// Access to resources is unique per pass. Attempting to declare access to the same resource
+        /// Access to *subresource* is unique per pass. Attempting to declare access to the same subresource
         /// multiple times in the same pass will result in an exception.
         /// </summary>
         ResourceHandle AccessTextureSRV(
@@ -287,7 +301,7 @@ namespace Foundation {
         /// <summary>
         /// Declares Unordered Access View (UAV/Read-write) access for reading a texture in shaders.
         ///
-        /// Access to resources is unique per pass. Attempting to declare access to the same resource
+        /// Access to *subresource* is unique per pass. Attempting to declare access to the same subresource
         /// multiple times in the same pass will result in an exception.
         /// </summary>        
         ResourceHandle AccessTextureUAV(
@@ -297,7 +311,7 @@ namespace Foundation {
         /// <summary>
         /// Declares Render Target View (RTV/Write) access for reading a texture in shaders.
         ///
-        /// Access to resources is unique per pass. Attempting to declare access to the same resource
+        /// Access to *subresource* is unique per pass. Attempting to declare access to the same subresource
         /// multiple times in the same pass will result in an exception.
         /// </summary>
         ResourceHandle AccessTextureRTV(
@@ -307,7 +321,7 @@ namespace Foundation {
         /// <summary>
         /// Declares Depth-stencil view (DSV/Write, Fragment Read) access for reading a texture in shaders.
         ///
-        /// Access to resources is unique per pass. Attempting to declare access to the same resource
+        /// Access to *subresource* is unique per pass. Attempting to declare access to the same subresource
         /// multiple times in the same pass will result in an exception.
         /// </summary>
         ResourceHandle AccessTextureDSV(
@@ -317,7 +331,7 @@ namespace Foundation {
         /// <summary>
         /// Declares Copy Destination access for a texture.
         /// 
-        /// Access to resources is unique per pass. Attempting to declare access to the same resource
+        /// Access to *subresource* is unique per pass. Attempting to declare access to the same subresource
         /// multiple times in the same pass will result in an exception.
         /// </summary>        
         void AccessTextureCopyDst(
@@ -327,7 +341,7 @@ namespace Foundation {
         /// <summary>
         /// Declares Copy Source access for a texture.
         /// 
-        /// Access to resources is unique per pass. Attempting to declare access to the same resource
+        /// Access to *subresource* is unique per pass. Attempting to declare access to the same subresource
         /// multiple times in the same pass will result in an exception.
         /// </summary>
         void AccessTextureCopySrc(

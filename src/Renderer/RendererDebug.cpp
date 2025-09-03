@@ -26,19 +26,6 @@ std::string Renderer::DbgDumpGraphviz() const {
                 resources[w].name);
         }
     }
-    // Cross-queue sync points
-    for (auto& pass : passes) {
-        auto const& consumer = pass.firstConsumerPass;
-        if (consumer.has_value()) {
-            auto const& cpass = passes[consumer.value()];
-            if (cpass.type != pass.type)
-                fmt::format_to(
-                    std::back_inserter(out),
-                    "    \"{}@{}\" -> \"{}@{}\" [label=\"<x-queue syncs>\" style=dotted];\n",
-                    cpass.name, cpass.handle,
-                    pass.name, pass.handle);
-        }
-    }
     fmt::format_to(std::back_inserter(out), "}}\n");
     return out;
 }

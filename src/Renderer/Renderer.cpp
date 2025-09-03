@@ -45,20 +45,20 @@ ResourceHandle Renderer::CreateTextureView(
     m_setup->trackedPasses[pass].views.emplace_back(hdl);
     return hdl;
 }
-void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPipelineStage stage, RHIResourceAccess access, size_t offset, size_t size) {
+void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPipelineStage stage, RHIResourceAccess access) {
     CHECK(m_state == State::Setup);
     auto& resource = m_setup->trackedResources[handle];
     // Check for overlap
-    for (auto& [h, _, __, ___] : m_setup->trackedPasses[pass].bufferUsages)
+    for (auto& [h, _, __] : m_setup->trackedPasses[pass].bufferUsages)
         if (h == handle)
             throw std::runtime_error("Overlap detected. Buffer access must be global.");            
     // Add edge
     if (resource.lastBufferState.producer != kInvalidHandle)
-        m_setup->add_edge(resource.lastBufferState.producer, pass, handle);
+        m_setup->add_edge(pass, resource.lastBufferState.producer, handle);
     // Set producer
     if (access & kAllShaderWrites)
         resource.lastBufferState.producer = pass;
-    m_setup->trackedPasses[pass].bufferUsages.emplace_back(handle, access, stage, std::pair{ offset, offset + size });
+    m_setup->trackedPasses[pass].bufferUsages.emplace_back(handle, access, stage);
     m_setup->trackedPasses[pass].resources.emplace_back(handle);
 }
 void Renderer::DeclareTextureAccess(
@@ -82,11 +82,10 @@ void Renderer::DeclareTextureAccess(
         }
     }
     // Do this for all subresources in range
-    auto& resource = m_setup->trackedResources[handle];
     for (auto& sta : resource.GetLastSubresourceStateOf(range)) {
         // Add edge
         if (sta.producer != kInvalidHandle)
-            m_setup->add_edge(sta.producer, pass, handle);
+            m_setup->add_edge(pass, sta.producer, handle);
         // Set producer
         if (access & kAllShaderWrites)
             sta.producer = pass;
@@ -188,12 +187,6 @@ void Renderer::EndSetup(PassHandle epiloguePass) {
         topo.push_back(u);
     };
     dfs(epiloguePass, -1, dfs);
-    std::stable_sort(topo.begin(), topo.end(), [&](PassHandle a, PassHandle b) {
-        return depth[a] > depth[b];
-        // Sort by longest path.
-        // This should maintain topological order (albeit in reverse)
-        // and prioritize passes that are deeper in the graph        
-    });
     m_setup->activePasses = topo;
     m_setup->epiloguePass = epiloguePass;
     for (PassHandle ord = 0; ord < m_setup->activePasses.size(); ord++) {
@@ -220,6 +213,8 @@ void Renderer::EndSetup(PassHandle epiloguePass) {
 }
 void Renderer::AllocateResources() {
     CHECK(m_state == State::Setup);
+    if (!m_device) // XXX: Testing only
+        return;
     m_resources = ConstructUnique<Resources>(m_allocator, m_allocator);
     m_resources->fit(m_setup->trackedResources.size());
     // Create semaphores for inter-queue synchronization
@@ -256,6 +251,12 @@ void Renderer::AllocateResources() {
         auto& res = DereferenceResource(rhdl).Get<RHIDeviceObjectHandle<RHITexture>>();
         m_resources->views[hdl] = res->CreateTextureView(desc);
     }
+    // Reset resource states
+    for (auto& res : m_setup->trackedResources) {
+        res.lastBufferState.reset();
+        for (auto& sta : res.lastSubresourceStates)
+            sta.reset();
+    }
 }
 void Renderer::PushPassBarriers(TrackedPass& pass, RHICommandList* cmd) {
     CHECK(m_state == State::Execute);
@@ -272,6 +273,8 @@ void Renderer::PushPassBarriers(TrackedPass& pass, RHICommandList* cmd) {
         auto& tres = m_setup->trackedResources[hdl];
         auto& res = DereferenceResource(hdl).Get<RHIDeviceObjectHandle<RHITexture>>();
         for (auto& sta : tres.GetLastSubresourceStateOf(range)) {
+            if (sta.access == access && sta.stage == stage && sta.layout == layout)
+                continue;
             cmd->SetImageTransition(
                 res.Get(),
                 {
@@ -281,7 +284,7 @@ void Renderer::PushPassBarriers(TrackedPass& pass, RHICommandList* cmd) {
                     .dst_stage = stage,
                     .src_img_layout = sta.layout,
                     .dst_img_layout = layout,
-                    .src_img_range = range
+                    .src_img_range = sta.ToRange()
                 }
             );
             sta.access = access;
@@ -291,7 +294,7 @@ void Renderer::PushPassBarriers(TrackedPass& pass, RHICommandList* cmd) {
     }
     // Buffers
     // These are always global i.e. at most one per buffer per pass.
-    for (auto [hdl, access, stage, range] : pass.bufferUsages) {
+    for (auto [hdl, access, stage] : pass.bufferUsages) {
         auto& tres = m_setup->trackedResources[hdl];
         auto& res = DereferenceResource(hdl).Get<RHIDeviceObjectHandle<RHIBuffer>>();
         cmd->SetBufferTransition(
@@ -301,8 +304,6 @@ void Renderer::PushPassBarriers(TrackedPass& pass, RHICommandList* cmd) {
                 .dst_access = access,
                 .src_stage = tres.lastBufferState.stage,
                 .dst_stage = stage,
-                .src_buffer_offset = range.first,
-                .src_buffer_size = range.second - range.first
             }
         );
         tres.lastBufferState.access = access;
@@ -332,41 +333,57 @@ void Renderer::SubmitPass(TrackedPass& pass, RHICommandList* cmd) {
         };
     // Textures
     for (auto [hdl, access, stage, range, layout] : pass.textureUsages) {
-        auto [rhdl, view] = m_setup->trackedViews[hdl];
-        auto& res = m_setup->trackedResources[rhdl];
+        auto& res = m_setup->trackedResources[hdl];
         for (auto& sta : res.GetLastSubresourceStateOf(range)) {
+            if (sta.producer == pass.handle)
+                continue;
             check_wait(sta.producer);
             if (access & kAllShaderWrites)
                 sta.producer = pass.handle;
         }
     }
     // Buffer ranges
-    for (auto [hdl, access, stage, range] : pass.bufferUsages) {
+    for (auto [hdl, access, stage] : pass.bufferUsages) {
         auto& res = m_setup->trackedResources[hdl];
+        if (res.lastBufferState.producer == pass.handle)
+            continue;
         check_wait(res.lastBufferState.producer);
         if (access & kAllShaderWrites)
             res.lastBufferState.producer = pass.handle;
     }
     // Submit
-    RHIDeviceQueue* queue = pass.type == PassType::Graphics ? m_gfxQueue : m_compQueue;
-    queue->Submit({
-        .waits = waits,
-        .signals = {{{ pass.waitSemaphore.Get(), SEM_COUNTER(pass.ord) }}},
-        .cmd_lists = { cmd },
-    });
+    if (m_gfxQueue != m_compQueue && m_enableAsyncCompute) {
+        RHIDeviceQueue* queue = pass.type == PassType::Graphics ? m_gfxQueue : m_compQueue;
+        queue->Submit({
+            .waits = waits,
+            .signals = {{{ pass.waitSemaphore.Get(), SEM_COUNTER(pass.ord) }}},
+            .cmd_lists = { cmd },
+            });
+    }
+    else {
+        // Same queue on devices that don't have dedicated compute
+        // or with async compute disabled
+        m_gfxQueue->Submit({            
+            .signals = {{{ pass.waitSemaphore.Get(), SEM_COUNTER(pass.ord) }}},
+            .cmd_lists = { cmd },
+        });
+    }
 }
 #pragma endregion
 
 
 void Renderer::Execute() {
     CHECK(m_state == State::PostSetup && "Invalid state. Did you call EndSetup()?");    
-    m_state = State::Execute;
+    m_state = State::Execute;    
     // Execute passes
-    // Passes within the same depths may be recorded in parallel
-    // TODO: Enable parallelism
     auto& ords = m_setup->activePasses;
     auto& passes = m_setup->trackedPasses;
     for (size_t i = 0, j = 0; i < ords.size();) {
+        // These passes can be executed in parallel
+        // though the benefit is questionable since recording
+        // isn't at all expensive, nor there's many opportunities
+        // for parallelism to apply here.
+        // Regardless, this is here for future-proofing.     
         for (; j < ords.size() && passes[ords[j]].depth == passes[ords[i]].depth; j++) {
             auto& pass = passes[ords[j]];
             auto cmd = m_cmdPool->CreateCommandList();
@@ -374,6 +391,7 @@ void Renderer::Execute() {
             pass.pass->Record(pass.handle, *this, cmd.Get());
             SubmitPass(pass, cmd.Get());
         }
+        i = j;
     }
     uint32_t swapIndex = m_swapchain->GetNextImage(-1, {}, {});
     if (m_setup->epiloguePass != kInvalidHandle) {
