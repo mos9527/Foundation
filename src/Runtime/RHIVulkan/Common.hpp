@@ -54,6 +54,7 @@ namespace Foundation::RHI {
         if (state & TransferRead) flags |= vk::AccessFlagBits2::eTransferRead;
         if (state & ShaderWrite) flags |= vk::AccessFlagBits2::eShaderWrite;
         if (state & ShaderRead) flags |= vk::AccessFlagBits2::eShaderRead;
+        if (state & UniformRead) flags |= vk::AccessFlagBits2::eUniformRead;
         return flags;
     }
 
@@ -125,6 +126,8 @@ namespace Foundation::RHI {
             return vk::DescriptorType::eSampler;
         case SampledImage:
             return vk::DescriptorType::eSampledImage;
+        case StorageImage:
+            return vk::DescriptorType::eStorageImage;
         case StorageBuffer:
             return vk::DescriptorType::eStorageBuffer;
         default:

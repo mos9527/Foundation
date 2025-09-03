@@ -3,6 +3,7 @@
 #include <RHICore/Resource.hpp>
 #include <RHICore/Device.hpp>
 #include <RHICore/Descriptor.hpp>
+#include <RHICore/PipelineState.hpp>
 #include "RenderPass.hpp"
 #include <ranges>
 namespace Foundation {
@@ -20,15 +21,11 @@ namespace Foundation {
         RHIResourceAccessBits::RenderTargetWrite |
         RHIResourceAccessBits::DepthStencilWrite |
         RHIResourceAccessBits::TransferWrite;
-    struct TrackedResource {
-        // Handle of the resource in the resource definitions vector
-        ResourceHandle handle;
-        // Name of the resource
-        std::string name;
-        // The resource definition itself
+    struct TrackedResource {        
+        ResourceHandle handle; // Index to tracked resources
+        std::string name;        
         ResourceDefinition desc;
-
-        /* STATES */
+        /* --- states --- */
         // (Texture) Per-subresource states
         size_t textureLayers{ 0 }, textureMips{ 0 };
         struct SubresourceState {
@@ -55,19 +52,19 @@ namespace Foundation {
             }
         };
         // [mip 0 array 0, mip 0 array 1, ..., mip 1 array 0, ...]
-        StlVector<SubresourceState> lastSubresourceStates;       
-        auto GetLastSubresourceStateOf(RHITextureSubresourceRange const& range) {
+        StlVector<SubresourceState> lastSubresourceStates;
+        inline auto GetLastSubresourceStateOf(RHITextureSubresourceRange const& range) {
             auto [mip_begin, mip_end] = range.GetMipLevelRange();
             auto [layer_begin, layer_end] = range.GetArrayLayerRange();
             CHECK(mip_begin <= mip_end && mip_end < textureMips);
             return std::views::all(StlSpan<SubresourceState>{
                 lastSubresourceStates.begin() + textureLayers * mip_begin,
-                lastSubresourceStates.end()
+                    lastSubresourceStates.end()
             }) | std::views::filter([=](SubresourceState& state) {
-                return state.mip >= mip_begin && state.mip <= mip_end && state.layer >= layer_begin && state.layer <= layer_end;
-            });
+                    return state.mip >= mip_begin && state.mip <= mip_end && state.layer >= layer_begin && state.layer <= layer_end;
+                });
         }
-        SubresourceState GetLastSubresourceStateOf(size_t mip, size_t layer) {
+        inline SubresourceState& GetLastSubresourceStateOf(size_t mip, size_t layer) {
             CHECK(mip < textureMips && layer < textureLayers);
             return lastSubresourceStates[mip * textureLayers + layer];
         }
@@ -94,11 +91,11 @@ namespace Foundation {
                 lastSubresourceStates.resize(desc.array_layers * desc.mip_levels);
                 textureLayers = desc.array_layers;
                 textureMips = desc.mip_levels;
-                for (size_t i = 0; i < lastSubresourceStates.size(); i++){
+                for (size_t i = 0; i < lastSubresourceStates.size(); i++) {
                     auto& sta = lastSubresourceStates[i];
                     sta.mip = i / desc.array_layers, sta.layer = i % desc.array_layers;
                 }
-            };
+                };
             desc.visit(
                 [&](RHITextureDesc const& tex) { update_texture_desc(tex); },
                 [&](RHIDeviceObjectHandle<RHITexture> const& tex) { update_texture_desc(tex->m_desc); }
@@ -107,50 +104,66 @@ namespace Foundation {
 
     };
     struct TrackedPass {
-        struct CreationInfo {
-            std::string const& name;
-            const PassType type = PassType::Graphics;
-        };
-        // Handle of the pass in the render passes vector
-        PassHandle handle;
-        // Name of the pass
         std::string name;
-        // The render pass itself
-        UniquePtr<RenderPass> pass;
-        // Type of the queue preferred to run this pass on (Graphics or Compute)
-        PassType type;
-        // Is pass used
-        bool used{ false };
-        // Depth in the dependency graph, used for scheduling
-        size_t depth{};
-        // Execution order index
-        size_t ord{};
-        // Priority of the pass, higher means earlier execution within the same depth
-        size_t pri{};
-        // Unique resource handles referenced by this pass into tracked resources
-        // These will be used to decide resource creation and lifetime
-        // -> trackedResources
+        PassHandle handle; // Index to tracked passes
+        PassQueue queue; // Prefered type of queue to run in
+        bool used{ false }; // Culled?
+        size_t depth{}; // Depth in RG
+        size_t ord{}; // Execution order
+        /* -- resources -- */
+        StlVector<std::tuple<
+            ResourceHandle,
+            RHIResourceAccess,
+            RHIPipelineStage,
+            RHITextureSubresourceRange,
+            RHITextureLayout
+            >> textureUsages; // Referenced texture subresources      
+        StlVector<std::tuple<
+            ResourceHandle,
+            RHIResourceAccess,
+            RHIPipelineStage
+            >> bufferUsages; // Referenced buffers
+        // Unique referenced resources (tex/buf)             
         StlVector<ResourceHandle> resources;
-        // Texture views used by this pass
-        // [view handle] -> trackedViews
-        StlVector<ResourceHandle> views;
-        // Texture ranges used by this pass
-        // Sorted by EndSetup()
-        // [resource handle, access, stage, range, layout] -> trackedResources
-        StlVector<std::tuple<ResourceHandle, RHIResourceAccess, RHIPipelineStage, RHITextureSubresourceRange, RHITextureLayout>> textureUsages;
-        // Buffer ranges used by this pass
-        // Sorted by EndSetup()       
-        // [resource handle, access, stage] -> trackedResources
-        StlVector<std::tuple<ResourceHandle, RHIResourceAccess, RHIPipelineStage>> bufferUsages;
-        TrackedPass(Allocator* alloc, PassHandle handle, CreationInfo const& info, UniquePtr<RenderPass> renderPass)
-            : resources(alloc), views(alloc), bufferUsages(alloc), textureUsages(alloc), handle(handle), name(info.name), pass(std::move(renderPass)), type(info.type) {
+        // Unique texture views
+        StlVector<ResourceHandle> texviews;
+        // Shader [path, entry point, stage]
+        StlVector<std::tuple<
+            std::string,
+            std::string,
+            RHIShaderStage
+            >> shaders;
+        // Bind points [view(tex) or buffer(buf), desc type, binding point]
+        StlVector<std::tuple<
+            ResourceHandle,
+            RHIDescriptorType,
+            std::string
+            >> tex_bindings, buf_bindings;        
+        /* -- pipeline -- */
+        UniquePtr<RenderPass> pass;
+        TrackedPass(Allocator* alloc, PassHandle handle, std::string const& name, PassQueue queue, UniquePtr<RenderPass> renderPass)
+            : resources(alloc), bufferUsages(alloc), textureUsages(alloc),
+            shaders(alloc), texviews(alloc), buf_bindings(alloc), tex_bindings(alloc),
+            handle(handle),
+            name(name), queue(queue),
+            pass(std::move(renderPass)) {
         };
         const PassHandle GetHandle() const { return handle; }
-        /* STATES */
+        /* -- states -- */
+        /* Only unculled passes have these initialized. */
         // Semaphore to signal on pass completion
         RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> waitSemaphore{};
+        // Pipeline state for the entire pass
+        RHIDeviceScopedObjectHandle<RHIPipelineState> pso;
     };
     class Renderer {
+        enum class State {
+            Undefined,
+            Setup,
+            PostSetup,
+            Execute
+        } m_state;
+
         Allocator* m_allocator{ nullptr };
 
         uint32_t m_currentSwap{ 0 };
@@ -163,39 +176,25 @@ namespace Foundation {
         RHIDeviceQueue* m_gfxQueue{}, * m_compQueue{};
 
         struct Setup {
-            // All allocated render passes
-            StlVector<TrackedPass> trackedPasses;
-            // All allocated resources
-            StlVector<TrackedResource> trackedResources;
-            // All texture views
-            // Creation is always deferred, and never borrowed
-            StlVector<std::pair<ResourceHandle, RHITextureViewDesc>> trackedViews;
-            // Render graph with resources as edges
             StlVector<StlVector<std::pair<PassHandle, ResourceHandle>>> graph;
-            // Actually used passes in the graph
-            // Ordering is the execution order, with respect to dependency graph depth
-            StlVector<PassHandle> activePasses;
-            // All resources's life cycles to be used in the render graph
-            // [index, {First used ord in activePasses, Last used ord in activePasses}]
+            StlVector<TrackedPass> trackedPasses;
+            StlVector<TrackedResource> trackedResources;
+            StlVector<std::pair<ResourceHandle, RHITextureViewDesc>> trackedViews;
+            // [index, {First used ord in execution, Last used ord in execution}]
             StlMap<ResourceHandle, std::pair<PassHandle, PassHandle>> activeResources;
-            // The final pass of the frame
-            PassHandle epiloguePass{ kInvalidHandle };
+            // Passes ordered by execution [.ord]  
+            StlVector<PassHandle> execution;
+            PassHandle epilogue{ kInvalidHandle };
             void add_edge(PassHandle u, PassHandle v, ResourceHandle hdl) {
                 while (u >= graph.size()) graph.emplace_back(graph.get_allocator());
                 graph[u].emplace_back(v, hdl);
             }
             Setup(Allocator* allocator) :
                 graph(allocator), trackedPasses(allocator), trackedResources(allocator),
-                trackedViews(allocator), activePasses(allocator), activeResources(allocator) {}
+                trackedViews(allocator), execution(allocator), activeResources(allocator) {
+            }
         };
         UniquePtr<Setup> m_setup;
-
-        enum class State {
-            Undefined,
-            Setup,
-            PostSetup,
-            Execute
-        } m_state;
 
         struct Resources {
             StlVector<Variant<
@@ -203,23 +202,19 @@ namespace Foundation {
                 RHIDeviceScopedObjectHandle<RHIBuffer>,
                 RHIDeviceObjectHandle<RHITexture>,
                 RHIDeviceScopedObjectHandle<RHITexture>
-            >> resources;
+                >> resources;
             StlVector<Variant<
                 RHITextureScopedHandle<RHITextureView>,
                 RHITextureHandle<RHITextureView>
-            >> views;
+                >> views;
             Resources(Allocator* allocator) : resources(allocator), views(allocator) {}
-            void fit(ResourceHandle handle) {                
+            void fit(ResourceHandle handle) {
                 resources.resize(std::max(resources.size(), handle + 1));
                 views.resize(std::max(views.size(), handle + 1));
             }
         };
         UniquePtr<Resources> m_resources;
-        void AllocateResources();
-        void PushPassBarriers(TrackedPass& pass, RHICommandList* cmd);
-        void SubmitPass(TrackedPass& pass, RHICommandList* cmd);
-        // Helpers to create views and access for textures
-        // Exported as helper functions to create DirectX/UE style SRV/UAV/RTV and co.
+
         void DeclareBufferAccess(PassHandle pass, ResourceHandle buffer,
             RHIPipelineStage stage,
             RHIResourceAccess access = RHIResourceAccessBits::ShaderRead
@@ -231,11 +226,21 @@ namespace Foundation {
             RHIResourceAccess access = RHIResourceAccessBits::ShaderRead,
             RHITextureLayout layout = RHITextureLayout::ShaderReadOnly
         );
-
         ResourceHandle CreateTextureView(
             PassHandle pass, ResourceHandle res,
             RHITextureViewDesc const& desc
         );
+
+
+        void CullPasses(PassHandle epilogue);        
+
+        RHIDeviceScopedObjectHandle<RHIPipelineState> BuildPipelineState(PassHandle pass);
+
+        void FinalizeResources();
+        void FinalizePSOs();
+
+        void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
+        void ExecuteSubmit(TrackedPass& pass, RHICommandList* cmd);
     public:
         // Enable async compute for compute passes
         bool m_enableAsyncCompute{ true };
@@ -253,6 +258,25 @@ namespace Foundation {
         /// </summary>
         void BeginSetup();
         /// <summary>
+        /// Create a render pass and add it to the render graph.
+        /// 
+        /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
+        /// </summary>        
+        template<typename T, typename ...Args>
+        std::pair<PassHandle, T*> CreatePass(std::string const& name, PassQueue queue, Args&&... args) {
+            CHECK(m_setup && "Setup context not initialized. Did you call BeginSetup()?");
+            PassHandle handle = m_setup->trackedPasses.size();
+            CHECK(handle < kRendererMaxPasses && "Too many passes - leaks might be possible");
+            m_setup->trackedPasses.emplace_back(
+                m_allocator,
+                handle,
+                name,
+                queue,
+                ConstructUniqueBase<RenderPass, T>(m_allocator, std::forward<Args>(args)...)
+            );
+            return std::pair{ handle, static_cast<T*>(m_setup->trackedPasses.back().pass.get()) };
+        }
+        /// <summary>
         /// Create a new resource to be used in the render graph.
         /// 
         /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().       
@@ -269,103 +293,50 @@ namespace Foundation {
             m_setup->trackedResources.emplace_back(index, name, desc, m_allocator);
             return m_setup->trackedResources.size() - 1;
         }
-        /// <summary>
-        /// Declares that a pass will access a Buffer in a certain way.
-        /// This will be used to automatically place barriers in-between passes.
-        ///
-        /// Access to *buffer* is unique per pass. Attempting to declare access to the same buffer
-        /// multiple times in the same pass will result in an exception.
-        /// 
-        /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
-        ///
-        /// It's undefined behavior to derefence and use a resource without declaring correct access first.
-        /// 
-        /// Resource dependencies will be implcitly created.        
-        /// </summary>
-        inline void AccessBuffer(PassHandle pass, ResourceHandle buffer,
-            RHIPipelineStage stage,
-            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead
-        ) {
-            DeclareBufferAccess(pass, buffer, stage, access);
-        }
-        /// <summary>
-        /// Declares Shader Resource View (SRV/Read-Only) access for reading a texture in shaders.
-        ///
-        /// Access to *subresource* is unique per pass. Attempting to declare access to the same subresource
-        /// multiple times in the same pass will result in an exception.
-        /// </summary>
-        ResourceHandle AccessTextureSRV(
+#pragma region Resource Binding
+        void BindShader(
+            PassHandle pass,
+            std::string const& shader_path, const char* entry_point, RHIShaderStage stage
+        );
+        void BindBufferUniform(
+            PassHandle pass, ResourceHandle buffer,
+            const char* bind_point
+        );
+        void BindBufferStorage(
+            PassHandle pass, ResourceHandle buffer,
+            const char* bind_point
+        );
+        void BindBufferUnordered(
+            PassHandle pass, ResourceHandle buffer,
+            const char* bind_point
+        );
+        ResourceHandle BindTextureSRV(
+            PassHandle pass, ResourceHandle texture,
+            const char* bind_point,
+            RHITextureViewDesc const& desc = {}
+        );
+        ResourceHandle BindTextureUAV(
+            PassHandle pass, ResourceHandle texture,
+            const char* bind_point,
+            RHITextureViewDesc const& desc = {}
+        );
+        ResourceHandle BindTextureRTV(
             PassHandle pass, ResourceHandle texture,
             RHITextureViewDesc const& desc = {}
         );
-        /// <summary>
-        /// Declares Unordered Access View (UAV/Read-write) access for reading a texture in shaders.
-        ///
-        /// Access to *subresource* is unique per pass. Attempting to declare access to the same subresource
-        /// multiple times in the same pass will result in an exception.
-        /// </summary>        
-        ResourceHandle AccessTextureUAV(
+        ResourceHandle BindTextureDSV(
             PassHandle pass, ResourceHandle texture,
             RHITextureViewDesc const& desc = {}
         );
-        /// <summary>
-        /// Declares Render Target View (RTV/Write) access for reading a texture in shaders.
-        ///
-        /// Access to *subresource* is unique per pass. Attempting to declare access to the same subresource
-        /// multiple times in the same pass will result in an exception.
-        /// </summary>
-        ResourceHandle AccessTextureRTV(
-            PassHandle pass, ResourceHandle texture,
-            RHITextureViewDesc const& desc = {}
-        );
-        /// <summary>
-        /// Declares Depth-stencil view (DSV/Write, Fragment Read) access for reading a texture in shaders.
-        ///
-        /// Access to *subresource* is unique per pass. Attempting to declare access to the same subresource
-        /// multiple times in the same pass will result in an exception.
-        /// </summary>
-        ResourceHandle AccessTextureDSV(
-            PassHandle pass, ResourceHandle texture,
-            RHITextureViewDesc const& desc = {}
-        );
-        /// <summary>
-        /// Declares Copy Destination access for a texture.
-        /// 
-        /// Access to *subresource* is unique per pass. Attempting to declare access to the same subresource
-        /// multiple times in the same pass will result in an exception.
-        /// </summary>        
-        void AccessTextureCopyDst(
+        void BindTextureCopyDst(
             PassHandle pass, ResourceHandle texture,
             RHITextureSubresourceRange const& range = {}
         );
-        /// <summary>
-        /// Declares Copy Source access for a texture.
-        /// 
-        /// Access to *subresource* is unique per pass. Attempting to declare access to the same subresource
-        /// multiple times in the same pass will result in an exception.
-        /// </summary>
-        void AccessTextureCopySrc(
+        void BindTextureCopySrc(
             PassHandle pass, ResourceHandle texture,
             RHITextureSubresourceRange const& range = {}
         );
-        /// <summary>
-        /// Create a render pass and add it to the render graph.
-        /// 
-        /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
-        /// </summary>        
-        template<typename T, typename ...Args>
-        std::pair<PassHandle, T*> CreatePass(TrackedPass::CreationInfo const& info, Args&&... args) {
-            CHECK(m_setup && "Setup context not initialized. Did you call BeginSetup()?");
-            PassHandle handle = m_setup->trackedPasses.size();
-            CHECK(handle < kRendererMaxPasses && "Too many passes - leaks might be possible");
-            m_setup->trackedPasses.emplace_back(
-                m_allocator,
-                handle,
-                info,
-                ConstructUniqueBase<RenderPass, T>(m_allocator, std::forward<Args>(args)...)
-            );
-            return std::pair{ handle, static_cast<T*>(m_setup->trackedPasses.back().pass.get()) };
-        }
+#pragma endregion
         /// <summary>
         /// Finish setting up the render graph.
         /// 
@@ -405,6 +376,16 @@ namespace Foundation {
                 [](RHITextureHandle<RHITextureView> const& hdl) -> Tv { return hdl; },
                 [](RHITextureScopedHandle<RHITextureView> const& hdl) -> Tv { return hdl.View(); }
             );
+        }
+        /// <summary>
+        /// Dereference the built pipeline state object handle associated with a given pass.
+        /// </summary>        
+        inline RHIDeviceObjectHandle<RHIPipelineState> DereferencePipelineState(PassHandle pass) {
+            CHECK(m_state == State::PostSetup || m_state == State::Execute);
+            CHECK(m_setup && pass < m_setup->trackedPasses.size());
+            auto& tpass = m_setup->trackedPasses[pass];
+            CHECK(tpass.used && "Pass is culled");
+            return tpass.pso;
         }
 #pragma endregion
 

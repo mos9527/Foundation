@@ -11,7 +11,7 @@ namespace Foundation {
         RHIDeviceObjectHandle<RHITexture>
     >;
     using ResourceHandle = size_t; // Index in the resource definitions vector
-    enum class PassType {
+    enum class PassQueue {
         Graphics,
         Compute
     };

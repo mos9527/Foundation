@@ -80,6 +80,7 @@ namespace Foundation::RHI {
         // XXX: In VK there's also CombinedImageSampler though no other APIs has it.
         // See also: https://github.com/gpuweb/gpuweb/issues/770
         SampledImage,
+        StorageImage,
         UniformBuffer,
         StorageBuffer
     };
@@ -107,6 +108,7 @@ namespace Foundation::RHI {
         TransferRead = 1 << 5,
         ShaderWrite = 1 << 6,
         ShaderRead = 1 << 7,
+        UniformRead = 1 << 8,
     BITMASK_ENUM_END();
 
     // https://gpuopen.com/learn/vulkan-barriers-explained/

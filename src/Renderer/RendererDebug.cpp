@@ -32,7 +32,7 @@ std::string Renderer::DbgDumpGraphviz() const {
 
 std::string Renderer::DbgDumpActivePasses() const {
     std::string out;
-    for (const auto& idx : m_setup->activePasses) {
+    for (const auto& idx : m_setup->execution) {
         auto& pass = m_setup->trackedPasses[idx];
         fmt::format_to(std::back_inserter(out), "{}: {}, dep={}, ord={}\n", pass.handle, pass.name, pass.depth, pass.ord);
     }
