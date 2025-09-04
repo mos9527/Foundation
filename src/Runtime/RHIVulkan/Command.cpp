@@ -146,6 +146,19 @@ RHICommandList& VulkanCommandList::DrawIndexed(uint32_t index_count, uint32_t in
     return *this;
 }
 
+RHICommandList& VulkanCommandList::PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Core::StlSpan<char> data)
+{
+    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    m_commandBuffer.pushConstants2(vk::PushConstantsInfo{
+        .layout = static_cast<VulkanPipelineState*>(pipeline)->GetVkPipelineLayout(),
+        .stageFlags = vkShaderStageFlagsFromRHIShaderStage(stage),
+        .offset = offset,
+        .size = static_cast<uint32_t>(data.size_bytes()),
+        .pValues = data.data()
+    });
+    return *this;
+}
+
 RHICommandList& VulkanCommandList::CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::StlSpan<const CopyBufferRegion> regions) {
     CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
     CHECK(src_buffer && dst_buffer && "Source and destination buffers must be valid.");

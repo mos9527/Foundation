@@ -3,8 +3,8 @@
 #define VMA_IMPLEMENTATION
 #include <vma/vk_mem_alloc.h>
 
-#include <Bits/StringUtils.hpp>
-#include <Core/Platform/Logging.hpp>
+#include <Bits/Format.hpp>
+#include <Core/Core.hpp>
 
 #include "Application.hpp"
 #include "Device.hpp"
@@ -30,7 +30,7 @@ vk::AllocationCallbacks const& VulkanDevice::GetVkAllocatorCallbacks() const {
     return m_app.GetVkAllocatorCallbacks();
 }
 
-VulkanDevice::VulkanDevice(Window* window, VulkanApplication const& app, const vk::raii::PhysicalDevice& physicalDevice) :
+VulkanDevice::VulkanDevice(VulkanApplication const& app, const vk::raii::PhysicalDevice& physicalDevice, Native::Window* window) :
     m_app(app), m_physicalDevice(physicalDevice), RHIDevice(app), m_storage(GetAllocator(), kDeviceStorageReserveSize) {
     LOG_RUNTIME(VulkanDevice, info, "Instantiating Vulkan device"), DebugLogDeviceInfo();
     auto queues = m_physicalDevice.getQueueFamilyProperties();
@@ -149,8 +149,8 @@ void VulkanDevice::DebugLogDeviceInfo() const {
         kVulkanDeviceTypes[static_cast<int>(properties.deviceType)],
         properties.deviceName.data(),
         properties.limits.maxMemoryAllocationCount,
-        Bits::ByteSizeToString(properties.limits.bufferImageGranularity),
-        Bits::ByteSizeToString(properties.limits.nonCoherentAtomSize)
+        format_as_readable_size(properties.limits.bufferImageGranularity),
+        format_as_readable_size(properties.limits.nonCoherentAtomSize)
     );
 }
 
@@ -237,11 +237,11 @@ void VulkanDevice::DebugLogAllocatorInfo() const {
         "    amdSpecificTypeCount = {}\n"
         "    lazilyAllocatedTypeCount = {}",
         deviceLocalHeapCount,
-        Bits::ByteSizeToString(deviceLocalHeapSumSize),
+        format_as_readable_size(deviceLocalHeapSumSize),
         hostVisibleHeapCount,
-        Bits::ByteSizeToString(hostVisibleHeapSumSize),
+        format_as_readable_size(hostVisibleHeapSumSize),
         deviceLocalAndHostVisibleHeapCount,
-        Bits::ByteSizeToString(deviceLocalAndHostVisibleHeapSumSize),
+        format_as_readable_size(deviceLocalAndHostVisibleHeapSumSize),
         hostVisibleNotHostCoherentTypeCount,
         notDeviceLocalNotHostVisibleTypeCount,
         amdSpecificTypeCount,

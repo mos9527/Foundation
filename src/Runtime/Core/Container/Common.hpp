@@ -4,6 +4,9 @@
 #include <vector>
 #include <queue>
 #include <span>
+#include <numeric>
+#include <optional>
+
 #include <Allocator/Allocator.hpp>
 namespace Foundation::Core {
     template<typename T>

@@ -1,6 +1,8 @@
+#include <GLFW/glfw3.h>
+#include <Core/Core.hpp>
+
 #include "Application.hpp"
 #include "Device.hpp"
-#include <Core/Platform/Logging.hpp>
 
 using namespace Foundation;
 using namespace Foundation::Core;
@@ -29,8 +31,8 @@ VulkanApplication::~VulkanApplication() {
     // Destroy all devices first
     m_storage.Clear();
 }
-VulkanApplication::VulkanApplication(const char* appName, const char* engineName, const uint32_t apiVersion, Core::Allocator* allocator)
-    : m_vulkanApiVersion(apiVersion), m_name(appName), m_allocator(allocator), m_devices(allocator),
+VulkanApplication::VulkanApplication(const char* appName, const char* engineName, const uint32_t apiVersion, Native::Window* window, Core::Allocator* allocator)
+    : m_vulkanApiVersion(apiVersion), m_name(appName), m_allocator(allocator), m_devices(allocator), m_window(window), 
     m_storage(allocator), m_vkAllocatorCpuCallbacks(CreateVulkanCpuAllocationCallbacks(allocator))
 {
     auto vkAppInfo = vk::ApplicationInfo{
@@ -77,9 +79,9 @@ Core::StlSpan<const RHIDevice::DeviceDesc> VulkanApplication::EnumerateDevices()
     return { m_devices.begin(), m_devices.end() };
 }
 
-RHIApplicationScopedObjectHandle<RHIDevice> VulkanApplication::CreateDevice(const RHIDevice::DeviceDesc& desc, Window* window) {
+RHIApplicationScopedObjectHandle<RHIDevice> VulkanApplication::CreateDevice(const RHIDevice::DeviceDesc& desc) {
     auto& phys_device = m_physicalDevices[desc.id];
-    Handle handle = m_storage.CreateObject<VulkanDevice>(window, *this, phys_device);
+    Handle handle = m_storage.CreateObject<VulkanDevice>(*this, phys_device, m_window);
     return { this, handle };
 }
 RHIDevice* VulkanApplication::GetDevice(Handle handle) const {

@@ -119,6 +119,13 @@ namespace Foundation::RHI {
             Core::StlSpan<const ShaderStage> shader_stages;
             // Descriptors
             Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceDescriptorSetLayout>> descriptor_set_layouts;
+            // Push Constants
+            struct PushConstant {
+                RHIShaderStage stage;
+                size_t offset;
+                size_t size;
+            };
+            Core::StlSpan<const PushConstant> push_constants;
         };
         const PipelineStateDesc m_desc;
 

@@ -30,18 +30,20 @@ namespace Foundation::RHI {
 
         Core::StlVector<RHIDevice::DeviceDesc> m_devices;
         vk::raii::DebugUtilsMessengerEXT m_debug_handler{ nullptr };
+
+        Native::Window* m_window;
     public:
         const std::string m_name;
 
         const vk::raii::Context m_context;
         const uint32_t m_vulkanApiVersion;
 
-        VulkanApplication(const char* appName, const char* engineName, const uint32_t apiVersion, Core::Allocator* allocator);
+        VulkanApplication(const char* appName, const char* engineName, const uint32_t apiVersion, Native::Window* window, Core::Allocator* allocator);
         ~VulkanApplication();
 
         Core::StlSpan<const RHIDevice::DeviceDesc> EnumerateDevices() const override;
 
-        RHIApplicationScopedObjectHandle<RHIDevice> CreateDevice(const RHIDevice::DeviceDesc& desc, Core::Window* window) override;
+        RHIApplicationScopedObjectHandle<RHIDevice> CreateDevice(const RHIDevice::DeviceDesc& desc) override;
         RHIDevice* GetDevice(Handle handle) const override;
         void DestroyDevice(Handle handle) override;
 

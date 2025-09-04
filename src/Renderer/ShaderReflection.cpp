@@ -1,4 +1,3 @@
-#include <Platform/Logging.hpp>
 #include "ShaderReflection.hpp"
 #include <spirv-headers/spirv.hpp>
 using namespace Foundation;
@@ -74,6 +73,21 @@ void ShaderReflection::ParseSPIRV(StlSpan<const char> bytecode)
                 ID[id].DescriptorSet = ins[3]; break;
             case spv::DecorationBinding:
                 ID[id].Binding = ins[3]; break;
+            default:
+                break;
+            }
+            break;
+        }
+        case spv::OpMemberDecorate:
+        {
+            // 1: ID
+            uint32_t id = ins[1];
+            // 2: Member Index
+            // We only take offset
+            switch (spv::Decoration(ins[3]))
+            {
+            case spv::DecorationOffset:
+
             default:
                 break;
             }

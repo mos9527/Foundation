@@ -115,19 +115,26 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
             .stage = vkFlagsToBits(vkShaderStageFlagsFromRHIShaderStage(shader.desc.stage)),
             .module = shader.shader_module.Get<VulkanShaderModule>()->GetVkShaderModule(),
             .pName = shader.desc.entry_point,
-            .pSpecializationInfo = nullptr // TODO: !! handle specialization info
+            .pSpecializationInfo = nullptr // TODO: Handle specialization info
         });
     Core::StlVector<vk::DescriptorSetLayout> p_set_layouts(desc.descriptor_set_layouts.size(), alloc.Ptr());
     for (size_t i = 0; i < desc.descriptor_set_layouts.size(); ++i)
         p_set_layouts[i] = desc.descriptor_set_layouts[i].Get<VulkanDeviceDescriptorSetLayout>()->GetVkLayout();
-
+    Core::StlVector<vk::PushConstantRange> push_constants(desc.push_constants.size(), alloc.Ptr());
+    for (size_t i = 0; i < desc.push_constants.size(); i++) {
+        auto& pdesc = desc.push_constants[i];
+        push_constants[i]
+            .setStageFlags(vkShaderStageFlagsFromRHIShaderStage(pdesc.stage))
+            .setOffset(pdesc.offset)
+            .setSize(pdesc.size);
+    }    
     m_pipeline_layout = vk::raii::PipelineLayout(m_device.GetVkDevice(),
         vk::PipelineLayoutCreateInfo{
         .setLayoutCount = static_cast<uint32_t>(p_set_layouts.size()),
         .pSetLayouts = p_set_layouts.data(),
-        .pushConstantRangeCount = 0, // TODO: handle push constants
+        .pushConstantRangeCount = static_cast<uint32_t>(push_constants.size()),
+        .pPushConstantRanges = push_constants.data()        
     }, m_device.GetVkAllocatorCallbacks());
-
     vk::GraphicsPipelineCreateInfo pipelineInfo{ .pNext = &rendering_create_info,
         .stageCount = static_cast<uint32_t>(shaderStages.size()), .pStages = shaderStages.data(),
         .pVertexInputState = &vtx, .pInputAssemblyState = &ia,

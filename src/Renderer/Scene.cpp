@@ -92,8 +92,8 @@ namespace Foundation {
     }
 
     void ScenePass::Setup(PassHandle self, Renderer& renderer) {        
-        renderer.BindBufferStorage(self, m_global, "global", {});
-        renderer.BindBufferStorage(self, m_instance, "instance", {});
-        renderer.BindBufferStorage(self, m_primitive, "primitive", {});
+        renderer.BindBufferStorage(self, m_global,    "global");
+        renderer.BindBufferStorage(self, m_instance,  "instance");
+        renderer.BindBufferStorage(self, m_primitive, "primitive");
     }
 }

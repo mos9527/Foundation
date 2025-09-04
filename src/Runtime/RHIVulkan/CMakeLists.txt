@@ -24,5 +24,5 @@ FetchContent_MakeAvailable(VulkanMemoryAllocator)
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 add_library(Foundation_RHIVulkan ${SOURCES} ${INCLUDES})
-target_link_libraries(Foundation_RHIVulkan PUBLIC Foundation_RHICore Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator)
+target_link_libraries(Foundation_RHIVulkan PUBLIC Foundation_Native Foundation_RHICore Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator)
 target_include_directories(Foundation_RHIVulkan PRIVATE ..)

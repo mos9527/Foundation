@@ -1,20 +1,16 @@
 #include <array>
-#include <fstream>
+#include <algorithm>
 #include <filesystem>
+#include <fstream>
 
 
 #include <Math/Math.hpp>
 #include <Core/Allocator/StackAllocator.hpp>
-#include <Core/Platform/Logging.hpp>
 #include <RHICore/Device.hpp>
 
 #include "Renderer.hpp"
 #include "ShaderReflection.hpp"
 
-#include <Cooking/Image.hpp>
-#include <Cooking/Mesh.hpp>
-
-#include <algorithm>
 using namespace Foundation;
 using namespace Foundation::Core;
 
@@ -113,6 +109,17 @@ void Renderer::BindVertexInput(
 ) {
     CHECK(m_state == State::Setup);
     m_setup->trackedPasses[pass].vertex_input = info;
+}
+ResourceHandle Renderer::BindPushConstant(
+    PassHandle pass, RHIShaderStage stage,
+    size_t offset, size_t size
+) {
+    CHECK(m_state == State::Setup);
+    for (auto& [s, _, __] : m_setup->trackedPasses[pass].push_constants)
+        if (s == stage)
+            throw std::runtime_error("Shader stage already has Push Constants");
+    m_setup->trackedPasses[pass].push_constants.emplace_back(stage, offset, size);
+    return m_setup->trackedPasses[pass].push_constants.size() - 1;
 }
 void Renderer::BindBufferUniform(
     PassHandle pass, ResourceHandle buffer,
@@ -326,8 +333,12 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         });
     }
     // Check variable bindings to be consistent across stages
-    StlMap<std::string, std::pair<uint32_t, uint32_t>> var_bindpoints;
+    StlMap<std::string, std::pair<uint32_t, uint32_t>> var_bindpoints(m_allocator);
+    // Check if any shader in the pipeline uses PC
+    bool use_pushconstants = false;
     for (auto& refl : reflections) {
+        if (refl.m_pushConstants.size())
+            use_pushconstants = true;        
         for (auto& bind : refl.m_bindings) {
             CHECK(bind.name.size() && "Unnamed bindings are not supported. Enable debug information.");
             auto it = var_bindpoints.find(bind.name);
@@ -399,7 +410,10 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         },
         .shader_stages = pso_stages,
         .descriptor_set_layouts = tracked.desc_layouts,
+        .push_constants = tracked.push_constants
     };
+    if (tracked.push_constants.size())
+        CHECK(use_pushconstants && "Push constants set but never used. Possible shader error.")
     // Setup compute/graphics specific states
     // Graphics
     // RTV,DSV
@@ -617,7 +631,7 @@ void Renderer::Execute() {
             pass.pass->Record(pass.handle, *this, cmd.Get());
             cmd->End();
             ExecuteSubmit(pass, cmd.Get());
-        }        
+        }
     }
     uint32_t swapIndex = m_swapchain->GetNextImage(-1, {}, {});
     if (m_setup->epilogue != kInvalidHandle) {
@@ -638,4 +652,12 @@ void Renderer::Execute() {
     m_currentSwap = (m_currentSwap + 1) % m_swapchain->m_desc.buffer_count;
     m_frame++;
     m_state = State::PostSetup;
+}
+void Renderer::CmdSetPushConstant(RHICommandList* cmd, PassHandle pass, ResourceHandle push_constant, size_t size, void* data)
+{
+    CHECK(m_state == State::Execute);
+    auto& tpass = m_setup->trackedPasses[pass];
+    auto& [pc_stage, pc_offset, pc_size] = tpass.push_constants[push_constant];
+    CHECK(pc_size >= size && "Set value larger than speicified");    
+    cmd->PushConstant(tpass.pso.Get(), pc_stage, pc_offset, { static_cast<char*>(data), size });
 }

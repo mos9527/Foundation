@@ -1,8 +1,7 @@
 #pragma once
-#include <Core/Container/Common.hpp>
-#include <Core/Allocator/Allocator.hpp>
-
+#include <Core/Core.hpp>
 #include <RHICore/Common.hpp>
+
 namespace Foundation {
     class ShaderReflection {
         Core::Allocator* m_allocator;        

@@ -1,12 +1,12 @@
 #pragma once
+#include <ranges>
+#include <filesystem>
 #include <RHICore/Application.hpp>
 #include <RHICore/Resource.hpp>
 #include <RHICore/Device.hpp>
 #include <RHICore/Descriptor.hpp>
 #include <RHICore/PipelineState.hpp>
 #include "RenderPass.hpp"
-#include <ranges>
-#include <filesystem>
 namespace Foundation {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
@@ -141,6 +141,8 @@ namespace Foundation {
             RHIDescriptorType,
             std::string
             >> tex_bindings, buf_bindings;
+        // Push Constants by [stage, offset, size]
+        StlVector<RHIPipelineState::PipelineStateDesc::PushConstant> push_constants;
         // (Graphics Only) Render Target View[s]
         StlVector<ResourceHandle> rtvs;
         // (Graphics Only) Depth Stencil View
@@ -156,6 +158,7 @@ namespace Foundation {
             name(name), queue(queue),
             rtvs(alloc),
             desc_layouts(alloc), desc_sets(alloc),
+            push_constants(alloc),
             pass(std::move(renderPass)) {
         };
         const PassHandle GetHandle() const { return handle; }
@@ -315,7 +318,7 @@ namespace Foundation {
         void BindShader(
             PassHandle pass, RHIShaderStage stage,
             std::filesystem::path const& shader_path, const char* entry_point
-        );
+        );        
         /// <summary>
         /// Associates Vertex Input description with this pass.
         ///
@@ -330,9 +333,19 @@ namespace Foundation {
             RHIPipelineState::PipelineStateDesc::VertexInput const& info
         );
         /// <summary>
+        /// Binds a shader push constant to a constant value, which can be set at Record time.
+        ///
+        /// Bind points are effectively shader variable names, which will be automatically dereferenced.
+        /// </summary>
+        /// <returns>Opaque handle value that can be used by CmdSetPushConstant to set data at Record time.</returns>
+        ResourceHandle BindPushConstant(
+            PassHandle pass, RHIShaderStage stage,
+            size_t offset, size_t size
+        );
+        /// <summary>
         /// Binds a uniform buffer to a specified binding point in a rendering pass.
         ///
-        /// Bin points are effectively shader variable names, which will be automatically dereferenced.       
+        /// Bind points are effectively shader variable names, which will be automatically dereferenced.       
         /// </summary>       
         void BindBufferUniform(
             PassHandle pass, ResourceHandle buffer,
@@ -483,6 +496,16 @@ namespace Foundation {
             auto& tpass = m_setup->trackedPasses[pass];
             CHECK(tpass.used && "Pass is culled");
             return tpass.desc_sets;
+        }
+#pragma endregion
+
+#pragma region Command Recording Helpers
+        /// <summary>
+        /// Helper that sets a Push Constant range data with previously bound Push Constant handle
+        /// </summary>        
+        void CmdSetPushConstant(RHICommandList* cmd, PassHandle pass, ResourceHandle push_constant, size_t size, void* data);
+        template<typename T> inline void CmdSetPushConstant(RHICommandList* cmd, PassHandle pass, ResourceHandle push_constant, T const& data) {
+            CmdSetPushConstant(cmd, pass, push_constant, sizeof(data), &data);
         }
 #pragma endregion
 

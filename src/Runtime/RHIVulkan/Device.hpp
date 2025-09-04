@@ -1,6 +1,7 @@
 #pragma once
-#include <vma/vk_mem_alloc.h>
+#include <Native/Application.hpp>
 #include <RHICore/Device.hpp>
+#include <vma/vk_mem_alloc.h>
 #include "Common.hpp"
 namespace Foundation::RHI {
     class VulkanApplication;
@@ -85,7 +86,7 @@ namespace Foundation::RHI {
         // Queues
         Core::UniquePtr<VulkanDeviceQueues> m_queues{ nullptr };
     public:
-        VulkanDevice(Core::Window* window, VulkanApplication const& app, const vk::raii::PhysicalDevice& physicalDevice);
+        VulkanDevice(VulkanApplication const& app, const vk::raii::PhysicalDevice& physicalDevice, Native::Window* window);
         ~VulkanDevice();
 
         void DebugLogDeviceInfo() const;

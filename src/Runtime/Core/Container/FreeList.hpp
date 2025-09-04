@@ -1,9 +1,6 @@
 #pragma once
-#include <vector>
-#include <numeric>
-#include <optional>
-
 #include "Common.hpp"
+
 namespace Foundation::Core {
     /// <summary>
     /// A free list counter implementation with amortized O(1) allocation and deallocation.

@@ -1,11 +1,11 @@
 #pragma once
 
-#include "Logging.hpp"
+#include <Core/Core.hpp>
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 #include <stdexcept>
 
-namespace Foundation::Core {
+namespace Foundation::Native {
     class Application;
     class Window {
         friend class Application;

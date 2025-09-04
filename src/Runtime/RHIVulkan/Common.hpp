@@ -4,8 +4,6 @@
 #include <vulkan/vulkan_raii.hpp>
 
 #include <RHICore/Common.hpp>
-#include <Core/Platform/Logging.hpp>
-#include <Core/Container/Common.hpp>
 namespace Foundation::RHI {
     template<typename Bits> inline Bits vkFlagsToBits(vk::Flags<Bits> flags) {
         return static_cast<Bits>(static_cast<std::underlying_type_t<Bits>>(flags));

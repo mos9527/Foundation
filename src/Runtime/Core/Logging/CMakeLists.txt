@@ -1,28 +1,17 @@
 cmake_minimum_required(VERSION 3.26)
 
 file(
-    GLOB SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
+    GLOB_RECURSE SOURCES 
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp" 
 )
 file(
-    GLOB INCLUDES 
+    GLOB_RECURSE INCLUDES 
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
 )
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
-
-add_library(
-    Foundation_Platform ${SOURCES} ${INCLUDES}    
- )
+add_library(Foundation_Logging ${SOURCES} ${INCLUDES})
 
 include(FetchContent)
-
-FetchContent_Declare(
-  GLFW
-  GIT_REPOSITORY https://github.com/glfw/glfw.git
-  GIT_TAG        506c11ba43b901dbcc4d90449f46de67cf000af4
-  GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(GLFW)
 
 FetchContent_Declare(
   fmt
@@ -41,5 +30,4 @@ FetchContent_Declare(
 set(SPDLOG_FMT_EXTERNAL ON)
 FetchContent_MakeAvailable(spdlog)
 
-target_link_libraries(Foundation_Platform PUBLIC fmt::fmt spdlog::spdlog glfw)
-target_include_directories(Foundation_Platform PRIVATE "${GLFW_SOURCE_DIR}/include")
+target_link_libraries(Foundation_Logging PUBLIC fmt::fmt spdlog::spdlog)

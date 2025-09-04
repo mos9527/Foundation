@@ -1,6 +1,5 @@
 #pragma once
-#include <Core/Platform/Application.hpp>
-#include <Core/Allocator/Allocator.hpp>
+#include <Core/Core.hpp>
 #include <Core/Container/FreeList.hpp>
 
 namespace Foundation::RHI {

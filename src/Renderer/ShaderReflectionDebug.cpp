@@ -1,5 +1,5 @@
-#include <Platform/Logging.hpp>
 #include "ShaderReflection.hpp"
+#include <fmt/format.h>
 using namespace Foundation;
 
 std::string ShaderReflection::DbgDumpShaderInfo() const

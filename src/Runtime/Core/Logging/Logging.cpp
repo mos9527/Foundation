@@ -1,22 +1,21 @@
 #include "Logging.hpp"
+
 #include <mutex>
+#include <spdlog/sinks/stdout_color_sinks.h>
 
 namespace Foundation::Core {
     static bool g_Initialized = false;
     static std::shared_ptr<spdlog::sinks::dist_sink_mt> g_LoggingSink = nullptr;
-    static std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> g_BacktraceSink = nullptr;
-    size_t kBacktraceLogMessages = 1000; // Number of messages to keep in the ring buffer for backtrace logging
+    static std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> g_BacktraceSink = nullptr;    
     std::recursive_mutex g_LoggingSinkMutex;
 
     std::shared_ptr<spdlog::sinks::dist_sink_mt> GetLoggingSink() {
-        std::scoped_lock lck(g_LoggingSinkMutex);
-        // Lazily initialize the global logging sink if it does not exist.
+        std::scoped_lock lck(g_LoggingSinkMutex);        
         if (!g_Initialized) {
             g_LoggingSink = std::make_shared<spdlog::sinks::dist_sink_mt>();
-            g_BacktraceSink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(kBacktraceLogMessages);
-            // Log to platform sink and ringbuffer sink for backtrace logging
+            g_BacktraceSink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(kMaxBacktraceLogMessages);
             g_LoggingSink->add_sink(g_BacktraceSink);
-            g_LoggingSink->add_sink(GetPlatformDebugLoggingSink());
+            g_LoggingSink->add_sink(std::make_shared<spdlog::sinks::stderr_color_sink_mt>());
             g_Initialized = true;
         }
         return g_LoggingSink;
@@ -38,11 +37,5 @@ namespace Foundation::Core {
             spdlog::initialize_logger(new_logger);
         }
         return spdlog::get(name).get();
-    }
-    void DestroyLogger(const char* name) {
-        auto logger = spdlog::get(name);
-        if (logger) {
-            spdlog::details::registry::instance().drop(name);
-        }
     }
 }

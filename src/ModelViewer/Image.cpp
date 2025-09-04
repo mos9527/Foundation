@@ -2,10 +2,7 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-
-#include <Core/Platform/Logging.hpp>
-using namespace Foundation::Cooking;
-Image Cook<Image>::sRGB32bpp_FromFile(std::filesystem::path const& path, Core::Allocator* allocator)
+Image LoadImage32bppFromFile(std::filesystem::path const& path, Core::Allocator* allocator)
 {
     int w, h, ch;
     stbi_uc* pixels = stbi_load(".derived/texture.jpg", &w, &h, &ch, STBI_rgb_alpha);
