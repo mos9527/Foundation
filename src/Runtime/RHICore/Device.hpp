@@ -21,10 +21,15 @@ namespace Foundation::RHI {
         struct SubmitDesc {
             RHIPipelineStage stages;
             // Semaphore(s) and the minimum values to wait on
-            Core::StlSpan<const std::pair<RHIDeviceSemaphore*, size_t>> waits;
+            Core::StlSpan<const std::pair<RHIDeviceSemaphore*, size_t>> timeline_waits;
             // Semaphore(s) and the values to signal
-            Core::StlSpan<const std::pair<RHIDeviceSemaphore*, size_t>> signals;
-            Core::StlSpan<RHICommandList*> cmd_lists;
+            Core::StlSpan<const std::pair<RHIDeviceSemaphore*, size_t>> timeline_signals;
+            // Binary semaphore(s) to wait when the command lists are done
+            Core::StlSpan<RHIDeviceSemaphore* const> waits;
+            // Binary semaphore(s) to signal when the command lists are done
+            Core::StlSpan<RHIDeviceSemaphore* const> signals;
+            // Command lists to submit
+            Core::StlSpan<RHICommandList* const> cmd_lists;
             RHIDeviceFence* fence;
         };
         virtual void Submit(SubmitDesc const& desc) const = 0;
@@ -32,19 +37,18 @@ namespace Foundation::RHI {
         struct PresentDesc {
             uint32_t image_index;
             RHISwapchain* swapchain;
-            // Semaphore(s) and the minimum values to wait on
-            Core::StlSpan<const std::pair<RHIDeviceSemaphore*, size_t>> waits;
+            // Binary semaphore(s) to wait
+            Core::StlSpan<RHIDeviceSemaphore* const> waits;
         };
         virtual void Present(PresentDesc const& desc) const = 0;
     };
     // https://docs.vulkan.org/samples/latest/samples/extensions/timeline_semaphore/README.html
-    // Semaphore implementations SHOULD be counter (timeline) semaphores if the backend supports it.
-    // Otherwise, emulation of such behaviors is required.
     class RHIDeviceSemaphore : public RHIObject {
     protected:
         const RHIDevice& m_device;
     public:
-        RHIDeviceSemaphore(RHIDevice const& device) : m_device(device) {}
+        const bool m_is_timeline;
+        RHIDeviceSemaphore(RHIDevice const& device, bool is_timeline) : m_device(device), m_is_timeline(is_timeline) {}
     };
     class RHIDeviceFence : public RHIObject {
     protected:
@@ -139,7 +143,7 @@ namespace Foundation::RHI {
 
         virtual RHIDeviceQueue* GetDeviceQueue(RHIDeviceQueueType type) const = 0;
 
-        virtual RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> CreateSemaphore() = 0;
+        virtual RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> CreateSemaphore(bool is_timeline = false) = 0;
         virtual RHIDeviceSemaphore* GetSemaphore(Handle handle) const = 0;
         virtual void DestroySemaphore(Handle handle) = 0;
 
@@ -172,8 +176,8 @@ namespace Foundation::RHI {
         virtual void ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) = 0;
         virtual void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) = 0;
 
-        virtual void SignalSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) = 0;
-        virtual void WaitForSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) = 0;
+        virtual void SignalTimelineSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) = 0;
+        virtual void WaitForTimelineSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) = 0;
 
         virtual void WaitIdle() const = 0;
     };

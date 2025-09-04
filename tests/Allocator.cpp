@@ -1,4 +1,4 @@
-#include <Core/Platform/Logging.hpp>
+#include <Core/Core.hpp>
 #include <Core/Allocator/StackAllocator.hpp>
 #include <Core/Allocator/HeapAllocator.hpp>
 #include <Core/Allocator/DefaultAllocator.hpp>

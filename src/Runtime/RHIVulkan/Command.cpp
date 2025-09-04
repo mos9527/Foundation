@@ -381,3 +381,18 @@ void VulkanCommandList::Reset() {
     CHECK(!m_allocator && "Invalid command list states. Did you call End()?");
     m_commandBuffer.reset();
 }
+
+RHICommandList& VulkanCommandList::DebugBegin(){
+    m_commandBuffer.beginDebugUtilsLabelEXT({});
+    return *this;
+}
+RHICommandList& VulkanCommandList::DebugInsertMarker(const char* message){
+    m_commandBuffer.insertDebugUtilsLabelEXT({
+        .pLabelName = message
+    });
+    return *this;
+}
+RHICommandList& VulkanCommandList::DebugEnd() {
+    m_commandBuffer.endDebugUtilsLabelEXT();
+    return *this;
+}

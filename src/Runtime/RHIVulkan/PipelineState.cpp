@@ -135,6 +135,7 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
         .pushConstantRangeCount = static_cast<uint32_t>(push_constants.size()),
         .pPushConstantRanges = push_constants.data()        
     }, m_device.GetVkAllocatorCallbacks());
+    // TODO Compute
     vk::GraphicsPipelineCreateInfo pipelineInfo{ .pNext = &rendering_create_info,
         .stageCount = static_cast<uint32_t>(shaderStages.size()), .pStages = shaderStages.data(),
         .pVertexInputState = &vtx, .pInputAssemblyState = &ia,

@@ -27,7 +27,7 @@ namespace Foundation {
                 .host_access = RHIResourceHostAccess::WriteOnly,
             },
             .usage = RHIBufferUsageBits::TransferSource,
-            .size = m_staging.size(),
+            .size = desc.TotalBudget()
         });
         m_globalData = renderer.GetDevice()->CreateBuffer({
             .resource = {

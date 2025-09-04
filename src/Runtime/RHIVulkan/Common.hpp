@@ -58,6 +58,7 @@ namespace Foundation::RHI {
 
     inline vk::ImageLayout vkImageLayoutFromRHITextureLayout(RHITextureLayout layout) {
         switch (layout) {
+        case RHITextureLayout::Undefined: return vk::ImageLayout::eUndefined;
         case RHITextureLayout::General: return vk::ImageLayout::eGeneral;
         case RHITextureLayout::RenderTarget: return vk::ImageLayout::eColorAttachmentOptimal;
         case RHITextureLayout::DepthStencil: return vk::ImageLayout::eDepthStencilAttachmentOptimal;

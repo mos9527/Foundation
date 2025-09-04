@@ -11,7 +11,8 @@ namespace Foundation {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
     constexpr PassHandle kRendererMaxPasses = 1024; // Maximum number of render passes
-    const RHIPipelineStageBits kAllShaderStages =
+    constexpr size_t kMaxCommandListsPerSwap = 32;  // Maximum number of concurrent command buffers per swap
+    const RHIPipelineStageBits kAllPipelineShaderStages =
         RHIPipelineStageBits::FragmentShader |
         RHIPipelineStageBits::ComputeShader |
         RHIPipelineStageBits::VertexShader |
@@ -109,6 +110,7 @@ namespace Foundation {
         PassHandle handle; // Index to tracked passes
         RHIDevicePipelineType queue; // Prefered type of queue to run in
         bool used{ false }; // Culled?
+        bool has_cross_queue_dependent{ false }; // Has an edge to/from another queue
         size_t depth{}; // Depth in RG
         size_t ord{}; // Execution order
         /* -- resources -- */
@@ -158,7 +160,7 @@ namespace Foundation {
             name(name), queue(queue),
             rtvs(alloc),
             desc_layouts(alloc), desc_sets(alloc),
-            push_constants(alloc),
+            push_constants(alloc), p_desc_sets(alloc),
             pass(std::move(renderPass)) {
         };
         const PassHandle GetHandle() const { return handle; }
@@ -170,9 +172,11 @@ namespace Foundation {
         RHIDeviceScopedObjectHandle<RHIPipelineState> pso;
         StlVector<RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout>> desc_layouts;
         StlVector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> desc_sets;
+        StlVector<RHIDeviceDescriptorSet*> p_desc_sets;
         // ---
     };
     class Renderer {
+        
         enum class State {
             Undefined,
             Setup,
@@ -182,13 +186,22 @@ namespace Foundation {
 
         Allocator* m_allocator{ nullptr };
 
-        uint32_t m_currentSwap{ 0 };
         uint64_t m_frame{ 0 };
 
-        RHIApplicationObjectHandle<RHIDevice> m_device;
-        RHIDeviceObjectHandle<RHISwapchain> m_swapchain;
+        const uint32_t m_frameSwaps{ 0 }; // Max frames in flight
+        uint32_t m_currentSwap{ 0 };
+        struct {
+            RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render, present;
+            RHIDeviceScopedObjectHandle<RHIDeviceFence> fence;
+            // For async compute, we might submit multiple command buffers
+            // per swap. Driver usually want them to live.                       
+            StlArray<RHICommandPoolScopedHandle<RHICommandList>, kMaxCommandListsPerSwap> cmds{};
+        } m_swaps[4];
 
-        RHIDeviceScopedObjectHandle<RHICommandPool> m_cmdPool;
+        RHIApplicationObjectHandle<RHIDevice> m_device{};
+        RHIDeviceObjectHandle<RHISwapchain> m_swapchain{};
+
+        RHIDeviceScopedObjectHandle<RHICommandPool> m_cmdPool{};
         RHIDeviceQueue* m_gfxQueue{}, *m_compQueue{};
 
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_descPool;
@@ -257,8 +270,8 @@ namespace Foundation {
         void FinalizeResources();
         void FinalizePSOs();
 
-        void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
-        void ExecuteSubmit(TrackedPass& pass, RHICommandList* cmd);
+        void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);        
+        bool ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd);
     public:
         // Enable async compute for compute passes
         bool m_enableAsyncCompute{ true };
@@ -372,6 +385,14 @@ namespace Foundation {
             const char* bind_point
         );
         /// <summary>
+        /// Declares that this pass will write to the buffer via copy
+        /// </summary>
+        void BindBufferCopyDst(PassHandle pass, ResourceHandle buffer);
+        /// <summary>
+        /// Declares that this pass will read from the buffer via copy
+        /// </summary>
+        void BindBufferCopySrc(PassHandle pass, ResourceHandle buffer);
+        /// <summary>
         /// Binds a texture as a Shader Resource View (read-only sampling / fetch).
         ///
         /// A view may be created if a subresource range (mips/layers) or format reinterpretation
@@ -452,7 +473,7 @@ namespace Foundation {
         ///
         /// This should only be called inside a pass's Record() function, or after EndSetup().
         /// </summary>        
-        inline Variant<RHIDeviceObjectHandle<RHIBuffer>, RHIDeviceObjectHandle<RHITexture>> DereferenceResource(ResourceHandle handle) {
+        inline Variant<RHIDeviceObjectHandle<RHIBuffer>, RHIDeviceObjectHandle<RHITexture>> DerefResource(ResourceHandle handle) {
             CHECK(m_state == State::PostSetup || m_state == State::Execute);
             CHECK(m_resources && handle < m_resources->resources.size());
             using Tv = Variant<RHIDeviceObjectHandle<RHIBuffer>, RHIDeviceObjectHandle<RHITexture>>;
@@ -468,7 +489,7 @@ namespace Foundation {
         ///
         /// This should only be called inside a pass's Record() function, or after EndSetup().
         /// </summary>       
-        inline RHITextureHandle<RHITextureView> DereferenceTextureView(ResourceHandle handle) {
+        inline RHITextureHandle<RHITextureView> DerefTextureView(ResourceHandle handle) {
             CHECK(m_state == State::PostSetup || m_state == State::Execute);
             CHECK(m_resources && handle < m_resources->views.size());
             using Tv = RHITextureHandle<RHITextureView>;
@@ -480,7 +501,7 @@ namespace Foundation {
         /// <summary>
         /// Dereference the built pipeline state object handle associated with a given pass.
         /// </summary>        
-        inline RHIDeviceObjectHandle<RHIPipelineState> DereferencePipelineState(PassHandle pass) {
+        inline RHIDeviceObjectHandle<RHIPipelineState> DerefPipelineState(PassHandle pass) {
             CHECK(m_state == State::PostSetup || m_state == State::Execute);
             CHECK(m_setup && pass < m_setup->trackedPasses.size());
             auto& tpass = m_setup->trackedPasses[pass];
@@ -490,7 +511,7 @@ namespace Foundation {
         /// <summary>
         /// Dereference the built descriptor sets assocaited with a given pass
         /// </summary>        
-        inline StlVector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> const& DereferenceDescriptorSets(PassHandle pass) {
+        inline StlVector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> const& DerefDescriptorSets(PassHandle pass) {
             CHECK(m_state == State::PostSetup || m_state == State::Execute);
             CHECK(m_setup && pass < m_setup->trackedPasses.size());
             auto& tpass = m_setup->trackedPasses[pass];
@@ -500,6 +521,11 @@ namespace Foundation {
 #pragma endregion
 
 #pragma region Command Recording Helpers
+        /// <summary>
+        /// Helper that sets the current pass's PSO and descriptor set
+        /// to the current command list.
+        /// </summary>        
+        void CmdSetPipeline(RHICommandList* cmd, PassHandle pass);
         /// <summary>
         /// Helper that sets a Push Constant range data with previously bound Push Constant handle
         /// </summary>        

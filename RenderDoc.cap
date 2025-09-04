@@ -5,7 +5,7 @@
         "commandLine": "",
         "environment": [
         ],
-        "executable": "C:\\Users\\Huang\\Foundation\\out\\build\\x64-Debug\\src\\Editor\\Foundation_Editor.exe",
+        "executable": "C:\\Users\\Huang\\Foundation\\out\\build\\x64-Debug\\src\\ModelViewer\\ModelViewer.exe",
         "inject": false,
         "numQueuedFrames": 0,
         "options": {

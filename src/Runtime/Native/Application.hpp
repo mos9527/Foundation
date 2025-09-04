@@ -10,16 +10,22 @@ namespace Foundation::Native {
     class Window {
         friend class Application;
 
-        GLFWwindow* m_window;
+        GLFWwindow* m_window{ nullptr };
         Window(int width, int height, const char* title);
     public:
+        Window() {};
         Window(const Window&) = delete;
-        Window(Window&& other) noexcept : m_window(other.m_window) {
+        Window(Window&& other) noexcept :
+            m_window(other.m_window) {
             other.m_window = nullptr;
+        }
+        Window& operator=(Window&& other) noexcept {
+            m_window = other.m_window;
+            other.m_window = nullptr;
+            return *this;
         }
         ~Window();
         bool WindowShouldClose();
-
         GLFWwindow* GetNativeWindow() const { return m_window; }
         std::pair<int,int> GetSize() const {
             int width, height;
@@ -31,12 +37,10 @@ namespace Foundation::Native {
     class Application {
         int m_initialized = 0;
     public:
-        const int m_argc;
-        char** m_argv;
         Window CreateWindow(int width, int height, const char* title) {
             return Window(width, height, title);
         }
-        Application(int argc, char** argv) : m_argc(argc), m_argv(argv) {
+        Application() {
             glfwSetErrorCallback(glfw_error_callback);
             if (!(m_initialized = glfwInit())) {
                 throw std::runtime_error("Failed to initialize GLFW");

@@ -14,7 +14,7 @@ public:
     GBufferPass(ResourceHandle depth) : m_depth(depth) {}
     void Setup(PassHandle self, Renderer& renderer) override {
         LOG_RUNTIME(GBufferPass, info, "Setup");
-        renderer.AccessTextureDSV(self, m_depth, {});
+        renderer.BindTextureDSV(self, m_depth, {});
     }
     void Record(PassHandle self, Renderer& renderer, RHICommandList* cmdList) override {
         LOG_RUNTIME(GBufferPass, info, "Record!");
@@ -28,7 +28,7 @@ public:
     ShadowCascadePass(ResourceHandle atlas, int index) : m_shadowAtlas(atlas), m_cascadeIndex(index) {}
     void Setup(PassHandle self, Renderer& renderer) override {
         LOG_RUNTIME(ShadowCascadePass, info, "Setup");
-        renderer.AccessTextureRTV(self, m_shadowAtlas, {});
+        renderer.BindTextureRTV(self, m_shadowAtlas, {});
     }
     void Record(PassHandle self, Renderer& renderer, RHICommandList* cmdList) override {
         LOG_RUNTIME(ShadowCascadePass, info, "Record!");
@@ -42,8 +42,8 @@ public:
     CopyPass(ResourceHandle source, ResourceHandle hiZ) : m_sourceDepth(source), m_hiZBuffer(hiZ) {}
     void Setup(PassHandle self, Renderer& renderer) override {
         LOG_RUNTIME(CopyPass, info, "Setup");
-        renderer.AccessTextureCopySrc(self, m_sourceDepth, {});
-        renderer.AccessTextureCopyDst(self, m_hiZBuffer, {});
+        renderer.BindTextureCopySrc(self, m_sourceDepth, {});
+        renderer.BindTextureCopyDst(self, m_hiZBuffer, {});
     }
     void Record(PassHandle self, Renderer& renderer, RHICommandList* cmdList) override {
         LOG_RUNTIME(CopyPass, info, "Record!");
@@ -57,7 +57,7 @@ public:
     HiZDownsamplePass(ResourceHandle hiZ, int mip) : m_hiZBuffer(hiZ), m_mipLevel(mip) {}
     void Setup(PassHandle self, Renderer& renderer) override {
         LOG_RUNTIME(HiZDownsamplePass, info, "Setup");
-        renderer.AccessTextureUAV(self, m_hiZBuffer, {});
+        renderer.BindTextureUAV(self, m_hiZBuffer, {});
     }
     void Record(PassHandle self, Renderer& renderer, RHICommandList* cmdList) override {
         LOG_RUNTIME(HiZDownsamplePass, info, "Record!");
@@ -75,10 +75,10 @@ public:
     }
     void Setup(PassHandle self, Renderer& renderer) override {
         LOG_RUNTIME(LightingPass, info, "Setup");
-        renderer.AccessTextureSRV(self, m_depth, {});
-        renderer.AccessTextureSRV(self, m_shadowAtlas, {});
-        renderer.AccessTextureSRV(self, m_hiZBuffer, {});
-        renderer.AccessTextureUAV(self, m_sceneColor, {});
+        renderer.BindTextureSRV(self, m_depth, {});
+        renderer.BindTextureSRV(self, m_shadowAtlas, {});
+        renderer.BindTextureSRV(self, m_hiZBuffer, {});
+        renderer.BindTextureUAV(self, m_sceneColor, {});
     }
     void Record(PassHandle self, Renderer& renderer, RHICommandList* cmdList) override { /* Compute lighting... */ }
 };
@@ -91,18 +91,18 @@ int main() {
     auto hiZBuffer = renderer.CreateResource("HiZBuffer", RHITextureDesc{});
     auto sceneColor = renderer.CreateResource("SceneColor", RHITextureDesc{});
     // HiZ generation is compute. This should be parallel and eventually sync'd
-    renderer.CreatePass<CopyPass>({ "CopyHiZ0", PassType::Graphics }, sceneDepth, hiZBuffer);
+    renderer.CreatePass<CopyPass>("CopyHiZ0", RHIDevicePipelineType::Graphics, sceneDepth, hiZBuffer);
     const int NUM_MIPS = 8;
     for (int i = 1; i < NUM_MIPS; ++i)
-        renderer.CreatePass<HiZDownsamplePass>({ fmt::format("DownSample{}", i), PassType::Compute }, hiZBuffer, i);
+        renderer.CreatePass<HiZDownsamplePass>(fmt::format("DownSample{}", i), RHIDevicePipelineType::Compute , hiZBuffer, i);
     // Gbuffer & cascade are both graphics work - these should be serial
-    auto [_, gbufferPass] = renderer.CreatePass<GBufferPass>({ "GBuffer" }, sceneDepth);
+    auto [_, gbufferPass] = renderer.CreatePass<GBufferPass>("GBuffer", RHIDevicePipelineType::Graphics, sceneDepth);
     const int NUM_CASCADES = 4;
     for (int i = 0; i < NUM_CASCADES; ++i)
-        renderer.CreatePass<ShadowCascadePass>({ fmt::format("Cascade{}", i), PassType::Graphics }, shadowAtlas, i);
+        renderer.CreatePass<ShadowCascadePass>(fmt::format("Cascade{}", i), RHIDevicePipelineType::Graphics, shadowAtlas, i);
     // Epilouge lighting.
     // This should be the root for the topology, culling everything it's not using
-    auto [lightingPassIdx, __] = renderer.CreatePass<LightingPass>({ "Lighting", PassType::Compute }, sceneDepth, shadowAtlas, hiZBuffer, sceneColor);
+    auto [lightingPassIdx, __] = renderer.CreatePass<LightingPass>("Lighting", RHIDevicePipelineType::Compute, sceneDepth, shadowAtlas, hiZBuffer, sceneColor);
     renderer.EndSetup(lightingPassIdx);
     printf(renderer.DbgDumpGraphviz().c_str());
     printf("\nPasses\n");

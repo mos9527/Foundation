@@ -3,6 +3,9 @@
 #include <mutex>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
+#if _WIN32
+#include <spdlog/sinks/msvc_sink.h>
+#endif
 namespace Foundation::Core {
     static bool g_Initialized = false;
     static std::shared_ptr<spdlog::sinks::dist_sink_mt> g_LoggingSink = nullptr;
@@ -16,6 +19,9 @@ namespace Foundation::Core {
             g_BacktraceSink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(kMaxBacktraceLogMessages);
             g_LoggingSink->add_sink(g_BacktraceSink);
             g_LoggingSink->add_sink(std::make_shared<spdlog::sinks::stderr_color_sink_mt>());
+#if _WIN32
+            g_LoggingSink->add_sink(std::make_shared<spdlog::sinks::msvc_sink_mt>());
+#endif
             g_Initialized = true;
         }
         return g_LoggingSink;
@@ -35,6 +41,7 @@ namespace Foundation::Core {
                 GetLoggingSink()
             );
             spdlog::initialize_logger(new_logger);
+            new_logger->set_level(spdlog::level::debug);
         }
         return spdlog::get(name).get();
     }

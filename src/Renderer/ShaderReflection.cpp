@@ -78,21 +78,6 @@ void ShaderReflection::ParseSPIRV(StlSpan<const char> bytecode)
             }
             break;
         }
-        case spv::OpMemberDecorate:
-        {
-            // 1: ID
-            uint32_t id = ins[1];
-            // 2: Member Index
-            // We only take offset
-            switch (spv::Decoration(ins[3]))
-            {
-            case spv::DecorationOffset:
-
-            default:
-                break;
-            }
-            break;
-        }
         /* 3.32.6 Type-Declaration Instructions */
         case spv::OpTypePointer: // e.g. Push Constants        
         {            

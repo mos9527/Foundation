@@ -60,6 +60,7 @@ namespace Foundation::RHI {
     };
 
     enum class RHITextureLayout {
+        Undefined,
         General,
         RenderTarget,
         DepthStencil,

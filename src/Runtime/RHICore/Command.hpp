@@ -118,6 +118,9 @@ namespace Foundation::RHI {
         virtual RHICommandList& EndGraphics() = 0;
 #pragma endregion
 #pragma region Tags
+        virtual RHICommandList& DebugBegin() = 0;
+        virtual RHICommandList& DebugInsertMarker(const char* message) = 0;
+        virtual RHICommandList& DebugEnd() = 0;
         virtual RHICommandList& Begin() = 0;
         virtual void End() = 0;
         virtual void Reset() = 0;

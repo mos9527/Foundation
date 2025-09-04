@@ -39,8 +39,9 @@ else()
     message(FATAL_ERROR "Unsupported platform")
 endif()
 
+
 target_sources(ModelViewer PRIVATE ${SOURCES} ${INCLUDES} "ModelViewer.cpp")
-target_link_libraries(ModelViewer PRIVATE Foundation_Runtime Foundation_Renderer Foundation_Cooking)
+target_link_libraries(ModelViewer PRIVATE Foundation_Runtime Foundation_Renderer)
 target_include_directories(ModelViewer PRIVATE .. "${stb_SOURCE_DIR}" "${fast_obj_SOURCE_DIR}")
 # TODO: Make this internal
 find_program(SLANGC_EXECUTABLE

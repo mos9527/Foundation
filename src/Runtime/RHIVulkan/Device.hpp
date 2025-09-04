@@ -46,7 +46,7 @@ namespace Foundation::RHI {
         const VulkanDevice& m_device;
         vk::raii::Semaphore m_semaphore{ nullptr };
     public:
-        VulkanDeviceSemaphore(const VulkanDevice& device);
+        VulkanDeviceSemaphore(const VulkanDevice& device, bool is_timeline);
         inline auto const& GetVkSemaphore() const { return m_semaphore; }
     };
     class VulkanDeviceFence : public RHIDeviceFence {
@@ -110,7 +110,7 @@ namespace Foundation::RHI {
         RHICommandPool* GetCommandPool(Handle handle) const override;
         void DestroyCommandPool(Handle handle) override;
 
-        RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> CreateSemaphore() override;
+        RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> CreateSemaphore(bool is_timeline = false) override;
         RHIDeviceSemaphore* GetSemaphore(Handle handle) const override;
         void DestroySemaphore(Handle handle) override;
 
@@ -142,8 +142,8 @@ namespace Foundation::RHI {
         void ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) override;
         void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) override;
 
-        void SignalSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) override;
-        void WaitForSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) override;
+        void SignalTimelineSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) override;
+        void WaitForTimelineSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) override;
 
         void WaitIdle() const override;
 

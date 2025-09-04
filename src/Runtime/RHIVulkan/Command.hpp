@@ -73,6 +73,10 @@ namespace Foundation::RHI {
         RHICommandList& BindIndexBuffer(RHIBuffer* buffer, size_t offset, RHIResourceFormat format) override;
         RHICommandList& EndGraphics() override;
 
+        RHICommandList& DebugBegin();
+        RHICommandList& DebugInsertMarker(const char* message);
+        RHICommandList& DebugEnd();
+
         void End() override;
         void Reset() override;
     };

@@ -6,9 +6,13 @@
 #include <span>
 #include <numeric>
 #include <optional>
+#include <array>
 
 #include <Allocator/Allocator.hpp>
 namespace Foundation::Core {
+    template<typename T, size_t Size>
+    using StlArray = std::array<T, Size>;
+
     template<typename T>
     using StlVector = std::vector<T, StlAllocator<T>>;
 

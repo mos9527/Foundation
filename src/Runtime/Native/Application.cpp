@@ -11,9 +11,11 @@ namespace Foundation::Native {
         m_window = glfwCreateWindow(width, height, title, NULL, NULL);
     }
     Window::~Window() {
-        glfwDestroyWindow(m_window);
+        if (m_window)
+            glfwDestroyWindow(m_window);
     }
     bool Window::WindowShouldClose() {
+        CHECK(m_window && "invalid window");
         if (!glfwWindowShouldClose(m_window)) {
             glfwPollEvents();
             return false;
