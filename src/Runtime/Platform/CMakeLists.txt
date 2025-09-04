@@ -24,18 +24,22 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(GLFW)
 
+FetchContent_Declare(
+  fmt
+  GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+  GIT_TAG        11.2.0
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(fmt)
+
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY https://github.com/gabime/spdlog.git
+  GIT_TAG v1.15.3
+  GIT_SHALLOW TRUE
+)
+set(SPDLOG_FMT_EXTERNAL ON)
+FetchContent_MakeAvailable(spdlog)
+
 target_link_libraries(Foundation_Platform PUBLIC fmt::fmt spdlog::spdlog glfw)
 target_include_directories(Foundation_Platform PRIVATE "${GLFW_SOURCE_DIR}/include")
-
-if (WIN32)
-    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/Windows")
-    target_link_libraries(Foundation_Platform PRIVATE Foundation_Platform_WIN32)
-elseif (APPLE)
-    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/Apple")
-    target_link_libraries(Foundation_Platform PRIVATE Foundation_Platform_APPLE)
-elseif (UNIX)
-    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/Linux")
-    target_link_libraries(Foundation_Platform PRIVATE Foundation_Platform_LINUX)
-else()
-    message(FATAL_ERROR "Unsupported platform")
-endif()

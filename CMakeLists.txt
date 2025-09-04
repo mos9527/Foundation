@@ -9,7 +9,6 @@ set(DERIVED_DATA_DIR "${CMAKE_SOURCE_DIR}/.derived")
 
 add_subdirectory(src/Runtime)
 add_subdirectory(src/Renderer)
-add_subdirectory(src/Cooking)
-add_subdirectory(src/Editor)
+add_subdirectory(src/ModelViewer)
 
 add_subdirectory(tests)

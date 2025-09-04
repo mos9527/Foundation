@@ -7,6 +7,7 @@ namespace Foundation::Core {
     static std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> g_BacktraceSink = nullptr;
     size_t kBacktraceLogMessages = 1000; // Number of messages to keep in the ring buffer for backtrace logging
     std::recursive_mutex g_LoggingSinkMutex;
+
     std::shared_ptr<spdlog::sinks::dist_sink_mt> GetLoggingSink() {
         std::scoped_lock lck(g_LoggingSinkMutex);
         // Lazily initialize the global logging sink if it does not exist.
