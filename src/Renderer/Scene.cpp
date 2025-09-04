@@ -92,8 +92,8 @@ namespace Foundation {
     }
 
     void ScenePass::Setup(PassHandle self, Renderer& renderer) {        
-        renderer.AccessBuffer(self, m_global,    RHIPipelineStageBits::Transfer, RHIResourceAccessBits::TransferWrite);
-        renderer.AccessBuffer(self, m_instance,  RHIPipelineStageBits::Transfer, RHIResourceAccessBits::TransferWrite);
-        renderer.AccessBuffer(self, m_primitive, RHIPipelineStageBits::Transfer, RHIResourceAccessBits::TransferWrite);
+        renderer.BindBufferStorage(self, m_global, "global", {});
+        renderer.BindBufferStorage(self, m_instance, "instance", {});
+        renderer.BindBufferStorage(self, m_primitive, "primitive", {});
     }
 }

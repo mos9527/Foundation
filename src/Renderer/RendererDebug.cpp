@@ -13,7 +13,7 @@ std::string Renderer::DbgDumpGraphviz() const {
             "    \"{}@{}\" [ shape=box style=filled fillcolor=\"{}\" ];\n",
             pass.name,
             pass.handle,
-            pass.type == PassType::Graphics ? "#d0e0f0" : "#f0d0e0");
+            pass.queue == RHIDevicePipelineType::Graphics ? "#d0e0f0" : "#f0d0e0");
     }
     // Dependencies
     for (PassHandle u = 0; u < m_setup->graph.size(); u++) {

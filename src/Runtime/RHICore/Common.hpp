@@ -32,9 +32,9 @@ namespace Foundation::RHI {
 
     struct RHIVertexAttribute {
         uint32_t location; // Index into shader input
-        uint32_t binding = 0; // 0-indexed index into bindings.
         uint32_t offset; // In bytes
         RHIResourceFormat format{ RHIResourceFormat::Undefined }; // Format on the GPU    
+        uint32_t binding = 0; // 0-indexed index into bindings
     };
 
     enum class RHICommandPoolType {
@@ -77,13 +77,19 @@ namespace Foundation::RHI {
 
     enum class RHIDescriptorType {
         Sampler,
-        // XXX: In VK there's also CombinedImageSampler though no other APIs has it.
-        // See also: https://github.com/gpuweb/gpuweb/issues/770
         SampledImage,
         StorageImage,
         UniformBuffer,
         StorageBuffer
     };
+
+    ENUM_NAME_CONV_BEGIN(RHIDescriptorType)
+        case Sampler: return "Sampler";
+        case SampledImage: return "SampledImage";
+        case StorageImage: return "StorageImage";
+        case UniformBuffer: return "UniformBuffer";
+        case StorageBuffer: return "StorageBuffe";
+    ENUM_NAME_CONV_END()
 
     enum class RHIMultisampleCount {
         e1, e2, e4, e8, e16
@@ -99,6 +105,12 @@ namespace Foundation::RHI {
         All = ~0u
     BITMASK_ENUM_END();
 
+    ENUM_NAME_CONV_BEGIN(RHIShaderStageBits)
+        case Vertex: return "Vertex Stage";
+        case Fragment: return "Fragment Stage";
+        case Compute: return "Compute Stage";
+    ENUM_NAME_CONV_END()
+        
     BITMASK_ENUM_BEGIN(RHIResourceAccess, uint32_t)
         RenderTargetWrite = 1 << 0,
         RenderTargetRead = 1 << 1,

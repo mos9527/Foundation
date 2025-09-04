@@ -1,4 +1,5 @@
 #pragma once
+#include <bit>
 template<typename T, typename Ty> struct BitmaskEnumWrapper {    
     Ty value{};
     BitmaskEnumWrapper() : value(static_cast<Ty>(T{})) {}
@@ -15,6 +16,9 @@ template<typename T, typename Ty> struct BitmaskEnumWrapper {
     inline constexpr operator Ty() const { return static_cast<Ty>(value); }
     inline constexpr operator T() const { return static_cast<T>(value); }
     inline constexpr operator bool() const { return value != 0; }
+    inline constexpr bool is_pow2() const { return (value & (value - 1)) == 0; }
+    inline constexpr bool is_bitmask() const { return is_pow2(); }
+    inline constexpr int ctz() const { return std::countr_one(value); }
 };
 // Defines a bitmask enum type {T}Bits with underlying integer type INT_T.
 // Whilst defining a wrapper class of type T that provides bitwise operators.
@@ -31,4 +35,16 @@ inline T##Bits&	 operator	^=	(T##Bits& x, T##Bits y)		{	x = static_cast<T##Bits>
 enum class T##Bits : INT_T {
 
 #define BITMASK_ENUM_END() };
+
+// Defines convience to_string() method and format_as() [fmt] for the respective enum class
+#define ENUM_NAME_CONV_BEGIN(T) \
+inline constexpr const char* to_string(T elem); \
+inline auto format_as(T elem) { return to_string(elem); } \
+inline constexpr const char* to_string(T elem) { \
+    using enum T; \
+    switch (elem) {
+
+#define ENUM_NAME_CONV_END() } \
+    return "Unknown"; \
+}
 

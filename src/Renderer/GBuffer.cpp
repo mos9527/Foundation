@@ -18,8 +18,8 @@ GBuffer::GBuffer(Renderer& renderer, ResourceHandle sceneGlobal, ResourceHandle 
     });
 }
 void GBuffer::Setup(PassHandle self, Renderer& renderer) {
-    m_albedoView = renderer.AccessTextureRTV(self, m_albedo, { .format = RHIResourceFormat::R8G8B8A8_UNORM });
-    m_depthView  = renderer.AccessTextureDSV(self, m_depth,  { .format = RHIResourceFormat::D32_SIGNED_FLOAT });
+    m_albedoView = renderer.BindTextureRTV(self, m_albedo, { .format = RHIResourceFormat::R8G8B8A8_UNORM });
+    m_depthView  = renderer.BindTextureDSV(self, m_depth,  { .format = RHIResourceFormat::D32_SIGNED_FLOAT });
 }
 void GBuffer::Record(PassHandle self, Renderer&, RHICommandList* cmd) {
 

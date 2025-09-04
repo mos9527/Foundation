@@ -9,6 +9,7 @@
 #include <RHICore/Device.hpp>
 
 #include "Renderer.hpp"
+#include "ShaderReflection.hpp"
 
 #include <Cooking/Image.hpp>
 #include <Cooking/Mesh.hpp>
@@ -27,7 +28,7 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObject
     m_cmdPool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
         .queue = RHIDeviceQueueType::Graphics,
         .type = RHICommandPoolType::Persistent
-    });
+    });    
 }
 
 #pragma region Render Graph Setup
@@ -51,7 +52,7 @@ void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPi
     // Check for overlap
     for (auto& [h, _, __] : m_setup->trackedPasses[pass].bufferUsages)
         if (h == handle)
-            throw std::runtime_error("Overlap detected. Buffer access must be global.");            
+            throw std::runtime_error("Overlap detected. Buffer access must be global.");
     // Add edge
     if (resource.lastBufferState.producer != kInvalidHandle)
         m_setup->add_edge(pass, resource.lastBufferState.producer, handle);
@@ -96,14 +97,22 @@ void Renderer::DeclareTextureAccess(
 
 /* -- binding -- */
 void Renderer::BindShader(
-    PassHandle pass,
-    std::string const& shader_path, const char* entry_point, RHIShaderStage stage
+    PassHandle pass, RHIShaderStage stage,
+    std::filesystem::path const& shader_path, const char* entry_point
 ) {
     CHECK(m_state == State::Setup);
+    CHECK(stage.is_bitmask() && "Only one stage can be bound to a shader per pass");
     for (auto& [_, __, s] : m_setup->trackedPasses[pass].shaders)
         if (s == stage)
             throw std::runtime_error("Shader stage already bound.");
     m_setup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage);
+}
+void Renderer::BindVertexInput(
+    PassHandle pass,
+    RHIPipelineState::PipelineStateDesc::VertexInput const& info
+) {
+    CHECK(m_state == State::Setup);
+    m_setup->trackedPasses[pass].vertex_input = info;
 }
 void Renderer::BindBufferUniform(
     PassHandle pass, ResourceHandle buffer,
@@ -115,17 +124,19 @@ void Renderer::BindBufferUniform(
         RHIResourceAccessBits::UniformRead
     );
     m_setup->trackedPasses[pass].buf_bindings.emplace_back(buffer, RHIDescriptorType::UniformBuffer, bind_point);
+    m_setup->binding_counts[RHIDescriptorType::UniformBuffer]++;
 }
 void Renderer::BindBufferStorage(
     PassHandle pass, ResourceHandle buffer,
     const char* bind_point
-){
+) {
     CHECK(m_state == State::Setup);
     DeclareBufferAccess(pass, buffer,
         kAllShaderStages,
-        RHIResourceAccessBits::ShaderRead 
+        RHIResourceAccessBits::ShaderRead
     );
     m_setup->trackedPasses[pass].buf_bindings.emplace_back(buffer, RHIDescriptorType::StorageBuffer, bind_point);
+    m_setup->binding_counts[RHIDescriptorType::StorageBuffer]++;
 }
 void Renderer::BindBufferUnordered(
     PassHandle pass, ResourceHandle buffer,
@@ -137,6 +148,7 @@ void Renderer::BindBufferUnordered(
         RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite
     );
     m_setup->trackedPasses[pass].buf_bindings.emplace_back(buffer, RHIDescriptorType::StorageBuffer, bind_point);
+    m_setup->binding_counts[RHIDescriptorType::StorageBuffer]++;
 }
 ResourceHandle Renderer::BindTextureSRV(
     PassHandle pass, ResourceHandle texture,
@@ -152,6 +164,7 @@ ResourceHandle Renderer::BindTextureSRV(
     );
     ResourceHandle view = CreateTextureView(pass, texture, desc);
     m_setup->trackedPasses[pass].tex_bindings.emplace_back(view, RHIDescriptorType::SampledImage, shader_name);
+    m_setup->binding_counts[RHIDescriptorType::SampledImage]++;
     return view;
 }
 ResourceHandle Renderer::BindTextureUAV(
@@ -168,6 +181,7 @@ ResourceHandle Renderer::BindTextureUAV(
     );
     ResourceHandle view = CreateTextureView(pass, texture, desc);
     m_setup->trackedPasses[pass].tex_bindings.emplace_back(view, RHIDescriptorType::StorageImage, shader_name);
+    m_setup->binding_counts[RHIDescriptorType::StorageImage]++;
     return view;
 }
 ResourceHandle Renderer::BindTextureRTV(
@@ -175,6 +189,8 @@ ResourceHandle Renderer::BindTextureRTV(
     RHITextureViewDesc const& desc
 ) {
     CHECK(m_state == State::Setup);
+    auto& tpass = m_setup->trackedPasses[pass];
+    CHECK(tpass.queue == RHIDevicePipelineType::Graphics && "RTV (Render Target Views) are only supported on Graphics queues");
     DeclareTextureAccess(pass, texture,
         RHIPipelineStageBits::ColorAttachmentOutput,
         desc.range,
@@ -182,6 +198,7 @@ ResourceHandle Renderer::BindTextureRTV(
         RHITextureLayout::RenderTarget
     );
     ResourceHandle view = CreateTextureView(pass, texture, desc);
+    tpass.rtvs.push_back(view);
     return view;
 }
 ResourceHandle Renderer::BindTextureDSV(
@@ -189,6 +206,8 @@ ResourceHandle Renderer::BindTextureDSV(
     RHITextureViewDesc const& desc
 ) {
     CHECK(m_state == State::Setup);
+    auto& tpass = m_setup->trackedPasses[pass];
+    CHECK(tpass.queue == RHIDevicePipelineType::Graphics && "DSV (Depth Stencil Views) are only supported on Graphics queues");
     DeclareTextureAccess(pass, texture,
         RHIPipelineStageBits::EarlyFragmentTests | RHIPipelineStageBits::LateFragmentTests,
         desc.range,
@@ -196,6 +215,7 @@ ResourceHandle Renderer::BindTextureDSV(
         RHITextureLayout::DepthStencil
     );
     ResourceHandle view = CreateTextureView(pass, texture, desc);
+    tpass.dsv = view;
     return view;
 }
 void Renderer::BindTextureCopyDst(
@@ -277,23 +297,147 @@ void Renderer::CullPasses(PassHandle epilogue) {
         }
     }
 }
-
-RHIDeviceScopedObjectHandle<RHIPipelineState> Renderer::BuildPipelineState(PassHandle pass) {
+void Renderer::BuildPipelineState(PassHandle pass) {
     auto& tracked = m_setup->trackedPasses[pass];
-    // Texture bindings
-    for (auto const& [view_hdl, desc_type, bindpoint] : tracked.tex_bindings) {
+    StlVector<RHIPipelineState::PipelineStateDesc::ShaderStage> pso_stages(m_allocator);
+    // Load shader bytecode
+    LOG_RUNTIME(Renderer, debug, "Building PSO for {} [{}]", tracked.name, pass);
+    StlVector<char> data(m_allocator);
+    StlVector<RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(m_allocator);
+    StlVector<ShaderReflection> reflections(m_allocator);
+    size_t stages[0xF]{};
+    for (auto const& [shader_path, entry_point, stage] : tracked.shaders) {
+        LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path.string());
+        std::ifstream file(shader_path);
+        CHECK(file.good());        
+        data.resize(std::filesystem::file_size(shader_path));
+        file.read(data.data(), data.size());
+        auto& refl = reflections.emplace_back(data, m_allocator);
+        // Check matching stage and entry point
+        CHECK(refl.m_entrypoint.name == entry_point);
+        CHECK(refl.m_entrypoint.stage == stage);
+        LOG_RUNTIME(Renderer, debug, "{}", refl.DbgDumpShaderInfo());
+        shaders.push_back(m_device->CreateShaderModule({ .source = data }));
+        // In BindShader we have already guaranteed these to be unique per stage
+        stages[(uint32_t)stage] = shaders.size() - 1;        
+        pso_stages.push_back({
+            .desc = {.stage = stage, .entry_point = entry_point.c_str() },
+            .shader_module = shaders.back()
+        });
     }
-    // Buffer bindings
-    for (auto const& [buf_hdl, desc_type, bindpoint] : tracked.buf_bindings) {
-
+    // Check variable bindings to be consistent across stages
+    StlMap<std::string, std::pair<uint32_t, uint32_t>> var_bindpoints;
+    for (auto& refl : reflections) {
+        for (auto& bind : refl.m_bindings) {
+            CHECK(bind.name.size() && "Unnamed bindings are not supported. Enable debug information.");
+            auto it = var_bindpoints.find(bind.name);
+            if (it == var_bindpoints.end())
+                var_bindpoints[bind.name] = { bind.descriptorSet, bind.binding };
+            else {
+                auto& [set, binding] = it->second;
+                CHECK(set == bind.descriptorSet && binding == bind.binding && "Inconsistent binding points across shader stages.");
+            }
+        }
     }
+    // Create descriptor set layout to be consistent across stages
+    StlMap<std::string, RHIDescriptorType> var_types(m_allocator);
+    for (auto& [vhdl, dtype, binding] : tracked.tex_bindings) {
+        auto& view = m_setup->trackedViews[vhdl];
+        auto it = var_types.find(binding);
+        if (it == var_types.end())
+            var_types[binding] = dtype;
+        else {
+            auto& dtype_prev = it->second;
+            CHECK(dtype_prev == dtype && "Inconsistent descriptor types across bindings.");
+        }
+    }
+    for (auto& [rhdl, dtype, binding] : tracked.buf_bindings) {
+        auto it = var_types.find(binding);
+        if (it == var_types.end())
+            var_types[binding] = dtype;
+        else {
+            auto& dtype_prev = it->second;
+            CHECK(dtype_prev == dtype && "Inconsistent descriptor types across bindings.");
+        }
+    }
+    LOG_RUNTIME(Renderer, debug, "Pipeline Parameters");
+    for (auto& [name, dtype] : var_types) {
+        auto [set, binding] = var_bindpoints[name];
+        LOG_RUNTIME(Renderer, debug, "\t{}: set {}, binding {}, type {}", name, set, binding, dtype);
+    }
+    StlVector<std::pair<std::pair<uint32_t, uint32_t>, std::string>> bindings(m_allocator);
+    bindings.reserve(var_types.size());
+    for (auto& [name, bind] : var_bindpoints)
+        bindings.push_back({ bind, name });
+    std::sort(bindings.begin(), bindings.end());
+    // Seperate into descriptor sets
+    StlVector<RHIDeviceDescriptorSetLayoutDesc::Binding> set_bindings(m_allocator);
+    for (auto& [_, binding] : bindings) {
+        // !! TODO: Descriptor Arrays
+        set_bindings.push_back({ .count = 1, .stage = RHIShaderStageBits::All, .type = var_types[binding] });
+    }
+    for (size_t i = 0, j = 0; i < bindings.size(); i = j) {
+        uint32_t set = bindings[i].first.first;
+        while (j < bindings.size() && bindings[j].first.first == set) j++;
+        tracked.desc_layouts.push_back(m_device->CreateDescriptorSetLayout(
+            { .bindings = { set_bindings.cbegin() + i, set_bindings.cbegin() + j } }
+        ));
+        tracked.desc_sets.push_back(m_descPool->CreateDescriptorSet(tracked.desc_layouts.back()));
+    }
+    RHIPipelineState::PipelineStateDesc pso_desc{
+        .vertex_input = tracked.vertex_input,
+        .topology = RHIPipelineState::PipelineStateDesc::TRIANGLE_LIST,
+        .rasterizer = {
+            .fill_mode = RHIPipelineState::PipelineStateDesc::Rasterizer::FILL_SOLID,
+            .cull_mode = RHIPipelineState::PipelineStateDesc::Rasterizer::CULL_BACK,
+            .front_face = RHIPipelineState::PipelineStateDesc::Rasterizer::FF_COUNTER_CLOCKWISE,
+        },
+        .multisample = {.enabled = false },
+        .depth_stencil = {                        
+            .depth_test = true,
+            .depth_write = true
+        },
+        .shader_stages = pso_stages,
+        .descriptor_set_layouts = tracked.desc_layouts,
+    };
+    // Setup compute/graphics specific states
+    // Graphics
+    // RTV,DSV
+    StlVector<RHIPipelineState::PipelineStateDesc::Attachment> attachments(m_allocator);
+    for (auto rtv : tracked.rtvs) {
+        auto& [rhdl, desc] = m_setup->trackedViews[rtv];
+        attachments.push_back({ .render_target = { .format = desc.format } });
+    }
+    pso_desc.attachments = attachments;
+    pso_desc.depth_stencil = {
+        .depth_test = tracked.dsv != kInvalidHandle,
+        .depth_write = tracked.dsv != kInvalidHandle,
+        .depth_compare_op = RHIPipelineState::PipelineStateDesc::DepthStencil::CompareOp::LESS,
+    };
+    if (tracked.dsv != kInvalidHandle) {
+        auto& [dhdl, desc] = m_setup->trackedViews[tracked.dsv];
+        pso_desc.depth_stencil.depth_format = desc.format;
+        // TODO Stencil?
+    }
+    tracked.pso = m_device->CreatePipelineState(pso_desc);
 }
 
 void Renderer::FinalizePSOs() {
     CHECK(m_state == State::Setup);
+    // Reset descriptor pool
+    m_descPool.Reset();
+    StlVector<RHIDeviceDescriptorPool::PoolDesc::Binding> bindings(m_allocator);
+    bindings.reserve(m_setup->binding_counts.size());
+    LOG_RUNTIME(Renderer, debug, "Descriptor Pool");
+    for (auto& [type, count] : m_setup->binding_counts) {
+        LOG_RUNTIME(Renderer, debug, "\t{}: {}", type, count);
+        bindings.push_back({ .type = type, .max_count = count });
+    }
+    m_descPool = m_device->CreateDescriptorPool({ bindings });
+    // Build PSOs for everything we need
     for (auto& pass : m_setup->trackedPasses) {
         if (!pass.used) continue;
-        pass.pso = BuildPipelineState(pass.handle);
+        BuildPipelineState(pass.handle);
     }
 }
 void Renderer::FinalizeResources() {
@@ -373,7 +517,7 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) {
             sta.access = access;
             sta.stage = stage;
             sta.layout = layout;
-        }        
+        }
     }
     // Buffers
     // These are always global i.e. at most one per buffer per pass.
@@ -388,13 +532,12 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) {
                 .src_stage = tres.lastBufferState.stage,
                 .dst_stage = stage,
             }
-        );
+            );
         tres.lastBufferState.access = access;
-        tres.lastBufferState.stage = stage;        
+        tres.lastBufferState.stage = stage;
     }
     cmd->EndTransition();
 }
-
 void Renderer::ExecuteSubmit(TrackedPass& pass, RHICommandList* cmd) {
     CHECK(m_state == State::Execute);
     Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
@@ -435,7 +578,7 @@ void Renderer::ExecuteSubmit(TrackedPass& pass, RHICommandList* cmd) {
     }
     // Submit
     if (m_gfxQueue != m_compQueue && m_enableAsyncCompute) {
-        RHIDeviceQueue* queue = pass.queue == PassQueue::Graphics ? m_gfxQueue : m_compQueue;
+        RHIDeviceQueue* queue = pass.queue == RHIDevicePipelineType::Graphics ? m_gfxQueue : m_compQueue;
         queue->Submit({
             .waits = waits,
             .signals = {{{ pass.waitSemaphore.Get(), SEM_COUNTER(pass.ord) }}},
@@ -445,22 +588,22 @@ void Renderer::ExecuteSubmit(TrackedPass& pass, RHICommandList* cmd) {
     else {
         // Same queue on devices that don't have dedicated compute
         // or with async compute disabled
-        m_gfxQueue->Submit({            
+        m_gfxQueue->Submit({
             .signals = {{{ pass.waitSemaphore.Get(), SEM_COUNTER(pass.ord) }}},
             .cmd_lists = { cmd },
-        });
+            });
     }
 }
 #pragma endregion
 
 
 void Renderer::Execute() {
-    CHECK(m_state == State::PostSetup && "Invalid state. Did you call EndSetup()?");    
-    m_state = State::Execute;    
+    CHECK(m_state == State::PostSetup && "Invalid state. Did you call EndSetup()?");
+    m_state = State::Execute;
     // Execute passes
     auto& ords = m_setup->execution;
     auto& passes = m_setup->trackedPasses;
-    for (size_t i = 0, j = 0; i < ords.size();) {
+    for (size_t i = 0, j = 0; i < ords.size(); i = j) {
         // These passes can be executed in parallel
         // though the benefit is questionable since recording
         // isn't at all expensive, nor there's many opportunities
@@ -469,11 +612,12 @@ void Renderer::Execute() {
         for (; j < ords.size() && passes[ords[j]].depth == passes[ords[i]].depth; j++) {
             auto& pass = passes[ords[j]];
             auto cmd = m_cmdPool->CreateCommandList();
+            cmd->Begin();
             ExecuteBarriers(pass, cmd.Get());
             pass.pass->Record(pass.handle, *this, cmd.Get());
+            cmd->End();
             ExecuteSubmit(pass, cmd.Get());
-        }
-        i = j;
+        }        
     }
     uint32_t swapIndex = m_swapchain->GetNextImage(-1, {}, {});
     if (m_setup->epilogue != kInvalidHandle) {
@@ -489,7 +633,7 @@ void Renderer::Execute() {
         m_gfxQueue->Present({
         .image_index = swapIndex,
         .swapchain = m_swapchain.Get()
-        });
+            });
     }
     m_currentSwap = (m_currentSwap + 1) % m_swapchain->m_desc.buffer_count;
     m_frame++;

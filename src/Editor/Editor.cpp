@@ -45,7 +45,7 @@ namespace Foundation {
             m_renderer->BeginSetup();
             auto [hScene, scene] = m_renderer->CreatePass<ScenePass>({ .name = "Scene Data Transfer" }, *m_renderer, *m_scene);
             auto [hgbuffer, gbuffer] = m_renderer->CreatePass<GBuffer>(
-                { .name = "GBuffer", .type = PassQueue::Graphics },
+                { .name = "GBuffer", .type = RHIDevicePipelineType::Graphics },
                 *m_renderer, scene->m_global, scene->m_instance, scene->m_primitive
             );
             m_renderer->EndSetup(hgbuffer);
