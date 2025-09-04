@@ -116,11 +116,11 @@ set(SHADER_BUILD_DIR "${DERIVED_DATA_DIR}/shaders")
 file(MAKE_DIRECTORY ${SHADER_BUILD_DIR})
 
 add_slang_shader(
-    Shader_Mesh
-    SOURCE          "${CMAKE_CURRENT_LIST_DIR}/Shaders/Mesh.slang"
+    Shader_GBuffer
+    SOURCE          "${CMAKE_CURRENT_LIST_DIR}/Shaders/GBuffer.slang"
     OUTPUT_DIR      "${SHADER_BUILD_DIR}"
     TARGETS         spirv               spirv
     PROFILES        spirv_1_4           spirv_1_4 
     ENTRY_POINTS    vertMain            fragMain
 )
-add_dependencies(ModelViewer Shader_Mesh)
+add_dependencies(ModelViewer Shader_GBuffer)

@@ -44,7 +44,6 @@ namespace Foundation {
     private:
         using AllocationList = FreeList<SceneHandle, RHIBuffer::Arena::Allocation>;
         Allocator* m_allocator{ nullptr };
-        Renderer& m_renderer;
 
         // GPU Staging data
         RHIDeviceScopedObjectHandle<RHIBuffer> m_stagingBuffer;
@@ -90,7 +89,7 @@ namespace Foundation {
 
         const SceneDataDesc m_desc;
     public:
-        SceneData(Allocator* allocator, Renderer& renderer, SceneDataDesc const& desc);
+        SceneData(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc);
 
         SceneHandle AddPrimitiveData(StlSpan<const uint8_t> data, size_t alignment = 16);
         void UpdatePrimitiveData(SceneHandle handle, StlSpan<const uint8_t> data);

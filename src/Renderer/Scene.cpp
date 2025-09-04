@@ -3,8 +3,8 @@
 namespace Foundation {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;    
-    Scene::Scene(Allocator* allocator, Renderer& renderer, SceneDataDesc const& desc) :
-        m_allocator(allocator), m_renderer(renderer), m_data(allocator, renderer, desc),
+    Scene::Scene(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc) :
+        m_allocator(allocator), m_data(allocator, device, desc),
         m_instanceOffsets(allocator) {}
 
     template<typename Vertex, typename Index>

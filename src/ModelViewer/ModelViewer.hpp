@@ -12,6 +12,8 @@
 #include <Renderer/Renderer.hpp>
 #include <Renderer/Scene.hpp>
 
+#include <Renderer/CopyToSwapchainPass.hpp>
+
 using namespace Foundation;
 using namespace Foundation::Core;
 using namespace Foundation::RHI;

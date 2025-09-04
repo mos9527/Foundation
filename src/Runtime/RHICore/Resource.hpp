@@ -116,7 +116,7 @@ namespace Foundation::RHI {
         RHIMultisampleCount sample_count{ RHIMultisampleCount::e1 }; // For MSAA
         uint32_t mip_levels{ 1 };
         uint32_t array_layers{ 1 }; // No. of images in a image array.
-        RHITextureLayout initial_layout{};        
+        RHITextureLayout initial_layout{ RHITextureLayout::Undefined };        
     };
     class RHITexture;
     class RHITextureView;

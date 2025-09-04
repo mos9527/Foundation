@@ -1,11 +1,11 @@
 #include "Scene.hpp"
 #include "Renderer.hpp"
 namespace Foundation {
-    SceneData::SceneData(Allocator* allocator, Renderer& renderer, SceneDataDesc const& desc)
-        : m_allocator(allocator), m_renderer(renderer), m_desc(desc),
+    SceneData::SceneData(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc)
+        : m_allocator(allocator), m_desc(desc),
         m_primitives(allocator), m_textures(allocator), m_instances(allocator),
         m_primitiveStaging(allocator), m_instanceStaging(allocator), m_staging(allocator) {
-        m_primitiveData = renderer.GetDevice()->CreateBuffer({
+        m_primitiveData = device->CreateBuffer({
             .resource = {
                 .heap = RHIDeviceHeapType::Local,
                 .host_access = RHIResourceHostAccess::Invisible,
@@ -13,7 +13,7 @@ namespace Foundation {
             .usage = RHIBufferUsageBits::VertexBuffer | RHIBufferUsageBits::IndexBuffer | RHIBufferUsageBits::StorageBuffer,
             .size = desc.PrimitiveDataBudget,
         });
-        m_instanceData = renderer.GetDevice()->CreateBuffer({
+        m_instanceData = device->CreateBuffer({
             .resource = {
                 .heap = RHIDeviceHeapType::Local,
                 .host_access = RHIResourceHostAccess::Invisible,
@@ -21,7 +21,7 @@ namespace Foundation {
             .usage = RHIBufferUsageBits::StorageBuffer,
             .size = desc.InstanceDataBudget,
         });
-        m_stagingBuffer = m_renderer.GetDevice()->CreateBuffer({
+        m_stagingBuffer = device->CreateBuffer({
             .resource = {
                 .heap = RHIDeviceHeapType::Upload,
                 .host_access = RHIResourceHostAccess::WriteOnly,
@@ -29,7 +29,7 @@ namespace Foundation {
             .usage = RHIBufferUsageBits::TransferSource,
             .size = desc.TotalBudget()
         });
-        m_globalData = renderer.GetDevice()->CreateBuffer({
+        m_globalData = device->CreateBuffer({
             .resource = {
                 .heap = RHIDeviceHeapType::Upload,
                 .host_access = RHIResourceHostAccess::WriteOnly,

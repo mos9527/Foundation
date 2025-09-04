@@ -387,6 +387,7 @@ RHICommandList& VulkanCommandList::DebugBegin(){
     return *this;
 }
 RHICommandList& VulkanCommandList::DebugInsertMarker(const char* message){
+    CHECK(message && "Debug message must not be null");
     m_commandBuffer.insertDebugUtilsLabelEXT({
         .pLabelName = message
     });

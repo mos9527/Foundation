@@ -28,13 +28,12 @@ namespace Foundation {
         };
     private:
         Allocator* m_allocator{ nullptr };
-        Renderer& m_renderer;
         SceneData m_data;
         StlVector<uint64_t> m_instanceOffsets;
 
         bool m_hasDirtyInstance = false;
     public:
-        Scene(Allocator* allocator, Renderer& renderer, SceneDataDesc const& desc);
+        Scene(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc);
 
         template<typename Vertex, typename Index>
         SceneHandle AddMesh(StlSpan<const Vertex> vertices, StlSpan<const Index> indices);

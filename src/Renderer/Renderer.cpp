@@ -111,14 +111,14 @@ void Renderer::DeclareTextureAccess(
 /* -- binding -- */
 void Renderer::BindShader(
     PassHandle pass, RHIShaderStage stage,
-    std::filesystem::path const& shader_path, const char* entry_point
+    std::filesystem::path const& shader_path
 ) {
     CHECK(m_state == State::Setup);
     CHECK(stage.is_bitmask() && "Only one stage can be bound to a shader per pass");
-    for (auto& [_, __, s] : m_setup->trackedPasses[pass].shaders)
+    for (auto& [_, s] : m_setup->trackedPasses[pass].shaders)
         if (s == stage)
             throw std::runtime_error("Shader stage already bound.");
-    m_setup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage);
+    m_setup->trackedPasses[pass].shaders.emplace_back(shader_path, stage);
 }
 void Renderer::BindVertexInput(
     PassHandle pass,
@@ -137,10 +137,10 @@ ResourceHandle Renderer::BindPushConstant(
             throw std::runtime_error("Shader stage already has Push Constants");
     m_setup->trackedPasses[pass].push_constants.emplace_back(stage, offset, size);
     return m_setup->trackedPasses[pass].push_constants.size() - 1;
-}
+}     
 void Renderer::BindBufferUniform(
     PassHandle pass, ResourceHandle buffer,
-    const char* bind_point
+    std::string const& bind_point
 ) {
     CHECK(m_state == State::Setup);
     DeclareBufferAccess(pass, buffer,
@@ -152,7 +152,7 @@ void Renderer::BindBufferUniform(
 }
 void Renderer::BindBufferStorage(
     PassHandle pass, ResourceHandle buffer,
-    const char* bind_point
+    std::string const& bind_point
 ) {
     CHECK(m_state == State::Setup);
     DeclareBufferAccess(pass, buffer,
@@ -164,7 +164,7 @@ void Renderer::BindBufferStorage(
 }
 void Renderer::BindBufferUnordered(
     PassHandle pass, ResourceHandle buffer,
-    const char* bind_point
+    std::string const& bind_point
 ) {
     CHECK(m_state == State::Setup);
     DeclareBufferAccess(pass, buffer,
@@ -173,6 +173,13 @@ void Renderer::BindBufferUnordered(
     );
     m_setup->trackedPasses[pass].buf_bindings.emplace_back(buffer, RHIDescriptorType::StorageBuffer, bind_point);
     m_setup->binding_counts[RHIDescriptorType::StorageBuffer]++;
+}
+void Renderer::BindBufferShaderRead(PassHandle pass, ResourceHandle buffer) {
+    CHECK(m_state == State::Setup);
+    DeclareBufferAccess(pass, buffer,
+        kAllPipelineShaderStages,
+        RHIResourceAccessBits::ShaderRead
+    );
 }
 void Renderer::BindBufferCopyDst(PassHandle pass, ResourceHandle buffer) {
     CHECK(m_state == State::Setup);
@@ -190,7 +197,7 @@ void Renderer::BindBufferCopySrc(PassHandle pass, ResourceHandle buffer) {
 }
 ResourceHandle Renderer::BindTextureSRV(
     PassHandle pass, ResourceHandle texture,
-    const char* shader_name,
+    std::string const& shader_name,
     RHITextureViewDesc const& desc
 ) {
     CHECK(m_state == State::Setup);
@@ -207,7 +214,7 @@ ResourceHandle Renderer::BindTextureSRV(
 }
 ResourceHandle Renderer::BindTextureUAV(
     PassHandle pass, ResourceHandle texture,
-    const char* shader_name,
+    std::string const& shader_name,
     RHITextureViewDesc const& desc
 ) {
     CHECK(m_state == State::Setup);
@@ -281,14 +288,14 @@ void Renderer::BindTextureCopySrc(
     );
 }
 /* --- */
-void Renderer::EndSetup(PassHandle epilogue) {
+void Renderer::EndSetup() {
     CHECK(m_state == State::Setup);
     // Setup all passes
     for (PassHandle i = 0; i < m_setup->trackedPasses.size(); ++i) {
         auto& pass = m_setup->trackedPasses[i];
         pass.pass->Setup(pass.handle, *this);
     }
-    CullPasses(epilogue);
+    CullPasses(m_setup->epilogue);
     FinalizeResources();
     FinalizePSOs();
     m_state = State::PostSetup;
@@ -341,32 +348,35 @@ void Renderer::CullPasses(PassHandle epilogue) {
             }
         }
     }
+    LOG_RUNTIME(Renderer, debug, "## Render Graph Execution Order ##\n{}", DbgDumpActivePasses());
 }
 void Renderer::BuildPipelineState(PassHandle pass) {
     auto& tracked = m_setup->trackedPasses[pass];
     StlVector<RHIPipelineState::PipelineStateDesc::ShaderStage> pso_stages(m_allocator);
     // Load shader bytecode
-    LOG_RUNTIME(Renderer, debug, "Building PSO for {} [{}]", tracked.name, pass);
+    if (!tracked.shaders.size())
+        return; // Pass with no shaders
+    LOG_RUNTIME(Renderer, debug, "## Building PSO for {} [{}] ##", tracked.name, pass);
     StlVector<char> data(m_allocator);
     StlVector<RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(m_allocator);
     StlVector<ShaderReflection> reflections(m_allocator);
+    reflections.reserve(tracked.shaders.size());
     size_t stages[0xF]{};
-    for (auto const& [shader_path, entry_point, stage] : tracked.shaders) {
+    for (auto const& [shader_path, stage] : tracked.shaders) {
         LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path.string());
         std::ifstream file(shader_path);
         CHECK(file.good());        
         data.resize(std::filesystem::file_size(shader_path));
         file.read(data.data(), data.size());
-        auto& refl = reflections.emplace_back(data, m_allocator);
-        // Check matching stage and entry point
-        CHECK(refl.m_entrypoint.name == entry_point);
+        auto const& refl = reflections.emplace_back(data, m_allocator);
+        // Check matching stage
         CHECK(refl.m_entrypoint.stage == stage);
         LOG_RUNTIME(Renderer, debug, "{}", refl.DbgDumpShaderInfo());
         shaders.push_back(m_device->CreateShaderModule({ .source = data }));
         // In BindShader we have already guaranteed these to be unique per stage
         stages[(uint32_t)stage] = shaders.size() - 1;        
         pso_stages.push_back({
-            .desc = {.stage = stage, .entry_point = entry_point.c_str() },
+            .desc = {.stage = stage, .entry_point = refl.m_entrypoint.name.c_str() },
             .shader_module = shaders.back()
         });
     }
@@ -477,16 +487,18 @@ void Renderer::BuildPipelineState(PassHandle pass) {
 
 void Renderer::FinalizePSOs() {
     CHECK(m_state == State::Setup);
-    // Reset descriptor pool
+    // Build descriptor pool
     m_descPool.Reset();
-    StlVector<RHIDeviceDescriptorPool::PoolDesc::Binding> bindings(m_allocator);
-    bindings.reserve(m_setup->binding_counts.size());
-    LOG_RUNTIME(Renderer, debug, "Descriptor Pool");
-    for (auto& [type, count] : m_setup->binding_counts) {
-        LOG_RUNTIME(Renderer, debug, "\t{}: {}", type, count);
-        bindings.push_back({ .type = type, .max_count = count });
+    if (m_setup->binding_counts.size()) {
+        StlVector<RHIDeviceDescriptorPool::PoolDesc::Binding> bindings(m_allocator);
+        bindings.reserve(m_setup->binding_counts.size());
+        LOG_RUNTIME(Renderer, debug, "## Descriptor Pool ##");
+        for (auto& [type, count] : m_setup->binding_counts) {
+            LOG_RUNTIME(Renderer, debug, "\t{}: {}", type, count);
+            bindings.push_back({ .type = type, .max_count = count });
+        }
+        m_descPool = m_device->CreateDescriptorPool({ bindings });
     }
-    m_descPool = m_device->CreateDescriptorPool({ bindings });
     // Build PSOs for everything we need
     for (auto& pass : m_setup->trackedPasses) {
         if (!pass.used) continue;
@@ -529,7 +541,7 @@ void Renderer::FinalizeResources() {
     m_resources->fit(activeViews.size());
     for (auto hdl : activeViews) {
         auto [rhdl, desc] = m_setup->trackedViews[hdl];
-        auto& res = DerefResource(rhdl).Get<RHIDeviceObjectHandle<RHITexture>>();
+        auto& res = DerefResource(rhdl).Get<RHITexture*>();
         m_resources->views[hdl] = res->CreateTextureView(desc);
     }
     // Reset resource states
@@ -552,12 +564,12 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) {
     // These are always disjoint ranges
     for (auto [hdl, access, stage, range, layout] : pass.textureUsages) {
         auto& tres = m_setup->trackedResources[hdl];
-        auto& res = DerefResource(hdl).Get<RHIDeviceObjectHandle<RHITexture>>();
+        auto& res = DerefResource(hdl).Get<RHITexture*>();
         for (auto& sta : tres.GetLastSubresourceStateOf(range)) {
             if (sta.access == access && sta.stage == stage && sta.layout == layout)
                 continue;
             cmd->SetImageTransition(
-                res.Get(),
+                res,
                 {
                     .src_access = sta.access,
                     .dst_access = access,
@@ -577,9 +589,9 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) {
     // These are always global i.e. at most one per buffer per pass.
     for (auto [hdl, access, stage] : pass.bufferUsages) {
         auto& tres = m_setup->trackedResources[hdl];
-        auto& res = DerefResource(hdl).Get<RHIDeviceObjectHandle<RHIBuffer>>();
+        auto& res = DerefResource(hdl).Get<RHIBuffer*>();
         cmd->SetBufferTransition(
-            res.Get(),
+            res,
             {
                 .src_access = tres.lastBufferState.access,
                 .dst_access = access,
@@ -690,7 +702,7 @@ void Renderer::Execute() {
     // Always transition swapchain image to present
     cmd->BeginTransition();
     cmd->SetImageTransition(
-        m_swapchain->GetImages()[m_currentSwap],
+        GetCurrentBackbuffer(),
         RHICommandList::TransitionDesc{
             .dst_stage = RHIPipelineStageBits::BottomOfPipe,
             .dst_img_layout = RHITextureLayout::Present
@@ -715,7 +727,40 @@ void Renderer::Execute() {
     m_frame++;
     m_state = State::PostSetup;
 }
-void Renderer::CmdSetPushConstant(RHICommandList* cmd, PassHandle pass, ResourceHandle push_constant, size_t size, void* data)
+void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd,
+    RHIExtent2D const& extent,
+    std::optional<RHIClearColor> clear_rtv,
+    std::optional<RHIClearDepthStencil> clear_dsv
+) {
+    CHECK(m_state == State::Execute);
+    auto& tpass = m_setup->trackedPasses[pass];
+    CHECK(tpass.pso.IsValid() && "Current pass has no Pipeline state.");
+    StackArena<1024> arena; StackAllocatorSingleThreaded alloc(arena);
+    StlVector<RHICommandList::GraphicsDesc::Attachment> rtvs(alloc.Ptr());
+    rtvs.reserve(tpass.rtvs.size());
+    for (auto rtv : tpass.rtvs) {
+        rtvs.push_back({
+            .image_view = DerefTextureView(rtv),
+            .clear_color = clear_rtv
+        });
+    }
+    if (tpass.dsv != kInvalidHandle) {
+        cmd->BeginGraphics({
+            .color_attachments = rtvs,
+            .depth_attachment = {.image_view = DerefTextureView(tpass.dsv), .clear_depth_stencil = clear_dsv },
+            .width = extent.x,
+            .height = extent.y
+            });
+    }
+    else {
+        cmd->BeginGraphics({
+            .color_attachments = rtvs,            
+            .width = extent.x,
+            .height = extent.y
+        });
+    }
+}
+void Renderer::CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, ResourceHandle push_constant, size_t size, void* data)
 {
     CHECK(m_state == State::Execute);
     auto& tpass = m_setup->trackedPasses[pass];
@@ -723,7 +768,7 @@ void Renderer::CmdSetPushConstant(RHICommandList* cmd, PassHandle pass, Resource
     CHECK(pc_size >= size && "Set value larger than speicified");    
     cmd->PushConstant(tpass.pso.Get(), pc_stage, pc_offset, { static_cast<char*>(data), size });
 }
-void Renderer::CmdSetPipeline(RHICommandList* cmd, PassHandle pass) {
+void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) {
     CHECK(m_state == State::Execute);
     auto& tpass = m_setup->trackedPasses[pass];
     CHECK(tpass.pso.IsValid() && "Current pass has no Pipeline state.");
