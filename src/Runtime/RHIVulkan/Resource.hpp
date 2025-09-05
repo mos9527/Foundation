@@ -105,12 +105,12 @@ namespace Foundation::RHI {
     protected:
         VulkanDevice const& m_device;
         VmaAllocation m_allocation{ nullptr };
-        RHIObjectStorage<VulkanTextureView> m_views;
 
         vk::raii::Image m_image{ nullptr };
         void* m_mapped{ nullptr };
 
         RHIObjectStorage<VulkanTexture> m_aliases;
+        RHIObjectStorage<VulkanTextureView> m_views;
     public:
         // Texture created by other means, e.g. swapchain or external source
         const bool m_shared{ false };

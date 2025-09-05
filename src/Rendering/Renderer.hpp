@@ -200,13 +200,13 @@ namespace Foundation::Rendering {
         RHIDeviceScopedObjectHandle<RHICommandPool> m_cmdPool{};
 
         struct {
-            RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render, present;
-            RHIDeviceScopedObjectHandle<RHIDeviceFence> fence;
+            RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render{}, present{};
+            RHIDeviceScopedObjectHandle<RHIDeviceFence> fence{};
             // For async compute, we might submit multiple command buffers
             // per swap. Driver usually want them to live.                       
             StlArray<RHICommandPoolScopedHandle<RHICommandList>, kMaxCommandListsPerSwap> cmds{};
             // RTV for the backbuffer
-            RHITextureScopedHandle<RHITextureView> rtv;
+            RHITextureScopedHandle<RHITextureView> rtv{};
         } m_swaps[4];
 
         RHIApplicationObjectHandle<RHIDevice> m_device{};
@@ -289,6 +289,7 @@ namespace Foundation::Rendering {
         // Enable async compute for compute passes
         bool m_enableAsyncCompute{ true };
 
+        ~Renderer();
         Renderer(Allocator* allocator) : m_allocator(allocator), m_state(State::Undefined) {}
         Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator);
 
@@ -493,7 +494,7 @@ namespace Foundation::Rendering {
         /// Backbuffer in the entirety of a graphics pass is always in RenderTarget layout,
         /// and cannot be read from, copied from/to, or used as anything but.
         ///
-        /// You can retrive the current backbuffer RTV via GetCurrentBackbufferView() at Record time.
+        /// You can retrive the current backbuffer RTV via DerefCurrentBackbufferView() at Record time.
         /// 
         /// This can be automatically bound to the pipeline with CmdBeginGraphics().             
         /// </summary>        
@@ -597,12 +598,12 @@ namespace Foundation::Rendering {
         ///
         /// The pass must have declared BindBackbufferRTV() during setup.
         /// </summary>        
-        inline RHITextureView* GetCurrentBackbufferView(PassHandle pass) {
+        inline RHITextureView* DerefCurrentBackbufferView(PassHandle pass) {
             CHECK(m_state == State::Execute);
             auto& tpass = m_setup->trackedPasses[pass];            
             CHECK_MSG(tpass.write_backbuffer, "Pass {} does not write to backbuffer", tpass.name);
             return m_swaps[m_currentSwap].rtv.Get();
-        }
+        }        
 #pragma endregion
 
 #pragma region Command Recording Helpers

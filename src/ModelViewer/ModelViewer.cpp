@@ -10,7 +10,7 @@ protected:
             "GBuffer Albedo",
             RHITextureDesc{
                 .usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::SampledImage,
-                .extent = { 1280, 720, 1 },
+                .extent = m_renderer->GetSwapchainExtent3D(),
                 .format = RHIResourceFormat::R8G8B8A8_UNORM
             });
         cp_sampler = createSampler(m_renderer.get(), "Copy Sampler", {});
@@ -33,6 +33,9 @@ protected:
             }
         );
         createPSBackbufferBlitPass(m_renderer.get(), "Backbuffer Blit", cp_sampler, gb_albedo);
+    }
+    virtual void OnSwapchainResize() override {        
+        InitializeRenderer();
     }
 };
 

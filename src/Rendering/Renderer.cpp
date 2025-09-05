@@ -17,7 +17,7 @@ using namespace Foundation::Rendering;
 #define SEM_COUNTER(ord) m_frame + ord + 1LL
 
 Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Core::Allocator* allocator)
-    : m_device(device), m_allocator(allocator), m_swapchain(swapchain), m_state(State::Undefined), m_frameSwaps(swapchain->GetImages().size()) {
+    : m_device(device), m_allocator(allocator), m_state(State::Undefined), m_frameSwaps(swapchain->GetImages().size()) {
     m_gfxQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
     m_compQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Compute);
     m_cmdPool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
@@ -35,7 +35,7 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObject
             m_swaps[i].cmds[j]->DebugSetObjectName(fmt::format("Command Buffer {} of Swap {}", j, i).c_str());
         }
     }
-    SetSwapchain(m_swapchain);
+    SetSwapchain(swapchain);
 }
 
 #pragma region Render Graph Setup
@@ -819,22 +819,23 @@ bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd) {
     }
 }
 #pragma endregion
-void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {    
-    CHECK_MSG(m_frameSwaps == swapchain->GetImages().size(), "New Swapchain uses different number of swaps ({} vs {})!", m_frameSwaps, swapchain->GetImages().size());
+void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
+    if (m_swapchain)
+        CHECK_MSG(m_frameSwaps == swapchain->GetImages().size(), "New Swapchain uses different number of swaps ({} vs {})!", m_frameSwaps, swapchain->GetImages().size());
     if (m_state == State::Execute) {
         // If changing swapchain during execution
         // Wait for GPU to be idle
         m_device->WaitIdle();
         m_state = State::PostSetup;
     }
-    m_swapchain = swapchain;
     for (size_t i = 0; i < m_frameSwaps; ++i) {
-        auto* backbuffer = m_swapchain->GetImages()[i];
+        auto* backbuffer = swapchain->GetImages()[i];
         backbuffer->DebugSetObjectName(fmt::format("Backbuffer of Swap {}", i).c_str());
         m_swaps[i].rtv = backbuffer->CreateTextureView(RHITextureViewDesc{
-            .format = m_swapchain->m_desc.format
+            .format = swapchain->m_desc.format
         });
     }
+    m_swapchain = swapchain;
     // Device is idle when calling this
     // Reset fences    
     for (size_t i = 0; i < m_frameSwaps; ++i) {                     
@@ -925,7 +926,7 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd,
             m_currentSwap
         );
         rtvs.push_back({
-            .image_view = GetCurrentBackbufferView(pass),
+            .image_view = DerefCurrentBackbufferView(pass),
             .clear_color = clear_rtv
         });
     }
@@ -991,4 +992,9 @@ void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) {
             tpass.pso.Get(),
             tpass.p_desc_sets
         );
+}
+
+Renderer::~Renderer() {
+    if (m_device)
+        m_device->WaitIdle();
 }

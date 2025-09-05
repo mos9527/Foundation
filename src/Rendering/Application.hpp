@@ -35,20 +35,30 @@ namespace Foundation::Rendering {
 
         void CreateSwapchain();
         void InitializeInternal(ApplicationInitDesc const& desc);
+        void InitializeRenderer();
         /// <summary>
         /// Setup the renderer by creating passes, resources, and other configurations.
         ///
-        /// This is invoked within a Renderer::BeginSetup() and Renderer::EndSetup() clause.        
-        /// Invoking BeginSetup, EndSetup again is incorrect.
+        /// This is invoked by InitializeRenderer()
+        /// within a Renderer::BeginSetup() and Renderer::EndSetup() clause.        
+        ///
+        /// Invoking BeginSetup, EndSetup here again is incorrect.
         ///
         /// Implementation that leave this empty will result in a warning log, and
         /// no graphics work will be done.
         ///
-        /// This should not be called by outside code.      
+        /// This should not be directly called.      
         /// </summary>
         virtual void RendererSetup() {
             LOG_RUNTIME(GraphicsApplication, warn, "RendererSetup() not implemented!");
         }
+        /// <summary>
+        /// Action to take when the swapchain is resized e.g.
+        /// resize resources that depend on the swapchain size.
+        ///
+        /// Implementation may leave this empty if no action is needed.
+        /// </summary>
+        virtual void OnSwapchainResize() { /* nop */ }
         ~Application();
     public:
         /// <summary>
@@ -61,6 +71,7 @@ namespace Foundation::Rendering {
             // XXX: Backends are expected to take Allocator* as the first argument
             m_rhi = ConstructUniqueBase<RHIApplication, Backend>(m_alloc.Ptr(), m_alloc.Ptr(), std::forward<Args>(args)...);
             InitializeInternal(desc);
+            InitializeRenderer();
         }
         /* --- */
         inline Renderer*  GetRenderer() { return m_renderer.get(); }
