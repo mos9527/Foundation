@@ -15,7 +15,7 @@ namespace Foundation::RHI {
 
         virtual Core::StlSpan<const RHIDevice::DeviceDesc> EnumerateDevices() const = 0;
            
-        virtual RHIApplicationScopedObjectHandle<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc) = 0;
+        virtual RHIApplicationScopedObjectHandle<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc, Native::Window* window = nullptr) = 0;
         virtual RHIDevice* GetDevice(Handle handle) const = 0;
         virtual void DestroyDevice(Handle handle) = 0;
     };

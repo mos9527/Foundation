@@ -509,8 +509,13 @@ void VulkanDeviceQueue::Present(PresentDesc const& desc) const {
         .pSwapchains = &swapchain,
         .pImageIndices = &desc.image_index,
     };
-    auto res = m_queue.presentKHR(present_info);
-    CHECK(res == vk::Result::eSuccess && "failed to present");
+    try {
+        auto res = m_queue.presentKHR(present_info);
+        CHECK(res == vk::Result::eSuccess && "failed to present");
+    } catch (std::exception&) {
+        // XXX: Not always the case e.g. device lost        
+        throw RHISwapchainResizeException{};
+    }
 }
 
 void VulkanDeviceQueue::DebugSetObjectName(const char* name) {
@@ -573,7 +578,7 @@ VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDev
         },
         m_device.GetVkAllocatorCallbacks()
     );
-    CHECK(m_layout != nullptr && "failed to create Vulkan descriptor set layout");
+    CHECK_MSG(m_layout != nullptr, "failed to create Vulkan descriptor set layout");
 }
 RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> VulkanDevice::CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc) {
     return { this, m_storage.CreateObject<VulkanDeviceDescriptorSetLayout>(*this, desc) };
@@ -646,7 +651,7 @@ VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, RHIDeviceSa
         },
         m_device.GetVkAllocatorCallbacks()
     );
-    CHECK(m_sampler != nullptr && "failed to create Vulkan sampler");
+    CHECK_MSG(m_sampler != nullptr, "failed to create Vulkan sampler");
 }
 RHIDeviceScopedObjectHandle<RHIDeviceSampler> VulkanDevice::CreateSampler(RHIDeviceSampler::SamplerDesc const& desc) {
     return { this, m_storage.CreateObject<VulkanDeviceSampler>(*this, desc) };

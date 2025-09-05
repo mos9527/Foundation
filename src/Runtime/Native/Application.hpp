@@ -32,6 +32,7 @@ namespace Foundation::Native {
             glfwGetWindowSize(m_window, &width, &height);
             return { width, height };
         }
+        inline constexpr operator bool() const { return m_window != nullptr; }
     };
     extern void glfw_error_callback(int error, const char* description);
     class Application {

@@ -179,13 +179,15 @@ namespace Foundation::Rendering {
         // ---
     };
     class Renderer {
-        
+    public:
         enum class State {
             Undefined,
             Setup,
             PostSetup,
             Execute
-        } m_state;
+        };
+    private:
+        State m_state;
 
         Allocator* m_allocator{ nullptr };
 
@@ -306,7 +308,7 @@ namespace Foundation::Rendering {
         T* CreatePassImpl(std::string const& name, RHIDevicePipelineType queue, Args&&... args) {
             CHECK(m_state == State::Setup);
             PassHandle handle = m_setup->trackedPasses.size();
-            CHECK(handle < kRendererMaxPasses && "Too many passes - leaks might be possible");
+            CHECK_MSG(handle < kRendererMaxPasses, "Too many passes ({}) - leaks might be possible", handle);
             m_setup->trackedPasses.emplace_back(
                 m_allocator,
                 handle,
@@ -598,7 +600,7 @@ namespace Foundation::Rendering {
         inline RHITextureView* GetCurrentBackbufferView(PassHandle pass) {
             CHECK(m_state == State::Execute);
             auto& tpass = m_setup->trackedPasses[pass];            
-            CHECK(tpass.write_backbuffer && "Pass does not write to backbuffer");
+            CHECK_MSG(tpass.write_backbuffer, "Pass {} does not write to backbuffer", tpass.name);
             return m_swaps[m_currentSwap].rtv.Get();
         }
 #pragma endregion
@@ -632,7 +634,18 @@ namespace Foundation::Rendering {
         std::string DbgDumpGraphviz() const;
         std::string DbgDumpActivePasses() const;
 #pragma endregion
-
+        /// <summary>
+        /// Retrieves the current state of the renderer.
+        /// </summary>        
+        State GetState() const { return m_state; }
+        /// <summary>
+        /// Update the swapchain to a new one.
+        ///
+        /// You must call this when the window is resized or the swapchain is invalidated.
+        ///
+        /// This call will block if pending GPU work exists.
+        /// </summary>        
+        void SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain);
         /// <summary>
         /// Run the frame. Go!
         /// </summary>
@@ -674,4 +687,11 @@ namespace Foundation::Rendering {
     LambdaPass<FSetup, FRecord>* createPass(Renderer* r, std::string const& name, RHIDevicePipelineType queue, FSetup&& setup, FRecord&& record) {
         return r->CreatePass(name, queue, std::forward<FSetup>(setup), std::forward<FRecord>(record));
     }
+
+    ENUM_NAME_CONV_BEGIN(Renderer::State)
+        case Undefined: return "Undefined";
+        case Setup: return "Setup";
+        case PostSetup: return "PostSetup";
+        case Execute: return "Execute";
+    ENUM_NAME_CONV_END();
 }

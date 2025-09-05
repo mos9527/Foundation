@@ -21,7 +21,7 @@ namespace Foundation::Rendering {
             },
             [](PassHandle self, Renderer* r, RHI::RHICommandList* cmd) {
                 auto const& img_wh = r->GetSwapchainExtent();
-                r->CmdBeginGraphics(self, cmd, r->GetSwapchainExtent(), {}, {});
+                r->CmdBeginGraphics(self, cmd, img_wh, {}, {});
                 r->CmdSetPipeline(self, cmd);
                 cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
                     .SetScissor(0, 0, img_wh.x, img_wh.y);

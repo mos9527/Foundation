@@ -105,6 +105,11 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
     case e2D:
         type = vk::ImageType::e2D; break;
     }
+    CHECK_MSG(
+        desc.extent.x > 0 && desc.extent.y > 0 && desc.extent.z > 0,
+        "Extents must be greater than 0. Current x={},y={},z={}",
+        desc.extent.x,desc.extent.y,desc.extent.z
+    );
     vk::ImageCreateInfo image_info = vkImageCreateInfoFromRHITextureDesc(desc);
     VmaAllocationCreateInfo allocInfo = {
         .flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.host_access),
@@ -120,7 +125,7 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
         &m_allocation,
         nullptr
     );
-    CHECK(res == VK_SUCCESS && "failed to create Vulkan image");
+    CHECK_MSG(res == VK_SUCCESS, "failed to create Vulkan image");
     m_image = vk::raii::Image(device.GetVkDevice(), vk::Image(image), device.GetVkAllocatorCallbacks());    
 }
 
