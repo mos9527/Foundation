@@ -19,8 +19,7 @@ include(FetchContent)
 FetchContent_Declare(
   GLFW
   GIT_REPOSITORY https://github.com/glfw/glfw.git
-  GIT_TAG        506c11ba43b901dbcc4d90449f46de67cf000af4
-  GIT_SHALLOW TRUE
+  GIT_TAG        3.4
 )
 FetchContent_MakeAvailable(GLFW)
 

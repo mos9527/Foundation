@@ -50,6 +50,5 @@ namespace Foundation::RHI {
         inline Core::Allocator* GetAllocator() const { return m_allocator; }
         inline vk::AllocationCallbacks const& GetVkAllocatorCallbacks() const { return m_vkAllocatorCpuCallbacks; }
         inline auto const& GetVkInstance() const { return m_instance; }
-
     };
 }

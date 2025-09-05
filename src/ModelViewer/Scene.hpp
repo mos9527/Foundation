@@ -1,9 +1,10 @@
 #pragma once
 #include "SceneData.hpp"
-#include "RenderPass.hpp"
+
 namespace Foundation {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
+    using namespace Foundation::Rendering;
     class Scene {
     public:
         struct MeshMetadata {
@@ -53,16 +54,30 @@ namespace Foundation {
             return m_data.Update(cmd);
         }
     };
-    struct ScenePass : public RenderPass {
-        Scene& scene;
-        // Resource handles for the global, instance, and primitive buffers
-        // These are declared as soon as the pass is constructed/created
-        ResourceHandle m_global{}, m_instance{}, m_primitive{};
-        ScenePass(Renderer& renderer, Scene& scene);
 
-        virtual void Setup(PassHandle self, Renderer& renderer) override;
-        virtual void Record(PassHandle self, Renderer&, RHICommandList* cmd) override {
-            scene.Update(cmd);
-        }
-    };
+    inline auto* createSceneUpdatePass(
+        Renderer* renderer,
+        Scene* scene,
+        ResourceHandle& outGlobal,
+        ResourceHandle& outInstance,
+        ResourceHandle& outPrimitive
+    ) {
+        auto& data = scene->GetData();
+        ResourceHandle Global    = createResource(renderer, "Globals", data.GetGlobalDataBuffer());
+        ResourceHandle Instance  = createResource(renderer, "Instances", data.GetInstanceDataBuffer());
+        ResourceHandle Primitive = createResource(renderer, "Primitives", data.GetPrimitiveDataBuffer());
+        outGlobal = Global, outInstance = Instance, outPrimitive = Primitive;
+        return createPass(
+            renderer, "Scene Update",
+            RHIDevicePipelineType::Graphics,
+            [=](PassHandle self, Renderer* r) {
+                r->BindBufferCopyDst(self, Global);
+                r->BindBufferCopyDst(self, Instance);
+                r->BindBufferCopyDst(self, Primitive);
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd) {
+                scene->Update(cmd);
+            }
+        );
+    }    
 }

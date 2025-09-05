@@ -1,5 +1,4 @@
 #include "Scene.hpp"
-#include "Renderer.hpp"
 namespace Foundation {
     SceneData::SceneData(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc)
         : m_allocator(allocator), m_desc(desc),

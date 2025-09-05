@@ -106,6 +106,8 @@ namespace Foundation::RHI {
         virtual RHIBufferScopedHandle<RHIBuffer> CreateAliasedBuffer(RHIBufferDesc const& desc, size_t offset = 0) = 0;
         virtual RHIBuffer* GetAliasedBuffer(Handle handle) const = 0;
         virtual void DestroyAliasedBuffer(Handle handle) = 0;
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
     struct RHITextureDesc {
         RHIResourceDesc resource{};
@@ -164,6 +166,8 @@ namespace Foundation::RHI {
         virtual RHITextureScopedHandle<RHITexture> CreateAliasedTexture(RHITextureDesc const& desc, size_t offset = 0) = 0;
         virtual RHITexture* GetAliasedTexture(Handle handle) const = 0;
         virtual void DestroyAliasedTexture(Handle handle) = 0;
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
     class RHITextureView : public RHIObject {
     protected:
@@ -173,6 +177,8 @@ namespace Foundation::RHI {
         RHITextureView(RHITexture const& image, RHITextureViewDesc const& desc)
             : m_image(image), m_desc(desc) {
         }
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
     template<> struct RHIObjectTraits<RHITexture, RHITextureView> {
         static RHITextureView* Get(RHITexture const* image, Handle handle) {

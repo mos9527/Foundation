@@ -1,6 +1,6 @@
 #include "ShaderReflection.hpp"
 #include <spirv-headers/spirv.hpp>
-using namespace Foundation;
+using namespace Foundation::Rendering;
 using namespace Foundation::Core;
 void ShaderReflection::ParseSPIRV(StlSpan<const char> bytecode)
 {
@@ -32,6 +32,7 @@ void ShaderReflection::ParseSPIRV(StlSpan<const char> bytecode)
     const uint32_t* ins = code + 5;
     while (ins < end) {
         uint16_t WordCount = ins[0] >> 16;
+        CHECK(WordCount && "malformed SPIRV shader! (WordCount=0)");
         uint16_t Opcode = ins[0] & 0xFFFF;
         switch (Opcode)
         {
@@ -101,7 +102,7 @@ void ShaderReflection::ParseSPIRV(StlSpan<const char> bytecode)
         }
         ins += WordCount;
     }
-    CHECK(ins == end && "malformed SPIRV shader!");
+    CHECK(ins == end && "malformed SPIRV shader! (Incomplete read)");
     for (auto& Element : ID) {
         if (Element.Opcode == spv::OpVariable) {
             switch (spv::StorageClass(Element.StorageClass)) {

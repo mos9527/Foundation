@@ -43,5 +43,7 @@ namespace Foundation::RHI {
             auto xy = GetExtents();
             return static_cast<float>(xy.x) / static_cast<float>(xy.y);
         }
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
 }

@@ -1,6 +1,6 @@
 #include "ShaderReflection.hpp"
 #include <fmt/format.h>
-using namespace Foundation;
+using namespace Foundation::Rendering;
 
 std::string ShaderReflection::DbgDumpShaderInfo() const
 {
@@ -15,5 +15,6 @@ std::string ShaderReflection::DbgDumpShaderInfo() const
     for (const auto& var : m_bindings) {
         fmt::format_to(std::back_inserter(out), "  Binding: {} (set={}, binding={})\n", var.name, var.descriptorSet, var.binding);
     }
+    out.pop_back();
     return out;
 }

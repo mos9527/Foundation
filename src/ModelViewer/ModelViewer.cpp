@@ -17,39 +17,49 @@ UniquePtr<Scene> g_scene;
 
 inline const RHIExtent2D getWindowSize() { auto [w, h] = g_window.GetSize(); return { w, h }; }
 
-struct GBufferPass : public RenderPass {
-    ResourceHandle scene_primitive{}, scene_instance{}, gbuffer_albedo{};
-    GBufferPass(ResourceHandle primitive, ResourceHandle instance, ResourceHandle albedo)
-        : scene_primitive(primitive), scene_instance(instance), gbuffer_albedo(albedo) {}
-    void Setup(PassHandle self, Renderer& r) override {
-        r.BindBufferShaderRead(self, scene_primitive);
-        r.BindBufferShaderRead(self, scene_instance);
-        r.BindTextureRTV(self, gbuffer_albedo, { .format = RHIResourceFormat::R8G8B8A8_UNORM });
-        r.BindShader(self, RHIShaderStageBits::Vertex, ".derived/shaders/GBuffer_vertMain.spirv");
-        r.BindShader(self, RHIShaderStageBits::Fragment, ".derived/shaders/GBuffer_fragMain.spirv");
-    }
-    void Record(PassHandle self, Renderer& r, RHICommandList* cmd) override {
-        auto const& img_wh = r.GetSwapchainExtent();
-        r.CmdBeginGraphics(self, cmd, r.GetSwapchainExtent());
-        r.CmdSetPipeline(self, cmd);
-        cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
-            .SetScissor(0, 0, img_wh.x, img_wh.y);
-        cmd->Draw(3); // Another triangle...sigh
-        cmd->EndGraphics();
-    }
-};
-
 void createRenderPasses() {
     CHECK(g_renderer && g_scene);
     g_renderer->BeginSetup();
-    ScenePass* scene = g_renderer->CreatePass<ScenePass>("Scene Data", RHIDevicePipelineType::Graphics, *g_renderer,  *g_scene);
-    ResourceHandle texAlbedo = g_renderer->CreateResource("GBuffer Albedo", RHITextureDesc{
-        .usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::TransferSource,
-        .extent = g_renderer->GetSwapchainExtent3D(),
-        .format = RHIResourceFormat::R8G8B8A8_UNORM        
-    });
-    GBufferPass* gbuffer = g_renderer->CreatePass<GBufferPass>("GBuffer", RHIDevicePipelineType::Graphics, scene->m_primitive, scene->m_instance, texAlbedo);
-    g_renderer->CreatePass<CopyToSwapchainPass>("Copy To Swapchain", RHIDevicePipelineType::Graphics, texAlbedo);
+    ResourceHandle s_global, s_instance, s_primitive, gb_albedo, cp_sampler;
+    gb_albedo = createResource(
+        g_renderer.get(),
+        "GBuffer Albedo",
+        RHITextureDesc{
+            .usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::SampledImage,
+            .extent = g_renderer->GetSwapchainExtent3D(),
+            .format = RHIResourceFormat::R8G8B8A8_UNORM
+        });
+    cp_sampler = createSampler(g_renderer.get(), "Copy Sampler", {});
+    createSceneUpdatePass(g_renderer.get(), g_scene.get(), s_global, s_instance, s_primitive);
+    createPass(
+        g_renderer.get(), "GBuffer",
+        RHIDevicePipelineType::Graphics,
+        [=](PassHandle self, Renderer* r) {
+            r->BindBufferShaderRead(self, s_primitive);
+            r->BindBufferShaderRead(self, s_instance);
+            r->BindTextureRTV(self, gb_albedo, { .format = RHIResourceFormat::R8G8B8A8_UNORM });
+            r->BindShader(self, RHIShaderStageBits::Vertex, ".derived/shaders/GBuffer_vertMain.spirv");
+            r->BindShader(self, RHIShaderStageBits::Fragment, ".derived/shaders/GBuffer_fragMain.spirv");
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd) {
+            auto const& img_wh = r->GetSwapchainExtent();
+            r->CmdBeginGraphics(self, cmd, r->GetSwapchainExtent());
+            r->CmdSetPipeline(self, cmd);
+            cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
+                .SetScissor(0, 0, img_wh.x, img_wh.y);
+            cmd->Draw(3); // Another triangle...sigh
+            cmd->EndGraphics();
+        }
+    );
+    createPSFullscreenPass(
+        g_renderer.get(),
+        "Blit Output",
+        [=](PassHandle self, Renderer* r) {
+            r->BindTextureSampler(self, cp_sampler, "sampler");
+            r->BindTextureSRV(self, gb_albedo, "srcTexture", { .format = RHIResourceFormat::R8G8B8A8_UNORM });
+            r->BindShader(self, RHIShaderStageBits::Fragment, ".derived/shaders/PSCopy_fragMain.spirv");
+        }
+    );
     g_renderer->EndSetup();
 }
 
@@ -57,12 +67,13 @@ void createResources() {
     CHECK(g_device);
     g_device->WaitIdle();
     g_swapchain.Reset();
-    g_swapchain = g_device->CreateSwapchain(RHISwapchain::SwapchainDesc{
+    g_swapchain = g_device->CreateSwapchain(
+        RHISwapchain::SwapchainDesc{
         .format = RHIResourceFormat::R8G8B8A8_UNORM,
         .extents = getWindowSize(),
         .buffer_count = 3,
         .present_mode = RHISwapchain::SwapchainDesc::PresentMode::MAILBOX,
-    });
+        });
     g_renderer = ConstructUnique<Renderer>(g_alloc_renderer.Ptr(), g_device, g_swapchain, g_alloc_renderer.Ptr());
     g_scene = ConstructUnique<Scene>(g_alloc_scene.Ptr(), g_alloc_scene.Ptr(), g_device.Get(), SceneDataDesc{});
 }
@@ -73,10 +84,6 @@ int main(int argc, char** argv) {
     g_device = vulkan.CreateDevice(vulkan.EnumerateDevices()[0]);
     createResources();
     createRenderPasses();
-    LOG_RUNTIME(ModelViewer, info, "Entering main loop");
-    LOG_RUNTIME(ModelViewer, info, "Main Allocation: {}", format_as_readable_size(g_alloc.GetUsedMemory()));
-    LOG_RUNTIME(ModelViewer, info, "Render Allocation: {}", format_as_readable_size(g_alloc_renderer.GetUsedMemory()));
-    LOG_RUNTIME(ModelViewer, info, "Scene Allocation: {}", format_as_readable_size(g_alloc_scene.GetUsedMemory()));
     while (!g_window.WindowShouldClose()) {
         g_renderer->Execute();
     }

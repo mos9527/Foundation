@@ -154,8 +154,8 @@ void VulkanDevice::DebugLogDeviceInfo() const {
         kVulkanDeviceTypes[static_cast<int>(properties.deviceType)],
         properties.deviceName.data(),
         properties.limits.maxMemoryAllocationCount,
-        format_as_readable_size(properties.limits.bufferImageGranularity),
-        format_as_readable_size(properties.limits.nonCoherentAtomSize)
+        formatHumanReadableSize(properties.limits.bufferImageGranularity),
+        formatHumanReadableSize(properties.limits.nonCoherentAtomSize)
     );
 }
 
@@ -242,11 +242,11 @@ void VulkanDevice::DebugLogAllocatorInfo() const {
         "    amdSpecificTypeCount = {}\n"
         "    lazilyAllocatedTypeCount = {}",
         deviceLocalHeapCount,
-        format_as_readable_size(deviceLocalHeapSumSize),
+        formatHumanReadableSize(deviceLocalHeapSumSize),
         hostVisibleHeapCount,
-        format_as_readable_size(hostVisibleHeapSumSize),
+        formatHumanReadableSize(hostVisibleHeapSumSize),
         deviceLocalAndHostVisibleHeapCount,
-        format_as_readable_size(deviceLocalAndHostVisibleHeapSumSize),
+        formatHumanReadableSize(deviceLocalAndHostVisibleHeapSumSize),
         hostVisibleNotHostCoherentTypeCount,
         notDeviceLocalNotHostVisibleTypeCount,
         amdSpecificTypeCount,
@@ -333,7 +333,14 @@ VulkanDeviceSemaphore::VulkanDeviceSemaphore(const VulkanDevice& device, bool is
     }
     m_semaphore = vk::raii::Semaphore(m_device.GetVkDevice(), info, device.GetVkAllocatorCallbacks());
 }
-
+void VulkanDeviceSemaphore::DebugSetObjectName(const char* name) {
+    VkSemaphore handle = *m_semaphore;
+    m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
+        .objectType = vk::ObjectType::eSemaphore,
+        .objectHandle = (uint64_t)(handle),
+        .pObjectName = name
+    });
+}
 VulkanDeviceFence::VulkanDeviceFence(const VulkanDevice& device, bool signaled)
     : RHIDeviceFence(device), m_device(device),
     m_fence(vk::raii::Fence(device.GetVkDevice(), vk::FenceCreateInfo{

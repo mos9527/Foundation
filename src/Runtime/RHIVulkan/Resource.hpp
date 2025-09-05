@@ -96,6 +96,8 @@ namespace Foundation::RHI {
         RHIBufferScopedHandle<RHIBuffer> CreateAliasedBuffer(RHIBufferDesc const& desc, size_t offset) override;
         RHIBuffer* GetAliasedBuffer(Handle handle) const override;
         void DestroyAliasedBuffer(Handle handle) override;
+
+        void DebugSetObjectName(const char* name) override;
     };
 
     class VulkanTextureView;
@@ -130,6 +132,8 @@ namespace Foundation::RHI {
         RHITextureScopedHandle<RHITexture> CreateAliasedTexture(RHITextureDesc const& desc, size_t offset) override;
         RHITexture* GetAliasedTexture(Handle handle) const override;
         void DestroyAliasedTexture(Handle handle) override;
+
+        void DebugSetObjectName(const char* name) override;
     };
 
     class VulkanTextureView : public RHITextureView {
@@ -141,5 +145,7 @@ namespace Foundation::RHI {
 
         inline auto const& GetVkImageView() const { return m_view; }
         inline auto const& GetImage() const { return m_image; }
+
+        void DebugSetObjectName(const char* name) override;
     };
 }

@@ -9,11 +9,12 @@
 #include <Bits/Format.hpp>
 
 #include <Native/Application.hpp>
-#include <Renderer/Renderer.hpp>
-#include <Renderer/Scene.hpp>
+#include <Rendering/Renderer.hpp>
+#include <Rendering/PSFullscreen.hpp>
 
-#include <Renderer/CopyToSwapchainPass.hpp>
+#include "Scene.hpp"
 
 using namespace Foundation;
 using namespace Foundation::Core;
 using namespace Foundation::RHI;
+using namespace Foundation::Rendering;

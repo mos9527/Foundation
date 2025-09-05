@@ -7,7 +7,7 @@ add_executable(Test_Misc "Misc.cpp" )
 target_link_libraries(Test_Misc PUBLIC Foundation_Runtime)
 
 add_executable(Test_RenderPass "RenderPass.cpp")
-target_link_libraries(Test_RenderPass PUBLIC Foundation_Renderer)
+target_link_libraries(Test_RenderPass PUBLIC Foundation_Rendering)
 
 add_executable(Test_ShaderReflection "ShaderReflection.cpp")
-target_link_libraries(Test_ShaderReflection PUBLIC Foundation_Renderer)
+target_link_libraries(Test_ShaderReflection PUBLIC Foundation_Rendering)

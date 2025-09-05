@@ -12,7 +12,7 @@ namespace Foundation::Core {
     static std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> g_BacktraceSink = nullptr;    
     std::recursive_mutex g_LoggingSinkMutex;
 
-    std::shared_ptr<spdlog::sinks::dist_sink_mt> GetLoggingSink() {
+    std::shared_ptr<spdlog::sinks::dist_sink_mt> getLoggingSink() {
         std::scoped_lock lck(g_LoggingSinkMutex);        
         if (!g_Initialized) {
             g_LoggingSink = std::make_shared<spdlog::sinks::dist_sink_mt>();
@@ -26,19 +26,19 @@ namespace Foundation::Core {
         }
         return g_LoggingSink;
     }
-    std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> GetBacktraceSink() {
+    std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> getBacktraceSink() {
         std::scoped_lock lck(g_LoggingSinkMutex);
         if (!g_Initialized) {
-            GetLoggingSink(); // Ensure the logging sink is initialized
+            getLoggingSink(); // Ensure the logging sink is initialized
         }
         return g_BacktraceSink;
     }
-    spdlog::logger* GetLogger(const char* name) {
+    spdlog::logger* getLogger(const char* name) {
         auto logger = spdlog::get(name);
         if (!logger) {
             auto new_logger = std::make_shared<spdlog::logger>(
                 name,
-                GetLoggingSink()
+                getLoggingSink()
             );
             spdlog::initialize_logger(new_logger);
             new_logger->set_level(spdlog::level::debug);

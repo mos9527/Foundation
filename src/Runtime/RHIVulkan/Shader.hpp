@@ -10,5 +10,7 @@ namespace Foundation::RHI {
         VulkanShaderModule(const VulkanDevice& device, ShaderModuleDesc const& desc);
 
         inline const vk::raii::ShaderModule& GetVkShaderModule() const { return m_shaderModule; }
+
+        void DebugSetObjectName(const char* name) override;
     };
 }  

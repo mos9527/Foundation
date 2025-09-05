@@ -2,7 +2,7 @@
 #include <Core/Core.hpp>
 #include <RHICore/Common.hpp>
 
-namespace Foundation {
+namespace Foundation::Rendering {
     class ShaderReflection {
         Core::Allocator* m_allocator;        
         /// <summary>

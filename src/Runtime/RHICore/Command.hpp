@@ -26,6 +26,8 @@ namespace Foundation::RHI {
         virtual RHICommandPoolScopedHandle<RHICommandList> CreateCommandList() = 0;
         virtual RHICommandList* GetCommandList(Handle handle) const = 0;
         virtual void DestroyCommandList(Handle handle) = 0;
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
     class RHICommandList : public RHIObject {
     protected:
@@ -117,13 +119,15 @@ namespace Foundation::RHI {
         virtual RHICommandList& EndGraphics() = 0;
 #pragma endregion
 #pragma region Tags
-        virtual RHICommandList& DebugBegin() = 0;
+        virtual RHICommandList& DebugBegin(const char* message) = 0;
         virtual RHICommandList& DebugInsertMarker(const char* message) = 0;
         virtual RHICommandList& DebugEnd() = 0;
         virtual RHICommandList& Begin() = 0;
         virtual void End() = 0;
         virtual void Reset() = 0;
 #pragma endregion
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
 
     template<> struct RHIObjectTraits<RHICommandPool, RHICommandList> {

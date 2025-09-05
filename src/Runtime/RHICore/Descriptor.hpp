@@ -35,6 +35,8 @@ namespace Foundation::RHI {
         // a single call is homogenous, and throw if type mismatches the spans given,
         // or some spans are unused.
         virtual void Update(UpdateDesc const& desc) = 0;
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
     class RHIDeviceDescriptorPool : public RHIObject {
     protected:
@@ -54,6 +56,8 @@ namespace Foundation::RHI {
             RHIDeviceObjectHandle<RHIDeviceDescriptorSetLayout>) = 0;
         virtual RHIDeviceDescriptorSet* GetDescriptorSet(Handle handle) const = 0;
         virtual void DestroyDescriptorSet(Handle handle) = 0;
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
     template<> struct RHIObjectTraits<RHIDeviceDescriptorPool, RHIDeviceDescriptorSet> {
         static RHIDeviceDescriptorSet* Get(RHIDeviceDescriptorPool const* pool, Handle handle) {

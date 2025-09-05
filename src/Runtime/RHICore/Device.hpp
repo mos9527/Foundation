@@ -41,6 +41,8 @@ namespace Foundation::RHI {
             Core::StlSpan<RHIDeviceSemaphore* const> waits;
         };
         virtual void Present(PresentDesc const& desc) const = 0;
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
     // https://docs.vulkan.org/samples/latest/samples/extensions/timeline_semaphore/README.html
     class RHIDeviceSemaphore : public RHIObject {
@@ -49,12 +51,16 @@ namespace Foundation::RHI {
     public:
         const bool m_is_timeline;
         RHIDeviceSemaphore(RHIDevice const& device, bool is_timeline) : m_device(device), m_is_timeline(is_timeline) {}
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
     class RHIDeviceFence : public RHIObject {
     protected:
         const RHIDevice& m_device;
     public:
         RHIDeviceFence(RHIDevice const& device) : m_device(device) {}
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
     struct RHIDeviceDescriptorSetLayoutDesc {
         struct Binding {
@@ -72,6 +78,8 @@ namespace Foundation::RHI {
         RHIDeviceDescriptorSetLayout(RHIDevice const& device, RHIDeviceDescriptorSetLayoutDesc const& desc)
             : m_device(device), m_desc(desc) {
         }
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
     class RHIDeviceSampler : public RHIObject {
     protected:
@@ -113,6 +121,8 @@ namespace Foundation::RHI {
         RHIDeviceSampler(RHIDevice const& device, SamplerDesc const& desc)
             : m_device(device), m_desc(desc) {
         }
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
     class RHIDevice : public RHIObject {
     protected:
@@ -180,6 +190,8 @@ namespace Foundation::RHI {
         virtual void WaitForTimelineSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) = 0;
 
         virtual void WaitIdle() const = 0;
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
 
     template<> struct RHIObjectTraits<RHIDevice, RHISwapchain> {

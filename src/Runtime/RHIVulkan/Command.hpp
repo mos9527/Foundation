@@ -23,6 +23,7 @@ namespace Foundation::RHI {
         RHICommandList* GetCommandList(Handle handle) const override;
         void DestroyCommandList(Handle handle) override;
 
+        void DebugSetObjectName(const char* name) override;
     };
     class VulkanCommandList : public RHICommandList {
     protected:
@@ -73,11 +74,13 @@ namespace Foundation::RHI {
         RHICommandList& BindIndexBuffer(RHIBuffer* buffer, size_t offset, RHIResourceFormat format) override;
         RHICommandList& EndGraphics() override;
 
-        RHICommandList& DebugBegin();
+        RHICommandList& DebugBegin(const char* message);
         RHICommandList& DebugInsertMarker(const char* message);
         RHICommandList& DebugEnd();
 
         void End() override;
         void Reset() override;
+
+        void DebugSetObjectName(const char* name) override;
     };
 }

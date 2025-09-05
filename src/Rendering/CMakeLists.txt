@@ -10,11 +10,13 @@ file(
 )
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 add_library(
-    Foundation_Renderer ${SOURCES} ${INCLUDES}
+    Foundation_Rendering ${SOURCES} ${INCLUDES}
 )
-target_link_libraries(Foundation_Renderer PUBLIC Foundation_Runtime)
+add_subdirectory(Shaders)
+
+target_link_libraries(Foundation_Rendering PUBLIC Foundation_Runtime)
 target_include_directories(
-	Foundation_Renderer 
+	Foundation_Rendering 
 	PRIVATE
     ..
 )

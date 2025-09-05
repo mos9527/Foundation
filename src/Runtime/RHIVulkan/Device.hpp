@@ -48,6 +48,8 @@ namespace Foundation::RHI {
     public:
         VulkanDeviceSemaphore(const VulkanDevice& device, bool is_timeline);
         inline auto const& GetVkSemaphore() const { return m_semaphore; }
+
+        void DebugSetObjectName(const char* name) override;
     };
     class VulkanDeviceFence : public RHIDeviceFence {
         const VulkanDevice& m_device;
@@ -55,14 +57,17 @@ namespace Foundation::RHI {
     public:
         VulkanDeviceFence(const VulkanDevice& device, bool signaled);
         inline auto const& GetVkFence() const { return m_fence; }
+
+        void DebugSetObjectName(const char* name) override;
     };
     class VulkanDeviceDescriptorSetLayout : public RHIDeviceDescriptorSetLayout {
         const VulkanDevice& m_device;
         vk::raii::DescriptorSetLayout m_layout{ nullptr };
     public:
         VulkanDeviceDescriptorSetLayout(const VulkanDevice& device, RHIDeviceDescriptorSetLayoutDesc const& desc);
-
         inline auto const& GetVkLayout() const { return m_layout; }
+
+        void DebugSetObjectName(const char* name) override;
     };
     class VulkanDeviceSampler : public RHIDeviceSampler {
         const VulkanDevice& m_device;
@@ -70,6 +75,8 @@ namespace Foundation::RHI {
     public:
         VulkanDeviceSampler(const VulkanDevice& device, RHIDeviceSampler::SamplerDesc const& desc);
         inline auto const& GetVkSampler() const { return m_sampler; }
+
+        void DebugSetObjectName(const char* name) override;
     };
     class VulkanDevice : public RHIDevice {
         const VulkanApplication& m_app;
@@ -155,6 +162,8 @@ namespace Foundation::RHI {
         inline auto const& GetVkSurface() const { return m_surface; }
         inline auto const& GetVkPhysicalDevice() const { return m_physicalDevice; }
         inline auto const& GetVkAllocator() const { return m_vkAllocator; }
+
+        void DebugSetObjectName(const char* name) override;
     };
     class VulkanDeviceQueue : public RHIDeviceQueue {
         const VulkanDevice& m_device;
@@ -172,5 +181,7 @@ namespace Foundation::RHI {
         void WaitIdle() const override;
         void Submit(SubmitDesc const& desc) const override;
         void Present(PresentDesc const& desc) const override;
+
+        void DebugSetObjectName(const char* name) override;
     };
 }

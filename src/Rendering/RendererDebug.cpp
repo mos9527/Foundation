@@ -1,5 +1,5 @@
 #include "Renderer.hpp"
-using namespace Foundation;
+using namespace Foundation::Rendering;
 std::string Renderer::DbgDumpGraphviz() const {
     std::string out;
     fmt::format_to(std::back_inserter(out), "digraph G {{\n");
@@ -27,6 +27,7 @@ std::string Renderer::DbgDumpGraphviz() const {
         }
     }
     fmt::format_to(std::back_inserter(out), "}}\n");
+    out.pop_back();
     return out;
 }
 
@@ -34,7 +35,17 @@ std::string Renderer::DbgDumpActivePasses() const {
     std::string out;
     for (const auto& idx : m_setup->execution) {
         auto& pass = m_setup->trackedPasses[idx];
-        fmt::format_to(std::back_inserter(out), "{}: {}, dep={}, ord={}\n", pass.handle, pass.name, pass.depth, pass.ord);
+        fmt::format_to(
+            std::back_inserter(out), "\t {}: {}, depth={}, ord={}, queue={}, has_cross_queue_dependent={}, write_backbuffer={}\n",
+            pass.handle,
+            pass.name,
+            pass.depth,
+            pass.ord,
+            pass.queue,
+            pass.has_cross_queue_dependent,
+            pass.write_backbuffer
+        );
     }
+    out.pop_back();
     return out;
 }

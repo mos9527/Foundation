@@ -81,5 +81,7 @@ namespace Foundation::RHI {
 
         inline auto const& GetVkPipeline() const { return m_pipeline; }
         inline auto const& GetVkPipelineLayout() const { return m_pipeline_layout; }
+
+        void DebugSetObjectName(const char* name) override;
     };
 }

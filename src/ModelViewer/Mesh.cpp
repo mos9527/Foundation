@@ -1,3 +1,5 @@
+#include <Runtime/Math/Math.hpp>
+
 #include "Mesh.hpp"
 using namespace Foundation;
 using namespace Foundation::Core;
@@ -41,23 +43,23 @@ Mesh LoadMeshFromObjFile(std::filesystem::path const& path, Core::Allocator* all
                 vtx += 2;
             }
             auto& v = vertices[vtx++];
-            v.px = QuantizeFP16(mesh->positions[index.p * 3 + 0]);
-            v.py = QuantizeFP16(mesh->positions[index.p * 3 + 1]);
-            v.pz = QuantizeFP16(mesh->positions[index.p * 3 + 2]);
+            v.px = quantizeFP16(mesh->positions[index.p * 3 + 0]);
+            v.py = quantizeFP16(mesh->positions[index.p * 3 + 1]);
+            v.pz = quantizeFP16(mesh->positions[index.p * 3 + 2]);
             // No tangent
             v.tp = 0;
-            vec2 nor = PackUnitOctahedral({
+            vec2 nor = packUnitOctahedral({
                 mesh->normals[index.n * 3 + 0],
                 mesh->normals[index.n * 3 + 1],
                 mesh->normals[index.n * 3 + 2]
             });
             v.np = {
-                .nx = QuantizeSnormShifted(nor.x, 15),
-                .ny = QuantizeSnormShifted(nor.y, 15),
+                .nx = quantizeSnormShifted(nor.x, 15),
+                .ny = quantizeSnormShifted(nor.y, 15),
                 .sign = 0
             };
-            v.u = QuantizeFP16(mesh->texcoords[index.t * 2 + 0]);
-            v.v = QuantizeFP16(mesh->texcoords[index.t * 2 + 1]);
+            v.u = quantizeFP16(mesh->texcoords[index.t * 2 + 0]);
+            v.v = quantizeFP16(mesh->texcoords[index.t * 2 + 1]);
         }
         idx += mesh->face_vertices[face];
     }

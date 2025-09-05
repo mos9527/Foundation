@@ -130,5 +130,7 @@ namespace Foundation::RHI {
         const PipelineStateDesc m_desc;
 
         RHIPipelineState(RHIDevice const& device, PipelineStateDesc const& desc) : m_device(device), m_desc(desc) {}
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
 }

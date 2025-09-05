@@ -12,5 +12,7 @@ namespace Foundation::RHI {
         const ShaderModuleDesc m_desc;
 
         RHIShaderModule(RHIDevice const& device, ShaderModuleDesc const& desc) : m_device(device), m_desc(desc) {}
+
+        virtual void DebugSetObjectName(const char* name) = 0;
     };
 }

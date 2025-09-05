@@ -3,10 +3,10 @@
 #include <RHICore/Device.hpp>
 #include <Core/Allocator/Allocator.hpp>
 #include <Core/Container/FreeList.hpp>
+#include <Rendering/Renderer.hpp>
 namespace Foundation {
     using namespace Foundation::RHI;
-    using namespace Foundation::Core;
-    class Renderer;    
+    using namespace Foundation::Core;    
     using SceneHandle = size_t;
     // When reallocating internal buffers, grow by this factor
     constexpr float kReallocGrowthFactor = 2.0f;

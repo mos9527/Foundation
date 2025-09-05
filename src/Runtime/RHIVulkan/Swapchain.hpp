@@ -35,5 +35,7 @@ namespace Foundation::RHI {
             RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore,
             RHIDeviceObjectHandle<RHIDeviceFence> fence
         ) override;
+
+        void DebugSetObjectName(const char* name) override;
     };
 }

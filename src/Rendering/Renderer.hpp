@@ -6,12 +6,13 @@
 #include <RHICore/Device.hpp>
 #include <RHICore/Descriptor.hpp>
 #include <RHICore/PipelineState.hpp>
+#include <RHICore/Command.hpp>
 #include "RenderPass.hpp"
-namespace Foundation {
+namespace Foundation::Rendering {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
     constexpr PassHandle kRendererMaxPasses = 1024; // Maximum number of render passes
-    constexpr size_t kMaxCommandListsPerSwap = 32;  // Maximum number of concurrent command buffers per swap
+    constexpr size_t kMaxCommandListsPerSwap = 8;  // Maximum number of concurrent command buffers per swap
     const RHIPipelineStageBits kAllPipelineShaderStages =
         RHIPipelineStageBits::FragmentShader |        
         RHIPipelineStageBits::VertexShader;
@@ -108,6 +109,9 @@ namespace Foundation {
         RHIDevicePipelineType queue; // Prefered type of queue to run in
         bool used{ false }; // Culled?
         bool has_cross_queue_dependent{ false }; // Has an edge to/from another queue
+        // Writes to the swapchain backbuffer
+        // Ignores other RTVs if true
+        bool write_backbuffer{ false }; 
         size_t depth{}; // Depth in RG
         size_t ord{}; // Execution order
         /* -- resources -- */
@@ -133,12 +137,14 @@ namespace Foundation {
             std::filesystem::path,
             RHIShaderStage
             >> shaders;
-        // Bind points [view(tex) or buffer(buf), desc type, binding point]
+        // Bind points [view(tex) or buffer(buf), desc type, binding point]        
         StlVector<std::tuple<
             ResourceHandle,
             RHIDescriptorType,
             std::string
             >> tex_bindings, buf_bindings;
+        // Samplers
+        StlVector<std::pair<ResourceHandle, std::string>> samplers;
         // Push Constants by [stage, offset, size]
         StlVector<RHIPipelineState::PipelineStateDesc::PushConstant> push_constants;
         // (Graphics Only) Render Target View[s]
@@ -157,6 +163,7 @@ namespace Foundation {
             rtvs(alloc),
             desc_layouts(alloc), desc_sets(alloc),
             push_constants(alloc), p_desc_sets(alloc),
+            samplers(alloc),
             pass(std::move(renderPass)) {
         };
         const PassHandle GetHandle() const { return handle; }
@@ -196,6 +203,8 @@ namespace Foundation {
             // For async compute, we might submit multiple command buffers
             // per swap. Driver usually want them to live.                       
             StlArray<RHICommandPoolScopedHandle<RHICommandList>, kMaxCommandListsPerSwap> cmds{};
+            // RTV for the backbuffer
+            RHITextureScopedHandle<RHITextureView> rtv;
         } m_swaps[4];
 
         RHIApplicationObjectHandle<RHIDevice> m_device{};
@@ -207,7 +216,9 @@ namespace Foundation {
             StlVector<StlVector<std::pair<PassHandle, ResourceHandle>>> graph;
             StlVector<TrackedPass> trackedPasses;
             StlVector<TrackedResource> trackedResources;
+            // [resource, view desc]
             StlVector<std::pair<ResourceHandle, RHITextureViewDesc>> trackedViews;
+            StlVector<RHIDeviceSampler::SamplerDesc> trackedSamplers;
             // [resource, ord range]
             StlMap<ResourceHandle, std::pair<PassHandle, PassHandle>> activeResources;
             // Passes ordered by pass.ord
@@ -221,16 +232,15 @@ namespace Foundation {
             Setup(Allocator* allocator) :
                 graph(allocator), trackedPasses(allocator), trackedResources(allocator),
                 trackedViews(allocator), execution(allocator), activeResources(allocator),
+                trackedSamplers(allocator),
                 binding_counts(allocator) {}
         };
         UniquePtr<Setup> m_setup;
 
         struct Resources {
             StlVector<Variant<
-                RHIBuffer*,
                 RHIDeviceObjectHandle<RHIBuffer>,
-                RHIDeviceScopedObjectHandle<RHIBuffer>,
-                RHITexture*,                
+                RHIDeviceScopedObjectHandle<RHIBuffer>,              
                 RHIDeviceObjectHandle<RHITexture>,
                 RHIDeviceScopedObjectHandle<RHITexture>
                 >> resources;
@@ -238,10 +248,12 @@ namespace Foundation {
                 RHITextureScopedHandle<RHITextureView>,
                 RHITextureHandle<RHITextureView>
                 >> views;
-            Resources(Allocator* allocator) : resources(allocator), views(allocator) {}
+            StlVector<RHIDeviceScopedObjectHandle<RHIDeviceSampler>> samplers;
+            Resources(Allocator* allocator) : resources(allocator), views(allocator), samplers(allocator) {}
             void fit(ResourceHandle handle) {
                 resources.resize(std::max(resources.size(), handle + 1));
                 views.resize(std::max(views.size(), handle + 1));
+                samplers.resize(std::max(samplers.size(), handle + 1));
             }
         };
         UniquePtr<Resources> m_resources;
@@ -286,12 +298,12 @@ namespace Foundation {
         /// </summary>
         void BeginSetup();
         /// <summary>
-        /// Create a render pass and add it to the render graph.
+        /// Create a render pass from a RenderPass* implementation and add it to the render graph.
         /// 
         /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
-        /// </summary>        
-        template<typename T, typename ...Args>
-        T* CreatePass(std::string const& name, RHIDevicePipelineType queue, Args&&... args) {
+        /// </summary>
+        template<typename T, typename ...Args> requires std::is_base_of_v<RenderPass, T>
+        T* CreatePassImpl(std::string const& name, RHIDevicePipelineType queue, Args&&... args) {
             CHECK(m_state == State::Setup);
             PassHandle handle = m_setup->trackedPasses.size();
             CHECK(handle < kRendererMaxPasses && "Too many passes - leaks might be possible");
@@ -304,6 +316,17 @@ namespace Foundation {
             );
             m_setup->epilogue = handle;
             return static_cast<T*>(m_setup->trackedPasses.back().pass.get());
+        }
+        /// <summary>
+        /// Create a render pass from a Setup(Renderer*, PassHandle) and Record(Renderer*, PassHandle, RHICommandList*) lambda.
+        ///
+        /// NOTE: Prefer using this over CreatePass<T>() for stateless passes
+        /// 
+        /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
+        /// </summary>
+        template<typename FSetup, typename FRecord>
+        LambdaPass<FSetup, FRecord>* CreatePass(std::string const& name, RHIDevicePipelineType queue, FSetup&& setup, FRecord&& record) {
+            return CreatePassImpl<LambdaPass<FSetup, FRecord>>(name, queue, std::forward<FSetup>(setup), std::forward<FRecord>(record));
         }
         /// <summary>
         /// Create a new resource to be used in the render graph.
@@ -322,6 +345,13 @@ namespace Foundation {
             m_setup->trackedResources.emplace_back(index, name, desc, m_allocator);
             return m_setup->trackedResources.size() - 1;
         }
+        /// <summary>
+        /// Creates a sampler with the specified name and descriptor.
+        ///
+        /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().       
+        /// No allocation is performed until EndSetup() is called.
+        /// </summary>
+        ResourceHandle CreateSampler(std::string const& name, RHIDeviceSampler::SamplerDesc const& desc);
 #pragma region Resource Binding
         /// <summary>
         /// Binds shader file path to a certain pass at a certain stage.
@@ -398,9 +428,16 @@ namespace Foundation {
         /// </summary>
         void BindBufferCopySrc(PassHandle pass, ResourceHandle buffer);
         /// <summary>
+        /// Binds a sampler to a specified variable name in the shader.
+        /// </summary>        
+        void BindTextureSampler(
+            PassHandle pass, ResourceHandle sampler,
+            std::string const& bind_point
+        );
+        /// <summary>
         /// Binds a texture as a Shader Resource View (read-only sampling / fetch).
         ///
-        /// A view may be created if a subresource range (mips/layers) or format reinterpretation
+        /// A view will be created if a subresource range (mips/layers) or format reinterpretation
         /// is specified via desc. Returns the (possibly new) texture view handle.
         /// </summary>
         ResourceHandle BindTextureSRV(
@@ -411,11 +448,13 @@ namespace Foundation {
         /// <summary>
         /// Binds a texture for unordered (UAV) read-write access in shaders.
         ///
-        /// Declares ShaderRead | ShaderWrite access and sets layout to General (or equivalent).
+        /// Declares ShaderRead | ShaderWrite access and sets layout to General (or equivalent),
+        /// bound as StorageImage.
+        ///
         /// A view will be created when desc customizes subresources or format.
         /// </summary>
         ResourceHandle BindTextureUAV(
-            PassHandle pass, ResourceHandle texture,
+            PassHandle pass, ResourceHandle texture, 
             std::string const& bind_point,
             RHITextureViewDesc const& desc = {}
         );
@@ -445,6 +484,19 @@ namespace Foundation {
             RHITextureViewDesc const& desc = {}
         );
         /// <summary>
+        /// Declares that this pass will write to the current (at Record time) swapchain backbuffer.
+        ///
+        /// ATTENTION: This invalidates any other bound RTVs.
+        /// 
+        /// Backbuffer in the entirety of a graphics pass is always in RenderTarget layout,
+        /// and cannot be read from, copied from/to, or used as anything but.
+        ///
+        /// You can retrive the current backbuffer RTV via GetCurrentBackbufferView() at Record time.
+        /// 
+        /// This can be automatically bound to the pipeline with CmdBeginGraphics().             
+        /// </summary>        
+        void BindBackbufferRTV(PassHandle pass);
+        /// <summary>
         /// Declares that this pass will write to the texture via copy / blit (transfer destination).
         ///
         /// Sets TransferWrite access over the specified subresource range (all if empty).
@@ -469,7 +521,7 @@ namespace Foundation {
         /// <summary>
         /// Finish setting up the render graph.
         ///
-        /// The last added pass is used as the epilogue (final) pass,
+        /// The **last** created pass is used as the epilogue (final) pass,
         /// and will be used to determine active passes and resource lifetimes.
         /// 
         /// You must call this before Execute().
@@ -501,11 +553,7 @@ namespace Foundation {
         inline Variant<RHIBuffer*, RHITexture*> DerefResource(ResourceHandle handle) {
             CHECK(m_resources && handle < m_resources->resources.size());
             using Tv = Variant<RHIBuffer*, RHITexture*>;
-            return m_resources->resources[handle].visit(
-                [](RHIBuffer* buf) -> Tv { return buf; },
-                [](RHITexture* tex) -> Tv { return tex; },
-                [](auto& hdl) -> Tv { return hdl.Get(); }
-            );
+            return m_resources->resources[handle].visit([](auto& hdl) -> Tv { return hdl.Get(); });
         }
         /// <summary>
         /// Dereference a texture view handle to its underlying RHI texture view.
@@ -515,9 +563,16 @@ namespace Foundation {
         inline RHITextureView* DerefTextureView(ResourceHandle handle) {
             CHECK(m_resources && handle < m_resources->views.size());
             using Tv = RHITextureView*;
-            return m_resources->views[handle].visit(
-                [](auto& hdl) -> Tv { return hdl.Get(); }
-            );
+            return m_resources->views[handle].visit([](auto& hdl) -> Tv { return hdl.Get(); });
+        }
+        /// <summary>
+        /// Dereference a sampler handle to its underlying RHI sampler.
+        ///
+        /// This should only be called inside a pass's Record() function, or after EndSetup().
+        /// </summary>        
+        inline RHIDeviceSampler* DerefSampler(ResourceHandle handle) {
+            CHECK(m_setup && handle < m_setup->trackedSamplers.size());
+            return m_resources->samplers[handle].Get();
         }
         /// <summary>
         /// Dereference the built pipeline state object handle associated with a given pass.
@@ -525,7 +580,6 @@ namespace Foundation {
         inline RHIPipelineState* DerefPipelineState(PassHandle pass) {
             CHECK(m_setup && pass < m_setup->trackedPasses.size());
             auto& tpass = m_setup->trackedPasses[pass];
-            CHECK(tpass.used && "Pass is culled");
             return tpass.pso.Get();
         }
         /// <summary>
@@ -534,8 +588,18 @@ namespace Foundation {
         inline StlVector<RHIDeviceDescriptorSet*> const& DerefDescriptorSets(PassHandle pass) {
             CHECK(m_setup && pass < m_setup->trackedPasses.size());
             auto& tpass = m_setup->trackedPasses[pass];
-            CHECK(tpass.used && "Pass is culled");
             return tpass.p_desc_sets;
+        }
+        /// <summary>
+        /// Returns a pointer to the current backbuffer texture view.
+        ///
+        /// The pass must have declared BindBackbufferRTV() during setup.
+        /// </summary>        
+        inline RHITextureView* GetCurrentBackbufferView(PassHandle pass) {
+            CHECK(m_state == State::Execute);
+            auto& tpass = m_setup->trackedPasses[pass];            
+            CHECK(tpass.write_backbuffer && "Pass does not write to backbuffer");
+            return m_swaps[m_currentSwap].rtv.Get();
         }
 #pragma endregion
 
@@ -574,5 +638,40 @@ namespace Foundation {
         /// </summary>
         void Execute();
     };
-
+    /* Functional Helpers */
+    /// <summary>
+    /// Convinent functional wrapper to create a resource
+    ///
+    /// This is equivalent to calling CreateResource(name, desc);
+    /// </summary>
+    template<typename T>
+    ResourceHandle createResource(Renderer* r, std::string const& name, T const& desc) {
+        return r->CreateResource(name, desc);
+    }
+    /// <summary>
+    /// Convenient functional wrapper to create a sampler
+    ///
+    /// This is equivalent to calling CreateSampler(name, desc);
+    /// </summary>
+    inline ResourceHandle createSampler(Renderer* r, std::string const& name, RHIDeviceSampler::SamplerDesc const& desc) {
+        return r->CreateSampler(name, desc);
+    }
+    /// <summary>
+    /// Convenient functional wrapper to create a pass from a RenderPass* implementation.
+    ///
+    /// This is equivalent to calling CreatePass<T>(name, queue, args...);     
+    /// </summary>    
+    template<typename T, typename ...Args> requires std::is_base_of_v<RenderPass, T>
+    T* createPassImpl(Renderer* r, std::string const& name, RHIDevicePipelineType queue, Args&&... args) {
+        return r->CreatePassImpl<T>(name, queue, std::forward<Args>(args)...);
+    }
+    /// <summary>
+    /// Convenient functional wrapper to create a pass from Setup/Record lambdas.
+    ///
+    /// This is equivalent to calling CreatePass(name, queue, setup, record);
+    /// </summary>
+    template<typename FSetup, typename FRecord>
+    LambdaPass<FSetup, FRecord>* createPass(Renderer* r, std::string const& name, RHIDevicePipelineType queue, FSetup&& setup, FRecord&& record) {
+        return r->CreatePass(name, queue, std::forward<FSetup>(setup), std::forward<FRecord>(record));
+    }
 }

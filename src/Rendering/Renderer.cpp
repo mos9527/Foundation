@@ -11,9 +11,8 @@
 #include "Renderer.hpp"
 #include "ShaderReflection.hpp"
 
-using namespace Foundation;
 using namespace Foundation::Core;
-
+using namespace Foundation::Rendering;
 // Semaphore counter
 #define SEM_COUNTER(ord) m_frame + ord + 1LL
 
@@ -31,6 +30,9 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObject
         m_swaps[i].fence = m_device->CreateFence();
         for (size_t j = 0; j < kMaxCommandListsPerSwap; j++)
             m_swaps[i].cmds[j] = m_cmdPool->CreateCommandList();
+        m_swaps[i].rtv = m_swapchain->GetImages()[i]->CreateTextureView(RHITextureViewDesc{
+            .format = m_swapchain->m_desc.format
+        });
     }
 }
 
@@ -48,6 +50,11 @@ ResourceHandle Renderer::CreateTextureView(
     ResourceHandle hdl = m_setup->trackedViews.size() - 1;
     m_setup->trackedPasses[pass].texviews.emplace_back(hdl);
     return hdl;
+}
+ResourceHandle Renderer::CreateSampler(std::string const& name, RHIDeviceSampler::SamplerDesc const& desc) {
+    CHECK(m_state == State::Setup);
+    m_setup->trackedSamplers.emplace_back(desc);
+    return m_setup->trackedSamplers.size() - 1;
 }
 void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPipelineStage stage, RHIResourceAccess access) {
     CHECK(m_state == State::Setup);
@@ -195,6 +202,14 @@ void Renderer::BindBufferCopySrc(PassHandle pass, ResourceHandle buffer) {
         RHIResourceAccessBits::TransferRead
     );
 }
+void Renderer::BindTextureSampler(
+    PassHandle pass, ResourceHandle sampler,
+    std::string const& shader_name
+) {
+    CHECK(m_state == State::Setup);
+    m_setup->trackedPasses[pass].samplers.emplace_back(sampler, shader_name);
+    m_setup->binding_counts[RHIDescriptorType::Sampler]++;
+}
 ResourceHandle Renderer::BindTextureSRV(
     PassHandle pass, ResourceHandle texture,
     std::string const& shader_name,
@@ -263,6 +278,12 @@ ResourceHandle Renderer::BindTextureDSV(
     tpass.dsv = view;
     return view;
 }
+void Renderer::BindBackbufferRTV(PassHandle pass) {
+    CHECK(m_state == State::Setup);
+    auto& tpass = m_setup->trackedPasses[pass];
+    CHECK(tpass.queue == RHIDevicePipelineType::Graphics && "RTV (Render Target Views) are only supported on Graphics queues");
+    tpass.write_backbuffer = true;
+}
 void Renderer::BindTextureCopyDst(
     PassHandle pass, ResourceHandle texture,
     RHITextureSubresourceRange const& range
@@ -293,7 +314,7 @@ void Renderer::EndSetup() {
     // Setup all passes
     for (PassHandle i = 0; i < m_setup->trackedPasses.size(); ++i) {
         auto& pass = m_setup->trackedPasses[i];
-        pass.pass->Setup(pass.handle, *this);
+        pass.pass->Setup(pass.handle, this);
     }
     CullPasses(m_setup->epilogue);
     FinalizeResources();
@@ -332,7 +353,7 @@ void Renderer::CullPasses(PassHandle epilogue) {
     for (PassHandle ord = 0; ord < m_setup->execution.size(); ord++) {
         auto& pass = m_setup->trackedPasses[m_setup->execution[ord]];
         // Derive lifetimes for resources from execution order
-        // AllocateResources() uses this to overlap resources.        
+        // FinializeResources() uses this to overlap resources.        
         pass.ord = ord, pass.depth = depth[pass.handle];
         auto& resources = pass.resources;
         // Sort then make unique
@@ -364,14 +385,15 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     size_t stages[0xF]{};
     for (auto const& [shader_path, stage] : tracked.shaders) {
         LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path.string());
-        std::ifstream file(shader_path);
+        std::ifstream file(shader_path, std::ios::binary);
         CHECK(file.good());        
-        data.resize(std::filesystem::file_size(shader_path));
+        data.resize(std::filesystem::file_size(shader_path));        
         file.read(data.data(), data.size());
+        CHECK(file.gcount() == data.size() && "Shader read failure");
         auto const& refl = reflections.emplace_back(data, m_allocator);
         // Check matching stage
         CHECK(refl.m_entrypoint.stage == stage);
-        LOG_RUNTIME(Renderer, debug, "{}", refl.DbgDumpShaderInfo());
+        LOG_RUNTIME(Renderer, debug, "### Shader Info###\n{}", refl.DbgDumpShaderInfo());
         shaders.push_back(m_device->CreateShaderModule({ .source = data }));
         // In BindShader we have already guaranteed these to be unique per stage
         stages[(uint32_t)stage] = shaders.size() - 1;        
@@ -381,6 +403,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         });
     }
     // Check variable bindings to be consistent across stages
+    // [name, [set, binding]]
     StlMap<std::string, std::pair<uint32_t, uint32_t>> var_bindpoints(m_allocator);
     // Check if any shader in the pipeline uses PC
     bool use_pushconstants = false;
@@ -400,30 +423,49 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     }
     // Create descriptor set layout to be consistent across stages
     StlMap<std::string, RHIDescriptorType> var_types(m_allocator);
+    StlMap<std::string, ResourceHandle> var_hdls(m_allocator);
+    StlMap<std::string, ResourceHandle> var_samplers(m_allocator);
     for (auto& [vhdl, dtype, binding] : tracked.tex_bindings) {
         auto& view = m_setup->trackedViews[vhdl];
         auto it = var_types.find(binding);
         if (it == var_types.end())
-            var_types[binding] = dtype;
+            var_types[binding] = dtype, var_hdls[binding] = vhdl;
         else {
             auto& dtype_prev = it->second;
-            CHECK(dtype_prev == dtype && "Inconsistent descriptor types across bindings.");
+            auto& vhdl_prev = var_hdls[binding];
+            CHECK(dtype_prev == dtype && vhdl_prev == vhdl);
         }
     }
     for (auto& [rhdl, dtype, binding] : tracked.buf_bindings) {
         auto it = var_types.find(binding);
         if (it == var_types.end())
-            var_types[binding] = dtype;
+            var_types[binding] = dtype, var_hdls[binding] = rhdl;
         else {
             auto& dtype_prev = it->second;
-            CHECK(dtype_prev == dtype && "Inconsistent descriptor types across bindings.");
+            auto& rhdl_prev = var_hdls[binding];
+            CHECK(dtype_prev == dtype && rhdl_prev == rhdl);
         }
     }
-    LOG_RUNTIME(Renderer, debug, "Pipeline Parameters");
-    for (auto& [name, dtype] : var_types) {
-        auto [set, binding] = var_bindpoints[name];
-        LOG_RUNTIME(Renderer, debug, "\t{}: set {}, binding {}, type {}", name, set, binding, dtype);
+    for (auto& [shdl, binding] : tracked.samplers) {
+        auto it = var_types.find(binding);
+        if (it == var_types.end())
+            var_types[binding] = RHIDescriptorType::Sampler, var_samplers[binding] = shdl;
+        else {
+            auto& dtype_prev = it->second;
+            auto& shdl_prev = var_samplers[binding];
+            CHECK(dtype_prev == RHIDescriptorType::Sampler && shdl_prev == shdl);
+        }
     }
+    if (var_bindpoints.size()) {
+        LOG_RUNTIME(Renderer, debug, "Pipeline Parameters");
+        for (auto& [name, dtype] : var_types) {
+            if (!var_bindpoints.contains(name))
+                continue;
+            auto [set, binding] = var_bindpoints[name];
+            LOG_RUNTIME(Renderer, debug, "\t{}: set {}, binding {}, type {}", name, set, binding, dtype);
+        }
+    }
+    // [[set, binding], name]
     StlVector<std::pair<std::pair<uint32_t, uint32_t>, std::string>> bindings(m_allocator);
     bindings.reserve(var_types.size());
     for (auto& [name, bind] : var_bindpoints)
@@ -442,7 +484,65 @@ void Renderer::BuildPipelineState(PassHandle pass) {
             { .bindings = { set_bindings.cbegin() + i, set_bindings.cbegin() + j } }
         ));
         tracked.desc_sets.push_back(m_descPool->CreateDescriptorSet(tracked.desc_layouts.back()));
-        tracked.p_desc_sets.push_back(tracked.desc_sets.back().Get());
+        auto& ds = tracked.desc_sets.back();
+        tracked.p_desc_sets.push_back(ds.Get());
+        // Update bindings
+        LOG_RUNTIME(Renderer, debug, "Descriptor Set {} Bindings", set);
+        for (size_t k = i; k < j; k++) {
+            auto& [bind, name] = bindings[k];
+            auto& [_, binding] = bind;
+            auto& hdl = var_hdls[name];
+            auto& type = var_types[name];
+            using enum RHIDescriptorType;
+            switch (type)
+            {
+            case Sampler:
+                {
+                    CHECK(var_samplers.contains(name) && "Shader expects a Sampler, but it's not bound by pass");
+                    auto& shdl = var_samplers[name];
+                    auto* sampler = DerefSampler(shdl);
+                    LOG_RUNTIME(Renderer, debug, "\t[Sampler] {}: binding {}, type {}", name, binding, type);
+                    ds->Update({
+                        .binding = binding,
+                        .type = type,
+                        .images = {{{
+                            .sampler = sampler
+                        }}}
+                        });                    
+                    break;
+            }
+                case SampledImage:
+                case StorageImage:
+                {
+                    auto* view = DerefTextureView(hdl);
+                    LOG_RUNTIME(Renderer, debug, "\t[Texture] {}: binding {}, type {}", name, binding, type);
+                    ds->Update({
+                        .binding = binding,
+                        .type = type,
+                        .images = {{{
+                            .image_view = view,
+                            .layout = type == RHIDescriptorType::SampledImage ?
+                                RHITextureLayout::ShaderReadOnly : RHITextureLayout::General
+                        }}}
+                    });
+                    break;
+                }
+                case UniformBuffer:
+                case StorageBuffer:
+                {
+                    LOG_RUNTIME(Renderer, debug, "\t[Buffer] {}: binding {}, type {}", name, binding, type);
+                    auto* buf = DerefResource(hdl).Get<RHIBuffer*>();
+                    ds->Update({
+                        .binding = binding,
+                        .type = type,
+                        .buffers = {{{ .buffer = buf }}}
+                    });
+                    break;
+                }
+            default:
+                break;
+            }
+        }
     }
     RHIPipelineState::PipelineStateDesc pso_desc{
         .vertex_input = tracked.vertex_input,
@@ -461,15 +561,20 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         .descriptor_set_layouts = tracked.desc_layouts,
         .push_constants = tracked.push_constants
     };
-    if (tracked.push_constants.size())
-        CHECK(use_pushconstants && "Push constants set but never used. Possible shader error.")
+    if (use_pushconstants)
+        CHECK(tracked.push_constants.size() && "Shader uses Push Constants but none were set by pass")    
     // Setup compute/graphics specific states
     // Graphics
     // RTV,DSV
     StlVector<RHIPipelineState::PipelineStateDesc::Attachment> attachments(m_allocator);
-    for (auto rtv : tracked.rtvs) {
-        auto& [rhdl, desc] = m_setup->trackedViews[rtv];
-        attachments.push_back({ .render_target = { .format = desc.format } });
+    if (tracked.write_backbuffer) {
+        // Only write to the backbuffer
+        attachments.push_back({ .render_target = {.format = m_swapchain->m_desc.format } });
+    } else{
+        for (auto rtv : tracked.rtvs) {
+            auto& [rhdl, desc] = m_setup->trackedViews[rtv];
+            attachments.push_back({ .render_target = {.format = desc.format } });
+        }
     }
     pso_desc.attachments = attachments;
     pso_desc.depth_stencil = {
@@ -529,13 +634,15 @@ void Renderer::FinalizeResources() {
         );
     }
     // Create texture views
-    StlVector<ResourceHandle> activeViews(m_allocator);
+    StlVector<ResourceHandle> activeViews(m_allocator), activeSamplers(m_allocator);
     for (PassHandle ord = 0; ord < m_setup->execution.size(); ord++) {
         auto& pass = m_setup->trackedPasses[m_setup->execution[ord]];
         for (auto hdl : pass.texviews)
             activeViews.push_back(hdl);
+        for (auto hdl : pass.samplers)
+            activeSamplers.push_back(hdl.first);
     }
-    // Instantiate active ones only
+    // Instantiate views
     std::sort(activeViews.begin(), activeViews.end());
     activeViews.erase(std::unique(activeViews.begin(), activeViews.end()), activeViews.end());
     m_resources->fit(activeViews.size());
@@ -543,6 +650,14 @@ void Renderer::FinalizeResources() {
         auto [rhdl, desc] = m_setup->trackedViews[hdl];
         auto& res = DerefResource(rhdl).Get<RHITexture*>();
         m_resources->views[hdl] = res->CreateTextureView(desc);
+    }
+    // Instantiate samplers
+    std::sort(activeSamplers.begin(), activeSamplers.end());
+    activeSamplers.erase(std::unique(activeSamplers.begin(), activeSamplers.end()), activeSamplers.end());
+    m_resources->fit(activeSamplers.size());
+    for (auto hdl : activeSamplers) {
+        auto& desc = m_setup->trackedSamplers[hdl];
+        m_resources->samplers[hdl] = m_device->CreateSampler(desc);
     }
     // Reset resource states
     for (auto& res : m_setup->trackedResources) {
@@ -645,7 +760,7 @@ bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd) {
         // If we'd need any kind of cross queue syncs, this must be ended and submitted now.
         if (waits.size() || pass.has_cross_queue_dependent) {
             // Submit to appropriate queue
-            cmd->DebugEnd().End();
+            cmd->End();
             RHIDeviceQueue* queue = pass.queue == RHIDevicePipelineType::Graphics ? m_gfxQueue : m_compQueue;
             queue->Submit({
                 .timeline_waits = waits,
@@ -684,19 +799,20 @@ void Renderer::Execute() {
     uint32_t cmd_index = 0;
     auto* cmd = cmds[cmd_index].Get();
     cmd->Reset();
-    cmd->Begin().DebugBegin();
+    cmd->Begin();
     for (size_t ord : ords) {
         auto& pass = passes[ord];
-        cmd->DebugInsertMarker(pass.name.c_str());
+        cmd->DebugBegin(pass.name.c_str());        
         ExecuteBarriers(pass, cmd);
-        pass.pass->Record(pass.handle, *this, cmd);
+        pass.pass->Record(pass.handle, this, cmd);
+        cmd->DebugEnd();
         // Submit if needed
         if (ExecuteSubmitOrContinue(pass, cmd)) {
-            // Record on a new one per swap
-            CHECK(cmd_index < kMaxCommandListsPerSwap && "Command Lists overflow");
-            cmd = cmds[++cmd_index].Get();
+            // Record on a new one per swap            
+            CHECK(++cmd_index < kMaxCommandListsPerSwap && "Too many external syncs. Try coalescing work into same queues.");
+            cmd = cmds[cmd_index].Get();
             cmd->Reset();
-            cmd->Begin().DebugBegin();
+            cmd->Begin();
         }
     }
     // Always transition swapchain image to present
@@ -709,7 +825,7 @@ void Renderer::Execute() {
         }
     );
     cmd->EndTransition();
-    cmd->DebugEnd().End();
+    cmd->End();
     // Submit final command list
     // always on the most competent queue
     m_gfxQueue->Submit({
@@ -737,12 +853,20 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd,
     CHECK(tpass.pso.IsValid() && "Current pass has no Pipeline state.");
     StackArena<1024> arena; StackAllocatorSingleThreaded alloc(arena);
     StlVector<RHICommandList::GraphicsDesc::Attachment> rtvs(alloc.Ptr());
-    rtvs.reserve(tpass.rtvs.size());
-    for (auto rtv : tpass.rtvs) {
+    if (tpass.write_backbuffer) {
         rtvs.push_back({
-            .image_view = DerefTextureView(rtv),
+            .image_view = GetCurrentBackbufferView(pass),
             .clear_color = clear_rtv
         });
+    }
+    else {
+        rtvs.reserve(tpass.rtvs.size());
+        for (auto rtv : tpass.rtvs) {
+            rtvs.push_back({
+                .image_view = DerefTextureView(rtv),
+                .clear_color = clear_rtv
+            });
+        }
     }
     if (tpass.dsv != kInvalidHandle) {
         cmd->BeginGraphics({
@@ -775,10 +899,11 @@ void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) {
     cmd->SetPipeline({
         .pipeline = tpass.pso.Get(),
         .type = tpass.queue
-    });    
-    cmd->BindDescriptorSet(
-        tpass.queue,
-        tpass.pso.Get(),
-        tpass.p_desc_sets
-    );
+    });
+    if (tpass.p_desc_sets.size())
+        cmd->BindDescriptorSet(
+            tpass.queue,
+            tpass.pso.Get(),
+            tpass.p_desc_sets
+        );
 }

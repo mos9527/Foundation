@@ -1,8 +1,8 @@
 #include "Scene.hpp"
-#include "Renderer.hpp"
 namespace Foundation {
     using namespace Foundation::RHI;
-    using namespace Foundation::Core;    
+    using namespace Foundation::Core;
+    using namespace Foundation::Rendering;
     Scene::Scene(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc) :
         m_allocator(allocator), m_data(allocator, device, desc),
         m_instanceOffsets(allocator) {}
@@ -82,18 +82,5 @@ namespace Foundation {
             std::memcpy(data, m_instanceOffsets.data(), sizeof(uint64_t) * m_instanceOffsets.size());
             m_hasDirtyInstance = false;
         }
-    }
-
-    ScenePass::ScenePass(Renderer& renderer, Scene& scene) : scene(scene) {
-        auto& data = scene.GetData();
-        m_global = renderer.CreateResource("Globals", data.GetGlobalDataBuffer());
-        m_instance = renderer.CreateResource("Instances", data.GetInstanceDataBuffer());
-        m_primitive = renderer.CreateResource("Primitives", data.GetPrimitiveDataBuffer());
-    }
-
-    void ScenePass::Setup(PassHandle self, Renderer& renderer) {        
-        renderer.BindBufferCopyDst(self, m_global);
-        renderer.BindBufferCopyDst(self, m_instance);
-        renderer.BindBufferCopyDst(self, m_primitive);
     }
 }

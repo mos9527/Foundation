@@ -53,6 +53,11 @@ namespace Foundation::RHI {
         Graphics,
         Compute,
     };
+    ENUM_NAME_CONV_BEGIN(RHIDevicePipelineType)
+        case Graphics: return "Graphics";
+        case Compute: return "Compute";
+    ENUM_NAME_CONV_END()
+
     enum class RHIDeviceHeapType {
         Local,
         Upload,
