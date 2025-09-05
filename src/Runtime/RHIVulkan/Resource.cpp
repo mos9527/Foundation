@@ -214,6 +214,15 @@ void VulkanBuffer::DestroyAliasedBuffer(Handle handle) {
     m_aliases.DestroyObject(handle);
 }
 
+void VulkanBuffer::DebugSetObjectName(const char* name) {
+    VkBuffer handle = *m_buffer;
+    m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
+        .objectType = vk::ObjectType::eBuffer,
+        .objectHandle = (uint64_t)(handle),
+        .pObjectName = name
+        });
+}
+
 RHITextureScopedHandle<RHITexture> VulkanTexture::CreateAliasedTexture(RHITextureDesc const& desc, size_t offset) {
     VkImage aliased;
     vk::ImageCreateInfo image_info = vkImageCreateInfoFromRHITextureDesc(desc);
@@ -230,4 +239,22 @@ RHITexture* VulkanTexture::GetAliasedTexture(Handle handle) const {
 }
 void VulkanTexture::DestroyAliasedTexture(Handle handle) {
     m_aliases.DestroyObject(handle);
+}
+
+void VulkanTexture::DebugSetObjectName(const char* name) {
+    VkImage handle = *m_image;
+    m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
+        .objectType = vk::ObjectType::eImage,
+        .objectHandle = (uint64_t)(handle),
+        .pObjectName = name
+        });
+}
+
+void VulkanTextureView::DebugSetObjectName(const char* name) {
+    VkImageView handle = *m_view;
+    m_image.GetDevice().GetVkDevice().setDebugUtilsObjectNameEXT({
+        .objectType = vk::ObjectType::eImageView,
+        .objectHandle = (uint64_t)(handle),
+        .pObjectName = name
+        });
 }

@@ -145,3 +145,12 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
 
     m_pipeline = vk::raii::Pipeline(m_device.GetVkDevice(), nullptr, pipelineInfo, m_device.GetVkAllocatorCallbacks());
 }
+
+void VulkanPipelineState::DebugSetObjectName(const char* name) {
+    VkPipeline handle = *m_pipeline;
+    m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
+        .objectType = vk::ObjectType::ePipeline,
+        .objectHandle = (uint64_t)(handle),
+        .pObjectName = name
+        });
+}

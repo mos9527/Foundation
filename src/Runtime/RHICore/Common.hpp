@@ -111,7 +111,7 @@ namespace Foundation::RHI {
         All = ~0u
     BITMASK_ENUM_END();
 
-    ENUM_NAME_CONV_BEGIN(RHIShaderStageBits)
+    ENUM_NAME_CONV_BEGIN(RHIShaderStageBits)        
         case Vertex: return "Vertex Stage";
         case Fragment: return "Fragment Stage";
         case Compute: return "Compute Stage";

@@ -1,6 +1,7 @@
 #include "Allocator.hpp"
 #include "StackAllocator.hpp"
-using namespace Foundation::Core;
+
+namespace Foundation::Core {
 template<typename Counter>
 pointer StackAllocator<Counter>::Allocate(size_type size, size_type alignment) {
     if (size == 0 || !m_memory) return nullptr;
@@ -30,3 +31,4 @@ pointer StackAllocator<Counter>::Allocate(size_type size) {
 
 template class StackAllocator<CounterSingleThreaded>;
 template class StackAllocator<CounterMultiThreaded>;
+}

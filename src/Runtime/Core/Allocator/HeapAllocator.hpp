@@ -58,14 +58,14 @@ namespace Foundation::Core {
         pointer Allocate(size_type size, size_t alignment) override;
 
         void Deallocate(pointer ptr) override;
-        inline void Deallocate(pointer ptr, size_type size) { Deallocate(ptr); }
+        inline void Deallocate(pointer ptr, size_type size) override { Deallocate(ptr); }
 
         /// <summary>
         /// Reallocates a block of memory.
         /// If the new size exceeds the available memory within the heap's arena, allocation
         /// fallbacks to mi_realloc_aligned and is not kept on the heap.
         /// </summary>
-        pointer Reallocate(pointer ptr, size_type new_size, size_t alignment);
+        pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) override;
 
         inline size_type GetUsedMemory() const noexcept override { return m_used; }
 	};

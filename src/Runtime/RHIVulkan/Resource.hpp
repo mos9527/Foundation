@@ -58,11 +58,11 @@ namespace Foundation::RHI {
                 vmaVirtualFree(m_block, vmaAlloc);
                 m_allocs.free(alloc);
             }
-            size_t GetOffset(Allocation alloc) const {
+            size_t GetOffset(Allocation alloc) const override  {
                 auto& [sz, off, vmaAlloc] = m_allocs.at(alloc);
                 return off;
             }
-            size_t GetSize(Allocation alloc) const {
+            size_t GetSize(Allocation alloc) const override {
                 auto& [sz, off, vmaAlloc] = m_allocs.at(alloc);
                 return sz;
             }
@@ -134,6 +134,8 @@ namespace Foundation::RHI {
         void DestroyAliasedTexture(Handle handle) override;
 
         void DebugSetObjectName(const char* name) override;
+
+        inline auto const& GetDevice() const { return m_device; }
     };
 
     class VulkanTextureView : public RHITextureView {

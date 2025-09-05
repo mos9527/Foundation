@@ -55,6 +55,15 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
     m_pool.GetDevice().GetVkDevice().updateDescriptorSets(writes, {});
 }
 
+void VulkanDeviceDescriptorSet::DebugSetObjectName(const char* name) {
+    VkDescriptorSet handle = *m_set;
+    m_pool.GetDevice().GetVkDevice().setDebugUtilsObjectNameEXT({
+        .objectType = vk::ObjectType::eDescriptorSet,
+        .objectHandle = (uint64_t)(handle),
+        .pObjectName = name
+        });
+}
+
 VulkanDeviceDescriptorPool::VulkanDeviceDescriptorPool(const VulkanDevice& device, PoolDesc const& desc)
     : RHIDeviceDescriptorPool(device, desc), m_device(device), m_storage(device.GetAllocator()) {
     Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
@@ -98,4 +107,13 @@ RHIDeviceDescriptorSet* VulkanDeviceDescriptorPool::GetDescriptorSet(Handle hand
 }
 void VulkanDeviceDescriptorPool::DestroyDescriptorSet(Handle handle) {
     return m_storage.DestroyObject(handle);
+}
+
+void VulkanDeviceDescriptorPool::DebugSetObjectName(const char* name) {
+    VkDescriptorPool handle = *m_pool;
+    m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
+        .objectType = vk::ObjectType::eDescriptorPool,
+        .objectHandle = (uint64_t)(handle),
+        .pObjectName = name
+        });
 }

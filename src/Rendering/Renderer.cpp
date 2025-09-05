@@ -24,15 +24,24 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObject
         .queue = RHIDeviceQueueType::Graphics,
         .type = RHICommandPoolType::Persistent
     });
+    m_cmdPool->DebugSetObjectName("Main Command Pool");
     for (size_t i = 0; i < m_frameSwaps; i++) {
         m_swaps[i].render = m_device->CreateSemaphore(false);
+        m_swaps[i].render->DebugSetObjectName(fmt::format("Render Semaphore of Swap {}", i).c_str());
         m_swaps[i].present = m_device->CreateSemaphore(false);
+        m_swaps[i].present->DebugSetObjectName(fmt::format("Present Semaphore of Swap {}", i).c_str());
         m_swaps[i].fence = m_device->CreateFence();
-        for (size_t j = 0; j < kMaxCommandListsPerSwap; j++)
+        m_swaps[i].fence->DebugSetObjectName(fmt::format("Fence of Swap {}", i).c_str());
+        for (size_t j = 0; j < kMaxCommandListsPerSwap; j++) {
             m_swaps[i].cmds[j] = m_cmdPool->CreateCommandList();
-        m_swaps[i].rtv = m_swapchain->GetImages()[i]->CreateTextureView(RHITextureViewDesc{
+            m_swaps[i].cmds[j]->DebugSetObjectName(fmt::format("Command Buffer {} of Swap {}", j, i).c_str());
+        }
+        auto* backbuffer = m_swapchain->GetImages()[i];
+        backbuffer->DebugSetObjectName(fmt::format("Backbuffer of Swap {}", i).c_str());
+        m_swaps[i].rtv = backbuffer->CreateTextureView(RHITextureViewDesc{
             .format = m_swapchain->m_desc.format
         });
+        
     }
 }
 
@@ -390,16 +399,17 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         data.resize(std::filesystem::file_size(shader_path));        
         file.read(data.data(), data.size());
         CHECK(file.gcount() == data.size() && "Shader read failure");
+        // Verifiy shader stage
         auto const& refl = reflections.emplace_back(data, m_allocator);
-        // Check matching stage
         CHECK(refl.m_entrypoint.stage == stage);
         LOG_RUNTIME(Renderer, debug, "### Shader Info###\n{}", refl.DbgDumpShaderInfo());
-        shaders.push_back(m_device->CreateShaderModule({ .source = data }));
+        auto& module = shaders.emplace_back(m_device->CreateShaderModule({ .source = data }));
+        module->DebugSetObjectName(shader_path.string().c_str());
         // In BindShader we have already guaranteed these to be unique per stage
         stages[(uint32_t)stage] = shaders.size() - 1;        
         pso_stages.push_back({
             .desc = {.stage = stage, .entry_point = refl.m_entrypoint.name.c_str() },
-            .shader_module = shaders.back()
+            .shader_module = module
         });
     }
     // Check variable bindings to be consistent across stages
@@ -483,8 +493,14 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         tracked.desc_layouts.push_back(m_device->CreateDescriptorSetLayout(
             { .bindings = { set_bindings.cbegin() + i, set_bindings.cbegin() + j } }
         ));
+        tracked.desc_layouts.back()->DebugSetObjectName(
+            fmt::format("Descriptor Set Layout {} of {} [{}]", set, tracked.name, pass).c_str()
+        );
         tracked.desc_sets.push_back(m_descPool->CreateDescriptorSet(tracked.desc_layouts.back()));
         auto& ds = tracked.desc_sets.back();
+        ds->DebugSetObjectName(
+            fmt::format("Descriptor Set {} of {} [{}]", set, tracked.name, pass).c_str()
+        );
         tracked.p_desc_sets.push_back(ds.Get());
         // Update bindings
         LOG_RUNTIME(Renderer, debug, "Descriptor Set {} Bindings", set);
@@ -588,6 +604,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         // TODO Stencil?
     }
     tracked.pso = m_device->CreatePipelineState(pso_desc);
+    tracked.pso->DebugSetObjectName(fmt::format("PSO of {} [{}]", tracked.name, pass).c_str());
 }
 
 void Renderer::FinalizePSOs() {
@@ -603,6 +620,7 @@ void Renderer::FinalizePSOs() {
             bindings.push_back({ .type = type, .max_count = count });
         }
         m_descPool = m_device->CreateDescriptorPool({ bindings });
+        m_descPool->DebugSetObjectName("Renderer Descriptor Pool");
     }
     // Build PSOs for everything we need
     for (auto& pass : m_setup->trackedPasses) {
@@ -618,16 +636,30 @@ void Renderer::FinalizeResources() {
     // Optionally used to be actually waited on (inter-queue, etc), but will always be signaled
     for (PassHandle ord = 0; ord < m_setup->execution.size(); ord++) {
         auto& pass = m_setup->trackedPasses[m_setup->execution[ord]];
-        if (pass.has_cross_queue_dependent)
+        if (pass.has_cross_queue_dependent) {
             pass.waitSemaphore = m_device->CreateSemaphore(true);
+            pass.waitSemaphore->DebugSetObjectName(
+                fmt::format("Timeline Semaphore of {} [{}]", pass.name, pass.handle).c_str()
+            );
+        }
     }
     // !! TODO: Overlap transient resources to with non-overlapping lifetimes with aliasing
     for (auto& [handle, _] : m_setup->activeResources) {
         auto& res = m_setup->trackedResources[handle];
         res.desc.visit(
             // Owned
-            [&](RHIBufferDesc const& desc) { m_resources->resources[handle] = m_device->CreateBuffer(desc);   },
-            [&](RHITextureDesc const& desc) { m_resources->resources[handle] = m_device->CreateTexture(desc); },
+            [&](RHIBufferDesc const& desc) {                
+                m_resources->resources[handle] = m_device->CreateBuffer(desc);
+                DerefResource(handle).Get<RHIBuffer*>()->DebugSetObjectName(
+                    fmt::format("Transient Buffer {} [{}]", res.name, handle).c_str()
+                );
+            },
+            [&](RHITextureDesc const& desc) {
+                m_resources->resources[handle] = m_device->CreateTexture(desc);
+                DerefResource(handle).Get<RHITexture*>()->DebugSetObjectName(
+                    fmt::format("Transient Texture {} [{}]", res.name, handle).c_str()
+                );
+            },
             // Borrowed
             [&](RHIDeviceObjectHandle<RHIBuffer> const& hdl) { m_resources->resources[handle] = hdl; },
             [&](RHIDeviceObjectHandle<RHITexture> const& hdl) { m_resources->resources[handle] = hdl; }

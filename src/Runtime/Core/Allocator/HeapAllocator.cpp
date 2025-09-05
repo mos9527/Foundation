@@ -1,5 +1,6 @@
 #include "HeapAllocator.hpp"
-using namespace Foundation::Core;
+
+namespace Foundation::Core {
 template<typename Counter>
 pointer HeapAllocator<Counter>::Allocate(size_type size) {
     void* p;
@@ -40,3 +41,4 @@ void HeapAllocator<Counter>::Deallocate(pointer ptr) {
 
 template class HeapAllocator<CounterSingleThreaded>;
 template class HeapAllocator<CounterMultiThreaded>;
+}

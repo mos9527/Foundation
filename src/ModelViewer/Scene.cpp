@@ -44,8 +44,8 @@ namespace Foundation {
         return ihdl;
     }
     template<typename Instance>
-    void Scene::UpdateInstance(SceneHandle instance, SceneHandle primitive, Instance const& idata) {
-        auto [sz, off] = m_data.QueryInstanceDataSizeAndOffset(instance);
+    void Scene::UpdateInstance(SceneHandle ihdl, SceneHandle primitive, Instance const& idata) {
+        auto [sz, off] = m_data.QueryInstanceDataSizeAndOffset(ihdl);
         InstanceMetadata instance{
             .primitiveOffset = m_data.QueryPrimitiveDataSizeAndOffset(primitive).second
         };
@@ -70,7 +70,7 @@ namespace Foundation {
     void Scene::UpdateGlobal(Global const& gdata) {
         size_t gsize = sizeof(GlobalMetadata) + sizeof(uint64_t) * m_instanceOffsets.size() + sizeof(gdata);
         CHECK(gsize <= m_data.GetGlobalDataBuffer()->m_desc.size && "Global data overflow");
-        uint8_t* data = m_data.GetGlobalDataBuffer()->Map();
+        uint8_t* data = reinterpret_cast<uint8_t*>(m_data.GetGlobalDataBuffer()->Map());
         std::memcpy(data, &gdata, sizeof(gdata));
         data += sizeof(gdata);
         GlobalMetadata meta{

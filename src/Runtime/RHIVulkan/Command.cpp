@@ -25,6 +25,15 @@ VulkanCommandPool::VulkanCommandPool(const VulkanDevice& device, PoolDesc const&
     CHECK(m_commandPool != nullptr && "failed to create Vulkan command pool");
 }
 
+void VulkanCommandPool::DebugSetObjectName(const char* name) {
+    VkCommandPool handle = *m_commandPool;
+    m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
+        .objectType = vk::ObjectType::eCommandPool,
+        .objectHandle = (uint64_t)(handle),
+        .pObjectName = name
+        });
+}
+
 RHICommandPoolScopedHandle<RHICommandList> VulkanCommandPool::CreateCommandList() {
     return { this, m_storage.CreateObject<VulkanCommandList>(*this) };
 }
@@ -399,4 +408,13 @@ RHICommandList& VulkanCommandList::DebugInsertMarker(const char* message){
 RHICommandList& VulkanCommandList::DebugEnd() {
     m_commandBuffer.endDebugUtilsLabelEXT();
     return *this;
+}
+
+void VulkanCommandList::DebugSetObjectName(const char* name) {
+    VkCommandBuffer handle = *m_commandBuffer;
+    m_commandPool.GetDevice().GetVkDevice().setDebugUtilsObjectNameEXT({
+        .objectType = vk::ObjectType::eCommandBuffer,
+        .objectHandle = (uint64_t)(handle),
+        .pObjectName = name
+        });
 }

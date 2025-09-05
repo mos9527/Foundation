@@ -75,3 +75,12 @@ uint32_t VulkanSwapchain::GetNextImage(uint64_t timeout_ns, RHIDeviceObjectHandl
     }
     return index;
 }
+
+void VulkanSwapchain::DebugSetObjectName(const char* name) {
+    VkSwapchainKHR handle = *m_swapchain;
+    m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
+        .objectType = vk::ObjectType::eSwapchainKHR,
+        .objectHandle = (uint64_t)(handle),
+        .pObjectName = name
+        });
+}

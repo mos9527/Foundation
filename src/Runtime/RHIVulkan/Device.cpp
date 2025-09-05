@@ -346,6 +346,14 @@ VulkanDeviceFence::VulkanDeviceFence(const VulkanDevice& device, bool signaled)
     m_fence(vk::raii::Fence(device.GetVkDevice(), vk::FenceCreateInfo{
         .flags = signaled ? vk::FenceCreateFlagBits::eSignaled : vk::FenceCreateFlags{}
     }, device.GetVkAllocatorCallbacks())) {}
+void VulkanDeviceFence::DebugSetObjectName(const char* name) {
+    VkFence handle = *m_fence;
+    m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
+        .objectType = vk::ObjectType::eFence,
+        .objectHandle = (uint64_t)(handle),
+        .pObjectName = name
+        });
+}
 
 RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> VulkanDevice::CreateSemaphore(bool is_timeline)
 {
@@ -419,6 +427,15 @@ void VulkanDevice::WaitForTimelineSemaphores(Core::StlSpan<const std::pair<RHIDe
         .pValues = vk_values.data()
     }, timeout);
     CHECK(res == vk::Result::eSuccess && "failed to wait for semaphores");
+}
+
+void VulkanDevice::DebugSetObjectName(const char* name) {
+    VkDevice handle = *m_device;
+    m_device.setDebugUtilsObjectNameEXT({
+        .objectType = vk::ObjectType::eDevice,
+        .objectHandle = (uint64_t)(handle),
+        .pObjectName = name
+        });
 }
 
 void VulkanDeviceQueue::WaitIdle() const {
@@ -496,6 +513,15 @@ void VulkanDeviceQueue::Present(PresentDesc const& desc) const {
     CHECK(res == vk::Result::eSuccess && "failed to present");
 }
 
+void VulkanDeviceQueue::DebugSetObjectName(const char* name) {
+    VkQueue handle = *m_queue;
+    m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
+        .objectType = vk::ObjectType::eQueue,
+        .objectHandle = (uint64_t)(handle),
+        .pObjectName = name
+        });
+}
+
 RHIDeviceScopedObjectHandle<RHIBuffer> VulkanDevice::CreateBuffer(RHIBufferDesc const& desc) {
     return { this, m_storage.CreateObject<VulkanBuffer>(*this, desc) };
 }
@@ -514,6 +540,15 @@ RHITexture* VulkanDevice::GetImage(Handle handle) const {
 }
 void VulkanDevice::DestroyImage(Handle handle) {
     m_storage.DestroyObject(handle);
+}
+
+void VulkanDeviceDescriptorSetLayout::DebugSetObjectName(const char* name) {
+    VkDescriptorSetLayout handle = *m_layout;
+    m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
+        .objectType = vk::ObjectType::eDescriptorSetLayout,
+        .objectHandle = (uint64_t)(handle),
+        .pObjectName = name
+        });
 }
 
 VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDevice& device, RHIDeviceDescriptorSetLayoutDesc const& desc)
@@ -561,6 +596,15 @@ void VulkanDevice::DestroyDescriptorPool(Handle handle) {
     m_storage.DestroyObject(handle);
 }
 
+
+void VulkanDeviceSampler::DebugSetObjectName(const char* name) {
+    VkSampler handle = *m_sampler;
+    m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
+        .objectType = vk::ObjectType::eSampler,
+        .objectHandle = (uint64_t)(handle),
+        .pObjectName = name
+        });
+}
 
 VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, RHIDeviceSampler::SamplerDesc const& desc):
     RHIDeviceSampler(device, desc), m_device(device) {

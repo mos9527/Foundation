@@ -39,15 +39,15 @@ namespace Foundation::Core {
         /// <summary>
         /// No-op. No memory is modified with this operation.
         /// </summary>
-        inline void Deallocate(pointer ptr) { /* nop */ }
+        inline void Deallocate(pointer ptr) override { /* nop */ }
         /// <summary>
         /// No-op. No memory is modified with this operation.
         /// </summary>
-        inline void Deallocate(pointer ptr, size_type size) {  /* nop */ }
+        inline void Deallocate(pointer ptr, size_type size) override {  /* nop */ }
         /// <summary>
         /// Unsupported. Throws std::runtime_error when invoked.
         /// </summary>
-        inline pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) {
+        inline pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) override {
             throw std::runtime_error("StackAllocator does not support reallocation");
         }
         inline size_type GetUsedMemory() const noexcept override {
