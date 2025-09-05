@@ -3,12 +3,16 @@
 namespace Foundation::Rendering {
     /// <summary>
     /// Creates a full-screen triangle pass that writes to the current backbuffer.
+    ///
+    /// setup() is called once during setup phase of the pass, after a fullscreen vertex stage is bound.
+    /// record() is called once per frame during execution phase of the pass, after the pipeline is set.
     /// </summary>    
-    template<typename FSetup>
+    template<typename FSetup, typename FRecord>
     inline auto* createPSFullscreenPass(
         Renderer* r,
         std::string const& name,        
-        FSetup&& setup
+        FSetup&& setup,
+        FRecord&& record
     ) {
         return createPass(r, name, RHIDevicePipelineType::Graphics,
             [=](PassHandle self, Renderer* r) {
@@ -19,10 +23,11 @@ namespace Foundation::Rendering {
                 r->BindShader(self, RHIShaderStageBits::Vertex, "data/shaders/PSFullscreen_vertMain.spirv");
                 setup(self, r);
             },
-            [](PassHandle self, Renderer* r, RHI::RHICommandList* cmd) {
+            [=](PassHandle self, Renderer* r, RHI::RHICommandList* cmd) {
                 auto const& img_wh = r->GetSwapchainExtent();
                 r->CmdBeginGraphics(self, cmd, img_wh, {}, {});
                 r->CmdSetPipeline(self, cmd);
+                record(self, r, cmd);
                 cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
                     .SetScissor(0, 0, img_wh.x, img_wh.y);
                 cmd->Draw(3);
@@ -45,7 +50,8 @@ namespace Foundation::Rendering {
                 r->BindTextureSampler(self, copy_sampler, "sampler");
                 r->BindTextureSRV(self, copy_source, "srcTexture", { .format = RHIResourceFormat::R8G8B8A8_UNORM });
                 r->BindShader(self, RHIShaderStageBits::Fragment, "data/shaders/PSCopy_fragMain.spirv");
-            }
+            },
+            [](PassHandle, Renderer*, RHI::RHICommandList* cmd) {}
         );
     }
 }

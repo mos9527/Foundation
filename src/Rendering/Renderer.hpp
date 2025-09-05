@@ -371,7 +371,7 @@ namespace Foundation::Rendering {
         /// Bind points are effectively shader variable names, which will be automatically dereferenced.
         /// </summary>
         /// <returns>Opaque handle value that can be used by CmdSetPushConstant to set data at Record time.</returns>
-        ResourceHandle BindPushConstant(
+        void BindPushConstant(
             PassHandle pass, RHIShaderStage stage,
             size_t offset, size_t size
         );
@@ -625,9 +625,9 @@ namespace Foundation::Rendering {
         /// <summary>
         /// Helper that sets a Push Constant range data with previously bound Push Constant handle
         /// </summary>        
-        void CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, ResourceHandle push_constant, size_t size, void* data);
-        template<typename T> inline void CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, ResourceHandle push_constant, T const& data) {
-            CmdSetPushConstant(pass, cmd, push_constant, sizeof(data), &data);
+        void CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, RHIShaderStage stage, size_t offset, StlSpan<const char> data);
+        template<typename T> inline void CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, RHIShaderStage stage, size_t offset, T const& data) {
+            CmdSetPushConstant(pass, cmd, stage, offset, { reinterpret_cast<const char*>(&data), sizeof(T) });
         }
 #pragma endregion
 

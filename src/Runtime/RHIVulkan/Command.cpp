@@ -155,16 +155,17 @@ RHICommandList& VulkanCommandList::DrawIndexed(uint32_t index_count, uint32_t in
     return *this;
 }
 
-RHICommandList& VulkanCommandList::PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Core::StlSpan<char> data)
+RHICommandList& VulkanCommandList::PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Core::StlSpan<const char> data)
 {
     CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
-    m_commandBuffer.pushConstants2(vk::PushConstantsInfo{
-        .layout = static_cast<VulkanPipelineState*>(pipeline)->GetVkPipelineLayout(),
-        .stageFlags = vkShaderStageFlagsFromRHIShaderStage(stage),
-        .offset = offset,
-        .size = static_cast<uint32_t>(data.size_bytes()),
-        .pValues = data.data()
-    });
+    vkCmdPushConstants(
+        *m_commandBuffer,
+        *static_cast<VulkanPipelineState*>(pipeline)->GetVkPipelineLayout(),
+        (VkShaderStageFlags)vkShaderStageFlagsFromRHIShaderStage(stage),
+        offset,
+        data.size(),
+        data.data()
+    );
     return *this;
 }
 

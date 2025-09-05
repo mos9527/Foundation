@@ -136,16 +136,15 @@ void Renderer::BindVertexInput(
     CHECK(m_state == State::Setup);
     m_setup->trackedPasses[pass].vertex_input = info;
 }
-ResourceHandle Renderer::BindPushConstant(
+void Renderer::BindPushConstant(
     PassHandle pass, RHIShaderStage stage,
     size_t offset, size_t size
 ) {
     CHECK(m_state == State::Setup);
     for (auto& [s, _, __] : m_setup->trackedPasses[pass].push_constants)
-        if (s == stage)
-            throw std::runtime_error("Shader stage already has Push Constants");
+        if (s & stage)
+            throw std::runtime_error("Some previous shader stage(s) already has Push Constants ranges");
     m_setup->trackedPasses[pass].push_constants.emplace_back(stage, offset, size);
-    return m_setup->trackedPasses[pass].push_constants.size() - 1;
 }     
 void Renderer::BindBufferUniform(
     PassHandle pass, ResourceHandle buffer,
@@ -988,13 +987,11 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd,
         });
     }
 }
-void Renderer::CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, ResourceHandle push_constant, size_t size, void* data)
+void Renderer::CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, RHIShaderStage stage, size_t offset, StlSpan<const char> data)
 {
     CHECK(m_state == State::Execute);
     auto& tpass = m_setup->trackedPasses[pass];
-    auto& [pc_stage, pc_offset, pc_size] = tpass.push_constants[push_constant];
-    CHECK_MSG(pc_size >= size, "Set value larger than speicified");
-    cmd->PushConstant(tpass.pso.Get(), pc_stage, pc_offset, { static_cast<char*>(data), size });
+    cmd->PushConstant(tpass.pso.Get(), stage, (uint32_t)offset, data);
 }
 void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) {
     CHECK(m_state == State::Execute);
