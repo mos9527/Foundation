@@ -12,7 +12,6 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 add_library(
     Foundation_Rendering ${SOURCES} ${INCLUDES}
 )
-add_subdirectory(Shaders)
 
 target_link_libraries(Foundation_Rendering PUBLIC Foundation_Runtime)
 target_include_directories(
@@ -20,3 +19,7 @@ target_include_directories(
 	PRIVATE
     ..
 )
+
+add_subdirectory(Shaders)
+add_dependencies(Foundation_Rendering Shader_PSFullscreen)
+add_dependencies(Foundation_Rendering Shader_PSCopy)

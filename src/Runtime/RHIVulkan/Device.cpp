@@ -147,7 +147,7 @@ void VulkanDevice::DebugLogDeviceInfo() const {
         "    limits:\n"
         "        maxMemoryAllocationCount: {}\n"
         "        bufferImageGranularity: {}\n"
-        "        nonCoherentAtomSize: {}\n",
+        "        nonCoherentAtomSize: {}",
         properties.driverVersion,
         properties.vendorID,
         properties.deviceID,

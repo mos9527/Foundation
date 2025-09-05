@@ -19,8 +19,8 @@ protected:
             RHIDevicePipelineType::Graphics,
             [=](PassHandle self, Renderer* r) {
                 r->BindTextureRTV(self, gb_albedo, { .format = RHIResourceFormat::R8G8B8A8_UNORM });
-                r->BindShader(self, RHIShaderStageBits::Vertex, ".derived/shaders/GBuffer_vertMain.spirv");
-                r->BindShader(self, RHIShaderStageBits::Fragment, ".derived/shaders/GBuffer_fragMain.spirv");
+                r->BindShader(self, RHIShaderStageBits::Vertex, "data/shaders/Mesh_vertMain.spirv");
+                r->BindShader(self, RHIShaderStageBits::Fragment, "data/shaders/Mesh_fragMain.spirv");
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd) {
                 auto const& img_wh = r->DerefResource(gb_albedo).Get<RHITexture*>()->m_desc.extent;
@@ -34,7 +34,7 @@ protected:
         );
         createPSBackbufferBlitPass(m_renderer.get(), "Backbuffer Blit", cp_sampler, gb_albedo);
     }
-    virtual void OnSwapchainResize() override {        
+    virtual void OnSwapchainResize() override {
         InitializeRenderer();
     }
 };

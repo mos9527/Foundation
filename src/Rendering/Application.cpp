@@ -13,15 +13,18 @@ void Application::CreateSwapchain() {
     });
 }
 void Application::InitializeRenderer() {
+    LOG_RUNTIME(Application, info, "** Renderer Setup **");
     m_renderer = ConstructUnique<Renderer>(m_alloc_renderer.Ptr(), m_device, m_swapchain, m_alloc_renderer.Ptr());
     m_renderer->BeginSetup();
     RendererSetup();
     m_renderer->EndSetup();
 }
 void Application::InitializeInternal(ApplicationInitDesc const& desc) {
+    LOG_RUNTIME(Application, info, "** Application Setup **");
+    LOG_RUNTIME(Application, info, "Dir: {}", std::filesystem::current_path().string());
     m_window = m_app.CreateWindow(desc.windowSize.x, desc.windowSize.y, desc.windowTitle);
     m_device = m_rhi->CreateDevice(m_rhi->EnumerateDevices()[desc.deviceIndex], &m_window);
-    CreateSwapchain();
+    CreateSwapchain();    
 }
 void Application::RunForever() {
     CHECK_MSG(m_rhi, "No RHI backend initialized! Call Initialize<Backend>() first.");

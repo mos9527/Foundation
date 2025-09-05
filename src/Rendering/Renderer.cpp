@@ -356,6 +356,7 @@ void Renderer::CullPasses(PassHandle epilogue) {
         // No dependency from any passes
         // Execute only the epilouge
         m_setup->execution.push_back(epilogue);
+        m_setup->trackedPasses[epilogue].used = true;
     }
     m_setup->epilogue = epilogue;
     for (PassHandle ord = 0; ord < m_setup->execution.size(); ord++) {
@@ -377,7 +378,8 @@ void Renderer::CullPasses(PassHandle epilogue) {
             }
         }
     }
-    LOG_RUNTIME(Renderer, debug, "## Render Graph Execution Order ##\n{}", DbgDumpActivePasses());
+    LOG_RUNTIME(Renderer, debug, "** Render Graph GraphViz **\n{}", DbgDumpGraphviz());
+    LOG_RUNTIME(Renderer, debug, "** Render Graph Execution Order **\n{}", DbgDumpActivePasses());
 }
 void Renderer::BuildPipelineState(PassHandle pass) {
     auto& tracked = m_setup->trackedPasses[pass];
@@ -385,7 +387,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     // Load shader bytecode
     if (!tracked.shaders.size())
         return; // Pass with no shaders
-    LOG_RUNTIME(Renderer, debug, "## Building PSO for {} [{}] ##", tracked.name, pass);
+    LOG_RUNTIME(Renderer, debug, "** Building PSO for {} [{}] **", tracked.name, pass);
     StlVector<char> data(m_allocator);
     StlVector<RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(m_allocator);
     StlVector<ShaderReflection> reflections(m_allocator);
@@ -401,7 +403,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         // Verifiy shader stage
         auto const& refl = reflections.emplace_back(data, m_allocator);
         CHECK_MSG(refl.m_entrypoint.stage == stage, "Shader entry point stage mismatch. Expected {}, got {}", stage, refl.m_entrypoint.stage);
-        LOG_RUNTIME(Renderer, debug, "### Shader Info###\n{}", refl.DbgDumpShaderInfo());
+        LOG_RUNTIME(Renderer, debug, "** Shader Info**\n{}", refl.DbgDumpShaderInfo());
         auto& module = shaders.emplace_back(m_device->CreateShaderModule({ .source = data }));
         module->DebugSetObjectName(shader_path.string().c_str());
         // In BindShader we have already guaranteed these to be unique per stage
@@ -418,8 +420,10 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     bool use_pushconstants = false;
     for (size_t i = 0; i < reflections.size(); i++) {
         auto const& refl = reflections[i];        
-        if (refl.m_pushConstants.size())
+        if (refl.m_pushConstants.size()) {
             use_pushconstants = true;        
+            CHECK_MSG(refl.m_pushConstants.size() == 1, "Shader uses more than Push Constant block. This is not accepted by most drivers.");
+        }
         for (auto& bind : refl.m_bindings) {
             CHECK_MSG(
                 bind.name.size(), 
@@ -504,6 +508,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         tracked.desc_layouts.back()->DebugSetObjectName(
             fmt::format("Descriptor Set Layout {} of {} [{}]", set, tracked.name, pass).c_str()
         );
+        CHECK_MSG(m_descPool.IsValid(), "Shader declared bindings, but the pass {} didn't provide any.", tracked.name);
         tracked.desc_sets.push_back(m_descPool->CreateDescriptorSet(tracked.desc_layouts.back()));
         auto& ds = tracked.desc_sets.back();
         ds->DebugSetObjectName(
@@ -620,7 +625,7 @@ void Renderer::FinalizePSOs() {
     if (m_setup->binding_counts.size()) {
         StlVector<RHIDeviceDescriptorPool::PoolDesc::Binding> bindings(m_allocator);
         bindings.reserve(m_setup->binding_counts.size());
-        LOG_RUNTIME(Renderer, debug, "## Descriptor Pool ##");
+        LOG_RUNTIME(Renderer, debug, "** Descriptor Pool **");
         for (auto& [type, count] : m_setup->binding_counts) {
             LOG_RUNTIME(Renderer, debug, "\t{}: {}", type, count);
             bindings.push_back({ .type = type, .max_count = count });
@@ -742,6 +747,8 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) {
     // These are always global i.e. at most one per buffer per pass.
     for (auto [hdl, access, stage] : pass.bufferUsages) {
         auto& tres = m_setup->trackedResources[hdl];
+        if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage)
+            continue;
         auto& res = DerefResource(hdl).Get<RHIBuffer*>();
         cmd->SetBufferTransition(
             res,
@@ -768,7 +775,7 @@ bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd) {
             if (other != kInvalidHandle) {
                 auto& opass = m_setup->trackedPasses[other];
                 if (opass.queue != pass.queue) {
-                    CHECK_MSG(opass.waitSemaphore.IsValid(), "Pass {} [{}] is not valid", opass.name, other);
+                    CHECK_MSG(opass.waitSemaphore.IsValid(), "Pass {} [{}] is not valid to be waited on", opass.name, other);
                     // Wait on the producer pass's semaphore                       
                     waits.emplace_back(opass.waitSemaphore.Get(), SEM_COUNTER(opass.ord));
                 }
@@ -800,11 +807,19 @@ bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd) {
             // Submit to appropriate queue
             cmd->End();
             RHIDeviceQueue* queue = pass.queue == RHIDevicePipelineType::Graphics ? m_gfxQueue : m_compQueue;
-            queue->Submit({
-                .timeline_waits = waits,
-                .timeline_signals = {{{ pass.waitSemaphore.Get(), SEM_COUNTER(pass.ord) }}},
-                .cmd_lists = { cmd },
-            });
+            if (pass.has_cross_queue_dependent) {
+                queue->Submit({
+                    .timeline_waits = waits,
+                    .timeline_signals = {{{ pass.waitSemaphore.Get(), SEM_COUNTER(pass.ord) }}},
+                    .cmd_lists = { cmd },
+                    });
+            }
+            else {
+                queue->Submit({
+                    .timeline_waits = waits,                   
+                    .cmd_lists = { cmd },
+                });
+            }
             return true;
         }
         else {
@@ -963,6 +978,9 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd,
         });
     }
     else {
+        CHECK_MSG(
+            rtvs.size(), "No RTVs or DSV bound for graphics pass {} [{}]", tpass.name, pass
+        )
         cmd->BeginGraphics({
             .color_attachments = rtvs,            
             .width = extent.x,
