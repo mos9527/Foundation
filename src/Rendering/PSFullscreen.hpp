@@ -29,4 +29,23 @@ namespace Foundation::Rendering {
                 cmd->EndGraphics();
             });        
     }
+    /// <summary>
+    /// Creates a full-screen triangle pass that copies from a source texture to the backbuffer.
+    /// </summary>
+    inline auto* createPSBackbufferBlitPass(
+        Renderer* r,
+        std::string const& name,
+        ResourceHandle copy_sampler,
+        ResourceHandle copy_source
+    ) {
+        return createPSFullscreenPass(
+            r,
+            name,
+            [=](PassHandle self, Renderer* r) {
+                r->BindTextureSampler(self, copy_sampler, "sampler");
+                r->BindTextureSRV(self, copy_source, "srcTexture", { .format = RHIResourceFormat::R8G8B8A8_UNORM });
+                r->BindShader(self, RHIShaderStageBits::Fragment, ".derived/shaders/PSCopy_fragMain.spirv");
+            }
+        );
+    }
 }

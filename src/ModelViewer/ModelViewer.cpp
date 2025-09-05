@@ -51,15 +51,7 @@ void createRenderPasses() {
             cmd->EndGraphics();
         }
     );
-    createPSFullscreenPass(
-        g_renderer.get(),
-        "Blit Output",
-        [=](PassHandle self, Renderer* r) {
-            r->BindTextureSampler(self, cp_sampler, "sampler");
-            r->BindTextureSRV(self, gb_albedo, "srcTexture", { .format = RHIResourceFormat::R8G8B8A8_UNORM });
-            r->BindShader(self, RHIShaderStageBits::Fragment, ".derived/shaders/PSCopy_fragMain.spirv");
-        }
-    );
+    createPSBackbufferBlitPass(g_renderer.get(), "Backbuffer Blit", cp_sampler, gb_albedo);
     g_renderer->EndSetup();
 }
 
