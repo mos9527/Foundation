@@ -351,6 +351,8 @@ namespace Foundation::Rendering {
          * @brief Create a render pass from a RenderPass* implementation and add it to the render graph.
          *
          * This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
+         * 
+         * @ref createPassImpl() should be generally preferred over this. 
          */
         template<typename T, typename ...Args> requires std::is_base_of_v<RenderPass, T>
         T* CreatePassImpl(std::string const& name, RHIDeviceQueueType queue, Args&&... args) {
@@ -374,6 +376,8 @@ namespace Foundation::Rendering {
          * NOTE: Prefer using this over CreatePass<T>() for stateless passes
          *
          * This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
+         * 
+         * @ref createPass() should be generally preferred over this.
          */
         template<typename FSetup, typename FRecord>
         LambdaPass<FSetup, FRecord>* CreatePass(std::string const& name, RHIDeviceQueueType queue, FSetup&& setup, FRecord&& record) {
@@ -388,6 +392,8 @@ namespace Foundation::Rendering {
          * All resources created by a pass that is not culled will be created, regardless of usage.
          *
          * Resources can be imported by passing in RHIDeviceObjectHandle<RHIBuffer> or RHIDeviceObjectHandle<RHITexture>.
+         * 
+         * @ref createResource() should be generally preferred over this.
          */
         template<typename T>
         ResourceHandle CreateResource(std::string const& name, T const& desc) {
@@ -401,6 +407,8 @@ namespace Foundation::Rendering {
          *
          * This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().       
          * No allocation is performed until EndSetup() is called.
+         * 
+         * @ref createSampler() should be generally preferred over this.
          */
         ResourceHandle CreateSampler(std::string const& name, RHIDeviceSampler::SamplerDesc const& desc);
 #pragma region Resource Binding
