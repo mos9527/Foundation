@@ -6,6 +6,23 @@ using namespace Foundation::RHI;
 const vk::SwapchainCreateInfoKHR VulkanSwapchain::GetSwapchainCreateInfo(SwapchainDesc const& desc) {
     auto const& surface = m_device.GetVkSurface();
     auto surface_caps = m_device.GetVkPhysicalDevice().getSurfaceCapabilitiesKHR(surface);
+    auto present_modes = m_device.GetVkPhysicalDevice().getSurfacePresentModesKHR(surface);
+    // Validate requested parameters
+    CHECK_MSG(
+        desc.extents.x >= surface_caps.minImageExtent.width && desc.extents.x <= surface_caps.maxImageExtent.width,
+        "Swapchain extent width {} not supported (min {}, max {})",
+        desc.extents.x, surface_caps.minImageExtent.width, surface_caps.maxImageExtent.width
+    );
+    CHECK_MSG(
+        desc.extents.y >= surface_caps.minImageExtent.height && desc.extents.y <= surface_caps.maxImageExtent.height,
+        "Swapchain extent height {} not supported (min {}, max {})",
+        desc.extents.y, surface_caps.minImageExtent.height, surface_caps.maxImageExtent.height
+    );
+    CHECK_MSG(
+        std::find(present_modes.begin(), present_modes.end(), GetVulkanPresentModeFromSwapchainDesc(desc.present_mode)) != present_modes.end(),
+        "Swapchain present mode {} not supported",
+        (uint32_t)desc.present_mode
+    );
     vk::SwapchainCreateInfoKHR create_info{
         .surface = surface,
         .minImageCount = desc.buffer_count,
@@ -34,8 +51,7 @@ const vk::SwapchainCreateInfoKHR VulkanSwapchain::GetSwapchainCreateInfo(Swapcha
     return create_info;
 }
 void VulkanSwapchain::Instantiate() {
-    if (!m_device.GetVkQueues() || !m_device.GetVkQueues()->CanPresent())
-        throw std::runtime_error("invalid device or device does not support presentation");
+    CHECK_MSG(m_device.GetVkQueues() && m_device.GetVkQueues()->CanPresent(), "Device does not have a present-capable queue");
     auto const& device = m_device.GetVkDevice();
     auto create_info = GetSwapchainCreateInfo(m_desc);
     m_images.Clear(), m_images_ptrs.clear();

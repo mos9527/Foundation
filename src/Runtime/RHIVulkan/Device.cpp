@@ -95,11 +95,13 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, const vk::raii::Physica
     }
     vk::StructureChain<
         vk::PhysicalDeviceFeatures2,
+        vk::PhysicalDeviceVulkan11Features,
         vk::PhysicalDeviceVulkan12Features,
         vk::PhysicalDeviceVulkan13Features,
         vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT       
     > featureChain = {
         {.features = {.samplerAnisotropy = true } },            // vk::PhysicalDeviceFeatures2
+        {.shaderDrawParameters = true },                        // vk::PhysicalDeviceVulkan11Features
         {.shaderFloat16 = true, .timelineSemaphore = true },    // vk::PhysicalDeviceVulkan12Features
         {.synchronization2 = true, .dynamicRendering = true },  // vk::PhysicalDeviceVulkan13Features
         {.extendedDynamicState = true }                         // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT        

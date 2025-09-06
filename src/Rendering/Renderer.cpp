@@ -697,7 +697,7 @@ void Renderer::FinalizeResources() {
     // Optionally used to be actually waited on (inter-queue, etc), but will always be signaled
     for (PassHandle ord = 0; ord < m_setup->execution.size(); ord++) {
         auto& pass = m_setup->trackedPasses[m_setup->execution[ord]];
-        if (m_desc.async) {
+        if (m_desc.async && pass.has_cross_queue_dependent) {
             pass.asyncSemaphore = m_device->CreateSemaphore(true);
             pass.asyncSemaphore->DebugSetObjectName(
                 fmt::format("Timeline Semaphore of {} [{}]", pass.name, pass.handle).c_str()
@@ -926,7 +926,7 @@ void Renderer::Execute() {
     // Execute passes
     auto& passes = m_setup->trackedPasses;
     m_device->WaitForFences({ m_swaps[m_currentSwap].fence }, true, -1);    
-    uint32_t next_image;
+    uint32_t next_image = 0;
     if (m_desc.present)
         next_image = m_swapchain->GetNextImage(-1, m_swaps[m_currentSwap].present, {});    
     m_device->ResetFences({ m_swaps[m_currentSwap].fence });
@@ -1049,14 +1049,14 @@ void Renderer::Execute() {
         if (m_desc.present) {
             queue->Submit({
                 .waits = {{ m_swaps[m_currentSwap].present.Get() }},
-                .signals = {{ m_swaps[m_currentSwap].render.Get() }},
+                .signals = {{ m_swaps[next_image].render.Get() }},
                 .cmd_lists = {{ cmd }},
                 .fence = m_swaps[m_currentSwap].fence.Get()
                 });
             queue->Present({
                 .image_index = next_image,
                 .swapchain = m_swapchain.Get(),
-                .waits = {{ m_swaps[m_currentSwap].render.Get() }}
+                .waits = {{ m_swaps[next_image].render.Get() }}
                 });
         }
         else {           
