@@ -1,12 +1,12 @@
 #pragma once
 #include "Renderer.hpp"
 namespace Foundation::Rendering {
-    /// <summary>
-    /// Creates a full-screen triangle pass that writes to the current backbuffer.
-    ///
-    /// setup() is called once during setup phase of the pass, after a fullscreen vertex stage is bound.
-    /// record() is called once per frame during execution phase of the pass, after the pipeline is set.
-    /// </summary>    
+    /**
+     * @brief Creates a full-screen triangle pass that writes to the current backbuffer.
+     *
+     * setup() is called once during setup phase of the pass, after a fullscreen vertex stage is bound.
+     * record() is called once per frame during execution phase of the pass, after the pipeline is set.
+     */
     template<typename FSetup, typename FRecord>
     inline auto* createPSFullscreenPass(
         Renderer* r,
@@ -34,9 +34,9 @@ namespace Foundation::Rendering {
                 cmd->EndGraphics();
             });        
     }
-    /// <summary>
-    /// Creates a full-screen triangle pass that copies from a source texture to the backbuffer.
-    /// </summary>
+    /**
+     * @brief Creates a full-screen triangle pass that copies from a source texture to the backbuffer.
+     */
     inline auto* createPSBackbufferBlitPass(
         Renderer* r,
         std::string const& name,

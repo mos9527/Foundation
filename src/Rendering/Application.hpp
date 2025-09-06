@@ -16,9 +16,9 @@ namespace Foundation::Rendering {
         bool present{ true };
         bool asyncCompute{ true };
     };
-    /// <summary>
-    /// Lightweight template for a rendering application
-    /// </summary>
+    /**
+     * @brief Lightweight template for a rendering application
+     */
     class Application : public Native::Application {
     protected:
         ApplicationInitDesc m_desc;
@@ -37,37 +37,37 @@ namespace Foundation::Rendering {
         void CreateSwapchain();
         void InitializeInternal();
         void InitializeRenderer();
-        /// <summary>
-        /// Setup the renderer by creating passes, resources, and other configurations.
-        ///
-        /// This is invoked by InitializeRenderer()
-        /// within a Renderer::BeginSetup() and Renderer::EndSetup() clause.        
-        ///
-        /// Invoking BeginSetup, EndSetup here again is incorrect.
-        ///
-        /// Implementation that leave this empty will result in a warning log, and
-        /// no graphics work will be done.
-        ///
-        /// This should not be directly called.      
-        /// </summary>
+        /**
+         * @brief Setup the renderer by creating passes, resources, and other configurations.
+         *
+         * This is invoked by InitializeRenderer()
+         * within a Renderer::BeginSetup() and Renderer::EndSetup() clause.        
+         *
+         * Invoking BeginSetup, EndSetup here again is incorrect.
+         *
+         * Implementation that leave this empty will result in a warning log, and
+         * no graphics work will be done.
+         *
+         * This should not be directly called.      
+         */
         virtual void RendererSetup() {
             LOG_RUNTIME(GraphicsApplication, warn, "RendererSetup() not implemented!");
         }
-        /// <summary>
-        /// Action to take when the swapchain is resized e.g.
-        /// resize resources that depend on the swapchain size.
-        ///
-        /// Implementation may leave this empty if no action is needed.
-        /// </summary>
+        /**
+         * @brief Action to take when the swapchain is resized e.g.
+         * resize resources that depend on the swapchain size.
+         *
+         * Implementation may leave this empty if no action is needed.
+         */
         virtual void OnSwapchainResize() { InitializeRenderer(); }
         ~Application();
     public:
         Application() : Native::Application() {};
-        /// <summary>
-        /// Initialize the application with the specified RHI backend.
-        ///
-        /// This must be called before RunForever().
-        /// </summary>        
+        /**
+         * @brief Initialize the application with the specified RHI backend.
+         *
+         * This must be called before RunForever().
+         */
         template<typename Backend, typename... Args>
         void Initialize(ApplicationInitDesc const& desc = {}, Args&&... args) {
             // XXX: Backends are expected to take Allocator* as the first argument
@@ -81,11 +81,11 @@ namespace Foundation::Rendering {
         inline Renderer*  GetRenderer() { return m_renderer.get(); }
         inline Allocator* GetAllocator() { return m_alloc.Ptr(); }
         inline Allocator* GetRendererAllocator() { return m_alloc_renderer.Ptr(); }
-        /// <summary>
-        /// Run the main loop of the application.
-        ///
-        /// Swapchain resize, etc, is handled automatically.
-        /// </summary>
+        /**
+         * @brief Run the main loop of the application.
+         *
+         * Swapchain resize, etc, is handled automatically.
+         */
         void RunForever();
     };
 }

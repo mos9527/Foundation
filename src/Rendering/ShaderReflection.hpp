@@ -5,14 +5,14 @@
 namespace Foundation::Rendering {
     class ShaderReflection {
         Core::Allocator* m_allocator;        
-        /// <summary>
-        /// Parse SPIR-V shader code and populate reflection data.        
-        /// References:
-        ///     https://github.com/zeux/niagara/blob/master/src/shaders.cpp
-        ///     https://registry.khronos.org/SPIR-V/specs/1.0/SPIRV.pdf
-        ///     https://www.khronos.org/spirv/visualizer/
-        ///     https://shader-slang.org/slang-playground/
-        /// </summary>        
+        /**
+         * @brief Parse SPIR-V shader code and populate reflection data.        
+         * References:
+         *     https://github.com/zeux/niagara/blob/master/src/shaders.cpp
+         *     https://registry.khronos.org/SPIR-V/specs/1.0/SPIRV.pdf
+         *     https://www.khronos.org/spirv/visualizer/
+         *     https://shader-slang.org/slang-playground/
+         */
         void ParseSPIRV(Core::StlSpan<const char> bytecode);
         void Sort();
     public:

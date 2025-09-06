@@ -1,52 +1,52 @@
 #pragma once
 #include "Allocator.hpp"
 namespace Foundation::Core {
-	/// <summary>
-    /// Enables fast, sequential memory allocation without frees from a pre-allocated memory block.
-    /// Also known as an Arena or Bump Allocator.      
-	/// </summary>
+	/**
+	 * @brief Enables fast, sequential memory allocation without frees from a pre-allocated memory block.
+	 * Also known as an Arena or Bump Allocator.      
+	 */
     template<typename Counter> class StackAllocator : public Allocator {
 	public:
         StackAllocator() {};
         StackAllocator(Arena arena) {
             Reset(arena);
 		}            
-        /// <summary>
-        /// Resets the stack allocator to the initial state, allowing for reuse of the memory block (Arena)
-        /// </summary>
+        /**
+         * @brief Resets the stack allocator to the initial state, allowing for reuse of the memory block (Arena)
+         */
         void Reset(Arena arena) {
             m_memory = arena.memory;
             m_current = reinterpret_cast<size_type>(arena.memory);
             m_end = reinterpret_cast<size_type>(arena.memory) + arena.size;
             m_used = 0;
         }
-        /// <summary>
-        /// Resets the stack allocator to a non-allocated state.
-        /// </summary>
+        /**
+         * @brief Resets the stack allocator to a non-allocated state.
+         */
         void Reset() {
             Reset({ nullptr, 0 });
         }
-		/// <summary>
-        /// Allocates a block of memory of the specified size.
-        /// If the requested size exceeds the available memory within the arena, returns nullptr.
-		/// </summary>			
+		/**
+		 * @brief Allocates a block of memory of the specified size.
+		 * If the requested size exceeds the available memory within the arena, returns nullptr.
+		 */
 		pointer Allocate(size_type size) override;
-		/// <summary>
-        /// Allocates a block of memory of the specified size with alignment.
-        /// If the requested size exceeds the available memory within the arena, returns nullptr.
-		/// </summary>		
+		/**
+		 * @brief Allocates a block of memory of the specified size with alignment.
+		 * If the requested size exceeds the available memory within the arena, returns nullptr.
+		 */
 		pointer Allocate(size_type size, size_type alignment) override;
-        /// <summary>
-        /// No-op. No memory is modified with this operation.
-        /// </summary>
+        /**
+         * @brief No-op. No memory is modified with this operation.
+         */
         inline void Deallocate(pointer ptr) override { /* nop */ }
-        /// <summary>
-        /// No-op. No memory is modified with this operation.
-        /// </summary>
+        /**
+         * @brief No-op. No memory is modified with this operation.
+         */
         inline void Deallocate(pointer ptr, size_type size) override {  /* nop */ }
-        /// <summary>
-        /// Unsupported. Throws std::runtime_error when invoked.
-        /// </summary>
+        /**
+         * @brief Unsupported. Throws std::runtime_error when invoked.
+         */
         inline pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) override {
             throw std::runtime_error("StackAllocator does not support reallocation");
         }
@@ -60,16 +60,16 @@ namespace Foundation::Core {
         Counter m_current{};
         Counter m_used{};
 	};
-    /// <summary>
-    /// Defines a type alias for StackAllocator using CounterSingleThreaded as the counter type.
-    /// Allows for single-threaded allocations. Concurrent access is undefined behavior.
-    /// Allocations being made through this allocator are tracked.
-    /// </summary>
+    /**
+     * @brief Defines a type alias for StackAllocator using CounterSingleThreaded as the counter type.
+     * Allows for single-threaded allocations. Concurrent access is undefined behavior.
+     * Allocations being made through this allocator are tracked.
+     */
     using StackAllocatorSingleThreaded = StackAllocator<CounterSingleThreaded>;
-    /// <summary>
-    /// Defines a type alias for StackAllocator that uses atomic counter.
-    /// Allows for multi-threaded allocations. Concurrent access is synchronized (atomic).
-    /// Allocations being made through this allocator are tracked.
-    /// </summary>
+    /**
+     * @brief Defines a type alias for StackAllocator that uses atomic counter.
+     * Allows for multi-threaded allocations. Concurrent access is synchronized (atomic).
+     * Allocations being made through this allocator are tracked.
+     */
     using StackAllocatorMultiThreaded = StackAllocator<CounterMultiThreaded>;
 }

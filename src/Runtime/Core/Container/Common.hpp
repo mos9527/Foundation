@@ -40,9 +40,9 @@ namespace Foundation::Core {
     public:
         using std::span<T>::span; 
         StlSpan() = default;
-        /// <summary>
-        /// Relaxed ctor for pointer-aliasing types
-        /// </summary>
+        /**
+         * @brief Relaxed ctor for pointer-aliasing types
+         */
         template<typename U> requires
             (sizeof(std::remove_reference<T>) == sizeof(std::remove_reference<U>) &&
             std::is_convertible_v<U*, T*>)
@@ -53,21 +53,21 @@ namespace Foundation::Core {
         /// For now you'll be making sandwhiches instead.
         /// ( i.e. StlSpan<const T>({ { 1, 2, 3 } }), StlSpan<T* const>({ { look_ma_a_single_pointer } })
             
-        /// <summary>
-        /// Shorthand for single l-value item
-        /// </summary>           
+        /**
+         * @brief Shorthand for single l-value item
+         */
         template<typename U> requires std::is_convertible_v<U*, T*>
         StlSpan(U& item) : StlSpan(&item, 1) {}
 
-        /// <summary>
-        /// Relaxed ctor for C-style arrays
-        /// </summary>
+        /**
+         * @brief Relaxed ctor for C-style arrays
+         */
         template<typename U, size_t Size>
         StlSpan(U(&array)[Size]) : StlSpan(array, Size) {}
 
-        /// <summary>
-        /// Relaxed ctor for contiguous STL containers
-        /// </summary>            
+        /**
+         * @brief Relaxed ctor for contiguous STL containers
+         */
         template<typename U>
         StlSpan(U& array) : StlSpan(array.data(), array.size())
         {}

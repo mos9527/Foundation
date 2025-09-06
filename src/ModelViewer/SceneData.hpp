@@ -105,11 +105,11 @@ namespace Foundation {
         RHIDeviceObjectHandle<RHIBuffer> GetInstanceDataBuffer() const { return m_instanceData; }
         RHIDeviceObjectHandle<RHIBuffer> GetGlobalDataBuffer() const { return m_globalData; }
 
-        /// <summary>
-        /// Update GPU buffers with the latest data
-        /// This may involve resource synchronization and copying, unless no transfer is needed.
-        /// In which case, this is a no-op. 
-        /// </summary>
+        /**
+         * @brief Update GPU buffers with the latest data
+         * This may involve resource synchronization and copying, unless no transfer is needed.
+         * In which case, this is a no-op. 
+         */
         /// <param name="cmd">Command list to be potentially populated.</param>
         /// <returns>true if command list is populated. Otherwise false.</returns>
         bool Update(RHICommandList* cmd);

@@ -31,69 +31,69 @@ namespace Foundation::RHI {
         RHIBuffer(RHIDevice const& device, RHIBufferDesc const& desc)
             : m_device(device), m_desc(desc) {
         }
-        /// <summary>
-        /// Proxy object to provide generic sub-buffer allocation within a buffer.                
-        /// 
-        /// Implementations should guarantee thread-safety of the arena itself.          
-        /// </summary>
+        /**
+         * @brief Proxy object to provide generic sub-buffer allocation within a buffer.                
+         *
+         * Implementations should guarantee thread-safety of the arena itself.          
+         */
         struct Arena : public RHIObject {
             using Allocation = size_t;
-            /// <summary>
-            /// Allocates a sub-region of the buffer with the given size and alignment.            
-            /// </summary>
+            /**
+             * @brief Allocates a sub-region of the buffer with the given size and alignment.            
+             */
             /// <returns>An opaque handle representing the allocated sub-region. kInvalidHandle if allocation fails.</returns>            
             virtual Allocation Allocate(size_t size, size_t alignment) = 0;
-            /// <summary>
-            /// Frees a previously allocated sub-region of the buffer.
-            /// </summary>            
+            /**
+             * @brief Frees a previously allocated sub-region of the buffer.
+             */
             virtual void Free(Allocation allocation) = 0;
-            /// <summary>
-            /// Retrives the offset of a previously allocated sub-region of the buffer.
-            /// This is not a raw pointer - one may expect to use this in CPU copy commands
-            /// or GPU shader code, or an offest in mapped memory if the resource is CPU visible.
-            /// </summary>            
+            /**
+             * @brief Retrives the offset of a previously allocated sub-region of the buffer.
+             * This is not a raw pointer - one may expect to use this in CPU copy commands
+             * or GPU shader code, or an offest in mapped memory if the resource is CPU visible.
+             */
             virtual size_t GetOffset(Allocation alloc) const = 0;
-            /// <summary>
-            /// Retrives the size of a previously allocated sub-region of the buffer.
-            /// </summary>            
+            /**
+             * @brief Retrives the size of a previously allocated sub-region of the buffer.
+             */
             virtual size_t GetSize(Allocation alloc) const = 0;
-            /// <summary>
-            /// Resets the arena, freeing all CPU-tracked allocations.
-            /// </summary>
+            /**
+             * @brief Resets the arena, freeing all CPU-tracked allocations.
+             */
             virtual void Reset() = 0;
             virtual ~Arena() = default;
         };
-        /// <summary>
-        /// Sub-buffer allocation arena capable of generic alloc/free
-        /// operations.        
-        /// </summary>        
+        /**
+         * @brief Sub-buffer allocation arena capable of generic alloc/free
+         * operations.        
+         */
         virtual Arena& GetArena() = 0;
-        /// <summary>
-        /// Maps the entire buffer to the host memory.
-        /// Alignment is implementation-defined.
-        /// Implementations MUST guarantee consecutive calls to Map() return the same pointer,
-        /// therefore it's not possible to map the same resource multiple times.
-        /// For caching behaviours, <see cref="RHIBufferDesc"/>
-        /// </summary>               
+        /**
+         * @brief Maps the entire buffer to the host memory.
+         * Alignment is implementation-defined.
+         * Implementations MUST guarantee consecutive calls to Map() return the same pointer,
+         * therefore it's not possible to map the same resource multiple times.
+         * For caching behaviours, <see cref="RHIBufferDesc"/>
+         */
         virtual void* Map() = 0;
-        /// <summary>
-        /// Flushes the mapped region to the device.
-        /// Depending on the implementation, this may be a no-op.                
-        /// </summary>
+        /**
+         * @brief Flushes the mapped region to the device.
+         * Depending on the implementation, this may be a no-op.                
+         */
         virtual void Flush(size_t offset = 0, size_t size = kFullSize) = 0;
-        /// <summary>
-        /// Releases or unmaps a previously mapped resource.
-        /// Implementations MUST guarantee that Unmap() is called at destruction time
-        /// if the resource is still mapped.                
-        /// </summary>
+        /**
+         * @brief Releases or unmaps a previously mapped resource.
+         * Implementations MUST guarantee that Unmap() is called at destruction time
+         * if the resource is still mapped.                
+         */
         virtual void Unmap() = 0;
 
-        /// <summary>
-        /// Creates a span that maps a contiguous region of the buffer to the host memory.
-        /// Behaviour of the memory access is defined by the resource itself. e.g. RO/RW.
-        /// It is undefined behaviour to access the memory without regard to the resource's host access type.
-        /// For detailed mapping behaviour, <see cref="Map"/>
-        /// </summary>                
+        /**
+         * @brief Creates a span that maps a contiguous region of the buffer to the host memory.
+         * Behaviour of the memory access is defined by the resource itself. e.g. RO/RW.
+         * It is undefined behaviour to access the memory without regard to the resource's host access type.
+         * For detailed mapping behaviour, <see cref="Map"/>
+         */
         /// <param name="count">count of elements</param>                
         template<typename T> Core::StlSpan<T> MapSpan(size_t count = kFullSize) {
             void* p = Map();

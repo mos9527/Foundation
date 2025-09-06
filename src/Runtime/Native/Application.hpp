@@ -32,28 +32,28 @@ namespace Foundation::Native {
         int m_initialized = 0;
         size_t m_startCounter = 0;
     public:
-        /// <summary>
-        /// Creates a message box with the specified title and message.
-        ///
-        /// This is blocking, and will halt execution until the user dismisses it.       
-        /// </summary>        
+        /**
+         * @brief Creates a message box with the specified title and message.
+         *
+         * This is blocking, and will halt execution until the user dismisses it.       
+         */
         void MessageBox(const char* title, const char* message);
-        /// <summary>
-        /// Creates a window with the specified width, height, and title.
-        /// </summary>        
+        /**
+         * @brief Creates a window with the specified width, height, and title.
+         */
         Window CreateWindow(int width, int height, const char* title);
-        /// <summary>
-        /// Returns a high-resolution time in seconds since the application started.
-        /// </summary>        
+        /**
+         * @brief Returns a high-resolution time in seconds since the application started.
+         */
         template<typename T = float> T GetApplicationTime() const { return (getPerformanceCounter() - m_startCounter) / 1e9; }
-        /// <summary>
-        /// Returns the time in seconds since the Unix epoch (1970-01-01 00:00:00 UTC).
-        ///
-        /// This is generally not useful for measuring time intervals, as it's not
-        /// monotonic and can be affected by system clock changes.
-        /// 
-        /// It's advised to use GetApplicationTime() for such purposes instead.        
-        /// </summary>       
+        /**
+         * @brief Returns the time in seconds since the Unix epoch (1970-01-01 00:00:00 UTC).
+         *
+         * This is generally not useful for measuring time intervals, as it's not
+         * monotonic and can be affected by system clock changes.
+         *
+         * It's advised to use GetApplicationTime() for such purposes instead.        
+         */
         template<typename T = float> T GetSystemTime() const { return (getEpochTime() - m_startCounter) / 1e9; }
         Application();
         ~Application();

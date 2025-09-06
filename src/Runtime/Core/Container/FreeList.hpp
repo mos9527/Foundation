@@ -2,9 +2,9 @@
 #include "Common.hpp"
 
 namespace Foundation::Core {
-    /// <summary>
-    /// A free list counter implementation with amortized O(1) allocation and deallocation.
-    /// </summary>
+    /**
+     * @brief A free list counter implementation with amortized O(1) allocation and deallocation.
+     */
     template<typename T = uint64_t> class FreeListCounter {
         StlVector<T> m_free;
         T m_top = 0;
@@ -14,10 +14,10 @@ namespace Foundation::Core {
             m_free.reserve(size);
         }
         FreeListCounter(Allocator* alloc) : m_free(alloc) {}
-        /// <summary>
-        /// Pops a value from the free list.
-        /// If the free list is empty, a new key is allocated.
-        /// </summary>
+        /**
+         * @brief Pops a value from the free list.
+         * If the free list is empty, a new key is allocated.
+         */
         T pop() {
             if (m_free.empty())
                 m_free.push_back(m_top++);
@@ -42,30 +42,30 @@ namespace Foundation::Core {
             return m_allocated;
         }
     };
-    /// <summary>
-    /// A dense map implementation based on free list with amortized O(1) allocation and deallocation.
-    /// This is by no means a conventional associative container, nor should it be used as such.
-    /// For all intents and purposes, this is, and SHOULD be used as an *Object Pool*
-    /// where allocation and deallocation of keys is done in a LIFO manner.
-    /// </summary>
+    /**
+     * @brief A dense map implementation based on free list with amortized O(1) allocation and deallocation.
+     * This is by no means a conventional associative container, nor should it be used as such.
+     * For all intents and purposes, this is, and SHOULD be used as an *Object Pool*
+     * where allocation and deallocation of keys is done in a LIFO manner.
+     */
     template<typename K, typename V>
     class FreeList {
         FreeListCounter<K> m_keys;
         StlVector<V> m_values;
         StlVector<bool> m_bitmap;
-        /// <summary>
-        /// Adds a key to the internal key container and resizes the value container if necessary.
-        /// </summary>
+        /**
+         * @brief Adds a key to the internal key container and resizes the value container if necessary.
+         */
         void push(K key) {
             m_keys.push(key);
             if (key >= m_values.size())
                 m_values.resize(key + 1);
         }
-        /// <summary>
-        /// Pops (allocates) a Key from the free list and returns it.
-        /// If the free list is empty, a new key is allocated.
-        /// The value associated with the key is guaranteed to be zero-initialized.
-        /// </summary>
+        /**
+         * @brief Pops (allocates) a Key from the free list and returns it.
+         * If the free list is empty, a new key is allocated.
+         * The value associated with the key is guaranteed to be zero-initialized.
+         */
         K pop() {
             K key = m_keys.pop();
             if (key >= m_values.size())
@@ -83,37 +83,37 @@ namespace Foundation::Core {
         FreeList(Allocator* alloc, size_t reserve_size) : FreeList(alloc) {
             reserve(reserve_size);
         }
-        /// <summary>
-        /// Retrieves a reference to the value associated with the given key.
-        /// NOTE: Calling this function with a key that's not retrieved from pop() is undefined behavior.
-        /// </summary>
+        /**
+         * @brief Retrieves a reference to the value associated with the given key.
+         * NOTE: Calling this function with a key that's not retrieved from pop() is undefined behavior.
+         */
         V& at(K key) {
             return m_values[key];
         }
-        /// <summary>
-        /// Retrieves a const reference to the value associated with the given key.
-        /// NOTE: Calling this function with a key that's not retrieved from pop() is undefined behavior.
-        /// </summary>
+        /**
+         * @brief Retrieves a const reference to the value associated with the given key.
+         * NOTE: Calling this function with a key that's not retrieved from pop() is undefined behavior.
+         */
         V const& at(K key) const {
             return m_values[key];
         }
-        /// <summary>
-        /// Checks if the specified key exists and has a value.
-        /// </summary>
+        /**
+         * @brief Checks if the specified key exists and has a value.
+         */
         bool contains(K key) const {
             return key < m_values.size() && m_bitmap[key];
         }
-        /// <summary>
-        /// Allocates a Key that returns a pair of key and value reference.
-        /// </summary>        
+        /**
+         * @brief Allocates a Key that returns a pair of key and value reference.
+         */
         const std::pair<K, V&> allocate() {
             K key = pop();
             m_bitmap[key] = true;
             return { key, m_values[key] };
         }
-        /// <summary>
-        /// Frees the value associated with the specified key
-        /// </summary>
+        /**
+         * @brief Frees the value associated with the specified key
+         */
         void free(K key) {
             m_values[key] = {};
             m_bitmap[key] = false;

@@ -326,17 +326,17 @@ namespace Foundation::Rendering {
         Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain,  Allocator* allocator);
 
 #pragma region Render Graph Setup
-        /// <summary>
-        /// Reset the render graph and being setup.
-        /// 
-        /// You must call this before Create... and Declare... calls.
-        /// </summary>
+        /**
+         * @brief Reset the render graph and being setup.
+         *
+         * You must call this before Create... and Declare... calls.
+         */
         void BeginSetup();
-        /// <summary>
-        /// Create a render pass from a RenderPass* implementation and add it to the render graph.
-        /// 
-        /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
-        /// </summary>
+        /**
+         * @brief Create a render pass from a RenderPass* implementation and add it to the render graph.
+         *
+         * This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
+         */
         template<typename T, typename ...Args> requires std::is_base_of_v<RenderPass, T>
         T* CreatePassImpl(std::string const& name, RHIDeviceQueueType queue, Args&&... args) {
             CHECK(m_state == State::Setup);
@@ -353,27 +353,27 @@ namespace Foundation::Rendering {
             m_setup->epilogue = handle;
             return static_cast<T*>(m_setup->trackedPasses.back().pass.get());
         }
-        /// <summary>
-        /// Create a render pass from a Setup(Renderer*, PassHandle) and Record(Renderer*, PassHandle, RHICommandList*) lambda.
-        ///
-        /// NOTE: Prefer using this over CreatePass<T>() for stateless passes
-        /// 
-        /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
-        /// </summary>
+        /**
+         * @brief Create a render pass from a Setup(Renderer*, PassHandle) and Record(Renderer*, PassHandle, RHICommandList*) lambda.
+         *
+         * NOTE: Prefer using this over CreatePass<T>() for stateless passes
+         *
+         * This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
+         */
         template<typename FSetup, typename FRecord>
         LambdaPass<FSetup, FRecord>* CreatePass(std::string const& name, RHIDeviceQueueType queue, FSetup&& setup, FRecord&& record) {
             return CreatePassImpl<LambdaPass<FSetup, FRecord>>(name, queue, std::forward<FSetup>(setup), std::forward<FRecord>(record));
         }
-        /// <summary>
-        /// Create a new resource to be used in the render graph.
-        /// 
-        /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().       
-        /// No allocation is performed until EndSetup() is called.
-        ///
-        /// All resources created by a pass that is not culled will be created, regardless of usage.
-        ///
-        /// Resources can be imported by passing in RHIDeviceObjectHandle<RHIBuffer> or RHIDeviceObjectHandle<RHITexture>.
-        /// </summary>
+        /**
+         * @brief Create a new resource to be used in the render graph.
+         *
+         * This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().       
+         * No allocation is performed until EndSetup() is called.
+         *
+         * All resources created by a pass that is not culled will be created, regardless of usage.
+         *
+         * Resources can be imported by passing in RHIDeviceObjectHandle<RHIBuffer> or RHIDeviceObjectHandle<RHITexture>.
+         */
         template<typename T>
         ResourceHandle CreateResource(std::string const& name, T const& desc) {
             CHECK(m_state == State::Setup);
@@ -381,188 +381,188 @@ namespace Foundation::Rendering {
             m_setup->trackedResources.emplace_back(index, name, desc, m_allocator);
             return m_setup->trackedResources.size() - 1;
         }
-        /// <summary>
-        /// Creates a sampler with the specified name and descriptor.
-        ///
-        /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().       
-        /// No allocation is performed until EndSetup() is called.
-        /// </summary>
+        /**
+         * @brief Creates a sampler with the specified name and descriptor.
+         *
+         * This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().       
+         * No allocation is performed until EndSetup() is called.
+         */
         ResourceHandle CreateSampler(std::string const& name, RHIDeviceSampler::SamplerDesc const& desc);
 #pragma region Resource Binding
-        /// <summary>
-        /// Binds shader file path to a certain pass at a certain stage.
-        ///
-        /// Shaders are unique per stage, and may be omitted.
-        /// </summary>
+        /**
+         * @brief Binds shader file path to a certain pass at a certain stage.
+         *
+         * Shaders are unique per stage, and may be omitted.
+         */
         void BindShader(
             PassHandle pass, RHIShaderStage stage,
             std::string const& entry_point,
             std::filesystem::path const& shader_path
         );        
-        /// <summary>
-        /// Binds a shader push constant to a constant value, which can be set at Record time.
-        ///
-        /// Bind points are effectively shader variable names, which will be automatically dereferenced.
-        /// </summary>
+        /**
+         * @brief Binds a shader push constant to a constant value, which can be set at Record time.
+         *
+         * Bind points are effectively shader variable names, which will be automatically dereferenced.
+         */
         /// <returns>Opaque handle value that can be used by CmdSetPushConstant to set data at Record time.</returns>
         void BindPushConstant(
             PassHandle pass, RHIShaderStage stage,
             size_t offset, size_t size
         );
-        /// <summary>
-        /// Associates Vertex Input description with this pass.
-        ///
-        /// This only applies to passes on Graphics queues. And will not have
-        /// any effect otherwise.
-        ///
-        /// You MUST bind a valid Vertex Input at creation time if Draw[Indexed]
-        /// is desired.       
-        /// </summary>        
+        /**
+         * @brief Associates Vertex Input description with this pass.
+         *
+         * This only applies to passes on Graphics queues. And will not have
+         * any effect otherwise.
+         *
+         * You MUST bind a valid Vertex Input at creation time if Draw[Indexed]
+         * is desired.       
+         */
         void BindVertexInput(
             PassHandle pass,
             RHIPipelineState::PipelineStateDesc::VertexInput const& info
         );
-        /// <summary>
-        /// Binds a uniform buffer to a specified binding point in a rendering pass.
-        ///
-        /// Bind points are effectively shader variable names, which will be automatically dereferenced.       
-        /// </summary>       
+        /**
+         * @brief Binds a uniform buffer to a specified binding point in a rendering pass.
+         *
+         * Bind points are effectively shader variable names, which will be automatically dereferenced.       
+         */
         void BindBufferUniform(
             PassHandle pass, ResourceHandle buffer,
             std::string const& bind_point
         );
-        /// <summary>
-        /// Binds a storage (read-write) buffer to a specified binding point.
-        ///
-        /// Use this for buffers declared as 'buffer' / 'RWStructuredBuffer' / 'StorageBuffer'
-        /// inside shaders. Declares ShaderRead | ShaderWrite access automatically.
-        /// </summary>
+        /**
+         * @brief Binds a storage (read-write) buffer to a specified binding point.
+         *
+         * Use this for buffers declared as 'buffer' / 'RWStructuredBuffer' / 'StorageBuffer'
+         * inside shaders. Declares ShaderRead | ShaderWrite access automatically.
+         */
         void BindBufferStorage(
             PassHandle pass, ResourceHandle buffer,
             std::string const& bind_point
         );
-        /// <summary>
-        /// Binds a buffer for unordered (UAV) access from shaders (read and/or write in any order).
-        ///
-        /// Equivalent to a storage buffer but semantically indicates random R/W patterns.
-        /// Declares ShaderRead | ShaderWrite access.
-        /// </summary>
+        /**
+         * @brief Binds a buffer for unordered (UAV) access from shaders (read and/or write in any order).
+         *
+         * Equivalent to a storage buffer but semantically indicates random R/W patterns.
+         * Declares ShaderRead | ShaderWrite access.
+         */
         void BindBufferUnordered(
             PassHandle pass, ResourceHandle buffer,
             std::string const& bind_point
         );
-        /// <summary>
-        /// Declares this pass has shaders that will read from this buffer.
-        /// e.g. Vertex, Index
-        /// </summary>        
+        /**
+         * @brief Declares this pass has shaders that will read from this buffer.
+         * e.g. Vertex, Index
+         */
         void BindBufferShaderRead(PassHandle pass, ResourceHandle buffer);
-        /// <summary>
-        /// Declares that this pass will write to the buffer via copy
-        /// </summary>
+        /**
+         * @brief Declares that this pass will write to the buffer via copy
+         */
         void BindBufferCopyDst(PassHandle pass, ResourceHandle buffer);
-        /// <summary>
-        /// Declares that this pass will read from the buffer via copy
-        /// </summary>
+        /**
+         * @brief Declares that this pass will read from the buffer via copy
+         */
         void BindBufferCopySrc(PassHandle pass, ResourceHandle buffer);
-        /// <summary>
-        /// Binds a sampler to a specified variable name in the shader.
-        /// </summary>        
+        /**
+         * @brief Binds a sampler to a specified variable name in the shader.
+         */
         void BindTextureSampler(
             PassHandle pass, ResourceHandle sampler,
             std::string const& bind_point
         );
-        /// <summary>
-        /// Binds a texture as a Shader Resource View (read-only sampling / fetch).
-        ///
-        /// A view will be created if a subresource range (mips/layers) or format reinterpretation
-        /// is specified via desc. Returns the (possibly new) texture view handle.
-        /// </summary>
+        /**
+         * @brief Binds a texture as a Shader Resource View (read-only sampling / fetch).
+         *
+         * A view will be created if a subresource range (mips/layers) or format reinterpretation
+         * is specified via desc. Returns the (possibly new) texture view handle.
+         */
         ResourceHandle BindTextureSRV(
             PassHandle pass, ResourceHandle texture,
             std::string const& bind_point,
             RHITextureViewDesc const& desc = {}
         );
-        /// <summary>
-        /// Binds a texture for unordered (UAV) read-write access in shaders.
-        ///
-        /// Declares ShaderRead | ShaderWrite access and sets layout to General (or equivalent),
-        /// bound as StorageImage.
-        ///
-        /// A view will be created when desc customizes subresources or format.
-        /// </summary>
+        /**
+         * @brief Binds a texture for unordered (UAV) read-write access in shaders.
+         *
+         * Declares ShaderRead | ShaderWrite access and sets layout to General (or equivalent),
+         * bound as StorageImage.
+         *
+         * A view will be created when desc customizes subresources or format.
+         */
         ResourceHandle BindTextureUAV(
             PassHandle pass, ResourceHandle texture, 
             std::string const& bind_point,
             RHITextureViewDesc const& desc = {}
         );
-        /// <summary>
-        /// Binds a texture as a Render Target View (color attachment) for a graphics pass.
-        ///
-        /// The pass must execute on a graphics-capable queue. Multiple RTVs may be bound.
-        /// Returns the created/assigned view handle (auto-created if needed).
-        ///
-        /// This can be automatically bound to the pipeline with CmdBeginGraphics(), where
-        /// order of multiple render targets is the same as the insertion order of the RTVs.
-        /// </summary>
+        /**
+         * @brief Binds a texture as a Render Target View (color attachment) for a graphics pass.
+         *
+         * The pass must execute on a graphics-capable queue. Multiple RTVs may be bound.
+         * Returns the created/assigned view handle (auto-created if needed).
+         *
+         * This can be automatically bound to the pipeline with CmdBeginGraphics(), where
+         * order of multiple render targets is the same as the insertion order of the RTVs.
+         */
         ResourceHandle BindTextureRTV(
             PassHandle pass, ResourceHandle texture,
             RHITextureViewDesc const& desc = {}
         );
-        /// <summary>
-        /// Binds a texture as a Depth-Stencil View for a graphics pass.
-        ///
-        /// Only one DSV may be active per pass. Layout transitions include depth / stencil write or read.
-        /// Returns the created/assigned view handle (auto-created if needed).
-        ///
-        /// This can be automatically bound to the pipeline with CmdBeginGraphics().
-        /// </summary>
+        /**
+         * @brief Binds a texture as a Depth-Stencil View for a graphics pass.
+         *
+         * Only one DSV may be active per pass. Layout transitions include depth / stencil write or read.
+         * Returns the created/assigned view handle (auto-created if needed).
+         *
+         * This can be automatically bound to the pipeline with CmdBeginGraphics().
+         */
         ResourceHandle BindTextureDSV(
             PassHandle pass, ResourceHandle texture,
             RHITextureViewDesc const& desc = {}
         );
-        /// <summary>
-        /// Declares that this pass will write to the current (at Record time) swapchain backbuffer.
-        ///
-        /// ATTENTION: This invalidates any other bound RTVs.
-        /// 
-        /// Backbuffer in the entirety of a graphics pass is always in RenderTarget layout,
-        /// and cannot be read from, copied from/to, or used as anything but.
-        ///
-        /// You can retrive the current backbuffer RTV via DerefCurrentBackbufferView() at Record time.
-        /// 
-        /// This can be automatically bound to the pipeline with CmdBeginGraphics().             
-        /// </summary>        
+        /**
+         * @brief Declares that this pass will write to the current (at Record time) swapchain backbuffer.
+         *
+         * ATTENTION: This invalidates any other bound RTVs.
+         *
+         * Backbuffer in the entirety of a graphics pass is always in RenderTarget layout,
+         * and cannot be read from, copied from/to, or used as anything but.
+         *
+         * You can retrive the current backbuffer RTV via DerefCurrentBackbufferView() at Record time.
+         *
+         * This can be automatically bound to the pipeline with CmdBeginGraphics().             
+         */
         void BindBackbufferRTV(PassHandle pass);
-        /// <summary>
-        /// Declares that this pass will write to the texture via copy / blit (transfer destination).
-        ///
-        /// Sets TransferWrite access over the specified subresource range (all if empty).
-        /// No view is created; raw resource state tracking is updated.
-        /// </summary>
+        /**
+         * @brief Declares that this pass will write to the texture via copy / blit (transfer destination).
+         *
+         * Sets TransferWrite access over the specified subresource range (all if empty).
+         * No view is created; raw resource state tracking is updated.
+         */
         void BindTextureCopyDst(
             PassHandle pass, ResourceHandle texture,
             RHITextureSubresourceRange const& range = {}
         );
-        /// <summary>
-        /// Declares that this pass will read from the texture via copy / blit (transfer source).
-        ///
-        /// Sets TransferRead access over the specified subresource range (all if empty).
-        /// No view is created; raw resource state tracking is updated.
-        /// </summary>
+        /**
+         * @brief Declares that this pass will read from the texture via copy / blit (transfer source).
+         *
+         * Sets TransferRead access over the specified subresource range (all if empty).
+         * No view is created; raw resource state tracking is updated.
+         */
         void BindTextureCopySrc(
             PassHandle pass, ResourceHandle texture,
             RHITextureSubresourceRange const& range = {}
         );
         /* TODO: Push Constants */
 #pragma endregion
-        /// <summary>
-        /// Finish setting up the render graph.
-        ///
-        /// The **last** created pass is used as the epilogue (final) pass,
-        /// and will be used to determine active passes and resource lifetimes.
-        /// 
-        /// You must call this before Execute().
-        /// </summary>
+        /**
+         * @brief Finish setting up the render graph.
+         *
+         * The **last** created pass is used as the epilogue (final) pass,
+         * and will be used to determine active passes and resource lifetimes.
+         *
+         * You must call this before Execute().
+         */
         void EndSetup();
 #pragma endregion
 
@@ -582,56 +582,56 @@ namespace Foundation::Rendering {
         }
 #pragma endregion
 #pragma region Render Graph Runtime
-        /// <summary>
-        /// Dereference a resource handle to its underlying RHI resource.
-        ///
-        /// This should only be called inside a pass's Record() function, or after EndSetup().
-        /// </summary>        
+        /**
+         * @brief Dereference a resource handle to its underlying RHI resource.
+         *
+         * This should only be called inside a pass's Record() function, or after EndSetup().
+         */
         inline Variant<RHIBuffer*, RHITexture*> DerefResource(ResourceHandle handle) {
             CHECK(m_resources && handle < m_resources->resources.size());
             using Tv = Variant<RHIBuffer*, RHITexture*>;
             return m_resources->resources[handle].visit([](auto& hdl) -> Tv { return hdl.Get(); });
         }
-        /// <summary>
-        /// Dereference a texture view handle to its underlying RHI texture view.
-        ///
-        /// This should only be called inside a pass's Record() function, or after EndSetup().
-        /// </summary>       
+        /**
+         * @brief Dereference a texture view handle to its underlying RHI texture view.
+         *
+         * This should only be called inside a pass's Record() function, or after EndSetup().
+         */
         inline RHITextureView* DerefTextureView(ResourceHandle handle) {
             CHECK(m_resources && handle < m_resources->views.size());
             using Tv = RHITextureView*;
             return m_resources->views[handle].visit([](auto& hdl) -> Tv { return hdl.Get(); });
         }
-        /// <summary>
-        /// Dereference a sampler handle to its underlying RHI sampler.
-        ///
-        /// This should only be called inside a pass's Record() function, or after EndSetup().
-        /// </summary>        
+        /**
+         * @brief Dereference a sampler handle to its underlying RHI sampler.
+         *
+         * This should only be called inside a pass's Record() function, or after EndSetup().
+         */
         inline RHIDeviceSampler* DerefSampler(ResourceHandle handle) {
             CHECK(m_setup && handle < m_setup->trackedSamplers.size());
             return m_resources->samplers[handle].Get();
         }
-        /// <summary>
-        /// Dereference the built pipeline state object handle associated with a given pass.
-        /// </summary>        
+        /**
+         * @brief Dereference the built pipeline state object handle associated with a given pass.
+         */
         inline RHIPipelineState* DerefPipelineState(PassHandle pass) {
             CHECK(m_setup && pass < m_setup->trackedPasses.size());
             auto& tpass = m_setup->trackedPasses[pass];
             return tpass.pso.Get();
         }
-        /// <summary>
-        /// Dereference the built descriptor sets associated with a given pass
-        /// </summary>        
+        /**
+         * @brief Dereference the built descriptor sets associated with a given pass
+         */
         inline StlVector<RHIDeviceDescriptorSet*> const& DerefDescriptorSets(PassHandle pass) {
             CHECK(m_setup && pass < m_setup->trackedPasses.size());
             auto& tpass = m_setup->trackedPasses[pass];
             return tpass.p_desc_sets;
         }
-        /// <summary>
-        /// Returns a pointer to the current backbuffer texture view.
-        ///
-        /// The pass must have declared BindBackbufferRTV() during setup.
-        /// </summary>        
+        /**
+         * @brief Returns a pointer to the current backbuffer texture view.
+         *
+         * The pass must have declared BindBackbufferRTV() during setup.
+         */
         inline RHITextureView* DerefCurrentBackbufferView(PassHandle pass) {
             CHECK(m_state == State::Execute);
             auto& tpass = m_setup->trackedPasses[pass];            
@@ -641,45 +641,45 @@ namespace Foundation::Rendering {
 #pragma endregion
 
 #pragma region Command Recording Helpers
-        /// <summary>
-        /// Helper that retrieves the local size declared by a compute pass.
-        ///
-        /// Calling this on a non-CS bound queue is incorrect, and will throw.
-        /// </summary>
+        /**
+         * @brief Helper that retrieves the local size declared by a compute pass.
+         *
+         * Calling this on a non-CS bound queue is incorrect, and will throw.
+         */
         const RHIExtent3D CmdGetComputeLocalSize(PassHandle pass);
-        /// <summary>
-        /// Helper that dispatches a compute shader with the specified total thread count
-        ///
-        /// This is equivalent to calling:
-        ///     auto local_size = CmdGetComputeLocalSize(pass);
-        ///     cmd->Dispatch(
-        ///         (thread_size.x + local_size.x - 1) / local_size.x,
-        ///         (thread_size.y + local_size.y - 1) / local_size.y,
-        ///         (thread_size.z + local_size.z - 1) / local_size.z
-        ///     );
-        /// </summary>        
+        /**
+         * @brief Helper that dispatches a compute shader with the specified total thread count
+         *
+         * This is equivalent to calling:
+         *     auto local_size = CmdGetComputeLocalSize(pass);
+         *     cmd->Dispatch(
+         *         (thread_size.x + local_size.x - 1) / local_size.x,
+         *         (thread_size.y + local_size.y - 1) / local_size.y,
+         *         (thread_size.z + local_size.z - 1) / local_size.z
+         *     );
+         */
         void CmdDispatch(
             PassHandle pass, RHICommandList* cmd,
             RHIExtent3D thread_size
         );
-        /// <summary>
-        /// Helper that sets the current pass's PSO and descriptor sets 
-        /// to the current command list.
-        /// </summary>        
+        /**
+         * @brief Helper that sets the current pass's PSO and descriptor sets 
+         * to the current command list.
+         */
         void CmdSetPipeline(PassHandle pass, RHICommandList* cmd);
-        /// <summary>
-        /// Helper that pushes correct descriptor sets and PSO to the current command list, and
-        /// pushes correct BeginGraphics() commands with declared RTVs and DSVs to the current command list.
-        /// </summary>        
+        /**
+         * @brief Helper that pushes correct descriptor sets and PSO to the current command list, and
+         * pushes correct BeginGraphics() commands with declared RTVs and DSVs to the current command list.
+         */
         void CmdBeginGraphics(
             PassHandle pass, RHICommandList* cmd,
             RHIExtent2D const& extent,
             std::optional<RHIClearColor> clear_rtv = RHIClearColor{},
             std::optional<RHIClearDepthStencil> = RHIClearDepthStencil{}
         );        
-        /// <summary>
-        /// Helper that sets a Push Constant range data with a single l-value.
-        /// </summary>        
+        /**
+         * @brief Helper that sets a Push Constant range data with a single l-value.
+         */
         template<typename T> inline void CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, RHIShaderStage stage, size_t offset, T const& data) {
             CHECK(m_state == State::Execute);
             auto& tpass = m_setup->trackedPasses[pass];
@@ -691,55 +691,55 @@ namespace Foundation::Rendering {
         std::string DbgDumpGraphviz() const;
         std::string DbgDumpActivePasses() const;
 #pragma endregion
-        /// <summary>
-        /// Retrieves the current state of the renderer.
-        /// </summary>        
+        /**
+         * @brief Retrieves the current state of the renderer.
+         */
         State GetState() const { return m_state; }
-        /// <summary>
-        /// Update the swapchain to a new one.
-        ///
-        /// You must call this when the window is resized or the swapchain is invalidated.
-        ///
-        /// This call will block if pending GPU work exists.
-        /// </summary>        
+        /**
+         * @brief Update the swapchain to a new one.
+         *
+         * You must call this when the window is resized or the swapchain is invalidated.
+         *
+         * This call will block if pending GPU work exists.
+         */
         void SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain);
-        /// <summary>
-        /// Run the frame. Go!
-        /// </summary>
+        /**
+         * @brief Run the frame. Go!
+         */
         void Execute();
     };
     /* Functional Helpers */
-    /// <summary>
-    /// Convinent functional wrapper to create a resource
-    ///
-    /// This is equivalent to calling CreateResource(name, desc);
-    /// </summary>
+    /**
+     * @brief Convinent functional wrapper to create a resource
+     *
+     * This is equivalent to calling CreateResource(name, desc);
+     */
     template<typename T>
     ResourceHandle createResource(Renderer* r, std::string const& name, T const& desc) {
         return r->CreateResource(name, desc);
     }
-    /// <summary>
-    /// Convenient functional wrapper to create a sampler
-    ///
-    /// This is equivalent to calling CreateSampler(name, desc);
-    /// </summary>
+    /**
+     * @brief Convenient functional wrapper to create a sampler
+     *
+     * This is equivalent to calling CreateSampler(name, desc);
+     */
     inline ResourceHandle createSampler(Renderer* r, std::string const& name, RHIDeviceSampler::SamplerDesc const& desc) {
         return r->CreateSampler(name, desc);
     }
-    /// <summary>
-    /// Convenient functional wrapper to create a pass from a RenderPass* implementation.
-    ///
-    /// This is equivalent to calling CreatePass<T>(name, queue, args...);     
-    /// </summary>    
+    /**
+     * @brief Convenient functional wrapper to create a pass from a RenderPass* implementation.
+     *
+     * This is equivalent to calling CreatePass<T>(name, queue, args...);     
+     */
     template<typename T, typename ...Args> requires std::is_base_of_v<RenderPass, T>
     T* createPassImpl(Renderer* r, std::string const& name, RHIDeviceQueueType queue, Args&&... args) {
         return r->CreatePassImpl<T>(name, queue, std::forward<Args>(args)...);
     }
-    /// <summary>
-    /// Convenient functional wrapper to create a pass from Setup/Record lambdas.
-    ///
-    /// This is equivalent to calling CreatePass(name, queue, setup, record);
-    /// </summary>
+    /**
+     * @brief Convenient functional wrapper to create a pass from Setup/Record lambdas.
+     *
+     * This is equivalent to calling CreatePass(name, queue, setup, record);
+     */
     template<typename FSetup, typename FRecord>
     LambdaPass<FSetup, FRecord>* createPass(Renderer* r, std::string const& name, RHIDeviceQueueType queue, FSetup&& setup, FRecord&& record) {
         return r->CreatePass(name, queue, std::forward<FSetup>(setup), std::forward<FRecord>(record));

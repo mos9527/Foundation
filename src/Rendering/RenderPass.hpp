@@ -16,27 +16,27 @@ namespace Foundation::Rendering {
     using PassHandle = size_t;
     class RenderPass : public RHIObject {
     public:
-        /// <summary>
-        /// Constructor. You may also create resources here for early setup.
-        /// However, access declaration must be done in Setup().
-        /// </summary>
+        /**
+         * @brief Constructor. You may also create resources here for early setup.
+         * However, access declaration must be done in Setup().
+         */
         RenderPass() = default;
-        /// <summary>
-        /// Perform any setup required for this pass.
-        /// This may include creating resources, declaring resource accesses, etc.
-        /// </summary>        
+        /**
+         * @brief Perform any setup required for this pass.
+         * This may include creating resources, declaring resource accesses, etc.
+         */
         virtual void Setup(PassHandle self, Renderer* r) = 0;
-        /// <summary>
-        /// Record the commands of this pass into the given command list.
-        ///
-        /// This is only executed after EndSetup() has been called,
-        /// and when the render graph is actually executed.
-        /// </summary>        
+        /**
+         * @brief Record the commands of this pass into the given command list.
+         *
+         * This is only executed after EndSetup() has been called,
+         * and when the render graph is actually executed.
+         */
         virtual void Record(PassHandle self, Renderer* r, RHICommandList* cmd) = 0;
     };
-    /// <summary>
-    /// Functional wrapper for a render pass    
-    /// </summary>    
+    /**
+     * @brief Functional wrapper for a render pass    
+     */
     template<typename FSetup, typename FRecord>
     struct LambdaPass : public RenderPass {
         FSetup m_setup;

@@ -29,10 +29,10 @@ namespace Foundation::RHI {
         } m_desc;
         virtual Core::StlSpan<RHITexture* const> GetImages() const = 0;
         RHISwapchain(RHIDevice const& device, SwapchainDesc const& desc) : m_device(device), m_desc(desc) {}
-        /// <summary>
-        /// Gets the next image in the swapchain.
-        /// Raises RHISwapchainResizeException if the swapchain needs to be resized.
-        /// </summary>        
+        /**
+         * @brief Gets the next image in the swapchain.
+         * Raises RHISwapchainResizeException if the swapchain needs to be resized.
+         */
         virtual uint32_t GetNextImage(
             uint64_t timeout_ns,
             RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore,

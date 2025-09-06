@@ -4,10 +4,10 @@
 
 namespace Foundation::RHI {
     class RHIDevice;
-    /// <summary>
-    /// The root object of everything RHI.
-    /// Implementation of this class inherently defines the RHI backend.
-    /// </summary>
+    /**
+     * @brief The root object of everything RHI.
+     * Implementation of this class inherently defines the RHI backend.
+     */
     class RHIApplication : public RHIObject {
     public:
         RHIApplication() = default;
