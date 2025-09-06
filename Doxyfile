@@ -1,0 +1,28 @@
+#---------------------------------------------------------------------------
+# Project related configuration options
+#---------------------------------------------------------------------------
+PROJECT_NAME           = "Foundation"
+PROJECT_BRIEF          = ""
+OUTPUT_DIRECTORY       = docs
+USE_MDFILE_AS_MAINPAGE = DOCS.md
+
+#---------------------------------------------------------------------------
+# Build related configuration options
+#---------------------------------------------------------------------------
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = YES
+EXTRACT_STATIC         = YES
+GENERATE_LATEX         = NO
+
+#---------------------------------------------------------------------------
+# Input related configuration options
+#---------------------------------------------------------------------------
+INPUT                  = ./src \
+                         ./DOCS.md
+EXAMPLE_PATH           = ./src/Examples
+RECURSIVE              = YES
+FILE_PATTERNS          = *.c *.cpp *.h *.hpp *.md *.slang
+EXCLUDE                = ./build \
+                         ./src/CMake
+EXCLUDE_PATTERNS       = */_deps/*
+#---------------------------------------------------------------------------

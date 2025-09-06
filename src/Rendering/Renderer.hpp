@@ -8,6 +8,9 @@
 #include <RHICore/PipelineState.hpp>
 #include <RHICore/Command.hpp>
 #include "RenderPass.hpp"
+/**
+ * @brief Everything GPU related, including the Frame Graph implementation.
+ */
 namespace Foundation::Rendering {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
@@ -21,6 +24,10 @@ namespace Foundation::Rendering {
         RHIResourceAccessBits::RenderTargetWrite |
         RHIResourceAccessBits::DepthStencilWrite |
         RHIResourceAccessBits::TransferWrite;
+        
+    /**
+     * @brief Internal tracking information for a resource in the frame graph.
+     */
     struct TrackedResource {        
         ResourceHandle handle; // Index to tracked resources
         std::string name;        
@@ -103,6 +110,9 @@ namespace Foundation::Rendering {
         }
 
     };
+    /**
+     * @brief Internal tracking information for a render pass in the frame graph.
+     */
     struct TrackedPass {
         std::string name;
         PassHandle handle; // Index to tracked passes
@@ -190,6 +200,11 @@ namespace Foundation::Rendering {
         // Present the swapchain in Execute()
         bool present{ true }; 
     };
+    /**
+     * @brief Renderer implementing a Frame Graph system with automatic resource tracking and synchronization.
+     * 
+     * For usage, see also @ref Foundation::Rendering::Application
+     */
     class Renderer {
     public:
         enum class State {

@@ -1,8 +1,8 @@
 /**
-Mandelbrot - smooth by iq
----
-https://iquilezles.org/articles/msetsmooth/
-https://www.shadertoy.com/view/4df3Rn
+ * Mandelbrot - smooth by iq
+ * ---
+ * https://iquilezles.org/articles/msetsmooth/
+ * https://www.shadertoy.com/view/4df3Rn
 */
 RWTexture2D<float4> image;
 

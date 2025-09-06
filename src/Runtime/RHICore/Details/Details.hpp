@@ -2,6 +2,9 @@
 #include <Core/Core.hpp>
 #include <Core/Container/FreeList.hpp>
 
+/**
+ * @brief Low-level Rendering Hardware Interface (RHI) abstractions.
+ */
 namespace Foundation::RHI {
     using Handle = uint64_t;
     constexpr static Handle kInvalidHandle = static_cast<Handle>(-1);

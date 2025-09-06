@@ -14,6 +14,9 @@ namespace Foundation::Rendering {
 
     class Renderer;
     using PassHandle = size_t;
+    /**
+     * @brief Interface for a render pass.     
+     */
     class RenderPass : public RHIObject {
     public:
         /**

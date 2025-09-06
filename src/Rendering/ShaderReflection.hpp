@@ -3,11 +3,15 @@
 #include <RHICore/Common.hpp>
 
 namespace Foundation::Rendering {
+    /**
+     * @brief Runtime reflection data for a shader module.
+     */
     class ShaderReflection {
         Core::Allocator* m_allocator;        
         /**
          * @brief Parse SPIR-V shader code and populate reflection data.        
-         * References:
+         * 
+         * See also:
          *     https://github.com/zeux/niagara/blob/master/src/shaders.cpp
          *     https://registry.khronos.org/SPIR-V/specs/1.0/SPIRV.pdf
          *     https://www.khronos.org/spirv/visualizer/

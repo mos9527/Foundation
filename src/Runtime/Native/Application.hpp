@@ -2,6 +2,9 @@
 #include <Core/Core.hpp>
 #include <Bits/Chrono.hpp>
 
+/**
+ * @brief Platform-dependent native application abstractions
+ */
 namespace Foundation::Native {
     class Application;
     class Window {
@@ -28,6 +31,12 @@ namespace Foundation::Native {
         inline void* GetNative() const { return m_window; }
         inline constexpr operator bool() const { return m_window != nullptr; }
     };
+    /**
+     * @brief Base class for native applications.
+     * 
+     * API-wise, this provides WinAPI-like semantics for window management and
+     * various system functionalities.
+     */
     class Application {
         int m_initialized = 0;
         size_t m_startCounter = 0;

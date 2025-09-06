@@ -17,8 +17,8 @@ namespace Foundation::Rendering {
         bool asyncCompute{ true };
     };
     /**
-     * @brief Lightweight template for a rendering application
-     */
+    *  @brief Template base class for rendering applications.        
+    */
     class Application : public Native::Application {
     protected:
         ApplicationInitDesc m_desc;

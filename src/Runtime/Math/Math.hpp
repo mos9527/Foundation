@@ -6,6 +6,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+/**
+ * @brief Mathematical utilities and types.
+ */
 namespace Foundation::Math {
     using namespace glm;
 }

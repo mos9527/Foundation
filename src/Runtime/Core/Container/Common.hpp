@@ -22,10 +22,6 @@ namespace Foundation::Core {
     template<typename K, typename V, typename Predicate = std::less<K>>
     using StlMap = std::map<K, V, Predicate, StlAllocator<std::pair<const K, V>>>;
 
-    // NO. Screw unordered_map<> et al.
-    // They are the LEAST ABI stable containers in the STL and that's saying something.
-    // If you need a hash map, think again until you don't need to.
-
     template<typename T>
     using StlDeque = std::deque<T, StlAllocator<T>>;
 
