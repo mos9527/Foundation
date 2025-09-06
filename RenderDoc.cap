@@ -23,6 +23,6 @@
             "verifyBufferAccess": false
         },
         "queuedFrameCap": 0,
-        "workingDir": "C:/Users/Huang/Foundation"
+        "workingDir": "C:/Users/Huang/Foundation/out/build/x64-Debug/bin"
     }
 }

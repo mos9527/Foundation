@@ -69,7 +69,7 @@ namespace Foundation {
         outGlobal = Global, outInstance = Instance, outPrimitive = Primitive;
         return createPass(
             renderer, "Scene Update",
-            RHIDevicePipelineType::Graphics,
+            RHIDeviceQueueType::Graphics,
             [=](PassHandle self, Renderer* r) {
                 r->BindBufferCopyDst(self, Global);
                 r->BindBufferCopyDst(self, Instance);

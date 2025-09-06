@@ -25,6 +25,7 @@ void ShaderReflection::ParseSPIRV(StlSpan<const char> bytecode)
         uint32_t Binding;
         /* -- debug -- */
         std::string Name;
+        uint32_t EpIndex;
     };
     StlVector<Element> ID(Bound, m_allocator);
     // 4: Reserved
@@ -51,9 +52,28 @@ void ShaderReflection::ParseSPIRV(StlSpan<const char> bytecode)
                 ep.stage = RHI::RHIShaderStageBits::Compute; break;
             }
             // 2: Entry Point OpFunction ID
+            ID[ins[2]].Opcode = Opcode;
+            ID[ins[2]].EpIndex = static_cast<uint32_t>(m_entrypoints.size());
             // 3: Name
             ep.name = std::string(reinterpret_cast<const char*>(ins + 3));
             m_entrypoints.push_back(ep);
+            break;
+        }
+        case spv::OpExecutionMode:
+        {
+            // 1: Entry Point OpFunction ID
+            uint32_t id = ins[1];
+            // 2: Execution Mode
+            switch (spv::ExecutionMode(ins[2]))
+            {
+            case spv::ExecutionModeLocalSize:
+                if (ID[id].EpIndex < m_entrypoints.size()) {
+                    m_entrypoints[ID[id].EpIndex].local_size = { ins[3], ins[4], ins[5] };
+                }
+                break;
+            default:
+                break;
+            }
             break;
         }
         case spv::OpName:

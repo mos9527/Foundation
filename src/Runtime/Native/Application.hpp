@@ -38,6 +38,9 @@ namespace Foundation::Native {
     class Application {
         int m_initialized = 0;
     public:
+        void MessageBox(const char* title, const char* message) {
+            CHECK(m_initialized && "GLFW not initialized");
+        }
         Window CreateWindow(int width, int height, const char* title) {
             return Window(width, height, title);
         }

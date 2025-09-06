@@ -118,6 +118,9 @@ namespace Foundation::RHI {
         virtual RHICommandList& BindIndexBuffer(RHIBuffer* buffer, size_t offset = 0, RHIResourceFormat format = RHIResourceFormat::R32_UINT) = 0;
         virtual RHICommandList& EndGraphics() = 0;
 #pragma endregion
+#pragma region Compute        
+        virtual RHICommandList& Dispatch(uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z) = 0;
+#pragma endregion
 #pragma region Tags
         virtual RHICommandList& DebugBegin(const char* message) = 0;
         virtual RHICommandList& DebugInsertMarker(const char* message) = 0;

@@ -49,6 +49,13 @@ namespace Foundation::RHI {
         Transfer,
         Present
     };
+    ENUM_NAME_CONV_BEGIN(RHIDeviceQueueType)
+        case Graphics: return "Graphics";
+        case Compute: return "Compute";
+        case Transfer: return "Transfer";
+        case Present: return "Present";
+    ENUM_NAME_CONV_END()
+
     enum class RHIDevicePipelineType {
         Graphics,
         Compute,

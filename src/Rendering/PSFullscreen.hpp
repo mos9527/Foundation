@@ -14,7 +14,7 @@ namespace Foundation::Rendering {
         FSetup&& setup,
         FRecord&& record
     ) {
-        return createPass(r, name, RHIDevicePipelineType::Graphics,
+        return createPass(r, name, RHIDeviceQueueType::Graphics,
             [=](PassHandle self, Renderer* r) {
                 // NOTE: Swapchain backbuffer for the entierity of a pass is always
                 // in ColorAttachmentOptimal layout - until the end of the frame

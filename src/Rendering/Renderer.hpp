@@ -12,7 +12,7 @@ namespace Foundation::Rendering {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
     constexpr PassHandle kRendererMaxPasses = 1024; // Maximum number of render passes
-    constexpr size_t kMaxCommandListsPerSwap = 8;  // Maximum number of concurrent command buffers per swap
+    constexpr size_t kMaxCommandListsPerSwap = 128;  // Maximum number of concurrent command buffers per swap
     const RHIPipelineStageBits kAllPipelineShaderStages =
         RHIPipelineStageBits::FragmentShader |        
         RHIPipelineStageBits::VertexShader;
@@ -106,7 +106,7 @@ namespace Foundation::Rendering {
     struct TrackedPass {
         std::string name;
         PassHandle handle; // Index to tracked passes
-        RHIDevicePipelineType queue; // Prefered type of queue to run in
+        RHIDeviceQueueType queue; // Prefered type of queue to run in
         bool used{ false }; // Culled?
         bool has_cross_queue_dependent{ false }; // Has an edge to/from another queue
         // Writes to the swapchain backbuffer
@@ -115,6 +115,8 @@ namespace Foundation::Rendering {
         // Uses compute shader, or runs in a compute pipeline (not necessarily a compute queue)
         // Should be mutally exclusive with write_backbuffer and other graphics states
         bool compute_pass{ false };
+        // Local size for compute shaders
+        std::tuple<uint32_t, uint32_t, uint32_t> compute_local_size{};
         size_t depth{}; // Depth in RG
         size_t ord{}; // Execution order
         /* -- resources -- */
@@ -159,7 +161,7 @@ namespace Foundation::Rendering {
         RHI::RHIPipelineState::PipelineStateDesc::VertexInput vertex_input{};
         /* --- */
         UniquePtr<RenderPass> pass;
-        TrackedPass(Allocator* alloc, PassHandle handle, std::string const& name, RHIDevicePipelineType queue, UniquePtr<RenderPass> renderPass)
+        TrackedPass(Allocator* alloc, PassHandle handle, std::string const& name, RHIDeviceQueueType queue, UniquePtr<RenderPass> renderPass)
             : resources(alloc), bufferUsages(alloc), textureUsages(alloc),
             shaders(alloc), texviews(alloc), buf_bindings(alloc), tex_bindings(alloc),
             handle(handle),
@@ -211,12 +213,30 @@ namespace Foundation::Rendering {
         RHIDeviceScopedObjectHandle<RHICommandPool> m_cmdPool{}, m_compCmdPool{}; // Graphics, Async Compute
 
         struct {
-            RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render{}, present{};
-            RHIDeviceScopedObjectHandle<RHIDeviceFence> fence{};
+        private:
             // For async compute, we might submit multiple command buffers
             // per swap. Driver usually want them to live.                       
             StlArray<RHICommandPoolScopedHandle<RHICommandList>, kMaxCommandListsPerSwap> cmds{};
             StlArray<RHICommandPoolScopedHandle<RHICommandList>, kMaxCommandListsPerSwap> comp_cmds{};
+            StlArray<RHIDeviceScopedObjectHandle<RHIDeviceSemaphore>, kMaxCommandListsPerSwap> barrier_semaphores{};
+        public:
+            RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render{}, present{};
+            RHIDeviceScopedObjectHandle<RHIDeviceFence> fence{};
+            inline RHICommandList* cmd_at(size_t i, RHICommandPool* pool) {
+                if (!cmds[i].IsValid())
+                    cmds[i] = pool->CreateCommandList();
+                return cmds[i].Get();
+            }
+            inline RHICommandList* comp_cmds_at(size_t i, RHICommandPool* pool) {
+                if (!comp_cmds[i].IsValid())
+                    comp_cmds[i] = pool->CreateCommandList();
+                return comp_cmds[i].Get();
+            }
+            inline RHIDeviceSemaphore* barrier_semaphore_at(size_t i, RHIDevice* device) {
+                if (!barrier_semaphores[i].IsValid())
+                    barrier_semaphores[i] = device->CreateSemaphore(true);
+                return barrier_semaphores[i].Get();
+            }
             // RTV for the backbuffer
             RHITextureScopedHandle<RHITextureView> rtv{};
         } m_swaps[4];
@@ -295,8 +315,9 @@ namespace Foundation::Rendering {
         void FinalizeResources();
         void FinalizePSOs();
 
-        void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);        
-        bool ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, RHIDeviceQueue* queue);
+        RHIPipelineStage ExecuteGetPassAllCurrentStages(TrackedPass& pass);
+        void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
+        bool ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, RHIDeviceQueue* queue, StlSpan<const std::pair<RHIDeviceSemaphore*, size_t>> extra_waits = {});
     public:
 
 
@@ -317,8 +338,9 @@ namespace Foundation::Rendering {
         /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
         /// </summary>
         template<typename T, typename ...Args> requires std::is_base_of_v<RenderPass, T>
-        T* CreatePassImpl(std::string const& name, RHIDevicePipelineType queue, Args&&... args) {
+        T* CreatePassImpl(std::string const& name, RHIDeviceQueueType queue, Args&&... args) {
             CHECK(m_state == State::Setup);
+            CHECK_MSG(queue == RHIDeviceQueueType::Graphics || queue == RHIDeviceQueueType::Compute, "Invalid queue type. Only Graphics and Compute queues are supported.");
             PassHandle handle = m_setup->trackedPasses.size();
             CHECK_MSG(handle < kRendererMaxPasses, "Too many passes ({}) - leaks might be possible", handle);
             m_setup->trackedPasses.emplace_back(
@@ -339,7 +361,7 @@ namespace Foundation::Rendering {
         /// This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
         /// </summary>
         template<typename FSetup, typename FRecord>
-        LambdaPass<FSetup, FRecord>* CreatePass(std::string const& name, RHIDevicePipelineType queue, FSetup&& setup, FRecord&& record) {
+        LambdaPass<FSetup, FRecord>* CreatePass(std::string const& name, RHIDeviceQueueType queue, FSetup&& setup, FRecord&& record) {
             return CreatePassImpl<LambdaPass<FSetup, FRecord>>(name, queue, std::forward<FSetup>(setup), std::forward<FRecord>(record));
         }
         /// <summary>
@@ -620,14 +642,25 @@ namespace Foundation::Rendering {
 
 #pragma region Command Recording Helpers
         /// <summary>
-        /// Helper that pushes correct BeginGraphics() commands with
-        /// declared RTVs and DSVs to the current command list.
+        /// Helper that retrieves the local size declared by a compute pass.
+        ///
+        /// Calling this on a non-CS bound queue is incorrect, and will throw.
+        /// </summary>
+        const RHIExtent3D CmdGetComputeLocalSize(PassHandle pass);
+        /// <summary>
+        /// Helper that dispatches a compute shader with the specified total thread count
+        ///
+        /// This is equivalent to calling:
+        ///     auto local_size = CmdGetComputeLocalSize(pass);
+        ///     cmd->Dispatch(
+        ///         (thread_size.x + local_size.x - 1) / local_size.x,
+        ///         (thread_size.y + local_size.y - 1) / local_size.y,
+        ///         (thread_size.z + local_size.z - 1) / local_size.z
+        ///     );
         /// </summary>        
-        void CmdBeginGraphics(
+        void CmdDispatch(
             PassHandle pass, RHICommandList* cmd,
-            RHIExtent2D const& extent,
-            std::optional<RHIClearColor> clear_rtv = RHIClearColor{},
-            std::optional<RHIClearDepthStencil> = RHIClearDepthStencil{}
+            RHIExtent3D thread_size
         );
         /// <summary>
         /// Helper that sets the current pass's PSO and descriptor sets 
@@ -635,11 +668,22 @@ namespace Foundation::Rendering {
         /// </summary>        
         void CmdSetPipeline(PassHandle pass, RHICommandList* cmd);
         /// <summary>
-        /// Helper that sets a Push Constant range data with previously bound Push Constant handle
+        /// Helper that pushes correct descriptor sets and PSO to the current command list, and
+        /// pushes correct BeginGraphics() commands with declared RTVs and DSVs to the current command list.
         /// </summary>        
-        void CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, RHIShaderStage stage, size_t offset, StlSpan<const char> data);
+        void CmdBeginGraphics(
+            PassHandle pass, RHICommandList* cmd,
+            RHIExtent2D const& extent,
+            std::optional<RHIClearColor> clear_rtv = RHIClearColor{},
+            std::optional<RHIClearDepthStencil> = RHIClearDepthStencil{}
+        );        
+        /// <summary>
+        /// Helper that sets a Push Constant range data with a single l-value.
+        /// </summary>        
         template<typename T> inline void CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, RHIShaderStage stage, size_t offset, T const& data) {
-            CmdSetPushConstant(pass, cmd, stage, offset, { reinterpret_cast<const char*>(&data), sizeof(T) });
+            CHECK(m_state == State::Execute);
+            auto& tpass = m_setup->trackedPasses[pass];
+            cmd->PushConstant(tpass.pso.Get(), stage, (uint32_t)offset, { reinterpret_cast<const char*>(&data), sizeof(T) });
         }
 #pragma endregion
 
@@ -688,7 +732,7 @@ namespace Foundation::Rendering {
     /// This is equivalent to calling CreatePass<T>(name, queue, args...);     
     /// </summary>    
     template<typename T, typename ...Args> requires std::is_base_of_v<RenderPass, T>
-    T* createPassImpl(Renderer* r, std::string const& name, RHIDevicePipelineType queue, Args&&... args) {
+    T* createPassImpl(Renderer* r, std::string const& name, RHIDeviceQueueType queue, Args&&... args) {
         return r->CreatePassImpl<T>(name, queue, std::forward<Args>(args)...);
     }
     /// <summary>
@@ -697,7 +741,7 @@ namespace Foundation::Rendering {
     /// This is equivalent to calling CreatePass(name, queue, setup, record);
     /// </summary>
     template<typename FSetup, typename FRecord>
-    LambdaPass<FSetup, FRecord>* createPass(Renderer* r, std::string const& name, RHIDevicePipelineType queue, FSetup&& setup, FRecord&& record) {
+    LambdaPass<FSetup, FRecord>* createPass(Renderer* r, std::string const& name, RHIDeviceQueueType queue, FSetup&& setup, FRecord&& record) {
         return r->CreatePass(name, queue, std::forward<FSetup>(setup), std::forward<FRecord>(record));
     }
 

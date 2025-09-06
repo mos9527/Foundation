@@ -19,6 +19,8 @@ namespace Foundation::Rendering {
         struct Entrypoint {
             std::string name;
             RHI::RHIShaderStage stage{};
+            // Compute shader specific
+            std::tuple<uint32_t, uint32_t, uint32_t> local_size{};
         };
         Core::StlVector<Entrypoint> m_entrypoints;        
         struct Binding {

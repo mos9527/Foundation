@@ -107,7 +107,7 @@ namespace Foundation::Core {
             Derived* obj = std::construct_at(static_cast<Derived*>(raw), std::forward<Args>(args)...);
             return UniquePtr<Base>(obj, StlDeleter<Base>{ resource });
         }
-        catch (...) {
+        catch (...) {            
             resource->Deallocate(raw, sizeof(Derived));
             throw;
         }       

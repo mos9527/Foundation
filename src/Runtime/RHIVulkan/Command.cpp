@@ -56,19 +56,19 @@ VulkanCommandList::VulkanCommandList(const VulkanCommandPool& commandPool) :
 }
 
 RHICommandList& VulkanCommandList::Begin() {
-    CHECK(!m_allocator && "Invalid command list states. Did you call End()?");
+    CHECK(!m_allocator && "Invalid command list states.");
     m_allocator.Reset(m_arena);
     m_commandBuffer.begin(vk::CommandBufferBeginInfo{});
     return *this;
 }
 RHICommandList& VulkanCommandList::BeginTransition() {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     m_barriers = Core::ConstructUnique<Barriers>(&m_allocator, &m_allocator);
     return *this;
 }
 #include "Resource.hpp"
 RHICommandList& VulkanCommandList::SetBufferTransition(RHIBuffer* image, TransitionDesc const& desc) {
-    CHECK(m_barriers && "Invalid barrier states. Did you call BeginTransition()?");
+    CHECK(m_barriers && "Invalid barrier states.");
     auto* res = static_cast<VulkanBuffer*>(image);
     m_barriers->buffer.push_back(vk::BufferMemoryBarrier2{
         .srcStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.src_stage),
@@ -82,7 +82,7 @@ RHICommandList& VulkanCommandList::SetBufferTransition(RHIBuffer* image, Transit
     return *this;
 }
 RHICommandList& VulkanCommandList::SetImageTransition(RHITexture* image, TransitionDesc const& desc) {
-    CHECK(m_barriers && "Invalid barrier states. Did you call BeginTransition()?");
+    CHECK(m_barriers && "Invalid barrier states.");
     auto* res = static_cast<VulkanTexture*>(image);
     m_barriers->image.push_back(vk::ImageMemoryBarrier2{
         .srcStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.src_stage),
@@ -105,7 +105,7 @@ RHICommandList& VulkanCommandList::SetImageTransition(RHITexture* image, Transit
     return *this;
 }
 RHICommandList& VulkanCommandList::EndTransition() {
-    CHECK(m_barriers && "Invalid barrier states. Did you call BeginTransition()?");
+    CHECK(m_barriers && "Invalid barrier states.");
     if (m_barriers->image.empty() && m_barriers->buffer.empty())
         return *this; // No transitions to apply
     vk::DependencyInfo dependency_info{
@@ -121,7 +121,7 @@ RHICommandList& VulkanCommandList::EndTransition() {
 
 #include "PipelineState.hpp"
 RHICommandList& VulkanCommandList::SetPipeline(PipelineDesc const& desc) {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     CHECK(desc.pipeline && "Pipeline is invalid.");
     m_commandBuffer.bindPipeline(
         vkPipelineBindPointFromRHIDevicePipelineType(desc.type),
@@ -131,34 +131,34 @@ RHICommandList& VulkanCommandList::SetPipeline(PipelineDesc const& desc) {
 }
 
 RHICommandList& VulkanCommandList::SetViewport(float x, float y, float width, float height, float depth_min, float depth_max) {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     vk::Viewport viewport{ x, y, width, height, depth_min, depth_max };
     m_commandBuffer.setViewport(0, viewport);
     return *this;
 }
 
 RHICommandList& VulkanCommandList::SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     vk::Rect2D scissor{ { (int32_t)x, (int32_t)y }, { width, height } };
     m_commandBuffer.setScissor(0, scissor);
     return *this;
 }
 
 RHICommandList& VulkanCommandList::Draw(uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance) {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     m_commandBuffer.draw(vertex_count, instance_count, first_vertex, first_instance);
     return *this;
 }
 
 RHICommandList& VulkanCommandList::DrawIndexed(uint32_t index_count, uint32_t instance_count, uint32_t first_index, int32_t vertex_offset, uint32_t first_instance) {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     m_commandBuffer.drawIndexed(index_count, instance_count, first_index, vertex_offset, first_instance);
     return *this;
 }
 
 RHICommandList& VulkanCommandList::PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Core::StlSpan<const char> data)
 {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     vkCmdPushConstants(
         *m_commandBuffer,
         *static_cast<VulkanPipelineState*>(pipeline)->GetVkPipelineLayout(),
@@ -171,7 +171,7 @@ RHICommandList& VulkanCommandList::PushConstant(RHIPipelineState* pipeline, RHIS
 }
 
 RHICommandList& VulkanCommandList::CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::StlSpan<const CopyBufferRegion> regions) {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     CHECK(src_buffer && dst_buffer && "Source and destination buffers must be valid.");
 
     auto* src_vulkan_buffer = static_cast<VulkanBuffer*>(src_buffer);
@@ -198,7 +198,7 @@ RHICommandList& VulkanCommandList::CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* 
 
 RHICommandList& VulkanCommandList::CopyImage(RHITexture* src_image, RHITextureLayout src_layout, RHITexture* dst_image, RHITextureLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions)
 {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     CHECK(src_image && dst_image && "Source and destination images must be valid.");
 
     auto* src_vulkan_image = static_cast<VulkanTexture*>(src_image);
@@ -237,7 +237,7 @@ RHICommandList& VulkanCommandList::CopyImage(RHITexture* src_image, RHITextureLa
 
 RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image, RHITextureLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions)
 {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     CHECK(src_buffer && dst_image && "Source buffer and destination image must be valid.");
 
     auto* src_vulkan_buffer = static_cast<VulkanBuffer*>(src_buffer);
@@ -272,7 +272,7 @@ RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHIT
 }
 
 RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc) {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     auto vkRenderingAttachmentInfoFromAttachment = [](const GraphicsDesc::Attachment& attachment) -> vk::RenderingAttachmentInfo {
         vk::ClearValue clear_value{ .color = vk::ClearColorValue{} };
         if (attachment.clear_color) {
@@ -319,7 +319,7 @@ RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc) {
 }
 
 RHICommandList& VulkanCommandList::BindVertexBuffer(uint32_t index, Core::StlSpan<RHIBuffer* const> buffers, Core::StlSpan<const size_t> offsets) {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     CHECK(buffers.size() == offsets.size() && "Buffers and offsets must have the same size.");
 
     Core::StlVector<vk::Buffer> vk_buffers(&m_allocator);
@@ -334,7 +334,7 @@ RHICommandList& VulkanCommandList::BindVertexBuffer(uint32_t index, Core::StlSpa
 }
 
 RHICommandList& VulkanCommandList::BindIndexBuffer(RHIBuffer* buffer, size_t offset, RHIResourceFormat format) {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     CHECK(buffer && "Buffer must be valid.");
     vk::IndexType type;
     switch (format)
@@ -359,7 +359,7 @@ RHICommandList& VulkanCommandList::BindDescriptorSet(
     Core::StlSpan<RHIDeviceDescriptorSet* const> sets,
     size_t first
 ) {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     Core::StlVector<vk::DescriptorSet> vk_sets(&m_allocator);
     for (auto* set : sets) {
         CHECK(set && "Descriptor set must be valid.");
@@ -377,19 +377,27 @@ RHICommandList& VulkanCommandList::BindDescriptorSet(
 }
 
 RHICommandList& VulkanCommandList::EndGraphics() {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     m_commandBuffer.endRendering();
     return *this;
 }
 
+RHICommandList& VulkanCommandList::Dispatch(uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z)
+{
+    CHECK(m_allocator && "Invalid command list states.");
+    CHECK_MSG(group_count_x > 0 && group_count_y > 0 && group_count_z > 0, "Dispatch group counts must be greater than zero.");
+    m_commandBuffer.dispatch(group_count_x, group_count_y, group_count_z);
+    return *this;
+}
+
 void VulkanCommandList::End() {
-    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
+    CHECK(m_allocator && "Invalid command list states.");
     m_commandBuffer.end();
     m_allocator.Reset();
 }
 
 void VulkanCommandList::Reset() {
-    CHECK(!m_allocator && "Invalid command list states. Did you call End()?");
+    CHECK(!m_allocator && "Invalid command list states.");
     m_commandBuffer.reset();
 }
 
