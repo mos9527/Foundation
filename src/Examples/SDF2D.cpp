@@ -20,9 +20,6 @@ protected:
             [=](PassHandle self, Renderer* r, RHICommandList* cmd) { r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, (float)glfwGetTime() - m_startTime); }
         );
     }
-    virtual void OnSwapchainResize() override {        
-        InitializeRenderer();
-    }
 };
 
 int main(int argc, char** argv) {

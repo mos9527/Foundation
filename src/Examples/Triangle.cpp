@@ -12,7 +12,7 @@ protected:
         m_startTime = glfwGetTime();
         createPass(
             m_renderer.get(), "Triangle",
-            RHIDevicePipelineType::Graphics,
+            RHIDeviceQueueType::Graphics,
             [=](PassHandle self, Renderer* r) {
                 r->BindBackbufferRTV(self);
                 r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/Triangle.spv");
@@ -30,9 +30,6 @@ protected:
                     .EndGraphics();
             }
         );
-    }
-    virtual void OnSwapchainResize() override {        
-        InitializeRenderer();
     }
 };
 

@@ -42,14 +42,12 @@ protected:
         );
         createPSBackbufferBlitPass(m_renderer.get(), "Backbuffer Blit", sampler, buffer);
     }
-    virtual void OnSwapchainResize() override {
-        InitializeRenderer();
-    }
 };
 
 int main(int argc, char** argv) {
     // This will actually be slower when you have async compute enabled
-    // since the work here aren't parallelized.    
+    // Overhead from synchronization is more than the gain from parallelism
+    // (which isn't much for this simple example)   
     DemoApp app({ .windowTitle = "Mandelbrot Async Compute", .asyncCompute = true });
     app.Initialize<VulkanApplication>();
     app.RunForever();

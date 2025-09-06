@@ -62,7 +62,7 @@ namespace Foundation::Rendering {
         ///
         /// Implementation may leave this empty if no action is needed.
         /// </summary>
-        virtual void OnSwapchainResize() { /* nop */ }
+        virtual void OnSwapchainResize() { InitializeRenderer(); }
         ~Application();
     public:
         Application(ApplicationInitDesc const& desc = {}) : m_desc(desc) {};

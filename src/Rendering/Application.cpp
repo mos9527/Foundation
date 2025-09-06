@@ -2,6 +2,7 @@
 using namespace Foundation::Rendering;
 void Application::CreateSwapchain() {
     CHECK(m_device && m_window);
+    LOG_RUNTIME(Application, info, "Creating swapchain ({}x{})", GetWindowSize().x, GetWindowSize().y);
     m_device->WaitIdle();
     m_swapchain.Reset();
     m_swapchain = m_device->CreateSwapchain(
