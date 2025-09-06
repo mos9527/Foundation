@@ -1,7 +1,7 @@
 #include <algorithm>
 
 #define VMA_IMPLEMENTATION
-#include <vma/vk_mem_alloc.h>
+#include <vk_mem_alloc.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 

@@ -30,7 +30,7 @@ FetchContent_MakeAvailable(tinyfiledialogs)
 add_library(
     Foundation_Native ${SOURCES} ${INCLUDES}
     "${tinyfiledialogs_SOURCE_DIR}/tinyfiledialogs.c"
- )
+)
 
 target_link_libraries(Foundation_Native PUBLIC Foundation_Core glfw)
 target_link_libraries(Foundation_Native PRIVATE )
@@ -39,4 +39,5 @@ target_include_directories(
     ..
     "${GLFW_SOURCE_DIR}/include"
     "${tinyfiledialogs_SOURCE_DIR}"
-)
+    )
+

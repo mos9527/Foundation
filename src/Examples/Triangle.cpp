@@ -15,7 +15,7 @@ namespace Examples {
                     r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/Triangle.spv");
                     r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, sizeof(float));
                 },
-                [=](PassHandle self, Renderer* r, RHICommandList* cmd) {
+                [=, this](PassHandle self, Renderer* r, RHICommandList* cmd) {
                     auto const& img_wh = r->GetSwapchainExtent();
                     r->CmdBeginGraphics(self, cmd, img_wh);
                     r->CmdSetPipeline(self, cmd);

@@ -1,5 +1,5 @@
 #pragma once
-#include <vma/vk_mem_alloc.h>
+#include <vk_mem_alloc.h>
 #include <RHICore/Device.hpp>
 #include <Native/Application.hpp>
 #include "Common.hpp"

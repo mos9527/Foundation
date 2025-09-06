@@ -49,7 +49,6 @@ function(slangc_compile TARGET)
             COMMENT "${SOURCE_FILENAME}.slang -> ${OUTPUT_FILENAME}"
             VERBATIM
         )
-        message("[slangc] ${SOURCE_FILENAME}.slang -> ${OUTPUT_FILENAME}")
         list(APPEND GENERATED_FILES "${OUTPUT_FILENAME}")
     endforeach()    
     add_custom_target(${TARGET} ALL DEPENDS ${GENERATED_FILES})

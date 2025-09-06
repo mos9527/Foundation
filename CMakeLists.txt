@@ -1,7 +1,11 @@
 cmake_minimum_required(VERSION 3.26)
 project(Foundation)
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_UNITY_BUILD ON)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
+# https://github.com/glfw/glfw/issues/783
+# GLFW doesn't like Unity builds yet
+set(CMAKE_UNITY_BUILD OFF)
 
 add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
 add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")

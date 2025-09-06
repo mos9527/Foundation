@@ -1,8 +1,8 @@
 #include "ModelViewer.hpp"
-
-class ModelViewer : public Application {
-    using Application::Application;
-protected:
+/**
+* @brief Model Viewer Application
+*/
+class ModelViewer : public RenderApplication {
     virtual void RendererSetup() override {
         ResourceHandle gb_albedo, cp_sampler;
         gb_albedo = createResource(
@@ -15,12 +15,11 @@ protected:
             });
         cp_sampler = createSampler(m_renderer.get(), "Copy Sampler", {});
         createPass(
-            m_renderer.get(), "GBuffer",
-            RHIDevicePipelineType::Graphics,
+            m_renderer.get(), "GBuffer", RHIDeviceQueueType::Graphics,
             [=](PassHandle self, Renderer* r) {
                 r->BindTextureRTV(self, gb_albedo, { .format = RHIResourceFormat::R8G8B8A8_UNORM });
-                r->BindShader(self, RHIShaderStageBits::Vertex, "data/shaders/Mesh_vertMain.spirv");
-                r->BindShader(self, RHIShaderStageBits::Fragment, "data/shaders/Mesh_fragMain.spirv");
+                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/Mesh.spv");
+                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/Mesh.spv");
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd) {
                 auto const& img_wh = r->DerefResource(gb_albedo).Get<RHITexture*>()->m_desc.extent;
@@ -34,13 +33,10 @@ protected:
         );
         createPSBackbufferBlitPass(m_renderer.get(), "Backbuffer Blit", cp_sampler, gb_albedo);
     }
-    virtual void OnSwapchainResize() override {
-        InitializeRenderer();
-    }
 };
 
 int main(int argc, char** argv) {
     ModelViewer app;
-    app.Initialize<VulkanApplication>();
+    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer" });
     app.RunForever();
 }

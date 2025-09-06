@@ -21,14 +21,14 @@ namespace Foundation::Core {
 	Foundation::Core::getLogger(#TAG)
 
 #define LOG_RUNTIME(TAG, LEVEL, ...) \
-	SPDLOG_LOGGER_CALL(LOG_GET_LOGGER(TAG), spdlog::level::LEVEL, __VA_ARGS__)
+	SPDLOG_LOGGER_CALL(LOG_GET_LOGGER(TAG), spdlog::level::LEVEL __VA_OPT__(,) __VA_ARGS__)
 
 #ifndef _DEBUG
 #define LOG_DEBUG(TAG, LEVEL, ...) (void)0
 #else
 
 #define LOG_DEBUG(TAG, LEVEL, ...) \
-	SPDLOG_LOGGER_CALL(LOG_GET_LOGGER(TAG), spdlog::level::LEVEL, __VA_ARGS__)
+	SPDLOG_LOGGER_CALL(LOG_GET_LOGGER(TAG), spdlog::level::LEVEL __VA_OPT__(,) __VA_ARGS__)
 #endif
 
 #define CHECK(expr) if(!(expr)) { \
@@ -37,6 +37,6 @@ namespace Foundation::Core {
 }
 
 #define CHECK_MSG(expr, format_str, ...) if(!(expr)) { \
-    LOG_RUNTIME(Core, err, "Check failed: {} - " format_str, #expr, __VA_ARGS__); \
-    throw std::runtime_error( fmt::format("{} - " format_str, #expr, __VA_ARGS__) ); \
+    LOG_RUNTIME(Core, err, "Check failed: {} - " format_str, #expr __VA_OPT__(,) __VA_ARGS__); \
+    throw std::runtime_error( fmt::format("{} - " format_str, #expr __VA_OPT__(,) __VA_ARGS__) ); \
 }

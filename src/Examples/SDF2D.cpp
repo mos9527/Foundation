@@ -14,7 +14,7 @@ namespace Examples {
                     r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/SDF2D.spv");
                     r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(float));
                 },
-                [=](PassHandle self, Renderer* r, RHICommandList* cmd) {
+                [=, this](PassHandle self, Renderer* r, RHICommandList* cmd) {
                     r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, GetApplicationTime());
                 }
             );

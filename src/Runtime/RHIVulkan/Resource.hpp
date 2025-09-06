@@ -2,7 +2,7 @@
 #include <RHICore/Resource.hpp>
 #include "Common.hpp"
 
-#include <vma/vk_mem_alloc.h>
+#include <vk_mem_alloc.h>
 #include <mutex>
 namespace Foundation::RHI {
     inline VmaAllocationCreateFlags vmaAllocationFlagsFromRHIResourceHostAccess(RHIResourceHostAccess access) {

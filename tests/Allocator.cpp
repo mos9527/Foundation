@@ -27,7 +27,7 @@ template<typename Func> void bench_many(const char* desc, Func&& func) {
 }
 
 int main() {
-    void* memory = _aligned_malloc(arenaSize, arenaSize); // 64 KiB alignment
+    void* memory = aligned_alloc(arenaSize, arenaSize); // 64 KiB alignment
     Arena arena(memory, arenaSize);
 	bench_many("Stack ST", [&]() {
 		StackAllocatorSingleThreaded alloc(arena);

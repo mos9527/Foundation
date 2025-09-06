@@ -1,5 +1,5 @@
 #include "ShaderReflection.hpp"
-#include <spirv-headers/spirv.hpp>
+#include <spirv/unified1/spirv.hpp>
 using namespace Foundation::Rendering;
 using namespace Foundation::Core;
 void ShaderReflection::ParseSPIRV(StlSpan<const char> bytecode)

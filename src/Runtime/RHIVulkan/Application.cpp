@@ -94,19 +94,19 @@ void VulkanApplication::DestroyDevice(Handle handle) {
 // Vulkan Custom Allocation Callbacks
 namespace Foundation::RHI {
     extern "C" {
-        static void* vkCustomCpuAllocation(
+        void* vkCustomCpuAllocation(
             Foundation::Core::Allocator* alloc, size_t size, size_t alignment,
             vk::SystemAllocationScope allocationScope)
         {
             return alloc->Allocate(size, alignment);
         }
-        static void* vkCustomCpuReallocation(
+        void* vkCustomCpuReallocation(
             Foundation::Core::Allocator* alloc, void* pOriginal, size_t size, size_t alignment,
             vk::SystemAllocationScope allocationScope)
         {
             return alloc->Reallocate(pOriginal, size, alignment);
         }
-        static void vkCustomCpuFree(Foundation::Core::Allocator* alloc, void* pMemory)
+        void vkCustomCpuFree(Foundation::Core::Allocator* alloc, void* pMemory)
         {
             alloc->Deallocate(pMemory);
         }

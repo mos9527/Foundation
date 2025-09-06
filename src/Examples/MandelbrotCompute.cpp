@@ -28,7 +28,7 @@ namespace Examples {
                     r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(PushConstants));
                     r->BindTextureUAV(self, buffer, "image", { .format = RHIResourceFormat::R8G8B8A8_UNORM });
                 },
-                [=](PassHandle self, Renderer* r, RHICommandList* cmd) {
+                [=, this](PassHandle self, Renderer* r, RHICommandList* cmd) {
                     r->CmdSetPipeline(self, cmd);
                     r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, PushConstants{
                         .time = GetApplicationTime(),
