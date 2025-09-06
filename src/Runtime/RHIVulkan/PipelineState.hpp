@@ -76,6 +76,9 @@ namespace Foundation::RHI {
 
         vk::raii::Pipeline m_pipeline{ nullptr };
         vk::raii::PipelineLayout m_pipeline_layout{ nullptr };
+        void InitializePipelineLayout();
+        void InitializeGraphics();
+        void InitializeCompute();
     public:
         VulkanPipelineState(const VulkanDevice& device, PipelineStateDesc const& desc);
 

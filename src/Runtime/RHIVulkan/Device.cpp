@@ -60,8 +60,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, const vk::raii::Physica
         if (glfwCreateWindowSurface(*m_app.GetVkInstance(), window->GetNativeWindow(), nullptr, &surface) != VK_SUCCESS)
             throw std::runtime_error("Failed to create Vulkan surface for window");
         m_surface = vk::raii::SurfaceKHR(m_app.GetVkInstance(), surface);
-        // Having present and graphics queues as the same avoids copies and is typically the case
-        // Most references handles the other case too, however
+        // Having present and graphics queues as the same avoids copies and is typically the case       
         // - https://github.com/KhronosGroup/Vulkan-Hpp/blob/main/RAII_Samples/05_InitSwapchain/05_InitSwapchain.cpp#L45
         // - https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/blob/master/src/VulkanSample.cpp#L1850
         if (m_physicalDevice.getSurfaceSupportKHR(graphics, *m_surface)) {
@@ -92,7 +91,6 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, const vk::raii::Physica
             .pQueuePriorities = &priority // All queues have the same priority
             });
     }
-    // TODO: hardcoded. from https://docs.vulkan.org/tutorial/latest/03_Drawing_a_triangle/04_Swap_chain_recreation.html
     vk::StructureChain<
         vk::PhysicalDeviceFeatures2,
         vk::PhysicalDeviceVulkan12Features,

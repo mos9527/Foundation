@@ -62,6 +62,7 @@ RHICommandList& VulkanCommandList::Begin() {
     return *this;
 }
 RHICommandList& VulkanCommandList::BeginTransition() {
+    CHECK(m_allocator && "Invalid command list states. Did you call Begin()?");
     m_barriers = Core::ConstructUnique<Barriers>(&m_allocator, &m_allocator);
     return *this;
 }

@@ -20,7 +20,7 @@ namespace Foundation::Rendering {
                 // in ColorAttachmentOptimal layout - until the end of the frame
                 // when it's presented.                
                 r->BindBackbufferRTV(self);
-                r->BindShader(self, RHIShaderStageBits::Vertex, "data/shaders/PSFullscreen_vertMain.spirv");
+                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/VSFullscreen.spv");
                 setup(self, r);
             },
             [=](PassHandle self, Renderer* r, RHI::RHICommandList* cmd) {
@@ -49,7 +49,7 @@ namespace Foundation::Rendering {
             [=](PassHandle self, Renderer* r) {
                 r->BindTextureSampler(self, copy_sampler, "sampler");
                 r->BindTextureSRV(self, copy_source, "srcTexture", { .format = RHIResourceFormat::R8G8B8A8_UNORM });
-                r->BindShader(self, RHIShaderStageBits::Fragment, "data/shaders/PSCopy_fragMain.spirv");
+                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/PSCopy.spv");
             },
             [](PassHandle, Renderer*, RHI::RHICommandList* cmd) {}
         );

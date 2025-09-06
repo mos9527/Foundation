@@ -39,19 +39,21 @@ void ShaderReflection::ParseSPIRV(StlSpan<const char> bytecode)
         /* 3.32.5 Mode-Setting Instructions */
         case spv::OpEntryPoint:
         {
+            Entrypoint ep;
             // 1: Execution Model
             switch (spv::ExecutionModel(ins[1]))
             {
             case spv::ExecutionModelVertex:
-                m_entrypoint.stage = RHI::RHIShaderStageBits::Vertex; break;
+                ep.stage = RHI::RHIShaderStageBits::Vertex; break;
             case spv::ExecutionModelFragment:
-                m_entrypoint.stage = RHI::RHIShaderStageBits::Fragment; break;
+                ep.stage = RHI::RHIShaderStageBits::Fragment; break;
             case spv::ExecutionModelGLCompute:
-                m_entrypoint.stage = RHI::RHIShaderStageBits::Compute; break;
+                ep.stage = RHI::RHIShaderStageBits::Compute; break;
             }
             // 2: Entry Point OpFunction ID
             // 3: Name
-            m_entrypoint.name = std::string(reinterpret_cast<const char*>(ins + 3));
+            ep.name = std::string(reinterpret_cast<const char*>(ins + 3));
+            m_entrypoints.push_back(ep);
             break;
         }
         case spv::OpName:
@@ -134,7 +136,7 @@ void ShaderReflection::Sort()
 }
 
 ShaderReflection::ShaderReflection(Core::StlSpan<const char> bytecode, Allocator* alloc)
-    : m_allocator(alloc), m_bindings(alloc), m_pushConstants(alloc)
+    : m_allocator(alloc), m_entrypoints(alloc), m_bindings(alloc), m_pushConstants(alloc)
 {    
     ParseSPIRV(bytecode);
     Sort();

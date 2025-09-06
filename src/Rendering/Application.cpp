@@ -14,17 +14,30 @@ void Application::CreateSwapchain() {
 }
 void Application::InitializeRenderer() {
     LOG_RUNTIME(Application, info, "** Renderer Setup **");
-    m_renderer = ConstructUnique<Renderer>(m_alloc_renderer.Ptr(), m_device, m_swapchain, m_alloc_renderer.Ptr());
+    m_renderer = ConstructUnique<Renderer>(
+        m_alloc_renderer.Ptr(),
+        RendererDesc{
+            .async = m_desc.asyncCompute,
+            .present = m_desc.present
+        },
+        m_device, m_swapchain, m_alloc_renderer.Ptr()
+    );
     m_renderer->BeginSetup();
     RendererSetup();
     m_renderer->EndSetup();
 }
-void Application::InitializeInternal(ApplicationInitDesc const& desc) {
+void Application::InitializeInternal() {
     LOG_RUNTIME(Application, info, "** Application Setup **");
     LOG_RUNTIME(Application, info, "Dir: {}", std::filesystem::current_path().string());
-    m_window = m_app.CreateWindow(desc.windowSize.x, desc.windowSize.y, desc.windowTitle);
-    m_device = m_rhi->CreateDevice(m_rhi->EnumerateDevices()[desc.deviceIndex], &m_window);
-    CreateSwapchain();    
+    if (m_desc.present) {
+        m_window = m_app.CreateWindow(m_desc.windowSize.x, m_desc.windowSize.y, m_desc.windowTitle);
+        m_device = m_rhi->CreateDevice(m_rhi->EnumerateDevices()[m_desc.deviceIndex], &m_window);
+        CreateSwapchain();
+    }
+    else {
+        // 'Headless' mode. No presentation therefore no swapchain/window.        
+        m_device = m_rhi->CreateDevice(m_rhi->EnumerateDevices()[m_desc.deviceIndex]);
+    }
 }
 void Application::RunForever() {
     CHECK_MSG(m_rhi, "No RHI backend initialized! Call Initialize<Backend>() first.");

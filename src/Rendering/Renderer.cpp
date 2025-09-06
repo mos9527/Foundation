@@ -16,8 +16,8 @@ using namespace Foundation::Rendering;
 // Semaphore counter
 #define SEM_COUNTER(ord) m_frame + ord + 1LL
 
-Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Core::Allocator* allocator)
-    : m_device(device), m_allocator(allocator), m_state(State::Undefined), m_frameSwaps(swapchain->GetImages().size()) {
+Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Core::Allocator* allocator)
+    : m_device(device), m_allocator(allocator), m_state(State::Undefined), m_frameSwaps(swapchain.IsValid() ? swapchain->GetImages().size() : 1), m_desc(desc) {
     m_gfxQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
     m_compQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Compute);
     m_cmdPool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
@@ -25,17 +25,35 @@ Renderer::Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObject
         .type = RHICommandPoolType::Persistent
     });
     m_cmdPool->DebugSetObjectName("Main Command Pool");
+    if (m_desc.async) {
+        m_compCmdPool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
+            .queue = RHIDeviceQueueType::Graphics,
+            .type = RHICommandPoolType::Persistent
+            });
+        m_compCmdPool->DebugSetObjectName("Async Compute Command Pool");
+    }
     for (size_t i = 0; i < m_frameSwaps; i++) {
         m_swaps[i].render = m_device->CreateSemaphore(false);
         m_swaps[i].render->DebugSetObjectName(fmt::format("Render Semaphore of Swap {}", i).c_str());
         m_swaps[i].present = m_device->CreateSemaphore(false);
         m_swaps[i].present->DebugSetObjectName(fmt::format("Present Semaphore of Swap {}", i).c_str());
-        for (size_t j = 0; j < kMaxCommandListsPerSwap; j++) {
-            m_swaps[i].cmds[j] = m_cmdPool->CreateCommandList();
-            m_swaps[i].cmds[j]->DebugSetObjectName(fmt::format("Command Buffer {} of Swap {}", j, i).c_str());
+        m_swaps[i].fence = m_device->CreateFence(true);
+        m_swaps[i].fence->DebugSetObjectName(fmt::format("Fence of Swap {}", i).c_str());
+        if (m_desc.async) {
+            for (size_t j = 0; j < kMaxCommandListsPerSwap; j++) {
+                m_swaps[i].cmds[j] = m_cmdPool->CreateCommandList();
+                m_swaps[i].cmds[j]->DebugSetObjectName(fmt::format("Command Buffer {} of Swap {}", j, i).c_str());
+                m_swaps[i].comp_cmds[j] = m_compCmdPool->CreateCommandList();
+                m_swaps[i].comp_cmds[j]->DebugSetObjectName(fmt::format("Compute Command Buffer {} of Swap {}", j, i).c_str());
+            }
+        }
+        else {
+            m_swaps[i].cmds[0] = m_cmdPool->CreateCommandList();
+            m_swaps[i].cmds[0]->DebugSetObjectName(fmt::format("Command Buffer of Swap {}", 0, i).c_str());
         }
     }
-    SetSwapchain(swapchain);
+    if (m_desc.present)
+        SetSwapchain(swapchain);
 }
 
 #pragma region Render Graph Setup
@@ -120,14 +138,12 @@ void Renderer::DeclareTextureAccess(
 /* -- binding -- */
 void Renderer::BindShader(
     PassHandle pass, RHIShaderStage stage,
+    std::string const& entry_point,
     std::filesystem::path const& shader_path
 ) {
     CHECK(m_state == State::Setup);
-    CHECK_MSG(stage.is_bitmask(), "Only one stage can be bound to a shader per pass");
-    for (auto& [_, s] : m_setup->trackedPasses[pass].shaders)
-        if (s == stage)
-            throw std::runtime_error("Shader stage already bound.");
-    m_setup->trackedPasses[pass].shaders.emplace_back(shader_path, stage);
+    CHECK_MSG(stage.is_bitmask(), "Only one stage can be bound to a shader per pass");    
+    m_setup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage);
 }
 void Renderer::BindVertexInput(
     PassHandle pass,
@@ -388,46 +404,61 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         return; // Pass with no shaders
     LOG_RUNTIME(Renderer, debug, "** Building PSO for {} [{}] **", tracked.name, pass);
     StlVector<char> data(m_allocator);
-    StlVector<RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(m_allocator);
-    StlVector<ShaderReflection> reflections(m_allocator);
-    reflections.reserve(tracked.shaders.size());
+    StlMap<std::filesystem::path, RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(m_allocator);
+    StlMap<std::filesystem::path, UniquePtr<ShaderReflection>> reflections(m_allocator);
     size_t stages[0xF]{};
-    for (auto const& [shader_path, stage] : tracked.shaders) {
-        LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path.string());
-        std::ifstream file(shader_path, std::ios::binary);
-        CHECK_MSG(file.good(), "Failed to open shader file {}", shader_path.string());
-        data.resize(std::filesystem::file_size(shader_path));
-        file.read(data.data(), data.size());
-        CHECK_MSG(file.gcount() == data.size(), "Shader read failure. Read {} bytes, expected {}", file.gcount(), data.size());
-        // Verifiy shader stage
-        auto const& refl = reflections.emplace_back(data, m_allocator);
-        CHECK_MSG(refl.m_entrypoint.stage == stage, "Shader entry point stage mismatch. Expected {}, got {}", stage, refl.m_entrypoint.stage);
-        LOG_RUNTIME(Renderer, debug, "** Shader Info**\n{}", refl.DbgDumpShaderInfo());
-        auto& module = shaders.emplace_back(m_device->CreateShaderModule({ .source = data }));
-        module->DebugSetObjectName(shader_path.string().c_str());
+    for (auto const& [shader_path, entry_point, stage] : tracked.shaders) {
+        if (!shaders.contains(shader_path)) {
+            LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path.string());
+            std::ifstream file(shader_path, std::ios::binary);
+            CHECK_MSG(file.good(), "Failed to open shader file {}", shader_path.string());
+            data.resize(std::filesystem::file_size(shader_path));
+            file.read(data.data(), data.size());
+            CHECK_MSG(file.gcount() == data.size(), "Shader read failure. Read {} bytes, expected {}", file.gcount(), data.size());
+            // Verifiy shader stage
+            auto const& refl = reflections.emplace(shader_path, ConstructUnique<ShaderReflection>(m_allocator, data, m_allocator)).first->second;
+            LOG_RUNTIME(Renderer, debug, "** Shader Info**\n{}", refl->DbgDumpShaderInfo());
+            shaders[shader_path] = m_device->CreateShaderModule({ .source = data });
+            shaders[shader_path]->DebugSetObjectName(shader_path.string().c_str());
+        }
+        auto& module = shaders[shader_path];
         // In BindShader we have already guaranteed these to be unique per stage
-        stages[(uint32_t)stage] = shaders.size() - 1;        
-        pso_stages.push_back({
-            .desc = {.stage = stage, .entry_point = refl.m_entrypoint.name.c_str() },
-            .shader_module = module
-        });
+        stages[(uint32_t)stage] = shaders.size() - 1;
+        if (stage == RHIShaderStageBits::Compute)
+            tracked.compute_pass = true;
+        bool found = false;
+        for (auto const& ep : reflections[shader_path]->m_entrypoints) {
+            if (ep.stage == stage && ep.name == entry_point) {
+                pso_stages.push_back({
+                    .desc = {.stage = stage, .entry_point = ep.name.c_str()},
+                    .shader_module = module
+                });
+                found = true;
+                break;
+            }
+        }
+        CHECK_MSG(found, "No entry point {} found for stage {} in shader {}", entry_point, stage, shader_path.string());
+    }
+    if (tracked.compute_pass) {
+        CHECK_MSG(shaders.size() == 1, "Pass {} must have exactly 1 Compute Shader, and 0 of any other types, if CS is used.", tracked.name);
+        CHECK_MSG(tracked.write_backbuffer == false, "Pass {} uses Compute Shader, and cannot write to the backbuffer.", tracked.name);
+        CHECK_MSG(tracked.rtvs.size() == 0 && tracked.dsv == kInvalidHandle, "Pass {} uses Compute Shader, and cannot have RTVs or DSVs.", tracked.name);
     }
     // Check variable bindings to be consistent across stages
     // [name, [set, binding]]
     StlMap<std::string, std::pair<uint32_t, uint32_t>> var_bindpoints(m_allocator);
     // Check if any shader in the pipeline uses PC
     bool use_pushconstants = false;
-    for (size_t i = 0; i < reflections.size(); i++) {
-        auto const& refl = reflections[i];        
-        if (refl.m_pushConstants.size()) {
+    for (auto const& [path, refl] : reflections){
+        if (refl->m_pushConstants.size()) {
             use_pushconstants = true;        
-            CHECK_MSG(refl.m_pushConstants.size() == 1, "Shader uses more than Push Constant block. This is not accepted by most drivers.");
+            CHECK_MSG(refl->m_pushConstants.size() == 1, "Shader uses more than Push Constant block. This is not accepted by most drivers.");
         }
-        for (auto& bind : refl.m_bindings) {
+        for (auto& bind : refl->m_bindings) {
             CHECK_MSG(
-                bind.name.size(), 
-                "Unnamed bindings are not supported. Enable debug information for shader {}", 
-                std::get<0>(tracked.shaders[i]).string()
+                bind.name.size(),
+                "Unnamed bindings are not supported. Enable debug information for shader {}",
+                path.string()
             );
             auto it = var_bindpoints.find(bind.name);
             if (it == var_bindpoints.end())
@@ -437,7 +468,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
                 CHECK_MSG(
                     set == bind.descriptorSet && binding == bind.binding, 
                     "Inconsistent binding points across shader stages for variable {} in shader {}",
-                    bind.name, std::get<0>(tracked.shaders[i]).string()
+                    bind.name, path.string()
                 );
             }
         }
@@ -573,6 +604,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         }
     }
     RHIPipelineState::PipelineStateDesc pso_desc{
+        .type = tracked.compute_pass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
         .vertex_input = tracked.vertex_input,
         .topology = RHIPipelineState::PipelineStateDesc::TRIANGLE_LIST,
         .rasterizer = {
@@ -616,7 +648,6 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     tracked.pso = m_device->CreatePipelineState(pso_desc);
     tracked.pso->DebugSetObjectName(fmt::format("PSO of {} [{}]", tracked.name, pass).c_str());
 }
-
 void Renderer::FinalizePSOs() {
     CHECK(m_state == State::Setup);
     // Build descriptor pool
@@ -646,9 +677,9 @@ void Renderer::FinalizeResources() {
     // Optionally used to be actually waited on (inter-queue, etc), but will always be signaled
     for (PassHandle ord = 0; ord < m_setup->execution.size(); ord++) {
         auto& pass = m_setup->trackedPasses[m_setup->execution[ord]];
-        if (pass.has_cross_queue_dependent) {
-            pass.waitSemaphore = m_device->CreateSemaphore(true);
-            pass.waitSemaphore->DebugSetObjectName(
+        if (m_desc.async && pass.has_cross_queue_dependent) {
+            pass.asyncSemaphore = m_device->CreateSemaphore(true);
+            pass.asyncSemaphore->DebugSetObjectName(
                 fmt::format("Timeline Semaphore of {} [{}]", pass.name, pass.handle).c_str()
             );
         }
@@ -763,9 +794,9 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) {
     }
     cmd->EndTransition();
 }
-bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd) {
+bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, RHIDeviceQueue* queue) {
     CHECK(m_state == State::Execute);
-    if (m_enableAsyncCompute) {
+    if (m_desc.async) {
         Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
         // Pass that depends on a producer pass that's on another queue
         // needs external synchronization.    
@@ -774,9 +805,9 @@ bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd) {
             if (other != kInvalidHandle) {
                 auto& opass = m_setup->trackedPasses[other];
                 if (opass.queue != pass.queue) {
-                    CHECK_MSG(opass.waitSemaphore.IsValid(), "Pass {} [{}] is not valid to be waited on", opass.name, other);
+                    CHECK_MSG(opass.asyncSemaphore.IsValid(), "Pass {} [{}] is not valid to be waited on", opass.name, other);
                     // Wait on the producer pass's semaphore                       
-                    waits.emplace_back(opass.waitSemaphore.Get(), SEM_COUNTER(opass.ord));
+                    waits.emplace_back(opass.asyncSemaphore.Get(), SEM_COUNTER(opass.ord));
                 }
             }
         };
@@ -805,11 +836,10 @@ bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd) {
         if (waits.size() || pass.has_cross_queue_dependent) {
             // Submit to appropriate queue
             cmd->End();
-            RHIDeviceQueue* queue = pass.queue == RHIDevicePipelineType::Graphics ? m_gfxQueue : m_compQueue;
             if (pass.has_cross_queue_dependent) {
                 queue->Submit({
                     .timeline_waits = waits,
-                    .timeline_signals = {{{ pass.waitSemaphore.Get(), SEM_COUNTER(pass.ord) }}},
+                    .timeline_signals = {{{ pass.asyncSemaphore.Get(), SEM_COUNTER(pass.ord) }}},
                     .cmd_lists = { cmd },
                     });
             }
@@ -834,6 +864,7 @@ bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd) {
 }
 #pragma endregion
 void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
+    CHECK_MSG(m_desc.present, "Cannot set swapchain when the renderer is not declared with Present support");
     if (m_swapchain)
         CHECK_MSG(m_frameSwaps == swapchain->GetImages().size(), "New Swapchain uses different number of swaps ({} vs {})!", m_frameSwaps, swapchain->GetImages().size());
     if (m_state == State::Execute) {
@@ -860,64 +891,135 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
     m_currentSwap = 0;
 }
 
+// See Also
+// - https://docs.vulkan.org/tutorial/latest/03_Drawing_a_triangle/03_Drawing/03_Frames_in_flight.html    
+// - https://docs.vulkan.org/tutorial/latest/_attachments/16_frames_in_flight.cpp
 void Renderer::Execute() {
     CHECK_MSG(m_state == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup()?", m_state);
     m_state = State::Execute;
     // Execute passes
     auto& passes = m_setup->trackedPasses;
-    // See Also
-    // - https://docs.vulkan.org/tutorial/latest/03_Drawing_a_triangle/03_Drawing/03_Frames_in_flight.html    
-    // - https://docs.vulkan.org/tutorial/latest/_attachments/16_frames_in_flight.cpp
-    m_device->WaitForFences({ m_swaps[m_currentSwap].fence }, true, -1);
-    uint32_t next_image = m_swapchain->GetNextImage(-1, m_swaps[m_currentSwap].present, {});
+    m_device->WaitForFences({ m_swaps[m_currentSwap].fence }, true, -1);    
+    uint32_t next_image;
+    if (m_desc.present)
+        next_image = m_swapchain->GetNextImage(-1, m_swaps[m_currentSwap].present, {});    
     m_device->ResetFences({ m_swaps[m_currentSwap].fence });
-    auto& cmds = m_swaps[m_currentSwap].cmds;
     uint32_t cmd_index = 0;
-    auto* cmd = cmds[cmd_index].Get();
-    cmd->Reset();
-    cmd->Begin();
-    for (size_t ord : m_setup->execution) {
-        auto& pass = passes[ord];
+    RHIDeviceQueue* queue = m_gfxQueue;
+    RHICommandList* cmd = m_swaps[m_currentSwap].cmds[cmd_index].Get();
+    auto set_next_graphics = [&]() { queue = m_gfxQueue, cmd = m_swaps[m_currentSwap].cmds[cmd_index].Get(); };
+    auto set_next_compute = [&]() { queue = m_compQueue, cmd = m_swaps[m_currentSwap].comp_cmds[cmd_index].Get(); };
+    auto set_next_pass_queue = [&](TrackedPass& pass) {
+        switch (pass.queue)
+        {
+        case RHIDevicePipelineType::Graphics:
+            set_next_graphics();
+            break;
+        case RHIDevicePipelineType::Compute:
+            set_next_compute();
+            break;
+        }
+    };
+    if (m_setup->execution.size()) {
+        set_next_pass_queue(passes[m_setup->execution[0]]);
+        cmd->Reset();
+        cmd->Begin();
+    }
+    for (size_t i = 0; i < m_setup->execution.size();i++) {
+        auto& pass = passes[m_setup->execution[i]];
         cmd->DebugBegin(pass.name.c_str());        
         ExecuteBarriers(pass, cmd);
         pass.pass->Record(pass.handle, this, cmd);
         cmd->DebugEnd();
         // Submit if needed
-        if (ExecuteSubmitOrContinue(pass, cmd)) {
-            // Record on a new one per swap            
+        if (ExecuteSubmitOrContinue(pass, cmd, queue)) {
             CHECK_MSG(
                 ++cmd_index < kMaxCommandListsPerSwap,
                 "Too many external syncs ({}). Try coalescing work into same queues.", cmd_index - 1
             );
-            cmd = cmds[cmd_index].Get();
-            cmd->Reset();
-            cmd->Begin();
+            if (i == m_setup->execution.size() - 1)
+            {
+                // Ending pass
+                // Only possible if we'd end up here with a pass
+                // that's only waiting on other queues
+                CHECK(!pass.has_cross_queue_dependent);                
+            }
+            else {
+                // Previous command list has already been consumed
+                // Start a new one for the next pass            
+                set_next_pass_queue(passes[m_setup->execution[i + 1]]);                
+                cmd->Reset();
+                cmd->Begin();
+            }
         }
     }
-    // Always transition swapchain image to present
-    cmd->BeginTransition();
-    cmd->SetImageTransition(
-        GetCurrentBackbuffer(),
-        RHICommandList::TransitionDesc{
-            .dst_stage = RHIPipelineStageBits::BottomOfPipe,
-            .dst_img_layout = RHITextureLayout::Present
+    if (queue == m_gfxQueue) {    
+        // Ending on Graphics queue, would be the case if
+        // - Async Compute is off
+        // - No cross-queue dependencies
+        // - Last pass is graphics
+        if (m_desc.present) {
+            // Always transition swapchain image to present
+            cmd->BeginTransition();
+            cmd->SetImageTransition(
+                GetCurrentBackbuffer(),
+                RHICommandList::TransitionDesc{
+                    .dst_stage = RHIPipelineStageBits::BottomOfPipe,
+                    .dst_img_layout = RHITextureLayout::Present
+                }
+            );
+            cmd->EndTransition();
         }
-    );
-    cmd->EndTransition();
-    cmd->End();
-    // Submit final command list
-    // always on the most competent queue
-    m_gfxQueue->Submit({
-        .waits =  {{ m_swaps[m_currentSwap].present.Get() }},
-        .signals = {{ m_swaps[m_currentSwap].render.Get() }},
-        .cmd_lists = {{ cmd }},
-        .fence = m_swaps[m_currentSwap].fence.Get()
-    });
-    m_gfxQueue->Present({
-        .image_index = next_image,
-        .swapchain = m_swapchain.Get(),
-        .waits = {{ m_swaps[m_currentSwap].render.Get() }}
-    });   
+        cmd->End();
+        // Submit final command list
+        if (m_desc.present) {
+            queue->Submit({
+                .waits = {{ m_swaps[m_currentSwap].present.Get() }},
+                .signals = {{ m_swaps[m_currentSwap].render.Get() }},
+                .cmd_lists = {{ cmd }},
+                .fence = m_swaps[m_currentSwap].fence.Get()
+                });
+            queue->Present({
+                .image_index = next_image,
+                .swapchain = m_swapchain.Get(),
+                .waits = {{ m_swaps[m_currentSwap].render.Get() }}
+                });
+        }
+        else {           
+            queue->Submit({
+                .signals = {{ m_swaps[m_currentSwap].render.Get() }},
+                .cmd_lists = {{ cmd }},
+                .fence = m_swaps[m_currentSwap].fence.Get()
+            });
+        }
+    } else {
+        // Ending on Compute queue
+        // If we need to present, we need to sync with the graphics queue
+        // Binary semaphores would be enough
+        if (m_desc.present) {
+            queue->Submit({
+                .signals = {{ m_swaps[m_currentSwap].render.Get() }},
+                .cmd_lists = {{ cmd }},                
+            });
+            m_gfxQueue->Submit({
+                .waits = {{ m_swaps[m_currentSwap].render.Get() }},
+                .signals = {{ m_swaps[m_currentSwap].present.Get() }},
+                .fence = m_swaps[m_currentSwap].fence.Get()
+            });
+            m_gfxQueue->Present({
+                .image_index = next_image,
+                .swapchain = m_swapchain.Get(),
+                .waits = {{ m_swaps[m_currentSwap].present.Get() }}
+            });
+        }
+        else {
+            queue->Submit({
+                .signals = {{ m_swaps[m_currentSwap].render.Get() }},
+                .cmd_lists = {{ cmd }},
+                .fence = m_swaps[m_currentSwap].fence.Get()
+            });
+        }
+    }
     m_currentSwap = (m_currentSwap + 1) % m_frameSwaps;
     m_frame++;
     m_state = State::PostSetup;

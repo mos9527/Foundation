@@ -13,12 +13,16 @@ namespace Foundation::Rendering {
         const size_t deviceIndex{ 0 };
         const char* windowTitle{ "Application" };
         RHIExtent2D windowSize{ 1280, 720 };
+        bool present{ true };
+        bool asyncCompute{ true };
     };
     /// <summary>
     /// Lightweight template for a rendering application
     /// </summary>
     class Application {
     protected:
+        ApplicationInitDesc const& m_desc;
+
         DefaultAllocator m_alloc, m_alloc_renderer;
 
         Native::Application m_app;
@@ -34,7 +38,7 @@ namespace Foundation::Rendering {
         inline const RHIExtent2D GetWindowSize() { auto [w, h] = m_window.GetSize(); return { w, h }; }
 
         void CreateSwapchain();
-        void InitializeInternal(ApplicationInitDesc const& desc);
+        void InitializeInternal();
         void InitializeRenderer();
         /// <summary>
         /// Setup the renderer by creating passes, resources, and other configurations.
@@ -61,16 +65,17 @@ namespace Foundation::Rendering {
         virtual void OnSwapchainResize() { /* nop */ }
         ~Application();
     public:
+        Application(ApplicationInitDesc const& desc = {}) : m_desc(desc) {};
         /// <summary>
         /// Initialize the application with the specified RHI backend.
         ///
         /// This must be called before RunForever().
         /// </summary>        
         template<typename Backend, typename... Args>
-        void Initialize(ApplicationInitDesc const& desc = {}, Args&&... args) {
+        void Initialize(Args&&... args) {
             // XXX: Backends are expected to take Allocator* as the first argument
             m_rhi = ConstructUniqueBase<RHIApplication, Backend>(m_alloc.Ptr(), m_alloc.Ptr(), std::forward<Args>(args)...);
-            InitializeInternal(desc);
+            InitializeInternal();
             InitializeRenderer();
         }
         /* --- */

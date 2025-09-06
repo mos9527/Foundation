@@ -17,7 +17,7 @@ std::vector<char> ReadFile(std::string const& path) {
 }
 DefaultAllocator g_alloc;
 int main() {
-    auto bytecode = ReadFile(".derived\\shaders\\Triangle_fragMain.spirv");
+    auto bytecode = ReadFile("data\\shaders\\Triangle_fragMain.spirv");
     ShaderReflection refl(bytecode, &g_alloc);
     std::cout << refl.DbgDumpShaderInfo() << std::endl;
 }

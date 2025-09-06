@@ -111,7 +111,10 @@ namespace Foundation::Rendering {
         bool has_cross_queue_dependent{ false }; // Has an edge to/from another queue
         // Writes to the swapchain backbuffer
         // Ignores other RTVs if true
-        bool write_backbuffer{ false }; 
+        bool write_backbuffer{ false };
+        // Uses compute shader, or runs in a compute pipeline (not necessarily a compute queue)
+        // Should be mutally exclusive with write_backbuffer and other graphics states
+        bool compute_pass{ false };
         size_t depth{}; // Depth in RG
         size_t ord{}; // Execution order
         /* -- resources -- */
@@ -135,6 +138,7 @@ namespace Foundation::Rendering {
         // Shader [path, entry point, stage]
         StlVector<std::tuple<
             std::filesystem::path,
+            std::string,
             RHIShaderStage
             >> shaders;
         // Bind points [view(tex) or buffer(buf), desc type, binding point]        
@@ -170,13 +174,19 @@ namespace Foundation::Rendering {
         /* -- states -- */
         /* Only unculled passes have these initialized. */
         // Semaphore to signal on pass completion
-        RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> waitSemaphore{};
+        RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> asyncSemaphore{};
         // Pipeline states for the entire pass
         RHIDeviceScopedObjectHandle<RHIPipelineState> pso;
         StlVector<RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout>> desc_layouts;
         StlVector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> desc_sets;
         StlVector<RHIDeviceDescriptorSet*> p_desc_sets;
         // ---
+    };
+    struct RendererDesc {
+        // Enable async compute
+        bool async{ true }; 
+        // Present the swapchain in Execute()
+        bool present{ true }; 
     };
     class Renderer {
     public:
@@ -188,8 +198,9 @@ namespace Foundation::Rendering {
         };
     private:
         State m_state;
-
         Allocator* m_allocator{ nullptr };
+
+        const RendererDesc m_desc{};
 
         uint64_t m_frame{ 0 };
 
@@ -197,7 +208,7 @@ namespace Foundation::Rendering {
         uint32_t m_currentSwap{ 0 };
 
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_descPool;
-        RHIDeviceScopedObjectHandle<RHICommandPool> m_cmdPool{};
+        RHIDeviceScopedObjectHandle<RHICommandPool> m_cmdPool{}, m_compCmdPool{}; // Graphics, Async Compute
 
         struct {
             RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render{}, present{};
@@ -205,6 +216,7 @@ namespace Foundation::Rendering {
             // For async compute, we might submit multiple command buffers
             // per swap. Driver usually want them to live.                       
             StlArray<RHICommandPoolScopedHandle<RHICommandList>, kMaxCommandListsPerSwap> cmds{};
+            StlArray<RHICommandPoolScopedHandle<RHICommandList>, kMaxCommandListsPerSwap> comp_cmds{};
             // RTV for the backbuffer
             RHITextureScopedHandle<RHITextureView> rtv{};
         } m_swaps[4];
@@ -214,7 +226,7 @@ namespace Foundation::Rendering {
         RHIDeviceQueue* m_gfxQueue{}, *m_compQueue{};
 
 
-        struct Setup {
+        struct Setup {            
             StlVector<StlVector<std::pair<PassHandle, ResourceHandle>>> graph;
             StlVector<TrackedPass> trackedPasses;
             StlVector<TrackedResource> trackedResources;
@@ -284,14 +296,13 @@ namespace Foundation::Rendering {
         void FinalizePSOs();
 
         void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);        
-        bool ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd);
+        bool ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, RHIDeviceQueue* queue);
     public:
-        // Enable async compute for compute passes
-        bool m_enableAsyncCompute{ true };
+
 
         ~Renderer();
         Renderer(Allocator* allocator) : m_allocator(allocator), m_state(State::Undefined) {}
-        Renderer(RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator);
+        Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain,  Allocator* allocator);
 
 #pragma region Render Graph Setup
         /// <summary>
@@ -363,6 +374,7 @@ namespace Foundation::Rendering {
         /// </summary>
         void BindShader(
             PassHandle pass, RHIShaderStage stage,
+            std::string const& entry_point,
             std::filesystem::path const& shader_path
         );        
         /// <summary>

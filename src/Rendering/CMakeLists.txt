@@ -21,5 +21,5 @@ target_include_directories(
 )
 
 add_subdirectory(Shaders)
-add_dependencies(Foundation_Rendering Shader_PSFullscreen)
+add_dependencies(Foundation_Rendering Shader_VSFullscreen)
 add_dependencies(Foundation_Rendering Shader_PSCopy)

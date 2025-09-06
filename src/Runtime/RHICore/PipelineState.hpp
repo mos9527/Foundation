@@ -8,8 +8,9 @@ namespace Foundation::RHI {
     protected:
         const RHIDevice& m_device;
     public:
-        struct PipelineStateDesc {            
-            // Vertex Input
+        struct PipelineStateDesc {
+            RHIDevicePipelineType type{ RHIDevicePipelineType::Graphics };
+            // [Graphics] Vertex Input
             struct VertexInput {
                 struct Binding {
                     uint32_t stride; // In bytes
@@ -18,23 +19,23 @@ namespace Foundation::RHI {
                 Core::StlSpan<const Binding> bindings;
                 Core::StlSpan<const RHIVertexAttribute> attributes;
             } vertex_input{};
-            // Input Assembly
+            // [Graphics] Input Assembly
             enum Topology {
                 LINE_LIST,
                 POINT_LIST,
                 TRIANGLE_LIST,
                 TRIANGLE_STRIP
             } topology{ TRIANGLE_LIST };
-            // Viewport
+            // [Graphics] Viewport
             struct Viewport {
                 float x = 0, y = 0, width, height;
                 float min_depth = 0.0, max_depth = 1.0;
             } viewport{};
-            // Scissor
+            // [Graphics] Scissor
             struct Scissor {
                 int32_t x = 0, y = 0, width, height;
             } scissor{};
-            // Rasterizer
+            // [Graphics] Rasterizer
             struct Rasterizer {
                 enum FillMode {
                     FILL_WIREFRAME,
@@ -53,12 +54,12 @@ namespace Foundation::RHI {
                 float depth_bias = 1.0;
                 float line_fill_width = 1.0;
             } rasterizer{};
-            // MSAA
+            // [Graphics] MSAA
             struct Multisample {
                 bool enabled;
                 RHIMultisampleCount sample_count; // 1, 2, 4, 8, etc.
             } multisample{};
-            // Depth Stencil
+            // [Graphics] Depth Stencil
             struct DepthStencil {
                 RHIResourceFormat depth_format{ RHIResourceFormat::Undefined };
                 RHIResourceFormat stencil_format{ RHIResourceFormat::Undefined };
@@ -75,7 +76,6 @@ namespace Foundation::RHI {
                     ALWAYS
                 } depth_compare_op{ LESS };
             } depth_stencil{};
-            // Attachments/Alpha Blending
             struct Attachment {
                 struct Blending {
                     bool enabled{ false };
@@ -102,6 +102,7 @@ namespace Foundation::RHI {
                     RHIResourceFormat format{ RHIResourceFormat::Undefined };
                 } render_target{};
             };
+            // [Graphics] Attachments/Alpha Blending
             Core::StlSpan<const Attachment> attachments;
             // Stages
             struct ShaderStage {

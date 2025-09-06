@@ -20,7 +20,7 @@ namespace Foundation::Rendering {
             std::string name;
             RHI::RHIShaderStage stage{};
         };
-        Entrypoint m_entrypoint;        
+        Core::StlVector<Entrypoint> m_entrypoints;        
         struct Binding {
             std::string name;
             uint32_t descriptorSet;

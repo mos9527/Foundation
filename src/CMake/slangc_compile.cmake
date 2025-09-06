@@ -11,7 +11,7 @@ endif()
 function(slangc_compile TARGET)
     set(options)
     set(oneValueArgs SOURCE OUTPUT_DIR OUTPUT_NAME)
-    set(multiValueArgs TARGETS PROFILES ENTRY_POINTS DEFINES INCLUDE_DIRS)
+    set(multiValueArgs DEFINES INCLUDE_DIRS)
     cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     get_filename_component(SOURCE_FILENAME ${ARG_SOURCE} NAME_WE)
@@ -19,33 +19,21 @@ function(slangc_compile TARGET)
         set(ARG_OUTPUT_NAME ${SOURCE_FILENAME})
     endif()
 
-    list(LENGTH ARG_TARGETS NUM_TARGETS)
-    list(LENGTH ARG_PROFILES NUM_PROFILES)
-    list(LENGTH ARG_ENTRY_POINTS NUM_ENTRY_POINTS)
-
-    if(NOT ${NUM_TARGETS} EQUAL ${NUM_PROFILES} OR NOT ${NUM_TARGETS} EQUAL ${NUM_ENTRY_POINTS})
-        message(FATAL_ERROR "slangc_compile: The number of TARGETS, PROFILES, and ENTRY_POINTS must be equal.")
-    endif()
-
     set(GENERATED_FILES "")
     math(EXPR LAST_INDEX "${NUM_TARGETS} - 1")
-
     # Loop through each requested shader target and create a build command for it.
     foreach(I RANGE ${LAST_INDEX})
-        list(GET ARG_TARGETS ${I} SHADER_TARGET)
-        list(GET ARG_PROFILES ${I} SHADER_PROFILE)
-        list(GET ARG_ENTRY_POINTS ${I} SHADER_ENTRY)
-
-        set(OUTPUT_FILENAME "${ARG_OUTPUT_DIR}/${ARG_OUTPUT_NAME}_${SHADER_ENTRY}.${SHADER_TARGET}")
+        set(OUTPUT_FILENAME "${ARG_OUTPUT_DIR}/${ARG_OUTPUT_NAME}.spv")
         # https://www.khronos.org/assets/uploads/developers/presentations/Vulkan_BOF_Using_Slang_with_Vulkan_SIGG24.pdf
+        # https://shader-slang.org/slang/user-guide/spirv-target-specific.html
         set(SLANGC_ARGS
             "${ARG_SOURCE}"
             -o "${OUTPUT_FILENAME}"
-            -target ${SHADER_TARGET}
-            -profile ${SHADER_PROFILE}
-            -entry ${SHADER_ENTRY}
+            -target spirv
+            -profile spirv_1_4
             -emit-spirv-directly
             -matrix-layout-column-major
+            -fvk-use-entrypoint-name
         )
         foreach(DEFINE ${ARG_DEFINES})
             list(APPEND SLANGC_ARGS -D${DEFINE})
@@ -58,10 +46,10 @@ function(slangc_compile TARGET)
             OUTPUT  "${OUTPUT_FILENAME}"
             COMMAND ${SLANGC_EXECUTABLE} ${SLANGC_ARGS}
             DEPENDS "${ARG_SOURCE}"
-            COMMENT "${SOURCE_FILENAME}.slang -> ${SHADER_ENTRY} (${SHADER_TARGET}) @ ${OUTPUT_FILENAME}"
+            COMMENT "${SOURCE_FILENAME}.slang -> ${OUTPUT_FILENAME}"
             VERBATIM
         )
-        message("[slangc] ${SOURCE_FILENAME}.slang -> ${SHADER_ENTRY} (${SHADER_TARGET}) @ ${OUTPUT_FILENAME}")
+        message("[slangc] ${SOURCE_FILENAME}.slang -> ${OUTPUT_FILENAME}")
         list(APPEND GENERATED_FILES "${OUTPUT_FILENAME}")
     endforeach()    
     add_custom_target(${TARGET} ALL DEPENDS ${GENERATED_FILES})
