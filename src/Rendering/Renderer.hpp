@@ -350,7 +350,7 @@ namespace Foundation::Rendering {
         /**
          * @brief Create a render pass from a RenderPass* implementation and add it to the render graph.
          *
-         * This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
+         * This is only available at Setup time.
          * 
          * @ref createPassImpl() should be generally preferred over this. 
          */
@@ -386,7 +386,7 @@ namespace Foundation::Rendering {
         /**
          * @brief Create a new resource to be used in the render graph.
          *
-         * This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().       
+         * This is only available at Setup time.    
          * No allocation is performed until EndSetup() is called.
          *
          * All resources created by a pass that is not culled will be created, regardless of usage.
@@ -405,7 +405,7 @@ namespace Foundation::Rendering {
         /**
          * @brief Creates a sampler with the specified name and descriptor.
          *
-         * This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().       
+         * This is only available at Setup time.
          * No allocation is performed until EndSetup() is called.
          * 
          * @ref createSampler() should be generally preferred over this.
@@ -415,7 +415,10 @@ namespace Foundation::Rendering {
         /**
          * @brief Binds shader file path to a certain pass at a certain stage.
          *
-         * Shaders are unique per stage, and may be omitted.
+         * This is only available at Setup time.     
+         * No allocation, or parsing of shader is performed until EndSetup() is called.
+         * 
+         * Shaders are unique per stage, and may be omitted e.g. there's only a copy.
          */
         void BindShader(
             PassHandle pass, RHIShaderStage stage,
@@ -423,11 +426,13 @@ namespace Foundation::Rendering {
             std::filesystem::path const& shader_path
         );        
         /**
-         * @brief Binds a shader push constant to a constant value, which can be set at Record time.
+         * @brief Declares a range of Push Constant used in a stage.
          *
-         * Bind points are effectively shader variable names, which will be automatically dereferenced.
+         * This is only available at Setup time.
+         * 
+         * You MUST bind a valid range if Push Constants are used in shaders,
+         * i.e. before calling CmdSetPushConstant()
          */
-        /// <returns>Opaque handle value that can be used by CmdSetPushConstant to set data at Record time.</returns>
         void BindPushConstant(
             PassHandle pass, RHIShaderStage stage,
             size_t offset, size_t size
@@ -435,11 +440,15 @@ namespace Foundation::Rendering {
         /**
          * @brief Associates Vertex Input description with this pass.
          *
-         * This only applies to passes on Graphics queues. And will not have
-         * any effect otherwise.
+         * This is only available at Setup time.
+         * 
+         * This only applies to passes on Graphics queues. And will throw
+         * otherwise.
          *
-         * You MUST bind a valid Vertex Input at creation time if Draw[Indexed]
-         * is desired.       
+         * You MUST bind a valid VertexInput at creation time if cmd->Draw[Indexed]
+         * is used.
+         *
+         * This can be automatically bound to the pipeline with CmdBeginGraphics().
          */
         void BindVertexInput(
             PassHandle pass,
@@ -448,7 +457,11 @@ namespace Foundation::Rendering {
         /**
          * @brief Binds a uniform buffer to a specified binding point in a rendering pass.
          *
-         * Bind points are effectively shader variable names, which will be automatically dereferenced.       
+         * This is only available at Setup time.
+         * 
+         * Bind points are effectively shader variable names, which will be automatically dereferenced.
+         *
+         * This can be automatically bound to the pipeline with CmdSetPipeline()
          */
         void BindBufferUniform(
             PassHandle pass, ResourceHandle buffer,
@@ -457,8 +470,11 @@ namespace Foundation::Rendering {
         /**
          * @brief Binds a storage (read-write) buffer to a specified binding point.
          *
-         * Use this for buffers declared as 'buffer' / 'RWStructuredBuffer' / 'StorageBuffer'
-         * inside shaders. Declares ShaderRead | ShaderWrite access automatically.
+         * This is only available at Setup time.
+         * 
+         * Bind points are effectively shader variable names, which will be automatically dereferenced.
+         *
+         * This can be automatically bound to the pipeline with CmdSetPipeline()
          */
         void BindBufferStorage(
             PassHandle pass, ResourceHandle buffer,
@@ -466,9 +482,12 @@ namespace Foundation::Rendering {
         );
         /**
          * @brief Binds a buffer for unordered (UAV) access from shaders (read and/or write in any order).
+         * 
+         * This is only available at Setup time.
          *
-         * Equivalent to a storage buffer but semantically indicates random R/W patterns.
-         * Declares ShaderRead | ShaderWrite access.
+         * Bind points are effectively shader variable names, which will be automatically dereferenced.
+         *
+         * This can be automatically bound to the pipeline with CmdSetPipeline()
          */
         void BindBufferUnordered(
             PassHandle pass, ResourceHandle buffer,
@@ -477,18 +496,28 @@ namespace Foundation::Rendering {
         /**
          * @brief Declares this pass has shaders that will read from this buffer.
          * e.g. Vertex, Index
+         *
+         * This by itself has no effect on binding. You need to call
+         * cmd->BindVertexBuffer(), cmd->BindIndexBuffer() at Record time to
+         * use the buffer.
          */
         void BindBufferShaderRead(PassHandle pass, ResourceHandle buffer);
         /**
-         * @brief Declares that this pass will write to the buffer via copy
+         * @brief Declares that this pass will write to the buffer via copy.
+         *
+         * This MUST be called before calling cmd->CopyBuffer(), etc at Record time.
          */
         void BindBufferCopyDst(PassHandle pass, ResourceHandle buffer);
         /**
          * @brief Declares that this pass will read from the buffer via copy
+         *
+         * This MUST be called before calling cmd->CopyBuffer(), etc at Record time.
          */
         void BindBufferCopySrc(PassHandle pass, ResourceHandle buffer);
         /**
-         * @brief Binds a sampler to a specified variable name in the shader.
+         * @brief Binds a sampler to the shader.
+         *
+         * Bind points are effectively shader variable names, which will be automatically dereferenced.
          */
         void BindTextureSampler(
             PassHandle pass, ResourceHandle sampler,
@@ -497,8 +526,9 @@ namespace Foundation::Rendering {
         /**
          * @brief Binds a texture as a Shader Resource View (read-only sampling / fetch).
          *
-         * A view will be created if a subresource range (mips/layers) or format reinterpretation
-         * is specified via desc. Returns the (possibly new) texture view handle.
+         * Bind points are effectively shader variable names, which will be automatically dereferenced.
+         * 
+         * No view is created until EndSetup() is called.
          */
         ResourceHandle BindTextureSRV(
             PassHandle pass, ResourceHandle texture,
@@ -508,10 +538,12 @@ namespace Foundation::Rendering {
         /**
          * @brief Binds a texture for unordered (UAV) read-write access in shaders.
          *
+         * Bind points are effectively shader variable names, which will be automatically dereferenced.
+         * 
          * Declares ShaderRead | ShaderWrite access and sets layout to General (or equivalent),
-         * bound as StorageImage.
+         * bound as StorageImage, and creates a view.
          *
-         * A view will be created when desc customizes subresources or format.
+         * No view is created until EndSetup() is called.
          */
         ResourceHandle BindTextureUAV(
             PassHandle pass, ResourceHandle texture, 
@@ -524,8 +556,9 @@ namespace Foundation::Rendering {
          * The pass must execute on a graphics-capable queue. Multiple RTVs may be bound.
          * Returns the created/assigned view handle (auto-created if needed).
          *
-         * This can be automatically bound to the pipeline with CmdBeginGraphics(), where
-         * order of multiple render targets is the same as the insertion order of the RTVs.
+         * This can be automatically bound to the pipeline with CmdBeginGraphics().
+         *
+         * The order of multiple render targets is the same as the insertion order of the RTVs.
          */
         ResourceHandle BindTextureRTV(
             PassHandle pass, ResourceHandle texture,
@@ -590,17 +623,28 @@ namespace Foundation::Rendering {
 #pragma endregion
 
 #pragma region Swapchain
+        /**
+         * @brief Get the current swapchain extents.
+         */
         inline RHIExtent2D GetSwapchainExtent() const {
             CHECK(m_swapchain && "Swapchain not initialized");
             return m_swapchain->m_desc.extents;
         }
+        /**
+        * @brief Get the current swapchain extents as a 3D extent with depth 1.
+        */
         inline RHIExtent3D GetSwapchainExtent3D() const {
             CHECK(m_swapchain && "Swapchain not initialized");
             auto xy = m_swapchain->m_desc.extents;
             return { xy.x,xy.y,1 };
         }
+        /**
+         * @brief Get the current swapchain image format.
+         *
+         * This is only valid in Execute() time, e.g. within a pass's Record() function.
+         */
         inline RHITexture* GetCurrentBackbuffer() {
-            CHECK(m_state == State::Execute);
+            CHECK(m_state == State::Execute && m_swapchain);
             return m_swapchain->GetImages()[m_currentSwap];
         }
 #pragma endregion
@@ -674,12 +718,14 @@ namespace Foundation::Rendering {
          * @brief Helper that dispatches a compute shader with the specified total thread count
          *
          * This is equivalent to calling:
+         * @code{.cpp}
          *     auto local_size = CmdGetComputeLocalSize(pass);
          *     cmd->Dispatch(
          *         (thread_size.x + local_size.x - 1) / local_size.x,
          *         (thread_size.y + local_size.y - 1) / local_size.y,
          *         (thread_size.z + local_size.z - 1) / local_size.z
          *     );
+         * @endcode
          */
         void CmdDispatch(
             PassHandle pass, RHICommandList* cmd,
