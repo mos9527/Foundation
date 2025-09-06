@@ -1,7 +1,7 @@
 #pragma once
-#include <Native/Application.hpp>
-#include <RHICore/Device.hpp>
 #include <vma/vk_mem_alloc.h>
+#include <RHICore/Device.hpp>
+#include <Native/Application.hpp>
 #include "Common.hpp"
 namespace Foundation::RHI {
     class VulkanApplication;

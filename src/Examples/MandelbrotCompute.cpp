@@ -1,19 +1,10 @@
-#include <Rendering/Application.hpp>
-#include <RHIVulkan/Application.hpp>
-#include <Rendering/PSFullscreen.hpp>
-
-using namespace Foundation::Core;
-using namespace Foundation::Rendering;
+#include "Examples.hpp"
 class DemoApp : public Application {
-    using Application::Application;
-    float m_startTime = 0;
-protected:
-    struct PC {
+    struct PushConstants {
         float time;
         RHIExtent2D resolution;
     };
-    virtual void RendererSetup() override {
-        m_startTime = glfwGetTime();
+    void RendererSetup() override {
         ResourceHandle buffer = createResource(
             m_renderer.get(), "Mandelbrot Image",
             RHITextureDesc{
@@ -24,17 +15,16 @@ protected:
         );
         ResourceHandle sampler = createSampler(m_renderer.get(), "Linear Sampler", {});
         createPass(
-            m_renderer.get(), "Mandelbrot",
-            RHIDeviceQueueType::Compute,
+            m_renderer.get(), "Mandelbrot", RHIDeviceQueueType::Compute,
             [=](PassHandle self, Renderer* r) {
                 r->BindShader(self, RHIShaderStageBits::Compute, "csMain", "data/shaders/MandelbrotCompute.spv");
-                r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(PC));
+                r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(PushConstants));
                 r->BindTextureUAV(self, buffer, "image", { .format = RHIResourceFormat::R8G8B8A8_UNORM });
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd) {                
                 r->CmdSetPipeline(self, cmd);
-                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, PC{
-                    .time = (float)glfwGetTime() - m_startTime,
+                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, PushConstants{
+                    .time = GetApplicationTime(),
                     .resolution = r->GetSwapchainExtent()
                 });
                 r->CmdDispatch(self, cmd, m_renderer->GetSwapchainExtent3D());
@@ -48,7 +38,7 @@ int main(int argc, char** argv) {
     // This will actually be slower when you have async compute enabled
     // Overhead from synchronization is more than the gain from parallelism
     // (which isn't much for this simple example)   
-    DemoApp app({ .windowTitle = "Mandelbrot Async Compute", .asyncCompute = true });
-    app.Initialize<VulkanApplication>();
+    DemoApp app;
+    app.Initialize<VulkanApplication>({ .windowTitle = "Mandelbrot Async Compute", .asyncCompute = true });
     app.RunForever();
 }

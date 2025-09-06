@@ -1,16 +1,12 @@
 #pragma once
-
 #include <Core/Core.hpp>
-#include <GLFW/glfw3.h>
-#include <GLFW/glfw3native.h>
-#include <stdexcept>
+#include <Bits/Chrono.hpp>
 
 namespace Foundation::Native {
     class Application;
     class Window {
         friend class Application;
-
-        GLFWwindow* m_window{ nullptr };
+        void* m_window{ nullptr };
         Window(int width, int height, const char* title);
     public:
         Window() {};
@@ -25,34 +21,41 @@ namespace Foundation::Native {
             return *this;
         }
         ~Window();
+
+        std::pair<uint32_t, uint32_t> GetSize() const;
         bool WindowShouldClose();
-        GLFWwindow* GetNativeWindow() const { return m_window; }
-        std::pair<int,int> GetSize() const {
-            int width, height;
-            glfwGetWindowSize(m_window, &width, &height);
-            return { width, height };
-        }
+
+        inline void* GetNative() const { return m_window; }
         inline constexpr operator bool() const { return m_window != nullptr; }
     };
-    extern void glfw_error_callback(int error, const char* description);
     class Application {
         int m_initialized = 0;
+        size_t m_startCounter = 0;
     public:
-        void MessageBox(const char* title, const char* message) {
-            CHECK(m_initialized && "GLFW not initialized");
-        }
-        Window CreateWindow(int width, int height, const char* title) {
-            return Window(width, height, title);
-        }
-        Application() {
-            glfwSetErrorCallback(glfw_error_callback);
-            if (!(m_initialized = glfwInit())) {
-                throw std::runtime_error("Failed to initialize GLFW");
-            }
-        }
-        ~Application() {
-            if (m_initialized)
-                glfwTerminate();
-        }
+        /// <summary>
+        /// Creates a message box with the specified title and message.
+        ///
+        /// This is blocking, and will halt execution until the user dismisses it.       
+        /// </summary>        
+        void MessageBox(const char* title, const char* message);
+        /// <summary>
+        /// Creates a window with the specified width, height, and title.
+        /// </summary>        
+        Window CreateWindow(int width, int height, const char* title);
+        /// <summary>
+        /// Returns a high-resolution time in seconds since the application started.
+        /// </summary>        
+        template<typename T = float> T GetApplicationTime() const { return (getPerformanceCounter() - m_startCounter) / 1e9; }
+        /// <summary>
+        /// Returns the time in seconds since the Unix epoch (1970-01-01 00:00:00 UTC).
+        ///
+        /// This is generally not useful for measuring time intervals, as it's not
+        /// monotonic and can be affected by system clock changes.
+        /// 
+        /// It's advised to use GetApplicationTime() for such purposes instead.        
+        /// </summary>       
+        template<typename T = float> T GetSystemTime() const { return (getEpochTime() - m_startCounter) / 1e9; }
+        Application();
+        ~Application();
     };
 }

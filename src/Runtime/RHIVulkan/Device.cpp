@@ -2,6 +2,8 @@
 
 #define VMA_IMPLEMENTATION
 #include <vma/vk_mem_alloc.h>
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
 
 #include <Bits/Format.hpp>
 #include <Core/Core.hpp>
@@ -57,7 +59,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, const vk::raii::Physica
         // Check for a present queue
         VkSurfaceKHR surface;
         // NOTE: Creating surfaces is platform-dependent w/ requisite extensions. GLFW does this.
-        if (glfwCreateWindowSurface(*m_app.GetVkInstance(), window->GetNativeWindow(), nullptr, &surface) != VK_SUCCESS)
+        if (glfwCreateWindowSurface(*m_app.GetVkInstance(), (GLFWwindow*)window->GetNative(), nullptr, &surface) != VK_SUCCESS)
             throw std::runtime_error("Failed to create Vulkan surface for window");
         m_surface = vk::raii::SurfaceKHR(m_app.GetVkInstance(), surface);
         // Having present and graphics queues as the same avoids copies and is typically the case       

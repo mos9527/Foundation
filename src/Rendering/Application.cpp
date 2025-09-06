@@ -31,12 +31,13 @@ void Application::InitializeInternal() {
     LOG_RUNTIME(Application, info, "** Application Setup **");
     LOG_RUNTIME(Application, info, "Dir: {}", std::filesystem::current_path().string());
     if (m_desc.present) {
-        m_window = m_app.CreateWindow(m_desc.windowSize.x, m_desc.windowSize.y, m_desc.windowTitle);
+        m_window = CreateWindow(m_desc.windowSize.x, m_desc.windowSize.y, m_desc.windowTitle.c_str());
         m_device = m_rhi->CreateDevice(m_rhi->EnumerateDevices()[m_desc.deviceIndex], &m_window);
         CreateSwapchain();
     }
     else {
-        // 'Headless' mode. No presentation therefore no swapchain/window.        
+        // 'Headless' mode. No presentation therefore no swapchain/window.
+        m_window = {};
         m_device = m_rhi->CreateDevice(m_rhi->EnumerateDevices()[m_desc.deviceIndex]);
     }
 }

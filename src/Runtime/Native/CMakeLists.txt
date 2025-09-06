@@ -23,5 +23,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(GLFW)
 
+FetchContent_Declare(
+    tinyfiledialogs
+    GIT_REPOSITORY https://git.code.sf.net/p/tinyfiledialogs/code
+    GIT_TAG 96c52c82399dbfce0ad6bf975dedd1ce522b3951
+)
+FetchContent_MakeAvailable(tinyfiledialogs)
+
 target_link_libraries(Foundation_Native PUBLIC Foundation_Core glfw)
 target_include_directories(Foundation_Native PRIVATE .. "${GLFW_SOURCE_DIR}/include")
