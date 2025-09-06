@@ -42,6 +42,9 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
     }
     if (m_desc.present)
         SetSwapchain(swapchain);
+    LOG_RUNTIME(Renderer, info, "** Renderer Init **");
+    LOG_RUNTIME(Renderer, info, "Async Compute: {}", m_desc.async);
+    LOG_RUNTIME(Renderer, info, "Presentation: {}", m_desc.present);
 }
 
 #pragma region Render Graph Setup

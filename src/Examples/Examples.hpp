@@ -4,6 +4,7 @@
 #include <Rendering/PSFullscreen.hpp>
 using namespace Foundation::Core;
 using namespace Foundation::Rendering;
+using namespace Foundation::Native;
 /**
  * @brief For a complete list of examples, see the <a href="examples.html">Examples Page</a>.
  */

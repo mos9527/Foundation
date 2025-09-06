@@ -19,12 +19,12 @@ namespace Foundation::Rendering {
     /**
     *  @brief Template base class for rendering applications.        
     */
-    class Application : public Native::Application {
+    class RenderApplication : public Native::NativeApplication {
     protected:
         ApplicationInitDesc m_desc;
 
         DefaultAllocator m_alloc, m_alloc_renderer;
-        Native::Window m_window;
+        Native::NativeWindow m_window;
         UniquePtr<RHIApplication> m_rhi;
 
         RHIApplicationScopedObjectHandle<RHIDevice> m_device;
@@ -60,9 +60,9 @@ namespace Foundation::Rendering {
          * Implementation may leave this empty if no action is needed.
          */
         virtual void OnSwapchainResize() { InitializeRenderer(); }
-        ~Application();
+        ~RenderApplication();
     public:
-        Application() : Native::Application() {};
+        RenderApplication() : Native::NativeApplication() {};
         /**
          * @brief Initialize the application with the specified RHI backend.
          *

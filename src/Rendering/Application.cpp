@@ -1,6 +1,6 @@
 #include <Rendering/Application.hpp>
 using namespace Foundation::Rendering;
-void Application::CreateSwapchain() {
+void RenderApplication::CreateSwapchain() {
     CHECK(m_device && m_window);
     LOG_RUNTIME(Application, info, "Creating swapchain ({}x{})", GetWindowSize().x, GetWindowSize().y);
     m_device->WaitIdle();
@@ -13,7 +13,7 @@ void Application::CreateSwapchain() {
         .present_mode = RHISwapchain::SwapchainDesc::PresentMode::MAILBOX,
     });
 }
-void Application::InitializeRenderer() {
+void RenderApplication::InitializeRenderer() {
     LOG_RUNTIME(Application, info, "** Renderer Setup **");
     m_renderer = ConstructUnique<Renderer>(
         m_alloc_renderer.Ptr(),
@@ -27,7 +27,7 @@ void Application::InitializeRenderer() {
     RendererSetup();
     m_renderer->EndSetup();
 }
-void Application::InitializeInternal() {
+void RenderApplication::InitializeInternal() {
     LOG_RUNTIME(Application, info, "** Application Setup **");
     LOG_RUNTIME(Application, info, "Dir: {}", std::filesystem::current_path().string());
     if (m_desc.present) {
@@ -41,7 +41,7 @@ void Application::InitializeInternal() {
         m_device = m_rhi->CreateDevice(m_rhi->EnumerateDevices()[m_desc.deviceIndex]);
     }
 }
-void Application::RunForever() {
+void RenderApplication::RunForever() {
     CHECK_MSG(m_rhi, "No RHI backend initialized! Call Initialize<Backend>() first.");
     CHECK(m_device && m_window && m_swapchain && m_renderer);
     while (!m_window.WindowShouldClose()) {
@@ -55,7 +55,7 @@ void Application::RunForever() {
         }
     }
 }
-Application::~Application() {
+RenderApplication::~RenderApplication() {
     if (m_device)
         m_device->WaitIdle();
 }

@@ -1,29 +1,29 @@
 #pragma once
 #include <Core/Core.hpp>
 #include <Bits/Chrono.hpp>
-
+#include "Enums.hpp"
 /**
  * @brief Platform-dependent native application abstractions
  */
 namespace Foundation::Native {
     class Application;
-    class Window {
-        friend class Application;
+    class NativeWindow {
+        friend class NativeApplication;
         void* m_window{ nullptr };
-        Window(int width, int height, const char* title);
+        NativeWindow(int width, int height, const char* title);
     public:
-        Window() {};
-        Window(const Window&) = delete;
-        Window(Window&& other) noexcept :
+        NativeWindow() {};
+        NativeWindow(const NativeWindow&) = delete;
+        NativeWindow(NativeWindow&& other) noexcept :
             m_window(other.m_window) {
             other.m_window = nullptr;
         }
-        Window& operator=(Window&& other) noexcept {
+        NativeWindow& operator=(NativeWindow&& other) noexcept {
             m_window = other.m_window;
             other.m_window = nullptr;
             return *this;
         }
-        ~Window();
+        ~NativeWindow();
 
         std::pair<uint32_t, uint32_t> GetSize() const;
         bool WindowShouldClose();
@@ -31,13 +31,14 @@ namespace Foundation::Native {
         inline void* GetNative() const { return m_window; }
         inline constexpr operator bool() const { return m_window != nullptr; }
     };
+
     /**
      * @brief Base class for native applications.
      * 
      * API-wise, this provides WinAPI-like semantics for window management and
      * various system functionalities.
      */
-    class Application {
+    class NativeApplication {
         int m_initialized = 0;
         size_t m_startCounter = 0;
     public:
@@ -46,11 +47,16 @@ namespace Foundation::Native {
          *
          * This is blocking, and will halt execution until the user dismisses it.       
          */
-        void MessageBox(const char* title, const char* message);
+        MessageBoxResult MessageBox(
+            const char* title, const char* message,
+            MessageBoxType type = MessageBoxType::Ok,
+            MessageBoxIcon icon = MessageBoxIcon::Info,
+            MessageBoxResult default_result = MessageBoxResult::Yes
+        );
         /**
          * @brief Creates a window with the specified width, height, and title.
          */
-        Window CreateWindow(int width, int height, const char* title);
+        NativeWindow CreateWindow(int width, int height, const char* title);
         /**
          * @brief Returns a high-resolution time in seconds since the application started.
          */
@@ -64,7 +70,7 @@ namespace Foundation::Native {
          * It's advised to use GetApplicationTime() for such purposes instead.        
          */
         template<typename T = float> T GetSystemTime() const { return (getEpochTime() - m_startCounter) / 1e9; }
-        Application();
-        ~Application();
+        NativeApplication();
+        ~NativeApplication();
     };
 }

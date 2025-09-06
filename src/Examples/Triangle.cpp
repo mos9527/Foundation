@@ -5,7 +5,7 @@ namespace Examples {
      * Animated triangle example.
      * @example Shaders/Triangle.slang
      */
-    class TriangleDemoApp : public Application {
+    class TriangleDemoApp : public RenderApplication {
         void RendererSetup() override {
             createPass(
                 m_renderer.get(), "Triangle", RHIDeviceQueueType::Graphics,

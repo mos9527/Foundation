@@ -6,7 +6,7 @@ namespace Examples {
      * @example Shaders/SDF2D.slang  
      * Shader courtesy of Inigo Quilez: https://iquilezles.org/articles/distfunctions2d/
      */
-    class SDFDemoApp : public Application {
+    class SDFDemoApp : public RenderApplication {
         void RendererSetup() override {
             createPSFullscreenPass(
                 m_renderer.get(), "SDF2D",

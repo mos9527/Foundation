@@ -80,7 +80,7 @@ Core::StlSpan<const RHIDevice::DeviceDesc> VulkanApplication::EnumerateDevices()
     return { m_devices.begin(), m_devices.end() };
 }
 
-RHIApplicationScopedObjectHandle<RHIDevice> VulkanApplication::CreateDevice(RHIDevice::DeviceDesc const& desc, Native::Window* window) {
+RHIApplicationScopedObjectHandle<RHIDevice> VulkanApplication::CreateDevice(RHIDevice::DeviceDesc const& desc, Native::NativeWindow* window) {
     auto& phys_device = m_physicalDevices[desc.id];
     Handle handle = m_storage.CreateObject<VulkanDevice>(*this, phys_device, window);
     return { this, handle };

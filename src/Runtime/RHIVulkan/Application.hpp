@@ -41,7 +41,7 @@ namespace Foundation::RHI {
 
         Core::StlSpan<const RHIDevice::DeviceDesc> EnumerateDevices() const override;
 
-        RHIApplicationScopedObjectHandle<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc, Native::Window* window = nullptr) override;
+        RHIApplicationScopedObjectHandle<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc, Native::NativeWindow* window = nullptr) override;
         RHIDevice* GetDevice(Handle handle) const override;
         void DestroyDevice(Handle handle) override;
 

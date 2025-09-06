@@ -32,7 +32,7 @@ vk::AllocationCallbacks const& VulkanDevice::GetVkAllocatorCallbacks() const {
     return m_app.GetVkAllocatorCallbacks();
 }
 
-VulkanDevice::VulkanDevice(VulkanApplication const& app, const vk::raii::PhysicalDevice& physicalDevice, Native::Window* window) :
+VulkanDevice::VulkanDevice(VulkanApplication const& app, const vk::raii::PhysicalDevice& physicalDevice, Native::NativeWindow* window) :
     m_app(app), m_physicalDevice(physicalDevice), RHIDevice(app), m_storage(GetAllocator(), kDeviceStorageReserveSize) {
     LOG_RUNTIME(VulkanDevice, info, "Instantiating Vulkan device"), DebugLogDeviceInfo();
     auto queues = m_physicalDevice.getQueueFamilyProperties();

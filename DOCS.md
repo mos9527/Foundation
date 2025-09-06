@@ -4,7 +4,7 @@ Foundation
 Quick Start
 ===
 The following classes can be used to create a basic rendering application:
-- @ref Foundation::Rendering::Application
+- @ref Foundation::Rendering::RenderApplication
 - @ref Foundation::Rendering::Renderer
 
 See @ref Examples for reference implementations and usage.

@@ -93,7 +93,7 @@ namespace Foundation::RHI {
         // Queues
         Core::UniquePtr<VulkanDeviceQueues> m_queues{ nullptr };
     public:
-        VulkanDevice(VulkanApplication const& app, const vk::raii::PhysicalDevice& physicalDevice, Native::Window* window);
+        VulkanDevice(VulkanApplication const& app, const vk::raii::PhysicalDevice& physicalDevice, Native::NativeWindow* window);
         ~VulkanDevice();
 
         void DebugLogDeviceInfo() const;

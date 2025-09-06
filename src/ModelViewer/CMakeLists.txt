@@ -5,7 +5,7 @@ include(FetchContent)
 FetchContent_Declare(
     stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
-    GIT_TAG 	  f58f558c120e9b32c217290b80bad1a0729fbb2c
+    GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(stb)
 
@@ -13,6 +13,7 @@ FetchContent_Declare(
     fast_obj
     GIT_REPOSITORY https://github.com/thisistherk/fast_obj
     GIT_TAG v1.3
+    GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(fast_obj)
 
@@ -20,6 +21,7 @@ FetchContent_Declare(
   meshoptimizer
   GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
   GIT_TAG v0.25
+  GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(meshoptimizer)
 

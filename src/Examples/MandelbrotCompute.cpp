@@ -6,7 +6,7 @@ namespace Examples {
      * @example Shaders/MandelbrotCompute.slang
      * Shader courtesy of Inigo Quilez: https://iquilezles.org/articles/mset_smooth/
      */
-    class MandelbrotComputeDemoApp : public Application {
+    class MandelbrotComputeDemoApp : public RenderApplication {
         struct PushConstants {
             float time;
             RHIExtent2D resolution;
@@ -28,12 +28,12 @@ namespace Examples {
                     r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(PushConstants));
                     r->BindTextureUAV(self, buffer, "image", { .format = RHIResourceFormat::R8G8B8A8_UNORM });
                 },
-                [=](PassHandle self, Renderer* r, RHICommandList* cmd) {                
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd) {
                     r->CmdSetPipeline(self, cmd);
                     r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, PushConstants{
                         .time = GetApplicationTime(),
                         .resolution = r->GetSwapchainExtent()
-                    });
+                        });
                     r->CmdDispatch(self, cmd, m_renderer->GetSwapchainExtent3D());
                 }
             );
@@ -46,6 +46,7 @@ int main(int argc, char** argv) {
     // Overhead from synchronization is more than the gain from parallelism
     // (which isn't much for this simple example)
     Examples::MandelbrotComputeDemoApp app;
-    app.Initialize<VulkanApplication>({ .windowTitle = "Mandelbrot Async Compute", .asyncCompute = true });
+    bool useAsync = app.MessageBox("Async Compute", "Enable Async Compute?", MessageBoxType::YesNo, MessageBoxIcon::Question, MessageBoxResult::Yes) == MessageBoxResult::Yes;
+    app.Initialize<VulkanApplication>({ .windowTitle = "Mandelbrot Async Compute", .asyncCompute = useAsync });
     app.RunForever();
 }
