@@ -1,4 +1,3 @@
-// !! TODO: Per-swap resources
 #include <array>
 #include <algorithm>
 #include <filesystem>
@@ -34,6 +33,7 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
             });
         m_compCmdPool->DebugSetObjectName("Async Compute Command Pool");
     }
+    BeginSetup();
     if (m_desc.present)
         SetSwapchain(swapchain);
     else
@@ -45,7 +45,7 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
 
 #pragma region Render Graph Setup
 void Renderer::BeginSetup() {
-    CHECK_MSG(m_state == State::Undefined || m_state == State::PostSetup, "Renderer may only be setup once for its life time. Current state is {}", m_state);
+    CHECK_MSG(m_state == State::Undefined || m_state == State::PostSetup, "BeginSetup() is called at construction time - you shouldn't call this again. Current state is {}", m_state);
     m_setup = ConstructUnique<Setup>(m_allocator, m_allocator);
     m_state = State::Setup;
 }
@@ -712,8 +712,27 @@ void Renderer::FinalizeResources() {
             },
             // Borrowed
             [&](RHIDeviceObjectHandle<RHIBuffer> const& hdl) { m_resources->resources[handle] = hdl; },
-            [&](RHIDeviceObjectHandle<RHITexture> const& hdl) { m_resources->resources[handle] = hdl; }
+            [&](RHIDeviceObjectHandle<RHITexture> const& hdl) { m_resources->resources[handle] = hdl; },
+            [&](RHIBuffer* const ptr)
+            {
+                m_resources->resources[handle] = ptr;
+            },
+            [&](RHITexture* const ptr)
+            {
+                m_resources->resources[handle] = ptr;
+            },
+            [&](auto const&) { throw std::runtime_error("Unhandled resource type at creation time"); }
         );
+    }
+    // Add backbuffers (if any)
+    if (m_desc.present)
+    {
+        for (size_t i = 0; i < m_frameSwaps;i++)
+        {
+            ResourceHandle handle = m_swaps[i].rt_handle;
+            auto& tres = m_setup->trackedResources[handle];
+            m_resources->resources[handle] = tres.desc.Get<RHITexture*>();
+        }
     }
     // Create texture views
     StlVector<ResourceHandle> activeViews(m_allocator), activeSamplers(m_allocator);
@@ -755,10 +774,53 @@ RHIPipelineStage Renderer::ExecuteGetPassAllCurrentStages(TrackedPass& pass) {
         for (auto& sta : tres.GetLastSubresourceStateOf(range))
             ans |= sta.stage;
     }
+    if (pass.write_backbuffer)
+        ans |= RHIPipelineStageBits::ColorAttachmentOutput;
     for (auto [hdl, access, stage] : pass.bufferUsages)
         ans |= stage;
     return ans;
 }
+void Renderer::ExecuteBarrierSubresource(TrackedResource& tres, RHITextureSubresourceRange const& range,RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd)
+{
+    RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
+    for (auto& sta : tres.GetLastSubresourceStateOf(range)) {
+        if (sta.access == access && sta.stage == stage && sta.layout == layout)
+            continue;
+        cmd->SetImageTransition(
+            res,
+            {
+                .src_access = sta.access,
+                .dst_access = access,
+                .src_stage = sta.stage,
+                .dst_stage = stage,
+                .src_img_layout = sta.layout,
+                .dst_img_layout = layout,
+                .src_img_range = sta.ToRange()
+            }
+        );
+        sta.access = access;
+        sta.stage = stage;
+        sta.layout = layout;
+    }
+}
+void Renderer::ExecuteBarrierBuffer(TrackedResource& tres, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd)
+{
+    auto& res = DerefResource(tres.handle).Get<RHIBuffer*>();
+    if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage)
+        return;
+    cmd->SetBufferTransition(
+        res,
+        {
+            .src_access = tres.lastBufferState.access,
+            .dst_access = access,
+            .src_stage = tres.lastBufferState.stage,
+            .dst_stage = stage,
+        }
+        );
+    tres.lastBufferState.access = access;
+    tres.lastBufferState.stage = stage;
+}
+
 void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) {
     CHECK(m_state == State::Execute);
     // At this point the pass execution order has been determined
@@ -772,45 +834,27 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) {
     // These are always disjoint ranges
     for (auto [hdl, access, stage, range, layout] : pass.textureUsages) {
         auto& tres = m_setup->trackedResources[hdl];
-        auto* res = DerefResource(hdl).Get<RHITexture*>();
-        for (auto& sta : tres.GetLastSubresourceStateOf(range)) {
-            if (sta.access == access && sta.stage == stage && sta.layout == layout)
-                continue;
-            cmd->SetImageTransition(
-                res,
-                {
-                    .src_access = sta.access,
-                    .dst_access = access,
-                    .src_stage = sta.stage,
-                    .dst_stage = stage,
-                    .src_img_layout = sta.layout,
-                    .dst_img_layout = layout,
-                    .src_img_range = sta.ToRange()
-                }
-            );
-            sta.access = access;
-            sta.stage = stage;
-            sta.layout = layout;
-        }
+        ExecuteBarrierSubresource(tres, range, access, stage, layout, cmd);
+    }
+    // Backbuffer
+    // A special case with known usages.
+    // We never create resource per-swap so tracking Backbuffers by passes
+    // is not possible. The BB is also opaque to the passes for the same reasons.
+    // Synchronization for other resources are already handled above,
+    // and should eliminate any redundant per-pass resource creation.
+    if (pass.write_backbuffer)
+    {
+        const RHIResourceAccess rt_access = RHIResourceAccessBits::RenderTargetWrite;
+        const RHITextureLayout rt_layout = RHITextureLayout::RenderTarget;
+        const RHIPipelineStage rt_stage = RHIPipelineStageBits::ColorAttachmentOutput;
+        auto& tres = m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle];
+        ExecuteBarrierSubresource(tres, {}, rt_access, rt_stage, rt_layout, cmd);
     }
     // Buffers
     // These are always global i.e. at most one per buffer per pass.
     for (auto [hdl, access, stage] : pass.bufferUsages) {
         auto& tres = m_setup->trackedResources[hdl];
-        if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage)
-            continue;
-        auto& res = DerefResource(hdl).Get<RHIBuffer*>();
-        cmd->SetBufferTransition(
-            res,
-            {
-                .src_access = tres.lastBufferState.access,
-                .dst_access = access,
-                .src_stage = tres.lastBufferState.stage,
-                .dst_stage = stage,
-            }
-            );
-        tres.lastBufferState.access = access;
-        tres.lastBufferState.stage = stage;
+        ExecuteBarrierBuffer(tres, access, stage, cmd);
     }
     cmd->EndTransition();
 }
@@ -971,16 +1015,6 @@ void Renderer::Execute() {
         cmd->Reset();
         cmd->Begin();
     }
-    for (size_t i = 0; i < m_setup->execution.size();i++)
-    {
-        auto& pass = passes[m_setup->execution[i]];
-        if (pass.write_backbuffer)
-        {
-            CHECK_MSG(m_desc.present, "Pass {} writes to the backbuffer, but the renderer is not created with Present support.", pass.name);
-
-            break;
-        }
-    }
     for (size_t i = 0; i < m_setup->execution.size();i++) {
         auto& pass = passes[m_setup->execution[i]];
         // Check if we can transition away on Compute
@@ -999,7 +1033,7 @@ void Renderer::Execute() {
                 cmd->Begin();
                 ExecuteBarriers(pass, cmd);
                 cmd->End();
-                barrier_extra_wait.emplace(m_swaps[i].barrier_semaphore_at(cmd_index - 1, m_device.Get()), SEM_COUNTER(cmd_index - 1));
+                barrier_extra_wait.emplace(m_swaps[m_currentSync].barrier_semaphore_at(cmd_index - 1, m_device.Get()), SEM_COUNTER(cmd_index - 1));
                 queue->Submit({
                     .timeline_signals = { barrier_extra_wait.value() },
                     .cmd_lists = { cmd },
@@ -1059,15 +1093,13 @@ void Renderer::Execute() {
             set_next_graphics();
         }
         cmd->BeginTransition();
-        cmd->SetImageTransition(
-            DerefResource(GetCurrentBackbuffer()).Get<RHITexture*>(),
-            RHICommandList::TransitionDesc{
-                .src_stage = RHIPipelineStageBits::ColorAttachmentOutput,
-                .dst_stage = RHIPipelineStageBits::BottomOfPipe,
-                .src_access =  RHIResourceAccessBits::RenderTargetWrite,
-                .src_img_layout = RHITextureLayout::RenderTarget,
-                .dst_img_layout = RHITextureLayout::Present
-            }
+        ExecuteBarrierSubresource(
+            m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle],
+            {},
+            {},
+            RHIPipelineStageBits::BottomOfPipe,
+            RHITextureLayout::Present,
+            cmd
         );
         cmd->EndTransition();
         cmd->End();

@@ -8,7 +8,9 @@ namespace Foundation::Rendering {
         RHIBufferDesc,
         RHITextureDesc,
         RHIDeviceObjectHandle<RHIBuffer>,
-        RHIDeviceObjectHandle<RHITexture>
+        RHIDeviceObjectHandle<RHITexture>,
+        RHIBuffer*,
+        RHITexture*
     >;
     using ResourceHandle = size_t; // Index in the resource definitions vector
 

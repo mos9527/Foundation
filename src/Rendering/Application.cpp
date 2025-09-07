@@ -23,7 +23,6 @@ void RenderApplication::InitializeRenderer() {
         },
         m_device, m_swapchain, m_alloc_renderer.Ptr()
     );
-    m_renderer->BeginSetup();
     RendererSetup();
     m_renderer->EndSetup();
 }

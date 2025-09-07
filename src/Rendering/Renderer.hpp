@@ -72,7 +72,7 @@ namespace Foundation::Rendering {
                 });
         }
         inline SubresourceState& GetLastSubresourceStateOf(size_t mip, size_t layer) {
-            CHECK(mip < textureMips && layer < textureLayers);
+            CHECK(mip <= textureMips && layer <= textureLayers);
             return lastSubresourceStates[mip * textureLayers + layer];
         }
 
@@ -105,7 +105,8 @@ namespace Foundation::Rendering {
                 };
             desc.visit(
                 [&](RHITextureDesc const& tex) { update_texture_desc(tex); },
-                [&](RHIDeviceObjectHandle<RHITexture> const& tex) { update_texture_desc(tex->m_desc); }
+                [&](RHIDeviceObjectHandle<RHITexture> const& tex) { update_texture_desc(tex->m_desc); },
+                [&](RHITexture* const tex) { update_texture_desc(tex->m_desc); }
             );
         }
 
@@ -336,6 +337,8 @@ namespace Foundation::Rendering {
         void FinalizePSOs();
 
         RHIPipelineStage ExecuteGetPassAllCurrentStages(TrackedPass& pass);
+        void ExecuteBarrierSubresource(TrackedResource& res, RHITextureSubresourceRange const& range, RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd);
+        void ExecuteBarrierBuffer(TrackedResource& res, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd);
         void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
         bool ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, RHIDeviceQueue* queue, StlSpan<const std::pair<RHIDeviceSemaphore*, size_t>> extra_waits = {});
 
@@ -349,9 +352,9 @@ namespace Foundation::Rendering {
 
 #pragma region Render Graph Setup
         /**
-         * @brief Reset the render graph and being setup.
+         * @brief Begins the setup phase of the render graph.
          *
-         * You must call this before Create... and Declare... calls.
+         * ATTENTION: This is called at construction time, you shouldn't call this again.
          */
         void BeginSetup();
         /**
@@ -644,15 +647,6 @@ namespace Foundation::Rendering {
             CHECK(m_swapchain && "Swapchain not initialized");
             auto xy = m_swapchain->m_desc.extents;
             return { xy.x,xy.y,1 };
-        }
-        /**
-         * @brief Get the current swapchain image format.
-         *
-         * This is only valid in Execute() time, e.g. within a pass's Record() function.
-         */
-        inline ResourceHandle GetCurrentBackbuffer() {
-            CHECK(m_state == State::Execute && m_swapchain);
-            return m_swaps[m_currentSwap].rt_handle;
         }
 #pragma endregion
 #pragma region Render Graph Runtime
