@@ -4,8 +4,8 @@ namespace Foundation::Rendering {
     /**
      * @brief Creates a full-screen triangle pass that writes to the current backbuffer.
      *
-     * setup() is called once during setup phase of the pass, after a fullscreen vertex stage is bound.
-     * record() is called once per frame during execution phase of the pass, after the pipeline is set.
+     * @param setup is called once during setup phase of the pass, after a fullscreen vertex stage is bound.
+     * @param record is called once per frame during execution phase of the pass, after the pipeline is set.
      */
     template<typename FSetup, typename FRecord>
     inline auto* createPSFullscreenPass(
@@ -35,7 +35,8 @@ namespace Foundation::Rendering {
             });        
     }
     /**
-     * @brief Creates a full-screen triangle pass that copies from a source texture to the backbuffer.
+     * @brief Creates a full-screen triangle pass that renders a texture
+     * to the current backbuffer.
      */
     inline auto* createPSBackbufferBlitPass(
         Renderer* r,

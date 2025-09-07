@@ -3,7 +3,7 @@
 #include "Swapchain.hpp"
 using namespace Foundation;
 using namespace Foundation::RHI;
-const vk::SwapchainCreateInfoKHR VulkanSwapchain::GetSwapchainCreateInfo(SwapchainDesc const& desc) {
+const vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDesc(SwapchainDesc const& desc) {
     auto const& surface = m_device.GetVkSurface();
     auto surface_caps = m_device.GetVkPhysicalDevice().getSurfaceCapabilitiesKHR(surface);
     auto present_modes = m_device.GetVkPhysicalDevice().getSurfacePresentModesKHR(surface);
@@ -19,7 +19,7 @@ const vk::SwapchainCreateInfoKHR VulkanSwapchain::GetSwapchainCreateInfo(Swapcha
         desc.extents.y, surface_caps.minImageExtent.height, surface_caps.maxImageExtent.height
     );
     CHECK_MSG(
-        std::find(present_modes.begin(), present_modes.end(), GetVulkanPresentModeFromSwapchainDesc(desc.present_mode)) != present_modes.end(),
+        std::find(present_modes.begin(), present_modes.end(), vkPresentModeFromSwapchainDesc(desc.present_mode)) != present_modes.end(),
         "Swapchain present mode {} not supported",
         (uint32_t)desc.present_mode
     );
@@ -28,18 +28,28 @@ const vk::SwapchainCreateInfoKHR VulkanSwapchain::GetSwapchainCreateInfo(Swapcha
         "Swapchain min buffer count {} not supported (min {})",
         desc.min_buffer_count, surface_caps.minImageCount
     );
+    vk::Format vk_format = vkFormatFromRHIFormat(desc.format);
+    std::optional<vk::ColorSpaceKHR> color_space;
+    auto formats = m_device.GetVkPhysicalDevice().getSurfaceFormatsKHR(surface);
+    for (auto const& fmt : formats) {
+        if (fmt.format == vk_format) {
+            color_space = fmt.colorSpace;
+            break;
+        }
+    }
+    CHECK_MSG(color_space.has_value(), "Swapchain format {} not supported", desc.format);
     vk::SwapchainCreateInfoKHR create_info{
         .surface = surface,
         .minImageCount = desc.min_buffer_count,
-        .imageFormat = vkFormatFromRHIFormat(desc.format),
-        .imageColorSpace = vk::ColorSpaceKHR::eSrgbNonlinear,
+        .imageFormat = vk_format,
+        .imageColorSpace = color_space.value(),
         .imageExtent = vk::Extent2D(desc.extents.x, desc.extents.y),
         .imageArrayLayers = 1, // 1 layer for 2D images
         .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
         .imageSharingMode = vk::SharingMode::eExclusive, // Exclusive mode by default
         .preTransform = surface_caps.currentTransform,
         .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque, // Opaque composite alpha
-        .presentMode = GetVulkanPresentModeFromSwapchainDesc(desc.present_mode),
+        .presentMode = vkPresentModeFromSwapchainDesc(desc.present_mode),
         .clipped = VK_TRUE, // Clipped presentation
         .oldSwapchain = m_swapchain // No old swapchain
     };
@@ -58,12 +68,12 @@ const vk::SwapchainCreateInfoKHR VulkanSwapchain::GetSwapchainCreateInfo(Swapcha
 void VulkanSwapchain::Instantiate() {
     CHECK_MSG(m_device.GetVkQueues() && m_device.GetVkQueues()->CanPresent(), "Device does not have a present-capable queue");
     auto const& device = m_device.GetVkDevice();
-    auto create_info = GetSwapchainCreateInfo(m_desc);
+    auto create_info = vkSwapchainCreateInfoFromSwapchainDesc(m_desc);
     m_images.Clear(), m_images_ptrs.clear();
     m_swapchain = vk::raii::SwapchainKHR(device, create_info, m_device.GetVkAllocatorCallbacks());
     auto images = m_swapchain.getImages();
     for (auto& image : images) {
-        Handle handle = m_images.CreateObject<VulkanTexture>(m_device, RHITextureDesc{}, vk::raii::Image(device, image, m_device.GetVkAllocatorCallbacks()), true /*shared=true*/);
+        const Handle handle = m_images.CreateObject<VulkanTexture>(m_device, RHITextureDesc{}, vk::raii::Image(device, image, m_device.GetVkAllocatorCallbacks()), true /*shared=true*/);
         m_images_ptrs.push_back(m_images.GetObjectPtr(handle));
     }
 }
@@ -92,6 +102,7 @@ uint32_t VulkanSwapchain::GetNextImage(uint64_t timeout_ns, RHIDeviceObjectHandl
         // Swapchain resize        
         throw RHISwapchainResizeException();
     default:
+        // TODO: Handle other errors?
         break;
     }
     return index;
@@ -101,7 +112,7 @@ void VulkanSwapchain::DebugSetObjectName(const char* name) {
     VkSwapchainKHR handle = *m_swapchain;
     m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eSwapchainKHR,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
         });
 }

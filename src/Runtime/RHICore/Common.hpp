@@ -29,6 +29,20 @@ namespace Foundation::RHI {
         R16_UINT,
         D32_SIGNED_FLOAT
     };
+    ENUM_NAME_CONV_BEGIN(RHIResourceFormat)
+        ENUM_NAME(R8G8B8A8_UNORM)
+        ENUM_NAME(R32_SIGNED_FLOAT)
+        ENUM_NAME(R32G32_SIGNED_FLOAT)
+        ENUM_NAME(R32G32B32_SIGNED_FLOAT)
+        ENUM_NAME(R32G32B32A32_SIGNED_FLOAT)
+        ENUM_NAME(R16_SIGNED_FLOAT)
+        ENUM_NAME(R16G16_SIGNED_FLOAT)
+        ENUM_NAME(R16G16B16_SIGNED_FLOAT)
+        ENUM_NAME(R16G16B16A16_SIGNED_FLOAT)
+        ENUM_NAME(R32_UINT)
+        ENUM_NAME(R16_UINT)
+        ENUM_NAME(D32_SIGNED_FLOAT)
+    ENUM_NAME_CONV_END()
 
     struct RHIVertexAttribute {
         uint32_t location; // Index into shader input
@@ -50,10 +64,10 @@ namespace Foundation::RHI {
         Present
     };
     ENUM_NAME_CONV_BEGIN(RHIDeviceQueueType)
-        case Graphics: return "Graphics";
-        case Compute: return "Compute";
-        case Transfer: return "Transfer";
-        case Present: return "Present";
+        ENUM_NAME(Graphics)
+        ENUM_NAME(Compute)
+        ENUM_NAME(Transfer)
+        ENUM_NAME(Present)
     ENUM_NAME_CONV_END()
 
     enum class RHIDevicePipelineType {
@@ -61,8 +75,8 @@ namespace Foundation::RHI {
         Compute,
     };
     ENUM_NAME_CONV_BEGIN(RHIDevicePipelineType)
-        case Graphics: return "Graphics";
-        case Compute: return "Compute";
+        ENUM_NAME(Graphics)
+        ENUM_NAME(Compute)
     ENUM_NAME_CONV_END()
 
     enum class RHIDeviceHeapType {
@@ -97,11 +111,11 @@ namespace Foundation::RHI {
     };
 
     ENUM_NAME_CONV_BEGIN(RHIDescriptorType)
-        case Sampler: return "Sampler";
-        case SampledImage: return "SampledImage";
-        case StorageImage: return "StorageImage";
-        case UniformBuffer: return "UniformBuffer";
-        case StorageBuffer: return "StorageBuffe";
+        ENUM_NAME(Sampler)
+        ENUM_NAME(SampledImage)
+        ENUM_NAME(StorageImage)
+        ENUM_NAME(UniformBuffer)
+        ENUM_NAME(StorageBuffer)
     ENUM_NAME_CONV_END()
 
     enum class RHIMultisampleCount {

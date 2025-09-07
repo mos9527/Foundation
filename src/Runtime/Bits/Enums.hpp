@@ -48,3 +48,4 @@ inline constexpr const char* to_string(T elem) { \
     return "Unknown"; \
 }
 
+#define ENUM_NAME(E) case E: return #E;

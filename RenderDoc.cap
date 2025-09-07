@@ -4,14 +4,20 @@
         "autoStart": false,
         "commandLine": "",
         "environment": [
+            {
+                "separator": "Platform style",
+                "type": "Set",
+                "value": "libasan.so",
+                "variable": "LD_PRELOAD"
+            }
         ],
-        "executable": "C:\\Users\\Huang\\Foundation\\out\\build\\x64-Debug\\src\\ModelViewer\\ModelViewer.exe",
+        "executable": "/home/mos9527/Foundation/cmake-build-debug/bin/Example_MandelbrotCompute",
         "inject": false,
         "numQueuedFrames": 0,
         "options": {
             "allowFullscreen": true,
             "allowVSync": true,
-            "apiValidation": false,
+            "apiValidation": true,
             "captureAllCmdLists": false,
             "captureCallstacks": false,
             "captureCallstacksOnlyDraws": false,
@@ -23,6 +29,6 @@
             "verifyBufferAccess": false
         },
         "queuedFrameCap": 0,
-        "workingDir": "C:/Users/Huang/Foundation/out/build/x64-Debug/bin"
+        "workingDir": ""
     }
 }

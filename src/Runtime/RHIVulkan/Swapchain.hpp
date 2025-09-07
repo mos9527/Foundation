@@ -3,7 +3,7 @@
 #include "Common.hpp"
 #include "Resource.hpp"
 namespace Foundation::RHI {
-    inline vk::PresentModeKHR GetVulkanPresentModeFromSwapchainDesc(RHISwapchain::SwapchainDesc::PresentMode mode) {
+    inline vk::PresentModeKHR vkPresentModeFromSwapchainDesc(RHISwapchain::SwapchainDesc::PresentMode mode) {
         using enum RHISwapchain::SwapchainDesc::PresentMode;
         switch (mode) {
         case MAILBOX: return vk::PresentModeKHR::eMailbox;
@@ -17,12 +17,12 @@ namespace Foundation::RHI {
     class VulkanSwapchain : public RHISwapchain {
         const VulkanDevice& m_device;
         vk::raii::SwapchainKHR m_swapchain{ nullptr };
-        std::array<uint32_t, 2> m_queue_family_indices;
+        std::array<uint32_t, 2> m_queue_family_indices{};
         RHIObjectStorage<VulkanTexture> m_images;
         Core::StlVector<RHITexture*> m_images_ptrs;
 
         void Instantiate();
-        const vk::SwapchainCreateInfoKHR GetSwapchainCreateInfo(SwapchainDesc const& desc);
+        const vk::SwapchainCreateInfoKHR vkSwapchainCreateInfoFromSwapchainDesc(SwapchainDesc const& desc);
     public:
         VulkanSwapchain(const VulkanDevice& device, SwapchainDesc const& desc);
 

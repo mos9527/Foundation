@@ -14,7 +14,7 @@ Features
 - Full SPIR-V shader reflection support with automatic pipeline binding and generation
 - Frame Graph/Frame Pass architecture with optimized resource barrier placement
 - Async Compute support for modern GPUs with automatic synchronization
-- Headless rendering support for GPGPU tasks @ref RenderApplication
+- Headless rendering support for GPGPU tasks @ref Foundation::Rendering::RenderApplication
 - Convenient in-built rendering techniques @ref Foundation::Rendering::createPSFullscreenPass, @ref Foundation::Rendering::createPSBackbufferBlitPass, etc.
 - Cross-platform support for Windows, Linux, and macOS
   - Vulkan-like explicit RHI APIs @ref Foundation::RHI
