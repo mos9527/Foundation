@@ -706,7 +706,7 @@ namespace Foundation::Rendering {
             CHECK(m_state == State::Execute);
             auto& tpass = m_setup->trackedPasses[pass];            
             CHECK_MSG(tpass.write_backbuffer, "Pass {} does not write to backbuffer", tpass.name);
-            return m_swaps[m_currentSync].rtv.Get();
+            return m_swaps[m_currentSwap].rtv.Get();
         }        
 #pragma endregion
 

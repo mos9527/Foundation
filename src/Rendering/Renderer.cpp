@@ -951,29 +951,46 @@ void Renderer::Execute() {
             set_next_graphics();
         }
     };
-    auto present = [&]() {
-        m_gfxQueue->Submit({
-            .waits = {{ m_swaps[m_currentSync].present.Get() }},
-            .signals = {{ m_swaps[m_currentSwap].render.Get() }},
-            .cmd_lists = {{ cmd }},
-            .fence = m_swaps[m_currentSync].fence.Get()
-        });
-        m_gfxQueue->Present({
-            .image_index = m_currentSwap,
-            .swapchain = m_swapchain.Get(),
-            .waits = {{ m_swaps[m_currentSwap].render.Get() }}
-        });
-    };
     if (m_setup->execution.size()) {        
         set_next_pass_queue(passes[m_setup->execution[0]]);
         cmd->Reset();
         cmd->Begin();
     }
+    StlVector<std::pair<RHIDeviceSemaphore*, size_t>> barrier_extra_wait(m_allocator);
+    for (size_t i = 0; i < m_setup->execution.size();i++)
+    {
+        auto& pass = passes[m_setup->execution[i]];
+        if (pass.write_backbuffer)
+        {
+            CHECK_MSG(m_desc.present, "Pass {} writes to the backbuffer, but the renderer is not created with Present support.", pass.name);
+            cmd->BeginTransition();
+            cmd->SetImageTransition(
+                GetCurrentBackbuffer(),
+                RHICommandList::TransitionDesc{
+                    .dst_access =  RHIResourceAccessBits::RenderTargetWrite,
+                    .src_stage = RHIPipelineStageBits::TopOfPipe,
+                    .dst_stage = RHIPipelineStageBits::ColorAttachmentOutput,
+                    .src_img_layout = RHITextureLayout::General,
+                    .dst_img_layout = RHITextureLayout::RenderTarget
+                }
+            );
+            cmd->EndTransition();
+            cmd->End();
+            barrier_extra_wait.emplace_back(m_swaps[m_currentSync].barrier_semaphore_at(cmd_index - 1, m_device.Get()), SEM_COUNTER(cmd_index - 1));
+            queue->Submit({
+                .timeline_signals = { barrier_extra_wait.back() },
+                .cmd_lists = { cmd },
+            });
+            set_next_graphics();
+            cmd->Reset();
+            cmd->Begin();
+            break;
+        }
+    }
     for (size_t i = 0; i < m_setup->execution.size();i++) {
         auto& pass = passes[m_setup->execution[i]];
         // Check if we can transition away on Compute
         // If not, Graphics must take over
-        std::optional<std::pair<RHIDeviceSemaphore*, size_t>> barrier_extra_wait{};
         if (m_desc.async && pass.queue == RHIDeviceQueueType::Compute) {
             const RHIPipelineStage computeMask =
                 RHIPipelineStageBits::FragmentShader |
@@ -987,9 +1004,9 @@ void Renderer::Execute() {
                 cmd->Begin();
                 ExecuteBarriers(pass, cmd);
                 cmd->End();
-                barrier_extra_wait.emplace(m_swaps[i].barrier_semaphore_at(cmd_index - 1, m_device.Get()), SEM_COUNTER(cmd_index - 1));
+                barrier_extra_wait.emplace_back(m_swaps[m_currentSync].barrier_semaphore_at(cmd_index - 1, m_device.Get()), SEM_COUNTER(cmd_index - 1));
                 queue->Submit({
-                    .timeline_signals = { barrier_extra_wait.value() },
+                    .timeline_signals = { barrier_extra_wait.back() },
                     .cmd_lists = { cmd },
                 });
                 cmd_comp_index--;
@@ -1005,14 +1022,8 @@ void Renderer::Execute() {
         pass.pass->Record(pass.handle, this, cmd);
         cmd->DebugEnd();
         // Submit if needed
-        bool submitted = false;
-        if (barrier_extra_wait.has_value()) {
-            submitted = ExecuteSubmitOrContinue(pass, cmd, queue, { barrier_extra_wait.value() });
-            barrier_extra_wait.reset();
-        }
-        else {
-            submitted = ExecuteSubmitOrContinue(pass, cmd, queue);
-        }
+        bool submitted = ExecuteSubmitOrContinue(pass, cmd, queue, barrier_extra_wait);
+        barrier_extra_wait.clear();
         if (submitted) {
             if (i == m_setup->execution.size() - 1)
             {
@@ -1035,53 +1046,47 @@ void Renderer::Execute() {
             }
         }
     }
-    if (queue == m_gfxQueue) {    
-        // Ending on Graphics queue, would be the case if
-        // - Async Compute is off
-        // - No cross-queue dependencies
-        // - Last pass is graphics
-        if (m_desc.present) {
-            // Always transition swapchain image to present
-            cmd->BeginTransition();
-            cmd->SetImageTransition(
-                GetCurrentBackbuffer(),
-                RHICommandList::TransitionDesc{
-                    .dst_stage = RHIPipelineStageBits::BottomOfPipe,
-                    .dst_img_layout = RHITextureLayout::Present
-                }
-            );
-            cmd->EndTransition();
+    if (m_desc.present)
+    {
+        if (queue != m_gfxQueue)
+        {
+            queue->Submit({
+                .signals = {{ m_swaps[m_currentSync].render.Get() }},
+                .cmd_lists = {{ cmd }},
+                .fence = m_swaps[m_currentSync].fence.Get()
+            });
+            set_next_graphics();
         }
+        cmd->BeginTransition();
+        cmd->SetImageTransition(
+            GetCurrentBackbuffer(),
+            RHICommandList::TransitionDesc{
+                .src_access =  RHIResourceAccessBits::RenderTargetWrite,
+                .src_stage = RHIPipelineStageBits::ColorAttachmentOutput,
+                .dst_stage = RHIPipelineStageBits::BottomOfPipe,
+                .src_img_layout = RHITextureLayout::RenderTarget,
+                .dst_img_layout = RHITextureLayout::Present
+            }
+        );
+        cmd->EndTransition();
         cmd->End();
-        // Submit final command list
-        if (m_desc.present) {
-            present();
-        }
-        else {           
-            queue->Submit({
-                .signals = {{ m_swaps[m_currentSync].render.Get() }},
-                .cmd_lists = {{ cmd }},
-                .fence = m_swaps[m_currentSync].fence.Get()
-            });
-        }
+        queue->Submit({
+            .waits = {{ m_swaps[m_currentSync].present.Get() }},
+            .signals = {{ m_swaps[m_currentSwap].render.Get() }},
+            .cmd_lists = {{ cmd }},
+            .fence = m_swaps[m_currentSync].fence.Get()
+        });
+        queue->Present({
+            .image_index = m_currentSwap,
+            .swapchain = m_swapchain.Get(),
+            .waits = {{ m_swaps[m_currentSwap].render.Get() }}
+        });
     } else {
-        // Ending on Compute queue
-        // If we need to present, we need to sync with the graphics queue
-        // Binary semaphores would be enough
-        if (m_desc.present) {
-            queue->Submit({
-                .signals = {{ m_swaps[m_currentSync].render.Get() }},
-                .cmd_lists = {{ cmd }},                
-            });
-            present();
-        }
-        else {
-            queue->Submit({
-                .signals = {{ m_swaps[m_currentSync].render.Get() }},
-                .cmd_lists = {{ cmd }},
-                .fence = m_swaps[m_currentSync].fence.Get()
-            });
-        }
+        queue->Submit({
+            .signals = {{ m_swaps[m_currentSync].render.Get() }},
+            .cmd_lists = {{ cmd }},
+            .fence = m_swaps[m_currentSync].fence.Get()
+        });
     }
     m_currentSync = (m_currentSync + 1) % m_frameSwaps;
     m_frame++;
