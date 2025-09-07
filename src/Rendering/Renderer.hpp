@@ -221,7 +221,7 @@ namespace Foundation::Rendering {
 
         uint64_t m_frame{ 0 };
 
-        const uint32_t m_frameSwaps{ 0 }; // Max frames in flight
+        uint32_t m_frameSwaps{ 1 }; // Max frames in flight
         uint32_t m_currentSwap{ 0 };
 
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_descPool;

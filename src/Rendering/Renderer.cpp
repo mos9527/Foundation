@@ -920,6 +920,8 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
 // See Also
 // - https://docs.vulkan.org/tutorial/latest/03_Drawing_a_triangle/03_Drawing/03_Frames_in_flight.html    
 // - https://docs.vulkan.org/tutorial/latest/_attachments/16_frames_in_flight.cpp
+// - https://vulkan-tutorial.com/Drawing_a_triangle/Drawing/Frames_in_flight
+// - https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9802
 void Renderer::Execute() {
     CHECK_MSG(m_state == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup()?", m_state);
     m_state = State::Execute;
@@ -956,6 +958,19 @@ void Renderer::Execute() {
         else {
             set_next_graphics();
         }
+    };
+    auto present = [&]() {
+        m_gfxQueue->Submit({
+            .waits = {{ m_swaps[m_currentSwap].present.Get() }},
+            .signals = {{ m_swaps[next_image].render.Get() }},
+            .cmd_lists = {{ cmd }},
+            .fence = m_swaps[m_currentSwap].fence.Get()
+        });
+        m_gfxQueue->Present({
+            .image_index = next_image,
+            .swapchain = m_swapchain.Get(),
+            .waits = {{ m_swaps[next_image].render.Get() }}
+        });
     };
     if (m_setup->execution.size()) {        
         set_next_pass_queue(passes[m_setup->execution[0]]);
@@ -1001,6 +1016,7 @@ void Renderer::Execute() {
         bool submitted = false;
         if (barrier_extra_wait.has_value()) {
             submitted = ExecuteSubmitOrContinue(pass, cmd, queue, { barrier_extra_wait.value() });
+            barrier_extra_wait.reset();
         }
         else {
             submitted = ExecuteSubmitOrContinue(pass, cmd, queue);
@@ -1047,17 +1063,7 @@ void Renderer::Execute() {
         cmd->End();
         // Submit final command list
         if (m_desc.present) {
-            queue->Submit({
-                .waits = {{ m_swaps[m_currentSwap].present.Get() }},
-                .signals = {{ m_swaps[next_image].render.Get() }},
-                .cmd_lists = {{ cmd }},
-                .fence = m_swaps[m_currentSwap].fence.Get()
-                });
-            queue->Present({
-                .image_index = next_image,
-                .swapchain = m_swapchain.Get(),
-                .waits = {{ m_swaps[next_image].render.Get() }}
-                });
+            present();
         }
         else {           
             queue->Submit({
@@ -1075,16 +1081,7 @@ void Renderer::Execute() {
                 .signals = {{ m_swaps[m_currentSwap].render.Get() }},
                 .cmd_lists = {{ cmd }},                
             });
-            m_gfxQueue->Submit({
-                .waits = {{ m_swaps[m_currentSwap].render.Get() }},
-                .signals = {{ m_swaps[m_currentSwap].present.Get() }},
-                .fence = m_swaps[m_currentSwap].fence.Get()
-            });
-            m_gfxQueue->Present({
-                .image_index = next_image,
-                .swapchain = m_swapchain.Get(),
-                .waits = {{ m_swaps[m_currentSwap].present.Get() }}
-            });
+            present();
         }
         else {
             queue->Submit({
