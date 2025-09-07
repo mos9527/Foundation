@@ -25,7 +25,10 @@ namespace Foundation::Native {
         }
         ~NativeWindow();
 
-        std::pair<uint32_t, uint32_t> GetSize() const;
+        std::pair<uint32_t, uint32_t> GetWindowSize() const;
+        std::pair<uint32_t, uint32_t> GetFramebufferSize() const;
+        void SetWindowTitle(const char* title);
+
         bool WindowShouldClose();
 
         inline void* GetNative() const { return m_window; }

@@ -2,13 +2,13 @@
 using namespace Foundation::Rendering;
 void RenderApplication::CreateSwapchain() {
     CHECK(m_device && m_window);
-    LOG_RUNTIME(Application, info, "Creating swapchain ({}x{})", GetWindowSize().x, GetWindowSize().y);
+    LOG_RUNTIME(Application, info, "Creating swapchain ({}x{})", GetFramebufferSize().x, GetFramebufferSize().y);
     m_device->WaitIdle();
     m_swapchain.Reset();
     m_swapchain = m_device->CreateSwapchain(
         RHISwapchain::SwapchainDesc{
         .format = RHIResourceFormat::R8G8B8A8_UNORM,
-        .extents = GetWindowSize(),
+        .extents = GetFramebufferSize(),
         .min_buffer_count = 3,
         .present_mode = RHISwapchain::SwapchainDesc::PresentMode::MAILBOX,
     });

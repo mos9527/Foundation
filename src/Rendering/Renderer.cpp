@@ -50,7 +50,6 @@ void Renderer::BeginSetup() {
 ResourceHandle Renderer::CreateTextureView(
     PassHandle pass, ResourceHandle handle, RHITextureViewDesc const& desc) {
     CHECK(m_state == State::Setup);
-    auto& resource = m_setup->trackedResources[handle];
     m_setup->trackedViews.emplace_back(handle, desc);
     ResourceHandle hdl = m_setup->trackedViews.size() - 1;
     m_setup->trackedPasses[pass].texviews.emplace_back(hdl);
@@ -145,7 +144,7 @@ void Renderer::BindPushConstant(
     size_t offset, size_t size
 ) {
     CHECK(m_state == State::Setup);
-    for (auto& [s, _, __] : m_setup->trackedPasses[pass].push_constants)
+    for (auto const& [s, _, __] : m_setup->trackedPasses[pass].push_constants)
         if (s & stage)
             throw std::runtime_error("Some previous shader stage(s) already has Push Constants ranges");
     m_setup->trackedPasses[pass].push_constants.emplace_back(stage, offset, size);
@@ -389,7 +388,7 @@ void Renderer::CullPasses(PassHandle epilogue) {
     for (PassHandle ord = 0; ord < m_setup->execution.size(); ord++) {
         auto& pass = m_setup->trackedPasses[m_setup->execution[ord]];
         // Derive lifetimes for resources from execution order
-        // FinializeResources() uses this to overlap resources.        
+        // FinalizeResources() uses this to overlap resources.
         pass.ord = ord, pass.depth = depth[pass.handle];
         auto& resources = pass.resources;
         // Sort then make unique
@@ -418,7 +417,6 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     StlVector<char> data(m_allocator);
     StlMap<std::filesystem::path, RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(m_allocator);
     StlMap<std::filesystem::path, UniquePtr<ShaderReflection>> reflections(m_allocator);
-    size_t stages[0xF]{};
     for (auto const& [shader_path, entry_point, stage] : tracked.shaders) {
         if (!shaders.contains(shader_path)) {
             LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path.string());
@@ -435,7 +433,6 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         }
         auto& module = shaders[shader_path];
         // In BindShader we have already guaranteed these to be unique per stage
-        stages[(uint32_t)stage] = shaders.size() - 1;
         if (stage == RHIShaderStageBits::Compute)
             tracked.compute_pass = true;
         bool found = false;
@@ -462,12 +459,9 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     // [name, [set, binding]]
     StlMap<std::string, std::pair<uint32_t, uint32_t>> var_bindpoints(m_allocator);
     // Check if any shader in the pipeline uses PC
-    bool use_pushconstants = false;
     for (auto const& [path, refl] : reflections){
-        if (refl->m_pushConstants.size()) {
-            use_pushconstants = true;        
+        if (refl->m_pushConstants.size())
             CHECK_MSG(refl->m_pushConstants.size() == 1, "Shader uses more than Push Constant block. This is not accepted by most drivers.");
-        }
         for (auto& bind : refl->m_bindings) {
             CHECK_MSG(
                 bind.name.size(),
@@ -492,7 +486,6 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     StlMap<std::string, ResourceHandle> var_hdls(m_allocator);
     StlMap<std::string, ResourceHandle> var_samplers(m_allocator);
     for (auto& [vhdl, dtype, binding] : tracked.tex_bindings) {
-        auto& view = m_setup->trackedViews[vhdl];
         auto it = var_types.find(binding);
         if (it == var_types.end())
             var_types[binding] = dtype, var_hdls[binding] = vhdl;
@@ -757,14 +750,11 @@ RHIPipelineStage Renderer::ExecuteGetPassAllCurrentStages(TrackedPass& pass) {
     RHIPipelineStage ans{};
     for (auto [hdl, access, stage, range, layout] : pass.textureUsages) {
         auto& tres = m_setup->trackedResources[hdl];
-        auto& res = DerefResource(hdl).Get<RHITexture*>();
-        for (auto& sta : tres.GetLastSubresourceStateOf(range)) {
+        for (auto& sta : tres.GetLastSubresourceStateOf(range))
             ans |= sta.stage;
-        }
     }
-    for (auto [hdl, access, stage] : pass.bufferUsages) {
+    for (auto [hdl, access, stage] : pass.bufferUsages)
         ans |= stage;
-    }
     return ans;
 }
 void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) {
@@ -780,7 +770,7 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) {
     // These are always disjoint ranges
     for (auto [hdl, access, stage, range, layout] : pass.textureUsages) {
         auto& tres = m_setup->trackedResources[hdl];
-        auto& res = DerefResource(hdl).Get<RHITexture*>();
+        auto* res = DerefResource(hdl).Get<RHITexture*>();
         for (auto& sta : tres.GetLastSubresourceStateOf(range)) {
             if (sta.access == access && sta.stage == stage && sta.layout == layout)
                 continue;
@@ -864,11 +854,17 @@ bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, R
         waits.insert(waits.end(), extra_waits.begin(), extra_waits.end());
         if (waits.size() || pass.has_cross_queue_dependent) {
             cmd->End();
-            queue->Submit({
-                .timeline_waits = waits,
-                .timeline_signals = {{{ pass.asyncSemaphore.Get(), SEM_COUNTER(pass.ord) }}},
-                .cmd_lists = { cmd },
-            });
+            if (pass.has_cross_queue_dependent)
+                queue->Submit({
+                    .timeline_waits = waits,
+                    .timeline_signals = {{{ pass.asyncSemaphore.Get(), SEM_COUNTER(pass.ord) }}},
+                    .cmd_lists = { cmd },
+                });
+            else
+                queue->Submit({
+                    .timeline_waits = waits,
+                    .cmd_lists = { cmd },
+                });
             return true;
         }
         else {
@@ -916,11 +912,9 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
     m_currentSwap = 0;
 }
 
-// See Also
-// - https://docs.vulkan.org/tutorial/latest/03_Drawing_a_triangle/03_Drawing/03_Frames_in_flight.html    
-// - https://docs.vulkan.org/tutorial/latest/_attachments/16_frames_in_flight.cpp
-// - https://vulkan-tutorial.com/Drawing_a_triangle/Drawing/Frames_in_flight
-// - https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9802
+/**
+ * @note MangoHud seem to cause validation errors with present semaphores
+ */
 void Renderer::Execute() {
     CHECK_MSG(m_state == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup()?", m_state);
     m_state = State::Execute;
@@ -1174,7 +1168,7 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd,
         });
     }
 }
-const RHIExtent3D Renderer::CmdGetComputeLocalSize(PassHandle pass) {
+RHIExtent3D Renderer::CmdGetComputeLocalSize(PassHandle pass) {
     CHECK(m_state == State::Execute);
     auto& tpass = m_setup->trackedPasses[pass];
     auto const& [x, y, z] = tpass.compute_local_size;

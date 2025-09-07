@@ -32,7 +32,7 @@ namespace Foundation::Rendering {
 
         UniquePtr<Renderer> m_renderer;
 
-        inline const RHIExtent2D GetWindowSize() { auto [w, h] = m_window.GetSize(); return { w, h }; }
+        inline const RHIExtent2D GetFramebufferSize() { auto [w, h] = m_window.GetFramebufferSize(); return { w, h }; }
 
         void CreateSwapchain();
         void InitializeInternal();

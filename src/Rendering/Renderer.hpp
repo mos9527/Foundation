@@ -715,7 +715,7 @@ namespace Foundation::Rendering {
          *
          * Calling this on a non-CS bound queue is incorrect, and will throw.
          */
-        const RHIExtent3D CmdGetComputeLocalSize(PassHandle pass);
+        RHIExtent3D CmdGetComputeLocalSize(PassHandle pass);
         /**
          * @brief Helper that dispatches a compute shader with the specified total thread count
          *
