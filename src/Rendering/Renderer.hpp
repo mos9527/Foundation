@@ -333,6 +333,8 @@ namespace Foundation::Rendering {
         RHIPipelineStage ExecuteGetPassAllCurrentStages(TrackedPass& pass);
         void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
         bool ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, RHIDeviceQueue* queue, StlSpan<const std::pair<RHIDeviceSemaphore*, size_t>> extra_waits = {});
+
+        void SetFrameSyncObjects();
     public:
 
 

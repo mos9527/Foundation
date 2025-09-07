@@ -17,7 +17,7 @@ using namespace Foundation::Rendering;
 #define SEM_COUNTER(ord) m_frame + ord + 1LL
 
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Core::Allocator* allocator)
-    : m_device(device), m_allocator(allocator), m_state(State::Undefined), m_frameSwaps(swapchain.IsValid() ? swapchain->GetImages().size() : 1), m_desc(desc) {
+    : m_device(device), m_allocator(allocator), m_state(State::Undefined), m_desc(desc) {
     m_gfxQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
     m_compQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Compute);
     m_cmdPool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
@@ -32,16 +32,10 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
             });
         m_compCmdPool->DebugSetObjectName("Async Compute Command Pool");
     }
-    for (size_t i = 0; i < m_frameSwaps; i++) {
-        m_swaps[i].render = m_device->CreateSemaphore(false);
-        m_swaps[i].render->DebugSetObjectName(fmt::format("Render Semaphore of Swap {}", i).c_str());
-        m_swaps[i].present = m_device->CreateSemaphore(false);
-        m_swaps[i].present->DebugSetObjectName(fmt::format("Present Semaphore of Swap {}", i).c_str());
-        m_swaps[i].fence = m_device->CreateFence(true);
-        m_swaps[i].fence->DebugSetObjectName(fmt::format("Fence of Swap {}", i).c_str());
-    }
     if (m_desc.present)
         SetSwapchain(swapchain);
+    else
+        SetFrameSyncObjects();
     LOG_RUNTIME(Renderer, info, "** Renderer Init **");
     LOG_RUNTIME(Renderer, info, "Async Compute: {}", m_desc.async);
     LOG_RUNTIME(Renderer, info, "Presentation: {}", m_desc.present);
@@ -889,10 +883,20 @@ bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, R
     }
 }
 #pragma endregion
+void Renderer::SetFrameSyncObjects() {
+    for (size_t i = 0; i < m_frameSwaps; i++) {
+        m_swaps[i].render = m_device->CreateSemaphore(false);
+        m_swaps[i].render->DebugSetObjectName(fmt::format("Render Semaphore of Swap {}", i).c_str());
+        m_swaps[i].present = m_device->CreateSemaphore(false);
+        m_swaps[i].present->DebugSetObjectName(fmt::format("Present Semaphore of Swap {}", i).c_str());
+        m_swaps[i].fence = m_device->CreateFence(true);
+        m_swaps[i].fence->DebugSetObjectName(fmt::format("Fence of Swap {}", i).c_str());
+    }
+}
 void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
     CHECK_MSG(m_desc.present, "Cannot set swapchain when the renderer is not declared with Present support");
-    if (m_swapchain)
-        CHECK_MSG(m_frameSwaps == swapchain->GetImages().size(), "New Swapchain uses different number of swaps ({} vs {})!", m_frameSwaps, swapchain->GetImages().size());
+    m_frameSwaps = swapchain->GetImages().size();
+    LOG_RUNTIME(Renderer, info, "Swapchain uses {} back buffers", m_frameSwaps);
     if (m_state == State::Execute) {
         // If changing swapchain during execution
         // Wait for GPU to be idle
@@ -907,12 +911,7 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
         });
     }
     m_swapchain = swapchain;
-    // Device is idle when calling this
-    // Reset fences    
-    for (size_t i = 0; i < m_frameSwaps; ++i) {                     
-        m_swaps[i].fence = m_device->CreateFence(true);
-        m_swaps[i].fence->DebugSetObjectName(fmt::format("Fence of Swap {}", i).c_str());
-    }
+    SetFrameSyncObjects();
     // Reset semaphores index
     m_currentSwap = 0;
 }
