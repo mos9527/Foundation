@@ -6,10 +6,10 @@ void RenderApplication::CreateSwapchain() {
     m_device->WaitIdle();
     m_swapchain.Reset();
     const RHIResourceFormat kFormatPreferenceList[] = {
-        RHIResourceFormat::R8G8B8A8_SRGB,
-        RHIResourceFormat::B8G8R8A8_SRGB,
         RHIResourceFormat::R8G8B8A8_UNORM,
-        RHIResourceFormat::B8G8R8A8_UNROM
+        RHIResourceFormat::B8G8R8A8_UNROM,
+        RHIResourceFormat::R8G8B8A8_SRGB,
+        RHIResourceFormat::B8G8R8A8_SRGB
     };
     RHIResourceFormat format = RHIResourceFormat::Undefined;
     auto const& supported = m_device->GetSwapchainSupportedFormats();
