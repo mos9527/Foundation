@@ -951,39 +951,18 @@ void Renderer::Execute() {
             set_next_graphics();
         }
     };
-    if (m_setup->execution.size()) {        
+    if (m_setup->execution.size()) {
         set_next_pass_queue(passes[m_setup->execution[0]]);
         cmd->Reset();
         cmd->Begin();
     }
-    StlVector<std::pair<RHIDeviceSemaphore*, size_t>> barrier_extra_wait(m_allocator);
     for (size_t i = 0; i < m_setup->execution.size();i++)
     {
         auto& pass = passes[m_setup->execution[i]];
         if (pass.write_backbuffer)
         {
             CHECK_MSG(m_desc.present, "Pass {} writes to the backbuffer, but the renderer is not created with Present support.", pass.name);
-            cmd->BeginTransition();
-            cmd->SetImageTransition(
-                GetCurrentBackbuffer(),
-                RHICommandList::TransitionDesc{
-                    .dst_access =  RHIResourceAccessBits::RenderTargetWrite,
-                    .src_stage = RHIPipelineStageBits::TopOfPipe,
-                    .dst_stage = RHIPipelineStageBits::ColorAttachmentOutput,
-                    .src_img_layout = RHITextureLayout::General,
-                    .dst_img_layout = RHITextureLayout::RenderTarget
-                }
-            );
-            cmd->EndTransition();
-            cmd->End();
-            barrier_extra_wait.emplace_back(m_swaps[m_currentSync].barrier_semaphore_at(cmd_index - 1, m_device.Get()), SEM_COUNTER(cmd_index - 1));
-            queue->Submit({
-                .timeline_signals = { barrier_extra_wait.back() },
-                .cmd_lists = { cmd },
-            });
-            set_next_graphics();
-            cmd->Reset();
-            cmd->Begin();
+
             break;
         }
     }
@@ -991,6 +970,7 @@ void Renderer::Execute() {
         auto& pass = passes[m_setup->execution[i]];
         // Check if we can transition away on Compute
         // If not, Graphics must take over
+        std::optional<std::pair<RHIDeviceSemaphore*, size_t>> barrier_extra_wait{};
         if (m_desc.async && pass.queue == RHIDeviceQueueType::Compute) {
             const RHIPipelineStage computeMask =
                 RHIPipelineStageBits::FragmentShader |
@@ -1004,9 +984,9 @@ void Renderer::Execute() {
                 cmd->Begin();
                 ExecuteBarriers(pass, cmd);
                 cmd->End();
-                barrier_extra_wait.emplace_back(m_swaps[m_currentSync].barrier_semaphore_at(cmd_index - 1, m_device.Get()), SEM_COUNTER(cmd_index - 1));
+                barrier_extra_wait.emplace(m_swaps[i].barrier_semaphore_at(cmd_index - 1, m_device.Get()), SEM_COUNTER(cmd_index - 1));
                 queue->Submit({
-                    .timeline_signals = { barrier_extra_wait.back() },
+                    .timeline_signals = { barrier_extra_wait.value() },
                     .cmd_lists = { cmd },
                 });
                 cmd_comp_index--;
@@ -1022,8 +1002,14 @@ void Renderer::Execute() {
         pass.pass->Record(pass.handle, this, cmd);
         cmd->DebugEnd();
         // Submit if needed
-        bool submitted = ExecuteSubmitOrContinue(pass, cmd, queue, barrier_extra_wait);
-        barrier_extra_wait.clear();
+        bool submitted = false;
+        if (barrier_extra_wait.has_value()) {
+            submitted = ExecuteSubmitOrContinue(pass, cmd, queue, { barrier_extra_wait.value() });
+            barrier_extra_wait.reset();
+        }
+        else {
+            submitted = ExecuteSubmitOrContinue(pass, cmd, queue);
+        }
         if (submitted) {
             if (i == m_setup->execution.size() - 1)
             {
@@ -1061,9 +1047,9 @@ void Renderer::Execute() {
         cmd->SetImageTransition(
             GetCurrentBackbuffer(),
             RHICommandList::TransitionDesc{
-                .src_access =  RHIResourceAccessBits::RenderTargetWrite,
                 .src_stage = RHIPipelineStageBits::ColorAttachmentOutput,
                 .dst_stage = RHIPipelineStageBits::BottomOfPipe,
+                .src_access =  RHIResourceAccessBits::RenderTargetWrite,
                 .src_img_layout = RHITextureLayout::RenderTarget,
                 .dst_img_layout = RHITextureLayout::Present
             }
