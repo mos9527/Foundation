@@ -5,7 +5,7 @@
 
 using namespace Foundation::Core;
 constexpr size_t benchCount = 5e1;
-constexpr size_t allocCount = 1e7;
+constexpr size_t allocCount = 1e6;
 constexpr size_t arenaSize = 512 * 1024 * 1024; // 512 MB
 
 #include <vector>
@@ -29,6 +29,7 @@ template<typename Func> void bench_many(const char* desc, Func&& func) {
 int main() {
     void* memory = aligned_alloc(arenaSize, arenaSize); // 64 KiB alignment
     Arena arena(memory, arenaSize);
+	LOG_RUNTIME(Allocator, info, "Benchmark: {} allocations of {} bytes, repeated {} times", allocCount, sizeof(int), benchCount);
 	bench_many("Stack ST", [&]() {
 		StackAllocatorSingleThreaded alloc(arena);
 		bench_one(&alloc);

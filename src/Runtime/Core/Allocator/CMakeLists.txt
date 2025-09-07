@@ -28,11 +28,8 @@ target_compile_definitions(
 	# e.g. OOM Allocation in Release produces nullptr,
 	# but in Debug causes segfault due to asserts.
 )
-target_compile_definitions(
-	mimalloc-static
-	PRIVATE
-	MI_OVERRIDE OFF
-)
+set(MI_OVERRIDE OFF CACHE BOOL "" FORCE)
+
 target_link_libraries(Foundation_Allocator PUBLIC mimalloc-static)
 target_include_directories(
 	Foundation_Allocator

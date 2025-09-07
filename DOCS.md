@@ -15,11 +15,11 @@ Features
 - Frame Graph/Frame Pass architecture with optimized resource barrier placement
 - Async Compute support for modern GPUs with automatic synchronization
 - Headless rendering support for GPGPU tasks @ref RenderApplication
-- Convenient in-built rendering techniques @ref createPSFullscreenPass, @ref createPSBackbufferBlitPass, etc.
+- Convenient in-built rendering techniques @ref Foundation::Rendering::createPSFullscreenPass, @ref Foundation::Rendering::createPSBackbufferBlitPass, etc.
 - Cross-platform support for Windows, Linux, and macOS
   - Vulkan-like explicit RHI APIs @ref Foundation::RHI
   - DirectX-like rendering concepts at @ref Foundation::Rendering
-  - WinAPI-like application APIs @ref Foundation::NativeApplication
+  - WinAPI-like application APIs @ref Foundation::Native::NativeApplication
 
 Quickstart
 ---
