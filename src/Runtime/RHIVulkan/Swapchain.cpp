@@ -23,9 +23,14 @@ const vk::SwapchainCreateInfoKHR VulkanSwapchain::GetSwapchainCreateInfo(Swapcha
         "Swapchain present mode {} not supported",
         (uint32_t)desc.present_mode
     );
+    CHECK_MSG(
+        desc.min_buffer_count >= surface_caps.minImageCount,
+        "Swapchain min buffer count {} not supported (min {})",
+        desc.min_buffer_count, surface_caps.minImageCount
+    );
     vk::SwapchainCreateInfoKHR create_info{
         .surface = surface,
-        .minImageCount = desc.buffer_count,
+        .minImageCount = desc.min_buffer_count,
         .imageFormat = vkFormatFromRHIFormat(desc.format),
         .imageColorSpace = vk::ColorSpaceKHR::eSrgbNonlinear,
         .imageExtent = vk::Extent2D(desc.extents.x, desc.extents.y),
