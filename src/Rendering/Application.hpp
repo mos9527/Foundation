@@ -12,7 +12,7 @@ namespace Foundation::Rendering {
     struct ApplicationInitDesc {
         size_t deviceIndex{ 0 };
         std::string windowTitle{"Application"};
-        RHIExtent2D windowSize{ 1280, 720 };
+        RHIExtent2D windowSize{ 800, 600 };
         bool present{ true };
         bool asyncCompute{ true };
     };

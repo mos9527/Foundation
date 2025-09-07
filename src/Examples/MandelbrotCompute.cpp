@@ -9,6 +9,7 @@ namespace Examples {
     class MandelbrotComputeDemoApp : public RenderApplication {
         struct PushConstants {
             float time;
+            float pad;
             RHIExtent2D resolution;
         };
         void RendererSetup() override {

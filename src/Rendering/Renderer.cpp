@@ -909,7 +909,7 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
     m_swapchain = swapchain;
     SetFrameSyncObjects();
     // Reset semaphores index
-    m_currentSwap = 0;
+    m_currentSync = 0;
 }
 
 /**
@@ -920,21 +920,20 @@ void Renderer::Execute() {
     m_state = State::Execute;
     // Execute passes
     auto& passes = m_setup->trackedPasses;
-    m_device->WaitForFences({ m_swaps[m_currentSwap].fence }, true, -1);    
-    uint32_t next_image = 0;
+    m_device->WaitForFences({ m_swaps[m_currentSync].fence }, true, -1);
     if (m_desc.present)
-        next_image = m_swapchain->GetNextImage(-1, m_swaps[m_currentSwap].present, {});    
-    m_device->ResetFences({ m_swaps[m_currentSwap].fence });
+        m_currentSwap = m_swapchain->GetNextImage(-1, m_swaps[m_currentSync].present, {});
+    m_device->ResetFences({ m_swaps[m_currentSync].fence });
     int cmd_index = 0, cmd_comp_index = 0;
     RHIDeviceQueue* queue = m_gfxQueue;
-    RHICommandList* cmd = m_swaps[m_currentSwap].cmd_at(cmd_index, m_cmdPool.Get());
+    RHICommandList* cmd = m_swaps[m_currentSync].cmd_at(cmd_index, m_cmdPool.Get());
     auto set_next_graphics = [&]() {
         CHECK_MSG(cmd_index < kMaxCommandListsPerSwap, "Not enough graphics command lists allocated for async compute execution [graphics exhausted]");
-        queue = m_gfxQueue, cmd = m_swaps[m_currentSwap].cmd_at(cmd_index++, m_cmdPool.Get());
+        queue = m_gfxQueue, cmd = m_swaps[m_currentSync].cmd_at(cmd_index++, m_cmdPool.Get());
     };
     auto set_next_compute = [&]() {
         CHECK_MSG(cmd_comp_index < kMaxCommandListsPerSwap, "Not enough compute command lists allocated for async compute execution [compute exhausted]");
-        queue = m_compQueue, cmd = m_swaps[m_currentSwap].comp_cmds_at(cmd_comp_index++, m_compCmdPool.Get());
+        queue = m_compQueue, cmd = m_swaps[m_currentSync].comp_cmds_at(cmd_comp_index++, m_compCmdPool.Get());
     };
     auto set_next_pass_queue = [&](TrackedPass& pass) {
         if (m_desc.async) {
@@ -954,15 +953,15 @@ void Renderer::Execute() {
     };
     auto present = [&]() {
         m_gfxQueue->Submit({
-            .waits = {{ m_swaps[m_currentSwap].present.Get() }},
-            .signals = {{ m_swaps[next_image].render.Get() }},
+            .waits = {{ m_swaps[m_currentSync].present.Get() }},
+            .signals = {{ m_swaps[m_currentSwap].render.Get() }},
             .cmd_lists = {{ cmd }},
-            .fence = m_swaps[m_currentSwap].fence.Get()
+            .fence = m_swaps[m_currentSync].fence.Get()
         });
         m_gfxQueue->Present({
-            .image_index = next_image,
+            .image_index = m_currentSwap,
             .swapchain = m_swapchain.Get(),
-            .waits = {{ m_swaps[next_image].render.Get() }}
+            .waits = {{ m_swaps[m_currentSwap].render.Get() }}
         });
     };
     if (m_setup->execution.size()) {        
@@ -1060,9 +1059,9 @@ void Renderer::Execute() {
         }
         else {           
             queue->Submit({
-                .signals = {{ m_swaps[m_currentSwap].render.Get() }},
+                .signals = {{ m_swaps[m_currentSync].render.Get() }},
                 .cmd_lists = {{ cmd }},
-                .fence = m_swaps[m_currentSwap].fence.Get()
+                .fence = m_swaps[m_currentSync].fence.Get()
             });
         }
     } else {
@@ -1071,20 +1070,20 @@ void Renderer::Execute() {
         // Binary semaphores would be enough
         if (m_desc.present) {
             queue->Submit({
-                .signals = {{ m_swaps[m_currentSwap].render.Get() }},
+                .signals = {{ m_swaps[m_currentSync].render.Get() }},
                 .cmd_lists = {{ cmd }},                
             });
             present();
         }
         else {
             queue->Submit({
-                .signals = {{ m_swaps[m_currentSwap].render.Get() }},
+                .signals = {{ m_swaps[m_currentSync].render.Get() }},
                 .cmd_lists = {{ cmd }},
-                .fence = m_swaps[m_currentSwap].fence.Get()
+                .fence = m_swaps[m_currentSync].fence.Get()
             });
         }
     }
-    m_currentSwap = (m_currentSwap + 1) % m_frameSwaps;
+    m_currentSync = (m_currentSync + 1) % m_frameSwaps;
     m_frame++;
     m_state = State::PostSetup;
 }
@@ -1118,7 +1117,7 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd,
         CHECK_MSG(
             extent.x <= backsize.x && extent.y <= backsize.y,
             "Graphics extent too large for Swapchain Backbuffer {}",
-            m_currentSwap
+            m_currentSync
         );
         rtvs.push_back({
             .image_view = DerefCurrentBackbufferView(pass),

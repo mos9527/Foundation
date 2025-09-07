@@ -222,6 +222,7 @@ namespace Foundation::Rendering {
         uint64_t m_frame{ 0 };
 
         uint32_t m_frameSwaps{ 1 }; // Max frames in flight
+        uint32_t m_currentSync{ 0 };
         uint32_t m_currentSwap{ 0 };
 
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_descPool;
@@ -705,7 +706,7 @@ namespace Foundation::Rendering {
             CHECK(m_state == State::Execute);
             auto& tpass = m_setup->trackedPasses[pass];            
             CHECK_MSG(tpass.write_backbuffer, "Pass {} does not write to backbuffer", tpass.name);
-            return m_swaps[m_currentSwap].rtv.Get();
+            return m_swaps[m_currentSync].rtv.Get();
         }        
 #pragma endregion
 

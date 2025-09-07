@@ -41,9 +41,8 @@ VulkanApplication::VulkanApplication(Core::Allocator* allocator, const char* app
         .pEngineName = engineName,
         .apiVersion = apiVersion,
     };
-    uint32_t count;
+    uint32_t count = 0;
     const char** extensions = glfwGetRequiredInstanceExtensions(&count);
-    CHECK(extensions && count > 0 && "Failed to get required Vulkan instance extensions from GLFW");
     Core::StlVector<const char*> instanceExtensions(m_allocator);
     instanceExtensions.insert(instanceExtensions.end(), extensions, extensions + count);
     // Add our own extensions
