@@ -13,8 +13,7 @@ add_library(
     Foundation_Rendering ${SOURCES} ${INCLUDES}
 )
 
-find_package(SPIRV-Headers REQUIRED)
-target_link_libraries(Foundation_Rendering PUBLIC Foundation_Runtime SPIRV-Headers::SPIRV-Headers)
+target_link_libraries(Foundation_Rendering PUBLIC Foundation_Runtime)
 target_include_directories(
 	Foundation_Rendering 
 	PRIVATE

@@ -10,6 +10,9 @@ set(CMAKE_UNITY_BUILD OFF)
 add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
 add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
 
+# https://developercommunity.visualstudio.com/t/__VA_OPT__-should-be-enabled-by-std:c/10565399
+add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/Zc:preprocessor>")
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(DERIVED_DATA_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/data")
 set(SHADER_BUILD_DIR "${DERIVED_DATA_DIR}/shaders")
