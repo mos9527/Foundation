@@ -86,6 +86,8 @@ namespace Foundation::RHI {
         vk::raii::Device m_device{ nullptr };
         vk::raii::SurfaceKHR m_surface{ nullptr };
 
+        Core::StlVector<RHIResourceFormat> m_swapchain_formats;
+
         VmaAllocator m_vkAllocator{ nullptr };
         // Device Object storage
         // Lifetimes and handle dereferencing are managed by the device.
@@ -101,6 +103,7 @@ namespace Foundation::RHI {
 
         RHIDeviceQueue* GetDeviceQueue(RHIDeviceQueueType type) const override;
 
+        Core::StlSpan<RHIResourceFormat const> GetSwapchainSupportedFormats() const override;
         RHIDeviceScopedObjectHandle<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) override;
         RHISwapchain* GetSwapchain(Handle handle) const override;
         void DestroySwapchain(Handle handle) override;

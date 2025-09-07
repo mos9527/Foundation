@@ -12,6 +12,9 @@ namespace Foundation::RHI {
         using enum RHIResourceFormat;
         switch (format) {
         case R8G8B8A8_UNORM: return vk::Format::eR8G8B8A8Unorm;
+        case R8G8B8A8_SRGB: return vk::Format::eR8G8B8A8Srgb;
+        case B8G8R8A8_UNROM: return vk::Format::eB8G8R8A8Unorm;
+        case B8G8R8A8_SRGB: return vk::Format::eB8G8R8A8Srgb;
         case R32_SIGNED_FLOAT: return vk::Format::eR32Sfloat;
         case R32G32_SIGNED_FLOAT: return vk::Format::eR32G32Sfloat;
         case R32G32B32_SIGNED_FLOAT: return vk::Format::eR32G32B32Sfloat;

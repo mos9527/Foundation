@@ -17,6 +17,9 @@ namespace Foundation::RHI {
     enum class RHIResourceFormat {
         Undefined = 0,
         R8G8B8A8_UNORM,
+        R8G8B8A8_SRGB,
+        B8G8R8A8_UNROM,
+        B8G8R8A8_SRGB,
         R32_SIGNED_FLOAT,
         R32G32_SIGNED_FLOAT,
         R32G32B32_SIGNED_FLOAT,
@@ -31,6 +34,9 @@ namespace Foundation::RHI {
     };
     ENUM_NAME_CONV_BEGIN(RHIResourceFormat)
         ENUM_NAME(R8G8B8A8_UNORM)
+        ENUM_NAME(R8G8B8A8_SRGB)
+        ENUM_NAME(B8G8R8A8_UNROM)
+        ENUM_NAME(B8G8R8A8_SRGB)
         ENUM_NAME(R32_SIGNED_FLOAT)
         ENUM_NAME(R32G32_SIGNED_FLOAT)
         ENUM_NAME(R32G32B32_SIGNED_FLOAT)

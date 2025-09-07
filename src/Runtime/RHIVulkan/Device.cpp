@@ -33,7 +33,7 @@ vk::AllocationCallbacks const& VulkanDevice::GetVkAllocatorCallbacks() const {
 }
 
 VulkanDevice::VulkanDevice(VulkanApplication const& app, const vk::raii::PhysicalDevice& physicalDevice, Native::NativeWindow* window) :
-    m_app(app), m_physicalDevice(physicalDevice), RHIDevice(app), m_storage(GetAllocator(), kDeviceStorageReserveSize) {
+    m_app(app), m_physicalDevice(physicalDevice), RHIDevice(app), m_storage(GetAllocator(), kDeviceStorageReserveSize), m_swapchain_formats(GetAllocator()) {
     LOG_RUNTIME(VulkanDevice, info, "Instantiating Vulkan device"), DebugLogDeviceInfo();
     auto queues = m_physicalDevice.getQueueFamilyProperties();
     // Find queues
@@ -135,6 +135,29 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, const vk::raii::Physica
     };
     CHECK(vmaCreateAllocator(&allocator_info, &m_vkAllocator) == VK_SUCCESS && "failed to create VMA for Vulkan device");
     DebugLogAllocatorInfo();
+    if (m_surface != nullptr)
+    {
+        auto formats = m_physicalDevice.getSurfaceFormatsKHR(m_surface);
+        for (auto& fmt : formats) {
+            using enum RHIResourceFormat;
+            switch (fmt.format)
+            {
+            case vk::Format::eR8G8B8A8Unorm:
+                m_swapchain_formats.emplace_back(R8G8B8A8_UNORM);
+                break;
+            case vk::Format::eR8G8B8A8Srgb:
+                m_swapchain_formats.emplace_back(R8G8B8A8_SRGB);
+                break;
+            case vk::Format::eB8G8R8A8Unorm:
+                m_swapchain_formats.emplace_back(B8G8R8A8_UNROM);
+                break;
+            case vk::Format::eB8G8R8A8Srgb:
+                m_swapchain_formats.emplace_back(B8G8R8A8_SRGB);
+                break;
+                // TODO: More formats? HDR?
+            }
+        }
+    }
 }
 
 void VulkanDevice::DebugLogDeviceInfo() const {
@@ -280,6 +303,10 @@ RHIDeviceQueue* VulkanDevice::GetDeviceQueue(RHIDeviceQueueType type) const {
 }
 
 #include "Swapchain.hpp"
+StlSpan<RHIResourceFormat const> VulkanDevice::GetSwapchainSupportedFormats() const
+{
+    return m_swapchain_formats;
+}
 RHIDeviceScopedObjectHandle<RHISwapchain> VulkanDevice::CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) {
     return { this, m_storage.CreateObject<VulkanSwapchain>(*this, desc) };
 }
