@@ -255,7 +255,9 @@ namespace Foundation::Rendering {
             }
             // RTV for the backbuffer
             RHITextureScopedHandle<RHITextureView> rtv{};
-        } m_swaps[4];
+            // Tracked backbuffer handle
+            ResourceHandle rt_handle{ kInvalidHandle };
+        } m_swaps[8];
 
         RHIApplicationObjectHandle<RHIDevice> m_device{};
         RHIDeviceObjectHandle<RHISwapchain> m_swapchain{};
@@ -289,8 +291,10 @@ namespace Foundation::Rendering {
 
         struct Resources {
             StlVector<Variant<
+                RHIBuffer*,
                 RHIDeviceObjectHandle<RHIBuffer>,
-                RHIDeviceScopedObjectHandle<RHIBuffer>,              
+                RHIDeviceScopedObjectHandle<RHIBuffer>,
+                RHITexture*,
                 RHIDeviceObjectHandle<RHITexture>,
                 RHIDeviceScopedObjectHandle<RHITexture>
                 >> resources;
@@ -646,9 +650,9 @@ namespace Foundation::Rendering {
          *
          * This is only valid in Execute() time, e.g. within a pass's Record() function.
          */
-        inline RHITexture* GetCurrentBackbuffer() {
+        inline ResourceHandle GetCurrentBackbuffer() {
             CHECK(m_state == State::Execute && m_swapchain);
-            return m_swapchain->GetImages()[m_currentSwap];
+            return m_swaps[m_currentSwap].rt_handle;
         }
 #pragma endregion
 #pragma region Render Graph Runtime
@@ -660,7 +664,10 @@ namespace Foundation::Rendering {
         inline Variant<RHIBuffer*, RHITexture*> DerefResource(ResourceHandle handle) {
             CHECK(m_resources && handle < m_resources->resources.size());
             using Tv = Variant<RHIBuffer*, RHITexture*>;
-            return m_resources->resources[handle].visit([](auto& hdl) -> Tv { return hdl.Get(); });
+            return m_resources->resources[handle].visit(
+                [](auto* ptr) -> Tv { return ptr; },
+                [](auto& hdl) -> Tv { return hdl.Get(); }
+                );
         }
         /**
          * @brief Dereference a texture view handle to its underlying RHI texture view.

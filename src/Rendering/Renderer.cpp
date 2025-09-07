@@ -1,3 +1,4 @@
+// !! TODO: Per-swap resources
 #include <array>
 #include <algorithm>
 #include <filesystem>
@@ -10,6 +11,7 @@
 
 #include "Renderer.hpp"
 #include "ShaderReflection.hpp"
+#include "spdlog/fmt/bundled/compile.h"
 
 using namespace Foundation::Core;
 using namespace Foundation::Rendering;
@@ -905,6 +907,19 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
         m_swaps[i].rtv = backbuffer->CreateTextureView(RHITextureViewDesc{
             .format = swapchain->m_desc.format
         });
+        if (m_swaps[i].rt_handle == kInvalidHandle) {
+            // First time setup
+            m_swaps[i].rt_handle = CreateResource(
+                fmt::format("Backbuffer of Swap {}", i),
+                backbuffer
+            );
+        }
+        else {
+            // Update existing handle
+            auto& rt_res = m_resources->resources[m_swaps[i].rt_handle];
+            CHECK_MSG(rt_res.GetIf<RHITexture*>(), "Swapchain backbuffer handle {} is not a texture", m_swaps[i].rt_handle);
+            rt_res = backbuffer;
+        }
     }
     m_swapchain = swapchain;
     SetFrameSyncObjects();
@@ -1045,7 +1060,7 @@ void Renderer::Execute() {
         }
         cmd->BeginTransition();
         cmd->SetImageTransition(
-            GetCurrentBackbuffer(),
+            DerefResource(GetCurrentBackbuffer()).Get<RHITexture*>(),
             RHICommandList::TransitionDesc{
                 .src_stage = RHIPipelineStageBits::ColorAttachmentOutput,
                 .dst_stage = RHIPipelineStageBits::BottomOfPipe,
