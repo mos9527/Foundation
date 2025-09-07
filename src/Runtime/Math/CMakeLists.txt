@@ -17,6 +17,10 @@ FetchContent_Declare(
   GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(glm)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)")
+    set(GLM_ENABLE_SIMD_AVX2 ON CACHE BOOL "" FORCE)
+endif()
+set(GLM_ENABLE_CXX_17 ON CACHE BOOL "" FORCE)
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 add_library(Foundation_Math ${SOURCES} ${INCLUDES})

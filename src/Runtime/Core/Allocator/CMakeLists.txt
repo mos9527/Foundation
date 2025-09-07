@@ -20,7 +20,6 @@ FetchContent_Declare(
   GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(mimalloc)
-
 target_compile_definitions(
 	mimalloc-static
 	PRIVATE
@@ -28,6 +27,11 @@ target_compile_definitions(
 	# Always build in Release mode for mimalloc
 	# e.g. OOM Allocation in Release produces nullptr,
 	# but in Debug causes segfault due to asserts.
+)
+target_compile_definitions(
+	mimalloc-static
+	PRIVATE
+	MI_OVERRIDE OFF
 )
 target_link_libraries(Foundation_Allocator PUBLIC mimalloc-static)
 target_include_directories(

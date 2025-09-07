@@ -3,15 +3,26 @@ project(Foundation)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
-# https://github.com/glfw/glfw/issues/783
-# GLFW doesn't like Unity builds yet
-set(CMAKE_UNITY_BUILD OFF)
+option(FOUNDATION_WITH_SANITIZERS "Build with sanitizers enabled" OFF)
+option(FOUNDATION_WITH_EXAMPLES "Build examples" ON)
+option(FOUNDATION_WITH_TESTS "Build tests" ON)
+option(FOUNDATION_WITH_MODELVIEWER "Build the model viewer application" ON)
 
-add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
-add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
+if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    # https://developercommunity.visualstudio.com/t/__VA_OPT__-should-be-enabled-by-std:c/10565399
+    add_compile_options("/Zc:preprocessor")
+    add_compile_options("/utf-8")
+endif()
 
-# https://developercommunity.visualstudio.com/t/__VA_OPT__-should-be-enabled-by-std:c/10565399
-add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/Zc:preprocessor>")
+if (FOUNDATION_WITH_SANITIZERS)
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        add_compile_options(/fsanitize=address)
+        add_link_options(/fsanitize=address)
+    else()
+        add_compile_options(-fsanitize=address,leak,undefined)
+        add_link_options(-fsanitize=address,leak,undefined)
+    endif()
+endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(DERIVED_DATA_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/data")
@@ -21,9 +32,17 @@ file(MAKE_DIRECTORY ${SHADER_BUILD_DIR})
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/src/CMake")
 
-add_subdirectory(src/Examples)
-add_subdirectory(src/ModelViewer)
 add_subdirectory(src/Rendering)
 add_subdirectory(src/Runtime)
 
-add_subdirectory(tests)
+if (FOUNDATION_WITH_MODELVIEWER)
+    add_subdirectory(src/ModelViewer)
+endif ()
+
+if (FOUNDATION_WITH_EXAMPLES)
+    add_subdirectory(src/Examples)
+endif ()
+
+if (FOUNDATION_WITH_TESTS)
+    add_subdirectory(tests)
+endif ()
