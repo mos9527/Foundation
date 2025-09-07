@@ -1,5 +1,31 @@
 Foundation
 ===
+Foundation is a work-in-progress cross-platform rendering framework.
+
+Heavily inspired by Arseny Kapoulkine's [niagara](https://github.com/zeux/niagara),
+[bgfx](https://github.com/bkaradzic/bgfx), and [Unreal Engine](https://www.unrealengine.com/en-US/),
+this project aims to provide a high-performance, low overhead rendering framework for *extremely*
+fast prototyping of various GPU workloads.
+
+Features
+---
+- Low-level modern API (Vulkan 1.3, DirectX12) as first-class citizen
+- Modern C++20 codebase with minimal dependencies
+- Full SPIR-V shader reflection support with automatic pipeline binding and generation
+- Frame Graph/Frame Pass architecture with optimized resource barrier placement
+- Async Compute support for modern GPUs with automatic synchronization
+- Headless rendering support for GPGPU tasks @ref RenderApplication
+- Convenient in-built rendering techniques @ref createPSFullscreenPass, @ref createPSBackbufferBlitPass, etc.
+- Cross-platform support for Windows, Linux, and macOS
+  - Vulkan-like explicit RHI APIs @ref Foundation::RHI
+  - DirectX-like rendering concepts at @ref Foundation::Rendering
+  - WinAPI-like application APIs @ref Foundation::NativeApplication
+
+Quickstart
+---
+<a href="examples.html">The Examples</a> is a great place to start exploring the framework.
+
+Feel free to explore the documentation, or check out the [Model Viewer](#model-viewer) application for a more complete example.
 
 Building
 ---
@@ -14,7 +40,7 @@ All third-party dependencies are included as [`FetchContent`](https://cmake.org/
 ### Windows
 You can build, and debug the app with [Visual Studio's CMake intergration](https://learn.microsoft.com/en-us/cpp/build/cmake-projects-in-visual-studio?view=msvc-170#ide-integration). Or with any alternative CMake workflow of your choice.
 
-The Vulkan SDK installer should take care of most, if not all of the setup for you.
+The Vulkan SDK installer should take care of most, if not all the setup for you.
 
 ### Linux
 Refer to https://docs.vulkan.org/tutorial/latest/02_Development_environment.html#_linux_2 for setting up the Vulkan SDK on Linux.
@@ -32,19 +58,16 @@ cmake ..
 cmake --build . -j8
 ```
 
-Quick Start
----
-### Backends
-#### @ref VulkanApplication
-A Vulkan 1.3 compatible GPU and drivers are required to run the @ref VulkanApplication backend.
+### Build Options
+The following CMake options are available:
+| Option | Description | Default |
+|--------|-------------|---------|
+| FOUNDATION_WITH_SANITIZERS | Build with sanitizers enabled | OFF |
+| FOUNDATION_WITH_EXAMPLES | Build examples | ON |
+| FOUNDATION_WITH_TESTS | Build tests | ON |
+| FOUNDATION_WITH_MODELVIEWER | Build the model viewer application | ON |
 
-This is the only @ref RHIApplication implementation currently available.
-### Usage
-The following classes can be used to create a basic rendering application:
-- @ref Foundation::Rendering::RenderApplication
-- @ref Foundation::Rendering::Renderer
-
-See @ref Examples for reference implementations and usage.
+Toggle these options with `-D<OPTION>=ON/OFF` when running `cmake ..`, e.g. `cmake -DFOUNDATION_WITH_SANITIZERS=ON ..`
 
 Model Viewer
 ---
@@ -52,25 +75,21 @@ Model Viewer
 
 See @ref ModelViewer page for source and more details.
 
-Namespaces
+Third party
 ---
-<a href="namespaces.html">List of all namespaces</a>
-
-Thirdparty
----
-### @ref Core
+### Core
 - https://github.com/microsoft/mimalloc.git
-### @ref Runtime
+### Runtime
 - https://github.com/fmtlib/fmt.git
 - https://github.com/gabime/spdlog.git
-### @ref Math
+### Math
 - https://github.com/g-truc/glm.git
-### @ref NativeApplication
+### NativeApplication
 - https://github.com/glfw/glfw.git
 - https://tinyfiledialogs.sourceforge.net/
-### @ref RHIVulkan
+### RHIVulkan
 - https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-### @ref ModelViewer
+### ModelViewer
 - https://github.com/nothings/stb.git
 - https://github.com/thisistherk/fast_obj
 - https://github.com/zeux/meshoptimizer.git

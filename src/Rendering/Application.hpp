@@ -9,12 +9,22 @@
 #include "Renderer.hpp"
 namespace Foundation::Rendering {
     using namespace Foundation::Core;
+
+    /**
+     * @brief Initialization parameters for RenderApplication.
+     */
     struct ApplicationInitDesc {
         size_t deviceIndex{ 0 };
         std::string windowTitle{"Application"};
         RHIExtent2D windowSize{ 800, 600 };
+        /**
+         * @brief Enable Present support.
+         *
+         * Disable this if you want to do headless work e.g.
+         * rendering to offscreen textures, etc.
+         */
         bool present{ true };
-        bool asyncCompute{ true };
+        bool asyncCompute{ true }; // Enable async compute queue if available
     };
     /**
     *  @brief Template base class for rendering applications.        
