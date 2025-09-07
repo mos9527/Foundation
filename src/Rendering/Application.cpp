@@ -9,7 +9,7 @@ void RenderApplication::CreateSwapchain() {
         RHISwapchain::SwapchainDesc{
         .format = RHIResourceFormat::R8G8B8A8_UNORM,
         .extents = GetWindowSize(),
-        .buffer_count = 3,
+        .min_buffer_count = 3,
         .present_mode = RHISwapchain::SwapchainDesc::PresentMode::MAILBOX,
     });
 }

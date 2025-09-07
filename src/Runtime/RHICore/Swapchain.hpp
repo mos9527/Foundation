@@ -22,8 +22,9 @@ namespace Foundation::RHI {
             RHIResourceFormat format;
             // Swapchain buffer sizes.
             RHIExtent2D extents;
-            // Number of buffers in the swap chain. i.e. double buffering = 2, triple buffering = 3, etc.
-            uint32_t buffer_count;
+            // Min number of buffers in the swap chain. i.e. double buffering = 2, triple buffering = 3, etc.
+            // Driver may create more buffers than requested.
+            uint32_t min_buffer_count;
             // Present mode for the swap chain.
             PresentMode present_mode;
         } m_desc;
