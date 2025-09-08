@@ -136,7 +136,7 @@ namespace Foundation::RHI {
          */
         /// <returns>The newly allocated Handle of the said RHIObject.</returns>
         template<typename U, typename ...Args> Handle CreateObject(Args&&... args) {
-            auto [handle, value] = m_objects.allocate();
+            auto [handle, value] = m_objects.pop();
             value = Core::ConstructUniqueBase<Base, U>(m_allocator, std::forward<Args>(args)...);
             return handle;
         }

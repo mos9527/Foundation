@@ -2,47 +2,46 @@
 #include <spirv/unified1/spirv.hpp>
 using namespace Foundation::Rendering;
 using namespace Foundation::Core;
-void ShaderReflection::ParseSPIRV(StlSpan<const char> bytecode)
+void ShaderReflection::ParseSPIRV(const StlSpan<const char> bytecode)
 {
     /* 2.3 Physical Layout of a SPIR-V Module and Instruction */
     // SPIRV shader bytecodes are always 32-bits words.    
-    // NOTE: Pointer aligment can be tricky here - though with STL allocators
+    // NOTE: Pointer alignment can be tricky here - though with STL allocators
     // every standard types are aligned to at least alignof(void*)
     // So it's generally fine to cast like this.
-    const uint32_t* code = reinterpret_cast<const uint32_t*>(bytecode.data());
-    const uint32_t* end  = reinterpret_cast<const uint32_t*>(bytecode.data() + bytecode.size());
+    const auto* code = reinterpret_cast<const uint32_t*>(bytecode.data());
+    const auto* end  = reinterpret_cast<const uint32_t*>(bytecode.data() + bytecode.size());
     // 0: Magic Number
     CHECK(code[0] == spv::MagicNumber);
     // 1: Version
     // 2: Generator Magic
     // 3: Bound
-    uint32_t Bound = code[3];
+    const uint32_t Bound = code[3];
     struct Element {
-        uint32_t Opcode;
-        uint32_t StorageClass;
-        uint32_t Type;
-        uint32_t DescriptorSet;
-        uint32_t Binding;
+        uint32_t Opcode{};
+        uint32_t StorageClass{};
+        uint32_t Type{};
+        uint32_t DescriptorSet{};
+        uint32_t Binding{};
         /* -- debug -- */
         std::string Name;
-        uint32_t EpIndex;
+        uint32_t EpIndex{};
     };
     StlVector<Element> ID(Bound, m_allocator);
     // 4: Reserved
     // 5: First Instruction
     const uint32_t* ins = code + 5;
     while (ins < end) {
-        uint16_t WordCount = ins[0] >> 16;
+        const uint16_t WordCount = ins[0] >> 16;
         CHECK(WordCount && "malformed SPIRV shader! (WordCount=0)");
-        uint16_t Opcode = ins[0] & 0xFFFF;
-        switch (Opcode)
+        switch (uint16_t Opcode = ins[0] & 0xFFFF)
         {
         /* 3.32.5 Mode-Setting Instructions */
         case spv::OpEntryPoint:
         {
             Entrypoint ep;
             // 1: Execution Model
-            switch (spv::ExecutionModel(ins[1]))
+            switch (static_cast<spv::ExecutionModel>(ins[1]))
             {
             case spv::ExecutionModelVertex:
                 ep.stage = RHI::RHIShaderStageBits::Vertex; break;
@@ -50,6 +49,8 @@ void ShaderReflection::ParseSPIRV(StlSpan<const char> bytecode)
                 ep.stage = RHI::RHIShaderStageBits::Fragment; break;
             case spv::ExecutionModelGLCompute:
                 ep.stage = RHI::RHIShaderStageBits::Compute; break;
+            default:
+                break;
             }
             // 2: Entry Point OpFunction ID
             ID[ins[2]].Opcode = Opcode;
@@ -64,7 +65,7 @@ void ShaderReflection::ParseSPIRV(StlSpan<const char> bytecode)
             // 1: Entry Point OpFunction ID
             uint32_t id = ins[1];
             // 2: Execution Mode
-            switch (spv::ExecutionMode(ins[2]))
+            switch (static_cast<spv::ExecutionMode>(ins[2]))
             {
             case spv::ExecutionModeLocalSize:
                 if (ID[id].EpIndex < m_entrypoints.size()) {
@@ -90,7 +91,7 @@ void ShaderReflection::ParseSPIRV(StlSpan<const char> bytecode)
             // 1: ID
             uint32_t id = ins[1];
             // 2: Decoration
-            switch (spv::Decoration(ins[2]))
+            switch (static_cast<spv::Decoration>(ins[2]))
             {
             case spv::DecorationDescriptorSet:
                 ID[id].DescriptorSet = ins[3]; break;
@@ -125,21 +126,25 @@ void ShaderReflection::ParseSPIRV(StlSpan<const char> bytecode)
         ins += WordCount;
     }
     CHECK(ins == end && "malformed SPIRV shader! (Incomplete read)");
-    for (auto& Element : ID) {
-        if (Element.Opcode == spv::OpVariable) {
-            switch (spv::StorageClass(Element.StorageClass)) {
+    for (auto& element : ID) {
+        if (element.Opcode == spv::OpVariable) {
+            switch (static_cast<spv::StorageClass>(element.StorageClass)) {
             case spv::StorageClassUniform:
             case spv::StorageClassUniformConstant:            
             case spv::StorageClassStorageBuffer:
-                m_bindings.push_back({ .name = Element.Name, .descriptorSet = Element.DescriptorSet, .binding = Element.Binding });
+                m_bindings.push_back({ .name = element.Name, .descriptorSet = element.DescriptorSet, .binding = element.Binding });
+                break;
+            default:
                 break;
             }           
-            switch (spv::StorageClass(Element.StorageClass)) {
+            switch (static_cast<spv::StorageClass>(element.StorageClass)) {
             case spv::StorageClassPushConstant:
             {
-                m_pushConstants.push_back({ .name = Element.Name });
+                m_pushConstants.push_back({ .name = element.Name });
                 break;
             }
+            default:
+                break;
             }
         }
     }
@@ -147,10 +152,9 @@ void ShaderReflection::ParseSPIRV(StlSpan<const char> bytecode)
 
 void ShaderReflection::Sort()
 {
-    std::sort(m_bindings.begin(), m_bindings.end(), [](const Binding& lhs, const Binding& rhs) {
-        std::pair<uint32_t, uint32_t>
-            k1 = { lhs.descriptorSet, lhs.binding },
-            k2 = { rhs.descriptorSet, rhs.binding };
+    std::ranges::sort(m_bindings, [](const Binding& lhs, const Binding& rhs) {
+        const std::pair k1 = { lhs.descriptorSet, lhs.binding };
+        const std::pair k2 = { rhs.descriptorSet, rhs.binding };
         return k1 < k2;
     });
 }

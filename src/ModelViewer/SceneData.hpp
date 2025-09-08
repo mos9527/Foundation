@@ -1,6 +1,5 @@
 #pragma once
 #include <RHICore/Resource.hpp>
-#include <RHICore/Device.hpp>
 #include <Core/Allocator/Allocator.hpp>
 #include <Core/Container/FreeList.hpp>
 #include <Rendering/Renderer.hpp>
@@ -15,21 +14,21 @@ namespace Foundation {
         size_t InstanceDataBudget{ 64 * (1 << 20LL) }; 
         size_t GlobalDataBudget{ 1 * (1 << 20LL) };
 
-        size_t TotalBudget() const { return PrimitiveDataBudget + InstanceDataBudget + GlobalDataBudget; }
+        [[nodiscard]] size_t TotalBudget() const { return PrimitiveDataBudget + InstanceDataBudget + GlobalDataBudget; }
     };
     /* Data representation for GPU driven rendering.
 
     SceneData merely consists flat, opaque representations of:
         - Primitive data (meshes, TLAS etc.)
-        - Texture maps (2D, Cubemaps, etc.)
+        - Texture maps (2D, Cube maps, etc.)
         - Instance data
             - Instanced draws
             - Geo transforms, materials
-            - GPU skinning matrices, etc
+            - GPU skinning matrices, etc.
         - Global data
             - Camera info, lighting info, etc.
 
-    * Eventual draw calls, etc, are only issued by the GPU via RenderPass that consumes these data.
+    * Eventual draw calls, etc., are only issued by the GPU via RenderPass that consumes these data.
     * Therefore, the SceneData class may have no knowledge of the underlying data structures or how they are used.
 
     NOTES:
@@ -56,7 +55,7 @@ namespace Foundation {
         RHIDeviceScopedObjectHandle<RHIBuffer>
             m_primitiveData;        
         AllocationList m_primitives;
-        // Textures used in the scene (2D, Cubemaps, etc.)
+        // Textures used in the scene (2D, Cube maps, etc.)
         // Expect this to be stored in GPU local memory.
         FreeList<SceneHandle, RHIDeviceScopedObjectHandle<RHITexture>>
             m_textures;
@@ -79,7 +78,7 @@ namespace Foundation {
         void UpdateData(RHIBuffer* buffer, StagingList& staging, RHIBuffer::Arena::Allocation handle, StlSpan<const uint8_t> data);
         // Free previously allocated data
         // This is a no-op GPU-wise, and only frees CPU tracked allocations
-        void FreeData(RHIBuffer* buffer, RHIBuffer::Arena::Allocation alloc);
+        static void FreeData(RHIBuffer* buffer, RHIBuffer::Arena::Allocation alloc);
 
         // Commit all staged data to GPU buffers
         // Temporary staging buffers are used to batch all data to be transferred
@@ -94,16 +93,16 @@ namespace Foundation {
         SceneHandle AddPrimitiveData(StlSpan<const uint8_t> data, size_t alignment = 16);
         void UpdatePrimitiveData(SceneHandle handle, StlSpan<const uint8_t> data);
         void FreePrimitiveData(SceneHandle handle);
-        std::pair<size_t, size_t> QueryPrimitiveDataSizeAndOffset(SceneHandle handle) const;
+        [[nodiscard]] std::pair<size_t, size_t> QueryPrimitiveDataSizeAndOffset(SceneHandle handle) const;
 
         SceneHandle AddInstanceData(StlSpan<const uint8_t> data, size_t alignment = 16);
         void UpdateInstanceData(SceneHandle handle, StlSpan<const uint8_t> data);
         void FreeInstanceData(SceneHandle handle);
-        std::pair<size_t, size_t> QueryInstanceDataSizeAndOffset(SceneHandle handle) const;
+        [[nodiscard]] std::pair<size_t, size_t> QueryInstanceDataSizeAndOffset(SceneHandle handle) const;
 
-        RHIDeviceObjectHandle<RHIBuffer> GetPrimitiveDataBuffer() const { return m_primitiveData; }
-        RHIDeviceObjectHandle<RHIBuffer> GetInstanceDataBuffer() const { return m_instanceData; }
-        RHIDeviceObjectHandle<RHIBuffer> GetGlobalDataBuffer() const { return m_globalData; }
+        [[nodiscard]] RHIDeviceObjectHandle<RHIBuffer> GetPrimitiveDataBuffer() const { return m_primitiveData; }
+        [[nodiscard]] RHIDeviceObjectHandle<RHIBuffer> GetInstanceDataBuffer() const { return m_instanceData; }
+        [[nodiscard]] RHIDeviceObjectHandle<RHIBuffer> GetGlobalDataBuffer() const { return m_globalData; }
 
         /**
          * @brief Update GPU buffers with the latest data
@@ -111,7 +110,7 @@ namespace Foundation {
          * In which case, this is a no-op. 
          */
         /// <param name="cmd">Command list to be potentially populated.</param>
-        /// <returns>true if command list is populated. Otherwise false.</returns>
+        /// <returns>true if command list is populated. Otherwise, false.</returns>
         bool Update(RHICommandList* cmd);
         // Cancel all pending staged transfers
         void Abort();

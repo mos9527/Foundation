@@ -15,7 +15,7 @@ void VulkanShaderModule::DebugSetObjectName(const char* name) {
     VkShaderModule handle = *m_shaderModule;
     m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eShaderModule,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
         });
 }

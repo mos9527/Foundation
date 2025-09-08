@@ -41,7 +41,7 @@ VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc
     VmaAllocationCreateInfo allocInfo = {
         .flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.host_access),
         .usage = VMA_MEMORY_USAGE_AUTO,
-        .requiredFlags = (VkMemoryPropertyFlags)(desc.resource.coherent ? VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : 0)
+        .requiredFlags = static_cast<VkMemoryPropertyFlags>(desc.resource.coherent ? VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : 0)
     };
     auto allocator = device.GetVkAllocator();
     VkBuffer buffer;
@@ -58,7 +58,7 @@ VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc
 VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc, vk::raii::Buffer&& buffer, bool shared)
     : RHIBuffer(device, desc), m_device(device),
     m_buffer(std::move(buffer)), m_aliases(device.GetAllocator()),
-    m_shared(shared), m_arena(device.GetAllocator(), desc.size)
+    m_arena(device.GetAllocator(), desc.size), m_shared(shared)
 {}
 
 VulkanBuffer::~VulkanBuffer() {
@@ -67,7 +67,7 @@ VulkanBuffer::~VulkanBuffer() {
         m_buffer.release();
     }
     if (m_mapped)
-        Unmap();
+        VulkanBuffer::Unmap();
     if (m_allocation) {
         auto allocator = m_device.GetVkAllocator();
         vmaDestroyBuffer(allocator, m_buffer.release(), m_allocation);
@@ -92,19 +92,7 @@ void VulkanBuffer::Unmap() {
 }
 
 VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& desc) :
-    RHITexture(device, desc), m_device(device), m_views(device.GetAllocator()), m_shared(false), m_aliases(device.GetAllocator()) {
-    vk::ImageType type{};
-    using enum RHITextureDimension;
-    switch (desc.dimension)
-    {
-    case e1D:
-        type = vk::ImageType::e1D; break;
-    case e3D:
-        type = vk::ImageType::e3D; break;
-    default:
-    case e2D:
-        type = vk::ImageType::e2D; break;
-    }
+    RHITexture(device, desc), m_device(device), m_aliases(device.GetAllocator()), m_views(device.GetAllocator()), m_shared(false) {
     CHECK_MSG(
         desc.extent.x > 0 && desc.extent.y > 0 && desc.extent.z > 0,
         "Extents must be greater than 0. Current x={},y={},z={}",
@@ -114,7 +102,7 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
     VmaAllocationCreateInfo allocInfo = {
         .flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.host_access),
         .usage = VMA_MEMORY_USAGE_AUTO,
-        .requiredFlags = (VkMemoryPropertyFlags)(desc.resource.coherent ? VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : 0)
+        .requiredFlags = static_cast<VkMemoryPropertyFlags>(desc.resource.coherent ? VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : 0)
     };
     auto allocator = device.GetVkAllocator();
     VkImage image;
@@ -130,7 +118,7 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
 }
 
 VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& desc, vk::raii::Image&& image, bool shared) :
-    RHITexture(device, desc), m_device(device), m_image(std::move(image)), m_views(device.GetAllocator()), m_shared(shared), m_aliases(device.GetAllocator()) {
+    RHITexture(device, desc), m_device(device), m_image(std::move(image)), m_aliases(device.GetAllocator()), m_views(device.GetAllocator()), m_shared(shared) {
 }
 
 VulkanTexture::~VulkanTexture() {
@@ -198,7 +186,7 @@ void VulkanTexture::DestroyImageView(Handle handle) {
 }
 
 VulkanTextureView::VulkanTextureView(VulkanTexture& image, RHITextureViewDesc const& desc, vk::raii::ImageView&& view) :
-    RHITextureView(image, desc), m_image(image), m_view(std::move(view)) {
+    RHITextureView(image, desc), m_view(std::move(view)), m_image(image) {
 }
 
 RHIBufferScopedHandle<RHIBuffer> VulkanBuffer::CreateAliasedBuffer(RHIBufferDesc const& desc, size_t offset) {
@@ -223,7 +211,7 @@ void VulkanBuffer::DebugSetObjectName(const char* name) {
     VkBuffer handle = *m_buffer;
     m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eBuffer,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
         });
 }
@@ -250,7 +238,7 @@ void VulkanTexture::DebugSetObjectName(const char* name) {
     VkImage handle = *m_image;
     m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eImage,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
         });
 }
@@ -259,7 +247,7 @@ void VulkanTextureView::DebugSetObjectName(const char* name) {
     VkImageView handle = *m_view;
     m_image.GetDevice().GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eImageView,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
         });
 }

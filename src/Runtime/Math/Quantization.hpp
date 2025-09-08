@@ -30,17 +30,17 @@ namespace Foundation::Math {
 
     /* [0,1] range -> [0, 1 << NBits) \in N */
     inline uint32_t quantizeUnorm(float v, int32_t N) {
-        const float scale = float((1 << N) - 1);
+        const float scale = static_cast<float>((1 << N) - 1);
 
         v = (v >= 0) ? v : 0;
         v = (v <= 1) ? v : 1;
 
-        return int(v * scale + 0.5f);
+        return static_cast<int>(v * scale + 0.5f);
     }
 
     /* [0, 1 << NBits) \in N -> [0, 1] range */
     inline float dequantizeUnorm(int32_t q, int32_t Nbits) {
-        return q / (float)((1 << Nbits) - 1);
+        return q / static_cast<float>((1 << Nbits) - 1);
     }
 
     /**
@@ -51,19 +51,19 @@ namespace Foundation::Math {
      * To do this, use QuantizeSnormShifted and DequantizeSnormShifted
     */
     inline int32_t quantizeSnorm(float v, int32_t N) {
-        const float scale = float((1 << (N - 1)) - 1);
+        const float scale = static_cast<float>((1 << (N - 1)) - 1);
 
         float round = (v >= 0 ? 0.5f : -0.5f);
 
         v = (v >= -1) ? v : -1;
         v = (v <= +1) ? v : +1;
 
-        return int(v * scale + round);
+        return static_cast<int>(v * scale + round);
     }
 
     // [-(1<< (Nbits - 1)) - 1, (1 << (Nbits - 1))] \in N -> [-1, 1]
     inline float dequantizeSnorm(int32_t q, int32_t Nbits) {
-        return q / (float)((1 << (Nbits - 1)) - 1);
+        return q / static_cast<float>((1 << (Nbits - 1)) - 1);
     }
 
     // [-1, 1] range -> [0, 1 << NBits) \in N

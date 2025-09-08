@@ -66,7 +66,7 @@ namespace Foundation::Core {
          * If the free list is empty, a new key is allocated.
          * The value associated with the key is guaranteed to be zero-initialized.
          */
-        K pop() {
+        K allocate() {
             K key = m_keys.pop();
             if (key >= m_values.size())
                 m_values.resize(key + 1),
@@ -88,13 +88,14 @@ namespace Foundation::Core {
          * NOTE: Calling this function with a key that's not retrieved from pop() is undefined behavior.
          */
         V& at(K key) {
+            CHECK_MSG(contains(key), "Key not allocated");
             return m_values[key];
         }
         /**
          * @brief Retrieves a const reference to the value associated with the given key.
-         * NOTE: Calling this function with a key that's not retrieved from pop() is undefined behavior.
          */
         V const& at(K key) const {
+            CHECK_MSG(contains(key), "Key not allocated");
             return m_values[key];
         }
         /**
@@ -106,8 +107,9 @@ namespace Foundation::Core {
         /**
          * @brief Allocates a Key that returns a pair of key and value reference.
          */
-        const std::pair<K, V&> allocate() {
-            K key = pop();
+        [[nodiscard]] const std::pair<K, V&> pop()
+        {
+            K key = allocate();
             m_bitmap[key] = true;
             return { key, m_values[key] };
         }
@@ -120,15 +122,12 @@ namespace Foundation::Core {
             push(key);
         }
         size_t size() const {
-            return m_keys.size();
+            return m_keys.allocation();
         }
         void clear() {
             m_keys.clear();
             m_values.clear();
             m_bitmap.clear();
-        }
-        size_t allocation() const {
-            return m_keys.allocation();
         }
     };
 }

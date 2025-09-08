@@ -94,9 +94,11 @@ namespace Foundation::RHI {
         RHIObjectStorage<> m_storage;
         // Queues
         Core::UniquePtr<VulkanDeviceQueues> m_queues{ nullptr };
+        Native::NativeWindow* window_;
+
     public:
-        VulkanDevice(VulkanApplication const& app, const vk::raii::PhysicalDevice& physicalDevice, Native::NativeWindow* window);
-        ~VulkanDevice();
+        VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice  physicalDevice, Native::NativeWindow* window);
+        ~VulkanDevice() override;
 
         void DebugLogDeviceInfo() const;
         void DebugLogAllocatorInfo() const;
@@ -120,11 +122,11 @@ namespace Foundation::RHI {
         RHICommandPool* GetCommandPool(Handle handle) const override;
         void DestroyCommandPool(Handle handle) override;
 
-        RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> CreateSemaphore(bool is_timeline = false) override;
+        RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> CreateSemaphore(bool is_timeline) override;
         RHIDeviceSemaphore* GetSemaphore(Handle handle) const override;
         void DestroySemaphore(Handle handle) override;
 
-        RHIDeviceScopedObjectHandle<RHIDeviceFence> CreateFence(bool signaled = false) override;
+        RHIDeviceScopedObjectHandle<RHIDeviceFence> CreateFence(bool signaled) override;
         RHIDeviceFence* GetFence(Handle handle) const override;
         void DestroyFence(Handle handle) override;
 
@@ -174,7 +176,7 @@ namespace Foundation::RHI {
         vk::raii::Queue m_queue{ nullptr };
     public:
         VulkanDeviceQueue(const VulkanDevice& device, uint32_t queue_index)
-            : RHIDeviceQueue(device), m_device(device), m_queue(device.GetVkDevice(), queue_index, 0), m_queue_index(queue_index) {
+            : RHIDeviceQueue(device), m_device(device), m_queue_index(queue_index), m_queue(device.GetVkDevice(), queue_index, 0) {
         };
 
         inline const VulkanDevice& GetVulkanDevice() const { return m_device; }

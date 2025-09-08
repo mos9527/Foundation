@@ -3,7 +3,7 @@
 
 using namespace Foundation::RHI;
 VulkanCommandPool::VulkanCommandPool(const VulkanDevice& device, PoolDesc const& desc, Core::Allocator* allocator) :
-    RHICommandPool(device, desc), m_device(device), m_allocator(allocator), m_storage(allocator, kCommandListReserveSize) {
+    RHICommandPool(device, desc), m_allocator(allocator), m_device(device), m_storage(allocator, kCommandListReserveSize) {
     // Create the command pool
     auto const& queue = device.GetVkQueues()->Get(desc.queue);
     vk::CommandPoolCreateFlagBits flag{};
@@ -29,7 +29,7 @@ void VulkanCommandPool::DebugSetObjectName(const char* name) {
     VkCommandPool handle = *m_commandPool;
     m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eCommandPool,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
         });
 }
@@ -139,7 +139,7 @@ RHICommandList& VulkanCommandList::SetViewport(float x, float y, float width, fl
 
 RHICommandList& VulkanCommandList::SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
     CHECK(m_allocator && "Invalid command list states.");
-    vk::Rect2D scissor{ { (int32_t)x, (int32_t)y }, { width, height } };
+    vk::Rect2D scissor{ { static_cast<int32_t>(x), static_cast<int32_t>(y) }, { width, height } };
     m_commandBuffer.setScissor(0, scissor);
     return *this;
 }
@@ -162,7 +162,7 @@ RHICommandList& VulkanCommandList::PushConstant(RHIPipelineState* pipeline, RHIS
     vkCmdPushConstants(
         *m_commandBuffer,
         *static_cast<VulkanPipelineState*>(pipeline)->GetVkPipelineLayout(),
-        (VkShaderStageFlags)vkShaderStageFlagsFromRHIShaderStage(stage),
+        static_cast<VkShaderStageFlags>(vkShaderStageFlagsFromRHIShaderStage(stage)),
         offset,
         data.size(),
         data.data()
@@ -345,7 +345,6 @@ RHICommandList& VulkanCommandList::BindIndexBuffer(RHIBuffer* buffer, size_t off
         type = vk::IndexType::eUint16; break;
     default:
         throw std::runtime_error("unsupported index format");
-        break;
     }
     auto* vulkan_buffer = static_cast<VulkanBuffer*>(buffer);
     m_commandBuffer.bindIndexBuffer(*vulkan_buffer->GetVkBuffer(), static_cast<vk::DeviceSize>(offset), type);
@@ -424,7 +423,7 @@ void VulkanCommandList::DebugSetObjectName(const char* name) {
     VkCommandBuffer handle = *m_commandBuffer;
     m_commandPool.GetDevice().GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eCommandBuffer,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
         });
 }

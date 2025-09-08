@@ -80,7 +80,7 @@ namespace Foundation {
     }
 
     SceneHandle SceneData::AddPrimitiveData(StlSpan<const uint8_t> data, size_t alignment) {
-        auto& [handle, alloc] = m_primitives.allocate();
+        auto& [handle, alloc] = m_primitives.pop();
         alloc = PushData(m_primitiveData.Get(), m_primitiveStaging, data, alignment);
         return handle;
     }
@@ -99,7 +99,7 @@ namespace Foundation {
     }
 
     SceneHandle SceneData::AddInstanceData(StlSpan<const uint8_t> data, size_t alignment) {
-        auto& [handle, alloc] = m_instances.allocate();
+        auto& [handle, alloc] = m_instances.pop();
         alloc = PushData(m_instanceData.Get(), m_instanceStaging, data, alignment);
         return handle;
     }

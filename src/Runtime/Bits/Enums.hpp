@@ -36,7 +36,7 @@ enum class T##Bits : INT_T {
 
 #define BITMASK_ENUM_END() };
 
-// Defines convience to_string() method and format_as() [fmt] for the respective enum class
+// Defines convince to_string() method and format_as() [fmt] for the respective enum class
 #define ENUM_NAME_CONV_BEGIN(T) \
 inline constexpr const char* to_string(T elem); \
 inline auto format_as(T elem) { return to_string(elem); } \

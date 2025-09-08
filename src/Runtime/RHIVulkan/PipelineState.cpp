@@ -11,11 +11,11 @@ void VulkanPipelineState::InitializePipelineLayout() {
         p_set_layouts[i] = m_desc.descriptor_set_layouts[i].Get<VulkanDeviceDescriptorSetLayout>()->GetVkLayout();
     Core::StlVector<vk::PushConstantRange> push_constants(m_desc.push_constants.size(), alloc.Ptr());
     for (size_t i = 0; i < m_desc.push_constants.size(); i++) {
-        auto& pdesc = m_desc.push_constants[i];
+        const auto& [stage, offset, size] = m_desc.push_constants[i];
         push_constants[i]
-            .setStageFlags(vkShaderStageFlagsFromRHIShaderStage(pdesc.stage))
-            .setOffset(pdesc.offset)
-            .setSize(pdesc.size);
+            .setStageFlags(vkShaderStageFlagsFromRHIShaderStage(stage))
+            .setOffset(offset)
+            .setSize(size);
     }
     m_pipeline_layout = vk::raii::PipelineLayout(m_device.GetVkDevice(),
         vk::PipelineLayoutCreateInfo{
@@ -148,7 +148,6 @@ void VulkanPipelineState::InitializeGraphics() {
     m_pipeline = vk::raii::Pipeline(m_device.GetVkDevice(), nullptr, pipelineInfo, m_device.GetVkAllocatorCallbacks());
 }
 void VulkanPipelineState::InitializeCompute() {
-    Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
     CHECK_MSG(m_desc.shader_stages.size() == 1, "Compute pipeline must have exactly 1 shader stage.");
     auto const& shader_stage = m_desc.shader_stages[0];
     CHECK_MSG(
@@ -186,7 +185,7 @@ void VulkanPipelineState::DebugSetObjectName(const char* name) {
     VkPipeline handle = *m_pipeline;
     m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::ePipeline,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
     });
 }

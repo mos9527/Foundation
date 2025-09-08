@@ -5,7 +5,7 @@ void RenderApplication::CreateSwapchain() {
     LOG_RUNTIME(RenderApplication, info, "Creating swapchain ({}x{})", GetFramebufferSize().x, GetFramebufferSize().y);
     m_device->WaitIdle();
     m_swapchain.Reset();
-    const RHIResourceFormat kFormatPreferenceList[] = {
+    constexpr RHIResourceFormat kFormatPreferenceList[] = {
         RHIResourceFormat::R8G8B8A8_UNORM,
         RHIResourceFormat::B8G8R8A8_UNROM,
         RHIResourceFormat::R8G8B8A8_SRGB,

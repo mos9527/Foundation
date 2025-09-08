@@ -7,6 +7,7 @@
 
 #include <Bits/Format.hpp>
 #include <Core/Core.hpp>
+#include <utility>
 
 #include "Application.hpp"
 #include "Device.hpp"
@@ -32,8 +33,10 @@ vk::AllocationCallbacks const& VulkanDevice::GetVkAllocatorCallbacks() const {
     return m_app.GetVkAllocatorCallbacks();
 }
 
-VulkanDevice::VulkanDevice(VulkanApplication const& app, const vk::raii::PhysicalDevice& physicalDevice, Native::NativeWindow* window) :
-    m_app(app), m_physicalDevice(physicalDevice), RHIDevice(app), m_storage(GetAllocator(), kDeviceStorageReserveSize), m_swapchain_formats(GetAllocator()) {
+VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice, Native::NativeWindow* window) :
+    RHIDevice(app), m_app(app), m_physicalDevice(std::move(physicalDevice)), m_swapchain_formats(GetAllocator()), m_storage(GetAllocator(), kDeviceStorageReserveSize),
+    window_(window)
+{
     LOG_RUNTIME(VulkanDevice, info, "Instantiating Vulkan device"), DebugLogDeviceInfo();
     auto queues = m_physicalDevice.getQueueFamilyProperties();
     // Find queues
@@ -59,7 +62,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, const vk::raii::Physica
         // Check for a present queue
         VkSurfaceKHR surface;
         // NOTE: Creating surfaces is platform-dependent w/ requisite extensions. GLFW does this.
-        if (glfwCreateWindowSurface(*m_app.GetVkInstance(), (GLFWwindow*)window->GetNative(), nullptr, &surface) != VK_SUCCESS)
+        if (glfwCreateWindowSurface(*m_app.GetVkInstance(), static_cast<GLFWwindow*>(window->GetNative()), nullptr, &surface) != VK_SUCCESS)
             throw std::runtime_error("Failed to create Vulkan surface for window");
         m_surface = vk::raii::SurfaceKHR(m_app.GetVkInstance(), surface);
         // Having present and graphics queues as the same avoids copies and is typically the case       
@@ -81,8 +84,8 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, const vk::raii::Physica
     }
     // Create the device
     // Gather all unique queues we'd need
-    Core::StlSet<uint32_t> unique_queues({ graphics, compute, transfer, present }, GetAllocator());
-    Core::StlVector<vk::DeviceQueueCreateInfo> queue_info(GetAllocator());
+    StlSet<uint32_t> unique_queues({ graphics, compute, transfer, present }, GetAllocator());
+    StlVector<vk::DeviceQueueCreateInfo> queue_info(GetAllocator());
     float priority = 1.0f;
     for (auto i : unique_queues) {
         if (i == kInvalidQueueIndex)
@@ -111,13 +114,13 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, const vk::raii::Physica
             .queueCreateInfoCount = static_cast<uint32_t>(queue_info.size()),
             .pQueueCreateInfos = queue_info.data(),
             .enabledLayerCount = 0,
-            .enabledExtensionCount = sizeof(kVulkanDeviceExtensions) / sizeof(kVulkanDeviceExtensions[0]),
+            .enabledExtensionCount = std::size(kVulkanDeviceExtensions),
             .ppEnabledExtensionNames = kVulkanDeviceExtensions
     };
     m_device = vk::raii::Device(m_physicalDevice, device_info, GetVkAllocatorCallbacks());
     CHECK(m_device != nullptr && "failed to create Vulkan device");
     // Allocate the queues
-    m_queues = Core::ConstructUnique<VulkanDeviceQueues>(GetAllocator(), GetAllocator());
+    m_queues = ConstructUnique<VulkanDeviceQueues>(GetAllocator(), GetAllocator());
     for (auto i : unique_queues) {
         auto handle = m_queues->storage.CreateObject<VulkanDeviceQueue>(*this, i);
         if (i == graphics) m_queues->graphics = handle;
@@ -154,7 +157,9 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, const vk::raii::Physica
             case vk::Format::eB8G8R8A8Srgb:
                 m_swapchain_formats.emplace_back(B8G8R8A8_SRGB);
                 break;
+            default:
                 // TODO: More formats? HDR?
+                break;
             }
         }
     }
@@ -366,7 +371,7 @@ void VulkanDeviceSemaphore::DebugSetObjectName(const char* name) {
     VkSemaphore handle = *m_semaphore;
     m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eSemaphore,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
     });
 }
@@ -379,7 +384,7 @@ void VulkanDeviceFence::DebugSetObjectName(const char* name) {
     VkFence handle = *m_fence;
     m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eFence,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
         });
 }
@@ -397,7 +402,7 @@ void VulkanDevice::DestroySemaphore(Handle handle)
     m_storage.DestroyObject(handle);
 }
 
-RHIDeviceScopedObjectHandle<RHIDeviceFence> VulkanDevice::CreateFence(bool signaled)
+auto VulkanDevice::CreateFence(bool signaled) -> RHIDeviceScopedObjectHandle<RHIDeviceFence>
 {
     return { this, m_storage.CreateObject<VulkanDeviceFence>(*this, signaled) };
 }
@@ -410,27 +415,27 @@ void VulkanDevice::DestroyFence(Handle handle)
     m_storage.DestroyObject(handle);
 }
 
-void VulkanDevice::ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences)
+void VulkanDevice::ResetFences(StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences)
 {
-    Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
-    Core::StlVector<vk::Fence> vk_fences(alloc.Ptr());
+    StackArena<> arena; StackAllocatorSingleThreaded alloc(arena);
+    StlVector<vk::Fence> vk_fences(alloc.Ptr());
     vk_fences.reserve(fences.size());
     for (auto const& fence : fences)
         vk_fences.emplace_back(fence.Get<VulkanDeviceFence>()->GetVkFence());
     m_device.resetFences(vk_fences);
 }
-void VulkanDevice::WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout)
+void VulkanDevice::WaitForFences(StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout)
 {
-    Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
-    Core::StlVector<vk::Fence> vk_fences(alloc.Ptr());
+    StackArena<> arena; StackAllocatorSingleThreaded alloc(arena);
+    StlVector<vk::Fence> vk_fences(alloc.Ptr());
     vk_fences.reserve(fences.size());
     for (auto const& fence : fences)
         vk_fences.emplace_back(fence.Get<VulkanDeviceFence>()->GetVkFence());
-    auto res = m_device.waitForFences(vk_fences, wait_all, timeout);
-    // !! TODO
+    vk::Result res = m_device.waitForFences(vk_fences, wait_all, timeout);
+    CHECK_MSG(res == vk::Result::eSuccess, "Failed waiting on fences");
 }
 
-void VulkanDevice::SignalTimelineSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) {
+void VulkanDevice::SignalTimelineSemaphores(StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) {
     for (auto const& [signal, val] : semaphores) {
         CHECK(signal->m_is_timeline);
         vk::SemaphoreSignalInfo info{
@@ -440,10 +445,10 @@ void VulkanDevice::SignalTimelineSemaphores(Core::StlSpan<const std::pair<RHIDev
         m_device.signalSemaphore(info);
     }
 }
-void VulkanDevice::WaitForTimelineSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) {
-    Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
-    Core::StlVector<vk::Semaphore> vk_semaphores(alloc.Ptr());
-    Core::StlVector<uint64_t> vk_values(alloc.Ptr());
+void VulkanDevice::WaitForTimelineSemaphores(StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) {
+    StackArena<> arena{}; StackAllocatorSingleThreaded alloc(arena);
+    StlVector<vk::Semaphore> vk_semaphores(alloc.Ptr());
+    StlVector<uint64_t> vk_values(alloc.Ptr());
     vk_semaphores.reserve(semaphores.size()), vk_values.reserve(semaphores.size());
     for (auto const& [wait, val] : semaphores) {
         CHECK(wait->m_is_timeline);
@@ -462,7 +467,7 @@ void VulkanDevice::DebugSetObjectName(const char* name) {
     VkDevice handle = *m_device;
     m_device.setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eDevice,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
         });
 }
@@ -471,11 +476,11 @@ void VulkanDeviceQueue::WaitIdle() const {
     m_queue.waitIdle();
 }
 void VulkanDeviceQueue::Submit(SubmitDesc const& desc) const {
-    Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
-    Core::StlVector<vk::CommandBuffer> cmds(alloc.Ptr());
-    Core::StlVector<vk::Semaphore>
+    StackArena<> arena{}; StackAllocatorSingleThreaded alloc(arena);
+    StlVector<vk::CommandBuffer> cmds(alloc.Ptr());
+    StlVector<vk::Semaphore>
         swaits(alloc.Ptr()), ssignals(alloc.Ptr());
-    Core::StlVector<uint64_t>
+    StlVector<uint64_t>
         wait_values(alloc.Ptr()), signal_values(alloc.Ptr());
     cmds.reserve(desc.cmd_lists.size()), swaits.reserve(desc.waits.size()), ssignals.reserve(desc.signals.size());
     for (auto const& cmd_list : desc.cmd_lists)
@@ -514,7 +519,7 @@ void VulkanDeviceQueue::Submit(SubmitDesc const& desc) const {
         .signalSemaphoreValueCount = static_cast<uint32_t>(signal_values.size()),
         .pSignalSemaphoreValues = signal_values.data()
     };
-    if (wait_values.size() || signal_values.size())
+    if (!wait_values.empty() || !signal_values.empty())
         info.setPNext(&tinfo);
     m_queue.submit(
         info,
@@ -523,9 +528,9 @@ void VulkanDeviceQueue::Submit(SubmitDesc const& desc) const {
 }
 void VulkanDeviceQueue::Present(PresentDesc const& desc) const {
     CHECK(m_device.GetDeviceQueue(RHIDeviceQueueType::Present) == this && "Present called on a queue that is not a present queue");
-    Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
+    StackArena<> arena{}; StackAllocatorSingleThreaded alloc(arena);
     vk::SwapchainKHR swapchain = static_cast<VulkanSwapchain*>(desc.swapchain)->GetVkSwapchain();
-    Core::StlVector<vk::Semaphore> swaits(alloc.Ptr());
+    StlVector<vk::Semaphore> swaits(alloc.Ptr());
     swaits.reserve(desc.waits.size());
     for (auto& wait : desc.waits) {
         CHECK(!wait->m_is_timeline && "Present() wait must be Binary semaphores");
@@ -551,7 +556,7 @@ void VulkanDeviceQueue::DebugSetObjectName(const char* name) {
     VkQueue handle = *m_queue;
     m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eQueue,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
         });
 }
@@ -580,16 +585,16 @@ void VulkanDeviceDescriptorSetLayout::DebugSetObjectName(const char* name) {
     VkDescriptorSetLayout handle = *m_layout;
     m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eDescriptorSetLayout,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
         });
 }
 
 VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDevice& device, RHIDeviceDescriptorSetLayoutDesc const& desc)
-    : m_device(device), RHIDeviceDescriptorSetLayout(device, desc)
+    : RHIDeviceDescriptorSetLayout(device, desc), m_device(device)
 {
-    Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
-    Core::StlVector<vk::DescriptorSetLayoutBinding> bindings(desc.bindings.size(), alloc.Ptr());
+    StackArena<> arena{}; StackAllocatorSingleThreaded alloc(arena);
+    StlVector<vk::DescriptorSetLayoutBinding> bindings(desc.bindings.size(), alloc.Ptr());
     for (size_t i = 0; i < desc.bindings.size(); ++i) {
         auto const& b = desc.bindings[i];
         bindings[i] = vk::DescriptorSetLayoutBinding{
@@ -635,7 +640,7 @@ void VulkanDeviceSampler::DebugSetObjectName(const char* name) {
     VkSampler handle = *m_sampler;
     m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eSampler,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
         });
 }

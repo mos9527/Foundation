@@ -22,7 +22,9 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
         case RHIDescriptorType::Sampler:
         case RHIDescriptorType::SampledImage:
             CHECK(desc.images.size() == size_all && "Image descriptor type must have images only");            
-            break;        
+            break;
+        default:
+            break;
         }
     }
     Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
@@ -59,7 +61,7 @@ void VulkanDeviceDescriptorSet::DebugSetObjectName(const char* name) {
     VkDescriptorSet handle = *m_set;
     m_pool.GetDevice().GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eDescriptorSet,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
         });
 }
@@ -113,7 +115,7 @@ void VulkanDeviceDescriptorPool::DebugSetObjectName(const char* name) {
     VkDescriptorPool handle = *m_pool;
     m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eDescriptorPool,
-        .objectHandle = (uint64_t)(handle),
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
         });
 }

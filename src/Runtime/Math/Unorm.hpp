@@ -5,7 +5,6 @@
  * - https://www.shadertoy.com/view/Mtfyzl
  */
 #pragma once
-#include "Math.hpp"
 namespace Foundation::Math {
     using namespace glm;
     inline vec2 packUnitOctahedral(vec3 v) {

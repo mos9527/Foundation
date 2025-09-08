@@ -1,7 +1,6 @@
 #pragma once
 #include "Common.hpp"
 #include "Resource.hpp"
-#include "Swapchain.hpp"
 #include "PipelineState.hpp"
 #include "Descriptor.hpp"
 namespace Foundation::RHI {
@@ -23,7 +22,7 @@ namespace Foundation::RHI {
         } const m_desc;
         RHICommandPool(RHIDevice const& device, PoolDesc desc) : m_device(device), m_desc(desc) {}
 
-        virtual RHICommandPoolScopedHandle<RHICommandList> CreateCommandList() = 0;
+        [[nodiscard]] virtual RHICommandPoolScopedHandle<RHICommandList> CreateCommandList() = 0;
         virtual RHICommandList* GetCommandList(Handle handle) const = 0;
         virtual void DestroyCommandList(Handle handle) = 0;
 
@@ -104,7 +103,8 @@ namespace Foundation::RHI {
                 // Clear values for depth and stencil attachments, if applicable.
                 // If both are set, the depth will be cleared first, then stencil.
                 std::optional<RHIClearDepthStencil> clear_depth_stencil{};
-                constexpr const bool IsValid() const {
+                constexpr bool IsValid() const
+                {
                     return image_view;
                 }
             };

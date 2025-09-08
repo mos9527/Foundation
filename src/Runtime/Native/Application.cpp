@@ -1,6 +1,5 @@
 #include "Application.hpp"
 #include <GLFW/glfw3.h>
-#include <GLFW/glfw3native.h>
 #include <tinyfiledialogs.h>
 #include <stdexcept>
 namespace Foundation::Native {
@@ -9,33 +8,37 @@ namespace Foundation::Native {
         LOG_RUNTIME(GLFW, critical, "GLFW Error ({}): {}", error, description);
     }
 
-    NativeWindow::NativeWindow(int width, int height, const char* title) {
+    NativeWindow::NativeWindow(uint32_t width, uint32_t height, const char* title) {
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        m_window = glfwCreateWindow(width, height, title, NULL, NULL);
+        m_window = glfwCreateWindow(
+            static_cast<int>(width),
+            static_cast<int>(height),
+            title, nullptr, nullptr);
     }
     NativeWindow::~NativeWindow() {
         if (m_window)
-            glfwDestroyWindow((GLFWwindow*)m_window);
+            glfwDestroyWindow(static_cast<GLFWwindow*>(m_window));
     }
     std::pair<uint32_t, uint32_t> NativeWindow::GetWindowSize() const
     {
         int width, height;
-        glfwGetWindowSize((GLFWwindow*)m_window, &width, &height);
+        glfwGetWindowSize(static_cast<GLFWwindow*>(m_window), &width, &height);
         return { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
     }
     std::pair<uint32_t, uint32_t> NativeWindow::GetFramebufferSize() const
     {
         int width, height;
-        glfwGetFramebufferSize((GLFWwindow*)m_window, &width, &height);
+        glfwGetFramebufferSize(static_cast<GLFWwindow*>(m_window), &width, &height);
         return { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
     }
-    void NativeWindow::SetWindowTitle(const char* title)
+    void NativeWindow::SetWindowTitle(const char* title) const
     {
-        glfwSetWindowTitle((GLFWwindow*)m_window, title);
+        glfwSetWindowTitle(static_cast<GLFWwindow*>(m_window), title);
     }
-    bool NativeWindow::WindowShouldClose() {
-        CHECK_MSG(m_window, "Window not initalized");
-        if (!glfwWindowShouldClose((GLFWwindow*)m_window)) {
+    bool NativeWindow::WindowShouldClose() const
+    {
+        CHECK_MSG(m_window, "Window not initialized");
+        if (!glfwWindowShouldClose(static_cast<GLFWwindow*>(m_window))) {
             glfwPollEvents();
             return false;
         }
@@ -52,12 +55,17 @@ namespace Foundation::Native {
         if (m_initialized)
             glfwTerminate();
     }
-    NativeWindow NativeApplication::CreateWindow(int width, int height, const char* title) {
-        return NativeWindow(width, height, title);
+    NativeWindow NativeApplication::CreateWindow(uint32_t width, uint32_t height, const char* title) {
+        return {width, height, title};
     }
     MessageBoxResult NativeApplication::MessageBox(const char* title, const char* message, MessageBoxType type, MessageBoxIcon icon, MessageBoxResult default_result) {
-        const char* kDialougeType[] = { "ok", "okcancel", "yesno", "yesnocancel" };
+        const char* kDialogueType[] = { "ok", "okcancel", "yesno", "yesnocancel" };
         const char* kIconType[] = { "info", "warning", "error", "question" };
-        return (MessageBoxResult)tinyfd_messageBox(title, message, kDialougeType[(int)type], kIconType[(int)icon], (int)default_result);
+        return static_cast<MessageBoxResult>(tinyfd_messageBox(
+            title, message,
+            kDialogueType[static_cast<int>(type)],
+            kIconType[static_cast<int>(icon)],
+            static_cast<int>(default_result)
+        ));
     }
 }

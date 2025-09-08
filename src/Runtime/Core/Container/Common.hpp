@@ -5,7 +5,6 @@
 #include <queue>
 #include <span>
 #include <numeric>
-#include <optional>
 #include <array>
 
 #include <Allocator/Allocator.hpp>
@@ -46,7 +45,7 @@ namespace Foundation::Core {
 
         /// For initializer lists, see
         /// https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p2447r4.html
-        /// For now you'll be making sandwhiches instead.
+        /// For now you'll be making sandwiches instead.
         /// ( i.e. StlSpan<const T>({ { 1, 2, 3 } }), StlSpan<T* const>({ { look_ma_a_single_pointer } })
             
         /**

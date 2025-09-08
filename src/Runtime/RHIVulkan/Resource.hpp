@@ -35,7 +35,7 @@ namespace Foundation::RHI {
 
             std::mutex m_mutex;
         public:
-            Arena(Core::Allocator* alloc, size_t size) : m_allocs(alloc), m_size(size) {
+            Arena(Core::Allocator* alloc, size_t size) : m_size(size), m_allocs(alloc) {
                 const VmaVirtualBlockCreateInfo info{ .size = size };
                 vmaCreateVirtualBlock(&info, &m_block);
             }
@@ -47,7 +47,7 @@ namespace Foundation::RHI {
                 VkResult ret = vmaVirtualAllocate(m_block, &info, &alloc, &offset);
                 if (ret == VK_ERROR_OUT_OF_DEVICE_MEMORY)
                     return kInvalidHandle;
-                auto& [res, ainfo] = m_allocs.allocate();
+                auto& [res, ainfo] = m_allocs.pop();
                 auto& [sz, off, vmaAlloc] = ainfo;
                 sz = size, off = offset, vmaAlloc = alloc;
                 return res;
@@ -71,7 +71,8 @@ namespace Foundation::RHI {
                 vmaClearVirtualBlock(m_block);
                 m_allocs.clear();
             }
-            ~Arena() {
+            ~Arena() override
+            {
                 vmaClearVirtualBlock(m_block);
                 vmaDestroyVirtualBlock(m_block);
             }
@@ -83,7 +84,7 @@ namespace Foundation::RHI {
         VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc);
         // Thin wrapper for buffers created by swapchains or other external sources (e.g. aliasing)
         VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc, vk::raii::Buffer&& buffer, bool shared = true);
-        ~VulkanBuffer();
+        ~VulkanBuffer() override;
 
         inline auto& GetVkBuffer() { return m_buffer; }
 
@@ -117,7 +118,7 @@ namespace Foundation::RHI {
         VulkanTexture(VulkanDevice const& device, RHITextureDesc const& desc);
         // Thin wrapper for textures created by swapchains or other external sources (e.g. aliasing)
         VulkanTexture(VulkanDevice const& device, RHITextureDesc const& desc, vk::raii::Image&& image, bool shared = true);
-        ~VulkanTexture();
+        ~VulkanTexture() override;
 
         inline auto& GetVkImage() const { return m_image; }
 

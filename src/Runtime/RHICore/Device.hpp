@@ -133,53 +133,52 @@ namespace Foundation::RHI {
             const char* name;
         };
         RHIDevice(RHIApplication const& app) : m_app(app) {}
-        RHIDevice(RHIDevice const&) = delete;
 
         virtual Core::StlSpan<RHIResourceFormat const> GetSwapchainSupportedFormats() const = 0;
-        virtual RHIDeviceScopedObjectHandle<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) = 0;
+        [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) = 0;
         virtual RHISwapchain* GetSwapchain(Handle handle) const = 0;
         virtual void DestroySwapchain(Handle handle) = 0;
 
-        virtual RHIDeviceScopedObjectHandle<RHIPipelineState> CreatePipelineState(RHIPipelineState::PipelineStateDesc const& desc) = 0;
+        [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIPipelineState> CreatePipelineState(RHIPipelineState::PipelineStateDesc const& desc) = 0;
         virtual RHIPipelineState* GetPipelineState(Handle handle)  const = 0;
         virtual void DestroyPipelineState(Handle handle) = 0;
 
-        virtual RHIDeviceScopedObjectHandle<RHIShaderModule> CreateShaderModule(RHIShaderModule::ShaderModuleDesc const& desc) = 0;
+        [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIShaderModule> CreateShaderModule(RHIShaderModule::ShaderModuleDesc const& desc) = 0;
         virtual RHIShaderModule* GetShaderModule(Handle handle) const = 0;
         virtual void DestroyShaderModule(Handle handle) = 0;
 
-        virtual RHIDeviceScopedObjectHandle<RHICommandPool> CreateCommandPool(RHICommandPool::PoolDesc type) = 0;
+        [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHICommandPool> CreateCommandPool(RHICommandPool::PoolDesc type) = 0;
         virtual RHICommandPool* GetCommandPool(Handle handle) const = 0;
         virtual void DestroyCommandPool(Handle handle) = 0;
 
         virtual RHIDeviceQueue* GetDeviceQueue(RHIDeviceQueueType type) const = 0;
 
-        virtual RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> CreateSemaphore(bool is_timeline = false) = 0;
+        [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> CreateSemaphore(bool is_timeline = false) = 0;
         virtual RHIDeviceSemaphore* GetSemaphore(Handle handle) const = 0;
         virtual void DestroySemaphore(Handle handle) = 0;
 
-        virtual RHIDeviceScopedObjectHandle<RHIDeviceFence> CreateFence(bool signaled = true) = 0;
+        [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIDeviceFence> CreateFence(bool signaled = true) = 0;
         virtual RHIDeviceFence* GetFence(Handle handle) const = 0;
         virtual void DestroyFence(Handle handle) = 0;
 
-        virtual RHIDeviceScopedObjectHandle<RHIBuffer> CreateBuffer(RHIBufferDesc const& desc) = 0;
+        [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIBuffer> CreateBuffer(RHIBufferDesc const& desc) = 0;
         virtual RHIBuffer* GetBuffer(Handle handle) const = 0;
         virtual void DestroyBuffer(Handle handle) = 0;
 
-        virtual RHIDeviceScopedObjectHandle<RHITexture> CreateTexture(RHITextureDesc const& desc) = 0;
+        [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHITexture> CreateTexture(RHITextureDesc const& desc) = 0;
         virtual RHITexture* GetImage(Handle handle) const = 0;
         virtual void DestroyImage(Handle handle) = 0;
 
-        virtual RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc) = 0;
+        [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc) = 0;
         virtual RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout(Handle handle) const = 0;
         virtual void DestroyDescriptorSetLayout(Handle handle) = 0;
 
-        virtual RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> CreateDescriptorPool(
+        [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> CreateDescriptorPool(
             RHIDeviceDescriptorPool::PoolDesc const& desc) = 0;
         virtual RHIDeviceDescriptorPool* GetDescriptorPool(Handle handle) const = 0;
         virtual void DestroyDescriptorPool(Handle handle) = 0;
 
-        virtual RHIDeviceScopedObjectHandle<RHIDeviceSampler> CreateSampler(
+        [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIDeviceSampler> CreateSampler(
             RHIDeviceSampler::SamplerDesc const& desc) = 0;
         virtual RHIDeviceSampler* GetSampler(Handle handle) const = 0;
         virtual void DestroySampler(Handle handle) = 0;

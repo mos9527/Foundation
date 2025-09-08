@@ -37,7 +37,7 @@ namespace Foundation::RHI {
         const uint32_t m_vulkanApiVersion;
 
         VulkanApplication(Core::Allocator* allocator, const char* appName = "Vulkan RHI", const char* engineName = "Foundation", const uint32_t apiVersion = VK_API_VERSION_1_3);
-        ~VulkanApplication();
+        ~VulkanApplication() override;
 
         Core::StlSpan<const RHIDevice::DeviceDesc> EnumerateDevices() const override;
 

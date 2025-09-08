@@ -48,20 +48,19 @@ namespace Foundation::RHI {
              */
             virtual void Free(Allocation allocation) = 0;
             /**
-             * @brief Retrives the offset of a previously allocated sub-region of the buffer.
+             * @brief Retrieves the offset of a previously allocated sub-region of the buffer.
              * This is not a raw pointer - one may expect to use this in CPU copy commands
              * or GPU shader code, or an offest in mapped memory if the resource is CPU visible.
              */
             virtual size_t GetOffset(Allocation alloc) const = 0;
             /**
-             * @brief Retrives the size of a previously allocated sub-region of the buffer.
+             * @brief Retrieves the size of a previously allocated sub-region of the buffer.
              */
             virtual size_t GetSize(Allocation alloc) const = 0;
             /**
              * @brief Resets the arena, freeing all CPU-tracked allocations.
              */
             virtual void Reset() = 0;
-            virtual ~Arena() = default;
         };
         /**
          * @brief Sub-buffer allocation arena capable of generic alloc/free
@@ -103,7 +102,7 @@ namespace Foundation::RHI {
             return { static_cast<T*>(p) , count };
         }
 
-        virtual RHIBufferScopedHandle<RHIBuffer> CreateAliasedBuffer(RHIBufferDesc const& desc, size_t offset = 0) = 0;
+        [[nodiscard]] virtual RHIBufferScopedHandle<RHIBuffer> CreateAliasedBuffer(RHIBufferDesc const& desc, size_t offset = 0) = 0;
         virtual RHIBuffer* GetAliasedBuffer(Handle handle) const = 0;
         virtual void DestroyAliasedBuffer(Handle handle) = 0;
 
@@ -117,7 +116,7 @@ namespace Foundation::RHI {
         RHIResourceFormat format{ RHIResourceFormat::Undefined };
         RHIMultisampleCount sample_count{ RHIMultisampleCount::e1 }; // For MSAA
         uint32_t mip_levels{ 1 };
-        uint32_t array_layers{ 1 }; // No. of images in a image array.
+        uint32_t array_layers{ 1 }; // No. of images in an image array.
         RHITextureLayout initial_layout{ RHITextureLayout::Undefined };        
     };
     class RHITexture;
@@ -159,11 +158,11 @@ namespace Foundation::RHI {
         virtual void Flush(size_t offset, size_t size) = 0;
         virtual void Unmap() = 0;
 
-        virtual RHITextureScopedHandle<RHITextureView> CreateTextureView(RHITextureViewDesc const& desc) = 0;
+        [[nodiscard]] virtual RHITextureScopedHandle<RHITextureView> CreateTextureView(RHITextureViewDesc const& desc) = 0;
         virtual RHITextureView* GetImageView(Handle handle) const = 0;
         virtual void DestroyImageView(Handle handle) = 0;
 
-        virtual RHITextureScopedHandle<RHITexture> CreateAliasedTexture(RHITextureDesc const& desc, size_t offset = 0) = 0;
+        [[nodiscard]] virtual RHITextureScopedHandle<RHITexture> CreateAliasedTexture(RHITextureDesc const& desc, size_t offset = 0) = 0;
         virtual RHITexture* GetAliasedTexture(Handle handle) const = 0;
         virtual void DestroyAliasedTexture(Handle handle) = 0;
 

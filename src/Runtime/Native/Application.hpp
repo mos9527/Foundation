@@ -10,9 +10,9 @@ namespace Foundation::Native {
     class NativeWindow {
         friend class NativeApplication;
         void* m_window{ nullptr };
-        NativeWindow(int width, int height, const char* title);
+        NativeWindow(uint32_t width, uint32_t height, const char* title);
     public:
-        NativeWindow() {};
+        NativeWindow() = default;
         NativeWindow(const NativeWindow&) = delete;
         NativeWindow(NativeWindow&& other) noexcept :
             m_window(other.m_window) {
@@ -25,14 +25,14 @@ namespace Foundation::Native {
         }
         ~NativeWindow();
 
-        std::pair<uint32_t, uint32_t> GetWindowSize() const;
-        std::pair<uint32_t, uint32_t> GetFramebufferSize() const;
-        void SetWindowTitle(const char* title);
+        [[nodiscard]] std::pair<uint32_t, uint32_t> GetWindowSize() const;
+        [[nodiscard]] std::pair<uint32_t, uint32_t> GetFramebufferSize() const;
+        void SetWindowTitle(const char* title) const;
 
-        bool WindowShouldClose();
+        [[nodiscard]] bool WindowShouldClose() const;
 
-        inline void* GetNative() const { return m_window; }
-        inline constexpr operator bool() const { return m_window != nullptr; }
+        [[nodiscard]] void* GetNative() const { return m_window; }
+        constexpr explicit operator bool() const { return m_window != nullptr; }
     };
 
     /**
@@ -50,7 +50,7 @@ namespace Foundation::Native {
          *
          * This is blocking, and will halt execution until the user dismisses it.       
          */
-        MessageBoxResult MessageBox(
+        static MessageBoxResult MessageBox(
             const char* title, const char* message,
             MessageBoxType type = MessageBoxType::Ok,
             MessageBoxIcon icon = MessageBoxIcon::Info,
@@ -59,7 +59,7 @@ namespace Foundation::Native {
         /**
          * @brief Creates a window with the specified width, height, and title.
          */
-        NativeWindow CreateWindow(int width, int height, const char* title);
+        [[nodiscard]] static NativeWindow CreateWindow(uint32_t width, uint32_t height, const char* title);
         /**
          * @brief Returns a high-resolution time in seconds since the application started.
          */
@@ -74,6 +74,6 @@ namespace Foundation::Native {
          */
         template<typename T = float> T GetSystemTime() const { return (getEpochTime() - m_startCounter) / 1e9; }
         NativeApplication();
-        ~NativeApplication();
+        virtual ~NativeApplication();
     };
 }

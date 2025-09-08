@@ -3,7 +3,6 @@
 #include <Core/Allocator/DefaultAllocator.hpp>
 
 #include <RHICore/Common.hpp>
-#include <RHICore/PipelineState.hpp>
 #include <Native/Application.hpp>
 
 #include "Renderer.hpp"
@@ -42,13 +41,14 @@ namespace Foundation::Rendering {
 
         UniquePtr<Renderer> m_renderer;
 
-        inline const RHIExtent2D GetFramebufferSize() { auto [w, h] = m_window.GetFramebufferSize(); return { w, h }; }
+        inline RHIExtent2D GetFramebufferSize() const
+        { auto [w, h] = m_window.GetFramebufferSize(); return { w, h }; }
 
         void CreateSwapchain();
         void InitializeInternal();
         void InitializeRenderer();
         /**
-         * @brief Setup the renderer by creating passes, resources, and other configurations.
+         * @brief Set up the renderer by creating passes, resources, and other configurations.
          *
          * This is invoked by InitializeRenderer()
          * within a Renderer::BeginSetup() and Renderer::EndSetup() clause.        
@@ -70,7 +70,7 @@ namespace Foundation::Rendering {
          * Implementation may leave this empty if no action is needed.
          */
         virtual void OnSwapchainResize() { InitializeRenderer(); }
-        ~RenderApplication();
+        ~RenderApplication() override;
     public:
         RenderApplication() : Native::NativeApplication() {};
         /**
@@ -88,13 +88,13 @@ namespace Foundation::Rendering {
             InitializeRenderer();
         }
         /* --- */
-        inline Renderer*  GetRenderer() { return m_renderer.get(); }
+        inline Renderer*  GetRenderer() const { return m_renderer.get(); }
         inline Allocator* GetAllocator() { return m_alloc.Ptr(); }
         inline Allocator* GetRendererAllocator() { return m_alloc_renderer.Ptr(); }
         /**
          * @brief Run the main loop of the application.
          *
-         * Swapchain resize, etc, is handled automatically.
+         * Swapchain resize, etc., is handled automatically.
          */
         void RunForever();
     };

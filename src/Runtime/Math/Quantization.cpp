@@ -26,7 +26,7 @@ namespace Foundation::Math {
         // NaN; note that we convert all types of NaN to qNaN
         h = (em > (255 << 23)) ? 0x7e00 : h;
 
-        return (unsigned short)(s | h);
+        return static_cast<unsigned short>(s | h);
     }
 
     float quantizeFP32(float v, int N)
@@ -52,8 +52,8 @@ namespace Foundation::Math {
 
     float dequantizeFP16(unsigned short h)
     {
-        unsigned int s = unsigned(h & 0x8000) << 16;
-        int em = h & 0x7fff;
+        const unsigned int s = static_cast<unsigned int>(h & 0x8000) << 16;
+        const int em = h & 0x7fff;
 
         // bias exponent and pad mantissa with 0; 112 is relative exponent bias (127-15)
         int r = (em + (112 << 10)) << 13;

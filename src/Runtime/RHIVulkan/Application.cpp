@@ -33,8 +33,8 @@ VulkanApplication::~VulkanApplication() {
     m_storage.Clear();
 }
 VulkanApplication::VulkanApplication(Core::Allocator* allocator, const char* appName, const char* engineName, const uint32_t apiVersion)
-    : m_vulkanApiVersion(apiVersion), m_name(appName), m_allocator(allocator), m_devices(allocator), 
-    m_storage(allocator), m_vkAllocatorCpuCallbacks(CreateVulkanCpuAllocationCallbacks(allocator))
+    : m_vkAllocatorCpuCallbacks(CreateVulkanCpuAllocationCallbacks(allocator)), m_allocator(allocator), m_storage(allocator), m_devices(allocator),
+    m_name(appName), m_vulkanApiVersion(apiVersion)
 {
     auto vkAppInfo = vk::ApplicationInfo{
         .pApplicationName = appName,
@@ -48,11 +48,11 @@ VulkanApplication::VulkanApplication(Core::Allocator* allocator, const char* app
     // Add our own extensions
     instanceExtensions.insert(
         instanceExtensions.end(),
-        kVulkanInstanceExtensions, kVulkanInstanceExtensions + sizeof(kVulkanInstanceExtensions) / sizeof(kVulkanInstanceExtensions[0])
+        kVulkanInstanceExtensions, kVulkanInstanceExtensions + std::size(kVulkanInstanceExtensions)
     );
     m_instance = vk::raii::Instance(m_context, vk::InstanceCreateInfo{
         .pApplicationInfo = &vkAppInfo,
-        .enabledLayerCount = sizeof(kVulkanInstanceLayers) / sizeof(kVulkanInstanceLayers[0]),
+        .enabledLayerCount = std::size(kVulkanInstanceLayers),
         .ppEnabledLayerNames = kVulkanInstanceLayers,
         .enabledExtensionCount = static_cast<uint32_t>(instanceExtensions.size()),
         .ppEnabledExtensionNames = instanceExtensions.data(),

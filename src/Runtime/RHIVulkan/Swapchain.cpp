@@ -3,7 +3,9 @@
 #include "Swapchain.hpp"
 using namespace Foundation;
 using namespace Foundation::RHI;
-const vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDesc(SwapchainDesc const& desc) {
+
+vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDesc(SwapchainDesc const& desc)
+{
     auto const& surface = m_device.GetVkSurface();
     auto surface_caps = m_device.GetVkPhysicalDevice().getSurfaceCapabilitiesKHR(surface);
     auto present_modes = m_device.GetVkPhysicalDevice().getSurfacePresentModesKHR(surface);
@@ -19,7 +21,7 @@ const vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapc
         desc.extents.y, surface_caps.minImageExtent.height, surface_caps.maxImageExtent.height
     );
     CHECK_MSG(
-        std::find(present_modes.begin(), present_modes.end(), vkPresentModeFromSwapchainDesc(desc.present_mode)) != present_modes.end(),
+        std::ranges::find(present_modes, vkPresentModeFromSwapchainDesc(desc.present_mode)) != present_modes.end(),
         "Swapchain present mode {} not supported",
         (uint32_t)desc.present_mode
     );

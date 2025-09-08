@@ -108,7 +108,7 @@ namespace Foundation::RHI {
             struct ShaderStage {
                 struct StageDesc {
                     // Stage this shader participates in
-                    // You can only speicify one stage per shader module.                                                      
+                    // You can only specify one stage per shader module.
                     RHIShaderStage stage;
                     const char* entry_point;
                     struct SpecializationInfo {

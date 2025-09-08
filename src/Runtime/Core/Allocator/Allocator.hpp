@@ -19,7 +19,8 @@ namespace Foundation::Core {
     };
 	class Allocator {			
 	public:
-		virtual pointer Allocate(size_type size) = 0;
+        virtual ~Allocator() = default;
+        virtual pointer Allocate(size_type size) = 0;
 		virtual pointer Allocate(size_type size, size_t alignment) = 0;
 		virtual void Deallocate(pointer ptr, size_type size) = 0;
         virtual void Deallocate(pointer ptr) = 0;
@@ -48,6 +49,7 @@ namespace Foundation::Core {
     template<size_t Size = kDefaultStackArenaSize> struct StackArena {
         alignas(std::max_align_t) std::byte data[Size];
         constexpr operator Arena() { return { reinterpret_cast<void*>(data), Size }; }
+        constexpr operator Arena() const { return { reinterpret_cast<void*>(data), Size }; }
     };
 		
 	template<typename T = void>

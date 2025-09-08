@@ -27,7 +27,7 @@ namespace Foundation::Core {
             if (!mi_manage_os_memory_ex(
                 arena.memory,
                 arena.size,
-                true, /* comitted */
+                true, /* committed */
                 false, /* pinned */
                 false, /* zero */
                 -1,
@@ -37,7 +37,8 @@ namespace Foundation::Core {
                 throw std::runtime_error("failed to manage OS memory for the arena");
             m_heap = mi_heap_new_in_arena(mi_arena);
         }
-        ~HeapAllocator() {
+        ~HeapAllocator() override
+        {
             if (m_heap)
                 mi_heap_delete(m_heap);
         }

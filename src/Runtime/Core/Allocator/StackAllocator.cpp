@@ -4,7 +4,7 @@
 namespace Foundation::Core {
 template<typename Counter>
 pointer StackAllocator<Counter>::Allocate(size_type size, size_type alignment) {
-    if (size == 0 || !m_memory) return nullptr;
+    if (size == 0) return nullptr;
 
     size_t start = AlignUp(m_current, alignment);
     size_t end = AlignUp(start + size, alignment);
@@ -17,7 +17,7 @@ pointer StackAllocator<Counter>::Allocate(size_type size, size_type alignment) {
 };
 template<typename Counter>
 pointer StackAllocator<Counter>::Allocate(size_type size) {
-    if (size == 0 || !m_memory) return nullptr;
+    if (size == 0) return nullptr;
 
     size_t start = m_current;
     size_t end = start + size;
