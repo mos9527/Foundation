@@ -2,7 +2,7 @@
 namespace Examples {
     /**
      * @example SDF2D.cpp
-     * 2D Signed Distance Field (SDF) example.   
+     * 2D Signed Distance Field (SDF) example.
      * @example Shaders/SDF2D.slang  
      * Shader courtesy of Inigo Quilez: https://iquilezles.org/articles/distfunctions2d/
      */

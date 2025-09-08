@@ -38,22 +38,41 @@ namespace Foundation::Rendering {
          * and when the render graph is actually executed.
          */
         virtual void Record(PassHandle self, Renderer* r, RHICommandList* cmd) = 0;
+        /**
+         * @brief Determine whether this pass should be skipped during Record time
+         *
+         * @return Whether this pass should be skipped during execution.
+         */
+        virtual bool IsSkipped(PassHandle self, Renderer* r) const { return false; }
     };
     /**
-     * @brief Functional wrapper for a render pass    
+     * @brief Default "not skipped" functor
      */
-    template<typename FSetup, typename FRecord>
+    struct FSkipDefault {
+        bool operator()(PassHandle, Renderer*) const { return false; }
+    };
+    /**
+     * @brief Functional wrapper for a render pass
+     *
+     * This is a convenience wrapper for stateless passes, and should be created via @ref Renderer::CreatePass()
+     */
+    template<typename FSetup,typename FRecord,typename FSkip>
     struct LambdaPass : public RenderPass {
         FSetup m_setup;
         FRecord m_record;
-        LambdaPass(FSetup&& setup, FRecord&& record)
-            : m_setup(std::forward<FSetup>(setup)), m_record(std::forward<FRecord>(record)) {
-        }
-        virtual void Setup(PassHandle self , Renderer* r) override {
+        FSkip m_skip;
+        LambdaPass(FSetup&& setup, FRecord&& record, FSkip&& skip = {})
+            : m_setup(std::forward<FSetup>(setup)),
+              m_record(std::forward<FRecord>(record)),
+              m_skip(std::forward<FSkip>(skip)) {}
+        void Setup(PassHandle self , Renderer* r) override {
             m_setup(self, r);
         }
-        virtual void Record(PassHandle self, Renderer* r, RHICommandList* cmd) override {
+        void Record(PassHandle self, Renderer* r, RHICommandList* cmd) override {
             m_record(self, r, cmd);
+        }
+        bool IsSkipped(PassHandle self, Renderer* r) const override {
+            return m_skip(self, r);
         }
     };
 }

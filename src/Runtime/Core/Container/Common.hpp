@@ -30,6 +30,7 @@ namespace Foundation::Core {
     template<typename T, typename Predicate = std::less<T>, typename Container = StlVector<T>>
     using StlPriorityQueue = std::priority_queue<T, Container, Predicate>;
 
+    class SpanReinterpretTag{};
     template<typename T>
     class StlSpan : public std::span<T> {
     public:
@@ -45,14 +46,7 @@ namespace Foundation::Core {
 
         /// For initializer lists, see
         /// https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p2447r4.html
-        /// For now you'll be making sandwiches instead.
-        /// ( i.e. StlSpan<const T>({ { 1, 2, 3 } }), StlSpan<T* const>({ { look_ma_a_single_pointer } })
-            
-        /**
-         * @brief Shorthand for single l-value item
-         */
-        template<typename U> requires std::is_convertible_v<U*, T*>
-        StlSpan(U& item) : StlSpan(&item, 1) {}
+        /// i.e. StlSpan<const T>({ { 1, 2, 3 } })
 
         /**
          * @brief Relaxed ctor for C-style arrays
@@ -64,7 +58,21 @@ namespace Foundation::Core {
          * @brief Relaxed ctor for contiguous STL containers
          */
         template<typename U>
+        requires requires (U a) { a.data(); a.size(); }
         StlSpan(U& array) : StlSpan(array.data(), array.size())
         {}
+
+        /**
+         * @brief Shorthand for single l-value item
+         */
+        template<typename U> requires std::is_convertible_v<U*, T*>
+        StlSpan(U& item) : StlSpan(&item, 1) {}
+
+        /**
+         * @brief Provides a byte-level view of the underlying data.
+         */
+        StlSpan<const char> AsBytes() const {
+            return StlSpan<const char>{ reinterpret_cast<const char*>(this->data()), this->size_bytes() };
+        }
     };
 }

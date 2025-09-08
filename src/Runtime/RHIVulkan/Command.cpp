@@ -156,18 +156,34 @@ RHICommandList& VulkanCommandList::DrawIndexed(uint32_t index_count, uint32_t in
     return *this;
 }
 
-RHICommandList& VulkanCommandList::PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Core::StlSpan<const char> data)
+RHICommandList& VulkanCommandList::DrawIndexedIndirectCount(RHIBuffer* buffer, size_t offset, RHIBuffer* count_buffer, size_t count_offset, uint32_t max_draw_count, uint32_t stride)
 {
     CHECK(m_allocator && "Invalid command list states.");
-    vkCmdPushConstants(
-        *m_commandBuffer,
-        *static_cast<VulkanPipelineState*>(pipeline)->GetVkPipelineLayout(),
-        static_cast<VkShaderStageFlags>(vkShaderStageFlagsFromRHIShaderStage(stage)),
+    m_commandBuffer.drawIndexedIndirectCount(
+        static_cast<VulkanBuffer*>(buffer)->GetVkBuffer(),
         offset,
-        data.size(),
-        data.data()
+        static_cast<VulkanBuffer*>(count_buffer)->GetVkBuffer(),
+        count_offset,
+        max_draw_count,
+        stride
     );
     return *this;
+}
+
+RHICommandList& VulkanCommandList::PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset,
+                                                Core::StlSpan<const char> data)
+{
+    CHECK(m_allocator && "Invalid command list states.");
+    vkCmdPushConstants(*m_commandBuffer, *static_cast<VulkanPipelineState*>(pipeline)->GetVkPipelineLayout(),
+                       static_cast<VkShaderStageFlags>(vkShaderStageFlagsFromRHIShaderStage(stage)), offset,
+                       data.size(), data.data());
+    return *this;
+}
+RHICommandList& VulkanCommandList::FillBuffer(RHIBuffer* buffer, uint32_t value, size_t offset, size_t size)
+{
+    CHECK(m_allocator && "Invalid command list states.");
+    auto* vulkan_buffer = static_cast<VulkanBuffer*>(buffer);
+    m_commandBuffer.fillBuffer(*vulkan_buffer->GetVkBuffer(), offset, size == kFullSize ? VK_WHOLE_SIZE : size, value);
 }
 
 RHICommandList& VulkanCommandList::CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::StlSpan<const CopyBufferRegion> regions) {

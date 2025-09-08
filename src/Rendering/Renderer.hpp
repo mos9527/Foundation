@@ -362,7 +362,10 @@ namespace Foundation::Rendering {
          *
          * This is only available at Setup time.
          * 
-         * @ref createPassImpl() should be generally preferred over this. 
+         * @ref createPassImpl() should be generally preferred over this.
+         *
+         * @tparam T Type of @ref RenderPass to create.
+         * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is disabled.
          */
         template<typename T, typename ...Args> requires std::is_base_of_v<RenderPass, T>
         T* CreatePassImpl(std::string const& name, RHIDeviceQueueType queue, Args&&... args) {
@@ -388,10 +391,27 @@ namespace Foundation::Rendering {
          * This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
          * 
          * @ref createPass() should be generally preferred over this.
+         *
+         * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is disabled.
+         * @param setup Lambda of type `void(PassHandle self, Renderer*)` called at Setup time.
+         * @param record Lambda of type `void(PassHandel self, Renderer*, RHICommandList*)` called at Record time.
+         * @param skip (Optional) Lambda of type `bool(PassHandle self, Renderer*)` called at Record time
+         *                        to determine whether this pass should be skipped if true. This is by default always false.
          */
-        template<typename FSetup, typename FRecord>
-        LambdaPass<FSetup, FRecord>* CreatePass(std::string const& name, RHIDeviceQueueType queue, FSetup&& setup, FRecord&& record) {
-            return CreatePassImpl<LambdaPass<FSetup, FRecord>>(name, queue, std::forward<FSetup>(setup), std::forward<FRecord>(record));
+        template<typename FSetup, typename FRecord, typename FSkip = FSkipDefault>
+        LambdaPass<FSetup, FRecord, FSkip>* CreatePass(
+            std::string const& name,
+            RHIDeviceQueueType queue,
+            FSetup&& setup,
+            FRecord&& record,
+            FSkip&& skip = {}
+            ) {
+            return CreatePassImpl<LambdaPass<FSetup, FRecord, FSkip>>(
+                name, queue,
+                std::forward<FSetup>(setup),
+                std::forward<FRecord>(record),
+                std::forward<FSkip>(skip)
+            );
         }
         /**
          * @brief Create a new resource to be used in the render graph.
@@ -404,6 +424,10 @@ namespace Foundation::Rendering {
          * Resources can be imported by passing in RHIDeviceObjectHandle<RHIBuffer> or RHIDeviceObjectHandle<RHITexture>.
          * 
          * @ref createResource() should be generally preferred over this.
+         *
+         * @param desc Resources can be created by passing in @ref RHIBufferDesc, @ref RHITextureDesc,
+         * and can be imported by passing in @ref RHIDeviceObjectHandle<RHIBuffer>, @ref RHIDeviceObjectHandle<RHITexture>,
+         * or raw, pinned pointers @ref RHIBuffer*, or @ref RHITexture*
          */
         template<typename T>
         ResourceHandle CreateResource(std::string const& name, T const& desc) {
@@ -725,7 +749,7 @@ namespace Foundation::Rendering {
          */
         [[nodiscard]] RHIExtent3D CmdGetComputeLocalSize(PassHandle pass) const;
         /**
-         * @brief Helper that dispatches a compute shader with the specified total thread count
+         * @brief Helper that dispatches a compute shader with the specified **TOTAL** thread count
          *
          * This is equivalent to calling:
          * @code{.cpp}
@@ -792,6 +816,10 @@ namespace Foundation::Rendering {
      * @brief Convenient functional wrapper to create a resource
      *
      * This is equivalent to calling CreateResource(name, desc);
+     *
+     * @param desc Resources can be created by passing in @ref RHIBufferDesc, @ref RHITextureDesc,
+     * and can be imported by passing in @ref RHIDeviceObjectHandle<RHIBuffer>, @ref RHIDeviceObjectHandle<RHITexture>,
+     * or raw, pinned pointers @ref RHIBuffer*, or @ref RHITexture*
      */
     template<typename T>
     ResourceHandle createResource(Renderer* r, std::string const& name, T const& desc) {
@@ -808,7 +836,10 @@ namespace Foundation::Rendering {
     /**
      * @brief Convenient functional wrapper to create a pass from a RenderPass* implementation.
      *
-     * This is equivalent to calling CreatePass<T>(name, queue, args...);     
+     * This is equivalent to calling @ref Renderer::CreatePassImpl
+     *
+     * @tparam T Type of @ref RenderPass to create.
+     * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is disabled.
      */
     template<typename T, typename ...Args> requires std::is_base_of_v<RenderPass, T>
     T* createPassImpl(Renderer* r, std::string const& name, RHIDeviceQueueType queue, Args&&... args) {
@@ -817,11 +848,25 @@ namespace Foundation::Rendering {
     /**
      * @brief Convenient functional wrapper to create a pass from Setup/Record lambdas.
      *
-     * This is equivalent to calling CreatePass(name, queue, setup, record);
+     * This is equivalent to calling @ref Renderer::CreatePass
+     *
+     * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is disabled.
+     * @param setup Lambda of type `void(PassHandle self, Renderer*)` called at Setup time.
+     * @param record Lambda of type `void(PassHandel self, Renderer*, RHICommandList*)` called at Record time.
+     * @param skip (Optional) Lambda of type `bool(PassHandle self, Renderer*)` called at Record time
+     *                        to determine whether this pass should be skipped if true. This is by default always false.
      */
-    template<typename FSetup, typename FRecord>
-    LambdaPass<FSetup, FRecord>* createPass(Renderer* r, std::string const& name, RHIDeviceQueueType queue, FSetup&& setup, FRecord&& record) {
-        return r->CreatePass(name, queue, std::forward<FSetup>(setup), std::forward<FRecord>(record));
+    template<typename FSetup, typename FRecord, typename FSkip = FSkipDefault>
+    LambdaPass<FSetup, FRecord, FSkip>* createPass(
+        Renderer* r, std::string const& name, RHIDeviceQueueType queue,
+        FSetup&& setup, FRecord&& record, FSkip&& skip = {}
+    ) {
+        return r->CreatePass(
+            name, queue,
+            std::forward<FSetup>(setup),
+            std::forward<FRecord>(record),
+            std::forward<FSkip>(skip)
+        );
     }
 
     ENUM_NAME_CONV_BEGIN(Renderer::State)

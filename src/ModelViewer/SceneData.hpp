@@ -7,54 +7,46 @@ namespace Foundation {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;    
     using SceneHandle = size_t;
-    // When reallocating internal buffers, grow by this factor
-    constexpr float kReallocGrowthFactor = 2.0f;
     struct SceneDataDesc {
-        size_t PrimitiveDataBudget{ 256 * (1 << 20LL) };
-        size_t InstanceDataBudget{ 64 * (1 << 20LL) }; 
-        size_t GlobalDataBudget{ 1 * (1 << 20LL) };
+        size_t PrimitiveDataBudget{ 32 * (1 << 20LL) };
+        size_t InstanceDataBudget{ 32 * (1 << 20LL) };
+        size_t VertexDataBudget{ 32 * (1 << 20LL) };
+        size_t IndexDataBudget{ 32 * (1 << 20LL) };
 
-        [[nodiscard]] size_t TotalBudget() const { return PrimitiveDataBudget + InstanceDataBudget + GlobalDataBudget; }
+        [[nodiscard]] size_t TotalBudget() const
+        {
+            return PrimitiveDataBudget + InstanceDataBudget +
+                VertexDataBudget + IndexDataBudget;
+        }
     };
-    /* Data representation for GPU driven rendering.
-
-    SceneData merely consists flat, opaque representations of:
-        - Primitive data (meshes, TLAS etc.)
-        - Texture maps (2D, Cube maps, etc.)
-        - Instance data
-            - Instanced draws
-            - Geo transforms, materials
-            - GPU skinning matrices, etc.
-        - Global data
-            - Camera info, lighting info, etc.
-
-    * Eventual draw calls, etc., are only issued by the GPU via RenderPass that consumes these data.
-    * Therefore, the SceneData class may have no knowledge of the underlying data structures or how they are used.
-
-    NOTES:
-        API implementations wise, descriptor indexing has been the most available one yet
-            - https://docs.vulkan.org/samples/latest/samples/extensions/descriptor_indexing/README.html
-
-        There's also a Vulkan-only extension that allows using buffer addresses w/ GPU pointers directly
-        Not considered for now.
-            - https://docs.vulkan.org/samples/latest/samples/extensions/buffer_device_address/README.html
-    */
+    /**
+     * @brief Flat buffers for GPU driven rendering
+     */
     class SceneData {
-    private:
         using AllocationList = FreeList<SceneHandle, RHIBuffer::Arena::Allocation>;
         Allocator* m_allocator{ nullptr };
 
         // GPU Staging data
         RHIDeviceScopedObjectHandle<RHIBuffer> m_stagingBuffer;
         // CPU Staging data
-        StlVector<uint8_t> m_staging;
+        StlVector<char> m_staging;
 
-        // Primitive data (e.g. vertex buffers, index buffers, etc.)
+        // Primitive data metadata
         // compacted into a fixed max-size homogeneous array
         // Expect this to be stored in GPU local memory.
         RHIDeviceScopedObjectHandle<RHIBuffer>
             m_primitiveData;        
         AllocationList m_primitives;
+        // Vertex buffer data
+        // Expect this to be stored in GPU local memory.
+        RHIDeviceScopedObjectHandle<RHIBuffer>
+            m_vertexData;
+        AllocationList m_vertices;
+        // Index buffer data
+        // Expect this to be stored in GPU local memory.
+        RHIDeviceScopedObjectHandle<RHIBuffer>
+            m_indexData;
+        AllocationList m_indices;
         // Textures used in the scene (2D, Cube maps, etc.)
         // Expect this to be stored in GPU local memory.
         FreeList<SceneHandle, RHIDeviceScopedObjectHandle<RHITexture>>
@@ -70,12 +62,12 @@ namespace Foundation {
             m_globalData;
         using StagingList = StlVector<RHI::RHICommandList::CopyBufferRegion>;
         // Staging offset, Allocation handle
-        StagingList m_primitiveStaging, m_instanceStaging;
+        StagingList m_primitiveStaging, m_instanceStaging, m_vertexStaging, m_indexStaging;
 
         // Push data to the staging buffer, and queue for GPU transfer
-        RHIBuffer::Arena::Allocation PushData(RHIBuffer* buffer, StagingList& staging, StlSpan<const uint8_t> data, size_t alignment = 16);
+        RHIBuffer::Arena::Allocation PushData(RHIBuffer* buffer, StagingList& staging, StlSpan<const char> data, size_t alignment = 16);
         // Update previously allocated data
-        void UpdateData(RHIBuffer* buffer, StagingList& staging, RHIBuffer::Arena::Allocation handle, StlSpan<const uint8_t> data);
+        void UpdateData(RHIBuffer* buffer, StagingList& staging, RHIBuffer::Arena::Allocation handle, StlSpan<const char> data);
         // Free previously allocated data
         // This is a no-op GPU-wise, and only frees CPU tracked allocations
         static void FreeData(RHIBuffer* buffer, RHIBuffer::Arena::Allocation alloc);
@@ -87,23 +79,62 @@ namespace Foundation {
         void EndTransfer(RHICommandList* cmd);
 
         const SceneDataDesc m_desc;
+
+        SceneHandle AddData(StlSpan<const char> data, RHIBuffer* buffer, AllocationList& alloc, StagingList& staging, size_t alignment = 16);
+        void UpdateData(SceneHandle handle, StlSpan<const char> data, RHIBuffer* buffer, AllocationList& alloc, StagingList& staging);
+        void FreeData(SceneHandle handle, RHIBuffer* buffer, AllocationList& alloc);
+        [[nodiscard]] std::pair<size_t, size_t> QueryDataSizeAndOffset(SceneHandle handle, RHIBuffer* buffer, AllocationList const& alloc) const;
+
+        bool m_initialized{ false };
     public:
         SceneData(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc);
 
-        SceneHandle AddPrimitiveData(StlSpan<const uint8_t> data, size_t alignment = 16);
-        void UpdatePrimitiveData(SceneHandle handle, StlSpan<const uint8_t> data);
-        void FreePrimitiveData(SceneHandle handle);
-        [[nodiscard]] std::pair<size_t, size_t> QueryPrimitiveDataSizeAndOffset(SceneHandle handle) const;
-
-        SceneHandle AddInstanceData(StlSpan<const uint8_t> data, size_t alignment = 16);
-        void UpdateInstanceData(SceneHandle handle, StlSpan<const uint8_t> data);
-        void FreeInstanceData(SceneHandle handle);
-        [[nodiscard]] std::pair<size_t, size_t> QueryInstanceDataSizeAndOffset(SceneHandle handle) const;
-
+        SceneHandle AddPrimitiveData(StlSpan<const char> data, size_t alignment = 16)
+        { return AddData(data, m_primitiveData.Get(), m_primitives, m_primitiveStaging, alignment); }
+        void UpdatePrimitiveData(SceneHandle handle, StlSpan<const char> data)
+        { UpdateData(handle, data, m_primitiveData.Get(), m_primitives, m_primitiveStaging); }
+        void FreePrimitiveData(SceneHandle handle)
+        { FreeData(handle, m_primitiveData.Get(), m_primitives); }
+        [[nodiscard]] std::pair<size_t, size_t> QueryPrimitiveDataSizeAndOffset(SceneHandle handle) const
+        { return QueryDataSizeAndOffset(handle, m_primitiveData.Get(), m_primitives); }
         [[nodiscard]] RHIDeviceObjectHandle<RHIBuffer> GetPrimitiveDataBuffer() const { return m_primitiveData; }
-        [[nodiscard]] RHIDeviceObjectHandle<RHIBuffer> GetInstanceDataBuffer() const { return m_instanceData; }
-        [[nodiscard]] RHIDeviceObjectHandle<RHIBuffer> GetGlobalDataBuffer() const { return m_globalData; }
 
+        SceneHandle AddInstanceData(StlSpan<const char> data, size_t alignment = 16)
+        { return AddData(data, m_instanceData.Get(), m_instances, m_instanceStaging, alignment); }
+        void UpdateInstanceData(SceneHandle handle, StlSpan<const char> data)
+        { UpdateData(handle, data, m_instanceData.Get(), m_instances, m_instanceStaging); }
+        void FreeInstanceData(SceneHandle handle)
+        { FreeData(handle, m_instanceData.Get(), m_instances); }
+        [[nodiscard]] std::pair<size_t, size_t> QueryInstanceDataSizeAndOffset(SceneHandle handle) const
+        { return QueryDataSizeAndOffset(handle, m_instanceData.Get(), m_instances); }
+        [[nodiscard]] RHIDeviceObjectHandle<RHIBuffer> GetInstanceDataBuffer() const { return m_instanceData; }
+
+        SceneHandle AddVertexData(StlSpan<const char> data, size_t alignment = 16)
+        { return AddData(data, m_vertexData.Get(), m_vertices, m_vertexStaging, alignment); }
+        void UpdateVertexData(SceneHandle handle, StlSpan<const char> data)
+        { UpdateData(handle, data, m_vertexData.Get(), m_vertices, m_vertexStaging); }
+        void FreeVertexData(SceneHandle handle)
+        { FreeData(handle, m_vertexData.Get(), m_vertices); }
+        [[nodiscard]] std::pair<size_t, size_t> QueryVertexDataSizeAndOffset(SceneHandle handle) const
+        { return QueryDataSizeAndOffset(handle, m_vertexData.Get(), m_vertices); }
+        [[nodiscard]] RHIDeviceObjectHandle<RHIBuffer> GetVertexDataBuffer() const { return m_vertexData; }
+
+        SceneHandle AddIndexData(StlSpan<const char> data, size_t alignment = 16)
+        { return AddData(data, m_indexData.Get(), m_indices, m_indexStaging, alignment); }
+        void UpdateIndexData(SceneHandle handle, StlSpan<const char> data)
+        { UpdateData(handle, data, m_indexData.Get(), m_indices, m_indexStaging); }
+        void FreeIndexData(SceneHandle handle)
+        { FreeData(handle, m_indexData.Get(), m_indices); }
+        [[nodiscard]] std::pair<size_t, size_t> QueryIndexDataSizeAndOffset(SceneHandle handle) const
+        { return QueryDataSizeAndOffset(handle, m_indexData.Get(), m_indices); }
+        [[nodiscard]] RHIDeviceObjectHandle<RHIBuffer> GetIndexDataBuffer() const { return m_indexData; }
+
+        [[nodiscard]] RHIDeviceObjectHandle<RHIBuffer> GetGlobalDataBuffer() const { return m_indexData; }
+
+        bool HasUpdates() const
+        {
+            return !m_initialized || !m_staging.empty();
+        }
         /**
          * @brief Update GPU buffers with the latest data
          * This may involve resource synchronization and copying, unless no transfer is needed.
@@ -111,7 +142,7 @@ namespace Foundation {
          */
         /// <param name="cmd">Command list to be potentially populated.</param>
         /// <returns>true if command list is populated. Otherwise, false.</returns>
-        bool Update(RHICommandList* cmd);
+        void Update(RHICommandList* cmd);
         // Cancel all pending staged transfers
         void Abort();
         // Clear all resources

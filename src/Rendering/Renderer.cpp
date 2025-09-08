@@ -843,7 +843,6 @@ void Renderer::ExecuteBarrierBuffer(TrackedResource& tres, RHIResourceAccess acc
     tres.lastBufferState.access = access;
     tres.lastBufferState.stage = stage;
 }
-
 void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) const
 {
     CHECK(m_state == State::Execute);
@@ -998,8 +997,12 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
 
 /**
  * @note MangoHud seem to cause validation errors with present semaphores
+ *
+ * Hot path. States are pre-allocated, and all auxiliary allocations are
+ * done on the stack e.g. command list recording, runtime (IsSkipped()) pass culling.
  */
 void Renderer::Execute() {
+    StackArena<> arena; StackAllocatorSingleThreaded alloc(arena);
     CHECK_MSG(m_state == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup()?", m_state);
     m_state = State::Execute;
     // Execute passes
@@ -1038,13 +1041,25 @@ void Renderer::Execute() {
             set_next_graphics();
         }
     };
-    if (!m_setup->execution.empty()) {
-        set_next_pass_queue(passes[m_setup->execution[0]]);
+    auto add_queue_marker = [&]()
+    {
+        if (queue == m_gfxQueue)
+            cmd->DebugInsertMarker("Queue->Graphics");
+        else
+            cmd->DebugInsertMarker("Queue->Compute");
+    };
+    // Take non-skipped passes only
+    auto execution_view = std::views::all(m_setup->execution)
+        | std::views::filter([&](PassHandle hdl) { return passes[hdl].used; });
+    auto execution = StlVector<PassHandle>(execution_view.begin(), execution_view.end(), alloc.Ptr());
+    if (!execution.empty()) {
+        set_next_pass_queue(passes[execution[0]]);
         cmd->Reset();
         cmd->Begin();
+        add_queue_marker();
     }
-    for (size_t i = 0; i < m_setup->execution.size();i++) {
-        auto& pass = passes[m_setup->execution[i]];
+    for (size_t i = 0; i < execution.size(); i++) {
+        auto& pass = passes[execution[i]];
         // Check if we can transition away on Compute
         // If not, Graphics must take over before we continue
         std::optional<std::pair<RHIDeviceSemaphore*, size_t>> barrier_extra_wait{};
@@ -1059,6 +1074,8 @@ void Renderer::Execute() {
                 set_next_graphics();
                 cmd->Reset();
                 cmd->Begin();
+                add_queue_marker();
+                cmd->DebugInsertMarker("Temp GFX Transition for Compute work");
                 ExecuteBarriers(pass, cmd);
                 cmd->End();
                 barrier_extra_wait.emplace(m_swaps[m_currentSync].barrier_semaphore_at(cmd_index - 1, m_device.Get()), SEM_COUNTER(cmd_index - 1));
@@ -1088,7 +1105,7 @@ void Renderer::Execute() {
             submitted = ExecuteSubmitOrContinue(pass, cmd, queue);
         }
         if (submitted) {
-            if (i == m_setup->execution.size() - 1)
+            if (i == execution.size() - 1)
             {
                 // Ending pass
                 // Only possible if we'd end up here with a pass
@@ -1098,6 +1115,7 @@ void Renderer::Execute() {
                     set_next_graphics();
                     cmd->Reset();
                     cmd->Begin();
+                    add_queue_marker();
                 }
             }
             else {
@@ -1106,6 +1124,7 @@ void Renderer::Execute() {
                 set_next_pass_queue(passes[m_setup->execution[i + 1]]);                
                 cmd->Reset();
                 cmd->Begin();
+                add_queue_marker();
             }
         }
     }
@@ -1119,6 +1138,9 @@ void Renderer::Execute() {
                 .fence = m_swaps[m_currentSync].fence.Get()
             });
             set_next_graphics();
+            cmd->Reset();
+            cmd->Begin();
+            add_queue_marker();
         }
         cmd->BeginTransition();
         ExecuteBarrierSubresource(

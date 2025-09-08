@@ -11,6 +11,11 @@
  */
 namespace Foundation::Math {
     using namespace glm;
+    using float4 = vec4;
+    // !! TODO: Padding?
+    using float3 = vec3;
+    using float2 = vec2;
+    using float4x4 = mat4;
 }
 
 #include "Quantization.hpp"

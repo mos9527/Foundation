@@ -1,83 +1,68 @@
 #pragma once
+#include "Mesh.hpp"
 #include "SceneData.hpp"
-
 namespace Foundation {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
     using namespace Foundation::Rendering;
+    using namespace Foundation::Math;
+    #include "Shaders/Common.h"
+
+    /**
+     * @brief Scene representation for GPU driven rendering.
+     *
+     * Primitive data, instance data, and global data are represented in flat buffers.
+     * See @ref PrimitiveMetadata, @ref InstanceMetadata, @ref GlobalMetadata for data layouts.
+     */
     class Scene {
-    public:
-        struct MeshMetadata {
-            uint32_t vertexCount;
-            uint32_t vertexStride;            
-            uint32_t indexCount;
-            uint32_t indexStride; // in bytes, usually 2 or 4
-            /* raw vertex data of stride */
-            /* raw index data of stride*/
-            // TODO
-            // meshlets?
-            // lods?
-        };
-        struct InstanceMetadata {
-            size_t primitiveOffset; // into m_data.GetPrimitiveDataBuffer()            
-            /* raw opaque instance data*/
-        };
-        struct GlobalMetadata {
-            /* raw opaque global data */
-            size_t instanceCount;
-            /* uint64_t offsets into m_data.GetInstanceDataBuffer() */
-        };
-    private:
         Allocator* m_allocator{ nullptr };
         SceneData m_data;
-        StlVector<uint64_t> m_instanceOffsets;
 
-        bool m_hasDirtyInstance = false;
+        bool m_dirty = true;
+        bool HasUpdates() const { return m_dirty || m_data.HasUpdates(); }
+        void Update(RHICommandList* cmd);
     public:
         Scene(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc);
 
-        template<typename Vertex, typename Index>
-        SceneHandle AddMesh(StlSpan<const Vertex> vertices, StlSpan<const Index> indices);
-        void FreeMesh(SceneHandle handle);
+        SceneHandle AddMesh(StlSpan<const Vertex> vertices, StlSpan<const Index> indices, SceneHandle& outVtx, SceneHandle& outIdx);
+        void FreeMesh(SceneHandle mesh, SceneHandle vtx, SceneHandle idx);
 
-        template<typename Instance>
-        SceneHandle AddInstance(SceneHandle primitive, Instance const& data);
-        template<typename Instance>
-        void UpdateInstance(SceneHandle instance, SceneHandle primitive, Instance const& data);
+        SceneHandle AddInstance(InstanceMetadata data);
+        void UpdateInstance(SceneHandle instance, InstanceMetadata const& data);
         void FreeInstance(SceneHandle handle);
 
-        template<typename Global>
-        void UpdateGlobal(Global const& data);
-
-        inline SceneData& GetData() { return m_data; }
-        inline bool Update(RHICommandList* cmd) {
-            return m_data.Update(cmd);
+        auto* CreateUpdatePass(
+            Renderer* renderer,
+            ResourceHandle& outInstance,
+            ResourceHandle& outPrimitive,
+            ResourceHandle& outVertex,
+            ResourceHandle& outIndex
+        ) {
+            auto& data = m_data;
+            ResourceHandle Instance  = createResource(renderer, "Scene Instances", data.GetInstanceDataBuffer());
+            ResourceHandle Primitive = createResource(renderer, "Scene Primitives", data.GetPrimitiveDataBuffer());
+            ResourceHandle Vertex    = createResource(renderer, "Scene Flat Vertices", data.GetVertexDataBuffer());
+            ResourceHandle Index     = createResource(renderer, "Scene Flat Indices", data.GetIndexDataBuffer());
+            outInstance = Instance, outPrimitive = Primitive, outVertex = Vertex, outIndex = Index;
+            return createPass(
+                renderer, "Scene Update",
+                RHIDeviceQueueType::Graphics,
+                [=](PassHandle self, Renderer* r) {
+                    r->BindBufferCopyDst(self, Instance);
+                    r->BindBufferCopyDst(self, Primitive);
+                    r->BindBufferCopyDst(self, Vertex);
+                    r->BindBufferCopyDst(self, Index);
+                },
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd) {
+                    Update(cmd);
+                },
+                [=](PassHandle self, Renderer* r)
+                {
+                    return HasUpdates();
+                }
+            );
         }
     };
 
-    inline auto* createSceneUpdatePass(
-        Renderer* renderer,
-        Scene* scene,
-        ResourceHandle& outGlobal,
-        ResourceHandle& outInstance,
-        ResourceHandle& outPrimitive
-    ) {
-        auto& data = scene->GetData();
-        ResourceHandle Global    = createResource(renderer, "Globals", data.GetGlobalDataBuffer());
-        ResourceHandle Instance  = createResource(renderer, "Instances", data.GetInstanceDataBuffer());
-        ResourceHandle Primitive = createResource(renderer, "Primitives", data.GetPrimitiveDataBuffer());
-        outGlobal = Global, outInstance = Instance, outPrimitive = Primitive;
-        return createPass(
-            renderer, "Scene Update",
-            RHIDeviceQueueType::Graphics,
-            [=](PassHandle self, Renderer* r) {
-                r->BindBufferCopyDst(self, Global);
-                r->BindBufferCopyDst(self, Instance);
-                r->BindBufferCopyDst(self, Primitive);
-            },
-            [=](PassHandle self, Renderer* r, RHICommandList* cmd) {
-                scene->Update(cmd);
-            }
-        );
-    }    
+
 }

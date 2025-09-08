@@ -3,40 +3,60 @@
 * @brief Model Viewer Application
 */
 class ModelViewer : public RenderApplication {
-    virtual void RendererSetup() override {
-        ResourceHandle gb_albedo, cp_sampler;
-        gb_albedo = createResource(
-            m_renderer.get(),
-            "GBuffer Albedo",
-            RHITextureDesc{
-                .usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::SampledImage,
-                .extent = m_renderer->GetSwapchainExtent3D(),
-                .format = RHIResourceFormat::R8G8B8A8_UNORM
-            });
-        cp_sampler = createSampler(m_renderer.get(), "Copy Sampler", {});
-        createPass(
-            m_renderer.get(), "GBuffer", RHIDeviceQueueType::Graphics,
-            [=](PassHandle self, Renderer* r) {
-                r->BindTextureRTV(self, gb_albedo, { .format = RHIResourceFormat::R8G8B8A8_UNORM });
-                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/Mesh.spv");
-                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/Mesh.spv");
-            },
-            [=](PassHandle self, Renderer* r, RHICommandList* cmd) {
-                auto const& img_wh = r->DerefResource(gb_albedo).Get<RHITexture*>()->m_desc.extent;
-                r->CmdBeginGraphics(self, cmd, img_wh);
-                r->CmdSetPipeline(self, cmd);
-                cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
-                    .SetScissor(0, 0, img_wh.x, img_wh.y);
-                cmd->Draw(3); // Another triangle...sigh
-                cmd->EndGraphics();
+    UniquePtr<Scene> m_scene;
+    ResourceHandle m_sceneInstance{kInvalidHandle}, m_scenePrimitive{kInvalidHandle};
+    ResourceHandle m_sceneVertex{kInvalidHandle}, m_sceneIndex{kInvalidHandle};
+    ResourceHandle m_indirectCommands{kInvalidHandle};
+
+    const size_t kMaxIndirectCommands = 1024;
+    void RendererSetup() override
+    {
+        m_scene = ConstructUnique<Scene>(
+        GetAllocator(),
+            GetAllocator(),
+            m_device.Get(),
+            SceneDataDesc{}
+        );
+        m_scene->CreateUpdatePass(m_renderer.get(),m_sceneInstance, m_scenePrimitive,m_sceneVertex, m_sceneIndex);
+        m_indirectCommands = createResource(m_renderer.get(), "IndirectCommands",
+            RHIBufferDesc{
+                .usage = RHIBufferUsageBits::IndirectBuffer | RHIBufferUsageBits::StorageBuffer,
+                .size = sizeof(MeshDrawIndirectCmd) * kMaxIndirectCommands
             }
         );
-        createPSBackbufferBlitPass(m_renderer.get(), "Backbuffer Blit", cp_sampler, gb_albedo);
+        // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
+        // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect
+        createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Compute,
+            [=, this](PassHandle self, Renderer* r)
+            {
+                r->BindShader(self, RHIShaderStageBits::Compute, "resetCounter", "data/shaders/MVIndirectCull.spv");
+                r->BindBufferUnordered(self, m_indirectCommands, "commands");
+            },
+            [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                r->CmdSetPipeline(self, cmd);
+                r->CmdDispatch(self, cmd, {1,1,1});
+            }
+        );
+        createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Compute,
+            [=, this](PassHandle self, Renderer* r)
+            {
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/MVIndirectCull.spv");
+                r->BindBufferUnordered(self, m_indirectCommands, "commands");
+                r->BindBufferStorage(self, m_sceneInstance, "scInstance");
+                r->BindBufferStorage(self, m_scenePrimitive, "scPrimitive");
+            },
+            [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                r->CmdSetPipeline(self, cmd);
+                r->CmdDispatch(self, cmd, { kMaxIndirectCommands, 1, 1 });
+            }
+        );
     }
 };
 
 int main(int argc, char** argv) {
     ModelViewer app;
-    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer" });
+    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = false, .asyncCompute = true });
     app.RunForever();
 }
