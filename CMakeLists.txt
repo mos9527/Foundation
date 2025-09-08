@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 3.26)
 project(Foundation)
-set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_CLANG_TIDY "clang-tidy")
 
 option(FOUNDATION_WITH_SANITIZERS "Build with sanitizers enabled" OFF)
 option(FOUNDATION_WITH_EXAMPLES "Build examples" ON)
