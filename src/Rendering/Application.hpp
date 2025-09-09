@@ -14,7 +14,7 @@ namespace Foundation::Rendering {
      */
     struct ApplicationInitDesc {
         size_t deviceIndex{ 0 };
-        std::string windowTitle{"Application"};
+        String windowTitle{"Application"};
         RHIExtent2D windowSize{ 800, 600 };
         /**
          * @brief Enable Present support.

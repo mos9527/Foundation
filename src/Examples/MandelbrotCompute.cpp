@@ -21,7 +21,7 @@ namespace Examples {
                     .format = RHIResourceFormat::R8G8B8A8_UNORM
                 }
             );
-            ResourceHandle sampler = createSampler(m_renderer.get(), "Linear Sampler", {});
+            ResourceHandle sampler = createSampler(m_renderer.get(), {});
             createPass(
                 m_renderer.get(), "Mandelbrot", RHIDeviceQueueType::Compute,
                 [=](PassHandle self, Renderer* r) {

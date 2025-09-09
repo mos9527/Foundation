@@ -1,11 +1,12 @@
 #pragma once
 #include <bit>
-#include <string>
+#include <Core/Container/Common.hpp>
 #include <fmt/format.h>
 
 namespace Foundation {
+    using namespace Foundation::Core;
     constexpr const char* kSuffixes[]{ "B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
-    inline std::string formatHumanReadableSize(const uint64_t size)
+    inline String formatHumanReadableSize(const uint64_t size)
     {
         const int bits = 63 - std::countl_zero(size);
         const int index = std::min(bits / 10, static_cast<int>(std::size(kSuffixes) - 1));

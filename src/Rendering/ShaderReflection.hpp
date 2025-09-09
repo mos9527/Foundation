@@ -22,20 +22,20 @@ namespace Foundation::Rendering {
         void Sort();
     public:
         struct Entrypoint {
-            std::string name;
+            String name;
             RHI::RHIShaderStage stage{};
             // Compute shader specific
             Tuple<uint32_t, uint32_t, uint32_t> local_size{};
         };
         Core::Vector<Entrypoint> m_entrypoints;
         struct Binding {
-            std::string name;
+            String name;
             uint32_t descriptorSet;
             uint32_t binding;
         };
         Core::Vector<Binding> m_bindings;
         struct PushConstant {
-            std::string name;
+            String name;
             // TODO: add size, offset, type info?
             // This would require us to parse all OpType.. instructions however.
             // Caller is also expected to know the layout of push constants - TODO for now.                      
@@ -43,6 +43,6 @@ namespace Foundation::Rendering {
         Core::Vector<PushConstant> m_pushConstants;
         ShaderReflection(Core::Span<const char> bytecode, Core::Allocator* alloc);
 
-        std::string DbgDumpShaderInfo() const;
+        String DbgDumpShaderInfo() const;
     };
 }

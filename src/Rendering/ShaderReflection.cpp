@@ -24,7 +24,7 @@ void ShaderReflection::ParseSPIRV(const Span<const char> bytecode)
         uint32_t DescriptorSet{};
         uint32_t Binding{};
         /* -- debug -- */
-        std::string Name;
+        String Name;
         uint32_t EpIndex{};
     };
     Vector<Element> ID(Bound, m_allocator);
@@ -56,7 +56,7 @@ void ShaderReflection::ParseSPIRV(const Span<const char> bytecode)
             ID[ins[2]].Opcode = Opcode;
             ID[ins[2]].EpIndex = static_cast<uint32_t>(m_entrypoints.size());
             // 3: Name
-            ep.name = std::string(reinterpret_cast<const char*>(ins + 3));
+            ep.name = String(reinterpret_cast<const char*>(ins + 3));
             m_entrypoints.push_back(ep);
             break;
         }
@@ -82,7 +82,7 @@ void ShaderReflection::ParseSPIRV(const Span<const char> bytecode)
             // 1: Target ID
             uint32_t id = ins[1];
             // 2: Name
-            ID[id].Name = std::string(reinterpret_cast<const char*>(ins + 2));
+            ID[id].Name = String(reinterpret_cast<const char*>(ins + 2));
             break;
         }
         /* 3.32.3 Annotation Instructions */

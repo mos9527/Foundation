@@ -13,11 +13,17 @@ namespace Foundation::Core {
 	}
     typedef size_t CounterSingleThreaded;
     typedef std::atomic<size_t> CounterMultiThreaded;
+    /**
+     * @brief A memory arena allocated from an Allocator
+     */
     struct Arena {
         pointer memory;
         size_type size;
     };
-	class Allocator {			
+    /**
+     * @brief General Purpose Allocator (GPA) interface
+     */
+    class Allocator {
 	public:
         virtual ~Allocator() = default;
         virtual pointer Allocate(size_type size) = 0;
@@ -26,16 +32,19 @@ namespace Foundation::Core {
         virtual void Deallocate(pointer ptr) = 0;
         virtual pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) = 0;
 
-        inline Arena AllocateArena(size_type size, size_t alignment) { return { Allocate(size, alignment), size }; }
-        inline Arena AllocateArena(size_type size) { return { Allocate(size), size }; }
-        inline void DeallocateArena(Arena arena) {
+        Arena AllocateArena(size_type size, size_t alignment) { return { Allocate(size, alignment), size }; }
+        Arena AllocateArena(size_type size) { return { Allocate(size), size }; }
+        void DeallocateArena(Arena arena) {
             if (arena.memory) 
                 Deallocate(arena.memory, arena.size);
         }
         virtual size_type GetUsedMemory() const noexcept = 0;
 
-        inline Allocator* Ptr() { return this; }
+        Allocator* Ptr() { return this; }
 	};
+    /**
+     * @brief RAII wrapper for an arena allocated from an Allocator
+     */
     struct ScopedArena {
         Allocator* resource;
         Arena arena;
@@ -46,13 +55,30 @@ namespace Foundation::Core {
         constexpr operator bool() const noexcept { return arena.memory != nullptr; }
     };
     constexpr size_t kDefaultStackArenaSize = 12 * 1024; // 12 KiB
+    /**
+     * @brief A fixed-size stack memory arena
+     */
     template<size_t Size = kDefaultStackArenaSize> struct StackArena {
         alignas(std::max_align_t) std::byte data[Size];
         constexpr operator Arena() { return { reinterpret_cast<void*>(data), Size }; }
         constexpr operator Arena() const { return { reinterpret_cast<void*>(data), Size }; }
     };
-		
-	template<typename T = void>
+
+    /**
+     * @brief `std::allocator` adaptor for @ref Foundation::Core::Allocator
+     *
+     * Construction without a @ref Foundation::Core::Allocator pointer is disallowed, and will result in a compile-time error.
+     * For STL types that require default-constructible allocators, use `StlAllocator<void>` and pass the resource explicitly
+     *
+     * Rebind construction is supported.
+     *
+     * Using this with e.g. @ref Foundation::Core::Vector can be done as follows:
+     * @code{.cpp}
+     * Allocator* resource = ...;
+     * Vector<int> vector(resource);
+     * @endcode
+     */
+    template <typename T = void>
     class StlAllocator {
         Allocator* m_resource;
     public:
@@ -88,7 +114,10 @@ namespace Foundation::Core {
         }          
     };
 
-    template<typename T>
+    /**
+     * @brief Custom deleter for @ref Foundation::Core::UniquePtr and @ref Foundation::Core::SharedPtr that uses a @ref Foundation::Core::Allocator to deallocate memory.
+     */
+    template <typename T>
     struct StlDeleter {
         Allocator* m_resource;
         void operator()(T* ptr) noexcept {
@@ -99,10 +128,21 @@ namespace Foundation::Core {
         }
     };
 
+    /**
+     * @brief `std::unique_ptr` with custom deleter that uses a @ref Foundation::Core::Allocator to deallocate memory.
+     *
+     * Construction without a @ref Foundation::Core::Allocator pointer is disallowed, and will result in a compile-time error.
+     */
     template<typename T>
     using UniquePtr = std::unique_ptr<T, StlDeleter<T>>;
 
-    template<typename Base, typename Derived, typename ...Args>
+    /**
+     * @brief Helper function for constructing a pinned resource with a @ref Foundation::Core::Allocator.
+     *
+     * @tparam Base is the base class type be templated on.
+     * @tparam Derived can be a subclass of Base, with destruction handled correctly.
+     */
+    template <typename Base, typename Derived, typename ...Args>
     UniquePtr<Base> ConstructUniqueBase(Allocator* resource, Args&& ...args) {
         auto raw = resource->Allocate(sizeof(Derived), alignof(Derived));
         try {
@@ -114,19 +154,40 @@ namespace Foundation::Core {
             throw;
         }       
     }
-    template<typename T, typename ...Args>
+    /**
+     * @brief Convenience wrapper for calling @ref ConstructUniqueBase when Base and Derived are the same type.
+     *
+     * @tparam T is the class type to be templated on.
+     */
+    template <typename T, typename ...Args>
     UniquePtr<T> ConstructUnique(Allocator* resource, Args&& ...args) {
         return ConstructUniqueBase<T, T>(resource, std::forward<Args>(args)...);
     }
-       
+
+    /**
+     * @brief `std::shared_ptr` with custom deleter that uses a @ref Foundation::Core::Allocator to deallocate memory.
+     */
     template<typename T>
     using SharedPtr = std::shared_ptr<T>;
+
+    /**
+     * @brief Helper function for constructing a ref-counted resource with a @ref Foundation::Core::Allocator.
+     *
+     * @tparam Base is the base class type be templated on.
+     * @tparam Derived can be a subclass of Base, with destruction handled correctly.
+     */
     template<typename Base, typename Derived, typename ...Args>
     SharedPtr<Base> ConstructSharedBase(Allocator* resource, Args&& ...args) {
         auto up = ConstructUnique<Derived>(resource, std::forward<Args>(args)...);
         return { up.release(), StlDeleter<Base>{ resource } };
     }
-    template<typename T, typename ...Args>
+
+    /**
+     * @brief Convenience wrapper for calling @ref ConstructSharedBase when Base and Derived are the same type.
+     *
+     * @tparam T is the class type to be templated on.
+     */
+    template <typename T, typename ...Args>
     SharedPtr<T> ConstructShared(Allocator* resource, Args&& ...args) {
         return ConstructSharedBase<T, T>(resource, std::forward<Args>(args)...);
     }            

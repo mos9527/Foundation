@@ -31,7 +31,7 @@ namespace Foundation::Rendering {
      */
     struct TrackedResource {        
         ResourceHandle handle; // Index to tracked resources
-        std::string name;        
+        String name;        
         ResourceDefinition desc;
         /* --- states --- */
         // (Texture) Per-subresource states
@@ -92,8 +92,8 @@ namespace Foundation::Rendering {
             }
         } lastBufferState{};
 
-        TrackedResource(const ResourceHandle handle, std::string  name, const ResourceDefinition& resourceDesc, Allocator* alloc)
-            : handle(handle), name(std::move(name)), desc(resourceDesc), lastSubresourceStates(alloc) {
+        TrackedResource(const ResourceHandle handle, StringView name, const ResourceDefinition& resourceDesc, Allocator* alloc)
+            : handle(handle), name(name), desc(resourceDesc), lastSubresourceStates(alloc) {
             // Resize subresource states if texture
             auto update_texture_desc = [&](RHITextureDesc const& desc) {
                 lastSubresourceStates.resize(desc.array_layers * desc.mip_levels);
@@ -116,7 +116,7 @@ namespace Foundation::Rendering {
      * @brief Internal tracking information for a render pass in the frame graph.
      */
     struct TrackedPass {
-        std::string name;
+        String name;
         PassHandle handle; // Index to tracked passes
         RHIDeviceQueueType queue; // Preferred type of queue to run in
         bool used{ false }; // Culled?
@@ -152,17 +152,17 @@ namespace Foundation::Rendering {
         // Shader [path, entry point, stage]
         Vector<Tuple<
             std::filesystem::path,
-            std::string,
+            String,
             RHIShaderStage
             >> shaders;
         // Bind points [view(tex) or buffer(buf), desc type, binding point]        
         Vector<Tuple<
             ResourceHandle,
             RHIDescriptorType,
-            std::string
+            String
             >> tex_bindings, buf_bindings;
         // Samplers
-        Vector<Pair<ResourceHandle, std::string>> samplers;
+        Vector<Pair<ResourceHandle, String>> samplers;
         // Push Constants by [stage, offset, size]
         Vector<RHIPipelineState::PipelineStateDesc::PushConstant> push_constants;
         // (Graphics Only) Render Target View[s]
@@ -173,8 +173,8 @@ namespace Foundation::Rendering {
         RHI::RHIPipelineState::PipelineStateDesc::VertexInput vertex_input{};
         /* --- */
         UniquePtr<RenderPass> pass;
-        TrackedPass(Allocator* alloc, const PassHandle handle, std::string  name, RHIDeviceQueueType queue, UniquePtr<RenderPass> renderPass)
-            : name(std::move(name)), handle(handle), queue(queue),
+        TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue, UniquePtr<RenderPass> renderPass)
+            : name(name), handle(handle), queue(queue),
             textureUsages(alloc), bufferUsages(alloc), resources(alloc), texviews(alloc),
             shaders(alloc),
             tex_bindings(alloc), buf_bindings(alloc),
@@ -368,7 +368,7 @@ namespace Foundation::Rendering {
          * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is disabled.
          */
         template<typename T, typename ...Args> requires std::is_base_of_v<RenderPass, T>
-        T* CreatePassImpl(std::string const& name, RHIDeviceQueueType queue, Args&&... args) {
+        T* CreatePassImpl(StringView name, RHIDeviceQueueType queue, Args&&... args) {
             CHECK(m_state == State::Setup);
             CHECK_MSG(queue == RHIDeviceQueueType::Graphics || queue == RHIDeviceQueueType::Compute, "Invalid queue type. Only Graphics and Compute queues are supported.");
             PassHandle handle = m_setup->trackedPasses.size();
@@ -400,7 +400,7 @@ namespace Foundation::Rendering {
          */
         template<typename FSetup, typename FRecord, typename FSkip = FSkipDefault>
         LambdaPass<FSetup, FRecord, FSkip>* CreatePass(
-            std::string const& name,
+            StringView name,
             RHIDeviceQueueType queue,
             FSetup&& setup,
             FRecord&& record,
@@ -430,7 +430,7 @@ namespace Foundation::Rendering {
          * or raw, pinned pointers @ref RHIBuffer*, or @ref RHITexture*
          */
         template<typename T>
-        ResourceHandle CreateResource(std::string const& name, T const& desc) {
+        ResourceHandle CreateResource(StringView name, T const& desc) {
             CHECK(m_state == State::Setup);
             ResourceHandle index = m_setup->trackedResources.size();
             m_setup->trackedResources.emplace_back(index, name, desc, m_allocator);
@@ -444,7 +444,7 @@ namespace Foundation::Rendering {
          * 
          * @ref createSampler() should be generally preferred over this.
          */
-        [[nodiscard]] ResourceHandle CreateSampler(std::string const& name, RHIDeviceSampler::SamplerDesc const& desc) const;
+        [[nodiscard]] ResourceHandle CreateSampler(RHIDeviceSampler::SamplerDesc const& desc) const;
 #pragma region Resource Binding
         /**
          * @brief Binds shader file path to a certain pass at a certain stage.
@@ -456,7 +456,7 @@ namespace Foundation::Rendering {
          */
         void BindShader(
             PassHandle pass, RHIShaderStage stage,
-            std::string const& entry_point,
+            StringView entry_point,
             std::filesystem::path const& shader_path
         ) const;
         /**
@@ -499,7 +499,7 @@ namespace Foundation::Rendering {
          */
         void BindBufferUniform(
             PassHandle pass, ResourceHandle buffer,
-            std::string const& bind_point
+            StringView bind_point
         ) const;
         /**
          * @brief Binds a storage (read-write) buffer to a specified binding point.
@@ -512,7 +512,7 @@ namespace Foundation::Rendering {
          */
         void BindBufferStorage(
             PassHandle pass, ResourceHandle buffer,
-            std::string const& bind_point
+            StringView bind_point
         ) const;
         /**
          * @brief Binds a buffer for unordered (UAV) access from shaders (read and/or write in any order).
@@ -525,7 +525,7 @@ namespace Foundation::Rendering {
          */
         void BindBufferUnordered(
             PassHandle pass, ResourceHandle buffer,
-            std::string const& bind_point
+            StringView bind_point
         ) const;
         /**
          * @brief Declares this pass has shaders that will read from this buffer.
@@ -555,7 +555,7 @@ namespace Foundation::Rendering {
          */
         void BindTextureSampler(
             PassHandle pass, ResourceHandle sampler,
-            std::string const& bind_point
+            StringView bind_point
         ) const;
         /**
          * @brief Binds a texture as a Shader Resource View (read-only sampling / fetch).
@@ -566,7 +566,7 @@ namespace Foundation::Rendering {
          */
         ResourceHandle BindTextureSRV(
             PassHandle pass, ResourceHandle texture,
-            std::string const& bind_point,
+            StringView bind_point,
             RHITextureViewDesc const& desc = {}
         ) const;
         /**
@@ -581,7 +581,7 @@ namespace Foundation::Rendering {
          */
         ResourceHandle BindTextureUAV(
             PassHandle pass, ResourceHandle texture, 
-            std::string const& bind_point,
+            StringView bind_point,
             RHITextureViewDesc const& desc = {}
         ) const;
         /**
@@ -791,8 +791,8 @@ namespace Foundation::Rendering {
 #pragma endregion
 
 #pragma region Debugging
-        [[nodiscard]] std::string DbgDumpGraphviz() const;
-        [[nodiscard]] std::string DbgDumpActivePasses() const;
+        [[nodiscard]] String DbgDumpGraphviz() const;
+        [[nodiscard]] String DbgDumpActivePasses() const;
 #pragma endregion
         /**
          * @brief Retrieves the current state of the renderer.
@@ -822,7 +822,7 @@ namespace Foundation::Rendering {
      * or raw, pinned pointers @ref RHIBuffer*, or @ref RHITexture*
      */
     template<typename T>
-    ResourceHandle createResource(Renderer* r, std::string const& name, T const& desc) {
+    ResourceHandle createResource(Renderer* r, StringView name, T const& desc) {
         return r->CreateResource(name, desc);
     }
     /**
@@ -830,8 +830,8 @@ namespace Foundation::Rendering {
      *
      * This is equivalent to calling CreateSampler(name, desc);
      */
-    inline ResourceHandle createSampler(Renderer* r, std::string const& name, RHIDeviceSampler::SamplerDesc const& desc) {
-        return r->CreateSampler(name, desc);
+    inline ResourceHandle createSampler(Renderer* r, RHIDeviceSampler::SamplerDesc const& desc) {
+        return r->CreateSampler(desc);
     }
     /**
      * @brief Convenient functional wrapper to create a pass from a RenderPass* implementation.
@@ -842,7 +842,7 @@ namespace Foundation::Rendering {
      * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is disabled.
      */
     template<typename T, typename ...Args> requires std::is_base_of_v<RenderPass, T>
-    T* createPassImpl(Renderer* r, std::string const& name, RHIDeviceQueueType queue, Args&&... args) {
+    T* createPassImpl(Renderer* r, StringView name, RHIDeviceQueueType queue, Args&&... args) {
         return r->CreatePassImpl<T>(name, queue, std::forward<Args>(args)...);
     }
     /**
@@ -858,7 +858,7 @@ namespace Foundation::Rendering {
      */
     template<typename FSetup, typename FRecord, typename FSkip = FSkipDefault>
     LambdaPass<FSetup, FRecord, FSkip>* createPass(
-        Renderer* r, std::string const& name, RHIDeviceQueueType queue,
+        Renderer* r, StringView name, RHIDeviceQueueType queue,
         FSetup&& setup, FRecord&& record, FSkip&& skip = {}
     ) {
         return r->CreatePass(

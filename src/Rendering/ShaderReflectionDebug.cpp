@@ -2,9 +2,9 @@
 #include <fmt/format.h>
 using namespace Foundation::Rendering;
 
-std::string ShaderReflection::DbgDumpShaderInfo() const
+String ShaderReflection::DbgDumpShaderInfo() const
 {
-    std::string out;
+    String out;
     fmt::format_to(std::back_inserter(out), "Entry Point: {}\n", m_entrypoints.size());
     for (const auto& ep : m_entrypoints)
         fmt::format_to(std::back_inserter(out), "   Name: {}, Stage: {}\n", ep.name, ep.stage);

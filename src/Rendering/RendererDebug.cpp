@@ -1,7 +1,7 @@
 #include "Renderer.hpp"
 using namespace Foundation::Rendering;
-std::string Renderer::DbgDumpGraphviz() const {
-    std::string out;
+String Renderer::DbgDumpGraphviz() const {
+    String out;
     fmt::format_to(std::back_inserter(out), "digraph G {{\n");
     fmt::format_to(std::back_inserter(out), "    rankdir=TB;\n");
     auto& graph = m_setup->graph;
@@ -31,8 +31,8 @@ std::string Renderer::DbgDumpGraphviz() const {
     return out;
 }
 
-std::string Renderer::DbgDumpActivePasses() const {
-    std::string out;
+String Renderer::DbgDumpActivePasses() const {
+    String out;
     for (const auto& idx : m_setup->execution) {
         auto& pass = m_setup->trackedPasses[idx];
         fmt::format_to(

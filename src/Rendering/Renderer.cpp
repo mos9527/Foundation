@@ -61,7 +61,7 @@ ResourceHandle Renderer::CreateTextureView(
     m_setup->trackedPasses[pass].texviews.emplace_back(hdl);
     return hdl;
 }
-ResourceHandle Renderer::CreateSampler(std::string const& name, RHIDeviceSampler::SamplerDesc const& desc) const
+ResourceHandle Renderer::CreateSampler(RHIDeviceSampler::SamplerDesc const& desc) const
 {
     CHECK(m_state == State::Setup);
     m_setup->trackedSamplers.emplace_back(desc);
@@ -130,7 +130,7 @@ void Renderer::DeclareTextureAccess(
 /* -- binding -- */
 void Renderer::BindShader(
     PassHandle pass, RHIShaderStage stage,
-    std::string const& entry_point,
+    StringView entry_point,
     std::filesystem::path const& shader_path
 ) const
 {
@@ -162,7 +162,7 @@ void Renderer::BindPushConstant(
 }     
 void Renderer::BindBufferUniform(
     PassHandle pass, ResourceHandle buffer,
-    std::string const& bind_point
+    StringView bind_point
 ) const
 {
     CHECK(m_state == State::Setup);
@@ -175,7 +175,7 @@ void Renderer::BindBufferUniform(
 }
 void Renderer::BindBufferStorage(
     PassHandle pass, ResourceHandle buffer,
-    std::string const& bind_point
+    StringView bind_point
 ) const
 {
     CHECK(m_state == State::Setup);
@@ -188,7 +188,7 @@ void Renderer::BindBufferStorage(
 }
 void Renderer::BindBufferUnordered(
     PassHandle pass, ResourceHandle buffer,
-    std::string const& bind_point
+    StringView bind_point
 ) const
 {
     CHECK(m_state == State::Setup);
@@ -225,7 +225,7 @@ void Renderer::BindBufferCopySrc(PassHandle pass, ResourceHandle buffer) const
 }
 void Renderer::BindTextureSampler(
     PassHandle pass, ResourceHandle sampler,
-    std::string const& shader_name
+    StringView shader_name
 ) const
 {
     CHECK(m_state == State::Setup);
@@ -234,7 +234,7 @@ void Renderer::BindTextureSampler(
 }
 ResourceHandle Renderer::BindTextureSRV(
     PassHandle pass, ResourceHandle texture,
-    std::string const& shader_name,
+    StringView shader_name,
     RHITextureViewDesc const& desc
 ) const
 {
@@ -264,7 +264,7 @@ ResourceHandle Renderer::BindTextureSRV(
 }
 ResourceHandle Renderer::BindTextureUAV(
     PassHandle pass, ResourceHandle texture,
-    std::string const& shader_name,
+    StringView shader_name,
     RHITextureViewDesc const& desc
 ) const
 {
@@ -483,7 +483,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     }
     // Check variable bindings to be consistent across stages
     // [name, [set, binding]]
-    Map<std::string, Pair<uint32_t, uint32_t>> var_bind_points(m_allocator);
+    Map<String, Pair<uint32_t, uint32_t>> var_bind_points(m_allocator);
     // Check if any shader in the pipeline uses PC
     for (auto const& [path, refl] : reflections){
         if (!refl->m_pushConstants.empty())
@@ -508,9 +508,9 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         }
     }
     // Create descriptor set layout to be consistent across stages
-    Map<std::string, RHIDescriptorType> var_types(m_allocator);
-    Map<std::string, ResourceHandle> var_handles(m_allocator);
-    Map<std::string, ResourceHandle> var_samplers(m_allocator);
+    Map<String, RHIDescriptorType> var_types(m_allocator);
+    Map<String, ResourceHandle> var_handles(m_allocator);
+    Map<String, ResourceHandle> var_samplers(m_allocator);
     for (auto& [vhdl, dtype, binding] : tracked.tex_bindings) {
         auto it = var_types.find(binding);
         if (it == var_types.end())
@@ -551,7 +551,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         }
     }
     // [[set, binding], name]
-    Vector<Pair<Pair<uint32_t, uint32_t>, std::string>> bindings(m_allocator);
+    Vector<Pair<Pair<uint32_t, uint32_t>, String>> bindings(m_allocator);
     bindings.reserve(var_types.size());
     for (auto& [name, bind] : var_bind_points)
         bindings.emplace_back( bind, name );

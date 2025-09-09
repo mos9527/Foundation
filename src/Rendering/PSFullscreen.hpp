@@ -10,7 +10,7 @@ namespace Foundation::Rendering {
     template<typename FSetup, typename FRecord>
     inline auto* createPSFullscreenPass(
         Renderer* r,
-        std::string const& name,        
+        StringView name,        
         FSetup&& setup,
         FRecord&& record
     ) {
@@ -40,7 +40,7 @@ namespace Foundation::Rendering {
      */
     inline auto* createPSBackbufferBlitPass(
         Renderer* r,
-        std::string const& name,
+        StringView name,
         ResourceHandle copy_sampler,
         ResourceHandle copy_source
     ) {

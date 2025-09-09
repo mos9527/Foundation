@@ -31,7 +31,7 @@ namespace Foundation::RHI {
         Core::Vector<RHIDevice::DeviceDesc> m_devices;
         vk::raii::DebugUtilsMessengerEXT m_debug_handler{ nullptr };
     public:
-        const std::string m_name;
+        const String m_name;
 
         const vk::raii::Context m_context;
         const uint32_t m_vulkanApiVersion;
