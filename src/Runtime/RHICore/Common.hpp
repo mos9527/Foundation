@@ -171,6 +171,7 @@ namespace Foundation::RHI {
         EarlyFragmentTests      = 1 << 9,
         LateFragmentTests       = 1 << 10,
         // ---
+        AllGraphics             = 1 << 28,
         TopOfPipe               = 1 << 29,
         BottomOfPipe            = 1 << 30,
     BITMASK_ENUM_END();

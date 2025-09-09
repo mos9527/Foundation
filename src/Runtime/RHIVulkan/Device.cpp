@@ -485,6 +485,7 @@ void VulkanDeviceQueue::Submit(SubmitDesc const& desc) const {
     cmds.reserve(desc.cmd_lists.size()), swaits.reserve(desc.waits.size()), ssignals.reserve(desc.signals.size());
     for (auto const& cmd_list : desc.cmd_lists)
         cmds.emplace_back(static_cast<VulkanCommandList*>(cmd_list)->GetVkCommandBuffer());
+
     for (auto const& [wait, val] : desc.timeline_waits) {
         CHECK(wait->m_is_timeline && "Submit() timeline_signals must be Timeline semaphores");
         swaits.emplace_back(static_cast<VulkanDeviceSemaphore*>(wait)->GetVkSemaphore());
@@ -498,16 +499,27 @@ void VulkanDeviceQueue::Submit(SubmitDesc const& desc) const {
     for (auto const& wait : desc.waits) {
         CHECK(!wait->m_is_timeline && "Submit() waits must be Binary semaphores");
         swaits.emplace_back(static_cast<VulkanDeviceSemaphore*>(wait)->GetVkSemaphore());
+        // https://registry.khronos.org/vulkan/specs/latest/man/html/VkTimelineSemaphoreSubmitInfo.html#_description
+        // Driver should ignore these
+        wait_values.emplace_back(0);
     }
     for (auto const& signal : desc.signals) {
         CHECK(!signal->m_is_timeline && "Submit() signals must be Binary semaphores");
         ssignals.emplace_back(static_cast<VulkanDeviceSemaphore*>(signal)->GetVkSemaphore());
+        signal_values.emplace_back(0);
     }
-    vk::PipelineStageFlags mask = vkPipelineStageFlagsFromRHIPipelineStage(desc.stages);
+    CHECK_MSG(
+        desc.waits_stages.size() == swaits.size(),
+        "Number of wait stages ({}) must match number of wait semaphores ({})",
+        desc.waits_stages.size(), swaits.size());
+    Vector<vk::PipelineStageFlags> stages(alloc.Ptr());
+    stages.reserve(desc.waits_stages.size());
+    for (auto stage : desc.waits_stages)
+        stages.emplace_back(vkPipelineStageFlagsFromRHIPipelineStage(stage));
     vk::SubmitInfo info{
         .waitSemaphoreCount = static_cast<uint32_t>(swaits.size()),
         .pWaitSemaphores = swaits.data(),
-        .pWaitDstStageMask = &mask,
+        .pWaitDstStageMask = stages.data(),
         .commandBufferCount = static_cast<uint32_t>(cmds.size()),
         .pCommandBuffers = cmds.data(),
         .signalSemaphoreCount = static_cast<uint32_t>(ssignals.size()),

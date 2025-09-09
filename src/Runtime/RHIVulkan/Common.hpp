@@ -89,6 +89,7 @@ namespace Foundation::RHI {
         if (stage & LateFragmentTests) flags |= vk::PipelineStageFlagBits::eLateFragmentTests;
         if (stage & TopOfPipe) flags |= vk::PipelineStageFlagBits::eTopOfPipe;
         if (stage & BottomOfPipe) flags |= vk::PipelineStageFlagBits::eBottomOfPipe;
+        if (stage & AllGraphics) flags |= vk::PipelineStageFlagBits::eAllGraphics;
         return flags;
     }
 
@@ -107,6 +108,7 @@ namespace Foundation::RHI {
         if (stage & LateFragmentTests) flags |= vk::PipelineStageFlagBits2::eLateFragmentTests;
         if (stage & TopOfPipe) flags |= vk::PipelineStageFlagBits2::eTopOfPipe;
         if (stage & BottomOfPipe) flags |= vk::PipelineStageFlagBits2::eBottomOfPipe;
+        if (stage & AllGraphics) flags |= vk::PipelineStageFlagBits2::eAllGraphics;
         return flags;
     }
 

@@ -164,22 +164,6 @@ void Renderer::BindPushConstant(
             throw std::runtime_error("Some previous shader stage(s) already has Push Constants ranges");
     m_setup->trackedPasses[pass].push_constants.emplace_back(stage, offset, size);
 }
-RHIPipelineStage getResourceBindStages(TrackedPass& pass)
-{
-    RHIPipelineStage stages{};
-    switch (pass.queue)
-    {
-    case RHIDeviceQueueType::Graphics:
-        stages = kAllPipelineShaderStages;
-        break;
-    case RHIDeviceQueueType::Compute:
-        stages = RHIPipelineStageBits::ComputeShader;
-        break;
-    default:
-        CHECK_MSG(false, "Unsupported queue");
-    }
-    return stages;
-}
 void Renderer::BindBufferUniform(
     PassHandle pass, ResourceHandle buffer,
     StringView bind_point
@@ -187,7 +171,7 @@ void Renderer::BindBufferUniform(
 {
     CHECK(m_state == State::Setup);
     DeclareBufferAccess(pass, buffer,
-        getResourceBindStages(m_setup->trackedPasses[pass]),
+        m_setup->trackedPasses[pass].GetStages(),
         RHIResourceAccessBits::UniformRead
     );
     m_setup->trackedPasses[pass].buf_bindings.emplace_back(buffer, RHIDescriptorType::UniformBuffer, bind_point);
@@ -200,7 +184,7 @@ void Renderer::BindBufferStorage(
 {
     CHECK(m_state == State::Setup);
     DeclareBufferAccess(pass, buffer,
-    getResourceBindStages(m_setup->trackedPasses[pass]),
+        m_setup->trackedPasses[pass].GetStages(),
         RHIResourceAccessBits::ShaderRead
     );
     m_setup->trackedPasses[pass].buf_bindings.emplace_back(buffer, RHIDescriptorType::StorageBuffer, bind_point);
@@ -213,7 +197,7 @@ void Renderer::BindBufferUnordered(
 {
     CHECK(m_state == State::Setup);
     DeclareBufferAccess(pass, buffer,
-    getResourceBindStages(m_setup->trackedPasses[pass]),
+        m_setup->trackedPasses[pass].GetStages(),
         RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite
     );
     m_setup->trackedPasses[pass].buf_bindings.emplace_back(buffer, RHIDescriptorType::StorageBuffer, bind_point);
@@ -223,7 +207,7 @@ void Renderer::BindBufferShaderRead(PassHandle pass, ResourceHandle buffer) cons
 {
     CHECK(m_state == State::Setup);
     DeclareBufferAccess(pass, buffer,
-    getResourceBindStages(m_setup->trackedPasses[pass]),
+        m_setup->trackedPasses[pass].GetStages(),
         RHIResourceAccessBits::ShaderRead
     );
 }
@@ -260,7 +244,7 @@ ResourceHandle Renderer::BindTextureSRV(
 {
     CHECK(m_state == State::Setup);
     DeclareTextureAccess(pass, texture,
-        getResourceBindStages(m_setup->trackedPasses[pass]),
+        m_setup->trackedPasses[pass].GetStages(),
         desc.range,
         RHIResourceAccessBits::ShaderRead,
         RHITextureLayout::ShaderReadOnly
@@ -278,7 +262,7 @@ ResourceHandle Renderer::BindTextureUAV(
 {
     CHECK(m_state == State::Setup);
     DeclareTextureAccess(pass, texture,
-        getResourceBindStages(m_setup->trackedPasses[pass]),
+    m_setup->trackedPasses[pass].GetStages(),
         desc.range,
         RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
         RHITextureLayout::General
@@ -961,13 +945,24 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
     }
     cmd->EndTransition();
 }
-bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, const RHIDeviceQueue* queue, Span<const Pair<RHIDeviceSemaphore*, size_t>> extra_waits)
+bool Renderer::ExecuteSubmitOrContinue(
+    TrackedPass& pass, RHICommandList* cmd,
+    const RHIDeviceQueue* queue,
+    bool final_submit,
+    Span<const Pair<RHIDeviceSemaphore*, size_t>> extra_waits
+)
 {
     CHECK(m_state == State::Execute && m_executeAlloc);
-    if (m_desc.async) {
+    Vector<Pair<RHIDeviceSemaphore*, size_t>> waits(m_executeAlloc.Ptr()), signals(m_executeAlloc.Ptr());
+    waits.insert(waits.end(), extra_waits.begin(), extra_waits.end());
+    if (pass.has_cross_queue_dependent)
+        signals.emplace_back(pass.asyncSemaphore.Get(), SEM_COUNTER(pass.ord));
+    Vector<RHIPipelineStage> waits_stages(m_executeAlloc.Ptr());
+    // Collect waited semaphores from inter-queue dependencies
+    if (m_desc.async)
+    {
         // Pass that depends on a producer pass that's on another queue
         // needs external synchronization.
-        Vector<Pair<RHIDeviceSemaphore*, size_t>> waits(m_executeAlloc.Ptr());
         auto check_wait = [&](PassHandle other) {
             if (other != kInvalidHandle) {
                 auto& opass = m_setup->trackedPasses[other];
@@ -998,39 +993,73 @@ bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, c
             if (access & kAllShaderWrites)
                 res.lastBufferState.producer = pass.handle;
         }
-        // Submit
-        // If we'd need any kind of cross queue syncs, this must be ended and submitted now.
-        waits.insert(waits.end(), extra_waits.begin(), extra_waits.end());
-        if (!waits.empty() || pass.has_cross_queue_dependent) {
-            if (pass.has_cross_queue_dependent)
-            {
-                cmd->DebugInsertMarker("<Async Compute: Sync Source>");
-                cmd->End();
-                queue->Submit({
-                    .timeline_waits = waits,
-                    .timeline_signals = {{{ pass.asyncSemaphore.Get(), SEM_COUNTER(pass.ord) }}},
-                    .cmd_lists = { cmd },
-                });
-            } else
-            {
-                cmd->DebugInsertMarker("<Async Compute: Sync Destination>");
-                cmd->End();
-                queue->Submit({
-                    .timeline_waits = waits,
-                    .cmd_lists = { cmd },
-                });
-            }
-            return true;
-        }
-        else {
-            // Otherwise continue recording on the same command list
-            return false;
-        }
     }
-    else {
-        // Without async compute.
-        // One large command list would be enough and in fact optimal.
-        return false;
+    auto fill_wait_stages = [&](uint32_t count)
+    {
+        RHIPipelineStageBits stage = pass.GetStages();
+        waits_stages.reserve(count + 1), waits_stages.resize(count);
+        std::ranges::fill(waits_stages, stage);
+    };
+    // Submit or continue on the same list
+    if (final_submit)
+    {
+        // Always submit the last one, and present if needed
+        if (m_desc.present)
+        {
+            CHECK_MSG(queue == m_gfxQueue, "Last pass must be on the Graphics queue to present!");
+            cmd->BeginTransition();
+            ExecuteBarrierSubresource(
+                m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle],
+                {},
+                {},
+                RHIPipelineStageBits::BottomOfPipe,
+                RHITextureLayout::Present,
+                cmd
+            );
+            cmd->EndTransition();
+            cmd->End();
+            fill_wait_stages(waits.size());
+            waits_stages.push_back(RHIPipelineStageBits::ColorAttachmentOutput);
+            queue->Submit({
+                .timeline_waits = waits,
+                .timeline_signals = signals,
+                .waits = {{ m_swaps[m_currentSync].present.Get() }},
+                .waits_stages = waits_stages,
+                .signals = {{ m_swaps[m_currentSwap].render.Get() }},
+                .cmd_lists = {{ cmd }},
+                .fence = m_swaps[m_currentSync].fence.Get()
+            });
+            queue->Present({
+                .image_index = m_currentSwap,
+                .swapchain = m_swapchain.Get(),
+                .waits = {{ m_swaps[m_currentSwap].render.Get() }}
+            });
+        } else
+        {
+            cmd->End();
+            fill_wait_stages(waits.size());
+            queue->Submit({
+                .timeline_waits = waits,
+                .timeline_signals = signals,
+                .waits_stages = waits_stages,
+                .cmd_lists = { cmd },
+            });
+        }
+        return true;
+    } else
+    {
+        if (!m_desc.async) return false; // Continue
+        if (waits.empty() && signals.empty()) return false; // Continue
+        // Otherwise submit now for subsequent passes to wait on
+        cmd->End();
+        fill_wait_stages(waits.size());
+        queue->Submit({
+            .timeline_waits = waits,
+            .timeline_signals = signals,
+            .waits_stages = waits_stages,
+            .cmd_lists = { cmd },
+        });
+        return true;
     }
 }
 /**
@@ -1082,25 +1111,27 @@ void Renderer::Execute() {
     size_t pass_cnt = execution.size();
     if (!execution.empty())
         set_next_pass_queue(passes[*execution.begin()]);
+    Vector<Pair<RHIDeviceSemaphore*, size_t>> extra_wait(m_executeAlloc.Ptr());
     for (auto i = 0; i < pass_cnt; ++i) {
         auto& pass = passes[execution[i]];
-        Optional<Pair<RHIDeviceSemaphore*, size_t>> barrier_extra_wait{};
         if (pass.queue == RHIDeviceQueueType::Compute) {
-            // We can't stay on compute to transition if the pass uses resources
-            // that has these flags
+            // XXX: Suboptimal. We can't stay on compute to transition if the pass
+            // uses resources that has these flags.
+            using enum RHIPipelineStageBits;
             const RHIPipelineStage computeMask =
-                RHIPipelineStageBits::FragmentShader |
-                RHIPipelineStageBits::VertexShader |
-                RHIPipelineStageBits::MeshShader |
-                RHIPipelineStageBits::RayTracingShader;
+                FragmentShader |
+                VertexShader |
+                MeshShader |
+                RayTracingShader |
+                AllGraphics;
             if (auto stages = ExecuteGetPassAllCurrentStages(pass); stages & computeMask) {
                 set_next_graphics();
                 cmd->DebugInsertMarker("<Sync with Graphics Resources>");
                 ExecuteBarriers(pass, cmd);
                 cmd->End();
-                barrier_extra_wait.emplace(m_swaps[m_currentSync].barrier_semaphore_at(cmd_index - 1, m_device.Get()), SEM_COUNTER(cmd_index - 1));
+                extra_wait.emplace_back(m_swaps[m_currentSync].barrier_semaphore_at(cmd_index - 1, m_device.Get()), SEM_COUNTER(cmd_index - 1));
                 queue->Submit({
-                    .timeline_signals = { barrier_extra_wait.value() },
+                    .timeline_signals = { extra_wait.back() },
                     .cmd_lists = { cmd },
                 });
                 cmd_comp_index--;
@@ -1116,56 +1147,15 @@ void Renderer::Execute() {
         pass.pass->Record(pass.handle, this, cmd);
         cmd->DebugEnd();
         // Submit if needed
-        bool submitted = false;
-        if (barrier_extra_wait.has_value()) {
-            submitted = ExecuteSubmitOrContinue(pass, cmd, queue, { barrier_extra_wait.value() });
-            barrier_extra_wait.reset();
-        }
-        else {
-            submitted = ExecuteSubmitOrContinue(pass, cmd, queue);
-        }
-        if (submitted)
+        bool final_submit = i == pass_cnt - 1;
+        bool submitted = ExecuteSubmitOrContinue(pass, cmd, queue, final_submit, extra_wait);
+        if (!extra_wait.empty())
         {
-            if (i + 1 < pass_cnt) set_next_pass_queue(passes[execution[i + 1]]);
-            else
-            {
-                if (m_desc.present)
-                    set_next_graphics();
-            }
+            CHECK_MSG(submitted, "FIXME-Async Compute: Extra wait not consumed");
+            extra_wait.clear();
         }
-
-    }
-    if (m_desc.present)
-    {
-        CHECK_MSG(queue == m_gfxQueue, "FIXME: Present - Last pass ran in a non-graphics queue!!");
-        cmd->BeginTransition();
-        ExecuteBarrierSubresource(
-            m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle],
-            {},
-            {},
-            RHIPipelineStageBits::BottomOfPipe,
-            RHITextureLayout::Present,
-            cmd
-        );
-        cmd->EndTransition();
-        cmd->End();
-        queue->Submit({
-            .waits = {{ m_swaps[m_currentSync].present.Get() }},
-            .signals = {{ m_swaps[m_currentSwap].render.Get() }},
-            .cmd_lists = {{ cmd }},
-            .fence = m_swaps[m_currentSync].fence.Get()
-        });
-        queue->Present({
-            .image_index = m_currentSwap,
-            .swapchain = m_swapchain.Get(),
-            .waits = {{ m_swaps[m_currentSwap].render.Get() }}
-        });
-    } else {
-        queue->Submit({
-            .signals = {{ m_swaps[m_currentSync].render.Get() }},
-            .cmd_lists = {{ cmd }},
-            .fence = m_swaps[m_currentSync].fence.Get()
-        });
+        if (submitted && !final_submit)
+            set_next_pass_queue(passes[execution[i + 1]]);
     }
     m_currentSync = (m_currentSync + 1) % m_frameSwaps;
     m_frame++;

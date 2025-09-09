@@ -18,9 +18,6 @@ namespace Foundation::Rendering {
     using namespace Foundation::Core;
     constexpr PassHandle kRendererMaxPasses = 1024; // Maximum number of render passes
     constexpr size_t kMaxCommandListsPerSwap = 128;  // Maximum number of concurrent command buffers per swap
-    const RHIPipelineStageBits kAllPipelineShaderStages =
-        RHIPipelineStageBits::FragmentShader |        
-        RHIPipelineStageBits::VertexShader;
     const RHIResourceAccessBits kAllShaderWrites =
         RHIResourceAccessBits::ShaderWrite |
         RHIResourceAccessBits::RenderTargetWrite |
@@ -195,6 +192,14 @@ namespace Foundation::Rendering {
         Vector<RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout>> desc_layouts;
         Vector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> desc_sets;
         Vector<RHIDeviceDescriptorSet*> p_desc_sets;
+        // All pipeline stages used in this pass
+        RHIPipelineStage GetStages() const
+        {
+            if (queue == RHIDeviceQueueType::Graphics)
+                return RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader;
+            else
+                return RHIPipelineStageBits::ComputeShader;
+        }
     };
     struct RendererDesc {
         // Enable async compute
@@ -347,7 +352,12 @@ namespace Foundation::Rendering {
         void ExecuteBarrierSubresource(TrackedResource& res, RHITextureSubresourceRange const& range, RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd);
         void ExecuteBarrierBuffer(TrackedResource& res, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd);
         void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
-        bool ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, const RHIDeviceQueue* queue, Span<const Pair<RHIDeviceSemaphore*, size_t>> extra_waits = {});
+        bool ExecuteSubmitOrContinue(
+            TrackedPass& pass, RHICommandList* cmd,
+            const RHIDeviceQueue* queue,
+            bool final_submit = false,
+            Span<const Pair<RHIDeviceSemaphore*, size_t>> extra_waits = {}
+        );
 
         void SetFrameSyncObjects();
     public:
