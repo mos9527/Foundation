@@ -8,16 +8,16 @@ namespace Foundation::RHI {
     class VulkanCommandList;
     class VulkanCommandPool : public RHICommandPool {
     protected:
-        Core::Allocator* m_allocator;
+        Allocator* m_allocator;
         const VulkanDevice& m_device;
         vk::raii::CommandPool m_commandPool{ nullptr };
         RHIObjectStorage<> m_storage;
         constexpr static size_t kCommandListReserveSize = 256;
     public:
-        VulkanCommandPool(const VulkanDevice& device, PoolDesc const& desc, Core::Allocator* allocator);
+        VulkanCommandPool(const VulkanDevice& device, PoolDesc const& desc, Allocator* allocator);
 
-        inline auto const& GetDevice() const { return m_device; }
-        inline auto const& GetVkCommandPool() const { return m_commandPool; }
+        auto const& GetDevice() const { return m_device; }
+        auto const& GetVkCommandPool() const { return m_commandPool; }
 
         RHICommandPoolScopedHandle<RHICommandList> CreateCommandList() override;
         RHICommandList* GetCommandList(Handle handle) const override;
@@ -30,21 +30,21 @@ namespace Foundation::RHI {
         const VulkanCommandPool& m_commandPool;
         vk::raii::CommandBuffer m_commandBuffer{ nullptr };
         struct Barriers {
-            Core::Vector<vk::ImageMemoryBarrier2> image;
-            Core::Vector<vk::BufferMemoryBarrier2> buffer;
-            Barriers(Core::Allocator* allocator) : image(allocator), buffer(allocator) {};
+            Vector<vk::ImageMemoryBarrier2> image;
+            Vector<vk::BufferMemoryBarrier2> buffer;
+            Barriers(Allocator* allocator) : image(allocator), buffer(allocator) {};
         };
-        Core::UniquePtr<Barriers> m_barriers;
+        UniquePtr<Barriers> m_barriers;
 
-        Core::ScopedArena m_arena;
+        ScopedArena m_arena;
         // Stack allocator for temporary allocations during command list execution
         // Only valid within Begin(), End() clause               
-        Core::StackAllocatorSingleThreaded m_allocator;
+        StackAllocatorSingleThreaded m_allocator;
         constexpr static size_t kArenaSize = 2LL * (1LL << 20); // 2 MB
     public:
         VulkanCommandList(const VulkanCommandPool& commandPool);
 
-        inline auto const& GetVkCommandBuffer() const { return m_commandBuffer; }
+        auto const& GetVkCommandBuffer() const { return m_commandBuffer; }
 
         RHICommandList& Begin() override;
 
@@ -57,7 +57,7 @@ namespace Foundation::RHI {
         RHICommandList& BindDescriptorSet(
             RHIDevicePipelineType bindpoint,
             RHIPipelineState* pipeline,
-            Core::Span<RHIDeviceDescriptorSet* const> sets,
+            Span<RHIDeviceDescriptorSet* const> sets,
             size_t first) override;
         RHICommandList& SetViewport(float x, float y, float width, float height, float depth_min = 0.0, float depth_max = 1.0) override;
         RHICommandList& SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override;

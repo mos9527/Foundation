@@ -5,7 +5,6 @@
 #include <fstream>
 
 #include <Math/Math.hpp>
-#include <Core/Allocator/StackAllocator.hpp>
 #include <RHICore/Device.hpp>
 
 #include "Renderer.hpp"
@@ -16,12 +15,17 @@ using namespace Foundation::Core;
 using namespace Foundation::Rendering;
 // Semaphore counter
 #define SEM_COUNTER(ord) (m_frame + ord + 1LL)
-const char* kShaderDescriptorFirstBindingErrorHelp = "This is usually caused by multiple entrypoints in a single "
-"shader unit, where one entrypoint uses a descriptor that another entrypoint does not. You may remedy this by splitting "
-"the entrypoints into separate shader units, or by ensuring that all entrypoints use the same set of descriptors.";
+const char* kShaderDescriptorFirstBindingErrorHelp = "This can be caused by one of the following:\n"
+"   - Parameter is optimized-out, and the binding is kept as is.\n"
+"   - Multiple entrypoints in the same shader, but they don't access the same parameters.\n"
+"Tips:\n"
+"   Try separating the entrypoints into different shader files, or sort the binding declarations"
+"so that the used bindings are continuous from 0.";
 const char* kShaderDescriptorFirstSetErrorHelp = kShaderDescriptorFirstBindingErrorHelp;
-Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Core::Allocator* allocator)
-    : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_device(device) {
+constexpr size_t kExecuteArenaSize = 16 * (1 << 20); // 16 MiB for render graph execution
+Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator)
+    : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_device(device),
+      m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena) {
     m_gfxQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
     m_compQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Compute);
     m_cmdPool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
@@ -72,7 +76,7 @@ void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPi
     CHECK(m_state == State::Setup);
     auto& resource = m_setup->trackedResources[handle];
     // Check for overlap
-    for (auto& [h, _access, _stage] : m_setup->trackedPasses[pass].bufferUsages)
+    for (auto const& [h, _access, _stage] : m_setup->trackedPasses[pass].bufferUsages)
         if (h == handle)
             throw std::runtime_error("Overlap detected. Buffer access must be global.");
     // Add edge
@@ -136,7 +140,7 @@ void Renderer::BindShader(
 {
     CHECK(m_state == State::Setup);
     CHECK_MSG(stage.is_bitmask(), "Only one stage can be bound to a shader per pass");
-    for (auto& [_, ep, st] : m_setup->trackedPasses[pass].shaders)
+    for (auto const& [path, ep, st] : m_setup->trackedPasses[pass].shaders)
         if (st & stage)
             throw std::runtime_error("Some previous shader stage(s) already bound to a shader");
     m_setup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage);
@@ -159,7 +163,23 @@ void Renderer::BindPushConstant(
         if (s & stage)
             throw std::runtime_error("Some previous shader stage(s) already has Push Constants ranges");
     m_setup->trackedPasses[pass].push_constants.emplace_back(stage, offset, size);
-}     
+}
+RHIPipelineStage getResourceBindStages(TrackedPass& pass)
+{
+    RHIPipelineStage stages{};
+    switch (pass.queue)
+    {
+    case RHIDeviceQueueType::Graphics:
+        stages = kAllPipelineShaderStages;
+        break;
+    case RHIDeviceQueueType::Compute:
+        stages = RHIPipelineStageBits::ComputeShader;
+        break;
+    default:
+        CHECK_MSG(false, "Unsupported queue");
+    }
+    return stages;
+}
 void Renderer::BindBufferUniform(
     PassHandle pass, ResourceHandle buffer,
     StringView bind_point
@@ -167,7 +187,7 @@ void Renderer::BindBufferUniform(
 {
     CHECK(m_state == State::Setup);
     DeclareBufferAccess(pass, buffer,
-        kAllPipelineShaderStages,
+        getResourceBindStages(m_setup->trackedPasses[pass]),
         RHIResourceAccessBits::UniformRead
     );
     m_setup->trackedPasses[pass].buf_bindings.emplace_back(buffer, RHIDescriptorType::UniformBuffer, bind_point);
@@ -180,7 +200,7 @@ void Renderer::BindBufferStorage(
 {
     CHECK(m_state == State::Setup);
     DeclareBufferAccess(pass, buffer,
-        kAllPipelineShaderStages,
+    getResourceBindStages(m_setup->trackedPasses[pass]),
         RHIResourceAccessBits::ShaderRead
     );
     m_setup->trackedPasses[pass].buf_bindings.emplace_back(buffer, RHIDescriptorType::StorageBuffer, bind_point);
@@ -193,7 +213,7 @@ void Renderer::BindBufferUnordered(
 {
     CHECK(m_state == State::Setup);
     DeclareBufferAccess(pass, buffer,
-        kAllPipelineShaderStages,
+    getResourceBindStages(m_setup->trackedPasses[pass]),
         RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite
     );
     m_setup->trackedPasses[pass].buf_bindings.emplace_back(buffer, RHIDescriptorType::StorageBuffer, bind_point);
@@ -203,7 +223,7 @@ void Renderer::BindBufferShaderRead(PassHandle pass, ResourceHandle buffer) cons
 {
     CHECK(m_state == State::Setup);
     DeclareBufferAccess(pass, buffer,
-        kAllPipelineShaderStages,
+    getResourceBindStages(m_setup->trackedPasses[pass]),
         RHIResourceAccessBits::ShaderRead
     );
 }
@@ -239,20 +259,8 @@ ResourceHandle Renderer::BindTextureSRV(
 ) const
 {
     CHECK(m_state == State::Setup);
-    RHIPipelineStage stages{};
-    switch (m_setup->trackedPasses[pass].queue)
-    {
-    case RHIDeviceQueueType::Graphics:
-        stages = kAllPipelineShaderStages;
-        break;
-    case RHIDeviceQueueType::Compute:
-        stages = RHIPipelineStageBits::ComputeShader;
-        break;
-    default:
-        CHECK_MSG(false, "Unsupported queue");
-    }
     DeclareTextureAccess(pass, texture,
-        stages,
+        getResourceBindStages(m_setup->trackedPasses[pass]),
         desc.range,
         RHIResourceAccessBits::ShaderRead,
         RHITextureLayout::ShaderReadOnly
@@ -269,20 +277,8 @@ ResourceHandle Renderer::BindTextureUAV(
 ) const
 {
     CHECK(m_state == State::Setup);
-    RHIPipelineStage stages{};
-    switch (m_setup->trackedPasses[pass].queue)
-    {
-    case RHIDeviceQueueType::Graphics:
-        stages = kAllPipelineShaderStages;
-        break;
-    case RHIDeviceQueueType::Compute:
-        stages = RHIPipelineStageBits::ComputeShader;
-        break;
-    default:
-        CHECK_MSG(false, "Unsupported queue");
-    }
     DeclareTextureAccess(pass, texture,
-        stages,
+        getResourceBindStages(m_setup->trackedPasses[pass]),
         desc.range,
         RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
         RHITextureLayout::General
@@ -411,8 +407,10 @@ void Renderer::CullPasses(PassHandle epilogue) const
         m_setup->trackedPasses[epilogue].used = true;
     }
     m_setup->epilogue = epilogue;
-    for (PassHandle ord = 0; ord < m_setup->execution.size(); ord++) {
-        auto& pass = m_setup->trackedPasses[m_setup->execution[ord]];
+    // Collect active resources
+    auto& exec = m_setup->execution;
+    for (PassHandle ord = 0; ord < exec.size(); ord++) {
+        auto& pass = m_setup->trackedPasses[exec[ord]];
         // Derive lifetimes for resources from execution order
         // FinalizeResources() uses this to overlap resources.
         pass.ord = ord, pass.depth = depth[pass.handle];
@@ -429,6 +427,15 @@ void Renderer::CullPasses(PassHandle epilogue) const
                 t_max = std::max(t_max, ord);
             }
         }
+    }
+    // Reorder passes within the same depth level to their relative insertion order (i.e. handle values)
+    // Topo order is preserved
+    for (PassHandle i = 0, j = 0; i < exec.size();i = j) {
+        while (j < exec.size() && m_setup->trackedPasses[exec[j]].depth == m_setup->trackedPasses[exec[i]].depth)
+            j++;
+        std::ranges::sort(exec.begin() + i, exec.begin() + j, [&](PassHandle a, PassHandle b) {
+            return m_setup->trackedPasses[a].handle < m_setup->trackedPasses[b].handle;
+        });
     }
     LOG_RUNTIME(Renderer, debug, "** Render Graph GraphViz **\n{}", DbgDumpGraphviz());
     LOG_RUNTIME(Renderer, debug, "** Render Graph Execution Order **\n{}", DbgDumpActivePasses());
@@ -604,11 +611,11 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         // Update bindings
         LOG_RUNTIME(Renderer, debug, "Descriptor Set {} Bindings", set);
         for (size_t k = i; k < j; k++) {
-            auto& [bind, name] = bindings[k];
-            auto& [_, binding] = bind;
-            auto& hdl = var_handles[name];
+            auto const& [bind, name] = bindings[k];
+            auto const& [set, binding] = bind;
+            auto const& hdl = var_handles[name];
             CHECK_MSG(var_types.contains(name), "Binding {} is undefined in pass {}, but referenced by one of its shaders", name, tracked.name);
-            auto& type = var_types[name];
+            auto const& type = var_types[name];
             using enum RHIDescriptorType;
             switch (type)
             {
@@ -815,10 +822,11 @@ void Renderer::FinalizeResources() {
             sta.reset();
     }
 }
-RHIPipelineStage Renderer::ExecuteGetPassAllCurrentStages(TrackedPass& pass) const
+RHIPipelineStage Renderer::ExecuteGetPassAllCurrentStages(TrackedPass& pass)
 {
     RHIPipelineStage ans{};
-    for (auto [hdl, access, stage, range, layout] : pass.textureUsages) {
+    for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
+    {
         auto& tres = m_setup->trackedResources[hdl];
         for (auto& sta : tres.GetLastSubresourceStateOf(range))
             ans |= sta.stage;
@@ -829,7 +837,7 @@ RHIPipelineStage Renderer::ExecuteGetPassAllCurrentStages(TrackedPass& pass) con
         ans |= stage;
     return ans;
 }
-void Renderer::ExecuteBarrierSubresource(TrackedResource& tres, RHITextureSubresourceRange const& range,RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd) const
+void Renderer::ExecuteBarrierSubresource(TrackedResource& tres, RHITextureSubresourceRange const& range,RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd)
 {
     RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
     for (auto& sta : tres.GetLastSubresourceStateOf(range)) {
@@ -852,9 +860,9 @@ void Renderer::ExecuteBarrierSubresource(TrackedResource& tres, RHITextureSubres
         sta.layout = layout;
     }
 }
-void Renderer::ExecuteBarrierBuffer(TrackedResource& tres, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd) const
+void Renderer::ExecuteBarrierBuffer(TrackedResource& tres, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd)
 {
-    auto& res = DerefResource(tres.handle).Get<RHIBuffer*>();
+    RHIBuffer* res = DerefResource(tres.handle).Get<RHIBuffer*>();
     if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage)
         return;
     cmd->SetBufferTransition(
@@ -869,7 +877,7 @@ void Renderer::ExecuteBarrierBuffer(TrackedResource& tres, RHIResourceAccess acc
     tres.lastBufferState.access = access;
     tres.lastBufferState.stage = stage;
 }
-void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) const
+void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
 {
     CHECK(m_state == State::Execute);
     // At this point the pass execution order has been determined
@@ -907,14 +915,13 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) const
     }
     cmd->EndTransition();
 }
-bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, const RHIDeviceQueue* queue, Span<const Pair<RHIDeviceSemaphore*, size_t>> extra_waits) const
+bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, const RHIDeviceQueue* queue, Span<const Pair<RHIDeviceSemaphore*, size_t>> extra_waits)
 {
-    CHECK(m_state == State::Execute);
+    CHECK(m_state == State::Execute && m_executeAlloc);
     if (m_desc.async) {
-        Core::StackArena<> arena{}; Core::StackAllocatorSingleThreaded alloc(arena);
         // Pass that depends on a producer pass that's on another queue
         // needs external synchronization.    
-        Core::Vector<Pair<RHIDeviceSemaphore*, size_t>> waits(&alloc);
+        Vector<Pair<RHIDeviceSemaphore*, size_t>> waits(m_executeAlloc.Ptr());
         auto check_wait = [&](PassHandle other) {
             if (other != kInvalidHandle) {
                 auto& opass = m_setup->trackedPasses[other];
@@ -949,18 +956,24 @@ bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, c
         // If we'd need any kind of cross queue syncs, this must be ended and submitted now.
         waits.insert(waits.end(), extra_waits.begin(), extra_waits.end());
         if (!waits.empty() || pass.has_cross_queue_dependent) {
-            cmd->End();
             if (pass.has_cross_queue_dependent)
+            {
+                cmd->DebugInsertMarker("<Async Compute: Sync Source>");
+                cmd->End();
                 queue->Submit({
                     .timeline_waits = waits,
                     .timeline_signals = {{{ pass.asyncSemaphore.Get(), SEM_COUNTER(pass.ord) }}},
                     .cmd_lists = { cmd },
                 });
-            else
+            } else
+            {
+                cmd->DebugInsertMarker("<Async Compute: Sync Destination>");
+                cmd->End();
                 queue->Submit({
                     .timeline_waits = waits,
                     .cmd_lists = { cmd },
                 });
+            }
             return true;
         }
         else {
@@ -1028,8 +1041,8 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
  * done on the stack e.g. command list recording, runtime (IsSkipped()) pass culling.
  */
 void Renderer::Execute() {
-    StackArena<> arena; StackAllocatorSingleThreaded alloc(arena);
     CHECK_MSG(m_state == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup()?", m_state);
+    m_executeAlloc.Reset(m_executeArena);
     m_state = State::Execute;
     // Execute passes
     auto& passes = m_setup->trackedPasses;
@@ -1037,16 +1050,19 @@ void Renderer::Execute() {
     if (m_desc.present)
         m_currentSwap = m_swapchain->GetNextImage(-1, m_swaps[m_currentSync].present, {});
     m_device->ResetFences({ m_swaps[m_currentSync].fence });
+    // Async compute supporting command lists
     int cmd_index = 0, cmd_comp_index = 0;
     RHIDeviceQueue* queue = m_gfxQueue;
     RHICommandList* cmd = m_swaps[m_currentSync].cmd_at(cmd_index, m_cmdPool.Get());
     auto set_next_graphics = [&]() {
-        CHECK_MSG(cmd_index < kMaxCommandListsPerSwap, "Not enough graphics command lists allocated for async compute execution [graphics exhausted]");
+        CHECK_MSG(cmd_index < kMaxCommandListsPerSwap, "FIXME-Async Compute: All transient Graphics Command lists exhausted");
         queue = m_gfxQueue, cmd = m_swaps[m_currentSync].cmd_at(cmd_index++, m_cmdPool.Get());
+        cmd->Reset(), cmd->Begin();
     };
     auto set_next_compute = [&]() {
-        CHECK_MSG(cmd_comp_index < kMaxCommandListsPerSwap, "Not enough compute command lists allocated for async compute execution [compute exhausted]");
+        CHECK_MSG(cmd_comp_index < kMaxCommandListsPerSwap, "FIXME-Async Compute: All transient Compute Command lists exhausted");
         queue = m_compQueue, cmd = m_swaps[m_currentSync].comp_cmds_at(cmd_comp_index++, m_compCmdPool.Get());
+        cmd->Reset(), cmd->Begin();
     };
     auto set_next_pass_queue = [&](const TrackedPass& pass) {
         if (m_desc.async) {
@@ -1067,41 +1083,27 @@ void Renderer::Execute() {
             set_next_graphics();
         }
     };
-    auto add_queue_marker = [&]()
-    {
-        if (queue == m_gfxQueue)
-            cmd->DebugInsertMarker("Queue->Graphics");
-        else
-            cmd->DebugInsertMarker("Queue->Compute");
-    };
     // Take non-skipped passes only
     auto execution_view = std::views::all(m_setup->execution)
-        | std::views::filter([&](PassHandle hdl) { return passes[hdl].used; });
-    auto execution = Vector<PassHandle>(execution_view.begin(), execution_view.end(), alloc.Ptr());
-    if (!execution.empty()) {
-        set_next_pass_queue(passes[execution[0]]);
-        cmd->Reset();
-        cmd->Begin();
-        add_queue_marker();
-    }
-    for (size_t i = 0; i < execution.size(); i++) {
+        | std::views::filter([&](PassHandle hdl) { return !passes[hdl].pass->IsSkipped(hdl, this); });
+    auto execution = Vector<PassHandle>(execution_view.begin(), execution_view.end(), m_executeAlloc.Ptr());
+    size_t pass_cnt = execution.size();
+    if (!execution.empty())
+        set_next_pass_queue(passes[*execution.begin()]);
+    for (auto i = 0; i < pass_cnt; ++i) {
         auto& pass = passes[execution[i]];
-        // Check if we can transition away on Compute
-        // If not, Graphics must take over before we continue
         Optional<Pair<RHIDeviceSemaphore*, size_t>> barrier_extra_wait{};
         if (m_desc.async && pass.queue == RHIDeviceQueueType::Compute) {
+            // We can't stay on compute to transition if the pass uses resources
+            // that has these flags
             const RHIPipelineStage computeMask =
                 RHIPipelineStageBits::FragmentShader |
                 RHIPipelineStageBits::VertexShader |
                 RHIPipelineStageBits::MeshShader |
                 RHIPipelineStageBits::RayTracingShader;
-            RHIPipelineStage stages = ExecuteGetPassAllCurrentStages(pass);
-            if (stages & computeMask) {
+            if (auto stages = ExecuteGetPassAllCurrentStages(pass); stages & computeMask) {
                 set_next_graphics();
-                cmd->Reset();
-                cmd->Begin();
-                add_queue_marker();
-                cmd->DebugInsertMarker("Temp GFX Transition for Compute work");
+                cmd->DebugInsertMarker("<Sync with Graphics Resources>");
                 ExecuteBarriers(pass, cmd);
                 cmd->End();
                 barrier_extra_wait.emplace(m_swaps[m_currentSync].barrier_semaphore_at(cmd_index - 1, m_device.Get()), SEM_COUNTER(cmd_index - 1));
@@ -1131,26 +1133,27 @@ void Renderer::Execute() {
             submitted = ExecuteSubmitOrContinue(pass, cmd, queue);
         }
         if (submitted) {
-            if (i == execution.size() - 1)
+            if (i + 1 < pass_cnt)
             {
-                // Ending pass
-                // Only possible if we'd end up here with a pass
-                // that's only waiting on other queues
-                CHECK(!pass.has_cross_queue_dependent);
-                if (m_desc.present) {
-                    set_next_graphics();
-                    cmd->Reset();
-                    cmd->Begin();
-                    add_queue_marker();
-                }
-            }
-            else {
                 // Previous command list has already been consumed
-                // Start a new one for the next pass            
-                set_next_pass_queue(passes[m_setup->execution[i + 1]]);                
-                cmd->Reset();
-                cmd->Begin();
-                add_queue_marker();
+                // Start a new one for the next pass
+                if (i == pass_cnt - 2)
+                {
+                    // The next pass is the last one
+                    // If we present, it must be on graphics
+                    if (m_desc.present)
+                        set_next_graphics();
+                    else
+                        set_next_pass_queue(passes[execution[i + 1]]);
+                }
+                else set_next_pass_queue(passes[execution[i + 1]]);
+            } else
+            {
+                // Last pass, continue on the same queue
+                if (queue == m_gfxQueue)
+                    set_next_graphics();
+                else
+                    set_next_compute();
             }
         }
     }
@@ -1158,15 +1161,12 @@ void Renderer::Execute() {
     {
         if (queue != m_gfxQueue)
         {
+            cmd->End();
             queue->Submit({
                 .signals = {{ m_swaps[m_currentSync].render.Get() }},
                 .cmd_lists = {{ cmd }},
-                .fence = m_swaps[m_currentSync].fence.Get()
             });
             set_next_graphics();
-            cmd->Reset();
-            cmd->Begin();
-            add_queue_marker();
         }
         cmd->BeginTransition();
         ExecuteBarrierSubresource(
@@ -1225,8 +1225,7 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd,
     CHECK(m_state == State::Execute);
     auto& tpass = m_setup->trackedPasses[pass];
     CHECK_MSG(tpass.pso.IsValid(), "Current pass has no Pipeline state.");
-    StackArena<1024> arena{}; StackAllocatorSingleThreaded alloc(arena);
-    Vector<RHICommandList::GraphicsDesc::Attachment> rtvs(alloc.Ptr());
+    Vector<RHICommandList::GraphicsDesc::Attachment> rtvs(m_executeAlloc.Ptr());
     if (tpass.write_backbuffer) {
         const RHIExtent2D backbuffer = GetSwapchainExtent();
         CHECK_MSG(

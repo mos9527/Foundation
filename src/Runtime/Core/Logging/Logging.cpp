@@ -18,7 +18,7 @@ namespace Foundation::Core {
             g_LoggingSink = std::make_shared<spdlog::sinks::dist_sink_mt>();
             g_BacktraceSink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(kMaxBacktraceLogMessages);
             g_LoggingSink->add_sink(g_BacktraceSink);
-            g_LoggingSink->add_sink(std::make_shared<spdlog::sinks::stderr_color_sink_mt>());
+            g_LoggingSink->add_sink(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
 #if _WIN32
             g_LoggingSink->add_sink(std::make_shared<spdlog::sinks::msvc_sink_mt>());
 #endif

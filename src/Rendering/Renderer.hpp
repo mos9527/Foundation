@@ -1,5 +1,6 @@
 #pragma once
 #include <ranges>
+#include <utility>
 #include <filesystem>
 #include <RHICore/Application.hpp>
 #include <RHICore/Resource.hpp>
@@ -7,7 +8,7 @@
 #include <RHICore/Descriptor.hpp>
 #include <RHICore/PipelineState.hpp>
 #include <RHICore/Command.hpp>
-#include <utility>
+#include <Allocator/StackAllocator.hpp>
 #include "RenderPass.hpp"
 /**
  * @brief Everything GPU related, including the Frame Graph implementation.
@@ -279,6 +280,7 @@ namespace Foundation::Rendering {
             Map<RHIDescriptorType, uint32_t> binding_counts;
             PassHandle epilogue{ kInvalidHandle };
             void add_edge(const PassHandle u, const PassHandle v,  const ResourceHandle hdl) {
+                // ReSharper disable once CppDFALoopConditionNotUpdated
                 while (u >= graph.size()) graph.emplace_back(graph.get_allocator());
                 graph[u].emplace_back(v, hdl);
             }
@@ -336,18 +338,22 @@ namespace Foundation::Rendering {
         void FinalizeResources();
         void FinalizePSOs();
 
-        RHIPipelineStage ExecuteGetPassAllCurrentStages(TrackedPass& pass) const;
-        void ExecuteBarrierSubresource(TrackedResource& res, RHITextureSubresourceRange const& range, RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd) const;
-        void ExecuteBarrierBuffer(TrackedResource& res, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd) const;
-        void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) const;
-        bool ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, const RHIDeviceQueue* queue, Span<const Pair<RHIDeviceSemaphore*, size_t>> extra_waits = {}) const;
+        // Temporary memory arena for execution
+        ScopedArena m_executeArena;
+        // Temporary allocator for execution
+        // This is reset every frame, and only guaranteed to be valid during Execute state.
+        StackAllocatorSingleThreaded m_executeAlloc;
+        RHIPipelineStage ExecuteGetPassAllCurrentStages(TrackedPass& pass);
+        void ExecuteBarrierSubresource(TrackedResource& res, RHITextureSubresourceRange const& range, RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd);
+        void ExecuteBarrierBuffer(TrackedResource& res, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd);
+        void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
+        bool ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, const RHIDeviceQueue* queue, Span<const Pair<RHIDeviceSemaphore*, size_t>> extra_waits = {});
 
         void SetFrameSyncObjects();
     public:
 
 
         ~Renderer();
-        explicit Renderer(Allocator* allocator) : m_state(State::Undefined), m_allocator(allocator) {}
         Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain,  Allocator* allocator);
 
 #pragma region Render Graph Setup

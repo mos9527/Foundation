@@ -21,13 +21,25 @@ namespace Foundation {
 
         // std::get<T>
         template<typename T>
-        T& Get() {
+        constexpr T& Get() {
+            return std::get<T>(*this);
+        }
+
+        // std::get<T>
+        template<typename T>
+        constexpr const T& Get() const {
             return std::get<T>(*this);
         }
 
         // std::get_if<T>
         template<typename T>
-        T* GetIf() {
+        constexpr T* GetIf() {
+            return std::get_if<T>(this);
+        }
+
+        // std::get_if<T>
+        template<typename T>
+        constexpr const T* GetIf() const {
             return std::get_if<T>(this);
         }
     };
