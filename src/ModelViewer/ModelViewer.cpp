@@ -35,7 +35,7 @@ class ModelViewer : public RenderApplication {
         createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Compute,
             [=, this](PassHandle self, Renderer* r)
             {
-                r->BindShader(self, RHIShaderStageBits::Compute, "resetCounter", "data/shaders/MVIndirectCull.spv");
+                r->BindShader(self, RHIShaderStageBits::Compute, "resetCounter", "data/shaders/MVClearCounters.spv");
                 r->BindBufferUnordered(self, m_counter, "counter");
             },
             [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)

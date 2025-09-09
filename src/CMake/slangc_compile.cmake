@@ -30,7 +30,7 @@ function(slangc_compile TARGET)
             "${ARG_SOURCE}"
             -o "${OUTPUT_FILENAME}"
             -target spirv
-            -profile spirv_1_4
+            -profile spirv_1_5
             -emit-spirv-directly
             -matrix-layout-column-major
             -fvk-use-entrypoint-name

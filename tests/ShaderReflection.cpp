@@ -1,21 +1,21 @@
-#include <Core/Allocator/DefaultAllocator.hpp>
 #include <Rendering/ShaderReflection.hpp>
+#include <Core/Allocator/DefaultAllocator.hpp>
 #include <fstream>
 #include <iostream>
-using namespace Foundation;
-using namespace Foundation::Core;
 using namespace Foundation::Rendering;
-std::vector<char> ReadFile(std::string const& path) {
+
+DefaultAllocator g_alloc;
+Vector<char> ReadFile(std::string const& path) {
     std::ifstream file(path, std::ios::ate | std::ios::binary);
     CHECK(file.good());
-    std::vector<char> data;
+    Vector<char> data(g_alloc.Ptr());
     data.resize(file.tellg());
     file.seekg(0, std::ios::beg);
     file.read(data.data(), static_cast<std::streamsize>(data.size()));
     file.close();
     return data;
 }
-DefaultAllocator g_alloc;
+
 int main() {
     auto bytecode = ReadFile("data\\shaders\\Triangle_fragMain.spirv");
     ShaderReflection refl(bytecode, &g_alloc);

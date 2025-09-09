@@ -7,12 +7,6 @@ RWStructuredBuffer<Atomic<uint>> counter;
 RWStructuredBuffer<MeshDrawIndirectCmd> commands;
 
 [shader("compute")]
-[numthreads(1,1,1)]
-void resetCounter(){
-    counter[0].store(0);
-}
-
-[shader("compute")]
 [numthreads(32, 1, 1)]
 void indirectCullEarly(uint instanceID : SV_DispatchThreadID){
     InstanceMetadata instance = scInstance.Load(instanceID);
