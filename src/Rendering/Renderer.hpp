@@ -195,6 +195,9 @@ namespace Foundation::Rendering {
         Vector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> desc_sets;
         Vector<RHIDeviceDescriptorSet*> p_desc_sets;
         // ---
+        // Queue this pass will actually be run in
+        // Valid only under Execute state/Execute.. calls
+        RHIDeviceQueueType exec_queue;
     };
     struct RendererDesc {
         // Enable async compute

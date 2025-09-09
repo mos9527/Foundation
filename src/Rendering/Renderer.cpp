@@ -925,7 +925,7 @@ bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, c
         auto check_wait = [&](PassHandle other) {
             if (other != kInvalidHandle) {
                 auto& opass = m_setup->trackedPasses[other];
-                if (opass.queue != pass.queue) {
+                if (opass.exec_queue != pass.exec_queue) {
                     CHECK_MSG(opass.asyncSemaphore.IsValid(), "Pass {} [{}] is not valid to be waited on", opass.name, other);
                     // Wait on the producer pass's semaphore                       
                     waits.emplace_back(opass.asyncSemaphore.Get(), SEM_COUNTER(opass.ord));
@@ -1065,22 +1065,17 @@ void Renderer::Execute() {
         cmd->Reset(), cmd->Begin();
     };
     auto set_next_pass_queue = [&](const TrackedPass& pass) {
-        if (m_desc.async) {
-            switch (pass.queue)
-            {
-            case RHIDeviceQueueType::Graphics:
-                set_next_graphics();
-                break;
-            case RHIDeviceQueueType::Compute:
-                set_next_compute();
-                break;
-            default:
-                throw std::runtime_error("Unsupported queue type");
-                break;
-            }
-        }
-        else {
+        switch (pass.exec_queue)
+        {
+        case RHIDeviceQueueType::Graphics:
             set_next_graphics();
+            break;
+        case RHIDeviceQueueType::Compute:
+            set_next_compute();
+            break;
+        default:
+            throw std::runtime_error("Unsupported queue type");
+            break;
         }
     };
     // Take non-skipped passes only
@@ -1088,12 +1083,28 @@ void Renderer::Execute() {
         | std::views::filter([&](PassHandle hdl) { return !passes[hdl].pass->IsSkipped(hdl, this); });
     auto execution = Vector<PassHandle>(execution_view.begin(), execution_view.end(), m_executeAlloc.Ptr());
     size_t pass_cnt = execution.size();
+    // Assign executed queue types
+    for (auto i = 0; i < pass_cnt; ++i)
+    {
+        auto& pass = passes[execution[i]];
+        if (m_desc.async)
+            pass.exec_queue = pass.queue;
+        else
+            pass.exec_queue = RHIDeviceQueueType::Graphics;
+    }
     if (!execution.empty())
+    {
+        // Last command list always executes on Graphics
+        // if we need to present
+        if (m_desc.present)
+            passes[execution.back()].exec_queue = RHIDeviceQueueType::Graphics;
+        // Begin first command list
         set_next_pass_queue(passes[*execution.begin()]);
+    }
     for (auto i = 0; i < pass_cnt; ++i) {
         auto& pass = passes[execution[i]];
         Optional<Pair<RHIDeviceSemaphore*, size_t>> barrier_extra_wait{};
-        if (m_desc.async && pass.queue == RHIDeviceQueueType::Compute) {
+        if (pass.exec_queue == RHIDeviceQueueType::Compute) {
             // We can't stay on compute to transition if the pass uses resources
             // that has these flags
             const RHIPipelineStage computeMask =
@@ -1132,42 +1143,20 @@ void Renderer::Execute() {
         else {
             submitted = ExecuteSubmitOrContinue(pass, cmd, queue);
         }
-        if (submitted) {
-            if (i + 1 < pass_cnt)
+        if (submitted)
+        {
+            if (i + 1 < pass_cnt) set_next_pass_queue(passes[execution[i + 1]]);
+            else
             {
-                // Previous command list has already been consumed
-                // Start a new one for the next pass
-                if (i == pass_cnt - 2)
-                {
-                    // The next pass is the last one
-                    // If we present, it must be on graphics
-                    if (m_desc.present)
-                        set_next_graphics();
-                    else
-                        set_next_pass_queue(passes[execution[i + 1]]);
-                }
-                else set_next_pass_queue(passes[execution[i + 1]]);
-            } else
-            {
-                // Last pass, continue on the same queue
-                if (queue == m_gfxQueue)
+                if (m_desc.present)
                     set_next_graphics();
-                else
-                    set_next_compute();
             }
         }
+
     }
     if (m_desc.present)
     {
-        if (queue != m_gfxQueue)
-        {
-            cmd->End();
-            queue->Submit({
-                .signals = {{ m_swaps[m_currentSync].render.Get() }},
-                .cmd_lists = {{ cmd }},
-            });
-            set_next_graphics();
-        }
+        CHECK_MSG(queue == m_gfxQueue, "FIXME: Present - Last pass ran in a non-graphics queue!!");
         cmd->BeginTransition();
         ExecuteBarrierSubresource(
             m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle],
@@ -1209,7 +1198,7 @@ void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) const
     cmd->SetPipeline({
         .pipeline = tpass.pso.Get(),
         .type = tpass.compute_pass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics
-        });
+    });
     if (!tpass.p_desc_sets.empty())
         cmd->BindDescriptorSet(
             tpass.compute_pass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
