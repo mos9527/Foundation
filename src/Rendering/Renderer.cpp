@@ -15,6 +15,7 @@ using namespace Foundation::Core;
 using namespace Foundation::Rendering;
 // Semaphore counter
 #define SEM_COUNTER(ord) (m_frame + ord + 1LL)
+#define SEM_COUNTER_PREV(ord) (m_frame + ord)
 const char* kShaderDescriptorFirstBindingErrorHelp = "This can be caused by one of the following:\n"
 "   - Parameter is optimized-out, and the binding is kept as is.\n"
 "   - Multiple entrypoints in the same shader, but they don't access the same parameters.\n"
@@ -725,7 +726,9 @@ void Renderer::FinalizeResources() {
     // Optionally used to be actually waited on (inter-queue, etc.), but will always be signaled
     for (PassHandle ord = 0; ord < m_setup->execution.size(); ord++) {
         auto& pass = m_setup->trackedPasses[m_setup->execution[ord]];
-        if (m_desc.async && pass.has_cross_queue_dependent) {
+        if (m_desc.async /* && pass.has_cross_queue_dependent */) {
+            // TODO: Figure out how to accurately detect dependency across *frames*
+            // Creating one for all passes works for now.
             pass.asyncSemaphore = m_device->CreateSemaphore(true);
             pass.asyncSemaphore->DebugSetObjectName(
                 fmt::format("Timeline Semaphore of {} [{}]", pass.name, pass.handle).c_str()
@@ -955,8 +958,7 @@ bool Renderer::ExecuteSubmitOrContinue(
     CHECK(m_state == State::Execute && m_executeAlloc);
     Vector<Pair<RHIDeviceSemaphore*, size_t>> waits(m_executeAlloc.Ptr()), signals(m_executeAlloc.Ptr());
     waits.insert(waits.end(), extra_waits.begin(), extra_waits.end());
-    if (pass.has_cross_queue_dependent)
-        signals.emplace_back(pass.asyncSemaphore.Get(), SEM_COUNTER(pass.ord));
+    signals.emplace_back(pass.asyncSemaphore.Get(), SEM_COUNTER(pass.ord));
     Vector<RHIPipelineStage> waits_stages(m_executeAlloc.Ptr());
     // Collect waited semaphores from inter-queue dependencies
     if (m_desc.async)
@@ -969,7 +971,15 @@ bool Renderer::ExecuteSubmitOrContinue(
                 if (opass.queue != pass.queue) {
                     CHECK_MSG(opass.asyncSemaphore.IsValid(), "FIXME-Async Compute: Pass {} [{}] is not valid to be waited on", opass.name, other);
                     // Wait on the producer pass's semaphore
-                    waits.emplace_back(opass.asyncSemaphore.Get(), SEM_COUNTER(opass.ord));
+                    if (opass.ord > pass.ord)
+                    {
+                        // From the previous frame
+                        waits.emplace_back(opass.asyncSemaphore.Get(), SEM_COUNTER_PREV(opass.ord));
+                    } else
+                    {
+                        waits.emplace_back(opass.asyncSemaphore.Get(), SEM_COUNTER(opass.ord));
+                    }
+
                 }
             }
         };
