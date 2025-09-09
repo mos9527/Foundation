@@ -40,7 +40,7 @@ namespace Foundation {
         m_dirty = true;
         const InstanceMetadata tombstone = {
             .enabled = 0,
-            .primitiveID = ~0ull,
+            .primitiveID = ~0u,
             .transform = {}
         };
         m_data.UpdateInstanceData(handle, StlSpan<const InstanceMetadata>{tombstone}.AsBytes());

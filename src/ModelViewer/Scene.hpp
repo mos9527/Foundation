@@ -47,16 +47,16 @@ namespace Foundation {
             return createPass(
                 renderer, "Scene Update",
                 RHIDeviceQueueType::Graphics,
-                [=](PassHandle self, Renderer* r) {
+                [=, this](PassHandle self, Renderer* r) {
                     r->BindBufferCopyDst(self, Instance);
                     r->BindBufferCopyDst(self, Primitive);
                     r->BindBufferCopyDst(self, Vertex);
                     r->BindBufferCopyDst(self, Index);
                 },
-                [=](PassHandle self, Renderer* r, RHICommandList* cmd) {
+                [=, this](PassHandle self, Renderer* r, RHICommandList* cmd) {
                     Update(cmd);
                 },
-                [=](PassHandle self, Renderer* r)
+                [=, this](PassHandle self, Renderer* r)
                 {
                     return HasUpdates();
                 }

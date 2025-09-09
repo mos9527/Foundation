@@ -31,7 +31,7 @@ struct PrimitiveMetadata {
 // In GetInstanceDataBuffer
 struct InstanceMetadata {
     uint32_t enabled;
-    uint64_t primitiveID;
+    uint32_t primitiveID;
     /* Other per-instance data */
     float4x4 transform;
 };

@@ -84,7 +84,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     }
     // Create the device
     // Gather all unique queues we'd need
-    StlSet<uint32_t> unique_queues({ graphics, compute, transfer, present }, GetAllocator());
+    StlSet<uint32_t> unique_queues({ graphics, compute }, GetAllocator());
     StlVector<vk::DeviceQueueCreateInfo> queue_info(GetAllocator());
     float priority = 1.0f;
     for (auto i : unique_queues) {

@@ -184,6 +184,7 @@ RHICommandList& VulkanCommandList::FillBuffer(RHIBuffer* buffer, uint32_t value,
     CHECK(m_allocator && "Invalid command list states.");
     auto* vulkan_buffer = static_cast<VulkanBuffer*>(buffer);
     m_commandBuffer.fillBuffer(*vulkan_buffer->GetVkBuffer(), offset, size == kFullSize ? VK_WHOLE_SIZE : size, value);
+    return *this;
 }
 
 RHICommandList& VulkanCommandList::CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::StlSpan<const CopyBufferRegion> regions) {

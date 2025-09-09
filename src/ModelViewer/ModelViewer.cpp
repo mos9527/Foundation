@@ -6,7 +6,7 @@ class ModelViewer : public RenderApplication {
     UniquePtr<Scene> m_scene;
     ResourceHandle m_sceneInstance{kInvalidHandle}, m_scenePrimitive{kInvalidHandle};
     ResourceHandle m_sceneVertex{kInvalidHandle}, m_sceneIndex{kInvalidHandle};
-    ResourceHandle m_indirectCommands{kInvalidHandle};
+    ResourceHandle m_indirectCommands{kInvalidHandle}, m_counter{kInvalidHandle};
 
     const size_t kMaxIndirectCommands = 1024;
     void RendererSetup() override
@@ -24,13 +24,19 @@ class ModelViewer : public RenderApplication {
                 .size = sizeof(MeshDrawIndirectCmd) * kMaxIndirectCommands
             }
         );
+        m_counter = createResource(m_renderer.get(), "Command Counter",
+            RHIBufferDesc{
+                .usage = RHIBufferUsageBits::IndirectBuffer | RHIBufferUsageBits::StorageBuffer,
+                .size = sizeof(int)
+            }
+        );
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect
         createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Compute,
             [=, this](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "resetCounter", "data/shaders/MVIndirectCull.spv");
-                r->BindBufferUnordered(self, m_indirectCommands, "commands");
+                r->BindBufferUnordered(self, m_counter, "counter");
             },
             [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
@@ -41,8 +47,9 @@ class ModelViewer : public RenderApplication {
         createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Compute,
             [=, this](PassHandle self, Renderer* r)
             {
-                r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/MVIndirectCull.spv");
+                r->BindShader(self, RHIShaderStageBits::Compute, "indirectCullEarly", "data/shaders/MVIndirectCull.spv");
                 r->BindBufferUnordered(self, m_indirectCommands, "commands");
+                r->BindBufferUnordered(self, m_counter, "counter");
                 r->BindBufferStorage(self, m_sceneInstance, "scInstance");
                 r->BindBufferStorage(self, m_scenePrimitive, "scPrimitive");
             },
@@ -57,6 +64,6 @@ class ModelViewer : public RenderApplication {
 
 int main(int argc, char** argv) {
     ModelViewer app;
-    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = false, .asyncCompute = true });
+    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer",  .asyncCompute = true });
     app.RunForever();
 }

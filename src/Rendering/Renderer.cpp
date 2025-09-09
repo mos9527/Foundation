@@ -16,7 +16,10 @@ using namespace Foundation::Core;
 using namespace Foundation::Rendering;
 // Semaphore counter
 #define SEM_COUNTER(ord) (m_frame + ord + 1LL)
-
+const char* kShaderDescriptorFirstBindingErrorHelp = "This is usually caused by multiple entrypoints in a single "
+"shader unit, where one entrypoint uses a descriptor that another entrypoint does not. You may remedy this by splitting "
+"the entrypoints into separate shader units, or by ensuring that all entrypoints use the same set of descriptors.";
+const char* kShaderDescriptorFirstSetErrorHelp = kShaderDescriptorFirstBindingErrorHelp;
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Core::Allocator* allocator)
     : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_device(device) {
     m_gfxQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
@@ -558,13 +561,36 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     StlVector<RHIDeviceDescriptorSetLayoutDesc::Binding> set_bindings(m_allocator);
     for (const auto& binding : bindings | std::views::values) {
         // !! TODO: Descriptor Arrays
+        CHECK_MSG(var_types.contains(binding), "Binding {} is not bound by pass {}, but is used by one of its shaders.", binding, tracked.name);
         set_bindings.push_back({ .count = 1, .stage = RHIShaderStageBits::All, .type = var_types[binding] });
+    }
+    // Check if our first set is not 0
+    if (!bindings.empty() && !bindings[0].first.first == 0)
+    {
+        LOG_RUNTIME(BuildPipelineState, err,
+            "Binding set numbers must start from 0. Error at set {} binding {} in pass {}.",
+            bindings[0].first.first, bindings[0].first.second, tracked.name
+        );
+        LOG_RUNTIME(BuildPipelineState, info, kShaderDescriptorFirstSetErrorHelp);
+        CHECK_MSG(false, "Binding set numbers must start from 0.");
     }
     for (uint32_t i = 0, j = 0; i < bindings.size(); i = j) {
         uint32_t set = bindings[i].first.first;
-        while (j < bindings.size() && bindings[j].first.first == set) j++;
+        // Check if our first binding is not 0
+        if (!bindings[i].first.second == 0)
+        {
+            LOG_RUNTIME(BuildPipelineState, err,
+                "Binding numbers must start from 0 in each descriptor set. Error at set {} binding {} in pass {}.",
+                set, bindings[i].first.second, tracked.name
+            );
+            LOG_RUNTIME(BuildPipelineState, info, kShaderDescriptorFirstBindingErrorHelp);
+            CHECK_MSG(false, "Binding binding numbers must start from 0.");
+        }
+        while (j < bindings.size() && bindings[j].first.first == set)
+            j++;
+        // Create descriptor set layout
         tracked.desc_layouts.push_back(m_device->CreateDescriptorSetLayout(
-            { .bindings = { set_bindings.cbegin() + i, set_bindings.cbegin() + j } }
+            { .bindings = { set_bindings.cbegin() + i, set_bindings.cbegin() + j} }
         ));
         tracked.desc_layouts.back()->DebugSetObjectName(
             fmt::format("Descriptor Set Layout {} of {} [{}]", set, tracked.name, pass).c_str()
@@ -582,6 +608,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
             auto& [bind, name] = bindings[k];
             auto& [_, binding] = bind;
             auto& hdl = var_handles[name];
+            CHECK_MSG(var_types.contains(name), "Binding {} is undefined in pass {}, but referenced by one of its shaders", name, tracked.name);
             auto& type = var_types[name];
             using enum RHIDescriptorType;
             switch (type)

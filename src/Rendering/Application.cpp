@@ -59,7 +59,7 @@ void RenderApplication::InitializeInternal() {
 }
 void RenderApplication::RunForever() {
     CHECK_MSG(m_rhi, "No RHI backend initialized! Call Initialize<Backend>() first.");
-    CHECK(m_device && m_window && m_swapchain && m_renderer);
+    CHECK(m_device && m_renderer);
     while (!m_window.WindowShouldClose()) {
         try {
             m_renderer->Execute();
