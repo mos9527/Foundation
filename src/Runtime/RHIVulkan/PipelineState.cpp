@@ -6,10 +6,10 @@
 using namespace Foundation::RHI;
 void VulkanPipelineState::InitializePipelineLayout() {
     Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
-    Core::StlVector<vk::DescriptorSetLayout> p_set_layouts(m_desc.descriptor_set_layouts.size(), alloc.Ptr());
+    Core::Vector<vk::DescriptorSetLayout> p_set_layouts(m_desc.descriptor_set_layouts.size(), alloc.Ptr());
     for (size_t i = 0; i < m_desc.descriptor_set_layouts.size(); ++i)
         p_set_layouts[i] = m_desc.descriptor_set_layouts[i].Get<VulkanDeviceDescriptorSetLayout>()->GetVkLayout();
-    Core::StlVector<vk::PushConstantRange> push_constants(m_desc.push_constants.size(), alloc.Ptr());
+    Core::Vector<vk::PushConstantRange> push_constants(m_desc.push_constants.size(), alloc.Ptr());
     for (size_t i = 0; i < m_desc.push_constants.size(); i++) {
         const auto& [stage, offset, size] = m_desc.push_constants[i];
         push_constants[i]
@@ -27,7 +27,7 @@ void VulkanPipelineState::InitializePipelineLayout() {
 }
 void VulkanPipelineState::InitializeGraphics() {
     Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
-    Core::StlVector<vk::VertexInputBindingDescription> vtx_bindings(alloc.Ptr());
+    Core::Vector<vk::VertexInputBindingDescription> vtx_bindings(alloc.Ptr());
     for (size_t i = 0; i < m_desc.vertex_input.bindings.size(); ++i) {
         const auto& binding = m_desc.vertex_input.bindings[i];
         vtx_bindings.emplace_back(vk::VertexInputBindingDescription{
@@ -36,7 +36,7 @@ void VulkanPipelineState::InitializeGraphics() {
             .inputRate = binding.per_instance ? vk::VertexInputRate::eInstance : vk::VertexInputRate::eVertex
             });
     }
-    Core::StlVector<vk::VertexInputAttributeDescription> vtx_attrs(alloc.Ptr());
+    Core::Vector<vk::VertexInputAttributeDescription> vtx_attrs(alloc.Ptr());
     for (const auto& attr : m_desc.vertex_input.attributes) {
         vtx_attrs.emplace_back(vk::VertexInputAttributeDescription{
             .location = attr.location,
@@ -98,8 +98,8 @@ void VulkanPipelineState::InitializeGraphics() {
         .rasterizationSamples = vkSampleCountFlagFromRHIMultisampleCount(m_desc.multisample.sample_count),
         .sampleShadingEnable = m_desc.multisample.enabled,
     };
-    Core::StlVector<vk::PipelineColorBlendAttachmentState> blend_attachments(alloc.Ptr());
-    Core::StlVector<vk::Format> color_attachment_formats(alloc.Ptr());
+    Core::Vector<vk::PipelineColorBlendAttachmentState> blend_attachments(alloc.Ptr());
+    Core::Vector<vk::Format> color_attachment_formats(alloc.Ptr());
     for (const auto& attachment : m_desc.attachments) {
         color_attachment_formats.push_back(vkFormatFromRHIFormat(attachment.render_target.format));
         vk::PipelineColorBlendAttachmentState blend_attachment{
@@ -129,7 +129,7 @@ void VulkanPipelineState::InitializeGraphics() {
         .depthAttachmentFormat = vkFormatFromRHIFormat(m_desc.depth_stencil.depth_format),
         .stencilAttachmentFormat = vkFormatFromRHIFormat(m_desc.depth_stencil.stencil_format),
     };
-    Core::StlVector<vk::PipelineShaderStageCreateInfo> shaderStages(alloc.Ptr());
+    Core::Vector<vk::PipelineShaderStageCreateInfo> shaderStages(alloc.Ptr());
     for (auto& shader : m_desc.shader_stages)
         shaderStages.push_back({
             .stage = vkFlagsToBits(vkShaderStageFlagsFromRHIShaderStage(shader.desc.stage)),

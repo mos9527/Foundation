@@ -2,7 +2,7 @@
 #include <spirv/unified1/spirv.hpp>
 using namespace Foundation::Rendering;
 using namespace Foundation::Core;
-void ShaderReflection::ParseSPIRV(const StlSpan<const char> bytecode)
+void ShaderReflection::ParseSPIRV(const Span<const char> bytecode)
 {
     /* 2.3 Physical Layout of a SPIR-V Module and Instruction */
     // SPIRV shader bytecodes are always 32-bits words.    
@@ -27,7 +27,7 @@ void ShaderReflection::ParseSPIRV(const StlSpan<const char> bytecode)
         std::string Name;
         uint32_t EpIndex{};
     };
-    StlVector<Element> ID(Bound, m_allocator);
+    Vector<Element> ID(Bound, m_allocator);
     // 4: Reserved
     // 5: First Instruction
     const uint32_t* ins = code + 5;
@@ -153,13 +153,13 @@ void ShaderReflection::ParseSPIRV(const StlSpan<const char> bytecode)
 void ShaderReflection::Sort()
 {
     std::ranges::sort(m_bindings, [](const Binding& lhs, const Binding& rhs) {
-        const std::pair k1 = { lhs.descriptorSet, lhs.binding };
-        const std::pair k2 = { rhs.descriptorSet, rhs.binding };
+        const Pair k1 = { lhs.descriptorSet, lhs.binding };
+        const Pair k2 = { rhs.descriptorSet, rhs.binding };
         return k1 < k2;
     });
 }
 
-ShaderReflection::ShaderReflection(Core::StlSpan<const char> bytecode, Allocator* alloc)
+ShaderReflection::ShaderReflection(Core::Span<const char> bytecode, Allocator* alloc)
     : m_allocator(alloc), m_entrypoints(alloc), m_bindings(alloc), m_pushConstants(alloc)
 {    
     ParseSPIRV(bytecode);

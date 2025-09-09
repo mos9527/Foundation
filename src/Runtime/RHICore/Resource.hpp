@@ -94,7 +94,7 @@ namespace Foundation::RHI {
          * For detailed mapping behaviour, <see cref="Map"/>
          */
         /// <param name="count">count of elements</param>                
-        template<typename T> Core::StlSpan<T> MapSpan(size_t count = kFullSize) {
+        template<typename T> Core::Span<T> MapSpan(size_t count = kFullSize) {
             void* p = Map();
             if (count == kFullSize)
                 count = m_desc.size / sizeof(T);
@@ -133,10 +133,10 @@ namespace Foundation::RHI {
         RHITextureSubresourceLayer layer;
         uint32_t mip_count{ 1 }; // Number of mip levels in the range
 
-        inline std::pair<uint32_t, uint32_t> GetMipLevelRange() const {
+        inline Pair<uint32_t, uint32_t> GetMipLevelRange() const {
             return { layer.mip_level, layer.mip_level + mip_count - 1 };
         }
-        inline std::pair<uint32_t, uint32_t> GetArrayLayerRange() const {
+        inline Pair<uint32_t, uint32_t> GetArrayLayerRange() const {
             return { layer.base_array_layer, layer.base_array_layer + layer.layer_count - 1 };
         }
     };

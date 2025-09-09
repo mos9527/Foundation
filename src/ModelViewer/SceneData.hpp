@@ -29,7 +29,7 @@ namespace Foundation {
         // GPU Staging data
         RHIDeviceScopedObjectHandle<RHIBuffer> m_stagingBuffer;
         // CPU Staging data
-        StlVector<char> m_staging;
+        Vector<char> m_staging;
 
         // Primitive data metadata
         // compacted into a fixed max-size homogeneous array
@@ -60,14 +60,14 @@ namespace Foundation {
         // Expect this to be dynamic - and stored in host visible memory.
         RHIDeviceScopedObjectHandle<RHIBuffer>
             m_globalData;
-        using StagingList = StlVector<RHI::RHICommandList::CopyBufferRegion>;
+        using StagingList = Vector<RHI::RHICommandList::CopyBufferRegion>;
         // Staging offset, Allocation handle
         StagingList m_primitiveStaging, m_instanceStaging, m_vertexStaging, m_indexStaging;
 
         // Push data to the staging buffer, and queue for GPU transfer
-        RHIBuffer::Arena::Allocation PushData(RHIBuffer* buffer, StagingList& staging, StlSpan<const char> data, size_t alignment = 16);
+        RHIBuffer::Arena::Allocation PushData(RHIBuffer* buffer, StagingList& staging, Span<const char> data, size_t alignment = 16);
         // Update previously allocated data
-        void UpdateData(RHIBuffer* buffer, StagingList& staging, RHIBuffer::Arena::Allocation handle, StlSpan<const char> data);
+        void UpdateData(RHIBuffer* buffer, StagingList& staging, RHIBuffer::Arena::Allocation handle, Span<const char> data);
         // Free previously allocated data
         // This is a no-op GPU-wise, and only frees CPU tracked allocations
         static void FreeData(RHIBuffer* buffer, RHIBuffer::Arena::Allocation alloc);
@@ -80,52 +80,52 @@ namespace Foundation {
 
         const SceneDataDesc m_desc;
 
-        SceneHandle AddData(StlSpan<const char> data, RHIBuffer* buffer, AllocationList& alloc, StagingList& staging, size_t alignment = 16);
-        void UpdateData(SceneHandle handle, StlSpan<const char> data, RHIBuffer* buffer, AllocationList& alloc, StagingList& staging);
+        SceneHandle AddData(Span<const char> data, RHIBuffer* buffer, AllocationList& alloc, StagingList& staging, size_t alignment = 16);
+        void UpdateData(SceneHandle handle, Span<const char> data, RHIBuffer* buffer, AllocationList& alloc, StagingList& staging);
         void FreeData(SceneHandle handle, RHIBuffer* buffer, AllocationList& alloc);
-        [[nodiscard]] std::pair<size_t, size_t> QueryDataSizeAndOffset(SceneHandle handle, RHIBuffer* buffer, AllocationList const& alloc) const;
+        [[nodiscard]] Pair<size_t, size_t> QueryDataSizeAndOffset(SceneHandle handle, RHIBuffer* buffer, AllocationList const& alloc) const;
 
         bool m_initialized{ false };
     public:
         SceneData(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc);
 
-        SceneHandle AddPrimitiveData(StlSpan<const char> data, size_t alignment = 16)
+        SceneHandle AddPrimitiveData(Span<const char> data, size_t alignment = 16)
         { return AddData(data, m_primitiveData.Get(), m_primitives, m_primitiveStaging, alignment); }
-        void UpdatePrimitiveData(SceneHandle handle, StlSpan<const char> data)
+        void UpdatePrimitiveData(SceneHandle handle, Span<const char> data)
         { UpdateData(handle, data, m_primitiveData.Get(), m_primitives, m_primitiveStaging); }
         void FreePrimitiveData(SceneHandle handle)
         { FreeData(handle, m_primitiveData.Get(), m_primitives); }
-        [[nodiscard]] std::pair<size_t, size_t> QueryPrimitiveDataSizeAndOffset(SceneHandle handle) const
+        [[nodiscard]] Pair<size_t, size_t> QueryPrimitiveDataSizeAndOffset(SceneHandle handle) const
         { return QueryDataSizeAndOffset(handle, m_primitiveData.Get(), m_primitives); }
         [[nodiscard]] RHIDeviceObjectHandle<RHIBuffer> GetPrimitiveDataBuffer() const { return m_primitiveData; }
 
-        SceneHandle AddInstanceData(StlSpan<const char> data, size_t alignment = 16)
+        SceneHandle AddInstanceData(Span<const char> data, size_t alignment = 16)
         { return AddData(data, m_instanceData.Get(), m_instances, m_instanceStaging, alignment); }
-        void UpdateInstanceData(SceneHandle handle, StlSpan<const char> data)
+        void UpdateInstanceData(SceneHandle handle, Span<const char> data)
         { UpdateData(handle, data, m_instanceData.Get(), m_instances, m_instanceStaging); }
         void FreeInstanceData(SceneHandle handle)
         { FreeData(handle, m_instanceData.Get(), m_instances); }
-        [[nodiscard]] std::pair<size_t, size_t> QueryInstanceDataSizeAndOffset(SceneHandle handle) const
+        [[nodiscard]] Pair<size_t, size_t> QueryInstanceDataSizeAndOffset(SceneHandle handle) const
         { return QueryDataSizeAndOffset(handle, m_instanceData.Get(), m_instances); }
         [[nodiscard]] RHIDeviceObjectHandle<RHIBuffer> GetInstanceDataBuffer() const { return m_instanceData; }
 
-        SceneHandle AddVertexData(StlSpan<const char> data, size_t alignment = 16)
+        SceneHandle AddVertexData(Span<const char> data, size_t alignment = 16)
         { return AddData(data, m_vertexData.Get(), m_vertices, m_vertexStaging, alignment); }
-        void UpdateVertexData(SceneHandle handle, StlSpan<const char> data)
+        void UpdateVertexData(SceneHandle handle, Span<const char> data)
         { UpdateData(handle, data, m_vertexData.Get(), m_vertices, m_vertexStaging); }
         void FreeVertexData(SceneHandle handle)
         { FreeData(handle, m_vertexData.Get(), m_vertices); }
-        [[nodiscard]] std::pair<size_t, size_t> QueryVertexDataSizeAndOffset(SceneHandle handle) const
+        [[nodiscard]] Pair<size_t, size_t> QueryVertexDataSizeAndOffset(SceneHandle handle) const
         { return QueryDataSizeAndOffset(handle, m_vertexData.Get(), m_vertices); }
         [[nodiscard]] RHIDeviceObjectHandle<RHIBuffer> GetVertexDataBuffer() const { return m_vertexData; }
 
-        SceneHandle AddIndexData(StlSpan<const char> data, size_t alignment = 16)
+        SceneHandle AddIndexData(Span<const char> data, size_t alignment = 16)
         { return AddData(data, m_indexData.Get(), m_indices, m_indexStaging, alignment); }
-        void UpdateIndexData(SceneHandle handle, StlSpan<const char> data)
+        void UpdateIndexData(SceneHandle handle, Span<const char> data)
         { UpdateData(handle, data, m_indexData.Get(), m_indices, m_indexStaging); }
         void FreeIndexData(SceneHandle handle)
         { FreeData(handle, m_indexData.Get(), m_indices); }
-        [[nodiscard]] std::pair<size_t, size_t> QueryIndexDataSizeAndOffset(SceneHandle handle) const
+        [[nodiscard]] Pair<size_t, size_t> QueryIndexDataSizeAndOffset(SceneHandle handle) const
         { return QueryDataSizeAndOffset(handle, m_indexData.Get(), m_indices); }
         [[nodiscard]] RHIDeviceObjectHandle<RHIBuffer> GetIndexDataBuffer() const { return m_indexData; }
 

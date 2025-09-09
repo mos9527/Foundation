@@ -28,7 +28,7 @@ namespace Foundation::RHI {
         Core::Allocator* m_allocator;
         RHIObjectStorage<> m_storage;
 
-        Core::StlVector<RHIDevice::DeviceDesc> m_devices;
+        Core::Vector<RHIDevice::DeviceDesc> m_devices;
         vk::raii::DebugUtilsMessengerEXT m_debug_handler{ nullptr };
     public:
         const std::string m_name;
@@ -39,7 +39,7 @@ namespace Foundation::RHI {
         VulkanApplication(Core::Allocator* allocator, const char* appName = "Vulkan RHI", const char* engineName = "Foundation", const uint32_t apiVersion = VK_API_VERSION_1_3);
         ~VulkanApplication() override;
 
-        Core::StlSpan<const RHIDevice::DeviceDesc> EnumerateDevices() const override;
+        Core::Span<const RHIDevice::DeviceDesc> EnumerateDevices() const override;
 
         RHIApplicationScopedObjectHandle<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc, Native::NativeWindow* window = nullptr) override;
         RHIDevice* GetDevice(Handle handle) const override;

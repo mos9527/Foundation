@@ -21,13 +21,13 @@ namespace Foundation::RHI {
                 size_t offset{ 0 }; // Offset in bytes
                 size_t size{ kFullSize }; // Size in bytes
             };
-            Core::StlSpan<const Buffer> buffers; // Applies to type of UniformBuffer, StorageBuffer
+            Core::Span<const Buffer> buffers; // Applies to type of UniformBuffer, StorageBuffer
             struct Image {
                 RHITextureView* image_view{ nullptr }; // Image view to bind, can be null
                 RHIDeviceSampler* sampler{ nullptr }; // Sampler to bind, can be null
                 RHITextureLayout layout{}; // Layout of the image
             };
-            Core::StlSpan<const Image> images; // Applies to type of Sampler, SampledImage
+            Core::Span<const Image> images; // Applies to type of Sampler, SampledImage
         };
         // NOTE: `desc.type` is used to determine which of the next spans is used                
         // to update the descriptors.
@@ -47,7 +47,7 @@ namespace Foundation::RHI {
                 RHIDescriptorType type; // Type of this binding
                 uint32_t max_count{ 1 }; // Max number of descriptors of this type that can be allocated
             };
-            Core::StlSpan<const Binding> bindings;
+            Core::Span<const Binding> bindings;
         } const m_desc;
         RHIDeviceDescriptorPool(RHIDevice const& device, PoolDesc const& desc)
             : m_device(device), m_desc(desc) {

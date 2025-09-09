@@ -28,7 +28,7 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
         }
     }
     Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
-    Core::StlVector<vk::DescriptorBufferInfo> buffers(desc.buffers.size(), alloc.Ptr());
+    Core::Vector<vk::DescriptorBufferInfo> buffers(desc.buffers.size(), alloc.Ptr());
     for (size_t i = 0; i < desc.buffers.size(); ++i) {
         auto const& b = desc.buffers[i];
         buffers[i] = vk::DescriptorBufferInfo{
@@ -37,7 +37,7 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
             .range = b.size == kFullSize ? VK_WHOLE_SIZE : b.size
         };
     }
-    Core::StlVector<vk::DescriptorImageInfo> images(desc.images.size(), alloc.Ptr());
+    Core::Vector<vk::DescriptorImageInfo> images(desc.images.size(), alloc.Ptr());
     for (size_t i = 0; i < desc.images.size(); ++i) {
         auto const& img = desc.images[i];
         images[i] = vk::DescriptorImageInfo{
@@ -69,7 +69,7 @@ void VulkanDeviceDescriptorSet::DebugSetObjectName(const char* name) {
 VulkanDeviceDescriptorPool::VulkanDeviceDescriptorPool(const VulkanDevice& device, PoolDesc const& desc)
     : RHIDeviceDescriptorPool(device, desc), m_device(device), m_storage(device.GetAllocator()) {
     Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
-    Core::StlVector<vk::DescriptorPoolSize> pool_sizes(desc.bindings.size(), alloc.Ptr());
+    Core::Vector<vk::DescriptorPoolSize> pool_sizes(desc.bindings.size(), alloc.Ptr());
     size_t max_sets = 0;
     for (size_t i = 0; i < desc.bindings.size(); ++i) {
         auto const& b = desc.bindings[i];

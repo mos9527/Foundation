@@ -13,7 +13,7 @@ namespace Foundation::RHI {
         RHIApplication() = default;
         RHIApplication(RHIApplication const&) = delete;
 
-        virtual Core::StlSpan<const RHIDevice::DeviceDesc> EnumerateDevices() const = 0;
+        virtual Core::Span<const RHIDevice::DeviceDesc> EnumerateDevices() const = 0;
            
         [[nodiscard]] virtual RHIApplicationScopedObjectHandle<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc, Native::NativeWindow* window = nullptr) = 0;
         virtual RHIDevice* GetDevice(Handle handle) const = 0;

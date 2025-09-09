@@ -31,7 +31,7 @@ vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDe
         desc.min_buffer_count, surface_caps.minImageCount
     );
     vk::Format vk_format = vkFormatFromRHIFormat(desc.format);
-    std::optional<vk::ColorSpaceKHR> color_space;
+    Optional<vk::ColorSpaceKHR> color_space;
     auto formats = m_device.GetVkPhysicalDevice().getSurfaceFormatsKHR(surface);
     for (auto const& fmt : formats) {
         if (fmt.format == vk_format) {
@@ -83,7 +83,7 @@ VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SwapchainDesc const
     : RHISwapchain(device, desc), m_device(device), m_images(device.GetAllocator()), m_images_ptrs(device.GetAllocator()) {
     Instantiate();
 }
-Core::StlSpan<RHITexture* const> VulkanSwapchain::GetImages() const {
+Core::Span<RHITexture* const> VulkanSwapchain::GetImages() const {
     return m_images_ptrs;
 }
 RHIExtent2D VulkanSwapchain::GetExtents() const

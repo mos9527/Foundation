@@ -6,9 +6,9 @@ using namespace Foundation;
 struct Image {
     RHI::RHITextureDesc m_desc;
     Core::Allocator* m_allocator;
-    Core::StlVector<char> m_data;
+    Core::Vector<char> m_data;
 
-    Image(RHI::RHITextureDesc const& desc, Core::Allocator* allocator, Core::StlSpan<const char> data = {}) noexcept
+    Image(RHI::RHITextureDesc const& desc, Core::Allocator* allocator, Core::Span<const char> data = {}) noexcept
         : m_desc(desc), m_allocator(allocator), m_data(data.begin(), data.end(), allocator) {
     }
     constexpr operator bool() const noexcept { return m_data.size() != 0; }

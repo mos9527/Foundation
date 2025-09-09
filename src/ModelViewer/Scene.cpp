@@ -6,7 +6,7 @@ namespace Foundation {
     Scene::Scene(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc) :
         m_allocator(allocator), m_data(allocator, device, desc) {}
 
-    SceneHandle Scene::AddMesh(StlSpan<const Vertex> vertices, StlSpan<const Index> indices, SceneHandle& outVtx, SceneHandle& outIdx) {
+    SceneHandle Scene::AddMesh(Span<const Vertex> vertices, Span<const Index> indices, SceneHandle& outVtx, SceneHandle& outIdx) {
         SceneHandle vtx = m_data.AddVertexData(vertices.AsBytes());
         SceneHandle idx = m_data.AddIndexData(indices.AsBytes());
         PrimitiveMetadata prim{
@@ -16,7 +16,7 @@ namespace Foundation {
             .sphereBounds = {} // !! TODO
         };
         outVtx = vtx, outIdx = idx;
-        return m_data.AddPrimitiveData(StlSpan<PrimitiveMetadata>{prim}.AsBytes());
+        return m_data.AddPrimitiveData(Span<PrimitiveMetadata>{prim}.AsBytes());
     };
     void Scene::FreeMesh(SceneHandle mesh, SceneHandle vtx, SceneHandle idx) {
         // TODO: Ref-counting usages?
@@ -27,13 +27,13 @@ namespace Foundation {
     SceneHandle Scene::AddInstance(InstanceMetadata data)
     {
         m_dirty = true;
-        SceneHandle hdl = m_data.AddInstanceData(StlSpan<InstanceMetadata>{data}.AsBytes());
+        SceneHandle hdl = m_data.AddInstanceData(Span<InstanceMetadata>{data}.AsBytes());
         return hdl;
     }
     void Scene::UpdateInstance(SceneHandle instance, InstanceMetadata const& data)
     {
         m_dirty = true;
-        m_data.UpdateInstanceData(instance, StlSpan<const InstanceMetadata>{data}.AsBytes());
+        m_data.UpdateInstanceData(instance, Span<const InstanceMetadata>{data}.AsBytes());
     }
     void Scene::FreeInstance(SceneHandle handle)
     {
@@ -43,7 +43,7 @@ namespace Foundation {
             .primitiveID = ~0u,
             .transform = {}
         };
-        m_data.UpdateInstanceData(handle, StlSpan<const InstanceMetadata>{tombstone}.AsBytes());
+        m_data.UpdateInstanceData(handle, Span<const InstanceMetadata>{tombstone}.AsBytes());
     }
 
     void Scene::Update(RHICommandList* cmd)

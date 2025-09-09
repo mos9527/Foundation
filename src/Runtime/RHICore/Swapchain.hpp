@@ -28,7 +28,7 @@ namespace Foundation::RHI {
             // Present mode for the swap chain.
             PresentMode present_mode;
         } m_desc;
-        virtual Core::StlSpan<RHITexture* const> GetImages() const = 0;
+        virtual Core::Span<RHITexture* const> GetImages() const = 0;
         RHISwapchain(RHIDevice const& device, SwapchainDesc const& desc) : m_device(device), m_desc(desc) {}
         /**
          * @brief Gets the next image in the swapchain.

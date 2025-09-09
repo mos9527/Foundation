@@ -60,12 +60,12 @@ namespace Foundation::Rendering {
             }
         };
         // [mip 0 array 0, mip 0 array 1, ..., mip 1 array 0, ...]
-        StlVector<SubresourceState> lastSubresourceStates;
+        Vector<SubresourceState> lastSubresourceStates;
         inline auto GetLastSubresourceStateOf(RHITextureSubresourceRange const& range) {
             auto [mip_begin, mip_end] = range.GetMipLevelRange();
             auto [layer_begin, layer_end] = range.GetArrayLayerRange();
             CHECK(mip_begin <= mip_end && mip_end < textureMips);
-            return std::views::all(StlSpan<SubresourceState>{
+            return std::views::all(Span<SubresourceState>{
                 lastSubresourceStates.begin() + textureLayers * mip_begin,
                     lastSubresourceStates.end()
             }) | std::views::filter([=](const SubresourceState& state) {
@@ -128,45 +128,45 @@ namespace Foundation::Rendering {
         // Should be mutually exclusive with write_backbuffer and other graphics states
         bool compute_pass{ false };
         // Local size for compute shaders
-        std::tuple<uint32_t, uint32_t, uint32_t> compute_local_size{};
+        Tuple<uint32_t, uint32_t, uint32_t> compute_local_size{};
         size_t depth{}; // Depth in RG
         size_t ord{}; // Execution order
         /* -- resources -- */
-        StlVector<std::tuple<
+        Vector<Tuple<
             ResourceHandle,
             RHIResourceAccess,
             RHIPipelineStage,
             RHITextureSubresourceRange,
             RHITextureLayout
             >> textureUsages; // Referenced texture sub resources
-        StlVector<std::tuple<
+        Vector<Tuple<
             ResourceHandle,
             RHIResourceAccess,
             RHIPipelineStage
             >> bufferUsages; // Referenced buffers
         // Unique referenced resources (tex/buf)             
-        StlVector<ResourceHandle> resources;
+        Vector<ResourceHandle> resources;
         // Unique texture views
-        StlVector<ResourceHandle> texviews;
+        Vector<ResourceHandle> texviews;
         /* -- pipeline -- */
         // Shader [path, entry point, stage]
-        StlVector<std::tuple<
+        Vector<Tuple<
             std::filesystem::path,
             std::string,
             RHIShaderStage
             >> shaders;
         // Bind points [view(tex) or buffer(buf), desc type, binding point]        
-        StlVector<std::tuple<
+        Vector<Tuple<
             ResourceHandle,
             RHIDescriptorType,
             std::string
             >> tex_bindings, buf_bindings;
         // Samplers
-        StlVector<std::pair<ResourceHandle, std::string>> samplers;
+        Vector<Pair<ResourceHandle, std::string>> samplers;
         // Push Constants by [stage, offset, size]
-        StlVector<RHIPipelineState::PipelineStateDesc::PushConstant> push_constants;
+        Vector<RHIPipelineState::PipelineStateDesc::PushConstant> push_constants;
         // (Graphics Only) Render Target View[s]
-        StlVector<ResourceHandle> rtvs;
+        Vector<ResourceHandle> rtvs;
         // (Graphics Only) Depth Stencil View
         ResourceHandle dsv{ kInvalidHandle };
         // (Graphics Only) Vertex Input assembly
@@ -190,9 +190,9 @@ namespace Foundation::Rendering {
         RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> asyncSemaphore{};
         // Pipeline states for the entire pass
         RHIDeviceScopedObjectHandle<RHIPipelineState> pso;
-        StlVector<RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout>> desc_layouts;
-        StlVector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> desc_sets;
-        StlVector<RHIDeviceDescriptorSet*> p_desc_sets;
+        Vector<RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout>> desc_layouts;
+        Vector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> desc_sets;
+        Vector<RHIDeviceDescriptorSet*> p_desc_sets;
         // ---
     };
     struct RendererDesc {
@@ -233,9 +233,9 @@ namespace Foundation::Rendering {
         private:
             // For async compute, we might submit multiple command buffers
             // per swap. Driver usually want them to live.                       
-            StlArray<RHICommandPoolScopedHandle<RHICommandList>, kMaxCommandListsPerSwap> cmds{};
-            StlArray<RHICommandPoolScopedHandle<RHICommandList>, kMaxCommandListsPerSwap> comp_cmds{};
-            StlArray<RHIDeviceScopedObjectHandle<RHIDeviceSemaphore>, kMaxCommandListsPerSwap> barrier_semaphores{};
+            Array<RHICommandPoolScopedHandle<RHICommandList>, kMaxCommandListsPerSwap> cmds{};
+            Array<RHICommandPoolScopedHandle<RHICommandList>, kMaxCommandListsPerSwap> comp_cmds{};
+            Array<RHIDeviceScopedObjectHandle<RHIDeviceSemaphore>, kMaxCommandListsPerSwap> barrier_semaphores{};
         public:
             RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render{}, present{};
             RHIDeviceScopedObjectHandle<RHIDeviceFence> fence{};
@@ -266,17 +266,17 @@ namespace Foundation::Rendering {
 
 
         struct Setup {            
-            StlVector<StlVector<std::pair<PassHandle, ResourceHandle>>> graph;
-            StlVector<TrackedPass> trackedPasses;
-            StlVector<TrackedResource> trackedResources;
+            Vector<Vector<Pair<PassHandle, ResourceHandle>>> graph;
+            Vector<TrackedPass> trackedPasses;
+            Vector<TrackedResource> trackedResources;
             // [resource, view desc]
-            StlVector<std::pair<ResourceHandle, RHITextureViewDesc>> trackedViews;
-            StlVector<RHIDeviceSampler::SamplerDesc> trackedSamplers;
+            Vector<Pair<ResourceHandle, RHITextureViewDesc>> trackedViews;
+            Vector<RHIDeviceSampler::SamplerDesc> trackedSamplers;
             // [resource, ord range]
-            StlMap<ResourceHandle, std::pair<PassHandle, PassHandle>> activeResources;
+            Map<ResourceHandle, Pair<PassHandle, PassHandle>> activeResources;
             // Passes ordered by pass.ord
-            StlVector<PassHandle> execution;            
-            StlMap<RHIDescriptorType, uint32_t> binding_counts;
+            Vector<PassHandle> execution;            
+            Map<RHIDescriptorType, uint32_t> binding_counts;
             PassHandle epilogue{ kInvalidHandle };
             void add_edge(const PassHandle u, const PassHandle v,  const ResourceHandle hdl) {
                 while (u >= graph.size()) graph.emplace_back(graph.get_allocator());
@@ -291,7 +291,7 @@ namespace Foundation::Rendering {
         UniquePtr<Setup> m_setup;
 
         struct Resources {
-            StlVector<Variant<
+            Vector<Variant<
                 RHIBuffer*,
                 RHIDeviceObjectHandle<RHIBuffer>,
                 RHIDeviceScopedObjectHandle<RHIBuffer>,
@@ -299,11 +299,11 @@ namespace Foundation::Rendering {
                 RHIDeviceObjectHandle<RHITexture>,
                 RHIDeviceScopedObjectHandle<RHITexture>
                 >> resources;
-            StlVector<Variant<
+            Vector<Variant<
                 RHITextureScopedHandle<RHITextureView>,
                 RHITextureHandle<RHITextureView>
                 >> views;
-            StlVector<RHIDeviceScopedObjectHandle<RHIDeviceSampler>> samplers;
+            Vector<RHIDeviceScopedObjectHandle<RHIDeviceSampler>> samplers;
             explicit Resources(Allocator* allocator) : resources(allocator), views(allocator), samplers(allocator) {}
             void fit(ResourceHandle handle) {
                 resources.resize(std::max(resources.size(), handle + 1));
@@ -340,7 +340,7 @@ namespace Foundation::Rendering {
         void ExecuteBarrierSubresource(TrackedResource& res, RHITextureSubresourceRange const& range, RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd) const;
         void ExecuteBarrierBuffer(TrackedResource& res, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd) const;
         void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) const;
-        bool ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, const RHIDeviceQueue* queue, StlSpan<const std::pair<RHIDeviceSemaphore*, size_t>> extra_waits = {}) const;
+        bool ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, const RHIDeviceQueue* queue, Span<const Pair<RHIDeviceSemaphore*, size_t>> extra_waits = {}) const;
 
         void SetFrameSyncObjects();
     public:
@@ -721,7 +721,7 @@ namespace Foundation::Rendering {
         /**
          * @brief Dereference the built descriptor sets associated with a given pass
          */
-        [[nodiscard]] inline StlVector<RHIDeviceDescriptorSet*> const& DerefDescriptorSets(const PassHandle pass) const
+        [[nodiscard]] inline Vector<RHIDeviceDescriptorSet*> const& DerefDescriptorSets(const PassHandle pass) const
         {
             CHECK(m_setup && pass < m_setup->trackedPasses.size());
             auto& tpass = m_setup->trackedPasses[pass];
@@ -777,8 +777,8 @@ namespace Foundation::Rendering {
         void CmdBeginGraphics(
             PassHandle pass, RHICommandList* cmd,
             RHIExtent2D const& extent,
-            std::optional<RHIClearColor>  const& clear_rtv = RHIClearColor{},
-            std::optional<RHIClearDepthStencil>  const&  clear_dsv = RHIClearDepthStencil{}
+            Optional<RHIClearColor>  const& clear_rtv = RHIClearColor{},
+            Optional<RHIClearDepthStencil>  const&  clear_dsv = RHIClearDepthStencil{}
         );        
         /**
          * @brief Helper that sets a Push Constant range data with a single l-value.

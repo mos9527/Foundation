@@ -6,7 +6,7 @@ namespace Foundation::Core {
      * @brief A free list counter implementation with amortized O(1) allocation and deallocation.
      */
     template<typename T = uint64_t> class FreeListCounter {
-        StlVector<T> m_free;
+        Vector<T> m_free;
         T m_top = 0;
         size_t m_allocated{ 0 };
     public:
@@ -51,8 +51,8 @@ namespace Foundation::Core {
     template<typename K, typename V>
     class FreeList {
         FreeListCounter<K> m_keys;
-        StlVector<V> m_values;
-        StlVector<bool> m_bitmap;
+        Vector<V> m_values;
+        Vector<bool> m_bitmap;
         /**
          * @brief Adds a key to the internal key container and resizes the value container if necessary.
          */
@@ -107,7 +107,7 @@ namespace Foundation::Core {
         /**
          * @brief Allocates a Key that returns a pair of key and value reference.
          */
-        [[nodiscard]] const std::pair<K, V&> pop()
+        [[nodiscard]] const Pair<K, V&> pop()
         {
             K key = allocate();
             m_bitmap[key] = true;

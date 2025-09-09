@@ -21,15 +21,15 @@ namespace Foundation::RHI {
         struct SubmitDesc {
             RHIPipelineStage stages;
             // Semaphore(s) and the minimum values to wait on
-            Core::StlSpan<const std::pair<RHIDeviceSemaphore*, size_t>> timeline_waits;
+            Core::Span<const Pair<RHIDeviceSemaphore*, size_t>> timeline_waits;
             // Semaphore(s) and the values to signal
-            Core::StlSpan<const std::pair<RHIDeviceSemaphore*, size_t>> timeline_signals;
+            Core::Span<const Pair<RHIDeviceSemaphore*, size_t>> timeline_signals;
             // Binary semaphore(s) to wait when the command lists are done
-            Core::StlSpan<RHIDeviceSemaphore* const> waits;
+            Core::Span<RHIDeviceSemaphore* const> waits;
             // Binary semaphore(s) to signal when the command lists are done
-            Core::StlSpan<RHIDeviceSemaphore* const> signals;
+            Core::Span<RHIDeviceSemaphore* const> signals;
             // Command lists to submit
-            Core::StlSpan<RHICommandList* const> cmd_lists;
+            Core::Span<RHICommandList* const> cmd_lists;
             RHIDeviceFence* fence;
         };
         virtual void Submit(SubmitDesc const& desc) const = 0;
@@ -38,7 +38,7 @@ namespace Foundation::RHI {
             uint32_t image_index;
             RHISwapchain* swapchain;
             // Binary semaphore(s) to wait
-            Core::StlSpan<RHIDeviceSemaphore* const> waits;
+            Core::Span<RHIDeviceSemaphore* const> waits;
         };
         virtual void Present(PresentDesc const& desc) const = 0;
 
@@ -68,7 +68,7 @@ namespace Foundation::RHI {
             RHIShaderStage stage{ RHIShaderStageBits::All }; // Stage this binding is used in
             RHIDescriptorType type; // Type of this binding
         };
-        Core::StlSpan<const Binding> bindings;
+        Core::Span<const Binding> bindings;
     };
     class RHIDeviceDescriptorSetLayout : public RHIObject {
     protected:
@@ -134,7 +134,7 @@ namespace Foundation::RHI {
         };
         RHIDevice(RHIApplication const& app) : m_app(app) {}
 
-        virtual Core::StlSpan<RHIResourceFormat const> GetSwapchainSupportedFormats() const = 0;
+        virtual Core::Span<RHIResourceFormat const> GetSwapchainSupportedFormats() const = 0;
         [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) = 0;
         virtual RHISwapchain* GetSwapchain(Handle handle) const = 0;
         virtual void DestroySwapchain(Handle handle) = 0;
@@ -183,11 +183,11 @@ namespace Foundation::RHI {
         virtual RHIDeviceSampler* GetSampler(Handle handle) const = 0;
         virtual void DestroySampler(Handle handle) = 0;
 
-        virtual void ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) = 0;
-        virtual void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) = 0;
+        virtual void ResetFences(Core::Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) = 0;
+        virtual void WaitForFences(Core::Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) = 0;
 
-        virtual void SignalTimelineSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) = 0;
-        virtual void WaitForTimelineSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) = 0;
+        virtual void SignalTimelineSemaphores(Core::Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) = 0;
+        virtual void WaitForTimelineSemaphores(Core::Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) = 0;
 
         virtual void WaitIdle() const = 0;
 

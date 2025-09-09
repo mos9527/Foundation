@@ -13,7 +13,7 @@ void RenderApplication::CreateSwapchain() {
     };
     RHIResourceFormat format = RHIResourceFormat::Undefined;
     auto const& supported = m_device->GetSwapchainSupportedFormats();
-    StlSet<RHIResourceFormat> formats(supported.begin(), supported.end(), m_alloc.Ptr());
+    Set<RHIResourceFormat> formats(supported.begin(), supported.end(), m_alloc.Ptr());
     for (auto fmt : kFormatPreferenceList) {
         if (formats.contains(fmt)) {
             format = fmt;

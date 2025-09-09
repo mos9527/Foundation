@@ -171,7 +171,7 @@ RHICommandList& VulkanCommandList::DrawIndexedIndirectCount(RHIBuffer* buffer, s
 }
 
 RHICommandList& VulkanCommandList::PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset,
-                                                Core::StlSpan<const char> data)
+                                                Core::Span<const char> data)
 {
     CHECK(m_allocator && "Invalid command list states.");
     vkCmdPushConstants(*m_commandBuffer, *static_cast<VulkanPipelineState*>(pipeline)->GetVkPipelineLayout(),
@@ -187,14 +187,14 @@ RHICommandList& VulkanCommandList::FillBuffer(RHIBuffer* buffer, uint32_t value,
     return *this;
 }
 
-RHICommandList& VulkanCommandList::CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::StlSpan<const CopyBufferRegion> regions) {
+RHICommandList& VulkanCommandList::CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::Span<const CopyBufferRegion> regions) {
     CHECK(m_allocator && "Invalid command list states.");
     CHECK(src_buffer && dst_buffer && "Source and destination buffers must be valid.");
 
     auto* src_vulkan_buffer = static_cast<VulkanBuffer*>(src_buffer);
     auto* dst_vulkan_buffer = static_cast<VulkanBuffer*>(dst_buffer);
 
-    Core::StlVector<vk::BufferCopy> vk_regions(&m_allocator);
+    Core::Vector<vk::BufferCopy> vk_regions(&m_allocator);
     for (auto const& region : regions) {
         size_t size = region.size;
         if (size == kFullSize) {
@@ -213,7 +213,7 @@ RHICommandList& VulkanCommandList::CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* 
     return *this;
 }
 
-RHICommandList& VulkanCommandList::CopyImage(RHITexture* src_image, RHITextureLayout src_layout, RHITexture* dst_image, RHITextureLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions)
+RHICommandList& VulkanCommandList::CopyImage(RHITexture* src_image, RHITextureLayout src_layout, RHITexture* dst_image, RHITextureLayout dst_layout, Core::Span<const CopyImageRegion> regions)
 {
     CHECK(m_allocator && "Invalid command list states.");
     CHECK(src_image && dst_image && "Source and destination images must be valid.");
@@ -221,7 +221,7 @@ RHICommandList& VulkanCommandList::CopyImage(RHITexture* src_image, RHITextureLa
     auto* src_vulkan_image = static_cast<VulkanTexture*>(src_image);
     auto* dst_vulkan_image = static_cast<VulkanTexture*>(dst_image);
 
-    Core::StlVector<vk::ImageCopy> vk_regions(&m_allocator);
+    Core::Vector<vk::ImageCopy> vk_regions(&m_allocator);
     vk_regions.reserve(regions.size());
     for (auto const& region : regions) {
         vk_regions.push_back(vk::ImageCopy{
@@ -252,7 +252,7 @@ RHICommandList& VulkanCommandList::CopyImage(RHITexture* src_image, RHITextureLa
     return *this;
 }
 
-RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image, RHITextureLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions)
+RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image, RHITextureLayout dst_layout, Core::Span<const CopyImageRegion> regions)
 {
     CHECK(m_allocator && "Invalid command list states.");
     CHECK(src_buffer && dst_image && "Source buffer and destination image must be valid.");
@@ -260,7 +260,7 @@ RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHIT
     auto* src_vulkan_buffer = static_cast<VulkanBuffer*>(src_buffer);
     auto* dst_vulkan_image = static_cast<VulkanTexture*>(dst_image);
 
-    Core::StlVector<vk::BufferImageCopy> vk_regions(&m_allocator);
+    Core::Vector<vk::BufferImageCopy> vk_regions(&m_allocator);
     vk_regions.reserve(regions.size());
     for (auto const& region : regions) {
         vk_regions.push_back(vk::BufferImageCopy{
@@ -316,7 +316,7 @@ RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc) {
             .clearValue = clear_value
         };
         };
-    Core::StlVector<vk::RenderingAttachmentInfo> attachments(&m_allocator);
+    Core::Vector<vk::RenderingAttachmentInfo> attachments(&m_allocator);
     attachments.reserve(desc.color_attachments.size());
     for (auto const& attachment : desc.color_attachments) {
         attachments.push_back(vkRenderingAttachmentInfoFromAttachment(attachment));
@@ -335,12 +335,12 @@ RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc) {
     return *this;
 }
 
-RHICommandList& VulkanCommandList::BindVertexBuffer(uint32_t index, Core::StlSpan<RHIBuffer* const> buffers, Core::StlSpan<const size_t> offsets) {
+RHICommandList& VulkanCommandList::BindVertexBuffer(uint32_t index, Core::Span<RHIBuffer* const> buffers, Core::Span<const size_t> offsets) {
     CHECK(m_allocator && "Invalid command list states.");
     CHECK(buffers.size() == offsets.size() && "Buffers and offsets must have the same size.");
 
-    Core::StlVector<vk::Buffer> vk_buffers(&m_allocator);
-    Core::StlVector<vk::DeviceSize> vk_offsets(&m_allocator);
+    Core::Vector<vk::Buffer> vk_buffers(&m_allocator);
+    Core::Vector<vk::DeviceSize> vk_offsets(&m_allocator);
     for (size_t i = 0; i < buffers.size(); ++i) {
         auto* buffer = static_cast<VulkanBuffer*>(buffers[i]);
         vk_buffers.push_back(*buffer->GetVkBuffer());
@@ -372,11 +372,11 @@ RHICommandList& VulkanCommandList::BindIndexBuffer(RHIBuffer* buffer, size_t off
 RHICommandList& VulkanCommandList::BindDescriptorSet(
     RHIDevicePipelineType bindpoint,
     RHIPipelineState* pipeline,
-    Core::StlSpan<RHIDeviceDescriptorSet* const> sets,
+    Core::Span<RHIDeviceDescriptorSet* const> sets,
     size_t first
 ) {
     CHECK(m_allocator && "Invalid command list states.");
-    Core::StlVector<vk::DescriptorSet> vk_sets(&m_allocator);
+    Core::Vector<vk::DescriptorSet> vk_sets(&m_allocator);
     for (auto* set : sets) {
         CHECK(set && "Descriptor set must be valid.");
         auto* vulkan_set = static_cast<VulkanDeviceDescriptorSet*>(set);

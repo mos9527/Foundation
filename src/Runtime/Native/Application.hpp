@@ -6,6 +6,7 @@
  * @brief Platform-dependent native application abstractions
  */
 namespace Foundation::Native {
+    using namespace Core;
     class Application;
     class NativeWindow {
         friend class NativeApplication;
@@ -25,8 +26,8 @@ namespace Foundation::Native {
         }
         ~NativeWindow();
 
-        [[nodiscard]] std::pair<uint32_t, uint32_t> GetWindowSize() const;
-        [[nodiscard]] std::pair<uint32_t, uint32_t> GetFramebufferSize() const;
+        [[nodiscard]] Pair<uint32_t, uint32_t> GetWindowSize() const;
+        [[nodiscard]] Pair<uint32_t, uint32_t> GetFramebufferSize() const;
         void SetWindowTitle(const char* title) const;
 
         [[nodiscard]] bool WindowShouldClose() const;

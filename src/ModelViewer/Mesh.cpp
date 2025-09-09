@@ -10,8 +10,8 @@ using namespace Foundation::Math;
 #include <meshoptimizer.h>
 
 template<typename Vertex, typename Index>
-void RunMeshOptimizerPass(StlVector<Vertex>& vertices, StlVector<Index>& indices, Allocator* allocator) {
-    StlVector<uint32_t> remap(vertices.size(), allocator);
+void RunMeshOptimizerPass(Vector<Vertex>& vertices, Vector<Index>& indices, Allocator* allocator) {
+    Vector<uint32_t> remap(vertices.size(), allocator);
     size_t unique = meshopt_generateVertexRemap(remap.data(), indices.data(), indices.size(), vertices.data(), vertices.size(), sizeof(Vertex));
     meshopt_remapVertexBuffer(vertices.data(), vertices.data(), vertices.size(), sizeof(Vertex), remap.data());
     meshopt_remapIndexBuffer(indices.data(), indices.data(), indices.size(), remap.data());
@@ -28,8 +28,8 @@ Mesh LoadMeshFromObjFile(std::filesystem::path const& path, Core::Allocator* all
     // Alloc for zero reuse scenario
     for (uint32_t face = 0; face < mesh->face_count; face++)
         num_vtx += 3u * (mesh->face_vertices[face] - 2u);
-    StlVector<Vertex> vertices(num_vtx, allocator);
-    StlVector<uint32_t> indices(num_vtx, allocator);
+    Vector<Vertex> vertices(num_vtx, allocator);
+    Vector<uint32_t> indices(num_vtx, allocator);
     std::iota(indices.begin(), indices.end(), 0);
 
     for (size_t vtx = 0, idx = 0, face = 0; face < mesh->face_count; face++) {

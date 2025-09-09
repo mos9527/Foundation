@@ -24,7 +24,7 @@ namespace Foundation {
     public:
         Scene(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc);
 
-        SceneHandle AddMesh(StlSpan<const Vertex> vertices, StlSpan<const Index> indices, SceneHandle& outVtx, SceneHandle& outIdx);
+        SceneHandle AddMesh(Span<const Vertex> vertices, Span<const Index> indices, SceneHandle& outVtx, SceneHandle& outIdx);
         void FreeMesh(SceneHandle mesh, SceneHandle vtx, SceneHandle idx);
 
         SceneHandle AddInstance(InstanceMetadata data);

@@ -31,16 +31,13 @@ namespace Foundation::RHI {
             const size_t m_size;
             VmaVirtualBlock m_block{};
             // [Allocation, {size, offset, VmaVirtualAllocation}]
-            Core::FreeList<Allocation, std::tuple<size_t, size_t, VmaVirtualAllocation>> m_allocs;
-
-            std::mutex m_mutex;
+            Core::FreeList<Allocation, Tuple<size_t, size_t, VmaVirtualAllocation>> m_allocs;
         public:
             Arena(Core::Allocator* alloc, size_t size) : m_size(size), m_allocs(alloc) {
                 const VmaVirtualBlockCreateInfo info{ .size = size };
                 vmaCreateVirtualBlock(&info, &m_block);
             }
-            Allocation Allocate(size_t size, size_t alignment) override {
-                std::scoped_lock lock(m_mutex);
+            Allocation Allocate(size_t size, size_t alignment) override {                
                 VmaVirtualAllocationCreateInfo info{ .size = size, .alignment = alignment };
                 VmaVirtualAllocation alloc{};
                 VkDeviceSize offset{};
@@ -52,8 +49,7 @@ namespace Foundation::RHI {
                 sz = size, off = offset, vmaAlloc = alloc;
                 return res;
             }
-            void Free(Allocation alloc) override {
-                std::scoped_lock lock(m_mutex);
+            void Free(Allocation alloc) override {                
                 auto& [sz, off, vmaAlloc] = m_allocs.at(alloc);
                 vmaVirtualFree(m_block, vmaAlloc);
                 m_allocs.free(alloc);
@@ -66,8 +62,7 @@ namespace Foundation::RHI {
                 auto& [sz, off, vmaAlloc] = m_allocs.at(alloc);
                 return sz;
             }
-            void Reset() override {
-                std::scoped_lock lock(m_mutex);
+            void Reset() override {                
                 vmaClearVirtualBlock(m_block);
                 m_allocs.clear();
             }

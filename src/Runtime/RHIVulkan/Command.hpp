@@ -30,8 +30,8 @@ namespace Foundation::RHI {
         const VulkanCommandPool& m_commandPool;
         vk::raii::CommandBuffer m_commandBuffer{ nullptr };
         struct Barriers {
-            Core::StlVector<vk::ImageMemoryBarrier2> image;
-            Core::StlVector<vk::BufferMemoryBarrier2> buffer;
+            Core::Vector<vk::ImageMemoryBarrier2> image;
+            Core::Vector<vk::BufferMemoryBarrier2> buffer;
             Barriers(Core::Allocator* allocator) : image(allocator), buffer(allocator) {};
         };
         Core::UniquePtr<Barriers> m_barriers;
@@ -57,7 +57,7 @@ namespace Foundation::RHI {
         RHICommandList& BindDescriptorSet(
             RHIDevicePipelineType bindpoint,
             RHIPipelineState* pipeline,
-            Core::StlSpan<RHIDeviceDescriptorSet* const> sets,
+            Core::Span<RHIDeviceDescriptorSet* const> sets,
             size_t first) override;
         RHICommandList& SetViewport(float x, float y, float width, float height, float depth_min = 0.0, float depth_max = 1.0) override;
         RHICommandList& SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override;
@@ -65,14 +65,14 @@ namespace Foundation::RHI {
         RHICommandList& DrawIndexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0, int32_t vertex_offset = 0, uint32_t first_instance = 0) override;
         RHICommandList& DrawIndexedIndirectCount(RHIBuffer* buffer, size_t offset, RHIBuffer* count_buffer, size_t count_offset, uint32_t max_draw_count, uint32_t stride) override;
 
-        RHICommandList& PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Core::StlSpan<const char> data) override;
+        RHICommandList& PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Core::Span<const char> data) override;
         RHICommandList& FillBuffer(RHIBuffer* buffer, uint32_t value, size_t offset = 0, size_t size = kFullSize) override;
-        RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::StlSpan<const CopyBufferRegion> regions) override;
-        RHICommandList& CopyImage(RHITexture* src_image, RHITextureLayout src_layout, RHITexture* dst_image, RHITextureLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions) override;
-        RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image, RHITextureLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions) override;
+        RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::Span<const CopyBufferRegion> regions) override;
+        RHICommandList& CopyImage(RHITexture* src_image, RHITextureLayout src_layout, RHITexture* dst_image, RHITextureLayout dst_layout, Core::Span<const CopyImageRegion> regions) override;
+        RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image, RHITextureLayout dst_layout, Core::Span<const CopyImageRegion> regions) override;
 
         RHICommandList& BeginGraphics(GraphicsDesc const& desc) override;
-        RHICommandList& BindVertexBuffer(uint32_t index, Core::StlSpan<RHIBuffer* const> buffers, Core::StlSpan<const size_t> offsets) override;
+        RHICommandList& BindVertexBuffer(uint32_t index, Core::Span<RHIBuffer* const> buffers, Core::Span<const size_t> offsets) override;
         RHICommandList& BindIndexBuffer(RHIBuffer* buffer, size_t offset, RHIResourceFormat format) override;
         RHICommandList& EndGraphics() override;
 

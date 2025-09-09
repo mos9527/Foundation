@@ -86,7 +86,7 @@ namespace Foundation::RHI {
         vk::raii::Device m_device{ nullptr };
         vk::raii::SurfaceKHR m_surface{ nullptr };
 
-        Core::StlVector<RHIResourceFormat> m_swapchain_formats;
+        Core::Vector<RHIResourceFormat> m_swapchain_formats;
 
         VmaAllocator m_vkAllocator{ nullptr };
         // Device Object storage
@@ -105,7 +105,7 @@ namespace Foundation::RHI {
 
         RHIDeviceQueue* GetDeviceQueue(RHIDeviceQueueType type) const override;
 
-        Core::StlSpan<RHIResourceFormat const> GetSwapchainSupportedFormats() const override;
+        Core::Span<RHIResourceFormat const> GetSwapchainSupportedFormats() const override;
         RHIDeviceScopedObjectHandle<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) override;
         RHISwapchain* GetSwapchain(Handle handle) const override;
         void DestroySwapchain(Handle handle) override;
@@ -151,11 +151,11 @@ namespace Foundation::RHI {
         RHIDeviceSampler* GetSampler(Handle handle) const override;
         void DestroySampler(Handle handle) override;
 
-        void ResetFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) override;
-        void WaitForFences(Core::StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) override;
+        void ResetFences(Core::Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) override;
+        void WaitForFences(Core::Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) override;
 
-        void SignalTimelineSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) override;
-        void WaitForTimelineSemaphores(Core::StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) override;
+        void SignalTimelineSemaphores(Core::Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) override;
+        void WaitForTimelineSemaphores(Core::Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) override;
 
         void WaitIdle() const override;
 

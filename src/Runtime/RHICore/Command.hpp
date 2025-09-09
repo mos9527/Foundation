@@ -58,7 +58,7 @@ namespace Foundation::RHI {
         virtual RHICommandList& BindDescriptorSet(
             RHIDevicePipelineType bindpoint,
             RHIPipelineState* pipeline,
-            Core::StlSpan<RHIDeviceDescriptorSet* const> sets,
+            Core::Span<RHIDeviceDescriptorSet* const> sets,
             size_t first = 0) = 0;
 #pragma endregion
 #pragma region Rasterizer
@@ -68,7 +68,7 @@ namespace Foundation::RHI {
         virtual RHICommandList& DrawIndexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0, int32_t vertex_offset = 0, uint32_t first_instance = 0) = 0;
         virtual RHICommandList& DrawIndexedIndirectCount(RHIBuffer* buffer, size_t offset, RHIBuffer* count_buffer, size_t count_offset, uint32_t max_draw_count, uint32_t stride) = 0;
 #pragma endregion
-        virtual RHICommandList& PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Core::StlSpan<const char> data) = 0;
+        virtual RHICommandList& PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Core::Span<const char> data) = 0;
 #pragma region Transfer Queue
         struct CopyBufferRegion {
             size_t src_offset = 0;
@@ -80,7 +80,7 @@ namespace Foundation::RHI {
             size_t size = kFullSize;
         };
         virtual RHICommandList& FillBuffer(RHIBuffer* buffer, uint32_t value, size_t offset = 0, size_t size = kFullSize) = 0;
-        virtual RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::StlSpan<const CopyBufferRegion> regions) = 0;
+        virtual RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::Span<const CopyBufferRegion> regions) = 0;
         struct CopyImageRegion {
             uint32_t src_buffer_offset = 0; // Offset in the source buffer, used for CopyBufferToImage
             RHITextureSubresourceLayer src_layer;
@@ -92,8 +92,8 @@ namespace Foundation::RHI {
             /// or the call to Copy(...)Image is invalid.
             RHIExtent3D extent{ 0,0,0 };
         };
-        virtual RHICommandList& CopyImage(RHITexture* src_image, RHITextureLayout src_layout, RHITexture* dst_image, RHITextureLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions) = 0;
-        virtual RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image, RHITextureLayout dst_layout, Core::StlSpan<const CopyImageRegion> regions) = 0;
+        virtual RHICommandList& CopyImage(RHITexture* src_image, RHITextureLayout src_layout, RHITexture* dst_image, RHITextureLayout dst_layout, Core::Span<const CopyImageRegion> regions) = 0;
+        virtual RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image, RHITextureLayout dst_layout, Core::Span<const CopyImageRegion> regions) = 0;
 #pragma endregion
 #pragma region Graphics Pipeline
         struct GraphicsDesc {
@@ -101,22 +101,22 @@ namespace Foundation::RHI {
                 RHITextureView* image_view{ nullptr };
                 RHITextureLayout image_layout{ RHITextureLayout::RenderTarget };
                 // Clear values for the color attachment, if applicable.
-                std::optional<RHIClearColor> clear_color{};
+                Optional<RHIClearColor> clear_color{};
                 // Clear values for depth and stencil attachments, if applicable.
                 // If both are set, the depth will be cleared first, then stencil.
-                std::optional<RHIClearDepthStencil> clear_depth_stencil{};
+                Optional<RHIClearDepthStencil> clear_depth_stencil{};
                 constexpr bool IsValid() const
                 {
                     return image_view;
                 }
             };
-            Core::StlSpan<const Attachment> color_attachments;
+            Core::Span<const Attachment> color_attachments;
             const Attachment depth_attachment{};
             const Attachment stencil_attachment{};
             uint32_t width, height;
         };
         virtual RHICommandList& BeginGraphics(GraphicsDesc const& desc) = 0;
-        virtual RHICommandList& BindVertexBuffer(uint32_t index, Core::StlSpan<RHIBuffer* const> buffers, Core::StlSpan<const size_t> offsets) = 0;
+        virtual RHICommandList& BindVertexBuffer(uint32_t index, Core::Span<RHIBuffer* const> buffers, Core::Span<const size_t> offsets) = 0;
         virtual RHICommandList& BindIndexBuffer(RHIBuffer* buffer, size_t offset = 0, RHIResourceFormat format = RHIResourceFormat::R32_UINT) = 0;
         virtual RHICommandList& EndGraphics() = 0;
 #pragma endregion

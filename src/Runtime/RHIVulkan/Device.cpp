@@ -84,8 +84,8 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     }
     // Create the device
     // Gather all unique queues we'd need
-    StlSet<uint32_t> unique_queues({ graphics, compute }, GetAllocator());
-    StlVector<vk::DeviceQueueCreateInfo> queue_info(GetAllocator());
+    Set<uint32_t> unique_queues({ graphics, compute }, GetAllocator());
+    Vector<vk::DeviceQueueCreateInfo> queue_info(GetAllocator());
     float priority = 1.0f;
     for (auto i : unique_queues) {
         if (i == kInvalidQueueIndex)
@@ -308,7 +308,7 @@ RHIDeviceQueue* VulkanDevice::GetDeviceQueue(RHIDeviceQueueType type) const {
 }
 
 #include "Swapchain.hpp"
-StlSpan<RHIResourceFormat const> VulkanDevice::GetSwapchainSupportedFormats() const
+Span<RHIResourceFormat const> VulkanDevice::GetSwapchainSupportedFormats() const
 {
     return m_swapchain_formats;
 }
@@ -415,19 +415,19 @@ void VulkanDevice::DestroyFence(Handle handle)
     m_storage.DestroyObject(handle);
 }
 
-void VulkanDevice::ResetFences(StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences)
+void VulkanDevice::ResetFences(Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences)
 {
     StackArena<> arena; StackAllocatorSingleThreaded alloc(arena);
-    StlVector<vk::Fence> vk_fences(alloc.Ptr());
+    Vector<vk::Fence> vk_fences(alloc.Ptr());
     vk_fences.reserve(fences.size());
     for (auto const& fence : fences)
         vk_fences.emplace_back(fence.Get<VulkanDeviceFence>()->GetVkFence());
     m_device.resetFences(vk_fences);
 }
-void VulkanDevice::WaitForFences(StlSpan<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout)
+void VulkanDevice::WaitForFences(Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout)
 {
     StackArena<> arena; StackAllocatorSingleThreaded alloc(arena);
-    StlVector<vk::Fence> vk_fences(alloc.Ptr());
+    Vector<vk::Fence> vk_fences(alloc.Ptr());
     vk_fences.reserve(fences.size());
     for (auto const& fence : fences)
         vk_fences.emplace_back(fence.Get<VulkanDeviceFence>()->GetVkFence());
@@ -435,7 +435,7 @@ void VulkanDevice::WaitForFences(StlSpan<const RHIDeviceObjectHandle<RHIDeviceFe
     CHECK_MSG(res == vk::Result::eSuccess, "Failed waiting on fences");
 }
 
-void VulkanDevice::SignalTimelineSemaphores(StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) {
+void VulkanDevice::SignalTimelineSemaphores(Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) {
     for (auto const& [signal, val] : semaphores) {
         CHECK(signal->m_is_timeline);
         vk::SemaphoreSignalInfo info{
@@ -445,10 +445,10 @@ void VulkanDevice::SignalTimelineSemaphores(StlSpan<const std::pair<RHIDeviceObj
         m_device.signalSemaphore(info);
     }
 }
-void VulkanDevice::WaitForTimelineSemaphores(StlSpan<const std::pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) {
+void VulkanDevice::WaitForTimelineSemaphores(Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) {
     StackArena<> arena{}; StackAllocatorSingleThreaded alloc(arena);
-    StlVector<vk::Semaphore> vk_semaphores(alloc.Ptr());
-    StlVector<uint64_t> vk_values(alloc.Ptr());
+    Vector<vk::Semaphore> vk_semaphores(alloc.Ptr());
+    Vector<uint64_t> vk_values(alloc.Ptr());
     vk_semaphores.reserve(semaphores.size()), vk_values.reserve(semaphores.size());
     for (auto const& [wait, val] : semaphores) {
         CHECK(wait->m_is_timeline);
@@ -477,10 +477,10 @@ void VulkanDeviceQueue::WaitIdle() const {
 }
 void VulkanDeviceQueue::Submit(SubmitDesc const& desc) const {
     StackArena<> arena{}; StackAllocatorSingleThreaded alloc(arena);
-    StlVector<vk::CommandBuffer> cmds(alloc.Ptr());
-    StlVector<vk::Semaphore>
+    Vector<vk::CommandBuffer> cmds(alloc.Ptr());
+    Vector<vk::Semaphore>
         swaits(alloc.Ptr()), ssignals(alloc.Ptr());
-    StlVector<uint64_t>
+    Vector<uint64_t>
         wait_values(alloc.Ptr()), signal_values(alloc.Ptr());
     cmds.reserve(desc.cmd_lists.size()), swaits.reserve(desc.waits.size()), ssignals.reserve(desc.signals.size());
     for (auto const& cmd_list : desc.cmd_lists)
@@ -530,7 +530,7 @@ void VulkanDeviceQueue::Present(PresentDesc const& desc) const {
     CHECK(m_device.GetDeviceQueue(RHIDeviceQueueType::Present) == this && "Present called on a queue that is not a present queue");
     StackArena<> arena{}; StackAllocatorSingleThreaded alloc(arena);
     vk::SwapchainKHR swapchain = static_cast<VulkanSwapchain*>(desc.swapchain)->GetVkSwapchain();
-    StlVector<vk::Semaphore> swaits(alloc.Ptr());
+    Vector<vk::Semaphore> swaits(alloc.Ptr());
     swaits.reserve(desc.waits.size());
     for (auto& wait : desc.waits) {
         CHECK(!wait->m_is_timeline && "Present() wait must be Binary semaphores");
@@ -594,7 +594,7 @@ VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDev
     : RHIDeviceDescriptorSetLayout(device, desc), m_device(device)
 {
     StackArena<> arena{}; StackAllocatorSingleThreaded alloc(arena);
-    StlVector<vk::DescriptorSetLayoutBinding> bindings(desc.bindings.size(), alloc.Ptr());
+    Vector<vk::DescriptorSetLayoutBinding> bindings(desc.bindings.size(), alloc.Ptr());
     for (size_t i = 0; i < desc.bindings.size(); ++i) {
         auto const& b = desc.bindings[i];
         bindings[i] = vk::DescriptorSetLayoutBinding{

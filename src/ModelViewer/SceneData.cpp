@@ -58,7 +58,7 @@ namespace Foundation {
                 .size = desc.TotalBudget()
         });
     }
-    RHIBuffer::Arena::Allocation SceneData::PushData(RHIBuffer* buffer, StagingList& staging, StlSpan<const char> data, size_t alignment)
+    RHIBuffer::Arena::Allocation SceneData::PushData(RHIBuffer* buffer, StagingList& staging, Span<const char> data, size_t alignment)
     {
         auto alloc = buffer->GetArena().Allocate(data.size(), alignment);
         if (alloc == kInvalidHandle)
@@ -67,7 +67,7 @@ namespace Foundation {
         m_staging.insert(m_staging.end(), data.begin(), data.end());
         return alloc;
     }
-    void SceneData::UpdateData(RHIBuffer* buffer, StagingList& staging, RHIBuffer::Arena::Allocation handle, StlSpan<const char> data)
+    void SceneData::UpdateData(RHIBuffer* buffer, StagingList& staging, RHIBuffer::Arena::Allocation handle, Span<const char> data)
     {
         auto size = buffer->GetArena().GetSize(handle);
         CHECK(data.size() <= size && "New data cannot be larger than initial allocation");
@@ -111,12 +111,12 @@ namespace Foundation {
             EndTransfer(cmd);
     }
 
-    SceneHandle SceneData::AddData(StlSpan<const char> data, RHIBuffer* buffer, AllocationList& alist, StagingList& staging, size_t alignment) {
+    SceneHandle SceneData::AddData(Span<const char> data, RHIBuffer* buffer, AllocationList& alist, StagingList& staging, size_t alignment) {
         auto& [handle, alloc] = alist.pop();
         alloc = PushData(buffer, staging, data, alignment);
         return handle;
     }
-    void SceneData::UpdateData(SceneHandle handle, StlSpan<const char> data, RHIBuffer* buffer, AllocationList& alist, StagingList& staging) {
+    void SceneData::UpdateData(SceneHandle handle, Span<const char> data, RHIBuffer* buffer, AllocationList& alist, StagingList& staging) {
         auto& alloc = alist.at(handle);
         UpdateData(buffer, staging, alloc, data);
     }
@@ -126,7 +126,7 @@ namespace Foundation {
         FreeData(buffer, alloc);
         alist.free(handle);
     }
-    std::pair<size_t, size_t> SceneData::QueryDataSizeAndOffset(SceneHandle handle, RHIBuffer* buffer, AllocationList const& alist) const
+    Pair<size_t, size_t> SceneData::QueryDataSizeAndOffset(SceneHandle handle, RHIBuffer* buffer, AllocationList const& alist) const
     {
         auto& alloc = alist.at(handle);
         return { buffer->GetArena().GetSize(alloc), buffer->GetArena().GetOffset(alloc) };

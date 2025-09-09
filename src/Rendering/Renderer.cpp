@@ -1,8 +1,8 @@
 #include <array>
+#include <ranges>
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-
 
 #include <Math/Math.hpp>
 #include <Core/Allocator/StackAllocator.hpp>
@@ -107,7 +107,6 @@ void Renderer::DeclareTextureAccess(
                 if (!(layer_end < r_layer_begin || layer_begin > r_layer_end))
                     throw std::runtime_error("Overlap detected. Texture access must be disjoint.");
             }
-            break;
         }
     }
     // Do this for all sub resources in range
@@ -384,7 +383,7 @@ void Renderer::CullPasses(PassHandle epilogue) const
     CHECK(m_state == State::Setup);
     CHECK(epilogue < m_setup->trackedPasses.size());
     // Cull and topsort
-    StlVector<PassHandle>
+    Vector<PassHandle>
         topo(m_allocator),
         vis(m_setup->trackedPasses.size(), m_allocator),
         depth(m_setup->trackedPasses.size(), m_allocator); // Depth in graph from epilogue
@@ -436,14 +435,14 @@ void Renderer::CullPasses(PassHandle epilogue) const
 }
 void Renderer::BuildPipelineState(PassHandle pass) {
     auto& tracked = m_setup->trackedPasses[pass];
-    StlVector<RHIPipelineState::PipelineStateDesc::ShaderStage> pso_stages(m_allocator);
+    Vector<RHIPipelineState::PipelineStateDesc::ShaderStage> pso_stages(m_allocator);
     // Load shader bytecode
     if (tracked.shaders.empty())
         return; // Pass with no shaders
     LOG_RUNTIME(Renderer, debug, "** Building PSO for {} [{}] **", tracked.name, pass);
-    StlVector<char> data(m_allocator);
-    StlMap<std::filesystem::path, RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(m_allocator);
-    StlMap<std::filesystem::path, UniquePtr<ShaderReflection>> reflections(m_allocator);
+    Vector<char> data(m_allocator);
+    Map<std::filesystem::path, RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(m_allocator);
+    Map<std::filesystem::path, UniquePtr<ShaderReflection>> reflections(m_allocator);
     for (auto const& [shader_path, entry_point, stage] : tracked.shaders) {
         if (!shaders.contains(shader_path)) {
             LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path.string());
@@ -484,7 +483,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     }
     // Check variable bindings to be consistent across stages
     // [name, [set, binding]]
-    StlMap<std::string, std::pair<uint32_t, uint32_t>> var_bind_points(m_allocator);
+    Map<std::string, Pair<uint32_t, uint32_t>> var_bind_points(m_allocator);
     // Check if any shader in the pipeline uses PC
     for (auto const& [path, refl] : reflections){
         if (!refl->m_pushConstants.empty())
@@ -509,9 +508,9 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         }
     }
     // Create descriptor set layout to be consistent across stages
-    StlMap<std::string, RHIDescriptorType> var_types(m_allocator);
-    StlMap<std::string, ResourceHandle> var_handles(m_allocator);
-    StlMap<std::string, ResourceHandle> var_samplers(m_allocator);
+    Map<std::string, RHIDescriptorType> var_types(m_allocator);
+    Map<std::string, ResourceHandle> var_handles(m_allocator);
+    Map<std::string, ResourceHandle> var_samplers(m_allocator);
     for (auto& [vhdl, dtype, binding] : tracked.tex_bindings) {
         auto it = var_types.find(binding);
         if (it == var_types.end())
@@ -552,13 +551,13 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         }
     }
     // [[set, binding], name]
-    StlVector<std::pair<std::pair<uint32_t, uint32_t>, std::string>> bindings(m_allocator);
+    Vector<Pair<Pair<uint32_t, uint32_t>, std::string>> bindings(m_allocator);
     bindings.reserve(var_types.size());
     for (auto& [name, bind] : var_bind_points)
         bindings.emplace_back( bind, name );
     std::ranges::sort(bindings);
     // Separate into descriptor sets
-    StlVector<RHIDeviceDescriptorSetLayoutDesc::Binding> set_bindings(m_allocator);
+    Vector<RHIDeviceDescriptorSetLayoutDesc::Binding> set_bindings(m_allocator);
     for (const auto& binding : bindings | std::views::values) {
         // !! TODO: Descriptor Arrays
         CHECK_MSG(var_types.contains(binding), "Binding {} is not bound by pass {}, but is used by one of its shaders.", binding, tracked.name);
@@ -682,7 +681,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     // Setup compute/graphics specific states
     // Graphics
     // RTV,DSV
-    StlVector<RHIPipelineState::PipelineStateDesc::Attachment> attachments(m_allocator);
+    Vector<RHIPipelineState::PipelineStateDesc::Attachment> attachments(m_allocator);
     if (tracked.write_backbuffer) {
         // Only write to the backbuffer
         attachments.push_back({ .render_target = {.format = m_swapchain->m_desc.format } });
@@ -711,7 +710,7 @@ void Renderer::FinalizePSOs() {
     // Build descriptor pool
     m_descPool.Reset();
     if (!m_setup->binding_counts.empty()) {
-        StlVector<RHIDeviceDescriptorPool::PoolDesc::Binding> bindings(m_allocator);
+        Vector<RHIDeviceDescriptorPool::PoolDesc::Binding> bindings(m_allocator);
         bindings.reserve(m_setup->binding_counts.size());
         LOG_RUNTIME(Renderer, debug, "** Descriptor Pool **");
         for (auto& [type, count] : m_setup->binding_counts) {
@@ -784,7 +783,7 @@ void Renderer::FinalizeResources() {
         }
     }
     // Create texture views
-    StlVector<ResourceHandle> activeViews(m_allocator), activeSamplers(m_allocator);
+    Vector<ResourceHandle> activeViews(m_allocator), activeSamplers(m_allocator);
     for (PassHandle ord = 0; ord < m_setup->execution.size(); ord++) {
         auto& pass = m_setup->trackedPasses[m_setup->execution[ord]];
         for (auto hdl : pass.texviews)
@@ -908,14 +907,14 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd) const
     }
     cmd->EndTransition();
 }
-bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, const RHIDeviceQueue* queue, StlSpan<const std::pair<RHIDeviceSemaphore*, size_t>> extra_waits) const
+bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, const RHIDeviceQueue* queue, Span<const Pair<RHIDeviceSemaphore*, size_t>> extra_waits) const
 {
     CHECK(m_state == State::Execute);
     if (m_desc.async) {
         Core::StackArena<> arena{}; Core::StackAllocatorSingleThreaded alloc(arena);
         // Pass that depends on a producer pass that's on another queue
         // needs external synchronization.    
-        Core::StlVector<std::pair<RHIDeviceSemaphore*, size_t>> waits(&alloc);
+        Core::Vector<Pair<RHIDeviceSemaphore*, size_t>> waits(&alloc);
         auto check_wait = [&](PassHandle other) {
             if (other != kInvalidHandle) {
                 auto& opass = m_setup->trackedPasses[other];
@@ -1078,7 +1077,7 @@ void Renderer::Execute() {
     // Take non-skipped passes only
     auto execution_view = std::views::all(m_setup->execution)
         | std::views::filter([&](PassHandle hdl) { return passes[hdl].used; });
-    auto execution = StlVector<PassHandle>(execution_view.begin(), execution_view.end(), alloc.Ptr());
+    auto execution = Vector<PassHandle>(execution_view.begin(), execution_view.end(), alloc.Ptr());
     if (!execution.empty()) {
         set_next_pass_queue(passes[execution[0]]);
         cmd->Reset();
@@ -1089,7 +1088,7 @@ void Renderer::Execute() {
         auto& pass = passes[execution[i]];
         // Check if we can transition away on Compute
         // If not, Graphics must take over before we continue
-        std::optional<std::pair<RHIDeviceSemaphore*, size_t>> barrier_extra_wait{};
+        Optional<Pair<RHIDeviceSemaphore*, size_t>> barrier_extra_wait{};
         if (m_desc.async && pass.queue == RHIDeviceQueueType::Compute) {
             const RHIPipelineStage computeMask =
                 RHIPipelineStageBits::FragmentShader |
@@ -1220,14 +1219,14 @@ void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) const
 }
 void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd,
     RHIExtent2D const& extent,
-    std::optional<RHIClearColor> const&  clear_rtv,
-    std::optional<RHIClearDepthStencil> const& clear_dsv
+    Optional<RHIClearColor> const&  clear_rtv,
+    Optional<RHIClearDepthStencil> const& clear_dsv
 ) {
     CHECK(m_state == State::Execute);
     auto& tpass = m_setup->trackedPasses[pass];
     CHECK_MSG(tpass.pso.IsValid(), "Current pass has no Pipeline state.");
     StackArena<1024> arena{}; StackAllocatorSingleThreaded alloc(arena);
-    StlVector<RHICommandList::GraphicsDesc::Attachment> rtvs(alloc.Ptr());
+    Vector<RHICommandList::GraphicsDesc::Attachment> rtvs(alloc.Ptr());
     if (tpass.write_backbuffer) {
         const RHIExtent2D backbuffer = GetSwapchainExtent();
         CHECK_MSG(

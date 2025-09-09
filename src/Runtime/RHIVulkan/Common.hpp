@@ -132,6 +132,7 @@ namespace Foundation::RHI {
             return vk::DescriptorType::eStorageImage;
         case StorageBuffer:
             return vk::DescriptorType::eStorageBuffer;
+        default:
         case UniformBuffer:
             return vk::DescriptorType::eUniformBuffer;
         }

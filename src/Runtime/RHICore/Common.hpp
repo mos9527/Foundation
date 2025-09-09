@@ -4,6 +4,7 @@
 #include "Details/Details.hpp"
 
 namespace Foundation::RHI {
+    using namespace Core;
     constexpr static size_t kFullSize = -1;
     using RHIExtent1D = glm::vec<1, uint32_t>;
     using RHIExtent2D = glm::vec<2, uint32_t>;
@@ -12,7 +13,7 @@ namespace Foundation::RHI {
     using RHIOffset2D = glm::vec<2, int32_t>;
     using RHIOffset3D = glm::vec<3, int32_t>;
     using RHIClearColor = glm::vec<4, float>;
-    using RHIClearDepthStencil = std::pair<float, uint32_t>;
+    using RHIClearDepthStencil = Pair<float, uint32_t>;
 
     enum class RHIResourceFormat {
         Undefined = 0,

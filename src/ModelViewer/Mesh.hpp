@@ -22,11 +22,11 @@ static constexpr RHI::RHIVertexAttribute Attributes[4]{
 };
 struct Mesh {
     Core::Allocator* m_allocator;
-    const Core::StlVector<char> m_vertex_data, m_index_data;
+    const Core::Vector<char> m_vertex_data, m_index_data;
     const size_t m_num_vertices, m_num_indices;
     Mesh(
-        Core::StlSpan<const char> vertex_data,
-        Core::StlSpan<const char> index_data,
+        Core::Span<const char> vertex_data,
+        Core::Span<const char> index_data,
         size_t num_vertices, size_t num_indices,
         Core::Allocator* allocator
     ) noexcept

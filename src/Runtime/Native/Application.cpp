@@ -19,13 +19,13 @@ namespace Foundation::Native {
         if (m_window)
             glfwDestroyWindow(static_cast<GLFWwindow*>(m_window));
     }
-    std::pair<uint32_t, uint32_t> NativeWindow::GetWindowSize() const
+    Pair<uint32_t, uint32_t> NativeWindow::GetWindowSize() const
     {
         int width, height;
         glfwGetWindowSize(static_cast<GLFWwindow*>(m_window), &width, &height);
         return { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
     }
-    std::pair<uint32_t, uint32_t> NativeWindow::GetFramebufferSize() const
+    Pair<uint32_t, uint32_t> NativeWindow::GetFramebufferSize() const
     {
         int width, height;
         glfwGetFramebufferSize(static_cast<GLFWwindow*>(m_window), &width, &height);

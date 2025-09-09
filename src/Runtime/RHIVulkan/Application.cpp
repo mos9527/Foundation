@@ -43,7 +43,7 @@ VulkanApplication::VulkanApplication(Core::Allocator* allocator, const char* app
     };
     uint32_t count = 0;
     const char** extensions = glfwGetRequiredInstanceExtensions(&count);
-    Core::StlVector<const char*> instanceExtensions(m_allocator);
+    Core::Vector<const char*> instanceExtensions(m_allocator);
     instanceExtensions.insert(instanceExtensions.end(), extensions, extensions + count);
     // Add our own extensions
     instanceExtensions.insert(
@@ -75,7 +75,7 @@ VulkanApplication::VulkanApplication(Core::Allocator* allocator, const char* app
         });
 }
 
-Core::StlSpan<const RHIDevice::DeviceDesc> VulkanApplication::EnumerateDevices() const {
+Core::Span<const RHIDevice::DeviceDesc> VulkanApplication::EnumerateDevices() const {
     return { m_devices.begin(), m_devices.end() };
 }
 
