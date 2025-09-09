@@ -119,7 +119,8 @@ namespace Foundation::Rendering {
     struct TrackedPass {
         String name;
         PassHandle handle; // Index to tracked passes
-        RHIDeviceQueueType queue; // Preferred type of queue to run in
+        // The queue to run this pass on
+        RHIDeviceQueueType queue;
         bool used{ false }; // Culled?
         bool has_cross_queue_dependent{ false }; // Has an edge to/from another queue
         // Writes to the swapchain backbuffer
@@ -194,10 +195,6 @@ namespace Foundation::Rendering {
         Vector<RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout>> desc_layouts;
         Vector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> desc_sets;
         Vector<RHIDeviceDescriptorSet*> p_desc_sets;
-        // ---
-        // Queue this pass will actually be run in
-        // Valid only under Execute state/Execute.. calls
-        RHIDeviceQueueType exec_queue;
     };
     struct RendererDesc {
         // Enable async compute
@@ -382,6 +379,8 @@ namespace Foundation::Rendering {
             CHECK_MSG(queue == RHIDeviceQueueType::Graphics || queue == RHIDeviceQueueType::Compute, "Invalid queue type. Only Graphics and Compute queues are supported.");
             PassHandle handle = m_setup->trackedPasses.size();
             CHECK_MSG(handle < kRendererMaxPasses, "Too many passes ({}) - leaks might be possible", handle);
+            if (!m_desc.async)
+                queue = RHIDeviceQueueType::Graphics; // Force graphics queue if async compute is disabled
             m_setup->trackedPasses.emplace_back(
                 m_allocator,
                 handle,

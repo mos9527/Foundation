@@ -822,6 +822,52 @@ void Renderer::FinalizeResources() {
             sta.reset();
     }
 }
+#pragma endregion
+void Renderer::SetFrameSyncObjects() {
+    for (size_t i = 0; i < m_frameSwaps; i++) {
+        m_swaps[i].render = m_device->CreateSemaphore(false);
+        m_swaps[i].render->DebugSetObjectName(fmt::format("Render Semaphore of Swap {}", i).c_str());
+        m_swaps[i].present = m_device->CreateSemaphore(false);
+        m_swaps[i].present->DebugSetObjectName(fmt::format("Present Semaphore of Swap {}", i).c_str());
+        m_swaps[i].fence = m_device->CreateFence(true);
+        m_swaps[i].fence->DebugSetObjectName(fmt::format("Fence of Swap {}", i).c_str());
+    }
+}
+void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
+    CHECK_MSG(m_desc.present, "Cannot set swapchain when the renderer is not declared with Present support");
+    m_frameSwaps = swapchain->GetImages().size();
+    LOG_RUNTIME(Renderer, info, "Swapchain uses {} back buffers", m_frameSwaps);
+    if (m_state == State::Execute) {
+        // If changing swapchain during execution (e.g. due to resize exception)
+        // Wait for GPU to be idle
+        m_device->WaitIdle();
+        m_state = State::PostSetup;
+    }
+    for (size_t i = 0; i < m_frameSwaps; ++i) {
+        auto* backbuffer = swapchain->GetImages()[i];
+        backbuffer->DebugSetObjectName(fmt::format("Backbuffer of Swap {}", i).c_str());
+        m_swaps[i].rtv = backbuffer->CreateTextureView(RHITextureViewDesc{
+            .format = swapchain->m_desc.format
+        });
+        if (m_swaps[i].rt_handle == kInvalidHandle) {
+            // First time setup
+            m_swaps[i].rt_handle = CreateResource(
+                fmt::format("Backbuffer of Swap {}", i),
+                backbuffer
+            );
+        }
+        else {
+            // Update existing handle
+            auto& rt_res = m_resources->resources[m_swaps[i].rt_handle];
+            CHECK_MSG(rt_res.GetIf<RHITexture*>(), "Swapchain backbuffer handle {} is not a texture", m_swaps[i].rt_handle);
+            rt_res = backbuffer;
+        }
+    }
+    m_swapchain = swapchain;
+    SetFrameSyncObjects();
+    // Reset semaphores index
+    m_currentSync = 0;
+}
 RHIPipelineStage Renderer::ExecuteGetPassAllCurrentStages(TrackedPass& pass)
 {
     RHIPipelineStage ans{};
@@ -920,14 +966,14 @@ bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, c
     CHECK(m_state == State::Execute && m_executeAlloc);
     if (m_desc.async) {
         // Pass that depends on a producer pass that's on another queue
-        // needs external synchronization.    
+        // needs external synchronization.
         Vector<Pair<RHIDeviceSemaphore*, size_t>> waits(m_executeAlloc.Ptr());
         auto check_wait = [&](PassHandle other) {
             if (other != kInvalidHandle) {
                 auto& opass = m_setup->trackedPasses[other];
-                if (opass.exec_queue != pass.exec_queue) {
-                    CHECK_MSG(opass.asyncSemaphore.IsValid(), "Pass {} [{}] is not valid to be waited on", opass.name, other);
-                    // Wait on the producer pass's semaphore                       
+                if (opass.queue != pass.queue) {
+                    CHECK_MSG(opass.asyncSemaphore.IsValid(), "FIXME-Async Compute: Pass {} [{}] is not valid to be waited on", opass.name, other);
+                    // Wait on the producer pass's semaphore
                     waits.emplace_back(opass.asyncSemaphore.Get(), SEM_COUNTER(opass.ord));
                 }
             }
@@ -987,56 +1033,7 @@ bool Renderer::ExecuteSubmitOrContinue(TrackedPass& pass, RHICommandList* cmd, c
         return false;
     }
 }
-#pragma endregion
-void Renderer::SetFrameSyncObjects() {
-    for (size_t i = 0; i < m_frameSwaps; i++) {
-        m_swaps[i].render = m_device->CreateSemaphore(false);
-        m_swaps[i].render->DebugSetObjectName(fmt::format("Render Semaphore of Swap {}", i).c_str());
-        m_swaps[i].present = m_device->CreateSemaphore(false);
-        m_swaps[i].present->DebugSetObjectName(fmt::format("Present Semaphore of Swap {}", i).c_str());
-        m_swaps[i].fence = m_device->CreateFence(true);
-        m_swaps[i].fence->DebugSetObjectName(fmt::format("Fence of Swap {}", i).c_str());
-    }
-}
-void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
-    CHECK_MSG(m_desc.present, "Cannot set swapchain when the renderer is not declared with Present support");
-    m_frameSwaps = swapchain->GetImages().size();
-    LOG_RUNTIME(Renderer, info, "Swapchain uses {} back buffers", m_frameSwaps);
-    if (m_state == State::Execute) {
-        // If changing swapchain during execution
-        // Wait for GPU to be idle
-        m_device->WaitIdle();
-        m_state = State::PostSetup;
-    }
-    for (size_t i = 0; i < m_frameSwaps; ++i) {
-        auto* backbuffer = swapchain->GetImages()[i];
-        backbuffer->DebugSetObjectName(fmt::format("Backbuffer of Swap {}", i).c_str());
-        m_swaps[i].rtv = backbuffer->CreateTextureView(RHITextureViewDesc{
-            .format = swapchain->m_desc.format
-        });
-        if (m_swaps[i].rt_handle == kInvalidHandle) {
-            // First time setup
-            m_swaps[i].rt_handle = CreateResource(
-                fmt::format("Backbuffer of Swap {}", i),
-                backbuffer
-            );
-        }
-        else {
-            // Update existing handle
-            auto& rt_res = m_resources->resources[m_swaps[i].rt_handle];
-            CHECK_MSG(rt_res.GetIf<RHITexture*>(), "Swapchain backbuffer handle {} is not a texture", m_swaps[i].rt_handle);
-            rt_res = backbuffer;
-        }
-    }
-    m_swapchain = swapchain;
-    SetFrameSyncObjects();
-    // Reset semaphores index
-    m_currentSync = 0;
-}
-
 /**
- * @note MangoHud seem to cause validation errors with present semaphores
- *
  * Hot path. States are pre-allocated, and all auxiliary allocations are
  * done on the stack e.g. command list recording, runtime (IsSkipped()) pass culling.
  */
@@ -1065,7 +1062,7 @@ void Renderer::Execute() {
         cmd->Reset(), cmd->Begin();
     };
     auto set_next_pass_queue = [&](const TrackedPass& pass) {
-        switch (pass.exec_queue)
+        switch (pass.queue)
         {
         case RHIDeviceQueueType::Graphics:
             set_next_graphics();
@@ -1083,28 +1080,12 @@ void Renderer::Execute() {
         | std::views::filter([&](PassHandle hdl) { return !passes[hdl].pass->IsSkipped(hdl, this); });
     auto execution = Vector<PassHandle>(execution_view.begin(), execution_view.end(), m_executeAlloc.Ptr());
     size_t pass_cnt = execution.size();
-    // Assign executed queue types
-    for (auto i = 0; i < pass_cnt; ++i)
-    {
-        auto& pass = passes[execution[i]];
-        if (m_desc.async)
-            pass.exec_queue = pass.queue;
-        else
-            pass.exec_queue = RHIDeviceQueueType::Graphics;
-    }
     if (!execution.empty())
-    {
-        // Last command list always executes on Graphics
-        // if we need to present
-        if (m_desc.present)
-            passes[execution.back()].exec_queue = RHIDeviceQueueType::Graphics;
-        // Begin first command list
         set_next_pass_queue(passes[*execution.begin()]);
-    }
     for (auto i = 0; i < pass_cnt; ++i) {
         auto& pass = passes[execution[i]];
         Optional<Pair<RHIDeviceSemaphore*, size_t>> barrier_extra_wait{};
-        if (pass.exec_queue == RHIDeviceQueueType::Compute) {
+        if (pass.queue == RHIDeviceQueueType::Compute) {
             // We can't stay on compute to transition if the pass uses resources
             // that has these flags
             const RHIPipelineStage computeMask =
