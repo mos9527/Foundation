@@ -2,10 +2,11 @@
 #include "Allocator.hpp"
 namespace Foundation::Core {
 	/**
-	 * @brief Enables fast, sequential memory allocation without frees from a pre-allocated memory block.
-	 * Also known as an Arena or Bump Allocator.      
+	 * @brief Implements a stack-based bump allocator.
+	 *
+	 * @note This is not thread-safe nor should it be used in a multithreaded context.
 	 */
-    template<typename Counter> class StackAllocator : public Allocator {
+    class StackAllocator : public Allocator {
 	public:
         StackAllocator() {};
         StackAllocator(Arena arena) {
@@ -37,39 +38,27 @@ namespace Foundation::Core {
 		 */
 		pointer Allocate(size_type size, size_type alignment) override;
         /**
-         * @brief No-op. No memory is modified with this operation.
+         * @note No-op. No memory is modified with this operation.
          */
-        inline void Deallocate(pointer ptr) override { /* nop */ }
+        void Deallocate(pointer ptr) override { /* nop */ }
         /**
-         * @brief No-op. No memory is modified with this operation.
+         * @note No-op. No memory is modified with this operation.
          */
-        inline void Deallocate(pointer ptr, size_type size) override {  /* nop */ }
+        void Deallocate(pointer ptr, size_type size) override {  /* nop */ }
         /**
-         * @brief Unsupported. Throws std::runtime_error when invoked.
+         * @note Unsupported. Throws std::runtime_error when invoked.
          */
-        inline pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) override {
+        pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) override {
             throw std::runtime_error("StackAllocator does not support reallocation");
         }
-        inline size_type GetUsedMemory() const noexcept override {
+        size_type GetUsedMemory() const noexcept override {
             return m_current - reinterpret_cast<size_type>(m_memory);
         }
         constexpr operator bool() const noexcept { return m_memory != nullptr; }
 	private:		
         pointer m_memory{ nullptr };
-        Counter m_end{};
-        Counter m_current{};
-        Counter m_used{};
+        size_type m_end{};
+        size_type m_current{};
+        size_type m_used{};
 	};
-    /**
-     * @brief Defines a type alias for StackAllocator using CounterSingleThreaded as the counter type.
-     * Allows for single-threaded allocations. Concurrent access is undefined behavior.
-     * Allocations being made through this allocator are tracked.
-     */
-    using StackAllocatorSingleThreaded = StackAllocator<CounterSingleThreaded>;
-    /**
-     * @brief Defines a type alias for StackAllocator that uses atomic counter.
-     * Allows for multi-threaded allocations. Concurrent access is synchronized (atomic).
-     * Allocations being made through this allocator are tracked.
-     */
-    using StackAllocatorMultiThreaded = StackAllocator<CounterMultiThreaded>;
 }

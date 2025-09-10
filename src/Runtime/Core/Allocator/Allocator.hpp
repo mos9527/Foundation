@@ -11,8 +11,6 @@ namespace Foundation::Core {
 	inline uintptr_t AlignDown(uintptr_t value, uintptr_t alignment) {
 		return (value) & ~(alignment - 1);
 	}
-    typedef size_t CounterSingleThreaded;
-    typedef std::atomic<size_t> CounterMultiThreaded;
     /**
      * @brief A memory arena allocated from an Allocator
      */

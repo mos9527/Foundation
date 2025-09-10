@@ -352,7 +352,7 @@ namespace Foundation::Rendering {
         ScopedArena m_executeArena;
         // Temporary allocator for execution
         // This is reset every frame, and only guaranteed to be valid during Execute state.
-        StackAllocatorSingleThreaded m_executeAlloc;
+        StackAllocator m_executeAlloc;
         RHIPipelineStage ExecuteGetPassAllCurrentStages(TrackedPass& pass);
         void ExecuteBarrierSubresource(TrackedResource& res, RHITextureSubresourceRange const& range, RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd);
         void ExecuteBarrierBuffer(TrackedResource& res, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd);
@@ -824,6 +824,13 @@ namespace Foundation::Rendering {
          * @brief Retrieves the current state of the renderer.
          */
         [[nodiscard]] State GetState() const { return m_state; }
+        /**
+         * @brief Retrieves the current frame index.
+         *
+         * This value is monotonically increasing every time Execute() is called,
+         * and starts from 0.
+         */
+        [[nodiscard]] uint64_t GetFrame() const { return m_frame; }
         /**
          * @brief Update the swapchain to a new one.
          *

@@ -8,7 +8,6 @@
 #include "Renderer.hpp"
 namespace Foundation::Rendering {
     using namespace Foundation::Core;
-
     /**
      * @brief Initialization parameters for RenderApplication.
      */
@@ -41,7 +40,7 @@ namespace Foundation::Rendering {
 
         UniquePtr<Renderer> m_renderer;
 
-        inline RHIExtent2D GetFramebufferSize() const
+        RHIExtent2D GetFramebufferSize() const
         { auto [w, h] = m_window.GetFramebufferSize(); return { w, h }; }
 
         void CreateSwapchain();
@@ -70,8 +69,21 @@ namespace Foundation::Rendering {
          * Implementation may leave this empty if no action is needed.
          */
         virtual void OnSwapchainResize() { InitializeRenderer(); }
+        /**
+         * @brief Action to take before each frame is executed.
+         *
+         * This is invoked by Execute() before the renderer is executed.
+         *
+         * Implementation may leave this empty if no action is needed.
+         */
+        virtual void OnBeforeFrame() { /* nop */ }
+        /**
+         * @brief Execute one frame of the application.
+         *
+         * This is invoked by RunForever() every frame, and should not be directly called.
+         */
+        void Execute();
     public:
-        RenderApplication() : Native::NativeApplication() {};
         /**
          * @brief Initialize the application with the specified RHI backend.
          *

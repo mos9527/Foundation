@@ -2,9 +2,7 @@
 #include "HeapAllocator.hpp"
 namespace Foundation::Core {
     /**
-     * @brief Alias for HeapAllocatorMultiThreaded
-     * Serves as a thin wrapper around mimalloc's default allocation behaviors,
-     * with allocations being made through this allocator being tracked.
+     * @brief Alias for HeapAllocator with tracking enabled.
      */
-    using DefaultAllocator = HeapAllocatorMultiThreaded;
+    using DefaultAllocator = HeapAllocator<true>;
 }

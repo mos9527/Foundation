@@ -33,7 +33,7 @@ namespace Foundation::RHI {
         ScopedArena m_arena;
         // Stack allocator for temporary allocations during command list execution
         // Only valid within Begin(), End() clause
-        StackAllocatorSingleThreaded m_allocator;
+        StackAllocator m_allocator;
         constexpr static size_t kArenaSize = 2LL * (1LL << 20); // 2 MB
 
         struct Barriers {

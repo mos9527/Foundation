@@ -4,7 +4,7 @@
 #include <Core/Allocator/StackAllocator.hpp>
 using namespace Foundation::RHI;
 void VulkanPipelineState::InitializePipelineLayout() {
-    StackArena<> arena; StackAllocatorSingleThreaded alloc(arena);
+    StackArena<> arena; StackAllocator alloc(arena);
     Vector<vk::DescriptorSetLayout> p_set_layouts(m_desc.descriptor_set_layouts.size(), alloc.Ptr());
     for (size_t i = 0; i < m_desc.descriptor_set_layouts.size(); ++i)
         p_set_layouts[i] = m_desc.descriptor_set_layouts[i].Get<VulkanDeviceDescriptorSetLayout>()->GetVkLayout();
@@ -25,7 +25,7 @@ void VulkanPipelineState::InitializePipelineLayout() {
     }, m_device.GetVkAllocatorCallbacks());
 }
 void VulkanPipelineState::InitializeGraphics() {
-    StackArena<> arena; StackAllocatorSingleThreaded alloc(arena);
+    StackArena<> arena; StackAllocator alloc(arena);
     Vector<vk::VertexInputBindingDescription> vtx_bindings(alloc.Ptr());
     for (size_t i = 0; i < m_desc.vertex_input.bindings.size(); ++i) {
         const auto& [stride, per_instance] = m_desc.vertex_input.bindings[i];

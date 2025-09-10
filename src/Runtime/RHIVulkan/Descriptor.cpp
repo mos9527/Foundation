@@ -27,7 +27,7 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
             break;
         }
     }
-    Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
+    Core::StackArena<> arena; Core::StackAllocator alloc(arena);
     Core::Vector<vk::DescriptorBufferInfo> buffers(desc.buffers.size(), alloc.Ptr());
     for (size_t i = 0; i < desc.buffers.size(); ++i) {
         auto const& b = desc.buffers[i];
@@ -68,7 +68,7 @@ void VulkanDeviceDescriptorSet::DebugSetObjectName(const char* name) {
 
 VulkanDeviceDescriptorPool::VulkanDeviceDescriptorPool(const VulkanDevice& device, PoolDesc const& desc)
     : RHIDeviceDescriptorPool(device, desc), m_device(device), m_storage(device.GetAllocator()) {
-    Core::StackArena<> arena; Core::StackAllocatorSingleThreaded alloc(arena);
+    Core::StackArena<> arena; Core::StackAllocator alloc(arena);
     Core::Vector<vk::DescriptorPoolSize> pool_sizes(desc.bindings.size(), alloc.Ptr());
     size_t max_sets = 0;
     for (size_t i = 0; i < desc.bindings.size(); ++i) {

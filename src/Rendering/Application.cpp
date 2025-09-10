@@ -57,23 +57,23 @@ void RenderApplication::InitializeInternal() {
         m_device = m_rhi->CreateDevice(m_rhi->EnumerateDevices()[m_desc.deviceIndex]);
     }
 }
+void RenderApplication::Execute()
+{
+    try {
+        m_renderer->Execute();
+    }
+    catch (RHISwapchainResizeException&) {
+        CreateSwapchain();
+        m_renderer->SetSwapchain(m_swapchain);
+        OnSwapchainResize();
+    }
+}
+
 void RenderApplication::RunForever() {
     CHECK_MSG(m_rhi, "No RHI backend initialized! Call Initialize<Backend>() first.");
     CHECK(m_device && m_renderer);
-    if (m_desc.present)
-    {
-        while (!m_window.WindowShouldClose()) {
-            try {
-                m_renderer->Execute();
-            }
-            catch (RHISwapchainResizeException&) {
-                CreateSwapchain();
-                m_renderer->SetSwapchain(m_swapchain);
-                OnSwapchainResize();
-            }
-        }
-    } else
-    {
-        m_renderer->Execute();
-    }
+    do {
+        OnBeforeFrame();
+        Execute();
+    } while (m_window && !m_window.WindowShouldClose());
 }

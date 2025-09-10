@@ -9,4 +9,7 @@ target_link_libraries(Test_Misc PUBLIC Foundation_Runtime)
 add_executable(Test_ShaderReflection "ShaderReflection.cpp")
 target_link_libraries(Test_ShaderReflection PUBLIC Foundation_Rendering)
 
+add_executable(Test_CircularBuffer "CircularBuffer.cpp")
+target_link_libraries(Test_CircularBuffer PUBLIC Foundation_Runtime)
+
 add_subdirectory(VulkanSamples)
