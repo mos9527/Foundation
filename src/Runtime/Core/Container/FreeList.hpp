@@ -79,7 +79,7 @@ namespace Foundation::Core {
             m_bitmap.reserve(size);
         }
         FreeList(Allocator* alloc) : m_keys(alloc), m_values(alloc), m_bitmap(alloc) {}
-        FreeList(Allocator* alloc, size_t reserve_size) : FreeList(alloc) {
+        FreeList(size_t reserve_size, Allocator* alloc) : FreeList(alloc) {
             reserve(reserve_size);
         }
         /**

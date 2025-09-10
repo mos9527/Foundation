@@ -75,5 +75,18 @@ void RenderApplication::RunForever() {
     do {
         OnBeforeFrame();
         Execute();
+        // Update framerate
+        size_t smp_tick = m_timing.begin.y;
+        size_t perf_counter = getPerformanceCounter();
+        if (perf_counter - smp_tick >= m_timing.kTimingSampleDuration)
+        {
+            m_timing.Tick({m_renderer->GetFrame(), perf_counter});
+            if (m_window)
+            {
+                double fps = static_cast<double>(m_timing.delta.x) / (m_timing.kTimingSampleDuration / 1e9);
+                m_window.SetWindowTitle(fmt::format("{} [{} FPS]", m_desc.windowTitle, fps).c_str());
+            }
+        }
+
     } while (m_window && !m_window.WindowShouldClose());
 }

@@ -83,6 +83,20 @@ namespace Foundation::Rendering {
          * This is invoked by RunForever() every frame, and should not be directly called.
          */
         void Execute();
+        struct FrameTiming
+        {
+            // [Frame Number, Perf Counter [ns]]
+            using FTick = glm::vec<2, size_t>;
+            // States
+            FTick begin, delta;
+            FTick Tick(FTick const& t)
+            {
+                delta = t - begin;
+                begin = t;
+                return delta;
+            }
+            const size_t kTimingSampleDuration{ static_cast<size_t>(1.0 * 1e9) };
+        } m_timing{};
     public:
         /**
          * @brief Initialize the application with the specified RHI backend.

@@ -129,7 +129,7 @@ namespace Foundation::RHI {
     public:
         RHIObjectStorage(Core::Allocator* allocator) : m_allocator(allocator), m_objects(allocator) {};
         RHIObjectStorage(Core::Allocator* allocator, size_t reserve_size) :
-            m_allocator(allocator), m_objects(allocator, reserve_size) {
+            m_allocator(allocator), m_objects(reserve_size, allocator) {
         };
         /**
          * @brief Creates specified RHIObject of derived type T and retrieves its handle
