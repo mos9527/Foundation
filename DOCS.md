@@ -50,7 +50,9 @@ Refer to https://docs.vulkan.org/tutorial/latest/02_Development_environment.html
 Refer to https://docs.vulkan.org/tutorial/latest/02_Development_environment.html#_macos for setting up the Vulkan SDK on macOS.
 
 ### Building from command line
-The following commands will create a build directory, generate the build system files, and build the project.
+The following commands will create a build directory, generate the build system files, and build all targets with 8 parallel jobs.
+Binary artifacts will be located in `build/bin/`.
+
 ```bash
 mkdir build
 cd build
@@ -75,7 +77,10 @@ Model Viewer
 ---
 @ref ModelViewer demonstrates a simple model viewer application built using @ref Foundation.
 
-See @ref ModelViewer page for source and more details.
+It's recommended to build with the following CMake options:
+```bash
+-DFOUNDATION_WITH_EXAMPLES=OFF -DFOUNDATION_WITH_TESTS=OFF -DFOUNDATION_WITH_MODELVIEWER=ON -DCMAKE_BUILD_TYPE=Release -DCAMKE_UNITY_BUILD=ON
+```
 
 Third party
 ---
