@@ -29,19 +29,23 @@ namespace Foundation::RHI {
     protected:
         const VulkanCommandPool& m_commandPool;
         vk::raii::CommandBuffer m_commandBuffer{ nullptr };
+
+        ScopedArena m_arena;
+        // Stack allocator for temporary allocations during command list execution
+        // Only valid within Begin(), End() clause
+        StackAllocatorSingleThreaded m_allocator;
+        constexpr static size_t kArenaSize = 2LL * (1LL << 20); // 2 MB
+
         struct Barriers {
             Vector<vk::ImageMemoryBarrier2> image;
             Vector<vk::BufferMemoryBarrier2> buffer;
             Barriers(Allocator* allocator) : image(allocator), buffer(allocator) {};
-            ~Barriers() = default;
         };
+        // !! XXX: Resources allocated with m_allocator must be destroyed before
+        // the allocator goes down.
+        // VTable can in-fact get corrupted otherwise - we need a better solution
+        // to safeguard this type of issue.
         UniquePtr<Barriers> m_barriers;
-
-        ScopedArena m_arena;
-        // Stack allocator for temporary allocations during command list execution
-        // Only valid within Begin(), End() clause               
-        StackAllocatorSingleThreaded m_allocator;
-        constexpr static size_t kArenaSize = 2LL * (1LL << 20); // 2 MB
     public:
         VulkanCommandList(const VulkanCommandPool& commandPool);
 

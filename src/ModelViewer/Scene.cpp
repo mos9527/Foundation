@@ -49,5 +49,6 @@ namespace Foundation {
     void Scene::Update(RHICommandList* cmd)
     {
         m_data.Update(cmd);
+        m_dirty = false;
     }
 }

@@ -77,7 +77,3 @@ void RenderApplication::RunForever() {
         m_renderer->Execute();
     }
 }
-RenderApplication::~RenderApplication() {
-    if (m_device)
-        m_device->WaitIdle();
-}

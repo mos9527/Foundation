@@ -70,7 +70,6 @@ namespace Foundation::Rendering {
          * Implementation may leave this empty if no action is needed.
          */
         virtual void OnSwapchainResize() { InitializeRenderer(); }
-        ~RenderApplication() override;
     public:
         RenderApplication() : Native::NativeApplication() {};
         /**

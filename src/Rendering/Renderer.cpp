@@ -991,6 +991,8 @@ bool Renderer::ExecuteSubmitOrContinue(
                 if (opass.queue != pass.queue) {
                     CHECK_MSG(opass.asyncSemaphore.IsValid(), "FIXME-Async Compute: Pass {} [{}] is not valid to be waited on", opass.name, other);
                     // Wait on the producer pass's semaphore
+                    if (opass.pass->IsSkipped(opass.handle, this))
+                        return false; // Skip waiting on skipped passes
                     if (opass.ord > pass.ord)
                     {
                         // From the previous frame
