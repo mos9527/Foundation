@@ -65,7 +65,7 @@ namespace Foundation::RHI {
         virtual RHICommandList& SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height) = 0;
         virtual RHICommandList& Draw(uint32_t vertex_count, uint32_t instance_count = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0) = 0;
         virtual RHICommandList& DrawIndexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0, int32_t vertex_offset = 0, uint32_t first_instance = 0) = 0;
-        virtual RHICommandList& DrawIndexedIndirectCount(RHIBuffer* buffer, size_t offset, RHIBuffer* count_buffer, size_t count_offset, uint32_t max_draw_count, uint32_t stride) = 0;
+        virtual RHICommandList& DrawIndexedIndirectCount(RHIBuffer* cmd_buffer, size_t cmd_offset, RHIBuffer* count_buffer, size_t count_offset, uint32_t max_draw_count, uint32_t cmd_stride) = 0;
 #pragma endregion
         virtual RHICommandList& PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Core::Span<const char> data) = 0;
 #pragma region Transfer Queue

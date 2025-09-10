@@ -55,6 +55,6 @@ add_subdirectory(Shaders)
 add_dependencies(ModelViewer
     Shader_MVClearCounters
     Shader_MVIndirectCull
-    Shader_Mesh
+    Shader_MVMeshDraw
 )
 

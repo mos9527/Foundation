@@ -169,7 +169,7 @@ namespace Foundation::Rendering {
         // (Graphics Only) Depth Stencil View
         ResourceHandle dsv{ kInvalidHandle };
         // (Graphics Only) Vertex Input assembly
-        RHI::RHIPipelineState::PipelineStateDesc::VertexInput vertex_input{};
+        RHIPipelineState::PipelineStateDesc::VertexInput vertex_input{};
         /* --- */
         UniquePtr<RenderPass> pass;
         TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue, UniquePtr<RenderPass> renderPass)

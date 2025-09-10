@@ -16,8 +16,8 @@ namespace Foundation::RHI {
                     uint32_t stride; // In bytes
                     bool per_instance{ false }; // If true, this binding is per-instance data
                 };
-                Core::Span<const Binding> bindings;
-                Core::Span<const RHIVertexAttribute> attributes;
+                Span<const Binding> bindings;
+                Span<const RHIVertexAttribute> attributes;
             } vertex_input{};
             // [Graphics] Input Assembly
             enum Topology {
@@ -103,7 +103,7 @@ namespace Foundation::RHI {
                 } render_target{};
             };
             // [Graphics] Attachments/Alpha Blending
-            Core::Span<const Attachment> attachments;
+            Span<const Attachment> attachments;
             // Stages
             struct ShaderStage {
                 struct StageDesc {
@@ -117,16 +117,16 @@ namespace Foundation::RHI {
                 } desc;
                 RHIDeviceObjectHandle<RHIShaderModule> shader_module;
             };
-            Core::Span<const ShaderStage> shader_stages;
+            Span<const ShaderStage> shader_stages;
             // Descriptors
-            Core::Span<const RHIDeviceObjectHandle<RHIDeviceDescriptorSetLayout>> descriptor_set_layouts;
+            Span<const RHIDeviceObjectHandle<RHIDeviceDescriptorSetLayout>> descriptor_set_layouts;
             // Push Constants
             struct PushConstant {
                 RHIShaderStage stage;
                 size_t offset;
                 size_t size;
             };
-            Core::Span<const PushConstant> push_constants;
+            Span<const PushConstant> push_constants;
         };
         const PipelineStateDesc m_desc;
 

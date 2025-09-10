@@ -16,6 +16,7 @@ using namespace Foundation::RHI;
 
 const char* kVulkanDeviceExtensions[] = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    VK_KHR_16BIT_STORAGE_EXTENSION_NAME
 };
 
 const char* kVulkanDeviceTypes[] = {
@@ -101,13 +102,15 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         vk::PhysicalDeviceVulkan11Features,
         vk::PhysicalDeviceVulkan12Features,
         vk::PhysicalDeviceVulkan13Features,
-        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT       
+        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT,
+        vk::PhysicalDevice16BitStorageFeatures
     > featureChain = {
-        {.features = {.samplerAnisotropy = true } },            // vk::PhysicalDeviceFeatures2
+        {.features = {.samplerAnisotropy = true, .shaderInt16 = true } },         // vk::PhysicalDeviceFeatures2
         {.shaderDrawParameters = true },                        // vk::PhysicalDeviceVulkan11Features
-        {.shaderFloat16 = true, .timelineSemaphore = true },    // vk::PhysicalDeviceVulkan12Features
+        {.drawIndirectCount = true, .shaderFloat16 = true, .timelineSemaphore = true },    // vk::PhysicalDeviceVulkan12Features
         {.synchronization2 = true, .dynamicRendering = true },  // vk::PhysicalDeviceVulkan13Features
-        {.extendedDynamicState = true }                         // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT        
+        {.extendedDynamicState = true },                        // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
+        {.storageInputOutput16 = true }                         // vk::PhysicalDevice16BitStorageFeatures
     };
     vk::DeviceCreateInfo device_info{
             .pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),

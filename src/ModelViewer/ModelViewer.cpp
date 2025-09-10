@@ -45,7 +45,7 @@ public:
                 r->CmdDispatch(self, cmd, {1,1,1});
             }
         );
-        createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Graphics,
+        createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Compute,
             [=, this](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "indirectCullEarly", "data/shaders/MVIndirectCull.spv");
@@ -58,6 +58,33 @@ public:
             {
                 r->CmdSetPipeline(self, cmd);
                 r->CmdDispatch(self, cmd, { kMaxIndirectCommands, 1, 1 });
+            }
+        );
+        createPass(m_renderer.get(), "Indirect Draw", RHIDeviceQueueType::Graphics,
+            [=, this](PassHandle self, Renderer* r)
+            {
+                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/MVMeshDraw.spv");
+                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVMeshDraw.spv");
+                r->BindBufferStorage(self, m_sceneVertex, RHIPipelineStageBits::VertexShader, "vertices");
+                r->BindBufferStorage(self, m_sceneIndex, RHIPipelineStageBits::VertexShader, "indices");
+                r->BindBufferShaderRead(self, m_indirectCommands, RHIPipelineStageBits::DrawIndirect);
+                r->BindBackbufferRTV(self);
+                r->BindVertexInput(self, {.bindings = {{{.stride = sizeof(Vertex)}}}, .attributes = Attributes});
+            },
+            [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                auto const& img_wh = r->GetSwapchainExtent();
+                r->CmdBeginGraphics(self, cmd, img_wh);
+                r->CmdSetPipeline(self, cmd);
+                cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
+                    .SetScissor(0, 0, img_wh.x, img_wh.y);
+                cmd->BindVertexBuffer(0, {{{r->DerefResource(m_sceneVertex).Get<RHIBuffer*>()}}},{{{0}}})
+                    .BindIndexBuffer(r->DerefResource(m_sceneIndex).Get<RHIBuffer*>(), 0, RHIResourceFormat::R32_UINT)
+                    .DrawIndexedIndirectCount(r->DerefResource(m_indirectCommands).Get<RHIBuffer*>(), 0,
+                    r->DerefResource(m_counter).Get<RHIBuffer*>(), 0,
+                    static_cast<uint32_t>(kMaxIndirectCommands),
+                    sizeof(MeshDrawIndirectCmd)
+                );
             }
         );
     }

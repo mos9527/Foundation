@@ -13,9 +13,6 @@ struct MVP {
     float4x4 proj;
 };
 
-SamplerState sampler;
-Texture2D texture;
-
 struct VSOutput
 {
     float4 pos : SV_Position;
@@ -47,7 +44,5 @@ VSOutput vertMain(VSInput input) {
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
-
-    float4 smp = texture.Sample(sampler, vertIn.uv);
-    return float4(smp * dot(vertIn.normal, float3(0, 0, 1)));
+    return float4(float4(1) * dot(vertIn.normal, float3(0, 0, 1)));
 }
