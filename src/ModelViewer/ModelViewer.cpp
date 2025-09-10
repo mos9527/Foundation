@@ -3,6 +3,7 @@
 * @brief Model Viewer Application
 */
 class ModelViewer : public RenderApplication {
+public:
     UniquePtr<Scene> m_scene;
     ResourceHandle m_sceneInstance{kInvalidHandle}, m_scenePrimitive{kInvalidHandle};
     ResourceHandle m_sceneVertex{kInvalidHandle}, m_sceneIndex{kInvalidHandle};
@@ -64,6 +65,8 @@ class ModelViewer : public RenderApplication {
 
 int main(int argc, char** argv) {
     ModelViewer app;
-    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = false, .asyncCompute = true});
+    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = true, .asyncCompute = true});
+    auto test = app.m_scene->AddInstance({.enabled = true});
+    LOG_RUNTIME(main, info, "Test: Enabled Instance ID {}", test);
     app.RunForever();
 }

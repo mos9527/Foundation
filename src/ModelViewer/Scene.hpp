@@ -46,7 +46,7 @@ namespace Foundation {
             outInstance = Instance, outPrimitive = Primitive, outVertex = Vertex, outIndex = Index;
             return createPass(
                 renderer, "Scene Update",
-                RHIDeviceQueueType::Graphics,
+                RHIDeviceQueueType::Compute,
                 [=, this](PassHandle self, Renderer* r) {
                     r->BindBufferCopyDst(self, Instance);
                     r->BindBufferCopyDst(self, Primitive);
@@ -58,7 +58,7 @@ namespace Foundation {
                 },
                 [=, this](PassHandle self, Renderer* r)
                 {
-                    return HasUpdates();
+                    return !HasUpdates();
                 }
             );
         }

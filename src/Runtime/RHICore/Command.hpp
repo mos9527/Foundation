@@ -31,7 +31,6 @@ namespace Foundation::RHI {
     class RHICommandList : public RHIObject {
     protected:
         const RHICommandPool& m_commandPool;
-
     public:
         RHICommandList(RHICommandPool const& commandPool) : m_commandPool(commandPool) {}
 #pragma region Transition

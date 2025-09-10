@@ -1,5 +1,3 @@
-implementing Math;
-
 float2 PackUnitOctahedral(float3 v) {
     v /= float3(abs(v.x) + abs(v.y) + abs(v.z));
     v.xy = (v.z >= 0.0f) ? v.xy : (float2(1.0f) - abs(float2(v.yx))) * sign(float2(v.xy));

@@ -33,6 +33,7 @@ namespace Foundation::RHI {
             Vector<vk::ImageMemoryBarrier2> image;
             Vector<vk::BufferMemoryBarrier2> buffer;
             Barriers(Allocator* allocator) : image(allocator), buffer(allocator) {};
+            ~Barriers() = default;
         };
         UniquePtr<Barriers> m_barriers;
 

@@ -87,7 +87,6 @@ namespace Foundation {
         m_stagingBuffer->Flush(), m_staging.clear(), m_staging.shrink_to_fit();
         using enum RHIResourceAccessBits;
         using enum RHIPipelineStageBits;
-        cmd->Begin();
         // Transfers
         if (!m_primitiveStaging.empty())
             cmd->CopyBuffer(m_stagingBuffer.Get(), m_primitiveData.Get(), m_primitiveStaging);
@@ -97,7 +96,6 @@ namespace Foundation {
             cmd->CopyBuffer(m_stagingBuffer.Get(), m_vertexData.Get(), m_vertexStaging);
         if (!m_indexStaging.empty())
             cmd->CopyBuffer(m_stagingBuffer.Get(), m_indexData.Get(), m_indexStaging);
-        cmd->End();
         m_primitiveStaging.clear(), m_instanceStaging.clear(), m_vertexStaging.clear(), m_indexStaging.clear();
     }
     void SceneData::Update(RHICommandList* cmd) {

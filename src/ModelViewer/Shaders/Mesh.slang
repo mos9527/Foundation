@@ -26,8 +26,7 @@ struct VSOutput
 };
 
 [[vk::push_constant]] MVP m;
-module Math;
-__include Math;
+#include "Math.h"
 
 [shader("vertex")]
 VSOutput vertMain(VSInput input) {

@@ -20,6 +20,12 @@ FetchContent_Declare(
   GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(mimalloc)
+set(MI_BUILD_STATIC ON CACHE BOOL "" FORCE)
+set(MI_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(MI_BUILD_OBJECT OFF CACHE BOOL "" FORCE)
+set(MI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(MI_OVERRIDE OFF CACHE BOOL "" FORCE)
+set(MI_OVERRIDE OFF CACHE BOOL "" FORCE)
 target_compile_definitions(
 	mimalloc-static
 	PRIVATE
@@ -28,7 +34,6 @@ target_compile_definitions(
 	# e.g. OOM Allocation in Release produces nullptr,
 	# but in Debug causes segfault due to asserts.
 )
-set(MI_OVERRIDE OFF CACHE BOOL "" FORCE)
 
 target_link_libraries(Foundation_Allocator PUBLIC mimalloc-static)
 target_include_directories(
