@@ -18,13 +18,17 @@ struct VSOutput
 };
 
 [[vk::push_constant]] DrawPushConstant draw;
+StructuredBuffer<InstanceMetadata> scInstance;
+StructuredBuffer<MeshDrawIndirectCmd> commands;
 
 #include "Math.h"
 [shader("vertex")]
-VSOutput vertMain(VSInput input) {
+VSOutput vertMain(VSInput input, uint32_t drawID : SV_DrawIndex) {
     VSOutput output;
-    float4x4 mvp = draw.viewProj;
-    float4x4 model;
+
+    uint32_t instanceID = commands[drawID].instanceID;
+    float4x4 model = scInstance[instanceID].transform;
+    float4x4 mvp = mul(draw.viewProj, model);
 
     float3 N;
     float4 T_BSign;

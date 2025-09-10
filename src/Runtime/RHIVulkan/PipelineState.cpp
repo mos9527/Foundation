@@ -46,7 +46,6 @@ void VulkanPipelineState::InitializeGraphics() {
         });
         bindings_used.insert(binding);
     }
-    CHECK_MSG(vtx_bindings.size() == bindings_used.size(), "Vertex binding count ({}) must match that of the the attribute count ({})",vtx_bindings.size(), vtx_attrs.size());
     vk::PipelineVertexInputStateCreateInfo vtx{
         .vertexBindingDescriptionCount = static_cast<uint32_t>(vtx_bindings.size()),
         .pVertexBindingDescriptions = vtx_bindings.data(),

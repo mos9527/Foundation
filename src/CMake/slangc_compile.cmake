@@ -1,4 +1,4 @@
-
+# TODO: Messy. Doesn't handle slang files with modified includes properly.
 find_program(SLANGC_EXECUTABLE
     NAMES slangc
     DOC "Slang compiler executable"

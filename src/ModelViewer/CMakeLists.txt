@@ -52,6 +52,7 @@ target_link_libraries(ModelViewer PRIVATE Foundation_Runtime Foundation_Renderin
 target_include_directories(ModelViewer PRIVATE .. "${stb_SOURCE_DIR}" "${fast_obj_SOURCE_DIR}")
 
 add_subdirectory(Shaders)
+add_subdirectory(Samples)
 add_dependencies(ModelViewer
     Shader_MVClearCounters
     Shader_MVIndirectCull

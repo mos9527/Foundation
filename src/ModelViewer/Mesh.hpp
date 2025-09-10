@@ -15,10 +15,10 @@ struct Vertex {
     uint16_t u, v;       // texcoord fp16
 };
 static constexpr RHI::RHIVertexAttribute Attributes[4]{
-    {.location = 0, .offset = offsetof(Vertex, px), .format = RHI::RHIResourceFormat::R16G16B16_SIGNED_FLOAT },
-    {.location = 1, .offset = offsetof(Vertex, tp), .format = RHI::RHIResourceFormat::R16_UINT },
-    {.location = 2, .offset = offsetof(Vertex, np), .format = RHI::RHIResourceFormat::R32_UINT},
-    {.location = 3, .offset = offsetof(Vertex, u),  .format = RHI::RHIResourceFormat::R16G16_SIGNED_FLOAT }
+    {.location = 0, .offset = offsetof(Vertex, px), .format = RHI::RHIResourceFormat::R16G16B16_SIGNED_FLOAT, .binding = 0 },
+    {.location = 1, .offset = offsetof(Vertex, tp), .format = RHI::RHIResourceFormat::R16_UINT, .binding = 0 },
+    {.location = 2, .offset = offsetof(Vertex, np), .format = RHI::RHIResourceFormat::R32_UINT, .binding = 0 },
+    {.location = 3, .offset = offsetof(Vertex, u),  .format = RHI::RHIResourceFormat::R16G16_SIGNED_FLOAT, .binding = 0 },
 };
 struct Mesh {
     Core::Allocator* m_allocator;

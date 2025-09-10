@@ -25,6 +25,13 @@ namespace Foundation {
         Scene(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc);
 
         SceneHandle AddMesh(Span<const Vertex> vertices, Span<const Index> indices, SceneHandle& outVtx, SceneHandle& outIdx);
+        SceneHandle AddMesh(Mesh const& mesh, SceneHandle& outVtx, SceneHandle& outIdx) {
+            return AddMesh(
+                Span<const Vertex>{reinterpret_cast<const Vertex*>(mesh.m_vertex_data.data()), mesh.m_num_vertices},
+                Span<const Index>{reinterpret_cast<const Index*>(mesh.m_index_data.data()), mesh.m_num_indices},
+                outVtx, outIdx
+            );
+        }
         void FreeMesh(SceneHandle mesh, SceneHandle vtx, SceneHandle idx);
 
         SceneHandle AddInstance(InstanceMetadata data);
@@ -33,6 +40,7 @@ namespace Foundation {
 
         auto* CreateUpdatePass(
             Renderer* renderer,
+            RHIDeviceQueueType queue,
             ResourceHandle& outInstance,
             ResourceHandle& outPrimitive,
             ResourceHandle& outVertex,
@@ -46,7 +54,7 @@ namespace Foundation {
             outInstance = Instance, outPrimitive = Primitive, outVertex = Vertex, outIndex = Index;
             return createPass(
                 renderer, "Scene Update",
-                RHIDeviceQueueType::Compute,
+                queue,
                 [=, this](PassHandle self, Renderer* r) {
                     r->BindBufferCopyDst(self, Instance);
                     r->BindBufferCopyDst(self, Primitive);

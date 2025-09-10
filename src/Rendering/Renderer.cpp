@@ -286,6 +286,9 @@ ResourceHandle Renderer::BindTextureRTV(
     CHECK(m_state == State::Setup);
     auto& tpass = m_setup->trackedPasses[pass];
     CHECK_MSG(tpass.queue == RHIDeviceQueueType::Graphics, "RTV (Render Target Views) are only supported on Graphics queues");
+    RHITextureAspectFlag kRTVBits = RHITextureAccessFlagBits::Color;
+    CHECK_MSG((desc.range.layer.access | kRTVBits == kRTVBits) && (desc.range.layer.access & kRTVBits),
+        "RTV view must have exactly one layer, and the access flag must be Color.");
     DeclareTextureAccess(pass, texture,
         RHIPipelineStageBits::ColorAttachmentOutput,
         desc.range,
@@ -304,6 +307,9 @@ ResourceHandle Renderer::BindTextureDSV(
     CHECK(m_state == State::Setup);
     auto& tpass = m_setup->trackedPasses[pass];
     CHECK_MSG(tpass.queue == RHIDeviceQueueType::Graphics, "DSV (Depth Stencil Views) are only supported on Graphics queues");
+    RHITextureAspectFlag kDSVBits = RHITextureAccessFlagBits::Depth | RHITextureAccessFlagBits::Stencil;
+    CHECK_MSG((desc.range.layer.access | kDSVBits == kDSVBits) && (desc.range.layer.access & kDSVBits),
+        "DSV view must have exactly one layer, and the access flag must be Depth and/or Stencil.");
     DeclareTextureAccess(pass, texture,
         RHIPipelineStageBits::EarlyFragmentTests | RHIPipelineStageBits::LateFragmentTests,
         desc.range,
@@ -1237,9 +1243,9 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd,
         }
     }
     if (tpass.dsv != kInvalidHandle) {
-        auto& [dsv_handel, desc] = m_setup->trackedViews[tpass.dsv];
-        auto& tres = m_setup->trackedResources[dsv_handel];
-        auto& res = DerefResource(dsv_handel).Get<RHITexture*>();
+        auto& [depth_hdl, desc] = m_setup->trackedViews[tpass.dsv];
+        auto const& tres = m_setup->trackedResources[depth_hdl];
+        RHITexture* res = DerefResource(depth_hdl).Get<RHITexture*>();
         CHECK_MSG(
             res->m_desc.extent.x >= extent.x && res->m_desc.extent.y >= extent.y,
             "Graphics extent too large for Depth buffer {}",
@@ -1247,7 +1253,11 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd,
         );
         cmd->BeginGraphics({
             .color_attachments = rtvs,
-            .depth_attachment = {.image_view = DerefTextureView(tpass.dsv), .clear_depth_stencil = clear_dsv },
+            .depth_attachment = {
+                .image_view = DerefTextureView(tpass.dsv),
+                .image_layout = RHITextureLayout::DepthStencil,
+                .clear_depth_stencil = clear_dsv
+            },
             .width = extent.x,
             .height = extent.y
         });

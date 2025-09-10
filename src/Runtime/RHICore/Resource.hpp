@@ -124,7 +124,7 @@ namespace Foundation::RHI {
     template<typename T> using RHITextureScopedHandle = RHIScopedHandle<RHITexture, T>;
     template<typename T> using RHITextureHandle = RHIHandle<RHITexture, T>;
     struct RHITextureSubresourceLayer {
-        RHITextureAccessFlag access{ RHITextureAccessFlagBits::Color };
+        RHITextureAspectFlag access{ RHITextureAccessFlagBits::Color };
         uint32_t mip_level{ 0 };
         uint32_t base_array_layer{ 0 };
         uint32_t layer_count{ 1 };

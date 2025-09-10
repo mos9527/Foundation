@@ -8,7 +8,7 @@ public:
     ResourceHandle m_sceneInstance{kInvalidHandle}, m_scenePrimitive{kInvalidHandle};
     ResourceHandle m_sceneVertex{kInvalidHandle}, m_sceneIndex{kInvalidHandle};
     ResourceHandle m_indirectCommands{kInvalidHandle}, m_counter{kInvalidHandle};
-
+    ResourceHandle m_depthBuffer{kInvalidHandle};
     const size_t kMaxIndirectCommands = 1024;
     void RendererSetup() override
     {
@@ -18,7 +18,10 @@ public:
             m_device.Get(),
             SceneDataDesc{}
         );
-        m_scene->CreateUpdatePass(m_renderer.get(),m_sceneInstance, m_scenePrimitive,m_sceneVertex, m_sceneIndex);
+        m_scene->CreateUpdatePass(
+            m_renderer.get(), RHIDeviceQueueType::Compute,
+            m_sceneInstance, m_scenePrimitive,m_sceneVertex, m_sceneIndex
+        );
         m_indirectCommands = createResource(m_renderer.get(), "IndirectCommands",
             RHIBufferDesc{
                 .usage = RHIBufferUsageBits::IndirectBuffer | RHIBufferUsageBits::StorageBuffer,
@@ -29,6 +32,14 @@ public:
             RHIBufferDesc{
                 .usage = RHIBufferUsageBits::IndirectBuffer | RHIBufferUsageBits::StorageBuffer,
                 .size = sizeof(int)
+            }
+        );
+        m_depthBuffer = createResource(m_renderer.get(), "DepthBuffer",
+            RHITextureDesc{
+                .usage = RHITextureUsageBits::DepthStencil,
+                .extent = m_renderer->GetSwapchainExtent3D(),
+                .format = RHIResourceFormat::D32_SIGNED_FLOAT,
+                .initial_layout = RHITextureLayout::Undefined,
             }
         );
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
@@ -67,26 +78,54 @@ public:
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVMeshDraw.spv");
                 r->BindBufferStorage(self, m_sceneVertex, RHIPipelineStageBits::VertexShader, "vertices");
                 r->BindBufferStorage(self, m_sceneIndex, RHIPipelineStageBits::VertexShader, "indices");
-                r->BindBufferShaderRead(self, m_indirectCommands, RHIPipelineStageBits::DrawIndirect | RHIPipelineStageBits::AllGraphics);
-                r->BindBackbufferRTV(self);
+                r->BindBufferStorage(self, m_indirectCommands, RHIPipelineStageBits::DrawIndirect | RHIPipelineStageBits::AllGraphics, "commands");
+                r->BindBufferStorage(self, m_sceneInstance, RHIPipelineStageBits::AllGraphics, "scInstance");
                 r->BindVertexInput(self, {.bindings = {{{.stride = sizeof(Vertex)}}}, .attributes = Attributes});
-                r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, 64);
+                r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, sizeof(DrawPushConstant));
+                r->BindBackbufferRTV(self);
+                // XXX: Quite verbose. Maybe we only need Format?
+                r->BindTextureDSV(self, m_depthBuffer, {
+                    .format = RHIResourceFormat::D32_SIGNED_FLOAT,
+                    .range = {
+                        .layer = {
+                            .access = RHITextureAccessFlagBits::Depth,
+                        }
+                    }
+                });
             },
             [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
                 auto const& img_wh = r->GetSwapchainExtent();
                 r->CmdBeginGraphics(self, cmd, img_wh);
                 r->CmdSetPipeline(self, cmd);
-                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, GetApplicationTime());
+                // Camera matrix
+                float4x4 view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+                float4x4 proj = glm::infinitePerspective(glm::radians(45.0f), m_swapchain->GetAspectRatio(),0.1f);
+                proj[1][1] *= -1; // vulkan NDC
+                DrawPushConstant pc {
+                    .viewProj =  proj * view,
+                    .time = GetApplicationTime<float>()
+                };
+                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, pc);
                 cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
                     .SetScissor(0, 0, img_wh.x, img_wh.y);
-                cmd->BindVertexBuffer(0, {{{r->DerefResource(m_sceneVertex).Get<RHIBuffer*>()}}},{{{0}}})
-                    .BindIndexBuffer(r->DerefResource(m_sceneIndex).Get<RHIBuffer*>(), 0, RHIResourceFormat::R32_UINT)
-                    .DrawIndexedIndirectCount(r->DerefResource(m_indirectCommands).Get<RHIBuffer*>(), 0,
-                    r->DerefResource(m_counter).Get<RHIBuffer*>(), 0,
-                    static_cast<uint32_t>(kMaxIndirectCommands),
-                    sizeof(MeshDrawIndirectCmd)
-                );
+                // TODO: No VB/IB requires maintenance9 and maintenance6, which are Vulkan 1.4 features
+                // niagara uses this - we'll make do with using an actual VB/IB for now
+                cmd->BindVertexBuffer(
+                    0,
+                    {{{r->DerefResource(m_sceneVertex).Get<RHIBuffer*>()}}},
+                    {{{0}}})
+                    .BindIndexBuffer(
+                        r->DerefResource(m_sceneIndex).Get<RHIBuffer*>(),
+                        0,
+                        RHIResourceFormat::R32_UINT)
+                    .DrawIndexedIndirectCount(
+                        r->DerefResource(m_indirectCommands).Get<RHIBuffer*>(),
+                        offsetof(MeshDrawIndirectCmd, indexCount),
+                        r->DerefResource(m_counter).Get<RHIBuffer*>(),
+                        0,
+                        static_cast<uint32_t>(kMaxIndirectCommands),
+                        sizeof(MeshDrawIndirectCmd));
                 cmd->EndGraphics();
             }
         );
@@ -96,7 +135,14 @@ public:
 int main(int argc, char** argv) {
     ModelViewer app;
     app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = true, .asyncCompute = true});
-    auto test = app.m_scene->AddInstance({.enabled = true});
-    LOG_RUNTIME(main, info, "Test: Enabled Instance ID {}", test);
+    auto mesh = LoadMeshFromObjFile("data/assets/kitten.obj", app.GetAllocator());
+    SceneHandle m_vtx, m_idx;
+    auto primitive_0 = app.m_scene->AddMesh(mesh, m_vtx, m_idx);
+    auto instance_0 = app.m_scene->AddInstance({
+        .enabled = true,
+        .primitiveID = primitive_0,
+        .transform = glm::mat4(1.0f),
+    });
+    LOG_RUNTIME(main, info, "Test: Enabled Instance ID {}", instance_0);
     app.RunForever();
 }

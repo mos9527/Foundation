@@ -6,7 +6,7 @@
 namespace Foundation {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;    
-    using SceneHandle = size_t;
+    using SceneHandle = uint32_t;
     struct SceneDataDesc {
         size_t PrimitiveDataBudget{ 32 * (1 << 20LL) };
         size_t InstanceDataBudget{ 32 * (1 << 20LL) };

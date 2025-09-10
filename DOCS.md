@@ -1,6 +1,6 @@
 Foundation
 ===
-Foundation is a work-in-progress cross-platform rendering framework.
+[Foundation](https://github.com/mos9527/Foundation/) is a work-in-progress cross-platform rendering framework.
 
 Heavily inspired by Arseny Kapoulkine's [niagara](https://github.com/zeux/niagara),
 [bgfx](https://github.com/bkaradzic/bgfx), and [Unreal Engine](https://www.unrealengine.com/en-US/),

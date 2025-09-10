@@ -197,7 +197,7 @@ namespace Foundation::RHI {
         TransferDestination = 1 << 5
     BITMASK_ENUM_END();
 
-    BITMASK_ENUM_BEGIN(RHITextureAccessFlag, uint32_t)
+    BITMASK_ENUM_BEGIN(RHITextureAspectFlag, uint32_t)
         Color = 1 << 0,
         Depth = 1 << 1,
         Stencil = 1 << 2
