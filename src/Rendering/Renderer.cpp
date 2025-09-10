@@ -675,6 +675,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     // RTV,DSV
     Vector<RHIPipelineState::PipelineStateDesc::Attachment> attachments(m_allocator);
     if (tracked.write_backbuffer) {
+        CHECK_MSG(tracked.rtvs.empty(), "Pass {} writes to backbuffer, and cannot have other RTVs.", tracked.name);
         // Only write to the backbuffer
         attachments.push_back({ .render_target = {.format = m_swapchain->m_desc.format } });
     } else{

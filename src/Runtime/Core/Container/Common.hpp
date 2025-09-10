@@ -18,25 +18,25 @@ namespace Foundation::Core {
     using Optional = std::optional<T>;
 
     /**
-     * @breif Alias for `std::pair`
+     * @brief Alias for `std::pair`
      */
     template <typename First, typename Second>
     using Pair = std::pair<First, Second>;
 
     /**
-     * @breif Alias for `std::tuple`
+     * @brief Alias for `std::tuple`
      */
     template<typename ...Args>
     using Tuple = std::tuple<Args...>;
 
     /**
-     * @breif Alias for `std::array`
+     * @brief Alias for `std::array`
      */
     template<typename T, size_t Size>
     using Array = std::array<T, Size>;
 
     /**
-    * @breif Alias for `std::basic_string_view<char>`
+    * @brief Alias for `std::basic_string_view<char>`
     */
     using StringView = std::basic_string_view<char>;
 

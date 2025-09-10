@@ -632,10 +632,8 @@ namespace Foundation::Rendering {
         /**
          * @brief Declares that this pass will write to the current (at Record time) swapchain backbuffer.
          *
-         * ATTENTION: This invalidates any other bound RTVs.
-         *
-         * Backbuffer in the entirety of a graphics pass is always in RenderTarget layout,
-         * and cannot be read from, copied from/to, or used as anything but.
+         * ATTENTION: This invalidates any other bound RTVs. With this enabled,
+         * existence of other RTVs will throw at EndSetup() time.
          *
          * You can retrieve the current backbuffer RTV via DerefCurrentBackbufferView() at Record time.
          *

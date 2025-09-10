@@ -43,10 +43,9 @@ namespace Foundation::Core {
         }
     };
     /**
-     * @brief A dense map implementation based on free list with amortized O(1) allocation and deallocation.
-     * This is by no means a conventional associative container, nor should it be used as such.
-     * For all intents and purposes, this is, and SHOULD be used as an *Object Pool*
-     * where allocation and deallocation of keys is done in a LIFO manner.
+     * @brief A dense map implementation with amortized O(1) allocation and deallocation.
+     *
+     * Reallocation (growth) behaviour is the same as std::vector.
      */
     template<typename K, typename V>
     class FreeList {
