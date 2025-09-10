@@ -21,6 +21,12 @@ FetchContent_Declare(
   GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(GLFW)
+if (UNIX AND NOT APPLE)
+    # https://github.com/glfw/glfw/issues/2495
+    # XXX: This is a bit of a hack.
+    # With Unity builds _GNU_SOURCE is defined too late for some reason
+    target_compile_definitions(glfw PUBLIC -D_GNU_SOURCE)
+endif()
 
 FetchContent_Declare(
     tinyfiledialogs

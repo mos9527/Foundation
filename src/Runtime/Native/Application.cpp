@@ -1,4 +1,5 @@
 #include "Application.hpp"
+#define _GNU_SOURCE
 #include <GLFW/glfw3.h>
 #include <tinyfiledialogs.h>
 #include <stdexcept>
