@@ -36,7 +36,7 @@ class ModelViewer : public RenderApplication {
             [=, this](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "resetCounter", "data/shaders/MVClearCounters.spv");
-                r->BindBufferUnordered(self, m_counter, "counter");
+                r->BindBufferUnordered(self, m_counter, RHIShaderStageBits::Compute, "counter");
             },
             [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
@@ -48,10 +48,10 @@ class ModelViewer : public RenderApplication {
             [=, this](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "indirectCullEarly", "data/shaders/MVIndirectCull.spv");
-                r->BindBufferUnordered(self, m_indirectCommands, "commands");
-                r->BindBufferUnordered(self, m_counter, "counter");
-                r->BindBufferStorage(self, m_sceneInstance, "scInstance");
-                r->BindBufferStorage(self, m_scenePrimitive, "scPrimitive");
+                r->BindBufferUnordered(self, m_indirectCommands, RHIShaderStageBits::Compute, "commands");
+                r->BindBufferUnordered(self, m_counter, RHIShaderStageBits::Compute, "counter");
+                r->BindBufferStorage(self, m_sceneInstance, RHIShaderStageBits::Compute, "scInstance");
+                r->BindBufferStorage(self, m_scenePrimitive, RHIShaderStageBits::Compute, "scPrimitive");
             },
             [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
             {

@@ -193,7 +193,7 @@ namespace Foundation::Rendering {
         Vector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> desc_sets;
         Vector<RHIDeviceDescriptorSet*> p_desc_sets;
         // All pipeline stages used in this pass
-        RHIPipelineStage GetStages() const
+        RHIPipelineStage GetMaxPipelineStages() const
         {
             if (queue == RHIDeviceQueueType::Graphics)
                 return RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader;
@@ -356,7 +356,7 @@ namespace Foundation::Rendering {
             TrackedPass& pass, RHICommandList* cmd,
             const RHIDeviceQueue* queue,
             bool final_submit = false,
-            Span<const Pair<RHIDeviceSemaphore*, size_t>> extra_waits = {}
+            Span<const Tuple<RHIDeviceSemaphore*, RHIPipelineStage, size_t>> extra_waits = {}
         );
 
         void SetFrameSyncObjects();
@@ -517,7 +517,7 @@ namespace Foundation::Rendering {
          */
         void BindBufferUniform(
             PassHandle pass, ResourceHandle buffer,
-            StringView bind_point
+            RHIPipelineStage stage, StringView bind_point
         ) const;
         /**
          * @brief Binds a storage (read-write) buffer to a specified binding point.
@@ -530,7 +530,7 @@ namespace Foundation::Rendering {
          */
         void BindBufferStorage(
             PassHandle pass, ResourceHandle buffer,
-            StringView bind_point
+            RHIPipelineStage stage, StringView bind_point
         ) const;
         /**
          * @brief Binds a buffer for unordered (UAV) access from shaders (read and/or write in any order).
@@ -543,7 +543,7 @@ namespace Foundation::Rendering {
          */
         void BindBufferUnordered(
             PassHandle pass, ResourceHandle buffer,
-            StringView bind_point
+            RHIPipelineStage stage, StringView bind_point
         ) const;
         /**
          * @brief Declares this pass has shaders that will read from this buffer.
@@ -553,7 +553,7 @@ namespace Foundation::Rendering {
          * cmd->BindVertexBuffer(), cmd->BindIndexBuffer() at Record time to
          * use the buffer.
          */
-        void BindBufferShaderRead(PassHandle pass, ResourceHandle buffer) const;
+        void BindBufferShaderRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage) const;
         /**
          * @brief Declares that this pass will write to the buffer via copy.
          *
@@ -584,7 +584,7 @@ namespace Foundation::Rendering {
          */
         ResourceHandle BindTextureSRV(
             PassHandle pass, ResourceHandle texture,
-            StringView bind_point,
+            StringView bind_point, RHIPipelineStage stage,
             RHITextureViewDesc const& desc = {}
         ) const;
         /**
@@ -599,7 +599,7 @@ namespace Foundation::Rendering {
          */
         ResourceHandle BindTextureUAV(
             PassHandle pass, ResourceHandle texture, 
-            StringView bind_point,
+            StringView bind_point, RHIPipelineStage stage,
             RHITextureViewDesc const& desc = {}
         ) const;
         /**

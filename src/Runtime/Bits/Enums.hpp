@@ -3,7 +3,8 @@
 template<typename T, typename Ty> struct BitmaskEnumWrapper {    
     Ty value{};
     BitmaskEnumWrapper() : value(static_cast<Ty>(T{})) {}
-    BitmaskEnumWrapper(auto v) : value(static_cast<Ty>(v)) {}
+    BitmaskEnumWrapper(T v) : value(static_cast<Ty>(v)) {}
+    BitmaskEnumWrapper(Ty v) : value(v) {}
     BitmaskEnumWrapper<T, Ty> operator=(auto v) { value = static_cast<Ty>(v); return *this; }
     BitmaskEnumWrapper<T, Ty> operator|(auto v) const { return { value | static_cast<Ty>(v) }; }
     BitmaskEnumWrapper<T, Ty> operator&(auto v) const { return { value & static_cast<Ty>(v) }; }

@@ -27,7 +27,7 @@ namespace Examples {
                 [=](PassHandle self, Renderer* r) {
                     r->BindShader(self, RHIShaderStageBits::Compute, "csMain", "data/shaders/MandelbrotCompute.spv");
                     r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(PushConstants));
-                    r->BindTextureUAV(self, buffer, "image", { .format = RHIResourceFormat::R8G8B8A8_UNORM });
+                    r->BindTextureUAV(self, buffer, "image", RHIPipelineStageBits::ComputeShader, { .format = RHIResourceFormat::R8G8B8A8_UNORM });
                 },
                 [=, this](PassHandle self, Renderer* r, RHICommandList* cmd) {
                     r->CmdSetPipeline(self, cmd);

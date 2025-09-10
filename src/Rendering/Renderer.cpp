@@ -24,6 +24,12 @@ const char* kShaderDescriptorFirstBindingErrorHelp = "This can be caused by one 
 "so that the used bindings are continuous from 0.";
 const char* kShaderDescriptorFirstSetErrorHelp = kShaderDescriptorFirstBindingErrorHelp;
 constexpr size_t kExecuteArenaSize = 16 * (1 << 20); // 16 MiB for render graph execution
+const RHIPipelineStage kComputeStagesMask =
+      RHIPipelineStageBits::FragmentShader |
+      RHIPipelineStageBits::VertexShader |
+      RHIPipelineStageBits::MeshShader |
+      RHIPipelineStageBits::RayTracingShader |
+      RHIPipelineStageBits::AllGraphics;
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator)
     : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_device(device),
       m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena) {
@@ -167,12 +173,11 @@ void Renderer::BindPushConstant(
 }
 void Renderer::BindBufferUniform(
     PassHandle pass, ResourceHandle buffer,
-    StringView bind_point
+    RHIPipelineStage stage, StringView bind_point
 ) const
 {
     CHECK(m_state == State::Setup);
-    DeclareBufferAccess(pass, buffer,
-        m_setup->trackedPasses[pass].GetStages(),
+    DeclareBufferAccess(pass, buffer, stage,
         RHIResourceAccessBits::UniformRead
     );
     m_setup->trackedPasses[pass].buf_bindings.emplace_back(buffer, RHIDescriptorType::UniformBuffer, bind_point);
@@ -180,12 +185,11 @@ void Renderer::BindBufferUniform(
 }
 void Renderer::BindBufferStorage(
     PassHandle pass, ResourceHandle buffer,
-    StringView bind_point
+    RHIPipelineStage stage, StringView bind_point
 ) const
 {
     CHECK(m_state == State::Setup);
-    DeclareBufferAccess(pass, buffer,
-        m_setup->trackedPasses[pass].GetStages(),
+    DeclareBufferAccess(pass, buffer, stage,
         RHIResourceAccessBits::ShaderRead
     );
     m_setup->trackedPasses[pass].buf_bindings.emplace_back(buffer, RHIDescriptorType::StorageBuffer, bind_point);
@@ -193,22 +197,20 @@ void Renderer::BindBufferStorage(
 }
 void Renderer::BindBufferUnordered(
     PassHandle pass, ResourceHandle buffer,
-    StringView bind_point
+    RHIPipelineStage stage, StringView bind_point
 ) const
 {
     CHECK(m_state == State::Setup);
-    DeclareBufferAccess(pass, buffer,
-        m_setup->trackedPasses[pass].GetStages(),
+    DeclareBufferAccess(pass, buffer, stage,
         RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite
     );
     m_setup->trackedPasses[pass].buf_bindings.emplace_back(buffer, RHIDescriptorType::StorageBuffer, bind_point);
     m_setup->binding_counts[RHIDescriptorType::StorageBuffer]++;
 }
-void Renderer::BindBufferShaderRead(PassHandle pass, ResourceHandle buffer) const
+void Renderer::BindBufferShaderRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage) const
 {
     CHECK(m_state == State::Setup);
-    DeclareBufferAccess(pass, buffer,
-        m_setup->trackedPasses[pass].GetStages(),
+    DeclareBufferAccess(pass, buffer, stage,
         RHIResourceAccessBits::ShaderRead
     );
 }
@@ -239,14 +241,12 @@ void Renderer::BindTextureSampler(
 }
 ResourceHandle Renderer::BindTextureSRV(
     PassHandle pass, ResourceHandle texture,
-    StringView shader_name,
+    StringView shader_name, RHIPipelineStage stage,
     RHITextureViewDesc const& desc
 ) const
 {
     CHECK(m_state == State::Setup);
-    DeclareTextureAccess(pass, texture,
-        m_setup->trackedPasses[pass].GetStages(),
-        desc.range,
+    DeclareTextureAccess(pass, texture, stage, desc.range,
         RHIResourceAccessBits::ShaderRead,
         RHITextureLayout::ShaderReadOnly
     );
@@ -257,14 +257,12 @@ ResourceHandle Renderer::BindTextureSRV(
 }
 ResourceHandle Renderer::BindTextureUAV(
     PassHandle pass, ResourceHandle texture,
-    StringView shader_name,
+    StringView shader_name, RHIPipelineStage stage,
     RHITextureViewDesc const& desc
 ) const
 {
     CHECK(m_state == State::Setup);
-    DeclareTextureAccess(pass, texture,
-    m_setup->trackedPasses[pass].GetStages(),
-        desc.range,
+    DeclareTextureAccess(pass, texture, stage, desc.range,
         RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
         RHITextureLayout::General
     );
@@ -867,7 +865,10 @@ RHIPipelineStage Renderer::ExecuteGetPassAllCurrentStages(TrackedPass& pass)
     if (pass.write_backbuffer)
         ans |= RHIPipelineStageBits::ColorAttachmentOutput;
     for (auto [hdl, access, stage] : pass.bufferUsages)
-        ans |= stage;
+    {
+        auto& tres = m_setup->trackedResources[hdl];
+        ans |= tres.lastBufferState.stage;
+    }
     return ans;
 }
 void Renderer::ExecuteBarrierSubresource(TrackedResource& tres, RHITextureSubresourceRange const& range,RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd)
@@ -952,20 +953,23 @@ bool Renderer::ExecuteSubmitOrContinue(
     TrackedPass& pass, RHICommandList* cmd,
     const RHIDeviceQueue* queue,
     bool final_submit,
-    Span<const Pair<RHIDeviceSemaphore*, size_t>> extra_waits
+    Span<const Tuple<RHIDeviceSemaphore*, RHIPipelineStage, size_t>> extra_waits
 )
 {
     CHECK(m_state == State::Execute && m_executeAlloc);
     Vector<Pair<RHIDeviceSemaphore*, size_t>> waits(m_executeAlloc.Ptr()), signals(m_executeAlloc.Ptr());
-    waits.insert(waits.end(), extra_waits.begin(), extra_waits.end());
-    signals.emplace_back(pass.asyncSemaphore.Get(), SEM_COUNTER(pass.ord));
     Vector<RHIPipelineStage> waits_stages(m_executeAlloc.Ptr());
+    for (auto const& [sem, stage, counter] : extra_waits) {
+        waits.emplace_back(sem, counter);
+        waits_stages.push_back(stage);
+    }
     // Collect waited semaphores from inter-queue dependencies
     if (m_desc.async)
     {
+        signals.emplace_back(pass.asyncSemaphore.Get(), SEM_COUNTER(pass.ord));
         // Pass that depends on a producer pass that's on another queue
         // needs external synchronization.
-        auto check_wait = [&](PassHandle other) {
+        auto check_wait = [&](PassHandle other) -> bool {
             if (other != kInvalidHandle) {
                 auto& opass = m_setup->trackedPasses[other];
                 if (opass.queue != pass.queue) {
@@ -975,13 +979,15 @@ bool Renderer::ExecuteSubmitOrContinue(
                     {
                         // From the previous frame
                         waits.emplace_back(opass.asyncSemaphore.Get(), SEM_COUNTER_PREV(opass.ord));
+                        return true;
                     } else
                     {
                         waits.emplace_back(opass.asyncSemaphore.Get(), SEM_COUNTER(opass.ord));
+                        return true;
                     }
-
                 }
             }
+            return false;
         };
         // Textures
         for (auto const& [hdl, access, stage, range, layout] : pass.textureUsages) {
@@ -989,7 +995,8 @@ bool Renderer::ExecuteSubmitOrContinue(
             for (auto& sta : res.GetLastSubresourceStateOf(range)) {
                 if (sta.producer == pass.handle)
                     continue;
-                check_wait(sta.producer);
+                if (check_wait(sta.producer))
+                    waits_stages.emplace_back(stage);
                 if (access & kAllShaderWrites)
                     sta.producer = pass.handle;
             }
@@ -999,17 +1006,12 @@ bool Renderer::ExecuteSubmitOrContinue(
             auto& res = m_setup->trackedResources[hdl];
             if (res.lastBufferState.producer == pass.handle)
                 continue;
-            check_wait(res.lastBufferState.producer);
+            if (check_wait(res.lastBufferState.producer))
+                waits_stages.emplace_back(stage);
             if (access & kAllShaderWrites)
                 res.lastBufferState.producer = pass.handle;
         }
     }
-    auto fill_wait_stages = [&](uint32_t count)
-    {
-        RHIPipelineStageBits stage = pass.GetStages();
-        waits_stages.reserve(count + 1), waits_stages.resize(count);
-        std::ranges::fill(waits_stages, stage);
-    };
     // Submit or continue on the same list
     if (final_submit)
     {
@@ -1028,7 +1030,6 @@ bool Renderer::ExecuteSubmitOrContinue(
             );
             cmd->EndTransition();
             cmd->End();
-            fill_wait_stages(waits.size());
             waits_stages.push_back(RHIPipelineStageBits::ColorAttachmentOutput);
             queue->Submit({
                 .timeline_waits = waits,
@@ -1047,7 +1048,6 @@ bool Renderer::ExecuteSubmitOrContinue(
         } else
         {
             cmd->End();
-            fill_wait_stages(waits.size());
             queue->Submit({
                 .timeline_waits = waits,
                 .timeline_signals = signals,
@@ -1062,7 +1062,6 @@ bool Renderer::ExecuteSubmitOrContinue(
         if (waits.empty() && signals.empty()) return false; // Continue
         // Otherwise submit now for subsequent passes to wait on
         cmd->End();
-        fill_wait_stages(waits.size());
         queue->Submit({
             .timeline_waits = waits,
             .timeline_signals = signals,
@@ -1121,36 +1120,31 @@ void Renderer::Execute() {
     size_t pass_cnt = execution.size();
     if (!execution.empty())
         set_next_pass_queue(passes[*execution.begin()]);
-    Vector<Pair<RHIDeviceSemaphore*, size_t>> extra_wait(m_executeAlloc.Ptr());
+    Vector<Tuple<RHIDeviceSemaphore*, RHIPipelineStage, size_t>> extra_wait(m_executeAlloc.Ptr());
     for (auto i = 0; i < pass_cnt; ++i) {
         auto& pass = passes[execution[i]];
         if (pass.queue == RHIDeviceQueueType::Compute) {
             // XXX: Suboptimal. We can't stay on compute to transition if the pass
             // uses resources that has these flags.
-            using enum RHIPipelineStageBits;
-            const RHIPipelineStage computeMask =
-                FragmentShader |
-                VertexShader |
-                MeshShader |
-                RayTracingShader |
-                AllGraphics;
-            if (auto stages = ExecuteGetPassAllCurrentStages(pass); stages & computeMask) {
+            if (auto stages = ExecuteGetPassAllCurrentStages(pass); stages & kComputeStagesMask) {
                 set_next_graphics();
                 cmd->DebugInsertMarker("<Sync with Graphics Resources>");
                 ExecuteBarriers(pass, cmd);
                 cmd->End();
-                extra_wait.emplace_back(m_swaps[m_currentSync].barrier_semaphore_at(cmd_index - 1, m_device.Get()), SEM_COUNTER(cmd_index - 1));
+                auto* extra_sem = m_swaps[m_currentSync].barrier_semaphore_at(cmd_index - 1, m_device.Get());
+                auto extra_ctr = SEM_COUNTER(cmd_index - 1);
+                extra_wait.emplace_back( extra_sem, pass.GetMaxPipelineStages(), extra_ctr );
                 queue->Submit({
-                    .timeline_signals = { extra_wait.back() },
+                    .timeline_signals = {{{extra_sem, extra_ctr}}},
                     .cmd_lists = { cmd },
                 });
                 cmd_comp_index--;
                 set_next_compute();
-            }
-            else {
+            } else {
                 ExecuteBarriers(pass, cmd);
             }
-        } else {
+        }
+        else {
             ExecuteBarriers(pass, cmd);
         }
         cmd->DebugBegin(pass.name.c_str());
