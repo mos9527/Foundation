@@ -88,9 +88,9 @@ namespace Foundation::Rendering {
             InitializeRenderer();
         }
         /* --- */
-        inline Renderer*  GetRenderer() const { return m_renderer.get(); }
-        inline Allocator* GetAllocator() { return m_alloc.Ptr(); }
-        inline Allocator* GetRendererAllocator() { return m_alloc_renderer.Ptr(); }
+        Renderer*  GetRenderer() const { return m_renderer.get(); }
+        Allocator* GetAllocator() { return m_alloc.Ptr(); }
+        Allocator* GetRendererAllocator() { return m_alloc_renderer.Ptr(); }
         /**
          * @brief Run the main loop of the application.
          *

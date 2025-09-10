@@ -258,7 +258,7 @@ namespace Foundation::Rendering {
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_descPool;
         RHIDeviceScopedObjectHandle<RHICommandPool> m_cmdPool{}, m_compCmdPool{}; // Graphics, Async Compute
 
-        struct SwapSyncObjects{
+        struct FrameSyncObjects{
         private:
             // For async compute, we might submit multiple command buffers
             // per swap. Driver usually want them to live.                       
@@ -287,14 +287,14 @@ namespace Foundation::Rendering {
             RHITextureScopedHandle<RHITextureView> rtv{};
             // Tracked backbuffer handle
             ResourceHandle rt_handle{ kInvalidHandle };
-            SwapSyncObjects(Allocator* allocator)
+            FrameSyncObjects(Allocator* allocator)
                 : cmds(allocator), comp_cmds(allocator), barrier_semaphores(allocator)
             {
                 cmds.resize(kMaxCommandListsPerSwap), comp_cmds.resize(kMaxCommandListsPerSwap),
                     barrier_semaphores.resize(kMaxCommandListsPerSwap);
             }
         };
-        Vector<SwapSyncObjects> m_swaps;
+        Vector<FrameSyncObjects> m_swaps;
 
         RHIApplicationObjectHandle<RHIDevice> m_device{};
         RHIDeviceObjectHandle<RHISwapchain> m_swapchain{};
@@ -362,8 +362,9 @@ namespace Foundation::Rendering {
             Span<const Tuple<RHIDeviceSemaphore*, RHIPipelineStage, size_t>> extra_waits = {}
         );
         void SetFrameSyncObjects();
+
+        RHIDeviceIdleGuard m_waitIdle; // Ensure device is idle on destruction
     public:
-        ~Renderer();
         Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain,  Allocator* allocator);
 
 #pragma region Render Graph Setup

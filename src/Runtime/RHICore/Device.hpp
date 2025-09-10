@@ -194,6 +194,18 @@ namespace Foundation::RHI {
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };
+    /**
+     * @brief RAII guard to wait for device idle on destruction.
+     */
+    struct RHIDeviceIdleGuard
+    {
+        RHIDevice const* m_device { nullptr };
+        RHIDeviceIdleGuard() = delete;
+        RHIDeviceIdleGuard(RHIDevice const* device): m_device(device) {};
+        ~RHIDeviceIdleGuard() {
+            if (m_device) m_device->WaitIdle();
+        }
+    };
 
     template<> struct RHIObjectTraits<RHIDevice, RHISwapchain> {
         static RHISwapchain* Get(RHIDevice const* device, Handle handle) {

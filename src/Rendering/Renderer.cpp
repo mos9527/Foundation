@@ -33,7 +33,8 @@ const RHIPipelineStage kComputeStagesMask =
       RHIPipelineStageBits::AllGraphics;
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator)
     : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_swaps(m_allocator),
-      m_device(device), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena) {
+      m_device(device), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena),
+      m_waitIdle(device.Get()) {
     m_gfxQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
     m_compQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Compute);
     m_cmdPool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
@@ -1268,8 +1269,4 @@ void Renderer::CmdDispatch(
         (thread_size.y + local_size.y - 1) / local_size.y,
         (thread_size.z + local_size.z - 1) / local_size.z
     );
-}
-Renderer::~Renderer() {
-    if (m_device)
-        m_device->WaitIdle();
 }

@@ -86,6 +86,7 @@ namespace Foundation {
         [[nodiscard]] Pair<size_t, size_t> QueryDataSizeAndOffset(SceneHandle handle, RHIBuffer* buffer, AllocationList const& alloc) const;
 
         bool m_initialized{ false };
+        RHIDeviceIdleGuard m_waitIdle;
     public:
         SceneData(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc);
 

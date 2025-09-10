@@ -4,7 +4,7 @@ namespace Foundation {
     SceneData::SceneData(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc) :
         m_allocator(allocator), m_staging(allocator), m_primitives(allocator), m_vertices(allocator), m_indices(allocator), m_textures(allocator),
         m_instances(allocator), m_primitiveStaging(allocator), m_instanceStaging(allocator), m_vertexStaging(allocator),
-        m_indexStaging(allocator), m_desc(desc)
+        m_indexStaging(allocator), m_desc(desc), m_waitIdle(device)
     {
         LOG_RUNTIME(SceneData, info, "** Scene Data Budgets **");
         LOG_RUNTIME(SceneData, info, "  Primitive Data: {}", formatHumanReadableSize(desc.PrimitiveDataBudget));
