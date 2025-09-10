@@ -160,7 +160,12 @@ void Renderer::BindVertexInput(
 ) const
 {
     CHECK(m_state == State::Setup);
-    m_setup->trackedPasses[pass].vertex_input = info;
+    m_setup->trackedPasses[pass].vertex_input_bindings.insert(
+        m_setup->trackedPasses[pass].vertex_input_bindings.end(),info.bindings.begin(), info.bindings.end()
+    );
+    m_setup->trackedPasses[pass].vertex_input_attributes.insert(
+        m_setup->trackedPasses[pass].vertex_input_attributes.end(),info.attributes.begin(), info.attributes.end()
+    );
 }
 void Renderer::BindPushConstant(
     PassHandle pass, RHIShaderStage stage,
@@ -479,7 +484,10 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     // Check if any shader in the pipeline uses PC
     for (auto const& [path, refl] : reflections){
         if (!refl->m_pushConstants.empty())
+        {
             CHECK_MSG(refl->m_pushConstants.size() == 1, "Shader uses more than Push Constant block. This is not accepted by most drivers.");
+            CHECK_MSG(!tracked.push_constants.empty(), "Pass does not declare Push Constant ranges, but shader {} uses them.", path.string());
+        }
         for (auto& bind : refl->m_bindings) {
             CHECK_MSG(
                 !bind.name.empty(),
@@ -654,7 +662,10 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     }
     RHIPipelineState::PipelineStateDesc pso_desc{
         .type = tracked.compute_pass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
-        .vertex_input = tracked.vertex_input,
+        .vertex_input = {
+            .bindings = tracked.vertex_input_bindings,
+            .attributes = tracked.vertex_input_attributes
+        },
         .topology = RHIPipelineState::PipelineStateDesc::TRIANGLE_LIST,
         .rasterizer = {
             .fill_mode = RHIPipelineState::PipelineStateDesc::Rasterizer::FILL_SOLID,

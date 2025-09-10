@@ -102,15 +102,13 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         vk::PhysicalDeviceVulkan11Features,
         vk::PhysicalDeviceVulkan12Features,
         vk::PhysicalDeviceVulkan13Features,
-        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT,
-        vk::PhysicalDevice16BitStorageFeatures
+        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
     > featureChain = {
         {.features = {.samplerAnisotropy = true, .shaderInt16 = true } },         // vk::PhysicalDeviceFeatures2
-        {.shaderDrawParameters = true },                        // vk::PhysicalDeviceVulkan11Features
+        {.storageInputOutput16 = true, .shaderDrawParameters = true },                        // vk::PhysicalDeviceVulkan11Features
         {.drawIndirectCount = true, .shaderFloat16 = true, .timelineSemaphore = true },    // vk::PhysicalDeviceVulkan12Features
         {.synchronization2 = true, .dynamicRendering = true },  // vk::PhysicalDeviceVulkan13Features
         {.extendedDynamicState = true },                        // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
-        {.storageInputOutput16 = true }                         // vk::PhysicalDevice16BitStorageFeatures
     };
     vk::DeviceCreateInfo device_info{
             .pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),

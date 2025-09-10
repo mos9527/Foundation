@@ -35,3 +35,7 @@ struct InstanceMetadata {
     /* Other per-instance data */
     float4x4 transform;
 };
+struct DrawPushConstant
+{
+    float4x4 viewProj;
+};

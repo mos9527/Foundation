@@ -1,3 +1,4 @@
+#include "Common.h"
 struct VSInput {
     float16_t3 pos; // fp16
 
@@ -5,12 +6,6 @@ struct VSInput {
     uint32_t np; // normal packed [octa 15+15, bitangent sign 2]
 
     float16_t2 texCoord; // fp16
-};
-
-struct MVP {
-    float4x4 model;
-    float4x4 view;
-    float4x4 proj;
 };
 
 struct VSOutput
@@ -22,21 +17,22 @@ struct VSOutput
     float2 uv;
 };
 
-[[vk::push_constant]] MVP m;
-#include "Math.h"
+[[vk::push_constant]] DrawPushConstant draw;
 
+#include "Math.h"
 [shader("vertex")]
 VSOutput vertMain(VSInput input) {
     VSOutput output;
-    float4x4 mvp = mul(m.proj, mul(m.view, m.model));
+    float4x4 mvp = draw.viewProj;
+    float4x4 model;
 
     float3 N;
     float4 T_BSign;
     UnpackTBN(input.np, input.tp, N, T_BSign);
 
     output.pos = mul(mvp, float4(input.pos, 1.0));
-    output.normal = normalize(mul(m.model, float4(N, 0.0)).xyz);
-    output.tangent = float4(normalize(mul(m.model, T_BSign)).xyz, T_BSign.w);
+    output.normal = normalize(mul(model, float4(N, 0.0)).xyz);
+    output.tangent = float4(normalize(mul(model, T_BSign)).xyz, T_BSign.w);
     output.uv = input.texCoord;
 
     return output;

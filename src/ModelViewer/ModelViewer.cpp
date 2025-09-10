@@ -67,15 +67,17 @@ public:
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVMeshDraw.spv");
                 r->BindBufferStorage(self, m_sceneVertex, RHIPipelineStageBits::VertexShader, "vertices");
                 r->BindBufferStorage(self, m_sceneIndex, RHIPipelineStageBits::VertexShader, "indices");
-                r->BindBufferShaderRead(self, m_indirectCommands, RHIPipelineStageBits::DrawIndirect);
+                r->BindBufferShaderRead(self, m_indirectCommands, RHIPipelineStageBits::DrawIndirect | RHIPipelineStageBits::AllGraphics);
                 r->BindBackbufferRTV(self);
                 r->BindVertexInput(self, {.bindings = {{{.stride = sizeof(Vertex)}}}, .attributes = Attributes});
+                r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, 64);
             },
             [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
                 auto const& img_wh = r->GetSwapchainExtent();
                 r->CmdBeginGraphics(self, cmd, img_wh);
                 r->CmdSetPipeline(self, cmd);
+                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, GetApplicationTime());
                 cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
                     .SetScissor(0, 0, img_wh.x, img_wh.y);
                 cmd->BindVertexBuffer(0, {{{r->DerefResource(m_sceneVertex).Get<RHIBuffer*>()}}},{{{0}}})
@@ -85,6 +87,7 @@ public:
                     static_cast<uint32_t>(kMaxIndirectCommands),
                     sizeof(MeshDrawIndirectCmd)
                 );
+                cmd->EndGraphics();
             }
         );
     }

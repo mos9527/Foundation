@@ -169,7 +169,8 @@ namespace Foundation::Rendering {
         // (Graphics Only) Depth Stencil View
         ResourceHandle dsv{ kInvalidHandle };
         // (Graphics Only) Vertex Input assembly
-        RHIPipelineState::PipelineStateDesc::VertexInput vertex_input{};
+        Vector<RHIPipelineState::PipelineStateDesc::VertexInput::Binding> vertex_input_bindings;
+        Vector<RHIVertexAttribute> vertex_input_attributes;
         /* --- */
         UniquePtr<RenderPass> pass;
         TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue, UniquePtr<RenderPass> renderPass)
@@ -180,8 +181,9 @@ namespace Foundation::Rendering {
             samplers(alloc),
             push_constants(alloc), rtvs(alloc),
             pass(std::move(renderPass)), desc_layouts(alloc),
-            desc_sets(alloc),
-            p_desc_sets(alloc) {
+            desc_sets(alloc), p_desc_sets(alloc),
+            vertex_input_bindings(alloc), vertex_input_attributes(alloc)
+        {
         };
         /* -- states -- */
         /* Only unculled passes have these initialized. */
@@ -371,7 +373,7 @@ namespace Foundation::Rendering {
         /**
          * @brief Begins the setup phase of the render graph.
          *
-         * ATTENTION: This is called at construction time, you shouldn't call this again.
+         * @note This is called at construction time, you shouldn't call this again.
          */
         void BeginSetup();
         /**
@@ -632,7 +634,7 @@ namespace Foundation::Rendering {
         /**
          * @brief Declares that this pass will write to the current (at Record time) swapchain backbuffer.
          *
-         * ATTENTION: This invalidates any other bound RTVs. With this enabled,
+         * @note This invalidates any other bound RTVs. With this enabled,
          * existence of other RTVs will throw at EndSetup() time.
          *
          * You can retrieve the current backbuffer RTV via DerefCurrentBackbufferView() at Record time.
@@ -767,6 +769,7 @@ namespace Foundation::Rendering {
         [[nodiscard]] RHIExtent3D CmdGetComputeLocalSize(PassHandle pass) const;
         /**
          * @brief Helper that dispatches a compute shader with the specified **TOTAL** thread count
+         * @note A valid @ref CmdSetPipeline call MUST be made before this, or the behaviour is undefined.
          *
          * This is equivalent to calling:
          * @code{.cpp}
@@ -790,6 +793,11 @@ namespace Foundation::Rendering {
         /**
          * @brief Helper that pushes correct descriptor sets and PSO to the current command list, and
          * pushes correct BeginGraphics() commands with declared RTVs and DSVs to the current command list.
+         *
+         * @note: There MUST be a matching @ref RHICommandList::EndGraphics() call AFTER calling this, or the behaviour
+         * is undefined.
+         * @note: The Pipeline state MUST be set with @ref CmdSetPipeline() AFTER calling this, or the behaviour
+         * is undefined.
          */
         void CmdBeginGraphics(
             PassHandle pass, RHICommandList* cmd,
@@ -799,6 +807,7 @@ namespace Foundation::Rendering {
         );        
         /**
          * @brief Helper that sets a Push Constant range data with a single l-value.
+         * @note A valid @ref CmdSetPipeline call MUST be made before this, or the behaviour is undefined.
          */
         template<typename T> inline void CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, RHIShaderStage stage, size_t offset, T const& data) {
             CHECK(m_state == State::Execute);

@@ -36,15 +36,17 @@ void VulkanPipelineState::InitializeGraphics() {
         });
     }
     Vector<vk::VertexInputAttributeDescription> vtx_attrs(alloc.Ptr());
+    Set<uint32_t> bindings_used(alloc.Ptr());
     for (const auto& [location, offset, format, binding] : m_desc.vertex_input.attributes) {
         vtx_attrs.emplace_back(vk::VertexInputAttributeDescription{
             .location = location,
             .binding = binding,
             .format = vkFormatFromRHIFormat(format),
             .offset = offset
-            });
+        });
+        bindings_used.insert(binding);
     }
-    CHECK_MSG(vtx_bindings.size() == vtx_attrs.size(), "Vertex binding count ({}) must match that of the the attribute count ({})",vtx_bindings.size(), vtx_attrs.size());
+    CHECK_MSG(vtx_bindings.size() == bindings_used.size(), "Vertex binding count ({}) must match that of the the attribute count ({})",vtx_bindings.size(), vtx_attrs.size());
     vk::PipelineVertexInputStateCreateInfo vtx{
         .vertexBindingDescriptionCount = static_cast<uint32_t>(vtx_bindings.size()),
         .pVertexBindingDescriptions = vtx_bindings.data(),
