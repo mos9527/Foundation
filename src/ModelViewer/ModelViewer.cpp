@@ -36,7 +36,7 @@ class ModelViewer : public RenderApplication {
             [=, this](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "resetCounter", "data/shaders/MVClearCounters.spv");
-                r->BindBufferUnordered(self, m_counter, RHIShaderStageBits::Compute, "counter");
+                r->BindBufferUnordered(self, m_counter, RHIPipelineStageBits::ComputeShader, "counter");
             },
             [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
@@ -48,10 +48,10 @@ class ModelViewer : public RenderApplication {
             [=, this](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "indirectCullEarly", "data/shaders/MVIndirectCull.spv");
-                r->BindBufferUnordered(self, m_indirectCommands, RHIShaderStageBits::Compute, "commands");
-                r->BindBufferUnordered(self, m_counter, RHIShaderStageBits::Compute, "counter");
-                r->BindBufferStorage(self, m_sceneInstance, RHIShaderStageBits::Compute, "scInstance");
-                r->BindBufferStorage(self, m_scenePrimitive, RHIShaderStageBits::Compute, "scPrimitive");
+                r->BindBufferUnordered(self, m_indirectCommands, RHIPipelineStageBits::ComputeShader, "commands");
+                r->BindBufferUnordered(self, m_counter, RHIPipelineStageBits::ComputeShader, "counter");
+                r->BindBufferStorage(self, m_sceneInstance, RHIPipelineStageBits::ComputeShader, "scInstance");
+                r->BindBufferStorage(self, m_scenePrimitive, RHIPipelineStageBits::ComputeShader, "scPrimitive");
             },
             [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
@@ -64,6 +64,6 @@ class ModelViewer : public RenderApplication {
 
 int main(int argc, char** argv) {
     ModelViewer app;
-    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer",  .asyncCompute = true });
+    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = false, .asyncCompute = true});
     app.RunForever();
 }

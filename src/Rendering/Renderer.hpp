@@ -17,7 +17,7 @@ namespace Foundation::Rendering {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
     constexpr PassHandle kRendererMaxPasses = 1024; // Maximum number of render passes
-    constexpr size_t kMaxCommandListsPerSwap = 128;  // Maximum number of concurrent command buffers per swap
+    constexpr size_t kMaxCommandListsPerSwap = 128; // Maximum number of command lists per frame
     const RHIResourceAccessBits kAllShaderWrites =
         RHIResourceAccessBits::ShaderWrite |
         RHIResourceAccessBits::RenderTargetWrite |
@@ -232,30 +232,53 @@ namespace Foundation::Rendering {
         uint32_t m_currentSync{ 0 };
         uint32_t m_currentSwap{ 0 };
 
+        struct Resources {
+            Vector<Variant<
+                RHIBuffer*,
+                RHIDeviceObjectHandle<RHIBuffer>,
+                RHIDeviceScopedObjectHandle<RHIBuffer>,
+                RHITexture*,
+                RHIDeviceObjectHandle<RHITexture>,
+                RHIDeviceScopedObjectHandle<RHITexture>
+                >> resources;
+            Vector<Variant<
+                RHITextureScopedHandle<RHITextureView>,
+                RHITextureHandle<RHITextureView>
+                >> views;
+            Vector<RHIDeviceScopedObjectHandle<RHIDeviceSampler>> samplers;
+            explicit Resources(Allocator* allocator) : resources(allocator), views(allocator), samplers(allocator) {}
+            void fit(ResourceHandle handle) {
+                resources.resize(std::max(resources.size(), handle + 1));
+                views.resize(std::max(views.size(), handle + 1));
+                samplers.resize(std::max(samplers.size(), handle + 1));
+            }
+        };
+        UniquePtr<Resources> m_resources;
+
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_descPool;
         RHIDeviceScopedObjectHandle<RHICommandPool> m_cmdPool{}, m_compCmdPool{}; // Graphics, Async Compute
 
-        struct {
+        struct SwapSyncObjects{
         private:
             // For async compute, we might submit multiple command buffers
             // per swap. Driver usually want them to live.                       
-            Array<RHICommandPoolScopedHandle<RHICommandList>, kMaxCommandListsPerSwap> cmds{};
-            Array<RHICommandPoolScopedHandle<RHICommandList>, kMaxCommandListsPerSwap> comp_cmds{};
-            Array<RHIDeviceScopedObjectHandle<RHIDeviceSemaphore>, kMaxCommandListsPerSwap> barrier_semaphores{};
+            Vector<RHICommandPoolScopedHandle<RHICommandList>> cmds;
+            Vector<RHICommandPoolScopedHandle<RHICommandList>> comp_cmds;
+            Vector<RHIDeviceScopedObjectHandle<RHIDeviceSemaphore>> barrier_semaphores;
         public:
             RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render{}, present{};
             RHIDeviceScopedObjectHandle<RHIDeviceFence> fence{};
-            inline RHICommandList* cmd_at(size_t i, RHICommandPool* pool) {
+            RHICommandList* cmd_at(size_t i, RHICommandPool* pool) {
                 if (!cmds[i].IsValid())
                     cmds[i] = pool->CreateCommandList();
                 return cmds[i].Get();
             }
-            inline RHICommandList* comp_cmds_at(size_t i, RHICommandPool* pool) {
+            RHICommandList* comp_cmds_at(size_t i, RHICommandPool* pool) {
                 if (!comp_cmds[i].IsValid())
                     comp_cmds[i] = pool->CreateCommandList();
                 return comp_cmds[i].Get();
             }
-            inline RHIDeviceSemaphore* barrier_semaphore_at(size_t i, RHIDevice* device) {
+            RHIDeviceSemaphore* barrier_semaphore_at(size_t i, RHIDevice* device) {
                 if (!barrier_semaphores[i].IsValid())
                     barrier_semaphores[i] = device->CreateSemaphore(true);
                 return barrier_semaphores[i].Get();
@@ -264,12 +287,18 @@ namespace Foundation::Rendering {
             RHITextureScopedHandle<RHITextureView> rtv{};
             // Tracked backbuffer handle
             ResourceHandle rt_handle{ kInvalidHandle };
-        } m_swaps[8];
+            SwapSyncObjects(Allocator* allocator)
+                : cmds(allocator), comp_cmds(allocator), barrier_semaphores(allocator)
+            {
+                cmds.resize(kMaxCommandListsPerSwap), comp_cmds.resize(kMaxCommandListsPerSwap),
+                    barrier_semaphores.resize(kMaxCommandListsPerSwap);
+            }
+        };
+        Vector<SwapSyncObjects> m_swaps;
 
         RHIApplicationObjectHandle<RHIDevice> m_device{};
         RHIDeviceObjectHandle<RHISwapchain> m_swapchain{};
         RHIDeviceQueue* m_gfxQueue{}, *m_compQueue{};
-
 
         struct Setup {            
             Vector<Vector<Pair<PassHandle, ResourceHandle>>> graph;
@@ -296,30 +325,7 @@ namespace Foundation::Rendering {
                 binding_counts(allocator) {}
         };
         UniquePtr<Setup> m_setup;
-
-        struct Resources {
-            Vector<Variant<
-                RHIBuffer*,
-                RHIDeviceObjectHandle<RHIBuffer>,
-                RHIDeviceScopedObjectHandle<RHIBuffer>,
-                RHITexture*,
-                RHIDeviceObjectHandle<RHITexture>,
-                RHIDeviceScopedObjectHandle<RHITexture>
-                >> resources;
-            Vector<Variant<
-                RHITextureScopedHandle<RHITextureView>,
-                RHITextureHandle<RHITextureView>
-                >> views;
-            Vector<RHIDeviceScopedObjectHandle<RHIDeviceSampler>> samplers;
-            explicit Resources(Allocator* allocator) : resources(allocator), views(allocator), samplers(allocator) {}
-            void fit(ResourceHandle handle) {
-                resources.resize(std::max(resources.size(), handle + 1));
-                views.resize(std::max(views.size(), handle + 1));
-                samplers.resize(std::max(samplers.size(), handle + 1));
-            }
-        };
-        UniquePtr<Resources> m_resources;
-
+        // Setup
         void DeclareBufferAccess(PassHandle pass, ResourceHandle buffer,
             RHIPipelineStage stage,
             RHIResourceAccess access = RHIResourceAccessBits::ShaderRead
@@ -335,15 +341,12 @@ namespace Foundation::Rendering {
             PassHandle pass, ResourceHandle res,
             RHITextureViewDesc const& desc
         ) const;
-
+        // PostSetup
         void CullPasses(PassHandle epilogue) const;
-
         void BuildPipelineState(PassHandle pass);
-
         void FinalizeResources();
         void FinalizePSOs();
-
-        // Temporary memory arena for execution
+        // Execute
         ScopedArena m_executeArena;
         // Temporary allocator for execution
         // This is reset every frame, and only guaranteed to be valid during Execute state.
@@ -358,11 +361,8 @@ namespace Foundation::Rendering {
             bool final_submit = false,
             Span<const Tuple<RHIDeviceSemaphore*, RHIPipelineStage, size_t>> extra_waits = {}
         );
-
         void SetFrameSyncObjects();
     public:
-
-
         ~Renderer();
         Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain,  Allocator* allocator);
 

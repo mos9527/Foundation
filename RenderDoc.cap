@@ -11,13 +11,13 @@
                 "variable": "LD_PRELOAD"
             }
         ],
-        "executable": "/home/mos9527/Foundation/cmake-build-debug/bin/Example_MandelbrotCompute",
+        "executable": "/home/mos9527/Foundation/cmake-build-debug/bin/ModelViewer",
         "inject": false,
         "numQueuedFrames": 0,
         "options": {
             "allowFullscreen": true,
             "allowVSync": true,
-            "apiValidation": true,
+            "apiValidation": false,
             "captureAllCmdLists": false,
             "captureCallstacks": false,
             "captureCallstacksOnlyDraws": false,

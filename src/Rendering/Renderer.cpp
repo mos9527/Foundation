@@ -1,3 +1,4 @@
+// ReSharper disable CppMemberFunctionMayBeConst
 #include <array>
 #include <ranges>
 #include <algorithm>
@@ -31,8 +32,8 @@ const RHIPipelineStage kComputeStagesMask =
       RHIPipelineStageBits::RayTracingShader |
       RHIPipelineStageBits::AllGraphics;
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator)
-    : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_device(device),
-      m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena) {
+    : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_swaps(m_allocator),
+      m_device(device), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena) {
     m_gfxQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
     m_compQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Compute);
     m_cmdPool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
@@ -809,6 +810,8 @@ void Renderer::FinalizeResources() {
 }
 #pragma endregion
 void Renderer::SetFrameSyncObjects() {
+    while (m_swaps.size() < m_frameSwaps)
+        m_swaps.emplace_back(m_allocator);
     for (size_t i = 0; i < m_frameSwaps; i++) {
         m_swaps[i].render = m_device->CreateSemaphore(false);
         m_swaps[i].render->DebugSetObjectName(fmt::format("Render Semaphore of Swap {}", i).c_str());
@@ -828,6 +831,7 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
         m_device->WaitIdle();
         m_state = State::PostSetup;
     }
+    SetFrameSyncObjects();
     for (size_t i = 0; i < m_frameSwaps; ++i) {
         auto* backbuffer = swapchain->GetImages()[i];
         backbuffer->DebugSetObjectName(fmt::format("Backbuffer of Swap {}", i).c_str());
@@ -849,7 +853,6 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
         }
     }
     m_swapchain = swapchain;
-    SetFrameSyncObjects();
     // Reset semaphores index
     m_currentSync = 0;
 }

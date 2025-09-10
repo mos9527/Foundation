@@ -60,15 +60,21 @@ void RenderApplication::InitializeInternal() {
 void RenderApplication::RunForever() {
     CHECK_MSG(m_rhi, "No RHI backend initialized! Call Initialize<Backend>() first.");
     CHECK(m_device && m_renderer);
-    while (!m_window.WindowShouldClose()) {
-        try {
-            m_renderer->Execute();
+    if (m_desc.present)
+    {
+        while (!m_window.WindowShouldClose()) {
+            try {
+                m_renderer->Execute();
+            }
+            catch (RHISwapchainResizeException&) {
+                CreateSwapchain();
+                m_renderer->SetSwapchain(m_swapchain);
+                OnSwapchainResize();
+            }
         }
-        catch (RHISwapchainResizeException&) {
-            CreateSwapchain();
-            m_renderer->SetSwapchain(m_swapchain);
-            OnSwapchainResize();
-        }
+    } else
+    {
+        m_renderer->Execute();
     }
 }
 RenderApplication::~RenderApplication() {
