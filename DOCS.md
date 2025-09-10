@@ -50,7 +50,7 @@ Refer to https://docs.vulkan.org/tutorial/latest/02_Development_environment.html
 Refer to https://docs.vulkan.org/tutorial/latest/02_Development_environment.html#_macos for setting up the Vulkan SDK on macOS.
 
 ### Building from command line
-The following commands will create a build directory, generate the build system files, and build the project
+The following commands will create a build directory, generate the build system files, and build the project.
 ```bash
 mkdir build
 cd build
@@ -68,6 +68,8 @@ The following CMake options are available:
 | FOUNDATION_WITH_MODELVIEWER | Build the model viewer application | ON |
 
 Toggle these options with `-D<OPTION>=ON/OFF` when running `cmake ..`, e.g. `cmake -DFOUNDATION_WITH_SANITIZERS=ON ..`
+
+[CMake Unity Builds](https://cmake.org/cmake/help/latest/prop_tgt/UNITY_BUILD.html) are supported, and can be enabled with `-DCMAKE_UNITY_BUILD=ON` when running `cmake ..`.
 
 Model Viewer
 ---
