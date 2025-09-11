@@ -63,7 +63,10 @@ namespace Foundation {
         using StagingList = Vector<RHI::RHICommandList::CopyBufferRegion>;
         // Staging offset, Allocation handle
         StagingList m_primitiveStaging, m_instanceStaging, m_vertexStaging, m_indexStaging;
-
+        // Temporary staging list used for coalescing regions
+        StagingList m_colescedTempStaging;
+        // Coalesce regions in the staging list to minimize number of copies
+        StagingList& CoalesceStaging(StagingList& list);
         // Push data to the staging buffer, and queue for GPU transfer
         RHIBuffer::Arena::Allocation PushData(RHIBuffer* buffer, StagingList& staging, Span<const char> data, size_t alignment = 16);
         // Update previously allocated data

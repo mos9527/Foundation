@@ -4,7 +4,7 @@ namespace Foundation {
     SceneData::SceneData(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc) :
         m_allocator(allocator), m_staging(allocator), m_primitives(allocator), m_vertices(allocator), m_indices(allocator), m_textures(allocator),
         m_instances(allocator), m_primitiveStaging(allocator), m_instanceStaging(allocator), m_vertexStaging(allocator),
-        m_indexStaging(allocator), m_desc(desc), m_waitIdle(device)
+        m_indexStaging(allocator), m_colescedTempStaging(allocator), m_desc(desc), m_waitIdle(device)
     {
         LOG_RUNTIME(SceneData, info, "** Scene Data Budgets **");
         LOG_RUNTIME(SceneData, info, "  Primitive Data: {}", formatHumanReadableSize(desc.PrimitiveDataBudget));
@@ -77,6 +77,31 @@ namespace Foundation {
     void SceneData::FreeData(RHIBuffer* buffer, RHIBuffer::Arena::Allocation alloc) {
         buffer->GetArena().Free(alloc);
     }
+    SceneData::StagingList& SceneData::CoalesceStaging(StagingList& list)
+    {
+        m_colescedTempStaging.clear();
+        if (list.size() <= 1)
+            return list;
+        std::ranges::sort(list, [](auto const& a, auto const& b) {
+            return Pair<size_t,size_t>{a.dst_offset, a.src_offset} < Pair<size_t,size_t>{b.dst_offset, b.src_offset};
+        });
+        list.erase(std::ranges::unique(list, [](auto const& a, auto const& b)
+        {
+            return a.dst_offset == b.dst_offset;
+        }).begin(), list.end());
+        m_colescedTempStaging.push_back(list[0]);
+        for (size_t i = 1; i < list.size(); ++i)
+        {
+            size_t d_src = list[i].src_offset - list[i - 1].src_offset;
+            size_t d_dst = list[i].dst_offset - list[i - 1].dst_offset;
+            size_t sz = list[i].size;
+            if (d_src == sz && d_dst == sz)
+                m_colescedTempStaging.back().size += sz;
+            else
+                m_colescedTempStaging.push_back(list[i]);
+        }
+        return m_colescedTempStaging;
+    }
     /**
      * NOTE: This should only be called within Scene::Update, after checking HasUpdates()
      * and within the Scene Update Pass that it creates.
@@ -89,13 +114,13 @@ namespace Foundation {
         using enum RHIPipelineStageBits;
         // Transfers
         if (!m_primitiveStaging.empty())
-            cmd->CopyBuffer(m_stagingBuffer.Get(), m_primitiveData.Get(), m_primitiveStaging);
+            cmd->CopyBuffer(m_stagingBuffer.Get(), m_primitiveData.Get(), CoalesceStaging(m_primitiveStaging));
         if (!m_instanceStaging.empty())
-            cmd->CopyBuffer(m_stagingBuffer.Get(), m_instanceData.Get(), m_instanceStaging);
+            cmd->CopyBuffer(m_stagingBuffer.Get(), m_instanceData.Get(), CoalesceStaging(m_instanceStaging));
         if (!m_vertexStaging.empty())
-            cmd->CopyBuffer(m_stagingBuffer.Get(), m_vertexData.Get(), m_vertexStaging);
+            cmd->CopyBuffer(m_stagingBuffer.Get(), m_vertexData.Get(), CoalesceStaging(m_vertexStaging));
         if (!m_indexStaging.empty())
-            cmd->CopyBuffer(m_stagingBuffer.Get(), m_indexData.Get(), m_indexStaging);
+            cmd->CopyBuffer(m_stagingBuffer.Get(), m_indexData.Get(), CoalesceStaging(m_indexStaging));
         m_primitiveStaging.clear(), m_instanceStaging.clear(), m_vertexStaging.clear(), m_indexStaging.clear();
     }
     void SceneData::Update(RHICommandList* cmd) {
