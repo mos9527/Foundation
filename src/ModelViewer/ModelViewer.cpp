@@ -39,7 +39,6 @@ public:
                 .usage = RHITextureUsageBits::DepthStencil,
                 .extent = m_renderer->GetSwapchainExtent3D(),
                 .format = RHIResourceFormat::D32_SIGNED_FLOAT,
-                .initial_layout = RHITextureLayout::Undefined,
             }
         );
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
@@ -83,14 +82,9 @@ public:
                 r->BindVertexInput(self, {.bindings = {{{.stride = sizeof(Vertex)}}}, .attributes = Attributes});
                 r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, sizeof(DrawPushConstant));
                 r->BindBackbufferRTV(self);
-                // XXX: Quite verbose. Maybe we only need Format?
                 r->BindTextureDSV(self, m_depthBuffer, {
                     .format = RHIResourceFormat::D32_SIGNED_FLOAT,
-                    .range = {
-                        .layer = {
-                            .access = RHITextureAccessFlagBits::Depth,
-                        }
-                    }
+                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)
                 });
             },
             [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)

@@ -1,16 +1,14 @@
 // ReSharper disable CppMemberFunctionMayBeConst
-#include <array>
-#include <ranges>
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <ranges>
 
 #include <Math/Math.hpp>
 #include <RHICore/Device.hpp>
 
 #include "Renderer.hpp"
 #include "ShaderReflection.hpp"
-#include "spdlog/fmt/bundled/compile.h"
 
 using namespace Foundation::Core;
 using namespace Foundation::Rendering;
@@ -107,18 +105,21 @@ void Renderer::DeclareTextureAccess(
 {
     CHECK(m_state == State::Setup);
     auto& resource = m_setup->trackedResources[handle];
-    // Check for overlap    
+    // Check for overlap
+    CHECK_MSG(range.layer.aspect.value, "Access aspect must be defined on resource {} when declared.", resource.name);
     auto [mip_begin, mip_end] = range.GetMipLevelRange();
     auto [layer_begin, layer_end] = range.GetArrayLayerRange();
     for (auto const& [h, _access, _stage, r, _layout] : m_setup->trackedPasses[pass].textureUsages) {
         if (h == handle) {
-            auto [r_mip_begin, r_mip_end] = r.GetMipLevelRange();
-            auto [r_layer_begin, r_layer_end] = r.GetArrayLayerRange();
-            // Mip intersects
-            if (!(mip_end < r_mip_begin || mip_begin > r_mip_end)) {
-                // Layer intersects
-                if (!(layer_end < r_layer_begin || layer_begin > r_layer_end))
-                    throw std::runtime_error("Overlap detected. Texture access must be disjoint.");
+            if (r.layer.aspect == range.layer.aspect)
+            {
+                auto [r_mip_begin, r_mip_end] = r.GetMipLevelRange();
+                auto [r_layer_begin, r_layer_end] = r.GetArrayLayerRange();
+                // Mip intersects
+                if (!(mip_end < r_mip_begin || mip_begin > r_mip_end)) {
+                    // Layer intersects
+                    CHECK_MSG(layer_end < r_layer_begin || layer_begin > r_layer_end,"Overlap detected. Texture access must be disjoint.");
+                }
             }
         }
     }
@@ -253,6 +254,7 @@ ResourceHandle Renderer::BindTextureSRV(
 ) const
 {
     CHECK(m_state == State::Setup);
+    CHECK_MSG(desc.range.IsValid(), "Binding SRV on {} is of invalid range! Did you specifiy `desc.range`?", m_setup->trackedResources[texture].name);
     DeclareTextureAccess(pass, texture, stage, desc.range,
         RHIResourceAccessBits::ShaderRead,
         RHITextureLayout::ShaderReadOnly
@@ -269,6 +271,7 @@ ResourceHandle Renderer::BindTextureUAV(
 ) const
 {
     CHECK(m_state == State::Setup);
+    CHECK_MSG(desc.range.IsValid(), "Binding UAV on {} is of invalid range! Did you specifiy `desc.range`?", m_setup->trackedResources[texture].name);
     DeclareTextureAccess(pass, texture, stage, desc.range,
         RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
         RHITextureLayout::General
@@ -284,10 +287,11 @@ ResourceHandle Renderer::BindTextureRTV(
 ) const
 {
     CHECK(m_state == State::Setup);
+    CHECK_MSG(desc.range.IsValid(), "Binding RTV on {} is of invalid range! Did you specifiy `desc.range`?", m_setup->trackedResources[texture].name);
     auto& tpass = m_setup->trackedPasses[pass];
     CHECK_MSG(tpass.queue == RHIDeviceQueueType::Graphics, "RTV (Render Target Views) are only supported on Graphics queues");
-    RHITextureAspectFlag kRTVBits = RHITextureAccessFlagBits::Color;
-    CHECK_MSG((desc.range.layer.access | kRTVBits == kRTVBits) && (desc.range.layer.access & kRTVBits),
+    RHITextureAspectFlag kRTVBits = RHITextureAspectFlagBits::Color;
+    CHECK_MSG((desc.range.layer.aspect | kRTVBits == kRTVBits) && (desc.range.layer.aspect & kRTVBits),
         "RTV view must have exactly one layer, and the access flag must be Color.");
     DeclareTextureAccess(pass, texture,
         RHIPipelineStageBits::ColorAttachmentOutput,
@@ -305,10 +309,11 @@ ResourceHandle Renderer::BindTextureDSV(
 ) const
 {
     CHECK(m_state == State::Setup);
+    CHECK_MSG(desc.range.IsValid(), "Binding DSV on {} is of invalid range! Did you specifiy `desc.range`?", m_setup->trackedResources[texture].name);
     auto& tpass = m_setup->trackedPasses[pass];
     CHECK_MSG(tpass.queue == RHIDeviceQueueType::Graphics, "DSV (Depth Stencil Views) are only supported on Graphics queues");
-    RHITextureAspectFlag kDSVBits = RHITextureAccessFlagBits::Depth | RHITextureAccessFlagBits::Stencil;
-    CHECK_MSG((desc.range.layer.access | kDSVBits == kDSVBits) && (desc.range.layer.access & kDSVBits),
+    RHITextureAspectFlag kDSVBits = RHITextureAspectFlagBits::Depth | RHITextureAspectFlagBits::Stencil;
+    CHECK_MSG((desc.range.layer.aspect | kDSVBits == kDSVBits) && (desc.range.layer.aspect & kDSVBits),
         "DSV view must have exactly one layer, and the access flag must be Depth and/or Stencil.");
     DeclareTextureAccess(pass, texture,
         RHIPipelineStageBits::EarlyFragmentTests | RHIPipelineStageBits::LateFragmentTests,
@@ -333,6 +338,7 @@ void Renderer::BindTextureCopyDst(
 ) const
 {
     CHECK(m_state == State::Setup);
+    CHECK_MSG(range.IsValid(), "Binding CopyDst on {} is of invalid range! Did you specifiy `desc.range`?", m_setup->trackedResources[texture].name);
     DeclareTextureAccess(pass, texture,
         RHIPipelineStageBits::Transfer,
         range,
@@ -346,6 +352,7 @@ void Renderer::BindTextureCopySrc(
 ) const
 {
     CHECK(m_state == State::Setup);
+    CHECK_MSG(range.IsValid(), "Binding CopySrc on {} is of invalid range! Did you specifiy `desc.range`?", m_setup->trackedResources[texture].name);
     DeclareTextureAccess(pass, texture,
         RHIPipelineStageBits::Transfer,
         range,
@@ -855,7 +862,8 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
         auto* backbuffer = swapchain->GetImages()[i];
         backbuffer->DebugSetObjectName(fmt::format("Backbuffer of Swap {}", i).c_str());
         m_swaps[i].rtv = backbuffer->CreateTextureView(RHITextureViewDesc{
-            .format = swapchain->m_desc.format
+            .format = swapchain->m_desc.format,
+            .range = RHITextureSubresourceRange::Create()
         });
         if (m_swaps[i].rt_handle == kInvalidHandle) {
             // First time setup
@@ -896,7 +904,9 @@ RHIPipelineStage Renderer::ExecuteGetPassAllCurrentStages(TrackedPass& pass)
 void Renderer::ExecuteBarrierSubresource(TrackedResource& tres, RHITextureSubresourceRange const& range,RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd)
 {
     RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
+    bool any_range = false;
     for (auto& sta : tres.GetLastSubresourceStateOf(range)) {
+        any_range = true;
         if (sta.access == access && sta.stage == stage && sta.layout == layout)
             continue;
         cmd->SetImageTransition(
@@ -915,6 +925,7 @@ void Renderer::ExecuteBarrierSubresource(TrackedResource& tres, RHITextureSubres
         sta.stage = stage;
         sta.layout = layout;
     }
+    CHECK_MSG(any_range, "FIXME-ExecuteBarrierSubresource: Failed to match resource range on {}",tres.name);
 }
 void Renderer::ExecuteBarrierBuffer(TrackedResource& tres, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd)
 {
@@ -961,7 +972,7 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
         const RHITextureLayout rt_layout = RHITextureLayout::RenderTarget;
         const RHIPipelineStage rt_stage = RHIPipelineStageBits::ColorAttachmentOutput;
         auto& tres = m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle];
-        ExecuteBarrierSubresource(tres, {}, rt_access, rt_stage, rt_layout, cmd);
+        ExecuteBarrierSubresource(tres, RHITextureSubresourceRange::Create(), rt_access, rt_stage, rt_layout, cmd);
     }
     // Buffers
     // These are always global i.e. at most one per buffer per pass.
@@ -1042,11 +1053,11 @@ bool Renderer::ExecuteSubmitOrContinue(
         // Always submit the last one, and present if needed
         if (m_desc.present)
         {
-            CHECK_MSG(queue == m_gfxQueue, "Last pass must be on the Graphics queue to present!");
+            CHECK_MSG(queue == m_gfxQueue, "FIXME-ExecuteSubmitOrContinue: Last pass must be on the Graphics queue to present!");
             cmd->BeginTransition();
             ExecuteBarrierSubresource(
                 m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle],
-                {},
+                RHITextureSubresourceRange::Create(),
                 {},
                 RHIPipelineStageBits::BottomOfPipe,
                 RHITextureLayout::Present,
@@ -1054,7 +1065,7 @@ bool Renderer::ExecuteSubmitOrContinue(
             );
             cmd->EndTransition();
             cmd->End();
-            waits_stages.push_back(RHIPipelineStageBits::ColorAttachmentOutput);
+            waits_stages.push_back(RHIPipelineStageBits::BottomOfPipe);
             queue->Submit({
                 .timeline_waits = waits,
                 .timeline_signals = signals,

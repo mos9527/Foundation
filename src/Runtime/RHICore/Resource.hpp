@@ -124,20 +124,50 @@ namespace Foundation::RHI {
     template<typename T> using RHITextureScopedHandle = RHIScopedHandle<RHITexture, T>;
     template<typename T> using RHITextureHandle = RHIHandle<RHITexture, T>;
     struct RHITextureSubresourceLayer {
-        RHITextureAspectFlag access{ RHITextureAccessFlagBits::Color };
-        uint32_t mip_level{ 0 };
-        uint32_t base_array_layer{ 0 };
-        uint32_t layer_count{ 1 };
+        RHITextureAspectFlag aspect{  };
+        uint32_t mip_level;
+        uint32_t base_array_layer;
+        uint32_t layer_count;
     };
     struct RHITextureSubresourceRange {
+        // Single mip level and array layer range
         RHITextureSubresourceLayer layer;
-        uint32_t mip_count{ 1 }; // Number of mip levels in the range
-
+        // Number of mip levels in the range
+        uint32_t mip_count;
+        /* @brief Mip level used (inclusive) */
         inline Pair<uint32_t, uint32_t> GetMipLevelRange() const {
             return { layer.mip_level, layer.mip_level + mip_count - 1 };
         }
+        /* @brief Array layers used (inclusive) */
         inline Pair<uint32_t, uint32_t> GetArrayLayerRange() const {
             return { layer.base_array_layer, layer.base_array_layer + layer.layer_count - 1 };
+        }
+        /**
+         * @brief Helper function to create a Subresource Range with default parameters
+         * @note The created range is validated, and will throw if invalid.
+         * @param aspect Defaults to @ref RHITextureAspectFlagBits::Color
+         * @param base_mip_level Defaults to 0
+         * @param mip_count Defaults to 1
+         * @param base_array_layer Defaults to 0
+         * @param layer_count Defaults to 1
+         */
+        static RHITextureSubresourceRange Create(RHITextureAspectFlag aspect = RHITextureAspectFlagBits::Color, uint32_t base_mip_level = 0, uint32_t mip_count = 1, uint32_t base_array_layer = 0, uint32_t layer_count = 1)
+        {
+            RHITextureSubresourceRange res{
+                .layer = {
+                    .aspect = aspect,
+                    .mip_level = base_mip_level,
+                    .base_array_layer = base_array_layer,
+                    .layer_count = layer_count,
+                },
+                .mip_count = mip_count,
+            };
+            CHECK_MSG(res.IsValid(), "Invalid Subresource Range is being created!");
+            return res;
+        }
+        constexpr bool IsValid() const
+        {
+            return layer.aspect.value && mip_count && layer.layer_count;
         }
     };
     struct RHITextureViewDesc {

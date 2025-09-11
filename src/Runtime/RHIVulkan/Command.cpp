@@ -83,6 +83,7 @@ RHICommandList& VulkanCommandList::SetBufferTransition(RHIBuffer* image, Transit
 }
 RHICommandList& VulkanCommandList::SetImageTransition(RHITexture* image, TransitionDesc const& desc) {
     CHECK(m_barriers && "Invalid barrier states.");
+    CHECK_MSG(desc.src_img_range.layer.aspect.value, "Aspect flag on transition subresource is NULL!!");
     auto* res = static_cast<VulkanTexture*>(image);
     m_barriers->image.push_back(vk::ImageMemoryBarrier2{
         .srcStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.src_stage),
@@ -95,7 +96,7 @@ RHICommandList& VulkanCommandList::SetImageTransition(RHITexture* image, Transit
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .image = *res->GetVkImage(),
         .subresourceRange = {
-            .aspectMask = vkImageAspectFlagFromRHITextureAspect(desc.src_img_range.layer.access),
+            .aspectMask = vkImageAspectFlagFromRHITextureAspect(desc.src_img_range.layer.aspect),
             .baseMipLevel = desc.src_img_range.layer.mip_level,
             .levelCount = desc.src_img_range.mip_count,
             .baseArrayLayer = desc.src_img_range.layer.base_array_layer,
@@ -226,14 +227,14 @@ RHICommandList& VulkanCommandList::CopyImage(RHITexture* src_image, RHITextureLa
     for (auto const& region : regions) {
         vk_regions.push_back(vk::ImageCopy{
             .srcSubresource = {
-                .aspectMask = vkImageAspectFlagFromRHITextureAspect(region.src_layer.access),
+                .aspectMask = vkImageAspectFlagFromRHITextureAspect(region.src_layer.aspect),
                 .mipLevel = region.src_layer.mip_level,
                 .baseArrayLayer = region.src_layer.base_array_layer,
                 .layerCount = region.src_layer.layer_count
             },
             .srcOffset = { region.src_offset.x, region.src_offset.y, region.src_offset.z },
             .dstSubresource = {
-                .aspectMask = vkImageAspectFlagFromRHITextureAspect(region.dst_layer.access),
+                .aspectMask = vkImageAspectFlagFromRHITextureAspect(region.dst_layer.aspect),
                 .mipLevel = region.dst_layer.mip_level,
                 .baseArrayLayer = region.dst_layer.base_array_layer,
                 .layerCount = region.dst_layer.layer_count
@@ -268,7 +269,7 @@ RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHIT
             .bufferRowLength = 0, // Tightly packed
             .bufferImageHeight = 0, // Tightly packed
             .imageSubresource = {
-                .aspectMask = vkImageAspectFlagFromRHITextureAspect(region.dst_layer.access),
+                .aspectMask = vkImageAspectFlagFromRHITextureAspect(region.dst_layer.aspect),
                 .mipLevel = region.dst_layer.mip_level,
                 .baseArrayLayer = region.dst_layer.base_array_layer,
                 .layerCount = region.dst_layer.layer_count

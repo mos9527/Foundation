@@ -167,7 +167,7 @@ RHITextureScopedHandle<RHITextureView> VulkanTexture::CreateTextureView(RHITextu
             .viewType = type,
             .format = vkFormatFromRHIFormat(desc.format),
             .subresourceRange = vk::ImageSubresourceRange{
-                .aspectMask = vkImageAspectFlagFromRHITextureAspect(desc.range.layer.access),
+                .aspectMask = vkImageAspectFlagFromRHITextureAspect(desc.range.layer.aspect),
                 .baseMipLevel = desc.range.layer.mip_level,
                 .levelCount = desc.range.mip_count,
                 .baseArrayLayer = desc.range.layer.base_array_layer,

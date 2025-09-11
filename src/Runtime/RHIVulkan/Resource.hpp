@@ -1,9 +1,8 @@
 #pragma once
 #include <RHICore/Resource.hpp>
-#include "Common.hpp"
-
 #include <vk_mem_alloc.h>
-#include <mutex>
+
+#include "Common.hpp"
 namespace Foundation::RHI {
     inline VmaAllocationCreateFlags vmaAllocationFlagsFromRHIResourceHostAccess(RHIResourceHostAccess access) {
         using enum RHIResourceHostAccess;

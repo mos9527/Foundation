@@ -174,7 +174,7 @@ namespace Foundation::RHI {
     }
 
     inline vk::ImageAspectFlags vkImageAspectFlagFromRHITextureAspect(RHITextureAspectFlag aspect) {
-        using enum RHITextureAccessFlagBits;
+        using enum RHITextureAspectFlagBits;
         vk::ImageAspectFlags flags{};
         if (aspect & Color) flags |= vk::ImageAspectFlagBits::eColor;
         if (aspect & Depth) flags |= vk::ImageAspectFlagBits::eDepth;

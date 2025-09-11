@@ -5,21 +5,21 @@ template<typename T, typename Ty> struct BitmaskEnumWrapper {
     BitmaskEnumWrapper() : value(static_cast<Ty>(T{})) {}
     BitmaskEnumWrapper(T v) : value(static_cast<Ty>(v)) {}
     BitmaskEnumWrapper(Ty v) : value(v) {}
-    BitmaskEnumWrapper<T, Ty> operator=(auto v) { value = static_cast<Ty>(v); return *this; }
-    BitmaskEnumWrapper<T, Ty> operator|(auto v) const { return { value | static_cast<Ty>(v) }; }
-    BitmaskEnumWrapper<T, Ty> operator&(auto v) const { return { value & static_cast<Ty>(v) }; }
-    BitmaskEnumWrapper<T, Ty> operator^(auto v) const { return { value ^ static_cast<Ty>(v) }; }
-    BitmaskEnumWrapper<T, Ty> operator~() const { return { ~value }; }
-    BitmaskEnumWrapper<T, Ty>& operator|=(auto v) { value |= static_cast<Ty>(v); return *this; }
-    BitmaskEnumWrapper<T, Ty>& operator&=(auto v) { value &= static_cast<Ty>(v); return *this; }
-    BitmaskEnumWrapper<T, Ty>& operator^=(auto v) { value ^= static_cast<Ty>(v); return *this; }    
-    inline constexpr bool operator ==(auto v) const { return value == static_cast<Ty>(v); }
-    inline constexpr operator Ty() const { return static_cast<Ty>(value); }
-    inline constexpr operator T() const { return static_cast<T>(value); }
-    inline constexpr operator bool() const { return value != 0; }
-    inline constexpr bool is_pow2() const { return (value & (value - 1)) == 0; }
-    inline constexpr bool is_bitmask() const { return is_pow2(); }
-    inline constexpr int ctz() const { return std::countr_one(value); }
+    BitmaskEnumWrapper operator=(auto v) { value = static_cast<Ty>(v); return *this; }
+    BitmaskEnumWrapper operator|(auto v) const { return { value | static_cast<Ty>(v) }; }
+    BitmaskEnumWrapper operator&(auto v) const { return { value & static_cast<Ty>(v) }; }
+    BitmaskEnumWrapper operator^(auto v) const { return { value ^ static_cast<Ty>(v) }; }
+    BitmaskEnumWrapper operator~() const { return { ~value }; }
+    BitmaskEnumWrapper& operator|=(auto v) { value |= static_cast<Ty>(v); return *this; }
+    BitmaskEnumWrapper& operator&=(auto v) { value &= static_cast<Ty>(v); return *this; }
+    BitmaskEnumWrapper& operator^=(auto v) { value ^= static_cast<Ty>(v); return *this; }
+    constexpr bool operator ==(auto v) const { return value == static_cast<Ty>(v); }
+    constexpr operator Ty() const { return static_cast<Ty>(value); }
+    constexpr operator T() const { return static_cast<T>(value); }
+    constexpr operator bool() const { return value != 0; }
+    constexpr bool is_pow2() const { return (value & (value - 1)) == 0; }
+    constexpr bool is_bitmask() const { return is_pow2(); }
+    constexpr int bit() const { return std::countr_one(value); }
 };
 // Defines a bitmask enum type {T}Bits with underlying integer type INT_T.
 // Whilst defining a wrapper class of type T that provides bitwise operators.

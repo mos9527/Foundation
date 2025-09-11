@@ -18,6 +18,7 @@ namespace Foundation::Rendering {
     using namespace Foundation::Core;
     constexpr PassHandle kRendererMaxPasses = 1024; // Maximum number of render passes
     constexpr size_t kMaxCommandListsPerSwap = 128; // Maximum number of command lists per frame
+    const size_t kTextureAspectCount = 3; // color, depth, stencil @ref RHITextureAspectFlag
     const RHIResourceAccessBits kAllShaderWrites =
         RHIResourceAccessBits::ShaderWrite |
         RHIResourceAccessBits::RenderTargetWrite |
@@ -32,10 +33,28 @@ namespace Foundation::Rendering {
         String name;        
         ResourceDefinition desc;
         /* --- states --- */
+        // (Buffer) Last known state
+        // Transitions here are always global since granularity would be too fine. And seems
+        // like drivers don't really care?
+        // See Also: https://www.reddit.com/r/vulkan/comments/v2mswb/global_memory_barriers_vs_bufferimage_memory/
+        // TODO: Investigate
+        struct BufferState {
+            PassHandle producer{ kInvalidHandle };
+            RHIResourceAccess access{};
+            RHIPipelineStage stage{};
+            void reset() {
+                producer = kInvalidHandle;
+                access = {};
+                stage = {};
+            }
+        } lastBufferState{};
+
         // (Texture) Per-subresource states
         uint32_t textureLayers{ 0 }, textureMips{ 0 };
         struct SubresourceState {
             size_t layer{ 0 }, mip{ 0 };
+            RHITextureAspectFlagBits aspect{};
+            /* -- states -- */
             PassHandle producer{ kInvalidHandle };
             RHIResourceAccess access{};
             RHIPipelineStage stage{};
@@ -49,6 +68,7 @@ namespace Foundation::Rendering {
             [[nodiscard]] RHITextureSubresourceRange ToRange() const {
                 return RHITextureSubresourceRange{
                     .layer = {
+                        .aspect = aspect,
                         .mip_level = static_cast<uint32_t>(mip),
                         .base_array_layer = static_cast<uint32_t>(layer),
                         .layer_count = 1
@@ -57,51 +77,44 @@ namespace Foundation::Rendering {
                 };
             }
         };
-        // [mip 0 array 0, mip 0 array 1, ..., mip 1 array 0, ...]
+        // [mip...,
+        //   layer...,
+        //      aspect...]
         Vector<SubresourceState> lastSubresourceStates;
-        inline auto GetLastSubresourceStateOf(RHITextureSubresourceRange const& range) {
+        auto GetLastSubresourceStateOf(RHITextureSubresourceRange const& range) {
             auto [mip_begin, mip_end] = range.GetMipLevelRange();
             auto [layer_begin, layer_end] = range.GetArrayLayerRange();
-            CHECK(mip_begin <= mip_end && mip_end < textureMips);
-            return std::views::all(Span<SubresourceState>{
-                lastSubresourceStates.begin() + textureLayers * mip_begin,
-                    lastSubresourceStates.end()
-            }) | std::views::filter([=](const SubresourceState& state) {
-                    return state.mip >= mip_begin && state.mip <= mip_end && state.layer >= layer_begin && state.layer <= layer_end;
+            uint32_t mip_stride = textureLayers * kTextureAspectCount;
+            return
+                std::views::all(Span<SubresourceState>{
+                    lastSubresourceStates.begin() + mip_begin * mip_stride,
+                    lastSubresourceStates.begin() + (mip_end + 1) * mip_stride,
+                }) |
+                std::views::filter([=](const SubresourceState& state) {
+                    return (RHITextureAspectFlag(state.aspect) & range.layer.aspect) && state.mip >= mip_begin && state.mip <= mip_end && state.layer >= layer_begin && state.layer <= layer_end;
                 });
         }
-        inline SubresourceState& GetLastSubresourceStateOf(size_t mip, size_t layer) {
-            CHECK(mip <= textureMips && layer <= textureLayers);
-            return lastSubresourceStates[mip * textureLayers + layer];
-        }
-
-        // (Buffer) Last known state
-        // Transitions here are always global since granularity would be too fine. And seems
-        // like drivers don't really care?
-        // See Also: https://www.reddit.com/r/vulkan/comments/v2mswb/global_memory_barriers_vs_bufferimage_memory/
-        struct BufferState {
-            PassHandle producer{ kInvalidHandle };
-            RHIResourceAccess access{};
-            RHIPipelineStage stage{};
-            void reset() {
-                producer = kInvalidHandle;
-                access = {};
-                stage = {};
-            }
-        } lastBufferState{};
-
         TrackedResource(const ResourceHandle handle, StringView name, const ResourceDefinition& resourceDesc, Allocator* alloc)
             : handle(handle), name(name), desc(resourceDesc), lastSubresourceStates(alloc) {
-            // Resize subresource states if texture
+            // Init texture tracking states
             auto update_texture_desc = [&](RHITextureDesc const& desc) {
-                lastSubresourceStates.resize(desc.array_layers * desc.mip_levels);
                 textureLayers = desc.array_layers;
                 textureMips = desc.mip_levels;
-                for (size_t i = 0; i < lastSubresourceStates.size(); i++) {
-                    auto& sta = lastSubresourceStates[i];
-                    sta.mip = i / desc.array_layers, sta.layer = i % desc.array_layers;
+                lastSubresourceStates.resize(textureMips * textureLayers * kTextureAspectCount);
+                for (uint32_t mip = 0; mip < textureMips; ++mip)
+                {
+                    for (uint32_t layer = 0; layer < textureLayers; ++layer)
+                    {
+                        for (uint32_t aspect = 0; aspect < kTextureAspectCount; ++aspect)
+                        {
+                            uint32_t i = mip * (textureLayers * kTextureAspectCount) + layer * kTextureAspectCount + aspect;
+                            auto& state = lastSubresourceStates[i];
+                            state.aspect = RHITextureAspectFlag(1u << aspect);
+                            state.mip = mip, state.layer = layer;
+                        }
+                    }
                 }
-                };
+            };
             desc.visit(
                 [&](RHITextureDesc const& tex) { update_texture_desc(tex); },
                 [&](RHIDeviceObjectHandle<RHITexture> const& tex) { update_texture_desc(tex->m_desc); },
@@ -588,7 +601,7 @@ namespace Foundation::Rendering {
         ResourceHandle BindTextureSRV(
             PassHandle pass, ResourceHandle texture,
             StringView bind_point, RHIPipelineStage stage,
-            RHITextureViewDesc const& desc = {}
+            RHITextureViewDesc const& desc
         ) const;
         /**
          * @brief Binds a texture for unordered (UAV) read-write access in shaders.
@@ -603,7 +616,7 @@ namespace Foundation::Rendering {
         ResourceHandle BindTextureUAV(
             PassHandle pass, ResourceHandle texture, 
             StringView bind_point, RHIPipelineStage stage,
-            RHITextureViewDesc const& desc = {}
+            RHITextureViewDesc const& desc
         ) const;
         /**
          * @brief Binds a texture as a Render Target View (color attachment) for a graphics pass.
@@ -617,7 +630,7 @@ namespace Foundation::Rendering {
          */
         ResourceHandle BindTextureRTV(
             PassHandle pass, ResourceHandle texture,
-            RHITextureViewDesc const& desc = {}
+            RHITextureViewDesc const& desc
         ) const;
         /**
          * @brief Binds a texture as a Depth-Stencil View for a graphics pass.
@@ -629,7 +642,7 @@ namespace Foundation::Rendering {
          */
         ResourceHandle BindTextureDSV(
             PassHandle pass, ResourceHandle texture,
-            RHITextureViewDesc const& desc = {}
+            RHITextureViewDesc const& desc
         ) const;
         /**
          * @brief Declares that this pass will write to the current (at Record time) swapchain backbuffer.
@@ -802,8 +815,8 @@ namespace Foundation::Rendering {
         void CmdBeginGraphics(
             PassHandle pass, RHICommandList* cmd,
             RHIExtent2D const& extent,
-            Optional<RHIClearColor>  const& clear_rtv = RHIClearColor{},
-            Optional<RHIClearDepthStencil>  const&  clear_dsv = RHIClearDepthStencil{}
+            Optional<RHIClearColor> const& clear_rtv = RHIClearColor{},
+            Optional<RHIClearDepthStencil> const& clear_dsv = RHIClearDepthStencil{1.0f, 0u}
         );        
         /**
          * @brief Helper that sets a Push Constant range data with a single l-value.

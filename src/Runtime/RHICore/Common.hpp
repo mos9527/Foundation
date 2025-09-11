@@ -12,7 +12,9 @@ namespace Foundation::RHI {
     using RHIOffset1D = glm::vec<1, int32_t>;
     using RHIOffset2D = glm::vec<2, int32_t>;
     using RHIOffset3D = glm::vec<3, int32_t>;
+    // [RGBA]
     using RHIClearColor = glm::vec<4, float>;
+    // [Depth Clear Value, Stencil Clear Value]
     using RHIClearDepthStencil = Pair<float, uint32_t>;
 
     enum class RHIResourceFormat {
