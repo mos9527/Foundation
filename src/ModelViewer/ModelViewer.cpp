@@ -25,7 +25,7 @@ public:
             SceneDataDesc{}
         );
         m_kittenMesh = m_scene->AddMesh(LoadMeshFromObjFile("data/assets/kitten.obj", GetAllocator()));
-        for (int i = 0; i < 32 * 32; i++)
+        for (int i = 0; i < 100 * 100; i++)
             m_kittenScene.push_back(m_scene->AddInstance({
                 .enabled = true,
                 .primitiveID = PrimitiveIDOf(m_kittenMesh),
