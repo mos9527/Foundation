@@ -6,7 +6,7 @@ namespace Foundation {
     Scene::Scene(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc) :
         m_allocator(allocator), m_data(allocator, device, desc) {}
 
-    SceneHandle Scene::AddMesh(Span<const Vertex> vertices, Span<const Index> indices, SceneHandle& outVtx, SceneHandle& outIdx) {
+    SceneHandle Scene::AddMeshSpan(Span<const Vertex> vertices, Span<const Index> indices, SceneHandle& outVtx, SceneHandle& outIdx) {
         SceneHandle vtx = m_data.AddVertexData(vertices.AsBytes());
         SceneHandle idx = m_data.AddIndexData(indices.AsBytes());
         PrimitiveMetadata prim{
@@ -18,7 +18,8 @@ namespace Foundation {
         outVtx = vtx, outIdx = idx;
         return m_data.AddPrimitiveData(Span<PrimitiveMetadata>{prim}.AsBytes());
     };
-    void Scene::FreeMesh(SceneHandle mesh, SceneHandle vtx, SceneHandle idx) {
+    void Scene::FreeMesh(MeshHandle handle) {
+        auto [mesh, vtx, idx] = handle;
         // TODO: Ref-counting usages?
         m_data.FreePrimitiveData(mesh);
         m_data.FreeVertexData(vtx);

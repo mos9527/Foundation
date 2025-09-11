@@ -1,6 +1,5 @@
 #include "ModelViewer.hpp"
 
-#include "glm/gtx/transform.hpp"
 /**
  * @brief Model Viewer Application
  */
@@ -11,7 +10,12 @@ public:
     ResourceHandle m_sceneVertex{kInvalidHandle}, m_sceneIndex{kInvalidHandle};
     ResourceHandle m_indirectCommands{kInvalidHandle}, m_counter{kInvalidHandle};
     ResourceHandle m_depthBuffer{kInvalidHandle};
-    const size_t kMaxIndirectCommands = 1024;
+    const size_t kMaxIndirectCommands = 32767;
+    /* -- scene -- */
+    MeshHandle m_kittenMesh;
+    Vector<SceneHandle> m_kittenScene;
+    float4x4 m_camera{ mat4(1.0f) };
+    ModelViewer() : RenderApplication(), m_kittenScene(GetAllocator()) {};
     void OnDeviceSetup() override
     {
         m_scene = ConstructUnique<Scene>(
@@ -20,6 +24,36 @@ public:
             m_device.Get(),
             SceneDataDesc{}
         );
+        m_kittenMesh = m_scene->AddMesh(LoadMeshFromObjFile("data/assets/kitten.obj", GetAllocator()));
+        for (int i = 0; i < 32 * 32; i++)
+            m_kittenScene.push_back(m_scene->AddInstance({
+                .enabled = true,
+                .primitiveID = PrimitiveIDOf(m_kittenMesh),
+            }));
+    }
+    void OnBeforeFrame() override
+    {
+        size_t cnt = m_kittenScene.size();
+        size_t sq = sqrt(cnt);
+        float4x4 view = lookAt(
+                    vec3(sq,sq,sq),
+                    vec3(sq / 2,sq / 2, 0),
+                    vec3(0.0f, 0.0f, 1.0f));
+        float4x4 proj = infinitePerspective(radians(45.0f), m_swapchain->GetAspectRatio(),0.1f);
+        proj[1][1] *= -1; // vulkan NDC
+        m_camera = proj * view;
+        for (SceneHandle instance : m_kittenScene)
+        {
+            m_scene->UpdateInstance(instance, {
+                .enabled = true,
+                .primitiveID = PrimitiveIDOf(m_kittenMesh),
+                .transform = translate(float3{
+                    (instance / sq),
+                    (instance % sq),
+                    sin(GetApplicationTime<float>() + instance  * acos(-1) / cnt)
+                })
+            });
+        }
     }
     void RendererSetup() override
     {
@@ -98,11 +132,8 @@ public:
                 r->CmdBeginGraphics(self, cmd, img_wh);
                 r->CmdSetPipeline(self, cmd);
                 // Camera matrix
-                float4x4 view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-                float4x4 proj = glm::infinitePerspective(glm::radians(45.0f), m_swapchain->GetAspectRatio(),0.1f);
-                proj[1][1] *= -1; // vulkan NDC
                 DrawPushConstant pc {
-                    .viewProj =  proj * view,
+                    .viewProj = m_camera,
                     .time = GetApplicationTime<float>()
                 };
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, pc);
@@ -133,16 +164,7 @@ public:
 
 int main(int argc, char** argv) {
     ModelViewer app;
-    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = true, .asyncCompute = false});
-    auto mesh = LoadMeshFromObjFile("data/assets/kitten.obj", app.GetAllocator());
-    SceneHandle m_vtx, m_idx;
-    auto primitive_0 = app.m_scene->AddMesh(mesh, m_vtx, m_idx);
-    for (int x = -8; x <= 8; x++)
-    for (int y = -8; y <= 8; y++)
-        app.m_scene->AddInstance({
-            .enabled = true,
-            .primitiveID = primitive_0,
-            .transform = glm::translate(glm::mat4(1.0f), glm::vec3(x, y, 0.0f))
-        });
+    // !! TODO: with asyncCompute on we get empty frames occasionally
+    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = true, .asyncCompute = false });
     app.RunForever();
 }
