@@ -47,6 +47,13 @@ namespace Foundation::Rendering {
         void InitializeInternal();
         void InitializeRenderer();
         /**
+         * @breif Set up device specific resources.
+         *
+         * This is invoked by InitializeInternal() after the device is created,
+         * and before the renderer is initialized.
+         */
+        virtual void OnDeviceSetup() { /* nop */ }
+        /**
          * @brief Set up the renderer by creating passes, resources, and other configurations.
          *
          * This is invoked by InitializeRenderer()

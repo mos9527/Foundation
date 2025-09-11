@@ -1,7 +1,9 @@
 #include "ModelViewer.hpp"
+
+#include "glm/gtx/transform.hpp"
 /**
-* @brief Model Viewer Application
-*/
+ * @brief Model Viewer Application
+ */
 class ModelViewer : public RenderApplication {
 public:
     UniquePtr<Scene> m_scene;
@@ -10,14 +12,17 @@ public:
     ResourceHandle m_indirectCommands{kInvalidHandle}, m_counter{kInvalidHandle};
     ResourceHandle m_depthBuffer{kInvalidHandle};
     const size_t kMaxIndirectCommands = 1024;
-    void RendererSetup() override
+    void OnDeviceSetup() override
     {
         m_scene = ConstructUnique<Scene>(
-        GetAllocator(),
+            GetAllocator(),
             GetAllocator(),
             m_device.Get(),
             SceneDataDesc{}
         );
+    }
+    void RendererSetup() override
+    {
         m_scene->CreateUpdatePass(
             m_renderer.get(), RHIDeviceQueueType::Compute,
             m_sceneInstance, m_scenePrimitive,m_sceneVertex, m_sceneIndex
@@ -128,15 +133,16 @@ public:
 
 int main(int argc, char** argv) {
     ModelViewer app;
-    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = true, .asyncCompute = true});
+    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = true, .asyncCompute = false});
     auto mesh = LoadMeshFromObjFile("data/assets/kitten.obj", app.GetAllocator());
     SceneHandle m_vtx, m_idx;
     auto primitive_0 = app.m_scene->AddMesh(mesh, m_vtx, m_idx);
-    auto instance_0 = app.m_scene->AddInstance({
-        .enabled = true,
-        .primitiveID = primitive_0,
-        .transform = glm::mat4(1.0f),
-    });
-    LOG_RUNTIME(main, info, "Test: Enabled Instance ID {}", instance_0);
+    for (int x = -8; x <= 8; x++)
+    for (int y = -8; y <= 8; y++)
+        app.m_scene->AddInstance({
+            .enabled = true,
+            .primitiveID = primitive_0,
+            .transform = glm::translate(glm::mat4(1.0f), glm::vec3(x, y, 0.0f))
+        });
     app.RunForever();
 }

@@ -56,6 +56,7 @@ void RenderApplication::InitializeInternal() {
         m_window = {};
         m_device = m_rhi->CreateDevice(m_rhi->EnumerateDevices()[m_desc.deviceIndex]);
     }
+    OnDeviceSetup();
 }
 void RenderApplication::Execute()
 {
