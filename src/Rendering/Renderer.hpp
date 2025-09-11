@@ -1,221 +1,20 @@
 #pragma once
-#include <ranges>
-#include <utility>
-#include <filesystem>
-#include <RHICore/Application.hpp>
-#include <RHICore/Resource.hpp>
 #include <RHICore/Device.hpp>
-#include <RHICore/Descriptor.hpp>
-#include <RHICore/PipelineState.hpp>
-#include <RHICore/Command.hpp>
-#include <Allocator/StackAllocator.hpp>
-#include "RenderPass.hpp"
+
+#include "RendererMeta.hpp"
 /**
  * @brief Everything GPU related, including the Frame Graph implementation.
  */
 namespace Foundation::Rendering {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
-    constexpr PassHandle kRendererMaxPasses = 1024; // Maximum number of render passes
     constexpr size_t kMaxCommandListsPerSwap = 128; // Maximum number of command lists per frame
-    const size_t kTextureAspectCount = 3; // color, depth, stencil @ref RHITextureAspectFlag
     const RHIResourceAccessBits kAllShaderWrites =
         RHIResourceAccessBits::ShaderWrite |
         RHIResourceAccessBits::RenderTargetWrite |
         RHIResourceAccessBits::DepthStencilWrite |
         RHIResourceAccessBits::TransferWrite;
-        
-    /**
-     * @brief Internal tracking information for a resource in the frame graph.
-     */
-    struct TrackedResource {        
-        ResourceHandle handle; // Index to tracked resources
-        String name;        
-        ResourceDefinition desc;
-        /* --- states --- */
-        // (Buffer) Last known state
-        // Transitions here are always global since granularity would be too fine. And seems
-        // like drivers don't really care?
-        // See Also: https://www.reddit.com/r/vulkan/comments/v2mswb/global_memory_barriers_vs_bufferimage_memory/
-        // TODO: Investigate
-        struct BufferState {
-            PassHandle producer{ kInvalidHandle };
-            RHIResourceAccess access{};
-            RHIPipelineStage stage{};
-            void reset() {
-                producer = kInvalidHandle;
-                access = {};
-                stage = {};
-            }
-        } lastBufferState{};
 
-        // (Texture) Per-subresource states
-        uint32_t textureLayers{ 0 }, textureMips{ 0 };
-        struct SubresourceState {
-            size_t layer{ 0 }, mip{ 0 };
-            RHITextureAspectFlagBits aspect{};
-            /* -- states -- */
-            PassHandle producer{ kInvalidHandle };
-            RHIResourceAccess access{};
-            RHIPipelineStage stage{};
-            RHITextureLayout layout{};
-            void reset() {
-                producer = kInvalidHandle;
-                access = {};
-                stage = {};
-                layout = {};
-            }
-            [[nodiscard]] RHITextureSubresourceRange ToRange() const {
-                return RHITextureSubresourceRange{
-                    .layer = {
-                        .aspect = aspect,
-                        .mip_level = static_cast<uint32_t>(mip),
-                        .base_array_layer = static_cast<uint32_t>(layer),
-                        .layer_count = 1
-                    },
-                    .mip_count = 1
-                };
-            }
-        };
-        // [mip...,
-        //   layer...,
-        //      aspect...]
-        Vector<SubresourceState> lastSubresourceStates;
-        auto GetLastSubresourceStateOf(RHITextureSubresourceRange const& range) {
-            auto [mip_begin, mip_end] = range.GetMipLevelRange();
-            auto [layer_begin, layer_end] = range.GetArrayLayerRange();
-            uint32_t mip_stride = textureLayers * kTextureAspectCount;
-            return
-                std::views::all(Span<SubresourceState>{
-                    lastSubresourceStates.begin() + mip_begin * mip_stride,
-                    lastSubresourceStates.begin() + (mip_end + 1) * mip_stride,
-                }) |
-                std::views::filter([=](const SubresourceState& state) {
-                    return (RHITextureAspectFlag(state.aspect) & range.layer.aspect) && state.mip >= mip_begin && state.mip <= mip_end && state.layer >= layer_begin && state.layer <= layer_end;
-                });
-        }
-        TrackedResource(const ResourceHandle handle, StringView name, const ResourceDefinition& resourceDesc, Allocator* alloc)
-            : handle(handle), name(name), desc(resourceDesc), lastSubresourceStates(alloc) {
-            // Init texture tracking states
-            auto update_texture_desc = [&](RHITextureDesc const& desc) {
-                textureLayers = desc.array_layers;
-                textureMips = desc.mip_levels;
-                lastSubresourceStates.resize(textureMips * textureLayers * kTextureAspectCount);
-                for (uint32_t mip = 0; mip < textureMips; ++mip)
-                {
-                    for (uint32_t layer = 0; layer < textureLayers; ++layer)
-                    {
-                        for (uint32_t aspect = 0; aspect < kTextureAspectCount; ++aspect)
-                        {
-                            uint32_t i = mip * (textureLayers * kTextureAspectCount) + layer * kTextureAspectCount + aspect;
-                            auto& state = lastSubresourceStates[i];
-                            state.aspect = RHITextureAspectFlag(1u << aspect);
-                            state.mip = mip, state.layer = layer;
-                        }
-                    }
-                }
-            };
-            desc.visit(
-                [&](RHITextureDesc const& tex) { update_texture_desc(tex); },
-                [&](RHIDeviceObjectHandle<RHITexture> const& tex) { update_texture_desc(tex->m_desc); },
-                [&](const RHITexture* const tex) { update_texture_desc(tex->m_desc); }
-            );
-        }
-
-    };
-    /**
-     * @brief Internal tracking information for a render pass in the frame graph.
-     */
-    struct TrackedPass {
-        String name;
-        PassHandle handle; // Index to tracked passes
-        // The queue to run this pass on
-        RHIDeviceQueueType queue;
-        bool used{ false }; // Culled?
-        bool has_cross_queue_dependent{ false }; // Has an edge to/from another queue
-        // Writes to the swapchain backbuffer
-        // Ignores other RTVs if true
-        bool write_backbuffer{ false };
-        // Uses compute shader, or runs in a compute pipeline (not necessarily a compute queue)
-        // Should be mutually exclusive with write_backbuffer and other graphics states
-        bool compute_pass{ false };
-        // Local size for compute shaders
-        Tuple<uint32_t, uint32_t, uint32_t> compute_local_size{};
-        size_t depth{}; // Depth in RG
-        size_t ord{}; // Execution order
-        /* -- resources -- */
-        Vector<Tuple<
-            ResourceHandle,
-            RHIResourceAccess,
-            RHIPipelineStage,
-            RHITextureSubresourceRange,
-            RHITextureLayout
-            >> textureUsages; // Referenced texture sub resources
-        Vector<Tuple<
-            ResourceHandle,
-            RHIResourceAccess,
-            RHIPipelineStage
-            >> bufferUsages; // Referenced buffers
-        // Unique referenced resources (tex/buf)             
-        Vector<ResourceHandle> resources;
-        // Unique texture views
-        Vector<ResourceHandle> texviews;
-        /* -- pipeline -- */
-        // Shader [path, entry point, stage]
-        Vector<Tuple<
-            std::filesystem::path,
-            String,
-            RHIShaderStage
-            >> shaders;
-        // Bind points [view(tex) or buffer(buf), desc type, binding point]        
-        Vector<Tuple<
-            ResourceHandle,
-            RHIDescriptorType,
-            String
-            >> tex_bindings, buf_bindings;
-        // Samplers
-        Vector<Pair<ResourceHandle, String>> samplers;
-        // Push Constants by [stage, offset, size]
-        Vector<RHIPipelineState::PipelineStateDesc::PushConstant> push_constants;
-        // (Graphics Only) Render Target View[s]
-        Vector<ResourceHandle> rtvs;
-        // (Graphics Only) Depth Stencil View
-        ResourceHandle dsv{ kInvalidHandle };
-        // (Graphics Only) Vertex Input assembly
-        Vector<RHIPipelineState::PipelineStateDesc::VertexInput::Binding> vertex_input_bindings;
-        Vector<RHIVertexAttribute> vertex_input_attributes;
-        /* --- */
-        UniquePtr<RenderPass> pass;
-        TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue, UniquePtr<RenderPass> renderPass)
-            : name(name), handle(handle), queue(queue),
-            textureUsages(alloc), bufferUsages(alloc), resources(alloc), texviews(alloc),
-            shaders(alloc),
-            tex_bindings(alloc), buf_bindings(alloc),
-            samplers(alloc),
-            push_constants(alloc), rtvs(alloc),
-            pass(std::move(renderPass)), desc_layouts(alloc),
-            desc_sets(alloc), p_desc_sets(alloc),
-            vertex_input_bindings(alloc), vertex_input_attributes(alloc)
-        {
-        };
-        /* -- states -- */
-        /* Only unculled passes have these initialized. */
-        // Semaphore to signal on pass completion
-        RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> asyncSemaphore{};
-        // Pipeline states for the entire pass
-        RHIDeviceScopedObjectHandle<RHIPipelineState> pso;
-        Vector<RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout>> desc_layouts;
-        Vector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> desc_sets;
-        Vector<RHIDeviceDescriptorSet*> p_desc_sets;
-        // All pipeline stages used in this pass
-        RHIPipelineStage GetMaxPipelineStages() const
-        {
-            if (queue == RHIDeviceQueueType::Graphics)
-                return RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader;
-            else
-                return RHIPipelineStageBits::ComputeShader;
-        }
-    };
     struct RendererDesc {
         // Enable async compute
         bool async{ true }; 
@@ -271,7 +70,7 @@ namespace Foundation::Rendering {
         UniquePtr<Resources> m_resources;
 
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_descPool;
-        RHIDeviceScopedObjectHandle<RHICommandPool> m_cmdPool{}, m_compCmdPool{}; // Graphics, Async Compute
+        RHIDeviceScopedObjectHandle<RHICommandPool> m_graphicsCmdPool{}, m_computeCmdPool{}; // Graphics, Async Compute
 
         struct FrameSyncObjects{
         private:
@@ -279,41 +78,34 @@ namespace Foundation::Rendering {
             // per swap. Driver usually want them to live.                       
             Vector<RHICommandPoolScopedHandle<RHICommandList>> cmds;
             Vector<RHICommandPoolScopedHandle<RHICommandList>> comp_cmds;
-            Vector<RHIDeviceScopedObjectHandle<RHIDeviceSemaphore>> barrier_semaphores;
         public:
             RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render{}, present{};
             RHIDeviceScopedObjectHandle<RHIDeviceFence> fence{};
-            RHICommandList* cmd_at(size_t i, RHICommandPool* pool) {
+            RHICommandList* graphics_cmd_at(size_t i, RHICommandPool* pool) {
                 if (!cmds[i].IsValid())
                     cmds[i] = pool->CreateCommandList();
                 return cmds[i].Get();
             }
-            RHICommandList* comp_cmds_at(size_t i, RHICommandPool* pool) {
+            RHICommandList* compute_cmd_at(size_t i, RHICommandPool* pool) {
                 if (!comp_cmds[i].IsValid())
                     comp_cmds[i] = pool->CreateCommandList();
                 return comp_cmds[i].Get();
-            }
-            RHIDeviceSemaphore* barrier_semaphore_at(size_t i, RHIDevice* device) {
-                if (!barrier_semaphores[i].IsValid())
-                    barrier_semaphores[i] = device->CreateSemaphore(true);
-                return barrier_semaphores[i].Get();
             }
             // RTV for the backbuffer
             RHITextureScopedHandle<RHITextureView> rtv{};
             // Tracked backbuffer handle
             ResourceHandle rt_handle{ kInvalidHandle };
             FrameSyncObjects(Allocator* allocator)
-                : cmds(allocator), comp_cmds(allocator), barrier_semaphores(allocator)
+                : cmds(allocator), comp_cmds(allocator)
             {
-                cmds.resize(kMaxCommandListsPerSwap), comp_cmds.resize(kMaxCommandListsPerSwap),
-                    barrier_semaphores.resize(kMaxCommandListsPerSwap);
+                cmds.resize(kMaxCommandListsPerSwap), comp_cmds.resize(kMaxCommandListsPerSwap);
             }
         };
         Vector<FrameSyncObjects> m_swaps;
 
         RHIApplicationObjectHandle<RHIDevice> m_device{};
         RHIDeviceObjectHandle<RHISwapchain> m_swapchain{};
-        RHIDeviceQueue* m_gfxQueue{}, *m_compQueue{};
+        RHIDeviceQueue* m_graphicsQueue{}, *m_computeQueue{};
 
         struct Setup {            
             Vector<Vector<Pair<PassHandle, ResourceHandle>>> graph;
@@ -325,9 +117,26 @@ namespace Foundation::Rendering {
             // [resource, ord range]
             Map<ResourceHandle, Pair<PassHandle, PassHandle>> activeResources;
             // Passes ordered by pass.ord
-            Vector<PassHandle> execution;            
+            Vector<PassHandle> execution;
             Map<RHIDescriptorType, uint32_t> binding_counts;
             PassHandle epilogue{ kInvalidHandle };
+            // Execution grouped by queue type
+            struct ExecutionGroups
+            {
+                const size_t group_index{}; // Index in executionGroups
+                const RHIDeviceQueueType queue{};
+
+                RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> semaphore;
+                Vector<PassHandle> passes;
+                Vector<ResourceHandle> dependencies;
+                bool any_write_backbuffer{false};
+                bool any_compute_pass{false};
+                size_t singal_ord{ 0 }; // Ord value used to signal
+                
+                ExecutionGroups(size_t group_index, RHIDeviceQueueType queue, Allocator* allocator) :
+                group_index(group_index), queue(queue), passes(allocator), dependencies(allocator) {}
+            };
+            Vector<ExecutionGroups> executionGroups;
             void add_edge(const PassHandle u, const PassHandle v,  const ResourceHandle hdl) {
                 // ReSharper disable once CppDFALoopConditionNotUpdated
                 while (u >= graph.size()) graph.emplace_back(graph.get_allocator());
@@ -336,8 +145,8 @@ namespace Foundation::Rendering {
             explicit Setup(Allocator* allocator) :
                 graph(allocator), trackedPasses(allocator), trackedResources(allocator),
                 trackedViews(allocator), trackedSamplers(allocator), activeResources(allocator),
-                execution(allocator),
-                binding_counts(allocator) {}
+                execution(allocator), binding_counts(allocator),
+                executionGroups(allocator) {}
         };
         UniquePtr<Setup> m_setup;
         // Setup
@@ -361,21 +170,22 @@ namespace Foundation::Rendering {
         void BuildPipelineState(PassHandle pass);
         void FinalizeResources();
         void FinalizePSOs();
-        // Execute
         ScopedArena m_executeArena;
         // Temporary allocator for execution
         // This is reset every frame, and only guaranteed to be valid during Execute state.
         StackAllocator m_executeAlloc;
-        RHIPipelineStage ExecuteGetPassAllCurrentStages(TrackedPass& pass);
+        // All shader stage bits
+        RHIPipelineStage ExecuteCollectResourceStates(
+            Span<PassHandle> passes,
+            RHIDeviceQueueType currentQueue,
+            Vector<size_t>& outCrossQueueGroups
+        );
+        // [Semaphore, Wait value]
+        using SemaphorePair = Pair<RHIDeviceSemaphore*, size_t>;
         void ExecuteBarrierSubresource(TrackedResource& res, RHITextureSubresourceRange const& range, RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd);
         void ExecuteBarrierBuffer(TrackedResource& res, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd);
         void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
-        bool ExecuteSubmitOrContinue(
-            TrackedPass& pass, RHICommandList* cmd,
-            const RHIDeviceQueue* queue,
-            bool final_submit = false,
-            Span<const Tuple<RHIDeviceSemaphore*, RHIPipelineStage, size_t>> extra_waits = {}
-        );
+        SemaphorePair ExecuteSubmitBarriers(RHICommandList* cmd);
         void SetFrameSyncObjects();
 
         RHIDeviceIdleGuard m_waitIdle; // Ensure device is idle on destruction
@@ -404,7 +214,6 @@ namespace Foundation::Rendering {
             CHECK(m_state == State::Setup);
             CHECK_MSG(queue == RHIDeviceQueueType::Graphics || queue == RHIDeviceQueueType::Compute, "Invalid queue type. Only Graphics and Compute queues are supported.");
             PassHandle handle = m_setup->trackedPasses.size();
-            CHECK_MSG(handle < kRendererMaxPasses, "Too many passes ({}) - leaks might be possible", handle);
             if (!m_desc.async)
                 queue = RHIDeviceQueueType::Graphics; // Force graphics queue if async compute is disabled
             m_setup->trackedPasses.emplace_back(

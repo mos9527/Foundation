@@ -33,19 +33,19 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
     : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_swaps(m_allocator),
       m_device(device), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena),
       m_waitIdle(device.Get()) {
-    m_gfxQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
-    m_compQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Compute);
-    m_cmdPool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
+    m_graphicsQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
+    m_computeQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Compute);
+    m_graphicsCmdPool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
         .queue = RHIDeviceQueueType::Graphics,
         .type = RHICommandPoolType::Persistent
     });
-    m_cmdPool->DebugSetObjectName("Main Command Pool");
+    m_graphicsCmdPool->DebugSetObjectName("Main Command Pool");
     if (m_desc.async) {
-        m_compCmdPool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
+        m_computeCmdPool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
             .queue = RHIDeviceQueueType::Compute,
             .type = RHICommandPoolType::Persistent
             });
-        m_compCmdPool->DebugSetObjectName("Async Compute Command Pool");
+        m_computeCmdPool->DebugSetObjectName("Async Compute Command Pool");
     }
     BeginSetup();
     if (m_desc.present)
@@ -440,9 +440,34 @@ void Renderer::CullPasses(PassHandle epilogue) const
             return m_setup->trackedPasses[a].handle < m_setup->trackedPasses[b].handle;
         });
     }
+    // Group passes by queue
+    auto& exec_group = m_setup->executionGroups;
+    for (PassHandle i = 0, j = 0; i < exec.size();i = j)
+    {
+        while (j < exec.size() && m_setup->trackedPasses[exec[j]].queue == m_setup->trackedPasses[exec[i]].queue)
+            j++;
+        auto& group = exec_group.emplace_back(exec_group.size(), m_setup->trackedPasses[exec[i]].queue, m_allocator);
+        group.passes.insert(group.passes.end(), exec.begin() + i, exec.begin() + j);
+        // Collect dependencies
+        for (auto pass : exec_group.back().passes) {
+            auto& tpass = m_setup->trackedPasses[pass];
+            group.dependencies.insert(group.dependencies.end(), tpass.resources.begin(), tpass.resources.end());
+            group.any_write_backbuffer |= tpass.write_backbuffer;
+            group.any_compute_pass |= tpass.compute_pass;
+            group.singal_ord = std::max(group.singal_ord, tpass.ord);
+        }
+        // Sort and unique
+        std::ranges::sort(group.dependencies);
+        group.dependencies.erase(std::ranges::unique(group.dependencies).begin(), group.dependencies.end());
+        group.semaphore = m_device->CreateSemaphore(true /* timeline */);
+        group.semaphore->DebugSetObjectName(
+            fmt::format("RG Exec Semaphore Group {} Queue {}", group.group_index, group.queue
+        ).c_str());
+    }
     LOG_RUNTIME(Renderer, debug, "** Render Graph GraphViz **\n{}", DbgDumpGraphviz());
     LOG_RUNTIME(Renderer, debug, "** Render Graph Execution Order **\n{}", DbgDumpActivePasses());
 }
+/* -- PSO -- */
 void Renderer::BuildPipelineState(PassHandle pass) {
     auto& tracked = m_setup->trackedPasses[pass];
     Vector<RHIPipelineState::PipelineStateDesc::ShaderStage> pso_stages(m_allocator);
@@ -747,19 +772,6 @@ void Renderer::FinalizeResources() {
     CHECK(m_state == State::Setup);
     m_resources = ConstructUnique<Resources>(m_allocator, m_allocator);
     m_resources->fit(m_setup->trackedResources.size());
-    // Create semaphores for inter-queue synchronization
-    // Optionally used to be actually waited on (inter-queue, etc.), but will always be signaled
-    for (PassHandle ord = 0; ord < m_setup->execution.size(); ord++) {
-        auto& pass = m_setup->trackedPasses[m_setup->execution[ord]];
-        if (m_desc.async /* && pass.has_cross_queue_dependent */) {
-            // TODO: Figure out how to accurately detect dependency across *frames*
-            // Creating one for all passes works for now.
-            pass.asyncSemaphore = m_device->CreateSemaphore(true);
-            pass.asyncSemaphore->DebugSetObjectName(
-                fmt::format("Timeline Semaphore of {} [{}]", pass.name, pass.handle).c_str()
-            );
-        }
-    }
     // !! TODO: Overlap transient resources to with non-overlapping lifetimes with aliasing
     for (const auto& handle : m_setup->activeResources | std::views::keys) {
         auto& res = m_setup->trackedResources[handle];
@@ -883,23 +895,36 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
     // Reset semaphores index
     m_currentSync = 0;
 }
-RHIPipelineStage Renderer::ExecuteGetPassAllCurrentStages(TrackedPass& pass)
+RHIPipelineStage Renderer::ExecuteCollectResourceStates(Span<PassHandle> passes, RHIDeviceQueueType currentQueue, Vector<size_t>& outCrossQueueGroups)
 {
-    RHIPipelineStage ans{};
-    for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
+    RHIPipelineStage all_states{};
+    outCrossQueueGroups.clear();
+    for (auto pass_handle : passes)
     {
-        auto& tres = m_setup->trackedResources[hdl];
-        for (auto& sta : tres.GetLastSubresourceStateOf(range))
-            ans |= sta.stage;
+        auto const& pass = m_setup->trackedPasses[pass_handle];
+        if (pass.queue != currentQueue)
+            outCrossQueueGroups.emplace_back(pass_handle);
+        for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
+        {
+            auto& tres = m_setup->trackedResources[hdl];
+            for (auto const& sta : tres.GetLastSubresourceStateOf(range))
+                all_states |= sta.stage;
+        }
+        if (pass.write_backbuffer)
+            all_states |= RHIPipelineStageBits::ColorAttachmentOutput;
+        for (auto [hdl, access, stage] : pass.bufferUsages)
+        {
+            auto& tres = m_setup->trackedResources[hdl];
+            all_states |= tres.lastBufferState.stage;
+        }
     }
-    if (pass.write_backbuffer)
-        ans |= RHIPipelineStageBits::ColorAttachmentOutput;
-    for (auto [hdl, access, stage] : pass.bufferUsages)
+    // Sort and unique cross-queue groups
+    if (!outCrossQueueGroups.empty())
     {
-        auto& tres = m_setup->trackedResources[hdl];
-        ans |= tres.lastBufferState.stage;
+        std::ranges::sort(outCrossQueueGroups);
+        outCrossQueueGroups.erase(std::ranges::unique(outCrossQueueGroups).begin(), outCrossQueueGroups.end());
     }
-    return ans;
+    return all_states;
 }
 void Renderer::ExecuteBarrierSubresource(TrackedResource& tres, RHITextureSubresourceRange const& range,RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd)
 {
@@ -982,219 +1007,49 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
     }
     cmd->EndTransition();
 }
-bool Renderer::ExecuteSubmitOrContinue(
-    TrackedPass& pass, RHICommandList* cmd,
-    const RHIDeviceQueue* queue,
-    bool final_submit,
-    Span<const Tuple<RHIDeviceSemaphore*, RHIPipelineStage, size_t>> extra_waits
-)
+Renderer::SemaphorePair Renderer::ExecuteSubmitBarriers(RHICommandList* cmd)
 {
-    CHECK(m_state == State::Execute && m_executeAlloc);
-    Vector<Pair<RHIDeviceSemaphore*, size_t>> waits(m_executeAlloc.Ptr()), signals(m_executeAlloc.Ptr());
-    Vector<RHIPipelineStage> waits_stages(m_executeAlloc.Ptr());
-    for (auto const& [sem, stage, counter] : extra_waits) {
-        waits.emplace_back(sem, counter);
-        waits_stages.push_back(stage);
-    }
-    // Collect waited semaphores from inter-queue dependencies
-    if (m_desc.async)
-    {
-        signals.emplace_back(pass.asyncSemaphore.Get(), SEM_COUNTER(pass.ord));
-        // Pass that depends on a producer pass that's on another queue
-        // needs external synchronization.
-        auto check_wait = [&](PassHandle other) -> bool {
-            if (other != kInvalidHandle) {
-                auto& opass = m_setup->trackedPasses[other];
-                if (opass.queue != pass.queue) {
-                    CHECK_MSG(opass.asyncSemaphore.IsValid(), "FIXME-Async Compute: Pass {} [{}] is not valid to be waited on", opass.name, other);
-                    // Wait on the producer pass's semaphore
-                    if (opass.pass->IsSkipped(opass.handle, this))
-                        return false; // Skip waiting on skipped passes
-                    if (opass.ord > pass.ord)
-                    {
-                        // From the previous frame
-                        waits.emplace_back(opass.asyncSemaphore.Get(), SEM_COUNTER_PREV(opass.ord));
-                        return true;
-                    } else
-                    {
-                        waits.emplace_back(opass.asyncSemaphore.Get(), SEM_COUNTER(opass.ord));
-                        return true;
-                    }
-                }
-            }
-            return false;
-        };
-        // Textures
-        for (auto const& [hdl, access, stage, range, layout] : pass.textureUsages) {
-            auto& res = m_setup->trackedResources[hdl];
-            for (auto& sta : res.GetLastSubresourceStateOf(range)) {
-                if (sta.producer == pass.handle)
-                    continue;
-                if (check_wait(sta.producer))
-                    waits_stages.emplace_back(stage);
-                if (access & kAllShaderWrites)
-                    sta.producer = pass.handle;
-            }
-        }
-        // Buffer ranges
-        for (auto const& [hdl, access, stage] : pass.bufferUsages) {
-            auto& res = m_setup->trackedResources[hdl];
-            if (res.lastBufferState.producer == pass.handle)
-                continue;
-            if (check_wait(res.lastBufferState.producer))
-                waits_stages.emplace_back(stage);
-            if (access & kAllShaderWrites)
-                res.lastBufferState.producer = pass.handle;
-        }
-    }
-    // Submit or continue on the same list
-    if (final_submit)
-    {
-        // Always submit the last one, and present if needed
-        if (m_desc.present)
-        {
-            CHECK_MSG(queue == m_gfxQueue, "FIXME-ExecuteSubmitOrContinue: Last pass must be on the Graphics queue to present!");
-            cmd->BeginTransition();
-            ExecuteBarrierSubresource(
-                m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle],
-                RHITextureSubresourceRange::Create(),
-                {},
-                RHIPipelineStageBits::BottomOfPipe,
-                RHITextureLayout::Present,
-                cmd
-            );
-            cmd->EndTransition();
-            cmd->End();
-            waits_stages.push_back(RHIPipelineStageBits::BottomOfPipe);
-            queue->Submit({
-                .timeline_waits = waits,
-                .timeline_signals = signals,
-                .waits = {{ m_swaps[m_currentSync].present.Get() }},
-                .waits_stages = waits_stages,
-                .signals = {{ m_swaps[m_currentSwap].render.Get() }},
-                .cmd_lists = {{ cmd }},
-                .fence = m_swaps[m_currentSync].fence.Get()
-            });
-            queue->Present({
-                .image_index = m_currentSwap,
-                .swapchain = m_swapchain.Get(),
-                .waits = {{ m_swaps[m_currentSwap].render.Get() }}
-            });
-        } else
-        {
-            cmd->End();
-            queue->Submit({
-                .timeline_waits = waits,
-                .timeline_signals = signals,
-                .waits_stages = waits_stages,
-                .cmd_lists = { cmd },
-            });
-        }
-        return true;
-    } else
-    {
-        if (!m_desc.async) return false; // Continue
-        if (waits.empty() && signals.empty()) return false; // Continue
-        // Otherwise submit now for subsequent passes to wait on
-        cmd->End();
-        queue->Submit({
-            .timeline_waits = waits,
-            .timeline_signals = signals,
-            .waits_stages = waits_stages,
-            .cmd_lists = { cmd },
-        });
-        return true;
-    }
+
 }
 /**
  * Hot path. States are pre-allocated, and all auxiliary allocations are
  * done on the stack e.g. command list recording, runtime (IsSkipped()) pass culling.
  */
-void Renderer::Execute() {
+void Renderer::Execute()
+{
     CHECK_MSG(m_state == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup()?", m_state);
-    m_executeAlloc.Reset(m_executeArena);
-    m_state = State::Execute;
-    // Execute passes
+    m_executeAlloc.Reset(m_executeArena), m_state = State::Execute;
     auto& passes = m_setup->trackedPasses;
+    // Swapchain acquire
     m_device->WaitForFences({ m_swaps[m_currentSync].fence }, true, -1);
     if (m_desc.present)
-        m_currentSwap = m_swapchain->GetNextImage(-1, m_swaps[m_currentSync].present, {});
+        m_currentSwap = m_swapchain->GetNextImage(
+            -1, m_swaps[m_currentSync].present, {}
+        );
     m_device->ResetFences({ m_swaps[m_currentSync].fence });
     // Async compute supporting command lists
-    int cmd_index = 0, cmd_comp_index = 0;
-    RHIDeviceQueue* queue = m_gfxQueue;
-    RHICommandList* cmd = m_swaps[m_currentSync].cmd_at(cmd_index, m_cmdPool.Get());
-    auto set_next_graphics = [&]() {
-        CHECK_MSG(cmd_index < kMaxCommandListsPerSwap, "FIXME-Async Compute: All transient Graphics Command lists exhausted");
-        queue = m_gfxQueue, cmd = m_swaps[m_currentSync].cmd_at(cmd_index++, m_cmdPool.Get());
+    int cmd_graphics = 0, cmd_compute = 0;
+    RHIDeviceQueue* queue = nullptr;
+    RHICommandList* cmd = nullptr;
+    auto SetNextGraphicsQueue = [&]() {
+        CHECK_MSG(cmd_graphics < kMaxCommandListsPerSwap, "FIXME-Async Compute: All transient Graphics Command lists exhausted");
+        queue = m_graphicsQueue, cmd = m_swaps[m_currentSync].graphics_cmd_at(cmd_graphics++, m_graphicsCmdPool.Get());
         cmd->Reset(), cmd->Begin();
     };
-    auto set_next_compute = [&]() {
-        CHECK_MSG(cmd_comp_index < kMaxCommandListsPerSwap, "FIXME-Async Compute: All transient Compute Command lists exhausted");
-        queue = m_compQueue, cmd = m_swaps[m_currentSync].comp_cmds_at(cmd_comp_index++, m_compCmdPool.Get());
+    auto SetNextComputeQueue = [&]() {
+        CHECK_MSG(cmd_compute < kMaxCommandListsPerSwap, "FIXME-Async Compute: All transient Compute Command lists exhausted");
+        queue = m_computeQueue, cmd = m_swaps[m_currentSync].compute_cmd_at(cmd_compute++, m_computeCmdPool.Get());
         cmd->Reset(), cmd->Begin();
     };
-    auto set_next_pass_queue = [&](const TrackedPass& pass) {
-        switch (pass.queue)
-        {
-        case RHIDeviceQueueType::Graphics:
-            set_next_graphics();
-            break;
-        case RHIDeviceQueueType::Compute:
-            set_next_compute();
-            break;
-        default:
-            throw std::runtime_error("Unsupported queue type");
-            break;
-        }
-    };
-    // Take non-skipped passes only
-    auto execution_view = std::views::all(m_setup->execution)
-        | std::views::filter([&](PassHandle hdl) { return !passes[hdl].pass->IsSkipped(hdl, this); });
-    auto execution = Vector<PassHandle>(execution_view.begin(), execution_view.end(), m_executeAlloc.Ptr());
-    size_t pass_cnt = execution.size();
-    if (!execution.empty())
-        set_next_pass_queue(passes[*execution.begin()]);
-    Vector<Tuple<RHIDeviceSemaphore*, RHIPipelineStage, size_t>> extra_wait(m_executeAlloc.Ptr());
-    for (auto i = 0; i < pass_cnt; ++i) {
-        auto& pass = passes[execution[i]];
-        if (pass.queue == RHIDeviceQueueType::Compute) {
-            // XXX: Suboptimal. We can't stay on compute to transition if the pass
-            // uses resources that has these flags.
-            if (auto stages = ExecuteGetPassAllCurrentStages(pass); stages & kComputeStagesMask) {
-                set_next_graphics();
-                cmd->DebugInsertMarker("<Sync with Graphics Resources>");
-                ExecuteBarriers(pass, cmd);
-                cmd->End();
-                auto* extra_sem = m_swaps[m_currentSync].barrier_semaphore_at(cmd_index - 1, m_device.Get());
-                auto extra_ctr = SEM_COUNTER(cmd_index - 1);
-                extra_wait.emplace_back( extra_sem, pass.GetMaxPipelineStages(), extra_ctr );
-                queue->Submit({
-                    .timeline_signals = {{{extra_sem, extra_ctr}}},
-                    .cmd_lists = { cmd },
-                });
-                cmd_comp_index--;
-                set_next_compute();
-            } else {
-                ExecuteBarriers(pass, cmd);
-            }
-        }
-        else {
-            ExecuteBarriers(pass, cmd);
-        }
-        cmd->DebugBegin(pass.name.c_str());
-        pass.pass->Record(pass.handle, this, cmd);
-        cmd->DebugEnd();
-        // Submit if needed
-        bool final_submit = i == pass_cnt - 1;
-        bool submitted = ExecuteSubmitOrContinue(pass, cmd, queue, final_submit, extra_wait);
-        if (!extra_wait.empty())
-        {
-            CHECK_MSG(submitted, "FIXME-Async Compute: Extra wait not consumed");
-            extra_wait.clear();
-        }
-        if (submitted && !final_submit)
-            set_next_pass_queue(passes[execution[i + 1]]);
+    // Execute by groups
+    Vector<size_t> cross_queue_groups(m_allocator);
+    Vector<SemaphorePair> wait_semaphores(m_allocator);
+    auto AddWaitOnGroup = []
+    for (auto& group : m_setup->executionGroups)
+    {
+        auto all_states = ExecuteCollectResourceStates(group.passes, group.queue, cross_queue_groups);
+        // Acquire all waited semaphores from other queues
+        if (!cross_queue_groups.empty())
     }
     m_currentSync = (m_currentSync + 1) % m_frameSwaps;
     m_frame++;
