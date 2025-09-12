@@ -9,6 +9,7 @@ namespace Foundation::Rendering {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
     constexpr size_t kMaxCommandListsPerSwap = 128; // Maximum number of command lists per frame
+    constexpr size_t kMaxTempResourceSemaphores = 16; // Maximum number of temporary semaphores for cross-queue barriers
     const RHIResourceAccessBits kAllShaderWrites =
         RHIResourceAccessBits::ShaderWrite |
         RHIResourceAccessBits::RenderTargetWrite |
@@ -102,7 +103,6 @@ namespace Foundation::Rendering {
             }
         };
         Vector<FrameSyncObjects> m_swaps;
-
         RHIApplicationObjectHandle<RHIDevice> m_device{};
         RHIDeviceObjectHandle<RHISwapchain> m_swapchain{};
         RHIDeviceQueue* m_graphicsQueue{}, *m_computeQueue{};
@@ -132,6 +132,7 @@ namespace Foundation::Rendering {
                 bool any_write_backbuffer{false};
                 bool any_compute_pass{false};
                 size_t singal_ord{ 0 }; // Ord value used to signal
+                RHIShaderStage all_stages{}; // All stages used in this group
                 
                 ExecutionGroups(size_t group_index, RHIDeviceQueueType queue, Allocator* allocator) :
                 group_index(group_index), queue(queue), passes(allocator), dependencies(allocator) {}
@@ -180,12 +181,14 @@ namespace Foundation::Rendering {
             RHIDeviceQueueType currentQueue,
             Vector<size_t>& outCrossQueueGroups
         );
-        // [Semaphore, Wait value]
-        using SemaphorePair = Pair<RHIDeviceSemaphore*, size_t>;
+        // [Semaphore, Waited Stages, Wait value]
+        using SemaphorePair = Pair<RHIDeviceSemaphore*, RHIPipelineStage, size_t>;
+        // Semaphores used for automatically placed resource transition barriers
+        Vector<RHIDeviceScopedObjectHandle<RHIDeviceSemaphore>> m_executeBarrierSemaphores;
         void ExecuteBarrierSubresource(TrackedResource& res, RHITextureSubresourceRange const& range, RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd);
         void ExecuteBarrierBuffer(TrackedResource& res, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd);
         void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
-        SemaphorePair ExecuteSubmitBarriers(RHICommandList* cmd);
+        void ExecuteFrame();
         void SetFrameSyncObjects();
 
         RHIDeviceIdleGuard m_waitIdle; // Ensure device is idle on destruction
@@ -664,7 +667,7 @@ namespace Foundation::Rendering {
         /**
          * @brief Run the frame. Go!
          */
-        void Execute();
+        void Execute() { return ExecuteFrame(); }
     };
     /* Functional Helpers */
     /**

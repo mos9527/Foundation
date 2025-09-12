@@ -184,18 +184,12 @@ namespace Foundation::Rendering
         };
         /* -- states -- */
         size_t group_index{}; // executionGroup index
+        // All stages used in this pass
+        RHIPipelineStageBits pass_stages{};
         // Pipeline states for the entire pass
         RHIDeviceScopedObjectHandle<RHIPipelineState> pso;
         Vector<RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout>> desc_layouts;
         Vector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> desc_sets;
         Vector<RHIDeviceDescriptorSet*> p_desc_sets;
-        // All pipeline stages used in this pass
-        RHIPipelineStage GetMaxPipelineStages() const
-        {
-            if (queue == RHIDeviceQueueType::Graphics)
-                return RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader;
-            else
-                return RHIPipelineStageBits::ComputeShader;
-        }
     };
 }
