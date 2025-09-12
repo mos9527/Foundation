@@ -6,7 +6,6 @@
 
 #include <Math/Math.hpp>
 #include <RHICore/Device.hpp>
-#include <RHICore/Application.hpp>
 
 #include "Renderer.hpp"
 #include "ShaderReflection.hpp"
@@ -241,7 +240,7 @@ ResourceHandle Renderer::BindTextureSRV(
 ) const
 {
     CHECK(m_state == State::Setup);
-    CHECK_MSG(desc.range.IsValid(), "Binding SRV on {} is of invalid range! Did you specifiy `desc.range`?", m_setup->trackedResources[texture].name);
+    CHECK_MSG(desc.range.IsValid(), "Binding SRV on {} is of invalid range! Did you specify `desc.range`?", m_setup->trackedResources[texture].name);
     DeclareTextureAccess(pass, texture, stage, desc.range,
         RHIResourceAccessBits::ShaderRead,
         RHITextureLayout::ShaderReadOnly
@@ -258,7 +257,7 @@ ResourceHandle Renderer::BindTextureUAV(
 ) const
 {
     CHECK(m_state == State::Setup);
-    CHECK_MSG(desc.range.IsValid(), "Binding UAV on {} is of invalid range! Did you specifiy `desc.range`?", m_setup->trackedResources[texture].name);
+    CHECK_MSG(desc.range.IsValid(), "Binding UAV on {} is of invalid range! Did you specify `desc.range`?", m_setup->trackedResources[texture].name);
     DeclareTextureAccess(pass, texture, stage, desc.range,
         RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
         RHITextureLayout::General
@@ -274,7 +273,7 @@ ResourceHandle Renderer::BindTextureRTV(
 ) const
 {
     CHECK(m_state == State::Setup);
-    CHECK_MSG(desc.range.IsValid(), "Binding RTV on {} is of invalid range! Did you specifiy `desc.range`?", m_setup->trackedResources[texture].name);
+    CHECK_MSG(desc.range.IsValid(), "Binding RTV on {} is of invalid range! Did you specify `desc.range`?", m_setup->trackedResources[texture].name);
     auto& tpass = m_setup->trackedPasses[pass];
     CHECK_MSG(tpass.queue == RHIDeviceQueueType::Graphics, "RTV (Render Target Views) are only supported on Graphics queues");
     RHITextureAspectFlag kRTVBits = RHITextureAspectFlagBits::Color;
@@ -296,7 +295,7 @@ ResourceHandle Renderer::BindTextureDSV(
 ) const
 {
     CHECK(m_state == State::Setup);
-    CHECK_MSG(desc.range.IsValid(), "Binding DSV on {} is of invalid range! Did you specifiy `desc.range`?", m_setup->trackedResources[texture].name);
+    CHECK_MSG(desc.range.IsValid(), "Binding DSV on {} is of invalid range! Did you specify `desc.range`?", m_setup->trackedResources[texture].name);
     auto& tpass = m_setup->trackedPasses[pass];
     CHECK_MSG(tpass.queue == RHIDeviceQueueType::Graphics, "DSV (Depth Stencil Views) are only supported on Graphics queues");
     RHITextureAspectFlag kDSVBits = RHITextureAspectFlagBits::Depth | RHITextureAspectFlagBits::Stencil;
@@ -325,7 +324,7 @@ void Renderer::BindTextureCopyDst(
 ) const
 {
     CHECK(m_state == State::Setup);
-    CHECK_MSG(range.IsValid(), "Binding CopyDst on {} is of invalid range! Did you specifiy `desc.range`?", m_setup->trackedResources[texture].name);
+    CHECK_MSG(range.IsValid(), "Binding CopyDst on {} is of invalid range! Did you specify `desc.range`?", m_setup->trackedResources[texture].name);
     DeclareTextureAccess(pass, texture,
         RHIPipelineStageBits::Transfer,
         range,
@@ -339,7 +338,7 @@ void Renderer::BindTextureCopySrc(
 ) const
 {
     CHECK(m_state == State::Setup);
-    CHECK_MSG(range.IsValid(), "Binding CopySrc on {} is of invalid range! Did you specifiy `desc.range`?", m_setup->trackedResources[texture].name);
+    CHECK_MSG(range.IsValid(), "Binding CopySrc on {} is of invalid range! Did you specify `desc.range`?", m_setup->trackedResources[texture].name);
     DeclareTextureAccess(pass, texture,
         RHIPipelineStageBits::Transfer,
         range,
@@ -439,8 +438,6 @@ void Renderer::CullPasses(PassHandle epilogue) const
         for (auto pass : exec_group.back().passes) {
             auto& tpass = m_setup->trackedPasses[pass];
             group.dependencies.insert(group.dependencies.end(), tpass.resources.begin(), tpass.resources.end());
-            group.any_write_backbuffer |= tpass.write_backbuffer;
-            group.any_compute_pass |= tpass.compute_pass;
             group.all_stages |= tpass.pass_stages;
             group.singal_ord = std::max(group.singal_ord, tpass.ord);
         }
@@ -451,6 +448,23 @@ void Renderer::CullPasses(PassHandle epilogue) const
         group.semaphore->DebugSetObjectName(
             fmt::format("RG Exec Semaphore Group {} Queue {}", group.group_index, group.queue
         ).c_str());
+        if (group.queue == RHIDeviceQueueType::Graphics)
+            m_setup->executionAnyGraphics = true;
+        else if (group.queue == RHIDeviceQueueType::Compute)
+            m_setup->executionAnyCompute = true;
+    }
+    // Assign last Graphics/Compute group
+    {
+        auto it = std::ranges::find_if(m_setup->executionGroups | std::views::reverse, [](auto const& g) {
+            return g.queue == RHIDeviceQueueType::Graphics;
+        });
+        if (it != m_setup->executionGroups.rend())
+            it->is_last_graphics = true;
+        it = std::ranges::find_if(m_setup->executionGroups | std::views::reverse, [](auto const& g) {
+            return g.queue == RHIDeviceQueueType::Compute;
+        });
+        if (it != m_setup->executionGroups.rend())
+            it->is_last_compute = true;
     }
     LOG_RUNTIME(Renderer, debug, "** Render Graph GraphViz **\n{}", DbgDumpGraphviz());
     LOG_RUNTIME(Renderer, debug, "** Render Graph Execution Order **\n{}", DbgDumpActivePasses());
@@ -527,7 +541,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
             else {
                 auto& [set, binding] = it->second;
                 CHECK_MSG(
-                    set == bind.descriptorSet && binding == bind.binding, 
+                    set == bind.descriptorSet && binding == bind.binding,
                     "Inconsistent binding points across shader stages for variable {} in shader {}",
                     bind.name, path.string()
                 );
@@ -651,7 +665,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
                         .images = {{{
                             .sampler = sampler
                         }}}
-                        });                    
+                        });
                     break;
             }
                 case SampledImage:
@@ -700,7 +714,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
             .front_face = RHIPipelineState::PipelineStateDesc::Rasterizer::FF_COUNTER_CLOCKWISE,
         },
         .multisample = {.enabled = false },
-        .depth_stencil = {                        
+        .depth_stencil = {
             .depth_test = true,
             .depth_write = true
         },
@@ -772,7 +786,7 @@ void Renderer::FinalizeResources() {
         auto& res = m_setup->trackedResources[handle];
         res.desc.visit(
             // Owned
-            [&](RHIBufferDesc const& desc) {                
+            [&](RHIBufferDesc const& desc) {
                 m_resources->resources[handle] = m_device->CreateBuffer(desc);
                 DerefResource(handle).Get<RHIBuffer*>()->DebugSetObjectName(
                     fmt::format("{} [{}]", res.name, handle).c_str()
@@ -850,8 +864,10 @@ void Renderer::SetFrameSyncObjects() {
         m_swaps[i].render->DebugSetObjectName(fmt::format("Render Semaphore of Swap {}", i).c_str());
         m_swaps[i].present = m_device->CreateSemaphore(false);
         m_swaps[i].present->DebugSetObjectName(fmt::format("Present Semaphore of Swap {}", i).c_str());
-        m_swaps[i].fence = m_device->CreateFence(true);
-        m_swaps[i].fence->DebugSetObjectName(fmt::format("Fence of Swap {}", i).c_str());
+        m_swaps[i].graphics_fence = m_device->CreateFence(true);
+        m_swaps[i].graphics_fence->DebugSetObjectName(fmt::format("Graphics Fence of Swap {}", i).c_str());
+        m_swaps[i].compute_fence = m_device->CreateFence(true);
+        m_swaps[i].compute_fence->DebugSetObjectName(fmt::format("Compute Fence of Swap {}", i).c_str());
     }
 }
 void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
@@ -1013,12 +1029,17 @@ void Renderer::ExecuteFrame()
     m_executeAlloc.Reset(m_executeArena), m_state = State::Execute;
     auto& passes = m_setup->trackedPasses;
     // Swapchain acquire
-    m_device->WaitForFences({ m_swaps[m_currentSync].fence }, true, -1);
+    Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait_fences(m_executeAlloc.Ptr());
+    if (m_setup->executionAnyGraphics)
+        wait_fences.push_back(m_swaps[m_currentSync].graphics_fence);
+    if (m_setup->executionAnyCompute)
+        wait_fences.push_back(m_swaps[m_currentSync].compute_fence);
+    m_device->WaitForFences(wait_fences, true, -1);
     if (m_desc.present)
         m_currentSwap = m_swapchain->GetNextImage(
             -1, m_swaps[m_currentSync].present, {}
         );
-    m_device->ResetFences({ m_swaps[m_currentSync].fence });
+    m_device->ResetFences(wait_fences);
     // Async compute supporting command lists
     int cmd_graphics = 0, cmd_compute = 0, sem_index = 0;
     RHIDeviceQueue* queue = nullptr;
@@ -1131,6 +1152,11 @@ void Renderer::ExecuteFrame()
         }
         // We'd only signal the current group per submit
         timeline_signals.emplace_back(group.semaphore.Get(), SEM_COUNTER(group.group_index));
+        RHIDeviceFence* fence_ptr = nullptr;
+        if (group.is_last_compute)
+            fence_ptr = m_swaps[m_currentSync].compute_fence.Get();
+        else if (group.is_last_graphics)
+            fence_ptr = m_swaps[m_currentSync].graphics_fence.Get();
         if (is_last)
         {
             if (!m_desc.present){
@@ -1140,7 +1166,7 @@ void Renderer::ExecuteFrame()
                     .timeline_signals = timeline_signals,
                     .waits_stages = waits_stages,
                     .cmd_lists = { cmd },
-                    .fence = m_swaps[m_currentSync].fence.Get()
+                    .fence = fence_ptr
                 });
             } else {
                 // Last group to submit, and we need to present
@@ -1153,6 +1179,7 @@ void Renderer::ExecuteFrame()
                         .timeline_signals = timeline_signals,
                         .waits_stages = waits_stages,
                         .cmd_lists = { cmd },
+                        .fence = fence_ptr // Compute
                     });
                     timeline_waits.clear(), timeline_waits.emplace_back(timeline_signals.back());
                     timeline_signals.clear(), waits_stages.clear();
@@ -1182,7 +1209,7 @@ void Renderer::ExecuteFrame()
                     .waits_stages = waits_stages,
                     .signals = {{ m_swaps[m_currentSwap].render.Get() }},
                     .cmd_lists = {{ cmd }},
-                    .fence = m_swaps[m_currentSync].fence.Get()
+                    .fence = m_swaps[m_currentSync].graphics_fence.Get()
                 });
                 queue->Present({
                     .image_index = m_currentSwap,
@@ -1198,6 +1225,7 @@ void Renderer::ExecuteFrame()
                 .timeline_signals = timeline_signals,
                 .waits_stages = waits_stages,
                 .cmd_lists = { cmd },
+                .fence = fence_ptr
             });
         }
     }

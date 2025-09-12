@@ -1,4 +1,5 @@
 #pragma once
+#include <RHICore/Application.hpp>
 #include <RHICore/Device.hpp>
 
 #include "RendererMeta.hpp"
@@ -87,7 +88,7 @@ namespace Foundation::Rendering {
         public:
             const size_t swapIndex;
             RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render{}, present{};
-            RHIDeviceScopedObjectHandle<RHIDeviceFence> fence{};
+            RHIDeviceScopedObjectHandle<RHIDeviceFence> graphics_fence{}, compute_fence{};
             RHICommandList* graphics_cmd_at(size_t i, RHICommandPool* pool) {
                 if (!cmds[i].IsValid())
                     cmds[i] = pool->CreateCommandList();
@@ -137,8 +138,8 @@ namespace Foundation::Rendering {
                 RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> semaphore;
                 Vector<PassHandle> passes;
                 Vector<ResourceHandle> dependencies;
-                bool any_write_backbuffer{false};
-                bool any_compute_pass{false};
+                bool is_last_graphics = false;
+                bool is_last_compute = false;
                 size_t singal_ord{ 0 }; // Ord value used to signal
                 RHIShaderStage all_stages{}; // All stages used in this group
                 
@@ -146,6 +147,7 @@ namespace Foundation::Rendering {
                 group_index(group_index), queue(queue), passes(allocator), dependencies(allocator) {}
             };
             Vector<ExecutionGroups> executionGroups;
+            bool executionAnyCompute{false}, executionAnyGraphics{false};
             void add_edge(const PassHandle u, const PassHandle v,  const ResourceHandle hdl) {
                 // ReSharper disable once CppDFALoopConditionNotUpdated
                 while (u >= graph.size()) graph.emplace_back(graph.get_allocator());
@@ -179,6 +181,7 @@ namespace Foundation::Rendering {
         void BuildPipelineState(PassHandle pass);
         void FinalizeResources();
         void FinalizePSOs();
+        // Temporary memory arena for execution
         ScopedArena m_executeArena;
         // Temporary allocator for execution
         // This is reset every frame, and only guaranteed to be valid during Execute state.
