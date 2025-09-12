@@ -85,24 +85,27 @@ namespace Foundation::Rendering {
             Vector<RHICommandPoolScopedHandle<RHICommandList>> cmds;
             Vector<RHICommandPoolScopedHandle<RHICommandList>> comp_cmds;
         public:
+            const size_t swapIndex;
             RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render{}, present{};
             RHIDeviceScopedObjectHandle<RHIDeviceFence> fence{};
             RHICommandList* graphics_cmd_at(size_t i, RHICommandPool* pool) {
                 if (!cmds[i].IsValid())
                     cmds[i] = pool->CreateCommandList();
+                cmds[i]->DebugSetObjectName(fmt::format("Swap {} Graphics Command List {}", swapIndex, i).c_str());
                 return cmds[i].Get();
             }
             RHICommandList* compute_cmd_at(size_t i, RHICommandPool* pool) {
                 if (!comp_cmds[i].IsValid())
                     comp_cmds[i] = pool->CreateCommandList();
+                comp_cmds[i]->DebugSetObjectName(fmt::format("Swap {} Compute Command List {}", swapIndex, i).c_str());
                 return comp_cmds[i].Get();
             }
             // RTV for the backbuffer
             RHITextureScopedHandle<RHITextureView> rtv{};
             // Tracked backbuffer handle
             ResourceHandle rt_handle{ kInvalidHandle };
-            FrameSyncObjects(Allocator* allocator)
-                : cmds(allocator), comp_cmds(allocator)
+            FrameSyncObjects(size_t swapIndex, Allocator* allocator)
+                : swapIndex(swapIndex), cmds(allocator), comp_cmds(allocator)
             {
                 cmds.resize(kMaxCommandListsPerSwap), comp_cmds.resize(kMaxCommandListsPerSwap);
             }

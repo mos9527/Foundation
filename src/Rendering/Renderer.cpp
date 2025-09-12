@@ -844,7 +844,7 @@ void Renderer::FinalizeResources() {
 #pragma endregion
 void Renderer::SetFrameSyncObjects() {
     while (m_swaps.size() < m_frameSwaps)
-        m_swaps.emplace_back(m_allocator);
+        m_swaps.emplace_back(m_swaps.size(), m_allocator);
     for (size_t i = 0; i < m_frameSwaps; i++) {
         m_swaps[i].render = m_device->CreateSemaphore(false);
         m_swaps[i].render->DebugSetObjectName(fmt::format("Render Semaphore of Swap {}", i).c_str());
