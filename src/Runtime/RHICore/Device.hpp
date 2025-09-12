@@ -17,12 +17,12 @@ namespace Foundation::RHI {
         RHIDeviceQueue(RHIDevice const& device) : m_device(device) {}
 
         virtual void WaitIdle() const = 0;
-
+        using TimelinePair = Pair<RHIDeviceSemaphore*, size_t>;
         struct SubmitDesc {
             // Semaphore(s) and the minimum values to wait on
-            Span<const Pair<RHIDeviceSemaphore*, size_t>> timeline_waits;
+            Span<const TimelinePair> timeline_waits;
             // Semaphore(s) and the values to signal
-            Span<const Pair<RHIDeviceSemaphore*, size_t>> timeline_signals;
+            Span<const TimelinePair> timeline_signals;
             // Binary semaphore(s) to wait when the command lists are done
             Span<RHIDeviceSemaphore* const> waits;
             // Stages the semaphore waits occur in [timeline_waits..., waits...]
@@ -202,9 +202,14 @@ namespace Foundation::RHI {
         RHIDevice const* m_device { nullptr };
         RHIDeviceIdleGuard() = delete;
         RHIDeviceIdleGuard(RHIDevice const* device): m_device(device) {};
-        ~RHIDeviceIdleGuard() {
+        void WaitIdle() const
+        {
             if (m_device) m_device->WaitIdle();
         }
+        ~RHIDeviceIdleGuard() {
+            WaitIdle();
+        }
+
     };
 
     template<> struct RHIObjectTraits<RHIDevice, RHISwapchain> {

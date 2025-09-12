@@ -25,7 +25,7 @@ public:
             SceneDataDesc{}
         );
         m_kittenMesh = m_scene->AddMesh(LoadMeshFromObjFile("data/assets/kitten.obj", GetAllocator()));
-        for (int i = 0; i < 100 * 100; i++)
+        for (int i = 0; i < 50 * 50; i++)
             m_kittenScene.push_back(m_scene->AddInstance({
                 .enabled = true,
                 .primitiveID = PrimitiveIDOf(m_kittenMesh),
@@ -57,10 +57,6 @@ public:
     }
     void RendererSetup() override
     {
-        m_scene->CreateUpdatePass(
-            m_renderer.get(), RHIDeviceQueueType::Compute,
-            m_sceneInstance, m_scenePrimitive,m_sceneVertex, m_sceneIndex
-        );
         m_indirectCommands = createResource(m_renderer.get(), "IndirectCommands",
             RHIBufferDesc{
                 .usage = RHIBufferUsageBits::IndirectBuffer | RHIBufferUsageBits::StorageBuffer,
@@ -80,6 +76,10 @@ public:
                 .format = RHIResourceFormat::D32_SIGNED_FLOAT,
             }
         );
+        m_scene->CreateUpdatePass(
+          m_renderer.get(), RHIDeviceQueueType::Graphics,
+          m_sceneInstance, m_scenePrimitive,m_sceneVertex, m_sceneIndex
+        );
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect
         createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Compute,
@@ -94,7 +94,7 @@ public:
                 r->CmdDispatch(self, cmd, {1,1,1});
             }
         );
-        createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Compute,
+        createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Graphics,
             [=, this](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "indirectCullEarly", "data/shaders/MVIndirectCull.spv");
@@ -165,6 +165,6 @@ public:
 int main(int argc, char** argv) {
     ModelViewer app;
     // !! TODO: with asyncCompute on we get empty frames occasionally
-    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = true, .asyncCompute = false });
+    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = true, .asyncCompute = true });
     app.RunForever();
 }

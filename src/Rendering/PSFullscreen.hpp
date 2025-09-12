@@ -16,9 +16,6 @@ namespace Foundation::Rendering {
     ) {
         return createPass(r, name, RHIDeviceQueueType::Graphics,
             [=](PassHandle self, Renderer* r) {
-                // NOTE: Swapchain backbuffer for the entierity of a pass is always
-                // in ColorAttachmentOptimal layout - until the end of the frame
-                // when it's presented.                
                 r->BindBackbufferRTV(self);
                 r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/VSFullscreen.spv");
                 setup(self, r);

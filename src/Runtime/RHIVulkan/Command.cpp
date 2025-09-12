@@ -420,6 +420,7 @@ void VulkanCommandList::Reset() {
 }
 
 RHICommandList& VulkanCommandList::DebugBegin(const char* message){
+    CHECK(m_allocator && "Invalid command list states.");
     CHECK(message && "Debug message must not be null");
     m_commandBuffer.beginDebugUtilsLabelEXT({
         .pLabelName = message
@@ -427,6 +428,7 @@ RHICommandList& VulkanCommandList::DebugBegin(const char* message){
     return *this;
 }
 RHICommandList& VulkanCommandList::DebugInsertMarker(const char* message){
+    CHECK(m_allocator && "Invalid command list states.");
     CHECK(message && "Debug message must not be null");
     m_commandBuffer.insertDebugUtilsLabelEXT({
         .pLabelName = message
@@ -434,6 +436,7 @@ RHICommandList& VulkanCommandList::DebugInsertMarker(const char* message){
     return *this;
 }
 RHICommandList& VulkanCommandList::DebugEnd() {
+    CHECK(m_allocator && "Invalid command list states.");
     m_commandBuffer.endDebugUtilsLabelEXT();
     return *this;
 }

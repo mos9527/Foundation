@@ -25,6 +25,7 @@ template<typename T, typename Ty> struct BitmaskEnumWrapper {
 // Whilst defining a wrapper class of type T that provides bitwise operators.
 #define BITMASK_ENUM_BEGIN(T,INT_T) \
 enum class T##Bits : INT_T;	\
+inline constexpr INT_T to_integer(T##Bits e) { return static_cast<INT_T>(e); } \
 using T = BitmaskEnumWrapper<T##Bits, INT_T>; \
 inline T##Bits   operator	&	(T##Bits x, T##Bits y)		{	return static_cast<T##Bits>(static_cast<INT_T>(x) & static_cast<INT_T>(y));	}; \
 inline T##Bits   operator	|	(T##Bits x, T##Bits y)		{	return static_cast<T##Bits>(static_cast<INT_T>(x) | static_cast<INT_T>(y));	}; \

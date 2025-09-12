@@ -108,6 +108,9 @@ namespace Foundation {
      */
     void SceneData::EndTransfer(RHICommandList* cmd)
     {
+        // !!! TODO: Contention
+        // If we'd write staging when GPU is reading from it, bad things happen.
+        // So staging should be properly synchronized.
         std::memcpy(m_stagingBuffer->Map(), m_staging.data(), m_staging.size());
         m_stagingBuffer->Flush(), m_staging.clear(), m_staging.shrink_to_fit();
         using enum RHIResourceAccessBits;

@@ -1,13 +1,14 @@
 #pragma once
-#include <map>
-#include <set>
-#include <vector>
-#include <queue>
-#include <span>
-#include <numeric>
 #include <array>
+#include <bitset>
+#include <map>
+#include <numeric>
 #include <optional>
+#include <queue>
+#include <set>
+#include <span>
 #include <string>
+#include <vector>
 
 #include <Allocator/Allocator.hpp>
 namespace Foundation::Core {
@@ -34,6 +35,12 @@ namespace Foundation::Core {
      */
     template<typename T, size_t Size>
     using Array = std::array<T, Size>;
+
+    /**
+     * @brief Alias for `std::bitset`
+     */
+    template<size_t Size>
+    using Bitset = std::bitset<Size>;
 
     /**
     * @brief Alias for `std::basic_string_view<char>`
