@@ -56,16 +56,16 @@ String Renderer::DbgDumpExecutionGroups() const
     for (const auto& group : m_setup->executionGroups)
     {
         fmt::format_to(
-            std::back_inserter(out), "{}: queue={}, stages={}, passes=[",
+            std::back_inserter(out), "{}: queue={}, stages={:b}, passes=[",
             group.group_index,
-            static_cast<uint32_t>(group.all_stages),
-            group.queue
+            group.queue,
+            static_cast<uint32_t>(group.all_stages)
         );
         for (const auto& pass : group.passes)
             fmt::format_to(std::back_inserter(out), "{} ", pass);
         out.pop_back();
         fmt::format_to(std::back_inserter(out), "]\n");
-        out.pop_back();
     }
+    out.pop_back();
     return out;
 }

@@ -16,13 +16,7 @@ using namespace Foundation::Rendering;
 // Semaphore counter
 #define SEM_COUNTER(ord) (m_frame + ord + 1LL)
 #define SEM_COUNTER_PREV(ord) (m_frame + ord)
-const char* kShaderDescriptorFirstBindingErrorHelp = "This can be caused by one of the following:\n"
-"   - Parameter is optimized-out, and the binding is kept as is.\n"
-"   - Multiple entrypoints in the same shader, but they don't access the same parameters.\n"
-"Tips:\n"
-"   Try separating the entrypoints into different shader files, or sort the binding declarations"
-"so that the used bindings are continuous from 0.";
-const char* kShaderDescriptorFirstSetErrorHelp = kShaderDescriptorFirstBindingErrorHelp;
+
 constexpr size_t kExecuteArenaSize = 16 * (1 << 20); // 16 MiB for render graph execution
 const RHIPipelineStage kComputeStagesMask =
       RHIPipelineStageBits::FragmentShader |
@@ -896,15 +890,16 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
     // Reset semaphores index
     m_currentSync = 0;
 }
-RHIPipelineStage Renderer::ExecuteCollectResourceStates(Span<PassHandle> passes, RHIDeviceQueueType currentQueue, Vector<size_t>& outCrossQueueGroups)
+RHIPipelineStage Renderer::ExecuteCollectResourceStates(Span<PassHandle> passes, RHIDeviceQueueType currentQueue, Vector<size_t>* outCrossQueueGroups)
 {
     RHIPipelineStage all_states{};
-    outCrossQueueGroups.clear();
+    if (outCrossQueueGroups)
+        outCrossQueueGroups->clear();
     for (auto pass_handle : passes)
     {
         auto const& pass = m_setup->trackedPasses[pass_handle];
-        if (pass.queue != currentQueue)
-            outCrossQueueGroups.emplace_back(pass_handle);
+        if (outCrossQueueGroups && pass.queue != currentQueue)
+            outCrossQueueGroups->emplace_back(pass_handle);
         for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
         {
             auto& tres = m_setup->trackedResources[hdl];
@@ -920,10 +915,10 @@ RHIPipelineStage Renderer::ExecuteCollectResourceStates(Span<PassHandle> passes,
         }
     }
     // Sort and unique cross-queue groups
-    if (!outCrossQueueGroups.empty())
+    if (outCrossQueueGroups && !outCrossQueueGroups->empty())
     {
-        std::ranges::sort(outCrossQueueGroups);
-        outCrossQueueGroups.erase(std::ranges::unique(outCrossQueueGroups).begin(), outCrossQueueGroups.end());
+        std::ranges::sort(*outCrossQueueGroups);
+        outCrossQueueGroups->erase(std::ranges::unique(*outCrossQueueGroups).begin(), outCrossQueueGroups->end());
     }
     return all_states;
 }
@@ -1050,7 +1045,7 @@ void Renderer::ExecuteFrame()
         Vector<SemaphorePair> wait_semaphores(m_executeAlloc.Ptr());
 
         const bool is_last = group.group_index == m_setup->executionGroups.size() - 1;
-        auto all_stages = ExecuteCollectResourceStates(group.passes, group.queue, cross_queue_groups);
+        ExecuteCollectResourceStates(group.passes, group.queue, &cross_queue_groups);
         /* -- Wait Semaphores -- */
         if (!cross_queue_groups.empty())
         {
@@ -1064,58 +1059,65 @@ void Renderer::ExecuteFrame()
                     wait_semaphores.emplace_back(cross_group.semaphore.Get(), group.all_stages, SEM_COUNTER_PREV(cross_group.group_index));
             }
         }
-        /* -- Barriers -- */
-        if (group.queue == RHIDeviceQueueType::Compute && all_stages & kComputeStagesMask)
-        {
-            // Resource cannot be transitioned [away] from their current states in Compute
-            // Schedule these to be done in Graphics first
-            SetNextAutoSemaphore();
-            SetNextGraphicsQueue();
-            cmd->DebugBegin("<Pre-Compute Resource Barriers>");
-            cmd->BeginTransition();
-            for (auto pass_handle : group.passes)
-            {
-                auto& pass = passes[pass_handle];
-                if (pass.pass->IsSkipped(pass.handle, this))
-                    continue;
-                ExecuteBarriers(pass, cmd);
-            }
-            cmd->EndTransition();
-            cmd->DebugEnd();
-            cmd->End();
-            queue->Submit({
-                .timeline_signals = {{{ auto_sem, SEM_COUNTER(group.group_index) }}},
-                .cmd_lists = {{{ cmd }}}
-            });
-            wait_semaphores.emplace_back(auto_sem, group.all_stages, SEM_COUNTER(group.group_index));
-            SetNextComputeQueue();
-        } else
-        {
-            // Can be transitioned as is. Do it in the same command list
-            if (group.queue == RHIDeviceQueueType::Graphics)
-                SetNextGraphicsQueue();
-            else if (group.queue == RHIDeviceQueueType::Compute)
-                SetNextComputeQueue();
-            else [[unlikely]]
-                throw std::runtime_error("Unhandled queue type");
-            cmd->DebugBegin("<Resource Barriers>");
-            cmd->BeginTransition();
-            for (auto pass_handle : group.passes)
-            {
-                auto& pass = passes[pass_handle];
-                ExecuteBarriers(pass, cmd);
-            }
-            cmd->EndTransition();
-            cmd->DebugEnd();
-        }
         /* -- Pass Recording -- */
+        if (group.queue == RHIDeviceQueueType::Graphics)
+            SetNextGraphicsQueue();
+        else if (group.queue == RHIDeviceQueueType::Compute)
+            SetNextComputeQueue();
+        else [[unlikely]]
+            throw std::runtime_error("Unhandled queue type");
         // We've previously established that all passes in a group share the same queue
         for (auto pass_handle : group.passes)
         {
             auto& pass = passes[pass_handle];
             if (pass.pass->IsSkipped(pass.handle, this))
                 continue;
+            /* -- Barriers -- */
+            bool transitioned = false;
+            if (group.queue == RHIDeviceQueueType::Compute)
+            {
+                RHIPipelineStage stages = ExecuteCollectResourceStates(Span<PassHandle>(pass.handle), group.queue);
+                if (stages & kComputeStagesMask)
+                {
+                    // Resource cannot be transitioned [away] from their current states in Compute
+                    // NOTE: This is always suboptimal - and should be avoided when setting up the graph
+                    if (!(m_warnings & RendererWarningFlagsBits::PassExternalSyncRequired))
+                    {
+                        m_warnings |= RendererWarningFlagsBits::PassExternalSyncRequired;
+                        LOG_RUNTIME(Renderer, warn,
+                            "Pass {} [{}] requires cross-queue resource transitions. This is always suboptimal. Consider re-arranging the graph to avoid this.",
+                            pass.name, pass.handle
+                        );
+                    }
+                    RHICommandList* compute_cmd = cmd;
+                    RHIDeviceQueue* compute_queue = queue;
+                    SetNextAutoSemaphore();
+                    SetNextGraphicsQueue();
+                    cmd->DebugBegin("<Pre-Compute Resource Barriers>");
+                    cmd->BeginTransition();
+                    ExecuteBarriers(pass, cmd);
+                    cmd->EndTransition();
+                    cmd->DebugEnd();
+                    cmd->End();
+                    queue->Submit({
+                        .timeline_signals = {{{ auto_sem, SEM_COUNTER(group.group_index) }}},
+                        .cmd_lists = {{{ cmd }}}
+                    });
+                    wait_semaphores.emplace_back(auto_sem, group.all_stages, SEM_COUNTER(group.group_index));
+                    transitioned = true;
+                    // Restore previous queue
+                    cmd = compute_cmd;
+                    queue = compute_queue;
+                }
+            }
             cmd->DebugBegin(pass.name.c_str());
+            if (!transitioned) {
+                cmd->DebugBegin("<Resource Barriers>");
+                cmd->BeginTransition();
+                ExecuteBarriers(pass, cmd);
+                cmd->EndTransition();
+                cmd->DebugEnd();
+            }
             pass.pass->Record(pass.handle, this, cmd);
             cmd->DebugEnd();
         }

@@ -2,14 +2,17 @@
 #include <ranges>
 #include <utility>
 #include <filesystem>
+#include <RHICore/Device.hpp>
 #include <RHICore/PipelineState.hpp>
 #include <Allocator/StackAllocator.hpp>
 
 #include "RenderPass.hpp"
 namespace Foundation::Rendering
 {
-    const size_t kTextureAspectCount = 3; // Color, depth, stencil @ref RHITextureAspectFlag
+    extern const char* kShaderDescriptorFirstBindingErrorHelp;
+    extern const char* kShaderDescriptorFirstSetErrorHelp;
 
+    const size_t kTextureAspectCount = 3; // Color, depth, stencil @ref RHITextureAspectFlag
     /**
      * @brief Internal tracking information for a resource in the frame graph.
      */
@@ -50,17 +53,7 @@ namespace Foundation::Rendering
                 stage = {};
                 layout = {};
             }
-            [[nodiscard]] RHITextureSubresourceRange ToRange() const {
-                return RHITextureSubresourceRange{
-                    .layer = {
-                        .aspect = aspect,
-                        .mip_level = static_cast<uint32_t>(mip),
-                        .base_array_layer = static_cast<uint32_t>(layer),
-                        .layer_count = 1
-                    },
-                    .mip_count = 1
-                };
-            }
+            [[nodiscard]] RHITextureSubresourceRange ToRange() const;
         };
         // [mip...,
         //   layer...,
@@ -79,34 +72,7 @@ namespace Foundation::Rendering
                     return (RHITextureAspectFlag(state.aspect) & range.layer.aspect) && state.mip >= mip_begin && state.mip <= mip_end && state.layer >= layer_begin && state.layer <= layer_end;
                 });
         }
-        TrackedResource(const ResourceHandle handle, StringView name, const ResourceDefinition& resourceDesc, Allocator* alloc)
-            : handle(handle), name(name), desc(resourceDesc), lastSubresourceStates(alloc) {
-            // Init texture tracking states
-            auto update_texture_desc = [&](RHITextureDesc const& desc) {
-                textureLayers = desc.array_layers;
-                textureMips = desc.mip_levels;
-                lastSubresourceStates.resize(textureMips * textureLayers * kTextureAspectCount);
-                for (uint32_t mip = 0; mip < textureMips; ++mip)
-                {
-                    for (uint32_t layer = 0; layer < textureLayers; ++layer)
-                    {
-                        for (uint32_t aspect = 0; aspect < kTextureAspectCount; ++aspect)
-                        {
-                            uint32_t i = mip * (textureLayers * kTextureAspectCount) + layer * kTextureAspectCount + aspect;
-                            auto& state = lastSubresourceStates[i];
-                            state.aspect = RHITextureAspectFlag(1u << aspect);
-                            state.mip = mip, state.layer = layer;
-                        }
-                    }
-                }
-            };
-            desc.visit(
-                [&](RHITextureDesc const& tex) { update_texture_desc(tex); },
-                [&](RHIDeviceObjectHandle<RHITexture> const& tex) { update_texture_desc(tex->m_desc); },
-                [&](const RHITexture* const tex) { update_texture_desc(tex->m_desc); }
-            );
-        }
-
+        TrackedResource(const ResourceHandle handle, StringView name, const ResourceDefinition& resourceDesc, Allocator* alloc);
     };
     /**
      * @brief Internal tracking information for a render pass in the frame graph.
@@ -170,18 +136,7 @@ namespace Foundation::Rendering
         Vector<RHIVertexAttribute> vertex_input_attributes;
         /* --- */
         UniquePtr<RenderPass> pass;
-        TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue, UniquePtr<RenderPass> renderPass)
-            : name(name), handle(handle), queue(queue),
-            textureUsages(alloc), bufferUsages(alloc), resources(alloc), texviews(alloc),
-            shaders(alloc),
-            tex_bindings(alloc), buf_bindings(alloc),
-            samplers(alloc),
-            push_constants(alloc), rtvs(alloc),
-            pass(std::move(renderPass)), desc_layouts(alloc),
-            desc_sets(alloc), p_desc_sets(alloc),
-            vertex_input_bindings(alloc), vertex_input_attributes(alloc)
-        {
-        };
+        TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue, UniquePtr<RenderPass> renderPass);
         /* -- states -- */
         size_t group_index{}; // executionGroup index
         // All stages used in this pass
