@@ -4,6 +4,7 @@
 
 #include <RHICore/Common.hpp>
 #include <Native/Application.hpp>
+#include <RHICore/Application.hpp>
 
 #include "Renderer.hpp"
 namespace Foundation::Rendering {

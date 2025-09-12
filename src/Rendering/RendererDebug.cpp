@@ -36,16 +36,36 @@ String Renderer::DbgDumpActivePasses() const {
     for (const auto& idx : m_setup->execution) {
         auto& pass = m_setup->trackedPasses[idx];
         fmt::format_to(
-            std::back_inserter(out), "{}: {}, depth={}, ord={}, queue={}, has_cross_queue_dependent={}, write_backbuffer={}\n",
+            std::back_inserter(out), "{}: {}, depth={}, ord={}, queue={}, group={}, write_backbuffer={}\n",
             pass.handle,
             pass.name,
             pass.depth,
             pass.ord,
             pass.queue,
-            pass.has_cross_queue_dependent,
+            pass.group_index,
             pass.write_backbuffer
         );
     }
     out.pop_back();
+    return out;
+}
+
+String Renderer::DbgDumpExecutionGroups() const
+{
+    String out;
+    for (const auto& group : m_setup->executionGroups)
+    {
+        fmt::format_to(
+            std::back_inserter(out), "{}: queue={}, stages={}, passes=[",
+            group.group_index,
+            static_cast<uint32_t>(group.all_stages),
+            group.queue
+        );
+        for (const auto& pass : group.passes)
+            fmt::format_to(std::back_inserter(out), "{} ", pass);
+        out.pop_back();
+        fmt::format_to(std::back_inserter(out), "]\n");
+        out.pop_back();
+    }
     return out;
 }

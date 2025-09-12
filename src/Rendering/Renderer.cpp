@@ -6,6 +6,7 @@
 
 #include <Math/Math.hpp>
 #include <RHICore/Device.hpp>
+#include <RHICore/Application.hpp>
 
 #include "Renderer.hpp"
 #include "ShaderReflection.hpp"
@@ -87,13 +88,8 @@ void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPi
         if (h == handle)
             throw std::runtime_error("Overlap detected. Buffer access must be global.");
     // Add edge
-    if (resource.lastBufferState.producer != kInvalidHandle) {
+    if (resource.lastBufferState.producer != kInvalidHandle)
         m_setup->add_edge(pass, resource.lastBufferState.producer, handle);
-        if (m_setup->trackedPasses[resource.lastBufferState.producer].queue != m_setup->trackedPasses[pass].queue) {
-            // Cross-queue dependency
-            m_setup->trackedPasses[resource.lastBufferState.producer].has_cross_queue_dependent = true;
-        }
-    }
     // Set producer
     if (access & kAllShaderWrites)
         resource.lastBufferState.producer = pass;
@@ -127,13 +123,8 @@ void Renderer::DeclareTextureAccess(
     // Do this for all sub resources in range
     for (auto& sta : resource.GetLastSubresourceStateOf(range)) {
         // Add edge
-        if (sta.producer != kInvalidHandle) {
+        if (sta.producer != kInvalidHandle)
             m_setup->add_edge(pass, sta.producer, handle);
-            if (m_setup->trackedPasses[sta.producer].queue != m_setup->trackedPasses[pass].queue) {
-                // Cross-queue dependency
-                m_setup->trackedPasses[sta.producer].has_cross_queue_dependent = true;
-            }
-        }
         // Set producer
         if (access & kAllShaderWrites)
             sta.producer = pass;
@@ -469,6 +460,7 @@ void Renderer::CullPasses(PassHandle epilogue) const
     }
     LOG_RUNTIME(Renderer, debug, "** Render Graph GraphViz **\n{}", DbgDumpGraphviz());
     LOG_RUNTIME(Renderer, debug, "** Render Graph Execution Order **\n{}", DbgDumpActivePasses());
+    LOG_RUNTIME(Renderer, debug, "** Render Graph Execution Groups **\n{}", DbgDumpExecutionGroups());
 }
 /* -- PSO -- */
 void Renderer::BuildPipelineState(PassHandle pass) {
@@ -777,8 +769,9 @@ void Renderer::FinalizeResources() {
     m_resources->fit(m_setup->trackedResources.size());
     m_executeBarrierSemaphores.resize(kMaxTempResourceSemaphores);
     for (size_t i = 0; i < m_executeBarrierSemaphores.size(); i++) {
+        auto& sem = m_executeBarrierSemaphores[i];
         sem = m_device->CreateSemaphore(true /* timeline */);
-        sem->DebugSetObjectName(fmt::format("RG Temp Resource Barrier Semaphore {}", i));
+        sem->DebugSetObjectName(fmt::format("RG Temp Resource Barrier Semaphore {}", i).c_str());
     }
     // !! TODO: Overlap transient resources to with non-overlapping lifetimes with aliasing
     for (const auto& handle : m_setup->activeResources | std::views::keys) {
@@ -942,6 +935,7 @@ void Renderer::ExecuteBarrierSubresource(TrackedResource& tres, RHITextureSubres
         any_range = true;
         if (sta.access == access && sta.stage == stage && sta.layout == layout)
             continue;
+        cmd->DebugInsertMarker(tres.name.c_str());
         cmd->SetImageTransition(
             res,
             {
@@ -965,6 +959,7 @@ void Renderer::ExecuteBarrierBuffer(TrackedResource& tres, RHIResourceAccess acc
     RHIBuffer* res = DerefResource(tres.handle).Get<RHIBuffer*>();
     if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage)
         return;
+    cmd->DebugInsertMarker(tres.name.c_str());
     cmd->SetBufferTransition(
         res,
         {
@@ -986,7 +981,6 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
     // optimal.
     // Inter-queue synchronization is handled separately at SubmitPass
     // where we wait on the producer pass's semaphore on the GPU
-    cmd->BeginTransition();
     // Textures
     // These are always disjoint ranges
     for (auto [hdl, access, stage, range, layout] : pass.textureUsages) {
@@ -1013,7 +1007,6 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
         auto& tres = m_setup->trackedResources[hdl];
         ExecuteBarrierBuffer(tres, access, stage, cmd);
     }
-    cmd->EndTransition();
 }
 /**
  * Hot path. States are pre-allocated, and all auxiliary allocations are
@@ -1048,13 +1041,13 @@ void Renderer::ExecuteFrame()
     };
     auto SetNextAutoSemaphore = [&] {
         CHECK_MSG(sem_index < m_executeBarrierSemaphores.size(), "FIXME-Async Compute: All transient Barrier Semaphores exhausted");
-        auto_sem = m_executeBarrierSemaphores[sem_index++];
+        auto_sem = m_executeBarrierSemaphores[sem_index++].Get();
     };
     // Execute by groups
     for (auto& group : m_setup->executionGroups)
     {
-        Vector<size_t> cross_queue_groups(m_executeAlloc);
-        Vector<SemaphorePair> wait_semaphores(m_executeAlloc);
+        Vector<size_t> cross_queue_groups(m_executeAlloc.Ptr());
+        Vector<SemaphorePair> wait_semaphores(m_executeAlloc.Ptr());
 
         const bool is_last = group.group_index == m_setup->executionGroups.size() - 1;
         auto all_stages = ExecuteCollectResourceStates(group.passes, group.queue, cross_queue_groups);
@@ -1065,7 +1058,10 @@ void Renderer::ExecuteFrame()
             for (auto const& cross_group_handle : cross_queue_groups)
             {
                 auto& cross_group = m_setup->executionGroups[cross_group_handle];
-                wait_semaphores.emplace_back(cross_group.semaphore, group.all_stages, SEM_COUNTER(cross_group.group_index));
+                if (cross_group.singal_ord < group.singal_ord)
+                    wait_semaphores.emplace_back(cross_group.semaphore.Get(), group.all_stages, SEM_COUNTER(cross_group.group_index));
+                else /* On a previous frame */
+                    wait_semaphores.emplace_back(cross_group.semaphore.Get(), group.all_stages, SEM_COUNTER_PREV(cross_group.group_index));
             }
         }
         /* -- Barriers -- */
@@ -1075,17 +1071,21 @@ void Renderer::ExecuteFrame()
             // Schedule these to be done in Graphics first
             SetNextAutoSemaphore();
             SetNextGraphicsQueue();
-            cmd->BeginDebugRegion("Pre-Compute Resource Barriers");
+            cmd->DebugBegin("<Pre-Compute Resource Barriers>");
+            cmd->BeginTransition();
             for (auto pass_handle : group.passes)
             {
                 auto& pass = passes[pass_handle];
-                if (pass.pass->IsSkipped())
+                if (pass.pass->IsSkipped(pass.handle, this))
                     continue;
                 ExecuteBarriers(pass, cmd);
             }
-            cmd->EndDebugRegion();
+            cmd->EndTransition();
+            cmd->DebugEnd();
+            cmd->End();
             queue->Submit({
-                .timeline_signals = {{{ auto_sem, SEM_COUNTER(group.group_index) }}}
+                .timeline_signals = {{{ auto_sem, SEM_COUNTER(group.group_index) }}},
+                .cmd_lists = {{{ cmd }}}
             });
             wait_semaphores.emplace_back(auto_sem, group.all_stages, SEM_COUNTER(group.group_index));
             SetNextComputeQueue();
@@ -1098,12 +1098,14 @@ void Renderer::ExecuteFrame()
                 SetNextComputeQueue();
             else [[unlikely]]
                 throw std::runtime_error("Unhandled queue type");
-            cmd->DebugBegin("Resource Barriers");
+            cmd->DebugBegin("<Resource Barriers>");
+            cmd->BeginTransition();
             for (auto pass_handle : group.passes)
             {
                 auto& pass = passes[pass_handle];
                 ExecuteBarriers(pass, cmd);
             }
+            cmd->EndTransition();
             cmd->DebugEnd();
         }
         /* -- Pass Recording -- */
@@ -1111,26 +1113,26 @@ void Renderer::ExecuteFrame()
         for (auto pass_handle : group.passes)
         {
             auto& pass = passes[pass_handle];
-            if (pass.IsSkipped())
+            if (pass.pass->IsSkipped(pass.handle, this))
                 continue;
             cmd->DebugBegin(pass.name.c_str());
             pass.pass->Record(pass.handle, this, cmd);
             cmd->DebugEnd();
         }
         /* -- Submission -- */
-        cmd->End();
-        Vector<RHIDeviceQueue::TimelinePair> timeline_waits(m_executeAlloc), timeline_signals(m_executeAlloc);
-        Vector<RHIPipelineStage> waits_stages(m_executeAlloc);
+        Vector<RHIDeviceQueue::TimelinePair> timeline_waits(m_executeAlloc.Ptr()), timeline_signals(m_executeAlloc.Ptr());
+        Vector<RHIPipelineStage> waits_stages(m_executeAlloc.Ptr());
         // Push waits
         for (auto const& [sem, stage, value] : wait_semaphores) {
-            timeline_waits.push_back({ sem, value });
+            timeline_waits.emplace_back(sem, value);
             waits_stages.push_back(stage);
         }
         // We'd only signal the current group per submit
-        timeline_signals.push_back({ group.semaphore, SEM_COUNTER(group.group_index) });
+        timeline_signals.emplace_back(group.semaphore.Get(), SEM_COUNTER(group.group_index));
         if (is_last)
         {
             if (!m_desc.present){
+                cmd->End();
                 queue->Submit({
                     .timeline_waits = timeline_waits,
                     .timeline_signals = timeline_signals,
@@ -1140,8 +1142,9 @@ void Renderer::ExecuteFrame()
                 });
             } else {
                 // Last group to submit, and we need to present
-                if (queue != m_graphicsQueue)
+                if (group.queue == RHIDeviceQueueType::Compute)
                 {
+                    cmd->End();
                     // Submit compute first
                     queue->Submit({
                         .timeline_waits = timeline_waits,
@@ -1167,6 +1170,7 @@ void Renderer::ExecuteFrame()
                     cmd
                 );
                 cmd->EndTransition();
+                cmd->DebugEnd();
                 cmd->End();
                 waits_stages.push_back(RHIPipelineStageBits::BottomOfPipe);
                 queue->Submit({
@@ -1186,6 +1190,7 @@ void Renderer::ExecuteFrame()
             }
         } else
         {
+            cmd->End();
             queue->Submit({
                 .timeline_waits = timeline_waits,
                 .timeline_signals = timeline_signals,

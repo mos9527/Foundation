@@ -182,7 +182,7 @@ namespace Foundation::Rendering {
             Vector<size_t>& outCrossQueueGroups
         );
         // [Semaphore, Waited Stages, Wait value]
-        using SemaphorePair = Pair<RHIDeviceSemaphore*, RHIPipelineStage, size_t>;
+        using SemaphorePair = Tuple<RHIDeviceSemaphore*, RHIPipelineStage, size_t>;
         // Semaphores used for automatically placed resource transition barriers
         Vector<RHIDeviceScopedObjectHandle<RHIDeviceSemaphore>> m_executeBarrierSemaphores;
         void ExecuteBarrierSubresource(TrackedResource& res, RHITextureSubresourceRange const& range, RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd);
@@ -644,6 +644,7 @@ namespace Foundation::Rendering {
 #pragma region Debugging
         [[nodiscard]] String DbgDumpGraphviz() const;
         [[nodiscard]] String DbgDumpActivePasses() const;
+        [[nodiscard]] String DbgDumpExecutionGroups() const;
 #pragma endregion
         /**
          * @brief Retrieves the current state of the renderer.
