@@ -28,7 +28,9 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
       m_device(device), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena),
       m_executeBarrierSemaphores(m_allocator), m_waitIdle(device.Get()) {
     m_graphicsQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
+    m_graphicsQueue->DebugSetObjectName("Graphics Queue");
     m_computeQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Compute);
+    m_computeQueue->DebugSetObjectName("Compute Queue");
     m_graphicsCmdPool = m_device->CreateCommandPool(RHICommandPool::PoolDesc{
         .queue = RHIDeviceQueueType::Graphics,
         .type = RHICommandPoolType::Persistent
@@ -911,16 +913,26 @@ RHIPipelineStage Renderer::ExecuteCollectResourceStates(Span<PassHandle> passes,
     RHIPipelineStage all_states{};
     if (outCrossQueueGroups)
         outCrossQueueGroups->clear();
+    auto PushProducer = [&](PassHandle handle)
+    {
+        if (handle == kInvalidHandle) return;
+        auto& pass = m_setup->trackedPasses[handle];
+        if (outCrossQueueGroups)
+            outCrossQueueGroups->emplace_back(pass.group_index);
+    };
     for (auto pass_handle : passes)
     {
         auto const& pass = m_setup->trackedPasses[pass_handle];
         if (outCrossQueueGroups && pass.queue != currentQueue)
-            outCrossQueueGroups->emplace_back(pass_handle);
+            outCrossQueueGroups->emplace_back(pass.group_index);
         for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
         {
             auto& tres = m_setup->trackedResources[hdl];
             for (auto const& sta : tres.GetLastSubresourceStateOf(range))
+            {
                 all_states |= sta.stage;
+                PushProducer(sta.producer);
+            }
         }
         if (pass.write_backbuffer)
             all_states |= RHIPipelineStageBits::ColorAttachmentOutput;
@@ -928,6 +940,7 @@ RHIPipelineStage Renderer::ExecuteCollectResourceStates(Span<PassHandle> passes,
         {
             auto& tres = m_setup->trackedResources[hdl];
             all_states |= tres.lastBufferState.stage;
+            PushProducer(tres.lastBufferState.producer);
         }
     }
     // Sort and unique cross-queue groups
@@ -938,7 +951,7 @@ RHIPipelineStage Renderer::ExecuteCollectResourceStates(Span<PassHandle> passes,
     }
     return all_states;
 }
-void Renderer::ExecuteBarrierSubresource(TrackedResource& tres, RHITextureSubresourceRange const& range,RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd)
+void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres, RHITextureSubresourceRange const& range,RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd)
 {
     RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
     bool any_range = false;
@@ -962,10 +975,12 @@ void Renderer::ExecuteBarrierSubresource(TrackedResource& tres, RHITextureSubres
         sta.access = access;
         sta.stage = stage;
         sta.layout = layout;
+        if (access & kAllShaderWrites)
+            sta.producer = pass;
     }
     CHECK_MSG(any_range, "FIXME-ExecuteBarrierSubresource: Failed to match resource range on {}",tres.name);
 }
-void Renderer::ExecuteBarrierBuffer(TrackedResource& tres, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd)
+void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd)
 {
     RHIBuffer* res = DerefResource(tres.handle).Get<RHIBuffer*>();
     if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage)
@@ -982,6 +997,8 @@ void Renderer::ExecuteBarrierBuffer(TrackedResource& tres, RHIResourceAccess acc
         );
     tres.lastBufferState.access = access;
     tres.lastBufferState.stage = stage;
+    if (access & kAllShaderWrites)
+        tres.lastBufferState.producer = pass;
 }
 void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
 {
@@ -996,7 +1013,7 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
     // These are always disjoint ranges
     for (auto [hdl, access, stage, range, layout] : pass.textureUsages) {
         auto& tres = m_setup->trackedResources[hdl];
-        ExecuteBarrierSubresource(tres, range, access, stage, layout, cmd);
+        ExecuteBarrierSubresource(pass.handle, tres, range, access, stage, layout, cmd);
     }
     // Backbuffer
     // A special case with known usages.
@@ -1010,13 +1027,13 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
         const RHITextureLayout rt_layout = RHITextureLayout::RenderTarget;
         const RHIPipelineStage rt_stage = RHIPipelineStageBits::ColorAttachmentOutput;
         auto& tres = m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle];
-        ExecuteBarrierSubresource(tres, RHITextureSubresourceRange::Create(), rt_access, rt_stage, rt_layout, cmd);
+        ExecuteBarrierSubresource(pass.handle, tres, RHITextureSubresourceRange::Create(), rt_access, rt_stage, rt_layout, cmd);
     }
     // Buffers
     // These are always global i.e. at most one per buffer per pass.
     for (auto [hdl, access, stage] : pass.bufferUsages) {
         auto& tres = m_setup->trackedResources[hdl];
-        ExecuteBarrierBuffer(tres, access, stage, cmd);
+        ExecuteBarrierBuffer(pass.handle, tres, access, stage, cmd);
     }
 }
 /**
@@ -1073,6 +1090,8 @@ void Renderer::ExecuteFrame()
             // This path should only be taken when async compute is enabled
             for (auto const& cross_group_handle : cross_queue_groups)
             {
+                if (cross_group_handle == group.group_index)
+                    continue;
                 auto& cross_group = m_setup->executionGroups[cross_group_handle];
                 if (cross_group.singal_ord < group.singal_ord)
                     wait_semaphores.emplace_back(cross_group.semaphore.Get(), group.all_stages, SEM_COUNTER(cross_group.group_index));
@@ -1191,6 +1210,7 @@ void Renderer::ExecuteFrame()
                 cmd->DebugBegin("Present");
                 cmd->BeginTransition();
                 ExecuteBarrierSubresource(
+                    kInvalidHandle,
                     m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle],
                     RHITextureSubresourceRange::Create(),
                     {},

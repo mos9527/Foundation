@@ -27,6 +27,7 @@ namespace Foundation::Rendering
         // See Also: https://www.reddit.com/r/vulkan/comments/v2mswb/global_memory_barriers_vs_bufferimage_memory/
         // TODO: Investigate
         struct BufferState {
+            // Last pass to write to this subresource
             PassHandle producer{ kInvalidHandle };
             RHIResourceAccess access{};
             RHIPipelineStage stage{};
@@ -43,6 +44,7 @@ namespace Foundation::Rendering
             size_t layer{ 0 }, mip{ 0 };
             RHITextureAspectFlagBits aspect{};
             /* -- states -- */
+            // Last pass to write to this subresource
             PassHandle producer{ kInvalidHandle };
             RHIResourceAccess access{};
             RHIPipelineStage stage{};

@@ -186,7 +186,10 @@ namespace Foundation::Rendering {
         // Temporary allocator for execution
         // This is reset every frame, and only guaranteed to be valid during Execute state.
         StackAllocator m_executeAlloc;
-        // All shader stage bits
+        /**
+         * @param outCrossQueueGroups Groups need to sync with
+         * @return All current resource states used in these passes
+         */
         RHIPipelineStage ExecuteCollectResourceStates(
             Span<PassHandle> passes,
             RHIDeviceQueueType currentQueue,
@@ -198,8 +201,8 @@ namespace Foundation::Rendering {
         Vector<RHIDeviceScopedObjectHandle<RHIDeviceSemaphore>> m_executeBarrierSemaphores;
 
         RendererWarningFlags m_warnings{};
-        void ExecuteBarrierSubresource(TrackedResource& res, RHITextureSubresourceRange const& range, RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd);
-        void ExecuteBarrierBuffer(TrackedResource& res, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd);
+        void ExecuteBarrierSubresource(PassHandle pass, TrackedResource& res, RHITextureSubresourceRange const& range, RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd);
+        void ExecuteBarrierBuffer(PassHandle pass, TrackedResource& res, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd);
         void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
         void ExecuteFrame();
         void SetFrameSyncObjects();

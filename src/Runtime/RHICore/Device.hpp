@@ -202,9 +202,14 @@ namespace Foundation::RHI {
         RHIDevice const* m_device { nullptr };
         RHIDeviceIdleGuard() = delete;
         RHIDeviceIdleGuard(RHIDevice const* device): m_device(device) {};
-        ~RHIDeviceIdleGuard() {
+        void WaitIdle() const
+        {
             if (m_device) m_device->WaitIdle();
         }
+        ~RHIDeviceIdleGuard() {
+            WaitIdle();
+        }
+
     };
 
     template<> struct RHIObjectTraits<RHIDevice, RHISwapchain> {
