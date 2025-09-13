@@ -1,5 +1,11 @@
 #include "Bits/Format.hpp"
 #include "Scene.hpp"
+/**
+ * TODO: Staging buffers are not synchronized with GPU reads.
+ * TODO: This could and should be generalized. Consider a helper staging buffer class?
+ *       Having a monolithic staging buffer doesn't help with fragmentation, nor is
+ *       there any real benefit to it.
+ */
 namespace Foundation {
     SceneData::SceneData(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc) :
         m_allocator(allocator), m_staging(allocator), m_primitives(allocator), m_vertices(allocator), m_indices(allocator), m_textures(allocator),

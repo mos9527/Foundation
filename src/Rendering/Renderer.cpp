@@ -1113,6 +1113,11 @@ void Renderer::ExecuteFrame()
             if (pass.pass->IsSkipped(pass.handle, this))
                 continue;
             /* -- Barriers -- */
+            // For textures - we're dealing with Subresource ranges,
+            // and for buffer it's always the whole thing.
+            // Execution on the states are always single-threaded due
+            // to the granularity of these states - the introduction
+            // of sync primitives here would incur quite a lot of overhead
             bool transitioned = false;
             if (group.queue == RHIDeviceQueueType::Compute)
             {
@@ -1158,6 +1163,9 @@ void Renderer::ExecuteFrame()
                 cmd->EndTransition();
                 cmd->DebugEnd();
             }
+            // TODO: Only dealing with Record() here can easily introduce parallelism
+            //       But - we don't currently have a good CPU async tasking system
+            //       yet - which would be the hard part.
             pass.pass->Record(pass.handle, this, cmd);
             cmd->DebugEnd();
         }
