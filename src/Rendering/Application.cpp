@@ -63,7 +63,6 @@ void RenderApplication::Execute()
 {
     try {
         m_renderer->BeginExecute();
-        m_renderer->ExecuteAcquire();
         m_renderer->ExecuteFrame();
         m_renderer->EndExecute();
     }

@@ -677,6 +677,10 @@ namespace Foundation::Rendering {
          */
         [[nodiscard]] State GetState() const { return m_state; }
         /**
+         * @brief Get the number of frames that can be simultaneously in-flight.
+         */
+        [[nodiscard]] uint32_t GetFrameSwaps() const { return m_frameSwaps; }
+        /**
          * @brief Retrieves the current frame number.
          *
          * This value is monotonically increasing every time @ref EndExecute() is called,
@@ -684,38 +688,45 @@ namespace Foundation::Rendering {
          */
         [[nodiscard]] uint64_t GetFrame() const { return m_frame; }
         /**
-         * @brief Retrieves the current swap index.
+         * @brief Retrieves the current swap index at the time of @ref ExecuteFrame().
          *
          * This value is associated with the current frame in flight.
          * It's guaranteed to be less than @ref GetFrameSwaps(), and starts from 0.
          *
+         * This value is updated at @ref BeginExecute(), and remains
+         * the same until the next @ref BeginExecute() call.
+         */
+        [[nodiscard]] uint32_t GetSwap() const { return m_currentSwap; }
+        /**
+         * @brief Retrieves the current synchronization index.
+         *
+         * This value is associated with the current synchronization primitives at the current time.
+         * It's guaranteed to be less than @ref GetFrameSwaps(), and starts from 0.
+         *
          * @note Values this returns can be used to index into per-swap resources,
          * and is guaranteed to be not used by the GPU with values acquired
-         * after @ref ExecuteAcquireSync, and before @ref EndExecute().
+         * after @ref BeginExecute(), and before @ref EndExecute().
+         *
+         * This value is updated at @ref BeginExecute(), and remains
+         * the same until the next @ref BeginExecute() call.
          */
         [[nodiscard]] uint64_t GetSync() const { return m_currentSync; }
         /**
          * @brief Update the swapchain to a new one.
-         *
          * You must call this when the window is resized or the swapchain is invalidated.
          *
-         * This call will block if pending GPU work exists.
+         * @note This call will block if pending GPU work exists.
          */
         void SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain);
         /**
-        * @brief Resets the temporary execution allocator, and begins the execution phase.
+        * @brief Resets the temporary execution allocator , and waits for the possibly multi-buffered
+        * next frame to finish rendering.
+        *
+        * See also @ref GetSync(), @ref GetSwap()
+        *
         * @note This MUST be called before entering Execute* functions.
         */
         void BeginExecute();
-        /**
-         * @brief Acquires the next swapchain image, and waits for the possibly multi-buffered
-         * next frame to finish rendering.
-         *
-         * @note This SHOULD be called after BeginExecute(), and before ExecuteFrame().
-         * For continuous rendering, this is a MUST. For one-shot workload, however, this may be
-         * optional - though still recommended.
-         */
-        void ExecuteAcquire();
         /**
          * @brief Executes all passes in the render graph for one frame.
          *
@@ -727,7 +738,6 @@ namespace Foundation::Rendering {
          * @code{.cpp}
          *  // With the above Execute... functions, a correct usage may look like this:
          *  BeginExecute();
-         *  ExecuteAcquire();
          *  // ...Additional pre-frame logic...
          *  ExecuteFrame();
          *  // ...Additional post-frame logic...

@@ -956,6 +956,17 @@ void Renderer::BeginExecute()
 {
     CHECK_MSG(m_state == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?", m_state);
     m_executeAlloc.Reset(m_executeArena), m_state = State::Execute;
+    Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait_fences(m_executeAlloc.Ptr());
+    if (m_setup->executionAnyGraphics)
+        wait_fences.push_back(m_swaps[m_currentSync].graphics_fence);
+    if (m_setup->executionAnyCompute)
+        wait_fences.push_back(m_swaps[m_currentSync].compute_fence);
+    m_device->WaitForFences(wait_fences, true, -1);
+    if (m_desc.present)
+        m_currentSwap = m_swapchain->GetNextImage(
+            -1, m_swaps[m_currentSync].present, {}
+        );
+    m_device->ResetFences(wait_fences);
 }
 void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres, RHITextureSubresourceRange const& range,RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd)
 {
@@ -1043,21 +1054,6 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
         auto& tres = m_setup->trackedResources[hdl];
         ExecuteBarrierBuffer(pass.handle, tres, access, stage, cmd);
     }
-}
-void Renderer::ExecuteAcquire()
-{
-    CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
-    Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait_fences(m_executeAlloc.Ptr());
-    if (m_setup->executionAnyGraphics)
-        wait_fences.push_back(m_swaps[m_currentSync].graphics_fence);
-    if (m_setup->executionAnyCompute)
-        wait_fences.push_back(m_swaps[m_currentSync].compute_fence);
-    m_device->WaitForFences(wait_fences, true, -1);
-    if (m_desc.present)
-        m_currentSwap = m_swapchain->GetNextImage(
-            -1, m_swaps[m_currentSync].present, {}
-        );
-    m_device->ResetFences(wait_fences);
 }
 void Renderer::ExecuteFrame()
 {
