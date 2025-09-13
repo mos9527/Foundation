@@ -24,11 +24,6 @@ namespace Foundation::Rendering {
         RHIResourceAccessBits::DepthStencilWrite |
         RHIResourceAccessBits::TransferWrite;
 
-    BITMASK_ENUM_BEGIN(RendererWarningFlags, uint32_t)
-        PassExternalSyncRequired = 1 << 0,
-        Count = 1 << 0
-    BITMASK_ENUM_END()
-
     struct RendererDesc {
         // Enable async compute
         bool async{ true }; 
@@ -205,13 +200,8 @@ namespace Foundation::Rendering {
             RHIDeviceQueueType currentQueue,
             Vector<size_t>* outCrossQueueGroups = nullptr
         );
-        // [Semaphore, Waited Stages, Wait value]
-        using SemaphorePair = Tuple<RHIDeviceSemaphore*, RHIPipelineStage, size_t>;
         // Semaphores used for automatically placed resource transition barriers
         Vector<RHIDeviceScopedObjectHandle<RHIDeviceSemaphore>> m_executeBarrierSemaphores;
-
-        RendererWarningFlags m_warnings{};
-
         /**
          * @brief Executes barriers for a subresource range of a texture
          */

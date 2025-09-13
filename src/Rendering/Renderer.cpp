@@ -1052,7 +1052,7 @@ void Renderer::ExecuteFrame()
     int cmd_graphics = 0, cmd_compute = 0, sem_index = 0;
     RHIDeviceQueue* queue = nullptr;
     RHICommandList* cmd = nullptr;
-    RHIDeviceSemaphore* auto_sem = nullptr;
+    RHIDeviceSemaphore* transition_sem = nullptr;
     auto SetNextGraphicsQueue = [&] {
         CHECK_MSG(cmd_graphics < kMaxCommandListsPerSwap, "FIXME-Async Compute: All transient Graphics Command lists exhausted");
         queue = m_graphicsQueue, cmd = m_swaps[m_currentSync].graphics_cmd_at(cmd_graphics++, m_graphicsCmdPool.Get());
@@ -1065,13 +1065,15 @@ void Renderer::ExecuteFrame()
     };
     auto SetNextAutoSemaphore = [&] {
         CHECK_MSG(sem_index < m_executeBarrierSemaphores.size(), "FIXME-Async Compute: All transient Barrier Semaphores exhausted");
-        auto_sem = m_executeBarrierSemaphores[sem_index++].Get();
+        transition_sem = m_executeBarrierSemaphores[sem_index++].Get();
     };
     // Execute by groups
     for (auto& group : m_setup->executionGroups)
     {
         Vector<size_t> cross_queue_groups(m_executeAlloc.Ptr());
-        Vector<SemaphorePair> wait_semaphores(m_executeAlloc.Ptr());
+
+        Vector<RHIDeviceQueue::TimelinePair> timeline_waits(m_executeAlloc.Ptr()), timeline_signals(m_executeAlloc.Ptr());
+        Vector<RHIPipelineStage> waits_stages(m_executeAlloc.Ptr());
 
         const bool is_last = group.group_index == m_setup->executionGroups.size() - 1;
         ExecuteCollectResourceStates(group.passes, group.queue, &cross_queue_groups);
@@ -1084,10 +1086,12 @@ void Renderer::ExecuteFrame()
                 if (cross_group_handle == group.group_index)
                     continue;
                 auto& cross_group = m_setup->executionGroups[cross_group_handle];
-                if (cross_group.singal_ord < group.singal_ord)
-                    wait_semaphores.emplace_back(cross_group.semaphore.Get(), group.all_stages, SEM_COUNTER(m_setup->executionGroups.size(), cross_group.group_index));
+                if (cross_group.group_index < group.group_index)
+                    timeline_waits.emplace_back(cross_group.semaphore.Get(), SEM_COUNTER(m_setup->executionGroups.size(), cross_group.group_index)),
+                    waits_stages.emplace_back(group.all_stages);
                 else /* On a previous frame */
-                    wait_semaphores.emplace_back(cross_group.semaphore.Get(), group.all_stages, SEM_COUNTER_PREV(m_setup->executionGroups.size(), cross_group.group_index));
+                    timeline_waits.emplace_back(cross_group.semaphore.Get(), SEM_COUNTER_PREV(m_setup->executionGroups.size(), cross_group.group_index)),
+                    waits_stages.emplace_back(group.all_stages);
             }
         }
         /* -- Pass Recording -- */
@@ -1112,39 +1116,14 @@ void Renderer::ExecuteFrame()
             bool transitioned = false;
             if (pass.queue == RHIDeviceQueueType::Compute)
             {
+                // Resource cannot be transitioned [away] from their current states in Compute.
+                // This is always suboptimal - and should be avoided when setting up the graph
+                // We'll die. This is not worth the complexity of adding more barriers.
                 RHIPipelineStage stages = ExecuteCollectResourceStates(Span<PassHandle>(pass.handle), pass.queue);
-                if (stages & kComputeStagesMask)
-                {
-                    // Resource cannot be transitioned [away] from their current states in Compute
-                    // NOTE: This is always suboptimal - and should be avoided when setting up the graph
-                    if (!(m_warnings & RendererWarningFlagsBits::PassExternalSyncRequired))
-                    {
-                        m_warnings |= RendererWarningFlagsBits::PassExternalSyncRequired;
-                        LOG_RUNTIME(Renderer, warn,
-                            "Pass {} [{}] requires cross-queue resource transitions. This is always suboptimal. Consider re-arranging the graph to avoid this.",
-                            pass.name, pass.handle
-                        );
-                    }
-                    RHICommandList* compute_cmd = cmd;
-                    RHIDeviceQueue* compute_queue = queue;
-                    SetNextAutoSemaphore();
-                    SetNextGraphicsQueue();
-                    cmd->DebugBegin("<Pre-Compute Resource Barriers>");
-                    cmd->BeginTransition();
-                    ExecuteBarriers(pass, cmd);
-                    cmd->EndTransition();
-                    cmd->DebugEnd();
-                    cmd->End();
-                    queue->Submit({
-                        .timeline_signals = {{{ auto_sem, SEM_COUNTER(m_setup->trackedPasses.size(), pass.ord) }}},
-                        .cmd_lists = {{{ cmd }}}
-                    });
-                    wait_semaphores.emplace_back(auto_sem, pass.pass_stages, SEM_COUNTER(m_setup->trackedPasses.size(),pass.ord));
-                    transitioned = true;
-                    // Restore previous queue
-                    cmd = compute_cmd;
-                    queue = compute_queue;
-                }
+                CHECK_MSG(!(stages & kComputeStagesMask),
+                    "Pass {} [{}] requires cross-queue resource transitions. This is always suboptimal. Consider re-arranging the graph, or have it run on Graphics to avoid this.",
+                    pass.name, pass.handle
+                );
             }
             cmd->DebugBegin(pass.name.c_str());
             if (!transitioned) {
@@ -1161,13 +1140,6 @@ void Renderer::ExecuteFrame()
             cmd->DebugEnd();
         }
         /* -- Submission -- */
-        Vector<RHIDeviceQueue::TimelinePair> timeline_waits(m_executeAlloc.Ptr()), timeline_signals(m_executeAlloc.Ptr());
-        Vector<RHIPipelineStage> waits_stages(m_executeAlloc.Ptr());
-        // Push waits
-        for (auto const& [sem, stage, value] : wait_semaphores) {
-            timeline_waits.emplace_back(sem, value);
-            waits_stages.push_back(stage);
-        }
         // We'd only signal the current group per submit
         timeline_signals.emplace_back(group.semaphore.Get(), SEM_COUNTER(m_setup->executionGroups.size(), group.group_index));
         RHIDeviceFence* fence_ptr = nullptr;
