@@ -1,6 +1,6 @@
 #pragma once
+#include <Rendering/StagingBuffer.hpp>
 #include "Mesh.hpp"
-#include "SceneData.hpp"
 namespace Foundation {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;

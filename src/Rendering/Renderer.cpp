@@ -12,17 +12,9 @@
 
 using namespace Foundation::Core;
 using namespace Foundation::Rendering;
-// Semaphore counter
+// Per-frame Semaphore counter
 #define SEM_COUNTER(ord) (m_frame + ord + 1LL)
 #define SEM_COUNTER_PREV(ord) (m_frame + ord)
-
-constexpr size_t kExecuteArenaSize = 16 * (1 << 20); // 16 MiB for render graph execution
-const RHIPipelineStage kComputeStagesMask =
-      RHIPipelineStageBits::FragmentShader |
-      RHIPipelineStageBits::VertexShader |
-      RHIPipelineStageBits::MeshShader |
-      RHIPipelineStageBits::RayTracingShader |
-      RHIPipelineStageBits::AllGraphics;
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator)
     : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_swaps(m_allocator),
       m_device(device), m_swapchain(swapchain), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena),
@@ -47,8 +39,6 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
     LOG_RUNTIME(Renderer, info, "Async Compute: {}", m_desc.async);
     LOG_RUNTIME(Renderer, info, "Presentation: {}", m_desc.present);
 }
-
-#pragma region Render Graph Setup
 void Renderer::BeginSetup() {
     CHECK_MSG(m_state == State::Undefined || m_state == State::PostSetup, "Bad Setup state. Current state is {}", m_state);
     m_state = State::Setup;
@@ -856,7 +846,6 @@ void Renderer::FinalizeResources() {
             sta.reset();
     }
 }
-#pragma endregion
 void Renderer::SetFrameSyncObjects() {
     while (m_swaps.size() < m_frameSwaps)
         m_swaps.emplace_back(m_swaps.size(), m_allocator);

@@ -80,11 +80,21 @@ namespace Foundation::Rendering {
         /**
          * @brief Action to take before each frame is executed.
          *
-         * This is invoked by Execute() before the renderer is executed.
+         * This is invoked before the renderer executes the passes,
+         * but after the current frame is acquired from the swapchain.
          *
          * Implementation may leave this empty if no action is needed.
          */
         virtual void OnBeforeFrame() { /* nop */ }
+        /**
+         * @brief Action to take after each frame is executed.
+         *
+         * This is invoked after the renderer has submitted all passes,
+         * but before the next frame could be rendered.
+         *
+         * Implementation may leave this empty if no action is needed.
+         */
+        virtual void OnAfterFrame() { /* nop */ }
         /**
          * @brief Execute one frame of the application.
          *

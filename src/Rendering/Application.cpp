@@ -63,7 +63,9 @@ void RenderApplication::Execute()
 {
     try {
         m_renderer->BeginExecute();
+        OnBeforeFrame();
         m_renderer->ExecuteFrame();
+        OnAfterFrame();
         m_renderer->EndExecute();
     }
     catch (RHISwapchainResizeException&) {
@@ -77,7 +79,6 @@ void RenderApplication::RunForever() {
     CHECK_MSG(m_rhi, "No RHI backend initialized! Call Initialize<Backend>() first.");
     CHECK(m_device && m_renderer);
     do {
-        OnBeforeFrame();
         Execute();
         // Update framerate
         size_t smp_tick = m_timing.begin.y;

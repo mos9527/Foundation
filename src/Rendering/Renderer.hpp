@@ -11,6 +11,13 @@ namespace Foundation::Rendering {
     using namespace Foundation::Core;
     constexpr size_t kMaxCommandListsPerSwap = 128; // Maximum number of command lists per frame
     constexpr size_t kMaxTempResourceSemaphores = 16; // Maximum number of temporary semaphores for cross-queue barriers
+    constexpr size_t kExecuteArenaSize = 16 * (1 << 20); // Maximum size of the per-frame transient arena (16MB)
+    const RHIPipelineStage kComputeStagesMask =
+          RHIPipelineStageBits::FragmentShader |
+          RHIPipelineStageBits::VertexShader |
+          RHIPipelineStageBits::MeshShader |
+          RHIPipelineStageBits::RayTracingShader |
+          RHIPipelineStageBits::AllGraphics;
     const RHIResourceAccessBits kAllShaderWrites =
         RHIResourceAccessBits::ShaderWrite |
         RHIResourceAccessBits::RenderTargetWrite |
