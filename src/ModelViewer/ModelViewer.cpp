@@ -13,7 +13,7 @@ public:
     const size_t kMaxIndirectCommands = 32767;
     /* -- scene -- */
     MeshHandle m_kittenMesh;
-    Vector<SceneHandle> m_kittenScene;
+    Vector<DataHandle> m_kittenScene;
     float4x4 m_camera{ mat4(1.0f) };
     ModelViewer() : RenderApplication(), m_kittenScene(GetAllocator()) {};
     void OnDeviceSetup() override
@@ -42,7 +42,7 @@ public:
         float4x4 proj = infinitePerspective(radians(45.0f), m_swapchain->GetAspectRatio(),0.1f);
         proj[1][1] *= -1; // vulkan NDC
         m_camera = proj * view;
-        for (SceneHandle instance : m_kittenScene)
+        for (DataHandle instance : m_kittenScene)
         {
             m_scene->UpdateInstance(instance, {
                 .enabled = true,

@@ -7,8 +7,8 @@ namespace Foundation {
     using namespace Foundation::Rendering;
     using namespace Foundation::Math;
     #include "Shaders/Common.h"
-    using MeshHandle =  Tuple<SceneHandle, SceneHandle, SceneHandle>;
-    inline SceneHandle PrimitiveIDOf(MeshHandle const& handle) { return std::get<0>(handle); }
+    using MeshHandle =  Tuple<DataHandle, DataHandle, DataHandle>;
+    inline DataHandle PrimitiveIDOf(MeshHandle const& handle) { return std::get<0>(handle); }
     /**
      * @brief Scene representation for GPU driven rendering.
      *
@@ -22,12 +22,12 @@ namespace Foundation {
         bool m_dirty = true;
         bool HasUpdates() const { return m_dirty || m_data.HasUpdates(); }
         void Update(RHICommandList* cmd);
-        SceneHandle AddMeshSpan(Span<const Vertex> vertices, Span<const Index> indices, SceneHandle& outVtx, SceneHandle& outIdx);
+        DataHandle AddMeshSpan(Span<const Vertex> vertices, Span<const Index> indices, DataHandle& outVtx, DataHandle& outIdx);
     public:
         Scene(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc);
         MeshHandle AddMesh(Mesh const& mesh) {
-            SceneHandle outVtx, outIdx;
-            SceneHandle handle = AddMeshSpan(
+            DataHandle outVtx, outIdx;
+            DataHandle handle = AddMeshSpan(
                 Span<const Vertex>{reinterpret_cast<const Vertex*>(mesh.m_vertex_data.data()), mesh.m_num_vertices},
                 Span<const Index>{reinterpret_cast<const Index*>(mesh.m_index_data.data()), mesh.m_num_indices},
                 outVtx, outIdx
@@ -36,9 +36,9 @@ namespace Foundation {
         }
         void FreeMesh(MeshHandle handle);
 
-        SceneHandle AddInstance(InstanceMetadata data);
-        void UpdateInstance(SceneHandle instance, InstanceMetadata const& data);
-        void FreeInstance(SceneHandle handle);
+        DataHandle AddInstance(InstanceMetadata data);
+        void UpdateInstance(DataHandle instance, InstanceMetadata const& data);
+        void FreeInstance(DataHandle handle);
 
         auto* CreateUpdatePass(
             Renderer* renderer,

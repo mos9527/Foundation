@@ -6,9 +6,9 @@ namespace Foundation {
     Scene::Scene(Allocator* allocator, RHIDevice* device, SceneDataDesc const& desc) :
         m_allocator(allocator), m_data(allocator, device, desc) {}
 
-    SceneHandle Scene::AddMeshSpan(Span<const Vertex> vertices, Span<const Index> indices, SceneHandle& outVtx, SceneHandle& outIdx) {
-        SceneHandle vtx = m_data.AddVertexData(vertices.AsBytes());
-        SceneHandle idx = m_data.AddIndexData(indices.AsBytes());
+    DataHandle Scene::AddMeshSpan(Span<const Vertex> vertices, Span<const Index> indices, DataHandle& outVtx, DataHandle& outIdx) {
+        DataHandle vtx = m_data.AddVertexData(vertices.AsBytes());
+        DataHandle idx = m_data.AddIndexData(indices.AsBytes());
         PrimitiveMetadata prim{
             .vertexOffset = static_cast<int>(m_data.QueryVertexDataSizeAndOffset(vtx).second),
             .indexCount = static_cast<int>(indices.size()),
@@ -25,18 +25,18 @@ namespace Foundation {
         m_data.FreeVertexData(vtx);
         m_data.FreeIndexData(idx);
     }
-    SceneHandle Scene::AddInstance(InstanceMetadata data)
+    DataHandle Scene::AddInstance(InstanceMetadata data)
     {
         m_dirty = true;
-        SceneHandle hdl = m_data.AddInstanceData(Span<InstanceMetadata>{data}.AsBytes());
+        DataHandle hdl = m_data.AddInstanceData(Span<InstanceMetadata>{data}.AsBytes());
         return hdl;
     }
-    void Scene::UpdateInstance(SceneHandle instance, InstanceMetadata const& data)
+    void Scene::UpdateInstance(DataHandle instance, InstanceMetadata const& data)
     {
         m_dirty = true;
         m_data.UpdateInstanceData(instance, Span<const InstanceMetadata>{data}.AsBytes());
     }
-    void Scene::FreeInstance(SceneHandle handle)
+    void Scene::FreeInstance(DataHandle handle)
     {
         m_dirty = true;
         const InstanceMetadata tombstone = {

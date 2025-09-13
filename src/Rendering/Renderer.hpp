@@ -86,7 +86,10 @@ namespace Foundation::Rendering {
             Vector<RHICommandPoolScopedHandle<RHICommandList>> cmds;
             Vector<RHICommandPoolScopedHandle<RHICommandList>> comp_cmds;
         public:
+            // Index of this swap
             const size_t swapIndex;
+            // Whether this frame is currently being processed by the GPU
+            bool isInFlight{false};
             RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render{}, present{};
             RHIDeviceScopedObjectHandle<RHIDeviceFence> graphics_fence{}, compute_fence{};
             RHICommandList* graphics_cmd_at(size_t i, RHICommandPool* pool) {
@@ -201,10 +204,19 @@ namespace Foundation::Rendering {
         Vector<RHIDeviceScopedObjectHandle<RHIDeviceSemaphore>> m_executeBarrierSemaphores;
 
         RendererWarningFlags m_warnings{};
+
+        /**
+         * @brief Executes barriers for a subresource range of a texture
+         */
         void ExecuteBarrierSubresource(PassHandle pass, TrackedResource& res, RHITextureSubresourceRange const& range, RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd);
+        /**
+         * @brief Executes barriers for a whole buffer
+         */
         void ExecuteBarrierBuffer(PassHandle pass, TrackedResource& res, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd);
+        /**
+         * @brief Executes all barriers for a pass
+         */
         void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
-        void ExecuteFrame();
         void SetFrameSyncObjects();
 
         RHIDeviceIdleGuard m_waitIdle; // Ensure device is idle on destruction
@@ -215,7 +227,7 @@ namespace Foundation::Rendering {
         /**
          * @brief Begins the setup phase of the render graph.
          *
-         * @note This is called at construction time, you shouldn't call this again.
+         * @note You MUST call this before any other Create..., Bind..., or Declare... functions.
          */
         void BeginSetup();
         /**
@@ -515,19 +527,18 @@ namespace Foundation::Rendering {
          */
         void EndSetup();
 #pragma endregion
-
 #pragma region Swapchain
         /**
          * @brief Get the current swapchain extents.
          */
-        [[nodiscard]] inline RHIExtent2D GetSwapchainExtent() const {
+        [[nodiscard]] RHIExtent2D GetSwapchainExtent() const {
             CHECK(m_swapchain && "Swapchain not initialized");
             return m_swapchain->m_desc.extents;
         }
         /**
         * @brief Get the current swapchain extents as a 3D extent with depth 1.
         */
-        [[nodiscard]] inline RHIExtent3D GetSwapchainExtent3D() const {
+        [[nodiscard]] RHIExtent3D GetSwapchainExtent3D() const {
             CHECK(m_swapchain && "Swapchain not initialized");
             auto xy = m_swapchain->m_desc.extents;
             return { xy.x,xy.y,1 };
@@ -539,7 +550,7 @@ namespace Foundation::Rendering {
          *
          * This should only be called inside a pass's Record() function, or after EndSetup().
          */
-        [[nodiscard]] inline Variant<RHIBuffer*, RHITexture*> DerefResource(const ResourceHandle handle) const
+        [[nodiscard]] Variant<RHIBuffer*, RHITexture*> DerefResource(const ResourceHandle handle) const
         {
             CHECK(m_resources && handle < m_resources->resources.size());
             using Tv = Variant<RHIBuffer*, RHITexture*>;
@@ -553,7 +564,7 @@ namespace Foundation::Rendering {
          *
          * This should only be called inside a pass's Record() function, or after EndSetup().
          */
-        [[nodiscard]] inline RHITextureView* DerefTextureView(const ResourceHandle handle) const
+        [[nodiscard]] RHITextureView* DerefTextureView(const ResourceHandle handle) const
         {
             CHECK(m_resources && handle < m_resources->views.size());
             using Tv = RHITextureView*;
@@ -564,7 +575,7 @@ namespace Foundation::Rendering {
          *
          * This should only be called inside a pass's Record() function, or after EndSetup().
          */
-        [[nodiscard]] inline RHIDeviceSampler* DerefSampler(const ResourceHandle handle) const
+        [[nodiscard]] RHIDeviceSampler* DerefSampler(const ResourceHandle handle) const
         {
             CHECK(m_setup && handle < m_setup->trackedSamplers.size());
             return m_resources->samplers[handle].Get();
@@ -572,7 +583,7 @@ namespace Foundation::Rendering {
         /**
          * @brief Dereference the automatically built pipeline state object handle associated with a given pass.
          */
-        [[nodiscard]] inline RHIPipelineState* DerefPipelineState(const PassHandle pass) const
+        [[nodiscard]] RHIPipelineState* DerefPipelineState(const PassHandle pass) const
         {
             CHECK(m_setup && pass < m_setup->trackedPasses.size());
             auto& tpass = m_setup->trackedPasses[pass];
@@ -581,7 +592,7 @@ namespace Foundation::Rendering {
         /**
          * @brief Dereference the built descriptor sets associated with a given pass
          */
-        [[nodiscard]] inline Vector<RHIDeviceDescriptorSet*> const& DerefDescriptorSets(const PassHandle pass) const
+        [[nodiscard]] Vector<RHIDeviceDescriptorSet*> const& DerefDescriptorSets(const PassHandle pass) const
         {
             CHECK(m_setup && pass < m_setup->trackedPasses.size());
             auto& tpass = m_setup->trackedPasses[pass];
@@ -592,7 +603,7 @@ namespace Foundation::Rendering {
          *
          * The pass must have declared BindBackbufferRTV() during setup.
          */
-        [[nodiscard]] inline RHITextureView* DerefCurrentBackbufferView(const PassHandle pass) const
+        [[nodiscard]] RHITextureView* DerefCurrentBackbufferView(const PassHandle pass) const
         {
             CHECK(m_state == State::Execute);
             auto& tpass = m_setup->trackedPasses[pass];            
@@ -600,7 +611,6 @@ namespace Foundation::Rendering {
             return m_swaps[m_currentSwap].rtv.Get();
         }        
 #pragma endregion
-
 #pragma region Command Recording Helpers
         /**
          * @brief Helper that retrieves the local size declared by a compute pass.
@@ -650,29 +660,40 @@ namespace Foundation::Rendering {
          * @brief Helper that sets a Push Constant range data with a single l-value.
          * @note A valid @ref CmdSetPipeline call MUST be made before this, or the behaviour is undefined.
          */
-        template<typename T> inline void CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, RHIShaderStage stage, size_t offset, T const& data) {
+        template<typename T> void CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, RHIShaderStage stage, size_t offset, T const& data) {
             CHECK(m_state == State::Execute);
             auto& tpass = m_setup->trackedPasses[pass];
             cmd->PushConstant(tpass.pso.Get(), stage, static_cast<uint32_t>(offset), { reinterpret_cast<const char*>(&data), sizeof(T) });
         }
 #pragma endregion
-
 #pragma region Debugging
         [[nodiscard]] String DbgDumpGraphviz() const;
         [[nodiscard]] String DbgDumpActivePasses() const;
         [[nodiscard]] String DbgDumpExecutionGroups() const;
 #pragma endregion
+#pragma region Frame Execution
         /**
          * @brief Retrieves the current state of the renderer.
          */
         [[nodiscard]] State GetState() const { return m_state; }
         /**
-         * @brief Retrieves the current frame index.
+         * @brief Retrieves the current frame number.
          *
-         * This value is monotonically increasing every time Execute() is called,
+         * This value is monotonically increasing every time @ref EndExecute() is called,
          * and starts from 0.
          */
         [[nodiscard]] uint64_t GetFrame() const { return m_frame; }
+        /**
+         * @brief Retrieves the current swap index.
+         *
+         * This value is associated with the current frame in flight.
+         * It's guaranteed to be less than @ref GetFrameSwaps(), and starts from 0.
+         *
+         * @note Values this returns can be used to index into per-swap resources,
+         * and is guaranteed to be not used by the GPU with values acquired
+         * after @ref ExecuteAcquireSync, and before @ref EndExecute().
+         */
+        [[nodiscard]] uint64_t GetSync() const { return m_currentSync; }
         /**
          * @brief Update the swapchain to a new one.
          *
@@ -682,9 +703,44 @@ namespace Foundation::Rendering {
          */
         void SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain);
         /**
-         * @brief Run the frame. Go!
+        * @brief Resets the temporary execution allocator, and begins the execution phase.
+        * @note This MUST be called before entering Execute* functions.
+        */
+        void BeginExecute();
+        /**
+         * @brief Acquires the next swapchain image, and waits for the possibly multi-buffered
+         * next frame to finish rendering.
+         *
+         * @note This SHOULD be called after BeginExecute(), and before ExecuteFrame().
+         * For continuous rendering, this is a MUST. For one-shot workload, however, this may be
+         * optional - though still recommended.
          */
-        void Execute() { return ExecuteFrame(); }
+        void ExecuteAcquire();
+        /**
+         * @brief Executes all passes in the render graph for one frame.
+         *
+         * This includes recording command lists, submitting them to the appropriate queues,
+         * and presenting the swapchain if enabled.
+         *
+         * @note This MUST be called after BeginExecuteImpl(), and before EndExecuteImpl().
+         *
+         * @code{.cpp}
+         *  // With the above Execute... functions, a correct usage may look like this:
+         *  BeginExecute();
+         *  ExecuteAcquire();
+         *  // ...Additional pre-frame logic...
+         *  ExecuteFrame();
+         *  // ...Additional post-frame logic...
+         *  EndExecute();
+         *  @endcode
+         */
+        void ExecuteFrame();
+        /**
+         * @brief Ends the execution phase, and prepares for the next frame.
+         * @note This MUST be called after ExecuteFrame(), and before BeginExecuteImpl() of the next frame.
+         */
+        void EndExecute();
+#pragma endregion
     };
     /* Functional Helpers */
     /**

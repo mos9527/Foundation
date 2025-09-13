@@ -40,6 +40,7 @@ void RenderApplication::InitializeRenderer() {
         },
         m_device, m_swapchain, m_alloc_renderer.Ptr()
     );
+    m_renderer->BeginSetup();
     RendererSetup();
     m_renderer->EndSetup();
 }
@@ -61,7 +62,10 @@ void RenderApplication::InitializeInternal() {
 void RenderApplication::Execute()
 {
     try {
-        m_renderer->Execute();
+        m_renderer->BeginExecute();
+        m_renderer->ExecuteAcquire();
+        m_renderer->ExecuteFrame();
+        m_renderer->EndExecute();
     }
     catch (RHISwapchainResizeException&) {
         CreateSwapchain();

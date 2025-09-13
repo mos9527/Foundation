@@ -25,7 +25,7 @@ const RHIPipelineStage kComputeStagesMask =
       RHIPipelineStageBits::AllGraphics;
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator)
     : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_swaps(m_allocator),
-      m_device(device), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena),
+      m_device(device), m_swapchain(swapchain), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena),
       m_executeBarrierSemaphores(m_allocator), m_waitIdle(device.Get()) {
     m_graphicsQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
     m_graphicsQueue->DebugSetObjectName("Graphics Queue");
@@ -43,11 +43,6 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
             });
         m_computeCmdPool->DebugSetObjectName("Async Compute Command Pool");
     }
-    BeginSetup();
-    if (m_desc.present)
-        SetSwapchain(swapchain);
-    else
-        SetFrameSyncObjects();
     LOG_RUNTIME(Renderer, info, "** Renderer Init **");
     LOG_RUNTIME(Renderer, info, "Async Compute: {}", m_desc.async);
     LOG_RUNTIME(Renderer, info, "Presentation: {}", m_desc.present);
@@ -55,9 +50,13 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
 
 #pragma region Render Graph Setup
 void Renderer::BeginSetup() {
-    CHECK_MSG(m_state == State::Undefined || m_state == State::PostSetup, "BeginSetup() is called at construction time - you shouldn't call this again. Current state is {}", m_state);
-    m_setup = ConstructUnique<Setup>(m_allocator, m_allocator);
+    CHECK_MSG(m_state == State::Undefined || m_state == State::PostSetup, "Bad Setup state. Current state is {}", m_state);
     m_state = State::Setup;
+    m_setup = ConstructUnique<Setup>(m_allocator, m_allocator);
+    if (m_desc.present)
+        SetSwapchain(m_swapchain);
+    else
+        SetFrameSyncObjects();
 }
 ResourceHandle Renderer::CreateTextureView(
     PassHandle pass, ResourceHandle handle, RHITextureViewDesc const& desc) const
@@ -908,14 +907,16 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
     // Reset semaphores index
     m_currentSync = 0;
 }
-RHIPipelineStage Renderer::ExecuteCollectResourceStates(Span<PassHandle> passes, RHIDeviceQueueType currentQueue, Vector<size_t>* outCrossQueueGroups)
+RHIPipelineStage Renderer::ExecuteCollectResourceStates(Span<PassHandle> passes, RHIDeviceQueueType currentQueue,
+                                                        Vector<size_t>* outCrossQueueGroups)
 {
     RHIPipelineStage all_states{};
     if (outCrossQueueGroups)
         outCrossQueueGroups->clear();
     auto PushProducer = [&](PassHandle handle)
     {
-        if (handle == kInvalidHandle) return;
+        if (handle == kInvalidHandle)
+            return;
         auto& pass = m_setup->trackedPasses[handle];
         if (outCrossQueueGroups)
             outCrossQueueGroups->emplace_back(pass.group_index);
@@ -951,8 +952,14 @@ RHIPipelineStage Renderer::ExecuteCollectResourceStates(Span<PassHandle> passes,
     }
     return all_states;
 }
+void Renderer::BeginExecute()
+{
+    CHECK_MSG(m_state == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?", m_state);
+    m_executeAlloc.Reset(m_executeArena), m_state = State::Execute;
+}
 void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres, RHITextureSubresourceRange const& range,RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd)
 {
+    CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
     bool any_range = false;
     for (auto& sta : tres.GetLastSubresourceStateOf(range)) {
@@ -982,6 +989,7 @@ void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
 }
 void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd)
 {
+    CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     RHIBuffer* res = DerefResource(tres.handle).Get<RHIBuffer*>();
     if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage)
         return;
@@ -1002,7 +1010,7 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
 }
 void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
 {
-    CHECK(m_state == State::Execute);
+    CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     // At this point the pass execution order has been determined
     // (execution) and so are the resources' access patterns.
     // Minimal synchronization barriers would always be the most
@@ -1036,16 +1044,9 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
         ExecuteBarrierBuffer(pass.handle, tres, access, stage, cmd);
     }
 }
-/**
- * Hot path. States are pre-allocated, and all auxiliary allocations are
- * done on the stack e.g. command list recording, runtime (IsSkipped()) pass culling.
- */
-void Renderer::ExecuteFrame()
+void Renderer::ExecuteAcquire()
 {
-    CHECK_MSG(m_state == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup()?", m_state);
-    m_executeAlloc.Reset(m_executeArena), m_state = State::Execute;
-    auto& passes = m_setup->trackedPasses;
-    // Swapchain acquire
+    CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait_fences(m_executeAlloc.Ptr());
     if (m_setup->executionAnyGraphics)
         wait_fences.push_back(m_swaps[m_currentSync].graphics_fence);
@@ -1057,6 +1058,11 @@ void Renderer::ExecuteFrame()
             -1, m_swaps[m_currentSync].present, {}
         );
     m_device->ResetFences(wait_fences);
+}
+void Renderer::ExecuteFrame()
+{
+    CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
+    auto& passes = m_setup->trackedPasses;
     // Async compute supporting command lists
     int cmd_graphics = 0, cmd_compute = 0, sem_index = 0;
     RHIDeviceQueue* queue = nullptr;
@@ -1257,6 +1263,10 @@ void Renderer::ExecuteFrame()
             });
         }
     }
+}
+void Renderer::EndExecute()
+{
+    CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). EndExecute() may only be called once per frame.", m_state);
     m_currentSync = (m_currentSync + 1) % m_frameSwaps;
     m_frame++;
     m_state = State::PostSetup;
