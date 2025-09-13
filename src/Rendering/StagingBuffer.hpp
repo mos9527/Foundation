@@ -15,17 +15,30 @@ namespace Foundation::Rendering {
      */
     class DataBuffer {
         using AllocationList = FreeList<DataHandle, RHIBuffer::Arena::Allocation>;
-        using StagingList = Vector<RHICommandList::CopyBufferRegion>;
+        using StagingPair = Pair<StagingBuffer*, RHICommandList::CopyBufferRegion>;
+        using StagingList = Vector<StagingPair>;
+        using CopyList = Vector<RHICommandList::CopyBufferRegion>;
         // Greedily coalesce m_staging to reduce the number of copy commands.
         StagingList& CoalesceStaging();
+
+        String m_name;
 
         Allocator* m_allocator;
         RHIDeviceScopedObjectHandle<RHIBuffer> m_buffer;
         AllocationList m_allocations;
+
         StagingList m_staging;
         StagingList m_coalescedStaging;
+
+        Optional<uint32_t> m_initClear;
     public:
-        DataBuffer(Allocator* allocator, RHIDevice* device, size_t budget, RHIBufferUsageBits usage);
+        /**
+         * @brief Initializes the DataBuffer with the given budget and usage.
+         * @param budget Max size of the buffer in bytes.
+         * @param initClear The value to clear the buffer to on the first Update() call. If not set, the buffer is
+         * uninitialized.
+         */
+        DataBuffer(StringView name, Allocator* allocator, RHIDevice* device, size_t budget, RHIBufferUsageBits usage, Optional<uint32_t> initClear = {});
         /**
          * @brief Pushes data to the buffer, returning a handle to the allocation.
          * @return Handle to the allocation.
@@ -51,7 +64,7 @@ namespace Foundation::Rendering {
         void FreeData(DataHandle handle);
         /**
          * @brief Queries the size and offset of the allocation associated with the given handle.
-         * @return [size, offset] of the allocation.
+         * @return [size, offset] in bytes of the allocation.
          */
         [[nodiscard]] Pair<size_t, size_t> Query(DataHandle handle) const;
         [[nodiscard]] RHIDeviceObjectHandle<RHIBuffer> GetBuffer() const { return m_buffer; }
@@ -62,9 +75,8 @@ namespace Foundation::Rendering {
          * the copy commands. e.g. through using the @ref Renderer and import the buffer with @ref CreateResource(), and
          * have Record() as a pass's Record() callback. See @ref Scene for an example.
          * @param cmd The command list to record the copy commands to.
-         * @param staging The staging buffer used in the previous PushData/UpdateData calls.
          */
-        void Record(RHICommandList* cmd, StagingBuffer* staging);
+        void Update(RHICommandList* cmd);
         /**
          * @brief Abort all previous PushData/UpdateData/FreeData calls.
          * No GPU-side data transfer is performed, and subsequent Record() calls will be no-ops.

@@ -13,8 +13,8 @@
 using namespace Foundation::Core;
 using namespace Foundation::Rendering;
 // Per-frame Semaphore counter
-#define SEM_COUNTER(ord) (m_frame + ord + 1LL)
-#define SEM_COUNTER_PREV(ord) (m_frame + ord)
+#define SEM_COUNTER(size, ord) (m_frame * size + ord + 1LL)
+#define SEM_COUNTER_PREV(size, ord) (m_frame * size + ord)
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator)
     : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_swaps(m_allocator),
       m_device(device), m_swapchain(swapchain), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena),
@@ -1085,9 +1085,9 @@ void Renderer::ExecuteFrame()
                     continue;
                 auto& cross_group = m_setup->executionGroups[cross_group_handle];
                 if (cross_group.singal_ord < group.singal_ord)
-                    wait_semaphores.emplace_back(cross_group.semaphore.Get(), group.all_stages, SEM_COUNTER(cross_group.group_index));
+                    wait_semaphores.emplace_back(cross_group.semaphore.Get(), group.all_stages, SEM_COUNTER(m_setup->executionGroups.size(), cross_group.group_index));
                 else /* On a previous frame */
-                    wait_semaphores.emplace_back(cross_group.semaphore.Get(), group.all_stages, SEM_COUNTER_PREV(cross_group.group_index));
+                    wait_semaphores.emplace_back(cross_group.semaphore.Get(), group.all_stages, SEM_COUNTER_PREV(m_setup->executionGroups.size(), cross_group.group_index));
             }
         }
         /* -- Pass Recording -- */
@@ -1110,9 +1110,9 @@ void Renderer::ExecuteFrame()
             // to the granularity of these states - the introduction
             // of sync primitives here would incur quite a lot of overhead
             bool transitioned = false;
-            if (group.queue == RHIDeviceQueueType::Compute)
+            if (pass.queue == RHIDeviceQueueType::Compute)
             {
-                RHIPipelineStage stages = ExecuteCollectResourceStates(Span<PassHandle>(pass.handle), group.queue);
+                RHIPipelineStage stages = ExecuteCollectResourceStates(Span<PassHandle>(pass.handle), pass.queue);
                 if (stages & kComputeStagesMask)
                 {
                     // Resource cannot be transitioned [away] from their current states in Compute
@@ -1136,10 +1136,10 @@ void Renderer::ExecuteFrame()
                     cmd->DebugEnd();
                     cmd->End();
                     queue->Submit({
-                        .timeline_signals = {{{ auto_sem, SEM_COUNTER(group.group_index) }}},
+                        .timeline_signals = {{{ auto_sem, SEM_COUNTER(m_setup->trackedPasses.size(), pass.ord) }}},
                         .cmd_lists = {{{ cmd }}}
                     });
-                    wait_semaphores.emplace_back(auto_sem, group.all_stages, SEM_COUNTER(group.group_index));
+                    wait_semaphores.emplace_back(auto_sem, pass.pass_stages, SEM_COUNTER(m_setup->trackedPasses.size(),pass.ord));
                     transitioned = true;
                     // Restore previous queue
                     cmd = compute_cmd;
@@ -1169,7 +1169,7 @@ void Renderer::ExecuteFrame()
             waits_stages.push_back(stage);
         }
         // We'd only signal the current group per submit
-        timeline_signals.emplace_back(group.semaphore.Get(), SEM_COUNTER(group.group_index));
+        timeline_signals.emplace_back(group.semaphore.Get(), SEM_COUNTER(m_setup->executionGroups.size(), group.group_index));
         RHIDeviceFence* fence_ptr = nullptr;
         if (group.is_last_compute)
             fence_ptr = m_swaps[m_currentSync].compute_fence.Get();

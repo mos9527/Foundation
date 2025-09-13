@@ -50,8 +50,8 @@ namespace Foundation::Rendering {
         /**
          * @breif Set up device specific resources.
          *
-         * This is invoked by InitializeInternal() after the device is created,
-         * and before the renderer is initialized.
+         * This is invoked by InitializeInternal() after the device and swapchain
+         * is created, but before the Renderer is created.
          */
         virtual void OnDeviceSetup() { /* nop */ }
         /**

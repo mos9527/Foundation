@@ -12,7 +12,7 @@ public:
     ResourceHandle m_depthBuffer{kInvalidHandle};
     const size_t kMaxIndirectCommands = 32767;
     /* -- scene -- */
-    MeshHandle m_kittenMesh;
+    MeshHandle m_kittenMesh{kInvalidMeshHandle};
     Vector<DataHandle> m_kittenScene;
     float4x4 m_camera{ mat4(1.0f) };
     ModelViewer() : RenderApplication(), m_kittenScene(GetAllocator()) {};
@@ -20,19 +20,23 @@ public:
     {
         m_scene = ConstructUnique<Scene>(
             GetAllocator(),
-            GetAllocator(),
-            m_device.Get(),
-            SceneDataDesc{}
+            m_device.Get(), GetAllocator(),
+            m_swapchain->GetImages().size(),
+            SceneBudgets{}
         );
-        m_kittenMesh = m_scene->AddMesh(LoadMeshFromObjFile("data/assets/kitten.obj", GetAllocator()));
-        for (int i = 0; i < 50 * 50; i++)
-            m_kittenScene.push_back(m_scene->AddInstance({
-                .enabled = true,
-                .primitiveID = PrimitiveIDOf(m_kittenMesh),
-            }));
     }
     void OnBeforeFrame() override
     {
+        m_scene->BeginTransfer(m_renderer->GetSync());
+        if (m_kittenMesh == kInvalidMeshHandle)
+        {
+            m_kittenMesh = m_scene->CreateMesh(LoadMeshFromObjFile("data/assets/kitten.obj", GetAllocator()));
+            for (int i = 0; i < 50 * 50; i++)
+                m_kittenScene.push_back(m_scene->CreateInstance({
+                    .enabled = true,
+                    .primitiveID = PrimitiveIDOf(m_kittenMesh),
+                }));
+        }
         size_t cnt = m_kittenScene.size();
         size_t sq = sqrt(cnt);
         float4x4 view = lookAt(
@@ -54,6 +58,7 @@ public:
                 })
             });
         }
+        m_scene->EndTransfer();
     }
     void RendererSetup() override
     {
@@ -76,10 +81,10 @@ public:
                 .format = RHIResourceFormat::D32_SIGNED_FLOAT,
             }
         );
-        m_scene->CreateUpdatePass(
-          m_renderer.get(), RHIDeviceQueueType::Graphics,
-          m_sceneInstance, m_scenePrimitive,m_sceneVertex, m_sceneIndex
-        );
+        m_sceneInstance = m_scene->CreateInstanceDataUpdate(m_renderer.get(), "Scene Instance Data Update", RHIDeviceQueueType::Compute);
+        m_scenePrimitive = m_scene->CreatePrimitiveDataUpdate(m_renderer.get(), "Scene Primitive Data Update", RHIDeviceQueueType::Compute);
+        m_sceneVertex = m_scene->CreateVertexDataUpdate(m_renderer.get(), "Scene Vertex Data Update", RHIDeviceQueueType::Compute);
+        m_sceneIndex = m_scene->CreateIndexDataUpdate(m_renderer.get(), "Scene Index Data Update", RHIDeviceQueueType::Compute);
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect
         createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Compute,
@@ -94,7 +99,7 @@ public:
                 r->CmdDispatch(self, cmd, {1,1,1});
             }
         );
-        createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Graphics,
+        createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Compute,
             [=, this](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "indirectCullEarly", "data/shaders/MVIndirectCull.spv");
