@@ -17,8 +17,7 @@ using namespace Foundation::Rendering;
 #define SEM_COUNTER_PREV(size, ord) (m_frame * size + ord)
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator)
     : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_swaps(m_allocator),
-      m_device(device), m_swapchain(swapchain), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena),
-      m_executeBarrierSemaphores(m_allocator), m_waitIdle(device.Get()) {
+      m_device(device), m_swapchain(swapchain), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena), m_waitIdle(device.Get()) {
     m_graphicsQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
     m_graphicsQueue->DebugSetObjectName("Graphics Queue");
     m_computeQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Compute);
@@ -766,12 +765,6 @@ void Renderer::FinalizeResources() {
     CHECK(m_state == State::Setup);
     m_resources = ConstructUnique<Resources>(m_allocator, m_allocator);
     m_resources->fit(m_setup->trackedResources.size());
-    m_executeBarrierSemaphores.resize(kMaxTempResourceSemaphores);
-    for (size_t i = 0; i < m_executeBarrierSemaphores.size(); i++) {
-        auto& sem = m_executeBarrierSemaphores[i];
-        sem = m_device->CreateSemaphore(true /* timeline */);
-        sem->DebugSetObjectName(fmt::format("RG Temp Resource Barrier Semaphore {}", i).c_str());
-    }
     // !! TODO: Overlap transient resources to with non-overlapping lifetimes with aliasing
     for (const auto& handle : m_setup->activeResources | std::views::keys) {
         auto& res = m_setup->trackedResources[handle];
@@ -1049,10 +1042,9 @@ void Renderer::ExecuteFrame()
     CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     auto& passes = m_setup->trackedPasses;
     // Async compute supporting command lists
-    int cmd_graphics = 0, cmd_compute = 0, sem_index = 0;
+    int cmd_graphics = 0, cmd_compute = 0;
     RHIDeviceQueue* queue = nullptr;
     RHICommandList* cmd = nullptr;
-    RHIDeviceSemaphore* transition_sem = nullptr;
     auto SetNextGraphicsQueue = [&] {
         CHECK_MSG(cmd_graphics < kMaxCommandListsPerSwap, "FIXME-Async Compute: All transient Graphics Command lists exhausted");
         queue = m_graphicsQueue, cmd = m_swaps[m_currentSync].graphics_cmd_at(cmd_graphics++, m_graphicsCmdPool.Get());
@@ -1062,10 +1054,6 @@ void Renderer::ExecuteFrame()
         CHECK_MSG(cmd_compute < kMaxCommandListsPerSwap, "FIXME-Async Compute: All transient Compute Command lists exhausted");
         queue = m_computeQueue, cmd = m_swaps[m_currentSync].compute_cmd_at(cmd_compute++, m_computeCmdPool.Get());
         cmd->Reset(), cmd->Begin();
-    };
-    auto SetNextAutoSemaphore = [&] {
-        CHECK_MSG(sem_index < m_executeBarrierSemaphores.size(), "FIXME-Async Compute: All transient Barrier Semaphores exhausted");
-        transition_sem = m_executeBarrierSemaphores[sem_index++].Get();
     };
     // Execute by groups
     for (auto& group : m_setup->executionGroups)

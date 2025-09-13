@@ -200,8 +200,6 @@ namespace Foundation::Rendering {
             RHIDeviceQueueType currentQueue,
             Vector<size_t>* outCrossQueueGroups = nullptr
         );
-        // Semaphores used for automatically placed resource transition barriers
-        Vector<RHIDeviceScopedObjectHandle<RHIDeviceSemaphore>> m_executeBarrierSemaphores;
         /**
          * @brief Executes barriers for a subresource range of a texture
          */
