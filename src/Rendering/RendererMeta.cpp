@@ -10,6 +10,13 @@ namespace Foundation::Rendering
 
     const char* kShaderDescriptorFirstSetErrorHelp = kShaderDescriptorFirstBindingErrorHelp;
 
+    const char* kAsyncComputeComputeTransitionCompatErrorHelp = "You can remedy this by:\n"
+    "   - Relaxing the resource stage to e.g. RHIPipelineStageBits::ComputeShader\n"
+    "   - Bind a Compute stage transition on one of its previous passes.\n"
+    "   - Using a Graphics queue instead of Compute queue on this pass.\n"
+    "Async compute is only beatifical if the compute work is significant enough"
+    "to justify the overhead of synchronization. Use at discretion!";
+
     RHITextureSubresourceRange TrackedResource::SubresourceState::ToRange() const
     {
         {

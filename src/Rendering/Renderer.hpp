@@ -194,8 +194,9 @@ namespace Foundation::Rendering {
         /**
          * @param outCrossQueueGroups Groups need to sync with
          * @return All current resource states used in these passes
+         * @note Throws if currentQueue can't be used to transition some resources
          */
-        RHIPipelineStage ExecuteCollectResourceStates(
+        void ExecuteCheckResourceStates(
             Span<PassHandle> passes,
             RHIDeviceQueueType currentQueue,
             Vector<size_t>* outCrossQueueGroups = nullptr

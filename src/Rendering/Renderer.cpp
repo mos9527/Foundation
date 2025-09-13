@@ -889,10 +889,9 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
     // Reset semaphores index
     m_currentSync = 0;
 }
-RHIPipelineStage Renderer::ExecuteCollectResourceStates(Span<PassHandle> passes, RHIDeviceQueueType currentQueue,
+void Renderer::ExecuteCheckResourceStates(Span<PassHandle> passes, RHIDeviceQueueType currentQueue,
                                                         Vector<size_t>* outCrossQueueGroups)
 {
-    RHIPipelineStage all_states{};
     if (outCrossQueueGroups)
         outCrossQueueGroups->clear();
     auto PushProducer = [&](PassHandle handle)
@@ -902,6 +901,10 @@ RHIPipelineStage Renderer::ExecuteCollectResourceStates(Span<PassHandle> passes,
         auto& pass = m_setup->trackedPasses[handle];
         if (outCrossQueueGroups)
             outCrossQueueGroups->emplace_back(pass.group_index);
+    };
+    auto CheckTransition = [&](StringView name, RHIPipelineStage stage){
+        if (currentQueue == RHIDeviceQueueType::Compute)
+            CHECK_MSG(!(stage & kComputeStagesMask), "Transition incompatible on resource {}.\n{}", name, kAsyncComputeComputeTransitionCompatErrorHelp);
     };
     for (auto pass_handle : passes)
     {
@@ -913,16 +916,16 @@ RHIPipelineStage Renderer::ExecuteCollectResourceStates(Span<PassHandle> passes,
             auto& tres = m_setup->trackedResources[hdl];
             for (auto const& sta : tres.GetLastSubresourceStateOf(range))
             {
-                all_states |= sta.stage;
+                CheckTransition(tres.name, sta.stage);
                 PushProducer(sta.producer);
             }
         }
         if (pass.write_backbuffer)
-            all_states |= RHIPipelineStageBits::ColorAttachmentOutput;
+            CheckTransition("Backbuffer", RHIPipelineStageBits::ColorAttachmentOutput);
         for (auto [hdl, access, stage] : pass.bufferUsages)
         {
             auto& tres = m_setup->trackedResources[hdl];
-            all_states |= tres.lastBufferState.stage;
+            CheckTransition(tres.name, tres.lastBufferState.stage);
             PushProducer(tres.lastBufferState.producer);
         }
     }
@@ -932,7 +935,6 @@ RHIPipelineStage Renderer::ExecuteCollectResourceStates(Span<PassHandle> passes,
         std::ranges::sort(*outCrossQueueGroups);
         outCrossQueueGroups->erase(std::ranges::unique(*outCrossQueueGroups).begin(), outCrossQueueGroups->end());
     }
-    return all_states;
 }
 void Renderer::BeginExecute()
 {
@@ -1064,7 +1066,7 @@ void Renderer::ExecuteFrame()
         Vector<RHIPipelineStage> waits_stages(m_executeAlloc.Ptr());
 
         const bool is_last = group.group_index == m_setup->executionGroups.size() - 1;
-        ExecuteCollectResourceStates(group.passes, group.queue, &cross_queue_groups);
+        ExecuteCheckResourceStates(group.passes, group.queue, &cross_queue_groups);
         /* -- Wait Semaphores -- */
         if (!cross_queue_groups.empty())
         {
@@ -1101,26 +1103,12 @@ void Renderer::ExecuteFrame()
             // Execution on the states are always single-threaded due
             // to the granularity of these states - the introduction
             // of sync primitives here would incur quite a lot of overhead
-            bool transitioned = false;
-            if (pass.queue == RHIDeviceQueueType::Compute)
-            {
-                // Resource cannot be transitioned [away] from their current states in Compute.
-                // This is always suboptimal - and should be avoided when setting up the graph
-                // We'll die. This is not worth the complexity of adding more barriers.
-                RHIPipelineStage stages = ExecuteCollectResourceStates(Span<PassHandle>(pass.handle), pass.queue);
-                CHECK_MSG(!(stages & kComputeStagesMask),
-                    "Pass {} [{}] requires cross-queue resource transitions. This is always suboptimal. Consider re-arranging the graph, or have it run on Graphics to avoid this.",
-                    pass.name, pass.handle
-                );
-            }
             cmd->DebugBegin(pass.name.c_str());
-            if (!transitioned) {
-                cmd->DebugBegin("<Resource Barriers>");
-                cmd->BeginTransition();
-                ExecuteBarriers(pass, cmd);
-                cmd->EndTransition();
-                cmd->DebugEnd();
-            }
+            cmd->DebugBegin("<Resource Barriers>");
+            cmd->BeginTransition();
+            ExecuteBarriers(pass, cmd);
+            cmd->EndTransition();
+            cmd->DebugEnd();
             // TODO: Only dealing with Record() here can easily introduce parallelism
             //       But - we don't currently have a good CPU async tasking system
             //       yet - which would be the hard part.

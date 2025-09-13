@@ -11,7 +11,7 @@ namespace Foundation::Rendering
 {
     extern const char* kShaderDescriptorFirstBindingErrorHelp;
     extern const char* kShaderDescriptorFirstSetErrorHelp;
-
+    extern const char* kAsyncComputeComputeTransitionCompatErrorHelp;
     const size_t kTextureAspectCount = 3; // Color, depth, stencil @ref RHITextureAspectFlag
     /**
      * @brief Internal tracking information for a resource in the frame graph.
