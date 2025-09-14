@@ -40,6 +40,7 @@ void RenderApplication::InitializeRenderer() {
         },
         m_device, m_swapchain, m_alloc_renderer.Ptr()
     );
+    m_renderer->BeginSetup();
     RendererSetup();
     m_renderer->EndSetup();
 }
@@ -61,7 +62,11 @@ void RenderApplication::InitializeInternal() {
 void RenderApplication::Execute()
 {
     try {
-        m_renderer->Execute();
+        m_renderer->BeginExecute();
+        OnBeforeFrame();
+        m_renderer->ExecuteFrame();
+        OnAfterFrame();
+        m_renderer->EndExecute();
     }
     catch (RHISwapchainResizeException&) {
         CreateSwapchain();
@@ -74,7 +79,6 @@ void RenderApplication::RunForever() {
     CHECK_MSG(m_rhi, "No RHI backend initialized! Call Initialize<Backend>() first.");
     CHECK(m_device && m_renderer);
     do {
-        OnBeforeFrame();
         Execute();
         // Update framerate
         size_t smp_tick = m_timing.begin.y;

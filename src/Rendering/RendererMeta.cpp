@@ -10,6 +10,12 @@ namespace Foundation::Rendering
 
     const char* kShaderDescriptorFirstSetErrorHelp = kShaderDescriptorFirstBindingErrorHelp;
 
+    const char* kAsyncComputeComputeTransitionCompatErrorHelp = "You can remedy this by:\n"
+    "   -  Use CreateTransitionPass before this pass\n"
+    "   - Using a Graphics queue instead of Compute queue on this pass.\n"
+    "Async compute is only beneficial if the compute work is significant enough "
+    "to justify the overhead of synchronization. Use at discretion!";
+
     RHITextureSubresourceRange TrackedResource::SubresourceState::ToRange() const
     {
         {

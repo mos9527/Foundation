@@ -6,27 +6,19 @@
 
 #include <Math/Math.hpp>
 #include <RHICore/Device.hpp>
+#include <RHICore/Application.hpp>
 
 #include "Renderer.hpp"
 #include "ShaderReflection.hpp"
 
 using namespace Foundation::Core;
 using namespace Foundation::Rendering;
-// Semaphore counter
-#define SEM_COUNTER(ord) (m_frame + ord + 1LL)
-#define SEM_COUNTER_PREV(ord) (m_frame + ord)
-
-constexpr size_t kExecuteArenaSize = 16 * (1 << 20); // 16 MiB for render graph execution
-const RHIPipelineStage kComputeStagesMask =
-      RHIPipelineStageBits::FragmentShader |
-      RHIPipelineStageBits::VertexShader |
-      RHIPipelineStageBits::MeshShader |
-      RHIPipelineStageBits::RayTracingShader |
-      RHIPipelineStageBits::AllGraphics;
+// Per-frame Semaphore counter
+#define SEM_COUNTER(size, ord) ((m_frame + 1) * size + ord)
+#define SEM_COUNTER_PREV(size, ord) (m_frame * size + ord)
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator)
     : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_swaps(m_allocator),
-      m_device(device), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena),
-      m_executeBarrierSemaphores(m_allocator), m_waitIdle(device.Get()) {
+      m_device(device), m_swapchain(swapchain), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena), m_waitIdle(device.Get()) {
     m_graphicsQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
     m_graphicsQueue->DebugSetObjectName("Graphics Queue");
     m_computeQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Compute);
@@ -43,21 +35,18 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
             });
         m_computeCmdPool->DebugSetObjectName("Async Compute Command Pool");
     }
-    BeginSetup();
-    if (m_desc.present)
-        SetSwapchain(swapchain);
-    else
-        SetFrameSyncObjects();
     LOG_RUNTIME(Renderer, info, "** Renderer Init **");
     LOG_RUNTIME(Renderer, info, "Async Compute: {}", m_desc.async);
     LOG_RUNTIME(Renderer, info, "Presentation: {}", m_desc.present);
 }
-
-#pragma region Render Graph Setup
 void Renderer::BeginSetup() {
-    CHECK_MSG(m_state == State::Undefined || m_state == State::PostSetup, "BeginSetup() is called at construction time - you shouldn't call this again. Current state is {}", m_state);
-    m_setup = ConstructUnique<Setup>(m_allocator, m_allocator);
+    CHECK_MSG(m_state == State::Undefined || m_state == State::PostSetup, "Bad Setup state. Current state is {}", m_state);
     m_state = State::Setup;
+    m_setup = ConstructUnique<Setup>(m_allocator, m_allocator);
+    if (m_desc.present)
+        SetSwapchain(m_swapchain);
+    else
+        SetFrameSyncObjects();
 }
 ResourceHandle Renderer::CreateTextureView(
     PassHandle pass, ResourceHandle handle, RHITextureViewDesc const& desc) const
@@ -86,7 +75,7 @@ void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPi
     if (resource.lastBufferState.producer != kInvalidHandle)
         m_setup->add_edge(pass, resource.lastBufferState.producer, handle);
     // Set producer
-    if (access & kAllShaderWrites)
+    if (access & kAllShaderWrites || (pass != kInvalidHandle && m_setup->trackedPasses[pass].always_produces))
         resource.lastBufferState.producer = pass;
     m_setup->trackedPasses[pass].bufferUsages.emplace_back(handle, access, stage);
     m_setup->trackedPasses[pass].resources.emplace_back(handle);
@@ -121,7 +110,7 @@ void Renderer::DeclareTextureAccess(
         if (sta.producer != kInvalidHandle)
             m_setup->add_edge(pass, sta.producer, handle);
         // Set producer
-        if (access & kAllShaderWrites)
+        if (access & kAllShaderWrites || (pass != kInvalidHandle && m_setup->trackedPasses[pass].always_produces))
             sta.producer = pass;
     }
     m_setup->trackedPasses[pass].textureUsages.emplace_back(handle, access, stage, range, layout);
@@ -439,9 +428,9 @@ void Renderer::CullPasses(PassHandle epilogue) const
         // Collect dependencies
         for (auto pass : exec_group.back().passes) {
             auto& tpass = m_setup->trackedPasses[pass];
+            tpass.group_index = group.group_index;
             group.dependencies.insert(group.dependencies.end(), tpass.resources.begin(), tpass.resources.end());
             group.all_stages |= tpass.pass_stages;
-            group.singal_ord = std::max(group.singal_ord, tpass.ord);
         }
         // Sort and unique
         std::ranges::sort(group.dependencies);
@@ -777,12 +766,6 @@ void Renderer::FinalizeResources() {
     CHECK(m_state == State::Setup);
     m_resources = ConstructUnique<Resources>(m_allocator, m_allocator);
     m_resources->fit(m_setup->trackedResources.size());
-    m_executeBarrierSemaphores.resize(kMaxTempResourceSemaphores);
-    for (size_t i = 0; i < m_executeBarrierSemaphores.size(); i++) {
-        auto& sem = m_executeBarrierSemaphores[i];
-        sem = m_device->CreateSemaphore(true /* timeline */);
-        sem->DebugSetObjectName(fmt::format("RG Temp Resource Barrier Semaphore {}", i).c_str());
-    }
     // !! TODO: Overlap transient resources to with non-overlapping lifetimes with aliasing
     for (const auto& handle : m_setup->activeResources | std::views::keys) {
         auto& res = m_setup->trackedResources[handle];
@@ -857,7 +840,6 @@ void Renderer::FinalizeResources() {
             sta.reset();
     }
 }
-#pragma endregion
 void Renderer::SetFrameSyncObjects() {
     while (m_swaps.size() < m_frameSwaps)
         m_swaps.emplace_back(m_swaps.size(), m_allocator);
@@ -908,51 +890,70 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
     // Reset semaphores index
     m_currentSync = 0;
 }
-RHIPipelineStage Renderer::ExecuteCollectResourceStates(Span<PassHandle> passes, RHIDeviceQueueType currentQueue, Vector<size_t>* outCrossQueueGroups)
+void Renderer::ExecuteCheckResourceStates(Span<PassHandle> passes, RHIDeviceQueueType currentQueue,
+                                                        Vector<Pair<size_t,bool>>* outGroups)
 {
-    RHIPipelineStage all_states{};
-    if (outCrossQueueGroups)
-        outCrossQueueGroups->clear();
-    auto PushProducer = [&](PassHandle handle)
+    if (outGroups)
+        outGroups->clear();
+    auto PushProducerGroup = [&](PassHandle handle, size_t lastFrame)
     {
-        if (handle == kInvalidHandle) return;
+        if (handle == kInvalidHandle)
+            return;
         auto& pass = m_setup->trackedPasses[handle];
-        if (outCrossQueueGroups)
-            outCrossQueueGroups->emplace_back(pass.group_index);
+        if (outGroups)
+            outGroups->emplace_back(pass.group_index, lastFrame != m_frame);
+    };
+    auto CheckTransition = [&](StringView name, RHIPipelineStage stage){
+        if (currentQueue == RHIDeviceQueueType::Compute)
+            CHECK_MSG(!(stage & kComputeStagesMask), "Transition incompatible on resource {}.\n{}", name, kAsyncComputeComputeTransitionCompatErrorHelp);
     };
     for (auto pass_handle : passes)
     {
         auto const& pass = m_setup->trackedPasses[pass_handle];
-        if (outCrossQueueGroups && pass.queue != currentQueue)
-            outCrossQueueGroups->emplace_back(pass.group_index);
         for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
         {
             auto& tres = m_setup->trackedResources[hdl];
             for (auto const& sta : tres.GetLastSubresourceStateOf(range))
             {
-                all_states |= sta.stage;
-                PushProducer(sta.producer);
+                CheckTransition(tres.name, sta.stage);
+                PushProducerGroup(sta.lastExecutor, sta.lastExecuteFrame);
             }
         }
         if (pass.write_backbuffer)
-            all_states |= RHIPipelineStageBits::ColorAttachmentOutput;
+            CheckTransition("Backbuffer", RHIPipelineStageBits::ColorAttachmentOutput);
         for (auto [hdl, access, stage] : pass.bufferUsages)
         {
             auto& tres = m_setup->trackedResources[hdl];
-            all_states |= tres.lastBufferState.stage;
-            PushProducer(tres.lastBufferState.producer);
+            CheckTransition(tres.name, tres.lastBufferState.stage);
+            PushProducerGroup(tres.lastBufferState.lastExecutor, tres.lastBufferState.lastExecuteFrame);
         }
     }
     // Sort and unique cross-queue groups
-    if (outCrossQueueGroups && !outCrossQueueGroups->empty())
+    if (outGroups && !outGroups->empty())
     {
-        std::ranges::sort(*outCrossQueueGroups);
-        outCrossQueueGroups->erase(std::ranges::unique(*outCrossQueueGroups).begin(), outCrossQueueGroups->end());
+        std::ranges::sort(*outGroups);
+        outGroups->erase(std::ranges::unique(*outGroups).begin(), outGroups->end());
     }
-    return all_states;
+}
+void Renderer::BeginExecute()
+{
+    CHECK_MSG(m_state == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?", m_state);
+    m_executeAlloc.Reset(m_executeArena), m_state = State::Execute;
+    Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait_fences(m_executeAlloc.Ptr());
+    if (m_setup->executionAnyGraphics)
+        wait_fences.push_back(m_swaps[m_currentSync].graphics_fence);
+    if (m_setup->executionAnyCompute)
+        wait_fences.push_back(m_swaps[m_currentSync].compute_fence);
+    m_device->WaitForFences(wait_fences, true, -1);
+    if (m_desc.present)
+        m_currentSwap = m_swapchain->GetNextImage(
+            -1, m_swaps[m_currentSync].present, {}
+        );
+    m_device->ResetFences(wait_fences);
 }
 void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres, RHITextureSubresourceRange const& range,RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd)
 {
+    CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
     bool any_range = false;
     for (auto& sta : tres.GetLastSubresourceStateOf(range)) {
@@ -975,13 +976,14 @@ void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
         sta.access = access;
         sta.stage = stage;
         sta.layout = layout;
-        if (access & kAllShaderWrites)
-            sta.producer = pass;
+        sta.lastExecutor = pass;
+        sta.lastExecuteFrame = m_frame;
     }
     CHECK_MSG(any_range, "FIXME-ExecuteBarrierSubresource: Failed to match resource range on {}",tres.name);
 }
 void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd)
 {
+    CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     RHIBuffer* res = DerefResource(tres.handle).Get<RHIBuffer*>();
     if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage)
         return;
@@ -997,12 +999,12 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
         );
     tres.lastBufferState.access = access;
     tres.lastBufferState.stage = stage;
-    if (access & kAllShaderWrites)
-        tres.lastBufferState.producer = pass;
+    tres.lastBufferState.lastExecutor = pass;
+    tres.lastBufferState.lastExecuteFrame = m_frame;
 }
 void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
 {
-    CHECK(m_state == State::Execute);
+    CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     // At this point the pass execution order has been determined
     // (execution) and so are the resources' access patterns.
     // Minimal synchronization barriers would always be the most
@@ -1036,32 +1038,14 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
         ExecuteBarrierBuffer(pass.handle, tres, access, stage, cmd);
     }
 }
-/**
- * Hot path. States are pre-allocated, and all auxiliary allocations are
- * done on the stack e.g. command list recording, runtime (IsSkipped()) pass culling.
- */
 void Renderer::ExecuteFrame()
 {
-    CHECK_MSG(m_state == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup()?", m_state);
-    m_executeAlloc.Reset(m_executeArena), m_state = State::Execute;
+    CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     auto& passes = m_setup->trackedPasses;
-    // Swapchain acquire
-    Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait_fences(m_executeAlloc.Ptr());
-    if (m_setup->executionAnyGraphics)
-        wait_fences.push_back(m_swaps[m_currentSync].graphics_fence);
-    if (m_setup->executionAnyCompute)
-        wait_fences.push_back(m_swaps[m_currentSync].compute_fence);
-    m_device->WaitForFences(wait_fences, true, -1);
-    if (m_desc.present)
-        m_currentSwap = m_swapchain->GetNextImage(
-            -1, m_swaps[m_currentSync].present, {}
-        );
-    m_device->ResetFences(wait_fences);
     // Async compute supporting command lists
-    int cmd_graphics = 0, cmd_compute = 0, sem_index = 0;
+    int cmd_graphics = 0, cmd_compute = 0;
     RHIDeviceQueue* queue = nullptr;
     RHICommandList* cmd = nullptr;
-    RHIDeviceSemaphore* auto_sem = nullptr;
     auto SetNextGraphicsQueue = [&] {
         CHECK_MSG(cmd_graphics < kMaxCommandListsPerSwap, "FIXME-Async Compute: All transient Graphics Command lists exhausted");
         queue = m_graphicsQueue, cmd = m_swaps[m_currentSync].graphics_cmd_at(cmd_graphics++, m_graphicsCmdPool.Get());
@@ -1072,31 +1056,29 @@ void Renderer::ExecuteFrame()
         queue = m_computeQueue, cmd = m_swaps[m_currentSync].compute_cmd_at(cmd_compute++, m_computeCmdPool.Get());
         cmd->Reset(), cmd->Begin();
     };
-    auto SetNextAutoSemaphore = [&] {
-        CHECK_MSG(sem_index < m_executeBarrierSemaphores.size(), "FIXME-Async Compute: All transient Barrier Semaphores exhausted");
-        auto_sem = m_executeBarrierSemaphores[sem_index++].Get();
-    };
     // Execute by groups
     for (auto& group : m_setup->executionGroups)
     {
-        Vector<size_t> cross_queue_groups(m_executeAlloc.Ptr());
-        Vector<SemaphorePair> wait_semaphores(m_executeAlloc.Ptr());
+        Vector<Pair<size_t, bool>> last_transitions(m_executeAlloc.Ptr());
 
+        Vector<RHIDeviceQueue::TimelinePair> timeline_waits(m_executeAlloc.Ptr()), timeline_signals(m_executeAlloc.Ptr());
+        Vector<RHIPipelineStage> waits_stages(m_executeAlloc.Ptr());
         const bool is_last = group.group_index == m_setup->executionGroups.size() - 1;
-        ExecuteCollectResourceStates(group.passes, group.queue, &cross_queue_groups);
+        ExecuteCheckResourceStates(group.passes, group.queue, &last_transitions);
         /* -- Wait Semaphores -- */
-        if (!cross_queue_groups.empty())
+        if (!last_transitions.empty())
         {
-            // This path should only be taken when async compute is enabled
-            for (auto const& cross_group_handle : cross_queue_groups)
+            for (auto const& [group_handle, previous_frame] : last_transitions)
             {
-                if (cross_group_handle == group.group_index)
+                if (group_handle == group.group_index)
                     continue;
-                auto& cross_group = m_setup->executionGroups[cross_group_handle];
-                if (cross_group.singal_ord < group.singal_ord)
-                    wait_semaphores.emplace_back(cross_group.semaphore.Get(), group.all_stages, SEM_COUNTER(cross_group.group_index));
+                auto& cross_group = m_setup->executionGroups[group_handle];
+                if (!previous_frame)
+                    timeline_waits.emplace_back(cross_group.semaphore.Get(), SEM_COUNTER(m_setup->executionGroups.size(), cross_group.group_index)),
+                    waits_stages.emplace_back(group.all_stages);
                 else /* On a previous frame */
-                    wait_semaphores.emplace_back(cross_group.semaphore.Get(), group.all_stages, SEM_COUNTER_PREV(cross_group.group_index));
+                    timeline_waits.emplace_back(cross_group.semaphore.Get(), SEM_COUNTER_PREV(m_setup->executionGroups.size(), cross_group.group_index)),
+                    waits_stages.emplace_back(group.all_stages);
             }
         }
         /* -- Pass Recording -- */
@@ -1113,64 +1095,26 @@ void Renderer::ExecuteFrame()
             if (pass.pass->IsSkipped(pass.handle, this))
                 continue;
             /* -- Barriers -- */
-            bool transitioned = false;
-            if (group.queue == RHIDeviceQueueType::Compute)
-            {
-                RHIPipelineStage stages = ExecuteCollectResourceStates(Span<PassHandle>(pass.handle), group.queue);
-                if (stages & kComputeStagesMask)
-                {
-                    // Resource cannot be transitioned [away] from their current states in Compute
-                    // NOTE: This is always suboptimal - and should be avoided when setting up the graph
-                    if (!(m_warnings & RendererWarningFlagsBits::PassExternalSyncRequired))
-                    {
-                        m_warnings |= RendererWarningFlagsBits::PassExternalSyncRequired;
-                        LOG_RUNTIME(Renderer, warn,
-                            "Pass {} [{}] requires cross-queue resource transitions. This is always suboptimal. Consider re-arranging the graph to avoid this.",
-                            pass.name, pass.handle
-                        );
-                    }
-                    RHICommandList* compute_cmd = cmd;
-                    RHIDeviceQueue* compute_queue = queue;
-                    SetNextAutoSemaphore();
-                    SetNextGraphicsQueue();
-                    cmd->DebugBegin("<Pre-Compute Resource Barriers>");
-                    cmd->BeginTransition();
-                    ExecuteBarriers(pass, cmd);
-                    cmd->EndTransition();
-                    cmd->DebugEnd();
-                    cmd->End();
-                    queue->Submit({
-                        .timeline_signals = {{{ auto_sem, SEM_COUNTER(group.group_index) }}},
-                        .cmd_lists = {{{ cmd }}}
-                    });
-                    wait_semaphores.emplace_back(auto_sem, group.all_stages, SEM_COUNTER(group.group_index));
-                    transitioned = true;
-                    // Restore previous queue
-                    cmd = compute_cmd;
-                    queue = compute_queue;
-                }
-            }
+            // For textures - we're dealing with Subresource ranges,
+            // and for buffer it's always the whole thing.
+            // Execution on the states are always single-threaded due
+            // to the granularity of these states - the introduction
+            // of sync primitives here would incur quite a lot of overhead
             cmd->DebugBegin(pass.name.c_str());
-            if (!transitioned) {
-                cmd->DebugBegin("<Resource Barriers>");
-                cmd->BeginTransition();
-                ExecuteBarriers(pass, cmd);
-                cmd->EndTransition();
-                cmd->DebugEnd();
-            }
+            cmd->DebugBegin("<Resource Barriers>");
+            cmd->BeginTransition();
+            ExecuteBarriers(pass, cmd);
+            cmd->EndTransition();
+            cmd->DebugEnd();
+            // TODO: Only dealing with Record() here can easily introduce parallelism
+            //       But - we don't currently have a good CPU async tasking system
+            //       yet - which would be the hard part.
             pass.pass->Record(pass.handle, this, cmd);
             cmd->DebugEnd();
         }
         /* -- Submission -- */
-        Vector<RHIDeviceQueue::TimelinePair> timeline_waits(m_executeAlloc.Ptr()), timeline_signals(m_executeAlloc.Ptr());
-        Vector<RHIPipelineStage> waits_stages(m_executeAlloc.Ptr());
-        // Push waits
-        for (auto const& [sem, stage, value] : wait_semaphores) {
-            timeline_waits.emplace_back(sem, value);
-            waits_stages.push_back(stage);
-        }
         // We'd only signal the current group per submit
-        timeline_signals.emplace_back(group.semaphore.Get(), SEM_COUNTER(group.group_index));
+        timeline_signals.emplace_back(group.semaphore.Get(), SEM_COUNTER(m_setup->executionGroups.size(), group.group_index));
         RHIDeviceFence* fence_ptr = nullptr;
         if (group.is_last_compute)
             fence_ptr = m_swaps[m_currentSync].compute_fence.Get();
@@ -1249,6 +1193,10 @@ void Renderer::ExecuteFrame()
             });
         }
     }
+}
+void Renderer::EndExecute()
+{
+    CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). EndExecute() may only be called once per frame.", m_state);
     m_currentSync = (m_currentSync + 1) % m_frameSwaps;
     m_frame++;
     m_state = State::PostSetup;

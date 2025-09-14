@@ -12,27 +12,31 @@ public:
     ResourceHandle m_depthBuffer{kInvalidHandle};
     const size_t kMaxIndirectCommands = 32767;
     /* -- scene -- */
-    MeshHandle m_kittenMesh;
-    Vector<SceneHandle> m_kittenScene;
+    MeshHandle m_kittenMesh{kInvalidMeshHandle};
+    Vector<DataHandle> m_kittenScene;
     float4x4 m_camera{ mat4(1.0f) };
     ModelViewer() : RenderApplication(), m_kittenScene(GetAllocator()) {};
     void OnDeviceSetup() override
     {
         m_scene = ConstructUnique<Scene>(
             GetAllocator(),
-            GetAllocator(),
-            m_device.Get(),
-            SceneDataDesc{}
+            m_device.Get(), GetAllocator(),
+            m_swapchain->GetImages().size(),
+            SceneBudgets{}
         );
-        m_kittenMesh = m_scene->AddMesh(LoadMeshFromObjFile("data/assets/kitten.obj", GetAllocator()));
-        for (int i = 0; i < 50 * 50; i++)
-            m_kittenScene.push_back(m_scene->AddInstance({
-                .enabled = true,
-                .primitiveID = PrimitiveIDOf(m_kittenMesh),
-            }));
     }
     void OnBeforeFrame() override
     {
+        m_scene->BeginTransfer(m_renderer->GetSync());
+        if (m_kittenMesh == kInvalidMeshHandle)
+        {
+            m_kittenMesh = m_scene->CreateMesh(LoadMeshFromObjFile("data/assets/kitten.obj", GetAllocator()));
+            for (int i = 0; i < 10 * 10; i++)
+                m_kittenScene.push_back(m_scene->CreateInstance({
+                    .enabled = true,
+                    .primitiveID = PrimitiveIDOf(m_kittenMesh),
+                }));
+        }
         size_t cnt = m_kittenScene.size();
         size_t sq = sqrt(cnt);
         float4x4 view = lookAt(
@@ -42,7 +46,7 @@ public:
         float4x4 proj = infinitePerspective(radians(45.0f), m_swapchain->GetAspectRatio(),0.1f);
         proj[1][1] *= -1; // vulkan NDC
         m_camera = proj * view;
-        for (SceneHandle instance : m_kittenScene)
+        for (DataHandle instance : m_kittenScene)
         {
             m_scene->UpdateInstance(instance, {
                 .enabled = true,
@@ -54,6 +58,7 @@ public:
                 })
             });
         }
+        m_scene->EndTransfer();
     }
     void RendererSetup() override
     {
@@ -76,13 +81,13 @@ public:
                 .format = RHIResourceFormat::D32_SIGNED_FLOAT,
             }
         );
-        m_scene->CreateUpdatePass(
-          m_renderer.get(), RHIDeviceQueueType::Graphics,
-          m_sceneInstance, m_scenePrimitive,m_sceneVertex, m_sceneIndex
-        );
+        m_sceneInstance = m_scene->CreateInstanceDataUpdate(m_renderer.get(), "Scene Instance Data Update", RHIDeviceQueueType::Graphics);
+        m_scenePrimitive = m_scene->CreatePrimitiveDataUpdate(m_renderer.get(), "Scene Primitive Data Update", RHIDeviceQueueType::Graphics);
+        m_sceneVertex = m_scene->CreateVertexDataUpdate(m_renderer.get(), "Scene Vertex Data Update", RHIDeviceQueueType::Graphics);
+        m_sceneIndex = m_scene->CreateIndexDataUpdate(m_renderer.get(), "Scene Index Data Update", RHIDeviceQueueType::Graphics);
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect
-        createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Compute,
+        createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Graphics,
             [=, this](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "resetCounter", "data/shaders/MVClearCounters.spv");
@@ -118,6 +123,7 @@ public:
                 r->BindBufferStorage(self, m_sceneIndex, RHIPipelineStageBits::VertexShader, "indices");
                 r->BindBufferStorage(self, m_indirectCommands, RHIPipelineStageBits::DrawIndirect | RHIPipelineStageBits::AllGraphics, "commands");
                 r->BindBufferStorage(self, m_sceneInstance, RHIPipelineStageBits::AllGraphics, "scInstance");
+                r->BindBufferShaderRead(self, m_counter, RHIPipelineStageBits::AllGraphics);
                 r->BindVertexInput(self, {.bindings = {{{.stride = sizeof(Vertex)}}}, .attributes = Attributes});
                 r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, sizeof(DrawPushConstant));
                 r->BindBackbufferRTV(self);

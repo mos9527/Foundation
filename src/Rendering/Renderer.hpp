@@ -1,5 +1,4 @@
 #pragma once
-#include <RHICore/Application.hpp>
 #include <RHICore/Device.hpp>
 
 #include "RendererMeta.hpp"
@@ -11,16 +10,18 @@ namespace Foundation::Rendering {
     using namespace Foundation::Core;
     constexpr size_t kMaxCommandListsPerSwap = 128; // Maximum number of command lists per frame
     constexpr size_t kMaxTempResourceSemaphores = 16; // Maximum number of temporary semaphores for cross-queue barriers
+    constexpr size_t kExecuteArenaSize = 16 * (1 << 20); // Maximum size of the per-frame transient arena (16MB)
+    const RHIPipelineStage kComputeStagesMask =
+          RHIPipelineStageBits::FragmentShader |
+          RHIPipelineStageBits::VertexShader |
+          RHIPipelineStageBits::MeshShader |
+          RHIPipelineStageBits::RayTracingShader |
+          RHIPipelineStageBits::AllGraphics;
     const RHIResourceAccessBits kAllShaderWrites =
         RHIResourceAccessBits::ShaderWrite |
         RHIResourceAccessBits::RenderTargetWrite |
         RHIResourceAccessBits::DepthStencilWrite |
         RHIResourceAccessBits::TransferWrite;
-
-    BITMASK_ENUM_BEGIN(RendererWarningFlags, uint32_t)
-        PassExternalSyncRequired = 1 << 0,
-        Count = 1 << 0
-    BITMASK_ENUM_END()
 
     struct RendererDesc {
         // Enable async compute
@@ -86,7 +87,10 @@ namespace Foundation::Rendering {
             Vector<RHICommandPoolScopedHandle<RHICommandList>> cmds;
             Vector<RHICommandPoolScopedHandle<RHICommandList>> comp_cmds;
         public:
+            // Index of this swap
             const size_t swapIndex;
+            // Whether this frame is currently being processed by the GPU
+            bool isInFlight{false};
             RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render{}, present{};
             RHIDeviceScopedObjectHandle<RHIDeviceFence> graphics_fence{}, compute_fence{};
             RHICommandList* graphics_cmd_at(size_t i, RHICommandPool* pool) {
@@ -106,7 +110,7 @@ namespace Foundation::Rendering {
             // Tracked backbuffer handle
             ResourceHandle rt_handle{ kInvalidHandle };
             FrameSyncObjects(size_t swapIndex, Allocator* allocator)
-                : swapIndex(swapIndex), cmds(allocator), comp_cmds(allocator)
+                : cmds(allocator), comp_cmds(allocator), swapIndex(swapIndex)
             {
                 cmds.resize(kMaxCommandListsPerSwap), comp_cmds.resize(kMaxCommandListsPerSwap);
             }
@@ -140,7 +144,6 @@ namespace Foundation::Rendering {
                 Vector<ResourceHandle> dependencies;
                 bool is_last_graphics = false;
                 bool is_last_compute = false;
-                size_t singal_ord{ 0 }; // Ord value used to signal
                 RHIShaderStage all_stages{}; // All stages used in this group
                 
                 ExecutionGroups(size_t group_index, RHIDeviceQueueType queue, Allocator* allocator) :
@@ -161,17 +164,6 @@ namespace Foundation::Rendering {
         };
         UniquePtr<Setup> m_setup;
         // Setup
-        void DeclareBufferAccess(PassHandle pass, ResourceHandle buffer,
-            RHIPipelineStage stage,
-            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead
-        ) const;
-        void DeclareTextureAccess(
-            PassHandle pass, ResourceHandle res,
-            RHIPipelineStage stage,
-            RHITextureSubresourceRange range = {},
-            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead,
-            RHITextureLayout layout = RHITextureLayout::ShaderReadOnly
-        ) const;
         [[nodiscard]] ResourceHandle CreateTextureView(
             PassHandle pass, ResourceHandle res,
             RHITextureViewDesc const& desc
@@ -187,24 +179,26 @@ namespace Foundation::Rendering {
         // This is reset every frame, and only guaranteed to be valid during Execute state.
         StackAllocator m_executeAlloc;
         /**
-         * @param outCrossQueueGroups Groups need to sync with
-         * @return All current resource states used in these passes
+         * @param outGroups Groups need to sync with, [group index, from previous frame]
+         * @note Throws if currentQueue can't be used to transition some resources
          */
-        RHIPipelineStage ExecuteCollectResourceStates(
+        void ExecuteCheckResourceStates(
             Span<PassHandle> passes,
             RHIDeviceQueueType currentQueue,
-            Vector<size_t>* outCrossQueueGroups = nullptr
+            Vector<Pair<size_t,bool>>* outGroups = nullptr
         );
-        // [Semaphore, Waited Stages, Wait value]
-        using SemaphorePair = Tuple<RHIDeviceSemaphore*, RHIPipelineStage, size_t>;
-        // Semaphores used for automatically placed resource transition barriers
-        Vector<RHIDeviceScopedObjectHandle<RHIDeviceSemaphore>> m_executeBarrierSemaphores;
-
-        RendererWarningFlags m_warnings{};
+        /**
+         * @brief Executes barriers for a subresource range of a texture
+         */
         void ExecuteBarrierSubresource(PassHandle pass, TrackedResource& res, RHITextureSubresourceRange const& range, RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd);
+        /**
+         * @brief Executes barriers for a whole buffer
+         */
         void ExecuteBarrierBuffer(PassHandle pass, TrackedResource& res, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd);
+        /**
+         * @brief Executes all barriers for a pass
+         */
         void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
-        void ExecuteFrame();
         void SetFrameSyncObjects();
 
         RHIDeviceIdleGuard m_waitIdle; // Ensure device is idle on destruction
@@ -215,7 +209,7 @@ namespace Foundation::Rendering {
         /**
          * @brief Begins the setup phase of the render graph.
          *
-         * @note This is called at construction time, you shouldn't call this again.
+         * @note You MUST call this before any other Create..., Bind..., or Declare... functions.
          */
         void BeginSetup();
         /**
@@ -274,6 +268,36 @@ namespace Foundation::Rendering {
                 std::forward<FRecord>(record),
                 std::forward<FSkip>(skip)
             );
+        }
+        /**
+         * @brief Create a render pass that only performs resource transitions in its Setup function.
+         *
+         * This is generally not needed, as resource transitions are automatically handled by the render graph.
+         * However, with Async Compute enabled there might be cases where the resource transitioned into
+         * a stage where it's impossible to automatically transition it out of in Compute.
+         *
+         * Use this to perform explicit transitions in such cases.
+         *
+         * @param queue Queue to prefer running this pass in. You should generally use RHIDeviceQueueType::Graphics
+         * here.
+         * @param setup Lambda of type `void(PassHandle self, Renderer*)` called at Setup time.
+         */
+        template <typename FSetup>
+        LambdaPass<FSetup, FRecordDefault, FSkipDefault>* CreateTransitionPass(
+            StringView name,
+            RHIDeviceQueueType queue,
+            FSetup&& setup
+        )
+        {
+            auto* pass = CreatePassImpl<LambdaPass<FSetup, FRecordDefault, FSkipDefault>>(
+                name, queue,
+                std::forward<FSetup>(setup),
+                FRecordDefault{},
+                FSkipDefault{}
+            );
+            // Flag as always producing to ensure it is never culled
+            m_setup->trackedPasses.back().always_produces = true;
+            return pass;
         }
         /**
          * @brief Create a new resource to be used in the render graph.
@@ -349,6 +373,33 @@ namespace Foundation::Rendering {
         void BindVertexInput(
             PassHandle pass,
             RHIPipelineState::PipelineStateDesc::VertexInput const& info
+        ) const;
+        /**
+         * @brief Explicitly declares that this pass will access the buffer in the specified stage with the specified access.
+         *
+         * This is only available at Setup time.
+         *
+         * This does not bind the buffer to any shader - use BindBuffer...() for that.
+         * You should generally *ONLY* use this when performing e.g. @ref CreateTransitionPass
+         */
+        void DeclareBufferAccess(PassHandle pass, ResourceHandle buffer,
+            RHIPipelineStage stage,
+            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead
+        ) const;
+        /**
+         * @brief Declares that this pass will access the texture in the specified stage with the specified access.
+         *
+         * This is only available at Setup time.
+         *
+         * This does not bind the texture to any shader - use BindTexture...() for that.
+         * You should generally *ONLY* use this when performing e.g. @ref CreateTransitionPass
+         */
+        void DeclareTextureAccess(
+            PassHandle pass, ResourceHandle res,
+            RHIPipelineStage stage,
+            RHITextureSubresourceRange range = {},
+            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead,
+            RHITextureLayout layout = RHITextureLayout::ShaderReadOnly
         ) const;
         /**
          * @brief Binds a uniform buffer to a specified binding point in a rendering pass.
@@ -515,19 +566,18 @@ namespace Foundation::Rendering {
          */
         void EndSetup();
 #pragma endregion
-
 #pragma region Swapchain
         /**
          * @brief Get the current swapchain extents.
          */
-        [[nodiscard]] inline RHIExtent2D GetSwapchainExtent() const {
+        [[nodiscard]] RHIExtent2D GetSwapchainExtent() const {
             CHECK(m_swapchain && "Swapchain not initialized");
             return m_swapchain->m_desc.extents;
         }
         /**
         * @brief Get the current swapchain extents as a 3D extent with depth 1.
         */
-        [[nodiscard]] inline RHIExtent3D GetSwapchainExtent3D() const {
+        [[nodiscard]] RHIExtent3D GetSwapchainExtent3D() const {
             CHECK(m_swapchain && "Swapchain not initialized");
             auto xy = m_swapchain->m_desc.extents;
             return { xy.x,xy.y,1 };
@@ -538,8 +588,12 @@ namespace Foundation::Rendering {
          * @brief Dereference a resource handle to its underlying RHI resource.
          *
          * This should only be called inside a pass's Record() function, or after EndSetup().
+         *
+         * @note Passes that use DerefResource() on a resource that was not declared with
+         * Bind...() or Declare...() in the pass *may* be allowed, but the behaviour is undefined as
+         * the transitions will then not be tracked.
          */
-        [[nodiscard]] inline Variant<RHIBuffer*, RHITexture*> DerefResource(const ResourceHandle handle) const
+        [[nodiscard]] Variant<RHIBuffer*, RHITexture*> DerefResource(const ResourceHandle handle) const
         {
             CHECK(m_resources && handle < m_resources->resources.size());
             using Tv = Variant<RHIBuffer*, RHITexture*>;
@@ -553,7 +607,7 @@ namespace Foundation::Rendering {
          *
          * This should only be called inside a pass's Record() function, or after EndSetup().
          */
-        [[nodiscard]] inline RHITextureView* DerefTextureView(const ResourceHandle handle) const
+        [[nodiscard]] RHITextureView* DerefTextureView(const ResourceHandle handle) const
         {
             CHECK(m_resources && handle < m_resources->views.size());
             using Tv = RHITextureView*;
@@ -564,7 +618,7 @@ namespace Foundation::Rendering {
          *
          * This should only be called inside a pass's Record() function, or after EndSetup().
          */
-        [[nodiscard]] inline RHIDeviceSampler* DerefSampler(const ResourceHandle handle) const
+        [[nodiscard]] RHIDeviceSampler* DerefSampler(const ResourceHandle handle) const
         {
             CHECK(m_setup && handle < m_setup->trackedSamplers.size());
             return m_resources->samplers[handle].Get();
@@ -572,7 +626,7 @@ namespace Foundation::Rendering {
         /**
          * @brief Dereference the automatically built pipeline state object handle associated with a given pass.
          */
-        [[nodiscard]] inline RHIPipelineState* DerefPipelineState(const PassHandle pass) const
+        [[nodiscard]] RHIPipelineState* DerefPipelineState(const PassHandle pass) const
         {
             CHECK(m_setup && pass < m_setup->trackedPasses.size());
             auto& tpass = m_setup->trackedPasses[pass];
@@ -581,7 +635,7 @@ namespace Foundation::Rendering {
         /**
          * @brief Dereference the built descriptor sets associated with a given pass
          */
-        [[nodiscard]] inline Vector<RHIDeviceDescriptorSet*> const& DerefDescriptorSets(const PassHandle pass) const
+        [[nodiscard]] Vector<RHIDeviceDescriptorSet*> const& DerefDescriptorSets(const PassHandle pass) const
         {
             CHECK(m_setup && pass < m_setup->trackedPasses.size());
             auto& tpass = m_setup->trackedPasses[pass];
@@ -592,7 +646,7 @@ namespace Foundation::Rendering {
          *
          * The pass must have declared BindBackbufferRTV() during setup.
          */
-        [[nodiscard]] inline RHITextureView* DerefCurrentBackbufferView(const PassHandle pass) const
+        [[nodiscard]] RHITextureView* DerefCurrentBackbufferView(const PassHandle pass) const
         {
             CHECK(m_state == State::Execute);
             auto& tpass = m_setup->trackedPasses[pass];            
@@ -600,7 +654,6 @@ namespace Foundation::Rendering {
             return m_swaps[m_currentSwap].rtv.Get();
         }        
 #pragma endregion
-
 #pragma region Command Recording Helpers
         /**
          * @brief Helper that retrieves the local size declared by a compute pass.
@@ -650,41 +703,111 @@ namespace Foundation::Rendering {
          * @brief Helper that sets a Push Constant range data with a single l-value.
          * @note A valid @ref CmdSetPipeline call MUST be made before this, or the behaviour is undefined.
          */
-        template<typename T> inline void CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, RHIShaderStage stage, size_t offset, T const& data) {
+        template<typename T> void CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, RHIShaderStage stage, size_t offset, T const& data) {
             CHECK(m_state == State::Execute);
             auto& tpass = m_setup->trackedPasses[pass];
             cmd->PushConstant(tpass.pso.Get(), stage, static_cast<uint32_t>(offset), { reinterpret_cast<const char*>(&data), sizeof(T) });
         }
 #pragma endregion
-
 #pragma region Debugging
         [[nodiscard]] String DbgDumpGraphviz() const;
         [[nodiscard]] String DbgDumpActivePasses() const;
         [[nodiscard]] String DbgDumpExecutionGroups() const;
 #pragma endregion
+#pragma region Frame Execution
         /**
          * @brief Retrieves the current state of the renderer.
          */
         [[nodiscard]] State GetState() const { return m_state; }
         /**
-         * @brief Retrieves the current frame index.
+         * @brief Get the number of frames that can be simultaneously in-flight.
+         */
+        [[nodiscard]] uint32_t GetFrameSwaps() const { return m_frameSwaps; }
+        /**
+         * @brief Retrieves the current frame number.
          *
-         * This value is monotonically increasing every time Execute() is called,
+         * This value is monotonically increasing every time @ref EndExecute() is called,
          * and starts from 0.
          */
         [[nodiscard]] uint64_t GetFrame() const { return m_frame; }
         /**
-         * @brief Update the swapchain to a new one.
+         * @brief Retrieves the current swap index at the time of @ref ExecuteFrame().
          *
+         * This value is associated with the current frame in flight.
+         * It's guaranteed to be less than @ref GetFrameSwaps(), and starts from 0.
+         *
+         * This value is updated at @ref BeginExecute(), and remains
+         * the same until the next @ref BeginExecute() call.
+         */
+        [[nodiscard]] uint32_t GetSwap() const { return m_currentSwap; }
+        /**
+         * @brief Retrieves the current synchronization index.
+         *
+         * This value is associated with the current synchronization primitives at the current time.
+         * It's guaranteed to be less than @ref GetFrameSwaps(), and starts from 0.
+         *
+         * @note Values this returns can be used to index into per-swap resources,
+         * and is guaranteed to be not used by the GPU with values acquired
+         * after @ref BeginExecute(), and before @ref EndExecute().
+         *
+         * This value is updated at @ref BeginExecute(), and remains
+         * the same until the next @ref BeginExecute() call.
+         */
+        [[nodiscard]] uint64_t GetSync() const { return m_currentSync; }
+        /**
+         * @brief Returns whether async compute is enabled.
+         *
+         * If this returns false, all passes will be executed on the graphics queue,
+         * and any queue hints passed during pass creation will be ignored.
+         */
+        [[nodiscard]] bool IsAsyncComputeEnabled() const { return m_desc.async; }
+        /**
+         * @brief Returns whether the swapchain is enabled.
+         *
+         * If this returns false, no backbuffer will be acquired or presented,
+         * and any passes that write to the backbuffer will throw at EndSetup() time.
+         */
+        [[nodiscard]] bool IsPresentEnabled() const { return m_desc.present; }
+        /**
+         * @brief Update the swapchain to a new one.
          * You must call this when the window is resized or the swapchain is invalidated.
          *
-         * This call will block if pending GPU work exists.
+         * @note This call will block if pending GPU work exists.
          */
         void SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain);
         /**
-         * @brief Run the frame. Go!
+        * @brief Resets the temporary execution allocator , and waits for the possibly multi-buffered
+        * next frame to finish rendering.
+        *
+        * See also @ref GetSync(), @ref GetSwap()
+        *
+        * @note This MUST be called before entering Execute* functions.
+        */
+        void BeginExecute();
+        /**
+         * @brief Executes all passes in the render graph for one frame.
+         *
+         * This includes recording command lists, submitting them to the appropriate queues,
+         * and presenting the swapchain if enabled.
+         *
+         * @note This MUST be called after BeginExecuteImpl(), and before EndExecuteImpl().
+         *
+         * @code{.cpp}
+         *  // With the above Execute... functions, a correct usage may look like this:
+         *  BeginExecute();
+         *  // ...Additional pre-frame logic...
+         *  ExecuteFrame();
+         *  // ...Additional post-frame logic...
+         *  EndExecute();
+         *  @endcode
          */
-        void Execute() { return ExecuteFrame(); }
+        void ExecuteFrame();
+        /**
+         * @brief Ends the execution phase, and prepares for the next frame.
+         * @note This MUST be called after ExecuteFrame(), and before BeginExecuteImpl() of the next frame.
+         */
+        void EndExecute();
+#pragma endregion
     };
     /* Functional Helpers */
     /**
@@ -741,6 +864,25 @@ namespace Foundation::Rendering {
             std::forward<FSetup>(setup),
             std::forward<FRecord>(record),
             std::forward<FSkip>(skip)
+        );
+    }
+    /**
+     * @brief Convenient functional wrapper to create a pass that only performs resource transitions in Setup().
+     *
+     * This is equivalent to calling @ref Renderer::CreateTransitionPass
+     *
+     * @param queue Queue to prefer running this pass in. You should generally use RHIDeviceQueueType::Graphics
+     * here.
+     * @param setup Lambda of type `void(PassHandle self, Renderer*)` called at Setup time.
+     */
+    template <typename FSetup>
+    LambdaPass<FSetup, FRecordDefault, FSkipDefault>* createTransitionPass(
+        Renderer* r, StringView name, RHIDeviceQueueType queue,
+        FSetup&& setup
+    ) {
+        return r->CreateTransitionPass(
+            name, queue,
+            std::forward<FSetup>(setup)
         );
     }
 
