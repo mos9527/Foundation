@@ -87,7 +87,7 @@ public:
         m_sceneIndex = m_scene->CreateIndexDataUpdate(m_renderer.get(), "Scene Index Data Update", RHIDeviceQueueType::Graphics);
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect
-        createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Compute,
+        createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Graphics,
             [=, this](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "resetCounter", "data/shaders/MVClearCounters.spv");
@@ -123,6 +123,7 @@ public:
                 r->BindBufferStorage(self, m_sceneIndex, RHIPipelineStageBits::VertexShader, "indices");
                 r->BindBufferStorage(self, m_indirectCommands, RHIPipelineStageBits::DrawIndirect | RHIPipelineStageBits::AllGraphics, "commands");
                 r->BindBufferStorage(self, m_sceneInstance, RHIPipelineStageBits::AllGraphics, "scInstance");
+                r->BindBufferShaderRead(self, m_counter, RHIPipelineStageBits::AllGraphics);
                 r->BindVertexInput(self, {.bindings = {{{.stride = sizeof(Vertex)}}}, .attributes = Attributes});
                 r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, sizeof(DrawPushConstant));
                 r->BindBackbufferRTV(self);

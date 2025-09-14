@@ -46,8 +46,7 @@ namespace Foundation::Rendering {
             name,
             [=](PassHandle self, Renderer* r) {
                 r->BindTextureSampler(self, copy_sampler, "sampler");
-                // NOTE: Binding to CS bit is intentional to avoid layout transition issues
-                r->BindTextureSRV(self, copy_source, "srcTexture", RHIPipelineStageBits::ComputeShader, {
+                r->BindTextureSRV(self, copy_source, "srcTexture", RHIPipelineStageBits::FragmentShader, {
                     .format = RHIResourceFormat::R8G8B8A8_UNORM,
                     .range = RHITextureSubresourceRange::Create()
                 });

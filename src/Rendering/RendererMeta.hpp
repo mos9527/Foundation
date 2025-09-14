@@ -27,8 +27,12 @@ namespace Foundation::Rendering
         // See Also: https://www.reddit.com/r/vulkan/comments/v2mswb/global_memory_barriers_vs_bufferimage_memory/
         // TODO: Investigate
         struct BufferState {
-            // Last pass to write to this subresource
+            // Last pass to write at Setup time
             PassHandle producer{ kInvalidHandle };
+            // Last pass to transition at Execute time
+            PassHandle lastExecutor{ kInvalidHandle };
+            // Last frame the transition was executed
+            size_t lastExecuteFrame{ 0 };
             RHIResourceAccess access{};
             RHIPipelineStage stage{};
             void reset() {
@@ -44,8 +48,12 @@ namespace Foundation::Rendering
             size_t layer{ 0 }, mip{ 0 };
             RHITextureAspectFlagBits aspect{};
             /* -- states -- */
-            // Last pass to write to this subresource
+            // Last pass to write at Setup time
             PassHandle producer{ kInvalidHandle };
+            // Last pass to transition at Execute time
+            PassHandle lastExecutor{ kInvalidHandle };
+            // Last frame the transition was executed
+            size_t lastExecuteFrame{ 0 };
             RHIResourceAccess access{};
             RHIPipelineStage stage{};
             RHITextureLayout layout{};
@@ -91,6 +99,10 @@ namespace Foundation::Rendering
         // Uses compute shader? (not necessarily in a compute queue)
         // Should be mutually exclusive with write_backbuffer and other graphics states
         bool compute_pass{ false };
+        // Always be treated as a producer of the associated resources,
+        // even when the access don't indicate writes.
+        // Currently, this is only used for @ref Renderer::CreateTransitionPass
+        bool always_produces{false};
         // Local size for compute shaders
         Tuple<uint32_t, uint32_t, uint32_t> compute_local_size{};
         size_t depth{}; // Depth in RG

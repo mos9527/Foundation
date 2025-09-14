@@ -11,7 +11,7 @@
                 "variable": "LD_PRELOAD"
             }
         ],
-        "executable": "/home/mos9527/Foundation/cmake-build-debug/bin/ModelViewer",
+        "executable": "/home/mos9527/Foundation/cmake-build-debug/bin/Example_MandelbrotCompute",
         "inject": false,
         "numQueuedFrames": 0,
         "options": {

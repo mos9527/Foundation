@@ -46,7 +46,14 @@ namespace Foundation::Rendering {
         virtual bool IsSkipped(PassHandle self, Renderer* r) const { return false; }
     };
     /**
-     * @brief Default "not skipped" functor
+     * @brief Default "no-op" functor for Record()
+     */
+    struct FRecordDefault
+    {
+        void operator()(PassHandle, Renderer*, RHICommandList*) const { /* nop */ }
+    };
+    /**
+     * @brief Default "not skipped" functor for IsSkipped()
      */
     struct FSkipDefault {
         bool operator()(PassHandle, Renderer*) const { return false; }

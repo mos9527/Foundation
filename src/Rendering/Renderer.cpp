@@ -6,6 +6,7 @@
 
 #include <Math/Math.hpp>
 #include <RHICore/Device.hpp>
+#include <RHICore/Application.hpp>
 
 #include "Renderer.hpp"
 #include "ShaderReflection.hpp"
@@ -13,7 +14,7 @@
 using namespace Foundation::Core;
 using namespace Foundation::Rendering;
 // Per-frame Semaphore counter
-#define SEM_COUNTER(size, ord) (m_frame * size + ord + 1LL)
+#define SEM_COUNTER(size, ord) ((m_frame + 1) * size + ord)
 #define SEM_COUNTER_PREV(size, ord) (m_frame * size + ord)
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator)
     : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_swaps(m_allocator),
@@ -74,7 +75,7 @@ void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPi
     if (resource.lastBufferState.producer != kInvalidHandle)
         m_setup->add_edge(pass, resource.lastBufferState.producer, handle);
     // Set producer
-    if (access & kAllShaderWrites)
+    if (access & kAllShaderWrites || (pass != kInvalidHandle && m_setup->trackedPasses[pass].always_produces))
         resource.lastBufferState.producer = pass;
     m_setup->trackedPasses[pass].bufferUsages.emplace_back(handle, access, stage);
     m_setup->trackedPasses[pass].resources.emplace_back(handle);
@@ -109,7 +110,7 @@ void Renderer::DeclareTextureAccess(
         if (sta.producer != kInvalidHandle)
             m_setup->add_edge(pass, sta.producer, handle);
         // Set producer
-        if (access & kAllShaderWrites)
+        if (access & kAllShaderWrites || (pass != kInvalidHandle && m_setup->trackedPasses[pass].always_produces))
             sta.producer = pass;
     }
     m_setup->trackedPasses[pass].textureUsages.emplace_back(handle, access, stage, range, layout);
@@ -427,9 +428,9 @@ void Renderer::CullPasses(PassHandle epilogue) const
         // Collect dependencies
         for (auto pass : exec_group.back().passes) {
             auto& tpass = m_setup->trackedPasses[pass];
+            tpass.group_index = group.group_index;
             group.dependencies.insert(group.dependencies.end(), tpass.resources.begin(), tpass.resources.end());
             group.all_stages |= tpass.pass_stages;
-            group.singal_ord = std::max(group.singal_ord, tpass.ord);
         }
         // Sort and unique
         std::ranges::sort(group.dependencies);
@@ -890,17 +891,17 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
     m_currentSync = 0;
 }
 void Renderer::ExecuteCheckResourceStates(Span<PassHandle> passes, RHIDeviceQueueType currentQueue,
-                                                        Vector<size_t>* outCrossQueueGroups)
+                                                        Vector<Pair<size_t,bool>>* outGroups)
 {
-    if (outCrossQueueGroups)
-        outCrossQueueGroups->clear();
-    auto PushProducer = [&](PassHandle handle)
+    if (outGroups)
+        outGroups->clear();
+    auto PushProducerGroup = [&](PassHandle handle, size_t lastFrame)
     {
         if (handle == kInvalidHandle)
             return;
         auto& pass = m_setup->trackedPasses[handle];
-        if (outCrossQueueGroups)
-            outCrossQueueGroups->emplace_back(pass.group_index);
+        if (outGroups)
+            outGroups->emplace_back(pass.group_index, lastFrame != m_frame);
     };
     auto CheckTransition = [&](StringView name, RHIPipelineStage stage){
         if (currentQueue == RHIDeviceQueueType::Compute)
@@ -909,15 +910,13 @@ void Renderer::ExecuteCheckResourceStates(Span<PassHandle> passes, RHIDeviceQueu
     for (auto pass_handle : passes)
     {
         auto const& pass = m_setup->trackedPasses[pass_handle];
-        if (outCrossQueueGroups && pass.queue != currentQueue)
-            outCrossQueueGroups->emplace_back(pass.group_index);
         for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
         {
             auto& tres = m_setup->trackedResources[hdl];
             for (auto const& sta : tres.GetLastSubresourceStateOf(range))
             {
                 CheckTransition(tres.name, sta.stage);
-                PushProducer(sta.producer);
+                PushProducerGroup(sta.lastExecutor, sta.lastExecuteFrame);
             }
         }
         if (pass.write_backbuffer)
@@ -926,14 +925,14 @@ void Renderer::ExecuteCheckResourceStates(Span<PassHandle> passes, RHIDeviceQueu
         {
             auto& tres = m_setup->trackedResources[hdl];
             CheckTransition(tres.name, tres.lastBufferState.stage);
-            PushProducer(tres.lastBufferState.producer);
+            PushProducerGroup(tres.lastBufferState.lastExecutor, tres.lastBufferState.lastExecuteFrame);
         }
     }
     // Sort and unique cross-queue groups
-    if (outCrossQueueGroups && !outCrossQueueGroups->empty())
+    if (outGroups && !outGroups->empty())
     {
-        std::ranges::sort(*outCrossQueueGroups);
-        outCrossQueueGroups->erase(std::ranges::unique(*outCrossQueueGroups).begin(), outCrossQueueGroups->end());
+        std::ranges::sort(*outGroups);
+        outGroups->erase(std::ranges::unique(*outGroups).begin(), outGroups->end());
     }
 }
 void Renderer::BeginExecute()
@@ -977,8 +976,8 @@ void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
         sta.access = access;
         sta.stage = stage;
         sta.layout = layout;
-        if (access & kAllShaderWrites)
-            sta.producer = pass;
+        sta.lastExecutor = pass;
+        sta.lastExecuteFrame = m_frame;
     }
     CHECK_MSG(any_range, "FIXME-ExecuteBarrierSubresource: Failed to match resource range on {}",tres.name);
 }
@@ -1000,8 +999,8 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
         );
     tres.lastBufferState.access = access;
     tres.lastBufferState.stage = stage;
-    if (access & kAllShaderWrites)
-        tres.lastBufferState.producer = pass;
+    tres.lastBufferState.lastExecutor = pass;
+    tres.lastBufferState.lastExecuteFrame = m_frame;
 }
 void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
 {
@@ -1060,23 +1059,21 @@ void Renderer::ExecuteFrame()
     // Execute by groups
     for (auto& group : m_setup->executionGroups)
     {
-        Vector<size_t> cross_queue_groups(m_executeAlloc.Ptr());
+        Vector<Pair<size_t, bool>> last_transitions(m_executeAlloc.Ptr());
 
         Vector<RHIDeviceQueue::TimelinePair> timeline_waits(m_executeAlloc.Ptr()), timeline_signals(m_executeAlloc.Ptr());
         Vector<RHIPipelineStage> waits_stages(m_executeAlloc.Ptr());
-
         const bool is_last = group.group_index == m_setup->executionGroups.size() - 1;
-        ExecuteCheckResourceStates(group.passes, group.queue, &cross_queue_groups);
+        ExecuteCheckResourceStates(group.passes, group.queue, &last_transitions);
         /* -- Wait Semaphores -- */
-        if (!cross_queue_groups.empty())
+        if (!last_transitions.empty())
         {
-            // This path should only be taken when async compute is enabled
-            for (auto const& cross_group_handle : cross_queue_groups)
+            for (auto const& [group_handle, previous_frame] : last_transitions)
             {
-                if (cross_group_handle == group.group_index)
+                if (group_handle == group.group_index)
                     continue;
-                auto& cross_group = m_setup->executionGroups[cross_group_handle];
-                if (cross_group.group_index < group.group_index)
+                auto& cross_group = m_setup->executionGroups[group_handle];
+                if (!previous_frame)
                     timeline_waits.emplace_back(cross_group.semaphore.Get(), SEM_COUNTER(m_setup->executionGroups.size(), cross_group.group_index)),
                     waits_stages.emplace_back(group.all_stages);
                 else /* On a previous frame */
