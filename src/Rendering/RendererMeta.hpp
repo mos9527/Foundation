@@ -33,6 +33,8 @@ namespace Foundation::Rendering
             PassHandle lastExecutor{ kInvalidHandle };
             // Last frame the transition was executed
             size_t lastExecuteFrame{ 0 };
+            // Last queue index this resource was owned by
+            uint32_t lastExecuteQueue{ ~0u };
             RHIResourceAccess access{};
             RHIPipelineStage stage{};
             void reset() {
@@ -54,6 +56,8 @@ namespace Foundation::Rendering
             PassHandle lastExecutor{ kInvalidHandle };
             // Last frame the transition was executed
             size_t lastExecuteFrame{ 0 };
+            // Last queue index this resource was owned by
+            uint32_t lastExecuteQueue{~0u};
             RHIResourceAccess access{};
             RHIPipelineStage stage{};
             RHITextureLayout layout{};

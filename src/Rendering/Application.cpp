@@ -27,7 +27,7 @@ void RenderApplication::CreateSwapchain() {
         .format = format,
         .extents = GetFramebufferSize(),
         .min_buffer_count = 3,
-        .present_mode = RHISwapchain::SwapchainDesc::PresentMode::MAILBOX,
+        .present_mode = RHISwapchain::SwapchainDesc::PresentMode::IMMEDIATE,
     });
 }
 void RenderApplication::InitializeRenderer() {

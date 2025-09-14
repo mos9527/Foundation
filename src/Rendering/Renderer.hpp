@@ -190,15 +190,18 @@ namespace Foundation::Rendering {
         /**
          * @brief Executes barriers for a subresource range of a texture
          */
-        void ExecuteBarrierSubresource(PassHandle pass, TrackedResource& res, RHITextureSubresourceRange const& range, RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd);
+        void ExecuteBarrierSubresource(PassHandle pass, TrackedResource& res, RHITextureSubresourceRange const& range,
+                                       RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout,
+                                       RHICommandList* cmd, uint32_t queueIndex);
         /**
          * @brief Executes barriers for a whole buffer
          */
-        void ExecuteBarrierBuffer(PassHandle pass, TrackedResource& res, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd);
+        void ExecuteBarrierBuffer(PassHandle pass, TrackedResource& res, RHIResourceAccess access,
+                                  RHIPipelineStage stage, RHICommandList* cmd, uint32_t queueIndex);
         /**
          * @brief Executes all barriers for a pass
          */
-        void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
+        void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd, uint32_t queueIndex);
         void SetFrameSyncObjects();
 
         RHIDeviceIdleGuard m_waitIdle; // Ensure device is idle on destruction

@@ -75,6 +75,8 @@ RHICommandList& VulkanCommandList::SetBufferTransition(RHIBuffer* image, Transit
         .srcAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.src_access),
         .dstStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.dst_stage),
         .dstAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.dst_access),
+        .srcQueueFamilyIndex = desc.src_queue_index,
+        .dstQueueFamilyIndex = desc.dst_queue_index,
         .buffer = *res->GetVkBuffer(),
         .offset = desc.src_buffer_offset,
         .size = desc.src_buffer_size == kFullSize ? VK_WHOLE_SIZE : desc.src_buffer_size
@@ -92,8 +94,8 @@ RHICommandList& VulkanCommandList::SetImageTransition(RHITexture* image, Transit
         .dstAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.dst_access),
         .oldLayout = vkImageLayoutFromRHITextureLayout(desc.src_img_layout),
         .newLayout = vkImageLayoutFromRHITextureLayout(desc.dst_img_layout),
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .srcQueueFamilyIndex = desc.src_queue_index,
+        .dstQueueFamilyIndex = desc.dst_queue_index,
         .image = *res->GetVkImage(),
         .subresourceRange = {
             .aspectMask = vkImageAspectFlagFromRHITextureAspect(desc.src_img_range.layer.aspect),

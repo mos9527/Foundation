@@ -149,8 +149,12 @@ public:
                 // niagara uses this - we'll make do with using an actual VB/IB for now
                 cmd->BindVertexBuffer(
                     0,
-                    {{{r->DerefResource(m_sceneVertex).Get<RHIBuffer*>()}}},
-                    {{{0}}})
+                    {{
+                        r->DerefResource(m_sceneVertex).Get<RHIBuffer*>()
+                    }},
+                    {{
+                        0
+                    }})
                     .BindIndexBuffer(
                         r->DerefResource(m_sceneIndex).Get<RHIBuffer*>(),
                         0,

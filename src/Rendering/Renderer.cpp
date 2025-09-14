@@ -951,14 +951,17 @@ void Renderer::BeginExecute()
         );
     m_device->ResetFences(wait_fences);
 }
-void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres, RHITextureSubresourceRange const& range,RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd)
+void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
+                                         RHITextureSubresourceRange const& range, RHIResourceAccess access,
+                                         RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd,
+                                         uint32_t queueIndex)
 {
     CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
     bool any_range = false;
     for (auto& sta : tres.GetLastSubresourceStateOf(range)) {
         any_range = true;
-        if (sta.access == access && sta.stage == stage && sta.layout == layout)
+        if (sta.access == access && sta.stage == stage && sta.layout == layout && sta.lastExecuteQueue == queueIndex)
             continue;
         cmd->DebugInsertMarker(tres.name.c_str());
         cmd->SetImageTransition(
@@ -970,7 +973,9 @@ void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
                 .dst_stage = stage,
                 .src_img_layout = sta.layout,
                 .dst_img_layout = layout,
-                .src_img_range = sta.ToRange()
+                .src_img_range = sta.ToRange(),
+                .src_queue_index = sta.lastExecuteQueue,
+                .dst_queue_index = queueIndex
             }
         );
         sta.access = access;
@@ -978,14 +983,16 @@ void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
         sta.layout = layout;
         sta.lastExecutor = pass;
         sta.lastExecuteFrame = m_frame;
+        sta.lastExecuteQueue = queueIndex;
     }
     CHECK_MSG(any_range, "FIXME-ExecuteBarrierSubresource: Failed to match resource range on {}",tres.name);
 }
-void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIResourceAccess access, RHIPipelineStage stage, RHICommandList* cmd)
+void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIResourceAccess access,
+                                    RHIPipelineStage stage, RHICommandList* cmd, uint32_t queueIndex)
 {
     CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     RHIBuffer* res = DerefResource(tres.handle).Get<RHIBuffer*>();
-    if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage)
+    if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage && tres.lastBufferState.lastExecuteQueue == queueIndex)
         return;
     cmd->DebugInsertMarker(tres.name.c_str());
     cmd->SetBufferTransition(
@@ -995,14 +1002,17 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
             .dst_access = access,
             .src_stage = tres.lastBufferState.stage,
             .dst_stage = stage,
+            .src_queue_index = tres.lastBufferState.lastExecuteQueue,
+            .dst_queue_index = queueIndex
         }
         );
     tres.lastBufferState.access = access;
     tres.lastBufferState.stage = stage;
     tres.lastBufferState.lastExecutor = pass;
     tres.lastBufferState.lastExecuteFrame = m_frame;
+    tres.lastBufferState.lastExecuteQueue = queueIndex;
 }
-void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
+void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd, uint32_t queueIndex)
 {
     CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     // At this point the pass execution order has been determined
@@ -1015,7 +1025,7 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
     // These are always disjoint ranges
     for (auto [hdl, access, stage, range, layout] : pass.textureUsages) {
         auto& tres = m_setup->trackedResources[hdl];
-        ExecuteBarrierSubresource(pass.handle, tres, range, access, stage, layout, cmd);
+        ExecuteBarrierSubresource(pass.handle, tres, range, access, stage, layout, cmd, queueIndex);
     }
     // Backbuffer
     // A special case with known usages.
@@ -1029,13 +1039,14 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
         const RHITextureLayout rt_layout = RHITextureLayout::RenderTarget;
         const RHIPipelineStage rt_stage = RHIPipelineStageBits::ColorAttachmentOutput;
         auto& tres = m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle];
-        ExecuteBarrierSubresource(pass.handle, tres, RHITextureSubresourceRange::Create(), rt_access, rt_stage, rt_layout, cmd);
+        ExecuteBarrierSubresource(pass.handle, tres, RHITextureSubresourceRange::Create(), rt_access, rt_stage,
+                                  rt_layout, cmd, queueIndex);
     }
     // Buffers
     // These are always global i.e. at most one per buffer per pass.
     for (auto [hdl, access, stage] : pass.bufferUsages) {
         auto& tres = m_setup->trackedResources[hdl];
-        ExecuteBarrierBuffer(pass.handle, tres, access, stage, cmd);
+        ExecuteBarrierBuffer(pass.handle, tres, access, stage, cmd, queueIndex);
     }
 }
 void Renderer::ExecuteFrame()
@@ -1103,7 +1114,7 @@ void Renderer::ExecuteFrame()
             cmd->DebugBegin(pass.name.c_str());
             cmd->DebugBegin("<Resource Barriers>");
             cmd->BeginTransition();
-            ExecuteBarriers(pass, cmd);
+            ExecuteBarriers(pass, cmd, kCommandQueueTransferIgnored);
             cmd->EndTransition();
             cmd->DebugEnd();
             // TODO: Only dealing with Record() here can easily introduce parallelism
@@ -1159,8 +1170,7 @@ void Renderer::ExecuteFrame()
                     RHITextureSubresourceRange::Create(),
                     {},
                     RHIPipelineStageBits::BottomOfPipe,
-                    RHITextureLayout::Present,
-                    cmd
+                    RHITextureLayout::Present, cmd, kCommandQueueTransferIgnored
                 );
                 cmd->EndTransition();
                 cmd->DebugEnd();

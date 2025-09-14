@@ -186,6 +186,7 @@ namespace Foundation::RHI {
         void WaitIdle() const override;
         void Submit(SubmitDesc const& desc) const override;
         void Present(PresentDesc const& desc) const override;
+        uint32_t GetQueueIndex() const override { return GetVkQueueIndex(); }
 
         void DebugSetObjectName(const char* name) override;
     };

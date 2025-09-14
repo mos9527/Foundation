@@ -28,6 +28,7 @@ namespace Foundation::RHI {
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };
+    const uint32_t kCommandQueueTransferIgnored = ~0u;
     class RHICommandList : public RHIObject {
     protected:
         const RHICommandPool& m_commandPool;
@@ -42,6 +43,8 @@ namespace Foundation::RHI {
             RHITextureSubresourceRange src_img_range{};
             // Buffer
             size_t src_buffer_offset = 0, src_buffer_size = kFullSize;
+            // Queue Transfer
+            uint32_t src_queue_index = kCommandQueueTransferIgnored, dst_queue_index = kCommandQueueTransferIgnored;
         };
         virtual RHICommandList& BeginTransition() = 0;
         virtual RHICommandList& SetBufferTransition(RHIBuffer* buffer, TransitionDesc const& desc) = 0;
