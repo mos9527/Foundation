@@ -88,7 +88,7 @@ namespace Foundation
         void EndTransfer();
     };
     ENUM_NAME_CONV_BEGIN(Scene::State)
-        case Idle: return "Idle";
-        case Transfer: return "Transfer";
+        ENUM_NAME(Idle)
+        ENUM_NAME(Transfer)
     ENUM_NAME_CONV_END()
 } // namespace Foundation

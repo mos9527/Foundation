@@ -67,12 +67,14 @@ namespace Foundation::RHI {
         Transient,
     };
     enum class RHIDeviceQueueType {
+        Undefined,
         Graphics,
         Compute,
         Transfer,
         Present
     };
     ENUM_NAME_CONV_BEGIN(RHIDeviceQueueType)
+        ENUM_NAME(Undefined)
         ENUM_NAME(Graphics)
         ENUM_NAME(Compute)
         ENUM_NAME(Transfer)

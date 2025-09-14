@@ -22,19 +22,6 @@ namespace Examples {
                 }
             );
             ResourceHandle sampler = createSampler(m_renderer.get(), {});
-            if (m_renderer->IsAsyncComputeEnabled())
-            {
-                // Necessary since after PS blit - the resource can't be transitioned away
-                // from the Fragment shader stage in Compute
-                createTransitionPass(m_renderer.get(), "Graphics to Compute", RHIDeviceQueueType::Graphics,
-                [=](PassHandle self, Renderer* r) {
-                    r->DeclareTextureAccess(self, buffer, RHIPipelineStageBits::ComputeShader,
-                        RHITextureSubresourceRange::Create(),
-                        RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
-                        RHITextureLayout::General
-                    );
-                });
-            }
             createPass(
                 m_renderer.get(), "Mandelbrot", RHIDeviceQueueType::Compute,
                 [=](PassHandle self, Renderer* r) {

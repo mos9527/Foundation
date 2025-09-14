@@ -141,13 +141,14 @@ namespace Foundation::Rendering {
 
                 RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> semaphore;
                 Vector<PassHandle> passes;
-                Vector<ResourceHandle> dependencies;
+                // Resources used in this group
+                Vector<ResourceHandle> resources;
                 bool is_last_graphics = false;
                 bool is_last_compute = false;
                 RHIShaderStage all_stages{}; // All stages used in this group
                 
                 ExecutionGroups(size_t group_index, RHIDeviceQueueType queue, Allocator* allocator) :
-                group_index(group_index), queue(queue), passes(allocator), dependencies(allocator) {}
+                group_index(group_index), queue(queue), passes(allocator), resources(allocator) {}
             };
             Vector<ExecutionGroups> executionGroups;
             bool executionAnyCompute{false}, executionAnyGraphics{false};
@@ -179,6 +180,20 @@ namespace Foundation::Rendering {
         // This is reset every frame, and only guaranteed to be valid during Execute state.
         StackAllocator m_executeAlloc;
         /**
+         * @breif Helper to get the queue index of a queue type
+         */
+        inline uint32_t ExecuteGetQueueIndex(RHIDeviceQueueType queue) const
+        {
+            switch (queue)
+            {
+            case RHIDeviceQueueType::Undefined: return kCommandQueueTransferIgnored;
+            case RHIDeviceQueueType::Graphics: return m_graphicsQueue->GetQueueIndex();
+            case RHIDeviceQueueType::Compute: return m_computeQueue->GetQueueIndex();
+            default:
+                throw std::runtime_error("Unhandled queue type");
+            }
+        };
+        /**
          * @param outGroups Groups need to sync with, [group index, from previous frame]
          * @note Throws if currentQueue can't be used to transition some resources
          */
@@ -192,18 +207,51 @@ namespace Foundation::Rendering {
          */
         void ExecuteBarrierSubresource(PassHandle pass, TrackedResource& res, RHITextureSubresourceRange const& range,
                                        RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout,
-                                       RHICommandList* cmd, uint32_t queueIndex);
+                                       RHICommandList* cmd);
         /**
          * @brief Executes barriers for a whole buffer
          */
         void ExecuteBarrierBuffer(PassHandle pass, TrackedResource& res, RHIResourceAccess access,
-                                  RHIPipelineStage stage, RHICommandList* cmd, uint32_t queueIndex);
+                                  RHIPipelineStage stage, RHICommandList* cmd);
         /**
          * @brief Executes all barriers for a pass
          */
-        void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd, uint32_t queueIndex);
+        void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
+        /**
+         * @breif Acquires resources for the current group.
+         */
+        void ExecuteAcquireQueueResources(RHIDeviceQueueType currentQueue, size_t groupIndex, RHICommandList* cmd);
+        /**
+         * @breif Performs transitions that's otherwise impossible
+         * (e.g. Fragment -> Compute) for the next group, and releases resources for the current group.
+         */
+        void ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, size_t groupIndex, RHICommandList* cmd);
         void SetFrameSyncObjects();
-
+        /**
+         * @brief Explicitly declares that this pass will access the buffer in the specified stage with the specified access.
+         *
+         * This is only available at Setup time.
+         *
+         * This does not bind the buffer to any shader - use BindBuffer...() for that.
+         */
+        void DeclareBufferAccess(PassHandle pass, ResourceHandle buffer,
+            RHIPipelineStage stage,
+            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead
+        ) const;
+        /**
+         * @brief Declares that this pass will access the texture in the specified stage with the specified access.
+         *
+         * This is only available at Setup time.
+         *
+         * This does not bind the texture to any shader - use BindTexture...() for that.
+         */
+        void DeclareTextureAccess(
+            PassHandle pass, ResourceHandle res,
+            RHIPipelineStage stage,
+            RHITextureSubresourceRange range = {},
+            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead,
+            RHITextureLayout layout = RHITextureLayout::ShaderReadOnly
+        ) const;
         RHIDeviceIdleGuard m_waitIdle; // Ensure device is idle on destruction
     public:
         Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain,  Allocator* allocator);
@@ -271,36 +319,6 @@ namespace Foundation::Rendering {
                 std::forward<FRecord>(record),
                 std::forward<FSkip>(skip)
             );
-        }
-        /**
-         * @brief Create a render pass that only performs resource transitions in its Setup function.
-         *
-         * This is generally not needed, as resource transitions are automatically handled by the render graph.
-         * However, with Async Compute enabled there might be cases where the resource transitioned into
-         * a stage where it's impossible to automatically transition it out of in Compute.
-         *
-         * Use this to perform explicit transitions in such cases.
-         *
-         * @param queue Queue to prefer running this pass in. You should generally use RHIDeviceQueueType::Graphics
-         * here.
-         * @param setup Lambda of type `void(PassHandle self, Renderer*)` called at Setup time.
-         */
-        template <typename FSetup>
-        LambdaPass<FSetup, FRecordDefault, FSkipDefault>* CreateTransitionPass(
-            StringView name,
-            RHIDeviceQueueType queue,
-            FSetup&& setup
-        )
-        {
-            auto* pass = CreatePassImpl<LambdaPass<FSetup, FRecordDefault, FSkipDefault>>(
-                name, queue,
-                std::forward<FSetup>(setup),
-                FRecordDefault{},
-                FSkipDefault{}
-            );
-            // Flag as always producing to ensure it is never culled
-            m_setup->trackedPasses.back().always_produces = true;
-            return pass;
         }
         /**
          * @brief Create a new resource to be used in the render graph.
@@ -376,33 +394,6 @@ namespace Foundation::Rendering {
         void BindVertexInput(
             PassHandle pass,
             RHIPipelineState::PipelineStateDesc::VertexInput const& info
-        ) const;
-        /**
-         * @brief Explicitly declares that this pass will access the buffer in the specified stage with the specified access.
-         *
-         * This is only available at Setup time.
-         *
-         * This does not bind the buffer to any shader - use BindBuffer...() for that.
-         * You should generally *ONLY* use this when performing e.g. @ref CreateTransitionPass
-         */
-        void DeclareBufferAccess(PassHandle pass, ResourceHandle buffer,
-            RHIPipelineStage stage,
-            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead
-        ) const;
-        /**
-         * @brief Declares that this pass will access the texture in the specified stage with the specified access.
-         *
-         * This is only available at Setup time.
-         *
-         * This does not bind the texture to any shader - use BindTexture...() for that.
-         * You should generally *ONLY* use this when performing e.g. @ref CreateTransitionPass
-         */
-        void DeclareTextureAccess(
-            PassHandle pass, ResourceHandle res,
-            RHIPipelineStage stage,
-            RHITextureSubresourceRange range = {},
-            RHIResourceAccess access = RHIResourceAccessBits::ShaderRead,
-            RHITextureLayout layout = RHITextureLayout::ShaderReadOnly
         ) const;
         /**
          * @brief Binds a uniform buffer to a specified binding point in a rendering pass.
@@ -869,26 +860,6 @@ namespace Foundation::Rendering {
             std::forward<FSkip>(skip)
         );
     }
-    /**
-     * @brief Convenient functional wrapper to create a pass that only performs resource transitions in Setup().
-     *
-     * This is equivalent to calling @ref Renderer::CreateTransitionPass
-     *
-     * @param queue Queue to prefer running this pass in. You should generally use RHIDeviceQueueType::Graphics
-     * here.
-     * @param setup Lambda of type `void(PassHandle self, Renderer*)` called at Setup time.
-     */
-    template <typename FSetup>
-    LambdaPass<FSetup, FRecordDefault, FSkipDefault>* createTransitionPass(
-        Renderer* r, StringView name, RHIDeviceQueueType queue,
-        FSetup&& setup
-    ) {
-        return r->CreateTransitionPass(
-            name, queue,
-            std::forward<FSetup>(setup)
-        );
-    }
-
     ENUM_NAME_CONV_BEGIN(Renderer::State)
         case Undefined: return "Undefined";
         case Setup: return "Setup";

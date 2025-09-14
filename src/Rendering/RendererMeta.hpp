@@ -11,7 +11,6 @@ namespace Foundation::Rendering
 {
     extern const char* kShaderDescriptorFirstBindingErrorHelp;
     extern const char* kShaderDescriptorFirstSetErrorHelp;
-    extern const char* kAsyncComputeComputeTransitionCompatErrorHelp;
     const size_t kTextureAspectCount = 3; // Color, depth, stencil @ref RHITextureAspectFlag
     /**
      * @brief Internal tracking information for a resource in the frame graph.
@@ -33,8 +32,8 @@ namespace Foundation::Rendering
             PassHandle lastExecutor{ kInvalidHandle };
             // Last frame the transition was executed
             size_t lastExecuteFrame{ 0 };
-            // Last queue index this resource was owned by
-            uint32_t lastExecuteQueue{ ~0u };
+            // Last queue this resource is owned by
+            RHIDeviceQueueType lastOwnerQueue{ RHIDeviceQueueType::Undefined };
             RHIResourceAccess access{};
             RHIPipelineStage stage{};
             void reset() {
@@ -56,8 +55,8 @@ namespace Foundation::Rendering
             PassHandle lastExecutor{ kInvalidHandle };
             // Last frame the transition was executed
             size_t lastExecuteFrame{ 0 };
-            // Last queue index this resource was owned by
-            uint32_t lastExecuteQueue{~0u};
+            // Last queue this resource is owned by
+            RHIDeviceQueueType lastOwnerQueue{};
             RHIResourceAccess access{};
             RHIPipelineStage stage{};
             RHITextureLayout layout{};
@@ -86,7 +85,12 @@ namespace Foundation::Rendering
                     return (RHITextureAspectFlag(state.aspect) & range.layer.aspect) && state.mip >= mip_begin && state.mip <= mip_end && state.layer >= layer_begin && state.layer <= layer_end;
                 });
         }
-        TrackedResource(const ResourceHandle handle, StringView name, const ResourceDefinition& resourceDesc, Allocator* alloc);
+        TrackedResource(
+            const ResourceHandle handle,
+            StringView name,
+            const ResourceDefinition& resourceDesc,
+            Allocator* alloc
+        );
     };
     /**
      * @brief Internal tracking information for a render pass in the frame graph.

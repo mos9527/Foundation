@@ -10,12 +10,6 @@ namespace Foundation::Rendering
 
     const char* kShaderDescriptorFirstSetErrorHelp = kShaderDescriptorFirstBindingErrorHelp;
 
-    const char* kAsyncComputeComputeTransitionCompatErrorHelp = "You can remedy this by:\n"
-    "   -  Use CreateTransitionPass before this pass\n"
-    "   - Using a Graphics queue instead of Compute queue on this pass.\n"
-    "Async compute is only beneficial if the compute work is significant enough "
-    "to justify the overhead of synchronization. Use at discretion!";
-
     RHITextureSubresourceRange TrackedResource::SubresourceState::ToRange() const
     {
         {
@@ -31,8 +25,7 @@ namespace Foundation::Rendering
         }
     }
 
-    TrackedResource::TrackedResource(const ResourceHandle handle, StringView name,
-      const ResourceDefinition& resourceDesc, Allocator* alloc)
+    TrackedResource::TrackedResource(const ResourceHandle handle, StringView name, const ResourceDefinition& resourceDesc, Allocator* alloc)
     : handle(handle), name(name), desc(resourceDesc), lastSubresourceStates(alloc) {
         // Init texture tracking states
         auto update_texture_desc = [&](RHITextureDesc const& desc) {

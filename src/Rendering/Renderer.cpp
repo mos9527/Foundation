@@ -429,12 +429,12 @@ void Renderer::CullPasses(PassHandle epilogue) const
         for (auto pass : exec_group.back().passes) {
             auto& tpass = m_setup->trackedPasses[pass];
             tpass.group_index = group.group_index;
-            group.dependencies.insert(group.dependencies.end(), tpass.resources.begin(), tpass.resources.end());
+            group.resources.insert(group.resources.end(), tpass.resources.begin(), tpass.resources.end());
             group.all_stages |= tpass.pass_stages;
         }
         // Sort and unique
-        std::ranges::sort(group.dependencies);
-        group.dependencies.erase(std::ranges::unique(group.dependencies).begin(), group.dependencies.end());
+        std::ranges::sort(group.resources);
+        group.resources.erase(std::ranges::unique(group.resources).begin(), group.resources.end());
         group.semaphore = m_device->CreateSemaphore(true /* timeline */);
         group.semaphore->DebugSetObjectName(
             fmt::format("RG Exec Semaphore Group {} Queue {}", group.group_index, group.queue
@@ -905,7 +905,7 @@ void Renderer::ExecuteCheckResourceStates(Span<PassHandle> passes, RHIDeviceQueu
     };
     auto CheckTransition = [&](StringView name, RHIPipelineStage stage){
         if (currentQueue == RHIDeviceQueueType::Compute)
-            CHECK_MSG(!(stage & kComputeStagesMask), "Transition incompatible on resource {}.\n{}", name, kAsyncComputeComputeTransitionCompatErrorHelp);
+            CHECK_MSG(!(stage & kComputeStagesMask), "FIXME-Transition: Barrier incompatible on resource {}", name);
     };
     for (auto pass_handle : passes)
     {
@@ -953,17 +953,16 @@ void Renderer::BeginExecute()
 }
 void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
                                          RHITextureSubresourceRange const& range, RHIResourceAccess access,
-                                         RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd,
-                                         uint32_t queueIndex)
+                                         RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd)
 {
     CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
     bool any_range = false;
+    cmd->DebugBegin(tres.name.c_str());
     for (auto& sta : tres.GetLastSubresourceStateOf(range)) {
         any_range = true;
-        if (sta.access == access && sta.stage == stage && sta.layout == layout && sta.lastExecuteQueue == queueIndex)
+        if (sta.access == access && sta.stage == stage && sta.layout == layout)
             continue;
-        cmd->DebugInsertMarker(tres.name.c_str());
         cmd->SetImageTransition(
             res,
             {
@@ -974,8 +973,6 @@ void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
                 .src_img_layout = sta.layout,
                 .dst_img_layout = layout,
                 .src_img_range = sta.ToRange(),
-                .src_queue_index = sta.lastExecuteQueue,
-                .dst_queue_index = queueIndex
             }
         );
         sta.access = access;
@@ -983,18 +980,18 @@ void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
         sta.layout = layout;
         sta.lastExecutor = pass;
         sta.lastExecuteFrame = m_frame;
-        sta.lastExecuteQueue = queueIndex;
     }
+    cmd->DebugEnd();
     CHECK_MSG(any_range, "FIXME-ExecuteBarrierSubresource: Failed to match resource range on {}",tres.name);
 }
 void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIResourceAccess access,
-                                    RHIPipelineStage stage, RHICommandList* cmd, uint32_t queueIndex)
+                                    RHIPipelineStage stage, RHICommandList* cmd)
 {
     CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     RHIBuffer* res = DerefResource(tres.handle).Get<RHIBuffer*>();
-    if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage && tres.lastBufferState.lastExecuteQueue == queueIndex)
+    if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage)
         return;
-    cmd->DebugInsertMarker(tres.name.c_str());
+    cmd->DebugBegin(tres.name.c_str());
     cmd->SetBufferTransition(
         res,
         {
@@ -1002,30 +999,27 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
             .dst_access = access,
             .src_stage = tres.lastBufferState.stage,
             .dst_stage = stage,
-            .src_queue_index = tres.lastBufferState.lastExecuteQueue,
-            .dst_queue_index = queueIndex
         }
         );
+    cmd->DebugEnd();
     tres.lastBufferState.access = access;
     tres.lastBufferState.stage = stage;
     tres.lastBufferState.lastExecutor = pass;
     tres.lastBufferState.lastExecuteFrame = m_frame;
-    tres.lastBufferState.lastExecuteQueue = queueIndex;
 }
-void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd, uint32_t queueIndex)
+void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
 {
     CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     // At this point the pass execution order has been determined
     // (execution) and so are the resources' access patterns.
     // Minimal synchronization barriers would always be the most
     // optimal.
-    // Inter-queue synchronization is handled separately at SubmitPass
-    // where we wait on the producer pass's semaphore on the GPU
     // Textures
     // These are always disjoint ranges
-    for (auto [hdl, access, stage, range, layout] : pass.textureUsages) {
+    for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
+    {
         auto& tres = m_setup->trackedResources[hdl];
-        ExecuteBarrierSubresource(pass.handle, tres, range, access, stage, layout, cmd, queueIndex);
+        ExecuteBarrierSubresource(pass.handle, tres, range, access, stage, layout, cmd);
     }
     // Backbuffer
     // A special case with known usages.
@@ -1035,19 +1029,79 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd, uint32_t 
     // and should eliminate any redundant per-pass resource creation.
     if (pass.write_backbuffer)
     {
+        CHECK_MSG(pass.queue == RHIDeviceQueueType::Graphics, "Backbuffer can only be used in Graphics queue");
         const RHIResourceAccess rt_access = RHIResourceAccessBits::RenderTargetWrite;
         const RHITextureLayout rt_layout = RHITextureLayout::RenderTarget;
         const RHIPipelineStage rt_stage = RHIPipelineStageBits::ColorAttachmentOutput;
         auto& tres = m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle];
         ExecuteBarrierSubresource(pass.handle, tres, RHITextureSubresourceRange::Create(), rt_access, rt_stage,
-                                  rt_layout, cmd, queueIndex);
+                                  rt_layout, cmd);
     }
     // Buffers
     // These are always global i.e. at most one per buffer per pass.
-    for (auto [hdl, access, stage] : pass.bufferUsages) {
+    for (auto [hdl, access, stage] : pass.bufferUsages)
+    {
         auto& tres = m_setup->trackedResources[hdl];
-        ExecuteBarrierBuffer(pass.handle, tres, access, stage, cmd, queueIndex);
+        ExecuteBarrierBuffer(pass.handle, tres, access, stage, cmd);
     }
+}
+void Renderer::ExecuteAcquireQueueResources(RHIDeviceQueueType currentQueue, size_t groupIndex, RHICommandList* cmd)
+{
+    auto& groups = m_setup->executionGroups;
+    if (groups.size() <= 1) // e.g. No Async Compute
+        return;
+    auto CheckOwnership = [&](StringView name, RHIDeviceQueueType queue)
+    {
+        CHECK_MSG(queue == RHIDeviceQueueType::Undefined, "FIXME-Ownership: Resource {} is STILL owned by another queue {}", name, queue);
+    };
+    cmd->DebugBegin("<Group Resource Acquire>");
+    cmd->BeginTransition();
+    uint32_t currentQueueIndex = ExecuteGetQueueIndex(currentQueue);
+    for (PassHandle pass : groups[groupIndex].passes)
+    {
+        auto& tracked = m_setup->trackedPasses[pass];
+        for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
+        {
+            auto& tres = m_setup->trackedResources[hdl];
+            cmd->DebugBegin(tres.name.c_str());
+            for (auto& sta : tres.GetLastSubresourceStateOf(range))
+            {
+                CheckOwnership(tres.name, sta.lastOwnerQueue), sta.lastOwnerQueue = currentQueue;
+                cmd->SetImageTransition(
+                    DerefResource(tres.handle).Get<RHITexture*>(),
+                { .src_img_range = sta.ToRange(), .dst_queue_index = currentQueueIndex }
+                );
+            }
+            cmd->DebugEnd();
+        }
+        for (auto [hdl, access, stage] : tracked.bufferUsages)
+        {
+            auto& tres = m_setup->trackedResources[hdl];
+            CheckOwnership(tres.name, tres.lastBufferState.lastOwnerQueue), tres.lastBufferState.lastOwnerQueue = currentQueue;
+            cmd->DebugBegin(tres.name.c_str());
+            cmd->SetBufferTransition(
+                DerefResource(tres.handle).Get<RHIBuffer*>(),
+            {  .dst_queue_index = currentQueueIndex }
+            );
+            cmd->DebugEnd();
+        }
+    }
+    cmd->EndTransition();
+    cmd->DebugEnd();
+    // Actual acquire happens during pass execution
+}
+void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, size_t groupIndex, RHICommandList* cmd)
+{
+    auto& groups = m_setup->executionGroups;
+    if (groups.size() <= 1) // e.g. No Async Compute
+        return;
+    // Next group. Could be the first group if this is the last group
+    size_t next_group = (groupIndex + 1) % groups.size();
+    // Next group is on the same queue
+    if (groups[next_group].queue == currentQueue)
+        return;
+    cmd->DebugBegin("<Group Resource Release>");
+    cmd->DebugEnd();
 }
 void Renderer::ExecuteFrame()
 {
@@ -1099,6 +1153,8 @@ void Renderer::ExecuteFrame()
             SetNextComputeQueue();
         else [[unlikely]]
             throw std::runtime_error("Unhandled queue type");
+        // Acquire resources for this queue - which should already been released
+        ExecuteAcquireQueueResources(group.queue, group.group_index, cmd);
         // We've previously established that all passes in a group share the same queue
         for (auto pass_handle : group.passes)
         {
@@ -1114,7 +1170,8 @@ void Renderer::ExecuteFrame()
             cmd->DebugBegin(pass.name.c_str());
             cmd->DebugBegin("<Resource Barriers>");
             cmd->BeginTransition();
-            ExecuteBarriers(pass, cmd, kCommandQueueTransferIgnored);
+            // Transfer *here* are on the same queue, so ignored
+            ExecuteBarriers(pass, cmd, true, false);
             cmd->EndTransition();
             cmd->DebugEnd();
             // TODO: Only dealing with Record() here can easily introduce parallelism
@@ -1123,6 +1180,9 @@ void Renderer::ExecuteFrame()
             pass.pass->Record(pass.handle, this, cmd);
             cmd->DebugEnd();
         }
+        // Release resources to the next group (*always* in different queues) if needed
+        // since we can *only* do that on this queue
+        ExecuteReleaseQueueResources(group.queue, group.group_index, cmd);
         /* -- Submission -- */
         // We'd only signal the current group per submit
         timeline_signals.emplace_back(group.semaphore.Get(), SEM_COUNTER(m_setup->executionGroups.size(), group.group_index));
@@ -1170,7 +1230,7 @@ void Renderer::ExecuteFrame()
                     RHITextureSubresourceRange::Create(),
                     {},
                     RHIPipelineStageBits::BottomOfPipe,
-                    RHITextureLayout::Present, cmd, kCommandQueueTransferIgnored
+                    RHITextureLayout::Present, cmd
                 );
                 cmd->EndTransition();
                 cmd->DebugEnd();
