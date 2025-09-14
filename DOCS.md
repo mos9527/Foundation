@@ -10,14 +10,15 @@ fast prototyping of various GPU workloads.
 Features
 ---
 - Low-level modern API (Vulkan 1.3, DirectX12) as first-class citizen
-- Modern C++20 codebase with minimal dependencies
+- Modern C++20 codebase with minimal dependencies 
 - Full SPIR-V shader reflection support with automatic pipeline binding and generation
 - Frame Graph/Frame Pass architecture with optimized resource barrier placement
 - Async Compute support for modern GPUs with automatic synchronization
-- Validation in API usage and resource state tracking
+- *Very* low CPU overhead thanks to arena memory allocation strategies and efficient algorithms
+- Validation in API usage and resource state tracking with detailed error reporting
 - Headless rendering support for GPGPU tasks @ref Foundation::Rendering::RenderApplication
 - Convenient in-built rendering techniques @ref Foundation::Rendering::createPSFullscreenPass, @ref Foundation::Rendering::createPSBackbufferBlitPass, etc.
-- Cross-platform support for Windows, Linux, and macOS
+- Cross-platform support for Windows, Linux, and macOS, with:
   - Vulkan-like explicit RHI APIs @ref Foundation::RHI
   - DirectX-like rendering concepts at @ref Foundation::Rendering
   - WinAPI-like application APIs @ref Foundation::Native::NativeApplication
@@ -101,3 +102,22 @@ Third party
 - https://github.com/nothings/stb.git
 - https://github.com/thisistherk/fast_obj
 - https://github.com/zeux/meshoptimizer.git
+
+Debugging
+---
+Or, notes to self. If you are *here*, well ...thanks a lot for the interest^^
+### Vulkan
+- [VVL Timeline resource tracking](https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/2441) has been an issue - though should be resolved
+by [now](https://github.com/KhronosGroup/Vulkan-ValidationLayers/pull/10316). Always update the SDK to the latest version.
+- [RenderDoc](https://renderdoc.org/) is generally enough for most debugging tasks.
+- Though some esoteric issues would eventually require HW specific tools for accurate timing and performance metrics.
+  - [NSight™ Graphics](https://developer.nvidia.com/nsight-graphics) for NVIDIA GPUs
+  - [Radeon™ Developer Tool Suite](https://gpuopen.com/news/introducing-radeon-developer-tool-suite/)
+
+### Linux & AMD
+[Radeon™ Developer Tool Suite](https://gpuopen.com/news/introducing-radeon-developer-tool-suite/) has issues
+with OSS AMD drivers (RADV and co), see:
+- https://github.com/GPUOpen-Tools/radeon_developer_panel/issues/36
+- https://github.com/GPUOpen-Tools/radeon_developer_panel/issues/57
+
+On Arch `https://aur.archlinux.org/packages/vulkan-amdgpu-pro` seems to resolve the issue.

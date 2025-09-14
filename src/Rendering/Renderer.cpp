@@ -474,6 +474,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     Map<std::filesystem::path, UniquePtr<ShaderReflection>> reflections(m_allocator);
     for (auto const& [shader_path, entry_point, stage] : tracked.shaders) {
         if (!shaders.contains(shader_path)) {
+            // TODO: Ugly. FS ops should be abstracted away
             LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path.string());
             std::ifstream file(shader_path, std::ios::binary);
             CHECK_MSG(file.good(), "Failed to open shader file {}", shader_path.string());
@@ -1050,10 +1051,6 @@ void Renderer::ExecuteAcquireQueueResources(RHIDeviceQueueType currentQueue, siz
     auto& groups = m_setup->executionGroups;
     if (groups.size() <= 1) // e.g. No Async Compute
         return;
-    auto CheckOwnership = [&](StringView name, RHIDeviceQueueType queue)
-    {
-        CHECK_MSG(queue == RHIDeviceQueueType::Undefined, "FIXME-Ownership: Resource {} is STILL owned by another queue {}", name, queue);
-    };
     cmd->DebugBegin("<Group Resource Acquire>");
     cmd->BeginTransition();
     uint32_t currentQueueIndex = ExecuteGetQueueIndex(currentQueue);
@@ -1066,29 +1063,37 @@ void Renderer::ExecuteAcquireQueueResources(RHIDeviceQueueType currentQueue, siz
             cmd->DebugBegin(tres.name.c_str());
             for (auto& sta : tres.GetLastSubresourceStateOf(range))
             {
-                CheckOwnership(tres.name, sta.lastOwnerQueue), sta.lastOwnerQueue = currentQueue;
-                cmd->SetImageTransition(
-                    DerefResource(tres.handle).Get<RHITexture*>(),
-                { .src_img_range = sta.ToRange(), .dst_queue_index = currentQueueIndex }
-                );
+                if (sta.lastOwnerQueue == currentQueue)
+                    continue;
+                if (sta.lastOwnerQueue != RHIDeviceQueueType::Undefined)
+                    cmd->SetImageTransition(
+                        DerefResource(tres.handle).Get<RHITexture*>(),
+                    { .src_img_range = sta.ToRange(), .dst_queue_index = currentQueueIndex }
+                    );
+                sta.lastOwnerQueue = currentQueue;
             }
             cmd->DebugEnd();
         }
         for (auto [hdl, access, stage] : tracked.bufferUsages)
         {
             auto& tres = m_setup->trackedResources[hdl];
-            CheckOwnership(tres.name, tres.lastBufferState.lastOwnerQueue), tres.lastBufferState.lastOwnerQueue = currentQueue;
-            cmd->DebugBegin(tres.name.c_str());
-            cmd->SetBufferTransition(
-                DerefResource(tres.handle).Get<RHIBuffer*>(),
-            {  .dst_queue_index = currentQueueIndex }
-            );
-            cmd->DebugEnd();
+            if (tres.lastBufferState.lastOwnerQueue == currentQueue)
+                continue;
+            if (tres.lastBufferState.lastOwnerQueue != RHIDeviceQueueType::Undefined)
+            {
+                cmd->DebugBegin(tres.name.c_str());
+                cmd->SetBufferTransition(
+                    DerefResource(tres.handle).Get<RHIBuffer*>(),
+                {  .dst_queue_index = currentQueueIndex }
+                );
+                cmd->DebugEnd();
+            }
+            tres.lastBufferState.lastOwnerQueue = currentQueue;
+
         }
     }
     cmd->EndTransition();
     cmd->DebugEnd();
-    // Actual acquire happens during pass execution
 }
 void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, size_t groupIndex, RHICommandList* cmd)
 {
@@ -1101,6 +1106,17 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
     if (groups[next_group].queue == currentQueue)
         return;
     cmd->DebugBegin("<Group Resource Release>");
+    cmd->BeginTransition();
+    uint32_t currentQueueIndex = ExecuteGetQueueIndex(currentQueue);
+    // If the current queue is more capable (i.e. Graphics), transition the resources for
+    // the next group which is *now* guaranteed to be less capable (i.e. Compute).
+    // The states are tracked - the subsequent transitions should be no-ops then.
+    if (groups[groupIndex].queue == RHIDeviceQueueType::Graphics)
+    {
+        // TODO!!!
+    }
+    // Actually release the resources to the next group
+    // TODO!!!
     cmd->DebugEnd();
 }
 void Renderer::ExecuteFrame()
@@ -1171,7 +1187,7 @@ void Renderer::ExecuteFrame()
             cmd->DebugBegin("<Resource Barriers>");
             cmd->BeginTransition();
             // Transfer *here* are on the same queue, so ignored
-            ExecuteBarriers(pass, cmd, true, false);
+            ExecuteBarriers(pass, cmd);
             cmd->EndTransition();
             cmd->DebugEnd();
             // TODO: Only dealing with Record() here can easily introduce parallelism
