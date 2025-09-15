@@ -58,7 +58,7 @@ namespace Foundation::Rendering
             // Last frame the transition was executed
             size_t lastExecuteFrame{ 0 };
             // Last queue this resource is owned by
-            RHIDeviceQueueType lastOwnerQueue{};
+            RHIDeviceQueueType lastOwnerQueue{RHIDeviceQueueType::Undefined};
             // [Only used by @ref ExecuteReleaseQueueResources]
             bool executeTempTransitionFlag{false};
             RHIResourceAccess access{};

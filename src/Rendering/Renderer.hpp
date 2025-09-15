@@ -182,7 +182,7 @@ namespace Foundation::Rendering {
         /**
          * @breif Helper to get the queue index of a queue type
          */
-        inline uint32_t ExecuteGetQueueIndex(RHIDeviceQueueType queue) const
+        uint32_t ExecuteGetQueueIndex(RHIDeviceQueueType queue) const
         {
             switch (queue)
             {

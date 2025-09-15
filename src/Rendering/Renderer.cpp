@@ -1074,7 +1074,11 @@ void Renderer::ExecuteAcquireQueueResources(RHIDeviceQueueType currentQueue, siz
                 if (sta.lastOwnerQueue != RHIDeviceQueueType::Undefined)
                     cmd->SetImageTransition(
                         DerefResource(tres.handle).Get<RHITexture*>(),
-                    { .src_img_range = sta.ToRange(), .dst_queue_index = currentQueueIndex }
+                    {
+                            .src_img_range = sta.ToRange(),
+                            .src_queue_index = ExecuteGetQueueIndex(sta.lastOwnerQueue),
+                            .dst_queue_index = currentQueueIndex
+                        }
                     );
                 sta.lastOwnerQueue = currentQueue;
             }
@@ -1085,15 +1089,16 @@ void Renderer::ExecuteAcquireQueueResources(RHIDeviceQueueType currentQueue, siz
             auto& tres = m_setup->trackedResources[hdl];
             if (tres.lastBufferState.lastOwnerQueue == currentQueue)
                 continue;
+            cmd->DebugBegin(tres.name.c_str());
             if (tres.lastBufferState.lastOwnerQueue != RHIDeviceQueueType::Undefined)
-            {
-                cmd->DebugBegin(tres.name.c_str());
                 cmd->SetBufferTransition(
                     DerefResource(tres.handle).Get<RHIBuffer*>(),
-                {  .dst_queue_index = currentQueueIndex }
+                {
+                    .src_queue_index = ExecuteGetQueueIndex(tres.lastBufferState.lastOwnerQueue),
+                    .dst_queue_index = currentQueueIndex
+                }
                 );
-                cmd->DebugEnd();
-            }
+            cmd->DebugEnd();
             tres.lastBufferState.lastOwnerQueue = currentQueue;
         }
     }
@@ -1168,7 +1173,11 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
     } else
     { /* Compute - nop */ }
     // Actually release our resources for subsequent groups
+    // Do this for _all_ resources to the next queue since we do not know the subsequent access
+    // We _can_ only do this for resources that _are_ going to be used by a different queue.
+    // However, exploiting the alternate queue orders like this proves to be quite efficient.
     uint32_t currentQueueIndex = ExecuteGetQueueIndex(currentQueue);
+    uint32_t nextQueueIndex = ExecuteGetQueueIndex(groups[nextGroupIndex].queue);
     cmd->BeginTransition();
     for (PassHandle pass : groups[groupIndex].passes)
     {
@@ -1179,28 +1188,29 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
             cmd->DebugBegin(tres.name.c_str());
             for (auto& sta : tres.GetLastSubresourceStateOf(range))
             {
-                if (sta.lastOwnerQueue == RHIDeviceQueueType::Undefined)
-                    continue;
                 cmd->SetImageTransition(
                     DerefResource(tres.handle).Get<RHITexture*>(),
-                { .src_img_range = sta.ToRange(), .src_queue_index = currentQueueIndex }
+                {
+                    .src_img_range = sta.ToRange(),
+                    .src_queue_index = currentQueueIndex,
+                    .dst_queue_index = nextQueueIndex
+                }
                 );
-                sta.lastOwnerQueue = RHIDeviceQueueType::Undefined;
             }
             cmd->DebugEnd();
         }
         for (auto [hdl, access, stage] : tracked.bufferUsages)
         {
             auto& tres = m_setup->trackedResources[hdl];
-            if (tres.lastBufferState.lastOwnerQueue == RHIDeviceQueueType::Undefined)
-                continue;
             cmd->DebugBegin(tres.name.c_str());
             cmd->SetBufferTransition(
                 DerefResource(tres.handle).Get<RHIBuffer*>(),
-            {  .src_queue_index = currentQueueIndex }
+            {
+                .src_queue_index = currentQueueIndex,
+                .dst_queue_index = nextQueueIndex
+            }
             );
             cmd->DebugEnd();
-            tres.lastBufferState.lastOwnerQueue = RHIDeviceQueueType::Undefined;
         }
     }
     cmd->EndTransition();

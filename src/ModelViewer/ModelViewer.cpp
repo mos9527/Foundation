@@ -81,13 +81,13 @@ public:
                 .format = RHIResourceFormat::D32_SIGNED_FLOAT,
             }
         );
-        m_sceneInstance = m_scene->CreateInstanceDataUpdate(m_renderer.get(), "Scene Instance Data Update", RHIDeviceQueueType::Graphics);
-        m_scenePrimitive = m_scene->CreatePrimitiveDataUpdate(m_renderer.get(), "Scene Primitive Data Update", RHIDeviceQueueType::Graphics);
-        m_sceneVertex = m_scene->CreateVertexDataUpdate(m_renderer.get(), "Scene Vertex Data Update", RHIDeviceQueueType::Graphics);
-        m_sceneIndex = m_scene->CreateIndexDataUpdate(m_renderer.get(), "Scene Index Data Update", RHIDeviceQueueType::Graphics);
+        m_sceneInstance = m_scene->CreateInstanceDataUpdate(m_renderer.get(), "Scene Instance Data Update", RHIDeviceQueueType::Compute);
+        m_scenePrimitive = m_scene->CreatePrimitiveDataUpdate(m_renderer.get(), "Scene Primitive Data Update", RHIDeviceQueueType::Compute);
+        m_sceneVertex = m_scene->CreateVertexDataUpdate(m_renderer.get(), "Scene Vertex Data Update", RHIDeviceQueueType::Compute);
+        m_sceneIndex = m_scene->CreateIndexDataUpdate(m_renderer.get(), "Scene Index Data Update", RHIDeviceQueueType::Compute);
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect
-        createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Graphics,
+        createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Compute,
             [=, this](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "resetCounter", "data/shaders/MVClearCounters.spv");
@@ -99,7 +99,7 @@ public:
                 r->CmdDispatch(self, cmd, {1,1,1});
             }
         );
-        createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Graphics,
+        createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Compute,
             [=, this](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "indirectCullEarly", "data/shaders/MVIndirectCull.spv");
