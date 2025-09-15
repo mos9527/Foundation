@@ -1173,7 +1173,7 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
     // Actually release our resources for subsequent groups
     // Do this for _all_ resources to the next queue since we do not know the subsequent access
     // We _can_ only do this for resources that _are_ going to be used by a different queue.
-    // However, exploiting the alternate queue orders like this proves to be quite efficient.
+    // However, exploiting the alternate queue orders like this seem to be efficient enough?
     uint32_t currentQueueIndex = ExecuteGetQueueIndex(currentQueue);
     uint32_t nextQueueIndex = ExecuteGetQueueIndex(groups[nextGroupIndex].queue);
     cmd->BeginTransition();

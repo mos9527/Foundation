@@ -30,8 +30,8 @@ public:
         m_scene->BeginTransfer(m_renderer->GetSync());
         if (m_kittenMesh == kInvalidMeshHandle)
         {
-            m_kittenMesh = m_scene->CreateMesh(LoadMeshFromObjFile("data/assets/kitten.obj", GetAllocator()));
-            for (int i = 0; i < 10 * 10; i++)
+            m_kittenMesh = m_scene->CreateMesh(LoadMeshFromObjFile("data/assets/Suzanne.obj", GetAllocator()));
+            for (int i = 0; i < 30 * 30; i++)
                 m_kittenScene.push_back(m_scene->CreateInstance({
                     .enabled = true,
                     .primitiveID = PrimitiveIDOf(m_kittenMesh),

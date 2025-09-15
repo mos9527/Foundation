@@ -57,5 +57,6 @@ add_dependencies(ModelViewer
     Shader_MVClearCounters
     Shader_MVIndirectCull
     Shader_MVMeshDraw
+    SampleModels
 )
 
