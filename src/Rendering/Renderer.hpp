@@ -202,6 +202,9 @@ namespace Foundation::Rendering {
             RHIDeviceQueueType currentQueue,
             Vector<Pair<size_t,bool>>* outGroups = nullptr
         );
+        void ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, TrackedResource::SubresourceState& sta,
+                                       RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout,
+                                       RHICommandList* cmd);
         /**
          * @brief Executes barriers for a subresource range of a texture
          */

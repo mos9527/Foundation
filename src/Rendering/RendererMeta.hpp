@@ -34,6 +34,8 @@ namespace Foundation::Rendering
             size_t lastExecuteFrame{ 0 };
             // Last queue this resource is owned by
             RHIDeviceQueueType lastOwnerQueue{ RHIDeviceQueueType::Undefined };
+            // [Only used by @ref ExecuteReleaseQueueResources]
+            bool executeTempTransitionFlag{false};
             RHIResourceAccess access{};
             RHIPipelineStage stage{};
             void reset() {
@@ -57,6 +59,8 @@ namespace Foundation::Rendering
             size_t lastExecuteFrame{ 0 };
             // Last queue this resource is owned by
             RHIDeviceQueueType lastOwnerQueue{};
+            // [Only used by @ref ExecuteReleaseQueueResources]
+            bool executeTempTransitionFlag{false};
             RHIResourceAccess access{};
             RHIPipelineStage stage{};
             RHITextureLayout layout{};

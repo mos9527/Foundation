@@ -892,7 +892,7 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
     m_currentSync = 0;
 }
 void Renderer::ExecuteCheckResourceStates(Span<PassHandle> passes, RHIDeviceQueueType currentQueue,
-                                                        Vector<Pair<size_t,bool>>* outGroups)
+                                          Vector<Pair<size_t, bool>>* outGroups)
 {
     if (outGroups)
         outGroups->clear();
@@ -904,7 +904,8 @@ void Renderer::ExecuteCheckResourceStates(Span<PassHandle> passes, RHIDeviceQueu
         if (outGroups)
             outGroups->emplace_back(pass.group_index, lastFrame != m_frame);
     };
-    auto CheckTransition = [&](StringView name, RHIPipelineStage stage){
+    auto CheckTransition = [&](StringView name, RHIPipelineStage stage)
+    {
         if (currentQueue == RHIDeviceQueueType::Compute)
             CHECK_MSG(!(stage & kComputeStagesMask), "FIXME-Transition: Barrier incompatible on resource {}", name);
     };
@@ -952,6 +953,30 @@ void Renderer::BeginExecute()
         );
     m_device->ResetFences(wait_fences);
 }
+void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res,  TrackedResource::SubresourceState& sta,
+                                              RHIResourceAccess access,
+                                              RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd)
+{
+    if (sta.access == access && sta.stage == stage && sta.layout == layout)
+        return;
+    cmd->SetImageTransition(
+        res,
+        {
+            .src_access = sta.access,
+            .dst_access = access,
+            .src_stage = sta.stage,
+            .dst_stage = stage,
+            .src_img_layout = sta.layout,
+            .dst_img_layout = layout,
+            .src_img_range = sta.ToRange(),
+        }
+    );
+    sta.access = access;
+    sta.stage = stage;
+    sta.layout = layout;
+    sta.lastExecutor = pass;
+    sta.lastExecuteFrame = m_frame;
+}
 void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
                                          RHITextureSubresourceRange const& range, RHIResourceAccess access,
                                          RHIPipelineStage stage, RHITextureLayout layout, RHICommandList* cmd)
@@ -962,25 +987,7 @@ void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
     cmd->DebugBegin(tres.name.c_str());
     for (auto& sta : tres.GetLastSubresourceStateOf(range)) {
         any_range = true;
-        if (sta.access == access && sta.stage == stage && sta.layout == layout)
-            continue;
-        cmd->SetImageTransition(
-            res,
-            {
-                .src_access = sta.access,
-                .dst_access = access,
-                .src_stage = sta.stage,
-                .dst_stage = stage,
-                .src_img_layout = sta.layout,
-                .dst_img_layout = layout,
-                .src_img_range = sta.ToRange(),
-            }
-        );
-        sta.access = access;
-        sta.stage = stage;
-        sta.layout = layout;
-        sta.lastExecutor = pass;
-        sta.lastExecuteFrame = m_frame;
+        ExecuteBarrierSubresourceState(pass, res, sta, access, stage, layout, cmd);
     }
     cmd->DebugEnd();
     CHECK_MSG(any_range, "FIXME-ExecuteBarrierSubresource: Failed to match resource range on {}",tres.name);
@@ -1089,7 +1096,6 @@ void Renderer::ExecuteAcquireQueueResources(RHIDeviceQueueType currentQueue, siz
                 cmd->DebugEnd();
             }
             tres.lastBufferState.lastOwnerQueue = currentQueue;
-
         }
     }
     cmd->EndTransition();
@@ -1100,23 +1106,103 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
     auto& groups = m_setup->executionGroups;
     if (groups.size() <= 1) // e.g. No Async Compute
         return;
-    // Next group. Could be the first group if this is the last group
-    size_t next_group = (groupIndex + 1) % groups.size();
-    // Next group is on the same queue
-    if (groups[next_group].queue == currentQueue)
-        return;
     cmd->DebugBegin("<Group Resource Release>");
-    cmd->BeginTransition();
-    uint32_t currentQueueIndex = ExecuteGetQueueIndex(currentQueue);
-    // If the current queue is more capable (i.e. Graphics), transition the resources for
-    // the next group which is *now* guaranteed to be less capable (i.e. Compute).
-    // The states are tracked - the subsequent transitions should be no-ops then.
-    if (groups[groupIndex].queue == RHIDeviceQueueType::Graphics)
+    /* -- Pre-transition -- */
+    // If the _current_ queue is strictly more capable (i.e. Graphics), transition the resources for
+    // the _next_ group which is *now* guaranteed to be less capable (i.e. Compute).
+    // Only Compute resources _need_ to be transitioned here beforehand. So we only deal with that
+    size_t nextGroupIndex = (groupIndex + 1) % groups.size(); // Next group. Could be the first group if this is the last group
+    if (groups[groupIndex].queue == RHIDeviceQueueType::Graphics && groups[nextGroupIndex].queue != currentQueue)
     {
-        // TODO!!!
+        cmd->BeginTransition();
+        cmd->DebugBegin("<Group Graphics to Compute>");
+        for (PassHandle pass : groups[nextGroupIndex].passes)
+        {
+            auto& tracked = m_setup->trackedPasses[pass];
+            for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
+            {
+                auto& tres = m_setup->trackedResources[hdl];
+                RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
+                cmd->DebugBegin(tres.name.c_str());
+                for (auto& sta : tres.GetLastSubresourceStateOf(range))
+                {
+                    // Only deal with resources currently owned by us _once_
+                    // This implies that the states (stages) _could_ be one
+                    // of ours (e.g. Fragment) and cannot be transitioned by the subsequent (Compute)
+                    // group.
+                    // Releasing this state SHOULD imply that all queues - no matter capability
+                    // can transition it.
+                    if (sta.executeTempTransitionFlag)
+                        continue; // Only transition once - so the *first* usages of the next group are valid
+                    // Subsequent intra-group transitions should always be valid by themselves
+                    ExecuteBarrierSubresourceState(pass, res, sta, access, stage, layout, cmd);
+                    sta.executeTempTransitionFlag = true;
+                }
+                cmd->DebugEnd();
+            }
+            for (auto [hdl, access, stage] : tracked.bufferUsages)
+            {
+                auto& tres = m_setup->trackedResources[hdl];
+                // Same as above
+                if (tres.lastBufferState.executeTempTransitionFlag)
+                    continue;
+                cmd->DebugBegin(tres.name.c_str());
+                ExecuteBarrierBuffer(pass, tres, access, stage, cmd);
+                cmd->DebugEnd();
+                tres.lastBufferState.executeTempTransitionFlag = true;
+            }
+            // Reset the flags
+            for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
+            {
+                auto& tres = m_setup->trackedResources[hdl];
+                for (auto& sta : tres.GetLastSubresourceStateOf(range))
+                    sta.executeTempTransitionFlag = false;
+            }
+            for (auto [hdl, access, stage] : tracked.bufferUsages)
+            {
+                auto& tres = m_setup->trackedResources[hdl];
+                tres.lastBufferState.executeTempTransitionFlag = false;
+            }
+        }
+        cmd->DebugEnd();
+        cmd->EndTransition();
+    } else
+    { /* Compute - nop */ }
+    // Actually release our resources for subsequent groups
+    uint32_t currentQueueIndex = ExecuteGetQueueIndex(currentQueue);
+    for (PassHandle pass : groups[groupIndex].passes)
+    {
+        auto& tracked = m_setup->trackedPasses[pass];
+        for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
+        {
+            auto& tres = m_setup->trackedResources[hdl];
+            cmd->DebugBegin(tres.name.c_str());
+            for (auto& sta : tres.GetLastSubresourceStateOf(range))
+            {
+                if (sta.lastOwnerQueue == RHIDeviceQueueType::Undefined)
+                    continue;
+                cmd->SetImageTransition(
+                    DerefResource(tres.handle).Get<RHITexture*>(),
+                { .src_img_range = sta.ToRange(), .src_queue_index = currentQueueIndex }
+                );
+                sta.lastOwnerQueue = RHIDeviceQueueType::Undefined;
+            }
+            cmd->DebugEnd();
+        }
+        for (auto [hdl, access, stage] : tracked.bufferUsages)
+        {
+            auto& tres = m_setup->trackedResources[hdl];
+            if (tres.lastBufferState.lastOwnerQueue == RHIDeviceQueueType::Undefined)
+                continue;
+            cmd->DebugBegin(tres.name.c_str());
+            cmd->SetBufferTransition(
+                DerefResource(tres.handle).Get<RHIBuffer*>(),
+            {  .src_queue_index = currentQueueIndex }
+            );
+            cmd->DebugEnd();
+            tres.lastBufferState.lastOwnerQueue = RHIDeviceQueueType::Undefined;
+        }
     }
-    // Actually release the resources to the next group
-    // TODO!!!
     cmd->DebugEnd();
 }
 void Renderer::ExecuteFrame()
