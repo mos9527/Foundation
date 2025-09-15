@@ -648,7 +648,11 @@ namespace Foundation::Rendering {
             auto& tpass = m_setup->trackedPasses[pass];            
             CHECK_MSG(tpass.write_backbuffer, "Pass {} does not write to backbuffer", tpass.name);
             return m_swaps[m_currentSwap].rtv.Get();
-        }        
+        }
+        /**
+         * @return The backing general-purpose allocator used for the Renderer
+         */
+        Allocator* GetAllocator() const { return m_allocator; }
 #pragma endregion
 #pragma region Command Recording Helpers
         /**

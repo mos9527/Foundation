@@ -32,16 +32,16 @@ namespace Foundation::RHI {
             : m_device(device), m_desc(desc) {
         }
         /**
-         * @brief Proxy object to provide generic sub-buffer allocation within a buffer.                
+         * @brief Proxy object to provide generic sub-buffer allocation within a buffer.
          *
-         * Implementations should guarantee thread-safety of the arena itself.          
+         * Implementations should guarantee thread-safety of the arena itself.
          */
         struct Arena : public RHIObject {
             using Allocation = size_t;
             /**
-             * @brief Allocates a sub-region of the buffer with the given size and alignment.            
+             * @brief Allocates a sub-region of the buffer with the given size and alignment.
              */
-            /// <returns>An opaque handle representing the allocated sub-region. kInvalidHandle if allocation fails.</returns>            
+            /// <returns>An opaque handle representing the allocated sub-region. kInvalidHandle if allocation fails.</returns>
             virtual Allocation Allocate(size_t size, size_t alignment) = 0;
             /**
              * @brief Frees a previously allocated sub-region of the buffer.
@@ -64,7 +64,7 @@ namespace Foundation::RHI {
         };
         /**
          * @brief Sub-buffer allocation arena capable of generic alloc/free
-         * operations.        
+         * operations.
          */
         virtual Arena& GetArena() = 0;
         /**
@@ -72,7 +72,7 @@ namespace Foundation::RHI {
          * Alignment is implementation-defined.
          * Implementations MUST guarantee consecutive calls to Map() return the same pointer,
          * therefore it's not possible to map the same resource multiple times.
-         * For caching behaviours, <see cref="RHIBufferDesc"/>
+         * For caching behaviours, @ref=RHIBufferDesc
          */
         virtual void* Map() = 0;
         /**

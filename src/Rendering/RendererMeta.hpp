@@ -20,6 +20,8 @@ namespace Foundation::Rendering
         ResourceHandle handle; // Index to tracked resources
         String name;
         ResourceDefinition desc;
+        bool compute_usage{ false }; // Used in a compute pass?
+        bool graphics_usage{ false }; // Used in a graphics pass?
         /* --- states --- */
         // (Buffer) Last known state
         // Transitions here are always global since granularity would be too fine. And seems

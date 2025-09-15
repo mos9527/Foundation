@@ -62,7 +62,7 @@ namespace Foundation::Rendering
     }
     void StagingBuffer::Reset() { m_offset = 0; }
 
-    Staging::Staging(RHIDevice* device, Allocator* allocator, uint32_t numSwaps, size_t stagingBudget) :
+    StagedBuffer::StagedBuffer(RHIDevice* device, Allocator* allocator, uint32_t numSwaps, RHIBufferDesc const& desc, size_t stagingBudget) :
         m_device(device), m_allocator(allocator), m_stagingBuffers(allocator), m_bufferStagings(allocator),
         m_idleGuard(m_device)
     {
@@ -71,15 +71,18 @@ namespace Foundation::Rendering
         // A lower memory footprint option is to do this with a single staging buffer,
         // and wait for the resource fence before reusing it, which
         // incurs CPU stalls.
+        if (stagingBudget == kFullSize)
+            stagingBudget = desc.size;
         for (size_t i = 0; i < numSwaps; i++)
         {
             m_stagingBuffers.emplace_back(allocator, device, stagingBudget);
             m_stagingBuffers.back().GetBuffer()->DebugSetObjectName(fmt::format("Staging Buffer {}", i).c_str());
         }
+        m_buffer = device->CreateBuffer(desc);
         LOG_RUNTIME(Staging, info, "** Staging init with {} buffers of {} each **", numSwaps,
-                    formatHumanReadableSize(stagingBudget));
+                    formatHumanReadableSize(desc.size));
     }
-    void Staging::BeginTransfer(uint32_t rendererSync)
+    void StagedBuffer::BeginTransfer(uint32_t rendererSync)
     {
         CHECK_MSG(m_state == State::Idle, "Staging is already in {} state", m_state);
         m_currentSync = rendererSync;
@@ -87,24 +90,47 @@ namespace Foundation::Rendering
         m_bufferStagings.clear();
         m_state = State::Transfer;
     }
-    RHIBuffer* Staging::GetStagingBuffer()
+    RHIBuffer* StagedBuffer::GetStagingBuffer()
     {
         CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");
         CHECK_MSG(m_currentSync < m_stagingBuffers.size(), "Invalid current sync index {}", m_currentSync);
         return m_stagingBuffers[m_currentSync].GetBuffer();
     }
-    void Staging::TransferBuffer(RHIBuffer* dst_buffer, size_t offset, Span<const char> data, size_t alignment)
+    void StagedBuffer::Transfer(size_t dst_offset, Span<const char> data, size_t alignment)
     {
         CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");
         size_t src_offset = m_stagingBuffers[m_currentSync].Write(data, alignment);
-        m_bufferStagings.emplace_back(m_stagingBuffers[m_currentSync].GetBuffer(), dst_buffer,
-                                      RHICommandList::CopyBufferRegion{src_offset, offset, data.size_bytes()});
+        if (!m_bufferStagings.empty())
+        {
+            // Check if we can coalesce the buffer transfer right away
+            auto& [last_src, last_dst, last_region] = m_bufferStagings.back();
+            if (last_src == m_stagingBuffers[m_currentSync].GetBuffer() && last_dst == m_buffer.Get() &&
+                dst_offset - last_region.dst_offset == last_region.size &&
+                src_offset - last_region.src_offset == last_region.size)
+            {
+                last_region.size += data.size_bytes();
+                return;
+            }
+        }
+        m_bufferStagings.emplace_back(m_stagingBuffers[m_currentSync].GetBuffer(), m_buffer.Get(),
+                                      RHICommandList::CopyBufferRegion{src_offset, dst_offset, data.size_bytes()});
     }
-    void Staging::EndTransfer()
+    void StagedBuffer::EndTransfer()
     {
         CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");
         CoalesceBufferStaging(m_bufferStagings);
         m_state = State::Idle;
         m_currentSync = ~0u;
+    }
+    void StagedBuffer::Update(RHICommandList* cmd)
+    {
+        CHECK_MSG(m_state == State::Idle, "Staging is not in Idle state");
+        if (m_bufferStagings.empty())
+            return;
+        cmd->DebugBegin("Staging Buffer Updates");
+        for (auto const& [src, dst, range] : m_bufferStagings)
+            cmd->CopyBuffer(src, dst, {range});
+        cmd->DebugEnd();
+        m_bufferStagings.clear();
     }
 } // namespace Foundation::Rendering

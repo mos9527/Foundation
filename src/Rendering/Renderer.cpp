@@ -398,6 +398,11 @@ void Renderer::CullPasses(PassHandle epilogue) const
         Ranges::sort(resources);
         resources.erase(Ranges::unique(resources).begin(), resources.end());
         for (auto res : resources) {
+            auto& tres = m_setup->trackedResources[res];
+            if (pass.queue == RHIDeviceQueueType::Graphics)
+                tres.graphics_usage = true;
+            if (pass.queue == RHIDeviceQueueType::Compute)
+                tres.compute_usage = true;
             if (!m_setup->activeResources.contains(res))
                 m_setup->activeResources[res] = { ord, ord };
             else {
@@ -1062,6 +1067,8 @@ void Renderer::ExecuteAcquireQueueResources(RHIDeviceQueueType currentQueue, siz
         for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
         {
             auto& tres = m_setup->trackedResources[hdl];
+            if (!(tres.graphics_usage && tres.compute_usage))
+                continue; // Only care about cross-queue resources
             cmd->DebugBegin(tres.name.c_str());
             for (auto& sta : tres.GetLastSubresourceStateOf(range))
             {
@@ -1083,6 +1090,8 @@ void Renderer::ExecuteAcquireQueueResources(RHIDeviceQueueType currentQueue, siz
         for (auto [hdl, access, stage] : tracked.bufferUsages)
         {
             auto& tres = m_setup->trackedResources[hdl];
+            if (!(tres.graphics_usage && tres.compute_usage))
+                continue; // Only care about cross-queue resources
             if (tres.lastBufferState.lastOwnerQueue == currentQueue)
                 continue;
             cmd->DebugBegin(tres.name.c_str());
@@ -1183,6 +1192,8 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
         for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
         {
             auto& tres = m_setup->trackedResources[hdl];
+            if (!(tres.graphics_usage && tres.compute_usage))
+                continue; // Only care about cross-queue resources
             cmd->DebugBegin(tres.name.c_str());
             for (auto& sta : tres.GetLastSubresourceStateOf(range))
             {
@@ -1200,6 +1211,8 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
         for (auto [hdl, access, stage] : tracked.bufferUsages)
         {
             auto& tres = m_setup->trackedResources[hdl];
+            if (!(tres.graphics_usage && tres.compute_usage))
+                continue; // Only care about cross-queue resources
             cmd->DebugBegin(tres.name.c_str());
             cmd->SetBufferTransition(
                 DerefResource(tres.handle).Get<RHIBuffer*>(),
