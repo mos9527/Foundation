@@ -5,6 +5,7 @@
 #include <RHICore/Device.hpp>
 #include <RHICore/PipelineState.hpp>
 #include <Allocator/StackAllocator.hpp>
+#include <Native/Filesystem.hpp>
 
 #include "RenderPass.hpp"
 namespace Foundation::Rendering
@@ -139,7 +140,7 @@ namespace Foundation::Rendering
         /* -- pipeline -- */
         // Shader [path, entry point, stage]
         Vector<Tuple<
-            std::filesystem::path,
+            Native::Path,
             String,
             RHIShaderStage
             >> shaders;

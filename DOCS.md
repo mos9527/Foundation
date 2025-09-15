@@ -13,9 +13,9 @@ Features
 - Modern C++20 codebase with minimal dependencies 
 - Full SPIR-V shader reflection support with automatic pipeline binding and generation
 - Frame Graph/Frame Pass architecture with optimized resource barrier placement
-- Async Compute support for modern GPUs with automatic synchronization
+- Async Compute support for modern GPUs with automatic release/acquire and synchronization
 - *Very* low CPU overhead thanks to arena memory allocation strategies and efficient algorithms
-- Validation in API usage and resource state tracking with detailed error reporting
+- Strict validation in API usage and resource state tracking with detailed error reporting
 - Headless rendering support for GPGPU tasks @ref Foundation::Rendering::RenderApplication
 - Convenient in-built rendering techniques @ref Foundation::Rendering::createPSFullscreenPass, @ref Foundation::Rendering::createPSBackbufferBlitPass, etc.
 - Cross-platform support for Windows, Linux, and macOS, with:
@@ -27,7 +27,7 @@ Quickstart
 ---
 <a href="examples.html">The Examples</a> is a great place to start exploring the framework.
 
-Feel free to explore the documentation, or check out the [Model Viewer](#model-viewer) application for a more complete example.
+Feel free to explore the documentation, or check out the @ref ModelViewer application for a more complete example.
 
 Building
 ---
@@ -74,15 +74,6 @@ The following CMake options are available:
 Toggle these options with `-D<OPTION>=ON/OFF` when running `cmake ..`, e.g. `cmake -DFOUNDATION_WITH_SANITIZERS=ON ..`
 
 [CMake Unity Builds](https://cmake.org/cmake/help/latest/prop_tgt/UNITY_BUILD.html) are supported, and can be enabled with `-DCMAKE_UNITY_BUILD=ON` when running `cmake ..`.
-
-Model Viewer
----
-@ref ModelViewer demonstrates a simple model viewer application built using @ref Foundation.
-
-It's recommended to build with the following CMake options:
-```bash
--DFOUNDATION_WITH_EXAMPLES=OFF -DFOUNDATION_WITH_TESTS=OFF -DFOUNDATION_WITH_MODELVIEWER=ON -DCMAKE_BUILD_TYPE=Release -DCAMKE_UNITY_BUILD=ON
-```
 
 Third party
 ---

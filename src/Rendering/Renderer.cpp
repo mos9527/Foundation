@@ -473,15 +473,13 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     Map<std::filesystem::path, UniquePtr<ShaderReflection>> reflections(m_allocator);
     for (auto const& [shader_path, entry_point, stage] : tracked.shaders) {
         if (!shaders.contains(shader_path)) {
-            // TODO: Ugly. FS ops should be abstracted away
             LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path.string());
-            std::ifstream file(shader_path, std::ios::binary);
-            CHECK_MSG(file.good(), "Failed to open shader file {}", shader_path.string());
-            data.resize(std::filesystem::file_size(shader_path));
-            file.read(data.data(), static_cast<uint32_t>(data.size()));
-            CHECK_MSG(file.gcount() == data.size(), "Shader read failure. Read {} bytes, expected {}", file.gcount(), data.size());
+            Native::ReadFile(shader_path, data);
             // Verify shader stage
-            auto const& refl = reflections.emplace(shader_path, ConstructUnique<ShaderReflection>(m_allocator, data, m_allocator)).first->second;
+            auto const& refl = reflections.emplace(
+                shader_path,
+                ConstructUnique<ShaderReflection>(m_allocator, data, m_allocator)
+            ).first->second;
             LOG_RUNTIME(Renderer, debug, "** Shader Info**\n{}", refl->DbgDumpShaderInfo());
             shaders[shader_path] = m_device->CreateShaderModule({ .source = data });
             shaders[shader_path]->DebugSetObjectName(shader_path.string().c_str());

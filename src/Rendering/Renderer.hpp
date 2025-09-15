@@ -1,6 +1,5 @@
 #pragma once
 #include <RHICore/Device.hpp>
-
 #include "RendererMeta.hpp"
 /**
  * @brief Everything GPU related, including the Frame Graph implementation.
@@ -367,7 +366,7 @@ namespace Foundation::Rendering {
         void BindShader(
             PassHandle pass, RHIShaderStage stage,
             StringView entry_point,
-            std::filesystem::path const& shader_path
+            Native::Path const& shader_path
         ) const;
         /**
          * @brief Declares a range of Push Constant used in a stage.
