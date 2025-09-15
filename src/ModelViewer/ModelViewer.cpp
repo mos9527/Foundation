@@ -174,7 +174,6 @@ public:
 
 int main(int argc, char** argv) {
     ModelViewer app;
-    // !! TODO: with asyncCompute on we get empty frames occasionally
     app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = true, .asyncCompute = true });
     app.RunForever();
 }
