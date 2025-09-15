@@ -475,12 +475,10 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         if (!shaders.contains(shader_path)) {
             LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path.string());
             Native::ReadFile(shader_path, data);
-            // Verify shader stage
-            auto const& refl = reflections.emplace(
+            reflections.emplace(
                 shader_path,
                 ConstructUnique<ShaderReflection>(m_allocator, data, m_allocator)
             ).first->second;
-            LOG_RUNTIME(Renderer, debug, "** Shader Info**\n{}", refl->DbgDumpShaderInfo());
             shaders[shader_path] = m_device->CreateShaderModule({ .source = data });
             shaders[shader_path]->DebugSetObjectName(shader_path.string().c_str());
         }

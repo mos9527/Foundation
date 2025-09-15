@@ -21,7 +21,7 @@ Features
 - Cross-platform support for Windows, Linux, and macOS, with:
   - Vulkan-like explicit RHI APIs @ref Foundation::RHI
   - DirectX-like rendering concepts at @ref Foundation::Rendering
-  - WinAPI-like application APIs @ref Foundation::Native::NativeApplication
+  - WinAPI-like application APIs @ref Foundation::Native
 
 Quickstart
 ---

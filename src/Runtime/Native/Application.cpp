@@ -1,8 +1,8 @@
 #include "Application.hpp"
 #include <GLFW/glfw3.h>
-#include <tinyfiledialogs.h>
 #include <stdexcept>
-namespace Foundation::Native {
+namespace Foundation::Native
+{
     void glfw_error_callback(int error, const char* description)
     {
         LOG_RUNTIME(GLFW, critical, "GLFW Error ({}): {}", error, description);
@@ -58,7 +58,10 @@ namespace Foundation::Native {
     NativeWindow NativeApplication::CreateWindow(uint32_t width, uint32_t height, const char* title) {
         return {width, height, title};
     }
-    MessageBoxResult NativeApplication::MessageBox(const char* title, const char* message, MessageBoxType type, MessageBoxIcon icon, MessageBoxResult default_result) {
+}
+#include <tinyfiledialogs.h>
+namespace Foundation::Native {
+    MessageBoxResult MessageBox(const char* title, const char* message, MessageBoxType type, MessageBoxIcon icon, MessageBoxResult default_result) {
         const char* kDialogueType[] = { "ok", "okcancel", "yesno", "yesnocancel" };
         const char* kIconType[] = { "info", "warning", "error", "question" };
         return static_cast<MessageBoxResult>(tinyfd_messageBox(

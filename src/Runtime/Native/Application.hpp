@@ -8,6 +8,9 @@
 namespace Foundation::Native {
     using namespace Core;
     class Application;
+    /**
+     * @brief Class representing a window for the platform.
+     */
     class NativeWindow {
         friend class NativeApplication;
         void* m_window{ nullptr };
@@ -37,44 +40,38 @@ namespace Foundation::Native {
     };
 
     /**
-     * @brief Base class for native applications.
-     * 
-     * API-wise, this provides WinAPI-like semantics for window management and
-     * various system functionalities.
+     * @brief Application base class.
+     * Handles initialization and shutdown of the native platform, and windowing management.
      */
     class NativeApplication {
         int m_initialized = 0;
         size_t m_startCounter = 0;
     public:
         /**
-         * @brief Creates a message box with the specified title and message.
-         *
-         * This is blocking, and will halt execution until the user dismisses it.       
-         */
-        static MessageBoxResult MessageBox(
-            const char* title, const char* message,
-            MessageBoxType type = MessageBoxType::Ok,
-            MessageBoxIcon icon = MessageBoxIcon::Info,
-            MessageBoxResult default_result = MessageBoxResult::Yes
-        );
-        /**
          * @brief Creates a window with the specified width, height, and title.
          */
         [[nodiscard]] static NativeWindow CreateWindow(uint32_t width, uint32_t height, const char* title);
         /**
          * @brief Returns a high-resolution time in seconds since the application started.
+         * @tparam T The return type. Must be a floating-point type. Default is float.
          */
         template<typename T = float> T GetApplicationTime() const { return (getPerformanceCounter() - m_startCounter) / 1e9; }
         /**
-         * @brief Returns the time in seconds since the Unix epoch (1970-01-01 00:00:00 UTC).
-         *
-         * This is generally not useful for measuring time intervals, as it's not
-         * monotonic and can be affected by system clock changes.
-         *
-         * It's advised to use GetApplicationTime() for such purposes instead.        
+         * @brief Returns a high-resolution time in _nanoseconds_ since the application started.
          */
-        template<typename T = float> T GetSystemTime() const { return (getEpochTime() - m_startCounter) / 1e9; }
+        size_t GetApplicationCounter() const { return getPerformanceCounter() - m_startCounter; }
         NativeApplication();
         virtual ~NativeApplication();
     };
+    /**
+    * @brief Creates a message box with the specified title and message.
+    *
+    * This is blocking, and will halt execution until the user dismisses it.
+    */
+    MessageBoxResult MessageBox(
+        const char* title, const char* message,
+        MessageBoxType type = MessageBoxType::Ok,
+        MessageBoxIcon icon = MessageBoxIcon::Info,
+        MessageBoxResult default_result = MessageBoxResult::Yes
+    );
 }
