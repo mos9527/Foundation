@@ -5,7 +5,7 @@
  */
 class ModelViewer : public RenderApplication {
 public:
-    UniquePtr<Scene> m_scene;
+    UniquePtr<Staging> m_scene;
     ResourceHandle m_sceneInstance{kInvalidHandle}, m_scenePrimitive{kInvalidHandle};
     ResourceHandle m_sceneVertex{kInvalidHandle}, m_sceneIndex{kInvalidHandle};
     ResourceHandle m_indirectCommands{kInvalidHandle}, m_counter{kInvalidHandle};
@@ -18,48 +18,14 @@ public:
     ModelViewer() : RenderApplication(), m_kittenScene(GetAllocator()) {};
     void OnDeviceSetup() override
     {
-        m_scene = ConstructUnique<Scene>(
+        m_scene = ConstructUnique<Staging>(
             GetAllocator(),
             m_device.Get(), GetAllocator(),
             m_swapchain->GetImages().size(),
             SceneBudgets{}
         );
     }
-    void OnBeforeFrame() override
-    {
-        m_scene->BeginTransfer(m_renderer->GetSync());
-        if (m_kittenMesh == kInvalidMeshHandle)
-        {
-            m_kittenMesh = m_scene->CreateMesh(LoadMeshFromObjFile("data/assets/Suzanne.obj", GetAllocator()));
-            for (int i = 0; i < 30 * 30; i++)
-                m_kittenScene.push_back(m_scene->CreateInstance({
-                    .enabled = true,
-                    .primitiveID = PrimitiveIDOf(m_kittenMesh),
-                }));
-        }
-        size_t cnt = m_kittenScene.size();
-        size_t sq = sqrt(cnt);
-        float4x4 view = lookAt(
-                    vec3(sq,sq,sq),
-                    vec3(sq / 2,sq / 2, 0),
-                    vec3(0.0f, 0.0f, 1.0f));
-        float4x4 proj = infinitePerspective(radians(45.0f), m_swapchain->GetAspectRatio(),0.1f);
-        proj[1][1] *= -1; // vulkan NDC
-        m_camera = proj * view;
-        for (DataHandle instance : m_kittenScene)
-        {
-            m_scene->UpdateInstance(instance, {
-                .enabled = true,
-                .primitiveID = PrimitiveIDOf(m_kittenMesh),
-                .transform = translate(float3{
-                    (instance / sq),
-                    (instance % sq),
-                    sin(GetApplicationTime<float>() + instance  * acos(-1) / cnt)
-                })
-            });
-        }
-        m_scene->EndTransfer();
-    }
+    void OnBeforeFrame() override;
     void RendererSetup() override
     {
         m_indirectCommands = createResource(m_renderer.get(), "IndirectCommands",
@@ -171,6 +137,42 @@ public:
         );
     }
 };
+// Setup
+void ModelViewer::OnBeforeFrame()
+{
+    m_scene->BeginTransfer(m_renderer->GetSync());
+    if (m_kittenMesh == kInvalidMeshHandle)
+    {
+        m_kittenMesh = m_scene->CreateMesh(LoadMeshFromObjFile("data/assets/Suzanne.obj", GetAllocator()));
+        for (int i = 0; i < 30 * 30; i++)
+            m_kittenScene.push_back(m_scene->CreateInstance({
+                .enabled = true,
+                .primitiveID = PrimitiveIDOf(m_kittenMesh),
+            }));
+    }
+    size_t cnt = m_kittenScene.size();
+    size_t sq = sqrt(cnt);
+    float4x4 view = lookAt(
+                vec3(sq,sq,sq),
+                vec3(sq / 2,sq / 2, 0),
+                vec3(0.0f, 0.0f, 1.0f));
+    float4x4 proj = infinitePerspective(radians(45.0f), m_swapchain->GetAspectRatio(),0.1f);
+    proj[1][1] *= -1; // vulkan NDC
+    m_camera = proj * view;
+    for (DataHandle instance : m_kittenScene)
+    {
+        m_scene->UpdateInstance(instance, {
+            .enabled = true,
+            .primitiveID = PrimitiveIDOf(m_kittenMesh),
+            .transform = translate(float3{
+                (instance / sq),
+                (instance % sq),
+                sin(GetApplicationTime<float>() + instance  * acos(-1) / cnt)
+            })
+        });
+    }
+    m_scene->EndTransfer();
+}
 
 int main(int argc, char** argv) {
     ModelViewer app;

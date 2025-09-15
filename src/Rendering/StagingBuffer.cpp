@@ -3,6 +3,39 @@
 
 namespace Foundation::Rendering
 {
+    BufferStagingList& CoalesceBufferStaging(BufferStagingList& res)
+    {
+        if (res.size() <= 1)
+            return res;
+        auto SortKey = [](BufferStagingItem const& item)
+        {
+            auto const& [src, dst, region] = item;
+            return Tuple{reinterpret_cast<size_t>(src), reinterpret_cast<size_t>(dst), region.dst_offset,
+                         region.src_offset};
+        };
+        Ranges::sort(res, [SortKey](BufferStagingItem& a, BufferStagingItem& b) { return SortKey(a) < SortKey(b); });
+        res.erase(Ranges::unique(res, [SortKey](BufferStagingItem& a, BufferStagingItem& b)
+                                 { return SortKey(a) == SortKey(b); })
+                      .begin(),
+                  res.end());
+        Span<BufferStagingItem> staging = {res.begin(), res.end()};
+        size_t i = 1, j = 0;
+        for (; i < staging.size(); ++i)
+        {
+            auto const& [src, dst, region] = staging[i];
+            auto const& [prev_src, prev_dst, prev_region] = staging[i - 1];
+            size_t d_src = region.src_offset - prev_region.src_offset;
+            size_t d_dst = region.dst_offset - prev_region.dst_offset;
+            size_t sz = region.size;
+            auto& [top_src, top_dst, top_region] = res[j];
+            if (src == prev_src && dst == prev_dst && d_src == sz && d_dst == sz)
+                top_region.size += sz;
+            else
+                j++, res[j] = staging[i];
+        }
+        res.resize(j + 1);
+        return res;
+    }
     StagingBuffer::StagingBuffer(Allocator* allocator, RHIDevice* device, const size_t size) :
         m_allocator(allocator), m_device(device),
         m_buffer(device->CreateBuffer(
@@ -29,125 +62,49 @@ namespace Foundation::Rendering
     }
     void StagingBuffer::Reset() { m_offset = 0; }
 
-    DataBuffer::DataBuffer(StringView name, Allocator* allocator, RHIDevice* device, size_t budget, RHIBufferUsageBits usage,
-                           Optional<uint32_t> initClear) :
-        m_name(name), m_allocator(allocator), m_allocations(allocator), m_staging(allocator), m_coalescedStaging(allocator),
-        m_initClear(initClear)
+    Staging::Staging(RHIDevice* device, Allocator* allocator, uint32_t numSwaps, size_t stagingBudget) :
+        m_device(device), m_allocator(allocator), m_stagingBuffers(allocator), m_bufferStagings(allocator),
+        m_idleGuard(m_device)
     {
-        m_buffer = device->CreateBuffer({
-            .resource =
-                {
-                    .heap = RHIDeviceHeapType::Local,
-                    .host_access = RHIResourceHostAccess::Invisible,
-                },
-            .usage = usage | RHIBufferUsageBits::TransferDestination,
-            .size = budget,
-        });
-        m_buffer->DebugSetObjectName(m_name.c_str());
-    }
-
-    DataHandle DataBuffer::PushData(StagingBuffer* buffer, Span<const char> data, size_t alignment)
-    {
-        auto& [handle, alloc] = m_allocations.pop();
-        alloc = m_buffer->GetArena().Allocate(data.size(), alignment);
-        if (alloc == kInvalidHandle)
-            throw std::bad_alloc();
-
-        auto stagingOffset = buffer->Write(data, alignment);
-        CHECK(stagingOffset != ~0ull &&
-              "FIXME-Staging: Buffer overflow. Amortize copies across frames, or call Reset().");
-
-        m_staging.emplace_back(
-            buffer,
-            RHICommandList::CopyBufferRegion{stagingOffset, m_buffer->GetArena().GetOffset(alloc), data.size()});
-        return handle;
-    }
-    void DataBuffer::UpdateData(StagingBuffer* buffer, DataHandle handle, Span<const char> data, size_t alignment)
-    {
-        auto& alloc = m_allocations.at(handle);
-        auto size = m_buffer->GetArena().GetSize(handle);
-        CHECK(data.size() <= size && "New data cannot be larger than initial allocation");
-
-        auto stagingOffset = buffer->Write(data, alignment);
-        CHECK(stagingOffset != ~0ull &&
-              "FIXME-Staging: Buffer overflow. Amortize copies across frames, or call Reset().");
-
-        m_staging.emplace_back(
-            buffer,
-            RHICommandList::CopyBufferRegion{stagingOffset, m_buffer->GetArena().GetOffset(alloc), data.size()});
-    }
-
-    void DataBuffer::FreeData(DataHandle handle)
-    {
-        auto& alloc = m_allocations.at(handle);
-        m_buffer->GetArena().Free(alloc);
-        m_allocations.free(handle);
-    }
-
-    Pair<size_t, size_t> DataBuffer::Query(DataHandle handle) const
-    {
-        auto& alloc = m_allocations.at(handle);
-        return {m_buffer->GetArena().GetSize(alloc), m_buffer->GetArena().GetOffset(alloc)};
-    }
-
-    void DataBuffer::Update(RHICommandList* cmd)
-    {
-        cmd->DebugBegin("Data Buffer Update");
-        cmd->DebugBegin(m_name.c_str());
-        if (m_initClear.has_value())
+        // Create one staging buffer for each frame in flight.
+        // This in turn utilizes the frame fences for synchronization.
+        // A lower memory footprint option is to do this with a single staging buffer,
+        // and wait for the resource fence before reusing it, which
+        // incurs CPU stalls.
+        for (size_t i = 0; i < numSwaps; i++)
         {
-            cmd->FillBuffer(m_buffer.Get(), m_initClear.value());
-            m_initClear.reset();
+            m_stagingBuffers.emplace_back(allocator, device, stagingBudget);
+            m_stagingBuffers.back().GetBuffer()->DebugSetObjectName(fmt::format("Staging Buffer {}", i).c_str());
         }
-        if (m_staging.empty())
-            return;
-        for (auto& [buffer, region] : CoalesceStaging())
-        {
-            cmd->CopyBuffer(buffer->GetBuffer().Get(), m_buffer.Get(), region);
-        }
-        m_staging.clear();
-        cmd->DebugEnd();
-        cmd->DebugEnd();
+        LOG_RUNTIME(Staging, info, "** Staging init with {} buffers of {} each **", numSwaps,
+                    formatHumanReadableSize(stagingBudget));
     }
-
-    void DataBuffer::Abort() { m_staging.clear(); }
-
-    void DataBuffer::Reset()
+    void Staging::BeginTransfer(uint32_t rendererSync)
     {
-        Abort();
-        m_allocations.clear();
-        m_buffer->GetArena().Reset();
+        CHECK_MSG(m_state == State::Idle, "Staging is already in {} state", m_state);
+        m_currentSync = rendererSync;
+        m_stagingBuffers[m_currentSync].Reset();
+        m_bufferStagings.clear();
+        m_state = State::Transfer;
     }
-
-    DataBuffer::StagingList& DataBuffer::CoalesceStaging()
+    RHIBuffer* Staging::GetStagingBuffer()
     {
-        m_coalescedStaging.clear();
-        if (m_staging.size() <= 1)
-            return m_staging;
-        Ranges::sort(m_staging,
-                          [](StagingPair& a, StagingPair& b)
-                          {
-                              Tuple A{reinterpret_cast<size_t>(a.first), a.second.dst_offset, a.second.src_offset};
-                              Tuple B{reinterpret_cast<size_t>(b.first), b.second.dst_offset, b.second.src_offset};
-                              return A < B;
-                          });
-        m_staging.erase(
-            Ranges::unique(m_staging, [](StagingPair& a, StagingPair& b)
-                                { return a.first == b.first && a.second.dst_offset == b.second.dst_offset; })
-                .begin(),
-            m_staging.end());
-        m_coalescedStaging.push_back(m_staging[0]);
-        for (size_t i = 1; i < m_staging.size(); ++i)
-        {
-            size_t d_src = m_staging[i].second.src_offset - m_staging[i - 1].second.src_offset;
-            size_t d_dst = m_staging[i].second.dst_offset - m_staging[i - 1].second.dst_offset;
-            size_t sz = m_staging[i].second.size;
-            if (m_staging[i].first == m_staging[i - 1].first && d_src == sz && d_dst == sz)
-                m_coalescedStaging.back().second.size += sz;
-            else
-                m_coalescedStaging.push_back(m_staging[i]);
-        }
-        return m_coalescedStaging;
+        CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");
+        CHECK_MSG(m_currentSync < m_stagingBuffers.size(), "Invalid current sync index {}", m_currentSync);
+        return m_stagingBuffers[m_currentSync].GetBuffer();
     }
-
+    void Staging::TransferBuffer(RHIBuffer* dst_buffer, size_t offset, Span<const char> data, size_t alignment)
+    {
+        CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");
+        size_t src_offset = m_stagingBuffers[m_currentSync].Write(data, alignment);
+        m_bufferStagings.emplace_back(m_stagingBuffers[m_currentSync].GetBuffer(), dst_buffer,
+                                      RHICommandList::CopyBufferRegion{src_offset, offset, data.size_bytes()});
+    }
+    void Staging::EndTransfer()
+    {
+        CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");
+        CoalesceBufferStaging(m_bufferStagings);
+        m_state = State::Idle;
+        m_currentSync = ~0u;
+    }
 } // namespace Foundation::Rendering
