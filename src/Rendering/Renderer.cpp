@@ -1114,8 +1114,8 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
     size_t nextGroupIndex = (groupIndex + 1) % groups.size(); // Next group. Could be the first group if this is the last group
     if (groups[groupIndex].queue == RHIDeviceQueueType::Graphics && groups[nextGroupIndex].queue != currentQueue)
     {
-        cmd->BeginTransition();
         cmd->DebugBegin("<Group Graphics to Compute>");
+        cmd->BeginTransition();
         for (PassHandle pass : groups[nextGroupIndex].passes)
         {
             auto& tracked = m_setup->trackedPasses[pass];
@@ -1164,12 +1164,13 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
                 tres.lastBufferState.executeTempTransitionFlag = false;
             }
         }
-        cmd->DebugEnd();
         cmd->EndTransition();
+        cmd->DebugEnd();
     } else
     { /* Compute - nop */ }
     // Actually release our resources for subsequent groups
     uint32_t currentQueueIndex = ExecuteGetQueueIndex(currentQueue);
+    cmd->BeginTransition();
     for (PassHandle pass : groups[groupIndex].passes)
     {
         auto& tracked = m_setup->trackedPasses[pass];
@@ -1203,6 +1204,7 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
             tres.lastBufferState.lastOwnerQueue = RHIDeviceQueueType::Undefined;
         }
     }
+    cmd->EndTransition();
     cmd->DebugEnd();
 }
 void Renderer::ExecuteFrame()
