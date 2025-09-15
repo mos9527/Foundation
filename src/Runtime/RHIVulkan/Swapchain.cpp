@@ -1,6 +1,8 @@
 #include "Resource.hpp"
 #include "Device.hpp"
 #include "Swapchain.hpp"
+
+#include <Bits/Ranges.hpp>
 using namespace Foundation;
 using namespace Foundation::RHI;
 
@@ -21,10 +23,9 @@ vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDe
         desc.extents.y, surface_caps.minImageExtent.height, surface_caps.maxImageExtent.height
     );
     CHECK_MSG(
-        std::ranges::find(present_modes, vkPresentModeFromSwapchainDesc(desc.present_mode)) != present_modes.end(),
+        Ranges::find(present_modes, vkPresentModeFromSwapchainDesc(desc.present_mode)) != present_modes.end(),
         "Swapchain present mode {} not supported",
-        (uint32_t)desc.present_mode
-    );
+        static_cast<uint32_t>(desc.present_mode));
     CHECK_MSG(
         desc.min_buffer_count >= surface_caps.minImageCount,
         "Swapchain min buffer count {} not supported (min {})",

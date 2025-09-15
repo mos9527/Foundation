@@ -35,13 +35,14 @@ vk::AllocationCallbacks const& VulkanDevice::GetVkAllocatorCallbacks() const {
 }
 
 VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice, Native::NativeWindow* window) :
-    RHIDevice(app), m_app(app), m_physicalDevice(std::move(physicalDevice)), m_swapchain_formats(GetAllocator()), m_storage(GetAllocator(), kDeviceStorageReserveSize),
+    RHIDevice(app), m_app(app), m_physicalDevice(std::move(physicalDevice)), m_swapchain_formats(GetAllocator()), m_swapchain_present_modes(GetAllocator()), m_storage(GetAllocator(), kDeviceStorageReserveSize),
     window_(window)
 {
     LOG_RUNTIME(VulkanDevice, info, "Instantiating Vulkan device"), DebugLogDeviceInfo();
     auto queues = m_physicalDevice.getQueueFamilyProperties();
     // Find queues
     // Graphics, Compute, Transfer should be preferably mutually exclusive
+    // NOTE: We never used dedicated transfer in the Renderer - offloading to compute is more than enough for such tasks.
     auto find_first = [&](vk::QueueFlags flags, uint32_t skip1, uint32_t skip2) -> uint32_t {
         for (uint32_t i = 0; i < queues.size(); ++i)
             if ((queues[i].queueFlags & flags) == flags && i != skip1 && i != skip2)
@@ -73,6 +74,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
             present = graphics;
         }
         else {
+            LOG_RUNTIME(VulkanDevice, warn, "Device may have separate Graphics and Present queues!");
             for (size_t i = 0; i < queues.size(); ++i) {
                 if (m_physicalDevice.getSurfaceSupportKHR(static_cast<uint32_t>(i), *m_surface)) {
                     present = static_cast<int>(i);
@@ -141,6 +143,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     DebugLogAllocatorInfo();
     if (m_surface != nullptr)
     {
+        // Collect swapchain (surface) info
         auto formats = m_physicalDevice.getSurfaceFormatsKHR(m_surface);
         for (auto& fmt : formats) {
             using enum RHIResourceFormat;
@@ -160,6 +163,25 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
                 break;
             default:
                 // TODO: More formats? HDR?
+                break;
+            }
+        }
+        auto modes = m_physicalDevice.getSurfacePresentModesKHR(m_surface);
+        for (auto& mode : modes)
+        {
+            using enum RHISwapchainPresentMode;
+            switch (mode)
+            {
+                case vk::PresentModeKHR::eMailbox:
+                    m_swapchain_present_modes.emplace_back(Mailbox);
+                    break;
+                case vk::PresentModeKHR::eImmediate:
+                    m_swapchain_present_modes.emplace_back(Tearing);
+                    break;
+                case vk::PresentModeKHR::eFifo:
+                    m_swapchain_present_modes.emplace_back(Fifo);
+                    break;
+                default:
                 break;
             }
         }
@@ -312,6 +334,10 @@ RHIDeviceQueue* VulkanDevice::GetDeviceQueue(RHIDeviceQueueType type) const {
 Span<RHIResourceFormat const> VulkanDevice::GetSwapchainSupportedFormats() const
 {
     return m_swapchain_formats;
+}
+Span<RHISwapchainPresentMode const> VulkanDevice::GetSwapchainSupportedPresentModes() const
+{
+    return m_swapchain_present_modes;
 }
 RHIDeviceScopedObjectHandle<RHISwapchain> VulkanDevice::CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) {
     return { this, m_storage.CreateObject<VulkanSwapchain>(*this, desc) };

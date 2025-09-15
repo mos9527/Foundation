@@ -1,5 +1,7 @@
-#include "ShaderReflection.hpp"
 #include <spirv/unified1/spirv.hpp>
+#include <Bits/Ranges.hpp>
+#include "ShaderReflection.hpp"
+
 using namespace Foundation::Rendering;
 using namespace Foundation::Core;
 void ShaderReflection::ParseSPIRV(const Span<const char> bytecode)
@@ -152,7 +154,7 @@ void ShaderReflection::ParseSPIRV(const Span<const char> bytecode)
 
 void ShaderReflection::Sort()
 {
-    std::ranges::sort(m_bindings, [](const Binding& lhs, const Binding& rhs) {
+    Ranges::sort(m_bindings, [](const Binding& lhs, const Binding& rhs) {
         const Pair k1 = { lhs.descriptorSet, lhs.binding };
         const Pair k2 = { rhs.descriptorSet, rhs.binding };
         return k1 < k2;

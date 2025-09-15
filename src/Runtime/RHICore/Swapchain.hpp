@@ -8,16 +8,19 @@ namespace Foundation::RHI {
     struct RHISwapchainResizeException : std::exception {
         using std::exception::exception;
     };
+    enum class RHISwapchainPresentMode {
+        // V-Sync
+        Fifo,
+        // N buffering
+        Mailbox,
+        // No V-Sync (tearing allowed)
+        Tearing
+    };
     class RHISwapchain : public RHIObject {
     protected:
         const RHIDevice& m_device;
     public:
         struct SwapchainDesc {
-            enum PresentMode {
-                FIFO, // V-Sync
-                MAILBOX, // N buffering
-                IMMEDIATE // No V-Sync (tearing allowed)
-            };            
             // Name for the swap chain, used for debugging purposes.
             RHIResourceFormat format;
             // Swapchain buffer sizes.
@@ -26,7 +29,7 @@ namespace Foundation::RHI {
             // Driver may create more buffers than requested.
             uint32_t min_buffer_count;
             // Present mode for the swap chain.
-            PresentMode present_mode;
+            RHISwapchainPresentMode present_mode;
         } m_desc;
         virtual Core::Span<RHITexture* const> GetImages() const = 0;
         RHISwapchain(RHIDevice const& device, SwapchainDesc const& desc) : m_device(device), m_desc(desc) {}
@@ -47,4 +50,9 @@ namespace Foundation::RHI {
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };
+    ENUM_NAME_CONV_BEGIN(RHISwapchainPresentMode)
+        ENUM_NAME(Fifo)
+        ENUM_NAME(Mailbox)
+        ENUM_NAME(Tearing)
+    ENUM_NAME_CONV_END()
 }

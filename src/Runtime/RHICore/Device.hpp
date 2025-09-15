@@ -136,6 +136,7 @@ namespace Foundation::RHI {
         RHIDevice(RHIApplication const& app) : m_app(app) {}
 
         virtual Span<RHIResourceFormat const> GetSwapchainSupportedFormats() const = 0;
+        virtual Span<RHISwapchainPresentMode const> GetSwapchainSupportedPresentModes() const = 0;
         [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) = 0;
         virtual RHISwapchain* GetSwapchain(Handle handle) const = 0;
         virtual void DestroySwapchain(Handle handle) = 0;

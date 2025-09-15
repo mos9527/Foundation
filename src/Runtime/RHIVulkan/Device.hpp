@@ -12,9 +12,9 @@ namespace Foundation::RHI {
     {
         RHIObjectStorage<VulkanDeviceQueue> storage;
         Handle graphics = kInvalidHandle, compute = kInvalidHandle, transfer = kInvalidHandle, present = kInvalidHandle;
-        VulkanDeviceQueues(Core::Allocator* allocator) : storage(allocator) {};
+        VulkanDeviceQueues(Allocator* allocator) : storage(allocator) {};
         VulkanDeviceQueue* Get(Handle handle) const;
-        inline VulkanDeviceQueue* Get(RHIDeviceQueueType type) const {
+        VulkanDeviceQueue* Get(RHIDeviceQueueType type) const {
             switch (type) {
             case RHIDeviceQueueType::Present:  return Get(present);
             case RHIDeviceQueueType::Compute:  return Get(compute);
@@ -23,21 +23,21 @@ namespace Foundation::RHI {
             case RHIDeviceQueueType::Graphics: return Get(graphics);
             }
         }
-        inline bool IsValid() const {
+        bool IsValid() const {
             return graphics != kInvalidHandle &&
                 compute != kInvalidHandle &&
                 transfer != kInvalidHandle;
         }
-        inline bool CanPresent() const {
+        bool CanPresent() const {
             return present != kInvalidHandle;
         }
-        inline bool IsDedicatedCompute() const {
+        bool IsDedicatedCompute() const {
             return IsValid() && compute != graphics;
         }
-        inline bool IsDedicatedTransfer() const {
+        bool IsDedicatedTransfer() const {
             return IsValid() && transfer != graphics;
         }
-        inline bool IsDedicatedPresent() const {
+        bool IsDedicatedPresent() const {
             return IsValid() && present != graphics;
         }
     };
@@ -47,7 +47,7 @@ namespace Foundation::RHI {
         vk::raii::Semaphore m_semaphore{ nullptr };
     public:
         VulkanDeviceSemaphore(const VulkanDevice& device, bool is_timeline);
-        inline auto const& GetVkSemaphore() const { return m_semaphore; }
+        auto const& GetVkSemaphore() const { return m_semaphore; }
 
         void DebugSetObjectName(const char* name) override;
     };
@@ -56,7 +56,7 @@ namespace Foundation::RHI {
         vk::raii::Fence m_fence{ nullptr };
     public:
         VulkanDeviceFence(const VulkanDevice& device, bool signaled);
-        inline auto const& GetVkFence() const { return m_fence; }
+        auto const& GetVkFence() const { return m_fence; }
 
         void DebugSetObjectName(const char* name) override;
     };
@@ -65,7 +65,7 @@ namespace Foundation::RHI {
         vk::raii::DescriptorSetLayout m_layout{ nullptr };
     public:
         VulkanDeviceDescriptorSetLayout(const VulkanDevice& device, RHIDeviceDescriptorSetLayoutDesc const& desc);
-        inline auto const& GetVkLayout() const { return m_layout; }
+        auto const& GetVkLayout() const { return m_layout; }
 
         void DebugSetObjectName(const char* name) override;
     };
@@ -74,7 +74,7 @@ namespace Foundation::RHI {
         vk::raii::Sampler m_sampler{ nullptr };
     public:
         VulkanDeviceSampler(const VulkanDevice& device, RHIDeviceSampler::SamplerDesc const& desc);
-        inline auto const& GetVkSampler() const { return m_sampler; }
+        auto const& GetVkSampler() const { return m_sampler; }
 
         void DebugSetObjectName(const char* name) override;
     };
@@ -86,14 +86,15 @@ namespace Foundation::RHI {
         vk::raii::Device m_device{ nullptr };
         vk::raii::SurfaceKHR m_surface{ nullptr };
 
-        Core::Vector<RHIResourceFormat> m_swapchain_formats;
+        Vector<RHIResourceFormat> m_swapchain_formats;
+        Vector<RHISwapchainPresentMode> m_swapchain_present_modes;
 
         VmaAllocator m_vkAllocator{ nullptr };
         // Device Object storage
         // Lifetimes and handle dereferencing are managed by the device.
         RHIObjectStorage<> m_storage;
         // Queues
-        Core::UniquePtr<VulkanDeviceQueues> m_queues{ nullptr };
+        UniquePtr<VulkanDeviceQueues> m_queues{ nullptr };
         Native::NativeWindow* window_;
 
     public:
@@ -105,7 +106,8 @@ namespace Foundation::RHI {
 
         RHIDeviceQueue* GetDeviceQueue(RHIDeviceQueueType type) const override;
 
-        Core::Span<RHIResourceFormat const> GetSwapchainSupportedFormats() const override;
+        Span<RHIResourceFormat const> GetSwapchainSupportedFormats() const override;
+        Span<RHISwapchainPresentMode const> GetSwapchainSupportedPresentModes() const;
         RHIDeviceScopedObjectHandle<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) override;
         RHISwapchain* GetSwapchain(Handle handle) const override;
         void DestroySwapchain(Handle handle) override;
@@ -151,22 +153,22 @@ namespace Foundation::RHI {
         RHIDeviceSampler* GetSampler(Handle handle) const override;
         void DestroySampler(Handle handle) override;
 
-        void ResetFences(Core::Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) override;
-        void WaitForFences(Core::Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) override;
+        void ResetFences(Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) override;
+        void WaitForFences(Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) override;
 
-        void SignalTimelineSemaphores(Core::Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) override;
-        void WaitForTimelineSemaphores(Core::Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) override;
+        void SignalTimelineSemaphores(Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) override;
+        void WaitForTimelineSemaphores(Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) override;
 
         void WaitIdle() const override;
 
-        Core::Allocator* GetAllocator() const;
+        Allocator* GetAllocator() const;
         vk::AllocationCallbacks const& GetVkAllocatorCallbacks() const;
 
-        inline auto const& GetVkQueues() const { return m_queues; }
-        inline auto const& GetVkDevice() const { return m_device; }
-        inline auto const& GetVkSurface() const { return m_surface; }
-        inline auto const& GetVkPhysicalDevice() const { return m_physicalDevice; }
-        inline auto const& GetVkAllocator() const { return m_vkAllocator; }
+        auto const& GetVkQueues() const { return m_queues; }
+        auto const& GetVkDevice() const { return m_device; }
+        auto const& GetVkSurface() const { return m_surface; }
+        auto const& GetVkPhysicalDevice() const { return m_physicalDevice; }
+        auto const& GetVkAllocator() const { return m_vkAllocator; }
 
         void DebugSetObjectName(const char* name) override;
     };
@@ -179,9 +181,9 @@ namespace Foundation::RHI {
             : RHIDeviceQueue(device), m_device(device), m_queue_index(queue_index), m_queue(device.GetVkDevice(), queue_index, 0) {
         };
 
-        inline const VulkanDevice& GetVulkanDevice() const { return m_device; }
-        inline vk::raii::Queue GetVkQueue() const { return m_queue; }
-        inline uint32_t GetVkQueueIndex() const { return m_queue_index; }
+        const VulkanDevice& GetVulkanDevice() const { return m_device; }
+        vk::raii::Queue GetVkQueue() const { return m_queue; }
+        uint32_t GetVkQueueIndex() const { return m_queue_index; }
 
         void WaitIdle() const override;
         void Submit(SubmitDesc const& desc) const override;

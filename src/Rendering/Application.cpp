@@ -11,23 +11,23 @@ void RenderApplication::CreateSwapchain() {
         RHIResourceFormat::R8G8B8A8_SRGB,
         RHIResourceFormat::B8G8R8A8_SRGB
     };
-    RHIResourceFormat format = RHIResourceFormat::Undefined;
-    auto const& supported = m_device->GetSwapchainSupportedFormats();
-    Set<RHIResourceFormat> formats(supported.begin(), supported.end(), m_alloc.Ptr());
-    for (auto fmt : kFormatPreferenceList) {
-        if (formats.contains(fmt)) {
-            format = fmt;
-            LOG_RUNTIME(RenderApplication, info, "Selected swapchain format: {}", format);
-            break;
-        }
-    }
-    CHECK_MSG(format != RHIResourceFormat::Undefined, "No supported swapchain format found!");
+    constexpr RHISwapchainPresentMode kPresentModePreferenceList[] = {
+        RHISwapchainPresentMode::Mailbox,
+        RHISwapchainPresentMode::Tearing,
+        RHISwapchainPresentMode::Fifo
+    };
+    auto format = Ranges::FirstOf(Views::all(kFormatPreferenceList) | Views::filter(Ranges::ContainedBy(m_device->GetSwapchainSupportedFormats())));
+    auto present = Ranges::FirstOf(Views::all(kPresentModePreferenceList) | Views::filter(Ranges::ContainedBy(m_device->GetSwapchainSupportedPresentModes())));
+    CHECK_MSG(format.has_value(), "No supported swapchain format found!");
+    LOG_RUNTIME(RenderApplication, info, "Selected swapchain format: {}", format.value());
+    CHECK_MSG(present.has_value(), "No supported presentation mode found!");
+    LOG_RUNTIME(RenderApplication, info, "Selected swapchain present mode: {}", present.value());
     m_swapchain = m_device->CreateSwapchain(
         RHISwapchain::SwapchainDesc{
-        .format = format,
+        .format = format.value(),
         .extents = GetFramebufferSize(),
         .min_buffer_count = 3,
-        .present_mode = RHISwapchain::SwapchainDesc::PresentMode::IMMEDIATE,
+        .present_mode = present.value(),
     });
 }
 void RenderApplication::InitializeRenderer() {

@@ -1,7 +1,7 @@
 #pragma once
-#include <ranges>
 #include <utility>
 #include <filesystem>
+#include <Bits/Ranges.hpp>
 #include <RHICore/Device.hpp>
 #include <RHICore/PipelineState.hpp>
 #include <Allocator/StackAllocator.hpp>
@@ -81,11 +81,11 @@ namespace Foundation::Rendering
             auto [layer_begin, layer_end] = range.GetArrayLayerRange();
             uint32_t mip_stride = textureLayers * kTextureAspectCount;
             return
-                std::views::all(Span<SubresourceState>{
+                Views::all(Span<SubresourceState>{
                     lastSubresourceStates.begin() + mip_begin * mip_stride,
                     lastSubresourceStates.begin() + (mip_end + 1) * mip_stride,
                 }) |
-                std::views::filter([=](const SubresourceState& state) {
+                Views::filter([=](const SubresourceState& state) {
                     return (RHITextureAspectFlag(state.aspect) & range.layer.aspect) && state.mip >= mip_begin && state.mip <= mip_end && state.layer >= layer_begin && state.layer <= layer_end;
                 });
         }

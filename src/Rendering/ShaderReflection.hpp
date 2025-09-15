@@ -8,7 +8,7 @@ namespace Foundation::Rendering {
      * @brief Runtime reflection data for a shader module.
      */
     class ShaderReflection {
-        Core::Allocator* m_allocator;        
+        Allocator* m_allocator;        
         /**
          * @brief Parse SPIR-V shader code and populate reflection data.        
          * 
@@ -18,7 +18,7 @@ namespace Foundation::Rendering {
          *     https://www.khronos.org/spirv/visualizer/
          *     https://shader-slang.org/slang-playground/
          */
-        void ParseSPIRV(Core::Span<const char> bytecode);
+        void ParseSPIRV(Span<const char> bytecode);
         void Sort();
     public:
         struct Entrypoint {
@@ -27,21 +27,21 @@ namespace Foundation::Rendering {
             // Compute shader specific
             Tuple<uint32_t, uint32_t, uint32_t> local_size{};
         };
-        Core::Vector<Entrypoint> m_entrypoints;
+        Vector<Entrypoint> m_entrypoints;
         struct Binding {
             String name;
             uint32_t descriptorSet;
             uint32_t binding;
         };
-        Core::Vector<Binding> m_bindings;
+        Vector<Binding> m_bindings;
         struct PushConstant {
             String name;
             // TODO: add size, offset, type info?
             // This would require us to parse all OpType.. instructions however.
             // Caller is also expected to know the layout of push constants - TODO for now.                      
         };
-        Core::Vector<PushConstant> m_pushConstants;
-        ShaderReflection(Core::Span<const char> bytecode, Core::Allocator* alloc);
+        Vector<PushConstant> m_pushConstants;
+        ShaderReflection(Span<const char> bytecode, Allocator* alloc);
 
         String DbgDumpShaderInfo() const;
     };

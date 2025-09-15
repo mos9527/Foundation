@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <ranges>
 
 #include <Math/Math.hpp>
 #include <RHICore/Device.hpp>
@@ -366,7 +365,7 @@ void Renderer::CullPasses(PassHandle epilogue) const
     topo.reserve(m_setup->trackedPasses.size());
     auto topsort = [&](PassHandle u, PassHandle pa, auto&& dfs) -> void {
         vis[u] = 1;
-        for (const auto& v : m_setup->graph[u] | std::views::keys) {
+        for (const auto& v : m_setup->graph[u] | Views::keys) {
             depth[v] = std::max(depth[u] + 1, depth[v]);
             if (vis[v] == 1)
                 throw std::runtime_error("Cycle detected in render graph");
@@ -396,8 +395,8 @@ void Renderer::CullPasses(PassHandle epilogue) const
         pass.ord = ord, pass.depth = depth[pass.handle];
         auto& resources = pass.resources;
         // Sort then make unique
-        std::ranges::sort(resources);
-        resources.erase(std::ranges::unique(resources).begin(), resources.end());
+        Ranges::sort(resources);
+        resources.erase(Ranges::unique(resources).begin(), resources.end());
         for (auto res : resources) {
             if (!m_setup->activeResources.contains(res))
                 m_setup->activeResources[res] = { ord, ord };
@@ -413,7 +412,7 @@ void Renderer::CullPasses(PassHandle epilogue) const
     for (PassHandle i = 0, j = 0; i < exec.size();i = j) {
         while (j < exec.size() && m_setup->trackedPasses[exec[j]].depth == m_setup->trackedPasses[exec[i]].depth)
             j++;
-        std::ranges::sort(exec.begin() + i, exec.begin() + j, [&](PassHandle a, PassHandle b) {
+        Ranges::sort(exec.begin() + i, exec.begin() + j, [&](PassHandle a, PassHandle b) {
             return m_setup->trackedPasses[a].handle < m_setup->trackedPasses[b].handle;
         });
     }
@@ -433,8 +432,8 @@ void Renderer::CullPasses(PassHandle epilogue) const
             group.all_stages |= tpass.pass_stages;
         }
         // Sort and unique
-        std::ranges::sort(group.resources);
-        group.resources.erase(std::ranges::unique(group.resources).begin(), group.resources.end());
+        Ranges::sort(group.resources);
+        group.resources.erase(Ranges::unique(group.resources).begin(), group.resources.end());
         group.semaphore = m_device->CreateSemaphore(true /* timeline */);
         group.semaphore->DebugSetObjectName(
             fmt::format("RG Exec Semaphore Group {} Queue {}", group.group_index, group.queue
@@ -446,12 +445,12 @@ void Renderer::CullPasses(PassHandle epilogue) const
     }
     // Assign last Graphics/Compute group
     {
-        auto it = std::ranges::find_if(m_setup->executionGroups | std::views::reverse, [](auto const& g) {
+        auto it = Ranges::find_if(m_setup->executionGroups | Views::reverse, [](auto const& g) {
             return g.queue == RHIDeviceQueueType::Graphics;
         });
         if (it != m_setup->executionGroups.rend())
             it->is_last_graphics = true;
-        it = std::ranges::find_if(m_setup->executionGroups | std::views::reverse, [](auto const& g) {
+        it = Ranges::find_if(m_setup->executionGroups | Views::reverse, [](auto const& g) {
             return g.queue == RHIDeviceQueueType::Compute;
         });
         if (it != m_setup->executionGroups.rend())
@@ -588,10 +587,10 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     bindings.reserve(var_types.size());
     for (auto& [name, bind] : var_bind_points)
         bindings.emplace_back( bind, name );
-    std::ranges::sort(bindings);
+    Ranges::sort(bindings);
     // Separate into descriptor sets
     Vector<RHIDeviceDescriptorSetLayoutDesc::Binding> set_bindings(m_allocator);
-    for (const auto& binding : bindings | std::views::values) {
+    for (const auto& binding : bindings | Views::values) {
         // !! TODO: Descriptor Arrays
         CHECK_MSG(var_types.contains(binding), "Binding {} is not bound by pass {}, but is used by one of its shaders.", binding, tracked.name);
         set_bindings.push_back({ .count = 1, .stage = RHIShaderStageBits::All, .type = var_types[binding] });
@@ -768,7 +767,7 @@ void Renderer::FinalizeResources() {
     m_resources = ConstructUnique<Resources>(m_allocator, m_allocator);
     m_resources->fit(m_setup->trackedResources.size());
     // !! TODO: Overlap transient resources to with non-overlapping lifetimes with aliasing
-    for (const auto& handle : m_setup->activeResources | std::views::keys) {
+    for (const auto& handle : m_setup->activeResources | Views::keys) {
         auto& res = m_setup->trackedResources[handle];
         res.desc.visit(
             // Owned
@@ -814,12 +813,12 @@ void Renderer::FinalizeResources() {
         auto& pass = m_setup->trackedPasses[m_setup->execution[ord]];
         for (auto hdl : pass.texviews)
             activeViews.push_back(hdl);
-        for (const auto& key : pass.samplers | std::views::keys)
+        for (const auto& key : pass.samplers | Views::keys)
             activeSamplers.push_back(key);
     }
     // Instantiate views
-    std::ranges::sort(activeViews);
-    activeViews.erase(std::ranges::unique(activeViews).begin(), activeViews.end());
+    Ranges::sort(activeViews);
+    activeViews.erase(Ranges::unique(activeViews).begin(), activeViews.end());
     m_resources->fit(activeViews.size());
     for (auto hdl : activeViews) {
         auto [rhdl, desc] = m_setup->trackedViews[hdl];
@@ -827,8 +826,8 @@ void Renderer::FinalizeResources() {
         m_resources->views[hdl] = res->CreateTextureView(desc);
     }
     // Instantiate samplers
-    std::ranges::sort(activeSamplers);
-    activeSamplers.erase(std::ranges::unique(activeSamplers).begin(), activeSamplers.end());
+    Ranges::sort(activeSamplers);
+    activeSamplers.erase(Ranges::unique(activeSamplers).begin(), activeSamplers.end());
     m_resources->fit(activeSamplers.size());
     for (auto hdl : activeSamplers) {
         auto& desc = m_setup->trackedSamplers[hdl];
@@ -933,8 +932,8 @@ void Renderer::ExecuteCheckResourceStates(Span<PassHandle> passes, RHIDeviceQueu
     // Sort and unique cross-queue groups
     if (outGroups && !outGroups->empty())
     {
-        std::ranges::sort(*outGroups);
-        outGroups->erase(std::ranges::unique(*outGroups).begin(), outGroups->end());
+        Ranges::sort(*outGroups);
+        outGroups->erase(Ranges::unique(*outGroups).begin(), outGroups->end());
     }
 }
 void Renderer::BeginExecute()

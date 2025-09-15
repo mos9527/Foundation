@@ -124,7 +124,7 @@ namespace Foundation::Rendering
         m_coalescedStaging.clear();
         if (m_staging.size() <= 1)
             return m_staging;
-        std::ranges::sort(m_staging,
+        Ranges::sort(m_staging,
                           [](StagingPair& a, StagingPair& b)
                           {
                               Tuple A{reinterpret_cast<size_t>(a.first), a.second.dst_offset, a.second.src_offset};
@@ -132,7 +132,7 @@ namespace Foundation::Rendering
                               return A < B;
                           });
         m_staging.erase(
-            std::ranges::unique(m_staging, [](StagingPair& a, StagingPair& b)
+            Ranges::unique(m_staging, [](StagingPair& a, StagingPair& b)
                                 { return a.first == b.first && a.second.dst_offset == b.second.dst_offset; })
                 .begin(),
             m_staging.end());

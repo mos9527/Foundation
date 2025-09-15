@@ -3,12 +3,12 @@
 #include "Common.hpp"
 #include "Resource.hpp"
 namespace Foundation::RHI {
-    inline vk::PresentModeKHR vkPresentModeFromSwapchainDesc(RHISwapchain::SwapchainDesc::PresentMode mode) {
-        using enum RHISwapchain::SwapchainDesc::PresentMode;
+    inline vk::PresentModeKHR vkPresentModeFromSwapchainDesc(RHISwapchainPresentMode mode) {
+        using enum RHISwapchainPresentMode;
         switch (mode) {
-        case MAILBOX: return vk::PresentModeKHR::eMailbox;
-        case IMMEDIATE: return vk::PresentModeKHR::eImmediate;
-        case FIFO:
+        case Mailbox: return vk::PresentModeKHR::eMailbox;
+        case Tearing: return vk::PresentModeKHR::eImmediate;
+        case Fifo:
         default:
             return vk::PresentModeKHR::eFifo;
         }
