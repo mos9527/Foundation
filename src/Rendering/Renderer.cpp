@@ -1118,6 +1118,8 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
     size_t nextGroupIndex = (groupIndex + 1) % groups.size(); // Next group. Could be the first group if this is the last group
     if (groups[groupIndex].queue == RHIDeviceQueueType::Graphics && groups[nextGroupIndex].queue != currentQueue)
     {
+        // Declare that the last pass from this group handled the transition
+        PassHandle executorPass = m_setup->executionGroups[groupIndex].passes.back();
         cmd->DebugBegin("<Group Graphics to Compute>");
         cmd->BeginTransition();
         for (PassHandle pass : groups[nextGroupIndex].passes)
@@ -1139,7 +1141,7 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
                     if (sta.executeTempTransitionFlag)
                         continue; // Only transition once - so the *first* usages of the next group are valid
                     // Subsequent intra-group transitions should always be valid by themselves
-                    ExecuteBarrierSubresourceState(pass, res, sta, access, stage, layout, cmd);
+                    ExecuteBarrierSubresourceState(executorPass, res, sta, access, stage, layout, cmd);
                     sta.executeTempTransitionFlag = true;
                 }
                 cmd->DebugEnd();
@@ -1151,7 +1153,7 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
                 if (tres.lastBufferState.executeTempTransitionFlag)
                     continue;
                 cmd->DebugBegin(tres.name.c_str());
-                ExecuteBarrierBuffer(pass, tres, access, stage, cmd);
+                ExecuteBarrierBuffer(executorPass, tres, access, stage, cmd);
                 cmd->DebugEnd();
                 tres.lastBufferState.executeTempTransitionFlag = true;
             }
