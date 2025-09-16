@@ -1,10 +1,10 @@
-#include "ModelViewer.hpp"
-#include "Scene.hpp"
 #include "Mesh.hpp"
+#include "ModelRenderer.hpp"
+#include "Scene.hpp"
 /**
  * @brief Model Viewer Applicationw
  */
-class ModelViewer : public RenderApplication {
+class ModelRenderer : public RenderApplication {
 public:
     UniquePtr<Scene> m_scene;
     ResourceHandle m_sceneInstance{kInvalidHandle}, m_scenePrimitive{kInvalidHandle};
@@ -55,7 +55,7 @@ public:
         );
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect
-        createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Compute,
+        createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Graphics,
             [=, this](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "resetCounter", "data/shaders/MVClearCounters.spv");
@@ -67,7 +67,7 @@ public:
                 r->CmdDispatch(self, cmd, {1,1,1});
             }
         );
-        createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Compute,
+        createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Graphics,
             [=, this](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "indirectCullEarly", "data/shaders/MVIndirectCull.spv");
@@ -140,8 +140,31 @@ public:
     }
 };
 
+class ModelViewer
+{
+
+};
 int main(int argc, char** argv) {
-    ModelViewer app;
-    app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = true, .asyncCompute = true });
-    Thread render(&ModelViewer::RunForever, &app);
+    ModelRenderer renderer;
+    renderer.Initialize<VulkanApplication>({
+        .windowTitle = "Model Viewer",
+        .present = true,
+        .asyncCompute = true
+    });
+    Thread renderThread(&ModelRenderer::RunForever, &renderer);
+
+    auto& scene = renderer.m_scene;
+    scene->BeginUpdateAsync();
+    auto fut = scene->LoadMeshAsync("data/assets/Kitten.obj");
+    scene->EndUpdateAsync();
+    fut.wait();
+    auto prim = fut.get<MeshAllocation>()->primitiveID; // TODO: Ugly.
+    // We could only do this here due to prior locking.
+    scene->BeginUpdateAsync();
+    scene->UpdateInstanceAsync(0, {
+        .enabled = true,
+        .primitiveID = prim,
+        .transform = glm::mat4(1.0f),
+    } );
+    scene->EndUpdateAsync();
 }

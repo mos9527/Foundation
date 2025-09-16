@@ -33,16 +33,17 @@ namespace Foundation
     class Scene;
     class SceneFuture : public Future<SceneHandle>
     {
+        const Scene* scene;
         const SharedPtr<Mutex> mutex;
         const void* data;
     public:
-        SceneFuture(const SharedPtr<Mutex>& mutex, void* data) : mutex(mutex), data(data) {}
+        SceneFuture(const Scene* scene, const SharedPtr<Mutex>& mutex, void* data) : scene(scene), mutex(mutex), data(data) {}
         /**
          * @brief Wait for the future to complete.
          * @note This _must_ be called on a different thread than the Scene one, otherwise a deadlock is guaranteed.
          */
         void wait() const;
-        template<typename T> T* get() { wait(); return static_cast<T*>(data); }
+        template<typename T> const T* get() const { wait(); return static_cast<const T*>(data); }
     };
     /**
      * @brief Scene data management for asynchronous data updates/uploads
@@ -84,6 +85,7 @@ namespace Foundation
         );
         Scene(RHIDevice* device, Allocator* alloc, size_t numSwaps, SceneBudgets const& budgets = {});
 
+        State GetState() const { return m_state; }
         void OnBeforeFrame(uint32_t rendererSync);
 
         void BeginUpdateAsync();

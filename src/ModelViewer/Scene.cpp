@@ -35,6 +35,8 @@ void Scene::OnBeforeFrame(uint32_t rendererSync)
         auto mesh = LoadMeshFromObjFile(fpath, m_allocator);
         alloc->vertex = m_vertexBuffer.Push(mesh.m_vertex_data);
         alloc->index = m_indexBuffer.Push(mesh.m_index_data);
+        CHECK_MSG(alloc->vertex != kInvalidHandle && alloc->index != kInvalidHandle,
+                  "Failed to allocate mesh data (vtx: {}, idx: {})", alloc->vertex, alloc->index);
         PrimitiveMetadata primitive{
             .vertexOffset = static_cast<int>(m_vertexBuffer.Query(alloc->vertex).second),
             .indexCount = static_cast<int>(mesh.m_index_data.size()),
@@ -45,6 +47,7 @@ void Scene::OnBeforeFrame(uint32_t rendererSync)
         CHECK(prim_size == sizeof(PrimitiveMetadata));
         alloc->primitiveID = prim_offset / prim_size;
         mutex->unlock();
+        m_meshQueue.pop();
         break; // TODO: Batch more!
     }
     while (!m_instanceQueue.empty())
@@ -72,11 +75,11 @@ SceneFuture Scene::LoadMeshAsync(Path path)
     mutex->lock();
     auto& data = m_meshes.emplace_back();
     m_meshQueue.emplace(mutex, path, &data);
-    return SceneFuture(mutex, &data);
+    return SceneFuture(this, mutex, &data);
 }
 void Scene::UpdateInstanceAsync(SceneHandle id, InstanceMetadata data)
 {
-    CHECK_MSG(m_state == State::UpdateAsync, "Bad Scene State ({})", m_state);
+    CHECK_MSG(m_state == State::UpdateAsync, "Bad Scene State ({}). This must be called within a BeginUpdateAsync() and EndUpdateAsync() clause.", m_state);
     m_instanceQueue.emplace(id, data);
 }
 void Scene::EndUpdateAsync()
@@ -85,6 +88,11 @@ void Scene::EndUpdateAsync()
     m_updateMutex.unlock();
 }
 void SceneFuture::wait() const {
+    CHECK_MSG(
+        scene->GetState() != Scene::State::UpdateAsync,
+        "Deadlock detected (state={}). This future must be waited _after_ the Scene's EndUpdateAsync() call.",
+        scene->GetState()
+    );
     std::scoped_lock lock(*mutex);
 }
 void Scene::BeginUpdate(uint32_t rendererSync)
