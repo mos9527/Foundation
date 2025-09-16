@@ -12,6 +12,10 @@ namespace Foundation::Rendering
     using BufferStagingItem = Tuple<RHIBuffer*, RHIBuffer*, RHICommandList::CopyBufferRegion>;
     using BufferStagingList = Vector<BufferStagingItem>;
     using BufferCopyList = Vector<RHICommandList::CopyBufferRegion>;
+    // Opaque handle to an allocation acquired through @ref StagedBuffer::Push
+    using BufferAllocation = RHIBuffer::Arena::Allocation;
+    // [size, offset]
+    using AllocationPair = Pair<uint32_t, uint32_t>;
     /**
      * @brief Bump-only allocation buffer used for staging data to be transferred to GPU.
      */
@@ -59,12 +63,15 @@ namespace Foundation::Rendering
     /**
      * @brief Helper class for GPU contention-free staged buffer updates.
      *
-     * @todo Not thread-safe on the CPU yet.
+     * @note Transfer functions are _not_ inherently thread-safe - but it _is_ possible -
+     * and encouraged to perform transfers on a separate thread from the renderer, where
+     * @ref Update routines are in fact thread-safe.
      *
      * This creates a GPU-only local buffer, and multiple staging buffers per swap.
      *
      * For one-shot, static content - you don't need this. Get a staging buffer,
-     * write to it, and do the transfer right away. Wait until the queue is done.
+     * write to it, and do the transfer right away. Wait until the queue is done,
+     * free the staging buffer if you'd like to. See @ref Scene for reference.
      *
      * This is here for _dynamic_ content updates that can be performed asynchronously
      * without stalling the CPU or GPU for each update.
@@ -92,16 +99,25 @@ namespace Foundation::Rendering
         uint32_t m_currentSync{0};
         BufferStagingList m_bufferStagings;
 
+        // Syncs with @ref Update and @ref HasUpdates
         std::mutex m_transferMutex;
         RHIDeviceIdleGuard m_idleGuard;
+
+        Optional<uint32_t> m_clearValue;
 
     public:
         /**
          * @brief Create the staging arena buffers.
-         * @param numSwaps Max number of frames in flight, can be greater than the actual number of swaps.
-         * @param desc
+         * @param numSwaps Max number of frames in flight, can be greater, but no less than the actual number of swaps.
+         * @param desc Description of the data buffer to be created
+         * @param stagingBudget Size of the staging buffer. Defaults to kFullSize, which is the same size of the buffer
+         * created.
+         *        This can and _should_ be small as the memory footprint comes with per-swap staging is O(N * M).
+         *        Amortize upload across multiple frames is also a good idea.
+         * @param clearValue Value to clear the buffer with at first update. Defaults to {}, which leaves the buffer uninitialized.
          */
-        StagedBuffer(RHIDevice* device, Allocator* allocator, uint32_t numSwaps, RHIBufferDesc const& desc, size_t stagingBudget = kFullSize);
+        StagedBuffer(RHIDevice* device, Allocator* allocator, uint32_t numSwaps, RHIBufferDesc const& desc,
+                     size_t stagingBudget = kFullSize, Optional<uint32_t> clearValue = {});
         /**
          * @brief Gets the GPU-only backing buffer.
          */
@@ -131,13 +147,43 @@ namespace Foundation::Rendering
          */
         void Transfer(size_t dst_offset, Span<const char> data, size_t alignment = 4);
         /**
+         * @brief Pushes a range of data into the buffer through its @ref RHIBuffer::Arena
+         *
+         * The destination offset is managed by the buffer's internal @ref RHIBuffer::Arena
+         *
+         * This MUST be called between @ref BeginTransfer and @ref EndTransfer.
+         *
+         * @note No transfer is performed until @ref EndTransfer is called, and its command list is executed.
+         */
+        BufferAllocation Push(Span<const char> data, size_t alignment = 4);
+        /**
+         * @brief Updates a previous allocation, with a range of data that's of the same size
+         * This MUST be called between @ref BeginTransfer and @ref EndTransfer.
+         *
+         * @note No transfer is performed until @ref EndTransfer is called, and its command list is executed.
+         */
+        void Emplace(BufferAllocation, Span<const char> data, size_t alignment = 4);
+        /**
+         * @brief Queries the size and offset in the raw buffer of a previous allocation
+         */
+        AllocationPair Query(BufferAllocation allocation) const;
+        /**
+         * @brief Frees a previous pushed (allocated) data, marking the region to be reused.
+         *
+         * @note This is a no-op on the GPU side.
+         */
+        void Pop(BufferAllocation allocation);
+        /**
          * @brief Ends the transfer state, and pushes optimized copy commands to the given command list.
          */
         void EndTransfer();
         /**
          * @brief Check if there are any pending updates to be performed.
          */
-        bool HasUpdates() const { return !m_bufferStagings.empty(); }
+        bool HasUpdates() const {
+            std::scoped_lock lock(m_transferMutex);
+            return m_clearValue.has_value() || !m_bufferStagings.empty();
+        }
         /**
          * @brief Push the scheduled uploads onto the command list.
          *
@@ -168,27 +214,19 @@ namespace Foundation::Rendering
      * @param staged StagedBuffer to perform updates from.
      * @param name Name of the pass.
      * @param outBufferHandle Output parameter to receive the created buffer handle.
-     * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is disabled.
+     * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is
+     * disabled.
      * @return Handle to the created pass.
      */
     inline auto* createStagedBufferUpdatePass(Renderer* renderer, StagedBuffer* staged, StringView name,
-                                       ResourceHandle& outBufferHandle,
-                                       RHIDeviceQueueType queue = RHIDeviceQueueType::Graphics)
+                                              ResourceHandle& outBufferHandle,
+                                              RHIDeviceQueueType queue = RHIDeviceQueueType::Graphics)
     {
         outBufferHandle = renderer->CreateResource(fmt::format("StagedBuffer {}", name), staged->GetBuffer());
-        return createPass(renderer, name, queue,
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindBufferCopyDst(self, outBufferHandle);
-            },
-            [&](RHICommandList* cmd)
-            {
-                staged->Update(cmd);
-            },
-            [=](PassHandle self, Renderer* r)
-            {
-                return !staged->HasUpdates();
-            });
+        return createPass(
+            renderer, name, queue, [=](PassHandle self, Renderer* r) { r->BindBufferCopyDst(self, outBufferHandle); },
+            [&](RHICommandList* cmd) { staged->Update(cmd); },
+            [=](PassHandle self, Renderer* r) { return !staged->HasUpdates(); });
     }
 
     ENUM_NAME_CONV_BEGIN(StagedBuffer::State)

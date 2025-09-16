@@ -1,31 +1,31 @@
 #include "ModelViewer.hpp"
-
+#include "Scene.hpp"
 /**
- * @brief Model Viewer Application
+ * @brief Model Viewer Applicationw
  */
 class ModelViewer : public RenderApplication {
 public:
-    UniquePtr<Staging> m_scene;
+    UniquePtr<Scene> m_scene;
     ResourceHandle m_sceneInstance{kInvalidHandle}, m_scenePrimitive{kInvalidHandle};
     ResourceHandle m_sceneVertex{kInvalidHandle}, m_sceneIndex{kInvalidHandle};
     ResourceHandle m_indirectCommands{kInvalidHandle}, m_counter{kInvalidHandle};
     ResourceHandle m_depthBuffer{kInvalidHandle};
     const size_t kMaxIndirectCommands = 32767;
     /* -- scene -- */
-    MeshHandle m_kittenMesh{kInvalidMeshHandle};
-    Vector<DataHandle> m_kittenScene;
     float4x4 m_camera{ mat4(1.0f) };
-    ModelViewer() : RenderApplication(), m_kittenScene(GetAllocator()) {};
     void OnDeviceSetup() override
     {
-        m_scene = ConstructUnique<Staging>(
+        m_scene = ConstructUnique<Scene>(
             GetAllocator(),
             m_device.Get(), GetAllocator(),
             m_swapchain->GetImages().size(),
             SceneBudgets{}
         );
     }
-    void OnBeforeFrame() override;
+    void OnBeforeFrame() override
+    {
+        m_scene->OnBeforeFrame(m_renderer->GetSync());
+    }
     void RendererSetup() override
     {
         m_indirectCommands = createResource(m_renderer.get(), "IndirectCommands",
@@ -47,10 +47,11 @@ public:
                 .format = RHIResourceFormat::D32_SIGNED_FLOAT,
             }
         );
-        m_sceneInstance = m_scene->CreateInstanceDataUpdate(m_renderer.get(), "Scene Instance Data Update", RHIDeviceQueueType::Compute);
-        m_scenePrimitive = m_scene->CreatePrimitiveDataUpdate(m_renderer.get(), "Scene Primitive Data Update", RHIDeviceQueueType::Compute);
-        m_sceneVertex = m_scene->CreateVertexDataUpdate(m_renderer.get(), "Scene Vertex Data Update", RHIDeviceQueueType::Compute);
-        m_sceneIndex = m_scene->CreateIndexDataUpdate(m_renderer.get(), "Scene Index Data Update", RHIDeviceQueueType::Compute);
+        m_scene->CreateUpdatePasses(
+            m_renderer.get(),
+            m_sceneInstance, m_scenePrimitive, m_sceneVertex, m_sceneIndex,
+            RHIDeviceQueueType::Graphics
+        );
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect
         createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Compute,
@@ -137,45 +138,9 @@ public:
         );
     }
 };
-// Setup
-void ModelViewer::OnBeforeFrame()
-{
-    m_scene->BeginTransfer(m_renderer->GetSync());
-    if (m_kittenMesh == kInvalidMeshHandle)
-    {
-        m_kittenMesh = m_scene->CreateMesh(LoadMeshFromObjFile("data/assets/Suzanne.obj", GetAllocator()));
-        for (int i = 0; i < 30 * 30; i++)
-            m_kittenScene.push_back(m_scene->CreateInstance({
-                .enabled = true,
-                .primitiveID = PrimitiveIDOf(m_kittenMesh),
-            }));
-    }
-    size_t cnt = m_kittenScene.size();
-    size_t sq = sqrt(cnt);
-    float4x4 view = lookAt(
-                vec3(sq,sq,sq),
-                vec3(sq / 2,sq / 2, 0),
-                vec3(0.0f, 0.0f, 1.0f));
-    float4x4 proj = infinitePerspective(radians(45.0f), m_swapchain->GetAspectRatio(),0.1f);
-    proj[1][1] *= -1; // vulkan NDC
-    m_camera = proj * view;
-    for (DataHandle instance : m_kittenScene)
-    {
-        m_scene->UpdateInstance(instance, {
-            .enabled = true,
-            .primitiveID = PrimitiveIDOf(m_kittenMesh),
-            .transform = translate(float3{
-                (instance / sq),
-                (instance % sq),
-                sin(GetApplicationTime<float>() + instance  * acos(-1) / cnt)
-            })
-        });
-    }
-    m_scene->EndTransfer();
-}
 
 int main(int argc, char** argv) {
     ModelViewer app;
     app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = true, .asyncCompute = true });
-    app.RunForever();
+    Thread render(app.RunForever);
 }

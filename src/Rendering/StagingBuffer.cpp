@@ -62,9 +62,10 @@ namespace Foundation::Rendering
     }
     void StagingBuffer::Reset() { m_offset = 0; }
 
-    StagedBuffer::StagedBuffer(RHIDevice* device, Allocator* allocator, uint32_t numSwaps, RHIBufferDesc const& desc, size_t stagingBudget) :
+    StagedBuffer::StagedBuffer(RHIDevice* device, Allocator* allocator, uint32_t numSwaps, RHIBufferDesc const& desc,
+                               size_t stagingBudget, Optional<uint32_t> clearValue) :
         m_device(device), m_allocator(allocator), m_stagingBuffers(allocator), m_bufferStagings(allocator),
-        m_idleGuard(m_device)
+        m_idleGuard(m_device), m_clearValue(clearValue)
     {
         // Create one staging buffer for each frame in flight.
         // This in turn utilizes the frame fences for synchronization.
@@ -89,6 +90,7 @@ namespace Foundation::Rendering
         m_stagingBuffers[m_currentSync].Reset();
         m_bufferStagings.clear();
         m_state = State::Transfer;
+        m_transferMutex.lock();
     }
     RHIBuffer* StagedBuffer::GetStagingBuffer()
     {
@@ -115,19 +117,51 @@ namespace Foundation::Rendering
         m_bufferStagings.emplace_back(m_stagingBuffers[m_currentSync].GetBuffer(), m_buffer.Get(),
                                       RHICommandList::CopyBufferRegion{src_offset, dst_offset, data.size_bytes()});
     }
+    BufferAllocation StagedBuffer::Push(Span<const char> data, size_t alignment)
+    {
+        CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");
+        auto& arena = m_buffer->GetArena();
+        BufferAllocation alloc = arena.Allocate(data.size(), alignment);
+        auto [size, offset] = Query(alloc);
+        Transfer(offset, data, alignment);
+        return alloc;
+    }
+    void StagedBuffer::Emplace(BufferAllocation, Span<const char> data, size_t alignment)
+    {
+        CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");
+        auto& arena = m_buffer->GetArena();
+        BufferAllocation alloc = arena.Allocate(data.size(), alignment);
+        auto [size, offset] = Query(alloc);
+        Transfer(offset, data, alignment);
+    }
+    AllocationPair StagedBuffer::Query(BufferAllocation allocation) const
+    {
+        CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");
+        auto& arena = m_buffer->GetArena();
+        return {arena.GetSize(allocation), arena.GetOffset(allocation)};
+    }
+    void StagedBuffer::Pop(BufferAllocation allocation)
+    {
+        auto& arena = m_buffer->GetArena();
+        arena.Free(allocation);
+    }
     void StagedBuffer::EndTransfer()
     {
         CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");
         CoalesceBufferStaging(m_bufferStagings);
         m_state = State::Idle;
         m_currentSync = ~0u;
+        m_transferMutex.unlock();
     }
     void StagedBuffer::Update(RHICommandList* cmd)
     {
+        std::scoped_lock lock(m_transferMutex);
         CHECK_MSG(m_state == State::Idle, "Staging is not in Idle state");
-        if (m_bufferStagings.empty())
+        if (!HasUpdates())
             return;
         cmd->DebugBegin("Staging Buffer Updates");
+        if (m_clearValue.has_value())
+            cmd->FillBuffer(m_buffer.Get(), m_clearValue.value()), m_clearValue.reset();
         for (auto const& [src, dst, range] : m_bufferStagings)
             cmd->CopyBuffer(src, dst, {range});
         cmd->DebugEnd();

@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <bitset>
+#include <list>
 #include <map>
 #include <numeric>
 #include <optional>
@@ -89,6 +90,13 @@ namespace Foundation::Core {
      */
     template<typename T>
     using Deque = std::deque<T, StlAllocator<T>>;
+    /**
+     * @brief `std::list` with explicit @ref Foundation::Core::StlAllocator constructor
+     *
+     * Construction without an allocator is disallowed, and will result in a compile-time error.
+     */
+    template<typename T>
+    using List = std::list<T, StlAllocator<T>>;
     /**
      * @brief `std::queue` with explicit @ref Foundation::Core::StlAllocator constructor
      *

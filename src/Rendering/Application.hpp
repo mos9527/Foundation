@@ -5,6 +5,7 @@
 #include <RHICore/Common.hpp>
 #include <Native/Application.hpp>
 #include <RHICore/Application.hpp>
+#include <Async/Thread.hpp>
 
 #include "Renderer.hpp"
 namespace Foundation::Rendering {
