@@ -51,7 +51,7 @@ public:
         m_scene->CreateUpdatePasses(
             m_renderer.get(),
             m_sceneInstance, m_scenePrimitive, m_sceneVertex, m_sceneIndex,
-            RHIDeviceQueueType::Graphics
+            RHIDeviceQueueType::Compute
         );
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
         // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect

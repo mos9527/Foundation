@@ -1180,11 +1180,17 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
     } else
     { /* Compute - nop */ }
     // Actually release our resources for subsequent groups
-    // Do this for _all_ resources to the next queue since we do not know the subsequent access
-    // We _can_ only do this for resources that _are_ going to be used by a different queue.
-    // However, exploiting the alternate queue orders like this seem to be efficient enough?
+    // Do this for resources to the next queue that may require alternate queue access.
     uint32_t currentQueueIndex = ExecuteGetQueueIndex(currentQueue);
-    uint32_t nextQueueIndex = ExecuteGetQueueIndex(groups[nextGroupIndex].queue);
+    // Always alternate
+    // Not always optimal - but easier than tracking multiple queues across multiple groups across multiple frames
+    // The resources that are touched on different queues are usually sparse anyway. And only these are released.
+    // Release/Acquire for other resources would be no-ops
+    uint32_t nextQueueIndex = ExecuteGetQueueIndex(
+        currentQueue == RHIDeviceQueueType::Graphics ?
+        RHIDeviceQueueType::Compute :
+        RHIDeviceQueueType::Graphics
+    );
     cmd->BeginTransition();
     for (PassHandle pass : groups[groupIndex].passes)
     {
@@ -1249,7 +1255,6 @@ void Renderer::ExecuteFrame()
     for (auto& group : m_setup->executionGroups)
     {
         Vector<Pair<size_t, bool>> last_transitions(m_executeAlloc.Ptr());
-
         Vector<RHIDeviceQueue::TimelinePair> timeline_waits(m_executeAlloc.Ptr()), timeline_signals(m_executeAlloc.Ptr());
         Vector<RHIPipelineStage> waits_stages(m_executeAlloc.Ptr());
         const bool is_last = group.group_index == m_setup->executionGroups.size() - 1;
