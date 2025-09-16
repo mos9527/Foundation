@@ -4,22 +4,22 @@ using namespace Foundation;
 Scene::Scene(RHIDevice* device, Allocator* alloc, size_t numSwaps, SceneBudgets const& budgets) :
     m_allocator(alloc),
     m_instanceBuffer(device, alloc, numSwaps,
-                     {.size = budgets.InstanceBudget,
-                      .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination},
+                     {.usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
+                     .size = budgets.InstanceBudget},
                      budgets.InstanceStaging, 0u),
     m_primitiveBuffer(device, alloc, numSwaps,
-                      {.size = budgets.PrimitiveBudget,
-                       .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination},
+                      { .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
+                      .size = budgets.PrimitiveBudget},
                       budgets.PrimitiveStaging),
     m_vertexBuffer(device, alloc, numSwaps,
-                   {.size = budgets.VertexBudget,
-                    .usage = RHIBufferUsageBits::VertexBuffer | RHIBufferUsageBits::TransferDestination},
+                   {.usage = RHIBufferUsageBits::VertexBuffer | RHIBufferUsageBits::TransferDestination,
+                   .size = budgets.VertexBudget},
                    budgets.InstanceStaging),
     m_indexBuffer(device, alloc, numSwaps,
-                  {.size = budgets.InstanceBudget,
-                   .usage = RHIBufferUsageBits::IndexBuffer | RHIBufferUsageBits::TransferDestination},
+                  {.usage = RHIBufferUsageBits::IndexBuffer | RHIBufferUsageBits::TransferDestination,
+                  .size = budgets.InstanceBudget},
                   budgets.InstanceStaging),
-    m_instanceQueue(alloc), m_meshQueue(alloc), m_meshes(alloc), m_conditions(alloc)
+    m_instanceQueue(alloc), m_meshQueue(alloc), m_meshes(alloc)
 {}
 void Scene::OnBeforeFrame(uint32_t rendererSync)
 {
@@ -68,18 +68,18 @@ void Scene::BeginUpdateAsync()
 SceneFuture Scene::LoadMeshAsync(Path path)
 {
     CHECK_MSG(m_state == State::UpdateAsync, "Bad Scene State ({})", m_state);
-    auto& mutex = ConstructShared<Mutex>(m_allocator);
+    auto mutex = ConstructShared<Mutex>(m_allocator);
     mutex->lock();
     auto& data = m_meshes.emplace_back();
-    m_meshQueue.emplace_back(mutex, path, &data);
-    return SceneFuture(this, mutex, &data);
+    m_meshQueue.emplace(mutex, path, &data);
+    return SceneFuture(mutex, &data);
 }
 void Scene::UpdateInstanceAsync(SceneHandle id, InstanceMetadata data)
 {
     CHECK_MSG(m_state == State::UpdateAsync, "Bad Scene State ({})", m_state);
     m_instanceQueue.emplace(id, data);
 }
-void Scene::EndAsyncUpdate()
+void Scene::EndUpdateAsync()
 {
     m_state = State::Idle;
     m_updateMutex.unlock();
@@ -102,7 +102,7 @@ void Scene::EndUpdate()
     m_indexBuffer.EndTransfer();
 }
 void Scene::CreateUpdatePasses(Renderer* renderer, ResourceHandle& outInstance, ResourceHandle& outPrimitive,
-                               ResourceHandle& outVertex, ResourceHandle& outIndex, RHIDescriptorType queue)
+                               ResourceHandle& outVertex, ResourceHandle& outIndex, RHIDeviceQueueType queue)
 {
     createStagedBufferUpdatePass(renderer, &m_instanceBuffer, "Instance", outInstance, queue);
     createStagedBufferUpdatePass(renderer, &m_primitiveBuffer, "Primitive", outPrimitive, queue);

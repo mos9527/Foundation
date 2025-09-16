@@ -90,7 +90,6 @@ namespace Foundation::Rendering
         m_stagingBuffers[m_currentSync].Reset();
         m_bufferStagings.clear();
         m_state = State::Transfer;
-        m_transferMutex.lock();
     }
     RHIBuffer* StagedBuffer::GetStagingBuffer()
     {
@@ -151,11 +150,9 @@ namespace Foundation::Rendering
         CoalesceBufferStaging(m_bufferStagings);
         m_state = State::Idle;
         m_currentSync = ~0u;
-        m_transferMutex.unlock();
     }
     void StagedBuffer::Update(RHICommandList* cmd)
     {
-        std::scoped_lock lock(m_transferMutex);
         CHECK_MSG(m_state == State::Idle, "Staging is not in Idle state");
         if (!HasUpdates())
             return;

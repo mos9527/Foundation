@@ -1,5 +1,6 @@
 #include "ModelViewer.hpp"
 #include "Scene.hpp"
+#include "Mesh.hpp"
 /**
  * @brief Model Viewer Applicationw
  */
@@ -142,5 +143,5 @@ public:
 int main(int argc, char** argv) {
     ModelViewer app;
     app.Initialize<VulkanApplication>({ .windowTitle = "Model Viewer", .present = true, .asyncCompute = true });
-    Thread render(app.RunForever);
+    Thread render(&ModelViewer::RunForever, &app);
 }

@@ -99,10 +99,7 @@ namespace Foundation::Rendering
         uint32_t m_currentSync{0};
         BufferStagingList m_bufferStagings;
 
-        // Syncs with @ref Update and @ref HasUpdates
-        std::mutex m_transferMutex;
         RHIDeviceIdleGuard m_idleGuard;
-
         Optional<uint32_t> m_clearValue;
 
     public:
@@ -180,8 +177,7 @@ namespace Foundation::Rendering
         /**
          * @brief Check if there are any pending updates to be performed.
          */
-        bool HasUpdates() const {
-            std::scoped_lock lock(m_transferMutex);
+        bool HasUpdates() {
             return m_clearValue.has_value() || !m_bufferStagings.empty();
         }
         /**
@@ -225,7 +221,7 @@ namespace Foundation::Rendering
         outBufferHandle = renderer->CreateResource(fmt::format("StagedBuffer {}", name), staged->GetBuffer());
         return createPass(
             renderer, name, queue, [=](PassHandle self, Renderer* r) { r->BindBufferCopyDst(self, outBufferHandle); },
-            [&](RHICommandList* cmd) { staged->Update(cmd); },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd) { staged->Update(cmd); },
             [=](PassHandle self, Renderer* r) { return !staged->HasUpdates(); });
     }
 

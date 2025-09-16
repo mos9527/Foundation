@@ -2,6 +2,9 @@
 #include <Rendering/StagingBuffer.hpp>
 #include <Bits/Format.hpp>
 #include <Async/Future.hpp>
+#include <Math/Math.hpp>
+using namespace Foundation::Math;
+#include "Shaders/Common.h"
 namespace Foundation
 {
     using namespace Core;
@@ -10,7 +13,6 @@ namespace Foundation
     using namespace Native;
     using namespace Async;
     using SceneHandle = uint32_t;
-    #include "Shaders/Common.h"
     struct SceneBudgets
     {
         size_t InstanceBudget = 16_MB;
