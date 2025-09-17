@@ -157,7 +157,7 @@ public:
         m_meshes(alloc)
     {
         scene->BeginUpdateAsync();
-        SceneFuture fut = scene->LoadMeshAsync("data/assets/Kitten.obj");
+        SceneFuture fut = scene->LoadMeshAsync("data/assets/Suzanne.obj");
         scene->EndUpdateAsync();
         m_meshes.push_back(fut.get<SceneMeshLoadResult>()->primitiveID);
     }
@@ -204,7 +204,7 @@ int main(int argc, char** argv) {
     renderer.Initialize<VulkanApplication>({
         .windowTitle = "Model Viewer",
         .present = true,
-        .asyncCompute = false
+        .asyncCompute = true
     });
     Thread renderThread(&ModelRenderer::RunForever, &renderer);
     // Main Thread
