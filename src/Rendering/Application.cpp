@@ -85,25 +85,28 @@ void RenderApplication::RenderWorker()
     CHECK_MSG(m_rhi, "No RHI backend initialized! Call Initialize<Backend>() first.");
     CHECK(m_device && m_renderer);
     TracyCSetThreadName("Render Thread");
-    do {
+    while (!m_appShouldClose)
         Execute();
-        // Update framerate
-        size_t smp_tick = m_timing.begin.y;
-        size_t perf_counter = getPerformanceCounter();
-        if (perf_counter - smp_tick >= m_timing.kTimingSampleDuration)
-            m_timing.Tick({m_renderer->GetFrame(), perf_counter});
-    } while (!m_appShouldClose);
     LOG_RUNTIME(RenderWorker, info, "Render Thread exiting.");
     m_renderFrame.notify_all();
 }
 using namespace Foundation::Async;
 void RenderApplication::RunForever() {
     m_renderThread = Thread(&RenderApplication::RenderWorker, this);
-    while (m_appShouldClose = (m_window ? m_window.WindowShouldClose() : true))
+    while (!((m_appShouldClose = m_window.WindowShouldClose())))
     {
         OnApplicationTick();
+        // Update framerate
+        size_t smp_tick = m_timing.begin.y;
+        size_t perf_counter = getPerformanceCounter();
+        if (perf_counter - smp_tick >= m_timing.kTimingSampleDuration)
+        {
+            m_timing.Tick({m_renderer->GetFrame(), perf_counter});
+            m_window.SetWindowTitle(fmt::format("{} [{} FPS]", m_desc.windowTitle, m_timing.GetFPS()).c_str());
+        }
     }
     LOG_RUNTIME(RenderApplication, info, "Main Thread exiting.");
+    m_renderThread.join();
 }
 void RenderApplication::WaitForFrame()
 {

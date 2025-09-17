@@ -36,12 +36,14 @@ namespace Foundation::ModelViewer
         m_camera = proj * view;
         if (m_scene->GetQueuedInstanceUpdates())
             return; // Wait for next frame. We're not done yet.
+        SceneHandle mesh = m_meshes.back().get<SceneMeshLoadResult>()->primitiveID;
+        // TODO: Ugly. We have to retrieve these even outside update scope
         m_scene->BeginUpdateAsync();
         for (size_t instance = 0; instance < cnt; ++instance)
         {
             m_scene->UpdateInstanceAsync(instance, {
                 .enabled = true,
-                .primitiveID = m_meshes.back().get<SceneMeshLoadResult>()->primitiveID,
+                .primitiveID = mesh,
                 .transform = translate(float3{
                     (instance / sq),
                     (instance % sq),
