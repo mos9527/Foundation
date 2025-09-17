@@ -1,7 +1,6 @@
 #pragma once
 #include <Runtime/Core/Allocator/Allocator.hpp>
 #include <Runtime/Core/Container/FreeList.hpp>
-#include <RenderCore/RHICore/Resource.hpp>
 #include <RenderCore/Renderer.hpp>
 
 namespace Foundation::Rendering

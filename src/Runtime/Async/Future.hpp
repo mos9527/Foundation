@@ -1,5 +1,8 @@
 #include <Runtime/Core/Core.hpp>
 #include <future>
+/**
+ * @brief Asynchronous programming utilities.
+ */
 namespace Foundation::Async
 {
     template<typename T = void> using Future = std::future<T>;

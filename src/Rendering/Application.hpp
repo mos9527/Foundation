@@ -10,6 +10,9 @@
 #include <RenderCore/RHICore/Application.hpp>
 #include <RenderCore/Renderer.hpp>
 
+/**
+ * @brief Reference implementations of real-time rendering routines.
+ */
 namespace Foundation::Rendering {
     using namespace Foundation::Core;
     using namespace Foundation::RenderCore;

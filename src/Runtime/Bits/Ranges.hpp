@@ -2,6 +2,9 @@
 #include <ranges>
 #include <Core/Core.hpp>
 namespace Foundation {
+    /**
+     * @brief `std::ranges` extensions and utilities.
+     */
     namespace Ranges
     {
         using namespace std::ranges;
@@ -25,7 +28,10 @@ namespace Foundation {
                 return *it;
             return {};
         }
-    }
+    } // namespace Ranges
+    /**
+     * @brief `std::views` extensions and utilities.
+     */
     namespace Views
     {
         using namespace std::views;

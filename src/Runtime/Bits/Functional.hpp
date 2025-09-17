@@ -1,10 +1,16 @@
 #pragma once
 #include <variant>
 namespace Foundation {
-    template<typename ...T> struct Visitor : T... {
+    /**
+     * @brief Functional visitor type that provides a default no-op operator() for unhandled types.
+     */
+    template <typename ...T> struct Visitor : T... {
         using T::operator()...;
         template<typename Arg> requires (!std::is_invocable_v<T, Arg&> && ...) auto operator()(Arg&) { /* nop */ };
     };
+    /**
+     * @brief Extended std::variant with C++23 visit() behavior and convenience Get()/GetIf() methods.
+     */
     template<typename ...Args> struct Variant : public std::variant<Args...> {
         using std::variant<Args...>::variant;
         using std::variant<Args...>::operator=;

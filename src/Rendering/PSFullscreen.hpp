@@ -1,5 +1,5 @@
 #pragma once
-#include "../RenderCore/Renderer.hpp"
+#include <RenderCore/Renderer.hpp>
 namespace Foundation::Rendering {
     using namespace RenderCore;
     /**

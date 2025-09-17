@@ -4,6 +4,9 @@
 #include <Rendering/PSFullscreen.hpp>
 #include <RenderCore/RHIVulkan/Application.hpp>
 #include "Scene.hpp"
+/**
+ * @brief ModelViewer implementation
+ */
 namespace Foundation::ModelViewer {
     using namespace RenderCore;
     /**

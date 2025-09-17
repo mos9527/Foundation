@@ -105,7 +105,7 @@ TrackedPass::TrackedPass(Allocator* alloc, const PassHandle handle, StringView n
 void Renderer::BeginSetup() {
     CHECK_MSG(m_state == State::Undefined || m_state == State::PostSetup, "Bad Setup state. Current state is {}", m_state);
     m_state = State::Setup;
-    m_setup = ConstructUnique<Setup>(m_allocator, m_allocator);
+    m_setup = ConstructUnique<SetupContext>(m_allocator, m_allocator);
     if (m_desc.present)
         SetSwapchain(m_swapchain);
     else

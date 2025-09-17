@@ -333,7 +333,7 @@ namespace Foundation::RenderCore {
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_descPool;
         RHIDeviceScopedObjectHandle<RHICommandPool> m_graphicsCmdPool{}, m_computeCmdPool{}; // Graphics, Async Compute
 
-        struct FrameSyncObjects{
+        struct FrameSyncObjects {
         private:
             // For async compute, we might submit multiple command buffers
             // per swap. Driver usually want them to live.                       
@@ -373,7 +373,7 @@ namespace Foundation::RenderCore {
         RHIDeviceObjectHandle<RHISwapchain> m_swapchain{};
         RHIDeviceQueue* m_graphicsQueue{}, *m_computeQueue{};
 
-        struct Setup {            
+        struct SetupContext {
             Vector<Vector<Pair<PassHandle, ResourceHandle>>> graph;
             Vector<TrackedPass> trackedPasses;
             Vector<TrackedResource> trackedResources;
@@ -410,13 +410,13 @@ namespace Foundation::RenderCore {
                 while (u >= graph.size()) graph.emplace_back(graph.get_allocator());
                 graph[u].emplace_back(v, hdl);
             }
-            explicit Setup(Allocator* allocator) :
+            explicit SetupContext(Allocator* allocator) :
                 graph(allocator), trackedPasses(allocator), trackedResources(allocator),
                 trackedViews(allocator), trackedSamplers(allocator), activeResources(allocator),
                 execution(allocator), binding_counts(allocator),
                 executionGroups(allocator) {}
         };
-        UniquePtr<Setup> m_setup;
+        UniquePtr<SetupContext> m_setup;
         // Setup
         [[nodiscard]] ResourceHandle CreateTextureView(
             PassHandle pass, ResourceHandle res,

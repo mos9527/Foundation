@@ -1,5 +1,8 @@
 #pragma once
 #include <Core/Core.hpp>
+/**
+ * @brief Lock-free atomic implementations of data structures.
+ */
 namespace Foundation::Atomic
 {
     using Foundation::Core;
