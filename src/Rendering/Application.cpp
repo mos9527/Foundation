@@ -44,7 +44,7 @@ void RenderApplication::InitializeRenderer() {
         m_device, m_swapchain, m_alloc_renderer.Ptr()
     );
     m_renderer->BeginSetup();
-    RendererSetup();
+    OnRendererSetup();
     m_renderer->EndSetup();
 }
 void RenderApplication::InitializeInternal() {
@@ -71,19 +71,19 @@ void RenderApplication::Execute()
         m_renderer->ExecuteFrame();
         OnAfterFrame();
         m_renderer->EndExecute();
-        m_frameCondition.notify_all();
+        m_renderFrame.notify_all();
     }
     catch (RHISwapchainResizeException&) {
         CreateSwapchain();
         m_renderer->SetSwapchain(m_swapchain);
         OnSwapchainResize();
+        InitializeRenderer();
     }
 }
-
-void RenderApplication::RunForever() {
+void RenderApplication::RenderWorker()
+{
     CHECK_MSG(m_rhi, "No RHI backend initialized! Call Initialize<Backend>() first.");
     CHECK(m_device && m_renderer);
-    m_state = State::Running;
     TracyCSetThreadName("Render Thread");
     do {
         Execute();
@@ -91,17 +91,25 @@ void RenderApplication::RunForever() {
         size_t smp_tick = m_timing.begin.y;
         size_t perf_counter = getPerformanceCounter();
         if (perf_counter - smp_tick >= m_timing.kTimingSampleDuration)
-        {
             m_timing.Tick({m_renderer->GetFrame(), perf_counter});
-            if (m_window)
-            {
-                double fps = static_cast<double>(m_timing.delta.x) / (m_timing.kTimingSampleDuration / 1e9);
-                m_window.SetWindowTitle(fmt::format("{} [{} FPS]", m_desc.windowTitle, fps).c_str());
-            }
-        }
-
-    } while (m_window && !m_window.WindowShouldClose());
-    m_state = State::Exiting;
-    LOG_RUNTIME(RenderApplication, info, "Exiting gracefully.");
-    m_frameCondition.notify_all();
+    } while (!m_appShouldClose);
+    LOG_RUNTIME(RenderWorker, info, "Render Thread exiting.");
+    m_renderFrame.notify_all();
+}
+using namespace Foundation::Async;
+void RenderApplication::RunForever() {
+    m_renderThread = Thread(&RenderApplication::RenderWorker, this);
+    while (m_appShouldClose = (m_window ? m_window.WindowShouldClose() : true))
+    {
+        OnApplicationTick();
+    }
+    LOG_RUNTIME(RenderApplication, info, "Main Thread exiting.");
+}
+void RenderApplication::WaitForFrame()
+{
+    if (!m_appShouldClose)
+    {
+        std::unique_lock lock(m_renderMutex);
+        m_renderFrame.wait(lock);
+    }
 }

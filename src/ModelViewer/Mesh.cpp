@@ -22,9 +22,10 @@ void RunMeshOptimizerPass(Vector<Vertex>& vertices, Vector<Index>& indices, Allo
 }
 
 // Reference: https://github.com/zeux/niagara/blob/master/src/scene.cpp
-Mesh LoadMeshFromObjFile(Path const& path, Core::Allocator* allocator)
+Mesh LoadMeshFromObjFile(Path path, Core::Allocator* allocator)
 {
     fastObjMesh* mesh = fast_obj_read(path.string().c_str());
+    CHECK_MSG(mesh, "Failed to load OBJ file: {}", path.string());
     uint32_t num_vtx = 0;
     // Alloc for zero reuse scenario
     for (uint32_t face = 0; face < mesh->face_count; face++)

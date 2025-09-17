@@ -3,20 +3,17 @@
 #include <Bits/Format.hpp>
 #include <Async/Future.hpp>
 #include <Math/Math.hpp>
-using namespace Foundation::Math;
-#include "Shaders/Common.h"
-namespace Foundation
+namespace Foundation::ModelViewer
 {
-    using namespace Core;
-    using namespace RHI;
     using namespace Rendering;
-    using namespace Native;
-    using namespace Async;
+    using namespace Foundation::Math;
+    #include "Shaders/Common.h"
+
     using SceneHandle = uint32_t;
     struct SceneBudgets
     {
         size_t InstanceBudget = 128_MB;
-        size_t InstanceStaging = 1_MB;
+        size_t InstanceStaging = 8_MB;
         size_t PrimitiveBudget = 16_MB;
         size_t PrimitiveStaging = 1_MB;
         size_t VertexBudget = 128_MB;
@@ -31,13 +28,13 @@ namespace Foundation
         BufferAllocation index;
     };
     class Scene;
-    class SceneFuture : public Future<SceneHandle>
+    class SceneFuture : public Async::Future<SceneHandle>
     {
-        const Scene* scene;
-        const SharedPtr<Mutex> mutex;
-        const void* data;
+        Scene* scene;
+        SharedPtr<Async::Mutex> mutex;
+        void* data;
     public:
-        SceneFuture(const Scene* scene, const SharedPtr<Mutex>& mutex, void* data) : scene(scene), mutex(mutex), data(data) {}
+        SceneFuture(Scene* scene, SharedPtr<Async::Mutex>& mutex, void* data) : scene(scene), mutex(mutex), data(data) {}
         /**
          * @brief Wait for the future to complete.
          * @note This _must_ be called on a different thread than the Scene one, otherwise a deadlock is guaranteed.
@@ -74,9 +71,9 @@ namespace Foundation
         // [Instance ID, Data]
         Queue<Pair<SceneHandle, InstanceMetadata>> m_instanceQueue;
         // [Signal Mutex, Path, Allocation Ptr]
-        Queue<Tuple<SharedPtr<Mutex>, Path, SceneMeshLoadResult*>> m_meshQueue;
+        Queue<Tuple<SharedPtr<Async::Mutex>, Native::Path, SceneMeshLoadResult*>> m_meshQueue;
         List<SceneMeshLoadResult> m_meshes;
-        Mutex m_updateMutex;
+        Async::Mutex m_updateMutex;
     public:
         void CreateUpdatePasses(Renderer* renderer,
             ResourceHandle& outInstance, ResourceHandle& outPrimitive,
@@ -89,9 +86,12 @@ namespace Foundation
         void OnBeforeFrame(uint32_t rendererSync);
 
         void BeginUpdateAsync();
-        SceneFuture LoadMeshAsync(Path path);
+        SceneFuture LoadMeshAsync(Native::Path path);
         void UpdateInstanceAsync(SceneHandle id, InstanceMetadata data);
         void EndUpdateAsync();
+
+        size_t GetQueuedInstanceUpdates() const { return m_instanceQueue.size(); }
+        size_t GetQueuedMeshLoads() const { return m_meshQueue.size(); }
     };
     ENUM_NAME_CONV_BEGIN(Scene::State)
     ENUM_NAME(Idle)

@@ -38,4 +38,4 @@ struct Mesh {
     {}
     inline constexpr uint32_t GetStride() const noexcept { return m_vertex_data.size() / m_num_vertices; }
 };
-extern Mesh LoadMeshFromObjFile(std::filesystem::path const& path, Core::Allocator* allocator);
+extern Mesh LoadMeshFromObjFile(Native::Path path, Core::Allocator* allocator);

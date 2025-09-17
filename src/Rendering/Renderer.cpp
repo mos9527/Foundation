@@ -443,7 +443,7 @@ void Renderer::CullPasses(PassHandle epilogue) const
         group.resources.erase(Ranges::unique(group.resources).begin(), group.resources.end());
         group.semaphore = m_device->CreateSemaphore(true /* timeline */);
         group.semaphore->DebugSetObjectName(
-            fmt::format("RG Exec Semaphore Group {} Queue {}", group.group_index, group.queue
+            fmt::format("Timeline Semaphore Group {} Queue {}", group.group_index, group.queue
         ).c_str());
         if (group.queue == RHIDeviceQueueType::Graphics)
             m_setup->executionAnyGraphics = true;

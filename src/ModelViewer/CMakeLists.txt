@@ -47,7 +47,7 @@ else()
 endif()
 
 
-target_sources(ModelViewer PRIVATE ${SOURCES} ${INCLUDES} "ModelRenderer.cpp")
+target_sources(ModelViewer PRIVATE ${SOURCES} ${INCLUDES} "App.cpp")
 target_link_libraries(ModelViewer PRIVATE Foundation_Runtime Foundation_Rendering meshoptimizer)
 target_include_directories(ModelViewer PRIVATE .. "${stb_SOURCE_DIR}" "${fast_obj_SOURCE_DIR}")
 
