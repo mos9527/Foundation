@@ -91,11 +91,11 @@ namespace Foundation::Rendering
         m_bufferStagings.clear();
         m_state = State::Transfer;
     }
-    RHIBuffer* StagedBuffer::GetStagingBuffer()
+    StagingBuffer* StagedBuffer::GetStagingBuffer()
     {
         CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");
         CHECK_MSG(m_currentSync < m_stagingBuffers.size(), "Invalid current sync index {}", m_currentSync);
-        return m_stagingBuffers[m_currentSync].GetBuffer();
+        return &m_stagingBuffers[m_currentSync];
     }
     void StagedBuffer::Transfer(size_t dst_offset, Span<const char> data, size_t alignment)
     {

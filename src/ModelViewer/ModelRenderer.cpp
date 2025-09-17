@@ -2,7 +2,7 @@
 #include "ModelRenderer.hpp"
 #include "Scene.hpp"
 /**
- * @brief Model Viewer Applicationw
+ * @brief Model Viewer Renderer implementation
  */
 class ModelRenderer : public RenderApplication {
 public:
@@ -139,32 +139,75 @@ public:
         );
     }
 };
-
+/**
+ * @brief The Model Viewer implementation
+ * See @ref main - This is meant to be run in a separate thread from the @ref ModelRenderer
+ */
 class ModelViewer
 {
+    ModelRenderer* const m_renderer;
+    Scene* const m_scene;
+    Allocator* m_allocator;
+    Vector<SceneHandle> m_meshes;
 
+    Mutex m_frameMutex;
+public:
+    ModelViewer(ModelRenderer* renderer, Scene* scene, Allocator* alloc) :
+        m_renderer(renderer), m_scene(scene), m_allocator(alloc),
+        m_meshes(alloc)
+    {
+        scene->BeginUpdateAsync();
+        SceneFuture fut = scene->LoadMeshAsync("data/assets/Kitten.obj");
+        scene->EndUpdateAsync();
+        m_meshes.push_back(fut.get<SceneMeshLoadResult>()->primitiveID);
+    }
+    void OnUpdate();
+    void RunForever()
+    {
+        while (m_renderer->GetState() != ModelRenderer::State::Exiting)
+        {
+            std::unique_lock lock(m_frameMutex);
+            m_renderer->GetFrameCondition()->wait(lock);
+            OnUpdate();
+        }
+    }
 };
+void ModelViewer::OnUpdate()
+{
+    size_t cnt = 30 * 30;
+    size_t sq = sqrt(cnt);
+    float4x4 view = lookAt(
+                vec3(sq,sq,sq),
+                vec3(sq / 2,sq / 2, 0),
+                vec3(0.0f, 0.0f, 1.0f));
+    float4x4 proj = infinitePerspective(radians(45.0f),  m_renderer->GetSwapchain()->GetAspectRatio(),0.1f);
+    proj[1][1] *= -1; // vulkan NDC
+    m_renderer->m_camera = proj * view;
+    m_scene->BeginUpdateAsync();
+    for (size_t instance = 0; instance < cnt; ++instance)
+    {
+        m_scene->UpdateInstanceAsync(instance, {
+            .enabled = true,
+            .primitiveID = 0,
+            .transform = translate(float3{
+                (instance / sq),
+                (instance % sq),
+                sin(m_renderer->GetApplicationTime<float>() + instance  * acos(-1) / cnt)
+            })
+        });
+    }
+    m_scene->EndUpdateAsync();
+}
 int main(int argc, char** argv) {
+    // Render Thread
     ModelRenderer renderer;
     renderer.Initialize<VulkanApplication>({
         .windowTitle = "Model Viewer",
         .present = true,
-        .asyncCompute = true
+        .asyncCompute = false
     });
     Thread renderThread(&ModelRenderer::RunForever, &renderer);
-
-    auto& scene = renderer.m_scene;
-    scene->BeginUpdateAsync();
-    auto fut = scene->LoadMeshAsync("data/assets/Kitten.obj");
-    scene->EndUpdateAsync();
-    fut.wait();
-    auto prim = fut.get<MeshAllocation>()->primitiveID; // TODO: Ugly.
-    // We could only do this here due to prior locking.
-    scene->BeginUpdateAsync();
-    scene->UpdateInstanceAsync(0, {
-        .enabled = true,
-        .primitiveID = prim,
-        .transform = glm::mat4(1.0f),
-    } );
-    scene->EndUpdateAsync();
+    // Main Thread
+    ModelViewer viewer(&renderer, renderer.m_scene.get(), renderer.GetAllocator());
+    viewer.RunForever();
 }

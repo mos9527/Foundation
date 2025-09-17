@@ -5,7 +5,7 @@
 #include <RHICore/Common.hpp>
 #include <Native/Application.hpp>
 #include <RHICore/Application.hpp>
-#include <Async/Thread.hpp>
+#include <Async/Future.hpp>
 
 #include "Renderer.hpp"
 namespace Foundation::Rendering {
@@ -30,6 +30,14 @@ namespace Foundation::Rendering {
     *  @brief Template base class for rendering applications.        
     */
     class RenderApplication : public Native::NativeApplication {
+    public:
+        enum class State
+        {
+            Undefined,
+            Initialized,
+            Running,
+            Exiting,
+        };
     protected:
         ApplicationInitDesc m_desc;
 
@@ -44,6 +52,8 @@ namespace Foundation::Rendering {
 
         RHIExtent2D GetFramebufferSize() const
         { auto [w, h] = m_window.GetFramebufferSize(); return { w, h }; }
+
+        Async::Condition m_frameCondition;
 
         void CreateSwapchain();
         void InitializeInternal();
@@ -116,6 +126,7 @@ namespace Foundation::Rendering {
             }
             const size_t kTimingSampleDuration{ static_cast<size_t>(1.0 * 1e9) };
         } m_timing{};
+        State m_state{ State::Undefined };
     public:
         /**
          * @brief Initialize the application with the specified RHI backend.
@@ -130,11 +141,15 @@ namespace Foundation::Rendering {
             m_rhi = ConstructUniqueBase<RHIApplication, Backend>(m_alloc.Ptr(), m_alloc.Ptr(), std::forward<Args>(args)...);
             InitializeInternal();
             InitializeRenderer();
+            m_state = State::Initialized;
         }
         /* --- */
+        Async::Condition* GetFrameCondition() { return &m_frameCondition; }
         Renderer*  GetRenderer() const { return m_renderer.get(); }
+        RHISwapchain* GetSwapchain() const { return m_swapchain.Get(); }
         Allocator* GetAllocator() { return m_alloc.Ptr(); }
         Allocator* GetRendererAllocator() { return m_alloc_renderer.Ptr(); }
+        State GetState() const { return m_state; }
         /**
          * @brief Run the main loop of the application.
          *

@@ -133,7 +133,7 @@ namespace Foundation::Rendering
          *
          * This MUST be called between @ref BeginTransfer and @ref EndTransfer.
          */
-        RHIBuffer* GetStagingBuffer();
+        StagingBuffer* GetStagingBuffer();
         /**
          * @brief Schedules a data upload to the given buffer at the given offset.
          *

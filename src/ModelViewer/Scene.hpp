@@ -15,7 +15,7 @@ namespace Foundation
     using SceneHandle = uint32_t;
     struct SceneBudgets
     {
-        size_t InstanceBudget = 16_MB;
+        size_t InstanceBudget = 128_MB;
         size_t InstanceStaging = 1_MB;
         size_t PrimitiveBudget = 16_MB;
         size_t PrimitiveStaging = 1_MB;
@@ -24,7 +24,7 @@ namespace Foundation
         size_t IndexBudget = 128_MB;
         size_t IndexStaging = 16_MB;
     };
-    struct MeshAllocation
+    struct SceneMeshLoadResult
     {
         uint32_t primitiveID;
         BufferAllocation vertex;
@@ -74,8 +74,8 @@ namespace Foundation
         // [Instance ID, Data]
         Queue<Pair<SceneHandle, InstanceMetadata>> m_instanceQueue;
         // [Signal Mutex, Path, Allocation Ptr]
-        Queue<Tuple<SharedPtr<Mutex>, Path, MeshAllocation*>> m_meshQueue;
-        List<MeshAllocation> m_meshes;
+        Queue<Tuple<SharedPtr<Mutex>, Path, SceneMeshLoadResult*>> m_meshQueue;
+        List<SceneMeshLoadResult> m_meshes;
         Mutex m_updateMutex;
     public:
         void CreateUpdatePasses(Renderer* renderer,

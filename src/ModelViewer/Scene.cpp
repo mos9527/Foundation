@@ -14,11 +14,11 @@ Scene::Scene(RHIDevice* device, Allocator* alloc, size_t numSwaps, SceneBudgets 
     m_vertexBuffer(device, alloc, numSwaps,
                    {.usage = RHIBufferUsageBits::VertexBuffer | RHIBufferUsageBits::TransferDestination,
                    .size = budgets.VertexBudget},
-                   budgets.InstanceStaging),
+                   budgets.VertexStaging),
     m_indexBuffer(device, alloc, numSwaps,
                   {.usage = RHIBufferUsageBits::IndexBuffer | RHIBufferUsageBits::TransferDestination,
-                  .size = budgets.InstanceBudget},
-                  budgets.InstanceStaging),
+                  .size = budgets.IndexBudget},
+                  budgets.IndexStaging),
     m_instanceQueue(alloc), m_meshQueue(alloc), m_meshes(alloc)
 {}
 void Scene::OnBeforeFrame(uint32_t rendererSync)
@@ -50,6 +50,7 @@ void Scene::OnBeforeFrame(uint32_t rendererSync)
         m_meshQueue.pop();
         break; // TODO: Batch more!
     }
+    size_t instanceUpd = 0;
     while (!m_instanceQueue.empty())
     {
         // Instance data is always of the same sizes
@@ -57,8 +58,15 @@ void Scene::OnBeforeFrame(uint32_t rendererSync)
         auto& [handle, data] = m_instanceQueue.front();
         static_assert(sizeof(data) == sizeof(InstanceMetadata));
         size_t offset = sizeof(data) * handle;
+        if (m_instanceBuffer.GetStagingBuffer()->FreeSize() < sizeof(data))
+        {
+            // Defer to next frame
+            LOG_RUNTIME(Scene, warn, "Deferred update. Done {}, Remain {}", instanceUpd, m_instanceQueue.size());
+            break;
+        }
         m_instanceBuffer.Transfer(offset, Span<InstanceMetadata>(data).AsBytes());
         m_instanceQueue.pop();
+        instanceUpd++;
     }
     EndUpdate();
     m_state = State::Idle;
