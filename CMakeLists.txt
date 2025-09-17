@@ -8,6 +8,7 @@ option(FOUNDATION_WITH_SANITIZERS "Build with sanitizers enabled" OFF)
 option(FOUNDATION_WITH_EXAMPLES "Build examples" ON)
 option(FOUNDATION_WITH_TESTS "Build tests" ON)
 option(FOUNDATION_WITH_MODELVIEWER "Build the model viewer application" ON)
+option(FOUNDATION_WITH_PROFILING "Build with profiling (Tracy) enabled" ON)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # https://developercommunity.visualstudio.com/t/__VA_OPT__-should-be-enabled-by-std:c/10565399
@@ -23,6 +24,10 @@ if (FOUNDATION_WITH_SANITIZERS)
         add_compile_options(-fsanitize=address)
         add_link_options(-fsanitize=address)
     endif()
+endif()
+
+if (FOUNDATION_WITH_PROFILING)
+    add_compile_definitions(TRACY_ENABLE=1)
 endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

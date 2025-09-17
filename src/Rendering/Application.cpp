@@ -1,4 +1,7 @@
 #include <Rendering/Application.hpp>
+#include <tracy/Tracy.hpp>
+
+#include "tracy/TracyC.h"
 using namespace Foundation::Rendering;
 void RenderApplication::CreateSwapchain() {
     CHECK(m_device && m_window);
@@ -61,6 +64,7 @@ void RenderApplication::InitializeInternal() {
 }
 void RenderApplication::Execute()
 {
+    ZoneScoped;
     try {
         m_renderer->BeginExecute();
         OnBeforeFrame();
@@ -80,6 +84,7 @@ void RenderApplication::RunForever() {
     CHECK_MSG(m_rhi, "No RHI backend initialized! Call Initialize<Backend>() first.");
     CHECK(m_device && m_renderer);
     m_state = State::Running;
+    TracyCSetThreadName("Render Thread");
     do {
         Execute();
         // Update framerate

@@ -1,5 +1,6 @@
 #include "Scene.hpp"
 #include "Mesh.hpp"
+#include <tracy/Tracy.hpp>
 using namespace Foundation;
 Scene::Scene(RHIDevice* device, Allocator* alloc, size_t numSwaps, SceneBudgets const& budgets) :
     m_allocator(alloc),
@@ -23,6 +24,7 @@ Scene::Scene(RHIDevice* device, Allocator* alloc, size_t numSwaps, SceneBudgets 
 {}
 void Scene::OnBeforeFrame(uint32_t rendererSync)
 {
+    ZoneScoped;
     std::scoped_lock lock(m_updateMutex);
     CHECK_MSG(m_state == State::Idle, "Bad Scene State ({})", m_state);
     m_state = State::Update;

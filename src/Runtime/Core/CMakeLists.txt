@@ -5,11 +5,14 @@ add_library(Foundation_Core INTERFACE)
 add_subdirectory(Allocator)
 add_subdirectory(Container)
 add_subdirectory(Logging)
+add_subdirectory(Profiling)
 
 target_link_libraries(Foundation_Core
     INTERFACE
     Foundation_Allocator
     Foundation_Container
     Foundation_Logging
+    Foundation_Profiling
 )
+add_compile_definitions()
 

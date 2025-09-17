@@ -1,6 +1,7 @@
 #pragma once
 #include <RHICore/Command.hpp>
 #include <Bits/Functional.hpp>
+#include <tracy/Tracy.hpp>
 namespace Foundation::Rendering {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
