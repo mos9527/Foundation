@@ -1,7 +1,7 @@
 #pragma once
-#include <Core/Allocator/Allocator.hpp>
-#include <Core/Container/Common.hpp>
-#include <Core/Logging/Logging.hpp>
+#include "Allocator/Allocator.hpp"
+#include "Container/Common.hpp"
+#include "Logging/Logging.hpp"
 
 /**
  * @brief Critical platform-independent functionalities such as 

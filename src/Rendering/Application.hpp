@@ -1,16 +1,18 @@
 #pragma once
-#include <Core/Core.hpp>
-#include <Core/Allocator/DefaultAllocator.hpp>
+#include <Runtime/Core/Core.hpp>
+#include <Runtime/Core/Allocator/DefaultAllocator.hpp>
 
-#include <RHICore/Common.hpp>
-#include <Native/Application.hpp>
-#include <RHICore/Application.hpp>
-#include <Async/Future.hpp>
+#include <Runtime/Async/Future.hpp>
+#include <Runtime/Async/Thread.hpp>
+#include <Runtime/Native/Application.hpp>
 
-#include "Async/Thread.hpp"
-#include "Renderer.hpp"
+#include <RenderCore/RHICore/Common.hpp>
+#include <RenderCore/RHICore/Application.hpp>
+#include <RenderCore/Renderer.hpp>
+
 namespace Foundation::Rendering {
     using namespace Foundation::Core;
+    using namespace Foundation::RenderCore;
     /**
      * @brief Initialization parameters for RenderApplication.
      */
@@ -87,7 +89,7 @@ namespace Foundation::Rendering {
         RHIDeviceScopedObjectHandle<RHISwapchain> m_swapchain;
 
         UniquePtr<Renderer> m_renderer;
-        FrameTiming m_timing;
+        FrameTiming m_timing{};
 
         Async::Thread m_renderThread;
         Async::Condition m_renderFrame;

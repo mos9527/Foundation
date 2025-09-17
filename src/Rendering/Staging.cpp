@@ -1,5 +1,5 @@
-#include "Bits/Format.hpp"
 #include "Staging.hpp"
+#include "Bits/Format.hpp"
 
 namespace Foundation::Rendering
 {
@@ -164,4 +164,4 @@ namespace Foundation::Rendering
         cmd->DebugEnd();
         m_bufferStagings.clear();
     }
-} // namespace Foundation::Rendering
+} // namespace Foundation::RenderCore

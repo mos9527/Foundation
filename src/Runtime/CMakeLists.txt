@@ -6,8 +6,6 @@ add_subdirectory(Core)
 add_subdirectory(Bits)
 add_subdirectory(Math)
 add_subdirectory(Native)
-add_subdirectory(RHICore)
-add_subdirectory(RHIVulkan)
 
 target_link_libraries(Foundation_Runtime
     INTERFACE
@@ -15,8 +13,6 @@ target_link_libraries(Foundation_Runtime
     Foundation_Bits
     Foundation_Math
     Foundation_Native
-    Foundation_RHICore
-    Foundation_RHIVulkan
 )
 target_include_directories(Foundation_Runtime
     INTERFACE

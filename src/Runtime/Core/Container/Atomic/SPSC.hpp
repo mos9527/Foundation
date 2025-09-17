@@ -1,7 +1,8 @@
 #pragma once
 #include <Core/Core.hpp>
-namespace Foundation::Core::Atomic
+namespace Foundation::Atomic
 {
+    using Foundation::Core;
     /**
      * @brief Atomic single-producer single-consumer ring buffer with a fixed maximum size
      *

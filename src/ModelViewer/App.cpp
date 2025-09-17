@@ -3,7 +3,7 @@
 #include "Scene.hpp"
 using namespace Foundation;
 using namespace Foundation::Core;
-using namespace Foundation::Rendering;
+using namespace Foundation::RenderCore;
 using namespace Foundation::Native;
 namespace Foundation::ModelViewer
 {
@@ -38,6 +38,7 @@ namespace Foundation::ModelViewer
             return; // Wait for next frame. We're not done yet.
         SceneHandle mesh = m_meshes.back().get<SceneMeshLoadResult>()->primitiveID;
         // TODO: Ugly. We have to retrieve these even outside update scope
+        //       We can go for atomic solutions - like a SPSC queue for these!
         m_scene->BeginUpdateAsync();
         for (size_t instance = 0; instance < cnt; ++instance)
         {

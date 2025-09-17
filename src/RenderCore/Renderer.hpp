@@ -1,16 +1,19 @@
 #pragma once
+
 #include <Allocator/StackAllocator.hpp>
-#include <RHICore/Device.hpp>
-#include <RHICore/Command.hpp>
-#include <Native/Filesystem.hpp>
-#include <Bits/Functional.hpp>
-#include <Bits/Ranges.hpp>
-#include <Core/Core.hpp>
+#include <Runtime/Native/Filesystem.hpp>
+#include <Runtime/Bits/Functional.hpp>
+#include <Runtime/Bits/Ranges.hpp>
+#include <Runtime/Core/Core.hpp>
 #include <tracy/Tracy.hpp>
+
+#include "RHICore/Device.hpp"
+#include "RHICore/Command.hpp"
+#include "RHICore/Application.hpp"
 /**
- * @brief Everything GPU related, including the Frame Graph implementation.
+ * @brief Core functionalities for rendering, including the Frame Graph implementation.
  */
-namespace Foundation::Rendering {
+namespace Foundation::RenderCore {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
     /* -- Constants -- */
@@ -282,7 +285,7 @@ namespace Foundation::Rendering {
     /**
      * @brief Renderer implementing a Frame Graph system with automatic resource tracking and synchronization.
      * 
-     * For usage, see also @ref Foundation::Rendering::Application
+     * For usage, see also @ref Foundation::RenderCore::Application
      */
     class Renderer {
     public:

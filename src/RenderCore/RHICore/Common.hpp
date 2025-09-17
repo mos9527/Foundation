@@ -1,7 +1,7 @@
 #pragma once
-#include <Math/Math.hpp>
 #include <Bits/Enums.hpp>
-#include "Details/Details.hpp"
+#include <Math/Math.hpp>
+#include "Details.hpp"
 
 namespace Foundation::RHI {
     using namespace Core;

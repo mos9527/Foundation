@@ -1,7 +1,7 @@
-#include <Rendering/Application.hpp>
 #include <tracy/Tracy.hpp>
+#include <tracy/TracyC.h>
 
-#include "tracy/TracyC.h"
+#include "Application.hpp"
 using namespace Foundation::Rendering;
 void RenderApplication::CreateSwapchain() {
     CHECK(m_device && m_window);

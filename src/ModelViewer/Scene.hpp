@@ -1,11 +1,12 @@
 #pragma once
-#include <Async/Future.hpp>
-#include <Bits/Format.hpp>
-#include <Math/Math.hpp>
+#include <Runtime/Async/Future.hpp>
+#include <Runtime/Bits/Format.hpp>
+#include <Runtime/Math/Math.hpp>
 #include <Rendering/Staging.hpp>
 namespace Foundation::ModelViewer
 {
-    using namespace Rendering;
+    using namespace Foundation::RenderCore;
+    using namespace Foundation::Rendering;
     using namespace Foundation::Math;
     #include "Shaders/Common.h"
 

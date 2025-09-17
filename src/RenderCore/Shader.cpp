@@ -1,10 +1,10 @@
+#include "Shader.hpp"
 #include <Bits/Ranges.hpp>
 #include <spirv/unified1/spirv.hpp>
-#include "Reflection.hpp"
 
-using namespace Foundation::Rendering;
+using namespace Foundation::RenderCore;
 using namespace Foundation::Core;
-void Reflection::ParseSPIRV(const Span<const char> bytecode)
+void Shader::ParseSPIRV(const Span<const char> bytecode)
 {
     /* 2.3 Physical Layout of a SPIR-V Module and Instruction */
     // SPIRV shader bytecodes are always 32-bits words.    
@@ -152,7 +152,7 @@ void Reflection::ParseSPIRV(const Span<const char> bytecode)
     }
 }
 
-void Reflection::Sort()
+void Shader::Sort()
 {
     Ranges::sort(m_bindings, [](const Binding& lhs, const Binding& rhs) {
         const Pair k1 = { lhs.descriptorSet, lhs.binding };
@@ -161,14 +161,14 @@ void Reflection::Sort()
     });
 }
 
-Reflection::Reflection(Core::Span<const char> bytecode, Allocator* alloc)
+Shader::Shader(Core::Span<const char> bytecode, Allocator* alloc)
     : m_allocator(alloc), m_entrypoints(alloc), m_bindings(alloc), m_pushConstants(alloc)
 {    
     ParseSPIRV(bytecode);
     Sort();
 }
 
-String Reflection::DbgDumpShaderInfo() const
+String Shader::DbgDumpShaderInfo() const
 {
     String out;
     fmt::format_to(std::back_inserter(out), "Entry Point: {}\n", m_entrypoints.size());

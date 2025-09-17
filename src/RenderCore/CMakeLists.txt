@@ -8,17 +8,16 @@ file(
     GLOB INCLUDES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
 )
+add_subdirectory(RHICore)
+add_subdirectory(RHIVulkan)
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 
 add_library(
-    Foundation_Rendering ${SOURCES} ${INCLUDES}
+    Foundation_RenderCore ${SOURCES} ${INCLUDES}
 )
-add_subdirectory(Shaders)
-target_link_libraries(Foundation_Rendering PUBLIC Foundation_RenderCore )
-add_dependencies(Foundation_Rendering Shader_VSFullscreen)
-add_dependencies(Foundation_Rendering Shader_PSCopy)
+target_link_libraries(Foundation_RenderCore PUBLIC Foundation_RHICore Foundation_RHIVulkan Foundation_Runtime)
 target_include_directories(
-	Foundation_Rendering
+	Foundation_RenderCore
 	PUBLIC
 	..
 )

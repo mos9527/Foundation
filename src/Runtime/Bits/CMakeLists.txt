@@ -8,4 +8,3 @@ add_library(Foundation_Bits INTERFACE ${SOURCES} ${INCLUDES})
 
 target_link_libraries(Foundation_Bits INTERFACE Foundation_Core)
 set_target_properties(Foundation_Bits PROPERTIES LINKER_LANGUAGE CXX)
-target_include_directories(Foundation_Bits INTERFACE ..)

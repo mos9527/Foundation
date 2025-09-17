@@ -2,16 +2,15 @@
 #include <filesystem>
 #include <fstream>
 
-#include <Math/Math.hpp>
-#include <RHICore/Device.hpp>
-#include <RHICore/Application.hpp>
+#include <Runtime/Math/Math.hpp>
+
 
 #include <tracy/Tracy.hpp>
-#include "Reflection.hpp"
 #include "Renderer.hpp"
+#include "Shader.hpp"
 
 using namespace Foundation::Core;
-using namespace Foundation::Rendering;
+using namespace Foundation::RenderCore;
 
 // Help messages
 const char* kShaderDescriptorBindingErrorHelp = "This can be caused by one of the following:\n"
@@ -540,14 +539,14 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     LOG_RUNTIME(Renderer, debug, "** Building PSO for {} [{}] **", tracked.name, pass);
     Vector<char> data(m_allocator);
     Map<std::filesystem::path, RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(m_allocator);
-    Map<std::filesystem::path, UniquePtr<Reflection>> reflections(m_allocator);
+    Map<std::filesystem::path, UniquePtr<Shader>> reflections(m_allocator);
     for (auto const& [shader_path, entry_point, stage] : tracked.shaders) {
         if (!shaders.contains(shader_path)) {
             LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path.string());
             Native::ReadFile(shader_path, data);
             reflections.emplace(
                 shader_path,
-                ConstructUnique<Reflection>(m_allocator, data, m_allocator)
+                ConstructUnique<Shader>(m_allocator, data, m_allocator)
             );
             shaders[shader_path] = m_device->CreateShaderModule({ .source = data });
             shaders[shader_path]->DebugSetObjectName(shader_path.string().c_str());

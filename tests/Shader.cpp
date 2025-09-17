@@ -1,5 +1,5 @@
+#include <../src/RenderCore/Shader.hpp>
 #include <Core/Allocator/DefaultAllocator.hpp>
-#include <Rendering/Reflection.hpp>
 #include <fstream>
 #include <iostream>
 using namespace Foundation::Rendering;
@@ -18,6 +18,6 @@ Vector<char> ReadFile(std::string const& path) {
 
 int main() {
     auto bytecode = ReadFile("data\\shaders\\Triangle_fragMain.spirv");
-    Reflection refl(bytecode, &g_alloc);
+    Shader refl(bytecode, &g_alloc);
     std::cout << refl.DbgDumpShaderInfo() << std::endl;
 }

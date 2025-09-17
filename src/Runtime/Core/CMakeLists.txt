@@ -15,4 +15,3 @@ target_link_libraries(Foundation_Core
     Foundation_Profiling
 )
 add_compile_definitions()
-

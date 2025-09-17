@@ -41,8 +41,9 @@ file(MAKE_DIRECTORY ${ASSET_BUILD_DIR})
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/src/CMake")
 
-add_subdirectory(src/Rendering)
 add_subdirectory(src/Runtime)
+add_subdirectory(src/RenderCore)
+add_subdirectory(src/Rendering)
 
 if (FOUNDATION_WITH_MODELVIEWER)
     add_subdirectory(src/ModelViewer)

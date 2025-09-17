@@ -18,11 +18,11 @@ Features
 - Async Compute support for modern GPUs with automatic release/acquire and synchronization
 - *Very* low CPU overhead thanks to arena memory allocation strategies and efficient algorithms
 - Strict validation in API usage and resource state tracking with detailed error reporting
-- Headless rendering support for GPGPU tasks @ref Foundation::Rendering::RenderApplication
+- Multithreaded application framework at @ref Foundation::Rendering::RenderApplication
 - Convenient in-built rendering techniques @ref Foundation::Rendering::createPSFullscreenPass, @ref Foundation::Rendering::createPSBackbufferBlitPass, etc.
 - Cross-platform support for Windows, Linux, and macOS, with:
   - Vulkan-like explicit RHI APIs @ref Foundation::RHI
-  - DirectX-like rendering concepts at @ref Foundation::Rendering
+  - DirectX-like rendering concepts at @ref Foundation::RenderCore
   - WinAPI-like application APIs @ref Foundation::Native
 
 Quickstart

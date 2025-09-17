@@ -1,13 +1,13 @@
 #pragma once
-#include <Core/Core.hpp>
-#include <RHICore/Common.hpp>
+#include <Runtime/Core/Core.hpp>
+#include "RHICore/Common.hpp"
 
-namespace Foundation::Rendering {
+namespace Foundation::RenderCore {
     using namespace Core;
     /**
      * @brief Runtime reflection data for a shader module.
      */
-    class Reflection {
+    class Shader {
         Allocator* m_allocator;        
         /**
          * @brief Parse SPIR-V shader code and populate reflection data.        
@@ -41,7 +41,7 @@ namespace Foundation::Rendering {
             // Caller is also expected to know the layout of push constants - TODO for now.                      
         };
         Vector<PushConstant> m_pushConstants;
-        Reflection(Span<const char> bytecode, Allocator* alloc);
+        Shader(Span<const char> bytecode, Allocator* alloc);
 
         String DbgDumpShaderInfo() const;
     };

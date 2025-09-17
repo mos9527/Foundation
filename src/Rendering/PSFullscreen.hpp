@@ -1,6 +1,7 @@
 #pragma once
-#include "Renderer.hpp"
+#include "../RenderCore/Renderer.hpp"
 namespace Foundation::Rendering {
+    using namespace RenderCore;
     /**
      * @brief Creates a full-screen triangle pass that writes to the current backbuffer.
      *
@@ -8,7 +9,7 @@ namespace Foundation::Rendering {
      * @param record is called once per frame during execution phase of the pass, after the pipeline is set.
      */
     template<typename FSetup, typename FRecord>
-    inline auto* createPSFullscreenPass(
+    auto* createPSFullscreenPass(
         Renderer* r,
         StringView name,        
         FSetup&& setup,

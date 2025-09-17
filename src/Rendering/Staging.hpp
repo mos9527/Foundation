@@ -1,13 +1,14 @@
 #pragma once
-#include <Core/Allocator/Allocator.hpp>
-#include <Core/Container/FreeList.hpp>
-#include <RHICore/Resource.hpp>
-#include <Rendering/Renderer.hpp>
+#include <Runtime/Core/Allocator/Allocator.hpp>
+#include <Runtime/Core/Container/FreeList.hpp>
+#include <RenderCore/RHICore/Resource.hpp>
+#include <RenderCore/Renderer.hpp>
 
 namespace Foundation::Rendering
 {
     using namespace Foundation::RHI;
     using namespace Foundation::Core;
+    using namespace Foundation::RenderCore;
     // [Source Buffer (staging), Dest Buffer, CopyRegion]
     using BufferStagingItem = Tuple<RHIBuffer*, RHIBuffer*, RHICommandList::CopyBufferRegion>;
     using BufferStagingList = Vector<BufferStagingItem>;
@@ -228,4 +229,4 @@ namespace Foundation::Rendering
     ENUM_NAME(Idle)
     ENUM_NAME(Transfer)
     ENUM_NAME_CONV_END()
-} // namespace Foundation::Rendering
+} // namespace Foundation::RenderCore

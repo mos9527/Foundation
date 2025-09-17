@@ -41,11 +41,13 @@ add_library(
 )
 
 target_link_libraries(Foundation_Native PUBLIC Foundation_Core glfw)
-target_link_libraries(Foundation_Native PRIVATE )
 target_include_directories(
     Foundation_Native PRIVATE
     ..
     "${GLFW_SOURCE_DIR}/include"
     "${tinyfiledialogs_SOURCE_DIR}"
-    )
-
+)
+target_include_directories(
+    Foundation_Native PUBLIC
+    ..
+)
