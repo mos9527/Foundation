@@ -32,8 +32,6 @@ struct PrimitiveMetadata {
     int indexCount;
     // Index into GetIndexBuffer()
     int indexOffset;
-    /* --- */
-    float4 sphereBounds; // (x,y,z) center, w radius
 };
 
 // In GetInstanceDataBuffer

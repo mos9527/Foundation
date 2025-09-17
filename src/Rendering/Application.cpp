@@ -67,6 +67,7 @@ void RenderApplication::Execute()
         m_renderer->ExecuteFrame();
         OnAfterFrame();
         m_renderer->EndExecute();
+        m_frameCondition.notify_all();
     }
     catch (RHISwapchainResizeException&) {
         CreateSwapchain();
@@ -78,6 +79,7 @@ void RenderApplication::Execute()
 void RenderApplication::RunForever() {
     CHECK_MSG(m_rhi, "No RHI backend initialized! Call Initialize<Backend>() first.");
     CHECK(m_device && m_renderer);
+    m_state = State::Running;
     do {
         Execute();
         // Update framerate
@@ -94,4 +96,7 @@ void RenderApplication::RunForever() {
         }
 
     } while (m_window && !m_window.WindowShouldClose());
+    m_state = State::Exiting;
+    LOG_RUNTIME(RenderApplication, info, "Exiting gracefully.");
+    m_frameCondition.notify_all();
 }
