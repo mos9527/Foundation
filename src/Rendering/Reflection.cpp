@@ -1,10 +1,10 @@
-#include <spirv/unified1/spirv.hpp>
 #include <Bits/Ranges.hpp>
-#include "ShaderReflection.hpp"
+#include <spirv/unified1/spirv.hpp>
+#include "Reflection.hpp"
 
 using namespace Foundation::Rendering;
 using namespace Foundation::Core;
-void ShaderReflection::ParseSPIRV(const Span<const char> bytecode)
+void Reflection::ParseSPIRV(const Span<const char> bytecode)
 {
     /* 2.3 Physical Layout of a SPIR-V Module and Instruction */
     // SPIRV shader bytecodes are always 32-bits words.    
@@ -152,7 +152,7 @@ void ShaderReflection::ParseSPIRV(const Span<const char> bytecode)
     }
 }
 
-void ShaderReflection::Sort()
+void Reflection::Sort()
 {
     Ranges::sort(m_bindings, [](const Binding& lhs, const Binding& rhs) {
         const Pair k1 = { lhs.descriptorSet, lhs.binding };
@@ -161,11 +161,25 @@ void ShaderReflection::Sort()
     });
 }
 
-ShaderReflection::ShaderReflection(Core::Span<const char> bytecode, Allocator* alloc)
+Reflection::Reflection(Core::Span<const char> bytecode, Allocator* alloc)
     : m_allocator(alloc), m_entrypoints(alloc), m_bindings(alloc), m_pushConstants(alloc)
 {    
     ParseSPIRV(bytecode);
     Sort();
 }
 
-
+String Reflection::DbgDumpShaderInfo() const
+{
+    String out;
+    fmt::format_to(std::back_inserter(out), "Entry Point: {}\n", m_entrypoints.size());
+    for (const auto& ep : m_entrypoints)
+        fmt::format_to(std::back_inserter(out), "   Name: {}, Stage: {}\n", ep.name, ep.stage);
+    fmt::format_to(std::back_inserter(out), "Push Constants: {}\n", m_pushConstants.size());
+    for (const auto& pc : m_pushConstants)
+        fmt::format_to(std::back_inserter(out), "   Push Constant: {}\n", pc.name);
+    fmt::format_to(std::back_inserter(out), "Bindings: {}\n", m_bindings.size());
+    for (const auto& var : m_bindings)
+        fmt::format_to(std::back_inserter(out), "   Binding: {} (set={}, binding={})\n", var.name, var.descriptorSet, var.binding);
+    out.pop_back();
+    return out;
+}

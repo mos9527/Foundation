@@ -1,8 +1,8 @@
 #pragma once
-#include <Rendering/StagingBuffer.hpp>
-#include <Bits/Format.hpp>
 #include <Async/Future.hpp>
+#include <Bits/Format.hpp>
 #include <Math/Math.hpp>
+#include <Rendering/Staging.hpp>
 namespace Foundation::ModelViewer
 {
     using namespace Rendering;

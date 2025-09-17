@@ -1,19 +1,26 @@
-// ReSharper disable CppMemberFunctionMayBeConst
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-
-#include <tracy/Tracy.hpp>
 
 #include <Math/Math.hpp>
 #include <RHICore/Device.hpp>
 #include <RHICore/Application.hpp>
 
+#include <tracy/Tracy.hpp>
+#include "Reflection.hpp"
 #include "Renderer.hpp"
-#include "ShaderReflection.hpp"
 
 using namespace Foundation::Core;
 using namespace Foundation::Rendering;
+
+// Help messages
+const char* kShaderDescriptorBindingErrorHelp = "This can be caused by one of the following:\n"
+"   - Parameter is optimized-out, and the binding is kept as is.\n"
+"   - Multiple entrypoints in the same shader, but they don't access the same parameters.\n"
+"Tips:\n"
+"   Try separating the entrypoints into different shader files, or sort the binding declarations"
+"so that the used bindings are continuous from 0.";
+
 // Per-frame Semaphore counter
 #define SEM_COUNTER(size, ord) ((m_frame + 1) * size + ord)
 #define SEM_COUNTER_PREV(size, ord) (m_frame * size + ord)
@@ -40,6 +47,62 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
     LOG_RUNTIME(Renderer, info, "Async Compute: {}", m_desc.async);
     LOG_RUNTIME(Renderer, info, "Presentation: {}", m_desc.present);
 }
+
+RHITextureSubresourceRange TrackedResource::SubresourceState::ToRange() const
+{
+    {
+        return RHITextureSubresourceRange{
+            .layer = {
+                .aspect = aspect,
+                .mip_level = static_cast<uint32_t>(mip),
+                .base_array_layer = static_cast<uint32_t>(layer),
+                .layer_count = 1
+            },
+            .mip_count = 1
+        };
+    }
+}
+
+TrackedResource::TrackedResource(const ResourceHandle handle, StringView name, const ResourceDefinition& resourceDesc, Allocator* alloc)
+: handle(handle), name(name), desc(resourceDesc), lastSubresourceStates(alloc) {
+    // Init texture tracking states
+    auto update_texture_desc = [&](RHITextureDesc const& texture_desc) {
+        textureLayers = texture_desc.array_layers;
+        textureMips = texture_desc.mip_levels;
+        lastSubresourceStates.resize(textureMips * textureLayers * kTextureAspectCount);
+        for (uint32_t mip = 0; mip < textureMips; ++mip)
+        {
+            for (uint32_t layer = 0; layer < textureLayers; ++layer)
+            {
+                for (uint32_t aspect = 0; aspect < kTextureAspectCount; ++aspect)
+                {
+                    uint32_t i = mip * (textureLayers * kTextureAspectCount) + layer * kTextureAspectCount + aspect;
+                    auto& state = lastSubresourceStates[i];
+                    state.aspect = RHITextureAspectFlag(1u << aspect);
+                    state.mip = mip, state.layer = layer;
+                }
+            }
+        }
+    };
+    desc.visit(
+        [&](RHITextureDesc const& tex) { update_texture_desc(tex); },
+        [&](RHIDeviceObjectHandle<RHITexture> const& tex) { update_texture_desc(tex->m_desc); },
+        [&](const RHITexture* const tex) { update_texture_desc(tex->m_desc); }
+    );
+}
+
+TrackedPass::TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue, UniquePtr<RenderPass> renderPass)
+        : name(name), handle(handle), queue(queue),
+        textureUsages(alloc), bufferUsages(alloc), resources(alloc), texviews(alloc),
+        shaders(alloc),
+        tex_bindings(alloc), buf_bindings(alloc),
+        samplers(alloc),
+        push_constants(alloc), rtvs(alloc),
+        vertex_input_bindings(alloc), vertex_input_attributes(alloc),
+        pass(std::move(renderPass)), desc_layouts(alloc),
+        desc_sets(alloc), p_desc_sets(alloc)
+{
+};
 void Renderer::BeginSetup() {
     CHECK_MSG(m_state == State::Undefined || m_state == State::PostSetup, "Bad Setup state. Current state is {}", m_state);
     m_state = State::Setup;
@@ -477,15 +540,15 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     LOG_RUNTIME(Renderer, debug, "** Building PSO for {} [{}] **", tracked.name, pass);
     Vector<char> data(m_allocator);
     Map<std::filesystem::path, RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(m_allocator);
-    Map<std::filesystem::path, UniquePtr<ShaderReflection>> reflections(m_allocator);
+    Map<std::filesystem::path, UniquePtr<Reflection>> reflections(m_allocator);
     for (auto const& [shader_path, entry_point, stage] : tracked.shaders) {
         if (!shaders.contains(shader_path)) {
             LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path.string());
             Native::ReadFile(shader_path, data);
             reflections.emplace(
                 shader_path,
-                ConstructUnique<ShaderReflection>(m_allocator, data, m_allocator)
-            ).first->second;
+                ConstructUnique<Reflection>(m_allocator, data, m_allocator)
+            );
             shaders[shader_path] = m_device->CreateShaderModule({ .source = data });
             shaders[shader_path]->DebugSetObjectName(shader_path.string().c_str());
         }
@@ -599,25 +662,25 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         set_bindings.push_back({ .count = 1, .stage = RHIShaderStageBits::All, .type = var_types[binding] });
     }
     // Check if our first set is not 0
-    if (!bindings.empty() && !bindings[0].first.first == 0)
+    if (!bindings.empty() && bindings[0].first.first != 0)
     {
         LOG_RUNTIME(BuildPipelineState, err,
             "Binding set numbers must start from 0. Error at set {} binding {} in pass {}.",
             bindings[0].first.first, bindings[0].first.second, tracked.name
         );
-        LOG_RUNTIME(BuildPipelineState, info, kShaderDescriptorFirstSetErrorHelp);
+        LOG_RUNTIME(BuildPipelineState, info, kShaderDescriptorBindingErrorHelp);
         CHECK_MSG(false, "Binding set numbers must start from 0.");
     }
     for (uint32_t i = 0, j = 0; i < bindings.size(); i = j) {
         uint32_t set = bindings[i].first.first;
         // Check if our first binding is not 0
-        if (!bindings[i].first.second == 0)
+        if (bindings[i].first.second != 0)
         {
             LOG_RUNTIME(BuildPipelineState, err,
                 "Binding numbers must start from 0 in each descriptor set. Error at set {} binding {} in pass {}.",
                 set, bindings[i].first.second, tracked.name
             );
-            LOG_RUNTIME(BuildPipelineState, info, kShaderDescriptorFirstBindingErrorHelp);
+            LOG_RUNTIME(BuildPipelineState, info, kShaderDescriptorBindingErrorHelp);
             CHECK_MSG(false, "Binding binding numbers must start from 0.");
         }
         while (j < bindings.size() && bindings[j].first.first == set)
@@ -640,7 +703,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         LOG_RUNTIME(Renderer, debug, "Descriptor Set {} Bindings", set);
         for (size_t k = i; k < j; k++) {
             auto const& [bind, name] = bindings[k];
-            auto const& [set, binding] = bind;
+            auto const& [binding_set, binding] = bind;
             auto const& hdl = var_handles[name];
             CHECK_MSG(var_types.contains(name), "Binding {} is undefined in pass {}, but referenced by one of its shaders", name, tracked.name);
             auto const& type = var_types[name];
@@ -1301,7 +1364,7 @@ void Renderer::ExecuteFrame()
         for (auto pass_handle : group.passes)
         {
             auto& pass = passes[pass_handle];
-            ZoneScoped;
+            ZoneScopedN("Pass Execution");
             ZoneNameF("[%s]", pass.name.c_str());
             if (pass.pass->IsSkipped(pass.handle, this))
                 continue;
@@ -1532,4 +1595,74 @@ void Renderer::CmdDispatch(
         (thread_size.y + local_size.y - 1) / local_size.y,
         (thread_size.z + local_size.z - 1) / local_size.z
     );
+}
+/* -- Debug -- */
+String Renderer::DbgDumpGraphviz() const {
+    String out;
+    fmt::format_to(std::back_inserter(out), "digraph G {{\n");
+    fmt::format_to(std::back_inserter(out), "    rankdir=TB;\n");
+    auto& graph = m_setup->graph;
+    auto& passes = m_setup->trackedPasses;
+    auto& resources = m_setup->trackedResources;
+    for (auto& pass : passes) {
+        fmt::format_to(
+            std::back_inserter(out),
+            "    \"{}@{}\" [ shape=box style=filled fillcolor=\"{}\" ];\n",
+            pass.name,
+            pass.handle,
+            pass.queue == RHIDeviceQueueType::Graphics ? "#d0e0f0" : "#f0d0e0");
+    }
+    // Dependencies
+    for (PassHandle u = 0; u < m_setup->graph.size(); u++) {
+        for (auto [v, w] : graph[u]) {
+            fmt::format_to(
+                std::back_inserter(out),
+                "    \"{}@{}\" -> \"{}@{}\" [label=\"{}\"];\n",
+                passes[u].name, u,
+                passes[v].name, v,
+                resources[w].name);
+        }
+    }
+    fmt::format_to(std::back_inserter(out), "}}\n");
+    out.pop_back();
+    return out;
+}
+
+String Renderer::DbgDumpActivePasses() const {
+    String out;
+    for (const auto& idx : m_setup->execution) {
+        auto& pass = m_setup->trackedPasses[idx];
+        fmt::format_to(
+            std::back_inserter(out), "{}: {}, depth={}, ord={}, queue={}, group={}, write_backbuffer={}\n",
+            pass.handle,
+            pass.name,
+            pass.depth,
+            pass.ord,
+            pass.queue,
+            pass.group_index,
+            pass.write_backbuffer
+        );
+    }
+    out.pop_back();
+    return out;
+}
+
+String Renderer::DbgDumpExecutionGroups() const
+{
+    String out;
+    for (const auto& group : m_setup->executionGroups)
+    {
+        fmt::format_to(
+            std::back_inserter(out), "{}: queue={}, stages={:b}, passes=[",
+            group.group_index,
+            group.queue,
+            static_cast<uint32_t>(group.all_stages)
+        );
+        for (const auto& pass : group.passes)
+            fmt::format_to(std::back_inserter(out), "{} ", pass);
+        out.pop_back();
+        fmt::format_to(std::back_inserter(out), "]\n");
+    }
+    out.pop_back();
+    return out;
 }

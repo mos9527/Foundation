@@ -1,4 +1,4 @@
-#include <Rendering/StagingBuffer.hpp>
+#include <Rendering/Staging.hpp>
 
 #include "Allocator/DefaultAllocator.hpp"
 using namespace Foundation::Rendering;

@@ -7,7 +7,7 @@ namespace Foundation::Rendering {
     /**
      * @brief Runtime reflection data for a shader module.
      */
-    class ShaderReflection {
+    class Reflection {
         Allocator* m_allocator;        
         /**
          * @brief Parse SPIR-V shader code and populate reflection data.        
@@ -41,7 +41,7 @@ namespace Foundation::Rendering {
             // Caller is also expected to know the layout of push constants - TODO for now.                      
         };
         Vector<PushConstant> m_pushConstants;
-        ShaderReflection(Span<const char> bytecode, Allocator* alloc);
+        Reflection(Span<const char> bytecode, Allocator* alloc);
 
         String DbgDumpShaderInfo() const;
     };

@@ -7,7 +7,7 @@ target_link_libraries(Test_Allocator PUBLIC Foundation_Runtime)
 add_executable(Test_Misc "Misc.cpp" )
 target_link_libraries(Test_Misc PUBLIC Foundation_Runtime)
 
-add_executable(Test_ShaderReflection "ShaderReflection.cpp")
+add_executable(Test_ShaderReflection "Reflection.cpp")
 target_link_libraries(Test_ShaderReflection PUBLIC Foundation_Rendering)
 
 add_executable(Test_CircularBuffer "RingBuffer.cpp")

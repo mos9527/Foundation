@@ -1,5 +1,5 @@
-#include "StagingBuffer.hpp"
 #include "Bits/Format.hpp"
+#include "Staging.hpp"
 
 namespace Foundation::Rendering
 {
