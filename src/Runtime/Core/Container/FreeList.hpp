@@ -46,6 +46,8 @@ namespace Foundation::Core {
      * @brief A dense map implementation with amortized O(1) allocation and deallocation.
      *
      * Reallocation (growth) behaviour is the same as std::vector.
+     *
+     * @note This is _not_ thread-safe, and should not be used in a multithreaded context.
      */
     template<typename K, typename V>
     class FreeList {

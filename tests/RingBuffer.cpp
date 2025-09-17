@@ -1,10 +1,10 @@
-#include <Container/CircularBuffer.hpp>
 #include <Allocator/DefaultAllocator.hpp>
+#include <Container/RingBuffer.hpp>
 using namespace Foundation::Core;
 DefaultAllocator alloc;
 int main()
 {
-    CircularBuffer<int> buffer(2, &alloc);
+    RingBuffer<int> buffer(2, &alloc);
     auto print_content = [&buffer]()  {
         for (const auto& v : buffer)
             printf("%d,", v);
