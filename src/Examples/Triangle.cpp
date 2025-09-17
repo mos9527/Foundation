@@ -6,7 +6,7 @@ namespace Examples {
      * @example Shaders/Triangle.slang
      */
     class TriangleDemoApp : public RenderApplication {
-        void RendererSetup() override {
+        void OnRendererSetup() override {
             createPass(
                 m_renderer.get(), "Triangle", RHIDeviceQueueType::Graphics,
                 [=](PassHandle self, Renderer* r) {

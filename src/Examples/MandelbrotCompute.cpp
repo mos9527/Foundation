@@ -12,7 +12,7 @@ namespace Examples {
             float pad;
             RHIExtent2D resolution;
         };
-        void RendererSetup() override {
+        void OnRendererSetup() override {
             ResourceHandle buffer = createResource(
                 m_renderer.get(), "Mandelbrot Image",
                 RHITextureDesc{

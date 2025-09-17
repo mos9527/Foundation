@@ -7,7 +7,7 @@ namespace Examples {
      * Shader courtesy of Inigo Quilez: https://iquilezles.org/articles/distfunctions2d/
      */
     class SDFDemoApp : public RenderApplication {
-        void RendererSetup() override {
+        void OnRendererSetup() override {
             createPSFullscreenPass(
                 m_renderer.get(), "SDF2D",
                 [=](PassHandle self, Renderer* r) {

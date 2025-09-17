@@ -848,6 +848,11 @@ namespace Foundation::Rendering {
      *
      * This is equivalent to calling @ref Renderer::CreatePass
      *
+     * @note Avoid using Lambdas with stateful captures (i.e. capturing `this` or [&]), as resource lifetimes
+     *       could be _much_ involved and unpredictable.
+     *       Prefer using stateless captures (i.e. [=]) or no captures at all, unless the states are trivial, and
+     *       you really know what you're doing.
+     *
      * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is disabled.
      * @param setup Lambda of type `void(PassHandle self, Renderer*)` called at Setup time.
      * @param record Lambda of type `void(PassHandel self, Renderer*, RHICommandList*)` called at Record time.

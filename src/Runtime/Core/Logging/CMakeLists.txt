@@ -9,8 +9,6 @@ file(
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
 )
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
-add_library(Foundation_Logging ${SOURCES} ${INCLUDES})
-
 include(FetchContent)
 
 FetchContent_Declare(
@@ -29,5 +27,5 @@ FetchContent_Declare(
 )
 set(SPDLOG_FMT_EXTERNAL ON)
 FetchContent_MakeAvailable(spdlog)
-
+add_library(Foundation_Logging ${SOURCES} ${INCLUDES})
 target_link_libraries(Foundation_Logging PUBLIC fmt::fmt spdlog::spdlog)

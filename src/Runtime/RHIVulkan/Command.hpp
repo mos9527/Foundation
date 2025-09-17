@@ -25,6 +25,7 @@ namespace Foundation::RHI {
 
         void DebugSetObjectName(const char* name) override;
     };
+    constexpr size_t kCommandBarrierReserveSize = 256;
     class VulkanCommandList : public RHICommandList {
     protected:
         const VulkanCommandPool& m_commandPool;
@@ -39,7 +40,11 @@ namespace Foundation::RHI {
         struct Barriers {
             Vector<vk::ImageMemoryBarrier2> image;
             Vector<vk::BufferMemoryBarrier2> buffer;
-            Barriers(Allocator* allocator) : image(allocator), buffer(allocator) {};
+            Barriers(Allocator* allocator) : image(allocator), buffer(allocator)
+            {
+                image.reserve(kCommandBarrierReserveSize);
+                buffer.reserve(kCommandBarrierReserveSize);
+            };
         };
         // !! XXX: Resources allocated with m_allocator must be destroyed before
         // the allocator goes down.

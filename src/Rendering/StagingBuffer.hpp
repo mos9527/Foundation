@@ -63,9 +63,8 @@ namespace Foundation::Rendering
     /**
      * @brief Helper class for GPU contention-free staged buffer updates.
      *
-     * @note Transfer functions are _not_ inherently thread-safe - but it _is_ possible -
-     * and encouraged to perform transfers on a separate thread from the renderer, where
-     * @ref Update routines are in fact thread-safe.
+     * @note Transfer functions are _not_ inherently thread-safe - see @ref ModelViewer::Scene
+     * for reference usage.
      *
      * This creates a GPU-only local buffer, and multiple staging buffers per swap.
      *

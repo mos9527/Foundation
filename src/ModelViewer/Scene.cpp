@@ -1,6 +1,9 @@
 #include "Scene.hpp"
 #include "Mesh.hpp"
-using namespace Foundation;
+#include <tracy/Tracy.hpp>
+using namespace Foundation::ModelViewer;
+using namespace Foundation::Async;
+using namespace Foundation::Native;
 Scene::Scene(RHIDevice* device, Allocator* alloc, size_t numSwaps, SceneBudgets const& budgets) :
     m_allocator(alloc),
     m_instanceBuffer(device, alloc, numSwaps,
@@ -23,6 +26,7 @@ Scene::Scene(RHIDevice* device, Allocator* alloc, size_t numSwaps, SceneBudgets 
 {}
 void Scene::OnBeforeFrame(uint32_t rendererSync)
 {
+    ZoneScoped;
     std::scoped_lock lock(m_updateMutex);
     CHECK_MSG(m_state == State::Idle, "Bad Scene State ({})", m_state);
     m_state = State::Update;
@@ -61,7 +65,7 @@ void Scene::OnBeforeFrame(uint32_t rendererSync)
         if (m_instanceBuffer.GetStagingBuffer()->FreeSize() < sizeof(data))
         {
             // Defer to next frame
-            LOG_RUNTIME(Scene, warn, "Deferred update. Done {}, Remain {}", instanceUpd, m_instanceQueue.size());
+            LOG_RUNTIME(Scene, warn, "Instance update being deferred. Done {}, Remain {}. Increase staging size to avoid latency!", instanceUpd, m_instanceQueue.size());
             break;
         }
         m_instanceBuffer.Transfer(offset, Span<InstanceMetadata>(data).AsBytes());
