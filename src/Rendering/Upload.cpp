@@ -5,9 +5,9 @@ UploadContext::UploadContext(RHIDevice* device, Allocator* allocator, size_t sta
 m_device(device), m_allocator(allocator), m_commandLists(allocator), m_fences(allocator),
 m_stagingBuffer(device, stagingBudget, allocator)
 {
-    m_transferQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Transfer);
+    m_queue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
     m_commandPool = m_device->CreateCommandPool({
-        .queue = RHIDeviceQueueType::Transfer,
+        .queue = RHIDeviceQueueType::Graphics,
         .type = RHICommandPoolType::Transient
     });
 }
@@ -16,12 +16,24 @@ RHIDeviceFence* UploadContext::Upload(RHIBuffer* dst, Span<const char> data, siz
     size_t offset = m_stagingBuffer.Write(data, alignment);
     auto& cmd = m_commandLists.emplace_back(m_commandPool->CreateCommandList());
     cmd->Begin();
+    cmd->BeginTransition();
+    cmd->SetBufferTransition(dst, {
+        .dst_access = RHIResourceAccessBits::TransferWrite,
+        .dst_stage = RHIPipelineStageBits::Transfer
+    });
+    cmd->EndTransition();
     cmd->CopyBuffer(m_stagingBuffer.GetBuffer(), dst, {{{
         .src_offset = offset, .dst_offset = dstOffset, .size = data.size()
     }}});
+    cmd->BeginTransition();
+    cmd->SetBufferTransition(dst, {
+        .dst_access = RHIResourceAccessBits::ShaderRead,
+        .dst_stage = RHIPipelineStageBits::AllGraphics
+    });
+    cmd->EndTransition();
     cmd->End();
     auto& fence = m_fences.emplace_back(m_device->CreateFence(false));
-    m_transferQueue->Submit({
+    m_queue->Submit({
         .cmd_lists = {{ cmd.Get() }},
         .fence = fence.Get()
     });
@@ -32,7 +44,16 @@ RHIDeviceFence* UploadContext::Upload(RHITexture* dst, Span<const char> data, ui
 {
     size_t offset = m_stagingBuffer.Write(data, 4);
     auto& cmd = m_commandLists.emplace_back(m_commandPool->CreateCommandList());
+    RHITextureSubresourceRange range = RHITextureSubresourceRange::Create(aspect, mipLevel, 1, arrayLayer, 1);
     cmd->Begin();
+    cmd->BeginTransition();
+    cmd->SetImageTransition(dst, {
+        .dst_access = RHIResourceAccessBits::TransferWrite,
+        .dst_stage = RHIPipelineStageBits::Transfer,
+        .dst_img_layout = RHITextureLayout::TransferDst,
+        .src_img_range = range
+    });
+    cmd->EndTransition();
     cmd->CopyBufferToImage(m_stagingBuffer.GetBuffer(), dst, RHITextureLayout::TransferDst, {
         {RHICommandList::CopyImageRegion{
             .src_buffer_offset = static_cast<uint32_t>(offset),
@@ -45,9 +66,17 @@ RHIDeviceFence* UploadContext::Upload(RHITexture* dst, Span<const char> data, ui
             .extent = dst->m_desc.extent
         }}
     });
+    cmd->BeginTransition();
+    cmd->SetImageTransition(dst, {
+        .dst_access = RHIResourceAccessBits::ShaderRead,
+        .dst_stage = RHIPipelineStageBits::AllGraphics,
+        .dst_img_layout = RHITextureLayout::ShaderReadOnly,
+        .src_img_range = range
+    });
+    cmd->EndTransition();
     cmd->End();
     auto& fence = m_fences.emplace_back(m_device->CreateFence(false));
-    m_transferQueue->Submit({
+    m_queue->Submit({
         .cmd_lists = {{ cmd.Get() }},
         .fence = fence.Get()
     });

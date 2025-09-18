@@ -9,17 +9,17 @@ namespace Foundation::Rendering
     /**
      * @brief Immediate upload context for transferring data to GPU resources.
      *
-     * @note All uploads are submitted to a transfer queue, and are executed immediately.
+     * @note All uploads are submitted to the _Graphics_ Queue, and are executed immediately.
      * A fence is returned that can be waited on to ensure the upload is complete.
-     *
-     * @note This is RAII - and is encouraged to be used as such. The destructor will wait for all uploads to complete.
+     * @note Upload operations are asynchronous. And is only guaranteed to be available after a @ref UploadContext::WaitAll() call.
+     * @note This is RAII - and is encouraged to be used as such. The destructor will wait for all uploads to complete,
      */
     class UploadContext
     {
         RHIDevice* m_device;
         Allocator* m_allocator;
 
-        RHIDeviceQueue* m_transferQueue;
+        RHIDeviceQueue* m_queue;
         RHIDeviceScopedObjectHandle<RHICommandPool> m_commandPool;
         Vector<RHICommandPoolScopedHandle<RHICommandList>> m_commandLists;
         Vector<RHIDeviceScopedObjectHandle<RHIDeviceFence>> m_fences;

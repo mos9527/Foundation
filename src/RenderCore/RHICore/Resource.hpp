@@ -206,7 +206,7 @@ namespace Foundation::RHI {
         RHITextureView(RHITexture const& image, RHITextureViewDesc const& desc)
             : m_image(image), m_desc(desc) {
         }
-
+        virtual RHITexture* GetTexture() const = 0;
         virtual void DebugSetObjectName(const char* name) = 0;
     };
     template<> struct RHIObjectTraits<RHITexture, RHITextureView> {

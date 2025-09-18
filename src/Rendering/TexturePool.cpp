@@ -1,7 +1,7 @@
 #include "TexturePool.hpp"
 #include <Rendering/Upload.hpp>
 using namespace Foundation::Rendering;
-const uint32_t kInvalidTexture[4] = {0xFF00FFFF, 0xFF00FFFF, 0xFF00FFFF, 0xFF00FFFF}; // Magenta
+const uint32_t kInvalidTexture[4] = {0xFFFF00FF, 0x00000000, 0x00000000, 0xFFFF00FF}; // RGBA in little endian
 void TexturePool::SetMissingTexture(uint32_t index)
 {
     m_descriptorSet->Update({.binding = 0,
@@ -25,24 +25,41 @@ TexturePool::TexturePool(RHIDevice* device, Allocator* allocator, uint32_t max_t
     m_descriptorSet = m_descriptorPool->CreateDescriptorSet(m_descriptorSetLayout, max_textures);
     // Create a 2x2 'missing' texture
     m_missingTextureHandle =
-        Allocate({.usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
-                  .format = RHIResourceFormat::B8G8R8A8_UNROM});
+        Allocate({
+                .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
+                .extent = {2,2,1},
+                .format = RHIResourceFormat::R8G8B8A8_UNORM,
+        });
     UploadContext ctx(device, allocator);
     ctx.Upload(GetTexture(m_missingTextureHandle), Span<const uint32_t>(kInvalidTexture).AsBytes());
     for (size_t i = 0; i < max_textures; i++)
         SetMissingTexture(i);
 }
+RHITexture* TexturePool::GetTexture(TextureHandle handle) const
+{
+    return m_textures.at(handle).visit(
+        [&](RHITextureView* const& view) { return view->GetTexture(); },
+        [&](TexturePair const& pair) { return pair.first.Get(); }
+    );
+}
+RHITextureView* TexturePool::GetTextureView(TextureHandle handle) const
+{
+    return m_textures.at(handle).visit(
+        [&](RHITextureView* const& view) { return view; },
+        [&](TexturePair const& pair) { return pair.second.Get(); }
+    );
+}
 TextureHandle TexturePool::Allocate(RHITextureDesc const& desc, RHITextureViewDesc const& viewDesc)
 {
     auto [handle, resource] = m_textures.pop();
     CHECK_MSG(handle < m_maxTextures, "TexturePool overflow.");
-    auto& [texture, view] = resource;
-    texture = m_device->CreateTexture(desc);
-    view = texture->CreateTextureView(viewDesc);
+    auto texture = m_device->CreateTexture(desc);
+    auto view = texture->CreateTextureView(viewDesc);
     m_descriptorSet->Update({.binding = 0,
                              .startIndex = handle,
                              .type = RHIDescriptorType::SampledImage,
                              .images = {{{.image_view = view.Get(), .layout = RHITextureLayout::ShaderReadOnly}}}});
+    resource = TexturePair(std::move(texture), std::move(view));
     return handle;
 }
 TextureHandle TexturePool::Allocate(RHITextureDesc const& desc)
@@ -52,6 +69,17 @@ TextureHandle TexturePool::Allocate(RHITextureDesc const& desc)
                                        .dimension = desc.dimension,
                                        .range = RHITextureSubresourceRange::Create(
                                            RHITextureAspectFlagBits::Color, 0, desc.mip_levels, 0, desc.array_layers)});
+}
+TextureHandle TexturePool::Allocate(RHITextureView* view)
+{
+    auto [handle, resource] = m_textures.pop();
+    CHECK_MSG(handle < m_maxTextures, "TexturePool overflow.");
+    m_descriptorSet->Update({.binding = 0,
+                             .startIndex = handle,
+                             .type = RHIDescriptorType::SampledImage,
+                             .images = {{{.image_view = view, .layout = RHITextureLayout::ShaderReadOnly}}}});
+    resource = view;
+    return handle;
 }
 void TexturePool::Free(TextureHandle handle)
 {

@@ -1,6 +1,7 @@
 #pragma once
 #include <RenderCore/RHICore/Device.hpp>
 #include <RenderCore/RHICore/Descriptor.hpp>
+#include <Runtime/Bits/Functional.hpp>
 #include <Native/Filesystem.hpp>
 namespace Foundation::Rendering
 {
@@ -16,7 +17,7 @@ namespace Foundation::Rendering
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> m_descriptorSetLayout;
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_descriptorPool;
         RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> m_descriptorSet;
-        FreeList<TextureHandle, TexturePair> m_textures;
+        FreeList<TextureHandle, Variant<TexturePair, RHITextureView*>> m_textures;
 
         TextureHandle m_missingTextureHandle{ kInvalidHandle };
         void SetMissingTexture(uint32_t index);
@@ -25,10 +26,13 @@ namespace Foundation::Rendering
 
         TextureHandle Allocate(RHITextureDesc const& desc);
         TextureHandle Allocate(RHITextureDesc const& desc, RHITextureViewDesc const& viewDesc);
-        RHITexture* GetTexture(TextureHandle handle) const { return m_textures.at(handle).first.Get(); }
-        RHITextureView* GetTextureView(TextureHandle handle) { return m_textures.at(handle).second.Get(); }
+        TextureHandle Allocate(RHITextureView* view);
+
+        RHITexture* GetTexture(TextureHandle handle) const;
+        RHITextureView* GetTextureView(TextureHandle handle) const;
         void Free(TextureHandle handle);
 
         RHIDeviceDescriptorSet* GetDescriptorSet() const { return m_descriptorSet.Get(); }
+        RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout() const { return m_descriptorSetLayout.Get(); }
     };
 }

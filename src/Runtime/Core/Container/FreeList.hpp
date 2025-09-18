@@ -46,10 +46,13 @@ namespace Foundation::Core {
      * @brief A dense map implementation with amortized O(1) allocation and deallocation.
      *
      * Reallocation (growth) behaviour is the same as std::vector.
-     *
      * @note This is _not_ thread-safe, and should not be used in a multithreaded context.
+     *
+     * @tparam K Key type. Should be an integral type.
+     * @tparam V Value type.
+     * @tparam Tombstone Tombstone value type for erased values.
      */
-    template<typename K, typename V>
+    template<typename K, typename V, typename Tombstone = V>
     class FreeList {
         FreeListCounter<K> m_keys;
         Vector<V> m_values;
@@ -118,7 +121,7 @@ namespace Foundation::Core {
          * @brief Frees the value associated with the specified key
          */
         void free(K key) {
-            m_values[key] = {};
+            m_values[key] = Tombstone{};
             m_bitmap[key] = false;
             push(key);
         }

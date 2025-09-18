@@ -258,8 +258,8 @@ namespace Foundation::RenderCore {
             RHIDescriptorType,
             String
             >> tex_bindings, buf_bindings;
-        // External Bind Sets [Ptr, binding point]
-        Vector<Pair<RHIDeviceDescriptorSet*, String>> external_sets;
+        // External Bind Sets [Ptr, Layout Ptr, binding point]
+        Vector<Tuple<RHIDeviceDescriptorSet*, RHIDeviceDescriptorSetLayout*, String>> external_sets;
         // Samplers
         Vector<Pair<ResourceHandle, String>> samplers;
         // Push Constants by [stage, offset, size]
@@ -280,11 +280,16 @@ namespace Foundation::RenderCore {
         RHIPipelineStageBits pass_stages{};
         // Pipeline states for the entire pass
         RHIDeviceScopedObjectHandle<RHIPipelineState> pso;
+        // Layouts created by ourselves
         Vector<RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout>> desc_layouts;
+        // Pointers. Can also contain external sets
+        Vector<RHIDeviceDescriptorSetLayout*> p_desc_layouts;
+        // Sets created by ourselves
         Vector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> desc_sets;
+        // Pointers. Can also contain external sets
         Vector<RHIDeviceDescriptorSet*> p_desc_sets;
-        // [Set Index, Set]
-        Vector<Pair<size_t, RHIDeviceDescriptorSet*>> external_desc_sets;
+        // [Set Index, Set, Layout]
+        Vector<Tuple<size_t, RHIDeviceDescriptorSet*, RHIDeviceDescriptorSetLayout*>> external_desc_sets;
     };
     /**
      * @brief Renderer implementing a Frame Graph system with automatic resource tracking and synchronization.
@@ -743,7 +748,8 @@ namespace Foundation::RenderCore {
         void BindDescriptorSet(
             PassHandle pass,
             StringView bind_point,
-            RHIDeviceDescriptorSet* descriptor_set
+            RHIDeviceDescriptorSet* descriptor_set,
+            RHIDeviceDescriptorSetLayout* layout
         );
         /**
          * @brief Binds a texture as a Shader Resource View (read-only sampling / fetch).

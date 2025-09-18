@@ -98,7 +98,8 @@ TrackedPass::TrackedPass(Allocator* alloc, const PassHandle handle, StringView n
         samplers(alloc),
         push_constants(alloc), rtvs(alloc),
         vertex_input_bindings(alloc), vertex_input_attributes(alloc),
-        pass(std::move(renderPass)), desc_layouts(alloc),
+        pass(std::move(renderPass)),
+        desc_layouts(alloc), p_desc_layouts(alloc),
         desc_sets(alloc), p_desc_sets(alloc),
         external_sets(alloc), external_desc_sets(alloc)
 {
@@ -288,10 +289,10 @@ void Renderer::BindTextureSampler(
     m_setup->trackedPasses[pass].samplers.emplace_back(sampler, shader_name);
     m_setup->binding_counts[RHIDescriptorType::Sampler]++;
 }
-void Renderer::BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSet* descriptor_set)
+void Renderer::BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSet* descriptor_set, RHIDeviceDescriptorSetLayout* layout)
 {
     CHECK(m_state == State::Setup);
-    m_setup->trackedPasses[pass].external_sets.emplace_back(descriptor_set, bind_point);
+    m_setup->trackedPasses[pass].external_sets.emplace_back(descriptor_set, layout, bind_point);
 }
 ResourceHandle Renderer::BindTextureSRV(
     PassHandle pass, ResourceHandle texture,
@@ -566,7 +567,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
             if (ep.stage == stage && ep.name == entry_point) {
                 pso_stages.push_back({
                     .desc = {.stage = stage, .entry_point = ep.name.c_str()},
-                    .shader_module = module
+                    .shader_module = module.Get()
                 });
                 if (stage == RHIShaderStageBits::Compute)
                     tracked.compute_local_size = ep.local_size;
@@ -649,12 +650,12 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         }
     }
     // External sets (e.g. @ref TexturePool)
-    for (auto& [desc_set, binding] : tracked.external_sets) {
+    for (auto& [desc_set, desc_set_layout, binding] : tracked.external_sets) {
         var_ext_sets[binding] = desc_set;
         // We don't create anything for the set - but do resolve these
         // so we can map them later on
         if (var_bind_points.contains(binding))
-            tracked.external_desc_sets.emplace_back(var_bind_points[binding].first, desc_set);
+            tracked.external_desc_sets.emplace_back(var_bind_points[binding].first, desc_set, desc_set_layout);
     }
     Ranges::sort(tracked.external_desc_sets);
     tracked.external_desc_sets.erase(Ranges::unique(tracked.external_desc_sets).begin(), tracked.external_desc_sets.end());
@@ -684,7 +685,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         set_bindings.push_back({ .count = 1, .stage = RHIShaderStageBits::All, .type = var_types[binding] });
     }
     // Check if the external set conflicts with our own bindings
-    for (auto const& [set, ptr] : tracked.external_desc_sets)
+    for (auto const& [set, ptr, layout_ptr] : tracked.external_desc_sets)
     {
         auto it = Ranges::find_if(bindings, [set](auto const& b)
         {
@@ -694,11 +695,11 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         {
             auto e_it = Ranges::find_if(tracked.external_sets, [set, ptr](auto const& e)
             {
-                return e.first == ptr;
+                return std::get<0>(e) == ptr;
             });
             CHECK_MSG(false,
-                "External descriptor set used by shader at set {} (used by '{}') conflicts with bindings declared by pass {}. Declare different set usage _in shader_ for usage!",
-                set, e_it->second, tracked.name
+                "External descriptor set used by shader at set {} (used by '{}') conflicts with bindings declared by pass {}, which is declared internally. Declare different set usage _in shader_ for usage!",
+                set, std::get<2>(*e_it), tracked.name
             );
         }
     }
@@ -733,6 +734,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
         tracked.desc_layouts.back()->DebugSetObjectName(
             fmt::format("Descriptor Set Layout {} of {} [{}]", set, tracked.name, pass).c_str()
         );
+        tracked.p_desc_layouts.emplace_back(tracked.desc_layouts.back().Get());
         CHECK_MSG(m_descPool.IsValid(), "Shader declared bindings, but the pass {} didn't provide any.", tracked.name);
         tracked.desc_sets.push_back(m_descPool->CreateDescriptorSet(tracked.desc_layouts.back()));
         auto& ds = tracked.desc_sets.back();
@@ -799,6 +801,13 @@ void Renderer::BuildPipelineState(PassHandle pass) {
             }
         }
     }
+    // Add external sets
+    // We've already established that these would not conflict, and has already been sorted
+    for (auto const& [set, ptr, layout_ptr] : tracked.external_desc_sets)
+    {
+        tracked.p_desc_sets.emplace_back(ptr);
+        tracked.p_desc_layouts.emplace_back(layout_ptr);
+    }
     RHIPipelineState::PipelineStateDesc pso_desc{
         .type = tracked.compute_pass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
         .vertex_input = {
@@ -817,7 +826,7 @@ void Renderer::BuildPipelineState(PassHandle pass) {
             .depth_write = true
         },
         .shader_stages = pso_stages,
-        .descriptor_set_layouts = tracked.desc_layouts,
+        .descriptor_set_layouts = tracked.p_desc_layouts,
         .push_constants = tracked.push_constants
     };
     // Setup compute/graphics specific states
@@ -1548,7 +1557,7 @@ void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) const
             tpass.p_desc_sets,
             0
         );
-    for (auto const& [index, ptr] : tpass.external_desc_sets)
+    for (auto const& [index, ptr, layout_ptr] : tpass.external_desc_sets)
         CmdBindDescriptorSet(pass, cmd, index, ptr);
 }
 void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, uint32_t index,

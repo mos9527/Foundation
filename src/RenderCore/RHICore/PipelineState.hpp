@@ -115,11 +115,11 @@ namespace Foundation::RHI {
                         // !! TODO
                     } specialization_info;
                 } desc;
-                RHIDeviceObjectHandle<RHIShaderModule> shader_module;
+                RHIShaderModule* shader_module;
             };
             Span<const ShaderStage> shader_stages;
             // Descriptors
-            Span<const RHIDeviceObjectHandle<RHIDeviceDescriptorSetLayout>> descriptor_set_layouts;
+            Span<RHIDeviceDescriptorSetLayout* const> descriptor_set_layouts;
             // Push Constants
             struct PushConstant {
                 RHIShaderStage stage;

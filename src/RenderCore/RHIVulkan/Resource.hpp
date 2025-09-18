@@ -140,6 +140,8 @@ namespace Foundation::RHI {
     public:
         VulkanTextureView(VulkanTexture& image, RHITextureViewDesc const& desc, vk::raii::ImageView&& view);
 
+        RHITexture* GetTexture() const override { return &m_image; }
+
         inline auto const& GetVkImageView() const { return m_view; }
         inline auto const& GetImage() const { return m_image; }
 
