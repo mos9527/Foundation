@@ -21,6 +21,7 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
             break;
         case RHIDescriptorType::Sampler:
         case RHIDescriptorType::SampledImage:
+        case RHIDescriptorType::StorageImage:
             CHECK_MSG(desc.images.size() == size_all, "Image descriptor type must have images only. Did you set the type?");
             break;
         default:

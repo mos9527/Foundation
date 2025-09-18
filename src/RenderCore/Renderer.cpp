@@ -1569,7 +1569,7 @@ void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, uint32
     cmd->BindDescriptorSet(
         tpass.compute_pass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
         tpass.pso.Get(),
-        {{{ descriptor_set }}},
+        {{ descriptor_set }},
         index
     );
 }

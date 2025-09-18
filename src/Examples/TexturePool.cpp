@@ -108,9 +108,9 @@ namespace Examples
                 auto texture = m_textures->GetTexture(m_handles.back());
                 Array<unsigned char, 16> hash;
                 // Randomly fill the hash
-                std::mt19937 rng{ i };
+                std::mt19937 rng{ static_cast<unsigned int>(i) };
                 std::uniform_int_distribution<> dist(0, 255);
-                for (int j = 0; j < 16; ++j) hash[j] = dist(rng);
+                for (int j = 0; j < 16; ++j) hash[j] = static_cast<unsigned char>(dist(rng));
                 auto art = identicon(hash);
                 // This won't block - the transfers are waited on @ref UploadContext destruction
                 upload.Upload(texture, Span<uint32_t>(art).AsBytes());
