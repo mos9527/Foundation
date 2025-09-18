@@ -1,7 +1,7 @@
 #include "Scene.hpp"
 #include "Mesh.hpp"
 #include <tracy/Tracy.hpp>
-using namespace Foundation::ModelViewer;
+using namespace ModelViewer;
 using namespace Foundation::Async;
 using namespace Foundation::Native;
 Scene::Scene(RHIDevice* device, Allocator* alloc, size_t numSwaps, SceneBudgets const& budgets) :
@@ -57,6 +57,7 @@ void Scene::OnBeforeFrame(uint32_t rendererSync)
     size_t instanceUpd = 0;
     while (!m_instanceQueue.empty())
     {
+        ZoneScopedN("Instance Update");
         // Instance data is always of the same sizes
         // and always pre-allocated.
         auto& [handle, data] = m_instanceQueue.front();

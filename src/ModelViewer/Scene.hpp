@@ -3,8 +3,9 @@
 #include <Runtime/Bits/Format.hpp>
 #include <Runtime/Math/Math.hpp>
 #include <Rendering/Staging.hpp>
-namespace Foundation::ModelViewer
+namespace ModelViewer
 {
+    using namespace Foundation;
     using namespace Foundation::RenderCore;
     using namespace Foundation::Rendering;
     using namespace Foundation::Math;

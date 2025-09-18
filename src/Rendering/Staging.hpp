@@ -29,7 +29,7 @@ namespace Foundation::Rendering
         size_t m_offset = 0;
 
     public:
-        StagingBuffer(Allocator* allocator, RHIDevice* device, size_t size);
+        StagingBuffer(RHIDevice* device, size_t size, Allocator* allocator);
         /**
          * @brief Writes data to the staging buffer, returning the offset of the data in the buffer.
          * @return Offset of the data in the buffer. Throws std::bad_alloc if there's not enough space.
@@ -68,15 +68,11 @@ namespace Foundation::Rendering
      *
      * This creates a GPU-only local buffer, and multiple staging buffers per swap.
      *
-     * For one-shot, static content - you don't need this. Get a staging buffer,
-     * write to it, and do the transfer right away. Wait until the queue is done,
-     * free the staging buffer if you'd like to. See @ref Scene for reference.
+     * For one-shot, uploaded static content that doesn't change, consider using
+     * @ref UploadContext instead. Don't forget that Push Constant also exists.
      *
      * This is here for _dynamic_ content updates that can be performed asynchronously
      * without stalling the CPU or GPU for each update.
-     *
-     * For trivial, small updates, you might want to consider using Push Constants instead.
-     * See also @ref createStagedBufferUpdatePass
      */
     class StagedBuffer : public RHIObject /* pinned */
     {

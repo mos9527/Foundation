@@ -60,7 +60,7 @@ namespace Foundation::RHI {
         virtual RHICommandList& BindDescriptorSet(
             RHIDevicePipelineType bindpoint,
             RHIPipelineState* pipeline,
-            Core::Span<RHIDeviceDescriptorSet* const> sets,
+            Span<RHIDeviceDescriptorSet* const> sets,
             size_t first = 0) = 0;
 #pragma endregion
 #pragma region Rasterizer
@@ -70,7 +70,7 @@ namespace Foundation::RHI {
         virtual RHICommandList& DrawIndexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0, int32_t vertex_offset = 0, uint32_t first_instance = 0) = 0;
         virtual RHICommandList& DrawIndexedIndirectCount(RHIBuffer* cmd_buffer, size_t cmd_offset, RHIBuffer* count_buffer, size_t count_offset, uint32_t max_draw_count, uint32_t cmd_stride) = 0;
 #pragma endregion
-        virtual RHICommandList& PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Core::Span<const char> data) = 0;
+        virtual RHICommandList& PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Span<const char> data) = 0;
 #pragma region Transfer Queue
         struct CopyBufferRegion {
             size_t src_offset = 0;
@@ -82,7 +82,7 @@ namespace Foundation::RHI {
             size_t size = kFullSize;
         };
         virtual RHICommandList& FillBuffer(RHIBuffer* buffer, uint32_t value, size_t offset = 0, size_t size = kFullSize) = 0;
-        virtual RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::Span<const CopyBufferRegion> regions) = 0;
+        virtual RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Span<const CopyBufferRegion> regions) = 0;
         struct CopyImageRegion {
             uint32_t src_buffer_offset = 0; // Offset in the source buffer, used for CopyBufferToImage
             RHITextureSubresourceLayer src_layer;
@@ -94,8 +94,8 @@ namespace Foundation::RHI {
             /// or the call to Copy(...)Image is invalid.
             RHIExtent3D extent{ 0,0,0 };
         };
-        virtual RHICommandList& CopyImage(RHITexture* src_image, RHITextureLayout src_layout, RHITexture* dst_image, RHITextureLayout dst_layout, Core::Span<const CopyImageRegion> regions) = 0;
-        virtual RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image, RHITextureLayout dst_layout, Core::Span<const CopyImageRegion> regions) = 0;
+        virtual RHICommandList& CopyImage(RHITexture* src_image, RHITextureLayout src_layout, RHITexture* dst_image, RHITextureLayout dst_layout, Span<const CopyImageRegion> regions) = 0;
+        virtual RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image, RHITextureLayout dst_layout, Span<const CopyImageRegion> regions) = 0;
 #pragma endregion
 #pragma region Graphics Pipeline
         struct GraphicsDesc {
@@ -112,13 +112,13 @@ namespace Foundation::RHI {
                     return image_view;
                 }
             };
-            Core::Span<const Attachment> color_attachments;
+            Span<const Attachment> color_attachments;
             const Attachment depth_attachment{};
             const Attachment stencil_attachment{};
             uint32_t width, height;
         };
         virtual RHICommandList& BeginGraphics(GraphicsDesc const& desc) = 0;
-        virtual RHICommandList& BindVertexBuffer(uint32_t index, Core::Span<RHIBuffer* const> buffers, Core::Span<const size_t> offsets) = 0;
+        virtual RHICommandList& BindVertexBuffer(uint32_t index, Span<RHIBuffer* const> buffers, Span<const size_t> offsets) = 0;
         virtual RHICommandList& BindIndexBuffer(RHIBuffer* buffer, size_t offset = 0, RHIResourceFormat format = RHIResourceFormat::R32_UINT) = 0;
         virtual RHICommandList& EndGraphics() = 0;
 #pragma endregion

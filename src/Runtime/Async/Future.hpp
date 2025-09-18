@@ -1,7 +1,8 @@
+#pragma once
 #include <Runtime/Core/Core.hpp>
 #include <future>
 /**
- * @brief Asynchronous programming utilities.
+ * @brief Asynchronous programming primitives.
  */
 namespace Foundation::Async
 {

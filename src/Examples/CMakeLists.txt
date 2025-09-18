@@ -13,3 +13,7 @@ add_dependencies(Example_SDF2D Shader_SDF2D)
 add_executable(Example_MandelbrotCompute "MandelbrotCompute.cpp")
 target_link_libraries(Example_MandelbrotCompute PUBLIC Foundation_Rendering)
 add_dependencies(Example_MandelbrotCompute Shader_MandelbrotCompute)
+
+add_executable(Example_TexturePool "TexturePool.cpp")
+target_link_libraries(Example_TexturePool PUBLIC Foundation_Rendering)
+add_dependencies(Example_TexturePool Shader_TexturePool)

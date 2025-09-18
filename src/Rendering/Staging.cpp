@@ -36,7 +36,7 @@ namespace Foundation::Rendering
         res.resize(j + 1);
         return res;
     }
-    StagingBuffer::StagingBuffer(Allocator* allocator, RHIDevice* device, const size_t size) :
+    StagingBuffer::StagingBuffer(RHIDevice* device, const size_t size, Allocator* allocator) :
         m_allocator(allocator), m_device(device),
         m_buffer(device->CreateBuffer(
             {.resource = {.heap = RHIDeviceHeapType::Upload, .host_access = RHIResourceHostAccess::WriteOnly},
@@ -76,7 +76,7 @@ namespace Foundation::Rendering
             stagingBudget = desc.size;
         for (size_t i = 0; i < numSwaps; i++)
         {
-            m_stagingBuffers.emplace_back(allocator, device, stagingBudget);
+            m_stagingBuffers.emplace_back(device, stagingBudget, allocator);
             m_stagingBuffers.back().GetBuffer()->DebugSetObjectName(fmt::format("Staging Buffer {}", i).c_str());
         }
         m_buffer = device->CreateBuffer(desc);

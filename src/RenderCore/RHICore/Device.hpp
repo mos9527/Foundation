@@ -69,7 +69,11 @@ namespace Foundation::RHI {
             RHIShaderStage stage{ RHIShaderStageBits::All }; // Stage this binding is used in
             RHIDescriptorType type; // Type of this binding
         };
+        // Bindings that make up this layout
         Span<const Binding> bindings;
+        // Allow updating descriptors after being bound to a command buffer when
+        // they are not used
+        bool update_after_bind{ false };
     };
     class RHIDeviceDescriptorSetLayout : public RHIObject {
     protected:
