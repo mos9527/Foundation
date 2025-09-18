@@ -1,8 +1,8 @@
-#include <../src/RenderCore/Shader.hpp>
+#include <RenderCore/Shader.hpp>
 #include <Core/Allocator/DefaultAllocator.hpp>
 #include <fstream>
 #include <iostream>
-using namespace Foundation::Rendering;
+using namespace Foundation::RenderCore;
 
 DefaultAllocator g_alloc;
 Vector<char> ReadFile(std::string const& path) {

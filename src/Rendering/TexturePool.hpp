@@ -9,6 +9,11 @@ namespace Foundation::Rendering
     using namespace Foundation::Native;
     using TexturePoolHandle = size_t;
     using TexturePair = Pair<RHIDeviceScopedObjectHandle<RHITexture>, RHITextureScopedHandle<RHITextureView>>;
+    /**
+     * @brief Bindless Texture Pool implementation
+     *
+     * See @ref Examples::TexturePoolApp for reference usage.
+     */
     class TexturePool : RHIObject // pinned
     {
         const size_t m_maxTextures;

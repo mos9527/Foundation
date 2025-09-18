@@ -1,5 +1,10 @@
 #include "Examples.hpp"
 namespace Examples {
+    struct PushConstants {
+        float time;
+        float pad;
+        RHIExtent2D resolution;
+    };
     /**
      * @example MandelbrotCompute.cpp
      * Mandelbrot set rendering on the compute shader and automatically synchronizes the result back to display.
@@ -7,11 +12,6 @@ namespace Examples {
      * Shader courtesy of Inigo Quilez: https://iquilezles.org/articles/mset_smooth/
      */
     class MandelbrotComputeDemoApp : public RenderApplication {
-        struct PushConstants {
-            float time;
-            float pad;
-            RHIExtent2D resolution;
-        };
         void OnRendererSetup() override {
             ResourceHandle buffer = createResource(
                 m_renderer.get(), "Mandelbrot Image",
@@ -21,7 +21,7 @@ namespace Examples {
                     .format = RHIResourceFormat::R8G8B8A8_UNORM
                 }
             );
-            ResourceHandle sampler = createSampler(m_renderer.get(), {});
+            1
             createPass(
                 m_renderer.get(), "Mandelbrot", RHIDeviceQueueType::Compute,
                 [=](PassHandle self, Renderer* r) {
