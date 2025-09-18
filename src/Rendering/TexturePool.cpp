@@ -12,7 +12,8 @@ void TexturePool::SetMissingTexture(uint32_t index)
    }}}});
 }
 TexturePool::TexturePool(RHIDevice* device, Allocator* allocator, uint32_t max_textures) :
-    m_maxTextures(max_textures), m_device(device), m_allocator(allocator), m_textures(max_textures, allocator)
+    m_maxTextures(max_textures), m_device(device), m_allocator(allocator), m_textures(max_textures, allocator),
+    m_idleGuard(device)
 {
     m_descriptorPool = m_device->CreateDescriptorPool(
         {.bindings = {{{.type = RHIDescriptorType::SampledImage, .max_count = max_textures}}},
@@ -35,21 +36,21 @@ TexturePool::TexturePool(RHIDevice* device, Allocator* allocator, uint32_t max_t
     for (size_t i = 0; i < max_textures; i++)
         SetMissingTexture(i);
 }
-RHITexture* TexturePool::GetTexture(TextureHandle handle) const
+RHITexture* TexturePool::GetTexture(TexturePoolHandle handle) const
 {
     return m_textures.at(handle).visit(
         [&](RHITextureView* const& view) { return view->GetTexture(); },
         [&](TexturePair const& pair) { return pair.first.Get(); }
     );
 }
-RHITextureView* TexturePool::GetTextureView(TextureHandle handle) const
+RHITextureView* TexturePool::GetTextureView(TexturePoolHandle handle) const
 {
     return m_textures.at(handle).visit(
         [&](RHITextureView* const& view) { return view; },
         [&](TexturePair const& pair) { return pair.second.Get(); }
     );
 }
-TextureHandle TexturePool::Allocate(RHITextureDesc const& desc, RHITextureViewDesc const& viewDesc)
+TexturePoolHandle TexturePool::Allocate(RHITextureDesc const& desc, RHITextureViewDesc const& viewDesc)
 {
     auto [handle, resource] = m_textures.pop();
     CHECK_MSG(handle < m_maxTextures, "TexturePool overflow.");
@@ -62,7 +63,7 @@ TextureHandle TexturePool::Allocate(RHITextureDesc const& desc, RHITextureViewDe
     resource = TexturePair(std::move(texture), std::move(view));
     return handle;
 }
-TextureHandle TexturePool::Allocate(RHITextureDesc const& desc)
+TexturePoolHandle TexturePool::Allocate(RHITextureDesc const& desc)
 {
     return Allocate(desc,
                     RHITextureViewDesc{.format = desc.format,
@@ -70,7 +71,7 @@ TextureHandle TexturePool::Allocate(RHITextureDesc const& desc)
                                        .range = RHITextureSubresourceRange::Create(
                                            RHITextureAspectFlagBits::Color, 0, desc.mip_levels, 0, desc.array_layers)});
 }
-TextureHandle TexturePool::Allocate(RHITextureView* view)
+TexturePoolHandle TexturePool::Allocate(RHITextureView* view)
 {
     auto [handle, resource] = m_textures.pop();
     CHECK_MSG(handle < m_maxTextures, "TexturePool overflow.");
@@ -81,8 +82,9 @@ TextureHandle TexturePool::Allocate(RHITextureView* view)
     resource = view;
     return handle;
 }
-void TexturePool::Free(TextureHandle handle)
+void TexturePool::Free(TexturePoolHandle handle)
 {
+    CHECK_MSG(handle != m_missingTextureHandle, "Attempted to free reserved texture!");
     m_textures.free(handle);
     SetMissingTexture(handle);
 }

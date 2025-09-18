@@ -10,9 +10,12 @@ namespace Foundation::Rendering
      * @brief Immediate upload context for transferring data to GPU resources.
      *
      * @note All uploads are submitted to the _Graphics_ Queue, and are executed immediately.
-     * A fence is returned that can be waited on to ensure the upload is complete.
+     *       Therefore, access on the same resources on the Graphics is safe and well-defined since
+     *       queue submissions are inherently 'single-threaded'.
+     * @note If resources are to be accessed on the Async Compute queue, however - beware of synchronization.
      * @note Upload operations are asynchronous. And is only guaranteed to be available after a @ref UploadContext::WaitAll() call.
-     * @note This is RAII - and is encouraged to be used as such. The destructor will wait for all uploads to complete,
+     *       The resources will be transitioned to-and-from states that's suitable
+     * @note This is RAII - and is encouraged to be used as such. The destructor will wait for all uploads to complete.
      */
     class UploadContext
     {
