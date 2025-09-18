@@ -5,5 +5,7 @@ build/
 .derived/
 .idea/
 docs/
-127.0.0.1* # I have no idea why my box wants to put this file here
-CMakeSettings.json # No, Visual Studio.
+# I have no idea why my box wants to put this file here
+127.0.0.1* 
+# No, Visual Studio.
+/CMakeSettings.json
