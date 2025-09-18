@@ -124,10 +124,10 @@ namespace Foundation::RHI {
     template<typename T> using RHITextureScopedHandle = RHIScopedHandle<RHITexture, T>;
     template<typename T> using RHITextureHandle = RHIHandle<RHITexture, T>;
     struct RHITextureSubresourceLayer {
-        RHITextureAspectFlag aspect{  };
-        uint32_t mip_level;
-        uint32_t base_array_layer;
-        uint32_t layer_count;
+        RHITextureAspectFlag aspect{};
+        uint32_t mip_level{ 0 };
+        uint32_t base_array_layer{ 0 };
+        uint32_t layer_count{ 1 };
     };
     struct RHITextureSubresourceRange {
         // Single mip level and array layer range
@@ -206,7 +206,7 @@ namespace Foundation::RHI {
         RHITextureView(RHITexture const& image, RHITextureViewDesc const& desc)
             : m_image(image), m_desc(desc) {
         }
-
+        virtual RHITexture* GetTexture() const = 0;
         virtual void DebugSetObjectName(const char* name) = 0;
     };
     template<> struct RHIObjectTraits<RHITexture, RHITextureView> {

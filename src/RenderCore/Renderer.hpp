@@ -258,6 +258,8 @@ namespace Foundation::RenderCore {
             RHIDescriptorType,
             String
             >> tex_bindings, buf_bindings;
+        // External Bind Sets [Ptr, Layout Ptr, binding point]
+        Vector<Tuple<RHIDeviceDescriptorSet*, RHIDeviceDescriptorSetLayout*, String>> external_sets;
         // Samplers
         Vector<Pair<ResourceHandle, String>> samplers;
         // Push Constants by [stage, offset, size]
@@ -278,14 +280,25 @@ namespace Foundation::RenderCore {
         RHIPipelineStageBits pass_stages{};
         // Pipeline states for the entire pass
         RHIDeviceScopedObjectHandle<RHIPipelineState> pso;
+        // Layouts created by ourselves
         Vector<RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout>> desc_layouts;
+        // Pointers. Can also contain external sets
+        Vector<RHIDeviceDescriptorSetLayout*> p_desc_layouts;
+        // Sets created by ourselves
         Vector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> desc_sets;
+        // Pointers. Can also contain external sets
         Vector<RHIDeviceDescriptorSet*> p_desc_sets;
+        // [Set Index, Set, Layout]
+        Vector<Tuple<size_t, RHIDeviceDescriptorSet*, RHIDeviceDescriptorSetLayout*>> external_desc_sets;
     };
     /**
      * @brief Renderer implementing a Frame Graph system with automatic resource tracking and synchronization.
-     * 
-     * For usage, see also @ref Foundation::RenderCore::Application
+     *
+     * The Renderer is responsible for managing rendering passes, resources, and synchronization on both
+     * the Graphics queue and an optional Async Compute queue (if enabled and supported).
+     *
+     * Do note - that the Transfer queue is not used in the Renderer. As such, you're free to use it
+     * for asynchronous resource uploads.
      */
     class Renderer {
     public:
@@ -721,6 +734,24 @@ namespace Foundation::RenderCore {
             StringView bind_point
         ) const;
         /**
+         * @brief Manually bind an existing descriptor set to the pipeline.
+         *
+         * Effectively, the bind point would be ignored by the PSO build process,
+         * and the descriptor set would be bound at the set belonging to the bind point.
+         *
+         * @note The bind point is only used to determine the set index.
+         * The binding index themselves is then _not_ checked by the @ref Renderer,
+         * therefore the shader and the descriptor set must guarantee match.
+         *
+         * This can be automatically bound to the pipeline with CmdSetPipeline()
+         */
+        void BindDescriptorSet(
+            PassHandle pass,
+            StringView bind_point,
+            RHIDeviceDescriptorSet* descriptor_set,
+            RHIDeviceDescriptorSetLayout* layout
+        );
+        /**
          * @brief Binds a texture as a Shader Resource View (read-only sampling / fetch).
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
@@ -938,6 +969,12 @@ namespace Foundation::RenderCore {
          * to the current command list.
          */
         void CmdSetPipeline(PassHandle pass, RHICommandList* cmd) const;
+        /**
+         * @brief Helper that binds a single descriptor set to the current command list.
+         *
+         * You generally want to use @ref CmdSetPipeline() instead.
+         */
+        void CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, uint32_t index, RHIDeviceDescriptorSet* descriptor_set) const;
         /**
          * @brief Helper that pushes correct descriptor sets and PSO to the current command list, and
          * pushes correct BeginGraphics() commands with declared RTVs and DSVs to the current command list.

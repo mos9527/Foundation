@@ -1,6 +1,6 @@
 #include "App.hpp"
 #include "Mesh.hpp"
-using namespace Foundation::ModelViewer;
+using namespace ModelViewer;
 const size_t kMaxIndirectCommands = 32767;
 void App::OnRendererSetup()
 {

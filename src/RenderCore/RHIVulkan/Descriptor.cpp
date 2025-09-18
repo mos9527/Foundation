@@ -17,18 +17,19 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
         {
         case RHIDescriptorType::UniformBuffer:
         case RHIDescriptorType::StorageBuffer:
-            CHECK(desc.buffers.size() == size_all && "Buffer descriptor type must have buffers only");
+            CHECK_MSG(desc.buffers.size() == size_all, "Buffer descriptor type must have buffers only. Did you set the type?");
             break;
         case RHIDescriptorType::Sampler:
         case RHIDescriptorType::SampledImage:
-            CHECK(desc.images.size() == size_all && "Image descriptor type must have images only");            
+            CHECK_MSG(desc.images.size() == size_all, "Image descriptor type must have images only. Did you set the type?");
             break;
         default:
+            CHECK_MSG(false, "Unsupported or mixed descriptor type");
             break;
         }
     }
-    Core::StackArena<> arena; Core::StackAllocator alloc(arena);
-    Core::Vector<vk::DescriptorBufferInfo> buffers(desc.buffers.size(), alloc.Ptr());
+    StackArena<> arena; StackAllocator alloc(arena);
+    Vector<vk::DescriptorBufferInfo> buffers(desc.buffers.size(), alloc.Ptr());
     for (size_t i = 0; i < desc.buffers.size(); ++i) {
         auto const& b = desc.buffers[i];
         buffers[i] = vk::DescriptorBufferInfo{
@@ -37,7 +38,7 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
             .range = b.size == kFullSize ? VK_WHOLE_SIZE : b.size
         };
     }
-    Core::Vector<vk::DescriptorImageInfo> images(desc.images.size(), alloc.Ptr());
+    Vector<vk::DescriptorImageInfo> images(desc.images.size(), alloc.Ptr());
     for (size_t i = 0; i < desc.images.size(); ++i) {
         auto const& img = desc.images[i];
         images[i] = vk::DescriptorImageInfo{
@@ -49,6 +50,7 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
     vk::WriteDescriptorSet writes{
         .dstSet = *m_set,
         .dstBinding = static_cast<uint32_t>(desc.binding),
+        .dstArrayElement = static_cast<uint32_t>(desc.startIndex),
         .descriptorCount = static_cast<uint32_t>(size_all),
         .descriptorType = vkDescriptorTypeFromRHIDescriptorType(desc.type),
         .pImageInfo = images.data(),
@@ -68,8 +70,8 @@ void VulkanDeviceDescriptorSet::DebugSetObjectName(const char* name) {
 
 VulkanDeviceDescriptorPool::VulkanDeviceDescriptorPool(const VulkanDevice& device, PoolDesc const& desc)
     : RHIDeviceDescriptorPool(device, desc), m_device(device), m_storage(device.GetAllocator()) {
-    Core::StackArena<> arena; Core::StackAllocator alloc(arena);
-    Core::Vector<vk::DescriptorPoolSize> pool_sizes(desc.bindings.size(), alloc.Ptr());
+    StackArena<> arena; StackAllocator alloc(arena);
+    Vector<vk::DescriptorPoolSize> pool_sizes(desc.bindings.size(), alloc.Ptr());
     size_t max_sets = 0;
     for (size_t i = 0; i < desc.bindings.size(); ++i) {
         auto const& b = desc.bindings[i];
@@ -79,10 +81,13 @@ VulkanDeviceDescriptorPool::VulkanDeviceDescriptorPool(const VulkanDevice& devic
         };
         max_sets += b.max_count;
     }
+    vk::DescriptorPoolCreateFlags flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
+    if (desc.update_after_bind)
+        flags |= vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind;
     m_pool = vk::raii::DescriptorPool(
         m_device.GetVkDevice(),
         vk::DescriptorPoolCreateInfo{
-            .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+            .flags = flags,
             .maxSets = static_cast<uint32_t>(max_sets),
             .poolSizeCount = static_cast<uint32_t>(pool_sizes.size()),
             .pPoolSizes = pool_sizes.data()
@@ -92,9 +97,16 @@ VulkanDeviceDescriptorPool::VulkanDeviceDescriptorPool(const VulkanDevice& devic
     CHECK(m_pool != nullptr && "failed to create Vulkan descriptor pool");
 }
 RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> VulkanDeviceDescriptorPool::CreateDescriptorSet(
-    RHIDeviceObjectHandle<RHIDeviceDescriptorSetLayout> layout) {
+    RHIDeviceObjectHandle<RHIDeviceDescriptorSetLayout> layout,
+    uint32_t max_variable_count
+    ) {
     auto& vk_layout = layout.Get<VulkanDeviceDescriptorSetLayout>()->GetVkLayout();
+    vk::DescriptorSetVariableDescriptorCountAllocateInfo varAlloc{
+        .descriptorSetCount = 1,
+        .pDescriptorCounts = &max_variable_count
+    };
     vk::DescriptorSetAllocateInfo alloc_info{
+        .pNext = max_variable_count ? &varAlloc : nullptr,
         .descriptorPool = *m_pool,
         .descriptorSetCount = 1,
         .pSetLayouts = &*vk_layout

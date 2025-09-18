@@ -7,7 +7,7 @@ void VulkanPipelineState::InitializePipelineLayout() {
     StackArena<> arena; StackAllocator alloc(arena);
     Vector<vk::DescriptorSetLayout> p_set_layouts(m_desc.descriptor_set_layouts.size(), alloc.Ptr());
     for (size_t i = 0; i < m_desc.descriptor_set_layouts.size(); ++i)
-        p_set_layouts[i] = m_desc.descriptor_set_layouts[i].Get<VulkanDeviceDescriptorSetLayout>()->GetVkLayout();
+        p_set_layouts[i] = static_cast<VulkanDeviceDescriptorSetLayout*>(m_desc.descriptor_set_layouts[i])->GetVkLayout();
     Vector<vk::PushConstantRange> push_constants(m_desc.push_constants.size(), alloc.Ptr());
     for (size_t i = 0; i < m_desc.push_constants.size(); i++) {
         const auto& [stage, offset, size] = m_desc.push_constants[i];
@@ -134,7 +134,7 @@ void VulkanPipelineState::InitializeGraphics() {
     for (auto& shader : m_desc.shader_stages)
         shaderStages.push_back({
             .stage = vkFlagsToBits(vkShaderStageFlagsFromRHIShaderStage(shader.desc.stage)),
-            .module = shader.shader_module.Get<VulkanShaderModule>()->GetVkShaderModule(),
+            .module = static_cast<VulkanShaderModule*>(shader.shader_module)->GetVkShaderModule(),
             .pName = shader.desc.entry_point,
             .pSpecializationInfo = nullptr // TODO: Handle specialization info
         });
@@ -158,7 +158,7 @@ void VulkanPipelineState::InitializeCompute() {
     );
     vk::PipelineShaderStageCreateInfo stage_info{
         .stage = vk::ShaderStageFlagBits::eCompute,
-        .module = shader_stage.shader_module.Get<VulkanShaderModule>()->GetVkShaderModule(),
+        .module =static_cast<VulkanShaderModule*>(shader_stage.shader_module)->GetVkShaderModule(),
         .pName = shader_stage.desc.entry_point,
         .pSpecializationInfo = nullptr // TODO: Handle specialization info
     };

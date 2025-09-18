@@ -7,8 +7,9 @@
 /**
  * @brief ModelViewer implementation
  */
-namespace Foundation::ModelViewer {
-    using namespace RenderCore;
+namespace ModelViewer {
+    using namespace Foundation;
+    using namespace Foundation::Rendering;
     /**
      * @brief Model Viewer Application implementation
      */

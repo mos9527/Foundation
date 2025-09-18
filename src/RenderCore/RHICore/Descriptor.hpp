@@ -15,19 +15,20 @@ namespace Foundation::RHI {
         RHIDeviceDescriptorSet(RHIDeviceDescriptorPool const& pool) : m_pool(pool) {}
         struct UpdateDesc {
             size_t binding{ 0 }; // 0-indexed, first to update in the descriptor set
+            size_t startIndex{ 0 }; // First index in the binding array to update
             RHIDescriptorType type{ RHIDescriptorType::UniformBuffer };
             struct Buffer {
                 RHIBuffer* buffer{ nullptr }; // Buffer to bind
                 size_t offset{ 0 }; // Offset in bytes
                 size_t size{ kFullSize }; // Size in bytes
             };
-            Core::Span<const Buffer> buffers; // Applies to type of UniformBuffer, StorageBuffer
+            Span<const Buffer> buffers; // Applies to type of UniformBuffer, StorageBuffer
             struct Image {
                 RHITextureView* image_view{ nullptr }; // Image view to bind, can be null
                 RHIDeviceSampler* sampler{ nullptr }; // Sampler to bind, can be null
                 RHITextureLayout layout{}; // Layout of the image
             };
-            Core::Span<const Image> images; // Applies to type of Sampler, SampledImage
+            Span<const Image> images; // Applies to type of Sampler, SampledImage
         };
         // NOTE: `desc.type` is used to determine which of the next spans is used                
         // to update the descriptors.
@@ -38,6 +39,7 @@ namespace Foundation::RHI {
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };
+    // XXX: Vulkanism. Not really a thing in other APIs.
     class RHIDeviceDescriptorPool : public RHIObject {
     protected:
         const RHIDevice& m_device;
@@ -47,13 +49,17 @@ namespace Foundation::RHI {
                 RHIDescriptorType type; // Type of this binding
                 uint32_t max_count{ 1 }; // Max number of descriptors of this type that can be allocated
             };
-            Core::Span<const Binding> bindings;
+            // Bindings that make up this pool
+            Span<const Binding> bindings;
+            // Allow updating descriptors after being bound to a command buffer when
+            // they are not used
+            bool update_after_bind{ false };
         } const m_desc;
         RHIDeviceDescriptorPool(RHIDevice const& device, PoolDesc const& desc)
             : m_device(device), m_desc(desc) {
         }
         [[nodiscard]] virtual RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> CreateDescriptorSet(
-            RHIDeviceObjectHandle<RHIDeviceDescriptorSetLayout>) = 0;
+            RHIDeviceObjectHandle<RHIDeviceDescriptorSetLayout>, uint32_t max_variable_count = 0) = 0;
         virtual RHIDeviceDescriptorSet* GetDescriptorSet(Handle handle) const = 0;
         virtual void DestroyDescriptorSet(Handle handle) = 0;
 
