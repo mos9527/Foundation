@@ -50,6 +50,10 @@ void Scene::OnBeforeFrame(uint32_t rendererSync)
             m_primitiveBuffer.Query(m_primitiveBuffer.Push(Span<PrimitiveMetadata>(primitive).AsBytes()));
         CHECK(prim_size == sizeof(PrimitiveMetadata));
         alloc->primitiveID = prim_offset / prim_size;
+        // MSVC dies here if we'd do a Debug build.
+        // It..runs in Release. What the hell.
+        // Regardless - we could - and should've implemented a lock-free alternative
+        // Though the issue it self is certainlly...interesting :/
         mutex->unlock();
         m_meshQueue.pop();
         break; // TODO: Batch more!
