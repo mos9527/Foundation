@@ -6,8 +6,8 @@
 #include <Runtime/Async/Thread.hpp>
 #include <Runtime/Native/Application.hpp>
 
-#include <RenderCore/RHICore/Common.hpp>
-#include <RenderCore/RHICore/Application.hpp>
+#include <RHICore/Common.hpp>
+#include <RHICore/Application.hpp>
 #include <RenderCore/Renderer.hpp>
 
 /**

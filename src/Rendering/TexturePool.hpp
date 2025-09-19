@@ -1,6 +1,6 @@
 #pragma once
-#include <RenderCore/RHICore/Device.hpp>
-#include <RenderCore/RHICore/Descriptor.hpp>
+#include <RHICore/Device.hpp>
+#include <RHICore/Descriptor.hpp>
 #include <Runtime/Bits/Functional.hpp>
 #include <Native/Filesystem.hpp>
 namespace Foundation::Rendering

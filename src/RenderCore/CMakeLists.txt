@@ -8,8 +8,6 @@ file(
     GLOB INCLUDES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
 )
-add_subdirectory(RHICore)
-add_subdirectory(RHIVulkan)
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 
 add_library(
