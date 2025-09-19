@@ -13,8 +13,8 @@ namespace Foundation::Rendering
      *       Therefore, access on the same resources on the Graphics is safe and well-defined since
      *       queue submissions are inherently 'single-threaded'.
      * @note If resources are to be accessed on the Async Compute queue, however - beware of synchronization.
-     * @note Upload operations are asynchronous. And is only guaranteed to be available after a @ref UploadContext::WaitAll() call.
-     *       The resources will be transitioned to-and-from states that's suitable
+     * @note Upload operations are asynchronous. And is only guaranteed to be available after a @ref
+     * UploadContext::WaitAll() call. The resources will be transitioned to-and-from states that's suitable
      * @note This is RAII - and is encouraged to be used as such. The destructor will wait for all uploads to complete.
      */
     class UploadContext
@@ -27,11 +27,18 @@ namespace Foundation::Rendering
         Vector<RHICommandPoolScopedHandle<RHICommandList>> m_commandLists;
         Vector<RHIDeviceScopedObjectHandle<RHIDeviceFence>> m_fences;
         StagingBuffer m_stagingBuffer;
+
     public:
         UploadContext(RHIDevice* device, Allocator* allocator, size_t stagingBudget = 16_MB);
-        RHIDeviceFence* Upload(RHIBuffer*  dst, Span<const char> data, size_t dstOffset = 0, size_t alignment = 4);
-        RHIDeviceFence* Upload(RHITexture* dst, Span<const char> data, uint32_t mipLevel = 0, uint32_t arrayLayer = 0, RHITextureAspectFlag aspect = RHITextureAspectFlagBits::Color);
+        RHIDeviceFence* Upload(RHIBuffer* dst, Span<const char> data, size_t dstOffset = 0, size_t alignment = 4,
+                               RHIResourceAccess dst_access = RHIResourceAccessBits::ShaderRead,
+                               RHIPipelineStage dst_stage = RHIPipelineStageBits::AllGraphics);
+        RHIDeviceFence* Upload(RHITexture* dst, Span<const char> data, uint32_t mipLevel = 0, uint32_t arrayLayer = 0,
+                               RHITextureAspectFlag aspect = RHITextureAspectFlagBits::Color,
+                               RHIResourceAccess dst_access = RHIResourceAccessBits::ShaderRead,
+                               RHIPipelineStage dst_stage = RHIPipelineStageBits::AllGraphics,
+                               RHITextureLayout dst_layout = RHITextureLayout::ShaderReadOnly);
         void WaitAll();
         ~UploadContext();
     };
-}
+} // namespace Foundation::Rendering

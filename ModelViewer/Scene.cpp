@@ -4,6 +4,7 @@
 using namespace ModelViewer;
 using namespace Foundation::Async;
 using namespace Foundation::Native;
+constexpr size_t kMaxQueuedInstanceUpdates = 65536, kMaxQueuedMeshLoads = 16;
 Scene::Scene(RHIDevice* device, Allocator* alloc, size_t numSwaps, SceneBudgets const& budgets) :
     m_allocator(alloc),
     m_instanceBuffer(device, alloc, numSwaps,
@@ -22,18 +23,23 @@ Scene::Scene(RHIDevice* device, Allocator* alloc, size_t numSwaps, SceneBudgets 
                   {.usage = RHIBufferUsageBits::IndexBuffer | RHIBufferUsageBits::TransferDestination,
                   .size = budgets.IndexBudget},
                   budgets.IndexStaging),
-    m_instanceQueue(alloc), m_meshQueue(alloc), m_meshes(alloc)
+    m_instanceQueue( kMaxQueuedInstanceUpdates, alloc), m_meshQueue(kMaxQueuedMeshLoads, alloc), m_meshes(alloc)
 {}
 void Scene::OnBeforeFrame(uint32_t rendererSync)
 {
     ZoneScoped;
-    std::scoped_lock lock(m_updateMutex);
     CHECK_MSG(m_state == State::Idle, "Bad Scene State ({})", m_state);
     m_state = State::Update;
     BeginUpdate(rendererSync);
-    while (!m_meshQueue.empty())
+    while (true)
     {
-        auto& [mutex, fpath, alloc] = m_meshQueue.front();
+        // TODO: No one loads meshes _every_ frame. Sparse updates don't really need a
+        //       staging buffer - blocking updates are fine. Transfers are not _that_ slow
+        //       if batched properly.
+        auto value = m_meshQueue.pop();
+        if (!value.has_value())
+            break;
+        auto& [mutex, fpath, alloc] = value.value();
         // TODO: Bake the data and acquire metadata information for allocation patterns
         //       We'll assume this will always fit for a frame now - and load only one of them at a time.
         auto mesh = LoadMeshFromObjFile(fpath, m_allocator);
@@ -50,66 +56,55 @@ void Scene::OnBeforeFrame(uint32_t rendererSync)
             m_primitiveBuffer.Query(m_primitiveBuffer.Push(Span<PrimitiveMetadata>(primitive).AsBytes()));
         CHECK(prim_size == sizeof(PrimitiveMetadata));
         alloc->primitiveID = prim_offset / prim_size;
-        // MSVC dies here if we'd do a Debug build.
-        // It..runs in Release. What the hell.
-        // Regardless - we could - and should've implemented a lock-free alternative
-        // Though the issue it self is certainlly...interesting :/
+        // TODO: MSVC dies here if we'd do a Debug build.
         mutex->unlock();
         m_meshQueue.pop();
         break; // TODO: Batch more!
     }
     size_t instanceUpd = 0;
-    while (!m_instanceQueue.empty())
     {
+        // TODO: Second thoughts. This is quite a bottleneck if we have many instances to update.
+        //       Perf is _not_ good. Considering the whole instance data size to be quite small,
+        //       maybe we should just copy the whole thing by maintaining one on the CPU too?
         ZoneScopedN("Instance Update");
-        // Instance data is always of the same sizes
-        // and always pre-allocated.
-        auto& [handle, data] = m_instanceQueue.front();
-        static_assert(sizeof(data) == sizeof(InstanceMetadata));
-        size_t offset = sizeof(data) * handle;
-        if (m_instanceBuffer.GetStagingBuffer()->FreeSize() < sizeof(data))
+        while (true)
         {
-            // Defer to next frame
-            LOG_RUNTIME(Scene, warn, "Instance update being deferred. Done {}, Remain {}. Increase staging size to avoid latency!", instanceUpd, m_instanceQueue.size());
-            break;
+            // Instance data is always of the same sizes
+            // and always pre-allocated.
+            auto value = m_instanceQueue.pop();
+            if (!value.has_value())
+                break;
+            auto& [handle, data] = value.value();
+            static_assert(sizeof(data) == sizeof(InstanceMetadata));
+            size_t offset = sizeof(data) * handle;
+            if (m_instanceBuffer.GetStagingBuffer()->FreeSize() < sizeof(data))
+            {
+                // Defer to next frame
+                LOG_RUNTIME(Scene, warn, "Instance update being deferred. Done {}. Increase staging size to avoid latency!", instanceUpd);
+                break;
+            }
+            m_instanceBuffer.Transfer(offset, Span<InstanceMetadata>(data).AsBytes());
+            m_instanceQueue.pop();
+            instanceUpd++;
         }
-        m_instanceBuffer.Transfer(offset, Span<InstanceMetadata>(data).AsBytes());
-        m_instanceQueue.pop();
-        instanceUpd++;
     }
     EndUpdate();
     m_state = State::Idle;
 }
-void Scene::BeginUpdateAsync()
-{
-    m_updateMutex.lock();
-    m_state = State::UpdateAsync;
-}
+
 SceneFuture Scene::LoadMeshAsync(Path path)
 {
-    CHECK_MSG(m_state == State::UpdateAsync, "Bad Scene State ({})", m_state);
     auto mutex = ConstructShared<Mutex>(m_allocator);
     mutex->lock();
     auto& data = m_meshes.emplace_back();
-    m_meshQueue.emplace(mutex, path, &data);
+    m_meshQueue.push({mutex, path, &data});
     return SceneFuture(this, mutex, &data);
 }
 void Scene::UpdateInstanceAsync(SceneHandle id, InstanceMetadata data)
 {
-    CHECK_MSG(m_state == State::UpdateAsync, "Bad Scene State ({}). This must be called within a BeginUpdateAsync() and EndUpdateAsync() clause.", m_state);
-    m_instanceQueue.emplace(id, data);
-}
-void Scene::EndUpdateAsync()
-{
-    m_state = State::Idle;
-    m_updateMutex.unlock();
+    m_instanceQueue.push({id, data});
 }
 void SceneFuture::wait() const {
-    CHECK_MSG(
-        scene->GetState() != Scene::State::UpdateAsync,
-        "Deadlock detected (state={}). This future must be waited _after_ the Scene's EndUpdateAsync() call.",
-        scene->GetState()
-    );
     std::scoped_lock lock(*mutex);
 }
 void Scene::BeginUpdate(uint32_t rendererSync)

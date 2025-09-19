@@ -1054,7 +1054,6 @@ void Renderer::ExecuteCheckResourceStates(Span<PassHandle> passes, RHIDeviceQueu
 void Renderer::BeginExecute()
 {
     CHECK_MSG(m_state == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?", m_state);
-    ZoneScoped;
     m_executeAlloc.Reset(m_executeArena), m_state = State::Execute;
     Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait_fences(m_executeAlloc.Ptr());
     if (m_setup->executionAnyGraphics)

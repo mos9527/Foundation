@@ -34,13 +34,10 @@ namespace ModelViewer
         float4x4 proj = infinitePerspective(radians(45.0f),  GetSwapchain()->GetAspectRatio(),0.1f);
         proj[1][1] *= -1; // vulkan NDC
         m_camera = proj * view;
-        if (m_scene->GetQueuedInstanceUpdates())
-            return; // Wait for next frame. We're not done yet.
         SceneHandle mesh = m_meshes.back().get<SceneMeshLoadResult>()->primitiveID;
         // TODO: Ugly. We have to retrieve these even outside update scope
         //       We can go for atomic solutions - like a SPSC queue for these
         {
-            m_scene->BeginUpdateAsync();
             for (size_t instance = 0; instance < cnt; ++instance)
             {
                 m_scene->UpdateInstanceAsync(instance, {
@@ -53,7 +50,6 @@ namespace ModelViewer
                     })
                 });
             }
-            m_scene->EndUpdateAsync();
         }
     }
 }
@@ -67,8 +63,6 @@ int main(int argc, char** argv) {
         .present = true,
         .asyncCompute = true
     });
-    app.m_scene->BeginUpdateAsync();
     app.m_meshes.push_back(app.m_scene->LoadMeshAsync("data/assets/Cube.obj"));
-    app.m_scene->EndUpdateAsync();
     app.RunForever();
 }

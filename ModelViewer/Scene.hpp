@@ -1,4 +1,5 @@
 #pragma once
+#include <Atomic/Queue.hpp>
 #include <Async/Future.hpp>
 #include <Bits/Format.hpp>
 #include <Math/Math.hpp>
@@ -55,7 +56,6 @@ namespace ModelViewer
         {
             Idle,
             Update,
-            UpdateAsync
         };
     private:
         Allocator* m_allocator;
@@ -72,11 +72,10 @@ namespace ModelViewer
         void EndUpdate();
         State m_state{ State::Idle };
         // [Instance ID, Data]
-        Queue<Pair<SceneHandle, InstanceMetadata>> m_instanceQueue;
+        Atomic::SPSCQueue<Pair<SceneHandle, InstanceMetadata>> m_instanceQueue;
         // [Signal Mutex, Path, Allocation Ptr]
-        Queue<Tuple<SharedPtr<Async::Mutex>, Native::Path, SceneMeshLoadResult*>> m_meshQueue;
+        Atomic::SPSCQueue<Tuple<SharedPtr<Async::Mutex>, Native::Path, SceneMeshLoadResult*>> m_meshQueue;
         List<SceneMeshLoadResult> m_meshes;
-        Async::Mutex m_updateMutex;
     public:
         void CreateUpdatePasses(Renderer* renderer,
             ResourceHandle& outInstance, ResourceHandle& outPrimitive,
@@ -88,17 +87,11 @@ namespace ModelViewer
         State GetState() const { return m_state; }
         void OnBeforeFrame(uint32_t rendererSync);
 
-        void BeginUpdateAsync();
         SceneFuture LoadMeshAsync(Native::Path path);
         void UpdateInstanceAsync(SceneHandle id, InstanceMetadata data);
-        void EndUpdateAsync();
-
-        size_t GetQueuedInstanceUpdates() const { return m_instanceQueue.size(); }
-        size_t GetQueuedMeshLoads() const { return m_meshQueue.size(); }
     };
     ENUM_NAME_CONV_BEGIN(Scene::State)
     ENUM_NAME(Idle)
     ENUM_NAME(Update)
-    ENUM_NAME(UpdateAsync)
     ENUM_NAME_CONV_END()
 }
