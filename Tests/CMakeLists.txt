@@ -9,4 +9,7 @@ target_link_libraries(Test_ShaderReflection PUBLIC Foundation_RenderCore Foundat
 add_executable(Test_Staging "StagingBuffer.cpp")
 target_link_libraries(Test_Staging PUBLIC Foundation_Rendering)
 
+add_executable(Test_SPSC "SPSC.cpp")
+target_link_libraries(Test_SPSC PUBLIC Foundation_Atomic)
+
 add_subdirectory(VulkanSamples)

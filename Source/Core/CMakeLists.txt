@@ -8,8 +8,7 @@ file(
         "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
 )
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
-add_library(Foundation_Core ${SOURCES} ${INCLUDES}
-        Container.cpp)
+add_library(Foundation_Core ${SOURCES} ${INCLUDES})
 
 include(FetchContent)
 
