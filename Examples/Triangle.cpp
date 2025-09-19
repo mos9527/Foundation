@@ -4,6 +4,7 @@ namespace Examples {
      * @example Triangle.cpp
      * Animated triangle example.
      * @example Shaders/Triangle.slang
+     * Simple shader to render an animated triangle.
      */
     class TriangleDemoApp : public RenderApplication {
         void OnRendererSetup() override {

@@ -85,6 +85,7 @@ namespace Examples
      * @example TexturePool.cpp
      * Bindless texture pool example
      * @example Shaders/TexturePool.slang
+     * Simple shader to display the texture pool contents with animation.
      */
     class TexturePoolApp : public RenderApplication
     {

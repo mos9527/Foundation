@@ -1,4 +1,4 @@
-Foundation
+Foundation {#mainpage}
 ===
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/eb139a29588a4f6d94da55e93e0239c8)](https://app.codacy.com/gh/mos9527/Foundation/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 
@@ -27,9 +27,13 @@ Features
 
 Quickstart
 ---
-<a href="examples.html">The Examples</a> is a great place to start exploring the framework.
+A comprehensive Examples section is provided below for quickstarts and reference.
 
-Feel free to explore the documentation, or check out the @ref ModelViewer application for a more complete example.
+You can also check out the @ref ModelViewer application for an advanced usage of the framework.
+
+Examples
+---
+All examples can also be found at <a href="examples.html">The Examples</a> directory.
 
 Building
 ---
@@ -48,7 +52,6 @@ The Vulkan SDK installer should take care of most, if not all the setup for you.
 
 ### Linux
 Refer to https://docs.vulkan.org/tutorial/latest/02_Development_environment.html#_linux_2 for setting up the Vulkan SDK on Linux.
-
 
 ### macOS
 Refer to https://docs.vulkan.org/tutorial/latest/02_Development_environment.html#_macos for setting up the Vulkan SDK on macOS.
@@ -77,16 +80,16 @@ Toggle these options with `-D<OPTION>=ON/OFF` when running `cmake ..`, e.g. `cma
 
 [CMake Unity Builds](https://cmake.org/cmake/help/latest/prop_tgt/UNITY_BUILD.html) are supported, and can be enabled with `-DCMAKE_UNITY_BUILD=ON` when running `cmake ..`.
 
+
 Third party
 ---
 ### Core
 - https://github.com/microsoft/mimalloc.git
-### Runtime
 - https://github.com/fmtlib/fmt.git
 - https://github.com/gabime/spdlog.git
 ### Math
 - https://github.com/g-truc/glm.git
-### NativeApplication
+### Native
 - https://github.com/glfw/glfw.git
 - https://tinyfiledialogs.sourceforge.net/
 ### RHIVulkan

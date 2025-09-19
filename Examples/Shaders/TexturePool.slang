@@ -1,3 +1,6 @@
+/**
+* Bindless texture array example with animation.
+*/
 struct PushConstant {
     float time;
     uint32_t num_textures;

@@ -17,13 +17,14 @@ GENERATE_LATEX         = NO
 #---------------------------------------------------------------------------
 # Input related configuration options
 #---------------------------------------------------------------------------
-INPUT                  = ./src \
+INPUT                  = ./Source \
+                         ./Examples \
+                         ./ModelViewer \
                          ./DOCS.md
-EXAMPLE_PATH           = ./src/Examples
+EXAMPLE_PATH           = ./Examples
 RECURSIVE              = YES
 FILE_PATTERNS          = *.c *.cpp *.h *.hpp *.md *.slang
 EXCLUDE                = ./build \
-                         ./src/CMake
 EXCLUDE_PATTERNS       = */_deps/*
 #---------------------------------------------------------------------------
 
