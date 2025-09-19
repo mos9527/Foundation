@@ -129,7 +129,7 @@ private:
         auto layerProperties = context.enumerateInstanceLayerProperties();
         for (auto const& requiredLayer : requiredLayers)
         {
-            if (Ranges::none_of(layerProperties,
+            if (std::ranges::none_of(layerProperties,
                                      [requiredLayer](auto const& layerProperty)
                                      { return strcmp(layerProperty.layerName, requiredLayer) == 0; }))
             {
@@ -144,7 +144,7 @@ private:
         auto extensionProperties = context.enumerateInstanceExtensionProperties();
         for (auto const& requiredExtension : requiredExtensions)
         {
-            if (Ranges::none_of(extensionProperties,
+            if (std::ranges::none_of(extensionProperties,
                                      [requiredExtension](auto const& extensionProperty)
                                      { return strcmp(extensionProperty.extensionName, requiredExtension) == 0; }))
             {
@@ -184,7 +184,7 @@ private:
 
     void pickPhysicalDevice() {
         std::vector<vk::raii::PhysicalDevice> devices = instance.enumeratePhysicalDevices();
-        const auto                            devIter = Ranges::find_if(
+        const auto                            devIter = std::ranges::find_if(
           devices,
           [&]( auto const & device )
           {
@@ -194,15 +194,15 @@ private:
             // Check if any of the queue families support graphics operations
             auto queueFamilies = device.getQueueFamilyProperties();
             bool supportsGraphics =
-              Ranges::any_of( queueFamilies, []( auto const & qfp ) { return !!( qfp.queueFlags & vk::QueueFlagBits::eGraphics ); } );
+              std::ranges::any_of( queueFamilies, []( auto const & qfp ) { return !!( qfp.queueFlags & vk::QueueFlagBits::eGraphics ); } );
 
             // Check if all required device extensions are available
             auto availableDeviceExtensions = device.enumerateDeviceExtensionProperties();
             bool supportsAllRequiredExtensions =
-              Ranges::all_of( requiredDeviceExtension,
+              std::ranges::all_of( requiredDeviceExtension,
                                    [&availableDeviceExtensions]( auto const & requiredDeviceExtension )
                                    {
-                                     return Ranges::any_of( availableDeviceExtensions,
+                                     return std::ranges::any_of( availableDeviceExtensions,
                                                                  [requiredDeviceExtension]( auto const & availableDeviceExtension )
                                                                  { return strcmp( availableDeviceExtension.extensionName, requiredDeviceExtension ) == 0; } );
                                    } );
@@ -483,7 +483,7 @@ private:
     }
 
     static vk::Format chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats) {
-        const auto formatIt = Ranges::find_if(availableFormats,
+        const auto formatIt = std::ranges::find_if(availableFormats,
         [](const auto& format) {
             return format.format == vk::Format::eB8G8R8A8Srgb &&
                    format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;
@@ -492,7 +492,7 @@ private:
     }
 
     static vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes) {
-        return Ranges::any_of(availablePresentModes,
+        return std::ranges::any_of(availablePresentModes,
             [](const vk::PresentModeKHR value) { return vk::PresentModeKHR::eMailbox == value; } ) ? vk::PresentModeKHR::eMailbox : vk::PresentModeKHR::eFifo;
     }
 

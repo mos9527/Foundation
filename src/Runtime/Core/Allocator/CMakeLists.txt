@@ -25,15 +25,6 @@ set(MI_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 set(MI_BUILD_OBJECT OFF CACHE BOOL "" FORCE)
 set(MI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(MI_OVERRIDE OFF CACHE BOOL "" FORCE)
-set(MI_OVERRIDE OFF CACHE BOOL "" FORCE)
-target_compile_definitions(
-	mimalloc-static
-	PRIVATE
-	MI_BUILD_RELEASE
-	# Always build in Release mode for mimalloc
-	# e.g. OOM Allocation in Release produces nullptr,
-	# but in Debug causes segfault due to asserts.
-)
 
 target_link_libraries(Foundation_Allocator PUBLIC mimalloc-static)
 target_include_directories(
