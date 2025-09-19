@@ -33,7 +33,6 @@ file(
     GLOB_RECURSE INCLUDES 
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
 )
-source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 
 if (WIN32)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /ENTRY:mainCRTStartup")
@@ -49,7 +48,7 @@ endif()
 
 target_sources(ModelViewer PRIVATE ${SOURCES} ${INCLUDES} "App.cpp")
 target_link_libraries(ModelViewer PRIVATE Foundation_RenderCore Foundation_Rendering meshoptimizer)
-target_include_directories(ModelViewer PRIVATE .. "${stb_SOURCE_DIR}" "${fast_obj_SOURCE_DIR}")
+target_include_directories(ModelViewer PRIVATE ../src "${stb_SOURCE_DIR}" "${fast_obj_SOURCE_DIR}")
 
 add_subdirectory(Shaders)
 add_subdirectory(Samples)
