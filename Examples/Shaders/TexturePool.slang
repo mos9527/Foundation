@@ -21,7 +21,7 @@ float4 fragMain(float2 pix: TEXCOORD0) : SV_Target
 
     float2 translation = float2(sin(t),cos(t)) * 0.1f;
     float rotation = t * 0.1f;
-    float scale = 0.5f + 0.5 * cos(t);
+    float scale = 0.75f + 0.5 * cos(t);
 
     float2 p = float2(cos(theta + rotation), sin(theta + rotation)) * r;
     p += translation;
@@ -30,7 +30,7 @@ float4 fragMain(float2 pix: TEXCOORD0) : SV_Target
     float sq = sqrt(pc.num_textures);
     int2 pid = p * sq;
     uint32_t id = pid.y * sq + pid.x;
-    id = clamp(0, pc.num_textures + 1, id);
+    id = max(1, id) % pc.num_textures;
     float2 uv = p * sq;
     return textures[id + pc.first_texture].Sample(sampler, uv);
 }

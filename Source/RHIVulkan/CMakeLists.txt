@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.26)
 
-
 file(
     GLOB_RECURSE SOURCES 
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp" 
@@ -32,6 +31,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(SPIRV-Headers)
 add_library(Foundation_RHIVulkan ${SOURCES} ${INCLUDES})
+option(FOUNDATION_RHIVULKAN_VALIDATION_LAYER "[RHIVulkan] Build with Vulkan Validation Layer (VVL)" ON)
+if (FOUNDATION_RHIVULKAN_VALIDATION_LAYER)
+    target_compile_definitions(Foundation_RHIVulkan PUBLIC FOUNDATION_RHIVULKAN_VVL=1)
+else()
+    target_compile_definitions(Foundation_RHIVulkan PUBLIC FOUNDATION_RHIVULKAN_VVL=0)
+endif()
+
 target_link_libraries(Foundation_RHIVulkan PUBLIC Foundation_Native Foundation_RHICore Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator SPIRV-Headers::SPIRV-Headers)
 target_include_directories(
     Foundation_RHIVulkan

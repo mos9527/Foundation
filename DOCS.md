@@ -72,6 +72,8 @@ The following CMake options are available:
 | Option | Description | Default |
 |--------|-------------|---------|
 | FOUNDATION_WITH_SANITIZERS | Build with sanitizers enabled | OFF |
+| FOUNDATION_WITH_PROFILING | Build with profiler (Tracy) enabled | ON |
+| FOUNDATION_RHIVULKAN_VALIDATION_LAYER | Build with Vulkan Validation Layer enabled | ON |
 | FOUNDATION_WITH_EXAMPLES | Build examples | ON |
 | FOUNDATION_WITH_TESTS | Build tests | ON |
 | FOUNDATION_WITH_MODELVIEWER | Build the model viewer application | ON |

@@ -25,7 +25,7 @@ namespace ModelViewer
         WaitForFrame();
         if (m_meshes.empty())
             return; // No mesh loaded yet.
-        size_t cnt = 100'00;
+        size_t cnt = 1;
         size_t sq = sqrt(cnt);
         float4x4 view = lookAt(
                     vec3(sq,sq,sq),

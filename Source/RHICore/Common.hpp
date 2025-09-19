@@ -170,7 +170,7 @@ namespace Foundation::RHI {
         ComputeShader           = 1 << 4,
         RayTracingShader        = 1 << 5,
         MeshShader              = 1 << 6,
-        ColorAttachmentOutput   = 1 << 7,
+        RenderTargetOutput      = 1 << 7,
         Transfer                = 1 << 8,
         EarlyFragmentTests      = 1 << 9,
         LateFragmentTests       = 1 << 10,

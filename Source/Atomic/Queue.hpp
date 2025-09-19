@@ -65,7 +65,7 @@ namespace Foundation::Atomic
         {
             size_t read = m_read.load(std::memory_order_relaxed);
             // Same as above
-            if (read == m_writeCached)
+            if (read == m_writeCached) [[unlikely]]
             {
                 m_writeCached = m_write.load(std::memory_order_acquire);
                 if (read == m_writeCached)

@@ -339,7 +339,7 @@ ResourceHandle Renderer::BindTextureRTV(
     CHECK_MSG((desc.range.layer.aspect | kRTVBits == kRTVBits) && (desc.range.layer.aspect & kRTVBits),
         "RTV view must have exactly one layer, and the access flag must be Color.");
     DeclareTextureAccess(pass, texture,
-        RHIPipelineStageBits::ColorAttachmentOutput,
+        RHIPipelineStageBits::RenderTargetOutput,
         desc.range,
         RHIResourceAccessBits::RenderTargetWrite,
         RHITextureLayout::RenderTarget
@@ -1036,7 +1036,7 @@ void Renderer::ExecuteCheckResourceStates(Span<PassHandle> passes, RHIDeviceQueu
             }
         }
         if (pass.write_backbuffer)
-            CheckTransition("Backbuffer", RHIPipelineStageBits::ColorAttachmentOutput);
+            CheckTransition("Backbuffer", RHIPipelineStageBits::RenderTargetOutput);
         for (auto [hdl, access, stage] : pass.bufferUsages)
         {
             auto& tres = m_setup->trackedResources[hdl];
@@ -1054,18 +1054,25 @@ void Renderer::ExecuteCheckResourceStates(Span<PassHandle> passes, RHIDeviceQueu
 void Renderer::BeginExecute()
 {
     CHECK_MSG(m_state == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?", m_state);
+    ZoneScoped;
     m_executeAlloc.Reset(m_executeArena), m_state = State::Execute;
     Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait_fences(m_executeAlloc.Ptr());
     if (m_setup->executionAnyGraphics)
         wait_fences.push_back(m_swaps[m_currentSync].graphics_fence);
     if (m_setup->executionAnyCompute)
         wait_fences.push_back(m_swaps[m_currentSync].compute_fence);
-    m_device->WaitForFences(wait_fences, true, -1);
+    {
+        ZoneScopedN("Wait For Fences");
+        m_device->WaitForFences(wait_fences, true, -1);
+        m_device->ResetFences(wait_fences);
+    }
     if (m_desc.present)
+    {
+        ZoneScopedN("Get Next Image");
         m_currentSwap = m_swapchain->GetNextImage(
             -1, m_swaps[m_currentSync].present, {}
         );
-    m_device->ResetFences(wait_fences);
+    }
 }
 void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res,  TrackedResource::SubresourceState& sta,
                                               RHIResourceAccess access,
@@ -1158,7 +1165,7 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
         CHECK_MSG(pass.queue == RHIDeviceQueueType::Graphics, "Backbuffer can only be used in Graphics queue");
         const RHIResourceAccess rt_access = RHIResourceAccessBits::RenderTargetWrite;
         const RHITextureLayout rt_layout = RHITextureLayout::RenderTarget;
-        const RHIPipelineStage rt_stage = RHIPipelineStageBits::ColorAttachmentOutput;
+        const RHIPipelineStage rt_stage = RHIPipelineStageBits::RenderTargetOutput;
         auto& tres = m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle];
         ExecuteBarrierSubresource(pass.handle, tres, RHITextureSubresourceRange::Create(), rt_access, rt_stage,
                                   rt_layout, cmd);
@@ -1457,6 +1464,7 @@ void Renderer::ExecuteFrame()
             {
                 ZoneScopedN("Final Submit");
                 if (!m_desc.present){
+                    ZoneScopedN("Submit (No Present)");
                     cmd->End();
                     queue->Submit({
                         .timeline_waits = timeline_waits,
@@ -1481,7 +1489,7 @@ void Renderer::ExecuteFrame()
                         timeline_waits.clear(), timeline_waits.emplace_back(timeline_signals.back());
                         timeline_signals.clear(), waits_stages.clear();
                         // And wait on it in graphics
-                        waits_stages.push_back(RHIPipelineStageBits::BottomOfPipe);
+                        waits_stages.push_back(RHIPipelineStageBits::RenderTargetOutput);
                         SetNextGraphicsQueue();
                     }
                     // Transition the Backbuffer
@@ -1492,27 +1500,30 @@ void Renderer::ExecuteFrame()
                         m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle],
                         RHITextureSubresourceRange::Create(),
                         {},
-                        RHIPipelineStageBits::BottomOfPipe,
+                        RHIPipelineStageBits::RenderTargetOutput,
                         RHITextureLayout::Present, cmd
                     );
                     cmd->EndTransition();
                     cmd->DebugEnd();
                     cmd->End();
-                    waits_stages.push_back(RHIPipelineStageBits::BottomOfPipe);
-                    queue->Submit({
-                        .timeline_waits = timeline_waits,
-                        .timeline_signals = timeline_signals,
-                        .waits = {{ m_swaps[m_currentSync].present.Get() }},
-                        .waits_stages = waits_stages,
-                        .signals = {{ m_swaps[m_currentSwap].render.Get() }},
-                        .cmd_lists = {{ cmd }},
-                        .fence = m_swaps[m_currentSync].graphics_fence.Get()
-                    });
-                    queue->Present({
-                        .image_index = m_currentSwap,
-                        .swapchain = m_swapchain.Get(),
-                        .waits = {{ m_swaps[m_currentSwap].render.Get() }}
-                    });
+                    waits_stages.push_back(RHIPipelineStageBits::RenderTargetOutput);
+                    {
+                        ZoneScopedN("Submit & Present");
+                        queue->Submit({
+                            .timeline_waits = timeline_waits,
+                            .timeline_signals = timeline_signals,
+                            .waits = {{ m_swaps[m_currentSync].present.Get() }},
+                            .waits_stages = waits_stages,
+                            .signals = {{ m_swaps[m_currentSwap].render.Get() }},
+                            .cmd_lists = {{ cmd }},
+                            .fence = m_swaps[m_currentSync].graphics_fence.Get()
+                        });
+                        queue->Present({
+                            .image_index = m_currentSwap,
+                            .swapchain = m_swapchain.Get(),
+                            .waits = {{ m_swaps[m_currentSwap].render.Get() }}
+                        });
+                    }
                 }
             } else
             {

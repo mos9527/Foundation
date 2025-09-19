@@ -11,6 +11,7 @@
 
 #include "Application.hpp"
 #include "Device.hpp"
+
 using namespace Foundation::Core;
 using namespace Foundation::RHI;
 using namespace Foundation::Bits;
@@ -497,12 +498,13 @@ void VulkanDevice::DebugSetObjectName(const char* name)
 void VulkanDeviceQueue::WaitIdle() const { m_queue.waitIdle(); }
 void VulkanDeviceQueue::Submit(SubmitDesc const& desc) const
 {
-    StackArena<> arena{};
+    StackArena<4096> arena{};
     StackAllocator alloc(arena);
     Vector<vk::CommandBuffer> cmds(alloc.Ptr());
     Vector<vk::Semaphore> swaits(alloc.Ptr()), ssignals(alloc.Ptr());
     Vector<uint64_t> wait_values(alloc.Ptr()), signal_values(alloc.Ptr());
     cmds.reserve(desc.cmd_lists.size()), swaits.reserve(desc.waits.size()), ssignals.reserve(desc.signals.size());
+    wait_values.reserve(desc.timeline_waits.size()), signal_values.reserve(desc.timeline_signals.size());
     for (auto const& cmd_list : desc.cmd_lists)
         cmds.emplace_back(static_cast<VulkanCommandList*>(cmd_list)->GetVkCommandBuffer());
 
@@ -552,13 +554,15 @@ void VulkanDeviceQueue::Submit(SubmitDesc const& desc) const
                                           .pSignalSemaphoreValues = signal_values.data()};
     if (!wait_values.empty() || !signal_values.empty())
         info.setPNext(&tinfo);
-    m_queue.submit(info, desc.fence ? static_cast<VulkanDeviceFence*>(desc.fence)->GetVkFence() : vk::Fence(nullptr));
+    {
+        m_queue.submit(info, desc.fence ? static_cast<VulkanDeviceFence*>(desc.fence)->GetVkFence() : vk::Fence(nullptr));
+    }
 }
 void VulkanDeviceQueue::Present(PresentDesc const& desc) const
 {
     CHECK(m_device.GetDeviceQueue(RHIDeviceQueueType::Present) == this &&
           "Present called on a queue that is not a present queue");
-    StackArena<> arena{};
+    StackArena<4096> arena{};
     StackAllocator alloc(arena);
     vk::SwapchainKHR swapchain = static_cast<VulkanSwapchain*>(desc.swapchain)->GetVkSwapchain();
     Vector<vk::Semaphore> swaits(alloc.Ptr());

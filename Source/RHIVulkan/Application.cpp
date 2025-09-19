@@ -12,11 +12,6 @@ const char* kVulkanInstanceExtensions[] = {
     VK_KHR_SURFACE_EXTENSION_NAME,
     VK_EXT_DEBUG_UTILS_EXTENSION_NAME
 };
-
-const char* kVulkanInstanceLayers[] = {
-    "VK_LAYER_KHRONOS_validation"
-};
-
 static VKAPI_ATTR vk::Bool32 VKAPI_CALL VkDebugLayerCallback(
     vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
     vk::DebugUtilsMessageTypeFlagsEXT type,
@@ -32,7 +27,7 @@ VulkanApplication::~VulkanApplication() {
     // Destroy all devices first
     m_storage.Clear();
 }
-VulkanApplication::VulkanApplication(Core::Allocator* allocator, const char* appName, const char* engineName, const uint32_t apiVersion)
+VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, const char* engineName, const uint32_t apiVersion)
     : m_vkAllocatorCpuCallbacks(CreateVulkanCpuAllocationCallbacks(allocator)), m_allocator(allocator), m_storage(allocator), m_devices(allocator),
     m_name(appName), m_vulkanApiVersion(apiVersion)
 {
@@ -43,17 +38,21 @@ VulkanApplication::VulkanApplication(Core::Allocator* allocator, const char* app
     };
     uint32_t count = 0;
     const char** extensions = glfwGetRequiredInstanceExtensions(&count);
-    Core::Vector<const char*> instanceExtensions(m_allocator);
+    Vector<const char*> instanceExtensions(m_allocator);
     instanceExtensions.insert(instanceExtensions.end(), extensions, extensions + count);
     // Add our own extensions
     instanceExtensions.insert(
         instanceExtensions.end(),
         kVulkanInstanceExtensions, kVulkanInstanceExtensions + std::size(kVulkanInstanceExtensions)
     );
+    Vector<const char*> instanceLayers(m_allocator);
+#if FOUNDATION_RHIVULKAN_VVL
+    instanceLayers.push_back("VK_LAYER_KHRONOS_validation");
+#endif
     m_instance = vk::raii::Instance(m_context, vk::InstanceCreateInfo{
         .pApplicationInfo = &vkAppInfo,
-        .enabledLayerCount = std::size(kVulkanInstanceLayers),
-        .ppEnabledLayerNames = kVulkanInstanceLayers,
+        .enabledLayerCount = static_cast<uint32_t>(instanceLayers.size()),
+        .ppEnabledLayerNames = instanceLayers.data(),
         .enabledExtensionCount = static_cast<uint32_t>(instanceExtensions.size()),
         .ppEnabledExtensionNames = instanceExtensions.data(),
         }, m_vkAllocatorCpuCallbacks);
@@ -75,7 +74,7 @@ VulkanApplication::VulkanApplication(Core::Allocator* allocator, const char* app
         });
 }
 
-Core::Span<const RHIDevice::DeviceDesc> VulkanApplication::EnumerateDevices() const {
+Span<const RHIDevice::DeviceDesc> VulkanApplication::EnumerateDevices() const {
     return { m_devices.begin(), m_devices.end() };
 }
 
@@ -94,18 +93,18 @@ void VulkanApplication::DestroyDevice(Handle handle) {
 namespace Foundation::RHI {
     extern "C" {
         void* vkCustomCpuAllocation(
-            Foundation::Core::Allocator* alloc, size_t size, size_t alignment,
+            Allocator* alloc, size_t size, size_t alignment,
             vk::SystemAllocationScope allocationScope)
         {
             return alloc->Allocate(size, alignment);
         }
         void* vkCustomCpuReallocation(
-            Foundation::Core::Allocator* alloc, void* pOriginal, size_t size, size_t alignment,
+            Allocator* alloc, void* pOriginal, size_t size, size_t alignment,
             vk::SystemAllocationScope allocationScope)
         {
             return alloc->Reallocate(pOriginal, size, alignment);
         }
-        void vkCustomCpuFree(Foundation::Core::Allocator* alloc, void* pMemory)
+        void vkCustomCpuFree(Allocator* alloc, void* pMemory)
         {
             alloc->Deallocate(pMemory);
         }

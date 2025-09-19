@@ -27,7 +27,7 @@ void App::OnRendererSetup()
     m_scene->CreateUpdatePasses(
         m_renderer.get(),
         instanceBuffer, primitiveBuffer, vertexBuffer, indexBuffer,
-        RHIDeviceQueueType::Compute
+        RHIDeviceQueueType::Graphics
     );
     // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
     // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect

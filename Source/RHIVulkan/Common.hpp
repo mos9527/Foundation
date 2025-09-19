@@ -83,7 +83,7 @@ namespace Foundation::RHI {
         if (stage & ComputeShader) flags |= vk::PipelineStageFlagBits::eComputeShader;
         if (stage & RayTracingShader) flags |= vk::PipelineStageFlagBits::eRayTracingShaderKHR;
         if (stage & MeshShader) flags |= vk::PipelineStageFlagBits::eMeshShaderEXT;
-        if (stage & ColorAttachmentOutput) flags |= vk::PipelineStageFlagBits::eColorAttachmentOutput;
+        if (stage & RenderTargetOutput) flags |= vk::PipelineStageFlagBits::eColorAttachmentOutput;
         if (stage & Transfer) flags |= vk::PipelineStageFlagBits::eTransfer;
         if (stage & EarlyFragmentTests) flags |= vk::PipelineStageFlagBits::eEarlyFragmentTests;
         if (stage & LateFragmentTests) flags |= vk::PipelineStageFlagBits::eLateFragmentTests;
@@ -102,7 +102,7 @@ namespace Foundation::RHI {
         if (stage & ComputeShader) flags |= vk::PipelineStageFlagBits2::eComputeShader;
         if (stage & RayTracingShader) flags |= vk::PipelineStageFlagBits2::eRayTracingShaderKHR;
         if (stage & MeshShader) flags |= vk::PipelineStageFlagBits2::eMeshShaderEXT;
-        if (stage & ColorAttachmentOutput) flags |= vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+        if (stage & RenderTargetOutput) flags |= vk::PipelineStageFlagBits2::eColorAttachmentOutput;
         if (stage & Transfer) flags |= vk::PipelineStageFlagBits2::eTransfer;
         if (stage & EarlyFragmentTests) flags |= vk::PipelineStageFlagBits2::eEarlyFragmentTests;
         if (stage & LateFragmentTests) flags |= vk::PipelineStageFlagBits2::eLateFragmentTests;
