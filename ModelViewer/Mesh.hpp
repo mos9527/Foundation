@@ -1,6 +1,6 @@
 #pragma once
 #include <filesystem>
-#include <RenderCore/RHICore/Common.hpp>
+#include <RHICore/Common.hpp>
 #include <Core/Core.hpp>
 using namespace Foundation;
 using Index = uint32_t; // 32-bit index

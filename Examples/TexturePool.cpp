@@ -1,4 +1,4 @@
-#include <Runtime/Math/Math.hpp>
+#include <Math/Math.hpp>
 #include "Examples.hpp"
 using namespace Foundation::Math;
 constexpr size_t kNumTextures = 16;
@@ -71,7 +71,7 @@ Array<uint32_t, 8*8> identicon(Array<unsigned char, 16> const& hash)
 }
 /*-- Actual example --*/
 #include <Rendering/TexturePool.hpp>
-#include <Rendering/Upload.hpp>
+#include <Rendering/UploadContext.hpp>
 #include <random>
 namespace Examples
 {

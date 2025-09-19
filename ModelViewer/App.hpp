@@ -1,8 +1,8 @@
 #pragma once
 #include <Rendering/Application.hpp>
-#include <Runtime/Async/Thread.hpp>
+#include <Async/Thread.hpp>
 #include <Rendering/PSFullscreen.hpp>
-#include <RenderCore/RHIVulkan/Application.hpp>
+#include <RHIVulkan/Application.hpp>
 #include "Scene.hpp"
 /**
  * @brief ModelViewer implementation

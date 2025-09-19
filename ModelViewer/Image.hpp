@@ -1,7 +1,7 @@
 #pragma once
 #include <filesystem>
-#include <Runtime/Core/Core.hpp>
-#include <RenderCore/RHICore/Resource.hpp>
+#include <Core/Core.hpp>
+#include <RHICore/Resource.hpp>
 using namespace Foundation;
 struct Image {
     RHI::RHITextureDesc m_desc;

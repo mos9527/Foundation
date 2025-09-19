@@ -1,14 +1,15 @@
 #pragma once
-#include <Runtime/Async/Future.hpp>
-#include <Runtime/Bits/Format.hpp>
-#include <Runtime/Math/Math.hpp>
-#include <Rendering/Staging.hpp>
+#include <Async/Future.hpp>
+#include <Bits/Format.hpp>
+#include <Math/Math.hpp>
+#include <Rendering/StagingBuffer.hpp>
 namespace ModelViewer
 {
     using namespace Foundation;
     using namespace Foundation::RenderCore;
     using namespace Foundation::Rendering;
     using namespace Foundation::Math;
+    using namespace Foundation::Bits;
     #include "Shaders/Common.h"
 
     using SceneHandle = uint32_t;

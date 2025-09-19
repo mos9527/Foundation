@@ -18,14 +18,25 @@ endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/Source")
 
-add_subdirectory(Runtime)
-add_subdirectory(RHICore)
-add_subdirectory(RHIVulkan)
+add_subdirectory(Async)
+add_subdirectory(Atomic)
+add_subdirectory(Bits)
+add_subdirectory(Core)
+add_subdirectory(Math)
+add_subdirectory(Native)
 add_subdirectory(RenderCore)
 add_subdirectory(Rendering)
+add_subdirectory(RHICore)
+add_subdirectory(RHIVulkan)
 
 add_library(Foundation INTERFACE)
 target_link_libraries(Foundation INTERFACE
+    Foundation_Async
+    Foundation_Atomic
+    Foundation_Bits
+    Foundation_Core
+    Foundation_Math
+    Foundation_Native
+    Foundation_RenderCore
     Foundation_Rendering
-    Foundation_Runtime
 )
