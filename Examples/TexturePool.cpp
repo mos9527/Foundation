@@ -75,12 +75,6 @@ Array<uint32_t, 8*8> identicon(Array<unsigned char, 16> const& hash)
 #include <random>
 namespace Examples
 {
-    struct PushConstant
-    {
-        float time;
-        uint32_t num_textures;
-        uint32_t first_texture;
-    };
     /**
      * @example TexturePool.cpp
      * Bindless texture pool example
@@ -91,7 +85,12 @@ namespace Examples
     {
         UniquePtr<TexturePool> m_textures;
         Vector<TexturePoolHandle> m_handles;
-
+        struct PushConstant
+        {
+            float time;
+            uint32_t num_textures;
+            uint32_t first_texture;
+        };
     public:
         TexturePoolApp() : m_handles(GetAllocator()) {};
         void OnDeviceSetup() override

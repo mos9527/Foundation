@@ -2,7 +2,9 @@
 #include <bit>
 #include <Core/Container.hpp>
 #include <fmt/format.h>
-
+/**
+ * @brief Header-only utilities
+ */
 namespace Foundation::Bits {
     using namespace Foundation::Core;
     constexpr const char* kSuffixes[]{ "B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };

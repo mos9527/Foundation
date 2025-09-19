@@ -1,10 +1,5 @@
 #include "Examples.hpp"
 namespace Examples {
-    struct PushConstants {
-        float time;
-        float pad;
-        RHIExtent2D resolution;
-    };
     /**
      * @example MandelbrotCompute.cpp
      * Mandelbrot set rendering on the compute shader and automatically synchronizes the result back to display.
@@ -12,6 +7,11 @@ namespace Examples {
      * Shader courtesy of Inigo Quilez: https://iquilezles.org/articles/mset_smooth/
      */
     class MandelbrotComputeDemoApp : public RenderApplication {
+        struct PushConstant {
+            float time;
+            float pad;
+            RHIExtent2D resolution;
+        };
         void OnRendererSetup() override {
             ResourceHandle buffer = createResource(
                 m_renderer.get(), "Mandelbrot Image",
@@ -26,7 +26,7 @@ namespace Examples {
                 m_renderer.get(), "Mandelbrot", RHIDeviceQueueType::Compute,
                 [=](PassHandle self, Renderer* r) {
                     r->BindShader(self, RHIShaderStageBits::Compute, "csMain", "data/shaders/MandelbrotCompute.spv");
-                    r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(PushConstants));
+                    r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(PushConstant));
                     r->BindTextureUAV(self, buffer, "image", RHIPipelineStageBits::ComputeShader, {
                         .format = RHIResourceFormat::R8G8B8A8_UNORM,
                         .range = RHITextureSubresourceRange::Create()
@@ -34,7 +34,7 @@ namespace Examples {
                 },
                 [=, this](PassHandle self, Renderer* r, RHICommandList* cmd) {
                     r->CmdSetPipeline(self, cmd);
-                    r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, PushConstants{
+                    r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, PushConstant{
                         .time = GetApplicationTime(),
                         .resolution = r->GetSwapchainExtent()
                     });
