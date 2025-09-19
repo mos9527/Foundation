@@ -8,6 +8,13 @@ option(FOUNDATION_WITH_SANITIZERS "Build with sanitizers enabled" OFF)
 option(FOUNDATION_WITH_TESTS "Build tests" ON)
 option(FOUNDATION_WITH_MODELVIEWER "Build the model viewer application" ON)
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    # https://developercommunity.visualstudio.com/t/__VA_OPT__-should-be-enabled-by-std:c/10565399
+    add_compile_options("/Zc:preprocessor")
+    add_compile_options("/utf-8")
+endif()
+
+
 if (FOUNDATION_WITH_SANITIZERS)
     if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         add_compile_options(/fsanitize=address)

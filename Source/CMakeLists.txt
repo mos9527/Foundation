@@ -6,12 +6,6 @@ set(CMAKE_CXX_STANDARD 20)
 option(FOUNDATION_WITH_EXAMPLES "Build examples" ON)
 option(FOUNDATION_WITH_PROFILING "Build with profiling (Tracy) enabled" ON)
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    # https://developercommunity.visualstudio.com/t/__VA_OPT__-should-be-enabled-by-std:c/10565399
-    add_compile_options("/Zc:preprocessor")
-    add_compile_options("/utf-8")
-endif()
-
 if (FOUNDATION_WITH_PROFILING)
     add_compile_definitions(TRACY_ENABLE=1)
 else ()

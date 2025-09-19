@@ -21,15 +21,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(VulkanMemoryAllocator)
 
-# XXX: Probably not required
-# On Windows Vulkan SDK comes with these but I couldn't find them on Linux
-FetchContent_Declare(
-  SPIRV-Headers
-  GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Headers
-  GIT_TAG        vulkan-sdk-1.4.321.0
-  GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(SPIRV-Headers)
 add_library(Foundation_RHIVulkan ${SOURCES} ${INCLUDES})
 option(FOUNDATION_RHIVULKAN_VALIDATION_LAYER "[RHIVulkan] Build with Vulkan Validation Layer (VVL)" ON)
 if (FOUNDATION_RHIVULKAN_VALIDATION_LAYER)
@@ -38,7 +29,7 @@ else()
     target_compile_definitions(Foundation_RHIVulkan PUBLIC FOUNDATION_RHIVULKAN_VVL=0)
 endif()
 
-target_link_libraries(Foundation_RHIVulkan PUBLIC Foundation_Native Foundation_RHICore Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator SPIRV-Headers::SPIRV-Headers)
+target_link_libraries(Foundation_RHIVulkan PUBLIC Foundation_Native Foundation_RHICore Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator)
 target_include_directories(
     Foundation_RHIVulkan
     PUBLIC
