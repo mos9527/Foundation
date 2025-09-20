@@ -1,4 +1,5 @@
 #include <Rendering/UploadContext.hpp>
+#include <Rendering/StagingBuffer.hpp>
 #include "Examples.hpp"
 
 #define WIN32_LEAN_AND_MEAN
@@ -15,20 +16,19 @@ namespace Examples
      */
     class Win32_ScreenCaptureApp : public RenderApplication
     {
-        UniquePtr<UploadContext> m_upload;
+        // Temporary staging buffer for screen capture
+        UniquePtr<StagingBuffer> m_staging;
         HDC hScreenDC = NULL, hMemoryDC = NULL;
         HBITMAP hBitmap = NULL;
         void OnDeviceSetup() override
-        {
-            m_upload =
-                ConstructUnique<UploadContext>(GetRendererAllocator(), m_device.Get(), GetRendererAllocator(), 256_MB);            
+        {            
+            m_staging = ConstructUnique<StagingBuffer>(GetRendererAllocator(), m_device.Get(), 256_MB, GetRendererAllocator());
         }
         void OnRendererSetup() override
         {
             HWND hwnd = glfwGetWin32Window(static_cast<GLFWwindow*>(GetNativeWindow()->GetNative()));
             // Exclude this window from any screen capture
             SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
-
             auto [w, h] = GetNativeWindow()->GetWindowSize();
             if (hBitmap)
                 DeleteObject(hBitmap);
@@ -49,13 +49,13 @@ namespace Examples
                 [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
                     auto* tex = r->DerefResource(screen).Get<RHITexture*>();
-                    Vector<char> buffer(w * h * 4, 0, GetRendererAllocator());
+                    auto* buffer = m_staging->GetBuffer();
+                    auto* mapped = buffer->Map();
                     // Capture the screen using GDI
                     // BitBlt is slow and usually can't get 60FPS, but it's the simplest way to do this
                     {
                         POINT clientTopLeft = { 0, 0 };
                         ClientToScreen(hwnd, &clientTopLeft);
-                        
                         BitBlt(hMemoryDC, 0, 0, w, h, hScreenDC, clientTopLeft.x, clientTopLeft.y, SRCCOPY | CAPTUREBLT);
                         BITMAPINFOHEADER bi = {};
                         bi.biSize = sizeof(BITMAPINFOHEADER);
@@ -64,14 +64,20 @@ namespace Examples
                         bi.biPlanes = 1;
                         bi.biBitCount = 32;
                         bi.biCompression = BI_RGB;
-                        GetDIBits(hMemoryDC, hBitmap, 0, h, buffer.data(), reinterpret_cast<BITMAPINFO*>(&bi),
-                                  DIB_RGB_COLORS);
+                        GetDIBits(hMemoryDC, hBitmap, 0, h, mapped, reinterpret_cast<BITMAPINFO*>(&bi), DIB_RGB_COLORS);
                     }
-                    // NOTE: This is _slow_. Transfer per update should've been done with @ref StagedBuffer
-                    //       For fixed screen refresh though this isn't _too_ much of a problem, hence the usage here
-                    //       as it's the simplest way to get data onto the GPU.                    
-                    m_upload->Upload(tex, buffer);
-                    m_upload->WaitAll();
+                    buffer->Flush();
+                    cmd->CopyBufferToImage(buffer, tex, RHITextureLayout::TransferDst, {{{
+                        .src_buffer_offset = 0,
+                        .dst_layer =
+                            {
+                                .aspect = RHITextureAspectFlagBits::Color,
+                                .mip_level = 0,
+                                .base_array_layer = 0,
+                                .layer_count = 1,
+                            },
+                        .extent = {w, h, 1},
+                    }}});
                 });
             ResourceHandle sampler = m_renderer->CreateSampler({});
             createPSFullscreenPass(
