@@ -32,7 +32,7 @@ template<typename Func> void bench_many(const char* desc, Func&& func) {
 }
 
 int main() {
-    void* memory = aligned_alloc(arenaSize, arenaSize); // 64 KiB alignment
+    void* memory = malloc(arenaSize);
     Arena arena(memory, arenaSize);
 	LOG_RUNTIME(Allocator, info, "Benchmark: {} allocations of {} bytes, repeated {} times", allocCount, sizeof(int), benchCount);
 	bench_many("Stack Arena", [&]() {
