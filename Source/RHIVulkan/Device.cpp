@@ -15,7 +15,7 @@
 using namespace Foundation::Core;
 using namespace Foundation::RHI;
 using namespace Foundation::Bits;
-const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_16BIT_STORAGE_EXTENSION_NAME};
+const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_16BIT_STORAGE_EXTENSION_NAME,VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME};
 
 const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
 
