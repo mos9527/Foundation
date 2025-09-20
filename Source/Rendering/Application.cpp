@@ -61,7 +61,7 @@ void RenderApplication::InitializeInternal() {
         // 'Headless' mode. No presentation therefore no swapchain/window.
         m_window = {};
         m_device = m_rhi->CreateDevice(m_rhi->EnumerateDevices()[m_desc.deviceIndex]);
-    }
+    }    
     OnDeviceSetup();
 }
 void RenderApplication::Execute()
@@ -80,6 +80,7 @@ void RenderApplication::Execute()
         m_renderer->SetSwapchain(m_swapchain);
         OnSwapchainResize();
         InitializeRenderer();
+        Execute();
     }
 }
 void RenderApplication::RenderWorker()
@@ -88,15 +89,23 @@ void RenderApplication::RenderWorker()
     CHECK(m_device && m_renderer);
     TracyCSetThreadName("Render Thread");
     while (!m_appShouldClose)
+    {
+        if (m_renderThreadReset.load(std::memory_order_relaxed))
+        {
+            m_renderThreadReset.store(false, std::memory_order_relaxed);
+            LOG_RUNTIME(RenderWorker, info, "Renderer Reset");
+            InitializeRenderer();
+        }
         Execute();
+    }
     LOG_RUNTIME(RenderWorker, info, "Render Thread exiting.");
     m_renderFrame.notify_all();
 }
 using namespace Foundation::Async;
 void RenderApplication::RunForever() {
     m_renderThread = Thread(&RenderApplication::RenderWorker, this);
-    while (!((m_appShouldClose = m_window.WindowShouldClose())))
-    {
+    while (!m_appShouldClose.load(std::memory_order_relaxed))
+    {        
         OnApplicationTick();
         // Update framerate
         size_t smp_tick = m_timing.begin.y;
@@ -106,15 +115,19 @@ void RenderApplication::RunForever() {
             m_timing.Tick({m_renderer->GetFrame(), perf_counter});
             m_window.SetWindowTitle(fmt::format("{} [{} FPS]", m_desc.windowTitle, m_timing.GetFPS()).c_str());
         }
+        if (m_window.WindowShouldClose())
+            m_appShouldClose.store(true, std::memory_order_relaxed);
     }
     LOG_RUNTIME(RenderApplication, info, "Main Thread exiting.");
     m_renderThread.join();
 }
 void RenderApplication::WaitForFrame()
 {
-    if (!m_appShouldClose)
+    if (!m_appShouldClose.load(std::memory_order_relaxed))
     {
         std::unique_lock lock(m_renderMutex);
         m_renderFrame.wait(lock);
     }
 }
+void RenderApplication::ResetRendererOnNextFrame() { m_renderThreadReset.store(true, std::memory_order_release); }
+void RenderApplication::Shutdown() { m_appShouldClose.store(true, std::memory_order_release); }

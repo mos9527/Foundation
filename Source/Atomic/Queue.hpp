@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Core.hpp>
 #include <Core/Allocator.hpp>
+#include "Atomic.hpp"
 /**
  * @brief Lock-free atomic implementations of data structures.
  */
@@ -21,7 +22,7 @@ namespace Foundation::Atomic
     {
         const size_t m_modulo;
         Vector<T> m_buffer;
-        std::atomic<size_t> m_read{}, m_write{};
+        Atomic<size_t> m_read{}, m_write{};
         // Only used in reader thread
         size_t m_readCached{};
         // Only used in writer thread

@@ -10,6 +10,7 @@
 #include <RHICore/Application.hpp>
 #include <RenderCore/Renderer.hpp>
 
+#include <Atomic/Atomic.hpp>
 /**
  * @brief Reference implementations of real-time rendering routines.
  */
@@ -56,8 +57,7 @@ namespace Foundation::Rendering {
         void CreateSwapchain();
         void InitializeInternal();
         void InitializeRenderer();
-        void RenderWorker();
-        bool m_appShouldClose{ false };
+        void RenderWorker();        
     public:
         /**
          * @brief Frame timing information for performance measurements.
@@ -101,6 +101,11 @@ namespace Foundation::Rendering {
         Async::Thread m_renderThread;
         Async::Condition m_renderFrame;
         Async::Mutex m_renderMutex;
+
+        // Should the Render thread reset the renderer on the next frame?
+        Atomic::Atomic<bool> m_renderThreadReset{false};
+        // Should the application exit?
+        Atomic::Atomic<bool> m_appShouldClose{false};
         /**
          * @breif Actions to take after device specific resources has been set up.
          *
@@ -233,5 +238,19 @@ namespace Foundation::Rendering {
          * @brief Wait for the next frame to be rendered.
          */
         void WaitForFrame();
+        /**
+         * @brief Reset the renderer on the next frame, calling @ref OnRendererSetup internally.         
+         * @note This can be called from any thread, and will be executed on the Render thread on the next frame of
+         * its work.
+         */
+        void ResetRendererOnNextFrame();
+        /**
+         * @brief Flag the application to exit.
+         * @note This can be called from any thread.
+         * @note This does not immediately terminate the application. At the end of the current
+         * tick of the main loop in @ref RunForever(), the application will exit gracefully if
+         * this is called, or the main window is closed.
+         */           
+        void Shutdown();
     };
 }

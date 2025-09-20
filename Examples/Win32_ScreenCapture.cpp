@@ -11,22 +11,40 @@ namespace Examples
     /**
      * @example Win32_ScreenCaptureApp.cpp
      * Capture screen content on Windows using GDI and display it using a fullscreen quad.
+     * @note Hotkeys:
+     *  - Press `Space` to toggle between different shaders.
+     *  - Press `C` to enter "click-through" mode.
+     *  - Press `Esc` to exit the application.
      * @example Shaders/SimpleCRT.slang
      * Simple CRT effect shader
      */
     class Win32_ScreenCaptureApp : public RenderApplication
     {
+        const char* kShaders[2] = {
+            "data/shaders/SimpleBloom.spv",
+            "data/shaders/SimpleCRT.spv"
+        };
+        uint32_t m_shaderIndex{0};
         // Temporary staging buffer for screen capture
         UniquePtr<StagingBuffer> m_staging;
         HDC hScreenDC = NULL, hMemoryDC = NULL;
         HBITMAP hBitmap = NULL;
+        struct PushConstant
+        {
+            float time;
+            uint32_t width;
+            uint32_t height;
+        };
         void OnDeviceSetup() override
         {            
             m_staging = ConstructUnique<StagingBuffer>(GetRendererAllocator(), m_device.Get(), 256_MB, GetRendererAllocator());
-        }
+        }        
         void OnRendererSetup() override
         {
-            HWND hwnd = glfwGetWin32Window(static_cast<GLFWwindow*>(GetNativeWindow()->GetNative()));
+            GLFWwindow* window = static_cast<GLFWwindow*>(GetNativeWindow()->GetNative());
+            HWND hwnd = glfwGetWin32Window(window);
+            // Always on top
+            glfwSetWindowAttrib(window, GLFW_FLOATING, GLFW_TRUE);            
             // Exclude this window from any screen capture
             SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
             auto [w, h] = GetNativeWindow()->GetWindowSize();
@@ -45,7 +63,9 @@ namespace Examples
                                .format = RHIResourceFormat::B8G8R8A8_UNROM});
             createPass(
                 m_renderer.get(), "Update Texture", RHIDeviceQueueType::Graphics, [=](PassHandle self, Renderer* r)
-                { r->BindTextureCopyDst(self, screen, RHITextureSubresourceRange::Create()); },
+                {
+                    r->BindTextureCopyDst(self, screen, RHITextureSubresourceRange::Create());                    
+                },
                 [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
                     auto* tex = r->DerefResource(screen).Get<RHITexture*>();
@@ -79,13 +99,13 @@ namespace Examples
                         .extent = {w, h, 1},
                     }}});
                 });
-            ResourceHandle sampler = m_renderer->CreateSampler({});
+            ResourceHandle sampler = m_renderer->CreateSampler({});            
             createPSFullscreenPass(
                 m_renderer.get(), "Draw Screen",
                 [=](PassHandle self, Renderer* r)
                 {
-                    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/SimpleCRT.spv");
-                    r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(float));
+                    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", kShaders[m_shaderIndex]);
+                    r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(PushConstant));
                     r->BindTextureSRV(
                         self, screen, "screen", RHIPipelineStageBits::FragmentShader,
                         {.format = RHIResourceFormat::B8G8R8A8_UNROM, .range = RHITextureSubresourceRange::Create()});
@@ -93,8 +113,41 @@ namespace Examples
                 },
                 [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
-                    r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, GetApplicationTime());
+                    auto [w, h] = GetNativeWindow()->GetWindowSize();
+                    r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, PushConstant{
+                        .time = GetApplicationTime<float>(),
+                        .width = w,
+                        .height = h
+                    });
                 });
+        }
+        void OnApplicationTick() override
+        {
+            GLFWwindow* window = static_cast<GLFWwindow*>(GetNativeWindow()->GetNative());
+            static bool key[0xFFF]{};
+            auto OnKeyDown = [&](int k) {
+                if (!key[k] && glfwGetKey(window, k))
+                {
+                    key[k] = true;
+                    return true;
+                }
+                if (!glfwGetKey(window, k))
+                    key[k] = false;
+                return false;
+            };
+            if (OnKeyDown(GLFW_KEY_ESCAPE))
+                Shutdown();
+            if (OnKeyDown(GLFW_KEY_SPACE))
+            {
+                m_shaderIndex = (m_shaderIndex + 1) % std::size(kShaders);
+                LOG_RUNTIME(Win32_ScreenCaptureApp, info, "Switched to shader: {}", kShaders[m_shaderIndex]);
+                ResetRendererOnNextFrame();
+            }
+            if (OnKeyDown(GLFW_KEY_C))
+            {
+                glfwSetWindowAttrib(window, GLFW_MOUSE_PASSTHROUGH, GLFW_TRUE);
+                glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_FALSE);                
+            }
         }
     };
 } // namespace Examples
