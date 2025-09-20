@@ -20,3 +20,10 @@ add_dependencies(Example_MandelbrotCompute Shader_MandelbrotCompute)
 add_executable(Example_TexturePool "TexturePool.cpp")
 target_link_libraries(Example_TexturePool PUBLIC Example_Common)
 add_dependencies(Example_TexturePool Shader_TexturePool)
+
+if (WIN32)
+	add_executable(Example_Win32_ScreenCapture "Win32_ScreenCapture.cpp")
+	target_link_libraries(Example_Win32_ScreenCapture PUBLIC Example_Common)
+	add_dependencies(Example_Win32_ScreenCapture Shader_SimpleCRT)
+endif()
+

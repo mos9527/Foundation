@@ -71,8 +71,7 @@ RHIDeviceFence* UploadContext::Upload(RHITexture* dst, Span<const char> data, ui
     return fence.Get();
 }
 void UploadContext::WaitAll()
-{
-    LOG_RUNTIME(UploadContext, debug, "Waiting on {} resource uploads", m_fences.size());
+{    
     m_device->WaitForFences(m_fences, true, ~0ull);
     m_fences.clear();
     m_commandLists.clear();

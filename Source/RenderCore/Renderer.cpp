@@ -678,7 +678,9 @@ void Renderer::BuildPipelineState(PassHandle pass) {
     // Separate into descriptor sets
     Vector<RHIDeviceDescriptorSetLayoutDesc::Binding> set_bindings(m_allocator);
     for (const auto& binding : bindings | Views::values) {
-        // !! TODO: Descriptor Arrays
+        // TODO: Descriptor Arrays?
+        // Not currently used by Renderer APIs - and for use cases like bindless,
+        // we have @ref BindDescriptorSet to bind a pre-made descriptor set.
         CHECK_MSG(var_types.contains(binding) || var_ext_sets.contains(binding), "Binding {} is not bound by pass {}, but is used by one of its shaders.", binding, tracked.name);
         set_bindings.push_back({ .count = 1, .stage = RHIShaderStageBits::All, .type = var_types[binding] });
     }

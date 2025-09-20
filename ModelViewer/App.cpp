@@ -25,7 +25,7 @@ namespace ModelViewer
         WaitForFrame();
         if (m_meshes.empty())
             return; // No mesh loaded yet.
-        size_t cnt = 1;
+        size_t cnt = 100'00;
         size_t sq = sqrt(cnt);
         float4x4 view = lookAt(
                     vec3(sq,sq,sq),
@@ -35,11 +35,15 @@ namespace ModelViewer
         proj[1][1] *= -1; // vulkan NDC
         m_camera = proj * view;
         SceneHandle mesh = m_meshes.back().get<SceneMeshLoadResult>()->primitiveID;
-        // TODO: Ugly. We have to retrieve these even outside update scope
-        //       We can go for atomic solutions - like a SPSC queue for these
         {
             for (size_t instance = 0; instance < cnt; ++instance)
             {
+                // TODO: This is..quite slow
+                //       We're currently using an atomic SPSC queue to schedule
+                //       the updates - for sparse updates that's quite OK.
+                //       But for lots of them like this - maybe we should've
+                //       gone with a frame barrier and update the entire buffer
+                //       instead. This is not supported yet by our APIs.
                 m_scene->UpdateInstanceAsync(instance, {
                     .enabled = true,
                     .primitiveID = mesh,

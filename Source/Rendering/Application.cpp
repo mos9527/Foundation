@@ -24,6 +24,8 @@ void RenderApplication::CreateSwapchain() {
     CHECK_MSG(format.has_value(), "No supported swapchain format found!");
     LOG_RUNTIME(RenderApplication, info, "Selected swapchain format: {}", format.value());
     CHECK_MSG(present.has_value(), "No supported presentation mode found!");
+    if (m_desc.vsync)
+        present = RHISwapchainPresentMode::Fifo;
     LOG_RUNTIME(RenderApplication, info, "Selected swapchain present mode: {}", present.value());
     m_swapchain = m_device->CreateSwapchain(
         RHISwapchain::SwapchainDesc{
@@ -51,7 +53,7 @@ void RenderApplication::InitializeInternal() {
     LOG_RUNTIME(RenderApplication, info, "** Application Setup **");
     LOG_RUNTIME(RenderApplication, info, "Dir: {}", std::filesystem::current_path().string());
     if (m_desc.present) {
-        m_window = CreateWindow(m_desc.windowSize.x, m_desc.windowSize.y, m_desc.windowTitle.c_str());
+        m_window = CreateNativeWindow(m_desc.windowSize.x, m_desc.windowSize.y, m_desc.windowTitle.c_str());
         m_device = m_rhi->CreateDevice(m_rhi->EnumerateDevices()[m_desc.deviceIndex], &m_window);
         CreateSwapchain();
     }

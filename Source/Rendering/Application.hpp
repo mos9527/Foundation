@@ -43,6 +43,10 @@ namespace Foundation::Rendering {
          * balance it out.
          */
         bool asyncCompute{ true };
+        /**
+        * @breif Enable VSync when presenting.
+        */
+        bool vsync{false};
     };
     /**
     *  @brief Template base class for rendering applications.        
@@ -208,6 +212,10 @@ namespace Foundation::Rendering {
             CHECK_MSG(m_swapchain, "No swapchain created. Did you initialize the application with present=true?");
             return m_swapchain.Get();
         }
+        /**
+         * @brief Retrieve the current NativeWindow instance.
+         */
+        Native::NativeWindow* GetNativeWindow() { return &m_window; }
         /**
          * @brief Retrieve the allocator used for general application allocations.
          */

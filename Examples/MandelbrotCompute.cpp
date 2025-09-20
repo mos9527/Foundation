@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
     // Overhead from synchronization is more than the gain from parallelism
     // (which isn't much for this simple example)
     Examples::MandelbrotComputeDemoApp app;
-    const bool useAsync = MessageBox("Async Compute", "Enable Async Compute?", MessageBoxType::YesNo, MessageBoxIcon::Question, MessageBoxResult::Yes) == MessageBoxResult::Yes;
+    const bool useAsync = CreateMessageBox("Async Compute", "Enable Async Compute?", MessageBoxType::YesNo, MessageBoxIcon::Question, MessageBoxResult::Yes) == MessageBoxResult::Yes;
     app.Initialize<VulkanApplication>({ .windowTitle = "Mandelbrot Async Compute", .asyncCompute = useAsync });
     app.RunForever();
 }

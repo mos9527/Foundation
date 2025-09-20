@@ -137,7 +137,7 @@ namespace Foundation::Rendering
     {
         CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");
         auto& arena = m_buffer->GetArena();
-        return {arena.GetSize(allocation), arena.GetOffset(allocation)};
+        return {static_cast<uint32_t>(arena.GetSize(allocation)), static_cast<uint32_t>(arena.GetOffset(allocation))};
     }
     void StagedBuffer::Pop(BufferAllocation allocation)
     {

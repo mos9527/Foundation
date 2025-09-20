@@ -30,6 +30,7 @@ namespace Foundation::Rendering
 
     public:
         UploadContext(RHIDevice* device, Allocator* allocator, size_t stagingBudget = 16_MB);
+        // !! TODO: Bound checks!
         RHIDeviceFence* Upload(RHIBuffer* dst, Span<const char> data, size_t dstOffset = 0, size_t alignment = 4,
                                RHIResourceAccess dst_access = RHIResourceAccessBits::ShaderRead,
                                RHIPipelineStage dst_stage = RHIPipelineStageBits::AllGraphics);

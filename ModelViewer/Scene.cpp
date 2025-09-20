@@ -57,6 +57,7 @@ void Scene::OnBeforeFrame(uint32_t rendererSync)
         CHECK(prim_size == sizeof(PrimitiveMetadata));
         alloc->primitiveID = prim_offset / prim_size;
         // TODO: MSVC dies here if we'd do a Debug build.
+        // TODO: Go figure. I've not updated my Visual Studio installation.
         mutex->unlock();
         m_meshQueue.pop();
         break; // TODO: Batch more!

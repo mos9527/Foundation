@@ -29,7 +29,13 @@ namespace Foundation::Native
     {
         int width, height;
         glfwGetFramebufferSize(static_cast<GLFWwindow*>(m_window), &width, &height);
-        return { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
+        return {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
+    }
+    Pair<uint32_t, uint32_t> NativeWindow::GetWindowPosition() const
+    {
+        int x, y;
+        glfwGetWindowPos(static_cast<GLFWwindow*>(m_window), &x, &y);
+        return {static_cast<uint32_t>(x), static_cast<uint32_t>(y)};
     }
     void NativeWindow::SetWindowTitle(const char* title) const
     {
@@ -55,13 +61,13 @@ namespace Foundation::Native
         if (m_initialized)
             glfwTerminate();
     }
-    NativeWindow NativeApplication::CreateWindow(uint32_t width, uint32_t height, const char* title) {
+    NativeWindow NativeApplication::CreateNativeWindow(uint32_t width, uint32_t height, const char* title) {
         return {width, height, title};
     }
 }
 #include <tinyfiledialogs.h>
 namespace Foundation::Native {
-    MessageBoxResult MessageBox(const char* title, const char* message, MessageBoxType type, MessageBoxIcon icon, MessageBoxResult default_result) {
+    MessageBoxResult CreateMessageBox(const char* title, const char* message, MessageBoxType type, MessageBoxIcon icon, MessageBoxResult default_result) {
         const char* kDialogueType[] = { "ok", "okcancel", "yesno", "yesnocancel" };
         const char* kIconType[] = { "info", "warning", "error", "question" };
         return static_cast<MessageBoxResult>(tinyfd_messageBox(

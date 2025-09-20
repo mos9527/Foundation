@@ -101,15 +101,17 @@ namespace Foundation::Rendering
         /**
          * @brief Create the staging arena buffers.
          * @param numSwaps Max number of frames in flight, can be greater, but no less than the actual number of swaps.
-         * @param desc Description of the data buffer to be created
+         * @param desc Description of the data buffer to be created.
+         *             It's valid to create a zero-sized buffer to use _only_ the staging buffers.
          * @param stagingBudget Size of the staging buffer. Defaults to kFullSize, which is the same size of the buffer
          * created.
-         *        This can and _should_ be small as the memory footprint comes with per-swap staging is O(N * M).
+         *        This can and _should_ be smaller as the memory footprint comes with per-swap staging is O(N * M).
          *        Amortize upload across multiple frames is also a good idea.
          * @param clearValue Value to clear the buffer with at first update. Defaults to {}, which leaves the buffer uninitialized.
          */
-        StagedBuffer(RHIDevice* device, Allocator* allocator, uint32_t numSwaps, RHIBufferDesc const& desc,
-                     size_t stagingBudget = kFullSize, Optional<uint32_t> clearValue = {});
+        StagedBuffer(
+            RHIDevice* device, Allocator* allocator, uint32_t numSwaps, RHIBufferDesc const& desc = {},
+            size_t stagingBudget = kFullSize, Optional<uint32_t> clearValue = {});
         /**
          * @brief Gets the GPU-only backing buffer.
          */

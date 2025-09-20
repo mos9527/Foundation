@@ -32,6 +32,7 @@ namespace Foundation::Native {
 
         [[nodiscard]] Pair<uint32_t, uint32_t> GetWindowSize() const;
         [[nodiscard]] Pair<uint32_t, uint32_t> GetFramebufferSize() const;
+        [[nodiscard]] Pair<uint32_t, uint32_t> GetWindowPosition() const;
         void SetWindowTitle(const char* title) const;
 
         [[nodiscard]] bool WindowShouldClose() const;
@@ -51,7 +52,7 @@ namespace Foundation::Native {
         /**
          * @brief Creates a window with the specified width, height, and title.
          */
-        [[nodiscard]] static NativeWindow CreateWindow(uint32_t width, uint32_t height, const char* title);
+        [[nodiscard]] static NativeWindow CreateNativeWindow(uint32_t width, uint32_t height, const char* title);
         /**
          * @brief Returns a high-resolution time in seconds since the application started.
          * @tparam T The return type. Must be a floating-point type. Default is float.
@@ -69,7 +70,7 @@ namespace Foundation::Native {
     *
     * This is blocking, and will halt execution until the user dismisses it.
     */
-    MessageBoxResult MessageBox(
+    MessageBoxResult CreateMessageBox(
         const char* title, const char* message,
         MessageBoxType type = MessageBoxType::Ok,
         MessageBoxIcon icon = MessageBoxIcon::Info,

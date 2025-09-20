@@ -10,3 +10,4 @@ foreach(SlangFile IN LISTS SLANG_FILES)
             OUTPUT_DIR      "${SHADER_BUILD_DIR}"
     )
 endforeach()
+
