@@ -66,6 +66,7 @@ namespace ModelViewer
         /* -- Data -- */
         FreeList<SceneHandle, SceneMesh> m_meshes; // All meshes in the scene
         void UploadAllocation(RHIBuffer* buffer, Span<const char> data, BufferAllocation allocation);
+        bool m_instanceDirty = false;
     public:
         RHIDeviceScopedObjectHandle<RHIBuffer>
             m_prmitive, m_vertex, m_index; // GPU Buffers
@@ -106,6 +107,7 @@ namespace ModelViewer
         void UnmapInstanceData()
         {
             m_instance.mutex.unlock();
+            m_instanceDirty = true;
         }
     };
 }

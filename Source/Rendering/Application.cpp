@@ -126,6 +126,7 @@ void RenderApplication::RunForever() {
     }
     LOG_RUNTIME(RenderApplication, info, "Main Thread exiting.");
     m_renderThread.join();
+    m_device->WaitIdle();
 }
 void RenderApplication::WaitForFrame()
 {

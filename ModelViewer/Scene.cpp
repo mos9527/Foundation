@@ -41,14 +41,19 @@ void Scene::OnBeforeFrame(const uint32_t rendererSync)
         ZoneScopedN("Wait Uploads");
         m_upload.SubmitAndWait();
     }
-    {
+    if (m_instanceDirty) {
         // Schedule the entirety of the instance buffer to be re-uploaded.
         // The backing StagedBuffer is N-buffered (renderSync), so we can do this without stalling the GPU.
         ZoneScopedN("Instance Data");
-        std::scoped_lock lock(m_instance.mutex);
+        {
+            ZoneScopedN("Waiting for Mutex");
+            m_instance.mutex.lock();
+        }
+        m_instanceDirty = false;
         m_instance.buffer.BeginTransfer(rendererSync);
         m_instance.buffer.Transfer(0, m_instance.View<char>(), m_instance.alignment);
         m_instance.buffer.EndTransfer();
+        m_instance.mutex.unlock();
     }
 }
 void Scene::UploadAllocation(RHIBuffer* buffer, Span<const char> data, BufferAllocation allocation)
