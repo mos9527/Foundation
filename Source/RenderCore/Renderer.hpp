@@ -18,6 +18,10 @@ namespace Foundation::RenderCore {
     using namespace Foundation::Core;
     using namespace Foundation::Bits;
     /* -- Constants -- */
+    // Maximum number of render passes per frame
+    // NOTE: The limit here is mostly arbitrary - and is only used
+    //       for the default priority heuristic when determining pass order.
+    constexpr size_t kMaxRenderPasses = 1024;
     constexpr size_t kMaxCommandListsPerSwap = 128; // Maximum number of command lists per frame
     constexpr size_t kMaxTempResourceSemaphores = 16; // Maximum number of temporary semaphores for cross-queue barriers
     constexpr size_t kExecuteArenaSize = 16 * (1 << 20); // Maximum size of the per-frame transient arena (16MB)
@@ -551,6 +555,7 @@ namespace Foundation::RenderCore {
             CHECK(m_state == State::Setup);
             CHECK_MSG(queue == RHIDeviceQueueType::Graphics || queue == RHIDeviceQueueType::Compute, "Invalid queue type. Only Graphics and Compute queues are supported.");
             PassHandle handle = m_setup->trackedPasses.size();
+            CHECK_MSG(handle < kMaxRenderPasses, "Exceeded maximum number of render passes ({})", kMaxRenderPasses);
             if (!m_desc.async)
                 queue = RHIDeviceQueueType::Graphics; // Force graphics queue if async compute is disabled
             m_setup->trackedPasses.emplace_back(
@@ -1145,14 +1150,15 @@ namespace Foundation::RenderCore {
     /**
      * @brief Convenient functional wrapper to create a pass from a RenderPass* implementation.
      *
-     * This is equivalent to calling @ref createPassImplPriority with priority 0.
-     *
+     * This is equivalent to calling @ref createPassImplPriority with  priority 0 for Graphics passes,
+     * and priority kMaxRenderPasses for Compute passes.
      * @tparam T Type of @ref RenderPass to create.
      * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is disabled.
      */
     template<typename T, typename ...Args> requires std::is_base_of_v<RenderPass, T>
     T* createPassImpl(Renderer* r, StringView name, RHIDeviceQueueType queue, Args&&... args) {
-        return createPassImpl<T>(r, name, queue, 0, std::forward<Args>(args)...);
+        size_t pri = (queue == RHIDeviceQueueType::Graphics) ? 0 : kMaxRenderPasses;
+        return createPassImpl<T>(r, name, queue, pri, std::forward<Args>(args)...);
     }
     /**
      * @brief Convenient functional wrapper to create a pass from Setup/Record lambdas with custom priority.
@@ -1186,7 +1192,8 @@ namespace Foundation::RenderCore {
     /**
      * @brief Convenient functional wrapper to create a pass from Setup/Record lambdas.
      *
-     * This is equivalent to calling @ref createPassPriority with priority 0.
+     * This is equivalent to calling @ref createPassPriority with priority 0 for Graphics passes,
+     * and priority kMaxRenderPasses for Compute passes.
      *
      * @note Avoid using Lambdas with stateful captures (i.e. capturing `this` or [&]), as resource lifetimes
      *       could be _much_ involved and unpredictable.
@@ -1205,7 +1212,8 @@ namespace Foundation::RenderCore {
         FSetup&& setup, FRecord&& record, FSkip&& skip = {}
     )
     {
-        return createPassPriority(r, name, queue, 0, std::forward<FSetup>(setup), std::forward<FRecord>(record), std::forward<FSkip>(skip));
+        size_t pri = (queue == RHIDeviceQueueType::Graphics) ? 0 : kMaxRenderPasses;
+        return createPassPriority(r, name, queue, pri, std::forward<FSetup>(setup), std::forward<FRecord>(record), std::forward<FSkip>(skip));
     }
     ENUM_NAME_CONV_BEGIN(Renderer::State)
         case Undefined: return "Undefined";

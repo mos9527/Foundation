@@ -114,7 +114,7 @@ namespace Foundation::Rendering {
          *
          * Implementation may leave this empty if no action is needed.
          *
-         * This should not be directly called.
+         * @note This should not be directly called.
          */
         virtual void OnDeviceSetup() { /* nop */ }
         /**
@@ -126,7 +126,7 @@ namespace Foundation::Rendering {
          *
          * Implementation may leave this empty if no action is needed.
          *
-         * This should not be directly called.
+         * @note This should not be directly called.
          */
         virtual void OnSwapchainResize() { /* nop */ }
         /**
@@ -139,7 +139,7 @@ namespace Foundation::Rendering {
          *
          * Implementation may leave this empty if no action is needed.
          *
-         * This should not be directly called.
+         * @note This should not be directly called.
          */
         virtual void OnBeforeFrame() { /* nop */ }
         /**
@@ -152,41 +152,43 @@ namespace Foundation::Rendering {
          *
          * Implementation may leave this empty if no action is needed.
          *
-         * This should not be directly called.
+         * @note This should not be directly called.
          */
         virtual void OnAfterFrame() { /* nop */ }
         /**
          * @brief Set up the renderer by creating passes, resources, and other configurations.
          *
-         * This is invoked by @ref InitializeRenderer on the Render thread,
-         * within a @ref Renderer::BeginSetup and @ref Renderer::EndSetup clause,
-         * thus invoking @ref Renderer::BeginSetup, @ref Renderer::EndSetup here again is incorrect.
-         * and will be called again if the swapchain is recreated.
+         * @note This is where you should set up your rendering pipeline.
+         *
+         * @note This is invoked by @ref InitializeRenderer on the Render thread,
+         *       within a @ref Renderer::BeginSetup and @ref Renderer::EndSetup clause,
+         *       thus invoking @ref Renderer::BeginSetup, @ref Renderer::EndSetup here again is incorrect.
+         *       and will be called again if the swapchain is recreated.
          *
          * @note This MUST be implemented by the subclass.
          *
-         * This should not be directly called.
+         * @note This should not be directly called.
          */
         virtual void OnRendererSetup() = 0;
         /**
          * @brief Action to take on every application tick.
          *
          * @note This is run on the main thread, i.e. the calling thread of @ref RunForever.
-         * No synchronization is performed on a per-frame basis. You may want to
-         * use @ref WaitForFrame() to synchronize with the render thread if needed.
+         *       No synchronization is performed on a per-frame basis. You may want to
+         *       use @ref WaitForFrame() to synchronize with the render thread if needed.
          *
          * @note This runs in a tight loop in @ref RunForever()
          *
          * Implementation may leave this empty if no action is needed.
          *
-         * This should not be directly called.
+         * @note This should not be directly called.
          */
         virtual void OnApplicationTick() { /* nop */ }
     public:
         /**
          * @brief Initialize the application with the specified RHI backend.
          *
-         * This must be called before RunForever().
+         * @note This must be called before RunForever().
          */
         template<typename Backend, typename... Args>
         void Initialize(ApplicationInitDesc const& desc = {}, Args&&... args) {
@@ -251,15 +253,15 @@ namespace Foundation::Rendering {
         /**
          * @brief Reset the renderer on the next frame, calling @ref OnRendererSetup internally.         
          * @note This can be called from any thread, and will be executed on the Render thread on the next frame of
-         * its work.
+         *       its work.
          */
         void ResetRendererOnNextFrame();
         /**
          * @brief Flag the application to exit.
          * @note This can be called from any thread.
          * @note This does not immediately terminate the application. At the end of the current
-         * tick of the main loop in @ref RunForever(), the application will exit gracefully if
-         * this is called, or the main window is closed.
+         *       tick of the main loop in @ref RunForever(), the application will exit gracefully if
+         *       this is called, or the main window is closed.
          */           
         void Shutdown();
     };
