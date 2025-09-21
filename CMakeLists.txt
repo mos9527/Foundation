@@ -7,6 +7,14 @@ set(CMAKE_CXX_STANDARD 20)
 option(FOUNDATION_WITH_SANITIZERS "Build with sanitizers enabled" OFF)
 option(FOUNDATION_WITH_TESTS "Build tests" ON)
 option(FOUNDATION_WITH_MODELVIEWER "Build the model viewer application" ON)
+option(FOUNDATION_WITH_EXAMPLES "Build examples" ON)
+option(FOUNDATION_WITH_PROFILING "Build with profiling (Tracy) enabled" ON)
+
+if (FOUNDATION_WITH_PROFILING)
+    add_compile_definitions(TRACY_ENABLE=1)
+else ()
+    add_compile_definitions(TRACY_ENABLE=0)
+endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # https://developercommunity.visualstudio.com/t/__VA_OPT__-should-be-enabled-by-std:c/10565399

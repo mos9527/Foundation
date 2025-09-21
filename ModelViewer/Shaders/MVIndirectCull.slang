@@ -9,8 +9,9 @@ RWStructuredBuffer<MeshDrawIndirectCmd> commands;
 [numthreads(32, 1, 1)]
 void indirectCullEarly(uint instanceID : SV_DispatchThreadID){
     InstanceMetadata instance = scInstance.Load(instanceID);
-    if (!instance.enabled) return;
-    PrimitiveMetadata primitive = scPrimitive.Load(instance.primitiveID);
+    if (instance.primitiveID == 0)
+        return;
+    PrimitiveMetadata primitive = scPrimitive.Load(instance.primitiveID - 1);
     MeshDrawIndirectCmd cmd;
     cmd.instanceID = instanceID;
     cmd.firstInstance = 0;

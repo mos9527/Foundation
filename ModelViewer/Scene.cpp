@@ -4,129 +4,89 @@
 using namespace ModelViewer;
 using namespace Foundation::Async;
 using namespace Foundation::Native;
-constexpr size_t kMaxQueuedInstanceUpdates = 65536, kMaxQueuedMeshLoads = 16;
-Scene::Scene(RHIDevice* device, Allocator* alloc, size_t numSwaps, SceneBudgets const& budgets) :
-    m_allocator(alloc),
-    m_instanceBuffer(device, alloc, numSwaps,
-                     {.usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
-                     .size = budgets.InstanceBudget},
-                     budgets.InstanceStaging, 0u),
-    m_primitiveBuffer(device, alloc, numSwaps,
-                      { .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
-                      .size = budgets.PrimitiveBudget},
-                      budgets.PrimitiveStaging),
-    m_vertexBuffer(device, alloc, numSwaps,
-                   {.usage = RHIBufferUsageBits::VertexBuffer | RHIBufferUsageBits::TransferDestination,
-                   .size = budgets.VertexBudget},
-                   budgets.VertexStaging),
-    m_indexBuffer(device, alloc, numSwaps,
-                  {.usage = RHIBufferUsageBits::IndexBuffer | RHIBufferUsageBits::TransferDestination,
-                  .size = budgets.IndexBudget},
-                  budgets.IndexStaging),
-    m_instanceQueue( kMaxQueuedInstanceUpdates, alloc), m_meshQueue(kMaxQueuedMeshLoads, alloc), m_meshes(alloc)
-{}
-void Scene::OnBeforeFrame(uint32_t rendererSync)
+StagedData::StagedData(RHIDevice* device, const size_t size, const size_t alignment, const size_t numSwaps, Allocator* alloc) :
+    alloc(alloc),
+    buffer(device, alloc, numSwaps,
+           {.usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination, .size = size}, size,
+           0u),
+    size(size), alignment(alignment), data(static_cast<char*>(alloc->Allocate(size, alignment)))
 {
-    ZoneScoped;
-    CHECK_MSG(m_state == State::Idle, "Bad Scene State ({})", m_state);
-    m_state = State::Update;
-    BeginUpdate(rendererSync);
-    while (true)
-    {
-        // TODO: No one loads meshes _every_ frame. Sparse updates don't really need a
-        //       staging buffer - blocking updates are fine. Transfers are not _that_ slow
-        //       if batched properly.
-        auto value = m_meshQueue.pop();
-        if (!value.has_value())
-            break;
-        auto& [mutex, fpath, alloc] = value.value();
-        // TODO: Bake the data and acquire metadata information for allocation patterns
-        //       We'll assume this will always fit for a frame now - and load only one of them at a time.
-        auto mesh = LoadMeshFromObjFile(fpath, m_allocator);
-        alloc->vertex = m_vertexBuffer.Push(mesh.m_vertex_data);
-        alloc->index = m_indexBuffer.Push(mesh.m_index_data);
-        CHECK_MSG(alloc->vertex != kInvalidHandle && alloc->index != kInvalidHandle,
-                  "Failed to allocate mesh data (vtx: {}, idx: {})", alloc->vertex, alloc->index);
-        PrimitiveMetadata primitive{
-            .vertexOffset = static_cast<int>(m_vertexBuffer.Query(alloc->vertex).second),
-            .indexCount = static_cast<int>(mesh.m_index_data.size()),
-            .indexOffset = static_cast<int>(m_indexBuffer.Query(alloc->index).second),
-        };
-        auto [prim_size, prim_offset] =
-            m_primitiveBuffer.Query(m_primitiveBuffer.Push(Span<PrimitiveMetadata>(primitive).AsBytes()));
-        CHECK(prim_size == sizeof(PrimitiveMetadata));
-        alloc->primitiveID = prim_offset / prim_size;
-        // TODO: MSVC dies here if we'd do a Debug build.
-        // TODO: Go figure. I've not updated my Visual Studio installation.
-        mutex->unlock();
-        m_meshQueue.pop();
-        break; // TODO: Batch more!
-    }
-    size_t instanceUpd = 0;
-    {
-        // TODO: Second thoughts. This is quite a bottleneck if we have many instances to update.
-        //       Perf is _not_ good. Considering the whole instance data size to be quite small,
-        //       maybe we should just copy the whole thing by maintaining one on the CPU too?
-        ZoneScopedN("Instance Update");
-        while (true)
-        {
-            // Instance data is always of the same sizes
-            // and always pre-allocated.
-            auto value = m_instanceQueue.pop();
-            if (!value.has_value())
-                break;
-            auto& [handle, data] = value.value();
-            static_assert(sizeof(data) == sizeof(InstanceMetadata));
-            size_t offset = sizeof(data) * handle;
-            if (m_instanceBuffer.GetStagingBuffer()->FreeSize() < sizeof(data))
-            {
-                // Defer to next frame
-                LOG_RUNTIME(Scene, warn, "Instance update being deferred. Done {}. Increase staging size to avoid latency!", instanceUpd);
-                break;
-            }
-            m_instanceBuffer.Transfer(offset, Span<InstanceMetadata>(data).AsBytes());
-            m_instanceQueue.pop();
-            instanceUpd++;
-        }
-    }
-    EndUpdate();
-    m_state = State::Idle;
+    CHECK_MSG(size % alignment == 0, "Bad alignment for size={}, alignment={}", size, alignment);
+}
+StagedData::~StagedData()
+{
+    alloc->Deallocate(data);
 }
 
-SceneFuture Scene::LoadMeshAsync(Path path)
+Scene::Scene(RHIDevice* device, size_t numSwaps, SceneBudgets const& budgets, Allocator* alloc) :
+    m_allocator(alloc),
+    m_upload(device, alloc, budgets.TotalBudget()),
+    m_instance(device, budgets.InstanceBudget, budgets.InstanceAlignment, numSwaps, alloc),
+    m_meshes(alloc)
 {
-    auto mutex = ConstructShared<Mutex>(m_allocator);
-    mutex->lock();
-    auto& data = m_meshes.emplace_back();
-    m_meshQueue.push({mutex, path, &data});
-    return SceneFuture(this, mutex, &data);
+    m_prmitive =
+        device->CreateBuffer({.usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
+                              .size = budgets.PrimitiveBudget});
+    m_vertex = device->CreateBuffer(
+        {.usage = RHIBufferUsageBits::VertexBuffer | RHIBufferUsageBits::TransferDestination, .size = budgets.VertexBudget});
+    m_index = device->CreateBuffer(
+        {.usage = RHIBufferUsageBits::IndexBuffer | RHIBufferUsageBits::TransferDestination, .size = budgets.IndexBudget});
 }
-void Scene::UpdateInstanceAsync(SceneHandle id, InstanceMetadata data)
+void Scene::OnBeforeFrame(const uint32_t rendererSync)
 {
-    m_instanceQueue.push({id, data});
+    ZoneScopedN("Scene Update");
+    {
+        // Flush all pending uploads
+        // This always blocks until completion.
+        ZoneScopedN("Wait Uploads");
+        m_upload.SubmitAndWait();
+    }
+    {
+        // Schedule the entirety of the instance buffer to be re-uploaded.
+        // The backing StagedBuffer is N-buffered (renderSync), so we can do this without stalling the GPU.
+        ZoneScopedN("Instance Data");
+        std::scoped_lock lock(m_instance.mutex);
+        m_instance.buffer.BeginTransfer(rendererSync);
+        m_instance.buffer.Transfer(0, m_instance.View<char>(), m_instance.alignment);
+        m_instance.buffer.EndTransfer();
+    }
 }
-void SceneFuture::wait() const {
-    std::scoped_lock lock(*mutex);
-}
-void Scene::BeginUpdate(uint32_t rendererSync)
+void Scene::UploadAllocation(RHIBuffer* buffer, Span<const char> data, BufferAllocation allocation)
 {
-    m_instanceBuffer.BeginTransfer(rendererSync);
-    m_primitiveBuffer.BeginTransfer(rendererSync);
-    m_vertexBuffer.BeginTransfer(rendererSync);
-    m_indexBuffer.BeginTransfer(rendererSync);
+    auto& arena = buffer->GetArena();
+    auto size = arena.GetSize(allocation);
+    auto offset = arena.GetOffset(allocation);
+    m_upload.Upload(buffer, data, offset, size);
 }
-void Scene::EndUpdate()
+SceneHandle Scene::CreateMesh(Span<const char> vertices, Span<const char> indices)
 {
-    m_instanceBuffer.EndTransfer();
-    m_primitiveBuffer.EndTransfer();
-    m_vertexBuffer.EndTransfer();
-    m_indexBuffer.EndTransfer();
+    auto [handle, data] = m_meshes.pop();
+    auto primitive = m_prmitive->GetArena().Allocate(sizeof(PrimitiveMetadata), alignof(PrimitiveMetadata));
+    data.primitiveID = m_prmitive->GetArena().GetOffset(primitive) / sizeof(PrimitiveMetadata);
+    data.vertex = m_vertex->GetArena().Allocate(vertices.size_bytes(), 4);
+    data.index = m_index->GetArena().Allocate(indices.size_bytes(), 4);
+    PrimitiveMetadata allocation{
+        .vertexOffset = static_cast<int>(m_vertex->GetArena().GetOffset(data.vertex)),
+        .indexCount = static_cast<int>(indices.size()),
+        .indexOffset = static_cast<int>(m_index->GetArena().GetOffset(data.index)),
+    };
+    UploadAllocation(m_prmitive.Get(), Span<PrimitiveMetadata>(allocation).AsBytes(), primitive);
+    UploadAllocation(m_vertex.Get(), vertices, data.vertex);
+    UploadAllocation(m_index.Get(), indices, data.index);
+    return handle;
 }
-void Scene::CreateUpdatePasses(Renderer* renderer, ResourceHandle& outInstance, ResourceHandle& outPrimitive,
-                               ResourceHandle& outVertex, ResourceHandle& outIndex, RHIDeviceQueueType queue)
+SceneMesh Scene::GetMesh(SceneHandle id)
 {
-    createStagedBufferUpdatePass(renderer, &m_instanceBuffer, "Instance", outInstance, queue);
-    createStagedBufferUpdatePass(renderer, &m_primitiveBuffer, "Primitive", outPrimitive, queue);
-    createStagedBufferUpdatePass(renderer, &m_vertexBuffer, "Vertex", outVertex, queue);
-    createStagedBufferUpdatePass(renderer, &m_indexBuffer, "Index", outIndex, queue);
+    return m_meshes.at(id);
+}
+void Scene::DestroyMesh(SceneHandle mesh)
+{
+    auto data = m_meshes.at(mesh);
+    m_vertex->GetArena().Free(data.vertex);
+    m_index->GetArena().Free(data.index);
+    m_meshes.free(mesh);
+}
+void Scene::CreateInstanceUpdatePass(Renderer* renderer, ResourceHandle& outInstanceBuffer, RHIDeviceQueueType queue)
+{
+    createStagedBufferUpdatePass(renderer, &m_instance.buffer, "Instance Buffer", outInstanceBuffer, queue);
 }

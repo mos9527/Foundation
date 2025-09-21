@@ -26,6 +26,7 @@ function(slangc_compile TARGET)
         set(OUTPUT_FILENAME "${ARG_OUTPUT_DIR}/${ARG_OUTPUT_NAME}.spv")
         # https://www.khronos.org/assets/uploads/developers/presentations/Vulkan_BOF_Using_Slang_with_Vulkan_SIGG24.pdf
         # https://shader-slang.org/slang/user-guide/spirv-target-specific.html
+        # https://shader-slang.org/docs/coming-from-hlsl/
         set(SLANGC_ARGS
             "${ARG_SOURCE}"
             -o "${OUTPUT_FILENAME}"
@@ -34,6 +35,7 @@ function(slangc_compile TARGET)
             -emit-spirv-directly
             -matrix-layout-column-major
             -fvk-use-entrypoint-name
+            -fvk-use-scalar-layout # Dense packing
         )
         foreach(DEFINE ${ARG_DEFINES})
             list(APPEND SLANGC_ARGS -D${DEFINE})

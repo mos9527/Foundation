@@ -4,6 +4,7 @@
 #include <Bits/Format.hpp>
 #include <Math/Math.hpp>
 #include <Rendering/StagingBuffer.hpp>
+#include <Rendering/UploadContext.hpp>
 namespace ModelViewer
 {
     using namespace Foundation;
@@ -16,82 +17,95 @@ namespace ModelViewer
     using SceneHandle = uint32_t;
     struct SceneBudgets
     {
-        size_t InstanceBudget = 128_MB;
-        size_t InstanceStaging = 8_MB;
-        size_t PrimitiveBudget = 16_MB;
+        size_t InstanceBudget = 4_MB;
+        size_t InstanceStaging = 4_MB;
+        size_t InstanceAlignment = 16_B;
+        size_t PrimitiveBudget = 4_MB;
         size_t PrimitiveStaging = 1_MB;
         size_t VertexBudget = 128_MB;
         size_t VertexStaging = 16_MB;
         size_t IndexBudget = 128_MB;
         size_t IndexStaging = 16_MB;
+        constexpr size_t TotalBudget() const
+        {
+            return InstanceBudget + PrimitiveBudget + VertexBudget + IndexBudget;
+        }
     };
-    struct SceneMeshLoadResult
+    struct SceneMesh
     {
         uint32_t primitiveID;
         BufferAllocation vertex;
         BufferAllocation index;
     };
-    class Scene;
-    class SceneFuture : public Async::Future<SceneHandle>
+    struct StagedData
     {
-        Scene* scene;
-        SharedPtr<Async::Mutex> mutex;
-        void* data;
-    public:
-        SceneFuture(Scene* scene, SharedPtr<Async::Mutex>& mutex, void* data) : scene(scene), mutex(mutex), data(data) {}
-        /**
-         * @brief Wait for the future to complete.
-         * @note This _must_ be called on a different thread than the Scene one, otherwise a deadlock is guaranteed.
-         */
-        void wait() const;
-        template<typename T> const T* get() const { wait(); return static_cast<const T*>(data); }
+        Allocator* const alloc;
+        char* const data;
+        const size_t size;
+        const size_t alignment;
+
+        StagedBuffer buffer;
+        Async::Mutex mutex;
+        StagedData(RHIDevice* device, size_t size, size_t alignment, size_t numSwaps, Allocator* alloc);
+        ~StagedData();
+
+        template<typename T> Span<T> View()
+        {
+            CHECK_MSG(alignment % alignof(T) == 0, "Bad alignment for type. Type must be aligned on multiples of {}", alignment);
+            return { reinterpret_cast<T*>(data), size / sizeof(T) };
+        }
     };
     /**
      * @brief Scene data management for asynchronous data updates/uploads
      */
     class Scene
     {
-    public:
-        enum class State
-        {
-            Idle,
-            Update,
-        };
-    private:
         Allocator* m_allocator;
-        StagedBuffer m_instanceBuffer;
-        StagedBuffer m_primitiveBuffer;
-        StagedBuffer m_vertexBuffer, m_indexBuffer;
-        /**
-         * @brief Resets all staging buffers and aborts all pending data updates.
-         *
-         * @note This MUST be called after the @ref Renderer's @ref BeginExecute,
-         * and before @ref ExecuteFrame as the updates are tied to the frame fences.
-         */
-        void BeginUpdate(uint32_t rendererSync);
-        void EndUpdate();
-        State m_state{ State::Idle };
-        // [Instance ID, Data]
-        Atomic::SPSCQueue<Pair<SceneHandle, InstanceMetadata>> m_instanceQueue;
-        // [Signal Mutex, Path, Allocation Ptr]
-        Atomic::SPSCQueue<Tuple<SharedPtr<Async::Mutex>, Native::Path, SceneMeshLoadResult*>> m_meshQueue;
-        List<SceneMeshLoadResult> m_meshes;
+        UploadContext m_upload; // Temp upload bump arena
+        StagedData m_instance; // Instance data with per-swap staging
+        /* -- Data -- */
+        FreeList<SceneHandle, SceneMesh> m_meshes; // All meshes in the scene
+        void UploadAllocation(RHIBuffer* buffer, Span<const char> data, BufferAllocation allocation);
     public:
-        void CreateUpdatePasses(Renderer* renderer,
-            ResourceHandle& outInstance, ResourceHandle& outPrimitive,
-            ResourceHandle& outVertex, ResourceHandle& outIndex,
-            RHIDeviceQueueType queue = RHIDeviceQueueType::Graphics
-        );
-        Scene(RHIDevice* device, Allocator* alloc, size_t numSwaps, SceneBudgets const& budgets = {});
-
-        State GetState() const { return m_state; }
+        RHIDeviceScopedObjectHandle<RHIBuffer>
+            m_prmitive, m_vertex, m_index; // GPU Buffers
+        Scene(RHIDevice* device,  size_t numSwaps, SceneBudgets const& budgets, Allocator* alloc);
         void OnBeforeFrame(uint32_t rendererSync);
 
-        SceneFuture LoadMeshAsync(Native::Path path);
-        void UpdateInstanceAsync(SceneHandle id, InstanceMetadata data);
+        /* -- Meshes -- */
+        SceneHandle CreateMesh(Span<const char> vertices, Span<const char> indices);
+        SceneMesh GetMesh(SceneHandle id);
+        void DestroyMesh(SceneHandle mesh);
+
+        /**
+         * @brief Creates a pass that updates the instance buffer with correct synchronization.
+         */
+        void CreateInstanceUpdatePass(Renderer* renderer, ResourceHandle& outInstanceBuffer, RHIDeviceQueueType queue = RHIDeviceQueueType::Graphics);
+        /**
+         * @brief Maps the instance data for writing.
+         * The returned span is valid until @ref UnmapInstanceData is called.
+         *
+         * @note The backing memory is CPU-only, and is NOT mapped to the GPU memory
+         * nor the driver. RW is always possible.
+         *
+         * @note There's NO atomic guarantees on the backing data.
+         *
+         * @note The data update is not immediate, and will be automatically scheduled
+         * and performed at the beginning of the next frame.
+         *
+         * @note This locks the internal mutex, and thus is not reentrant.
+         */
+        template<typename T> Span<T> MapInstanceData()
+        {
+            m_instance.mutex.lock();
+            return m_instance.View<T>();
+        }
+        /**
+         * @brief Unmaps the instance data, allowing other threads to map it again.
+         */
+        void UnmapInstanceData()
+        {
+            m_instance.mutex.unlock();
+        }
     };
-    ENUM_NAME_CONV_BEGIN(Scene::State)
-    ENUM_NAME(Idle)
-    ENUM_NAME(Update)
-    ENUM_NAME_CONV_END()
 }

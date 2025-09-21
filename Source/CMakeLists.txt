@@ -3,14 +3,7 @@ project(Foundation)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 set(CMAKE_CXX_STANDARD 20)
-option(FOUNDATION_WITH_EXAMPLES "Build examples" ON)
-option(FOUNDATION_WITH_PROFILING "Build with profiling (Tracy) enabled" ON)
 
-if (FOUNDATION_WITH_PROFILING)
-    add_compile_definitions(TRACY_ENABLE=1)
-else ()
-    add_compile_definitions(TRACY_ENABLE=0)
-endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/Source")
 

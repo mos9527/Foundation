@@ -69,9 +69,15 @@ void RenderApplication::Execute()
     ZoneScoped;
     try {
         m_renderer->BeginExecute();
-        OnBeforeFrame();
+        {
+            ZoneScopedN("OnBeforeFrame");
+            OnBeforeFrame();
+        }
         m_renderer->ExecuteFrame();
-        OnAfterFrame();
+        {
+            ZoneScopedN("OnAfterFrame");
+            OnAfterFrame();
+        }
         m_renderer->EndExecute();
         m_renderFrame.notify_all();
     }

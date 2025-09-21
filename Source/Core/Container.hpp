@@ -136,27 +136,27 @@ namespace Foundation::Core {
          * @brief Relaxed ctor for C-style arrays
          */
         template<typename U, size_t Size>
-        Span(U(&array)[Size]) : Span(array, Size) {} // NOLINT(*-explicit-constructor)
+        Span(U(&array)[Size]) : Span(array, Size) {}
 
         /**
          * @brief Relaxed ctor for contiguous STL containers
          */
         template<typename U>
         requires requires (U a) { a.data(); a.size(); }
-        Span(U& array) : Span(array.data(), array.size()) // NOLINT(*-explicit-constructor)
+        Span(U& array) : Span(array.data(), array.size())
         {}
 
         /**
          * @brief Shorthand for single l-value item
          */
         template<typename U> requires std::is_convertible_v<U*, T*>
-        Span(U& item) : Span(&item, 1) {} // NOLINT(*-explicit-constructor)
+        Span(U& item) : Span(&item, 1) {}
 
         /**
-         * @brief Provides a byte-level view of the underlying data.
+         * @brief Provides casting to a byte-level view of the underlying data.
          */
         [[nodiscard]] Span<const char> AsBytes() const {
-            return Span<const char>{ reinterpret_cast<const char*>(this->data()), this->size_bytes() };
+            return Span<const char>{ reinterpret_cast<const char*>(this->data()), this->size_bytes()  };
         }
     };
 }

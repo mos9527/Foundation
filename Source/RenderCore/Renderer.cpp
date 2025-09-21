@@ -1064,13 +1064,12 @@ void Renderer::BeginExecute()
     if (m_setup->executionAnyCompute)
         wait_fences.push_back(m_swaps[m_currentSync].compute_fence);
     {
-        ZoneScopedN("Wait For Fences");
+        ZoneScopedN("Wait for GPU");
         m_device->WaitForFences(wait_fences, true, -1);
         m_device->ResetFences(wait_fences);
     }
     if (m_desc.present)
     {
-        ZoneScopedN("Get Next Image");
         m_currentSwap = m_swapchain->GetNextImage(
             -1, m_swaps[m_currentSync].present, {}
         );

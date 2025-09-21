@@ -36,12 +36,13 @@ struct PrimitiveMetadata {
 
 // In GetInstanceDataBuffer
 struct InstanceMetadata {
-    uint32_t enabled;
+    /* Actual primitive ID + 1 (0 reserved for disabled) */
     uint32_t primitiveID;
-    uint32_t _pad1;
-    uint32_t _pad2;
     /* Other per-instance data */
-    float4x4 transform;
+    // Translation
+    float3 t;
+    // Rotation quaternion xyzw
+    float4 q;
 };
 struct DrawPushConstant
 {

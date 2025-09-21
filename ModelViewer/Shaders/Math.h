@@ -20,3 +20,11 @@ void UnpackTBN(uint32_t np /* 15-15-2 octa xy + bitangent sign */, uint16_t tp /
     N = UnpackUnitOctahedral(float2(DequantizeSnorm(inor.x, 15), DequantizeSnorm(inor.y, 15)));
     T_BSign = float4(UnpackUnitOctahedral(float2(DequantizeSnorm(itan.x, 8), DequantizeSnorm(itan.y, 8))), (inor.z < 0 ? -1.0f : 1.0f));    
 }
+float3 Translate(float3 v, float3 t)
+{
+    return v + t;
+}
+float3 Rotate(float3 v, float4 q)
+{
+    return v + 2.0f * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+}

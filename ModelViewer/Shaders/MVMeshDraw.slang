@@ -21,22 +21,32 @@ struct VSOutput
 StructuredBuffer<InstanceMetadata> scInstance;
 StructuredBuffer<MeshDrawIndirectCmd> commands;
 
+float4x4 translation(float3 t){
+    return float4x4(
+        1,0,0,t.x,
+        0,1,0,t.y,
+        0,0,1,t.z,
+        0,0,0,1
+    );
+}
 #include "Math.h"
 [shader("vertex")]
 VSOutput vertMain(VSInput input, uint32_t drawID : SV_DrawIndex) {
     VSOutput output;
 
     uint32_t instanceID = commands[drawID].instanceID;
-    float4x4 model = scInstance[instanceID].transform;
-    float4x4 mvp = mul(draw.viewProj, model);
-
     float3 N;
     float4 T_BSign;
     UnpackTBN(input.np, input.tp, N, T_BSign);
+    float3 pos = input.pos;
+    // Model matrix
+    InstanceMetadata instance = scInstance[instanceID];
+    pos = Rotate(pos, instance.q);
+    pos = Translate(pos, instance.t);
 
-    output.pos = mul(mvp, float4(input.pos, 1.0));
-    output.normal = normalize(mul(model, float4(N, 0.0)).xyz);
-    output.tangent = float4(normalize(mul(model, T_BSign)).xyz, T_BSign.w);
+    output.pos = mul(draw.viewProj, float4(pos, 1.0));
+    output.normal = normalize(Rotate(N, instance.q));
+    output.tangent = float4(Rotate(T_BSign.xyz, instance.q), T_BSign.w);
     output.uv = input.texCoord;
 
     return output;

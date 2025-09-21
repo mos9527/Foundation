@@ -1,7 +1,7 @@
 #include "App.hpp"
 #include "Mesh.hpp"
 using namespace ModelViewer;
-const size_t kMaxIndirectCommands = 32767;
+const size_t kMaxIndirectCommands = 1e6; // 1 million
 void App::OnRendererSetup()
 {
     ResourceHandle indirectCommands = createResource(m_renderer.get(), "IndirectCommands",
@@ -23,12 +23,15 @@ void App::OnRendererSetup()
             .format = RHIResourceFormat::D32_SIGNED_FLOAT,
         }
     );
-    ResourceHandle instanceBuffer, primitiveBuffer, vertexBuffer, indexBuffer;
-    m_scene->CreateUpdatePasses(
+    ResourceHandle instanceBuffer;
+    m_scene->CreateInstanceUpdatePass(
         m_renderer.get(),
-        instanceBuffer, primitiveBuffer, vertexBuffer, indexBuffer,
+        instanceBuffer,
         RHIDeviceQueueType::Graphics
     );
+    ResourceHandle primitiveBuffer = m_renderer->CreateResource("Primitive", m_scene->m_prmitive.Get());
+    ResourceHandle vertexBuffer = m_renderer->CreateResource("Vertex", m_scene->m_vertex.Get());
+    ResourceHandle indexBuffer = m_renderer->CreateResource("Index", m_scene->m_index.Get());
     // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
     // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect
     createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Graphics,

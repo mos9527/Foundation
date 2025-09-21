@@ -39,7 +39,10 @@ namespace Foundation::Rendering
     StagingBuffer::StagingBuffer(RHIDevice* device, const size_t size, Allocator* allocator) :
         m_allocator(allocator), m_device(device),
         m_buffer(device->CreateBuffer(
-            {.resource = {.heap = RHIDeviceHeapType::Upload, .host_access = RHIResourceHostAccess::WriteOnly},
+            {.resource = {
+                .heap = RHIDeviceHeapType::Upload,
+                .host_access = RHIResourceHostAccess::WriteOnly
+            },
              .usage = RHIBufferUsageBits::TransferSource,
              .size = size})),
         m_size(size)
@@ -49,7 +52,7 @@ namespace Foundation::Rendering
     size_t StagingBuffer::Write(const Span<const char> data, const size_t alignment)
     {
         size_t alignedOffset = (m_offset + alignment - 1) & ~(alignment - 1);
-        CHECK_MSG(alignedOffset + data.size() < m_size, "Staging buffer overflow");
+        CHECK_MSG(alignedOffset + data.size() <= m_size, "Staging buffer overflow");
         std::memcpy(static_cast<char*>(m_mapped) + alignedOffset, data.data(), data.size());
         m_offset = alignedOffset + data.size();
         return alignedOffset;
