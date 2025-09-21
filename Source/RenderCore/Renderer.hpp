@@ -383,6 +383,8 @@ namespace Foundation::RenderCore {
             }
         };
         Vector<FrameSyncObjects> m_swaps;
+        // Semaphore for async compute
+        RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> m_asyncSemaphore{};
         RHIApplicationObjectHandle<RHIDevice> m_device{};
         RHIDeviceObjectHandle<RHISwapchain> m_swapchain{};
         RHIDeviceQueue* m_graphicsQueue{}, *m_computeQueue{};
@@ -403,10 +405,8 @@ namespace Foundation::RenderCore {
             // Execution grouped by queue type
             struct ExecutionGroups
             {
-                const size_t group_index{}; // Index in executionGroups
+                const int group_index{}; // Index in executionGroups
                 const RHIDeviceQueueType queue{};
-
-                RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> semaphore;
                 Vector<PassHandle> passes;
                 // Resources used in this group
                 Vector<ResourceHandle> resources;
@@ -414,7 +414,7 @@ namespace Foundation::RenderCore {
                 bool is_last_compute = false;
                 RHIShaderStage all_stages{}; // All stages used in this group
                 
-                ExecutionGroups(size_t group_index, RHIDeviceQueueType queue, Allocator* allocator) :
+                ExecutionGroups(int group_index, RHIDeviceQueueType queue, Allocator* allocator) :
                 group_index(group_index), queue(queue), passes(allocator), resources(allocator) {}
             };
             Vector<ExecutionGroups> executionGroups;

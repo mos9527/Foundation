@@ -18,9 +18,6 @@ const char* kShaderDescriptorBindingErrorHelp = "This can be caused by one of th
 "   Try separating the entrypoints into different shader files, or sort the binding declarations"
 "so that the used bindings are continuous from 0.";
 
-// Per-frame Semaphore counter
-#define SEM_COUNTER(size, ord) ((m_frame + 1) * size + ord)
-#define SEM_COUNTER_PREV(size, ord) (m_frame * size + ord)
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator)
     : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_swaps(m_allocator),
       m_device(device), m_swapchain(swapchain), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena), m_waitIdle(device.Get()) {
@@ -508,10 +505,6 @@ void Renderer::CullPasses(PassHandle epilogue) const
         // Sort and unique
         Ranges::sort(group.resources);
         group.resources.erase(Ranges::unique(group.resources).begin(), group.resources.end());
-        group.semaphore = m_device->CreateSemaphore(true /* timeline */);
-        group.semaphore->DebugSetObjectName(
-            fmt::format("Timeline Semaphore Group {} Queue {}", group.group_index, group.queue
-        ).c_str());
         if (group.queue == RHIDeviceQueueType::Graphics)
             m_setup->executionAnyGraphics = true;
         else if (group.queue == RHIDeviceQueueType::Compute)
@@ -969,6 +962,8 @@ void Renderer::SetFrameSyncObjects() {
         m_swaps[i].compute_fence = m_device->CreateFence(true);
         m_swaps[i].compute_fence->DebugSetObjectName(fmt::format("Compute Fence of Swap {}", i).c_str());
     }
+    m_asyncSemaphore = m_device->CreateSemaphore(true);
+    m_asyncSemaphore->DebugSetObjectName(fmt::format("Async Compute Semaphore").c_str());
 }
 void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain) {
     CHECK_MSG(m_desc.present, "Cannot set swapchain when the renderer is not declared with Present support");
@@ -1368,6 +1363,7 @@ void Renderer::ExecuteFrame()
     auto& passes = m_setup->trackedPasses;
     // Async compute supporting command lists
     int cmd_graphics = 0, cmd_compute = 0;
+    RHIDeviceSemaphore* async_semaphore = m_asyncSemaphore.Get();
     RHIDeviceQueue* queue = nullptr;
     RHICommandList* cmd = nullptr;
     auto SetNextGraphicsQueue = [&] {
@@ -1385,27 +1381,7 @@ void Renderer::ExecuteFrame()
     // Execute by groups
     for (auto& group : m_setup->executionGroups)
     {
-        Vector<Pair<size_t, bool>> last_transitions(m_executeAlloc.Ptr());
-        Vector<RHIDeviceQueue::TimelinePair> timeline_waits(m_executeAlloc.Ptr()), timeline_signals(m_executeAlloc.Ptr());
-        Vector<RHIPipelineStage> waits_stages(m_executeAlloc.Ptr());
         const bool is_last = group.group_index == m_setup->executionGroups.size() - 1;
-        ExecuteCheckResourceStates(group.passes, group.queue, &last_transitions);
-        /* -- Wait Semaphores -- */
-        if (!last_transitions.empty())
-        {
-            for (auto const& [group_handle, previous_frame] : last_transitions)
-            {
-                if (group_handle == group.group_index)
-                    continue;
-                auto& cross_group = m_setup->executionGroups[group_handle];
-                if (!previous_frame)
-                    timeline_waits.emplace_back(cross_group.semaphore.Get(), SEM_COUNTER(m_setup->executionGroups.size(), cross_group.group_index)),
-                    waits_stages.emplace_back(group.all_stages);
-                else /* On a previous frame */
-                    timeline_waits.emplace_back(cross_group.semaphore.Get(), SEM_COUNTER_PREV(m_setup->executionGroups.size(), cross_group.group_index)),
-                    waits_stages.emplace_back(group.all_stages);
-            }
-        }
         /* -- Pass Recording -- */
         if (group.queue == RHIDeviceQueueType::Graphics)
             SetNextGraphicsQueue();
@@ -1455,7 +1431,9 @@ void Renderer::ExecuteFrame()
         {
             ZoneScopedN("Group Submit");
             // We'd only signal the current group per submit
-            timeline_signals.emplace_back(group.semaphore.Get(), SEM_COUNTER(m_setup->executionGroups.size(), group.group_index));
+            auto Counter = [&](size_t ord) { return m_frame * m_setup->executionGroups.size() + ord + 1; };
+            RHIDeviceQueue::TimelinePair timeline_signal(async_semaphore, Counter(group.group_index));
+            RHIDeviceQueue::TimelinePair timeline_wait(async_semaphore, Counter(group.group_index - 1));
             RHIDeviceFence* fence_ptr = nullptr;
             if (group.is_last_compute)
                 fence_ptr = m_swaps[m_currentSync].compute_fence.Get();
@@ -1468,9 +1446,9 @@ void Renderer::ExecuteFrame()
                     ZoneScopedN("Submit (No Present)");
                     cmd->End();
                     queue->Submit({
-                        .timeline_waits = timeline_waits,
-                        .timeline_signals = timeline_signals,
-                        .waits_stages = waits_stages,
+                        .timeline_waits = {{{ timeline_wait }}},
+                        .timeline_signals = {{{ timeline_signal }}},
+                        .waits_stages = {{{ group.all_stages }}},
                         .cmd_lists = { cmd },
                         .fence = fence_ptr
                     });
@@ -1481,16 +1459,12 @@ void Renderer::ExecuteFrame()
                         cmd->End();
                         // Submit compute first
                         queue->Submit({
-                            .timeline_waits = timeline_waits,
-                            .timeline_signals = timeline_signals,
-                            .waits_stages = waits_stages,
+                            .timeline_waits = {{{ timeline_wait }}},
+                            .timeline_signals = {{{ timeline_signal }}},
+                            .waits_stages = {{{ group.all_stages }}},
                             .cmd_lists = { cmd },
                             .fence = fence_ptr // Compute
                         });
-                        timeline_waits.clear(), timeline_waits.emplace_back(timeline_signals.back());
-                        timeline_signals.clear(), waits_stages.clear();
-                        // And wait on it in graphics
-                        waits_stages.push_back(RHIPipelineStageBits::RenderTargetOutput);
                         SetNextGraphicsQueue();
                     }
                     // Transition the Backbuffer
@@ -1507,14 +1481,14 @@ void Renderer::ExecuteFrame()
                     cmd->EndTransition();
                     cmd->DebugEnd();
                     cmd->End();
-                    waits_stages.push_back(RHIPipelineStageBits::RenderTargetOutput);
                     {
                         ZoneScopedN("Submit & Present");
+                        RHIPipelineStage stages{group.all_stages | RHIPipelineStageBits::RenderTargetOutput};
                         queue->Submit({
-                            .timeline_waits = timeline_waits,
-                            .timeline_signals = timeline_signals,
+                            .timeline_waits = {{{ timeline_wait }}},
+                            .timeline_signals = {{{ timeline_signal }}},
                             .waits = {{ m_swaps[m_currentSync].present.Get() }},
-                            .waits_stages = waits_stages,
+                            .waits_stages = {{ stages, stages }},
                             .signals = {{ m_swaps[m_currentSwap].render.Get() }},
                             .cmd_lists = {{ cmd }},
                             .fence = m_swaps[m_currentSync].graphics_fence.Get()
@@ -1531,9 +1505,9 @@ void Renderer::ExecuteFrame()
                 ZoneScopedN("Submit");
                 cmd->End();
                 queue->Submit({
-                    .timeline_waits = timeline_waits,
-                    .timeline_signals = timeline_signals,
-                    .waits_stages = waits_stages,
+                    .timeline_waits = {{{ timeline_wait }}},
+                    .timeline_signals = {{{ timeline_signal }}},
+                    .waits_stages = {{{ group.all_stages }}},
                     .cmd_lists = { cmd },
                     .fence = fence_ptr
                 });
