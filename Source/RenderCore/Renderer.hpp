@@ -390,7 +390,7 @@ namespace Foundation::RenderCore {
         };
         Vector<FrameSyncObjects> m_swaps;
         // Semaphore for async compute
-        RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> m_asyncSemaphore{};
+        RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> m_graphicsTimeline{}, m_computeTimeline{};
         RHIApplicationObjectHandle<RHIDevice> m_device{};
         RHIDeviceObjectHandle<RHISwapchain> m_swapchain{};
         RHIDeviceQueue* m_graphicsQueue{}, *m_computeQueue{};
@@ -412,13 +412,15 @@ namespace Foundation::RenderCore {
             struct ExecutionGroups
             {
                 const int group_index{}; // Index in executionGroups
+                int graphics_group_index{ -1 }; // Index of all unique graphics groups before this one
+                int compute_group_index{ -1 }; // Index of all unqiue compute groups before this one
                 const RHIDeviceQueueType queue{};
                 Vector<PassHandle> passes;
                 // Resources used in this group
                 Vector<ResourceHandle> resources;
                 bool is_last_graphics = false;
                 bool is_last_compute = false;
-                RHIShaderStage all_stages{}; // All stages used in this group
+                RHIPipelineStage all_stages{}; // All stages used in this group
                 
                 ExecutionGroups(int group_index, RHIDeviceQueueType queue, Allocator* allocator) :
                 group_index(group_index), queue(queue), passes(allocator), resources(allocator) {}
@@ -466,15 +468,6 @@ namespace Foundation::RenderCore {
                 throw std::runtime_error("Unhandled queue type");
             }
         };
-        /**
-         * @param outGroups Groups need to sync with, [group index, from previous frame]
-         * @note Throws if currentQueue can't be used to transition some resources
-         */
-        void ExecuteCheckResourceStates(
-            Span<PassHandle> passes,
-            RHIDeviceQueueType currentQueue,
-            Vector<Pair<size_t,bool>>* outGroups = nullptr
-        );
         void ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, TrackedResource::SubresourceState& sta,
                                        RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout,
                                        RHICommandList* cmd);
