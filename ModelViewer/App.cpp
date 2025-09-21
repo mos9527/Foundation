@@ -28,7 +28,7 @@ namespace ModelViewer
     void App::OnApplicationTick()
     {
         WaitForFrame();
-        size_t total = 100'00;
+        size_t total = 100;
         auto data = m_scene->MapInstanceData<InstanceMetadata>();
         CHECK_MSG(data.size() >= total, "Not enough space (max={}, current={})", data.size(),total);
         auto mesh_id = m_scene->GetMesh(mesh).primitiveID;
@@ -51,7 +51,7 @@ namespace ModelViewer
                 .t = float3{
                     (instance / sq),
                     (instance % sq),
-                    sin(time + instance  * acos(-1) / total) * sq / 8
+                    0 // sin(time + instance  * acos(-1) / total) * sq / 8
                 },
                 .q = float4(q.x, q.y, q.z, q.w)
             };

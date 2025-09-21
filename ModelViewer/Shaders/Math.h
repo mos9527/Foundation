@@ -4,11 +4,13 @@ float2 PackUnitOctahedral(float3 v) {
     return v.xy;
 }
 
-float3 UnpackUnitOctahedral(float2 e) {
-    float3 v = float3(e.xy, 1.0f - abs(e.x) - abs(e.y));
-    v.xy += float2(max(-v.z, 0.0f)) * (-1.0f * sign(float2(v.xy)));
-    return normalize(v);
+float3 UnpackUnitOctahedral(float2 v)
+{
+    float3 nor = float3(v.xy, 1.0f - abs(v.x) - abs(v.y));
+    nor.xy = nor.z >= 0.0f ? nor.xy :  (float2(1.0f, 1.0f) - abs(nor.yx)) * sign(nor.xy);
+    return normalize(nor);
 }
+
 
 float DequantizeSnorm(int32_t q, int32_t Nbits) {
     return q / (float)((1 << (Nbits - 1)) - 1);
@@ -24,7 +26,19 @@ float3 Translate(float3 v, float3 t)
 {
     return v + t;
 }
+float4 qmul(float4 q, float4 r)
+{
+    float3 qv = q.xyz, rv = r.xyz;
+    return float4(q.w * rv + r.w * qv + cross(qv, rv), q.w * r.w - dot(qv, rv));
+}
+float3 RotateSlow(float3 v, float4 q)
+{
+    float4 p = float4(v, 0.0f);
+    float4 qConj = float4(-q.xyz, q.w);
+    float4 rotatedP = qmul(qmul(q, p), qConj);
+    return rotatedP.xyz;
+}
 float3 Rotate(float3 v, float4 q)
 {
-    return v + 2.0f * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+    return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
 }

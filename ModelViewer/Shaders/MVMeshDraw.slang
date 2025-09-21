@@ -45,7 +45,7 @@ VSOutput vertMain(VSInput input, uint32_t drawID : SV_DrawIndex) {
     pos = Translate(pos, instance.t);
 
     output.pos = mul(draw.viewProj, float4(pos, 1.0));
-    output.normal = normalize(Rotate(N, instance.q));
+    output.normal = Rotate(N, instance.q);
     output.tangent = float4(Rotate(T_BSign.xyz, instance.q), T_BSign.w);
     output.uv = input.texCoord;
 
@@ -54,5 +54,5 @@ VSOutput vertMain(VSInput input, uint32_t drawID : SV_DrawIndex) {
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
-    return float4(float4(1) * dot(vertIn.normal, float3(0, 0, 1)));
+    return float4(float3(1) * clamp(dot(vertIn.normal, float3(0, 0, 1)), 0, 1), 1.0);
 }

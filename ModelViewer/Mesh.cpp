@@ -50,11 +50,12 @@ Mesh LoadMeshFromObjFile(Path path, Core::Allocator* allocator)
             v.pz = quantizeFP16(mesh->positions[index.p * 3 + 2]);
             // No tangent
             v.tp = 0;
-            vec2 nor = packUnitOctahedral({
+            vec3 nor_orignal = {
                 mesh->normals[index.n * 3 + 0],
                 mesh->normals[index.n * 3 + 1],
                 mesh->normals[index.n * 3 + 2]
-            });
+            };
+            vec2 nor = packUnitOctahedral(nor_orignal);
             v.np = {
                 .nx = quantizeSnormShifted(nor.x, 15),
                 .ny = quantizeSnormShifted(nor.y, 15),

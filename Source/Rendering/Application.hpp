@@ -193,21 +193,12 @@ namespace Foundation::Rendering {
         template<typename Backend, typename... Args>
         void Initialize(ApplicationInitDesc const& desc = {}, Args&&... args) {
             // XXX: Backends are expected to take Allocator* as the first argument
-            try
-            {
-                m_desc = desc;
-                m_rhi.reset();
-                m_rhi = ConstructUniqueBase<RHIApplication, Backend>(m_alloc.Ptr(), m_alloc.Ptr(),
-                                                                     std::forward<Args>(args)...);
-                InitializeInternal();
-                InitializeRenderer();
-            }
-            catch (std::exception const& e)
-            {
-                LOG_RUNTIME(RenderApplication, critical, "Init fail: {}", e.what());
-                CreateMessageBox("Initialization Failure!", e.what(), Native::MessageBoxType::Ok, Native::MessageBoxIcon::Error);
-                throw e;
-            }
+            m_desc = desc;
+            m_rhi.reset();
+            m_rhi = ConstructUniqueBase<RHIApplication, Backend>(m_alloc.Ptr(), m_alloc.Ptr(),
+                                                                 std::forward<Args>(args)...);
+            InitializeInternal();
+            InitializeRenderer();
         }
         /**
          * @brief Retrieve the framebuffer size of the current window.
