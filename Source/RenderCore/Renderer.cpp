@@ -85,18 +85,18 @@ TrackedResource::TrackedResource(const ResourceHandle handle, StringView name, c
     );
 }
 
-TrackedPass::TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue, UniquePtr<RenderPass> renderPass)
-        : name(name), handle(handle), queue(queue),
-        textureUsages(alloc), bufferUsages(alloc), resources(alloc), texviews(alloc),
-        shaders(alloc),
-        tex_bindings(alloc), buf_bindings(alloc),
-        samplers(alloc),
+TrackedPass::TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue, UniquePtr<RenderPass> renderPass, size_t priority)
+        : name(name), handle(handle), priority(priority),
+        queue(queue), textureUsages(alloc), bufferUsages(alloc), resources(alloc),
+        texviews(alloc),
+        shaders(alloc), tex_bindings(alloc),
+        buf_bindings(alloc),
+        external_sets(alloc), samplers(alloc),
         push_constants(alloc), rtvs(alloc),
-        vertex_input_bindings(alloc), vertex_input_attributes(alloc),
-        pass(std::move(renderPass)),
+        vertex_input_bindings(alloc),
+        vertex_input_attributes(alloc), pass(std::move(renderPass)),
         desc_layouts(alloc), p_desc_layouts(alloc),
-        desc_sets(alloc), p_desc_sets(alloc),
-        external_sets(alloc), external_desc_sets(alloc)
+        desc_sets(alloc), p_desc_sets(alloc), external_desc_sets(alloc)
 {
 };
 void Renderer::BeginSetup() {
@@ -427,12 +427,14 @@ void Renderer::CullPasses(PassHandle epilogue) const
     Vector<PassHandle>
         topo(m_allocator),
         vis(m_setup->trackedPasses.size(), m_allocator),
-        depth(m_setup->trackedPasses.size(), m_allocator); // Depth in graph from epilogue
+        dis(m_setup->trackedPasses.size(), m_allocator); // Depth in graph from epilogue
     topo.reserve(m_setup->trackedPasses.size());
-    auto topsort = [&](PassHandle u, PassHandle pa, auto&& dfs) -> void {
+    auto dp = [&](PassHandle u, PassHandle pa, auto&& dfs) -> void {
         vis[u] = 1;
         for (const auto& v : m_setup->graph[u] | Views::keys) {
-            depth[v] = std::max(depth[u] + 1, depth[v]);
+            // Weighted by vertex priority
+            size_t w = 1 + m_setup->trackedPasses[v].priority;
+            dis[v] = std::max(dis[u] + w, dis[v]);
             if (vis[v] == 1)
                 throw std::runtime_error("Cycle detected in render graph");
             if (vis[v] == 0) dfs(v, u, dfs);
@@ -440,25 +442,30 @@ void Renderer::CullPasses(PassHandle epilogue) const
         vis[u] = 2;
         m_setup->trackedPasses[u].used = true;
         topo.push_back(u);
-        };
+    };
+    auto& exec = m_setup->execution;
     if (!m_setup->graph.empty()) {
-        topsort(epilogue, -1, topsort);
-        m_setup->execution = topo;
+        dp(epilogue, -1, dp);
+        // Sort by longest path
+        // Ordering is still valid topological order
+        Ranges::sort(topo, [&](auto const& a, auto const& b) {
+            return dis[a] > dis[b];
+        });
+        exec = topo;
     }
     else {
         // No dependency from any passes
         // Execute only the epilogue
-        m_setup->execution.push_back(epilogue);
+        exec.push_back(epilogue);
         m_setup->trackedPasses[epilogue].used = true;
     }
     m_setup->epilogue = epilogue;
     // Collect active resources
-    auto& exec = m_setup->execution;
     for (PassHandle ord = 0; ord < exec.size(); ord++) {
         auto& pass = m_setup->trackedPasses[exec[ord]];
         // Derive lifetimes for resources from execution order
         // FinalizeResources() uses this to overlap resources.
-        pass.ord = ord, pass.depth = depth[pass.handle];
+        pass.ord = ord, pass.depth = dis[pass.handle];
         auto& resources = pass.resources;
         // Sort then make unique
         Ranges::sort(resources);
@@ -479,7 +486,6 @@ void Renderer::CullPasses(PassHandle epilogue) const
         }
     }
     // Reorder passes within the same depth level to their relative insertion order (i.e. handle values)
-    // Topo order is preserved
     for (PassHandle i = 0, j = 0; i < exec.size();i = j) {
         while (j < exec.size() && m_setup->trackedPasses[exec[j]].depth == m_setup->trackedPasses[exec[i]].depth)
             j++;
@@ -1432,6 +1438,8 @@ void Renderer::ExecuteFrame()
             ZoneScopedN("Group Submit");
             // We'd only signal the current group per submit
             auto Counter = [&](size_t ord) { return m_frame * m_setup->executionGroups.size() + ord + 1; };
+            // The counter is guaranteed to be monotonically increasing, with a constant step of 1
+            // between groups. One is *really* all you need.
             RHIDeviceQueue::TimelinePair timeline_signal(async_semaphore, Counter(group.group_index));
             RHIDeviceQueue::TimelinePair timeline_wait(async_semaphore, Counter(group.group_index - 1));
             RHIDeviceFence* fence_ptr = nullptr;
@@ -1682,10 +1690,11 @@ String Renderer::DbgDumpActivePasses() const {
     for (const auto& idx : m_setup->execution) {
         auto& pass = m_setup->trackedPasses[idx];
         fmt::format_to(
-            std::back_inserter(out), "{}: {}, depth={}, ord={}, queue={}, group={}, write_backbuffer={}\n",
+            std::back_inserter(out), "{}: {}, depth={}, pri={}, ord={}, queue={}, group={}, write_backbuffer={}\n",
             pass.handle,
             pass.name,
             pass.depth,
+            pass.priority,
             pass.ord,
             pass.queue,
             pass.group_index,

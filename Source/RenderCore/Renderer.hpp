@@ -212,6 +212,7 @@ namespace Foundation::RenderCore {
     struct TrackedPass {
         String name;
         PassHandle handle; // Index to tracked passes
+        size_t priority{ 0 }; // Higher priority passes are scheduled earlier
         // The queue to run this pass on
         RHIDeviceQueueType queue;
         bool used{ false }; // Culled?
@@ -274,7 +275,8 @@ namespace Foundation::RenderCore {
         Vector<RHIVertexAttribute> vertex_input_attributes;
         /* --- */
         UniquePtr<RenderPass> pass;
-        TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue, UniquePtr<RenderPass> renderPass);
+        TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue, UniquePtr<RenderPass> renderPass,
+            size_t priority);
         /* -- states -- */
         size_t group_index{}; // executionGroup index
         // All stages used in this pass
@@ -542,9 +544,10 @@ namespace Foundation::RenderCore {
          *
          * @tparam T Type of @ref RenderPass to create.
          * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is disabled.
+         * @param priority Priority of this pass. Higher priority passes are scheduled earlier.
          */
         template<typename T, typename ...Args> requires std::is_base_of_v<RenderPass, T>
-        T* CreatePassImpl(StringView name, RHIDeviceQueueType queue, Args&&... args) {
+        T* CreatePassImpl(StringView name, RHIDeviceQueueType queue, size_t priority, Args&&... args) {
             CHECK(m_state == State::Setup);
             CHECK_MSG(queue == RHIDeviceQueueType::Graphics || queue == RHIDeviceQueueType::Compute, "Invalid queue type. Only Graphics and Compute queues are supported.");
             PassHandle handle = m_setup->trackedPasses.size();
@@ -555,7 +558,8 @@ namespace Foundation::RenderCore {
                 handle,
                 name,
                 queue,
-                ConstructUniqueBase<RenderPass, T>(m_allocator, std::forward<Args>(args)...)
+                ConstructUniqueBase<RenderPass, T>(m_allocator, std::forward<Args>(args)...),
+                priority
             );
             m_setup->epilogue = handle;
             return static_cast<T*>(m_setup->trackedPasses.back().pass.get());
@@ -570,6 +574,7 @@ namespace Foundation::RenderCore {
          * @ref createPass() should be generally preferred over this.
          *
          * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is disabled.
+         * @param priority Priority of this pass. Higher priority passes are scheduled earlier.
          * @param setup Lambda of type `void(PassHandle self, Renderer*)` called at Setup time.
          * @param record Lambda of type `void(PassHandel self, Renderer*, RHICommandList*)` called at Record time.
          * @param skip (Optional) Lambda of type `bool(PassHandle self, Renderer*)` called at Record time
@@ -579,12 +584,13 @@ namespace Foundation::RenderCore {
         LambdaPass<FSetup, FRecord, FSkip>* CreatePass(
             StringView name,
             RHIDeviceQueueType queue,
+            size_t priority,
             FSetup&& setup,
             FRecord&& record,
             FSkip&& skip = {}
             ) {
             return CreatePassImpl<LambdaPass<FSetup, FRecord, FSkip>>(
-                name, queue,
+                name, queue, priority,
                 std::forward<FSetup>(setup),
                 std::forward<FRecord>(record),
                 std::forward<FSkip>(skip)
@@ -1124,21 +1130,63 @@ namespace Foundation::RenderCore {
         return r->CreateSampler(desc);
     }
     /**
-     * @brief Convenient functional wrapper to create a pass from a RenderPass* implementation.
+     * @brief Convenient functional wrapper to create a pass from a RenderPass* implementation with custom priority.
      *
      * This is equivalent to calling @ref Renderer::CreatePassImpl
+     *
+     * @tparam T Type of @ref RenderPass to create.
+     * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is disabled.
+     * @param priority Priority of this pass. Higher priority passes are scheduled earlier.
+     */
+    template<typename T, typename ...Args> requires std::is_base_of_v<RenderPass, T>
+    T* createPassImplPriority(Renderer* r, StringView name, RHIDeviceQueueType queue, size_t priority, Args&&... args) {
+        return r->CreatePassImpl<T>(name, queue, priority, std::forward<Args>(args)...);
+    }
+    /**
+     * @brief Convenient functional wrapper to create a pass from a RenderPass* implementation.
+     *
+     * This is equivalent to calling @ref createPassImplPriority with priority 0.
      *
      * @tparam T Type of @ref RenderPass to create.
      * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is disabled.
      */
     template<typename T, typename ...Args> requires std::is_base_of_v<RenderPass, T>
     T* createPassImpl(Renderer* r, StringView name, RHIDeviceQueueType queue, Args&&... args) {
-        return r->CreatePassImpl<T>(name, queue, std::forward<Args>(args)...);
+        return createPassImpl<T>(r, name, queue, 0, std::forward<Args>(args)...);
+    }
+    /**
+     * @brief Convenient functional wrapper to create a pass from Setup/Record lambdas with custom priority.
+     *
+     * This is equivalent to calling @ref Renderer::CreatePass
+     *
+     * @note Avoid using Lambdas with stateful captures (i.e. capturing `this` or [&]), as resource lifetimes
+     *       could be _much_ involved and unpredictable.
+     *       Prefer using stateless captures (i.e. [=]) or no captures at all, unless the states are trivial, and
+     *       you really know what you're doing.
+     *
+     * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is disabled.
+     * @param priority Priority of this pass. Higher priority passes are scheduled earlier.
+     * @param setup Lambda of type `void(PassHandle self, Renderer*)` called at Setup time.
+     * @param record Lambda of type `void(PassHandel self, Renderer*, RHICommandList*)` called at Record time.
+     * @param skip (Optional) Lambda of type `bool(PassHandle self, Renderer*)` called at Record time
+     *                        to determine whether this pass should be skipped if true. This is by default always false.
+     */
+    template<typename FSetup, typename FRecord, typename FSkip = FSkipDefault>
+    LambdaPass<FSetup, FRecord, FSkip>* createPassPriority(
+        Renderer* r, StringView name, RHIDeviceQueueType queue, size_t priority,
+        FSetup&& setup, FRecord&& record, FSkip&& skip = {}
+    ) {
+        return r->CreatePass(
+            name, queue, priority,
+            std::forward<FSetup>(setup),
+            std::forward<FRecord>(record),
+            std::forward<FSkip>(skip)
+        );
     }
     /**
      * @brief Convenient functional wrapper to create a pass from Setup/Record lambdas.
      *
-     * This is equivalent to calling @ref Renderer::CreatePass
+     * This is equivalent to calling @ref createPassPriority with priority 0.
      *
      * @note Avoid using Lambdas with stateful captures (i.e. capturing `this` or [&]), as resource lifetimes
      *       could be _much_ involved and unpredictable.
@@ -1155,13 +1203,9 @@ namespace Foundation::RenderCore {
     LambdaPass<FSetup, FRecord, FSkip>* createPass(
         Renderer* r, StringView name, RHIDeviceQueueType queue,
         FSetup&& setup, FRecord&& record, FSkip&& skip = {}
-    ) {
-        return r->CreatePass(
-            name, queue,
-            std::forward<FSetup>(setup),
-            std::forward<FRecord>(record),
-            std::forward<FSkip>(skip)
-        );
+    )
+    {
+        return createPassPriority(r, name, queue, 0, std::forward<FSetup>(setup), std::forward<FRecord>(record), std::forward<FSkip>(skip));
     }
     ENUM_NAME_CONV_BEGIN(Renderer::State)
         case Undefined: return "Undefined";

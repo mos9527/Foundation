@@ -34,7 +34,7 @@ void App::OnRendererSetup()
     ResourceHandle indexBuffer = m_renderer->CreateResource("Index", m_scene->m_index.Get());
     // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
     // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect
-    createPass(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Graphics,
+    createPassPriority(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Graphics, 1000,
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "resetCounter", "data/shaders/MVClearCounters.spv");
@@ -46,7 +46,7 @@ void App::OnRendererSetup()
             r->CmdDispatch(self, cmd, {1,1,1});
         }
     );
-    createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Compute,
+    createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Graphics,
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "indirectCullEarly", "data/shaders/MVIndirectCull.spv");
