@@ -12,6 +12,9 @@ target_link_libraries(Test_Staging PUBLIC Foundation_Rendering)
 add_executable(Test_SPSC "SPSC.cpp")
 target_link_libraries(Test_SPSC PUBLIC Foundation_Atomic)
 
+add_executable(Test_MPMC "MPMC.cpp")
+target_link_libraries(Test_MPMC PUBLIC Foundation_Atomic)
+
 add_executable(Test_ThreadPool "ThreadPool.cpp")
 target_link_libraries(Test_ThreadPool PUBLIC Foundation_Async)
 

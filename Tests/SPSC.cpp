@@ -1,29 +1,46 @@
 #include <Core/DefaultAllocator.hpp>
 #include <Atomic/Queue.hpp>
 #include <Async/Thread.hpp>
+#include <Async/Future.hpp>
 using namespace Foundation;
 using namespace Atomic;
 using namespace Async;
-constexpr size_t kSize = 1024;
+constexpr size_t kSize = 1LL << 20;
 int main()
 {
     DefaultAllocator alloc;
     SPSCQueue<int> queue(kSize, &alloc);
-    Thread producer([&queue]() {
+    size_t sum_expect = 0;
+    Thread producer([&]() {
         for (int i = 0; i < kSize; i++)
         {
             while (!queue.push(i));
+            sum_expect += i;
         }
     });
-    Thread consumer([&queue]()
+    producer.join();
+    std::atomic<size_t> sum_all = 0;
+    Mutex printMutex;
+    Thread consumer([&]()
     {
+        const int* value;
+        while (!(value = queue.pop()));
         while (true)
         {
-            auto value = queue.pop();
-            if (value.has_value())
+            sum_all += *value;
+            value = queue.pop();
+            if (!value)
             {
-                printf("Got: %d\n", value.value());
+                std::scoped_lock lock(printMutex);
+                printf("Got sum: %ld\n", sum_all.load());
+                return;
             }
         }
     });
+    consumer.join();
+    CHECK(sum_expect == sum_all);
+    {
+        std::scoped_lock lock(printMutex);
+        printf("pass!\n");
+    }
 }
