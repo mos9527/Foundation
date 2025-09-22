@@ -24,6 +24,8 @@ add_library(
 target_link_libraries(
 	Foundation_RenderCore PUBLIC
 	Foundation_Core
+	Foundation_Async
+	Foundation_Atomics
 	Foundation_RHICore
 	SPIRV-Headers::SPIRV-Headers
 )

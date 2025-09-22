@@ -1,5 +1,5 @@
 #pragma once
-#include <Atomic/Queue.hpp>
+#include <Atomics/Queue.hpp>
 #include <Async/Future.hpp>
 #include <Bits/Format.hpp>
 #include <Math/Math.hpp>

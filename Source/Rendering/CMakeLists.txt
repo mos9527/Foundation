@@ -14,7 +14,7 @@ add_library(
     Foundation_Rendering ${SOURCES} ${INCLUDES}
 )
 add_subdirectory(Shaders)
-target_link_libraries(Foundation_Rendering PUBLIC Foundation_RenderCore Foundation_Native)
+target_link_libraries(Foundation_Rendering PUBLIC Foundation_Atomics Foundation_RenderCore Foundation_Native)
 add_dependencies(Foundation_Rendering Shader_VSFullscreen)
 add_dependencies(Foundation_Rendering Shader_PSCopy)
 target_include_directories(
