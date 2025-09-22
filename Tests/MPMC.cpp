@@ -2,6 +2,7 @@
 #include <Atomics/Queue.hpp>
 #include <Async/Thread.hpp>
 #include <Async/Future.hpp>
+
 using namespace Foundation;
 using namespace Atomics;
 using namespace Async;
@@ -9,37 +10,40 @@ constexpr size_t kSize = 1LL << 20;
 int main()
 {
     DefaultAllocator alloc;
-    SPSCQueue<int> queue(kSize, &alloc);
+    MPMCQueue<int> queue(kSize, &alloc);
     size_t sum_expect = 0;
     Thread producer([&]() {
+        auto writer = queue.create_writer();
         for (int i = 0; i < kSize; i++)
         {
-            while (!queue.push(i));
+            while (!writer.push(i));
             sum_expect += i;
         }
     });
     producer.join();
-    std::atomic<size_t> sum_all = 0;
     Mutex printMutex;
-    Thread consumer([&]()
+    std::atomic<size_t> sum_all = 0;
+    auto consume = [&](size_t index)
     {
-        int value;
-        while (!queue.pop(value));
+        size_t sum = 0;
+        auto reader = queue.create_reader();
         while (true)
         {
-            sum_all += value;
-            if (!queue.pop(value))
+            int value;
+            if (reader.pop(value))
+            {
+                sum += value;
+            } else
             {
                 std::scoped_lock lock(printMutex);
-                printf("Got sum: %ld\n", sum_all.load());
+                printf("Queue %ld exit. Sum=%ld\n", index, sum);
+                sum_all += sum;
                 return;
             }
         }
-    });
-    consumer.join();
+    };
+    Thread c1(consume, 1), c2(consume, 2), c3(consume, 3), c4(consume, 4);
+    c1.join(), c2.join(), c3.join(), c4.join();
     CHECK(sum_expect == sum_all);
-    {
-        std::scoped_lock lock(printMutex);
-        printf("pass!\n");
-    }
+    printf("pass!\n");
 }

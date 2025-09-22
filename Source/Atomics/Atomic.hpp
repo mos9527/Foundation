@@ -1,6 +1,6 @@
 #pragma once
 #include <atomic>
-namespace Foundation::Atomic
+namespace Foundation::Atomics
 {
     /**
      * @brief Alias of `std::atomic<T>`.

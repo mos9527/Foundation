@@ -10,13 +10,15 @@
 #include <RHICore/Application.hpp>
 #include <RenderCore/Renderer.hpp>
 
-#include <Atomic/Atomic.hpp>
+#include <Atomics/Atomic.hpp>
 /**
  * @brief Reference implementations of real-time rendering routines.
  */
 namespace Foundation::Rendering {
-    using namespace Foundation::Core;
-    using namespace Foundation::RenderCore;
+    using namespace Foundation;
+    using namespace Core;
+    using namespace RenderCore;
+    using namespace Atomics;
     /**
      * @brief Initialization parameters for RenderApplication.
      */
@@ -103,9 +105,9 @@ namespace Foundation::Rendering {
         Async::Mutex m_renderMutex;
 
         // Should the Render thread reset the renderer on the next frame?
-        Atomic::Atomic<bool> m_renderThreadReset{false};
+        Atomic<bool> m_renderThreadReset{false};
         // Should the application exit?
-        Atomic::Atomic<bool> m_appShouldClose{false};
+        Atomic<bool> m_appShouldClose{false};
         /**
          * @breif Actions to take after device specific resources has been set up.
          *

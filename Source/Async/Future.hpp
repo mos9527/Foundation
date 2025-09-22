@@ -6,7 +6,11 @@
  */
 namespace Foundation::Async
 {
+    template<typename T = void> using Promise = std::promise<T>;
     template<typename T = void> using Future = std::future<T>;
+
+    template<typename T = void> using SharedPromise = Core::SharedPtr<std::promise<T>>;
+
     using Condition = std::condition_variable;
     using Mutex = std::mutex;
 }

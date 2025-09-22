@@ -20,7 +20,8 @@ const char* kShaderDescriptorBindingErrorHelp = "This can be caused by one of th
 
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator)
     : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_swaps(m_allocator),
-      m_device(device), m_swapchain(swapchain), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena), m_waitIdle(device.Get()) {
+      m_device(device), m_swapchain(swapchain), m_executeArena(m_allocator, kExecuteArenaSize),
+      m_executeAlloc(m_executeArena), m_recordThreadPool(kRecordThreadpoolSize, kMaxCommandListsPerSwap * 2, allocator), m_waitIdle(device.Get())  {
     m_graphicsQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
     m_graphicsQueue->DebugSetObjectName("Graphics Queue");
     m_computeQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Compute);
@@ -1434,18 +1435,25 @@ void Renderer::ExecuteFrame()
                 // For the next pass
                 SetNextCmdList();
             }
-            // TODO: Barrier execution up until this point are committed in the CPU only
-            //       We only flush them to the driver now before recording the command list.
-            //       This whole process is very fast - actually recording, however is not.
-            //       States of the resources here are now well defined. The next scope should
-            //       get parallelized!
+            auto* pass_name = pass.name.c_str();
+            auto* pass_ptr = pass.pass.get();
+            auto* renderer_ptr = this;
             {
-                ZoneScopedN("Record");
-                pass_cmd->EndTransition();
-                pass.pass->Record(pass.handle, this, pass_cmd);
-                pass_cmd->DebugEnd();
-                pass_cmd->End();
+                m_recordThreadPool.Push([=]
+                {
+                    ZoneScoped;
+                    ZoneNameF("<%s>", pass_name);
+                    pass_cmd->EndTransition();
+                    pass_ptr->Record(pass_handle, renderer_ptr, pass_cmd);
+                    pass_cmd->DebugEnd();
+                    pass_cmd->End();
+                });
             }
+        }
+        // Wait for all recording to finish
+        {
+            ZoneScopedN("Wait for Record");
+            m_recordThreadPool.Join();
         }
         // Release resources to the next group (*always* in different queues) if needed
         // since we can *only* do that on this queue

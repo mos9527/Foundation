@@ -11,7 +11,7 @@ file(
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 add_library(Foundation_Async ${SOURCES} ${INCLUDES})
-target_link_libraries(Foundation_Async PUBLIC Foundation_Core)
+target_link_libraries(Foundation_Async PUBLIC Foundation_Core Foundation_Atomics)
 set_target_properties(Foundation_Async PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(
         Foundation_Async

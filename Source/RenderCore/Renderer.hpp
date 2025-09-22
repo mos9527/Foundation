@@ -1,5 +1,5 @@
 #pragma once
-
+#include <Async/ThreadPool.hpp>
 #include <Core/StackAllocator.hpp>
 #include <Native/Filesystem.hpp>
 #include <Bits/Functional.hpp>
@@ -21,6 +21,7 @@ namespace Foundation::RenderCore {
     // Maximum number of render passes per frame
     // NOTE: The limit here is mostly arbitrary - and is only used
     //       for the default priority heuristic when determining pass order.
+    constexpr size_t kRecordThreadpoolSize = 8; // Threads to record command lists concurrently
     constexpr size_t kMaxRenderPasses = 1024;
     constexpr size_t kMaxCommandListsPerSwap = 128; // Maximum number of command lists per frame
     constexpr size_t kMaxTempResourceSemaphores = 16; // Maximum number of temporary semaphores for cross-queue barriers
@@ -454,6 +455,8 @@ namespace Foundation::RenderCore {
         // Temporary allocator for execution
         // This is reset every frame, and only guaranteed to be valid during Execute state.
         StackAllocator m_executeAlloc;
+        // Thread pool for concurrent command list recording
+        Async::ThreadPool m_recordThreadPool;
         /**
          * @breif Helper to get the queue index of a queue type
          */
