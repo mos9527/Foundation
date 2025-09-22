@@ -1,4 +1,5 @@
 #pragma once
+#include <Atomics/Queue.hpp>
 #include <Bits/Ranges.hpp>
 #include <Core/Core.hpp>
 #include "Future.hpp"
@@ -6,6 +7,8 @@
 namespace Foundation::Async
 {
     using namespace Core;
+    using namespace Async;
+    using namespace Atomics;
     struct ThreadPoolJob
     {
         virtual ~ThreadPoolJob() = default;
@@ -21,7 +24,6 @@ namespace Foundation::Async
     {
         Lambda m_func;
         SharedPromise<ReturnType> m_promise;
-
     public:
         ThreadPoolLambdaJob(SharedPromise<ReturnType> promise, Lambda&& func) : m_func(func), m_promise(promise) {}
         void Execute() noexcept override
@@ -42,38 +44,34 @@ namespace Foundation::Async
             }
         }
     };
+    using JobQueue = MPMCQueue<UniquePtr<ThreadPoolJob>>;
     class ThreadPool
     {
         Allocator* m_allocator;
-        Vector<Thread> m_threads; // All worker threads
-        Vector<Pair<int, UniquePtr<ThreadPoolJob>>> m_jobs; // Priority, Job
+        Vector<Thread> m_threads;
 
-        bool m_shutdown{false};
-        Mutex m_mutex;
-        Condition m_jobCond;
+        Atomic<bool> m_shutdown{false};
+        Atomic<size_t> m_complete{ 0 };
+        Atomic<size_t> m_total{ 0 };
+
+        JobQueue m_jobs;
+        JobQueue::Writer m_jobsWriter;
 
         void ThreadPoolWorker(size_t id);
-        void PushJob(size_t priority, UniquePtr<ThreadPoolJob>&& job);
-        UniquePtr<ThreadPoolJob> PopJob();
     public:
         /**
          * @brief Construct a thread pool with the given number of worker threads.
          * @param numThreads Number of worker threads to spawn.
+         * @param maxTasks Max number of tasks that can be queued. Must be a power of two.
          * @param alloc Allocator to use for internal and job allocations
          */
-        ThreadPool(size_t numThreads, Allocator* alloc);
+        ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc);
         /**
-         * @brief Construct a thread pool with all available hardware thread count.
-         * @param alloc Allocator to use for internal and job allocations
-         */
-        ThreadPool(Allocator* alloc) : ThreadPool(std::thread::hardware_concurrency(), alloc) {};
-        /**
-         * @brief Push a job with the given priority to the thread pool.
-         * @param priority Priority of the job. Higher priority jobs are executed first.
+         * @brief Push a job to the thread pool.
          * @return @ref SharedPromise that will be set when the job is completed.
          */
         template <typename Lambda, typename... Args>
-        auto PushPriority(Lambda&& func, int priority, Args&&... args)
+        auto Push(Lambda&& func, Args&&... args)
         {
             CHECK(!m_shutdown);
             auto packaged = ThreadPoolPackagedLambda(std::forward<Lambda>(func), std::forward<Args>(args)...);
@@ -83,22 +81,15 @@ namespace Foundation::Async
             using LambdaType = ThreadPoolLambdaJob<PackagedType, ReturnType>;
             // Construct the job on our own allocator
             auto promise = ConstructShared<std::promise<ReturnType>>(m_allocator);
-            std::scoped_lock lock(m_mutex);
-            PushJob(priority,
-                    ConstructUniqueBase<ThreadPoolJob, LambdaType>(m_allocator, promise,
-                                                                   std::forward<PackagedType>(packaged)));
+            m_total.fetch_add(1, std::memory_order_relaxed);
+            CHECK_MSG(m_jobsWriter.push(
+                ConstructUniqueBase<ThreadPoolJob, LambdaType>(
+                    m_allocator, promise,
+                    std::forward<PackagedType>(packaged))), "Jobs full");
             return promise;
         }
-        /**
-         * @brief Push a job with default priority (0) to the thread pool.
-         * @return @ref SharedPromise that will be set when the job is completed.
-         */
-        template <typename Lambda, typename... Args>
-        auto Push(Lambda&& func, Args&&... args)
-        {
-            return PushPriority(std::forward<Lambda>(func), 0, std::forward<Args>(args)...);
-        }
         void Shutdown() { m_shutdown = true; }
+        void Join();
         ~ThreadPool();
     };
 } // namespace Foundation::Async

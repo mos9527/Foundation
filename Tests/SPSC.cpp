@@ -1,9 +1,9 @@
 #include <Core/DefaultAllocator.hpp>
-#include <Atomic/Queue.hpp>
+#include <Atomics/Queue.hpp>
 #include <Async/Thread.hpp>
 #include <Async/Future.hpp>
 using namespace Foundation;
-using namespace Atomic;
+using namespace Atomics;
 using namespace Async;
 constexpr size_t kSize = 1LL << 20;
 int main()
@@ -23,13 +23,12 @@ int main()
     Mutex printMutex;
     Thread consumer([&]()
     {
-        const int* value;
-        while (!(value = queue.pop()));
+        int value;
+        while (!queue.pop(value));
         while (true)
         {
-            sum_all += *value;
-            value = queue.pop();
-            if (!value)
+            sum_all += value;
+            if (!queue.pop(value))
             {
                 std::scoped_lock lock(printMutex);
                 printf("Got sum: %ld\n", sum_all.load());

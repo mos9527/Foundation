@@ -1,46 +1,35 @@
 #include "ThreadPool.hpp"
 namespace Foundation::Async
 {
-    ThreadPool::ThreadPool(size_t numThreads, Allocator* alloc) :
-        m_allocator(alloc), m_threads(alloc), m_jobs(alloc)
+    ThreadPool::ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc) :
+        m_allocator(alloc), m_threads(alloc), m_jobs(maxTasks, alloc),
+        m_jobsWriter(m_jobs.create_writer())
     {
         for (size_t i = 0; i < numThreads; ++i)
             m_threads.emplace_back(&ThreadPool::ThreadPoolWorker, this, i);
     }
+    void ThreadPool::Join()
+    {
+        while (m_complete.load(std::memory_order_relaxed) < m_total.load(std::memory_order_relaxed))
+            std::this_thread::yield();
+    }
     ThreadPool::~ThreadPool()
     {
         Shutdown();
-        m_jobCond.notify_all();
-        // Automatically join the threads
-    }
-    void ThreadPool::PushJob(size_t priority, UniquePtr<ThreadPoolJob>&& job)
-    {
-        m_jobs.emplace_back(priority, std::move(job));
-        Bits::Ranges::push_heap(m_jobs, [](auto const& a, auto const& b) { return a.first < b.first; });
-        m_jobCond.notify_one();
-    }
-    UniquePtr<ThreadPoolJob> ThreadPool::PopJob()
-    {
-        Bits::Ranges::pop_heap(m_jobs);
-        UniquePtr<ThreadPoolJob> job = std::move(m_jobs.back().second);
-        m_jobs.pop_back();
-        return std::move(job);
+        Join();
     }
     void ThreadPool::ThreadPoolWorker(size_t id)
     {
+        auto reader = m_jobs.create_reader();
         while (!m_shutdown)
         {
             UniquePtr<ThreadPoolJob> job;
+            if (reader.pop(job))
             {
-                std::unique_lock lock(m_mutex);
-                m_jobCond.wait(lock, [this] { return m_shutdown || !m_jobs.empty(); });
-                LOG_RUNTIME(ThreadPoolWorker, info, "Thread {} wake up", id);
-                if (!m_jobs.empty())
-                    job = PopJob();
-                lock.unlock();
-            }
-            if (job)
                 job->Execute();
+                m_complete.fetch_add(1, std::memory_order_relaxed);
+            } else
+                std::this_thread::yield();
         }
     }
 } // namespace Foundation::Async
