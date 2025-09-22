@@ -10,7 +10,7 @@ namespace Foundation::Core {
     static bool g_Initialized = false;
     static std::shared_ptr<spdlog::sinks::dist_sink_mt> g_LoggingSink = nullptr;
     static std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> g_BacktraceSink = nullptr;    
-    std::recursive_mutex g_LoggingSinkMutex;
+    std::recursive_mutex g_LoggingSinkMutex, g_LoggerMutex;
 
     std::shared_ptr<spdlog::sinks::dist_sink_mt> getLoggingSink() {
         std::scoped_lock lck(g_LoggingSinkMutex);        
@@ -34,6 +34,7 @@ namespace Foundation::Core {
         return g_BacktraceSink;
     }
     spdlog::logger* getLogger(const char* name) {
+        std::scoped_lock lck(g_LoggerMutex);
         auto logger = spdlog::get(name);
         if (!logger) {
             auto new_logger = std::make_shared<spdlog::logger>(
