@@ -72,7 +72,7 @@ SceneHandle Scene::CreateMesh(Span<const char> vertices, Span<const char> indice
     data.index = m_index->GetArena().Allocate(indices.size_bytes(), 4);
     PrimitiveMetadata allocation{
         .vertexOffset = static_cast<int>(m_vertex->GetArena().GetOffset(data.vertex)),
-        .indexCount = static_cast<int>(indices.size()),
+        .indexCount = static_cast<int>(indices.size() / sizeof(uint32_t)), // ! TODO
         .indexOffset = static_cast<int>(m_index->GetArena().GetOffset(data.index)),
     };
     UploadAllocation(m_prmitive.Get(), Span<PrimitiveMetadata>(allocation).AsBytes(), primitive);

@@ -55,6 +55,7 @@ Mesh LoadMeshFromObjFile(Path path, Core::Allocator* allocator)
                 mesh->normals[index.n * 3 + 1],
                 mesh->normals[index.n * 3 + 2]
             };
+            nor_orignal = normalize(nor_orignal);
             vec2 nor = packUnitOctahedral(nor_orignal);
             v.np = {
                 .nx = quantizeSnormShifted(nor.x, 15),

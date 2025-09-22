@@ -46,7 +46,7 @@ void App::OnRendererSetup()
             r->CmdDispatch(self, cmd, {1,1,1});
         }
     );
-    createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Compute,
+    createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Graphics,
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "indirectCullEarly", "data/shaders/MVIndirectCull.spv");

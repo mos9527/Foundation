@@ -28,7 +28,7 @@ namespace ModelViewer
     void App::OnApplicationTick()
     {
         WaitForFrame();
-        size_t total = 100;
+        size_t total = 100'00;
         auto data = m_scene->MapInstanceData<InstanceMetadata>();
         CHECK_MSG(data.size() >= total, "Not enough space (max={}, current={})", data.size(),total);
         auto mesh_id = m_scene->GetMesh(mesh).primitiveID;
@@ -44,8 +44,8 @@ namespace ModelViewer
         m_camera = proj * view;
         for (size_t instance = 0; instance < total; ++instance)
         {
-            float theta = time * acos(-1) * 0.1f;
-            quat q = quat(cosf(theta), float3(0,1,0) * sinf(theta));
+            float theta = time * acos(-1);
+            quat q = quat(cosf(theta / 2), float3(0,1,0) * sinf(theta / 2));
             data[instance] = {
                 .primitiveID = mesh_id + 1,
                 .t = float3{

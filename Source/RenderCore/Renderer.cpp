@@ -1075,12 +1075,10 @@ void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
     CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
     bool any_range = false;
-    cmd->DebugBegin(tres.name.c_str());
     for (auto& sta : tres.GetLastSubresourceStateOf(range)) {
         any_range = true;
         ExecuteBarrierSubresourceState(pass, res, sta, access, stage, layout, cmd);
     }
-    cmd->DebugEnd();
     CHECK_MSG(any_range, "FIXME-ExecuteBarrierSubresource: Failed to match resource range on {}",tres.name);
 }
 void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIResourceAccess access,
@@ -1091,7 +1089,6 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
     RHIBuffer* res = DerefResource(tres.handle).Get<RHIBuffer*>();
     if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage)
         return;
-    cmd->DebugBegin(tres.name.c_str());
     cmd->SetBufferTransition(
         res,
         {
@@ -1101,7 +1098,6 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
             .dst_stage = stage,
         }
         );
-    cmd->DebugEnd();
     tres.lastBufferState.access = access;
     tres.lastBufferState.stage = stage;
     tres.lastBufferState.lastExecutor = pass;
@@ -1357,7 +1353,7 @@ void Renderer::ExecuteFrame()
         // Collect producers that branched out before this group
         // We only take groups that's produced in this frame before the current one
         int maxGraphicsSyncGroup = -1, maxComputeSyncGroup = -1;
-        if (m_desc.async)
+        if (m_setup->executionGroups.size() > 1)
         {
             auto UpdateSyncGroup = [&](PassHandle pass)
             {
@@ -1392,50 +1388,74 @@ void Renderer::ExecuteFrame()
             }
         }
         /* -- Pass Recording -- */
-        if (group.queue == RHIDeviceQueueType::Graphics)
-            SetNextGraphicsQueue();
-        else if (group.queue == RHIDeviceQueueType::Compute)
-            SetNextComputeQueue();
-        else [[unlikely]]
-            throw std::runtime_error("Unhandled queue type");
+        auto SetNextCmdList = [&]
+        {
+            if (group.queue == RHIDeviceQueueType::Graphics)
+                SetNextGraphicsQueue();
+            else if (group.queue == RHIDeviceQueueType::Compute)
+                SetNextComputeQueue();
+            else [[unlikely]]
+                throw std::runtime_error("Unhandled queue type");
+        };
+        SetNextCmdList();
+        Vector<RHICommandList*> group_cmds(m_executeAlloc.Ptr());
+        group_cmds.reserve(m_setup->executionGroups.size() + 1);
         // Acquire resources for this queue - which should already been released
-        ExecuteAcquireQueueResources(group.queue, group.group_index, cmd);
+        if (m_setup->executionGroups.size() > 1)
+        {
+            ExecuteAcquireQueueResources(group.queue, group.group_index, cmd);
+            cmd->End();
+            group_cmds.push_back(cmd);
+            SetNextCmdList();
+        }
         // We've previously established that all passes in a group share the same queue
         for (auto pass_handle : group.passes)
         {
             auto& pass = passes[pass_handle];
-            ZoneScopedN("Pass Execution");
+            ZoneScoped;
             ZoneNameF("[%s]", pass.name.c_str());
             if (pass.pass->IsSkipped(pass.handle, this))
                 continue;
+            RHICommandList* pass_cmd = cmd;
             /* -- Barriers -- */
             // For textures - we're dealing with Subresource ranges,
             // and for buffer it's always the whole thing.
             // Execution on the states are always single-threaded due
             // to the granularity of these states - the introduction
             // of sync primitives here would incur quite a lot of overhead
-            cmd->DebugBegin(pass.name.c_str());
-            cmd->DebugBegin("<Resource Barriers>");
-            cmd->BeginTransition();
-            // Transfer *here* are on the same queue, so ignored
-            ExecuteBarriers(pass, cmd);
             {
-                ZoneScopedN("Finalize Transitions");
-                cmd->EndTransition();
+                ZoneScopedN("Pre-record");
+                pass_cmd->DebugBegin(pass.name.c_str());
+                pass_cmd->BeginTransition();
+                // Transfer *here* are on the same queue, so ignored
+                ExecuteBarriers(pass, pass_cmd);
+                // Schedule ourselves!
+                group_cmds.push_back(pass_cmd);
+                // For the next pass
+                SetNextCmdList();
             }
-            cmd->DebugEnd();
-            // TODO: Only dealing with Record() here can easily introduce parallelism
-            //       But - we don't currently have a good CPU async tasking system
-            //       yet - which would be the hard part.
+            // TODO: Barrier execution up until this point are committed in the CPU only
+            //       We only flush them to the driver now before recording the command list.
+            //       This whole process is very fast - actually recording, however is not.
+            //       States of the resources here are now well defined. The next scope should
+            //       get parallelized!
             {
                 ZoneScopedN("Record");
-                pass.pass->Record(pass.handle, this, cmd);
+                pass_cmd->EndTransition();
+                pass.pass->Record(pass.handle, this, pass_cmd);
+                pass_cmd->DebugEnd();
+                pass_cmd->End();
             }
-            cmd->DebugEnd();
         }
         // Release resources to the next group (*always* in different queues) if needed
         // since we can *only* do that on this queue
-        ExecuteReleaseQueueResources(group.queue, group.group_index, cmd);
+        if (m_setup->executionGroups.size() > 1)
+        {
+            ExecuteReleaseQueueResources(group.queue, group.group_index, cmd);
+            cmd->End();
+            group_cmds.push_back(cmd);
+            SetNextCmdList();
+        }
         /* -- Submission -- */
         {
             ZoneScopedN("Group Submit");
@@ -1479,20 +1499,19 @@ void Renderer::ExecuteFrame()
                         .timeline_waits = timeline_waits,
                         .timeline_signals = {{{ timeline_signal }}},
                         .waits_stages = timeline_wait_stages,
-                        .cmd_lists = { cmd },
+                        .cmd_lists = group_cmds,
                         .fence = fence_ptr
                     });
                 } else {
                     // Last group to submit, and we need to present
                     if (group.queue == RHIDeviceQueueType::Compute)
                     {
-                        cmd->End();
                         // Submit compute first
                         queue->Submit({
                             .timeline_waits = timeline_waits,
                             .timeline_signals = {{{ timeline_signal }}},
                             .waits_stages = timeline_wait_stages,
-                            .cmd_lists = { cmd },
+                            .cmd_lists = group_cmds,
                             .fence = fence_ptr // Compute
                         });
                         SetNextGraphicsQueue();
@@ -1511,6 +1530,7 @@ void Renderer::ExecuteFrame()
                     cmd->EndTransition();
                     cmd->DebugEnd();
                     cmd->End();
+                    group_cmds.push_back(cmd);
                     {
                         ZoneScopedN("Submit & Present");
                         timeline_wait_stages.push_back(group.all_stages | RHIPipelineStageBits::RenderTargetOutput);
@@ -1520,7 +1540,7 @@ void Renderer::ExecuteFrame()
                             .waits = {{ m_swaps[m_currentSync].present.Get() }},
                             .waits_stages = timeline_wait_stages,
                             .signals = {{ m_swaps[m_currentSwap].render.Get() }},
-                            .cmd_lists = {{ cmd }},
+                            .cmd_lists = group_cmds,
                             .fence = m_swaps[m_currentSync].graphics_fence.Get()
                         });
                         queue->Present({
@@ -1538,7 +1558,7 @@ void Renderer::ExecuteFrame()
                     .timeline_waits = timeline_waits,
                     .timeline_signals = {{{ timeline_signal }}},
                     .waits_stages = timeline_wait_stages,
-                    .cmd_lists = { cmd },
+                    .cmd_lists = group_cmds,
                     .fence = fence_ptr
                 });
             }
