@@ -24,7 +24,7 @@ namespace Foundation::RenderCore
     //       for the default priority heuristic when determining pass order.
     constexpr size_t kRecordThreadpoolSize = 1; // Threads to record command lists concurrently
     constexpr size_t kMaxRenderPasses = 1024;
-    constexpr size_t kMaxCommandListsPerSwap = 128; // Maximum number of command lists per frame
+    constexpr size_t kMaxCommandListsPerThread = 128; // Maximum number of command lists per frame
     constexpr size_t kMaxTempResourceSemaphores = 16; // Maximum number of temporary semaphores for cross-queue barriers
     constexpr size_t kExecuteArenaSize = 16 * (1 << 20); // Maximum size of the per-frame transient arena (16MB)
     const size_t kTextureAspectCount = 3; // Color, depth, stencil @ref RHITextureAspectFlag
@@ -326,10 +326,7 @@ namespace Foundation::RenderCore
             }
         };
         UniquePtr<Resources> m_resources;
-
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_descPool;
-        RHIDeviceScopedObjectHandle<RHICommandPool> m_graphicsCmdPool{}, m_computeCmdPool{}; // Graphics, Async Compute
-
         struct FrameSyncObjects
         {
             // Index of this swap
@@ -416,17 +413,17 @@ namespace Foundation::RenderCore
         Async::ThreadPool m_executeThreadPool;
         struct ExecutePerThreadCommandLists
         {
+            RHIDeviceScopedObjectHandle<RHICommandPool> graphicsPool{}, computePool{};
             Vector<RHICommandPoolScopedHandle<RHICommandList>> graphicsCmds, computeCmds;
             // Resets every frame
             Atomics::Atomic<size_t> graphicsCtr{}, computeCtr{};
-            ExecutePerThreadCommandLists(Allocator* alloc) :
-                graphicsCmds(kMaxCommandListsPerSwap,alloc), computeCmds(kMaxCommandListsPerSwap, alloc) {}
+            ExecutePerThreadCommandLists(RHIDevice* device, const size_t maxPerThread, Allocator* alloc);
             void Reset();
-            RHICommandList* AllocateGraphics(RHICommandPool* pool);
-            RHICommandList* AllocateCompute(RHICommandPool* pool);
+            RHICommandList* AllocateGraphics();
+            RHICommandList* AllocateCompute();
         };
         // [current sync][thread id]
-        Vector<Vector<ExecutePerThreadCommandLists>> m_executePerSwapCmds;
+        Vector<Vector<UniquePtr<ExecutePerThreadCommandLists>>> m_executePerSwapCmds;
         /**
          * @param thread_id -1 for main thread, [0, kRecordThreadpoolSize] for workers
          * @return A command list allocated from the appropriate pool only used for the specified thread_id (dense)
