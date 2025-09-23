@@ -2,28 +2,27 @@
 #include "StackAllocator.hpp"
 
 namespace Foundation::Core {
-pointer StackAllocator::Allocate(size_type size, size_type alignment) {
-    if (size == 0) return nullptr;
+    pointer StackAllocator::Allocate(size_type size, size_type alignment)
+    {
+        if (size == 0)
+            return nullptr;        
+        size_t current = m_current.load(std::memory_order_relaxed);
+        while (true)
+        {
+            auto aligned = AlignUp(current, alignment);
+            auto next = aligned + size;
 
-    size_t start = AlignUp(m_current, alignment);
-    size_t end = AlignUp(start + size, alignment);
-    
-	if (end > m_end) return nullptr;
-
-	m_current = end;
-    m_used += end - start;
-    return reinterpret_cast<pointer>(start);
-};
-pointer StackAllocator::Allocate(size_type size) {
-    if (size == 0) return nullptr;
-
-    size_t start = m_current;
-    size_t end = start + size;
-
-    if (end > m_end) return nullptr;
-
-    m_current = end;
-    m_used += size;
-    return reinterpret_cast<pointer>(start);
-};
+            if (next > m_end) [[unlikely]]
+                return nullptr;            
+            
+            if (m_current.compare_exchange_weak(current, next, std::memory_order_release,
+                                                std::memory_order_relaxed))
+            {
+                // Bump OK. Good to go!
+                m_used.fetch_add(size, std::memory_order_relaxed);
+                return reinterpret_cast<pointer>(aligned);
+            }
+            current = m_current.load(std::memory_order_relaxed);
+        }
+    };
 }

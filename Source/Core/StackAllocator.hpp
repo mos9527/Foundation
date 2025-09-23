@@ -2,9 +2,9 @@
 #include "Allocator.hpp"
 namespace Foundation::Core {
 	/**
-	 * @brief Implements a stack-based bump allocator.
+	 * @brief Implements a lock-free stack-based bump allocator.
 	 *
-	 * @note This is not thread-safe nor should it be used in a multithreaded context.
+	 * @note This is atomic, and therefore thread-safe.
 	 */
     class StackAllocator : public Allocator {
 	public:
@@ -31,7 +31,7 @@ namespace Foundation::Core {
 		 * @brief Allocates a block of memory of the specified size.
 		 * If the requested size exceeds the available memory within the arena, returns nullptr.
 		 */
-		pointer Allocate(size_type size) override;
+        pointer Allocate(size_type size) override { return Allocate(size, sizeof(std::max_align_t)); }
 		/**
 		 * @brief Allocates a block of memory of the specified size with alignment.
 		 * If the requested size exceeds the available memory within the arena, returns nullptr.
@@ -57,8 +57,8 @@ namespace Foundation::Core {
         constexpr operator bool() const noexcept { return m_memory != nullptr; }
 	private:		
         pointer m_memory{ nullptr };
-        size_type m_end{};
-        size_type m_current{};
-        size_type m_used{};
+        std::atomic<size_type> m_end{};
+        std::atomic<size_type> m_current{};
+        std::atomic<size_type> m_used{};
 	};
 }
