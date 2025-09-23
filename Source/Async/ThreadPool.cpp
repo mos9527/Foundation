@@ -46,7 +46,7 @@ namespace Foundation::Async
             UniquePtr<ThreadPoolJob> job;
             if (reader.pop(job))
             {
-                job->Execute();
+                job->Execute(id);
                 m_complete.fetch_add(1, std::memory_order_relaxed);
                 m_complete.notify_one();
             }

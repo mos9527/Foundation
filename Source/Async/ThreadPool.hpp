@@ -12,7 +12,7 @@ namespace Foundation::Async
     struct ThreadPoolJob
     {
         virtual ~ThreadPoolJob() = default;
-        virtual void Execute() noexcept = 0;
+        virtual void Execute(size_t id) noexcept = 0;
     };
     inline auto ThreadPoolPackagedLambda = []<typename T0, typename... T1>(T0&& func, T1&&... args)
     {
@@ -26,7 +26,7 @@ namespace Foundation::Async
         SharedPromise<ReturnType> m_promise;
     public:
         ThreadPoolLambdaJob(SharedPromise<ReturnType> promise, Lambda&& func) : m_func(func), m_promise(promise) {}
-        void Execute() noexcept override
+        void Execute(size_t) noexcept override
         {
             try
             {
@@ -69,6 +69,20 @@ namespace Foundation::Async
          * @param alloc Allocator to use for internal and job allocations
          */
         ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc);
+        /**
+         * @brief Push a job implementing @ref ThreadPoolJob to the thread pool.
+         * @return @ref SharedPromise that will be set when the job is completed.
+         */
+        template <typename T, typename ... Args>
+        requires std::is_base_of_v<ThreadPoolJob, T>
+        void PushImpl(Args&&... args)
+        {
+            CHECK_MSG(!m_shutdown, "ThreadPool shutting down");
+            CHECK_MSG(m_jobsWriter.push(
+                ConstructUniqueBase<ThreadPoolJob, T>(m_allocator, std::forward<Args>(args)...)), "Jobs full");
+            m_total.fetch_add(1, std::memory_order_relaxed);
+            m_total.notify_one();
+        }
         /**
          * @brief Push a lambda job to the thread pool.
          * @return @ref SharedPromise that will be set when the job is completed.

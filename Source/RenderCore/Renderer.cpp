@@ -21,7 +21,8 @@ const char* kShaderDescriptorBindingErrorHelp = "This can be caused by one of th
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device, RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator)
     : m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_swaps(m_allocator),
       m_device(device), m_swapchain(swapchain), m_executeArena(m_allocator, kExecuteArenaSize),
-      m_executeAlloc(m_executeArena), m_recordThreadPool(kRecordThreadpoolSize, kMaxCommandListsPerSwap * 2, allocator), m_waitIdle(device.Get())  {
+      m_executeAlloc(m_executeArena), m_executeThreadPool(kRecordThreadpoolSize, kMaxCommandListsPerSwap * 2, allocator), m_executePerSwapCmds(allocator),
+m_waitIdle(device.Get()) {
     m_graphicsQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
     m_graphicsQueue->DebugSetObjectName("Graphics Queue");
     m_computeQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Compute);
@@ -969,7 +970,9 @@ void Renderer::FinalizeResources() {
 }
 void Renderer::SetFrameSyncObjects() {
     while (m_swaps.size() < m_frameSwaps)
-        m_swaps.emplace_back(m_swaps.size(), m_allocator);
+        m_swaps.emplace_back(m_swaps.size());
+    while (m_executePerSwapCmds.size() < m_frameSwaps)
+        m_executePerSwapCmds.emplace_back(m_allocator);
     for (size_t i = 0; i < m_frameSwaps; i++) {
         m_swaps[i].render = m_device->CreateSemaphore(false);
         m_swaps[i].render->DebugSetObjectName(fmt::format("Render Semaphore of Swap {}", i).c_str());
@@ -1025,7 +1028,11 @@ void Renderer::BeginExecute()
 {
     CHECK_MSG(m_state == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?", m_state);
     ZoneScoped;
-    m_executeAlloc.Reset(m_executeArena), m_state = State::Execute;
+    m_state = State::Execute;
+    // Reset per-swap command lists
+    for (auto& cmds : m_executePerSwapCmds[m_currentSync])
+        cmds.Reset();
+    m_executeAlloc.Reset(m_executeArena);
     Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait_fences(m_executeAlloc.Ptr());
     if (m_setup->executionAnyGraphics)
         wait_fences.push_back(m_swaps[m_currentSync].graphics_fence);
@@ -1325,31 +1332,46 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
     cmd->EndTransition();
     cmd->DebugEnd();
 }
+void Renderer::ExecutePerThreadCommandLists::Reset()
+{
+    graphicsCtr.store(0, std::memory_order_relaxed);
+    computeCtr.store(0, std::memory_order_relaxed);
+}
+RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateGraphics(RHICommandPool* pool)
+{
+    size_t index = graphicsCtr.fetch_add(1, std::memory_order_relaxed);
+    if (!graphicsCmds[index].IsValid())
+        graphicsCmds[index] = pool->CreateCommandList();
+    return graphicsCmds[index].Get();
+}
+RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateCompute(RHICommandPool* pool)
+{
+    size_t index = computeCtr.fetch_add(1, std::memory_order_relaxed);
+    if (!computeCmds[index].IsValid())
+        computeCmds[index] = pool->CreateCommandList();
+    return computeCmds[index].Get();
+}
+RHICommandList* Renderer::ExecuteAllocateCommandList(RHIDeviceQueueType queue, int thread_id)
+{
+    auto& swap = m_executePerSwapCmds[m_currentSync];
+    auto& thread = swap[thread_id];
+    switch (queue)
+    {
+    case RHIDeviceQueueType::Compute:
+        return thread.AllocateCompute(m_computeCmdPool.Get());
+    default:
+    case RHIDeviceQueueType::Graphics:
+        return thread.AllocateGraphics(m_graphicsCmdPool.Get());
+    }
+}
 void Renderer::ExecuteFrame()
 {
     ZoneScoped;
     CHECK_MSG(m_state == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", m_state);
     auto& passes = m_setup->trackedPasses;
-    // Async compute supporting command lists
-    int cmd_graphics = 0, cmd_compute = 0;
-    RHIDeviceQueue* queue = nullptr;
-    RHICommandList* cmd = nullptr;
-    auto SetNextGraphicsQueue = [&] {
-        ZoneScopedN("Acquire Graphics Cmd");
-        CHECK_MSG(cmd_graphics < kMaxCommandListsPerSwap, "FIXME-Async Compute: All transient Graphics Command lists exhausted");
-        queue = m_graphicsQueue, cmd = m_swaps[m_currentSync].graphics_cmd_at(cmd_graphics++, m_graphicsCmdPool.Get());
-        cmd->Reset(), cmd->Begin();
-    };
-    auto SetNextComputeQueue = [&] {
-        ZoneScopedN("Acquire Compute Cmd");
-        CHECK_MSG(cmd_compute < kMaxCommandListsPerSwap, "FIXME-Async Compute: All transient Compute Command lists exhausted");
-        queue = m_computeQueue, cmd = m_swaps[m_currentSync].compute_cmd_at(cmd_compute++, m_computeCmdPool.Get());
-        cmd->Reset(), cmd->Begin();
-    };
     // Execute by groups
     for (auto& group : m_setup->executionGroups)
     {
-        const bool is_last = group.group_index == m_setup->executionGroups.size() - 1;
         /* -- Dependency -- */
         // Collect producers that branched out before this group
         // We only take groups that's produced in this frame before the current one
@@ -1388,82 +1410,87 @@ void Renderer::ExecuteFrame()
                 }
             }
         }
-        /* -- Pass Recording -- */
-        auto SetNextCmdList = [&]
+        /* -- Recording -- */
+        // Count only the non-skipped ones
+        Vector<PassHandle> group_active(m_executeAlloc.Ptr());
+        group_active.reserve(m_setup->executionGroups.size() + 1);
+        for (auto handle : group.passes)
         {
-            if (group.queue == RHIDeviceQueueType::Graphics)
-                SetNextGraphicsQueue();
-            else if (group.queue == RHIDeviceQueueType::Compute)
-                SetNextComputeQueue();
-            else [[unlikely]]
-                throw std::runtime_error("Unhandled queue type");
-        };
-        SetNextCmdList();
-        Vector<RHICommandList*> group_cmds(m_executeAlloc.Ptr());
-        group_cmds.reserve(m_setup->executionGroups.size() + 1);
-        // Acquire resources for this queue - which should already been released
+            if (!passes[handle].pass->IsSkipped(handle, this))
+                group_active.emplace_back(handle);
+        }
+        // Record all the active tasks
+        // We do this in parallel - and additionally, transitions are recorded separately
+        Vector<RHICommandList*> execute_cmds(m_executeAlloc.Ptr());
+        execute_cmds.resize(group_active.size() * 2, nullptr); // [transition cmd, execute cmd]
+        {
+            ZoneScopedN("Schedule Records");
+            struct RecordJob : public Async::ThreadPoolJob
+            {
+                Renderer* r;
+                TrackedPass* pass;
+                RHICommandList*& cmd;
+                RecordJob(Renderer* r, TrackedPass* pass, RHICommandList*& cmd) : r(r), pass(pass), cmd(cmd) {}
+                void Execute(size_t thread_id) noexcept override
+                {
+                    cmd = r->ExecuteAllocateCommandList(pass->queue, thread_id);
+                    cmd->Reset();
+                    cmd->Begin();
+                    pass->pass->Record(pass->handle, r, cmd);
+                    cmd->End();
+                };
+            };
+            for (size_t i = 0; i < group_active.size(); ++i)
+                m_executeThreadPool.PushImpl<RecordJob>(this, &passes[group_active[i]], execute_cmds[i * 2 + 1]);
+            // Now, on the render thread - we record the transitions in serial
+            // This needs to be done in lockstep anyway
+            for (size_t i = 0; i < group_active.size(); ++i)
+            {
+                auto& pass = passes[group_active[i]];
+                auto& cmd = execute_cmds[i * 2];
+                cmd = ExecuteAllocateCommandList(group.queue, -1);
+                cmd->Reset();
+                cmd->Begin();
+                cmd->BeginTransition();
+                ExecuteBarriers(pass, cmd);
+                cmd->EndTransition();
+                cmd->End();
+            }
+        }
+        Vector<RHICommandList*> acq_cmds(m_executeAlloc.Ptr()), rel_cmds(m_executeAlloc.Ptr());
+        // Acquire resources for ourselves
         if (m_setup->executionGroups.size() > 1)
         {
+            auto cmd = ExecuteAllocateCommandList(group.queue, -1);
+            cmd->Reset();
+            cmd->Begin();
             ExecuteAcquireQueueResources(group.queue, group.group_index, cmd);
             cmd->End();
-            group_cmds.push_back(cmd);
-            SetNextCmdList();
-        }
-        // We've previously established that all passes in a group share the same queue
-        for (auto pass_handle : group.passes)
-        {
-            auto& pass = passes[pass_handle];
-            ZoneScoped;
-            ZoneNameF("[%s]", pass.name.c_str());
-            if (pass.pass->IsSkipped(pass.handle, this))
-                continue;
-            RHICommandList* pass_cmd = cmd;
-            /* -- Barriers -- */
-            // For textures - we're dealing with Subresource ranges,
-            // and for buffer it's always the whole thing.
-            // Execution on the states are always single-threaded due
-            // to the granularity of these states - the introduction
-            // of sync primitives here would incur quite a lot of overhead
-            {
-                ZoneScopedN("Pre-record");
-                pass_cmd->DebugBegin(pass.name.c_str());
-                pass_cmd->BeginTransition();
-                // Transfer *here* are on the same queue, so ignored
-                ExecuteBarriers(pass, pass_cmd);
-                // Schedule ourselves!
-                group_cmds.push_back(pass_cmd);
-                // For the next pass
-                SetNextCmdList();
-            }
-            auto* pass_name = pass.name.c_str();
-            auto* pass_ptr = pass.pass.get();
-            auto* renderer_ptr = this;
-            {
-                m_recordThreadPool.Push([=]
-                {
-                    ZoneScoped;
-                    ZoneNameF("<%s>", pass_name);
-                    pass_cmd->EndTransition();
-                    pass_ptr->Record(pass_handle, renderer_ptr, pass_cmd);
-                    pass_cmd->DebugEnd();
-                    pass_cmd->End();
-                });
-            }
-        }
-        // Wait for all recording to finish
-        {
-            ZoneScopedN("Wait for Record");
-            m_recordThreadPool.Join();
+            acq_cmds.emplace_back(cmd);
         }
         // Release resources to the next group (*always* in different queues) if needed
         // since we can *only* do that on this queue
         if (m_setup->executionGroups.size() > 1)
         {
+            auto cmd = ExecuteAllocateCommandList(group.queue, -1);
+            cmd->Reset();
+            cmd->Begin();
             ExecuteReleaseQueueResources(group.queue, group.group_index, cmd);
             cmd->End();
-            group_cmds.push_back(cmd);
-            SetNextCmdList();
+            rel_cmds.emplace_back(cmd);
         }
+        // Wait for all recording to finish
+        {
+            ZoneScopedN("Wait for Record");
+            m_executeThreadPool.Join();
+        }
+        // Prepare the final command list submission
+        Vector<RHICommandList*> group_cmds(m_executeAlloc.Ptr());
+        group_cmds.reserve(acq_cmds.size() + rel_cmds.size() + execute_cmds.size());
+        // [acq, execute, rel]
+        group_cmds.insert(group_cmds.end(), acq_cmds.begin(), acq_cmds.end());
+        group_cmds.insert(group_cmds.end(), execute_cmds.begin(), execute_cmds.end());
+        group_cmds.insert(group_cmds.end(), rel_cmds.begin(), rel_cmds.end());
         /* -- Submission -- */
         {
             ZoneScopedN("Group Submit");
@@ -1493,16 +1520,26 @@ void Renderer::ExecuteFrame()
                 )),
                 timeline_wait_stages.push_back(group.all_stages);
             RHIDeviceFence* fence_ptr = nullptr;
+            // Fence the queues for every frame
+            // Only one fence per queue is needed since submissions are in order
             if (group.is_last_compute)
                 fence_ptr = m_swaps[m_currentSync].compute_fence.Get();
             else if (group.is_last_graphics)
                 fence_ptr = m_swaps[m_currentSync].graphics_fence.Get();
+            const bool is_last = group.group_index == m_setup->executionGroups.size() - 1;
+            // Submit to our own queue
+            RHIDeviceQueue* queue = nullptr;
+            if (group.queue == RHIDeviceQueueType::Graphics)
+                queue = m_graphicsQueue;
+            else if (group.queue == RHIDeviceQueueType::Compute)
+                queue = m_computeQueue;
+            else [[unlikely]]
+                throw std::runtime_error("Unhandled queue type");
             if (is_last)
             {
                 ZoneScopedN("Final Submit");
                 if (!m_desc.present){
                     ZoneScopedN("Submit (No Present)");
-                    cmd->End();
                     queue->Submit({
                         .timeline_waits = timeline_waits,
                         .timeline_signals = {{{ timeline_signal }}},
@@ -1514,7 +1551,7 @@ void Renderer::ExecuteFrame()
                     // Last group to submit, and we need to present
                     if (group.queue == RHIDeviceQueueType::Compute)
                     {
-                        // Submit compute first
+                        // Submit compute first, then...
                         queue->Submit({
                             .timeline_waits = timeline_waits,
                             .timeline_signals = {{{ timeline_signal }}},
@@ -1522,9 +1559,12 @@ void Renderer::ExecuteFrame()
                             .cmd_lists = group_cmds,
                             .fence = fence_ptr // Compute
                         });
-                        SetNextGraphicsQueue();
+                        queue = m_graphicsQueue;
                     }
-                    // Transition the Backbuffer
+                    // Transition the Backbuffer to Present.
+                    auto cmd = ExecuteAllocateCommandList(RHIDeviceQueueType::Graphics, -1);
+                    cmd->Reset();
+                    cmd->Begin();
                     cmd->DebugBegin("Present");
                     cmd->BeginTransition();
                     ExecuteBarrierSubresource(
@@ -1540,6 +1580,7 @@ void Renderer::ExecuteFrame()
                     cmd->End();
                     group_cmds.push_back(cmd);
                     {
+                        // Finally..
                         ZoneScopedN("Submit & Present");
                         timeline_wait_stages.push_back(group.all_stages | RHIPipelineStageBits::RenderTargetOutput);
                         queue->Submit({
@@ -1561,7 +1602,6 @@ void Renderer::ExecuteFrame()
             } else
             {
                 ZoneScopedN("Submit");
-                cmd->End();
                 queue->Submit({
                     .timeline_waits = timeline_waits,
                     .timeline_signals = {{{ timeline_signal }}},
