@@ -71,7 +71,9 @@ namespace Foundation::Async
         ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc);
         /**
          * @brief Push a job implementing @ref ThreadPoolJob to the thread pool.
-         * @return @ref SharedPromise that will be set when the job is completed.
+         * @note This by itself does not return a future or any way to get the result of the job
+         *       It's up to the implementation of the job to provide a way to get the result.
+         *       See also @ref ThreadPoolLambdaJob
          */
         template <typename T, typename ... Args>
         requires std::is_base_of_v<ThreadPoolJob, T>
