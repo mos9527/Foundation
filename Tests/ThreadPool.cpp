@@ -6,17 +6,19 @@ using namespace Async;
 int main()
 {
     DefaultAllocator alloc;
-    ThreadPool pool(4, 16, &alloc);
-    Mutex printMutex;
-    for (int i = 0; i < 16; ++i)
-        pool.Push([&printMutex, i](){
-            {
-                std::scoped_lock lock(printMutex);
-                printf("Work %d..\n", i);
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        });
+    ThreadPool pool(16, 64, &alloc);
+    auto job = []
+    {
+        auto id =std::hash<std::thread::id>()(std::this_thread::get_id());
+        LOG_RUNTIME(Job, info, "Starting in {}", id);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        LOG_RUNTIME(Job, info, "Done in {}", id);
+        return id;
+    };
+    auto fut1 = pool.Push(job);
+    auto fut2 = pool.Push(job);
     printf("wait...\n");
     pool.Join();
-    printf("work complete\n");
+    LOG_RUNTIME(fut1, info, "{}", fut1->get_future().get());
+    LOG_RUNTIME(fut2, info, "{}", fut2->get_future().get());
 }

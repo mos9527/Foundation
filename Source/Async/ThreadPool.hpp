@@ -45,6 +45,9 @@ namespace Foundation::Async
         }
     };
     using JobQueue = MPMCQueue<UniquePtr<ThreadPoolJob>>;
+    /**
+     * @breif Atomic, lock-free Thread Pool implementation with fixed bounds
+     */
     class ThreadPool
     {
         Allocator* m_allocator;
@@ -67,28 +70,38 @@ namespace Foundation::Async
          */
         ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc);
         /**
-         * @brief Push a job to the thread pool.
+         * @brief Push a lambda job to the thread pool.
          * @return @ref SharedPromise that will be set when the job is completed.
          */
         template <typename Lambda, typename... Args>
         auto Push(Lambda&& func, Args&&... args)
         {
-            CHECK(!m_shutdown);
+            CHECK_MSG(!m_shutdown, "ThreadPool shutting down");
             auto packaged = ThreadPoolPackagedLambda(std::forward<Lambda>(func), std::forward<Args>(args)...);
             using ReturnType = decltype(func(args...));
             using PackagedType = decltype(packaged);
             // Use the wrapped lambda type for the job
             using LambdaType = ThreadPoolLambdaJob<PackagedType, ReturnType>;
-            // Construct the job on our own allocator
             auto promise = ConstructShared<std::promise<ReturnType>>(m_allocator);
-            m_total.fetch_add(1, std::memory_order_relaxed);
             CHECK_MSG(m_jobsWriter.push(
                 ConstructUniqueBase<ThreadPoolJob, LambdaType>(
                     m_allocator, promise,
                     std::forward<PackagedType>(packaged))), "Jobs full");
+            m_total.fetch_add(1, std::memory_order_relaxed);
+            m_total.notify_one();
             return promise;
         }
-        void Shutdown() { m_shutdown = true; }
+        /**
+         * @brief Shutdown the @ref ThreadPool, potentially cancelling all pending jobs.
+         * @note This does not cancel running jobs.
+         * @note Calling @ref Join _after_ this has no effect.
+         */
+        void Shutdown();
+        /**
+         * @brief Wait for all scheduled jobs to complete
+         * @note This is always automatically called on destruction. For forceful shutdowns,
+         *       call @ref Shutdown before destructing the @ref Threadpool
+         */
         void Join();
         ~ThreadPool();
     };

@@ -13,4 +13,8 @@ namespace Foundation::Async
 
     using Condition = std::condition_variable;
     using Mutex = std::mutex;
+    /**
+     * @brief Alias for `std::counting_semaphore`.
+     */
+    using Semaphore = std::counting_semaphore<>;
 }
