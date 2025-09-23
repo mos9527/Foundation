@@ -50,8 +50,7 @@ namespace Foundation::Async
      */
     class ThreadPool
     {
-        Allocator* m_allocator;
-        Vector<Thread> m_threads;
+        Allocator* m_allocator;        
 
         Atomic<bool> m_shutdown{false};
         Atomic<size_t> m_complete{ 0 };
@@ -59,7 +58,8 @@ namespace Foundation::Async
 
         JobQueue m_jobs;
         JobQueue::Writer m_jobsWriter;
-
+        // Ensure threads are joined first on destruction
+        Vector<Thread> m_threads;
         void ThreadPoolWorker(size_t id);
     public:
         /**
@@ -108,13 +108,10 @@ namespace Foundation::Async
         /**
          * @brief Shutdown the @ref ThreadPool, potentially cancelling all pending jobs.
          * @note This does not cancel running jobs.
-         * @note Calling @ref Join _after_ this has no effect.
          */
         void Shutdown();
         /**
          * @brief Wait for all scheduled jobs to complete
-         * @note This is always automatically called on destruction. For forceful shutdowns,
-         *       call @ref Shutdown before destructing the @ref Threadpool
          */
         void Join();
         ~ThreadPool();

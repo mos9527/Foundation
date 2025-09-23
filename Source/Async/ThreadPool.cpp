@@ -11,7 +11,7 @@ namespace Foundation::Async
     void ThreadPool::Shutdown()
     {
         m_shutdown = true;
-        m_total.store(0, std::memory_order_relaxed);
+        m_total.store(-1, std::memory_order_relaxed);
         m_total.notify_all();
     }
     void ThreadPool::Join()
@@ -25,7 +25,6 @@ namespace Foundation::Async
     }
     ThreadPool::~ThreadPool()
     {
-        Join();
         Shutdown();
     }
     void ThreadPool::ThreadPoolWorker(size_t id)
@@ -51,5 +50,6 @@ namespace Foundation::Async
                 m_complete.notify_one();
             }
         }
+        LOG_RUNTIME(ThreadPoolWorker, info, "Exit {}", id);
     }
 } // namespace Foundation::Async

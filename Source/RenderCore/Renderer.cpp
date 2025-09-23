@@ -441,7 +441,7 @@ void Renderer::CullPasses(PassHandle epilogue) const
     {
         while (j < exec.size() && m_setup->trackedPasses[exec[j]].queue == m_setup->trackedPasses[exec[i]].queue)
             j++;
-        auto& group = exec_group.emplace_back(exec_group.size(), m_setup->trackedPasses[exec[i]].queue, m_allocator);
+        auto& group = exec_group.emplace_back(static_cast<int>(exec_group.size()), m_setup->trackedPasses[exec[i]].queue, m_allocator);
         group.passes.insert(group.passes.end(), exec.begin() + i, exec.begin() + j);
         // Collect dependencies
         for (auto pass : exec_group.back().passes)
@@ -1281,14 +1281,20 @@ RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateGraphics()
 {
     size_t index = graphicsCtr.fetch_add(1, std::memory_order_relaxed);
     if (!graphicsCmds[index].IsValid())
+    {
         graphicsCmds[index] = graphicsPool->CreateCommandList();
+        graphicsCmds[index]->DebugSetObjectName(fmt::format("Graphics List {}", index).c_str());
+    }
     return graphicsCmds[index].Get();
 }
 RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateCompute()
 {
     size_t index = computeCtr.fetch_add(1, std::memory_order_relaxed);
     if (!computeCmds[index].IsValid())
+    {
         computeCmds[index] = computePool->CreateCommandList();
+        computeCmds[index]->DebugSetObjectName(fmt::format("Compute List {}", index).c_str());
+    }
     return computeCmds[index].Get();
 }
 RHICommandList* Renderer::ExecuteAllocateCommandList(RHIDeviceQueueType queue, int thread_id)
@@ -1371,19 +1377,21 @@ void Renderer::ExecuteFrame()
             {
                 Renderer* r;
                 TrackedPass* pass;
-                RHICommandList*& cmd;
-                RecordJob(Renderer* r, TrackedPass* pass, RHICommandList*& cmd) : r(r), pass(pass), cmd(cmd) {}
+                RHICommandList** cmd;
+                RecordJob(Renderer* r, TrackedPass* pass, RHICommandList** cmd) : r(r), pass(pass), cmd(cmd) {}
                 void Execute(size_t thread_id) noexcept override
                 {
-                    cmd = r->ExecuteAllocateCommandList(pass->queue, thread_id);
-                    cmd->Reset();
-                    cmd->Begin();
-                    pass->pass->Record(pass->handle, r, cmd);
-                    cmd->End();
+                    *cmd = r->ExecuteAllocateCommandList(pass->queue, thread_id);
+                    (*cmd)->Reset();
+                    (*cmd)->Begin();
+                    (*cmd)->DebugBegin(pass->name.c_str());
+                    pass->pass->Record(pass->handle, r, *cmd);
+                    (*cmd)->DebugEnd();
+                    (*cmd)->End();
                 };
             };
             for (size_t i = 0; i < group_active.size(); ++i)
-                m_executeThreadPool.PushImpl<RecordJob>(this, &passes[group_active[i]], execute_cmds[i * 2 + 1]);
+                m_executeThreadPool.PushImpl<RecordJob>(this, &passes[group_active[i]], &execute_cmds[i * 2 + 1]);
             // Now, on the render thread - we record the transitions in serial
             // This needs to be done in lockstep anyway
             for (size_t i = 0; i < group_active.size(); ++i)
@@ -1406,7 +1414,9 @@ void Renderer::ExecuteFrame()
             auto cmd = ExecuteAllocateCommandList(group.queue, -1);
             cmd->Reset();
             cmd->Begin();
+            cmd->DebugBegin("Group Acquire");
             ExecuteAcquireQueueResources(group.queue, group.group_index, cmd);
+            cmd->DebugEnd();
             cmd->End();
             acq_cmds.emplace_back(cmd);
         }
@@ -1417,7 +1427,9 @@ void Renderer::ExecuteFrame()
             auto cmd = ExecuteAllocateCommandList(group.queue, -1);
             cmd->Reset();
             cmd->Begin();
+            cmd->DebugBegin("Group Acquire");
             ExecuteReleaseQueueResources(group.queue, group.group_index, cmd);
+            cmd->DebugEnd();
             cmd->End();
             rel_cmds.emplace_back(cmd);
         }
