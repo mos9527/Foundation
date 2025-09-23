@@ -57,10 +57,6 @@ namespace Foundation::RHI {
              * @brief Retrieves the size of a previously allocated sub-region of the buffer.
              */
             virtual size_t GetSize(Allocation alloc) const = 0;
-            /**
-             * @brief Resets the arena, freeing all CPU-tracked allocations.
-             */
-            virtual void Reset() = 0;
         };
         /**
          * @brief Sub-buffer allocation arena capable of generic alloc/free

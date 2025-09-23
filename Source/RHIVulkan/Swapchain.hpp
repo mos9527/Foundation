@@ -18,7 +18,7 @@ namespace Foundation::RHI {
         const VulkanDevice& m_device;
         vk::raii::SwapchainKHR m_swapchain{ nullptr };
         std::array<uint32_t, 2> m_queue_family_indices{};
-        RHIObjectStorage<VulkanTexture> m_images;
+        UniquePtr<RHIObjectStorage<VulkanTexture>> m_images;
         Core::Vector<RHITexture*> m_images_ptrs;
 
         void Instantiate();

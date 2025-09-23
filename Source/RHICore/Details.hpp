@@ -1,12 +1,13 @@
 #pragma once
+#include <Atomics/FreeList.hpp>
 #include <Core/Core.hpp>
-#include <Core/FreeList.hpp>
 
 /**
  * @brief Low-level Rendering Hardware Interface (RHI) abstractions.
  */
 namespace Foundation::RHI {
     using Handle = uint64_t;
+    constexpr size_t kRHIObjectStorageDefaultSize = 16384;
     constexpr static Handle kInvalidHandle = static_cast<Handle>(-1);
     /**
      * @brief Base class for all RHI objects.
@@ -125,18 +126,17 @@ namespace Foundation::RHI {
      */
     template<typename Base = RHIObject> class RHIObjectStorage {
         Core::Allocator* m_allocator;
-        Core::FreeList<Handle, Core::UniquePtr<Base>> m_objects;
+        Atomics::FreeList<Handle, Core::UniquePtr<Base>> m_objects;
     public:
-        RHIObjectStorage(Core::Allocator* allocator) : m_allocator(allocator), m_objects(allocator) {};
-        RHIObjectStorage(Core::Allocator* allocator, size_t reserve_size) :
-            m_allocator(allocator), m_objects(reserve_size, allocator) {
+        RHIObjectStorage(Core::Allocator* allocator, size_t capacity = kRHIObjectStorageDefaultSize) :
+            m_allocator(allocator), m_objects(capacity, allocator) {
         };
         /**
          * @brief Creates specified RHIObject of derived type T and retrieves its handle
          */
         /// <returns>The newly allocated Handle of the said RHIObject.</returns>
         template<typename U, typename ...Args> Handle CreateObject(Args&&... args) {
-            auto [handle, value] = m_objects.pop();
+            auto [handle, value] = m_objects.pop_pair();
             value = Core::ConstructUniqueBase<Base, U>(m_allocator, std::forward<Args>(args)...);
             return handle;
         }
@@ -156,19 +156,6 @@ namespace Foundation::RHI {
         /// <param name="handle"></param>
         inline void DestroyObject(Handle handle) {
             m_objects.free(handle);
-        }
-        /**
-         * @brief Removes all elements from the m_objects container.
-         * Using handles acquired earlier will result in undefined behavior.
-         */
-        inline void Clear() {
-            m_objects.clear();
-        }
-        /**
-         * @brief Number of objects currently stored in the storage.
-         */
-        inline size_t Allocation() const {
-            return m_objects.allocation() > 0;
         }
     };
 }

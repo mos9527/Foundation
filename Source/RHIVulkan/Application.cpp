@@ -23,10 +23,6 @@ static VKAPI_ATTR vk::Bool32 VKAPI_CALL VkDebugLayerCallback(
     );
     return vk::False;
 }
-VulkanApplication::~VulkanApplication() {
-    // Destroy all devices first
-    m_storage.Clear();
-}
 VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, const char* engineName, const uint32_t apiVersion)
     : m_vkAllocatorCpuCallbacks(CreateVulkanCpuAllocationCallbacks(allocator)), m_allocator(allocator), m_storage(allocator), m_devices(allocator),
     m_name(appName), m_vulkanApiVersion(apiVersion)

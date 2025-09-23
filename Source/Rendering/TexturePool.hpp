@@ -23,7 +23,7 @@ namespace Foundation::Rendering
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> m_descriptorSetLayout;
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_descriptorPool;
         RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> m_descriptorSet;
-        FreeList<TexturePoolHandle, Variant<TexturePair, RHITextureView*>> m_textures;
+        Atomics::FreeList<TexturePoolHandle, Variant<TexturePair, RHITextureView*>> m_textures;
 
         TexturePoolHandle m_missingTextureHandle{ kInvalidHandle };
         void SetMissingTexture(uint32_t index);

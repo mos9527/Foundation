@@ -21,7 +21,7 @@ namespace Foundation::Atomics
 {
     using namespace Foundation::Core;
     /**
-     * @brief Atomic single-producer single-consumer ring buffer with a fixed maximum size
+     * @brief Atomic single-producer single-consumer FIFO ring buffer with a fixed maximum size
      * @tparam T Data type.
      */
     template <typename T>
@@ -90,7 +90,7 @@ namespace Foundation::Atomics
         }
     };
     /**
-     * @brief Atomic multi-producer multi-consumer ring buffer with a fixed maximum size
+     * @brief Atomic multi-producer multi-consumer FIFO ring buffer with a fixed maximum size
      * @tparam T Data type.
      */
     template<typename T>
@@ -135,7 +135,7 @@ namespace Foundation::Atomics
                     size_t cycle = write >> queue->m_shift;
                     if (write_cycle == cycle) // Ready to write
                     {
-                        // Bump the write index if we can, claiming the new index. Try later otherwise.
+                        // Bump the write index if we can, claiming the old index. Try later otherwise.
                         if (queue->m_write.compare_exchange_weak(write, write + 1, std::memory_order_relaxed))
                         {
                             elem.data = std::forward<U>(data);

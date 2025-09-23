@@ -72,19 +72,21 @@ void VulkanSwapchain::Instantiate() {
     CHECK_MSG(m_device.GetVkQueues() && m_device.GetVkQueues()->CanPresent(), "Device does not have a present-capable queue");
     auto const& device = m_device.GetVkDevice();
     auto create_info = vkSwapchainCreateInfoFromSwapchainDesc(m_desc);
-    m_images.Clear(), m_images_ptrs.clear();
+    m_images.reset();
+    m_images = ConstructUnique<RHIObjectStorage<VulkanTexture>>(m_device.GetAllocator(), m_device.GetAllocator());
+    m_images_ptrs.clear();
     m_swapchain = vk::raii::SwapchainKHR(device, create_info, m_device.GetVkAllocatorCallbacks());
     auto images = m_swapchain.getImages();
     for (auto& image : images) {
-        const Handle handle = m_images.CreateObject<VulkanTexture>(m_device, RHITextureDesc{}, vk::raii::Image(device, image, m_device.GetVkAllocatorCallbacks()), true /*shared=true*/);
-        m_images_ptrs.push_back(m_images.GetObjectPtr(handle));
+        const Handle handle = m_images->CreateObject<VulkanTexture>(m_device, RHITextureDesc{}, vk::raii::Image(device, image, m_device.GetVkAllocatorCallbacks()), true /*shared=true*/);
+        m_images_ptrs.push_back(m_images->GetObjectPtr(handle));
     }
 }
 VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SwapchainDesc const& desc)
-    : RHISwapchain(device, desc), m_device(device), m_images(device.GetAllocator()), m_images_ptrs(device.GetAllocator()) {
+    : RHISwapchain(device, desc), m_device(device), m_images_ptrs(device.GetAllocator()) {
     Instantiate();
 }
-Core::Span<RHITexture* const> VulkanSwapchain::GetImages() const {
+Span<RHITexture* const> VulkanSwapchain::GetImages() const {
     return m_images_ptrs;
 }
 RHIExtent2D VulkanSwapchain::GetExtents() const

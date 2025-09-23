@@ -4,6 +4,7 @@
 
 #include "Common.hpp"
 namespace Foundation::RHI {
+    constexpr size_t kArenaMaxAllocations = 65536;
     inline VmaAllocationCreateFlags vmaAllocationFlagsFromRHIResourceHostAccess(RHIResourceHostAccess access) {
         using enum RHIResourceHostAccess;
         switch (access) {
@@ -25,14 +26,17 @@ namespace Foundation::RHI {
         vk::raii::Buffer m_buffer{ nullptr };
 
         RHIObjectStorage<VulkanBuffer> m_aliases;
-
+        // XXX: This idea is quite dumb. We're inherently requiring implementations
+        // to roll their _own_ allocators for no good reason.
+        // Thankfully only ModelViewer now uses this feature. TODO: Remove ASAP.
         class Arena : public RHIBuffer::Arena {
             const size_t m_size;
+
             VmaVirtualBlock m_block{};
             // [Allocation, {size, offset, VmaVirtualAllocation}]
-            Core::FreeList<Allocation, Tuple<size_t, size_t, VmaVirtualAllocation>> m_allocs;
+            Atomics::FreeList<Allocation, Tuple<size_t, size_t, VmaVirtualAllocation>> m_allocs;
         public:
-            Arena(Core::Allocator* alloc, size_t size) : m_size(size), m_allocs(alloc) {
+            Arena(Allocator* alloc, size_t size) : m_size(size), m_allocs(kArenaMaxAllocations, alloc) {
                 const VmaVirtualBlockCreateInfo info{ .size = size };
                 vmaCreateVirtualBlock(&info, &m_block);
             }
@@ -43,7 +47,7 @@ namespace Foundation::RHI {
                 VkResult ret = vmaVirtualAllocate(m_block, &info, &alloc, &offset);
                 if (ret == VK_ERROR_OUT_OF_DEVICE_MEMORY)
                     return kInvalidHandle;
-                auto& [res, ainfo] = m_allocs.pop();
+                auto& [res, ainfo] = m_allocs.pop_pair();
                 auto& [sz, off, vmaAlloc] = ainfo;
                 sz = size, off = offset, vmaAlloc = alloc;
                 return res;
@@ -60,10 +64,6 @@ namespace Foundation::RHI {
             size_t GetSize(Allocation alloc) const override {
                 auto& [sz, off, vmaAlloc] = m_allocs.at(alloc);
                 return sz;
-            }
-            void Reset() override {                
-                vmaClearVirtualBlock(m_block);
-                m_allocs.clear();
             }
             ~Arena() override
             {

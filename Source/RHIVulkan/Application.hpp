@@ -26,27 +26,26 @@ namespace Foundation::RHI {
         vk::raii::PhysicalDevices m_physicalDevices{ nullptr };
         vk::raii::Instance m_instance{ nullptr };
         Core::Allocator* m_allocator;
-        RHIObjectStorage<> m_storage;
 
         Core::Vector<RHIDevice::DeviceDesc> m_devices;
         vk::raii::DebugUtilsMessengerEXT m_debug_handler{ nullptr };
+
+        RHIObjectStorage<> m_storage;
     public:
         const String m_name;
 
         const vk::raii::Context m_context;
         const uint32_t m_vulkanApiVersion;
 
-        VulkanApplication(Core::Allocator* allocator, const char* appName = "Vulkan RHI", const char* engineName = "Foundation", const uint32_t apiVersion = VK_API_VERSION_1_3);
-        ~VulkanApplication() override;
-
-        Core::Span<const RHIDevice::DeviceDesc> EnumerateDevices() const override;
+        VulkanApplication(Allocator* allocator, const char* appName = "Vulkan RHI", const char* engineName = "Foundation", const uint32_t apiVersion = VK_API_VERSION_1_3);
+        Span<const RHIDevice::DeviceDesc> EnumerateDevices() const override;
 
         RHIApplicationScopedObjectHandle<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc, Native::NativeWindow* window = nullptr) override;
         RHIDevice* GetDevice(Handle handle) const override;
         void DestroyDevice(Handle handle) override;
 
-        inline Core::Allocator* GetAllocator() const { return m_allocator; }
-        inline vk::AllocationCallbacks const& GetVkAllocatorCallbacks() const { return m_vkAllocatorCpuCallbacks; }
-        inline auto const& GetVkInstance() const { return m_instance; }
+        Allocator* GetAllocator() const { return m_allocator; }
+        vk::AllocationCallbacks const& GetVkAllocatorCallbacks() const { return m_vkAllocatorCpuCallbacks; }
+        auto const& GetVkInstance() const { return m_instance; }
     };
 }

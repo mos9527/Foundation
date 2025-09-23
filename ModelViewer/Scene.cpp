@@ -22,7 +22,7 @@ Scene::Scene(RHIDevice* device, size_t numSwaps, SceneBudgets const& budgets, Al
     m_allocator(alloc),
     m_upload(device, alloc, budgets.TotalBudget()),
     m_instance(device, budgets.InstanceBudget, budgets.InstanceAlignment, numSwaps, alloc),
-    m_meshes(alloc)
+    m_meshes(kMaxSceneMeshes, alloc)
 {
     m_prmitive =
         device->CreateBuffer({.usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
@@ -65,7 +65,7 @@ void Scene::UploadAllocation(RHIBuffer* buffer, Span<const char> data, BufferAll
 }
 SceneHandle Scene::CreateMesh(Span<const char> vertices, Span<const char> indices)
 {
-    auto [handle, data] = m_meshes.pop();
+    auto [handle, data] = m_meshes.pop_pair();
     auto primitive = m_prmitive->GetArena().Allocate(sizeof(PrimitiveMetadata), alignof(PrimitiveMetadata));
     data.primitiveID = m_prmitive->GetArena().GetOffset(primitive) / sizeof(PrimitiveMetadata);
     data.vertex = m_vertex->GetArena().Allocate(vertices.size_bytes(), 4);

@@ -1,5 +1,6 @@
 #pragma once
 #include <Atomics/Queue.hpp>
+#include <Atomics/FreeList.hpp>
 #include <Async/Future.hpp>
 #include <Bits/Format.hpp>
 #include <Math/Math.hpp>
@@ -13,7 +14,7 @@ namespace ModelViewer
     using namespace Foundation::Math;
     using namespace Foundation::Bits;
     #include "Shaders/Common.h"
-
+    constexpr size_t kMaxSceneMeshes = 65536;
     using SceneHandle = uint32_t;
     struct SceneBudgets
     {
@@ -64,7 +65,7 @@ namespace ModelViewer
         UploadContext m_upload; // Temp upload bump arena
         StagedData m_instance; // Instance data with per-swap staging
         /* -- Data -- */
-        FreeList<SceneHandle, SceneMesh> m_meshes; // All meshes in the scene
+        Atomics::FreeList<SceneHandle, SceneMesh> m_meshes; // All meshes in the scene
         void UploadAllocation(RHIBuffer* buffer, Span<const char> data, BufferAllocation allocation);
         bool m_instanceDirty = false;
     public:
