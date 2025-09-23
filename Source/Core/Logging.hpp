@@ -23,14 +23,6 @@ namespace Foundation::Core {
 #define LOG_RUNTIME(TAG, LEVEL, ...) \
 	SPDLOG_LOGGER_CALL(LOG_GET_LOGGER(TAG), spdlog::level::LEVEL __VA_OPT__(,) __VA_ARGS__)
 
-#ifndef _DEBUG
-#define LOG_DEBUG(TAG, LEVEL, ...) (void)0
-#else
-
-#define LOG_DEBUG(TAG, LEVEL, ...) \
-	SPDLOG_LOGGER_CALL(LOG_GET_LOGGER(TAG), spdlog::level::LEVEL __VA_OPT__(,) __VA_ARGS__)
-#endif
-
 #define CHECK(expr) if(!(expr)) { \
     LOG_RUNTIME(Core, err, "Check failed: {}", #expr); \
     throw std::runtime_error( #expr ); \

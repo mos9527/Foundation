@@ -931,9 +931,9 @@ void Renderer::SetFrameSyncObjects()
         m_swaps[i].compute_fence->DebugSetObjectName(fmt::format("Compute Fence of Swap {}", i).c_str());
     }
     m_graphicsTimeline = m_device->CreateSemaphore(true);
-    m_graphicsTimeline->DebugSetObjectName(fmt::format("Async Graphics Semaphore").c_str());
+    m_graphicsTimeline->DebugSetObjectName(fmt::format("Async Graphics Timeline Semaphore").c_str());
     m_computeTimeline = m_device->CreateSemaphore(true);
-    m_computeTimeline->DebugSetObjectName(fmt::format("Async Compute Semaphore").c_str());
+    m_computeTimeline->DebugSetObjectName(fmt::format("Async Compute Timeline Semaphore").c_str());
 }
 void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain)
 {
@@ -1494,7 +1494,6 @@ void Renderer::ExecuteFrame()
                 {
                     ZoneScopedN("Submit (No Present)");
                     queue->Submit({.timeline_waits = timeline_waits,
-                                   .timeline_signals = {{{timeline_signal}}},
                                    .waits_stages = timeline_wait_stages,
                                    .cmd_lists = group_cmds,
                                    .fence = fence_ptr});
@@ -1502,18 +1501,7 @@ void Renderer::ExecuteFrame()
                 else
                 {
                     // Last group to submit, and we need to present
-                    if (group.queue == RHIDeviceQueueType::Compute)
-                    {
-                        // Submit compute first, then...
-                        queue->Submit({
-                            .timeline_waits = timeline_waits,
-                            .timeline_signals = {{{timeline_signal}}},
-                            .waits_stages = timeline_wait_stages,
-                            .cmd_lists = group_cmds,
-                            .fence = fence_ptr // Compute
-                        });
-                        queue = m_graphicsQueue;
-                    }
+                    CHECK_MSG(group.queue == RHIDeviceQueueType::Graphics, "FIXME-ExecuteFrame: Last pass ended on a non-Graphics queue");
                     // Transition the Backbuffer to Present.
                     auto cmd = ExecuteAllocateCommandList(RHIDeviceQueueType::Graphics, -1);
                     cmd->Reset();
@@ -1533,7 +1521,6 @@ void Renderer::ExecuteFrame()
                         ZoneScopedN("Submit & Present");
                         timeline_wait_stages.push_back(group.all_stages | RHIPipelineStageBits::RenderTargetOutput);
                         queue->Submit({.timeline_waits = timeline_waits,
-                                       .timeline_signals = {{{timeline_signal}}},
                                        .waits = {{m_swaps[m_currentSync].present.Get()}},
                                        .waits_stages = timeline_wait_stages,
                                        .signals = {{m_swaps[m_currentSwap].render.Get()}},

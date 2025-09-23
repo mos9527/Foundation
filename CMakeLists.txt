@@ -4,7 +4,8 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 set(CMAKE_CXX_STANDARD 20)
 
-option(FOUNDATION_WITH_SANITIZERS "Build with sanitizers enabled" OFF)
+option(FOUNDATION_WITH_ASAN "Build with ASAN (Address) enabled" OFF)
+option(FOUNDATION_WITH_TSAN "Build with TSAN (Thread) enabled" OFF)
 option(FOUNDATION_WITH_TESTS "Build tests" ON)
 option(FOUNDATION_WITH_MODELVIEWER "Build the model viewer application" ON)
 option(FOUNDATION_WITH_EXAMPLES "Build examples" ON)
@@ -23,16 +24,8 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 endif()
 
 
-if (FOUNDATION_WITH_SANITIZERS)
-    if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-        add_compile_options(/fsanitize=address)
-        add_link_options(/fsanitize=address)
-    else()
-        add_compile_options(-fsanitize=address)
-        add_link_options(-fsanitize=address)
-    endif()
-endif()
-
+set(MI_TRACK_ASAN FOUNDATION_WITH_ASAN CACHE BOOL "" FORCE)
+set(MI_DEBUG_TSAN FOUNDATION_WITH_TSAN CACHE BOOL "" FORCE)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(DERIVED_DATA_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/data")

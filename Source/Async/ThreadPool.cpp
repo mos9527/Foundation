@@ -50,6 +50,5 @@ namespace Foundation::Async
                 m_complete.notify_one();
             }
         }
-        LOG_RUNTIME(ThreadPoolWorker, info, "Exit {}", id);
     }
 } // namespace Foundation::Async
