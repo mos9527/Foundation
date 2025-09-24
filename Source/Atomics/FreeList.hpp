@@ -4,7 +4,7 @@
 namespace Foundation::Atomics {
     using namespace Core;
     /**
-     * @brief Bounded Atomic Freelist
+     * @brief Atomic, bounded free list with O(1) value mapping
      * @tparam K Key type. Should be an integral type.
      * @tparam V Value type.
      * @tparam Tombstone Tombstone value type for erased values.

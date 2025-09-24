@@ -3,7 +3,7 @@
 #include <mutex>
 namespace Foundation::Core {
     /**
-     * @brief Unbounded Freelist.
+     * @brief Unbounded free list with O(1) value mapping
      * @note This implementation utilizes locks to guarantee thread safety.
      *       For a lock-free, bounded implementation see @ref Atomics::FreeList.
      * @tparam K Key type. Should be an integral type.

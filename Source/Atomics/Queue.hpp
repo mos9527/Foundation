@@ -6,7 +6,7 @@ namespace Foundation::Atomics
 {
     using namespace Foundation::Core;
     /**
-     * @brief Atomic single-producer single-consumer FIFO ring buffer with a fixed maximum size
+     * @brief Atomic, bounded single-producer single-consumer FIFO ring buffer with a fixed maximum size
      * @tparam T Data type.
      */
     template <typename T>
@@ -75,7 +75,7 @@ namespace Foundation::Atomics
         }
     };
     /**
-     * @brief Atomic multi-producer multi-consumer FIFO ring buffer with a fixed maximum size
+     * @brief Atomic, bounded multi-producer multi-consumer FIFO ring buffer with a fixed maximum size
      * @tparam T Data type.
      */
     template<typename T>

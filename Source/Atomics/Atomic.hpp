@@ -1,7 +1,7 @@
 #pragma once
 #include <atomic>
 /**
- * @brief Bounded, lock-free atomic primitives and implementations of data structures.
+ * @brief Lock-free atomic primitives and implementations of data structures.
  *
  * References:
  * - Dmitry Vyukov's blog on lock-free algorithms and data structures
@@ -16,6 +16,8 @@
  *   - https://en.cppreference.com/w/cpp/atomic/memory_order.html
  * - Tracy Profiler's various lockfree implementations
  *   - https://github.com/wolfpld/tracy/blob/master/public/client/tracy_concurrentqueue.h
+ * - SO answer on tagged pointers for ABA problem
+ *   - https://stackoverflow.com/a/38991835
  */
 namespace Foundation::Atomics
 {
