@@ -13,17 +13,20 @@ Features
 ---
 - Low-level modern API (Vulkan 1.3, DirectX12) as first-class citizen
 - Modern C++20 codebase with minimal dependencies 
+- Modern lock-free data structures at @ref Foundation::Atomics for low-contention, high-concurrency workloads
+- Explict thread safe guarantees - you pay for what you use
+- Arena allocation strategies for minimal fragmentation and latency in hot paths
+- Optional profiling integration with [Tracy Profiler](https://github.com/wolfpld/tracy)
+
+Renderer
+---
 - Full SPIR-V shader reflection support with automatic pipeline binding and generation
 - Frame Graph/Frame Pass architecture with optimized resource barrier placement
 - Async Compute support for modern GPUs with automatic release/acquire and synchronization
-- *Very* low CPU overhead thanks to arena memory allocation strategies and efficient algorithms
-- Strict validation in API usage and resource state tracking with detailed error reporting
-- Multithreaded application framework at @ref Foundation::Rendering::RenderApplication
-- Convenient in-built rendering techniques @ref Foundation::Rendering::createPSFullscreenPass, @ref Foundation::Rendering::createPSBackbufferBlitPass, etc.
-- Cross-platform support for Windows, Linux, and macOS, with:
-  - Vulkan-like explicit RHI APIs @ref Foundation::RHI
-  - DirectX-like rendering concepts at @ref Foundation::RenderCore
-  - WinAPI-like application APIs @ref Foundation::Native
+- Multithreaded command recording with automatic command buffer merging
+- [Unreal Render Dependency Graph](https://dev.epicgames.com/documentation/en-us/unreal-engine/render-dependency-graph-in-unreal-engine) inspired
+  syntax without esoteric macros
+
 
 Quickstart
 ---
@@ -89,6 +92,7 @@ Third party
 - https://github.com/microsoft/mimalloc.git
 - https://github.com/fmtlib/fmt.git
 - https://github.com/gabime/spdlog.git
+- https://github.com/wolfpld/tracy.git
 ### Math
 - https://github.com/g-truc/glm.git
 ### Native

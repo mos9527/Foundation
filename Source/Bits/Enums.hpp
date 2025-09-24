@@ -1,8 +1,16 @@
 #pragma once
 #include <bit>
+/**
+ * @brief Header-only convenience utilities
+ */
 namespace Foundation::Bits
 {
-    template<typename T, typename Ty> struct BitmaskEnumWrapper {
+    /**
+     * @brief Wrapper for bitmask enum types that provides bitwise operators.
+     * @tparam T Enum type
+     * @tparam Ty Underlying type
+     */
+    template <typename T, typename Ty> struct BitmaskEnumWrapper {
         Ty value{};
         BitmaskEnumWrapper() : value(static_cast<Ty>(T{})) {}
         BitmaskEnumWrapper(T v) : value(static_cast<Ty>(v)) {}
@@ -23,9 +31,17 @@ namespace Foundation::Bits
         constexpr bool is_bitmask() const { return is_pow2(); }
         constexpr int bit() const { return std::countr_one(value); }
     };
-}
-// Defines a bitmask enum type {T}Bits with underlying integer type INT_T.
-// Whilst defining a wrapper class of type T that provides bitwise operators.
+} // namespace Foundation::Bits
+/**
+ * @brief Defines a bitmask enum type {T}Bits with underlying integer type INT_T whilst defining a wrapper class of type
+ * T that provides bitwise operators.
+ * @param T Enum name
+ * @param INT_T Underlying integer type (e.g. uint32_t, uint64_t)
+ * @note The actual enum values must be defined between BITMASK_ENUM_BEGIN and BITMASK_ENUM_END.
+ * @note The enum values should be powers of two, or combinations thereof.
+ * @note This also defines the to_integer() function for converting the enum to its underlying integer type.
+ * @note This also defines the bitwise operators for the enum type.
+ */
 #define BITMASK_ENUM_BEGIN(T,INT_T) \
 enum class T##Bits : INT_T;	\
 inline constexpr INT_T to_integer(T##Bits e) { return static_cast<INT_T>(e); } \
@@ -41,7 +57,26 @@ enum class T##Bits : INT_T {
 
 #define BITMASK_ENUM_END() };
 
-// Defines convince to_string() method and format_as() [fmt] for the respective enum class
+/**
+ * @brief Defines convince to_string() method and format_as() [fmt] for the respective enum class
+ * Example usage:
+ * @code{.cpp}
+ *  ENUM_NAME_CONV_BEGIN(Color)
+ *      ENUM_NAME(Red)
+ *      ENUM_NAME(Green)
+ *      ENUM_NAME(Blue)
+ *  ENUM_NAME_CONV_END()
+ * @endcode
+ * The enum can be subsequently used as:
+ * @code{.cpp}
+ *  Color c = Color::Red;
+ *  std::cout << to_string(c); // prints "Red"
+ *  fmt::print("Color is {}\n", c); // prints "Color is Red"
+ * @endcode
+ * @param T Enum type
+ * @note The actual enum values must be defined between ENUM_NAME_CONV_BEGIN and ENUM_NAME_CONV_END.
+ * @note If the enum value is not recognized (not defined), "Unknown" is returned.
+ */
 #define ENUM_NAME_CONV_BEGIN(T) \
 inline constexpr const char* to_string(T elem); \
 inline auto format_as(T elem) { return to_string(elem); } \
@@ -52,5 +87,5 @@ inline constexpr const char* to_string(T elem) { \
 #define ENUM_NAME_CONV_END() } \
     return "Unknown"; \
 }
-
+// Shorthand for @ref ENUM_NAME_CONV_BEGIN case statements
 #define ENUM_NAME(E) case E: return #E;

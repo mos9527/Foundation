@@ -64,6 +64,9 @@ namespace Foundation::RenderCore
         /**
          * @brief Perform any setup required for this pass.
          * This may include creating resources, declaring resource accesses, etc.
+         *
+         * @note This is only executed during the Setup phase of the render graph,
+         * and is always called from the main (renderer's) thread.
          */
         virtual void Setup(PassHandle self, Renderer* r) = 0;
         /**
@@ -71,12 +74,18 @@ namespace Foundation::RenderCore
          *
          * This is only executed after EndSetup() has been called,
          * and when the render graph is actually executed.
+         *
+         * @note This may be called from multiple threads concurrently, and thus
+         * should ensure thread safety if accessing shared data.
          */
         virtual void Record(PassHandle self, Renderer* r, RHICommandList* cmd) = 0;
         /**
          * @brief Determine whether this pass should be skipped during Record time
          *
          * @return Whether this pass should be skipped during execution.
+         *
+         * @note This is only executed during the Setup phase of the render graph,
+         * and is always called from the main (renderer's) thread.
          */
         virtual bool IsSkipped(PassHandle self, Renderer* r) const { return false; }
     };
@@ -365,7 +374,7 @@ namespace Foundation::RenderCore
             {
                 const int group_index{}; // Index in executionGroups
                 int graphics_group_index{-1}; // Index of all unique graphics groups before this one
-                int compute_group_index{-1}; // Index of all unqiue compute groups before this one
+                int compute_group_index{-1}; // Index of all unique compute groups before this one
                 const RHIDeviceQueueType queue{};
                 Vector<PassHandle> passes;
                 // Resources used in this group
@@ -1099,7 +1108,8 @@ namespace Foundation::RenderCore
      * This is equivalent to calling @ref Renderer::CreatePass
      *
      * @note Avoid using Lambdas with stateful captures (i.e. capturing `this` or [&]), as resource lifetimes
-     *       could be _much_ involved and unpredictable.
+     *       could be _much_ involved and unpredictable. Coupled with how passes may be scheduled on different
+     *       threads - refrain from shooting yourself in the foot.
      *       Prefer using stateless captures (i.e. [=]) or no captures at all, unless the states are trivial, and
      *       you really know what you're doing.
      *
@@ -1126,9 +1136,13 @@ namespace Foundation::RenderCore
      * and priority kMaxRenderPasses for Compute passes.
      *
      * @note Avoid using Lambdas with stateful captures (i.e. capturing `this` or [&]), as resource lifetimes
-     *       could be _much_ involved and unpredictable.
+     *       could be _much_ involved and unpredictable. Coupled with how passes may be scheduled on different
+     *       threads - refrain from shooting yourself in the foot.
      *       Prefer using stateless captures (i.e. [=]) or no captures at all, unless the states are trivial, and
      *       you really know what you're doing.
+     *
+     * @note The priority parameter is omitted here for simplicity. If you need custom priority,
+     *       use @ref createPassPriority instead.
      *
      * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is
      * disabled.
