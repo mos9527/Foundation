@@ -119,34 +119,6 @@ namespace Foundation::Rendering
         m_bufferStagings.emplace_back(m_stagingBuffers[m_currentSync].GetBuffer(), m_buffer.Get(),
                                       RHICommandList::CopyBufferRegion{src_offset, dst_offset, data.size_bytes()});
     }
-    BufferAllocation StagedBuffer::Push(Span<const char> data, size_t alignment)
-    {
-        CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");
-        auto& arena = m_buffer->GetArena();
-        BufferAllocation alloc = arena.Allocate(data.size(), alignment);
-        auto [size, offset] = Query(alloc);
-        Transfer(offset, data, alignment);
-        return alloc;
-    }
-    void StagedBuffer::Emplace(BufferAllocation, Span<const char> data, size_t alignment)
-    {
-        CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");
-        auto& arena = m_buffer->GetArena();
-        BufferAllocation alloc = arena.Allocate(data.size(), alignment);
-        auto [size, offset] = Query(alloc);
-        Transfer(offset, data, alignment);
-    }
-    AllocationPair StagedBuffer::Query(BufferAllocation allocation) const
-    {
-        CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");
-        auto& arena = m_buffer->GetArena();
-        return {static_cast<uint32_t>(arena.GetSize(allocation)), static_cast<uint32_t>(arena.GetOffset(allocation))};
-    }
-    void StagedBuffer::Pop(BufferAllocation allocation)
-    {
-        auto& arena = m_buffer->GetArena();
-        arena.Free(allocation);
-    }
     void StagedBuffer::EndTransfer()
     {
         CHECK_MSG(m_state == State::Transfer, "Staging is not in Transfer state");

@@ -36,7 +36,7 @@ vk::ImageCreateInfo vkImageCreateInfoFromRHITextureDesc(RHITextureDesc const& de
     };
 }
 VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc)
-    : RHIBuffer(device, desc), m_device(device), m_aliases(device.GetAllocator()), m_arena(device.GetAllocator(), desc.size) {
+    : RHIBuffer(device, desc), m_device(device), m_aliases(device.GetAllocator()) {
     vk::BufferCreateInfo buffer_info = vkBufferCreateInfoFromRHIBufferDesc(desc);
     VmaAllocationCreateInfo allocInfo = {
         .flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.host_access),
@@ -57,8 +57,7 @@ VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc
 }
 VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc, vk::raii::Buffer&& buffer, bool shared)
     : RHIBuffer(device, desc), m_device(device),
-    m_buffer(std::move(buffer)), m_aliases(device.GetAllocator()),
-    m_arena(device.GetAllocator(), desc.size), m_shared(shared)
+    m_buffer(std::move(buffer)), m_aliases(device.GetAllocator()), m_shared(shared)
 {}
 
 VulkanBuffer::~VulkanBuffer() {

@@ -11,10 +11,6 @@ namespace Foundation::Rendering
     using BufferStagingItem = Tuple<RHIBuffer*, RHIBuffer*, RHICommandList::CopyBufferRegion>;
     using BufferStagingList = Vector<BufferStagingItem>;
     using BufferCopyList = Vector<RHICommandList::CopyBufferRegion>;
-    // Opaque handle to an allocation acquired through @ref StagedBuffer::Push
-    using BufferAllocation = RHIBuffer::Arena::Allocation;
-    // [size, offset]
-    using AllocationPair = Pair<uint32_t, uint32_t>;
     /**
      * @brief Bump-only allocation buffer used for staging data to be transferred to GPU.
      */
@@ -139,33 +135,6 @@ namespace Foundation::Rendering
          * @note Overlapping transfers is undefined behavior.
          */
         void Transfer(size_t dst_offset, Span<const char> data, size_t alignment = 4);
-        /**
-         * @brief Pushes a range of data into the buffer through its @ref RHIBuffer::Arena
-         *
-         * The destination offset is managed by the buffer's internal @ref RHIBuffer::Arena
-         *
-         * This MUST be called between @ref BeginTransfer and @ref EndTransfer.
-         *
-         * @note No transfer is performed until @ref EndTransfer is called, and its command list is executed.
-         */
-        BufferAllocation Push(Span<const char> data, size_t alignment = 4);
-        /**
-         * @brief Updates a previous allocation, with a range of data that's of the same size
-         * This MUST be called between @ref BeginTransfer and @ref EndTransfer.
-         *
-         * @note No transfer is performed until @ref EndTransfer is called, and its command list is executed.
-         */
-        void Emplace(BufferAllocation, Span<const char> data, size_t alignment = 4);
-        /**
-         * @brief Queries the size and offset in the raw buffer of a previous allocation
-         */
-        AllocationPair Query(BufferAllocation allocation) const;
-        /**
-         * @brief Frees a previous pushed (allocated) data, marking the region to be reused.
-         *
-         * @note This is a no-op on the GPU side.
-         */
-        void Pop(BufferAllocation allocation);
         /**
          * @brief Ends the transfer state, and pushes optimized copy commands to the given command list.
          */
