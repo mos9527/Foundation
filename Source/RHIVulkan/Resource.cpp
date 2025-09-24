@@ -38,8 +38,11 @@ vk::ImageCreateInfo vkImageCreateInfoFromRHITextureDesc(RHITextureDesc const& de
 VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc)
     : RHIBuffer(device, desc), m_device(device), m_aliases(device.GetAllocator()) {
     vk::BufferCreateInfo buffer_info = vkBufferCreateInfoFromRHIBufferDesc(desc);
+    auto flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.host_access);
+    if (desc.resource.staging)
+        flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT;
     VmaAllocationCreateInfo allocInfo = {
-        .flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.host_access),
+        .flags = flags,
         .usage = VMA_MEMORY_USAGE_AUTO,
         .requiredFlags = static_cast<VkMemoryPropertyFlags>(desc.resource.coherent ? VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : 0)
     };

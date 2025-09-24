@@ -13,6 +13,10 @@ namespace Foundation::RHI {
         /// Guarantees that the host can see the latest data written by the device without explicit flush
         /// On implementations that do not support this, exceptions will be thrown when trying to create such resources.            
         bool coherent{ false };
+        /// Hint that the resource will be used for staging
+        /// With this flag - the resource may be not host-visible regardless of the host_access flag.
+        /// This is a performance hint, and may be ignored by implementations.
+        bool staging{ false };
     };
     struct RHIBufferDesc {
         RHIResourceDesc resource{};

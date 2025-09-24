@@ -39,9 +39,10 @@ namespace Foundation::Rendering
     StagingBuffer::StagingBuffer(RHIDevice* device, const size_t size, Allocator* allocator) :
         m_allocator(allocator), m_device(device),
         m_buffer(device->CreateBuffer(
-            {.resource = {
+                {.resource = {
                 .heap = RHIDeviceHeapType::Upload,
-                .host_access = RHIResourceHostAccess::WriteOnly
+                .host_access = RHIResourceHostAccess::WriteOnly,
+                .staging = true
             },
              .usage = RHIBufferUsageBits::TransferSource,
              .size = size})),

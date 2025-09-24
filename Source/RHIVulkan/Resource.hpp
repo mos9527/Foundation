@@ -66,7 +66,7 @@ namespace Foundation::RHI {
         VulkanTexture(VulkanDevice const& device, RHITextureDesc const& desc, vk::raii::Image&& image, bool shared = true);
         ~VulkanTexture() override;
 
-        inline auto& GetVkImage() const { return m_image; }
+        auto& GetVkImage() const { return m_image; }
 
         void* Map() override;
         void Flush(size_t offset, size_t size) override;
@@ -82,7 +82,7 @@ namespace Foundation::RHI {
 
         void DebugSetObjectName(const char* name) override;
 
-        inline auto const& GetDevice() const { return m_device; }
+        auto const& GetDevice() const { return m_device; }
     };
 
     class VulkanTextureView : public RHITextureView {
@@ -94,8 +94,8 @@ namespace Foundation::RHI {
 
         RHITexture* GetTexture() const override { return &m_image; }
 
-        inline auto const& GetVkImageView() const { return m_view; }
-        inline auto const& GetImage() const { return m_image; }
+        auto const& GetVkImageView() const { return m_view; }
+        auto const& GetImage() const { return m_image; }
 
         void DebugSetObjectName(const char* name) override;
     };
