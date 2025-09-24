@@ -84,8 +84,10 @@ namespace Foundation::RenderCore
          *
          * @return Whether this pass should be skipped during execution.
          *
-         * @note This is only executed during the Setup phase of the render graph,
-         * and is always called from the main (renderer's) thread.
+         * This is only executed after EndSetup() has been called,
+         * and when the render graph is actually executed.
+         *
+         * @note This is always called from the main (renderer's) thread.
          */
         virtual bool IsSkipped(PassHandle self, Renderer* r) const { return false; }
     };

@@ -84,8 +84,6 @@ namespace Foundation::Rendering
             m_stagingBuffers.back().GetBuffer()->DebugSetObjectName(fmt::format("Staging Buffer {}", i).c_str());
         }
         m_buffer = device->CreateBuffer(desc);
-        LOG_RUNTIME(Staging, info, "** Staging init with {} buffers of {} each **", numSwaps,
-                    formatHumanReadableSize(desc.size));
     }
     void StagedBuffer::BeginTransfer(uint32_t rendererSync)
     {
