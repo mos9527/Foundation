@@ -5,9 +5,7 @@
 namespace Foundation::Core {
 	/**
 	 * @brief Wrapper around mimalloc's heap allocation functionalities.
-	 *
-	 * This allocator serves as a thin wrapper around mimalloc's default allocation behaviors,
-	 * and as mimalloc is thread-safe by default, so is this allocator.
+	 * @note As mimalloc is thread-safe by default, so is this allocator.
 	 */
 	class HeapAllocator : public Allocator {
         std::atomic<uint64_t> m_used{};

@@ -4,6 +4,6 @@
 #include "Logging.hpp"
 
 /**
- * @brief Thread-safe Allocators, Data Structures and introspection implementations.
+ * @brief Allocators, Data Structures and introspection implementations.
  */
 namespace Foundation::Core {}

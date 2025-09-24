@@ -13,6 +13,9 @@
 
 #include "Allocator.hpp"
 namespace Foundation::Core {
+
+    /* -- STL Value types -- */
+
     /**
      * @brief Alias for `std::optional`
      */
@@ -49,76 +52,12 @@ namespace Foundation::Core {
     using StringView = std::basic_string_view<char>;
 
     /**
-     * @brief Alias for `std::basic_string<char>`, without an explicit allocator constructor
-     *
-     * Allocation of strings on heap is done with the default global allocator.
-     */
-    using String = std::basic_string<char>;
-    /**
-     * @brief `std::basic_string<char>` with explicit @ref Foundation::Core::StlAllocator constructor
-     *
-     * Construction without an allocator is disallowed, and will result in a compile-time error.
-     */
-    using StringAlloc = std::basic_string<char, std::char_traits<char>, StlAllocator<char>>;
-
-    /**
-     * @brief `std::vector` with explicit @ref Foundation::Core::StlAllocator constructor
-     *
-     * Construction without an allocator is disallowed, and will result in a compile-time error.
-     */
-    template<typename T>
-    using Vector = std::vector<T, StlAllocator<T>>;
-
-    /**
-     * @brief `std::set` with explicit @ref Foundation::Core::StlAllocator constructor
-     *
-     * Construction without an allocator is disallowed, and will result in a compile-time error.
-     */
-    template<typename T, typename Predicate = std::less<T>>
-    using Set = std::set<T, Predicate, StlAllocator<T>>;
-    /**
-     * @brief `std::map` with explicit @ref Foundation::Core::StlAllocator constructor
-     *
-     * Construction without an allocator is disallowed, and will result in a compile-time error.
-     */
-    template<typename K, typename V, typename Predicate = std::less<K>>
-    using Map = std::map<K, V, Predicate, StlAllocator<Pair<const K, V>>>;
-    /**
-     * @brief `std::deque` with explicit @ref Foundation::Core::StlAllocator constructor
-     *
-     * Construction without an allocator is disallowed, and will result in a compile-time error.
-     */
-    template<typename T>
-    using Deque = std::deque<T, StlAllocator<T>>;
-    /**
-     * @brief `std::list` with explicit @ref Foundation::Core::StlAllocator constructor
-     *
-     * Construction without an allocator is disallowed, and will result in a compile-time error.
-     */
-    template<typename T>
-    using List = std::list<T, StlAllocator<T>>;
-    /**
-     * @brief `std::queue` with explicit @ref Foundation::Core::StlAllocator constructor
-     *
-     * Construction without an allocator is disallowed, and will result in a compile-time error.
-     */
-    template<typename T, typename Container = Deque<T>>
-    using Queue = std::queue<T, Container>;
-    /**
-     * @brief `std::priority_queue` with explicit @ref Foundation::Core::StlAllocator constructor
-     *
-     * Construction without an allocator is disallowed, and will result in a compile-time error.
-     */
-    template<typename T, typename Predicate = std::less<T>, typename Container = Vector<T>>
-    using PriorityQueue = std::priority_queue<T, Container, Predicate>;
-
-    /**
      * @brief std::span with relaxed constructors for pointer-aliasing types and common containers.
      */
     template<typename T>
     class Span : public std::span<T> {
     public:
-        using std::span<T>::span; 
+        using std::span<T>::span;
         Span() = default;
         /**
          * @brief Relaxed ctor for pointer-aliasing types
@@ -159,4 +98,88 @@ namespace Foundation::Core {
             return Span<const char>{ reinterpret_cast<const char*>(this->data()), this->size_bytes()  };
         }
     };
+
+    /* -- STL Containers -- */
+
+    /**
+     * @brief Alias for `std::basic_string<char>`, without an explicit allocator constructor
+     *
+     * Allocation of strings on heap is done with the default global allocator.
+     *
+     * @note Thread-safety is _not_ guaranteed as with other STL containers.
+     */
+    using String = std::basic_string<char>;
+    /**
+     * @brief `std::basic_string<char>` with explicit @ref Foundation::Core::StlAllocator constructor
+     *
+     * Construction without an allocator is disallowed, and will result in a compile-time error.
+     *
+     * @note Thread-safety is _not_ guaranteed as with other STL containers.
+     */
+    using StringAlloc = std::basic_string<char, std::char_traits<char>, StlAllocator<char>>;
+
+    /**
+     * @brief `std::vector` with explicit @ref Foundation::Core::StlAllocator constructor
+     *
+     * Construction without an allocator is disallowed, and will result in a compile-time error.
+     *
+     * @note Thread-safety is _not_ guaranteed as with other STL containers.
+     */
+    template<typename T>
+    using Vector = std::vector<T, StlAllocator<T>>;
+
+    /**
+     * @brief `std::set` with explicit @ref Foundation::Core::StlAllocator constructor
+     *
+     * Construction without an allocator is disallowed, and will result in a compile-time error.
+     *
+     * @note Thread-safety is _not_ guaranteed as with other STL containers.
+     */
+    template<typename T, typename Predicate = std::less<T>>
+    using Set = std::set<T, Predicate, StlAllocator<T>>;
+    /**
+     * @brief `std::map` with explicit @ref Foundation::Core::StlAllocator constructor
+     *
+     * Construction without an allocator is disallowed, and will result in a compile-time error.
+     *
+     * @note Thread-safety is _not_ guaranteed as with other STL containers.
+     */
+    template<typename K, typename V, typename Predicate = std::less<K>>
+    using Map = std::map<K, V, Predicate, StlAllocator<Pair<const K, V>>>;
+    /**
+     * @brief `std::deque` with explicit @ref Foundation::Core::StlAllocator constructor
+     *
+     * Construction without an allocator is disallowed, and will result in a compile-time error.
+     *
+     * @note Thread-safety is _not_ guaranteed as with other STL containers.
+     */
+    template<typename T>
+    using Deque = std::deque<T, StlAllocator<T>>;
+    /**
+     * @brief `std::list` with explicit @ref Foundation::Core::StlAllocator constructor
+     *
+     * Construction without an allocator is disallowed, and will result in a compile-time error.
+     *
+     * @note Thread-safety is _not_ guaranteed as with other STL containers.
+     */
+    template<typename T>
+    using List = std::list<T, StlAllocator<T>>;
+    /**
+     * @brief `std::queue` with explicit @ref Foundation::Core::StlAllocator constructor
+     *
+     * Construction without an allocator is disallowed, and will result in a compile-time error.
+     *
+     * @note Thread-safety is _not_ guaranteed as with other STL containers.
+     */
+    template<typename T, typename Container = Deque<T>>
+    using Queue = std::queue<T, Container>;
+    /**
+     * @brief `std::priority_queue` with explicit @ref Foundation::Core::StlAllocator constructor
+     *
+     * Construction without an allocator is disallowed, and will result in a compile-time error.
+     *
+     * @note Thread-safety is _not_ guaranteed as with other STL containers.
+     */
+    template<typename T, typename Predicate = std::less<T>, typename Container = Vector<T>>
+    using PriorityQueue = std::priority_queue<T, Container, Predicate>;
 }
