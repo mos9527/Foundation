@@ -2,9 +2,9 @@
 #include "Allocator.hpp"
 namespace Foundation::Core {
 	/**
-	 * @brief Implements a lock-free stack-based bump allocator.
-	 *
-	 * @note This is atomic, and therefore thread-safe.
+	 * @brief Implements an atomic stack-based bump allocator.
+	 * @note This implementation is thread-safe for allocations from multiple threads.
+     *       Deallocation is a no-op and does not modify the internal state.
 	 */
     class StackAllocator : public Allocator {
 	public:

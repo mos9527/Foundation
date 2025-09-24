@@ -1,8 +1,8 @@
 #pragma once
-#include <Atomics/Queue.hpp>
-#include <Core/FreeList.hpp>
 #include <Async/Future.hpp>
+#include <Atomics/Queue.hpp>
 #include <Bits/Format.hpp>
+#include <Core/Pool.hpp>
 #include <Math/Math.hpp>
 #include <Rendering/StagingBuffer.hpp>
 #include <Rendering/UploadContext.hpp>
@@ -64,7 +64,7 @@ namespace ModelViewer
         UploadContext m_upload; // Temp upload bump arena
         StagedData m_instance; // Instance data with per-swap staging
         /* -- Data -- */
-        Atomics::FreeList<SceneHandle, SceneMesh> m_meshes; // All meshes in the scene
+        Atomics::Pool<SceneHandle, SceneMesh> m_meshes; // All meshes in the scene
         void UploadAllocation(RHIBuffer* buffer, Span<const char> data, BufferAllocation allocation);
         bool m_instanceDirty = false;
     public:

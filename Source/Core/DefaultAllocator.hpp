@@ -4,5 +4,5 @@ namespace Foundation::Core {
     /**
      * @brief Alias for HeapAllocator with tracking enabled.
      */
-    using DefaultAllocator = HeapAllocator<true>;
+    using DefaultAllocator = HeapAllocator;
 }

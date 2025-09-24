@@ -7,8 +7,7 @@ namespace Foundation::Atomics
     using namespace Foundation::Core;
     /**
      * @brief Atomic, unbounded stack (LIFO) with lock-free push and pop operations.
-     * @note Memory allocations are performed on each push and deallocations on each pop,
-     *       and thus should be avoided in performance-critical paths.
+     * @note Memory allocations are performed on each push and deallocations on each pop.
      *       This also requires a thread-safe Allocator, which @ref Core provides.
      * @note Consider @ref MPMCQueue for a bounded, allocation-free alternative.
      * @tparam T Data type.

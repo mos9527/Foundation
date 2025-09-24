@@ -11,7 +11,7 @@ namespace Foundation::RHI {
         Allocator* m_allocator;
         const VulkanDevice& m_device;
         vk::raii::CommandPool m_commandPool{ nullptr };
-        RHIObjectStorage<> m_storage;
+        RHIObjectPool<> m_storage;
     public:
         VulkanCommandPool(const VulkanDevice& device, PoolDesc const& desc, Allocator* allocator);
 

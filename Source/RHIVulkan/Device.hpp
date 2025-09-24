@@ -9,7 +9,7 @@ namespace Foundation::RHI {
     constexpr uint32_t kInvalidQueueIndex = static_cast<uint32_t>(-1);
     struct VulkanDeviceQueues
     {
-        RHIObjectStorage<VulkanDeviceQueue> storage;
+        RHIObjectPool<VulkanDeviceQueue> storage;
         Handle graphics = kInvalidHandle, compute = kInvalidHandle, transfer = kInvalidHandle, present = kInvalidHandle;
         VulkanDeviceQueues(Allocator* allocator) : storage(allocator) {};
         VulkanDeviceQueue* Get(Handle handle) const;
@@ -91,7 +91,7 @@ namespace Foundation::RHI {
         VmaAllocator m_vkAllocator{ nullptr };
         // Device Object storage
         // Lifetimes and handle dereferencing are managed by the device.
-        RHIObjectStorage<> m_storage;
+        RHIObjectPool<> m_storage;
         // Queues
         UniquePtr<VulkanDeviceQueues> m_queues{ nullptr };
         Native::NativeWindow* window_;

@@ -73,7 +73,7 @@ void VulkanSwapchain::Instantiate() {
     auto const& device = m_device.GetVkDevice();
     auto create_info = vkSwapchainCreateInfoFromSwapchainDesc(m_desc);
     m_images.reset();
-    m_images = ConstructUnique<RHIObjectStorage<VulkanTexture>>(m_device.GetAllocator(), m_device.GetAllocator());
+    m_images = ConstructUnique<RHIObjectPool<VulkanTexture>>(m_device.GetAllocator(), m_device.GetAllocator());
     m_images_ptrs.clear();
     m_swapchain = vk::raii::SwapchainKHR(device, create_info, m_device.GetVkAllocatorCallbacks());
     auto images = m_swapchain.getImages();

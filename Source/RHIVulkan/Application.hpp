@@ -30,7 +30,7 @@ namespace Foundation::RHI {
         Core::Vector<RHIDevice::DeviceDesc> m_devices;
         vk::raii::DebugUtilsMessengerEXT m_debug_handler{ nullptr };
 
-        RHIObjectStorage<> m_storage;
+        RHIObjectPool<> m_storage;
     public:
         const String m_name;
 

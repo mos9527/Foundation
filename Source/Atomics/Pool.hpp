@@ -4,13 +4,16 @@
 namespace Foundation::Atomics {
     using namespace Core;
     /**
-     * @brief Atomic, bounded free list with O(1) value mapping
+     * @brief Atomic, bounded object pool with O(1) value mapping
+     * @note This is the atomic, lock-free version of @ref Core::Pool.
+     *       The pool has a fixed maximum size and will never allocate memory after construction.
+     *       For an unbounded, lock-based implementation see @ref Core::Pool.
      * @tparam K Key type. Should be an integral type.
      * @tparam V Value type.
      * @tparam Tombstone Tombstone value type for erased values.
      */
     template<typename K, typename V, typename Tombstone = V>
-    class FreeList {
+    class Pool {
         const size_t m_capacity;
         MPMCQueue<K> m_keys;
         Vector<V> m_values;
@@ -23,7 +26,7 @@ namespace Foundation::Atomics {
          * @param size The maximum number of elements the FreeList can hold, which will be pre-allocated.
          * @param alloc Allocator to use for internal allocations.
          */
-        FreeList(size_t size, Allocator* alloc) :
+        Pool(size_t size, Allocator* alloc) :
             m_capacity(size), m_keys(size, alloc), m_values(size, alloc), m_bitmap(size, alloc)
         {
             // Allocate all the keys that can be possibly produced

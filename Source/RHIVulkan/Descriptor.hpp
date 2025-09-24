@@ -21,7 +21,7 @@ namespace Foundation::RHI {
     class VulkanDeviceDescriptorPool : public RHIDeviceDescriptorPool {
         const VulkanDevice& m_device;
         vk::raii::DescriptorPool m_pool{ nullptr };
-        RHIObjectStorage<> m_storage;
+        RHIObjectPool<> m_storage;
     public:
         VulkanDeviceDescriptorPool(const VulkanDevice& device, PoolDesc const& desc);
         /**

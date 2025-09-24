@@ -3,15 +3,15 @@
 #include <mutex>
 namespace Foundation::Core {
     /**
-     * @brief Unbounded free list with O(1) value mapping
+     * @brief Unbounded object pool with O(1) value mapping
      * @note This implementation utilizes locks to guarantee thread safety.
-     *       For a lock-free, bounded implementation see @ref Atomics::FreeList.
+     *       For a lock-free, bounded implementation see @ref Atomics::Pool.
      * @tparam K Key type. Should be an integral type.
      * @tparam V Value type.
      * @tparam Tombstone Tombstone value type for erased values.
      */
     template<typename K, typename V, typename Tombstone = V>
-    class FreeList {
+    class Pool {
         Vector<K> m_keys;
         Vector<V> m_values;
         Vector<bool> m_bitmap;
@@ -27,7 +27,7 @@ namespace Foundation::Core {
                 m_values.resize(key + 1);
         }
     public:
-        FreeList(Allocator* alloc) : m_keys(alloc), m_values(alloc), m_bitmap(alloc) {}
+        Pool(Allocator* alloc) : m_keys(alloc), m_values(alloc), m_bitmap(alloc) {}
         /**
          * @brief Checks if the specified key exists and has a value.
          */

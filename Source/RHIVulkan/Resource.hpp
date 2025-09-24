@@ -24,7 +24,7 @@ namespace Foundation::RHI {
 
         vk::raii::Buffer m_buffer{ nullptr };
 
-        RHIObjectStorage<VulkanBuffer> m_aliases;
+        RHIObjectPool<VulkanBuffer> m_aliases;
         // XXX: This idea is quite dumb. We're inherently requiring implementations
         // to roll their _own_ allocators for no good reason.
         // Thankfully only ModelViewer now uses this feature. TODO: Remove ASAP.
@@ -33,7 +33,7 @@ namespace Foundation::RHI {
 
             VmaVirtualBlock m_block{};
             // [Allocation, {size, offset, VmaVirtualAllocation}]
-            Core::FreeList<Allocation, Tuple<size_t, size_t, VmaVirtualAllocation>> m_allocs;
+            Core::Pool<Allocation, Tuple<size_t, size_t, VmaVirtualAllocation>> m_allocs;
         public:
             Arena(Allocator* alloc, size_t size) : m_size(size), m_allocs(alloc) {
                 const VmaVirtualBlockCreateInfo info{ .size = size };
@@ -103,8 +103,8 @@ namespace Foundation::RHI {
         vk::raii::Image m_image{ nullptr };
         void* m_mapped{ nullptr };
 
-        RHIObjectStorage<VulkanTexture> m_aliases;
-        RHIObjectStorage<VulkanTextureView> m_views;
+        RHIObjectPool<VulkanTexture> m_aliases;
+        RHIObjectPool<VulkanTextureView> m_views;
     public:
         // Texture created by other means, e.g. swapchain or external source
         const bool m_shared{ false };

@@ -8,10 +8,8 @@ namespace Foundation::Core {
 	 *
 	 * This allocator serves as a thin wrapper around mimalloc's default allocation behaviors,
 	 * and as mimalloc is thread-safe by default, so is this allocator.
-	 *
-	 * @tparam Tracking Whether to track memory usage. If false, GetUsedMemory() will always return 0.
 	 */
-	template<bool Tracking = true> class HeapAllocator : public Allocator {
+	class HeapAllocator : public Allocator {
         std::atomic<uint64_t> m_used{};
 	public:
         pointer Allocate(size_type size) override;

@@ -1,6 +1,6 @@
 #pragma once
-#include <Core/FreeList.hpp>
 #include <Core/Core.hpp>
+#include <Core/Pool.hpp>
 
 /**
  * @brief Low-level Rendering Hardware Interface (RHI) abstractions.
@@ -123,11 +123,11 @@ namespace Foundation::RHI {
     /**
      * @brief Storage/Object dereference facility for RHI Objects
      */
-    template<typename Base = RHIObject> class RHIObjectStorage {
+    template<typename Base = RHIObject> class RHIObjectPool {
         Core::Allocator* m_allocator;
-        Core::FreeList<Handle, Core::UniquePtr<Base>> m_objects;
+        Core::Pool<Handle, Core::UniquePtr<Base>> m_objects;
     public:
-        RHIObjectStorage(Core::Allocator* allocator) :
+        RHIObjectPool(Core::Allocator* allocator) :
             m_allocator(allocator), m_objects(allocator) {
         };
         /**
