@@ -1,4 +1,5 @@
 #include <Core/DefaultAllocator.hpp>
+#include <Core/StackAllocator.hpp>
 #include <Atomics/Stack.hpp>
 #include <Async/Thread.hpp>
 #include <Async/Future.hpp>
@@ -9,7 +10,9 @@ using namespace Async;
 constexpr size_t kSize = 1LL << 20;
 int main()
 {
-    DefaultAllocator alloc;
+    // Use a stack allocator to avoid malloc/free overhead
+    Arena arena( malloc(kSize * sizeof(int) * 8), kSize * sizeof(int) * 8);
+    StackAllocator alloc(arena);
     Stack<int> stack(&alloc);
     size_t sum_expect = 0;
     Thread producer([&]() {
@@ -44,4 +47,5 @@ int main()
     c1.join(), c2.join(), c3.join(), c4.join();
     CHECK(sum_expect == sum_all);
     printf("pass!\n");
+    free(arena.memory);
 }
