@@ -25,51 +25,6 @@ namespace Foundation::RHI {
         vk::raii::Buffer m_buffer{ nullptr };
 
         RHIObjectPool<VulkanBuffer> m_aliases;
-        // XXX: This idea is quite dumb. We're inherently requiring implementations
-        // to roll their _own_ allocators for no good reason.
-        // Thankfully only ModelViewer now uses this feature. TODO: Remove ASAP.
-        class Arena : public RHIBuffer::Arena {
-            const size_t m_size;
-
-            VmaVirtualBlock m_block{};
-            // [Allocation, {size, offset, VmaVirtualAllocation}]
-            Core::Pool<Allocation, Tuple<size_t, size_t, VmaVirtualAllocation>> m_allocs;
-        public:
-            Arena(Allocator* alloc, size_t size) : m_size(size), m_allocs(alloc) {
-                const VmaVirtualBlockCreateInfo info{ .size = size };
-                vmaCreateVirtualBlock(&info, &m_block);
-            }
-            Allocation Allocate(size_t size, size_t alignment) override {                
-                VmaVirtualAllocationCreateInfo info{ .size = size, .alignment = alignment };
-                VmaVirtualAllocation alloc{};
-                VkDeviceSize offset{};
-                VkResult ret = vmaVirtualAllocate(m_block, &info, &alloc, &offset);
-                if (ret == VK_ERROR_OUT_OF_DEVICE_MEMORY)
-                    return kInvalidHandle;
-                auto& [res, ainfo] = m_allocs.pop_pair();
-                auto& [sz, off, vmaAlloc] = ainfo;
-                sz = size, off = offset, vmaAlloc = alloc;
-                return res;
-            }
-            void Free(Allocation alloc) override {                
-                auto& [sz, off, vmaAlloc] = m_allocs.at(alloc);
-                vmaVirtualFree(m_block, vmaAlloc);
-                m_allocs.free(alloc);
-            }
-            size_t GetOffset(Allocation alloc) const override  {
-                auto& [sz, off, vmaAlloc] = m_allocs.at(alloc);
-                return off;
-            }
-            size_t GetSize(Allocation alloc) const override {
-                auto& [sz, off, vmaAlloc] = m_allocs.at(alloc);
-                return sz;
-            }
-            ~Arena() override
-            {
-                vmaClearVirtualBlock(m_block);
-                vmaDestroyVirtualBlock(m_block);
-            }
-        } m_arena;
     public:
         // Buffer created by other means.
         const bool m_shared{ false };
@@ -79,9 +34,7 @@ namespace Foundation::RHI {
         VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc, vk::raii::Buffer&& buffer, bool shared = true);
         ~VulkanBuffer() override;
 
-        inline auto& GetVkBuffer() { return m_buffer; }
-
-        Arena& GetArena() override { return m_arena; }
+        auto& GetVkBuffer() { return m_buffer; }
 
         void* Map() override;
         void Flush(size_t offset, size_t size) override;

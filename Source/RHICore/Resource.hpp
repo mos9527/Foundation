@@ -32,38 +32,6 @@ namespace Foundation::RHI {
             : m_device(device), m_desc(desc) {
         }
         /**
-         * @brief Proxy object to provide generic sub-buffer allocation within a buffer.
-         *
-         * Implementations should guarantee thread-safety of the arena itself.
-         */
-        struct Arena : public RHIObject {
-            using Allocation = size_t;
-            /**
-             * @brief Allocates a sub-region of the buffer with the given size and alignment.
-             */
-            /// <returns>An opaque handle representing the allocated sub-region. kInvalidHandle if allocation fails.</returns>
-            virtual Allocation Allocate(size_t size, size_t alignment) = 0;
-            /**
-             * @brief Frees a previously allocated sub-region of the buffer.
-             */
-            virtual void Free(Allocation allocation) = 0;
-            /**
-             * @brief Retrieves the offset of a previously allocated sub-region of the buffer.
-             * This is not a raw pointer - one may expect to use this in CPU copy commands
-             * or GPU shader code, or an offest in mapped memory if the resource is CPU visible.
-             */
-            virtual size_t GetOffset(Allocation alloc) const = 0;
-            /**
-             * @brief Retrieves the size of a previously allocated sub-region of the buffer.
-             */
-            virtual size_t GetSize(Allocation alloc) const = 0;
-        };
-        /**
-         * @brief Sub-buffer allocation arena capable of generic alloc/free
-         * operations.
-         */
-        virtual Arena& GetArena() = 0;
-        /**
          * @brief Maps the entire buffer to the host memory.
          * Alignment is implementation-defined.
          * Implementations MUST guarantee consecutive calls to Map() return the same pointer,
@@ -90,7 +58,7 @@ namespace Foundation::RHI {
          * For detailed mapping behaviour, <see cref="Map"/>
          */
         /// <param name="count">count of elements</param>                
-        template<typename T> Core::Span<T> MapSpan(size_t count = kFullSize) {
+        template<typename T> Span<T> MapSpan(size_t count = kFullSize) {
             void* p = Map();
             if (count == kFullSize)
                 count = m_desc.size / sizeof(T);
