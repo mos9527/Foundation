@@ -35,7 +35,7 @@ namespace Foundation::RenderCore
         RHIResourceAccessBits::RenderTargetWrite | RHIResourceAccessBits::DepthStencilWrite |
         RHIResourceAccessBits::TransferWrite;
     /**
-     * @breif Parameters for @ref Renderer creation
+     * @brief Parameters for @ref Renderer creation
      */
     struct RendererDesc
     {
@@ -430,7 +430,7 @@ namespace Foundation::RenderCore
          */
         RHICommandList* ExecuteAllocateCommandList(RHIDeviceQueueType queue, int thread_id);
         /**
-         * @breif Helper to get the queue index of a queue type
+         * @brief Helper to get the queue index of a queue type
          */
         uint32_t ExecuteGetQueueIndex(RHIDeviceQueueType queue) const
         {
@@ -465,11 +465,11 @@ namespace Foundation::RenderCore
          */
         void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
         /**
-         * @breif Acquires resources for the current group.
+         * @brief Acquires resources for the current group.
          */
         void ExecuteAcquireQueueResources(RHIDeviceQueueType currentQueue, size_t groupIndex, RHICommandList* cmd);
         /**
-         * @breif Performs transitions that's otherwise impossible
+         * @brief Performs transitions that's otherwise impossible
          * (e.g. Fragment -> Compute) for the next group, and releases resources for the current group.
          */
         void ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, size_t groupIndex, RHICommandList* cmd);

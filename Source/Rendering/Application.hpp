@@ -47,7 +47,7 @@ namespace Foundation::Rendering {
          */
         bool asyncCompute{ true };
         /**
-        * @breif Enable VSync when presenting.
+        * @brief Enable VSync when presenting.
         */
         bool vsync{false};
     };
@@ -109,7 +109,7 @@ namespace Foundation::Rendering {
         // Should the application exit?
         Atomic<bool> m_appShouldClose{false};
         /**
-         * @breif Actions to take after device specific resources has been set up.
+         * @brief Actions to take after device specific resources has been set up.
          *
          * This is run on the main thread, i.e. the calling thread of @ref Initialize(),
          * after the device and swapchain is created, but before the Renderer is created.

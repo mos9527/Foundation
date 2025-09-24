@@ -9,16 +9,25 @@ namespace Foundation::Async
     using namespace Core;
     using namespace Async;
     using namespace Atomics;
+    /**
+     * @brief Job interface for use with @ref ThreadPool
+     *
+     * Custom implementations of @ref ThreadPoolJob can be constructed in-place with @ref ThreadPool::PushImpl
+     * For simple, stateless jobs, consider using @ref ThreadPool::Push with a lambda instead.
+     */
     struct ThreadPoolJob
     {
         virtual ~ThreadPoolJob() = default;
         virtual void Execute(size_t id) noexcept = 0;
     };
-    inline auto ThreadPoolPackagedLambda = []<typename T0, typename... T1>(T0&& func, T1&&... args)
-    {
-        return [func = std::forward<T0>(func), ... args = std::forward<T1>(args)]
-        { return func(std::forward<decltype(args)>(args)...); };
-    };
+    /**
+     * @brief State-carrying lambda job for use with @ref ThreadPool
+     *
+     * @note This is not meant to be used directly. Instead, use @ref ThreadPool::Push with a lambda function.
+     *
+     * @tparam Lambda Type of the lambda function.
+     * @tparam ReturnType Return type of the lambda function.
+     */
     template <typename Lambda, typename ReturnType>
     class ThreadPoolLambdaJob final : public ThreadPoolJob
     {
@@ -44,9 +53,12 @@ namespace Foundation::Async
             }
         }
     };
+    /**
+     * @brief Backing job queue type for @ref ThreadPool
+     */
     using JobQueue = MPMCQueue<UniquePtr<ThreadPoolJob>>;
     /**
-     * @breif Atomic, lock-free Thread Pool implementation with fixed bounds
+     * @brief Atomic, lock-free Thread Pool implementation with fixed bounds
      */
     class ThreadPool
     {
@@ -93,6 +105,11 @@ namespace Foundation::Async
         auto Push(Lambda&& func, Args&&... args)
         {
             CHECK_MSG(!m_shutdown, "ThreadPool shutting down");
+            auto ThreadPoolPackagedLambda = [](Lambda&& fn, Args&&... fargs)
+            {
+                return [func = std::forward<Lambda>(fn), ... fargs = std::forward<Args>(fargs)]
+                { return func(std::forward<Args>(fargs)...); };
+            };
             auto packaged = ThreadPoolPackagedLambda(std::forward<Lambda>(func), std::forward<Args>(args)...);
             using ReturnType = decltype(func(args...));
             using PackagedType = decltype(packaged);
