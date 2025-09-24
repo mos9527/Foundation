@@ -1,9 +1,11 @@
 #include "ThreadPool.hpp"
+
+#include "../../cmake-build-minsizerel/_deps/tracy-src/public/tracy/TracyC.h"
 namespace Foundation::Async
 {
     ThreadPool::ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc, StringView name):
-        m_allocator(alloc), m_threads(alloc), m_jobs(maxTasks, alloc),
-        m_jobsWriter(m_jobs.create_writer())
+        m_allocator(alloc), m_name(name), m_jobs(maxTasks, alloc),
+        m_jobsWriter(m_jobs.create_writer()), m_threads(alloc)
     {
         for (size_t i = 0; i < numThreads; ++i)
             m_threads.emplace_back(&ThreadPool::ThreadPoolWorker, this, i);
@@ -29,6 +31,7 @@ namespace Foundation::Async
     }
     void ThreadPool::ThreadPoolWorker(size_t id)
     {
+        TracyCSetThreadName(fmt::format("{}@{}", m_name.c_str(), id).c_str());
         auto reader = m_jobs.create_reader();
         size_t total = 0;
         while (!m_shutdown)

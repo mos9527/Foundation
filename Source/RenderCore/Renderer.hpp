@@ -22,8 +22,8 @@ namespace Foundation::RenderCore
     // Maximum number of render passes per frame
     // NOTE: The limit here is mostly arbitrary - and is only used
     //       for the default priority heuristic when determining pass order.
-    constexpr size_t kRecordThreadpoolSize = 8; // Threads to record command lists concurrently
     constexpr size_t kMaxRenderPasses = 1024;
+    constexpr size_t kRecordThreadpoolSize = 8; // Threads to record command lists concurrently
     constexpr size_t kMaxCommandListsPerThread = 128; // Maximum number of command lists per frame
     constexpr size_t kMaxTempResourceSemaphores = 16; // Maximum number of temporary semaphores for cross-queue barriers
     constexpr size_t kExecuteArenaSize = 16 * (1 << 20); // Maximum size of the per-frame transient arena (16MB)
@@ -317,7 +317,7 @@ namespace Foundation::RenderCore
 
         uint32_t m_frameSwaps{1}; // Max frames in flight
         uint32_t m_currentSync{0};
-        uint32_t m_currentSwap{0};
+        uint32_t m_currentSwap;
 
         struct Resources
         {
@@ -879,7 +879,7 @@ namespace Foundation::RenderCore
             CHECK(m_state == State::Execute);
             auto& tpass = m_setup->trackedPasses[pass];
             CHECK_MSG(tpass.write_backbuffer, "Pass {} does not write to backbuffer", tpass.name);
-            return m_swaps[m_currentSwap].rtv.Get();
+            return m_swaps[GetSwap()].rtv.Get();
         }
         /**
          * @return The backing general-purpose allocator used for the Renderer

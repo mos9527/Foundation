@@ -23,7 +23,7 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
                    RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator) :
     m_state(State::Undefined), m_allocator(allocator), m_desc(desc), m_swaps(m_allocator), m_device(device),
     m_swapchain(swapchain), m_executeArena(m_allocator, kExecuteArenaSize), m_executeAlloc(m_executeArena),
-    m_executeThreadPool(kRecordThreadpoolSize, kMaxCommandListsPerThread * 2, allocator),
+    m_executeThreadPool(kRecordThreadpoolSize, kMaxCommandListsPerThread * 2, allocator, "Renderer"),
     m_executePerSwapCmds(allocator), m_waitIdle(device.Get())
 {
     m_graphicsQueue = m_device->GetDeviceQueue(RHIDeviceQueueType::Graphics);
@@ -994,6 +994,7 @@ void Renderer::BeginExecute()
     }
     if (m_desc.present)
     {
+        ZoneScopedN("Acquire Next Image");
         m_currentSwap = m_swapchain->GetNextImage(-1, m_swaps[m_currentSync].present, {});
     }
 }
@@ -1082,7 +1083,7 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
         const RHIResourceAccess rt_access = RHIResourceAccessBits::RenderTargetWrite;
         const RHITextureLayout rt_layout = RHITextureLayout::RenderTarget;
         const RHIPipelineStage rt_stage = RHIPipelineStageBits::RenderTargetOutput;
-        auto& tres = m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle];
+        auto& tres = m_setup->trackedResources[m_swaps[GetSwap()].rt_handle];
         ExecuteBarrierSubresource(pass.handle, tres, RHITextureSubresourceRange::Create(), rt_access, rt_stage,
                                   rt_layout, cmd);
     }
@@ -1513,7 +1514,7 @@ void Renderer::ExecuteFrame()
                     cmd->DebugBegin("Present");
                     cmd->BeginTransition();
                     ExecuteBarrierSubresource(kInvalidHandle,
-                                              m_setup->trackedResources[m_swaps[m_currentSwap].rt_handle],
+                                              m_setup->trackedResources[m_swaps[GetSwap()].rt_handle],
                                               RHITextureSubresourceRange::Create(), {},
                                               RHIPipelineStageBits::RenderTargetOutput, RHITextureLayout::Present, cmd);
                     cmd->EndTransition();
@@ -1527,12 +1528,12 @@ void Renderer::ExecuteFrame()
                         queue->Submit({.timeline_waits = timeline_waits,
                                        .waits = {{m_swaps[m_currentSync].present.Get()}},
                                        .waits_stages = timeline_wait_stages,
-                                       .signals = {{m_swaps[m_currentSwap].render.Get()}},
+                                       .signals = {{m_swaps[GetSwap()].render.Get()}},
                                        .cmd_lists = group_cmds,
                                        .fence = m_swaps[m_currentSync].graphics_fence.Get()});
-                        queue->Present({.image_index = m_currentSwap,
+                        queue->Present({.image_index = GetSwap(),
                                         .swapchain = m_swapchain.Get(),
-                                        .waits = {{m_swaps[m_currentSwap].render.Get()}}});
+                                        .waits = {{m_swaps[GetSwap()].render.Get()}}});
                     }
                 }
             }

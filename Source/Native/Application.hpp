@@ -3,7 +3,7 @@
 #include <Bits/Chrono.hpp>
 #include "Enums.hpp"
 /**
- * @brief Platform-dependent native application abstractions
+ * @brief Platform-dependent application abstractions
  */
 namespace Foundation::Native {
     using namespace Core;

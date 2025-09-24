@@ -63,7 +63,7 @@ namespace Foundation::Async
     class ThreadPool
     {
         Allocator* m_allocator;        
-
+        String m_name;
         Atomic<bool> m_shutdown{false};
         Atomic<size_t> m_complete{ 0 };
         Atomic<size_t> m_total{ 0 };
@@ -79,6 +79,7 @@ namespace Foundation::Async
          * @param numThreads Number of worker threads to spawn.
          * @param maxTasks Max number of tasks that can be queued. Must be a power of two.
          * @param alloc Allocator to use for internal and job allocations
+         * @param name Prefix for worker thread names ("name@id")
          */
         ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc, StringView name = "ThreadPool");
         /**
