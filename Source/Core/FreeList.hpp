@@ -1,40 +1,38 @@
 #pragma once
-#include <Core/Container.hpp>
-#include "Queue.hpp"
-namespace Foundation::Atomics {
-    using namespace Core;
+#include "Core.hpp"
+#include <mutex>
+namespace Foundation::Core {
     /**
-     * @brief Bounded Atomic Freelist
+     * @brief Unbounded Freelist.
+     * @note This implementation utilizes locks to guarantee thread safety.
+     *       For a lock-free, bounded implementation see @ref Atomics::FreeList.
      * @tparam K Key type. Should be an integral type.
      * @tparam V Value type.
      * @tparam Tombstone Tombstone value type for erased values.
      */
     template<typename K, typename V, typename Tombstone = V>
     class FreeList {
-        const size_t m_capacity;
-        MPMCQueue<K> m_keys;
+        Vector<K> m_keys;
         Vector<V> m_values;
-        // Yes - there is Vector<bool>. If only you know the horror to
-        // synchronize a bitset across threads...
-        Vector<char> m_bitmap;
-    public:
+        Vector<bool> m_bitmap;
+        mutable std::recursive_mutex m_mutex;
+        K m_top{};
         /**
-         * @brief Constructs a FreeList with the specified capacity and allocator.
-         * @param size The maximum number of elements the FreeList can hold, which will be pre-allocated.
-         * @param alloc Allocator to use for internal allocations.
+         * @brief Adds a key to the internal key container and resizes the value container if necessary.
          */
-        FreeList(size_t size, Allocator* alloc) :
-            m_capacity(size), m_keys(size, alloc), m_values(size, alloc), m_bitmap(size, alloc)
-        {
-            // Allocate all the keys that can be possibly produced
-            auto writer = m_keys.create_writer();
-            for (size_t i = 0; i < size; i++)
-                writer.push(i);
+        void push(K key) {
+            std::scoped_lock lock(m_mutex);
+            m_keys.push_back(key);
+            if (key >= m_values.size())
+                m_values.resize(key + 1);
         }
+    public:
+        FreeList(Allocator* alloc) : m_keys(alloc), m_values(alloc), m_bitmap(alloc) {}
         /**
          * @brief Checks if the specified key exists and has a value.
          */
         bool contains(K key) const {
+            std::scoped_lock lock(m_mutex);
             return key < m_values.size() && m_bitmap[key];
         }
         /**
@@ -42,6 +40,7 @@ namespace Foundation::Atomics {
          * NOTE: Calling this function with a key that's not retrieved from pop() is undefined behavior.
          */
         V& at(K key) {
+            std::scoped_lock lock(m_mutex);
             CHECK_MSG(contains(key), "Key not allocated");
             return m_values[key];
         }
@@ -49,14 +48,25 @@ namespace Foundation::Atomics {
          * @brief Retrieves a const reference to the value associated with the given key.
          */
         V const& at(K key) const {
+            std::scoped_lock lock(m_mutex);
             CHECK_MSG(contains(key), "Key not allocated");
             return m_values[key];
         }
-        const K pop()
-        {
+        /**
+         * @brief Pops (allocates) a Key from the free list and returns it.
+         * If the free list is empty, a new key is allocated.
+         * The value associated with the key is guaranteed to be zero-initialized.
+         */
+        K pop() {
+            std::scoped_lock lock(m_mutex);
             K key;
-            CHECK_MSG(m_keys.create_reader().pop(key), "Key pool exhausted");
-            m_bitmap[key] = true;
+            if (m_keys.empty())
+                key = m_top++;
+            else
+                key = m_keys.back(), m_keys.pop_back();
+            if (key >= m_values.size())
+                m_values.resize(key + 1),
+                m_bitmap.resize(key + 1);
             return key;
         }
         /**
@@ -64,6 +74,7 @@ namespace Foundation::Atomics {
          */
         [[nodiscard]] const Pair<K, V&> pop_pair()
         {
+            std::scoped_lock lock(m_mutex);
             K key = pop();
             m_bitmap[key] = true;
             return { key, m_values[key] };
@@ -72,10 +83,11 @@ namespace Foundation::Atomics {
          * @brief Frees the value associated with the specified key
          */
         void free(K key) {
-            CHECK_MSG(contains(key), "Key {} is invalid", key);
+            std::scoped_lock lock(m_mutex);
+            CHECK_MSG(contains(key), "Key not allocated");
             m_values[key] = Tombstone{};
             m_bitmap[key] = false;
-            CHECK_MSG(m_keys.create_writer().push(key), "Key pool full");
+            push(key);
         }
     };
 }

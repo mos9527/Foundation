@@ -68,7 +68,7 @@ namespace Foundation::Async
          * @param maxTasks Max number of tasks that can be queued. Must be a power of two.
          * @param alloc Allocator to use for internal and job allocations
          */
-        ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc);
+        ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc, StringView name = "ThreadPool");
         /**
          * @brief Push a job implementing @ref ThreadPoolJob to the thread pool.
          * @note This by itself does not return a future or any way to get the result of the job

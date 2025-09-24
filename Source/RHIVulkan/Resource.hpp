@@ -4,7 +4,6 @@
 
 #include "Common.hpp"
 namespace Foundation::RHI {
-    constexpr size_t kArenaMaxAllocations = 65536;
     inline VmaAllocationCreateFlags vmaAllocationFlagsFromRHIResourceHostAccess(RHIResourceHostAccess access) {
         using enum RHIResourceHostAccess;
         switch (access) {
@@ -34,9 +33,9 @@ namespace Foundation::RHI {
 
             VmaVirtualBlock m_block{};
             // [Allocation, {size, offset, VmaVirtualAllocation}]
-            Atomics::FreeList<Allocation, Tuple<size_t, size_t, VmaVirtualAllocation>> m_allocs;
+            Core::FreeList<Allocation, Tuple<size_t, size_t, VmaVirtualAllocation>> m_allocs;
         public:
-            Arena(Allocator* alloc, size_t size) : m_size(size), m_allocs(kArenaMaxAllocations, alloc) {
+            Arena(Allocator* alloc, size_t size) : m_size(size), m_allocs(alloc) {
                 const VmaVirtualBlockCreateInfo info{ .size = size };
                 vmaCreateVirtualBlock(&info, &m_block);
             }

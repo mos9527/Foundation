@@ -1,5 +1,5 @@
 #pragma once
-#include <Atomics/FreeList.hpp>
+#include <Core/FreeList.hpp>
 #include <Core/Core.hpp>
 
 /**
@@ -7,7 +7,6 @@
  */
 namespace Foundation::RHI {
     using Handle = uint64_t;
-    constexpr size_t kRHIObjectStorageDefaultSize = 16384;
     constexpr static Handle kInvalidHandle = static_cast<Handle>(-1);
     /**
      * @brief Base class for all RHI objects.
@@ -126,10 +125,10 @@ namespace Foundation::RHI {
      */
     template<typename Base = RHIObject> class RHIObjectStorage {
         Core::Allocator* m_allocator;
-        Atomics::FreeList<Handle, Core::UniquePtr<Base>> m_objects;
+        Core::FreeList<Handle, Core::UniquePtr<Base>> m_objects;
     public:
-        RHIObjectStorage(Core::Allocator* allocator, size_t capacity = kRHIObjectStorageDefaultSize) :
-            m_allocator(allocator), m_objects(capacity, allocator) {
+        RHIObjectStorage(Core::Allocator* allocator) :
+            m_allocator(allocator), m_objects(allocator) {
         };
         /**
          * @brief Creates specified RHIObject of derived type T and retrieves its handle
@@ -154,7 +153,7 @@ namespace Foundation::RHI {
          * @brief Destroys the object associated with the given handle, and frees the handle for reuse.
          */
         /// <param name="handle"></param>
-        inline void DestroyObject(Handle handle) {
+        void DestroyObject(Handle handle) {
             m_objects.free(handle);
         }
     };

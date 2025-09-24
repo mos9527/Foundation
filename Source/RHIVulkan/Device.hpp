@@ -6,7 +6,6 @@
 namespace Foundation::RHI {
     class VulkanApplication;
     class VulkanDeviceQueue;
-    constexpr size_t kDeviceStorageReserveSize = 65536;
     constexpr uint32_t kInvalidQueueIndex = static_cast<uint32_t>(-1);
     struct VulkanDeviceQueues
     {

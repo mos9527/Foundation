@@ -12,7 +12,6 @@ namespace Foundation::RHI {
         const VulkanDevice& m_device;
         vk::raii::CommandPool m_commandPool{ nullptr };
         RHIObjectStorage<> m_storage;
-        constexpr static size_t kCommandListReserveSize = 256;
     public:
         VulkanCommandPool(const VulkanDevice& device, PoolDesc const& desc, Allocator* allocator);
 

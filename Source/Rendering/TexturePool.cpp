@@ -12,7 +12,7 @@ void TexturePool::SetMissingTexture(uint32_t index)
    }}}});
 }
 TexturePool::TexturePool(RHIDevice* device, Allocator* allocator, uint32_t max_textures) :
-    m_maxTextures(max_textures), m_device(device), m_allocator(allocator), m_textures(max_textures, allocator),
+    m_maxTextures(max_textures), m_device(device), m_allocator(allocator), m_textures(allocator),
     m_idleGuard(device)
 {
     m_descriptorPool = m_device->CreateDescriptorPool(

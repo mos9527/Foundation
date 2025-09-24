@@ -1381,6 +1381,8 @@ void Renderer::ExecuteFrame()
                 RecordJob(Renderer* r, TrackedPass* pass, RHICommandList** cmd) : r(r), pass(pass), cmd(cmd) {}
                 void Execute(size_t thread_id) noexcept override
                 {
+                    ZoneScoped;
+                    ZoneNameF("<%s>", pass->name.c_str());
                     *cmd = r->ExecuteAllocateCommandList(pass->queue, thread_id);
                     (*cmd)->Reset();
                     (*cmd)->Begin();
@@ -1396,7 +1398,9 @@ void Renderer::ExecuteFrame()
             // This needs to be done in lockstep anyway
             for (size_t i = 0; i < group_active.size(); ++i)
             {
+                ZoneScoped;
                 auto& pass = passes[group_active[i]];
+                ZoneNameF("<%s> Transition", pass.name.c_str());
                 auto& cmd = execute_cmds[i * 2];
                 cmd = ExecuteAllocateCommandList(group.queue, -1);
                 cmd->Reset();

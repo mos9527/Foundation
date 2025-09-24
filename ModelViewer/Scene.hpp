@@ -1,6 +1,6 @@
 #pragma once
 #include <Atomics/Queue.hpp>
-#include <Atomics/FreeList.hpp>
+#include <Core/FreeList.hpp>
 #include <Async/Future.hpp>
 #include <Bits/Format.hpp>
 #include <Math/Math.hpp>
@@ -14,7 +14,6 @@ namespace ModelViewer
     using namespace Foundation::Math;
     using namespace Foundation::Bits;
     #include "Shaders/Common.h"
-    constexpr size_t kMaxSceneMeshes = 65536;
     using SceneHandle = uint32_t;
     struct SceneBudgets
     {

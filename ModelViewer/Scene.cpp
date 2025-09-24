@@ -22,7 +22,7 @@ Scene::Scene(RHIDevice* device, size_t numSwaps, SceneBudgets const& budgets, Al
     m_allocator(alloc),
     m_upload(device, alloc, budgets.TotalBudget()),
     m_instance(device, budgets.InstanceBudget, budgets.InstanceAlignment, numSwaps, alloc),
-    m_meshes(kMaxSceneMeshes, alloc)
+    m_meshes(alloc)
 {
     m_prmitive =
         device->CreateBuffer({.usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,

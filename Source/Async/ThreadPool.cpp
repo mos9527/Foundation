@@ -1,7 +1,7 @@
 #include "ThreadPool.hpp"
 namespace Foundation::Async
 {
-    ThreadPool::ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc) :
+    ThreadPool::ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc, StringView name):
         m_allocator(alloc), m_threads(alloc), m_jobs(maxTasks, alloc),
         m_jobsWriter(m_jobs.create_writer())
     {
