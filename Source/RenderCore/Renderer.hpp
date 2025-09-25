@@ -16,8 +16,7 @@ namespace Foundation::RenderCore
     //       for the default priority heuristic when determining pass order.
     constexpr size_t kMaxRenderPasses = 1024;
     constexpr size_t kRecordThreadpoolSize = 8; // Threads to record command lists concurrently
-    constexpr size_t kMaxCommandListsPerThread = 128; // Maximum number of command lists per frame
-    constexpr size_t kMaxTempResourceSemaphores = 16; // Maximum number of temporary semaphores for cross-queue barriers
+    constexpr size_t kMaxCommandListsPerThread = 128; // Maximum number of command lists per frame    
     constexpr size_t kExecuteArenaSize = 16 * (1 << 20); // Maximum size of the per-frame transient arena (16MB)
     const RHIPipelineStage kComputeStagesMask = RHIPipelineStageBits::FragmentShader |
         RHIPipelineStageBits::VertexShader | RHIPipelineStageBits::MeshShader | RHIPipelineStageBits::RayTracingShader |
@@ -40,24 +39,24 @@ namespace Foundation::RenderCore
         Map<ResourceHandle, Pair<PassHandle, PassHandle>> activeResources;
         // Passes ordered by pass.ord
         Vector<PassHandle> execution;
-        Map<RHIDescriptorType, uint32_t> binding_counts;
+        Map<RHIDescriptorType, uint32_t> bindingCounts;
         PassHandle epilogue{kInvalidHandle};
         // Execution grouped by queue type
         struct ExecutionGroups
         {
-            const int group_index{}; // Index in executionGroups
-            int graphics_group_index{-1}; // Index of all unique graphics groups before this one
-            int compute_group_index{-1}; // Index of all unique compute groups before this one
+            const int groupIndex{}; // Index in executionGroups
+            int graphicsGroupIndex{-1}; // Index of all unique graphics groups before this one
+            int computeGroupIndex{-1}; // Index of all unique compute groups before this one
             const RHIDeviceQueueType queue{};
             Vector<PassHandle> passes;
             // Resources used in this group
             Vector<ResourceHandle> resources;
-            bool is_last_graphics = false;
-            bool is_last_compute = false;
+            bool isLastGraphics = false;
+            bool isLastCompute = false;
             RHIPipelineStage all_stages{}; // All stages used in this group
 
-            ExecutionGroups(int group_index, RHIDeviceQueueType queue, Allocator* allocator) :
-                group_index(group_index), queue(queue), passes(allocator), resources(allocator)
+            ExecutionGroups(int groupIndex, RHIDeviceQueueType queue, Allocator* allocator) :
+                groupIndex(groupIndex), queue(queue), passes(allocator), resources(allocator)
             {
             }
         };
@@ -65,14 +64,13 @@ namespace Foundation::RenderCore
         bool executionAnyCompute{false}, executionAnyGraphics{false};
         void add_edge(const PassHandle u, const PassHandle v, const ResourceHandle hdl)
         {
-            // ReSharper disable once CppDFALoopConditionNotUpdated
             while (u >= graph.size())
                 graph.emplace_back(graph.get_allocator());
             graph[u].emplace_back(v, hdl);
         }
         explicit RendererSetup(Allocator* allocator) :
             graph(allocator), trackedPasses(allocator), trackedResources(allocator), trackedViews(allocator),
-            trackedSamplers(allocator), activeResources(allocator), execution(allocator), binding_counts(allocator),
+            trackedSamplers(allocator), activeResources(allocator), execution(allocator), bindingCounts(allocator),
             executionGroups(allocator)
         {
         }
@@ -127,11 +125,11 @@ namespace Foundation::RenderCore
             // Index of this swap
             const size_t swapIndex;
             RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render{}, present{};
-            RHIDeviceScopedObjectHandle<RHIDeviceFence> graphics_fence{}, compute_fence{};
+            RHIDeviceScopedObjectHandle<RHIDeviceFence> graphicsFence{}, computeFence{};
             // RTV for the backbuffer
             RHITextureScopedHandle<RHITextureView> rtv{};
             // Tracked backbuffer handle
-            ResourceHandle rt_handle{kInvalidHandle};
+            ResourceHandle backbuffer{kInvalidHandle};
             FrameSyncObjects(size_t swapIndex) : swapIndex(swapIndex) {};
         };
         Vector<FrameSyncObjects> m_swaps;
@@ -783,6 +781,12 @@ namespace Foundation::RenderCore
         [[nodiscard]] String DbgDumpExecutionGroups() const;
 #pragma endregion
     };
+    ENUM_NAME_CONV_BEGIN(Renderer::State)
+        ENUM_NAME(Undefined);
+        ENUM_NAME(Setup);
+        ENUM_NAME(PostSetup);
+        ENUM_NAME(Execute);
+    ENUM_NAME_CONV_END();
     /* Functional Helpers */
     /**
      * @brief Convenient functional wrapper to create a resource
@@ -826,8 +830,9 @@ namespace Foundation::RenderCore
     /**
      * @brief Convenient functional wrapper to create a pass from a RenderPass* implementation.
      *
-     * This is equivalent to calling @ref createPassImplPriority with  priority 0 for Graphics passes,
-     * and priority kMaxRenderPasses for Compute passes.
+     * This is equivalent to calling @ref createPassPriority with priority 0 for Graphics passes,
+     * and priority kMaxRenderPasses for Compute passes, which schedules all Compute passes first with the best effort.
+     *
      * @tparam T Type of @ref RenderPass to create.
      * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is
      * disabled.
@@ -870,7 +875,7 @@ namespace Foundation::RenderCore
      * @brief Convenient functional wrapper to create a pass from Setup/Record lambdas.
      *
      * This is equivalent to calling @ref createPassPriority with priority 0 for Graphics passes,
-     * and priority kMaxRenderPasses for Compute passes.
+     * and priority kMaxRenderPasses for Compute passes, which schedules all Compute passes first with the best effort.
      *
      * @note Avoid using Lambdas with stateful captures (i.e. capturing `this` or [&]), as resource lifetimes
      *       could be _much_ involved and unpredictable. Coupled with how passes may be scheduled on different
@@ -896,14 +901,4 @@ namespace Foundation::RenderCore
         return createPassPriority(r, name, queue, pri, std::forward<FSetup>(setup), std::forward<FRecord>(record),
                                   std::forward<FSkip>(skip));
     }
-    ENUM_NAME_CONV_BEGIN(Renderer::State)
-case Undefined:
-    return "Undefined";
-case Setup:
-    return "Setup";
-case PostSetup:
-    return "PostSetup";
-case Execute:
-    return "Execute";
-    ENUM_NAME_CONV_END();
 } // namespace Foundation::RenderCore
