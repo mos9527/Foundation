@@ -18,12 +18,6 @@ auto bench_one(Allocator* allocator) {
         vec.push_back(i);
     }
 }
-auto bench_one_stl() {
-    vector<int> vec;
-    for (size_t i = 0; i < allocCount; ++i) {
-        vec.push_back(i);
-    }
-}
 template<typename Func> void bench_many(const char* desc, Func&& func) {
 	chrono::steady_clock::time_point start = chrono::steady_clock::now();
 	for (size_t i = 0; i < benchCount; ++i) func();
@@ -43,7 +37,4 @@ int main() {
         HeapAllocator alloc;
         bench_one(&alloc);
     });
-	bench_many("OS Default (STL)", [&]() {
-	    bench_one_stl();
-	});
 }

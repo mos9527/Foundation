@@ -18,8 +18,8 @@ namespace ModelViewer
     using SceneHandle = uint32_t;
     struct SceneBudgets
     {
-        size_t InstanceBudget = 4_MB;
-        size_t InstanceStaging = 4_MB;
+        size_t InstanceBudget = 2_MB;
+        size_t InstanceStaging = 2_MB;
         size_t InstanceAlignment = 16_B;
         size_t PrimitiveBudget = 4_MB;
         size_t PrimitiveStaging = 1_MB;
