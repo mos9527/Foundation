@@ -5,10 +5,10 @@ namespace Foundation::RenderCore
     {
         {
             return RHITextureSubresourceRange{.layer = {.aspect = aspect,
-                                                        .mip_level = static_cast<uint32_t>(mip),
-                                                        .base_array_layer = static_cast<uint32_t>(layer),
-                                                        .layer_count = 1},
-                                              .mip_count = 1};
+                                                        .mipLevel = static_cast<uint32_t>(mip),
+                                                        .baseArrayLayer = static_cast<uint32_t>(layer),
+                                                        .layerCount = 1},
+                                              .mipCount = 1};
         }
     }
 
@@ -19,8 +19,8 @@ namespace Foundation::RenderCore
         // Init texture tracking states
         auto update_texture_desc = [&](RHITextureDesc const& texture_desc)
         {
-            textureLayers = texture_desc.array_layers;
-            textureMips = texture_desc.mip_levels;
+            textureLayers = texture_desc.arrayLayers;
+            textureMips = texture_desc.mipLevels;
             lastSubresourceStates.resize(textureMips * textureLayers * kTextureAspectCount);
             for (uint32_t mip = 0; mip < textureMips; ++mip)
             {
@@ -37,8 +37,8 @@ namespace Foundation::RenderCore
             }
         };
         desc.visit([&](RHITextureDesc const& tex) { update_texture_desc(tex); },
-                   [&](RHIDeviceObjectHandle<RHITexture> const& tex) { update_texture_desc(tex->m_desc); },
-                   [&](const RHITexture* const tex) { update_texture_desc(tex->m_desc); });
+                   [&](RHIDeviceObjectHandle<RHITexture> const& tex) { update_texture_desc(tex->mDesc); },
+                   [&](const RHITexture* const tex) { update_texture_desc(tex->mDesc); });
     }
 
 }

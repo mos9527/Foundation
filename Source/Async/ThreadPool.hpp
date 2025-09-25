@@ -31,25 +31,25 @@ namespace Foundation::Async
     template <typename Lambda, typename ReturnType>
     class ThreadPoolLambdaJob final : public ThreadPoolJob
     {
-        Lambda m_func;
-        SharedPromise<ReturnType> m_promise;
+        Lambda mFunc;
+        SharedPromise<ReturnType> mPromise;
     public:
-        ThreadPoolLambdaJob(SharedPromise<ReturnType> promise, Lambda&& func) : m_func(func), m_promise(promise) {}
+        ThreadPoolLambdaJob(SharedPromise<ReturnType> promise, Lambda&& func) : mFunc(func), mPromise(promise) {}
         void Execute(size_t) noexcept override
         {
             try
             {
                 if constexpr (std::is_same_v<ReturnType, void>)
                 {
-                    m_func();
-                    m_promise->set_value();
+                    mFunc();
+                    mPromise->set_value();
                 }
                 else
-                    m_promise->set_value(m_func());
+                    mPromise->set_value(mFunc());
             }
             catch (...)
             {
-                m_promise->set_exception(std::current_exception());
+                mPromise->set_exception(std::current_exception());
             }
         }
     };
@@ -62,16 +62,16 @@ namespace Foundation::Async
      */
     class ThreadPool
     {
-        Allocator* m_allocator;        
-        String m_name;
-        Atomic<bool> m_shutdown{false};
-        Atomic<size_t> m_complete{ 0 };
-        Atomic<size_t> m_total{ 0 };
+        Allocator* mAllocator;        
+        String mName;
+        Atomic<bool> mShutdown{false};
+        Atomic<size_t> mComplete{ 0 };
+        Atomic<size_t> mTotal{ 0 };
 
-        JobQueue m_jobs;
-        JobQueue::Writer m_jobsWriter;
+        JobQueue mJobs;
+        JobQueue::Writer mJobsWriter;
         // Ensure threads are joined first on destruction
-        Vector<Thread> m_threads;
+        Vector<Thread> mThreads;
         void ThreadPoolWorker(size_t id);
     public:
         /**
@@ -92,11 +92,11 @@ namespace Foundation::Async
         requires std::is_base_of_v<ThreadPoolJob, T>
         void PushImpl(Args&&... args)
         {
-            CHECK_MSG(!m_shutdown, "ThreadPool shutting down");
-            CHECK_MSG(m_jobsWriter.push(
-                ConstructUniqueBase<ThreadPoolJob, T>(m_allocator, std::forward<Args>(args)...)), "Jobs full");
-            m_total.fetch_add(1, std::memory_order_relaxed);
-            m_total.notify_one();
+            CHECK_MSG(!mShutdown, "ThreadPool shutting down");
+            CHECK_MSG(mJobsWriter.push(
+                ConstructUniqueBase<ThreadPoolJob, T>(mAllocator, std::forward<Args>(args)...)), "Jobs full");
+            mTotal.fetch_add(1, std::memory_order_relaxed);
+            mTotal.notify_one();
         }
         /**
          * @brief Push a lambda job to the thread pool.
@@ -105,7 +105,7 @@ namespace Foundation::Async
         template <typename Lambda, typename... Args>
         auto Push(Lambda&& func, Args&&... args)
         {
-            CHECK_MSG(!m_shutdown, "ThreadPool shutting down");
+            CHECK_MSG(!mShutdown, "ThreadPool shutting down");
             auto ThreadPoolPackagedLambda = [](Lambda&& fn, Args&&... fargs)
             {
                 return [func = std::forward<Lambda>(fn), ... fargs = std::forward<Args>(fargs)]
@@ -116,13 +116,13 @@ namespace Foundation::Async
             using PackagedType = decltype(packaged);
             // Use the wrapped lambda type for the job
             using LambdaType = ThreadPoolLambdaJob<PackagedType, ReturnType>;
-            auto promise = ConstructShared<std::promise<ReturnType>>(m_allocator);
-            CHECK_MSG(m_jobsWriter.push(
+            auto promise = ConstructShared<std::promise<ReturnType>>(mAllocator);
+            CHECK_MSG(mJobsWriter.push(
                 ConstructUniqueBase<ThreadPoolJob, LambdaType>(
-                    m_allocator, promise,
+                    mAllocator, promise,
                     std::forward<PackagedType>(packaged))), "Jobs full");
-            m_total.fetch_add(1, std::memory_order_relaxed);
-            m_total.notify_one();
+            mTotal.fetch_add(1, std::memory_order_relaxed);
+            mTotal.notify_one();
             return promise;
         }
         /**

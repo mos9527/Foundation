@@ -25,16 +25,16 @@ namespace Foundation::Rendering
      */
     class UploadContext
     {
-        RHIDevice* m_device;
-        Allocator* m_allocator;
+        RHIDevice* mDevice;
+        Allocator* mAllocator;
 
-        RHIDeviceQueue* m_queue;
-        RHIDeviceScopedObjectHandle<RHICommandPool> m_commandPool;
-        Vector<RHICommandPoolScopedHandle<RHICommandList>> m_commandLists;
-        RHIDeviceScopedObjectHandle<RHIDeviceFence> m_fence;
-        StagingBuffer m_stagingBuffer;
+        RHIDeviceQueue* mQueue;
+        RHIDeviceScopedObjectHandle<RHICommandPool> mCommandPool;
+        Vector<RHICommandPoolScopedHandle<RHICommandList>> mCommandLists;
+        RHIDeviceScopedObjectHandle<RHIDeviceFence> mFence;
+        StagingBuffer mStagingBuffer;
 
-        Async::Mutex m_mutex;
+        Async::Mutex mMutex;
     public:
         UploadContext(RHIDevice* device, Allocator* allocator, size_t stagingBudget = 16_MB);
         // !! TODO: Bound checks!

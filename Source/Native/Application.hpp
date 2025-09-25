@@ -14,18 +14,18 @@ namespace Foundation::Native {
      */
     class NativeWindow {
         friend class NativeApplication;
-        void* m_window{ nullptr };
+        void* mWindow{ nullptr };
         NativeWindow(uint32_t width, uint32_t height, const char* title);
     public:
         NativeWindow() = default;
         NativeWindow(const NativeWindow&) = delete;
         NativeWindow(NativeWindow&& other) noexcept :
-            m_window(other.m_window) {
-            other.m_window = nullptr;
+            mWindow(other.mWindow) {
+            other.mWindow = nullptr;
         }
         NativeWindow& operator=(NativeWindow&& other) noexcept {
-            m_window = other.m_window;
-            other.m_window = nullptr;
+            mWindow = other.mWindow;
+            other.mWindow = nullptr;
             return *this;
         }
         ~NativeWindow();
@@ -37,8 +37,8 @@ namespace Foundation::Native {
 
         [[nodiscard]] bool WindowShouldClose() const;
 
-        [[nodiscard]] void* GetNative() const { return m_window; }
-        constexpr explicit operator bool() const { return m_window != nullptr; }
+        [[nodiscard]] void* GetNative() const { return mWindow; }
+        constexpr explicit operator bool() const { return mWindow != nullptr; }
     };
 
     /**
@@ -46,8 +46,8 @@ namespace Foundation::Native {
      * Handles initialization and shutdown of the native platform, and windowing management.
      */
     class NativeApplication {
-        int m_initialized = 0;
-        size_t m_startCounter = 0;
+        int mInitialized = 0;
+        size_t mStartCounter = 0;
     public:
         /**
          * @brief Creates a window with the specified width, height, and title.
@@ -57,11 +57,11 @@ namespace Foundation::Native {
          * @brief Returns a high-resolution time in seconds since the application started.
          * @tparam T The return type. Must be a floating-point type. Default is float.
          */
-        template<typename T = float> T GetApplicationTime() const { return (getPerformanceCounter() - m_startCounter) / 1e9; }
+        template<typename T = float> T GetApplicationTime() const { return (getPerformanceCounter() - mStartCounter) / 1e9; }
         /**
          * @brief Returns a high-resolution time in _nanoseconds_ since the application started.
          */
-        size_t GetApplicationCounter() const { return getPerformanceCounter() - m_startCounter; }
+        [[nodiscard]] size_t GetApplicationCounter() const { return getPerformanceCounter() - mStartCounter; }
         NativeApplication();
         virtual ~NativeApplication();
     };

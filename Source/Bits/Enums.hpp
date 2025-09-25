@@ -27,9 +27,9 @@ namespace Foundation::Bits
         constexpr operator Ty() const { return static_cast<Ty>(value); }
         constexpr operator T() const { return static_cast<T>(value); }
         constexpr operator bool() const { return value != 0; }
-        constexpr bool is_pow2() const { return (value & (value - 1)) == 0; }
-        constexpr bool is_bitmask() const { return is_pow2(); }
-        constexpr int bit() const { return std::countr_one(value); }
+        [[nodiscard]] constexpr bool is_pow2() const { return (value & (value - 1)) == 0; }
+        [[nodiscard]] constexpr bool is_bitmask() const { return is_pow2(); }
+        [[nodiscard]] constexpr int bit() const { return std::countr_one(value); }
     };
 } // namespace Foundation::Bits
 /**

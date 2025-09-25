@@ -36,7 +36,7 @@ namespace Foundation::Core {
             if (arena.memory) 
                 Deallocate(arena.memory, arena.size);
         }
-        virtual size_type GetUsedMemory() const noexcept = 0;
+        [[nodiscard]] virtual size_type GetUsedMemory() const noexcept = 0;
 
         Allocator* Ptr() { return this; }
 	};
@@ -78,7 +78,7 @@ namespace Foundation::Core {
      */
     template <typename T = void>
     class StlAllocator {
-        Allocator* m_resource;
+        Allocator* mResource;
     public:
         using value_type = T;
         using size_type = std::size_t;
@@ -89,23 +89,23 @@ namespace Foundation::Core {
         using const_reference = const T&;
 
         template<typename U> friend class StlAllocator; // Rebind ctor
-        template<typename U> struct rebind { using other = StlAllocator<U>; };
-        StlAllocator(Allocator* resource) noexcept : m_resource(resource) {}            
+        template<typename U> struct Rebind { using other = StlAllocator<U>; };
+        StlAllocator(Allocator* resource) noexcept : mResource(resource) {}            
         template<typename U>
-        StlAllocator(const StlAllocator<U>& other) noexcept : m_resource(other.m_resource) {}
+        StlAllocator(const StlAllocator<U>& other) noexcept : mResource(other.mResource) {}
 
         pointer allocate(size_type n) {
-            return static_cast<pointer>(m_resource->Allocate(n * sizeof(T), alignof(T)));
+            return static_cast<pointer>(mResource->Allocate(n * sizeof(T), alignof(T)));
         }
         void deallocate(pointer p, size_type n) noexcept {
-            m_resource->Deallocate(p, n * sizeof(T));
+            mResource->Deallocate(p, n * sizeof(T));
         }
         void deallocate(pointer p) noexcept { 
-            m_resource->Deallocate(p, sizeof(T)); 
+            mResource->Deallocate(p, sizeof(T)); 
         }
 		// Allocators are deemed equal if they point to the same resource
         friend bool operator==(const StlAllocator& lhs, const StlAllocator& rhs) noexcept {
-            return lhs.m_resource == rhs.m_resource;
+            return lhs.mResource == rhs.mResource;
         }
         friend bool operator!=(const StlAllocator& lhs, const StlAllocator& rhs) noexcept {
             return !(lhs == rhs);
@@ -117,11 +117,11 @@ namespace Foundation::Core {
      */
     template <typename T>
     struct StlDeleter {
-        Allocator* m_resource;
+        Allocator* mResource;
         void operator()(T* ptr) noexcept {
             if (ptr) {
                 std::destroy_at(ptr);
-                m_resource->Deallocate(ptr, sizeof(T));                
+                mResource->Deallocate(ptr, sizeof(T));                
             }
         }
     };

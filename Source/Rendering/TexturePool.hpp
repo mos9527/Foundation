@@ -16,17 +16,17 @@ namespace Foundation::Rendering
      */
     class TexturePool : RHIObject // pinned
     {
-        const size_t m_maxTextures;
-        RHIDevice* m_device;
-        Allocator* m_allocator;
-        RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> m_descriptorSetLayout;
-        RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_descriptorPool;
-        RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> m_descriptorSet;
-        Pool<TexturePoolHandle, Variant<TexturePair, RHITextureView*>> m_textures;
+        const size_t mMaxTextures;
+        RHIDevice* mDevice;
+        Allocator* mAllocator;
+        RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> mDescriptorSetLayout;
+        RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> mDescriptorPool;
+        RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> mDescriptorSet;
+        Pool<TexturePoolHandle, Variant<TexturePair, RHITextureView*>> mTextures;
 
-        TexturePoolHandle m_missingTextureHandle{ kInvalidHandle };
+        TexturePoolHandle mMissingTextureHandle{ kInvalidHandle };
         void SetMissingTexture(uint32_t index);
-        RHIDeviceIdleGuard m_idleGuard;
+        RHIDeviceIdleGuard mIdleGuard;
     public:
         TexturePool(RHIDevice* device, Allocator* allocator, uint32_t max_textures = 128);
 
@@ -38,7 +38,7 @@ namespace Foundation::Rendering
         [[nodiscard]] RHITextureView* GetTextureView(TexturePoolHandle handle) const;
         void Free(TexturePoolHandle handle);
 
-        [[nodiscard]] RHIDeviceDescriptorSet* GetDescriptorSet() const { return m_descriptorSet.Get(); }
-        [[nodiscard]] RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout() const { return m_descriptorSetLayout.Get(); }
+        [[nodiscard]] RHIDeviceDescriptorSet* GetDescriptorSet() const { return mDescriptorSet.Get(); }
+        [[nodiscard]] RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout() const { return mDescriptorSetLayout.Get(); }
     };
 }

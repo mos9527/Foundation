@@ -39,12 +39,8 @@ int main() {
 		StackAllocator alloc(arena);
 		bench_one(&alloc);
 	});
-    bench_many("Heap (tracking)", [&]() {
-        HeapAllocator<true> alloc;
-        bench_one(&alloc);
-    });
-    bench_many("Heap (non-tracking)", [&]() {
-        HeapAllocator<false> alloc;
+    bench_many("Heap (mimalloc)", [&]() {
+        HeapAllocator alloc;
         bench_one(&alloc);
     });
 	bench_many("OS Default (STL)", [&]() {

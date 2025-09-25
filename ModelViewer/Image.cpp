@@ -10,7 +10,7 @@ Image LoadImage32bppFromFile(std::filesystem::path const& path, Core::Allocator*
     CHECK(pixels && "Failed to load texture image");
     auto* ptr = reinterpret_cast<const char*>(pixels);
     auto image = Image(
-        RHI::RHITextureDesc{ .extent = {w,h,1}, .format = RHI::RHIResourceFormat::R8G8B8A8_UNORM, },
+        RHI::RHITextureDesc{ .extent = {w,h,1}, .format = RHI::RHIResourceFormat::R8G8B8A8Unorm, },
         allocator,
         { ptr, ptr + 1ll * w * h * ch }
     );

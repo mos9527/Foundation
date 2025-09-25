@@ -8,15 +8,15 @@ namespace Foundation::RHI {
     class VulkanCommandList;
     class VulkanCommandPool : public RHICommandPool {
     protected:
-        Allocator* m_allocator;
-        const VulkanDevice& m_device;
-        vk::raii::CommandPool m_commandPool{ nullptr };
-        RHIObjectPool<> m_storage;
+        Allocator* mAllocator;
+        const VulkanDevice& mDevice;
+        vk::raii::CommandPool mCommandPool{ nullptr };
+        RHIObjectPool<> mStorage;
     public:
         VulkanCommandPool(const VulkanDevice& device, PoolDesc const& desc, Allocator* allocator);
 
-        auto const& GetDevice() const { return m_device; }
-        auto const& GetVkCommandPool() const { return m_commandPool; }
+        auto const& GetDevice() const { return mDevice; }
+        auto const& GetVkCommandPool() const { return mCommandPool; }
 
         RHICommandPoolScopedHandle<RHICommandList> CreateCommandList() override;
         RHICommandList* GetCommandList(Handle handle) const override;
@@ -27,13 +27,13 @@ namespace Foundation::RHI {
     constexpr size_t kCommandBarrierReserveSize = 256;
     class VulkanCommandList : public RHICommandList {
     protected:
-        const VulkanCommandPool& m_commandPool;
-        vk::raii::CommandBuffer m_commandBuffer{ nullptr };
+        const VulkanCommandPool& mCommandPool;
+        vk::raii::CommandBuffer mCommandBuffer{ nullptr };
 
-        ScopedArena m_arena;
+        ScopedArena mArena;
         // Stack allocator for temporary allocations during command list execution
         // Only valid within Begin(), End() clause
-        StackAllocator m_allocator;
+        StackAllocator mAllocator;
         constexpr static size_t kArenaSize = 2LL * (1LL << 20); // 2 MB
 
         struct Barriers {
@@ -49,11 +49,11 @@ namespace Foundation::RHI {
         // the allocator goes down.
         // VTable can in-fact get corrupted otherwise - we need a better solution
         // to safeguard this type of issue.
-        UniquePtr<Barriers> m_barriers;
+        UniquePtr<Barriers> mBarriers;
     public:
         VulkanCommandList(const VulkanCommandPool& commandPool);
 
-        auto const& GetVkCommandBuffer() const { return m_commandBuffer; }
+        [[nodiscard]] auto const& GetVkCommandBuffer() const { return mCommandBuffer; }
 
         RHICommandList& Begin() override;
 

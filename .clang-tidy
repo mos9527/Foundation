@@ -63,7 +63,6 @@ cert-str34-c,
 cppcoreguidelines-interfaces-global-init,
 cppcoreguidelines-slicing,
 google-default-arguments,
-google-explicit-constructor,
 google-runtime-operator,
 hicpp-exception-baseclass,
 hicpp-multiway-paths-covered,
@@ -174,7 +173,5 @@ CheckOptions:
     value:           k
   - key:             readability-identifier-naming.EnumConstantCase
     value:           CamelCase
-  - key:             readability-identifier-naming.EnumConstantPrefix
-    value:           k
   - key:             readability-identifier-naming.MacroDefinitionCase
     value:           UPPER_CASE

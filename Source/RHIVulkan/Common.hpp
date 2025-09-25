@@ -11,21 +11,21 @@ namespace Foundation::RHI {
     inline vk::Format vkFormatFromRHIFormat(RHIResourceFormat format) {
         using enum RHIResourceFormat;
         switch (format) {
-        case R8G8B8A8_UNORM: return vk::Format::eR8G8B8A8Unorm;
-        case R8G8B8A8_SRGB: return vk::Format::eR8G8B8A8Srgb;
-        case B8G8R8A8_UNROM: return vk::Format::eB8G8R8A8Unorm;
-        case B8G8R8A8_SRGB: return vk::Format::eB8G8R8A8Srgb;
-        case R32_SIGNED_FLOAT: return vk::Format::eR32Sfloat;
-        case R32G32_SIGNED_FLOAT: return vk::Format::eR32G32Sfloat;
-        case R32G32B32_SIGNED_FLOAT: return vk::Format::eR32G32B32Sfloat;
-        case R32G32B32A32_SIGNED_FLOAT: return vk::Format::eR32G32B32A32Sfloat;
-        case R16_SIGNED_FLOAT: return vk::Format::eR16Sfloat;
-        case R16G16_SIGNED_FLOAT: return vk::Format::eR16G16Sfloat;
-        case R16G16B16_SIGNED_FLOAT: return vk::Format::eR16G16B16Sfloat;
-        case R16G16B16A16_SIGNED_FLOAT: return vk::Format::eR16G16B16A16Sfloat;
-        case R32_UINT: return vk::Format::eR32Uint;
-        case R16_UINT: return vk::Format::eR16Uint;
-        case D32_SIGNED_FLOAT: return vk::Format::eD32Sfloat;
+        case R8G8B8A8Unorm: return vk::Format::eR8G8B8A8Unorm;
+        case R8G8B8A8Srgb: return vk::Format::eR8G8B8A8Srgb;
+        case B8G8R8A8Unrom: return vk::Format::eB8G8R8A8Unorm;
+        case B8G8R8A8Srgb: return vk::Format::eB8G8R8A8Srgb;
+        case R32SignedFloat: return vk::Format::eR32Sfloat;
+        case R32G32SignedFloat: return vk::Format::eR32G32Sfloat;
+        case R32G32B32SignedFloat: return vk::Format::eR32G32B32Sfloat;
+        case R32G32B32A32SignedFloat: return vk::Format::eR32G32B32A32Sfloat;
+        case R16SignedFloat: return vk::Format::eR16Sfloat;
+        case R16G16SignedFloat: return vk::Format::eR16G16Sfloat;
+        case R16G16B16SignedFloat: return vk::Format::eR16G16B16Sfloat;
+        case R16G16B16A16SignedFloat: return vk::Format::eR16G16B16A16Sfloat;
+        case R32Uint: return vk::Format::eR32Uint;
+        case R16Uint: return vk::Format::eR16Uint;
+        case D32SignedFloat: return vk::Format::eD32Sfloat;
         case Undefined:
         default:
             return vk::Format::eUndefined;
@@ -163,11 +163,11 @@ namespace Foundation::RHI {
     inline vk::SampleCountFlagBits vkSampleCountFlagFromRHIMultisampleCount(RHIMultisampleCount count) {
         using enum RHIMultisampleCount;
         switch (count) {
-        case e2: return vk::SampleCountFlagBits::e2;
-        case e4: return vk::SampleCountFlagBits::e4;
-        case e8: return vk::SampleCountFlagBits::e8;
-        case e16: return vk::SampleCountFlagBits::e16;
-        case e1:
+        case E2: return vk::SampleCountFlagBits::e2;
+        case E4: return vk::SampleCountFlagBits::e4;
+        case E8: return vk::SampleCountFlagBits::e8;
+        case E16: return vk::SampleCountFlagBits::e16;
+        case E1:
         default:
             return vk::SampleCountFlagBits::e1;
         }

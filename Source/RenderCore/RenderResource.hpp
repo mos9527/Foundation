@@ -98,7 +98,7 @@ namespace Foundation::RenderCore
                                state.mip <= mip_end && state.layer >= layer_begin && state.layer <= layer_end;
                        });
         }
-        TrackedResource(const ResourceHandle handle, StringView name, const ResourceDefinition& resourceDesc,
+        TrackedResource(ResourceHandle handle, StringView name, const ResourceDefinition& resourceDesc,
                         Allocator* alloc);
     };
     /**

@@ -19,7 +19,7 @@ namespace ModelViewer {
         void OnRendererSetup() override;
         void OnApplicationTick() override;
     public:
-        UniquePtr<Scene> m_scene;
-        mat4 m_camera;
+        UniquePtr<Scene> mScene;
+        mat4 mCamera;
     };
 }

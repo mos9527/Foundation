@@ -14,21 +14,21 @@ namespace Examples {
         };
         void OnRendererSetup() override {
             ResourceHandle buffer = createResource(
-                m_renderer.get(), "Mandelbrot Image",
+                mRenderer.get(), "Mandelbrot Image",
                 RHITextureDesc{
                     .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::StorageImage,
-                    .extent = m_renderer->GetSwapchainExtent3D(),
-                    .format = RHIResourceFormat::R8G8B8A8_UNORM
+                    .extent = mRenderer->GetSwapchainExtent3D(),
+                    .format = RHIResourceFormat::R8G8B8A8Unorm
                 }
             );
-            ResourceHandle sampler = createSampler(m_renderer.get(), {});
+            ResourceHandle sampler = createSampler(mRenderer.get(), {});
             createPass(
-                m_renderer.get(), "Mandelbrot", RHIDeviceQueueType::Compute,
+                mRenderer.get(), "Mandelbrot", RHIDeviceQueueType::Compute,
                 [=](PassHandle self, Renderer* r) {
                     r->BindShader(self, RHIShaderStageBits::Compute, "csMain", "data/shaders/MandelbrotCompute.spv");
                     r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(PushConstant));
                     r->BindTextureUAV(self, buffer, "image", RHIPipelineStageBits::ComputeShader, {
-                        .format = RHIResourceFormat::R8G8B8A8_UNORM,
+                        .format = RHIResourceFormat::R8G8B8A8Unorm,
                         .range = RHITextureSubresourceRange::Create()
                     });
                 },
@@ -38,10 +38,10 @@ namespace Examples {
                         .time = GetApplicationTime(),
                         .resolution = r->GetSwapchainExtent()
                     });
-                    r->CmdDispatch(self, cmd, m_renderer->GetSwapchainExtent3D());
+                    r->CmdDispatch(self, cmd, mRenderer->GetSwapchainExtent3D());
                 }
             );
-            createPSBackbufferBlitPass(m_renderer.get(), "Backbuffer Blit", sampler, buffer);
+            createPSBackbufferBlitPass(mRenderer.get(), "Backbuffer Blit", sampler, buffer);
         }
     };
 }

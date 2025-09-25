@@ -122,3 +122,13 @@ with OSS AMD drivers (RADV and co), see:
 - https://github.com/GPUOpen-Tools/radeon_developer_panel/issues/57
 
 On Arch `https://aur.archlinux.org/packages/vulkan-amdgpu-pro` seems to resolve the issue.
+
+clang-tidy
+===
+```bash
+mkdir build
+cd build
+cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
+# Get the script from https://github.com/llvm-mirror/clang-tools-extra/blob/master/clang-tidy/tool/run-clang-tidy.py
+python run-clang-tidy.py -header-filter=".*/Source/.*" ".*/Source/.*" -config "$(cat ../.clang-tidy)"
+```

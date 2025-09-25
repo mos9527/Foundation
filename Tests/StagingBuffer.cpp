@@ -9,7 +9,7 @@ int main()
     auto PrintStaging = [&]()
     {
         for (auto const& [src, dst, region] : list)
-            printf("Src: %p, Dst: %p, Src Off: %zu, Dst Off: %zu Size: %zu\n", src, dst, region.src_offset, region.dst_offset, region.size);
+            printf("Src: %p, Dst: %p, Src Off: %zu, Dst Off: %zu Size: %zu\n", src, dst, region.srcOffset, region.dstOffset, region.size);
     };
     auto Add = [&](auto src, auto dst, size_t src_offset, size_t dst_offset, size_t size)
     {

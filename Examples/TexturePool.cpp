@@ -95,15 +95,15 @@ namespace Examples
         TexturePoolApp() : m_handles(GetAllocator()) {};
         void OnDeviceSetup() override
         {
-            m_textures = ConstructUnique<TexturePool>(GetAllocator(), m_device.Get(), GetAllocator());
+            m_textures = ConstructUnique<TexturePool>(GetAllocator(), mDevice.Get(), GetAllocator());
             // Perform immediate uploads
-            UploadContext upload(m_device.Get(), GetAllocator());
+            UploadContext upload(mDevice.Get(), GetAllocator());
             for (size_t i = 0; i < kNumTextures; ++i)
             {
                 m_handles.push_back(m_textures->Allocate(RHITextureDesc{
                     .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
                     .extent = { 8, 8, 1 },
-                    .format = RHIResourceFormat::B8G8R8A8_UNROM
+                    .format = RHIResourceFormat::R8G8B8A8Unorm
                 }));
                 auto texture = m_textures->GetTexture(m_handles.back());
                 Array<unsigned char, 16> hash;
@@ -118,14 +118,14 @@ namespace Examples
         }
         void OnRendererSetup() override
         {
-            ResourceHandle sampler = createSampler(m_renderer.get(), {
+            ResourceHandle sampler = createSampler(mRenderer.get(), {
                 .filter = {
-                    .min_filter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor,
-                    .mag_filter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor
+                    .minFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor,
+                    .magFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor
                 }
             });
             createPSFullscreenPass(
-                m_renderer.get(), "Texture Pool Atlas",
+                mRenderer.get(), "Texture Pool Atlas",
                 [=, this](PassHandle self, Renderer* r)
                 {
                     r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/TexturePool.spv");

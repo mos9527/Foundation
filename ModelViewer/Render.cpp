@@ -4,37 +4,37 @@ using namespace ModelViewer;
 const size_t kMaxIndirectCommands = 1e6; // 1 million
 void App::OnRendererSetup()
 {
-    ResourceHandle indirectCommands = createResource(m_renderer.get(), "IndirectCommands",
+    ResourceHandle indirectCommands = createResource(mRenderer.get(), "IndirectCommands",
         RHIBufferDesc{
             .usage = RHIBufferUsageBits::IndirectBuffer | RHIBufferUsageBits::StorageBuffer,
             .size = sizeof(MeshDrawIndirectCmd) * kMaxIndirectCommands
         }
     );
-    ResourceHandle counter = createResource(m_renderer.get(), "Command Counter",
+    ResourceHandle counter = createResource(mRenderer.get(), "Command Counter",
         RHIBufferDesc{
             .usage = RHIBufferUsageBits::IndirectBuffer | RHIBufferUsageBits::StorageBuffer,
             .size = sizeof(int)
         }
     );
-    ResourceHandle zbuffer = createResource(m_renderer.get(), "DepthBuffer",
+    ResourceHandle zbuffer = createResource(mRenderer.get(), "DepthBuffer",
         RHITextureDesc{
             .usage = RHITextureUsageBits::DepthStencil,
-            .extent = m_renderer->GetSwapchainExtent3D(),
-            .format = RHIResourceFormat::D32_SIGNED_FLOAT,
+            .extent = mRenderer->GetSwapchainExtent3D(),
+            .format = RHIResourceFormat::D32SignedFloat,
         }
     );
     ResourceHandle instanceBuffer;
-    m_scene->CreateInstanceUpdatePass(
-        m_renderer.get(),
+    mScene->CreateInstanceUpdatePass(
+        mRenderer.get(),
         instanceBuffer,
         RHIDeviceQueueType::Graphics
     );
-    ResourceHandle primitiveBuffer = m_renderer->CreateResource("Primitive", m_scene->m_prmitive.Get());
-    ResourceHandle vertexBuffer = m_renderer->CreateResource("Vertex", m_scene->m_vertex.Get());
-    ResourceHandle indexBuffer = m_renderer->CreateResource("Index", m_scene->m_index.Get());
+    ResourceHandle primitiveBuffer = mRenderer->CreateResource("Primitive", mScene->mPrimitive.Get());
+    ResourceHandle vertexBuffer = mRenderer->CreateResource("Vertex", mScene->mVertex.Get());
+    ResourceHandle indexBuffer = mRenderer->CreateResource("Index", mScene->mIndex.Get());
     // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
     // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect
-    createPassPriority(m_renderer.get(), "Reset Command Counter", RHIDeviceQueueType::Graphics, 1000,
+    createPassPriority(mRenderer.get(), "Reset Command Counter", RHIDeviceQueueType::Graphics, 1000,
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "resetCounter", "data/shaders/MVClearCounters.spv");
@@ -46,7 +46,7 @@ void App::OnRendererSetup()
             r->CmdDispatch(self, cmd, {1,1,1});
         }
     );
-    createPass(m_renderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Graphics,
+    createPass(mRenderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Graphics,
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "indirectCullEarly", "data/shaders/MVIndirectCull.spv");
@@ -61,7 +61,7 @@ void App::OnRendererSetup()
             r->CmdDispatch(self, cmd, { kMaxIndirectCommands, 1, 1 });
         }
     );
-    createPass(m_renderer.get(), "Indirect Draw", RHIDeviceQueueType::Graphics,
+    createPass(mRenderer.get(), "Indirect Draw", RHIDeviceQueueType::Graphics,
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/MVMeshDraw.spv");
@@ -75,7 +75,7 @@ void App::OnRendererSetup()
             r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, sizeof(DrawPushConstant));
             r->BindBackbufferRTV(self);
             r->BindTextureDSV(self, zbuffer, {
-                .format = RHIResourceFormat::D32_SIGNED_FLOAT,
+                .format = RHIResourceFormat::D32SignedFloat,
                 .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)
             });
         },
@@ -86,7 +86,7 @@ void App::OnRendererSetup()
             r->CmdSetPipeline(self, cmd);
             // Camera matrix
             DrawPushConstant pc {
-                .viewProj = m_camera,
+                .viewProj = mCamera,
                 .time = GetApplicationTime<float>()
             };
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0, pc);
@@ -102,7 +102,7 @@ void App::OnRendererSetup()
                 .BindIndexBuffer(
                     r->DerefResource(indexBuffer).Get<RHIBuffer*>(),
                     0,
-                    RHIResourceFormat::R32_UINT)
+                    RHIResourceFormat::R32Uint)
                 .DrawIndexedIndirectCount(
                     r->DerefResource(indirectCommands).Get<RHIBuffer*>(),
                     offsetof(MeshDrawIndirectCmd, indexCount),

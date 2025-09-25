@@ -39,43 +39,43 @@ namespace Foundation::RHI {
     template<typename Factory, typename T> class RHIHandle {
     public:
         ///
-        Factory* m_factory{ nullptr };
-        Handle m_handle{ kInvalidHandle };
+        Factory* mFactory{ nullptr };
+        Handle mHandle{ kInvalidHandle };
         /**
          * @brief Retrieves the underlying RHIObject pointer.
          * It is undefined behavior to use the returned pointer after the underlying resource has been destroyed.
          */
         /// <typeparam name="U">Pointer type to retrieve as. U is required to be castable from T</typeparam>                
-        template<typename U = T> U* Get() const {
+        template<typename U = T> [[nodiscard]] U* Get() const {
             CHECK(IsValid() && "RHIHandle::Get called on an invalid handle");
-            auto ptr = RHIObjectTraits<Factory, T>::Get(m_factory, m_handle);
+            auto ptr = RHIObjectTraits<Factory, T>::Get(mFactory, mHandle);
             return static_cast<U*>(ptr);
         }
         T* operator->() const {
             return Get();
         }
 
-        constexpr Handle operator()() const { return m_handle; }
+        constexpr Handle operator()() const { return mHandle; }
         constexpr operator bool() const noexcept { return IsValid(); }
-        bool operator==(const RHIHandle& other) const { return m_factory == other.m_factory && m_handle == other.m_handle; }
+        bool operator==(const RHIHandle& other) const { return mFactory == other.mFactory && mHandle == other.mHandle; }
 
-        bool IsValid() const { return m_factory != nullptr && m_handle != kInvalidHandle; }
-        bool IsFrom(const Factory* factory) const { return m_factory == factory; }
-        void Invalidate() { m_factory = nullptr, m_handle = kInvalidHandle; }
+        [[nodiscard]] bool IsValid() const { return mFactory != nullptr && mHandle != kInvalidHandle; }
+        bool IsFrom(const Factory* factory) const { return mFactory == factory; }
+        void Invalidate() { mFactory = nullptr, mHandle = kInvalidHandle; }
     };
     /**
      * @brief Scoped move-only RAII handle wrapper for RHI Objects.
      */
     template<typename Factory, typename T> class RHIScopedHandle : public RHIHandle<Factory, T> {
     public:
-        using RHIHandle<Factory, T>::m_factory;
-        using RHIHandle<Factory, T>::m_handle;
+        using RHIHandle<Factory, T>::mFactory;
+        using RHIHandle<Factory, T>::mHandle;
         using RHIHandle<Factory, T>::Get;
         using RHIHandle<Factory, T>::IsValid;
         using RHIHandle<Factory, T>::IsFrom;
         using RHIHandle<Factory, T>::Invalidate;
 
-        RHIScopedHandle() {};
+        RHIScopedHandle() = default;
         RHIScopedHandle(Factory* factory, Handle handle) : RHIHandle<Factory, T>(factory, handle) {}
         RHIScopedHandle(RHIScopedHandle&& other) noexcept
             : RHIHandle<Factory, T>(std::move(other)) {
@@ -83,8 +83,8 @@ namespace Foundation::RHI {
         }
         RHIScopedHandle& operator=(RHIScopedHandle&& other) noexcept {
             if (this != &other) {
-                m_factory = other.m_factory;
-                m_handle = other.m_handle;
+                mFactory = other.mFactory;
+                mHandle = other.mHandle;
                 other.Invalidate();
             }
             return *this;
@@ -92,7 +92,7 @@ namespace Foundation::RHI {
         /**
          * @brief Returns a non-owning view of the underlying RHIHandle.
          */
-        RHIHandle<Factory, T> View() const {
+        [[nodiscard]] RHIHandle<Factory, T> View() const {
             return *this;
         }
         /**
@@ -109,7 +109,7 @@ namespace Foundation::RHI {
          */
         void Reset() {
             if (IsValid()) {
-                RHIObjectTraits<Factory, T>::Destroy(m_factory, m_handle);
+                RHIObjectTraits<Factory, T>::Destroy(mFactory, mHandle);
                 Invalidate();
             }            
         }
@@ -117,26 +117,26 @@ namespace Foundation::RHI {
         RHIScopedHandle& operator=(const RHIScopedHandle&) = delete;
         ~RHIScopedHandle() {
             if (IsValid())
-                RHIObjectTraits<Factory, T>::Destroy(m_factory, m_handle);
+                RHIObjectTraits<Factory, T>::Destroy(mFactory, mHandle);
         }
     };
     /**
      * @brief Storage/Object dereference facility for RHI Objects
      */
     template<typename Base = RHIObject> class RHIObjectPool {
-        Core::Allocator* m_allocator;
-        Core::Pool<Handle, Core::UniquePtr<Base>> m_objects;
+        Core::Allocator* mAllocator;
+        Core::Pool<Handle, Core::UniquePtr<Base>> mObjects;
     public:
         RHIObjectPool(Core::Allocator* allocator) :
-            m_allocator(allocator), m_objects(allocator) {
+            mAllocator(allocator), mObjects(allocator) {
         };
         /**
          * @brief Creates specified RHIObject of derived type T and retrieves its handle
          */
         /// <returns>The newly allocated Handle of the said RHIObject.</returns>
         template<typename U, typename ...Args> Handle CreateObject(Args&&... args) {
-            auto [handle, value] = m_objects.pop_pair();
-            value = Core::ConstructUniqueBase<Base, U>(m_allocator, std::forward<Args>(args)...);
+            auto [handle, value] = mObjects.pop_pair();
+            value = Core::ConstructUniqueBase<Base, U>(mAllocator, std::forward<Args>(args)...);
             return handle;
         }
         /**
@@ -145,16 +145,16 @@ namespace Foundation::RHI {
         /// <typeparam name="U">Pointer type to cast to.</typeparam>
         /// <returns>The raw pointer.</returns>
         template<typename U = Base> U* GetObjectPtr(Handle handle) const {
-            if (!m_objects.contains(handle))
+            if (!mObjects.contains(handle))
                 throw std::out_of_range("invalid handle");
-            return static_cast<U*>(m_objects.at(handle).get());
+            return static_cast<U*>(mObjects.at(handle).get());
         }
         /**
          * @brief Destroys the object associated with the given handle, and frees the handle for reuse.
          */
         /// <param name="handle"></param>
         void DestroyObject(Handle handle) {
-            m_objects.free(handle);
+            mObjects.free(handle);
         }
     };
 }

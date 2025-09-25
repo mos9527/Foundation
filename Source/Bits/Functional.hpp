@@ -33,7 +33,7 @@ namespace Foundation::Bits {
 
         // std::get<T>
         template<typename T>
-        constexpr const T& Get() const {
+        [[nodiscard]] constexpr const T& Get() const {
             return std::get<T>(*this);
         }
 
@@ -45,7 +45,7 @@ namespace Foundation::Bits {
 
         // std::get_if<T>
         template<typename T>
-        constexpr const T* GetIf() const {
+        [[nodiscard]] constexpr const T* GetIf() const {
             return std::get_if<T>(this);
         }
     };

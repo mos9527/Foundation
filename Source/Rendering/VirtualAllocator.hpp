@@ -23,11 +23,11 @@ namespace Foundation::Rendering
      *  - https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/virtual_allocator.html
      */
     class VirtualAllocator {
-        const size_t m_size;
-        VmaVirtualBlock m_block{};
-        Pool<VirtualAllocation, Tuple<size_t, size_t, VmaVirtualAllocation>> m_allocs;
+        const size_t mSize;
+        VmaVirtualBlock mBlock{};
+        Pool<VirtualAllocation, Tuple<size_t, size_t, VmaVirtualAllocation>> mAllocs;
         // VMA virtual allocs are not thread-safe. Need guards.
-        Async::Mutex m_mutex;
+        Async::Mutex mMutex;
     public:
         /**
          * @brief Construct a @ref VirtualAllocator instance
@@ -46,13 +46,13 @@ namespace Foundation::Rendering
          * @brief Free a previous allocation
          * @param allocation Previously acquired allocation from the same allocator through @ref Allocate
          */
-        void Free(VirtualAllocation allocation);
+        void Free(VirtualAllocation handle);
         /**
          * @brief Query the offset and size of a previous allocation
          * @param allocation Previously acquired allocation from the same allocator through @ref Allocate
          * @return Pair of [Raw Offset, Raw Size]
          */
-        Pair<size_t, size_t> Query(VirtualAllocation allocation);
+        Pair<size_t, size_t> Query(VirtualAllocation handle);
         size_t QuerySize(size_t allocation)
         {
             auto [off, sz] = Query(allocation);

@@ -16,12 +16,12 @@ namespace Foundation::Rendering
      */
     class StagingBuffer
     {
-        Allocator* m_allocator;
-        RHIDevice* m_device;
-        RHIDeviceScopedObjectHandle<RHIBuffer> m_buffer;
-        void* m_mapped;
-        size_t m_size;
-        size_t m_offset = 0;
+        Allocator* mAllocator;
+        RHIDevice* mDevice;
+        RHIDeviceScopedObjectHandle<RHIBuffer> mBuffer;
+        void* mMapped;
+        size_t mSize;
+        size_t mOffset = 0;
 
     public:
         StagingBuffer(RHIDevice* device, size_t size, Allocator* allocator);
@@ -38,12 +38,12 @@ namespace Foundation::Rendering
          * @brief Resets the staging buffer, allowing it to be reused.
          * No GPU-side data transfer is performed.
          */
-        size_t Tell() const { return m_offset; }
-        size_t Size() const { return m_size; }
-        size_t FreeSize() const { return m_size - m_offset; }
+        [[nodiscard]] size_t Tell() const { return mOffset; }
+        [[nodiscard]] size_t Size() const { return mSize; }
+        [[nodiscard]] size_t FreeSize() const { return mSize - mOffset; }
         void Reset();
 
-        [[nodiscard]] RHIBuffer* GetBuffer() const { return m_buffer.Get(); }
+        [[nodiscard]] RHIBuffer* GetBuffer() const { return mBuffer.Get(); }
     };
     /**
      * @brief Two-pointers in-place coalescing of copy regions
@@ -79,18 +79,18 @@ namespace Foundation::Rendering
         };
 
     private:
-        RHIDevice* m_device{nullptr};
-        Allocator* m_allocator{nullptr};
+        RHIDevice* mDevice{nullptr};
+        Allocator* mAllocator{nullptr};
 
-        Vector<StagingBuffer> m_stagingBuffers;
-        RHIDeviceScopedObjectHandle<RHIBuffer> m_buffer;
+        Vector<StagingBuffer> mStagingBuffers;
+        RHIDeviceScopedObjectHandle<RHIBuffer> mBuffer;
 
-        State m_state{State::Idle};
-        uint32_t m_currentSync{0};
-        BufferStagingList m_bufferStagings;
+        State mState{State::Idle};
+        uint32_t mCurrentSync{0};
+        BufferStagingList mBufferStagings;
 
-        RHIDeviceIdleGuard m_idleGuard;
-        Optional<uint32_t> m_clearValue;
+        RHIDeviceIdleGuard mIdleGuard;
+        Optional<uint32_t> mClearValue;
 
     public:
         /**
@@ -110,7 +110,7 @@ namespace Foundation::Rendering
         /**
          * @brief Gets the GPU-only backing buffer.
          */
-        RHIBuffer* GetBuffer() { return m_buffer.Get(); }
+        RHIBuffer* GetBuffer() { return mBuffer.Get(); }
         /**
          * @brief Resets the staging buffer and aborts all pending data updates.
          *
@@ -143,7 +143,7 @@ namespace Foundation::Rendering
          * @brief Check if there are any pending updates to be performed.
          */
         bool HasUpdates() {
-            return m_clearValue.has_value() || !m_bufferStagings.empty();
+            return mClearValue.has_value() || !mBufferStagings.empty();
         }
         /**
          * @brief Push the scheduled uploads onto the command list.

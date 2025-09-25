@@ -5,7 +5,7 @@
 using namespace Foundation;
 using namespace Foundation::RHI;
 VulkanDeviceDescriptorSet::VulkanDeviceDescriptorSet(VulkanDeviceDescriptorPool const& pool, vk::raii::DescriptorSet&& set) :
-    RHIDeviceDescriptorSet(pool), m_pool(pool), m_set(std::move(set)) {
+    RHIDeviceDescriptorSet(pool), mPool(pool), mSet(std::move(set)) {
 }
 
 void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
@@ -44,12 +44,12 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
         auto const& img = desc.images[i];
         images[i] = vk::DescriptorImageInfo{
             .sampler = img.sampler ? *static_cast<VulkanDeviceSampler*>(img.sampler)->GetVkSampler() : nullptr,
-            .imageView = img.image_view ? *static_cast<VulkanTextureView*>(img.image_view)->GetVkImageView() : nullptr,
+            .imageView = img.imageView ? *static_cast<VulkanTextureView*>(img.imageView)->GetVkImageView() : nullptr,
             .imageLayout = vkImageLayoutFromRHITextureLayout(img.layout)
         };
     }
     vk::WriteDescriptorSet writes{
-        .dstSet = *m_set,
+        .dstSet = *mSet,
         .dstBinding = static_cast<uint32_t>(desc.binding),
         .dstArrayElement = static_cast<uint32_t>(desc.startIndex),
         .descriptorCount = static_cast<uint32_t>(size_all),
@@ -57,12 +57,12 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
         .pImageInfo = images.data(),
         .pBufferInfo = buffers.data(),
     };
-    m_pool.GetDevice().GetVkDevice().updateDescriptorSets(writes, {});
+    mPool.GetDevice().GetVkDevice().updateDescriptorSets(writes, {});
 }
 
 void VulkanDeviceDescriptorSet::DebugSetObjectName(const char* name) {
-    VkDescriptorSet handle = *m_set;
-    m_pool.GetDevice().GetVkDevice().setDebugUtilsObjectNameEXT({
+    VkDescriptorSet handle = *mSet;
+    mPool.GetDevice().GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eDescriptorSet,
         .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
@@ -70,7 +70,7 @@ void VulkanDeviceDescriptorSet::DebugSetObjectName(const char* name) {
 }
 
 VulkanDeviceDescriptorPool::VulkanDeviceDescriptorPool(const VulkanDevice& device, PoolDesc const& desc)
-    : RHIDeviceDescriptorPool(device, desc), m_device(device), m_storage(device.GetAllocator()) {
+    : RHIDeviceDescriptorPool(device, desc), mDevice(device), mStorage(device.GetAllocator()) {
     StackArena<> arena; StackAllocator alloc(arena);
     Vector<vk::DescriptorPoolSize> pool_sizes(desc.bindings.size(), alloc.Ptr());
     size_t max_sets = 0;
@@ -78,24 +78,24 @@ VulkanDeviceDescriptorPool::VulkanDeviceDescriptorPool(const VulkanDevice& devic
         auto const& b = desc.bindings[i];
         pool_sizes[i] = vk::DescriptorPoolSize{
             .type = vkDescriptorTypeFromRHIDescriptorType(b.type),
-            .descriptorCount = b.max_count
+            .descriptorCount = b.maxCount
         };
-        max_sets += b.max_count;
+        max_sets += b.maxCount;
     }
     vk::DescriptorPoolCreateFlags flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
-    if (desc.update_after_bind)
+    if (desc.updateAfterBind)
         flags |= vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind;
-    m_pool = vk::raii::DescriptorPool(
-        m_device.GetVkDevice(),
+    mPool = vk::raii::DescriptorPool(
+        mDevice.GetVkDevice(),
         vk::DescriptorPoolCreateInfo{
             .flags = flags,
             .maxSets = static_cast<uint32_t>(max_sets),
             .poolSizeCount = static_cast<uint32_t>(pool_sizes.size()),
             .pPoolSizes = pool_sizes.data()
         },
-        m_device.GetVkAllocatorCallbacks()
+        mDevice.GetVkAllocatorCallbacks()
     );
-    CHECK(m_pool != nullptr && "failed to create Vulkan descriptor pool");
+    CHECK(mPool != nullptr && "failed to create Vulkan descriptor pool");
 }
 RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> VulkanDeviceDescriptorPool::CreateDescriptorSet(
     RHIDeviceObjectHandle<RHIDeviceDescriptorSetLayout> layout,
@@ -108,25 +108,25 @@ RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> VulkanDeviceDescript
     };
     vk::DescriptorSetAllocateInfo alloc_info{
         .pNext = max_variable_count ? &varAlloc : nullptr,
-        .descriptorPool = *m_pool,
+        .descriptorPool = *mPool,
         .descriptorSetCount = 1,
         .pSetLayouts = &*vk_layout
     };
-    auto set = m_device.GetVkDevice().allocateDescriptorSets(alloc_info);
+    auto set = mDevice.GetVkDevice().allocateDescriptorSets(alloc_info);
     CHECK(!set.empty() && "descriptor set allocation failure");
-    auto handle = m_storage.CreateObject<VulkanDeviceDescriptorSet>(*this, std::move(set.front()));
+    auto handle = mStorage.CreateObject<VulkanDeviceDescriptorSet>(*this, std::move(set.front()));
     return { this, handle };
 }
 RHIDeviceDescriptorSet* VulkanDeviceDescriptorPool::GetDescriptorSet(Handle handle) const {
-    return m_storage.GetObjectPtr<RHIDeviceDescriptorSet>(handle);
+    return mStorage.GetObjectPtr<RHIDeviceDescriptorSet>(handle);
 }
 void VulkanDeviceDescriptorPool::DestroyDescriptorSet(Handle handle) {
-    return m_storage.DestroyObject(handle);
+    return mStorage.DestroyObject(handle);
 }
 
 void VulkanDeviceDescriptorPool::DebugSetObjectName(const char* name) {
-    VkDescriptorPool handle = *m_pool;
-    m_device.GetVkDevice().setDebugUtilsObjectNameEXT({
+    VkDescriptorPool handle = *mPool;
+    mDevice.GetVkDevice().setDebugUtilsObjectNameEXT({
         .objectType = vk::ObjectType::eDescriptorPool,
         .objectHandle = reinterpret_cast<uint64_t>(handle),
         .pObjectName = name
