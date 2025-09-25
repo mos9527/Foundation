@@ -38,12 +38,12 @@ void RenderApplication::CreateSwapchain() {
 void RenderApplication::InitializeRenderer() {
     LOG_RUNTIME(RenderApplication, info, "** Renderer Setup **");
     m_renderer = ConstructUnique<Renderer>(
-        m_alloc_renderer.Ptr(),
+        m_allocRenderer.Ptr(),
         RendererDesc{
             .async = m_desc.asyncCompute,
             .present = m_desc.present
         },
-        m_device, m_swapchain, m_alloc_renderer.Ptr()
+        m_device, m_swapchain, m_allocRenderer.Ptr()
     );
     m_renderer->BeginSetup();
     OnRendererSetup();

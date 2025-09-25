@@ -25,7 +25,7 @@ namespace Foundation::RenderCore {
             String name;
             RHI::RHIShaderStage stage{};
             // Compute shader specific
-            Tuple<uint32_t, uint32_t, uint32_t> local_size{};
+            Tuple<uint32_t, uint32_t, uint32_t> computeLocalSize{};
         };
         Vector<Entrypoint> m_entrypoints;
         struct Binding {

@@ -72,7 +72,7 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
             {
             case spv::ExecutionModeLocalSize:
                 if (ID[id].EpIndex < m_entrypoints.size()) {
-                    m_entrypoints[ID[id].EpIndex].local_size = { ins[3], ins[4], ins[5] };
+                    m_entrypoints[ID[id].EpIndex].computeLocalSize = { ins[3], ins[4], ins[5] };
                 }
                 break;
             default:

@@ -602,7 +602,7 @@ namespace Foundation::RenderCore
         {
             CHECK(m_setup && pass < m_setup->trackedPasses.size());
             auto& tpass = m_setup->trackedPasses[pass];
-            return tpass.p_desc_sets;
+            return tpass.pDescriptorSets;
         }
         /**
          * @brief Returns a pointer to the current backbuffer texture view.
@@ -613,7 +613,7 @@ namespace Foundation::RenderCore
         {
             CHECK(m_state == State::Execute);
             auto& tpass = m_setup->trackedPasses[pass];
-            CHECK_MSG(tpass.write_backbuffer, "Pass {} does not write to backbuffer", tpass.name);
+            CHECK_MSG(tpass.writeBackbuffer, "Pass {} does not write to backbuffer", tpass.name);
             return m_swaps[GetSwap()].rtv.Get();
         }
         /**

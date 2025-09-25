@@ -98,19 +98,19 @@ namespace Foundation::RenderCore
         bool used{false}; // Culled?
         // Writes to the swapchain backbuffer
         // Ignores other RTVs if true
-        bool write_backbuffer{false};
+        bool writeBackbuffer{false};
         // Uses compute shader? (not necessarily in a compute queue)
         // Should be mutually exclusive with write_backbuffer and other graphics states
-        bool compute_pass{false};
+        bool isComputePass{false};
         // Always be treated as a producer of the associated resources,
         // even when the access don't indicate writes.
         // Currently, this is only used for @ref Renderer::CreateTransitionPass
-        bool always_produces{false};
+        bool alwaysProduce{false};
         // Local size for compute shaders
-        Tuple<uint32_t, uint32_t, uint32_t> compute_local_size{};
+        Tuple<uint32_t, uint32_t, uint32_t> computeLocalSize{};
         size_t depth{}; // Depth in RG
         size_t ord{}; // Execution order
-        /* -- resources -- */
+        /* -- Resources -- */
         Vector<Tuple<ResourceHandle, RHIResourceAccess, RHIPipelineStage, RHITextureSubresourceRange,
                      RHITextureLayout>>
             textureUsages; // Referenced texture sub resources
@@ -120,43 +120,43 @@ namespace Foundation::RenderCore
         Vector<ResourceHandle> resources;
         // Unique texture views
         Vector<ResourceHandle> texviews;
-        /* -- pipeline -- */
+        /* -- Pipeline -- */
         // Shader [path, entry point, stage]
         Vector<Tuple<Native::Path, String, RHIShaderStage>> shaders;
         // Bind points [view(tex) or buffer(buf), desc type, binding point]
-        Vector<Tuple<ResourceHandle, RHIDescriptorType, String>> tex_bindings, buf_bindings;
+        Vector<Tuple<ResourceHandle, RHIDescriptorType, String>> textureBindings, bufferBindings;
         // External Bind Sets [Ptr, Layout Ptr, binding point]
-        Vector<Tuple<RHIDeviceDescriptorSet*, RHIDeviceDescriptorSetLayout*, String>> external_sets;
+        Vector<Tuple<RHIDeviceDescriptorSet*, RHIDeviceDescriptorSetLayout*, String>> externalBindings;
         // Samplers
         Vector<Pair<ResourceHandle, String>> samplers;
         // Push Constants by [stage, offset, size]
-        Vector<RHIPipelineState::PipelineStateDesc::PushConstant> push_constants;
+        Vector<RHIPipelineState::PipelineStateDesc::PushConstant> pushConstants;
         // (Graphics Only) Render Target View[s]
         Vector<ResourceHandle> rtvs;
         // (Graphics Only) Depth Stencil View
         ResourceHandle dsv{kInvalidHandle};
         // (Graphics Only) Vertex Input assembly
-        Vector<RHIPipelineState::PipelineStateDesc::VertexInput::Binding> vertex_input_bindings;
-        Vector<RHIVertexAttribute> vertex_input_attributes;
+        Vector<RHIPipelineState::PipelineStateDesc::VertexInput::Binding> vertexInputBindings;
+        Vector<RHIVertexAttribute> vertexInputAttributes;
         /* --- */
         UniquePtr<RenderPass> pass;
         TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue,
                     UniquePtr<RenderPass> renderPass, size_t priority);
-        /* -- states -- */
-        size_t group_index{}; // executionGroup index
+        /* -- States -- */
+        size_t groupIndex{}; // executionGroup index
         // All stages used in this pass
-        RHIPipelineStageBits pass_stages{};
+        RHIPipelineStageBits piplineStages{};
         // Pipeline states for the entire pass
         RHIDeviceScopedObjectHandle<RHIPipelineState> pso;
         // Layouts created by ourselves
-        Vector<RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout>> desc_layouts;
+        Vector<RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout>> descriptorLayouts;
         // Pointers. Can also contain external sets
-        Vector<RHIDeviceDescriptorSetLayout*> p_desc_layouts;
+        Vector<RHIDeviceDescriptorSetLayout*> pDescriptorLayouts;
         // Sets created by ourselves
-        Vector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> desc_sets;
+        Vector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> descriptorSets;
         // Pointers. Can also contain external sets
-        Vector<RHIDeviceDescriptorSet*> p_desc_sets;
+        Vector<RHIDeviceDescriptorSet*> pDescriptorSets;
         // [Set Index, Set, Layout]
-        Vector<Tuple<size_t, RHIDeviceDescriptorSet*, RHIDeviceDescriptorSetLayout*>> external_desc_sets;
+        Vector<Tuple<size_t, RHIDeviceDescriptorSet*, RHIDeviceDescriptorSetLayout*>> pExternalDescriptorSets;
     };
 }

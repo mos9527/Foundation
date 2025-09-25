@@ -78,7 +78,7 @@ namespace Foundation::Rendering {
                 return delta;
             }
             // Returns the average FPS over the last sample duration.
-            size_t GetFPS() const
+            [[nodiscard]] size_t GetFPS() const
             {
                 if (delta.y == 0) return 0;
                 return static_cast<size_t>(1e9 * delta.x / delta.y);
@@ -88,7 +88,7 @@ namespace Foundation::Rendering {
     protected:
         ApplicationInitDesc m_desc;
 
-        DefaultAllocator m_alloc, m_alloc_renderer;
+        DefaultAllocator m_alloc, m_allocRenderer;
         Native::NativeWindow m_window;
         UniquePtr<RHIApplication> m_rhi;
 
@@ -203,19 +203,19 @@ namespace Foundation::Rendering {
         /**
          * @brief Retrieve the framebuffer size of the current window.
          */
-        RHIExtent2D GetFramebufferSize() const { auto [w, h] = m_window.GetFramebufferSize(); return { w, h }; }
+        [[nodiscard]] RHIExtent2D GetFramebufferSize() const { auto [w, h] = m_window.GetFramebufferSize(); return { w, h }; }
         /**
          * @brief Retrieve the timing information of the last frame.
          */
-        FrameTiming GetTiming() const { return m_timing; }
+        [[nodiscard]] FrameTiming GetTiming() const { return m_timing; }
         /**
          * @brief Retrieve the underlying Renderer instance.
          */
-        Renderer* GetRenderer() const { return m_renderer.get(); }
+        [[nodiscard]] Renderer* GetRenderer() const { return m_renderer.get(); }
         /**
          * @brief Retrieve the current RHISwapchain instance.
          */
-        RHISwapchain* GetSwapchain() const
+        [[nodiscard]] RHISwapchain* GetSwapchain() const
         {
             CHECK_MSG(m_swapchain, "No swapchain created. Did you initialize the application with present=true?");
             return m_swapchain.Get();
@@ -231,7 +231,7 @@ namespace Foundation::Rendering {
         /**
          * @brief Retrieve the allocator used for renderer allocations.
          */
-        Allocator* GetRendererAllocator() { return m_alloc_renderer.Ptr(); }
+        Allocator* GetRendererAllocator() { return m_allocRenderer.Ptr(); }
         /**
          * @brief Start the Render thread and run the application loop indefinitely,
          * until the window is closed or the application is exited.
