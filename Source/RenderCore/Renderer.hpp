@@ -562,7 +562,7 @@ namespace Foundation::RenderCore
         {
             CHECK(mResources && handle < mResources->resources.size());
             using Tv = Variant<RHIBuffer*, RHITexture*>;
-            return mResources->resources[handle].visit([](auto* ptr) -> Tv { return ptr; },
+            return mResources->resources[handle].Visit([](auto* ptr) -> Tv { return ptr; },
                                                         [](auto& hdl) -> Tv { return hdl.Get(); });
         }
         /**
@@ -574,7 +574,7 @@ namespace Foundation::RenderCore
         {
             CHECK(mResources && handle < mResources->views.size());
             using Tv = RHITextureView*;
-            return mResources->views[handle].visit([](auto& hdl) -> Tv { return hdl.Get(); });
+            return mResources->views[handle].Visit([](auto& hdl) -> Tv { return hdl.Get(); });
         }
         /**
          * @brief Dereference a sampler handle to its underlying RHI sampler.

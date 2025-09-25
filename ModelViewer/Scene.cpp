@@ -58,7 +58,7 @@ void Scene::OnBeforeFrame(const uint32_t rendererSync)
 }
 SceneHandle Scene::CreateMesh(Span<const char> vertices, Span<const char> indices)
 {
-    auto [handle, data] = mMeshes.pop_pair();
+    auto [handle, data] = mMeshes.PopPair();
     auto primitive = mPrimitiveAlloc.Allocate(sizeof(PrimitiveMetadata), alignof(PrimitiveMetadata));
     data.primitiveID = mPrimitiveAlloc.QueryOffset(primitive) / sizeof(PrimitiveMetadata);
     data.vertex = mVertexAlloc.Allocate(vertices.size_bytes(), 4);
@@ -73,14 +73,14 @@ SceneHandle Scene::CreateMesh(Span<const char> vertices, Span<const char> indice
     mUpload.Upload(mIndex.Get(), indices, mIndexAlloc.QueryOffset(data.index));
     return handle;
 }
-SceneMesh Scene::GetMesh(SceneHandle id) { return mMeshes.at(id); }
+SceneMesh Scene::GetMesh(SceneHandle id) { return mMeshes.At(id); }
 void Scene::DestroyMesh(SceneHandle mesh)
 {
-    auto data = mMeshes.at(mesh);
+    auto data = mMeshes.At(mesh);
     mPrimitiveAlloc.Free(data.primitiveID);
     mVertexAlloc.Free(data.vertex);
     mIndexAlloc.Free(data.index);
-    mMeshes.free(mesh);
+    mMeshes.Free(mesh);
 }
 void Scene::CreateInstanceUpdatePass(Renderer* renderer, ResourceHandle& outInstanceBuffer, RHIDeviceQueueType queue)
 {

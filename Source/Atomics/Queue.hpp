@@ -36,7 +36,7 @@ namespace Foundation::Atomics
          * @return Whether the push was successful. Returns false if the queue is full.
          */
         template<typename U>
-        bool push(U&& data)
+        bool Push(U&& data)
         {
             size_t write = mWrite.load(std::memory_order_relaxed);
             // Amortize atomic reads
@@ -59,7 +59,7 @@ namespace Foundation::Atomics
          *            The values are move-constructed from the queue.
          * @return True is successful, false if the queue is empty.
          */
-        bool pop(T& out)
+        bool Pop(T& out)
         {
             size_t read = mRead.load(std::memory_order_relaxed);
             // Same as above
@@ -107,7 +107,7 @@ namespace Foundation::Atomics
              * @return Whether the push was successful. Returns false if the queue is full.
              */
             template<typename U>
-            bool push(U&& data) {
+            bool Push(U&& data) {
                 size_t write = queue->mWrite.load(std::memory_order_relaxed);
                 while (true)
                 {
@@ -135,7 +135,7 @@ namespace Foundation::Atomics
         /**
          * @brief Create a @ref Writer for concurrent pushing.
          */
-        Writer create_writer() { return Writer(this); }
+        Writer CreateWriter() { return Writer(this); }
         class Reader
         {
             MPMCQueue* const queue;
@@ -148,7 +148,7 @@ namespace Foundation::Atomics
              *            The values are move-constructed from the queue.
              * @return True is successful, false if the queue is empty.
              */
-            bool pop(T& out)
+            bool Pop(T& out)
             {
                 size_t read = queue->mRead.load(std::memory_order_relaxed);
                 while (true)
@@ -177,6 +177,6 @@ namespace Foundation::Atomics
         /**
          * @brief Create a @ref Reader for concurrent popping.
          */
-        Reader create_reader() { return Reader(this); }
+        Reader CreateReader() { return Reader(this); }
     };
 }

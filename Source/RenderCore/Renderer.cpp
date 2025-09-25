@@ -788,7 +788,7 @@ void Renderer::FinalizeResources()
     for (const auto& handle : mSetup->activeResources | Views::keys)
     {
         auto& res = mSetup->trackedResources[handle];
-        res.desc.visit(
+        res.desc.Visit(
             // Owned
             [&](RHIBufferDesc const& desc)
             {

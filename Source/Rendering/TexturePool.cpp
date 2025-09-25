@@ -38,21 +38,21 @@ TexturePool::TexturePool(RHIDevice* device, Allocator* allocator, uint32_t max_t
 }
 RHITexture* TexturePool::GetTexture(TexturePoolHandle handle) const
 {
-    return mTextures.at(handle).visit(
+    return mTextures.At(handle).Visit(
         [&](RHITextureView* const& view) { return view->GetTexture(); },
         [&](TexturePair const& pair) { return pair.first.Get(); }
     );
 }
 RHITextureView* TexturePool::GetTextureView(TexturePoolHandle handle) const
 {
-    return mTextures.at(handle).visit(
+    return mTextures.At(handle).Visit(
         [&](RHITextureView* const& view) { return view; },
         [&](TexturePair const& pair) { return pair.second.Get(); }
     );
 }
 TexturePoolHandle TexturePool::Allocate(RHITextureDesc const& desc, RHITextureViewDesc const& viewDesc)
 {
-    auto [handle, resource] = mTextures.pop_pair();
+    auto [handle, resource] = mTextures.PopPair();
     CHECK_MSG(handle < mMaxTextures, "TexturePool overflow.");
     auto texture = mDevice->CreateTexture(desc);
     auto view = texture->CreateTextureView(viewDesc);
@@ -73,7 +73,7 @@ TexturePoolHandle TexturePool::Allocate(RHITextureDesc const& desc)
 }
 TexturePoolHandle TexturePool::Allocate(RHITextureView* view)
 {
-    auto [handle, resource] = mTextures.pop_pair();
+    auto [handle, resource] = mTextures.PopPair();
     CHECK_MSG(handle < mMaxTextures, "TexturePool overflow.");
     mDescriptorSet->Update({.binding = 0,
                              .startIndex = handle,
@@ -85,6 +85,6 @@ TexturePoolHandle TexturePool::Allocate(RHITextureView* view)
 void TexturePool::Free(TexturePoolHandle handle)
 {
     CHECK_MSG(handle != mMissingTextureHandle, "Attempted to free reserved texture!");
-    mTextures.free(handle);
+    mTextures.Free(handle);
     SetMissingTexture(handle);
 }

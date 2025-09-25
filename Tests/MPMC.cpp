@@ -13,10 +13,10 @@ int main()
     MPMCQueue<int> queue(kSize, &alloc);
     size_t sum_expect = 0;
     Thread producer([&]() {
-        auto writer = queue.create_writer();
+        auto writer = queue.CreateWriter();
         for (int i = 0; i < kSize; i++)
         {
-            while (!writer.push(i));
+            while (!writer.Push(i));
             sum_expect += i;
         }
     });
@@ -26,11 +26,11 @@ int main()
     auto consume = [&](size_t index)
     {
         size_t sum = 0;
-        auto reader = queue.create_reader();
+        auto reader = queue.CreateReader();
         while (true)
         {
             int value;
-            if (reader.pop(value))
+            if (reader.Pop(value))
             {
                 sum += value;
             } else

@@ -16,7 +16,7 @@ namespace Foundation::Rendering
         VkResult ret = vmaVirtualAllocate(mBlock, &info, &alloc, &offset);
         if (ret != VK_SUCCESS)
             return kInvalidVirtualAllocation;
-        auto [handle, ainfo] = mAllocs.pop_pair();
+        auto [handle, ainfo] = mAllocs.PopPair();
         auto& [sz, off, vmaAlloc] = ainfo;
         sz = size, off = offset, vmaAlloc = alloc;
         return handle;
@@ -24,13 +24,13 @@ namespace Foundation::Rendering
     void VirtualAllocator::Free(VirtualAllocation handle)
     {
         std::scoped_lock lock(mMutex);
-        auto& [sz, off, vmaAlloc] = mAllocs.at(handle);
+        auto& [sz, off, vmaAlloc] = mAllocs.At(handle);
         vmaVirtualFree(mBlock, vmaAlloc);
-        mAllocs.free(handle);
+        mAllocs.Free(handle);
     }
     Pair<size_t, size_t> VirtualAllocator::Query(VirtualAllocation handle)
     {
-        auto const& [sz, off, vmaAlloc] = mAllocs.at(handle);
+        auto const& [sz, off, vmaAlloc] = mAllocs.At(handle);
         return { off, sz };
     }
     VirtualAllocator::~VirtualAllocator()

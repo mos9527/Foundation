@@ -18,7 +18,7 @@ int main()
     Thread producer([&]() {
         for (int i = 0; i < kSize; i++)
         {
-            stack.push(i);
+            stack.Push(i);
             sum_expect += i;
         }
     });
@@ -31,7 +31,7 @@ int main()
         while (true)
         {
             int value;
-            if (stack.pop(value))
+            if (stack.Pop(value))
             {
                 sum += value;
             } else

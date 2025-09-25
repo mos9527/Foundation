@@ -20,7 +20,7 @@ namespace Foundation::Core {
         /**
          * @brief Adds a key to the internal key container and resizes the value container if necessary.
          */
-        void push(K key) {
+        void Push(K key) {
             std::scoped_lock lock(mMutex);
             mKeys.push_back(key);
             if (key >= mValues.size())
@@ -31,7 +31,7 @@ namespace Foundation::Core {
         /**
          * @brief Checks if the specified key exists and has a value.
          */
-        bool contains(K key) const {
+        bool Contains(K key) const {
             std::scoped_lock lock(mMutex);
             return key < mValues.size() && mBitmap[key];
         }
@@ -39,17 +39,17 @@ namespace Foundation::Core {
          * @brief Retrieves a reference to the value associated with the given key.
          * NOTE: Calling this function with a key that's not retrieved from pop() is undefined behavior.
          */
-        V& at(K key) {
+        V& At(K key) {
             std::scoped_lock lock(mMutex);
-            CHECK_MSG(contains(key), "Key not allocated");
+            CHECK_MSG(Contains(key), "Key not allocated");
             return mValues[key];
         }
         /**
          * @brief Retrieves a const reference to the value associated with the given key.
          */
-        V const& at(K key) const {
+        V const& At(K key) const {
             std::scoped_lock lock(mMutex);
-            CHECK_MSG(contains(key), "Key not allocated");
+            CHECK_MSG(Contains(key), "Key not allocated");
             return mValues[key];
         }
         /**
@@ -57,7 +57,7 @@ namespace Foundation::Core {
          * If the free list is empty, a new key is allocated.
          * The value associated with the key is guaranteed to be zero-initialized.
          */
-        K pop() {
+        K Pop() {
             std::scoped_lock lock(mMutex);
             K key;
             if (mKeys.empty())
@@ -72,22 +72,22 @@ namespace Foundation::Core {
         /**
          * @brief Allocates a Key that returns a pair of key and value reference.
          */
-        [[nodiscard]] Pair<K, V&> pop_pair()
+        [[nodiscard]] Pair<K, V&> PopPair()
         {
             std::scoped_lock lock(mMutex);
-            K key = pop();
+            K key = Pop();
             mBitmap[key] = true;
             return { key, mValues[key] };
         }
         /**
          * @brief Frees the value associated with the specified key
          */
-        void free(K key) {
+        void Free(K key) {
             std::scoped_lock lock(mMutex);
-            CHECK_MSG(contains(key), "Key not allocated");
+            CHECK_MSG(Contains(key), "Key not allocated");
             mValues[key] = Tombstone{};
             mBitmap[key] = false;
-            push(key);
+            Push(key);
         }
     };
 }

@@ -4,7 +4,7 @@ namespace Foundation::Async
 {
     ThreadPool::ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc, StringView name):
         mAllocator(alloc), mName(name), mJobs(maxTasks, alloc),
-        mJobsWriter(mJobs.create_writer()), mThreads(alloc)
+        mJobsWriter(mJobs.CreateWriter()), mThreads(alloc)
     {
         for (size_t i = 0; i < numThreads; ++i)
             mThreads.emplace_back(&ThreadPool::ThreadPoolWorker, this, i);
@@ -31,7 +31,7 @@ namespace Foundation::Async
     void ThreadPool::ThreadPoolWorker(size_t id)
     {
         TracyCSetThreadName(fmt::format("{}@{}", mName.c_str(), id).c_str());
-        auto reader = mJobs.create_reader();
+        auto reader = mJobs.CreateReader();
         size_t total = 0;
         while (!mShutdown)
         {
@@ -45,7 +45,7 @@ namespace Foundation::Async
             // before letting the OS primitive take over
             total++;
             UniquePtr<ThreadPoolJob> job;
-            if (reader.pop(job))
+            if (reader.Pop(job))
             {
                 job->Execute(id);
                 mComplete.fetch_add(1, std::memory_order_relaxed);

@@ -17,11 +17,11 @@ namespace Foundation::Bits {
 
         // C++23 visit() behavior with default no-op visitor.        
         template<typename ...Visitors>
-        auto visit(Visitors&&... visitors) {
+        auto Visit(Visitors&&... visitors) {
             return std::visit(Visitor{ std::forward<Visitors>(visitors)... }, *this);
         }
         template<typename ...Visitors>
-        auto visit(Visitors&&... visitors) const {
+        auto Visit(Visitors&&... visitors) const {
             return std::visit(Visitor{ std::forward<Visitors>(visitors)... }, *this);
         }
 

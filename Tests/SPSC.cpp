@@ -14,7 +14,7 @@ int main()
     Thread producer([&]() {
         for (int i = 0; i < kSize; i++)
         {
-            while (!queue.push(i));
+            while (!queue.Push(i));
             sum_expect += i;
         }
     });
@@ -24,11 +24,11 @@ int main()
     Thread consumer([&]()
     {
         int value;
-        while (!queue.pop(value));
+        while (!queue.Pop(value));
         while (true)
         {
             sum_all += value;
-            if (!queue.pop(value))
+            if (!queue.Pop(value))
             {
                 std::scoped_lock lock(printMutex);
                 printf("Got sum: %ld\n", sum_all.load());

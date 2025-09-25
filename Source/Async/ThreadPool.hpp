@@ -93,7 +93,7 @@ namespace Foundation::Async
         void PushImpl(Args&&... args)
         {
             CHECK_MSG(!mShutdown, "ThreadPool shutting down");
-            CHECK_MSG(mJobsWriter.push(
+            CHECK_MSG(mJobsWriter.Push(
                 ConstructUniqueBase<ThreadPoolJob, T>(mAllocator, std::forward<Args>(args)...)), "Jobs full");
             mTotal.fetch_add(1, std::memory_order_relaxed);
             mTotal.notify_one();
@@ -117,7 +117,7 @@ namespace Foundation::Async
             // Use the wrapped lambda type for the job
             using LambdaType = ThreadPoolLambdaJob<PackagedType, ReturnType>;
             auto promise = ConstructShared<std::promise<ReturnType>>(mAllocator);
-            CHECK_MSG(mJobsWriter.push(
+            CHECK_MSG(mJobsWriter.Push(
                 ConstructUniqueBase<ThreadPoolJob, LambdaType>(
                     mAllocator, promise,
                     std::forward<PackagedType>(packaged))), "Jobs full");

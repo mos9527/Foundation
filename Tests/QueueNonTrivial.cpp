@@ -16,11 +16,11 @@ int main()
     auto consume = [&](size_t index)
     {
         size_t sum = 0;
-        auto reader = queue.create_reader();
+        auto reader = queue.CreateReader();
         while (true)
         {
             UniquePtr<int> value;
-            if (reader.pop(value))
+            if (reader.Pop(value))
             {
                 std::scoped_lock lock(printMutex);
                 printf("Ptr: %ld from Queue %ld\n", reinterpret_cast<size_t>(value.get()), index);
@@ -39,10 +39,10 @@ int main()
     for (size_t i = 0; i < 32; i++)
         threads.emplace_back(consume, i);
     size_t sum_expect = 0;
-    auto writer = queue.create_writer();
+    auto writer = queue.CreateWriter();
     for (int i = 0; i < kSize; i++)
     {
-        CHECK(writer.push(ConstructUnique<int>(&alloc, i)));
+        CHECK(writer.Push(ConstructUnique<int>(&alloc, i)));
         sum_expect += i;
     }
     for (auto& t : threads)

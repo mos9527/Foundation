@@ -14,12 +14,12 @@ namespace Foundation::Atomics {
      */
     template<typename K, typename V, typename Tombstone = V>
     class Pool {
-        const size_t m_capacity;
-        MPMCQueue<K> m_keys;
-        Vector<V> m_values;
+        const size_t mCapacity;
+        MPMCQueue<K> mKeys;
+        Vector<V> mValues;
         // Yes - there is Vector<bool>. If only you know the horror to
         // synchronize a bitset across threads...
-        Vector<char> m_bitmap;
+        Vector<char> mBitmap;
     public:
         /**
          * @brief Constructs a FreeList with the specified capacity and allocator.
@@ -27,58 +27,58 @@ namespace Foundation::Atomics {
          * @param alloc Allocator to use for internal allocations.
          */
         Pool(size_t size, Allocator* alloc) :
-            m_capacity(size), m_keys(size, alloc), m_values(size, alloc), m_bitmap(size, alloc)
+            mCapacity(size), mKeys(size, alloc), mValues(size, alloc), mBitmap(size, alloc)
         {
             // Allocate all the keys that can be possibly produced
-            auto writer = m_keys.create_writer();
+            auto writer = mKeys.CreateWriter();
             for (size_t i = 0; i < size; i++)
-                writer.push(i);
+                writer.Push(i);
         }
         /**
          * @brief Checks if the specified key exists and has a value.
          */
-        bool contains(K key) const {
-            return key < m_values.size() && m_bitmap[key];
+        bool Contains(K key) const {
+            return key < mValues.size() && mBitmap[key];
         }
         /**
          * @brief Retrieves a reference to the value associated with the given key.
          * NOTE: Calling this function with a key that's not retrieved from pop() is undefined behavior.
          */
-        V& at(K key) {
-            CHECK_MSG(contains(key), "Key not allocated");
-            return m_values[key];
+        V& At(K key) {
+            CHECK_MSG(Contains(key), "Key not allocated");
+            return mValues[key];
         }
         /**
          * @brief Retrieves a const reference to the value associated with the given key.
          */
-        V const& at(K key) const {
-            CHECK_MSG(contains(key), "Key not allocated");
-            return m_values[key];
+        V const& At(K key) const {
+            CHECK_MSG(Contains(key), "Key not allocated");
+            return mValues[key];
         }
-        const K pop()
+        const K Pop()
         {
             K key;
-            CHECK_MSG(m_keys.create_reader().pop(key), "Key pool exhausted");
-            m_bitmap[key] = true;
+            CHECK_MSG(mKeys.CreateReader().Pop(key), "Key pool exhausted");
+            mBitmap[key] = true;
             return key;
         }
         /**
          * @brief Allocates a Key that returns a pair of key and value reference.
          */
-        [[nodiscard]] const Pair<K, V&> pop_pair()
+        [[nodiscard]] const Pair<K, V&> PopPair()
         {
-            K key = pop();
-            m_bitmap[key] = true;
-            return { key, m_values[key] };
+            K key = Pop();
+            mBitmap[key] = true;
+            return { key, mValues[key] };
         }
         /**
          * @brief Frees the value associated with the specified key
          */
-        void free(K key) {
-            CHECK_MSG(contains(key), "Key {} is invalid", key);
-            m_values[key] = Tombstone{};
-            m_bitmap[key] = false;
-            CHECK_MSG(m_keys.create_writer().push(key), "Key pool full");
+        void Free(K key) {
+            CHECK_MSG(Contains(key), "Key {} is invalid", key);
+            mValues[key] = Tombstone{};
+            mBitmap[key] = false;
+            CHECK_MSG(mKeys.CreateWriter().Push(key), "Key pool full");
         }
     };
 }

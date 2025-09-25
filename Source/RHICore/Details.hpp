@@ -10,6 +10,7 @@ namespace Foundation::RHI {
     constexpr static Handle kInvalidHandle = static_cast<Handle>(-1);
     /**
      * @brief Base class for all RHI objects.
+     *
      * RHI Objects are non-copyable, non-movable (pinned), and must be derived from this class.
      */
     class RHIObject {
@@ -44,8 +45,8 @@ namespace Foundation::RHI {
         /**
          * @brief Retrieves the underlying RHIObject pointer.
          * It is undefined behavior to use the returned pointer after the underlying resource has been destroyed.
+         * @tparam U Pointer type to retrieve as. U is required to be castable from T
          */
-        /// <typeparam name="U">Pointer type to retrieve as. U is required to be castable from T</typeparam>                
         template<typename U = T> [[nodiscard]] U* Get() const {
             CHECK(IsValid() && "RHIHandle::Get called on an invalid handle");
             auto ptr = RHIObjectTraits<Factory, T>::Get(mFactory, mHandle);
@@ -132,29 +133,28 @@ namespace Foundation::RHI {
         };
         /**
          * @brief Creates specified RHIObject of derived type T and retrieves its handle
+         * @returns A handle to the newly created object.
          */
-        /// <returns>The newly allocated Handle of the said RHIObject.</returns>
         template<typename U, typename ...Args> Handle CreateObject(Args&&... args) {
-            auto [handle, value] = mObjects.pop_pair();
+            auto [handle, value] = mObjects.PopPair();
             value = Core::ConstructUniqueBase<Base, U>(mAllocator, std::forward<Args>(args)...);
             return handle;
         }
         /**
          * @brief Retrieves the raw pointer to the object within the storage.
+         * @tparam U Pointer type to cast to.
+         * @returns The raw pointer.
          */
-        /// <typeparam name="U">Pointer type to cast to.</typeparam>
-        /// <returns>The raw pointer.</returns>
         template<typename U = Base> U* GetObjectPtr(Handle handle) const {
-            if (!mObjects.contains(handle))
+            if (!mObjects.Contains(handle))
                 throw std::out_of_range("invalid handle");
-            return static_cast<U*>(mObjects.at(handle).get());
+            return static_cast<U*>(mObjects.At(handle).get());
         }
         /**
          * @brief Destroys the object associated with the given handle, and frees the handle for reuse.
          */
-        /// <param name="handle"></param>
         void DestroyObject(Handle handle) {
-            mObjects.free(handle);
+            mObjects.Free(handle);
         }
     };
 }
