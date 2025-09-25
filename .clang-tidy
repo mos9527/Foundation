@@ -160,7 +160,7 @@ CheckOptions:
   - key:             readability-identifier-naming.StaticVariableCase
     value:           camelBack
   - key:             readability-identifier-naming.ClassMethodCase
-    value:           CamelBack
+    value:           CamelCase
   - key:             readability-identifier-naming.ConstexprVariableCase
     value:           CamelCase
   - key:             readability-identifier-naming.ConstexprVariablePrefix
