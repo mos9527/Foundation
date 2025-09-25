@@ -24,4 +24,5 @@ target_link_libraries(Test_Stack PUBLIC Foundation_Atomics)
 add_executable(Test_ThreadPool "ThreadPool.cpp")
 target_link_libraries(Test_ThreadPool PUBLIC Foundation_Async)
 
-add_subdirectory(VulkanSamples)
+add_executable(Test_Unrom "Unorm.cpp")
+target_link_libraries(Test_Unrom PUBLIC Foundation_Math Foundation_Core)

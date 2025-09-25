@@ -1,13 +1,14 @@
+#define EPS 1e-6
 float2 PackUnitOctahedral(float3 v) {
     v /= float3(abs(v.x) + abs(v.y) + abs(v.z));
-    v.xy = (v.z >= 0.0f) ? v.xy : (float2(1.0f) - abs(float2(v.yx))) * sign(float2(v.xy));
+    v.xy = (v.z >= EPS) ? v.xy : (float2(1.0f) - abs(float2(v.yx))) * sign(float2(v.xy) + EPS);
     return v.xy;
 }
 
 float3 UnpackUnitOctahedral(float2 v)
 {
     float3 nor = float3(v.xy, 1.0f - abs(v.x) - abs(v.y));
-    nor.xy = nor.z >= 0.0f ? nor.xy :  (float2(1.0f, 1.0f) - abs(nor.yx)) * sign(nor.xy);
+    nor.xy = nor.z >= EPS ? nor.xy :  (float2(1.0f, 1.0f) - abs(nor.yx)) * sign(nor.xy + EPS);
     return normalize(nor);
 }
 

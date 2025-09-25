@@ -31,6 +31,5 @@ namespace Foundation::Math {
     using float2 = vec2;
     using float4x4 = mat4;
 }
-
 #include "Quantization.hpp"
 #include "Unorm.hpp"
