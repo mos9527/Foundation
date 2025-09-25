@@ -1,6 +1,5 @@
 #include "ThreadPool.hpp"
-
-#include "../../cmake-build-minsizerel/_deps/tracy-src/public/tracy/TracyC.h"
+#include <tracy/TracyC.h>
 namespace Foundation::Async
 {
     ThreadPool::ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc, StringView name):

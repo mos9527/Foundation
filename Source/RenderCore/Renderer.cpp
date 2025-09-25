@@ -1,8 +1,3 @@
-#include <algorithm>
-#include <filesystem>
-#include <fstream>
-
-#include <Math/Math.hpp>
 #include <tracy/Tracy.hpp>
 
 #include "Renderer.hpp"
@@ -35,59 +30,12 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
     LOG_RUNTIME(Renderer, info, "Presentation: {}", m_desc.present);
 }
 
-RHITextureSubresourceRange TrackedResource::SubresourceState::ToRange() const
-{
-    {
-        return RHITextureSubresourceRange{.layer = {.aspect = aspect,
-                                                    .mip_level = static_cast<uint32_t>(mip),
-                                                    .base_array_layer = static_cast<uint32_t>(layer),
-                                                    .layer_count = 1},
-                                          .mip_count = 1};
-    }
-}
-
-TrackedResource::TrackedResource(const ResourceHandle handle, StringView name, const ResourceDefinition& resourceDesc,
-                                 Allocator* alloc) :
-    handle(handle), name(name), desc(resourceDesc), lastSubresourceStates(alloc)
-{
-    // Init texture tracking states
-    auto update_texture_desc = [&](RHITextureDesc const& texture_desc)
-    {
-        textureLayers = texture_desc.array_layers;
-        textureMips = texture_desc.mip_levels;
-        lastSubresourceStates.resize(textureMips * textureLayers * kTextureAspectCount);
-        for (uint32_t mip = 0; mip < textureMips; ++mip)
-        {
-            for (uint32_t layer = 0; layer < textureLayers; ++layer)
-            {
-                for (uint32_t aspect = 0; aspect < kTextureAspectCount; ++aspect)
-                {
-                    uint32_t i = mip * (textureLayers * kTextureAspectCount) + layer * kTextureAspectCount + aspect;
-                    auto& state = lastSubresourceStates[i];
-                    state.aspect = RHITextureAspectFlag(1u << aspect);
-                    state.mip = mip, state.layer = layer;
-                }
-            }
-        }
-    };
-    desc.visit([&](RHITextureDesc const& tex) { update_texture_desc(tex); },
-               [&](RHIDeviceObjectHandle<RHITexture> const& tex) { update_texture_desc(tex->m_desc); },
-               [&](const RHITexture* const tex) { update_texture_desc(tex->m_desc); });
-}
-
-TrackedPass::TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue,
-                         UniquePtr<RenderPass> renderPass, size_t priority) :
-    name(name), handle(handle), priority(priority), queue(queue), textureUsages(alloc), bufferUsages(alloc),
-    resources(alloc), texviews(alloc), shaders(alloc), tex_bindings(alloc), buf_bindings(alloc), external_sets(alloc),
-    samplers(alloc), push_constants(alloc), rtvs(alloc), vertex_input_bindings(alloc), vertex_input_attributes(alloc),
-    pass(std::move(renderPass)), desc_layouts(alloc), p_desc_layouts(alloc), desc_sets(alloc), p_desc_sets(alloc),
-    external_desc_sets(alloc) {};
 void Renderer::BeginSetup()
 {
     CHECK_MSG(m_state == State::Undefined || m_state == State::PostSetup, "Bad Setup state. Current state is {}",
               m_state);
     m_state = State::Setup;
-    m_setup = ConstructUnique<SetupContext>(m_allocator, m_allocator);
+    m_setup = ConstructUnique<RendererSetup>(m_allocator, m_allocator);
     if (m_desc.present)
         SetSwapchain(m_swapchain);
     else
@@ -171,7 +119,7 @@ void Renderer::DeclareTextureAccess(PassHandle pass, ResourceHandle handle, RHIP
 
 /* -- binding -- */
 void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point,
-                          std::filesystem::path const& shader_path) const
+                          Native::Path const& shader_path) const
 {
     CHECK(m_state == State::Setup);
     CHECK_MSG(stage.is_bitmask(), "Only one stage can be bound to a shader per pass");
@@ -495,8 +443,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
         return; // Pass with no shaders
     LOG_RUNTIME(Renderer, debug, "** Building PSO for {} [{}] **", tracked.name, pass);
     Vector<char> data(m_allocator);
-    Map<std::filesystem::path, RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(m_allocator);
-    Map<std::filesystem::path, UniquePtr<Shader>> reflections(m_allocator);
+    Map<Native::Path, RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(m_allocator);
+    Map<Native::Path, UniquePtr<Shader>> reflections(m_allocator);
     for (auto const& [shader_path, entry_point, stage] : tracked.shaders)
     {
         if (!shaders.contains(shader_path))
@@ -604,8 +552,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
         else
         {
             auto& dtype_prev = it->second;
-            auto& sampler_handle = var_samplers[binding];
-            CHECK(dtype_prev == RHIDescriptorType::Sampler && sampler_handle == sampler_handle);
+            auto& var_handle = var_samplers[binding];
+            CHECK(dtype_prev == RHIDescriptorType::Sampler && var_handle == sampler_handle);
         }
     }
     // External sets (e.g. @ref TexturePool)
@@ -658,7 +606,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
         if (it != bindings.end())
         {
             auto e_it =
-                Ranges::find_if(tracked.external_sets, [set, ptr](auto const& e) { return std::get<0>(e) == ptr; });
+                Ranges::find_if(tracked.external_sets, [ptr](auto const& e) { return std::get<0>(e) == ptr; });
             CHECK_MSG(
                 false,
                 "External descriptor set used by shader at set {} (used by '{}') conflicts with bindings declared by "
@@ -834,7 +782,7 @@ void Renderer::FinalizePSOs()
 void Renderer::FinalizeResources()
 {
     CHECK(m_state == State::Setup);
-    m_resources = ConstructUnique<Resources>(m_allocator, m_allocator);
+    m_resources = ConstructUnique<ExecuteResources>(m_allocator, m_allocator);
     m_resources->fit(m_setup->trackedResources.size());
     // !! TODO: Overlap transient resources to with non-overlapping lifetimes with aliasing
     for (const auto& handle : m_setup->activeResources | Views::keys)

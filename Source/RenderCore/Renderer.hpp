@@ -1,23 +1,15 @@
 #pragma once
 #include <Async/ThreadPool.hpp>
-#include <Bits/Functional.hpp>
-#include <Bits/Ranges.hpp>
-#include <Core/Core.hpp>
 #include <Core/StackAllocator.hpp>
-#include <Native/Filesystem.hpp>
-#include <tracy/Tracy.hpp>
-
 #include <RHICore/Application.hpp>
-#include <RHICore/Command.hpp>
-#include <RHICore/Device.hpp>
+
+#include "RenderPass.hpp"
+#include "RenderResource.hpp"
 /**
  * @brief Core functionalities for rendering, including the Frame Graph implementation.
  */
 namespace Foundation::RenderCore
 {
-    using namespace Foundation::RHI;
-    using namespace Foundation::Core;
-    using namespace Foundation::Bits;
     /* -- Constants -- */
     // Maximum number of render passes per frame
     // NOTE: The limit here is mostly arbitrary - and is only used
@@ -27,13 +19,64 @@ namespace Foundation::RenderCore
     constexpr size_t kMaxCommandListsPerThread = 128; // Maximum number of command lists per frame
     constexpr size_t kMaxTempResourceSemaphores = 16; // Maximum number of temporary semaphores for cross-queue barriers
     constexpr size_t kExecuteArenaSize = 16 * (1 << 20); // Maximum size of the per-frame transient arena (16MB)
-    const size_t kTextureAspectCount = 3; // Color, depth, stencil @ref RHITextureAspectFlag
     const RHIPipelineStage kComputeStagesMask = RHIPipelineStageBits::FragmentShader |
         RHIPipelineStageBits::VertexShader | RHIPipelineStageBits::MeshShader | RHIPipelineStageBits::RayTracingShader |
         RHIPipelineStageBits::AllGraphics;
     const RHIResourceAccessBits kAllShaderWrites = RHIResourceAccessBits::ShaderWrite |
         RHIResourceAccessBits::RenderTargetWrite | RHIResourceAccessBits::DepthStencilWrite |
         RHIResourceAccessBits::TransferWrite;
+    /**
+     * @brief Helper class containing all states pertaining to @ref Renderer's Setup phase
+     */
+    struct RendererSetup
+    {
+        Vector<Vector<Pair<PassHandle, ResourceHandle>>> graph;
+        Vector<TrackedPass> trackedPasses;
+        Vector<TrackedResource> trackedResources;
+        // [resource, view desc]
+        Vector<Pair<ResourceHandle, RHITextureViewDesc>> trackedViews;
+        Vector<RHIDeviceSampler::SamplerDesc> trackedSamplers;
+        // [resource, ord range]
+        Map<ResourceHandle, Pair<PassHandle, PassHandle>> activeResources;
+        // Passes ordered by pass.ord
+        Vector<PassHandle> execution;
+        Map<RHIDescriptorType, uint32_t> binding_counts;
+        PassHandle epilogue{kInvalidHandle};
+        // Execution grouped by queue type
+        struct ExecutionGroups
+        {
+            const int group_index{}; // Index in executionGroups
+            int graphics_group_index{-1}; // Index of all unique graphics groups before this one
+            int compute_group_index{-1}; // Index of all unique compute groups before this one
+            const RHIDeviceQueueType queue{};
+            Vector<PassHandle> passes;
+            // Resources used in this group
+            Vector<ResourceHandle> resources;
+            bool is_last_graphics = false;
+            bool is_last_compute = false;
+            RHIPipelineStage all_stages{}; // All stages used in this group
+
+            ExecutionGroups(int group_index, RHIDeviceQueueType queue, Allocator* allocator) :
+                group_index(group_index), queue(queue), passes(allocator), resources(allocator)
+            {
+            }
+        };
+        Vector<ExecutionGroups> executionGroups;
+        bool executionAnyCompute{false}, executionAnyGraphics{false};
+        void add_edge(const PassHandle u, const PassHandle v, const ResourceHandle hdl)
+        {
+            // ReSharper disable once CppDFALoopConditionNotUpdated
+            while (u >= graph.size())
+                graph.emplace_back(graph.get_allocator());
+            graph[u].emplace_back(v, hdl);
+        }
+        explicit RendererSetup(Allocator* allocator) :
+            graph(allocator), trackedPasses(allocator), trackedResources(allocator), trackedViews(allocator),
+            trackedSamplers(allocator), activeResources(allocator), execution(allocator), binding_counts(allocator),
+            executionGroups(allocator)
+        {
+        }
+    };
     /**
      * @brief Parameters for @ref Renderer creation
      */
@@ -44,251 +87,7 @@ namespace Foundation::RenderCore
         // Present the swapchain in Execute()
         bool present{true};
     };
-    using ResourceDefinition = Variant<RHIBufferDesc, RHITextureDesc, RHIDeviceObjectHandle<RHIBuffer>,
-                                       RHIDeviceObjectHandle<RHITexture>, RHIBuffer*, RHITexture*>;
-    using ResourceHandle = size_t; // Index in the resource definitions vector
-    using PassHandle = size_t; // Index in the pass definitions vector
     class Renderer;
-    /* -- Render Pass -- */
-    /**
-     * @brief Interface for a render pass.
-     */
-    class RenderPass : public RHIObject
-    {
-    public:
-        /**
-         * @brief Constructor. You may also create resources here for early setup.
-         * However, access declaration must be done in Setup().
-         */
-        RenderPass() = default;
-        /**
-         * @brief Perform any setup required for this pass.
-         * This may include creating resources, declaring resource accesses, etc.
-         *
-         * @note This is only executed during the Setup phase of the render graph,
-         * and is always called from the main (renderer's) thread.
-         */
-        virtual void Setup(PassHandle self, Renderer* r) = 0;
-        /**
-         * @brief Record the commands of this pass into the given command list.
-         *
-         * This is only executed after EndSetup() has been called,
-         * and when the render graph is actually executed.
-         *
-         * @note This may be called from multiple threads concurrently, and thus
-         * should ensure thread safety if accessing shared data.
-         */
-        virtual void Record(PassHandle self, Renderer* r, RHICommandList* cmd) = 0;
-        /**
-         * @brief Determine whether this pass should be skipped during Record time
-         *
-         * @return Whether this pass should be skipped during execution.
-         *
-         * This is only executed after EndSetup() has been called,
-         * and when the render graph is actually executed.
-         *
-         * @note This is always called from the main (renderer's) thread.
-         */
-        virtual bool IsSkipped(PassHandle self, Renderer* r) const { return false; }
-    };
-    /**
-     * @brief Default "no-op" functor for Record()
-     */
-    struct FRecordDefault
-    {
-        void operator()(PassHandle, Renderer*, RHICommandList*) const { /* nop */ }
-    };
-    /**
-     * @brief Default "not skipped" functor for IsSkipped()
-     */
-    struct FSkipDefault
-    {
-        bool operator()(PassHandle, Renderer*) const { return false; }
-    };
-    /**
-     * @brief Functional wrapper for a render pass
-     *
-     * This is a convenience wrapper for stateless passes, and should be created via @ref Renderer::CreatePass()
-     */
-    template <typename FSetup, typename FRecord, typename FSkip>
-    struct LambdaPass : public RenderPass
-    {
-        FSetup m_setup;
-        FRecord m_record;
-        FSkip m_skip;
-        LambdaPass(FSetup&& setup, FRecord&& record, FSkip&& skip = {}) :
-            m_setup(std::forward<FSetup>(setup)), m_record(std::forward<FRecord>(record)),
-            m_skip(std::forward<FSkip>(skip))
-        {
-        }
-        void Setup(PassHandle self, Renderer* r) override { m_setup(self, r); }
-        void Record(PassHandle self, Renderer* r, RHICommandList* cmd) override { m_record(self, r, cmd); }
-        bool IsSkipped(PassHandle self, Renderer* r) const override { return m_skip(self, r); }
-    };
-    /**
-     * @brief Internal tracking information for a resource in the frame graph.
-     */
-    struct TrackedResource
-    {
-        ResourceHandle handle; // Index to tracked resources
-        String name;
-        ResourceDefinition desc;
-        bool compute_usage{false}; // Used in a compute pass?
-        bool graphics_usage{false}; // Used in a graphics pass?
-        /* --- states --- */
-        // (Buffer) Last known state
-        // Transitions here are always global since granularity would be too fine. And seems
-        // like drivers don't really care?
-        // See Also: https://www.reddit.com/r/vulkan/comments/v2mswb/global_memory_barriers_vs_bufferimage_memory/
-        // TODO: Investigate
-        struct BufferState
-        {
-            // Last pass to write at Setup time
-            PassHandle producer{kInvalidHandle};
-            // Last pass to transition at Execute time
-            PassHandle lastExecutor{kInvalidHandle};
-            // Last frame the transition was executed
-            size_t lastExecuteFrame{0};
-            // Last queue this resource is owned by
-            RHIDeviceQueueType lastOwnerQueue{RHIDeviceQueueType::Undefined};
-            // [Only used by @ref ExecuteReleaseQueueResources]
-            bool executeTempTransitionFlag{false};
-            RHIResourceAccess access{};
-            RHIPipelineStage stage{};
-            void reset()
-            {
-                producer = kInvalidHandle;
-                access = {};
-                stage = {};
-            }
-        } lastBufferState{};
-
-        // (Texture) Per-subresource states
-        uint32_t textureLayers{0}, textureMips{0};
-        struct SubresourceState
-        {
-            size_t layer{0}, mip{0};
-            RHITextureAspectFlagBits aspect{};
-            /* -- states -- */
-            // Last pass to write at Setup time
-            PassHandle producer{kInvalidHandle};
-            // Last pass to transition at Execute time
-            PassHandle lastExecutor{kInvalidHandle};
-            // Last frame the transition was executed
-            size_t lastExecuteFrame{0};
-            // Last queue this resource is owned by
-            RHIDeviceQueueType lastOwnerQueue{RHIDeviceQueueType::Undefined};
-            // [Only used by @ref ExecuteReleaseQueueResources]
-            bool executeTempTransitionFlag{false};
-            RHIResourceAccess access{};
-            RHIPipelineStage stage{};
-            RHITextureLayout layout{};
-            void reset()
-            {
-                producer = kInvalidHandle;
-                access = {};
-                stage = {};
-                layout = {};
-            }
-            [[nodiscard]] RHITextureSubresourceRange ToRange() const;
-        };
-        // [mip...,
-        //   layer...,
-        //      aspect...]
-        Vector<SubresourceState> lastSubresourceStates;
-        auto GetLastSubresourceStateOf(RHITextureSubresourceRange const& range)
-        {
-            auto [mip_begin, mip_end] = range.GetMipLevelRange();
-            auto [layer_begin, layer_end] = range.GetArrayLayerRange();
-            uint32_t mip_stride = textureLayers * kTextureAspectCount;
-            return Views::all(Span<SubresourceState>{
-                       lastSubresourceStates.begin() + mip_begin * mip_stride,
-                       lastSubresourceStates.begin() + (mip_end + 1) * mip_stride,
-                   }) |
-                Views::filter(
-                       [=](const SubresourceState& state)
-                       {
-                           return (RHITextureAspectFlag(state.aspect) & range.layer.aspect) && state.mip >= mip_begin &&
-                               state.mip <= mip_end && state.layer >= layer_begin && state.layer <= layer_end;
-                       });
-        }
-        TrackedResource(const ResourceHandle handle, StringView name, const ResourceDefinition& resourceDesc,
-                        Allocator* alloc);
-    };
-    /**
-     * @brief Internal tracking information for a render pass in the frame graph.
-     */
-    struct TrackedPass
-    {
-        String name;
-        PassHandle handle; // Index to tracked passes
-        size_t priority{0}; // Higher priority passes are scheduled earlier
-        // The queue to run this pass on
-        RHIDeviceQueueType queue;
-        bool used{false}; // Culled?
-        // Writes to the swapchain backbuffer
-        // Ignores other RTVs if true
-        bool write_backbuffer{false};
-        // Uses compute shader? (not necessarily in a compute queue)
-        // Should be mutually exclusive with write_backbuffer and other graphics states
-        bool compute_pass{false};
-        // Always be treated as a producer of the associated resources,
-        // even when the access don't indicate writes.
-        // Currently, this is only used for @ref Renderer::CreateTransitionPass
-        bool always_produces{false};
-        // Local size for compute shaders
-        Tuple<uint32_t, uint32_t, uint32_t> compute_local_size{};
-        size_t depth{}; // Depth in RG
-        size_t ord{}; // Execution order
-        /* -- resources -- */
-        Vector<Tuple<ResourceHandle, RHIResourceAccess, RHIPipelineStage, RHITextureSubresourceRange,
-                     RHITextureLayout>>
-            textureUsages; // Referenced texture sub resources
-        Vector<Tuple<ResourceHandle, RHIResourceAccess,
-                     RHIPipelineStage>> bufferUsages; // Referenced buffers
-        // Unique referenced resources (tex/buf)
-        Vector<ResourceHandle> resources;
-        // Unique texture views
-        Vector<ResourceHandle> texviews;
-        /* -- pipeline -- */
-        // Shader [path, entry point, stage]
-        Vector<Tuple<Native::Path, String, RHIShaderStage>> shaders;
-        // Bind points [view(tex) or buffer(buf), desc type, binding point]
-        Vector<Tuple<ResourceHandle, RHIDescriptorType, String>> tex_bindings, buf_bindings;
-        // External Bind Sets [Ptr, Layout Ptr, binding point]
-        Vector<Tuple<RHIDeviceDescriptorSet*, RHIDeviceDescriptorSetLayout*, String>> external_sets;
-        // Samplers
-        Vector<Pair<ResourceHandle, String>> samplers;
-        // Push Constants by [stage, offset, size]
-        Vector<RHIPipelineState::PipelineStateDesc::PushConstant> push_constants;
-        // (Graphics Only) Render Target View[s]
-        Vector<ResourceHandle> rtvs;
-        // (Graphics Only) Depth Stencil View
-        ResourceHandle dsv{kInvalidHandle};
-        // (Graphics Only) Vertex Input assembly
-        Vector<RHIPipelineState::PipelineStateDesc::VertexInput::Binding> vertex_input_bindings;
-        Vector<RHIVertexAttribute> vertex_input_attributes;
-        /* --- */
-        UniquePtr<RenderPass> pass;
-        TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue,
-                    UniquePtr<RenderPass> renderPass, size_t priority);
-        /* -- states -- */
-        size_t group_index{}; // executionGroup index
-        // All stages used in this pass
-        RHIPipelineStageBits pass_stages{};
-        // Pipeline states for the entire pass
-        RHIDeviceScopedObjectHandle<RHIPipelineState> pso;
-        // Layouts created by ourselves
-        Vector<RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout>> desc_layouts;
-        // Pointers. Can also contain external sets
-        Vector<RHIDeviceDescriptorSetLayout*> p_desc_layouts;
-        // Sets created by ourselves
-        Vector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> desc_sets;
-        // Pointers. Can also contain external sets
-        Vector<RHIDeviceDescriptorSet*> p_desc_sets;
-        // [Set Index, Set, Layout]
-        Vector<Tuple<size_t, RHIDeviceDescriptorSet*, RHIDeviceDescriptorSetLayout*>> external_desc_sets;
-    };
     /**
      * @brief Renderer implementing a Frame Graph system with automatic resource tracking and synchronization.
      *
@@ -319,24 +118,9 @@ namespace Foundation::RenderCore
 
         uint32_t m_frameSwaps{1}; // Max frames in flight
         uint32_t m_currentSync{0};
-        uint32_t m_currentSwap;
+        uint32_t m_currentSwap{0};
 
-        struct Resources
-        {
-            Vector<Variant<RHIBuffer*, RHIDeviceObjectHandle<RHIBuffer>, RHIDeviceScopedObjectHandle<RHIBuffer>,
-                           RHITexture*, RHIDeviceObjectHandle<RHITexture>, RHIDeviceScopedObjectHandle<RHITexture>>>
-                resources;
-            Vector<Variant<RHITextureScopedHandle<RHITextureView>, RHITextureHandle<RHITextureView>>> views;
-            Vector<RHIDeviceScopedObjectHandle<RHIDeviceSampler>> samplers;
-            explicit Resources(Allocator* allocator) : resources(allocator), views(allocator), samplers(allocator) {}
-            void fit(ResourceHandle handle)
-            {
-                resources.resize(std::max(resources.size(), handle + 1));
-                views.resize(std::max(views.size(), handle + 1));
-                samplers.resize(std::max(samplers.size(), handle + 1));
-            }
-        };
-        UniquePtr<Resources> m_resources;
+        UniquePtr<ExecuteResources> m_resources;
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_descPool;
         struct FrameSyncObjects
         {
@@ -357,56 +141,7 @@ namespace Foundation::RenderCore
         RHIDeviceObjectHandle<RHISwapchain> m_swapchain{};
         RHIDeviceQueue *m_graphicsQueue{}, *m_computeQueue{};
 
-        struct SetupContext
-        {
-            Vector<Vector<Pair<PassHandle, ResourceHandle>>> graph;
-            Vector<TrackedPass> trackedPasses;
-            Vector<TrackedResource> trackedResources;
-            // [resource, view desc]
-            Vector<Pair<ResourceHandle, RHITextureViewDesc>> trackedViews;
-            Vector<RHIDeviceSampler::SamplerDesc> trackedSamplers;
-            // [resource, ord range]
-            Map<ResourceHandle, Pair<PassHandle, PassHandle>> activeResources;
-            // Passes ordered by pass.ord
-            Vector<PassHandle> execution;
-            Map<RHIDescriptorType, uint32_t> binding_counts;
-            PassHandle epilogue{kInvalidHandle};
-            // Execution grouped by queue type
-            struct ExecutionGroups
-            {
-                const int group_index{}; // Index in executionGroups
-                int graphics_group_index{-1}; // Index of all unique graphics groups before this one
-                int compute_group_index{-1}; // Index of all unique compute groups before this one
-                const RHIDeviceQueueType queue{};
-                Vector<PassHandle> passes;
-                // Resources used in this group
-                Vector<ResourceHandle> resources;
-                bool is_last_graphics = false;
-                bool is_last_compute = false;
-                RHIPipelineStage all_stages{}; // All stages used in this group
-
-                ExecutionGroups(int group_index, RHIDeviceQueueType queue, Allocator* allocator) :
-                    group_index(group_index), queue(queue), passes(allocator), resources(allocator)
-                {
-                }
-            };
-            Vector<ExecutionGroups> executionGroups;
-            bool executionAnyCompute{false}, executionAnyGraphics{false};
-            void add_edge(const PassHandle u, const PassHandle v, const ResourceHandle hdl)
-            {
-                // ReSharper disable once CppDFALoopConditionNotUpdated
-                while (u >= graph.size())
-                    graph.emplace_back(graph.get_allocator());
-                graph[u].emplace_back(v, hdl);
-            }
-            explicit SetupContext(Allocator* allocator) :
-                graph(allocator), trackedPasses(allocator), trackedResources(allocator), trackedViews(allocator),
-                trackedSamplers(allocator), activeResources(allocator), execution(allocator), binding_counts(allocator),
-                executionGroups(allocator)
-            {
-            }
-        };
-        UniquePtr<SetupContext> m_setup;
+        UniquePtr<RendererSetup> m_setup;
         // Setup
         [[nodiscard]] ResourceHandle CreateTextureView(PassHandle pass, ResourceHandle res,
                                                        RHITextureViewDesc const& desc) const;
@@ -948,11 +683,6 @@ namespace Foundation::RenderCore
                               {reinterpret_cast<const char*>(&data), sizeof(T)});
         }
 #pragma endregion
-#pragma region Debugging
-        [[nodiscard]] String DbgDumpGraphviz() const;
-        [[nodiscard]] String DbgDumpActivePasses() const;
-        [[nodiscard]] String DbgDumpExecutionGroups() const;
-#pragma endregion
 #pragma region Frame Execution
         /**
          * @brief Retrieves the current state of the renderer.
@@ -1046,6 +776,11 @@ namespace Foundation::RenderCore
          * @note This MUST be called after ExecuteFrame(), and before BeginExecuteImpl() of the next frame.
          */
         void EndExecute();
+#pragma endregion
+#pragma region Debugging
+        [[nodiscard]] String DbgDumpGraphviz() const;
+        [[nodiscard]] String DbgDumpActivePasses() const;
+        [[nodiscard]] String DbgDumpExecutionGroups() const;
 #pragma endregion
     };
     /* Functional Helpers */

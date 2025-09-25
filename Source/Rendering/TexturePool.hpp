@@ -31,9 +31,6 @@ namespace Foundation::Rendering
     public:
         TexturePool(RHIDevice* device, Allocator* allocator, uint32_t max_textures = 128);
 
-        // docs blah blah blah
-        // - allocations are usually contiguous
-        // - first index is reserved for missing texture
         [[nodiscard]] TexturePoolHandle Allocate(RHITextureDesc const& desc);
         [[nodiscard]] TexturePoolHandle Allocate(RHITextureDesc const& desc, RHITextureViewDesc const& viewDesc);
         [[nodiscard]] TexturePoolHandle Allocate(RHITextureView* view);

@@ -26,6 +26,7 @@ namespace Foundation::Math {
     //      Currently we compile shaders with -fvk-use-scalar-layout to
     //      always densely pack them.
     // TODO: This may have performance implications on some hardware - needs testing.
+    // TODO: MSVC default alignment is a bit weird. Figure out how to make it compilant.
     using float3 = vec3;
     using float2 = vec2;
     using float4x4 = mat4;
