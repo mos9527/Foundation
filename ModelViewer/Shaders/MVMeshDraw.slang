@@ -1,4 +1,8 @@
 #include "Common.h"
+
+import "Math/Quaternion";
+import "Math/Quantization";
+
 struct VSInput {
     float16_t3 pos; // fp16
 
@@ -29,7 +33,6 @@ float4x4 translation(float3 t){
         0,0,0,1
     );
 }
-#include "Math.h"
 [shader("vertex")]
 VSOutput vertMain(VSInput input, uint32_t drawID : SV_DrawIndex) {
     VSOutput output;
@@ -37,16 +40,17 @@ VSOutput vertMain(VSInput input, uint32_t drawID : SV_DrawIndex) {
     uint32_t instanceID = commands[drawID].instanceID;
     float3 N;
     float4 T_BSign;
-    UnpackTBN(input.np, input.tp, N, T_BSign);
-    float3 pos = input.pos;
-    // Model matrix
+    unpackTBN(input.np, input.tp, N, T_BSign);
+    // Apply transforms from instance data
     InstanceMetadata instance = scInstance[instanceID];
-    pos = Rotate(pos, instance.q);
-    pos = Translate(pos, instance.t);
+    Quaternion q = Quaternion(instance.q);
+    float3 pos = input.pos;
+    pos = q.rotate(pos);
+    pos = pos + instance.t;
 
     output.pos = mul(draw.viewProj, float4(pos, 1.0));
-    output.normal = Rotate(N, instance.q);
-    output.tangent = float4(Rotate(T_BSign.xyz, instance.q), T_BSign.w);
+    output.normal = q.rotate(N);
+    output.tangent = float4(q.rotate(T_BSign.xyz), T_BSign.w);
     output.uv = input.texCoord;
 
     return output;

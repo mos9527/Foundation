@@ -2,6 +2,9 @@
  * @brief Data definition shared between C++ and Slang shaders
  * XXX: It would seem that slang always aligns to 16 bytes
  * https://github.com/shader-slang/slang/discussions/5705
+ *
+ * TODO: Sharing the same definition between C++ and shaders is usually not
+ *       a good idea. MSVC proves it too. Remove this ASAP.
 */
 
 // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#VkDrawIndexedIndirectCommand

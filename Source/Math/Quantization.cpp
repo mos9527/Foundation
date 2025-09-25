@@ -1,5 +1,5 @@
-// This file is part of meshoptimizer library; see meshoptimizer.h for version/license details
 namespace Foundation::Math {
+    // From meshoptimizer library
     union FloatBits
     {
         float f;
