@@ -5,9 +5,8 @@
 #include <Native/Filesystem.hpp>
 namespace Foundation::Rendering
 {
-    using namespace Foundation::RHI;
-    using namespace Foundation::Native;
-    using namespace Foundation::Bits;
+    using namespace RHI;
+    using namespace Bits;
     using TexturePoolHandle = size_t;
     using TexturePair = Pair<RHIDeviceScopedObjectHandle<RHITexture>, RHITextureScopedHandle<RHITextureView>>;
     /**
@@ -23,7 +22,7 @@ namespace Foundation::Rendering
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> m_descriptorSetLayout;
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_descriptorPool;
         RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> m_descriptorSet;
-        Core::Pool<TexturePoolHandle, Variant<TexturePair, RHITextureView*>> m_textures;
+        Pool<TexturePoolHandle, Variant<TexturePair, RHITextureView*>> m_textures;
 
         TexturePoolHandle m_missingTextureHandle{ kInvalidHandle };
         void SetMissingTexture(uint32_t index);

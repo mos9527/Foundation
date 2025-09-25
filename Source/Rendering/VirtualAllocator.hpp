@@ -1,0 +1,68 @@
+#pragma once
+#include <Core/Core.hpp>
+#include <Core/Pool.hpp>
+#include <Async/Future.hpp>
+#include <vk_mem_alloc.h>
+namespace Foundation::Rendering
+{
+    using namespace Core;
+    using VirtualAllocation = size_t;
+    // [Raw Offset, Size]
+    constexpr size_t kInvalidVirtualAllocation = ~0ULL;
+    /**
+     * @brief Thread-safe wrapper around VulkanMemoryAllocator's Virtual Allocator interface
+     *
+     * @note Despite the name, this does not limit you to only Vulkan memory allocations. VMA's virtual
+     *       allocations are just offsets into a large virtual memory arena that you can use for any purpose.
+     *       The backing memory doesn't have to be real in that sense.
+     *
+     * You can use this to allocate offsets into a large GPU buffer, or even as a general purpose CPU memory
+     * allocator - the usage of the latter is discouraged in favor of @ref HeapAllocator and @ref StackAllocator
+     *
+     * See also
+     *  - https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/virtual_allocator.html
+     */
+    class VirtualAllocator {
+        const size_t m_size;
+        VmaVirtualBlock m_block{};
+        Pool<VirtualAllocation, Tuple<size_t, size_t, VmaVirtualAllocation>> m_allocs;
+        // VMA virtual allocs are not thread-safe. Need guards.
+        Async::Mutex m_mutex;
+    public:
+        /**
+         * @brief Construct a @ref VirtualAllocator instance
+         * @param size Size of the virtual memory arena
+         * @param alloc @ref Allocator for virtual allocator state management
+         */
+        VirtualAllocator(size_t size, Allocator* alloc);
+        /**
+         * @brief Allocate memory of size and alignment
+         * @param size Size of the allocation
+         * @param alignment Alignment of the allocation
+         * @return Opaque @ref VirtualAllocation handle that you can use with @ref Query, @ref Free
+         */
+        VirtualAllocation Allocate(size_t size, size_t alignment);
+        /**
+         * @brief Free a previous allocation
+         * @param allocation Previously acquired allocation from the same allocator through @ref Allocate
+         */
+        void Free(VirtualAllocation allocation);
+        /**
+         * @brief Query the offset and size of a previous allocation
+         * @param allocation Previously acquired allocation from the same allocator through @ref Allocate
+         * @return Pair of [Raw Offset, Raw Size]
+         */
+        Pair<size_t, size_t> Query(VirtualAllocation allocation);
+        size_t QuerySize(size_t allocation)
+        {
+            auto [off, sz] = Query(allocation);
+            return sz;
+        };
+        size_t QueryOffset(size_t allocation)
+        {
+            auto [off, sz] = Query(allocation);
+            return off;
+        }
+        ~VirtualAllocator();
+    };
+}

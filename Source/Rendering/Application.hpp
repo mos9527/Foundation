@@ -15,10 +15,8 @@
  * @brief Reference implementations of real-time rendering routines.
  */
 namespace Foundation::Rendering {
-    using namespace Foundation;
     using namespace Core;
     using namespace RenderCore;
-    using namespace Atomics;
     /**
      * @brief Initialization parameters for RenderApplication.
      */
@@ -105,9 +103,9 @@ namespace Foundation::Rendering {
         Async::Mutex m_renderMutex;
 
         // Should the Render thread reset the renderer on the next frame?
-        Atomic<bool> m_renderThreadReset{false};
+        Atomics::Atomic<bool> m_renderThreadReset{false};
         // Should the application exit?
-        Atomic<bool> m_appShouldClose{false};
+        Atomics::Atomic<bool> m_appShouldClose{false};
         /**
          * @brief Actions to take after device specific resources has been set up.
          *

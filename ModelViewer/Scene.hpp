@@ -6,13 +6,14 @@
 #include <Math/Math.hpp>
 #include <Rendering/StagingBuffer.hpp>
 #include <Rendering/UploadContext.hpp>
+#include <Rendering/VirtualAllocator.hpp>
 namespace ModelViewer
 {
     using namespace Foundation;
-    using namespace Foundation::RenderCore;
-    using namespace Foundation::Rendering;
-    using namespace Foundation::Math;
-    using namespace Foundation::Bits;
+    using namespace RenderCore;
+    using namespace Rendering;
+    using namespace Math;
+    using namespace Bits;
     #include "Shaders/Common.h"
     using SceneHandle = uint32_t;
     struct SceneBudgets
@@ -34,8 +35,8 @@ namespace ModelViewer
     struct SceneMesh
     {
         uint32_t primitiveID;
-        BufferAllocation vertex;
-        BufferAllocation index;
+        VirtualAllocation vertex;
+        VirtualAllocation index;
     };
     struct StagedData
     {
@@ -64,12 +65,13 @@ namespace ModelViewer
         UploadContext m_upload; // Temp upload bump arena
         StagedData m_instance; // Instance data with per-swap staging
         /* -- Data -- */
-        Atomics::Pool<SceneHandle, SceneMesh> m_meshes; // All meshes in the scene
-        void UploadAllocation(RHIBuffer* buffer, Span<const char> data, BufferAllocation allocation);
+        Pool<SceneHandle, SceneMesh> m_meshes; // All meshes in the scene
         bool m_instanceDirty = false;
     public:
         RHIDeviceScopedObjectHandle<RHIBuffer>
             m_prmitive, m_vertex, m_index; // GPU Buffers
+        VirtualAllocator
+            m_prmitiveAlloc, m_vertexAlloc, m_indexAlloc; // GPU virtual allocator
         Scene(RHIDevice* device,  size_t numSwaps, SceneBudgets const& budgets, Allocator* alloc);
         void OnBeforeFrame(uint32_t rendererSync);
 

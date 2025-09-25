@@ -4,9 +4,9 @@
 
 namespace Foundation::Rendering
 {
-    using namespace Foundation::RHI;
-    using namespace Foundation::Core;
-    using namespace Foundation::RenderCore;
+    using namespace RHI;
+    using namespace Core;
+    using namespace RenderCore;
     // [Source Buffer (staging), Dest Buffer, CopyRegion]
     using BufferStagingItem = Tuple<RHIBuffer*, RHIBuffer*, RHICommandList::CopyBufferRegion>;
     using BufferStagingList = Vector<BufferStagingItem>;

@@ -27,8 +27,6 @@ namespace ModelViewer
     }
     void App::OnApplicationTick()
     {
-        if (m_renderer->GetFrame() > 1000)
-            return;
         WaitForFrame();
         size_t total = 100'00;
         auto data = m_scene->MapInstanceData<InstanceMetadata>();
