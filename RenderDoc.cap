@@ -9,9 +9,21 @@
                 "type": "Set",
                 "value": "libasan.so",
                 "variable": "LD_PRELOAD"
+            },
+            {
+                "separator": "Platform style",
+                "type": "Set",
+                "value": "1",
+                "variable": "MIMALLOC_VERBOSE"
+            },
+            {
+                "separator": "Platform style",
+                "type": "Set",
+                "value": "1",
+                "variable": "MIMALLOC_SHOW_ERRORS"
             }
         ],
-        "executable": "/home/mos9527/Foundation/cmake-build-debug/bin/Example_MandelbrotCompute",
+        "executable": "/home/mos9527/Foundation/cmake-build-debug/bin/ModelViewer",
         "inject": false,
         "numQueuedFrames": 0,
         "options": {

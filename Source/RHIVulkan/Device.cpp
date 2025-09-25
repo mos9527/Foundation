@@ -384,13 +384,12 @@ VulkanDeviceSemaphore::VulkanDeviceSemaphore(const VulkanDevice& device, bool is
     RHIDeviceSemaphore(device, is_timeline), mDevice(device)
 {
     vk::SemaphoreCreateInfo info{};
+    vk::SemaphoreTypeCreateInfo tinfo{
+        .semaphoreType = vk::SemaphoreType::eTimeline,
+        .initialValue = 0
+    };
     if (is_timeline)
-    {
-        vk::SemaphoreTypeCreateInfo tinfo{};
-        tinfo.semaphoreType = vk::SemaphoreType::eTimeline;
-        tinfo.initialValue = 0;
         info.setPNext(&tinfo);
-    }
     mSemaphore = vk::raii::Semaphore(mDevice.GetVkDevice(), info, device.GetVkAllocatorCallbacks());
 }
 void VulkanDeviceSemaphore::DebugSetObjectName(const char* name)
