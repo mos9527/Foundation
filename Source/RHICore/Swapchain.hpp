@@ -18,7 +18,7 @@ namespace Foundation::RHI {
     };
     class RHISwapchain : public RHIObject {
     protected:
-        const RHIDevice& m_device;
+        const RHIDevice& mDevice;
     public:
         struct SwapchainDesc {
             // Name for the swap chain, used for debugging purposes.
@@ -27,12 +27,12 @@ namespace Foundation::RHI {
             RHIExtent2D extents;
             // Min number of buffers in the swap chain. i.e. double buffering = 2, triple buffering = 3, etc.
             // Driver may create more buffers than requested.
-            uint32_t min_buffer_count;
+            uint32_t minBufferCount;
             // Present mode for the swap chain.
-            RHISwapchainPresentMode present_mode;
-        } m_desc;
-        virtual Core::Span<RHITexture* const> GetImages() const = 0;
-        RHISwapchain(RHIDevice const& device, SwapchainDesc const& desc) : m_device(device), m_desc(desc) {}
+            RHISwapchainPresentMode presentMode;
+        } mDesc;
+        [[nodiscard]] virtual Core::Span<RHITexture* const> GetImages() const = 0;
+        RHISwapchain(RHIDevice const& device, SwapchainDesc const& desc) : mDevice(device), mDesc(desc) {}
         /**
          * @brief Gets the next image in the swapchain.
          * Raises RHISwapchainResizeException if the swapchain needs to be resized.
@@ -42,8 +42,8 @@ namespace Foundation::RHI {
             RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore,
             RHIDeviceObjectHandle<RHIDeviceFence> fence
         ) = 0;            
-        virtual RHIExtent2D GetExtents() const = 0;
-        inline float GetAspectRatio() const {
+        [[nodiscard]] virtual RHIExtent2D GetExtents() const = 0;
+        [[nodiscard]] inline float GetAspectRatio() const {
             auto xy = GetExtents();
             return static_cast<float>(xy.x) / static_cast<float>(xy.y);
         }

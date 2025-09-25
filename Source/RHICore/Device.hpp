@@ -12,54 +12,54 @@ namespace Foundation::RHI {
     class RHIDeviceFence;
     class RHIDeviceQueue : public RHIObject {
     protected:
-        const RHIDevice& m_device;
+        const RHIDevice& mDevice;
     public:
-        RHIDeviceQueue(RHIDevice const& device) : m_device(device) {}
+        RHIDeviceQueue(RHIDevice const& device) : mDevice(device) {}
 
         virtual void WaitIdle() const = 0;
         using TimelinePair = Pair<RHIDeviceSemaphore*, size_t>;
         struct SubmitDesc {
             // Semaphore(s) and the minimum values to wait on
-            Span<const TimelinePair> timeline_waits;
+            Span<const TimelinePair> timelineWaits;
             // Semaphore(s) and the values to signal
-            Span<const TimelinePair> timeline_signals;
+            Span<const TimelinePair> timelineSignals;
             // Binary semaphore(s) to wait when the command lists are done
             Span<RHIDeviceSemaphore* const> waits;
             // Stages the semaphore waits occur in [timeline_waits..., waits...]
-            Span<const RHIPipelineStage> waits_stages{};
+            Span<const RHIPipelineStage> waitsStages{};
             // Binary semaphore(s) to signal when the command lists are done
             Span<RHIDeviceSemaphore* const> signals;
             // Command lists to submit
-            Span<RHICommandList* const> cmd_lists;
+            Span<RHICommandList* const> cmdLists;
             RHIDeviceFence* fence;
         };
         virtual void Submit(SubmitDesc const& desc) const = 0;
 
         struct PresentDesc {
-            uint32_t image_index;
+            uint32_t imageIndex;
             RHISwapchain* swapchain;
             // Binary semaphore(s) to wait
             Span<RHIDeviceSemaphore* const> waits;
         };
         virtual void Present(PresentDesc const& desc) const = 0;
-        virtual uint32_t GetQueueIndex() const = 0;
+        [[nodiscard]] virtual uint32_t GetQueueIndex() const = 0;
         virtual void DebugSetObjectName(const char* name) = 0;
     };
     // https://docs.vulkan.org/samples/latest/samples/extensions/timeline_semaphore/README.html
     class RHIDeviceSemaphore : public RHIObject {
     protected:
-        const RHIDevice& m_device;
+        const RHIDevice& mDevice;
     public:
-        const bool m_is_timeline;
-        RHIDeviceSemaphore(RHIDevice const& device, bool is_timeline) : m_device(device), m_is_timeline(is_timeline) {}
+        const bool mIsTimeline;
+        RHIDeviceSemaphore(RHIDevice const& device, bool is_timeline) : mDevice(device), mIsTimeline(is_timeline) {}
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };
     class RHIDeviceFence : public RHIObject {
     protected:
-        const RHIDevice& m_device;
+        const RHIDevice& mDevice;
     public:
-        RHIDeviceFence(RHIDevice const& device) : m_device(device) {}
+        RHIDeviceFence(RHIDevice const& device) : mDevice(device) {}
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };
@@ -73,27 +73,27 @@ namespace Foundation::RHI {
         Span<const Binding> bindings;
         // Allow updating descriptors after being bound to a command buffer when
         // they are not used
-        bool update_after_bind{ false };
+        bool updateAfterBind{ false };
     };
     class RHIDeviceDescriptorSetLayout : public RHIObject {
     protected:
-        const RHIDevice& m_device;
+        const RHIDevice& mDevice;
     public:
-        const RHIDeviceDescriptorSetLayoutDesc m_desc;
+        const RHIDeviceDescriptorSetLayoutDesc mDesc;
         RHIDeviceDescriptorSetLayout(RHIDevice const& device, RHIDeviceDescriptorSetLayoutDesc const& desc)
-            : m_device(device), m_desc(desc) {
+            : mDevice(device), mDesc(desc) {
         }
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };
     class RHIDeviceSampler : public RHIObject {
     protected:
-        const RHIDevice& m_device;
+        const RHIDevice& mDevice;
     public:
         struct SamplerDesc {
             struct Anisotropy {
                 bool enable{ false }; // Enable anisotropic filtering
-                float max_level{ 16.0f }; // Max anisotropy level
+                float maxLevel{ 16.0f }; // Max anisotropy level
             } anisotropy;
             struct AddressMode {
                 enum Mode {
@@ -103,12 +103,12 @@ namespace Foundation::RHI {
                     ClampToBorder,
                     MirrorClampToEdge
                 } u{ Repeat }, v{ Repeat }, w{ Repeat }; // Address modes for U, V, W coordinates
-            } address_mode;
+            } addressMode;
             struct Mipmap {
                 enum MipmapMode {
                     Linear,
                     Nearest
-                } mipmap_mode{ Linear }; // Mipmap mode;
+                } mipmapMode{ Linear }; // Mipmap mode;
                 float bias{ 0.0f }; // Mipmap LOD bias
             } mipmap;
             struct Filter {
@@ -116,77 +116,77 @@ namespace Foundation::RHI {
                     NearestNeighbor,
                     Linear,
                     Cubic
-                } min_filter{ Linear }, mag_filter{ Linear }; // Minification and magnification filters
+                } minFilter{ Linear }, magFilter{ Linear }; // Minification and magnification filters
             } filter;
             struct LOD {
                 float min{ 0.0f }; // Minimum level of detail
                 float max{ 16.0f }; // Maximum level of detail                        
             } lod; // Level of detail settings;
-        } const m_desc;
+        } const mDesc;
         RHIDeviceSampler(RHIDevice const& device, SamplerDesc const& desc)
-            : m_device(device), m_desc(desc) {
+            : mDevice(device), mDesc(desc) {
         }
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };
     class RHIDevice : public RHIObject {
     protected:
-        const RHIApplication& m_app;
+        const RHIApplication& mApp;
     public:
         struct DeviceDesc {
             uint32_t id;
             const char* name;
         };
-        RHIDevice(RHIApplication const& app) : m_app(app) {}
+        RHIDevice(RHIApplication const& app) : mApp(app) {}
 
-        virtual Span<RHIResourceFormat const> GetSwapchainSupportedFormats() const = 0;
-        virtual Span<RHISwapchainPresentMode const> GetSwapchainSupportedPresentModes() const = 0;
+        [[nodiscard]] virtual Span<RHIResourceFormat const> GetSwapchainSupportedFormats() const = 0;
+        [[nodiscard]] virtual Span<RHISwapchainPresentMode const> GetSwapchainSupportedPresentModes() const = 0;
         [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) = 0;
-        virtual RHISwapchain* GetSwapchain(Handle handle) const = 0;
+        [[nodiscard]] virtual RHISwapchain* GetSwapchain(Handle handle) const = 0;
         virtual void DestroySwapchain(Handle handle) = 0;
 
         [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIPipelineState> CreatePipelineState(RHIPipelineState::PipelineStateDesc const& desc) = 0;
-        virtual RHIPipelineState* GetPipelineState(Handle handle)  const = 0;
+        [[nodiscard]] virtual RHIPipelineState* GetPipelineState(Handle handle)  const = 0;
         virtual void DestroyPipelineState(Handle handle) = 0;
 
         [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIShaderModule> CreateShaderModule(RHIShaderModule::ShaderModuleDesc const& desc) = 0;
-        virtual RHIShaderModule* GetShaderModule(Handle handle) const = 0;
+        [[nodiscard]] virtual RHIShaderModule* GetShaderModule(Handle handle) const = 0;
         virtual void DestroyShaderModule(Handle handle) = 0;
 
         [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHICommandPool> CreateCommandPool(RHICommandPool::PoolDesc type) = 0;
-        virtual RHICommandPool* GetCommandPool(Handle handle) const = 0;
+        [[nodiscard]] virtual RHICommandPool* GetCommandPool(Handle handle) const = 0;
         virtual void DestroyCommandPool(Handle handle) = 0;
 
-        virtual RHIDeviceQueue* GetDeviceQueue(RHIDeviceQueueType type) const = 0;
+        [[nodiscard]] virtual RHIDeviceQueue* GetDeviceQueue(RHIDeviceQueueType type) const = 0;
 
         [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> CreateSemaphore(bool is_timeline = false) = 0;
-        virtual RHIDeviceSemaphore* GetSemaphore(Handle handle) const = 0;
+        [[nodiscard]] virtual RHIDeviceSemaphore* GetSemaphore(Handle handle) const = 0;
         virtual void DestroySemaphore(Handle handle) = 0;
 
         [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIDeviceFence> CreateFence(bool signaled = true) = 0;
-        virtual RHIDeviceFence* GetFence(Handle handle) const = 0;
+        [[nodiscard]] virtual RHIDeviceFence* GetFence(Handle handle) const = 0;
         virtual void DestroyFence(Handle handle) = 0;
 
         [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIBuffer> CreateBuffer(RHIBufferDesc const& desc) = 0;
-        virtual RHIBuffer* GetBuffer(Handle handle) const = 0;
+        [[nodiscard]] virtual RHIBuffer* GetBuffer(Handle handle) const = 0;
         virtual void DestroyBuffer(Handle handle) = 0;
 
         [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHITexture> CreateTexture(RHITextureDesc const& desc) = 0;
-        virtual RHITexture* GetImage(Handle handle) const = 0;
+        [[nodiscard]] virtual RHITexture* GetImage(Handle handle) const = 0;
         virtual void DestroyImage(Handle handle) = 0;
 
         [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc) = 0;
-        virtual RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout(Handle handle) const = 0;
+        [[nodiscard]] virtual RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout(Handle handle) const = 0;
         virtual void DestroyDescriptorSetLayout(Handle handle) = 0;
 
         [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> CreateDescriptorPool(
             RHIDeviceDescriptorPool::PoolDesc const& desc) = 0;
-        virtual RHIDeviceDescriptorPool* GetDescriptorPool(Handle handle) const = 0;
+        [[nodiscard]] virtual RHIDeviceDescriptorPool* GetDescriptorPool(Handle handle) const = 0;
         virtual void DestroyDescriptorPool(Handle handle) = 0;
 
         [[nodiscard]] virtual RHIDeviceScopedObjectHandle<RHIDeviceSampler> CreateSampler(
             RHIDeviceSampler::SamplerDesc const& desc) = 0;
-        virtual RHIDeviceSampler* GetSampler(Handle handle) const = 0;
+        [[nodiscard]] virtual RHIDeviceSampler* GetSampler(Handle handle) const = 0;
         virtual void DestroySampler(Handle handle) = 0;
 
         virtual void ResetFences(Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) = 0;
@@ -204,12 +204,12 @@ namespace Foundation::RHI {
      */
     struct RHIDeviceIdleGuard
     {
-        RHIDevice const* m_device { nullptr };
+        RHIDevice const* mDevice { nullptr };
         RHIDeviceIdleGuard() = delete;
-        RHIDeviceIdleGuard(RHIDevice const* device): m_device(device) {};
+        RHIDeviceIdleGuard(RHIDevice const* device): mDevice(device) {};
         void WaitIdle() const
         {
-            if (m_device) m_device->WaitIdle();
+            if (mDevice) mDevice->WaitIdle();
         }
         ~RHIDeviceIdleGuard() {
             WaitIdle();

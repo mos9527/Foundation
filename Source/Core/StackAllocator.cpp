@@ -6,23 +6,23 @@ namespace Foundation::Core {
     {
         if (size == 0)
             return nullptr;        
-        size_t current = m_current.load(std::memory_order_relaxed);
+        size_t current = mCurrent.load(std::memory_order_relaxed);
         while (true)
         {
             auto aligned = AlignUp(current, alignment);
             auto next = aligned + size;
 
-            if (next > m_end) [[unlikely]]
+            if (next > mEnd) [[unlikely]]
                 return nullptr;            
             
-            if (m_current.compare_exchange_weak(current, next, std::memory_order_release,
+            if (mCurrent.compare_exchange_weak(current, next, std::memory_order_release,
                                                 std::memory_order_relaxed))
             {
                 // Bump OK. Good to go!
-                m_used.fetch_add(size, std::memory_order_relaxed);
+                mUsed.fetch_add(size, std::memory_order_relaxed);
                 return reinterpret_cast<pointer>(aligned);
             }
-            current = m_current.load(std::memory_order_relaxed);
+            current = mCurrent.load(std::memory_order_relaxed);
         }
     };
 }

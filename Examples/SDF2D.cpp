@@ -9,7 +9,7 @@ namespace Examples {
     class SDFDemoApp : public RenderApplication {
         void OnRendererSetup() override {
             createPSFullscreenPass(
-                m_renderer.get(), "SDF2D",
+                mRenderer.get(), "SDF2D",
                 [=](PassHandle self, Renderer* r) {
                     r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/SDF2D.spv");
                     r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(float));

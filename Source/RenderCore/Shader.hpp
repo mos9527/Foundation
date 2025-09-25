@@ -8,7 +8,7 @@ namespace Foundation::RenderCore {
      * @brief Runtime reflection data for a shader module.
      */
     class Shader {
-        Allocator* m_allocator;        
+        Allocator* mAllocator;        
         /**
          * @brief Parse SPIR-V shader code and populate reflection data.        
          * 
@@ -27,22 +27,22 @@ namespace Foundation::RenderCore {
             // Compute shader specific
             Tuple<uint32_t, uint32_t, uint32_t> computeLocalSize{};
         };
-        Vector<Entrypoint> m_entrypoints;
+        Vector<Entrypoint> mEntrypoints;
         struct Binding {
             String name;
             uint32_t descriptorSet;
             uint32_t binding;
         };
-        Vector<Binding> m_bindings;
+        Vector<Binding> mBindings;
         struct PushConstant {
             String name;
             // TODO: add size, offset, type info?
             // This would require us to parse all OpType.. instructions however.
             // Caller is also expected to know the layout of push constants - TODO for now.                      
         };
-        Vector<PushConstant> m_pushConstants;
+        Vector<PushConstant> mPushConstants;
         Shader(Span<const char> bytecode, Allocator* alloc);
 
-        String DbgDumpShaderInfo() const;
+        [[nodiscard]] String DbgDumpShaderInfo() const;
     };
 }

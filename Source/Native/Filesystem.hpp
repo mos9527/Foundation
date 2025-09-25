@@ -19,15 +19,15 @@ namespace Foundation::Native
     /**
      * @return The size of the file in bytes.
      */
-    const size_t GetFileSize(Path const& path);
+    size_t GetFileSize(Path const& path);
     /**
      * @brief Reads the entire contents of a file into a byte vector.
      * @return The number of bytes read.
      */
-    const size_t ReadFile(Path const& path, ByteArray& data);
+    size_t ReadFile(Path const& path, ByteArray& data);
     /**
      * @brief Writes the entire contents of a byte vector to a file.
      * @return The number of bytes written.
      */
-    const size_t WriteFile(Path const& path, Bytes data);
+    size_t WriteFile(Path const& path, Bytes data);
 }

@@ -30,7 +30,7 @@ namespace Foundation::Math {
 
     /* [0,1] range -> [0, 1 << NBits) \in N */
     inline uint32_t quantizeUnorm(float v, int32_t N) {
-        const float scale = static_cast<float>((1 << N) - 1);
+        const auto scale = static_cast<float>((1 << N) - 1);
 
         v = (v >= 0) ? v : 0;
         v = (v <= 1) ? v : 1;
@@ -51,7 +51,7 @@ namespace Foundation::Math {
      * To do this, use QuantizeSnormShifted and DequantizeSnormShifted
     */
     inline int32_t quantizeSnorm(float v, int32_t N) {
-        const float scale = static_cast<float>((1 << (N - 1)) - 1);
+        const auto scale = static_cast<float>((1 << (N - 1)) - 1);
 
         float round = (v >= 0 ? 0.5f : -0.5f);
 

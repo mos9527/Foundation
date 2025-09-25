@@ -61,17 +61,17 @@ namespace ModelViewer
      */
     class Scene
     {
-        Allocator* m_allocator;
-        UploadContext m_upload; // Temp upload bump arena
-        StagedData m_instance; // Instance data with per-swap staging
+        Allocator* mAllocator;
+        UploadContext mUpload; // Temp upload bump arena
+        StagedData mInstance; // Instance data with per-swap staging
         /* -- Data -- */
-        Pool<SceneHandle, SceneMesh> m_meshes; // All meshes in the scene
-        bool m_instanceDirty = false;
+        Pool<SceneHandle, SceneMesh> mMeshes; // All meshes in the scene
+        bool mInstanceDirty = false;
     public:
         RHIDeviceScopedObjectHandle<RHIBuffer>
-            m_prmitive, m_vertex, m_index; // GPU Buffers
+            mPrimitive, mVertex, mIndex; // GPU Buffers
         VirtualAllocator
-            m_prmitiveAlloc, m_vertexAlloc, m_indexAlloc; // GPU virtual allocator
+            mPrimitiveAlloc, mVertexAlloc, mIndexAlloc; // GPU virtual allocator
         Scene(RHIDevice* device,  size_t numSwaps, SceneBudgets const& budgets, Allocator* alloc);
         void OnBeforeFrame(uint32_t rendererSync);
 
@@ -100,16 +100,16 @@ namespace ModelViewer
          */
         template<typename T> Span<T> MapInstanceData()
         {
-            m_instance.mutex.lock();
-            return m_instance.View<T>();
+            mInstance.mutex.lock();
+            return mInstance.View<T>();
         }
         /**
          * @brief Unmaps the instance data, allowing other threads to map it again.
          */
         void UnmapInstanceData()
         {
-            m_instance.mutex.unlock();
-            m_instanceDirty = true;
+            mInstance.mutex.unlock();
+            mInstanceDirty = true;
         }
     };
 }

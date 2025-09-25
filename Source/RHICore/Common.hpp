@@ -19,38 +19,38 @@ namespace Foundation::RHI {
 
     enum class RHIResourceFormat {
         Undefined = 0,
-        R8G8B8A8_UNORM,
-        R8G8B8A8_SRGB,
-        B8G8R8A8_UNROM,
-        B8G8R8A8_SRGB,
-        R32_SIGNED_FLOAT,
-        R32G32_SIGNED_FLOAT,
-        R32G32B32_SIGNED_FLOAT,
-        R32G32B32A32_SIGNED_FLOAT,
-        R16_SIGNED_FLOAT,
-        R16G16_SIGNED_FLOAT,
-        R16G16B16_SIGNED_FLOAT,
-        R16G16B16A16_SIGNED_FLOAT,
-        R32_UINT,
-        R16_UINT,
-        D32_SIGNED_FLOAT
+        R8G8B8A8Unorm,
+        R8G8B8A8Srgb,
+        B8G8R8A8Unrom,
+        B8G8R8A8Srgb,
+        R32SignedFloat,
+        R32G32SignedFloat,
+        R32G32B32SignedFloat,
+        R32G32B32A32SignedFloat,
+        R16SignedFloat,
+        R16G16SignedFloat,
+        R16G16B16SignedFloat,
+        R16G16B16A16SignedFloat,
+        R32Uint,
+        R16Uint,
+        D32SignedFloat
     };
     ENUM_NAME_CONV_BEGIN(RHIResourceFormat)
-        ENUM_NAME(R8G8B8A8_UNORM)
-        ENUM_NAME(R8G8B8A8_SRGB)
-        ENUM_NAME(B8G8R8A8_UNROM)
-        ENUM_NAME(B8G8R8A8_SRGB)
-        ENUM_NAME(R32_SIGNED_FLOAT)
-        ENUM_NAME(R32G32_SIGNED_FLOAT)
-        ENUM_NAME(R32G32B32_SIGNED_FLOAT)
-        ENUM_NAME(R32G32B32A32_SIGNED_FLOAT)
-        ENUM_NAME(R16_SIGNED_FLOAT)
-        ENUM_NAME(R16G16_SIGNED_FLOAT)
-        ENUM_NAME(R16G16B16_SIGNED_FLOAT)
-        ENUM_NAME(R16G16B16A16_SIGNED_FLOAT)
-        ENUM_NAME(R32_UINT)
-        ENUM_NAME(R16_UINT)
-        ENUM_NAME(D32_SIGNED_FLOAT)
+        ENUM_NAME(R8G8B8A8Unorm)
+        ENUM_NAME(R8G8B8A8Srgb)
+        ENUM_NAME(B8G8R8A8Unrom)
+        ENUM_NAME(B8G8R8A8Srgb)
+        ENUM_NAME(R32SignedFloat)
+        ENUM_NAME(R32G32SignedFloat)
+        ENUM_NAME(R32G32B32SignedFloat)
+        ENUM_NAME(R32G32B32A32SignedFloat)
+        ENUM_NAME(R16SignedFloat)
+        ENUM_NAME(R16G16SignedFloat)
+        ENUM_NAME(R16G16B16SignedFloat)
+        ENUM_NAME(R16G16B16A16SignedFloat)
+        ENUM_NAME(R32Uint)
+        ENUM_NAME(R16Uint)
+        ENUM_NAME(D32SignedFloat)
     ENUM_NAME_CONV_END()
 
     struct RHIVertexAttribute {
@@ -130,10 +130,10 @@ namespace Foundation::RHI {
     ENUM_NAME_CONV_END()
 
     enum class RHIMultisampleCount {
-        e1, e2, e4, e8, e16
+        E1, E2, E4, E8, E16
     };
     enum class RHITextureDimension {
-        e1D, e2D, e3D
+        E1D, E2D, E3D
     };
 
     BITMASK_ENUM_BEGIN(RHIShaderStage, uint32_t)

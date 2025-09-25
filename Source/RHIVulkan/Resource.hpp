@@ -18,23 +18,23 @@ namespace Foundation::RHI {
 
     class VulkanBuffer : public RHIBuffer {
     protected:
-        VulkanDevice const& m_device;
-        VmaAllocation m_allocation{ nullptr };
-        void* m_mapped{ nullptr };
+        VulkanDevice const& mDevice;
+        VmaAllocation mAllocation{ nullptr };
+        void* mMapped{ nullptr };
 
-        vk::raii::Buffer m_buffer{ nullptr };
+        vk::raii::Buffer mBuffer{ nullptr };
 
-        RHIObjectPool<VulkanBuffer> m_aliases;
+        RHIObjectPool<VulkanBuffer> mAliases;
     public:
         // Buffer created by other means.
-        const bool m_shared{ false };
+        const bool mShared{ false };
 
         VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc);
         // Thin wrapper for buffers created by swapchains or other external sources (e.g. aliasing)
         VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc, vk::raii::Buffer&& buffer, bool shared = true);
         ~VulkanBuffer() override;
 
-        auto& GetVkBuffer() { return m_buffer; }
+        auto& GetVkBuffer() { return mBuffer; }
 
         void* Map() override;
         void Flush(size_t offset, size_t size) override;
@@ -50,23 +50,23 @@ namespace Foundation::RHI {
     class VulkanTextureView;
     class VulkanTexture : public RHITexture {
     protected:
-        VulkanDevice const& m_device;
-        VmaAllocation m_allocation{ nullptr };
+        VulkanDevice const& mDevice;
+        VmaAllocation mAllocation{ nullptr };
 
-        vk::raii::Image m_image{ nullptr };
-        void* m_mapped{ nullptr };
+        vk::raii::Image mImage{ nullptr };
+        void* mMapped{ nullptr };
 
-        RHIObjectPool<VulkanTexture> m_aliases;
-        RHIObjectPool<VulkanTextureView> m_views;
+        RHIObjectPool<VulkanTexture> mAliases;
+        RHIObjectPool<VulkanTextureView> mViews;
     public:
         // Texture created by other means, e.g. swapchain or external source
-        const bool m_shared{ false };
+        const bool mShared{ false };
         VulkanTexture(VulkanDevice const& device, RHITextureDesc const& desc);
         // Thin wrapper for textures created by swapchains or other external sources (e.g. aliasing)
         VulkanTexture(VulkanDevice const& device, RHITextureDesc const& desc, vk::raii::Image&& image, bool shared = true);
         ~VulkanTexture() override;
 
-        auto& GetVkImage() const { return m_image; }
+        auto& GetVkImage() const { return mImage; }
 
         void* Map() override;
         void Flush(size_t offset, size_t size) override;
@@ -82,20 +82,20 @@ namespace Foundation::RHI {
 
         void DebugSetObjectName(const char* name) override;
 
-        auto const& GetDevice() const { return m_device; }
+        auto const& GetDevice() const { return mDevice; }
     };
 
     class VulkanTextureView : public RHITextureView {
     protected:
-        vk::raii::ImageView m_view{ nullptr };
-        VulkanTexture& m_image;
+        vk::raii::ImageView mView{ nullptr };
+        VulkanTexture& mImage;
     public:
         VulkanTextureView(VulkanTexture& image, RHITextureViewDesc const& desc, vk::raii::ImageView&& view);
 
-        RHITexture* GetTexture() const override { return &m_image; }
+        [[nodiscard]] RHITexture* GetTexture() const override { return &mImage; }
 
-        auto const& GetVkImageView() const { return m_view; }
-        auto const& GetImage() const { return m_image; }
+        [[nodiscard]] auto const& GetVkImageView() const { return mView; }
+        [[nodiscard]] auto const& GetImage() const { return mImage; }
 
         void DebugSetObjectName(const char* name) override;
     };

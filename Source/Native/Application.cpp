@@ -10,41 +10,41 @@ namespace Foundation::Native
 
     NativeWindow::NativeWindow(uint32_t width, uint32_t height, const char* title) {
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        m_window = glfwCreateWindow(
+        mWindow = glfwCreateWindow(
             static_cast<int>(width),
             static_cast<int>(height),
             title, nullptr, nullptr);
     }
     NativeWindow::~NativeWindow() {
-        if (m_window)
-            glfwDestroyWindow(static_cast<GLFWwindow*>(m_window));
+        if (mWindow)
+            glfwDestroyWindow(static_cast<GLFWwindow*>(mWindow));
     }
     Pair<uint32_t, uint32_t> NativeWindow::GetWindowSize() const
     {
         int width, height;
-        glfwGetWindowSize(static_cast<GLFWwindow*>(m_window), &width, &height);
+        glfwGetWindowSize(static_cast<GLFWwindow*>(mWindow), &width, &height);
         return { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
     }
     Pair<uint32_t, uint32_t> NativeWindow::GetFramebufferSize() const
     {
         int width, height;
-        glfwGetFramebufferSize(static_cast<GLFWwindow*>(m_window), &width, &height);
+        glfwGetFramebufferSize(static_cast<GLFWwindow*>(mWindow), &width, &height);
         return {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
     }
     Pair<uint32_t, uint32_t> NativeWindow::GetWindowPosition() const
     {
         int x, y;
-        glfwGetWindowPos(static_cast<GLFWwindow*>(m_window), &x, &y);
+        glfwGetWindowPos(static_cast<GLFWwindow*>(mWindow), &x, &y);
         return {static_cast<uint32_t>(x), static_cast<uint32_t>(y)};
     }
     void NativeWindow::SetWindowTitle(const char* title) const
     {
-        glfwSetWindowTitle(static_cast<GLFWwindow*>(m_window), title);
+        glfwSetWindowTitle(static_cast<GLFWwindow*>(mWindow), title);
     }
     bool NativeWindow::WindowShouldClose() const
     {
-        CHECK_MSG(m_window, "Window not initialized");
-        if (!glfwWindowShouldClose(static_cast<GLFWwindow*>(m_window))) {
+        CHECK_MSG(mWindow, "Window not initialized");
+        if (!glfwWindowShouldClose(static_cast<GLFWwindow*>(mWindow))) {
             glfwPollEvents();
             return false;
         }
@@ -54,11 +54,11 @@ namespace Foundation::Native
     }
     NativeApplication::NativeApplication() {
         glfwSetErrorCallback(glfw_error_callback);
-        CHECK_MSG((m_initialized = glfwInit()) == GLFW_TRUE, "Failed to initialize GLFW");        
-        m_startCounter = getPerformanceCounter();
+        CHECK_MSG((mInitialized = glfwInit()) == GLFW_TRUE, "Failed to initialize GLFW");        
+        mStartCounter = getPerformanceCounter();
     }
     NativeApplication::~NativeApplication() {
-        if (m_initialized)
+        if (mInitialized)
             glfwTerminate();
     }
     NativeWindow NativeApplication::CreateNativeWindow(uint32_t width, uint32_t height, const char* title) {

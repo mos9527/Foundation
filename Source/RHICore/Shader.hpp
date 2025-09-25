@@ -4,14 +4,14 @@ namespace Foundation::RHI {
     class RHIDevice;
     class RHIShaderModule : public RHIObject {
     protected:
-        const RHIDevice& m_device;
+        const RHIDevice& mDevice;
     public:
         struct ShaderModuleDesc {
             Core::Span<char> source;
         };
-        const ShaderModuleDesc m_desc;
+        const ShaderModuleDesc mDesc;
 
-        RHIShaderModule(RHIDevice const& device, ShaderModuleDesc const& desc) : m_device(device), m_desc(desc) {}
+        RHIShaderModule(RHIDevice const& device, ShaderModuleDesc const& desc) : mDevice(device), mDesc(desc) {}
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };

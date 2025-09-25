@@ -21,16 +21,16 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
     // 3: Bound
     const uint32_t Bound = code[3];
     struct Element {
-        uint32_t Opcode{};
-        uint32_t StorageClass{};
-        uint32_t Type{};
-        uint32_t DescriptorSet{};
-        uint32_t Binding{};
+        uint32_t opcode{};
+        uint32_t storageClass{};
+        uint32_t type{};
+        uint32_t descriptorSet{};
+        uint32_t binding{};
         /* -- debug -- */
-        String Name;
-        uint32_t EpIndex{};
+        String name;
+        uint32_t epIndex{};
     };
-    Vector<Element> ID(Bound, m_allocator);
+    Vector<Element> ID(Bound, mAllocator);
     // 4: Reserved
     // 5: First Instruction
     const uint32_t* ins = code + 5;
@@ -56,11 +56,11 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
                 break;
             }
             // 2: Entry Point OpFunction ID
-            ID[ins[2]].Opcode = Opcode;
-            ID[ins[2]].EpIndex = static_cast<uint32_t>(m_entrypoints.size());
+            ID[ins[2]].opcode = Opcode;
+            ID[ins[2]].epIndex = static_cast<uint32_t>(mEntrypoints.size());
             // 3: Name
             ep.name = String(reinterpret_cast<const char*>(ins + 3));
-            m_entrypoints.push_back(ep);
+            mEntrypoints.push_back(ep);
             break;
         }
         case spv::OpExecutionMode:
@@ -71,8 +71,8 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
             switch (static_cast<spv::ExecutionMode>(ins[2]))
             {
             case spv::ExecutionModeLocalSize:
-                if (ID[id].EpIndex < m_entrypoints.size()) {
-                    m_entrypoints[ID[id].EpIndex].computeLocalSize = { ins[3], ins[4], ins[5] };
+                if (ID[id].epIndex < mEntrypoints.size()) {
+                    mEntrypoints[ID[id].epIndex].computeLocalSize = { ins[3], ins[4], ins[5] };
                 }
                 break;
             default:
@@ -85,7 +85,7 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
             // 1: Target ID
             uint32_t id = ins[1];
             // 2: Name
-            ID[id].Name = String(reinterpret_cast<const char*>(ins + 2));
+            ID[id].name = String(reinterpret_cast<const char*>(ins + 2));
             break;
         }
         /* 3.32.3 Annotation Instructions */
@@ -97,9 +97,9 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
             switch (static_cast<spv::Decoration>(ins[2]))
             {
             case spv::DecorationDescriptorSet:
-                ID[id].DescriptorSet = ins[3]; break;
+                ID[id].descriptorSet = ins[3]; break;
             case spv::DecorationBinding:
-                ID[id].Binding = ins[3]; break;
+                ID[id].binding = ins[3]; break;
             default:
                 break;
             }
@@ -109,18 +109,18 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
         case spv::OpTypePointer: // e.g. Push Constants        
         {            
             uint32_t id = ins[1];
-            ID[id].Opcode = Opcode;
-            ID[id].StorageClass = ins[2];            
-            ID[id].Type = ins[3];
+            ID[id].opcode = Opcode;
+            ID[id].storageClass = ins[2];            
+            ID[id].type = ins[3];
             break;
         }
         /* 3.32.8 Memory Instruction */
         case spv::OpVariable:
         {
             uint32_t id = ins[2];         
-            ID[id].Opcode = Opcode;
-            ID[id].Type = ins[1];
-            ID[id].StorageClass = ins[3];
+            ID[id].opcode = Opcode;
+            ID[id].type = ins[1];
+            ID[id].storageClass = ins[3];
             break;
         }
         default:
@@ -130,20 +130,20 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
     }
     CHECK(ins == end && "malformed SPIRV shader! (Incomplete read)");
     for (auto& element : ID) {
-        if (element.Opcode == spv::OpVariable) {
-            switch (static_cast<spv::StorageClass>(element.StorageClass)) {
+        if (element.opcode == spv::OpVariable) {
+            switch (static_cast<spv::StorageClass>(element.storageClass)) {
             case spv::StorageClassUniform:
             case spv::StorageClassUniformConstant:            
             case spv::StorageClassStorageBuffer:
-                m_bindings.push_back({ .name = element.Name, .descriptorSet = element.DescriptorSet, .binding = element.Binding });
+                mBindings.push_back({ .name = element.name, .descriptorSet = element.descriptorSet, .binding = element.binding });
                 break;
             default:
                 break;
             }           
-            switch (static_cast<spv::StorageClass>(element.StorageClass)) {
+            switch (static_cast<spv::StorageClass>(element.storageClass)) {
             case spv::StorageClassPushConstant:
             {
-                m_pushConstants.push_back({ .name = element.Name });
+                mPushConstants.push_back({ .name = element.name });
                 break;
             }
             default:
@@ -155,7 +155,7 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
 
 void Shader::Sort()
 {
-    Ranges::sort(m_bindings, [](const Binding& lhs, const Binding& rhs) {
+    Ranges::sort(mBindings, [](const Binding& lhs, const Binding& rhs) {
         const Pair k1 = { lhs.descriptorSet, lhs.binding };
         const Pair k2 = { rhs.descriptorSet, rhs.binding };
         return k1 < k2;
@@ -163,7 +163,7 @@ void Shader::Sort()
 }
 
 Shader::Shader(Core::Span<const char> bytecode, Allocator* alloc)
-    : m_allocator(alloc), m_entrypoints(alloc), m_bindings(alloc), m_pushConstants(alloc)
+    : mAllocator(alloc), mEntrypoints(alloc), mBindings(alloc), mPushConstants(alloc)
 {    
     ParseSPIRV(bytecode);
     Sort();
@@ -172,14 +172,14 @@ Shader::Shader(Core::Span<const char> bytecode, Allocator* alloc)
 String Shader::DbgDumpShaderInfo() const
 {
     String out;
-    fmt::format_to(std::back_inserter(out), "Entry Point: {}\n", m_entrypoints.size());
-    for (const auto& ep : m_entrypoints)
+    fmt::format_to(std::back_inserter(out), "Entry Point: {}\n", mEntrypoints.size());
+    for (const auto& ep : mEntrypoints)
         fmt::format_to(std::back_inserter(out), "   Name: {}, Stage: {}\n", ep.name, ep.stage);
-    fmt::format_to(std::back_inserter(out), "Push Constants: {}\n", m_pushConstants.size());
-    for (const auto& pc : m_pushConstants)
+    fmt::format_to(std::back_inserter(out), "Push Constants: {}\n", mPushConstants.size());
+    for (const auto& pc : mPushConstants)
         fmt::format_to(std::back_inserter(out), "   Push Constant: {}\n", pc.name);
-    fmt::format_to(std::back_inserter(out), "Bindings: {}\n", m_bindings.size());
-    for (const auto& var : m_bindings)
+    fmt::format_to(std::back_inserter(out), "Bindings: {}\n", mBindings.size());
+    for (const auto& var : mBindings)
         fmt::format_to(std::back_inserter(out), "   Binding: {} (set={}, binding={})\n", var.name, var.descriptorSet, var.binding);
     out.pop_back();
     return out;

@@ -8,7 +8,7 @@ namespace Foundation::Core {
 	 */
     class StackAllocator : public Allocator {
 	public:
-        StackAllocator() {};
+        StackAllocator() = default;
         StackAllocator(Arena arena) {
             Reset(arena);
 		}            
@@ -16,10 +16,10 @@ namespace Foundation::Core {
          * @brief Resets the stack allocator to the initial state, allowing for reuse of the memory block (Arena)
          */
         void Reset(Arena arena) {
-            m_memory = arena.memory;
-            m_current = reinterpret_cast<size_type>(arena.memory);
-            m_end = reinterpret_cast<size_type>(arena.memory) + arena.size;
-            m_used = 0;
+            mMemory = arena.memory;
+            mCurrent = reinterpret_cast<size_type>(arena.memory);
+            mEnd = reinterpret_cast<size_type>(arena.memory) + arena.size;
+            mUsed = 0;
         }
         /**
          * @brief Resets the stack allocator to a non-allocated state.
@@ -51,14 +51,14 @@ namespace Foundation::Core {
         pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) override {
             throw std::runtime_error("StackAllocator does not support reallocation");
         }
-        size_type GetUsedMemory() const noexcept override {
-            return m_current - reinterpret_cast<size_type>(m_memory);
+        [[nodiscard]] size_type GetUsedMemory() const noexcept override {
+            return mCurrent - reinterpret_cast<size_type>(mMemory);
         }
-        constexpr operator bool() const noexcept { return m_memory != nullptr; }
+        constexpr operator bool() const noexcept { return mMemory != nullptr; }
 	private:		
-        pointer m_memory{ nullptr };
-        std::atomic<size_type> m_end{};
-        std::atomic<size_type> m_current{};
-        std::atomic<size_type> m_used{};
+        pointer mMemory{ nullptr };
+        std::atomic<size_type> mEnd{};
+        std::atomic<size_type> mCurrent{};
+        std::atomic<size_type> mUsed{};
 	};
 }

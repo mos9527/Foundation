@@ -12,45 +12,45 @@ namespace Foundation::Core {
      */
     template<typename K, typename V, typename Tombstone = V>
     class Pool {
-        Vector<K> m_keys;
-        Vector<V> m_values;
-        Vector<bool> m_bitmap;
-        mutable std::recursive_mutex m_mutex;
-        K m_top{};
+        Vector<K> mKeys;
+        Vector<V> mValues;
+        Vector<bool> mBitmap;
+        mutable std::recursive_mutex mMutex;
+        K mTop{};
         /**
          * @brief Adds a key to the internal key container and resizes the value container if necessary.
          */
         void push(K key) {
-            std::scoped_lock lock(m_mutex);
-            m_keys.push_back(key);
-            if (key >= m_values.size())
-                m_values.resize(key + 1);
+            std::scoped_lock lock(mMutex);
+            mKeys.push_back(key);
+            if (key >= mValues.size())
+                mValues.resize(key + 1);
         }
     public:
-        Pool(Allocator* alloc) : m_keys(alloc), m_values(alloc), m_bitmap(alloc) {}
+        Pool(Allocator* alloc) : mKeys(alloc), mValues(alloc), mBitmap(alloc) {}
         /**
          * @brief Checks if the specified key exists and has a value.
          */
         bool contains(K key) const {
-            std::scoped_lock lock(m_mutex);
-            return key < m_values.size() && m_bitmap[key];
+            std::scoped_lock lock(mMutex);
+            return key < mValues.size() && mBitmap[key];
         }
         /**
          * @brief Retrieves a reference to the value associated with the given key.
          * NOTE: Calling this function with a key that's not retrieved from pop() is undefined behavior.
          */
         V& at(K key) {
-            std::scoped_lock lock(m_mutex);
+            std::scoped_lock lock(mMutex);
             CHECK_MSG(contains(key), "Key not allocated");
-            return m_values[key];
+            return mValues[key];
         }
         /**
          * @brief Retrieves a const reference to the value associated with the given key.
          */
         V const& at(K key) const {
-            std::scoped_lock lock(m_mutex);
+            std::scoped_lock lock(mMutex);
             CHECK_MSG(contains(key), "Key not allocated");
-            return m_values[key];
+            return mValues[key];
         }
         /**
          * @brief Pops (allocates) a Key from the free list and returns it.
@@ -58,35 +58,35 @@ namespace Foundation::Core {
          * The value associated with the key is guaranteed to be zero-initialized.
          */
         K pop() {
-            std::scoped_lock lock(m_mutex);
+            std::scoped_lock lock(mMutex);
             K key;
-            if (m_keys.empty())
-                key = m_top++;
+            if (mKeys.empty())
+                key = mTop++;
             else
-                key = m_keys.back(), m_keys.pop_back();
-            if (key >= m_values.size())
-                m_values.resize(key + 1),
-                m_bitmap.resize(key + 1);
+                key = mKeys.back(), mKeys.pop_back();
+            if (key >= mValues.size())
+                mValues.resize(key + 1),
+                mBitmap.resize(key + 1);
             return key;
         }
         /**
          * @brief Allocates a Key that returns a pair of key and value reference.
          */
-        [[nodiscard]] const Pair<K, V&> pop_pair()
+        [[nodiscard]] Pair<K, V&> pop_pair()
         {
-            std::scoped_lock lock(m_mutex);
+            std::scoped_lock lock(mMutex);
             K key = pop();
-            m_bitmap[key] = true;
-            return { key, m_values[key] };
+            mBitmap[key] = true;
+            return { key, mValues[key] };
         }
         /**
          * @brief Frees the value associated with the specified key
          */
         void free(K key) {
-            std::scoped_lock lock(m_mutex);
+            std::scoped_lock lock(mMutex);
             CHECK_MSG(contains(key), "Key not allocated");
-            m_values[key] = Tombstone{};
-            m_bitmap[key] = false;
+            mValues[key] = Tombstone{};
+            mBitmap[key] = false;
             push(key);
         }
     };

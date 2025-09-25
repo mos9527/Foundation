@@ -2,11 +2,11 @@
 #include <fstream>
 namespace Foundation::Native
 {
-    const size_t GetFileSize(Path const& path)
+    size_t GetFileSize(Path const& path)
     {
         return std::filesystem::file_size(path);
     }
-    const size_t ReadFile(Path const& path, ByteArray& data)
+    size_t ReadFile(Path const& path, ByteArray& data)
     {
         std::ifstream file(path, std::ios::binary);
         CHECK_MSG(file.good(), "Failed to open file {}", path.string());
@@ -15,7 +15,7 @@ namespace Foundation::Native
         CHECK_MSG(file.gcount() == data.size(), "Read {} bytes, expected {}", file.gcount(), data.size());
         return file.gcount();
     }
-    const size_t WriteFile(Path const& path, Bytes data)
+    size_t WriteFile(Path const& path, Bytes data)
     {
         std::ofstream file(path, std::ios::binary);
         CHECK_MSG(file.good(), "Failed to open file {}", path.string());

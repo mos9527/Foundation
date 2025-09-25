@@ -22,20 +22,20 @@ namespace Foundation::RHI {
     }
     class VulkanDevice;
     class VulkanApplication : public RHIApplication {
-        vk::AllocationCallbacks m_vkAllocatorCpuCallbacks;
-        vk::raii::PhysicalDevices m_physicalDevices{ nullptr };
-        vk::raii::Instance m_instance{ nullptr };
-        Core::Allocator* m_allocator;
+        vk::AllocationCallbacks mVkAllocatorCpuCallbacks;
+        vk::raii::PhysicalDevices mPhysicalDevices{ nullptr };
+        vk::raii::Instance mInstance{ nullptr };
+        Core::Allocator* mAllocator;
 
-        Core::Vector<RHIDevice::DeviceDesc> m_devices;
-        vk::raii::DebugUtilsMessengerEXT m_debug_handler{ nullptr };
+        Core::Vector<RHIDevice::DeviceDesc> mDevices;
+        vk::raii::DebugUtilsMessengerEXT mDebugHandler{ nullptr };
 
-        RHIObjectPool<> m_storage;
+        RHIObjectPool<> mStorage;
     public:
-        const String m_name;
+        const String mName;
 
-        const vk::raii::Context m_context;
-        const uint32_t m_vulkanApiVersion;
+        const vk::raii::Context mContext;
+        const uint32_t mVulkanApiVersion;
 
         VulkanApplication(Allocator* allocator, const char* appName = "Vulkan RHI", const char* engineName = "Foundation", const uint32_t apiVersion = VK_API_VERSION_1_3);
         Span<const RHIDevice::DeviceDesc> EnumerateDevices() const override;
@@ -44,8 +44,8 @@ namespace Foundation::RHI {
         RHIDevice* GetDevice(Handle handle) const override;
         void DestroyDevice(Handle handle) override;
 
-        Allocator* GetAllocator() const { return m_allocator; }
-        vk::AllocationCallbacks const& GetVkAllocatorCallbacks() const { return m_vkAllocatorCpuCallbacks; }
-        auto const& GetVkInstance() const { return m_instance; }
+        Allocator* GetAllocator() const { return mAllocator; }
+        vk::AllocationCallbacks const& GetVkAllocatorCallbacks() const { return mVkAllocatorCpuCallbacks; }
+        auto const& GetVkInstance() const { return mInstance; }
     };
 }

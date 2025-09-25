@@ -6,7 +6,7 @@ namespace Foundation::RHI {
     class RHIDevice;
     class RHIPipelineState : public RHIObject {
     protected:
-        const RHIDevice& m_device;
+        const RHIDevice& mDevice;
     public:
         struct PipelineStateDesc {
             RHIDevicePipelineType type{ RHIDevicePipelineType::Graphics };
@@ -14,22 +14,22 @@ namespace Foundation::RHI {
             struct VertexInput {
                 struct Binding {
                     uint32_t stride; // In bytes
-                    bool per_instance{ false }; // If true, this binding is per-instance data
+                    bool perInstance{ false }; // If true, this binding is per-instance data
                 };
                 Span<const Binding> bindings;
                 Span<const RHIVertexAttribute> attributes;
-            } vertex_input{};
+            } vertexInput{};
             // [Graphics] Input Assembly
             enum Topology {
-                LINE_LIST,
-                POINT_LIST,
-                TRIANGLE_LIST,
-                TRIANGLE_STRIP
-            } topology{ TRIANGLE_LIST };
+                LineList,
+                PointList,
+                TriangleList,
+                TriangleStrip
+            } topology{ TriangleList };
             // [Graphics] Viewport
             struct Viewport {
                 float x = 0, y = 0, width, height;
-                float min_depth = 0.0, max_depth = 1.0;
+                float minDepth = 0.0, maxDepth = 1.0;
             } viewport{};
             // [Graphics] Scissor
             struct Scissor {
@@ -38,69 +38,69 @@ namespace Foundation::RHI {
             // [Graphics] Rasterizer
             struct Rasterizer {
                 enum FillMode {
-                    FILL_WIREFRAME,
-                    FILL_SOLID
-                } fill_mode{ FILL_SOLID };
+                    FillWireframe,
+                    FillSolid
+                } fillMode{ FillSolid };
                 enum CullMode {
-                    CULL_NONE,
-                    CULL_FRONT,
-                    CULL_BACK
-                } cull_mode{ CULL_BACK };
+                    CullNone,
+                    CullFront,
+                    CullBack
+                } cullMode{ CullBack };
                 enum FrontFace {
-                    FF_COUNTER_CLOCKWISE,
-                    FF_CLOCKWISE
-                } front_face{ FF_CLOCKWISE };
-                bool enable_depth_bias{ false };
-                float depth_bias = 1.0;
-                float line_fill_width = 1.0;
+                    FfCounterClockwise,
+                    FfClockwise
+                } frontFace{ FfClockwise };
+                bool enableDepthBias{ false };
+                float depthBias = 1.0;
+                float lineFillWidth = 1.0;
             } rasterizer{};
             // [Graphics] MSAA
             struct Multisample {
                 bool enabled;
-                RHIMultisampleCount sample_count; // 1, 2, 4, 8, etc.
+                RHIMultisampleCount sampleCount; // 1, 2, 4, 8, etc.
             } multisample{};
             // [Graphics] Depth Stencil
             struct DepthStencil {
-                RHIResourceFormat depth_format{ RHIResourceFormat::Undefined };
-                RHIResourceFormat stencil_format{ RHIResourceFormat::Undefined };
-                bool depth_test{ false };
-                bool depth_write{ false };
+                RHIResourceFormat depthFormat{ RHIResourceFormat::Undefined };
+                RHIResourceFormat stencilFormat{ RHIResourceFormat::Undefined };
+                bool depthTest{ false };
+                bool depthWrite{ false };
                 enum CompareOp {
                     NEVER,
                     LESS,
                     EQUAL,
-                    LESS_EQUAL,
+                    LessEqual,
                     GREATER,
-                    NOT_EQUAL,
-                    GREATER_EQUAL,
+                    NotEqual,
+                    GreaterEqual,
                     ALWAYS
-                } depth_compare_op{ LESS };
-            } depth_stencil{};
+                } depthCompareOp{ LESS };
+            } depthStencil{};
             struct Attachment {
                 struct Blending {
                     bool enabled{ false };
                     enum BlendFactor {
                         ZERO,
                         ONE,
-                        SRC_COLOR,
-                        ONE_MINUS_SRC_COLOR,
-                        DST_COLOR,
-                        ONE_MINUS_DST_COLOR,
-                        SRC_ALPHA,
-                        ONE_MINUS_SRC_ALPHA,
-                        DST_ALPHA,
-                        ONE_MINUS_DST_ALPHA
-                    } src_color_blend_factor, dst_color_blend_factor;
+                        SrcColor,
+                        OneMinusSrcColor,
+                        DstColor,
+                        OneMinusDstColor,
+                        SrcAlpha,
+                        OneMinusSrcAlpha,
+                        DstAlpha,
+                        OneMinusDstAlpha
+                    } srcColorBlendFactor, dstColorBlendFactor;
                     enum BlendOp {
                         ADD,
                         SUBTRACT,
-                        REVERSE_SUBTRACT
-                    } color_blend_op;
-                    float blend_constant[4]{}; // RGBA
+                        ReverseSubtract
+                    } colorBlendOp;
+                    float blendConstant[4]{}; // RGBA
                 } blending;
                 struct RenderTarget {
                     RHIResourceFormat format{ RHIResourceFormat::Undefined };
-                } render_target{};
+                } renderTarget{};
             };
             // [Graphics] Attachments/Alpha Blending
             Span<const Attachment> attachments;
@@ -110,27 +110,27 @@ namespace Foundation::RHI {
                     // Stage this shader participates in
                     // You can only specify one stage per shader module.
                     RHIShaderStage stage;
-                    const char* entry_point;
+                    const char* entryPoint;
                     struct SpecializationInfo {
                         // !! TODO
-                    } specialization_info;
+                    } specializationInfo;
                 } desc;
-                RHIShaderModule* shader_module;
+                RHIShaderModule* shaderModule;
             };
-            Span<const ShaderStage> shader_stages;
+            Span<const ShaderStage> shaderStages;
             // Descriptors
-            Span<RHIDeviceDescriptorSetLayout* const> descriptor_set_layouts;
+            Span<RHIDeviceDescriptorSetLayout* const> descriptorSetLayouts;
             // Push Constants
             struct PushConstant {
                 RHIShaderStage stage;
                 size_t offset;
                 size_t size;
             };
-            Span<const PushConstant> push_constants;
+            Span<const PushConstant> pushConstants;
         };
-        const PipelineStateDesc m_desc;
+        const PipelineStateDesc mDesc;
 
-        RHIPipelineState(RHIDevice const& device, PipelineStateDesc const& desc) : m_device(device), m_desc(desc) {}
+        RHIPipelineState(RHIDevice const& device, PipelineStateDesc const& desc) : mDevice(device), mDesc(desc) {}
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };

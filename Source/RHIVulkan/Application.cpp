@@ -24,8 +24,8 @@ static VKAPI_ATTR vk::Bool32 VKAPI_CALL VkDebugLayerCallback(
     return vk::False;
 }
 VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, const char* engineName, const uint32_t apiVersion)
-    : m_vkAllocatorCpuCallbacks(CreateVulkanCpuAllocationCallbacks(allocator)), m_allocator(allocator), m_storage(allocator), m_devices(allocator),
-    m_name(appName), m_vulkanApiVersion(apiVersion)
+    : mVkAllocatorCpuCallbacks(CreateVulkanCpuAllocationCallbacks(allocator)), mAllocator(allocator), mStorage(allocator), mDevices(allocator),
+    mName(appName), mVulkanApiVersion(apiVersion)
 {
     auto vkAppInfo = vk::ApplicationInfo{
         .pApplicationName = appName,
@@ -34,36 +34,36 @@ VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, 
     };
     uint32_t count = 0;
     const char** extensions = glfwGetRequiredInstanceExtensions(&count);
-    Vector<const char*> instanceExtensions(m_allocator);
+    Vector<const char*> instanceExtensions(mAllocator);
     instanceExtensions.insert(instanceExtensions.end(), extensions, extensions + count);
     // Add our own extensions
     instanceExtensions.insert(
         instanceExtensions.end(),
         kVulkanInstanceExtensions, kVulkanInstanceExtensions + std::size(kVulkanInstanceExtensions)
     );
-    Vector<const char*> instanceLayers(m_allocator);
+    Vector<const char*> instanceLayers(mAllocator);
 #if FOUNDATION_RHIVULKAN_VVL
     instanceLayers.push_back("VK_LAYER_KHRONOS_validation");
 #endif
-    m_instance = vk::raii::Instance(m_context, vk::InstanceCreateInfo{
+    mInstance = vk::raii::Instance(mContext, vk::InstanceCreateInfo{
         .pApplicationInfo = &vkAppInfo,
         .enabledLayerCount = static_cast<uint32_t>(instanceLayers.size()),
         .ppEnabledLayerNames = instanceLayers.data(),
         .enabledExtensionCount = static_cast<uint32_t>(instanceExtensions.size()),
         .ppEnabledExtensionNames = instanceExtensions.data(),
-        }, m_vkAllocatorCpuCallbacks);
-    m_physicalDevices = vk::raii::PhysicalDevices(m_instance);
-    m_devices.clear();
-    for (uint32_t id = 0; id < m_physicalDevices.size(); ++id) {
-        auto const& device = m_physicalDevices[id];
+        }, mVkAllocatorCpuCallbacks);
+    mPhysicalDevices = vk::raii::PhysicalDevices(mInstance);
+    mDevices.clear();
+    for (uint32_t id = 0; id < mPhysicalDevices.size(); ++id) {
+        auto const& device = mPhysicalDevices[id];
         auto props = device.getProperties();
-        m_devices.emplace_back(RHIDevice::DeviceDesc{
+        mDevices.emplace_back(RHIDevice::DeviceDesc{
             .id = id,
             .name = props.deviceName
             });
     }
     // Debug layer callbacks
-    m_debug_handler = m_instance.createDebugUtilsMessengerEXT({
+    mDebugHandler = mInstance.createDebugUtilsMessengerEXT({
         .messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
         .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
         .pfnUserCallback = &VkDebugLayerCallback
@@ -71,19 +71,19 @@ VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, 
 }
 
 Span<const RHIDevice::DeviceDesc> VulkanApplication::EnumerateDevices() const {
-    return { m_devices.begin(), m_devices.end() };
+    return { mDevices.begin(), mDevices.end() };
 }
 
 RHIApplicationScopedObjectHandle<RHIDevice> VulkanApplication::CreateDevice(RHIDevice::DeviceDesc const& desc, Native::NativeWindow* window) {
-    auto& phys_device = m_physicalDevices[desc.id];
-    Handle handle = m_storage.CreateObject<VulkanDevice>(*this, phys_device, window);
+    auto& phys_device = mPhysicalDevices[desc.id];
+    Handle handle = mStorage.CreateObject<VulkanDevice>(*this, phys_device, window);
     return { this, handle };
 }
 RHIDevice* VulkanApplication::GetDevice(Handle handle) const {
-    return m_storage.GetObjectPtr<RHIDevice>(handle);
+    return mStorage.GetObjectPtr<RHIDevice>(handle);
 }
 void VulkanApplication::DestroyDevice(Handle handle) {
-    m_storage.DestroyObject(handle);
+    mStorage.DestroyObject(handle);
 }
 // Vulkan Custom Allocation Callbacks
 namespace Foundation::RHI {

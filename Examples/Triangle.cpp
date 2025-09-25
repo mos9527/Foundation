@@ -9,7 +9,7 @@ namespace Examples {
     class TriangleDemoApp : public RenderApplication {
         void OnRendererSetup() override {
             createPass(
-                m_renderer.get(), "Triangle", RHIDeviceQueueType::Graphics,
+                mRenderer.get(), "Triangle", RHIDeviceQueueType::Graphics,
                 [=](PassHandle self, Renderer* r) {
                     r->BindBackbufferRTV(self);
                     r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/Triangle.spv");

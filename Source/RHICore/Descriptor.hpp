@@ -10,9 +10,9 @@ namespace Foundation::RHI {
     template<typename T> using RHIDeviceDescriptorPoolScopedHandle = RHIScopedHandle<RHIDeviceDescriptorPool, T>;
     class RHIDeviceDescriptorSet : public RHIObject {
     protected:
-        const RHIDeviceDescriptorPool& m_pool;
+        const RHIDeviceDescriptorPool& mPool;
     public:
-        RHIDeviceDescriptorSet(RHIDeviceDescriptorPool const& pool) : m_pool(pool) {}
+        RHIDeviceDescriptorSet(RHIDeviceDescriptorPool const& pool) : mPool(pool) {}
         struct UpdateDesc {
             size_t binding{ 0 }; // 0-indexed, first to update in the descriptor set
             size_t startIndex{ 0 }; // First index in the binding array to update
@@ -24,7 +24,7 @@ namespace Foundation::RHI {
             };
             Span<const Buffer> buffers; // Applies to type of UniformBuffer, StorageBuffer
             struct Image {
-                RHITextureView* image_view{ nullptr }; // Image view to bind, can be null
+                RHITextureView* imageView{ nullptr }; // Image view to bind, can be null
                 RHIDeviceSampler* sampler{ nullptr }; // Sampler to bind, can be null
                 RHITextureLayout layout{}; // Layout of the image
             };
@@ -42,25 +42,25 @@ namespace Foundation::RHI {
     // XXX: Vulkanism. Not really a thing in other APIs.
     class RHIDeviceDescriptorPool : public RHIObject {
     protected:
-        const RHIDevice& m_device;
+        const RHIDevice& mDevice;
     public:
         struct PoolDesc {
             struct Binding {
                 RHIDescriptorType type; // Type of this binding
-                uint32_t max_count{ 1 }; // Max number of descriptors of this type that can be allocated
+                uint32_t maxCount{ 1 }; // Max number of descriptors of this type that can be allocated
             };
             // Bindings that make up this pool
             Span<const Binding> bindings;
             // Allow updating descriptors after being bound to a command buffer when
             // they are not used
-            bool update_after_bind{ false };
-        } const m_desc;
+            bool updateAfterBind{ false };
+        } const mDesc;
         RHIDeviceDescriptorPool(RHIDevice const& device, PoolDesc const& desc)
-            : m_device(device), m_desc(desc) {
+            : mDevice(device), mDesc(desc) {
         }
         [[nodiscard]] virtual RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> CreateDescriptorSet(
             RHIDeviceObjectHandle<RHIDeviceDescriptorSetLayout>, uint32_t max_variable_count = 0) = 0;
-        virtual RHIDeviceDescriptorSet* GetDescriptorSet(Handle handle) const = 0;
+        [[nodiscard]] virtual RHIDeviceDescriptorSet* GetDescriptorSet(Handle handle) const = 0;
         virtual void DestroyDescriptorSet(Handle handle) = 0;
 
         virtual void DebugSetObjectName(const char* name) = 0;

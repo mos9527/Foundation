@@ -7,21 +7,21 @@ namespace Foundation::RHI {
     class VulkanDeviceDescriptorPool;
     class VulkanDeviceDescriptorSetLayout;
     class VulkanDeviceDescriptorSet : public RHIDeviceDescriptorSet {
-        const VulkanDeviceDescriptorPool& m_pool;
-        vk::raii::DescriptorSet m_set{ nullptr };
+        const VulkanDeviceDescriptorPool& mPool;
+        vk::raii::DescriptorSet mSet{ nullptr };
     public:
         VulkanDeviceDescriptorSet(VulkanDeviceDescriptorPool const& pool, vk::raii::DescriptorSet&& set);
 
         void Update(UpdateDesc const& desc) override;
 
-        auto const& GetVkDescriptorSet() const { return m_set; }
+        [[nodiscard]] auto const& GetVkDescriptorSet() const { return mSet; }
 
         void DebugSetObjectName(const char* name) override;
     };
     class VulkanDeviceDescriptorPool : public RHIDeviceDescriptorPool {
-        const VulkanDevice& m_device;
-        vk::raii::DescriptorPool m_pool{ nullptr };
-        RHIObjectPool<> m_storage;
+        const VulkanDevice& mDevice;
+        vk::raii::DescriptorPool mPool{ nullptr };
+        RHIObjectPool<> mStorage;
     public:
         VulkanDeviceDescriptorPool(const VulkanDevice& device, PoolDesc const& desc);
         /**
@@ -34,8 +34,8 @@ namespace Foundation::RHI {
         RHIDeviceDescriptorSet* GetDescriptorSet(Handle handle) const override;
 
         void DestroyDescriptorSet(Handle handle) override;
-        auto const& GetDevice() const { return m_device; }
-        auto const& GetVkDescriptorPool() const { return m_pool; }
+        auto const& GetDevice() const { return mDevice; }
+        auto const& GetVkDescriptorPool() const { return mPool; }
 
         void DebugSetObjectName(const char* name) override;
     };

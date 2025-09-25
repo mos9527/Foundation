@@ -5,18 +5,18 @@ namespace Foundation::RHI {
     inline vk::PrimitiveTopology GetVulkanPrimitiveTopologyFromDesc(RHIPipelineState::PipelineStateDesc::Topology topology) {
         using enum RHIPipelineState::PipelineStateDesc::Topology;
         switch (topology) {
-        case POINT_LIST: return vk::PrimitiveTopology::ePointList;
-        case LINE_LIST: return vk::PrimitiveTopology::eLineList;
-        case TRIANGLE_STRIP: return vk::PrimitiveTopology::eTriangleStrip;
-        case TRIANGLE_LIST:
+        case PointList: return vk::PrimitiveTopology::ePointList;
+        case LineList: return vk::PrimitiveTopology::eLineList;
+        case TriangleStrip: return vk::PrimitiveTopology::eTriangleStrip;
+        case TriangleList:
         default:
             return vk::PrimitiveTopology::eTriangleList;
         }
     }
     inline vk::PolygonMode GetVulkanPolygonModeFromDesc(RHIPipelineState::PipelineStateDesc::Rasterizer::FillMode mode) {
         switch (mode) {
-        case RHIPipelineState::PipelineStateDesc::Rasterizer::FILL_WIREFRAME: return vk::PolygonMode::eLine;
-        case RHIPipelineState::PipelineStateDesc::Rasterizer::FILL_SOLID: return vk::PolygonMode::eFill;
+        case RHIPipelineState::PipelineStateDesc::Rasterizer::FillWireframe: return vk::PolygonMode::eLine;
+        case RHIPipelineState::PipelineStateDesc::Rasterizer::FillSolid: return vk::PolygonMode::eFill;
         default:
             return vk::PolygonMode::ePoint;
         }
@@ -24,9 +24,9 @@ namespace Foundation::RHI {
 
     inline vk::CullModeFlags GetVulkanCullModeFromDesc(RHIPipelineState::PipelineStateDesc::Rasterizer::CullMode mode) {
         switch (mode) {
-        case RHIPipelineState::PipelineStateDesc::Rasterizer::CULL_NONE: return vk::CullModeFlagBits::eNone;
-        case RHIPipelineState::PipelineStateDesc::Rasterizer::CULL_FRONT: return vk::CullModeFlagBits::eFront;
-        case RHIPipelineState::PipelineStateDesc::Rasterizer::CULL_BACK:
+        case RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone: return vk::CullModeFlagBits::eNone;
+        case RHIPipelineState::PipelineStateDesc::Rasterizer::CullFront: return vk::CullModeFlagBits::eFront;
+        case RHIPipelineState::PipelineStateDesc::Rasterizer::CullBack:
         default:
             return vk::CullModeFlagBits::eBack;
         }
@@ -34,8 +34,8 @@ namespace Foundation::RHI {
 
     inline vk::FrontFace GetVulkanFrontFaceFromDesc(RHIPipelineState::PipelineStateDesc::Rasterizer::FrontFace face) {
         switch (face) {
-        case RHIPipelineState::PipelineStateDesc::Rasterizer::FF_COUNTER_CLOCKWISE: return vk::FrontFace::eCounterClockwise;
-        case RHIPipelineState::PipelineStateDesc::Rasterizer::FF_CLOCKWISE:
+        case RHIPipelineState::PipelineStateDesc::Rasterizer::FfCounterClockwise: return vk::FrontFace::eCounterClockwise;
+        case RHIPipelineState::PipelineStateDesc::Rasterizer::FfClockwise:
         default:
             return vk::FrontFace::eClockwise;
         }
@@ -46,14 +46,14 @@ namespace Foundation::RHI {
         switch (factor) {
         case ZERO: return vk::BlendFactor::eZero;
         case ONE: return vk::BlendFactor::eOne;
-        case SRC_COLOR: return vk::BlendFactor::eSrcColor;
-        case ONE_MINUS_SRC_COLOR: return vk::BlendFactor::eOneMinusSrcColor;
-        case DST_COLOR: return vk::BlendFactor::eDstColor;
-        case ONE_MINUS_DST_COLOR: return vk::BlendFactor::eOneMinusDstColor;
-        case SRC_ALPHA: return vk::BlendFactor::eSrcAlpha;
-        case ONE_MINUS_SRC_ALPHA: return vk::BlendFactor::eOneMinusSrcAlpha;
-        case DST_ALPHA: return vk::BlendFactor::eDstAlpha;
-        case ONE_MINUS_DST_ALPHA:
+        case SrcColor: return vk::BlendFactor::eSrcColor;
+        case OneMinusSrcColor: return vk::BlendFactor::eOneMinusSrcColor;
+        case DstColor: return vk::BlendFactor::eDstColor;
+        case OneMinusDstColor: return vk::BlendFactor::eOneMinusDstColor;
+        case SrcAlpha: return vk::BlendFactor::eSrcAlpha;
+        case OneMinusSrcAlpha: return vk::BlendFactor::eOneMinusSrcAlpha;
+        case DstAlpha: return vk::BlendFactor::eDstAlpha;
+        case OneMinusDstAlpha:
         default:
             return vk::BlendFactor::eOneMinusDstAlpha;
         }
@@ -64,7 +64,7 @@ namespace Foundation::RHI {
         switch (op) {
         case ADD: return vk::BlendOp::eAdd;
         case SUBTRACT: return vk::BlendOp::eSubtract;
-        case REVERSE_SUBTRACT:
+        case ReverseSubtract:
         default:
             return vk::BlendOp::eReverseSubtract;
         }
@@ -72,18 +72,18 @@ namespace Foundation::RHI {
 
     class VulkanDevice;
     class VulkanPipelineState : public RHIPipelineState {
-        const VulkanDevice& m_device;
+        const VulkanDevice& mDevice;
 
-        vk::raii::Pipeline m_pipeline{ nullptr };
-        vk::raii::PipelineLayout m_pipeline_layout{ nullptr };
+        vk::raii::Pipeline mPipeline{ nullptr };
+        vk::raii::PipelineLayout mPipelineLayout{ nullptr };
         void InitializePipelineLayout();
         void InitializeGraphics();
         void InitializeCompute();
     public:
         VulkanPipelineState(const VulkanDevice& device, PipelineStateDesc const& desc);
 
-        inline auto const& GetVkPipeline() const { return m_pipeline; }
-        inline auto const& GetVkPipelineLayout() const { return m_pipeline_layout; }
+        [[nodiscard]] inline auto const& GetVkPipeline() const { return mPipeline; }
+        [[nodiscard]] inline auto const& GetVkPipelineLayout() const { return mPipelineLayout; }
 
         void DebugSetObjectName(const char* name) override;
     };

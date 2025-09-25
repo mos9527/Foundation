@@ -12,18 +12,18 @@ namespace Foundation::RHI {
     template<typename T> using RHICommandPoolScopedHandle = RHIScopedHandle<RHICommandPool, T>;
     class RHICommandPool : public RHIObject {
     protected:
-        const RHIDevice& m_device;
+        const RHIDevice& mDevice;
     public:
         struct PoolDesc {
             // Queue this command pool is associated with.
             RHIDeviceQueueType queue;
             // How CommandList should be created by this pool.
             RHICommandPoolType type;
-        } const m_desc;
-        RHICommandPool(RHIDevice const& device, PoolDesc desc) : m_device(device), m_desc(desc) {}
+        } const mDesc;
+        RHICommandPool(RHIDevice const& device, PoolDesc desc) : mDevice(device), mDesc(desc) {}
 
         [[nodiscard]] virtual RHICommandPoolScopedHandle<RHICommandList> CreateCommandList() = 0;
-        virtual RHICommandList* GetCommandList(Handle handle) const = 0;
+        [[nodiscard]] virtual RHICommandList* GetCommandList(Handle handle) const = 0;
         virtual void DestroyCommandList(Handle handle) = 0;
 
         virtual void DebugSetObjectName(const char* name) = 0;
@@ -31,20 +31,20 @@ namespace Foundation::RHI {
     const uint32_t kCommandQueueTransferIgnored = ~0u;
     class RHICommandList : public RHIObject {
     protected:
-        const RHICommandPool& m_commandPool;
+        const RHICommandPool& mCommandPool;
     public:
-        RHICommandList(RHICommandPool const& commandPool) : m_commandPool(commandPool) {}
+        RHICommandList(RHICommandPool const& commandPool) : mCommandPool(commandPool) {}
 #pragma region Transition
         struct TransitionDesc {
-            RHIResourceAccess src_access, dst_access;
-            RHIPipelineStage src_stage, dst_stage;
+            RHIResourceAccess srcAccess, dstAccess;
+            RHIPipelineStage srcStage, dstStage;
             // Image
-            RHITextureLayout src_img_layout, dst_img_layout;
-            RHITextureSubresourceRange src_img_range{};
+            RHITextureLayout srcImgLayout, dstImgLayout;
+            RHITextureSubresourceRange srcImgRange{};
             // Buffer
-            size_t src_buffer_offset = 0, src_buffer_size = kFullSize;
+            size_t srcBufferOffset = 0, srcBufferSize = kFullSize;
             // Queue Transfer
-            uint32_t src_queue_index = kCommandQueueTransferIgnored, dst_queue_index = kCommandQueueTransferIgnored;
+            uint32_t srcQueueIndex = kCommandQueueTransferIgnored, dstQueueIndex = kCommandQueueTransferIgnored;
         };
         virtual RHICommandList& BeginTransition() = 0;
         virtual RHICommandList& SetBufferTransition(RHIBuffer* buffer, TransitionDesc const& desc) = 0;
@@ -73,8 +73,8 @@ namespace Foundation::RHI {
         virtual RHICommandList& PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Span<const char> data) = 0;
 #pragma region Transfer Queue
         struct CopyBufferRegion {
-            size_t src_offset = 0;
-            size_t dst_offset = 0;
+            size_t srcOffset = 0;
+            size_t dstOffset = 0;
             /// Size of the region to copy.
             /// If size is kFullSize, the maximum copiable region
             /// min(src_buffer.size - src_offset, dst_buffer.size - dst_offset)
@@ -84,11 +84,11 @@ namespace Foundation::RHI {
         virtual RHICommandList& FillBuffer(RHIBuffer* buffer, uint32_t value, size_t offset = 0, size_t size = kFullSize) = 0;
         virtual RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Span<const CopyBufferRegion> regions) = 0;
         struct CopyImageRegion {
-            uint32_t src_buffer_offset = 0; // Offset in the source buffer, used for CopyBufferToImage
-            RHITextureSubresourceLayer src_layer;
-            RHIOffset3D src_offset{ 0,0,0 };
-            RHITextureSubresourceLayer dst_layer;
-            RHIOffset3D dst_offset{ 0,0,0 };
+            uint32_t srcBufferOffset = 0; // Offset in the source buffer, used for CopyBufferToImage
+            RHITextureSubresourceLayer srcLayer;
+            RHIOffset3D srcOffset{ 0,0,0 };
+            RHITextureSubresourceLayer dstLayer;
+            RHIOffset3D dstOffset{ 0,0,0 };
             /// Extent of the region to copy.
             /// This MUST have a non-zero size (size=xyz)
             /// or the call to Copy(...)Image is invalid.
@@ -100,26 +100,26 @@ namespace Foundation::RHI {
 #pragma region Graphics Pipeline
         struct GraphicsDesc {
             struct Attachment {
-                RHITextureView* image_view{ nullptr };
-                RHITextureLayout image_layout{ RHITextureLayout::RenderTarget };
+                RHITextureView* imageView{ nullptr };
+                RHITextureLayout imageLayout{ RHITextureLayout::RenderTarget };
                 // Clear values for the color attachment, if applicable.
-                Optional<RHIClearColor> clear_color{};
+                Optional<RHIClearColor> clearColor{};
                 // Clear values for depth and stencil attachments, if applicable.
                 // If both are set, the depth will be cleared first, then stencil.
-                Optional<RHIClearDepthStencil> clear_depth_stencil{};
-                constexpr bool IsValid() const
+                Optional<RHIClearDepthStencil> clearDepthStencil{};
+                [[nodiscard]] constexpr bool IsValid() const
                 {
-                    return image_view;
+                    return imageView;
                 }
             };
-            Span<const Attachment> color_attachments;
-            const Attachment depth_attachment{};
-            const Attachment stencil_attachment{};
+            Span<const Attachment> colorAttachments;
+            const Attachment depthAttachment{};
+            const Attachment stencilAttachment{};
             uint32_t width, height;
         };
         virtual RHICommandList& BeginGraphics(GraphicsDesc const& desc) = 0;
         virtual RHICommandList& BindVertexBuffer(uint32_t index, Span<RHIBuffer* const> buffers, Span<const size_t> offsets) = 0;
-        virtual RHICommandList& BindIndexBuffer(RHIBuffer* buffer, size_t offset = 0, RHIResourceFormat format = RHIResourceFormat::R32_UINT) = 0;
+        virtual RHICommandList& BindIndexBuffer(RHIBuffer* buffer, size_t offset = 0, RHIResourceFormat format = RHIResourceFormat::R32Uint) = 0;
         virtual RHICommandList& EndGraphics() = 0;
 #pragma endregion
 #pragma region Compute        

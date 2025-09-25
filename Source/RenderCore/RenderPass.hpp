@@ -73,17 +73,17 @@ namespace Foundation::RenderCore
     template <typename FSetup, typename FRecord, typename FSkip>
     struct LambdaPass : public RenderPass
     {
-        FSetup m_setup;
-        FRecord m_record;
-        FSkip m_skip;
+        FSetup mSetup;
+        FRecord mRecord;
+        FSkip mSkip;
         LambdaPass(FSetup&& setup, FRecord&& record, FSkip&& skip = {}) :
-            m_setup(std::forward<FSetup>(setup)), m_record(std::forward<FRecord>(record)),
-            m_skip(std::forward<FSkip>(skip))
+            mSetup(std::forward<FSetup>(setup)), mRecord(std::forward<FRecord>(record)),
+            mSkip(std::forward<FSkip>(skip))
         {
         }
-        void Setup(PassHandle self, Renderer* r) override { m_setup(self, r); }
-        void Record(PassHandle self, Renderer* r, RHI::RHICommandList* cmd) override { m_record(self, r, cmd); }
-        bool IsSkipped(PassHandle self, Renderer* r) const override { return m_skip(self, r); }
+        void Setup(PassHandle self, Renderer* r) override { mSetup(self, r); }
+        void Record(PassHandle self, Renderer* r, RHI::RHICommandList* cmd) override { mRecord(self, r, cmd); }
+        bool IsSkipped(PassHandle self, Renderer* r) const override { return mSkip(self, r); }
     };
     /**
      * @brief Internal tracking information for a render pass in the frame graph.
@@ -140,7 +140,7 @@ namespace Foundation::RenderCore
         Vector<RHIVertexAttribute> vertexInputAttributes;
         /* --- */
         UniquePtr<RenderPass> pass;
-        TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue,
+        TrackedPass(Allocator* alloc, PassHandle handle, StringView name, RHIDeviceQueueType queue,
                     UniquePtr<RenderPass> renderPass, size_t priority);
         /* -- States -- */
         size_t groupIndex{}; // executionGroup index

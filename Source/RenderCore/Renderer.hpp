@@ -53,7 +53,7 @@ namespace Foundation::RenderCore
             Vector<ResourceHandle> resources;
             bool isLastGraphics = false;
             bool isLastCompute = false;
-            RHIPipelineStage all_stages{}; // All stages used in this group
+            RHIPipelineStage allStages{}; // All stages used in this group
 
             ExecutionGroups(int groupIndex, RHIDeviceQueueType queue, Allocator* allocator) :
                 groupIndex(groupIndex), queue(queue), passes(allocator), resources(allocator)
@@ -107,19 +107,19 @@ namespace Foundation::RenderCore
         };
 
     private:
-        State m_state;
-        Allocator* m_allocator{nullptr};
+        State mState;
+        Allocator* mAllocator{nullptr};
 
-        const RendererDesc m_desc{};
+        const RendererDesc mDesc{};
 
-        uint64_t m_frame{0};
+        uint64_t mFrame{0};
 
-        uint32_t m_frameSwaps{1}; // Max frames in flight
-        uint32_t m_currentSync{0};
-        uint32_t m_currentSwap{0};
+        uint32_t mFrameSwaps{1}; // Max frames in flight
+        uint32_t mCurrentSync{0};
+        uint32_t mCurrentSwap{0};
 
-        UniquePtr<ExecuteResources> m_resources;
-        RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> m_descPool;
+        UniquePtr<ExecuteResources> mResources;
+        RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> mDescPool;
         struct FrameSyncObjects
         {
             // Index of this swap
@@ -132,16 +132,16 @@ namespace Foundation::RenderCore
             ResourceHandle backbuffer{kInvalidHandle};
             FrameSyncObjects(size_t swapIndex) : swapIndex(swapIndex) {};
         };
-        Vector<FrameSyncObjects> m_swaps;
+        Vector<FrameSyncObjects> mSwaps;
         // Semaphore for async compute
-        RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> m_graphicsTimeline{}, m_computeTimeline{};
-        RHIApplicationObjectHandle<RHIDevice> m_device{};
-        RHIDeviceObjectHandle<RHISwapchain> m_swapchain{};
-        RHIDeviceQueue *m_graphicsQueue{}, *m_computeQueue{};
+        RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> mGraphicsTimeline{}, mComputeTimeline{};
+        RHIApplicationObjectHandle<RHIDevice> mDevice{};
+        RHIDeviceObjectHandle<RHISwapchain> mSwapchain{};
+        RHIDeviceQueue *mGraphicsQueue{}, *mComputeQueue{};
 
-        UniquePtr<RendererSetup> m_setup;
+        UniquePtr<RendererSetup> mSetup;
         // Setup
-        [[nodiscard]] ResourceHandle CreateTextureView(PassHandle pass, ResourceHandle res,
+        [[nodiscard]] ResourceHandle CreateTextureView(PassHandle pass, ResourceHandle handle,
                                                        RHITextureViewDesc const& desc) const;
         // PostSetup
         void CullPasses(PassHandle epilogue) const;
@@ -149,25 +149,25 @@ namespace Foundation::RenderCore
         void FinalizeResources();
         void FinalizePSOs();
         // Temporary memory arena for execution
-        ScopedArena m_executeArena;
+        ScopedArena mExecuteArena;
         // Temporary allocator for execution
         // This is reset every frame, and only guaranteed to be valid during Execute state.
-        StackAllocator m_executeAlloc;
+        StackAllocator mExecuteAlloc;
         // Thread pool for concurrent command list recording
-        Async::ThreadPool m_executeThreadPool;
+        Async::ThreadPool mExecuteThreadPool;
         struct ExecutePerThreadCommandLists
         {
             RHIDeviceScopedObjectHandle<RHICommandPool> graphicsPool{}, computePool{};
             Vector<RHICommandPoolScopedHandle<RHICommandList>> graphicsCmds, computeCmds;
             // Resets every frame
             Atomics::Atomic<size_t> graphicsCtr{}, computeCtr{};
-            ExecutePerThreadCommandLists(RHIDevice* device, const size_t maxPerThread, Allocator* alloc);
+            ExecutePerThreadCommandLists(RHIDevice* device, size_t maxPerThread, Allocator* alloc);
             void Reset();
             RHICommandList* AllocateGraphics();
             RHICommandList* AllocateCompute();
         };
         // [current sync][thread id]
-        Vector<Vector<UniquePtr<ExecutePerThreadCommandLists>>> m_executePerSwapCmds;
+        Vector<Vector<UniquePtr<ExecutePerThreadCommandLists>>> mExecutePerSwapCmds;
         /**
          * @param thread_id -1 for main thread, [0, kRecordThreadpoolSize] for workers
          * @return A command list allocated from the appropriate pool only used for the specified thread_id (dense)
@@ -176,23 +176,23 @@ namespace Foundation::RenderCore
         /**
          * @brief Helper to get the queue index of a queue type
          */
-        uint32_t ExecuteGetQueueIndex(RHIDeviceQueueType queue) const
+        [[nodiscard]] uint32_t ExecuteGetQueueIndex(RHIDeviceQueueType queue) const
         {
             switch (queue)
             {
             case RHIDeviceQueueType::Undefined:
                 return kCommandQueueTransferIgnored;
             case RHIDeviceQueueType::Graphics:
-                return m_graphicsQueue->GetQueueIndex();
+                return mGraphicsQueue->GetQueueIndex();
             case RHIDeviceQueueType::Compute:
-                return m_computeQueue->GetQueueIndex();
+                return mComputeQueue->GetQueueIndex();
             default:
                 throw std::runtime_error("Unhandled queue type");
             }
         };
         void ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, TrackedResource::SubresourceState& sta,
                                             RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout,
-                                            RHICommandList* cmd);
+                                            RHICommandList* cmd) const;
         /**
          * @brief Executes barriers for a subresource range of a texture
          */
@@ -226,7 +226,7 @@ namespace Foundation::RenderCore
          *
          * This does not bind the buffer to any shader - use BindBuffer...() for that.
          */
-        void DeclareBufferAccess(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
+        void DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPipelineStage stage,
                                  RHIResourceAccess access = RHIResourceAccessBits::ShaderRead) const;
         /**
          * @brief Declares that this pass will access the texture in the specified stage with the specified access.
@@ -235,11 +235,11 @@ namespace Foundation::RenderCore
          *
          * This does not bind the texture to any shader - use BindTexture...() for that.
          */
-        void DeclareTextureAccess(PassHandle pass, ResourceHandle res, RHIPipelineStage stage,
+        void DeclareTextureAccess(PassHandle pass, ResourceHandle handle, RHIPipelineStage stage,
                                   RHITextureSubresourceRange range = {},
                                   RHIResourceAccess access = RHIResourceAccessBits::ShaderRead,
                                   RHITextureLayout layout = RHITextureLayout::ShaderReadOnly) const;
-        RHIDeviceIdleGuard m_waitIdle; // Ensure device is idle on destruction
+        RHIDeviceIdleGuard mWaitIdle; // Ensure device is idle on destruction
     public:
         Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device,
                  RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator);
@@ -267,18 +267,18 @@ namespace Foundation::RenderCore
             requires std::is_base_of_v<RenderPass, T>
         T* CreatePassImpl(StringView name, RHIDeviceQueueType queue, size_t priority, Args&&... args)
         {
-            CHECK(m_state == State::Setup);
+            CHECK(mState == State::Setup);
             CHECK_MSG(queue == RHIDeviceQueueType::Graphics || queue == RHIDeviceQueueType::Compute,
                       "Invalid queue type. Only Graphics and Compute queues are supported.");
-            PassHandle handle = m_setup->trackedPasses.size();
+            PassHandle handle = mSetup->trackedPasses.size();
             CHECK_MSG(handle < kMaxRenderPasses, "Exceeded maximum number of render passes ({})", kMaxRenderPasses);
-            if (!m_desc.async)
+            if (!mDesc.async)
                 queue = RHIDeviceQueueType::Graphics; // Force graphics queue if async compute is disabled
-            m_setup->trackedPasses.emplace_back(
-                m_allocator, handle, name, queue,
-                ConstructUniqueBase<RenderPass, T>(m_allocator, std::forward<Args>(args)...), priority);
-            m_setup->epilogue = handle;
-            return static_cast<T*>(m_setup->trackedPasses.back().pass.get());
+            mSetup->trackedPasses.emplace_back(
+                mAllocator, handle, name, queue,
+                ConstructUniqueBase<RenderPass, T>(mAllocator, std::forward<Args>(args)...), priority);
+            mSetup->epilogue = handle;
+            return static_cast<T*>(mSetup->trackedPasses.back().pass.get());
         }
         /**
          * @brief Create a render pass from a Setup(Renderer*, PassHandle) and Record(Renderer*, PassHandle,
@@ -325,12 +325,12 @@ namespace Foundation::RenderCore
          * RHIDeviceObjectHandle<RHITexture>, or raw, pinned pointers @ref RHIBuffer*, or @ref RHITexture*
          */
         template <typename T>
-        ResourceHandle CreateResource(StringView name, T const& desc)
+        [[nodiscard]] ResourceHandle CreateResource(StringView name, T const& desc)
         {
-            CHECK(m_state == State::Setup);
-            ResourceHandle index = m_setup->trackedResources.size();
-            m_setup->trackedResources.emplace_back(index, name, desc, m_allocator);
-            return m_setup->trackedResources.size() - 1;
+            CHECK(mState == State::Setup);
+            ResourceHandle index = mSetup->trackedResources.size();
+            mSetup->trackedResources.emplace_back(index, name, desc, mAllocator);
+            return mSetup->trackedResources.size() - 1;
         }
         /**
          * @brief Creates a sampler with the specified name and descriptor.
@@ -434,7 +434,7 @@ namespace Foundation::RenderCore
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          */
-        void BindTextureSampler(PassHandle pass, ResourceHandle sampler, StringView bind_point) const;
+        void BindTextureSampler(PassHandle pass, ResourceHandle sampler, StringView shader_name) const;
         /**
          * @brief Manually bind an existing descriptor set to the pipeline.
          *
@@ -456,7 +456,7 @@ namespace Foundation::RenderCore
          *
          * No view is created until EndSetup() is called.
          */
-        ResourceHandle BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point,
+        ResourceHandle BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView shader_name,
                                       RHIPipelineStage stage, RHITextureViewDesc const& desc) const;
         /**
          * @brief Binds a texture for unordered (UAV) read-write access in shaders.
@@ -468,7 +468,7 @@ namespace Foundation::RenderCore
          *
          * No view is created until EndSetup() is called.
          */
-        ResourceHandle BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView bind_point,
+        ResourceHandle BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView shader_name,
                                       RHIPipelineStage stage, RHITextureViewDesc const& desc) const;
         /**
          * @brief Binds a texture as a Render Target View (color attachment) for a graphics pass.
@@ -535,16 +535,16 @@ namespace Foundation::RenderCore
          */
         [[nodiscard]] RHIExtent2D GetSwapchainExtent() const
         {
-            CHECK(m_swapchain && "Swapchain not initialized");
-            return m_swapchain->m_desc.extents;
+            CHECK(mSwapchain && "Swapchain not initialized");
+            return mSwapchain->mDesc.extents;
         }
         /**
          * @brief Get the current swapchain extents as a 3D extent with depth 1.
          */
         [[nodiscard]] RHIExtent3D GetSwapchainExtent3D() const
         {
-            CHECK(m_swapchain && "Swapchain not initialized");
-            auto xy = m_swapchain->m_desc.extents;
+            CHECK(mSwapchain && "Swapchain not initialized");
+            auto xy = mSwapchain->mDesc.extents;
             return {xy.x, xy.y, 1};
         }
 #pragma endregion
@@ -560,9 +560,9 @@ namespace Foundation::RenderCore
          */
         [[nodiscard]] Variant<RHIBuffer*, RHITexture*> DerefResource(const ResourceHandle handle) const
         {
-            CHECK(m_resources && handle < m_resources->resources.size());
+            CHECK(mResources && handle < mResources->resources.size());
             using Tv = Variant<RHIBuffer*, RHITexture*>;
-            return m_resources->resources[handle].visit([](auto* ptr) -> Tv { return ptr; },
+            return mResources->resources[handle].visit([](auto* ptr) -> Tv { return ptr; },
                                                         [](auto& hdl) -> Tv { return hdl.Get(); });
         }
         /**
@@ -572,9 +572,9 @@ namespace Foundation::RenderCore
          */
         [[nodiscard]] RHITextureView* DerefTextureView(const ResourceHandle handle) const
         {
-            CHECK(m_resources && handle < m_resources->views.size());
+            CHECK(mResources && handle < mResources->views.size());
             using Tv = RHITextureView*;
-            return m_resources->views[handle].visit([](auto& hdl) -> Tv { return hdl.Get(); });
+            return mResources->views[handle].visit([](auto& hdl) -> Tv { return hdl.Get(); });
         }
         /**
          * @brief Dereference a sampler handle to its underlying RHI sampler.
@@ -583,16 +583,16 @@ namespace Foundation::RenderCore
          */
         [[nodiscard]] RHIDeviceSampler* DerefSampler(const ResourceHandle handle) const
         {
-            CHECK(m_setup && handle < m_setup->trackedSamplers.size());
-            return m_resources->samplers[handle].Get();
+            CHECK(mSetup && handle < mSetup->trackedSamplers.size());
+            return mResources->samplers[handle].Get();
         }
         /**
          * @brief Dereference the automatically built pipeline state object handle associated with a given pass.
          */
         [[nodiscard]] RHIPipelineState* DerefPipelineState(const PassHandle pass) const
         {
-            CHECK(m_setup && pass < m_setup->trackedPasses.size());
-            auto& tpass = m_setup->trackedPasses[pass];
+            CHECK(mSetup && pass < mSetup->trackedPasses.size());
+            auto& tpass = mSetup->trackedPasses[pass];
             return tpass.pso.Get();
         }
         /**
@@ -600,8 +600,8 @@ namespace Foundation::RenderCore
          */
         [[nodiscard]] Vector<RHIDeviceDescriptorSet*> const& DerefDescriptorSets(const PassHandle pass) const
         {
-            CHECK(m_setup && pass < m_setup->trackedPasses.size());
-            auto& tpass = m_setup->trackedPasses[pass];
+            CHECK(mSetup && pass < mSetup->trackedPasses.size());
+            auto& tpass = mSetup->trackedPasses[pass];
             return tpass.pDescriptorSets;
         }
         /**
@@ -611,15 +611,15 @@ namespace Foundation::RenderCore
          */
         [[nodiscard]] RHITextureView* DerefCurrentBackbufferView(const PassHandle pass) const
         {
-            CHECK(m_state == State::Execute);
-            auto& tpass = m_setup->trackedPasses[pass];
+            CHECK(mState == State::Execute);
+            auto& tpass = mSetup->trackedPasses[pass];
             CHECK_MSG(tpass.writeBackbuffer, "Pass {} does not write to backbuffer", tpass.name);
-            return m_swaps[GetSwap()].rtv.Get();
+            return mSwaps[GetSwap()].rtv.Get();
         }
         /**
          * @return The backing general-purpose allocator used for the Renderer
          */
-        Allocator* GetAllocator() const { return m_allocator; }
+        [[nodiscard]] Allocator* GetAllocator() const { return mAllocator; }
 #pragma endregion
 #pragma region Command Recording Helpers
         /**
@@ -675,8 +675,8 @@ namespace Foundation::RenderCore
         void CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, RHIShaderStage stage, size_t offset,
                                 T const& data)
         {
-            CHECK(m_state == State::Execute);
-            auto& tpass = m_setup->trackedPasses[pass];
+            CHECK(mState == State::Execute);
+            auto& tpass = mSetup->trackedPasses[pass];
             cmd->PushConstant(tpass.pso.Get(), stage, static_cast<uint32_t>(offset),
                               {reinterpret_cast<const char*>(&data), sizeof(T)});
         }
@@ -685,18 +685,18 @@ namespace Foundation::RenderCore
         /**
          * @brief Retrieves the current state of the renderer.
          */
-        [[nodiscard]] State GetState() const { return m_state; }
+        [[nodiscard]] State GetState() const { return mState; }
         /**
          * @brief Get the number of frames that can be simultaneously in-flight.
          */
-        [[nodiscard]] uint32_t GetFrameSwaps() const { return m_frameSwaps; }
+        [[nodiscard]] uint32_t GetFrameSwaps() const { return mFrameSwaps; }
         /**
          * @brief Retrieves the current frame number.
          *
          * This value is monotonically increasing every time @ref EndExecute() is called,
          * and starts from 0.
          */
-        [[nodiscard]] uint64_t GetFrame() const { return m_frame; }
+        [[nodiscard]] uint64_t GetFrame() const { return mFrame; }
         /**
          * @brief Retrieves the current swap index at the time of @ref ExecuteFrame().
          *
@@ -706,7 +706,7 @@ namespace Foundation::RenderCore
          * This value is updated at @ref BeginExecute(), and remains
          * the same until the next @ref BeginExecute() call.
          */
-        [[nodiscard]] uint32_t GetSwap() const { return m_currentSwap; }
+        [[nodiscard]] uint32_t GetSwap() const { return mCurrentSwap; }
         /**
          * @brief Retrieves the current synchronization index.
          *
@@ -720,21 +720,21 @@ namespace Foundation::RenderCore
          * This value is updated at @ref BeginExecute(), and remains
          * the same until the next @ref BeginExecute() call.
          */
-        [[nodiscard]] uint64_t GetSync() const { return m_currentSync; }
+        [[nodiscard]] uint64_t GetSync() const { return mCurrentSync; }
         /**
          * @brief Returns whether async compute is enabled.
          *
          * If this returns false, all passes will be executed on the graphics queue,
          * and any queue hints passed during pass creation will be ignored.
          */
-        [[nodiscard]] bool IsAsyncComputeEnabled() const { return m_desc.async; }
+        [[nodiscard]] bool IsAsyncComputeEnabled() const { return mDesc.async; }
         /**
          * @brief Returns whether the swapchain is enabled.
          *
          * If this returns false, no backbuffer will be acquired or presented,
          * and any passes that write to the backbuffer will throw at EndSetup() time.
          */
-        [[nodiscard]] bool IsPresentEnabled() const { return m_desc.present; }
+        [[nodiscard]] bool IsPresentEnabled() const { return mDesc.present; }
         /**
          * @brief Update the swapchain to a new one.
          * You must call this when the window is resized or the swapchain is invalidated.
@@ -798,7 +798,7 @@ namespace Foundation::RenderCore
      * or raw, pinned pointers @ref RHIBuffer*, or @ref RHITexture*
      */
     template <typename T>
-    ResourceHandle createResource(Renderer* r, StringView name, T const& desc)
+    [[nodiscard]] ResourceHandle createResource(Renderer* r, StringView name, T const& desc)
     {
         return r->CreateResource(name, desc);
     }
@@ -807,7 +807,7 @@ namespace Foundation::RenderCore
      *
      * This is equivalent to calling CreateSampler(name, desc);
      */
-    inline ResourceHandle createSampler(Renderer* r, RHIDeviceSampler::SamplerDesc const& desc)
+    [[nodiscard]] inline ResourceHandle createSampler(Renderer* r, RHIDeviceSampler::SamplerDesc const& desc)
     {
         return r->CreateSampler(desc);
     }

@@ -86,26 +86,26 @@ namespace Foundation::Rendering {
             const size_t kTimingSampleDuration{ static_cast<size_t>(1.0 * 1e9) /* 1 second */ };
         };
     protected:
-        ApplicationInitDesc m_desc;
+        ApplicationInitDesc mDesc;
 
-        DefaultAllocator m_alloc, m_allocRenderer;
-        Native::NativeWindow m_window;
-        UniquePtr<RHIApplication> m_rhi;
+        DefaultAllocator mAlloc, mAllocRenderer;
+        Native::NativeWindow mWindow;
+        UniquePtr<RHIApplication> mRhi;
 
-        RHIApplicationScopedObjectHandle<RHIDevice> m_device;
-        RHIDeviceScopedObjectHandle<RHISwapchain> m_swapchain;
+        RHIApplicationScopedObjectHandle<RHIDevice> mDevice;
+        RHIDeviceScopedObjectHandle<RHISwapchain> mSwapchain;
 
-        UniquePtr<Renderer> m_renderer;
-        FrameTiming m_timing{};
+        UniquePtr<Renderer> mRenderer;
+        FrameTiming mTiming{};
 
-        Async::Thread m_renderThread;
-        Async::Condition m_renderFrame;
-        Async::Mutex m_renderMutex;
+        Async::Thread mRenderThread;
+        Async::Condition mRenderFrame;
+        Async::Mutex mRenderMutex;
 
         // Should the Render thread reset the renderer on the next frame?
-        Atomics::Atomic<bool> m_renderThreadReset{false};
+        Atomics::Atomic<bool> mRenderThreadReset{false};
         // Should the application exit?
-        Atomics::Atomic<bool> m_appShouldClose{false};
+        Atomics::Atomic<bool> mAppShouldClose{false};
         /**
          * @brief Actions to take after device specific resources has been set up.
          *
@@ -193,9 +193,9 @@ namespace Foundation::Rendering {
         template<typename Backend, typename... Args>
         void Initialize(ApplicationInitDesc const& desc = {}, Args&&... args) {
             // XXX: Backends are expected to take Allocator* as the first argument
-            m_desc = desc;
-            m_rhi.reset();
-            m_rhi = ConstructUniqueBase<RHIApplication, Backend>(m_alloc.Ptr(), m_alloc.Ptr(),
+            mDesc = desc;
+            mRhi.reset();
+            mRhi = ConstructUniqueBase<RHIApplication, Backend>(mAlloc.Ptr(), mAlloc.Ptr(),
                                                                  std::forward<Args>(args)...);
             InitializeInternal();
             InitializeRenderer();
@@ -203,35 +203,35 @@ namespace Foundation::Rendering {
         /**
          * @brief Retrieve the framebuffer size of the current window.
          */
-        [[nodiscard]] RHIExtent2D GetFramebufferSize() const { auto [w, h] = m_window.GetFramebufferSize(); return { w, h }; }
+        [[nodiscard]] RHIExtent2D GetFramebufferSize() const { auto [w, h] = mWindow.GetFramebufferSize(); return { w, h }; }
         /**
          * @brief Retrieve the timing information of the last frame.
          */
-        [[nodiscard]] FrameTiming GetTiming() const { return m_timing; }
+        [[nodiscard]] FrameTiming GetTiming() const { return mTiming; }
         /**
          * @brief Retrieve the underlying Renderer instance.
          */
-        [[nodiscard]] Renderer* GetRenderer() const { return m_renderer.get(); }
+        [[nodiscard]] Renderer* GetRenderer() const { return mRenderer.get(); }
         /**
          * @brief Retrieve the current RHISwapchain instance.
          */
         [[nodiscard]] RHISwapchain* GetSwapchain() const
         {
-            CHECK_MSG(m_swapchain, "No swapchain created. Did you initialize the application with present=true?");
-            return m_swapchain.Get();
+            CHECK_MSG(mSwapchain, "No swapchain created. Did you initialize the application with present=true?");
+            return mSwapchain.Get();
         }
         /**
          * @brief Retrieve the current NativeWindow instance.
          */
-        Native::NativeWindow* GetNativeWindow() { return &m_window; }
+        Native::NativeWindow* GetNativeWindow() { return &mWindow; }
         /**
          * @brief Retrieve the allocator used for general application allocations.
          */
-        Allocator* GetAllocator() { return m_alloc.Ptr(); }
+        Allocator* GetAllocator() { return mAlloc.Ptr(); }
         /**
          * @brief Retrieve the allocator used for renderer allocations.
          */
-        Allocator* GetRendererAllocator() { return m_allocRenderer.Ptr(); }
+        Allocator* GetRendererAllocator() { return mAllocRenderer.Ptr(); }
         /**
          * @brief Start the Render thread and run the application loop indefinitely,
          * until the window is closed or the application is exited.

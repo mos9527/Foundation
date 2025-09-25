@@ -4,12 +4,12 @@
 namespace Foundation::RHI {
     class VulkanDevice;
     class VulkanShaderModule : public RHIShaderModule {
-        const VulkanDevice& m_device;
-        vk::raii::ShaderModule m_shaderModule{ nullptr };
+        const VulkanDevice& mDevice;
+        vk::raii::ShaderModule mShaderModule{ nullptr };
     public:
         VulkanShaderModule(const VulkanDevice& device, ShaderModuleDesc const& desc);
 
-        inline const vk::raii::ShaderModule& GetVkShaderModule() const { return m_shaderModule; }
+        [[nodiscard]] inline const vk::raii::ShaderModule& GetVkShaderModule() const { return mShaderModule; }
 
         void DebugSetObjectName(const char* name) override;
     };

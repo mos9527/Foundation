@@ -42,59 +42,59 @@ namespace Foundation::RHI {
     };
     class VulkanDevice;
     class VulkanDeviceSemaphore : public RHIDeviceSemaphore {
-        const VulkanDevice& m_device;
-        vk::raii::Semaphore m_semaphore{ nullptr };
+        const VulkanDevice& mDevice;
+        vk::raii::Semaphore mSemaphore{ nullptr };
     public:
         VulkanDeviceSemaphore(const VulkanDevice& device, bool is_timeline);
-        auto const& GetVkSemaphore() const { return m_semaphore; }
+        [[nodiscard]] auto const& GetVkSemaphore() const { return mSemaphore; }
 
         void DebugSetObjectName(const char* name) override;
     };
     class VulkanDeviceFence : public RHIDeviceFence {
-        const VulkanDevice& m_device;
-        vk::raii::Fence m_fence{ nullptr };
+        const VulkanDevice& mDevice;
+        vk::raii::Fence mFence{ nullptr };
     public:
         VulkanDeviceFence(const VulkanDevice& device, bool signaled);
-        auto const& GetVkFence() const { return m_fence; }
+        [[nodiscard]] auto const& GetVkFence() const { return mFence; }
 
         void DebugSetObjectName(const char* name) override;
     };
     class VulkanDeviceDescriptorSetLayout : public RHIDeviceDescriptorSetLayout {
-        const VulkanDevice& m_device;
-        vk::raii::DescriptorSetLayout m_layout{ nullptr };
+        const VulkanDevice& mDevice;
+        vk::raii::DescriptorSetLayout mLayout{ nullptr };
     public:
         VulkanDeviceDescriptorSetLayout(const VulkanDevice& device, RHIDeviceDescriptorSetLayoutDesc const& desc);
-        auto const& GetVkLayout() const { return m_layout; }
+        [[nodiscard]] auto const& GetVkLayout() const { return mLayout; }
 
         void DebugSetObjectName(const char* name) override;
     };
     class VulkanDeviceSampler : public RHIDeviceSampler {
-        const VulkanDevice& m_device;
-        vk::raii::Sampler m_sampler{ nullptr };
+        const VulkanDevice& mDevice;
+        vk::raii::Sampler mSampler{ nullptr };
     public:
         VulkanDeviceSampler(const VulkanDevice& device, RHIDeviceSampler::SamplerDesc const& desc);
-        auto const& GetVkSampler() const { return m_sampler; }
+        [[nodiscard]] auto const& GetVkSampler() const { return mSampler; }
 
         void DebugSetObjectName(const char* name) override;
     };
     class VulkanDevice : public RHIDevice {
-        const VulkanApplication& m_app;
+        const VulkanApplication& mApp;
 
-        vk::PhysicalDeviceProperties m_properties;
-        vk::raii::PhysicalDevice m_physicalDevice{ nullptr };
-        vk::raii::Device m_device{ nullptr };
-        vk::raii::SurfaceKHR m_surface{ nullptr };
+        vk::PhysicalDeviceProperties mProperties;
+        vk::raii::PhysicalDevice mPhysicalDevice{ nullptr };
+        vk::raii::Device mDevice{ nullptr };
+        vk::raii::SurfaceKHR mSurface{ nullptr };
 
-        Vector<RHIResourceFormat> m_swapchain_formats;
-        Vector<RHISwapchainPresentMode> m_swapchain_present_modes;
+        Vector<RHIResourceFormat> mSwapchainFormats;
+        Vector<RHISwapchainPresentMode> mSwapchainPresentModes;
 
-        VmaAllocator m_vkAllocator{ nullptr };
+        VmaAllocator mVkAllocator{ nullptr };
         // Device Object storage
         // Lifetimes and handle dereferencing are managed by the device.
-        RHIObjectPool<> m_storage;
+        RHIObjectPool<> mStorage;
         // Queues
-        UniquePtr<VulkanDeviceQueues> m_queues{ nullptr };
-        Native::NativeWindow* window_;
+        UniquePtr<VulkanDeviceQueues> mQueues{ nullptr };
+        Native::NativeWindow* window;
 
     public:
         VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice  physicalDevice, Native::NativeWindow* window);
@@ -106,7 +106,7 @@ namespace Foundation::RHI {
         RHIDeviceQueue* GetDeviceQueue(RHIDeviceQueueType type) const override;
 
         Span<RHIResourceFormat const> GetSwapchainSupportedFormats() const override;
-        Span<RHISwapchainPresentMode const> GetSwapchainSupportedPresentModes() const;
+        Span<RHISwapchainPresentMode const> GetSwapchainSupportedPresentModes() const override;
         RHIDeviceScopedObjectHandle<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) override;
         RHISwapchain* GetSwapchain(Handle handle) const override;
         void DestroySwapchain(Handle handle) override;
@@ -163,31 +163,31 @@ namespace Foundation::RHI {
         Allocator* GetAllocator() const;
         vk::AllocationCallbacks const& GetVkAllocatorCallbacks() const;
 
-        auto const& GetVkQueues() const { return m_queues; }
-        auto const& GetVkDevice() const { return m_device; }
-        auto const& GetVkSurface() const { return m_surface; }
-        auto const& GetVkPhysicalDevice() const { return m_physicalDevice; }
-        auto const& GetVkAllocator() const { return m_vkAllocator; }
+        auto const& GetVkQueues() const { return mQueues; }
+        auto const& GetVkDevice() const { return mDevice; }
+        auto const& GetVkSurface() const { return mSurface; }
+        auto const& GetVkPhysicalDevice() const { return mPhysicalDevice; }
+        auto const& GetVkAllocator() const { return mVkAllocator; }
 
         void DebugSetObjectName(const char* name) override;
     };
     class VulkanDeviceQueue : public RHIDeviceQueue {
-        const VulkanDevice& m_device;
-        const uint32_t m_queue_index;
-        vk::raii::Queue m_queue{ nullptr };
+        const VulkanDevice& mDevice;
+        const uint32_t mQueueIndex;
+        vk::raii::Queue mQueue{ nullptr };
     public:
         VulkanDeviceQueue(const VulkanDevice& device, uint32_t queue_index)
-            : RHIDeviceQueue(device), m_device(device), m_queue_index(queue_index), m_queue(device.GetVkDevice(), queue_index, 0) {
+            : RHIDeviceQueue(device), mDevice(device), mQueueIndex(queue_index), mQueue(device.GetVkDevice(), queue_index, 0) {
         };
 
-        const VulkanDevice& GetVulkanDevice() const { return m_device; }
-        vk::raii::Queue GetVkQueue() const { return m_queue; }
-        uint32_t GetVkQueueIndex() const { return m_queue_index; }
+        [[nodiscard]] const VulkanDevice& GetVulkanDevice() const { return mDevice; }
+        [[nodiscard]] vk::raii::Queue GetVkQueue() const { return mQueue; }
+        [[nodiscard]] uint32_t GetVkQueueIndex() const { return mQueueIndex; }
 
         void WaitIdle() const override;
         void Submit(SubmitDesc const& desc) const override;
         void Present(PresentDesc const& desc) const override;
-        uint32_t GetQueueIndex() const override { return GetVkQueueIndex(); }
+        [[nodiscard]] uint32_t GetQueueIndex() const override { return GetVkQueueIndex(); }
 
         void DebugSetObjectName(const char* name) override;
     };
