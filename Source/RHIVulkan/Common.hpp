@@ -56,6 +56,8 @@ namespace Foundation::RHI {
         if (state & ShaderWrite) flags |= vk::AccessFlagBits2::eShaderWrite;
         if (state & ShaderRead) flags |= vk::AccessFlagBits2::eShaderRead;
         if (state & UniformRead) flags |= vk::AccessFlagBits2::eUniformRead;
+        if (state & HostWrite) flags |= vk::AccessFlagBits2::eHostWrite;
+        if (state & HostRead) flags |= vk::AccessFlagBits2::eHostRead;
         return flags;
     }
 
@@ -90,6 +92,7 @@ namespace Foundation::RHI {
         if (stage & TopOfPipe) flags |= vk::PipelineStageFlagBits::eTopOfPipe;
         if (stage & BottomOfPipe) flags |= vk::PipelineStageFlagBits::eBottomOfPipe;
         if (stage & AllGraphics) flags |= vk::PipelineStageFlagBits::eAllGraphics;
+        if (stage & Host) flags |= vk::PipelineStageFlagBits::eHost;
         return flags;
     }
 
@@ -109,6 +112,7 @@ namespace Foundation::RHI {
         if (stage & TopOfPipe) flags |= vk::PipelineStageFlagBits2::eTopOfPipe;
         if (stage & BottomOfPipe) flags |= vk::PipelineStageFlagBits2::eBottomOfPipe;
         if (stage & AllGraphics) flags |= vk::PipelineStageFlagBits2::eAllGraphics;
+        if (stage & Host) flags |= vk::PipelineStageFlagBits2::eHost;
         return flags;
     }
 

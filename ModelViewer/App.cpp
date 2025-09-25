@@ -28,7 +28,7 @@ namespace ModelViewer
     void App::OnApplicationTick()
     {
         WaitForFrame();
-        size_t total = 100'00;
+        size_t total = 100'000;
         auto data = mScene->MapInstanceData<InstanceMetadata>();
         CHECK_MSG(data.size() >= total, "Not enough space (max={}, current={})", data.size(),total);
         auto mesh_id = mScene->GetMesh(mesh).primitiveID;

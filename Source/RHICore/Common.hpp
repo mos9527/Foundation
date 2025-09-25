@@ -159,6 +159,8 @@ namespace Foundation::RHI {
         ShaderWrite = 1 << 6,
         ShaderRead = 1 << 7,
         UniformRead = 1 << 8,
+        HostWrite = 1 << 9,
+        HostRead = 1 << 10
     BITMASK_ENUM_END();
 
     // https://gpuopen.com/learn/vulkan-barriers-explained/
@@ -175,6 +177,7 @@ namespace Foundation::RHI {
         EarlyFragmentTests      = 1 << 9,
         LateFragmentTests       = 1 << 10,
         // ---
+        Host                    = 1 << 27,
         AllGraphics             = 1 << 28,
         TopOfPipe               = 1 << 29,
         BottomOfPipe            = 1 << 30,

@@ -131,10 +131,32 @@ namespace Foundation::Rendering
         if (!HasUpdates())
             return;
         cmd->DebugBegin("Staging Buffer Updates");
+        cmd->BeginTransition();
+        cmd->SetBufferTransition(
+            mBuffer.Get(),
+            {
+                .srcAccess = RHIResourceAccessBits::HostWrite,
+                .dstAccess = RHIResourceAccessBits::TransferRead,
+                .srcStage = RHIPipelineStageBits::Host,
+                .dstStage = RHIPipelineStageBits::Transfer,
+            }
+        );
+        cmd->EndTransition();
         if (mClearValue.has_value())
             cmd->FillBuffer(mBuffer.Get(), mClearValue.value()), mClearValue.reset();
         for (auto const& [src, dst, range] : mBufferStagings)
             cmd->CopyBuffer(src, dst, {range});
+        cmd->BeginTransition();
+        cmd->SetBufferTransition(
+            mBuffer.Get(),
+            {
+                .srcAccess = RHIResourceAccessBits::TransferRead,
+                .dstAccess = RHIResourceAccessBits::HostWrite,
+                .srcStage = RHIPipelineStageBits::Transfer,
+                .dstStage = RHIPipelineStageBits::Host,
+            }
+        );
+        cmd->EndTransition();
         cmd->DebugEnd();
         mBufferStagings.clear();
     }
