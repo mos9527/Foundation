@@ -52,5 +52,5 @@ target_include_directories(ModelViewer PRIVATE ../src "${stb_SOURCE_DIR}" "${fas
 
 add_subdirectory(Shaders)
 add_subdirectory(Samples)
-add_dependencies(ModelViewer ModelViewer_Shaders)
+add_dependencies(ModelViewer ModelViewer_Shaders ModelViewer_SampleModels)
 

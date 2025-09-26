@@ -23,10 +23,11 @@ void App::OnRendererSetup()
             .format = RHIResourceFormat::D32SignedFloat,
         }
     );
-    ResourceHandle instanceBuffer;
-    mScene->CreateInstanceUpdatePass(
+    ResourceHandle instanceBuffer, metadataBuffer;
+    mScene->CreateUpdatePasses(
         mRenderer.get(),
         instanceBuffer,
+        metadataBuffer,
         RHIDeviceQueueType::Graphics
     );
     ResourceHandle primitiveBuffer = mRenderer->CreateResource("Primitive", mScene->mPrimitive.Get());

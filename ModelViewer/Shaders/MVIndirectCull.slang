@@ -1,6 +1,6 @@
 #include "Common.h"
 
-StructuredBuffer<PrimitiveMetadata> scPrimitive;
+ByteAddressBuffer scPrimitive;
 StructuredBuffer<InstanceMetadata> scInstance;
 RWStructuredBuffer<Atomic<uint>> counter;
 RWStructuredBuffer<MeshDrawIndirectCmd> commands;
@@ -9,9 +9,9 @@ RWStructuredBuffer<MeshDrawIndirectCmd> commands;
 [numthreads(32, 1, 1)]
 void indirectCullEarly(uint instanceID : SV_DispatchThreadID){
     InstanceMetadata instance = scInstance.Load(instanceID);
-    if (instance.primitiveID == 0)
+    if (instance.primitiveOffsetPP == 0)
         return;
-    PrimitiveMetadata primitive = scPrimitive.Load(instance.primitiveID - 1);
+    PrimitiveMetadata primitive = scPrimitive.Load<PrimitiveMetadata>(instance.primitiveOffsetPP - 1);
     MeshDrawIndirectCmd cmd;
     cmd.instanceID = instanceID;
     cmd.firstInstance = 0;

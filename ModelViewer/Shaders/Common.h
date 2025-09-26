@@ -39,8 +39,8 @@ struct PrimitiveMetadata {
 
 // In GetInstanceDataBuffer
 struct InstanceMetadata {
-    /* Actual primitive ID + 1 (0 reserved for disabled) */
-    uint32_t primitiveID;
+    /* Raw Offset in Primitive buffer + 1. 0 for disabled. */
+    uint32_t primitiveOffsetPP;
     /* Other per-instance data */
     // Translation
     float3 t;
