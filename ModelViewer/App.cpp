@@ -18,7 +18,7 @@ namespace ModelViewer
             SceneBudgets{},
             GetAllocator()
         );
-        auto meshData = LoadMeshFromObjFile("data/assets/Cube.obj", GetAllocator());
+        auto meshData = LoadMeshFromObjFile("data/assets/Sphere.obj", GetAllocator());
         mesh = mScene->PushMesh(meshData.m_vertex_data, meshData.m_index_data);
     }
     void App::OnBeforeFrame()
@@ -28,7 +28,7 @@ namespace ModelViewer
     void App::OnApplicationTick()
     {
         WaitForFrame();
-        size_t total = 60'000; // 0.6mil instances
+        size_t total = 8 * 8; // 0.6mil instances
         auto data = mScene->MapInstanceData<InstanceData>();
         CHECK_MSG(data.size() >= total, "Not enough space (max={}, current={})", data.size(),total);
         auto time = GetApplicationTime<float>();
@@ -43,14 +43,14 @@ namespace ModelViewer
         mCamera = proj * view;
         for (size_t instance = 0; instance < total; ++instance)
         {
-            float theta = time * acos(-1);
+            float theta = time * acos(-1) * 0.1f;
             quat q = quat(cosf(theta / 2), float3(0,1,0) * sinf(theta / 2));
             data[instance] = {
                 .primitiveOffsetPP = mScene->QueryMesh(mesh).primitiveOffset + 1,
                 .t = float3{
                     (instance / sq),
                     (instance % sq),
-                    0
+                    sin(instance + time)
                 },
                 .q = float4(q.x, q.y, q.z, q.w)
             };

@@ -1380,7 +1380,7 @@ void Renderer::ExecuteFrame()
             auto cmd = ExecuteAllocateCommandList(group.queue, -1);
             cmd->Reset();
             cmd->Begin();
-            cmd->DebugBegin("Group Acquire");
+            cmd->DebugBegin("Group Release");
             ExecuteReleaseQueueResources(group.queue, group.groupIndex, cmd);
             cmd->DebugEnd();
             cmd->End();
@@ -1402,7 +1402,9 @@ void Renderer::ExecuteFrame()
         {
             ZoneScopedN("Group Submit");
             // We'd only signal the current group per submit
-            auto Counter = [&](size_t ord) { return mFrame * mSetup->executionGroups.size() + ord + 1; };
+            auto Counter = [&](size_t ord) { return mFrame * mSetup->executionGroups.size() + ord + 1LL; };
+            // Counter for a frame prior
+            auto CounterFF = [&](size_t ord) { return (mFrame - 1LL) * mSetup->executionGroups.size() + ord + 1LL; };
             RHIDeviceQueue::TimelinePair timeline_signal;
             if (group.queue == RHIDeviceQueueType::Graphics)
                 timeline_signal =
@@ -1422,6 +1424,20 @@ void Renderer::ExecuteFrame()
             if (maxComputeSyncGroup >= 0 && group.queue == RHIDeviceQueueType::Graphics)
                 timeline_waits.emplace_back(mComputeTimeline.Get(), Counter(maxComputeSyncGroup)),
                     timeline_wait_stages.push_back(group.allStages);
+            // A special case for the first group of a queue
+            // Always synchronize with the _last_ group of the _last_ frame
+            if ((group.computeGroupIndex == 0 || group.graphicsGroupIndex == 0) && mFrame > 0)
+            {
+                auto& lastGroup = mSetup->executionGroups.back();
+                if (lastGroup.queue == RHIDeviceQueueType::Graphics)
+                    timeline_waits.emplace_back(mGraphicsTimeline.Get(), CounterFF(lastGroup.graphicsGroupIndex)),
+                        timeline_wait_stages.push_back(group.allStages);
+                else if (lastGroup.queue == RHIDeviceQueueType::Compute)
+                    timeline_waits.emplace_back(mComputeTimeline.Get(), CounterFF(lastGroup.computeGroupIndex)),
+                        timeline_wait_stages.push_back(group.allStages);
+                else [[unlikely]]
+                    throw std::runtime_error("Unhandled queue type");
+            }
             RHIDeviceFence* fence_ptr = nullptr;
             // Fence the queues for every frame
             // Only one fence per queue is needed since submissions are in order
@@ -1445,6 +1461,7 @@ void Renderer::ExecuteFrame()
                 {
                     ZoneScopedN("Submit (No Present)");
                     queue->Submit({.timelineWaits = timeline_waits,
+                                    .timelineSignals = {{{timeline_signal}}},
                                    .waitsStages = timeline_wait_stages,
                                    .cmdLists = group_cmds,
                                    .fence = fence_ptr});
@@ -1472,6 +1489,7 @@ void Renderer::ExecuteFrame()
                         ZoneScopedN("Submit & Present");
                         timeline_wait_stages.push_back(group.allStages | RHIPipelineStageBits::RenderTargetOutput);
                         queue->Submit({.timelineWaits = timeline_waits,
+                                        .timelineSignals = {{{timeline_signal}}},
                                        .waits = {{mSwaps[mCurrentSync].present.Get()}},
                                        .waitsStages = timeline_wait_stages,
                                        .signals = {{mSwaps[GetSwap()].render.Get()}},

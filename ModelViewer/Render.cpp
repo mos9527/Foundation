@@ -28,14 +28,14 @@ void App::OnRendererSetup()
         mRenderer.get(),
         instanceBuffer,
         metadataBuffer,
-        RHIDeviceQueueType::Graphics
+        RHIDeviceQueueType::Compute
     );
     ResourceHandle primitiveBuffer = mRenderer->CreateResource("Primitive", mScene->mPrimitive.Get());
     ResourceHandle vertexBuffer = mRenderer->CreateResource("Vertex", mScene->mVertex.Get());
     ResourceHandle indexBuffer = mRenderer->CreateResource("Index", mScene->mIndex.Get());
     // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
     // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect
-    createPassPriority(mRenderer.get(), "Reset Command Counter", RHIDeviceQueueType::Graphics, 1000,
+    createPass(mRenderer.get(), "Reset Command Counter", RHIDeviceQueueType::Compute,
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "resetCounter", "data/shaders/MVClearCounters.spv");
