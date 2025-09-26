@@ -29,7 +29,7 @@ namespace ModelViewer
     {
         WaitForFrame();
         size_t total = 60'000; // 0.6mil instances
-        auto data = mScene->MapInstanceData<InstanceMetadata>();
+        auto data = mScene->MapInstanceData<InstanceData>();
         CHECK_MSG(data.size() >= total, "Not enough space (max={}, current={})", data.size(),total);
         auto time = GetApplicationTime<float>();
         size_t sq = sqrt(total);

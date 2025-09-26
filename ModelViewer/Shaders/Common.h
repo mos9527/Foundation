@@ -27,7 +27,7 @@ struct VertexSL {
 // In GetIndexBuffer()
 typedef uint32_t IndexSL; // 32-bit index
 // In GetPrimitiveDataBuffer
-struct PrimitiveMetadata {
+struct PrimitiveData {
     /* Vertex Buffers */
     // Index into GetVertexBuffer()
     int vertexOffset;
@@ -38,8 +38,8 @@ struct PrimitiveMetadata {
 };
 
 // In GetInstanceDataBuffer
-struct InstanceMetadata {
-    /* Raw Offset in Primitive buffer + 1. 0 for disabled. */
+struct InstanceData {
+    /* Raw Offset in Primitive buffer + 1. Set to 0 to disable. */
     uint32_t primitiveOffsetPP;
     /* Other per-instance data */
     // Translation

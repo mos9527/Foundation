@@ -22,7 +22,7 @@ struct VSOutput
 };
 
 [[vk::push_constant]] DrawPushConstant draw;
-StructuredBuffer<InstanceMetadata> scInstance;
+StructuredBuffer<InstanceData> scInstance;
 StructuredBuffer<MeshDrawIndirectCmd> commands;
 
 float4x4 translation(float3 t){
@@ -42,7 +42,7 @@ VSOutput vertMain(VSInput input, uint32_t drawID : SV_DrawIndex) {
     float4 T_BSign;
     unpackTBN(input.np, input.tp, N, T_BSign);
     // Apply transforms from instance data
-    InstanceMetadata instance = scInstance[instanceID];
+    InstanceData instance = scInstance[instanceID];
     Quaternion q = Quaternion(instance.q);
     float3 pos = input.pos;
     pos = q.rotate(pos);

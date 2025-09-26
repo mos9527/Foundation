@@ -76,18 +76,18 @@ void Scene::OnBeforeFrame(const uint32_t rendererSync)
 SceneHandle Scene::PushMesh(Span<const char> vertices, Span<const char> indices)
 {
     auto [handle, data] = mMeshes.PopPair();
-    data.primitive = mPrimitiveAlloc.Allocate(sizeof(PrimitiveMetadata), alignof(PrimitiveMetadata));
+    data.primitive = mPrimitiveAlloc.Allocate(sizeof(PrimitiveData), alignof(PrimitiveData));
     data.primitiveOffset = mPrimitiveAlloc.QueryOffset(data.primitive);
     data.vertex = mVertexAlloc.Allocate(vertices.size_bytes(), 4);
     data.vertexOffset = mVertexAlloc.QueryOffset(data.vertex);
     data.index = mIndexAlloc.Allocate(indices.size_bytes(), 4);
     data.indexOffset = mIndexAlloc.QueryOffset(data.index);
-    PrimitiveMetadata allocation{
+    PrimitiveData allocation{
         .vertexOffset = static_cast<int>(data.vertexOffset),
         .indexCount = static_cast<int>(indices.size() / sizeof(uint32_t)),
         .indexOffset = static_cast<int>(data.indexOffset),
     };
-    mUpload.Upload(mPrimitive.Get(), Span<PrimitiveMetadata>(allocation).AsBytes(), data.primitiveOffset);
+    mUpload.Upload(mPrimitive.Get(), Span<PrimitiveData>(allocation).AsBytes(), data.primitiveOffset);
     mUpload.Upload(mVertex.Get(), vertices, data.vertexOffset);
     mUpload.Upload(mIndex.Get(), indices, data.indexOffset);
     return handle;

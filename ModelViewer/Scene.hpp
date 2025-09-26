@@ -94,6 +94,8 @@ namespace ModelViewer
          * @note This is a blocking operation, and will stall until the staging buffer is available
          * from the GPU.
          *
+         * @note The update is guaranteed to be completed by the next frame.
+         *
          * @note There's no requirement for the data to be alive after this call as it's copied
          *       into the staging buffer immediately.
          *       Uploads are guaranteed to be completed by the next frame.
@@ -138,6 +140,8 @@ namespace ModelViewer
         }
         /**
          * @brief Unmaps the instance data, allowing other threads to map it again.
+         *
+         * @note The update is guaranteed to be completed by the next frame.
          */
         void UnmapInstanceData()
         {
@@ -150,6 +154,8 @@ namespace ModelViewer
          *
          * The data can be anything from something like an array of matrices, to a custom
          * structure that contains material information, AABB, etc.
+         *
+         * @note The update is guaranteed to be completed by the next frame.
          *
          * @param data Data to push
          * @param alignment Alignment requirement for the data. Must be a multiple of 4.
@@ -164,6 +170,8 @@ namespace ModelViewer
         Pair<size_t, size_t> QueryMetadata(VirtualAllocation allocation);
         /**
          * @brief Updates a previously allocated metadata allocation.
+         *
+         * @note The update is guaranteed to be completed by the next frame.
          *
          * @param allocation Previously allocated metadata allocation
          * @param data New data to write. Must be the same size as the original allocation.
