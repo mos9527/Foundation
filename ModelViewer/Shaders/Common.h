@@ -17,15 +17,6 @@ struct MeshDrawIndirectCmd
     int32_t     vertexOffset;
     uint32_t    firstInstance;
 };
-// In GetVertexBuffer()
-struct VertexSL {
-    uint16_t px, py, pz; // quantized fp16
-    uint16_t tp;         // tangent [octa 8+8]
-    uint32_t np; // normal packed [snorm octa 15+15, bitangent sign 2]
-    uint16_t u, v;       // texcoord fp16
-};
-// In GetIndexBuffer()
-typedef uint32_t IndexSL; // 32-bit index
 // In GetPrimitiveDataBuffer
 struct PrimitiveData {
     /* Vertex Buffers */
@@ -36,7 +27,6 @@ struct PrimitiveData {
     // Index into GetIndexBuffer()
     int indexOffset;
 };
-
 // In GetInstanceDataBuffer
 struct InstanceData {
     /* Raw Offset in Primitive buffer + 1. Set to 0 to disable. */

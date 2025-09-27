@@ -12,7 +12,7 @@ void App::OnRendererSetup()
     );
     ResourceHandle counter = createResource(mRenderer.get(), "Command Counter",
         RHIBufferDesc{
-            .usage = RHIBufferUsageBits::IndirectBuffer | RHIBufferUsageBits::StorageBuffer,
+            .usage = RHIBufferUsageBits::IndirectBuffer | RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
             .size = sizeof(int)
         }
     );
@@ -28,23 +28,21 @@ void App::OnRendererSetup()
         mRenderer.get(),
         instanceBuffer,
         metadataBuffer,
-        RHIDeviceQueueType::Compute
+        RHIDeviceQueueType::Graphics
     );
     ResourceHandle primitiveBuffer = mRenderer->CreateResource("Primitive", mScene->mPrimitive.Get());
     ResourceHandle vertexBuffer = mRenderer->CreateResource("Vertex", mScene->mVertex.Get());
     ResourceHandle indexBuffer = mRenderer->CreateResource("Index", mScene->mIndex.Get());
     // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#drawing-primitive-shading
     // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#vkCmdDrawIndexedIndirect
-    createPass(mRenderer.get(), "Reset Command Counter", RHIDeviceQueueType::Compute,
+    createPass(mRenderer.get(), "Reset Command Counter", RHIDeviceQueueType::Graphics,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Compute, "resetCounter", "data/shaders/MVClearCounters.spv");
-            r->BindBufferUnordered(self, counter, RHIPipelineStageBits::ComputeShader, "counter");
+            r->BindBufferCopyDst(self, counter);
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
-            r->CmdSetPipeline(self, cmd);
-            r->CmdDispatch(self, cmd, {1,1,1});
+            cmd->FillBuffer(r->DerefResource(counter).Get<RHIBuffer*>(), 0);
         }
     );
     createPass(mRenderer.get(), "Indirect Drawcall Generation [Early]", RHIDeviceQueueType::Graphics,

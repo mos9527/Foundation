@@ -63,9 +63,9 @@ namespace ModelViewer
         }
     };
     /**
-     * @brief Scene data management for asynchronous data updates/uploads
+     * @brief Scene data management for asynchronous data updates/uploads on the GPU
      */
-    class Scene
+    class GPUScene
     {
         Allocator* mAllocator;
         UploadContext mUpload; // Temp upload bump arena
@@ -80,7 +80,7 @@ namespace ModelViewer
         RHIDeviceScopedObjectHandle<RHIBuffer> mPrimitive, mVertex, mIndex;
         VirtualAllocator mPrimitiveAlloc, mVertexAlloc, mIndexAlloc;
         VirtualAllocator mMetadataAlloc; // Metadata allocator
-        Scene(RHIDevice* device, size_t numSwaps, SceneBudgets const& budgets, Allocator* alloc);
+        GPUScene(RHIDevice* device, size_t numSwaps, SceneBudgets const& budgets, Allocator* alloc);
         void OnBeforeFrame(uint32_t rendererSync);
         /**
          * @brief Creates a pass that updates the instance buffer with correct synchronization.
@@ -114,6 +114,10 @@ namespace ModelViewer
          * @return A @ref SceneMesh containing all allocation handles
          */
         SceneMesh QueryMesh(SceneHandle id);
+        /**
+         * @brief Frees a previously allocated mesh.
+         * @param mesh Previously allocated mesh handle
+         */
         void DestroyMesh(SceneHandle mesh);
         /* -- Instance -- */
         /**

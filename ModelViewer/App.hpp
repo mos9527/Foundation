@@ -3,7 +3,7 @@
 #include <Async/Thread.hpp>
 #include <Rendering/PSFullscreen.hpp>
 #include <RHIVulkan/Application.hpp>
-#include "Scene.hpp"
+#include "GPUScene.hpp"
 /**
  * @brief ModelViewer implementation
  */
@@ -19,7 +19,7 @@ namespace ModelViewer {
         void OnRendererSetup() override;
         void OnApplicationTick() override;
     public:
-        UniquePtr<Scene> mScene;
+        UniquePtr<GPUScene> mScene;
         mat4 mCamera;
     };
 }

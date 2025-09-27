@@ -1,6 +1,6 @@
 #include "App.hpp"
 #include "Mesh.hpp"
-#include "Scene.hpp"
+#include "GPUScene.hpp"
 using namespace Foundation;
 using namespace Foundation::Core;
 using namespace Foundation::RenderCore;
@@ -11,7 +11,7 @@ namespace ModelViewer
     SceneHandle mesh;
     void App::OnDeviceSetup()
     {
-        mScene = ConstructUnique<Scene>(
+        mScene = ConstructUnique<GPUScene>(
             GetAllocator(),
             mDevice.Get(),
             mSwapchain->GetImages().size(),

@@ -1,4 +1,4 @@
-#include "Scene.hpp"
+#include "GPUScene.hpp"
 #include <tracy/Tracy.hpp>
 #include "Mesh.hpp"
 using namespace ModelViewer;
@@ -17,7 +17,7 @@ StagedData::StagedData(RHIDevice* device, const size_t size, const size_t alignm
 }
 StagedData::~StagedData() { alloc->Deallocate(data); }
 
-Scene::Scene(RHIDevice* device, size_t numSwaps, SceneBudgets const& budgets, Allocator* alloc) :
+GPUScene::GPUScene(RHIDevice* device, size_t numSwaps, SceneBudgets const& budgets, Allocator* alloc) :
     mAllocator(alloc), mUpload(device, alloc, budgets.TotalBudget()),
     mInstance(device, budgets.InstanceBudget, budgets.InstanceAlignment, numSwaps, alloc),
     mMetadata(device, budgets.MetadataBudget, 4, numSwaps, alloc), mMetadataRegions(alloc), mMeshes(alloc),
@@ -32,9 +32,9 @@ Scene::Scene(RHIDevice* device, size_t numSwaps, SceneBudgets const& budgets, Al
     mIndex = device->CreateBuffer({.usage = RHIBufferUsageBits::IndexBuffer | RHIBufferUsageBits::TransferDestination,
                                    .size = budgets.IndexBudget});
 }
-void Scene::OnBeforeFrame(const uint32_t rendererSync)
+void GPUScene::OnBeforeFrame(const uint32_t rendererSync)
 {
-    ZoneScopedN("Scene Update");
+    ZoneScopedN("GPUScene Update");
     {
         // Flush all pending uploads
         // This always blocks until completion.
@@ -73,7 +73,7 @@ void Scene::OnBeforeFrame(const uint32_t rendererSync)
         mMetadata.mutex.unlock();
     }
 }
-SceneHandle Scene::PushMesh(Span<const char> vertices, Span<const char> indices)
+SceneHandle GPUScene::PushMesh(Span<const char> vertices, Span<const char> indices)
 {
     auto [handle, data] = mMeshes.PopPair();
     data.primitive = mPrimitiveAlloc.Allocate(sizeof(PrimitiveData), alignof(PrimitiveData));
@@ -92,8 +92,8 @@ SceneHandle Scene::PushMesh(Span<const char> vertices, Span<const char> indices)
     mUpload.Upload(mIndex.Get(), indices, data.indexOffset);
     return handle;
 }
-SceneMesh Scene::QueryMesh(SceneHandle id) { return mMeshes.At(id); }
-void Scene::DestroyMesh(SceneHandle mesh)
+SceneMesh GPUScene::QueryMesh(SceneHandle id) { return mMeshes.At(id); }
+void GPUScene::DestroyMesh(SceneHandle mesh)
 {
     auto data = mMeshes.At(mesh);
     mPrimitiveAlloc.Free(data.primitive);
@@ -101,7 +101,7 @@ void Scene::DestroyMesh(SceneHandle mesh)
     mIndexAlloc.Free(data.index);
     mMeshes.Free(mesh);
 }
-VirtualAllocation Scene::PushMetadata(Span<const char> data, size_t alignment)
+VirtualAllocation GPUScene::PushMetadata(Span<const char> data, size_t alignment)
 {
     std::scoped_lock lock(mMetadata.mutex);
     auto allocation = mMetadataAlloc.Allocate(data.size_bytes(), alignment);
@@ -111,11 +111,11 @@ VirtualAllocation Scene::PushMetadata(Span<const char> data, size_t alignment)
     mMetadataDirty = true;
     return allocation;
 }
-Pair<size_t, size_t> Scene::QueryMetadata(VirtualAllocation allocation)
+Pair<size_t, size_t> GPUScene::QueryMetadata(VirtualAllocation allocation)
 {
     return mMetadataAlloc.Query(allocation);
 }
-void Scene::UpdateMetadata(VirtualAllocation allocation, Span<const char> data)
+void GPUScene::UpdateMetadata(VirtualAllocation allocation, Span<const char> data)
 {
     std::scoped_lock lock(mMetadata.mutex);
     auto [offset, size] = mMetadataAlloc.Query(allocation);
@@ -124,11 +124,11 @@ void Scene::UpdateMetadata(VirtualAllocation allocation, Span<const char> data)
     std::memcpy(mMetadata.data + offset, data.data(), data.size_bytes());
     mMetadataDirty = true;
 }
-void Scene::FreeMetadata(const VirtualAllocation allocation)
+void GPUScene::FreeMetadata(const VirtualAllocation allocation)
 {
     mMetadataAlloc.Free(allocation);
 }
-void Scene::CreateUpdatePasses(Renderer* renderer, ResourceHandle& outInstanceBuffer, ResourceHandle& outMetadataBuffer, RHIDeviceQueueType queue)
+void GPUScene::CreateUpdatePasses(Renderer* renderer, ResourceHandle& outInstanceBuffer, ResourceHandle& outMetadataBuffer, RHIDeviceQueueType queue)
 {
     createStagedBufferUpdatePass(renderer, &mInstance.buffer, "Instance Buffer", outInstanceBuffer, queue);
     createStagedBufferUpdatePass(renderer, &mMetadata.buffer, "Metadata Buffer", outMetadataBuffer, queue);
