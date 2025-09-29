@@ -32,8 +32,7 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
 
 void Renderer::BeginSetup()
 {
-    CHECK_MSG(mState == State::Undefined || mState == State::PostSetup, "Bad Setup state. Current state is {}",
-              mState);
+    CHECK_MSG(mState == State::Undefined || mState == State::PostSetup, "Bad Setup state. Current state is {}", mState);
     mState = State::Setup;
     mSetup = ConstructUnique<RendererSetup>(mAllocator, mAllocator);
     if (mDesc.present)
@@ -132,9 +131,9 @@ void Renderer::BindVertexInput(PassHandle pass, RHIPipelineState::PipelineStateD
 {
     CHECK(mState == State::Setup);
     mSetup->trackedPasses[pass].vertexInputBindings.insert(mSetup->trackedPasses[pass].vertexInputBindings.end(),
-                                                              info.bindings.begin(), info.bindings.end());
-    mSetup->trackedPasses[pass].vertexInputAttributes.insert(
-        mSetup->trackedPasses[pass].vertexInputAttributes.end(), info.attributes.begin(), info.attributes.end());
+                                                           info.bindings.begin(), info.bindings.end());
+    mSetup->trackedPasses[pass].vertexInputAttributes.insert(mSetup->trackedPasses[pass].vertexInputAttributes.end(),
+                                                             info.attributes.begin(), info.attributes.end());
 }
 void Renderer::BindPushConstant(PassHandle pass, RHIShaderStage stage, size_t offset, size_t size) const
 {
@@ -389,7 +388,8 @@ void Renderer::CullPasses(PassHandle epilogue) const
     {
         while (j < exec.size() && mSetup->trackedPasses[exec[j]].queue == mSetup->trackedPasses[exec[i]].queue)
             j++;
-        auto& group = exec_group.emplace_back(static_cast<int>(exec_group.size()), mSetup->trackedPasses[exec[i]].queue, mAllocator);
+        auto& group = exec_group.emplace_back(static_cast<int>(exec_group.size()), mSetup->trackedPasses[exec[i]].queue,
+                                              mAllocator);
         group.passes.insert(group.passes.end(), exec.begin() + i, exec.begin() + j);
         // Collect dependencies
         for (auto pass : exec_group.back().passes)
@@ -567,7 +567,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
     }
     Ranges::sort(tracked.pExternalDescriptorSets);
     tracked.pExternalDescriptorSets.erase(Ranges::unique(tracked.pExternalDescriptorSets).begin(),
-                                     tracked.pExternalDescriptorSets.end());
+                                          tracked.pExternalDescriptorSets.end());
     if (!var_bind_points.empty())
     {
         LOG_RUNTIME(Renderer, debug, "Pipeline Parameters");
@@ -864,8 +864,8 @@ void Renderer::SetFrameSyncObjects()
     {
         auto& threads = mExecutePerSwapCmds.emplace_back(mAllocator);
         while (threads.size() < kRecordThreadpoolSize + 1)
-            threads.emplace_back(
-                ConstructUnique<ExecutePerThreadCommandLists>(mAllocator, mDevice.Get(), kMaxCommandListsPerThread, mAllocator));
+            threads.emplace_back(ConstructUnique<ExecutePerThreadCommandLists>(mAllocator, mDevice.Get(),
+                                                                               kMaxCommandListsPerThread, mAllocator));
     }
     for (size_t i = 0; i < mFrameSwaps; i++)
     {
@@ -922,8 +922,7 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain)
 }
 void Renderer::BeginExecute()
 {
-    CHECK_MSG(mState == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?",
-              mState);
+    CHECK_MSG(mState == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?", mState);
     ZoneScoped;
     mState = State::Execute;
     // Reset per-swap command lists
@@ -1010,16 +1009,15 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
     CHECK_MSG(mState == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", mState);
     // At this point the pass execution order has been determined
     // (execution) and so are the resources' access patterns.
-    // Minimal synchronization barriers would always be the most
-    // optimal.
-    // Textures
+    // Minimal synchronization barriers would always be the most optimal.
+    /* -- Textures -- */
     // These are always disjoint ranges
     for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
     {
         auto& tres = mSetup->trackedResources[hdl];
         ExecuteBarrierSubresource(pass.handle, tres, range, access, stage, layout, cmd);
     }
-    // Backbuffer
+    /* -- Backbuffer -- */
     // A special case with known usages.
     // We never create resource per-swap so tracking Back buffers by passes
     // is not possible. The BB is also opaque to the passes for the same reasons.
@@ -1035,7 +1033,7 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
         ExecuteBarrierSubresource(pass.handle, tres, RHITextureSubresourceRange::Create(), rt_access, rt_stage,
                                   rt_layout, cmd);
     }
-    // Buffers
+    /* -- Buffers -- */
     // These are always global i.e. at most one per buffer per pass.
     for (auto [hdl, access, stage] : pass.bufferUsages)
     {
@@ -1105,7 +1103,7 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
     // the _next_ group which is *now* guaranteed to be less capable (i.e. Compute).
     // Only Compute resources _need_ to be transitioned here beforehand. So we only deal with that
     size_t nextGroupIndex =
-        (groupIndex + 1) % groups.size(); // Next group. Could be the first group if this is the last group
+        (groupIndex + 1) % groups.size(); // Next group. Would be the first group if current groupIndex is the last group
     if (groups[groupIndex].queue == RHIDeviceQueueType::Graphics && groups[nextGroupIndex].queue != currentQueue)
     {
         // Declare that the first pass from the next group handled the transition
@@ -1212,14 +1210,10 @@ Renderer::ExecutePerThreadCommandLists::ExecutePerThreadCommandLists(RHIDevice* 
                                                                      Allocator* alloc) :
     graphicsCmds(maxPerThread, alloc), computeCmds(maxPerThread, alloc)
 {
-    graphicsPool = device->CreateCommandPool({
-        .queue = RHIDeviceQueueType::Graphics,
-        .type = RHICommandPoolType::Persistent
-    });
-    computePool = device->CreateCommandPool({
-        .queue = RHIDeviceQueueType::Compute,
-        .type = RHICommandPoolType::Persistent
-    });
+    graphicsPool =
+        device->CreateCommandPool({.queue = RHIDeviceQueueType::Graphics, .type = RHICommandPoolType::Persistent});
+    computePool =
+        device->CreateCommandPool({.queue = RHIDeviceQueueType::Compute, .type = RHICommandPoolType::Persistent});
 }
 void Renderer::ExecutePerThreadCommandLists::Reset()
 {
@@ -1461,7 +1455,7 @@ void Renderer::ExecuteFrame()
                 {
                     ZoneScopedN("Submit (No Present)");
                     queue->Submit({.timelineWaits = timeline_waits,
-                                    .timelineSignals = {{{timeline_signal}}},
+                                   .timelineSignals = {{{timeline_signal}}},
                                    .waitsStages = timeline_wait_stages,
                                    .cmdLists = group_cmds,
                                    .fence = fence_ptr});
@@ -1469,15 +1463,15 @@ void Renderer::ExecuteFrame()
                 else
                 {
                     // Last group to submit, and we need to present
-                    CHECK_MSG(group.queue == RHIDeviceQueueType::Graphics, "FIXME-ExecuteFrame: Last pass ended on a non-Graphics queue");
+                    CHECK_MSG(group.queue == RHIDeviceQueueType::Graphics,
+                              "FIXME-ExecuteFrame: Last pass ended on a non-Graphics queue");
                     // Transition the Backbuffer to Present.
                     auto cmd = ExecuteAllocateCommandList(RHIDeviceQueueType::Graphics, -1);
                     cmd->Reset();
                     cmd->Begin();
                     cmd->DebugBegin("Present");
                     cmd->BeginTransition();
-                    ExecuteBarrierSubresource(kInvalidHandle,
-                                              mSetup->trackedResources[mSwaps[GetSwap()].backbuffer],
+                    ExecuteBarrierSubresource(kInvalidHandle, mSetup->trackedResources[mSwaps[GetSwap()].backbuffer],
                                               RHITextureSubresourceRange::Create(), {},
                                               RHIPipelineStageBits::RenderTargetOutput, RHITextureLayout::Present, cmd);
                     cmd->EndTransition();
@@ -1489,7 +1483,7 @@ void Renderer::ExecuteFrame()
                         ZoneScopedN("Submit & Present");
                         timeline_wait_stages.push_back(group.allStages | RHIPipelineStageBits::RenderTargetOutput);
                         queue->Submit({.timelineWaits = timeline_waits,
-                                        .timelineSignals = {{{timeline_signal}}},
+                                       .timelineSignals = {{{timeline_signal}}},
                                        .waits = {{mSwaps[mCurrentSync].present.Get()}},
                                        .waitsStages = timeline_wait_stages,
                                        .signals = {{mSwaps[GetSwap()].render.Get()}},
@@ -1582,8 +1576,8 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
                   "Graphics extent too large for Depth buffer {}", tres.name);
         cmd->BeginGraphics({.colorAttachments = rtvs,
                             .depthAttachment = {.imageView = DerefTextureView(tpass.dsv),
-                                                 .imageLayout = RHITextureLayout::DepthStencil,
-                                                 .clearDepthStencil = clear_dsv},
+                                                .imageLayout = RHITextureLayout::DepthStencil,
+                                                .clearDepthStencil = clear_dsv},
                             .width = extent.x,
                             .height = extent.y});
     }

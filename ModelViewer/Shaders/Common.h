@@ -6,7 +6,7 @@
  * TODO: Sharing the same definition between C++ and shaders is usually not
  *       a good idea. MSVC proves it too. Remove this ASAP.
 */
-
+#define MV_WGSIZE 64 // Workgroup size for task and mesh shader
 // https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#VkDrawIndexedIndirectCommand
 struct MeshDrawIndirectCmd
 {

@@ -18,118 +18,44 @@ StagedData::StagedData(RHIDevice* device, const size_t size, const size_t alignm
 StagedData::~StagedData() { alloc->Deallocate(data); }
 
 GPUScene::GPUScene(RHIDevice* device, size_t numSwaps, SceneBudgets const& budgets, Allocator* alloc) :
-    mAllocator(alloc), mUpload(device, alloc, budgets.TotalBudget()),
-    mInstance(device, budgets.InstanceBudget, budgets.InstanceAlignment, numSwaps, alloc),
-    mMetadata(device, budgets.MetadataBudget, 4, numSwaps, alloc), mMetadataRegions(alloc), mMeshes(alloc),
-    mPrimitiveAlloc(budgets.PrimitiveBudget, alloc), mVertexAlloc(budgets.VertexBudget, alloc),
-    mIndexAlloc(budgets.IndexBudget, alloc), mMetadataAlloc(budgets.MetadataBudget, alloc)
+    mAllocator(alloc), mUpload(device, alloc, budgets.totalStaging()),
+    mInstance(device, budgets.instanceBudget, budgets.instanceAlignment, numSwaps, alloc),
+    mShared(device, budgets.sharedBudget, 4, numSwaps, alloc), mSharedAlloc(budgets.sharedBudget, alloc),
+    mSharedUpdateRegions(alloc), mGeometryAlloc(budgets.geometryBudget, alloc)
 {
-    mPrimitive =
+    mGeometry =
         device->CreateBuffer({.usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
-                              .size = budgets.PrimitiveBudget});
-    mVertex = device->CreateBuffer({.usage = RHIBufferUsageBits::VertexBuffer | RHIBufferUsageBits::TransferDestination,
-                                    .size = budgets.VertexBudget});
-    mIndex = device->CreateBuffer({.usage = RHIBufferUsageBits::IndexBuffer | RHIBufferUsageBits::TransferDestination,
-                                   .size = budgets.IndexBudget});
+                              .size = budgets.geometryBudget});
 }
-void GPUScene::OnBeforeFrame(const uint32_t rendererSync)
+
+VirtualAllocation GPUScene::PushShared(Span<const char> data, size_t alignment)
 {
-    ZoneScopedN("GPUScene Update");
-    {
-        // Flush all pending uploads
-        // This always blocks until completion.
-        ZoneScopedN("Wait Uploads");
-        mUpload.SubmitAndWait();
-    }
-    if (mInstanceDirty)
-    {
-        // Schedule the entirety of the instance buffer to be re-uploaded.
-        // The backing StagedBuffer is N-buffered (renderSync), so we can do this without stalling the GPU.
-        ZoneScopedN("Instance Data");
-        {
-            ZoneScopedN("Waiting for Mutex");
-            mInstance.mutex.lock();
-        }
-        mInstanceDirty = false;
-        mInstance.buffer.BeginTransfer(rendererSync);
-        mInstance.buffer.Transfer(0, mInstance.View<char>(), mInstance.alignment);
-        mInstance.buffer.EndTransfer();
-        mInstance.mutex.unlock();
-    }
-    if (mMetadataDirty)
-    {
-        // Schedule regions of the metadata buffer to be re-uploaded.
-        ZoneScopedN("Metadata Data");
-        {
-            ZoneScopedN("Waiting for Mutex");
-            mMetadata.mutex.lock();
-        }
-        mMetadataDirty = false;
-        mMetadata.buffer.BeginTransfer(rendererSync);
-        for (auto [offset, size] : mMetadataRegions)
-            mMetadata.buffer.Transfer(offset, Span<const char>(mMetadata.data + offset, size).AsBytes(), 4);
-        mMetadataRegions.clear();
-        mMetadata.buffer.EndTransfer();
-        mMetadata.mutex.unlock();
-    }
-}
-SceneHandle GPUScene::PushMesh(Span<const char> vertices, Span<const char> indices)
-{
-    auto [handle, data] = mMeshes.PopPair();
-    data.primitive = mPrimitiveAlloc.Allocate(sizeof(PrimitiveData), alignof(PrimitiveData));
-    data.primitiveOffset = mPrimitiveAlloc.QueryOffset(data.primitive);
-    data.vertex = mVertexAlloc.Allocate(vertices.size_bytes(), 4);
-    data.vertexOffset = mVertexAlloc.QueryOffset(data.vertex);
-    data.index = mIndexAlloc.Allocate(indices.size_bytes(), 4);
-    data.indexOffset = mIndexAlloc.QueryOffset(data.index);
-    PrimitiveData allocation{
-        .vertexOffset = static_cast<int>(data.vertexOffset),
-        .indexCount = static_cast<int>(indices.size() / sizeof(uint32_t)),
-        .indexOffset = static_cast<int>(data.indexOffset),
-    };
-    mUpload.Upload(mPrimitive.Get(), Span<PrimitiveData>(allocation).AsBytes(), data.primitiveOffset);
-    mUpload.Upload(mVertex.Get(), vertices, data.vertexOffset);
-    mUpload.Upload(mIndex.Get(), indices, data.indexOffset);
-    return handle;
-}
-SceneMesh GPUScene::QueryMesh(SceneHandle id) { return mMeshes.At(id); }
-void GPUScene::DestroyMesh(SceneHandle mesh)
-{
-    auto data = mMeshes.At(mesh);
-    mPrimitiveAlloc.Free(data.primitive);
-    mVertexAlloc.Free(data.vertex);
-    mIndexAlloc.Free(data.index);
-    mMeshes.Free(mesh);
-}
-VirtualAllocation GPUScene::PushMetadata(Span<const char> data, size_t alignment)
-{
-    std::scoped_lock lock(mMetadata.mutex);
-    auto allocation = mMetadataAlloc.Allocate(data.size_bytes(), alignment);
-    auto offset = mMetadataAlloc.QueryOffset(allocation);
-    mMetadataRegions.emplace_back(offset, data.size_bytes());
-    std::memcpy(mMetadata.data + offset, data.data(), data.size_bytes());
-    mMetadataDirty = true;
+    std::scoped_lock lock(mShared.mutex);
+    auto allocation = mSharedAlloc.Allocate(data.size_bytes(), alignment);
+    auto offset = mSharedAlloc.QueryOffset(allocation);
+    mSharedUpdateRegions.emplace_back(offset, data.size_bytes());
+    std::memcpy(mShared.data + offset, data.data(), data.size_bytes());
+    mSharedDirty = true;
     return allocation;
 }
-Pair<size_t, size_t> GPUScene::QueryMetadata(VirtualAllocation allocation)
+Pair<size_t, size_t> GPUScene::QueryShared(VirtualAllocation allocation)
 {
-    return mMetadataAlloc.Query(allocation);
+    return mSharedAlloc.Query(allocation);
 }
-void GPUScene::UpdateMetadata(VirtualAllocation allocation, Span<const char> data)
+void GPUScene::UpdateShared(VirtualAllocation allocation, Span<const char> data)
 {
-    std::scoped_lock lock(mMetadata.mutex);
-    auto [offset, size] = mMetadataAlloc.Query(allocation);
+    std::scoped_lock lock(mShared.mutex);
+    auto [offset, size] = mSharedAlloc.Query(allocation);
     CHECK_MSG(size >= data.size_bytes(), "Data size too large (expected={}, got={})", size, data.size_bytes());
-    mMetadataRegions.emplace_back(offset, size);
-    std::memcpy(mMetadata.data + offset, data.data(), data.size_bytes());
-    mMetadataDirty = true;
+    mSharedUpdateRegions.emplace_back(offset, size);
+    std::memcpy(mShared.data + offset, data.data(), data.size_bytes());
+    mSharedDirty = true;
 }
-void GPUScene::FreeMetadata(const VirtualAllocation allocation)
-{
-    mMetadataAlloc.Free(allocation);
-}
-void GPUScene::CreateUpdatePasses(Renderer* renderer, ResourceHandle& outInstanceBuffer, ResourceHandle& outMetadataBuffer, RHIDeviceQueueType queue)
+void GPUScene::FreeShared(const VirtualAllocation allocation) { mSharedAlloc.Free(allocation); }
+
+void GPUScene::CreateUpdatePasses(Renderer* renderer, ResourceHandle& outInstanceBuffer,
+                                  ResourceHandle& outSharedBuffer, ResourceHandle& outGeometryBuffer, RHIDeviceQueueType queue)
 {
     createStagedBufferUpdatePass(renderer, &mInstance.buffer, "Instance Buffer", outInstanceBuffer, queue);
-    createStagedBufferUpdatePass(renderer, &mMetadata.buffer, "Metadata Buffer", outMetadataBuffer, queue);
+    createStagedBufferUpdatePass(renderer, &mShared.buffer, "Shared Buffer", outSharedBuffer, queue);
 }

@@ -90,7 +90,7 @@ namespace Foundation::Rendering {
 
         DefaultAllocator mAlloc, mAllocRenderer;
         Native::NativeWindow mWindow;
-        UniquePtr<RHIApplication> mRhi;
+        UniquePtr<RHIApplication> mRHI;
 
         RHIApplicationScopedObjectHandle<RHIDevice> mDevice;
         RHIDeviceScopedObjectHandle<RHISwapchain> mSwapchain;
@@ -194,8 +194,8 @@ namespace Foundation::Rendering {
         void Initialize(ApplicationInitDesc const& desc = {}, Args&&... args) {
             // XXX: Backends are expected to take Allocator* as the first argument
             mDesc = desc;
-            mRhi.reset();
-            mRhi = ConstructUniqueBase<RHIApplication, Backend>(mAlloc.Ptr(), mAlloc.Ptr(),
+            mRHI.reset();
+            mRHI = ConstructUniqueBase<RHIApplication, Backend>(mAlloc.Ptr(), mAlloc.Ptr(),
                                                                  std::forward<Args>(args)...);
             InitializeInternal();
             InitializeRenderer();
