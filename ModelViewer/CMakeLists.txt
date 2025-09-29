@@ -34,11 +34,11 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(meshoptimizer)
 
 file(
-    GLOB_RECURSE SOURCES 
+    GLOB SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp" 
 )
 file(
-    GLOB_RECURSE INCLUDES 
+    GLOB INCLUDES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
 )
 
@@ -53,9 +53,10 @@ else()
     message(FATAL_ERROR "Unsupported platform")
 endif()
 
+add_subdirectory(Assets)
+
 target_sources(ModelViewer PRIVATE ${SOURCES} ${INCLUDES} "App.cpp")
-target_link_libraries(ModelViewer PRIVATE Foundation_Rendering Foundation_RHIVulkan meshoptimizer)
-target_include_directories(ModelViewer PRIVATE ../src "${stb_SOURCE_DIR}" "${fast_obj_SOURCE_DIR}" "${cgltf_SOURCE_DIR}")
+target_link_libraries(ModelViewer PRIVATE Foundation_Rendering Foundation_RHIVulkan ModelViewer_Assets)
 
 add_subdirectory(Shaders)
 add_subdirectory(Samples)

@@ -1,6 +1,6 @@
+#include "Mesh.hpp"
 #include <Math/Math.hpp>
 #include <Native/Filesystem.hpp>
-#include "Mesh.hpp"
 using namespace Foundation;
 using namespace Foundation::Core;
 using namespace Foundation::Math;

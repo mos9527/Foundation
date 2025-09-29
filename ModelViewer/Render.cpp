@@ -1,5 +1,5 @@
 #include "App.hpp"
-#include "Mesh.hpp"
+#include "Assets/Mesh.hpp"
 using namespace ModelViewer;
 const size_t kMaxIndirectCommands = 1e6; // 1 million
 void App::OnRendererSetup()

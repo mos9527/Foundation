@@ -195,4 +195,4 @@ namespace Foundation::Rendering
          */
         void FreeConst(VirtualAllocation allocation);
     };
-} // namespace ModelViewer
+} // namespace Foundation::Rendering
