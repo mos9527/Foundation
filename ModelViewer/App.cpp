@@ -1,6 +1,6 @@
 #include "App.hpp"
+#include <Rendering/GPUScene.hpp>
 #include "Mesh.hpp"
-#include "GPUScene.hpp"
 using namespace Foundation;
 using namespace Foundation::Core;
 using namespace Foundation::RenderCore;

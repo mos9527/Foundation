@@ -1,9 +1,9 @@
 #pragma once
-#include <Rendering/Application.hpp>
 #include <Async/Thread.hpp>
-#include <Rendering/PSFullscreen.hpp>
 #include <RHIVulkan/Application.hpp>
-#include "GPUScene.hpp"
+#include <Rendering/Application.hpp>
+#include <Rendering/PSFullscreen.hpp>
+#include <Rendering/GPUScene.hpp>
 /**
  * @brief ModelViewer implementation
  */

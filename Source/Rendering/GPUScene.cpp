@@ -1,16 +1,15 @@
 #include "GPUScene.hpp"
-#include <tracy/Tracy.hpp>
-#include "Mesh.hpp"
-using namespace ModelViewer;
+
+using namespace Foundation::Rendering;
 using namespace Foundation::Async;
 using namespace Foundation::Native;
 StagedData::StagedData(RHIDevice* device, const size_t size, const size_t alignment, const size_t numSwaps,
                        Allocator* alloc) :
     alloc(alloc),
-    buffer(device, alloc, numSwaps,
+    data(static_cast<char*>(alloc->Allocate(size, alignment))),
+    size(size), alignment(alignment), buffer(device, alloc, numSwaps,
            {.usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination, .size = size}, size,
-           ~0u),
-    size(size), alignment(alignment), data(static_cast<char*>(alloc->Allocate(size, alignment)))
+           ~0u)
 {
     CHECK_MSG(size % alignment == 0, "Bad alignment for size={}, alignment={}", size, alignment);
     std::memset(data, 0, size);

@@ -1,14 +1,13 @@
 #pragma once
 #include <Bits/Format.hpp>
 #include <Core/Pool.hpp>
-#include <Rendering/StagingBuffer.hpp>
-#include <Rendering/UploadContext.hpp>
-#include <Rendering/VirtualAllocator.hpp>
-namespace ModelViewer
+#include "StagingBuffer.hpp"
+#include "UploadContext.hpp"
+#include "VirtualAllocator.hpp"
+namespace Foundation::Rendering
 {
     using namespace Foundation;
     using namespace RenderCore;
-    using namespace Rendering;
     using namespace Bits;
     struct GPUSceneBudgets
     {

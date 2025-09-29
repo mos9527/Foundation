@@ -10,18 +10,18 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(stb)
 
 FetchContent_Declare(
-        fast_obj
-        GIT_REPOSITORY https://github.com/thisistherk/fast_obj
-        GIT_TAG v1.3
-        GIT_SHALLOW TRUE
+    fast_obj
+    GIT_REPOSITORY https://github.com/thisistherk/fast_obj
+    GIT_TAG v1.3
+    GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(fast_obj)
 
 FetchContent_Declare(
-        cgltf
-        GIT_REPOSITORY https://github.com/jkuhlmann/cgltf
-        GIT_TAG v1.15
-        GIT_SHALLOW TRUE
+    cgltf
+    GIT_REPOSITORY https://github.com/jkuhlmann/cgltf
+    GIT_TAG v1.15
+    GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(cgltf)
 
@@ -52,7 +52,6 @@ elseif (UNIX)
 else()
     message(FATAL_ERROR "Unsupported platform")
 endif()
-
 
 target_sources(ModelViewer PRIVATE ${SOURCES} ${INCLUDES} "App.cpp")
 target_link_libraries(ModelViewer PRIVATE Foundation_Rendering Foundation_RHIVulkan meshoptimizer)
