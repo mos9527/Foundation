@@ -18,7 +18,7 @@ namespace ModelViewer
             GPUSceneBudgets{},
             GetAllocator()
         );
-        auto meshData = LoadMeshFromObjFile("data/assets/Sphere.obj", GetAllocator());
+        auto meshData = meshLoadObjFile("data/assets/Sphere.obj", GetAllocator());
         mesh = mScene->PushMesh(meshData.m_vertex_data, meshData.m_index_data);
     }
     void App::OnBeforeFrame()

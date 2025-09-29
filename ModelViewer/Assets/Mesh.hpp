@@ -1,41 +1,98 @@
 #pragma once
-#include <filesystem>
+#include <Native/Filesystem.hpp>
 #include <RHICore/Common.hpp>
 #include <Core/Core.hpp>
-using namespace Foundation;
-using Index = uint32_t; // 32-bit index
-struct Vertex {
-    uint16_t px, py, pz; // quantized fp16
-    uint16_t tp;         // tangent [octa 8+8]
-    struct {
-        uint32_t nx : 15;
-        uint32_t ny : 15;
-        uint32_t sign : 2;
-    } np; // normal packed [snorm octa 15+15, bitangent sign 2]
-    uint16_t u, v;       // texcoord fp16
-};
-static constexpr RHI::RHIVertexAttribute Attributes[4]{
-    {.location = 0, .offset = offsetof(Vertex, px), .format = RHI::RHIResourceFormat::R16G16B16A16SignedFloat, .binding = 0 },
-    {.location = 1, .offset = offsetof(Vertex, tp), .format = RHI::RHIResourceFormat::R16Uint, .binding = 0 },
-    {.location = 2, .offset = offsetof(Vertex, np), .format = RHI::RHIResourceFormat::R32Uint, .binding = 0 },
-    {.location = 3, .offset = offsetof(Vertex, u),  .format = RHI::RHIResourceFormat::R16G16SignedFloat, .binding = 0 },
-};
-struct Mesh {
-    Core::Allocator* m_allocator;
-    const Core::Vector<char> m_vertex_data, m_index_data;
-    const size_t m_num_vertices, m_num_indices;
-    Mesh(
-        Core::Span<const char> vertex_data,
-        Core::Span<const char> index_data,
-        size_t num_vertices, size_t num_indices,
-        Core::Allocator* allocator
-    ) noexcept
-        : m_allocator(allocator),
-        m_vertex_data(vertex_data.begin(), vertex_data.end(), allocator),
-        m_index_data(index_data.begin(), index_data.end(), allocator),
-        m_num_vertices(num_vertices),
-        m_num_indices(num_indices)
-    {}
-    inline constexpr uint32_t GetStride() const noexcept { return m_vertex_data.size() / m_num_vertices; }
-};
-extern Mesh LoadMeshFromObjFile(Native::Path path, Core::Allocator* allocator);
+#include <Math/Math.hpp>
+
+namespace ModelViewer
+{
+    using namespace Foundation;
+    using namespace Math;
+    using namespace Core;
+    using MeshIndex = uint32_t; // 32-bit index
+    /**
+     * @brief Full-size vertex structure for static meshes
+     */
+    struct MeshVertex
+    {
+        vec3 pos;
+        vec3 normal;
+        vec3 tangent;
+        vec3 bitangent;
+        vec2 uv;
+    };
+    /**
+     * @brief Compact 4-byte aligned vertex structure for static meshes
+     */
+    struct MeshVertexCompact {
+        uint16_t px, py, pz; // quantized fp16
+        struct // 16 bits
+        {
+            uint32_t tx : 8; // packed x
+            uint32_t ty : 8; // packed y
+        } tp;         // tangent [octa 8+8]
+        struct { // 32 bits
+            uint32_t nx : 15;  // packed x
+            uint32_t ny : 15;  // packed y
+            uint32_t sign : 2; // bitangent sign
+        } np; // normal packed [snorm octa 15+15, bitangent sign 2]
+        uint16_t u, v;       // UV coords fp16
+        /**
+         * @brief Pack vertex attributes into compact MeshVertex
+         */
+        static MeshVertexCompact Pack(vec3 pos, vec3 normal, vec3 tangent, vec3 bitangent, vec2 uv);
+        static MeshVertexCompact Pack(MeshVertex data)
+        {
+            return Pack(data.pos, data.normal, data.tangent, data.bitangent, data.uv);
+        }
+        /**
+         * @brief Unpack vertex attributes from compact MeshVertex
+         */
+        void Unpack(vec3& pos, vec3& normal, vec3& tangent, vec3& bitangent, vec2& uv) const;
+        void Unpack(MeshVertex& data) const
+        {
+            Unpack(data.pos, data.normal, data.tangent, data.bitangent, data.uv);
+        }
+    };
+    /**
+     * @brief Meshlet structure containing offsets and counts to access meshlet data
+     * @note Reference: https://github.com/zeux/meshoptimizer?tab=readme-ov-file#clusterization
+     */
+    struct MeshMeshlet // same layout as meshopt_Meshlet
+    {
+        /* offsets within meshlet_vertices and meshlet_triangles arrays with meshlet data */
+        uint32_t vertexOffset;
+        uint32_t triangleOffset;
+        /* number of vertices and triangles used in the meshlet; data is stored in consecutive range defined by offset and count */
+        uint32_t vertexCount;
+        uint32_t triangleCount;
+    };
+    constexpr uint32_t kMeshletMaxVertices = 64;  // max vertices per meshlet
+    constexpr uint32_t kMeshletMaxTriangles = 126; // max triangle indices per meshlet (42 * 3)
+    /**
+     * @brief Build meshlets from a mesh
+     * @param outMeshlet Output meshlet array
+     * @param outMeshletVertices Output meshlet vertex indirection array
+     * @param outMeshletTriangles Output meshlet triangle index array (into meshlet vertices)
+     * @param vertices Input vertex array
+     * @param indices Input index array
+     */
+    void meshBuildMeshlets(Vector<MeshMeshlet>& outMeshlet, Vector<uint32_t>& outMeshletVertices, Vector<uint8_t>& outMeshletTriangles, const Vector<MeshVertex>& vertices, const Vector<MeshIndex>& indices);
+    /**
+     * @brief Generate a simplified LOD mesh index buffer from the input mesh
+     * @param outIndices Output index array for the LOD mesh
+     * @param vertices Input vertex array
+     * @param indices Input source index array.
+     * @param lodScale Scale factor for the LOD (0.0 - 1.0)
+     * @return Error factor of this LOD to the input mesh
+     */
+    float meshGenerateLod(Vector<MeshIndex>& outIndices, const Vector<MeshVertex>& vertices, const Vector<MeshIndex>& indices, float lodScale, Allocator* allocator);
+    /**
+     * @brief Load a mesh from an OBJ file
+     * @param outVertex Output vertex array
+     * @param outIndex Output index array
+     * @param path Path to the OBJ file
+     */
+    void meshLoadObjFile(Vector<MeshVertex>& outVertex, Vector<MeshIndex>& outIndex, Native::Path path);
+
+}
