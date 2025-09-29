@@ -15,7 +15,7 @@ namespace ModelViewer
             GetAllocator(),
             mDevice.Get(),
             mSwapchain->GetImages().size(),
-            SceneBudgets{},
+            GPUSceneBudgets{},
             GetAllocator()
         );
         auto meshData = LoadMeshFromObjFile("data/assets/Sphere.obj", GetAllocator());

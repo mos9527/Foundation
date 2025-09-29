@@ -158,37 +158,6 @@ namespace Foundation::Rendering
          */
         void Update(RHICommandList* cmd);
     };
-    /**
-     * @brief Convenient functional wrapper to create a staged buffer update pass.
-     *
-     * This creates a pass that performs the following:
-     * - Binds the destination buffer as a copy destination.
-     * - Calls StagedBuffer::Update to perform and flush all pending updates.
-     * - Skipped when there are no more pending updates.
-     *
-     * Updates should be scheduled between @ref Renderer's @ref BeginExecute and @ref ExecuteFrame,
-     * as per @StagedBuffer documentation.
-     *
-     * The created pass will have the name "Staged Buffer [name]".
-     *
-     * @param renderer Renderer to create the pass in.
-     * @param staged StagedBuffer to perform updates from.
-     * @param name Name of the pass.
-     * @param outBufferHandle Output parameter to receive the created buffer handle.
-     * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is
-     * disabled.
-     * @return Handle to the created pass.
-     */
-    inline auto* createStagedBufferUpdatePass(Renderer* renderer, StagedBuffer* staged, StringView name,
-                                              ResourceHandle& outBufferHandle,
-                                              RHIDeviceQueueType queue = RHIDeviceQueueType::Graphics)
-    {
-        outBufferHandle = renderer->CreateResource(fmt::format("StagedBuffer {}", name), staged->GetBuffer());
-        return createPass(
-            renderer, name, queue, [=](PassHandle self, Renderer* r) { r->BindBufferCopyDst(self, outBufferHandle); },
-            [=](PassHandle self, Renderer* r, RHICommandList* cmd) { staged->Update(cmd); },
-            [=](PassHandle self, Renderer* r) { return !staged->HasUpdates(); });
-    }
 
     ENUM_NAME_CONV_BEGIN(StagedBuffer::State)
     ENUM_NAME(Idle)
