@@ -61,8 +61,8 @@ namespace ModelViewer
                                     sizeof(Vertex));
     }
 
-    float meshGenerateLod(Vector<MeshIndex>& outIndices, const Vector<MeshVertex>& vertices,
-                          const Vector<MeshIndex>& indices, const float lodScale)
+    float meshGenerateLod(Vector<MeshIndex>& outIndices, Span<const MeshVertex> vertices,
+                           Span<const MeshIndex> indices, const float lodScale)
     {
         meshopt_setAllocator(meshoptAlloc, meshoptFree);
         const float normalWeight = 0.5f;
@@ -80,9 +80,9 @@ namespace ModelViewer
         return actualError;
     }
 
-    void meshBuildMeshlets(Vector<MeshMeshlet>& outMeshlet, Vector<uint32_t>& outMeshletVertices,
-                           Vector<uint8_t>& outMeshletTriangles, const Vector<MeshVertex>& vertices,
-                           const Vector<MeshIndex>& indices)
+    void meshBuildMeshlets(Vector<MeshMeshlet>& outMeshlet, Vector<MeshIndex>& outMeshletVertices,
+                           Vector<MeshMicroIndex>& outMeshletTriangles, Span<const MeshVertex> vertices,
+                           Span<const MeshIndex> indices)
     {
         meshopt_setAllocator(meshoptAlloc, meshoptFree);
         size_t maxMeshlets = meshopt_buildMeshletsBound(indices.size(), kMeshletMaxVertices, kMeshletMaxTriangles);

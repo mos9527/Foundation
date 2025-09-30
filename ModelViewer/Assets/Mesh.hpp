@@ -67,6 +67,7 @@ namespace ModelViewer
         uint32_t vertexCount;
         uint32_t triangleCount;
     };
+    using MeshMicroIndex = uint8_t; // 8-bit index into meshlet vertex array
     constexpr uint32_t kMeshletMaxVertices = 64;  // max vertices per meshlet
     constexpr uint32_t kMeshletMaxTriangles = 32 * 3; // max triangle indices per meshlet (96, 3 per)
     /**
@@ -77,7 +78,7 @@ namespace ModelViewer
      * @param vertices Input vertex array
      * @param indices Input index array
      */
-    void meshBuildMeshlets(Vector<MeshMeshlet>& outMeshlet, Vector<uint32_t>& outMeshletVertices, Vector<uint8_t>& outMeshletTriangles, const Vector<MeshVertex>& vertices, const Vector<MeshIndex>& indices);
+    void meshBuildMeshlets(Vector<MeshMeshlet>& outMeshlet, Vector<MeshIndex>& outMeshletVertices, Vector<MeshMicroIndex>& outMeshletTriangles, Span<const MeshVertex> vertices, Span<const MeshIndex> indices);
     /**
      * @brief Generate a simplified LOD mesh index buffer from the input mesh
      * @param outIndices Output index array for the LOD mesh
@@ -86,7 +87,7 @@ namespace ModelViewer
      * @param lodScale Scale factor for the LOD (0.0 - 1.0)
      * @return Error factor of this LOD to the input mesh
      */
-    float meshGenerateLod(Vector<MeshIndex>& outIndices, const Vector<MeshVertex>& vertices, const Vector<MeshIndex>& indices, float lodScale, Allocator* allocator);
+    float meshGenerateLod(Vector<MeshIndex>& outIndices, Span<const MeshVertex> vertices, Span<const MeshIndex> indices, float lodScale, Allocator* allocator);
     /**
      * @brief Load a mesh from an OBJ file
      * @param outVertex Output vertex array
