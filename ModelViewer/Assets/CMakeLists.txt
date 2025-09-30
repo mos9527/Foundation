@@ -46,5 +46,8 @@ add_library(ModelViewer_Assets)
 target_sources(ModelViewer_Assets PRIVATE ${SOURCES} ${INCLUDES})
 target_link_libraries(ModelViewer_Assets PUBLIC Foundation_Core Foundation_Math Foundation_Bits Foundation_Native meshoptimizer)
 target_include_directories(ModelViewer_Assets PUBLIC "${stb_SOURCE_DIR}" "${fast_obj_SOURCE_DIR}" "${cgltf_SOURCE_DIR}")
-
-
+target_include_directories(
+    ModelViewer_Assets
+    PUBLIC
+    ..
+)

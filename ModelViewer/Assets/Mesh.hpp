@@ -68,7 +68,7 @@ namespace ModelViewer
         uint32_t triangleCount;
     };
     constexpr uint32_t kMeshletMaxVertices = 64;  // max vertices per meshlet
-    constexpr uint32_t kMeshletMaxTriangles = 126; // max triangle indices per meshlet (42 * 3)
+    constexpr uint32_t kMeshletMaxTriangles = 32 * 3; // max triangle indices per meshlet (96, 3 per)
     /**
      * @brief Build meshlets from a mesh
      * @param outMeshlet Output meshlet array
@@ -93,6 +93,5 @@ namespace ModelViewer
      * @param outIndex Output index array
      * @param path Path to the OBJ file
      */
-    void meshLoadObjFile(Vector<MeshVertex>& outVertex, Vector<MeshIndex>& outIndex, Native::Path path);
-
+    void meshLoadObjFile(Vector<MeshVertex>& outVertex, Vector<MeshIndex>& outIndex, const Native::Path& path);
 }

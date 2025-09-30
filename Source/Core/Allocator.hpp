@@ -36,8 +36,6 @@ namespace Foundation::Core {
             if (arena.memory) 
                 Deallocate(arena.memory, arena.size);
         }
-        [[nodiscard]] virtual size_type GetUsedMemory() const noexcept = 0;
-
         Allocator* Ptr() { return this; }
 	};
     /**

@@ -1,7 +1,7 @@
 #pragma once
+#include <Async/Future.hpp>
 #include <Core/Core.hpp>
 #include <Core/Pool.hpp>
-#include <Async/Future.hpp>
 #include <vk_mem_alloc.h>
 namespace Foundation::Rendering
 {
@@ -22,12 +22,14 @@ namespace Foundation::Rendering
      * See also
      *  - https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/virtual_allocator.html
      */
-    class VirtualAllocator {
+    class VirtualAllocator
+    {
         const size_t mSize;
         VmaVirtualBlock mBlock{};
         Pool<VirtualAllocation, Tuple<size_t, size_t, VmaVirtualAllocation>> mAllocs;
         // VMA virtual allocs are not thread-safe. Need guards.
         Async::Mutex mMutex;
+
     public:
         /**
          * @brief Construct a @ref VirtualAllocator instance
@@ -65,4 +67,4 @@ namespace Foundation::Rendering
         }
         ~VirtualAllocator();
     };
-}
+} // namespace Foundation::Rendering

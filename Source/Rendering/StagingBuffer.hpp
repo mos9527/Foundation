@@ -102,11 +102,11 @@ namespace Foundation::Rendering
          * created.
          *        This can and _should_ be smaller as the memory footprint comes with per-swap staging is O(N * M).
          *        Amortize upload across multiple frames is also a good idea.
-         * @param clearValue Value to clear the buffer with at first update. Defaults to {}, which leaves the buffer uninitialized.
+         * @param clearValue Value to clear the buffer with at first update. Defaults to {}, which leaves the buffer
+         * uninitialized.
          */
-        StagedBuffer(
-            RHIDevice* device, Allocator* allocator, uint32_t numSwaps, RHIBufferDesc const& desc = {},
-            size_t stagingBudget = kFullSize, Optional<uint32_t> clearValue = {});
+        StagedBuffer(RHIDevice* device, Allocator* allocator, uint32_t numSwaps, RHIBufferDesc const& desc = {},
+                     size_t stagingBudget = kFullSize, Optional<uint32_t> clearValue = {});
         /**
          * @brief Gets the GPU-only backing buffer.
          */
@@ -142,9 +142,7 @@ namespace Foundation::Rendering
         /**
          * @brief Check if there are any pending updates to be performed.
          */
-        bool HasUpdates() {
-            return mClearValue.has_value() || !mBufferStagings.empty();
-        }
+        bool HasUpdates() { return mClearValue.has_value() || !mBufferStagings.empty(); }
         /**
          * @brief Push the scheduled uploads onto the command list.
          *
@@ -163,4 +161,4 @@ namespace Foundation::Rendering
     ENUM_NAME(Idle)
     ENUM_NAME(Transfer)
     ENUM_NAME_CONV_END()
-} // namespace Foundation::RenderCore
+} // namespace Foundation::Rendering

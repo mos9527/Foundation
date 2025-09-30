@@ -1,8 +1,8 @@
 #pragma once
-#include <RHICore/Device.hpp>
-#include <RHICore/Descriptor.hpp>
 #include <Bits/Functional.hpp>
 #include <Native/Filesystem.hpp>
+#include <RHICore/Descriptor.hpp>
+#include <RHICore/Device.hpp>
 namespace Foundation::Rendering
 {
     using namespace RHI;
@@ -24,9 +24,10 @@ namespace Foundation::Rendering
         RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> mDescriptorSet;
         Pool<TexturePoolHandle, Variant<TexturePair, RHITextureView*>> mTextures;
 
-        TexturePoolHandle mMissingTextureHandle{ kInvalidHandle };
+        TexturePoolHandle mMissingTextureHandle{kInvalidHandle};
         void SetMissingTexture(uint32_t index);
         RHIDeviceIdleGuard mIdleGuard;
+
     public:
         TexturePool(RHIDevice* device, Allocator* allocator, uint32_t max_textures = 128);
 
@@ -39,6 +40,9 @@ namespace Foundation::Rendering
         void Free(TexturePoolHandle handle);
 
         [[nodiscard]] RHIDeviceDescriptorSet* GetDescriptorSet() const { return mDescriptorSet.Get(); }
-        [[nodiscard]] RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout() const { return mDescriptorSetLayout.Get(); }
+        [[nodiscard]] RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout() const
+        {
+            return mDescriptorSetLayout.Get();
+        }
     };
-}
+} // namespace Foundation::Rendering
