@@ -87,7 +87,7 @@ namespace ModelViewer
      * @param lodScale Scale factor for the LOD (0.0 - 1.0)
      * @return Error factor of this LOD to the input mesh
      */
-    float meshGenerateLod(Vector<MeshIndex>& outIndices, Span<const MeshVertex> vertices, Span<const MeshIndex> indices, float lodScale, Allocator* allocator);
+    float meshGenerateLod(Vector<MeshIndex>& outIndices, Span<const MeshVertex> vertices, Span<const MeshIndex> indices, const float lodScale);
     /**
      * @brief Load a mesh from an OBJ file
      * @param outVertex Output vertex array

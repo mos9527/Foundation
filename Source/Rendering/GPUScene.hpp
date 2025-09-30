@@ -102,6 +102,10 @@ namespace Foundation::Rendering
          * @note The data update is not immediate, and will be automatically scheduled
          * and performed at the beginning of the next frame.
          *
+         * @note This has the side effect of blocking GPU buffer updates,
+         * i.e. the @ref CreateUpdatePasses passes, and can thus be used to batch
+         * updates and synchronize with the Renderer.
+         *
          * @note This locks the internal mutex, and thus is not reentrant.
          */
         template <typename T>
@@ -132,6 +136,9 @@ namespace Foundation::Rendering
          * @note The data update is not immediate, and will be automatically scheduled
          * and performed at the beginning of the next frame.
          *
+         * @note To batch updates, you can acquire @ref MapInstanceData before pushing,
+         * and use @ref UnmapInstanceData afterward to flush all updates at once.
+         *
          * @param data Data to push
          * @param alignment Alignment requirement for the data. Must be a multiple of 4.
          * @return Allocation handle. Use @ref QueryShared to get offset/size, and @ref FreeShared to free it.
@@ -147,6 +154,9 @@ namespace Foundation::Rendering
          * @brief Updates a previously allocated Shared allocation.
          *
          * @note The update is guaranteed to be completed by the next frame.
+         *
+         * @note To batch updates, you can acquire @ref MapInstanceData before pushing,
+         * and use @ref UnmapInstanceData afterward to flush all updates at once.
          *
          * @param allocation Previously allocated shared allocation
          * @param data New data to write. Must be the same size as the original allocation.
@@ -168,6 +178,9 @@ namespace Foundation::Rendering
          * @note The data update is not immediate, and will be automatically scheduled
          * and performed at the beginning of the next frame.
          *
+         * @note To batch updates, you can acquire @ref MapInstanceData before pushing,
+         * and use @ref UnmapInstanceData afterward to flush all updates at once.
+         *
          * @param data Data to push
          * @param alignment Alignment requirement for the data. Must be a multiple of 4.
          * @return Allocation handle. Use @ref QueryConst to get offset/size, and @ref FreeConst to free it.
@@ -184,6 +197,9 @@ namespace Foundation::Rendering
          *
          * @note The data update is not immediate, and will be automatically scheduled
          * and performed at the beginning of the next frame.
+         *
+         * @note To batch updates, you can acquire @ref MapInstanceData before pushing,
+         * and use @ref UnmapInstanceData afterward to flush all updates at once.
          *
          * @param allocation Previously allocated const allocation
          * @param data New data to write. Must be the same size as the original allocation.

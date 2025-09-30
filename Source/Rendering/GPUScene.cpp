@@ -80,11 +80,10 @@ void GPUScene::CreateUpdatePasses(Renderer* renderer, ResourceHandle& outInstanc
             [=](PassHandle self, Renderer* r)
             {
                 r->BindBufferCopyDst(self, outBufferHandle);
-                if (isInstance)
+                if (!isInstance)
                 {
-                    // Ensure these to be updated before the Instance data does
-                    r->BindBufferShaderRead(self, outSharedBuffer, RHIPipelineStageBits::Transfer);
-                    r->BindBufferShaderRead(self, outConstBuffer, RHIPipelineStageBits::Transfer);
+                    // Ensure instance data gets transferred first - see @ref MapInstanceData
+                    r->BindBufferShaderRead(self, outInstanceBuffer, RHIPipelineStageBits::Transfer);
                 }
             },
             /* record */
@@ -121,8 +120,8 @@ void GPUScene::CreateUpdatePasses(Renderer* renderer, ResourceHandle& outInstanc
                 return updateRegions->empty();
             });
     };
+    createStagedBufferUpdatePass(&mInstance, outInstanceBuffer, "Instance Buffer", true);
+    // Dependent on Instance data
     createStagedBufferUpdatePass(&mShared, outSharedBuffer, "Shared Buffer", false, &mSharedUpdateRegions);
     createStagedBufferUpdatePass(&mConst, outConstBuffer, "Const Buffer", false, &mConstUpdateRegions);
-    // Needs the ones above
-    createStagedBufferUpdatePass(&mInstance, outInstanceBuffer, "Instance Buffer", true);
 }

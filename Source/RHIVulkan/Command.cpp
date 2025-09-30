@@ -56,7 +56,6 @@ VulkanCommandList::VulkanCommandList(const VulkanCommandPool& commandPool) :
 }
 
 RHICommandList& VulkanCommandList::Begin() {
-    CHECK(!mAllocator.GetUsedMemory() && "Invalid command list states.");
     mAllocator.Reset(mArena);
     mCommandBuffer.begin(vk::CommandBufferBeginInfo{});
     return *this;

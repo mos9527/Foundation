@@ -6,9 +6,9 @@
 namespace Foundation::Rendering
 {
     using namespace Core;
-    using VirtualAllocation = size_t;
+    using VirtualAllocation = uint32_t;
     // [Raw Offset, Size]
-    constexpr size_t kInvalidVirtualAllocation = ~0ULL;
+    constexpr VirtualAllocation kInvalidVirtualAllocation = ~0ULL;
     /**
      * @brief Thread-safe wrapper around VulkanMemoryAllocator's Virtual Allocator interface
      *
@@ -46,23 +46,23 @@ namespace Foundation::Rendering
         VirtualAllocation Allocate(size_t size, size_t alignment);
         /**
          * @brief Free a previous allocation
-         * @param allocation Previously acquired allocation from the same allocator through @ref Allocate
+         * @param handle Previously acquired allocation from the same allocator through @ref Allocate
          */
         void Free(VirtualAllocation handle);
         /**
          * @brief Query the offset and size of a previous allocation
-         * @param allocation Previously acquired allocation from the same allocator through @ref Allocate
+         * @param handle Previously acquired allocation from the same allocator through @ref Allocate
          * @return Pair of [Raw Offset, Raw Size]
          */
         Pair<size_t, size_t> Query(VirtualAllocation handle);
-        size_t QuerySize(size_t allocation)
+        size_t QuerySize(size_t handle)
         {
-            auto [off, sz] = Query(allocation);
+            auto [off, sz] = Query(handle);
             return sz;
         };
-        size_t QueryOffset(size_t allocation)
+        size_t QueryOffset(size_t handle)
         {
-            auto [off, sz] = Query(allocation);
+            auto [off, sz] = Query(handle);
             return off;
         }
         ~VirtualAllocator();
