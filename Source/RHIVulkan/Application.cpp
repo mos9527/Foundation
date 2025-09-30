@@ -1,15 +1,15 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <Core/Core.hpp>
-
+#include <Bits/Ranges.hpp>
 #include "Application.hpp"
 #include "Device.hpp"
 
 using namespace Foundation;
-using namespace Foundation::Core;
-using namespace Foundation::RHI;
+using namespace Core;
+using namespace RHI;
+using namespace Bits;
 const char* kVulkanInstanceExtensions[] = {
-    VK_KHR_SURFACE_EXTENSION_NAME,
     VK_EXT_DEBUG_UTILS_EXTENSION_NAME
 };
 static VKAPI_ATTR vk::Bool32 VKAPI_CALL VkDebugLayerCallback(
@@ -45,6 +45,10 @@ VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, 
 #if FOUNDATION_RHIVULKAN_VVL
     instanceLayers.push_back("VK_LAYER_KHRONOS_validation");
 #endif
+    Ranges::sort(instanceLayers);
+    instanceLayers.erase(Ranges::unique(instanceLayers).begin(), instanceLayers.end());
+    Ranges::sort(instanceExtensions);
+    instanceExtensions.erase(Ranges::unique(instanceExtensions).begin(), instanceExtensions.end());
     mInstance = vk::raii::Instance(mContext, vk::InstanceCreateInfo{
         .pApplicationInfo = &vkAppInfo,
         .enabledLayerCount = static_cast<uint32_t>(instanceLayers.size()),

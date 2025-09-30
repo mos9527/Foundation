@@ -15,7 +15,10 @@
 using namespace Foundation::Core;
 using namespace Foundation::RHI;
 using namespace Foundation::Bits;
-const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_16BIT_STORAGE_EXTENSION_NAME,VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME};
+const char* kVulkanDeviceExtensions[] = {
+    VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+};
 
 const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
 
@@ -103,7 +106,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
                        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
         featureChain = {
             {.features = {.samplerAnisotropy = true, .shaderInt16 = true}}, // vk::PhysicalDeviceFeatures2
-            {.storageInputOutput16 = true, .shaderDrawParameters = true}, // vk::PhysicalDeviceVulkan11Features
+            {.shaderDrawParameters = true}, // vk::PhysicalDeviceVulkan11Features
             {.drawIndirectCount = true,
              .shaderFloat16 = true,
              .runtimeDescriptorArray = true,
