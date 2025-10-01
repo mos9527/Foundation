@@ -52,6 +52,13 @@ namespace Foundation::RenderCore
         virtual bool IsSkipped(PassHandle self, Renderer* r) const { return false; }
     };
     /**
+     * @brief Default "no-op" functor for Setup()
+     */
+    struct FSetupDefault
+    {
+        void operator()(PassHandle, Renderer*) const { /* nop */ }
+    };
+    /**
      * @brief Default "no-op" functor for Record()
      */
     struct FRecordDefault

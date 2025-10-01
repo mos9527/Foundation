@@ -2,7 +2,7 @@
 namespace ModelViewer
 {
 
-    SceneMeshData sceneMeshFromVertexIndex(Span<MeshVertex> vertices, Span<MeshIndex> indices, Allocator* allocator,
+    SceneMeshData sceneMeshDataFromVertexIndex(Span<MeshVertex> vertices, Span<MeshIndex> indices, Allocator* allocator,
                                            int numLods, const bool buildMeshlets)
     {
         CHECK_MSG(numLods >= 1 && numLods <= kMaxSceneMeshLodCount, "numLods ({}) out of range [1, {}]", numLods, kMaxSceneMeshLodCount);
@@ -26,46 +26,46 @@ namespace ModelViewer
         }
         return res;
     }
-    Scene::Scene(GPUScene& scene, Allocator* allocator) : mAllocator(allocator), mGPUScene(scene), mMeshes(allocator) {}
+    Scene::Scene(GPUScene* scene, Allocator* allocator) : mAllocator(allocator), mGPUScene(scene), mMeshes(allocator) {}
     SceneHandle Scene::PushMesh(SceneMeshData const& data)
     {
         auto [handle, alloc] = mMeshes.PopPair();
-        alloc.vertices = mGPUScene.PushConst(
+        alloc.vertices = mGPUScene->PushConst(
             Span<const MeshVertexCompact>(data.vertices).AsBytes(), alignof(MeshVertexCompact)
         );
         alloc.vertexCount = data.vertices.size();
-        alloc.vertexRawOffset = mGPUScene.QueryConst(alloc.vertices).first;
+        alloc.vertexRawOffset = mGPUScene->QueryConst(alloc.vertices).first;
         alloc.lodCount = data.lods.size();
         for (size_t i = 0; i < alloc.lodCount; ++i)
         {
             auto& src = data.lods[i];
             auto& dst = alloc.lods[i];
-            dst.indices = mGPUScene.PushConst(
+            dst.indices = mGPUScene->PushConst(
                 Span<const MeshIndex>(src.indices).AsBytes(), alignof(MeshIndex)
             );
             dst.indexCount = src.indices.size();
-            dst.indexRawOffset = mGPUScene.QueryConst(dst.indices).first;
+            dst.indexRawOffset = mGPUScene->QueryConst(dst.indices).first;
             if (!src.meshlets.empty())
             {
-                dst.meshlets = mGPUScene.PushConst(
+                dst.meshlets = mGPUScene->PushConst(
                     Span<const MeshMeshlet>(src.meshlets).AsBytes(), alignof(MeshMeshlet)
                 );
                 dst.meshletCount = src.meshlets.size();
-                dst.meshletRawOffset = mGPUScene.QueryConst(dst.meshlets).first;
-                dst.meshletTriangles = mGPUScene.PushConst(
+                dst.meshletRawOffset = mGPUScene->QueryConst(dst.meshlets).first;
+                dst.meshletTriangles = mGPUScene->PushConst(
                     Span<const MeshMicroIndex>(src.meshletTriangles).AsBytes(), alignof(MeshMicroIndex)
                 );
-                dst.meshletTrianglesRawOffset = mGPUScene.QueryConst(dst.meshletTriangles).first;
-                dst.meshletVertices = mGPUScene.PushConst(
+                dst.meshletTrianglesRawOffset = mGPUScene->QueryConst(dst.meshletTriangles).first;
+                dst.meshletVertices = mGPUScene->PushConst(
                     Span<const MeshIndex>(src.meshletVertices).AsBytes(), alignof(MeshIndex)
                 );
-                dst.meshletVerticesRawOffset = mGPUScene.QueryConst(dst.meshletVertices).first;
+                dst.meshletVerticesRawOffset = mGPUScene->QueryConst(dst.meshletVertices).first;
             }
         }
-        alloc.self = mGPUScene.PushConst(
+        alloc.self = mGPUScene->PushConst(
             Span<const SceneMeshAllocation>(alloc).AsBytes(), alignof(SceneMeshAllocation)
         );
-        alloc.selfRawOffset = mGPUScene.QueryConst(alloc.self).first;
+        alloc.selfRawOffset = mGPUScene->QueryConst(alloc.self).first;
         return handle;
     }
     SceneMeshAllocation const& Scene::QueryMesh(SceneHandle handle)
@@ -75,19 +75,25 @@ namespace ModelViewer
     void Scene::FreeMesh(SceneHandle handle)
     {
         auto const& alloc = mMeshes.At(handle);
-        mGPUScene.FreeConst(alloc.vertices);
+        mGPUScene->FreeConst(alloc.vertices);
         for (size_t i = 0; i < alloc.lodCount; ++i)
         {
             auto const& lod = alloc.lods[i];
-            mGPUScene.FreeConst(lod.indices);
+            mGPUScene->FreeConst(lod.indices);
             if (lod.meshlets != kInvalidVirtualAllocation)
             {
-                mGPUScene.FreeConst(lod.meshlets);
-                mGPUScene.FreeConst(lod.meshletTriangles);
-                mGPUScene.FreeConst(lod.meshletVertices);
+                mGPUScene->FreeConst(lod.meshlets);
+                mGPUScene->FreeConst(lod.meshletTriangles);
+                mGPUScene->FreeConst(lod.meshletVertices);
             }
         }
-        mGPUScene.FreeConst(alloc.self);
+        mGPUScene->FreeConst(alloc.self);
         mMeshes.Free(handle);
+    }
+    Span<SceneInstanceData> Scene::MapInstances() { 
+        return mGPUScene->MapInstanceData<SceneInstanceData>();
+    }
+    void Scene::UnmapInstances() { 
+        mGPUScene->UnmapInstanceData(); 
     }
 } // namespace ModelViewer

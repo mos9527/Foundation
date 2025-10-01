@@ -151,7 +151,7 @@ void Renderer::BindBufferUniform(PassHandle pass, ResourceHandle buffer, RHIPipe
     mSetup->trackedPasses[pass].bufferBindings.emplace_back(buffer, RHIDescriptorType::UniformBuffer, bind_point);
     mSetup->bindingCounts[RHIDescriptorType::UniformBuffer]++;
 }
-void Renderer::BindBufferStorage(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
+void Renderer::BindBufferStorageRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
                                  StringView bind_point) const
 {
     CHECK(mState == State::Setup);
@@ -314,6 +314,8 @@ void Renderer::CullPasses(PassHandle epilogue) const
     topo.reserve(mSetup->trackedPasses.size());
     auto dp = [&](PassHandle u, PassHandle pa, auto&& dfs) -> void
     {
+        if (u >= mSetup->graph.size())
+            return; // No out degrees
         vis[u] = 1;
         for (const auto& v : mSetup->graph[u] | Views::keys)
         {

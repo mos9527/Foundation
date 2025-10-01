@@ -23,8 +23,10 @@ namespace Foundation::Rendering
         [[nodiscard]] constexpr size_t totalBudget() const { return instanceBudget + sharedBudget + constBudget; }
         [[nodiscard]] constexpr size_t totalStaging() const { return instanceBudget + sharedStaging; }
     };
-
-    struct StagedData
+    /**
+     * @brief Internal data structure for staged data updates.
+     */
+    struct StagedDoubleBuffer
     {
         Allocator* const alloc;
         char* const data;
@@ -34,8 +36,8 @@ namespace Foundation::Rendering
         StagedBuffer buffer;
         Async::Mutex mutex;
 
-        StagedData(RHIDevice* device, size_t size, size_t alignment, size_t numSwaps, Allocator* alloc);
-        ~StagedData();
+        StagedDoubleBuffer(RHIDevice* device, size_t size, size_t stagingSize, size_t alignment, Allocator* alloc);
+        ~StagedDoubleBuffer();
 
         template <typename T>
         Span<T> View()
@@ -72,19 +74,19 @@ namespace Foundation::Rendering
     {
         Allocator* mAllocator;
         /* -- Instance -- */
-        StagedData mInstance; // Instance data [updated every frame as a whole]
+        StagedDoubleBuffer mInstance; // Instance data [updated every frame as a whole]
         bool mInstanceDirty{false};
-        std::unique_lock<Async::Mutex> mInstanceLock;
+        Async::Mutex mInstanceMutex; // Mutex for instance data mapping
         /* -- Shared -- */
-        StagedData mShared; // Shared (instance) data [partially updated every frame, could be empty]
+        StagedDoubleBuffer mShared; // Shared (instance) data [partially updated every frame, could be empty]
         VirtualAllocator mSharedAlloc; // Allocator for Shared data
         Vector<Pair<size_t, size_t>> mSharedUpdateRegions; // Shared regions to update next frame
         /* -- Const -- */
-        StagedData mConst; // Const data [updated on demand, could be empty]
+        StagedDoubleBuffer mConst; // Const data [updated on demand, could be empty]
         VirtualAllocator mConstAlloc; // Allocator for Const data
         Vector<Pair<size_t, size_t>> mConstUpdateRegions; // Const regions to update next frame
     public:
-        GPUScene(RHIDevice* device, size_t numSwaps, GPUSceneBudgets const& budgets, Allocator* alloc);
+        GPUScene(RHIDevice* device, GPUSceneBudgets const& budgets, Allocator* alloc);
 
         /**
          * @brief Creates a pass that performs per-frame updates with correct synchronization.
@@ -111,7 +113,7 @@ namespace Foundation::Rendering
         template <typename T>
         Span<T> MapInstanceData()
         {
-            mInstanceLock.lock();
+            mInstanceMutex.lock();
             return mInstance.View<T>();
         }
         /**
@@ -121,7 +123,7 @@ namespace Foundation::Rendering
          */
         void UnmapInstanceData()
         {
-            mInstanceLock.unlock();
+            mInstanceMutex.unlock();
             mInstanceDirty = true;
         }
         /* -- Shared -- */
@@ -136,6 +138,8 @@ namespace Foundation::Rendering
          * @note The data update is not immediate, and will be automatically scheduled
          * and performed at the beginning of the next frame.
          *
+         * @note However, it's valid to @ref QueryShared the allocation right after this call.
+         * 
          * @note To batch updates, you can acquire @ref MapInstanceData before pushing,
          * and use @ref UnmapInstanceData afterward to flush all updates at once.
          *
@@ -177,6 +181,8 @@ namespace Foundation::Rendering
          *
          * @note The data update is not immediate, and will be automatically scheduled
          * and performed at the beginning of the next frame.
+         * 
+         * @note However, it's valid to @ref QueryConst the allocation right after this call.
          *
          * @note To batch updates, you can acquire @ref MapInstanceData before pushing,
          * and use @ref UnmapInstanceData afterward to flush all updates at once.

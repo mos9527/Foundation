@@ -172,6 +172,18 @@ RHICommandList& VulkanCommandList::DrawIndexedIndirectCount(RHIBuffer* buffer, s
     return *this;
 }
 
+RHICommandList& Foundation::RHI::VulkanCommandList::DrawMeshTasksIndirect(RHIBuffer* cmd_buffer, size_t cmd_offset, size_t draw_count, size_t stride)
+{
+    CHECK(mAllocator && "Invalid command list states.");
+    mCommandBuffer.drawMeshTasksIndirectEXT(
+        static_cast<VulkanBuffer*>(cmd_buffer)->GetVkBuffer(),
+        cmd_offset,
+        draw_count,
+        stride
+    );
+    return *this;
+}
+
 RHICommandList& VulkanCommandList::PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset,
                                                 Span<const char> data)
 {

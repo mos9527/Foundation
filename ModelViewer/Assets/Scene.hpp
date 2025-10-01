@@ -25,7 +25,8 @@ namespace ModelViewer {
         Vector<SceneMeshLodData> lods;
         SceneMeshData(Allocator* allocator) : vertices(allocator), lods(allocator) {}
     };
-    SceneMeshData sceneMeshFromVertexIndex(Span<MeshVertex> vertices, Span<MeshIndex> indices, Allocator* allocator, int numLods = kMaxSceneMeshLodCount, bool buildMeshlets = true);
+    SceneMeshData sceneMeshDataFromVertexIndex(Span<MeshVertex> vertices, Span<MeshIndex> indices, Allocator* allocator, int numLods = kMaxSceneMeshLodCount, bool buildMeshlets = true);
+#pragma pack(push, 4)
     struct SceneMeshLodAllocation
     {
         VirtualAllocation indices{kInvalidVirtualAllocation};
@@ -34,6 +35,7 @@ namespace ModelViewer {
         VirtualAllocation meshletTriangles{kInvalidVirtualAllocation};
         uint32_t indexCount;
         uint32_t meshletCount;
+
         uint32_t indexRawOffset;
         uint32_t meshletRawOffset;
         uint32_t meshletVerticesRawOffset;
@@ -45,11 +47,11 @@ namespace ModelViewer {
      */
     struct SceneMeshAllocation
     {
-        VirtualAllocation vertices{kInvalidVirtualAllocation};
-        Array<SceneMeshLodAllocation, kMaxSceneMeshLodCount> lods;
+        VirtualAllocation vertices{kInvalidVirtualAllocation};        
         uint32_t vertexCount;
         uint32_t vertexRawOffset;
         uint32_t lodCount;
+        SceneMeshLodAllocation lods[kMaxSceneMeshLodCount];
         // We store ourselves in the Const buffer as well
         VirtualAllocation self{kInvalidVirtualAllocation};
         uint32_t selfRawOffset;
@@ -60,24 +62,28 @@ namespace ModelViewer {
      */
     struct SceneInstanceData
     {
-        vec3 t; // Translation
-        vec4 q; // Rotation Quat (xyzw)
-        vec3 s; // Scale
+        float3 t; // Translation
+        float4 q; // Rotation Quat (xyzw)
+        float3 s; // Scale
         // @ref SceneMeshAllocation::selfRawOffset + 1
         // 0 reserved for no mesh
-        uint32_t meshAllocationRawOffsetPP = 0;
+        uint32_t meshAllocationRawOffsetPP = 0;            
     };
+#pragma pack(pop)
     class Scene
     {
         Allocator* mAllocator;
+        GPUScene* mGPUScene;
 
-        GPUScene& mGPUScene;
         Pool<SceneHandle, SceneMeshAllocation> mMeshes;
     public:
-        Scene(GPUScene& scene, Allocator* allocator);
+        Scene(GPUScene* scene, Allocator* allocator);
 
         SceneHandle PushMesh(SceneMeshData const& data);
         SceneMeshAllocation const& QueryMesh(SceneHandle handle);
         void FreeMesh(SceneHandle handle);
+        
+        Span<SceneInstanceData> MapInstances();
+        void UnmapInstances();
     };
 }

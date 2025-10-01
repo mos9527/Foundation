@@ -3,25 +3,30 @@
 using namespace Foundation::Rendering;
 using namespace Foundation::Async;
 using namespace Foundation::Native;
-StagedData::StagedData(RHIDevice* device, const size_t size, const size_t alignment, const size_t numSwaps,
+StagedDoubleBuffer::StagedDoubleBuffer(RHIDevice* device, size_t size, size_t stagingSize, const size_t alignment,
                        Allocator* alloc) :
     alloc(alloc),
     data(static_cast<char*>(alloc->Allocate(size, alignment))),
-    size(size), alignment(alignment), buffer(device, alloc, numSwaps,
-           {.usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination, .size = size}, size,
+    size(size), alignment(alignment), buffer(device, alloc, 
+           {.usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination, .size = size},
+           stagingSize,
            ~0u)
 {
     CHECK_MSG(size % alignment == 0, "Bad alignment for size={}, alignment={}", size, alignment);
     std::memset(data, 0, size);
 }
-StagedData::~StagedData() { alloc->Deallocate(data); }
+StagedDoubleBuffer::~StagedDoubleBuffer() { alloc->Deallocate(data); }
 
-GPUScene::GPUScene(RHIDevice* device, size_t numSwaps, GPUSceneBudgets const& budgets, Allocator* alloc) :
-    mAllocator(alloc), mInstance(device, budgets.instanceBudget, budgets.instanceAlignment, numSwaps, alloc),
-    mShared(device, budgets.sharedBudget, 4, numSwaps, alloc), mSharedAlloc(budgets.sharedBudget, alloc),
-    mSharedUpdateRegions(alloc), mConst(device, budgets.constBudget, 4, numSwaps, alloc),
+GPUScene::GPUScene(RHIDevice* device, GPUSceneBudgets const& budgets, Allocator* alloc) :
+    mAllocator(alloc),
+    mInstance(device, budgets.instanceBudget, budgets.instanceBudget, budgets.instanceAlignment, alloc),
+    mShared(device, budgets.sharedBudget, budgets.sharedStaging, 4, alloc), mSharedAlloc(budgets.sharedBudget, alloc),
+    mSharedUpdateRegions(alloc), mConst(device, budgets.constBudget, budgets.constStaging, 4, alloc),
     mConstAlloc(budgets.constBudget, alloc), mConstUpdateRegions(alloc)
 {
+    mInstance.buffer.GetBuffer()->DebugSetObjectName("GPUScene Instance");
+    mShared.buffer.GetBuffer()->DebugSetObjectName("GPUScene Shared");
+    mConst.buffer.GetBuffer()->DebugSetObjectName("GPUScene Const");
 }
 
 VirtualAllocation GPUScene::PushShared(Span<const char> data, size_t alignment)
@@ -69,7 +74,7 @@ void GPUScene::CreateUpdatePasses(Renderer* renderer, ResourceHandle& outInstanc
                                   RHIDeviceQueueType queue)
 {
     auto createStagedBufferUpdatePass =
-        [&](StagedData* stagedData, ResourceHandle& outBufferHandle, StringView name,
+        [&](StagedDoubleBuffer* stagedData, ResourceHandle& outBufferHandle, StringView name,
             bool isInstance = false, Vector<Pair<size_t, size_t>>* updateRegions = nullptr
             )
     {
@@ -83,7 +88,7 @@ void GPUScene::CreateUpdatePasses(Renderer* renderer, ResourceHandle& outInstanc
                 if (!isInstance)
                 {
                     // Ensure instance data gets transferred first - see @ref MapInstanceData
-                    r->BindBufferShaderRead(self, outInstanceBuffer, RHIPipelineStageBits::Transfer);
+                    r->BindBufferCopySrc(self, outInstanceBuffer);
                 }
             },
             /* record */
@@ -93,7 +98,7 @@ void GPUScene::CreateUpdatePasses(Renderer* renderer, ResourceHandle& outInstanc
                 if (isInstance)
                 {
                     CHECK(mInstanceDirty);
-                    stagedData->buffer.BeginTransfer(renderer->GetSync());
+                    stagedData->buffer.BeginTransfer();
                     stagedData->buffer.Transfer(0, mInstance.View<char>(), mInstance.alignment);
                     stagedData->buffer.EndTransfer();
                     stagedData->buffer.Update(cmd);
@@ -101,7 +106,7 @@ void GPUScene::CreateUpdatePasses(Renderer* renderer, ResourceHandle& outInstanc
                 } else if (updateRegions)
                 {
                     CHECK(!updateRegions->empty());
-                    stagedData->buffer.BeginTransfer(renderer->GetSync());
+                    stagedData->buffer.BeginTransfer();
                     for (auto [offset, size] : *updateRegions)
                         stagedData->buffer.Transfer(offset, Span<const char>(stagedData->data + offset, size).AsBytes(), 4);
                     stagedData->buffer.EndTransfer();

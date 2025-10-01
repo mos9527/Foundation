@@ -1,6 +1,5 @@
 #pragma once
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_SWIZZLE
 #define GLM_ENABLE_EXPERIMENTAL
@@ -22,14 +21,16 @@
 namespace Foundation::Math {
     using namespace glm;
     using float4 = vec4;
-    // XXX: vec3 padding can be quite broken
-    //      Currently we compile shaders with -fvk-use-scalar-layout to
-    //      always densely pack them.
-    // TODO: This may have performance implications on some hardware - needs testing.
-    // TODO: MSVC default alignment is a bit weird. Figure out how to make it compilant.
     using float3 = vec3;
     using float2 = vec2;
     using float4x4 = mat4;
+    // No Surprises.
+    // Shaders are compiled with -fvk-use-scalar-layout
+    // so interexchange should always be dense
+    static_assert(sizeof(float4) == 4 * sizeof(float));
+    static_assert(sizeof(float3) == 3 * sizeof(float));
+    static_assert(sizeof(float2) == 2 * sizeof(float));
+    static_assert(sizeof(float4x4) == 16 * sizeof(float));
 }
 #include "Quantization.hpp"
 #include "Unorm.hpp"

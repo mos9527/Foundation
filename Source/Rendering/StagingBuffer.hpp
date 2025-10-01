@@ -56,18 +56,17 @@ namespace Foundation::Rendering
      */
     extern BufferStagingList& CoalesceBufferStaging(BufferStagingList& res);
     /**
-     * @brief Helper class for GPU contention-free staged buffer updates.
+     * @brief Helper class for GPU buffer updates.
      *
-     * @note Transfer functions are _not_ inherently thread-safe - see @ref ModelViewer::Scene
-     * for reference usage.
+     * This creates a GPU-only local buffer, and a staging buffer of arbitrary size
      *
-     * This creates a GPU-only local buffer, and multiple staging buffers per swap.
-     *
-     * For one-shot, uploaded static content that doesn't change, consider using
-     * @ref UploadContext instead. Don't forget that Push Constant also exists.
-     *
-     * This is here for _dynamic_ content updates that can be performed asynchronously
-     * without stalling the CPU or GPU for each update.
+     * @note For one-shot, uploaded static content that doesn't change, consider using
+     *       @ref UploadContext instead. Don't forget that Push Constant also exists.     
+     * 
+     * @note The user should ensure correct synchronization of the buffer usage e.g.
+     *       avoid performing Transfer while the buffer is being read by the GPU.
+     *       Thus a CPU-only buffer is recommended to be used as an intermediate cache
+     *       before accessing the GPU buffer. See @ref StagedDoubleBuffer in @ref GPUScene for details.
      */
     class StagedBuffer : public RHIObject /* pinned */
     {
@@ -82,11 +81,10 @@ namespace Foundation::Rendering
         RHIDevice* mDevice{nullptr};
         Allocator* mAllocator{nullptr};
 
-        Vector<StagingBuffer> mStagingBuffers;
+        StagingBuffer mStagingBuffer;
         RHIDeviceScopedObjectHandle<RHIBuffer> mBuffer;
 
         State mState{State::Idle};
-        uint32_t mCurrentSync{0};
         BufferStagingList mBufferStagings;
 
         RHIDeviceIdleGuard mIdleGuard;
@@ -95,17 +93,13 @@ namespace Foundation::Rendering
     public:
         /**
          * @brief Create the staging arena buffers.
-         * @param numSwaps Max number of frames in flight, can be greater, but no less than the actual number of swaps.
-         * @param desc Description of the data buffer to be created.
-         *             It's valid to create a zero-sized buffer to use _only_ the staging buffers.
+         * @param desc Description of the data buffer to be created.         
          * @param stagingBudget Size of the staging buffer. Defaults to kFullSize, which is the same size of the buffer
          * created.
-         *        This can and _should_ be smaller as the memory footprint comes with per-swap staging is O(N * M).
-         *        Amortize upload across multiple frames is also a good idea.
          * @param clearValue Value to clear the buffer with at first update. Defaults to {}, which leaves the buffer
          * uninitialized.
          */
-        StagedBuffer(RHIDevice* device, Allocator* allocator, uint32_t numSwaps, RHIBufferDesc const& desc = {},
+        StagedBuffer(RHIDevice* device, Allocator* allocator, RHIBufferDesc const& desc = {},
                      size_t stagingBudget = kFullSize, Optional<uint32_t> clearValue = {});
         /**
          * @brief Gets the GPU-only backing buffer.
@@ -119,7 +113,7 @@ namespace Foundation::Rendering
          *
          * @param rendererSync The @ref Renderer::GetSync() value acquired after @ref Renderer::BeginExecute()
          */
-        void BeginTransfer(uint32_t rendererSync);
+        void BeginTransfer();
         /**
          * @brief Gets the current staging buffer for data uploads.
          *
@@ -156,7 +150,6 @@ namespace Foundation::Rendering
          */
         void Update(RHICommandList* cmd);
     };
-
     ENUM_NAME_CONV_BEGIN(StagedBuffer::State)
     ENUM_NAME(Idle)
     ENUM_NAME(Transfer)

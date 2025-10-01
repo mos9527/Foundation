@@ -3,7 +3,7 @@
 #include <RHIVulkan/Application.hpp>
 #include <Rendering/Application.hpp>
 #include <Rendering/PSFullscreen.hpp>
-#include <Rendering/GPUScene.hpp>
+#include "Assets/Scene.hpp"
 /**
  * @brief ModelViewer implementation
  */
@@ -14,12 +14,11 @@ namespace ModelViewer {
      * @brief Model Viewer Application implementation
      */
     class App : public RenderApplication {
-        void OnDeviceSetup() override;
-        void OnBeforeFrame() override;
-        void OnRendererSetup() override;
+        void OnDeviceSetup() override;        
+        void OnRendererSetup() override;        
         void OnApplicationTick() override;
     public:
-        UniquePtr<GPUScene> mScene;
-        mat4 mCamera;
+        UniquePtr<Scene> mScene;
+        UniquePtr<GPUScene> mGPUScene;
     };
 }
