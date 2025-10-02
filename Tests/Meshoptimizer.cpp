@@ -10,7 +10,7 @@ int main()
     Vector<MeshIndex> indices(allocator.Ptr());
     meshLoadObjFile(vertices, indices, path);
     fmt::print("vtx: {} idx {}\n", vertices.size(), indices.size());
-    auto data = sceneMeshFromVertexIndex(vertices, indices, &allocator, 4, true);
+    auto data = sceneMeshDataFromVertexIndex(vertices, indices, &allocator, 4, true);
     fmt::print("lods: {}\n", data.lods.size());
     return 0;
 }

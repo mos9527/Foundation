@@ -24,8 +24,8 @@ namespace Foundation::RenderCore {
         struct Entrypoint {
             String name;
             RHI::RHIShaderStage stage{};
-            // Compute shader specific
-            Tuple<uint32_t, uint32_t, uint32_t> computeLocalSize{};
+            // Applies to Compute, Task and Mesh shaders
+            Tuple<uint32_t, uint32_t, uint32_t> groupLocalSize{};
         };
         Vector<Entrypoint> mEntrypoints;
         struct Binding {

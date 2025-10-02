@@ -37,6 +37,7 @@ public struct SceneInstanceData
 };
 public struct MeshletTaskParams
 {
+    public uint32_t instanceID;
     public uint32_t meshletCount;
     public uint32_t meshletRawOffset;
     public uint32_t meshletVerticesRawOffset;

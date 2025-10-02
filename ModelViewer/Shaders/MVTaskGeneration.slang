@@ -17,15 +17,18 @@ void taskGeneration(uint instanceID: SV_DispatchThreadID) {
     // TODO: Corase culling and LOD selection
     SceneMeshLodAllocation lod = mesh.lods[0];
     // Generate tasks for each meshlet
-    // Each task shader dispatch processes at most kMaxTaskShaderWork meshlets
+    // Each task shader _group_ dispatch processes at most kMaxTaskShaderWork meshlets
+    // and each task shader thread submits one mesh shader work
     uint groups = alignUp(lod.meshletCount, kMaxTaskShaderWork) / kMaxTaskShaderWork;
+    uint taskIndex = counter[0].add(groups);
     for (uint group = 0; group < groups; group++) {
-        uint taskIndex = counter[0].increment();
+
         MeshletTaskParams task;
+        task.instanceID = instanceID;
         task.meshletCount = min(lod.meshletCount - group * kMaxTaskShaderWork, kMaxTaskShaderWork);
         task.meshletRawOffset = lod.meshletRawOffset + group * kMaxTaskShaderWork * sizeof(MeshMeshlet);
         task.meshletVerticesRawOffset = lod.meshletVerticesRawOffset;
         task.meshletTrianglesRawOffset = lod.meshletTrianglesRawOffset;
-        tasks[taskIndex] = task;
+        tasks[taskIndex + group] = task;
     }
 }

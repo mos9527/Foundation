@@ -123,8 +123,7 @@ void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entr
     CHECK(mState == State::Setup);
     CHECK_MSG(stage.is_bitmask(), "Only one stage can be bound to a shader per pass");
     for (auto const& [path, ep, st] : mSetup->trackedPasses[pass].shaders)
-        if (st & stage)
-            throw std::runtime_error("Some previous shader stage(s) already bound to a shader");
+        CHECK_MSG(!(st & stage), "Shader stage {} already bound to {} in this pass. There can be at most one shader program per shader stage per pass", st, path.string());        
     mSetup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage);
 }
 void Renderer::BindVertexInput(PassHandle pass, RHIPipelineState::PipelineStateDesc::VertexInput const& info) const
@@ -138,9 +137,8 @@ void Renderer::BindVertexInput(PassHandle pass, RHIPipelineState::PipelineStateD
 void Renderer::BindPushConstant(PassHandle pass, RHIShaderStage stage, size_t offset, size_t size) const
 {
     CHECK(mState == State::Setup);
-    for (auto const& [s, _offset, _size] : mSetup->trackedPasses[pass].pushConstants)
-        if (s & stage)
-            throw std::runtime_error("Some previous shader stage(s) already has Push Constants ranges");
+    for (auto const& [st, _offset, _size] : mSetup->trackedPasses[pass].pushConstants)
+        CHECK_MSG(!(st & stage), "Shader stage {} already has Push Constant bound in this pass. There can be only one Push Constant configuration per shader stage per pass.", st);      
     mSetup->trackedPasses[pass].pushConstants.emplace_back(stage, offset, size);
 }
 void Renderer::BindBufferUniform(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
@@ -458,7 +456,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
             shaders[shader_path]->DebugSetObjectName(shader_path.string().c_str());
         }
         auto& module = shaders[shader_path];
-        // In BindShader we have already guaranteed these to be unique per stage
+        // In BindShader we have already guaranteed these to be unique per stage        
         if (stage == RHIShaderStageBits::Compute)
             tracked.isComputePass = true;
         bool found = false;
@@ -468,8 +466,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
             {
                 pso_stages.push_back(
                     {.desc = {.stage = stage, .entryPoint = ep.name.c_str()}, .shaderModule = module.Get()});
-                if (stage == RHIShaderStageBits::Compute)
-                    tracked.computeLocalSize = ep.computeLocalSize;
+                if (stage & (RHIShaderStageBits::Compute | RHIShaderStageBits::Mesh | RHIShaderStageBits::Task))
+                    tracked.groupLocalSize = ep.groupLocalSize;
                 found = true;
                 break;
             }
@@ -1593,7 +1591,7 @@ RHIExtent3D Renderer::CmdGetComputeLocalSize(const PassHandle pass) const
 {
     CHECK(mState == State::Execute);
     auto& tpass = mSetup->trackedPasses[pass];
-    auto const& [x, y, z] = tpass.computeLocalSize;
+    auto const& [x, y, z] = tpass.groupLocalSize;
     CHECK_MSG(x > 0 && y > 0 && z > 0, "Pass {} does not have a valid compute local size", tpass.name);
     return {x, y, z};
 }

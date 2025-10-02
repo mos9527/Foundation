@@ -5,11 +5,11 @@ using namespace ModelViewer;
 const size_t kMaxMeshletTasks = 1e6; // 1 million
 struct MeshletTaskParams
 {
-    uint32_t meshletCount; // <= Task workgroup size
+    uint32_t instanceID;
+    uint32_t meshletCount;
     uint32_t meshletRawOffset;
     uint32_t meshletVerticesRawOffset;
     uint32_t meshletTrianglesRawOffset;
-    // TODO: Cone culling?
 };
 #pragma pack(push, 1)
 struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
@@ -18,7 +18,7 @@ struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
     uint32_t groupCountY;
     uint32_t groupCountZ;
 };
-#pragma pop(pack)
+#pragma pack(pop)
 void App::OnRendererSetup()
 {
     ResourceHandle meshletTaskParams =
@@ -81,8 +81,10 @@ void App::OnRendererSetup()
         mRenderer.get(), "Meshlet DRAW!!", RHIDeviceQueueType::Graphics,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Compute, "meshletTask", "data/shaders/MVTaskDispatch.spv");
-            // TODO: Actual task/mesh shaders
+            r->BindShader(self, RHIShaderStageBits::Task, "meshletTask", "data/shaders/MVMeshlet.spv");
+            r->BindShader(self, RHIShaderStageBits::Mesh, "meshletMesh", "data/shaders/MVMeshlet.spv");
+            r->BindShader(self, RHIShaderStageBits::Fragment, "meshletFrag", "data/shaders/MVMeshlet.spv");
+            r->BindBufferShaderRead(self, meshletTaskDispatch, RHIPipelineStageBits::DrawIndirect);
             r->BindBufferStorageRead(self, meshletTaskParams, RHIPipelineStageBits::ComputeShader, "tasks");
             r->BindBufferStorageRead(self, meshletIndirectTasksCtr, RHIPipelineStageBits::ComputeShader, "counter");
             r->BindBufferStorageRead(self, sceneInstance, RHIPipelineStageBits::ComputeShader, "sceneInstance");
