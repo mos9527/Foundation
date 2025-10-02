@@ -17,6 +17,7 @@ namespace ModelViewer {
         void OnDeviceSetup() override;        
         void OnRendererSetup() override;        
         void OnApplicationTick() override;
+        void OnBeforeFrame() override;
     public:
         UniquePtr<Scene> mScene;
         UniquePtr<GPUScene> mGPUScene;

@@ -25,12 +25,16 @@ namespace ModelViewer
         instances[0].meshAllocationRawOffsetPP = mScene->QueryMesh(mesh).selfRawOffset + 1;
         mScene->UnmapInstances();
     }
+    // TEST: Limit FPS for debug
+    void App::OnBeforeFrame() {
+        // nop
+    }
 } // namespace ModelViewer
 using namespace ModelViewer;
 using namespace Foundation::Async;
 int main(int argc, char** argv)
 {
     App app;
-    app.Initialize<VulkanApplication>({.windowTitle = "Model Viewer", .present = true, .asyncCompute = true});
+    app.Initialize<VulkanApplication>({.windowTitle = "Model Viewer", .present = true, .asyncCompute = true, .vsync = true});
     app.RunForever();
 }

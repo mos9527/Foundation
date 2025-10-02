@@ -1,7 +1,8 @@
 // TODO: Codegen for these structs
 module Definitions;
 public static const uint32_t kMaxSceneMeshLodCount = 4;
-public static const uint32_t kMaxTaskShaderWork = 64; // Work group size per task shader
+public static const uint32_t kMaxTaskShaderWork = 64; 
+// Work group size per task shader - 64 usually fits wave sizes on most HW
 public struct SceneMeshLodAllocation
 {
     uint32_t indices;

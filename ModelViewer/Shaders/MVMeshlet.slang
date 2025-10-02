@@ -19,35 +19,36 @@ struct DrawPushConstant
 struct MeshletPayload
 {
     uint32_t meshletRawOffsets[kMaxTaskShaderWork];
-    Atomic<uint32_t> meshletCount;
+    uint32_t meshletCount;
     uint32_t instanceID;
     uint32_t meshletVerticesRawOffset;
     uint32_t meshletTrianglesRawOffset;
 };
-groupshared MeshletPayload payload;
-
+groupshared MeshletPayload gsPayload;
+// https://gpuopen.com/learn/mesh_shaders/mesh_shaders-optimization_and_best_practices/
 [shader("amplification")]
 [numthreads(kMaxTaskShaderWork, 1, 1)]
-void meshletTask(uint meshlet: SV_GroupThreadID, uint2 groupID: SV_GroupID) {
+void meshletTask(uint meshlet: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     uint count = counter[0];
     uint dispatchIndex = dot(groupID, uint2(kMaxTaskShaderWork, 1));
     if (dispatchIndex >= count)
-        return; // Out of range
+        return; // Out of range - kill the entire WG
     MeshletTaskParams params = tasks[dispatchIndex];
-    if (meshlet > params.meshletCount)
-        return; // Out of range
-    // Initialize shared memory
-    payload.meshletCount = 0;
-    payload.instanceID = params.instanceID;
-    payload.meshletVerticesRawOffset = params.meshletVerticesRawOffset;
-    payload.meshletTrianglesRawOffset = params.meshletTrianglesRawOffset;
-    GroupMemoryBarrierWithGroupSync();
-    // TODO: Culling
-    uint payloadIndex = payload.meshletCount.increment();
-    payload.meshletRawOffsets[payloadIndex] = params.meshletRawOffset + meshlet * sizeof(MeshMeshlet);
-    GroupMemoryBarrierWithGroupSync();
-    // DispatchMesh works in groups
-    DispatchMesh(payload.meshletCount.load(), 1, 1, payload);
+    // Initialize payload    
+    gsPayload.instanceID = params.instanceID;
+    gsPayload.meshletVerticesRawOffset = params.meshletVerticesRawOffset;
+    gsPayload.meshletTrianglesRawOffset = params.meshletTrianglesRawOffset;
+    bool visible = meshlet < params.meshletCount;
+    // Not used - note to self: do NOT branch on a memory barrier!! i.e. GroupMemoryBarrierWithGroupSync();
+    // TODO: Actual Culling
+    if (visible) {
+        uint gsPayloadIndex = WavePrefixCountBits(visible);
+        gsPayload.meshletRawOffsets[gsPayloadIndex] = params.meshletRawOffset + meshlet * sizeof(MeshMeshlet);
+    }    
+    gsPayload.meshletCount = WaveActiveCountBits(visible);
+    // DispatchMesh works in groups - this 'effectively' runs once
+    printf("dispatch %d meshlets %d", dispatchIndex, gsPayload.meshletCount);
+    DispatchMesh(gsPayload.meshletCount, 1, 1, gsPayload);
 }
 struct MeshVertexCompact32 {
     uint32_t pxy;
@@ -71,21 +72,23 @@ struct VertexOutput
 };
 
 // Each WG of mesh shader processes one meshlet
-[shader("mesh")]
 [outputtopology("triangle")]
 [numthreads(kMaxTaskShaderWork, 1, 1)]
 void meshletMesh(
-    uint meshlet: SV_GroupID,
-    uint groupIndex : SV_GroupIndex,
+    in payload MeshletPayload payload,
+    in uint meshlet: SV_GroupID,
+    in uint groupIndex: SV_GroupIndex,
     OutputVertices<VertexOutput, 64> verts,
     OutputIndices<uint3, 32> triangles
 ) {
-    if (meshlet >= payload.meshletCount.load())
+    printf("meshlet %d gid %d count %d addr %d", meshlet, groupIndex, payload.meshletCount, payload.meshletVerticesRawOffset);
+    if (meshlet >= payload.meshletCount)
         return; // Out of range - shouldn't happen?
+
     uint offset = payload.meshletRawOffsets[meshlet];
     MeshMeshlet meshlet = sceneConst.Load<MeshMeshlet>(offset);
     SetMeshOutputCounts(meshlet.vertexCount, meshlet.triangleCount);
-    
+
     uint vertexRawOffset = meshlet.vertexOffset * sizeof(MeshVertexCompact) + payload.meshletVerticesRawOffset;
     uint triangleRawOffset = meshlet.triangleOffset * sizeof(uint) + payload.meshletTrianglesRawOffset;
     // Vertices
@@ -120,8 +123,11 @@ void meshletMesh(
     // Indices
     for (uint i = groupIndex; i < meshlet.triangleCount; i += kMaxTaskShaderWork) {
         // XXX: Would alignment be an issue?
-        uint3 tri = sceneConst.Load<uint3>(triangleRawOffset + i * sizeof(uint3));
-        triangles[i] = tri;
+        uint a, b, c;
+        a = sceneConst.Load<uint>(triangleRawOffset + (i * 3 + 0) * sizeof(uint));
+        b = sceneConst.Load<uint>(triangleRawOffset + (i * 3 + 1) * sizeof(uint));
+        c = sceneConst.Load<uint>(triangleRawOffset + (i * 3 + 2) * sizeof(uint));        
+        triangles[i] = uint3(a, b, c);
     }
 }
 

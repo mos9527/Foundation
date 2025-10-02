@@ -113,7 +113,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
              .shaderFloat16 = true,
              .runtimeDescriptorArray = true,
              .timelineSemaphore = true}, // vk::PhysicalDeviceVulkan12Features
-            {.synchronization2 = true, .dynamicRendering = true}, // vk::PhysicalDeviceVulkan13Features
+            {.synchronization2 = true, .dynamicRendering = true, .shaderIntegerDotProduct = true}, // vk::PhysicalDeviceVulkan13Features
             {.extendedDynamicState = true}, // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
             {.taskShader = true, .meshShader = true} // vk::PhysicalDeviceMeshShaderFeaturesEXT
         };
