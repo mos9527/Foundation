@@ -51,7 +51,7 @@ void RenderApplication::InitializeRenderer() {
 }
 void RenderApplication::InitializeInternal() {
     LOG_RUNTIME(RenderApplication, info, "** Application Setup **");
-    LOG_RUNTIME(RenderApplication, info, "Dir: {}", std::filesystem::current_path().string());
+    LOG_RUNTIME(RenderApplication, info, "Dir: {}", std::filesystem::current_path());
     if (mDesc.present) {
         mWindow = CreateNativeWindow(mDesc.windowSize.x, mDesc.windowSize.y, mDesc.windowTitle.c_str());
         mDevice = mRHI->CreateDevice(mRHI->EnumerateDevices()[mDesc.deviceIndex], &mWindow);

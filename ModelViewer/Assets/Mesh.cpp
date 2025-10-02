@@ -116,7 +116,7 @@ namespace ModelViewer
     void meshLoadObjFile(Vector<MeshVertex>& vertices, Vector<MeshIndex>& indices, const Path& path)
     {
         fastObjMesh* mesh = fast_obj_read(path.string().c_str());
-        CHECK_MSG(mesh, "Failed to load OBJ file: {}", path.string());
+        CHECK_MSG(mesh, "Failed to load OBJ file: {}", path);
         uint32_t num_vtx = 0;
         // Alloc for zero reuse scenario where all vertices are assumed to be unique
         for (uint32_t face = 0; face < mesh->face_count; face++)

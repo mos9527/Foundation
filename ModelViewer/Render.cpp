@@ -84,11 +84,15 @@ void App::OnRendererSetup()
             r->BindShader(self, RHIShaderStageBits::Task, "meshletTask", "data/shaders/MVMeshlet.spv");
             r->BindShader(self, RHIShaderStageBits::Mesh, "meshletMesh", "data/shaders/MVMeshlet.spv");
             r->BindShader(self, RHIShaderStageBits::Fragment, "meshletFrag", "data/shaders/MVMeshlet.spv");
-            r->BindBufferShaderRead(self, meshletTaskDispatch, RHIPipelineStageBits::DrawIndirect);
+            r->BindBufferShaderRead(self, meshletTaskDispatch, RHIPipelineStageBits::DrawIndirect | RHIPipelineStageBits::AllGraphics);
             r->BindBufferStorageRead(self, meshletTaskParams, RHIPipelineStageBits::ComputeShader, "tasks");
             r->BindBufferStorageRead(self, meshletIndirectTasksCtr, RHIPipelineStageBits::ComputeShader, "counter");
             r->BindBufferStorageRead(self, sceneInstance, RHIPipelineStageBits::ComputeShader, "sceneInstance");
             r->BindBufferStorageRead(self, sceneConst, RHIPipelineStageBits::ComputeShader, "sceneConst");
+            // TODO
+            r->BindPushConstant(self,
+                                RHIShaderStageBits::Mesh | RHIShaderStageBits::Fragment, 0,
+                                sizeof(ScenePushConstants));
             r->BindBackbufferRTV(self);
             r->BindTextureDSV(self, zbuffer,
                               {.format = RHIResourceFormat::D32SignedFloat,
@@ -99,6 +103,8 @@ void App::OnRendererSetup()
             auto const& img_wh = r->GetSwapchainExtent();
             r->CmdBeginGraphics(self, cmd, img_wh);
             r->CmdSetPipeline(self, cmd);
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Mesh  | RHIShaderStageBits::Fragment, 0, mScene->GetSceneConstants());
+            cmd->SetViewport(0, 0, img_wh.x, img_wh.y).SetScissor(0, 0, img_wh.x, img_wh.y);
             cmd->DrawMeshTasksIndirect(r->DerefResource(meshletTaskDispatch).Get<RHIBuffer*>(), 0, 1, sizeof(MeshletTaskDispatch));                
             cmd->EndGraphics();
         });

@@ -28,26 +28,33 @@ groupshared MeshletPayload payload;
 
 [shader("amplification")]
 [numthreads(kMaxTaskShaderWork, 1, 1)]
-void meshletTask(uint meshlet: SV_GroupThreadID, uint2 groupID: SV_GroupID, uint groupIndex : SV_GroupIndex) {    
+void meshletTask(uint meshlet: SV_GroupThreadID, uint2 groupID: SV_GroupID) {
     uint count = counter[0];
-    if (groupIndex >= count)
+    uint dispatchIndex = dot(groupID, uint2(kMaxTaskShaderWork, 1));
+    if (dispatchIndex >= count)
+        return; // Out of range
+    MeshletTaskParams params = tasks[dispatchIndex];
+    if (meshlet > params.meshletCount)
         return; // Out of range
     // Initialize shared memory
     payload.meshletCount = 0;
-    payload.instanceID = tasks[groupIndex].instanceID;
-    payload.meshletVerticesRawOffset = tasks[groupIndex].meshletVerticesRawOffset;
-    payload.meshletTrianglesRawOffset = tasks[groupIndex].meshletTrianglesRawOffset;
+    payload.instanceID = params.instanceID;
+    payload.meshletVerticesRawOffset = params.meshletVerticesRawOffset;
+    payload.meshletTrianglesRawOffset = params.meshletTrianglesRawOffset;
     GroupMemoryBarrierWithGroupSync();
-    MeshletTaskParams params = tasks[groupIndex];
-    if (meshlet > params.meshletCount)
-        return; // Out of range
     // TODO: Culling
-    uint payloadIndex = payload.meshletCount.add(1);
-    payload.meshletRawOffsets[payloadIndex] = tasks[groupIndex].meshletRawOffset + meshlet * sizeof(MeshMeshlet);
+    uint payloadIndex = payload.meshletCount.increment();
+    payload.meshletRawOffsets[payloadIndex] = params.meshletRawOffset + meshlet * sizeof(MeshMeshlet);
     GroupMemoryBarrierWithGroupSync();
     // DispatchMesh works in groups
-    DispatchMesh(params.meshletCount, 1, 1, payload);
+    DispatchMesh(payload.meshletCount.load(), 1, 1, payload);
 }
+struct MeshVertexCompact32 {
+    uint32_t pxy;
+    uint32_t pztp;
+    uint32_t np;
+    uint32_t uv;
+};
 struct MeshVertexCompact {
     uint16_t px, py, pz; // quantized fp16
     uint16_t tp;         // tangent [octa 8+8]
@@ -62,23 +69,36 @@ struct VertexOutput
     float3 bitangent;
     float2 uv;
 };
+
+// Each WG of mesh shader processes one meshlet
+[shader("mesh")]
 [outputtopology("triangle")]
 [numthreads(kMaxTaskShaderWork, 1, 1)]
 void meshletMesh(
-    uint meshletIndex: SV_GroupID,
+    uint meshlet: SV_GroupID,
+    uint groupIndex : SV_GroupIndex,
     OutputVertices<VertexOutput, 64> verts,
     OutputIndices<uint3, 32> triangles
 ) {
-    if (meshletIndex > payload.meshletCount.load())
-        return;
-    uint offset = payload.meshletRawOffsets[meshletIndex];
+    if (meshlet >= payload.meshletCount.load())
+        return; // Out of range - shouldn't happen?
+    uint offset = payload.meshletRawOffsets[meshlet];
     MeshMeshlet meshlet = sceneConst.Load<MeshMeshlet>(offset);
     SetMeshOutputCounts(meshlet.vertexCount, meshlet.triangleCount);
+    
     uint vertexRawOffset = meshlet.vertexOffset * sizeof(MeshVertexCompact) + payload.meshletVerticesRawOffset;
     uint triangleRawOffset = meshlet.triangleOffset * sizeof(uint) + payload.meshletTrianglesRawOffset;
     // Vertices
-    for (uint i = 0; i < meshlet.vertexCount; i++) {
-        MeshVertexCompact input = sceneConst.Load<MeshVertexCompact>(vertexRawOffset + i * sizeof(MeshVertexCompact));
+    for (uint i = groupIndex; i < meshlet.vertexCount; i += kMaxTaskShaderWork) {
+        MeshVertexCompact32 input32 = sceneConst.Load<MeshVertexCompact32>(vertexRawOffset + i * sizeof(MeshVertexCompact32));
+        MeshVertexCompact input;
+        input.px = input32.pxy & 0xFFFF;
+        input.py = (input32.pxy >> 16) & 0xFFFF;
+        input.pz = input32.pztp & 0xFFFF;
+        input.tp = (input32.pztp >> 16) & 0xFFFF;
+        input.np = input32.np;
+        input.u = input32.uv & 0xFFFF;
+        input.v = (input32.uv >> 16) & 0xFFFF;
         VertexOutput output;
         
         float3 N; float4 T_BSign;
@@ -98,7 +118,7 @@ void meshletMesh(
         verts[i] = output;
     }
     // Indices
-    for (uint i = 0; i < meshlet.triangleCount; i++) {
+    for (uint i = groupIndex; i < meshlet.triangleCount; i += kMaxTaskShaderWork) {
         // XXX: Would alignment be an issue?
         uint3 tri = sceneConst.Load<uint3>(triangleRawOffset + i * sizeof(uint3));
         triangles[i] = tri;

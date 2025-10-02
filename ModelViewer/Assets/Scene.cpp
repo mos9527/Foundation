@@ -1,7 +1,6 @@
 #include "Scene.hpp"
 namespace ModelViewer
 {
-
     SceneMeshData sceneMeshDataFromVertexIndex(Span<MeshVertex> vertices, Span<MeshIndex> indices, Allocator* allocator,
                                            int numLods, const bool buildMeshlets)
     {
@@ -27,6 +26,11 @@ namespace ModelViewer
         return res;
     }
     Scene::Scene(GPUScene* scene, Allocator* allocator) : mAllocator(allocator), mGPUScene(scene), mMeshes(allocator) {}
+    ScenePushConstants Scene::GetSceneConstants() { 
+        ScenePushConstants pc{};
+        pc.viewProj = float4x4(1);
+        return pc;
+    }
     SceneHandle Scene::PushMesh(SceneMeshData const& data)
     {
         auto [handle, alloc] = mMeshes.PopPair();

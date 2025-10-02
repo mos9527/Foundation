@@ -52,6 +52,18 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
                 ep.stage = RHI::RHIShaderStageBits::Fragment; break;
             case spv::ExecutionModelGLCompute:
                 ep.stage = RHI::RHIShaderStageBits::Compute; break;
+            case spv::ExecutionModelMeshEXT:
+                ep.stage = RHI::RHIShaderStageBits::Mesh; break;
+            case spv::ExecutionModelTaskEXT:
+                ep.stage = RHI::RHIShaderStageBits::Task; break;
+            case spv::ExecutionModelRayGenerationKHR:
+                ep.stage = RHI::RHIShaderStageBits::RayGeneration; break;
+            case spv::ExecutionModelAnyHitKHR:
+                ep.stage = RHI::RHIShaderStageBits::RayAnyHit; break;
+            case spv::ExecutionModelClosestHitKHR:
+                ep.stage = RHI::RHIShaderStageBits::RayClosestHit; break;
+            case spv::ExecutionModelMissKHR:
+                ep.stage = RHI::RHIShaderStageBits::RayMiss; break;
             default:
                 break;
             }

@@ -69,6 +69,13 @@ namespace ModelViewer {
         // 0 reserved for no mesh
         uint32_t meshAllocationRawOffsetPP = 0;            
     };
+    /* -- Scene -- */
+    struct ScenePushConstants
+    {
+        float4x4 viewProj;        
+        float time;       
+        float3 reserved;
+    };
 #pragma pack(pop)
     class Scene
     {
@@ -78,6 +85,8 @@ namespace ModelViewer {
         Pool<SceneHandle, SceneMeshAllocation> mMeshes;
     public:
         Scene(GPUScene* scene, Allocator* allocator);
+
+        ScenePushConstants GetSceneConstants();
 
         SceneHandle PushMesh(SceneMeshData const& data);
         SceneMeshAllocation const& QueryMesh(SceneHandle handle);

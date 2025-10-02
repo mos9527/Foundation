@@ -123,7 +123,7 @@ void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entr
     CHECK(mState == State::Setup);
     CHECK_MSG(stage.is_bitmask(), "Only one stage can be bound to a shader per pass");
     for (auto const& [path, ep, st] : mSetup->trackedPasses[pass].shaders)
-        CHECK_MSG(!(st & stage), "Shader stage {} already bound to {} in this pass. There can be at most one shader program per shader stage per pass", st, path.string());        
+        CHECK_MSG(!(st & stage), "Shader stage {} already bound to {} in this pass. There can be at most one shader program per shader stage per pass", st, path);        
     mSetup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage);
 }
 void Renderer::BindVertexInput(PassHandle pass, RHIPipelineState::PipelineStateDesc::VertexInput const& info) const
@@ -449,7 +449,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
     {
         if (!shaders.contains(shader_path))
         {
-            LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path.string());
+            LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path);
             Native::ReadFile(shader_path, data);
             reflections.emplace(shader_path, ConstructUnique<Shader>(mAllocator, data, mAllocator));
             shaders[shader_path] = mDevice->CreateShaderModule({.source = data});
@@ -472,7 +472,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
                 break;
             }
         }
-        CHECK_MSG(found, "No entry point {} found for stage {} in shader {}", entry_point, stage, shader_path.string());
+        CHECK_MSG(found, "No entry point {} found for stage {} in shader {}", entry_point, stage, shader_path);
     }
     if (tracked.isComputePass)
     {
@@ -492,14 +492,15 @@ void Renderer::BuildPipelineState(PassHandle pass)
         if (!refl->mPushConstants.empty())
         {
             CHECK_MSG(refl->mPushConstants.size() == 1,
-                      "Shader uses more than Push Constant block. This is not accepted by most drivers.");
+                      "Shader uses more than Push Constant block. This is not accepted by most drivers.");            
             CHECK_MSG(!tracked.pushConstants.empty(),
-                      "Pass does not declare Push Constant ranges, but shader {} uses them.", path.string());
+                      "Shader {} uses Push Constant, but no Push Constant is bound in pass {}. Did you forget to bind it?",
+                path, tracked.name);            
         }
         for (auto& bind : refl->mBindings)
         {
             CHECK_MSG(!bind.name.empty(), "Unnamed bindings are not supported. Enable debug information for shader {}",
-                      path.string());
+                      path);
             auto it = var_bind_points.find(bind.name);
             if (it == var_bind_points.end())
                 var_bind_points[bind.name] = {bind.descriptorSet, bind.binding};
@@ -508,7 +509,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
                 auto& [set, binding] = it->second;
                 CHECK_MSG(set == bind.descriptorSet && binding == bind.binding,
                           "Inconsistent binding points across shader stages for variable {} in shader {}", bind.name,
-                          path.string());
+                          path);
             }
         }
     }

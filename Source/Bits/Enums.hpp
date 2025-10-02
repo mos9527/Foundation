@@ -78,9 +78,7 @@ enum class T##Bits : INT_T {
  * @note If the enum value is not recognized (not defined), "Unknown" is returned.
  */
 #define ENUM_NAME_CONV_BEGIN(T) \
-inline constexpr const char* to_string(T elem); \
-inline auto format_as(T elem) { return to_string(elem); } \
-inline constexpr const char* to_string(T elem) { \
+inline constexpr const char* format_as(T elem) { \
     using enum T; \
     switch (elem) {
 
