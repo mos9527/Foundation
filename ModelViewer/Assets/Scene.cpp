@@ -28,7 +28,10 @@ namespace ModelViewer
     Scene::Scene(GPUScene* scene, Allocator* allocator) : mAllocator(allocator), mGPUScene(scene), mMeshes(allocator) {}
     ScenePushConstants Scene::GetSceneConstants() { 
         ScenePushConstants pc{};
-        pc.viewProj = float4x4(1);
+        mat4 proj = infinitePerspective(mCamera.verticalFov, mCamera.aspectRatio, mCamera.zNear);
+        mat4 view = lookAt(mCamera.position, mCamera.lookAt, float3{0, 0, 1});
+        proj[1][1] *= -1; // Vulkan NDC
+        pc.viewProj = proj * view;
         return pc;
     }
     SceneHandle Scene::PushMesh(SceneMeshData const& data)

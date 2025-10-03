@@ -15,20 +15,22 @@ namespace ModelViewer
         // TEST: Load mesh
         Vector<MeshVertex> vertices(GetAllocator());
         Vector<MeshIndex> indices(GetAllocator());
-        meshLoadObjFile(vertices, indices, "data/assets/Sphere.obj");
+        meshLoadObjFile(vertices, indices, "data/assets/Kitten.obj");
         SceneMeshData meshData = sceneMeshDataFromVertexIndex(vertices, indices, GetAllocator());
         mesh = mScene->PushMesh(meshData);
     }    
     void App::OnApplicationTick()
     {
+        mScene->mCamera.position = float3{1,1,1};
         auto instances = mScene->MapInstances();
         instances[0].meshAllocationRawOffsetPP = mScene->QueryMesh(mesh).selfRawOffset + 1;
-        instances[0].q = float4(0, 0, 0, 1);
+        float time = GetApplicationTime();
+        float theta = time * acos(-1) * 0.1f;
+        instances[0].q = angleAxis(theta, float3{0, 0, 1}) * angleAxis(radians(90.0f), float3{1, 0, 0});
         mScene->UnmapInstances();
-    }
-    // TEST: Limit FPS for debug
-    void App::OnBeforeFrame() {
-        // nop
+    }    
+    void App::OnBeforeFrame() { 
+        mScene->mCamera.aspectRatio = mSwapchain->GetAspectRatio();
     }
 } // namespace ModelViewer
 using namespace ModelViewer;
@@ -36,6 +38,6 @@ using namespace Foundation::Async;
 int main(int argc, char** argv)
 {
     App app;
-    app.Initialize<VulkanApplication>({.windowTitle = "Model Viewer", .present = true, .asyncCompute = true, .vsync = true});
+    app.Initialize<VulkanApplication>({.windowTitle = "Model Viewer", .present = true, .asyncCompute = true, .vsync = false});
     app.RunForever();
 }

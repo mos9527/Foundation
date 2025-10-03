@@ -20,19 +20,11 @@ void meshletMesh(
     uint offset = payload.meshletRawOffsets[meshletID];
     MeshMeshlet meshlet = sceneConst.Load<MeshMeshlet>(offset);
     SetMeshOutputCounts(meshlet.vertexCount, meshlet.triangleCount);
-
-    uint vertexRawOffset = meshlet.vertexOffset * sizeof(MeshVertexCompact) + payload.meshletVerticesRawOffset;
+    uint meshletVerticesRawOffset = meshlet.vertexOffset * sizeof(uint) + payload.meshletVerticesRawOffset;
     // Vertices
     for (uint i = groupIndex; i < meshlet.vertexCount; i += kMaxMeshShaderWork) {
-        MeshVertexCompact32 input32 = sceneConst.Load<MeshVertexCompact32>(vertexRawOffset + i * sizeof(MeshVertexCompact32));
-        MeshVertexCompact input;
-        input.px = input32.pxy & 0xFFFF;
-        input.py = (input32.pxy >> 16) & 0xFFFF;
-        input.pz = input32.pztp & 0xFFFF;
-        input.tp = (input32.pztp >> 16) & 0xFFFF;
-        input.np = input32.np;
-        input.u = input32.uv & 0xFFFF;
-        input.v = (input32.uv >> 16) & 0xFFFF;
+        uint vertex = sceneConst.Load<uint>(meshletVerticesRawOffset + i * sizeof(uint));
+        MeshVertexCompact input = sceneConst.Load<MeshVertexCompact>(payload.vertexRawOffset + vertex * sizeof(MeshVertexCompact));
         VertexOutput output;
         
         float3 N; float4 T_BSign;
@@ -49,13 +41,13 @@ void meshletMesh(
         output.tangent = q.rotate(T_BSign.xyz);
         output.bitangent = cross(output.normal, output.tangent) * T_BSign.w;
         output.uv = float2(input.u, input.v);
-        output.instance = payload.instanceID;
         output.meshlet = meshletID;
         verts[i] = output;
     }
     // Indices
+    uint triangleRawOffset = meshlet.triangleOffset + payload.meshletTrianglesRawOffset;
     for (uint i = groupIndex; i < meshlet.triangleCount; i += kMaxMeshShaderWork) {
-        // XXX: Would alignment be an issue?
+        // Requires 8bit storage
         MicroIndices mi = sceneConst.Load<MicroIndices>(triangleRawOffset + i * sizeof(MicroIndices));
         triangles[i] = uint3(mi.v0, mi.v1, mi.v2);
     }

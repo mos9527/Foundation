@@ -6,6 +6,7 @@ const size_t kMaxMeshletTasks = 1e6; // 1 million
 struct MeshletTaskParams
 {
     uint32_t instanceID;
+    uint32_t vertexRawOffset;
     uint32_t meshletCount;
     uint32_t meshletRawOffset;
     uint32_t meshletVerticesRawOffset;
@@ -89,7 +90,6 @@ void App::OnRendererSetup()
             r->BindBufferStorageRead(self, meshletIndirectTasksCtr, RHIPipelineStageBits::ComputeShader, "counter");
             r->BindBufferStorageRead(self, sceneInstance, RHIPipelineStageBits::ComputeShader, "sceneInstance");
             r->BindBufferStorageRead(self, sceneConst, RHIPipelineStageBits::ComputeShader, "sceneConst");
-            // TODO
             r->BindPushConstant(self,
                                 RHIShaderStageBits::Mesh | RHIShaderStageBits::Fragment, 0,
                                 sizeof(ScenePushConstants));

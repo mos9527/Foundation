@@ -24,18 +24,11 @@ namespace ModelViewer
     /**
      * @brief Compact 4-byte aligned vertex structure for static meshes
      */
+#pragma pack(push, 1)
     struct MeshVertexCompact {
         uint16_t px, py, pz; // quantized fp16
-        struct // 16 bits
-        {
-            uint32_t tx : 8; // packed x
-            uint32_t ty : 8; // packed y
-        } tp;         // tangent [octa 8+8]
-        struct { // 32 bits
-            uint32_t nx : 15;  // packed x
-            uint32_t ny : 15;  // packed y
-            uint32_t sign : 2; // bitangent sign
-        } np; // normal packed [snorm octa 15+15, bitangent sign 2]
+        uint16_t tp;         // tangent [octa 8+8]
+        uint32_t np;         // normal packed [snorm octa 15+15, bitangent sign 2]
         uint16_t u, v;       // UV coords fp16
         /**
          * @brief Pack vertex attributes into compact MeshVertex
@@ -45,15 +38,9 @@ namespace ModelViewer
         {
             return Pack(data.pos, data.normal, data.tangent, data.bitangent, data.uv);
         }
-        /**
-         * @brief Unpack vertex attributes from compact MeshVertex
-         */
-        void Unpack(vec3& pos, vec3& normal, vec3& tangent, vec3& bitangent, vec2& uv) const;
-        void Unpack(MeshVertex& data) const
-        {
-            Unpack(data.pos, data.normal, data.tangent, data.bitangent, data.uv);
-        }
     };
+    static_assert(sizeof(MeshVertexCompact) == 16);
+#pragma pack(pop)
     /**
      * @brief Meshlet structure containing offsets and counts to access meshlet data
      * @note Reference: https://github.com/zeux/meshoptimizer?tab=readme-ov-file#clusterization
@@ -66,7 +53,7 @@ namespace ModelViewer
         /* number of vertices and triangles used in the meshlet; data is stored in consecutive range defined by offset and count */
         uint32_t vertexCount;
         uint32_t triangleCount;
-    };
+    };    
     using MeshMicroIndex = uint8_t; // 8-bit index into meshlet vertex array
     constexpr uint32_t kMeshletMaxVertices = 64;  // max vertices per meshlet
     constexpr uint32_t kMeshletMaxTriangles = 96; // max triangles per meshlet (indices=3*triangles)

@@ -18,7 +18,9 @@ using namespace Foundation::Bits;
 const char* kVulkanDeviceExtensions[] = {
     VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    VK_EXT_MESH_SHADER_EXTENSION_NAME
+    VK_EXT_MESH_SHADER_EXTENSION_NAME,
+    VK_KHR_16BIT_STORAGE_EXTENSION_NAME,
+    VK_KHR_8BIT_STORAGE_EXTENSION_NAME,    
 };
 
 const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
@@ -108,9 +110,13 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
                        vk::PhysicalDeviceMeshShaderFeaturesEXT>
         featureChain = {
             {.features = {.samplerAnisotropy = true, .shaderInt16 = true}}, // vk::PhysicalDeviceFeatures2
-            {.shaderDrawParameters = true}, // vk::PhysicalDeviceVulkan11Features
-            {.drawIndirectCount = true,
+            {.storageBuffer16BitAccess = true,
+             .shaderDrawParameters = true}, // vk::PhysicalDeviceVulkan11Features
+            {
+             .drawIndirectCount = true,
+             .storageBuffer8BitAccess = true,
              .shaderFloat16 = true,
+             .shaderInt8 = true,
              .runtimeDescriptorArray = true,
              .timelineSemaphore = true}, // vk::PhysicalDeviceVulkan12Features
             {.synchronization2 = true, .dynamicRendering = true, .shaderIntegerDotProduct = true}, // vk::PhysicalDeviceVulkan13Features

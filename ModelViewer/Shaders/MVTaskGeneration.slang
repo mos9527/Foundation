@@ -25,10 +25,11 @@ void taskGeneration(uint instanceID: SV_DispatchThreadID) {
 
         MeshletTaskParams task;
         task.instanceID = instanceID;
+        task.vertexRawOffset = mesh.vertexRawOffset;
         task.meshletCount = min(lod.meshletCount - group * kMaxTaskShaderWork, kMaxTaskShaderWork);
         task.meshletRawOffset = lod.meshletRawOffset + group * kMaxTaskShaderWork * sizeof(MeshMeshlet);
         task.meshletVerticesRawOffset = lod.meshletVerticesRawOffset;
-        task.meshletTrianglesRawOffset = lod.meshletTrianglesRawOffset;
+        task.meshletTrianglesRawOffset = lod.meshletTrianglesRawOffset;        
         tasks[taskIndex + group] = task;
     }
 }

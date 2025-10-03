@@ -63,7 +63,7 @@ namespace ModelViewer {
     struct SceneInstanceData
     {
         float3 t; // Translation
-        float4 q; // Rotation Quat (xyzw)
+        quat q; // Rotation Quat (xyzw)
         float3 s; // Scale
         // @ref SceneMeshAllocation::selfRawOffset + 1
         // 0 reserved for no mesh
@@ -76,7 +76,16 @@ namespace ModelViewer {
         float time;       
         float3 reserved;
     };
-#pragma pack(pop)
+#pragma pack(pop)    
+    struct SceneCamera
+    {
+        float3 position{1,1,1};
+        float3 lookAt{0,0,0};
+
+        float verticalFov{radians(45.0)}; // In radians
+        float aspectRatio{1};
+        float zNear{0.1};
+    };
     class Scene
     {
         Allocator* mAllocator;
@@ -86,6 +95,9 @@ namespace ModelViewer {
     public:
         Scene(GPUScene* scene, Allocator* allocator);
 
+        SceneCamera mCamera{};
+        // TODO: Proper Scene Graph impl. Keeping things simple while being able
+        // to load glTF scenes.       
         ScenePushConstants GetSceneConstants();
 
         SceneHandle PushMesh(SceneMeshData const& data);

@@ -15,6 +15,7 @@ void meshletTask(uint meshlet: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     if (dispatchIndex < count) {
         MeshletTaskParams params = tasks[dispatchIndex];
         gsPayload.instanceID = params.instanceID;
+        gsPayload.vertexRawOffset = params.vertexRawOffset;
         gsPayload.meshletVerticesRawOffset = params.meshletVerticesRawOffset;
         gsPayload.meshletTrianglesRawOffset = params.meshletTrianglesRawOffset;
         visible = meshlet < params.meshletCount;

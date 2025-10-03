@@ -17,29 +17,16 @@ namespace ModelViewer
         v.px = quantizeFP16(pos.x);
         v.py = quantizeFP16(pos.y);
         v.pz = quantizeFP16(pos.z);
-        vec2 tangentOct = packUnitOctahedral(tangent);
-        v.tp = {.tx = quantizeSnormShifted(tangentOct.x, 8), .ty = quantizeSnormShifted(tangentOct.y, 8)};
+        vec2 tangentOct = packUnitOctahedral(tangent);       
+        v.tp = quantizeSnormShifted(tangentOct.x, 8) << 8u | quantizeSnormShifted(tangentOct.y, 8);
         vec2 normalOct = packUnitOctahedral(normal);
-        bool sgn = dot(cross(normal, tangent), bitangent) < 0;
-        v.np = {.nx = quantizeSnormShifted(normalOct.x, 15), .ny = quantizeSnormShifted(normalOct.y, 15), .sign = sgn};
+        uint32_t sgn = dot(cross(normal, tangent), bitangent) < 0;
+        v.np = quantizeSnormShifted(normalOct.x, 15) << 15u | quantizeSnormShifted(normalOct.y, 15) << 2u | sgn;
         v.u = quantizeFP16(uv.x);
         v.v = quantizeFP16(uv.y);
         return v;
     }
 
-    void MeshVertexCompact::Unpack(vec3& pos, vec3& normal, vec3& tangent, vec3& bitangent, vec2& uv) const
-    {
-        pos.x = dequantizeFP16(px);
-        pos.y = dequantizeFP16(py);
-        pos.z = dequantizeFP16(pz);
-        vec2 tangentOct = {dequantizeSnormShifted(tp.tx, 8), dequantizeSnormShifted(tp.ty, 8)};
-        tangent = unpackUnitOctahedral(tangentOct);
-        vec2 normalOct = {dequantizeSnormShifted(np.nx, 15), dequantizeSnormShifted(np.ny, 15)};
-        normal = unpackUnitOctahedral(normalOct);
-        bitangent = cross(normal, tangent) * (np.sign ? -1.0f : 1.0f);
-        uv.x = dequantizeFP16(u);
-        uv.y = dequantizeFP16(v);
-    }
     // meshoptimizer doesn't provide user data for allocators - we'd use a global one
     // here for all temporary allocations that might happen in the functions below.
     static DefaultAllocator MeshoptAllocator;

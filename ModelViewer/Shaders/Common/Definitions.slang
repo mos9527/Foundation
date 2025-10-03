@@ -40,6 +40,7 @@ public struct SceneInstanceData
 public struct MeshletTaskParams
 {
     public uint32_t instanceID;
+    public uint32_t vertexRawOffset;
     public uint32_t meshletCount;
     public uint32_t meshletRawOffset;
     public uint32_t meshletVerticesRawOffset;
@@ -58,4 +59,28 @@ public struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
     public uint32_t groupCountX;
     public uint32_t groupCountY;
     public uint32_t groupCountZ;
+};
+public struct MeshletPayload
+{
+    public uint32_t meshletRawOffsets[kMaxTaskShaderWork];
+    public uint32_t vertexRawOffset;
+    public uint32_t meshletCount;
+    public uint32_t instanceID;
+    public uint32_t meshletVerticesRawOffset;
+    public uint32_t meshletTrianglesRawOffset;
+};
+public struct MeshVertexCompact {
+    public half px, py, pz; // quantized fp16
+    public uint16_t tp;     // tangent [octa 8+8]
+    public uint32_t np;     // normal packed [snorm octa 15+15, bitangent sign 2]
+    public half u, v;       // texcoord fp16
+};
+public struct VertexOutput
+{
+    public float4 pos : SV_Position;
+    public float3 normal;
+    public float3 tangent;
+    public float3 bitangent;
+    public float2 uv;
+    public uint meshlet;
 };
