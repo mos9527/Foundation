@@ -2,6 +2,7 @@
 module Definitions;
 public static const uint32_t kMaxSceneMeshLodCount = 4;
 public static const uint32_t kMaxTaskShaderWork = 64; 
+public static const uint32_t kMaxMeshShaderWork = 64;
 // Work group size per task shader - 64 usually fits wave sizes on most HW
 public struct SceneMeshLodAllocation
 {

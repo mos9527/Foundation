@@ -78,12 +78,12 @@ void App::OnRendererSetup()
             r->CmdDispatch(self, cmd, {1, 1, 1});
         });
     createPass(
-        mRenderer.get(), "Meshlet DRAW!!", RHIDeviceQueueType::Graphics,
+        mRenderer.get(), "Meshlet Draw", RHIDeviceQueueType::Graphics,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Task, "meshletTask", "data/shaders/MVMeshlet.spv");
-            r->BindShader(self, RHIShaderStageBits::Mesh, "meshletMesh", "data/shaders/MVMeshlet.spv");
-            r->BindShader(self, RHIShaderStageBits::Fragment, "meshletFrag", "data/shaders/MVMeshlet.spv");
+            r->BindShader(self, RHIShaderStageBits::Task, "meshletTask", "data/shaders/MVMeshletTask.spv");
+            r->BindShader(self, RHIShaderStageBits::Mesh, "meshletMesh", "data/shaders/MVMeshletMesh.spv");
+            r->BindShader(self, RHIShaderStageBits::Fragment, "meshletFrag", "data/shaders/MVMeshletFrag.spv");
             r->BindBufferShaderRead(self, meshletTaskDispatch, RHIPipelineStageBits::DrawIndirect | RHIPipelineStageBits::AllGraphics);
             r->BindBufferStorageRead(self, meshletTaskParams, RHIPipelineStageBits::ComputeShader, "tasks");
             r->BindBufferStorageRead(self, meshletIndirectTasksCtr, RHIPipelineStageBits::ComputeShader, "counter");

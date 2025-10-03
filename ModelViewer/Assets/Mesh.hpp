@@ -61,15 +61,15 @@ namespace ModelViewer
     struct MeshMeshlet // same layout as meshopt_Meshlet
     {
         /* offsets within meshlet_vertices and meshlet_triangles arrays with meshlet data */
-        uint32_t vertexOffset;
-        uint32_t triangleOffset;
+        uint32_t vertexOffset; // in vertices
+        uint32_t triangleOffset; // in indices (3*triangles)
         /* number of vertices and triangles used in the meshlet; data is stored in consecutive range defined by offset and count */
         uint32_t vertexCount;
         uint32_t triangleCount;
     };
     using MeshMicroIndex = uint8_t; // 8-bit index into meshlet vertex array
     constexpr uint32_t kMeshletMaxVertices = 64;  // max vertices per meshlet
-    constexpr uint32_t kMeshletMaxTriangles = 32 * 3; // max triangle indices per meshlet (96, 3 per)
+    constexpr uint32_t kMeshletMaxTriangles = 96; // max triangles per meshlet (indices=3*triangles)
     /**
      * @brief Build meshlets from a mesh
      * @param outMeshlet Output meshlet array

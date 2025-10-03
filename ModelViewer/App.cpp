@@ -23,6 +23,7 @@ namespace ModelViewer
     {
         auto instances = mScene->MapInstances();
         instances[0].meshAllocationRawOffsetPP = mScene->QueryMesh(mesh).selfRawOffset + 1;
+        instances[0].q = float4(0, 0, 0, 1);
         mScene->UnmapInstances();
     }
     // TEST: Limit FPS for debug
