@@ -3,7 +3,8 @@
 using namespace Foundation::Rendering;
 using namespace Foundation::Async;
 using namespace Foundation::Native;
-StagedDoubleBuffer::StagedDoubleBuffer(RHIDevice* device, size_t size, size_t stagingSize, const size_t alignment,
+GPUScene::StagedDoubleBuffer::StagedDoubleBuffer(RHIDevice* device, size_t size, size_t stagingSize,
+                                                 const size_t alignment,
                        Allocator* alloc) :
     alloc(alloc),
     data(static_cast<char*>(alloc->Allocate(size, alignment))),
@@ -15,7 +16,7 @@ StagedDoubleBuffer::StagedDoubleBuffer(RHIDevice* device, size_t size, size_t st
     CHECK_MSG(size % alignment == 0, "Bad alignment for size={}, alignment={}", size, alignment);
     std::memset(data, 0, size);
 }
-StagedDoubleBuffer::~StagedDoubleBuffer() { alloc->Deallocate(data); }
+GPUScene::StagedDoubleBuffer::~StagedDoubleBuffer() { alloc->Deallocate(data); }
 
 GPUScene::GPUScene(RHIDevice* device, GPUSceneBudgets const& budgets, Allocator* alloc) :
     mAllocator(alloc),

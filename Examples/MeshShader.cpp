@@ -5,7 +5,7 @@ namespace Examples
      * @example MeshShader.cpp
      * Mesh Shader example.
      * @example Shaders/MeshShader.slang
-     * Simple shader to render an triangle. In mesh shader pipeline.
+     * Simple shader to render lots of triangles. In mesh shader pipeline.
      */
     class TriangleDemoApp : public RenderApplication
     {

@@ -24,30 +24,6 @@ namespace Foundation::Rendering
         [[nodiscard]] constexpr size_t totalStaging() const { return instanceBudget + sharedStaging; }
     };
     /**
-     * @brief Internal data structure for staged data updates.
-     */
-    struct StagedDoubleBuffer
-    {
-        Allocator* const alloc;
-        char* const data;
-        const size_t size;
-        const size_t alignment;
-
-        StagedBuffer buffer;
-        Async::Mutex mutex;
-
-        StagedDoubleBuffer(RHIDevice* device, size_t size, size_t stagingSize, size_t alignment, Allocator* alloc);
-        ~StagedDoubleBuffer();
-
-        template <typename T>
-        Span<T> View()
-        {
-            CHECK_MSG(alignment % alignof(T) == 0, "Bad alignment for type. Type must be aligned on multiples of {}",
-                      alignment);
-            return {reinterpret_cast<T*>(data), size / sizeof(T)};
-        }
-    };
-    /**
      * @brief Scene data management for asynchronous data updates/uploads on the GPU
      *
      * This implements a 3-tier buffer structure with:
@@ -72,6 +48,30 @@ namespace Foundation::Rendering
      */
     class GPUScene
     {
+        /**
+         * @brief Internal staged buffer with a CPU-side (non-driver) data for immediate writes.
+         */
+        struct StagedDoubleBuffer
+        {
+            Allocator* const alloc;
+            char* const data;
+            const size_t size;
+            const size_t alignment;
+
+            StagedBuffer buffer;
+            Async::Mutex mutex;
+
+            StagedDoubleBuffer(RHIDevice* device, size_t size, size_t stagingSize, size_t alignment, Allocator* alloc);
+            ~StagedDoubleBuffer();
+
+            template <typename T>
+            Span<T> View()
+            {
+                CHECK_MSG(alignment % alignof(T) == 0,
+                          "Bad alignment for type. Type must be aligned on multiples of {}", alignment);
+                return {reinterpret_cast<T*>(data), size / sizeof(T)};
+            }
+        };
         Allocator* mAllocator;
         /* -- Instance -- */
         StagedDoubleBuffer mInstance; // Instance data [updated every frame as a whole]
