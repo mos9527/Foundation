@@ -19,7 +19,6 @@ namespace Foundation::Core {
             mMemory = arena.memory;
             mCurrent = reinterpret_cast<size_type>(arena.memory);
             mEnd = reinterpret_cast<size_type>(arena.memory) + arena.size;
-            mUsed = 0;
         }
         /**
          * @brief Resets the stack allocator to a non-allocated state.
@@ -51,14 +50,10 @@ namespace Foundation::Core {
         pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) override {
             throw std::runtime_error("StackAllocator does not support reallocation");
         }
-        [[nodiscard]] size_type GetUsedMemory() const noexcept override {
-            return mCurrent - reinterpret_cast<size_type>(mMemory);
-        }
         constexpr operator bool() const noexcept { return mMemory != nullptr; }
 	private:		
         pointer mMemory{ nullptr };
-        std::atomic<size_type> mEnd{};
         std::atomic<size_type> mCurrent{};
-        std::atomic<size_type> mUsed{};
+        size_type mEnd{};
 	};
 }

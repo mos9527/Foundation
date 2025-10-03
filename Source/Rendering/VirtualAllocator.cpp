@@ -8,7 +8,7 @@ namespace Foundation::Rendering
         VmaVirtualBlockCreateInfo info{.size = size, .pAllocationCallbacks = &callbacks};
         vmaCreateVirtualBlock(&info, &mBlock);
     }
-    VirtualAllocation VirtualAllocator::Allocate(size_t size, size_t alignment) {
+    VirtualAllocation VirtualAllocator::Allocate(size_t size, size_t alignment) {        
         std::scoped_lock lock(mMutex);
         VmaVirtualAllocationCreateInfo info{ .size = size, .alignment = alignment };
         VmaVirtualAllocation alloc{};

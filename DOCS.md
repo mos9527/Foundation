@@ -9,7 +9,7 @@ fast prototyping of various GPU workloads.
 
 Features
 ---
-- Low-level modern API (Vulkan 1.3, DirectX12) as first-class citizen
+- Low-level modern API (Vulkan 1.3) as first-class citizen
 - Modern C++20 codebase with minimal dependencies 
 - Modern lock-free data structures at @ref Foundation::Atomics for low-contention, high-concurrency workloads
 - Explict thread safe guarantees - you pay for what you use
@@ -19,6 +19,7 @@ Features
 Renderer
 ---
 - Full SPIR-V shader reflection support with automatic pipeline binding and generation
+- Slang as the primary shading language 
 - Frame Graph/Frame Pass architecture with optimized resource barrier placement
 - Async Compute support for modern GPUs with automatic release/acquire and synchronization
 - Multithreaded command recording with automatic command buffer merging

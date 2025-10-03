@@ -19,7 +19,6 @@ namespace Foundation::Core {
                                                 std::memory_order_relaxed))
             {
                 // Bump OK. Good to go!
-                mUsed.fetch_add(size, std::memory_order_relaxed);
                 return reinterpret_cast<pointer>(aligned);
             }
             current = mCurrent.load(std::memory_order_relaxed);

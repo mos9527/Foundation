@@ -105,6 +105,7 @@ namespace Foundation::RHI {
         if (stage & ComputeShader) flags |= vk::PipelineStageFlagBits2::eComputeShader;
         if (stage & RayTracingShader) flags |= vk::PipelineStageFlagBits2::eRayTracingShaderKHR;
         if (stage & MeshShader) flags |= vk::PipelineStageFlagBits2::eMeshShaderEXT;
+        if (stage & TaskShader) flags |= vk::PipelineStageFlagBits2::eTaskShaderEXT;
         if (stage & RenderTargetOutput) flags |= vk::PipelineStageFlagBits2::eColorAttachmentOutput;
         if (stage & Transfer) flags |= vk::PipelineStageFlagBits2::eTransfer;
         if (stage & EarlyFragmentTests) flags |= vk::PipelineStageFlagBits2::eEarlyFragmentTests;
@@ -123,6 +124,13 @@ namespace Foundation::RHI {
         if (stage & Vertex) flags |= vk::ShaderStageFlagBits::eVertex;
         if (stage & Fragment) flags |= vk::ShaderStageFlagBits::eFragment;
         if (stage & Compute) flags |= vk::ShaderStageFlagBits::eCompute;
+        if (stage & RayGeneration) flags |= vk::ShaderStageFlagBits::eRaygenKHR;
+        if (stage & RayAnyHit) flags |= vk::ShaderStageFlagBits::eAnyHitKHR;
+        if (stage & RayClosestHit) flags |= vk::ShaderStageFlagBits::eClosestHitKHR;
+        if (stage & RayMiss) flags |= vk::ShaderStageFlagBits::eMissKHR;
+        if (stage & RayIntersection) flags |= vk::ShaderStageFlagBits::eIntersectionKHR;
+        if (stage & Task) flags |= vk::ShaderStageFlagBits::eTaskEXT;
+        if (stage & Mesh) flags |= vk::ShaderStageFlagBits::eMeshEXT;
         return flags;
     }
 

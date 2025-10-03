@@ -56,18 +56,17 @@ namespace Foundation::Rendering
      */
     extern BufferStagingList& CoalesceBufferStaging(BufferStagingList& res);
     /**
-     * @brief Helper class for GPU contention-free staged buffer updates.
+     * @brief Helper class for GPU buffer updates.
      *
-     * @note Transfer functions are _not_ inherently thread-safe - see @ref ModelViewer::Scene
-     * for reference usage.
+     * This creates a GPU-only local buffer, and a staging buffer of arbitrary size
      *
-     * This creates a GPU-only local buffer, and multiple staging buffers per swap.
-     *
-     * For one-shot, uploaded static content that doesn't change, consider using
-     * @ref UploadContext instead. Don't forget that Push Constant also exists.
-     *
-     * This is here for _dynamic_ content updates that can be performed asynchronously
-     * without stalling the CPU or GPU for each update.
+     * @note For one-shot, uploaded static content that doesn't change, consider using
+     *       @ref UploadContext instead. Don't forget that Push Constant also exists.     
+     * 
+     * @note The user should ensure correct synchronization of the buffer usage e.g.
+     *       avoid performing Transfer while the buffer is being read by the GPU.
+     *       Thus a CPU-only buffer is recommended to be used as an intermediate cache
+     *       before accessing the GPU buffer. See @ref StagedDoubleBuffer in @ref GPUScene for details.
      */
     class StagedBuffer : public RHIObject /* pinned */
     {
@@ -82,11 +81,10 @@ namespace Foundation::Rendering
         RHIDevice* mDevice{nullptr};
         Allocator* mAllocator{nullptr};
 
-        Vector<StagingBuffer> mStagingBuffers;
+        StagingBuffer mStagingBuffer;
         RHIDeviceScopedObjectHandle<RHIBuffer> mBuffer;
 
         State mState{State::Idle};
-        uint32_t mCurrentSync{0};
         BufferStagingList mBufferStagings;
 
         RHIDeviceIdleGuard mIdleGuard;
@@ -95,18 +93,14 @@ namespace Foundation::Rendering
     public:
         /**
          * @brief Create the staging arena buffers.
-         * @param numSwaps Max number of frames in flight, can be greater, but no less than the actual number of swaps.
-         * @param desc Description of the data buffer to be created.
-         *             It's valid to create a zero-sized buffer to use _only_ the staging buffers.
+         * @param desc Description of the data buffer to be created.         
          * @param stagingBudget Size of the staging buffer. Defaults to kFullSize, which is the same size of the buffer
          * created.
-         *        This can and _should_ be smaller as the memory footprint comes with per-swap staging is O(N * M).
-         *        Amortize upload across multiple frames is also a good idea.
-         * @param clearValue Value to clear the buffer with at first update. Defaults to {}, which leaves the buffer uninitialized.
+         * @param clearValue Value to clear the buffer with at first update. Defaults to {}, which leaves the buffer
+         * uninitialized.
          */
-        StagedBuffer(
-            RHIDevice* device, Allocator* allocator, uint32_t numSwaps, RHIBufferDesc const& desc = {},
-            size_t stagingBudget = kFullSize, Optional<uint32_t> clearValue = {});
+        StagedBuffer(RHIDevice* device, Allocator* allocator, RHIBufferDesc const& desc = {},
+                     size_t stagingBudget = kFullSize, Optional<uint32_t> clearValue = {});
         /**
          * @brief Gets the GPU-only backing buffer.
          */
@@ -119,7 +113,7 @@ namespace Foundation::Rendering
          *
          * @param rendererSync The @ref Renderer::GetSync() value acquired after @ref Renderer::BeginExecute()
          */
-        void BeginTransfer(uint32_t rendererSync);
+        void BeginTransfer();
         /**
          * @brief Gets the current staging buffer for data uploads.
          *
@@ -142,9 +136,7 @@ namespace Foundation::Rendering
         /**
          * @brief Check if there are any pending updates to be performed.
          */
-        bool HasUpdates() {
-            return mClearValue.has_value() || !mBufferStagings.empty();
-        }
+        bool HasUpdates() { return mClearValue.has_value() || !mBufferStagings.empty(); }
         /**
          * @brief Push the scheduled uploads onto the command list.
          *
@@ -158,40 +150,8 @@ namespace Foundation::Rendering
          */
         void Update(RHICommandList* cmd);
     };
-    /**
-     * @brief Convenient functional wrapper to create a staged buffer update pass.
-     *
-     * This creates a pass that performs the following:
-     * - Binds the destination buffer as a copy destination.
-     * - Calls StagedBuffer::Update to perform and flush all pending updates.
-     * - Skipped when there are no more pending updates.
-     *
-     * Updates should be scheduled between @ref Renderer's @ref BeginExecute and @ref ExecuteFrame,
-     * as per @StagedBuffer documentation.
-     *
-     * The created pass will have the name "Staged Buffer [name]".
-     *
-     * @param renderer Renderer to create the pass in.
-     * @param staged StagedBuffer to perform updates from.
-     * @param name Name of the pass.
-     * @param outBufferHandle Output parameter to receive the created buffer handle.
-     * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is
-     * disabled.
-     * @return Handle to the created pass.
-     */
-    inline auto* createStagedBufferUpdatePass(Renderer* renderer, StagedBuffer* staged, StringView name,
-                                              ResourceHandle& outBufferHandle,
-                                              RHIDeviceQueueType queue = RHIDeviceQueueType::Graphics)
-    {
-        outBufferHandle = renderer->CreateResource(fmt::format("StagedBuffer {}", name), staged->GetBuffer());
-        return createPass(
-            renderer, name, queue, [=](PassHandle self, Renderer* r) { r->BindBufferCopyDst(self, outBufferHandle); },
-            [=](PassHandle self, Renderer* r, RHICommandList* cmd) { staged->Update(cmd); },
-            [=](PassHandle self, Renderer* r) { return !staged->HasUpdates(); });
-    }
-
     ENUM_NAME_CONV_BEGIN(StagedBuffer::State)
     ENUM_NAME(Idle)
     ENUM_NAME(Transfer)
     ENUM_NAME_CONV_END()
-} // namespace Foundation::RenderCore
+} // namespace Foundation::Rendering

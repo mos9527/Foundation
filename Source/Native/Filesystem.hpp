@@ -29,5 +29,10 @@ namespace Foundation::Native
      * @brief Writes the entire contents of a byte vector to a file.
      * @return The number of bytes written.
      */
-    size_t WriteFile(Path const& path, Bytes data);
-}
+    size_t WriteFile(Path const& path, Bytes data);        
+} // namespace Foundation::Native
+
+namespace std::filesystem
+{
+    inline auto format_as(path const& p) { return p.string(); }
+} // namespace std::filesystem

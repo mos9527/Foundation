@@ -3,22 +3,22 @@
 
 #include "Application.hpp"
 using namespace Foundation::Rendering;
+constexpr RHIResourceFormat kFormatPreferenceList[] = {
+    RHIResourceFormat::R8G8B8A8Unorm,
+    RHIResourceFormat::B8G8R8A8Unrom,
+    RHIResourceFormat::R8G8B8A8Srgb,
+    RHIResourceFormat::B8G8R8A8Srgb
+};
+constexpr RHISwapchainPresentMode kPresentModePreferenceList[] = {
+    RHISwapchainPresentMode::Mailbox,
+    RHISwapchainPresentMode::Tearing,
+    RHISwapchainPresentMode::Fifo
+};
 void RenderApplication::CreateSwapchain() {
     CHECK(mDevice && mWindow);
     LOG_RUNTIME(RenderApplication, info, "Creating swapchain ({}x{})", GetFramebufferSize().x, GetFramebufferSize().y);
     mDevice->WaitIdle();
     mSwapchain.Reset();
-    constexpr RHIResourceFormat kFormatPreferenceList[] = {
-        RHIResourceFormat::R8G8B8A8Unorm,
-        RHIResourceFormat::B8G8R8A8Unrom,
-        RHIResourceFormat::R8G8B8A8Srgb,
-        RHIResourceFormat::B8G8R8A8Srgb
-    };
-    constexpr RHISwapchainPresentMode kPresentModePreferenceList[] = {
-        RHISwapchainPresentMode::Mailbox,
-        RHISwapchainPresentMode::Tearing,
-        RHISwapchainPresentMode::Fifo
-    };
     auto format = Ranges::FirstOf(Views::all(kFormatPreferenceList) | Views::filter(Ranges::ContainedBy(mDevice->GetSwapchainSupportedFormats())));
     auto present = Ranges::FirstOf(Views::all(kPresentModePreferenceList) | Views::filter(Ranges::ContainedBy(mDevice->GetSwapchainSupportedPresentModes())));
     CHECK_MSG(format.has_value(), "No supported swapchain format found!");
@@ -51,16 +51,16 @@ void RenderApplication::InitializeRenderer() {
 }
 void RenderApplication::InitializeInternal() {
     LOG_RUNTIME(RenderApplication, info, "** Application Setup **");
-    LOG_RUNTIME(RenderApplication, info, "Dir: {}", std::filesystem::current_path().string());
+    LOG_RUNTIME(RenderApplication, info, "Dir: {}", std::filesystem::current_path());
     if (mDesc.present) {
         mWindow = CreateNativeWindow(mDesc.windowSize.x, mDesc.windowSize.y, mDesc.windowTitle.c_str());
-        mDevice = mRhi->CreateDevice(mRhi->EnumerateDevices()[mDesc.deviceIndex], &mWindow);
+        mDevice = mRHI->CreateDevice(mRHI->EnumerateDevices()[mDesc.deviceIndex], &mWindow);
         CreateSwapchain();
     }
     else {
         // 'Headless' mode. No presentation therefore no swapchain/window.
         mWindow = {};
-        mDevice = mRhi->CreateDevice(mRhi->EnumerateDevices()[mDesc.deviceIndex]);
+        mDevice = mRHI->CreateDevice(mRHI->EnumerateDevices()[mDesc.deviceIndex]);
     }    
     OnDeviceSetup();
 }
@@ -91,7 +91,7 @@ void RenderApplication::Execute()
 }
 void RenderApplication::RenderWorker()
 {
-    CHECK_MSG(mRhi, "No RHI backend initialized! Call Initialize<Backend>() first.");
+    CHECK_MSG(mRHI, "No RHI backend initialized! Call Initialize<Backend>() first.");
     CHECK(mDevice && mRenderer);
     TracyCSetThreadName("Render Thread");
     while (!mAppShouldClose)
@@ -110,7 +110,7 @@ void RenderApplication::RenderWorker()
 using namespace Foundation::Async;
 void RenderApplication::RunForever() {
     mRenderThread = Thread(&RenderApplication::RenderWorker, this);
-    while (!mAppShouldClose.load(std::memory_order_relaxed))
+    while (!mAppShouldClose.load())
     {        
         OnApplicationTick();
         // Update framerate
@@ -122,7 +122,7 @@ void RenderApplication::RunForever() {
             mWindow.SetWindowTitle(fmt::format("{} [{} FPS]", mDesc.windowTitle, mTiming.GetFPS()).c_str());
         }
         if (mWindow.WindowShouldClose())
-            mAppShouldClose.store(true, std::memory_order_relaxed);
+            mAppShouldClose.store(true);
     }
     LOG_RUNTIME(RenderApplication, info, "Main Thread exiting.");
     mRenderThread.join();
@@ -130,11 +130,11 @@ void RenderApplication::RunForever() {
 }
 void RenderApplication::WaitForFrame()
 {
-    if (!mAppShouldClose.load(std::memory_order_relaxed))
+    if (!mAppShouldClose.load())
     {
         std::unique_lock lock(mRenderMutex);
         mRenderFrame.wait(lock);
     }
 }
-void RenderApplication::ResetRendererOnNextFrame() { mRenderThreadReset.store(true, std::memory_order_release); }
-void RenderApplication::Shutdown() { mAppShouldClose.store(true, std::memory_order_release); }
+void RenderApplication::ResetRendererOnNextFrame() { mRenderThreadReset.store(true); }
+void RenderApplication::Shutdown() { mAppShouldClose.store(true); }

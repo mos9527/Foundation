@@ -52,6 +52,13 @@ namespace Foundation::RenderCore
         virtual bool IsSkipped(PassHandle self, Renderer* r) const { return false; }
     };
     /**
+     * @brief Default "no-op" functor for Setup()
+     */
+    struct FSetupDefault
+    {
+        void operator()(PassHandle, Renderer*) const { /* nop */ }
+    };
+    /**
      * @brief Default "no-op" functor for Record()
      */
     struct FRecordDefault
@@ -106,8 +113,8 @@ namespace Foundation::RenderCore
         // even when the access don't indicate writes.
         // Currently, this is only used for @ref Renderer::CreateTransitionPass
         bool alwaysProduce{false};
-        // Local size for compute shaders
-        Tuple<uint32_t, uint32_t, uint32_t> computeLocalSize{};
+        // Local size for compute/mesh shaders        
+        Tuple<uint32_t, uint32_t, uint32_t> groupLocalSize{};
         size_t depth{}; // Depth in RG
         size_t ord{}; // Execution order
         /* -- Resources -- */

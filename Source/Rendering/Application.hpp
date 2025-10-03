@@ -6,31 +6,33 @@
 #include <Async/Thread.hpp>
 #include <Native/Application.hpp>
 
-#include <RHICore/Common.hpp>
 #include <RHICore/Application.hpp>
+#include <RHICore/Common.hpp>
 #include <RenderCore/Renderer.hpp>
 
 #include <Atomics/Atomic.hpp>
 /**
  * @brief Reference implementations of real-time rendering routines.
  */
-namespace Foundation::Rendering {
+namespace Foundation::Rendering
+{
     using namespace Core;
     using namespace RenderCore;
     /**
      * @brief Initialization parameters for RenderApplication.
      */
-    struct ApplicationInitDesc {
-        size_t deviceIndex{ 0 };
+    struct ApplicationInitDesc
+    {
+        size_t deviceIndex{0};
         String windowTitle{"Application"};
-        RHIExtent2D windowSize{ 800, 600 };
+        RHIExtent2D windowSize{800, 600};
         /**
          * @brief Enable Present support.
          *
          * Disable this if you want to do headless work e.g.
          * rendering to offscreen textures, etc.
          */
-        bool present{ true };
+        bool present{true};
         /**
          * @brief Enable async compute support.
          *
@@ -43,21 +45,23 @@ namespace Foundation::Rendering {
          * if your render graph doesn't have enough compute work to
          * balance it out.
          */
-        bool asyncCompute{ true };
+        bool asyncCompute{true};
         /**
-        * @brief Enable VSync when presenting.
-        */
+         * @brief Enable VSync when presenting.
+         */
         bool vsync{false};
     };
     /**
-    *  @brief Template base class for rendering applications.        
-    */
-    class RenderApplication : public Native::NativeApplication {
+     *  @brief Template base class for rendering applications.
+     */
+    class RenderApplication : public Native::NativeApplication
+    {
         void Execute();
         void CreateSwapchain();
         void InitializeInternal();
         void InitializeRenderer();
-        void RenderWorker();        
+        void RenderWorker();
+
     public:
         /**
          * @brief Frame timing information for performance measurements.
@@ -80,17 +84,19 @@ namespace Foundation::Rendering {
             // Returns the average FPS over the last sample duration.
             [[nodiscard]] size_t GetFPS() const
             {
-                if (delta.y == 0) return 0;
+                if (delta.y == 0)
+                    return 0;
                 return static_cast<size_t>(1e9 * delta.x / delta.y);
             }
-            const size_t kTimingSampleDuration{ static_cast<size_t>(1.0 * 1e9) /* 1 second */ };
+            const size_t kTimingSampleDuration{static_cast<size_t>(1.0 * 1e9) /* 1 second */};
         };
+
     protected:
         ApplicationInitDesc mDesc;
 
         DefaultAllocator mAlloc, mAllocRenderer;
         Native::NativeWindow mWindow;
-        UniquePtr<RHIApplication> mRhi;
+        UniquePtr<RHIApplication> mRHI;
 
         RHIApplicationScopedObjectHandle<RHIDevice> mDevice;
         RHIDeviceScopedObjectHandle<RHISwapchain> mSwapchain;
@@ -184,26 +190,32 @@ namespace Foundation::Rendering {
          * @note This should not be directly called.
          */
         virtual void OnApplicationTick() { /* nop */ }
+
     public:
         /**
          * @brief Initialize the application with the specified RHI backend.
          *
          * @note This must be called before RunForever().
          */
-        template<typename Backend, typename... Args>
-        void Initialize(ApplicationInitDesc const& desc = {}, Args&&... args) {
+        template <typename Backend, typename... Args>
+        void Initialize(ApplicationInitDesc const& desc = {}, Args&&... args)
+        {
             // XXX: Backends are expected to take Allocator* as the first argument
             mDesc = desc;
-            mRhi.reset();
-            mRhi = ConstructUniqueBase<RHIApplication, Backend>(mAlloc.Ptr(), mAlloc.Ptr(),
-                                                                 std::forward<Args>(args)...);
+            mRHI.reset();
+            mRHI =
+                ConstructUniqueBase<RHIApplication, Backend>(mAlloc.Ptr(), mAlloc.Ptr(), std::forward<Args>(args)...);
             InitializeInternal();
             InitializeRenderer();
         }
         /**
          * @brief Retrieve the framebuffer size of the current window.
          */
-        [[nodiscard]] RHIExtent2D GetFramebufferSize() const { auto [w, h] = mWindow.GetFramebufferSize(); return { w, h }; }
+        [[nodiscard]] RHIExtent2D GetFramebufferSize() const
+        {
+            auto [w, h] = mWindow.GetFramebufferSize();
+            return {w, h};
+        }
         /**
          * @brief Retrieve the timing information of the last frame.
          */
@@ -242,7 +254,7 @@ namespace Foundation::Rendering {
          */
         void WaitForFrame();
         /**
-         * @brief Reset the renderer on the next frame, calling @ref OnRendererSetup internally.         
+         * @brief Reset the renderer on the next frame, calling @ref OnRendererSetup internally.
          * @note This can be called from any thread, and will be executed on the Render thread on the next frame of
          *       its work.
          */
@@ -253,7 +265,7 @@ namespace Foundation::Rendering {
          * @note This does not immediately terminate the application. At the end of the current
          *       tick of the main loop in @ref RunForever(), the application will exit gracefully if
          *       this is called, or the main window is closed.
-         */           
+         */
         void Shutdown();
     };
-}
+} // namespace Foundation::Rendering

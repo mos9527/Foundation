@@ -32,8 +32,7 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
 
 void Renderer::BeginSetup()
 {
-    CHECK_MSG(mState == State::Undefined || mState == State::PostSetup, "Bad Setup state. Current state is {}",
-              mState);
+    CHECK_MSG(mState == State::Undefined || mState == State::PostSetup, "Bad Setup state. Current state is {}", mState);
     mState = State::Setup;
     mSetup = ConstructUnique<RendererSetup>(mAllocator, mAllocator);
     if (mDesc.present)
@@ -124,24 +123,22 @@ void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entr
     CHECK(mState == State::Setup);
     CHECK_MSG(stage.is_bitmask(), "Only one stage can be bound to a shader per pass");
     for (auto const& [path, ep, st] : mSetup->trackedPasses[pass].shaders)
-        if (st & stage)
-            throw std::runtime_error("Some previous shader stage(s) already bound to a shader");
+        CHECK_MSG(!(st & stage), "Shader stage {} already bound to {} in this pass. There can be at most one shader program per shader stage per pass", st, path);        
     mSetup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage);
 }
 void Renderer::BindVertexInput(PassHandle pass, RHIPipelineState::PipelineStateDesc::VertexInput const& info) const
 {
     CHECK(mState == State::Setup);
     mSetup->trackedPasses[pass].vertexInputBindings.insert(mSetup->trackedPasses[pass].vertexInputBindings.end(),
-                                                              info.bindings.begin(), info.bindings.end());
-    mSetup->trackedPasses[pass].vertexInputAttributes.insert(
-        mSetup->trackedPasses[pass].vertexInputAttributes.end(), info.attributes.begin(), info.attributes.end());
+                                                           info.bindings.begin(), info.bindings.end());
+    mSetup->trackedPasses[pass].vertexInputAttributes.insert(mSetup->trackedPasses[pass].vertexInputAttributes.end(),
+                                                             info.attributes.begin(), info.attributes.end());
 }
 void Renderer::BindPushConstant(PassHandle pass, RHIShaderStage stage, size_t offset, size_t size) const
 {
     CHECK(mState == State::Setup);
-    for (auto const& [s, _offset, _size] : mSetup->trackedPasses[pass].pushConstants)
-        if (s & stage)
-            throw std::runtime_error("Some previous shader stage(s) already has Push Constants ranges");
+    for (auto const& [st, _offset, _size] : mSetup->trackedPasses[pass].pushConstants)
+        CHECK_MSG(!(st & stage), "Shader stage {} already has Push Constant bound in this pass. There can be only one Push Constant configuration per shader stage per pass.", st);      
     mSetup->trackedPasses[pass].pushConstants.emplace_back(stage, offset, size);
 }
 void Renderer::BindBufferUniform(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
@@ -152,7 +149,7 @@ void Renderer::BindBufferUniform(PassHandle pass, ResourceHandle buffer, RHIPipe
     mSetup->trackedPasses[pass].bufferBindings.emplace_back(buffer, RHIDescriptorType::UniformBuffer, bind_point);
     mSetup->bindingCounts[RHIDescriptorType::UniformBuffer]++;
 }
-void Renderer::BindBufferStorage(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
+void Renderer::BindBufferStorageRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
                                  StringView bind_point) const
 {
     CHECK(mState == State::Setup);
@@ -315,6 +312,8 @@ void Renderer::CullPasses(PassHandle epilogue) const
     topo.reserve(mSetup->trackedPasses.size());
     auto dp = [&](PassHandle u, PassHandle pa, auto&& dfs) -> void
     {
+        if (u >= mSetup->graph.size())
+            return; // No out degrees
         vis[u] = 1;
         for (const auto& v : mSetup->graph[u] | Views::keys)
         {
@@ -389,7 +388,8 @@ void Renderer::CullPasses(PassHandle epilogue) const
     {
         while (j < exec.size() && mSetup->trackedPasses[exec[j]].queue == mSetup->trackedPasses[exec[i]].queue)
             j++;
-        auto& group = exec_group.emplace_back(static_cast<int>(exec_group.size()), mSetup->trackedPasses[exec[i]].queue, mAllocator);
+        auto& group = exec_group.emplace_back(static_cast<int>(exec_group.size()), mSetup->trackedPasses[exec[i]].queue,
+                                              mAllocator);
         group.passes.insert(group.passes.end(), exec.begin() + i, exec.begin() + j);
         // Collect dependencies
         for (auto pass : exec_group.back().passes)
@@ -449,14 +449,14 @@ void Renderer::BuildPipelineState(PassHandle pass)
     {
         if (!shaders.contains(shader_path))
         {
-            LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path.string());
+            LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path);
             Native::ReadFile(shader_path, data);
             reflections.emplace(shader_path, ConstructUnique<Shader>(mAllocator, data, mAllocator));
             shaders[shader_path] = mDevice->CreateShaderModule({.source = data});
             shaders[shader_path]->DebugSetObjectName(shader_path.string().c_str());
         }
         auto& module = shaders[shader_path];
-        // In BindShader we have already guaranteed these to be unique per stage
+        // In BindShader we have already guaranteed these to be unique per stage        
         if (stage == RHIShaderStageBits::Compute)
             tracked.isComputePass = true;
         bool found = false;
@@ -466,13 +466,13 @@ void Renderer::BuildPipelineState(PassHandle pass)
             {
                 pso_stages.push_back(
                     {.desc = {.stage = stage, .entryPoint = ep.name.c_str()}, .shaderModule = module.Get()});
-                if (stage == RHIShaderStageBits::Compute)
-                    tracked.computeLocalSize = ep.computeLocalSize;
+                if (stage & (RHIShaderStageBits::Compute | RHIShaderStageBits::Mesh | RHIShaderStageBits::Task))
+                    tracked.groupLocalSize = ep.groupLocalSize;
                 found = true;
                 break;
             }
         }
-        CHECK_MSG(found, "No entry point {} found for stage {} in shader {}", entry_point, stage, shader_path.string());
+        CHECK_MSG(found, "No entry point {} found for stage {} in shader {}", entry_point, stage, shader_path);
     }
     if (tracked.isComputePass)
     {
@@ -492,14 +492,15 @@ void Renderer::BuildPipelineState(PassHandle pass)
         if (!refl->mPushConstants.empty())
         {
             CHECK_MSG(refl->mPushConstants.size() == 1,
-                      "Shader uses more than Push Constant block. This is not accepted by most drivers.");
+                      "Shader uses more than Push Constant block. This is not accepted by most drivers.");            
             CHECK_MSG(!tracked.pushConstants.empty(),
-                      "Pass does not declare Push Constant ranges, but shader {} uses them.", path.string());
+                      "Shader {} uses Push Constant, but no Push Constant is bound in pass {}. Did you forget to bind it?",
+                path, tracked.name);            
         }
         for (auto& bind : refl->mBindings)
         {
             CHECK_MSG(!bind.name.empty(), "Unnamed bindings are not supported. Enable debug information for shader {}",
-                      path.string());
+                      path);
             auto it = var_bind_points.find(bind.name);
             if (it == var_bind_points.end())
                 var_bind_points[bind.name] = {bind.descriptorSet, bind.binding};
@@ -508,7 +509,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
                 auto& [set, binding] = it->second;
                 CHECK_MSG(set == bind.descriptorSet && binding == bind.binding,
                           "Inconsistent binding points across shader stages for variable {} in shader {}", bind.name,
-                          path.string());
+                          path);
             }
         }
     }
@@ -567,7 +568,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
     }
     Ranges::sort(tracked.pExternalDescriptorSets);
     tracked.pExternalDescriptorSets.erase(Ranges::unique(tracked.pExternalDescriptorSets).begin(),
-                                     tracked.pExternalDescriptorSets.end());
+                                          tracked.pExternalDescriptorSets.end());
     if (!var_bind_points.empty())
     {
         LOG_RUNTIME(Renderer, debug, "Pipeline Parameters");
@@ -809,7 +810,7 @@ void Renderer::FinalizeResources()
             [&](RHITexture* const ptr) { mResources->resources[handle] = ptr; },
             [&](auto const&) { throw std::runtime_error("Unhandled resource type at creation time"); });
     }
-    // Add back buffers (if any)
+    // Add back buffers (if need to present)
     if (mDesc.present)
     {
         for (size_t i = 0; i < mFrameSwaps; i++)
@@ -863,9 +864,9 @@ void Renderer::SetFrameSyncObjects()
     while (mExecutePerSwapCmds.size() < mFrameSwaps)
     {
         auto& threads = mExecutePerSwapCmds.emplace_back(mAllocator);
-        while (threads.size() < kRecordThreadpoolSize + 1)
-            threads.emplace_back(
-                ConstructUnique<ExecutePerThreadCommandLists>(mAllocator, mDevice.Get(), kMaxCommandListsPerThread, mAllocator));
+        while (threads.size() < kRecordThreadpoolSize + 1) // Inc. main (render) thread. We do work too!
+            threads.emplace_back(ConstructUnique<ExecutePerThreadCommandLists>(mAllocator, mDevice.Get(),
+                                                                               kMaxCommandListsPerThread, mAllocator));
     }
     for (size_t i = 0; i < mFrameSwaps; i++)
     {
@@ -922,13 +923,13 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain)
 }
 void Renderer::BeginExecute()
 {
-    CHECK_MSG(mState == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?",
-              mState);
+    CHECK_MSG(mState == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?", mState);
     ZoneScoped;
     mState = State::Execute;
     // Reset per-swap command lists
     for (auto& cmds : mExecutePerSwapCmds[mCurrentSync])
         cmds->Reset();
+    // Reset per-frame arena
     mExecuteAlloc.Reset(mExecuteArena);
     Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait_fences(mExecuteAlloc.Ptr());
     if (mSetup->executionAnyGraphics)
@@ -1010,16 +1011,15 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
     CHECK_MSG(mState == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", mState);
     // At this point the pass execution order has been determined
     // (execution) and so are the resources' access patterns.
-    // Minimal synchronization barriers would always be the most
-    // optimal.
-    // Textures
+    // Minimal synchronization barriers would always be the most optimal.
+    /* -- Textures -- */
     // These are always disjoint ranges
     for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
     {
         auto& tres = mSetup->trackedResources[hdl];
         ExecuteBarrierSubresource(pass.handle, tres, range, access, stage, layout, cmd);
     }
-    // Backbuffer
+    /* -- Backbuffer -- */
     // A special case with known usages.
     // We never create resource per-swap so tracking Back buffers by passes
     // is not possible. The BB is also opaque to the passes for the same reasons.
@@ -1035,7 +1035,7 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
         ExecuteBarrierSubresource(pass.handle, tres, RHITextureSubresourceRange::Create(), rt_access, rt_stage,
                                   rt_layout, cmd);
     }
-    // Buffers
+    /* -- Buffers -- */
     // These are always global i.e. at most one per buffer per pass.
     for (auto [hdl, access, stage] : pass.bufferUsages)
     {
@@ -1105,7 +1105,7 @@ void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, siz
     // the _next_ group which is *now* guaranteed to be less capable (i.e. Compute).
     // Only Compute resources _need_ to be transitioned here beforehand. So we only deal with that
     size_t nextGroupIndex =
-        (groupIndex + 1) % groups.size(); // Next group. Could be the first group if this is the last group
+        (groupIndex + 1) % groups.size(); // Next group. Would be the first group if current groupIndex is the last group
     if (groups[groupIndex].queue == RHIDeviceQueueType::Graphics && groups[nextGroupIndex].queue != currentQueue)
     {
         // Declare that the first pass from the next group handled the transition
@@ -1212,14 +1212,10 @@ Renderer::ExecutePerThreadCommandLists::ExecutePerThreadCommandLists(RHIDevice* 
                                                                      Allocator* alloc) :
     graphicsCmds(maxPerThread, alloc), computeCmds(maxPerThread, alloc)
 {
-    graphicsPool = device->CreateCommandPool({
-        .queue = RHIDeviceQueueType::Graphics,
-        .type = RHICommandPoolType::Persistent
-    });
-    computePool = device->CreateCommandPool({
-        .queue = RHIDeviceQueueType::Compute,
-        .type = RHICommandPoolType::Persistent
-    });
+    graphicsPool =
+        device->CreateCommandPool({.queue = RHIDeviceQueueType::Graphics, .type = RHICommandPoolType::Persistent});
+    computePool =
+        device->CreateCommandPool({.queue = RHIDeviceQueueType::Compute, .type = RHICommandPoolType::Persistent});
 }
 void Renderer::ExecutePerThreadCommandLists::Reset()
 {
@@ -1461,7 +1457,7 @@ void Renderer::ExecuteFrame()
                 {
                     ZoneScopedN("Submit (No Present)");
                     queue->Submit({.timelineWaits = timeline_waits,
-                                    .timelineSignals = {{{timeline_signal}}},
+                                   .timelineSignals = {{{timeline_signal}}},
                                    .waitsStages = timeline_wait_stages,
                                    .cmdLists = group_cmds,
                                    .fence = fence_ptr});
@@ -1469,15 +1465,15 @@ void Renderer::ExecuteFrame()
                 else
                 {
                     // Last group to submit, and we need to present
-                    CHECK_MSG(group.queue == RHIDeviceQueueType::Graphics, "FIXME-ExecuteFrame: Last pass ended on a non-Graphics queue");
+                    CHECK_MSG(group.queue == RHIDeviceQueueType::Graphics,
+                              "FIXME-ExecuteFrame: Last pass ended on a non-Graphics queue");
                     // Transition the Backbuffer to Present.
                     auto cmd = ExecuteAllocateCommandList(RHIDeviceQueueType::Graphics, -1);
                     cmd->Reset();
                     cmd->Begin();
                     cmd->DebugBegin("Present");
                     cmd->BeginTransition();
-                    ExecuteBarrierSubresource(kInvalidHandle,
-                                              mSetup->trackedResources[mSwaps[GetSwap()].backbuffer],
+                    ExecuteBarrierSubresource(kInvalidHandle, mSetup->trackedResources[mSwaps[GetSwap()].backbuffer],
                                               RHITextureSubresourceRange::Create(), {},
                                               RHIPipelineStageBits::RenderTargetOutput, RHITextureLayout::Present, cmd);
                     cmd->EndTransition();
@@ -1489,7 +1485,7 @@ void Renderer::ExecuteFrame()
                         ZoneScopedN("Submit & Present");
                         timeline_wait_stages.push_back(group.allStages | RHIPipelineStageBits::RenderTargetOutput);
                         queue->Submit({.timelineWaits = timeline_waits,
-                                        .timelineSignals = {{{timeline_signal}}},
+                                       .timelineSignals = {{{timeline_signal}}},
                                        .waits = {{mSwaps[mCurrentSync].present.Get()}},
                                        .waitsStages = timeline_wait_stages,
                                        .signals = {{mSwaps[GetSwap()].render.Get()}},
@@ -1582,8 +1578,8 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
                   "Graphics extent too large for Depth buffer {}", tres.name);
         cmd->BeginGraphics({.colorAttachments = rtvs,
                             .depthAttachment = {.imageView = DerefTextureView(tpass.dsv),
-                                                 .imageLayout = RHITextureLayout::DepthStencil,
-                                                 .clearDepthStencil = clear_dsv},
+                                                .imageLayout = RHITextureLayout::DepthStencil,
+                                                .clearDepthStencil = clear_dsv},
                             .width = extent.x,
                             .height = extent.y});
     }
@@ -1597,7 +1593,7 @@ RHIExtent3D Renderer::CmdGetComputeLocalSize(const PassHandle pass) const
 {
     CHECK(mState == State::Execute);
     auto& tpass = mSetup->trackedPasses[pass];
-    auto const& [x, y, z] = tpass.computeLocalSize;
+    auto const& [x, y, z] = tpass.groupLocalSize;
     CHECK_MSG(x > 0 && y > 0 && z > 0, "Pass {} does not have a valid compute local size", tpass.name);
     return {x, y, z};
 }

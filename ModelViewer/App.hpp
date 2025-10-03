@@ -1,9 +1,9 @@
 #pragma once
-#include <Rendering/Application.hpp>
 #include <Async/Thread.hpp>
-#include <Rendering/PSFullscreen.hpp>
 #include <RHIVulkan/Application.hpp>
-#include "Scene.hpp"
+#include <Rendering/Application.hpp>
+#include <Rendering/PSFullscreen.hpp>
+#include "Assets/Scene.hpp"
 /**
  * @brief ModelViewer implementation
  */
@@ -14,12 +14,12 @@ namespace ModelViewer {
      * @brief Model Viewer Application implementation
      */
     class App : public RenderApplication {
-        void OnDeviceSetup() override;
-        void OnBeforeFrame() override;
-        void OnRendererSetup() override;
+        void OnDeviceSetup() override;        
+        void OnRendererSetup() override;        
         void OnApplicationTick() override;
+        void OnBeforeFrame() override;
     public:
         UniquePtr<Scene> mScene;
-        mat4 mCamera;
+        UniquePtr<GPUScene> mGPUScene;
     };
 }

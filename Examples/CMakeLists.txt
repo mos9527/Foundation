@@ -27,3 +27,6 @@ if (WIN32)
 	add_dependencies(Example_Win32_ScreenCapture Shader_SimpleCRT Shader_SimpleBloom)
 endif()
 
+add_executable(Example_MeshShader "MeshShader.cpp")
+target_link_libraries(Example_MeshShader PUBLIC Example_Common)
+add_dependencies(Example_MeshShader Shader_MeshShaderTask Shader_MeshShaderMesh Shader_MeshShaderFrag)

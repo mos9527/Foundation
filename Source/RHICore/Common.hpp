@@ -137,17 +137,41 @@ namespace Foundation::RHI {
     };
 
     BITMASK_ENUM_BEGIN(RHIShaderStage, uint32_t)
+        // Vertex Shader
         Vertex = 1 << 0,
+        // Fragment Shader (aka Pixel)
         Fragment = 1 << 1,
+        // Compute Shader
         Compute = 1 << 2,
+        // Ray Tracing Ray Generation
+        RayGeneration = 1 << 3,
+        // Ray Tracing Ray Any Hit
+        RayAnyHit = 1 << 4,
+        // Ray Tracing Ray Closest Hit
+        RayClosestHit = 1 << 5,
+        // Ray Tracing Ray Miss
+        RayMiss = 1 << 6,
+        // Ray Tracing Ray Intersection
+        RayIntersection = 1 << 7,
+        // Mesh Shading (aka Amplification)
+        Task = 1 << 8,
+        // Mesh Shading
+        Mesh = 1 << 9,
         All = ~0u
     BITMASK_ENUM_END();
 
     ENUM_NAME_CONV_BEGIN(RHIShaderStageBits)        
-        case Vertex: return "Vertex Stage";
-        case Fragment: return "Fragment Stage";
-        case Compute: return "Compute Stage";
-    ENUM_NAME_CONV_END()
+        case Vertex: return "Vertex Shader";
+        case Fragment: return "Fragment Shader";
+        case Compute: return "Compute Shader";
+        case RayGeneration: return "RT Ray Generation";
+        case RayAnyHit: return "RT Any Hit";
+        case RayClosestHit: return "RT Closest Hit";
+        case RayMiss: return "RT Miss";
+        case RayIntersection: return "RT Intersection";
+        case Task: return "Task Shader";
+        case Mesh: return "Mesh Shader";
+    ENUM_NAME_CONV_END();
         
     BITMASK_ENUM_BEGIN(RHIResourceAccess, uint32_t)
         RenderTargetWrite = 1 << 0,
@@ -172,10 +196,11 @@ namespace Foundation::RHI {
         ComputeShader           = 1 << 4,
         RayTracingShader        = 1 << 5,
         MeshShader              = 1 << 6,
-        RenderTargetOutput      = 1 << 7,
-        Transfer                = 1 << 8,
-        EarlyFragmentTests      = 1 << 9,
-        LateFragmentTests       = 1 << 10,
+        TaskShader 			    = 1 << 7,
+        RenderTargetOutput      = 1 << 8,
+        Transfer                = 1 << 9,
+        EarlyFragmentTests      = 1 << 10,
+        LateFragmentTests       = 1 << 11,        
         // ---
         Host                    = 1 << 27,
         AllGraphics             = 1 << 28,

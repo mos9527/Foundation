@@ -387,7 +387,7 @@ namespace Foundation::RenderCore
         void BindBufferUniform(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
                                StringView bind_point) const;
         /**
-         * @brief Binds a storage (read-write) buffer to a specified binding point.
+         * @brief Binds a read-only storage buffer to a specified binding point.
          *
          * This is only available at Setup time.
          *
@@ -395,7 +395,7 @@ namespace Foundation::RenderCore
          *
          * This can be automatically bound to the pipeline with CmdSetPipeline()
          */
-        void BindBufferStorage(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
+        void BindBufferStorageRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
                                StringView bind_point) const;
         /**
          * @brief Binds a buffer for unordered (UAV) access from shaders (read and/or write in any order).
@@ -670,6 +670,8 @@ namespace Foundation::RenderCore
         /**
          * @brief Helper that sets a Push Constant range data with a single l-value.
          * @note A valid @ref CmdSetPipeline call MUST be made before this, or the behaviour is undefined.
+         * @note The @ref stage param must overlap with at least one stage that the PSO was created with,
+         *       and must be a subset of a range declared with @ref BindPushConstant(), or the behaviour is undefined.
          */
         template <typename T>
         void CmdSetPushConstant(PassHandle pass, RHICommandList* cmd, RHIShaderStage stage, size_t offset,

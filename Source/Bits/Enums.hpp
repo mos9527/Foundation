@@ -29,7 +29,10 @@ namespace Foundation::Bits
         constexpr operator bool() const { return value != 0; }
         [[nodiscard]] constexpr bool is_pow2() const { return (value & (value - 1)) == 0; }
         [[nodiscard]] constexpr bool is_bitmask() const { return is_pow2(); }
-        [[nodiscard]] constexpr int bit() const { return std::countr_one(value); }
+        [[nodiscard]] constexpr int bit() const { 
+            constexpr size_t bits = sizeof(Ty) * 8;
+            return std::countr_zero(value) & (bits - 1); 
+        }
     };
 } // namespace Foundation::Bits
 /**
@@ -78,9 +81,7 @@ enum class T##Bits : INT_T {
  * @note If the enum value is not recognized (not defined), "Unknown" is returned.
  */
 #define ENUM_NAME_CONV_BEGIN(T) \
-inline constexpr const char* to_string(T elem); \
-inline auto format_as(T elem) { return to_string(elem); } \
-inline constexpr const char* to_string(T elem) { \
+inline constexpr const char* format_as(T elem) { \
     using enum T; \
     switch (elem) {
 

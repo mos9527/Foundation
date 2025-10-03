@@ -66,9 +66,10 @@ namespace Foundation::Rendering
     }
     void StagingBuffer::Reset() { mOffset = 0; }
 
-    StagedBuffer::StagedBuffer(RHIDevice* device, Allocator* allocator, uint32_t numSwaps, RHIBufferDesc const& desc,
+    StagedBuffer::StagedBuffer(RHIDevice* device, Allocator* allocator, RHIBufferDesc const& desc,
                                size_t stagingBudget, Optional<uint32_t> clearValue) :
-        mDevice(device), mAllocator(allocator), mStagingBuffers(allocator), mBufferStagings(allocator),
+        mDevice(device), mAllocator(allocator), mStagingBuffer(device, stagingBudget, allocator),
+        mBufferStagings(allocator),
         mIdleGuard(mDevice), mClearValue(clearValue)
     {
         // Create one staging buffer for each frame in flight.
@@ -78,36 +79,30 @@ namespace Foundation::Rendering
         // incurs CPU stalls.
         if (stagingBudget == kFullSize)
             stagingBudget = desc.size;
-        for (size_t i = 0; i < numSwaps; i++)
-        {
-            mStagingBuffers.emplace_back(device, stagingBudget, allocator);
-            mStagingBuffers.back().GetBuffer()->DebugSetObjectName(fmt::format("Staging Buffer {}", i).c_str());
-        }
+        mStagingBuffer.GetBuffer()->DebugSetObjectName("Staging Buffer");
         mBuffer = device->CreateBuffer(desc);
     }
-    void StagedBuffer::BeginTransfer(uint32_t rendererSync)
+    void StagedBuffer::BeginTransfer()
     {
         CHECK_MSG(mState == State::Idle, "Staging is already in {} state", mState);
-        mCurrentSync = rendererSync;
-        mStagingBuffers[mCurrentSync].Reset();
+        mStagingBuffer.Reset();
         mBufferStagings.clear();
         mState = State::Transfer;
     }
     StagingBuffer* StagedBuffer::GetStagingBuffer()
     {
         CHECK_MSG(mState == State::Transfer, "Staging is not in Transfer state");
-        CHECK_MSG(mCurrentSync < mStagingBuffers.size(), "Invalid current sync index {}", mCurrentSync);
-        return &mStagingBuffers[mCurrentSync];
+        return &mStagingBuffer;
     }
     void StagedBuffer::Transfer(size_t dst_offset, Span<const char> data, size_t alignment)
     {
         CHECK_MSG(mState == State::Transfer, "Staging is not in Transfer state");
-        size_t src_offset = mStagingBuffers[mCurrentSync].Write(data, alignment);
+        size_t src_offset = mStagingBuffer.Write(data, alignment);
         if (!mBufferStagings.empty())
         {
             // Check if we can coalesce the buffer transfer right away
             auto& [last_src, last_dst, last_region] = mBufferStagings.back();
-            if (last_src == mStagingBuffers[mCurrentSync].GetBuffer() && last_dst == mBuffer.Get() &&
+            if (last_src == mStagingBuffer.GetBuffer() && last_dst == mBuffer.Get() &&
                 dst_offset - last_region.dstOffset == last_region.size &&
                 src_offset - last_region.srcOffset == last_region.size)
             {
@@ -115,7 +110,7 @@ namespace Foundation::Rendering
                 return;
             }
         }
-        mBufferStagings.emplace_back(mStagingBuffers[mCurrentSync].GetBuffer(), mBuffer.Get(),
+        mBufferStagings.emplace_back(mStagingBuffer.GetBuffer(), mBuffer.Get(),
                                       RHICommandList::CopyBufferRegion{src_offset, dst_offset, data.size_bytes()});
     }
     void StagedBuffer::EndTransfer()
@@ -123,7 +118,6 @@ namespace Foundation::Rendering
         CHECK_MSG(mState == State::Transfer, "Staging is not in Transfer state");
         CoalesceBufferStaging(mBufferStagings);
         mState = State::Idle;
-        mCurrentSync = ~0u;
     }
     void StagedBuffer::Update(RHICommandList* cmd)
     {
@@ -142,6 +136,7 @@ namespace Foundation::Rendering
             }
         );
         cmd->EndTransition();
+        mStagingBuffer.GetBuffer()->Flush(0, mStagingBuffer.Tell());
         if (mClearValue.has_value())
             cmd->FillBuffer(mBuffer.Get(), mClearValue.value()), mClearValue.reset();
         for (auto const& [src, dst, range] : mBufferStagings)

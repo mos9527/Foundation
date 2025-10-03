@@ -1,7 +1,7 @@
- /**
- * Ported from iq's SDF 2D example
- * ---
- * https://iquilezles.org/articles/distfunctions2d/
+/**
+* Ported from iq's SDF 2D example
+* ---
+* https://iquilezles.org/articles/distfunctions2d/
 */
 
 [[vk::push_constant]] float time;

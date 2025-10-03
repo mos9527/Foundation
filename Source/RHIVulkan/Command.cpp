@@ -56,7 +56,6 @@ VulkanCommandList::VulkanCommandList(const VulkanCommandPool& commandPool) :
 }
 
 RHICommandList& VulkanCommandList::Begin() {
-    CHECK(!mAllocator.GetUsedMemory() && "Invalid command list states.");
     mAllocator.Reset(mArena);
     mCommandBuffer.begin(vk::CommandBufferBeginInfo{});
     return *this;
@@ -168,6 +167,26 @@ RHICommandList& VulkanCommandList::DrawIndexedIndirectCount(RHIBuffer* buffer, s
         static_cast<VulkanBuffer*>(count_buffer)->GetVkBuffer(),
         count_offset,
         max_draw_count,
+        stride
+    );
+    return *this;
+}
+
+RHICommandList& Foundation::RHI::VulkanCommandList::DrawMeshTasks(uint32_t group_count_x, uint32_t group_count_y,
+                                                                  uint32_t group_count_z)
+{
+    CHECK(mAllocator && "Invalid command list states.");
+    mCommandBuffer.drawMeshTasksEXT(group_count_x, group_count_y, group_count_z);
+    return *this;
+}
+
+RHICommandList& Foundation::RHI::VulkanCommandList::DrawMeshTasksIndirect(RHIBuffer* cmd_buffer, size_t cmd_offset, size_t draw_count, size_t stride)
+{
+    CHECK(mAllocator && "Invalid command list states.");
+    mCommandBuffer.drawMeshTasksIndirectEXT(
+        static_cast<VulkanBuffer*>(cmd_buffer)->GetVkBuffer(),
+        cmd_offset,
+        draw_count,
         stride
     );
     return *this;

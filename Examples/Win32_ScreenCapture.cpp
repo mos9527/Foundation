@@ -24,9 +24,9 @@ namespace Examples
             "data/shaders/SimpleBloom.spv",
             "data/shaders/SimpleCRT.spv"
         };
-        uint32_t m_shaderIndex{0};
+        uint32_t mShaderIndex{0};
         // Temporary staging buffer for screen capture
-        UniquePtr<StagingBuffer> m_staging;
+        UniquePtr<StagingBuffer> mStaging;
         HDC hScreenDC = NULL, hMemoryDC = NULL;
         HBITMAP hBitmap = NULL;
         struct PushConstant
@@ -37,7 +37,7 @@ namespace Examples
         };
         void OnDeviceSetup() override
         {            
-            m_staging = ConstructUnique<StagingBuffer>(GetRendererAllocator(), m_device.Get(), 256_MB, GetRendererAllocator());
+            mStaging = ConstructUnique<StagingBuffer>(GetRendererAllocator(), mDevice.Get(), 256_MB, GetRendererAllocator());
         }        
         void OnRendererSetup() override
         {
@@ -57,19 +57,19 @@ namespace Examples
             hBitmap = CreateCompatibleBitmap(hScreenDC, w, h);
             SelectObject(hMemoryDC, hBitmap);
             ResourceHandle screen = createResource(
-                m_renderer.get(), "Screen Texture",
+                mRenderer.get(), "Screen Texture",
                 RHITextureDesc{.usage = RHITextureUsageBits::TransferDestination | RHITextureUsageBits::SampledImage,
                                .extent = {w, h, 1},
-                               .format = RHIResourceFormat::B8G8R8A8_UNROM});
+                               .format = RHIResourceFormat::B8G8R8A8Unrom});
             createPass(
-                m_renderer.get(), "Update Texture", RHIDeviceQueueType::Graphics, [=](PassHandle self, Renderer* r)
+                mRenderer.get(), "Update Texture", RHIDeviceQueueType::Graphics, [=](PassHandle self, Renderer* r)
                 {
                     r->BindTextureCopyDst(self, screen, RHITextureSubresourceRange::Create());                    
                 },
                 [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
                     auto* tex = r->DerefResource(screen).Get<RHITexture*>();
-                    auto* buffer = m_staging->GetBuffer();
+                    auto* buffer = mStaging->GetBuffer();
                     auto* mapped = buffer->Map();
                     // Capture the screen using GDI
                     // BitBlt is slow and usually can't get 60FPS, but it's the simplest way to do this
@@ -88,27 +88,27 @@ namespace Examples
                     }
                     buffer->Flush();
                     cmd->CopyBufferToImage(buffer, tex, RHITextureLayout::TransferDst, {{{
-                        .src_buffer_offset = 0,
-                        .dst_layer =
+                        .srcBufferOffset = 0,
+                        .dstLayer =
                             {
                                 .aspect = RHITextureAspectFlagBits::Color,
-                                .mip_level = 0,
-                                .base_array_layer = 0,
-                                .layer_count = 1,
+                                .mipLevel = 0,
+                                .baseArrayLayer = 0,
+                                .layerCount = 1,
                             },
                         .extent = {w, h, 1},
                     }}});
                 });
-            ResourceHandle sampler = m_renderer->CreateSampler({});            
+            ResourceHandle sampler = mRenderer->CreateSampler({});            
             createPSFullscreenPass(
-                m_renderer.get(), "Draw Screen",
+                mRenderer.get(), "Draw Screen",
                 [=](PassHandle self, Renderer* r)
                 {
-                    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", kShaders[m_shaderIndex]);
+                    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", kShaders[mShaderIndex]);
                     r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(PushConstant));
                     r->BindTextureSRV(
                         self, screen, "screen", RHIPipelineStageBits::FragmentShader,
-                        {.format = RHIResourceFormat::B8G8R8A8_UNROM, .range = RHITextureSubresourceRange::Create()});
+                        {.format = RHIResourceFormat::B8G8R8A8Unrom, .range = RHITextureSubresourceRange::Create()});
                     r->BindTextureSampler(self, sampler, "sampler");
                 },
                 [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -139,8 +139,8 @@ namespace Examples
                 Shutdown();
             if (OnKeyDown(GLFW_KEY_SPACE))
             {
-                m_shaderIndex = (m_shaderIndex + 1) % std::size(kShaders);
-                LOG_RUNTIME(Win32_ScreenCaptureApp, info, "Switched to shader: {}", kShaders[m_shaderIndex]);
+                mShaderIndex = (mShaderIndex + 1) % std::size(kShaders);
+                LOG_RUNTIME(Win32_ScreenCaptureApp, info, "Switched to shader: {}", kShaders[mShaderIndex]);
                 ResetRendererOnNextFrame();
             }
             if (OnKeyDown(GLFW_KEY_C))
