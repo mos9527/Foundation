@@ -172,6 +172,14 @@ RHICommandList& VulkanCommandList::DrawIndexedIndirectCount(RHIBuffer* buffer, s
     return *this;
 }
 
+RHICommandList& Foundation::RHI::VulkanCommandList::DrawMeshTasks(uint32_t group_count_x, uint32_t group_count_y,
+                                                                  uint32_t group_count_z)
+{
+    CHECK(mAllocator && "Invalid command list states.");
+    mCommandBuffer.drawMeshTasksEXT(group_count_x, group_count_y, group_count_z);
+    return *this;
+}
+
 RHICommandList& Foundation::RHI::VulkanCommandList::DrawMeshTasksIndirect(RHIBuffer* cmd_buffer, size_t cmd_offset, size_t draw_count, size_t stride)
 {
     CHECK(mAllocator && "Invalid command list states.");

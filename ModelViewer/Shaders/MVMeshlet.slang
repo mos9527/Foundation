@@ -31,23 +31,27 @@ groupshared MeshletPayload gsPayload;
 void meshletTask(uint meshlet: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     uint count = counter[0];
     uint dispatchIndex = dot(groupID, uint2(kMaxTaskShaderWork, 1));
-    if (dispatchIndex >= count)
-        return; // Out of range - kill the entire WG
-    MeshletTaskParams params = tasks[dispatchIndex];
-    // Initialize payload    
-    gsPayload.instanceID = params.instanceID;
-    gsPayload.meshletVerticesRawOffset = params.meshletVerticesRawOffset;
-    gsPayload.meshletTrianglesRawOffset = params.meshletTrianglesRawOffset;
-    bool visible = meshlet < params.meshletCount;
-    // Not used - note to self: do NOT branch on a memory barrier!! i.e. GroupMemoryBarrierWithGroupSync();
-    // TODO: Actual Culling
-    if (visible) {
-        uint gsPayloadIndex = WavePrefixCountBits(visible);
-        gsPayload.meshletRawOffsets[gsPayloadIndex] = params.meshletRawOffset + meshlet * sizeof(MeshMeshlet);
-    }    
-    gsPayload.meshletCount = WaveActiveCountBits(visible);
-    // DispatchMesh works in groups - this 'effectively' runs once
-    printf("dispatch %d meshlets %d", dispatchIndex, gsPayload.meshletCount);
+    bool visible = false;
+    // Note to self: do NOT branch (inc. early return) with a memory barrier!! i.e. GroupMemoryBarrierWithGroupSync();
+    // Initialize payload
+    gsPayload.meshletCount = 0;
+    GroupMemoryBarrierWithGroupSync();
+    if (dispatchIndex < count) {
+        MeshletTaskParams params = tasks[dispatchIndex];
+        gsPayload.instanceID = params.instanceID;
+        gsPayload.meshletVerticesRawOffset = params.meshletVerticesRawOffset;
+        gsPayload.meshletTrianglesRawOffset = params.meshletTrianglesRawOffset;
+        visible = meshlet < params.meshletCount;
+        // TODO: Actual Culling
+        if (visible) {
+            uint gsPayloadIndex;
+            InterlockedAdd(gsPayload.meshletCount, 1, gsPayloadIndex);
+            gsPayload.meshletRawOffsets[gsPayloadIndex] = params.meshletRawOffset + meshlet * sizeof(MeshMeshlet);
+        }
+    }
+    GroupMemoryBarrierWithGroupSync();
+    if (gsPayload.meshletCount > 0 && meshlet == 0)
+        printf("dispatch#%d dispatch count %d meshlet %d visible %d total %d", dispatchIndex, count, meshlet, visible ? 1 : 0, gsPayload.meshletCount);
     DispatchMesh(gsPayload.meshletCount, 1, 1, gsPayload);
 }
 struct MeshVertexCompact32 {

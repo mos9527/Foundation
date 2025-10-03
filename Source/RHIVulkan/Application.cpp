@@ -17,10 +17,14 @@ static VKAPI_ATTR vk::Bool32 VKAPI_CALL VkDebugLayerCallback(
     vk::DebugUtilsMessageTypeFlagsEXT type,
     const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, void*
 ) {
-    LOG_RUNTIME(VulkanDebugLayer, err,
-        "{}",
-        pCallbackData->pMessage
-    );
+    const spdlog::level::level_enum kLevels[] = {
+        spdlog::level::debug,    // eVerbose
+        spdlog::level::info,     // eInfo
+        spdlog::level::warn,     // eWarning
+        spdlog::level::err       // eError
+    };
+    spdlog::level::level_enum level = kLevels[(std::countr_zero(static_cast<uint32_t>(severity)) >> 2) & 3];     
+    getLogger("VkDebugLayer")->log(level, "{}", pCallbackData->pMessage);    
     return vk::False;
 }
 VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, const char* engineName, const uint32_t apiVersion)

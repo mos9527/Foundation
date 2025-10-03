@@ -29,7 +29,10 @@ namespace Foundation::Bits
         constexpr operator bool() const { return value != 0; }
         [[nodiscard]] constexpr bool is_pow2() const { return (value & (value - 1)) == 0; }
         [[nodiscard]] constexpr bool is_bitmask() const { return is_pow2(); }
-        [[nodiscard]] constexpr int bit() const { return std::countr_one(value); }
+        [[nodiscard]] constexpr int bit() const { 
+            constexpr size_t bits = sizeof(Ty) * 8;
+            return std::countr_zero(value) & (bits - 1); 
+        }
     };
 } // namespace Foundation::Bits
 /**

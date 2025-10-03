@@ -810,7 +810,7 @@ void Renderer::FinalizeResources()
             [&](RHITexture* const ptr) { mResources->resources[handle] = ptr; },
             [&](auto const&) { throw std::runtime_error("Unhandled resource type at creation time"); });
     }
-    // Add back buffers (if any)
+    // Add back buffers (if need to present)
     if (mDesc.present)
     {
         for (size_t i = 0; i < mFrameSwaps; i++)
@@ -864,7 +864,7 @@ void Renderer::SetFrameSyncObjects()
     while (mExecutePerSwapCmds.size() < mFrameSwaps)
     {
         auto& threads = mExecutePerSwapCmds.emplace_back(mAllocator);
-        while (threads.size() < kRecordThreadpoolSize + 1)
+        while (threads.size() < kRecordThreadpoolSize + 1) // Inc. main (render) thread. We do work too!
             threads.emplace_back(ConstructUnique<ExecutePerThreadCommandLists>(mAllocator, mDevice.Get(),
                                                                                kMaxCommandListsPerThread, mAllocator));
     }
@@ -929,6 +929,7 @@ void Renderer::BeginExecute()
     // Reset per-swap command lists
     for (auto& cmds : mExecutePerSwapCmds[mCurrentSync])
         cmds->Reset();
+    // Reset per-frame arena
     mExecuteAlloc.Reset(mExecuteArena);
     Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait_fences(mExecuteAlloc.Ptr());
     if (mSetup->executionAnyGraphics)
