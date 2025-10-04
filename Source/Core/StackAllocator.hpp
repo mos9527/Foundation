@@ -27,11 +27,6 @@ namespace Foundation::Core {
             Reset({ nullptr, 0 });
         }
 		/**
-		 * @brief Allocates a block of memory of the specified size.
-		 * If the requested size exceeds the available memory within the arena, returns nullptr.
-		 */
-        pointer Allocate(size_type size) override { return Allocate(size, sizeof(std::max_align_t)); }
-		/**
 		 * @brief Allocates a block of memory of the specified size with alignment.
 		 * If the requested size exceeds the available memory within the arena, returns nullptr.
 		 */

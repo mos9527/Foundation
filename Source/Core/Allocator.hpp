@@ -24,8 +24,7 @@ namespace Foundation::Core {
     class Allocator {
 	public:
         virtual ~Allocator() = default;
-        virtual pointer Allocate(size_type size) = 0;
-		virtual pointer Allocate(size_type size, size_t alignment) = 0;
+		virtual pointer Allocate(size_type size, size_t alignment = alignof(std::max_align_t)) = 0;
 		virtual void Deallocate(pointer ptr, size_type size) = 0;
         virtual void Deallocate(pointer ptr) = 0;
         virtual pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) = 0;

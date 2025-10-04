@@ -1,16 +1,38 @@
+#if !(FOUNDATION_CORE_USES_OS_ALLOC)
+#include <mimalloc.h>
+#else
+#include <cstdlib>
+#ifndef aligned_alloc
+#if defined(_MSC_VER) // Thanks as always.
+void* aligned_alloc(size_t alignment, size_t size) { return _aligned_malloc(size, alignment); }
+void aligned_free(void* ptr) { _aligned_free(ptr); }
+void* aligned_realloc(void* ptr, size_t size, size_t alignment) { return _aligned_realloc(ptr, size, alignment); }
+#else
+static_assert(false, "aligned_alloc not defined on this platform");
+#endif
+#endif 
+#endif
 #include "HeapAllocator.hpp"
-
 namespace Foundation::Core {
-pointer HeapAllocator::Allocate(size_type size) {
-    return mi_malloc(size);
-}
-pointer HeapAllocator::Allocate(size_type size, size_t alignment) {
-    return mi_malloc_aligned(size, alignment);
-}
-pointer HeapAllocator::Reallocate(pointer ptr, size_type new_size, size_t alignment) {
-    return mi_realloc_aligned(ptr, new_size, alignment);
-}
-void HeapAllocator::Deallocate(pointer ptr) {
-    mi_free(ptr);
-}
+    pointer HeapAllocator::Allocate(size_type size, size_t alignment) {
+#if FOUNDATION_CORE_USES_OS_ALLOC     
+        return aligned_alloc(alignment, size);
+#else
+        return mi_malloc_aligned(size, alignment);
+#endif
+    }
+    pointer HeapAllocator::Reallocate(pointer ptr, size_type new_size, size_t alignment) {
+#if FOUNDATION_CORE_USES_OS_ALLOC
+        return aligned_realloc(ptr, new_size, alignment);
+#else
+        return mi_realloc_aligned(ptr, new_size, alignment);
+#endif
+    }
+    void HeapAllocator::Deallocate(pointer ptr) {
+#if FOUNDATION_CORE_USES_OS_ALLOC
+        return aligned_free(ptr);
+#else
+        mi_free(ptr);
+#endif
+    }
 }

@@ -76,7 +76,7 @@ public struct MeshVertexCompact {
     public half u, v;       // texcoord fp16
 };
 public struct VertexOutput
-{
+{    
     public float4 pos : SV_Position;
     public float3 normal;
     public float3 tangent;
@@ -84,3 +84,8 @@ public struct VertexOutput
     public float2 uv;
     public uint meshlet;
 };
+public struct PrimitiveOutput
+{
+    public uint id : SV_PrimitiveID;
+    public bool cull : SV_CullPrimitive;
+}

@@ -43,6 +43,15 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(mimalloc)
 
+target_link_libraries(Foundation_Core PUBLIC fmt::fmt spdlog::spdlog)
+option(FOUNDATION_CORE_USES_OS_ALLOC "Use OS allocator instead of mimalloc for HeapAllocator" OFF)
+if (FOUNDATION_CORE_USES_OS_ALLOC)
+    target_compile_definitions(Foundation_Core PUBLIC "FOUNDATION_CORE_USES_OS_ALLOC=1")
+else ()    
+    target_compile_definitions(Foundation_Core PUBLIC "FOUNDATION_CORE_USES_OS_ALLOC=0")
+    target_link_libraries(Foundation_Core PUBLIC mimalloc-static)
+endif()
+
 FetchContent_Declare(
         tracy
         GIT_REPOSITORY https://github.com/wolfpld/tracy.git
@@ -51,7 +60,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tracy)
 
-target_link_libraries(Foundation_Core PUBLIC  fmt::fmt spdlog::spdlog mimalloc-static)
+
+
 target_include_directories(
         Foundation_Core
         PUBLIC

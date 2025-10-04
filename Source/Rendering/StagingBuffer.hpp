@@ -110,8 +110,6 @@ namespace Foundation::Rendering
          *
          * @note This MUST be called after the @ref Renderer's @ref BeginExecute,
          * and before @ref ExecuteFrame as the staging buffer is tied to the frame fences.
-         *
-         * @param rendererSync The @ref Renderer::GetSync() value acquired after @ref Renderer::BeginExecute()
          */
         void BeginTransfer();
         /**

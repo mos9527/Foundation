@@ -37,6 +37,7 @@ void RenderApplication::CreateSwapchain() {
 }
 void RenderApplication::InitializeRenderer() {
     LOG_RUNTIME(RenderApplication, info, "** Renderer Setup **");
+    mRenderer.reset();
     mRenderer = ConstructUnique<Renderer>(
         mAllocRenderer.Ptr(),
         RendererDesc{
