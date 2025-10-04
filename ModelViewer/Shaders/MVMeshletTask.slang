@@ -2,6 +2,8 @@
 
 groupshared MeshletPayload gsPayload;
 // https://gpuopen.com/learn/mesh_shaders/mesh_shaders-optimization_and_best_practices/
+// Each WG of task shader processes up to kMaxTaskShaderWork meshlets, and each
+// thread in the WG processes one meshlet
 [shader("amplification")]
 [numthreads(kMaxTaskShaderWork, 1, 1)]
 void meshletTask(uint meshlet: SV_GroupIndex, uint2 groupID: SV_GroupID) {

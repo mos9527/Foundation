@@ -15,7 +15,7 @@ void taskGeneration(uint instanceID: SV_DispatchThreadID) {
     SceneMeshAllocation mesh = sceneConst.Load<SceneMeshAllocation>(instance.meshAllocationRawOffsetPP - 1);
     // Just use LOD 0 for now
     // TODO: Corase culling and LOD selection
-    SceneMeshLodAllocation lod = mesh.lods[2];
+    SceneMeshLodAllocation lod = mesh.lods[0];
     // Generate tasks for each meshlet
     // Each task shader _group_ dispatch processes at most kMaxTaskShaderWork meshlets
     // and each task shader thread submits one mesh shader work

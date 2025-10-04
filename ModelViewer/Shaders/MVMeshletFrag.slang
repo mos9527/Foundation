@@ -13,5 +13,6 @@ uint hash(uint a)
 float4 meshletFrag(VertexOutput vtx) : SV_Target {
     uint mhash = hash(vtx.meshlet);
     float3 col = float3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
-    return float4(pow(col, 1/2.2), 1.0);
+    col *= clamp(normalize(vtx.normal).z,0,1); // L=(0,0,1)
+    return float4(col, 1.0);
 }

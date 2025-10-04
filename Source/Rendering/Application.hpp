@@ -64,7 +64,7 @@ namespace Foundation::Rendering
 
     public:
         /**
-         * @brief Frame timing information for performance measurements.
+         * @brief Rolling frame timing information for performance measurements.
          *
          * This is updated every frame in RenderWorker(), where `delta` reflects
          * a rolling average over the last @ref FrameTiming::kTimingSampleDuration duration.
@@ -77,6 +77,11 @@ namespace Foundation::Rendering
             FTick begin, delta;
             FTick Tick(FTick const& t)
             {
+                if (t.x <= begin.x)
+                {
+                    begin = t; // Reset
+                    return delta;
+                }                    
                 delta = t - begin;
                 begin = t;
                 return delta;

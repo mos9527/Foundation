@@ -42,7 +42,7 @@ void meshletMesh(
         // Output
         output.pos = mul(draw.viewProj, float4(pos, 1.0));
         output.normal = q.rotate(N);
-        output.tangent = q.rotate(T_BSign.xyz);
+        output.tangent = N; // q.rotate(T_BSign.xyz);
         output.bitangent = cross(output.normal, output.tangent) * T_BSign.w;
         output.uv = float2(input.u, input.v);
         output.meshlet = meshletID;
@@ -64,7 +64,7 @@ void meshletMesh(
         float prod = ab.x * ac.y - ab.y * ac.x;
         // Cull backface
         if (prod > 0) // Clockwise -> backfacing
-            prim.cull = true;
+            prim.cull = true;        
         triangles[i] = uint3(mi.v0, mi.v1, mi.v2);
         prims[i] = prim;
     }

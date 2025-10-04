@@ -81,6 +81,7 @@ namespace ModelViewer {
     {
         float3 position{1,1,1};
         float3 lookAt{0,0,0};
+        float3 up{0, 0, 1};
 
         float verticalFov{radians(45.0)}; // In radians
         float aspectRatio{1};

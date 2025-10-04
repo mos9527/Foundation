@@ -29,7 +29,7 @@ namespace ModelViewer
     ScenePushConstants Scene::GetSceneConstants() { 
         ScenePushConstants pc{};
         mat4 proj = infinitePerspective(mCamera.verticalFov, mCamera.aspectRatio, mCamera.zNear);
-        mat4 view = lookAt(mCamera.position, mCamera.lookAt, float3{0, 0, 1});
+        mat4 view = lookAt(mCamera.position, mCamera.lookAt, mCamera.up);
         proj[1][1] *= -1; // Vulkan NDC
         pc.viewProj = proj * view;
         return pc;

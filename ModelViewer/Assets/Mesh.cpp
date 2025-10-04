@@ -18,10 +18,10 @@ namespace ModelViewer
         v.py = quantizeFP16(pos.y);
         v.pz = quantizeFP16(pos.z);
         vec2 tangentOct = packUnitOctahedral(tangent);       
-        v.tp = quantizeSnormShifted(tangentOct.x, 8) << 8u | quantizeSnormShifted(tangentOct.y, 8);
+        v.tp = quantizeSnormShifted(tangentOct.x, 8) | quantizeSnormShifted(tangentOct.y, 8) << 8u;
         vec2 normalOct = packUnitOctahedral(normal);
         uint32_t sgn = dot(cross(normal, tangent), bitangent) < 0;
-        v.np = quantizeSnormShifted(normalOct.x, 15) << 15u | quantizeSnormShifted(normalOct.y, 15) << 2u | sgn;
+        v.np = quantizeSnormShifted(normalOct.x, 15) | quantizeSnormShifted(normalOct.y, 15) << 15u | sgn << 30u;
         v.u = quantizeFP16(uv.x);
         v.v = quantizeFP16(uv.y);
         return v;
