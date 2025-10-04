@@ -79,6 +79,28 @@ void App::OnRendererSetup()
             r->CmdDispatch(self, cmd, {1, 1, 1});
         });
     createPass(
+        mRenderer.get(), "Grid View", RHIDeviceQueueType::Graphics,
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/MVGridView.spv");
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVGridView.spv");
+            r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0,
+                                sizeof(SceneGrid::Params));
+            r->BindBackbufferRTV(self);
+            r->PassSetRasterizerFlags(self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone});
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            auto const& img_wh = r->GetSwapchainExtent();
+            r->CmdBeginGraphics(self, cmd, img_wh);
+            r->CmdSetPipeline(self, cmd);
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0,
+                                  mScene->mGrid.GetParams(mScene->mCamera));
+            cmd->SetViewport(0, 0, img_wh.x, img_wh.y).SetScissor(0, 0, img_wh.x, img_wh.y);
+            cmd->Draw(24);
+            cmd->EndGraphics();
+        });
+    createPass(
         mRenderer.get(), "Meshlet Draw", RHIDeviceQueueType::Graphics,
         [=](PassHandle self, Renderer* r)
         {
@@ -92,7 +114,7 @@ void App::OnRendererSetup()
             r->BindBufferStorageRead(self, sceneConst, RHIPipelineStageBits::ComputeShader, "sceneConst");
             r->BindPushConstant(self,
                                 RHIShaderStageBits::Mesh | RHIShaderStageBits::Fragment, 0,
-                                sizeof(ScenePushConstants));
+                                sizeof(SceneCamera::Params));
             r->BindBackbufferRTV(self);
             r->BindTextureDSV(self, zbuffer,
                               {.format = RHIResourceFormat::D32SignedFloat,
@@ -101,9 +123,10 @@ void App::OnRendererSetup()
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             auto const& img_wh = r->GetSwapchainExtent();
-            r->CmdBeginGraphics(self, cmd, img_wh);
+            r->CmdBeginGraphics(self, cmd, img_wh, {} /* no RTV clear */);
             r->CmdSetPipeline(self, cmd);
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Mesh  | RHIShaderStageBits::Fragment, 0, mScene->GetSceneConstants());
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Mesh | RHIShaderStageBits::Fragment, 0,
+                                  mScene->mCamera.GetParams());
             cmd->SetViewport(0, 0, img_wh.x, img_wh.y).SetScissor(0, 0, img_wh.x, img_wh.y);
             cmd->DrawMeshTasksIndirect(r->DerefResource(meshletTaskDispatch).Get<RHIBuffer*>(), 0, 1, sizeof(MeshletTaskDispatch));                
             cmd->EndGraphics();

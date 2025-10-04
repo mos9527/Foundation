@@ -89,3 +89,10 @@ public struct PrimitiveOutput
     public uint id : SV_PrimitiveID;
     public bool cull : SV_CullPrimitive;
 }
+public struct CameraParams {
+    public float4x4 view;
+    public float4x4 proj;
+    public float3 cameraPosition;
+
+    public float4x4 ViewProj() { return mul(proj, view); }
+}

@@ -69,14 +69,7 @@ namespace ModelViewer {
         // 0 reserved for no mesh
         uint32_t meshAllocationRawOffsetPP = 0;            
     };
-    /* -- Scene -- */
-    struct ScenePushConstants
-    {
-        float4x4 viewProj;        
-        float time;       
-        float3 reserved;
-    };
-#pragma pack(pop)    
+    /* -- Metadata -- */
     struct SceneCamera
     {
         float3 position{1,1,1};
@@ -85,8 +78,36 @@ namespace ModelViewer {
 
         float verticalFov{radians(45.0)}; // In radians
         float aspectRatio{1};
-        float zNear{0.1};
+        float zNear{1e-3};
+        
+        struct Params
+        {
+            mat4 view;
+            mat4 proj;
+            float3 cameraPosition;
+        };
+        Params GetParams() const;
     };
+    struct SceneGrid
+    {
+        uint32_t dimension{10000};
+        float width{0.01};
+        enum class Type : uint32_t
+        {
+            Cartesian = 0,
+            Radial = 1
+        } type{Type::Cartesian};
+
+        struct Params
+        {
+            SceneCamera::Params camera;
+            uint dimension;
+            float width;
+            uint type;
+        };
+        Params GetParams(SceneCamera const& camera) const;
+    };
+#pragma pack(pop)   
     class Scene
     {
         Allocator* mAllocator;
@@ -96,10 +117,9 @@ namespace ModelViewer {
     public:
         Scene(GPUScene* scene, Allocator* allocator);
 
+        float mTime{};
         SceneCamera mCamera{};
-        // TODO: Proper Scene Graph impl. Keeping things simple while being able
-        // to load glTF scenes.       
-        ScenePushConstants GetSceneConstants();
+        SceneGrid mGrid{};
 
         SceneHandle PushMesh(SceneMeshData const& data);
         SceneMeshAllocation const& QueryMesh(SceneHandle handle);

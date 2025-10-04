@@ -21,7 +21,7 @@ namespace ModelViewer
         meshLoadObjFile(vertices, indices, "data/assets/Kitten.obj");
         SceneMeshData meshData = sceneMeshDataFromVertexIndex(vertices, indices, GetAllocator());
         mesh = mScene->PushMesh(meshData);
-        mScene->mCamera.position = float3{2, 2, 2};
+        mScene->mCamera.position = float3{2, 2, 10};
     }    
     void App::OnApplicationTick()
     {
@@ -33,6 +33,7 @@ namespace ModelViewer
         mScene->UnmapInstances();
     }    
     void App::OnBeforeFrame() { 
+        mScene->mTime = GetApplicationTime();
         mScene->mCamera.aspectRatio = mSwapchain->GetAspectRatio();        
         static float t0 = 0; float t1 = GetApplicationTime(), dt = t1 - t0;
         /* -- Camera controls -- */
@@ -49,12 +50,13 @@ namespace ModelViewer
         if (glfwGetKey(win, GLFW_KEY_S) == GLFW_PRESS)
             move -= view;
         if (glfwGetKey(win, GLFW_KEY_A) == GLFW_PRESS)
-            move -= right, camera.lookAt -= right * delta;
+            move -= right;
         if (glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS)
-            move += right, camera.lookAt += right * delta;
+            move += right;
         if (length(move) > 0)
             move = normalize(move) * delta;
         camera.position += move; 
+        camera.lookAt += move;
         // View
         static double lastX = 0, lastY = 0;
         double mX, mY; glfwGetCursorPos(win, &mX, &mY);

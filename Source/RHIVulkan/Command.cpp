@@ -330,10 +330,13 @@ RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc) {
                 attachment.clearDepthStencil->second
             };
         }
+        vk::AttachmentLoadOp loadOp = attachment.clearColor || attachment.clearDepthStencil
+            ? vk::AttachmentLoadOp::eClear
+            : vk::AttachmentLoadOp::eLoad;
         return vk::RenderingAttachmentInfo{
             .imageView = attachment.imageView ? static_cast<const VulkanTextureView*>(attachment.imageView)->GetVkImageView() : vk::ImageView{ nullptr },
             .imageLayout = vkImageLayoutFromRHITextureLayout(attachment.imageLayout),
-            .loadOp = vk::AttachmentLoadOp::eClear,
+            .loadOp = loadOp,
             .storeOp = vk::AttachmentStoreOp::eStore,
             .clearValue = clear_value
         };

@@ -47,9 +47,9 @@ namespace Foundation::RHI {
                     CullBack
                 } cullMode{ CullBack };
                 enum FrontFace {
-                    FfCounterClockwise,
-                    FfClockwise
-                } frontFace{ FfClockwise };
+                    FFCounterClockwise,
+                    FFClockwise
+                } frontFace{ FFCounterClockwise };
                 bool enableDepthBias{ false };
                 float depthBias = 1.0;
                 float lineFillWidth = 1.0;
@@ -63,8 +63,8 @@ namespace Foundation::RHI {
             struct DepthStencil {
                 RHIResourceFormat depthFormat{ RHIResourceFormat::Undefined };
                 RHIResourceFormat stencilFormat{ RHIResourceFormat::Undefined };
-                bool depthTest{ false };
-                bool depthWrite{ false };
+                bool depthTest{ true };
+                bool depthWrite{ true };
                 enum CompareOp {
                     NEVER,
                     LESS,

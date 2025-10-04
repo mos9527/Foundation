@@ -262,6 +262,9 @@ void Renderer::BindBackbufferRTV(PassHandle pass) const
     CHECK_MSG(tpass.queue == RHIDeviceQueueType::Graphics,
               "RTV (Render Target Views) are only supported on Graphics queues");
     tpass.writeBackbuffer = true;
+    if (mSetup->lastBackbufferProducer != kInvalidHandle && mSetup->lastBackbufferProducer != pass)
+        mSetup->add_edge(pass, mSetup->lastBackbufferProducer, kInvalidHandle);
+    mSetup->lastBackbufferProducer = pass;
 }
 void Renderer::BindTextureCopyDst(PassHandle pass, ResourceHandle texture,
                                   RHITextureSubresourceRange const& range) const
@@ -280,6 +283,15 @@ void Renderer::BindTextureCopySrc(PassHandle pass, ResourceHandle texture,
               mSetup->trackedResources[texture].name);
     DeclareTextureAccess(pass, texture, RHIPipelineStageBits::Transfer, range, RHIResourceAccessBits::TransferRead,
                          RHITextureLayout::TransferSrc);
+}
+void Renderer::PassSetRasterizerFlags(
+    PassHandle pass, RHIPipelineState::PipelineStateDesc::Rasterizer const& rasterizer,
+    RHIPipelineState::PipelineStateDesc::DepthStencil const& depth_stencil) const
+{
+    CHECK(mState == State::Setup);
+    auto& tpass = mSetup->trackedPasses[pass];
+    tpass.psoRasterizer = rasterizer;
+    tpass.psoDepthStencil = depth_stencil;
 }
 /* --- */
 void Renderer::EndSetup()
@@ -710,14 +722,9 @@ void Renderer::BuildPipelineState(PassHandle pass)
         .type = tracked.isComputePass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
         .vertexInput = {.bindings = tracked.vertexInputBindings, .attributes = tracked.vertexInputAttributes},
         .topology = RHIPipelineState::PipelineStateDesc::TriangleList,
-        .rasterizer =
-            {
-                .fillMode = RHIPipelineState::PipelineStateDesc::Rasterizer::FillSolid,
-                .cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullBack,
-                .frontFace = RHIPipelineState::PipelineStateDesc::Rasterizer::FfCounterClockwise,
-            },
+        .rasterizer = tracked.psoRasterizer,
         .multisample = {.enabled = false},
-        .depthStencil = {.depthTest = true, .depthWrite = true},
+        .depthStencil = tracked.psoDepthStencil,
         .shaderStages = pso_stages,
         .descriptorSetLayouts = tracked.pDescriptorLayouts,
         .pushConstants = tracked.pushConstants};
@@ -1623,8 +1630,9 @@ String Renderer::DbgDumpGraphviz() const
     {
         for (auto [v, w] : graph[u])
         {
+            auto const& resName = w != kInvalidHandle ? resources[w].name : "<reserved or Backbuffer>";
             fmt::format_to(std::back_inserter(out), "    \"{}@{}\" -> \"{}@{}\" [label=\"{}\"];\n", passes[u].name, u,
-                           passes[v].name, v, resources[w].name);
+                           passes[v].name, v, resName);
         }
     }
     fmt::format_to(std::back_inserter(out), "}}\n");

@@ -32,6 +32,8 @@ namespace Foundation::RenderCore
         Vector<Vector<Pair<PassHandle, ResourceHandle>>> graph;
         Vector<TrackedPass> trackedPasses;
         Vector<TrackedResource> trackedResources;
+        // Backbuffer producer
+        PassHandle lastBackbufferProducer{kInvalidHandle};
         // [resource, view desc]
         Vector<Pair<ResourceHandle, RHITextureViewDesc>> trackedViews;
         Vector<RHIDeviceSampler::SamplerDesc> trackedSamplers;
@@ -518,6 +520,19 @@ namespace Foundation::RenderCore
         void BindTextureCopySrc(PassHandle pass, ResourceHandle texture,
                                 RHITextureSubresourceRange const& range = {}) const;
         /* TODO: Push Constants */
+#pragma endregion
+#pragma region PSO Flags
+        /**
+        * @brief Sets the rasterizer and depth-stencil state for a graphics pass.
+        * 
+        * If shaders are bound to the pass, a pipeline state object will be automatically created.
+        * The parameters here will be used for the PSO creation, instead of the defaults.
+        */
+        void PassSetRasterizerFlags(
+            PassHandle pass, 
+            RHIPipelineState::PipelineStateDesc::Rasterizer const& rasterizer = {},
+            RHIPipelineState::PipelineStateDesc::DepthStencil const& depth_stencil = {}
+        ) const;
 #pragma endregion
         /**
          * @brief Finish setting up the render graph.

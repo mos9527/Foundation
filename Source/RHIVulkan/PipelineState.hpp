@@ -34,8 +34,8 @@ namespace Foundation::RHI {
 
     inline vk::FrontFace GetVulkanFrontFaceFromDesc(RHIPipelineState::PipelineStateDesc::Rasterizer::FrontFace face) {
         switch (face) {
-        case RHIPipelineState::PipelineStateDesc::Rasterizer::FfCounterClockwise: return vk::FrontFace::eCounterClockwise;
-        case RHIPipelineState::PipelineStateDesc::Rasterizer::FfClockwise:
+        case RHIPipelineState::PipelineStateDesc::Rasterizer::FFCounterClockwise: return vk::FrontFace::eCounterClockwise;
+        case RHIPipelineState::PipelineStateDesc::Rasterizer::FFClockwise:
         default:
             return vk::FrontFace::eClockwise;
         }
