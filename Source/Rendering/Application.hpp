@@ -117,9 +117,11 @@ namespace Foundation::Rendering
         Async::Mutex mRenderMutex;
 
         // Should the Render thread reset the renderer on the next frame?
-        Atomics::Atomic<bool> mRenderThreadReset{false};
+        bool mRenderThreadReset{false};
+        // Has the Render thread started?
+        bool mRenderThreadStarted{false};
         // Should the application exit?
-        Atomics::Atomic<bool> mAppShouldClose{false};
+        bool mAppShouldClose{false};
         /**
          * @brief Actions to take after device specific resources has been set up.
          *

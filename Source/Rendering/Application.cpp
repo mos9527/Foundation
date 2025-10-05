@@ -98,12 +98,13 @@ void RenderApplication::RenderWorker()
     InitializeInternal();
     InitializeRenderer();
     CHECK(mDevice && mRenderer);       
-    mRenderFrame.notify_all(); // Wake up waiting thread to start their ticks.
+    mRenderThreadStarted = true;
+    mRenderFrame.notify_all(); // Wake up waiting thread to start their ticks.    
     while (!(mAppShouldClose = mWindow.WindowShouldClose()))
     {
         if (mRenderThreadReset)
         {
-            mRenderThreadReset.store(false, std::memory_order_relaxed);
+            mRenderThreadReset = false;
             LOG_RUNTIME(RenderWorker, info, "Renderer Reset");
             InitializeRenderer();
         }
@@ -135,7 +136,7 @@ void RenderApplication::RunForever() {
 void RenderApplication::WaitForFrame()
 {    
     std::unique_lock lock(mRenderMutex);
-    mRenderFrame.wait(lock, [&]() { return mAppShouldClose.load(); }); 
+    mRenderFrame.wait(lock, [&]() { return mRenderThreadStarted; });
 }
-void RenderApplication::ResetRendererOnNextFrame() { mRenderThreadReset.store(true); }
-void RenderApplication::Shutdown() { mAppShouldClose.store(true); }
+void RenderApplication::ResetRendererOnNextFrame() { mRenderThreadReset = true; }
+void RenderApplication::Shutdown() { mAppShouldClose = true; }
