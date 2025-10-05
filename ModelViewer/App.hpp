@@ -14,10 +14,13 @@ namespace ModelViewer {
      * @brief Model Viewer Application implementation
      */
     class App : public RenderApplication {
+        void OnImGui();
+
         void OnDeviceSetup() override;        
         void OnRendererSetup() override;        
         void OnApplicationTick() override;
         void OnBeforeFrame() override;
+        void OnAfterFrame() override;
     public:
         UniquePtr<Scene> mScene;
         UniquePtr<GPUScene> mGPUScene;

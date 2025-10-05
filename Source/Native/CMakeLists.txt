@@ -11,30 +11,19 @@ file(
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 
 include(FetchContent)
-
+# GLFW
+# HiDPi issues remain at large with Wayland backend in GLFW. Disabled for now.
 set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(
-  GLFW
-  GIT_REPOSITORY https://github.com/glfw/glfw.git
-  GIT_TAG        3.4
-  GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(GLFW)
+set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(glfw)
 if (UNIX AND NOT APPLE)
     # https://github.com/glfw/glfw/issues/2495
     # XXX: This is a bit of a hack.
     # With Unity builds _GNU_SOURCE is defined too late for some reason
     target_compile_definitions(glfw PUBLIC -D_GNU_SOURCE)
 endif()
-
-FetchContent_Declare(
-    tinyfiledialogs
-    GIT_REPOSITORY https://git.code.sf.net/p/tinyfiledialogs/code
-    GIT_SHALLOW TRUE
-)
 FetchContent_MakeAvailable(tinyfiledialogs)
-
 add_library(
     Foundation_Native ${SOURCES} ${INCLUDES}
     "${tinyfiledialogs_SOURCE_DIR}/tinyfiledialogs.c"

@@ -1,4 +1,5 @@
 #include <Rendering/PSFullscreen.hpp>
+#include <Bindings/ImGui.hpp>
 #include "App.hpp"
 #include "Assets/Mesh.hpp"
 using namespace ModelViewer;
@@ -82,6 +83,7 @@ void App::OnRendererSetup()
         mRenderer.get(), "Grid View", RHIDeviceQueueType::Graphics,
         [=](PassHandle self, Renderer* r)
         {
+            using enum RHIPipelineState::PipelineStateDesc::Attachment::Blending::BlendFactor;
             r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/MVGridView.spv");
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVGridView.spv");
             r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0,
@@ -131,4 +133,5 @@ void App::OnRendererSetup()
             cmd->DrawMeshTasksIndirect(r->DerefResource(meshletTaskDispatch).Get<RHIBuffer*>(), 0, 1, sizeof(MeshletTaskDispatch));                
             cmd->EndGraphics();
         });
+    ImGui_ImplFoundation_CreatePass(mRenderer.get(), "ImGui");
 }

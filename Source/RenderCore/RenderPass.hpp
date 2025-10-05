@@ -106,6 +106,7 @@ namespace Foundation::RenderCore
         // Writes to the swapchain backbuffer
         // Ignores other RTVs if true
         bool writeBackbuffer{false};
+        RHIPipelineState::PipelineStateDesc::Attachment::Blending writeBackbufferBlending{};
         // Uses compute shader? (not necessarily in a compute queue)
         // Should be mutually exclusive with write_backbuffer and other graphics states
         bool isComputePass{false};
@@ -138,8 +139,8 @@ namespace Foundation::RenderCore
         Vector<Pair<ResourceHandle, String>> samplers;
         // Push Constants by [stage, offset, size]
         Vector<RHIPipelineState::PipelineStateDesc::PushConstant> pushConstants;
-        // (Graphics Only) Render Target View[s]
-        Vector<ResourceHandle> rtvs;
+        // (Graphics Only) Render Target View[s], Blending Op
+        Vector<Pair<ResourceHandle, RHIPipelineState::PipelineStateDesc::Attachment::Blending>> rtvs;
         // (Graphics Only) Depth Stencil View
         ResourceHandle dsv{kInvalidHandle};
         // (Graphics Only) Vertex Input assembly

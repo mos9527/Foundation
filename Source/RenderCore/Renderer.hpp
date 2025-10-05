@@ -15,8 +15,8 @@ namespace Foundation::RenderCore
     // NOTE: The limit here is mostly arbitrary - and is only used
     //       for the default priority heuristic when determining pass order.
     constexpr size_t kMaxRenderPasses = 1024;
-    constexpr size_t kRecordThreadpoolSize = 8; // Threads to record command lists concurrently
-    constexpr size_t kMaxCommandListsPerThread = 128; // Maximum number of command lists per frame    
+    constexpr size_t kRecordThreadPoolSize = 4; // Threads to record command lists concurrently
+    constexpr size_t kMaxCommandListsPerThread = kMaxRenderPasses; // Maximum number of command lists per frame    
     constexpr size_t kExecuteArenaSize = 16 * (1 << 20); // Maximum size of the per-frame transient arena (16MB)
     const RHIPipelineStage kComputeStagesMask = RHIPipelineStageBits::FragmentShader |
         RHIPipelineStageBits::VertexShader | RHIPipelineStageBits::MeshShader | RHIPipelineStageBits::RayTracingShader |
@@ -482,7 +482,7 @@ namespace Foundation::RenderCore
          *
          * The order of multiple render targets is the same as the insertion order of the RTVs.
          */
-        ResourceHandle BindTextureRTV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc) const;
+        ResourceHandle BindTextureRTV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc, RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending = {}) const;
         /**
          * @brief Binds a texture as a Depth-Stencil View for a graphics pass.
          *
@@ -502,7 +502,7 @@ namespace Foundation::RenderCore
          *
          * This can be automatically bound to the pipeline with CmdBeginGraphics().
          */
-        void BindBackbufferRTV(PassHandle pass) const;
+        void BindBackbufferRTV(PassHandle pass, RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending = {}) const;
         /**
          * @brief Declares that this pass will write to the texture via copy / blit (transfer destination).
          *
@@ -640,7 +640,7 @@ namespace Foundation::RenderCore
         /**
          * @brief Helper that retrieves the local size declared by a compute pass.
          *
-         * Calling this on a non-CS bound queue is incorrect, and will throw.
+         * Calling this on a non-CS/Task/Mesh bound queue is incorrect, and will throw.
          */
         [[nodiscard]] RHIExtent3D CmdGetComputeLocalSize(PassHandle pass) const;
         /**

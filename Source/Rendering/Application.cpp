@@ -74,7 +74,7 @@ void RenderApplication::Execute()
             ZoneScopedN("OnBeforeFrame");
             OnBeforeFrame();
         }
-        mRenderer->ExecuteFrame();
+        mRenderer->ExecuteFrame();        
         {
             ZoneScopedN("OnAfterFrame");
             OnAfterFrame();
@@ -87,6 +87,7 @@ void RenderApplication::Execute()
         mRenderer->SetSwapchain(mSwapchain);
         OnSwapchainResize();
         InitializeRenderer();
+        OnAfterFrame();
         Execute();
     }
 }

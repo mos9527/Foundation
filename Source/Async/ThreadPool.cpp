@@ -12,7 +12,7 @@ namespace Foundation::Async
     void ThreadPool::Shutdown()
     {
         mShutdown = true;
-        mTotal.store(-1, std::memory_order_relaxed);
+        mTotal.store(-1LL, std::memory_order_relaxed);
         mTotal.notify_all();
     }
     void ThreadPool::Join()

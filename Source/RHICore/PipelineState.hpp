@@ -66,22 +66,22 @@ namespace Foundation::RHI {
                 bool depthTest{ true };
                 bool depthWrite{ true };
                 enum CompareOp {
-                    NEVER,
-                    LESS,
-                    EQUAL,
+                    Never,
+                    Less,
+                    Equal,
                     LessEqual,
-                    GREATER,
+                    Greater,
                     NotEqual,
                     GreaterEqual,
-                    ALWAYS
-                } depthCompareOp{ LESS };
+                    Always
+                } depthCompareOp{Less};
             } depthStencil{};
             struct Attachment {
                 struct Blending {
                     bool enabled{ false };
                     enum BlendFactor {
-                        ZERO,
-                        ONE,
+                        Zero,
+                        One,
                         SrcColor,
                         OneMinusSrcColor,
                         DstColor,
@@ -90,13 +90,12 @@ namespace Foundation::RHI {
                         OneMinusSrcAlpha,
                         DstAlpha,
                         OneMinusDstAlpha
-                    } srcColorBlendFactor, dstColorBlendFactor;
+                    } srcColorBlendFactor, dstColorBlendFactor, srcAlphaBlendFactor, dstAlphaBlendFactor;
                     enum BlendOp {
-                        ADD,
-                        SUBTRACT,
+                        Add,
+                        Subtract,
                         ReverseSubtract
-                    } colorBlendOp;
-                    float blendConstant[4]{}; // RGBA
+                    } colorBlendOp, alphaBlendOp;
                 } blending;
                 struct RenderTarget {
                     RHIResourceFormat format{ RHIResourceFormat::Undefined };

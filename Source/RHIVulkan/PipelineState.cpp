@@ -59,21 +59,21 @@ void VulkanPipelineState::InitializeGraphics() {
     vk::CompareOp depth_compare_op{ vk::CompareOp::eLess };
     switch (mDesc.depthStencil.depthCompareOp)
     {
-    case PipelineStateDesc::DepthStencil::NEVER:
+    case PipelineStateDesc::DepthStencil::Never:
         depth_compare_op = vk::CompareOp::eNever; break;
-    case PipelineStateDesc::DepthStencil::LESS:
+    case PipelineStateDesc::DepthStencil::Less:
         depth_compare_op = vk::CompareOp::eLess; break;
-    case PipelineStateDesc::DepthStencil::EQUAL:
+    case PipelineStateDesc::DepthStencil::Equal:
         depth_compare_op = vk::CompareOp::eEqual; break;
     case PipelineStateDesc::DepthStencil::LessEqual:
         depth_compare_op = vk::CompareOp::eLessOrEqual; break;
-    case PipelineStateDesc::DepthStencil::GREATER:
+    case PipelineStateDesc::DepthStencil::Greater:
         depth_compare_op = vk::CompareOp::eGreater; break;
     case PipelineStateDesc::DepthStencil::NotEqual:
         depth_compare_op = vk::CompareOp::eNotEqual; break;
     case PipelineStateDesc::DepthStencil::GreaterEqual:
         depth_compare_op = vk::CompareOp::eGreaterOrEqual; break;
-    case PipelineStateDesc::DepthStencil::ALWAYS:
+    case PipelineStateDesc::DepthStencil::Always:
         depth_compare_op = vk::CompareOp::eAlways; break;
     default:
         break;
@@ -108,6 +108,9 @@ void VulkanPipelineState::InitializeGraphics() {
             .srcColorBlendFactor = GetVulkanBlendFactorFromDesc(attachment.blending.srcColorBlendFactor),
             .dstColorBlendFactor = GetVulkanBlendFactorFromDesc(attachment.blending.dstColorBlendFactor),
             .colorBlendOp = GetVulkanBlendOpFromDesc(attachment.blending.colorBlendOp),
+            .srcAlphaBlendFactor = GetVulkanBlendFactorFromDesc(attachment.blending.srcAlphaBlendFactor),
+            .dstAlphaBlendFactor = GetVulkanBlendFactorFromDesc(attachment.blending.dstAlphaBlendFactor),
+            .alphaBlendOp = GetVulkanBlendOpFromDesc(attachment.blending.alphaBlendOp),
             .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
                               vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
         };
@@ -115,9 +118,10 @@ void VulkanPipelineState::InitializeGraphics() {
     }
     vk::PipelineColorBlendStateCreateInfo color_blending{
         .logicOpEnable = VK_FALSE,
-        .logicOp = vk::LogicOp::eCopy, // TODO
+        .logicOp = vk::LogicOp::eCopy, // TODO - logicOp unused for now
         .attachmentCount = static_cast<uint32_t>(blend_attachments.size()),
         .pAttachments = blend_attachments.data(),
+        .blendConstants = Array<float,4>{1.0f, 1.0f, 1.0f, 1.0f}
     };
     vk::DynamicState dynamic_states[2]{ vk::DynamicState::eViewport, vk::DynamicState::eScissor };
     vk::PipelineDynamicStateCreateInfo dynamic_state{

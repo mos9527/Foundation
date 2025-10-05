@@ -18,7 +18,7 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
                    RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator) :
     mState(State::Undefined), mAllocator(allocator), mDesc(desc), mSwaps(mAllocator), mDevice(device),
     mSwapchain(swapchain), mExecuteArena(mAllocator, kExecuteArenaSize), mExecuteAlloc(mExecuteArena),
-    mExecuteThreadPool(kRecordThreadpoolSize, kMaxCommandListsPerThread * 2, allocator, "Renderer"),
+    mExecuteThreadPool(kRecordThreadPoolSize, kMaxCommandListsPerThread * 2, allocator, "Renderer"),
     mExecutePerSwapCmds(allocator), mWaitIdle(device.Get())
 {
     mGraphicsQueue = mDevice->GetDeviceQueue(RHIDeviceQueueType::Graphics);
@@ -219,7 +219,9 @@ ResourceHandle Renderer::BindTextureUAV(PassHandle pass, ResourceHandle texture,
     mSetup->bindingCounts[RHIDescriptorType::StorageImage]++;
     return view;
 }
-ResourceHandle Renderer::BindTextureRTV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc) const
+ResourceHandle
+Renderer::BindTextureRTV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc,
+                         RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending) const
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(desc.range.IsValid(), "Binding RTV on {} is of invalid range! Did you specify `desc.range`?",
@@ -233,7 +235,7 @@ ResourceHandle Renderer::BindTextureRTV(PassHandle pass, ResourceHandle texture,
     DeclareTextureAccess(pass, texture, RHIPipelineStageBits::RenderTargetOutput, desc.range,
                          RHIResourceAccessBits::RenderTargetWrite, RHITextureLayout::RenderTarget);
     ResourceHandle view = CreateTextureView(pass, texture, desc);
-    tpass.rtvs.push_back(view);
+    tpass.rtvs.emplace_back(view, blending);
     return view;
 }
 ResourceHandle Renderer::BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc) const
@@ -255,13 +257,14 @@ ResourceHandle Renderer::BindTextureDSV(PassHandle pass, ResourceHandle texture,
     tpass.dsv = view;
     return view;
 }
-void Renderer::BindBackbufferRTV(PassHandle pass) const
+void Renderer::BindBackbufferRTV(PassHandle pass, RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending) const
 {
     CHECK(mState == State::Setup);
     auto& tpass = mSetup->trackedPasses[pass];
     CHECK_MSG(tpass.queue == RHIDeviceQueueType::Graphics,
               "RTV (Render Target Views) are only supported on Graphics queues");
     tpass.writeBackbuffer = true;
+    tpass.writeBackbufferBlending = blending;
     if (mSetup->lastBackbufferProducer != kInvalidHandle && mSetup->lastBackbufferProducer != pass)
         mSetup->add_edge(pass, mSetup->lastBackbufferProducer, kInvalidHandle);
     mSetup->lastBackbufferProducer = pass;
@@ -736,21 +739,27 @@ void Renderer::BuildPipelineState(PassHandle pass)
     {
         CHECK_MSG(tracked.rtvs.empty(), "Pass {} writes to backbuffer, and cannot have other RTVs.", tracked.name);
         // Only write to the backbuffer
-        attachments.push_back({.renderTarget = {.format = mSwapchain->mDesc.format}});
+        attachments.push_back({
+            .blending = tracked.writeBackbufferBlending,
+            .renderTarget = {.format = mSwapchain->mDesc.format}
+        });
     }
     else
     {
-        for (auto rtv : tracked.rtvs)
+        for (auto const& [rtv, blending] : tracked.rtvs)
         {
             auto& [rhdl, desc] = mSetup->trackedViews[rtv];
-            attachments.push_back({.renderTarget = {.format = desc.format}});
+            attachments.push_back({
+                .blending = blending,
+                .renderTarget = {.format = desc.format}
+            });
         }
     }
     pso_desc.attachments = attachments;
     pso_desc.depthStencil = {
         .depthTest = tracked.dsv != kInvalidHandle,
         .depthWrite = tracked.dsv != kInvalidHandle,
-        .depthCompareOp = RHIPipelineState::PipelineStateDesc::DepthStencil::CompareOp::LESS,
+        .depthCompareOp = RHIPipelineState::PipelineStateDesc::DepthStencil::CompareOp::Less,
     };
     if (tracked.dsv != kInvalidHandle)
     {
@@ -871,7 +880,7 @@ void Renderer::SetFrameSyncObjects()
     while (mExecutePerSwapCmds.size() < mFrameSwaps)
     {
         auto& threads = mExecutePerSwapCmds.emplace_back(mAllocator);
-        while (threads.size() < kRecordThreadpoolSize + 1) // Inc. main (render) thread. We do work too!
+        while (threads.size() < kRecordThreadPoolSize + 1) // Inc. main (render) thread. We do work too!
             threads.emplace_back(ConstructUnique<ExecutePerThreadCommandLists>(mAllocator, mDevice.Get(),
                                                                                kMaxCommandListsPerThread, mAllocator));
     }
@@ -1462,7 +1471,6 @@ void Renderer::ExecuteFrame()
                 ZoneScopedN("Final Submit");
                 if (!mDesc.present)
                 {
-                    ZoneScopedN("Submit (No Present)");
                     queue->Submit({.timelineWaits = timeline_waits,
                                    .timelineSignals = {{{timeline_signal}}},
                                    .waitsStages = timeline_wait_stages,
@@ -1489,7 +1497,6 @@ void Renderer::ExecuteFrame()
                     group_cmds.push_back(cmd);
                     {
                         // Finally..
-                        ZoneScopedN("Submit & Present");
                         timeline_wait_stages.push_back(group.allStages | RHIPipelineStageBits::RenderTargetOutput);
                         queue->Submit({.timelineWaits = timeline_waits,
                                        .timelineSignals = {{{timeline_signal}}},
@@ -1554,7 +1561,6 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
 {
     CHECK(mState == State::Execute);
     auto& tpass = mSetup->trackedPasses[pass];
-    CHECK_MSG(tpass.pso.IsValid(), "Current pass has no Pipeline state.");
     Vector<RHICommandList::GraphicsDesc::Attachment> rtvs(mExecuteAlloc.Ptr());
     if (tpass.writeBackbuffer)
     {
@@ -1566,7 +1572,7 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
     else
     {
         rtvs.reserve(tpass.rtvs.size());
-        for (auto rtv : tpass.rtvs)
+        for (auto const& [rtv, blending] : tpass.rtvs)
         {
             auto& [rhdl, desc] = mSetup->trackedViews[rtv];
             auto& tres = mSetup->trackedResources[rhdl];
@@ -1601,7 +1607,7 @@ RHIExtent3D Renderer::CmdGetComputeLocalSize(const PassHandle pass) const
     CHECK(mState == State::Execute);
     auto& tpass = mSetup->trackedPasses[pass];
     auto const& [x, y, z] = tpass.groupLocalSize;
-    CHECK_MSG(x > 0 && y > 0 && z > 0, "Pass {} does not have a valid compute local size", tpass.name);
+    CHECK_MSG(x > 0 && y > 0 && z > 0, "Pass {} does not have a valid group local size", tpass.name);
     return {x, y, z};
 }
 void Renderer::CmdDispatch(const PassHandle pass, RHICommandList* cmd, const RHIExtent3D thread_size) const

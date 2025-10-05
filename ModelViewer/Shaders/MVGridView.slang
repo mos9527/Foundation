@@ -71,5 +71,5 @@ float4 fragMain(GridVertex vtx) : SV_Target
         grid = Grid(vtx.world, params.width);
     else
         grid = RadialGrid(vtx.world, params.width);
-    return float4(float3(grid), 1);
+    return float4(float3(grid), 0.5);
 }

@@ -11,6 +11,8 @@ option(FOUNDATION_WITH_TESTS "Build tests" ON)
 option(FOUNDATION_WITH_MODELVIEWER "Build the model viewer application" ON)
 option(FOUNDATION_WITH_EXAMPLES "Build examples" ON)
 option(FOUNDATION_WITH_PROFILING "Build with profiling (Tracy) enabled" ON)
+option(FOUNDATION_CORE_USES_OS_ALLOC "Use OS allocator instead of mimalloc for HeapAllocator" OFF)
+option(FOUNDATION_RHIVULKAN_VALIDATION_LAYER "[RHIVulkan] Build with Vulkan Validation Layer (VVL)" ON)
 
 if (FOUNDATION_WITH_PROFILING)
     add_compile_definitions(TRACY_ENABLE=1)
@@ -63,7 +65,10 @@ file(MAKE_DIRECTORY ${ASSET_BUILD_DIR})
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/Source")
 
+add_subdirectory(ThirdParty)
 add_subdirectory(Source)
+
+add_subdirectory(ThirdParty/ImGui)
 
 if (FOUNDATION_WITH_MODELVIEWER)
     add_subdirectory(ModelViewer)

@@ -32,6 +32,14 @@ namespace Foundation::Rendering {
                 cmd->EndGraphics();
             });        
     }
+    template<typename FSetup>
+    auto* createPSFullscreenPass(
+        Renderer* r,
+        StringView name,        
+        FSetup&& setup)
+    {
+        return createPSFullscreenPass(r, name, std::forward<FSetup>(setup), FRecordDefault{});
+    }
     /**
      * @brief Creates a full-screen triangle pass that renders a texture
      * to the current backbuffer.

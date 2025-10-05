@@ -2,6 +2,8 @@
 #include "Assets/Mesh.hpp"
 #include <Math/Math.hpp>
 #include <GLFW/glfw3.h>
+#include <Bindings/ImGui.hpp>
+
 using namespace Foundation;
 using namespace Foundation::Core;
 using namespace Foundation::RenderCore;
@@ -10,11 +12,19 @@ using namespace Foundation::Math;
 namespace ModelViewer
 {
     /* -- States -- */
-    SceneHandle mesh;
+    SceneHandle mesh;    
     void App::OnDeviceSetup()
     {
         mGPUScene = ConstructUnique<GPUScene>(GetAllocator(), mDevice.Get(), GPUSceneBudgets{}, GetAllocator());
         mScene = ConstructUnique<Scene>(GetAllocator(), mGPUScene.get(), GetAllocator());
+        // Setup ImGui
+        ImGui_ImplFoundation_Init(
+            static_cast<VulkanApplication*>(mRHI.get()),
+            static_cast<VulkanDevice*>(mDevice.Get()), 
+            static_cast<VulkanDeviceQueue*>(mDevice->GetDeviceQueue(RHIDeviceQueueType::Graphics)),
+            mSwapchain.Get(), 
+            reinterpret_cast<GLFWwindow*>(GetNativeWindow()->GetNative())
+        );
         // TEST: Load mesh
         Vector<MeshVertex> vertices(GetAllocator());
         Vector<MeshIndex> indices(GetAllocator());
@@ -32,7 +42,32 @@ namespace ModelViewer
         instances[0].q = angleAxis(theta, float3{0, 0, 1}) * angleAxis(radians(90.0f), float3{1, 0, 0});
         mScene->UnmapInstances();
     }    
+    void App::OnImGui() {
+        ImGui::Begin("Scene");
+        ImGui::Text("FPS: %zu", mTiming.GetFPS());
+        ImGui::Text("Frame Time: %.2f ms", mTiming.delta.y / 1e6f);
+        ImGui::Separator();
+        if (ImGui::CollapsingHeader("Camera"))
+        {
+            auto& cam = mScene->mCamera;
+            ImGui::DragFloat3("Position", &cam.position.x, 0.1f);
+            ImGui::DragFloat3("LookAt", &cam.lookAt.x, 0.1f);
+            ImGui::DragFloat3("Up", &cam.up.x, 0.1f);
+            ImGui::DragFloat("Vertical FOV (degrees)", &cam.verticalFov, 0.1f, radians(1.0f), radians(179.0f));
+            ImGui::Text("Aspect Ratio: %.3f", cam.aspectRatio);
+            ImGui::DragFloat("Near Plane", &cam.zNear, 1e-4f, 1e-4f, 100.f);
+        }
+        if (ImGui::CollapsingHeader("Controls"))
+        {
+            ImGui::Text("WASD - Move");
+            ImGui::Text("Right Mouse + Drag - Look Around");
+            ImGui::Text("Left Shift - Speed Boost");
+        }
+        ImGui::End();
+    }
     void App::OnBeforeFrame() { 
+        ImGui_ImplFoundation_OnBeforeFrame();
+        OnImGui();
         mScene->mTime = GetApplicationTime();
         mScene->mCamera.aspectRatio = mSwapchain->GetAspectRatio();        
         static float t0 = 0; float t1 = GetApplicationTime(), dt = t1 - t0;
@@ -74,6 +109,7 @@ namespace ModelViewer
         lastX = mX; lastY = mY;
         t0 = GetApplicationTime();
     }
+    void App::OnAfterFrame() { ImGui_ImplFoundation_OnAfterFrame(); }
 } // namespace ModelViewer
 using namespace ModelViewer;
 using namespace Foundation::Async;
@@ -82,4 +118,5 @@ int main(int argc, char** argv)
     App app;
     app.Initialize<VulkanApplication>({.windowTitle = "Model Viewer", .present = true, .asyncCompute = true, .vsync = false});
     app.RunForever();
+    ImGui_ImplFoundation_Shutdown();
 }

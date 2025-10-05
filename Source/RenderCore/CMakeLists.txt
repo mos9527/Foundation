@@ -10,14 +10,7 @@ file(
 )
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 
-FetchContent_Declare(
-  SPIRV-Headers
-  GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Headers
-  GIT_TAG        vulkan-sdk-1.4.321.0
-  GIT_SHALLOW TRUE
-)
 FetchContent_MakeAvailable(SPIRV-Headers)
-
 add_library(
     Foundation_RenderCore ${SOURCES} ${INCLUDES}
 )

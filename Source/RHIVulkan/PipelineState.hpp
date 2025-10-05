@@ -44,8 +44,8 @@ namespace Foundation::RHI {
     inline vk::BlendFactor GetVulkanBlendFactorFromDesc(RHIPipelineState::PipelineStateDesc::Attachment::Blending::BlendFactor factor) {
         using enum RHIPipelineState::PipelineStateDesc::Attachment::Blending::BlendFactor;
         switch (factor) {
-        case ZERO: return vk::BlendFactor::eZero;
-        case ONE: return vk::BlendFactor::eOne;
+        case Zero: return vk::BlendFactor::eZero;
+        case One: return vk::BlendFactor::eOne;
         case SrcColor: return vk::BlendFactor::eSrcColor;
         case OneMinusSrcColor: return vk::BlendFactor::eOneMinusSrcColor;
         case DstColor: return vk::BlendFactor::eDstColor;
@@ -62,8 +62,8 @@ namespace Foundation::RHI {
     inline vk::BlendOp GetVulkanBlendOpFromDesc(RHIPipelineState::PipelineStateDesc::Attachment::Blending::BlendOp op) {
         using enum RHIPipelineState::PipelineStateDesc::Attachment::Blending::BlendOp;
         switch (op) {
-        case ADD: return vk::BlendOp::eAdd;
-        case SUBTRACT: return vk::BlendOp::eSubtract;
+        case Add: return vk::BlendOp::eAdd;
+        case Subtract: return vk::BlendOp::eSubtract;
         case ReverseSubtract:
         default:
             return vk::BlendOp::eReverseSubtract;
