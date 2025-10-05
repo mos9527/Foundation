@@ -12,7 +12,7 @@ namespace Foundation::Rendering
     struct GPUSceneBudgets
     {
         // Instance: Full update every frame, fixed allocation sizes
-        size_t instanceBudget = 2_MB;
+        size_t instanceBudget = 128_KB;
         size_t instanceAlignment = 16_B;
         // Shared: Partial update every frame, dynamic allocation
         size_t sharedBudget = 1_MB;
