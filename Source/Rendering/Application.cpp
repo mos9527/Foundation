@@ -93,18 +93,21 @@ void RenderApplication::Execute()
 }
 void RenderApplication::RenderWorker()
 {
+    TracyCSetThreadName("Render Thread"); 
     CHECK_MSG(mRHI, "No RHI backend initialized! Call Initialize<Backend>() first.");
-    CHECK(mDevice && mRenderer);
-    TracyCSetThreadName("Render Thread");
-    while (!mAppShouldClose)
+    InitializeInternal();
+    InitializeRenderer();
+    CHECK(mDevice && mRenderer);       
+    mRenderFrame.notify_all(); // Wake up waiting thread to start their ticks.
+    while (!(mAppShouldClose = mWindow.WindowShouldClose()))
     {
-        if (mRenderThreadReset.load(std::memory_order_relaxed))
+        if (mRenderThreadReset)
         {
             mRenderThreadReset.store(false, std::memory_order_relaxed);
             LOG_RUNTIME(RenderWorker, info, "Renderer Reset");
             InitializeRenderer();
         }
-        Execute();
+        Execute();        
     }
     LOG_RUNTIME(RenderWorker, info, "Render Thread exiting.");
     mRenderFrame.notify_all();
@@ -112,7 +115,8 @@ void RenderApplication::RenderWorker()
 using namespace Foundation::Async;
 void RenderApplication::RunForever() {
     mRenderThread = Thread(&RenderApplication::RenderWorker, this);
-    while (!mAppShouldClose.load())
+    WaitForFrame(); // Wait for the render thread to finish initialization.
+    while (!mAppShouldClose)
     {        
         OnApplicationTick();
         // Update framerate
@@ -122,21 +126,16 @@ void RenderApplication::RunForever() {
         {
             mTiming.Tick({mRenderer->GetFrame(), perf_counter});
             mWindow.SetWindowTitle(fmt::format("{} [{} FPS]", mDesc.windowTitle, mTiming.GetFPS()).c_str());
-        }
-        if (mWindow.WindowShouldClose())
-            mAppShouldClose.store(true);
+        }                 
     }
     LOG_RUNTIME(RenderApplication, info, "Main Thread exiting.");
     mRenderThread.join();
     mDevice->WaitIdle();
 }
 void RenderApplication::WaitForFrame()
-{
-    if (!mAppShouldClose.load())
-    {
-        std::unique_lock lock(mRenderMutex);
-        mRenderFrame.wait(lock);
-    }
+{    
+    std::unique_lock lock(mRenderMutex);
+    mRenderFrame.wait(lock, [&]() { return mAppShouldClose.load(); }); 
 }
 void RenderApplication::ResetRendererOnNextFrame() { mRenderThreadReset.store(true); }
 void RenderApplication::Shutdown() { mAppShouldClose.store(true); }

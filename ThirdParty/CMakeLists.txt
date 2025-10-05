@@ -3,24 +3,24 @@ cmake_minimum_required(VERSION 3.26)
 include(FetchContent)
 
 FetchContent_Declare(
-  VulkanMemoryAllocator
-  GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-  GIT_TAG        v3.3.0
-  GIT_SHALLOW TRUE
+    VulkanMemoryAllocator
+    GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+    GIT_TAG        v3.3.0
+    GIT_SHALLOW TRUE
 )
 
 FetchContent_Declare(
-  SPIRV-Headers
-  GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Headers
-  GIT_TAG        vulkan-sdk-1.4.321.0
-  GIT_SHALLOW TRUE
+    SPIRV-Headers
+    GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Headers
+    GIT_TAG        vulkan-sdk-1.4.321.0
+    GIT_SHALLOW TRUE
 )
 
 FetchContent_Declare(
-  GLFW
-  GIT_REPOSITORY https://github.com/glfw/glfw.git
-  GIT_TAG        3.4
-  GIT_SHALLOW TRUE
+    GLFW
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG        3.4
+    GIT_SHALLOW TRUE
 )
 
 FetchContent_Declare(
@@ -30,10 +30,10 @@ FetchContent_Declare(
 )
 
 FetchContent_Declare(
-  glm
-  GIT_REPOSITORY https://github.com/g-truc/glm.git
-  GIT_TAG        1.0.1
-  GIT_SHALLOW TRUE
+    glm
+    GIT_REPOSITORY https://github.com/g-truc/glm.git
+    GIT_TAG        1.0.1
+    GIT_SHALLOW TRUE
 )
 
 FetchContent_Declare(
@@ -95,4 +95,13 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/ocornut/imgui
     GIT_TAG v1.92.3-docking
     GIT_SHALLOW TRUE
+)
+
+# Font
+FetchContent_Declare(
+    LxgwNeoXiHei
+    URL https://github.com/lxgw/LxgwNeoXiHei/releases/download/v1.223/LXGWNeoXiHei.ttf
+    URL_HASH SHA256=9937c0e201c6b4228fedd8a29a3f58cf31044295d57726005c17b30445a25871
+    DOWNLOAD_NO_EXTRACT TRUE
+    DOWNLOAD_DIR ${ASSET_BUILD_DIR}
 )

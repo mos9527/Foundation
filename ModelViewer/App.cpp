@@ -17,7 +17,8 @@ namespace ModelViewer
     {
         mGPUScene = ConstructUnique<GPUScene>(GetAllocator(), mDevice.Get(), GPUSceneBudgets{}, GetAllocator());
         mScene = ConstructUnique<Scene>(GetAllocator(), mGPUScene.get(), GetAllocator());
-        // Setup ImGui
+        /* -- ImGui -- */        
+        ImGui_ImplFoundation_SetupContextWithDefaultStyles();
         ImGui_ImplFoundation_Init(
             static_cast<VulkanApplication*>(mRHI.get()),
             static_cast<VulkanDevice*>(mDevice.Get()), 
@@ -45,7 +46,6 @@ namespace ModelViewer
     void App::OnImGui() {
         ImGui::Begin("Scene");
         ImGui::Text("FPS: %zu", mTiming.GetFPS());
-        ImGui::Text("Frame Time: %.2f ms", mTiming.delta.y / 1e6f);
         ImGui::Separator();
         if (ImGui::CollapsingHeader("Camera"))
         {

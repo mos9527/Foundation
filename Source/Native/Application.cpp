@@ -44,13 +44,8 @@ namespace Foundation::Native
     bool NativeWindow::WindowShouldClose() const
     {
         CHECK_MSG(mWindow, "Window not initialized");
-        if (!glfwWindowShouldClose(static_cast<GLFWwindow*>(mWindow))) {
-            glfwPollEvents();
-            return false;
-        }
-        else {
-            return true;
-        }
+        glfwPollEvents(); // May deadlock if called outside main thread - so always poll
+        return glfwWindowShouldClose(static_cast<GLFWwindow*>(mWindow));
     }
     NativeApplication::NativeApplication() {
         glfwSetErrorCallback(glfw_error_callback);

@@ -79,6 +79,10 @@ void App::OnRendererSetup()
             r->CmdSetPipeline(self, cmd);
             r->CmdDispatch(self, cmd, {1, 1, 1});
         });
+    createPSFullscreenPass(
+        mRenderer.get(), "Background", [=](PassHandle self, Renderer* r)
+        { r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVBackground.spv"); }
+    );
     createPass(
         mRenderer.get(), "Grid View", RHIDeviceQueueType::Graphics,
         [=](PassHandle self, Renderer* r)
@@ -88,13 +92,13 @@ void App::OnRendererSetup()
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVGridView.spv");
             r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0,
                                 sizeof(SceneGrid::Params));
-            r->BindBackbufferRTV(self);
+            r->BindBackbufferRTV(self, RHIPipelineState::PipelineStateDesc::Attachment::Blending::GetAlphaBlending());
             r->PassSetRasterizerFlags(self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone});
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             auto const& img_wh = r->GetSwapchainExtent();
-            r->CmdBeginGraphics(self, cmd, img_wh);
+            r->CmdBeginGraphics(self, cmd, img_wh, {} /* don't clear RTV */);
             r->CmdSetPipeline(self, cmd);
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0,
                                   mScene->mGrid.GetParams(mScene->mCamera));

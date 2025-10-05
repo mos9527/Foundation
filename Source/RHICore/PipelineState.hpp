@@ -96,6 +96,30 @@ namespace Foundation::RHI {
                         Subtract,
                         ReverseSubtract
                     } colorBlendOp, alphaBlendOp;
+                    const static Blending GetNoBlending() { return {}; }
+                    const static Blending GetAlphaBlending() {
+                        return {
+                            .enabled = true,
+                            .srcColorBlendFactor = SrcAlpha,
+                            .dstColorBlendFactor = OneMinusSrcAlpha,                            
+                            .srcAlphaBlendFactor = One,
+                            .dstAlphaBlendFactor = OneMinusSrcAlpha,
+                            .colorBlendOp = Add,
+                            .alphaBlendOp = Add
+                        };
+                    }
+                    const static Blending GetAdditiveBlending()
+                    {
+                        return {
+                            .enabled = true,
+                            .srcColorBlendFactor = SrcAlpha,
+                            .dstColorBlendFactor = One,                            
+                            .srcAlphaBlendFactor = One,
+                            .dstAlphaBlendFactor = One,
+                            .colorBlendOp = Add,
+                            .alphaBlendOp = Add
+                        };
+                    }
                 } blending;
                 struct RenderTarget {
                     RHIResourceFormat format{ RHIResourceFormat::Undefined };

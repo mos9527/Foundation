@@ -32,5 +32,9 @@ target_link_libraries(
 
 add_subdirectory(Shaders)
 add_subdirectory(Samples)
-add_dependencies(ModelViewer ModelViewer_Shaders ModelViewer_SampleModels)
 
+add_dependencies(
+    ModelViewer 
+    ModelViewer_Shaders
+    ModelViewer_SampleModels
+)

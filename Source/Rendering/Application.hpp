@@ -108,7 +108,10 @@ namespace Foundation::Rendering
 
         UniquePtr<Renderer> mRenderer;
         FrameTiming mTiming{};
-
+        // The render thread. This is started in RunForever(),
+        // and owns the Renderer instance and therefore all device resources.
+        // Window events are also polled here - doing so on main thread seperately could make
+        // @ref OnBeforeFrame and @ref OnAfterFrame usage difficult.
         Async::Thread mRenderThread;
         Async::Condition mRenderFrame;
         Async::Mutex mRenderMutex;
@@ -188,7 +191,9 @@ namespace Foundation::Rendering
          *       No synchronization is performed on a per-frame basis. You may want to
          *       use @ref WaitForFrame() to synchronize with the render thread if needed.
          *
-         * @note This runs in a tight loop in @ref RunForever()
+         * @note This runs in a tight loop in @ref RunForever(), and is only run after
+         *       the Render thread has started - i.e. after @ref OnDeviceSetup() and
+         *       @ref OnRendererSetup() has been called, in that order.
          *
          * Implementation may leave this empty if no action is needed.
          *
@@ -210,8 +215,6 @@ namespace Foundation::Rendering
             mRHI.reset();
             mRHI =
                 ConstructUniqueBase<RHIApplication, Backend>(mAlloc.Ptr(), mAlloc.Ptr(), std::forward<Args>(args)...);
-            InitializeInternal();
-            InitializeRenderer();
         }
         /**
          * @brief Retrieve the framebuffer size of the current window.
@@ -252,10 +255,12 @@ namespace Foundation::Rendering
         /**
          * @brief Start the Render thread and run the application loop indefinitely,
          * until the window is closed or the application is exited.
+         * 
+         * A Window will be created if @ref Initialize was called with `desc.present == true`.
          */
         void RunForever();
         /**
-         * @brief Wait for the next frame to be rendered.
+         * @brief Wait for the render thread to start, or the next frame to be rendered.
          */
         void WaitForFrame();
         /**
