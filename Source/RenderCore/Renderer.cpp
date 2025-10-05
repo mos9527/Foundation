@@ -1400,7 +1400,12 @@ void Renderer::ExecuteFrame()
             }
         }
         Vector<RHICommandList*> acq_cmds(mExecuteAlloc.Ptr()), rel_cmds(mExecuteAlloc.Ptr());
-        bool needAcquire = false, needRelease = false;
+        bool needAcquire = false, needRelease = mSetup->executionGroups.size() > 1;
+        if (group.groupIndex - 1 >= 0 )
+        {
+            auto& prevGroup = mSetup->executionGroups[group.groupIndex - 1];
+            needAcquire = prevGroup.queue != group.queue;
+        }
         // Acquire resources for ourselves
         if (needAcquire)
         {
