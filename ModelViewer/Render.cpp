@@ -3,7 +3,7 @@
 #include "App.hpp"
 #include "Assets/Mesh.hpp"
 using namespace ModelViewer;
-const size_t kMaxMeshletTasks = 1e6; // 1 million
+const size_t kMaxMeshletTasks = 1e2; // 100
 struct MeshletTaskParams
 {
     uint32_t instanceID;
@@ -45,13 +45,13 @@ void App::OnRendererSetup()
                                             });
     ResourceHandle sceneInstance, sceneShared, sceneConst;
     mGPUScene->CreateUpdatePasses(mRenderer.get(), sceneInstance, sceneShared, sceneConst,
-                                  RHIDeviceQueueType::Graphics);
+                                  RHIDeviceQueueType::Compute);
     createPass(
-        mRenderer.get(), "Reset Counters", RHIDeviceQueueType::Graphics, [=](PassHandle self, Renderer* r)
+        mRenderer.get(), "Reset Counters", RHIDeviceQueueType::Compute, [=](PassHandle self, Renderer* r)
         { r->BindBufferCopyDst(self, meshletIndirectTasksCtr); }, [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         { cmd->FillBuffer(r->DerefResource(meshletIndirectTasksCtr).Get<RHIBuffer*>(), 0); });
     createPass(
-        mRenderer.get(), "Meshlet Task Generation", RHIDeviceQueueType::Graphics,
+        mRenderer.get(), "Meshlet Task Generation", RHIDeviceQueueType::Compute,
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "taskGeneration", "data/shaders/MVTaskGeneration.spv");
@@ -64,20 +64,6 @@ void App::OnRendererSetup()
         {
             r->CmdSetPipeline(self, cmd);
             r->CmdDispatch(self, cmd, {kMaxMeshletTasks, 1, 1});
-        });
-    createPass(
-        mRenderer.get(), "Meshlet Task Submit", RHIDeviceQueueType::Graphics,
-        [=](PassHandle self, Renderer* r)
-        {
-            // Simply fills the dispatch buffer with the number of tasks to dispatch
-            r->BindShader(self, RHIShaderStageBits::Compute, "taskSubmit", "data/shaders/MVTaskSubmit.spv");
-            r->BindBufferStorageRead(self, meshletIndirectTasksCtr, RHIPipelineStageBits::ComputeShader, "counter");
-            r->BindBufferUnordered(self, meshletTaskDispatch, RHIPipelineStageBits::ComputeShader, "dispatch");
-        },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            r->CmdSetPipeline(self, cmd);
-            r->CmdDispatch(self, cmd, {1, 1, 1});
         });
     createPSFullscreenPass(
         mRenderer.get(), "Background", [=](PassHandle self, Renderer* r)
@@ -105,6 +91,20 @@ void App::OnRendererSetup()
             cmd->SetViewport(0, 0, img_wh.x, img_wh.y).SetScissor(0, 0, img_wh.x, img_wh.y);
             cmd->Draw(24);
             cmd->EndGraphics();
+        });
+    createPass(
+        mRenderer.get(), "Meshlet Task Submit", RHIDeviceQueueType::Compute,
+        [=](PassHandle self, Renderer* r)
+        {
+            // Simply fills the dispatch buffer with the number of tasks to dispatch
+            r->BindShader(self, RHIShaderStageBits::Compute, "taskSubmit", "data/shaders/MVTaskSubmit.spv");
+            r->BindBufferStorageRead(self, meshletIndirectTasksCtr, RHIPipelineStageBits::ComputeShader, "counter");
+            r->BindBufferUnordered(self, meshletTaskDispatch, RHIPipelineStageBits::ComputeShader, "dispatch");
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            r->CmdSetPipeline(self, cmd);
+            r->CmdDispatch(self, cmd, {1, 1, 1});
         });
     createPass(
         mRenderer.get(), "Meshlet Draw", RHIDeviceQueueType::Graphics,

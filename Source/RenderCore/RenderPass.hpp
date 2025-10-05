@@ -110,10 +110,6 @@ namespace Foundation::RenderCore
         // Uses compute shader? (not necessarily in a compute queue)
         // Should be mutually exclusive with write_backbuffer and other graphics states
         bool isComputePass{false};
-        // Always be treated as a producer of the associated resources,
-        // even when the access don't indicate writes.
-        // Currently, this is only used for @ref Renderer::CreateTransitionPass
-        bool alwaysProduce{false};
         // Local size for compute/mesh shaders        
         Tuple<uint32_t, uint32_t, uint32_t> groupLocalSize{};
         size_t depth{}; // Depth in RG

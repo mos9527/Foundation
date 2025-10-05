@@ -67,7 +67,7 @@ void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPi
     if (resource.lastBufferState.producer != kInvalidHandle)
         mSetup->add_edge(pass, resource.lastBufferState.producer, handle);
     // Set producer
-    if (access & kAllShaderWrites || (pass != kInvalidHandle && mSetup->trackedPasses[pass].alwaysProduce))
+    if (access & kAllShaderWrites)
         resource.lastBufferState.producer = pass;
     mSetup->trackedPasses[pass].bufferUsages.emplace_back(handle, access, stage);
     mSetup->trackedPasses[pass].resources.emplace_back(handle);
@@ -108,7 +108,7 @@ void Renderer::DeclareTextureAccess(PassHandle pass, ResourceHandle handle, RHIP
         if (sta.producer != kInvalidHandle)
             mSetup->add_edge(pass, sta.producer, handle);
         // Set producer
-        if (access & kAllShaderWrites || (pass != kInvalidHandle && mSetup->trackedPasses[pass].alwaysProduce))
+        if (access & kAllShaderWrites)
             sta.producer = pass;
     }
     mSetup->trackedPasses[pass].textureUsages.emplace_back(handle, access, stage, range, layout);
@@ -396,13 +396,40 @@ void Renderer::CullPasses(PassHandle epilogue) const
             j++;
         Ranges::sort(exec.begin() + i, exec.begin() + j, [&](PassHandle a, PassHandle b)
                      { return mSetup->trackedPasses[a].handle < mSetup->trackedPasses[b].handle; });
-    }
-    // Group passes by queue
+    }    
     auto& exec_group = mSetup->executionGroups;
-    for (PassHandle i = 0, j = 0; i < exec.size(); i = j)
+    // Grouping heuristics:
+    // 1: Group contains only passes of same queue types
+    // 2: Graphics passes that don't depend on prior Compute seperates ones that do while satisfying (1)
+    Set<ResourceHandle> produced(mAllocator); // Coarse, ignores subresources
+    auto noDependenciesProduced = [&](PassHandle pass)
     {
+        auto const& tpass = mSetup->trackedPasses[pass];
+        return Ranges::none_of(tpass.resources, [&](auto const& r) { return produced.contains(r); });
+    };
+    auto pushDependenciesProduced = [&](PassHandle pass)
+    {
+        auto const& tpass = mSetup->trackedPasses[pass];
+        auto textureProduces = Views::all(tpass.textureUsages) |
+            Views::filter([](auto const& t) { return (std::get<1>(t) & kAllShaderWrites); }) | Views::keys;
+        auto bufferProduces = Views::all(tpass.bufferUsages) |
+            Views::filter([](auto const& b) { return (std::get<1>(b) & kAllShaderWrites); }) | Views::keys;
+        produced.insert(tpass.resources.begin(), tpass.resources.end());
+    };
+    for (PassHandle i = 0, j = 0; i < exec.size(); i = j)
+    {          
         while (j < exec.size() && mSetup->trackedPasses[exec[j]].queue == mSetup->trackedPasses[exec[i]].queue)
-            j++;
+        {
+            auto queue = mSetup->trackedPasses[exec[j]].queue;
+            if (queue == RHIDeviceQueueType::Compute)
+                pushDependenciesProduced(exec[j]);            
+            PassHandle next = (j + 1) < exec.size() ? exec[j + 1] : kInvalidHandle;
+            bool nextProducedByCompute = next != kInvalidHandle && !noDependenciesProduced(next);
+            bool currentProducedByCompute = !noDependenciesProduced(exec[j]);
+            j++;            
+            if (queue == RHIDeviceQueueType::Graphics && nextProducedByCompute && !currentProducedByCompute)
+                break; // Start new group            
+        }        
         auto& group = exec_group.emplace_back(static_cast<int>(exec_group.size()), mSetup->trackedPasses[exec[i]].queue,
                                               mAllocator);
         group.passes.insert(group.passes.end(), exec.begin() + i, exec.begin() + j);
@@ -1373,8 +1400,9 @@ void Renderer::ExecuteFrame()
             }
         }
         Vector<RHICommandList*> acq_cmds(mExecuteAlloc.Ptr()), rel_cmds(mExecuteAlloc.Ptr());
+        bool needAcquire = false, needRelease = false;
         // Acquire resources for ourselves
-        if (mSetup->executionGroups.size() > 1)
+        if (needAcquire)
         {
             auto cmd = ExecuteAllocateCommandList(group.queue, -1);
             cmd->Reset();
@@ -1385,9 +1413,9 @@ void Renderer::ExecuteFrame()
             cmd->End();
             acq_cmds.emplace_back(cmd);
         }
-        // Release resources to the next group (*always* in different queues) if needed
+        // Release resources to the next group if needed
         // since we can *only* do that on this queue
-        if (mSetup->executionGroups.size() > 1)
+        if (needRelease)
         {
             auto cmd = ExecuteAllocateCommandList(group.queue, -1);
             cmd->Reset();
