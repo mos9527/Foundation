@@ -1431,18 +1431,6 @@ void Renderer::ExecuteFrame()
             cmd->End();
             rel_cmds.emplace_back(cmd);
         }
-        // Wait for all recording to finish
-        {
-            ZoneScopedN("Wait for Record");
-            mExecuteThreadPool.Join();
-        }
-        // Prepare the final command list submission
-        Vector<RHICommandList*> group_cmds(mExecuteAlloc.Ptr());
-        group_cmds.reserve(acq_cmds.size() + rel_cmds.size() + execute_cmds.size());
-        // [acq, execute, rel]
-        group_cmds.insert(group_cmds.end(), acq_cmds.begin(), acq_cmds.end());
-        group_cmds.insert(group_cmds.end(), execute_cmds.begin(), execute_cmds.end());
-        group_cmds.insert(group_cmds.end(), rel_cmds.begin(), rel_cmds.end());
         /* -- Submission -- */
         {
             ZoneScopedN("Group Submit");
@@ -1499,11 +1487,27 @@ void Renderer::ExecuteFrame()
                 queue = mComputeQueue;
             else [[unlikely]]
                 throw std::runtime_error("Unhandled queue type");
+            // Prepare the final command list submission
+            Vector<RHICommandList*> group_cmds(mExecuteAlloc.Ptr());
+            auto collectAllCommands = [&]()
+            {
+                // Wait for all recording to finish
+                {
+                    ZoneScopedN("Wait for Record");
+                    mExecuteThreadPool.Join();
+                }
+                group_cmds.reserve(acq_cmds.size() + rel_cmds.size() + execute_cmds.size());
+                // [acq, execute, rel]
+                group_cmds.insert(group_cmds.end(), acq_cmds.begin(), acq_cmds.end());
+                group_cmds.insert(group_cmds.end(), execute_cmds.begin(), execute_cmds.end());
+                group_cmds.insert(group_cmds.end(), rel_cmds.begin(), rel_cmds.end());
+            };
             if (is_last)
             {
                 ZoneScopedN("Final Submit");
                 if (!mDesc.present)
                 {
+                    collectAllCommands();
                     queue->Submit({.timelineWaits = timeline_waits,
                                    .timelineSignals = {{{timeline_signal}}},
                                    .waitsStages = timeline_wait_stages,
@@ -1527,6 +1531,7 @@ void Renderer::ExecuteFrame()
                     cmd->EndTransition();
                     cmd->DebugEnd();
                     cmd->End();
+                    collectAllCommands();
                     group_cmds.push_back(cmd);
                     {
                         // Finally..
