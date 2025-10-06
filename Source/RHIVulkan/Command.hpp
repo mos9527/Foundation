@@ -22,6 +22,8 @@ namespace Foundation::RHI {
         RHICommandList* GetCommandList(Handle handle) const override;
         void DestroyCommandList(Handle handle) override;
 
+        void ResetAllCommandLists(bool freeResources) override;
+
         void DebugSetObjectName(const char* name) override;
     };
     constexpr size_t kCommandBarrierReserveSize = 256;
@@ -29,7 +31,7 @@ namespace Foundation::RHI {
     protected:
         const VulkanCommandPool& mCommandPool;
         vk::raii::CommandBuffer mCommandBuffer{ nullptr };
-
+        
         ScopedArena mArena;
         // Stack allocator for temporary allocations during command list execution
         // Only valid within Begin(), End() clause

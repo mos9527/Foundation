@@ -41,7 +41,10 @@ RHICommandList* VulkanCommandPool::GetCommandList(Handle handle) const {
     return mStorage.GetObjectPtr<RHICommandList>(handle);
 }
 void VulkanCommandPool::DestroyCommandList(Handle handle) {
-    mStorage.DestroyObject(handle);
+    mStorage.DestroyObject(handle); }
+
+void VulkanCommandPool::ResetAllCommandLists(bool freeResources) {
+    mCommandPool.reset(freeResources ? vk::CommandPoolResetFlagBits::eReleaseResources : vk::CommandPoolResetFlags{});    
 }
 
 VulkanCommandList::VulkanCommandList(const VulkanCommandPool& commandPool) :
@@ -57,7 +60,10 @@ VulkanCommandList::VulkanCommandList(const VulkanCommandPool& commandPool) :
 
 RHICommandList& VulkanCommandList::Begin() {
     mAllocator.Reset(mArena);
-    mCommandBuffer.begin(vk::CommandBufferBeginInfo{});
+    bool isTransient = mCommandPool.mDesc.type == RHICommandPoolType::Transient;
+    mCommandBuffer.begin(vk::CommandBufferBeginInfo{
+        .flags = isTransient ? vk::CommandBufferUsageFlagBits::eOneTimeSubmit : vk::CommandBufferUsageFlags{}
+    });
     return *this;
 }
 RHICommandList& VulkanCommandList::BeginTransition() {

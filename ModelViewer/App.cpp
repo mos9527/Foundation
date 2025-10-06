@@ -37,10 +37,14 @@ namespace ModelViewer
     void App::OnApplicationTick()
     {
         auto instances = mScene->MapInstances();
-        instances[0].meshAllocationRawOffsetPP = mScene->QueryMesh(mesh).selfRawOffset + 1;
         float time = GetApplicationTime();
-        float theta = time * acos(-1) * 0.1f;
-        instances[0].q = angleAxis(theta, float3{0, 0, 1}) * angleAxis(radians(90.0f), float3{1, 0, 0});
+        for (int i = 0; i < 100; i++)
+        {
+            instances[i].meshAllocationRawOffsetPP = mScene->QueryMesh(mesh).selfRawOffset + 1;
+            float theta = time * acos(-1) * 0.1f;
+            instances[i].q = angleAxis(theta, float3{0, 0, 1}) * angleAxis(radians(90.0f), float3{1, 0, 0});
+            instances[i].t = float3{sin(i * 0.1f + time) * 5.f + i / 10, cos(i * 0.1f + time) * 5.f + i % 10, 0};
+        }
         mScene->UnmapInstances();
     }    
     void App::OnImGui() {

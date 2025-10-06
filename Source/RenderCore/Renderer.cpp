@@ -969,9 +969,6 @@ void Renderer::BeginExecute()
     CHECK_MSG(mState == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?", mState);
     ZoneScoped;
     mState = State::Execute;
-    // Reset per-swap command lists
-    for (auto& cmds : mExecutePerSwapCmds[mCurrentSync])
-        cmds->Reset();
     // Reset per-frame arena
     mExecuteAlloc.Reset(mExecuteArena);
     Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait_fences(mExecuteAlloc.Ptr());
@@ -989,6 +986,9 @@ void Renderer::BeginExecute()
         ZoneScopedN("Acquire Next Image");
         mCurrentSwap = mSwapchain->GetNextImage(-1, mSwaps[mCurrentSync].present, {});
     }
+    // Reset per-swap command lists
+    for (auto& cmds : mExecutePerSwapCmds[mCurrentSync])
+        cmds->Reset();
 }
 void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, TrackedResource::SubresourceState& sta,
                                               RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout,
@@ -1256,18 +1256,20 @@ Renderer::ExecutePerThreadCommandLists::ExecutePerThreadCommandLists(RHIDevice* 
     graphicsCmds(maxPerThread, alloc), computeCmds(maxPerThread, alloc)
 {
     graphicsPool =
-        device->CreateCommandPool({.queue = RHIDeviceQueueType::Graphics, .type = RHICommandPoolType::Persistent});
+        device->CreateCommandPool({.queue = RHIDeviceQueueType::Graphics, .type = RHICommandPoolType::Transient});
     computePool =
-        device->CreateCommandPool({.queue = RHIDeviceQueueType::Compute, .type = RHICommandPoolType::Persistent});
+        device->CreateCommandPool({.queue = RHIDeviceQueueType::Compute, .type = RHICommandPoolType::Transient});
 }
 void Renderer::ExecutePerThreadCommandLists::Reset()
 {
-    graphicsCtr.store(0, std::memory_order_relaxed);
-    computeCtr.store(0, std::memory_order_relaxed);
+    graphicsCtr = 0;
+    computeCtr = 0;
+    graphicsPool->ResetAllCommandLists(false /* freeResources */);
+    computePool->ResetAllCommandLists(false /* freeResources */);
 }
-RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateGraphics()
+RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateGraphics(int thread_id)
 {
-    size_t index = graphicsCtr.fetch_add(1, std::memory_order_relaxed);
+    size_t index = graphicsCtr++;
     if (!graphicsCmds[index].IsValid())
     {
         graphicsCmds[index] = graphicsPool->CreateCommandList();
@@ -1275,9 +1277,9 @@ RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateGraphics()
     }
     return graphicsCmds[index].Get();
 }
-RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateCompute()
+RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateCompute(int thread_id)
 {
-    size_t index = computeCtr.fetch_add(1, std::memory_order_relaxed);
+    size_t index = computeCtr++;
     if (!computeCmds[index].IsValid())
     {
         computeCmds[index] = computePool->CreateCommandList();
@@ -1292,10 +1294,10 @@ RHICommandList* Renderer::ExecuteAllocateCommandList(RHIDeviceQueueType queue, i
     switch (queue)
     {
     case RHIDeviceQueueType::Compute:
-        return thread->AllocateCompute();
+        return thread->AllocateCompute(thread_id + 1);
     default:
     case RHIDeviceQueueType::Graphics:
-        return thread->AllocateGraphics();
+        return thread->AllocateGraphics(thread_id + 1);
     }
 }
 void Renderer::ExecuteFrame()
@@ -1371,8 +1373,7 @@ void Renderer::ExecuteFrame()
                 {
                     ZoneScoped;
                     ZoneNameF("<%s>", pass->name.c_str());
-                    *cmd = r->ExecuteAllocateCommandList(pass->queue, thread_id);
-                    (*cmd)->Reset();
+                    *cmd = r->ExecuteAllocateCommandList(pass->queue, thread_id);                    
                     (*cmd)->Begin();
                     (*cmd)->DebugBegin(pass->name.c_str());
                     pass->pass->Record(pass->handle, r, *cmd);
@@ -1390,8 +1391,7 @@ void Renderer::ExecuteFrame()
                 auto& pass = passes[group_active[i]];
                 ZoneNameF("<%s> Transition", pass.name.c_str());
                 auto& cmd = execute_cmds[i * 2];
-                cmd = ExecuteAllocateCommandList(group.queue, -1);
-                cmd->Reset();
+                cmd = ExecuteAllocateCommandList(group.queue, -1);               
                 cmd->Begin();
                 cmd->BeginTransition();
                 ExecuteBarriers(pass, cmd);
@@ -1409,8 +1409,7 @@ void Renderer::ExecuteFrame()
         // Acquire resources for ourselves
         if (needAcquire)
         {
-            auto cmd = ExecuteAllocateCommandList(group.queue, -1);
-            cmd->Reset();
+            auto cmd = ExecuteAllocateCommandList(group.queue, -1);            
             cmd->Begin();
             cmd->DebugBegin("Group Acquire");
             ExecuteAcquireQueueResources(group.queue, group.groupIndex, cmd);
@@ -1422,8 +1421,7 @@ void Renderer::ExecuteFrame()
         // since we can *only* do that on this queue
         if (needRelease)
         {
-            auto cmd = ExecuteAllocateCommandList(group.queue, -1);
-            cmd->Reset();
+            auto cmd = ExecuteAllocateCommandList(group.queue, -1);            
             cmd->Begin();
             cmd->DebugBegin("Group Release");
             ExecuteReleaseQueueResources(group.queue, group.groupIndex, cmd);
@@ -1520,8 +1518,7 @@ void Renderer::ExecuteFrame()
                     CHECK_MSG(group.queue == RHIDeviceQueueType::Graphics,
                               "FIXME-ExecuteFrame: Last pass ended on a non-Graphics queue");
                     // Transition the Backbuffer to Present.
-                    auto cmd = ExecuteAllocateCommandList(RHIDeviceQueueType::Graphics, -1);
-                    cmd->Reset();
+                    auto cmd = ExecuteAllocateCommandList(RHIDeviceQueueType::Graphics, -1);                    
                     cmd->Begin();
                     cmd->DebugBegin("Present");
                     cmd->BeginTransition();

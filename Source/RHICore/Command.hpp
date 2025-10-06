@@ -25,6 +25,8 @@ namespace Foundation::RHI {
         [[nodiscard]] virtual RHICommandPoolScopedHandle<RHICommandList> CreateCommandList() = 0;
         [[nodiscard]] virtual RHICommandList* GetCommandList(Handle handle) const = 0;
         virtual void DestroyCommandList(Handle handle) = 0;
+        
+        virtual void ResetAllCommandLists(bool freeResources = false) = 0;
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };

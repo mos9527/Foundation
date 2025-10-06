@@ -162,11 +162,11 @@ namespace Foundation::RenderCore
             RHIDeviceScopedObjectHandle<RHICommandPool> graphicsPool{}, computePool{};
             Vector<RHICommandPoolScopedHandle<RHICommandList>> graphicsCmds, computeCmds;
             // Resets every frame
-            Atomics::Atomic<size_t> graphicsCtr{}, computeCtr{};
+            size_t graphicsCtr{}, computeCtr{};
             ExecutePerThreadCommandLists(RHIDevice* device, size_t maxPerThread, Allocator* alloc);
             void Reset();
-            RHICommandList* AllocateGraphics();
-            RHICommandList* AllocateCompute();
+            RHICommandList* AllocateGraphics(int thread_id);
+            RHICommandList* AllocateCompute(int thread_id);
         };
         // [current sync][thread id]
         Vector<Vector<UniquePtr<ExecutePerThreadCommandLists>>> mExecutePerSwapCmds;
