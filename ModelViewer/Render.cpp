@@ -3,7 +3,7 @@
 #include "App.hpp"
 #include "Assets/Mesh.hpp"
 using namespace ModelViewer;
-const size_t kMaxMeshletTasks = 1e5;
+const size_t kMaxMeshletTasks = 1e4;
 struct MeshletTaskParams
 {
     uint32_t instanceID;

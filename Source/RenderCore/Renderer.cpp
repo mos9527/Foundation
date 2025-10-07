@@ -989,8 +989,7 @@ void Renderer::BeginExecute()
     }
     // Reset per-swap command lists
     for (auto& cmds : mExecutePerSwapCmds[mCurrentSync])
-        cmds->Reset();
-    mGraphicsQueue->WaitIdle();
+        cmds->Reset();    
 }
 void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, TrackedResource::SubresourceState& sta,
                                               RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout,

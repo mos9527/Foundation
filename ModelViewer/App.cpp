@@ -37,8 +37,6 @@ namespace ModelViewer
     void App::OnApplicationTick()
     {
         float time = GetApplicationTime();
-        if (time > 1.0f)
-            return;
         auto instances = mScene->MapInstances();
         for (int i = 0; i < 50 * 50; i++)
         {
