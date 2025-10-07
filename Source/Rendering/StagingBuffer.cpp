@@ -124,26 +124,50 @@ namespace Foundation::Rendering
         CHECK_MSG(mState == State::Idle, "Staging is not in Idle state");
         if (!HasUpdates())
             return;
+        auto* stagingBuf = mStagingBuffer.GetBuffer();
         cmd->DebugBegin("Staging Buffer Updates");
+        mStagingBuffer.GetBuffer()->Flush(0, mStagingBuffer.Tell());
         cmd->BeginTransition();
         cmd->SetBufferTransition(
-            mBuffer.Get(),
+            stagingBuf,
             {
                 .srcAccess = RHIResourceAccessBits::HostWrite,
                 .dstAccess = RHIResourceAccessBits::TransferRead,
                 .srcStage = RHIPipelineStageBits::Host,
-                .dstStage = RHIPipelineStageBits::Transfer,
+                .dstStage = RHIPipelineStageBits::Transfer
             }
         );
         cmd->EndTransition();
-        mStagingBuffer.GetBuffer()->Flush(0, mStagingBuffer.Tell());
         if (mClearValue.has_value())
-            cmd->FillBuffer(mBuffer.Get(), mClearValue.value()), mClearValue.reset();
+        {
+            cmd->BeginTransition();
+            cmd->SetBufferTransition(
+                mBuffer.Get(),
+                {
+                    .dstAccess = RHIResourceAccessBits::TransferWrite,
+                    .dstStage = RHIPipelineStageBits::Transfer
+                }
+            );
+            cmd->EndTransition();
+            cmd->FillBuffer(mBuffer.Get(), mClearValue.value());
+            mClearValue.reset();
+        }
+        cmd->BeginTransition();
+        cmd->SetBufferTransition(
+            mBuffer.Get(),
+            {
+                .srcAccess = RHIResourceAccessBits::TransferWrite,
+                .dstAccess = RHIResourceAccessBits::TransferWrite,
+                .srcStage = RHIPipelineStageBits::Transfer,
+                .dstStage = RHIPipelineStageBits::Transfer
+            }
+        );
+        cmd->EndTransition();
         for (auto const& [src, dst, range] : mBufferStagings)
             cmd->CopyBuffer(src, dst, {range});
         cmd->BeginTransition();
         cmd->SetBufferTransition(
-            mBuffer.Get(),
+            stagingBuf,
             {
                 .srcAccess = RHIResourceAccessBits::TransferRead,
                 .dstAccess = RHIResourceAccessBits::HostWrite,

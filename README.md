@@ -14,31 +14,7 @@ Docs are available at: https://mos9527.com/Foundation
 ### References
 - https://www.lunarg.com/wp-content/uploads/2021/08/Vulkan-Synchronization-SIGGRAPH-2021.pdf   
 ### TODO
-- !! SYNC HAZARD with FillBuffer -> CopyBuffer !!
-```
-Validation Error: [ SYNC-HAZARD-WRITE-AFTER-WRITE ] | MessageID = 0x5c0ec5d6
-[AppName: Vulkan RHI] vkCmdCopyBuffer(): WRITE_AFTER_WRITE hazard detected. vkCmdCopyBuffer writes to VkBuffer 0x160000000016[GPUScene Const], which was previously written by vkCmdFillBuffer[Const Buffer::Staging Buffer Updates]. 
-No sufficient synchronization is present to ensure that a write (VK_ACCESS_2_TRANSFER_WRITE_BIT) at VK_PIPELINE_STAGE_2_COPY_BIT does not conflict with a prior write of the same type at VK_PIPELINE_STAGE_2_CLEAR_BIT.
-Buffer copy region 0: {
-  offset = 0,
-  size = 46538
-}
-[Extra properties]
-message_type = BufferCopyError
-hazard_type = WRITE_AFTER_WRITE
-access = VK_PIPELINE_STAGE_2_COPY_BIT(VK_ACCESS_2_TRANSFER_WRITE_BIT)
-prior_access = VK_PIPELINE_STAGE_2_CLEAR_BIT(VK_ACCESS_2_TRANSFER_WRITE_BIT)
-write_barriers = 0
-command = vkCmdCopyBuffer
-prior_command = vkCmdFillBuffer
-prior_debug_region = Const Buffer::Staging Buffer Updates
-region_index = 0
-seq_no = 2
-reset_no = 0
-Objects: 2
-    [0] VkCommandBuffer 0xb4cf9acdb0[Graphics List 0]
-    [1] VkBuffer 0x160000000016[GPUScene Const]
-```
+- ~~!! SYNC HAZARD with FillBuffer -> CopyBuffer !!~~ Fixed by 
 - ~~!! SYNC HAZARD Present after write !!~~
     False positive. Fixed by https://github.com/KhronosGroup/Vulkan-ValidationLayers/pull/10680
 - High `VkFence` count - maybe fencing for compute is not needed?

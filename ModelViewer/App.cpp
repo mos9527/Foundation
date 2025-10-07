@@ -38,13 +38,14 @@ namespace ModelViewer
     {
         float time = GetApplicationTime();
         auto instances = mScene->MapInstances();
-        for (int i = 0; i < 50 * 50; i++)
+        constexpr int countSq = 100;
+        for (int i = 0; i < countSq*countSq; i++)
         {
             CHECK(i < instances.size());
             instances[i].meshAllocationRawOffsetPP = mScene->QueryMesh(mesh).selfRawOffset + 1;
             float theta = time * acos(-1) * 0.1f;
             instances[i].q = angleAxis(theta, float3{0, 0, 1}) * angleAxis(radians(90.0f), float3{1, 0, 0});
-            instances[i].t = float3{ 2*(i / 50),  2*(i % 50), 0};
+            instances[i].t = float3{ 2*(i / countSq),  2*(i % countSq), 0};
         }
         mScene->UnmapInstances();
     }    
@@ -121,7 +122,7 @@ using namespace Foundation::Async;
 int main(int argc, char** argv)
 {
     App app;
-    app.Initialize<VulkanApplication>({.windowTitle = "Model Viewer", .present = true, .asyncCompute = 0, .vsync = false});
+    app.Initialize<VulkanApplication>({.windowTitle = "Model Viewer", .present = true, .asyncCompute = 1, .vsync = false});
     app.RunForever();
     ImGui_ImplFoundation_Shutdown();
 }

@@ -82,6 +82,7 @@ namespace Foundation::Rendering
         Allocator* mAllocator{nullptr};
 
         StagingBuffer mStagingBuffer;
+        // Destination buffer
         RHIDeviceScopedObjectHandle<RHIBuffer> mBuffer;
 
         State mState{State::Idle};

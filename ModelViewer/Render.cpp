@@ -3,7 +3,7 @@
 #include "App.hpp"
 #include "Assets/Mesh.hpp"
 using namespace ModelViewer;
-const size_t kMaxMeshletTasks = 1e4;
+const size_t kMaxMeshletTasks = 1e5;
 struct MeshletTaskParams
 {
     uint32_t instanceID;
@@ -45,13 +45,13 @@ void App::OnRendererSetup()
                                             });
     ResourceHandle sceneInstance, sceneShared, sceneConst;
     mGPUScene->CreateUpdatePasses(mRenderer.get(), sceneInstance, sceneShared, sceneConst,
-                                  RHIDeviceQueueType::Compute);
+                                  RHIDeviceQueueType::Graphics);
     createPass(
-        mRenderer.get(), "Reset Counters", RHIDeviceQueueType::Compute, [=](PassHandle self, Renderer* r)
+        mRenderer.get(), "Reset Counters", RHIDeviceQueueType::Graphics, [=](PassHandle self, Renderer* r)
         { r->BindBufferCopyDst(self, meshletIndirectTasksCtr); }, [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         { cmd->FillBuffer(r->DerefResource(meshletIndirectTasksCtr).Get<RHIBuffer*>(), 0); });
     createPass(
-        mRenderer.get(), "Meshlet Task Generation", RHIDeviceQueueType::Compute,
+        mRenderer.get(), "Meshlet Task Generation", RHIDeviceQueueType::Graphics,
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "taskGeneration", "data/shaders/MVTaskGeneration.spv");
@@ -93,7 +93,7 @@ void App::OnRendererSetup()
             cmd->EndGraphics();
         });
     createPass(
-        mRenderer.get(), "Meshlet Task Submit", RHIDeviceQueueType::Compute,
+        mRenderer.get(), "Meshlet Task Submit", RHIDeviceQueueType::Graphics,
         [=](PassHandle self, Renderer* r)
         {
             // Simply fills the dispatch buffer with the number of tasks to dispatch

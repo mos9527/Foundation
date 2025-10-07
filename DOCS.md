@@ -55,6 +55,11 @@ The Vulkan SDK installer should take care of most, if not all the setup for you.
 ### Linux
 Refer to https://docs.vulkan.org/tutorial/latest/02_Development_environment.html#_linux_2 for setting up the Vulkan SDK on Linux.
 
+- Arch Linux
+```bash
+# Enable [extra-testing] in /etc/pacman.conf for the latest validation layers et al
+sudo pacman -S vulkan-validation-layers vulkan-tools vulkan-radeon vulkan-headers
+```
 ### macOS
 Refer to https://docs.vulkan.org/tutorial/latest/02_Development_environment.html#_macos for setting up the Vulkan SDK on macOS.
 
