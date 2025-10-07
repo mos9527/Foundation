@@ -990,6 +990,7 @@ void Renderer::BeginExecute()
     // Reset per-swap command lists
     for (auto& cmds : mExecutePerSwapCmds[mCurrentSync])
         cmds->Reset();
+    mGraphicsQueue->WaitIdle();
 }
 void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, TrackedResource::SubresourceState& sta,
                                               RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout,
@@ -1532,14 +1533,14 @@ void Renderer::ExecuteFrame()
                     cmd->BeginTransition();
                     ExecuteBarrierSubresource(kInvalidHandle, mSetup->trackedResources[mSwaps[GetSwap()].backbuffer],
                                               RHITextureSubresourceRange::Create(), {},
-                                              RHIPipelineStageBits::RenderTargetOutput, RHITextureLayout::Present, cmd);
+                                              RHIPipelineStageBits::BottomOfPipe, RHITextureLayout::Present, cmd);
                     cmd->EndTransition();
                     cmd->DebugEnd();
                     cmd->End();
                     group_cmds.push_back(cmd);
                     {
                         // Finally..
-                        timeline_wait_stages.push_back(group.allStages | RHIPipelineStageBits::RenderTargetOutput);
+                        timeline_wait_stages.push_back(group.allStages | RHIPipelineStageBits::BottomOfPipe);
                         queue->Submit({.timelineWaits = timeline_waits,
                                        .timelineSignals = {{{timeline_signal}}},
                                        .waits = {{mSwaps[mCurrentSync].present.Get()}},

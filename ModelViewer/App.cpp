@@ -29,7 +29,7 @@ namespace ModelViewer
         // TEST: Load mesh
         Vector<MeshVertex> vertices(GetAllocator());
         Vector<MeshIndex> indices(GetAllocator());
-        meshLoadObjFile(vertices, indices, "data/assets/Kitten.obj");
+        meshLoadObjFile(vertices, indices, "data/assets/Suzanne.obj");
         SceneMeshData meshData = sceneMeshDataFromVertexIndex(vertices, indices, GetAllocator());
         mesh = mScene->PushMesh(meshData);
         mScene->mCamera.position = float3{2, 2, 10};
@@ -40,12 +40,13 @@ namespace ModelViewer
         if (time > 1.0f)
             return;
         auto instances = mScene->MapInstances();
-        for (int i = 0; i < 100; i++)
+        for (int i = 0; i < 50 * 50; i++)
         {
+            CHECK(i < instances.size());
             instances[i].meshAllocationRawOffsetPP = mScene->QueryMesh(mesh).selfRawOffset + 1;
             float theta = time * acos(-1) * 0.1f;
             instances[i].q = angleAxis(theta, float3{0, 0, 1}) * angleAxis(radians(90.0f), float3{1, 0, 0});
-            instances[i].t = float3{sin(i * 0.1f + time) * 5.f + i / 10, cos(i * 0.1f + time) * 5.f + i % 10, 0};
+            instances[i].t = float3{ 2*(i / 50),  2*(i % 50), 0};
         }
         mScene->UnmapInstances();
     }    
