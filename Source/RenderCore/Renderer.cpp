@@ -996,7 +996,13 @@ void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, 
                                               RHICommandList* cmd) const
 {
     ZoneScoped;
-    if (sta.access == access && sta.stage == stage && sta.layout == layout)
+    // RW resources need barriers even if the state doesn't change
+    // because of potential hazards
+    if ((sta.access & kAllShaderWrites) != 0 || (access & kAllShaderWrites) != 0)
+    {
+        /* always barrier */
+    }
+    else if (sta.access == access && sta.stage == stage && sta.layout == layout)
         return;
     cmd->SetImageTransition(res,
                             {
@@ -1035,7 +1041,12 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
     ZoneScoped;
     CHECK_MSG(mState == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", mState);
     RHIBuffer* res = DerefResource(tres.handle).Get<RHIBuffer*>();
-    if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage)
+    /* Same as textures, RW buffers need barriers even if the state doesn't change */
+    if ((tres.lastBufferState.access & kAllShaderWrites) != 0 || (access & kAllShaderWrites) != 0)
+    {
+        /* always barrier */
+    }
+    else if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage)
         return;
     cmd->SetBufferTransition(res,
                              {
@@ -1072,7 +1083,7 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
     if (pass.writeBackbuffer)
     {
         CHECK_MSG(pass.queue == RHIDeviceQueueType::Graphics, "Backbuffer can only be used in Graphics queue");
-        const RHIResourceAccess rt_access = RHIResourceAccessBits::RenderTargetWrite;
+        const RHIResourceAccess rt_access = RHIResourceAccessBits::RenderTargetWrite | RHIResourceAccessBits::RenderTargetRead;
         const RHITextureLayout rt_layout = RHITextureLayout::RenderTarget;
         const RHIPipelineStage rt_stage = RHIPipelineStageBits::RenderTargetOutput;
         auto& tres = mSetup->trackedResources[mSwaps[GetSwap()].backbuffer];
@@ -1430,6 +1441,18 @@ void Renderer::ExecuteFrame()
             cmd->End();
             rel_cmds.emplace_back(cmd);
         }
+        // Prepare the final command list submission
+        Vector<RHICommandList*> group_cmds(mExecuteAlloc.Ptr());
+        // Wait for all recording to finish
+        {
+            ZoneScopedN("Wait for Record");
+            mExecuteThreadPool.Join();
+        }
+        group_cmds.reserve(acq_cmds.size() + rel_cmds.size() + execute_cmds.size());
+        // [acq, execute, rel]
+        group_cmds.insert(group_cmds.end(), acq_cmds.begin(), acq_cmds.end());
+        group_cmds.insert(group_cmds.end(), execute_cmds.begin(), execute_cmds.end());
+        group_cmds.insert(group_cmds.end(), rel_cmds.begin(), rel_cmds.end());
         /* -- Submission -- */
         {
             ZoneScopedN("Group Submit");
@@ -1486,27 +1509,11 @@ void Renderer::ExecuteFrame()
                 queue = mComputeQueue;
             else [[unlikely]]
                 throw std::runtime_error("Unhandled queue type");
-            // Prepare the final command list submission
-            Vector<RHICommandList*> group_cmds(mExecuteAlloc.Ptr());
-            auto collectAllCommands = [&]()
-            {
-                // Wait for all recording to finish
-                {
-                    ZoneScopedN("Wait for Record");
-                    mExecuteThreadPool.Join();
-                }
-                group_cmds.reserve(acq_cmds.size() + rel_cmds.size() + execute_cmds.size());
-                // [acq, execute, rel]
-                group_cmds.insert(group_cmds.end(), acq_cmds.begin(), acq_cmds.end());
-                group_cmds.insert(group_cmds.end(), execute_cmds.begin(), execute_cmds.end());
-                group_cmds.insert(group_cmds.end(), rel_cmds.begin(), rel_cmds.end());
-            };
             if (is_last)
             {
                 ZoneScopedN("Final Submit");
                 if (!mDesc.present)
                 {
-                    collectAllCommands();
                     queue->Submit({.timelineWaits = timeline_waits,
                                    .timelineSignals = {{{timeline_signal}}},
                                    .waitsStages = timeline_wait_stages,
@@ -1529,7 +1536,6 @@ void Renderer::ExecuteFrame()
                     cmd->EndTransition();
                     cmd->DebugEnd();
                     cmd->End();
-                    collectAllCommands();
                     group_cmds.push_back(cmd);
                     {
                         // Finally..

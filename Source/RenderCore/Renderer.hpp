@@ -23,7 +23,10 @@ namespace Foundation::RenderCore
         RHIPipelineStageBits::AllGraphics;
     const RHIResourceAccessBits kAllShaderWrites = RHIResourceAccessBits::ShaderWrite |
         RHIResourceAccessBits::RenderTargetWrite | RHIResourceAccessBits::DepthStencilWrite |
-        RHIResourceAccessBits::TransferWrite;
+        RHIResourceAccessBits::TransferWrite | RHIResourceAccessBits::HostWrite;
+    const RHIResourceAccessBits kAllShaderReads = RHIResourceAccessBits::ShaderRead |
+        RHIResourceAccessBits::RenderTargetRead | RHIResourceAccessBits::UniformRead |
+        RHIResourceAccessBits::TransferRead | RHIResourceAccessBits::HostRead;
     /**
      * @brief Helper class containing all states pertaining to @ref Renderer's Setup phase
      */
