@@ -30,3 +30,7 @@ endif()
 add_executable(Example_MeshShader "MeshShader.cpp")
 target_link_libraries(Example_MeshShader PUBLIC Example_Common)
 add_dependencies(Example_MeshShader Shader_MeshShaderTask Shader_MeshShaderMesh Shader_MeshShaderFrag)
+
+add_executable(Example_ManyPass "ManyPass.cpp")
+target_link_libraries(Example_ManyPass PUBLIC Example_Common)
+add_dependencies(Example_ManyPass Shader_ManyPass)
