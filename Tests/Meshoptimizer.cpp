@@ -17,9 +17,9 @@ int main()
     for (auto& meshlet : mesh.meshlets)
     {
         fmt::print("  m: vtxOff {} vtxCnt {} triOff {} triCnt {}\n", meshlet.vertexOffset, meshlet.vertexCount, meshlet.triangleOffset, meshlet.triangleCount);
-        for (int ti = 0; ti < meshlet.triangleCount; ti++)
+        for (uint32_t ti = 0; ti < meshlet.triangleCount; ti++)
         {
-            int t = ti * 3 + meshlet.triangleOffset;
+            uint32_t t = ti * 3 + meshlet.triangleOffset;
             fmt::print("    tri: {}, {}, {}\n", mesh.meshletTriangles[t], mesh.meshletTriangles[t+1],mesh.meshletTriangles[t+2]);
         }
     }

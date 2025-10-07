@@ -7,7 +7,7 @@ namespace ModelViewer {
     using namespace Rendering;
     using SceneHandle = uint32_t;
     constexpr uint32_t kSceneInvalid = ~0u;
-    constexpr size_t kMaxSceneMeshLodCount = 4;
+    constexpr int kMaxSceneMeshLodCount = 4;
     /* -- Mesh -- */
     // Intermediate scratch buffers
     // TODO: We may want to actually cache these. Meshlet generation can be expensive.

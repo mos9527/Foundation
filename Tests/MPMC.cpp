@@ -14,7 +14,7 @@ int main()
     size_t sum_expect = 0;
     Thread producer([&]() {
         auto writer = queue.CreateWriter();
-        for (int i = 0; i < kSize; i++)
+        for (size_t i = 0; i < kSize; i++)
         {
             while (!writer.Push(i));
             sum_expect += i;

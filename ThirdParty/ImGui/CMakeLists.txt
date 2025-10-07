@@ -20,6 +20,12 @@ target_include_directories(ThirdParty_ImGui PUBLIC
     .
 )
 
+if (UNIX AND NOT APPLE)
+    # X11 for ImGui_ImplGlfw
+    find_package(X11 REQUIRED)
+    target_include_directories(ThirdParty_ImGui PUBLIC ${X11_INCLUDE_DIR})
+    target_link_libraries(ThirdParty_ImGui PUBLIC ${X11_LIBRARIES})
+endif()
 
 target_link_libraries(ThirdParty_ImGui PUBLIC
     Foundation_Native
@@ -27,5 +33,5 @@ target_link_libraries(ThirdParty_ImGui PUBLIC
     Foundation_RenderCore
 )
 # Custom font
-FetchContent_Populate(LxgwNeoXiHei)
+FetchContent_MakeAvailable(LxgwNeoXiHei)
 

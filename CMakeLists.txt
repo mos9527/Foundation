@@ -24,6 +24,9 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # https://developercommunity.visualstudio.com/t/__VA_OPT__-should-be-enabled-by-std:c/10565399
     add_compile_options("/Zc:preprocessor")
     add_compile_options("/utf-8")
+    add_compile_options("/Wall" "/W4")
+else()
+    add_compile_options("-Wall")
 endif()
 
 set(MI_TRACK_ASAN ${FOUNDATION_WITH_ASAN} CACHE BOOL "" FORCE)

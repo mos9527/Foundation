@@ -28,7 +28,7 @@ static VKAPI_ATTR vk::Bool32 VKAPI_CALL VkDebugLayerCallback(
     return vk::False;
 }
 VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, const char* engineName, const uint32_t apiVersion)
-    : mVkAllocatorCpuCallbacks(CreateVulkanCpuAllocationCallbacks(allocator)), mAllocator(allocator), mStorage(allocator), mDevices(allocator),
+    : mVkAllocatorCpuCallbacks(CreateVulkanCpuAllocationCallbacks(allocator)), mAllocator(allocator), mDevices(allocator), mStorage(allocator),
     mName(appName), mVulkanApiVersion(apiVersion)
 {
     auto vkAppInfo = vk::ApplicationInfo{

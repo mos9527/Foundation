@@ -16,7 +16,7 @@ int main()
     Stack<int> stack(&alloc);
     size_t sum_expect = 0;
     Thread producer([&]() {
-        for (int i = 0; i < kSize; i++)
+        for (size_t i = 0; i < kSize; i++)
         {
             stack.Push(i);
             sum_expect += i;

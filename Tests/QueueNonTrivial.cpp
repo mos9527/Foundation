@@ -40,7 +40,7 @@ int main()
         threads.emplace_back(consume, i);
     size_t sum_expect = 0;
     auto writer = queue.CreateWriter();
-    for (int i = 0; i < kSize; i++)
+    for (size_t i = 0; i < kSize; i++)
     {
         CHECK(writer.Push(ConstructUnique<int>(&alloc, i)));
         sum_expect += i;

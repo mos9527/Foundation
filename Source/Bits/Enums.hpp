@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <bit>
 /**
  * @brief Header-only convenience utilities
@@ -85,8 +86,10 @@ inline constexpr const char* format_as(T elem) { \
     using enum T; \
     switch (elem) {
 
-#define ENUM_NAME_CONV_END() } \
+#define ENUM_NAME_CONV_END() \
+    default: \
     return "Unknown"; \
+    } \
 }
 // Shorthand for @ref ENUM_NAME_CONV_BEGIN case statements
 #define ENUM_NAME(E) case E: return #E;

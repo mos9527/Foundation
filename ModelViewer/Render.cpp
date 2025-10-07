@@ -81,7 +81,7 @@ void App::OnRendererSetup()
             r->BindBackbufferRTV(self, RHIPipelineState::PipelineStateDesc::Attachment::Blending::GetAlphaBlending());
             r->PassSetRasterizerFlags(self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone});
         },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             auto const& img_wh = r->GetSwapchainExtent();
             r->CmdBeginGraphics(self, cmd, img_wh, {} /* don't clear RTV */);
@@ -126,7 +126,7 @@ void App::OnRendererSetup()
                               {.format = RHIResourceFormat::D32SignedFloat,
                                .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
         },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             auto const& img_wh = r->GetSwapchainExtent();
             r->CmdBeginGraphics(self, cmd, img_wh, {} /* no RTV clear */);

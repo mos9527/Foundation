@@ -230,7 +230,7 @@ Renderer::BindTextureRTV(PassHandle pass, ResourceHandle texture, RHITextureView
     CHECK_MSG(tpass.queue == RHIDeviceQueueType::Graphics,
               "RTV (Render Target Views) are only supported on Graphics queues");
     RHITextureAspectFlag kRTVBits = RHITextureAspectFlagBits::Color;
-    CHECK_MSG((desc.range.layer.aspect | kRTVBits == kRTVBits) && (desc.range.layer.aspect & kRTVBits),
+    CHECK_MSG(((desc.range.layer.aspect | kRTVBits) == kRTVBits) && (desc.range.layer.aspect & kRTVBits),
               "RTV view must have exactly one layer, and the access flag must be Color.");
     DeclareTextureAccess(pass, texture, RHIPipelineStageBits::RenderTargetOutput, desc.range,
                          RHIResourceAccessBits::RenderTargetWrite, RHITextureLayout::RenderTarget);
@@ -247,7 +247,7 @@ ResourceHandle Renderer::BindTextureDSV(PassHandle pass, ResourceHandle texture,
     CHECK_MSG(tpass.queue == RHIDeviceQueueType::Graphics,
               "DSV (Depth Stencil Views) are only supported on Graphics queues");
     RHITextureAspectFlag kDSVBits = RHITextureAspectFlagBits::Depth | RHITextureAspectFlagBits::Stencil;
-    CHECK_MSG((desc.range.layer.aspect | kDSVBits == kDSVBits) && (desc.range.layer.aspect & kDSVBits),
+    CHECK_MSG(((desc.range.layer.aspect | kDSVBits) == kDSVBits) && (desc.range.layer.aspect & kDSVBits),
               "DSV view must have exactly one layer, and the access flag must be Depth and/or Stencil.");
     DeclareTextureAccess(pass, texture,
                          RHIPipelineStageBits::EarlyFragmentTests | RHIPipelineStageBits::LateFragmentTests, desc.range,
@@ -414,7 +414,8 @@ void Renderer::CullPasses(PassHandle epilogue) const
             Views::filter([](auto const& t) { return (std::get<1>(t) & kAllShaderWrites); }) | Views::keys;
         auto bufferProduces = Views::all(tpass.bufferUsages) |
             Views::filter([](auto const& b) { return (std::get<1>(b) & kAllShaderWrites); }) | Views::keys;
-        produced.insert(tpass.resources.begin(), tpass.resources.end());
+        produced.insert(textureProduces.begin(), textureProduces.end());
+        produced.insert(bufferProduces.begin(), bufferProduces.end());
     };
     for (PassHandle i = 0, j = 0; i < exec.size(); i = j)
     {          
@@ -1476,7 +1477,7 @@ void Renderer::ExecuteFrame()
                 fence_ptr = mSwaps[mCurrentSync].computeFence.Get();
             else if (group.isLastGraphics)
                 fence_ptr = mSwaps[mCurrentSync].graphicsFence.Get();
-            const bool is_last = group.groupIndex == mSetup->executionGroups.size() - 1;
+            const bool is_last = static_cast<size_t>(group.groupIndex) == mSetup->executionGroups.size() - 1;
             // Submit to our own queue
             RHIDeviceQueue* queue = nullptr;
             if (group.queue == RHIDeviceQueueType::Graphics)

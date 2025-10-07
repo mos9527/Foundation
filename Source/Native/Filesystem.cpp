@@ -12,7 +12,7 @@ namespace Foundation::Native
         CHECK_MSG(file.good(), "Failed to open file {}", path);
         data.resize(GetFileSize(path));
         file.read(data.data(), static_cast<uint32_t>(data.size()));
-        CHECK_MSG(file.gcount() == data.size(), "Read {} bytes, expected {}", file.gcount(), data.size());
+        CHECK_MSG(static_cast<size_t>(file.gcount()) == data.size(), "Read {} bytes, expected {}", file.gcount(), data.size());
         return file.gcount();
     }
     size_t WriteFile(Path const& path, Bytes data)

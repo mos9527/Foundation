@@ -8,7 +8,7 @@ namespace Foundation::Rendering
     using namespace Core;
     using VirtualAllocation = uint32_t;
     // [Raw Offset, Size]
-    constexpr VirtualAllocation kInvalidVirtualAllocation = ~0ULL;
+    constexpr VirtualAllocation kInvalidVirtualAllocation = ~0u;
     /**
      * @brief Thread-safe wrapper around VulkanMemoryAllocator's Virtual Allocator interface
      *

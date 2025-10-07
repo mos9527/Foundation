@@ -147,7 +147,7 @@ namespace Foundation::RenderCore
         TrackedPass(Allocator* alloc, PassHandle handle, StringView name, RHIDeviceQueueType queue,
                     UniquePtr<RenderPass> renderPass, size_t priority);
         /* -- States -- */
-        size_t groupIndex{}; // executionGroup index
+        int groupIndex{}; // executionGroup index
         // All stages used in this pass
         RHIPipelineStageBits piplineStages{};
         // Pipeline states for the entire pass
