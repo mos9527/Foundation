@@ -39,31 +39,8 @@ Objects: 2
     [0] VkCommandBuffer 0xb4cf9acdb0[Graphics List 0]
     [1] VkBuffer 0x160000000016[GPUScene Const]
 ```
-- !! SYNC HAZARD Present after write !!
-```
-[2025-10-07 11:16:13.332] [VkDebugLayer] [warning] [AppName: Vulkan RHI] vkCmdPipelineBarrier(): pImageMemoryBarriers[0] image is VkImage 0xc000000000c[Backbuffer of Swap 0] and accessMask is VK_ACCESS_2_MEMORY_READ_BIT, but for layout VK_IMAGE_LAYOUT_PRESENT_SRC_KHR expected accessMask are VkAccessFlags2(0).
-Validation Error: [ SYNC-HAZARD-PRESENT-AFTER-WRITE ] | MessageID = 0xe17ab4ae
-[AppName: Vulkan RHI] vkQueuePresentKHR(): PRESENT_AFTER_WRITE hazard detected. vkQueuePresentKHR presents swapchain image 0 (VkImage 0xc000000000c[Backbuffer of Swap 0] from VkSwapchainKHR 0xb000000000b), which was previously written during an image layout transition initiated by vkCmdEndRenderPass. 
-No sufficient synchronization is present to ensure that a swapchain present operation does not conflict with a prior layout transition.
-[Extra properties]
-message_type = PresentError
-hazard_type = PRESENT_AFTER_WRITE
-access = SYNC_PRESENT_ENGINE_SYNCVAL_PRESENT_PRESENTED_SYNCVAL
-prior_access = SYNC_IMAGE_LAYOUT_TRANSITION
-write_barriers = 0
-command = vkQueuePresentKHR
-prior_command = vkCmdEndRenderPass
-submit_index = 2
-batch_index = 0
-swapchain_index = 0
-seq_no = 5
-reset_no = 0
-batch_tag = 42
-Objects: 3
-    [0] VkQueue 0xb4ce868710[Graphics Queue]
-    [1] VkSwapchainKHR 0xb000000000b
-    [2] VkImage 0xc000000000c[Backbuffer of Swap 0]
-```
+- ~~!! SYNC HAZARD Present after write !!~~
+    False positive. Fixed by https://github.com/KhronosGroup/Vulkan-ValidationLayers/pull/10680
 - High `VkFence` count - maybe fencing for compute is not needed?
 ```
 [2025-10-07 11:16:13.036] [Renderer] [info] [Renderer.cpp:935] Swapchain uses 3 back buffers
