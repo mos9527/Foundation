@@ -111,10 +111,12 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         featureChain = {
             {.features = {.samplerAnisotropy = true, .shaderInt16 = true}}, // vk::PhysicalDeviceFeatures2
             {.storageBuffer16BitAccess = true,
+            .uniformAndStorageBuffer16BitAccess = true,
              .shaderDrawParameters = true}, // vk::PhysicalDeviceVulkan11Features
             {
              .drawIndirectCount = true,
              .storageBuffer8BitAccess = true,
+             .uniformAndStorageBuffer8BitAccess = true,
              .shaderFloat16 = true,
              .shaderInt8 = true,
              .runtimeDescriptorArray = true,

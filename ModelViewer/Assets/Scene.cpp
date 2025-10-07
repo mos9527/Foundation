@@ -31,7 +31,7 @@ namespace ModelViewer
         mat4 proj = infinitePerspective(verticalFov, aspectRatio, zNear);
         mat4 view = lookAtRH(position, lookAt, up);
         proj[1][1] *= -1; // Vulkan NDC
-        return {.view = view, .proj = proj, .cameraPosition = position};
+        return {.view = view, .proj = proj, .cameraPosition = position, .zNear = zNear};
     }
     SceneGrid::Params SceneGrid::GetParams(SceneCamera const& camera) const
     {

@@ -85,6 +85,7 @@ namespace ModelViewer {
             mat4 view;
             mat4 proj;
             float3 cameraPosition;
+            float zNear;
         };
         Params GetParams() const;
     };

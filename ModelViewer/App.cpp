@@ -36,8 +36,10 @@ namespace ModelViewer
     }    
     void App::OnApplicationTick()
     {
-        auto instances = mScene->MapInstances();
         float time = GetApplicationTime();
+        if (time > 1.0f)
+            return;
+        auto instances = mScene->MapInstances();
         for (int i = 0; i < 100; i++)
         {
             instances[i].meshAllocationRawOffsetPP = mScene->QueryMesh(mesh).selfRawOffset + 1;
