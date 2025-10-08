@@ -70,33 +70,33 @@ void App::OnRendererSetup()
                                   mScene->GetParams());
             r->CmdDispatch(self, cmd, { mScene->mInstanceCount , 1, 1});
         });
-    //createPSFullscreenPass(
-    //    mRenderer.get(), "Background", [=](PassHandle self, Renderer* r)
-    //    { r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVBackground.spv"); }
-    //);
-    //createPass(
-    //    mRenderer.get(), "Grid View", RHIDeviceQueueType::Graphics,
-    //    [=](PassHandle self, Renderer* r)
-    //    {
-    //        using enum RHIPipelineState::PipelineStateDesc::Attachment::Blending::BlendFactor;
-    //        r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/MVGridView.spv");
-    //        r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVGridView.spv");
-    //        r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0,
-    //                            sizeof(SceneGrid::Params));
-    //        r->BindBackbufferRTV(self, RHIPipelineState::PipelineStateDesc::Attachment::Blending::GetAlphaBlending());
-    //        r->PassSetRasterizerFlags(self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone});
-    //    },
-    //    [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
-    //    {
-    //        auto const& img_wh = r->GetSwapchainExtent();
-    //        r->CmdBeginGraphics(self, cmd, img_wh, {} /* don't clear RTV */);
-    //        r->CmdSetPipeline(self, cmd);
-    //        r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0,
-    //                              mScene->mGrid.GetParams(mScene->mCamera));
-    //        cmd->SetViewport(0, 0, img_wh.x, img_wh.y).SetScissor(0, 0, img_wh.x, img_wh.y);
-    //        cmd->Draw(24);
-    //        cmd->EndGraphics();
-    //    });
+    createPSFullscreenPass(
+        mRenderer.get(), "Background", [=](PassHandle self, Renderer* r)
+        { r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVBackground.spv"); }
+    );
+    createPass(
+        mRenderer.get(), "Grid View", RHIDeviceQueueType::Graphics,
+        [=](PassHandle self, Renderer* r)
+        {
+            using enum RHIPipelineState::PipelineStateDesc::Attachment::Blending::BlendFactor;
+            r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/MVGridView.spv");
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVGridView.spv");
+            r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0,
+                                sizeof(SceneGrid::Params));
+            r->BindBackbufferRTV(self, RHIPipelineState::PipelineStateDesc::Attachment::Blending::GetAlphaBlending());
+            r->PassSetRasterizerFlags(self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone});
+        },
+        [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            auto const& img_wh = r->GetSwapchainExtent();
+            r->CmdBeginGraphics(self, cmd, img_wh, {} /* don't clear RTV */);
+            r->CmdSetPipeline(self, cmd);
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0,
+                                  mScene->mGrid.GetParams(mScene->mCamera));
+            cmd->SetViewport(0, 0, img_wh.x, img_wh.y).SetScissor(0, 0, img_wh.x, img_wh.y);
+            cmd->Draw(24);
+            cmd->EndGraphics();
+        });
     createPass(
         mRenderer.get(), "Meshlet Task Submit", RHIDeviceQueueType::Graphics,
         [=](PassHandle self, Renderer* r)
@@ -134,7 +134,7 @@ void App::OnRendererSetup()
         [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             auto const& img_wh = r->GetSwapchainExtent();
-            r->CmdBeginGraphics(self, cmd, img_wh);
+            r->CmdBeginGraphics(self, cmd, img_wh, {});
             r->CmdSetPipeline(self, cmd);
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Mesh | RHIShaderStageBits::Fragment, 0,
                                   mScene->GetParams());

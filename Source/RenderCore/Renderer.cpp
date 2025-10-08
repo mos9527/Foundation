@@ -1085,7 +1085,7 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
         CHECK_MSG(pass.queue == RHIDeviceQueueType::Graphics, "Backbuffer can only be used in Graphics queue");
         const RHIResourceAccess rt_access = RHIResourceAccessBits::RenderTargetWrite | RHIResourceAccessBits::RenderTargetRead;
         const RHITextureLayout rt_layout = RHITextureLayout::RenderTarget;
-        const RHIPipelineStage rt_stage = RHIPipelineStageBits::RenderTargetOutput;
+        const RHIPipelineStage rt_stage = pass.piplineStages | RHIPipelineStageBits::RenderTargetOutput;
         auto& tres = mSetup->trackedResources[mSwaps[GetSwap()].backbuffer];
         ExecuteBarrierSubresource(pass.handle, tres, RHITextureSubresourceRange::Create(), rt_access, rt_stage,
                                   rt_layout, cmd);
@@ -1370,23 +1370,39 @@ void Renderer::ExecuteFrame()
                 group_active.emplace_back(handle);
         }
         // Record all the active tasks
-        // We do this in parallel - and additionally, transitions are recorded separately
+        // We do this in parallel - with transitions starting before the passes
         Vector<RHICommandList*> execute_cmds(mExecuteAlloc.Ptr());
-        execute_cmds.resize(group_active.size() * 2, nullptr); // [transition cmd, execute cmd]
+        execute_cmds.resize(group_active.size(), nullptr);
         {
             ZoneScopedN("Schedule Records");
+            Atomics::Atomic<PassHandle> nextOrd{0};
             struct RecordJob : public Async::ThreadPoolJob
             {
+                Atomics::Atomic<PassHandle>* nextOrd;
                 Renderer* r;
                 TrackedPass* pass;
                 RHICommandList** cmd;
-                RecordJob(Renderer* r, TrackedPass* pass, RHICommandList** cmd) : r(r), pass(pass), cmd(cmd) {}
+                size_t ord;
+                // Write a lambda without writing a lambda
+                // For demonstration of custom job types - and that
+                // cmd buffers are thread-local - we don't get thread_id in lambda in my implementation
+                RecordJob(
+                    Renderer* r, TrackedPass* pass, RHICommandList** cmd, size_t ord, Atomics::Atomic<PassHandle>* nextOrd
+                ) : r(r), pass(pass), cmd(cmd), ord(ord), nextOrd(nextOrd) {}
                 void Execute(size_t thread_id) noexcept override
                 {
-                    ZoneScoped;
-                    ZoneNameF("<%s>", pass->name.c_str());
-                    *cmd = r->ExecuteAllocateCommandList(pass->queue, thread_id);                    
+                    (*cmd) = r->ExecuteAllocateCommandList(pass->queue, thread_id);
                     (*cmd)->Begin();
+                    (*cmd)->BeginTransition();
+                    // vvv Wait for our turn
+                    size_t expected;
+                    while ((expected = nextOrd->load(std::memory_order_relaxed)) != ord)
+                        nextOrd->wait(expected, std::memory_order_acquire);
+                    r->ExecuteBarriers(*pass, *cmd); // CPU Only. Only comitted to driver at EndTransition
+                    nextOrd->store(ord + 1, std::memory_order_release);
+                    nextOrd->notify_all(); // Wake up other jobs
+                    // vvv Resume recording
+                    (*cmd)->EndTransition();
                     (*cmd)->DebugBegin(pass->name.c_str());
                     pass->pass->Record(pass->handle, r, *cmd);
                     (*cmd)->DebugEnd();
@@ -1394,22 +1410,7 @@ void Renderer::ExecuteFrame()
                 };
             };
             for (size_t i = 0; i < group_active.size(); ++i)
-                mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[group_active[i]], &execute_cmds[i * 2 + 1]);
-            // Now, on the render thread - we record the transitions in serial
-            // This needs to be done in lockstep anyway
-            for (size_t i = 0; i < group_active.size(); ++i)
-            {
-                ZoneScoped;
-                auto& pass = passes[group_active[i]];
-                ZoneNameF("<%s> Transition", pass.name.c_str());
-                auto& cmd = execute_cmds[i * 2];
-                cmd = ExecuteAllocateCommandList(group.queue, -1);               
-                cmd->Begin();
-                cmd->BeginTransition();
-                ExecuteBarriers(pass, cmd);
-                cmd->EndTransition();
-                cmd->End();
-            }
+                mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[group_active[i]], &execute_cmds[i], i, &nextOrd);       
         }
         Vector<RHICommandList*> acq_cmds(mExecuteAlloc.Ptr()), rel_cmds(mExecuteAlloc.Ptr());
         bool needAcquire = false, needRelease = mSetup->executionGroups.size() > 1;
@@ -1470,7 +1471,8 @@ void Renderer::ExecuteFrame()
             else [[unlikely]]
                 throw std::runtime_error("Unhandled queue type");
             // Sync with previous groups on a different queue
-            // otherwise submissions on the same queue are already ordered
+            // otherwise submissions on the same queue are already ordered _by the barriers_
+            // To my idiotic past self: https://www.lunarg.com/wp-content/uploads/2021/08/Vulkan-Synchronization-SIGGRAPH-2021.pdf   
             Vector<RHIDeviceQueue::TimelinePair> timeline_waits(mExecuteAlloc.Ptr());
             Vector<RHIPipelineStage> timeline_wait_stages(mExecuteAlloc.Ptr());
             if (maxGraphicsSyncGroup >= 0 && group.queue == RHIDeviceQueueType::Compute)
