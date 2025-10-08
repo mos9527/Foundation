@@ -1395,6 +1395,7 @@ void Renderer::ExecuteFrame()
                     (*cmd)->Begin();
                     (*cmd)->BeginTransition();
                     // vvv Wait for our turn
+                    // XXX Quite unfriendly to the cache - how to improve?
                     {
                         ZoneScopedN("Lockstep Wait");
                         size_t expected;
