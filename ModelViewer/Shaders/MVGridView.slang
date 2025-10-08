@@ -32,7 +32,7 @@ GridVertex vertMain(uint vid: SV_VertexID /* 24 */ ) {
     GridVertex output;    
     float2 vtx = positions[vid % 6] + offsets[vid / 6];    
     vtx = vtx * params.dimension + floor(params.camera.cameraPosition.xy); // Grid shader works on units of 1 world space
-    output.pos = mul(params.camera.ViewProj(), float4(vtx, 0, 1.0));    
+    output.pos = mul(params.camera.viewProj, float4(vtx, 0, 1.0));    
     output.world = vtx;
     return output;
 }

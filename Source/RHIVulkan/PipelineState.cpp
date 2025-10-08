@@ -11,6 +11,7 @@ void VulkanPipelineState::InitializePipelineLayout() {
     Vector<vk::PushConstantRange> push_constants(mDesc.pushConstants.size(), alloc.Ptr());
     for (size_t i = 0; i < mDesc.pushConstants.size(); i++) {
         const auto& [stage, offset, size] = mDesc.pushConstants[i];
+        CHECK_MSG(size <= 128, "Push constant size exceeds min spec limit");
         push_constants[i]
             .setStageFlags(vkShaderStageFlagsFromRHIShaderStage(stage))
             .setOffset(offset)

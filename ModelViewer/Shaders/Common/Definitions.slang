@@ -90,9 +90,7 @@ public struct PrimitiveOutput
     public bool cull : SV_CullPrimitive;
 }
 public struct CameraParams {
-    public float4x4 view;
-    public float4x4 proj;
+    public float4x4 viewProj;    
     public float3 cameraPosition;
-    public float zNear;
-    public float4x4 ViewProj() { return mul(proj, view); }
+    public float zNear;    
 }

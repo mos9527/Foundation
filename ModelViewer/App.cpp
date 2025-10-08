@@ -115,7 +115,7 @@ namespace ModelViewer
         lastX = mX; lastY = mY;
         t0 = GetApplicationTime();
     }
-    void App::OnAfterFrame() { ImGui_ImplFoundation_OnAfterFrame(); }
+    void App::OnAfterFrame() { /*ImGui_ImplFoundation_OnAfterFrame();*/ }
 } // namespace ModelViewer
 using namespace ModelViewer;
 using namespace Foundation::Async;

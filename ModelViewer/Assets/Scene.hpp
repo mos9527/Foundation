@@ -82,8 +82,7 @@ namespace ModelViewer {
         
         struct Params
         {
-            mat4 view;
-            mat4 proj;
+            mat4 viewProj;
             float3 cameraPosition;
             float zNear;
         };

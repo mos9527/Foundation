@@ -7,7 +7,7 @@ ByteAddressBuffer sceneInstance;
 ByteAddressBuffer sceneConst;
 
 [shader("compute")]
-[numthreads(32, 1, 1)]
+[numthreads(64, 1, 1)]
 void taskGeneration(uint instanceID: SV_DispatchThreadID) {
     SceneInstanceData instance = sceneInstance.Load<SceneInstanceData>(instanceID * sizeof(SceneInstanceData));
     if (instance.meshAllocationRawOffsetPP == 0)
