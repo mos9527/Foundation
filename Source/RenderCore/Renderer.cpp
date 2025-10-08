@@ -1085,7 +1085,7 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd)
         CHECK_MSG(pass.queue == RHIDeviceQueueType::Graphics, "Backbuffer can only be used in Graphics queue");
         const RHIResourceAccess rt_access = RHIResourceAccessBits::RenderTargetWrite | RHIResourceAccessBits::RenderTargetRead;
         const RHITextureLayout rt_layout = RHITextureLayout::RenderTarget;
-        const RHIPipelineStage rt_stage = pass.piplineStages | RHIPipelineStageBits::RenderTargetOutput;
+        const RHIPipelineStage rt_stage = RHIPipelineStageBits::RenderTargetOutput;
         auto& tres = mSetup->trackedResources[mSwaps[GetSwap()].backbuffer];
         ExecuteBarrierSubresource(pass.handle, tres, RHITextureSubresourceRange::Create(), rt_access, rt_stage,
                                   rt_layout, cmd);
