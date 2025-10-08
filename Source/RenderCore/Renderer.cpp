@@ -1532,14 +1532,14 @@ void Renderer::ExecuteFrame()
                     cmd->BeginTransition();
                     ExecuteBarrierSubresource(kInvalidHandle, mSetup->trackedResources[mSwaps[GetSwap()].backbuffer],
                                               RHITextureSubresourceRange::Create(), {},
-                                              RHIPipelineStageBits::BottomOfPipe, RHITextureLayout::Present, cmd);
+                                              RHIPipelineStageBits::AllGraphics, RHITextureLayout::Present, cmd);
                     cmd->EndTransition();
                     cmd->DebugEnd();
                     cmd->End();
                     group_cmds.push_back(cmd);
                     {
                         // Finally..
-                        timeline_wait_stages.push_back(group.allStages | RHIPipelineStageBits::BottomOfPipe);
+                        timeline_wait_stages.push_back(group.allStages | RHIPipelineStageBits::AllGraphics);
                         queue->Submit({.timelineWaits = timeline_waits,
                                        .timelineSignals = {{{timeline_signal}}},
                                        .waits = {{mSwaps[mCurrentSync].present.Get()}},

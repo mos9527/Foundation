@@ -41,6 +41,12 @@ namespace ModelViewer
             .type = static_cast<uint>(type)
         };
     }
+    Scene::Params Scene::GetParams() const { 
+        return {
+            .camera = mCamera.GetParams(),
+            .instanceCount = mInstanceCount
+        };
+    }
     SceneHandle Scene::PushMesh(SceneMeshData const& data)
     {
         auto [handle, alloc] = mMeshes.PopPair();

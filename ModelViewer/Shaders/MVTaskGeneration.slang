@@ -1,6 +1,8 @@
 import "Common/Definitions";
 import "Math/Bits";
 
+[[vk::push_constant]] SceneParams scene;
+
 RWStructuredBuffer<MeshletTaskParams> tasks;
 RWStructuredBuffer<Atomic<uint>> counter;
 ByteAddressBuffer sceneInstance;
@@ -9,6 +11,8 @@ ByteAddressBuffer sceneConst;
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void taskGeneration(uint instanceID: SV_DispatchThreadID) {
+    if (instanceID >= scene.instanceCount)
+        return; // Out of range
     SceneInstanceData instance = sceneInstance.Load<SceneInstanceData>(instanceID * sizeof(SceneInstanceData));
     if (instance.meshAllocationRawOffsetPP == 0)
         return;

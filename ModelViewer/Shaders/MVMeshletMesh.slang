@@ -40,7 +40,7 @@ void meshletMesh(
         pos = q.rotate(pos);
         pos = pos + instance.t;
         // Output
-        output.pos = mul(camera.viewProj, float4(pos, 1.0));
+        output.pos = mul(scene.camera.viewProj, float4(pos, 1.0));
         output.normal = q.rotate(N);
         output.tangent = N; // q.rotate(T_BSign.xyz);
         output.bitangent = cross(output.normal, output.tangent) * T_BSign.w;

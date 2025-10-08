@@ -91,6 +91,10 @@ public struct PrimitiveOutput
 }
 public struct CameraParams {
     public float4x4 viewProj;    
-    public float3 cameraPosition;
-    public float zNear;    
+    public float4 cameraPosition; // xyz = position, w = zNear    
+}
+public struct SceneParams {    
+    public CameraParams camera;
+    public uint32_t instanceCount;
+    public uint3 padding;
 }

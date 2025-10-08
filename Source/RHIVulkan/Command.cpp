@@ -60,10 +60,10 @@ VulkanCommandList::VulkanCommandList(const VulkanCommandPool& commandPool) :
 
 RHICommandList& VulkanCommandList::Begin() {
     mAllocator.Reset(mArena);
-    bool isTransient = mCommandPool.mDesc.type == RHICommandPoolType::Transient;
-    mCommandBuffer.begin(vk::CommandBufferBeginInfo{
-        .flags = isTransient ? vk::CommandBufferUsageFlagBits::eOneTimeSubmit : vk::CommandBufferUsageFlags{}
-    });
+    bool isTransient = mCommandPool.mDesc.type == RHICommandPoolType::Transient;  
+    vk::CommandBufferBeginInfo beginInfo{.flags = isTransient ? vk::CommandBufferUsageFlagBits::eOneTimeSubmit
+                                                              : vk::CommandBufferUsageFlags{}};
+    mCommandBuffer.begin(beginInfo);
     return *this;
 }
 RHICommandList& VulkanCommandList::BeginTransition() {

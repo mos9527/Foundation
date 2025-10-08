@@ -39,7 +39,8 @@ namespace ModelViewer
         float time = GetApplicationTime();
         auto instances = mScene->MapInstances();
         constexpr int countSq = 100;
-        for (int i = 0; i < countSq*countSq; i++)
+        mScene->mInstanceCount = countSq * countSq;
+        for (int i = 0; i < mScene->mInstanceCount; i++)
         {
             CHECK(i < instances.size());
             instances[i].meshAllocationRawOffsetPP = mScene->QueryMesh(mesh).selfRawOffset + 1;
@@ -115,7 +116,7 @@ namespace ModelViewer
         lastX = mX; lastY = mY;
         t0 = GetApplicationTime();
     }
-    void App::OnAfterFrame() { /*ImGui_ImplFoundation_OnAfterFrame();*/ }
+    void App::OnAfterFrame() { ImGui_ImplFoundation_OnAfterFrame(); }
 } // namespace ModelViewer
 using namespace ModelViewer;
 using namespace Foundation::Async;

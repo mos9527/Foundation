@@ -107,7 +107,6 @@ namespace ModelViewer {
         };
         Params GetParams(SceneCamera const& camera) const;
     };
-#pragma pack(pop)   
     class Scene
     {
         Allocator* mAllocator;
@@ -118,8 +117,21 @@ namespace ModelViewer {
         Scene(GPUScene* scene, Allocator* allocator);
 
         float mTime{};
+        
+        /* -- Data -- */
+        // TODO: Ugly - we do have a upper bound and data are in fact expected
+        //       to be tightly packed. This works for now.
+        uint32_t mInstanceCount{0};
         SceneCamera mCamera{};
         SceneGrid mGrid{};
+
+        struct Params
+        {
+            SceneCamera::Params camera;
+            uint32_t instanceCount;
+            uvec3 _padding;
+        };
+        Params GetParams() const;
 
         SceneHandle PushMesh(SceneMeshData const& data);
         SceneMeshAllocation const& QueryMesh(SceneHandle handle);
@@ -128,4 +140,5 @@ namespace ModelViewer {
         Span<SceneInstanceData> MapInstances();
         void UnmapInstances();
     };
+#pragma pack(pop)
 }

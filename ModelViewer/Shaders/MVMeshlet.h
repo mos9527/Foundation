@@ -3,7 +3,7 @@ import "Math/Bits";
 import "Math/Quantization";
 import "Math/Quaternion";
 
-[[vk::push_constant]] CameraParams camera;
+[[vk::push_constant]] SceneParams scene;
 [[vk_binding(0, 0)]]
 StructuredBuffer<MeshletTaskParams> tasks;
 [[vk_binding(0, 1)]]
