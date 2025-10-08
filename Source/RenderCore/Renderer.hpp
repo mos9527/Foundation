@@ -14,8 +14,7 @@ namespace Foundation::RenderCore
     // Maximum number of render passes per frame
     // NOTE: The limit here is mostly arbitrary - and is only used
     //       for the default priority heuristic when determining pass order.
-    constexpr size_t kMaxRenderPasses = 1024;
-    constexpr size_t kRecordThreadPoolSize = 4; // Threads to record command lists concurrently
+    constexpr size_t kMaxRenderPasses = 1024;    
     constexpr size_t kMaxCommandListsPerThread = kMaxRenderPasses; // Maximum number of command lists per frame    
     constexpr size_t kExecuteArenaSize = 16 * (1 << 20); // Maximum size of the per-frame transient arena (16MB)
     const RHIPipelineStage kComputeStagesMask = RHIPipelineStageBits::FragmentShader |
@@ -89,6 +88,8 @@ namespace Foundation::RenderCore
         bool async{true};
         // Present the swapchain in Execute()
         bool present{true};
+        // Number of threads to use for recording command lists
+        size_t renderThreads{std::max(1u, std::thread::hardware_concurrency() - 1)};
     };
     class Renderer;
     /**

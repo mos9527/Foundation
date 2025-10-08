@@ -18,7 +18,7 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
                    RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator) :
     mState(State::Undefined), mAllocator(allocator), mDesc(desc), mSwaps(mAllocator), mDevice(device),
     mSwapchain(swapchain), mExecuteArena(mAllocator, kExecuteArenaSize), mExecuteAlloc(mExecuteArena),
-    mExecuteThreadPool(kRecordThreadPoolSize, kMaxCommandListsPerThread * 2, allocator, "Renderer"),
+    mExecuteThreadPool(mDesc.renderThreads, kMaxCommandListsPerThread * 2, allocator, "Renderer"),
     mExecutePerSwapCmds(allocator), mWaitIdle(device.Get())
 {
     mGraphicsQueue = mDevice->GetDeviceQueue(RHIDeviceQueueType::Graphics);
@@ -908,7 +908,7 @@ void Renderer::SetFrameSyncObjects()
     while (mExecutePerSwapCmds.size() < mFrameSwaps)
     {
         auto& threads = mExecutePerSwapCmds.emplace_back(mAllocator);
-        while (threads.size() < kRecordThreadPoolSize + 1) // Inc. main (render) thread. We do work too!
+        while (threads.size() < mDesc.renderThreads + 1) // Inc. main (render) thread. We do work too!
             threads.emplace_back(ConstructUnique<ExecutePerThreadCommandLists>(mAllocator, mDevice.Get(),
                                                                                kMaxCommandListsPerThread, mAllocator));
     }
@@ -1375,10 +1375,10 @@ void Renderer::ExecuteFrame()
         execute_cmds.resize(group_active.size(), nullptr);
         {
             ZoneScopedN("Schedule Records");
-            Atomics::Atomic<PassHandle> nextOrd{0};
+            Atomics::Atomic<PassHandle> signal{0};
             struct RecordJob : public Async::ThreadPoolJob
             {
-                Atomics::Atomic<PassHandle>* nextOrd;
+                Atomics::Atomic<PassHandle>* signal;
                 Renderer* r;
                 TrackedPass* pass;
                 RHICommandList** cmd;
@@ -1387,30 +1387,37 @@ void Renderer::ExecuteFrame()
                 // For demonstration of custom job types - and that
                 // cmd buffers are thread-local - we don't get thread_id in lambda in my implementation
                 RecordJob(
-                    Renderer* r, TrackedPass* pass, RHICommandList** cmd, size_t ord, Atomics::Atomic<PassHandle>* nextOrd
-                ) : r(r), pass(pass), cmd(cmd), ord(ord), nextOrd(nextOrd) {}
+                    Renderer* r, TrackedPass* pass, RHICommandList** cmd, size_t ord, Atomics::Atomic<PassHandle>* signal
+                ) : r(r), pass(pass), cmd(cmd), ord(ord), signal(signal) {}
                 void Execute(size_t thread_id) noexcept override
                 {
                     (*cmd) = r->ExecuteAllocateCommandList(pass->queue, thread_id);
                     (*cmd)->Begin();
                     (*cmd)->BeginTransition();
                     // vvv Wait for our turn
-                    size_t expected;
-                    while ((expected = nextOrd->load(std::memory_order_relaxed)) != ord)
-                        nextOrd->wait(expected, std::memory_order_acquire);
-                    r->ExecuteBarriers(*pass, *cmd); // CPU Only. Only comitted to driver at EndTransition
-                    nextOrd->store(ord + 1, std::memory_order_release);
-                    nextOrd->notify_all(); // Wake up other jobs
-                    // vvv Resume recording
-                    (*cmd)->EndTransition();
-                    (*cmd)->DebugBegin(pass->name.c_str());
-                    pass->pass->Record(pass->handle, r, *cmd);
-                    (*cmd)->DebugEnd();
-                    (*cmd)->End();
+                    {
+                        ZoneScopedN("Lockstep Wait");
+                        size_t expected;
+                        while ((expected = signal->load(std::memory_order_relaxed)) != ord)
+                            signal->wait(expected, std::memory_order_relaxed);
+                        r->ExecuteBarriers(*pass, *cmd); // CPU Only. Only comitted to driver at EndTransition
+                        signal->store(ord + 1, std::memory_order_relaxed);
+                        signal->notify_all(); // Wake up other jobs
+                    }
+                    {
+                        ZoneScoped;
+                        ZoneNameF("<%s>", pass->name.c_str());
+                        // vvv Resume recording
+                        (*cmd)->EndTransition();
+                        (*cmd)->DebugBegin(pass->name.c_str());
+                        pass->pass->Record(pass->handle, r, *cmd);
+                        (*cmd)->DebugEnd();
+                        (*cmd)->End();
+                    }
                 };
             };
             for (size_t i = 0; i < group_active.size(); ++i)
-                mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[group_active[i]], &execute_cmds[i], i, &nextOrd);       
+                mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[group_active[i]], &execute_cmds[i], i, &signal);       
         }
         Vector<RHICommandList*> acq_cmds(mExecuteAlloc.Ptr()), rel_cmds(mExecuteAlloc.Ptr());
         bool needAcquire = false, needRelease = mSetup->executionGroups.size() > 1;
@@ -1471,7 +1478,8 @@ void Renderer::ExecuteFrame()
             else [[unlikely]]
                 throw std::runtime_error("Unhandled queue type");
             // Sync with previous groups on a different queue
-            // otherwise submissions on the same queue are already ordered _by the barriers_
+            // otherwise submissions on the same queue are ordered only _by the barriers_
+            // The command list ordering itself does _NOT_ guarantee it!!
             // To my idiotic past self: https://www.lunarg.com/wp-content/uploads/2021/08/Vulkan-Synchronization-SIGGRAPH-2021.pdf   
             Vector<RHIDeviceQueue::TimelinePair> timeline_waits(mExecuteAlloc.Ptr());
             Vector<RHIPipelineStage> timeline_wait_stages(mExecuteAlloc.Ptr());
