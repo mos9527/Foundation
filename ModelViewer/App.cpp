@@ -38,7 +38,7 @@ namespace ModelViewer
     {
         float time = GetApplicationTime();
         auto instances = mScene->MapInstances();
-        constexpr int countSq = 1;
+        constexpr int countSq = 100;
         mScene->mInstanceCount = countSq * countSq;
         for (int i = 0; i < mScene->mInstanceCount; i++)
         {

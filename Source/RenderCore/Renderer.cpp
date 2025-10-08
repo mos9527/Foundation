@@ -1373,9 +1373,9 @@ void Renderer::ExecuteFrame()
         // We do this in parallel - with transitions starting before the passes
         Vector<RHICommandList*> execute_cmds(mExecuteAlloc.Ptr());
         execute_cmds.resize(group_active.size(), nullptr);
+        Atomics::Atomic<PassHandle> signal{0};
         {
             ZoneScopedN("Schedule Records");
-            Atomics::Atomic<PassHandle> signal{0};
             struct RecordJob : public Async::ThreadPoolJob
             {
                 Atomics::Atomic<PassHandle>* signal;
