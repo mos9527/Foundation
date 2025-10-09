@@ -1,4 +1,4 @@
-import "Common/Definitions";
+import "Scene/Structs";
 import "Math/Bits";
 
 RWStructuredBuffer<Atomic<uint>> counter;

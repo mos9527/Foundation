@@ -4,6 +4,8 @@
 #include <GLFW/glfw3.h>
 #include <Bindings/ImGui.hpp>
 
+#include "../cmake-build-release/_deps/imgui-src/imgui_internal.h"
+
 using namespace Foundation;
 using namespace Foundation::Core;
 using namespace Foundation::RenderCore;
@@ -51,6 +53,36 @@ namespace ModelViewer
         mScene->UnmapInstances();
     }    
     void App::OnImGui() {
+        // Draw the culling camera frustums
+        {
+            const float3 kVerts[8]{{-1, -1, 1},{-1, 1, 1},{-1, -1, -1},{-1, 1, -1},{1, -1, 1},{1, 1, 1},{1, -1, -1}, {1, 1, -1}};
+            const ivec2 kEdges[12]{{0,1},{0,2},{0,4},{1,3},{1,5},{2,3},{2,6},{3,7},{4,5},{4,6},{5,7},{6,7}};
+            mat4 invViewProj = inverse(mScene->mCullingCamera.GetViewProjFinite(1));
+            mat4 viewProj = mScene->mCamera.GetParams().viewProj;
+            float2 ndcFrustum[8];
+            bool cull[8]{};
+            ImVec2 region = ImGui::GetIO().DisplaySize;
+            ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+            for (int i = 0; i < 8; i++)
+            {
+                float4 p = invViewProj * float4{ kVerts[i], 1.0f };
+                p = p / p.w;
+                p = viewProj * p;
+                p = p / p.w;
+                ndcFrustum[i] = (p.xy()+float2(1,1)) * float2(0.5, 0.5);  // [-1,1] -> [0,1]
+                ndcFrustum[i].x *= region.x, ndcFrustum[i].y *= region.y;
+                if (p.z < 0 || p.z > 1)
+                    cull[i] = true;
+            }
+            for (int i = 0; i < 12; i++)
+            {
+                if (cull[kEdges[i].x] || cull[kEdges[i].y])
+                    continue;
+                drawList->AddLine(ImVec2(ndcFrustum[kEdges[i].x].x, ndcFrustum[kEdges[i].x].y),
+                                  ImVec2(ndcFrustum[kEdges[i].y].x, ndcFrustum[kEdges[i].y].y),
+                                  IM_COL32(255, 255, 0, 255), 1.0f);
+            }
+        }
         ImGui::Begin("Scene");
         ImGui::Text("FPS: %zu", mTiming.GetFPS());
         ImGui::Separator();

@@ -1,4 +1,4 @@
-import "Common/Definitions";
+import "Scene/Structs";
 struct Params {
     CameraParams camera;
     uint dimension;

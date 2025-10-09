@@ -1,5 +1,5 @@
 namespace Foundation::Math {
-    // From meshoptimizer library
+    // From meshoptimizer
     union FloatBits
     {
         float f;

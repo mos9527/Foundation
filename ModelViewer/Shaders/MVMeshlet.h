@@ -1,7 +1,4 @@
-import "Common/Definitions";
-import "Math/Bits";
-import "Math/Quantization";
-import "Math/Quaternion";
+import "Scene/Structs";
 
 [[vk::push_constant]] uint32_t sceneParamsOffset; // in sceneShared
 [[vk_binding(0, 0)]]

@@ -1,4 +1,6 @@
 ﻿#include "MVMeshlet.h"
+import "Math/Quaternion";
+import "Math/Quantization";
 struct MicroIndices {
     uint8_t v0;
     uint8_t v1;

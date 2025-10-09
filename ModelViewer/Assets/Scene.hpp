@@ -79,7 +79,13 @@ namespace ModelViewer {
         float verticalFov{radians(45.0)}; // In radians
         float aspectRatio{1};
         float zNear{1e-3};
-        
+        inline mat4 GetViewProjFinite(float zFar) const
+        {
+            mat4 p = perspective(verticalFov, aspectRatio, zNear, zFar);
+            p[1][1] *= -1; // Vulkan NDC
+            mat4 v = lookAtRH(position, lookAt, up);
+            return p * v;
+        }
         struct Params
         {
             mat4 viewProj;
@@ -89,9 +95,8 @@ namespace ModelViewer {
         Params GetParams() const;
         struct CullParams
         {
-            mat4 view;
-            mat4 proj;
-            float4 frustum; // left/right/top/bottom
+            mat4 viewMatrix;
+            float4 frustum; // See @ref GetCullParams
         };
         CullParams GetCullParams() const;
     };
@@ -141,6 +146,7 @@ namespace ModelViewer {
         //       to be tightly packed. This works for now.
         uint32_t mInstanceCount{0};
         SceneCamera mCamera{};
+        SceneCamera mCullingCamera{};
         SceneGrid mGrid{};
 
         void CommitParams();

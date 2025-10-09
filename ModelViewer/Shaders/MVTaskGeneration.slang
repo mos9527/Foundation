@@ -1,4 +1,5 @@
 #include "MVMeshlet.h"
+import "Math/Bits";
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
