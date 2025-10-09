@@ -19,7 +19,7 @@ void meshletMesh(
 ) {    
     if (meshletID >= payload.meshletCount)
         return; // Out of range. Kill the entire WG - barriers should still be fine
-
+    SceneParams scene = sceneShared.Load<SceneParams>(sceneParamsOffset);
     uint offset = payload.meshletRawOffsets[meshletID];
     MeshMeshlet meshlet = sceneConst.Load<MeshMeshlet>(offset);
     SetMeshOutputCounts(meshlet.vertexCount, meshlet.triangleCount);

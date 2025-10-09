@@ -12,7 +12,7 @@ namespace Foundation::Rendering
     struct GPUSceneBudgets
     {
         // Instance: Full update every frame, fixed allocation sizes
-        size_t instanceBudget = 16_KB;
+        size_t instanceBudget = 1_MB;
         size_t instanceAlignment = 16_B;
         // Shared: Partial update every frame, dynamic allocation
         size_t sharedBudget = 1_MB;
@@ -90,6 +90,9 @@ namespace Foundation::Rendering
 
         /**
          * @brief Creates a pass that performs per-frame updates with correct synchronization.
+         * @note IMPORTANT: Resources created by this call _must_ be used within the @ref Renderer,
+         *       or _no_ updates will have any effect (i.e. the updates will never be executed),
+         *       and the next-frame guarantee will not hold!
          */
         void CreateUpdatePasses(Renderer* renderer, ResourceHandle& outInstanceBuffer, ResourceHandle& outSharedBuffer,
                                 ResourceHandle& outConstBuffer,
@@ -102,7 +105,7 @@ namespace Foundation::Rendering
          * The entirety of the buffer will be updated to the GPU.
          *
          * @note The data update is not immediate, and will be automatically scheduled
-         * and performed at the beginning of the next frame.
+         * and performed at the beginning of the next frame (call to @ref Renderer::ExecuteFrame)
          *
          * @note This has the side effect of blocking GPU buffer updates,
          * i.e. the @ref CreateUpdatePasses passes, and can thus be used to batch
@@ -119,7 +122,7 @@ namespace Foundation::Rendering
         /**
          * @brief Unmaps the instance data, allowing other threads to map it again.
          *
-         * @note The update is guaranteed to be completed by the next frame.
+         * @note The update is guaranteed to be completed by the next frame (call to @ref Renderer::ExecuteFrame)
          */
         void UnmapInstanceData()
         {
@@ -136,7 +139,7 @@ namespace Foundation::Rendering
          * granularity.
          *
          * @note The data update is not immediate, and will be automatically scheduled
-         * and performed at the beginning of the next frame.
+         * and performed at the beginning of the next frame (call to @ref Renderer::ExecuteFrame)
          *
          * @note However, it's valid to @ref QueryShared the allocation right after this call.
          * 
@@ -157,7 +160,7 @@ namespace Foundation::Rendering
         /**
          * @brief Updates a previously allocated Shared allocation.
          *
-         * @note The update is guaranteed to be completed by the next frame.
+         * @note The update is guaranteed to be completed by the next frame (call to @ref Renderer::ExecuteFrame)
          *
          * @note To batch updates, you can acquire @ref MapInstanceData before pushing,
          * and use @ref UnmapInstanceData afterward to flush all updates at once.
@@ -180,7 +183,7 @@ namespace Foundation::Rendering
          * granularity.
          *
          * @note The data update is not immediate, and will be automatically scheduled
-         * and performed at the beginning of the next frame.
+         * and performed at the beginning of the next frame (call to @ref Renderer::ExecuteFrame)
          * 
          * @note However, it's valid to @ref QueryConst the allocation right after this call.
          *
@@ -202,7 +205,7 @@ namespace Foundation::Rendering
          * @brief Updates a previously allocated Const allocation.
          *
          * @note The data update is not immediate, and will be automatically scheduled
-         * and performed at the beginning of the next frame.
+         * and performed at the beginning of the next frame (call to @ref Renderer::ExecuteFrame)
          *
          * @note To batch updates, you can acquire @ref MapInstanceData before pushing,
          * and use @ref UnmapInstanceData afterward to flush all updates at once.

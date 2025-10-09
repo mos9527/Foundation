@@ -25,13 +25,24 @@ namespace ModelViewer
         }
         return res;
     }
-    Scene::Scene(GPUScene* scene, Allocator* allocator) : mAllocator(allocator), mGPUScene(scene), mMeshes(allocator) {}
+    Scene::Scene(GPUScene* scene, Allocator* allocator) : mAllocator(allocator), mGPUScene(scene), mMeshes(allocator)
+    {
+        mSceneParamsAllocation = scene->PushShared(Span<Params>(mParams).AsBytes(), alignof(Params));
+    }
     SceneCamera::Params SceneCamera::GetParams() const
     { 
         mat4 proj = infinitePerspective(verticalFov, aspectRatio, zNear);
         mat4 view = lookAtRH(position, lookAt, up);
         proj[1][1] *= -1; // Vulkan NDC
         return {.viewProj = proj * view, .cameraPosition = position, .zNear = zNear};
+    }
+    SceneCamera::CullParams SceneCamera::GetCullParams() const
+    {
+        mat4 proj = infinitePerspective(verticalFov, aspectRatio, zNear);
+        mat4 view = lookAtRH(position, lookAt, up);
+        proj[1][1] *= -1; // Vulkan NDC
+        float4 frustum;
+        return {.view = view, .proj = proj};
     }
     SceneGrid::Params SceneGrid::GetParams(SceneCamera const& camera) const
     {
@@ -41,11 +52,16 @@ namespace ModelViewer
             .type = static_cast<uint>(type)
         };
     }
-    Scene::Params Scene::GetParams() const { 
-        return {
-            .camera = mCamera.GetParams(),
-            .instanceCount = mInstanceCount
-        };
+    void Scene::CommitParams()
+    {
+        mParams.camera = mCamera.GetParams();
+        mParams.cullParams = mCamera.GetCullParams();
+        mParams.instanceCount = mInstanceCount; // TODO. Again...
+        mGPUScene->UpdateShared(mSceneParamsAllocation,Span<Params>(mParams).AsBytes());
+    }
+    VirtualAllocation Scene::GetParamsAllocationRawOffset() const
+    {
+        return mGPUScene->QueryShared(mSceneParamsAllocation).first;
     }
     SceneHandle Scene::PushMesh(SceneMeshData const& data)
     {

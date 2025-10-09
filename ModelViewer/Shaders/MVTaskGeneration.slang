@@ -1,16 +1,9 @@
-import "Common/Definitions";
-import "Math/Bits";
-
-[[vk::push_constant]] SceneParams scene;
-
-RWStructuredBuffer<MeshletTaskParams> tasks;
-RWStructuredBuffer<Atomic<uint>> counter;
-ByteAddressBuffer sceneInstance;
-ByteAddressBuffer sceneConst;
+#include "MVMeshlet.h"
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void taskGeneration(uint instanceID: SV_DispatchThreadID) {
+    SceneParams scene = sceneShared.Load<SceneParams>(sceneParamsOffset);
     if (instanceID >= scene.instanceCount)
         return; // Out of range
     SceneInstanceData instance = sceneInstance.Load<SceneInstanceData>(instanceID * sizeof(SceneInstanceData));

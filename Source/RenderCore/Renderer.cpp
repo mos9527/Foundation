@@ -1547,11 +1547,11 @@ void Renderer::ExecuteFrame()
                     cmd->EndTransition();
                     cmd->DebugEnd();
                     cmd->End();
+                    waitForRecord();
+                    timeline_wait_stages.push_back(group.allStages | RHIPipelineStageBits::BottomOfPipe);
                     group_cmds.push_back(cmd);
                     {
                         // Finally..
-                        timeline_wait_stages.push_back(group.allStages | RHIPipelineStageBits::BottomOfPipe);
-                        waitForRecord();
                         queue->Submit({.timelineWaits = timeline_waits,
                                        .timelineSignals = {{{timeline_signal}}},
                                        .waits = {{mSwaps[mCurrentSync].present.Get()}},

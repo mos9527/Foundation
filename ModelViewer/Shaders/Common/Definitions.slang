@@ -93,8 +93,13 @@ public struct CameraParams {
     public float4x4 viewProj;    
     public float4 cameraPosition; // xyz = position, w = zNear    
 }
-public struct SceneParams {    
+public struct CullParams {
+    public float4x4 viewMatrix;
+    public float4x4 projMatrix;
+    public float4 frustum;
+}
+public struct SceneParams {
     public CameraParams camera;
+    public CullParams culling;
     public uint32_t instanceCount;
-    public uint3 padding;
 }

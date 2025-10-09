@@ -7,7 +7,7 @@ groupshared MeshletPayload gsPayload;
 [shader("amplification")]
 [numthreads(kMaxTaskShaderWork, 1, 1)]
 void meshletTask(uint meshlet: SV_GroupIndex, uint2 groupID: SV_GroupID) {
-    uint count = counter[0];
+    uint count = counter[0].load();
     uint dispatchIndex = dot(groupID, uint2(kMaxTaskShaderWork, 1));
     bool visible = false;
     // Note to self: do NOT branch (inc. early return) with a memory barrier!! i.e. GroupMemoryBarrierWithGroupSync();

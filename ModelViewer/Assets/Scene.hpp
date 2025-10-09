@@ -87,6 +87,13 @@ namespace ModelViewer {
             float zNear;
         };
         Params GetParams() const;
+        struct CullParams
+        {
+            mat4 view;
+            mat4 proj;
+            float4 frustum; // left/right/top/bottom
+        };
+        CullParams GetCullParams() const;
     };
     struct SceneGrid
     {
@@ -107,12 +114,23 @@ namespace ModelViewer {
         };
         Params GetParams(SceneCamera const& camera) const;
     };
+    // TODO: Docs docs docs.
+    //       Minus how everything here are still me figuring things out. Maybe later.
     class Scene
     {
         Allocator* mAllocator;
         GPUScene* mGPUScene;
 
         Pool<SceneHandle, SceneMeshAllocation> mMeshes;
+
+        VirtualAllocation mSceneParamsAllocation;
+
+        struct Params
+        {
+            SceneCamera::Params camera;
+            SceneCamera::CullParams cullParams;
+            uint32_t instanceCount;
+        } mParams;
     public:
         Scene(GPUScene* scene, Allocator* allocator);
 
@@ -125,13 +143,8 @@ namespace ModelViewer {
         SceneCamera mCamera{};
         SceneGrid mGrid{};
 
-        struct Params
-        {
-            SceneCamera::Params camera;
-            uint32_t instanceCount;
-            uvec3 _padding;
-        };
-        Params GetParams() const;
+        void CommitParams();
+        VirtualAllocation GetParamsAllocationRawOffset() const;
 
         SceneHandle PushMesh(SceneMeshData const& data);
         SceneMeshAllocation const& QueryMesh(SceneHandle handle);

@@ -24,7 +24,7 @@ namespace ModelViewer
             static_cast<VulkanDevice*>(mDevice.Get()), 
             static_cast<VulkanDeviceQueue*>(mDevice->GetDeviceQueue(RHIDeviceQueueType::Graphics)),
             mSwapchain.Get(), 
-            reinterpret_cast<GLFWwindow*>(GetNativeWindow()->GetNative())
+            static_cast<GLFWwindow*>(GetNativeWindow()->GetNative())
         );
         // TEST: Load mesh
         Vector<MeshVertex> vertices(GetAllocator());
@@ -79,7 +79,7 @@ namespace ModelViewer
         mScene->mCamera.aspectRatio = mSwapchain->GetAspectRatio();        
         static float t0 = 0; float t1 = GetApplicationTime(), dt = t1 - t0;
         /* -- Camera controls -- */
-        GLFWwindow* win = reinterpret_cast<GLFWwindow*>(GetNativeWindow()->GetNative());
+        GLFWwindow* win = static_cast<GLFWwindow*>(GetNativeWindow()->GetNative());
         // Movement
         auto& camera = mScene->mCamera;
         float3 view = normalize(camera.lookAt - camera.position);        
@@ -115,6 +115,7 @@ namespace ModelViewer
         }
         lastX = mX; lastY = mY;
         t0 = GetApplicationTime();
+        mScene->CommitParams();
     }
     void App::OnAfterFrame() { ImGui_ImplFoundation_OnAfterFrame(); }
 } // namespace ModelViewer
