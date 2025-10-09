@@ -196,24 +196,26 @@ namespace Foundation::RenderCore
                 throw std::runtime_error("Unhandled queue type");
             }
         };
+        using ExecuteBarrierList = Vector<Pair<Variant<RHIBuffer*, RHITexture*>, RHICommandList::TransitionDesc>>;
+        using ExecuteBarrierPCmdOrPBarrierList = Variant<RHICommandList*, ExecuteBarrierList*>;
         void ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, TrackedResource::SubresourceState& sta,
                                             RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout,
-                                            RHICommandList* cmd) const;
+                                            ExecuteBarrierPCmdOrPBarrierList cmd) const;
         /**
          * @brief Executes barriers for a subresource range of a texture
          */
         void ExecuteBarrierSubresource(PassHandle pass, TrackedResource& res, RHITextureSubresourceRange const& range,
                                        RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout,
-                                       RHICommandList* cmd);
+                                       ExecuteBarrierPCmdOrPBarrierList cmd);
         /**
          * @brief Executes barriers for a whole buffer
          */
         void ExecuteBarrierBuffer(PassHandle pass, TrackedResource& res, RHIResourceAccess access,
-                                  RHIPipelineStage stage, RHICommandList* cmd);
+                                  RHIPipelineStage stage, ExecuteBarrierPCmdOrPBarrierList cmd);
         /**
          * @brief Executes all barriers for a pass
          */
-        void ExecuteBarriers(TrackedPass& pass, RHICommandList* cmd);
+        void ExecuteBarriers(TrackedPass& pass, ExecuteBarrierPCmdOrPBarrierList cmd);
         /**
          * @brief Acquires resources for the current group.
          */

@@ -4,6 +4,9 @@ namespace Foundation::Bits {
     /*! \cond */
     template <typename ...T> struct Visitor : T... {
         using T::operator()...;
+    };
+    template <typename ...T> struct VisitorDefault : T... {
+        using T::operator()...;
         template<typename Arg> requires (!std::is_invocable_v<T, Arg&> && ...) auto operator()(Arg&) { /* nop */ };
     };
     /*! \endcond */
@@ -15,7 +18,7 @@ namespace Foundation::Bits {
         using std::variant<Args...>::variant;
         using std::variant<Args...>::operator=;
 
-        // C++23 visit() behavior with default no-op visitor.        
+        // C++23 visit() behavior
         template<typename ...Visitors>
         auto Visit(Visitors&&... visitors) {
             return std::visit(Visitor{ std::forward<Visitors>(visitors)... }, *this);
@@ -23,6 +26,15 @@ namespace Foundation::Bits {
         template<typename ...Visitors>
         auto Visit(Visitors&&... visitors) const {
             return std::visit(Visitor{ std::forward<Visitors>(visitors)... }, *this);
+        }
+        // C++23 visit() behavior with default no-op visitor.
+        template<typename ...Visitors>
+        auto VisitDefault(Visitors&&... visitors) {
+            return std::visit(VisitorDefault{ std::forward<Visitors>(visitors)... }, *this);
+        }
+        template<typename ...Visitors>
+        auto VisitDefault(Visitors&&... visitors) const {
+            return std::visit(VisitorDefault{ std::forward<Visitors>(visitors)... }, *this);
         }
 
         // std::get<T>
