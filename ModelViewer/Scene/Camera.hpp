@@ -26,10 +26,12 @@ namespace ModelViewer
         {
             mat4 viewMatrix;
             mat4 viewProj;
-            float4 frustum; // See @ref GetCullParams
+            float4 frustumACBC; // See @ref GetCullParams
             float3 cameraPosition;
             float zCull;
         };
         CullParams GetCullParams() const;
+
+        void OnImGui();
     };
 }

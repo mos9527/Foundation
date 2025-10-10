@@ -102,7 +102,7 @@ public struct CameraParams {
 public struct CullParams {
     public float4x4 viewMatrix;
     public float4x4 viewProj;
-    public float4 frustum; // left(ax,0,cz,0) top(0,by,cz,0) -> ax,cz,by,cz coeff
+    public float4 frustumACBC; // left(ax,0,cz,0) top(0,by,cz,0) -> acbc coefficients
     public float3 cameraPosition;
     public float zCull; // Max z for coarse culling
 }

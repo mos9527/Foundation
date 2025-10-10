@@ -1,5 +1,7 @@
 #include "MVMeshlet.h"
 import "Math/Quaternion";
+import "Math/Culling.slang";
+
 groupshared MeshletPayload shared;
 // https://gpuopen.com/learn/mesh_shaders/mesh_shaders-optimization_and_best_practices/
 // Each WG of task shader processes up to kMaxTaskShaderWork meshlets from the same Instance,
@@ -31,33 +33,14 @@ void meshletTask(uint meshletIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
             float3 eye = scene.culling.cameraPosition;
             float3 apex = meshlet.coneApex + instance.t;
             float3 axis = instance.q.rotate(meshlet.coneAxisAngle.xyz);
-            float angleCos = meshlet.coneAxisAngle.w;
-            float3 toApex = normalize(apex - eye);
-            visible &= dot(toApex, axis) <= angleCos;
+            visible &= coneCull(apex, axis, meshlet.coneAxisAngle.w, eye);
             // vvv Sphere culling
             if (visible) {
-                float4 frustum = scene.culling.frustum; // [left xy -> ac] [top zw -> bc]
-                // See @ref Camera::GetCullParams
-                // pLeft -> ax+cz = 0, pRight -> -ax+cz=0
-                // pTop -> by+cz=0, pBottom -> -by+cz=0
-                // Solve for left&right
-                // -> dot(left, p) >= -r && dot(right, p) >= -r
-                // -> ax+cz >= -r && -ax+cz >= -r
-                // -> cz >= -r + |ax|
-                // Same goes for top&bottom
-                // -> cz >= -r + |by|
                 float3 center = meshlet.sphereCenterRadius.xyz;
                 center = instance.q.rotate(center);
                 center += instance.t;
                 center = mul(scene.culling.viewMatrix, float4(center, 1.0)).xyz;
-                // Performed in View Space
-                float r = meshlet.sphereCenterRadius.w;
-                float ax = abs(frustum.x * center.x);
-                float by = abs(frustum.z * center.y);
-                float cz = frustum.y * center.z;
-                float dz = frustum.w * center.z;
-                visible &= (cz >= -r + ax);
-                visible &= (dz >= -r + by);
+                visible &= frustumCull(scene.culling.frustumACBC, center, meshlet.sphereCenterRadius.w);
             }
             if (visible) {
                 uint sharedIndex;

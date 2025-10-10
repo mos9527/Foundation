@@ -1,4 +1,6 @@
 #include "Camera.hpp"
+
+#include "../../cmake-build-debug/_deps/imgui-src/imgui.h"
 namespace ModelViewer
 {
     Camera::Params Camera::GetParams() const
@@ -34,9 +36,12 @@ namespace ModelViewer
         return {
             .viewMatrix = view,
             .viewProj = proj * view,
-            .frustum = {pLeft.x, pLeft.z, pTop.y , pTop.z,},
+            .frustumACBC = {pLeft.x, pLeft.z, pTop.y , pTop.z,},
             .cameraPosition = position,
             .zCull = zCull,
         };
     }
-}
+    void Camera::OnImGui()
+    {
+    }
+} // namespace ModelViewer

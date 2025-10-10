@@ -21,5 +21,7 @@ namespace ModelViewer
             uint type;
         };
         Params GetParams(Camera const& camera) const;
+
+        void OnImGui();
     };
 }

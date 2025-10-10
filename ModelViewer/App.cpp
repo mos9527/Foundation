@@ -38,6 +38,7 @@ namespace ModelViewer
         float time = GetApplicationTime();
         auto instances = mScene->MapInstances();
         constexpr int countSq = 10;
+        constexpr float scale = 1.0f;
         mScene->mInstanceCount = countSq * countSq;
         for (size_t i = 0; i < mScene->mInstanceCount; i++)
         {
@@ -45,7 +46,7 @@ namespace ModelViewer
             instances[i].meshAllocationRawOffsetPP = mScene->QueryMesh(mesh).selfRawOffset + 1;
             float theta = time * acos(-1) * 0.1f;
             instances[i].q = angleAxis(theta, float3{0, 0, 1}) * angleAxis(radians(90.0f), float3{1, 0, 0});
-            instances[i].t = float3{4 * (i / countSq), 4 * (i % countSq), 0};
+            instances[i].t = float3{scale * (i / countSq), scale * (i % countSq), sin(time + i)};
         }
         mScene->UnmapInstances();
     }
@@ -84,6 +85,10 @@ namespace ModelViewer
         GLFWwindow* win = static_cast<GLFWwindow*>(GetNativeWindow()->GetNative());
         // Movement
         Camera* camera = &mScene->mCamera;
+        if (glfwGetKey(win, GLFW_KEY_LEFT_ALT) == GLFW_PRESS)
+        {
+            camera = &mScene->mCullingCamera;
+        }
         float3 view = normalize(camera->lookAt - camera->position);
         float3 up = camera->up;
         float3 right = normalize(cross(view, up));

@@ -9,4 +9,8 @@ namespace ModelViewer
             .type = static_cast<uint>(type)
         };
     }
-}
+    void Grid::OnImGui()
+    {
+
+    }
+} // namespace ModelViewer

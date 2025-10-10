@@ -13,16 +13,17 @@ groupshared float3 sharedScreenSpaceVerts[kMaxMeshShaderWork]; // Max vertices p
 [numthreads(kMaxMeshShaderWork, 1, 1)]
 void meshletMesh(
     in payload MeshletPayload payload,
-    in uint meshletID: SV_GroupID,
+    in uint tid: SV_GroupID,
     in uint groupIndex: SV_GroupIndex,
     OutputVertices<VertexOutput, 64> verts,
     OutputIndices<uint3, 96> triangles,
     OutputPrimitives<PrimitiveOutput, 96> prims,
 ) {    
-    if (meshletID >= payload.meshletCount)
+    if (tid >= payload.meshletCount)
         return; // Out of range. Kill the entire WG - barriers should still be fine
     SceneParams scene = sceneShared.Load<SceneParams>(sceneParamsOffset);
-    uint offset = payload.meshletRawOffset + payload.meshletIndices[meshletID] * sizeof(MeshMeshlet);
+    uint meshletIndex = payload.meshletIndices[tid];
+    uint offset = payload.meshletRawOffset + meshletIndex * sizeof(MeshMeshlet);
     MeshMeshlet meshlet = sceneConst.Load<MeshMeshlet>(offset);
     SetMeshOutputCounts(meshlet.vertexCount, meshlet.triangleCount);
     uint meshletVerticesRawOffset = meshlet.vertexOffset * sizeof(uint) + payload.meshletVerticesRawOffset;
@@ -46,7 +47,7 @@ void meshletMesh(
         output.tangent = instance.q.rotate(T_BSign.xyz);
         output.bitangent = cross(output.normal, output.tangent) * T_BSign.w;
         output.uv = float2(input.u, input.v);
-        output.meshlet = meshletID;
+        output.meshlet = meshletIndex;
         verts[i] = output;
         // For culling
         sharedScreenSpaceVerts[i] = output.pos.xyz / output.pos.w;
