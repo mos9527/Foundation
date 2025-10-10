@@ -57,19 +57,23 @@ namespace ModelViewer
         ImGui::Separator();
         if (ImGui::CollapsingHeader("Camera"))
         {
-            auto& cam = mScene->mCamera;
-            ImGui::DragFloat3("Position", &cam.position.x, 0.1f);
-            ImGui::DragFloat3("LookAt", &cam.lookAt.x, 0.1f);
-            ImGui::DragFloat3("Up", &cam.up.x, 0.1f);
-            ImGui::DragFloat("Vertical FOV (degrees)", &cam.verticalFov, 0.1f, radians(1.0f), radians(179.0f));
-            ImGui::Text("Aspect Ratio: %.3f", cam.aspectRatio);
-            ImGui::DragFloat("Near Plane", &cam.zNear, 1e-4f, 1e-4f, 100.f);
+            mScene->mCamera.OnImGui();
         }
-        if (ImGui::CollapsingHeader("Controls"))
+        if (ImGui::CollapsingHeader("Culling Camera"))
+        {
+            mScene->mCullingCamera.OnImGui();
+        }
+        if (ImGui::CollapsingHeader("Grid"))
+        {
+            mScene->mGrid.OnImGui();
+        }
+        if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen))
         {
             ImGui::Text("WASD - Move");
             ImGui::Text("Right Mouse + Drag - Look Around");
             ImGui::Text("Left Shift - Speed Boost");
+            ImGui::Text("Left Alt - Control Culling Camera");
+            ImGui::Text("Space - Set Culling Camera to Main Camera");
         }
         ImGui::End();
     }
@@ -124,7 +128,7 @@ namespace ModelViewer
         lastX = mX;
         lastY = mY;
         t0 = GetApplicationTime();
-        if (glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
+        if (glfwGetKey(win, GLFW_KEY_SPACE) == GLFW_PRESS)
             mScene->mCullingCamera = mScene->mCamera;
         mScene->CommitParams();
         gizmosDrawCameraFrustum(mScene->mCamera.GetParams().viewProj, mScene->mCullingCamera.GetCullParams().viewProj);

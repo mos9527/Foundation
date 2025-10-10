@@ -1,6 +1,9 @@
 #include "Camera.hpp"
+#include <Math/Math.hpp>
+#include <imgui.h>
 
 #include "../../cmake-build-debug/_deps/imgui-src/imgui.h"
+
 namespace ModelViewer
 {
     Camera::Params Camera::GetParams() const
@@ -43,5 +46,16 @@ namespace ModelViewer
     }
     void Camera::OnImGui()
     {
+        ImGui::PushID(this); // XXX
+        ImGui::DragFloat3("Position", &position.x, 0.1f);
+        ImGui::DragFloat3("LookAt", &lookAt.x, 0.1f);
+        ImGui::DragFloat3("Up", &up.x, 0.1f);
+        ImGui::DragFloat(
+            "Vertical FOV (radians)", &verticalFov, 0.1f, Foundation::Math::radians(1.0f),
+            Foundation::Math::radians(179.0f));
+        ImGui::Text("Aspect Ratio: %.3f", aspectRatio);
+        ImGui::DragFloat("Near Plane", &zNear, 1e-4f, 1e-4f, 100.f);
+        ImGui::DragFloat("Cull Plane", &zCull);
+        ImGui::PopID();
     }
 } // namespace ModelViewer

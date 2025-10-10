@@ -40,7 +40,7 @@ void meshletTask(uint meshletIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
                 center = instance.q.rotate(center);
                 center += instance.t;
                 center = mul(scene.culling.viewMatrix, float4(center, 1.0)).xyz;
-                visible &= frustumCull(scene.culling.frustumACBC, center, meshlet.sphereCenterRadius.w);
+                visible &= frustumCull(scene.culling.frustumACBC, center, meshlet.sphereCenterRadius.w, scene.culling.zCull);
             }
             if (visible) {
                 uint sharedIndex;

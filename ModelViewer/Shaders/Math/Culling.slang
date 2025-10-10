@@ -1,7 +1,7 @@
 module Culling;
 
 // See also ModelViewer::Camera::GetCullParams
-public bool frustumCull(float4 acbc /* [pLeft xy -> ac] [pTop zw -> bc] */, float3 center /* view space */, float radius) {
+public bool frustumCull(float4 acbc /* [pLeft xy -> ac] [pTop zw -> bc] */, float3 center /* view space */, float radius, float zCull /* abs distance to camera */) {
     // pLeft -> ax+cz = 0, pRight -> -ax+cz=0
     // pTop -> by+cz=0, pBottom -> -by+cz=0
     // Solve for left&right
@@ -13,7 +13,7 @@ public bool frustumCull(float4 acbc /* [pLeft xy -> ac] [pTop zw -> bc] */, floa
     float by = abs(acbc.z * center.y);
     float cz = acbc.y * center.z;
     float dz = acbc.w * center.z;
-    return (cz >= -radius + ax) && (dz >= -radius + by);
+    return (center.z >= -zCull) && (cz >= -radius + ax) && (dz >= -radius + by);
 }
 
 // See also https://meshoptimizer.org/#mesh-shading
