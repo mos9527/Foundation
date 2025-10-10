@@ -2,6 +2,7 @@
 #include <Math/Math.hpp>
 #include <Core/Core.hpp>
 #include <imgui.h>
+
 namespace ModelViewer
 {
     using namespace Foundation;
@@ -16,7 +17,7 @@ namespace ModelViewer
     }
     IMGUI_API void gizmosDrawCameraFrustum(
         mat4 viewProj,
-        mat4 frustumViewProj,
+        mat4 frustumViewProj /* req. non-inf zFar (zCull) - use @ref Camera::GetCullParams */,
         ImColor color = ImColor(1.0f,1.0f,1.0f,0.75f),
         float lineThickness = 1.0f
     );

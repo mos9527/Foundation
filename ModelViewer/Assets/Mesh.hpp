@@ -40,7 +40,6 @@ namespace ModelViewer
         }
     };
     static_assert(sizeof(MeshVertexCompact) == 16);
-#pragma pack(pop)
     /**
      * @brief Meshlet structure containing offsets and counts to access meshlet data
      * @note Reference: https://github.com/zeux/meshoptimizer?tab=readme-ov-file#clusterization
@@ -53,7 +52,13 @@ namespace ModelViewer
         /* number of vertices and triangles used in the meshlet; data is stored in consecutive range defined by offset and count */
         uint32_t vertexCount;
         uint32_t triangleCount;
-    };    
+        /* bounds */
+        float4 sphereCenterRadius; // (x,y,z,r)
+        float4 coneAxisAngle; // (x,y,z,cos(half solid angle))
+        float3 coneApex;
+    };
+    static_assert(sizeof(MeshMeshlet) == 60);
+#pragma pack(pop)
     using MeshMicroIndex = uint8_t; // 8-bit index into meshlet vertex array
     constexpr uint32_t kMeshletMaxVertices = 64;  // max vertices per meshlet
     constexpr uint32_t kMeshletMaxTriangles = 96; // max triangles per meshlet (indices=3*triangles)

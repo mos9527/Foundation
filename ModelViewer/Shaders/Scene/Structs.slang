@@ -1,7 +1,6 @@
 // TODO: Codegen for these structs
 module Definitions;
 import "../Math/Quaternion.slang";
-import "../Math/Plane.slang";
 import "../Math/Bits.slang";
 public static const uint32_t kMaxSceneMeshLodCount = 4;
 public static const uint32_t kMaxTaskShaderWork = 64; 
@@ -55,6 +54,9 @@ public struct MeshMeshlet
     public uint32_t triangleOffset;
     public uint32_t vertexCount;
     public uint32_t triangleCount;
+    public float4 sphereCenterRadius; // (x,y,z,r)
+    public float4 coneAxisAngle; // (x,y,z,cos(half solid angle))
+    public float3 coneApex;
 };
 public typedef uint8_t MeshMicroIndex;
 public struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
@@ -65,7 +67,8 @@ public struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
 };
 public struct MeshletPayload
 {
-    public uint32_t meshletRawOffsets[kMaxTaskShaderWork];
+    public uint32_t meshletIndices[kMaxTaskShaderWork];
+    public uint32_t meshletRawOffset;
     public uint32_t vertexRawOffset;
     public uint32_t meshletCount;
     public uint32_t instanceID;
@@ -98,12 +101,10 @@ public struct CameraParams {
 }
 public struct CullParams {
     public float4x4 viewMatrix;
-    public float4 frustum; // left(ax,0,cz,0) top(0,by,cz,0)
-    /* Frustum planes in View Space */
-    public Plane left() { return Plane(frustum.x,0,frustum.z,0); }
-    public Plane right() { return Plane(-frustum.x,0,frustum.z,0); }
-    public Plane top() { return Plane(0,frustum.y,frustum.z,0); }
-    public Plane bottom() { return Plane(0,-frustum.y,frustum.z,0); }
+    public float4x4 viewProj;
+    public float4 frustum; // left(ax,0,cz,0) top(0,by,cz,0) -> ax,cz,by,cz coeff
+    public float3 cameraPosition;
+    public float zCull; // Max z for coarse culling
 }
 public struct SceneParams {
     public CameraParams camera;

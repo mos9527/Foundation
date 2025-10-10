@@ -2,6 +2,7 @@
 #include <Core/DefaultAllocator.hpp>
 #include <Math/Math.hpp>
 #include <Native/Filesystem.hpp>
+#include <meshoptimizer.h>
 
 namespace ModelViewer
 {
@@ -32,7 +33,7 @@ namespace ModelViewer
     static DefaultAllocator MeshoptAllocator;
     static void* meshoptAlloc(size_t size) { return MeshoptAllocator.Allocate(size, alignof(std::max_align_t)); }
     static void meshoptFree(void* ptr) { MeshoptAllocator.Deallocate(ptr); }
-#include <meshoptimizer.h>
+
     template <typename Vertex, typename Index>
     void optimizeVertexIndex(Vector<Vertex>& vertices, Vector<Index>& indices)
     {
@@ -73,26 +74,42 @@ namespace ModelViewer
     {
         meshopt_setAllocator(meshoptAlloc, meshoptFree);
         size_t maxMeshlets = meshopt_buildMeshletsBound(indices.size(), kMeshletMaxVertices, kMeshletMaxTriangles);
-        outMeshlet.resize(maxMeshlets);
         // Resize to worst bounds first
         outMeshletVertices.resize(maxMeshlets * kMeshletMaxVertices);
         outMeshletTriangles.resize(maxMeshlets * kMeshletMaxTriangles);
-        static_assert(sizeof(MeshMeshlet) == sizeof(meshopt_Meshlet));
+        Vector<meshopt_Meshlet> meshoptMeshlets(maxMeshlets, MeshoptAllocator.Ptr());
         static_assert(offsetof(MeshMeshlet, vertexOffset) == offsetof(meshopt_Meshlet, vertex_offset));
         static_assert(offsetof(MeshMeshlet, triangleOffset) == offsetof(meshopt_Meshlet, triangle_offset));
         static_assert(offsetof(MeshMeshlet, vertexCount) == offsetof(meshopt_Meshlet, vertex_count));
         static_assert(offsetof(MeshMeshlet, triangleCount) == offsetof(meshopt_Meshlet, triangle_count));
         size_t meshlets =
-            meshopt_buildMeshlets(reinterpret_cast<meshopt_Meshlet*>(outMeshlet.data()), outMeshletVertices.data(),
+            meshopt_buildMeshlets(meshoptMeshlets.data(), outMeshletVertices.data(),
                                   outMeshletTriangles.data(), indices.data(), indices.size(), &vertices[0].pos.x,
                                   vertices.size(), sizeof(MeshVertex), kMeshletMaxVertices, kMeshletMaxTriangles,
                                   0.25f // As recommended by the docs
             );
-        outMeshlet.resize(meshlets);
+        meshoptMeshlets.resize(meshlets);
         {
-            const auto& [vertexOffset, triangleOffset, vertexCount, triangleCount] = outMeshlet.back();
+            const auto& [vertexOffset, triangleOffset, vertexCount, triangleCount] = meshoptMeshlets.back();
             outMeshletVertices.resize(vertexOffset + vertexCount);
             outMeshletTriangles.resize(triangleOffset + triangleCount * 3);
+        }
+        // Calculate bounds and fill outMeshlet
+        outMeshlet.resize(meshoptMeshlets.size());
+        for (size_t i = 0; i < meshoptMeshlets.size(); ++i)
+        {
+            auto& dst = outMeshlet[i];
+            auto& src = meshoptMeshlets[i];
+            dst.vertexOffset = src.vertex_offset;
+            dst.triangleOffset = src.triangle_offset;
+            dst.vertexCount = src.vertex_count;
+            dst.triangleCount = src.triangle_count;
+            meshopt_Bounds bounds = meshopt_computeMeshletBounds(
+                &outMeshletVertices[src.vertex_offset], &outMeshletTriangles[src.triangle_offset],
+                src.triangle_count, &vertices[0].pos.x, vertices.size(), sizeof(MeshVertex));
+            dst.sphereCenterRadius = float4(bounds.center[0], bounds.center[1], bounds.center[2], bounds.radius);
+            dst.coneAxisAngle = float4(bounds.cone_axis[0], bounds.cone_axis[1], bounds.cone_axis[2], bounds.cone_cutoff);
+            dst.coneApex = float3(bounds.cone_apex[0], bounds.cone_apex[1], bounds.cone_apex[2]);
         }
     }
 

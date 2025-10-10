@@ -22,7 +22,7 @@ void meshletMesh(
     if (meshletID >= payload.meshletCount)
         return; // Out of range. Kill the entire WG - barriers should still be fine
     SceneParams scene = sceneShared.Load<SceneParams>(sceneParamsOffset);
-    uint offset = payload.meshletRawOffsets[meshletID];
+    uint offset = payload.meshletRawOffset + payload.meshletIndices[meshletID] * sizeof(MeshMeshlet);
     MeshMeshlet meshlet = sceneConst.Load<MeshMeshlet>(offset);
     SetMeshOutputCounts(meshlet.vertexCount, meshlet.triangleCount);
     uint meshletVerticesRawOffset = meshlet.vertexOffset * sizeof(uint) + payload.meshletVerticesRawOffset;
@@ -37,14 +37,13 @@ void meshletMesh(
         unpackTBN(input.np, input.tp, N, T_BSign);
         // Apply transforms from instance data
         SceneInstanceData instance = sceneInstance.Load<SceneInstanceData>(payload.instanceID * sizeof(SceneInstanceData));
-        Quaternion q = Quaternion(instance.q);
         float3 pos = float3(input.px, input.py, input.pz);
-        pos = q.rotate(pos);
+        pos = instance.q.rotate(pos);
         pos = pos + instance.t;
         // Output
         output.pos = mul(scene.camera.viewProj, float4(pos, 1.0));
-        output.normal = q.rotate(N);
-        output.tangent = N; // q.rotate(T_BSign.xyz);
+        output.normal = instance.q.rotate(N);
+        output.tangent = instance.q.rotate(T_BSign.xyz);
         output.bitangent = cross(output.normal, output.tangent) * T_BSign.w;
         output.uv = float2(input.u, input.v);
         output.meshlet = meshletID;

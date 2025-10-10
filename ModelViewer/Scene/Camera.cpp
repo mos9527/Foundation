@@ -10,9 +10,9 @@ namespace ModelViewer
     }
     Camera::CullParams Camera::GetCullParams() const
     {
-        mat4 proj = infinitePerspective(verticalFov, aspectRatio, zNear);
+        mat4 proj = perspective(verticalFov, aspectRatio, zNear, zCull);
         mat4 view = lookAtRH(position, lookAt, up);
-        view[1][1] *= -1; // Vulkan NDC
+        proj[1][1] *= -1; // Vulkan NDC
         // See also
         // - Fast Extraction of Viewing Frustum Planes from the WorldView-Projection Matrix
         // - https://github.com/zeux/niagara/blob/master/src/niagara.cpp
@@ -31,8 +31,12 @@ namespace ModelViewer
         // For near and far plane - just use the view space depth.
         // vvv Normalize
         pLeft /= length(pLeft.xyz()), pTop /= length(pTop.xyz());
-        return {.viewMatrix = view, .frustum = {
-            pLeft.x, pLeft.z, pTop.y , pTop.z,
-           }};
+        return {
+            .viewMatrix = view,
+            .viewProj = proj * view,
+            .frustum = {pLeft.x, pLeft.z, pTop.y , pTop.z,},
+            .cameraPosition = position,
+            .zCull = zCull,
+        };
     }
 }

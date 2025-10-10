@@ -125,7 +125,7 @@ void App::OnRendererSetup()
             r->BindBufferStorageRead(self, sceneShared, RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::AllGraphics, "sceneShared");
             r->BindBufferStorageRead(self, sceneConst, RHIPipelineStageBits::ComputeShader, "sceneConst");
             r->BindPushConstant(self,
-                                RHIShaderStageBits::Mesh | RHIShaderStageBits::Fragment, 0,
+                                RHIShaderStageBits::Mesh | RHIShaderStageBits::Task | RHIShaderStageBits::Fragment, 0,
                                 sizeof(uint32_t));
             r->BindBackbufferRTV(self);
             r->BindTextureDSV(self, zbuffer,
@@ -137,7 +137,7 @@ void App::OnRendererSetup()
             auto const& img_wh = r->GetSwapchainExtent();
             r->CmdBeginGraphics(self, cmd, img_wh, {});
             r->CmdSetPipeline(self, cmd);
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Mesh | RHIShaderStageBits::Fragment, 0,
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Mesh | RHIShaderStageBits::Task | RHIShaderStageBits::Fragment, 0,
                                   mScene->GetParamsAllocationRawOffset());
             cmd->SetViewport(0, 0, img_wh.x, img_wh.y).SetScissor(0, 0, img_wh.x, img_wh.y);
             cmd->DrawMeshTasksIndirect(r->DerefResource(meshletTaskDispatch).Get<RHIBuffer*>(), 0, 1, sizeof(MeshletTaskDispatch));                
