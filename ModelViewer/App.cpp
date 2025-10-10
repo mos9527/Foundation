@@ -1,10 +1,13 @@
 #include "App.hpp"
-#include <Bindings/ImGui.hpp>
-#include <GLFW/glfw3.h>
+
 #include <Gizmos/Gizmos.hpp>
 #include <Math/Math.hpp>
-#include "Assets/Mesh.hpp"
 
+#include <Bindings/ImGui.hpp>
+#include <GLFW/glfw3.h>
+#include <imgui_impl_glfw.h>
+
+#include "Assets/Mesh.hpp"
 using namespace Foundation;
 using namespace Foundation::Core;
 using namespace Foundation::RenderCore;
@@ -20,10 +23,8 @@ namespace ModelViewer
         mScene = ConstructUnique<Scene>(GetAllocator(), mGPUScene.get(), GetAllocator());
         /* -- ImGui -- */
         ImGui_ImplFoundation_SetupContextWithDefaultStyles();
-        ImGui_ImplFoundation_Init(
-            static_cast<VulkanApplication*>(mRHI.get()), static_cast<VulkanDevice*>(mDevice.Get()),
-            static_cast<VulkanDeviceQueue*>(mDevice->GetDeviceQueue(RHIDeviceQueueType::Graphics)), mSwapchain.Get(),
-            static_cast<GLFWwindow*>(GetNativeWindow()->GetNative()));
+        ImGui_ImplGlfw_InitForOther(static_cast<GLFWwindow*>(GetNativeWindow()->GetNative()), true);
+        ImGui_ImplFoundation_Init(mDevice.Get(), GetAllocator());
         // TEST: Load mesh
         Vector<MeshVertex> vertices(GetAllocator());
         Vector<MeshIndex> indices(GetAllocator());
@@ -36,6 +37,7 @@ namespace ModelViewer
     void App::OnApplicationTick()
     {
         float time = GetApplicationTime();
+        if (time > 10) return;
         auto instances = mScene->MapInstances();
         constexpr int countSq = 10;
         constexpr float scale = 1.0f;
@@ -77,9 +79,9 @@ namespace ModelViewer
         }
         ImGui::End();
     }
-    void App::OnBeforeFrame()
-    {
-        ImGui_ImplFoundation_OnBeforeFrame();
+    void App::OnBeforeFrame() {
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
         mScene->mTime = GetApplicationTime();
         mScene->mCamera.aspectRatio = mSwapchain->GetAspectRatio();
         mScene->mCullingCamera.aspectRatio = mSwapchain->GetAspectRatio();
@@ -134,7 +136,7 @@ namespace ModelViewer
         gizmosDrawCameraFrustum(mScene->mCamera.GetParams().viewProj, mScene->mCullingCamera.GetCullParams().viewProj);
         OnImGui();
     }
-    void App::OnAfterFrame() { ImGui_ImplFoundation_OnAfterFrame(); }
+    void App::OnAfterFrame() { /* nop */ }
 } // namespace ModelViewer
 using namespace ModelViewer;
 using namespace Foundation::Async;
@@ -142,7 +144,7 @@ int main(int argc, char** argv)
 {
     App app;
     app.Initialize<VulkanApplication>(
-        {.windowTitle = "Model Viewer", .present = true, .asyncCompute = true, .vsync = true /* !! */});
+        {.windowTitle = "Model Viewer", .present = true, .asyncCompute = true, .vsync = false /* !! */});
     app.RunForever();
     ImGui_ImplFoundation_Shutdown();
 }

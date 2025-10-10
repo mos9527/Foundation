@@ -1,7 +1,7 @@
 #pragma once
 #include <Math/Math.hpp>
 #include <Core/Core.hpp>
-#include <imgui.h>
+#include <Bindings/ImGui.hpp>
 
 namespace ModelViewer
 {

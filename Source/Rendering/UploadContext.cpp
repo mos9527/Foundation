@@ -39,10 +39,22 @@ void UploadContext::Upload(RHITexture* dst, Span<const char> data, uint32_t mipL
                                       RHITextureAspectFlag aspect, RHIResourceAccess dst_access,
                                       RHIPipelineStage dst_stage, RHITextureLayout dst_layout)
 {
+    RHITextureSubresourceRange range = RHITextureSubresourceRange::Create(aspect, mipLevel, 1, arrayLayer, 1);
+    RHICommandList::CopyImageRegion region{
+        .dstLayer = range.layer,
+        .extent = dst->mDesc.extent
+    };
+    Upload(dst, data, range, region, dst_access, dst_stage, dst_layout);
+}
+void UploadContext::Upload(RHITexture* dst, Span<const char> data,
+    RHITextureSubresourceRange range,
+    RHICommandList::CopyImageRegion region,
+    RHIResourceAccess dst_access, RHIPipelineStage dst_stage, RHITextureLayout dst_layout)
+{
     std::scoped_lock lock(mMutex);
     size_t offset = mStagingBuffer.Write(data, 4);
+    region.srcBufferOffset = offset;
     auto& cmd = mCommandLists.emplace_back(mCommandPool->CreateCommandList());
-    RHITextureSubresourceRange range = RHITextureSubresourceRange::Create(aspect, mipLevel, 1, arrayLayer, 1);
     cmd->Begin();
     cmd->BeginTransition();
     cmd->SetImageTransition(dst,
@@ -52,15 +64,7 @@ void UploadContext::Upload(RHITexture* dst, Span<const char> data, uint32_t mipL
                              .srcImgRange = range});
     cmd->EndTransition();
     cmd->CopyBufferToImage(mStagingBuffer.GetBuffer(), dst, RHITextureLayout::TransferDst,
-                           {{{.srcBufferOffset = static_cast<uint32_t>(offset),
-                              .dstLayer =
-                                  {
-                                      .aspect = aspect,
-                                      .mipLevel = mipLevel,
-                                      .baseArrayLayer = arrayLayer,
-                                      .layerCount = 1,
-                                  },
-                              .extent = dst->mDesc.extent}}});
+                           {{region}});
     cmd->BeginTransition();
     cmd->SetImageTransition(
         dst, {.dstAccess = dst_access, .dstStage = dst_stage, .dstImgLayout = dst_layout, .srcImgRange = range});

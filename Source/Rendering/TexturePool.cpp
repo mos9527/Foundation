@@ -24,6 +24,7 @@ TexturePool::TexturePool(RHIDevice* device, Allocator* allocator, uint32_t max_t
                                                             .type = RHIDescriptorType::SampledImage}}},
                                              .updateAfterBind = true});
     mDescriptorSet = mDescriptorPool->CreateDescriptorSet(mDescriptorSetLayout, max_textures);
+    mDescriptorSet->DebugSetObjectName("Texture Pool Set");
     // Create a 2x2 'missing' texture
     mMissingTextureHandle =
         Allocate({

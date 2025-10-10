@@ -127,6 +127,9 @@ namespace Foundation::RenderCore
         /* -- Pipeline -- */
         // Shader [path, entry point, stage]
         Vector<Tuple<Native::Path, String, RHIShaderStage>> shaders;
+        // Explicit descriptor bindings [binding index,set index, binding point]
+        // These are otherwise derived from shader reflection
+        Vector<Tuple<uint32_t, uint32_t, String>> explictDescriptorBindings;
         // Bind points [view(tex) or buffer(buf), desc type, binding point]
         Vector<Tuple<ResourceHandle, RHIDescriptorType, String>> textureBindings, bufferBindings;
         // External Bind Sets [Ptr, Layout Ptr, binding point]

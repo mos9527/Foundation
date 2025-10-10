@@ -180,10 +180,10 @@ void Renderer::BindBufferCopySrc(PassHandle pass, ResourceHandle buffer) const
     CHECK(mState == State::Setup);
     DeclareBufferAccess(pass, buffer, RHIPipelineStageBits::Transfer, RHIResourceAccessBits::TransferRead);
 }
-void Renderer::BindTextureSampler(PassHandle pass, ResourceHandle sampler, StringView shader_name) const
+void Renderer::BindTextureSampler(PassHandle pass, ResourceHandle sampler, StringView bind_point) const
 {
     CHECK(mState == State::Setup);
-    mSetup->trackedPasses[pass].samplers.emplace_back(sampler, shader_name);
+    mSetup->trackedPasses[pass].samplers.emplace_back(sampler, bind_point);
     mSetup->bindingCounts[RHIDescriptorType::Sampler]++;
 }
 void Renderer::BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSet* descriptor_set,
@@ -192,7 +192,12 @@ void Renderer::BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDevi
     CHECK(mState == State::Setup);
     mSetup->trackedPasses[pass].externalBindings.emplace_back(descriptor_set, layout, bind_point);
 }
-ResourceHandle Renderer::BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView shader_name,
+void Renderer::BindDescriptorBindPoint(PassHandle pass, StringView bind_point, uint32_t binding, uint32_t set)
+{
+    CHECK(mState == State::Setup);
+    mSetup->trackedPasses[pass].explictDescriptorBindings.emplace_back(binding, set, bind_point);
+}
+ResourceHandle Renderer::BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                         RHIPipelineStage stage, RHITextureViewDesc const& desc) const
 {
     CHECK(mState == State::Setup);
@@ -201,11 +206,11 @@ ResourceHandle Renderer::BindTextureSRV(PassHandle pass, ResourceHandle texture,
     DeclareTextureAccess(pass, texture, stage, desc.range, RHIResourceAccessBits::ShaderRead,
                          RHITextureLayout::ShaderReadOnly);
     ResourceHandle view = CreateTextureView(pass, texture, desc);
-    mSetup->trackedPasses[pass].textureBindings.emplace_back(view, RHIDescriptorType::SampledImage, shader_name);
+    mSetup->trackedPasses[pass].textureBindings.emplace_back(view, RHIDescriptorType::SampledImage, bind_point);
     mSetup->bindingCounts[RHIDescriptorType::SampledImage]++;
     return view;
 }
-ResourceHandle Renderer::BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView shader_name,
+ResourceHandle Renderer::BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                         RHIPipelineStage stage, RHITextureViewDesc const& desc) const
 {
     CHECK(mState == State::Setup);
@@ -215,7 +220,7 @@ ResourceHandle Renderer::BindTextureUAV(PassHandle pass, ResourceHandle texture,
                          RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
                          RHITextureLayout::General);
     ResourceHandle view = CreateTextureView(pass, texture, desc);
-    mSetup->trackedPasses[pass].textureBindings.emplace_back(view, RHIDescriptorType::StorageImage, shader_name);
+    mSetup->trackedPasses[pass].textureBindings.emplace_back(view, RHIDescriptorType::StorageImage, bind_point);
     mSetup->bindingCounts[RHIDescriptorType::StorageImage]++;
     return view;
 }
@@ -353,7 +358,7 @@ void Renderer::CullPasses(PassHandle epilogue) const
         Ranges::sort(topo, [&](auto const& a, auto const& b) { return dis[a] > dis[b]; });
         exec = topo;
     }
-    else
+    if (exec.empty())
     {
         // No dependency from any passes
         // Execute only the epilogue
@@ -528,7 +533,21 @@ void Renderer::BuildPipelineState(PassHandle pass)
     }
     // Check variable bindings to be consistent across stages
     // [name, [set, binding]]
-    Map<String, Pair<uint32_t, uint32_t>> var_bind_points(mAllocator);
+    Map<String, Pair<uint32_t, uint32_t>> refl_var_bind_points(mAllocator);
+    // Push explict declarations first
+    for (auto const& [binding, set, name] : tracked.explictDescriptorBindings)
+    {
+        auto it = refl_var_bind_points.find(name);
+        if (it == refl_var_bind_points.end())
+            refl_var_bind_points[name] = {set, binding};
+        else
+        {
+            auto& [set_prev, binding_prev] = it->second;
+            CHECK_MSG(set_prev == set && binding_prev == binding,
+                      "Inconsistent explicit binding points across shader stages for variable {} in pass {}", name,
+                      tracked.name);
+        }
+    }
     // Check if any shader in the pipeline uses PC
     for (auto const& [path, refl] : reflections)
     {
@@ -544,9 +563,9 @@ void Renderer::BuildPipelineState(PassHandle pass)
         {
             CHECK_MSG(!bind.name.empty(), "Unnamed bindings are not supported. Enable debug information for shader {}",
                       path);
-            auto it = var_bind_points.find(bind.name);
-            if (it == var_bind_points.end())
-                var_bind_points[bind.name] = {bind.descriptorSet, bind.binding};
+            auto it = refl_var_bind_points.find(bind.name);
+            if (it == refl_var_bind_points.end())
+                refl_var_bind_points[bind.name] = {bind.descriptorSet, bind.binding};
             else
             {
                 auto& [set, binding] = it->second;
@@ -606,27 +625,27 @@ void Renderer::BuildPipelineState(PassHandle pass)
         var_ext_sets[binding] = desc_set;
         // We don't create anything for the set - but do resolve these
         // so we can map them later on
-        if (var_bind_points.contains(binding))
-            tracked.pExternalDescriptorSets.emplace_back(var_bind_points[binding].first, desc_set, desc_set_layout);
+        if (refl_var_bind_points.contains(binding))
+            tracked.pExternalDescriptorSets.emplace_back(refl_var_bind_points[binding].first, desc_set, desc_set_layout);
     }
     Ranges::sort(tracked.pExternalDescriptorSets);
     tracked.pExternalDescriptorSets.erase(Ranges::unique(tracked.pExternalDescriptorSets).begin(),
                                           tracked.pExternalDescriptorSets.end());
-    if (!var_bind_points.empty())
+    if (!refl_var_bind_points.empty())
     {
         LOG_RUNTIME(Renderer, debug, "Pipeline Parameters");
         for (auto& [name, dtype] : var_types)
         {
-            if (!var_bind_points.contains(name))
+            if (!refl_var_bind_points.contains(name))
                 continue;
-            auto [set, binding] = var_bind_points[name];
+            auto [set, binding] = refl_var_bind_points[name];
             LOG_RUNTIME(Renderer, debug, "\t{}: set {}, binding {}, type {}", name, set, binding, dtype);
         }
     }
     // [[set, binding], name]
     Vector<Pair<Pair<uint32_t, uint32_t>, String>> bindings(mAllocator);
     bindings.reserve(var_types.size());
-    for (auto& [name, bind] : var_bind_points)
+    for (auto& [name, bind] : refl_var_bind_points)
     {
         if (!var_ext_sets.contains(name))
             bindings.emplace_back(bind, name);
@@ -682,7 +701,11 @@ void Renderer::BuildPipelineState(PassHandle pass)
         }
         while (j < bindings.size() && bindings[j].first.first == set)
             j++;
-        // Create descriptor set layout
+        // Check and create descriptors
+        // In short - we ensure that there'd be no undefined access from the shaders
+        // thus all _shader_ bindings are guaranteed to be bound
+        // We do not check if _all_ bound resources are used by shaders - unused, unbound
+        // resources are allowed.
         tracked.descriptorLayouts.push_back(
             mDevice->CreateDescriptorSetLayout({.bindings = {set_bindings.cbegin() + i, set_bindings.cbegin() + j}}));
         tracked.descriptorLayouts.back()->DebugSetObjectName(
@@ -749,54 +772,61 @@ void Renderer::BuildPipelineState(PassHandle pass)
         tracked.pDescriptorSets.emplace_back(ptr);
         tracked.pDescriptorLayouts.emplace_back(layout_ptr);
     }
-    RHIPipelineState::PipelineStateDesc pso_desc{
-        .type = tracked.isComputePass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
-        .vertexInput = {.bindings = tracked.vertexInputBindings, .attributes = tracked.vertexInputAttributes},
-        .topology = RHIPipelineState::PipelineStateDesc::TriangleList,
-        .rasterizer = tracked.psoRasterizer,
-        .multisample = {.enabled = false},
-        .depthStencil = tracked.psoDepthStencil,
-        .shaderStages = pso_stages,
-        .descriptorSetLayouts = tracked.pDescriptorLayouts,
-        .pushConstants = tracked.pushConstants};
-    // Setup compute/graphics specific states
-    // Graphics
-    // RTV,DSV
-    Vector<RHIPipelineState::PipelineStateDesc::Attachment> attachments(mAllocator);
-    if (tracked.writeBackbuffer)
+    // Create PSO if we have shader stages
+    if (!pso_stages.empty())
     {
-        CHECK_MSG(tracked.rtvs.empty(), "Pass {} writes to backbuffer, and cannot have other RTVs.", tracked.name);
-        // Only write to the backbuffer
-        attachments.push_back({
-            .blending = tracked.writeBackbufferBlending,
-            .renderTarget = {.format = mSwapchain->mDesc.format}
-        });
-    }
-    else
-    {
-        for (auto const& [rtv, blending] : tracked.rtvs)
+        RHIPipelineState::PipelineStateDesc pso_desc{
+            .type = tracked.isComputePass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
+            .vertexInput = {.bindings = tracked.vertexInputBindings, .attributes = tracked.vertexInputAttributes},
+            .topology = RHIPipelineState::PipelineStateDesc::TriangleList,
+            .rasterizer = tracked.psoRasterizer,
+            .multisample = {.enabled = false},
+            .depthStencil = tracked.psoDepthStencil,
+            .shaderStages = pso_stages,
+            .descriptorSetLayouts = tracked.pDescriptorLayouts,
+            .pushConstants = tracked.pushConstants};
+        // Setup compute/graphics specific states
+        // Graphics
+        // RTV,DSV
+        Vector<RHIPipelineState::PipelineStateDesc::Attachment> attachments(mAllocator);
+        if (tracked.writeBackbuffer)
         {
-            auto& [rhdl, desc] = mSetup->trackedViews[rtv];
+            CHECK_MSG(tracked.rtvs.empty(), "Pass {} writes to backbuffer, and cannot have other RTVs.", tracked.name);
+            // Only write to the backbuffer
             attachments.push_back({
-                .blending = blending,
-                .renderTarget = {.format = desc.format}
+                .blending = tracked.writeBackbufferBlending,
+                .renderTarget = {.format = mSwapchain->mDesc.format}
             });
         }
-    }
-    pso_desc.attachments = attachments;
-    pso_desc.depthStencil = {
-        .depthTest = tracked.dsv != kInvalidHandle,
-        .depthWrite = tracked.dsv != kInvalidHandle,
-        .depthCompareOp = RHIPipelineState::PipelineStateDesc::DepthStencil::CompareOp::Less,
-    };
-    if (tracked.dsv != kInvalidHandle)
+        else
+        {
+            for (auto const& [rtv, blending] : tracked.rtvs)
+            {
+                auto& [rhdl, desc] = mSetup->trackedViews[rtv];
+                attachments.push_back({
+                    .blending = blending,
+                    .renderTarget = {.format = desc.format}
+                });
+            }
+        }
+        pso_desc.attachments = attachments;
+        pso_desc.depthStencil = {
+            .depthTest = tracked.dsv != kInvalidHandle,
+            .depthWrite = tracked.dsv != kInvalidHandle,
+            .depthCompareOp = RHIPipelineState::PipelineStateDesc::DepthStencil::CompareOp::Less,
+        };
+        if (tracked.dsv != kInvalidHandle)
+        {
+            auto& [dsv_handle, desc] = mSetup->trackedViews[tracked.dsv];
+            pso_desc.depthStencil.depthFormat = desc.format;
+            // TODO Stencil?
+        }
+        tracked.pso = mDevice->CreatePipelineState(pso_desc);
+        tracked.pso->DebugSetObjectName(fmt::format("PSO of {} [{}]", tracked.name, pass).c_str());
+    } else
     {
-        auto& [dsv_handle, desc] = mSetup->trackedViews[tracked.dsv];
-        pso_desc.depthStencil.depthFormat = desc.format;
-        // TODO Stencil?
+        LOG_RUNTIME(Renderer, debug, "Pass {} has no shader stages, and thus no PSO is created.", tracked.name);
     }
-    tracked.pso = mDevice->CreatePipelineState(pso_desc);
-    tracked.pso->DebugSetObjectName(fmt::format("PSO of {} [{}]", tracked.name, pass).c_str());
 }
 void Renderer::FinalizePSOs()
 {
@@ -1682,9 +1712,9 @@ String Renderer::DbgDumpGraphviz() const
     auto& passes = mSetup->trackedPasses;
     auto& resources = mSetup->trackedResources;
     for (auto& pass : passes)
-    {
-        fmt::format_to(std::back_inserter(out), "    \"{}@{}\" [ shape=box style=filled fillcolor=\"{}\" ];\n",
-                       pass.name, pass.handle, pass.queue == RHIDeviceQueueType::Graphics ? "#d0e0f0" : "#f0d0e0");
+    {        
+        fmt::format_to(std::back_inserter(out), "    \"{}@{}\" [ shape=box style={} fillcolor=\"{}\" ];\n",
+                       pass.name, pass.handle, pass.used ? "filled" : "unfilled", pass.queue == RHIDeviceQueueType::Graphics ? "#d0e0f0" : "#f0d0e0");
     }
     // Dependencies
     for (PassHandle u = 0; u < mSetup->graph.size(); u++)

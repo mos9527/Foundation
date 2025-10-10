@@ -1,4 +1,4 @@
-#include <Assets/Scene.hpp>
+#include <Scene/Scene.hpp>
 #include <Core/DefaultAllocator.hpp>
 using namespace ModelViewer;
 int main()

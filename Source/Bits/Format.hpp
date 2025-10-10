@@ -5,10 +5,10 @@
 namespace Foundation::Bits {
     using namespace Foundation::Core;
     constexpr const char* kSuffixes[]{ "B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
-    inline size_t operator"" _B(unsigned long long k) { return k;}
-    inline size_t operator"" _KB(unsigned long long k) { return k * (1 << 10LL);}
-    inline size_t operator"" _MB(unsigned long long k) { return k * (1 << 20LL);}
-    inline size_t operator"" _GB(unsigned long long k) { return k * (1 << 30LL);}
+    consteval size_t operator"" _B(unsigned long long k) { return k;}
+    consteval size_t operator"" _KB(unsigned long long k) { return k * (1 << 10LL);}
+    consteval size_t operator"" _MB(unsigned long long k) { return k * (1 << 20LL);}
+    consteval size_t operator"" _GB(unsigned long long k) { return k * (1 << 30LL);}
     inline String formatHumanReadableSize(const uint64_t size)
     {
         const int bits = 63 - std::countl_zero(size);

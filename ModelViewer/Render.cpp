@@ -1,7 +1,7 @@
-#include <Rendering/PSFullscreen.hpp>
 #include <Bindings/ImGui.hpp>
-#include "App.hpp"
+#include <Rendering/PSFullscreen.hpp>
 #include "Assets/Mesh.hpp"
+#include "App.hpp"
 using namespace ModelViewer;
 const size_t kMaxMeshletTasks = 1e5;
 struct MeshletTaskParams
@@ -37,12 +37,19 @@ void App::OnRendererSetup()
                        RHIBufferDesc{.usage = RHIBufferUsageBits::IndirectBuffer | RHIBufferUsageBits::StorageBuffer |
                                          RHIBufferUsageBits::TransferDestination,
                                      .size = sizeof(int)});
-    ResourceHandle zbuffer = createResource(mRenderer.get(), "Main Depth Buffer",
+    ResourceHandle zbuffer = createResource(mRenderer.get(), "ZBuffer",
                                             RHITextureDesc{
                                                 .usage = RHITextureUsageBits::DepthStencil,
-                                                .extent = mRenderer->GetSwapchainExtent3D(),
+                                                .extent = mViewportSize,
                                                 .format = RHIResourceFormat::D32SignedFloat,
                                             });
+    ResourceHandle gbuffer =
+        createResource(mRenderer.get(), "GBuffer",
+                       RHITextureDesc{
+                           .usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::StorageImage,
+                           .extent = mViewportSize,
+                           .format = RHIResourceFormat::R8G8B8A8Unorm,
+                       });
     ResourceHandle sceneInstance, sceneShared, sceneConst;
     mGPUScene->CreateUpdatePasses(mRenderer.get(), sceneInstance, sceneShared, sceneConst,
                                   RHIDeviceQueueType::Graphics);
@@ -59,21 +66,21 @@ void App::OnRendererSetup()
             r->BindBufferUnordered(self, meshletTaskParams, RHIPipelineStageBits::ComputeShader, "tasks");
             r->BindBufferUnordered(self, meshletIndirectTasksCtr, RHIPipelineStageBits::ComputeShader, "counter");
             r->BindBufferStorageRead(self, sceneInstance, RHIPipelineStageBits::ComputeShader, "sceneInstance");
-            r->BindBufferStorageRead(self, sceneShared, RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::AllGraphics, "sceneShared");
+            r->BindBufferStorageRead(self, sceneShared,
+                                     RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::AllGraphics,
+                                     "sceneShared");
             r->BindBufferStorageRead(self, sceneConst, RHIPipelineStageBits::ComputeShader, "sceneConst");
             r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(uint32_t));
         },
         [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             r->CmdSetPipeline(self, cmd);
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0,
-                                  mScene->GetParamsAllocationRawOffset());
-            r->CmdDispatch(self, cmd, { mScene->mInstanceCount , 1, 1});
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, mScene->GetParamsAllocationRawOffset());
+            r->CmdDispatch(self, cmd, {mScene->mInstanceCount, 1, 1});
         });
     createPSFullscreenPass(
-        mRenderer.get(), "Background", [=](PassHandle self, Renderer* r)
-        { r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVBackground.spv"); }
-    );
+        mRenderer.get(), "Background", gbuffer, RHIResourceFormat::B8G8R8A8Unrom, [=](PassHandle self, Renderer* r)
+        { r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVBackground.spv"); });
     createPass(
         mRenderer.get(), "Grid View", RHIDeviceQueueType::Graphics,
         [=](PassHandle self, Renderer* r)
@@ -83,7 +90,12 @@ void App::OnRendererSetup()
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVGridView.spv");
             r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0,
                                 sizeof(Grid::Params));
-            r->BindBackbufferRTV(self, RHIPipelineState::PipelineStateDesc::Attachment::Blending::GetAlphaBlending());
+            r->BindTextureRTV(self, gbuffer,
+                              {
+                                  .format = RHIResourceFormat::B8G8R8A8Unrom,
+                                  .range = RHITextureSubresourceRange::Create(),
+                              },
+                              RHIPipelineState::PipelineStateDesc::Attachment::Blending::GetAlphaBlending());
             r->PassSetRasterizerFlags(self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone});
         },
         [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -118,16 +130,23 @@ void App::OnRendererSetup()
             r->BindShader(self, RHIShaderStageBits::Task, "meshletTask", "data/shaders/MVMeshletTask.spv");
             r->BindShader(self, RHIShaderStageBits::Mesh, "meshletMesh", "data/shaders/MVMeshletMesh.spv");
             r->BindShader(self, RHIShaderStageBits::Fragment, "meshletFrag", "data/shaders/MVMeshletFrag.spv");
-            r->BindBufferShaderRead(self, meshletTaskDispatch, RHIPipelineStageBits::DrawIndirect | RHIPipelineStageBits::AllGraphics);
+            r->BindBufferShaderRead(self, meshletTaskDispatch,
+                                    RHIPipelineStageBits::DrawIndirect | RHIPipelineStageBits::AllGraphics);
             r->BindBufferStorageRead(self, meshletTaskParams, RHIPipelineStageBits::ComputeShader, "tasks");
             r->BindBufferStorageRead(self, meshletIndirectTasksCtr, RHIPipelineStageBits::ComputeShader, "counter");
             r->BindBufferStorageRead(self, sceneInstance, RHIPipelineStageBits::ComputeShader, "sceneInstance");
-            r->BindBufferStorageRead(self, sceneShared, RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::AllGraphics, "sceneShared");
+            r->BindBufferStorageRead(self, sceneShared,
+                                     RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::AllGraphics,
+                                     "sceneShared");
             r->BindBufferStorageRead(self, sceneConst, RHIPipelineStageBits::ComputeShader, "sceneConst");
             r->BindPushConstant(self,
                                 RHIShaderStageBits::Mesh | RHIShaderStageBits::Task | RHIShaderStageBits::Fragment, 0,
                                 sizeof(uint32_t));
-            r->BindBackbufferRTV(self);
+            r->BindTextureRTV(self, gbuffer,
+                              {
+                                  .format = RHIResourceFormat::B8G8R8A8Unrom,
+                                  .range = RHITextureSubresourceRange::Create(),
+                              });
             r->BindTextureDSV(self, zbuffer,
                               {.format = RHIResourceFormat::D32SignedFloat,
                                .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
@@ -137,10 +156,12 @@ void App::OnRendererSetup()
             auto const& img_wh = r->GetSwapchainExtent();
             r->CmdBeginGraphics(self, cmd, img_wh, {});
             r->CmdSetPipeline(self, cmd);
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Mesh | RHIShaderStageBits::Task | RHIShaderStageBits::Fragment, 0,
+            r->CmdSetPushConstant(self, cmd,
+                                  RHIShaderStageBits::Mesh | RHIShaderStageBits::Task | RHIShaderStageBits::Fragment, 0,
                                   mScene->GetParamsAllocationRawOffset());
             cmd->SetViewport(0, 0, img_wh.x, img_wh.y).SetScissor(0, 0, img_wh.x, img_wh.y);
-            cmd->DrawMeshTasksIndirect(r->DerefResource(meshletTaskDispatch).Get<RHIBuffer*>(), 0, 1, sizeof(MeshletTaskDispatch));                
+            cmd->DrawMeshTasksIndirect(r->DerefResource(meshletTaskDispatch).Get<RHIBuffer*>(), 0, 1,
+                                       sizeof(MeshletTaskDispatch));
             cmd->EndGraphics();
         });
     ImGui_ImplFoundation_CreatePass(mRenderer.get(), "ImGui");

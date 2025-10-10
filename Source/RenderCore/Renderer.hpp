@@ -361,6 +361,14 @@ namespace Foundation::RenderCore
         void BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point,
                         Native::Path const& shader_path) const;
         /**
+         * @brief Declares that a bind point in a certain pass is a descriptor set at the specified set and binding index.
+         *        This is _only_ useful if you don't have control over the shader code, and cannot rely
+         *        on automatic reflection.
+         *        You can use the same bind point name with subsequent @ref BindTextureSRV, etc. calls.
+         * @note Same bind point names from a shader bound with @ref BindShader will override ones set by this function.
+         */
+        void BindDescriptorBindPoint(PassHandle pass, StringView bind_point, uint32_t binding, uint32_t set);
+        /**
          * @brief Declares a range of Push Constant used in a stage.
          *
          * This is only available at Setup time.
@@ -442,7 +450,7 @@ namespace Foundation::RenderCore
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          */
-        void BindTextureSampler(PassHandle pass, ResourceHandle sampler, StringView shader_name) const;
+        void BindTextureSampler(PassHandle pass, ResourceHandle sampler, StringView bind_point) const;
         /**
          * @brief Manually bind an existing descriptor set to the pipeline.
          *
@@ -464,7 +472,7 @@ namespace Foundation::RenderCore
          *
          * No view is created until EndSetup() is called.
          */
-        ResourceHandle BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView shader_name,
+        ResourceHandle BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                       RHIPipelineStage stage, RHITextureViewDesc const& desc) const;
         /**
          * @brief Binds a texture for unordered (UAV) read-write access in shaders.
@@ -476,7 +484,7 @@ namespace Foundation::RenderCore
          *
          * No view is created until EndSetup() is called.
          */
-        ResourceHandle BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView shader_name,
+        ResourceHandle BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                       RHIPipelineStage stage, RHITextureViewDesc const& desc) const;
         /**
          * @brief Binds a texture as a Render Target View (color attachment) for a graphics pass.

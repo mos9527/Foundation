@@ -2,8 +2,6 @@
 #include <Math/Math.hpp>
 #include <imgui.h>
 
-#include "../../cmake-build-debug/_deps/imgui-src/imgui.h"
-
 namespace ModelViewer
 {
     Camera::Params Camera::GetParams() const

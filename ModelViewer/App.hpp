@@ -22,6 +22,8 @@ namespace ModelViewer {
         void OnBeforeFrame() override;
         void OnAfterFrame() override;
     public:
+        RHIExtent3D mViewportSize{ 1280, 720, 1 };
+
         UniquePtr<Scene> mScene;
         UniquePtr<GPUScene> mGPUScene;
     };

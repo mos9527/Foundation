@@ -8,7 +8,7 @@ struct PushConstant {
 }
 [[vk::push_constant]] PushConstant pc;
 SamplerState sampler;
-[[vk::binding(0, 1)]] // [set, binding]
+[[vk::binding(0, 1)]] // [binding, set]
 texture2D textures[];
 
 [shader("fragment")]

@@ -187,6 +187,17 @@ namespace Foundation::Rendering
          */
         virtual void OnRendererSetup() = 0;
         /**
+         * @brief Action to take after the renderer has been set up.
+         *
+         * This is run on the Render thread, immediately after @ref OnRendererSetup
+         * has been called, and before the first frame is rendered.
+         *
+         * Implementation may leave this empty if no action is needed.
+         *
+         * @note This should not be directly called.
+         */
+        virtual void OnRendererPostSetup() { /* nop */ }
+        /**
          * @brief Action to take on every application tick.
          *
          * @note This is run on the main thread, i.e. the calling thread of @ref RunForever.

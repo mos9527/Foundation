@@ -40,6 +40,46 @@ namespace Foundation::Rendering {
     {
         return createPSFullscreenPass(r, name, std::forward<FSetup>(setup), FRecordDefault{});
     }
+    template<typename FSetup, typename FRecord>
+    auto* createPSFullscreenPass(
+        Renderer* r,
+        StringView name,
+        ResourceHandle renderTexture,
+        RHIResourceFormat format,
+        FSetup&& setup,
+        FRecord&& record
+    ) {
+        return createPass(r, name, RHIDeviceQueueType::Graphics,
+            [=](PassHandle self, Renderer* r) {
+                r->BindTextureRTV(self, renderTexture, {
+                    .format = format,
+                    .range = RHITextureSubresourceRange::Create()
+                });
+                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/VSFullscreen.spv");
+                setup(self, r);
+            },
+            [=](PassHandle self, Renderer* r, RHI::RHICommandList* cmd) {
+                auto const& img_wh = r->DerefResource(renderTexture).Get<RHITexture*>()->mDesc.extent;;
+                r->CmdBeginGraphics(self, cmd, img_wh, {}, {});
+                r->CmdSetPipeline(self, cmd);
+                record(self, r, cmd);
+                cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
+                    .SetScissor(0, 0, img_wh.x, img_wh.y);
+                cmd->Draw(3);
+                cmd->EndGraphics();
+            });
+    }
+    template<typename FSetup>
+    auto* createPSFullscreenPass(
+        Renderer* r,
+        StringView name,
+        ResourceHandle renderTexture,
+        RHIResourceFormat format,
+        FSetup&& setup
+    )
+    {
+        return createPSFullscreenPass(r,name, renderTexture, format, std::forward<FSetup>(setup), FRecordDefault{});
+    }
     /**
      * @brief Creates a full-screen triangle pass that renders a texture
      * to the current backbuffer.

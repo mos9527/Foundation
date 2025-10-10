@@ -41,6 +41,12 @@ namespace Foundation::Rendering
         void Upload(RHIBuffer* dst, Span<const char> data, size_t dstOffset = 0, size_t alignment = 4,
                                RHIResourceAccess dst_access = RHIResourceAccessBits::ShaderRead,
                                RHIPipelineStage dst_stage = RHIPipelineStageBits::AllGraphics);
+        void Upload(RHITexture* dst, Span<const char> data,
+                               RHITextureSubresourceRange range,
+                               RHICommandList::CopyImageRegion region,
+                               RHIResourceAccess dst_access = RHIResourceAccessBits::ShaderRead,
+                               RHIPipelineStage dst_stage = RHIPipelineStageBits::AllGraphics,
+                               RHITextureLayout dst_layout = RHITextureLayout::ShaderReadOnly);
         void Upload(RHITexture* dst, Span<const char> data, uint32_t mipLevel = 0, uint32_t arrayLayer = 0,
                                RHITextureAspectFlag aspect = RHITextureAspectFlagBits::Color,
                                RHIResourceAccess dst_access = RHIResourceAccessBits::ShaderRead,
