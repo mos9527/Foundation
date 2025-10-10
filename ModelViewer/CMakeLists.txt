@@ -21,13 +21,16 @@ else()
 endif()
 
 add_subdirectory(Assets)
-
+add_subdirectory(Gizmos)
+add_subdirectory(Scene)
 target_sources(ModelViewer PRIVATE ${SOURCES} ${INCLUDES} )
 target_link_libraries(
     ModelViewer PRIVATE 
-    Foundation_Rendering Foundation_RHIVulkan 
-    ModelViewer_Assets
+    Foundation_Rendering Foundation_RHIVulkan
     ThirdParty_ImGui
+    ModelViewer_Scene
+    ModelViewer_Assets
+    ModelViewer_Gizmos
 )
 
 add_subdirectory(Shaders)

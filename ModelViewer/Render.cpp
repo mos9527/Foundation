@@ -63,7 +63,7 @@ void App::OnRendererSetup()
             r->BindBufferStorageRead(self, sceneConst, RHIPipelineStageBits::ComputeShader, "sceneConst");
             r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(uint32_t));
         },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             r->CmdSetPipeline(self, cmd);
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0,
@@ -82,7 +82,7 @@ void App::OnRendererSetup()
             r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/MVGridView.spv");
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVGridView.spv");
             r->BindPushConstant(self, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0,
-                                sizeof(SceneGrid::Params));
+                                sizeof(Grid::Params));
             r->BindBackbufferRTV(self, RHIPipelineState::PipelineStateDesc::Attachment::Blending::GetAlphaBlending());
             r->PassSetRasterizerFlags(self, {.cullMode = RHIPipelineState::PipelineStateDesc::Rasterizer::CullNone});
         },

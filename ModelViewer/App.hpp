@@ -3,7 +3,7 @@
 #include <RHIVulkan/Application.hpp>
 #include <Rendering/Application.hpp>
 #include <Rendering/PSFullscreen.hpp>
-#include "Assets/Scene.hpp"
+#include "Scene/Scene.hpp"
 /**
  * @brief ModelViewer implementation
  */
