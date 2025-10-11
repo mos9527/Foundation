@@ -109,7 +109,7 @@ void App::OnRendererSetup()
                                 sizeof(Grid::Params));
             r->BindTextureRTV(self, gbuffer,
                               {
-                                  .format = RHIResourceFormat::B8G8R8A8Unrom,
+                                  .format = RHIResourceFormat::R8G8B8A8Unorm,
                                   .range = RHITextureSubresourceRange::Create(),
                               },
                               RHIPipelineState::PipelineStateDesc::Attachment::Blending::GetAlphaBlending());
@@ -160,7 +160,7 @@ void App::OnRendererSetup()
                                 sizeof(uint32_t));
             r->BindTextureRTV(self, gbuffer,
                               {
-                                  .format = RHIResourceFormat::B8G8R8A8Unrom,
+                                  .format = RHIResourceFormat::R8G8B8A8Unorm,
                                   .range = RHITextureSubresourceRange::Create(),
                               });
             r->BindTextureDSV(self, zbuffer,

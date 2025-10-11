@@ -50,6 +50,7 @@ namespace Foundation::RHI {
         template<typename U = T> [[nodiscard]] U* Get() const {
             CHECK(IsValid() && "RHIHandle::Get called on an invalid handle");
             auto ptr = RHIObjectTraits<Factory, T>::Get(mFactory, mHandle);
+            CHECK(ptr != nullptr);
             return static_cast<U*>(ptr);
         }
         T* operator->() const {
@@ -126,7 +127,7 @@ namespace Foundation::RHI {
      */
     template<typename Base = RHIObject> class RHIObjectPool {
         Core::Allocator* mAllocator;
-        Core::Pool<Handle, Core::UniquePtr<Base>> mObjects;
+        Core::Pool<Handle, Base> mObjects;
     public:
         RHIObjectPool(Core::Allocator* allocator) :
             mAllocator(allocator), mObjects(allocator) {
@@ -136,8 +137,7 @@ namespace Foundation::RHI {
          * @returns A handle to the newly created object.
          */
         template<typename U, typename ...Args> Handle CreateObject(Args&&... args) {
-            auto [handle, value] = mObjects.PopPair();
-            value = Core::ConstructUniqueBase<Base, U>(mAllocator, std::forward<Args>(args)...);
+            auto handle = mObjects.PopBase<U>(std::forward<Args>(args)...);            
             return handle;
         }
         /**
@@ -148,7 +148,7 @@ namespace Foundation::RHI {
         template<typename U = Base> U* GetObjectPtr(Handle handle) const {
             if (!mObjects.Contains(handle))
                 throw std::out_of_range("invalid handle");
-            return static_cast<U*>(mObjects.At(handle).get());
+            return static_cast<U*>(mObjects.At(handle));
         }
         /**
          * @brief Destroys the object associated with the given handle, and frees the handle for reuse.

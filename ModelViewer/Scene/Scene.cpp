@@ -45,7 +45,8 @@ namespace ModelViewer
     }
     SceneHandle Scene::PushMesh(MeshScratchBuffers const& data)
     {
-        auto [handle, alloc] = mMeshes.PopPair();
+        auto handle = mMeshes.Pop();
+        auto& alloc = *mMeshes.At(handle);
         alloc.vertices = mGPUScene->PushConst(
             Span<const MeshVertexCompact>(data.vertices).AsBytes(), alignof(MeshVertexCompact)
         );
@@ -86,11 +87,11 @@ namespace ModelViewer
     }
     MeshAllocation const& Scene::QueryMesh(SceneHandle handle)
     {
-        return mMeshes.At(handle);
+        return *mMeshes.At(handle);
     }
     void Scene::FreeMesh(SceneHandle handle)
     {
-        auto const& alloc = mMeshes.At(handle);
+        auto const& alloc = *mMeshes.At(handle);
         mGPUScene->FreeConst(alloc.vertices);
         for (size_t i = 0; i < alloc.lodCount; ++i)
         {

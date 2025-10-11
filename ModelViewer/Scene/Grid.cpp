@@ -1,5 +1,5 @@
 #include "Grid.hpp"
-#include "../../cmake-build-debug/_deps/imgui-src/imgui.h"
+#include <imgui.h>
 
 namespace ModelViewer
 {

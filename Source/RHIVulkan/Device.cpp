@@ -639,8 +639,9 @@ VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDev
     if (desc.updateAfterBind)
         bindingFlags |= vk::DescriptorBindingFlagBits::eUpdateAfterBind;
     Vector<vk::DescriptorSetLayoutBinding> bindings(desc.bindings.size(), alloc.Ptr());
+    Vector<vk::DescriptorBindingFlags> flags(desc.bindings.size(), bindingFlags, alloc.Ptr());
     vk::DescriptorSetLayoutBindingFlagsCreateInfo bindInfo{.bindingCount = static_cast<uint32_t>(desc.bindings.size()),
-                                                           .pBindingFlags = &bindingFlags};
+                                                           .pBindingFlags = flags.data()};
     for (size_t i = 0; i < desc.bindings.size(); ++i)
     {
         auto const& b = desc.bindings[i];

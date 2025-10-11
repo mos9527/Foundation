@@ -22,7 +22,7 @@ namespace Foundation::RenderCore
     // Stub name for bind_point names that's not found in shaders. This has no
     // effect - as bindings not found will simply not participate
     // in the PSO building process.
-    constexpr String kBindpointIgnored = "<ignored>";
+    const String kBindpointIgnored = "<ignored>"; // no constexpr in Debug?? thanks MSVC 
     const RHIPipelineStage kComputeStagesMask = RHIPipelineStageBits::FragmentShader |
         RHIPipelineStageBits::VertexShader | RHIPipelineStageBits::MeshShader | RHIPipelineStageBits::RayTracingShader |
         RHIPipelineStageBits::AllGraphics;
