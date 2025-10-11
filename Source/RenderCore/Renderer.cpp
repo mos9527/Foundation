@@ -855,13 +855,25 @@ void Renderer::FinalizePSOs()
     // Build PSOs for everything we need
     LOG_RUNTIME(Renderer, info, "Compiling Shaders");
     Async::ThreadPool pool(std::thread::hardware_concurrency(), kMaxRenderPasses, mAllocator, "PSOComp");
+    Vector<Async::SharedPromise<void>> futures(mAllocator);
     for (auto& pass : mSetup->trackedPasses)
     {
         if (!pass.used)
             continue;
-        pool.Push([&] { BuildPipelineState(pass.handle); });
+        futures.emplace_back(pool.Push([&] { BuildPipelineState(pass.handle); }));
     }
-    pool.Join();
+    for (size_t i = 0; i < futures.size(); i++)
+    {
+        auto& tpass = mSetup->trackedPasses[i];
+        try
+        {
+            futures[i]->get_future().get();
+        } catch (std::runtime_error const& e)
+        {
+            LOG_RUNTIME(Renderer, err, "Failed to build PSO for pass {}: {}", tpass.name, e.what());
+            throw; // Failfast
+        }
+    }
     LOG_RUNTIME(Renderer, info, "Compiled Shaders.");
 }
 void Renderer::FinalizeResources()

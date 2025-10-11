@@ -100,7 +100,7 @@ namespace Foundation::Async
         }
         /**
          * @brief Push a lambda job to the thread pool.
-         * @return @ref SharedPromise that will be set when the job is completed.
+         * @return @ref SharedPromise<func ReturnType> that will be set when the job is completed.
          */
         template <typename Lambda, typename... Args>
         auto Push(Lambda&& func, Args&&... args)
@@ -116,7 +116,7 @@ namespace Foundation::Async
             using PackagedType = decltype(packaged);
             // Use the wrapped lambda type for the job
             using LambdaType = ThreadPoolLambdaJob<PackagedType, ReturnType>;
-            auto promise = ConstructShared<std::promise<ReturnType>>(mAllocator);
+            SharedPromise<ReturnType> promise = ConstructShared<std::promise<ReturnType>>(mAllocator);
             CHECK_MSG(mJobsWriter.Push(
                 ConstructUniqueBase<ThreadPoolJob, LambdaType>(
                     mAllocator, promise,

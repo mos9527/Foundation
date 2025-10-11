@@ -12,8 +12,8 @@
  */
 enum ImGui_ImplFoundation_ImageSampler
 {
-    ImGui_ImplFoundation_ImageSampler_Linear = 0,
-    ImGui_ImplFoundation_ImageSampler_Nearest = 1
+    ImGuiImplFoundationImageSamplerLinear = 0,
+    ImGuiImplFoundationImageSamplerNearest = 1
 };
 // Upper half of ImTextureID stores metadata (i.e. sampler)
 static_assert(sizeof(ImTextureID) == 2 * sizeof(Foundation::Rendering::TexturePoolHandle));
@@ -71,7 +71,7 @@ void ImGui_ImplFoundation_Shutdown();
  * @return An ImTextureID that you can use with ImGui::Image() and other functions.
  */
 ImTextureID ImGui_ImplFoundation_AddImage(Foundation::RHI::RHITextureView* textureView,
-                              ImGui_ImplFoundation_ImageSampler sampler = ImGui_ImplFoundation_ImageSampler_Linear);
+                              ImGui_ImplFoundation_ImageSampler sampler = ImGuiImplFoundationImageSamplerLinear);
 
 /**
  * @brief Unregisters a texture from the ImGui backend.

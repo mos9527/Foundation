@@ -1,7 +1,9 @@
 #pragma once
-#include <ranges>
 #include <Core/Core.hpp>
-namespace Foundation::Bits {
+#include <ranges>
+namespace Foundation::Bits
+{
+    using namespace Core;
     /**
      * @brief `std::ranges` extensions and utilities.
      */
@@ -11,18 +13,21 @@ namespace Foundation::Bits {
         /**
          * @brief Range predicate that checks if a value is contained within a given range.
          */
-        template <typename Range> struct ContainedBy
+        template <typename Range>
+        struct ContainedBy
         {
             Range const& range;
             ContainedBy(Range const& range) : range(range) {}
-            constexpr bool operator()(auto&& value) const {
+            constexpr bool operator()(auto&& value) const
+            {
                 return std::ranges::find(range, value) != std::ranges::end(range);
             }
         };
         /**
          * @brief Returns the first element of a range, or an empty Optional if the range is empty.
          */
-        template<typename T> constexpr Core::Optional<range_value_t<T>> FirstOf(T&& range)
+        template <typename T>
+        constexpr Optional<range_value_t<T>> FirstOf(T&& range)
         {
             if (auto it = std::ranges::begin(range); it != std::ranges::end(range))
                 return *it;
@@ -35,5 +40,5 @@ namespace Foundation::Bits {
     namespace Views
     {
         using namespace std::views;
-    }
-}
+    } // namespace Views
+} // namespace Foundation::Bits

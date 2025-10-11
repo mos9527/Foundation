@@ -52,7 +52,7 @@ Pair<TexturePoolHandle, ImGui_ImplFoundation_ImageSampler> ImGui_ImplFoundation_
     return {handle, static_cast<ImGui_ImplFoundation_ImageSampler>(sampler)};
 }
 ImTextureID ImGui_ImplFoundation_EncodeImTextureID(
-    TexturePoolHandle handle, ImGui_ImplFoundation_ImageSampler sampler = ImGui_ImplFoundation_ImageSampler_Linear)
+    TexturePoolHandle handle, ImGui_ImplFoundation_ImageSampler sampler = ImGuiImplFoundationImageSamplerLinear)
 {
     ImTextureID id = handle;
     size_t smp = static_cast<ImTextureID>(sampler);
@@ -230,10 +230,10 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
             pc.textureId = textureId;
             switch (samplerId)
             {
-            case ImGui_ImplFoundation_ImageSampler_Linear:
+            case ImGuiImplFoundationImageSamplerLinear:
                 pc.samplerId = 0;
                 break;
-            case ImGui_ImplFoundation_ImageSampler_Nearest:
+            case ImGuiImplFoundationImageSamplerNearest:
                 pc.samplerId = 1;
                 break;
             }

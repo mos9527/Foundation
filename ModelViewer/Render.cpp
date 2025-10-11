@@ -88,8 +88,9 @@ void App::OnRendererSetup()
                 self, gbuffer,
                 {.format = RHIResourceFormat::R8G8B8A8Unorm, .range = RHITextureSubresourceRange::Create()});
             r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/VSFullscreen.spv");
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVBackground.spv");
         },
-        [=, this](PassHandle self, Renderer* r, RHI::RHICommandList* cmd)
+        [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             r->CmdBeginGraphics(self, cmd, mViewportSize, {}, {});
             r->CmdSetPipeline(self, cmd);
