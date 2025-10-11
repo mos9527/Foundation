@@ -104,7 +104,12 @@ void ImGui_ImplFoundation_ImplUpdateTexture(ImTextureData* tex)
     }
     // Release
     if (tex->Status == ImTextureStatus_WantDestroy)
+    {
         ImGui_ImplFoundation_RemoveImage(tex->GetTexID());
+        tex->SetStatus(ImTextureStatus_Destroyed);
+        tex->SetTexID(0);
+        tex->BackendUserData = nullptr;
+    }
 }
 ImTextureID ImGui_ImplFoundation_AddImage(RHITextureView* textureView, ImGui_ImplFoundation_ImageSampler sampler)
 {

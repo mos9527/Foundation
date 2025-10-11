@@ -110,7 +110,7 @@ RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> VulkanDeviceDescript
         .pNext = max_variable_count ? &varAlloc : nullptr,
         .descriptorPool = *mPool,
         .descriptorSetCount = 1,
-        .pSetLayouts = &*vk_layout
+        .pSetLayouts = &*vk_layout,
     };
     auto set = mDevice.GetVkDevice().allocateDescriptorSets(alloc_info);
     CHECK(!set.empty() && "descriptor set allocation failure");

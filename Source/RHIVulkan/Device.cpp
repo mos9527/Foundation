@@ -15,9 +15,9 @@
 using namespace Foundation::Core;
 using namespace Foundation::RHI;
 using namespace Foundation::Bits;
-const char* kVulkanDeviceExtensions[] = {    
+const char* kVulkanDeviceExtensions[] = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    VK_EXT_MESH_SHADER_EXTENSION_NAME,    
+    VK_EXT_MESH_SHADER_EXTENSION_NAME,
 };
 
 const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
@@ -103,22 +103,23 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     }
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
                        vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
-                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT,
-                       vk::PhysicalDeviceMeshShaderFeaturesEXT>
+                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT, vk::PhysicalDeviceMeshShaderFeaturesEXT>
         featureChain = {
             {.features = {.samplerAnisotropy = true, .shaderInt16 = true}}, // vk::PhysicalDeviceFeatures2
             {.storageBuffer16BitAccess = true,
-            .uniformAndStorageBuffer16BitAccess = true,
+             .uniformAndStorageBuffer16BitAccess = true,
              .shaderDrawParameters = true}, // vk::PhysicalDeviceVulkan11Features
-            {
-             .drawIndirectCount = true,
+            {.drawIndirectCount = true,
              .storageBuffer8BitAccess = true,
              .uniformAndStorageBuffer8BitAccess = true,
              .shaderFloat16 = true,
              .shaderInt8 = true,
+             .descriptorBindingSampledImageUpdateAfterBind = true,
              .runtimeDescriptorArray = true,
              .timelineSemaphore = true}, // vk::PhysicalDeviceVulkan12Features
-            {.synchronization2 = true, .dynamicRendering = true, .shaderIntegerDotProduct = true}, // vk::PhysicalDeviceVulkan13Features
+            {.synchronization2 = true,
+             .dynamicRendering = true,
+             .shaderIntegerDotProduct = true}, // vk::PhysicalDeviceVulkan13Features
             {.extendedDynamicState = true}, // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
             {.taskShader = true, .meshShader = true} // vk::PhysicalDeviceMeshShaderFeaturesEXT
         };
@@ -151,8 +152,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         .pAllocationCallbacks = reinterpret_cast<const VkAllocationCallbacks*>(&GetVkAllocatorCallbacks()),
         .instance = *mApp.GetVkInstance(),
         .vulkanApiVersion = mApp.mVulkanApiVersion};
-    CHECK(vmaCreateAllocator(&allocator_info, &mVkAllocator) == VK_SUCCESS &&
-          "failed to create VMA for Vulkan device");
+    CHECK(vmaCreateAllocator(&allocator_info, &mVkAllocator) == VK_SUCCESS && "failed to create VMA for Vulkan device");
     DebugLogAllocatorInfo();
     if (mSurface != nullptr)
     {
@@ -395,10 +395,7 @@ VulkanDeviceSemaphore::VulkanDeviceSemaphore(const VulkanDevice& device, bool is
     RHIDeviceSemaphore(device, is_timeline), mDevice(device)
 {
     vk::SemaphoreCreateInfo info{};
-    vk::SemaphoreTypeCreateInfo tinfo{
-        .semaphoreType = vk::SemaphoreType::eTimeline,
-        .initialValue = 0
-    };
+    vk::SemaphoreTypeCreateInfo tinfo{.semaphoreType = vk::SemaphoreType::eTimeline, .initialValue = 0};
     if (is_timeline)
         info.setPNext(&tinfo);
     mSemaphore = vk::raii::Semaphore(mDevice.GetVkDevice(), info, device.GetVkAllocatorCallbacks());
@@ -407,8 +404,8 @@ void VulkanDeviceSemaphore::DebugSetObjectName(const char* name)
 {
     VkSemaphore handle = *mSemaphore;
     mDevice.GetVkDevice().setDebugUtilsObjectNameEXT({.objectType = vk::ObjectType::eSemaphore,
-                                                       .objectHandle = reinterpret_cast<uint64_t>(handle),
-                                                       .pObjectName = name});
+                                                      .objectHandle = reinterpret_cast<uint64_t>(handle),
+                                                      .pObjectName = name});
 }
 VulkanDeviceFence::VulkanDeviceFence(const VulkanDevice& device, bool signaled) :
     RHIDeviceFence(device), mDevice(device),
@@ -422,8 +419,8 @@ void VulkanDeviceFence::DebugSetObjectName(const char* name)
 {
     VkFence handle = *mFence;
     mDevice.GetVkDevice().setDebugUtilsObjectNameEXT({.objectType = vk::ObjectType::eFence,
-                                                       .objectHandle = reinterpret_cast<uint64_t>(handle),
-                                                       .pObjectName = name});
+                                                      .objectHandle = reinterpret_cast<uint64_t>(handle),
+                                                      .pObjectName = name});
 }
 
 RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> VulkanDevice::CreateSemaphore(bool is_timeline)
@@ -491,9 +488,9 @@ void VulkanDevice::WaitForTimelineSemaphores(
     }
     auto res =
         mDevice.waitSemaphores(vk::SemaphoreWaitInfo{.semaphoreCount = static_cast<uint32_t>(vk_semaphores.size()),
-                                                      .pSemaphores = vk_semaphores.data(),
-                                                      .pValues = vk_values.data()},
-                                timeout);
+                                                     .pSemaphores = vk_semaphores.data(),
+                                                     .pValues = vk_values.data()},
+                               timeout);
     CHECK(res == vk::Result::eSuccess && "failed to wait for semaphores");
 }
 
@@ -501,8 +498,8 @@ void VulkanDevice::DebugSetObjectName(const char* name)
 {
     VkDevice handle = *mDevice;
     mDevice.setDebugUtilsObjectNameEXT({.objectType = vk::ObjectType::eDevice,
-                                         .objectHandle = reinterpret_cast<uint64_t>(handle),
-                                         .pObjectName = name});
+                                        .objectHandle = reinterpret_cast<uint64_t>(handle),
+                                        .pObjectName = name});
 }
 
 void VulkanDeviceQueue::WaitIdle() const { mQueue.waitIdle(); }
@@ -565,7 +562,8 @@ void VulkanDeviceQueue::Submit(SubmitDesc const& desc) const
     if (!wait_values.empty() || !signal_values.empty())
         info.setPNext(&tinfo);
     {
-        mQueue.submit(info, desc.fence ? static_cast<VulkanDeviceFence*>(desc.fence)->GetVkFence() : vk::Fence(nullptr));
+        mQueue.submit(info,
+                      desc.fence ? static_cast<VulkanDeviceFence*>(desc.fence)->GetVkFence() : vk::Fence(nullptr));
     }
 }
 void VulkanDeviceQueue::Present(PresentDesc const& desc) const
@@ -605,8 +603,8 @@ void VulkanDeviceQueue::DebugSetObjectName(const char* name)
 {
     VkQueue handle = *mQueue;
     mDevice.GetVkDevice().setDebugUtilsObjectNameEXT({.objectType = vk::ObjectType::eQueue,
-                                                       .objectHandle = reinterpret_cast<uint64_t>(handle),
-                                                       .pObjectName = name});
+                                                      .objectHandle = reinterpret_cast<uint64_t>(handle),
+                                                      .pObjectName = name});
 }
 
 RHIDeviceScopedObjectHandle<RHIBuffer> VulkanDevice::CreateBuffer(RHIBufferDesc const& desc)
@@ -627,8 +625,8 @@ void VulkanDeviceDescriptorSetLayout::DebugSetObjectName(const char* name)
 {
     VkDescriptorSetLayout handle = *mLayout;
     mDevice.GetVkDevice().setDebugUtilsObjectNameEXT({.objectType = vk::ObjectType::eDescriptorSetLayout,
-                                                       .objectHandle = reinterpret_cast<uint64_t>(handle),
-                                                       .pObjectName = name});
+                                                      .objectHandle = reinterpret_cast<uint64_t>(handle),
+                                                      .pObjectName = name});
 }
 
 VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDevice& device,
@@ -637,18 +635,29 @@ VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDev
 {
     StackArena<> arena{};
     StackAllocator alloc(arena);
+    vk::DescriptorBindingFlags bindingFlags{};
+    if (desc.updateAfterBind)
+        bindingFlags |= vk::DescriptorBindingFlagBits::eUpdateAfterBind;
     Vector<vk::DescriptorSetLayoutBinding> bindings(desc.bindings.size(), alloc.Ptr());
+    vk::DescriptorSetLayoutBindingFlagsCreateInfo bindInfo{.bindingCount = static_cast<uint32_t>(desc.bindings.size()),
+                                                           .pBindingFlags = &bindingFlags};
     for (size_t i = 0; i < desc.bindings.size(); ++i)
     {
         auto const& b = desc.bindings[i];
-        bindings[i] = vk::DescriptorSetLayoutBinding{.binding = static_cast<uint32_t>(i),
-                                                     .descriptorType = vkDescriptorTypeFromRHIDescriptorType(b.type),
-                                                     .descriptorCount = b.count,
-                                                     .stageFlags = vkShaderStageFlagsFromRHIShaderStage(b.stage)};
+        bindings[i] = vk::DescriptorSetLayoutBinding{
+            .binding = static_cast<uint32_t>(i),
+            .descriptorType = vkDescriptorTypeFromRHIDescriptorType(b.type),
+            .descriptorCount = b.count,
+            .stageFlags = vkShaderStageFlagsFromRHIShaderStage(b.stage),
+        };
     }
     mLayout = vk::raii::DescriptorSetLayout(
         mDevice.GetVkDevice(),
-        vk::DescriptorSetLayoutCreateInfo{.bindingCount = static_cast<uint32_t>(bindings.size()),
+        vk::DescriptorSetLayoutCreateInfo{.pNext = &bindInfo,
+                                          .flags = desc.updateAfterBind
+                                              ? vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool
+                                              : vk::DescriptorSetLayoutCreateFlagBits{},
+                                          .bindingCount = static_cast<uint32_t>(bindings.size()),
                                           .pBindings = bindings.data()},
         mDevice.GetVkAllocatorCallbacks());
     CHECK_MSG(mLayout != nullptr, "failed to create Vulkan descriptor set layout");
@@ -681,8 +690,8 @@ void VulkanDeviceSampler::DebugSetObjectName(const char* name)
 {
     VkSampler handle = *mSampler;
     mDevice.GetVkDevice().setDebugUtilsObjectNameEXT({.objectType = vk::ObjectType::eSampler,
-                                                       .objectHandle = reinterpret_cast<uint64_t>(handle),
-                                                       .pObjectName = name});
+                                                      .objectHandle = reinterpret_cast<uint64_t>(handle),
+                                                      .pObjectName = name});
 }
 
 VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, SamplerDesc const& desc) :
