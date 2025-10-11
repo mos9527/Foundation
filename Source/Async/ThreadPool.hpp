@@ -131,9 +131,13 @@ namespace Foundation::Async
          */
         void Shutdown();
         /**
-         * @brief Wait for all scheduled jobs to complete
+         * @brief Wait for all scheduled jobs to complete.
+         * @note This _MUST_ be called if you'd like all submitted work to complete before destruction.
          */
         void Join();
+        /**
+         * Shutdown, without waiting for pending jobs.
+         */
         ~ThreadPool();
     };
 } // namespace Foundation::Async
