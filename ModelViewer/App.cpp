@@ -23,8 +23,7 @@ namespace ModelViewer
         mScene = ConstructUnique<Scene>(GetAllocator(), mGPUScene.get(), GetAllocator());
         /* -- ImGui -- */
         ImGui_ImplFoundation_SetupContextWithDefaultStyles();
-        ImGui_ImplGlfw_InitForOther(static_cast<GLFWwindow*>(GetNativeWindow()->GetNative()), true);
-        ImGui_ImplFoundation_Init(mDevice.Get(), GetAllocator());
+        ImGui_ImplFoundation_Init(mDevice.Get(), GetNativeWindow(), GetAllocator());
         // TEST: Load mesh
         Vector<MeshVertex> vertices(GetAllocator());
         Vector<MeshIndex> indices(GetAllocator());
@@ -34,10 +33,17 @@ namespace ModelViewer
         mScene->mCamera.position = float3{2, 2, 10};
         mScene->mCullingCamera = mScene->mCamera;
     }
+    void App::OnRendererPostSetup()
+    {
+        CHECK(mGBufferSRV != kInvalidHandle);
+        auto* srv = mRenderer->DerefTextureView(mGBufferSRV);
+        if (mGBufferHandle)
+            ImGui_ImplFoundation_RemoveImage(mGBufferHandle);
+        mGBufferHandle = ImGui_ImplFoundation_AddImage(srv);
+    }
     void App::OnApplicationTick()
     {
         float time = GetApplicationTime();
-        if (time > 10) return;
         auto instances = mScene->MapInstances();
         constexpr int countSq = 10;
         constexpr float scale = 1.0f;
@@ -54,37 +60,54 @@ namespace ModelViewer
     }
     void App::OnImGui()
     {
-        ImGui::Begin("Scene");
-        ImGui::Text("FPS: %zu", mTiming.GetFPS());
-        ImGui::Separator();
-        if (ImGui::CollapsingHeader("Camera"))
+        ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
+        if (ImGui::Begin("Viewport"))
         {
-            mScene->mCamera.OnImGui();
+            {
+                ImVec2 size = ImGui::GetContentRegionAvail();
+                mViewportSize.x = size.x, mViewportSize.y = size.y;
+            }
+            float2 size = mViewportSize, extent = {kTextureMaxExtent.x, kTextureMaxExtent.y};
+            float2 uv1 = size / extent;
+            ImGui::Image(mGBufferHandle, ImVec2(size.x, size.y), ImVec2(0, 0), ImVec2(uv1.x, uv1.y));
+            ImGui::SetCursorPos(ImVec2{0, 0});
+            drawGizmoCameraFrustum(mScene->mCamera.GetParams().viewProj, mScene->mCullingCamera.GetCullParams().viewProj);
         }
-        if (ImGui::CollapsingHeader("Culling Camera"))
+        ImGui::End();
+        if (ImGui::Begin("Scene"))
         {
-            mScene->mCullingCamera.OnImGui();
-        }
-        if (ImGui::CollapsingHeader("Grid"))
-        {
-            mScene->mGrid.OnImGui();
-        }
-        if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            ImGui::Text("WASD - Move");
-            ImGui::Text("Right Mouse + Drag - Look Around");
-            ImGui::Text("Left Shift - Speed Boost");
-            ImGui::Text("Left Alt - Control Culling Camera");
-            ImGui::Text("Space - Set Culling Camera to Main Camera");
+            ImGui::Text("FPS: %zu", mTiming.GetFPS());
+            ImGui::Separator();
+            if (ImGui::CollapsingHeader("Camera"))
+            {
+                mScene->mCamera.OnImGui();
+            }
+            if (ImGui::CollapsingHeader("Culling Camera"))
+            {
+                mScene->mCullingCamera.OnImGui();
+            }
+            if (ImGui::CollapsingHeader("Grid"))
+            {
+                mScene->mGrid.OnImGui();
+            }
+            if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                ImGui::Text("WASD - Move");
+                ImGui::Text("Right Mouse + Drag - Look Around");
+                ImGui::Text("Left Shift - Speed Boost");
+                ImGui::Text("Left Alt - Control Culling Camera");
+                ImGui::Text("Space - Set Culling Camera to Main Camera");
+            }
         }
         ImGui::End();
     }
-    void App::OnBeforeFrame() {
-        ImGui_ImplGlfw_NewFrame();
+    void App::OnBeforeFrame()
+    {
+        ImGui_ImplFoundation_NewFrame();
         ImGui::NewFrame();
         mScene->mTime = GetApplicationTime();
-        mScene->mCamera.aspectRatio = mSwapchain->GetAspectRatio();
-        mScene->mCullingCamera.aspectRatio = mSwapchain->GetAspectRatio();
+        mScene->mCamera.aspectRatio = mScene->mCullingCamera.aspectRatio =
+            mViewportSize.x / static_cast<float>(mViewportSize.y);
         static float t0 = 0;
         float t1 = GetApplicationTime(), dt = t1 - t0;
         /* -- Camera controls -- */
@@ -131,12 +154,14 @@ namespace ModelViewer
         lastY = mY;
         t0 = GetApplicationTime();
         if (glfwGetKey(win, GLFW_KEY_SPACE) == GLFW_PRESS)
-            mScene->mCullingCamera = mScene->mCamera;
+        {
+            mScene->mCullingCamera.position = mScene->mCamera.position;
+            mScene->mCullingCamera.lookAt = mScene->mCamera.lookAt;
+        }
         mScene->CommitParams();
-        gizmosDrawCameraFrustum(mScene->mCamera.GetParams().viewProj, mScene->mCullingCamera.GetCullParams().viewProj);
         OnImGui();
     }
-    void App::OnAfterFrame() { /* nop */ }
+
 } // namespace ModelViewer
 using namespace ModelViewer;
 using namespace Foundation::Async;
@@ -144,7 +169,7 @@ int main(int argc, char** argv)
 {
     App app;
     app.Initialize<VulkanApplication>(
-        {.windowTitle = "Model Viewer", .present = true, .asyncCompute = true, .vsync = false /* !! */});
+        {.windowTitle = "Model Viewer", .present = true, .asyncCompute = true, .vsync = true /* !! */});
     app.RunForever();
     ImGui_ImplFoundation_Shutdown();
 }

@@ -1659,9 +1659,9 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
         rtvs.reserve(tpass.rtvs.size());
         for (const auto& rtv : tpass.rtvs | std::views::keys)
         {
-            auto& [rhdl, desc] = mSetup->trackedViews[rtv];
-            auto& tres = mSetup->trackedResources[rhdl];
-            auto& res = DerefResource(rhdl).Get<RHITexture*>();
+            auto const& [rhdl, desc] = mSetup->trackedViews[rtv];
+            auto const& tres = mSetup->trackedResources[rhdl];
+            RHITexture* res = DerefResource(rhdl).Get<RHITexture*>();
             CHECK_MSG(res->mDesc.extent.x >= extent.x && res->mDesc.extent.y >= extent.y,
                       "Graphics extent too large for Render Target on {}", tres.name);
             rtvs.push_back({.imageView = DerefTextureView(rtv), .clearColor = clear_rtv});
@@ -1669,7 +1669,7 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
     }
     if (tpass.dsv != kInvalidHandle)
     {
-        auto& [depth_hdl, desc] = mSetup->trackedViews[tpass.dsv];
+        auto const& [depth_hdl, desc] = mSetup->trackedViews[tpass.dsv];
         auto const& tres = mSetup->trackedResources[depth_hdl];
         RHITexture* res = DerefResource(depth_hdl).Get<RHITexture*>();
         CHECK_MSG(res->mDesc.extent.x >= extent.x && res->mDesc.extent.y >= extent.y,

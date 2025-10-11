@@ -8,14 +8,14 @@ namespace ModelViewer
     using namespace Foundation;
     using namespace Core;
     using namespace Math;
-    inline Pair<ImVec2,ImDrawList*> gizmoGetCurrentRegionAndDrawList()
+    inline Tuple<ImVec2,ImVec2,ImDrawList*> getGizmoDrawOffsetRegionList()
     {
-        // TODO: Change these once we're doing dynamic viewport window within ImGui
-        ImVec2 region = ImGui::GetIO().DisplaySize;
-        ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-        return {region, drawList};
+        ImVec2 offset = ImGui::GetWindowPos();
+        ImVec2 region = ImGui::GetContentRegionAvail();
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        return {offset, region, drawList};
     }
-    IMGUI_API void gizmosDrawCameraFrustum(
+    IMGUI_API void drawGizmoCameraFrustum(
         mat4 viewProj,
         mat4 frustumViewProj /* req. non-inf zFar (zCull) - use @ref Camera::GetCullParams */,
         ImColor color = ImColor(1.0f,1.0f,1.0f,0.75f),

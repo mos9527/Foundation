@@ -49,6 +49,7 @@ void RenderApplication::InitializeRenderer() {
     mRenderer->BeginSetup();
     OnRendererSetup();
     mRenderer->EndSetup();
+    OnRendererPostSetup();
 }
 void RenderApplication::InitializeInternal() {
     LOG_RUNTIME(RenderApplication, info, "** Application Setup **");

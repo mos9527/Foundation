@@ -4,17 +4,20 @@ struct Vertex
     float4 color;
     float2 uv;
     uint textureId;
+    uint samplerId;
 };
 struct PushConstants
 {
     float2 s; // scale
     float2 t; // translation
     uint textureId;
+    uint samplerId;
 };
 
 [[vk::push_constant]] PushConstants pc;
 
-SamplerState sampler;
+SamplerState linSampler;
+SamplerState nearSampler;
 
 [[vk::binding(0, 1)]] // [binding, set]
 texture2D textures[];
@@ -30,13 +33,21 @@ Vertex vertMain(
     output.color = color;
     output.uv = uv;
     output.textureId = pc.textureId;
+    output.samplerId = pc.samplerId;
     return output;
 }
 
 [shader("fragment")]
 float4 fragMain(Vertex vtx) : SV_Target
 {
-    if (vtx.textureId == 0)
-        return vtx.color;
-    return vtx.color * textures[vtx.textureId].Sample(sampler, vtx.uv);
+    float4 sample;
+    switch (vtx.samplerId){
+        case 0:
+            sample = textures[vtx.textureId].Sample(linSampler, vtx.uv);
+            break;
+        case 1:
+            sample = textures[vtx.textureId].Sample(nearSampler, vtx.uv);
+            break;
+    }
+    return vtx.color * sample;
 }

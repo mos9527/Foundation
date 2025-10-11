@@ -20,6 +20,7 @@ target_link_libraries(
 	Foundation_Async
 	Foundation_Atomics
 	Foundation_RHICore
+	Foundation_Native
 	SPIRV-Headers::SPIRV-Headers
 )
 target_include_directories(

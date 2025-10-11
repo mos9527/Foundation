@@ -1,7 +1,7 @@
 #include <Bindings/ImGui.hpp>
 #include <Rendering/PSFullscreen.hpp>
-#include "Assets/Mesh.hpp"
 #include "App.hpp"
+#include "Assets/Mesh.hpp"
 using namespace ModelViewer;
 const size_t kMaxMeshletTasks = 1e5;
 struct MeshletTaskParams
@@ -37,17 +37,19 @@ void App::OnRendererSetup()
                        RHIBufferDesc{.usage = RHIBufferUsageBits::IndirectBuffer | RHIBufferUsageBits::StorageBuffer |
                                          RHIBufferUsageBits::TransferDestination,
                                      .size = sizeof(int)});
+    CHECK_MSG(mViewportSize.x <= kTextureMaxExtent.x && mViewportSize.y <= kTextureMaxExtent.y,
+              "Viewport size ({}x{}) exceeds swapchain extent ({}x{})", mViewportSize.x, mViewportSize.y,kTextureMaxExtent.x, kTextureMaxExtent.y);
     ResourceHandle zbuffer = createResource(mRenderer.get(), "ZBuffer",
                                             RHITextureDesc{
                                                 .usage = RHITextureUsageBits::DepthStencil,
-                                                .extent = mViewportSize,
+                                                .extent = kTextureMaxExtent,
                                                 .format = RHIResourceFormat::D32SignedFloat,
                                             });
     ResourceHandle gbuffer =
         createResource(mRenderer.get(), "GBuffer",
                        RHITextureDesc{
-                           .usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::StorageImage,
-                           .extent = mViewportSize,
+                           .usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::SampledImage,
+                           .extent = kTextureMaxExtent,
                            .format = RHIResourceFormat::R8G8B8A8Unorm,
                        });
     ResourceHandle sceneInstance, sceneShared, sceneConst;
@@ -78,9 +80,23 @@ void App::OnRendererSetup()
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, mScene->GetParamsAllocationRawOffset());
             r->CmdDispatch(self, cmd, {mScene->mInstanceCount, 1, 1});
         });
-    createPSFullscreenPass(
-        mRenderer.get(), "Background", gbuffer, RHIResourceFormat::B8G8R8A8Unrom, [=](PassHandle self, Renderer* r)
-        { r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MVBackground.spv"); });
+    createPass(
+        mRenderer.get(), "Background", RHIDeviceQueueType::Graphics,
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindTextureRTV(
+                self, gbuffer,
+                {.format = RHIResourceFormat::R8G8B8A8Unorm, .range = RHITextureSubresourceRange::Create()});
+            r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/VSFullscreen.spv");
+        },
+        [=, this](PassHandle self, Renderer* r, RHI::RHICommandList* cmd)
+        {
+            r->CmdBeginGraphics(self, cmd, mViewportSize, {}, {});
+            r->CmdSetPipeline(self, cmd);
+            cmd->SetViewport(0, 0, mViewportSize.x, mViewportSize.y).SetScissor(0, 0, mViewportSize.x, mViewportSize.y);
+            cmd->Draw(3);
+            cmd->EndGraphics();
+        });
     createPass(
         mRenderer.get(), "Grid View", RHIDeviceQueueType::Graphics,
         [=](PassHandle self, Renderer* r)
@@ -100,12 +116,11 @@ void App::OnRendererSetup()
         },
         [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
-            auto const& img_wh = r->GetSwapchainExtent();
-            r->CmdBeginGraphics(self, cmd, img_wh, {} /* don't clear RTV */);
+            r->CmdBeginGraphics(self, cmd, mViewportSize, {} /* don't clear RTV */);
             r->CmdSetPipeline(self, cmd);
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Vertex | RHIShaderStageBits::Fragment, 0,
                                   mScene->mGrid.GetParams(mScene->mCamera));
-            cmd->SetViewport(0, 0, img_wh.x, img_wh.y).SetScissor(0, 0, img_wh.x, img_wh.y);
+            cmd->SetViewport(0, 0, mViewportSize.x, mViewportSize.y).SetScissor(0, 0, mViewportSize.x, mViewportSize.y);
             cmd->Draw(24);
             cmd->EndGraphics();
         });
@@ -153,7 +168,7 @@ void App::OnRendererSetup()
         },
         [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
-            auto const& img_wh = r->GetSwapchainExtent();
+            auto const& img_wh = mViewportSize;
             r->CmdBeginGraphics(self, cmd, img_wh, {});
             r->CmdSetPipeline(self, cmd);
             r->CmdSetPushConstant(self, cmd,
@@ -164,5 +179,19 @@ void App::OnRendererSetup()
                                        sizeof(MeshletTaskDispatch));
             cmd->EndGraphics();
         });
-    ImGui_ImplFoundation_CreatePass(mRenderer.get(), "ImGui");
+    ImGui_ImplFoundation_CreatePass(mRenderer.get(), "ImGui", true /* clear */,
+        [=, this](PassHandle self, Renderer* r)
+        {
+            // Declare dependency on the GBuffer so it is at correct state
+            // when ImGui pass records.
+            // The SRV will _not_ be created until @ref Renderer finishes
+            // its @ref Setup phase.
+            // See @ref ModelViewer::App::OnAfterFrame for further details
+            mGBufferSRV = r->BindTextureSRV(
+                self, gbuffer, kBindpointIgnored, RHIPipelineStageBits::FragmentShader,
+                {
+                    .format = RHIResourceFormat::R8G8B8A8Unorm,
+                    .range = RHITextureSubresourceRange::Create(),
+                });
+        });
 }

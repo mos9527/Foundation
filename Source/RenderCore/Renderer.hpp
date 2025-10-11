@@ -14,9 +14,15 @@ namespace Foundation::RenderCore
     // Maximum number of render passes per frame
     // NOTE: The limit here is mostly arbitrary - and is only used
     //       for the default priority heuristic when determining pass order.
-    constexpr size_t kMaxRenderPasses = 1024;    
-    constexpr size_t kMaxCommandListsPerThread = kMaxRenderPasses; // Maximum number of command lists per frame    
-    constexpr size_t kExecuteArenaSize = 16 * (1 << 20); // Maximum size of the per-frame transient arena (16MB)
+    constexpr size_t kMaxRenderPasses = 1024;
+    // Maximum number of command lists per frame
+    constexpr size_t kMaxCommandListsPerThread = kMaxRenderPasses;
+    // Maximum size of the per-frame transient arena (16MB)
+    constexpr size_t kExecuteArenaSize = 16 * (1 << 20);
+    // Stub name for bind_point names that's not found in shaders. This has no
+    // effect - as bindings not found will simply not participate
+    // in the PSO building process.
+    constexpr String kBindpointIgnored = "<ignored>";
     const RHIPipelineStage kComputeStagesMask = RHIPipelineStageBits::FragmentShader |
         RHIPipelineStageBits::VertexShader | RHIPipelineStageBits::MeshShader | RHIPipelineStageBits::RayTracingShader |
         RHIPipelineStageBits::AllGraphics;
@@ -399,6 +405,10 @@ namespace Foundation::RenderCore
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          *
          * This can be automatically bound to the pipeline with CmdSetPipeline()
+         *
+         * @note bind_point may be ignored if shader usage is not required. For readability,
+         *       you may use @ref kBindpointIgnored as the bind_point to indicate that
+         *       the actual bind point is not known or not important.
          */
         void BindBufferUniform(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
                                StringView bind_point) const;
@@ -410,6 +420,10 @@ namespace Foundation::RenderCore
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          *
          * This can be automatically bound to the pipeline with CmdSetPipeline()
+         *
+         * @note bind_point may be ignored if shader usage is not required. For readability,
+         *       you may use @ref kBindpointIgnored as the bind_point to indicate that
+         *       the actual bind point is not known or not important.
          */
         void BindBufferStorageRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
                                StringView bind_point) const;
@@ -421,6 +435,10 @@ namespace Foundation::RenderCore
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          *
          * This can be automatically bound to the pipeline with CmdSetPipeline()
+         *
+         * @note bind_point may be ignored if shader usage is not required. For readability,
+         *       you may use @ref kBindpointIgnored as the bind_point to indicate that
+         *       the actual bind point is not known or not important.
          */
         void BindBufferUnordered(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
                                  StringView bind_point) const;
@@ -431,6 +449,10 @@ namespace Foundation::RenderCore
          * This by itself has no effect on binding. You need to call
          * cmd->BindVertexBuffer(), cmd->BindIndexBuffer() at Record time to
          * use the buffer.
+         *
+         * @note bind_point may be ignored if shader usage is not required. For readability,
+         *       you may use @ref kBindpointIgnored as the bind_point to indicate that
+         *       the actual bind point is not known or not important.
          */
         void BindBufferShaderRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage) const;
         /**
@@ -462,6 +484,10 @@ namespace Foundation::RenderCore
          * therefore the shader and the descriptor set must guarantee match.
          *
          * This can be automatically bound to the pipeline with CmdSetPipeline()
+         *
+         * @note bind_point may be ignored if shader usage is not required. For readability,
+         *       you may use @ref kBindpointIgnored as the bind_point to indicate that
+         *       the actual bind point is not known or not important.
          */
         void BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSet* descriptor_set,
                                RHIDeviceDescriptorSetLayout* layout);
@@ -471,6 +497,10 @@ namespace Foundation::RenderCore
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          *
          * No view is created until EndSetup() is called.
+         *
+         * @note bind_point may be ignored if shader usage is not required. For readability,
+         *       you may use @ref kBindpointIgnored as the bind_point to indicate that
+         *       the actual bind point is not known or not important.
          */
         ResourceHandle BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                       RHIPipelineStage stage, RHITextureViewDesc const& desc) const;
@@ -483,6 +513,10 @@ namespace Foundation::RenderCore
          * bound as StorageImage, and creates a view.
          *
          * No view is created until EndSetup() is called.
+         *
+         * @note bind_point may be ignored if shader usage is not required. For readability,
+         *       you may use @ref kBindpointIgnored as the bind_point to indicate that
+         *       the actual bind point is not known or not important.
          */
         ResourceHandle BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                       RHIPipelineStage stage, RHITextureViewDesc const& desc) const;
@@ -586,6 +620,8 @@ namespace Foundation::RenderCore
          * @note Passes that use DerefResource() on a resource that was not declared with
          * Bind...() or Declare...() in the pass *may* be allowed, but the behaviour is undefined as
          * the transitions will then not be tracked.
+         *
+         * @note This returns a rvalue @ref Variant - do not use a reference to the return value!
          */
         [[nodiscard]] Variant<RHIBuffer*, RHITexture*> DerefResource(const ResourceHandle handle) const
         {

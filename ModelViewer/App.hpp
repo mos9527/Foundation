@@ -3,7 +3,10 @@
 #include <RHIVulkan/Application.hpp>
 #include <Rendering/Application.hpp>
 #include <Rendering/PSFullscreen.hpp>
+
+#include "Rendering/TexturePool.hpp"
 #include "Scene/Scene.hpp"
+#include "imgui.h"
 /**
  * @brief ModelViewer implementation
  */
@@ -20,8 +23,12 @@ namespace ModelViewer {
         void OnRendererSetup() override;        
         void OnApplicationTick() override;
         void OnBeforeFrame() override;
-        void OnAfterFrame() override;
+        void OnRendererPostSetup() override;
+
+        ResourceHandle mGBufferSRV{ kInvalidHandle };
+        ImTextureID mGBufferHandle{};
     public:
+        const RHIExtent3D kTextureMaxExtent{ 4096, 4096, 1 };
         RHIExtent3D mViewportSize{ 1280, 720, 1 };
 
         UniquePtr<Scene> mScene;

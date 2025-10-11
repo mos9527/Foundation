@@ -34,3 +34,6 @@ add_dependencies(Example_MeshShader Shader_MeshShaderTask Shader_MeshShaderMesh 
 add_executable(Example_ManyPass "ManyPass.cpp")
 target_link_libraries(Example_ManyPass PUBLIC Example_Common)
 add_dependencies(Example_ManyPass Shader_ManyPass)
+
+add_executable(Example_ImGui "ImGui.cpp")
+target_link_libraries(Example_ImGui PUBLIC Example_Common ThirdParty_ImGui)
