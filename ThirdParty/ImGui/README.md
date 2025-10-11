@@ -1,5 +1,6 @@
-ImGui
+ImGui Binding
 ---
-ImGui-style [ImGui](https://github.com/ocornut/imgui) bindings for Foundation!
+[Dear ImGui](https://github.com/ocornut/imgui) binding for Foundation.
 
-Refer to the [docs](https://mos9527.com/Foundation/) for more information.
+See [Examples/ImGui](https://github.com/mos9527/Foundation/blob/vulkan/Examples/ImGui.cpp) and
+[ModelViewer's Render](https://github.com/mos9527/Foundation/blob/vulkan/ModelViewer/Render.cpp) for usage examples.
