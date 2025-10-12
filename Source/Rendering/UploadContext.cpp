@@ -2,8 +2,7 @@
 using namespace Foundation;
 using namespace Foundation::Rendering;
 UploadContext::UploadContext(RHIDevice* device, Allocator* allocator, size_t stagingBudget) :
-    mDevice(device), mAllocator(allocator), mCommandLists(allocator),
-    mStagingBuffer(device, stagingBudget, allocator)
+    mDevice(device), mAllocator(allocator), mCommandLists(allocator), mStagingBuffer(device, stagingBudget, allocator)
 {
     mQueue = mDevice->GetDeviceQueue(RHIDeviceQueueType::Graphics);
     mCommandPool =
@@ -11,7 +10,7 @@ UploadContext::UploadContext(RHIDevice* device, Allocator* allocator, size_t sta
     mFence = mDevice->CreateFence(true);
 }
 void UploadContext::Upload(RHIBuffer* dst, Span<const char> data, size_t dstOffset, size_t alignment,
-                                      RHIResourceAccess dst_access, RHIPipelineStage dst_stage)
+                           RHIResourceAccess dst_access, RHIPipelineStage dst_stage)
 {
     std::scoped_lock lock(mMutex);
     size_t offset = mStagingBuffer.Write(data, alignment);
@@ -36,20 +35,16 @@ void UploadContext::Upload(RHIBuffer* dst, Span<const char> data, size_t dstOffs
     cmd->End();
 }
 void UploadContext::Upload(RHITexture* dst, Span<const char> data, uint32_t mipLevel, uint32_t arrayLayer,
-                                      RHITextureAspectFlag aspect, RHIResourceAccess dst_access,
-                                      RHIPipelineStage dst_stage, RHITextureLayout dst_layout)
+                           RHITextureAspectFlag aspect, RHIResourceAccess dst_access, RHIPipelineStage dst_stage,
+                           RHITextureLayout dst_layout)
 {
     RHITextureSubresourceRange range = RHITextureSubresourceRange::Create(aspect, mipLevel, 1, arrayLayer, 1);
-    RHICommandList::CopyImageRegion region{
-        .dstLayer = range.layer,
-        .extent = dst->mDesc.extent
-    };
+    RHICommandList::CopyImageRegion region{.dstLayer = range.layer, .extent = dst->mDesc.extent};
     Upload(dst, data, range, region, dst_access, dst_stage, dst_layout);
 }
-void UploadContext::Upload(RHITexture* dst, Span<const char> data,
-    RHITextureSubresourceRange range,
-    RHICommandList::CopyImageRegion region,
-    RHIResourceAccess dst_access, RHIPipelineStage dst_stage, RHITextureLayout dst_layout)
+void UploadContext::Upload(RHITexture* dst, Span<const char> data, RHITextureSubresourceRange range,
+                           RHICommandList::CopyImageRegion region, RHIResourceAccess dst_access,
+                           RHIPipelineStage dst_stage, RHITextureLayout dst_layout)
 {
     std::scoped_lock lock(mMutex);
     size_t offset = mStagingBuffer.Write(data, 4);
@@ -63,11 +58,15 @@ void UploadContext::Upload(RHITexture* dst, Span<const char> data,
                              .dstImgLayout = RHITextureLayout::TransferDst,
                              .srcImgRange = range});
     cmd->EndTransition();
-    cmd->CopyBufferToImage(mStagingBuffer.GetBuffer(), dst, RHITextureLayout::TransferDst,
-                           {{region}});
+    cmd->CopyBufferToImage(mStagingBuffer.GetBuffer(), dst, RHITextureLayout::TransferDst, {{region}});
     cmd->BeginTransition();
-    cmd->SetImageTransition(
-        dst, {.dstAccess = dst_access, .dstStage = dst_stage, .dstImgLayout = dst_layout, .srcImgRange = range});
+    cmd->SetImageTransition(dst,
+                            {.srcAccess = RHIResourceAccessBits::TransferWrite,
+                             .dstAccess = dst_access,
+                             .srcStage = RHIPipelineStageBits::Transfer,
+                             .dstStage = dst_stage,
+                             .dstImgLayout = dst_layout,
+                             .srcImgRange = range});
     cmd->EndTransition();
     cmd->End();
 }
@@ -81,15 +80,9 @@ void UploadContext::SubmitAndWait()
     Vector<RHICommandList*> cmds(mAllocator);
     for (auto& cmd : mCommandLists)
         cmds.push_back(cmd.Get());
-    mQueue->Submit({
-        .cmdLists = cmds,
-        .fence = mFence.Get()
-    });
+    mQueue->Submit({.cmdLists = cmds, .fence = mFence.Get()});
     mDevice->WaitForFences({{{mFence}}}, true, ~0ull);
     mCommandLists.clear();
     mStagingBuffer.Reset();
 }
-UploadContext::~UploadContext()
-{
-    SubmitAndWait();
-}
+UploadContext::~UploadContext() { SubmitAndWait(); }

@@ -137,8 +137,13 @@ namespace Foundation::RHI {
          * @returns A handle to the newly created object.
          */
         template<typename U, typename ...Args> Handle CreateObject(Args&&... args) {
-            auto handle = mObjects.PopBase<U>(std::forward<Args>(args)...);            
-            return handle;
+#ifdef _MSC_VER
+            // Motherfucker.
+            // https://stackoverflow.com/questions/77144003/use-of-template-keyword-before-dependent-template-name
+            return mObjects.PopBase<U>(std::forward<Args>(args)...);
+#else
+            return mObjects.template PopBase<U>(std::forward<Args>(args)...);
+#endif
         }
         /**
          * @brief Retrieves the raw pointer to the object within the storage.

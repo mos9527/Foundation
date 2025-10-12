@@ -9,7 +9,7 @@ namespace Foundation::Rendering
         vmaCreateVirtualBlock(&info, &mBlock);
     }
     VirtualAllocation VirtualAllocator::Allocate(size_t size, size_t alignment) {        
-        std::scoped_lock lock(mMutex);
+        std::unique_lock lock(mMutex);
         VmaVirtualAllocationCreateInfo info{ .size = size, .alignment = alignment };
         VmaVirtualAllocation alloc{};
         VkDeviceSize offset{};
@@ -23,7 +23,7 @@ namespace Foundation::Rendering
     }
     void VirtualAllocator::Free(VirtualAllocation handle)
     {
-        std::scoped_lock lock(mMutex);
+        std::unique_lock lock(mMutex);
         auto& [sz, off, vmaAlloc] = *mAllocs.At(handle);
         vmaVirtualFree(mBlock, vmaAlloc);
         mAllocs.Free(handle);
