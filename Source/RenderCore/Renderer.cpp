@@ -699,8 +699,10 @@ void Renderer::BuildPipelineState(PassHandle pass)
         tracked.descriptorLayouts.back()->DebugSetObjectName(
             fmt::format("Descriptor Set Layout {} of {} [{}]", set, tracked.name, pass).c_str());
         tracked.pDescriptorLayouts.emplace_back(tracked.descriptorLayouts.back().Get());
-        CHECK_MSG(mDescPool.IsValid(), "Shader declared bindings, but the pass {} didn't provide any.", tracked.name);
-        tracked.descriptorSets.push_back(mDescPool->CreateDescriptorSet(tracked.descriptorLayouts.back()));
+        {
+            std::unique_lock lock(mDescPoolMutex);
+            tracked.descriptorSets.push_back(mDescPool->CreateDescriptorSet(tracked.descriptorLayouts.back()));
+        }
         auto& ds = tracked.descriptorSets.back();
         ds->DebugSetObjectName(fmt::format("Descriptor Set {} of {} [{}]", set, tracked.name, pass).c_str());
         tracked.pDescriptorSets.push_back(ds.Get());
@@ -859,7 +861,7 @@ void Renderer::FinalizeResources()
     CHECK(mState == State::Setup);
     mResources = ConstructUnique<ExecuteResources>(mAllocator, mAllocator);
     mResources->fit(mSetup->trackedResources.size());
-    // !! TODO: Overlap transient resources to with non-overlapping lifetimes with aliasing
+    // !! TODO: Overlap transient resources if possible
     for (const auto& handle : mSetup->activeResources | Views::keys)
     {
         auto& res = mSetup->trackedResources[handle];
@@ -884,7 +886,7 @@ void Renderer::FinalizeResources()
             [&](RHITexture* const ptr) { mResources->resources[handle] = ptr; },
             [&](auto const&) { throw std::runtime_error("Unhandled resource type at creation time"); });
     }
-    // Add back buffers (if need to present)
+    // Add back buffers (if we need to present)
     if (mDesc.present)
     {
         for (size_t i = 0; i < mFrameSwaps; i++)

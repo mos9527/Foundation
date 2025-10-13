@@ -14,7 +14,17 @@ namespace Examples
      */
     class MipGenerationApp : public RenderApplication
     {
+    public:
+        // Q: Why is a custom destructor needed?
+        // A: TexturePool resource got imported into the @ref Renderer - see @ref Renderer::createResource
+        //    We need to ensure that the TexturePool outlives the Renderer.
         UniquePtr<TexturePool> mTexturePool;
+        ~MipGenerationApp() override
+        {
+            mRenderer.reset();
+            mTexturePool.reset();
+            // Follows Device destruction, etc.
+        }
         TexturePoolHandle mSampleImage{kInvalidTexturePoolHandle};
         ResourceHandle mRenderedSRV{kInvalidHandle};
         float mBlur = 1.0f;
@@ -28,7 +38,8 @@ namespace Examples
             int x, y, n;
             stbi_uc* data = stbi_load("data/assets/cameraman.jpg", &x, &y, &n, 4);
             mSampleImage = mTexturePool->Allocate(
-                RHITextureDesc{.usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::StorageImage | RHITextureUsageBits::TransferDestination,
+                RHITextureDesc{.usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::StorageImage |
+                                   RHITextureUsageBits::TransferDestination,
                                .extent = {x, y, 1},
                                .format = RHIResourceFormat::R8G8B8A8Unorm,
                                .mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::min(x, y))))});
@@ -59,12 +70,12 @@ namespace Examples
                     r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MipGenerationBlur.spv");
                     r->BindTextureSRV(self, srcHandle, "srcTexture", RHIPipelineStageBits::FragmentShader,
                                       {.format = RHIResourceFormat::R8G8B8A8Unorm,
-                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color, 0, srcTex->mDesc.mipLevels)});
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color, 0,
+                                                                                   srcTex->mDesc.mipLevels)});
                     r->BindTextureSampler(self, sampler, "srcSampler");
-                    r->BindTextureRTV(self, renderedHandle, {
-                        .format = RHIResourceFormat::R8G8B8A8Unorm,
-                        .range = RHITextureSubresourceRange::Create()
-                    });
+                    r->BindTextureRTV(
+                        self, renderedHandle,
+                        {.format = RHIResourceFormat::R8G8B8A8Unorm, .range = RHITextureSubresourceRange::Create()});
                     r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(float));
                 },
                 [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -73,20 +84,20 @@ namespace Examples
                     r->CmdBeginGraphics(self, cmd, img_wh, {}, {});
                     r->CmdSetPipeline(self, cmd);
                     r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, mBlur);
-                    cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
-                        .SetScissor(0, 0, img_wh.x, img_wh.y);
+                    cmd->SetViewport(0, 0, img_wh.x, img_wh.y).SetScissor(0, 0, img_wh.x, img_wh.y);
                     cmd->Draw(3);
                     cmd->EndGraphics();
                 });
             ImGui_ImplFoundation_CreatePass(mRenderer.get(), "ImGui", true,
                                             [=, this](PassHandle self, Renderer* r)
                                             {
-                                                mRenderedSRV = r->BindTextureSRV(self, renderedHandle, kBindpointIgnored,
-                                                                  RHIPipelineStageBits::FragmentShader,
-                                                                  {
-                                                                      .format = RHIResourceFormat::R8G8B8A8Unorm,
-                                                                      .range = RHITextureSubresourceRange::Create(),
-                                                                  });
+                                                mRenderedSRV =
+                                                    r->BindTextureSRV(self, renderedHandle, kBindpointIgnored,
+                                                                      RHIPipelineStageBits::FragmentShader,
+                                                                      {
+                                                                          .format = RHIResourceFormat::R8G8B8A8Unorm,
+                                                                          .range = RHITextureSubresourceRange::Create(),
+                                                                      });
                                             });
         }
         ImTextureID mRenderedImageID{0};
@@ -101,7 +112,7 @@ namespace Examples
         {
             ImGui_ImplFoundation_NewFrame();
             ImGui::NewFrame();
-            ImGui::SetNextWindowPos({ 0,0 });
+            ImGui::SetNextWindowPos({0, 0});
             ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
             ImGui::Begin("Viewer");
             ImGui::Image(mRenderedImageID, ImVec2(512, 512));
@@ -114,7 +125,7 @@ namespace Examples
 int main(int argc, char** argv)
 {
     Examples::MipGenerationApp app;
-    app.Initialize<VulkanApplication>({.windowTitle = "Mipmap Generation", .vsync = false });
+    app.Initialize<VulkanApplication>({.windowTitle = "Mipmap Generation", .vsync = false});
     app.RunForever();
     ImGui_ImplFoundation_Shutdown();
 }

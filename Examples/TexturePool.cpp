@@ -83,8 +83,8 @@ namespace Examples
      */
     class TexturePoolApp : public RenderApplication
     {
-        UniquePtr<TexturePool> m_textures;
-        Vector<TexturePoolHandle> m_handles;
+        UniquePtr<TexturePool> mTexturePool;
+        Vector<TexturePoolHandle> mHandles;
         struct PushConstant
         {
             float time;
@@ -92,20 +92,20 @@ namespace Examples
             uint32_t first_texture;
         };
     public:
-        TexturePoolApp() : m_handles(GetAllocator()) {};
+        TexturePoolApp() : mHandles(GetAllocator()) {};
         void OnDeviceSetup() override
         {
-            m_textures = ConstructUnique<TexturePool>(GetAllocator(), mDevice.Get(), GetAllocator());
+            mTexturePool = ConstructUnique<TexturePool>(GetAllocator(), mDevice.Get(), GetAllocator());
             // Perform immediate uploads
             UploadContext upload(mDevice.Get(), GetAllocator());
             for (size_t i = 0; i < kNumTextures; ++i)
             {
-                m_handles.push_back(m_textures->Allocate(RHITextureDesc{
+                mHandles.push_back(mTexturePool->Allocate(RHITextureDesc{
                     .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
                     .extent = { 8, 8, 1 },
                     .format = RHIResourceFormat::R8G8B8A8Unorm
                 }));
-                auto texture = m_textures->GetTexture(m_handles.back());
+                auto texture = mTexturePool->GetTexture(mHandles.back());
                 Array<unsigned char, 16> hash;
                 // Randomly fill the hash
                 std::mt19937 rng{ static_cast<unsigned int>(i) };
@@ -131,7 +131,7 @@ namespace Examples
                     r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/TexturePool.spv");
                     r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(PushConstant));
                     r->BindTextureSampler(self, sampler, "sampler");
-                    r->BindDescriptorSet(self, "textures" , m_textures->GetDescriptorSet(), m_textures->GetDescriptorSetLayout());
+                    r->BindDescriptorSet(self, "textures" , mTexturePool->GetDescriptorSet(), mTexturePool->GetDescriptorSetLayout());
                 },
                 [=, this](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {

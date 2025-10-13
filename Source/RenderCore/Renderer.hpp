@@ -132,6 +132,8 @@ namespace Foundation::RenderCore
 
         UniquePtr<ExecuteResources> mResources;
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> mDescPool;
+        Async::Mutex mDescPoolMutex;
+
         struct FrameSyncObjects
         {
             // Index of this swap
@@ -337,6 +339,9 @@ namespace Foundation::RenderCore
          * @param desc Resources can be created by passing in @ref RHIBufferDesc, @ref RHITextureDesc,
          * and can be imported by passing in @ref RHIDeviceObjectHandle<RHIBuffer>, @ref
          * RHIDeviceObjectHandle<RHITexture>, or raw, pinned pointers @ref RHIBuffer*, or @ref RHITexture*
+         *
+         * @note ALWAYS ENSURE that your IMPORTED resources OUTLIVE the @ref Renderer. There's
+         *       NO reference counting or tracking of the underlying resource lifetime.
          */
         template <typename T>
         [[nodiscard]] ResourceHandle CreateResource(StringView name, T const& desc)
@@ -863,6 +868,9 @@ namespace Foundation::RenderCore
      * @param desc Resources can be created by passing in @ref RHIBufferDesc, @ref RHITextureDesc,
      * and can be imported by passing in @ref RHIDeviceObjectHandle<RHIBuffer>, @ref RHIDeviceObjectHandle<RHITexture>,
      * or raw, pinned pointers @ref RHIBuffer*, or @ref RHITexture*
+     *
+     * @note ALWAYS ENSURE that your IMPORTED resources OUTLIVE the @ref Renderer. There's
+     *       NO reference counting or tracking of the underlying resource lifetime.
      */
     template <typename T>
     [[nodiscard]] ResourceHandle createResource(Renderer* r, StringView name, T const& desc)
