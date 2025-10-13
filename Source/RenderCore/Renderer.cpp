@@ -79,28 +79,6 @@ void Renderer::DeclareTextureAccess(PassHandle pass, ResourceHandle handle, RHIP
 {
     CHECK(mState == State::Setup);
     auto& resource = mSetup->trackedResources[handle];
-    // Check for overlap
-    CHECK_MSG(range.layer.aspect.value, "Access aspect must be defined on resource {} when declared.", resource.name);
-    auto [mip_begin, mip_end] = range.GetMipLevelRange();
-    auto [layer_begin, layer_end] = range.GetArrayLayerRange();
-    for (auto const& [h, _access, _stage, r, _layout] : mSetup->trackedPasses[pass].textureUsages)
-    {
-        if (h == handle)
-        {
-            if (r.layer.aspect == range.layer.aspect)
-            {
-                auto [r_mip_begin, r_mip_end] = r.GetMipLevelRange();
-                auto [r_layer_begin, r_layer_end] = r.GetArrayLayerRange();
-                // Mip intersects
-                if (!(mip_end < r_mip_begin || mip_begin > r_mip_end))
-                {
-                    // Layer intersects
-                    CHECK_MSG(layer_end < r_layer_begin || layer_begin > r_layer_end,
-                              "Overlap detected. Texture access must be disjoint.");
-                }
-            }
-        }
-    }
     // Do this for all sub resources in range
     for (auto& sta : resource.GetLastSubresourceStateOf(range))
     {
@@ -929,7 +907,7 @@ void Renderer::FinalizeResources()
     // Instantiate views
     Ranges::sort(activeViews);
     activeViews.erase(Ranges::unique(activeViews).begin(), activeViews.end());
-    mResources->fit(activeViews.size());
+    mResources->fit(Ranges::max(activeViews));
     for (auto hdl : activeViews)
     {
         auto [rhdl, desc] = mSetup->trackedViews[hdl];
@@ -939,7 +917,7 @@ void Renderer::FinalizeResources()
     // Instantiate samplers
     Ranges::sort(activeSamplers);
     activeSamplers.erase(Ranges::unique(activeSamplers).begin(), activeSamplers.end());
-    mResources->fit(activeSamplers.size());
+    mResources->fit(Ranges::max(activeSamplers));
     for (auto hdl : activeSamplers)
     {
         auto& desc = mSetup->trackedSamplers[hdl];

@@ -53,6 +53,7 @@ RHITextureView* TexturePool::GetTextureView(TexturePoolHandle handle) const
 }
 TexturePoolHandle TexturePool::Allocate(RHITextureDesc const& desc, RHITextureViewDesc const& viewDesc)
 {
+    std::unique_lock lock(mMutex);
     auto handle = mTextures.Pop();    
     CHECK_MSG(handle < mMaxTextures, "TexturePool overflow.");
     auto texture = mDevice->CreateTexture(desc);
@@ -74,6 +75,7 @@ TexturePoolHandle TexturePool::Allocate(RHITextureDesc const& desc)
 }
 TexturePoolHandle TexturePool::Allocate(RHITextureView* view)
 {
+    std::unique_lock lock(mMutex);
     auto handle = mTextures.Pop();        
     CHECK_MSG(handle < mMaxTextures, "TexturePool overflow.");
     mDescriptorSet->Update({.binding = 0,

@@ -25,6 +25,7 @@ target_link_libraries(
 )
 add_dependencies(Foundation_Rendering Shader_VSFullscreen)
 add_dependencies(Foundation_Rendering Shader_PSCopy)
+add_dependencies(Foundation_Rendering Shader_CSMipGeneration)
 target_include_directories(
 	Foundation_Rendering
 	PUBLIC

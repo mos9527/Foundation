@@ -3,6 +3,7 @@
 #include <Native/Filesystem.hpp>
 #include <RHICore/Descriptor.hpp>
 #include <RHICore/Device.hpp>
+#include <Async/Future.hpp>
 namespace Foundation::Rendering
 {
     using namespace RHI;
@@ -29,6 +30,7 @@ namespace Foundation::Rendering
         void SetMissingTexture(uint32_t index);
         RHIDeviceIdleGuard mIdleGuard;
 
+        Async::Mutex mMutex;
     public:
         TexturePool(RHIDevice* device, Allocator* allocator, uint32_t max_textures = 128);
 

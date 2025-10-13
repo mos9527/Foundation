@@ -89,7 +89,7 @@ namespace Foundation::RenderCore
         {
         }
         void Setup(PassHandle self, Renderer* r) override { mSetup(self, r); }
-        void Record(PassHandle self, Renderer* r, RHI::RHICommandList* cmd) override { mRecord(self, r, cmd); }
+        void Record(PassHandle self, Renderer* r, RHICommandList* cmd) override { mRecord(self, r, cmd); }
         bool IsSkipped(PassHandle self, Renderer* r) const override { return mSkip(self, r); }
     };
     /**

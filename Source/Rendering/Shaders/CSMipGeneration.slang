@@ -1,6 +1,6 @@
 Texture2D srcTexture;
 // ^^ Chained from previous mip level
-RWTexture2D dstMipTexture;
+RWTexture2D dstTexture;
 
 struct PushConstant {
     uint2 srcExtent; // Power of 2
@@ -28,5 +28,5 @@ void csMain(uint2 tid: SV_DispatchThreadID, uint2 gid: SV_GroupID, uint2 gtid: S
             color = (a + b + c + d) * 0.25;
             break;
     }
-    dstMipTexture[tid] = color;
+    dstTexture[tid] = color;
 }
