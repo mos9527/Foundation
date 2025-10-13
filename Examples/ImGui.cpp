@@ -29,7 +29,7 @@ namespace Examples
 int main(int argc, char** argv)
 {
     Examples::ImGuiDemoApp app;
-    app.Initialize<VulkanApplication>({.windowTitle = "ImGui", .vsync = true});
+    app.Initialize<VulkanApplication>({.windowTitle = "ImGui", .vsync = false});
     app.RunForever();
     ImGui_ImplFoundation_Shutdown();
 }

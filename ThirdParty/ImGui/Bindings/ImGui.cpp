@@ -17,11 +17,20 @@ constexpr size_t kVertexBufferSize = 8_MB;
 constexpr size_t kIndexBufferSize = 4_MB;
 const Native::Path kDefaultFontPath = "./data/assets/LXGWNeoXiHei.ttf";
 
-UniquePtr<TexturePool> gTexturePool;
-UniquePtr<UploadContext> gTextureUploadContext;
-DefaultAllocator gAllocator;
+UniquePtr<TexturePool> gImGuiTexturePool;
+UniquePtr<UploadContext> gImGuiUploadContext;
+DefaultAllocator gImGuiAllocator;
 
-void ImGui_ImplFoundation_Init(RHIDevice* device, Foundation::Native::NativeWindow* window, Allocator* allocator)
+void* ImGui_ImplFoundation_MemAlloc(size_t sz, void*)
+{
+    return gImGuiAllocator.Allocate(sz, sizeof(std::max_align_t));
+}
+void ImGui_ImplFoundation_MemFree(void* ptr, void*)
+{
+    return gImGuiAllocator.Deallocate(ptr);
+}
+
+void ImGui_ImplFoundation_Init(RHIDevice* device, Native::NativeWindow* window, Allocator* allocator)
 {
     // Reference being the official Vulkan implementation - sans Viewport support to keep things _really_ simple
     ImGuiIO& io = ImGui::GetIO();
@@ -33,16 +42,16 @@ void ImGui_ImplFoundation_Init(RHIDevice* device, Foundation::Native::NativeWind
                                                                // allowing// for large meshes.
     io.BackendFlags |=
         ImGuiBackendFlags_RendererHasTextures; // We can honor ImGuiPlatformIO::Textures[] requests during render.
-    gTexturePool = ConstructUnique<TexturePool>(allocator, device, allocator, kMaxTextures);
-    gTextureUploadContext = ConstructUnique<UploadContext>(allocator, device, allocator, kUploadBudget);
+    gImGuiTexturePool = ConstructUnique<TexturePool>(allocator, device, allocator, kMaxTextures);
+    gImGuiUploadContext = ConstructUnique<UploadContext>(allocator, device, allocator, kUploadBudget);
     // Init windowing backend
     ImGui_ImplGlfw_InitForOther(static_cast<GLFWwindow*>(window->GetNative()), true);
 }
 void ImGui_ImplFoundation_NewFrame() { ImGui_ImplGlfw_NewFrame(); }
 void ImGui_ImplFoundation_Shutdown()
 {
-    gTexturePool.reset();
-    gTextureUploadContext.reset();
+    gImGuiTexturePool.reset();
+    gImGuiUploadContext.reset();
 }
 
 Pair<TexturePoolHandle, ImGui_ImplFoundation_ImageSampler> ImGui_ImplFoundation_DecodeImTextureID(ImTextureID id)
@@ -62,7 +71,7 @@ ImTextureID ImGui_ImplFoundation_EncodeImTextureID(
 }
 void ImGui_ImplFoundation_ImplUpdateTexture(ImTextureData* tex)
 {
-    CHECK_MSG(gTexturePool && gTextureUploadContext,
+    CHECK_MSG(gImGuiTexturePool && gImGuiUploadContext,
               "Backend not initialized. Did you call ImGui_ImplFoundation_Init()?");
     if (tex->Status == ImTextureStatus_OK)
         return;
@@ -71,12 +80,12 @@ void ImGui_ImplFoundation_ImplUpdateTexture(ImTextureData* tex)
     {
         IM_ASSERT(tex->TexID == ImTextureID_Invalid && tex->BackendUserData == nullptr);
         IM_ASSERT(tex->Format == ImTextureFormat_RGBA32);
-        auto handle = gTexturePool->Allocate(
+        auto handle = gImGuiTexturePool->Allocate(
             RHITextureDesc{.usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
                            .extent = {tex->Width, tex->Height, 1},
                            .format = RHIResourceFormat::R8G8B8A8Unorm});
         tex->SetTexID(ImGui_ImplFoundation_EncodeImTextureID(handle));
-        tex->BackendUserData = gTexturePool.get();
+        tex->BackendUserData = gImGuiTexturePool.get();
     }
     // Actually updating the texture
     // Usually - this is only for updating the (now dynamic) font atlas.
@@ -91,12 +100,12 @@ void ImGui_ImplFoundation_ImplUpdateTexture(ImTextureData* tex)
         size_t upload_pitch = upload_w * tex->BytesPerPixel;
         size_t upload_size = upload_h * upload_pitch;
         auto [hdl, smp] = ImGui_ImplFoundation_DecodeImTextureID(tex->GetTexID());
-        RHITexture* texture = gTexturePool->GetTexture(hdl);
-        Vector<char> pixels(upload_size, gAllocator.Ptr());
+        RHITexture* texture = gImGuiTexturePool->GetTexture(hdl);
+        Vector<char> pixels(upload_size, gImGuiAllocator.Ptr());
         for (int y = 0; y < upload_h; y++)
             std::memcpy(pixels.data() + upload_pitch * y, tex->GetPixelsAt(upload_x, upload_y + y), upload_pitch);
         auto range = RHITextureSubresourceRange::Create();
-        gTextureUploadContext->Upload(texture, pixels, range,
+        gImGuiUploadContext->Upload(texture, pixels, range,
                                       RHICommandList::CopyImageRegion{.dstLayer = range.layer,
                                                                       .dstOffset = {upload_x, upload_y, 0},
                                                                       .extent = {upload_w, upload_h, 1}});
@@ -113,15 +122,15 @@ void ImGui_ImplFoundation_ImplUpdateTexture(ImTextureData* tex)
 }
 ImTextureID ImGui_ImplFoundation_AddImage(RHITextureView* textureView, ImGui_ImplFoundation_ImageSampler sampler)
 {
-    CHECK_MSG(gTexturePool, "Backend not initialized. Did you call ImGui_ImplFoundation_Init()?");
-    TexturePoolHandle handle = gTexturePool->Allocate(textureView);
+    CHECK_MSG(gImGuiTexturePool, "Backend not initialized. Did you call ImGui_ImplFoundation_Init()?");
+    TexturePoolHandle handle = gImGuiTexturePool->Allocate(textureView);
     return ImGui_ImplFoundation_EncodeImTextureID(handle, sampler);
 }
 void ImGui_ImplFoundation_RemoveImage(ImTextureID textureID)
 {
-    CHECK_MSG(gTexturePool, "Backend not initialized. Did you call ImGui_ImplFoundation_Init()?");
+    CHECK_MSG(gImGuiTexturePool, "Backend not initialized. Did you call ImGui_ImplFoundation_Init()?");
     auto [hdl, smp] = ImGui_ImplFoundation_DecodeImTextureID(textureID);
-    gTexturePool->Free(hdl);
+    gImGuiTexturePool->Free(hdl);
 }
 
 #pragma pack(push, 4)
@@ -143,7 +152,7 @@ void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHa
     r->BindPushConstant(self, RHIShaderStageBits::Vertex, 0, sizeof(PushConstants));
     r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/ImGui.spv");
     r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/ImGui.spv");
-    r->BindDescriptorSet(self, "textures", gTexturePool->GetDescriptorSet(), gTexturePool->GetDescriptorSetLayout());
+    r->BindDescriptorSet(self, "textures", gImGuiTexturePool->GetDescriptorSet(), gImGuiTexturePool->GetDescriptorSetLayout());
     // We have fixed samplers for ImGui - IMO these two are quite enough for UI elements
     r->BindTextureSampler(self, linSampler, "linSampler");
     r->BindTextureSampler(self, nearSampler, "nearSampler");
@@ -170,7 +179,7 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
             if (tex->Status != ImTextureStatus_OK)
                 ImGui_ImplFoundation_ImplUpdateTexture(tex);
     // vvv No-op if no creation/updates are required
-    gTextureUploadContext->SubmitAndWait();
+    gImGuiUploadContext->SubmitAndWait();
     // Upload vertex/index buffers
     auto* vtx = r->DerefResource(vtxBuffer).Get<RHIBuffer*>();
     auto* idx = r->DerefResource(idxBuffer).Get<RHIBuffer*>();
@@ -243,7 +252,7 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
                 break;
             }
             // Bad texture?
-            if (!gTexturePool->Contains(textureId))
+            if (!gImGuiTexturePool->Contains(textureId))
             {
                 pc.textureId = 0; // Reserved for invalid textures
                 pc.samplerId = 1; // Nearest neighbor
@@ -280,6 +289,7 @@ void ImGui_ImplFoundation_ImplCreateResources(Renderer* renderer, ResourceHandle
 }
 void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
 {
+    ImGui::SetAllocatorFunctions(ImGui_ImplFoundation_MemAlloc, ImGui_ImplFoundation_MemFree);
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; // Enable Docking

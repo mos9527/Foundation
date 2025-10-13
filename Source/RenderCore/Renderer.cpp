@@ -860,7 +860,8 @@ void Renderer::FinalizeResources()
 {
     CHECK(mState == State::Setup);
     mResources = ConstructUnique<ExecuteResources>(mAllocator, mAllocator);
-    mResources->fit(mSetup->trackedResources.size());
+    if (!mSetup->activeResources.empty())
+        mResources->fit(mSetup->trackedResources.size());
     // !! TODO: Overlap transient resources if possible
     for (const auto& handle : mSetup->activeResources | Views::keys)
     {
@@ -909,7 +910,8 @@ void Renderer::FinalizeResources()
     // Instantiate views
     Ranges::sort(activeViews);
     activeViews.erase(Ranges::unique(activeViews).begin(), activeViews.end());
-    mResources->fit(Ranges::max(activeViews));
+    if (!activeViews.empty())
+        mResources->fit(Ranges::max(activeViews));
     for (auto hdl : activeViews)
     {
         auto [rhdl, desc] = mSetup->trackedViews[hdl];
@@ -919,7 +921,8 @@ void Renderer::FinalizeResources()
     // Instantiate samplers
     Ranges::sort(activeSamplers);
     activeSamplers.erase(Ranges::unique(activeSamplers).begin(), activeSamplers.end());
-    mResources->fit(Ranges::max(activeSamplers));
+    if (!activeSamplers.empty())
+        mResources->fit(Ranges::max(activeSamplers));
     for (auto hdl : activeSamplers)
     {
         auto& desc = mSetup->trackedSamplers[hdl];
