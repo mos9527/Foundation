@@ -122,7 +122,36 @@ namespace Foundation::Core {
             }
         }
     };
-
+    /**
+     * @brief Placement new helper for constructing an object of type Derived (which can be a subclass of Base) using a @ref Foundation::Core::Allocator.
+     */
+    template <typename Base, typename Derived, typename ...Args>
+    Base* ConstructBase(Allocator* resource, Args&& ...args) {
+        auto raw = resource->Allocate(sizeof(Derived), alignof(Derived));
+        try {
+            Derived* obj = std::construct_at(static_cast<Derived*>(raw), std::forward<Args>(args)...);
+            return obj;
+        }
+        catch (...) {
+            resource->Deallocate(raw, sizeof(Derived));
+            throw;
+        }
+    }
+    /**
+     * @brief Convenience placement new with object of type T using a @ref Foundation::Core::Allocator.
+     */
+    template <typename T, typename ...Args>
+    T* Construct(Allocator* resource, Args&& ...args) {
+        return ConstructBase<T, T>(resource, std::forward<Args>(args)...);
+    }
+    /**
+     * @brief Convenience destructor for objects allocated with @ref Construct or @ref ConstructBase.
+     */
+    template <typename T>
+    void Destruct(Allocator* resource, T* obj) {
+        StlDeleter<T> deleter(resource);
+        deleter(obj);
+    }
     /**
      * @brief `std::unique_ptr` with custom deleter that uses a @ref Foundation::Core::Allocator to deallocate memory.
      *
@@ -139,15 +168,8 @@ namespace Foundation::Core {
      */
     template <typename Base, typename Derived, typename ...Args>
     UniquePtr<Base> ConstructUniqueBase(Allocator* resource, Args&& ...args) {
-        auto raw = resource->Allocate(sizeof(Derived), alignof(Derived));
-        try {
-            Derived* obj = std::construct_at(static_cast<Derived*>(raw), std::forward<Args>(args)...);
-            return UniquePtr<Base>(obj, StlDeleter<Base>{ resource });
-        }
-        catch (...) {            
-            resource->Deallocate(raw, sizeof(Derived));
-            throw;
-        }       
+        Base* obj = ConstructBase<Base, Derived>(resource, std::forward<Args>(args)...);
+        return UniquePtr<Base>(obj, StlDeleter<Base>{ resource });
     }
     /**
      * @brief Convenience wrapper for calling @ref ConstructUniqueBase when Base and Derived are the same type.
@@ -173,8 +195,8 @@ namespace Foundation::Core {
      */
     template<typename Base, typename Derived, typename ...Args>
     SharedPtr<Base> ConstructSharedBase(Allocator* resource, Args&& ...args) {
-        auto up = ConstructUnique<Derived>(resource, std::forward<Args>(args)...);
-        return { up.release(), StlDeleter<Base>{ resource } };
+        Base* obj = ConstructBase<Base, Derived>(resource, std::forward<Args>(args)...);
+        return { obj, StlDeleter<Base>{ resource } };
     }
 
     /**
