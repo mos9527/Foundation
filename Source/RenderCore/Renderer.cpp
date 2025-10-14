@@ -972,6 +972,7 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain)
     {
         // If changing swapchain during execution (e.g. due to resize exception)
         // Wait for GPU to be idle
+        LOG_RUNTIME(Renderer, info, "Swapchain is already in execute??");
         mDevice->WaitIdle();
         mState = State::PostSetup;
     }
@@ -994,11 +995,12 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain)
             CHECK_MSG(rt_res.GetIf<RHITexture*>(), "Swapchain backbuffer handle {} is not a texture",
                       mSwaps[i].backbuffer);
             rt_res = backbuffer;
+            mSetup->trackedResources[mSwaps[i].backbuffer].ResetStates();
         }
     }
     mSwapchain = swapchain;
-    // Reset semaphores index
-    mCurrentSync = 0;
+    // Reset semaphores index and swapchain frame count
+    mFrameSwapped = mCurrentSwap = mCurrentSync = 0;
 }
 void Renderer::BeginExecute()
 {
@@ -1054,7 +1056,7 @@ void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, 
     sta.stage = stage;
     sta.layout = layout;
     sta.lastExecutor = pass;
-    sta.lastExecuteFrame = mFrame;
+    sta.lastExecuteFrame = mFrameSwapped;
 }
 void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
                                          RHITextureSubresourceRange const& range, RHIResourceAccess access,
@@ -1096,7 +1098,7 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
     tres.lastBufferState.access = access;
     tres.lastBufferState.stage = stage;
     tres.lastBufferState.lastExecutor = pass;
-    tres.lastBufferState.lastExecuteFrame = mFrame;
+    tres.lastBufferState.lastExecuteFrame = mFrameSwapped;
 }
 void Renderer::ExecuteBarriers(TrackedPass& pass, ExecuteBarrierPCmdOrPBarrierList cmd)
 {
@@ -1478,9 +1480,9 @@ void Renderer::ExecuteFrame()
         {
             ZoneScopedN("Group Submit");
             // We'd only signal the current group per submit
-            auto Counter = [&](size_t ord) { return mFrame * mSetup->executionGroups.size() + ord + 1LL; };
+            auto Counter = [&](size_t ord) { return mFrameSwapped * mSetup->executionGroups.size() + ord + 1LL; };
             // Counter for a frame prior
-            auto CounterFF = [&](size_t ord) { return (mFrame - 1LL) * mSetup->executionGroups.size() + ord + 1LL; };
+            auto CounterFF = [&](size_t ord) { return (mFrameSwapped - 1LL) * mSetup->executionGroups.size() + ord + 1LL; };
             RHIDeviceQueue::TimelinePair timeline_signal;
             if (group.queue == RHIDeviceQueueType::Graphics)
                 timeline_signal =
@@ -1505,7 +1507,7 @@ void Renderer::ExecuteFrame()
                     timeline_wait_stages.push_back(group.allStages);
             // A special case for the first group of a queue
             // Always synchronize with the _last_ group of the _last_ frame
-            if ((group.computeGroupIndex == 0 || group.graphicsGroupIndex == 0) && mFrame > 0)
+            if ((group.computeGroupIndex == 0 || group.graphicsGroupIndex == 0) && mFrameSwapped > 0)
             {
                 auto& lastGroup = mSetup->executionGroups.back();
                 if (lastGroup.queue == RHIDeviceQueueType::Graphics)
@@ -1612,7 +1614,7 @@ void Renderer::EndExecute()
     CHECK_MSG(mState == State::Execute, "Renderer bad state ({}). EndExecute() may only be called once per frame.",
               mState);
     mCurrentSync = (mCurrentSync + 1) % mFrameSwaps;
-    mFrame++;
+    mFrameSwapped++;
     mState = State::PostSetup;
     FrameMark;
 }

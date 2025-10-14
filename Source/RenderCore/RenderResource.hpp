@@ -98,6 +98,12 @@ namespace Foundation::RenderCore
                                state.mip <= mip_end && state.layer >= layer_begin && state.layer <= layer_end;
                        });
         }
+        void ResetStates()
+        {
+            lastBufferState = {};
+            for (auto& sta : lastSubresourceStates)
+                sta.reset();
+        }
         TrackedResource(ResourceHandle handle, StringView name, const ResourceDefinition& resourceDesc,
                         Allocator* alloc);
     };

@@ -124,7 +124,7 @@ namespace Foundation::RenderCore
 
         const RendererDesc mDesc{};
 
-        uint64_t mFrame{0};
+        uint64_t mFrameSwapped{0}; // Frame rendered in the current Swapchain
 
         uint32_t mFrameSwaps{1}; // Max frames in flight
         uint32_t mCurrentSync{0};
@@ -765,7 +765,7 @@ namespace Foundation::RenderCore
          * This value is monotonically increasing every time @ref EndExecute() is called,
          * and starts from 0.
          */
-        [[nodiscard]] uint64_t GetFrame() const { return mFrame; }
+        [[nodiscard]] uint64_t GetFrame() const { return mFrameSwapped; }
         /**
          * @brief Retrieves the current swap index at the time of @ref ExecuteFrame().
          *
@@ -809,6 +809,9 @@ namespace Foundation::RenderCore
          * You must call this when the window is resized or the swapchain is invalidated.
          *
          * @note This call will block if pending GPU work exists.
+         *
+         * @note You may want to re-create the entire @ref Renderer instead if your resources depend on
+         *       the backbuffer size.
          */
         void SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain);
         /**

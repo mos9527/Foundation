@@ -69,28 +69,18 @@ void RenderApplication::InitializeInternal() {
 void RenderApplication::Execute()
 {
     ZoneScoped;
-    try {
-        mRenderer->BeginExecute();
-        {
-            ZoneScopedN("OnBeforeFrame");
-            OnBeforeFrame();
-        }
-        mRenderer->ExecuteFrame();        
-        {
-            ZoneScopedN("OnAfterFrame");
-            OnAfterFrame();
-        }
-        mRenderer->EndExecute();
-        mRenderFrame.notify_all();
+    mRenderer->BeginExecute();
+    {
+        ZoneScopedN("OnBeforeFrame");
+        OnBeforeFrame();
     }
-    catch (RHISwapchainResizeException&) {
-        CreateSwapchain();
-        mRenderer->SetSwapchain(mSwapchain);
-        OnSwapchainResize();
-        InitializeRenderer();
+    mRenderer->ExecuteFrame();
+    {
+        ZoneScopedN("OnAfterFrame");
         OnAfterFrame();
-        Execute();
     }
+    mRenderer->EndExecute();
+    mRenderFrame.notify_all();
 }
 void RenderApplication::RenderWorker()
 {
@@ -100,16 +90,38 @@ void RenderApplication::RenderWorker()
     InitializeRenderer();
     CHECK(mDevice && mRenderer);       
     mRenderThreadStarted = true;
-    mRenderFrame.notify_all(); // Wake up waiting thread to start their ticks.    
-    while (!(mAppShouldClose = mWindow.WindowShouldClose()))
+    mRenderFrame.notify_all(); // Wake up waiting thread to start their ticks.
+    RHIExtent2D frameBufferSize = GetFramebufferSize();
+    while (!((mAppShouldClose = mWindow.WindowShouldClose())))
     {
+        // Reset swapchain if we need to
+        // TODO: There could be more ways for Present to fail - we're only capturing resized windows for now
+        {
+            RHIExtent2D swapchainSize = GetFramebufferSize();
+            if (frameBufferSize != swapchainSize)
+            {
+                CreateSwapchain();
+                if (mDesc.initOnResize)
+                    InitializeRenderer();
+                else
+                    mRenderer->SetSwapchain(mSwapchain);
+                frameBufferSize = swapchainSize;
+            }
+        }
         if (mRenderThreadReset)
         {
             mRenderThreadReset = false;
             LOG_RUNTIME(RenderWorker, info, "Renderer Reset");
             InitializeRenderer();
         }
-        Execute();        
+        try
+        {
+            Execute();
+        } catch (RHISwapchainResizeException const&)
+        {
+            LOG_RUNTIME(RenderWorker, critical, "Swapchain resize failure!");
+            throw;
+        }
     }
     LOG_RUNTIME(RenderWorker, info, "Render Thread exiting.");
     mRenderFrame.notify_all();

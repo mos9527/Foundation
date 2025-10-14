@@ -51,6 +51,7 @@ namespace Foundation::Native
         glfwSetErrorCallback(glfw_error_callback);
         CHECK_MSG((mInitialized = glfwInit()) == GLFW_TRUE, "Failed to initialize GLFW");        
         mStartCounter = getPerformanceCounter();
+        LOG_RUNTIME(NativeApplication, info, "GLFW version: {}, platform: {}", glfwGetVersionString(), glfwGetPlatform());
     }
     NativeApplication::~NativeApplication() {
         if (mInitialized)

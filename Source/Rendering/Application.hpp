@@ -50,6 +50,15 @@ namespace Foundation::Rendering
          * @brief Enable VSync when presenting.
          */
         bool vsync{false};
+        /**
+         * @brief Reinitialize the renderer when the window is resized.
+         *
+         * If this is false, only the backbuffer is resized. Otherwise,
+         * the entire @ref Renderer is reinitialized, re-creating resources
+         * - which is useful if you have resources that depend on the backbuffer
+         * size.
+         */
+        bool initOnResize{false};
     };
     /**
      *  @brief Template base class for rendering applications.
@@ -133,18 +142,6 @@ namespace Foundation::Rendering
          * @note This should not be directly called.
          */
         virtual void OnDeviceSetup() { /* nop */ }
-        /**
-         * @brief Action to take when the swapchain is resized e.g.
-         * resize resources that depend on the swapchain size, and before the
-         * @ref Renderer is reinstantiated with the new swapchain.
-         *
-         * This is run on the Render thread.
-         *
-         * Implementation may leave this empty if no action is needed.
-         *
-         * @note This should not be directly called.
-         */
-        virtual void OnSwapchainResize() { /* nop */ }
         /**
          * @brief Action to take before each frame is executed.
          *

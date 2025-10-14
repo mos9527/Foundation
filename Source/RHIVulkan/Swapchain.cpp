@@ -6,22 +6,18 @@
 using namespace Foundation;
 using namespace Foundation::RHI;
 using namespace Foundation::Bits;
-vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDesc(SwapchainDesc const& desc)
+vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDesc(SwapchainDesc desc)
 {
     auto const& surface = mDevice.GetVkSurface();
     auto surface_caps = mDevice.GetVkPhysicalDevice().getSurfaceCapabilitiesKHR(surface);
     auto present_modes = mDevice.GetVkPhysicalDevice().getSurfacePresentModesKHR(surface);
     // Validate requested parameters
-    CHECK_MSG(
-        desc.extents.x >= surface_caps.minImageExtent.width && desc.extents.x <= surface_caps.maxImageExtent.width,
-        "Swapchain extent width {} not supported (min {}, max {})",
-        desc.extents.x, surface_caps.minImageExtent.width, surface_caps.maxImageExtent.width
-    );
-    CHECK_MSG(
-        desc.extents.y >= surface_caps.minImageExtent.height && desc.extents.y <= surface_caps.maxImageExtent.height,
-        "Swapchain extent height {} not supported (min {}, max {})",
-        desc.extents.y, surface_caps.minImageExtent.height, surface_caps.maxImageExtent.height
-    );
+    desc.extents.x = std::clamp(desc.extents.x, surface_caps.minImageExtent.width, surface_caps.maxImageExtent.width);
+    desc.extents.y = std::clamp(desc.extents.y, surface_caps.minImageExtent.height, surface_caps.maxImageExtent.height);
+    if (desc.minBufferCount < surface_caps.minImageCount)
+        desc.minBufferCount = surface_caps.minImageCount;
+    if (surface_caps.maxImageCount > 0 && desc.minBufferCount > surface_caps.maxImageCount)
+        desc.minBufferCount = surface_caps.maxImageCount;
     CHECK_MSG(
         Ranges::find(present_modes, vkPresentModeFromSwapchainDesc(desc.presentMode)) != present_modes.end(),
         "Swapchain present mode {} not supported",
@@ -81,6 +77,10 @@ void VulkanSwapchain::Instantiate() {
         const Handle handle = mImages->CreateObject<VulkanTexture>(mDevice, RHITextureDesc{}, vk::raii::Image(device, image, mDevice.GetVkAllocatorCallbacks()), true /*shared=true*/);
         mImagesPtrs.push_back(mImages->GetObjectPtr(handle));
     }
+    // Update actual extents
+    mDesc.extents.x = create_info.imageExtent.width;
+    mDesc.extents.y = create_info.imageExtent.height;
+    mDesc.minBufferCount = create_info.minImageCount;
 }
 VulkanSwapchain::VulkanSwapchain(const VulkanDevice& device, SwapchainDesc const& desc)
     : RHISwapchain(device, desc), mDevice(device), mImagesPtrs(device.GetAllocator()) {

@@ -22,7 +22,7 @@ namespace Foundation::RHI {
         Core::Vector<RHITexture*> mImagesPtrs;
 
         void Instantiate();
-        vk::SwapchainCreateInfoKHR vkSwapchainCreateInfoFromSwapchainDesc(SwapchainDesc const& desc);
+        vk::SwapchainCreateInfoKHR vkSwapchainCreateInfoFromSwapchainDesc(SwapchainDesc desc);
     public:
         VulkanSwapchain(const VulkanDevice& device, SwapchainDesc const& desc);
 
