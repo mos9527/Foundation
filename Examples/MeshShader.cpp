@@ -39,6 +39,6 @@ namespace Examples
 int main(int argc, char** argv)
 {
     Examples::TriangleDemoApp app;
-    app.Initialize<VulkanApplication>({.windowTitle = "Triangle"});
+    app.Initialize<VulkanApplication>({.windowTitle = "Mesh Shader"});
     app.RunForever();
 }

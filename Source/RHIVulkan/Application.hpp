@@ -25,9 +25,9 @@ namespace Foundation::RHI {
         vk::AllocationCallbacks mVkAllocatorCpuCallbacks;
         vk::raii::PhysicalDevices mPhysicalDevices{ nullptr };
         vk::raii::Instance mInstance{ nullptr };
-        Core::Allocator* mAllocator;
+        Allocator* mAllocator;
 
-        Core::Vector<RHIDevice::DeviceDesc> mDevices;
+        Vector<RHIDevice::DeviceDesc> mDevices;
         vk::raii::DebugUtilsMessengerEXT mDebugHandler{ nullptr };
 
         RHIObjectPool<> mStorage;

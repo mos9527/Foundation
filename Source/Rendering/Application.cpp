@@ -24,8 +24,6 @@ void RenderApplication::CreateSwapchain() {
     CHECK_MSG(format.has_value(), "No supported swapchain format found!");
     LOG_RUNTIME(RenderApplication, info, "Selected swapchain format: {}", format.value());
     CHECK_MSG(present.has_value(), "No supported presentation mode found!");
-    if (mDesc.vsync)
-        present = RHISwapchainPresentMode::Fifo;
     LOG_RUNTIME(RenderApplication, info, "Selected swapchain present mode: {}", present.value());
     mSwapchain = mDevice->CreateSwapchain(
         RHISwapchain::SwapchainDesc{
@@ -40,10 +38,7 @@ void RenderApplication::InitializeRenderer() {
     mRenderer.reset();
     mRenderer = ConstructUnique<Renderer>(
         mAllocRenderer.Ptr(),
-        RendererDesc{
-            .async = mDesc.asyncCompute,
-            .present = mDesc.present
-        },
+        mDesc.renderer,
         mDevice, mSwapchain, mAllocRenderer.Ptr()
     );
     mRenderer->BeginSetup();
@@ -54,7 +49,7 @@ void RenderApplication::InitializeRenderer() {
 void RenderApplication::InitializeInternal() {
     LOG_RUNTIME(RenderApplication, info, "** Application Setup **");
     LOG_RUNTIME(RenderApplication, info, "Dir: {}", std::filesystem::current_path());
-    if (mDesc.present) {
+    if (mDesc.renderer.enablePresent) {
         mWindow = CreateNativeWindow(mDesc.windowSize.x, mDesc.windowSize.y, mDesc.windowTitle.c_str());
         mDevice = mRHI->CreateDevice(mRHI->EnumerateDevices()[mDesc.deviceIndex], &mWindow);
         CreateSwapchain();
@@ -92,20 +87,22 @@ void RenderApplication::RenderWorker()
     mRenderThreadStarted = true;
     mRenderFrame.notify_all(); // Wake up waiting thread to start their ticks.
     RHIExtent2D frameBufferSize = GetFramebufferSize();
+    auto ResetSwapchainAndRenderer = [&]() {
+        CreateSwapchain();
+        if (mDesc.initOnResize)
+            InitializeRenderer();
+        else
+            mRenderer->SetSwapchain(mSwapchain);
+    };
     while (!((mAppShouldClose = mWindow.WindowShouldClose())))
     {
         // Reset swapchain if we need to
         // TODO: There could be more ways for Present to fail - we're only capturing resized windows for now
         {
-            RHIExtent2D swapchainSize = GetFramebufferSize();
-            if (frameBufferSize != swapchainSize)
+            if (frameBufferSize != GetFramebufferSize())
             {
-                CreateSwapchain();
-                if (mDesc.initOnResize)
-                    InitializeRenderer();
-                else
-                    mRenderer->SetSwapchain(mSwapchain);
-                frameBufferSize = swapchainSize;
+                ResetSwapchainAndRenderer();
+                frameBufferSize = GetFramebufferSize();
             }
         }
         if (mRenderThreadReset)
@@ -119,8 +116,8 @@ void RenderApplication::RenderWorker()
             Execute();
         } catch (RHISwapchainResizeException const&)
         {
-            LOG_RUNTIME(RenderWorker, critical, "Swapchain resize failure!");
-            throw;
+            LOG_RUNTIME(RenderWorker, err, "Swapchain resize failure! Resizing on the next frame.");
+            frameBufferSize = {};
         }
     }
     LOG_RUNTIME(RenderWorker, info, "Render Thread exiting.");

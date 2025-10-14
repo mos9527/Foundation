@@ -48,7 +48,8 @@ namespace Foundation::Rendering {
         Renderer* r,
         StringView name,
         ResourceHandle copy_sampler,
-        ResourceHandle copy_source
+        ResourceHandle copy_source,
+        RHIResourceFormat srcFormat = RHIResourceFormat::R8G8B8A8Unorm
     ) {
         return createPSFullscreenPass(
             r,
@@ -56,7 +57,7 @@ namespace Foundation::Rendering {
             [=](PassHandle self, Renderer* r) {
                 r->BindTextureSampler(self, copy_sampler, "sampler");
                 r->BindTextureSRV(self, copy_source, "srcTexture", RHIPipelineStageBits::FragmentShader, {
-                    .format = RHIResourceFormat::R8G8B8A8Unorm,
+                    .format = srcFormat,
                     .range = RHITextureSubresourceRange::Create()
                 });
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/PSCopy.spv");

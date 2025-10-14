@@ -10,6 +10,39 @@
  */
 namespace Foundation::RenderCore
 {
+    /**
+     * @brief Parameters for @ref Renderer creation
+     */
+    struct RendererDesc
+    {
+        /**
+         * @brief Enable Async Compute support.
+         *
+         * @note This requires the underlying RHI device to support an async compute queue, and
+         *       the @ref Renderer having passes that's scheduled on the compute queue. (see @ref createPass).
+         *
+         * @note Expect fallback to single-queue operation if this is not the case, and potential
+         *       performance regression if your render graph doesn't have enough compute work to
+         *       balance out the synchronization overhead, or your scheduling is not optimal, e.g.
+         *       overlapping bandwidth/ALU bound Graphics/Compute work together (see @ref createPassPriority).
+         *
+         * @note Always examine the generated execution groups (see @ref DbgDumpExecutionGroups) and _PROFILE_
+         *       to verify that your render graph is scheduled as expected.
+         */
+        bool enableAsyncCompute{true};
+        /**
+         * @brief Enable presentation support.
+         *
+         * @note Enabling this implies a valid @ref RHISwapchain handle is provided to the @ref Renderer
+         *       on creation (see @ref Renderer::Renderer), otherwise an exception is thrown.
+         */
+        bool enablePresent{true};
+        /**
+         * @brief Number of worker threads to use for recording command lists.
+         * @note Set this to 0 to disable multithreaded command recording.
+         */
+        uint32_t numRenderThreads{std::max(1u, std::thread::hardware_concurrency() - 1)};
+    };
     /* -- Constants -- */
     // Maximum number of render passes per frame
     // NOTE: The limit here is mostly arbitrary - and is only used
@@ -33,72 +66,6 @@ namespace Foundation::RenderCore
         RHIResourceAccessBits::RenderTargetRead | RHIResourceAccessBits::UniformRead |
         RHIResourceAccessBits::TransferRead | RHIResourceAccessBits::HostRead;
     /**
-     * @brief Helper class containing all states pertaining to @ref Renderer's Setup phase
-     */
-    struct RendererSetup
-    {
-        Vector<Vector<Pair<PassHandle, ResourceHandle>>> graph;
-        Vector<TrackedPass> trackedPasses;
-        Vector<TrackedResource> trackedResources;
-        // Backbuffer producer
-        PassHandle lastBackbufferProducer{kInvalidHandle};
-        // [resource, view desc]
-        Vector<Pair<ResourceHandle, RHITextureViewDesc>> trackedViews;
-        Vector<RHIDeviceSampler::SamplerDesc> trackedSamplers;
-        // [resource, ord range]
-        Map<ResourceHandle, Pair<PassHandle, PassHandle>> activeResources;
-        // Passes ordered by pass.ord
-        Vector<PassHandle> execution;
-        Map<RHIDescriptorType, uint32_t> bindingCounts;
-        PassHandle epilogue{kInvalidHandle};
-        // Execution grouped by queue type
-        struct ExecutionGroups
-        {
-            const int groupIndex{}; // Index in executionGroups
-            int graphicsGroupIndex{-1}; // Index of all unique graphics groups before this one
-            int computeGroupIndex{-1}; // Index of all unique compute groups before this one
-            const RHIDeviceQueueType queue{};
-            Vector<PassHandle> passes;
-            // Resources used in this group
-            Vector<ResourceHandle> resources;
-            bool isLastGraphics = false;
-            bool isLastCompute = false;
-            RHIPipelineStage allStages{}; // All stages used in this group
-
-            ExecutionGroups(int groupIndex, RHIDeviceQueueType queue, Allocator* allocator) :
-                groupIndex(groupIndex), queue(queue), passes(allocator), resources(allocator)
-            {
-            }
-        };
-        Vector<ExecutionGroups> executionGroups;
-        bool executionAnyCompute{false}, executionAnyGraphics{false};
-        void add_edge(const PassHandle u, const PassHandle v, const ResourceHandle hdl)
-        {
-            while (u >= graph.size())
-                graph.emplace_back(graph.get_allocator());
-            graph[u].emplace_back(v, hdl);
-        }
-        explicit RendererSetup(Allocator* allocator) :
-            graph(allocator), trackedPasses(allocator), trackedResources(allocator), trackedViews(allocator),
-            trackedSamplers(allocator), activeResources(allocator), execution(allocator), bindingCounts(allocator),
-            executionGroups(allocator)
-        {
-        }
-    };
-    /**
-     * @brief Parameters for @ref Renderer creation
-     */
-    struct RendererDesc
-    {
-        // Enable async compute
-        bool async{true};
-        // Present the swapchain in Execute()
-        bool present{true};
-        // Number of threads to use for recording command lists
-        size_t renderThreads{std::max(1u, std::thread::hardware_concurrency() - 1)};
-    };
-    class Renderer;
-    /**
      * @brief Renderer implementing a Frame Graph system with automatic resource tracking and synchronization.
      *
      * The Renderer is responsible for managing rendering passes, resources, and synchronization on both
@@ -109,6 +76,59 @@ namespace Foundation::RenderCore
      */
     class Renderer
     {
+        /**
+         * @brief Helper class containing all states pertaining to @ref Renderer's Setup phase
+         */
+        struct RendererSetup
+        {
+            Vector<Vector<Pair<PassHandle, ResourceHandle>>> graph;
+            Vector<TrackedPass> trackedPasses;
+            Vector<TrackedResource> trackedResources;
+            // Backbuffer producer
+            PassHandle lastBackbufferProducer{kInvalidHandle};
+            // [resource, view desc]
+            Vector<Pair<ResourceHandle, RHITextureViewDesc>> trackedViews;
+            Vector<RHIDeviceSampler::SamplerDesc> trackedSamplers;
+            // [resource, ord range]
+            Map<ResourceHandle, Pair<PassHandle, PassHandle>> activeResources;
+            // Passes ordered by pass.ord
+            Vector<PassHandle> execution;
+            Map<RHIDescriptorType, uint32_t> bindingCounts;
+            PassHandle epilogue{kInvalidHandle};
+            // Execution grouped by queue type
+            struct ExecutionGroups
+            {
+                const int groupIndex{}; // Index in executionGroups
+                int graphicsGroupIndex{-1}; // Index of all unique graphics groups before this one
+                int computeGroupIndex{-1}; // Index of all unique compute groups before this one
+                const RHIDeviceQueueType queue{};
+                Vector<PassHandle> passes;
+                // Resources used in this group
+                Vector<ResourceHandle> resources;
+                bool isLastGraphics = false;
+                bool isLastCompute = false;
+                RHIPipelineStage allStages{}; // All stages used in this group
+
+                ExecutionGroups(int groupIndex, RHIDeviceQueueType queue, Allocator* allocator) :
+                    groupIndex(groupIndex), queue(queue), passes(allocator), resources(allocator)
+                {
+                }
+            };
+            Vector<ExecutionGroups> executionGroups;
+            bool executionAnyCompute{false}, executionAnyGraphics{false};
+            void add_edge(const PassHandle u, const PassHandle v, const ResourceHandle hdl)
+            {
+                while (u >= graph.size())
+                    graph.emplace_back(graph.get_allocator());
+                graph[u].emplace_back(v, hdl);
+            }
+            explicit RendererSetup(Allocator* allocator) :
+                graph(allocator), trackedPasses(allocator), trackedResources(allocator), trackedViews(allocator),
+                trackedSamplers(allocator), activeResources(allocator), execution(allocator), bindingCounts(allocator),
+                executionGroups(allocator)
+            {
+            }
+        };
     public:
         enum class State
         {
@@ -288,7 +308,7 @@ namespace Foundation::RenderCore
                       "Invalid queue type. Only Graphics and Compute queues are supported.");
             PassHandle handle = mSetup->trackedPasses.size();
             CHECK_MSG(handle < kMaxRenderPasses, "Exceeded maximum number of render passes ({})", kMaxRenderPasses);
-            if (!mDesc.async)
+            if (!mDesc.enableAsyncCompute)
                 queue = RHIDeviceQueueType::Graphics; // Force graphics queue if async compute is disabled
             mSetup->trackedPasses.emplace_back(
                 mAllocator, handle, name, queue,
@@ -796,14 +816,14 @@ namespace Foundation::RenderCore
          * If this returns false, all passes will be executed on the graphics queue,
          * and any queue hints passed during pass creation will be ignored.
          */
-        [[nodiscard]] bool IsAsyncComputeEnabled() const { return mDesc.async; }
+        [[nodiscard]] bool IsAsyncComputeEnabled() const { return mDesc.enableAsyncCompute; }
         /**
          * @brief Returns whether the swapchain is enabled.
          *
          * If this returns false, no backbuffer will be acquired or presented,
          * and any passes that write to the backbuffer will throw at EndSetup() time.
          */
-        [[nodiscard]] bool IsPresentEnabled() const { return mDesc.present; }
+        [[nodiscard]] bool IsPresentEnabled() const { return mDesc.enablePresent; }
         /**
          * @brief Update the swapchain to a new one.
          * You must call this when the window is resized or the swapchain is invalidated.

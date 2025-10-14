@@ -18,7 +18,7 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
                    RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator) :
     mState(State::Undefined), mAllocator(allocator), mDesc(desc), mSwaps(mAllocator), mDevice(device),
     mSwapchain(swapchain), mExecuteArena(mAllocator, kExecuteArenaSize), mExecuteAlloc(mExecuteArena),
-    mExecuteThreadPool(mDesc.renderThreads, kMaxCommandListsPerThread * 2, allocator, "Renderer"),
+    mExecuteThreadPool(mDesc.numRenderThreads, kMaxCommandListsPerThread * 2, allocator, "Renderer"),
     mExecutePerSwapCmds(allocator), mWaitIdle(device.Get())
 {
     mGraphicsQueue = mDevice->GetDeviceQueue(RHIDeviceQueueType::Graphics);
@@ -26,8 +26,9 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
     mComputeQueue = mDevice->GetDeviceQueue(RHIDeviceQueueType::Compute);
     mComputeQueue->DebugSetObjectName("Compute Queue");
     LOG_RUNTIME(Renderer, info, "** Renderer Init **");
-    LOG_RUNTIME(Renderer, info, "Async Compute: {}", mDesc.async);
-    LOG_RUNTIME(Renderer, info, "Presentation: {}", mDesc.present);
+    LOG_RUNTIME(Renderer, info, "Async Compute:\t{}", mDesc.enableAsyncCompute);
+    LOG_RUNTIME(Renderer, info, "Presentation:\t{}", mDesc.enablePresent);
+    LOG_RUNTIME(Renderer, info, "Threads:\t{}", mDesc.numRenderThreads);
 }
 
 void Renderer::BeginSetup()
@@ -35,7 +36,7 @@ void Renderer::BeginSetup()
     CHECK_MSG(mState == State::Undefined || mState == State::PostSetup, "Bad Setup state. Current state is {}", mState);
     mState = State::Setup;
     mSetup = ConstructUnique<RendererSetup>(mAllocator, mAllocator);
-    if (mDesc.present)
+    if (mDesc.enablePresent)
         SetSwapchain(mSwapchain);
     else
         SetFrameSyncObjects();
@@ -888,12 +889,13 @@ void Renderer::FinalizeResources()
             [&](auto const&) { throw std::runtime_error("Unhandled resource type at creation time"); });
     }
     // Add back buffers (if we need to present)
-    if (mDesc.present)
+    if (mDesc.enablePresent)
     {
         for (size_t i = 0; i < mFrameSwaps; i++)
         {
             ResourceHandle handle = mSwaps[i].backbuffer;
             auto& tres = mSetup->trackedResources[handle];
+            mResources->fit(handle);
             mResources->resources[handle] = tres.desc.Get<RHITexture*>();
         }
     }
@@ -943,7 +945,7 @@ void Renderer::SetFrameSyncObjects()
     while (mExecutePerSwapCmds.size() < mFrameSwaps)
     {
         auto& threads = mExecutePerSwapCmds.emplace_back(mAllocator);
-        while (threads.size() < mDesc.renderThreads + 1) // Inc. main (render) thread. We do work too!
+        while (threads.size() < mDesc.numRenderThreads + 1) // Inc. main (render) thread. We do work too!
             threads.emplace_back(ConstructUnique<ExecutePerThreadCommandLists>(mAllocator, mDevice.Get(),
                                                                                kMaxCommandListsPerThread, mAllocator));
     }
@@ -965,7 +967,8 @@ void Renderer::SetFrameSyncObjects()
 }
 void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain)
 {
-    CHECK_MSG(mDesc.present, "Cannot set swapchain when the renderer is not declared with Present support");
+    CHECK_MSG(mDesc.enablePresent, "Cannot set swapchain when the renderer is not created with Present support");
+    CHECK_MSG(swapchain.IsValid(), "Cannot set swapchain when swapchain is not valid");
     mFrameSwaps = swapchain->GetImages().size();
     LOG_RUNTIME(Renderer, info, "Swapchain uses {} back buffers", mFrameSwaps);
     if (mState == State::Execute)
@@ -1019,7 +1022,7 @@ void Renderer::BeginExecute()
         mDevice->WaitForFences(wait_fences, true, -1);
         mDevice->ResetFences(wait_fences);
     }
-    if (mDesc.present)
+    if (mDesc.enablePresent)
     {
         ZoneScopedN("Acquire Next Image");
         mCurrentSwap = mSwapchain->GetNextImage(-1, mSwaps[mCurrentSync].present, {});
@@ -1443,8 +1446,17 @@ void Renderer::ExecuteFrame()
                 };
             };
             for (size_t i = 0; i < group_active.size(); ++i)
-                mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[group_active[i]], &execute_cmds[i], i,
-                                                       &execute_barriers[i]);
+            {
+                if (mDesc.numRenderThreads)
+                {
+                    mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[group_active[i]], &execute_cmds[i], i,
+                                                           &execute_barriers[i]);
+                } else
+                {
+                    RecordJob job(this, &passes[group_active[i]], &execute_cmds[i], i, &execute_barriers[i]);
+                    job.Execute(-1); // Main thread
+                }
+            }
         }
         Vector<RHICommandList*> acq_cmds(mExecuteAlloc.Ptr()), rel_cmds(mExecuteAlloc.Ptr());
         bool needAcquire = false, needRelease = mSetup->executionGroups.size() > 1;
@@ -1541,8 +1553,11 @@ void Renderer::ExecuteFrame()
             // Wait for all recording to finish
             auto waitForRecord = [&]()
             {
-                ZoneScopedN("Wait for Record");
-                mExecuteThreadPool.Join();
+                if (mDesc.numRenderThreads > 0)
+                {
+                    ZoneScopedN("Wait for Record");
+                    mExecuteThreadPool.Join();
+                }
                 // Insert all cmd lists
                 // [acq, execute, rel]
                 group_cmds.insert(group_cmds.end(), acq_cmds.begin(), acq_cmds.end());
@@ -1552,7 +1567,7 @@ void Renderer::ExecuteFrame()
             if (is_last)
             {
                 ZoneScopedN("Final Submit");
-                if (!mDesc.present)
+                if (!mDesc.enablePresent)
                 {
                     waitForRecord();
                     queue->Submit({.timelineWaits = timeline_waits,

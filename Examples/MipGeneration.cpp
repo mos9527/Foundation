@@ -125,7 +125,7 @@ namespace Examples
 int main(int argc, char** argv)
 {
     Examples::MipGenerationApp app;
-    app.Initialize<VulkanApplication>({.windowTitle = "Mipmap Generation", .vsync = false});
+    app.Initialize<VulkanApplication>({.windowTitle = "Mipmap Generation"});
     app.RunForever();
     ImGui_ImplFoundation_Shutdown();
 }

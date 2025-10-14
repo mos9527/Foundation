@@ -33,6 +33,11 @@ namespace Examples {
 }
 int main(int argc, char** argv) {
     Examples::TriangleDemoApp app;
-    app.Initialize<VulkanApplication>({ .windowTitle = "Triangle" });
+    app.Initialize<VulkanApplication>({
+        .windowTitle = "Triangle",
+        .renderer = {
+            .numRenderThreads = 0 /* disables MT */
+        }
+    });
     app.RunForever();
 }

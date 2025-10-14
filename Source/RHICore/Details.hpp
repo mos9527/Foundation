@@ -61,8 +61,16 @@ namespace Foundation::RHI {
         constexpr operator bool() const noexcept { return IsValid(); }
         bool operator==(const RHIHandle& other) const { return mFactory == other.mFactory && mHandle == other.mHandle; }
 
+        /**
+         * @brief Check if the handle is valid (i.e. associated with a Factory and not kInvalidHandle)
+         * @note THIS CHECK IS CONSERVATIVE. A true handle may still refer to a destroyed resource.
+         *       Always ensure correct destruction order, possibly with the help of @ref UniquePtr or @ref SharedPtr
+         */
         [[nodiscard]] bool IsValid() const { return mFactory != nullptr && mHandle != kInvalidHandle; }
-        bool IsFrom(const Factory* factory) const { return mFactory == factory; }
+        /**
+         * @brief Resets the handle to an invalid state.
+         * After calling this, the handle is no longer associated with any Factory or resource.
+         */
         void Invalidate() { mFactory = nullptr, mHandle = kInvalidHandle; }
     };
     /**
@@ -74,7 +82,6 @@ namespace Foundation::RHI {
         using RHIHandle<Factory, T>::mHandle;
         using RHIHandle<Factory, T>::Get;
         using RHIHandle<Factory, T>::IsValid;
-        using RHIHandle<Factory, T>::IsFrom;
         using RHIHandle<Factory, T>::Invalidate;
 
         RHIScopedHandle() = default;
@@ -99,7 +106,7 @@ namespace Foundation::RHI {
         }
         /**
          * @brief Releases the underlying RHIHandle, invalidating the scoped handle.
-         * NOTE: This may leak the resource if not properly managed afterwards.
+         * NOTE: This may leak the resource if not properly managed afterward.
          */
         RHIHandle<Factory, T> Release() {
             RHIHandle<Factory, T> handle = *this;
@@ -107,7 +114,7 @@ namespace Foundation::RHI {
             return handle;
         }
         /**
-         * @brief Destructs the underlying RHIObject, if valid, and invalidates the scoped handle.
+         * @brief Destructs the underlying RHIObject, and invalidates the scoped handle.
          */
         void Reset() {
             if (IsValid()) {

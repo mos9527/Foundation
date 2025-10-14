@@ -28,5 +28,5 @@ add_executable(Test_Unrom "Unorm.cpp")
 target_link_libraries(Test_Unrom PUBLIC Foundation_Math Foundation_Core)
 
 add_executable(Test_Meshoptimizer "Meshoptimizer.cpp")
-target_link_libraries(Test_Meshoptimizer PUBLIC ModelViewer_Assets Foundation_Rendering)
+target_link_libraries(Test_Meshoptimizer PUBLIC ModelViewer_Scene Foundation_Rendering)
 add_dependencies(Test_Meshoptimizer ModelViewer_Assets)

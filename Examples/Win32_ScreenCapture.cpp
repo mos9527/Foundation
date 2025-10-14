@@ -154,6 +154,6 @@ namespace Examples
 int main(int argc, char** argv)
 {
     Examples::Win32_ScreenCaptureApp app;
-    app.Initialize<VulkanApplication>({.windowTitle = "Screen Capture", .asyncCompute = false, .vsync = true });
+    app.Initialize<VulkanApplication>({.windowTitle = "Screen Capture"});
     app.RunForever();
 }

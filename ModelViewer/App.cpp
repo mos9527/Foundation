@@ -71,7 +71,8 @@ namespace ModelViewer
             float2 uv1 = size / extent;
             ImGui::Image(mGBufferHandle, ImVec2(size.x, size.y), ImVec2(0, 0), ImVec2(uv1.x, uv1.y));
             ImGui::SetCursorPos(ImVec2{0, 0});
-            drawGizmoCameraFrustum(mScene->mCamera.GetParams().viewProj, mScene->mCullingCamera.GetCullParams().viewProj);
+            drawGizmoCameraFrustum(mScene->mCamera.GetParams().viewProj,
+                                   mScene->mCullingCamera.GetCullParams().viewProj);
         }
         ImGui::End();
         if (ImGui::Begin("Scene"))
@@ -168,8 +169,7 @@ using namespace Foundation::Async;
 int main(int argc, char** argv)
 {
     App app;
-    app.Initialize<VulkanApplication>(
-        {.windowTitle = "Model Viewer", .present = true, .asyncCompute = true, .vsync = true /* !! */});
+    app.Initialize<VulkanApplication>({.windowTitle = "Model Viewer"});
     app.RunForever();
     ImGui_ImplFoundation_Shutdown();
 }

@@ -27,30 +27,6 @@ namespace Foundation::Rendering
         String windowTitle{"Application"};
         RHIExtent2D windowSize{800, 600};
         /**
-         * @brief Enable Present support.
-         *
-         * Disable this if you want to do headless work e.g.
-         * rendering to offscreen textures, etc.
-         */
-        bool present{true};
-        /**
-         * @brief Enable async compute support.
-         *
-         * This may improve performance if you have a GPU that
-         * supports async compute well, and your render graph
-         * has a good (and trivial) amount of compute work to do.
-         *
-         * Do note that this may introduce additional latency due
-         * to synchronization overhead, and cause performance regression
-         * if your render graph doesn't have enough compute work to
-         * balance it out.
-         */
-        bool asyncCompute{true};
-        /**
-         * @brief Enable VSync when presenting.
-         */
-        bool vsync{false};
-        /**
          * @brief Reinitialize the renderer when the window is resized.
          *
          * If this is false, only the backbuffer is resized. Otherwise,
@@ -59,6 +35,14 @@ namespace Foundation::Rendering
          * size.
          */
         bool initOnResize{false};
+        /**
+         * @brief Parameters for the initializing the underlying @ref Renderer.
+         */
+        RendererDesc renderer {
+            .enableAsyncCompute = true,
+            .enablePresent = true,
+            .numRenderThreads = std::max(1u, std::thread::hardware_concurrency() - 1)
+        };
     };
     /**
      *  @brief Template base class for rendering applications.
