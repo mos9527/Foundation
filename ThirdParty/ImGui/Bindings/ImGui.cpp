@@ -3,6 +3,8 @@
 #include <Core/DefaultAllocator.hpp>
 #include <Rendering/UploadContext.hpp>
 #include <imgui_impl_glfw.h>
+
+#include "tracy/Tracy.hpp"
 using namespace Foundation;
 using namespace RenderCore;
 using namespace Rendering;
@@ -47,7 +49,11 @@ void ImGui_ImplFoundation_Init(RHIDevice* device, Native::NativeWindow* window, 
     // Init windowing backend
     ImGui_ImplGlfw_InitForOther(static_cast<GLFWwindow*>(window->GetNative()), true);
 }
-void ImGui_ImplFoundation_NewFrame() { ImGui_ImplGlfw_NewFrame(); }
+void ImGui_ImplFoundation_NewFrame()
+{
+    ZoneScoped;
+    ImGui_ImplGlfw_NewFrame();
+}
 void ImGui_ImplFoundation_Shutdown()
 {
     gImGuiTexturePool.reset();

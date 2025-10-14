@@ -4,7 +4,7 @@ namespace Examples
 {
     /**
      * @example ImGui.cpp
-     * ImGui integration example.
+     * Absolutely minimal example for integrating our ImGui backend.
      */
     class ImGuiDemoApp : public RenderApplication
     {

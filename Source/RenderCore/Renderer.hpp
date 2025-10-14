@@ -481,9 +481,6 @@ namespace Foundation::RenderCore
         /**
          * @brief Manually bind an existing descriptor set to the pipeline.
          *
-         * Effectively, the bind point would be ignored by the PSO build process,
-         * and the descriptor set would be bound at the set belonging to the bind point.
-         *
          * @note The bind point is only used to determine the set index.
          * The binding index themselves is then _not_ checked by the @ref Renderer,
          * therefore the shader and the descriptor set must guarantee match.
