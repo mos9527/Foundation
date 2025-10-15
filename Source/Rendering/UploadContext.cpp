@@ -80,7 +80,10 @@ void UploadContext::SubmitAndWait()
     Vector<RHICommandList*> cmds(mAllocator);
     for (auto& cmd : mCommandLists)
         cmds.push_back(cmd.Get());
-    mQueue->Submit({.cmdLists = cmds, .fence = mFence.Get()});
+    mQueue->Submit({{{
+                       .cmdLists = cmds,
+                   }}},
+                   mFence.Get());
     mDevice->WaitForFences({{{mFence}}}, true, ~0ull);
     mCommandLists.clear();
     mStagingBuffer.Reset();

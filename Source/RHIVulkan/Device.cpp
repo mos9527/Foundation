@@ -503,68 +503,75 @@ void VulkanDevice::DebugSetObjectName(const char* name)
 }
 
 void VulkanDeviceQueue::WaitIdle() const { mQueue.waitIdle(); }
-void VulkanDeviceQueue::Submit(SubmitDesc const& desc) const
+void VulkanDeviceQueue::Submit(Span<const SubmitDesc> descs, RHIDeviceFence* completionFence) const
 {
     StackArena<4096> arena{};
     StackAllocator alloc(arena);
-    Vector<vk::CommandBuffer> cmds(alloc.Ptr());
-    Vector<vk::Semaphore> swaits(alloc.Ptr()), ssignals(alloc.Ptr());
-    Vector<uint64_t> wait_values(alloc.Ptr()), signal_values(alloc.Ptr());
-    cmds.reserve(desc.cmdLists.size()), swaits.reserve(desc.waits.size()), ssignals.reserve(desc.signals.size());
-    wait_values.reserve(desc.timelineWaits.size()), signal_values.reserve(desc.timelineSignals.size());
-    for (auto const& cmd_list : desc.cmdLists)
-        cmds.emplace_back(static_cast<VulkanCommandList*>(cmd_list)->GetVkCommandBuffer());
+    Vector<vk::SubmitInfo> submits(alloc.Ptr());
+    submits.reserve(descs.size());
+    for (auto const& desc : descs)
+    {
+        auto* cmds = Construct<Vector<vk::CommandBuffer>>(alloc.Ptr(), alloc.Ptr());
+        auto* swaits = Construct<Vector<vk::Semaphore>>(alloc.Ptr(), alloc.Ptr());
+        auto* ssignals = Construct<Vector<vk::Semaphore>>(alloc.Ptr(), alloc.Ptr());
+        auto* wait_values = Construct<Vector<uint64_t>>(alloc.Ptr(), alloc.Ptr());
+        auto* signal_values = Construct<Vector<uint64_t>>(alloc.Ptr(), alloc.Ptr());
+        cmds->reserve(desc.cmdLists.size()), swaits->reserve(desc.waits.size()), ssignals->reserve(desc.signals.size());
+        wait_values->reserve(desc.timelineWaits.size()), signal_values->reserve(desc.timelineSignals.size());
+        for (auto const& cmd_list : desc.cmdLists)
+            cmds->emplace_back(static_cast<VulkanCommandList*>(cmd_list)->GetVkCommandBuffer());
 
-    for (auto const& [wait, val] : desc.timelineWaits)
-    {
-        CHECK(wait->mIsTimeline && "Submit() timeline_signals must be Timeline semaphores");
-        swaits.emplace_back(static_cast<VulkanDeviceSemaphore*>(wait)->GetVkSemaphore());
-        wait_values.emplace_back(val);
+        for (auto const& [wait, val] : desc.timelineWaits)
+        {
+            CHECK(wait->mIsTimeline && "Submit() timeline_signals must be Timeline semaphores");
+            swaits->emplace_back(static_cast<VulkanDeviceSemaphore*>(wait)->GetVkSemaphore());
+            wait_values->emplace_back(val);
+        }
+        for (auto const& [signal, val] : desc.timelineSignals)
+        {
+            CHECK(signal->mIsTimeline && "Submit() timeline_signals must be Timeline semaphores");
+            ssignals->emplace_back(static_cast<VulkanDeviceSemaphore*>(signal)->GetVkSemaphore());
+            signal_values->emplace_back(val);
+        }
+        for (auto const& wait : desc.waits)
+        {
+            CHECK(!wait->mIsTimeline && "Submit() waits must be Binary semaphores");
+            swaits->emplace_back(static_cast<VulkanDeviceSemaphore*>(wait)->GetVkSemaphore());
+            // https://registry.khronos.org/vulkan/specs/latest/man/html/VkTimelineSemaphoreSubmitInfo.html#_description
+            // Driver should ignore these
+            wait_values->emplace_back(0);
+        }
+        for (auto const& signal : desc.signals)
+        {
+            CHECK(!signal->mIsTimeline && "Submit() signals must be Binary semaphores");
+            ssignals->emplace_back(static_cast<VulkanDeviceSemaphore*>(signal)->GetVkSemaphore());
+            signal_values->emplace_back(0);
+        }
+        CHECK_MSG(desc.waitsStages.size() == swaits->size(),
+                  "Number of wait stages ({}) must match number of wait semaphores ({})", desc.waitsStages.size(),
+                  swaits->size());
+        auto* stages = Construct<Vector<vk::PipelineStageFlags>>(alloc.Ptr(), alloc.Ptr());
+        stages->reserve(desc.waitsStages.size());
+        for (auto stage : desc.waitsStages)
+            stages->emplace_back(vkPipelineStageFlagsFromRHIPipelineStage(stage));
+        vk::SubmitInfo info{.waitSemaphoreCount = static_cast<uint32_t>(swaits->size()),
+                            .pWaitSemaphores = swaits->data(),
+                            .pWaitDstStageMask = stages->data(),
+                            .commandBufferCount = static_cast<uint32_t>(cmds->size()),
+                            .pCommandBuffers = cmds->data(),
+                            .signalSemaphoreCount = static_cast<uint32_t>(ssignals->size()),
+                            .pSignalSemaphores = ssignals->data()};
+        auto* tinfo = Construct<vk::TimelineSemaphoreSubmitInfo>(alloc.Ptr());
+        *tinfo = vk::TimelineSemaphoreSubmitInfo{.waitSemaphoreValueCount = static_cast<uint32_t>(wait_values->size()),
+                  .pWaitSemaphoreValues = wait_values->data(),
+                  .signalSemaphoreValueCount = static_cast<uint32_t>(signal_values->size()),
+                  .pSignalSemaphoreValues = signal_values->data()};
+        if (!wait_values->empty() || !signal_values->empty())
+            info.setPNext(tinfo);
+        submits.push_back(info);
     }
-    for (auto const& [signal, val] : desc.timelineSignals)
-    {
-        CHECK(signal->mIsTimeline && "Submit() timeline_signals must be Timeline semaphores");
-        ssignals.emplace_back(static_cast<VulkanDeviceSemaphore*>(signal)->GetVkSemaphore());
-        signal_values.emplace_back(val);
-    }
-    for (auto const& wait : desc.waits)
-    {
-        CHECK(!wait->mIsTimeline && "Submit() waits must be Binary semaphores");
-        swaits.emplace_back(static_cast<VulkanDeviceSemaphore*>(wait)->GetVkSemaphore());
-        // https://registry.khronos.org/vulkan/specs/latest/man/html/VkTimelineSemaphoreSubmitInfo.html#_description
-        // Driver should ignore these
-        wait_values.emplace_back(0);
-    }
-    for (auto const& signal : desc.signals)
-    {
-        CHECK(!signal->mIsTimeline && "Submit() signals must be Binary semaphores");
-        ssignals.emplace_back(static_cast<VulkanDeviceSemaphore*>(signal)->GetVkSemaphore());
-        signal_values.emplace_back(0);
-    }
-    CHECK_MSG(desc.waitsStages.size() == swaits.size(),
-              "Number of wait stages ({}) must match number of wait semaphores ({})", desc.waitsStages.size(),
-              swaits.size());
-    Vector<vk::PipelineStageFlags> stages(alloc.Ptr());
-    stages.reserve(desc.waitsStages.size());
-    for (auto stage : desc.waitsStages)
-        stages.emplace_back(vkPipelineStageFlagsFromRHIPipelineStage(stage));
-    vk::SubmitInfo info{.waitSemaphoreCount = static_cast<uint32_t>(swaits.size()),
-                        .pWaitSemaphores = swaits.data(),
-                        .pWaitDstStageMask = stages.data(),
-                        .commandBufferCount = static_cast<uint32_t>(cmds.size()),
-                        .pCommandBuffers = cmds.data(),
-                        .signalSemaphoreCount = static_cast<uint32_t>(ssignals.size()),
-                        .pSignalSemaphores = ssignals.data()};
-    vk::TimelineSemaphoreSubmitInfo tinfo{.waitSemaphoreValueCount = static_cast<uint32_t>(wait_values.size()),
-                                          .pWaitSemaphoreValues = wait_values.data(),
-                                          .signalSemaphoreValueCount = static_cast<uint32_t>(signal_values.size()),
-                                          .pSignalSemaphoreValues = signal_values.data()};
-    if (!wait_values.empty() || !signal_values.empty())
-        info.setPNext(&tinfo);
-    {
-        mQueue.submit(info,
-                      desc.fence ? static_cast<VulkanDeviceFence*>(desc.fence)->GetVkFence() : vk::Fence(nullptr));
-    }
+    mQueue.submit(
+        submits, completionFence ? static_cast<VulkanDeviceFence*>(completionFence)->GetVkFence() : vk::Fence(nullptr));
 }
 void VulkanDeviceQueue::Present(PresentDesc const& desc) const
 {

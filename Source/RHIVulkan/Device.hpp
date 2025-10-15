@@ -185,7 +185,7 @@ namespace Foundation::RHI {
         [[nodiscard]] uint32_t GetVkQueueIndex() const { return mQueueIndex; }
 
         void WaitIdle() const override;
-        void Submit(SubmitDesc const& desc) const override;
+        void Submit(Span<const SubmitDesc>, RHIDeviceFence* completionFence) const override;
         void Present(PresentDesc const& desc) const override;
         [[nodiscard]] uint32_t GetQueueIndex() const override { return GetVkQueueIndex(); }
 

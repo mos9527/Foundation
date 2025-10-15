@@ -31,9 +31,8 @@ namespace Foundation::RHI {
             Span<RHIDeviceSemaphore* const> signals;
             // Command lists to submit
             Span<RHICommandList* const> cmdLists;
-            RHIDeviceFence* fence;
         };
-        virtual void Submit(SubmitDesc const& desc) const = 0;
+        virtual void Submit(Span<const SubmitDesc> desc, RHIDeviceFence* completionFence = nullptr) const = 0;
 
         struct PresentDesc {
             uint32_t imageIndex;

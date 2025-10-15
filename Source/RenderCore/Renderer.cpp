@@ -849,7 +849,8 @@ void Renderer::FinalizePSOs()
         try
         {
             futures[i]->get_future().get();
-        } catch (std::runtime_error const& e)
+        }
+        catch (std::runtime_error const& e)
         {
             LOG_RUNTIME(Renderer, err, "Failed to build PSO for pass {}: {}", tpass.name, e.what());
             throw; // Failfast
@@ -1451,7 +1452,8 @@ void Renderer::ExecuteFrame()
                 {
                     mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[group_active[i]], &execute_cmds[i], i,
                                                            &execute_barriers[i]);
-                } else
+                }
+                else
                 {
                     RecordJob job(this, &passes[group_active[i]], &execute_cmds[i], i, &execute_barriers[i]);
                     job.Execute(-1); // Main thread
@@ -1494,7 +1496,8 @@ void Renderer::ExecuteFrame()
             // We'd only signal the current group per submit
             auto Counter = [&](size_t ord) { return mFrameSwapped * mSetup->executionGroups.size() + ord + 1LL; };
             // Counter for a frame prior
-            auto CounterFF = [&](size_t ord) { return (mFrameSwapped - 1LL) * mSetup->executionGroups.size() + ord + 1LL; };
+            auto CounterFF = [&](size_t ord)
+            { return (mFrameSwapped - 1LL) * mSetup->executionGroups.size() + ord + 1LL; };
             RHIDeviceQueue::TimelinePair timeline_signal;
             if (group.queue == RHIDeviceQueueType::Graphics)
                 timeline_signal =
@@ -1570,11 +1573,13 @@ void Renderer::ExecuteFrame()
                 if (!mDesc.enablePresent)
                 {
                     waitForRecord();
-                    queue->Submit({.timelineWaits = timeline_waits,
-                                   .timelineSignals = {{{timeline_signal}}},
-                                   .waitsStages = timeline_wait_stages,
-                                   .cmdLists = group_cmds,
-                                   .fence = fence_ptr});
+                    queue->Submit({{{
+                                      .timelineWaits = timeline_waits,
+                                      .timelineSignals = {{{timeline_signal}}},
+                                      .waitsStages = timeline_wait_stages,
+                                      .cmdLists = group_cmds,
+                                  }}},
+                                  fence_ptr);
                 }
                 else
                 {
@@ -1597,13 +1602,13 @@ void Renderer::ExecuteFrame()
                     group_cmds.push_back(cmd);
                     {
                         // Finally..
-                        queue->Submit({.timelineWaits = timeline_waits,
-                                       .timelineSignals = {{{timeline_signal}}},
-                                       .waits = {{mSwaps[mCurrentSync].present.Get()}},
-                                       .waitsStages = timeline_wait_stages,
-                                       .signals = {{mSwaps[GetSwap()].render.Get()}},
-                                       .cmdLists = group_cmds,
-                                       .fence = mSwaps[mCurrentSync].graphicsFence.Get()});
+                        queue->Submit({{{.timelineWaits = timeline_waits,
+                                         .timelineSignals = {{{timeline_signal}}},
+                                         .waits = {{mSwaps[mCurrentSync].present.Get()}},
+                                         .waitsStages = timeline_wait_stages,
+                                         .signals = {{mSwaps[GetSwap()].render.Get()}},
+                                         .cmdLists = group_cmds}}},
+                                      mSwaps[mCurrentSync].graphicsFence.Get());
                         queue->Present({.imageIndex = GetSwap(),
                                         .swapchain = mSwapchain.Get(),
                                         .waits = {{mSwaps[GetSwap()].render.Get()}}});
@@ -1614,11 +1619,11 @@ void Renderer::ExecuteFrame()
             {
                 ZoneScopedN("Submit");
                 waitForRecord();
-                queue->Submit({.timelineWaits = timeline_waits,
-                               .timelineSignals = {{{timeline_signal}}},
-                               .waitsStages = timeline_wait_stages,
-                               .cmdLists = group_cmds,
-                               .fence = fence_ptr});
+                queue->Submit({{{.timelineWaits = timeline_waits,
+                                 .timelineSignals = {{{timeline_signal}}},
+                                 .waitsStages = timeline_wait_stages,
+                                 .cmdLists = group_cmds,
+                                 }}}, fence_ptr);
             }
         }
     }
