@@ -511,62 +511,64 @@ void VulkanDeviceQueue::Submit(Span<const SubmitDesc> descs, RHIDeviceFence* com
     submits.reserve(descs.size());
     for (auto const& desc : descs)
     {
-        auto* cmds = Construct<Vector<vk::CommandBuffer>>(alloc.Ptr(), alloc.Ptr());
-        auto* swaits = Construct<Vector<vk::Semaphore>>(alloc.Ptr(), alloc.Ptr());
-        auto* ssignals = Construct<Vector<vk::Semaphore>>(alloc.Ptr(), alloc.Ptr());
-        auto* wait_values = Construct<Vector<uint64_t>>(alloc.Ptr(), alloc.Ptr());
-        auto* signal_values = Construct<Vector<uint64_t>>(alloc.Ptr(), alloc.Ptr());
-        cmds->reserve(desc.cmdLists.size()), swaits->reserve(desc.waits.size()), ssignals->reserve(desc.signals.size());
-        wait_values->reserve(desc.timelineWaits.size()), signal_values->reserve(desc.timelineSignals.size());
+        auto cmds = ConstructSpan<vk::CommandBuffer>(alloc.Ptr(), desc.cmdLists.size());
+        auto swaits = ConstructSpan<vk::Semaphore>(alloc.Ptr(), desc.timelineWaits.size() + desc.waits.size());
+        auto ssignals = ConstructSpan<vk::Semaphore>(alloc.Ptr(), desc.timelineSignals.size() + desc.signals.size());
+        auto wait_values = ConstructSpan<uint64_t>(alloc.Ptr(), swaits.size());
+        auto signal_values = ConstructSpan<uint64_t>(alloc.Ptr(), ssignals.size());
+        auto* pcmd = cmds.data();
         for (auto const& cmd_list : desc.cmdLists)
-            cmds->emplace_back(static_cast<VulkanCommandList*>(cmd_list)->GetVkCommandBuffer());
-
+            *pcmd++ = static_cast<VulkanCommandList*>(cmd_list)->GetVkCommandBuffer();
+        auto* pswaits = swaits.data();
+        auto* pwait_values = wait_values.data();
         for (auto const& [wait, val] : desc.timelineWaits)
         {
             CHECK(wait->mIsTimeline && "Submit() timeline_signals must be Timeline semaphores");
-            swaits->emplace_back(static_cast<VulkanDeviceSemaphore*>(wait)->GetVkSemaphore());
-            wait_values->emplace_back(val);
+            *pswaits++ = static_cast<VulkanDeviceSemaphore*>(wait)->GetVkSemaphore();
+            *pwait_values++ = val;
         }
+        auto* pssignals = ssignals.data();
+        auto* psignal_values = signal_values.data();
         for (auto const& [signal, val] : desc.timelineSignals)
         {
             CHECK(signal->mIsTimeline && "Submit() timeline_signals must be Timeline semaphores");
-            ssignals->emplace_back(static_cast<VulkanDeviceSemaphore*>(signal)->GetVkSemaphore());
-            signal_values->emplace_back(val);
+            *pssignals++ = static_cast<VulkanDeviceSemaphore*>(signal)->GetVkSemaphore();
+            *psignal_values++ = val;
         }
         for (auto const& wait : desc.waits)
         {
             CHECK(!wait->mIsTimeline && "Submit() waits must be Binary semaphores");
-            swaits->emplace_back(static_cast<VulkanDeviceSemaphore*>(wait)->GetVkSemaphore());
+            *pswaits++ = static_cast<VulkanDeviceSemaphore*>(wait)->GetVkSemaphore();
             // https://registry.khronos.org/vulkan/specs/latest/man/html/VkTimelineSemaphoreSubmitInfo.html#_description
             // Driver should ignore these
-            wait_values->emplace_back(0);
+            *pwait_values++ = 0;
         }
         for (auto const& signal : desc.signals)
         {
             CHECK(!signal->mIsTimeline && "Submit() signals must be Binary semaphores");
-            ssignals->emplace_back(static_cast<VulkanDeviceSemaphore*>(signal)->GetVkSemaphore());
-            signal_values->emplace_back(0);
+            *pssignals++ = static_cast<VulkanDeviceSemaphore*>(signal)->GetVkSemaphore();
+            *psignal_values++ = 0;
         }
-        CHECK_MSG(desc.waitsStages.size() == swaits->size(),
-                  "Number of wait stages ({}) must match number of wait semaphores ({})", desc.waitsStages.size(),
-                  swaits->size());
-        auto* stages = Construct<Vector<vk::PipelineStageFlags>>(alloc.Ptr(), alloc.Ptr());
-        stages->reserve(desc.waitsStages.size());
+        CHECK_MSG(desc.waitsStages.size() == swaits.size(),
+                  "Number of wait stages ({}) must match number of wait (timeline+binary) semaphores ({})", desc.waitsStages.size(),
+                  swaits.size());
+        auto stages = ConstructSpan<vk::PipelineStageFlags>(alloc.Ptr(), desc.waitsStages.size());
+        auto* pstages = stages.data();
         for (auto stage : desc.waitsStages)
-            stages->emplace_back(vkPipelineStageFlagsFromRHIPipelineStage(stage));
-        vk::SubmitInfo info{.waitSemaphoreCount = static_cast<uint32_t>(swaits->size()),
-                            .pWaitSemaphores = swaits->data(),
-                            .pWaitDstStageMask = stages->data(),
-                            .commandBufferCount = static_cast<uint32_t>(cmds->size()),
-                            .pCommandBuffers = cmds->data(),
-                            .signalSemaphoreCount = static_cast<uint32_t>(ssignals->size()),
-                            .pSignalSemaphores = ssignals->data()};
+            *pstages++ = vkPipelineStageFlagsFromRHIPipelineStage(stage);
+        vk::SubmitInfo info{.waitSemaphoreCount = static_cast<uint32_t>(swaits.size()),
+                            .pWaitSemaphores = swaits.data(),
+                            .pWaitDstStageMask = stages.data(),
+                            .commandBufferCount = static_cast<uint32_t>(cmds.size()),
+                            .pCommandBuffers = cmds.data(),
+                            .signalSemaphoreCount = static_cast<uint32_t>(ssignals.size()),
+                            .pSignalSemaphores = ssignals.data()};
         auto* tinfo = Construct<vk::TimelineSemaphoreSubmitInfo>(alloc.Ptr());
-        *tinfo = vk::TimelineSemaphoreSubmitInfo{.waitSemaphoreValueCount = static_cast<uint32_t>(wait_values->size()),
-                  .pWaitSemaphoreValues = wait_values->data(),
-                  .signalSemaphoreValueCount = static_cast<uint32_t>(signal_values->size()),
-                  .pSignalSemaphoreValues = signal_values->data()};
-        if (!wait_values->empty() || !signal_values->empty())
+        *tinfo = vk::TimelineSemaphoreSubmitInfo{.waitSemaphoreValueCount = static_cast<uint32_t>(wait_values.size()),
+                  .pWaitSemaphoreValues = wait_values.data(),
+                  .signalSemaphoreValueCount = static_cast<uint32_t>(signal_values.size()),
+                  .pSignalSemaphoreValues = signal_values.data()};
+        if (!wait_values.empty() || !signal_values.empty())
             info.setPNext(tinfo);
         submits.push_back(info);
     }

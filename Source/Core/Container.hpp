@@ -99,7 +99,36 @@ namespace Foundation::Core {
             return Span<const char>{ reinterpret_cast<const char*>(this->data()), this->size_bytes()  };
         }
     };
-
+    /**
+     * @brief Convenience function for constructing a Span with memory allocated from a @ref
+     *        Foundation::Core::Allocator. Possibly constructs objects in-place if they are not trivially constructible (e.g.
+     *        non-PODs)
+     * @note Data is _not_ guaranteed to be zero-initialized. Pass in constructor args if needed.
+     * @note Constructor args are only used if T is not trivially constructible, or if more than 0 args are passed in.
+     */
+    template <typename T, typename ...Args>
+    Span<T> ConstructSpan(Allocator* resource, size_t size, Args&& ...args) {
+        T* data = static_cast<T*>(resource->Allocate(size * sizeof(T), alignof(T)));
+        if constexpr (!std::is_trivially_constructible_v<T> || sizeof...(Args) > 0)
+        {
+            for (size_t i = 0; i < size; i++)
+                std::construct_at(&data[i], std::forward<Args>(args)...);
+        }
+        return Span<T>(data, size);
+    }
+    /**
+     * @brief Convenience function for destructing a Span allocated with @ref ConstructSpan.
+     *        Calls destructors in-place if the type is not trivially destructible (e.g. non-PODs)
+     */
+    template<typename T>
+    void DestructSpan(Allocator* resource, Span<T> span) {
+        if constexpr (!std::is_trivially_destructible_v<T>)
+        {
+            for (T& item : span)
+                std::destroy_at(&item);
+        }
+        resource->Deallocate(span.data(), span.size() * sizeof(T));
+    }
     /* -- STL Containers -- */
 
     /**

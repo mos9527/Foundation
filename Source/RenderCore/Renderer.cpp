@@ -1013,15 +1013,17 @@ void Renderer::BeginExecute()
     mState = State::Execute;
     // Reset per-frame arena
     mExecuteAlloc.Reset(mExecuteArena);
-    Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait_fences(mExecuteAlloc.Ptr());
+    mExecuteGraphicsSubmits = Construct<Vector<RHIDeviceQueue::SubmitDesc>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
+    mExecuteComputeSubmits = Construct<Vector<RHIDeviceQueue::SubmitDesc>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
+    Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait(mExecuteAlloc.Ptr());
     if (mSetup->executionAnyGraphics)
-        wait_fences.push_back(mSwaps[mCurrentSync].graphicsFence);
+        wait.push_back(mSwaps[mCurrentSync].graphicsFence);
     if (mSetup->executionAnyCompute)
-        wait_fences.push_back(mSwaps[mCurrentSync].computeFence);
+        wait.push_back(mSwaps[mCurrentSync].computeFence);
     {
         ZoneScopedN("Wait for GPU");
-        mDevice->WaitForFences(wait_fences, true, -1);
-        mDevice->ResetFences(wait_fences);
+        mDevice->WaitForFences(wait, true, -1);
+        mDevice->ResetFences(wait);
     }
     if (mDesc.enablePresent)
     {
@@ -1389,27 +1391,37 @@ void Renderer::ExecuteFrame()
         }
         /* -- Recording -- */
         // Count only the non-skipped ones
-        Vector<PassHandle> group_active(mExecuteAlloc.Ptr());
-        group_active.reserve(mSetup->executionGroups.size() + 1);
+        Vector<PassHandle> active(mExecuteAlloc.Ptr());
+        active.reserve(mSetup->executionGroups.size() + 1);
         for (auto handle : group.passes)
         {
             if (!passes[handle].pass->IsSkipped(handle, this))
-                group_active.emplace_back(handle);
+                active.emplace_back(handle);
         }
         // Record all the active tasks
-        // We do this in parallel - with transitions starting before the passes
-        Vector<ExecuteBarrierList> execute_barriers(mExecuteAlloc.Ptr());
-        Vector<RHICommandList*> execute_cmds(mExecuteAlloc.Ptr());
-        execute_cmds.resize(group_active.size(), nullptr);
-        execute_barriers.resize(group_active.size(), ExecuteBarrierList(mExecuteAlloc.Ptr()));
+        // Acquire/Release resources if needed
+        bool needAcquire = false, needRelease = mSetup->executionGroups.size() > 1;
+        if (group.groupIndex - 1 >= 0)
+        {
+            auto& prevGroup = mSetup->executionGroups[group.groupIndex - 1];
+            needAcquire = prevGroup.queue != group.queue;
+        }
+        // If this is the last group and present is needed
+        const bool needPresent =
+            static_cast<size_t>(group.groupIndex) == mSetup->executionGroups.size() - 1 && mDesc.enablePresent;
+        // Next - we do all the passes in parallel - with transitions starting before the passes
+        auto passBarriers = ConstructSpan<ExecuteBarrierList>(mExecuteAlloc.Ptr(), active.size(), mExecuteAlloc.Ptr());
+        auto passCmds = ConstructSpan<RHICommandList*>(mExecuteAlloc.Ptr(),
+                                                       needAcquire + active.size() + needRelease + needPresent);
+        // Acquire? - [Passes] - Release? - Present?
         {
             // ExecuteBarriers - Set...Barrier calls are very, very cheap and doesn't reach the driver
             // until a call to EndTransition on the cmd
             // This needs to be done in lockstep - helps with cache locality as well now
             // we're only writing on the main thread :D
             ZoneScopedN("Pre-transition");
-            for (size_t i = 0; i < group_active.size(); ++i)
-                ExecuteBarriers(passes[group_active[i]], &execute_barriers[i]);
+            for (size_t i = 0; i < active.size(); ++i)
+                ExecuteBarriers(passes[active[i]], &passBarriers[i]);
         }
         {
             ZoneScopedN("Schedule Records");
@@ -1422,7 +1434,7 @@ void Renderer::ExecuteFrame()
                 size_t ord;
                 // Write a lambda without writing a lambda
                 // For demonstration of custom job types - and that
-                // cmd buffers are thread-local - we don't get thread_id in lambda in my implementation
+                // cmd buffers are thread-local, plus how we don't get thread_id in lambda in my implementation
                 RecordJob(Renderer* r, TrackedPass* pass, RHICommandList** cmd, size_t ord,
                           ExecuteBarrierList* barriers) : r(r), barriers(barriers), pass(pass), cmd(cmd), ord(ord)
                 {
@@ -1431,7 +1443,7 @@ void Renderer::ExecuteFrame()
                 {
                     ZoneScoped;
                     ZoneNameF("<%s>", pass->name.c_str());
-                    (*cmd) = r->ExecuteAllocateCommandList(pass->queue, thread_id);
+                    *cmd = r->ExecuteAllocateCommandList(pass->queue, thread_id);
                     (*cmd)->Begin();
                     (*cmd)->BeginTransition();
                     for (auto& [res, desc] : (*barriers))
@@ -1444,186 +1456,120 @@ void Renderer::ExecuteFrame()
                     pass->pass->Record(pass->handle, r, *cmd);
                     (*cmd)->DebugEnd();
                     (*cmd)->End();
-                };
+                }
             };
-            for (size_t i = 0; i < group_active.size(); ++i)
+            for (size_t i = 0; i < active.size(); ++i)
             {
                 if (mDesc.numRenderThreads)
                 {
-                    mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[group_active[i]], &execute_cmds[i], i,
-                                                           &execute_barriers[i]);
+                    mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[active[i]], &passCmds[i + needAcquire], i,
+                                                           &passBarriers[i]);
                 }
                 else
                 {
-                    RecordJob job(this, &passes[group_active[i]], &execute_cmds[i], i, &execute_barriers[i]);
+                    RecordJob job(this, &passes[active[i]], &passCmds[i + needAcquire], i, &passBarriers[i]);
                     job.Execute(-1); // Main thread
                 }
             }
         }
-        Vector<RHICommandList*> acq_cmds(mExecuteAlloc.Ptr()), rel_cmds(mExecuteAlloc.Ptr());
-        bool needAcquire = false, needRelease = mSetup->executionGroups.size() > 1;
-        if (group.groupIndex - 1 >= 0)
         {
-            auto& prevGroup = mSetup->executionGroups[group.groupIndex - 1];
-            needAcquire = prevGroup.queue != group.queue;
-        }
-        // Acquire resources for ourselves
-        if (needAcquire)
-        {
-            auto cmd = ExecuteAllocateCommandList(group.queue, -1);
-            cmd->Begin();
-            cmd->DebugBegin("Group Acquire");
-            ExecuteAcquireQueueResources(group.queue, group.groupIndex, cmd);
-            cmd->DebugEnd();
-            cmd->End();
-            acq_cmds.emplace_back(cmd);
-        }
-        // Release resources to the next group if needed
-        // since we can *only* do that on this queue
-        if (needRelease)
-        {
-            auto cmd = ExecuteAllocateCommandList(group.queue, -1);
-            cmd->Begin();
-            cmd->DebugBegin("Group Release");
-            ExecuteReleaseQueueResources(group.queue, group.groupIndex, cmd);
-            cmd->DebugEnd();
-            cmd->End();
-            rel_cmds.emplace_back(cmd);
+            ZoneScopedN("Auxiliary Command Record");
+            // Acquire resources for ourselves
+            if (needAcquire)
+            {
+                auto cmd = ExecuteAllocateCommandList(group.queue, -1);
+                cmd->Begin();
+                ExecuteAcquireQueueResources(group.queue, group.groupIndex, cmd);
+                cmd->End();
+                passCmds.front() = cmd;
+            }
+            // Release resources to the next group if needed
+            // since we can *only* do that on this queue
+            if (needRelease)
+            {
+                auto cmd = ExecuteAllocateCommandList(group.queue, -1);
+                cmd->Begin();
+                ExecuteReleaseQueueResources(group.queue, group.groupIndex, cmd);
+                cmd->End();
+                passCmds[needAcquire + active.size()] = cmd;
+            }
+            // Transition the backbuffer
+            if (needPresent)
+            {
+                // Transition the Backbuffer to Present.
+                auto cmd = ExecuteAllocateCommandList(RHIDeviceQueueType::Graphics, -1);
+                cmd->Begin();
+                cmd->BeginTransition();
+                ExecuteBarrierSubresource(kInvalidHandle, mSetup->trackedResources[mSwaps[GetSwap()].backbuffer],
+                                          RHITextureSubresourceRange::Create(), {}, RHIPipelineStageBits::BottomOfPipe,
+                                          RHITextureLayout::Present, cmd);
+                cmd->EndTransition();
+                cmd->End();
+                passCmds.back() = cmd;
+            }
         }
         /* -- Submission -- */
         {
-            ZoneScopedN("Group Submit");
+            ZoneScopedN("Group Pre-submit");
             // We'd only signal the current group per submit
             auto Counter = [&](size_t ord) { return mFrameSwapped * mSetup->executionGroups.size() + ord + 1LL; };
             // Counter for a frame prior
             auto CounterFF = [&](size_t ord)
             { return (mFrameSwapped - 1LL) * mSetup->executionGroups.size() + ord + 1LL; };
-            RHIDeviceQueue::TimelinePair timeline_signal;
+            auto* signal = Construct<RHIDeviceQueue::TimelinePair>(mExecuteAlloc.Ptr());
             if (group.queue == RHIDeviceQueueType::Graphics)
-                timeline_signal =
-                    RHIDeviceQueue::TimelinePair(mGraphicsTimeline.Get(), Counter(group.graphicsGroupIndex));
-            else if (group.queue == RHIDeviceQueueType::Compute)
-                timeline_signal =
-                    RHIDeviceQueue::TimelinePair(mComputeTimeline.Get(), Counter(group.computeGroupIndex));
-            else [[unlikely]]
-                throw std::runtime_error("Unhandled queue type");
+                *signal = RHIDeviceQueue::TimelinePair(mGraphicsTimeline.Get(), Counter(group.graphicsGroupIndex));
+            else
+                *signal = RHIDeviceQueue::TimelinePair(mComputeTimeline.Get(), Counter(group.computeGroupIndex));
             // Sync with previous groups on a different queue
             // otherwise submissions on the same queue are ordered only _by the barriers_
             // The command list ordering itself does _NOT_ guarantee it!!
             // To my idiotic past self:
             // https://www.lunarg.com/wp-content/uploads/2021/08/Vulkan-Synchronization-SIGGRAPH-2021.pdf
-            Vector<RHIDeviceQueue::TimelinePair> timeline_waits(mExecuteAlloc.Ptr());
-            Vector<RHIPipelineStage> timeline_wait_stages(mExecuteAlloc.Ptr());
+            auto* wait = Construct<Vector<RHIDeviceQueue::TimelinePair>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
+            auto* waitStage = Construct<Vector<RHIPipelineStage>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
             if (maxGraphicsSyncGroup >= 0 && group.queue == RHIDeviceQueueType::Compute)
-                timeline_waits.emplace_back(mGraphicsTimeline.Get(), Counter(maxGraphicsSyncGroup)),
-                    timeline_wait_stages.push_back(group.allStages);
+                wait->emplace_back(mGraphicsTimeline.Get(), Counter(maxGraphicsSyncGroup)),
+                    waitStage->push_back(group.allStages);
             if (maxComputeSyncGroup >= 0 && group.queue == RHIDeviceQueueType::Graphics)
-                timeline_waits.emplace_back(mComputeTimeline.Get(), Counter(maxComputeSyncGroup)),
-                    timeline_wait_stages.push_back(group.allStages);
+                wait->emplace_back(mComputeTimeline.Get(), Counter(maxComputeSyncGroup)),
+                    waitStage->push_back(group.allStages);
             // A special case for the first group of a queue
             // Always synchronize with the _last_ group of the _last_ frame
             if ((group.computeGroupIndex == 0 || group.graphicsGroupIndex == 0) && mFrameSwapped > 0)
             {
                 auto& lastGroup = mSetup->executionGroups.back();
                 if (lastGroup.queue == RHIDeviceQueueType::Graphics)
-                    timeline_waits.emplace_back(mGraphicsTimeline.Get(), CounterFF(lastGroup.graphicsGroupIndex)),
-                        timeline_wait_stages.push_back(group.allStages);
-                else if (lastGroup.queue == RHIDeviceQueueType::Compute)
-                    timeline_waits.emplace_back(mComputeTimeline.Get(), CounterFF(lastGroup.computeGroupIndex)),
-                        timeline_wait_stages.push_back(group.allStages);
-                else [[unlikely]]
-                    throw std::runtime_error("Unhandled queue type");
-            }
-            RHIDeviceFence* fence_ptr = nullptr;
-            // Fence the queues for every frame
-            // Only one fence per queue is needed since submissions are in order
-            if (group.isLastCompute)
-                fence_ptr = mSwaps[mCurrentSync].computeFence.Get();
-            else if (group.isLastGraphics)
-                fence_ptr = mSwaps[mCurrentSync].graphicsFence.Get();
-            const bool is_last = static_cast<size_t>(group.groupIndex) == mSetup->executionGroups.size() - 1;
-            // Submit to our own queue
-            RHIDeviceQueue* queue = nullptr;
-            if (group.queue == RHIDeviceQueueType::Graphics)
-                queue = mGraphicsQueue;
-            else if (group.queue == RHIDeviceQueueType::Compute)
-                queue = mComputeQueue;
-            else [[unlikely]]
-                throw std::runtime_error("Unhandled queue type");
-            // Prepare the final command list submission
-            Vector<RHICommandList*> group_cmds(mExecuteAlloc.Ptr());
-            group_cmds.reserve(acq_cmds.size() + rel_cmds.size() + execute_cmds.size());
-            // Wait for all recording to finish
-            auto waitForRecord = [&]()
-            {
-                if (mDesc.numRenderThreads > 0)
-                {
-                    ZoneScopedN("Wait for Record");
-                    mExecuteThreadPool.Join();
-                }
-                // Insert all cmd lists
-                // [acq, execute, rel]
-                group_cmds.insert(group_cmds.end(), acq_cmds.begin(), acq_cmds.end());
-                group_cmds.insert(group_cmds.end(), execute_cmds.begin(), execute_cmds.end());
-                group_cmds.insert(group_cmds.end(), rel_cmds.begin(), rel_cmds.end());
-            };
-            if (is_last)
-            {
-                ZoneScopedN("Final Submit");
-                if (!mDesc.enablePresent)
-                {
-                    waitForRecord();
-                    queue->Submit({{{
-                                      .timelineWaits = timeline_waits,
-                                      .timelineSignals = {{{timeline_signal}}},
-                                      .waitsStages = timeline_wait_stages,
-                                      .cmdLists = group_cmds,
-                                  }}},
-                                  fence_ptr);
-                }
+                    wait->emplace_back(mGraphicsTimeline.Get(), CounterFF(lastGroup.graphicsGroupIndex)),
+                        waitStage->push_back(group.allStages);
                 else
-                {
-                    // Last group to submit, and we need to present
-                    CHECK_MSG(group.queue == RHIDeviceQueueType::Graphics,
-                              "FIXME-ExecuteFrame: Last pass ended on a non-Graphics queue");
-                    // Transition the Backbuffer to Present.
-                    auto cmd = ExecuteAllocateCommandList(RHIDeviceQueueType::Graphics, -1);
-                    cmd->Begin();
-                    cmd->DebugBegin("Present");
-                    cmd->BeginTransition();
-                    ExecuteBarrierSubresource(kInvalidHandle, mSetup->trackedResources[mSwaps[GetSwap()].backbuffer],
-                                              RHITextureSubresourceRange::Create(), {},
-                                              RHIPipelineStageBits::BottomOfPipe, RHITextureLayout::Present, cmd);
-                    cmd->EndTransition();
-                    cmd->DebugEnd();
-                    cmd->End();
-                    waitForRecord();
-                    timeline_wait_stages.push_back(group.allStages | RHIPipelineStageBits::BottomOfPipe);
-                    group_cmds.push_back(cmd);
-                    {
-                        // Finally..
-                        queue->Submit({{{.timelineWaits = timeline_waits,
-                                         .timelineSignals = {{{timeline_signal}}},
-                                         .waits = {{mSwaps[mCurrentSync].present.Get()}},
-                                         .waitsStages = timeline_wait_stages,
-                                         .signals = {{mSwaps[GetSwap()].render.Get()}},
-                                         .cmdLists = group_cmds}}},
-                                      mSwaps[mCurrentSync].graphicsFence.Get());
-                        queue->Present({.imageIndex = GetSwap(),
-                                        .swapchain = mSwapchain.Get(),
-                                        .waits = {{mSwaps[GetSwap()].render.Get()}}});
-                    }
-                }
+                    wait->emplace_back(mComputeTimeline.Get(), CounterFF(lastGroup.computeGroupIndex)),
+                        waitStage->push_back(group.allStages);
+            }
+            // Presenting needs a bit more care
+            if (needPresent)
+            {
+                // Last group to submit, and we need to present
+                CHECK_MSG(group.queue == RHIDeviceQueueType::Graphics,
+                          "FIXME-ExecuteFrame: Last pass ended on a non-Graphics queue");
+                waitStage->push_back(group.allStages | RHIPipelineStageBits::BottomOfPipe);
+                mExecuteGraphicsSubmits->push_back({.timelineWaits = *wait,
+                                                    .timelineSignals = {{{*signal}}},
+                                                    .waits = {{mSwaps[mCurrentSync].present.Get()}},
+                                                    .waitsStages = *waitStage,
+                                                    .signals = {{mSwaps[GetSwap()].render.Get()}},
+                                                    .cmdLists = passCmds});
             }
             else
             {
-                ZoneScopedN("Submit");
-                waitForRecord();
-                queue->Submit({{{.timelineWaits = timeline_waits,
-                                 .timelineSignals = {{{timeline_signal}}},
-                                 .waitsStages = timeline_wait_stages,
-                                 .cmdLists = group_cmds,
-                                 }}}, fence_ptr);
+                auto* pSubmits = mExecuteGraphicsSubmits;
+                if (group.queue == RHIDeviceQueueType::Compute)
+                    pSubmits = mExecuteComputeSubmits;
+                pSubmits->push_back({.timelineWaits = *wait,
+                                     .timelineSignals = {{{*signal}}},
+                                     .waitsStages = *waitStage,
+                                     .signals = {{mSwaps[GetSwap()].render.Get()}},
+                                     .cmdLists = passCmds});
             }
         }
     }
@@ -1633,6 +1579,19 @@ void Renderer::EndExecute()
     ZoneScoped;
     CHECK_MSG(mState == State::Execute, "Renderer bad state ({}). EndExecute() may only be called once per frame.",
               mState);
+    // At this point, all passes have been scheduled to record and submit params are valid.
+    // Wait for all recording to finish
+    mExecuteThreadPool.Join();
+    // Submit all the recorded command lists
+    if (!mExecuteGraphicsSubmits->empty())
+        mGraphicsQueue->Submit(*mExecuteGraphicsSubmits, mSwaps[mCurrentSync].graphicsFence.Get());
+    if (!mExecuteComputeSubmits->empty())
+        mComputeQueue->Submit(*mExecuteComputeSubmits, mSwaps[mCurrentSync].computeFence.Get());
+    // Present if needed
+    if (mDesc.enablePresent)
+        mGraphicsQueue->Present({.imageIndex = GetSwap(),
+                                        .swapchain = mSwapchain.Get(),
+                                        .waits = {{mSwaps[GetSwap()].render.Get()}}});
     mCurrentSync = (mCurrentSync + 1) % mFrameSwaps;
     mFrameSwapped++;
     mState = State::PostSetup;
