@@ -961,7 +961,7 @@ void Renderer::SetFrameSyncObjects()
         mSwaps[i].computeFence->DebugSetObjectName(fmt::format("Compute Fence of Swap {}", i).c_str());
     }
     mGraphicsTimeline = mDevice->CreateSemaphore(true);
-    mGraphicsTimeline->DebugSetObjectName(fmt::format("Async Graphics Timeline Semaphore").c_str());
+    mGraphicsTimeline->DebugSetObjectName(fmt::format("Graphics Timeline Semaphore").c_str());
     mComputeTimeline = mDevice->CreateSemaphore(true);
     mComputeTimeline->DebugSetObjectName(fmt::format("Async Compute Timeline Semaphore").c_str());
 }
@@ -1538,6 +1538,8 @@ void Renderer::ExecuteFrame()
                     waitStage->push_back(group.allStages);
             // A special case for the first group of a queue
             // Always synchronize with the _last_ group of the _last_ frame
+            // TODO: This also seems idiotic - shouldn't previous barrier checks _ensure_ this?
+            //       And no, this is not comprehensive either - FIXME.
             if ((group.computeGroupIndex == 0 || group.graphicsGroupIndex == 0) && mFrameSwapped > 0)
             {
                 auto& lastGroup = mSetup->executionGroups.back();
