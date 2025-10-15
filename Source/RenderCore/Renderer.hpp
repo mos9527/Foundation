@@ -82,6 +82,7 @@ namespace Foundation::RenderCore
         struct RendererSetup
         {
             Vector<Vector<Pair<PassHandle, ResourceHandle>>> graph;
+            Vector<PassHandle> indegree;
             Vector<TrackedPass> trackedPasses;
             Vector<TrackedResource> trackedResources;
             // Backbuffer producer
@@ -121,9 +122,12 @@ namespace Foundation::RenderCore
                 while (u >= graph.size())
                     graph.emplace_back(graph.get_allocator());
                 graph[u].emplace_back(v, hdl);
+                while (v >= indegree.size())
+                    indegree.push_back(0);
+                indegree[v]++;
             }
             explicit RendererSetup(Allocator* allocator) :
-                graph(allocator), trackedPasses(allocator), trackedResources(allocator), trackedViews(allocator),
+                graph(allocator), indegree(allocator), trackedPasses(allocator), trackedResources(allocator), trackedViews(allocator),
                 trackedSamplers(allocator), activeResources(allocator), execution(allocator), bindingCounts(allocator),
                 executionGroups(allocator)
             {
@@ -939,7 +943,7 @@ namespace Foundation::RenderCore
         requires std::is_base_of_v<RenderPass, T>
     T* createPassImpl(Renderer* r, StringView name, RHIDeviceQueueType queue, Args&&... args)
     {
-        size_t pri = (queue == RHIDeviceQueueType::Graphics) ? 0 : kMaxRenderPasses;
+        size_t pri = (queue == RHIDeviceQueueType::Graphics) ? 0 : kMaxRenderPasses; // Just a _pretty large_ value.
         return createPassImpl<T>(r, name, queue, pri, std::forward<Args>(args)...);
     }
     /**

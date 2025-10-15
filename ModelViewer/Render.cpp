@@ -1,5 +1,6 @@
 #include <Bindings/ImGui.hpp>
 #include <Rendering/PSFullscreen.hpp>
+#include <Rendering/CSMipGeneration.hpp>
 #include "App.hpp"
 #include "Assets/Mesh.hpp"
 using namespace ModelViewer;
@@ -41,10 +42,17 @@ void App::OnRendererSetup()
               "Viewport size ({}x{}) exceeds swapchain extent ({}x{})", mViewportSize.x, mViewportSize.y,kTextureMaxExtent.x, kTextureMaxExtent.y);
     ResourceHandle zbuffer = createResource(mRenderer.get(), "ZBuffer",
                                             RHITextureDesc{
-                                                .usage = RHITextureUsageBits::DepthStencil,
+                                                .usage = RHITextureUsageBits::DepthStencil | RHITextureUsageBits::SampledImage,
                                                 .extent = kTextureMaxExtent,
                                                 .format = RHIResourceFormat::D32SignedFloat,
                                             });
+    ResourceHandle hiz = createResource(mRenderer.get(), "HiZ",
+        RHITextureDesc{
+            .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::StorageImage,
+            .extent = kTextureMaxExtent,
+            .format = RHIResourceFormat::R32SignedFloat,
+            .mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(kTextureMaxExtent.x, kTextureMaxExtent.y)))) + 1,
+        });
     ResourceHandle gbuffer =
         createResource(mRenderer.get(), "GBuffer",
                        RHITextureDesc{
@@ -180,6 +188,10 @@ void App::OnRendererSetup()
                                        sizeof(MeshletTaskDispatch));
             cmd->EndGraphics();
         });
+    createCSMipGenerationPasses(
+        mRenderer.get(),"Depth Pyramid", RHIDeviceQueueType::Compute, zbuffer, hiz,
+        RHITextureAspectFlagBits::Depth, RHIResourceFormat::D32SignedFloat,
+        RHITextureAspectFlagBits::Color, RHIResourceFormat::R32SignedFloat);
     ImGui_ImplFoundation_CreatePass(mRenderer.get(), "ImGui", true /* clear */,
         [=, this](PassHandle self, Renderer* r)
         {
@@ -193,6 +205,12 @@ void App::OnRendererSetup()
                 {
                     .format = RHIResourceFormat::R8G8B8A8Unorm,
                     .range = RHITextureSubresourceRange::Create(),
+                });
+            r->BindTextureSRV(
+                self, hiz, kBindpointIgnored, RHIPipelineStageBits::FragmentShader,
+                {
+                    .format = RHIResourceFormat::R32SignedFloat,
+                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color, 0, 13)
                 });
         });
 }

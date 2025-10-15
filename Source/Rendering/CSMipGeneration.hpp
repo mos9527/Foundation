@@ -3,7 +3,7 @@
 namespace Foundation::Rendering
 {
     using namespace RenderCore;
-    inline void createCSMipGenerationPasses(Renderer* renderer, StringView name, ResourceHandle src, ResourceHandle dst,
+    inline void createCSMipGenerationPasses(Renderer* renderer, StringView name, RHIDeviceQueueType queue, ResourceHandle src, ResourceHandle dst,
                                             RHITextureAspectFlagBits srcAspect, RHIResourceFormat srcFormat,
                                             RHITextureAspectFlagBits dstAspect, RHIResourceFormat dstFormat,
                                             uint32_t maxMips = 16, uint32_t layer = 0
@@ -20,7 +20,7 @@ namespace Foundation::Rendering
         for (uint32 i = 0; i < maxMips; ++i)
         {
             createPass(
-                renderer, fmt::format("Mip Gen {} {}", i, name), RHIDeviceQueueType::Compute,
+                renderer, fmt::format("Mip Gen {} {}", i, name), queue,
                 [=](PassHandle self, Renderer* r)
                 {
                     r->BindShader(self, RHIShaderStageBits::Compute, "csMain", "data/shaders/CSMipGeneration.spv");

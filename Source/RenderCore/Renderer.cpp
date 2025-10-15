@@ -175,6 +175,7 @@ void Renderer::BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDevi
                                  RHIDeviceDescriptorSetLayout* layout)
 {
     CHECK(mState == State::Setup);
+    CHECK_MSG(bind_point != kBindpointIgnored, "Cannot bind descriptor set with ignored bind point. Declare explict set and binding with BindDescriptorBindPoint(), and use the name there instead.");
     mSetup->trackedPasses[pass].externalBindings.emplace_back(descriptor_set, layout, bind_point);
 }
 void Renderer::BindDescriptorBindPoint(PassHandle pass, StringView bind_point, uint32_t binding, uint32_t set)
@@ -312,49 +313,41 @@ void Renderer::CullPasses(PassHandle epilogue) const
     CHECK(mState == State::Setup);
     CHECK(epilogue < mSetup->trackedPasses.size());
     // Cull and topsort
-    Vector<PassHandle> topo(mAllocator), vis(mSetup->trackedPasses.size(), mAllocator),
-        dis(mSetup->trackedPasses.size(), mAllocator); // Depth in graph from epilogue
-    topo.reserve(mSetup->trackedPasses.size());
-    auto dp = [&](PassHandle u, PassHandle pa, auto&& dfs) -> void
+    PriorityQueue<Pair<int, PassHandle>> pq(mAllocator); // (pri, node)
+    Vector<PassHandle> topo(mAllocator);
+    Vector<int> dis(mSetup->trackedPasses.size(), 0, mAllocator);
+    auto& in = mSetup->indegree;
+    for (auto& pass : mSetup->trackedPasses)
     {
-        if (u >= mSetup->graph.size())
-            return; // No out degrees
-        vis[u] = 1;
-        for (const auto& v : mSetup->graph[u] | Views::keys)
-        {
-            // Weighted by vertex priority
-            size_t w = 1 + mSetup->trackedPasses[v].priority;
-            dis[v] = std::max(dis[u] + w, dis[v]);
-            if (vis[v] == 1)
-                throw std::runtime_error("Cycle detected in render graph");
-            if (vis[v] == 0)
-                dfs(v, u, dfs);
-        }
-        vis[u] = 2;
-        mSetup->trackedPasses[u].used = true;
+        // Always visit epilogue first
+        if (pass.handle >= in.size() || in[pass.handle] == 0)
+            pq.emplace( pass.handle == epilogue ? std::numeric_limits<int>::max() : pass.priority, pass.handle);
+    }
+    // Khan BFS with priority <pri then insertion order (handle value)>
+    while (!pq.empty())
+    {
+        auto [pri, u] = pq.top();
+        pq.pop();
         topo.push_back(u);
-    };
+        for (const auto& v : mSetup->graph[u] | std::views::keys)
+        {
+            in[v]--;
+            dis[v] = std::max(dis[v], dis[u] + 1);
+            if (in[v] == 0)
+                pq.emplace(mSetup->trackedPasses[v].priority, v);
+        }
+    }
+    // Sort by longest path
+    // Ordering is still valid topological order
+    Ranges::sort(topo, [&](auto const& a, auto const& b) { return dis[a] > dis[b]; });
     auto& exec = mSetup->execution;
-    if (!mSetup->graph.empty())
-    {
-        dp(epilogue, -1, dp);
-        // Sort by longest path
-        // Ordering is still valid topological order
-        Ranges::sort(topo, [&](auto const& a, auto const& b) { return dis[a] > dis[b]; });
-        exec = topo;
-    }
-    if (exec.empty())
-    {
-        // No dependency from any passes
-        // Execute only the epilogue
-        exec.push_back(epilogue);
-        mSetup->trackedPasses[epilogue].used = true;
-    }
+    exec = topo;
     mSetup->epilogue = epilogue;
     // Collect active resources
     for (PassHandle ord = 0; ord < exec.size(); ord++)
     {
         auto& pass = mSetup->trackedPasses[exec[ord]];
+        pass.used = true;
         // Derive lifetimes for resources from execution order
         // FinalizeResources() uses this to overlap resources.
         pass.ord = ord, pass.depth = dis[pass.handle];
@@ -571,6 +564,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
     // Textures
     for (auto& [vhdl, dtype, binding] : tracked.textureBindings)
     {
+        if (binding == kBindpointIgnored)
+            continue;
         auto it = var_types.find(binding);
         if (it == var_types.end())
             var_types[binding] = dtype, var_handles[binding] = vhdl;
@@ -584,6 +579,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
     // Buffers
     for (auto& [rhdl, dtype, binding] : tracked.bufferBindings)
     {
+        if (binding == kBindpointIgnored)
+            continue;
         auto it = var_types.find(binding);
         if (it == var_types.end())
             var_types[binding] = dtype, var_handles[binding] = rhdl;
@@ -597,6 +594,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
     // Samplers
     for (auto& [sampler_handle, binding] : tracked.samplers)
     {
+        if (binding == kBindpointIgnored)
+            continue;
         auto it = var_types.find(binding);
         if (it == var_types.end())
             var_types[binding] = RHIDescriptorType::Sampler, var_samplers[binding] = sampler_handle;
@@ -1030,9 +1029,12 @@ void Renderer::BeginExecute()
         ZoneScopedN("Acquire Next Image");
         mCurrentSwap = mSwapchain->GetNextImage(-1, mSwaps[mCurrentSync].present, {});
     }
-    // Reset per-swap command lists
-    for (auto& cmds : mExecutePerSwapCmds[mCurrentSync])
-        cmds->Reset();
+    {
+        ZoneScopedN("Reset Cmds");
+        // Reset per-swap command lists
+        for (auto& cmds : mExecutePerSwapCmds[mCurrentSync])
+            cmds->Reset();
+    }
 }
 void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, TrackedResource::SubresourceState& sta,
                                               RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout,
@@ -1553,11 +1555,14 @@ void Renderer::ExecuteFrame()
                 CHECK_MSG(group.queue == RHIDeviceQueueType::Graphics,
                           "FIXME-ExecuteFrame: Last pass ended on a non-Graphics queue");
                 waitStage->push_back(group.allStages | RHIPipelineStageBits::BottomOfPipe);
+                auto pPresentSemaphores = ConstructSpan<RHIDeviceSemaphore*>(mExecuteAlloc.Ptr(), 2);
+                pPresentSemaphores[0] = mSwaps[mCurrentSync].present.Get();
+                pPresentSemaphores[1] = mSwaps[GetSwap()].render.Get();
                 mExecuteGraphicsSubmits->push_back({.timelineWaits = *wait,
-                                                    .timelineSignals = {{{*signal}}},
-                                                    .waits = {{mSwaps[mCurrentSync].present.Get()}},
+                                                    .timelineSignals = {signal, 1},
+                                                    .waits = pPresentSemaphores.subspan(0, 1),
                                                     .waitsStages = *waitStage,
-                                                    .signals = {{mSwaps[GetSwap()].render.Get()}},
+                                                    .signals = pPresentSemaphores.subspan(1, 1),
                                                     .cmdLists = passCmds});
             }
             else
@@ -1566,9 +1571,8 @@ void Renderer::ExecuteFrame()
                 if (group.queue == RHIDeviceQueueType::Compute)
                     pSubmits = mExecuteComputeSubmits;
                 pSubmits->push_back({.timelineWaits = *wait,
-                                     .timelineSignals = {{{*signal}}},
+                                     .timelineSignals = {signal, 1},
                                      .waitsStages = *waitStage,
-                                     .signals = {{mSwaps[GetSwap()].render.Get()}},
                                      .cmdLists = passCmds});
             }
         }
@@ -1581,17 +1585,28 @@ void Renderer::EndExecute()
               mState);
     // At this point, all passes have been scheduled to record and submit params are valid.
     // Wait for all recording to finish
-    mExecuteThreadPool.Join();
+    {
+        ZoneScopedN("Wait for Records");
+        mExecuteThreadPool.Join();
+    }
     // Submit all the recorded command lists
     if (!mExecuteGraphicsSubmits->empty())
+    {
+        ZoneScopedN("Graphics Submit");
         mGraphicsQueue->Submit(*mExecuteGraphicsSubmits, mSwaps[mCurrentSync].graphicsFence.Get());
+    }
     if (!mExecuteComputeSubmits->empty())
+    {
+        ZoneScopedN("Async Compute Submit");
         mComputeQueue->Submit(*mExecuteComputeSubmits, mSwaps[mCurrentSync].computeFence.Get());
+    }
     // Present if needed
     if (mDesc.enablePresent)
-        mGraphicsQueue->Present({.imageIndex = GetSwap(),
-                                        .swapchain = mSwapchain.Get(),
-                                        .waits = {{mSwaps[GetSwap()].render.Get()}}});
+    {
+        ZoneScopedN("Present");
+        mGraphicsQueue->Present(
+            {.imageIndex = GetSwap(), .swapchain = mSwapchain.Get(), .waits = {{mSwaps[GetSwap()].render.Get()}}});
+    }
     mCurrentSync = (mCurrentSync + 1) % mFrameSwaps;
     mFrameSwapped++;
     mState = State::PostSetup;
@@ -1601,7 +1616,7 @@ void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) const
 {
     CHECK(mState == State::Execute);
     auto& tpass = mSetup->trackedPasses[pass];
-    CHECK_MSG(tpass.pso.IsValid(), "Current pass has no Pipeline state.");
+        CHECK_MSG(tpass.pso.IsValid(), "Current pass {} has no Pipeline state.", tpass.name);
     cmd->SetPipeline({.pipeline = tpass.pso.Get(),
                       .type = tpass.isComputePass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics});
     if (!tpass.pDescriptorSets.empty())

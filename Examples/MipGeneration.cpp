@@ -59,7 +59,7 @@ namespace Examples
                                    .format = RHIResourceFormat::R8G8B8A8Unorm,
                                });
             ResourceHandle sampler = createSampler(mRenderer.get(), {});
-            createCSMipGenerationPasses(mRenderer.get(), "Mip Gen", srcHandle, srcHandle,
+            createCSMipGenerationPasses(mRenderer.get(), "Mip Gen", RHIDeviceQueueType::Compute, srcHandle, srcHandle,
                                         RHITextureAspectFlagBits::Color, RHIResourceFormat::R8G8B8A8Unorm,
                                         RHITextureAspectFlagBits::Color, RHIResourceFormat::R8G8B8A8Unorm, 16, 0);
             createPass(

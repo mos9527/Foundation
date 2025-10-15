@@ -99,7 +99,7 @@ namespace Foundation::RenderCore
     {
         String name;
         PassHandle handle; // Index to tracked passes
-        size_t priority{0}; // Higher priority passes are scheduled earlier
+        int priority{0}; // Higher priority passes are scheduled earlier
         // The queue to run this pass on
         RHIDeviceQueueType queue;
         bool used{false}; // Culled?
