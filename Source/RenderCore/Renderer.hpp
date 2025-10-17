@@ -117,6 +117,7 @@ namespace Foundation::RenderCore
             };
             Vector<ExecutionGroups> executionGroups;
             bool executionAnyCompute{false}, executionAnyGraphics{false};
+            int executionNumGraphicsGroups{0}, executionNumComputeGroups{0};
             void add_edge(const PassHandle u, const PassHandle v, const ResourceHandle hdl)
             {
                 while (u >= graph.size())

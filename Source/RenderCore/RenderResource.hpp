@@ -32,9 +32,9 @@ namespace Foundation::RenderCore
             // Last pass to write at Setup time
             PassHandle producer{kInvalidHandle};
             // Last pass to transition at Execute time
-            PassHandle lastExecutor{kInvalidHandle};
+            PassHandle lastProducer{kInvalidHandle};
             // Last frame the transition was executed
-            size_t lastExecuteFrame{0};
+            size_t lastProducedFrame{0};
             // Last queue this resource is owned by
             RHIDeviceQueueType lastOwnerQueue{RHIDeviceQueueType::Undefined};
             // [Only used by @ref ExecuteReleaseQueueResources]
@@ -59,9 +59,9 @@ namespace Foundation::RenderCore
             // Last pass to write at Setup time
             PassHandle producer{kInvalidHandle};
             // Last pass to transition at Execute time
-            PassHandle lastExecutor{kInvalidHandle};
+            PassHandle lastProducer{kInvalidHandle};
             // Last frame the transition was executed
-            size_t lastExecuteFrame{0};
+            size_t lastProducedFrame{0};
             // Last queue this resource is owned by
             RHIDeviceQueueType lastOwnerQueue{RHIDeviceQueueType::Undefined};
             // [Only used by @ref ExecuteReleaseQueueResources]

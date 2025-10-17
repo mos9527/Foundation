@@ -446,13 +446,12 @@ void Renderer::CullPasses(PassHandle epilogue) const
     }
     // Assign graphics/compute group indices
     {
-        size_t graphics_count = 0, compute_count = 0;
         for (auto& g : mSetup->executionGroups)
         {
             if (g.queue == RHIDeviceQueueType::Graphics)
-                g.graphicsGroupIndex = graphics_count++;
+                g.graphicsGroupIndex = mSetup->executionNumGraphicsGroups++;
             else if (g.queue == RHIDeviceQueueType::Compute)
-                g.computeGroupIndex = compute_count++;
+                g.computeGroupIndex = mSetup->executionNumGraphicsGroups++;
         }
     }
     LOG_RUNTIME(Renderer, debug, "** Render Graph GraphViz **\n{}", DbgDumpGraphviz());
@@ -1047,7 +1046,7 @@ void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, 
     {
         /* always barrier */
     }
-    else if (sta.access == access && sta.stage == stage && sta.layout == layout)
+    else if (mFrameSwapped != 0 && sta.access == access && sta.stage == stage && sta.layout == layout)
         return;
     RHICommandList::TransitionDesc desc{
         .srcAccess = sta.access,
@@ -1063,8 +1062,11 @@ void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, 
     sta.access = access;
     sta.stage = stage;
     sta.layout = layout;
-    sta.lastExecutor = pass;
-    sta.lastExecuteFrame = mFrameSwapped;
+    if (access & kAllShaderWrites)
+    {
+        sta.lastProducer = pass;
+        sta.lastProducedFrame = mFrameSwapped;
+    }
 }
 void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
                                          RHITextureSubresourceRange const& range, RHIResourceAccess access,
@@ -1093,7 +1095,7 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
     {
         /* always barrier */
     }
-    else if (tres.lastBufferState.access == access && tres.lastBufferState.stage == stage)
+    else if (mFrameSwapped != 0 && tres.lastBufferState.access == access && tres.lastBufferState.stage == stage)
         return;
     RHICommandList::TransitionDesc desc{
         .srcAccess = tres.lastBufferState.access,
@@ -1105,8 +1107,11 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
               [&](ExecuteBarrierList* barrierList) { barrierList->emplace_back(res, desc); });
     tres.lastBufferState.access = access;
     tres.lastBufferState.stage = stage;
-    tres.lastBufferState.lastExecutor = pass;
-    tres.lastBufferState.lastExecuteFrame = mFrameSwapped;
+    if (access & kAllShaderWrites)
+    {
+        tres.lastBufferState.lastProducer = pass;
+        tres.lastBufferState.lastProducedFrame = mFrameSwapped;
+    }
 }
 void Renderer::ExecuteBarriers(TrackedPass& pass, ExecuteBarrierPCmdOrPBarrierList cmd)
 {
@@ -1351,44 +1356,48 @@ void Renderer::ExecuteFrame()
     // Execute by groups
     for (auto& group : mSetup->executionGroups)
     {
-        /* -- Dependency -- */
+        /* -- Inter queue sync -- */
+        auto Counter = [&](size_t ord) { return mFrameSwapped * mSetup->executionGroups.size() + ord + 1LL; };
+        auto CounterPrior = [&](size_t ord) { return (mFrameSwapped - 1LL) * mSetup->executionGroups.size() + ord + 1LL; };
         // Collect producers that branched out before this group
         // We only take groups that's produced in this frame before the current one
-        int maxGraphicsSyncGroup = -1, maxComputeSyncGroup = -1;
-        if (mSetup->executionGroups.size() > 1)
+        int graphicsWaitValue = CounterPrior(mSetup->executionNumGraphicsGroups - 1);
+        int computeWaitValue = CounterPrior(mSetup->executionNumComputeGroups - 1);
+        // By default - the last frame's values
+        auto UpdateSyncGroup = [&](PassHandle pass, size_t frame)
         {
-            auto UpdateSyncGroup = [&](PassHandle pass)
+            if (pass == kInvalidHandle)
+                return;
+            auto& tpass = mSetup->trackedPasses[pass];
+            auto& tgroup = mSetup->executionGroups[tpass.groupIndex];
+            int graphicsValue = frame == mFrameSwapped ? Counter(tgroup.graphicsGroupIndex)
+                                                  : CounterPrior(tgroup.graphicsGroupIndex);
+            int computeValue = frame == mFrameSwapped ? Counter(tgroup.computeGroupIndex)
+                                                 : CounterPrior(tgroup.computeGroupIndex);
+            switch (tpass.queue)
             {
-                if (pass == kInvalidHandle)
-                    return;
-                auto& tpass = mSetup->trackedPasses[pass];
-                auto& tgroup = mSetup->executionGroups[tpass.groupIndex];
-                if (tpass.groupIndex >= group.groupIndex)
-                    return;
-                switch (tpass.queue)
-                {
-                case RHIDeviceQueueType::Graphics:
-                    maxGraphicsSyncGroup = std::max<int>(maxGraphicsSyncGroup, tgroup.graphicsGroupIndex);
-                    break;
-                default:
-                case RHIDeviceQueueType::Compute:
-                    maxComputeSyncGroup = std::max<int>(maxComputeSyncGroup, tgroup.computeGroupIndex);
-                }
-            };
-            for (auto pass_handle : group.passes)
+            case RHIDeviceQueueType::Graphics:
+                graphicsWaitValue = std::max(graphicsValue, graphicsValue);
+                break;
+            default:
+            case RHIDeviceQueueType::Compute:
+                computeWaitValue = std::max(computeValue, computeValue);
+                break;
+            }
+        };
+        for (auto pass_handle : group.passes)
+        {
+            auto const& pass = mSetup->trackedPasses[pass_handle];
+            for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
             {
-                auto const& pass = mSetup->trackedPasses[pass_handle];
-                for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
-                {
-                    auto& tres = mSetup->trackedResources[hdl];
-                    for (auto const& sta : tres.GetLastSubresourceStateOf(range))
-                        UpdateSyncGroup(sta.lastExecutor);
-                }
-                for (auto [hdl, access, stage] : pass.bufferUsages)
-                {
-                    auto& tres = mSetup->trackedResources[hdl];
-                    UpdateSyncGroup(tres.lastBufferState.lastExecutor);
-                }
+                auto& tres = mSetup->trackedResources[hdl];
+                for (auto const& sta : tres.GetLastSubresourceStateOf(range))
+                    UpdateSyncGroup(sta.lastProducer, sta.lastProducedFrame);
+            }
+            for (auto [hdl, access, stage] : pass.bufferUsages)
+            {
+                auto& tres = mSetup->trackedResources[hdl];
+                UpdateSyncGroup(tres.lastBufferState.lastProducer, tres.lastBufferState.lastProducedFrame);
             }
         }
         /* -- Recording -- */
@@ -1419,8 +1428,6 @@ void Renderer::ExecuteFrame()
         {
             // ExecuteBarriers - Set...Barrier calls are very, very cheap and doesn't reach the driver
             // until a call to EndTransition on the cmd
-            // This needs to be done in lockstep - helps with cache locality as well now
-            // we're only writing on the main thread :D
             ZoneScopedN("Pre-transition");
             for (size_t i = 0; i < active.size(); ++i)
                 ExecuteBarriers(passes[active[i]], &passBarriers[i]);
@@ -1513,44 +1520,23 @@ void Renderer::ExecuteFrame()
         /* -- Submission -- */
         {
             ZoneScopedN("Group Pre-submit");
-            // We'd only signal the current group per submit
-            auto Counter = [&](size_t ord) { return mFrameSwapped * mSetup->executionGroups.size() + ord + 1LL; };
-            // Counter for a frame prior
-            auto CounterFF = [&](size_t ord)
-            { return (mFrameSwapped - 1LL) * mSetup->executionGroups.size() + ord + 1LL; };
             auto* signal = Construct<RHIDeviceQueue::TimelinePair>(mExecuteAlloc.Ptr());
             if (group.queue == RHIDeviceQueueType::Graphics)
                 *signal = RHIDeviceQueue::TimelinePair(mGraphicsTimeline.Get(), Counter(group.graphicsGroupIndex));
             else
                 *signal = RHIDeviceQueue::TimelinePair(mComputeTimeline.Get(), Counter(group.computeGroupIndex));
-            // Sync with previous groups on a different queue
-            // otherwise submissions on the same queue are ordered only _by the barriers_
-            // The command list ordering itself does _NOT_ guarantee it!!
-            // To my idiotic past self:
+            // Submissions on the same queue are guaranteed to be ordered only by the barriers
+            // where ones w/o dependency may _execute_ concurrently in the driver
+            // However, cross-queue synchronization is still needed - we'll do timeline semaphores for that
             // https://www.lunarg.com/wp-content/uploads/2021/08/Vulkan-Synchronization-SIGGRAPH-2021.pdf
             auto* wait = Construct<Vector<RHIDeviceQueue::TimelinePair>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
             auto* waitStage = Construct<Vector<RHIPipelineStage>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
-            if (maxGraphicsSyncGroup >= 0 && group.queue == RHIDeviceQueueType::Compute)
-                wait->emplace_back(mGraphicsTimeline.Get(), Counter(maxGraphicsSyncGroup)),
+            if (graphicsWaitValue >= 0 && group.queue == RHIDeviceQueueType::Compute)
+                wait->emplace_back(mGraphicsTimeline.Get(), graphicsWaitValue),
                     waitStage->push_back(group.allStages);
-            if (maxComputeSyncGroup >= 0 && group.queue == RHIDeviceQueueType::Graphics)
-                wait->emplace_back(mComputeTimeline.Get(), Counter(maxComputeSyncGroup)),
+            if (computeWaitValue >= 0 && group.queue == RHIDeviceQueueType::Graphics)
+                wait->emplace_back(mComputeTimeline.Get(), computeWaitValue),
                     waitStage->push_back(group.allStages);
-            // A special case for the first group of a queue
-            // Always synchronize with the _last_ group of the _last_ frame
-            // TODO: This also seems idiotic - shouldn't previous barrier checks _ensure_ this?
-            //       And no, this is not comprehensive either - FIXME.
-            if ((group.computeGroupIndex == 0 || group.graphicsGroupIndex == 0) && mFrameSwapped > 0)
-            {
-                auto& lastGroup = mSetup->executionGroups.back();
-                if (lastGroup.queue == RHIDeviceQueueType::Graphics)
-                    wait->emplace_back(mGraphicsTimeline.Get(), CounterFF(lastGroup.graphicsGroupIndex)),
-                        waitStage->push_back(group.allStages);
-                else
-                    wait->emplace_back(mComputeTimeline.Get(), CounterFF(lastGroup.computeGroupIndex)),
-                        waitStage->push_back(group.allStages);
-            }
-            // Presenting needs a bit more care
             if (needPresent)
             {
                 // Last group to submit, and we need to present
