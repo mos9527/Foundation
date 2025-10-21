@@ -5,7 +5,6 @@
 using namespace Foundation::Core;
 using namespace Foundation::RenderCore;
 
-// Help messages
 const char* kShaderDescriptorBindingErrorHelp =
     "This can be caused by one of the following:\n"
     "   - Parameter is optimized-out, and the binding is kept as is.\n"
@@ -1578,16 +1577,22 @@ void Renderer::EndExecute()
         mExecuteThreadPool.Join();
     }
     // Submit all the recorded command lists
-    if (!mExecuteGraphicsSubmits->empty())
-    {
-        ZoneScopedN("Graphics Submit");
-        mGraphicsQueue->Submit(*mExecuteGraphicsSubmits, mSwaps[mCurrentSync].graphicsFence.Get());
-    }
+    // XXX: Queue transfers could raise false-positives for synchronization validation.
+    //      Assuming there's a Graphics-Compute release op on the graphics queue, submitting the
+    //      compute queue _now_ makes the validation layer confused - as we haven't submitted
+    //      that release yet.
+    //      It's guaranteed, however that the actual executions are in order with the timeline semaphores.
     if (!mExecuteComputeSubmits->empty())
     {
         ZoneScopedN("Async Compute Submit");
         mComputeQueue->Submit(*mExecuteComputeSubmits, mSwaps[mCurrentSync].computeFence.Get());
     }
+    if (!mExecuteGraphicsSubmits->empty())
+    {
+        ZoneScopedN("Graphics Submit");
+        mGraphicsQueue->Submit(*mExecuteGraphicsSubmits, mSwaps[mCurrentSync].graphicsFence.Get());
+    }
+
     // Present if needed
     if (mDesc.enablePresent)
     {
