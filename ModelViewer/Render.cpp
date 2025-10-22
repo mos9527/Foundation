@@ -188,10 +188,10 @@ void App::OnRendererSetup()
                                        sizeof(MeshletTaskDispatch));
             cmd->EndGraphics();
         });
-    createCSMipGenerationPasses(
-        mRenderer.get(),"Depth Pyramid", RHIDeviceQueueType::Compute, zbuffer, hiz,
-        RHITextureAspectFlagBits::Depth, RHIResourceFormat::D32SignedFloat,
-        RHITextureAspectFlagBits::Color, RHIResourceFormat::R32SignedFloat);
+    // createCSMipGenerationPasses(
+    //     mRenderer.get(),"Depth Pyramid", RHIDeviceQueueType::Compute, zbuffer, hiz,
+    //     RHITextureAspectFlagBits::Depth, RHIResourceFormat::D32SignedFloat,
+    //     RHITextureAspectFlagBits::Color, RHIResourceFormat::R32SignedFloat);
     ImGui_ImplFoundation_CreatePass(mRenderer.get(), "ImGui", true /* clear */,
         [=, this](PassHandle self, Renderer* r)
         {
@@ -206,11 +206,11 @@ void App::OnRendererSetup()
                     .format = RHIResourceFormat::R8G8B8A8Unorm,
                     .range = RHITextureSubresourceRange::Create(),
                 });
-            r->BindTextureSRV(
-                self, hiz, kBindpointIgnored, RHIPipelineStageBits::FragmentShader,
-                {
-                    .format = RHIResourceFormat::R32SignedFloat,
-                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color, 0, 13)
-                });
+            // r->BindTextureSRV(
+            //     self, hiz, kBindpointIgnored, RHIPipelineStageBits::FragmentShader,
+            //     {
+            //         .format = RHIResourceFormat::R32SignedFloat,
+            //         .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color, 0, 13)
+            //     });
         });
 }

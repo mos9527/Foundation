@@ -1530,10 +1530,10 @@ void Renderer::ExecuteFrame()
             // https://www.lunarg.com/wp-content/uploads/2021/08/Vulkan-Synchronization-SIGGRAPH-2021.pdf
             auto* wait = Construct<Vector<RHIDeviceQueue::TimelinePair>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
             auto* waitStage = Construct<Vector<RHIPipelineStage>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
-            if (graphicsWaitValue >= 0 && group.queue == RHIDeviceQueueType::Compute)
+            if (mSetup->executionNumGraphicsGroups &&graphicsWaitValue >= 0 && group.queue == RHIDeviceQueueType::Compute)
                 wait->emplace_back(mGraphicsTimeline.Get(), graphicsWaitValue),
                     waitStage->push_back(group.allStages);
-            if (computeWaitValue >= 0 && group.queue == RHIDeviceQueueType::Graphics)
+            if (mSetup->executionNumComputeGroups && computeWaitValue >= 0 && group.queue == RHIDeviceQueueType::Graphics)
                 wait->emplace_back(mComputeTimeline.Get(), computeWaitValue),
                     waitStage->push_back(group.allStages);
             if (needPresent)
