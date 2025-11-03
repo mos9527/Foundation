@@ -870,17 +870,22 @@ void Renderer::FinalizeResources()
     for (const auto& handle : mSetup->activeResources | Views::keys)
     {
         auto& res = mSetup->trackedResources[handle];
+        bool needShared = res.hasComputeUsage && res.hasGraphicsUsage;
         res.desc.Visit(
             // Owned
             [&](RHIBufferDesc const& desc)
             {
-                mResources->resources[handle] = mDevice->CreateBuffer(desc);
+                RHIBufferDesc sdesc = desc;
+                if (needShared) sdesc.resource.shared = true, sdesc.resource.sharedQueues = RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute;
+                mResources->resources[handle] = mDevice->CreateBuffer(sdesc);
                 DerefResource(handle).Get<RHIBuffer*>()->DebugSetObjectName(
                     fmt::format("{} [{}]", res.name, handle).c_str());
             },
             [&](RHITextureDesc const& desc)
             {
-                mResources->resources[handle] = mDevice->CreateTexture(desc);
+                RHITextureDesc sdesc = desc;
+                if (needShared) sdesc.resource.shared = true, sdesc.resource.sharedQueues = RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute;
+                mResources->resources[handle] = mDevice->CreateTexture(sdesc);
                 DerefResource(handle).Get<RHITexture*>()->DebugSetObjectName(
                     fmt::format("{} [{}]", res.name, handle).c_str());
             },

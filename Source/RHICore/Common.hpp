@@ -81,6 +81,13 @@ namespace Foundation::RHI {
         ENUM_NAME(Present)
     ENUM_NAME_CONV_END()
 
+    BITMASK_ENUM_BEGIN(RHIDeviceQueueFlags, uint32_t)
+        Graphics = 1u << 0,
+        Compute = 1u << 1,
+        Transfer = 1u << 2,
+        Present = 1u << 3
+    BITMASK_ENUM_END()
+
     enum class RHIDevicePipelineType {
         Graphics,
         Compute,

@@ -35,27 +35,27 @@ vk::ImageCreateInfo vkImageCreateInfoFromRHITextureDesc(RHITextureDesc const& de
         .initialLayout = vkImageLayoutFromRHITextureLayout(desc.initialLayout),
     };
 }
-uint32_t FillQueueFamilies(VulkanDevice const& device, uint32_t* dst, Bitset<8> const& queues)
+uint32_t FillQueueFamilies(VulkanDevice const& device, uint32_t* dst, RHIDeviceQueueFlags queueFlags)
 {
-    using enum RHIDeviceQueueType;
-    constexpr RHIDeviceQueueType kTypes[] = { Graphics,Compute,Transfer };
     uint32_t* p = dst;
-    for (auto type : kTypes)
-    {
-        if (queues[static_cast<size_t>(type)])
-            *p++ = device.GetDeviceQueue(type)->GetQueueIndex();
-    }
+    if (queueFlags & RHIDeviceQueueFlagsBits::Graphics)
+        *p++ = device.GetDeviceQueue(RHIDeviceQueueType::Graphics)->GetQueueIndex();
+    if (queueFlags & RHIDeviceQueueFlagsBits::Compute)
+        *p++ = device.GetDeviceQueue(RHIDeviceQueueType::Compute)->GetQueueIndex();
+    if (queueFlags & RHIDeviceQueueFlagsBits::Transfer)
+        *p++ = device.GetDeviceQueue(RHIDeviceQueueType::Transfer)->GetQueueIndex();
     return p - dst;
 }
 VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc)
     : RHIBuffer(device, desc), mDevice(device), mAliases(device.GetAllocator()) {
     vk::BufferCreateInfo buffer_info = vkBufferCreateInfoFromRHIBufferDesc(desc);
 
-    uint32_t queueFamilies[8]{}, queueCount = 0;
+    uint32_t queueFamilies[8]{};
     if (desc.resource.shared)
-        queueCount = FillQueueFamilies(device, &queueFamilies[0], desc.resource.sharedQueues);
-    buffer_info.pQueueFamilyIndices = queueFamilies;
-    buffer_info.queueFamilyIndexCount = queueCount;
+    {
+        buffer_info.pQueueFamilyIndices = queueFamilies;
+        buffer_info.queueFamilyIndexCount = FillQueueFamilies(device, &queueFamilies[0], desc.resource.sharedQueues);
+    }
 
     auto flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.hostAccess);
     if (desc.resource.staging)
@@ -120,12 +120,12 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
         desc.extent.x,desc.extent.y,desc.extent.z
     );
     vk::ImageCreateInfo image_info = vkImageCreateInfoFromRHITextureDesc(desc);
-    uint32_t queueFamilies[8]{}, queueCount = 0;
+    uint32_t queueFamilies[8]{};
     if (desc.resource.shared)
-        queueCount = FillQueueFamilies(device, &queueFamilies[0], desc.resource.sharedQueues);
-    image_info.pQueueFamilyIndices = queueFamilies;
-    image_info.queueFamilyIndexCount = queueCount;
-
+    {
+        image_info.pQueueFamilyIndices = queueFamilies;
+        image_info.queueFamilyIndexCount = FillQueueFamilies(device, &queueFamilies[0], desc.resource.sharedQueues);
+    }
     VmaAllocationCreateInfo allocInfo = {
         .flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.hostAccess),
         .usage = VMA_MEMORY_USAGE_AUTO,
