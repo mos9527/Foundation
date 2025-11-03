@@ -384,7 +384,7 @@ void Renderer::CullPasses(PassHandle epilogue) const
         Ranges::sort(exec.begin() + i, exec.begin() + j, [&](PassHandle a, PassHandle b)
                      { return mSetup->trackedPasses[a].handle < mSetup->trackedPasses[b].handle; });
     }
-    auto& exec_group = mSetup->executionGroups;
+    auto& groups = mSetup->executionGroups;
     // Grouping heuristics:
     // 1: Group contains only passes of same queue types
     // 2: Graphics passes that don't depend on prior Compute separates ones that do while satisfying (1)
@@ -418,11 +418,11 @@ void Renderer::CullPasses(PassHandle epilogue) const
             if (queue == RHIDeviceQueueType::Graphics && nextProducedByCompute && !currentProducedByCompute)
                 break; // Start new group
         }
-        auto& group = exec_group.emplace_back(static_cast<int>(exec_group.size()), mSetup->trackedPasses[exec[i]].queue,
+        auto& group = groups.emplace_back(static_cast<int>(groups.size()), mSetup->trackedPasses[exec[i]].queue,
                                               mAllocator);
         group.passes.insert(group.passes.end(), exec.begin() + i, exec.begin() + j);
         // Collect dependencies
-        for (auto pass : exec_group.back().passes)
+        for (auto pass : groups.back().passes)
         {
             auto& tpass = mSetup->trackedPasses[pass];
             tpass.groupIndex = group.groupIndex;
@@ -439,23 +439,23 @@ void Renderer::CullPasses(PassHandle epilogue) const
     }
     // Assign last Graphics/Compute group
     {
-        auto it = Ranges::find_if(mSetup->executionGroups | Views::reverse,
+        auto it = Ranges::find_if(groups | Views::reverse,
                                   [](auto const& g) { return g.queue == RHIDeviceQueueType::Graphics; });
-        if (it != mSetup->executionGroups.rend())
+        if (it != groups.rend())
             it->isLastGraphics = true;
-        it = Ranges::find_if(mSetup->executionGroups | Views::reverse,
+        it = Ranges::find_if(groups | Views::reverse,
                              [](auto const& g) { return g.queue == RHIDeviceQueueType::Compute; });
-        if (it != mSetup->executionGroups.rend())
+        if (it != groups.rend())
             it->isLastCompute = true;
     }
     // Assign graphics/compute group indices
     {
-        for (auto& g : mSetup->executionGroups)
+        for (auto& g : groups)
         {
             if (g.queue == RHIDeviceQueueType::Graphics)
                 g.graphicsGroupIndex = mSetup->executionNumGraphicsGroups++;
             else if (g.queue == RHIDeviceQueueType::Compute)
-                g.computeGroupIndex = mSetup->executionNumGraphicsGroups++;
+                g.computeGroupIndex = mSetup->executionNumComputeGroups++;
         }
     }
     LOG_RUNTIME(Renderer, debug, "** Render Graph GraphViz **\n{}", DbgDumpGraphviz());
@@ -1216,12 +1216,13 @@ void Renderer::ExecuteFrame()
     CHECK_MSG(mState == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", mState);
     auto& passes = mSetup->trackedPasses;
     // Execute by groups
-    for (auto& group : mSetup->executionGroups)
+    auto& groups = mSetup->executionGroups;
+    for (auto& group : groups)
     {
         /* -- Inter queue sync -- */
-        auto Counter = [&](size_t ord) { return mFrameSwapped * mSetup->executionGroups.size() + ord + 1LL; };
+        auto Counter = [&](size_t ord) { return mFrameSwapped * groups.size() + ord + 1LL; };
         auto CounterPrior = [&](size_t ord)
-        { return (mFrameSwapped - 1LL) * mSetup->executionGroups.size() + ord + 1LL; };
+        { return (mFrameSwapped - 1LL) * groups.size() + ord + 1LL; };
         // Collect producers that branched out before this group
         // We only take groups that's produced in this frame before the current one
         int graphicsWaitValue = CounterPrior(mSetup->executionNumGraphicsGroups - 1);
@@ -1232,7 +1233,7 @@ void Renderer::ExecuteFrame()
             if (pass == kInvalidHandle)
                 return;
             auto& tpass = mSetup->trackedPasses[pass];
-            auto& tgroup = mSetup->executionGroups[tpass.groupIndex];
+            auto& tgroup = groups[tpass.groupIndex];
             int graphicsValue =
                 frame == mFrameSwapped ? Counter(tgroup.graphicsGroupIndex) : CounterPrior(tgroup.graphicsGroupIndex);
             int computeValue =
@@ -1266,7 +1267,7 @@ void Renderer::ExecuteFrame()
         /* -- Recording -- */
         // Count only the non-skipped ones
         Vector<PassHandle> active(mExecuteAlloc.Ptr());
-        active.reserve(mSetup->executionGroups.size() + 1);
+        active.reserve(groups.size() + 1);
         for (auto handle : group.passes)
         {
             if (!passes[handle].pass->IsSkipped(handle, this))
@@ -1275,12 +1276,17 @@ void Renderer::ExecuteFrame()
         // Record all the active tasks
         // If this is the last group and present is needed
         const bool needPresent =
-            static_cast<size_t>(group.groupIndex) == mSetup->executionGroups.size() - 1 && mDesc.enablePresent;
+            static_cast<size_t>(group.groupIndex) == groups.size() - 1 && mDesc.enablePresent;
+        // Graphics then Compute - some resources (e.g. depth) needs to be transitioned on
+        // and only on the most capable queue.
+        size_t groupIndex = group.groupIndex;
+        size_t nextGroupIndex = (groupIndex + 1) %
+            groups.size(); // Next group. Would be the first group if current groupIndex is the last group
+        bool needPostTransition = groups[groupIndex].queue == RHIDeviceQueueType::Graphics && groups[nextGroupIndex].queue != RHIDeviceQueueType::Graphics;
         // Next - we do all the passes in parallel - with transitions starting before the passes
         auto passBarriers = ConstructSpan<ExecuteBarrierList>(mExecuteAlloc.Ptr(), active.size(), mExecuteAlloc.Ptr());
         auto passCmds = ConstructSpan<RHICommandList*>(mExecuteAlloc.Ptr(),
-                                                        active.size() + needPresent);
-        // Acquire? - [Passes] - Release? - Present?
+                                                        active.size() + needPostTransition + needPresent);
         {
             // ExecuteBarriers - Set...Barrier calls are very, very cheap and doesn't reach the driver
             // until a call to EndTransition on the cmd
@@ -1338,7 +1344,69 @@ void Renderer::ExecuteFrame()
             }
         }
         {
-            ZoneScopedN("Auxiliary Command Record");
+            ZoneScopedN("Post Transition / Present");
+            // Only Compute resources _need_ to be transitioned here beforehand. So we only deal with that
+            if (needPostTransition)
+            {
+                // Declare that the first pass from the next group handled the transition
+                PassHandle executorPass = groups[nextGroupIndex].passes.front();
+                auto cmd = ExecuteAllocateCommandList(RHIDeviceQueueType::Graphics, -1);
+                cmd->Begin();
+                cmd->DebugBegin("Graphics Pre Compute");
+                cmd->BeginTransition();
+                for (PassHandle pass : groups[nextGroupIndex].passes)
+                {
+                    auto& tracked = mSetup->trackedPasses[pass];
+                    for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
+                    {
+                        auto& tres = mSetup->trackedResources[hdl];
+                        RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
+                        for (auto& sta : tres.GetLastSubresourceStateOf(range))
+                        {
+                            // Only deal with resources currently owned by us _once_
+                            // This implies that the states (stages) _could_ be one
+                            // of ours (e.g. Fragment) and cannot be transitioned by the subsequent (Compute)
+                            // group.
+                            // Releasing this state SHOULD imply that all queues - no matter capability
+                            // can transition it.
+                            if (sta.executeTempTransitionFlag)
+                                continue; // Only transition once - so the *first* usages of the next group are valid
+                            // Subsequent intra-group transitions should always be valid by themselves
+                            ExecuteBarrierSubresourceState(executorPass, res, sta, access, stage, layout, cmd);
+                            sta.executeTempTransitionFlag = true;
+                        }
+                    }
+                    for (auto [hdl, access, stage] : tracked.bufferUsages)
+                    {
+                        auto& tres = mSetup->trackedResources[hdl];
+                        // Same as above
+                        if (tres.lastBufferState.executeTempTransitionFlag)
+                            continue;
+                        ExecuteBarrierBuffer(executorPass, tres, access, stage, cmd);
+                        tres.lastBufferState.executeTempTransitionFlag = true;
+                    }
+                }
+                for (PassHandle pass : groups[nextGroupIndex].passes)
+                {
+                    auto& tracked = mSetup->trackedPasses[pass];
+                    // Reset the flags
+                    for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
+                    {
+                        auto& tres = mSetup->trackedResources[hdl];
+                        for (auto& sta : tres.GetLastSubresourceStateOf(range))
+                            sta.executeTempTransitionFlag = false;
+                    }
+                    for (auto [hdl, access, stage] : tracked.bufferUsages)
+                    {
+                        auto& tres = mSetup->trackedResources[hdl];
+                        tres.lastBufferState.executeTempTransitionFlag = false;
+                    }
+                }
+                cmd->EndTransition();
+                cmd->DebugEnd();
+                cmd->End();
+                passCmds[active.size()] = cmd;
+            }
             // Transition the backbuffer
             if (needPresent)
             {
@@ -1351,7 +1419,7 @@ void Renderer::ExecuteFrame()
                                           RHITextureLayout::Present, cmd);
                 cmd->EndTransition();
                 cmd->End();
-                passCmds.back() = cmd;
+                passCmds[active.size() + needPostTransition] = cmd;
             }
         }
         /* -- Submission -- */
