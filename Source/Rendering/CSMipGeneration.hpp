@@ -48,13 +48,12 @@ namespace Foundation::Rendering
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
-                    RHITexture* srcTex = r->DerefResource(src).Get<RHITexture*>();
                     RHITexture* dstTex = r->DerefResource(dst).Get<RHITexture*>();
-                    RHIExtent3D extent;
-                    CHECK_MSG((extent = srcTex->mDesc.extent) == dstTex->mDesc.extent, "Extent of source images mismatch");
+                    RHIExtent3D extent = dstTex->mDesc.extent;
                     r->CmdSetPipeline(self,cmd);
                     uint32_t w = std::max(1u, extent.x >> i);
                     uint32_t h = std::max(1u, extent.y >> i);
+                    CHECK_MSG(w == h, "w:{} h:{} should be equal", w, h);
                     r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, PushConstant{
                         .srcExtent = { w, h },
                         .filter = 0 // box
@@ -63,10 +62,8 @@ namespace Foundation::Rendering
                 },
                 [=](PassHandle self, Renderer* r)
                 {
-                    if (i == 0 && src == dst)
-                        return true;
-                    RHITexture* srcTex = r->DerefResource(src).Get<RHITexture*>();
-                    return i > srcTex->mDesc.mipLevels - 1;
+                    RHITexture* dstTex = r->DerefResource(dst).Get<RHITexture*>();
+                    return i > dstTex->mDesc.mipLevels - 1;
                 });
         }
     }

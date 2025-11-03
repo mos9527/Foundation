@@ -35,9 +35,28 @@ vk::ImageCreateInfo vkImageCreateInfoFromRHITextureDesc(RHITextureDesc const& de
         .initialLayout = vkImageLayoutFromRHITextureLayout(desc.initialLayout),
     };
 }
+uint32_t FillQueueFamilies(VulkanDevice const& device, uint32_t* dst, Bitset<8> const& queues)
+{
+    using enum RHIDeviceQueueType;
+    constexpr RHIDeviceQueueType kTypes[] = { Graphics,Compute,Transfer };
+    uint32_t* p = dst;
+    for (auto type : kTypes)
+    {
+        if (queues[static_cast<size_t>(type)])
+            *p++ = device.GetDeviceQueue(type)->GetQueueIndex();
+    }
+    return p - dst;
+}
 VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc)
     : RHIBuffer(device, desc), mDevice(device), mAliases(device.GetAllocator()) {
     vk::BufferCreateInfo buffer_info = vkBufferCreateInfoFromRHIBufferDesc(desc);
+
+    uint32_t queueFamilies[8]{}, queueCount = 0;
+    if (desc.resource.shared)
+        queueCount = FillQueueFamilies(device, &queueFamilies[0], desc.resource.sharedQueues);
+    buffer_info.pQueueFamilyIndices = queueFamilies;
+    buffer_info.queueFamilyIndexCount = queueCount;
+
     auto flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.hostAccess);
     if (desc.resource.staging)
         flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT;
@@ -101,6 +120,12 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
         desc.extent.x,desc.extent.y,desc.extent.z
     );
     vk::ImageCreateInfo image_info = vkImageCreateInfoFromRHITextureDesc(desc);
+    uint32_t queueFamilies[8]{}, queueCount = 0;
+    if (desc.resource.shared)
+        queueCount = FillQueueFamilies(device, &queueFamilies[0], desc.resource.sharedQueues);
+    image_info.pQueueFamilyIndices = queueFamilies;
+    image_info.queueFamilyIndexCount = queueCount;
+
     VmaAllocationCreateInfo allocInfo = {
         .flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.hostAccess),
         .usage = VMA_MEMORY_USAGE_AUTO,

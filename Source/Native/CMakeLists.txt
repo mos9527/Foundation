@@ -14,6 +14,7 @@ include(FetchContent)
 # GLFW
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(glfw)
 if (UNIX AND NOT APPLE)
     # https://github.com/glfw/glfw/issues/2495

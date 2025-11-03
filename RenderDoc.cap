@@ -29,7 +29,7 @@
                 "variable": "XDG_SESSION_TYPE"
             }
         ],
-        "executable": "/home/mos9527/Foundation/cmake-build-debug/bin/Example_MandelbrotCompute",
+        "executable": "/home/mos9527/Foundation/cmake-build-debug/bin/ModelViewer",
         "inject": false,
         "numQueuedFrames": 0,
         "options": {

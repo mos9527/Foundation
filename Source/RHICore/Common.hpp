@@ -66,12 +66,12 @@ namespace Foundation::RHI {
         // The command pool is meant to be used once
         Transient,
     };
-    enum class RHIDeviceQueueType {
-        Undefined,
-        Graphics,
-        Compute,
-        Transfer,
-        Present
+    enum class RHIDeviceQueueType : uint32_t {
+        Undefined = ~0u,
+        Graphics = 0,
+        Compute = 1,
+        Transfer = 2,
+        Present = 3
     };
     ENUM_NAME_CONV_BEGIN(RHIDeviceQueueType)
         ENUM_NAME(Undefined)

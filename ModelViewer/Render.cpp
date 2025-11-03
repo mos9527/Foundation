@@ -3,8 +3,11 @@
 #include <Rendering/CSMipGeneration.hpp>
 #include "App.hpp"
 #include "Assets/Mesh.hpp"
+#include <cmath>
 using namespace ModelViewer;
-const size_t kMaxMeshletTasks = 1e5;
+constexpr size_t kMaxMeshletTasks = 1e5;
+constexpr int kHIZResolution = 512;
+constexpr int kHIZMips = std::log2(kHIZResolution) + 1;
 struct MeshletTaskParams
 {
     uint32_t instanceID;
@@ -38,26 +41,24 @@ void App::OnRendererSetup()
                        RHIBufferDesc{.usage = RHIBufferUsageBits::IndirectBuffer | RHIBufferUsageBits::StorageBuffer |
                                          RHIBufferUsageBits::TransferDestination,
                                      .size = sizeof(int)});
-    CHECK_MSG(mViewportSize.x <= kTextureMaxExtent.x && mViewportSize.y <= kTextureMaxExtent.y,
-              "Viewport size ({}x{}) exceeds swapchain extent ({}x{})", mViewportSize.x, mViewportSize.y,kTextureMaxExtent.x, kTextureMaxExtent.y);
     ResourceHandle zbuffer = createResource(mRenderer.get(), "ZBuffer",
                                             RHITextureDesc{
                                                 .usage = RHITextureUsageBits::DepthStencil | RHITextureUsageBits::SampledImage,
-                                                .extent = kTextureMaxExtent,
+                                                .extent = mViewportSize,
                                                 .format = RHIResourceFormat::D32SignedFloat,
                                             });
     ResourceHandle hiz = createResource(mRenderer.get(), "HiZ",
         RHITextureDesc{
             .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::StorageImage,
-            .extent = kTextureMaxExtent,
+            .extent = {kHIZResolution,kHIZResolution,1},
             .format = RHIResourceFormat::R32SignedFloat,
-            .mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(kTextureMaxExtent.x, kTextureMaxExtent.y)))) + 1,
+            .mipLevels = kHIZMips
         });
     ResourceHandle gbuffer =
         createResource(mRenderer.get(), "GBuffer",
                        RHITextureDesc{
                            .usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::SampledImage,
-                           .extent = kTextureMaxExtent,
+                           .extent = mViewportSize,
                            .format = RHIResourceFormat::R8G8B8A8Unorm,
                        });
     ResourceHandle sceneInstance, sceneShared, sceneConst;
@@ -188,10 +189,10 @@ void App::OnRendererSetup()
                                        sizeof(MeshletTaskDispatch));
             cmd->EndGraphics();
         });
-    // createCSMipGenerationPasses(
-    //     mRenderer.get(),"Depth Pyramid", RHIDeviceQueueType::Compute, zbuffer, hiz,
-    //     RHITextureAspectFlagBits::Depth, RHIResourceFormat::D32SignedFloat,
-    //     RHITextureAspectFlagBits::Color, RHIResourceFormat::R32SignedFloat);
+    createCSMipGenerationPasses(
+        mRenderer.get(),"Depth Pyramid", RHIDeviceQueueType::Compute, zbuffer, hiz,
+        RHITextureAspectFlagBits::Depth, RHIResourceFormat::D32SignedFloat,
+        RHITextureAspectFlagBits::Color, RHIResourceFormat::R32SignedFloat, kHIZMips);
     ImGui_ImplFoundation_CreatePass(mRenderer.get(), "ImGui", true /* clear */,
         [=, this](PassHandle self, Renderer* r)
         {
@@ -206,11 +207,11 @@ void App::OnRendererSetup()
                     .format = RHIResourceFormat::R8G8B8A8Unorm,
                     .range = RHITextureSubresourceRange::Create(),
                 });
-            // r->BindTextureSRV(
-            //     self, hiz, kBindpointIgnored, RHIPipelineStageBits::FragmentShader,
-            //     {
-            //         .format = RHIResourceFormat::R32SignedFloat,
-            //         .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color, 0, 13)
-            //     });
+            r->BindTextureSRV(
+                self, hiz, kBindpointIgnored, RHIPipelineStageBits::FragmentShader,
+                {
+                    .format = RHIResourceFormat::R32SignedFloat,
+                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color, 0, kHIZMips)
+                });
         });
 }

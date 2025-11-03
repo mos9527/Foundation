@@ -194,7 +194,7 @@ namespace Foundation::RenderCore
         StackAllocator mExecuteAlloc;
         // Temporary storage for submits calls
         // This is reset every frame, and only guaranteed to be valid during Execute state.
-        Vector<RHIDeviceQueue::SubmitDesc> *mExecuteGraphicsSubmits{}, *mExecuteComputeSubmits{};
+        Vector<Pair<RHIDeviceQueueType, RHIDeviceQueue::SubmitDesc>> *mExecuteSubmits;
         // Thread pool for concurrent command list recording
         Async::ThreadPool mExecuteThreadPool;
         struct ExecutePerThreadCommandLists

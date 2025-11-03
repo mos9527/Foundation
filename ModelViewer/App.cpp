@@ -169,7 +169,7 @@ using namespace Foundation::Async;
 int main(int argc, char** argv)
 {
     App app;
-    app.Initialize<VulkanApplication>({.windowTitle = "Model Viewer", .renderer = {.enableAsyncCompute=false}});
+    app.Initialize<VulkanApplication>({.windowTitle = "Model Viewer", .renderer = {.enableAsyncCompute=true}});
     app.RunForever();
     ImGui_ImplFoundation_Shutdown();
 }

@@ -1,6 +1,9 @@
 #include <tracy/Tracy.hpp>
 
 #include "Renderer.hpp"
+
+#include <oneapi/tbb/task_arena.h>
+
 #include "Shader.hpp"
 using namespace Foundation::Core;
 using namespace Foundation::RenderCore;
@@ -174,7 +177,9 @@ void Renderer::BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDevi
                                  RHIDeviceDescriptorSetLayout* layout)
 {
     CHECK(mState == State::Setup);
-    CHECK_MSG(bind_point != kBindpointIgnored, "Cannot bind descriptor set with ignored bind point. Declare explict set and binding with BindDescriptorBindPoint(), and use the name there instead.");
+    CHECK_MSG(bind_point != kBindpointIgnored,
+              "Cannot bind descriptor set with ignored bind point. Declare explict set and binding with "
+              "BindDescriptorBindPoint(), and use the name there instead.");
     mSetup->trackedPasses[pass].externalBindings.emplace_back(descriptor_set, layout, bind_point);
 }
 void Renderer::BindDescriptorBindPoint(PassHandle pass, StringView bind_point, uint32_t binding, uint32_t set)
@@ -320,7 +325,7 @@ void Renderer::CullPasses(PassHandle epilogue) const
     {
         // Always visit epilogue first
         if (pass.handle >= in.size() || in[pass.handle] == 0)
-            pq.emplace( pass.handle == epilogue ? std::numeric_limits<int>::max() : pass.priority, pass.handle);
+            pq.emplace(pass.handle == epilogue ? std::numeric_limits<int>::max() : pass.priority, pass.handle);
     }
     // Khan BFS with priority <pri then insertion order (handle value)>
     while (!pq.empty())
@@ -1010,8 +1015,8 @@ void Renderer::BeginExecute()
     mState = State::Execute;
     // Reset per-frame arena
     mExecuteAlloc.Reset(mExecuteArena);
-    mExecuteGraphicsSubmits = Construct<Vector<RHIDeviceQueue::SubmitDesc>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
-    mExecuteComputeSubmits = Construct<Vector<RHIDeviceQueue::SubmitDesc>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
+    mExecuteSubmits = Construct<Vector<Pair<RHIDeviceQueueType, RHIDeviceQueue::SubmitDesc>>>(mExecuteAlloc.Ptr(),
+                                                                                              mExecuteAlloc.Ptr());
     Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait(mExecuteAlloc.Ptr());
     if (mSetup->executionAnyGraphics)
         wait.push_back(mSwaps[mCurrentSync].graphicsFence);
@@ -1151,153 +1156,6 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, ExecuteBarrierPCmdOrPBarrierLi
         ExecuteBarrierBuffer(pass.handle, tres, access, stage, cmd);
     }
 }
-void Renderer::ExecuteAcquireQueueResources(RHIDeviceQueueType currentQueue, size_t groupIndex, RHICommandList* cmd)
-{
-    ZoneScoped;
-    auto& groups = mSetup->executionGroups;
-    if (groups.size() <= 1) // e.g. No Async Compute
-        return;
-    cmd->BeginTransition();
-    uint32_t currentQueueIndex = ExecuteGetQueueIndex(currentQueue);
-    for (PassHandle pass : groups[groupIndex].passes)
-    {
-        auto& tracked = mSetup->trackedPasses[pass];
-        for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
-        {
-            auto& tres = mSetup->trackedResources[hdl];
-            if (!(tres.hasGraphicsUsage && tres.hasComputeUsage))
-                continue; // Only care about cross-queue resources
-            for (auto& sta : tres.GetLastSubresourceStateOf(range))
-            {
-                if (sta.lastOwnerQueue == currentQueue)
-                    continue;
-                if (sta.lastOwnerQueue != RHIDeviceQueueType::Undefined)
-                    cmd->SetImageTransition(DerefResource(tres.handle).Get<RHITexture*>(),
-                                            {.srcImgRange = sta.ToRange(),
-                                             .srcQueueIndex = ExecuteGetQueueIndex(sta.lastOwnerQueue),
-                                             .dstQueueIndex = currentQueueIndex});
-                sta.lastOwnerQueue = currentQueue;
-            }
-        }
-        for (auto [hdl, access, stage] : tracked.bufferUsages)
-        {
-            auto& tres = mSetup->trackedResources[hdl];
-            if (!(tres.hasGraphicsUsage && tres.hasComputeUsage))
-                continue; // Only care about cross-queue resources
-            if (tres.lastBufferState.lastOwnerQueue == currentQueue)
-                continue;
-            if (tres.lastBufferState.lastOwnerQueue != RHIDeviceQueueType::Undefined)
-                cmd->SetBufferTransition(DerefResource(tres.handle).Get<RHIBuffer*>(),
-                                         {.srcQueueIndex = ExecuteGetQueueIndex(tres.lastBufferState.lastOwnerQueue),
-                                          .dstQueueIndex = currentQueueIndex});
-            tres.lastBufferState.lastOwnerQueue = currentQueue;
-        }
-    }
-    cmd->EndTransition();
-}
-void Renderer::ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, size_t groupIndex, RHICommandList* cmd)
-{
-    ZoneScoped;
-    auto& groups = mSetup->executionGroups;
-    if (groups.size() <= 1) // e.g. No Async Compute
-        return;
-    /* -- Pre-transition -- */
-    // If the _current_ queue is strictly more capable (i.e. Graphics), transition the resources for
-    // the _next_ group which is *now* guaranteed to be less capable (i.e. Compute).
-    // Only Compute resources _need_ to be transitioned here beforehand. So we only deal with that
-    size_t nextGroupIndex = (groupIndex + 1) %
-        groups.size(); // Next group. Would be the first group if current groupIndex is the last group
-    if (groups[groupIndex].queue == RHIDeviceQueueType::Graphics && groups[nextGroupIndex].queue != currentQueue)
-    {
-        // Declare that the first pass from the next group handled the transition
-        PassHandle executorPass = mSetup->executionGroups[nextGroupIndex].passes.front();
-        cmd->BeginTransition();
-        for (PassHandle pass : groups[nextGroupIndex].passes)
-        {
-            auto& tracked = mSetup->trackedPasses[pass];
-            for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
-            {
-                auto& tres = mSetup->trackedResources[hdl];
-                RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
-                for (auto& sta : tres.GetLastSubresourceStateOf(range))
-                {
-                    // Only deal with resources currently owned by us _once_
-                    // This implies that the states (stages) _could_ be one
-                    // of ours (e.g. Fragment) and cannot be transitioned by the subsequent (Compute)
-                    // group.
-                    // Releasing this state SHOULD imply that all queues - no matter capability
-                    // can transition it.
-                    if (sta.executeTempTransitionFlag)
-                        continue; // Only transition once - so the *first* usages of the next group are valid
-                    // Subsequent intra-group transitions should always be valid by themselves
-                    ExecuteBarrierSubresourceState(executorPass, res, sta, access, stage, layout, cmd);
-                    sta.executeTempTransitionFlag = true;
-                }
-            }
-            for (auto [hdl, access, stage] : tracked.bufferUsages)
-            {
-                auto& tres = mSetup->trackedResources[hdl];
-                // Same as above
-                if (tres.lastBufferState.executeTempTransitionFlag)
-                    continue;
-                ExecuteBarrierBuffer(executorPass, tres, access, stage, cmd);
-                tres.lastBufferState.executeTempTransitionFlag = true;
-            }
-            // Reset the flags
-            for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
-            {
-                auto& tres = mSetup->trackedResources[hdl];
-                for (auto& sta : tres.GetLastSubresourceStateOf(range))
-                    sta.executeTempTransitionFlag = false;
-            }
-            for (auto [hdl, access, stage] : tracked.bufferUsages)
-            {
-                auto& tres = mSetup->trackedResources[hdl];
-                tres.lastBufferState.executeTempTransitionFlag = false;
-            }
-        }
-        cmd->EndTransition();
-    }
-    else
-    { /* Compute - nop */
-    }
-    // Actually release our resources for subsequent groups
-    // Do this for resources to the next queue that may require alternate queue access.
-    uint32_t currentQueueIndex = ExecuteGetQueueIndex(currentQueue);
-    // Always alternate
-    // Not always optimal - but easier than tracking multiple queues across multiple groups across multiple frames
-    // The resources that are touched on different queues are usually sparse anyway. And only these are released.
-    // Release/Acquire for other resources would be no-ops
-    uint32_t nextQueueIndex = ExecuteGetQueueIndex(
-        currentQueue == RHIDeviceQueueType::Graphics ? RHIDeviceQueueType::Compute : RHIDeviceQueueType::Graphics);
-    cmd->BeginTransition();
-    for (PassHandle pass : groups[groupIndex].passes)
-    {
-        auto& tracked = mSetup->trackedPasses[pass];
-        for (auto [hdl, access, stage, range, layout] : tracked.textureUsages)
-        {
-            auto& tres = mSetup->trackedResources[hdl];
-            if (!(tres.hasGraphicsUsage && tres.hasComputeUsage))
-                continue; // Only care about cross-queue resources
-            for (auto& sta : tres.GetLastSubresourceStateOf(range))
-            {
-                cmd->SetImageTransition(DerefResource(tres.handle).Get<RHITexture*>(),
-                                        {.srcImgRange = sta.ToRange(),
-                                         .srcQueueIndex = currentQueueIndex,
-                                         .dstQueueIndex = nextQueueIndex});
-            }
-        }
-        for (auto [hdl, access, stage] : tracked.bufferUsages)
-        {
-            auto& tres = mSetup->trackedResources[hdl];
-            if (!(tres.hasGraphicsUsage && tres.hasComputeUsage))
-                continue; // Only care about cross-queue resources
-            cmd->SetBufferTransition(DerefResource(tres.handle).Get<RHIBuffer*>(),
-                                     {.srcQueueIndex = currentQueueIndex, .dstQueueIndex = nextQueueIndex});
-        }
-    }
-    cmd->EndTransition();
-}
 Renderer::ExecutePerThreadCommandLists::ExecutePerThreadCommandLists(RHIDevice* device, const size_t maxPerThread,
                                                                      Allocator* alloc) :
     graphicsCmds(maxPerThread, alloc), computeCmds(maxPerThread, alloc)
@@ -1357,7 +1215,8 @@ void Renderer::ExecuteFrame()
     {
         /* -- Inter queue sync -- */
         auto Counter = [&](size_t ord) { return mFrameSwapped * mSetup->executionGroups.size() + ord + 1LL; };
-        auto CounterPrior = [&](size_t ord) { return (mFrameSwapped - 1LL) * mSetup->executionGroups.size() + ord + 1LL; };
+        auto CounterPrior = [&](size_t ord)
+        { return (mFrameSwapped - 1LL) * mSetup->executionGroups.size() + ord + 1LL; };
         // Collect producers that branched out before this group
         // We only take groups that's produced in this frame before the current one
         int graphicsWaitValue = CounterPrior(mSetup->executionNumGraphicsGroups - 1);
@@ -1369,10 +1228,10 @@ void Renderer::ExecuteFrame()
                 return;
             auto& tpass = mSetup->trackedPasses[pass];
             auto& tgroup = mSetup->executionGroups[tpass.groupIndex];
-            int graphicsValue = frame == mFrameSwapped ? Counter(tgroup.graphicsGroupIndex)
-                                                  : CounterPrior(tgroup.graphicsGroupIndex);
-            int computeValue = frame == mFrameSwapped ? Counter(tgroup.computeGroupIndex)
-                                                 : CounterPrior(tgroup.computeGroupIndex);
+            int graphicsValue =
+                frame == mFrameSwapped ? Counter(tgroup.graphicsGroupIndex) : CounterPrior(tgroup.graphicsGroupIndex);
+            int computeValue =
+                frame == mFrameSwapped ? Counter(tgroup.computeGroupIndex) : CounterPrior(tgroup.computeGroupIndex);
             switch (tpass.queue)
             {
             case RHIDeviceQueueType::Graphics:
@@ -1409,20 +1268,13 @@ void Renderer::ExecuteFrame()
                 active.emplace_back(handle);
         }
         // Record all the active tasks
-        // Acquire/Release resources if needed
-        bool needAcquire = false, needRelease = mSetup->executionGroups.size() > 1;
-        if (group.groupIndex - 1 >= 0)
-        {
-            auto& prevGroup = mSetup->executionGroups[group.groupIndex - 1];
-            needAcquire = prevGroup.queue != group.queue;
-        }
         // If this is the last group and present is needed
         const bool needPresent =
             static_cast<size_t>(group.groupIndex) == mSetup->executionGroups.size() - 1 && mDesc.enablePresent;
         // Next - we do all the passes in parallel - with transitions starting before the passes
         auto passBarriers = ConstructSpan<ExecuteBarrierList>(mExecuteAlloc.Ptr(), active.size(), mExecuteAlloc.Ptr());
         auto passCmds = ConstructSpan<RHICommandList*>(mExecuteAlloc.Ptr(),
-                                                       needAcquire + active.size() + needRelease + needPresent);
+                                                        active.size() + needPresent);
         // Acquire? - [Passes] - Release? - Present?
         {
             // ExecuteBarriers - Set...Barrier calls are very, very cheap and doesn't reach the driver
@@ -1470,37 +1322,18 @@ void Renderer::ExecuteFrame()
             {
                 if (mDesc.numRenderThreads)
                 {
-                    mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[active[i]], &passCmds[i + needAcquire], i,
+                    mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[active[i]], &passCmds[i], i,
                                                            &passBarriers[i]);
                 }
                 else
                 {
-                    RecordJob job(this, &passes[active[i]], &passCmds[i + needAcquire], i, &passBarriers[i]);
+                    RecordJob job(this, &passes[active[i]], &passCmds[i], i, &passBarriers[i]);
                     job.Execute(-1); // Main thread
                 }
             }
         }
         {
             ZoneScopedN("Auxiliary Command Record");
-            // Acquire resources for ourselves
-            if (needAcquire)
-            {
-                auto cmd = ExecuteAllocateCommandList(group.queue, -1);
-                cmd->Begin();
-                ExecuteAcquireQueueResources(group.queue, group.groupIndex, cmd);
-                cmd->End();
-                passCmds.front() = cmd;
-            }
-            // Release resources to the next group if needed
-            // since we can *only* do that on this queue
-            if (needRelease)
-            {
-                auto cmd = ExecuteAllocateCommandList(group.queue, -1);
-                cmd->Begin();
-                ExecuteReleaseQueueResources(group.queue, group.groupIndex, cmd);
-                cmd->End();
-                passCmds[needAcquire + active.size()] = cmd;
-            }
             // Transition the backbuffer
             if (needPresent)
             {
@@ -1530,12 +1363,12 @@ void Renderer::ExecuteFrame()
             // https://www.lunarg.com/wp-content/uploads/2021/08/Vulkan-Synchronization-SIGGRAPH-2021.pdf
             auto* wait = Construct<Vector<RHIDeviceQueue::TimelinePair>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
             auto* waitStage = Construct<Vector<RHIPipelineStage>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
-            if (mSetup->executionNumGraphicsGroups &&graphicsWaitValue >= 0 && group.queue == RHIDeviceQueueType::Compute)
-                wait->emplace_back(mGraphicsTimeline.Get(), graphicsWaitValue),
-                    waitStage->push_back(group.allStages);
-            if (mSetup->executionNumComputeGroups && computeWaitValue >= 0 && group.queue == RHIDeviceQueueType::Graphics)
-                wait->emplace_back(mComputeTimeline.Get(), computeWaitValue),
-                    waitStage->push_back(group.allStages);
+            if (mSetup->executionNumGraphicsGroups && graphicsWaitValue >= 0 &&
+                group.queue == RHIDeviceQueueType::Compute)
+                wait->emplace_back(mGraphicsTimeline.Get(), graphicsWaitValue), waitStage->push_back(group.allStages);
+            if (mSetup->executionNumComputeGroups && computeWaitValue >= 0 &&
+                group.queue == RHIDeviceQueueType::Graphics)
+                wait->emplace_back(mComputeTimeline.Get(), computeWaitValue), waitStage->push_back(group.allStages);
             if (needPresent)
             {
                 // Last group to submit, and we need to present
@@ -1545,22 +1378,21 @@ void Renderer::ExecuteFrame()
                 auto pPresentSemaphores = ConstructSpan<RHIDeviceSemaphore*>(mExecuteAlloc.Ptr(), 2);
                 pPresentSemaphores[0] = mSwaps[mCurrentSync].present.Get();
                 pPresentSemaphores[1] = mSwaps[GetSwap()].render.Get();
-                mExecuteGraphicsSubmits->push_back({.timelineWaits = *wait,
-                                                    .timelineSignals = {signal, 1},
-                                                    .waits = pPresentSemaphores.subspan(0, 1),
-                                                    .waitsStages = *waitStage,
-                                                    .signals = pPresentSemaphores.subspan(1, 1),
-                                                    .cmdLists = passCmds});
+                mExecuteSubmits->push_back({RHIDeviceQueueType::Graphics,
+                                            {.timelineWaits = *wait,
+                                             .timelineSignals = {signal, 1},
+                                             .waits = pPresentSemaphores.subspan(0, 1),
+                                             .waitsStages = *waitStage,
+                                             .signals = pPresentSemaphores.subspan(1, 1),
+                                             .cmdLists = passCmds}});
             }
             else
             {
-                auto* pSubmits = mExecuteGraphicsSubmits;
-                if (group.queue == RHIDeviceQueueType::Compute)
-                    pSubmits = mExecuteComputeSubmits;
-                pSubmits->push_back({.timelineWaits = *wait,
-                                     .timelineSignals = {signal, 1},
-                                     .waitsStages = *waitStage,
-                                     .cmdLists = passCmds});
+                mExecuteSubmits->push_back({group.queue,
+                                            {.timelineWaits = *wait,
+                                             .timelineSignals = {signal, 1},
+                                             .waitsStages = *waitStage,
+                                             .cmdLists = passCmds}});
             }
         }
     }
@@ -1571,26 +1403,28 @@ void Renderer::EndExecute()
     CHECK_MSG(mState == State::Execute, "Renderer bad state ({}). EndExecute() may only be called once per frame.",
               mState);
     // At this point, all passes have been scheduled to record and submit params are valid.
-    // Wait for all recording to finish
+    // Wait for all recording to finishLOG_RUNTIME(MipGen, info, "Mip {} executes", i);
     {
         ZoneScopedN("Wait for Records");
         mExecuteThreadPool.Join();
     }
     // Submit all the recorded command lists
-    // XXX: Queue transfers could raise false-positives for synchronization validation.
-    //      Assuming there's a Graphics-Compute release op on the graphics queue, submitting the
-    //      compute queue _now_ makes the validation layer confused - as we haven't submitted
-    //      that release yet.
-    //      It's guaranteed, however that the actual executions are in order with the timeline semaphores.
-    if (!mExecuteComputeSubmits->empty())
+    int ctr = 0, lastGraphics = -1, lastCompute = -1;
+    for (auto const& [qtype, submits] : *mExecuteSubmits)
     {
-        ZoneScopedN("Async Compute Submit");
-        mComputeQueue->Submit(*mExecuteComputeSubmits, mSwaps[mCurrentSync].computeFence.Get());
+        if (qtype == RHIDeviceQueueType::Graphics) lastGraphics = ctr;
+        if (qtype == RHIDeviceQueueType::Compute) lastCompute = ctr;
+        ctr++;
     }
-    if (!mExecuteGraphicsSubmits->empty())
+    ctr = 0;
+    for (auto const& [qtype, submits] : *mExecuteSubmits)
     {
-        ZoneScopedN("Graphics Submit");
-        mGraphicsQueue->Submit(*mExecuteGraphicsSubmits, mSwaps[mCurrentSync].graphicsFence.Get());
+        RHIDeviceQueue* q = qtype == RHIDeviceQueueType::Graphics ? mGraphicsQueue : mComputeQueue;
+        RHIDeviceFence* f = nullptr;
+        if (ctr == lastGraphics) f = mSwaps[mCurrentSync].graphicsFence.Get();
+        if (ctr == lastCompute) f = mSwaps[mCurrentSync].computeFence.Get();
+        q->Submit(submits, f);
+        ctr++;
     }
 
     // Present if needed
@@ -1609,7 +1443,7 @@ void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) const
 {
     CHECK(mState == State::Execute);
     auto& tpass = mSetup->trackedPasses[pass];
-        CHECK_MSG(tpass.pso.IsValid(), "Current pass {} has no Pipeline state.", tpass.name);
+    CHECK_MSG(tpass.pso.IsValid(), "Current pass {} has no Pipeline state.", tpass.name);
     cmd->SetPipeline({.pipeline = tpass.pso.Get(),
                       .type = tpass.isComputePass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics});
     if (!tpass.pDescriptorSets.empty())

@@ -8,8 +8,11 @@ namespace Foundation::RHI {
         RHIDeviceHeapType heap{ RHIDeviceHeapType::Local };
         /// How the resource can be accessed by the host (CPU)
         RHIResourceHostAccess hostAccess{ RHIResourceHostAccess::Invisible };
-        /// Can be shared with other devices
-        bool shared{ false };
+        /// Can be shared with other device queues
+        bool shared{ true };
+        /// With shared=true, the types of queues that are allowed access
+        /// indexed by @ref RHIDeviceQueueType values
+        Bitset<8> sharedQueues{ 0xff };
         /// Guarantees that the host can see the latest data written by the device without explicit flush
         /// On implementations that do not support this, exceptions will be thrown when trying to create such resources.            
         bool coherent{ false };
