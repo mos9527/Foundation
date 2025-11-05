@@ -4,6 +4,7 @@ namespace Foundation::Rendering
 {
     using namespace RenderCore;
     inline void createCSMipGenerationPasses(Renderer* renderer, StringView name, RHIDeviceQueueType queue, ResourceHandle src, ResourceHandle dst,
+                                            RHIExtent2D srcExtent,
                                             RHITextureAspectFlagBits srcAspect, RHIResourceFormat srcFormat,
                                             RHITextureAspectFlagBits dstAspect, RHIResourceFormat dstFormat,
                                             uint32_t maxMips = 16, uint32_t layer = 0
@@ -13,8 +14,7 @@ namespace Foundation::Rendering
 #pragma pack(push, 1)
         struct PushConstant
         {
-            ivec2 srcExtent;
-            uint filter;
+            vec2 srcExtent;
         };
 #pragma pack(pop)
         for (uint32 i = 0; i < maxMips; ++i)
@@ -23,6 +23,8 @@ namespace Foundation::Rendering
                 renderer, fmt::format("Mip Gen {} {}", i, name), queue,
                 [=](PassHandle self, Renderer* r)
                 {
+                    auto sampler = createSampler(r, {});
+                    r->BindTextureSampler(self, sampler, "sampler");
                     r->BindShader(self, RHIShaderStageBits::Compute, "csMain", "data/shaders/CSMipGeneration.spv");
                     if (i == 0)
                         r->BindTextureSRV(
@@ -53,17 +55,15 @@ namespace Foundation::Rendering
                     r->CmdSetPipeline(self,cmd);
                     uint32_t w = std::max(1u, extent.x >> i);
                     uint32_t h = std::max(1u, extent.y >> i);
-                    CHECK_MSG(w == h, "w:{} h:{} should be equal", w, h);
                     r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, PushConstant{
-                        .srcExtent = { w, h },
-                        .filter = 0 // box
+                        .srcExtent = (i == 0 ? srcExtent : RHIExtent3D{w, h, 1}),
                     });
                     r->CmdDispatch(self, cmd, {w,h,1});
                 },
-                [=](PassHandle self, Renderer* r)
+                [=](PassHandle, Renderer* r)
                 {
                     RHITexture* dstTex = r->DerefResource(dst).Get<RHITexture*>();
-                    return i > dstTex->mDesc.mipLevels - 1;
+                    return (src == dst && i == 0) || i >= dstTex->mDesc.mipLevels;
                 });
         }
     }

@@ -42,7 +42,7 @@ namespace Examples
                                    RHITextureUsageBits::TransferDestination,
                                .extent = {x, y, 1},
                                .format = RHIResourceFormat::R8G8B8A8Unorm,
-                               .mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::min(x, y))))});
+                               .mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::min(x, y)))) + 1u});
             Span<char> span(reinterpret_cast<char*>(data), reinterpret_cast<char*>(data) + x * y * 4);
             upload.Upload(mTexturePool->GetTexture(mSampleImage), span);
             upload.SubmitAndWait();
@@ -58,10 +58,12 @@ namespace Examples
                                    .extent = srcTex->mDesc.extent,
                                    .format = RHIResourceFormat::R8G8B8A8Unorm,
                                });
-            ResourceHandle sampler = createSampler(mRenderer.get(), {});
+            ResourceHandle sampler =
+                createSampler(mRenderer.get(),{});
             createCSMipGenerationPasses(mRenderer.get(), "Mip Gen", RHIDeviceQueueType::Compute, srcHandle, srcHandle,
-                                        RHITextureAspectFlagBits::Color, RHIResourceFormat::R8G8B8A8Unorm,
-                                        RHITextureAspectFlagBits::Color, RHIResourceFormat::R8G8B8A8Unorm, 16, 0);
+                                        srcTex->mDesc.extent, RHITextureAspectFlagBits::Color,
+                                        RHIResourceFormat::R8G8B8A8Unorm, RHITextureAspectFlagBits::Color,
+                                        RHIResourceFormat::R8G8B8A8Unorm, 16, 0);
             createPass(
                 mRenderer.get(), "Blur", RHIDeviceQueueType::Graphics,
                 [=](PassHandle self, Renderer* r)
@@ -106,7 +108,7 @@ namespace Examples
             if (mRenderedImageID != 0)
                 ImGui_ImplFoundation_RemoveImage(mRenderedImageID);
             auto* srv = mRenderer->DerefTextureView(mRenderedSRV);
-            mRenderedImageID = ImGui_ImplFoundation_AddImage(srv);
+            mRenderedImageID = ImGui_ImplFoundation_AddImage(srv, ImGuiImplFoundationImageSamplerLinear);
         }
         void OnBeforeFrame() override
         {

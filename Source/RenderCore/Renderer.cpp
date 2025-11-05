@@ -20,6 +20,7 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
                    RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator) :
     mState(State::Undefined), mAllocator(allocator), mDesc(desc), mSwaps(mAllocator), mDevice(device),
     mSwapchain(swapchain), mExecuteArena(mAllocator, kExecuteArenaSize), mExecuteAlloc(mExecuteArena),
+    mExecuteSubmits(nullptr),
     mExecuteThreadPool(mDesc.numRenderThreads, kMaxCommandListsPerThread * 2, allocator, "Renderer"),
     mExecutePerSwapCmds(allocator), mWaitIdle(device.Get())
 {
@@ -418,8 +419,8 @@ void Renderer::CullPasses(PassHandle epilogue) const
             if (queue == RHIDeviceQueueType::Graphics && nextProducedByCompute && !currentProducedByCompute)
                 break; // Start new group
         }
-        auto& group = groups.emplace_back(static_cast<int>(groups.size()), mSetup->trackedPasses[exec[i]].queue,
-                                              mAllocator);
+        auto& group =
+            groups.emplace_back(static_cast<int>(groups.size()), mSetup->trackedPasses[exec[i]].queue, mAllocator);
         group.passes.insert(group.passes.end(), exec.begin() + i, exec.begin() + j);
         // Collect dependencies
         for (auto pass : groups.back().passes)
@@ -798,16 +799,11 @@ void Renderer::BuildPipelineState(PassHandle pass)
             }
         }
         pso_desc.attachments = attachments;
-        pso_desc.depthStencil = {
-            .depthTest = tracked.dsv != kInvalidHandle,
-            .depthWrite = tracked.dsv != kInvalidHandle,
-            .depthCompareOp = RHIPipelineState::PipelineStateDesc::DepthStencil::CompareOp::Less,
-        };
-        if (tracked.dsv != kInvalidHandle)
+        pso_desc.depthStencil.depthTest = pso_desc.depthStencil.depthWrite = tracked.dsv != kInvalidHandle;
+        if (pso_desc.depthStencil.depthTest)
         {
             auto& [dsv_handle, desc] = mSetup->trackedViews[tracked.dsv];
             pso_desc.depthStencil.depthFormat = desc.format;
-            // TODO Stencil?
         }
         tracked.pso = mDevice->CreatePipelineState(pso_desc);
         tracked.pso->DebugSetObjectName(fmt::format("PSO of {} [{}]", tracked.name, pass).c_str());
@@ -876,7 +872,9 @@ void Renderer::FinalizeResources()
             [&](RHIBufferDesc const& desc)
             {
                 RHIBufferDesc sdesc = desc;
-                if (needShared) sdesc.resource.shared = true, sdesc.resource.sharedQueues = RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute;
+                if (needShared)
+                    sdesc.resource.shared = true,
+                    sdesc.resource.sharedQueues = RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute;
                 mResources->resources[handle] = mDevice->CreateBuffer(sdesc);
                 DerefResource(handle).Get<RHIBuffer*>()->DebugSetObjectName(
                     fmt::format("{} [{}]", res.name, handle).c_str());
@@ -884,7 +882,9 @@ void Renderer::FinalizeResources()
             [&](RHITextureDesc const& desc)
             {
                 RHITextureDesc sdesc = desc;
-                if (needShared) sdesc.resource.shared = true, sdesc.resource.sharedQueues = RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute;
+                if (needShared)
+                    sdesc.resource.shared = true,
+                    sdesc.resource.sharedQueues = RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute;
                 mResources->resources[handle] = mDevice->CreateTexture(sdesc);
                 DerefResource(handle).Get<RHITexture*>()->DebugSetObjectName(
                     fmt::format("{} [{}]", res.name, handle).c_str());
@@ -1221,8 +1221,7 @@ void Renderer::ExecuteFrame()
     {
         /* -- Inter queue sync -- */
         auto Counter = [&](size_t ord) { return mFrameSwapped * groups.size() + ord + 1LL; };
-        auto CounterPrior = [&](size_t ord)
-        { return (mFrameSwapped - 1LL) * groups.size() + ord + 1LL; };
+        auto CounterPrior = [&](size_t ord) { return (mFrameSwapped - 1LL) * groups.size() + ord + 1LL; };
         // Collect producers that branched out before this group
         // We only take groups that's produced in this frame before the current one
         int graphicsWaitValue = CounterPrior(mSetup->executionNumGraphicsGroups - 1);
@@ -1275,18 +1274,18 @@ void Renderer::ExecuteFrame()
         }
         // Record all the active tasks
         // If this is the last group and present is needed
-        const bool needPresent =
-            static_cast<size_t>(group.groupIndex) == groups.size() - 1 && mDesc.enablePresent;
+        const bool needPresent = static_cast<size_t>(group.groupIndex) == groups.size() - 1 && mDesc.enablePresent;
         // Graphics then Compute - some resources (e.g. depth) needs to be transitioned on
         // and only on the most capable queue.
         size_t groupIndex = group.groupIndex;
         size_t nextGroupIndex = (groupIndex + 1) %
             groups.size(); // Next group. Would be the first group if current groupIndex is the last group
-        bool needPostTransition = groups[groupIndex].queue == RHIDeviceQueueType::Graphics && groups[nextGroupIndex].queue != RHIDeviceQueueType::Graphics;
+        bool needPostTransition = groups[groupIndex].queue == RHIDeviceQueueType::Graphics &&
+            groups[nextGroupIndex].queue != RHIDeviceQueueType::Graphics;
         // Next - we do all the passes in parallel - with transitions starting before the passes
         auto passBarriers = ConstructSpan<ExecuteBarrierList>(mExecuteAlloc.Ptr(), active.size(), mExecuteAlloc.Ptr());
-        auto passCmds = ConstructSpan<RHICommandList*>(mExecuteAlloc.Ptr(),
-                                                        active.size() + needPostTransition + needPresent);
+        auto passCmds =
+            ConstructSpan<RHICommandList*>(mExecuteAlloc.Ptr(), active.size() + needPostTransition + needPresent);
         {
             // ExecuteBarriers - Set...Barrier calls are very, very cheap and doesn't reach the driver
             // until a call to EndTransition on the cmd
@@ -1333,8 +1332,7 @@ void Renderer::ExecuteFrame()
             {
                 if (mDesc.numRenderThreads)
                 {
-                    mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[active[i]], &passCmds[i], i,
-                                                           &passBarriers[i]);
+                    mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[active[i]], &passCmds[i], i, &passBarriers[i]);
                 }
                 else
                 {
@@ -1485,8 +1483,10 @@ void Renderer::EndExecute()
     int ctr = 0, lastGraphics = -1, lastCompute = -1;
     for (auto const& [qtype, submits] : *mExecuteSubmits)
     {
-        if (qtype == RHIDeviceQueueType::Graphics) lastGraphics = ctr;
-        if (qtype == RHIDeviceQueueType::Compute) lastCompute = ctr;
+        if (qtype == RHIDeviceQueueType::Graphics)
+            lastGraphics = ctr;
+        if (qtype == RHIDeviceQueueType::Compute)
+            lastCompute = ctr;
         ctr++;
     }
     ctr = 0;
@@ -1494,8 +1494,10 @@ void Renderer::EndExecute()
     {
         RHIDeviceQueue* q = qtype == RHIDeviceQueueType::Graphics ? mGraphicsQueue : mComputeQueue;
         RHIDeviceFence* f = nullptr;
-        if (ctr == lastGraphics) f = mSwaps[mCurrentSync].graphicsFence.Get();
-        if (ctr == lastCompute) f = mSwaps[mCurrentSync].computeFence.Get();
+        if (ctr == lastGraphics)
+            f = mSwaps[mCurrentSync].graphicsFence.Get();
+        if (ctr == lastCompute)
+            f = mSwaps[mCurrentSync].computeFence.Get();
         q->Submit(submits, f);
         ctr++;
     }

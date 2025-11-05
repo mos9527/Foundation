@@ -3,7 +3,7 @@ namespace ModelViewer
 {
     void drawGizmoCameraFrustum(mat4 viewProj, mat4 frustumViewProj, ImColor color, float lineThickness)
     {
-        const float3 kNDC[8]{{-1, -1, 1},{-1, 1, 1},{-1, -1, -1},{-1, 1, -1},{1, -1, 1},{1, 1, 1},{1, -1, -1}, {1, 1, -1}};
+        const float3 kNDC[8]{{-1, -1, 1},{-1, 1, 1},{-1, -1, 0},{-1, 1, 0},{1, -1, 1},{1, 1, 1},{1, -1, 0}, {1, 1, 0}};
         const ivec2 kEdge[12]{{0,1},{0,2},{0,4},{1,3},{1,5},{2,3},{2,6},{3,7},{4,5},{4,6},{5,7},{6,7}};
         auto [offset, region, drawList] = getGizmoDrawOffsetRegionList();
         mat4 invViewProj = inverse(frustumViewProj);

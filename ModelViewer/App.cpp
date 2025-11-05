@@ -39,22 +39,22 @@ namespace ModelViewer
         auto* srv = mRenderer->DerefTextureView(mGBufferSRV);
         if (mGBufferHandle)
             ImGui_ImplFoundation_RemoveImage(mGBufferHandle);
-        mGBufferHandle = ImGui_ImplFoundation_AddImage(srv);
+        mGBufferHandle = ImGui_ImplFoundation_AddImage(srv, ImGuiImplFoundationImageSamplerNearest);
     }
     void App::OnApplicationTick()
     {
         float time = GetApplicationTime();
         auto instances = mScene->MapInstances();
-        constexpr int countSq = 10;
-        constexpr float scale = 1.0f;
-        mScene->mInstanceCount = countSq * countSq;
+        constexpr int kCountSq = 10;
+        mScene->mInstanceCount = kCountSq * kCountSq;
         for (size_t i = 0; i < mScene->mInstanceCount; i++)
         {
+            constexpr float scale = 1.0f;
             CHECK(i < instances.size());
             instances[i].meshAllocationRawOffsetPP = mScene->QueryMesh(mesh).selfRawOffset + 1;
             float theta = time * acos(-1) * 0.1f;
             instances[i].q = angleAxis(theta, float3{0, 0, 1}) * angleAxis(radians(90.0f), float3{1, 0, 0});
-            instances[i].t = float3{scale * (i / countSq), scale * (i % countSq), sin(time + i)};
+            instances[i].t = float3{scale * (i / kCountSq), scale * (i % kCountSq), sin(time + i)};
         }
         mScene->UnmapInstances();
     }
@@ -119,15 +119,15 @@ namespace ModelViewer
         {
             camera = &mScene->mCullingCamera;
         }
-        float3 view = normalize(camera->lookAt - camera->position);
-        float3 up = camera->up;
-        float3 right = normalize(cross(view, up));
+        float3 up = float3{0,1,0};
+        float3 forward = normalize(camera->orientation * float3{0,0,-1});
+        float3 right = cross(forward, up);
         float3 move{};
         float delta = (glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? 5.f : 2.f) * dt;
         if (glfwGetKey(win, GLFW_KEY_W) == GLFW_PRESS)
-            move += view;
+            move += forward;
         if (glfwGetKey(win, GLFW_KEY_S) == GLFW_PRESS)
-            move -= view;
+            move -= forward;
         if (glfwGetKey(win, GLFW_KEY_A) == GLFW_PRESS)
             move -= right;
         if (glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS)
@@ -135,21 +135,19 @@ namespace ModelViewer
         if (length(move) > 0)
             move = normalize(move) * delta;
         camera->position += move;
-        camera->lookAt += move;
         // View
         static double lastX = 0, lastY = 0;
         double mX, mY;
         glfwGetCursorPos(win, &mX, &mY);
         double dX = mX - lastX, dY = mY - lastY;
-        if (glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS)
+        if (glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
         {
             float yaw = -static_cast<float>(dX) * 0.002f;
             float pitch = -static_cast<float>(dY) * 0.002f;
             quat qYaw = angleAxis(yaw, up);
             quat qPitch = angleAxis(pitch, right);
             quat q = normalize(qPitch * qYaw);
-            view = q * view;
-            camera->lookAt = camera->position + view * length(camera->lookAt - camera->position);
+            camera->orientation = camera->orientation * q;
         }
         lastX = mX;
         lastY = mY;
@@ -157,7 +155,7 @@ namespace ModelViewer
         if (glfwGetKey(win, GLFW_KEY_SPACE) == GLFW_PRESS)
         {
             mScene->mCullingCamera.position = mScene->mCamera.position;
-            mScene->mCullingCamera.lookAt = mScene->mCamera.lookAt;
+            mScene->mCullingCamera.orientation = mScene->mCamera.orientation;
         }
         mScene->CommitParams();
         OnImGui();
@@ -166,7 +164,7 @@ namespace ModelViewer
 } // namespace ModelViewer
 using namespace ModelViewer;
 using namespace Foundation::Async;
-int main(int argc, char** argv)
+int main(int, char**)
 {
     App app;
     app.Initialize<VulkanApplication>({.windowTitle = "Model Viewer", .renderer = {.enableAsyncCompute=true}});

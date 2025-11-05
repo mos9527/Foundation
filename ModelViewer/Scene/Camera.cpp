@@ -1,21 +1,19 @@
 #include "Camera.hpp"
-#include <Math/Math.hpp>
+#include <Rendering/Math.hpp>
 #include <imgui.h>
 
 namespace ModelViewer
 {
     Camera::Params Camera::GetParams() const
     {
-        mat4 proj = infinitePerspective(verticalFov, aspectRatio, zNear);
-        mat4 view = lookAtRH(position, lookAt, up);
-        proj[1][1] *= -1; // Vulkan NDC
+        mat4 proj = infinitePerspectiveLHReverseZ(verticalFov, aspectRatio, zNear);
+        mat4 view = viewMatrixLH(position, orientation);
         return {.viewProj = proj * view, .cameraPosition = position, .zNear = zNear};
     }
     Camera::CullParams Camera::GetCullParams() const
     {
-        mat4 proj = perspective(verticalFov, aspectRatio, zNear, zCull);
-        mat4 view = lookAtRH(position, lookAt, up);
-        proj[1][1] *= -1; // Vulkan NDC
+        mat4 proj = perspectiveLHReverseZ(verticalFov, aspectRatio, zNear, zCull);
+        mat4 view = viewMatrixLH(position, orientation);
         // See also
         // - Fast Extraction of Viewing Frustum Planes from the WorldView-Projection Matrix
         // - https://github.com/zeux/niagara/blob/master/src/niagara.cpp
@@ -37,7 +35,7 @@ namespace ModelViewer
         return {
             .viewMatrix = view,
             .viewProj = proj * view,
-            .frustumACBC = {pLeft.x, pLeft.z, pTop.y , pTop.z,},
+            .frustumACBC = { pLeft.x, pLeft.z, pTop.y , pTop.z,},
             .cameraPosition = position,
             .zCull = zCull,
         };
@@ -46,11 +44,9 @@ namespace ModelViewer
     {
         ImGui::PushID(this); // XXX
         ImGui::DragFloat3("Position", &position.x, 0.1f);
-        ImGui::DragFloat3("LookAt", &lookAt.x, 0.1f);
-        ImGui::DragFloat3("Up", &up.x, 0.1f);
         ImGui::DragFloat(
-            "Vertical FOV (radians)", &verticalFov, 0.1f, Foundation::Math::radians(1.0f),
-            Foundation::Math::radians(179.0f));
+            "Vertical FOV (radians)", &verticalFov, 0.1f, radians(1.0f),
+            radians(179.0f));
         ImGui::Text("Aspect Ratio: %.3f", aspectRatio);
         ImGui::DragFloat("Near Plane", &zNear, 1e-4f, 1e-4f, 100.f);
         ImGui::DragFloat("Cull Plane", &zCull);
