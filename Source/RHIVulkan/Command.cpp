@@ -323,10 +323,10 @@ RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc) {
         if (attachment.clearColor) {
             clear_value.color = vk::ClearColorValue{
                 std::array{
-                    attachment.clearColor->r,
-                    attachment.clearColor->g,
-                    attachment.clearColor->b,
-                    attachment.clearColor->a
+                    attachment.clearColor->x,
+                    attachment.clearColor->y,
+                    attachment.clearColor->z,
+                    attachment.clearColor->w
                 }
             };
         }

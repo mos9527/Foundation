@@ -2,18 +2,22 @@
 #include <Rendering/Math.hpp>
 #include <imgui.h>
 
+#include <fmt/base.h>
+#include <fmt/format.h>
+
 namespace ModelViewer
 {
     Camera::Params Camera::GetParams() const
     {
-        mat4 proj = infinitePerspectiveLHReverseZ(verticalFov, aspectRatio, zNear);
-        mat4 view = viewMatrixLH(position, orientation);
-        return {.viewProj = proj * view, .cameraPosition = position, .zNear = zNear};
+        mat4 proj = infinitePerspectiveRHReverseZ(verticalFov, aspectRatio, zNear);
+        mat4 view = viewMatrixPosRot(position, orientation);
+        mat4 viewProj = proj * view;
+        return {.viewProj = viewProj, .cameraPosition = position, .zNear = zNear};
     }
     Camera::CullParams Camera::GetCullParams() const
     {
-        mat4 proj = perspectiveLHReverseZ(verticalFov, aspectRatio, zNear, zCull);
-        mat4 view = viewMatrixLH(position, orientation);
+        mat4 proj = perspectiveRHReverseZ(verticalFov, aspectRatio, zNear, zCull);
+        mat4 view = viewMatrixPosRot(position, orientation);
         // See also
         // - Fast Extraction of Viewing Frustum Planes from the WorldView-Projection Matrix
         // - https://github.com/zeux/niagara/blob/master/src/niagara.cpp

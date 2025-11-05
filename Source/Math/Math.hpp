@@ -1,9 +1,10 @@
 #pragma once
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_SWIZZLE
 #define GLM_ENABLE_EXPERIMENTAL
 #define GLM_FORCE_QUAT_DATA_XYZW
+#define GLM_FORCE_XYZW_ONLY
+#define GLM_FORCE_QUAT_CTOR_XYZW
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
 #include <glm/gtc/integer.hpp>
@@ -34,5 +35,6 @@ namespace Foundation::Math {
     static_assert(sizeof(float2) == 2 * sizeof(float));
     static_assert(sizeof(float4x4) == 16 * sizeof(float));
 }
+
 #include "Quantization.hpp"
 #include "Unorm.hpp"

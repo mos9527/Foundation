@@ -30,7 +30,7 @@ namespace ModelViewer
         meshLoadObjFile(vertices, indices, "data/assets/Kitten.obj");
         MeshScratchBuffers meshData = sceneMeshDataFromVertexIndex(vertices, indices, GetAllocator());
         mesh = mScene->PushMesh(meshData);
-        mScene->mCamera.position = float3{2, 2, 10};
+        mScene->mCamera.position = float3{3,20,3};
         mScene->mCullingCamera = mScene->mCamera;
     }
     void App::OnRendererPostSetup()
@@ -45,7 +45,7 @@ namespace ModelViewer
     {
         float time = GetApplicationTime();
         auto instances = mScene->MapInstances();
-        constexpr int kCountSq = 10;
+        constexpr int kCountSq = 1;
         mScene->mInstanceCount = kCountSq * kCountSq;
         for (size_t i = 0; i < mScene->mInstanceCount; i++)
         {
@@ -53,7 +53,7 @@ namespace ModelViewer
             CHECK(i < instances.size());
             instances[i].meshAllocationRawOffsetPP = mScene->QueryMesh(mesh).selfRawOffset + 1;
             float theta = time * acos(-1) * 0.1f;
-            instances[i].q = angleAxis(theta, float3{0, 0, 1}) * angleAxis(radians(90.0f), float3{1, 0, 0});
+            instances[i].q = quat(0,0,0,1); // angleAxis(theta, float3{0, 0, 1});
             instances[i].t = float3{scale * (i / kCountSq), scale * (i % kCountSq), sin(time + i)};
         }
         mScene->UnmapInstances();
@@ -140,20 +140,22 @@ namespace ModelViewer
         double mX, mY;
         glfwGetCursorPos(win, &mX, &mY);
         double dX = mX - lastX, dY = mY - lastY;
+        static float pitch = 0, yaw = -radians(90.0f);
         if (glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS || glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
         {
-            float yaw = -static_cast<float>(dX) * 0.002f;
-            float pitch = -static_cast<float>(dY) * 0.002f;
-            quat qYaw = angleAxis(yaw, up);
-            quat qPitch = angleAxis(pitch, right);
-            quat q = normalize(qPitch * qYaw);
-            camera->orientation = camera->orientation * q;
+            pitch -= static_cast<float>(dX) * 0.002f;
+            yaw += static_cast<float>(dY) * 0.002f;
         }
+        quat qYaw = angleAxis(yaw, vec3{1,0,0});
+        quat qPitch = angleAxis(pitch, vec3{0,1,0});
+        camera->orientation = normalize(qYaw * qPitch);
         lastX = mX;
         lastY = mY;
         t0 = GetApplicationTime();
-        if (glfwGetKey(win, GLFW_KEY_SPACE) == GLFW_PRESS)
+        static bool set = false;
+        if (!set || glfwGetKey(win, GLFW_KEY_SPACE) == GLFW_PRESS)
         {
+            set = true;
             mScene->mCullingCamera.position = mScene->mCamera.position;
             mScene->mCullingCamera.orientation = mScene->mCamera.orientation;
         }

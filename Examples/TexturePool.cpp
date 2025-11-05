@@ -10,10 +10,10 @@ static uint32_t to_rgba8_unorm(vec4 c)
         uint32_t col;
         char rgba[4];
     } color;
-    color.rgba[0] = clamp(c.r * 255.0f, 0.f, 255.f);
-    color.rgba[1] = clamp(c.g * 255.0f, 0.f, 255.f);
-    color.rgba[2] = clamp(c.b * 255.0f, 0.f, 255.f);
-    color.rgba[3] = clamp(c.a * 255.0f, 0.f, 255.f);
+    color.rgba[0] = clamp(c.x * 255.0f, 0.f, 255.f);
+    color.rgba[1] = clamp(c.y * 255.0f, 0.f, 255.f);
+    color.rgba[2] = clamp(c.z * 255.0f, 0.f, 255.f);
+    color.rgba[3] = clamp(c.w * 255.0f, 0.f, 255.f);
     return color.col;
 };
 // http://en.wikipedia.org/wiki/HSL_and_HSV#HSL_to_RGB_alternative
