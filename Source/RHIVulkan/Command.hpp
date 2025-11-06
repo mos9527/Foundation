@@ -1,8 +1,8 @@
 #pragma once
+#include <Core/AllocatorStack.hpp>
+#include <RHICore/Command.hpp>
 #include "Common.hpp"
 #include "Resource.hpp"
-#include <RHICore/Command.hpp>
-#include <Core/StackAllocator.hpp>
 namespace Foundation::RHI {
     class VulkanDevice;
     class VulkanCommandList;
@@ -35,7 +35,7 @@ namespace Foundation::RHI {
         ScopedArena mArena;
         // Stack allocator for temporary allocations during command list execution
         // Only valid within Begin(), End() clause
-        StackAllocator mAllocator;
+        AllocatorStack mAllocator;
         constexpr static size_t kArenaSize = 2LL * (1LL << 20); // 2 MB
 
         struct Barriers {

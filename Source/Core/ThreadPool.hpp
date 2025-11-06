@@ -1,14 +1,8 @@
 #pragma once
-#include <Atomics/Queue.hpp>
-#include <Bits/Ranges.hpp>
-#include <Core/Core.hpp>
-#include "Future.hpp"
+#include "AtomicQueue.hpp"
 #include "Thread.hpp"
-namespace Foundation::Async
+namespace Foundation::Core
 {
-    using namespace Core;
-    using namespace Async;
-    using namespace Atomics;
     /**
      * @brief Job interface for use with @ref ThreadPool
      *
@@ -92,9 +86,10 @@ namespace Foundation::Async
         requires std::is_base_of_v<ThreadPoolJob, T>
         void PushImpl(Args&&... args)
         {
-            CHECK_MSG(!mShutdown, "ThreadPool shutting down");
-            CHECK_MSG(mJobsWriter.Push(
-                ConstructUniqueBase<ThreadPoolJob, T>(mAllocator, std::forward<Args>(args)...)), "Jobs full");
+            if(mShutdown)
+                throw std::runtime_error("ThreadPool shutting down");
+            if(!mJobsWriter.Push(ConstructUniqueBase<ThreadPoolJob, T>(mAllocator, std::forward<Args>(args)...)))
+                throw std::runtime_error("Jobs full");
             mTotal.fetch_add(1, std::memory_order_relaxed);
             mTotal.notify_one();
         }
@@ -105,7 +100,8 @@ namespace Foundation::Async
         template <typename Lambda, typename... Args>
         auto Push(Lambda&& func, Args&&... args)
         {
-            CHECK_MSG(!mShutdown, "ThreadPool shutting down");
+            if(mShutdown)
+                throw std::runtime_error("ThreadPool shutting down");
             auto ThreadPoolPackagedLambda = [](Lambda&& fn, Args&&... fargs)
             {
                 return [func = std::forward<Lambda>(fn), ... fargs = std::forward<Args>(fargs)]
@@ -117,10 +113,10 @@ namespace Foundation::Async
             // Use the wrapped lambda type for the job
             using LambdaType = ThreadPoolLambdaJob<PackagedType, ReturnType>;
             SharedPromise<ReturnType> promise = ConstructShared<std::promise<ReturnType>>(mAllocator);
-            CHECK_MSG(mJobsWriter.Push(
-                ConstructUniqueBase<ThreadPoolJob, LambdaType>(
+            if(!mJobsWriter.Push(ConstructUniqueBase<ThreadPoolJob, LambdaType>(
                     mAllocator, promise,
-                    std::forward<PackagedType>(packaged))), "Jobs full");
+                    std::forward<PackagedType>(packaged))))
+                throw std::runtime_error("Jobs full");
             mTotal.fetch_add(1, std::memory_order_relaxed);
             mTotal.notify_one();
             return promise;

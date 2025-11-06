@@ -31,3 +31,8 @@ target_include_directories(
 	PUBLIC
 	..
 )
+target_precompile_headers(
+	Foundation_RenderCore
+	PUBLIC
+	Precompiled.inc
+)

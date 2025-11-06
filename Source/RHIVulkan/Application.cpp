@@ -1,10 +1,5 @@
 #include "Application.hpp"
-#include <Bits/Ranges.hpp>
-#include <Core/Core.hpp>
 #include "Device.hpp"
-
-#include <SDL3/SDL_vulkan.h>
-
 using namespace Foundation;
 using namespace Core;
 using namespace RHI;

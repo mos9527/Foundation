@@ -1,6 +1,6 @@
+#include <Core/AllocatorHeap.hpp>
+#include <Core/AllocatorStack.hpp>
 #include <Core/Core.hpp>
-#include <Core/StackAllocator.hpp>
-#include <Core/HeapAllocator.hpp>
 
 using namespace Foundation::Core;
 constexpr size_t benchCount = 6e1;
@@ -30,11 +30,11 @@ int main() {
     Arena arena(memory, arenaSize);
 	LOG_RUNTIME(Allocator, info, "Benchmark: {} allocations of {} bytes, repeated {} times", allocCount, sizeof(int), benchCount);
 	bench_many("Stack Arena", [&]() {
-		StackAllocator alloc(arena);
+		AllocatorStack alloc(arena);
 		bench_one(&alloc);
 	});
     bench_many("Heap (mimalloc)", [&]() {
-        HeapAllocator alloc;
+        AllocatorHeap alloc;
         bench_one(&alloc);
     });
 }

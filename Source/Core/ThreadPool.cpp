@@ -1,6 +1,6 @@
 #include "ThreadPool.hpp"
 #include <tracy/TracyC.h>
-namespace Foundation::Async
+namespace Foundation::Core
 {
     ThreadPool::ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc, StringView name):
         mAllocator(alloc), mName(name), mJobs(maxTasks, alloc),

@@ -1,6 +1,6 @@
-#include <Core/StackAllocator.hpp>
-#include "Device.hpp"
 #include "Descriptor.hpp"
+#include <Core/AllocatorStack.hpp>
+#include "Device.hpp"
 #include "Resource.hpp"
 using namespace Foundation;
 using namespace Foundation::RHI;
@@ -29,7 +29,7 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
             break;
         }
     }
-    StackArena<> arena; StackAllocator alloc(arena);
+    StackArena<> arena; AllocatorStack alloc(arena);
     Vector<vk::DescriptorBufferInfo> buffers(desc.buffers.size(), alloc.Ptr());
     for (size_t i = 0; i < desc.buffers.size(); ++i) {
         auto const& b = desc.buffers[i];
@@ -71,7 +71,7 @@ void VulkanDeviceDescriptorSet::DebugSetObjectName(const char* name) {
 
 VulkanDeviceDescriptorPool::VulkanDeviceDescriptorPool(const VulkanDevice& device, PoolDesc const& desc)
     : RHIDeviceDescriptorPool(device, desc), mDevice(device), mStorage(device.GetAllocator()) {
-    StackArena<> arena; StackAllocator alloc(arena);
+    StackArena<> arena; AllocatorStack alloc(arena);
     Vector<vk::DescriptorPoolSize> pool_sizes(desc.bindings.size(), alloc.Ptr());
     size_t max_sets = 0;
     for (size_t i = 0; i < desc.bindings.size(); ++i) {

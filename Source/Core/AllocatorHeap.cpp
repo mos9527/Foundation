@@ -12,23 +12,23 @@ static_assert(false, "aligned_alloc not defined on this platform");
 #endif
 #endif 
 #endif
-#include "HeapAllocator.hpp"
+#include "AllocatorHeap.hpp"
 namespace Foundation::Core {
-    pointer HeapAllocator::Allocate(size_type size, size_t alignment) {
+    pointer AllocatorHeap::Allocate(size_type size, size_t alignment) {
 #if FOUNDATION_CORE_USES_OS_ALLOC     
         return aligned_alloc(alignment, size);
 #else
         return mi_malloc_aligned(size, alignment);
 #endif
     }
-    pointer HeapAllocator::Reallocate(pointer ptr, size_type new_size, size_t alignment) {
+    pointer AllocatorHeap::Reallocate(pointer ptr, size_type new_size, size_t alignment) {
 #if FOUNDATION_CORE_USES_OS_ALLOC
         return aligned_realloc(ptr, new_size, alignment);
 #else
         return mi_realloc_aligned(ptr, new_size, alignment);
 #endif
     }
-    void HeapAllocator::Deallocate(pointer ptr) {
+    void AllocatorHeap::Deallocate(pointer ptr) {
 #if FOUNDATION_CORE_USES_OS_ALLOC
         return aligned_free(ptr);
 #else

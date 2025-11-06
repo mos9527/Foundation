@@ -26,3 +26,9 @@ target_include_directories(
     PUBLIC
     ..
 )
+
+target_precompile_headers(
+        Foundation_RHIVulkan
+        INTERFACE
+        Precompiled.inc
+)

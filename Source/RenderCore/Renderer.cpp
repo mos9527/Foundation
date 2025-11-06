@@ -1,21 +1,9 @@
 #include <tracy/Tracy.hpp>
-#include "Renderer.hpp"
-
 #include <filesystem>
 #include <fstream>
 
-#include "Shader.hpp"
-
 using namespace Foundation::Core;
 using namespace Foundation::RenderCore;
-
-const char* kShaderDescriptorBindingErrorHelp =
-    "This can be caused by one of the following:\n"
-    "   - Parameter is optimized-out, and the binding is kept as is.\n"
-    "   - Multiple entrypoints in the same shader, but they don't access the same parameters.\n"
-    "Tips:\n"
-    "   Try separating the entrypoints into different shader files, or sort the binding declarations"
-    "so that the used bindings are continuous from 0.";
 
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device,
                    RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator) :
@@ -100,8 +88,7 @@ void Renderer::DeclareTextureAccess(PassHandle pass, ResourceHandle handle, RHIP
 }
 
 /* -- binding -- */
-void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point,
-                          const char* shader_path) const
+void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point, const char* shader_path) const
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(stage.is_bitmask(), "Only one stage can be bound to a shader per pass");
@@ -629,9 +616,10 @@ void Renderer::BuildPipelineState(PassHandle pass)
             tracked.pExternalDescriptorSets.emplace_back(refl_var_bind_points[binding].first, desc_set,
                                                          desc_set_layout);
     }
-    Ranges::sort(tracked.pExternalDescriptorSets);
-    tracked.pExternalDescriptorSets.erase(Ranges::unique(tracked.pExternalDescriptorSets).begin(),
-                                          tracked.pExternalDescriptorSets.end());
+    std::sort(tracked.pExternalDescriptorSets.begin(), tracked.pExternalDescriptorSets.end());
+    tracked.pExternalDescriptorSets.erase(
+        std::unique(tracked.pExternalDescriptorSets.begin(), tracked.pExternalDescriptorSets.end()),
+        tracked.pExternalDescriptorSets.end());
     if (!refl_var_bind_points.empty())
     {
         LOG_RUNTIME(Renderer, debug, "Pipeline Parameters");
@@ -684,7 +672,6 @@ void Renderer::BuildPipelineState(PassHandle pass)
         LOG_RUNTIME(BuildPipelineState, err,
                     "Binding set numbers must start from 0. Error at set {} binding {} in pass {}.",
                     bindings[0].first.first, bindings[0].first.second, tracked.name);
-        LOG_RUNTIME(BuildPipelineState, info, kShaderDescriptorBindingErrorHelp);
         CHECK_MSG(false, "Binding set numbers must start from 0.");
     }
     for (uint32_t i = 0, j = 0; i < bindings.size(); i = j)
@@ -697,7 +684,6 @@ void Renderer::BuildPipelineState(PassHandle pass)
                 BuildPipelineState, err,
                 "Binding numbers must start from 0 in each descriptor set. Error at set {} binding {} in pass {}.", set,
                 bindings[i].first.second, tracked.name);
-            LOG_RUNTIME(BuildPipelineState, info, kShaderDescriptorBindingErrorHelp);
             CHECK_MSG(false, "Binding binding numbers must start from 0.");
         }
         while (j < bindings.size() && bindings[j].first.first == set)
@@ -750,7 +736,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
                     ds->Update({.binding = binding,
                                 .type = type,
                                 .images = {{{.imageView = view,
-                                             .layout = type == RHIDescriptorType::SampledImage
+                                             .layout = type == SampledImage
                                                  ? RHITextureLayout::ShaderReadOnly
                                                  : RHITextureLayout::General}}}});
                     break;
@@ -842,8 +828,8 @@ void Renderer::FinalizePSOs()
     }
     // Build PSOs for everything we need
     LOG_RUNTIME(Renderer, info, "Compiling Shaders");
-    Async::ThreadPool pool(std::thread::hardware_concurrency(), kMaxRenderPasses, mAllocator, "PSOComp");
-    Vector<Async::SharedPromise<void>> futures(mAllocator);
+    ThreadPool pool(std::thread::hardware_concurrency(), kMaxRenderPasses, mAllocator, "PSOComp");
+    Vector<SharedPromise<void>> futures(mAllocator);
     for (auto& pass : mSetup->trackedPasses)
     {
         if (!pass.used)
@@ -880,21 +866,23 @@ void Renderer::FinalizeResources()
             // Owned
             [&](RHIBufferDesc const& desc)
             {
-                RHIBufferDesc sdesc = desc;
+                RHIBufferDesc maybeShared = desc;
                 if (needShared)
-                    sdesc.resource.shared = true,
-                    sdesc.resource.sharedQueues = RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute;
-                mResources->resources[handle] = mDevice->CreateBuffer(sdesc);
+                    maybeShared.resource.shared = true,
+                    maybeShared.resource.sharedQueues =
+                        RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute;
+                mResources->resources[handle] = mDevice->CreateBuffer(maybeShared);
                 DerefResource(handle).Get<RHIBuffer*>()->DebugSetObjectName(
                     fmt::format("{} [{}]", res.name, handle).c_str());
             },
             [&](RHITextureDesc const& desc)
             {
-                RHITextureDesc sdesc = desc;
+                RHITextureDesc maybeShared = desc;
                 if (needShared)
-                    sdesc.resource.shared = true,
-                    sdesc.resource.sharedQueues = RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute;
-                mResources->resources[handle] = mDevice->CreateTexture(sdesc);
+                    maybeShared.resource.shared = true,
+                    maybeShared.resource.sharedQueues =
+                        RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute;
+                mResources->resources[handle] = mDevice->CreateTexture(maybeShared);
                 DerefResource(handle).Get<RHITexture*>()->DebugSetObjectName(
                     fmt::format("{} [{}]", res.name, handle).c_str());
             },
@@ -1235,7 +1223,7 @@ void Renderer::ExecuteFrame()
         // We only take groups that's produced in this frame before the current one
         int graphicsWaitValue = CounterPrior(mSetup->executionNumGraphicsGroups - 1);
         int computeWaitValue = CounterPrior(mSetup->executionNumComputeGroups - 1);
-        // By default - the last frame's values
+        // ...since by default - we use the last frame's values
         auto UpdateSyncGroup = [&](PassHandle pass, size_t frame)
         {
             if (pass == kInvalidHandle)
@@ -1304,7 +1292,7 @@ void Renderer::ExecuteFrame()
         }
         {
             ZoneScopedN("Schedule Records");
-            struct RecordJob : public Async::ThreadPoolJob
+            struct RecordJob : public ThreadPoolJob
             {
                 Renderer* r;
                 ExecuteBarrierList* barriers;
@@ -1483,14 +1471,14 @@ void Renderer::EndExecute()
     CHECK_MSG(mState == State::Execute, "Renderer bad state ({}). EndExecute() may only be called once per frame.",
               mState);
     // At this point, all passes have been scheduled to record and submit params are valid.
-    // Wait for all recording to finishLOG_RUNTIME(MipGen, info, "Mip {} executes", i);
+    // Wait for all recording to finish
     {
         ZoneScopedN("Wait for Records");
         mExecuteThreadPool.Join();
     }
     // Submit all the recorded command lists
     int ctr = 0, lastGraphics = -1, lastCompute = -1;
-    for (auto const& [qtype, submits] : *mExecuteSubmits)
+    for (const auto& qtype : *mExecuteSubmits | std::views::keys)
     {
         if (qtype == RHIDeviceQueueType::Graphics)
             lastGraphics = ctr;

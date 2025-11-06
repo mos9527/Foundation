@@ -1,7 +1,7 @@
-#include <Core/DefaultAllocator.hpp>
-#include <Atomics/Queue.hpp>
-#include <Async/Thread.hpp>
 #include <Async/Future.hpp>
+#include <Async/Thread.hpp>
+#include <Atomics/AtomicQueue.hpp>
+#include <Core/AllocatorDefault.hpp>
 
 using namespace Foundation;
 using namespace Atomics;

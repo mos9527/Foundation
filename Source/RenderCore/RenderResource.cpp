@@ -1,4 +1,3 @@
-#include "RenderResource.hpp"
 namespace Foundation::RenderCore
 {
     RHITextureSubresourceRange TrackedResource::SubresourceState::ToRange() const

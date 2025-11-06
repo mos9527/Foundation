@@ -1,5 +1,3 @@
-#include "Shader.hpp"
-#include <Bits/Ranges.hpp>
 #include <spirv/unified1/spirv.hpp>
 
 using namespace Foundation::RenderCore;

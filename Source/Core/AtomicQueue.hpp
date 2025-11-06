@@ -1,10 +1,9 @@
 #pragma once
-#include <Core/Core.hpp>
-#include <Core/Allocator.hpp>
+#include "Allocator.hpp"
 #include "Atomic.hpp"
-namespace Foundation::Atomics
+#include "Container.hpp"
+namespace Foundation::Core
 {
-    using namespace Foundation::Core;
     /**
      * @brief Atomic, bounded single-producer single-consumer FIFO ring buffer with a fixed maximum size
      * @tparam T Data type.
@@ -27,7 +26,8 @@ namespace Foundation::Atomics
          */
         SPSCQueue(size_t size, Allocator* alloc) :
             mModulo(size - 1), mBuffer(size, alloc) {
-            CHECK_MSG(size > 0 && (size & mModulo) == 0, "Size must be a power of two");
+            if ((size & mModulo) != 0)
+                throw std::runtime_error("Size must be a power of two");
         }
         /**
          * @brief _Try_ to push data into the queue.
@@ -93,7 +93,8 @@ namespace Foundation::Atomics
     public:
         MPMCQueue(size_t size, Allocator* alloc) :
             mModulo(size - 1), mShift(std::countr_zero(size)), mBuffer(size, alloc) {
-            CHECK_MSG(size > 0 && (size & mModulo) == 0, "Size must be a power of two");
+            if ((size & mModulo) != 0)
+                throw std::runtime_error("Size must be a power of two");
         }
         class Writer
         {
@@ -172,7 +173,7 @@ namespace Foundation::Atomics
                     } else // Old write
                         read = queue->mRead.load(std::memory_order_relaxed);
                 }
-            };
+            }
         };
         /**
          * @brief Create a @ref Reader for concurrent popping.

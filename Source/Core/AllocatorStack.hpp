@@ -6,10 +6,10 @@ namespace Foundation::Core {
 	 * @note This implementation is thread-safe for allocations from multiple threads.
      *       Deallocation is a no-op and does not modify the internal state.
 	 */
-    class StackAllocator : public Allocator {
+    class AllocatorStack : public Allocator {
 	public:
-        StackAllocator() = default;
-        StackAllocator(Arena arena) {
+        AllocatorStack() = default;
+        AllocatorStack(Arena arena) {
             Reset(arena);
 		}            
         /**

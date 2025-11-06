@@ -1,4 +1,3 @@
-#include "RenderPass.hpp"
 namespace Foundation::RenderCore
 {
     TrackedPass::TrackedPass(Allocator* alloc, const PassHandle handle, StringView name, RHIDeviceQueueType queue,

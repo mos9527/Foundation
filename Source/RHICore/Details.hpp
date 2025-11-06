@@ -1,6 +1,6 @@
 #pragma once
-#include <Core/Core.hpp>
 #include <Core/Pool.hpp>
+#include <Core/Precompiled.inc>
 
 /**
  * @brief Low-level Rendering Hardware Interface (RHI) abstractions.

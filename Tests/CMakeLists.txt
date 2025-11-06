@@ -15,7 +15,7 @@ target_link_libraries(Test_MPMC PUBLIC Foundation_Atomics)
 add_executable(Test_QueueNonTrivial "QueueNonTrivial.cpp")
 target_link_libraries(Test_QueueNonTrivial PUBLIC Foundation_Atomics)
 
-add_executable(Test_Stack "Stack.cpp")
+add_executable(Test_Stack "AtomicStack.cpp")
 target_link_libraries(Test_Stack PUBLIC Foundation_Atomics)
 
 add_executable(Test_ThreadPool "ThreadPool.cpp")

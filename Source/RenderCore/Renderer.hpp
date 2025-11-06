@@ -1,10 +1,7 @@
 #pragma once
-#include <Async/ThreadPool.hpp>
-#include <Core/StackAllocator.hpp>
-#include <RHICore/Application.hpp>
-
 #include "RenderPass.hpp"
 #include "RenderResource.hpp"
+#include "Shader.hpp"
 /**
  * @brief Core functionalities for rendering, including the Frame Graph implementation.
  */
@@ -157,7 +154,7 @@ namespace Foundation::RenderCore
 
         UniquePtr<ExecuteResources> mResources;
         RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> mDescPool;
-        Async::Mutex mDescPoolMutex;
+        Mutex mDescPoolMutex;
 
         struct FrameSyncObjects
         {
@@ -191,12 +188,12 @@ namespace Foundation::RenderCore
         ScopedArena mExecuteArena;
         // Temporary allocator for execution
         // This is reset every frame, and only guaranteed to be valid during Execute state.
-        StackAllocator mExecuteAlloc;
+        AllocatorStack mExecuteAlloc;
         // Temporary storage for submits calls
         // This is reset every frame, and only guaranteed to be valid during Execute state.
         Vector<Pair<RHIDeviceQueueType, RHIDeviceQueue::SubmitDesc>> *mExecuteSubmits;
         // Thread pool for concurrent command list recording
-        Async::ThreadPool mExecuteThreadPool;
+        ThreadPool mExecuteThreadPool;
         struct ExecutePerThreadCommandLists
         {
             RHIDeviceScopedObjectHandle<RHICommandPool> graphicsPool{}, computePool{};

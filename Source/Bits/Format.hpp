@@ -1,6 +1,6 @@
 #pragma once
-#include <bit>
 #include <Core/Container.hpp>
+#include <bit>
 #include <fmt/format.h>
 namespace Foundation::Bits {
     using namespace Foundation::Core;

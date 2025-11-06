@@ -1,8 +1,8 @@
-#include <Core/DefaultAllocator.hpp>
-#include <Core/StackAllocator.hpp>
-#include <Atomics/Stack.hpp>
-#include <Async/Thread.hpp>
 #include <Async/Future.hpp>
+#include <Async/Thread.hpp>
+#include <Atomics/AtomicStack.hpp>
+#include <Core/AllocatorDefault.hpp>
+#include <Core/StackAllocator.hpp>
 
 using namespace Foundation;
 using namespace Atomics;
@@ -13,7 +13,7 @@ int main()
     // Use a stack allocator to avoid malloc/free overhead
     Arena arena( malloc(kSize * sizeof(int) * 8), kSize * sizeof(int) * 8);
     StackAllocator alloc(arena);
-    Stack<int> stack(&alloc);
+    AtomicStack<int> stack(&alloc);
     size_t sum_expect = 0;
     Thread producer([&]() {
         for (size_t i = 0; i < kSize; i++)

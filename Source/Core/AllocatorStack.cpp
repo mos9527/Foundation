@@ -1,8 +1,8 @@
 #include "Allocator.hpp"
-#include "StackAllocator.hpp"
+#include "AllocatorStack.hpp"
 
 namespace Foundation::Core {
-    pointer StackAllocator::Allocate(size_type size, size_type alignment)
+    pointer AllocatorStack::Allocate(size_type size, size_type alignment)
     {
         if (size == 0)
             return nullptr;        

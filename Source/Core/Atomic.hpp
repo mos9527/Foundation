@@ -18,7 +18,7 @@
  *  - SO answer on tagged pointers for ABA problem
  *    - https://stackoverflow.com/a/38991835
  */
-namespace Foundation::Atomics
+namespace Foundation::Core
 {
     /**
      * @brief Alias of `std::atomic<T>`.

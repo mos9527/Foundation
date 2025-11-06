@@ -8,7 +8,7 @@ namespace Foundation::Core {
      *       overridden by defining FOUNDATION_CORE_USES_OS_ALLOC to use the OS's default allocator.
 	 * @note As mimalloc/OS allocators are thread-safe by default, so is this allocator.
 	 */
-	class HeapAllocator : public Allocator {
+	class AllocatorHeap : public Allocator {
 	public:
         pointer Allocate(size_type size, size_t alignment) override;
         void Deallocate(pointer ptr) override;

@@ -12,7 +12,7 @@ namespace Foundation::RenderCore
     /**
      * @brief Interface for a render pass.
      */
-    class RenderPass : public RHI::RHIObject
+    class RenderPass : public RHIObject
     {
     public:
         /**
@@ -37,7 +37,7 @@ namespace Foundation::RenderCore
          * @note This may be called from multiple threads concurrently, and thus
          * should ensure thread safety if accessing shared data.
          */
-        virtual void Record(PassHandle self, Renderer* r, RHI::RHICommandList* cmd) = 0;
+        virtual void Record(PassHandle self, Renderer* r, RHICommandList* cmd) = 0;
         /**
          * @brief Determine whether this pass should be skipped during Record time
          *
@@ -62,7 +62,7 @@ namespace Foundation::RenderCore
      */
     struct FRecordDefault
     {
-        void operator()(PassHandle, Renderer*, RHI::RHICommandList*) const { /* nop */ }
+        void operator()(PassHandle, Renderer*, RHICommandList*) const { /* nop */ }
     };
     /**
      * @brief Default "not skipped" functor for IsSkipped()

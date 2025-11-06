@@ -1,14 +1,13 @@
 #pragma once
-#include "Core.hpp"
-#include <mutex>
+#include "Container.hpp"
+#include "Thread.hpp"
 namespace Foundation::Core {
     /**
-     * @brief Unbounded object pool with O(1) value mapping
+     * @brief Stable (pointer), unbounded object pool with O(1) value mapping
      * @tparam K Key type. Should be an integral type.
      * @tparam V Value type.     
      * @note The values are allocated using the provided Allocator, and is guaranteed
      *       to have a stable address until freed.
-     * @note An atomic, bounded version of this is provided by @ref Foundation::Atomics::Pool
      */
     template<typename K, typename V>
     class Pool {

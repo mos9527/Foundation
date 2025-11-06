@@ -1,6 +1,4 @@
 #pragma once
-#include <Bits/Functional.hpp>
-#include <Bits/Ranges.hpp>
 #include <RHICore/Resource.hpp>
 #include "RenderPass.hpp"
 namespace Foundation::RenderCore

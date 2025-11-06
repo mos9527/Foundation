@@ -11,6 +11,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <ranges>
+#include <algorithm>
 
 #include "Allocator.hpp"
 namespace Foundation::Core {
@@ -212,4 +214,42 @@ namespace Foundation::Core {
      */
     template<typename T, typename Predicate = std::less<T>, typename Container = Vector<T>>
     using PriorityQueue = std::priority_queue<T, Container, Predicate>;
+
+    /**
+     * @brief STL Ranges extensions
+     */
+    namespace Ranges
+    {
+        using namespace std::ranges;
+        /**
+         * @brief Range predicate that checks if a value is contained within a given range.
+         */
+        template <typename Range>
+        struct ContainedBy
+        {
+            Range const& range;
+            ContainedBy(Range const& range) : range(range) {}
+            constexpr bool operator()(auto&& value) const
+            {
+                return std::ranges::find(range, value) != std::ranges::end(range);
+            }
+        };
+        /**
+         * @brief Returns the first element of a range, or an empty Optional if the range is empty.
+         */
+        template <typename T>
+        constexpr Optional<range_value_t<T>> FirstOf(T&& range)
+        {
+            if (auto it = std::ranges::begin(range); it != std::ranges::end(range))
+                return *it;
+            return {};
+        }
+    } // namespace Ranges
+    /**
+     * @brief STL Views extensions
+     */
+    namespace Views
+    {
+        using namespace std::views;
+    } // namespace Views
 }

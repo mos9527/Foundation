@@ -1,6 +1,6 @@
 #pragma once
 #include <variant>
-namespace Foundation::Bits {
+namespace Foundation::Core {
     /*! \cond */
     template <typename ...T> struct Visitor : T... {
         using T::operator()...;

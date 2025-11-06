@@ -1,10 +1,8 @@
 #pragma once
-#include <Core/Core.hpp>
-#include <Core/Allocator.hpp>
+#include "Allocator.hpp"
 #include "Atomic.hpp"
-namespace Foundation::Atomics
+namespace Foundation::Core
 {
-    using namespace Foundation::Core;
     /**
      * @brief Atomic, unbounded LIFO stack with lock-free push and pop operations.
      * @note Memory allocations are performed on each push and deallocations on each pop.
@@ -13,7 +11,7 @@ namespace Foundation::Atomics
      * @tparam T Data type.
      */
     template <typename T>
-    class Stack
+    class AtomicStack
     {
         struct Node;
         struct alignas(2 * sizeof(Node*)) PTag
@@ -33,7 +31,7 @@ namespace Foundation::Atomics
          * @brief Construct the Stack.
          * @param alloc Allocator to use for element allocations.
          */
-        Stack(Allocator* alloc) : mAlloc(alloc) {}
+        AtomicStack(Allocator* alloc) : mAlloc(alloc) {}
         /**
          * @brief Push a value onto the stack.
          * @note Multiple threads may call this concurrently.
