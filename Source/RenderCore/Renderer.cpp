@@ -334,12 +334,15 @@ void Renderer::CullPasses(PassHandle epilogue) const
         auto [pri, u] = pq.top();
         pq.pop();
         topo.push_back(u);
-        for (const auto& v : mSetup->graph[u] | std::views::keys)
+        if (mSetup->graph.size() > u)
         {
-            in[v]--;
-            dis[v] = std::max(dis[v], dis[u] + 1);
-            if (in[v] == 0)
-                pq.emplace(mSetup->trackedPasses[v].priority, v);
+            for (const auto& v : mSetup->graph[u] | std::views::keys)
+            {
+                in[v]--;
+                dis[v] = std::max(dis[v], dis[u] + 1);
+                if (in[v] == 0)
+                    pq.emplace(mSetup->trackedPasses[v].priority, v);
+            }
         }
     }
     // Sort by longest path

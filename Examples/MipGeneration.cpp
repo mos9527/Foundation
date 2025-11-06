@@ -93,6 +93,8 @@ namespace Examples
             ImGui_ImplFoundation_CreatePass(mRenderer.get(), "ImGui", true,
                                             [=, this](PassHandle self, Renderer* r)
                                             {
+                                                // Add a dependency here to ensure the blur pass is executed.
+                                                // Beware - ImGui_ImplFoundation_AddImage does not do this.
                                                 mRenderedSRV =
                                                     r->BindTextureSRV(self, renderedHandle, kBindpointIgnored,
                                                                       RHIPipelineStageBits::FragmentShader,

@@ -72,9 +72,9 @@ add_subdirectory(Source)
 
 add_subdirectory(ThirdParty/ImGui)
 
-if (FOUNDATION_WITH_MODELVIEWER)
-    add_subdirectory(ModelViewer)
-endif ()
+#if (FOUNDATION_WITH_MODELVIEWER)
+#    add_subdirectory(ModelViewer)
+#endif ()
 
 if (FOUNDATION_WITH_EXAMPLES)
     add_subdirectory(Examples)
