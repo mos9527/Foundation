@@ -1,7 +1,7 @@
+#include <../Source/RenderUtils/UploadContext.hpp>
 #include <Bindings/ImGui.hpp>
 #include <Rendering/CSMipGeneration.hpp>
-#include <Rendering/TexturePool.hpp>
-#include <Rendering/UploadContext.hpp>
+#include <Rendering/Textureration.hpp>
 #include "Examples.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION

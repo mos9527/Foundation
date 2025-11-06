@@ -398,7 +398,7 @@ namespace Foundation::RenderCore
          * Shaders are unique per stage, and may be omitted e.g. there's only a copy.
          */
         void BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point,
-                        Native::Path const& shader_path) const;
+                        const char* shader_path) const;
         /**
          * @brief Declares that a bind point in a certain pass is a descriptor set at the specified set and binding index.
          *        This is _only_ useful if you don't have control over the shader code, and cannot rely

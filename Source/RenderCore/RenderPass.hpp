@@ -3,7 +3,6 @@
 #include <RHICore/Descriptor.hpp>
 #include <RHICore/Device.hpp>
 #include <RHICore/PipelineState.hpp>
-#include <Native/Filesystem.hpp>
 namespace Foundation::RenderCore
 {
     using namespace RHI;
@@ -126,7 +125,7 @@ namespace Foundation::RenderCore
         Vector<ResourceHandle> texviews;
         /* -- Pipeline -- */
         // Shader [path, entry point, stage]
-        Vector<Tuple<Native::Path, String, RHIShaderStage>> shaders;
+        Vector<Tuple<String, String, RHIShaderStage>> shaders;
         // Explicit descriptor bindings [binding index,set index, binding point]
         // These are otherwise derived from shader reflection
         Vector<Tuple<uint32_t, uint32_t, String>> explictDescriptorBindings;

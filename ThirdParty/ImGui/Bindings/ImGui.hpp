@@ -3,10 +3,10 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DISABLE_DEFAULT_ALLOCATORS
 #include <imgui.h>
+#include <SDL3/SDL.h>
 
 #include <RHICore/Device.hpp>
 #include <RenderCore/Renderer.hpp>
-#include <Rendering/TexturePool.hpp>
 
 /**
  * @brief Sampler type for added image.
@@ -16,8 +16,6 @@ enum ImGui_ImplFoundation_ImageSampler
     ImGuiImplFoundationImageSamplerLinear = 0,
     ImGuiImplFoundationImageSamplerNearest = 1
 };
-// Upper half of ImTextureID stores metadata (i.e. sampler)
-static_assert(sizeof(ImTextureID) == 2 * sizeof(Foundation::Rendering::TexturePoolHandle));
 
 /* -- Internals -- */
 void ImGui_ImplFoundation_ImplUpdateTexture(ImTextureData* tex);
@@ -43,13 +41,13 @@ void ImGui_ImplFoundation_ImplCreateResources(Foundation::RenderCore::Renderer* 
 /**
  * @breif Initialize global context (@ref TexturePool, etc) for our ImGui backend
  * @param device @ref RHIDevice of the @ref Renderer
- * @param window @ref NativeWindow that the current @ref RHISwapchain is constructed upon
+ * @param window @ref SDL_Window
  * @param allocator Allocator used for ImGui and internal state tracking.
  *
  * @note You _MUST_ call @ref ImGui_ImplFoundation_Shutdown before the destruction of @ref RHIDevice related objects.
  *       See @ref Examples::ImGui or other ImGui backend usage for reference.
  */
-void ImGui_ImplFoundation_Init(Foundation::RHI::RHIDevice* device, Foundation::Native::NativeWindow* window, Foundation::Core::Allocator* allocator);
+void ImGui_ImplFoundation_Init(Foundation::RHI::RHIDevice* device, SDL_Window* window, Foundation::Core::Allocator* allocator);
 
 /**
  * @brief Starts a new ImGui frame.

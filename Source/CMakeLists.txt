@@ -12,8 +12,8 @@ add_subdirectory(Atomics)
 add_subdirectory(Bits)
 add_subdirectory(Core)
 add_subdirectory(Math)
-add_subdirectory(Native)
 add_subdirectory(RenderCore)
+add_subdirectory(RenderUtils)
 add_subdirectory(Rendering)
 add_subdirectory(RHICore)
 add_subdirectory(RHIVulkan)
@@ -25,7 +25,6 @@ target_link_libraries(Foundation INTERFACE
     Foundation_Bits
     Foundation_Core
     Foundation_Math
-    Foundation_Native
     Foundation_RenderCore
     Foundation_Rendering
 )

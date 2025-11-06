@@ -1,4 +1,4 @@
-#include "UploadContext.hpp"
+#include "../Rendering/UploadContext.hpp"
 using namespace Foundation;
 using namespace Foundation::Rendering;
 UploadContext::UploadContext(RHIDevice* device, Allocator* allocator, size_t stagingBudget) :

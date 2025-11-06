@@ -5,7 +5,6 @@
 using namespace Foundation;
 using namespace Core;
 using namespace Rendering;
-using namespace Native;
 /**
  * @brief For a complete list of examples, see the <a href="examples.html">Examples Page</a>.
  */

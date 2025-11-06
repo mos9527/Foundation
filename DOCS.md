@@ -100,9 +100,6 @@ Third party
 - https://github.com/wolfpld/tracy.git
 ### Math
 - https://github.com/g-truc/glm.git
-### Native
-- https://github.com/glfw/glfw.git
-- https://tinyfiledialogs.sourceforge.net/
 ### RHIVulkan
 - https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
 ### ModelViewer

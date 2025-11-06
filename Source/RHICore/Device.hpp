@@ -5,6 +5,7 @@
 #include "Command.hpp"
 #include "Resource.hpp"
 #include "Descriptor.hpp"
+
 namespace Foundation::RHI {
     class RHIApplication;
     class RHIDevice;

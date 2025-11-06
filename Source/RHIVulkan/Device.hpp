@@ -1,7 +1,7 @@
 #pragma once
+#include <SDL3/SDL.h>
 #include <vk_mem_alloc.h>
 #include <RHICore/Device.hpp>
-#include <Native/Application.hpp>
 #include "Common.hpp"
 namespace Foundation::RHI {
     class VulkanApplication;
@@ -72,13 +72,15 @@ namespace Foundation::RHI {
         const VulkanDevice& mDevice;
         vk::raii::Sampler mSampler{ nullptr };
     public:
-        VulkanDeviceSampler(const VulkanDevice& device, RHIDeviceSampler::SamplerDesc const& desc);
+        VulkanDeviceSampler(const VulkanDevice& device, SamplerDesc const& desc);
         [[nodiscard]] auto const& GetVkSampler() const { return mSampler; }
 
         void DebugSetObjectName(const char* name) override;
     };
     class VulkanDevice : public RHIDevice {
         const VulkanApplication& mApp;
+
+        RHIWindow* mWindow;
 
         vk::PhysicalDeviceProperties mProperties;
         vk::raii::PhysicalDevice mPhysicalDevice{ nullptr };
@@ -94,10 +96,8 @@ namespace Foundation::RHI {
         RHIObjectPool<> mStorage;
         // Queues
         UniquePtr<VulkanDeviceQueues> mQueues{ nullptr };
-        Native::NativeWindow* window;
-
     public:
-        VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice  physicalDevice, Native::NativeWindow* window);
+        VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice, RHIWindow* window = nullptr);
         ~VulkanDevice() override;
 
         void DebugLogDeviceInfo() const;

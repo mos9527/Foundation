@@ -1,10 +1,15 @@
 #include "ImGui.hpp"
+
 #include <Bits/Format.hpp>
 #include <Core/DefaultAllocator.hpp>
-#include <Rendering/UploadContext.hpp>
-#include <imgui_impl_glfw.h>
+#include <filesystem>
+#include <imgui_impl_sdl3.h>
 
 #include "tracy/Tracy.hpp"
+#include <Rendering/UploadContext.hpp>
+#include <Rendering/TexturePool.hpp>
+
+#include <SDL3/SDL.h>
 using namespace Foundation;
 using namespace RenderCore;
 using namespace Rendering;
@@ -17,7 +22,7 @@ constexpr size_t kMaxTextures = 1024;
 constexpr size_t kUploadBudget = 16_MB;
 constexpr size_t kVertexBufferSize = 8_MB;
 constexpr size_t kIndexBufferSize = 4_MB;
-const Native::Path kDefaultFontPath = "./data/assets/LXGWNeoXiHei.ttf";
+const char* kDefaultFontPath = "./data/assets/LXGWNeoXiHei.ttf";
 
 UniquePtr<TexturePool> gImGuiTexturePool;
 UniquePtr<UploadContext> gImGuiUploadContext;
@@ -32,7 +37,7 @@ void ImGui_ImplFoundation_MemFree(void* ptr, void*)
     return gImGuiAllocator.Deallocate(ptr);
 }
 
-void ImGui_ImplFoundation_Init(RHIDevice* device, Native::NativeWindow* window, Allocator* allocator)
+void ImGui_ImplFoundation_Init(RHIDevice* device, SDL_Window* window, Allocator* allocator)
 {
     // Reference being the official Vulkan implementation - sans Viewport support to keep things _really_ simple
     ImGuiIO& io = ImGui::GetIO();
@@ -47,12 +52,12 @@ void ImGui_ImplFoundation_Init(RHIDevice* device, Native::NativeWindow* window, 
     gImGuiTexturePool = ConstructUnique<TexturePool>(allocator, device, allocator, kMaxTextures);
     gImGuiUploadContext = ConstructUnique<UploadContext>(allocator, device, allocator, kUploadBudget);
     // Init windowing backend
-    ImGui_ImplGlfw_InitForOther(static_cast<GLFWwindow*>(window->GetNative()), true);
+    ImGui_ImplSDL3_InitForOther(window);
 }
 void ImGui_ImplFoundation_NewFrame()
 {
     ZoneScoped;
-    ImGui_ImplGlfw_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
 }
 void ImGui_ImplFoundation_Shutdown()
 {
@@ -327,6 +332,6 @@ void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
     {
         io.Fonts->Clear();
         ImFontConfig font_cfg;
-        io.Fonts->AddFontFromFileTTF(kDefaultFontPath.string().c_str(), 16.0f, &font_cfg);
+        io.Fonts->AddFontFromFileTTF(kDefaultFontPath, 16.0f, &font_cfg);
     }
 }

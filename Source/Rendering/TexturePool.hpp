@@ -1,6 +1,5 @@
 #pragma once
 #include <Bits/Functional.hpp>
-#include <Native/Filesystem.hpp>
 #include <RHICore/Descriptor.hpp>
 #include <RHICore/Device.hpp>
 #include <Async/Future.hpp>

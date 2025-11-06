@@ -1,10 +1,11 @@
 #include <tracy/Tracy.hpp>
-
 #include "Renderer.hpp"
 
-#include <oneapi/tbb/task_arena.h>
+#include <filesystem>
+#include <fstream>
 
 #include "Shader.hpp"
+
 using namespace Foundation::Core;
 using namespace Foundation::RenderCore;
 
@@ -100,7 +101,7 @@ void Renderer::DeclareTextureAccess(PassHandle pass, ResourceHandle handle, RHIP
 
 /* -- binding -- */
 void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point,
-                          Native::Path const& shader_path) const
+                          const char* shader_path) const
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(stage.is_bitmask(), "Only one stage can be bound to a shader per pass");
@@ -478,17 +479,22 @@ void Renderer::BuildPipelineState(PassHandle pass)
         return; // Pass with no shaders
     LOG_RUNTIME(Renderer, info, "** Building PSO for {} [{}] **", tracked.name, pass);
     Vector<char> data(mAllocator);
-    Map<Native::Path, RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(mAllocator);
-    Map<Native::Path, UniquePtr<Shader>> reflections(mAllocator);
+    Map<String, RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(mAllocator);
+    Map<String, UniquePtr<Shader>> reflections(mAllocator);
     for (auto const& [shader_path, entry_point, stage] : tracked.shaders)
     {
         if (!shaders.contains(shader_path))
         {
             LOG_RUNTIME(Renderer, debug, "Loading shader {}", shader_path);
-            Native::ReadFile(shader_path, data);
+            std::error_code ec;
+            auto size = std::filesystem::file_size(shader_path, ec);
+            CHECK_MSG(!ec, "Failed to open shader file {}: {}", shader_path, ec.message());
+            data.resize(size);
+            std::ifstream file(shader_path, std::ios::binary);
+            CHECK_MSG(file.is_open() && file.read(data.data(), size), "Failed to read shader {}", shader_path);
             reflections.emplace(shader_path, ConstructUnique<Shader>(mAllocator, data, mAllocator));
             shaders[shader_path] = mDevice->CreateShaderModule({.source = data});
-            shaders[shader_path]->DebugSetObjectName(shader_path.string().c_str());
+            shaders[shader_path]->DebugSetObjectName(shader_path.c_str());
         }
         auto& module = shaders[shader_path];
         // In BindShader we have already guaranteed these to be unique per stage

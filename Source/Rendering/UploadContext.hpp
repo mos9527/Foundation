@@ -3,7 +3,7 @@
 #include <Bits/Format.hpp>
 #include <RHICore/Device.hpp>
 #include <RHICore/Resource.hpp>
-#include "StagingBuffer.hpp"
+#include "../Rendering/StagingBuffer.hpp"
 namespace Foundation::Rendering
 {
     using namespace RHI;

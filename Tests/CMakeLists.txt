@@ -4,7 +4,7 @@ add_executable(Test_Allocator "Allocator.cpp")
 target_link_libraries(Test_Allocator PUBLIC Foundation_Core)
 
 add_executable(Test_ShaderReflection "Shader.cpp")
-target_link_libraries(Test_ShaderReflection PUBLIC Foundation_RenderCore Foundation_Native)
+target_link_libraries(Test_ShaderReflection PUBLIC Foundation_RenderCore)
 
 add_executable(Test_SPSC "SPSC.cpp")
 target_link_libraries(Test_SPSC PUBLIC Foundation_Atomics)

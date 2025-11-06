@@ -17,15 +17,9 @@ FetchContent_Declare(
 )
 
 FetchContent_Declare(
-    GLFW
-    GIT_REPOSITORY https://github.com/glfw/glfw.git
-    GIT_TAG        3.4
-    GIT_SHALLOW TRUE
-)
-
-FetchContent_Declare(
-    tinyfiledialogs
-    GIT_REPOSITORY https://git.code.sf.net/p/tinyfiledialogs/code
+    SDL3
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL
+    GIT_TAG release-3.2.26
     GIT_SHALLOW TRUE
 )
 

@@ -1,5 +1,5 @@
 #include "TexturePool.hpp"
-#include <Rendering/UploadContext.hpp>
+#include <UploadContext.hpp>
 using namespace Foundation::Rendering;
 const uint32_t kInvalidTexture[4] = {0xFFFF00FF, 0x00000000, 0x00000000, 0xFFFF00FF}; // RGBA in little endian
 void TexturePool::SetMissingTexture(uint32_t index)

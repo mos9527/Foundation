@@ -11,17 +11,20 @@ file(
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 
 FetchContent_MakeAvailable(SPIRV-Headers)
+FetchContent_MakeAvailable(SDL3)
+
 add_library(
     Foundation_RenderCore ${SOURCES} ${INCLUDES}
 )
+
 target_link_libraries(
 	Foundation_RenderCore PUBLIC
 	Foundation_Core
 	Foundation_Async
 	Foundation_Atomics
 	Foundation_RHICore
-	Foundation_Native
 	SPIRV-Headers::SPIRV-Headers
+	SDL3::SDL3-static
 )
 target_include_directories(
 	Foundation_RenderCore

@@ -2,8 +2,8 @@
 
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
+
+#include <SDL3/SDL_vulkan.h>
 
 #include <Bits/Format.hpp>
 #include <Core/Core.hpp>
@@ -25,10 +25,9 @@ const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "
 Allocator* VulkanDevice::GetAllocator() const { return mApp.GetAllocator(); }
 vk::AllocationCallbacks const& VulkanDevice::GetVkAllocatorCallbacks() const { return mApp.GetVkAllocatorCallbacks(); }
 
-VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice,
-                           Native::NativeWindow* window) :
+VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice, RHIWindow* window) :
     RHIDevice(app), mApp(app), mPhysicalDevice(std::move(physicalDevice)), mSwapchainFormats(GetAllocator()),
-    mSwapchainPresentModes(GetAllocator()), mStorage(GetAllocator()), window(window)
+    mSwapchainPresentModes(GetAllocator()), mStorage(GetAllocator()), mWindow(window)
 {
     LOG_RUNTIME(VulkanDevice, info, "Instantiating Vulkan device"), DebugLogDeviceInfo();
     auto queues = mPhysicalDevice.getQueueFamilyProperties();
@@ -57,12 +56,10 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     uint32_t present = kInvalidQueueIndex; // Will be set later if a window is provided
     if (window)
     {
+        auto vkWindow = static_cast<VulkanWindow*>(window);
         // Check for a present queue
-        VkSurfaceKHR surface;
-        // NOTE: Creating surfaces is platform-dependent w/ requisite extensions. GLFW does this.
-        if (glfwCreateWindowSurface(*mApp.GetVkInstance(), static_cast<GLFWwindow*>(window->GetNative()), nullptr,
-                                    &surface) != VK_SUCCESS)
-            throw std::runtime_error("Failed to create Vulkan surface for window");
+        VkSurfaceKHR surface;        
+        CHECK_MSG(SDL_Vulkan_CreateSurface(vkWindow->GetVkWindow(), *mApp.GetVkInstance(), app.GetVkAllocatorCallbacks(), &surface), "failed to create window surface: {}", SDL_GetError());
         mSurface = vk::raii::SurfaceKHR(mApp.GetVkInstance(), surface);
         // Having present and graphics queues as the same avoids copies and is typically the case
         // - https://github.com/KhronosGroup/Vulkan-Hpp/blob/main/RAII_Samples/05_InitSwapchain/05_InitSwapchain.cpp#L45

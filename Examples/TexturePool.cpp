@@ -70,8 +70,8 @@ Array<uint32_t, 8*8> identicon(Array<unsigned char, 16> const& hash)
     return img;
 }
 /*-- Actual example --*/
-#include <Rendering/TexturePool.hpp>
-#include <Rendering/UploadContext.hpp>
+#include <../Source/RenderUtils/TexturePool.hpp>
+#include <../Source/RenderUtils/UploadContext.hpp>
 #include <random>
 namespace Examples
 {
