@@ -5,6 +5,7 @@
 
 #define LOG_STREAM stderr
 
+// TODO: level should be enums
 template<typename ...Args>
 void foundationLogRuntime(const char* tag, const char* level, std::string_view format, Args&&... args)
 {
@@ -12,10 +13,10 @@ void foundationLogRuntime(const char* tag, const char* level, std::string_view f
     if constexpr (kN > 0)
     {
         auto kStr = fmt::format(fmt::runtime(format), std::forward<Args>(args)...);
-        fprintf(LOG_STREAM, fmt::format("[{}] {} {}\n", level, tag, kStr).c_str());
+        fprintf(LOG_STREAM, fmt::format("[{}@{}] {}\n", level, tag, kStr).c_str());
     } else
     {
-        fprintf(LOG_STREAM, fmt::format("[{}] {} {}\n", level, tag, format).c_str());
+        fprintf(LOG_STREAM, fmt::format("[{}@{}] {}\n", level, tag, format).c_str());
     }
 }
 

@@ -4,7 +4,7 @@ add_subdirectory(Shaders)
 add_subdirectory(Samples)
 
 add_library(Example_Common INTERFACE)
-target_link_libraries(Example_Common INTERFACE Foundation_Rendering Foundation_RHIVulkan)
+target_link_libraries(Example_Common INTERFACE Foundation_RenderCore Foundation_RHIVulkan)
 add_dependencies(Example_Common Examples_SampleFiles)
 
 add_executable(Example_Triangle "Triangle.cpp")

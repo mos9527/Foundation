@@ -124,6 +124,8 @@ namespace Foundation::Core {
     };
     /**
      * @brief Placement new helper for constructing an object of type Derived (which can be a subclass of Base) using a @ref Foundation::Core::Allocator.
+     * @note Using `delete`, `delete[]` on the returned pointer is undefined behaviour. @ref Destruct should ALWAYS
+     *       be used for such purposes.
      */
     template <typename Base, typename Derived, typename ...Args>
     Base* ConstructBase(Allocator* resource, Args&& ...args) {
@@ -139,6 +141,8 @@ namespace Foundation::Core {
     }
     /**
      * @brief Convenience placement new with object of type T using a @ref Foundation::Core::Allocator.
+     * @note Using `delete`, `delete[]` on the returned pointer is undefined behaviour. @ref Destruct should ALWAYS
+     *       be used for such purposes.
      */
     template <typename T, typename ...Args>
     T* Construct(Allocator* resource, Args&& ...args) {
@@ -207,5 +211,10 @@ namespace Foundation::Core {
     template <typename T, typename ...Args>
     SharedPtr<T> ConstructShared(Allocator* resource, Args&& ...args) {
         return ConstructSharedBase<T, T>(resource, std::forward<Args>(args)...);
-    }            
+    }
+
+    /** Implemented by @ref AllocatorHeap **/
+    extern Allocator* getGlobalAllocator();
 }
+
+#define GLOBAL_ALLOC Foundation::Core::getGlobalAllocator()

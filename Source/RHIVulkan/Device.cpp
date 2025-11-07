@@ -13,7 +13,7 @@ const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "
 Allocator* VulkanDevice::GetAllocator() const { return mApp.GetAllocator(); }
 vk::AllocationCallbacks const& VulkanDevice::GetVkAllocatorCallbacks() const { return mApp.GetVkAllocatorCallbacks(); }
 
-VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice, RHIWindow* window) :
+VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice, SDL_Window* window) :
     RHIDevice(app), mApp(app), mWindow(window), mPhysicalDevice(std::move(physicalDevice)),
     mSwapchainFormats(GetAllocator()), mSwapchainPresentModes(GetAllocator()), mStorage(GetAllocator())
 {
@@ -43,10 +43,9 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     uint32_t present = kInvalidQueueIndex; // Will be set later if a window is provided
     if (window)
     {
-        auto vkWindow = static_cast<VulkanWindow*>(window);
         // Check for a present queue
         VkSurfaceKHR surface;        
-        CHECK_MSG(SDL_Vulkan_CreateSurface(vkWindow->GetVkWindow(), *mApp.GetVkInstance(), app.GetVkAllocatorCallbacks(), &surface), "failed to create window surface: {}", SDL_GetError());
+        CHECK_MSG(SDL_Vulkan_CreateSurface(window, *mApp.GetVkInstance(), app.GetVkAllocatorCallbacks(), &surface), "failed to create window surface: {}", SDL_GetError());
         mSurface = vk::raii::SurfaceKHR(mApp.GetVkInstance(), surface);
         // Having present and graphics queues as the same avoids copies and is typically the case
         // - https://github.com/KhronosGroup/Vulkan-Hpp/blob/main/RAII_Samples/05_InitSwapchain/05_InitSwapchain.cpp#L45
@@ -137,7 +136,6 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         .instance = *mApp.GetVkInstance(),
         .vulkanApiVersion = mApp.mVulkanApiVersion};
     CHECK(vmaCreateAllocator(&allocator_info, &mVkAllocator) == VK_SUCCESS && "failed to create VMA for Vulkan device");
-    DebugLogAllocatorInfo();
     if (mSurface != nullptr)
     {
         // Collect swapchain (surface) info

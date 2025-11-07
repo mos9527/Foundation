@@ -48,7 +48,7 @@ namespace Foundation::RHI {
         template<typename U = T> [[nodiscard]] U* Get() const {
             if(!IsValid())
                 throw std::runtime_error("RHIHandle::Get called on an invalid handle");
-            auto ptr = RHIObjectTraits<Factory, T>::Get(mFactory, mHandle);
+            T* ptr = RHIObjectTraits<Factory, T>::Get(mFactory, mHandle);
             if (!ptr)
                 throw std::runtime_error("RHIHandle::Get got nullptr");
             return static_cast<U*>(ptr);
@@ -59,6 +59,7 @@ namespace Foundation::RHI {
 
         constexpr Handle operator()() const { return mHandle; }
         constexpr operator bool() const noexcept { return IsValid(); }
+        constexpr T* operator*() noexcept { return Get(); }
         bool operator==(const RHIHandle& other) const { return mFactory == other.mFactory && mHandle == other.mHandle; }
 
         /**

@@ -20,7 +20,7 @@ else ()
     target_compile_definitions(Foundation_RHIVulkan PUBLIC FOUNDATION_RHIVULKAN_VVL=0)
 endif ()
 
-target_link_libraries(Foundation_RHIVulkan PUBLIC Foundation_RHICore Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator SDL3::SDL3-static)
+target_link_libraries(Foundation_RHIVulkan PUBLIC Foundation_RHICore Vulkan::Vulkan GPUOpen::VulkanMemoryAllocator)
 target_include_directories(
         Foundation_RHIVulkan
         PUBLIC

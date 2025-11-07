@@ -31,7 +31,7 @@ namespace Foundation::RHI {
             // Present mode for the swap chain.
             RHISwapchainPresentMode presentMode;
         } mDesc;
-        [[nodiscard]] virtual Core::Span<RHITexture* const> GetImages() const = 0;
+        [[nodiscard]] virtual Span<RHITexture* const> GetImages() const = 0;
         RHISwapchain(RHIDevice const& device, SwapchainDesc const& desc) : mDevice(device), mDesc(desc) {}
         /**
          * @brief Gets the next image in the swapchain.
@@ -43,7 +43,7 @@ namespace Foundation::RHI {
             RHIDeviceObjectHandle<RHIDeviceFence> fence
         ) = 0;            
         [[nodiscard]] virtual RHIExtent2D GetExtents() const = 0;
-        [[nodiscard]] inline float GetAspectRatio() const {
+        [[nodiscard]] float GetAspectRatio() const {
             auto xy = GetExtents();
             return static_cast<float>(xy.x) / static_cast<float>(xy.y);
         }

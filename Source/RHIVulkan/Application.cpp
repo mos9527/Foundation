@@ -75,16 +75,9 @@ Span<const RHIDevice::DeviceDesc> VulkanApplication::EnumerateDevices() const
 {
     return {mDevices.begin(), mDevices.end()};
 }
-RHIApplicationScopedObjectHandle<RHIWindow> VulkanApplication::CreateWindow(RHIWindow::WindowDesc const& desc)
-{
-    Handle handle = mStorage.CreateObject<VulkanWindow>(*this, desc);
-    return {this, handle};
-}
-RHIWindow* VulkanApplication::GetWindow(Handle handle) const { return mStorage.GetObjectPtr<RHIWindow>(handle); }
-void VulkanApplication::DestroyWindow(Handle handle) { mStorage.DestroyObject(handle); }
 
 RHIApplicationScopedObjectHandle<RHIDevice> VulkanApplication::CreateDevice(RHIDevice::DeviceDesc const& desc,
-                                                                            RHIWindow* window)
+                                                                            SDL_Window* window)
 {
     auto& phys_device = mPhysicalDevices[desc.id];
     Handle handle = mStorage.CreateObject<VulkanDevice>(*this, phys_device, window);
@@ -116,10 +109,5 @@ namespace Foundation::RHI
             .pfnFree = reinterpret_cast<vk::PFN_FreeFunction>(vkCustomCpuFree),
             .pfnInternalAllocation = nullptr,
             .pfnInternalFree = nullptr};
-    }
-    VulkanWindow::VulkanWindow(VulkanApplication const& app, WindowDesc const& desc) : RHIWindow(app)
-    {
-        mWindow = SDL_CreateWindow(desc.title.data(), desc.width, desc.height, desc.platformFlags);
-        CHECK_MSG(mWindow, "SDL_CreateWindow error: {}", SDL_GetError());
     }
 } // namespace Foundation::RHI

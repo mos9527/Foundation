@@ -789,8 +789,8 @@ namespace Foundation::RenderCore
         /**
          * @brief Retrieves the current frame number.
          *
-         * This value is monotonically increasing every time @ref EndExecute() is called,
-         * and starts from 0.
+         * This value is updated at @ref EndExecute(), and is guaranteed
+         * to be monotonic.
          */
         [[nodiscard]] uint64_t GetFrame() const { return mFrameSwapped; }
         /**
@@ -799,8 +799,9 @@ namespace Foundation::RenderCore
          * This value is associated with the current frame in flight.
          * It's guaranteed to be less than @ref GetFrameSwaps(), and starts from 0.
          *
-         * This value is updated at @ref BeginExecute(), and remains
-         * the same until the next @ref BeginExecute() call.
+         * @note This value is updated at @ref BeginExecute(), and remains
+         *       the same until the next @ref BeginExecute() call.
+         * @note See also @ref GetSync
          */
         [[nodiscard]] uint32_t GetSwap() const { return mCurrentSwap; }
         /**
@@ -810,11 +811,11 @@ namespace Foundation::RenderCore
          * It's guaranteed to be less than @ref GetFrameSwaps(), and starts from 0.
          *
          * @note Values this returns can be used to index into per-swap resources,
-         * and is guaranteed to be not used by the GPU with values acquired
-         * after @ref BeginExecute(), and before @ref EndExecute().
-         *
-         * This value is updated at @ref BeginExecute(), and remains
-         * the same until the next @ref BeginExecute() call.
+         *       and is guaranteed to be not used by the GPU with values acquired
+         *       after @ref BeginExecute(), and before @ref EndExecute().
+         * @note This value is updated at @ref BeginExecute(), and remains
+         *       the same until the next @ref BeginExecute() call.
+         * @note This value is guaranteed to be monotonic.
          */
         [[nodiscard]] uint64_t GetSync() const { return mCurrentSync; }
         /**
@@ -869,8 +870,9 @@ namespace Foundation::RenderCore
          */
         void ExecuteFrame();
         /**
-         * @brief Ends the execution phase, and prepares for the next frame.
+         * @brief Ends the execution phase and performs GPU submission, possibly with a @ref RHIDeviceQueue::Present
          * @note This MUST be called after ExecuteFrame(), and before BeginExecuteImpl() of the next frame.
+         * @throws @ref RHISwapchainResizeException if swapchain is resized and has not been recreated.
          */
         void EndExecute();
 #pragma endregion
@@ -886,121 +888,4 @@ namespace Foundation::RenderCore
         ENUM_NAME(PostSetup);
         ENUM_NAME(Execute);
     ENUM_NAME_CONV_END();
-    /* Functional Helpers */
-    /**
-     * @brief Convenient functional wrapper to create a resource
-     *
-     * This is equivalent to calling CreateResource(name, desc);
-     *
-     * @param desc Resources can be created by passing in @ref RHIBufferDesc, @ref RHITextureDesc,
-     * and can be imported by passing in @ref RHIDeviceObjectHandle<RHIBuffer>, @ref RHIDeviceObjectHandle<RHITexture>,
-     * or raw, pinned pointers @ref RHIBuffer*, or @ref RHITexture*
-     *
-     * @note ALWAYS ENSURE that your IMPORTED resources OUTLIVE the @ref Renderer. There's
-     *       NO reference counting or tracking of the underlying resource lifetime.
-     */
-    template <typename T>
-    [[nodiscard]] ResourceHandle createResource(Renderer* r, StringView name, T const& desc)
-    {
-        return r->CreateResource(name, desc);
-    }
-    /**
-     * @brief Convenient functional wrapper to create a sampler
-     *
-     * This is equivalent to calling CreateSampler(name, desc);
-     */
-    [[nodiscard]] inline ResourceHandle createSampler(Renderer* r, RHIDeviceSampler::SamplerDesc const& desc)
-    {
-        return r->CreateSampler(desc);
-    }
-    /**
-     * @brief Convenient functional wrapper to create a pass from a RenderPass* implementation with custom priority.
-     *
-     * This is equivalent to calling @ref Renderer::CreatePassImpl
-     *
-     * @tparam T Type of @ref RenderPass to create.
-     * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is
-     * disabled.
-     * @param priority Priority of this pass. Higher priority passes are scheduled earlier.
-     */
-    template <typename T, typename... Args>
-        requires std::is_base_of_v<RenderPass, T>
-    T* createPassImplPriority(Renderer* r, StringView name, RHIDeviceQueueType queue, size_t priority, Args&&... args)
-    {
-        return r->CreatePassImpl<T>(name, queue, priority, std::forward<Args>(args)...);
-    }
-    /**
-     * @brief Convenient functional wrapper to create a pass from a RenderPass* implementation.
-     *
-     * This is equivalent to calling @ref createPassPriority with priority 0 for Graphics passes,
-     * and priority kMaxRenderPasses for Compute passes, which schedules all Compute passes first with the best effort.
-     *
-     * @tparam T Type of @ref RenderPass to create.
-     * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is
-     * disabled.
-     */
-    template <typename T, typename... Args>
-        requires std::is_base_of_v<RenderPass, T>
-    T* createPassImpl(Renderer* r, StringView name, RHIDeviceQueueType queue, Args&&... args)
-    {
-        size_t pri = (queue == RHIDeviceQueueType::Graphics) ? 0 : kMaxRenderPasses; // Just a _pretty large_ value.
-        return createPassImpl<T>(r, name, queue, pri, std::forward<Args>(args)...);
-    }
-    /**
-     * @brief Convenient functional wrapper to create a pass from Setup/Record lambdas with custom priority.
-     *
-     * This is equivalent to calling @ref Renderer::CreatePass
-     *
-     * @note Avoid using Lambdas with stateful captures (i.e. capturing `this` or [&]), as resource lifetimes
-     *       could be _much_ involved and unpredictable. Coupled with how passes may be scheduled on different
-     *       threads - refrain from shooting yourself in the foot.
-     *       Prefer using stateless captures (i.e. [=]) or no captures at all, unless the states are trivial, and
-     *       you really know what you're doing.
-     *
-     * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is
-     * disabled.
-     * @param priority Priority of this pass. Higher priority passes are scheduled earlier.
-     * @param setup Lambda of type `void(PassHandle self, Renderer*)` called at Setup time.
-     * @param record Lambda of type `void(PassHandel self, Renderer*, RHICommandList*)` called at Record time.
-     * @param skip (Optional) Lambda of type `bool(PassHandle self, Renderer*)` called at Record time
-     *                        to determine whether this pass should be skipped if true. This is by default always false.
-     */
-    template <typename FSetup, typename FRecord, typename FSkip = FSkipDefault>
-    LambdaPass<FSetup, FRecord, FSkip>* createPassPriority(Renderer* r, StringView name, RHIDeviceQueueType queue,
-                                                           size_t priority, FSetup&& setup, FRecord&& record,
-                                                           FSkip&& skip = {})
-    {
-        return r->CreatePass(name, queue, priority, std::forward<FSetup>(setup), std::forward<FRecord>(record),
-                             std::forward<FSkip>(skip));
-    }
-    /**
-     * @brief Convenient functional wrapper to create a pass from Setup/Record lambdas.
-     *
-     * This is equivalent to calling @ref createPassPriority with priority 0 for Graphics passes,
-     * and priority kMaxRenderPasses for Compute passes, which schedules all Compute passes first with the best effort.
-     *
-     * @note Avoid using Lambdas with stateful captures (i.e. capturing `this` or [&]), as resource lifetimes
-     *       could be _much_ involved and unpredictable. Coupled with how passes may be scheduled on different
-     *       threads - refrain from shooting yourself in the foot.
-     *       Prefer using stateless captures (i.e. [=]) or no captures at all, unless the states are trivial, and
-     *       you really know what you're doing.
-     *
-     * @note The priority parameter is omitted here for simplicity. If you need custom priority,
-     *       use @ref createPassPriority instead.
-     *
-     * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is
-     * disabled.
-     * @param setup Lambda of type `void(PassHandle self, Renderer*)` called at Setup time.
-     * @param record Lambda of type `void(PassHandel self, Renderer*, RHICommandList*)` called at Record time.
-     * @param skip (Optional) Lambda of type `bool(PassHandle self, Renderer*)` called at Record time
-     *                        to determine whether this pass should be skipped if true. This is by default always false.
-     */
-    template <typename FSetup, typename FRecord, typename FSkip = FSkipDefault>
-    LambdaPass<FSetup, FRecord, FSkip>* createPass(Renderer* r, StringView name, RHIDeviceQueueType queue,
-                                                   FSetup&& setup, FRecord&& record, FSkip&& skip = {})
-    {
-        size_t pri = (queue == RHIDeviceQueueType::Graphics) ? 0 : kMaxRenderPasses;
-        return createPassPriority(r, name, queue, pri, std::forward<FSetup>(setup), std::forward<FRecord>(record),
-                                  std::forward<FSkip>(skip));
-    }
 } // namespace Foundation::RenderCore

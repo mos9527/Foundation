@@ -80,7 +80,7 @@ namespace Foundation::RHI {
     class VulkanDevice : public RHIDevice {
         const VulkanApplication& mApp;
 
-        RHIWindow* mWindow;
+        SDL_Window* mWindow;
 
         vk::PhysicalDeviceProperties mProperties;
         vk::raii::PhysicalDevice mPhysicalDevice{ nullptr };
@@ -97,11 +97,8 @@ namespace Foundation::RHI {
         // Queues
         UniquePtr<VulkanDeviceQueues> mQueues{ nullptr };
     public:
-        VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice, RHIWindow* window = nullptr);
+        VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice, SDL_Window* window = nullptr);
         ~VulkanDevice() override;
-
-        void DebugLogDeviceInfo() const;
-        void DebugLogAllocatorInfo() const;
 
         RHIDeviceQueue* GetDeviceQueue(RHIDeviceQueueType type) const override;
 

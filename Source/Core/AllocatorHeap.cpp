@@ -34,4 +34,9 @@ namespace Foundation::Core {
         mi_free(ptr);
 #endif
     }
+    Allocator* getGlobalAllocator()
+    {
+        static AllocatorHeap GlobalAllocatorHeap;
+        return &GlobalAllocatorHeap;
+    }
 }

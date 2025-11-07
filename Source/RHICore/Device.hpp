@@ -134,8 +134,8 @@ namespace Foundation::RHI {
         const RHIApplication& mApp;
     public:
         struct DeviceDesc {
-            uint32_t id;
-            const char* name;
+            uint32_t id = 0;
+            const char* name = nullptr;
         };
         RHIDevice(RHIApplication const& app) : mApp(app) {}
 

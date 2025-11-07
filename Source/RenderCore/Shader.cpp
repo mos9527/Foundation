@@ -1,5 +1,3 @@
-#include <spirv/unified1/spirv.hpp>
-
 using namespace Foundation::RenderCore;
 using namespace Foundation::Core;
 void Shader::ParseSPIRV(const Span<const char> bytecode)
