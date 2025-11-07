@@ -102,10 +102,9 @@ namespace Foundation::RenderCore
         // The queue to run this pass on
         RHIDeviceQueueType queue;
         bool used{false}; // Culled?
-        // Writes to the swapchain backbuffer
-        // Ignores other RTVs if true
-        bool writeBackbuffer{false};
-        RHIPipelineState::PipelineStateDesc::Attachment::Blending writeBackbufferBlending{};
+        // Backbuffer specializations
+        Optional<RHIPipelineState::PipelineStateDesc::Attachment::Blending> backbufferRTV{}; // opt: blending mode
+        Optional<int> backbufferUAV; // opt: set index
         // Uses compute shader? (not necessarily in a compute queue)
         // Should be mutually exclusive with write_backbuffer and other graphics states
         bool isComputePass{false};

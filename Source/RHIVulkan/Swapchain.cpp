@@ -38,7 +38,8 @@ vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDe
         .imageColorSpace = color_space.value(),
         .imageExtent = vk::Extent2D(desc.extents.x, desc.extents.y),
         .imageArrayLayers = 1, // 1 layer for 2D images
-        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
+        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eStorage,
+        // ^^ AMD uses CS to clear themselves - not sure about NV drivers
         .imageSharingMode = vk::SharingMode::eExclusive, // Exclusive mode by default
         .preTransform = surface_caps.currentTransform,
         .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque, // Opaque composite alpha

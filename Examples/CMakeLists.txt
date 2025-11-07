@@ -4,7 +4,8 @@ add_subdirectory(Shaders)
 add_subdirectory(Samples)
 
 add_library(Example_Common INTERFACE)
-target_link_libraries(Example_Common INTERFACE Foundation_RenderCore Foundation_RHIVulkan)
+target_link_libraries(Example_Common INTERFACE Foundation_RenderCore Foundation_RHIVulkan Foundation_RenderUtils)
+target_precompile_headers(Example_Common INTERFACE Examples.hpp)
 add_dependencies(Example_Common Examples_SampleFiles)
 
 add_executable(Example_Triangle "Triangle.cpp")
@@ -32,6 +33,9 @@ endif()
 add_executable(Example_MeshShader "MeshShader.cpp")
 target_link_libraries(Example_MeshShader PUBLIC Example_Common)
 add_dependencies(Example_MeshShader Shader_MeshShaderTask Shader_MeshShaderMesh Shader_MeshShaderFrag)
+
+add_executable(Example_DebugText "DebugText.cpp")
+target_link_libraries(Example_DebugText PUBLIC Example_Common)
 
 add_executable(Example_ManyPass "ManyPass.cpp")
 target_link_libraries(Example_ManyPass PUBLIC Example_Common)

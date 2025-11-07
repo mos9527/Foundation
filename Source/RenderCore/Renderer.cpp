@@ -1,6 +1,6 @@
-#include <tracy/Tracy.hpp>
 #include <filesystem>
 #include <fstream>
+#include <tracy/Tracy.hpp>
 
 using namespace Foundation::Core;
 using namespace Foundation::RenderCore;
@@ -166,9 +166,6 @@ void Renderer::BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDevi
                                  RHIDeviceDescriptorSetLayout* layout)
 {
     CHECK(mState == State::Setup);
-    CHECK_MSG(bind_point != kBindpointIgnored,
-              "Cannot bind descriptor set with ignored bind point. Declare explict set and binding with "
-              "BindDescriptorBindPoint(), and use the name there instead.");
     mSetup->trackedPasses[pass].externalBindings.emplace_back(descriptor_set, layout, bind_point);
 }
 void Renderer::BindDescriptorBindPoint(PassHandle pass, StringView bind_point, uint32_t binding, uint32_t set)
@@ -245,13 +242,20 @@ void Renderer::BindBackbufferRTV(PassHandle pass,
 {
     CHECK(mState == State::Setup);
     auto& tpass = mSetup->trackedPasses[pass];
-    CHECK_MSG(tpass.queue == RHIDeviceQueueType::Graphics,
-              "RTV (Render Target Views) are only supported on Graphics queues");
-    tpass.writeBackbuffer = true;
-    tpass.writeBackbufferBlending = blending;
-    if (mSetup->lastBackbufferProducer != kInvalidHandle && mSetup->lastBackbufferProducer != pass)
+    tpass.backbufferRTV = blending;
+    if (mSetup->lastBackbufferProducer != kInvalidHandle)
         mSetup->add_edge(pass, mSetup->lastBackbufferProducer, kInvalidHandle);
     mSetup->lastBackbufferProducer = pass;
+}
+void Renderer::BindBackbufferUAV(PassHandle pass, int set_index) const
+{
+    CHECK(mState == State::Setup);
+    auto& tpass = mSetup->trackedPasses[pass];
+    tpass.backbufferUAV = set_index;
+    if (mSetup->lastBackbufferProducer != kInvalidHandle)
+        mSetup->add_edge(pass, mSetup->lastBackbufferProducer, kInvalidHandle);
+    mSetup->lastBackbufferProducer = pass;
+    mSetup->bindingCounts[RHIDescriptorType::StorageImage]++;
 }
 void Renderer::BindTextureCopyDst(PassHandle pass, ResourceHandle texture,
                                   RHITextureSubresourceRange const& range) const
@@ -309,7 +313,7 @@ void Renderer::CullPasses(PassHandle epilogue) const
     PriorityQueue<Pair<int, PassHandle>> pq(mAllocator); // (pri, node)
     Vector<PassHandle> topo(mAllocator);
     Vector<int> dis(mSetup->trackedPasses.size(), 0, mAllocator);
-    auto& in = mSetup->indegree;
+    auto& in = mSetup->in;
     for (auto& pass : mSetup->trackedPasses)
     {
         // Always visit epilogue first
@@ -506,10 +510,6 @@ void Renderer::BuildPipelineState(PassHandle pass)
     {
         CHECK_MSG(shaders.size() == 1,
                   "Pass {} must have exactly 1 Compute Shader, and 0 of any other types, if CS is used.", tracked.name);
-        CHECK_MSG(tracked.writeBackbuffer == false, "Pass {} uses Compute Shader, and cannot write to the backbuffer.",
-                  tracked.name);
-        CHECK_MSG(tracked.rtvs.empty() && tracked.dsv == kInvalidHandle,
-                  "Pass {} uses Compute Shader, and cannot have RTVs or DSVs.", tracked.name);
     }
     // Check variable bindings to be consistent across stages
     // [name, [set, binding]]
@@ -528,6 +528,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
                       tracked.name);
         }
     }
+    Optional<int> backbufferUAVUsage; // opt: set index
     // Check if any shader in the pipeline uses PC
     for (auto const& [path, refl] : reflections)
     {
@@ -546,7 +547,17 @@ void Renderer::BuildPipelineState(PassHandle pass)
                       path);
             auto it = refl_var_bind_points.find(bind.name);
             if (it == refl_var_bind_points.end())
+            {
+                if (tracked.backbufferUAV == bind.descriptorSet)
+                {
+                    CHECK_MSG(bind.binding == 0 && !backbufferUAVUsage.has_value(),
+                              "Set {} is used for Backbuffer UAV, which can only contain one binding at 0 (got {})",
+                              bind.descriptorSet, bind.binding);
+                    backbufferUAVUsage = bind.descriptorSet;
+                    continue;
+                }
                 refl_var_bind_points[bind.name] = {bind.descriptorSet, bind.binding};
+            }
             else
             {
                 auto& [set, binding] = it->second;
@@ -564,8 +575,6 @@ void Renderer::BuildPipelineState(PassHandle pass)
     // Textures
     for (auto& [vhdl, dtype, binding] : tracked.textureBindings)
     {
-        if (binding == kBindpointIgnored)
-            continue;
         auto it = var_types.find(binding);
         if (it == var_types.end())
             var_types[binding] = dtype, var_handles[binding] = vhdl;
@@ -579,8 +588,6 @@ void Renderer::BuildPipelineState(PassHandle pass)
     // Buffers
     for (auto& [rhdl, dtype, binding] : tracked.bufferBindings)
     {
-        if (binding == kBindpointIgnored)
-            continue;
         auto it = var_types.find(binding);
         if (it == var_types.end())
             var_types[binding] = dtype, var_handles[binding] = rhdl;
@@ -594,8 +601,6 @@ void Renderer::BuildPipelineState(PassHandle pass)
     // Samplers
     for (auto& [sampler_handle, binding] : tracked.samplers)
     {
-        if (binding == kBindpointIgnored)
-            continue;
         auto it = var_types.find(binding);
         if (it == var_types.end())
             var_types[binding] = RHIDescriptorType::Sampler, var_samplers[binding] = sampler_handle;
@@ -620,7 +625,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
     tracked.pExternalDescriptorSets.erase(
         std::unique(tracked.pExternalDescriptorSets.begin(), tracked.pExternalDescriptorSets.end()),
         tracked.pExternalDescriptorSets.end());
-    if (!refl_var_bind_points.empty())
+    if (!refl_var_bind_points.empty() || backbufferUAVUsage.has_value())
     {
         LOG_RUNTIME(Renderer, debug, "Pipeline Parameters");
         for (auto& [name, dtype] : var_types)
@@ -630,6 +635,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
             auto [set, binding] = refl_var_bind_points[name];
             LOG_RUNTIME(Renderer, debug, "\t{}: set {}, binding {}, type {}", name, set, binding, dtype);
         }
+        if (backbufferUAVUsage.has_value())
+            LOG_RUNTIME(Renderer, debug, "\tSet {}: Backbuffer UAV", backbufferUAVUsage.value());
     }
     // [[set, binding], name]
     Vector<Pair<Pair<uint32_t, uint32_t>, String>> bindings(mAllocator);
@@ -736,9 +743,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
                     ds->Update({.binding = binding,
                                 .type = type,
                                 .images = {{{.imageView = view,
-                                             .layout = type == SampledImage
-                                                 ? RHITextureLayout::ShaderReadOnly
-                                                 : RHITextureLayout::General}}}});
+                                             .layout = type == SampledImage ? RHITextureLayout::ShaderReadOnly
+                                                                            : RHITextureLayout::General}}}});
                     break;
                 }
             case UniformBuffer:
@@ -761,6 +767,13 @@ void Renderer::BuildPipelineState(PassHandle pass)
         tracked.pDescriptorSets.emplace_back(ptr);
         tracked.pDescriptorLayouts.emplace_back(layout_ptr);
     }
+    // Add Backbuffer UAV set if needed
+    if (backbufferUAVUsage.has_value())
+    {
+        auto set = backbufferUAVUsage.value();
+        tracked.pDescriptorLayouts.resize(std::max(tracked.pDescriptorLayouts.size(), static_cast<size_t>(set + 1u)));
+        tracked.pDescriptorLayouts[set] = mSwapDescriptorSetLayout.Get();
+    }
     // Create PSO if we have shader stages
     if (!pso_stages.empty())
     {
@@ -778,20 +791,10 @@ void Renderer::BuildPipelineState(PassHandle pass)
         // Graphics
         // RTV,DSV
         Vector<RHIPipelineState::PipelineStateDesc::Attachment> attachments(mAllocator);
-        if (tracked.writeBackbuffer)
+        for (auto const& [rtv, blending] : tracked.rtvs)
         {
-            CHECK_MSG(tracked.rtvs.empty(), "Pass {} writes to backbuffer, and cannot have other RTVs.", tracked.name);
-            // Only write to the backbuffer
-            attachments.push_back(
-                {.blending = tracked.writeBackbufferBlending, .renderTarget = {.format = mSwapchain->mDesc.format}});
-        }
-        else
-        {
-            for (auto const& [rtv, blending] : tracked.rtvs)
-            {
-                auto& [rhdl, desc] = mSetup->trackedViews[rtv];
-                attachments.push_back({.blending = blending, .renderTarget = {.format = desc.format}});
-            }
+            auto& [rhdl, desc] = mSetup->trackedViews[rtv];
+            attachments.push_back({.blending = blending, .renderTarget = {.format = desc.format}});
         }
         pso_desc.attachments = attachments;
         pso_desc.depthStencil.depthTest = pso_desc.depthStencil.depthWrite = tracked.dsv != kInvalidHandle;
@@ -988,13 +991,24 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain)
     for (size_t i = 0; i < mFrameSwaps; ++i)
     {
         auto* backbuffer = swapchain->GetImages()[i];
-        backbuffer->DebugSetObjectName(fmt::format("Backbuffer of Swap {}", i).c_str());
-        mSwaps[i].rtv = backbuffer->CreateTextureView(
+        backbuffer->DebugSetObjectName(fmt::format("Backbuffer {}", i).c_str());
+        mSwaps[i].view = backbuffer->CreateTextureView(
             RHITextureViewDesc{.format = swapchain->mDesc.format, .range = RHITextureSubresourceRange::Create()});
+        // Create one descriptor set per backbuffer
+        // Ideally - we should use Push Descriptors for these - alas we're stuck with Vulkan 1.3 for now.
+        // @ref CmdSetPipeline would set these up automatically if a pass wants backbuffer UAV/SRV.
+        mSwapDescriptorSetLayout =
+            mDevice->CreateDescriptorSetLayout({.bindings = {{{.type = RHIDescriptorType::StorageImage}}}});
+        mSwapDescriptorPool = mDevice->CreateDescriptorPool(
+            {.bindings = {{{.type = RHIDescriptorType::StorageImage, .maxCount = mFrameSwaps}}}});
+        mSwaps[i].viewSet = mSwapDescriptorPool->CreateDescriptorSet(mSwapDescriptorSetLayout);
+        mSwaps[i].viewSet->Update(
+            {.type = RHIDescriptorType::StorageImage,
+             .images = {{{.imageView = mSwaps[i].view.Get(), .layout = RHITextureLayout::General}}}});
         if (mSwaps[i].backbuffer == kInvalidHandle)
         {
             // First time setup
-            mSwaps[i].backbuffer = CreateResource(fmt::format("Backbuffer of Swap {}", i), backbuffer);
+            mSwaps[i].backbuffer = CreateResource(fmt::format("Backbuffer {}", i), backbuffer);
         }
         else
         {
@@ -1134,18 +1148,22 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, ExecuteBarrierPCmdOrPBarrierLi
         ExecuteBarrierSubresource(pass.handle, tres, range, access, stage, layout, cmd);
     }
     /* -- Backbuffer -- */
-    // A special case with known usages.
-    // We never create resource per-swap so tracking Back buffers by passes
-    // is not possible. The BB is also opaque to the passes for the same reasons.
-    // Synchronization for other resources are already handled above,
-    // and should eliminate any redundant per-pass resource creation.
-    if (pass.writeBackbuffer)
+    if (pass.backbufferRTV)
     {
-        CHECK_MSG(pass.queue == RHIDeviceQueueType::Graphics, "Backbuffer can only be used in Graphics queue");
+        CHECK_MSG(pass.queue == RHIDeviceQueueType::Graphics, "Backbuffer RTV can only be used in Graphics queue");
         const RHIResourceAccess rt_access =
             RHIResourceAccessBits::RenderTargetWrite | RHIResourceAccessBits::RenderTargetRead;
         const RHITextureLayout rt_layout = RHITextureLayout::RenderTarget;
         const RHIPipelineStage rt_stage = RHIPipelineStageBits::RenderTargetOutput;
+        auto& tres = mSetup->trackedResources[mSwaps[GetSwap()].backbuffer];
+        ExecuteBarrierSubresource(pass.handle, tres, RHITextureSubresourceRange::Create(), rt_access, rt_stage,
+                                  rt_layout, cmd);
+    }
+    if (pass.backbufferUAV)
+    {
+        const RHIResourceAccess rt_access = RHIResourceAccessBits::ShaderWrite;
+        const RHITextureLayout rt_layout = RHITextureLayout::General;
+        const RHIPipelineStage rt_stage = RHIPipelineStageBits::ComputeShader;
         auto& tres = mSetup->trackedResources[mSwaps[GetSwap()].backbuffer];
         ExecuteBarrierSubresource(pass.handle, tres, RHITextureSubresourceRange::Create(), rt_access, rt_stage,
                                   rt_layout, cmd);
@@ -1523,15 +1541,17 @@ void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) const
                                tpass.pso.Get(), tpass.pDescriptorSets, 0);
     for (auto const& [index, ptr, layout_ptr] : tpass.pExternalDescriptorSets)
         CmdBindDescriptorSet(pass, cmd, index, ptr);
+    if (tpass.backbufferUAV)
+        CmdBindDescriptorSet(pass, cmd, tpass.backbufferUAV.value(), mSwaps[GetSwap()].viewSet.Get());
 }
-void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, uint32_t index,
+void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, uint32_t set_index,
                                     RHIDeviceDescriptorSet* descriptor_set) const
 {
     CHECK(mState == State::Execute);
     auto& tpass = mSetup->trackedPasses[pass];
     CHECK_MSG(tpass.pso.IsValid(), "Current pass has no Pipeline state.");
     cmd->BindDescriptorSet(tpass.isComputePass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
-                           tpass.pso.Get(), {{descriptor_set}}, index);
+                           tpass.pso.Get(), {{descriptor_set}}, set_index);
 }
 void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2D const& extent,
                                 Optional<RHIClearColor> const& clear_rtv,
@@ -1540,25 +1560,17 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
     CHECK(mState == State::Execute);
     auto& tpass = mSetup->trackedPasses[pass];
     Vector<RHICommandList::GraphicsDesc::Attachment> rtvs(mExecuteAlloc.Ptr());
-    if (tpass.writeBackbuffer)
+    rtvs.reserve(tpass.rtvs.size() + 1);
+    if (tpass.backbufferRTV)
+        rtvs.push_back({.imageView = DerefTextureView(mSwaps[GetSwap()].view), .clearColor = clear_rtv});
+    for (const auto& rtv : tpass.rtvs | std::views::keys)
     {
-        const RHIExtent2D backbuffer = GetSwapchainExtent();
-        CHECK_MSG(extent.x <= backbuffer.x && extent.y <= backbuffer.y,
-                  "Graphics extent too large for Swapchain Backbuffer {}", mCurrentSync);
-        rtvs.push_back({.imageView = DerefCurrentBackbufferView(pass), .clearColor = clear_rtv});
-    }
-    else
-    {
-        rtvs.reserve(tpass.rtvs.size());
-        for (const auto& rtv : tpass.rtvs | std::views::keys)
-        {
-            auto const& [rhdl, desc] = mSetup->trackedViews[rtv];
-            auto const& tres = mSetup->trackedResources[rhdl];
-            RHITexture* res = DerefResource(rhdl).Get<RHITexture*>();
-            CHECK_MSG(res->mDesc.extent.x >= extent.x && res->mDesc.extent.y >= extent.y,
-                      "Graphics extent too large for Render Target on {}", tres.name);
-            rtvs.push_back({.imageView = DerefTextureView(rtv), .clearColor = clear_rtv});
-        }
+        auto const& [rhdl, desc] = mSetup->trackedViews[rtv];
+        auto const& tres = mSetup->trackedResources[rhdl];
+        RHITexture* res = DerefResource(rhdl).Get<RHITexture*>();
+        CHECK_MSG(res->mDesc.extent.x >= extent.x && res->mDesc.extent.y >= extent.y,
+                  "Graphics extent too large for Render Target on {}", tres.name);
+        rtvs.push_back({.imageView = DerefTextureView(rtv), .clearColor = clear_rtv});
     }
     if (tpass.dsv != kInvalidHandle)
     {
@@ -1615,7 +1627,7 @@ String Renderer::DbgDumpGraphviz() const
     {
         for (auto [v, w] : graph[u])
         {
-            auto const& resName = w != kInvalidHandle ? resources[w].name : "<reserved or Backbuffer>";
+            auto const& resName = w != kInvalidHandle ? resources[w].name : "<Backbuffer or Reserved>";
             fmt::format_to(std::back_inserter(out), "    \"{}@{}\" -> \"{}@{}\" [label=\"{}\"];\n", passes[u].name, u,
                            passes[v].name, v, resName);
         }
@@ -1631,10 +1643,8 @@ String Renderer::DbgDumpActivePasses() const
     for (const auto& idx : mSetup->execution)
     {
         auto& pass = mSetup->trackedPasses[idx];
-        fmt::format_to(std::back_inserter(out),
-                       "{}: {}, depth={}, pri={}, ord={}, queue={}, group={}, write_backbuffer={}\n", pass.handle,
-                       pass.name, pass.depth, pass.priority, pass.ord, pass.queue, pass.groupIndex,
-                       pass.writeBackbuffer);
+        fmt::format_to(std::back_inserter(out), "{}: {}, depth={}, pri={}, ord={}, queue={}, group={}\n", pass.handle,
+                       pass.name, pass.depth, pass.priority, pass.ord, pass.queue, pass.groupIndex);
     }
     out.pop_back();
     return out;

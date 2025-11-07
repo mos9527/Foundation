@@ -44,8 +44,10 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     if (window)
     {
         // Check for a present queue
-        VkSurfaceKHR surface;        
-        CHECK_MSG(SDL_Vulkan_CreateSurface(window, *mApp.GetVkInstance(), app.GetVkAllocatorCallbacks(), &surface), "failed to create window surface: {}", SDL_GetError());
+        VkSurfaceKHR surface;
+        CHECK_MSG(SDL_Vulkan_CreateSurface(window, *mApp.GetVkInstance(),
+                                           nullptr /* Doesn't work well with SDL_DestroyWindow */, &surface),
+                  "failed to create window surface: {}", SDL_GetError());
         mSurface = vk::raii::SurfaceKHR(mApp.GetVkInstance(), surface);
         // Having present and graphics queues as the same avoids copies and is typically the case
         // - https://github.com/KhronosGroup/Vulkan-Hpp/blob/main/RAII_Samples/05_InitSwapchain/05_InitSwapchain.cpp#L45
@@ -421,8 +423,8 @@ void VulkanDeviceQueue::Submit(Span<const SubmitDesc> descs, RHIDeviceFence* com
             *psignal_values++ = 0;
         }
         CHECK_MSG(desc.waitsStages.size() == swaits.size(),
-                  "Number of wait stages ({}) must match number of wait (timeline+binary) semaphores ({})", desc.waitsStages.size(),
-                  swaits.size());
+                  "Number of wait stages ({}) must match number of wait (timeline+binary) semaphores ({})",
+                  desc.waitsStages.size(), swaits.size());
         auto stages = ConstructSpan<vk::PipelineStageFlags>(alloc.Ptr(), desc.waitsStages.size());
         auto* pstages = stages.data();
         for (auto stage : desc.waitsStages)
@@ -435,10 +437,11 @@ void VulkanDeviceQueue::Submit(Span<const SubmitDesc> descs, RHIDeviceFence* com
                             .signalSemaphoreCount = static_cast<uint32_t>(ssignals.size()),
                             .pSignalSemaphores = ssignals.data()};
         auto* tinfo = Construct<vk::TimelineSemaphoreSubmitInfo>(alloc.Ptr());
-        *tinfo = vk::TimelineSemaphoreSubmitInfo{.waitSemaphoreValueCount = static_cast<uint32_t>(wait_values.size()),
-                  .pWaitSemaphoreValues = wait_values.data(),
-                  .signalSemaphoreValueCount = static_cast<uint32_t>(signal_values.size()),
-                  .pSignalSemaphoreValues = signal_values.data()};
+        *tinfo =
+            vk::TimelineSemaphoreSubmitInfo{.waitSemaphoreValueCount = static_cast<uint32_t>(wait_values.size()),
+                                            .pWaitSemaphoreValues = wait_values.data(),
+                                            .signalSemaphoreValueCount = static_cast<uint32_t>(signal_values.size()),
+                                            .pSignalSemaphoreValues = signal_values.data()};
         if (!wait_values.empty() || !signal_values.empty())
             info.setPNext(tinfo);
         submits.push_back(info);

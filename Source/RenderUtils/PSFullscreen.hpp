@@ -1,6 +1,6 @@
 #pragma once
 #include <RenderCore/Renderer.hpp>
-namespace Foundation::Rendering {
+namespace Foundation::RenderUtils {
     using namespace RenderCore;
     /**
      * @brief Creates a full-screen triangle pass that writes to the current backbuffer.
@@ -15,7 +15,7 @@ namespace Foundation::Rendering {
         FSetup&& setup,
         FRecord&& record
     ) {
-        return createPass(r, name, RHIDeviceQueueType::Graphics,
+        return r->CreatePass(name, RHIDeviceQueueType::Graphics, 0u,
             [=](PassHandle self, Renderer* r) {
                 r->BindBackbufferRTV(self);
                 r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/VSFullscreen.spv");
@@ -54,7 +54,7 @@ namespace Foundation::Rendering {
         return createPSFullscreenPass(
             r,
             name,
-            [=](PassHandle self, Renderer* r) {
+            [=](PassHandle self, Renderer*) {
                 r->BindTextureSampler(self, copy_sampler, "sampler");
                 r->BindTextureSRV(self, copy_source, "srcTexture", RHIPipelineStageBits::FragmentShader, {
                     .format = srcFormat,
@@ -62,7 +62,7 @@ namespace Foundation::Rendering {
                 });
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/PSCopy.spv");
             },
-            [](PassHandle, Renderer*, RHI::RHICommandList* cmd) {}
+            [](PassHandle, Renderer*, RHICommandList*) {}
         );
     }
 }

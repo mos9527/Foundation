@@ -1,6 +1,6 @@
 #pragma once
 #include <RenderCore/Renderer.hpp>
-namespace Foundation::Rendering
+namespace Foundation::RenderUtils
 {
     using namespace RenderCore;
     inline void createCSMipGenerationPasses(Renderer* renderer, StringView name, RHIDeviceQueueType queue, ResourceHandle src, ResourceHandle dst,
@@ -19,11 +19,11 @@ namespace Foundation::Rendering
 #pragma pack(pop)
         for (uint32 i = 0; i < maxMips; ++i)
         {
-            createPass(
-                renderer, fmt::format("Mip Gen {} {}", i, name), queue,
+            renderer->CreatePass(
+                fmt::format("Mip Gen {} {}", i, name), queue, 0u,
                 [=](PassHandle self, Renderer* r)
                 {
-                    auto sampler = createSampler(r, {});
+                    auto sampler = renderer->CreateSampler({});
                     r->BindTextureSampler(self, sampler, "sampler");
                     r->BindShader(self, RHIShaderStageBits::Compute, "csMain", "data/shaders/CSMipGeneration.spv");
                     if (i == 0)

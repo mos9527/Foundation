@@ -1,9 +1,7 @@
-#include "Examples.hpp"
-
 int main()
 {
-    SDL_Window* window = SDL_CreateWindow("Mesh Shader Example", 800, 600, SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN);
-    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, RendererDesc{});
+    SDL_Window* window = SDL_CreateWindow("Mesh Shader Example", 800, 600, Examples_SDLWindowFlagsVulkan);
+    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, {});
     renderer->BeginSetup();
     renderer->CreatePass(
         "Mesh Task", RHIDeviceQueueType::Graphics, 0u,
@@ -27,8 +25,7 @@ int main()
                 .EndGraphics();
         });
     renderer->EndSetup();
-    SDL_Event event;
-    while (!Examples_ShouldClose(window, renderer, swapchain, event))
+    while (!Examples_ShouldClose(window, renderer, swapchain))
         Examples_NewFrame(renderer);
-    Examples_DestroyVulkan(window, renderer, app);
+    Examples_DestroyVulkan(window, renderer, app, device, swapchain);
 }

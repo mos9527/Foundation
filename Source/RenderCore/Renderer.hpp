@@ -51,10 +51,6 @@ namespace Foundation::RenderCore
     constexpr size_t kMaxCommandListsPerThread = kMaxRenderPasses;
     // Maximum size of the per-frame transient arena (16MB)
     constexpr size_t kExecuteArenaSize = 16 * (1 << 20);
-    // Stub name for bind_point names that's not found in shaders. This has no
-    // effect - as bindings not found will simply not participate
-    // in the PSO building process.
-    const String kBindpointIgnored = "<ignored>"; // no constexpr in Debug?? thanks MSVC 
     const RHIPipelineStage kComputeStagesMask = RHIPipelineStageBits::FragmentShader |
         RHIPipelineStageBits::VertexShader | RHIPipelineStageBits::MeshShader | RHIPipelineStageBits::RayTracingShader |
         RHIPipelineStageBits::AllGraphics;
@@ -81,10 +77,10 @@ namespace Foundation::RenderCore
         struct RendererSetup
         {
             Vector<Vector<Pair<PassHandle, ResourceHandle>>> graph;
-            Vector<PassHandle> indegree;
+            Vector<PassHandle> in;
             Vector<TrackedPass> trackedPasses;
             Vector<TrackedResource> trackedResources;
-            // Backbuffer producer
+            // Backbuffer specializations
             PassHandle lastBackbufferProducer{kInvalidHandle};
             // [resource, view desc]
             Vector<Pair<ResourceHandle, RHITextureViewDesc>> trackedViews;
@@ -122,12 +118,12 @@ namespace Foundation::RenderCore
                 while (u >= graph.size())
                     graph.emplace_back(graph.get_allocator());
                 graph[u].emplace_back(v, hdl);
-                while (v >= indegree.size())
-                    indegree.push_back(0);
-                indegree[v]++;
+                while (v >= in.size())
+                    in.push_back(0);
+                in[v]++;
             }
             explicit RendererSetup(Allocator* allocator) :
-                graph(allocator), indegree(allocator), trackedPasses(allocator), trackedResources(allocator), trackedViews(allocator),
+                graph(allocator), in(allocator), trackedPasses(allocator), trackedResources(allocator), trackedViews(allocator),
                 trackedSamplers(allocator), activeResources(allocator), execution(allocator), bindingCounts(allocator),
                 executionGroups(allocator)
             {
@@ -164,12 +160,16 @@ namespace Foundation::RenderCore
             const size_t swapIndex;
             RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render{}, present{};
             RHIDeviceScopedObjectHandle<RHIDeviceFence> graphicsFence{}, computeFence{};
-            // RTV for the backbuffer
-            RHITextureScopedHandle<RHITextureView> rtv{};
+            // Texture view for the backbuffer
+            RHITextureScopedHandle<RHITextureView> view{};
+            RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> viewSet{};
             // Tracked backbuffer handle
             ResourceHandle backbuffer{kInvalidHandle};
-            FrameSyncObjects(size_t swapIndex) : swapIndex(swapIndex) {};
+            FrameSyncObjects(size_t swapIndex) : swapIndex(swapIndex) {}
         };
+        RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> mSwapDescriptorPool;
+        RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> mSwapDescriptorSetLayout;
+
         Vector<FrameSyncObjects> mSwaps;
         // Semaphore for async compute
         RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> mGraphicsTimeline{}, mComputeTimeline{};
@@ -252,14 +252,8 @@ namespace Foundation::RenderCore
          */
         void ExecuteBarriers(TrackedPass& pass, ExecuteBarrierPCmdOrPBarrierList cmd);
         /**
-         * @brief Acquires resources for the current group.
+         * @brief Sets backbuffer views and sync primitives
          */
-        void ExecuteAcquireQueueResources(RHIDeviceQueueType currentQueue, size_t groupIndex, RHICommandList* cmd);
-        /**
-         * @brief Performs transitions that's otherwise impossible
-         * (e.g. Fragment -> Compute) for the next group, and releases resources for the current group.
-         */
-        void ExecuteReleaseQueueResources(RHIDeviceQueueType currentQueue, size_t groupIndex, RHICommandList* cmd);
         void SetFrameSyncObjects();
         /**
          * @brief Explicitly declares that this pass will access the buffer in the specified stage with the specified
@@ -570,16 +564,16 @@ namespace Foundation::RenderCore
          */
         ResourceHandle BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc) const;
         /**
-         * @brief Declares that this pass will write to the current (at Record time) swapchain backbuffer.
+         * @breif Binds the backbuffer as the first Render Target.
+         * @note  If this is used, the first RTV will always be the Backbuffer itself.
          *
-         * @note This invalidates any other bound RTVs. With this enabled,
-         * existence of other RTVs will throw at EndSetup() time.
-         *
-         * You can retrieve the current backbuffer RTV via DerefCurrentBackbufferView() at Record time.
-         *
-         * This can be automatically bound to the pipeline with CmdBeginGraphics().
+         *        This can be automatically bound to the pipeline with CmdBeginGraphics().
          */
         void BindBackbufferRTV(PassHandle pass, RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending = {}) const;
+        /**
+         * @brief Binds the backbuffer as RW access at binding 0 of set index
+         */
+        void BindBackbufferUAV(PassHandle pass, int set_index) const;
         /**
          * @brief Declares that this pass will write to the texture via copy / blit (transfer destination).
          *
@@ -699,18 +693,6 @@ namespace Foundation::RenderCore
             return tpass.pDescriptorSets;
         }
         /**
-         * @brief Returns a pointer to the current backbuffer texture view.
-         *
-         * The pass must have declared BindBackbufferRTV() during setup.
-         */
-        [[nodiscard]] RHITextureView* DerefCurrentBackbufferView(const PassHandle pass) const
-        {
-            CHECK(mState == State::Execute);
-            auto& tpass = mSetup->trackedPasses[pass];
-            CHECK_MSG(tpass.writeBackbuffer, "Pass {} does not write to backbuffer", tpass.name);
-            return mSwaps[GetSwap()].rtv.Get();
-        }
-        /**
          * @return The backing general-purpose allocator used for the Renderer
          */
         [[nodiscard]] Allocator* GetAllocator() const { return mAllocator; }
@@ -747,7 +729,7 @@ namespace Foundation::RenderCore
          *
          * You generally want to use @ref CmdSetPipeline() instead.
          */
-        void CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, uint32_t index,
+        void CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, uint32_t set_index,
                                   RHIDeviceDescriptorSet* descriptor_set) const;
         /**
          * @brief Helper that pushes correct descriptor sets and PSO to the current command list, and

@@ -19,7 +19,7 @@ namespace details
                                         RHIDeviceScopedObjectHandle<RHISwapchain>& outSwap)
     {
         int w, h;
-        SDL_GetWindowSize(window, &w, &h);
+        SDL_GetWindowSizeInPixels(window, &w, &h);
         LOG_RUNTIME(RenderApplication, info, "Creating swapchain ({}x{})", w, h);
         device->WaitIdle();
         if (outSwap)
@@ -41,6 +41,7 @@ namespace details
     }
 }
 // [renderer, app, device, swapchain]
+constexpr int Examples_SDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_VULKAN;
 inline auto Examples_InitVulkan(SDL_Window* window, RendererDesc const& desc = {})
 {
     auto app = Construct<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC);
@@ -51,10 +52,16 @@ inline auto Examples_InitVulkan(SDL_Window* window, RendererDesc const& desc = {
     return std::make_tuple(renderer, app, std::move(device), std::move(swap));
 }
 // Polls event, possibly resizing the swapchain, and returns true if the window should close.
-inline bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScopedObjectHandle<RHISwapchain>& swap, SDL_Event& event)
+inline bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScopedObjectHandle<RHISwapchain>& swap, SDL_Event* outEvent = nullptr)
 {
-    if (!SDL_PollEvent(&event) || event.window.windowID != SDL_GetWindowID(window)) return false;
-    if (event.type == SDL_EVENT_QUIT) return true;
+    SDL_Event event;
+    if (!SDL_PollEvent(&event))
+        return false;
+    if (outEvent)
+        *outEvent = event;
+    if (event.window.windowID != SDL_GetWindowID(window))
+        return false;
+    if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) return true;
     // Resize swapchain if necessary
     if (event.type == SDL_EVENT_WINDOW_RESIZED)
     {
@@ -69,9 +76,13 @@ inline void Examples_NewFrame(Renderer* renderer)
     renderer->ExecuteFrame();
     renderer->EndExecute();
 }
-inline auto Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplication* app)
+inline auto Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplication* app, RHIApplicationScopedObjectHandle<RHIDevice>& device, RHIDeviceScopedObjectHandle<RHISwapchain>& swapchain)
 {
     Destruct(GLOBAL_ALLOC, renderer);
+    if (device)
+        device->WaitIdle();
+    swapchain.Reset();
+    device.Reset();
     Destruct(GLOBAL_ALLOC, app);
     SDL_DestroyWindow(window);
 }
