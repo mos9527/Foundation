@@ -2,7 +2,6 @@
 
 using namespace Foundation::RenderCore;
 using namespace Foundation::Core;
-using namespace Foundation::Bits;
 void Shader::ParseSPIRV(const Span<const char> bytecode)
 {
     /* 2.3 Physical Layout of a SPIR-V Module and Instruction */

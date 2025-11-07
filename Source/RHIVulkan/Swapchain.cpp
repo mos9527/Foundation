@@ -2,10 +2,8 @@
 #include "Device.hpp"
 #include "Swapchain.hpp"
 
-#include <Bits/Ranges.hpp>
-using namespace Foundation;
+using namespace Foundation::Core;
 using namespace Foundation::RHI;
-using namespace Foundation::Bits;
 vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDesc(SwapchainDesc desc)
 {
     auto const& surface = mDevice.GetVkSurface();

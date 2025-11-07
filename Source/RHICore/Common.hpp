@@ -1,6 +1,5 @@
 #pragma once
-#include <Bits/Enums.hpp>
-#include <Math/Math.hpp>
+#include <Core/Enums.hpp>
 #include "Details.hpp"
 
 namespace Foundation::RHI {

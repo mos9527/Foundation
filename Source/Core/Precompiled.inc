@@ -3,6 +3,8 @@
 #include "AllocatorHeap.hpp"
 #include "AllocatorStack.hpp"
 #include "Container.hpp"
+#include "Enums.hpp"
+#include "Logging.hpp"
 #include "Atomic.hpp"
 #include "AtomicQueue.hpp"
 #include "AtomicStack.hpp"

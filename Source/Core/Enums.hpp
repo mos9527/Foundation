@@ -1,10 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <bit>
-/**
- * @brief Header-only convenience utilities
- */
-namespace Foundation::Bits
+namespace Foundation::Core
 {
     /**
      * @brief Wrapper for bitmask enum types that provides bitwise operators.
@@ -35,7 +32,7 @@ namespace Foundation::Bits
             return std::countr_zero(value) & (bits - 1); 
         }
     };
-} // namespace Foundation::Bits
+} // namespace Foundation::Core
 /**
  * @brief Defines a bitmask enum type {T}Bits with underlying integer type INT_T whilst defining a wrapper class of type
  * T that provides bitwise operators.
@@ -49,7 +46,7 @@ namespace Foundation::Bits
 #define BITMASK_ENUM_BEGIN(T,INT_T) \
 enum class T##Bits : INT_T;	\
 inline constexpr INT_T to_integer(T##Bits e) { return static_cast<INT_T>(e); } \
-using T = Foundation::Bits::BitmaskEnumWrapper<T##Bits, INT_T>; \
+using T = Foundation::Core::BitmaskEnumWrapper<T##Bits, INT_T>; \
 inline T##Bits   operator	&	(T##Bits x, T##Bits y)		{	return static_cast<T##Bits>(static_cast<INT_T>(x) & static_cast<INT_T>(y));	}; \
 inline T##Bits   operator	|	(T##Bits x, T##Bits y)		{	return static_cast<T##Bits>(static_cast<INT_T>(x) | static_cast<INT_T>(y));	}; \
 inline T##Bits   operator	^	(T##Bits x, T##Bits y)		{	return static_cast<T##Bits>(static_cast<INT_T>(x) ^ static_cast<INT_T>(y));	}; \

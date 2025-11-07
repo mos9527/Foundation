@@ -1,6 +1,3 @@
-#include "Allocator.hpp"
-#include "AllocatorStack.hpp"
-
 namespace Foundation::Core {
     pointer AllocatorStack::Allocate(size_type size, size_type alignment)
     {

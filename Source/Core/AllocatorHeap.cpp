@@ -12,7 +12,6 @@ static_assert(false, "aligned_alloc not defined on this platform");
 #endif
 #endif 
 #endif
-#include "AllocatorHeap.hpp"
 namespace Foundation::Core {
     pointer AllocatorHeap::Allocate(size_type size, size_t alignment) {
 #if FOUNDATION_CORE_USES_OS_ALLOC     

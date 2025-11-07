@@ -14,7 +14,6 @@
 
 using namespace Foundation::Core;
 using namespace Foundation::RHI;
-using namespace Foundation::Bits;
 const char* kVulkanDeviceExtensions[] = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     VK_EXT_MESH_SHADER_EXTENSION_NAME,
