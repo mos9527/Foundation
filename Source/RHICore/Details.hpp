@@ -1,7 +1,5 @@
 #pragma once
 #include <Core/Pool.hpp>
-#include <Core/Precompiled.inc>
-
 /**
  * @brief Low-level Rendering Hardware Interface (RHI) abstractions.
  */
@@ -48,9 +46,11 @@ namespace Foundation::RHI {
          * @tparam U Pointer type to retrieve as. U is required to be castable from T
          */
         template<typename U = T> [[nodiscard]] U* Get() const {
-            CHECK(IsValid() && "RHIHandle::Get called on an invalid handle");
+            if(!IsValid())
+                throw std::runtime_error("RHIHandle::Get called on an invalid handle");
             auto ptr = RHIObjectTraits<Factory, T>::Get(mFactory, mHandle);
-            CHECK(ptr != nullptr);
+            if (!ptr)
+                throw std::runtime_error("RHIHandle::Get got nullptr");
             return static_cast<U*>(ptr);
         }
         T* operator->() const {

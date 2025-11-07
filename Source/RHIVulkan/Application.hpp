@@ -18,7 +18,7 @@ namespace Foundation::RHI {
         mutable SDL_Window* mWindow = nullptr;
         public:
             VulkanWindow(VulkanApplication const& app, WindowDesc const& desc);
-            SDL_Window* GetVkWindow() const { return window; }
+            SDL_Window* GetVkWindow() const { return mWindow; }
     };
     class VulkanApplication : public RHIApplication {
         vk::AllocationCallbacks mVkAllocatorCpuCallbacks;

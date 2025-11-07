@@ -1,5 +1,6 @@
 #pragma once
 #include "Common.hpp"
+#include "Core/Logging.hpp"
 namespace Foundation::RHI {
     class RHIDevice;
     struct RHIResourceDesc {
@@ -69,7 +70,7 @@ namespace Foundation::RHI {
             void* p = Map();
             if (count == kFullSize)
                 count = mDesc.size / sizeof(T);
-            CHECK(count * sizeof(T) <= mDesc.size && "Buffer map range out of bounds");
+            CHECK_MSG(count * sizeof(T) <= mDesc.size, "Buffer map range out of bounds");
             return { static_cast<T*>(p) , count };
         }
 

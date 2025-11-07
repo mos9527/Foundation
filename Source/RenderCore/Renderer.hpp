@@ -1,4 +1,6 @@
 #pragma once
+#include <Core/ThreadPool.hpp>
+#include <Core/AllocatorStack.hpp>
 #include "RenderPass.hpp"
 #include "RenderResource.hpp"
 #include "Shader.hpp"

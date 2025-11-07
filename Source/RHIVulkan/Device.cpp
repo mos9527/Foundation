@@ -1,16 +1,5 @@
-#include <algorithm>
-
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
-
-#include <SDL3/SDL_vulkan.h>
-
-#include <Bits/Format.hpp>
-#include <Core/Precompiled.inc>
-#include <utility>
-
-#include "Application.hpp"
-#include "Device.hpp"
 
 using namespace Foundation::Core;
 using namespace Foundation::RHI;
@@ -25,8 +14,8 @@ Allocator* VulkanDevice::GetAllocator() const { return mApp.GetAllocator(); }
 vk::AllocationCallbacks const& VulkanDevice::GetVkAllocatorCallbacks() const { return mApp.GetVkAllocatorCallbacks(); }
 
 VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice, RHIWindow* window) :
-    RHIDevice(app), mApp(app), mPhysicalDevice(std::move(physicalDevice)), mSwapchainFormats(GetAllocator()),
-    mSwapchainPresentModes(GetAllocator()), mStorage(GetAllocator()), mWindow(window)
+    RHIDevice(app), mApp(app), mWindow(window), mPhysicalDevice(std::move(physicalDevice)),
+    mSwapchainFormats(GetAllocator()), mSwapchainPresentModes(GetAllocator()), mStorage(GetAllocator())
 {
     auto queues = mPhysicalDevice.getQueueFamilyProperties();
     // Find queues
@@ -195,117 +184,6 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
             }
         }
     }
-}
-
-void VulkanDevice::DebugLogDeviceInfo() const
-{
-    auto properties = mPhysicalDevice.getProperties();
-    LOG_RUNTIME(VulkanDevice, info,
-                "** Vulkan Device Info **\n"
-                "    driverVersion: 0x{:X}\n"
-                "    vendorID: 0x{:X}\n"
-                "    deviceID: 0x{:X}\n"
-                "    deviceType: {}\n"
-                "    deviceName: {}\n"
-                "    limits:\n"
-                "        maxMemoryAllocationCount: {}\n"
-                "        bufferImageGranularity: {}\n"
-                "        nonCoherentAtomSize: {}",
-                properties.driverVersion, properties.vendorID, properties.deviceID,
-                kVulkanDeviceTypes[static_cast<int>(properties.deviceType)], properties.deviceName.data(),
-                properties.limits.maxMemoryAllocationCount,
-                formatHumanReadableSize(properties.limits.bufferImageGranularity),
-                formatHumanReadableSize(properties.limits.nonCoherentAtomSize));
-}
-
-/// https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/blob/master/src/VulkanSample.cpp#L1694
-void VulkanDevice::DebugLogAllocatorInfo() const
-{
-    const VkPhysicalDeviceProperties* props;
-    const VkPhysicalDeviceMemoryProperties* memProps;
-    vmaGetPhysicalDeviceProperties(mVkAllocator, &props);
-    vmaGetMemoryProperties(mVkAllocator, &memProps);
-
-    const uint32_t heapCount = memProps->memoryHeapCount;
-
-    uint32_t deviceLocalHeapCount = 0;
-    uint32_t hostVisibleHeapCount = 0;
-    uint32_t deviceLocalAndHostVisibleHeapCount = 0;
-    VkDeviceSize deviceLocalHeapSumSize = 0;
-    VkDeviceSize hostVisibleHeapSumSize = 0;
-    VkDeviceSize deviceLocalAndHostVisibleHeapSumSize = 0;
-
-    for (uint32_t heapIndex = 0; heapIndex < heapCount; ++heapIndex)
-    {
-        const VkMemoryHeap& heap = memProps->memoryHeaps[heapIndex];
-        const bool isDeviceLocal = (heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0;
-        bool isHostVisible = false;
-        for (uint32_t typeIndex = 0; typeIndex < memProps->memoryTypeCount; ++typeIndex)
-        {
-            const VkMemoryType& type = memProps->memoryTypes[typeIndex];
-            if (type.heapIndex == heapIndex && (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
-            {
-                isHostVisible = true;
-                break;
-            }
-        }
-        if (isDeviceLocal)
-        {
-            ++deviceLocalHeapCount;
-            deviceLocalHeapSumSize += heap.size;
-        }
-        if (isHostVisible)
-        {
-            ++hostVisibleHeapCount;
-            hostVisibleHeapSumSize += heap.size;
-            if (isDeviceLocal)
-            {
-                ++deviceLocalAndHostVisibleHeapCount;
-                deviceLocalAndHostVisibleHeapSumSize += heap.size;
-            }
-        }
-    }
-
-    uint32_t hostVisibleNotHostCoherentTypeCount = 0;
-    uint32_t notDeviceLocalNotHostVisibleTypeCount = 0;
-    uint32_t amdSpecificTypeCount = 0;
-    uint32_t lazilyAllocatedTypeCount = 0;
-    uint32_t allTypeBits = 0;
-    uint32_t deviceLocalTypeBits = 0;
-    for (uint32_t typeIndex = 0; typeIndex < memProps->memoryTypeCount; ++typeIndex)
-    {
-        const VkMemoryType& type = memProps->memoryTypes[typeIndex];
-        allTypeBits |= 1u << typeIndex;
-        if (type.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
-            deviceLocalTypeBits |= 1u << typeIndex;
-        if ((type.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
-            (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
-            ++hostVisibleNotHostCoherentTypeCount;
-        if ((type.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == 0 &&
-            (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0)
-            ++notDeviceLocalNotHostVisibleTypeCount;
-        if (type.propertyFlags &
-            (VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD | VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD))
-            ++amdSpecificTypeCount;
-        if (type.propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT)
-            ++lazilyAllocatedTypeCount;
-    }
-    LOG_RUNTIME(VulkanDevice, info,
-                "** Vulkan Allocator Stats **\n"
-                "    deviceLocalHeapCount = {}\n"
-                "    deviceLocalHeapSumSize = {}\n"
-                "    hostVisibleHeapCount = {}\n"
-                "    hostVisibleHeapSumSize = {}\n"
-                "    deviceLocalAndHostVisibleHeapCount = {}\n"
-                "    deviceLocalAndHostVisibleHeapSumSize = {}\n"
-                "    hostVisibleNotHostCoherentTypeCount = {}\n"
-                "    notDeviceLocalNotHostVisibleTypeCount = {}\n"
-                "    amdSpecificTypeCount = {}\n"
-                "    lazilyAllocatedTypeCount = {}",
-                deviceLocalHeapCount, formatHumanReadableSize(deviceLocalHeapSumSize), hostVisibleHeapCount,
-                formatHumanReadableSize(hostVisibleHeapSumSize), deviceLocalAndHostVisibleHeapCount,
-                formatHumanReadableSize(deviceLocalAndHostVisibleHeapSumSize), hostVisibleNotHostCoherentTypeCount,
-                notDeviceLocalNotHostVisibleTypeCount, amdSpecificTypeCount, lazilyAllocatedTypeCount);
 }
 
 VulkanDevice::~VulkanDevice()

@@ -1,7 +1,3 @@
-#include "Resource.hpp"
-#include "Device.hpp"
-#include "Swapchain.hpp"
-
 using namespace Foundation::Core;
 using namespace Foundation::RHI;
 vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDesc(SwapchainDesc desc)

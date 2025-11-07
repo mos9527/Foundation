@@ -1,6 +1,3 @@
-#include "Command.hpp"
-#include "Device.hpp"
-
 using namespace Foundation::RHI;
 VulkanCommandPool::VulkanCommandPool(const VulkanDevice& device, PoolDesc const& desc, Allocator* allocator) :
     RHICommandPool(device, desc), mAllocator(allocator), mDevice(device), mStorage(allocator) {

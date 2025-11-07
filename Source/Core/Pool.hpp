@@ -25,7 +25,8 @@ namespace Foundation::Core {
                 mValues.resize(key + 1);
         }     
         void CheckContains(K key) const {
-            CHECK_MSG(key < mValues.size() && mValues[key], "Key not allocated"); 
+            if (key > mValues.size() || !mValues[key])
+                throw std::runtime_error("Key not allocated");
         }
         K PopKey() {
             K key{};

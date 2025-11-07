@@ -13,9 +13,3 @@ target_include_directories(
     INTERFACE
     ..
 )
-
-target_precompile_headers(
-    Foundation_RHICore
-    INTERFACE
-    Precompiled.inc
-)

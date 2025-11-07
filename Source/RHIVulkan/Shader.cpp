@@ -1,6 +1,3 @@
-#include "Shader.hpp"
-#include "Device.hpp"
-
 using namespace Foundation::RHI;
 VulkanShaderModule::VulkanShaderModule(const VulkanDevice& device, ShaderModuleDesc const& desc)
     : RHIShaderModule(device, desc), mDevice(device) {

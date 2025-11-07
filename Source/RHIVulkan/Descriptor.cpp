@@ -1,7 +1,3 @@
-#include "Descriptor.hpp"
-#include <Core/AllocatorStack.hpp>
-#include "Device.hpp"
-#include "Resource.hpp"
 using namespace Foundation;
 using namespace Foundation::RHI;
 VulkanDeviceDescriptorSet::VulkanDeviceDescriptorSet(VulkanDeviceDescriptorPool const& pool, vk::raii::DescriptorSet&& set) :

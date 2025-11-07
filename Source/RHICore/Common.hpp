@@ -1,7 +1,7 @@
 #pragma once
 #include <Core/Enums.hpp>
+#include <Math/Math.hpp>
 #include "Details.hpp"
-
 namespace Foundation::RHI {
     using namespace Core;
     constexpr static size_t kFullSize = -1;

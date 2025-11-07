@@ -1,5 +1,3 @@
-#include "Resource.hpp"
-#include "Device.hpp"
 using namespace Foundation;
 using namespace Foundation::RHI;
 vk::BufferCreateInfo vkBufferCreateInfoFromRHIBufferDesc(RHIBufferDesc const& desc) {

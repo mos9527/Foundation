@@ -1,5 +1,3 @@
-#include "Application.hpp"
-#include "Device.hpp"
 using namespace Foundation;
 using namespace Core;
 using namespace RHI;
@@ -8,14 +6,9 @@ static VKAPI_ATTR vk::Bool32 VKAPI_CALL
 VkDebugLayerCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::DebugUtilsMessageTypeFlagsEXT,
                      const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, void*)
 {
-    const spdlog::level::level_enum kLevels[] = {
-        spdlog::level::debug, // eVerbose
-        spdlog::level::info, // eInfo
-        spdlog::level::warn, // eWarning
-        spdlog::level::err // eError
-    };
-    spdlog::level::level_enum level = kLevels[std::countr_zero(static_cast<uint32_t>(severity)) >> 2 & 3];
-    getLogger("VkDebugLayer")->log(level, "{}", pCallbackData->pMessage);
+    constexpr const char* kLevels[] = {"verbose", "info", "warning", "error"};
+    LOG_RUNTIME(VkDebugLayer, info, "{} {}",
+                kLevels[std::countr_zero(static_cast<uint32_t>(severity)) >> 2 & 3], pCallbackData->pMessage);
     return vk::False;
 }
 VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, const char* engineName,
@@ -124,10 +117,9 @@ namespace Foundation::RHI
             .pfnInternalAllocation = nullptr,
             .pfnInternalFree = nullptr};
     }
-    VulkanWindow::VulkanWindow(VulkanApplication const& app, WindowDesc const& desc):
-        RHIWindow(app)
+    VulkanWindow::VulkanWindow(VulkanApplication const& app, WindowDesc const& desc) : RHIWindow(app)
     {
-        mWindow = SDL_CreateWindow(desc.title.data(),desc.width,desc.height,desc.platformFlags);
+        mWindow = SDL_CreateWindow(desc.title.data(), desc.width, desc.height, desc.platformFlags);
         CHECK_MSG(mWindow, "SDL_CreateWindow error: {}", SDL_GetError());
     }
 } // namespace Foundation::RHI

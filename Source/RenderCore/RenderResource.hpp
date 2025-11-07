@@ -1,11 +1,11 @@
 #pragma once
+#include <Core/Variant.hpp>
 #include <RHICore/Resource.hpp>
 #include "RenderPass.hpp"
 namespace Foundation::RenderCore
 {
     using namespace RHI;
     using namespace Core;
-    using namespace Bits;
     using ResourceDefinition = Variant<RHIBufferDesc, RHITextureDesc, RHIDeviceObjectHandle<RHIBuffer>,
                                        RHIDeviceObjectHandle<RHITexture>, RHIBuffer*, RHITexture*>;
     const size_t kTextureAspectCount = 3; // Color, depth, stencil @ref RHITextureAspectFlag
