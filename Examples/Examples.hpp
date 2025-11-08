@@ -20,7 +20,7 @@ namespace details
     {
         int w, h;
         SDL_GetWindowSizeInPixels(window, &w, &h);
-        LOG_RUNTIME(RenderApplication, info, "Creating swapchain ({}x{})", w, h);
+        LOG_RUNTIME(RenderApplication, LogDebug, "Creating swapchain ({}x{})", w, h);
         device->WaitIdle();
         if (outSwap)
             outSwap.Reset();
@@ -29,9 +29,9 @@ namespace details
         auto present = Ranges::FirstOf(Views::all(kPresentModePreferenceList) |
                                        Views::filter(Ranges::ContainedBy(device->GetSwapchainSupportedPresentModes())));
         CHECK_MSG(format.has_value(), "No supported swapchain format found!");
-        LOG_RUNTIME(RenderApplication, info, "Selected swapchain format: {}", format.value());
+        LOG_RUNTIME(RenderApplication, LogDebug, "Selected swapchain format: {}", format.value());
         CHECK_MSG(present.has_value(), "No supported presentation mode found!");
-        LOG_RUNTIME(RenderApplication, info, "Selected swapchain present mode: {}", present.value());
+        LOG_RUNTIME(RenderApplication, LogDebug, "Selected swapchain present mode: {}", present.value());
         outSwap = device->CreateSwapchain(RHISwapchain::SwapchainDesc{
             .format = format.value(),
             .extents = RHIExtent3D{w, h, 1},
@@ -86,3 +86,23 @@ inline auto Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, Vulka
     Destruct(GLOBAL_ALLOC, app);
     SDL_DestroyWindow(window);
 }
+
+struct ExampleFpsCounter
+{
+    size_t lastTick{};
+    size_t frames{};
+    float fps{};
+    float Update()
+    {
+        size_t now = SDL_GetTicksNS();
+        size_t delta = now - lastTick;
+        if (delta >= 1e9)
+        {
+            fps = 1e9 * (static_cast<float>(frames) / delta);
+            frames = 0;
+            lastTick = now;
+        }
+        frames++;
+        return fps;
+    }
+};

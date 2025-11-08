@@ -40,7 +40,7 @@ namespace Foundation::RenderCore
          * @brief Number of worker threads to use for recording command lists.
          * @note Set this to 0 to disable multithreaded command recording.
          */
-        uint32_t numRenderThreads{std::max(1u, std::thread::hardware_concurrency() - 1)};
+        uint32_t threads{std::max(1u, std::thread::hardware_concurrency() - 1)};
     };
     /* -- Constants -- */
     // Maximum number of render passes per frame
@@ -278,6 +278,7 @@ namespace Foundation::RenderCore
                                   RHITextureLayout layout = RHITextureLayout::ShaderReadOnly) const;
         RHIDeviceIdleGuard mWaitIdle; // Ensure device is idle on destruction
     public:
+        Renderer() = delete;
         Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device,
                  RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator);
 
@@ -705,7 +706,8 @@ namespace Foundation::RenderCore
          */
         [[nodiscard]] RHIExtent3D CmdGetComputeLocalSize(PassHandle pass) const;
         /**
-         * @brief Helper that dispatches a compute shader with the specified **TOTAL** thread count
+         * @brief Helper that dispatches a compute shader with the specified **THREAD** count
+         * @note  To dispatch groups - use @ref RHICommandList::Dispatch as is!
          * @note A valid @ref CmdSetPipeline call MUST be made before this, or the behaviour is undefined.
          *
          * This is equivalent to calling:

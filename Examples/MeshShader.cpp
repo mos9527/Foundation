@@ -1,6 +1,9 @@
+#include <RenderUtils/CSDebugText.hpp>
+using namespace RenderUtils;
 int main()
 {
     SDL_Window* window = SDL_CreateWindow("Mesh Shader Example", 800, 600, Examples_SDLWindowFlagsVulkan);
+    CSDebugTextData data{ .x = 16, .y = 16 };
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, {});
     renderer->BeginSetup();
     renderer->CreatePass(
@@ -24,8 +27,13 @@ int main()
                 .DrawMeshTasks(1, 1, 1)
                 .EndGraphics();
         });
+    createCSDebugTextPassBackBuffer(renderer, "Debug Text", {data});
     renderer->EndSetup();
+    ExampleFpsCounter fps;
     while (!Examples_ShouldClose(window, renderer, swapchain))
+    {
+        fmt::format_to(data.text.ch, "MeshShader Example FPS: {}", fps.Update());
         Examples_NewFrame(renderer);
+    }
     Examples_DestroyVulkan(window, renderer, app, device, swapchain);
 }

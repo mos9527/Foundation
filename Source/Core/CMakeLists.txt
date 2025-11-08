@@ -12,13 +12,9 @@ add_library(Foundation_Core ${SOURCES} ${INCLUDES})
 
 include(FetchContent)
 FetchContent_MakeAvailable(fmt)
-
-set(SPDLOG_FMT_EXTERNAL ON)
-FetchContent_MakeAvailable(spdlog)
-
 FetchContent_MakeAvailable(tracy)
 
-target_link_libraries(Foundation_Core PUBLIC fmt::fmt spdlog::spdlog)
+target_link_libraries(Foundation_Core PUBLIC fmt::fmt)
 
 if (FOUNDATION_CORE_USES_OS_ALLOC)
     target_compile_definitions(Foundation_Core PUBLIC "FOUNDATION_CORE_USES_OS_ALLOC=1")

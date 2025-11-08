@@ -58,7 +58,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         }
         else
         {
-            LOG_RUNTIME(VulkanDevice, warn, "Device may have separate Graphics and Present queues!");
+            LOG_RUNTIME(VulkanDevice, LogWarn, "Device may have separate Graphics and Present queues!");
             for (size_t i = 0; i < queues.size(); ++i)
             {
                 if (mPhysicalDevice.getSurfaceSupportKHR(static_cast<uint32_t>(i), *mSurface))

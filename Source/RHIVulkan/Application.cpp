@@ -1,13 +1,15 @@
 using namespace Foundation;
 using namespace Core;
 using namespace RHI;
-const char* kVulkanInstanceExtensions[] = {VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
+const char* kVulkanInstanceExtensions[] = {
+    VK_EXT_DEBUG_UTILS_EXTENSION_NAME
+};
 static VKAPI_ATTR vk::Bool32 VKAPI_CALL
 VkDebugLayerCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::DebugUtilsMessageTypeFlagsEXT,
                      const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, void*)
 {
     constexpr const char* kLevels[] = {"verbose", "info", "warning", "error"};
-    LOG_RUNTIME(VkDebugLayer, info, "{} {}",
+    LOG_RUNTIME(VkDebugLayer, LogInfo, "{} {}",
                 kLevels[std::countr_zero(static_cast<uint32_t>(severity)) >> 2 & 3], pCallbackData->pMessage);
     return vk::False;
 }
@@ -28,6 +30,11 @@ VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, 
     // Add our own extensions
     instanceExtensions.insert(instanceExtensions.end(), kVulkanInstanceExtensions,
                               kVulkanInstanceExtensions + std::size(kVulkanInstanceExtensions));
+    LOG_RUNTIME(VulkanApplication, LogDebug, "Enabling Extensions:")
+    for (auto ext : instanceExtensions)
+    {
+        LOG_RUNTIME(VulkanApplication, LogDebug, "\t{}", ext);
+    }
     Vector<const char*> instanceLayers(mAllocator);
 #if FOUNDATION_RHIVULKAN_VVL
     instanceLayers.push_back("VK_LAYER_KHRONOS_validation");
@@ -51,8 +58,7 @@ VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, 
     validation_features.pEnabledValidationFeatures = &validation_feature_enables;
     instanceInfo.setPNext(&validation_features);
 #endif
-    auto cb = vk::AllocationCallbacks(mVkAllocatorCpuCallbacks);
-    mInstance = vk::raii::Instance(mContext, instanceInfo, cb);
+    mInstance = vk::raii::Instance(mContext, instanceInfo);
     mPhysicalDevices = vk::raii::PhysicalDevices(mInstance);
     mDevices.clear();
     for (uint32_t id = 0; id < mPhysicalDevices.size(); ++id)
