@@ -100,6 +100,13 @@ namespace Foundation::Core {
         [[nodiscard]] Span<const char> AsBytes() const {
             return Span<const char>{ reinterpret_cast<const char*>(this->data()), this->size_bytes()  };
         }
+
+        /**
+         * @brief Creates a sub-span from the current span.
+         */
+        Span SubSpan(size_t offset = 0, size_t count = std::dynamic_extent) const {
+            return Span(this->data() + offset, count == std::dynamic_extent ? this->size() - offset : count);
+        }
     };
     /**
      * @brief Convenience function for constructing a Span with memory allocated from a @ref
