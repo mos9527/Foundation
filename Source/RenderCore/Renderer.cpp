@@ -1065,7 +1065,7 @@ void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, 
 {
     ZoneScoped;
     // RW resources need barriers even if the state doesn't change
-    // because of potential hazards
+    // because of potential WOW hazards
     if ((sta.access & kAllShaderWrites) != 0 || (access & kAllShaderWrites) != 0)
     {
         /* always barrier */
@@ -1114,7 +1114,7 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
     ZoneScoped;
     CHECK_MSG(mState == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", mState);
     RHIBuffer* res = DerefResource(tres.handle).Get<RHIBuffer*>();
-    /* Same as textures, RW buffers need barriers even if the state doesn't change */
+    /* Same as textures */
     if ((tres.lastBufferState.access & kAllShaderWrites) != 0 || (access & kAllShaderWrites) != 0)
     {
         /* always barrier */

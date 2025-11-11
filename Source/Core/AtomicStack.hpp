@@ -7,12 +7,14 @@ namespace Foundation::Core
      * @brief Atomic, unbounded LIFO stack with lock-free push and pop operations.
      * @note Memory allocations are performed on each push and deallocations on each pop.
      *       This also requires a thread-safe Allocator, which @ref Core provides.
-     * @note Consider @ref MPMCQueue for a bounded, allocation-free alternative.
-     * @tparam T Data type.
+     * @note Consider using @ref AllocatorPool for fixed-size allocations to reduce allocation overhead,
+     *       with a T of AtomicStack<T>::Node
+     * @tparam T Data type, must be default constructible.
      */
     template <typename T>
     class AtomicStack
     {
+    public:
         struct Node;
         struct alignas(2 * sizeof(Node*)) PTag
         {
@@ -24,6 +26,7 @@ namespace Foundation::Core
             PTag next{};
             T data{};
         };
+    private:
         Atomic<PTag> mTop{};
         Allocator* mAlloc;
     public:
@@ -58,7 +61,6 @@ namespace Foundation::Core
                     node->next = old_top;
                     return; // OK. Acquired the head and we're in
                 }
-                old_top = mTop.load(std::memory_order_relaxed); // Retry later
             }
         }
         /**
@@ -81,9 +83,13 @@ namespace Foundation::Core
                     mAlloc->Deallocate(old_top.p);
                     return true; // OK. Acquired the head and we're out
                 }
-                old_top = mTop.load(std::memory_order_relaxed); // Retry later
             }
             return false; // Empty
+        }
+        ~AtomicStack()
+        {
+            T val;
+            while (Pop(val));
         }
     };
 }

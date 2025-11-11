@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/Container.hpp>
 #include <Core/Enums.hpp>
 #include <Math/Math.hpp>
 #include "Details.hpp"

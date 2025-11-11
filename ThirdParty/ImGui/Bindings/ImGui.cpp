@@ -30,11 +30,11 @@ DefaultAllocator gImGuiAllocator;
 
 void* ImGui_ImplFoundation_MemAlloc(size_t sz, void*)
 {
-    return gImGuiAllocator.Allocate(sz, sizeof(std::max_align_t));
+    return GLOBAL_ALLOC->Allocate(sz, sizeof(std::max_align_t));
 }
 void ImGui_ImplFoundation_MemFree(void* ptr, void*)
 {
-    return gImGuiAllocator.Deallocate(ptr);
+    return GLOBAL_ALLOC->Deallocate(ptr);
 }
 
 void ImGui_ImplFoundation_Init(RHIDevice* device, SDL_Window* window, Allocator* allocator)
@@ -46,7 +46,7 @@ void ImGui_ImplFoundation_Init(RHIDevice* device, SDL_Window* window, Allocator*
     io.BackendRendererUserData = static_cast<void*>(bd);
     io.BackendRendererName = "imgui_impl_foundation";
     io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset; // We can honor the ImDrawCmd::VtxOffset field,
-                                                               // allowing// for large meshes.
+                                                               // allowing for large meshes.
     io.BackendFlags |=
         ImGuiBackendFlags_RendererHasTextures; // We can honor ImGuiPlatformIO::Textures[] requests during render.
     gImGuiTexturePool = ConstructUnique<TexturePool>(allocator, device, allocator, kMaxTextures);

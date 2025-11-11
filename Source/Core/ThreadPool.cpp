@@ -2,8 +2,7 @@
 namespace Foundation::Core
 {
     ThreadPool::ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc, StringView name):
-        mAllocator(alloc), mName(name), mJobs(maxTasks, alloc),
-        mJobsWriter(mJobs.CreateWriter()), mThreads(alloc)
+        mAllocator(alloc), mName(name), mJobs(maxTasks, alloc), mThreads(alloc)
     {
         for (size_t i = 0; i < numThreads; ++i)
             mThreads.emplace_back(&ThreadPool::ThreadPoolWorker, this, i);
@@ -30,7 +29,6 @@ namespace Foundation::Core
     void ThreadPool::ThreadPoolWorker(size_t id)
     {
         TracyCSetThreadName(fmt::format("{}@{}", mName.c_str(), id).c_str());
-        auto reader = mJobs.CreateReader();
         size_t total = 0;
         while (!mShutdown)
         {
@@ -44,7 +42,7 @@ namespace Foundation::Core
             // before letting the OS primitive take over
             total++;
             UniquePtr<ThreadPoolJob> job;
-            if (reader.Pop(job))
+            if (mJobs.Pop(job))
             {
                 job->Execute(id);
                 mComplete.fetch_add(1, std::memory_order_relaxed);

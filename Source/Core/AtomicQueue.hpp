@@ -6,7 +6,7 @@ namespace Foundation::Core
 {
     /**
      * @brief Atomic, bounded single-producer single-consumer FIFO ring buffer with a fixed maximum size
-     * @tparam T Data type.
+     * @tparam T Data type, must be default constructible.
      */
     template <typename T>
     class SPSCQueue
@@ -76,7 +76,7 @@ namespace Foundation::Core
     };
     /**
      * @brief Atomic, bounded multi-producer multi-consumer FIFO ring buffer with a fixed maximum size
-     * @tparam T Data type.
+     * @tparam T Data type, must be default constructible.
      */
     template<typename T>
     class MPMCQueue
@@ -96,88 +96,53 @@ namespace Foundation::Core
             if ((size & mModulo) != 0)
                 throw std::runtime_error("Size must be a power of two");
         }
-        class Writer
-        {
-            MPMCQueue* const queue;
-        public:
-            Writer(MPMCQueue* queue) : queue(queue) {}
-            /**
-             * @brief _Try_ to push data into the queue.
-             * @note Multiple threads may call this concurrently.
-             * @param data The data to push.
-             * @return Whether the push was successful. Returns false if the queue is full.
-             */
-            template<typename U>
-            bool Push(U&& data) {
-                size_t write = queue->mWrite.load(std::memory_order_relaxed);
-                while (true)
-                {
-                    // Stick with the current write index until we succeed
-                    auto& elem = queue->mBuffer[write & queue->mModulo];
-                    size_t read_cycle = elem.readCycle.load(std::memory_order_acquire);
-                    size_t write_cycle = elem.writeCycle.load(std::memory_order_acquire);
-                    if (write_cycle > read_cycle) [[unlikely]] // Still not consumed
-                        return false; // full
-                    size_t cycle = write >> queue->mShift;
-                    if (write_cycle == cycle) // Ready to write
-                    {
-                        // Bump the write index if we can, claiming the old index. Try later otherwise.
-                        if (queue->mWrite.compare_exchange_weak(write, write + 1, std::memory_order_relaxed))
-                        {
-                            elem.data = std::forward<U>(data);
-                            elem.writeCycle.store(cycle + 1, std::memory_order_release);
-                            return true;
-                        }
-                    } else // Not our turn yet? So we must be an old write. Update and try again.
-                        write = queue->mWrite.load(std::memory_order_relaxed);
-                }
-            }
-        };
-        /**
-         * @brief Create a @ref Writer for concurrent pushing.
-         */
-        Writer CreateWriter() { return Writer(this); }
-        class Reader
-        {
-            MPMCQueue* const queue;
-        public:
-            Reader(MPMCQueue* queue) : queue(queue) {}
-            /**
-             * @brief _Try_ to pop data from the queue.
-             * @note Multiple threads may call this concurrently.
-             * @param out Reference to receive the popped data. This is only valid if the function returns true.
-             *            The values are move-constructed from the queue.
-             * @return True is successful, false if the queue is empty.
-             */
-            bool Pop(T& out)
+        template<typename U>
+        bool Push(U&& data) {
+            size_t write = mWrite.load(std::memory_order_relaxed);
+            while (true)
             {
-                size_t read = queue->mRead.load(std::memory_order_relaxed);
-                while (true)
+                // Stick with the current write index until we succeed
+                auto& elem = mBuffer[write & mModulo];
+                size_t read_cycle = elem.readCycle.load(std::memory_order_acquire);
+                size_t write_cycle = elem.writeCycle.load(std::memory_order_acquire);
+                if (write_cycle > read_cycle) [[unlikely]] // Still not consumed
+                    return false; // full
+                size_t cycle = write >> mShift;
+                if (write_cycle == cycle) // Ready to write
                 {
-                    // Same as above
-                    auto& elem = queue->mBuffer[read & queue->mModulo];
-                    size_t read_cycle = elem.readCycle.load(std::memory_order_acquire);
-                    size_t write_cycle = elem.writeCycle.load(std::memory_order_relaxed);
-                    if (read_cycle >= write_cycle) [[unlikely]] // Still not written
-                        return false; // empty
-                    size_t cycle = read >> queue->mShift;
-                    if (read_cycle == cycle) // Ready to read
+                    // Bump the write index if we can, claiming the old index. Try later otherwise.
+                    if (mWrite.compare_exchange_weak(write, write + 1, std::memory_order_relaxed))
                     {
-                        // Same as above for reading
-                        if (queue->mRead.compare_exchange_weak(read, read + 1, std::memory_order_relaxed))
-                        {
-                            out = std::move(elem.data);
-                            elem.readCycle.store(cycle + 1, std::memory_order_release);
-                            return true;
-                        }
-                    } else // Old write
-                        read = queue->mRead.load(std::memory_order_relaxed);
-                }
+                        elem.data = std::forward<U>(data);
+                        elem.writeCycle.store(cycle + 1, std::memory_order_release);
+                        return true;
+                    }
+                } // Not our turn yet? So we must be an old write. Update and try again. CAS does this already.
             }
-        };
-        /**
-         * @brief Create a @ref Reader for concurrent popping.
-         */
-        Reader CreateReader() { return Reader(this); }
+        }
+        bool Pop(T& out)
+        {
+            size_t read = mRead.load(std::memory_order_relaxed);
+            while (true)
+            {
+                // Same as above
+                auto& elem = mBuffer[read & mModulo];
+                size_t read_cycle = elem.readCycle.load(std::memory_order_acquire);
+                size_t write_cycle = elem.writeCycle.load(std::memory_order_relaxed);
+                if (read_cycle >= write_cycle) [[unlikely]] // Still not written
+                    return false; // empty
+                size_t cycle = read >> mShift;
+                if (read_cycle == cycle) // Ready to read
+                {
+                    // Same as above for reading
+                    if (mRead.compare_exchange_weak(read, read + 1, std::memory_order_relaxed))
+                    {
+                        out = std::move(elem.data);
+                        elem.readCycle.store(cycle + 1, std::memory_order_release);
+                        return true;
+                    }
+                } // Old write otherwise
+            }
+        }
     };
 }

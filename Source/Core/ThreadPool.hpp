@@ -63,7 +63,6 @@ namespace Foundation::Core
         Atomic<size_t> mTotal{ 0 };
 
         JobQueue mJobs;
-        JobQueue::Writer mJobsWriter;
         // Ensure threads are joined first on destruction
         Vector<Thread> mThreads;
         void ThreadPoolWorker(size_t id);
@@ -88,7 +87,7 @@ namespace Foundation::Core
         {
             if(mShutdown)
                 throw std::runtime_error("ThreadPool shutting down");
-            if(!mJobsWriter.Push(ConstructUniqueBase<ThreadPoolJob, T>(mAllocator, std::forward<Args>(args)...)))
+            if(!mJobs.Push(ConstructUniqueBase<ThreadPoolJob, T>(mAllocator, std::forward<Args>(args)...)))
                 throw std::runtime_error("Jobs full");
             mTotal.fetch_add(1, std::memory_order_relaxed);
             mTotal.notify_one();
@@ -113,7 +112,7 @@ namespace Foundation::Core
             // Use the wrapped lambda type for the job
             using LambdaType = ThreadPoolLambdaJob<PackagedType, ReturnType>;
             SharedPromise<ReturnType> promise = ConstructShared<std::promise<ReturnType>>(mAllocator);
-            if(!mJobsWriter.Push(ConstructUniqueBase<ThreadPoolJob, LambdaType>(
+            if(!mJobs.Push(ConstructUniqueBase<ThreadPoolJob, LambdaType>(
                     mAllocator, promise,
                     std::forward<PackagedType>(packaged))))
                 throw std::runtime_error("Jobs full");

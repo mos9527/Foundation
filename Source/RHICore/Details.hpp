@@ -1,17 +1,19 @@
 #pragma once
-#include <Core/Pool.hpp>
+#include <Core/AllocatorPool.hpp>
 /**
  * @brief Low-level Rendering Hardware Interface (RHI) abstractions.
  */
-namespace Foundation::RHI {
-    using Handle = uint64_t;
+namespace Foundation::RHI
+{
+    using Handle = uintptr_t;
     constexpr static Handle kInvalidHandle = static_cast<Handle>(-1);
     /**
      * @brief Base class for all RHI objects.
      *
      * RHI Objects are non-copyable, non-movable (pinned), and must be derived from this class.
      */
-    class RHIObject {
+    class RHIObject
+    {
     public:
         RHIObject() = default;
         RHIObject(RHIObject const&) = delete;
@@ -24,10 +26,10 @@ namespace Foundation::RHI {
     /**
      * @brief Provides type traits for types derived from RHIObject.
      */
-    template<typename Factory, std::derived_from<RHIObject> T>
+    template <typename Factory, std::derived_from<RHIObject> T>
     struct RHIObjectTraits;
     /**
-     * @brief Handle type for RHI Objects.  
+     * @brief Handle type for RHI Objects.
      *
      * RHIHandle<Factory, T> are trivially copiable objects that provide a view into the underlying RHIObject storage.
      * When a Factory goes out of scope, all underlying RHIObjects are destroyed.
@@ -35,27 +37,29 @@ namespace Foundation::RHI {
      * The behavior is undefined to use a Handle after it's Factory has been destroyed or the resource
      * it refers to has been destroyed.
      */
-    template<typename Factory, typename T> class RHIHandle {
+    template <typename Factory, typename T>
+    class RHIHandle
+    {
     public:
         ///
-        Factory* mFactory{ nullptr };
-        Handle mHandle{ kInvalidHandle };
+        Factory* mFactory{nullptr};
+        Handle mHandle{kInvalidHandle};
         /**
          * @brief Retrieves the underlying RHIObject pointer.
          * It is undefined behavior to use the returned pointer after the underlying resource has been destroyed.
          * @tparam U Pointer type to retrieve as. U is required to be castable from T
          */
-        template<typename U = T> [[nodiscard]] U* Get() const {
-            if(!IsValid())
+        template <typename U = T>
+        [[nodiscard]] U* Get() const
+        {
+            if (!IsValid())
                 throw std::runtime_error("RHIHandle::Get called on an invalid handle");
             T* ptr = RHIObjectTraits<Factory, T>::Get(mFactory, mHandle);
             if (!ptr)
                 throw std::runtime_error("RHIHandle::Get got nullptr");
             return static_cast<U*>(ptr);
         }
-        T* operator->() const {
-            return Get();
-        }
+        T* operator->() const { return Get(); }
 
         constexpr Handle operator()() const { return mHandle; }
         constexpr operator bool() const noexcept { return IsValid(); }
@@ -77,7 +81,9 @@ namespace Foundation::RHI {
     /**
      * @brief Scoped move-only RAII handle wrapper for RHI Objects.
      */
-    template<typename Factory, typename T> class RHIScopedHandle : public RHIHandle<Factory, T> {
+    template <typename Factory, typename T>
+    class RHIScopedHandle : public RHIHandle<Factory, T>
+    {
     public:
         using RHIHandle<Factory, T>::mFactory;
         using RHIHandle<Factory, T>::mHandle;
@@ -87,12 +93,14 @@ namespace Foundation::RHI {
 
         RHIScopedHandle() = default;
         RHIScopedHandle(Factory* factory, Handle handle) : RHIHandle<Factory, T>(factory, handle) {}
-        RHIScopedHandle(RHIScopedHandle&& other) noexcept
-            : RHIHandle<Factory, T>(std::move(other)) {
+        RHIScopedHandle(RHIScopedHandle&& other) noexcept : RHIHandle<Factory, T>(std::move(other))
+        {
             other.Invalidate();
         }
-        RHIScopedHandle& operator=(RHIScopedHandle&& other) noexcept {
-            if (this != &other) {
+        RHIScopedHandle& operator=(RHIScopedHandle&& other) noexcept
+        {
+            if (this != &other)
+            {
                 mFactory = other.mFactory;
                 mHandle = other.mHandle;
                 other.Invalidate();
@@ -102,14 +110,13 @@ namespace Foundation::RHI {
         /**
          * @brief Returns a non-owning view of the underlying RHIHandle.
          */
-        [[nodiscard]] RHIHandle<Factory, T> View() const {
-            return *this;
-        }
+        [[nodiscard]] RHIHandle<Factory, T> View() const { return *this; }
         /**
          * @brief Releases the underlying RHIHandle, invalidating the scoped handle.
          * NOTE: This may leak the resource if not properly managed afterward.
          */
-        RHIHandle<Factory, T> Release() {
+        RHIHandle<Factory, T> Release()
+        {
             RHIHandle<Factory, T> handle = *this;
             Invalidate();
             return handle;
@@ -117,68 +124,89 @@ namespace Foundation::RHI {
         /**
          * @brief Destructs the underlying RHIObject, and invalidates the scoped handle.
          */
-        void Reset() {
-            if (IsValid()) {
+        void Reset()
+        {
+            if (IsValid())
+            {
                 RHIObjectTraits<Factory, T>::Destroy(mFactory, mHandle);
                 Invalidate();
-            }            
+            }
         }
         RHIScopedHandle(const RHIScopedHandle&) = delete;
         RHIScopedHandle& operator=(const RHIScopedHandle&) = delete;
-        ~RHIScopedHandle() {
+        ~RHIScopedHandle()
+        {
             if (IsValid())
                 RHIObjectTraits<Factory, T>::Destroy(mFactory, mHandle);
         }
     };
+    static constexpr size_t kRHIObjectPoolMaxSize = 65536;
     /**
-     * @brief Storage/Object dereference facility for RHI Objects
+     * @brief Thread-safe handle dereference facility for RHI Objects
      */
-    template<typename Base = RHIObject> class RHIObjectPool {
+    template<typename Base = RHIObject>
+    class RHIObjectPool
+    {
         Core::Allocator* mAllocator;
-        Core::Pool<Handle, Base> mObjects;
+        using PointerType = Core::UniquePtr<Base>;
+        Core::ScopedArena mArena;
+        Core::AllocatorPool<PointerType> mPool;
     public:
         RHIObjectPool(Core::Allocator* allocator) :
-            mAllocator(allocator), mObjects(allocator) {
-        };
+            mAllocator(allocator),
+            mArena(allocator, Core::AllocatorPool<PointerType>::SizeOfObjects(kRHIObjectPoolMaxSize)), mPool(mArena)
+        {
+        }
         /**
          * @brief Creates specified RHIObject of derived type T and retrieves its handle
          * @returns A handle to the newly created object.
          */
-        template<typename U, typename ...Args> Handle CreateObject(Args&&... args) {
-#ifdef _MSC_VER
-            // Motherfucker.
-            // https://stackoverflow.com/questions/77144003/use-of-template-keyword-before-dependent-template-name
-            return mObjects.PopBase<U>(std::forward<Args>(args)...);
-#else
-            return mObjects.template PopBase<U>(std::forward<Args>(args)...);
-#endif
+        template <typename U, typename... Args>
+        Handle CreateObject(Args&&... args)
+        {
+            Base* obj = Core::ConstructBase<Base, U>(mAllocator, std::forward<Args>(args)...);
+            PointerType* pointer = mPool.AllocateObject(obj, Core::StlDeleter<Base>(mAllocator));
+            return reinterpret_cast<Handle>(pointer);
         }
         /**
          * @brief Retrieves the raw pointer to the object within the storage.
          * @tparam U Pointer type to cast to.
          * @returns The raw pointer.
          */
-        template<typename U = Base> U* GetObjectPtr(Handle handle) const {
-            if (!mObjects.Contains(handle))
-                throw std::out_of_range("invalid handle");
-            return static_cast<U*>(mObjects.At(handle));
+        template <typename U = Base>
+        static U* GetObjectPtr(Handle handle) noexcept
+        {
+            PointerType& pointer = *reinterpret_cast<PointerType*>(handle);
+            Base* obj = pointer.get();
+            return reinterpret_cast<U*>(obj);
         }
         /**
          * @brief Destroys the object associated with the given handle, and frees the handle for reuse.
          */
-        void DestroyObject(Handle handle) {
-            mObjects.Free(handle);
+        void DestroyObject(Handle handle)
+        {
+            auto* pointer = reinterpret_cast<PointerType*>(handle);
+            mPool.Deallocate(pointer);
+        }
+        ~RHIObjectPool()
+        {
+            mPool.Collect();
         }
     };
-}
+} // namespace Foundation::RHI
 
 
-namespace Foundation::RHI {
+namespace Foundation::RHI
+{
     class RHIApplication;
-    template<typename T> using RHIApplicationScopedObjectHandle = RHIScopedHandle<RHIApplication, T>;
-    template<typename T> using RHIApplicationObjectHandle = RHIHandle<RHIApplication, T>;
+    template <typename T>
+    using RHIApplicationScopedObjectHandle = RHIScopedHandle<RHIApplication, T>;
+    template <typename T>
+    using RHIApplicationObjectHandle = RHIHandle<RHIApplication, T>;
 
     class RHIDevice;
-    template<typename T> using RHIDeviceScopedObjectHandle = RHIScopedHandle<RHIDevice, T>;
-    template<typename T> using RHIDeviceObjectHandle = RHIHandle<RHIDevice, T>;
-}
+    template <typename T>
+    using RHIDeviceScopedObjectHandle = RHIScopedHandle<RHIDevice, T>;
+    template <typename T>
+    using RHIDeviceObjectHandle = RHIHandle<RHIDevice, T>;
+} // namespace Foundation::RHI

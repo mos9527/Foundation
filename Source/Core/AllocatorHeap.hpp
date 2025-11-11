@@ -12,7 +12,6 @@ namespace Foundation::Core {
 	public:
         pointer Allocate(size_type size, size_t alignment) override;
         void Deallocate(pointer ptr) override;
-        void Deallocate(pointer ptr, size_type size) override { Deallocate(ptr); }
         pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) override;
 	};
 }

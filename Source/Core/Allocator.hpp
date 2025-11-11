@@ -25,7 +25,6 @@ namespace Foundation::Core {
 	public:
         virtual ~Allocator() = default;
 		virtual pointer Allocate(size_type size, size_t alignment = alignof(std::max_align_t)) = 0;
-		virtual void Deallocate(pointer ptr, size_type size) = 0;
         virtual void Deallocate(pointer ptr) = 0;
         virtual pointer Reallocate(pointer ptr, size_type new_size, size_t alignment) = 0;
 
@@ -33,7 +32,7 @@ namespace Foundation::Core {
         Arena AllocateArena(size_type size) { return { Allocate(size), size }; }
         void DeallocateArena(Arena arena) {
             if (arena.memory) 
-                Deallocate(arena.memory, arena.size);
+                Deallocate(arena.memory);
         }
         Allocator* Ptr() { return this; }
 	};
@@ -95,7 +94,7 @@ namespace Foundation::Core {
             return static_cast<pointer>(mResource->Allocate(n * sizeof(T), alignof(T)));
         }
         void deallocate(pointer p, size_type n) noexcept {
-            mResource->Deallocate(p, n * sizeof(T));
+            mResource->Deallocate(p);
         }
         void deallocate(pointer p) noexcept { 
             mResource->Deallocate(p, sizeof(T)); 
@@ -118,7 +117,7 @@ namespace Foundation::Core {
         void operator()(T* ptr) noexcept {
             if (ptr) {
                 std::destroy_at(ptr);
-                mResource->Deallocate(ptr, sizeof(T));                
+                mResource->Deallocate(ptr);
             }
         }
     };
@@ -135,7 +134,7 @@ namespace Foundation::Core {
             return obj;
         }
         catch (...) {
-            resource->Deallocate(raw, sizeof(Derived));
+            resource->Deallocate(raw);
             throw;
         }
     }
