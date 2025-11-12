@@ -16,7 +16,9 @@ int main()
         });
         // Lifetime of streaming pool tied to this scope
         // Ensure to destruct before device destruction
-        StreamingPool stream(device.Get(), GLOBAL_ALLOC);
+        StreamingPool stream(device.Get(), GLOBAL_ALLOC, {
+            .maxTransferPerSubmit = 1
+        });
         CSDebugTextData lines[5];
         lines[0].x = lines[0].y = 16, lines[0].SetText("Streaming Example");
         renderer->BeginSetup();
@@ -25,7 +27,6 @@ int main()
         renderer->EndSetup();
         ExampleFpsCounter fps;
         auto data = Vector<char>(128LL * (1u << 20), GLOBAL_ALLOC); // 128 MiB of data
-        stream.Write(data, buf.Get(), 0);
         SDL_Event event;
         while (!Examples_ShouldClose(window, renderer, swapchain, &event))
         {
@@ -33,11 +34,19 @@ int main()
             lines[2].x = 16, lines[2].y = 64, lines[2].SetText(fmt::format("{}", stream.DbgGetStatistics()));
             Examples_NewFrame(renderer);
             // SDL3 Get Enter Pressed?
-            if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_RETURN)
+            if (event.type == SDL_EVENT_KEY_UP)
             {
-                // Simulate streaming more data
-                LOG_RUNTIME(Example, LogDebug, "Write");
-                stream.Write(data, buf.Get(), 0);
+                if (event.key.scancode == SDL_SCANCODE_RETURN)
+                {
+                    // Simulate streaming more data
+                    LOG_RUNTIME(Example, LogDebug, "Write");
+                    stream.Write(data, buf.Get(), 0);
+                }
+                if (event.key.scancode == SDL_SCANCODE_SPACE)
+                {
+                    LOG_RUNTIME(Example, LogDebug, "Clean");
+                    stream.Reset();
+                }
             }
         }
     }

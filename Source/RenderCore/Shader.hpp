@@ -22,7 +22,7 @@ namespace Foundation::RenderCore {
     public:
         struct Entrypoint {
             String name;
-            RHI::RHIShaderStage stage{};
+            RHIShaderStage stage{};
             // Applies to Compute, Task and Mesh shaders
             Tuple<uint32_t, uint32_t, uint32_t> groupLocalSize{};
         };

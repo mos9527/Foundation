@@ -6,16 +6,18 @@
 namespace Foundation::RenderCore
 {
     using namespace RHI;
-    constexpr static size_t kStreamingPageSize = 4 * 1024 * 1024; // 4 MiB
-    constexpr static size_t kStreamingMaxPages = 128; // Max 128 * 4 MiB
+    constexpr static size_t kStreamingMaxPages = 128; // Max 128 * 1 MiB
+
     struct BufferCopyCommand
     {
+        int pid;
         RHIBuffer* src;
         RHIBuffer* dst;
         RHICommandList::CopyBufferRegion region;
     };
     struct TextureCopyCommand
     {
+        int pid;
         RHIBuffer* src;
         RHITexture* dst;
         RHITextureLayout dstLayout;
@@ -23,13 +25,14 @@ namespace Foundation::RenderCore
     };
     /**
      * @brief Simple dynamic pool + linear allocator for streaming data to the GPU.
+     *        Thread-safety is guaranteed for public methods.
+     * @note  GPU memory once allocated will NOT be freed until destruction of the pool,
+     *        or @ref Reset is called (which requires no active references).
      */
     class StreamingPool
     {
         using PageRef = Array<int, kStreamingMaxPages>;
-        static PageRef& AddRef(PageRef& lhs, PageRef const& rhs);
-        static PageRef& DecRef(PageRef& lhs, PageRef const& rhs);
-        using WriteEntry = Tuple<RHIBuffer*, size_t, size_t>; // buffer, offset, size
+        using WriteEntry = Tuple<RHIBuffer*, size_t, size_t, int>; // buffer, offset, size, page ID
         using WriteList = Vector<WriteEntry>;
 
         RHIDevice* const mDevice;
@@ -60,17 +63,21 @@ namespace Foundation::RenderCore
          * @brief Commit buffer to pages, possibly touching multiple ones.
          * @param alignment Size alignment for each write in @ref WriteList
          */
-        void Write(Span<const char> data, PageRef& outPages, WriteList& outList, size_t alignment = 1);
+        void WritePages(std::unique_lock<Mutex>& lck, Span<const char> data, WriteList& outList, size_t alignment);
 
         PageRef mPageRefs{};
         // Perform page GC sweep to reclaim space
-        void Collect();
+        int Collect(std::unique_lock<Mutex>& lck);
 
-        template<typename T> using CmdEntry = Tuple<Vector<T>, PageRef, SharedPromise<>>;
-        Vector<CmdEntry<BufferCopyCommand>> mBufferCopies;
-        Vector<CmdEntry<TextureCopyCommand>> mTextureCopies;
+        template<typename T> using CmdEntry = Tuple<Vector<T>, SharedPromise<>>;
 
-        mutable Mutex mScheduleMutex;
+        // Schedule copies that's more likely to complete early (less command/pages touched) first
+        // with a min-heap
+        constexpr static auto kCopyPred = [](auto const& lhs, auto const& rhs){ return lhs.first < rhs.first; };
+        PriorityQueue<Pair<size_t, CmdEntry<BufferCopyCommand>>, decltype(kCopyPred)> mBufferCopies;
+        PriorityQueue<Pair<size_t, CmdEntry<TextureCopyCommand>>, decltype(kCopyPred)> mTextureCopies;
+
+        mutable Mutex mPageMutex;
         RHIDeviceQueue* mTransferQueue;
         RHIDeviceScopedObjectHandle<RHICommandPool> mCommandPool;
 
@@ -88,8 +95,24 @@ namespace Foundation::RenderCore
         bool mShutdown{false};
         void WorkerThread();
         Thread mWorker;
+
+        CondVar mResolvedCV;
     public:
-        StreamingPool(RHIDevice* device, Allocator * allocator);
+        struct StreamingPoolDesc
+        {
+            // Size per page.
+            // A max total of 128 pages are allowed.
+            // Max page count * page size = max resident staging memory usage,
+            // your assets should be streamed in chunks smaller than that.
+            size_t streamingPageSize = 1u << 20;
+            // Max transfer commands to be executed per submit
+            // Effectively limits max concurrent transfers - use a lower
+            // value for lower latency, higher value for higher throughput
+            int maxTransferPerSubmit = 16;
+        };
+        const StreamingPoolDesc mDesc;
+        StreamingPool(RHIDevice* device, Allocator * allocator, StreamingPoolDesc const& desc);
+        ~StreamingPool();
         /**
          * @brief Schedules buffer upload.
          * @note Destination buffer MUST have been created with @ref RHIBufferUsage::TransferDst, and
@@ -103,13 +126,15 @@ namespace Foundation::RenderCore
          */
         SharedPromise<> Write(Span<const char> data, RHITexture* dst, RHITextureLayout dstLayout,
                               RHITextureAspectFlag aspect, uint32_t dstMip, uint32_t firstLayer);
-        ~StreamingPool();
-
+        /**
+         * @brief Get total active reference counts. A non-zero value indicates there are active GPU transfers.
+         */
+        size_t GetRefCounts() const;
+        /**
+         * @brief Frees all allocated pages. Can only be called when there are no active references.
+         */
+        void Reset();
+        ///
         String DbgGetStatistics() const;
-    };
-
-    class StreamingTexture
-    {
-        RHIDeviceScopedObjectHandle<RHITexture> mTexture;
     };
 }

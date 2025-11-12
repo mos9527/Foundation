@@ -42,23 +42,23 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
             switch (static_cast<spv::ExecutionModel>(ins[1]))
             {
             case spv::ExecutionModelVertex:
-                ep.stage = RHI::RHIShaderStageBits::Vertex; break;
+                ep.stage = RHIShaderStageBits::Vertex; break;
             case spv::ExecutionModelFragment:
-                ep.stage = RHI::RHIShaderStageBits::Fragment; break;
+                ep.stage = RHIShaderStageBits::Fragment; break;
             case spv::ExecutionModelGLCompute:
-                ep.stage = RHI::RHIShaderStageBits::Compute; break;
+                ep.stage = RHIShaderStageBits::Compute; break;
             case spv::ExecutionModelMeshEXT:
-                ep.stage = RHI::RHIShaderStageBits::Mesh; break;
+                ep.stage = RHIShaderStageBits::Mesh; break;
             case spv::ExecutionModelTaskEXT:
-                ep.stage = RHI::RHIShaderStageBits::Task; break;
+                ep.stage = RHIShaderStageBits::Task; break;
             case spv::ExecutionModelRayGenerationKHR:
-                ep.stage = RHI::RHIShaderStageBits::RayGeneration; break;
+                ep.stage = RHIShaderStageBits::RayGeneration; break;
             case spv::ExecutionModelAnyHitKHR:
-                ep.stage = RHI::RHIShaderStageBits::RayAnyHit; break;
+                ep.stage = RHIShaderStageBits::RayAnyHit; break;
             case spv::ExecutionModelClosestHitKHR:
-                ep.stage = RHI::RHIShaderStageBits::RayClosestHit; break;
+                ep.stage = RHIShaderStageBits::RayClosestHit; break;
             case spv::ExecutionModelMissKHR:
-                ep.stage = RHI::RHIShaderStageBits::RayMiss; break;
+                ep.stage = RHIShaderStageBits::RayMiss; break;
             default:
                 break;
             }
@@ -169,7 +169,7 @@ void Shader::Sort()
     });
 }
 
-Shader::Shader(Core::Span<const char> bytecode, Allocator* alloc)
+Shader::Shader(Span<const char> bytecode, Allocator* alloc)
     : mAllocator(alloc), mEntrypoints(alloc), mBindings(alloc), mPushConstants(alloc)
 {    
     ParseSPIRV(bytecode);

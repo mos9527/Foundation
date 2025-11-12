@@ -54,11 +54,12 @@ inline auto Examples_InitVulkan(SDL_Window* window, RendererDesc const& desc = {
 // Polls event, possibly resizing the swapchain, and returns true if the window should close.
 inline bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScopedObjectHandle<RHISwapchain>& swap, SDL_Event* outEvent = nullptr)
 {
-    SDL_Event event;
-    if (!SDL_PollEvent(&event))
-        return false;
+    SDL_Event event{};
+    bool any = SDL_PollEvent(&event);
     if (outEvent)
         *outEvent = event;
+    if (!any)
+        return false;
     if (event.window.windowID != SDL_GetWindowID(window))
         return false;
     if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) return true;
