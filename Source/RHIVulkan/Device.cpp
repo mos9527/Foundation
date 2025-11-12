@@ -1,4 +1,5 @@
 #define VMA_IMPLEMENTATION
+#include <queue>
 #include <vk_mem_alloc.h>
 
 using namespace Foundation::Core;
@@ -17,30 +18,37 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     RHIDevice(app), mApp(app), mWindow(window), mPhysicalDevice(std::move(physicalDevice)),
     mSwapchainFormats(GetAllocator()), mSwapchainPresentModes(GetAllocator()), mStorage(GetAllocator())
 {
-    auto queues = mPhysicalDevice.getQueueFamilyProperties();
+    auto families = mPhysicalDevice.getQueueFamilyProperties();
     // Find queues
     // Graphics, Compute, Transfer should be preferably mutually exclusive
     // NOTE: We never used dedicated transfer in the Renderer - offloading to compute is more than enough for such
     // tasks.
-    auto find_first = [&](vk::QueueFlags flags, uint32_t skip1, uint32_t skip2) -> uint32_t
+    Pair<uint32_t, uint32_t> graphics{kInvalidQueueIndex,kInvalidQueueIndex},
+                   compute{kInvalidQueueIndex,kInvalidQueueIndex},
+                   transfer{kInvalidQueueIndex,kInvalidQueueIndex};
+    Array<uint32_t, 256> queueCounts{};
+    for (size_t i = 0; i < families.size(); ++i)
     {
-        for (uint32_t i = 0; i < queues.size(); ++i)
-            if ((queues[i].queueFlags & flags) == flags && i != skip1 && i != skip2)
-                return i;
-        // If all queues are used, return the first usable one
-        for (uint32_t i = 0; i < queues.size(); ++i)
-            if ((queues[i].queueFlags & flags) == flags)
-                return i;
-        return kInvalidQueueIndex;
-    };
-    uint32_t graphics = find_first(vk::QueueFlagBits::eGraphics, -1, -1);
-    uint32_t compute = find_first(vk::QueueFlagBits::eCompute, graphics, -1);
-    uint32_t transfer = find_first(vk::QueueFlagBits::eTransfer, graphics, compute);
-    if (graphics == kInvalidQueueIndex || compute == kInvalidQueueIndex || transfer == kInvalidQueueIndex)
-    {
-        throw std::runtime_error("unable to find queues for graphics, compute, or transfer");
+        auto& family = families[i];
+        if (family.queueCount && family.queueFlags & vk::QueueFlagBits::eGraphics && graphics.first == kInvalidQueueIndex)
+        {
+            graphics = {i, queueCounts[i]++};
+            family.queueCount--;
+        }
+        if (family.queueCount && family.queueFlags & vk::QueueFlagBits::eCompute && compute.first == kInvalidQueueIndex)
+        {
+            compute = {i, queueCounts[i]++};
+            family.queueCount--;
+        }
+        if (family.queueCount && family.queueFlags & vk::QueueFlagBits::eTransfer && transfer.first == kInvalidQueueIndex)
+        {
+            transfer = {i, queueCounts[i]++};
+            family.queueCount--;
+        }
     }
-    uint32_t present = kInvalidQueueIndex; // Will be set later if a window is provided
+    CHECK(graphics.first != kInvalidQueueIndex);
+    CHECK(compute.first != kInvalidQueueIndex);
+    CHECK(transfer.first != kInvalidQueueIndex);
     if (window)
     {
         // Check for a present queue
@@ -52,39 +60,19 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         // Having present and graphics queues as the same avoids copies and is typically the case
         // - https://github.com/KhronosGroup/Vulkan-Hpp/blob/main/RAII_Samples/05_InitSwapchain/05_InitSwapchain.cpp#L45
         // - https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/blob/master/src/VulkanSample.cpp#L1850
-        if (mPhysicalDevice.getSurfaceSupportKHR(graphics, *mSurface))
-        {
-            present = graphics;
-        }
-        else
-        {
-            LOG_RUNTIME(VulkanDevice, LogWarn, "Device may have separate Graphics and Present queues!");
-            for (size_t i = 0; i < queues.size(); ++i)
-            {
-                if (mPhysicalDevice.getSurfaceSupportKHR(static_cast<uint32_t>(i), *mSurface))
-                {
-                    present = static_cast<int>(i);
-                    break;
-                }
-            }
-        }
-        if (present == kInvalidQueueIndex)
-            throw std::runtime_error("failed to find a valid present queue");
+        CHECK(mPhysicalDevice.getSurfaceSupportKHR(graphics.first, *mSurface));
     }
-    // Create the device
-    // Gather all unique queues we'd need
-    Set<uint32_t> unique_queues({graphics, compute, transfer, present}, GetAllocator());
+    // Create the device queues
     Vector<vk::DeviceQueueCreateInfo> queue_info(GetAllocator());
     float priority = 1.0f;
-    for (auto i : unique_queues)
+    for (uint32_t i = 0; i < families.size(); ++i)
     {
-        if (i == kInvalidQueueIndex)
-            continue;
-        queue_info.emplace_back(vk::DeviceQueueCreateInfo{
-            .queueFamilyIndex = i,
-            .queueCount = 1,
-            .pQueuePriorities = &priority // All queues have the same priority
-        });
+        if (queueCounts[i])
+            queue_info.emplace_back(vk::DeviceQueueCreateInfo{
+                .queueFamilyIndex = i,
+                .queueCount = queueCounts[i],
+                .pQueuePriorities = &priority // All queues have the same priority
+            });
     }
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
                        vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
@@ -118,18 +106,9 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     CHECK(mDevice != nullptr && "failed to create Vulkan device");
     // Allocate the queues
     mQueues = ConstructUnique<VulkanDeviceQueues>(GetAllocator(), GetAllocator());
-    for (auto i : unique_queues)
-    {
-        auto handle = mQueues->storage.CreateObject<VulkanDeviceQueue>(*this, i);
-        if (i == graphics)
-            mQueues->graphics = handle;
-        if (i == compute)
-            mQueues->compute = handle;
-        if (i == transfer)
-            mQueues->transfer = handle;
-        if (i == present)
-            mQueues->present = handle;
-    }
+    mQueues->graphics = mQueues->storage.CreateObject<VulkanDeviceQueue>(*this, graphics.first, graphics.second);
+    mQueues->compute = mQueues->storage.CreateObject<VulkanDeviceQueue>(*this, compute.first, compute.second);
+    mQueues->transfer = mQueues->storage.CreateObject<VulkanDeviceQueue>(*this, transfer.first, transfer.second);
     // Initialize VMA
     const VmaAllocatorCreateInfo allocator_info{
         .physicalDevice = *mPhysicalDevice,
@@ -202,8 +181,6 @@ RHIDeviceQueue* VulkanDevice::GetDeviceQueue(RHIDeviceQueueType type) const
 {
     switch (type)
     {
-    case RHIDeviceQueueType::Present:
-        return mQueues->Get(mQueues->present);
     case RHIDeviceQueueType::Compute:
         return mQueues->Get(mQueues->compute);
     case RHIDeviceQueueType::Transfer:
@@ -313,43 +290,43 @@ auto VulkanDevice::CreateFence(bool signaled) -> RHIDeviceScopedObjectHandle<RHI
 RHIDeviceFence* VulkanDevice::GetFence(Handle handle) const { return mStorage.GetObjectPtr<RHIDeviceFence>(handle); }
 void VulkanDevice::DestroyFence(Handle handle) { mStorage.DestroyObject(handle); }
 
-void VulkanDevice::ResetFences(Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences)
+void VulkanDevice::ResetFences(Span<RHIDeviceFence*> fences)
 {
-    StackArena<> arena;
+    StackArena arena;
     AllocatorStack alloc(arena);
     Vector<vk::Fence> vk_fences(alloc.Ptr());
     vk_fences.reserve(fences.size());
-    for (auto const& fence : fences)
-        vk_fences.emplace_back(fence.Get<VulkanDeviceFence>()->GetVkFence());
+    for (auto* fence : fences)
+        vk_fences.emplace_back(static_cast<VulkanDeviceFence*>(fence)->GetVkFence());
     mDevice.resetFences(vk_fences);
 }
-void VulkanDevice::WaitForFences(Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all,
+void VulkanDevice::WaitForFences(Span<RHIDeviceFence*> fences, bool wait_all,
                                  size_t timeout)
 {
-    StackArena<> arena;
+    StackArena arena;
     AllocatorStack alloc(arena);
     Vector<vk::Fence> vk_fences(alloc.Ptr());
     vk_fences.reserve(fences.size());
     for (auto const& fence : fences)
-        vk_fences.emplace_back(fence.Get<VulkanDeviceFence>()->GetVkFence());
+        vk_fences.emplace_back(static_cast<VulkanDeviceFence*>(fence)->GetVkFence());
     vk::Result res = mDevice.waitForFences(vk_fences, wait_all, timeout);
     CHECK_MSG(res == vk::Result::eSuccess, "Failed waiting on fences");
 }
 
 void VulkanDevice::SignalTimelineSemaphores(
-    Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores)
+    Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores)
 {
     for (auto const& [signal, val] : semaphores)
     {
         CHECK(signal->mIsTimeline);
-        vk::SemaphoreSignalInfo info{.semaphore = signal.Get<VulkanDeviceSemaphore>()->GetVkSemaphore(), .value = val};
+        vk::SemaphoreSignalInfo info{.semaphore = static_cast<VulkanDeviceSemaphore*>(signal)->GetVkSemaphore(), .value = val};
         mDevice.signalSemaphore(info);
     }
 }
-void VulkanDevice::WaitForTimelineSemaphores(
-    Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout)
+bool VulkanDevice::WaitForTimelineSemaphores(
+    Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores, size_t timeout)
 {
-    StackArena<> arena{};
+    StackArena arena{};
     AllocatorStack alloc(arena);
     Vector<vk::Semaphore> vk_semaphores(alloc.Ptr());
     Vector<uint64_t> vk_values(alloc.Ptr());
@@ -357,14 +334,18 @@ void VulkanDevice::WaitForTimelineSemaphores(
     for (auto const& [wait, val] : semaphores)
     {
         CHECK(wait->mIsTimeline);
-        vk_semaphores.emplace_back(wait.Get<VulkanDeviceSemaphore>()->GetVkSemaphore()), vk_values.emplace_back(val);
+        vk_semaphores.emplace_back(static_cast<VulkanDeviceSemaphore*>(wait)->GetVkSemaphore()), vk_values.emplace_back(val);
     }
     auto res =
         mDevice.waitSemaphores(vk::SemaphoreWaitInfo{.semaphoreCount = static_cast<uint32_t>(vk_semaphores.size()),
                                                      .pSemaphores = vk_semaphores.data(),
                                                      .pValues = vk_values.data()},
                                timeout);
-    CHECK(res == vk::Result::eSuccess && "failed to wait for semaphores");
+    if (res == vk::Result::eSuccess)
+        return true;
+    if (res == vk::Result::eTimeout)
+        return false;
+    CHECK_MSG(false, "failed to wait for semaphores. result={}", vk::to_string(res));
 }
 
 void VulkanDevice::DebugSetObjectName(const char* name)
@@ -451,8 +432,6 @@ void VulkanDeviceQueue::Submit(Span<const SubmitDesc> descs, RHIDeviceFence* com
 }
 void VulkanDeviceQueue::Present(PresentDesc const& desc) const
 {
-    CHECK(mDevice.GetDeviceQueue(RHIDeviceQueueType::Present) == this &&
-          "Present called on a queue that is not a present queue");
     StackArena<4096> arena{};
     AllocatorStack alloc(arena);
     vk::SwapchainKHR swapchain = static_cast<VulkanSwapchain*>(desc.swapchain)->GetVkSwapchain();
@@ -516,7 +495,7 @@ VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDev
                                                                  RHIDeviceDescriptorSetLayoutDesc const& desc) :
     RHIDeviceDescriptorSetLayout(device, desc), mDevice(device)
 {
-    StackArena<> arena{};
+    StackArena arena{};
     AllocatorStack alloc(arena);
     vk::DescriptorBindingFlags bindingFlags{};
     if (desc.updateAfterBind)

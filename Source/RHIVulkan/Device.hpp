@@ -10,16 +10,17 @@ namespace Foundation::RHI {
     struct VulkanDeviceQueues
     {
         RHIObjectPool<VulkanDeviceQueue> storage;
-        Handle graphics = kInvalidHandle, compute = kInvalidHandle, transfer = kInvalidHandle, present = kInvalidHandle;
+        Handle graphics = kInvalidHandle, compute = kInvalidHandle, transfer = kInvalidHandle;
         VulkanDeviceQueues(Allocator* allocator) : storage(allocator) {};
         VulkanDeviceQueue* Get(Handle handle) const;
         VulkanDeviceQueue* Get(RHIDeviceQueueType type) const {
             switch (type) {
-            case RHIDeviceQueueType::Present:  return Get(present);
             case RHIDeviceQueueType::Compute:  return Get(compute);
             case RHIDeviceQueueType::Transfer: return Get(transfer);
-            default:
+            case RHIDeviceQueueType::Present:
             case RHIDeviceQueueType::Graphics: return Get(graphics);
+            default:
+                CHECK_MSG(false, "Unknown queue type {}", type);
             }
         }
         bool IsValid() const {
@@ -27,17 +28,11 @@ namespace Foundation::RHI {
                 compute != kInvalidHandle &&
                 transfer != kInvalidHandle;
         }
-        bool CanPresent() const {
-            return present != kInvalidHandle;
-        }
         bool IsDedicatedCompute() const {
             return IsValid() && compute != graphics;
         }
         bool IsDedicatedTransfer() const {
             return IsValid() && transfer != graphics;
-        }
-        bool IsDedicatedPresent() const {
-            return IsValid() && present != graphics;
         }
     };
     class VulkanDevice;
@@ -149,11 +144,11 @@ namespace Foundation::RHI {
         RHIDeviceSampler* GetSampler(Handle handle) const override;
         void DestroySampler(Handle handle) override;
 
-        void ResetFences(Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) override;
-        void WaitForFences(Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) override;
+        void ResetFences(Span<RHIDeviceFence*> fences) override;
+        void WaitForFences(Span<RHIDeviceFence*> fences, bool wait_all, size_t timeout) override;
 
-        void SignalTimelineSemaphores(Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) override;
-        void WaitForTimelineSemaphores(Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) override;
+        void SignalTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores) override;
+        bool WaitForTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores, size_t timeout) override;
 
         void WaitIdle() const override;
 
@@ -171,10 +166,12 @@ namespace Foundation::RHI {
     class VulkanDeviceQueue : public RHIDeviceQueue {
         const VulkanDevice& mDevice;
         const uint32_t mQueueIndex;
+        const uint32_t mFamilyIndex;
         vk::raii::Queue mQueue{ nullptr };
     public:
-        VulkanDeviceQueue(const VulkanDevice& device, uint32_t queue_index)
-            : RHIDeviceQueue(device), mDevice(device), mQueueIndex(queue_index), mQueue(device.GetVkDevice(), queue_index, 0) {
+        VulkanDeviceQueue(const VulkanDevice& device, uint32_t family_index, uint32_t queue_index)
+            : RHIDeviceQueue(device), mDevice(device), mQueueIndex(queue_index), mFamilyIndex(family_index),
+        mQueue(device.GetVkDevice(), family_index, queue_index) {
         };
 
         [[nodiscard]] const VulkanDevice& GetVulkanDevice() const { return mDevice; }

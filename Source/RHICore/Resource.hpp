@@ -13,7 +13,7 @@ namespace Foundation::RHI {
         bool shared{ false };
         /// With shared=true, the types of queues that are allowed access
         /// indexed by @ref RHIDeviceQueueType values
-        RHIDeviceQueueFlags sharedQueues{};
+        RHIDeviceQueueFlags sharedQueues{RHIDeviceQueueFlagsBits::Graphics | RHIDeviceQueueFlagsBits::Compute | RHIDeviceQueueFlagsBits::Transfer};
         /// Guarantees that the host can see the latest data written by the device without explicit flush
         /// On implementations that do not support this, exceptions will be thrown when trying to create such resources.            
         bool coherent{ false };

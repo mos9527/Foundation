@@ -189,11 +189,16 @@ namespace Foundation::RHI {
         [[nodiscard]] virtual RHIDeviceSampler* GetSampler(Handle handle) const = 0;
         virtual void DestroySampler(Handle handle) = 0;
 
-        virtual void ResetFences(Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences) = 0;
-        virtual void WaitForFences(Span<const RHIDeviceObjectHandle<RHIDeviceFence>> fences, bool wait_all, size_t timeout) = 0;
+        virtual void ResetFences(Span<RHIDeviceFence*> fences) = 0;
+        virtual void WaitForFences(Span<RHIDeviceFence*> fences, bool wait_all, size_t timeout) = 0;
 
-        virtual void SignalTimelineSemaphores(Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores) = 0;
-        virtual void WaitForTimelineSemaphores(Span<const Pair<RHIDeviceObjectHandle<RHIDeviceSemaphore>, size_t>> semaphores, size_t timeout) = 0;
+        virtual void SignalTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores) = 0;
+        /**
+         * @brief Wait for timeline semaphores to reach specified values.
+         * @param timeout Wait timeout in nanoseconds. Set to 0 for no wait and return immediately.
+         * @return true if all semaphores reached the specified values, false if timeout occurred.
+         */
+        virtual bool WaitForTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores, size_t timeout) = 0;
 
         virtual void WaitIdle() const = 0;
 

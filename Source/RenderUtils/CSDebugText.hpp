@@ -7,11 +7,14 @@ namespace Foundation::RenderUtils
     struct CSDebugTextData
     {
         int x = 0u, y = 0u, scale = 2u, col32 = ~0u;
-        union
+        char szText[28 * 4]; // Zero terminated
+
+        void SetText(StringView str)
         {
-            uint32_t u[28]; // (128-4*3)/4
-            char ch[28 * 4];
-        } text{};
+            size_t len = std::min(str.size(), sizeof(szText) - 1);
+            std::memcpy(szText, str.data(), len);
+            szText[len] = '\0';
+        }
     };
 #pragma pack(pop)
     /**
@@ -33,7 +36,7 @@ namespace Foundation::RenderUtils
                 r->CmdSetPipeline(self, cmd);
                 for (auto const& line : lines)
                 {
-                    if (size_t len = strlen(line.text.ch))
+                    if (size_t len = strlen(line.szText))
                     {
                         r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, line);
                         cmd->Dispatch(len,1,1);

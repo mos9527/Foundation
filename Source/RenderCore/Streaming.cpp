@@ -3,6 +3,28 @@
 // TODO: Thread safety
 namespace Foundation::RenderCore
 {
+    StreamingPool::PageRef& StreamingPool::AddRef(PageRef& lhs, PageRef const& rhs)
+    {
+        for (size_t i = 0; i < kStreamingMaxPages / 4; i += 4)
+        {
+            lhs[i + 0] += rhs[i + 0];
+            lhs[i + 1] += rhs[i + 1];
+            lhs[i + 2] += rhs[i + 2];
+            lhs[i + 3] += rhs[i + 3];
+        }
+        return lhs;
+    }
+    StreamingPool::PageRef& StreamingPool::DecRef(PageRef& lhs, PageRef const& rhs)
+    {
+        for (size_t i = 0; i < kStreamingMaxPages / 4; i += 4)
+        {
+            lhs[i + 0] -= rhs[i + 0];
+            lhs[i + 1] -= rhs[i + 1];
+            lhs[i + 2] -= rhs[i + 2];
+            lhs[i + 3] -= rhs[i + 3];
+        }
+        return lhs;
+    }
     void StreamingPool::Maintain(int id, size_t oldSize, size_t newSize)
     {
         auto it = mPageHeap.find({oldSize, id});
@@ -17,11 +39,9 @@ namespace Foundation::RenderCore
         auto& page = mPages[mPageTop];
         page.id = mPageTop++, page.capacity = kStreamingPageSize;
         page.buffer = mDevice->CreateBuffer({
-            .resource = {
-                .heap = RHIDeviceHeapType::Upload,
-                .shared = false, /* Transfer only */
-                .staging = true
-            },
+            .resource = {.heap = RHIDeviceHeapType::Upload,
+                         .shared = false, /* Transfer only */
+                         .staging = true},
             .usage = RHIBufferUsageBits::TransferSource,
             .size = page.capacity,
         });
@@ -53,7 +73,7 @@ namespace Foundation::RenderCore
             PageAlloc();
         return mPageHeap.rbegin()->second;
     }
-    void StreamingPool::Write(Span<const char> data, PageSet& outPages, WriteList& outList)
+    void StreamingPool::Write(Span<const char> data, PageRef& outPages, WriteList& outList)
     {
         RHIBuffer* buf = nullptr;
         while (!data.empty())
@@ -61,74 +81,133 @@ namespace Foundation::RenderCore
             auto* page = &mPages[GetPage()];
             if (!page->freeSize())
             {
-                PageAlloc();
+                if (mPageTop >= kStreamingMaxPages)
+                    Collect();
+                else
+                    PageAlloc();
                 page = &mPages[GetPage()];
             }
             size_t write = std::min(data.size(), page->freeSize()), offset = 0;
             PageWrite(page->id, data.SubSpan(0, write), offset, buf);
             data = data.SubSpan(write);
-            outPages.set(page->id);
+            outPages[page->id]++;
             outList.emplace_back(buf, offset, write);
-        }
-    }
-    void StreamingPool::IncRef(PageSet const& pages)
-    {
-        for (int i = 0; i < kStreamingMaxPages; i++)
-        {
-            if (pages.test(i))
-                mPageRefs[i]++;
-        }
-    }
-    void StreamingPool::DecRef(PageSet const& pages)
-    {
-        for (int i = 0; i < kStreamingMaxPages; i++)
-        {
-            if (pages.test(i))
-                mPageRefs[i]--;
         }
     }
     void StreamingPool::Collect()
     {
-        for (int i = 0; i < mPageTop && !mPageHeap.empty(); i++)
+        for (size_t i = 0; i < mPageTop && !mPageHeap.empty(); i++)
         {
-            if (mPageRefs[i] == 0 && mPages[i].id == i /* actually allocated */)
+            if (mPageRefs[i] == 0)
                 PageReset(i);
         }
     }
     StreamingPool::StreamingPool(RHIDevice* device, Allocator* allocator) :
-        mDevice(device), mAllocator(allocator), mPageHeap(allocator), mCommands(allocator)
+        mDevice(device), mAllocator(allocator), mPageHeap(allocator), mBufferCopies(allocator),
+        mTextureCopies(allocator), mTransferCmds(allocator), mPendingCompletions(allocator)
     {
         mTransferQueue = mDevice->GetDeviceQueue(RHIDeviceQueueType::Transfer);
-        mCommandPool = mDevice->CreateCommandPool({
-            .queue = RHIDeviceQueueType::Graphics,
-            .type = RHICommandPoolType::Transient
-        });
+        mCommandPool =
+            mDevice->CreateCommandPool({.queue = mTransferQueue, .type = RHICommandPoolType::Transient});
+        mTransferSemaphore = mDevice->CreateSemaphore(true /* timeline */);
+        mWorker = Thread([this] { WorkerThread(); });
     }
     SharedPromise<> StreamingPool::Write(Span<const char> data, RHIBuffer* dst, size_t offset)
     {
         WriteList writes(mAllocator);
-        PageSet touched;
+        PageRef touched{};
+
+        std::unique_lock lock(mScheduleMutex);
         Write(data, touched, writes);
-        IncRef(touched);
-        SharedPromise<> promise;
-        auto command = mCommandPool->CreateCommandList();
-        command->Begin();
+        AddRef(mPageRefs, touched);
+        SharedPromise<> promise = ConstructShared<std::promise<void>>(mAllocator);
+        Vector<BufferCopyCommand> cmds(mAllocator);
         for (auto& [srcBuffer, srcOffset, size] : writes)
         {
-            RHICommandList::CopyBufferRegion region{
-                .srcOffset = srcOffset,
-                .dstOffset = offset,
-                .size = size
-            };
-            command->CopyBuffer(srcBuffer, dst, {region});
+            cmds.emplace_back(srcBuffer, dst, RHICommandList::CopyBufferRegion{.srcOffset = srcOffset, .dstOffset = offset, .size = size});
             offset += size;
         }
-        command->End();
-        mCommands.emplace_back(std::move(command), touched, promise);
+        mBufferCopies.emplace_back(cmds, touched, promise);
         return promise;
     }
-    void StreamingPool::Execute()
+    StreamingPool::~StreamingPool()
     {
+        mShutdown = true;
+    }
+    String StreamingPool::DbgGetStatistics() const
+    {
+        size_t allocated = 0, used = 0, refs = 0;
+        for (size_t i = 0; i < mPageTop; i++)
+        {
+            allocated += kStreamingPageSize;
+            used += mPages[i].top - mPages[i].mem;
+            refs += mPageRefs[i];
+        }
+        return fmt::format("Pages: {}, Allocated: {} KB, Used: {} KB, Refs: {}", mPageTop,
+            allocated / 1024, used / 1024, refs);
+    }
+    void StreamingPool::Submit()
+    {
+        // Signal completions
+        while (!mPendingCompletions.empty())
+        {
+            auto& [ctr, pages, promises] = mPendingCompletions.front();
+            if (!mDevice->WaitForTimelineSemaphores({{{mTransferSemaphore.Get(), ctr}}}, 0 /* timeout */))
+            {
+                break; // In-progress. Ctr is monotonically increasing so terminate here
+            }
+            // Complete
+            DecRef(mPageRefs, pages);
+            for (auto& promise : promises)
+                promise->set_value();
+            mPendingCompletions.pop_front();
+        }
+        // Schedule and submit
+        if (mBufferCopies.empty() && mTextureCopies.empty())
+            return;
+        std::unique_lock lock(mScheduleMutex);
+        PageRef touched{};
+        Vector<SharedPromise<>> promises(mAllocator);
+        auto& cmd = mTransferCmds.emplace_back(mCommandPool->CreateCommandList());
+        cmd->Begin();
+        if (!mBufferCopies.empty())
+        {
+            for (auto& [bccs, pages, promise] : mBufferCopies)
+            {
 
+                for (auto const& [src, dst, region] : bccs)
+                    cmd->CopyBuffer(src, dst, {region});
+                AddRef(touched, pages);
+                promises.emplace_back(promise);
+            }
+        }
+        cmd->End();
+        // Submit
+        if (mSubmitCtr)
+            mTransferQueue->Submit({{
+                RHIDeviceQueue::SubmitDesc{
+                    .timelineWaits = {{{mTransferSemaphore.Get(), mSubmitCtr}}},
+                    .timelineSignals = {{{mTransferSemaphore.Get(), mSubmitCtr+1}}},
+                    .waitsStages = {{{ RHIPipelineStageBits::Transfer}}},
+                    .cmdLists = {{cmd.Get()}}
+                }
+            }});
+        else
+            mTransferQueue->Submit({{
+                RHIDeviceQueue::SubmitDesc{
+                    .timelineSignals = {{{mTransferSemaphore.Get(), mSubmitCtr+1}}},
+                    .cmdLists = {{cmd.Get()}}
+                }
+            }});
+        mSubmitCtr++;
+        mPendingCompletions.emplace_back(mSubmitCtr, touched, std::move(promises));
+        mBufferCopies.clear(), mTextureCopies.clear();
+    }
+    void StreamingPool::WorkerThread()
+    {
+        while (!mShutdown)
+        {
+            Submit();
+        }
     }
 } // namespace Foundation::RenderCore

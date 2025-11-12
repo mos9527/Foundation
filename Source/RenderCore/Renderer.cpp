@@ -1037,11 +1037,11 @@ void Renderer::BeginExecute()
     mExecuteAlloc.Reset(mExecuteArena);
     mExecuteSubmits = Construct<Vector<Pair<RHIDeviceQueueType, RHIDeviceQueue::SubmitDesc>>>(mExecuteAlloc.Ptr(),
                                                                                               mExecuteAlloc.Ptr());
-    Vector<RHIDeviceObjectHandle<RHIDeviceFence>> wait(mExecuteAlloc.Ptr());
+    Vector<RHIDeviceFence*> wait(mExecuteAlloc.Ptr());
     if (mSetup->executionAnyGraphics)
-        wait.push_back(mSwaps[mCurrentSync].graphicsFence);
+        wait.push_back(mSwaps[mCurrentSync].graphicsFence.Get());
     if (mSetup->executionAnyCompute)
-        wait.push_back(mSwaps[mCurrentSync].computeFence);
+        wait.push_back(mSwaps[mCurrentSync].computeFence.Get());
     {
         ZoneScopedN("Wait for GPU");
         mDevice->WaitForFences(wait, true, -1);
@@ -1185,9 +1185,9 @@ Renderer::ExecutePerThreadCommandLists::ExecutePerThreadCommandLists(RHIDevice* 
     graphicsCmds(maxPerThread, alloc), computeCmds(maxPerThread, alloc)
 {
     graphicsPool =
-        device->CreateCommandPool({.queue = RHIDeviceQueueType::Graphics, .type = RHICommandPoolType::Transient});
+        device->CreateCommandPool({.queue = device->GetDeviceQueue(RHIDeviceQueueType::Graphics), .type = RHICommandPoolType::Transient});
     computePool =
-        device->CreateCommandPool({.queue = RHIDeviceQueueType::Compute, .type = RHICommandPoolType::Transient});
+        device->CreateCommandPool({.queue = device->GetDeviceQueue(RHIDeviceQueueType::Compute), .type = RHICommandPoolType::Transient});
 }
 void Renderer::ExecutePerThreadCommandLists::Reset()
 {

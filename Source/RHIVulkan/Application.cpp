@@ -8,9 +8,8 @@ static VKAPI_ATTR vk::Bool32 VKAPI_CALL
 VkDebugLayerCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::DebugUtilsMessageTypeFlagsEXT,
                      const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, void*)
 {
-    constexpr const char* kLevels[] = {"verbose", "info", "warning", "error"};
-    LOG_RUNTIME(VkDebugLayer, LogInfo, "{} {}",
-                kLevels[std::countr_zero(static_cast<uint32_t>(severity)) >> 2 & 3], pCallbackData->pMessage);
+    constexpr LogLevel kLevels[] = {LogDebug, LogInfo, LogWarn, LogError};
+    LOG_RUNTIME(VkDebugLayer, kLevels[std::countr_zero(static_cast<uint32_t>(severity)) >> 2 & 3], "{}", pCallbackData->pMessage);
     return vk::False;
 }
 VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, const char* engineName,

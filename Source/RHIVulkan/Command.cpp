@@ -2,7 +2,6 @@ using namespace Foundation::RHI;
 VulkanCommandPool::VulkanCommandPool(const VulkanDevice& device, PoolDesc const& desc, Allocator* allocator) :
     RHICommandPool(device, desc), mAllocator(allocator), mDevice(device), mStorage(allocator) {
     // Create the command pool
-    auto const& queue = device.GetVkQueues()->Get(desc.queue);
     vk::CommandPoolCreateFlagBits flag{};
     switch (desc.type)
     {
@@ -16,7 +15,7 @@ VulkanCommandPool::VulkanCommandPool(const VulkanDevice& device, PoolDesc const&
     }
     vk::CommandPoolCreateInfo pool_info{
         .flags = flag,
-        .queueFamilyIndex = queue->GetVkQueueIndex(),
+        .queueFamilyIndex = static_cast<VulkanDeviceQueue*>(desc.queue)->GetVkQueueIndex(),
     };
     mCommandPool = vk::raii::CommandPool(device.GetVkDevice(), pool_info, mDevice.GetVkAllocatorCallbacks());
     CHECK(mCommandPool != nullptr && "failed to create Vulkan command pool");

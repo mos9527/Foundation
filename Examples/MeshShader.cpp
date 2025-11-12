@@ -32,7 +32,7 @@ int main()
     ExampleFpsCounter fps;
     while (!Examples_ShouldClose(window, renderer, swapchain))
     {
-        fmt::format_to(data.text.ch, "MeshShader Example FPS: {}", fps.Update());
+        fmt::format_to(data.text.sz, "MeshShader Example FPS: {}", fps.Update());
         Examples_NewFrame(renderer);
     }
     Examples_DestroyVulkan(window, renderer, app, device, swapchain);

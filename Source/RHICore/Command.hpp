@@ -16,7 +16,7 @@ namespace Foundation::RHI {
     public:
         struct PoolDesc {
             // Queue this command pool is associated with.
-            RHIDeviceQueueType queue;
+            RHIDeviceQueue* queue;
             // How CommandList should be created by this pool.
             RHICommandPoolType type;
         } const mDesc;
@@ -88,7 +88,8 @@ namespace Foundation::RHI {
         virtual RHICommandList& FillBuffer(RHIBuffer* buffer, uint32_t value, size_t offset = 0, size_t size = kFullSize) = 0;
         virtual RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Span<const CopyBufferRegion> regions) = 0;
         struct CopyImageRegion {
-            uint32_t srcBufferOffset = 0; // Offset in the source buffer, used for CopyBufferToImage
+            // Offset in the source buffer, used for CopyBufferToImage
+            uint32_t srcBufferOffset = 0;
             RHITextureSubresourceLayer srcLayer;
             RHIOffset3D srcOffset{ 0,0,0 };
             RHITextureSubresourceLayer dstLayer;

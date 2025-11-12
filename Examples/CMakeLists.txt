@@ -49,3 +49,6 @@ add_executable(Example_MipGeneration "MipGeneration.cpp")
 target_link_libraries(Example_MipGeneration PUBLIC Example_Common ThirdParty_ImGui)
 target_include_directories(Example_MipGeneration PUBLIC "${stb_SOURCE_DIR}")
 add_dependencies(Example_MipGeneration Shader_MipGenerationBlur)
+
+add_executable(Example_Streaming "Streaming.cpp")
+target_link_libraries(Example_Streaming PUBLIC Example_Common)

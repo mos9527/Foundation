@@ -47,20 +47,9 @@ vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDe
         .clipped = VK_TRUE, // Clipped presentation
         .oldSwapchain = mSwapchain // No old swapchain
     };
-    // Check for different graphics-present queue indices
-    auto const& queues = mDevice.GetVkQueues();
-    mQueueFamilyIndices = {
-        queues->Get(queues->graphics)->GetVkQueueIndex(),
-        queues->Get(queues->present)->GetVkQueueIndex()
-    };
-    if (queues->IsDedicatedPresent()) {
-        create_info.setImageSharingMode(vk::SharingMode::eConcurrent);
-        create_info.setQueueFamilyIndices(mQueueFamilyIndices);
-    }
     return create_info;
 }
 void VulkanSwapchain::Instantiate() {
-    CHECK_MSG(mDevice.GetVkQueues() && mDevice.GetVkQueues()->CanPresent(), "Device does not have a present-capable queue");
     auto const& device = mDevice.GetVkDevice();
     auto create_info = vkSwapchainCreateInfoFromSwapchainDesc(mDesc);
     mImages.reset();
