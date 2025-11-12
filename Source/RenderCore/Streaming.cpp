@@ -73,13 +73,13 @@ namespace Foundation::RenderCore
             PageAlloc();
         return mPageHeap.rbegin()->second;
     }
-    void StreamingPool::Write(Span<const char> data, PageRef& outPages, WriteList& outList)
+    void StreamingPool::Write(Span<const char> data, PageRef& outPages, WriteList& outList, size_t alignment)
     {
         RHIBuffer* buf = nullptr;
         while (!data.empty())
         {
             auto* page = &mPages[GetPage()];
-            if (!page->freeSize())
+            if (page->freeSize() < alignment)
             {
                 if (mPageTop >= kStreamingMaxPages)
                     Collect();
@@ -88,6 +88,7 @@ namespace Foundation::RenderCore
                 page = &mPages[GetPage()];
             }
             size_t write = std::min(data.size(), page->freeSize()), offset = 0;
+            write -= write % alignment; // Align down
             PageWrite(page->id, data.SubSpan(0, write), offset, buf);
             data = data.SubSpan(write);
             outPages[page->id]++;
@@ -107,8 +108,7 @@ namespace Foundation::RenderCore
         mTextureCopies(allocator), mTransferCmds(allocator), mPendingCompletions(allocator)
     {
         mTransferQueue = mDevice->GetDeviceQueue(RHIDeviceQueueType::Transfer);
-        mCommandPool =
-            mDevice->CreateCommandPool({.queue = mTransferQueue, .type = RHICommandPoolType::Transient});
+        mCommandPool = mDevice->CreateCommandPool({.queue = mTransferQueue, .type = RHICommandPoolType::Transient});
         mTransferSemaphore = mDevice->CreateSemaphore(true /* timeline */);
         mWorker = Thread([this] { WorkerThread(); });
     }
@@ -124,16 +124,59 @@ namespace Foundation::RenderCore
         Vector<BufferCopyCommand> cmds(mAllocator);
         for (auto& [srcBuffer, srcOffset, size] : writes)
         {
-            cmds.emplace_back(srcBuffer, dst, RHICommandList::CopyBufferRegion{.srcOffset = srcOffset, .dstOffset = offset, .size = size});
+            cmds.emplace_back(
+                srcBuffer, dst,
+                RHICommandList::CopyBufferRegion{.srcOffset = srcOffset, .dstOffset = offset, .size = size});
             offset += size;
         }
         mBufferCopies.emplace_back(cmds, touched, promise);
         return promise;
     }
-    StreamingPool::~StreamingPool()
+    SharedPromise<> StreamingPool::Write(Span<const char> data, RHITexture* dst, RHITextureLayout dstLayout,
+                                         RHITextureAspectFlag aspect, uint32_t dstMip, uint32_t firstLayer)
     {
-        mShutdown = true;
+        CHECK_MSG(dst->mDesc.dimension == RHITextureDimension::E2D, "2D Textures ONLY");
+        WriteList writes(mAllocator);
+        PageRef touched{};
+
+        std::unique_lock lock(mScheduleMutex);
+        // https://docs.vulkan.org/guide/latest/image_copies.html
+        // Texture writes are aligned to row pitch (assuming tightly packed)
+        auto extent = dst->mDesc.extent;
+        size_t numRows = extent.y;
+        size_t rowPitch = extent.x * RHIResourceFormatSize(dst->mDesc.format);
+        size_t layerSize = rowPitch * extent.y * extent.z, numLayers = data.size() / layerSize;
+        SharedPromise<> promise = ConstructShared<std::promise<void>>(mAllocator);
+        Vector<TextureCopyCommand> cmds(mAllocator);
+        size_t offset = 0;
+        for (size_t layer = 0; layer < numLayers; layer++)
+        {
+            Span layerData = data.SubSpan(layer * layerSize, layerSize);
+            Write(layerData, touched, writes, rowPitch);
+            AddRef(mPageRefs, touched);
+            // Same mip
+            for (auto& [srcBuffer, srcOffset, size] : writes)
+            {
+                int rows = size / rowPitch, offsetAll = offset / rowPitch, offsetRow = offsetAll % numRows;
+                cmds.emplace_back(srcBuffer, dst, dstLayout,
+                                  RHICommandList::CopyImageRegion{
+                                      .srcBufferOffset = static_cast<uint32_t>(srcOffset),
+                                      .dstLayer = RHITextureSubresourceLayer{
+                                            .aspect = aspect,
+                                            .mipLevel = dstMip,
+                                            .baseArrayLayer = static_cast<uint32_t>(firstLayer + layer),
+                                            .layerCount = 1,
+                                      },
+                                      .dstOffset = {0, offsetRow, 0},
+                                      .extent = {extent.x, rows, 1}
+                                });
+                offset += size;
+            }
+        }
+        mTextureCopies.emplace_back(cmds, touched, promise);
+        return promise;
     }
+    StreamingPool::~StreamingPool() { mShutdown = true; }
     String StreamingPool::DbgGetStatistics() const
     {
         size_t allocated = 0, used = 0, refs = 0;
@@ -143,8 +186,8 @@ namespace Foundation::RenderCore
             used += mPages[i].top - mPages[i].mem;
             refs += mPageRefs[i];
         }
-        return fmt::format("Pages: {}, Allocated: {} KB, Used: {} KB, Refs: {}", mPageTop,
-            allocated / 1024, used / 1024, refs);
+        return fmt::format("Pages: {}, Allocated: {} KB, Used: {} KB, Refs: {}", mPageTop, allocated / 1024,
+                           used / 1024, refs);
     }
     void StreamingPool::Submit()
     {
@@ -170,35 +213,33 @@ namespace Foundation::RenderCore
         Vector<SharedPromise<>> promises(mAllocator);
         auto& cmd = mTransferCmds.emplace_back(mCommandPool->CreateCommandList());
         cmd->Begin();
-        if (!mBufferCopies.empty())
+        for (auto& [bccs, pages, promise] : mBufferCopies)
         {
-            for (auto& [bccs, pages, promise] : mBufferCopies)
-            {
 
-                for (auto const& [src, dst, region] : bccs)
-                    cmd->CopyBuffer(src, dst, {region});
-                AddRef(touched, pages);
-                promises.emplace_back(promise);
-            }
+            for (auto const& [src, dst, region] : bccs)
+                cmd->CopyBuffer(src, dst, {region});
+            AddRef(touched, pages);
+            promises.emplace_back(promise);
+        }
+        for (auto& [tccs, pages, promise] : mTextureCopies)
+        {
+
+            for (auto const& [src, dst, dstLayout, region] : tccs)
+                cmd->CopyBufferToImage(src, dst, dstLayout, region);
+            AddRef(touched, pages);
+            promises.emplace_back(promise);
         }
         cmd->End();
         // Submit
         if (mSubmitCtr)
-            mTransferQueue->Submit({{
-                RHIDeviceQueue::SubmitDesc{
-                    .timelineWaits = {{{mTransferSemaphore.Get(), mSubmitCtr}}},
-                    .timelineSignals = {{{mTransferSemaphore.Get(), mSubmitCtr+1}}},
-                    .waitsStages = {{{ RHIPipelineStageBits::Transfer}}},
-                    .cmdLists = {{cmd.Get()}}
-                }
-            }});
+            mTransferQueue->Submit(
+                {{RHIDeviceQueue::SubmitDesc{.timelineWaits = {{{mTransferSemaphore.Get(), mSubmitCtr}}},
+                                             .timelineSignals = {{{mTransferSemaphore.Get(), mSubmitCtr + 1}}},
+                                             .waitsStages = {{{RHIPipelineStageBits::Transfer}}},
+                                             .cmdLists = {{cmd.Get()}}}}});
         else
-            mTransferQueue->Submit({{
-                RHIDeviceQueue::SubmitDesc{
-                    .timelineSignals = {{{mTransferSemaphore.Get(), mSubmitCtr+1}}},
-                    .cmdLists = {{cmd.Get()}}
-                }
-            }});
+            mTransferQueue->Submit({{RHIDeviceQueue::SubmitDesc{
+                .timelineSignals = {{{mTransferSemaphore.Get(), mSubmitCtr + 1}}}, .cmdLists = {{cmd.Get()}}}}});
         mSubmitCtr++;
         mPendingCompletions.emplace_back(mSubmitCtr, touched, std::move(promises));
         mBufferCopies.clear(), mTextureCopies.clear();

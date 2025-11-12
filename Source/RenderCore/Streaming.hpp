@@ -56,8 +56,11 @@ namespace Foundation::RenderCore
         void PageReset(int id);
         // Retrieve the most available page
         int GetPage();
-        // Commit buffer to pages, possibly touching multiple ones.
-        void Write(Span<const char> data, PageRef& outPages, WriteList& outList);
+        /**
+         * @brief Commit buffer to pages, possibly touching multiple ones.
+         * @param alignment Size alignment for each write in @ref WriteList
+         */
+        void Write(Span<const char> data, PageRef& outPages, WriteList& outList, size_t alignment = 1);
 
         PageRef mPageRefs{};
         // Perform page GC sweep to reclaim space
@@ -93,7 +96,13 @@ namespace Foundation::RenderCore
          *       is *shared* across at least the transfer queue.
          */
         SharedPromise<> Write(Span<const char> data, RHIBuffer* dst, size_t offset);
-
+        /**
+         * @brief Schedules texture upload.
+         * @note Destination texture MUST have been created with @ref RHITextureUsage::TransferDst, and
+         *       is *shared* across at least the transfer queue.
+         */
+        SharedPromise<> Write(Span<const char> data, RHITexture* dst, RHITextureLayout dstLayout,
+                              RHITextureAspectFlag aspect, uint32_t dstMip, uint32_t firstLayer);
         ~StreamingPool();
 
         String DbgGetStatistics() const;
