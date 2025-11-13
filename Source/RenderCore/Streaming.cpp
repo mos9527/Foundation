@@ -1,6 +1,5 @@
 #include "Streaming.hpp"
 #include "RHICore/Device.hpp"
-// TODO: Thread safety
 namespace Foundation::RenderCore
 {
     void StreamingPool::Maintain(int id, size_t oldSize, size_t newSize)
@@ -295,7 +294,6 @@ namespace Foundation::RenderCore
         while (!mShutdown)
         {
             Submit();
-            // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     }
 } // namespace Foundation::RenderCore

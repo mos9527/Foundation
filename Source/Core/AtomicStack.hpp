@@ -7,8 +7,8 @@ namespace Foundation::Core
      * @brief Atomic, unbounded LIFO stack with lock-free push and pop operations.
      * @note Memory allocations are performed on each push and deallocations on each pop.
      *       This also requires a thread-safe Allocator, which @ref Core provides.
-     * @note Consider using @ref AllocatorPool for fixed-size allocations to reduce allocation overhead,
-     *       with a T of AtomicStack<T>::Node
+     * @note Consider using @ref AtomicPool for fixed-size allocations to reduce allocation overhead
+     *       if a max-bound is known.
      * @tparam T Data type, must be default constructible.
      */
     template <typename T>
@@ -18,7 +18,7 @@ namespace Foundation::Core
         struct Node;
         struct alignas(2 * sizeof(Node*)) PTag
         {
-            Node* p{ nullptr };
+            Node* p{nullptr};
             uintptr_t tag{};
         };
         struct Node
@@ -26,9 +26,11 @@ namespace Foundation::Core
             PTag next{};
             T data{};
         };
+
     private:
         Atomic<PTag> mTop{};
         Allocator* mAlloc;
+
     public:
         /**
          * @brief Construct the Stack.
@@ -41,7 +43,7 @@ namespace Foundation::Core
          * @tparam U Type of the value to push. May be different from T, but must be convertible to T.
          * @param value The value to push. This is forwarded to T's constructor.
          */
-        template<typename U>
+        template <typename U>
         void Push(U&& value)
         {
             Node* node = static_cast<Node*>(mAlloc->Allocate(sizeof(Node), alignof(Node)));
@@ -55,7 +57,7 @@ namespace Foundation::Core
             // -> Tag is incremented on every modification of the head pointer.
             while (true)
             {
-                PTag new_top{ node, old_top.tag + 1 };
+                PTag new_top{node, old_top.tag + 1};
                 if (mTop.compare_exchange_weak(old_top, new_top, std::memory_order_acquire, std::memory_order_relaxed))
                 {
                     node->next = old_top;
@@ -75,7 +77,7 @@ namespace Foundation::Core
             while (old_top.p != nullptr)
             {
                 // Same as above
-                PTag new_top{ old_top.p->next.p, old_top.tag + 1 };
+                PTag new_top{old_top.p->next.p, old_top.tag + 1};
                 if (mTop.compare_exchange_weak(old_top, new_top, std::memory_order_acquire, std::memory_order_relaxed))
                 {
                     out = std::move(old_top.p->data);
@@ -89,7 +91,8 @@ namespace Foundation::Core
         ~AtomicStack()
         {
             T val;
-            while (Pop(val));
+            while (Pop(val))
+                ;
         }
     };
-}
+} // namespace Foundation::Core

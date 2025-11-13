@@ -105,7 +105,7 @@ namespace Foundation::RenderCore
             // Max page count * page size = max resident staging memory usage,
             // your assets should be streamed in chunks smaller than that.
             size_t streamingPageSize = 1u << 20;
-            // Max transfer commands to be executed per submit
+            // Max transfer commands/pages to be executed per submit
             // Effectively limits max concurrent transfers - use a lower
             // value for lower latency, higher value for higher throughput
             int maxTransferPerSubmit = 16;

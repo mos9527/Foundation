@@ -1,5 +1,5 @@
 #pragma once
-#include <Core/AllocatorPool.hpp>
+#include <Core/AtomicPool.hpp>
 /**
  * @brief Low-level Rendering Hardware Interface (RHI) abstractions.
  */
@@ -144,19 +144,16 @@ namespace Foundation::RHI
     /**
      * @brief Thread-safe handle dereference facility for RHI Objects
      */
-    template<typename Base = RHIObject>
+    template <typename Base = RHIObject>
     class RHIObjectPool
     {
-        Core::Allocator* mAllocator;
         using PointerType = Core::UniquePtr<Base>;
-        Core::ScopedArena mArena;
-        Core::AllocatorPool<PointerType> mPool;
+
+        Core::Allocator* mAllocator;
+        Core::AtomicPool<PointerType> mPool;
+
     public:
-        RHIObjectPool(Core::Allocator* allocator) :
-            mAllocator(allocator),
-            mArena(allocator, Core::AllocatorPool<PointerType>::SizeOfObjects(kRHIObjectPoolMaxSize)), mPool(mArena)
-        {
-        }
+        RHIObjectPool(Core::Allocator* allocator) : mAllocator(allocator), mPool(kRHIObjectPoolMaxSize, allocator) {}
         /**
          * @brief Creates specified RHIObject of derived type T and retrieves its handle
          * @returns A handle to the newly created object.
@@ -165,7 +162,7 @@ namespace Foundation::RHI
         Handle CreateObject(Args&&... args)
         {
             Base* obj = Core::ConstructBase<Base, U>(mAllocator, std::forward<Args>(args)...);
-            PointerType* pointer = mPool.AllocateObject(obj, Core::StlDeleter<Base>(mAllocator));
+            PointerType* pointer = mPool.Allocate(obj, Core::StlDeleter<Base>(mAllocator));
             return reinterpret_cast<Handle>(pointer);
         }
         /**
@@ -187,10 +184,6 @@ namespace Foundation::RHI
         {
             auto* pointer = reinterpret_cast<PointerType*>(handle);
             mPool.Deallocate(pointer);
-        }
-        ~RHIObjectPool()
-        {
-            mPool.Collect();
         }
     };
 } // namespace Foundation::RHI

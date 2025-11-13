@@ -17,7 +17,7 @@ int main()
         // Lifetime of streaming pool tied to this scope
         // Ensure to destruct before device destruction
         StreamingPool stream(device.Get(), GLOBAL_ALLOC, {
-            .maxTransferPerSubmit = 1
+            .maxTransferPerSubmit = 1 /* For demonstration - don't do this. You want a reasonably large batch size. */
         });
         CSDebugTextData lines[5];
         lines[0].x = lines[0].y = 16, lines[0].SetText("Streaming Example");
