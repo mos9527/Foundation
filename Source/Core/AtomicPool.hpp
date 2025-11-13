@@ -1,7 +1,5 @@
 #pragma once
 #include <cstring>
-
-
 #include "Allocator.hpp"
 #include "Atomic.hpp"
 namespace Foundation::Core
@@ -11,6 +9,7 @@ namespace Foundation::Core
      *        Being a sibling to @ref AtomicStack - key differences being how objects are
      *        allocated in a fixed-size arena and is never freed back to the system.
      *        Deallocation returns objects to the pool for reuse.
+     *        That - and you get stable pointers to objects directly.
      * @note This implementation is thread-safe for allocations from multiple threads.
      * @tparam T Type of object to allocate, must be default constructible.
      */
@@ -78,23 +77,54 @@ namespace Foundation::Core
             mNodes[mSize - 1].next = nullptr;
             mHead.store({&mNodes[0], 0});
         }
-
+        /**
+         * @brief Constructs an object of type T in the pool with the given arguments.
+         * @return Pointer to the constructed object, or nullptr if the pool is exhausted.
+         * @note User NOT use `delete` to free the returned pointer as it is managed by the pool.
+         *       The destructor of T should NOT be manually called - handle both with @ref Deallocate.
+         */
         template <typename... Args>
-        T* Allocate(Args&&... args)
+        T* Construct(Args&&... args)
         {
             Node* node = AllocateNode();
+            if (!node)
+                return nullptr;
             node->used = true;
             std::construct_at(&node->data, std::forward<Args>(args)...);
             return &node->data;
         }
-        void Deallocate(T* ptr)
+        /**
+         * @brief Destructs the object pointed to by ptr and returns it to the pool.
+         */
+        void Destruct(T* ptr)
         {
+            if (!ptr)
+                return;
             // We know the memory layout is Node.data, so we can get the Node* from T*
             // Hacky - though guaranteed to work by standard.
             Node* node = reinterpret_cast<Node*>(reinterpret_cast<uint8_t*>(ptr) - sizeof(Node::next));
             node->data.~T();
             node->used = false;
             DeallocateNode(node);
+        }
+        /**
+         * @brief Returns the index of the given pointer in the pool.
+         * @return Index of range [0, mSize). -1
+         */
+        size_t Index(T* ptr) const
+        {
+            auto node = reinterpret_cast<Node*>(reinterpret_cast<uint8_t*>(ptr) - sizeof(Node::next));
+            return static_cast<size_t>(node - mNodes);
+        }
+        /**
+         * @brief Returns the pointer at the given index in the pool.
+         * @return Pointer to object of type T, or nullptr if index is out of bounds.
+         */
+        T* At(size_t index)
+        {
+            if (index >= mSize)
+                return nullptr;
+            return &mNodes[index].data;
         }
         /**
          * @brief Destruct all allocated objects in the pool, collecting garbage.

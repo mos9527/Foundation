@@ -142,7 +142,7 @@ namespace Foundation::RHI
     };
     static constexpr size_t kRHIObjectPoolMaxSize = 65536;
     /**
-     * @brief Thread-safe handle dereference facility for RHI Objects
+     * @brief Thread-safe type-erased handle dereference facility for RHI Objects
      */
     template <typename Base = RHIObject>
     class RHIObjectPool
@@ -162,7 +162,7 @@ namespace Foundation::RHI
         Handle CreateObject(Args&&... args)
         {
             Base* obj = Core::ConstructBase<Base, U>(mAllocator, std::forward<Args>(args)...);
-            PointerType* pointer = mPool.Allocate(obj, Core::StlDeleter<Base>(mAllocator));
+            PointerType* pointer = mPool.Construct(obj, Core::StlDeleter<Base>(mAllocator));
             return reinterpret_cast<Handle>(pointer);
         }
         /**
@@ -183,7 +183,7 @@ namespace Foundation::RHI
         void DestroyObject(Handle handle)
         {
             auto* pointer = reinterpret_cast<PointerType*>(handle);
-            mPool.Deallocate(pointer);
+            mPool.Destruct(pointer);
         }
     };
 } // namespace Foundation::RHI

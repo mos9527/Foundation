@@ -88,6 +88,12 @@ inline auto Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, Vulka
     SDL_DestroyWindow(window);
 }
 
+inline float Examples_GetTime()
+{
+    return static_cast<float>(SDL_GetTicks() / 1e3);
+}
+
+
 struct ExampleFpsCounter
 {
     size_t lastTick{};

@@ -5,4 +5,5 @@
 #include "RenderResource.hpp"
 #include "Shader.hpp"
 #include "Streaming.hpp"
+#include "Bindless.hpp"
 #include <spirv/unified1/spirv.hpp>

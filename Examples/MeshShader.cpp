@@ -21,7 +21,7 @@ int main()
             auto const& img_wh = r->GetSwapchainExtent();
             r->CmdBeginGraphics(self, cmd, img_wh);
             r->CmdSetPipeline(self, cmd);
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Task, 0, static_cast<float>(SDL_GetTicks() / 1e3));
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Task, 0, Examples_GetTime());
             cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
                 .SetScissor(0, 0, img_wh.x, img_wh.y)
                 .DrawMeshTasks(1, 1, 1)
@@ -32,7 +32,7 @@ int main()
     ExampleFpsCounter fps;
     while (!Examples_ShouldClose(window, renderer, swapchain))
     {
-        fmt::format_to(data.text.sz, "MeshShader Example FPS: {}", fps.Update());
+        data.SetText(fmt::format("MeshShader Example FPS: {}", fps.Update()));
         Examples_NewFrame(renderer);
     }
     Examples_DestroyVulkan(window, renderer, app, device, swapchain);

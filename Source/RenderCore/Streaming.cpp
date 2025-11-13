@@ -1,5 +1,3 @@
-#include "Streaming.hpp"
-#include "RHICore/Device.hpp"
 namespace Foundation::RenderCore
 {
     void StreamingPool::Maintain(int id, size_t oldSize, size_t newSize)

@@ -19,6 +19,9 @@ int main()
         StreamingPool stream(device.Get(), GLOBAL_ALLOC, {
             .maxTransferPerSubmit = 1 /* For demonstration - don't do this. You want a reasonably large batch size. */
         });
+        BindlessPool bindless(device.Get(), GLOBAL_ALLOC, {
+            .maxBindings = 1024
+        });
         CSDebugTextData lines[5];
         lines[0].x = lines[0].y = 16, lines[0].SetText("Streaming Example");
         renderer->BeginSetup();

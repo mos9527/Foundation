@@ -148,6 +148,7 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
 }
 
 VulkanTexture::~VulkanTexture() {
+    Unmap();
     if (mShared && mImage != nullptr) {
         // If the image is shared (e.g. from a swapchain), we do not destroy it here.
         mImage.release();

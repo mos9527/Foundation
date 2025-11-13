@@ -32,5 +32,6 @@ float4 fragMain(float2 pix: TEXCOORD0) : SV_Target
     uint32_t id = pid.y * sq + pid.x;
     id = max(1, id) % pc.num_textures;
     float2 uv = p * sq;
-    return textures[id + pc.first_texture].Sample(sampler, uv);
+    uint32_t sample_id = id + pc.first_texture;
+    return textures[NonUniformResourceIndex(sample_id)].Sample(sampler, uv);
 }
