@@ -24,16 +24,16 @@ constexpr const char* format_as(LogLevel level)
 }
 // NOLINTEND
 template<typename ...Args>
-void foundationLogRuntime(const char* tag, LogLevel level, std::string_view format, Args&&... args)
+void foundationLogRuntime(const char* tag, LogLevel level, fmt::format_string<Args...> format, Args&&... args)
 {
     constexpr size_t kN = sizeof...(Args);
     if constexpr (kN > 0)
     {
-        auto kStr = fmt::format(fmt::runtime(format), std::forward<Args>(args)...);
-        fprintf(LOG_STREAM, fmt::format("[{}@{}] {}\n", level, tag, kStr).c_str());
+        auto message = fmt::format(format, std::forward<Args>(args)...);
+        fprintf(LOG_STREAM, fmt::format("[{}@{}] {}\n", level, tag, message).c_str());
     } else
     {
-        fprintf(LOG_STREAM, fmt::format("[{}@{}] {}\n", level, tag, format).c_str());
+        fprintf(LOG_STREAM, fmt::format("[{}@{}] {}\n", level, tag, format.str).c_str());
     }
 }
 

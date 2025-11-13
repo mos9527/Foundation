@@ -42,7 +42,7 @@ namespace Foundation::RHI {
             Span<RHIDeviceSemaphore* const> waits;
         };
         virtual void Present(PresentDesc const& desc) const = 0;
-        [[nodiscard]] virtual uint32_t GetQueueIndex() const = 0;
+        [[nodiscard]] virtual uint32_t GetQueueFamily() const = 0;
         virtual void DebugSetObjectName(const char* name) = 0;
     };
     // https://docs.vulkan.org/samples/latest/samples/extensions/timeline_semaphore/README.html
@@ -189,13 +189,18 @@ namespace Foundation::RHI {
         [[nodiscard]] virtual RHIDeviceSampler* GetSampler(Handle handle) const = 0;
         virtual void DestroySampler(Handle handle) = 0;
 
-        virtual void ResetFences(Span<RHIDeviceFence*> fences) = 0;
-        virtual void WaitForFences(Span<RHIDeviceFence*> fences, bool wait_all, size_t timeout) = 0;
+        virtual void ResetFences(Span<RHIDeviceFence* const> fences) = 0;
+        /**
+         * @brief Wait for fences to arrive.
+         * @param timeout Wait timeout in nanoseconds. Set to 0 for no wait and return immediately, -1 for infinite wait.
+         * @return true if fence reached, false if timeout occurred.
+         */
+        virtual bool WaitForFences(Span<RHIDeviceFence* const> fences, bool wait_all, size_t timeout) = 0;
 
         virtual void SignalTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores) = 0;
         /**
          * @brief Wait for timeline semaphores to reach specified values.
-         * @param timeout Wait timeout in nanoseconds. Set to 0 for no wait and return immediately.
+         * @param timeout Wait timeout in nanoseconds. Set to 0 for no wait and return immediately, -1 for infinite wait.
          * @return true if all semaphores reached the specified values, false if timeout occurred.
          */
         virtual bool WaitForTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores, size_t timeout) = 0;

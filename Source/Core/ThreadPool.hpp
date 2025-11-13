@@ -23,12 +23,11 @@ namespace Foundation::Core
      * @tparam ReturnType Return type of the lambda function.
      */
     template <typename Lambda, typename ReturnType>
-    class ThreadPoolLambdaJob final : public ThreadPoolJob
+    struct ThreadPoolLambdaJob final : public ThreadPoolJob
     {
         Lambda mFunc;
-        SharedPromise<ReturnType> mPromise;
-    public:
-        ThreadPoolLambdaJob(SharedPromise<ReturnType> promise, Lambda&& func) : mFunc(func), mPromise(promise) {}
+        Promise<ReturnType> mPromise;
+        ThreadPoolLambdaJob(Lambda&& func) : mFunc(func) {}
         void Execute(size_t) noexcept override
         {
             try
@@ -36,14 +35,14 @@ namespace Foundation::Core
                 if constexpr (std::is_same_v<ReturnType, void>)
                 {
                     mFunc();
-                    mPromise->set_value();
+                    mPromise.set_value();
                 }
                 else
-                    mPromise->set_value(mFunc());
+                    mPromise.set_value(mFunc());
             }
             catch (...)
             {
-                mPromise->set_exception(std::current_exception());
+                mPromise.set_exception(std::current_exception());
             }
         }
     };
@@ -56,16 +55,17 @@ namespace Foundation::Core
      */
     class ThreadPool
     {
-        Allocator* mAllocator;        
+        Allocator* mAllocator;
         String mName;
         Atomic<bool> mShutdown{false};
-        Atomic<size_t> mComplete{ 0 };
-        Atomic<size_t> mTotal{ 0 };
+        Atomic<size_t> mComplete{0};
+        Atomic<size_t> mTotal{0};
 
         JobQueue mJobs;
         // Ensure threads are joined first on destruction
         Vector<Thread> mThreads;
         void ThreadPoolWorker(size_t id);
+
     public:
         /**
          * @brief Construct a thread pool with the given number of worker threads.
@@ -81,25 +81,25 @@ namespace Foundation::Core
          *       It's up to the implementation of the job to provide a way to get the result.
          *       See also @ref ThreadPoolLambdaJob
          */
-        template <typename T, typename ... Args>
-        requires std::is_base_of_v<ThreadPoolJob, T>
+        template <typename T, typename... Args>
+            requires std::is_base_of_v<ThreadPoolJob, T>
         void PushImpl(Args&&... args)
         {
-            if(mShutdown)
+            if (mShutdown)
                 throw std::runtime_error("ThreadPool shutting down");
-            if(!mJobs.Push(ConstructUniqueBase<ThreadPoolJob, T>(mAllocator, std::forward<Args>(args)...)))
+            if (!mJobs.Push(ConstructUniqueBase<ThreadPoolJob, T>(mAllocator, std::forward<Args>(args)...)))
                 throw std::runtime_error("Jobs full");
             mTotal.fetch_add(1, std::memory_order_relaxed);
             mTotal.notify_one();
         }
         /**
          * @brief Push a lambda job to the thread pool.
-         * @return @ref SharedPromise<func ReturnType> that will be set when the job is completed.
+         * @return @ref SharedFuture<func ReturnType> that will be set when the job is completed.
          */
         template <typename Lambda, typename... Args>
         auto Push(Lambda&& func, Args&&... args)
         {
-            if(mShutdown)
+            if (mShutdown)
                 throw std::runtime_error("ThreadPool shutting down");
             auto ThreadPoolPackagedLambda = [](Lambda&& fn, Args&&... fargs)
             {
@@ -111,14 +111,14 @@ namespace Foundation::Core
             using PackagedType = decltype(packaged);
             // Use the wrapped lambda type for the job
             using LambdaType = ThreadPoolLambdaJob<PackagedType, ReturnType>;
-            SharedPromise<ReturnType> promise = ConstructShared<std::promise<ReturnType>>(mAllocator);
-            if(!mJobs.Push(ConstructUniqueBase<ThreadPoolJob, LambdaType>(
-                    mAllocator, promise,
-                    std::forward<PackagedType>(packaged))))
+            auto task =
+                ConstructUniqueBase<ThreadPoolJob, LambdaType>(mAllocator, std::forward<PackagedType>(packaged));
+            auto ptr = static_cast<LambdaType*>(task.get());
+            if (!mJobs.Push(std::move(task)))
                 throw std::runtime_error("Jobs full");
             mTotal.fetch_add(1, std::memory_order_relaxed);
             mTotal.notify_one();
-            return promise;
+            return SharedFuture<ReturnType>(ptr->mPromise.get_future());
         }
         /**
          * @brief Shutdown the @ref ThreadPool, potentially cancelling all pending jobs.
@@ -135,4 +135,4 @@ namespace Foundation::Core
          */
         ~ThreadPool();
     };
-} // namespace Foundation::Async
+} // namespace Foundation::Core

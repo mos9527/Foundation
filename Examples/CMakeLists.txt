@@ -24,6 +24,10 @@ add_executable(Example_BindlessSimple "BindlessSimple.cpp")
 target_link_libraries(Example_BindlessSimple PUBLIC Example_Common)
 add_dependencies(Example_BindlessSimple Shader_BindlessSimple)
 
+add_executable(Example_BindlessStreaming "BindlessStreaming.cpp")
+target_link_libraries(Example_BindlessStreaming PUBLIC Example_Common)
+add_dependencies(Example_BindlessStreaming Shader_BindlessStreaming)
+
 if (WIN32)
 	add_executable(Example_Win32_ScreenCapture "Win32_ScreenCapture.cpp")
 	target_link_libraries(Example_Win32_ScreenCapture PUBLIC Example_Common)

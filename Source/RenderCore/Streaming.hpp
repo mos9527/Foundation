@@ -23,6 +23,8 @@ namespace Foundation::RenderCore
         RHITextureLayout dstLayout;
         RHICommandList::CopyImageRegion region;
     };
+    using StreamingPromise = Promise<void>;
+    using StreamingFuture = SharedFuture<void>;
     /**
      * @brief Simple dynamic pool + linear allocator for streaming data to the GPU.
      *        Thread-safety is guaranteed for public methods.
@@ -69,7 +71,7 @@ namespace Foundation::RenderCore
         // Perform page GC sweep to reclaim space
         int Collect(std::unique_lock<Mutex>& lck);
 
-        template<typename T> using CmdEntry = Tuple<Vector<T>, SharedPromise<>>;
+        template<typename T> using CmdEntry = Tuple<Vector<T>, SharedPtr<StreamingPromise>>;
 
         // Schedule copies that's more likely to complete early (less command/pages touched) first
         // with a min-heap
@@ -85,7 +87,7 @@ namespace Foundation::RenderCore
         Vector<RHICommandPoolScopedHandle<RHICommandList>> mTransferCmds;
 
         size_t mSubmitCtr = 0;
-        using CompletionEntry = Tuple<size_t, PageRef, Vector<SharedPromise<>>>;
+        using CompletionEntry = Tuple<size_t, PageRef, Vector<SharedPtr<StreamingPromise>>>;
         Deque<CompletionEntry> mPendingCompletions;
         /**
          * @brief Submits GPU side transfers.
@@ -118,14 +120,14 @@ namespace Foundation::RenderCore
          * @note Destination buffer MUST have been created with @ref RHIBufferUsage::TransferDst, and
          *       is *shared* across at least the transfer queue.
          */
-        SharedPromise<> Write(Span<const char> data, RHIBuffer* dst, size_t offset);
+        StreamingFuture Write(Span<const char> data, RHIBuffer* dst, size_t offset);
         /**
          * @brief Schedules texture upload.
          * @note Destination texture MUST have been created with @ref RHITextureUsage::TransferDst, and
          *       is *shared* across at least the transfer queue.
          */
-        SharedPromise<> Write(Span<const char> data, RHITexture* dst, RHITextureLayout dstLayout,
-                              RHITextureAspectFlag aspect, uint32_t dstMip, uint32_t firstLayer);
+        StreamingFuture Write(Span<const char> data, RHITexture* dst, RHITextureAspectFlag aspect, uint32_t dstMip,
+                              uint32_t firstLayer);
         /**
          * @brief Get total active reference counts. A non-zero value indicates there are active GPU transfers.
          */

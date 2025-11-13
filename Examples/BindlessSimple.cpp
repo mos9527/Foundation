@@ -1,4 +1,3 @@
-#include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSDebugText.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
 #include <RenderCore/Bindless.hpp>
@@ -6,8 +5,8 @@ using namespace RenderUtils;
 struct PushConstant
 {
     float time;
-    uint32_t num_textures;
-    uint32_t first_texture;
+    uint32_t total;
+    uint32_t first;
 };
 constexpr uint32_t kNumTextures = 64;
 int main()
@@ -59,8 +58,8 @@ int main()
             {
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, PushConstant{
                     .time = Examples_GetTime(),
-                    .num_textures = kNumTextures,
-                    .first_texture = 0
+                    .total = kNumTextures,
+                    .first = 0
                 });
             }
         );

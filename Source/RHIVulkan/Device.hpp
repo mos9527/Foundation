@@ -144,8 +144,8 @@ namespace Foundation::RHI {
         RHIDeviceSampler* GetSampler(Handle handle) const override;
         void DestroySampler(Handle handle) override;
 
-        void ResetFences(Span<RHIDeviceFence*> fences) override;
-        void WaitForFences(Span<RHIDeviceFence*> fences, bool wait_all, size_t timeout) override;
+        void ResetFences(Span<RHIDeviceFence* const> fences) override;
+        bool WaitForFences(Span<RHIDeviceFence* const> fences, bool wait_all, size_t timeout) override;
 
         void SignalTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores) override;
         bool WaitForTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores, size_t timeout) override;
@@ -181,7 +181,7 @@ namespace Foundation::RHI {
         void WaitIdle() const override;
         void Submit(Span<const SubmitDesc>, RHIDeviceFence* completionFence) const override;
         void Present(PresentDesc const& desc) const override;
-        [[nodiscard]] uint32_t GetQueueIndex() const override { return GetVkQueueIndex(); }
+        [[nodiscard]] uint32_t GetQueueFamily() const override { return GetVkQueueIndex(); }
 
         void DebugSetObjectName(const char* name) override;
     };

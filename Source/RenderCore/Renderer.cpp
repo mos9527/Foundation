@@ -46,6 +46,12 @@ ResourceHandle Renderer::CreateSampler(RHIDeviceSampler::SamplerDesc const& desc
     mSetup->trackedSamplers.emplace_back(desc);
     return mSetup->trackedSamplers.size() - 1;
 }
+void Renderer::BindPass(PassHandle pass, PassHandle other)
+{
+    CHECK(mState == State::Setup);
+    mSetup->add_edge(pass, other, kInvalidHandle);
+    mSetup->trackedPasses[pass].bindPasses.emplace_back(other);
+}
 void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPipelineStage stage,
                                    RHIResourceAccess access) const
 {
@@ -836,7 +842,7 @@ void Renderer::FinalizePSOs()
     // Build PSOs for everything we need
     LOG_RUNTIME(Renderer, LogInfo, "Compiling Shaders");
     ThreadPool pool(std::thread::hardware_concurrency(), kMaxRenderPasses, mAllocator, "PSOComp");
-    Vector<SharedPromise<void>> futures(mAllocator);
+    Vector<SharedFuture<void>> futures(mAllocator);
     for (auto& pass : mSetup->trackedPasses)
     {
         if (!pass.used)
@@ -848,7 +854,7 @@ void Renderer::FinalizePSOs()
         auto& tpass = mSetup->trackedPasses[i];
         try
         {
-            futures[i]->get_future().get();
+            futures[i].get();
         }
         catch (std::runtime_error const& e)
         {
@@ -1196,7 +1202,7 @@ void Renderer::ExecutePerThreadCommandLists::Reset()
     graphicsPool->ResetAllCommandLists(false /* freeResources */);
     computePool->ResetAllCommandLists(false /* freeResources */);
 }
-RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateGraphics(int thread_id)
+RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateGraphics()
 {
     size_t index = graphicsCtr++;
     if (!graphicsCmds[index].IsValid())
@@ -1206,7 +1212,7 @@ RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateGraphics(int thr
     }
     return graphicsCmds[index].Get();
 }
-RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateCompute(int thread_id)
+RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateCompute()
 {
     size_t index = computeCtr++;
     if (!computeCmds[index].IsValid())
@@ -1218,15 +1224,17 @@ RHICommandList* Renderer::ExecutePerThreadCommandLists::AllocateCompute(int thre
 }
 RHICommandList* Renderer::ExecuteAllocateCommandList(RHIDeviceQueueType queue, int thread_id)
 {
+    CHECK_MSG(mState == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", mState);
     auto& swap = mExecutePerSwapCmds[mCurrentSync];
     auto& thread = swap[thread_id + 1]; // thread_id == -1 is the main thread
     switch (queue)
     {
     case RHIDeviceQueueType::Compute:
-        return thread->AllocateCompute(thread_id + 1);
-    default:
+        return thread->AllocateCompute();
     case RHIDeviceQueueType::Graphics:
-        return thread->AllocateGraphics(thread_id + 1);
+        return thread->AllocateGraphics();
+    default:
+        throw std::runtime_error("Unsupported queue type for command list allocation");
     }
 }
 void Renderer::ExecuteFrame()
@@ -1270,6 +1278,11 @@ void Renderer::ExecuteFrame()
         for (auto pass_handle : group.passes)
         {
             auto const& pass = mSetup->trackedPasses[pass_handle];
+            for (auto hdl : pass.bindPasses)
+            {
+                auto& tpass = mSetup->trackedPasses[hdl];
+                UpdateSyncGroup(hdl, tpass.frameExec);
+            }
             for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
             {
                 auto& tres = mSetup->trackedResources[hdl];
@@ -1342,6 +1355,7 @@ void Renderer::ExecuteFrame()
                     }
                     (*cmd)->EndTransition();
                     (*cmd)->DebugBegin(pass->name.c_str());
+                    pass->frameExec = r->mFrameSwapped;
                     pass->pass->Record(pass->handle, r, *cmd);
                     (*cmd)->DebugEnd();
                     (*cmd)->End();

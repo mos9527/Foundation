@@ -204,33 +204,35 @@ namespace Foundation::RenderCore
             size_t graphicsCtr{}, computeCtr{};
             ExecutePerThreadCommandLists(RHIDevice* device, size_t maxPerThread, Allocator* alloc);
             void Reset();
-            RHICommandList* AllocateGraphics(int thread_id);
-            RHICommandList* AllocateCompute(int thread_id);
+            RHICommandList* AllocateGraphics();
+            RHICommandList* AllocateCompute();
         };
         // [current sync][thread id]
         Vector<Vector<UniquePtr<ExecutePerThreadCommandLists>>> mExecutePerSwapCmds;
         /**
          * @param thread_id -1 for main thread, [0, kRecordThreadpoolSize] for workers
+         * @note  The lifetime of the command list is only valid between @ref ExecuteBegin calls.
+         *        Proper CPU-GPU synchronization is required to avoid race.
          * @return A command list allocated from the appropriate pool only used for the specified thread_id (dense)
          */
-        RHICommandList* ExecuteAllocateCommandList(RHIDeviceQueueType queue, int thread_id);
+        RHICommandList* ExecuteAllocateCommandList(RHIDeviceQueueType queue, int thread_id = -1);
         /**
          * @brief Helper to get the queue index of a queue type
          */
-        [[nodiscard]] uint32_t ExecuteGetQueueIndex(RHIDeviceQueueType queue) const
+        [[nodiscard]] uint32_t ExecuteGetQueueFamily(RHIDeviceQueueType queue) const
         {
             switch (queue)
             {
             case RHIDeviceQueueType::Undefined:
                 return kCommandQueueTransferIgnored;
             case RHIDeviceQueueType::Graphics:
-                return mGraphicsQueue->GetQueueIndex();
+                return mGraphicsQueue->GetQueueFamily();
             case RHIDeviceQueueType::Compute:
-                return mComputeQueue->GetQueueIndex();
+                return mComputeQueue->GetQueueFamily();
             default:
                 throw std::runtime_error("Unhandled queue type");
             }
-        };
+        }
         using ExecuteBarrierList = Vector<Pair<Variant<RHIBuffer*, RHITexture*>, RHICommandList::TransitionDesc>>;
         using ExecuteBarrierPCmdOrPBarrierList = Variant<RHICommandList*, ExecuteBarrierList*>;
         void ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, TrackedResource::SubresourceState& sta,
@@ -294,8 +296,6 @@ namespace Foundation::RenderCore
          *
          * This is only available at Setup time.
          *
-         * @ref createPassImpl() should be generally preferred over this.
-         *
          * @tparam T Type of @ref RenderPass to create.
          * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is
          * disabled.
@@ -303,7 +303,7 @@ namespace Foundation::RenderCore
          */
         template <typename T, typename... Args>
             requires std::is_base_of_v<RenderPass, T>
-        T* CreatePassImpl(StringView name, RHIDeviceQueueType queue, size_t priority, Args&&... args)
+        PassHandle CreatePassImpl(StringView name, RHIDeviceQueueType queue, size_t priority, Args&&... args)
         {
             CHECK(mState == State::Setup);
             CHECK_MSG(queue == RHIDeviceQueueType::Graphics || queue == RHIDeviceQueueType::Compute,
@@ -316,7 +316,7 @@ namespace Foundation::RenderCore
                 mAllocator, handle, name, queue,
                 ConstructUniqueBase<RenderPass, T>(mAllocator, std::forward<Args>(args)...), priority);
             mSetup->epilogue = handle;
-            return static_cast<T*>(mSetup->trackedPasses.back().pass.get());
+            return handle;
         }
         /**
          * @brief Create a render pass from a Setup(Renderer*, PassHandle) and Record(Renderer*, PassHandle,
@@ -326,19 +326,18 @@ namespace Foundation::RenderCore
          *
          * This can be called inside a pass's Setup() function, or after CreatePass() but before EndSetup().
          *
-         * @ref createPass() should be generally preferred over this.
          *
          * @param queue Queue to prefer running this pass in - this is a hint, and might be ignored if async compute is
          * disabled.
          * @param priority Priority of this pass. Higher priority passes are scheduled earlier.
          * @param setup Lambda of type `void(PassHandle self, Renderer*)` called at Setup time.
-         * @param record Lambda of type `void(PassHandel self, Renderer*, RHICommandList*)` called at Record time.
+         * @param record Lambda of type `void(PassHandle self, Renderer*, RHICommandList*)` called at Record time.
          * @param skip (Optional) Lambda of type `bool(PassHandle self, Renderer*)` called at Record time
          *                        to determine whether this pass should be skipped if true. This is by default always
          * false.
          */
         template <typename FSetup, typename FRecord, typename FSkip = FSkipDefault>
-        LambdaPass<FSetup, FRecord, FSkip>* CreatePass(StringView name, RHIDeviceQueueType queue, size_t priority,
+        PassHandle CreatePass(StringView name, RHIDeviceQueueType queue, size_t priority,
                                                        FSetup&& setup, FRecord&& record, FSkip&& skip = {})
         {
             return CreatePassImpl<LambdaPass<FSetup, FRecord, FSkip>>(
@@ -383,6 +382,13 @@ namespace Foundation::RenderCore
          */
         [[nodiscard]] ResourceHandle CreateSampler(RHIDeviceSampler::SamplerDesc const& desc) const;
 #pragma region Resource Binding
+        /**
+         * @brief Declares an inter-pass dependency, where the *other* pass should execute-before the current pass.
+         * @note  This is especially useful with passes without in-graph resource dependency, or the transitions are
+         *        difficult to track within the Renderer.
+         *        The ordering is enforced on recording, and on device execution.
+         */
+        void BindPass(PassHandle pass, PassHandle other);
         /**
          * @brief Binds shader file path to a certain pass at a certain stage.
          *
@@ -841,6 +847,11 @@ namespace Foundation::RenderCore
          * This includes recording command lists, submitting them to the appropriate queues,
          * and presenting the swapchain if enabled.
          *
+         * @note This is asynchronously executed - the function will return
+         *       once all passes have been *scheduled* for recording.
+         *       @ref EndExecute() is the synchronization point for the frame.
+         *       Meaning - if work is required during the frame, you can do it *after*
+         *       @ref ExecuteFrame() and *before* @ref EndExecute() to overlap recording work.
          * @note This MUST be called after BeginExecuteImpl(), and before EndExecuteImpl().
          *
          * @code{.cpp}
@@ -856,6 +867,7 @@ namespace Foundation::RenderCore
         /**
          * @brief Ends the execution phase and performs GPU submission, possibly with a @ref RHIDeviceQueue::Present
          * @note This MUST be called after ExecuteFrame(), and before BeginExecuteImpl() of the next frame.
+         * @note This function will block until all command list recording is finished, but will NOT wait for GPU.
          * @throws @ref RHISwapchainResizeException if swapchain is resized and has not been recreated.
          */
         void EndExecute();

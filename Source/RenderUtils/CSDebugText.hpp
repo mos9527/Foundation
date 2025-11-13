@@ -15,13 +15,17 @@ namespace Foundation::RenderUtils
             std::memcpy(szText, str.data(), len);
             szText[len] = '\0';
         }
+        int SetColor(int r, int g, int b, int a = 255)
+        {
+            return col32 = a << 24 | b << 16 | g << 8 | r;
+        }
     };
 #pragma pack(pop)
     /**
      * @breif Draw debug text overlay on top of the existing backbuffer content
      *        This is a port of https://github.com/zeux/niagara/blob/master/src/shaders/debugtext.comp.glsl
      */
-    inline auto* createCSDebugTextPassBackBuffer(Renderer* r, StringView name, Span<const CSDebugTextData> lines)
+    inline PassHandle createCSDebugTextPassBackBuffer(Renderer* r, StringView name, Span<const CSDebugTextData> lines)
     {
         return r->CreatePass(
             name, RHIDeviceQueueType::Graphics, 0u,

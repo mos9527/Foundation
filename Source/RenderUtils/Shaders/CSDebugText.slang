@@ -72,17 +72,18 @@ const static uint g_MicroProfileFont[1024*9/32] =
 };
 
 [shader("compute")]
-[numthreads(5, 9, 1)]
+[numthreads(6, 9, 1)]
 void debugText(uint gid : SV_GroupID, uint2 gtid : SV_GroupThreadID){
     uint ch = bitfieldExtract(pc.text[gid / 4], (gid % 4) * 8, 8);
     uint offsetU = bitfieldExtract(g_MicroProfileFontDescription[ch / 2], 16 - (ch % 2) * 16, 16) + gtid.x;
     uint bitOffset = offsetU + gtid.y * 1024;
     uint col = bitfieldExtract(g_MicroProfileFont[bitOffset / 32], 31 - (bitOffset % 32), 1);
-    uint shadow = bitfieldExtract(g_MicroProfileFont[(bitOffset - 1024) / 32], 31 - (bitOffset % 32), 1);
+    uint shadowBit = max(0, bitOffset - 1024); // shadow is one pixel down
+    uint shadow = bitfieldExtract(g_MicroProfileFont[shadowBit / 32], 31 - (shadowBit % 32), 1);
     if ((col | shadow) == 0) return;
     uint v = pc.col32;
     float4 fore = float4(v&255,v>>8&255,v>>16&255,v>>24&255)/255;
-    float4 color = lerp(float4(float3(0.25), 1.0), fore, col);
+    float4 color = fore * (col == 1u ? 1.0f : 0.5f);
     for (uint x=0;x < pc.scale;x++)
         for (uint y=0;y < pc.scale;y++)
             texture[(uint2(gid * 6, 0) + gtid) * pc.scale + uint2(x + pc.x,y + pc.y)] = color;

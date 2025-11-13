@@ -35,13 +35,19 @@ vk::ImageCreateInfo vkImageCreateInfoFromRHITextureDesc(RHITextureDesc const& de
 }
 uint32_t FillQueueFamilies(VulkanDevice const& device, uint32_t* dst, RHIDeviceQueueFlags queueFlags)
 {
-    uint32_t* p = dst;
+    Bitset<256> uniqueFamilies{};
     if (queueFlags & RHIDeviceQueueFlagsBits::Graphics)
-        *p++ = device.GetDeviceQueue(RHIDeviceQueueType::Graphics)->GetQueueIndex();
+        uniqueFamilies[device.GetDeviceQueue(RHIDeviceQueueType::Graphics)->GetQueueFamily()] = true;
     if (queueFlags & RHIDeviceQueueFlagsBits::Compute)
-        *p++ = device.GetDeviceQueue(RHIDeviceQueueType::Compute)->GetQueueIndex();
+        uniqueFamilies[device.GetDeviceQueue(RHIDeviceQueueType::Compute)->GetQueueFamily()] = true;
     if (queueFlags & RHIDeviceQueueFlagsBits::Transfer)
-        *p++ = device.GetDeviceQueue(RHIDeviceQueueType::Transfer)->GetQueueIndex();
+        uniqueFamilies[device.GetDeviceQueue(RHIDeviceQueueType::Transfer)->GetQueueFamily()] = true;
+    uint32_t* p = dst;
+    for (size_t i = 0; i < uniqueFamilies.size(); ++i)
+    {
+        if (uniqueFamilies[i])
+            *p++ = static_cast<uint32_t>(i);
+    }
     return p - dst;
 }
 VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc)

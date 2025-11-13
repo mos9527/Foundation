@@ -112,7 +112,9 @@ namespace Foundation::RenderCore
         Tuple<uint32_t, uint32_t, uint32_t> groupLocalSize{};
         size_t depth{}; // Depth in RG
         size_t ord{}; // Execution order
+        size_t frameExec{}; // Last frame this pass is executed
         /* -- Resources -- */
+        Vector<PassHandle> bindPasses; // Referenced, explicit pass execute-before.
         Vector<Tuple<ResourceHandle, RHIResourceAccess, RHIPipelineStage, RHITextureSubresourceRange,
                      RHITextureLayout>>
             textureUsages; // Referenced texture sub resources

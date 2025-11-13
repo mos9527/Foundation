@@ -24,6 +24,7 @@ int main()
         });
         CSDebugTextData lines[5];
         lines[0].x = lines[0].y = 16, lines[0].SetText("Streaming Example");
+        lines[1].x = lines[1].y = 40, lines[1].SetText("Enter to submit, Space to reset");
         renderer->BeginSetup();
         createCSClearBackBuffer(renderer, "Clear");
         createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);

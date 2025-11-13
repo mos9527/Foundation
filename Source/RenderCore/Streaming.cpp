@@ -99,13 +99,12 @@ namespace Foundation::RenderCore
         mTransferSemaphore = mDevice->CreateSemaphore(true /* timeline */);
         mWorker = Thread([this] { WorkerThread(); });
     }
-    SharedPromise<> StreamingPool::Write(Span<const char> data, RHIBuffer* dst, size_t offset)
+    StreamingFuture StreamingPool::Write(Span<const char> data, RHIBuffer* dst, size_t offset)
     {
         WriteList writes(mAllocator);
 
         std::unique_lock lock(mPageMutex);
         WritePages(lock, data, writes, 1);
-        SharedPromise<> promise = ConstructShared<std::promise<void>>(mAllocator);
         Vector<BufferCopyCommand> cmds(mAllocator);
         for (auto& [srcBuffer, srcOffset, size, pid] : writes)
         {
@@ -114,11 +113,12 @@ namespace Foundation::RenderCore
                 RHICommandList::CopyBufferRegion{.srcOffset = srcOffset, .dstOffset = offset, .size = size});
             offset += size;
         }
-        mBufferCopies.push({cmds.size(), {cmds, promise}});
-        return promise;
+        auto promise = ConstructShared<StreamingPromise>(mAllocator);
+        mBufferCopies.emplace(cmds.size(), CmdEntry{cmds, promise});
+        return promise->get_future();
     }
-    SharedPromise<> StreamingPool::Write(Span<const char> data, RHITexture* dst, RHITextureLayout dstLayout,
-                                         RHITextureAspectFlag aspect, uint32_t dstMip, uint32_t firstLayer)
+    StreamingFuture StreamingPool::Write(Span<const char> data, RHITexture* dst, RHITextureAspectFlag aspect,
+                                         uint32_t dstMip, uint32_t firstLayer)
     {
         CHECK_MSG(dst->mDesc.dimension == RHITextureDimension::E2D, "2D Textures ONLY");
         WriteList writes(mAllocator);
@@ -127,10 +127,10 @@ namespace Foundation::RenderCore
         // https://docs.vulkan.org/guide/latest/image_copies.html
         // Texture writes are aligned to row pitch (assuming tightly packed)
         auto extent = dst->mDesc.extent;
+        extent.x >>= dstMip, extent.y >>= dstMip;
         size_t numRows = extent.y;
         size_t rowPitch = extent.x * RHIResourceFormatSize(dst->mDesc.format);
-        size_t layerSize = rowPitch * extent.y * extent.z, numLayers = data.size() / layerSize;
-        SharedPromise<> promise = ConstructShared<std::promise<void>>(mAllocator);
+        size_t layerSize = rowPitch * extent.y, numLayers = data.size() / layerSize;
         Vector<TextureCopyCommand> cmds(mAllocator);
         size_t offset = 0;
         for (size_t layer = 0; layer < numLayers; layer++)
@@ -142,7 +142,7 @@ namespace Foundation::RenderCore
             {
                 int rows = size / rowPitch, offsetAll = offset / rowPitch, offsetRow = offsetAll % numRows;
                 cmds.emplace_back(
-                    pid, srcBuffer, dst, dstLayout,
+                    pid, srcBuffer, dst, RHITextureLayout::TransferDst,
                     RHICommandList::CopyImageRegion{.srcBufferOffset = static_cast<uint32_t>(srcOffset),
                                                     .dstLayer =
                                                         RHITextureSubresourceLayer{
@@ -156,8 +156,9 @@ namespace Foundation::RenderCore
                 offset += size;
             }
         }
-        mTextureCopies.push({cmds.size(), {cmds, promise}});
-        return promise;
+        auto promise = ConstructShared<StreamingPromise>(mAllocator);
+        mTextureCopies.emplace(cmds.size(), CmdEntry{cmds, promise});
+        return promise->get_future();
     }
     StreamingPool::~StreamingPool() { mShutdown = true; }
     String StreamingPool::DbgGetStatistics() const
@@ -216,7 +217,7 @@ namespace Foundation::RenderCore
         if (mBufferCopies.empty() && mTextureCopies.empty())
             return;
         std::unique_lock lock(mPageMutex);
-        Vector<SharedPromise<>> promises(mAllocator);
+        Vector<SharedPtr<StreamingPromise>> promises(mAllocator);
         auto& cmd = mTransferCmds.emplace_back(mCommandPool->CreateCommandList());
         PageRef refs{};
         cmd->Begin();

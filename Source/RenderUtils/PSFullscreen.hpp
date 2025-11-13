@@ -9,7 +9,7 @@ namespace Foundation::RenderUtils {
      * @param record is called once per frame during execution phase of the pass, after the pipeline is set.
      */
     template<typename FSetup, typename FRecord>
-    auto* createPSFullscreenPass(
+    PassHandle createPSFullscreenPass(
         Renderer* r,
         StringView name,        
         FSetup&& setup,
@@ -23,9 +23,9 @@ namespace Foundation::RenderUtils {
             },
             [=](PassHandle self, Renderer* r, RHI::RHICommandList* cmd) {
                 auto const& img_wh = r->GetSwapchainExtent();
-                r->CmdBeginGraphics(self, cmd, img_wh, {}, {});
                 r->CmdSetPipeline(self, cmd);
                 record(self, r, cmd);
+                r->CmdBeginGraphics(self, cmd, img_wh, {}, {});
                 cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
                     .SetScissor(0, 0, img_wh.x, img_wh.y);
                 cmd->Draw(3);
@@ -33,7 +33,7 @@ namespace Foundation::RenderUtils {
             });        
     }
     template<typename FSetup>
-    auto* createPSFullscreenPass(
+    PassHandle createPSFullscreenPass(
         Renderer* r,
         StringView name,        
         FSetup&& setup)
@@ -44,7 +44,7 @@ namespace Foundation::RenderUtils {
      * @brief Creates a full-screen triangle pass that renders a texture
      * to the current backbuffer.
      */
-    inline auto* createPSBackbufferBlitPass(
+    inline PassHandle createPSBackbufferBlitPass(
         Renderer* r,
         StringView name,
         ResourceHandle copy_sampler,

@@ -11,7 +11,7 @@ namespace Foundation::RenderUtils
         uint32_t w, h;
     };
 #pragma pack(pop)
-    inline auto* createCSClearBackBuffer(Renderer* r, StringView name, Math::float4 clearColor = {})
+    inline PassHandle createCSClearBackBuffer(Renderer* r, StringView name, Math::float4 clearColor = {})
     {
         return r->CreatePass(
             name, RHIDeviceQueueType::Graphics, 0u,

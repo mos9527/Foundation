@@ -290,7 +290,7 @@ auto VulkanDevice::CreateFence(bool signaled) -> RHIDeviceScopedObjectHandle<RHI
 RHIDeviceFence* VulkanDevice::GetFence(Handle handle) const { return mStorage.GetObjectPtr<RHIDeviceFence>(handle); }
 void VulkanDevice::DestroyFence(Handle handle) { mStorage.DestroyObject(handle); }
 
-void VulkanDevice::ResetFences(Span<RHIDeviceFence*> fences)
+void VulkanDevice::ResetFences(Span<RHIDeviceFence* const> fences)
 {
     StackArena arena;
     AllocatorStack alloc(arena);
@@ -300,7 +300,7 @@ void VulkanDevice::ResetFences(Span<RHIDeviceFence*> fences)
         vk_fences.emplace_back(static_cast<VulkanDeviceFence*>(fence)->GetVkFence());
     mDevice.resetFences(vk_fences);
 }
-void VulkanDevice::WaitForFences(Span<RHIDeviceFence*> fences, bool wait_all,
+bool VulkanDevice::WaitForFences(Span<RHIDeviceFence* const> fences, bool wait_all,
                                  size_t timeout)
 {
     StackArena arena;
@@ -310,7 +310,11 @@ void VulkanDevice::WaitForFences(Span<RHIDeviceFence*> fences, bool wait_all,
     for (auto const& fence : fences)
         vk_fences.emplace_back(static_cast<VulkanDeviceFence*>(fence)->GetVkFence());
     vk::Result res = mDevice.waitForFences(vk_fences, wait_all, timeout);
-    CHECK_MSG(res == vk::Result::eSuccess, "Failed waiting on fences");
+    if (res == vk::Result::eSuccess)
+        return true;
+    if (res == vk::Result::eTimeout)
+        return false;
+    CHECK_MSG(false, "failed to wait for fence. result={}", vk::to_string(res));
 }
 
 void VulkanDevice::SignalTimelineSemaphores(

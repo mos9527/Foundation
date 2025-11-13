@@ -5,8 +5,7 @@ namespace Foundation::Core
 {
     template<typename T = void> using Promise = std::promise<T>;
     template<typename T = void> using Future = std::future<T>;
-
-    template<typename T = void> using SharedPromise = SharedPtr<std::promise<T>>;
+    template<typename T = void> using SharedFuture = std::shared_future<T>;
 
     using CondVar = std::condition_variable;
     using Mutex = std::mutex;
