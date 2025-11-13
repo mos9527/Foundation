@@ -27,14 +27,14 @@ Span<uint32_t> generateCheckerboardMip(uint32_t mipLevel)
 }
 int main()
 {
-    SDL_Window* window = SDL_CreateWindow("BindlessStreaming Example", 768, 512, Examples_SDLWindowFlagsVulkan);
+    SDL_Window* window = SDL_CreateWindow("BindlessStreaming Example", 1024, 1024, Examples_SDLWindowFlagsVulkan);
     auto [renderer, app, device, swapchain] =
         Examples_InitVulkan(window,
                             {
                                 .enableAsyncCompute = false, .threads = 0, /* ST recording */
                             });
     CSDebugTextData lines[5];
-    lines[0].col32 = lines[1].col32 = lines[2].SetColor(0,255,255,255);
+    lines[0].col32 = lines[1].col32 = lines[2].SetColor(255,255,0,255);
     lines[0].x = lines[0].y = 16, lines[0].SetText("Bindless Streaming - Enter to submit a new mip");
     {
         BindlessPool bindings(device.Get(), GLOBAL_ALLOC, {.maxBindings = 1});
