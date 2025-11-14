@@ -423,12 +423,11 @@ void Renderer::CullPasses(PassHandle epilogue) const
             groups.emplace_back(static_cast<int>(groups.size()), mSetup->trackedPasses[exec[i]].queue, mAllocator);
         group.passes.insert(group.passes.end(), exec.begin() + i, exec.begin() + j);
         // Collect dependencies
-        for (auto pass : groups.back().passes)
+        for (auto pass : group.passes)
         {
             auto& tpass = mSetup->trackedPasses[pass];
             tpass.groupIndex = group.groupIndex;
             group.resources.insert(group.resources.end(), tpass.resources.begin(), tpass.resources.end());
-            group.allStages |= tpass.piplineStages;
         }
         // Sort and unique
         Ranges::sort(group.resources);
@@ -494,8 +493,16 @@ void Renderer::BuildPipelineState(PassHandle pass)
         }
         auto& module = shaders[shader_path];
         // In BindShader we have already guaranteed these to be unique per stage
-        if (stage == RHIShaderStageBits::Compute)
-            tracked.isComputePass = true;
+        if (stage & RHIShaderStageBits::Compute)
+            tracked.isComputePass = true, tracked.piplineStages |= RHIPipelineStageBits::ComputeShader;
+        if (stage & RHIShaderStageBits::Fragment)
+            tracked.piplineStages |= RHIPipelineStageBits::FragmentShader;
+        if (stage & RHIShaderStageBits::Vertex)
+            tracked.piplineStages |= RHIPipelineStageBits::VertexShader;
+        if (stage & RHIShaderStageBits::Mesh)
+            tracked.piplineStages |= RHIPipelineStageBits::MeshShader;
+        if (stage & RHIShaderStageBits::Task)
+            tracked.piplineStages |= RHIPipelineStageBits::TaskShader;
         bool found = false;
         for (auto const& ep : reflections[shader_path]->mEntrypoints)
         {
@@ -1278,21 +1285,31 @@ void Renderer::ExecuteFrame()
         for (auto pass_handle : group.passes)
         {
             auto const& pass = mSetup->trackedPasses[pass_handle];
+            // Explicit producers
             for (auto hdl : pass.bindPasses)
             {
                 auto& tpass = mSetup->trackedPasses[hdl];
                 UpdateSyncGroup(hdl, tpass.frameExec);
             }
+            // Textures
             for (auto [hdl, access, stage, range, layout] : pass.textureUsages)
             {
                 auto& tres = mSetup->trackedResources[hdl];
                 for (auto const& sta : tres.GetLastSubresourceStateOf(range))
                     UpdateSyncGroup(sta.lastProducer, sta.lastProducedFrame);
             }
+            // Buffers
             for (auto [hdl, access, stage] : pass.bufferUsages)
             {
                 auto& tres = mSetup->trackedResources[hdl];
                 UpdateSyncGroup(tres.lastBufferState.lastProducer, tres.lastBufferState.lastProducedFrame);
+            }
+            // Backbuffer
+            if (pass.backbufferRTV || pass.backbufferUAV)
+            {
+                auto& tres = mSetup->trackedResources[mSwaps[GetSwap()].backbuffer];
+                for (auto const& sta : tres.GetLastSubresourceStateOf(RHITextureSubresourceRange::Create()))
+                    UpdateSyncGroup(sta.lastProducer, sta.lastProducedFrame);
             }
         }
         /* -- Recording -- */
@@ -1467,18 +1484,24 @@ void Renderer::ExecuteFrame()
             // https://www.lunarg.com/wp-content/uploads/2021/08/Vulkan-Synchronization-SIGGRAPH-2021.pdf
             auto* wait = Construct<Vector<RHIDeviceQueue::TimelinePair>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
             auto* waitStage = Construct<Vector<RHIPipelineStage>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
+            RHIPipelineStage allStages{};
+            for (auto pass_handle : group.passes)
+            {
+                auto const& pass = mSetup->trackedPasses[pass_handle];
+                allStages |= pass.piplineStages;
+            }
             if (mSetup->executionNumGraphicsGroups && graphicsWaitValue >= 0 &&
                 group.queue == RHIDeviceQueueType::Compute)
-                wait->emplace_back(mGraphicsTimeline.Get(), graphicsWaitValue), waitStage->push_back(group.allStages);
+                wait->emplace_back(mGraphicsTimeline.Get(), graphicsWaitValue), waitStage->push_back(allStages);
             if (mSetup->executionNumComputeGroups && computeWaitValue >= 0 &&
                 group.queue == RHIDeviceQueueType::Graphics)
-                wait->emplace_back(mComputeTimeline.Get(), computeWaitValue), waitStage->push_back(group.allStages);
+                wait->emplace_back(mComputeTimeline.Get(), computeWaitValue), waitStage->push_back(allStages);
             if (needPresent)
             {
                 // Last group to submit, and we need to present
                 CHECK_MSG(group.queue == RHIDeviceQueueType::Graphics,
                           "FIXME-ExecuteFrame: Last pass ended on a non-Graphics queue");
-                waitStage->push_back(group.allStages | RHIPipelineStageBits::BottomOfPipe);
+                waitStage->push_back(allStages | RHIPipelineStageBits::BottomOfPipe);
                 auto pPresentSemaphores = ConstructSpan<RHIDeviceSemaphore*>(mExecuteAlloc.Ptr(), 2);
                 pPresentSemaphores[0] = mSwaps[mCurrentSync].present.Get();
                 pPresentSemaphores[1] = mSwaps[GetSwap()].render.Get();
@@ -1675,8 +1698,7 @@ String Renderer::DbgDumpExecutionGroups() const
     String out;
     for (const auto& group : mSetup->executionGroups)
     {
-        fmt::format_to(std::back_inserter(out), "{}: queue={}, stages={:b}, passes=[", group.groupIndex, group.queue,
-                       static_cast<uint32_t>(group.allStages));
+        fmt::format_to(std::back_inserter(out), "{}: queue={}, passes=[", group.groupIndex, group.queue);
         for (const auto& pass : group.passes)
             fmt::format_to(std::back_inserter(out), "{} ", pass);
         out.pop_back();

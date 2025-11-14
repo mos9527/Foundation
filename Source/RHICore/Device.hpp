@@ -42,7 +42,7 @@ namespace Foundation::RHI {
             Span<RHIDeviceSemaphore* const> waits;
         };
         virtual void Present(PresentDesc const& desc) const = 0;
-        [[nodiscard]] virtual uint32_t GetQueueFamily() const = 0;
+        [[nodiscard]] virtual uint32_t GetVkQueueFamily() const = 0;
         virtual void DebugSetObjectName(const char* name) = 0;
     };
     // https://docs.vulkan.org/samples/latest/samples/extensions/timeline_semaphore/README.html

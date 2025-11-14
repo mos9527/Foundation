@@ -37,11 +37,11 @@ uint32_t FillQueueFamilies(VulkanDevice const& device, uint32_t* dst, RHIDeviceQ
 {
     Bitset<256> uniqueFamilies{};
     if (queueFlags & RHIDeviceQueueFlagsBits::Graphics)
-        uniqueFamilies[device.GetDeviceQueue(RHIDeviceQueueType::Graphics)->GetQueueFamily()] = true;
+        uniqueFamilies[device.GetDeviceQueue(RHIDeviceQueueType::Graphics)->GetVkQueueFamily()] = true;
     if (queueFlags & RHIDeviceQueueFlagsBits::Compute)
-        uniqueFamilies[device.GetDeviceQueue(RHIDeviceQueueType::Compute)->GetQueueFamily()] = true;
+        uniqueFamilies[device.GetDeviceQueue(RHIDeviceQueueType::Compute)->GetVkQueueFamily()] = true;
     if (queueFlags & RHIDeviceQueueFlagsBits::Transfer)
-        uniqueFamilies[device.GetDeviceQueue(RHIDeviceQueueType::Transfer)->GetQueueFamily()] = true;
+        uniqueFamilies[device.GetDeviceQueue(RHIDeviceQueueType::Transfer)->GetVkQueueFamily()] = true;
     uint32_t* p = dst;
     for (size_t i = 0; i < uniqueFamilies.size(); ++i)
     {

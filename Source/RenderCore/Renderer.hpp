@@ -103,7 +103,6 @@ namespace Foundation::RenderCore
                 Vector<ResourceHandle> resources;
                 bool isLastGraphics = false;
                 bool isLastCompute = false;
-                RHIPipelineStage allStages{}; // All stages used in this group
 
                 ExecutionGroups(int groupIndex, RHIDeviceQueueType queue, Allocator* allocator) :
                     groupIndex(groupIndex), queue(queue), passes(allocator), resources(allocator)
@@ -226,9 +225,9 @@ namespace Foundation::RenderCore
             case RHIDeviceQueueType::Undefined:
                 return kCommandQueueTransferIgnored;
             case RHIDeviceQueueType::Graphics:
-                return mGraphicsQueue->GetQueueFamily();
+                return mGraphicsQueue->GetVkQueueFamily();
             case RHIDeviceQueueType::Compute:
-                return mComputeQueue->GetQueueFamily();
+                return mComputeQueue->GetVkQueueFamily();
             default:
                 throw std::runtime_error("Unhandled queue type");
             }

@@ -177,11 +177,12 @@ namespace Foundation::RHI {
         [[nodiscard]] const VulkanDevice& GetVulkanDevice() const { return mDevice; }
         [[nodiscard]] vk::raii::Queue GetVkQueue() const { return mQueue; }
         [[nodiscard]] uint32_t GetVkQueueIndex() const { return mQueueIndex; }
+        [[nodiscard]] uint32_t GetVkQueueFamily() const override { return mFamilyIndex; }
 
         void WaitIdle() const override;
         void Submit(Span<const SubmitDesc>, RHIDeviceFence* completionFence) const override;
         void Present(PresentDesc const& desc) const override;
-        [[nodiscard]] uint32_t GetQueueFamily() const override { return GetVkQueueIndex(); }
+
 
         void DebugSetObjectName(const char* name) override;
     };

@@ -15,7 +15,7 @@ VulkanCommandPool::VulkanCommandPool(const VulkanDevice& device, PoolDesc const&
     }
     vk::CommandPoolCreateInfo pool_info{
         .flags = flag,
-        .queueFamilyIndex = static_cast<VulkanDeviceQueue*>(desc.queue)->GetVkQueueIndex(),
+        .queueFamilyIndex = static_cast<VulkanDeviceQueue*>(desc.queue)->GetVkQueueFamily(),
     };
     mCommandPool = vk::raii::CommandPool(device.GetVkDevice(), pool_info, mDevice.GetVkAllocatorCallbacks());
     CHECK(mCommandPool != nullptr && "failed to create Vulkan command pool");
