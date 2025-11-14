@@ -1,32 +1,29 @@
 #include <Bindings/ImGui.hpp>
-#include "Examples.hpp"
-namespace Examples
+#include <RenderUtils/CSDebugText.hpp>
+using namespace RenderUtils;
+int main()
 {
-    /**
-     * @example ImGui.cpp
-     * Absolutely minimal example for integrating our ImGui backend.
-     */
-    class ImGuiDemoApp : public RenderApplication
+    SDL_Window* window = SDL_CreateWindow("DebugText Example", 800, 600, Examples_SDLWindowFlagsVulkan);
+    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, {
+        .threads = 0 /* ST recording */
+    });
+    CSDebugTextData lines[5];
+    lines[0].x = lines[0].y = 16, lines[0].SetText("ImGui Demo Window");
+    ImGui_ImplFoundation_SetupContextWithDefaultStyles();
+    renderer->BeginSetup();
+    ImGui_ImplFoundation_Init(device.Get(), window, renderer);
+    createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);
+    renderer->EndSetup();
+    SDL_Event event;
+    ExampleFpsCounter fps;
+    while (!Examples_ShouldClose(window, renderer, swapchain, &event))
     {
-        void OnDeviceSetup() override
-        {
-            ImGui_ImplFoundation_SetupContextWithDefaultStyles();
-            ImGui_ImplFoundation_Init(mDevice.Get(), GetNativeWindow(), mAlloc.Ptr());
-        }
-        void OnRendererSetup() override { ImGui_ImplFoundation_CreatePass(mRenderer.get(), "ImGui"); }
-        void OnBeforeFrame() override
-        {
-            ImGui_ImplFoundation_NewFrame();
-            ImGui::NewFrame();
-            ImGui::ShowDemoWindow();
-        }
-    };
-
-} // namespace Examples
-int main(int argc, char** argv)
-{
-    Examples::ImGuiDemoApp app;
-    app.Initialize<VulkanApplication>({.windowTitle = "ImGui"});
-    app.RunForever();
+        lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("FPS: {}", fps.Update()));
+        ImGui_ImplFoundation_NewFrame(&event);
+        ImGui::NewFrame();
+        ImGui::ShowDemoWindow();
+        Examples_NewFrame(renderer);
+    }
     ImGui_ImplFoundation_Shutdown();
+    Examples_DestroyVulkan(window, renderer, app, device, swapchain);
 }

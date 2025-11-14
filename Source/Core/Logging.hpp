@@ -40,8 +40,7 @@ void Foundation_Log(const char* tag, LogLevel level, fmt::format_string<Args...>
     }
 }
 
-#define LOG(TAG, LEVEL, FORMAT, ...) \
-    Foundation_Log(#TAG, LEVEL, FORMAT __VA_OPT__(,) __VA_ARGS__);
+#define LOG(TAG, LEVEL, FORMAT, ...) Foundation_Log(#TAG, LEVEL, FORMAT __VA_OPT__(,) __VA_ARGS__);
 
 #define CHECK(expr) if(!(expr)) { \
     LOG(Core, LogError, "Check failed: " #expr); \

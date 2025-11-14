@@ -682,8 +682,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
     if (!bindings.empty() && bindings[0].first.first != 0)
     {
         LOG(BuildPipelineState, LogError,
-                    "Binding set numbers must start from 0. Error at set {} binding {} in pass {}.",
-                    bindings[0].first.first, bindings[0].first.second, tracked.name);
+            "Binding set numbers must start from 0. Error at set {} binding {} in pass {}.", bindings[0].first.first,
+            bindings[0].first.second, tracked.name);
         CHECK_MSG(false, "Binding set numbers must start from 0.");
     }
     for (uint32_t i = 0, j = 0; i < bindings.size(); i = j)
@@ -692,8 +692,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
         // Check if our first binding is not 0
         if (bindings[i].first.second != 0)
         {
-            LOG(
-                BuildPipelineState, LogError,
+            LOG(BuildPipelineState, LogError,
                 "Binding numbers must start from 0 in each descriptor set. Error at set {} binding {} in pass {}.", set,
                 bindings[i].first.second, tracked.name);
             CHECK_MSG(false, "Binding binding numbers must start from 0.");
@@ -1048,12 +1047,13 @@ void Renderer::BeginExecute()
         wait.push_back(mSwaps[mCurrentSync].graphicsFence.Get());
     if (mSetup->executionAnyCompute)
         wait.push_back(mSwaps[mCurrentSync].computeFence.Get());
+    if (wait.size())
     {
         ZoneScopedN("Wait for GPU");
         mDevice->WaitForFences(wait, true, -1);
         mDevice->ResetFences(wait);
     }
-    if (mDesc.enablePresent)
+    if (mDesc.enablePresent && mSetup->executionAnyGraphics)
     {
         ZoneScopedN("Acquire Next Image");
         mCurrentSwap = mSwapchain->GetNextImage(-1, mSwaps[mCurrentSync].present, {});
@@ -1190,10 +1190,10 @@ Renderer::ExecutePerThreadCommandLists::ExecutePerThreadCommandLists(RHIDevice* 
                                                                      Allocator* alloc) :
     graphicsCmds(maxPerThread, alloc), computeCmds(maxPerThread, alloc)
 {
-    graphicsPool =
-        device->CreateCommandPool({.queue = device->GetDeviceQueue(RHIDeviceQueueType::Graphics), .type = RHICommandPoolType::Transient});
-    computePool =
-        device->CreateCommandPool({.queue = device->GetDeviceQueue(RHIDeviceQueueType::Compute), .type = RHICommandPoolType::Transient});
+    graphicsPool = device->CreateCommandPool(
+        {.queue = device->GetDeviceQueue(RHIDeviceQueueType::Graphics), .type = RHICommandPoolType::Transient});
+    computePool = device->CreateCommandPool(
+        {.queue = device->GetDeviceQueue(RHIDeviceQueueType::Compute), .type = RHICommandPoolType::Transient});
 }
 void Renderer::ExecutePerThreadCommandLists::Reset()
 {
@@ -1538,7 +1538,7 @@ void Renderer::EndExecute()
         }
     }
     // Present if needed
-    if (mDesc.enablePresent)
+    if (mDesc.enablePresent && mSetup->executionAnyGraphics)
     {
         ZoneScopedN("Present");
         mGraphicsQueue->Present(

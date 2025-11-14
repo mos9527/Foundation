@@ -154,7 +154,6 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
 }
 
 VulkanTexture::~VulkanTexture() {
-    Unmap();
     if (mShared && mImage != nullptr) {
         // If the image is shared (e.g. from a swapchain), we do not destroy it here.
         mImage.release();
@@ -164,22 +163,7 @@ VulkanTexture::~VulkanTexture() {
         vmaDestroyImage(allocator, mImage.release(), mAllocation);
     }
 }
-void* VulkanTexture::Map() {
-    if (!mMapped)
-        vmaMapMemory(mDevice.GetVkAllocator(), mAllocation, &mMapped);
-    return mMapped;
-}
-void VulkanTexture::Flush(size_t offset, size_t size) {
-    if (mDesc.resource.coherent || !mMapped)
-        return;
-    if (size == kFullSize)
-        size = VK_WHOLE_SIZE;
-    vmaFlushAllocation(mDevice.GetVkAllocator(), mAllocation, offset, size);
-}
-void VulkanTexture::Unmap() {
-    if (mMapped)
-        vmaUnmapMemory(mDevice.GetVkAllocator(), mAllocation);
-}
+
 RHITextureScopedHandle<RHITextureView> VulkanTexture::CreateTextureView(RHITextureViewDesc const& desc) {
     auto const& device = mDevice.GetVkDevice();
     using enum RHITextureDimension;

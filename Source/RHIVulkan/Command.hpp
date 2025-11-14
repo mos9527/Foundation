@@ -31,12 +31,7 @@ namespace Foundation::RHI {
     protected:
         const VulkanCommandPool& mCommandPool;
         vk::raii::CommandBuffer mCommandBuffer{ nullptr };
-        
-        ScopedArena mArena;
-        // Stack allocator for temporary allocations during command list execution
-        // Only valid within Begin(), End() clause
-        AllocatorStack mAllocator;
-        constexpr static size_t kArenaSize = 2LL * (1LL << 20); // 2 MB
+        Allocator* mAllocator = nullptr;
 
         struct Barriers {
             Vector<vk::ImageMemoryBarrier2> image;

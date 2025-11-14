@@ -27,6 +27,21 @@ namespace Foundation::RHI {
         /// How the buffer can be used by the device, initially
         RHIBufferUsage usage{};
         size_t size{}; // size in bytes
+
+        static RHIBufferDesc CreateStagingDesc(size_t size)
+        {
+            return {
+            .resource = {
+                    .heap = RHIDeviceHeapType::Upload,
+                    .hostAccess = RHIResourceHostAccess::WriteOnly,
+                    .shared = false,
+                    .coherent = true,
+                    .staging = true,
+                },
+                .usage = RHIBufferUsageBits::TransferSource,
+                .size = size,
+            };
+        }
     };
     class RHIBuffer;
     template<typename T> using RHIBufferScopedHandle = RHIScopedHandle<RHIBuffer, T>;
@@ -155,10 +170,6 @@ namespace Foundation::RHI {
         RHITexture(RHIDevice const& device, RHITextureDesc const& desc)
             : mDevice(device), mDesc(desc) {
         }
-
-        virtual void* Map() = 0;
-        virtual void Flush(size_t offset, size_t size) = 0;
-        virtual void Unmap() = 0;
 
         [[nodiscard]] virtual RHITextureScopedHandle<RHITextureView> CreateTextureView(RHITextureViewDesc const& desc) = 0;
         [[nodiscard]] virtual RHITextureView* GetImageView(Handle handle) const = 0;

@@ -88,8 +88,8 @@ FetchContent_Declare(
 # Font
 FetchContent_Declare(
     LxgwNeoXiHei
-    URL https://github.com/lxgw/LxgwNeoXiHei/releases/download/v1.223/LXGWNeoXiHei.ttf
-    URL_HASH SHA256=9937c0e201c6b4228fedd8a29a3f58cf31044295d57726005c17b30445a25871
+    URL https://github.com/lxgw/LxgwNeoXiHei/releases/download/v1.227/LXGWNeoXiHei.ttf
     DOWNLOAD_NO_EXTRACT TRUE
     DOWNLOAD_DIR ${ASSET_BUILD_DIR}
 )
+FetchContent_MakeAvailable(LxgwNeoXiHei)

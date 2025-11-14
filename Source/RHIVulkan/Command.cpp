@@ -44,7 +44,7 @@ void VulkanCommandPool::ResetAllCommandLists(bool freeResources) {
 }
 
 VulkanCommandList::VulkanCommandList(const VulkanCommandPool& commandPool) :
-    RHICommandList(commandPool), mCommandPool(commandPool), mArena(commandPool.GetDevice().GetAllocator(), kArenaSize) {
+    RHICommandList(commandPool), mCommandPool(commandPool) {
     vk::CommandBufferAllocateInfo alloc_info{
         .commandPool = *mCommandPool.GetVkCommandPool(),
         .level = vk::CommandBufferLevel::ePrimary,
@@ -55,16 +55,15 @@ VulkanCommandList::VulkanCommandList(const VulkanCommandPool& commandPool) :
 }
 
 RHICommandList& VulkanCommandList::Begin() {
-    mAllocator.Reset(mArena);
     bool isTransient = mCommandPool.mDesc.type == RHICommandPoolType::Transient;  
-    vk::CommandBufferBeginInfo beginInfo{.flags = isTransient ? vk::CommandBufferUsageFlagBits::eOneTimeSubmit
-                                                              : vk::CommandBufferUsageFlags{}};
+    vk::CommandBufferBeginInfo beginInfo{.flags = isTransient ? vk::CommandBufferUsageFlagBits::eOneTimeSubmit: vk::CommandBufferUsageFlags{}};
     mCommandBuffer.begin(beginInfo);
+    mAllocator = mCommandPool.GetDevice().GetAllocator();
     return *this;
 }
 RHICommandList& VulkanCommandList::BeginTransition() {
     CHECK(mAllocator && "Invalid command list states.");
-    mBarriers = ConstructUnique<Barriers>(&mAllocator, &mAllocator);
+    mBarriers = ConstructUnique<Barriers>(mAllocator, mAllocator);
     return *this;
 }
 #include "Resource.hpp"
@@ -218,7 +217,7 @@ RHICommandList& VulkanCommandList::CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* 
     auto* src_vulkan_buffer = static_cast<VulkanBuffer*>(src_buffer);
     auto* dst_vulkan_buffer = static_cast<VulkanBuffer*>(dst_buffer);
 
-    Vector<vk::BufferCopy> vk_regions(&mAllocator);
+    Vector<vk::BufferCopy> vk_regions(mAllocator);
     for (auto const& region : regions) {
         size_t size = region.size;
         if (size == kFullSize) {
@@ -245,7 +244,7 @@ RHICommandList& VulkanCommandList::CopyImage(RHITexture* src_image, RHITextureLa
     auto* src_vulkan_image = static_cast<VulkanTexture*>(src_image);
     auto* dst_vulkan_image = static_cast<VulkanTexture*>(dst_image);
 
-    Vector<vk::ImageCopy> vk_regions(&mAllocator);
+    Vector<vk::ImageCopy> vk_regions(mAllocator);
     vk_regions.reserve(regions.size());
     for (auto const& region : regions) {
         vk_regions.push_back(vk::ImageCopy{
@@ -284,7 +283,7 @@ RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHIT
     auto* src_vulkan_buffer = static_cast<VulkanBuffer*>(src_buffer);
     auto* dst_vulkan_image = static_cast<VulkanTexture*>(dst_image);
 
-    Vector<vk::BufferImageCopy> vk_regions(&mAllocator);
+    Vector<vk::BufferImageCopy> vk_regions(mAllocator);
     vk_regions.reserve(regions.size());
     for (auto const& region : regions) {
         vk_regions.push_back(vk::BufferImageCopy{
@@ -343,7 +342,7 @@ RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc) {
             .clearValue = clear_value
         };
         };
-    Vector<vk::RenderingAttachmentInfo> attachments(&mAllocator);
+    Vector<vk::RenderingAttachmentInfo> attachments(mAllocator);
     attachments.reserve(desc.colorAttachments.size());
     for (auto const& attachment : desc.colorAttachments) {
         attachments.push_back(vkRenderingAttachmentInfoFromAttachment(attachment));
@@ -366,8 +365,8 @@ RHICommandList& VulkanCommandList::BindVertexBuffer(uint32_t index, Span<RHIBuff
     CHECK(mAllocator && "Invalid command list states.");
     CHECK(buffers.size() == offsets.size() && "Buffers and offsets must have the same size.");
 
-    Vector<vk::Buffer> vk_buffers(&mAllocator);
-    Vector<vk::DeviceSize> vk_offsets(&mAllocator);
+    Vector<vk::Buffer> vk_buffers(mAllocator);
+    Vector<vk::DeviceSize> vk_offsets(mAllocator);
     for (size_t i = 0; i < buffers.size(); ++i) {
         auto* buffer = static_cast<VulkanBuffer*>(buffers[i]);
         vk_buffers.push_back(*buffer->GetVkBuffer());
@@ -403,7 +402,7 @@ RHICommandList& VulkanCommandList::BindDescriptorSet(
     size_t first
 ) {
     CHECK(mAllocator && "Invalid command list states.");
-    Vector<vk::DescriptorSet> vk_sets(&mAllocator);
+    Vector<vk::DescriptorSet> vk_sets(mAllocator);
     for (auto* set : sets) {
         CHECK(set && "Descriptor set must be valid.");
         auto* vulkan_set = static_cast<VulkanDeviceDescriptorSet*>(set);
@@ -436,12 +435,11 @@ RHICommandList& VulkanCommandList::Dispatch(uint32_t group_count_x, uint32_t gro
 void VulkanCommandList::End() {
     CHECK(mAllocator && "Invalid command list states.");
     mCommandBuffer.end();
-    mAllocator.Reset();
+    mAllocator = nullptr;
 }
 
 void VulkanCommandList::Reset() {
-    mAllocator.Reset(mArena);
-    mAllocator.Reset(mArena);
+    mAllocator = nullptr;
     mCommandBuffer.reset();
 }
 

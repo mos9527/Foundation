@@ -8,8 +8,8 @@ namespace Foundation::RenderCore
     using namespace RHI;
     /**
      * @brief Single persistent command list for immediate submissions.
-     * @note  This is prmiarily intended for quick one-shot commands, e.g. resource transitions, copies, etc.
-     *        Avoid using this in hot paths.
+     * @note  This is primarily intended for quick one-shot commands, e.g. resource transitions, copies, etc.
+     *        Avoid using this in hot path, or at all, if you could - which is usually the case.
      */
     class ImmediateContext
     {
@@ -25,5 +25,7 @@ namespace Foundation::RenderCore
         RHICommandList* operator->() { return mCommandList.Get(); }
 
         void Submit(RHIDeviceFence* completionFence = nullptr);
+
+        void WaitIdle();
     };
 }

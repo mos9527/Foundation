@@ -28,8 +28,6 @@ endif()
 target_link_libraries(ThirdParty_ImGui PUBLIC
     Foundation_RenderCore
 )
-# Custom font
-FetchContent_MakeAvailable(LxgwNeoXiHei)
 
 # Shader
 include(slangc_compile)

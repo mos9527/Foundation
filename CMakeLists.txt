@@ -61,6 +61,11 @@ set(DERIVED_DATA_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/data")
 set(SHADER_BUILD_DIR "${DERIVED_DATA_DIR}/shaders")
 set(ASSET_BUILD_DIR "${DERIVED_DATA_DIR}/assets")
 
+message(STATUS "** Runtime Output Directory: ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+message(STATUS "** Derived Data Directory: ${DERIVED_DATA_DIR}")
+message(STATUS "** Shader Build Directory: ${SHADER_BUILD_DIR}")
+message(STATUS "** Asset Build Directory: ${ASSET_BUILD_DIR}")
+
 file(MAKE_DIRECTORY ${DERIVED_DATA_DIR})
 file(MAKE_DIRECTORY ${SHADER_BUILD_DIR})
 file(MAKE_DIRECTORY ${ASSET_BUILD_DIR})

@@ -20,9 +20,9 @@ namespace Foundation::RHI {
     protected:
         VulkanDevice const& mDevice;
         VmaAllocation mAllocation{ nullptr };
-        void* mMapped{ nullptr };
 
         vk::raii::Buffer mBuffer{ nullptr };
+        void* mMapped{ nullptr };
 
         RHIObjectPool<VulkanBuffer> mAliases;
     public:
@@ -54,7 +54,6 @@ namespace Foundation::RHI {
         VmaAllocation mAllocation{ nullptr };
 
         vk::raii::Image mImage{ nullptr };
-        void* mMapped{ nullptr };
 
         RHIObjectPool<VulkanTexture> mAliases;
         RHIObjectPool<VulkanTextureView> mViews;
@@ -67,10 +66,6 @@ namespace Foundation::RHI {
         ~VulkanTexture() override;
 
         auto& GetVkImage() const { return mImage; }
-
-        void* Map() override;
-        void Flush(size_t offset, size_t size) override;
-        void Unmap() override;
 
         RHITextureScopedHandle<RHITextureView> CreateTextureView(RHITextureViewDesc const& desc) override;
         RHITextureView* GetImageView(Handle handle) const override;

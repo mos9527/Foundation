@@ -2,12 +2,11 @@
 #define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 #define IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DISABLE_DEFAULT_ALLOCATORS
-#include <imgui.h>
 #include <SDL3/SDL.h>
+#include <imgui.h>
 
 #include <RHICore/Device.hpp>
 #include <RenderCore/Renderer.hpp>
-
 /**
  * @brief Sampler type for added image.
  */
@@ -39,22 +38,27 @@ void ImGui_ImplFoundation_ImplCreateResources(Foundation::RenderCore::Renderer* 
 
 /* -- APIs -- */
 /**
- * @breif Initialize global context (@ref TexturePool, etc) for our ImGui backend
+ * @breif Initialize global context (@ref TexturePool, etc.) for our ImGui backend
+ *        Call this once context is created, within BeginSetup/EndSetup block of your @ref Renderer.
+ *
  * @param device @ref RHIDevice of the @ref Renderer
  * @param window @ref SDL_Window
- * @param allocator Allocator used for ImGui and internal state tracking.
+ * @param clear Whether to clear the render target before drawing.
+ * @param dependOn (Optional) A pass to depend on. You may want this if the prior pass writes to resources ImGui may renderer
+ *                 (e.g. through ImGui_ImplFoundation_AddImage). If the prior pass writes to the backbuffer as well, this
+ *                 is not required as dependency will be automatically created.
  *
  * @note You _MUST_ call @ref ImGui_ImplFoundation_Shutdown before the destruction of @ref RHIDevice related objects.
  *       See @ref Examples::ImGui or other ImGui backend usage for reference.
  */
-void ImGui_ImplFoundation_Init(Foundation::RHI::RHIDevice* device, SDL_Window* window, Foundation::Core::Allocator* allocator);
+void ImGui_ImplFoundation_Init(Foundation::RHI::RHIDevice* device, SDL_Window* window, Foundation::RenderCore::Renderer* renderer, Foundation::Core::StringView passName = "ImGui", bool clear = true, Foundation::RenderCore::PassHandle dependOn = Foundation::RenderCore::kInvalidHandle);
 
 /**
  * @brief Starts a new ImGui frame.
  * @note You should call this once per frame, before any other ImGui calls.
  *       See @ref Examples::ImGui or other ImGui backend usage for reference.
  */
-void ImGui_ImplFoundation_NewFrame();
+void ImGui_ImplFoundation_NewFrame(SDL_Event* event);
 
 /**
  * @brief Shuts down the ImGui backend and releases all resources.
@@ -69,7 +73,8 @@ void ImGui_ImplFoundation_Shutdown();
  * @param sampler The sampler to be used for the texture.
  * @return An ImTextureID that you can use with ImGui::Image() and other functions.
  */
-ImTextureID ImGui_ImplFoundation_AddImage(Foundation::RHI::RHITextureView* textureView,
+ImTextureID
+ImGui_ImplFoundation_AddImage(Foundation::RHI::RHITextureView* textureView,
                               ImGui_ImplFoundation_ImageSampler sampler = ImGuiImplFoundationImageSamplerLinear);
 
 /**
@@ -92,16 +97,15 @@ void ImGui_ImplFoundation_RemoveImage(ImTextureID textureID);
  * @param clear Whether to clear the render target before drawing.
  */
 template <typename FSetup>
-auto* ImGui_ImplFoundation_CreatePass(Foundation::RenderCore::Renderer* renderer, Foundation::Core::StringView name,
-                                      bool clear, FSetup&& setup)
+Foundation::RenderCore::PassHandle ImGui_ImplFoundation_CreatePass(Foundation::RenderCore::Renderer* renderer, Foundation::Core::StringView name, bool clear, FSetup&& setup)
 {
     using namespace Foundation;
     using namespace RenderCore;
     using namespace RHI;
     ResourceHandle vtxBuffer, idxBuffer, linSampler, nearSampler;
     ImGui_ImplFoundation_ImplCreateResources(renderer, vtxBuffer, idxBuffer, linSampler, nearSampler);
-    return createPass(
-        renderer, name, RHIDeviceQueueType::Graphics,
+    return renderer->CreatePass(
+        "ImGui", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
             ImGui_ImplFoundation_ImplPassSetup(self, r, vtxBuffer, idxBuffer, linSampler, nearSampler);
@@ -111,17 +115,6 @@ auto* ImGui_ImplFoundation_CreatePass(Foundation::RenderCore::Renderer* renderer
         { ImGui_ImplFoundation_ImplPassRecord(self, r, clear, cmd, vtxBuffer, idxBuffer); });
 }
 
-/**
- * @brief Creates a render pass that will draw the ImGui UI.
- * @param renderer The main renderer object.
- * @param name A name for the pass, for debugging purposes.
- * @param clear Whether to clear the render target before drawing. Defaults to true.
- */
-inline auto* ImGui_ImplFoundation_CreatePass(Foundation::RenderCore::Renderer* renderer,
-                                             Foundation::Core::StringView name, bool clear = true)
-{
-    return ImGui_ImplFoundation_CreatePass(renderer, name, clear, Foundation::RenderCore::FSetupDefault{});
-}
 
 /**
  * @brief Applies a default, vaguely stylish theme to the ImGui context.
