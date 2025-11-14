@@ -43,12 +43,12 @@ int main()
                 if (event.key.scancode == SDL_SCANCODE_RETURN)
                 {
                     // Simulate streaming more data
-                    LOG_RUNTIME(Example, LogDebug, "Write");
+                    LOG(Example, LogDebug, "Write");
                     stream.Write(data, buf.Get(), 0);
                 }
                 if (event.key.scancode == SDL_SCANCODE_SPACE)
                 {
-                    LOG_RUNTIME(Example, LogDebug, "Clean");
+                    LOG(Example, LogDebug, "Clean");
                     stream.Reset();
                 }
             }

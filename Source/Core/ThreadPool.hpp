@@ -22,12 +22,12 @@ namespace Foundation::Core
      * @tparam Lambda Type of the lambda function.
      * @tparam ReturnType Return type of the lambda function.
      */
-    template <typename Lambda, typename ReturnType>
+    template <typename Lambda, typename ReturnType, typename... Args>
     struct ThreadPoolLambdaJob final : public ThreadPoolJob
     {
         Lambda mFunc;
         Promise<ReturnType> mPromise;
-        ThreadPoolLambdaJob(Lambda&& func) : mFunc(func) {}
+        ThreadPoolLambdaJob(Lambda&& func) : mFunc(std::forward<Lambda>(func)) {}
         void Execute(size_t) noexcept override
         {
             try
@@ -80,17 +80,21 @@ namespace Foundation::Core
          * @note This by itself does not return a future or any way to get the result of the job
          *       It's up to the implementation of the job to provide a way to get the result.
          *       See also @ref ThreadPoolLambdaJob
+         * @return Stable pointer of the pushed job. Lifetime guaranteed until the job's completion.
          */
         template <typename T, typename... Args>
             requires std::is_base_of_v<ThreadPoolJob, T>
-        void PushImpl(Args&&... args)
+        T* PushImpl(Args&&... args)
         {
             if (mShutdown)
                 throw std::runtime_error("ThreadPool shutting down");
-            if (!mJobs.Push(ConstructUniqueBase<ThreadPoolJob, T>(mAllocator, std::forward<Args>(args)...)))
+            auto task = ConstructUniqueBase<ThreadPoolJob, T>(mAllocator, std::forward<Args>(args)...);
+            T* ptr = static_cast<T*>(task.get());
+            if (!mJobs.Push(std::move(task)))
                 throw std::runtime_error("Jobs full");
             mTotal.fetch_add(1, std::memory_order_relaxed);
             mTotal.notify_one();
+            return ptr;
         }
         /**
          * @brief Push a lambda job to the thread pool.
@@ -99,30 +103,21 @@ namespace Foundation::Core
         template <typename Lambda, typename... Args>
         auto Push(Lambda&& func, Args&&... args)
         {
-            if (mShutdown)
-                throw std::runtime_error("ThreadPool shutting down");
-            auto ThreadPoolPackagedLambda = [](Lambda&& fn, Args&&... fargs)
-            {
-                return [func = std::forward<Lambda>(fn), ... fargs = std::forward<Args>(fargs)]
-                { return func(std::forward<Args>(fargs)...); };
-            };
-            auto packaged = ThreadPoolPackagedLambda(std::forward<Lambda>(func), std::forward<Args>(args)...);
             using ReturnType = decltype(func(args...));
-            using PackagedType = decltype(packaged);
-            // Use the wrapped lambda type for the job
-            using LambdaType = ThreadPoolLambdaJob<PackagedType, ReturnType>;
-            auto task =
-                ConstructUniqueBase<ThreadPoolJob, LambdaType>(mAllocator, std::forward<PackagedType>(packaged));
-            auto ptr = static_cast<LambdaType*>(task.get());
-            if (!mJobs.Push(std::move(task)))
-                throw std::runtime_error("Jobs full");
-            mTotal.fetch_add(1, std::memory_order_relaxed);
-            mTotal.notify_one();
+            auto LambdaFn = [](Lambda&& fn, Args&&... fargs) // Capture erasure madness
+            {
+                return [func = std::forward<Lambda>(fn), ... args = std::forward<Args>(fargs)]
+                { return func(std::forward<Args>(args)...); };
+            };
+            auto LambdaObj = LambdaFn(std::forward<Lambda>(func), std::forward<Args>(args)...);
+            using LambdaType = decltype(LambdaObj);
+            auto ptr = PushImpl<ThreadPoolLambdaJob<LambdaType, ReturnType>>(
+                std::forward<LambdaType>(LambdaObj));
             return SharedFuture<ReturnType>(ptr->mPromise.get_future());
         }
         /**
          * @brief Shutdown the @ref ThreadPool, potentially cancelling all pending jobs.
-         * @note This does not cancel running jobs.
+         * @note This does not cancel running jobs, but prevents any new jobs from being run/scheduled.
          */
         void Shutdown();
         /**
@@ -131,8 +126,21 @@ namespace Foundation::Core
          */
         void Join();
         /**
-         * Shutdown, without waiting for pending jobs.
+         * @brief Shutdown, without waiting for pending jobs.
          */
         ~ThreadPool();
+
+        [[nodiscard]] size_t GetPendingJobCount() const noexcept
+        {
+            return mTotal.load(std::memory_order_relaxed) - mComplete.load(std::memory_order_relaxed);
+        }
+        [[nodiscard]] size_t GetCompletedJobCount() const noexcept
+        {
+            return mComplete.load(std::memory_order_relaxed);
+        }
+        [[nodiscard]] size_t GetTotalJobCount() const noexcept
+        {
+            return mTotal.load(std::memory_order_relaxed);
+        }
     };
 } // namespace Foundation::Core

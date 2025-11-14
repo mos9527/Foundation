@@ -117,7 +117,7 @@ void debugText(uint gid : SV_GroupID, uint2 gtid : SV_GroupThreadID){
     if ((shadowUV | shadowV | col) == 0) return;
     uint v = pc.col32;
     float4 fore = float4(v&255,v>>8&255,v>>16&255,v>>24&255)/255;
-    float4 color = fore * (col == 1u ? 1.0f : 0.25f);
+    float4 color = col == 1u ? fore : float4(float3(0),1);
     color.a = 1.0f;
     for (uint x=0;x < pc.scale;x++)
         for (uint y=0;y < pc.scale;y++)

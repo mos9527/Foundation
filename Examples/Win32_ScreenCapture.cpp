@@ -140,7 +140,7 @@ namespace Examples
             if (OnKeyDown(GLFW_KEY_SPACE))
             {
                 mShaderIndex = (mShaderIndex + 1) % std::size(kShaders);
-                LOG_RUNTIME(Win32_ScreenCaptureApp, info, "Switched to shader: {}", kShaders[mShaderIndex]);
+                LOG(Win32_ScreenCaptureApp, info, "Switched to shader: {}", kShaders[mShaderIndex]);
                 ResetRendererOnNextFrame();
             }
             if (OnKeyDown(GLFW_KEY_C))

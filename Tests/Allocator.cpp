@@ -21,14 +21,14 @@ auto bench_one(Allocator* allocator) {
 template<typename Func> void bench_many(const char* desc, Func&& func) {
 	chrono::steady_clock::time_point start = chrono::steady_clock::now();
 	for (size_t i = 0; i < benchCount; ++i) func();
-    LOG_RUNTIME(Allocator, info, "{}: {} ms", desc,
+    LOG(Allocator, info, "{}: {} ms", desc,
         chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count());
 }
 
 int main() {
     void* memory = malloc(arenaSize);
     Arena arena(memory, arenaSize);
-	LOG_RUNTIME(Allocator, info, "Benchmark: {} allocations of {} bytes, repeated {} times", allocCount, sizeof(int), benchCount);
+	LOG(Allocator, info, "Benchmark: {} allocations of {} bytes, repeated {} times", allocCount, sizeof(int), benchCount);
 	bench_many("Stack Arena", [&]() {
 		AllocatorStack alloc(arena);
 		bench_one(&alloc);

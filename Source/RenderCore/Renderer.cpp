@@ -16,10 +16,10 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevic
     mGraphicsQueue->DebugSetObjectName("Graphics Queue");
     mComputeQueue = mDevice->GetDeviceQueue(RHIDeviceQueueType::Compute);
     mComputeQueue->DebugSetObjectName("Compute Queue");
-    LOG_RUNTIME(Renderer, LogDebug, "** Renderer Init **");
-    LOG_RUNTIME(Renderer, LogDebug, "Async Compute:\t{}", mDesc.enableAsyncCompute);
-    LOG_RUNTIME(Renderer, LogDebug, "Presentation:\t{}", mDesc.enablePresent);
-    LOG_RUNTIME(Renderer, LogDebug, "Threads:\t{}", mDesc.threads);
+    LOG(Renderer, LogDebug, "** Renderer Init **");
+    LOG(Renderer, LogDebug, "Async Compute:\t{}", mDesc.enableAsyncCompute);
+    LOG(Renderer, LogDebug, "Presentation:\t{}", mDesc.enablePresent);
+    LOG(Renderer, LogDebug, "Threads:\t{}", mDesc.threads);
 }
 
 void Renderer::BeginSetup()
@@ -306,7 +306,7 @@ void Renderer::EndSetup()
     }
     else
     {
-        LOG_RUNTIME(Renderer, LogWarn, "No passes created in render graph.");
+        LOG(Renderer, LogWarn, "No passes created in render graph.");
     }
     mState = State::PostSetup;
 }
@@ -459,9 +459,9 @@ void Renderer::CullPasses(PassHandle epilogue) const
                 g.computeGroupIndex = mSetup->executionNumComputeGroups++;
         }
     }
-    LOG_RUNTIME(Renderer, LogDebug, "** Render Graph GraphViz **\n{}", DbgDumpGraphviz());
-    LOG_RUNTIME(Renderer, LogDebug, "** Render Graph Execution Order **\n{}", DbgDumpActivePasses());
-    LOG_RUNTIME(Renderer, LogDebug, "** Render Graph Execution Groups **\n{}", DbgDumpExecutionGroups());
+    LOG(Renderer, LogDebug, "** Render Graph GraphViz **\n{}", DbgDumpGraphviz());
+    LOG(Renderer, LogDebug, "** Render Graph Execution Order **\n{}", DbgDumpActivePasses());
+    LOG(Renderer, LogDebug, "** Render Graph Execution Groups **\n{}", DbgDumpExecutionGroups());
 }
 /* -- PSO -- */
 void Renderer::BuildPipelineState(PassHandle pass)
@@ -473,7 +473,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
     // Load shader bytecode
     if (tracked.shaders.empty())
         return; // Pass with no shaders
-    LOG_RUNTIME(Renderer, LogInfo, "** Building PSO for {} [{}] **", tracked.name, pass);
+    LOG(Renderer, LogInfo, "** Building PSO for {} [{}] **", tracked.name, pass);
     Vector<char> data(mAllocator);
     Map<String, RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(mAllocator);
     Map<String, UniquePtr<Shader>> reflections(mAllocator);
@@ -481,7 +481,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
     {
         if (!shaders.contains(shader_path))
         {
-            LOG_RUNTIME(Renderer, LogDebug, "Loading shader {}", shader_path);
+            LOG(Renderer, LogDebug, "Loading shader {}", shader_path);
             std::error_code ec;
             auto size = std::filesystem::file_size(shader_path, ec);
             CHECK_MSG(!ec, "Failed to open shader file {}: {}", shader_path, ec.message());
@@ -632,16 +632,16 @@ void Renderer::BuildPipelineState(PassHandle pass)
         tracked.pExternalDescriptorSets.end());
     if (!refl_var_bind_points.empty() || backbufferUAVUsage.has_value())
     {
-        LOG_RUNTIME(Renderer, LogDebug, "Pipeline Parameters");
+        LOG(Renderer, LogDebug, "Pipeline Parameters");
         for (auto& [name, dtype] : var_types)
         {
             if (!refl_var_bind_points.contains(name))
                 continue;
             auto [set, binding] = refl_var_bind_points[name];
-            LOG_RUNTIME(Renderer, LogDebug, "\t{}: set {}, binding {}, type {}", name, set, binding, dtype);
+            LOG(Renderer, LogDebug, "\t{}: set {}, binding {}, type {}", name, set, binding, dtype);
         }
         if (backbufferUAVUsage.has_value())
-            LOG_RUNTIME(Renderer, LogDebug, "\tSet {}: Backbuffer UAV", backbufferUAVUsage.value());
+            LOG(Renderer, LogDebug, "\tSet {}: Backbuffer UAV", backbufferUAVUsage.value());
     }
     // [[set, binding], name]
     Vector<Pair<Pair<uint32_t, uint32_t>, String>> bindings(mAllocator);
@@ -681,7 +681,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
     // Check if our first set is not 0
     if (!bindings.empty() && bindings[0].first.first != 0)
     {
-        LOG_RUNTIME(BuildPipelineState, LogError,
+        LOG(BuildPipelineState, LogError,
                     "Binding set numbers must start from 0. Error at set {} binding {} in pass {}.",
                     bindings[0].first.first, bindings[0].first.second, tracked.name);
         CHECK_MSG(false, "Binding set numbers must start from 0.");
@@ -692,7 +692,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
         // Check if our first binding is not 0
         if (bindings[i].first.second != 0)
         {
-            LOG_RUNTIME(
+            LOG(
                 BuildPipelineState, LogError,
                 "Binding numbers must start from 0 in each descriptor set. Error at set {} binding {} in pass {}.", set,
                 bindings[i].first.second, tracked.name);
@@ -718,7 +718,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
         ds->DebugSetObjectName(fmt::format("Descriptor Set {} of {} [{}]", set, tracked.name, pass).c_str());
         tracked.pDescriptorSets.push_back(ds.Get());
         // Update bindings
-        LOG_RUNTIME(Renderer, LogDebug, "Descriptor Set {} Bindings", set);
+        LOG(Renderer, LogDebug, "Descriptor Set {} Bindings", set);
         for (size_t k = i; k < j; k++)
         {
             auto const& [bind, name] = bindings[k];
@@ -736,7 +736,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
                               "Shader expects a Sampler at {}, but it's not bound by pass {}", name, tracked.name);
                     auto& sampler_handle = var_samplers[name];
                     auto* sampler = DerefSampler(sampler_handle);
-                    LOG_RUNTIME(Renderer, LogDebug, "\t[Sampler] {}: binding {}, type {}", name, binding, type);
+                    LOG(Renderer, LogDebug, "\t[Sampler] {}: binding {}, type {}", name, binding, type);
                     ds->Update({.binding = binding, .type = type, .images = {{{.sampler = sampler}}}});
                     break;
                 }
@@ -744,7 +744,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
             case StorageImage:
                 {
                     auto* view = DerefTextureView(hdl);
-                    LOG_RUNTIME(Renderer, LogDebug, "\t[Texture] {}: binding {}, type {}", name, binding, type);
+                    LOG(Renderer, LogDebug, "\t[Texture] {}: binding {}, type {}", name, binding, type);
                     ds->Update({.binding = binding,
                                 .type = type,
                                 .images = {{{.imageView = view,
@@ -755,7 +755,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
             case UniformBuffer:
             case StorageBuffer:
                 {
-                    LOG_RUNTIME(Renderer, LogDebug, "\t[Buffer] {}: binding {}, type {}", name, binding, type);
+                    LOG(Renderer, LogDebug, "\t[Buffer] {}: binding {}, type {}", name, binding, type);
                     auto* buf = DerefResource(hdl).Get<RHIBuffer*>();
                     ds->Update({.binding = binding, .type = type, .buffers = {{{.buffer = buf}}}});
                     break;
@@ -818,7 +818,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
     }
     else
     {
-        LOG_RUNTIME(Renderer, LogDebug, "Pass {} has no shader stages, and thus no PSO is created.", tracked.name);
+        LOG(Renderer, LogDebug, "Pass {} has no shader stages, and thus no PSO is created.", tracked.name);
     }
 }
 void Renderer::FinalizePSOs()
@@ -830,17 +830,17 @@ void Renderer::FinalizePSOs()
     {
         Vector<RHIDeviceDescriptorPool::PoolDesc::Binding> bindings(mAllocator);
         bindings.reserve(mSetup->bindingCounts.size());
-        LOG_RUNTIME(Renderer, LogDebug, "** Descriptor Pool **");
+        LOG(Renderer, LogDebug, "** Descriptor Pool **");
         for (auto& [type, count] : mSetup->bindingCounts)
         {
-            LOG_RUNTIME(Renderer, LogDebug, "\t{}: {}", type, count);
+            LOG(Renderer, LogDebug, "\t{}: {}", type, count);
             bindings.push_back({.type = type, .maxCount = count});
         }
         mDescPool = mDevice->CreateDescriptorPool({bindings});
         mDescPool->DebugSetObjectName("Renderer Descriptor Pool");
     }
     // Build PSOs for everything we need
-    LOG_RUNTIME(Renderer, LogInfo, "Compiling Shaders");
+    LOG(Renderer, LogInfo, "Compiling Shaders");
     ThreadPool pool(std::thread::hardware_concurrency(), kMaxRenderPasses, mAllocator, "PSOComp");
     Vector<SharedFuture<void>> futures(mAllocator);
     for (auto& pass : mSetup->trackedPasses)
@@ -858,11 +858,11 @@ void Renderer::FinalizePSOs()
         }
         catch (std::runtime_error const& e)
         {
-            LOG_RUNTIME(Renderer, LogError, "Failed to build PSO for pass {}: {}", tpass.name, e.what());
+            LOG(Renderer, LogError, "Failed to build PSO for pass {}: {}", tpass.name, e.what());
             throw; // Failfast
         }
     }
-    LOG_RUNTIME(Renderer, LogInfo, "Compiled Shaders.");
+    LOG(Renderer, LogInfo, "Compiled Shaders.");
 }
 void Renderer::FinalizeResources()
 {
@@ -988,12 +988,12 @@ void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain)
     CHECK_MSG(mDesc.enablePresent, "Cannot set swapchain when the renderer is not created with Present support");
     CHECK_MSG(swapchain.IsValid(), "Cannot set swapchain when swapchain is not valid");
     mFrameSwaps = swapchain->GetImages().size();
-    LOG_RUNTIME(Renderer, LogInfo, "Swapchain uses {} back buffers", mFrameSwaps);
+    LOG(Renderer, LogInfo, "Swapchain uses {} back buffers", mFrameSwaps);
     if (mState == State::Execute)
     {
         // If changing swapchain during execution (e.g. due to resize exception)
         // Wait for GPU to be idle
-        LOG_RUNTIME(Renderer, LogInfo, "Swapchain is already in execute??");
+        LOG(Renderer, LogInfo, "Swapchain is already in execute??");
         mDevice->WaitIdle();
         mState = State::PostSetup;
     }

@@ -9,7 +9,7 @@ VkDebugLayerCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::Debu
                      const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, void*)
 {
     constexpr LogLevel kLevels[] = {LogDebug, LogInfo, LogWarn, LogError};
-    LOG_RUNTIME(VkDebugLayer, kLevels[std::countr_zero(static_cast<uint32_t>(severity)) >> 2 & 3], "{}", pCallbackData->pMessage);
+    LOG(VkDebugLayer, kLevels[std::countr_zero(static_cast<uint32_t>(severity)) >> 2 & 3], "{}", pCallbackData->pMessage);
     return vk::False;
 }
 VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, const char* engineName,
@@ -29,10 +29,10 @@ VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, 
     // Add our own extensions
     instanceExtensions.insert(instanceExtensions.end(), kVulkanInstanceExtensions,
                               kVulkanInstanceExtensions + std::size(kVulkanInstanceExtensions));
-    LOG_RUNTIME(VulkanApplication, LogDebug, "Enabling Extensions:")
+    LOG(VulkanApplication, LogDebug, "Enabling Extensions:")
     for (auto ext : instanceExtensions)
     {
-        LOG_RUNTIME(VulkanApplication, LogDebug, "\t{}", ext);
+        LOG(VulkanApplication, LogDebug, "\t{}", ext);
     }
     Vector<const char*> instanceLayers(mAllocator);
 #if FOUNDATION_RHIVULKAN_VVL

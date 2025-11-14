@@ -82,16 +82,8 @@ int main()
             }
         });
         uint32_t mipReady = 13, mipView = 13;
-        createPSFullscreenPass(
-            renderer, "Atlas Display",
-            [&](PassHandle self, Renderer* r)
-            {
-                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/BindlessStreaming.spv");
-                r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(PushConstant));
-                r->BindTextureSampler(self, nearSampler, "sampler");
-                r->BindDescriptorSet(self, "textures", bindings.GetDescriptorSet(), bindings.GetDescriptorSetLayout());
-            },
-            [&](PassHandle self, Renderer* r, RHICommandList* cmd)
+        auto transitionPass = renderer->CreatePass("Transition", RHIDeviceQueueType::Graphics, 0,
+            FSetupDefault{}, [&](PassHandle, Renderer*, RHICommandList* cmd)
             {
                 if (mipReady != mipView)
                 {
@@ -111,6 +103,21 @@ int main()
                     cmd->EndTransition();
                     mipReady = mipView;
                 }
+            });
+        createPSFullscreenPass(
+            renderer, "Atlas Display",
+            [&](PassHandle self, Renderer* r)
+            {
+                // Ensure transition pass happens first, in both recording
+                // and GPU execution.
+                r->BindPass(self, transitionPass);
+                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/BindlessStreaming.spv");
+                r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(PushConstant));
+                r->BindTextureSampler(self, nearSampler, "sampler");
+                r->BindDescriptorSet(self, "textures", bindings.GetDescriptorSet(), bindings.GetDescriptorSetLayout());
+            },
+            [&](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
                 PushConstant pc{
                     .time = 0.0f,
                     .binding = binding,
@@ -124,6 +131,7 @@ int main()
         SDL_Event event;
 
         StreamingFuture lastFuture;
+        ThreadPool uploadPool(1, 1, GLOBAL_ALLOC, "UploadPool");
         while (!Examples_ShouldClose(window, renderer, swapchain, &event))
         {
             lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("FPS: {}", fps.Update()));
@@ -131,17 +139,20 @@ int main()
             lines[2].SetText(fmt::format("Streaming Pool: {}", stream.DbgGetStatistics()));
             if (lastFuture.valid() && lastFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready)
             {
-                LOG_RUNTIME(Example, LogDebug, "Mip {} upload complete", mipView);
+                LOG(Example, LogDebug, "Mip {} upload complete", mipView);
                 mipView--, lastFuture = {};
             }
-            if (mipView != 0 && !lastFuture.valid() && event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_RETURN)
+            if (mipView != 0 && !uploadPool.GetPendingJobCount() && !lastFuture.valid() && event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_RETURN)
             {
                 // Upload a new mip, bottom up
-                // TODO: Actually thread-safe. Demonstrate?
                 uint32_t mipPrep = mipView - 1;
                 const uint32_t dim = 1u << (12 - mipPrep);
-                LOG_RUNTIME(Example, LogDebug, "Streaming mip {} {}x{}", mipPrep, dim, dim);
-                lastFuture = stream.Write(generateCheckerboardMip(mipPrep).AsBytes(), tex.Get(), RHITextureAspectFlagBits::Color, mipPrep, 0);
+                // Stream ops are thread-safe by design. Use a thread pool to simulate real-world usage
+                uploadPool.Push([=, &lastFuture, &stream, &tex]
+                {
+                    LOG(Upload, LogDebug, "Worker streaming mip {} {}x{}", mipPrep, dim, dim);
+                    lastFuture = stream.Write(generateCheckerboardMip(mipPrep).AsBytes(), tex.Get(), RHITextureAspectFlagBits::Color, mipPrep, 0);
+                });
             }
             Examples_NewFrame(renderer);
         }

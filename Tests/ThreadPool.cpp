@@ -10,15 +10,15 @@ int main()
     auto job = []
     {
         auto id =std::hash<std::thread::id>()(std::this_thread::get_id());
-        LOG_RUNTIME(Job, info, "Starting in {}", id);
+        LOG(Job, info, "Starting in {}", id);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        LOG_RUNTIME(Job, info, "Done in {}", id);
+        LOG(Job, info, "Done in {}", id);
         return id;
     };
     auto fut1 = pool.Push(job);
     auto fut2 = pool.Push(job);
     printf("wait...\n");
     pool.Join();
-    LOG_RUNTIME(fut1, info, "{}", fut1->get_future().get());
-    LOG_RUNTIME(fut2, info, "{}", fut2->get_future().get());
+    LOG(fut1, info, "{}", fut1->get_future().get());
+    LOG(fut2, info, "{}", fut2->get_future().get());
 }

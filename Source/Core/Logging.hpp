@@ -1,9 +1,10 @@
 #pragma once
 #include <cstdio>
+#include <chrono>
 #include <string_view>
 #include <fmt/format.h>
+#include <fmt/chrono.h>
 
-#define LOG_STREAM stderr
 enum LogLevel
 {
     LogDebug,
@@ -16,36 +17,38 @@ constexpr const char* format_as(LogLevel level)
 {
     switch (level)
     {
-    case LogDebug: return "DEBUG";
-    case LogInfo: return "INFO";
-    case LogWarn: return "WARN";
-    case LogError: return "ERROR";
+    case LogDebug: return "D";
+    case LogInfo: return  "I";
+    case LogError: return "E";
+    case LogWarn: return "W";
     }
 }
+
 // NOLINTEND
+
+extern void Foundation_LogImpl(LogLevel level, const char* tag, std::string_view formatted);
 template<typename ...Args>
-void foundationLogRuntime(const char* tag, LogLevel level, fmt::format_string<Args...> format, Args&&... args)
+void Foundation_Log(const char* tag, LogLevel level, fmt::format_string<Args...> format, Args&&... args)
 {
     constexpr size_t kN = sizeof...(Args);
     if constexpr (kN > 0)
     {
-        auto message = fmt::format(format, std::forward<Args>(args)...);
-        fprintf(LOG_STREAM, fmt::format("[{}@{}] {}\n", level, tag, message).c_str());
+        Foundation_LogImpl(level, tag, fmt::format(format, std::forward<Args>(args)...));
     } else
     {
-        fprintf(LOG_STREAM, fmt::format("[{}@{}] {}\n", level, tag, format.str).c_str());
+        Foundation_LogImpl(level, tag, format.str.data());
     }
 }
 
-#define LOG_RUNTIME(TAG, LEVEL, FORMAT, ...) \
-    foundationLogRuntime(#TAG, LEVEL, FORMAT __VA_OPT__(,) __VA_ARGS__);
+#define LOG(TAG, LEVEL, FORMAT, ...) \
+    Foundation_Log(#TAG, LEVEL, FORMAT __VA_OPT__(,) __VA_ARGS__);
 
 #define CHECK(expr) if(!(expr)) { \
-    LOG_RUNTIME(Core, LogError, "Check failed: " #expr); \
+    LOG(Core, LogError, "Check failed: " #expr); \
     throw std::runtime_error( #expr ); \
 }
 
 #define CHECK_MSG(expr, format_str, ...) if(!(expr)) { \
-    LOG_RUNTIME(Core, LogError, format_str __VA_OPT__(,) __VA_ARGS__); \
+    LOG(Core, LogError, format_str __VA_OPT__(,) __VA_ARGS__); \
     throw std::runtime_error( #expr ); \
 }

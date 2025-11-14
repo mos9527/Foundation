@@ -327,7 +327,7 @@ void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
     style.Colors[ImGuiCol_ButtonActive] = ImVec4(1.0f, 0.0f, 0.0f, 0.8f);
     // Font from https://github.com/lxgw/LxgwNeoXiHei
     if (!std::filesystem::exists(kDefaultFontPath))
-        LOG_RUNTIME(ImGui, err, "Font file {} not found! ImGui will use default font.", kDefaultFontPath);
+        LOG(ImGui, err, "Font file {} not found! ImGui will use default font.", kDefaultFontPath);
     else
     {
         io.Fonts->Clear();

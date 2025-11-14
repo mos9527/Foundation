@@ -20,7 +20,7 @@ namespace details
     {
         int w, h;
         SDL_GetWindowSizeInPixels(window, &w, &h);
-        LOG_RUNTIME(RenderApplication, LogDebug, "Creating swapchain ({}x{})", w, h);
+        LOG(RenderApplication, LogDebug, "Creating swapchain ({}x{})", w, h);
         device->WaitIdle();
         if (outSwap)
             outSwap.Reset();
@@ -29,9 +29,9 @@ namespace details
         auto present = Ranges::FirstOf(Views::all(kPresentModePreferenceList) |
                                        Views::filter(Ranges::ContainedBy(device->GetSwapchainSupportedPresentModes())));
         CHECK_MSG(format.has_value(), "No supported swapchain format found!");
-        LOG_RUNTIME(RenderApplication, LogDebug, "Selected swapchain format: {}", format.value());
+        LOG(RenderApplication, LogDebug, "Selected swapchain format: {}", format.value());
         CHECK_MSG(present.has_value(), "No supported presentation mode found!");
-        LOG_RUNTIME(RenderApplication, LogDebug, "Selected swapchain present mode: {}", present.value());
+        LOG(RenderApplication, LogDebug, "Selected swapchain present mode: {}", present.value());
         outSwap = device->CreateSwapchain(RHISwapchain::SwapchainDesc{
             .format = format.value(),
             .extents = RHIExtent3D{w, h, 1},
