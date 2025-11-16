@@ -1,29 +1,32 @@
-#include "Examples.hpp"
-namespace Examples {
-    /**
-     * @example SDF2D.cpp
-     * 2D Signed Distance Field (SDF) example.
-     * @example Shaders/SDF2D.slang  
-     * Shader courtesy of Inigo Quilez: https://iquilezles.org/articles/distfunctions2d/
-     */
-    class SDFDemoApp : public RenderApplication {
-        void OnRendererSetup() override {
-            createPSFullscreenPass(
-                mRenderer.get(), "SDF2D",
-                [=](PassHandle self, Renderer* r) {
-                    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/SDF2D.spv");
-                    r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(float));
-                },
-                [=, this](PassHandle self, Renderer* r, RHICommandList* cmd) {
-                    r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, GetApplicationTime());
-                }
-            );
+#include <RenderUtils/PSFullscreen.hpp>
+#include <RenderUtils/CSDebugText.hpp>
+using namespace RenderUtils;
+int main()
+{
+    SDL_Window* window = SDL_CreateWindow("SDF2D Example", 1024, 768, Examples_SDLWindowFlagsVulkan);
+    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, {
+        .threads = 0 /* ST recording */
+    });
+    CSDebugTextData lines[5];
+    lines[0].x = lines[0].y = 16, lines[0].SetText("SDF2D - port courtesy of https://iquilezles.org/articles/distfunctions2d/");
+    renderer->BeginSetup();
+    createPSFullscreenPass(
+        renderer, "SDF2D",
+        [=](PassHandle self, Renderer* r) {
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/SDF2D.spv");
+            r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(float));
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd) {
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, Examples_GetTime());
         }
-    };
-
-}
-int main(int argc, char** argv) {
-    Examples::SDFDemoApp app;
-    app.Initialize<VulkanApplication>({ .windowTitle = "SDF2D" });
-    app.RunForever();
+    );
+    createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);
+    renderer->EndSetup();
+    ExampleFpsCounter fps;
+    while (!Examples_ShouldClose(window, renderer, swapchain))
+    {
+        lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("FPS: {}", fps.Update()));
+        Examples_NewFrame(renderer);
+    }
+    Examples_DestroyVulkan(window, renderer, app, device, swapchain);
 }

@@ -11,7 +11,7 @@ file(
 
 find_package(Vulkan REQUIRED)
 FetchContent_MakeAvailable(VulkanMemoryAllocator)
-FetchContent_MakeAvailable(SDL3)
+
 add_library(Foundation_RHIVulkan ${SOURCES} ${INCLUDES})
 
 if (FOUNDATION_RHIVULKAN_VALIDATION_LAYER)

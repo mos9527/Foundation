@@ -185,6 +185,13 @@ namespace Foundation::RHI
             auto* pointer = reinterpret_cast<PointerType*>(handle);
             mPool.Destruct(pointer);
         }
+        /**
+         * @brief Destroys all objects in the pool.
+         */
+        void Destroy()
+        {
+            mPool.Collect();
+        }
     };
 } // namespace Foundation::RHI
 

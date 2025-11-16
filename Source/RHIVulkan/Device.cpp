@@ -167,6 +167,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
 
 VulkanDevice::~VulkanDevice()
 {
+    mStorage.Destroy();
     if (mVkAllocator)
     {
         vmaDestroyAllocator(mVkAllocator);
