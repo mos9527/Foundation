@@ -399,14 +399,6 @@ namespace Foundation::RenderCore
         void BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point,
                         const char* shader_path) const;
         /**
-         * @brief Declares that a bind point in a certain pass is a descriptor set at the specified set and binding index.
-         *        This is _only_ useful if you don't have control over the shader code, and cannot rely
-         *        on automatic reflection.
-         *        You can use the same bind point name with subsequent @ref BindTextureSRV, etc. calls.
-         * @note Same bind point names from a shader bound with @ref BindShader will override ones set by this function.
-         */
-        void BindDescriptorBindPoint(PassHandle pass, StringView bind_point, uint32_t binding, uint32_t set);
-        /**
          * @brief Declares a range of Push Constant used in a stage.
          *
          * This is only available at Setup time.
@@ -437,10 +429,6 @@ namespace Foundation::RenderCore
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          *
          * This can be automatically bound to the pipeline with CmdSetPipeline()
-         *
-         * @note bind_point may be ignored if shader usage is not required. For readability,
-         *       you may use @ref kBindpointIgnored as the bind_point to indicate that
-         *       the actual bind point is not known or not important.
          */
         void BindBufferUniform(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
                                StringView bind_point) const;
@@ -452,10 +440,6 @@ namespace Foundation::RenderCore
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          *
          * This can be automatically bound to the pipeline with CmdSetPipeline()
-         *
-         * @note bind_point may be ignored if shader usage is not required. For readability,
-         *       you may use @ref kBindpointIgnored as the bind_point to indicate that
-         *       the actual bind point is not known or not important.
          */
         void BindBufferStorageRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
                                StringView bind_point) const;
@@ -467,10 +451,6 @@ namespace Foundation::RenderCore
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          *
          * This can be automatically bound to the pipeline with CmdSetPipeline()
-         *
-         * @note bind_point may be ignored if shader usage is not required. For readability,
-         *       you may use @ref kBindpointIgnored as the bind_point to indicate that
-         *       the actual bind point is not known or not important.
          */
         void BindBufferUnordered(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
                                  StringView bind_point) const;
@@ -481,10 +461,6 @@ namespace Foundation::RenderCore
          * This by itself has no effect on binding. You need to call
          * cmd->BindVertexBuffer(), cmd->BindIndexBuffer() at Record time to
          * use the buffer.
-         *
-         * @note bind_point may be ignored if shader usage is not required. For readability,
-         *       you may use @ref kBindpointIgnored as the bind_point to indicate that
-         *       the actual bind point is not known or not important.
          */
         void BindBufferShaderRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage) const;
         /**
@@ -508,28 +484,15 @@ namespace Foundation::RenderCore
         /**
          * @brief Manually bind an existing descriptor set to the pipeline.
          *
-         * @note The bind point is only used to determine the set index.
-         * The binding index themselves is then _not_ checked by the @ref Renderer,
-         * therefore the shader and the descriptor set must guarantee match.
-         *
-         * This can be automatically bound to the pipeline with CmdSetPipeline()
-         *
-         * @note bind_point may be ignored if shader usage is not required. For readability,
-         *       you may use @ref kBindpointIgnored as the bind_point to indicate that
-         *       the actual bind point is not known or not important.
+         * @note You'll need to call @ref CmdBindDescriptorSet at Record time to bind the set to the pipeline.
          */
-        void BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSet* descriptor_set,
-                               RHIDeviceDescriptorSetLayout* layout);
+        void BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout);
         /**
          * @brief Binds a texture as a Shader Resource View (read-only sampling / fetch).
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          *
          * No view is created until EndSetup() is called.
-         *
-         * @note bind_point may be ignored if shader usage is not required. For readability,
-         *       you may use @ref kBindpointIgnored as the bind_point to indicate that
-         *       the actual bind point is not known or not important.
          */
         ResourceHandle BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                       RHIPipelineStage stage, RHITextureViewDesc const& desc) const;
@@ -542,10 +505,6 @@ namespace Foundation::RenderCore
          * bound as StorageImage, and creates a view.
          *
          * No view is created until EndSetup() is called.
-         *
-         * @note bind_point may be ignored if shader usage is not required. For readability,
-         *       you may use @ref kBindpointIgnored as the bind_point to indicate that
-         *       the actual bind point is not known or not important.
          */
         ResourceHandle BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                       RHIPipelineStage stage, RHITextureViewDesc const& desc) const;
@@ -733,10 +692,16 @@ namespace Foundation::RenderCore
         void CmdSetPipeline(PassHandle pass, RHICommandList* cmd) const;
         /**
          * @brief Helper that binds a single descriptor set to the current command list.
-         *
-         * You generally want to use @ref CmdSetPipeline() instead.
          */
         void CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, uint32_t set_index,
+                                  RHIDeviceDescriptorSet* descriptor_set) const;
+        /**
+         * @brief Helper that binds a single descriptor set to the set of the specified bind point.
+         *
+         * @note For this to work, the descriptor set MUST have been bound at Setup time with
+         * @ref BindDescriptorSet().
+         */
+        void CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, StringView bind_point,
                                   RHIDeviceDescriptorSet* descriptor_set) const;
         /**
          * @brief Helper that pushes correct descriptor sets and PSO to the current command list, and

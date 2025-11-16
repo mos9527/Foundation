@@ -127,13 +127,11 @@ namespace Foundation::RenderCore
         /* -- Pipeline -- */
         // Shader [path, entry point, stage]
         Vector<Tuple<String, String, RHIShaderStage>> shaders;
-        // Explicit descriptor bindings [binding index,set index, binding point]
-        // These are otherwise derived from shader reflection
-        Vector<Tuple<uint32_t, uint32_t, String>> explictDescriptorBindings;
         // Bind points [view(tex) or buffer(buf), desc type, binding point]
         Vector<Tuple<ResourceHandle, RHIDescriptorType, String>> textureBindings, bufferBindings;
-        // External Bind Sets [Ptr, Layout Ptr, binding point]
-        Vector<Tuple<RHIDeviceDescriptorSet*, RHIDeviceDescriptorSetLayout*, String>> externalBindings;
+        // External Bind Sets [binding point, layout ptr, set index (set when built)]
+        // Sorted lexicographically if the pipeline is built.
+        Vector<Tuple<String, RHIDeviceDescriptorSetLayout*, int>> externalBindings;
         // Samplers
         Vector<Pair<ResourceHandle, String>> samplers;
         // Push Constants by [stage, offset, size]
@@ -167,6 +165,6 @@ namespace Foundation::RenderCore
         // Pointers. Can also contain external sets
         Vector<RHIDeviceDescriptorSet*> pDescriptorSets;
         // [Set Index, Set, Layout]
-        Vector<Tuple<size_t, RHIDeviceDescriptorSet*, RHIDeviceDescriptorSetLayout*>> pExternalDescriptorSets;
+        Vector<Tuple<size_t, RHIDeviceDescriptorSetLayout*>> pExternalDescriptorSets;
     };
 }

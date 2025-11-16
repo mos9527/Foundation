@@ -10,7 +10,7 @@ int main()
 {
     SDL_Window* window = SDL_CreateWindow("Mandelbrot Compute", 800, 600, Examples_SDLWindowFlagsVulkan);
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, {});
-    CSDebugTextData lines[5];
+    CSDebugTextData lines[5]{};
     lines[0].x = lines[0].y = 16, lines[0].SetText("Mandelbrot Compute");
     renderer->BeginSetup();
     renderer->CreatePass(

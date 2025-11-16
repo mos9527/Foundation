@@ -199,8 +199,7 @@ void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHa
     r->BindPushConstant(self, RHIShaderStageBits::Vertex, 0, sizeof(PushConstants));
     r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/ImGui.spv");
     r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/ImGui.spv");
-    r->BindDescriptorSet(self, "textures", gImGuiTexturePool->GetDescriptorSet(),
-                         gImGuiTexturePool->GetDescriptorSetLayout());
+    r->BindDescriptorSet(self, "textures", gImGuiTexturePool->GetDescriptorSetLayout());
     // We have fixed samplers for ImGui - IMO these two are quite enough for UI elements
     r->BindTextureSampler(self, linSampler, "linSampler");
     r->BindTextureSampler(self, nearSampler, "nearSampler");
@@ -244,6 +243,7 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
     // Implementations guarantee that mapped, flushed resources are available at
     // the time of the next device queue submit - so extra barriers are not needed.
     r->CmdSetPipeline(self, cmd);
+    r->CmdBindDescriptorSet(self, cmd, "textures", gImGuiTexturePool->GetDescriptorSet());
     Optional<RHIClearColor> clearColor;
     if (clear)
         clearColor = RHIClearColor{};

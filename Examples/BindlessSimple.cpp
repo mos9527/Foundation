@@ -17,7 +17,7 @@ int main()
                             {
                                 .enableAsyncCompute = false, .threads = 0, /* ST recording */
                             });
-    CSDebugTextData lines[5];
+    CSDebugTextData lines[5]{};
     lines[0].x = lines[0].y = 16, lines[0].SetText("Bindless Simple");
     {
         BindlessPool bindings(device.Get(), GLOBAL_ALLOC, {.maxBindings = kNumTextures});
@@ -91,10 +91,11 @@ int main()
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/BindlessSimple.spv");
                 r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(PushConstant));
                 r->BindTextureSampler(self, linSampler, "sampler");
-                r->BindDescriptorSet(self, "textures", bindings.GetDescriptorSet(), bindings.GetDescriptorSetLayout());
+                r->BindDescriptorSet(self, "textures",  bindings.GetDescriptorSetLayout());
             },
             [&](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
+                r->CmdBindDescriptorSet(self, cmd, "textures", bindings.GetDescriptorSet());
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0,
                                       PushConstant{.time = Examples_GetTime(), .total = kNumTextures, .first = 0});
             });

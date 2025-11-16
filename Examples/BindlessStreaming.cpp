@@ -33,7 +33,7 @@ int main()
                             {
                                 .enableAsyncCompute = false, .threads = 0, /* ST recording */
                             });
-    CSDebugTextData lines[5];
+    CSDebugTextData lines[5]{};
     lines[0].col32 = lines[1].col32 = lines[2].SetColor(255,255,0,255);
     lines[0].x = lines[0].y = 16, lines[0].SetText("Bindless Streaming - Enter to submit a new mip");
     {
@@ -114,7 +114,7 @@ int main()
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/BindlessStreaming.spv");
                 r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(PushConstant));
                 r->BindTextureSampler(self, nearSampler, "sampler");
-                r->BindDescriptorSet(self, "textures", bindings.GetDescriptorSet(), bindings.GetDescriptorSetLayout());
+                r->BindDescriptorSet(self, "textures",  bindings.GetDescriptorSetLayout());
             },
             [&](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
@@ -123,6 +123,7 @@ int main()
                     .binding = binding,
                     .mipReady = mipReady
                 };
+                r->CmdBindDescriptorSet(self, cmd, "textures", bindings.GetDescriptorSet());
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, pc);
             });
         createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);

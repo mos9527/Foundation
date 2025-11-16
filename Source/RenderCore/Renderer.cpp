@@ -167,16 +167,10 @@ void Renderer::BindTextureSampler(PassHandle pass, ResourceHandle sampler, Strin
     mSetup->trackedPasses[pass].samplers.emplace_back(sampler, bind_point);
     mSetup->bindingCounts[RHIDescriptorType::Sampler]++;
 }
-void Renderer::BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSet* descriptor_set,
-                                 RHIDeviceDescriptorSetLayout* layout)
+void Renderer::BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout)
 {
     CHECK(mState == State::Setup);
-    mSetup->trackedPasses[pass].externalBindings.emplace_back(descriptor_set, layout, bind_point);
-}
-void Renderer::BindDescriptorBindPoint(PassHandle pass, StringView bind_point, uint32_t binding, uint32_t set)
-{
-    CHECK(mState == State::Setup);
-    mSetup->trackedPasses[pass].explictDescriptorBindings.emplace_back(binding, set, bind_point);
+    mSetup->trackedPasses[pass].externalBindings.emplace_back(bind_point, layout, ~0u);
 }
 ResourceHandle Renderer::BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                         RHIPipelineStage stage, RHITextureViewDesc const& desc) const
@@ -526,20 +520,6 @@ void Renderer::BuildPipelineState(PassHandle pass)
     // Check variable bindings to be consistent across stages
     // [name, [set, binding]]
     Map<String, Pair<uint32_t, uint32_t>> refl_var_bind_points(mAllocator);
-    // Push explict declarations first
-    for (auto const& [binding, set, name] : tracked.explictDescriptorBindings)
-    {
-        auto it = refl_var_bind_points.find(name);
-        if (it == refl_var_bind_points.end())
-            refl_var_bind_points[name] = {set, binding};
-        else
-        {
-            auto& [set_prev, binding_prev] = it->second;
-            CHECK_MSG(set_prev == set && binding_prev == binding,
-                      "Inconsistent explicit binding points across shader stages for variable {} in pass {}", name,
-                      tracked.name);
-        }
-    }
     Optional<int> backbufferUAVUsage; // opt: set index
     // Check if any shader in the pipeline uses PC
     for (auto const& [path, refl] : reflections)
@@ -583,7 +563,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
     Map<String, RHIDescriptorType> var_types(mAllocator);
     Map<String, ResourceHandle> var_handles(mAllocator);
     Map<String, ResourceHandle> var_samplers(mAllocator);
-    Map<String, RHIDeviceDescriptorSet*> var_ext_sets(mAllocator);
+    Map<String, RHIDeviceDescriptorSetLayout*> var_ext_sets(mAllocator);
     // Textures
     for (auto& [vhdl, dtype, binding] : tracked.textureBindings)
     {
@@ -624,14 +604,25 @@ void Renderer::BuildPipelineState(PassHandle pass)
         }
     }
     // External sets (e.g. @ref TexturePool)
-    for (auto& [desc_set, desc_set_layout, binding] : tracked.externalBindings)
+    Ranges::sort(tracked.externalBindings);
+    for (auto& [binding, desc_set_layout, set] : tracked.externalBindings)
     {
-        var_ext_sets[binding] = desc_set;
         // We don't create anything for the set - but do resolve these
         // so we can map them later on
         if (refl_var_bind_points.contains(binding))
-            tracked.pExternalDescriptorSets.emplace_back(refl_var_bind_points[binding].first, desc_set,
-                                                         desc_set_layout);
+        {
+            auto bind = refl_var_bind_points[binding];
+            CHECK_MSG(bind.second < desc_set_layout->mDesc.bindings.size(),
+                      "Shader binding {} at set {} exceeded declared layout binding {} size {} in pass {}.", binding,
+                      binding, bind.first, desc_set_layout->mDesc.bindings.size(), pass);
+            set = bind.first, tracked.pExternalDescriptorSets.emplace_back(set, desc_set_layout);
+        }
+        else
+        {
+            CHECK_MSG(false, "External descriptor set binding {} is not used by any shader in pass {}", binding,
+                      tracked.name);
+        }
+        var_ext_sets[binding] = desc_set_layout;
     }
     std::sort(tracked.pExternalDescriptorSets.begin(), tracked.pExternalDescriptorSets.end());
     tracked.pExternalDescriptorSets.erase(
@@ -669,21 +660,6 @@ void Renderer::BuildPipelineState(PassHandle pass)
         CHECK_MSG(var_types.contains(binding) || var_ext_sets.contains(binding),
                   "Binding {} is not bound by pass {}, but is used by one of its shaders.", binding, tracked.name);
         set_bindings.push_back({.count = 1, .stage = RHIShaderStageBits::All, .type = var_types[binding]});
-    }
-    // Check if the external set conflicts with our own bindings
-    for (auto const& [set, ptr, layout_ptr] : tracked.pExternalDescriptorSets)
-    {
-        auto it = Ranges::find_if(bindings, [set](auto const& b) { return b.first.first == set; });
-        if (it != bindings.end())
-        {
-            auto e_it =
-                Ranges::find_if(tracked.externalBindings, [ptr](auto const& e) { return std::get<0>(e) == ptr; });
-            CHECK_MSG(
-                false,
-                "External descriptor set used by shader at set {} (used by '{}') conflicts with bindings declared by "
-                "pass {}, which is declared internally. Declare different set usage _in shader_ for usage!",
-                set, std::get<2>(*e_it), tracked.name);
-        }
     }
     // Check if our first set is not 0
     if (!bindings.empty() && bindings[0].first.first != 0)
@@ -773,9 +749,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
     }
     // Add external sets
     // We've already established that these would not conflict, and has already been sorted
-    for (auto const& [set, ptr, layout_ptr] : tracked.pExternalDescriptorSets)
+    for (auto const& [ptr, layout_ptr] : tracked.pExternalDescriptorSets)
     {
-        tracked.pDescriptorSets.emplace_back(ptr);
         tracked.pDescriptorLayouts.emplace_back(layout_ptr);
     }
     // Add Backbuffer UAV set if needed
@@ -1582,8 +1557,6 @@ void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) const
     if (!tpass.pDescriptorSets.empty())
         cmd->BindDescriptorSet(tpass.isComputePass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
                                tpass.pso.Get(), tpass.pDescriptorSets, 0);
-    for (auto const& [index, ptr, layout_ptr] : tpass.pExternalDescriptorSets)
-        CmdBindDescriptorSet(pass, cmd, index, ptr);
     if (tpass.backbufferUAV)
         CmdBindDescriptorSet(pass, cmd, tpass.backbufferUAV.value(), mSwaps[GetSwap()].viewSet.Get());
 }
@@ -1595,6 +1568,19 @@ void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, uint32
     CHECK_MSG(tpass.pso.IsValid(), "Current pass has no Pipeline state.");
     cmd->BindDescriptorSet(tpass.isComputePass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
                            tpass.pso.Get(), {{descriptor_set}}, set_index);
+}
+void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, StringView bind_point,
+                                    RHIDeviceDescriptorSet* descriptor_set) const
+{
+    CHECK(mState == State::Execute);
+    auto& tpass = mSetup->trackedPasses[pass];
+    CHECK_MSG(tpass.pso.IsValid(), "Current pass has no Pipeline state.");
+    auto it = std::lower_bound(tpass.externalBindings.begin(), tpass.externalBindings.end(), bind_point,
+                               [](auto const& a, auto const& b) { return std::get<0>(a) < b; });
+    CHECK_MSG(it != tpass.externalBindings.end() && std::get<0>(*it) == bind_point,
+              "No external binding point named '{}' found on pass {}", bind_point, tpass.name);
+    int set = std::get<2>(*it);
+    return CmdBindDescriptorSet(pass, cmd, set, descriptor_set);
 }
 void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2D const& extent,
                                 Optional<RHIClearColor> const& clear_rtv,

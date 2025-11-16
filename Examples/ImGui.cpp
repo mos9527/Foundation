@@ -7,7 +7,7 @@ int main()
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, {
         .threads = 0 /* ST recording */
     });
-    CSDebugTextData lines[5];
+    CSDebugTextData lines[5]{};
     lines[0].x = lines[0].y = 16, lines[0].SetText("ImGui Demo Window");
     ImGui_ImplFoundation_SetupContextWithDefaultStyles();
     renderer->BeginSetup();
