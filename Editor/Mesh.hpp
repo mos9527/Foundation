@@ -15,8 +15,8 @@ struct FVertex {
 static_assert(sizeof(FVertex) == 32); // TODO: Quantization
 struct FMeshlet // same layout as meshopt_Meshlet
 {
-    /* offsets within meshlet_vertices and meshlet_triangles arrays with meshlet data */
-    uint32_t vtxOffset;   // in vertices
+    /* offsets within meshletVtx and meshletTri arrays with meshlet data */
+    uint32_t vtxOffset;  // in vertices
     uint32_t triOffset; // in indices (3*triangles)
     /* number of vertices and triangles used in the meshlet; data is stored in consecutive range defined by offset and count */
     uint32_t vtxCount;

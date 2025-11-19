@@ -48,4 +48,4 @@ add_dependencies(Example_MeshShaderHello Shader_MeshShaderHelloTask Shader_MeshS
 
 add_executable(Example_MeshShaderBasic "MeshShaderBasic.cpp")
 target_link_libraries(Example_MeshShaderBasic PUBLIC Editor_Assets Example_Common)
-add_dependencies(Example_MeshShaderBasic Shader_MeshShaderBasicMesh)
+add_dependencies(Example_MeshShaderBasic Shader_MeshShaderBasicMesh Shader_MeshShaderBasicFrag Examples_SampleFiles)

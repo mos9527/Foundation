@@ -88,6 +88,13 @@ namespace Foundation::RHI {
             CHECK_MSG(count * sizeof(T) <= mDesc.size, "Buffer map range out of bounds");
             return { static_cast<T*>(p) , count };
         }
+        /**
+         * @brief Maps as pointer of T
+         */
+        template <typename T> T* Map()
+        {
+            return static_cast<T*>(Map());
+        }
 
         [[nodiscard]] virtual RHIBufferScopedHandle<RHIBuffer> CreateAliasedBuffer(RHIBufferDesc const& desc, size_t offset = 0) = 0;
         [[nodiscard]] virtual RHIBuffer* GetAliasedBuffer(Handle handle) const = 0;

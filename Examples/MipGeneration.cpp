@@ -60,7 +60,6 @@ int main()
         }
         stbi_image_free(data);
         renderer->BeginSetup();
-        // Release - texture is part of the renderer now
         ResourceHandle hdl = renderer->CreateResource("Mip Image", texture.Get());
         ResourceHandle sampler = renderer->CreateSampler({});
         createCSMipGenerationPasses(renderer, "Mip Generation", RHIDeviceQueueType::Compute, hdl, hdl, {x, y},

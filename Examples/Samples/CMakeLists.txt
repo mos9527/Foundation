@@ -1,4 +1,9 @@
-file(GLOB SAMPLE_FILES "${CMAKE_CURRENT_LIST_DIR}/*.jpg")
+file(
+        GLOB
+        SAMPLE_FILES
+        "${CMAKE_CURRENT_LIST_DIR}/*.jpg"
+        "${CMAKE_CURRENT_LIST_DIR}/*.obj"
+)
 
 add_custom_target(Examples_SampleFiles)
 foreach (FILE ${SAMPLE_FILES})

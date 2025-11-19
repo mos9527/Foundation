@@ -8,7 +8,7 @@ BITMASK_ENUM_BEGIN(GSData, uint8_t)
     Mesh = 1 << 0,
 BITMASK_ENUM_END()
 
-static constexpr size_t kNumMeshDiscreteLODs = 5;
+static const size_t kNumMeshDiscreteLODs = 5;
 
 struct GSMeshLOD
 {
@@ -23,8 +23,10 @@ struct GSMesh
 {
     uint32_t vtxOffset;
     uint32_t vtxCount;
+    uint32_t lodCount;
     GSMeshLOD lod[kNumMeshDiscreteLODs];
 };
+
 struct GSInstance
 {
     // TRS

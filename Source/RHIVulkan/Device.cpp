@@ -89,6 +89,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
              .shaderInt8 = true,
              .descriptorBindingSampledImageUpdateAfterBind = true,
              .runtimeDescriptorArray = true,
+             .uniformBufferStandardLayout = true,
              .timelineSemaphore = true}, // vk::PhysicalDeviceVulkan12Features
             {.synchronization2 = true,
              .dynamicRendering = true,
