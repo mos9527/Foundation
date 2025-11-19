@@ -70,6 +70,7 @@ add_subdirectory(Source)
 
 add_subdirectory(ThirdParty/ImGui)
 
+add_subdirectory(Editor)
 if (FOUNDATION_WITH_EXAMPLES)
     add_subdirectory(Examples)
 endif ()
@@ -77,5 +78,3 @@ endif ()
 if (FOUNDATION_WITH_TESTS)
     add_subdirectory(Tests)
 endif ()
-
-add_subdirectory(Editor)

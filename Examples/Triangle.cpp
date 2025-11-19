@@ -4,9 +4,9 @@
 using namespace RenderUtils;
 int main()
 {
-    SDL_Window* window = SDL_CreateWindow("Triangle Example", 1024, 768, Examples_SDLWindowFlagsVulkan);
+    SDL_Window* window = SDL_CreateWindow("Hello World", 1024, 768, Examples_SDLWindowFlagsVulkan);
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, {
-        .threads = 0 /* ST recording */
+        .threadCount = 0 /* ST recording */
     });
     CSDebugTextData lines[5];
     lines[0].x = lines[0].y = 16, lines[0].SetText("Triangle, or Hello World in 3 vertices.");

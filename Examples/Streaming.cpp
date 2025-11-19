@@ -6,7 +6,7 @@ int main()
 {
     SDL_Window* window = SDL_CreateWindow("Streaming Example", 800, 600, Examples_SDLWindowFlagsVulkan);
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, {
-        .threads = 0 /* ST recording */
+        .threadCount = 0 /* ST recording */
     });
     {
         auto buf = device->CreateBuffer({

@@ -38,3 +38,4 @@ namespace Foundation::Math {
 
 #include "Quantization.hpp"
 #include "Unorm.hpp"
+#include "Bitfield.hpp"

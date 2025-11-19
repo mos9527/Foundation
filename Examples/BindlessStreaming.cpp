@@ -31,7 +31,7 @@ int main()
     auto [renderer, app, device, swapchain] =
         Examples_InitVulkan(window,
                             {
-                                .enableAsyncCompute = false, .threads = 0, /* ST recording */
+                                .asyncCompute = false, .threadCount = 0, /* ST recording */
                             });
     CSDebugTextData lines[5]{};
     lines[0].col32 = lines[1].col32 = lines[2].SetColor(255,255,0,255);
@@ -57,6 +57,7 @@ int main()
             });
         uint32_t binding = bindings.Allocate(view.Release().Get()); // OK to release - textures own the view.
         // Oneshot command to transition the whole texture to TransferDst
+        // Alternatively - create the textures in linear tiling so we can just map and write directly
         {
             ImmediateContext im(RHIDeviceQueueType::Graphics, device.Get());
             im->Begin();

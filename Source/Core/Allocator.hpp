@@ -73,9 +73,7 @@ namespace Foundation::Core {
      * @endcode
      */
     template <typename T = void>
-    class StlAllocator {
-        Allocator* mResource;
-    public:
+    struct StlAllocator {
         using value_type = T;
         using size_type = std::size_t;
         using difference_type = std::ptrdiff_t;
@@ -84,7 +82,9 @@ namespace Foundation::Core {
         using reference = T&;
         using const_reference = const T&;
 
-        template<typename U> friend class StlAllocator; // Rebind ctor
+        Allocator* mResource;
+
+        template<typename U> friend struct StlAllocator; // Rebind ctor
         template<typename U> struct Rebind { using other = StlAllocator<U>; };
         StlAllocator(Allocator* resource) noexcept : mResource(resource) {}            
         template<typename U>

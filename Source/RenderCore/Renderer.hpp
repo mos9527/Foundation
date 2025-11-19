@@ -28,19 +28,19 @@ namespace Foundation::RenderCore
          * @note Always examine the generated execution groups (see @ref DbgDumpExecutionGroups) and _PROFILE_
          *       to verify that your render graph is scheduled as expected.
          */
-        bool enableAsyncCompute{true};
+        bool asyncCompute{true};
         /**
          * @brief Enable presentation support.
          *
          * @note Enabling this implies a valid @ref RHISwapchain handle is provided to the @ref Renderer
          *       on creation (see @ref Renderer::Renderer), otherwise an exception is thrown.
          */
-        bool enablePresent{true};
+        bool present{true};
         /**
          * @brief Number of worker threads to use for recording command lists.
          * @note Set this to 0 to disable multithreaded command recording.
          */
-        uint32_t threads{std::max(1u, std::thread::hardware_concurrency() - 1)};
+        uint32_t threadCount{std::max(1u, std::thread::hardware_concurrency() - 1)};
     };
     /* -- Constants -- */
     // Maximum number of render passes per frame
@@ -309,7 +309,7 @@ namespace Foundation::RenderCore
                       "Invalid queue type. Only Graphics and Compute queues are supported.");
             PassHandle handle = mSetup->trackedPasses.size();
             CHECK_MSG(handle < kMaxRenderPasses, "Exceeded maximum number of render passes ({})", kMaxRenderPasses);
-            if (!mDesc.enableAsyncCompute)
+            if (!mDesc.asyncCompute)
                 queue = RHIDeviceQueueType::Graphics; // Force graphics queue if async compute is disabled
             mSetup->trackedPasses.emplace_back(
                 mAllocator, handle, name, queue,
@@ -776,14 +776,14 @@ namespace Foundation::RenderCore
          * If this returns false, all passes will be executed on the graphics queue,
          * and any queue hints passed during pass creation will be ignored.
          */
-        [[nodiscard]] bool IsAsyncComputeEnabled() const { return mDesc.enableAsyncCompute; }
+        [[nodiscard]] bool IsAsyncComputeEnabled() const { return mDesc.asyncCompute; }
         /**
          * @brief Returns whether the swapchain is enabled.
          *
          * If this returns false, no backbuffer will be acquired or presented,
          * and any passes that write to the backbuffer will throw at EndSetup() time.
          */
-        [[nodiscard]] bool IsPresentEnabled() const { return mDesc.enablePresent; }
+        [[nodiscard]] bool IsPresentEnabled() const { return mDesc.present; }
         /**
          * @brief Update the swapchain to a new one.
          * You must call this when the window is resized or the swapchain is invalidated.

@@ -27,3 +27,5 @@ extern void UpdateSwapchain(FEditorContext* context);
 
 extern FEditorContext* CreateEditorContext(SDL_Window* window, Allocator* allocator = GLOBAL_ALLOC);
 extern void DestroyEditorContext(FEditorContext* context = nullptr /* global */);
+
+template<typename T> T LoadAsset(StringView assetPath, Allocator* allocator = GLOBAL_ALLOC);

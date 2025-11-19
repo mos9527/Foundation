@@ -27,10 +27,6 @@ add_executable(Example_BindlessStreaming "BindlessStreaming.cpp")
 target_link_libraries(Example_BindlessStreaming PUBLIC Example_Common)
 add_dependencies(Example_BindlessStreaming Shader_BindlessStreaming)
 
-add_executable(Example_MeshShader "MeshShader.cpp")
-target_link_libraries(Example_MeshShader PUBLIC Example_Common)
-add_dependencies(Example_MeshShader Shader_MeshShaderTask Shader_MeshShaderMesh Shader_MeshShaderFrag)
-
 add_executable(Example_DebugText "DebugText.cpp")
 target_link_libraries(Example_DebugText PUBLIC Example_Common)
 
@@ -45,3 +41,11 @@ add_dependencies(Example_MipGeneration Shader_MipGenerationBlur Examples_SampleF
 
 add_executable(Example_Streaming "Streaming.cpp")
 target_link_libraries(Example_Streaming PUBLIC Example_Common)
+
+add_executable(Example_MeshShaderHello "MeshShaderHello.cpp")
+target_link_libraries(Example_MeshShaderHello PUBLIC Example_Common)
+add_dependencies(Example_MeshShaderHello Shader_MeshShaderHelloTask Shader_MeshShaderHelloMesh Shader_MeshShaderHelloFrag)
+
+add_executable(Example_MeshShaderBasic "MeshShaderBasic.cpp")
+target_link_libraries(Example_MeshShaderBasic PUBLIC Editor_Assets Example_Common)
+add_dependencies(Example_MeshShaderBasic Shader_MeshShaderBasicMesh)

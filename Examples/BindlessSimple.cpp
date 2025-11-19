@@ -15,7 +15,7 @@ int main()
     auto [renderer, app, device, swapchain] =
         Examples_InitVulkan(window,
                             {
-                                .enableAsyncCompute = false, .threads = 0, /* ST recording */
+                                .asyncCompute = false, .threadCount = 0, /* ST recording */
                             });
     CSDebugTextData lines[5]{};
     lines[0].x = lines[0].y = 16, lines[0].SetText("Bindless Simple");

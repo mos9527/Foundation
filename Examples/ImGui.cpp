@@ -5,7 +5,7 @@ int main()
 {
     SDL_Window* window = SDL_CreateWindow("DebugText Example", 800, 600, Examples_SDLWindowFlagsVulkan);
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, {
-        .threads = 0 /* ST recording */
+        .threadCount = 0 /* ST recording */
     });
     CSDebugTextData lines[5]{};
     lines[0].x = lines[0].y = 16, lines[0].SetText("ImGui Demo Window");
