@@ -5,8 +5,8 @@
 using namespace Foundation::Core;
 using namespace Foundation::RenderCore;
 
-Renderer::Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device,
-                   RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator) :
+Renderer::Renderer(RendererDesc const& desc, RHIApplicationRef<RHIDevice> device,
+                   RHIDeviceRef<RHISwapchain> swapchain, Allocator* allocator) :
     mState(State::Undefined), mAllocator(allocator), mDesc(desc), mSwaps(mAllocator), mDevice(device),
     mSwapchain(swapchain), mExecuteArena(mAllocator, kExecuteArenaSize), mExecuteAlloc(mExecuteArena),
     mExecuteSubmits(nullptr), mExecuteThreadPool(mDesc.threads, kMaxCommandListsPerThread * 2, allocator, "Renderer"),
@@ -468,7 +468,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
         return; // Pass with no shaders
     LOG(Renderer, LogInfo, "** Building PSO for {} [{}] **", tracked.name, pass);
     Vector<char> data(mAllocator);
-    Map<String, RHIDeviceScopedObjectHandle<RHIShaderModule>> shaders(mAllocator);
+    Map<String, RHIDeviceUniqueRef<RHIShaderModule>> shaders(mAllocator);
     Map<String, UniquePtr<Shader>> reflections(mAllocator);
     for (auto const& [shader_path, entry_point, stage] : tracked.shaders)
     {
@@ -881,8 +881,8 @@ void Renderer::FinalizeResources()
                     fmt::format("{} [{}]", res.name, handle).c_str());
             },
             // Borrowed
-            [&](RHIDeviceObjectHandle<RHIBuffer> const& hdl) { mResources->resources[handle] = hdl; },
-            [&](RHIDeviceObjectHandle<RHITexture> const& hdl) { mResources->resources[handle] = hdl; },
+            [&](RHIDeviceRef<RHIBuffer> const& hdl) { mResources->resources[handle] = hdl; },
+            [&](RHIDeviceRef<RHITexture> const& hdl) { mResources->resources[handle] = hdl; },
             [&](RHIBuffer* const ptr) { mResources->resources[handle] = ptr; },
             [&](RHITexture* const ptr) { mResources->resources[handle] = ptr; },
             [&](auto const&) { throw std::runtime_error("Unhandled resource type at creation time"); });
@@ -964,7 +964,7 @@ void Renderer::SetFrameSyncObjects()
     mComputeTimeline = mDevice->CreateSemaphore(true);
     mComputeTimeline->DebugSetObjectName(fmt::format("Async Compute Timeline Semaphore").c_str());
 }
-void Renderer::SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain)
+void Renderer::SetSwapchain(RHIDeviceRef<RHISwapchain> swapchain)
 {
     CHECK_MSG(mDesc.enablePresent, "Cannot set swapchain when the renderer is not created with Present support");
     CHECK_MSG(swapchain.IsValid(), "Cannot set swapchain when swapchain is not valid");

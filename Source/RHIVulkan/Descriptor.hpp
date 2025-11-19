@@ -30,7 +30,7 @@ namespace Foundation::RHI {
          * @param max_variable_count Maximum number of _variable number of_ descriptors. Set to 0 if the layout does not have any variable count bindings.
          */
         RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> CreateDescriptorSet(
-            RHIDeviceObjectHandle<RHIDeviceDescriptorSetLayout> layout, uint32_t max_variable_count) override;
+            RHIDeviceRef<RHIDeviceDescriptorSetLayout> layout, uint32_t max_variable_count) override;
         RHIDeviceDescriptorSet* GetDescriptorSet(Handle handle) const override;
 
         void DestroyDescriptorSet(Handle handle) override;

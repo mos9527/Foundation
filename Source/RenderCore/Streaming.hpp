@@ -42,7 +42,7 @@ namespace Foundation::RenderCore
         struct StagingPage
         {
             int id = 0;
-            RHIDeviceScopedObjectHandle<RHIBuffer> buffer;
+            RHIDeviceUniqueRef<RHIBuffer> buffer;
             size_t capacity;
             char *mem = nullptr, *top = nullptr; // Mapped memory for linear allocation
             [[nodiscard]] constexpr size_t freeSize() const { return capacity - (top - mem); }
@@ -81,9 +81,9 @@ namespace Foundation::RenderCore
 
         mutable Mutex mPageMutex;
         RHIDeviceQueue* mTransferQueue;
-        RHIDeviceScopedObjectHandle<RHICommandPool> mCommandPool;
+        RHIDeviceUniqueRef<RHICommandPool> mCommandPool;
 
-        RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> mTransferSemaphore;
+        RHIDeviceUniqueRef<RHIDeviceSemaphore> mTransferSemaphore;
         Vector<RHICommandPoolScopedHandle<RHICommandList>> mTransferCmds;
 
         size_t mSubmitCtr = 0;

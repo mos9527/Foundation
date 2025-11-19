@@ -39,8 +39,8 @@ namespace Foundation::RHI {
          */
         virtual uint32_t GetNextImage(
             uint64_t timeout_ns,
-            RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore,
-            RHIDeviceObjectHandle<RHIDeviceFence> fence
+            RHIDeviceRef<RHIDeviceSemaphore> semaphore,
+            RHIDeviceRef<RHIDeviceFence> fence
         ) = 0;            
         [[nodiscard]] virtual RHIExtent2D GetExtents() const = 0;
         [[nodiscard]] float GetAspectRatio() const {

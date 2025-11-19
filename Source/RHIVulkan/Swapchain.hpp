@@ -32,8 +32,8 @@ namespace Foundation::RHI {
         [[nodiscard]] RHIExtent2D GetExtents() const override;
         uint32_t GetNextImage(
             uint64_t timeout_ns,
-            RHIDeviceObjectHandle<RHIDeviceSemaphore> semaphore,
-            RHIDeviceObjectHandle<RHIDeviceFence> fence
+            RHIDeviceRef<RHIDeviceSemaphore> semaphore,
+            RHIDeviceRef<RHIDeviceFence> fence
         ) override;
 
         void DebugSetObjectName(const char* name) override;

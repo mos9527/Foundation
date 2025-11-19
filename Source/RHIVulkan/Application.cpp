@@ -81,7 +81,7 @@ Span<const RHIDevice::DeviceDesc> VulkanApplication::EnumerateDevices() const
     return {mDevices.begin(), mDevices.end()};
 }
 
-RHIApplicationScopedObjectHandle<RHIDevice> VulkanApplication::CreateDevice(RHIDevice::DeviceDesc const& desc,
+RHIApplicationUniqueRef<RHIDevice> VulkanApplication::CreateDevice(RHIDevice::DeviceDesc const& desc,
                                                                             SDL_Window* window)
 {
     auto& phys_device = mPhysicalDevices[desc.id];

@@ -31,7 +31,7 @@ Quickstart
 ---
 A comprehensive Examples section is provided below for quickstarts and reference.
 
-You can also check out the @ref ModelViewer application for an advanced usage of the framework.
+You can also check out the @ref Editor application for an advanced usage of the framework.
 
 Examples
 ---
@@ -84,7 +84,6 @@ The following CMake options are available:
 | FOUNDATION_RHIVULKAN_VALIDATION_LAYER | Build with Vulkan Validation Layer enabled | ON |
 | FOUNDATION_WITH_EXAMPLES | Build examples | ON |
 | FOUNDATION_WITH_TESTS | Build tests | ON |
-| FOUNDATION_WITH_MODELVIEWER | Build the model viewer application | ON |
 
 Toggle these options with `-D<OPTION>=ON/OFF` when running `cmake ..`, e.g. `cmake -DFOUNDATION_WITH_SANITIZERS=ON ..`
 
@@ -102,7 +101,7 @@ Third party
 - https://github.com/g-truc/glm.git
 ### RHIVulkan
 - https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-### ModelViewer
+### Editor, Examples & Tests
 - https://github.com/nothings/stb.git
 - https://github.com/thisistherk/fast_obj
 - https://github.com/zeux/meshoptimizer.git
@@ -117,14 +116,6 @@ by [now](https://github.com/KhronosGroup/Vulkan-ValidationLayers/pull/10316). Al
 - Though some esoteric issues would eventually require HW specific tools for accurate timing and performance metrics.
   - [NSight™ Graphics](https://developer.nvidia.com/nsight-graphics) for NVIDIA GPUs
   - [Radeon™ Developer Tool Suite](https://gpuopen.com/news/introducing-radeon-developer-tool-suite/)
-
-### Linux & AMD
-[Radeon™ Developer Tool Suite](https://gpuopen.com/news/introducing-radeon-developer-tool-suite/) has issues
-with OSS AMD drivers (RADV and co), see:
-- https://github.com/GPUOpen-Tools/radeon_developer_panel/issues/36
-- https://github.com/GPUOpen-Tools/radeon_developer_panel/issues/57
-
-On Arch `https://aur.archlinux.org/packages/vulkan-amdgpu-pro` seems to resolve the issue.
 
 clang-tidy
 ===

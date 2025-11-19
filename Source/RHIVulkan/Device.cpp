@@ -200,7 +200,7 @@ Span<RHISwapchainPresentMode const> VulkanDevice::GetSwapchainSupportedPresentMo
 {
     return mSwapchainPresentModes;
 }
-RHIDeviceScopedObjectHandle<RHISwapchain> VulkanDevice::CreateSwapchain(RHISwapchain::SwapchainDesc const& desc)
+RHIDeviceUniqueRef<RHISwapchain> VulkanDevice::CreateSwapchain(RHISwapchain::SwapchainDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanSwapchain>(*this, desc)};
 }
@@ -208,7 +208,7 @@ RHISwapchain* VulkanDevice::GetSwapchain(Handle handle) const { return mStorage.
 void VulkanDevice::DestroySwapchain(Handle handle) { mStorage.DestroyObject(handle); }
 
 #include "PipelineState.hpp"
-RHIDeviceScopedObjectHandle<RHIPipelineState>
+RHIDeviceUniqueRef<RHIPipelineState>
 VulkanDevice::CreatePipelineState(RHIPipelineState::PipelineStateDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanPipelineState>(*this, desc)};
@@ -220,7 +220,7 @@ RHIPipelineState* VulkanDevice::GetPipelineState(Handle handle) const
 void VulkanDevice::DestroyPipelineState(Handle handle) { mStorage.DestroyObject(handle); }
 
 #include "Shader.hpp"
-RHIDeviceScopedObjectHandle<RHIShaderModule>
+RHIDeviceUniqueRef<RHIShaderModule>
 VulkanDevice::CreateShaderModule(RHIShaderModule::ShaderModuleDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanShaderModule>(*this, desc)};
@@ -232,7 +232,7 @@ RHIShaderModule* VulkanDevice::GetShaderModule(Handle handle) const
 void VulkanDevice::DestroyShaderModule(Handle handle) { mStorage.DestroyObject(handle); }
 
 #include "Command.hpp"
-RHIDeviceScopedObjectHandle<RHICommandPool> VulkanDevice::CreateCommandPool(RHICommandPool::PoolDesc desc)
+RHIDeviceUniqueRef<RHICommandPool> VulkanDevice::CreateCommandPool(RHICommandPool::PoolDesc desc)
 {
     return {this, mStorage.CreateObject<VulkanCommandPool>(*this, desc, GetAllocator())};
 }
@@ -274,7 +274,7 @@ void VulkanDeviceFence::DebugSetObjectName(const char* name)
                                                       .pObjectName = name});
 }
 
-RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> VulkanDevice::CreateSemaphore(bool is_timeline)
+RHIDeviceUniqueRef<RHIDeviceSemaphore> VulkanDevice::CreateSemaphore(bool is_timeline)
 {
     return {this, mStorage.CreateObject<VulkanDeviceSemaphore>(*this, is_timeline)};
 }
@@ -284,7 +284,7 @@ RHIDeviceSemaphore* VulkanDevice::GetSemaphore(Handle handle) const
 }
 void VulkanDevice::DestroySemaphore(Handle handle) { mStorage.DestroyObject(handle); }
 
-auto VulkanDevice::CreateFence(bool signaled) -> RHIDeviceScopedObjectHandle<RHIDeviceFence>
+auto VulkanDevice::CreateFence(bool signaled) -> RHIDeviceUniqueRef<RHIDeviceFence>
 {
     return {this, mStorage.CreateObject<VulkanDeviceFence>(*this, signaled)};
 }
@@ -474,14 +474,14 @@ void VulkanDeviceQueue::DebugSetObjectName(const char* name)
                                                       .pObjectName = name});
 }
 
-RHIDeviceScopedObjectHandle<RHIBuffer> VulkanDevice::CreateBuffer(RHIBufferDesc const& desc)
+RHIDeviceUniqueRef<RHIBuffer> VulkanDevice::CreateBuffer(RHIBufferDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanBuffer>(*this, desc)};
 }
 RHIBuffer* VulkanDevice::GetBuffer(Handle handle) const { return mStorage.GetObjectPtr<RHIBuffer>(handle); }
 void VulkanDevice::DestroyBuffer(Handle handle) { mStorage.DestroyObject(handle); }
 
-RHIDeviceScopedObjectHandle<RHITexture> VulkanDevice::CreateTexture(RHITextureDesc const& desc)
+RHIDeviceUniqueRef<RHITexture> VulkanDevice::CreateTexture(RHITextureDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanTexture>(*this, desc)};
 }
@@ -530,7 +530,7 @@ VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDev
         mDevice.GetVkAllocatorCallbacks());
     CHECK_MSG(mLayout != nullptr, "failed to create Vulkan descriptor set layout");
 }
-RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout>
+RHIDeviceUniqueRef<RHIDeviceDescriptorSetLayout>
 VulkanDevice::CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanDeviceDescriptorSetLayout>(*this, desc)};
@@ -542,7 +542,7 @@ RHIDeviceDescriptorSetLayout* VulkanDevice::GetDescriptorSetLayout(Handle handle
 void VulkanDevice::DestroyDescriptorSetLayout(Handle handle) { mStorage.DestroyObject(handle); }
 
 #include "Descriptor.hpp"
-RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool>
+RHIDeviceUniqueRef<RHIDeviceDescriptorPool>
 VulkanDevice::CreateDescriptorPool(RHIDeviceDescriptorPool::PoolDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanDeviceDescriptorPool>(*this, desc)};
@@ -616,7 +616,7 @@ VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, SamplerDesc
         mDevice.GetVkAllocatorCallbacks());
     CHECK_MSG(mSampler != nullptr, "failed to create Vulkan sampler");
 }
-RHIDeviceScopedObjectHandle<RHIDeviceSampler> VulkanDevice::CreateSampler(RHIDeviceSampler::SamplerDesc const& desc)
+RHIDeviceUniqueRef<RHIDeviceSampler> VulkanDevice::CreateSampler(RHIDeviceSampler::SamplerDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanDeviceSampler>(*this, desc)};
 }

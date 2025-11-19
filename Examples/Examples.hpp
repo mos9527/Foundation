@@ -16,7 +16,7 @@ constexpr RHISwapchainPresentMode kPresentModePreferenceList[] = {
 namespace details
 {
     inline void CreateSwapchain(SDL_Window* window, RHIDevice* device,
-                                        RHIDeviceScopedObjectHandle<RHISwapchain>& outSwap)
+                                        RHIDeviceUniqueRef<RHISwapchain>& outSwap)
     {
         int w, h;
         SDL_GetWindowSizeInPixels(window, &w, &h);
@@ -46,13 +46,13 @@ inline auto Examples_InitVulkan(SDL_Window* window, RendererDesc const& desc = {
 {
     auto app = Construct<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC);
     auto device = app->CreateDevice({}, window);
-    RHIDeviceScopedObjectHandle<RHISwapchain> swap;
+    RHIDeviceUniqueRef<RHISwapchain> swap;
     details::CreateSwapchain(window, *device, swap);
     auto renderer = Construct<Renderer>(GLOBAL_ALLOC, desc, device, swap, GLOBAL_ALLOC);
     return std::make_tuple(renderer, app, std::move(device), std::move(swap));
 }
 // Polls event, possibly resizing the swapchain, and returns true if the window should close.
-inline bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceScopedObjectHandle<RHISwapchain>& swap, SDL_Event* outEvent = nullptr)
+inline bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDeviceUniqueRef<RHISwapchain>& swap, SDL_Event* outEvent = nullptr)
 {
     SDL_Event event{};
     bool any = SDL_PollEvent(&event);
@@ -77,7 +77,7 @@ inline void Examples_NewFrame(Renderer* renderer)
     renderer->ExecuteFrame();
     renderer->EndExecute();
 }
-inline auto Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplication* app, RHIApplicationScopedObjectHandle<RHIDevice>& device, RHIDeviceScopedObjectHandle<RHISwapchain>& swapchain)
+inline auto Examples_DestroyVulkan(SDL_Window* window, Renderer* renderer, VulkanApplication* app, RHIApplicationUniqueRef<RHIDevice>& device, RHIDeviceUniqueRef<RHISwapchain>& swapchain)
 {
     Destruct(GLOBAL_ALLOC, renderer);
     if (device)

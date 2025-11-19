@@ -99,48 +99,48 @@ namespace Foundation::RHI {
 
         Span<RHIResourceFormat const> GetSwapchainSupportedFormats() const override;
         Span<RHISwapchainPresentMode const> GetSwapchainSupportedPresentModes() const override;
-        RHIDeviceScopedObjectHandle<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) override;
+        RHIDeviceUniqueRef<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) override;
         RHISwapchain* GetSwapchain(Handle handle) const override;
         void DestroySwapchain(Handle handle) override;
 
-        RHIDeviceScopedObjectHandle<RHIPipelineState> CreatePipelineState(RHIPipelineState::PipelineStateDesc const& desc) override;
+        RHIDeviceUniqueRef<RHIPipelineState> CreatePipelineState(RHIPipelineState::PipelineStateDesc const& desc) override;
         RHIPipelineState* GetPipelineState(Handle handle) const override;
         void DestroyPipelineState(Handle handle) override;
 
-        RHIDeviceScopedObjectHandle<RHIShaderModule> CreateShaderModule(RHIShaderModule::ShaderModuleDesc const& desc) override;
+        RHIDeviceUniqueRef<RHIShaderModule> CreateShaderModule(RHIShaderModule::ShaderModuleDesc const& desc) override;
         RHIShaderModule* GetShaderModule(Handle handle) const override;
         void DestroyShaderModule(Handle handle) override;
 
-        RHIDeviceScopedObjectHandle<RHICommandPool> CreateCommandPool(RHICommandPool::PoolDesc desc) override;
+        RHIDeviceUniqueRef<RHICommandPool> CreateCommandPool(RHICommandPool::PoolDesc desc) override;
         RHICommandPool* GetCommandPool(Handle handle) const override;
         void DestroyCommandPool(Handle handle) override;
 
-        RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> CreateSemaphore(bool is_timeline) override;
+        RHIDeviceUniqueRef<RHIDeviceSemaphore> CreateSemaphore(bool is_timeline) override;
         RHIDeviceSemaphore* GetSemaphore(Handle handle) const override;
         void DestroySemaphore(Handle handle) override;
 
-        RHIDeviceScopedObjectHandle<RHIDeviceFence> CreateFence(bool signaled) override;
+        RHIDeviceUniqueRef<RHIDeviceFence> CreateFence(bool signaled) override;
         RHIDeviceFence* GetFence(Handle handle) const override;
         void DestroyFence(Handle handle) override;
 
-        RHIDeviceScopedObjectHandle<RHIBuffer> CreateBuffer(RHIBufferDesc const& desc) override;
+        RHIDeviceUniqueRef<RHIBuffer> CreateBuffer(RHIBufferDesc const& desc) override;
         RHIBuffer* GetBuffer(Handle handle) const override;
         void DestroyBuffer(Handle handle) override;
 
-        RHIDeviceScopedObjectHandle<RHITexture> CreateTexture(RHITextureDesc const& desc) override;
+        RHIDeviceUniqueRef<RHITexture> CreateTexture(RHITextureDesc const& desc) override;
         RHITexture* GetImage(Handle handle) const override;
         void DestroyImage(Handle handle) override;
 
-        RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc) override;
+        RHIDeviceUniqueRef<RHIDeviceDescriptorSetLayout> CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc) override;
         RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout(Handle handle) const override;
         void DestroyDescriptorSetLayout(Handle handle) override;
 
-        RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> CreateDescriptorPool(
+        RHIDeviceUniqueRef<RHIDeviceDescriptorPool> CreateDescriptorPool(
             RHIDeviceDescriptorPool::PoolDesc const& desc) override;
         RHIDeviceDescriptorPool* GetDescriptorPool(Handle handle) const override;
         void DestroyDescriptorPool(Handle handle) override;
 
-        RHIDeviceScopedObjectHandle<RHIDeviceSampler> CreateSampler(RHIDeviceSampler::SamplerDesc const& desc) override;
+        RHIDeviceUniqueRef<RHIDeviceSampler> CreateSampler(RHIDeviceSampler::SamplerDesc const& desc) override;
         RHIDeviceSampler* GetSampler(Handle handle) const override;
         void DestroySampler(Handle handle) override;
 

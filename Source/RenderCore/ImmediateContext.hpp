@@ -10,13 +10,14 @@ namespace Foundation::RenderCore
      * @brief Single persistent command list for immediate submissions.
      * @note  This is primarily intended for quick one-shot commands, e.g. resource transitions, copies, etc.
      *        Avoid using this in hot path, or at all, if you could - which is usually the case.
+     *        This has only been sparingly used in Examples so far.
      */
     class ImmediateContext
     {
         RHIDevice* const mDevice;
         RHIDeviceQueue* mQueue;
 
-        RHIDeviceScopedObjectHandle<RHICommandPool> mCommandPool;
+        RHIDeviceUniqueRef<RHICommandPool> mCommandPool;
         RHICommandPoolScopedHandle<RHICommandList> mCommandList; // Persistent
     public:
         ImmediateContext(RHIDeviceQueueType type, RHIDevice* device);

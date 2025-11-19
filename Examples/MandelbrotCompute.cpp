@@ -14,12 +14,12 @@ int main()
     lines[0].x = lines[0].y = 16, lines[0].SetText("Mandelbrot Compute");
     renderer->BeginSetup();
     renderer->CreatePass(
-        "Mandelbrot", RHIDeviceQueueType::Compute, 0u,
+        "Mandelbrot", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "csMain", "data/shaders/MandelbrotCompute.spv");
             r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(PushConstant));
-            r->BindBackbufferUAV(self, 0);;
+            r->BindBackbufferUAV(self, 0);
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {

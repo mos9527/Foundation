@@ -6,8 +6,8 @@ namespace Foundation::RenderCore
 {
     using namespace RHI;
     using namespace Core;
-    using ResourceDefinition = Variant<RHIBufferDesc, RHITextureDesc, RHIDeviceObjectHandle<RHIBuffer>,
-                                       RHIDeviceObjectHandle<RHITexture>, RHIBuffer*, RHITexture*>;
+    using ResourceDefinition = Variant<RHIBufferDesc, RHITextureDesc, RHIDeviceRef<RHIBuffer>,
+                                       RHIDeviceRef<RHITexture>, RHIBuffer*, RHITexture*>;
     const size_t kTextureAspectCount = 3; // Color, depth, stencil @ref RHITextureAspectFlag
     /**
      * @brief Internal tracking information for a resource in the frame graph.
@@ -110,11 +110,11 @@ namespace Foundation::RenderCore
      */
     struct ExecuteResources
     {
-        Vector<Variant<RHIBuffer*, RHIDeviceObjectHandle<RHIBuffer>, RHIDeviceScopedObjectHandle<RHIBuffer>,
-                       RHITexture*, RHIDeviceObjectHandle<RHITexture>, RHIDeviceScopedObjectHandle<RHITexture>>>
+        Vector<Variant<RHIBuffer*, RHIDeviceRef<RHIBuffer>, RHIDeviceUniqueRef<RHIBuffer>,
+                       RHITexture*, RHIDeviceRef<RHITexture>, RHIDeviceUniqueRef<RHITexture>>>
             resources;
         Vector<Variant<RHITextureScopedHandle<RHITextureView>, RHITextureHandle<RHITextureView>>> views;
-        Vector<RHIDeviceScopedObjectHandle<RHIDeviceSampler>> samplers;
+        Vector<RHIDeviceUniqueRef<RHIDeviceSampler>> samplers;
         explicit ExecuteResources(Allocator* allocator) : resources(allocator), views(allocator), samplers(allocator) {}
         void fit(ResourceHandle handle)
         {

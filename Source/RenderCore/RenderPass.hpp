@@ -152,12 +152,12 @@ namespace Foundation::RenderCore
         // All stages used in this pass
         RHIPipelineStageBits piplineStages{};
         // Pipeline states for the entire pass
-        RHIDeviceScopedObjectHandle<RHIPipelineState> pso;
+        RHIDeviceUniqueRef<RHIPipelineState> pso;
         // PSO Creation parameters
         RHIPipelineState::PipelineStateDesc::Rasterizer psoRasterizer{};
         RHIPipelineState::PipelineStateDesc::DepthStencil psoDepthStencil{};
         // Layouts created by ourselves
-        Vector<RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout>> descriptorLayouts;
+        Vector<RHIDeviceUniqueRef<RHIDeviceDescriptorSetLayout>> descriptorLayouts;
         // Pointers. Can also contain external sets
         Vector<RHIDeviceDescriptorSetLayout*> pDescriptorLayouts;
         // Sets created by ourselves

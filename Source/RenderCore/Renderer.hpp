@@ -150,15 +150,15 @@ namespace Foundation::RenderCore
         uint32_t mCurrentSwap{0};
 
         UniquePtr<ExecuteResources> mResources;
-        RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> mDescPool;
+        RHIDeviceUniqueRef<RHIDeviceDescriptorPool> mDescPool;
         Mutex mDescPoolMutex;
 
         struct FrameSyncObjects
         {
             // Index of this swap
             const size_t swapIndex;
-            RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> render{}, present{};
-            RHIDeviceScopedObjectHandle<RHIDeviceFence> graphicsFence{}, computeFence{};
+            RHIDeviceUniqueRef<RHIDeviceSemaphore> render{}, present{};
+            RHIDeviceUniqueRef<RHIDeviceFence> graphicsFence{}, computeFence{};
             // Texture view for the backbuffer
             RHITextureScopedHandle<RHITextureView> view{};
             RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> viewSet{};
@@ -166,14 +166,14 @@ namespace Foundation::RenderCore
             ResourceHandle backbuffer{kInvalidHandle};
             FrameSyncObjects(size_t swapIndex) : swapIndex(swapIndex) {}
         };
-        RHIDeviceScopedObjectHandle<RHIDeviceDescriptorPool> mSwapDescriptorPool;
-        RHIDeviceScopedObjectHandle<RHIDeviceDescriptorSetLayout> mSwapDescriptorSetLayout;
+        RHIDeviceUniqueRef<RHIDeviceDescriptorPool> mSwapDescriptorPool;
+        RHIDeviceUniqueRef<RHIDeviceDescriptorSetLayout> mSwapDescriptorSetLayout;
 
         Vector<FrameSyncObjects> mSwaps;
         // Semaphore for async compute
-        RHIDeviceScopedObjectHandle<RHIDeviceSemaphore> mGraphicsTimeline{}, mComputeTimeline{};
-        RHIApplicationObjectHandle<RHIDevice> mDevice{};
-        RHIDeviceObjectHandle<RHISwapchain> mSwapchain{};
+        RHIDeviceUniqueRef<RHIDeviceSemaphore> mGraphicsTimeline{}, mComputeTimeline{};
+        RHIApplicationRef<RHIDevice> mDevice{};
+        RHIDeviceRef<RHISwapchain> mSwapchain{};
         RHIDeviceQueue *mGraphicsQueue{}, *mComputeQueue{};
 
         UniquePtr<RendererSetup> mSetup;
@@ -197,7 +197,7 @@ namespace Foundation::RenderCore
         ThreadPool mExecuteThreadPool;
         struct ExecutePerThreadCommandLists
         {
-            RHIDeviceScopedObjectHandle<RHICommandPool> graphicsPool{}, computePool{};
+            RHIDeviceUniqueRef<RHICommandPool> graphicsPool{}, computePool{};
             Vector<RHICommandPoolScopedHandle<RHICommandList>> graphicsCmds, computeCmds;
             // Resets every frame
             size_t graphicsCtr{}, computeCtr{};
@@ -280,8 +280,8 @@ namespace Foundation::RenderCore
         RHIDeviceIdleGuard mWaitIdle; // Ensure device is idle on destruction
     public:
         Renderer() = delete;
-        Renderer(RendererDesc const& desc, RHIApplicationObjectHandle<RHIDevice> device,
-                 RHIDeviceObjectHandle<RHISwapchain> swapchain, Allocator* allocator);
+        Renderer(RendererDesc const& desc, RHIApplicationRef<RHIDevice> device,
+                 RHIDeviceRef<RHISwapchain> swapchain, Allocator* allocator);
 
 #pragma region Render Graph Setup
         /**
@@ -351,14 +351,12 @@ namespace Foundation::RenderCore
          *
          * All resources created by a pass that is not culled will be created, regardless of usage.
          *
-         * Resources can be imported by passing in RHIDeviceObjectHandle<RHIBuffer> or
-         * RHIDeviceObjectHandle<RHITexture>.
-         *
-         * @ref createResource() should be generally preferred over this.
+         * Resources can be imported by passing in RHIDeviceRef<RHIBuffer> or
+         * RHIDeviceRef<RHITexture>.
          *
          * @param desc Resources can be created by passing in @ref RHIBufferDesc, @ref RHITextureDesc,
-         * and can be imported by passing in @ref RHIDeviceObjectHandle<RHIBuffer>, @ref
-         * RHIDeviceObjectHandle<RHITexture>, or raw, pinned pointers @ref RHIBuffer*, or @ref RHITexture*
+         * and can be imported by passing in @ref RHIDeviceRef<RHIBuffer>, @ref
+         * RHIDeviceRef<RHITexture>, or raw, pinned pointers @ref RHIBuffer*, or @ref RHITexture*
          *
          * @note ALWAYS ENSURE that your IMPORTED resources OUTLIVE the @ref Renderer. There's
          *       NO reference counting or tracking of the underlying resource lifetime.
@@ -795,7 +793,7 @@ namespace Foundation::RenderCore
          * @note You may want to re-create the entire @ref Renderer instead if your resources depend on
          *       the backbuffer size.
          */
-        void SetSwapchain(RHIDeviceObjectHandle<RHISwapchain> swapchain);
+        void SetSwapchain(RHIDeviceRef<RHISwapchain> swapchain);
         /**
          * @brief Resets the temporary execution allocator , and waits for the possibly multi-buffered
          * next frame to finish rendering.
