@@ -5,7 +5,6 @@ add_subdirectory(Samples)
 
 add_library(Example_Common INTERFACE)
 target_link_libraries(Example_Common INTERFACE Foundation_RenderCore Foundation_RHIVulkan Foundation_RenderUtils)
-target_precompile_headers(Example_Common INTERFACE Examples.hpp)
 
 add_executable(Example_Triangle "Triangle.cpp")
 target_link_libraries(Example_Triangle PUBLIC Example_Common)

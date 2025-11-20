@@ -173,7 +173,7 @@ RHICommandList& VulkanCommandList::DrawIndexedIndirectCount(RHIBuffer* buffer, s
     return *this;
 }
 
-RHICommandList& Foundation::RHI::VulkanCommandList::DrawMeshTasks(uint32_t group_count_x, uint32_t group_count_y,
+RHICommandList& VulkanCommandList::DrawMeshTasks(uint32_t group_count_x, uint32_t group_count_y,
                                                                   uint32_t group_count_z)
 {
     CHECK(mAllocator && "Invalid command list states.");
@@ -181,7 +181,7 @@ RHICommandList& Foundation::RHI::VulkanCommandList::DrawMeshTasks(uint32_t group
     return *this;
 }
 
-RHICommandList& Foundation::RHI::VulkanCommandList::DrawMeshTasksIndirect(RHIBuffer* cmd_buffer, size_t cmd_offset, size_t draw_count, size_t stride)
+RHICommandList& VulkanCommandList::DrawMeshTasksIndirect(RHIBuffer* cmd_buffer, size_t cmd_offset, size_t draw_count, size_t stride)
 {
     CHECK(mAllocator && "Invalid command list states.");
     mCommandBuffer.drawMeshTasksIndirectEXT(
@@ -200,6 +200,13 @@ RHICommandList& VulkanCommandList::PushConstant(RHIPipelineState* pipeline, RHIS
     vkCmdPushConstants(*mCommandBuffer, *static_cast<VulkanPipelineState*>(pipeline)->GetVkPipelineLayout(),
                        static_cast<VkShaderStageFlags>(vkShaderStageFlagsFromRHIShaderStage(stage)), offset,
                        data.size(), data.data());
+    return *this;
+}
+RHICommandList& VulkanCommandList::UpdateBuffer(RHIBuffer* buffer, size_t offset, Span<const char> data)
+{
+    CHECK(mAllocator && "Invalid command list states.");
+    auto* vulkan_buffer = static_cast<VulkanBuffer*>(buffer);
+    mCommandBuffer.updateBuffer<const char>(vulkan_buffer->GetVkBuffer(), offset, data);
     return *this;
 }
 RHICommandList& VulkanCommandList::FillBuffer(RHIBuffer* buffer, uint32_t value, size_t offset, size_t size)
@@ -399,7 +406,8 @@ RHICommandList& VulkanCommandList::BindDescriptorSet(
     RHIDevicePipelineType bindpoint,
     RHIPipelineState* pipeline,
     Span<RHIDeviceDescriptorSet* const> sets,
-    size_t first
+    size_t first,
+    Span<uint32_t> dynamicOffsets
 ) {
     CHECK(mAllocator && "Invalid command list states.");
     Vector<vk::DescriptorSet> vk_sets(mAllocator);
@@ -413,7 +421,7 @@ RHICommandList& VulkanCommandList::BindDescriptorSet(
         static_cast<VulkanPipelineState*>(pipeline)->GetVkPipelineLayout(),
         static_cast<uint32_t>(first),
         vk_sets,
-        {} // TODO? Dynamic offsets
+        dynamicOffsets
     );
     return *this;
 }

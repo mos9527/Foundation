@@ -57,57 +57,12 @@ namespace Foundation::Core {
     /**
      * @brief std::span with relaxed constructors for pointer-aliasing types and common containers.
      */
-    template<typename T>
-    class Span : public std::span<T> {
-    public:
-        using std::span<T>::span;
-        Span() = default;
-        /**
-         * @brief Relaxed ctor for pointer-aliasing types
-         */
-        template<typename U> requires
-            (sizeof(std::remove_reference<T>) == sizeof(std::remove_reference<U>) &&
-            std::is_convertible_v<U*, T*>)
-        Span(U* data, size_t size) : std::span<T>(static_cast<T*>(data), size) {}
+    template<typename T> using Span = std::span<T>;
 
-        /// For initializer lists, see
-        /// https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p2447r4.html
-        /// i.e. StlSpan<const T>({ { 1, 2, 3 } })
-
-        /**
-         * @brief Relaxed ctor for C-style arrays
-         */
-        template<typename U, size_t Size>
-        Span(U(&array)[Size]) : Span(array, Size) {}
-
-        /**
-         * @brief Relaxed ctor for contiguous STL containers
-         */
-        template<typename U>
-        requires requires (U a) { a.data(); a.size(); }
-        Span(U& array) : Span(array.data(), array.size())
-        {}
-
-        /**
-         * @brief Shorthand for single l-value item
-         */
-        template<typename U> requires std::is_convertible_v<U*, T*>
-        Span(U& item) : Span(&item, 1) {}
-
-        /**
-         * @brief Provides casting to a byte-level view of the underlying data.
-         */
-        [[nodiscard]] Span<const char> AsBytes() const {
-            return Span<const char>{ reinterpret_cast<const char*>(this->data()), this->size_bytes()  };
-        }
-
-        /**
-         * @brief Creates a sub-span from the current span.
-         */
-        Span SubSpan(size_t offset = 0, size_t count = std::dynamic_extent) const {
-            return Span(this->data() + offset, count == std::dynamic_extent ? this->size() - offset : count);
-        }
-    };
+    template<typename T> Span<const char> AsBytes(T const& data)
+    {
+        return { reinterpret_cast<const char*>(&data), sizeof(T) };
+    }
     /**
      * @brief Convenience function for constructing a Span with memory allocated from a @ref
      *        Foundation::Core::Allocator. Possibly constructs objects in-place if they are not trivially constructible (e.g.

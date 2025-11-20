@@ -18,9 +18,7 @@
 #include <glm/mat2x2.hpp>
 #include <glm/mat3x3.hpp>
 #include <glm/mat4x4.hpp>
-/**
- * @brief Mathematical utilities and types.
- */
+
 namespace Foundation::Math {
     using namespace glm;
     using float4 = vec4;
@@ -34,8 +32,55 @@ namespace Foundation::Math {
     static_assert(sizeof(float3) == 3 * sizeof(float));
     static_assert(sizeof(float2) == 2 * sizeof(float));
     static_assert(sizeof(float4x4) == 16 * sizeof(float));
-}
 
-#include "Quantization.hpp"
-#include "Unorm.hpp"
-#include "Bitfield.hpp"
+#pragma region Bitfields
+    template<typename T> constexpr T bitfieldExtract(T value, T offset, T length)
+    {
+        T mask = ((static_cast<T>(1u) << length) - 1) << offset;
+        return (value & mask) >> offset;
+    }
+    template<typename T> constexpr T bitfieldInsert(T original, T value, T offset, T length)
+    {
+        T mask = ((static_cast<T>(1u) << length) - 1) << offset;
+        return (original & ~mask) | (value << offset & mask);
+    }
+#pragma endregion
+
+#pragma region MVP
+    // zNear -> zNDC = 1, zFar (inf) -> zNDC = 0. Y flipped for Vulkan NDC.
+    // View perspective: Right = +X, Up = +Y, Forward = +Z
+    inline mat4 infinitePerspectiveLHReverseZ(float fovY /* radians */, float a /* aspect W/H */, float zNear)
+    {
+        float f = 1 / tan(fovY / 2);
+        return mat4{
+            f/a,0,0,0,
+            0,-f,0,0, // Y Flip
+            // zNDC = zNear/z
+            0,0,0,1,
+            0,0,zNear,0
+        };
+    }
+
+    // zNear -> zNDC = 1, zFar -> zNDC = 0. Y flipped for Vulkan NDC.
+    // View perspective: Right = +X, Up = +Y, Forward = +Z
+    inline mat4 perspectiveLHReverseZ(float fovY, float a, float zNear, float zFar)
+    {
+        float f = 1 / tan(fovY / 2);
+        return mat4{
+            f/a,0,0,0,
+            0,-f,0,0, // Y Flip
+            // zNDC = zNear/z
+            0,0,-zNear/(zFar - zNear),1,
+            0,0,(zFar * zNear)/(zFar - zNear),0
+        };
+    }
+
+    // Forward = +Z
+    inline mat4 viewMatrixLHReverseZ(vec3 pos, quat rot)
+    {
+        mat4 view = mat4_cast(rot);
+        view[3] = vec4(pos.x,pos.y,pos.z,1.0f);
+        return scale(glm::identity<mat4>(), vec3(1, 1, -1)) * inverse(view);
+    }
+#pragma endregion
+}

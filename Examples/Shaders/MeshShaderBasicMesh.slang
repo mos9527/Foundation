@@ -34,18 +34,24 @@ struct GSMesh
     uint32_t lodCount;
     GSMeshLOD lod[kNumMeshDiscreteLODs];
 };
-struct UBO {
+struct UBO
+{
+    float4x4 mvp;
     GSMesh mesh;
 };
 // ^^^
-
 uniform UBO globalParams;
 ByteAddressBuffer mesh;
 
+struct MIndex {
+    uint8_t v0;
+    uint8_t v1;
+    uint8_t v2;
+}
 struct V2F
 {
     float4 pos : SV_POSITION;
-    float4 color : COLOR0;
+    uint32_t meshlet : ID;
 };
 
 static const size_t kWGSize = 64;
@@ -62,21 +68,22 @@ void meshMain(
     GSMeshLOD lod = globalParams.mesh.lod[0];
     // Each WG of mesh shader processes *exactly* one meshlet per dispatch
     FMeshlet meshlet = mesh.Load<FMeshlet>(lod.meshletOffset + gid * sizeof(FMeshlet));
-    uint32_t vtxBase = globalParams.mesh.vtxOffset + lod.meshletVtxOffset + meshlet.vtxOffset;
+    uint32_t vtxBase = lod.meshletVtxOffset + meshlet.vtxOffset * sizeof(uint32_t);
     uint32_t vtxCount = meshlet.vtxCount;
-    uint32_t indBase = lod.indOffset + lod.meshletTriOffset + meshlet.triOffset;
+    uint32_t triBase = lod.meshletTriOffset + meshlet.triOffset * sizeof(uint8_t);
     uint32_t triCount = meshlet.triCount;
     SetMeshOutputCounts(vtxCount, triCount);
     // Each thread in the WG processes multiple vertices/triangles
     for (uint i = tid; i < vtxCount; i += kWGSize) {
-        FVertex vtx = mesh.Load<FVertex>(vtxBase + i * sizeof(FVertex));
+        uint ind = mesh.Load<uint32_t>(vtxBase + i * sizeof(uint32_t));
+        FVertex vtx = mesh.Load<FVertex>(globalParams.mesh.vtxOffset + ind * sizeof(FVertex));
         V2F v2f;
-        v2f.pos = float4(vtx.position, 1.0);
-        v2f.color = float4(vtx.normal * 0.5 + 0.5, 1.0);
+        v2f.pos = mul(globalParams.mvp, float4(vtx.position, 1.0));
+        v2f.meshlet = gid;
         verts[i] = v2f;
     }
     for (uint i = tid; i < triCount; i += kWGSize) {
-        uint3 ind = mesh.Load<uint3>(indBase + i * 3 * sizeof(uint32_t));
-        triangles[i] = ind;
+        MIndex tri = mesh.Load<MIndex>(triBase + i * sizeof(MIndex));
+        triangles[i] = uint3(tri.v0, tri.v1, tri.v2);
     }
 }

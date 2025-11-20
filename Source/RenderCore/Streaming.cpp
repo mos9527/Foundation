@@ -84,8 +84,8 @@ namespace Foundation::RenderCore
             }
             size_t write = std::min(data.size(), page->freeSize()), offset = 0;
             write -= write % alignment; // Align down
-            PageWrite(page->id, data.SubSpan(0, write), offset, buf);
-            data = data.SubSpan(write);
+            PageWrite(page->id, data.subspan(0, write), offset, buf);
+            data = data.subspan(write);
             mPageRefs[page->id]++;
             outList.emplace_back(buf, offset, write, page->id);
         }
@@ -135,7 +135,7 @@ namespace Foundation::RenderCore
         size_t offset = 0;
         for (size_t layer = 0; layer < numLayers; layer++)
         {
-            Span layerData = data.SubSpan(layer * layerSize, layerSize);
+            Span layerData = data.subspan(layer * layerSize, layerSize);
             WritePages(lock, layerData, writes, rowPitch);
             // Same mip
             for (auto& [srcBuffer, srcOffset, size, pid] : writes)
@@ -229,11 +229,11 @@ namespace Foundation::RenderCore
 
             auto& [bccs, promise] = elem;
             Span<BufferCopyCommand> bccsSpan = bccs;
-            auto writing = bccsSpan.SubSpan(0, std::min(transferBudget, static_cast<int>(bccsSpan.size())));
-            auto remaining = bccsSpan.SubSpan(writing.size());
+            auto writing = bccsSpan.subspan(0, std::min(transferBudget, static_cast<int>(bccsSpan.size())));
+            auto remaining = bccsSpan.subspan(writing.size());
             for (auto const& [pid, src, dst, region] : writing)
             {
-                cmd->CopyBuffer(src, dst, {region});
+                cmd->CopyBuffer(src, dst, {{region}});
                 refs[pid]++;
             }
             // Finished this entry?
@@ -254,12 +254,12 @@ namespace Foundation::RenderCore
             mTextureCopies.pop();
 
             auto& [tccs, promise] = elem;
-            Span<TextureCopyCommand> tccsSpan = tccs;
-            auto writing = tccsSpan.SubSpan(0, std::min(transferBudget, static_cast<int>(tccsSpan.size())));
-            auto remaining = tccsSpan.SubSpan(writing.size());
+            Span tccsSpan = tccs;
+            auto writing = tccsSpan.subspan(0, std::min(transferBudget, static_cast<int>(tccsSpan.size())));
+            auto remaining = tccsSpan.subspan(writing.size());
             for (auto const& [pid, src, dst, dstLayout, region] : writing)
             {
-                cmd->CopyBufferToImage(src, dst, dstLayout, region);
+                cmd->CopyBufferToImage(src, dst, dstLayout, {{region}});
                 refs[pid]++;
             }
             // Finished this entry?

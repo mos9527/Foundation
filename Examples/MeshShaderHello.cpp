@@ -27,7 +27,7 @@ int main()
                 .DrawMeshTasks(1, 1, 1)
                 .EndGraphics();
         });
-    createCSDebugTextPassBackBuffer(renderer, "Debug Text", {data});
+    createCSDebugTextPassBackBuffer(renderer, "Debug Text", {{data}});
     renderer->EndSetup();
     ExampleFpsCounter fps;
     while (!Examples_ShouldClose(window, renderer, swapchain))

@@ -59,11 +59,16 @@ namespace Foundation::RHI {
             RHIDevicePipelineType type;
         };
         virtual RHICommandList& SetPipeline(PipelineDesc const& desc) = 0;
+        /**
+         * @param dynamicOffsets Span of uint32_t mapping to *only* the dynamic bindings within the sets.
+         *                       The indices are effectively the prefix sum of dynamic bindings in each set.
+         */
         virtual RHICommandList& BindDescriptorSet(
             RHIDevicePipelineType bindpoint,
             RHIPipelineState* pipeline,
             Span<RHIDeviceDescriptorSet* const> sets,
-            size_t first = 0) = 0;
+            size_t first = 0,
+            Span<uint32_t> dynamicOffsets = {}) = 0;
 #pragma endregion
 #pragma region Rasterizer
         virtual RHICommandList& SetViewport(float x, float y, float width, float height, float depth_min = 0.0, float depth_max = 1.0) = 0;
@@ -75,6 +80,7 @@ namespace Foundation::RHI {
         virtual RHICommandList& DrawMeshTasksIndirect(RHIBuffer* cmd_buffer, size_t cmd_offset, size_t draw_count, size_t stride) = 0;
 #pragma endregion
         virtual RHICommandList& PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Span<const char> data) = 0;
+        virtual RHICommandList& UpdateBuffer(RHIBuffer* buffer, size_t offset, Span<const char> data) = 0;
 #pragma region Transfer Queue
         struct CopyBufferRegion {
             size_t srcOffset = 0;

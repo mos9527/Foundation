@@ -153,7 +153,7 @@ int main()
                 uploadPool.Push([=, &lastFuture, &stream, &tex]
                 {
                     LOG(Upload, LogDebug, "Worker streaming mip {} {}x{}", mipPrep, dim, dim);
-                    lastFuture = stream.Write(generateCheckerboardMip(mipPrep).AsBytes(), tex.Get(), RHITextureAspectFlagBits::Color, mipPrep, 0);
+                    lastFuture = stream.Write(AsBytes(generateCheckerboardMip(mipPrep)), tex.Get(), RHITextureAspectFlagBits::Color, mipPrep, 0);
                 });
             }
             Examples_NewFrame(renderer);

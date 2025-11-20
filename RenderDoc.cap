@@ -7,12 +7,6 @@
             {
                 "separator": "Platform style",
                 "type": "Set",
-                "value": "libasan.so",
-                "variable": "LD_PRELOAD"
-            },
-            {
-                "separator": "Platform style",
-                "type": "Set",
                 "value": "1",
                 "variable": "MIMALLOC_VERBOSE"
             },
@@ -25,11 +19,11 @@
             {
                 "separator": "Platform style",
                 "type": "Set",
-                "value": "X11",
-                "variable": "XDG_SESSION_TYPE"
+                "value": "x11",
+                "variable": "SDL_VIDEODRIVER"
             }
         ],
-        "executable": "/home/mos9527/Foundation/cmake-build-debug/bin/ModelViewer",
+        "executable": "/home/mos9527/Foundation/cmake-build-debug/bin/Example_MeshShaderBasic",
         "inject": false,
         "numQueuedFrames": 0,
         "options": {

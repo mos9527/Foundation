@@ -1,9 +1,10 @@
 #pragma once
 #include <RHIVulkan/Application.hpp>
 #include <RenderCore/Renderer.hpp>
-
+#include <Math/Math.hpp>
 using namespace Foundation;
 using namespace Core;
+using namespace Math;
 using namespace RenderCore;
 
 constexpr RHIResourceFormat kFormatPreferenceList[] = {
@@ -111,5 +112,51 @@ struct ExampleFpsCounter
         }
         frames++;
         return fps;
+    }
+};
+
+
+/**
+ * CONTROLS
+ * - Drag with left mouse - pitch yaw
+ * - Mouse wheel - radius
+ * - Drag with right mouse - panning
+ */
+struct ExamplesArcballCamera
+{
+    float3 center;
+    float radius;
+    float pitch, yaw;
+    float zNear, fovY, aspect;
+    mat4 Update(SDL_Event const& event)
+    {
+        if (event.type == SDL_EVENT_MOUSE_MOTION)
+        {
+            if (event.motion.state & SDL_BUTTON_LMASK)
+            {
+                pitch -= event.motion.xrel * 1e-2f;
+                yaw -= event.motion.yrel * 1e-2f;
+            }
+            if (event.motion.state & SDL_BUTTON_RMASK)
+            {
+                quat rot = angleAxis(yaw, vec3(1, 0, 0)) * angleAxis(pitch, vec3(0, 1, 0));
+                vec3 right = rot * vec3(1, 0, 0);
+                vec3 up = rot * vec3(0, 1, 0);
+                center -= right * (event.motion.xrel * radius * 1e-3f);
+                center += up * (event.motion.yrel * radius * 1e-3f);
+            }
+        }
+        if (event.type == SDL_EVENT_MOUSE_WHEEL)
+        {
+            radius -= event.wheel.y * radius * 1e-1f;
+            radius = radius < 1e-3f ? 1e-3f : radius;
+        }
+        // ---
+        mat4 proj = infinitePerspectiveLHReverseZ(fovY, aspect, zNear);
+        quat rot = angleAxis(yaw, vec3(1, 0, 0)) * angleAxis(pitch, vec3(0, 1, 0));
+        vec3 dir = rot * vec3(0, 0, 1);
+        mat4 view = viewMatrixLHReverseZ(center + radius * dir, rot);
+        mat4 viewProj = proj * view;
+        return viewProj;
     }
 };

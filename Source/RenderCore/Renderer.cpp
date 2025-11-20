@@ -1531,7 +1531,7 @@ void Renderer::EndExecute()
                 f = mSwaps[mCurrentSync].graphicsFence.Get();
             if (ctr == lastCompute)
                 f = mSwaps[mCurrentSync].computeFence.Get();
-            q->Submit(submits, f);
+            q->Submit({{submits}}, f);
             ctr++;
         }
     }
