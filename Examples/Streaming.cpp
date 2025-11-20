@@ -1,3 +1,4 @@
+#include "Examples.hpp"
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSDebugText.hpp>
 #include <RenderCore/Streaming.hpp>

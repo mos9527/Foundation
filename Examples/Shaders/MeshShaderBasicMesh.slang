@@ -72,7 +72,9 @@ void meshMain(
     uint32_t vtxCount = meshlet.vtxCount;
     uint32_t triBase = lod.meshletTriOffset + meshlet.triOffset * sizeof(uint8_t);
     uint32_t triCount = meshlet.triCount;
-    SetMeshOutputCounts(vtxCount, triCount);
+    printf("Meshlet %d: vtxCount=%d, triCount=%d\n", gid, vtxCount, triCount);
+    SetMeshOutputCounts(0, 0);
+    return;
     // Each thread in the WG processes multiple vertices/triangles
     for (uint i = tid; i < vtxCount; i += kWGSize) {
         uint ind = mesh.Load<uint32_t>(vtxBase + i * sizeof(uint32_t));

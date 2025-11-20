@@ -1,3 +1,4 @@
+#include "Examples.hpp"
 #include <Bindings/ImGui.hpp>
 #include <RenderUtils/CSDebugText.hpp>
 using namespace RenderUtils;

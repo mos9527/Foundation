@@ -10,7 +10,7 @@ struct UBO
 };
 int main()
 {
-    SDL_Window* window = SDL_CreateWindow("Mesh Shader Basic", 800, 600, Examples_SDLWindowFlagsVulkan);
+    SDL_Window* window = SDL_CreateWindow("Mesh Shader Hierarchical LOD", 800, 600, Examples_SDLWindowFlagsVulkan);
     UBO ubo{};
     CSDebugTextData lines[3]{};
     /* Setup */
@@ -19,11 +19,11 @@ int main()
         .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer,
         .size = 16u * (1u << 20) // 16 MB
     });
-    /* Loads LOD0 and upload immediately */
+    /* Loads and computes DAG LODs and upload immediately */
     {
         FMesh src(GLOBAL_ALLOC);
         src.Load("data/assets/bunny.obj");
-        src.ClusterizeLOD();
+        src.ClusterizeDAG();
         auto staging = device->CreateBuffer(RHIBufferDesc::CreateStagingDesc(meshData->mDesc.size));
         char *ptr = static_cast<char*>(staging->Map()), *dst = ptr;
         auto Write = [&](const void* pData, size_t bytes)
@@ -36,9 +36,13 @@ int main()
         auto& mesh = ubo.mesh;
         mesh.vtxCount = src.vertices.size();
         mesh.vtxOffset = Write(src.vertices.data(), sizeof(FVertex) * src.vertices.size());
+        // Group data
+        mesh.groupCount = src.dag.groups.size();
+        mesh.groupOffset = Write(src.dag.groups.data(), sizeof(FLODGroup) * src.dag.groups.size());
+        // DAG occupies LOD0 data
         mesh.lodCount = 1;
         auto& m0 = mesh.lod[0];
-        auto& s0 = src.lods[0];
+        auto& s0 = src.dag;
         m0.meshletCount = s0.meshlets.size();
         m0.meshletOffset = Write(s0.meshlets.data(), sizeof(FMeshlet) * s0.meshlets.size());
         m0.meshletVtxOffset = Write(s0.meshletVtx.data(), sizeof(uint32_t) * s0.meshletVtx.size());
@@ -79,10 +83,6 @@ int main()
             r->BindTextureDSV(self, zbufferHandle,
                               {.format = RHIResourceFormat::D32SignedFloat,
                                .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
-            r->PassSetRasterizerFlags(
-                self, {},
-                {// Reverse Z (near->1, far->0). See also @ref ExamplesArcballCamera
-                 .depthCompareOp = RHIPipelineState::PipelineStateDesc::DepthStencil::GreaterEqual});
             // No task shader required. See below.
             r->BindShader(self, RHIShaderStageBits::Mesh, "meshMain", "data/shaders/MeshShaderBasicMesh.spv");
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MeshShaderBasicFrag.spv");
@@ -114,8 +114,8 @@ int main()
     ExamplesArcballCamera camera{.center = {0, 0.5f, 0}, .radius = 2.0f};
     while (!Examples_ShouldClose(window, renderer, swapchain, &event))
     {
-        lines[0].x = 16, lines[0].y = 16, lines[0].SetText(fmt::format("Mesh Shader Basic FPS: {}", fps.Update()));
-        lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("Drag to rotate camera."));
+        lines[0].x = 16, lines[0].y = 16, lines[0].SetText(fmt::format("Mesh Shader - Hierarchical LOD FPS: {}", fps.Update()));
+        lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format(ExamplesArcballCamera::kControlsText));
         camera.aspect = swapchain->GetAspectRatio(), camera.fovY = radians(45.0f), camera.zNear = 0.01f;
         ubo.mvp = camera.Update(event);
         Examples_NewFrame(renderer);

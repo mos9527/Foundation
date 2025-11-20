@@ -1,3 +1,4 @@
+#include "Examples.hpp"
 #define STB_IMAGE_IMPLEMENTATION
 #include <RenderUtils/CSDebugText.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>

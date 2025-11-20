@@ -1,5 +1,6 @@
 // Example showing how to use CSDebugText to get the absolute minimum up and running - with something to display.
 // You can copy-paste this into your own application to get started.
+#include "Examples.hpp"
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSDebugText.hpp>
 using namespace RenderUtils;

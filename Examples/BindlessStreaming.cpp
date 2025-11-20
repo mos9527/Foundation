@@ -1,3 +1,4 @@
+#include "Examples.hpp"
 #include <RenderCore/Bindless.hpp>
 #include <RenderCore/ImmediateContext.hpp>
 #include <RenderCore/Streaming.hpp>

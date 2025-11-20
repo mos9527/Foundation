@@ -12,8 +12,10 @@ static const size_t kNumMeshDiscreteLODs = 5;
 
 struct GSMeshLOD
 {
+    // -- VS pipeline
     uint32_t indOffset;
     uint32_t indCount;
+    // -- MS pipeline @ref FMeshlet
     uint32_t meshletOffset;
     uint32_t meshletCount;
     uint32_t meshletVtxOffset;
@@ -21,8 +23,13 @@ struct GSMeshLOD
 };
 struct GSMesh
 {
+    // @ref FVertex
     uint32_t vtxOffset;
     uint32_t vtxCount;
+    // -- DAG LODs @ref FLODGroup
+    uint32_t groupOffset;
+    uint32_t groupCount;
+    // -- Discrete LODs
     uint32_t lodCount;
     GSMeshLOD lod[kNumMeshDiscreteLODs];
 };

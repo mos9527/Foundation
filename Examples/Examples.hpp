@@ -116,14 +116,10 @@ struct ExampleFpsCounter
 };
 
 
-/**
- * CONTROLS
- * - Drag with left mouse - pitch yaw
- * - Mouse wheel - radius
- * - Drag with right mouse - panning
- */
 struct ExamplesArcballCamera
 {
+    static constexpr char kControlsText[] = "Mouse Left: Rotate | Mouse Right: Pan | Mouse Wheel: Zoom";
+
     float3 center;
     float radius;
     float pitch, yaw;

@@ -1,3 +1,4 @@
+#include "Examples.hpp"
 #include <RenderCore/Bindless.hpp>
 #include <RenderUtils/CSDebugText.hpp>
 #include <RenderUtils/PSFullscreen.hpp>

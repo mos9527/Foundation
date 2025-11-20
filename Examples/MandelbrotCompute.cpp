@@ -1,3 +1,4 @@
+#include "Examples.hpp"
 #include <RenderUtils/CSDebugText.hpp>
 using namespace RenderUtils;
 struct PushConstant

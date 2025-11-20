@@ -74,7 +74,7 @@ namespace Foundation::RHI {
                     NotEqual,
                     GreaterEqual,
                     Always
-                } depthCompareOp{ Less };
+                } depthCompareOp{ Greater };
             } depthStencil{};
             struct Attachment {
                 struct Blending {

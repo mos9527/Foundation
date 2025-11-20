@@ -1,3 +1,4 @@
+#include "Examples.hpp"
 #include <RenderUtils/PSFullscreen.hpp>
 #include <RenderUtils/CSDebugText.hpp>
 using namespace RenderUtils;

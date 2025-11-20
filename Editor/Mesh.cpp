@@ -1,8 +1,13 @@
 #define FAST_OBJ_IMPLEMENTATION
 #include <fast_obj.h>
+
 #include <meshoptimizer.h>
+#define CLUSTERLOD_IMPLEMENTATION
+#include <clusterlod.h>
 
 #include "Mesh.hpp"
+
+// -- optimize
 template <typename Vertex, typename Index>
 void OptimizeVertexIndex(Vector<Vertex>& vertices, Vector<Index>& indices)
 {
@@ -17,6 +22,7 @@ void OptimizeVertexIndex(Vector<Vertex>& vertices, Vector<Index>& indices)
                                 sizeof(FVertex));
 }
 
+// -- simplify
 template <typename Vertex, typename Index>
 float GenerateLOD(Vector<Index>& outIndices, Span<const Vertex> vertices, Span<const Index> indices,
                   const float lodScale)
@@ -26,20 +32,21 @@ float GenerateLOD(Vector<Index>& outIndices, Span<const Vertex> vertices, Span<c
     auto targetIndexCount = static_cast<uint32_t>(ceilf(indices.size() * lodScale));
     outIndices.resize(indices.size());
     float actualError;
-    size_t lodSize = meshopt_simplifyWithAttributes(
-        outIndices.data(), indices.data(), indices.size(), reinterpret_cast<const float*>(&vertices[0]), vertices.size(),
-        sizeof(Vertex), &vertices[0].normal.x, sizeof(Vertex), attrWeights, 3, nullptr, targetIndexCount,
-        1e-1f, // max error
-        0, // options
-        &actualError);
+    size_t lodSize =
+        meshopt_simplifyWithAttributes(outIndices.data(), indices.data(), indices.size(),
+                                       reinterpret_cast<const float*>(&vertices[0]), vertices.size(), sizeof(Vertex),
+                                       &vertices[0].normal.x, sizeof(Vertex), attrWeights, 3, nullptr, targetIndexCount,
+                                       1e-1f, // max error
+                                       0, // options
+                                       &actualError);
     outIndices.resize(lodSize);
     return actualError;
 }
 
-template<typename Vertex, typename Index>
+// -- clusterize
+template <typename Vertex, typename Index>
 void BuildMeshlets(Vector<FMeshlet>& outMeshlet, Vector<Index>& outMeshletVertices,
-                           Vector<uint8_t>& outMeshletTriangles, Span<const Vertex> vertices,
-                           Span<const Index> indices)
+                   Vector<uint8_t>& outMeshletTriangles, Span<const Vertex> vertices, Span<const Index> indices)
 {
     size_t maxMeshlets = meshopt_buildMeshletsBound(indices.size(), kMeshletMaxVertices, kMeshletMaxTriangles);
     // Worst bounds
@@ -47,8 +54,8 @@ void BuildMeshlets(Vector<FMeshlet>& outMeshlet, Vector<Index>& outMeshletVertic
     outMeshletTriangles.resize(maxMeshlets * kMeshletMaxTriangles);
     Vector<meshopt_Meshlet> meshoptMeshlets(maxMeshlets, outMeshlet.get_allocator());
     size_t meshlets =
-        meshopt_buildMeshlets(meshoptMeshlets.data(), outMeshletVertices.data(),
-                              outMeshletTriangles.data(), indices.data(), indices.size(), reinterpret_cast<const float*>(&vertices[0]),
+        meshopt_buildMeshlets(meshoptMeshlets.data(), outMeshletVertices.data(), outMeshletTriangles.data(),
+                              indices.data(), indices.size(), reinterpret_cast<const float*>(&vertices[0]),
                               vertices.size(), sizeof(Vertex), kMeshletMaxVertices, kMeshletMaxTriangles,
                               0.25f // As recommended by the docs
         );
@@ -64,19 +71,101 @@ void BuildMeshlets(Vector<FMeshlet>& outMeshlet, Vector<Index>& outMeshletVertic
     {
         auto& dst = outMeshlet[i];
         auto& src = meshoptMeshlets[i];
+        dst.group = 0u;
         dst.vtxOffset = src.vertex_offset;
         dst.triOffset = src.triangle_offset;
         dst.vtxCount = src.vertex_count;
         dst.triCount = src.triangle_count;
         meshopt_Bounds bounds = meshopt_computeMeshletBounds(
-            &outMeshletVertices[src.vertex_offset], &outMeshletTriangles[src.triangle_offset],
-            src.triangle_count, reinterpret_cast<const float*>(&vertices[0]), vertices.size(), sizeof(Vertex));
+            &outMeshletVertices[src.vertex_offset], &outMeshletTriangles[src.triangle_offset], src.triangle_count,
+            reinterpret_cast<const float*>(&vertices[0]), vertices.size(), sizeof(Vertex));
         dst.centerRadius = float4(bounds.center[0], bounds.center[1], bounds.center[2], bounds.radius);
         dst.coneAxisAngle = float4(bounds.cone_axis[0], bounds.cone_axis[1], bounds.cone_axis[2], bounds.cone_cutoff);
         dst.coneApex = float3(bounds.cone_apex[0], bounds.cone_apex[1], bounds.cone_apex[2]);
     }
 }
 
+void FMesh::SimplifyLOD(int levels, float scale)
+{
+    CHECK_MSG(lods.size() == 1, "LOD already populated");
+    for (int i = 1; i < levels; i++)
+    {
+        lods.emplace_back(lods.get_allocator().mResource);
+        GenerateLOD<FVertex, uint32_t>(lods[i].indices, vertices, lods[i - 1].indices, scale);
+    }
+}
+void FMesh::ClusterizeLOD()
+{
+    for (int i = 0; i < lods.size(); i++)
+    {
+        BuildMeshlets<FVertex, uint32_t>(lods[i].meshlets, lods[i].meshletVtx, lods[i].meshletTri, vertices,
+                                         lods[i].indices);
+    }
+}
+void FMesh::ClusterizeDAG()
+{
+    clodConfig config = clodDefaultConfig(kMeshletMaxTriangles);
+    const float attribute_weights[3] = {0.5f, 0.5f, 0.5f};
+    clodMesh mesh{.indices = lods[0].indices.data(),
+                  .index_count = lods[0].indices.size(),
+                  .vertex_count = vertices.size(),
+                  .vertex_positions = reinterpret_cast<const float*>(&vertices[0].position),
+                  .vertex_positions_stride = sizeof(FVertex),
+                  .vertex_attributes = reinterpret_cast<const float*>(&vertices[0].normal),
+                  .vertex_attributes_stride = sizeof(FVertex),
+                  .attribute_weights = attribute_weights,
+                  .attribute_count = 3};
+    clodBuild(config, mesh,
+              [&](clodGroup group, const clodCluster* clusters, size_t cluster_count) -> int
+              {
+                  dag.groups.push_back(FLODGroup{
+                      .depth = group.depth,
+                      .center = {group.simplified.center[0], group.simplified.center[1], group.simplified.center[2]},
+                      .radius = group.simplified.radius,
+                      .error = group.simplified.error});
+                  for (size_t i = 0; i < cluster_count; i++)
+                  {
+                      auto& cluster = clusters[i];
+                      auto& lvl = dag.clusters.emplace_back(vertices.get_allocator().mResource);
+                      lvl.group = dag.groups.size() - 1u;
+                      auto& ind = lvl.indices;
+                      ind.insert(ind.end(), cluster.indices, cluster.indices + cluster.index_count);
+                  }
+                  return 0;
+              });
+    // Done - build meshlets for each cluster
+    size_t numIndices = 0;
+    for (auto& cluster : dag.clusters)
+        numIndices += cluster.indices.size();
+    // Worst bounds
+    dag.meshletVtx.resize(numIndices), dag.meshletTri.resize(numIndices);
+    uint32_t* vtx = dag.meshletVtx.data();
+    uint8_t* tri = dag.meshletTri.data();
+    dag.meshlets.reserve(dag.clusters.size());
+    for (auto& cluster : dag.clusters)
+    {
+        FMeshlet meshlet{
+            .group = cluster.group,
+            .vtxOffset = static_cast<uint32_t>(vtx - dag.meshletVtx.data()),
+            .triOffset = static_cast<uint32_t>(tri - dag.meshletTri.data()),
+        };
+        size_t unique = clodLocalIndices(vtx, tri, cluster.indices.data(), cluster.indices.size());
+        vtx += unique, tri += cluster.indices.size();
+        meshlet.vtxCount = unique, meshlet.triCount = cluster.indices.size() / 3;
+        // Compute bounds
+        meshopt_Bounds bounds = meshopt_computeMeshletBounds(
+            &dag.meshletVtx[meshlet.vtxOffset], &dag.meshletTri[meshlet.triOffset], meshlet.triCount,
+            reinterpret_cast<const float*>(&vertices[0]), vertices.size(), sizeof(FVertex));
+        meshlet.centerRadius = float4(bounds.center[0], bounds.center[1], bounds.center[2], bounds.radius);
+        meshlet.coneAxisAngle =
+            float4(bounds.cone_axis[0], bounds.cone_axis[1], bounds.cone_axis[2], bounds.cone_cutoff);
+        meshlet.coneApex = float3(bounds.cone_apex[0], bounds.cone_apex[1], bounds.cone_apex[2]);
+        dag.meshlets.push_back(meshlet);
+    }
+}
+
+FMesh::FMesh(Allocator* alloc) : vertices(alloc), lods(alloc), dag(alloc) { lods.resize(1u, alloc); }
+// -- loading
 void FMesh::Load(StringView path, bool optimize)
 {
     fastObjMesh* mesh = fast_obj_read(path.data());
@@ -107,26 +196,3 @@ void FMesh::Load(StringView path, bool optimize)
     if (optimize)
         OptimizeVertexIndex(vertices, lods[0].indices);
 }
-void FMesh::SimplifyLOD(int levels, float scale)
-{
-    CHECK_MSG(lods.size() == 1, "LOD already populated");
-    for (int i = 1; i < levels; i++)
-    {
-        lods.emplace_back(lods.get_allocator().mResource);
-        GenerateLOD<FVertex, uint32_t>(
-            lods[i].indices, vertices, lods[i - 1].indices, scale
-        );
-    }
-}
-void FMesh::Clusterize()
-{
-    for (int i = 0; i < lods.size(); i++)
-    {
-        BuildMeshlets<FVertex, uint32_t>(
-            lods[i].meshlets, lods[i].meshletVtx, lods[i].meshletTri,
-            vertices, lods[i].indices
-        );
-    }
-}
-
-FMesh::FMesh(Allocator* alloc) : vertices(alloc), lods(alloc) { lods.resize(1u, alloc); }

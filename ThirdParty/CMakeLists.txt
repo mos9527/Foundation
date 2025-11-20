@@ -74,8 +74,7 @@ FetchContent_Declare(
 FetchContent_Declare(
     meshoptimizer
     GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
-    GIT_TAG v0.25
-    GIT_SHALLOW TRUE
+    GIT_TAG 19bb5e6fa8da4ba9c333fc6a265d776363c06b39
 )
 
 FetchContent_Declare(
