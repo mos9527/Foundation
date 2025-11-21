@@ -6,7 +6,6 @@ using namespace Core;
 using namespace Math;
 constexpr uint32_t kMeshletMaxVertices = 64; // max vertices per meshlet
 constexpr uint32_t kMeshletMaxTriangles = 96; // max triangles per meshlet (indices=3*triangles)
-#pragma pack(push, 1)
 struct FVertex
 {
     float3 position;
@@ -24,13 +23,19 @@ struct FLODGroup // @ref clodGroup
     float radius;
 
     // combined simplification error, in mesh coordinate space
+    // FLT_MAX for terminal groups
     float error;
 };
 static_assert(sizeof(FLODGroup) == 24);
 struct FMeshlet // @ref meshopt_Meshlet
 {
+    /* meshlet group */
     /* ID of the @ref FLODGroup this meshlet belongs to in a hierarchy */
-    uint32_t group{0u};
+    uint32_t group;
+    /* ID of the @ref FLODGroup (with more triangles) that produced this meshlet during simplification (parent). ~0u if original geometry */
+    uint32_t refined;
+
+    /* meshlet */
     /* offsets within meshletVtx and meshletTri arrays with meshlet data */
     uint32_t vtxOffset; // in vertices
     uint32_t triOffset; // in indices (3*triangles)
@@ -38,13 +43,13 @@ struct FMeshlet // @ref meshopt_Meshlet
      * count */
     uint32_t vtxCount;
     uint32_t triCount;
+
     /* bounds */
     float4 centerRadius; // (x,y,z,r)
     float4 coneAxisAngle; // (x,y,z,cos(half solid angle))
     float3 coneApex; // (x,y,z)
 };
-static_assert(sizeof(FMeshlet) == 64);
-#pragma pack(pop)
+static_assert(sizeof(FMeshlet) == 68);
 
 struct FMesh
 {
@@ -63,6 +68,7 @@ struct FMesh
         struct Cluster
         {
             uint32_t group{~0u}; // ID of the FLODGroup this cluster belongs to
+            uint32_t refined{~0u}; // ID of the FLODGroup (with more triangles) that produced this cluster during simplification (parent). ~0u if original geometry
             Vector<uint32_t> indices;
             Cluster(Allocator* alloc) : indices(alloc) {}
         };

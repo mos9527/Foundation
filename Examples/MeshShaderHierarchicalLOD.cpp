@@ -6,6 +6,7 @@ using namespace RenderUtils;
 struct UBO
 {
     float4x4 mvp;
+    uint32_t cutDepth;
     GSMesh mesh;
 };
 int main()
@@ -24,6 +25,13 @@ int main()
         FMesh src(GLOBAL_ALLOC);
         src.Load("data/assets/bunny.obj");
         src.ClusterizeDAG();
+        for (int i = 0; auto& cluster : src.dag.clusters)
+        {
+            if (cluster.refined != ~0u)
+                fmt::println("Cluster {}: group {} (dep={} err={}), refined {} (dep={} err={}), indices {}", i++, cluster.group, src.dag.groups[cluster.group].depth,src.dag.groups[cluster.group].error, cluster.refined, src.dag.groups[cluster.refined].depth,src.dag.groups[cluster.refined].error, cluster.indices.size());
+            else
+                fmt::println("Cluster {}: group {} (dep={} err={}), indices {}", i++, cluster.group, src.dag.groups[cluster.group].depth,src.dag.groups[cluster.group].error, cluster.indices.size());
+        }
         auto staging = device->CreateBuffer(RHIBufferDesc::CreateStagingDesc(meshData->mDesc.size));
         char *ptr = static_cast<char*>(staging->Map()), *dst = ptr;
         auto Write = [&](const void* pData, size_t bytes)
@@ -84,7 +92,7 @@ int main()
                               {.format = RHIResourceFormat::D32SignedFloat,
                                .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
             // No task shader required. See below.
-            r->BindShader(self, RHIShaderStageBits::Mesh, "meshMain", "data/shaders/MeshShaderBasicMesh.spv");
+            r->BindShader(self, RHIShaderStageBits::Mesh, "meshMain", "data/shaders/MeshShaderHierarchicalLODMesh.spv");
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MeshShaderBasicFrag.spv");
             // NOTE: globalParams is introduced by slang compiler and is currently not customizable
             //       for uniform storage members
@@ -116,6 +124,14 @@ int main()
     {
         lines[0].x = 16, lines[0].y = 16, lines[0].SetText(fmt::format("Mesh Shader - Hierarchical LOD FPS: {}", fps.Update()));
         lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format(ExamplesArcballCamera::kControlsText));
+        lines[2].x = 16, lines[2].y = 64, lines[2].SetText(fmt::format("Q,E | Adjust LOD Cut Depth: {}", ubo.cutDepth));
+        if (event.type == SDL_EVENT_KEY_DOWN)
+        {
+            if (event.key.scancode == SDL_SCANCODE_Q && ubo.cutDepth > 0)
+                ubo.cutDepth--;
+            else if (event.key.scancode == SDL_SCANCODE_E)
+                ubo.cutDepth++;
+        }
         camera.aspect = swapchain->GetAspectRatio(), camera.fovY = radians(45.0f), camera.zNear = 0.01f;
         ubo.mvp = camera.Update(event);
         Examples_NewFrame(renderer);

@@ -2,6 +2,7 @@
 struct UBO
 {
     float4x4 mvp;
+    uint32_t cutDepth;
     GSMesh mesh;
 };
 // ^^^
@@ -33,6 +34,12 @@ void meshMain(
     uint32_t vtxCount = meshlet.vtxCount;
     uint32_t triBase = lod.meshletTriOffset + meshlet.triOffset * sizeof(uint8_t);
     uint32_t triCount = meshlet.triCount;
+    uint32_t groupBase = globalParams.mesh.groupOffset + meshlet.group * sizeof(FLODGroup);
+    FLODGroup lodGroup = mesh.Load<FLODGroup>(groupBase);
+    if (lodGroup.depth != globalParams.cutDepth) { // Cull Depth
+        SetMeshOutputCounts(0, 0);
+        return;
+    }
     SetMeshOutputCounts(vtxCount, triCount);
     // Each thread in the WG processes multiple vertices/triangles
     for (uint i = tid; i < vtxCount; i += kWGSize) {

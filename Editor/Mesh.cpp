@@ -127,7 +127,7 @@ void FMesh::ClusterizeDAG()
                   {
                       auto& cluster = clusters[i];
                       auto& lvl = dag.clusters.emplace_back(vertices.get_allocator().mResource);
-                      lvl.group = dag.groups.size() - 1u;
+                      lvl.group = dag.groups.size() - 1u, lvl.refined = cluster.refined;
                       auto& ind = lvl.indices;
                       ind.insert(ind.end(), cluster.indices, cluster.indices + cluster.index_count);
                   }
@@ -146,6 +146,7 @@ void FMesh::ClusterizeDAG()
     {
         FMeshlet meshlet{
             .group = cluster.group,
+            .refined = cluster.refined,
             .vtxOffset = static_cast<uint32_t>(vtx - dag.meshletVtx.data()),
             .triOffset = static_cast<uint32_t>(tri - dag.meshletTri.data()),
         };

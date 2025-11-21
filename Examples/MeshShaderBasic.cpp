@@ -79,10 +79,6 @@ int main()
             r->BindTextureDSV(self, zbufferHandle,
                               {.format = RHIResourceFormat::D32SignedFloat,
                                .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
-            r->PassSetRasterizerFlags(
-                self, {},
-                {// Reverse Z (near->1, far->0). See also @ref ExamplesArcballCamera
-                 .depthCompareOp = RHIPipelineState::PipelineStateDesc::DepthStencil::GreaterEqual});
             // No task shader required. See below.
             r->BindShader(self, RHIShaderStageBits::Mesh, "meshMain", "data/shaders/MeshShaderBasicMesh.spv");
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MeshShaderBasicFrag.spv");
@@ -115,7 +111,7 @@ int main()
     while (!Examples_ShouldClose(window, renderer, swapchain, &event))
     {
         lines[0].x = 16, lines[0].y = 16, lines[0].SetText(fmt::format("Mesh Shader Basic FPS: {}", fps.Update()));
-        lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("Drag to rotate camera."));
+        lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format(ExamplesArcballCamera::kControlsText));
         camera.aspect = swapchain->GetAspectRatio(), camera.fovY = radians(45.0f), camera.zNear = 0.01f;
         ubo.mvp = camera.Update(event);
         Examples_NewFrame(renderer);
