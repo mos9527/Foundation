@@ -59,9 +59,14 @@ namespace Foundation::Core {
      */
     template<typename T> using Span = std::span<T>;
 
-    template<typename T> Span<const char> AsBytes(T const& data)
+    template<typename T> Span<const char> AsBytes(Span<T> data)
     {
-        return { reinterpret_cast<const char*>(&data), sizeof(T) };
+        return { reinterpret_cast<const char*>(data.data()), data.size_bytes() };
+    }
+
+    template<typename T> Span<const T> AsSpan(T const& data)
+    {
+        return { &data, 1 };
     }
     /**
      * @brief Convenience function for constructing a Span with memory allocated from a @ref

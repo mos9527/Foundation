@@ -106,7 +106,7 @@ int main()
         {
             auto const& img_wh = r->GetSwapchainExtent();
             auto* uboData = r->DerefResource(uboHandle).Get<RHIBuffer*>();
-            cmd->UpdateBuffer(uboData, 0, AsBytes(ubo));
+            cmd->UpdateBuffer(uboData, 0, AsBytes(AsSpan(ubo)));
             r->CmdBeginGraphics(self, cmd, img_wh);
             r->CmdSetPipeline(self, cmd);
             // Simplest dispatch - spawn meshlets one by one to each Mesh Shader WG

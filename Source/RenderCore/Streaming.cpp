@@ -228,7 +228,7 @@ namespace Foundation::RenderCore
             mBufferCopies.pop();
 
             auto& [bccs, promise] = elem;
-            Span<BufferCopyCommand> bccsSpan = bccs;
+            Span bccsSpan = bccs;
             auto writing = bccsSpan.subspan(0, std::min(transferBudget, static_cast<int>(bccsSpan.size())));
             auto remaining = bccsSpan.subspan(writing.size());
             for (auto const& [pid, src, dst, region] : writing)
