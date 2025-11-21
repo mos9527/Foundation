@@ -5,14 +5,16 @@
 using namespace RenderUtils;
 struct UBO
 {
-    float4x4 mvp;
-    uint32_t cutDepth;
+    float4x4 view;
+    float4x4 proj;
+    float zNear;
+    float threshold;
     GSMesh mesh;
 };
 int main()
 {
     SDL_Window* window = SDL_CreateWindow("Mesh Shader Hierarchical LOD", 800, 600, Examples_SDLWindowFlagsVulkan);
-    UBO ubo{};
+    UBO ubo{ .threshold = 0.01f};
     CSDebugTextData lines[3]{};
     /* Setup */
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, {});
@@ -28,7 +30,7 @@ int main()
         for (int i = 0; auto& cluster : src.dag.clusters)
         {
             if (cluster.refined != ~0u)
-                fmt::println("Cluster {}: group {} (dep={} err={}), refined {} (dep={} err={}), indices {}", i++, cluster.group, src.dag.groups[cluster.group].depth,src.dag.groups[cluster.group].error, cluster.refined, src.dag.groups[cluster.refined].depth,src.dag.groups[cluster.refined].error, cluster.indices.size());
+                fmt::println("Cluster {}: group {} (dep={} err={} center={} {} {} radius={}), refined {} (dep={} err={} center={} {} {} radius={}), indices {}", i++, cluster.group, src.dag.groups[cluster.group].depth,src.dag.groups[cluster.group].error, src.dag.groups[cluster.group].center.x,src.dag.groups[cluster.group].center.y,src.dag.groups[cluster.group].center.z, src.dag.groups[cluster.group].radius, cluster.refined, src.dag.groups[cluster.refined].depth,src.dag.groups[cluster.refined].error,src.dag.groups[cluster.refined].center.x,src.dag.groups[cluster.refined].center.y,src.dag.groups[cluster.refined].center.z, src.dag.groups[cluster.refined].radius,  cluster.indices.size());
             else
                 fmt::println("Cluster {}: group {} (dep={} err={}), indices {}", i++, cluster.group, src.dag.groups[cluster.group].depth,src.dag.groups[cluster.group].error, cluster.indices.size());
         }
@@ -124,16 +126,17 @@ int main()
     {
         lines[0].x = 16, lines[0].y = 16, lines[0].SetText(fmt::format("Mesh Shader - Hierarchical LOD FPS: {}", fps.Update()));
         lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format(ExamplesArcballCamera::kControlsText));
-        lines[2].x = 16, lines[2].y = 64, lines[2].SetText(fmt::format("Q,E | Adjust LOD Cut Depth: {}", ubo.cutDepth));
+        lines[2].x = 16, lines[2].y = 64, lines[2].SetText(fmt::format("Q,E | LOD Threshold: {}", ubo.threshold));
         if (event.type == SDL_EVENT_KEY_DOWN)
         {
-            if (event.key.scancode == SDL_SCANCODE_Q && ubo.cutDepth > 0)
-                ubo.cutDepth--;
+            if (event.key.scancode == SDL_SCANCODE_Q && ubo.threshold > 0.01f)
+                ubo.threshold -= 0.01f;
             else if (event.key.scancode == SDL_SCANCODE_E)
-                ubo.cutDepth++;
+                ubo.threshold += 0.01f;
         }
         camera.aspect = swapchain->GetAspectRatio(), camera.fovY = radians(45.0f), camera.zNear = 0.01f;
-        ubo.mvp = camera.Update(event);
+        camera.Update(event);
+        ubo.view = camera.view, ubo.proj = camera.proj, ubo.zNear = camera.zNear;
         Examples_NewFrame(renderer);
     }
     meshData.Release(); // Release - destructs with the device

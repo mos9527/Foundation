@@ -124,6 +124,7 @@ struct ExamplesArcballCamera
     float radius;
     float pitch, yaw;
     float zNear, fovY, aspect;
+    mat4 view, proj;
     mat4 Update(SDL_Event const& event)
     {
         if (event.type == SDL_EVENT_MOUSE_MOTION)
@@ -148,10 +149,10 @@ struct ExamplesArcballCamera
             radius = radius < 1e-3f ? 1e-3f : radius;
         }
         // ---
-        mat4 proj = infinitePerspectiveLHReverseZ(fovY, aspect, zNear);
+        proj = infinitePerspectiveLHReverseZ(fovY, aspect, zNear);
         quat rot = angleAxis(yaw, vec3(1, 0, 0)) * angleAxis(pitch, vec3(0, 1, 0));
         vec3 dir = rot * vec3(0, 0, 1);
-        mat4 view = viewMatrixLHReverseZ(center + radius * dir, rot);
+        view = viewMatrixLHReverseZ(center + radius * dir, rot);
         mat4 viewProj = proj * view;
         return viewProj;
     }

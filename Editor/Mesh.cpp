@@ -118,6 +118,7 @@ void FMesh::ClusterizeDAG()
     clodBuild(config, mesh,
               [&](clodGroup group, const clodCluster* clusters, size_t cluster_count) -> int
               {
+                  size_t group_id = dag.groups.size();
                   dag.groups.push_back(FLODGroup{
                       .depth = group.depth,
                       .center = {group.simplified.center[0], group.simplified.center[1], group.simplified.center[2]},
@@ -127,11 +128,11 @@ void FMesh::ClusterizeDAG()
                   {
                       auto& cluster = clusters[i];
                       auto& lvl = dag.clusters.emplace_back(vertices.get_allocator().mResource);
-                      lvl.group = dag.groups.size() - 1u, lvl.refined = cluster.refined;
+                      lvl.group = group_id, lvl.refined = cluster.refined;
                       auto& ind = lvl.indices;
                       ind.insert(ind.end(), cluster.indices, cluster.indices + cluster.index_count);
                   }
-                  return 0;
+                  return group_id; // recorded as refined IDs
               });
     // Done - build meshlets for each cluster
     size_t numIndices = 0;

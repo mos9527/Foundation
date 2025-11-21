@@ -68,3 +68,30 @@ struct MIndex {
     uint8_t v1;
     uint8_t v2;
 }
+
+// 2D Polyhedral Bounds of a Clipped, Perspective-Projected 3D Sphere. Michael Mara, Morgan McGuire. 2013
+bool projectSphere(float3 c, float r, float znear, float P00, float P11, out float4 aabb)
+{
+    // f = 1 / tan(fovY / 2), a = aspect ratio
+    // P00 = f/a, P11 = f
+	if (c.z < r + znear) // clipping near plane
+		return false;
+
+    P00 = abs(P00), P11 = abs(P11); // Ensure positive in case of NDC Y Flip
+
+	float3 cr = c * r;
+	float czr2 = c.z * c.z - r * r;
+
+	float vx = sqrt(c.x * c.x + czr2);
+	float minx = (vx * c.x - cr.z) / (vx * c.z + cr.x);
+	float maxx = (vx * c.x + cr.z) / (vx * c.z - cr.x);
+
+	float vy = sqrt(c.y * c.y + czr2);
+	float miny = (vy * c.y - cr.z) / (vy * c.z + cr.y);
+	float maxy = (vy * c.y + cr.z) / (vy * c.z - cr.y);
+
+	aabb = float4(minx * P00, miny * P11, maxx * P00, maxy * P11);
+	aabb = aabb.xwzy * float4(0.5f, -0.5f, 0.5f, -0.5f) + float4(0.5f); // clip space -> uv space
+
+	return true;
+}
