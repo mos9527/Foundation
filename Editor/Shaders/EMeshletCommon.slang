@@ -1,5 +1,7 @@
+#include "EMath.slang"
+static const uint kTaskShaderWG = 64;
 // Definitions From C++ sources
-static const size_t kNumMeshDiscreteLODs = 5;
+static const uint kNumMeshDiscreteLODs = 5;
 struct FVertex {
     float3 position;
     float3 normal;
@@ -53,6 +55,7 @@ struct GSMeshLOD
 };
 struct GSMesh
 {
+    // Offsets are absolute, and are in Primitive buffer (bytes).
     // @ref FVertex
     uint32_t vtxOffset;
     uint32_t vtxCount;
@@ -68,3 +71,39 @@ struct MIndex {
     uint8_t v1;
     uint8_t v2;
 }
+struct GSInstance
+{
+    // Bitfield LE [8 GSData] [24 ID]
+    uint32_t tag;
+    // TRS
+    float3 transform;
+    quat rotation;
+    float3 scale;
+    // Data
+    // There's not really unions in most shader languages.
+    // Fields are represented in raw uint32s, and interpreted accordingly.
+    // Offsets are in Primitive buffer (bytes).
+    /**
+     * Mesh: [abs GSMesh offset, unused...]
+     */
+    uint32_t data[16];
+};
+
+struct MeshletTaskWork
+{
+    uint32_t instanceID; // Absolute
+    uint32_t meshOffset; // to GSMesh
+    // Task shader can *only* dispatch zero or one meshlet per work thread.
+    // Hence, batching is required here. Whereas in Mesh Shader multiple verts/tris
+    // can be processed per thread.
+    uint32_t firstMeshlet;
+    uint32_t numMeshlets;
+};
+struct UBO
+{
+    uint32_t firstInstance;
+    uint32_t numInstances;
+    float4x4 mvp;
+} GShaderGlobals;
+// ^^^
+uniform UBO globalParams;

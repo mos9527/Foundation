@@ -1,0 +1,55 @@
+/* Round up for 2^k divisors */
+public const uint32_t alignUp(uint32_t value, uint32_t alignment) {
+    return (value + alignment - 1) & ~(alignment - 1);
+}
+
+public struct quat
+{
+    float4 q; // (x, y, z, w)
+    public __init(float4 v) { q = v; }
+    public __init(float3 axis, float angle) {
+        float halfAngle = angle * 0.5;
+        float s = sin(halfAngle);
+        q = float4(axis * s, cos(halfAngle));
+    }
+    // Rotate a vector by this quaternion
+    public float3 rotate(float3 v) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }
+    // Multiply two quaternions
+    public quat mul(quat r) {
+        return quat(float4(
+            q.w * r.q.x + q.x * r.q.w + q.y * r.q.z - q.z * r.q.y,
+            q.w * r.q.y - q.x * r.q.z + q.y * r.q.w + q.z * r.q.x,
+            q.w * r.q.z + q.x * r.q.y - q.y * r.q.x + q.z * r.q.w,
+            q.w * r.q.w - q.x * r.q.x - q.y * r.q.y - q.z * r.q.z
+        ));
+    }
+    // Overload
+    public quat operator*(quat r) { return mul(r); }
+};
+
+// 2D Polyhedral Bounds of a Clipped, Perspective-Projected 3D Sphere. Michael Mara, Morgan McGuire. 2013
+bool projectSphere(float3 c, float r, float znear, float P00, float P11, out float4 aabb)
+{
+    // f = 1 / tan(fovY / 2), a = aspect ratio
+    // P00 = f/a, P11 = f
+	if (c.z < r + znear) // clipping near plane
+		return false;
+
+    P00 = abs(P00), P11 = abs(P11); // Ensure positive in case of NDC Y Flip
+
+	float3 cr = c * r;
+	float czr2 = c.z * c.z - r * r;
+
+	float vx = sqrt(c.x * c.x + czr2);
+	float minx = (vx * c.x - cr.z) / (vx * c.z + cr.x);
+	float maxx = (vx * c.x + cr.z) / (vx * c.z - cr.x);
+
+	float vy = sqrt(c.y * c.y + czr2);
+	float miny = (vy * c.y - cr.z) / (vy * c.z + cr.y);
+	float maxy = (vy * c.y + cr.z) / (vy * c.z - cr.y);
+
+	aabb = float4(minx * P00, miny * P11, maxx * P00, maxy * P11);
+	aabb = aabb.xwzy * float4(0.5f, -0.5f, 0.5f, -0.5f) + float4(0.5f); // clip space -> uv space
+
+	return true;
+}

@@ -35,7 +35,7 @@ Pair<GSInstance*, uint32_t> GPUScene::InstanceAlloc(uint32_t count)
 }
 SharedFuture<> GPUScene::Upload(FMesh const& src, GSMesh& mesh, uint32_t& outOffset)
 {
-    Vector<char> data(src.ApproximateSize(), mContext->allocator);
+    Vector<char> data(src.ApproximateSize() + sizeof(GSMesh), mContext->allocator);
     char* ptr = data.data(), *dst = ptr;
     auto Write = [&](const void* pData, size_t bytes)
     {
@@ -45,6 +45,8 @@ SharedFuture<> GPUScene::Upload(FMesh const& src, GSMesh& mesh, uint32_t& outOff
         return off;
     };
     outOffset = mPrimitiveOffset, mPrimitiveOffset += data.size();
+    // GSMesh (stub)
+    Write(&mesh, sizeof(GSMesh));
     // Vertex data
     mesh.vtxCount = src.vertices.size();
     mesh.vtxOffset = outOffset + Write(src.vertices.data(), sizeof(FVertex) * src.vertices.size());
@@ -61,6 +63,8 @@ SharedFuture<> GPUScene::Upload(FMesh const& src, GSMesh& mesh, uint32_t& outOff
         dstLod.meshletVtxOffset = outOffset + Write(srcLod.meshletVtx.data(), sizeof(uint32_t) * srcLod.meshletVtx.size());
         dstLod.meshletTriOffset = outOffset + Write(srcLod.meshletTri.data(), sizeof(uint8_t) * srcLod.meshletTri.size());
     }
+    // GSMesh (data)
+    std::memcpy(ptr, &mesh, sizeof(GSMesh));
     return mStreaming.Write(data, mPrimitiveBuffer.Get(), outOffset);
 }
 String GPUScene::DbgGetStatistics() const

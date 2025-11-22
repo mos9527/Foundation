@@ -24,6 +24,7 @@ struct GSMeshLOD
 };
 struct GSMesh
 {
+    // Offsets are absolute, and are in Primitive buffer (bytes).
     // @ref FVertex
     uint32_t vtxOffset;
     uint32_t vtxCount;
@@ -46,10 +47,11 @@ struct GSInstance
     // Data
     // There's not really unions in most shader languages.
     // Fields are represented in raw uint32s, and interpreted accordingly.
+    // Offsets are absolute, and are in Primitive buffer (bytes).
     /**
-     * Mesh: buffer offset
+     * Mesh: [abs GSMesh offset, unused...]
      */
-    uint32_t data1;
+    uint32_t data[16];
 };
 
 inline uint32_t MakeGSInstanceTag(GSData dataFlags, uint32_t id)

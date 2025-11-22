@@ -12,7 +12,6 @@ struct FEMesh
 };
 Vector<FEMesh> FEMeshes(GLOBAL_ALLOC);
 Vector<GSInstance> GSInstances(GLOBAL_ALLOC);
-uint32_t GSFirstInstance = 0;
 
 #pragma pack(push, 1)
 struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
@@ -21,8 +20,24 @@ struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
     uint32_t groupCountY;
     uint32_t groupCountZ;
 };
+struct MeshletTaskWork
+{
+    uint32_t instanceID; // Absolute
+    uint32_t meshOffset; // to GSMesh
+    // Task shader can *only* dispatch zero or one meshlet per work thread.
+    // Hence, batching is required here. Whereas in Mesh Shader multiple verts/tris
+    // can be processed per thread.
+    uint32_t firstMeshlet;
+    uint32_t numMeshlets;
+};
+struct UBO
+{
+    uint32_t firstInstance;
+    uint32_t numInstances;
+    float4x4 mvp;
+} GShaderGlobals;
 #pragma pack(pop)
-constexpr size_t kMaxMeshletTaskDispatchCount = 1e5;
+constexpr size_t kMaxMeshletTaskWorkCount = 1e5;
 void RendererSetup(FContext* context)
 {
     if (context->renderer)
@@ -31,6 +46,11 @@ void RendererSetup(FContext* context)
                                                              context->swapchain, context->allocator);
     auto* scene = context->gpuScene;
     renderer->BeginSetup();
+    /* UBO for everyone */
+    auto GlobalUBO = renderer->CreateResource(
+        "Global UBO",
+        RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
+                      .size = sizeof(UBO)});
     /* Instance and Primitive buffers */
     auto InstanceBuffer = renderer->CreateResource("Instance Buffer", scene->GetInstanceBuffer());
     auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", scene->GetPrimitiveBuffer());
@@ -39,7 +59,7 @@ void RendererSetup(FContext* context)
     auto IndirectTasks =
         renderer->CreateResource("Meshlet Indirect Tasks Buffer", // Instance IDs
                                  RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer,
-                                               .size = sizeof(uint32_t) * kMaxMeshletTaskDispatchCount});
+                                               .size = sizeof(MeshletTaskWork) * kMaxMeshletTaskWorkCount});
     auto IndirectTaskCounter = renderer->CreateResource(
         "Meshlet Indirect Tasks Counter (Single)",
         RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(int)});
@@ -49,13 +69,28 @@ void RendererSetup(FContext* context)
         "Meshlet Task Indirect Dispatch Command (Single)",
         RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer, .size = sizeof(MeshletTaskDispatch)});
     renderer->CreatePass(
+        "UBO Update", RHIDeviceQueueType::Compute, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindBufferCopyDst(self, GlobalUBO);
+        },
+        [=](PassHandle, Renderer* r, RHICommandList* cmd)
+        {
+            auto* ubo = r->DerefResource(GlobalUBO).Get<RHIBuffer*>();
+            cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(GShaderGlobals)));
+        });
+    renderer->CreatePass(
         "Meshlet Task Generation", RHIDeviceQueueType::Compute, 0u,
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSInstanceTaskCull.spv");
+            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindBufferUnordered(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "task");
             r->BindBufferUnordered(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "counter");
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instance");
+            r->BindBufferStorageRead(self, PrimitiveBuffer,
+                                     RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::AllGraphics,
+                                     "primitive");
         },
         [&](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
@@ -72,6 +107,7 @@ void RendererSetup(FContext* context)
             // Simply fills the dispatch buffer with the number of tasks to dispatch
             // A roundtrip back to the CPU would be expensive, so we do it all on the GPU side.
             r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSIndirectTaskGen.spv");
+            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindBufferStorageRead(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "counter");
             r->BindBufferUnordered(self, IndirectTaskDispatch, RHIPipelineStageBits::ComputeShader, "dispatch");
         },
@@ -90,9 +126,10 @@ void RendererSetup(FContext* context)
         "Main Pass", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Task, "main", "data/shaders/ETaskMeshletCull.spv");
-            r->BindShader(self, RHIShaderStageBits::Mesh, "main", "data/shaders/EMeshBasic.spv");
-            r->BindShader(self, RHIShaderStageBits::Fragment, "main", "data/shaders/EFragBasic.spv");
+            r->BindShader(self, RHIShaderStageBits::Task, "main", "data/shaders/ETSMeshletCull.spv");
+            r->BindShader(self, RHIShaderStageBits::Mesh, "main", "data/shaders/EMSBasic.spv");
+            r->BindShader(self, RHIShaderStageBits::Fragment, "main", "data/shaders/EPSBasic.spv");
+            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindBufferShaderRead(self, IndirectTaskDispatch,
                                     RHIPipelineStageBits::DrawIndirect | RHIPipelineStageBits::AllGraphics);
             r->BindBufferStorageRead(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "task");
@@ -100,7 +137,7 @@ void RendererSetup(FContext* context)
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instance");
             r->BindBufferStorageRead(self, PrimitiveBuffer,
                                      RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::AllGraphics,
-                                     "sceneShared");
+                                     "primitive");
             r->BindBackbufferRTV(self);
             r->BindTextureDSV(self, ZBuffer,
                               {.format = RHIResourceFormat::D32SignedFloat,
@@ -143,7 +180,7 @@ bool ExecuteInit()
     for (int i = 0; auto& ins : GSInstances)
     {
         ins.tag = MakeGSInstanceTag(GSDataBits::Mesh, i++);
-        ins.data1 = mesh.offset;
+        ins.data[0] = mesh.offset;
     }
     FEState = FERunning;
     return false;
@@ -161,7 +198,8 @@ bool ExecuteFrame()
     auto* scene = GContext->gpuScene;
     auto [ptr, off] = scene->InstanceAlloc(GSInstances.size());
     std::memcpy(ptr, GSInstances.data(), GSInstances.size() * sizeof(GSInstance));
-    GSFirstInstance = off;
+    GShaderGlobals.firstInstance = off;
+    GShaderGlobals.numInstances = GSInstances.size();
     // New frame
     renderer->BeginExecute();
     ImGui_ImplFoundation_NewFrame(&GContext->event);
