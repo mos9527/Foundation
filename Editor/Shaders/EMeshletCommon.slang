@@ -88,11 +88,15 @@ struct GSInstance
      */
     uint32_t data[16];
 };
-
+struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
+{
+    uint32_t groupCountX;
+    uint32_t groupCountY;
+    uint32_t groupCountZ;
+};
 struct MeshletTaskWork
 {
     uint32_t instanceID; // Absolute
-    uint32_t meshOffset; // to GSMesh
     // Task shader can *only* dispatch zero or one meshlet per work thread.
     // Hence, batching is required here. Whereas in Mesh Shader multiple verts/tris
     // can be processed per thread.
@@ -103,7 +107,23 @@ struct UBO
 {
     uint32_t firstInstance;
     uint32_t numInstances;
-    float4x4 mvp;
+    float lodThreshold;
+    float zNear;
+    float4x4 view;
+    float4x4 proj;
+
 } GShaderGlobals;
 // ^^^
 uniform UBO globalParams;
+
+public struct MeshletGroupShared {
+    uint32_t instanceID;
+    uint32_t meshletCount;
+    uint32_t meshletIndices[kTaskShaderWG];
+};
+
+struct V2F
+{
+    float4 pos : SV_POSITION;
+    uint32_t meshlet : ID;
+};

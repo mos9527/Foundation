@@ -12,6 +12,8 @@ void main(uint tid: SV_DispatchThreadID) {
         return;
     uint iid = tid + globalParams.firstInstance;
     GSInstance inst = instance[iid];
+    // TODO: Culling instance
+    // Would require AABB update on the CPU side. Not implemented yet.
     GSMesh mesh = primitive.Load<GSMesh>(inst.data[0]);
     // Not discrete. LOD0 is used for DAG lods.
     GSMeshLOD lod = mesh.lod[0];
@@ -22,10 +24,8 @@ void main(uint tid: SV_DispatchThreadID) {
     uint groups = alignUp(lod.meshletCount, kTaskShaderWG) / kTaskShaderWG;
     uint taskIndex = counter[0].add(groups);
     for (uint group = 0; group < groups; group++) {
-
         MeshletTaskWork task;
         task.instanceID = iid;
-        task.meshOffset = inst.data[0];
         task.numMeshlets = min(lod.meshletCount - group * kTaskShaderWG, kTaskShaderWG);
         task.firstMeshlet = group * kTaskShaderWG;
         tasks[taskIndex + group] = task;

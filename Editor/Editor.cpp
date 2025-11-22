@@ -23,7 +23,6 @@ struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
 struct MeshletTaskWork
 {
     uint32_t instanceID; // Absolute
-    uint32_t meshOffset; // to GSMesh
     // Task shader can *only* dispatch zero or one meshlet per work thread.
     // Hence, batching is required here. Whereas in Mesh Shader multiple verts/tris
     // can be processed per thread.
