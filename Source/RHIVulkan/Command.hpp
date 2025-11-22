@@ -65,8 +65,8 @@ namespace Foundation::RHI {
             RHIPipelineState* pipeline,
             Span<RHIDeviceDescriptorSet* const> sets,
             size_t first,
-            Span<uint32_t> dynamicOffsets) override;
-        RHICommandList& SetViewport(float x, float y, float width, float height, float depth_min = 0.0, float depth_max = 1.0) override;
+            Span<const uint32_t> dynamicOffsets) override;
+        RHICommandList& SetViewport(float x, float y, float width, float height, float depth_min = 0.0, float depth_max = 1.0, bool flipY = false) override;
         RHICommandList& SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override;
         RHICommandList& Draw(uint32_t vertex_count, uint32_t instance_count = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0) override;
         RHICommandList& DrawIndexed(uint32_t index_count, uint32_t instance_count = 1, uint32_t first_index = 0, int32_t vertex_offset = 0, uint32_t first_instance = 0) override;

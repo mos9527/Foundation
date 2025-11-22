@@ -164,6 +164,26 @@ void FMesh::ClusterizeDAG()
         meshlet.coneApex = float3(bounds.cone_apex[0], bounds.cone_apex[1], bounds.cone_apex[2]);
         dag.meshlets.push_back(meshlet);
     }
+    dag.clusters = {}; // No longer needed
+}
+size_t FMesh::ApproximateSize() const
+{
+    size_t size = sizeof(FMesh);
+    size += vertices.size() * sizeof(FVertex);
+    for (auto const& lod : lods)
+    {
+        size += sizeof(decltype(lod));
+        size += lod.indices.size() * sizeof(uint32_t);
+        size += lod.meshlets.size() * sizeof(FMeshlet);
+        size += lod.meshletVtx.size() * sizeof(uint32_t);
+        size += lod.meshletTri.size() * sizeof(uint8_t);
+    }
+    size += sizeof(decltype(dag));
+    size += dag.groups.size() * sizeof(FLODGroup);
+    size += dag.meshlets.size() * sizeof(FMeshlet);
+    size += dag.meshletVtx.size() * sizeof(uint32_t);
+    size += dag.meshletTri.size() * sizeof(uint8_t);
+    return size;
 }
 
 FMesh::FMesh(Allocator* alloc) : vertices(alloc), lods(alloc), dag(alloc) { lods.resize(1u, alloc); }

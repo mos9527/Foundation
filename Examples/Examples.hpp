@@ -149,10 +149,10 @@ struct ExamplesArcballCamera
             radius = radius < 1e-3f ? 1e-3f : radius;
         }
         // ---
-        proj = infinitePerspectiveLHReverseZ(fovY, aspect, zNear);
+        proj = infinitePerspectiveRHReverseZ(fovY, aspect, zNear);
         quat rot = angleAxis(yaw, vec3(1, 0, 0)) * angleAxis(pitch, vec3(0, 1, 0));
         vec3 dir = rot * vec3(0, 0, 1);
-        view = viewMatrixLHReverseZ(center + radius * dir, rot);
+        view = viewMatrixRHReverseZ(center + radius * dir, rot);
         mat4 viewProj = proj * view;
         return viewProj;
     }

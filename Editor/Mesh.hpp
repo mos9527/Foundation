@@ -101,4 +101,8 @@ struct FMesh
     *       levels created by @ref ClusterizeLOD, or @ref SimplifyLOD.
     */
     void ClusterizeDAG();
+    /**
+     * @brief Returns an upper bound estimate of the size of the used mesh data when uploaded to GPU
+     */
+    [[nodiscard]] size_t ApproximateSize() const;
 };

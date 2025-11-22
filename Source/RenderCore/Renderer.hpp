@@ -480,9 +480,9 @@ namespace Foundation::RenderCore
          */
         void BindTextureSampler(PassHandle pass, ResourceHandle sampler, StringView bind_point) const;
         /**
-         * @brief Manually bind an existing descriptor set to the pipeline.
+         * @brief Manually bind an existing descriptor set (layout) to the pipeline.
          *
-         * @note You'll need to call @ref CmdBindDescriptorSet at Record time to bind the set to the pipeline.
+         * @note This applies to the bind point's *whole* set. You'll need to call @ref CmdBindDescriptorSet at Record time to bind the set to the pipeline.
          */
         void BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout);
         /**

@@ -6,26 +6,26 @@ using namespace Foundation;
 using namespace RHI;
 using namespace RenderCore;
 using namespace Core;
-struct FEditorContext
+struct GPUScene;
+struct FContext
 {
-    Allocator* allocator;
+    Allocator* allocator{};
 
-    SDL_Window* window;
-    UniquePtr<RHIApplication> application;
+    SDL_Window* window{};
 
+    RHIApplication* application{};
     RHIApplicationUniqueRef<RHIDevice> device;
     RHIDeviceUniqueRef<RHISwapchain> swapchain;
 
-    UniquePtr<Renderer> renderer;
+    GPUScene* gpuScene{};
+    Renderer* renderer{};
 
     SDL_Event event;
 };
 
-extern FEditorContext* GEditor;
+extern FContext* GContext;
 
-extern void UpdateSwapchain(FEditorContext* context);
+extern void UpdateSwapchain(FContext* context);
 
-extern FEditorContext* CreateEditorContext(SDL_Window* window, Allocator* allocator = GLOBAL_ALLOC);
-extern void DestroyEditorContext(FEditorContext* context = nullptr /* global */);
-
-template<typename T> T LoadAsset(StringView assetPath, Allocator* allocator = GLOBAL_ALLOC);
+extern FContext* CreateContext(SDL_Window* window, Allocator* allocator = GLOBAL_ALLOC);
+extern void DestroyContext(FContext* context = nullptr /* global */);

@@ -112,7 +112,7 @@ int main()
             // Simplest dispatch - spawn meshlets one by one to each Mesh Shader WG
             // We don't need a task shader - if unbound, DrawMeshTasks dispatches
             // Mesh Shader workgroups effectively directly.
-            cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
+            cmd->SetViewport(0, 0, img_wh.x, img_wh.y,0, 1, true)
                 .SetScissor(0, 0, img_wh.x, img_wh.y)
                 .DrawMeshTasks(ubo.mesh.lod[0].meshletCount, 1, 1)
                 .EndGraphics();

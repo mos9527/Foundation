@@ -51,7 +51,7 @@ void ImGui_ImplFoundation_ImplCreateResources(Foundation::RenderCore::Renderer* 
  * @note You _MUST_ call @ref ImGui_ImplFoundation_Shutdown before the destruction of @ref RHIDevice related objects.
  *       See @ref Examples::ImGui or other ImGui backend usage for reference.
  */
-void ImGui_ImplFoundation_Init(Foundation::RHI::RHIDevice* device, SDL_Window* window, Foundation::RenderCore::Renderer* renderer, Foundation::Core::StringView passName = "ImGui", bool clear = true, Foundation::RenderCore::PassHandle dependOn = Foundation::RenderCore::kInvalidHandle);
+void ImGui_ImplFoundation_Init(Foundation::RHI::RHIDevice* device, SDL_Window* window);
 
 /**
  * @brief Starts a new ImGui frame.

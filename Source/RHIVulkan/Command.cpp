@@ -133,8 +133,13 @@ RHICommandList& VulkanCommandList::SetPipeline(PipelineDesc const& desc) {
     return *this;
 }
 
-RHICommandList& VulkanCommandList::SetViewport(float x, float y, float width, float height, float depth_min, float depth_max) {
+RHICommandList& VulkanCommandList::SetViewport(float x, float y, float width, float height, float depth_min, float depth_max, bool flipY) {
     CHECK(mAllocator && "Invalid command list states.");
+    if (flipY)
+    {
+        y = height - y;
+        height = -height;
+    }
     vk::Viewport viewport{ x, y, width, height, depth_min, depth_max };
     mCommandBuffer.setViewport(0, viewport);
     return *this;
@@ -407,7 +412,7 @@ RHICommandList& VulkanCommandList::BindDescriptorSet(
     RHIPipelineState* pipeline,
     Span<RHIDeviceDescriptorSet* const> sets,
     size_t first,
-    Span<uint32_t> dynamicOffsets
+    Span<const uint32_t> dynamicOffsets
 ) {
     CHECK(mAllocator && "Invalid command list states.");
     Vector<vk::DescriptorSet> vk_sets(mAllocator);

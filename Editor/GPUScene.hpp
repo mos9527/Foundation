@@ -1,5 +1,6 @@
 #pragma once
 #include "Context.hpp"
+#include "Mesh.hpp"
 #include <RenderCore/Streaming.hpp>
 #include <Math/Math.hpp>
 using namespace Math;
@@ -36,57 +37,72 @@ struct GSMesh
 
 struct GSInstance
 {
+    // Bitfield LE [8 GSData] [24 ID]
+    uint32_t tag;
     // TRS
     float3 transform;
     quat rotation;
     float3 scale;
-    // Bitfield LE [8 GSData] [24 Offset]
-    uint32_t data;
+    // Data
+    // There's not really unions in most shader languages.
+    // Fields are represented in raw uint32s, and interpreted accordingly.
+    /**
+     * Mesh: buffer offset
+     */
+    uint32_t data1;
 };
+
+inline uint32_t MakeGSInstanceTag(GSData dataFlags, uint32_t id)
+{
+    uint32_t tag = 0;
+    tag = bitfieldInsert(tag, static_cast<uint32_t>(dataFlags.value), 0, 8);
+    tag = bitfieldInsert(tag, id, 8, 24);
+    return tag;
+}
 
 /**
 * @brief Async GPU scene data storage for Editor.
 */
 class GPUScene
 {
-    FEditorContext* mContext;
+    FContext* mContext;
 
     StreamingPool mStreaming;
-
-    // Staged from StreamingPool
     RHIDeviceUniqueRef<RHIBuffer> mPrimitiveBuffer;
     // XXX: Linear allocation. GPA would be needed if we'd upload & free
     //      at will. Not needed for Editor use-case currently.
-    AllocatorStack mPrimitiveAlloc;
+    size_t mPrimitiveOffset{0};
 
     // Mapped as-is
     RHIDeviceUniqueRef<RHIBuffer> mInstanceBuffer;
-    Span<char> mInstanceData;
-
-    List<SharedFuture<>> mTasksMeshUpload;
+    GSInstance *mInstanceBegin, *mInstanceRing, *mInstanceEnd;
 public:
     struct GPUSceneDesc
     {
         size_t primitiveBudget = 16 * (1u<<20); // 16MB
-        size_t instanceBudget = 4 * (1u<<20);  // 4MB
+        size_t instanceBudget = 4 * (1u<<20);  // 4MB ring buffer
     };
-    GPUScene(FEditorContext* ctx, GPUSceneDesc const& desc);
+    GPUScene(FContext* ctx, GPUSceneDesc const& desc);
 
-    struct UploadMeshData
-    {
-        Span<const char> vtx;
-        uint32_t vtxCount;
-        struct LOD
-        {
-            Span<const char> ind;
-            uint32_t indCount;
-            Span<char> meshletData;
-            uint32_t meshletCount;
-            Span<char> meshletVtx; // uint8_t indices
-            Span<char> meshletTri; // uint8_t indices
-        };
-    };
-    SharedFuture<> UploadMeshAsync(uint32_t& outOffset, GSMesh& outData, UploadMeshData const& source);
+    /**
+     * @breif Allocates `count` instances in the Instance ring buffer, returning a Span to the allocated memory.
+     *        It's up to the caller to fill in the data, which is usually write-only.
+     * @note There's no guard against allocating potentially still in-flight memory range.
+     *       Ensure enough @ref GPUSceneDesc::instanceBudget to avoid overwriting.
+     * @return Raw mapped memory ptr, offset (element wise) in buffer.
+     */
+    Pair<GSInstance*, uint32_t> InstanceAlloc(uint32_t count);
 
-    PassHandle CreatePass(Renderer* r);
+    /**
+     * @brief Uploads mesh data asynchronously to GPU, returning a future that completes when upload is done.
+     *        outData is immediately filled with offsets/counts, but the actual GPU data will only be valid once the
+     * future is completed.
+     * @note  source is copied internally, and thus is not required to be kept alive.
+     */
+    SharedFuture<> Upload(FMesh const& source, GSMesh& outData, uint32_t& outOffset);
+
+    String DbgGetStatistics() const;
+
+    RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
+    RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.Get(); }
 };

@@ -11,8 +11,9 @@ int main()
     CSDebugTextData lines[5]{};
     lines[0].x = lines[0].y = 16, lines[0].SetText("ImGui Demo Window");
     ImGui_ImplFoundation_SetupContextWithDefaultStyles();
+    ImGui_ImplFoundation_Init(device.Get(), window);
     renderer->BeginSetup();
-    ImGui_ImplFoundation_Init(device.Get(), window, renderer);
+    ImGui_ImplFoundation_CreatePass(renderer, "ImGui Pass", true /* clear */, FSetupDefault{});
     createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);
     renderer->EndSetup();
     SDL_Event event;

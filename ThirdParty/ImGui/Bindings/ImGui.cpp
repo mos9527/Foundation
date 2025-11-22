@@ -22,8 +22,7 @@ UniquePtr<BindlessPool> gImGuiTexturePool = nullptr;
 void* ImGui_ImplFoundation_MemAlloc(size_t sz, void*) { return GLOBAL_ALLOC->Allocate(sz, sizeof(std::max_align_t)); }
 void ImGui_ImplFoundation_MemFree(void* ptr, void*) { return GLOBAL_ALLOC->Deallocate(ptr); }
 
-void ImGui_ImplFoundation_Init(RHIDevice* device, SDL_Window* window, Renderer* renderer, StringView passName,
-                               bool clear, PassHandle dependOn)
+void ImGui_ImplFoundation_Init(RHIDevice* device, SDL_Window* window)
 {
     // Reference being the official Vulkan implementation - sans Viewport support to keep things _really_ simple
     ImGuiIO& io = ImGui::GetIO();
@@ -39,12 +38,6 @@ void ImGui_ImplFoundation_Init(RHIDevice* device, SDL_Window* window, Renderer* 
                                                       BindlessPool::BindlessPoolDesc{.maxBindings = kMaxTextures});
     // Init windowing backend
     ImGui_ImplSDL3_InitForOther(window);
-    ImGui_ImplFoundation_CreatePass(renderer, passName, clear,
-                                    [=](PassHandle self, Renderer* r)
-                                    {
-                                        if (dependOn != kInvalidHandle)
-                                            r->BindPass(self, dependOn);
-                                    });
 }
 void ImGui_ImplFoundation_NewFrame(SDL_Event* event)
 {
@@ -200,7 +193,7 @@ void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHa
     r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/ImGui.spv");
     r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/ImGui.spv");
     r->BindDescriptorSet(self, "textures", gImGuiTexturePool->GetDescriptorSetLayout());
-    // We have fixed samplers for ImGui - IMO these two are quite enough for UI elements
+    // We have fixed samplers for ImGui - quite enough for UI elements
     r->BindTextureSampler(self, linSampler, "linSampler");
     r->BindTextureSampler(self, nearSampler, "nearSampler");
     r->BindVertexInput(

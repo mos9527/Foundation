@@ -1,29 +1,27 @@
-#include <Bindings/ImGui.hpp>
-
+extern bool ShouldEditorClose(FContext*);
 bool /* should close */ mainLoop()
 {
-    if (!GEditor->renderer)
-        RendererSetup(GEditor, {});
-    SDL_Event& event = GEditor->event;
+    SDL_Event& event = GContext->event;
     if (SDL_PollEvent(&event))
     {
-        if (event.window.windowID != SDL_GetWindowID(GEditor->window))
+        if (event.window.windowID != SDL_GetWindowID(GContext->window))
             return false;
     }
     if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) return true;
     if (event.type == SDL_EVENT_WINDOW_RESIZED)
     {
-        UpdateSwapchain(GEditor);
-        if (GEditor->renderer)
-            GEditor->renderer->SetSwapchain(GEditor->swapchain);
+        UpdateSwapchain(GContext);
+        if (GContext->renderer)
+            GContext->renderer->SetSwapchain(GContext->swapchain);
     }
+    if (ShouldEditorClose(GContext)) return true;
     return false;
 }
 
 constexpr int kSDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_VULKAN;
 int main()
 {
-    CreateEditorContext(SDL_CreateWindow("Editor", 800, 600, kSDLWindowFlagsVulkan));
+    CreateContext(SDL_CreateWindow("Editor", 800, 600, kSDLWindowFlagsVulkan));
     while (!mainLoop()) {}
-    DestroyEditorContext();
+    DestroyContext();
 }

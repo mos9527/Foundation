@@ -9,7 +9,8 @@ int main()
     SDL_Window* window = SDL_CreateWindow("MipGeneration Example", 512, 512, Examples_SDLWindowFlagsVulkan);
     auto [renderer, app, device, swapchain] = Examples_InitVulkan(window,
                                                                   {
-                                                                      .threadCount = 0 /* ST recording */
+                                                                      .asyncCompute = false, /* Nothing to overlap */
+                                                                      .threadCount = 0, /* ST recording */
                                                                   });
     CSDebugTextData lines[5]{};
     lines[0].x = lines[0].y = 16, lines[0].SetText("Mip Generation");

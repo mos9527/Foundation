@@ -1,6 +1,6 @@
-FEditorContext* GEditor = nullptr;
+FContext* GContext = nullptr;
 
-void UpdateSwapchain(FEditorContext* context)
+void UpdateSwapchain(FContext* context)
 {
     constexpr RHIResourceFormat kFormatPreferenceList[] = {
         RHIResourceFormat::R8G8B8A8Unorm, RHIResourceFormat::B8G8R8A8Unrom, RHIResourceFormat::R8G8B8A8Srgb,
@@ -30,22 +30,31 @@ void UpdateSwapchain(FEditorContext* context)
     });
 }
 
-FEditorContext* CreateEditorContext(SDL_Window* window, Allocator* allocator)
+FContext* CreateContext(SDL_Window* window, Allocator* allocator)
 {
-    auto* context = Construct<FEditorContext>(allocator);
+    auto* context = Construct<FContext>(allocator);
     context->allocator = allocator;
     context->window = window;
-    context->application = ConstructUniqueBase<RHIApplication, VulkanApplication>(allocator, allocator);
+    context->application = ConstructBase<RHIApplication, VulkanApplication>(allocator, allocator);
     context->device = context->application->CreateDevice({}, window);
+    context->gpuScene = Construct<GPUScene>(allocator, context, GPUScene::GPUSceneDesc{});
     UpdateSwapchain(context);
-    GEditor = context;
-    return context;
+    ImGui_ImplFoundation_SetupContextWithDefaultStyles();
+    ImGui_ImplFoundation_Init(context->device.Get(), context->window);
+    return GContext = context;
 }
 
-void DestroyEditorContext(FEditorContext* context)
+void DestroyContext(FContext* context)
 {
-    context = context ? context : GEditor;
+    context = context ? context : GContext;
     if (!context)
         return;
+    ImGui_ImplFoundation_Shutdown();
+    SDL_DestroyWindow(context->window);
+    Destruct(context->allocator, context->renderer);
+    Destruct(context->allocator, context->gpuScene);
+    context->swapchain.Reset();
+    context->device.Reset();
+    Destruct(context->allocator, context->application);
     Destruct(context->allocator, context);
 }

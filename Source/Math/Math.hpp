@@ -33,54 +33,41 @@ namespace Foundation::Math {
     static_assert(sizeof(float2) == 2 * sizeof(float));
     static_assert(sizeof(float4x4) == 16 * sizeof(float));
 
-#pragma region Bitfields
-    template<typename T> constexpr T bitfieldExtract(T value, T offset, T length)
-    {
-        T mask = ((static_cast<T>(1u) << length) - 1) << offset;
-        return (value & mask) >> offset;
-    }
-    template<typename T> constexpr T bitfieldInsert(T original, T value, T offset, T length)
-    {
-        T mask = ((static_cast<T>(1u) << length) - 1) << offset;
-        return (original & ~mask) | (value << offset & mask);
-    }
-#pragma endregion
-
 #pragma region MVP
-    // zNear -> zNDC = 1, zFar (inf) -> zNDC = 0. Y flipped for Vulkan NDC.
-    // View perspective: Right = +X, Up = +Y, Forward = +Z
-    inline mat4 infinitePerspectiveLHReverseZ(float fovY /* radians */, float a /* aspect W/H */, float zNear)
+    // zNear -> zNDC = 1, zFar (inf) -> zNDC = 0
+    // View perspective: Right = +X, Up = +Y, Forward = -Z
+    inline mat4 infinitePerspectiveRHReverseZ(float fovY /* radians */, float a /* aspect W/H */, float zNear)
     {
         float f = 1 / tan(fovY / 2);
         return mat4{
             f/a,0,0,0,
-            0,-f,0,0, // Y Flip
+            0,f,0,0,
             // zNDC = zNear/z
-            0,0,0,1,
+            0,0,0,-1,
             0,0,zNear,0
         };
     }
 
-    // zNear -> zNDC = 1, zFar -> zNDC = 0. Y flipped for Vulkan NDC.
-    // View perspective: Right = +X, Up = +Y, Forward = +Z
-    inline mat4 perspectiveLHReverseZ(float fovY, float a, float zNear, float zFar)
+    // zNear -> zNDC = 1, zFar -> zNDC = 0
+    // View perspective: Right = +X, Up = +Y, Forward = -Z
+    inline mat4 perspectiveRHReverseZ(float fovY, float a, float zNear, float zFar)
     {
         float f = 1 / tan(fovY / 2);
         return mat4{
             f/a,0,0,0,
-            0,-f,0,0, // Y Flip
+            0,f,0,0,
             // zNDC = zNear/z
-            0,0,-zNear/(zFar - zNear),1,
+            0,0,zNear/(zFar - zNear),-1,
             0,0,(zFar * zNear)/(zFar - zNear),0
         };
     }
 
-    // Forward = +Z
-    inline mat4 viewMatrixLHReverseZ(vec3 pos, quat rot)
+    // Forward = -Z
+    inline mat4 viewMatrixRHReverseZ(vec3 pos, quat rot)
     {
         mat4 view = mat4_cast(rot);
         view[3] = vec4(pos.x,pos.y,pos.z,1.0f);
-        return scale(glm::identity<mat4>(), vec3(1, 1, -1)) * inverse(view);
+        return inverse(view);
     }
 #pragma endregion
 }
