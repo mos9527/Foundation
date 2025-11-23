@@ -13,7 +13,7 @@ void main(uint tid: SV_DispatchThreadID) {
     // We'll do [ceil(N/kTaskShaderWG),min(N,kTaskShaderWG),1] dispatches for N tasks - task shaders can read the
     // actual task count from the prepared count buffer
     MeshletTaskDispatch command;
-    uint N = counter[0].load();
+    uint N = counter[0].load();    
     command.groupCountX = (N + kTaskShaderWG - 1) / kTaskShaderWG;
     command.groupCountY = kTaskShaderWG;
     command.groupCountZ = 1;

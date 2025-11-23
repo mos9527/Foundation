@@ -73,16 +73,26 @@ void RendererSetup(FContext* context)
         RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer, .size = sizeof(MeshletTaskDispatch)});
     // NOTE: Lambda captures
     // NONE of the handle values outlive the renderer. Therefore, ALWAYS capture by value.
+    auto* pShaderGlobals = &GShaderGlobals;
     renderer->CreatePass(
         "UBO Update", RHIDeviceQueueType::Compute, 0u,
         [=](PassHandle self, Renderer* r)
         {
             r->BindBufferCopyDst(self, GlobalUBO);
+            r->BindBufferCopyDst(self, IndirectTaskCounter);
         },
         [=](PassHandle, Renderer* r, RHICommandList* cmd)
         {
             auto* ubo = r->DerefResource(GlobalUBO).Get<RHIBuffer*>();
-            cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(GShaderGlobals)));
+            auto* counter = r->DerefResource(IndirectTaskCounter).Get<RHIBuffer*>();
+            // Fill, Update are considered Transfer operations
+            // and would require proper barriers - which are automatically handled
+            // by the Renderer *inter* passes.
+            // Note that usage before a Dispatch, etc, may be valid but is still a ROW hazard.
+            // TODO: Document these.
+            cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(*pShaderGlobals)));
+            /// ^^^ Footgun as noted in MeshShaderHierarchicalLOD.cpp ^^^
+            cmd->FillBuffer(counter, 0u);
         });
     renderer->CreatePass(
         "Meshlet Task Generation", RHIDeviceQueueType::Compute, 0u,
@@ -95,11 +105,8 @@ void RendererSetup(FContext* context)
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
             r->BindBufferStorageRead(self, PrimitiveBuffer,RHIPipelineStageBits::ComputeShader, "primitive");
         },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            auto* counter = r->DerefResource(IndirectTaskCounter).Get<RHIBuffer*>();
-            // Reset counter
-            cmd->FillBuffer(counter, 0, 0);
+        [&](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {                        
             r->CmdSetPipeline(self, cmd);
             r->CmdDispatch(self, cmd, {GSInstances.size(), 1, 1});
         });
@@ -132,14 +139,11 @@ void RendererSetup(FContext* context)
             r->BindShader(self, RHIShaderStageBits::Mesh, "main", "data/shaders/EMSBasic.spv");
             r->BindShader(self, RHIShaderStageBits::Fragment, "main", "data/shaders/EPSBasic.spv");
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-            r->BindBufferShaderRead(self, IndirectTaskDispatch,
-                                    RHIPipelineStageBits::DrawIndirect | RHIPipelineStageBits::AllGraphics);
+            r->BindBufferShaderRead(self, IndirectTaskDispatch, RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);
             r->BindBufferStorageRead(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "tasks");
             r->BindBufferStorageRead(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "counter");
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
-            r->BindBufferStorageRead(self, PrimitiveBuffer,
-                                     RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::AllGraphics,
-                                     "primitive");
+            r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
             r->BindBackbufferRTV(self);
             r->BindTextureDSV(self, ZBuffer,
                               {.format = RHIResourceFormat::D32SignedFloat,
@@ -152,7 +156,7 @@ void RendererSetup(FContext* context)
             r->CmdBeginGraphics(self, cmd, wh, RHIClearColor{}, RHIClearDepthStencil{0.0f, 0});
             r->CmdSetPipeline(self, cmd);
             cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
-            cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
+            cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 0, sizeof(MeshletTaskDispatch));
             cmd->EndGraphics();
         });
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});
