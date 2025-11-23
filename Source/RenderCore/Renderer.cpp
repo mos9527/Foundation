@@ -559,6 +559,32 @@ void Renderer::BuildPipelineState(PassHandle pass)
             }
         }
     }
+    // Check that all [set,binding] are unique, and bindings per set is contiguous
+    Map<Pair<int,int>, String> bind_unique(mAllocator); // set, binding, name
+    for (auto& [name, bind] : refl_var_bind_points)
+    {
+        auto it = bind_unique.find(bind);
+        CHECK_MSG(it == bind_unique.end(), "Binding set {} binding {} is used by both {} and {} in pass {}.",
+                  bind.first, bind.second, name, it->second, tracked.name);
+        bind_unique[bind] = name;
+    }
+    // Check contiguity
+    for (uint32_t set = 0; ; set++)
+    {
+        Pair<int, int> key {set, 0};
+        auto it = bind_unique.find(key);
+        if (it == bind_unique.end())
+            break;
+        int cbindings = 0, last_binding = 0;
+        for (; it != bind_unique.end() && it->first.first == set; it++)
+        {        
+            last_binding = it->first.second;
+            cbindings++;
+        }
+        CHECK_MSG(last_binding == cbindings - 1,
+                  "Pass {} Binding set {} has non-contiguous bindings (max binding {}, count {}). Last binding {}.", tracked.name, set,
+                  last_binding, cbindings, bind_unique[{set, last_binding}]);
+    }
     // Create descriptor set layout to be consistent across stages
     Map<String, RHIDescriptorType> var_types(mAllocator);
     Map<String, ResourceHandle> var_handles(mAllocator);

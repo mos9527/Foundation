@@ -1,10 +1,10 @@
 #include "EMeshletCommon.slang"
 
 uniform UBO globalParams;
-[[vk_binding(1,0)]] RWStructuredBuffer<Atomic<uint>> counter;
-[[vk_binding(2,0)]] RWStructuredBuffer<MeshletTaskWork> tasks;
-[[vk_binding(3,0)]] StructuredBuffer<GSInstance> instances;
-[[vk_binding(4,0)]] ByteAddressBuffer primitive;
+[[vk_binding(1,0)]] StructuredBuffer<GSInstance> instances;
+[[vk_binding(2,0)]] ByteAddressBuffer primitive;
+[[vk_binding(3,0)]] RWStructuredBuffer<MeshletTaskWork> tasks;
+[[vk_binding(4,0)]] RWStructuredBuffer<Atomic<uint>> counter;
 
 float projErrorSimple(FLODGroup lodGroup, GSInstance inst) {
     float3 center = mul(globalParams.view, float4(lodGroup.center + inst.transform, 1.0)).xyz;
@@ -21,9 +21,8 @@ groupshared MeshletGroupShared shared;
 [numthreads(kTaskShaderWG, 1, 1)]
 void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     uint count = counter[0].load();
-    uint dispatchIndex = dot(groupID, uint2(kTaskShaderWG, 1)); // ID of this group, flattened
-    printf("count=%d dispatchIndex=%d\n", count, dispatchIndex);
-    if (dispatchIndex >= count || dispatchIndex >= 0)
+    uint dispatchIndex = dot(groupID, uint2(kTaskShaderWG, 1)); // ID of this group, flattened    
+    if (dispatchIndex >= count)
         return; // Group inactive. Should NOT happen.    
     MeshletTaskWork work = tasks[dispatchIndex];
     GSInstance inst = instances[work.instanceID];
