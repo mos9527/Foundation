@@ -824,6 +824,11 @@ void Renderer::FinalizePSOs()
     LOG(Renderer, LogInfo, "Compiling Shaders");
     ThreadPool pool(std::thread::hardware_concurrency(), kMaxRenderPasses, mAllocator, "PSOComp");
     Vector<SharedFuture<void>> futures(mAllocator);
+    //// ST vvv
+    //for (auto& pass : mSetup->trackedPasses)
+    //    BuildPipelineState(pass.handle);
+    //return;
+    // MT vvv
     for (auto& pass : mSetup->trackedPasses)
     {
         if (!pass.used)

@@ -150,13 +150,13 @@ void RendererSetup(FContext* context)
                                .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
+        {            
             RHIExtent2D wh{w, h};
             auto* dispatchBuffer = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
             r->CmdBeginGraphics(self, cmd, wh, RHIClearColor{}, RHIClearDepthStencil{0.0f, 0});
-            r->CmdSetPipeline(self, cmd);
-            cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
-            cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
+            //r->CmdSetPipeline(self, cmd);
+            cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);            
+            // cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
             cmd->EndGraphics();
         });
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});

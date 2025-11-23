@@ -13,7 +13,7 @@ namespace Foundation::Core
      * @note This implementation is thread-safe for allocations from multiple threads.
      * @tparam T Type of object to allocate, must be default constructible.
      */
-    template <typename T>
+    template <typename T>        
     class AtomicPool
     {
         struct Node;
@@ -22,12 +22,12 @@ namespace Foundation::Core
             Node* p{nullptr};
             uintptr_t tag{};
         };
-        struct Node
+        struct alignas(2 * sizeof(Node*)) Node
         {
             Node* next;
-            T data;
-            ///
-            bool used{false};
+            uintptr_t used{nullptr};
+            T data;            
+            
         };
         Node* mNodes{nullptr};
         size_t mSize{0};
@@ -101,10 +101,10 @@ namespace Foundation::Core
             if (!ptr)
                 return;
             // We know the memory layout is Node.data, so we can get the Node* from T*
-            // Hacky - though guaranteed to work by standard.
-            Node* node = reinterpret_cast<Node*>(reinterpret_cast<uint8_t*>(ptr) - sizeof(Node::next));
-            node->data.~T();
+            // Hacky - though guaranteed to work by standard layout.
+            Node* node = reinterpret_cast<Node*>(reinterpret_cast<uintptr_t>(ptr) - offsetof(Node, data));
             node->used = false;
+            node->data.~T();            
             DeallocateNode(node);
         }
         /**
@@ -113,7 +113,7 @@ namespace Foundation::Core
          */
         size_t Index(T* ptr) const
         {
-            auto node = reinterpret_cast<Node*>(reinterpret_cast<uint8_t*>(ptr) - sizeof(Node::next));
+            Node* node = reinterpret_cast<Node*>(reinterpret_cast<uintptr_t>(ptr) - offsetof(Node, data));
             return static_cast<size_t>(node - mNodes);
         }
         /**
@@ -133,7 +133,7 @@ namespace Foundation::Core
         {
             for (size_t i = 0; i < mSize; i++)
                 if (mNodes[i].used)
-                    mNodes[i].data.~T();
+                    mNodes[i].used = false, mNodes[i].data.~T();
         }
         ~AtomicPool() { Collect(); }
     };
