@@ -114,7 +114,7 @@ namespace Foundation::RenderCore
             offset += size;
         }
         auto promise = ConstructShared<StreamingPromise>(mAllocator);
-        mBufferCopies.emplace(cmds.size(), CmdEntry{cmds, promise});
+        mBufferCopies.emplace(cmds.size(), CmdEntry<BufferCopyCommand>{cmds, promise});
         return promise->get_future();
     }
     StreamingFuture StreamingPool::Write(Span<const char> data, RHITexture* dst, RHITextureAspectFlag aspect,
@@ -157,7 +157,10 @@ namespace Foundation::RenderCore
             }
         }
         auto promise = ConstructShared<StreamingPromise>(mAllocator);
-        mTextureCopies.emplace(cmds.size(), CmdEntry{cmds, promise});
+        // Reliably triggers C1001 on MSVC. Deduct it ourselves.
+        // (paraphrased) D:\a\_work\1\s\src\vctools\Compiler\CxxFE\sl\p1\c\CTAD.cpp#L372
+        // mTextureCopies.emplace(cmds.size(), CmdEntry{cmds, promise});
+        mTextureCopies.emplace(cmds.size(), CmdEntry<TextureCopyCommand>{cmds, promise});
         return promise->get_future();
     }
     StreamingPool::~StreamingPool() { mShutdown = true; }

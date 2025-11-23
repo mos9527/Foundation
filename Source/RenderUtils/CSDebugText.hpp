@@ -6,7 +6,7 @@ namespace Foundation::RenderUtils
 #pragma pack(push,1)
     struct CSDebugTextData
     {
-        int x = 0u, y = 0u, scale = 2u, col32 = ~0u;
+        int x = 0u, y = 0u, scale = 2u, col32 = -1;
         char szText[28 * 4]; // Zero terminated
 
         void SetText(StringView str)

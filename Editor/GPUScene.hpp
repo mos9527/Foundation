@@ -71,7 +71,7 @@ public:
     struct GPUSceneDesc
     {
         size_t primitiveBudget = 16 * (1u<<20); // 16MB
-        size_t instanceBudget = 1e3; // # of instances
+        size_t instanceBudget = (size_t)1e3; // # of instances
     };
     GPUScene(FContext* ctx, GPUSceneDesc const& desc);
 
