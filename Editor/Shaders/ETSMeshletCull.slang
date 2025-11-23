@@ -6,8 +6,8 @@ RWStructuredBuffer<MeshletTaskWork> tasks;
 StructuredBuffer<GSInstance> instances;
 ByteAddressBuffer primitive;
 
-float projErrorSimple(FLODGroup lodGroup) {
-    float3 center = mul(globalParams.view, float4(lodGroup.center, 1.0)).xyz;
+float projErrorSimple(FLODGroup lodGroup, GSInstance inst) {
+    float3 center = mul(globalParams.view, float4(lodGroup.center + inst.transform, 1.0)).xyz;
     float r = lodGroup.radius;
     float d = max(length(center) - r, globalParams.zNear);
     return lodGroup.error / d * abs(globalParams.proj[1][1]) * 0.5f;
@@ -37,13 +37,13 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
         FMeshlet meshlet = primitive.Load<FMeshlet>(mesh.meshletOffset + meshletID * sizeof(FMeshlet));
         // View-dependent culling
         FLODGroup selfGroup = primitive.Load<FLODGroup>(mesh.groupOffset + meshlet.group * sizeof(FLODGroup));
-        float selfError = projErrorSimple(selfGroup);
+        float selfError = projErrorSimple(selfGroup, inst);
         // Remember - we take the upper_bound of the acceptable clusters
         // where it's the *first* LOD that exceeds the error threshold
         culled = selfError <= globalParams.lodThreshold;
         if (meshlet.refined != ~0u){
             FLODGroup refGroup = primitive.Load<FLODGroup>(mesh.groupOffset + meshlet.refined * sizeof(FLODGroup));
-            float refError = projErrorSimple(refGroup);
+            float refError = projErrorSimple(refGroup, inst);
             // The refined ones exceeds it too - impossible unless it's closer to
             // the actual upper bound. So cull ourselves.
             culled |= refError > globalParams.lodThreshold;

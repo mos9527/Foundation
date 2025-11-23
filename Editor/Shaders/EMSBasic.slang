@@ -33,6 +33,8 @@ void main(
     for (uint i = tid; i < vtxCount; i += kTaskShaderWG) {
         uint ind = primitive.Load<uint32_t>(vtxBase + i * sizeof(uint32_t));
         FVertex vtx = primitive.Load<FVertex>(mesh.vtxOffset + ind * sizeof(FVertex));
+        vtx.position = inst.rotation.rotate(vtx.position);
+        vtx.position = vtx.position * inst.scale + inst.transform;
         V2F v2f;
         v2f.pos = mul(mul(globalParams.proj, globalParams.view), float4(vtx.position, 1.0));
         v2f.meshlet = meshletID;

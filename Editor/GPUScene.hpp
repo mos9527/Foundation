@@ -30,9 +30,9 @@ struct GSInstance
     // Bitfield LE [8 GSData] [24 ID]
     uint32_t tag;
     // TRS
-    float3 transform;
-    quat rotation;
-    float3 scale;
+    float3 transform{0,0,0};
+    quat rotation{0,0,0,1};
+    float3 scale{1,1,1};
     // Data
     // There's not really unions in most shader languages.
     // Fields are represented in raw uint32s, and interpreted accordingly.

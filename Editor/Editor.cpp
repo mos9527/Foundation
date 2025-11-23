@@ -178,12 +178,16 @@ bool ExecuteInit()
         mesh.mesh.meshletCount);
     FEMeshes.emplace_back(mesh);
     // Create instances
-    GSInstances.resize(100);
-    for (int i = 0; auto& ins : GSInstances)
-    {
-        ins.tag = MakeGSInstanceTag(GSDataBits::Mesh, i++);
-        ins.data[0] = mesh.offset;
-    }
+    float sz = 10, scale = 1.0f;
+    GSInstances.resize(sz * sz * sz);
+    for (int x = 0; x < sz; x++)
+        for (int y = 0; y < sz; y++)
+            for (int z = 0; z < sz; z++)
+            {
+                int i = x * sz * sz + y * sz + z;
+                GSInstances[i].data[0] = mesh.offset;
+                GSInstances[i].transform = float3{(x - sz / 2), (y - sz / 2), (z - sz / 2)} * scale;
+            }
     FEState = FERunning;
     return false;
 }
@@ -239,8 +243,12 @@ bool ExecuteFrame()
         RendererSetup(GContext);
     }
     auto* renderer = GContext->renderer;
-    // Upload instance data
     auto* scene = GContext->gpuScene;
+    // New frame
+    renderer->BeginExecute();
+    ImGui_ImplFoundation_NewFrame(&GContext->event);
+    ImGui::NewFrame();
+    // Upload instance data
     auto [ptr, off] = scene->InstanceAlloc(GSInstances.size());
     std::memcpy(ptr, GSInstances.data(), GSInstances.size() * sizeof(GSInstance));
     GShaderGlobals.firstInstance = off;
@@ -255,20 +263,18 @@ bool ExecuteFrame()
         .fovY = radians(60.f),
     };
     camera.aspect = GContext->swapchain->GetAspectRatio();
-    camera.Update(GContext->event);
+    auto& io = ImGui::GetIO();
+    if (!io.WantCaptureMouse)
+        camera.Update(GContext->event);
     GShaderGlobals.view = camera.view;
     GShaderGlobals.proj = camera.proj;
     GShaderGlobals.zNear = camera.zNear;
-    // New frame
-    renderer->BeginExecute();
-    ImGui_ImplFoundation_NewFrame(&GContext->event);
-    ImGui::NewFrame();
     ImGui::Begin("Debug");
     ImGui::TextUnformatted(ArcballCamera::kControlsText);
-    ImGui::Text("FPS %.2f", ImGui::GetIO().Framerate);
-    ImGui::Text("Pool %s", scene->DbgGetStatistics().c_str());
-    ImGui::Text("Instances: %zu", GSInstances.size());
-    ImGui::SliderFloat("LOD Threshold", &GShaderGlobals.lodThreshold, 0.f, 1.f);
+    ImGui::Text("FPS | %.2f", ImGui::GetIO().Framerate);
+    ImGui::Text("StreamingPool | %s", scene->DbgGetStatistics().c_str());
+    ImGui::Text("Instances | %zu", GSInstances.size());
+    ImGui::SliderFloat("LOD Threshold | ", &GShaderGlobals.lodThreshold, 0.f, 1.f);
     ImGui::End();
     renderer->ExecuteFrame();
     renderer->EndExecute();
