@@ -18,6 +18,7 @@ add_library(Editor_Assets)
 target_sources(Editor_Assets PUBLIC Mesh.cpp Mesh.hpp)
 target_link_libraries(
     Editor_Assets PUBLIC
+    Foundation_Math
     Foundation_Core
     meshoptimizer
 )
@@ -28,7 +29,7 @@ target_include_directories(
 add_executable(Editor)
 target_sources(Editor PRIVATE ${SOURCES} ${INCLUDES} )
 target_link_libraries(
-        Editor PRIVATE
+        Editor PRIVATE        
         Foundation_RHIVulkan
         Foundation_RenderCore
         Foundation_RenderUtils

@@ -1,4 +1,5 @@
 #pragma once
+#include <bit>
 #include "Allocator.hpp"
 #include "Atomic.hpp"
 #include "Container.hpp"

@@ -17,7 +17,7 @@ int main()
     UBO ubo{ .threshold = 0.01f};
     CSDebugTextData lines[3]{};
     /* Setup */
-    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, {});
+    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window);
     auto meshData = device->CreateBuffer({
         .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer,
         .size = 16u * (1u << 20) // 16 MB
@@ -77,6 +77,20 @@ int main()
                                                                  .extent = {4096, 4096, 1},
                                                                  .format = RHIResourceFormat::D32SignedFloat});
     renderer->CreatePass(
+        "UBO Update", RHIDeviceQueueType::Compute, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindBufferCopyDst(self, uboHandle);            
+        },
+        [&](PassHandle, Renderer* r, RHICommandList* cmd)
+        {
+            auto* uboData = r->DerefResource(uboHandle).Get<RHIBuffer*>();
+            // Possible footgun here - capturing by *value* copys ubo at its 
+            // initial state.
+            // XXX: Figure out how to make this less error-prone.
+            cmd->UpdateBuffer(uboData, 0, AsBytes(AsSpan(ubo)));            
+        });
+    renderer->CreatePass(
         "Mesh Shader", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
@@ -96,8 +110,6 @@ int main()
         [&](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             auto const& img_wh = r->GetSwapchainExtent();
-            auto* uboData = r->DerefResource(uboHandle).Get<RHIBuffer*>();
-            cmd->UpdateBuffer(uboData, 0, AsBytes(AsSpan(ubo)));
             r->CmdBeginGraphics(self, cmd, img_wh);
             r->CmdSetPipeline(self, cmd);
             // Simplest dispatch - spawn meshlets one by one to each Mesh Shader WG

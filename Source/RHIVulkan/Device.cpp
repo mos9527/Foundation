@@ -64,7 +64,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     }
     // Create the device queues
     Vector<vk::DeviceQueueCreateInfo> queue_info(GetAllocator());
-    float priority = 1.0f;
+    const float priority = 1.0f;
     for (uint32_t i = 0; i < families.size(); ++i)
     {
         if (queueCounts[i])
@@ -89,6 +89,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
              .shaderInt8 = true,
              .descriptorBindingSampledImageUpdateAfterBind = true,
              .runtimeDescriptorArray = true,
+             .scalarBlockLayout = true,
              .uniformBufferStandardLayout = true,
              .timelineSemaphore = true}, // vk::PhysicalDeviceVulkan12Features
             {.synchronization2 = true,

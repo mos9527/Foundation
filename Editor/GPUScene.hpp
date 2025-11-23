@@ -9,6 +9,7 @@ BITMASK_ENUM_BEGIN(GSData, uint8_t)
     Mesh = 1 << 0,
 BITMASK_ENUM_END()
 
+#pragma pack(push, 1)
 struct GSMesh
 {
     // Offsets are absolute, and are in Primitive buffer (bytes).
@@ -24,7 +25,6 @@ struct GSMesh
     uint32_t meshletVtxOffset;
     uint32_t meshletTriOffset;
 };
-
 struct GSInstance
 {
     // Bitfield LE [8 GSData] [24 ID]
@@ -42,6 +42,9 @@ struct GSInstance
      */
     uint32_t data[16];
 };
+#pragma pack(pop)
+static_assert(sizeof(GSMesh) == 32); 
+static_assert(sizeof(GSInstance) == 108);
 
 inline uint32_t MakeGSInstanceTag(GSData dataFlags, uint32_t id)
 {
@@ -71,7 +74,7 @@ public:
     struct GPUSceneDesc
     {
         size_t primitiveBudget = 16 * (1u<<20); // 16MB
-        size_t instanceBudget = 1e3; // # of instances
+        size_t instanceBudget = (size_t)1e3; // # of instances
     };
     GPUScene(FContext* ctx, GPUSceneDesc const& desc);
 
