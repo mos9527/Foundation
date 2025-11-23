@@ -1,8 +1,9 @@
 #include "EMeshletCommon.slang"
 
+uniform UBO globalParams;
 RWStructuredBuffer<Atomic<uint>> counter;
 RWStructuredBuffer<MeshletTaskWork> tasks;
-StructuredBuffer<GSInstance> instance;
+StructuredBuffer<GSInstance> instances;
 ByteAddressBuffer primitive;
 
 groupshared float3 sharedScreenSpaceVerts[kTaskShaderWG];
@@ -10,7 +11,7 @@ groupshared float3 sharedScreenSpaceVerts[kTaskShaderWG];
 // Each thread in the WG processes zero, or more vertices/triangles
 [outputtopology("triangle")]
 [numthreads(kTaskShaderWG, 1, 1)]
-void meshletMesh(
+void main(
     in payload MeshletGroupShared shared,
     in uint gid: SV_GroupID,
     in uint tid: SV_GroupIndex,
@@ -20,13 +21,12 @@ void meshletMesh(
     if (gid > shared.meshletCount)
         return;
     uint meshletID = shared.meshletIndices[gid];
-    GSInstance inst = instance[shared.instanceID];
+    GSInstance inst = instances[shared.instanceID];
     GSMesh mesh = primitive.Load<GSMesh>(inst.data[0]);
-    GSMeshLOD lod = mesh.lod[0];
-    FMeshlet meshlet = primitive.Load<FMeshlet>(lod.meshletOffset + meshletID * sizeof(FMeshlet));
-    uint32_t vtxBase = lod.meshletVtxOffset + meshlet.vtxOffset * sizeof(uint32_t);
+    FMeshlet meshlet = primitive.Load<FMeshlet>(mesh.meshletOffset + meshletID * sizeof(FMeshlet));
+    uint32_t vtxBase = mesh.meshletVtxOffset + meshlet.vtxOffset * sizeof(uint32_t);
     uint32_t vtxCount = meshlet.vtxCount;
-    uint32_t triBase = lod.meshletTriOffset + meshlet.triOffset * sizeof(uint8_t);
+    uint32_t triBase = mesh.meshletTriOffset + meshlet.triOffset * sizeof(uint8_t);
     uint32_t triCount = meshlet.triCount;
     SetMeshOutputCounts(vtxCount, triCount);
     // Each thread in the WG processes multiple vertices/triangles

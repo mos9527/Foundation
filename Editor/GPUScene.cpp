@@ -20,7 +20,7 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
                 .coherent = true
             },
         .usage = RHIBufferUsageBits::StorageBuffer,
-        .size = desc.instanceBudget});
+        .size = desc.instanceBudget * sizeof(GSInstance)});
     mInstanceBegin = mInstanceRing = mInstanceBuffer->Map<GSInstance>();
     mInstanceEnd = mInstanceBegin + desc.instanceBudget;
 }
@@ -50,19 +50,14 @@ SharedFuture<> GPUScene::Upload(FMesh const& src, GSMesh& mesh, uint32_t& outOff
     // Vertex data
     mesh.vtxCount = src.vertices.size();
     mesh.vtxOffset = outOffset + Write(src.vertices.data(), sizeof(FVertex) * src.vertices.size());
-    // Group data
+    // LOD Group data
     mesh.groupCount = src.dag.groups.size();
     mesh.groupOffset = outOffset + Write(src.dag.groups.data(), sizeof(FLODGroup) * src.dag.groups.size());
-    // LOD Data
-    mesh.lodCount = src.lods.size();
-    for (int i = 0; auto& srcLod : src.lods)
-    {
-        auto& dstLod = mesh.lod[i];
-        dstLod.meshletCount = srcLod.meshlets.size();
-        dstLod.meshletOffset = outOffset + Write(srcLod.meshlets.data(), sizeof(FMeshlet) * srcLod.meshlets.size());
-        dstLod.meshletVtxOffset = outOffset + Write(srcLod.meshletVtx.data(), sizeof(uint32_t) * srcLod.meshletVtx.size());
-        dstLod.meshletTriOffset = outOffset + Write(srcLod.meshletTri.data(), sizeof(uint8_t) * srcLod.meshletTri.size());
-    }
+    // Meshlet data
+    mesh.meshletCount = src.dag.meshlets.size();
+    mesh.meshletOffset = outOffset + Write(src.dag.meshlets.data(), sizeof(FMeshlet) * src.dag.meshlets.size());
+    mesh.meshletVtxOffset = outOffset + Write(src.dag.meshletVtx.data(), sizeof(uint32_t) * src.dag.meshletVtx.size());
+    mesh.meshletTriOffset = outOffset + Write(src.dag.meshletTri.data(), sizeof(uint8_t) * src.dag.meshletTri.size());
     // GSMesh (data)
     std::memcpy(ptr, &mesh, sizeof(GSMesh));
     return mStreaming.Write(data, mPrimitiveBuffer.Get(), outOffset);

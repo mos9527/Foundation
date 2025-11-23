@@ -40,28 +40,20 @@ struct FMeshlet // @ref meshopt_Meshlet
     float4 coneAxisAngle; // (x,y,z,cos(half solid angle))
     float3 coneApex; // (x,y,z)
 };
-struct GSMeshLOD
+struct GSMesh
 {
-    // -- VS pipeline
-    uint32_t indOffset;
-    uint32_t indCount;
-    // -- MS pipeline @ref FMeshlet
+    // Offsets are absolute, and are in Primitive buffer (bytes).
+    // @ref FVertex
+    uint32_t vtxOffset;
+    uint32_t vtxCount;
+    // -- DAG LOD Group @ref FLODGroup
+    uint32_t groupOffset;
+    uint32_t groupCount;
+    // -- DAG Meshlets @ref FMeshlet
     uint32_t meshletOffset;
     uint32_t meshletCount;
     uint32_t meshletVtxOffset;
     uint32_t meshletTriOffset;
-};
-struct GSMesh
-{
-    // @ref FVertex
-    uint32_t vtxOffset;
-    uint32_t vtxCount;
-    // -- DAG LODs @ref FLODGroup
-    uint32_t groupOffset;
-    uint32_t groupCount;
-    // -- Discrete LODs
-    uint32_t lodCount;
-    GSMeshLOD lod[kNumMeshDiscreteLODs];
 };
 struct MIndex {
     uint8_t v0;

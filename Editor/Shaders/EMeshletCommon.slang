@@ -59,12 +59,14 @@ struct GSMesh
     // @ref FVertex
     uint32_t vtxOffset;
     uint32_t vtxCount;
-    // -- DAG LODs @ref FLODGroup
+    // -- DAG LOD Group @ref FLODGroup
     uint32_t groupOffset;
     uint32_t groupCount;
-    // -- Discrete LODs
-    uint32_t lodCount;
-    GSMeshLOD lod[kNumMeshDiscreteLODs];
+    // -- DAG Meshlets @ref FMeshlet
+    uint32_t meshletOffset;
+    uint32_t meshletCount;
+    uint32_t meshletVtxOffset;
+    uint32_t meshletTriOffset;
 };
 struct MIndex {
     uint8_t v0;
@@ -111,11 +113,8 @@ struct UBO
     float zNear;
     float4x4 view;
     float4x4 proj;
-
-} GShaderGlobals;
+};
 // ^^^
-uniform UBO globalParams;
-
 public struct MeshletGroupShared {
     uint32_t instanceID;
     uint32_t meshletCount;

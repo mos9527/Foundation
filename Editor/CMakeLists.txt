@@ -41,3 +41,11 @@ target_precompile_headers(
         PRIVATE
         Precompiled.inc
 )
+add_dependencies(
+        Editor
+        Shader_ECSIndirectTaskGen
+        Shader_ECSInstanceTaskCull
+        Shader_EMSBasic
+        Shader_ETSMeshletCull
+        Shader_EPSBasic
+)

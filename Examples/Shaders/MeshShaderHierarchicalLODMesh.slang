@@ -35,13 +35,12 @@ void meshMain(
     in uint tid: SV_GroupIndex,
     OutputVertices<V2F, 96> verts,
     OutputIndices<uint3, 96> triangles,
-) {    
-    GSMeshLOD lod = globalParams.mesh.lod[0];
+) {
     // Each WG of mesh shader processes *exactly* one meshlet per dispatch
-    FMeshlet meshlet = mesh.Load<FMeshlet>(lod.meshletOffset + gid * sizeof(FMeshlet));
-    uint32_t vtxBase = lod.meshletVtxOffset + meshlet.vtxOffset * sizeof(uint32_t);
+    FMeshlet meshlet = mesh.Load<FMeshlet>(globalParams.mesh.meshletOffset + gid * sizeof(FMeshlet));
+    uint32_t vtxBase = globalParams.mesh.meshletVtxOffset + meshlet.vtxOffset * sizeof(uint32_t);
     uint32_t vtxCount = meshlet.vtxCount;
-    uint32_t triBase = lod.meshletTriOffset + meshlet.triOffset * sizeof(uint8_t);
+    uint32_t triBase = globalParams.mesh.meshletTriOffset + meshlet.triOffset * sizeof(uint8_t);
     uint32_t triCount = meshlet.triCount;
     // View-dependent culling
     FLODGroup selfGroup = mesh.Load<FLODGroup>(globalParams.mesh.groupOffset + meshlet.group * sizeof(FLODGroup));

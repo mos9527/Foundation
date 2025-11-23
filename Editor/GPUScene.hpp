@@ -9,31 +9,20 @@ BITMASK_ENUM_BEGIN(GSData, uint8_t)
     Mesh = 1 << 0,
 BITMASK_ENUM_END()
 
-static const size_t kNumMeshDiscreteLODs = 5;
-
-struct GSMeshLOD
-{
-    // -- VS pipeline
-    uint32_t indOffset;
-    uint32_t indCount;
-    // -- MS pipeline @ref FMeshlet
-    uint32_t meshletOffset;
-    uint32_t meshletCount;
-    uint32_t meshletVtxOffset;
-    uint32_t meshletTriOffset;
-};
 struct GSMesh
 {
     // Offsets are absolute, and are in Primitive buffer (bytes).
     // @ref FVertex
     uint32_t vtxOffset;
     uint32_t vtxCount;
-    // -- DAG LODs @ref FLODGroup
+    // -- DAG LOD Group @ref FLODGroup
     uint32_t groupOffset;
     uint32_t groupCount;
-    // -- Discrete LODs
-    uint32_t lodCount;
-    GSMeshLOD lod[kNumMeshDiscreteLODs];
+    // -- DAG Meshlets @ref FMeshlet
+    uint32_t meshletOffset;
+    uint32_t meshletCount;
+    uint32_t meshletVtxOffset;
+    uint32_t meshletTriOffset;
 };
 
 struct GSInstance
@@ -82,7 +71,7 @@ public:
     struct GPUSceneDesc
     {
         size_t primitiveBudget = 16 * (1u<<20); // 16MB
-        size_t instanceBudget = 4 * (1u<<20);  // 4MB ring buffer
+        size_t instanceBudget = 1e3; // # of instances
     };
     GPUScene(FContext* ctx, GPUSceneDesc const& desc);
 

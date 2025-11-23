@@ -1641,10 +1641,21 @@ String Renderer::DbgDumpGraphviz() const
 {
     String out;
     fmt::format_to(std::back_inserter(out), "digraph G {{\n");
-    fmt::format_to(std::back_inserter(out), "    rankdir=TB;\n");
+    fmt::format_to(std::back_inserter(out), "    rankdir=TB; splines=ortho;\n");
     auto& graph = mSetup->graph;
     auto& passes = mSetup->trackedPasses;
     auto& resources = mSetup->trackedResources;
+    for (auto& group : mSetup->executionGroups)
+    {
+        fmt::format_to(std::back_inserter(out), "    subgraph cluster_{} {{\n", group.groupIndex);
+        fmt::format_to(std::back_inserter(out), "        label=\"Group {} (Queue={})\";\n", group.groupIndex, group.queue);
+        for (auto& pass_handle : group.passes)
+        {
+            auto& pass = passes[pass_handle];
+            fmt::format_to(std::back_inserter(out), "        \"{}@{}\";\n", pass.name, pass.handle);
+        }
+        fmt::format_to(std::back_inserter(out), "    }}\n");
+    }
     for (auto& pass : passes)
     {
         fmt::format_to(std::back_inserter(out), "    \"{}@{}\" [ shape=box style={} fillcolor=\"{}\" ];\n", pass.name,

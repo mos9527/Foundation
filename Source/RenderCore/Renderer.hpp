@@ -613,7 +613,9 @@ namespace Foundation::RenderCore
         {
             CHECK(mResources && handle < mResources->resources.size());
             using Tv = Variant<RHIBuffer*, RHITexture*>;
-            return mResources->resources[handle].Visit([](auto* ptr) -> Tv { return ptr; },
+            auto& res = mResources->resources[handle];
+            CHECK_MSG(!res.valueless_by_exception(), "Resource handle {} is valueless", handle);
+            return res.Visit([](auto* ptr) -> Tv { return ptr; },
                                                         [](auto& hdl) -> Tv { return hdl.Get(); });
         }
         /**
@@ -625,7 +627,9 @@ namespace Foundation::RenderCore
         {
             CHECK(mResources && handle < mResources->views.size());
             using Tv = RHITextureView*;
-            return mResources->views[handle].Visit([](auto& hdl) -> Tv { return hdl.Get(); });
+            auto& view = mResources->views[handle];
+            CHECK_MSG(!view.valueless_by_exception(), "Texture view handle {} is valueless", handle);
+            return view.Visit([](auto& hdl) -> Tv { return hdl.Get(); });
         }
         /**
          * @brief Dereference a sampler handle to its underlying RHI sampler.

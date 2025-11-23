@@ -50,28 +50,19 @@ int main()
         mesh.groupCount = src.dag.groups.size();
         mesh.groupOffset = Write(src.dag.groups.data(), sizeof(FLODGroup) * src.dag.groups.size());
         // DAG occupies LOD0 data
-        mesh.lodCount = 1;
-        auto& m0 = mesh.lod[0];
         auto& s0 = src.dag;
-        m0.meshletCount = s0.meshlets.size();
-        m0.meshletOffset = Write(s0.meshlets.data(), sizeof(FMeshlet) * s0.meshlets.size());
-        m0.meshletVtxOffset = Write(s0.meshletVtx.data(), sizeof(uint32_t) * s0.meshletVtx.size());
-        m0.meshletTriOffset = Write(s0.meshletTri.data(), sizeof(uint8_t) * s0.meshletTri.size());
+        mesh.meshletCount = s0.meshlets.size();
+        mesh.meshletOffset = Write(s0.meshlets.data(), sizeof(FMeshlet) * s0.meshlets.size());
+        mesh.meshletVtxOffset = Write(s0.meshletVtx.data(), sizeof(uint32_t) * s0.meshletVtx.size());
+        mesh.meshletTriOffset = Write(s0.meshletTri.data(), sizeof(uint8_t) * s0.meshletTri.size());
         size_t size = dst - ptr;
         dst = ptr;
         ImmediateContext im(RHIDeviceQueueType::Graphics, device.Get());
         im->Begin();
-        im->BeginTransition();
-        im->SetBufferTransition(meshData.Get(),
-                                {
-                                    .dstAccess = RHIResourceAccessBits::TransferWrite,
-                                    .dstStage = RHIPipelineStageBits::Transfer,
-                                });
-        im->EndTransition();
         im->CopyBuffer(staging.Get(), meshData.Get(), {{{.size = size}}});
         im->End();
-        // NOTE: No need for another transition here. RG will see to it, and
-        // the later WaitIdle ensures there'd be no ROW hazards from this.
+        // NOTE: No need for transition here.
+        // Later WaitIdle ensures there'd be no ROW hazards from this.
         im.Submit();
         im.WaitIdle();
     }
@@ -114,7 +105,7 @@ int main()
             // Mesh Shader workgroups effectively directly.
             cmd->SetViewport(0, 0, img_wh.x, img_wh.y,0, 1, true)
                 .SetScissor(0, 0, img_wh.x, img_wh.y)
-                .DrawMeshTasks(ubo.mesh.lod[0].meshletCount, 1, 1)
+                .DrawMeshTasks(ubo.mesh.meshletCount, 1, 1)
                 .EndGraphics();
         });
     createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);
