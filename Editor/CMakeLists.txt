@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.26)
 FetchContent_MakeAvailable(stb)
 FetchContent_MakeAvailable(fast_obj)
 FetchContent_MakeAvailable(meshoptimizer)
+FetchContent_MakeAvailable(cgltf)
 
 file(
     GLOB SOURCES
@@ -23,7 +24,7 @@ target_link_libraries(
     meshoptimizer
 )
 target_include_directories(
-    Editor_Assets PUBLIC "${stb_SOURCE_DIR}" "${fast_obj_SOURCE_DIR}" "${meshoptimizer_SOURCE_DIR}/demo" ..
+    Editor_Assets PUBLIC "${stb_SOURCE_DIR}" "${fast_obj_SOURCE_DIR}" "${cgltf_SOURCE_DIR}" "${meshoptimizer_SOURCE_DIR}/demo" ..
 )
 
 add_executable(Editor)
@@ -49,4 +50,5 @@ add_dependencies(
         Shader_EMSBasic
         Shader_ETSMeshletCull
         Shader_EPSBasic
+        Examples_SampleFiles
 )

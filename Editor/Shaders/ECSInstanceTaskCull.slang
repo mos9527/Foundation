@@ -15,7 +15,7 @@ void main(uint tid: SV_DispatchThreadID) {
     GSInstance inst = instances[iid];
     // TODO: Culling instance
     // Would require AABB update on the CPU side. Not implemented yet.
-    GSMesh mesh = primitive.Load<GSMesh>(inst.data[0]);
+    GSMesh mesh = primitive.Load<GSMesh>(inst.TagID());
     // Generate tasks for each meshlet. Not culling them now!
     // Task and mesh shader dispatch is one-to-one, or one-to-zero.
     // Each task shader _group_ dispatch processes at most kMaxTaskShaderWork meshlets

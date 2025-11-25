@@ -108,6 +108,8 @@ namespace Foundation::RenderCore
         Vector<BufferCopyCommand> cmds(mAllocator);
         for (auto& [srcBuffer, srcOffset, size, pid] : writes)
         {
+            CHECK_MSG(offset + size <= dst->mDesc.size, "Buffer overflow in StreamingPool Write (at={}, size={}, free={})",
+                      offset, size, dst->mDesc.size - offset);
             cmds.emplace_back(
                 pid, srcBuffer, dst,
                 RHICommandList::CopyBufferRegion{.srcOffset = srcOffset, .dstOffset = offset, .size = size});

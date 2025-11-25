@@ -101,15 +101,15 @@ namespace Foundation::Core
          * @return @ref SharedFuture<func ReturnType> that will be set when the job is completed.
          */
         template <typename Lambda, typename... Args>
-        auto Push(Lambda&& func, Args&&... args)
+        auto Push(Lambda&& func, Args const&... args)
         {
             using ReturnType = decltype(func(args...));
-            auto LambdaFn = [](Lambda&& fn, Args&&... fargs) // Capture erasure madness
+            auto LambdaFn = [](Lambda&& fn, Args const&... fargs) // Capture erasure madness
             {
-                return [func = std::forward<Lambda>(fn), ... args = std::forward<Args>(fargs)]
-                { return func(std::forward<Args>(args)...); };
+                return [func = std::forward<Lambda>(fn), ... args = fargs]
+                { return func(args...); };
             };
-            auto LambdaObj = LambdaFn(std::forward<Lambda>(func), std::forward<Args>(args)...);
+            auto LambdaObj = LambdaFn(std::forward<Lambda>(func), args...);
             using LambdaType = decltype(LambdaObj);
             auto ptr = PushImpl<ThreadPoolLambdaJob<LambdaType, ReturnType>>(
                 std::forward<LambdaType>(LambdaObj));

@@ -4,13 +4,6 @@ enum FEditorState
     FERunning
 } FEState;
 // -- Scene data
-struct FEMesh
-{
-    uint32_t offset;
-    GSMesh mesh;
-    SharedFuture<> future;
-};
-Vector<FEMesh> FEMeshes(GLOBAL_ALLOC);
 Vector<GSInstance> GSInstances(GLOBAL_ALLOC);
 
 #pragma pack(push, 1)
@@ -156,7 +149,7 @@ void RendererSetup(FContext* context)
             r->CmdBeginGraphics(self, cmd, wh, RHIClearColor{}, RHIClearDepthStencil{0.0f, 0});
             r->CmdSetPipeline(self, cmd);
             cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);            
-            cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 0, sizeof(MeshletTaskDispatch));
+            cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
             cmd->EndGraphics();
         });
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});
@@ -165,33 +158,32 @@ void RendererSetup(FContext* context)
 
 bool ExecuteInit()
 {
+    Vector<FMesh> meshes(GLOBAL_ALLOC);
+    Vector<FInstance> instances(GLOBAL_ALLOC);
+    LoadGLTF("data/assets/suzanne.glb", meshes, instances);
+    // Load into GPUScene
+    auto* scene = GContext->gpuScene;
+    Vector<Pair<uint32_t, GSMesh>> meshOffsets(GLOBAL_ALLOC);
+    Vector<SharedFuture<>> uploadFutures(GLOBAL_ALLOC);
+    for (auto& src : meshes)
+    {
+        auto& [offset, dst] = meshOffsets.emplace_back();
+        uploadFutures.emplace_back(scene->Upload(src, dst , offset));
+    }
+    GSInstances.clear();
+    for (auto& src : instances)
+    {
+        auto& dst = GSInstances.emplace_back();
+        dst.transform = src.transform;
+        dst.rotation = src.rotation;
+        dst.scale = src.scale;
+        dst.tag = MakeGSInstanceTag(GSDataBits::Mesh, meshOffsets[src.meshIndex].first);
+    }
+    // Wait for uploads
+    for (auto& fut : uploadFutures)
+        fut.wait();
     // Setup Renderer
     RendererSetup(GContext);
-    // DEMO: Loading one mesh at startup
-    auto* scene = GContext->gpuScene;
-    FMesh src(GLOBAL_ALLOC);
-    src.Load("data/assets/bunny.obj");
-    src.ClusterizeDAG();
-    FEMesh mesh;
-    mesh.future = scene->Upload(src, mesh.mesh, mesh.offset);
-    // Wait for upload to complete
-    // This is async and can be waited on later, but for simplicity we just
-    // block here.
-    mesh.future.wait();
-    LOG(Editor, LogInfo, "Uploaded mesh with {} vertices, {} groups, {} meshlets", mesh.mesh.vtxCount, mesh.mesh.groupCount,
-        mesh.mesh.meshletCount);
-    FEMeshes.emplace_back(mesh);
-    // Create instances
-    float sz = 10, scale = 1.0f;
-    GSInstances.resize(sz * sz * sz);
-    for (int x = 0; x < sz; x++)
-        for (int y = 0; y < sz; y++)
-            for (int z = 0; z < sz; z++)
-            {
-                int i = x * sz * sz + y * sz + z;
-                GSInstances[i].data[0] = mesh.offset;
-                GSInstances[i].transform = float3{(x - sz / 2), (y - sz / 2), (z - sz / 2)} * scale;
-            }
     FEState = FERunning;
     return false;
 }
@@ -285,7 +277,6 @@ bool ExecuteFrame()
     return false;
 }
 // Per-frame logic
-// Executes once a swap is acquired
 bool ShouldEditorClose(FContext*)
 {
     switch (FEState)

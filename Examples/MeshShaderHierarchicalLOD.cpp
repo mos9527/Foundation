@@ -25,7 +25,8 @@ int main()
     /* Loads and computes DAG LODs and upload immediately */
     {
         FMesh src(GLOBAL_ALLOC);
-        src.Load("data/assets/bunny.obj");
+        LoadObj(src, "data/assets/bunny.obj");
+        src.Optimize();
         src.ClusterizeDAG();
         for (int i = 0; auto& cluster : src.dag.clusters)
         {

@@ -160,8 +160,8 @@ namespace Foundation::Core {
      *
      * Construction without a @ref Foundation::Core::Allocator pointer is disallowed, and will result in a compile-time error.
      */
-    template<typename T>
-    using UniquePtr = std::unique_ptr<T, StlDeleter<T>>;
+    template<typename T, typename Deleter = StlDeleter<T>>
+    using UniquePtr = std::unique_ptr<T, Deleter>;
 
     /**
      * @brief Helper function for constructing a pinned resource with a @ref Foundation::Core::Allocator.

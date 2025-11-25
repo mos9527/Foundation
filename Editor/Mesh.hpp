@@ -85,7 +85,11 @@ struct FMesh
     /**
      * @brief Load OBJ mesh from file
      */
-    void Load(StringView path, bool optimize = true);
+    void Load(StringView path);
+    /**
+     * @brief Optimize vertex reuse with meshoptimizer
+     */
+    void Optimize();
     /**
     * @brief Creates N LOD levels, iteratively scaling down by 'scale' factor
     * @note Can be clusterized by @ref ClusterizeLOD afterward to create discrete LOD levels
@@ -106,3 +110,5 @@ struct FMesh
      */
     [[nodiscard]] size_t ApproximateSize() const;
 };
+
+void LoadObj(FMesh& mesh, StringView path);

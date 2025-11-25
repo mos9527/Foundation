@@ -26,7 +26,7 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
         return; // Group inactive. Should NOT happen.    
     MeshletTaskWork work = tasks[dispatchIndex];
     GSInstance inst = instances[work.instanceID];
-    GSMesh mesh = primitive.Load<GSMesh>(inst.data[0]);
+    GSMesh mesh = primitive.Load<GSMesh>(inst.TagID());
     uint32_t meshletID = work.firstMeshlet + groupIndex;
     // Init
     shared.instanceID = work.instanceID;

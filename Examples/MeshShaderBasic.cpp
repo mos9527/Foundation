@@ -22,7 +22,8 @@ int main()
     /* Loads LOD0 and upload immediately */
     {
         FMesh src(GLOBAL_ALLOC);
-        src.Load("data/assets/bunny.obj");
+        LoadObj(src, "data/assets/bunny.obj");
+        src.Optimize();
         src.ClusterizeLOD();
         auto staging = device->CreateBuffer(RHIBufferDesc::CreateStagingDesc(meshData->mDesc.size));
         char *ptr = static_cast<char*>(staging->Map()), *dst = ptr;
@@ -36,8 +37,7 @@ int main()
         auto& mesh = ubo.mesh;
         mesh.vtxCount = src.vertices.size();
         mesh.vtxOffset = Write(src.vertices.data(), sizeof(FVertex) * src.vertices.size());
-        mesh.lodCount = 1;
-        auto& m0 = mesh.lod[0];
+        auto& m0 = mesh;
         auto& s0 = src.lods[0];
         m0.meshletCount = s0.meshlets.size();
         m0.meshletOffset = Write(s0.meshlets.data(), sizeof(FMeshlet) * s0.meshlets.size());
@@ -100,7 +100,7 @@ int main()
             // Mesh Shader workgroups effectively directly.
             cmd->SetViewport(0, 0, img_wh.x, img_wh.y,0, 1, true)
                 .SetScissor(0, 0, img_wh.x, img_wh.y)
-                .DrawMeshTasks(ubo.mesh.lod[0].meshletCount, 1, 1)
+                .DrawMeshTasks(ubo.mesh.meshletCount, 1, 1)
                 .EndGraphics();
         });
     createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);

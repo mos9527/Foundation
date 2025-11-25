@@ -25,7 +25,7 @@ namespace Foundation::Core
         struct alignas(2 * sizeof(Node*)) Node
         {
             Node* next;
-            uintptr_t used{nullptr};
+            uintptr_t used{0};
             T data;            
             
         };

@@ -33,23 +33,15 @@ struct GSInstance
     float3 transform{0,0,0};
     quat rotation{0,0,0,1};
     float3 scale{1,1,1};
-    // Data
-    // There's not really unions in most shader languages.
-    // Fields are represented in raw uint32s, and interpreted accordingly.
-    // Offsets are absolute, and are in Primitive buffer (bytes).
-    /**
-     * Mesh: [abs GSMesh offset, unused...]
-     */
-    uint32_t data[16];
 };
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 32); 
-static_assert(sizeof(GSInstance) == 108);
+static_assert(sizeof(GSInstance) == 44);
 
-inline uint32_t MakeGSInstanceTag(GSData dataFlags, uint32_t id)
+inline uint32_t MakeGSInstanceTag(GSData gs, uint32_t id)
 {
     uint32_t tag = 0;
-    tag = bitfieldInsert(tag, static_cast<uint32_t>(dataFlags.value), 0, 8);
+    tag = bitfieldInsert(tag, static_cast<uint32_t>(gs.value), 0, 8);
     tag = bitfieldInsert(tag, id, 8, 24);
     return tag;
 }
@@ -99,4 +91,6 @@ public:
 
     RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
     RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.Get(); }
+
+    void Reset();
 };

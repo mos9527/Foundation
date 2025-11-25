@@ -37,7 +37,9 @@ FContext* CreateContext(SDL_Window* window, Allocator* allocator)
     context->window = window;
     context->application = ConstructBase<RHIApplication, VulkanApplication>(allocator, allocator);
     context->device = context->application->CreateDevice({}, window);
-    context->gpuScene = Construct<GPUScene>(allocator, context, GPUScene::GPUSceneDesc{});
+    context->gpuScene = Construct<GPUScene>(allocator, context, GPUScene::GPUSceneDesc{
+        .primitiveBudget = 1024 * (1u << 20) // 1 GB
+    });
     UpdateSwapchain(context);
     ImGui_ImplFoundation_SetupContextWithDefaultStyles();
     ImGui_ImplFoundation_Init(context->device.Get(), context->window);

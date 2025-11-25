@@ -73,7 +73,7 @@ struct MIndex {
     uint8_t v1;
     uint8_t v2;
 }
-struct GSInstance
+public struct GSInstance
 {
     // Bitfield LE [8 GSData] [24 ID]
     uint32_t tag;
@@ -81,14 +81,14 @@ struct GSInstance
     float3 transform;
     quat rotation;
     float3 scale;
-    // Data
-    // There's not really unions in most shader languages.
-    // Fields are represented in raw uint32s, and interpreted accordingly.
-    // Offsets are in Primitive buffer (bytes).
-    /**
-     * Mesh: [abs GSMesh offset, unused...]
-     */
-    uint32_t data[16];
+
+    public uint8_t TagGS() {
+        return bitfieldExtract(tag, 0, 8);
+    }
+    public uint32_t TagID(){
+        return bitfieldExtract(tag, 8, 24);
+    }
+
 };
 struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
 {

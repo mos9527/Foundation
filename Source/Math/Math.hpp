@@ -7,11 +7,12 @@
 #define GLM_FORCE_QUAT_CTOR_XYZW
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
+#include <glm/gtx/matrix_decompose.hpp>
 #include <glm/gtc/integer.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <glm/ext/quaternion_float.hpp>
 #include <glm/ext/quaternion_transform.hpp>
-#include <glm/gtc/quaternion.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>

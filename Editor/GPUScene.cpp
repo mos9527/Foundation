@@ -66,3 +66,8 @@ String GPUScene::DbgGetStatistics() const
 {
     return fmt::format("Pool: {}", mStreaming.DbgGetStatistics());
 }
+void GPUScene::Reset()
+{
+    mPrimitiveOffset = 0;
+    mInstanceRing = mInstanceBegin;
+}

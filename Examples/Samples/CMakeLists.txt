@@ -3,6 +3,7 @@ file(
         SAMPLE_FILES
         "${CMAKE_CURRENT_LIST_DIR}/*.jpg"
         "${CMAKE_CURRENT_LIST_DIR}/*.obj"
+        "${CMAKE_CURRENT_LIST_DIR}/*.glb"
 )
 
 add_custom_target(Examples_SampleFiles)
