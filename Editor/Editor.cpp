@@ -177,7 +177,7 @@ bool ExecuteInit()
         dst.transform = src.transform;
         dst.rotation = src.rotation;
         dst.scale = src.scale;
-        dst.tag = MakeGSInstanceTag(GSDataBits::Mesh, meshOffsets[src.meshIndex].first);
+        dst.meshOffset = meshOffsets[src.meshIndex].first;
     }
     // Wait for uploads
     for (auto& fut : uploadFutures)

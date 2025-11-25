@@ -27,24 +27,15 @@ struct GSMesh
 };
 struct GSInstance
 {
-    // Bitfield LE [8 GSData] [24 ID]
-    uint32_t tag;
     // TRS
     float3 transform{0,0,0};
     quat rotation{0,0,0,1};
     float3 scale{1,1,1};
+    uint32_t meshOffset; // In Primitive buffer (bytes)
 };
 #pragma pack(pop)
-static_assert(sizeof(GSMesh) == 32); 
+static_assert(sizeof(GSMesh) == 32);
 static_assert(sizeof(GSInstance) == 44);
-
-inline uint32_t MakeGSInstanceTag(GSData gs, uint32_t id)
-{
-    uint32_t tag = 0;
-    tag = bitfieldInsert(tag, static_cast<uint32_t>(gs.value), 0, 8);
-    tag = bitfieldInsert(tag, id, 8, 24);
-    return tag;
-}
 
 /**
 * @brief Async GPU scene data storage for Editor.

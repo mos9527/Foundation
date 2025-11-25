@@ -23,7 +23,7 @@ void main(
         return;
     uint meshletID = shared.meshletIndices[gid];
     GSInstance inst = instances[shared.instanceID];
-    GSMesh mesh = primitive.Load<GSMesh>(inst.TagID());
+    GSMesh mesh = primitive.Load<GSMesh>(inst.meshOffset);
     FMeshlet meshlet = primitive.Load<FMeshlet>(mesh.meshletOffset + meshletID * sizeof(FMeshlet));
     uint32_t vtxBase = mesh.meshletVtxOffset + meshlet.vtxOffset * sizeof(uint32_t);
     uint32_t vtxCount = meshlet.vtxCount;

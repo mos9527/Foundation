@@ -44,7 +44,13 @@ SharedFuture<> GPUScene::Upload(FMesh const& src, GSMesh& mesh, uint32_t& outOff
         dst += bytes;
         return off;
     };
-    outOffset = mPrimitiveOffset, mPrimitiveOffset += data.size();
+    constexpr size_t kAlign = 4;
+    // We need to ensure the *worst* alignment case fits per DXC docs
+    // https://github.com/microsoft/DirectXShaderCompiler/wiki/ByteAddressBuffer-Load-Store-Additions
+    // We can consider the GSMesh, FVertex etc as one struct - aligning to its largest member
+    // uint32_t, in this case - would be sufficient.
+    outOffset = AlignUp(mPrimitiveOffset, kAlign), mPrimitiveOffset += data.size();
+    CHECK_MSG(mPrimitiveOffset < mPrimitiveBuffer->mDesc.size, "GPUScene primitive buffer overflow");
     // GSMesh (stub)
     Write(&mesh, sizeof(GSMesh));
     // Vertex data

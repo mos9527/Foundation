@@ -86,9 +86,13 @@ void LoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outI
                     {
                         auto& submesh = outMeshes[index];
                         submesh = LoadSubmesh(sub);
+                        LOG(Meshopt, LogInfo, "-- Optimizing {}, vtx: {}, idx: {}", index, submesh.vertices.size(),
+                            submesh.lods[0].indices.size());
                         submesh.Optimize();
                         submesh.ClusterizeDAG();
-                    }, mi++);
+                        LOG(Meshopt, LogInfo, "-- Completed meshopt for {}", index);
+                    },
+                    mi++);
             }
             subs.emplace_back(p);
         }
@@ -102,7 +106,8 @@ void LoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outI
             mat4 world;
             cgltf_node_transform_world(node, reinterpret_cast<float*>(&world));
             FInstance instance{};
-            float3 skew; float4 presp; // unused
+            float3 skew;
+            float4 presp; // unused
             decompose(world, instance.scale, instance.rotation, instance.transform, skew, presp);
             auto meshIndex = cgltf_mesh_index(data, node->mesh);
             for (auto sub : submeshIndices[meshIndex])

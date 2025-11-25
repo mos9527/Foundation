@@ -75,20 +75,11 @@ struct MIndex {
 }
 public struct GSInstance
 {
-    // Bitfield LE [8 GSData] [24 ID]
-    uint32_t tag;
     // TRS
     float3 transform;
     quat rotation;
     float3 scale;
-
-    public uint8_t TagGS() {
-        return bitfieldExtract(tag, 0, 8);
-    }
-    public uint32_t TagID(){
-        return bitfieldExtract(tag, 8, 24);
-    }
-
+    uint32_t meshOffset; // In Primitive buffer (bytes)
 };
 struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
 {
