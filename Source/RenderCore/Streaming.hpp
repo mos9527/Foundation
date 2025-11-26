@@ -56,7 +56,7 @@ namespace Foundation::RenderCore
         // Allocate a new page
         void PageAlloc();
         // Write to page
-        void PageWrite(int id, Span<const char> data, size_t& outOffset, RHIBuffer*& outBuffer);
+        void PageWrite(int id, Span<const char> data, size_t& outOffset, RHIBuffer*& outBuffer, size_t alignment);
         // Reset page allocations
         void PageReset(int id);
         // Retrieve the most available page

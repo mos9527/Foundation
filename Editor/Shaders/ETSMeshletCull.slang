@@ -8,7 +8,7 @@ uniform UBO globalParams;
 
 float projErrorSimple(FLODGroup lodGroup, GSInstance inst) {
     float3 center = mul(globalParams.view, float4(lodGroup.center + inst.transform, 1.0)).xyz;
-    float r = lodGroup.radius;
+    float r = lodGroup.radius * max(max(inst.scale.x,inst.scale.y),inst.scale.z);
     float d = max(length(center) - r, globalParams.zNear);
     return lodGroup.error / d * abs(globalParams.proj[1][1]) * 0.5f;
 }

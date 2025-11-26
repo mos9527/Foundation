@@ -1689,9 +1689,15 @@ String Renderer::DbgDumpGraphviz() const
     }
     for (auto& pass : passes)
     {
+        if (pass.handle == mSetup->epilogue) continue;
         fmt::format_to(std::back_inserter(out), "    \"{}@{}\" [ shape=box style={} fillcolor=\"{}\" ];\n", pass.name,
                        pass.handle, pass.used ? "filled" : "unfilled",
                        pass.queue == RHIDeviceQueueType::Graphics ? "#d0e0f0" : "#f0d0e0");
+    }
+    {
+        auto& epilogue = mSetup->trackedPasses[mSetup->epilogue];
+        fmt::format_to(std::back_inserter(out), "    \"{}@{}\" [ shape=box style=filled fillcolor=\"#00e000\" ];\n",
+                       epilogue.name, epilogue.handle);
     }
     // Dependencies
     for (PassHandle u = 0; u < mSetup->graph.size(); u++)

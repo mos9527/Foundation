@@ -48,7 +48,7 @@ FMesh LoadSubmesh(cgltf_primitive* submesh)
     return mesh;
 }
 
-void LoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outInstances)
+void LoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outInstances, Vector<FCamera>& outCamera)
 {
     LOG(Scene, LogInfo, "Load GLTF Scene {}", path);
     cgltf_options options = {};
@@ -68,54 +68,66 @@ void LoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outI
         numSubmeshes += data->meshes[i].primitives_count;
     // Mesh's submesh children
     // These will be flattened later on into instances of themselves
-    Vector<Vector<size_t>> submeshIndices(GContext->allocator);
+    Vector<Pair<size_t, size_t>> submeshIndices(GContext->allocator);
     outMeshes.resize(numSubmeshes, GContext->allocator);
     LOG(Scene, LogInfo, "Loading meshes. Sub total={}", numSubmeshes);
     ThreadPool pool(std::thread::hardware_concurrency(), 4096, GContext->allocator, "meshopt");
     for (size_t mi = 0, i = 0; i < data->meshes_count; i++)
     {
         auto& mesh = data->meshes[i];
-        auto& subs = submeshIndices.emplace_back(GContext->allocator);
+        auto& [mmin, mmax] = submeshIndices.emplace_back(mi, mi);
         for (size_t p = 0; p < mesh.primitives_count; p++)
         {
             auto* sub = mesh.primitives + p;
-            if (sub->type == cgltf_primitive_type_triangles)
-            {
-                pool.Push(
-                    [&](size_t index)
-                    {
-                        auto& submesh = outMeshes[index];
-                        submesh = LoadSubmesh(sub);
-                        LOG(Meshopt, LogInfo, "-- Optimizing {}, vtx: {}, idx: {}", index, submesh.vertices.size(),
-                            submesh.lods[0].indices.size());
-                        submesh.Optimize();
-                        submesh.ClusterizeDAG();
-                        LOG(Meshopt, LogInfo, "-- Completed meshopt for {}", index);
-                    },
-                    mi++);
-            }
-            subs.emplace_back(p);
+            CHECK(sub->type == cgltf_primitive_type_triangles);
+            // cgltf does not guarantee thread-safety with its accessors.
+            // Load first - otherwise UB as I've seen from plenty of examples
+            outMeshes[mi] = LoadSubmesh(sub);
+            pool.Push(
+                [&](size_t index)
+                {
+                    auto& submesh = outMeshes[index];
+                    LOG(Meshopt, LogInfo, "-- Optimizing {}, vtx: {}, idx: {}", index, submesh.vertices.size(),
+                        submesh.lods[0].indices.size());
+                    submesh.Optimize();
+                    submesh.ClusterizeDAG();
+                    LOG(Meshopt, LogInfo, "-- Completed meshopt for {}", index);
+                },
+                mi++);
         }
+        mmax = mi;
     }
     /* Instances */
     for (size_t i = 0; i < data->nodes_count; i++)
     {
         const cgltf_node* node = &data->nodes[i];
-        if (node->mesh)
+        auto getTransform = [&](FTransform& outTransform) -> void
         {
             mat4 world;
             cgltf_node_transform_world(node, reinterpret_cast<float*>(&world));
-            FInstance instance{};
             float3 skew;
             float4 presp; // unused
-            decompose(world, instance.scale, instance.rotation, instance.transform, skew, presp);
+            decompose(world, outTransform.scale, outTransform.rotation, outTransform.transform, skew, presp);
+        };
+        if (node->mesh)
+        {
+            FInstance instance{};
+            getTransform(instance.transform);
             auto meshIndex = cgltf_mesh_index(data, node->mesh);
-            for (auto sub : submeshIndices[meshIndex])
+            auto [mmin, mmax] = submeshIndices[meshIndex];
+            for (size_t j = mmin; j < mmax; j++)
             {
-                instance.meshIndex = sub;
+                instance.meshIndex = j;
                 outInstances.emplace_back(instance);
             }
         }
+        if (node->camera)
+        {
+            auto& camera = outCamera.emplace_back();
+            getTransform(camera.transform);
+            camera.fovY = node->camera->data.perspective.yfov;
+        }
     }
     pool.Join();
+    LOG(LoadGLTF, LogInfo, "Scene load complete");
 }

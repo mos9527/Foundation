@@ -26,13 +26,63 @@ struct UBO
 {
     uint32_t firstInstance;
     uint32_t numInstances;
-    float lodThreshold{0.1f};
+    float lodThreshold{0.01f};
     float zNear;
     float4x4 view;
     float4x4 proj;
 } GShaderGlobals;
 
 #pragma pack(pop)
+struct ArcballCamera
+{
+    static constexpr char kControlsText[] = "Mouse Left: Rotate | Mouse Right: Pan | Mouse Wheel: Zoom";
+
+    float3 center;
+    float radius;
+    float pitch, yaw, roll;
+    float zNear, fovY, aspect;
+    mat4 view, proj;
+    mat4 Update(SDL_Event const& event)
+    {
+        quat rot = angleAxis(pitch, vec3(1, 0, 0)) * angleAxis(yaw, vec3(0, 1, 0)) * angleAxis(roll, vec3(0, 0, 1));
+        if (event.type == SDL_EVENT_MOUSE_MOTION)
+        {
+            if (event.motion.state & SDL_BUTTON_LMASK)
+            {
+                pitch -= event.motion.xrel * 1e-2f;
+                yaw -= event.motion.yrel * 1e-2f;
+            }
+            if (event.motion.state & SDL_BUTTON_RMASK)
+            {
+                vec3 right = rot * vec3(1, 0, 0);
+                vec3 up = rot * vec3(0, 1, 0);
+                center -= right * (event.motion.xrel * radius * 1e-3f);
+                center += up * (event.motion.yrel * radius * 1e-3f);
+            }
+        }
+        if (event.type == SDL_EVENT_MOUSE_WHEEL)
+        {
+            radius -= event.wheel.y * radius * 1e-1f;
+            radius = radius < 1e-3f ? 1e-3f : radius;
+        }
+        // ---
+        proj = infinitePerspectiveRHReverseZ(fovY, aspect, zNear);
+        vec3 dir = rot * vec3(0, 0, 1);
+        view = viewMatrixRHReverseZ(center + radius * dir, rot);
+        mat4 viewProj = proj * view;
+        return viewProj;
+    }
+};
+static ArcballCamera GCamera{
+    .center = float3{0, 0, 0},
+    .radius = 12.0f,
+    .pitch = 0.f,
+    .yaw = 0.f,
+    .roll = 0.f,
+    .zNear = 0.1f,
+    .fovY = radians(60.f),
+};
+
 constexpr size_t kMaxMeshletTaskWorkCount = 1e5;
 void RendererSetup(FContext* context)
 {
@@ -96,10 +146,10 @@ void RendererSetup(FContext* context)
             r->BindBufferUnordered(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "tasks");
             r->BindBufferUnordered(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "counter");
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
-            r->BindBufferStorageRead(self, PrimitiveBuffer,RHIPipelineStageBits::ComputeShader, "primitive");
+            r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
         },
         [&](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {                        
+        {
             r->CmdSetPipeline(self, cmd);
             r->CmdDispatch(self, cmd, {GSInstances.size(), 1, 1});
         });
@@ -132,7 +182,8 @@ void RendererSetup(FContext* context)
             r->BindShader(self, RHIShaderStageBits::Mesh, "main", "data/shaders/EMSBasic.spv");
             r->BindShader(self, RHIShaderStageBits::Fragment, "main", "data/shaders/EPSBasic.spv");
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-            r->BindBufferShaderRead(self, IndirectTaskDispatch, RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);
+            r->BindBufferShaderRead(self, IndirectTaskDispatch,
+                                    RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);
             r->BindBufferStorageRead(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "tasks");
             r->BindBufferStorageRead(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "counter");
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
@@ -143,12 +194,12 @@ void RendererSetup(FContext* context)
                                .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {            
+        {
             RHIExtent2D wh{w, h};
             auto* dispatchBuffer = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
             r->CmdBeginGraphics(self, cmd, wh, RHIClearColor{}, RHIClearDepthStencil{0.0f, 0});
             r->CmdSetPipeline(self, cmd);
-            cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);            
+            cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
             cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
             cmd->EndGraphics();
         });
@@ -160,7 +211,23 @@ bool ExecuteInit()
 {
     Vector<FMesh> meshes(GLOBAL_ALLOC);
     Vector<FInstance> instances(GLOBAL_ALLOC);
-    LoadGLTF("data/assets/suzanne.glb", meshes, instances);
+    Vector<FCamera> cameras(GLOBAL_ALLOC);
+    LoadGLTF("/home/mos9527/Desktop/PlaneTest.glb", meshes, instances, cameras);
+    for (auto& mesh : meshes)
+    {
+        LOG(Editor, LogInfo, "Loaded Mesh | Vtx={} | LODGroups={} | ApproxSize={} B", mesh.vertices.size(),
+            mesh.dag.groups.size(), mesh.ApproximateSize());
+    }
+    if (cameras.size())
+    {
+        auto& camera = cameras.front();
+        GCamera.radius = length(camera.transform.transform);
+        float3 eulers = eulerAngles(camera.transform.rotation);
+        GCamera.pitch = eulers.x;
+        GCamera.yaw = eulers.y;
+        GCamera.roll = eulers.z;
+        GCamera.fovY = camera.fovY;
+    }
     // Load into GPUScene
     auto* scene = GContext->gpuScene;
     Vector<Pair<uint32_t, GSMesh>> meshOffsets(GLOBAL_ALLOC);
@@ -168,15 +235,15 @@ bool ExecuteInit()
     for (auto& src : meshes)
     {
         auto& [offset, dst] = meshOffsets.emplace_back();
-        uploadFutures.emplace_back(scene->Upload(src, dst , offset));
+        uploadFutures.emplace_back(scene->Upload(src, dst, offset));
     }
     GSInstances.clear();
     for (auto& src : instances)
     {
         auto& dst = GSInstances.emplace_back();
-        dst.transform = src.transform;
-        dst.rotation = src.rotation;
-        dst.scale = src.scale;
+        dst.transform = src.transform.transform;
+        dst.rotation = src.transform.rotation;
+        dst.scale = src.transform.scale;
         dst.meshOffset = meshOffsets[src.meshIndex].first;
     }
     // Wait for uploads
@@ -188,47 +255,6 @@ bool ExecuteInit()
     return false;
 }
 
-struct ArcballCamera
-{
-    static constexpr char kControlsText[] = "Mouse Left: Rotate | Mouse Right: Pan | Mouse Wheel: Zoom";
-
-    float3 center;
-    float radius;
-    float pitch, yaw;
-    float zNear, fovY, aspect;
-    mat4 view, proj;
-    mat4 Update(SDL_Event const& event)
-    {
-        if (event.type == SDL_EVENT_MOUSE_MOTION)
-        {
-            if (event.motion.state & SDL_BUTTON_LMASK)
-            {
-                pitch -= event.motion.xrel * 1e-2f;
-                yaw -= event.motion.yrel * 1e-2f;
-            }
-            if (event.motion.state & SDL_BUTTON_RMASK)
-            {
-                quat rot = angleAxis(yaw, vec3(1, 0, 0)) * angleAxis(pitch, vec3(0, 1, 0));
-                vec3 right = rot * vec3(1, 0, 0);
-                vec3 up = rot * vec3(0, 1, 0);
-                center -= right * (event.motion.xrel * radius * 1e-3f);
-                center += up * (event.motion.yrel * radius * 1e-3f);
-            }
-        }
-        if (event.type == SDL_EVENT_MOUSE_WHEEL)
-        {
-            radius -= event.wheel.y * radius * 1e-1f;
-            radius = radius < 1e-3f ? 1e-3f : radius;
-        }
-        // ---
-        proj = infinitePerspectiveRHReverseZ(fovY, aspect, zNear);
-        quat rot = angleAxis(yaw, vec3(1, 0, 0)) * angleAxis(pitch, vec3(0, 1, 0));
-        vec3 dir = rot * vec3(0, 0, 1);
-        view = viewMatrixRHReverseZ(center + radius * dir, rot);
-        mat4 viewProj = proj * view;
-        return viewProj;
-    }
-};
 
 bool ExecuteFrame()
 {
@@ -250,27 +276,30 @@ bool ExecuteFrame()
     GShaderGlobals.firstInstance = off;
     GShaderGlobals.numInstances = GSInstances.size();
     // Global param update
-    static ArcballCamera camera{
-        .center = float3{0, 0, 0},
-        .radius = 2.5f,
-        .pitch = 0.f,
-        .yaw = 0.f,
-        .zNear = 0.1f,
-        .fovY = radians(60.f),
-    };
-    camera.aspect = GContext->swapchain->GetAspectRatio();
+
+    GCamera.aspect = GContext->swapchain->GetAspectRatio();
     auto& io = ImGui::GetIO();
-    if (!io.WantCaptureMouse)
-        camera.Update(GContext->event);
-    GShaderGlobals.view = camera.view;
-    GShaderGlobals.proj = camera.proj;
-    GShaderGlobals.zNear = camera.zNear;
+    GShaderGlobals.view = GCamera.view;
+    GShaderGlobals.proj = GCamera.proj;
+    GShaderGlobals.zNear = GCamera.zNear;
     ImGui::Begin("Debug");
     ImGui::TextUnformatted(ArcballCamera::kControlsText);
     ImGui::Text("FPS | %.2f", ImGui::GetIO().Framerate);
     ImGui::Text("StreamingPool | %s", scene->DbgGetStatistics().c_str());
     ImGui::Text("Instances | %zu", GSInstances.size());
     ImGui::SliderFloat("LOD Threshold | ", &GShaderGlobals.lodThreshold, 0.f, 1.f);
+    ImGui::Separator();
+
+    ImGui::SliderAngle("Cam Pitch", &GCamera.pitch, -180.f, 180.f);
+    ImGui::SliderAngle("Cam Yaw", &GCamera.yaw, -180.f, 180.f);
+    ImGui::SliderAngle("Cam Roll", &GCamera.roll, -180.f, 180.f);
+    ImGui::InputFloat3("Cam Center", &GCamera.center.x);
+    ImGui::InputFloat("Cam Radius", &GCamera.radius);
+    ImGui::InputFloat("Cam FOV Y", &GCamera.fovY);
+    SDL_Event camEvent{};
+    if (!io.WantCaptureMouse)
+        camEvent = GContext->event;
+    GCamera.Update(camEvent);
     ImGui::End();
     renderer->ExecuteFrame();
     renderer->EndExecute();

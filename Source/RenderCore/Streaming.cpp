@@ -16,7 +16,8 @@ namespace Foundation::RenderCore
         page.buffer = mDevice->CreateBuffer({
             .resource = {.heap = RHIDeviceHeapType::Upload,
                          .shared = false, /* Transfer only */
-                         .staging = true},
+                         .coherent = true, /* No flush required */
+                         .staging = true,},
             .usage = RHIBufferUsageBits::TransferSource,
             .size = page.capacity,
         });
@@ -24,13 +25,14 @@ namespace Foundation::RenderCore
         // Insert
         mPageHeap.insert({page.freeSize(), page.id});
     }
-    void StreamingPool::PageWrite(int id, Span<const char> data, size_t& outOffset, RHIBuffer*& outBuffer)
+    void StreamingPool::PageWrite(int id, Span<const char> data, size_t& outOffset, RHIBuffer*& outBuffer, size_t alignment)
     {
         auto& page = mPages[id];
+        const size_t oldSize = page.freeSize();
+        page.top = reinterpret_cast<char*>(AlignUp(reinterpret_cast<size_t>(page.top), alignment));
         CHECK_MSG(data.size() <= page.freeSize(), "StreamingPool page overflow");
         outOffset = page.top - page.mem;
         outBuffer = page.buffer.Get();
-        const size_t oldSize = page.freeSize();
         std::memcpy(page.top, data.data(), data.size());
         page.top += data.size();
         Maintain(id, oldSize, page.freeSize());
@@ -66,6 +68,7 @@ namespace Foundation::RenderCore
             mResolvedCV.wait(lck);
             collect();
         }
+        LOG(Streaming, LogDebug, "StreamingPool collected {} pages", res);
         return res;
     }
     void StreamingPool::WritePages(std::unique_lock<Mutex>& lck, Span<const char> data, WriteList& outList, size_t alignment)
@@ -83,8 +86,7 @@ namespace Foundation::RenderCore
                 page = &mPages[GetPage()];
             }
             size_t write = std::min(data.size(), page->freeSize()), offset = 0;
-            write -= write % alignment; // Align down
-            PageWrite(page->id, data.subspan(0, write), offset, buf);
+            PageWrite(page->id, data.subspan(0, write), offset, buf, alignment);
             data = data.subspan(write);
             mPageRefs[page->id]++;
             outList.emplace_back(buf, offset, write, page->id);
@@ -104,7 +106,7 @@ namespace Foundation::RenderCore
         WriteList writes(mAllocator);
 
         std::unique_lock lock(mPageMutex);
-        WritePages(lock, data, writes, 1);
+        WritePages(lock, data, writes, 4);
         Vector<BufferCopyCommand> cmds(mAllocator);
         for (auto& [srcBuffer, srcOffset, size, pid] : writes)
         {
@@ -239,6 +241,7 @@ namespace Foundation::RenderCore
             for (auto const& [pid, src, dst, region] : writing)
             {
                 cmd->CopyBuffer(src, dst, {{region}});
+                LOG(Streaming, LogDebug, "Push copy pid={} sz={} dst={} src={}", pid, region.size, region.dstOffset, region.srcOffset);
                 refs[pid]++;
             }
             // Finished this entry?
@@ -281,6 +284,7 @@ namespace Foundation::RenderCore
         }
         cmd->End();
         // Submit
+        LOG(StreamingPool, LogDebug, "Batch Submit cmds={}", mTransferCmds.size());
         if (mSubmitCtr)
             mTransferQueue->Submit(
                 {{RHIDeviceQueue::SubmitDesc{.timelineWaits = {{{mTransferSemaphore.Get(), mSubmitCtr}}},

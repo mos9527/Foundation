@@ -200,7 +200,7 @@ namespace Foundation::RHI {
         virtual void SignalTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores) = 0;
         /**
          * @brief Wait for timeline semaphores to reach specified values.
-         * @param timeout Wait timeout in nanoseconds. Set to 0 for no wait and return immediately, -1 for infinite wait.
+         * @param timeout Wait timeout in nanoseconds. Set to 0 for no wait and return immediately.
          * @return true if all semaphores reached the specified values, false if timeout occurred.
          */
         virtual bool WaitForTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores, size_t timeout) = 0;
