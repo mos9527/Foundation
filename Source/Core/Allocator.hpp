@@ -5,11 +5,11 @@
 namespace Foundation::Core {
 	using size_type = std::size_t;
 	using pointer = void*;
-	inline uintptr_t AlignUp(uintptr_t value, uintptr_t alignment) {
-        return (value + alignment - 1) & ~(alignment - 1);
+	constexpr uintptr_t AlignUp(const uintptr_t value, const uintptr_t alignment) {
+        return value % alignment ? (value + alignment - value % alignment) : value;
 	}
-	inline uintptr_t AlignDown(uintptr_t value, uintptr_t alignment) {
-		return (value) & ~(alignment - 1);
+	constexpr uintptr_t AlignDown(const uintptr_t value, const uintptr_t alignment) {
+	    return value % alignment ? (value - value % alignment) : value;
 	}
     /**
      * @brief A memory arena allocated from an Allocator

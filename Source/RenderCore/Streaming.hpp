@@ -44,8 +44,8 @@ namespace Foundation::RenderCore
             int id = 0;
             RHIDeviceUniqueRef<RHIBuffer> buffer;
             size_t capacity;
-            char *mem = nullptr, *top = nullptr; // Mapped memory for linear allocation
-            [[nodiscard]] constexpr size_t freeSize() const { return capacity - (top - mem); }
+            char *base = nullptr, *top = nullptr; // Mapped memory for linear allocation
+            [[nodiscard]] constexpr size_t freeSize() const { return capacity - (top - base); }
         };
         Array<StagingPage, kStreamingMaxPages> mPages{};
         size_t mPageTop = 0;
@@ -56,7 +56,7 @@ namespace Foundation::RenderCore
         // Allocate a new page
         void PageAlloc();
         // Write to page
-        void PageWrite(int id, Span<const char> data, size_t& outOffset, RHIBuffer*& outBuffer, size_t alignment);
+        size_t PageWrite(int id, Span<const char> data, size_t& outOffset, RHIBuffer*& outBuffer, size_t alignment);
         // Reset page allocations
         void PageReset(int id);
         // Retrieve the most available page

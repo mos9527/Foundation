@@ -212,7 +212,7 @@ bool ExecuteInit()
     Vector<FMesh> meshes(GLOBAL_ALLOC);
     Vector<FInstance> instances(GLOBAL_ALLOC);
     Vector<FCamera> cameras(GLOBAL_ALLOC);
-    LoadGLTF("/home/mos9527/Desktop/PlaneTest.glb", meshes, instances, cameras);
+    LoadGLTF("/mnt/Windows/Scenes/glTFSponza/Sponza-glTF.glb", meshes, instances, cameras);
     for (auto& mesh : meshes)
     {
         LOG(Editor, LogInfo, "Loaded Mesh | Vtx={} | LODGroups={} | ApproxSize={} B", mesh.vertices.size(),

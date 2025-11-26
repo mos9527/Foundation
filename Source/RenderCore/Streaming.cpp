@@ -21,27 +21,32 @@ namespace Foundation::RenderCore
             .usage = RHIBufferUsageBits::TransferSource,
             .size = page.capacity,
         });
-        page.mem = page.top = static_cast<char*>(page.buffer->Map());
+        page.base = page.top = static_cast<char*>(page.buffer->Map());
         // Insert
         mPageHeap.insert({page.freeSize(), page.id});
     }
-    void StreamingPool::PageWrite(int id, Span<const char> data, size_t& outOffset, RHIBuffer*& outBuffer, size_t alignment)
+    size_t StreamingPool::PageWrite(int id, Span<const char> data, size_t& outOffset, RHIBuffer*& outBuffer, size_t alignment)
     {
         auto& page = mPages[id];
+        char* aligned = reinterpret_cast<char*>(AlignUp(reinterpret_cast<size_t>(page.top), alignment));
+        if (aligned - page.base >= page.capacity)
+            return 0; // Not enough space
         const size_t oldSize = page.freeSize();
-        page.top = reinterpret_cast<char*>(AlignUp(reinterpret_cast<size_t>(page.top), alignment));
-        CHECK_MSG(data.size() <= page.freeSize(), "StreamingPool page overflow");
-        outOffset = page.top - page.mem;
+        // Aligned write
+        page.top = aligned;
+        outOffset = page.top - page.base;
         outBuffer = page.buffer.Get();
-        std::memcpy(page.top, data.data(), data.size());
-        page.top += data.size();
+        size_t written = std::min(data.size(), page.freeSize());
+        std::memcpy(page.top, data.data(), written);
+        page.top += written;
         Maintain(id, oldSize, page.freeSize());
+        return written;
     }
     void StreamingPool::PageReset(int id)
     {
         auto& page = mPages[id];
         const size_t oldSize = page.freeSize();
-        page.top = page.mem;
+        page.top = page.base;
         Maintain(id, oldSize, page.freeSize());
     }
     int StreamingPool::GetPage()
@@ -77,19 +82,23 @@ namespace Foundation::RenderCore
         while (!data.empty())
         {
             auto* page = &mPages[GetPage()];
-            if (page->freeSize() < alignment)
+            size_t written = 0, offset = 0;
+            while (true)
             {
+                if ((written = PageWrite(page->id, data, offset, buf, alignment)))
+                {
+                    data = data.subspan(written);
+                    break;
+                }
+                // Largest page does not hold. Alloc new or collect
                 if (mPageTop < kStreamingMaxPages)
                     PageAlloc();
                 else
                     Collect(lck);
                 page = &mPages[GetPage()];
             }
-            size_t write = std::min(data.size(), page->freeSize()), offset = 0;
-            PageWrite(page->id, data.subspan(0, write), offset, buf, alignment);
-            data = data.subspan(write);
             mPageRefs[page->id]++;
-            outList.emplace_back(buf, offset, write, page->id);
+            outList.emplace_back(buf, offset, written, page->id);
         }
     }
     StreamingPool::StreamingPool(RHIDevice* device, Allocator* allocator, StreamingPoolDesc const& desc) :
@@ -174,7 +183,7 @@ namespace Foundation::RenderCore
         for (size_t i = 0; i < mPageTop; i++)
         {
             allocated += mPages[i].capacity;
-            used += mPages[i].top - mPages[i].mem;
+            used += mPages[i].top - mPages[i].base;
             refs += mPageRefs[i];
         }
         return fmt::format("Pages: {}, Capacity: {} KB, Resident: {} KB, Refs: {}", mPageTop, allocated / 1024,
@@ -196,7 +205,7 @@ namespace Foundation::RenderCore
         for (auto& page : mPages)
         {
             page.buffer.Reset();
-            page.mem = page.top = nullptr;
+            page.base = page.top = nullptr;
         }
     }
     void StreamingPool::Submit()
