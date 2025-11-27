@@ -272,7 +272,8 @@ void RendererSetup(FContext* context)
         renderer, "Blit Image",
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/EPSBlit.spv");
+            uint32_t mode = 0;
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/EPSBlit.spv", AsBytes(AsSpan(mode)));
             r->BindTextureSampler(self, nearSampler, "sampler");
             r->BindTextureSRV(self, GBuffer, "gbuffer", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
@@ -333,27 +334,42 @@ bool ExecuteInit()
 }
 
 
-bool ExecuteFrame()
+bool EditorProcessEvent(SDL_Event* event)
 {
-    auto& event = GContext->event;
-    if (event.type == SDL_EVENT_WINDOW_RESIZED)
+    ImGui_ImplFoundation_ProcessEvent(event);
+    if (event->type == SDL_EVENT_WINDOW_RESIZED)
     {
         // Reset renderer to update framebuffer size changes
-        // TODO: This *also* recompiles all PSOs. We should cache these.
         RendererSetup(GContext);
     }
-    if (event.type == SDL_EVENT_KEY_DOWN)
+    if (event->type == SDL_EVENT_KEY_DOWN)
     {
-        if (event.key.scancode == SDL_SCANCODE_R)
+        if (event->key.scancode == SDL_SCANCODE_R)
         {
-            GContext->renderer->ReloadShaders();
+            // Is Ctrl pressed?
+            if (SDL_GetModState() & SDL_KMOD_LCTRL)
+            {
+                // Reload renderer
+                RendererSetup(GContext);
+            } else
+            {
+                // Only shaders
+                GContext->renderer->ReloadShaders();
+            }
         }
     }
+    auto& io = ImGui::GetIO();
+    if (!io.WantCaptureMouse)
+        GCamera.Update(*event);
+    return false;
+}
+bool ExecuteFrame()
+{
     auto* renderer = GContext->renderer;
     auto* scene = GContext->gpuScene;
     // New frame
     renderer->BeginExecute();
-    ImGui_ImplFoundation_NewFrame(&event);
+    ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
     // Upload instance data
     auto [ptr, off] = scene->InstanceAlloc(GSInstances.size());
@@ -362,7 +378,6 @@ bool ExecuteFrame()
     GShaderGlobals.numInstances = GSInstances.size();
     // Global param update
     GCamera.aspect = GContext->swapchain->GetAspectRatio();
-    auto& io = ImGui::GetIO();
     GShaderGlobals.view = GCamera.view;
     GShaderGlobals.proj = GCamera.proj;
     GShaderGlobals.zNear = GCamera.zNear;
@@ -376,10 +391,6 @@ bool ExecuteFrame()
     ImGui::InputFloat3("Cam Center", &GCamera.center.x);
     ImGui::InputFloat("Cam Radius", &GCamera.radius);
     ImGui::InputFloat("Cam FOV Y", &GCamera.fovY);
-    SDL_Event camEvent{};
-    if (!io.WantCaptureMouse)
-        camEvent = event;
-    GCamera.Update(camEvent);
     ImGui::End();
     renderer->ExecuteFrame();
     renderer->EndExecute();

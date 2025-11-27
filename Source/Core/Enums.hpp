@@ -25,6 +25,7 @@ namespace Foundation::Core
         constexpr operator Ty() const { return static_cast<Ty>(value); }
         constexpr operator T() const { return static_cast<T>(value); }
         constexpr operator bool() const { return value != 0; }
+        constexpr bool operator<(auto v) const { return value < static_cast<Ty>(v); }
         [[nodiscard]] constexpr bool is_pow2() const { return (value & (value - 1)) == 0; }
         [[nodiscard]] constexpr bool is_bitmask() const { return is_pow2(); }
         [[nodiscard]] constexpr int bit() const { 

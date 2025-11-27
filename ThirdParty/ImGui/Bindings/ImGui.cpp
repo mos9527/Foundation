@@ -39,10 +39,12 @@ void ImGui_ImplFoundation_Init(RHIDevice* device, SDL_Window* window)
     // Init windowing backend
     ImGui_ImplSDL3_InitForOther(window);
 }
-void ImGui_ImplFoundation_NewFrame(SDL_Event* event)
+void ImGui_ImplFoundation_ProcessEvent(SDL_Event* event)
 {
-    ZoneScoped;
     ImGui_ImplSDL3_ProcessEvent(event);
+}
+void ImGui_ImplFoundation_NewFrame()
+{
     ImGui_ImplSDL3_NewFrame();
 }
 void ImGui_ImplFoundation_Shutdown() { gImGuiTexturePool.reset(); }

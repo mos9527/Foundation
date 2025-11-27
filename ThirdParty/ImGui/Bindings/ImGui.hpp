@@ -54,11 +54,18 @@ void ImGui_ImplFoundation_ImplCreateResources(Foundation::RenderCore::Renderer* 
 void ImGui_ImplFoundation_Init(Foundation::RHI::RHIDevice* device, SDL_Window* window);
 
 /**
+ * @brief Processes one SDL event and forwards it to ImGui.
+ * @param event The SDL event to be processed.
+ * @note You should call this for each SDL event in your main event loop,
+ *       i.e. while (SDL_PollEvent(&event)) { ImGui_ImplFoundation_ProcessEvent(&event); }
+ */
+void ImGui_ImplFoundation_ProcessEvent(SDL_Event* event);
+/**
  * @brief Starts a new ImGui frame.
  * @note You should call this once per frame, before any other ImGui calls.
  *       See @ref Examples::ImGui or other ImGui backend usage for reference.
  */
-void ImGui_ImplFoundation_NewFrame(SDL_Event* event);
+void ImGui_ImplFoundation_NewFrame();
 
 /**
  * @brief Shuts down the ImGui backend and releases all resources.

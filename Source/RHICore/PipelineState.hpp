@@ -150,9 +150,8 @@ namespace Foundation::RHI {
                     // You can only specify one stage per shader module.
                     RHIShaderStage stage;
                     const char* entryPoint;
-                    struct SpecializationInfo {
-                        // !! TODO
-                    } specializationInfo;
+                    // Only one specialization info per stage for simplicity
+                    Span<const char> specializationData{};
                 } desc;
                 RHIShaderModule* shaderModule;
             };

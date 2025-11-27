@@ -94,16 +94,17 @@ void Renderer::DeclareTextureAccess(PassHandle pass, ResourceHandle handle, RHIP
 }
 
 /* -- binding -- */
-void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point, const char* shader_path) const
+void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point, const char* shader_path, Span<const char> specializationData) const
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(stage.is_bitmask(), "Only one stage can be bound to a shader per pass");
-    for (auto const& [path, ep, st] : mSetup->trackedPasses[pass].shaders)
+    for (auto const& [path, ep, st, spec] : mSetup->trackedPasses[pass].shaders)
         CHECK_MSG(!(st & stage),
                   "Shader stage {} already bound to {} in this pass. There can be at most one shader program per "
                   "shader stage per pass",
                   st, path);
-    mSetup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage);
+    auto& [path, ep, st, spec] = mSetup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage, mAllocator);
+    spec.insert(spec.end(), specializationData.begin(), specializationData.end());
 }
 void Renderer::BindVertexInput(PassHandle pass, RHIPipelineState::PipelineStateDesc::VertexInput const& info) const
 {
@@ -471,7 +472,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
     Vector<char> data(mAllocator);
     Map<String, RHIDeviceScopedHandle<RHIShaderModule>> shaders(mAllocator);
     Map<String, UniquePtr<Shader>> reflections(mAllocator);
-    for (auto const& [shader_path, entry_point, stage] : tracked.shaders)
+    Map<String, Span<const char>> specializations(mAllocator);
+    for (auto const& [shader_path, entry_point, stage, spec] : tracked.shaders)
     {
         if (!shaders.contains(shader_path))
         {
@@ -484,6 +486,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
             reflections.emplace(shader_path, ConstructUnique<Shader>(mAllocator, data, mAllocator));
             shaders[shader_path] = mDevice->CreateShaderModule({.source = data});
             shaders[shader_path]->DebugSetObjectName(shader_path.c_str());
+            specializations[shader_path] = spec;
         }
         auto& module = shaders[shader_path];
         // In BindShader we have already guaranteed these to be unique per stage
@@ -503,7 +506,11 @@ void Renderer::BuildPipelineState(PassHandle pass)
             if (ep.stage == stage && ep.name == entry_point)
             {
                 pso_stages.push_back(
-                    {.desc = {.stage = stage, .entryPoint = ep.name.c_str()}, .shaderModule = module.Get()});
+                    {.desc = {
+                        .stage = stage,
+                        .entryPoint = ep.name.c_str(),
+                        .specializationData = specializations[shader_path],
+                    }, .shaderModule = module.Get()});
                 if (stage & (RHIShaderStageBits::Compute | RHIShaderStageBits::Mesh | RHIShaderStageBits::Task))
                     tracked.groupLocalSize = ep.groupLocalSize;
                 found = true;

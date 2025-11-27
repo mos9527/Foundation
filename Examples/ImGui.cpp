@@ -21,7 +21,8 @@ int main()
     while (!Examples_ShouldClose(window, renderer, swapchain, &event))
     {
         lines[1].x = 16, lines[1].y = 40, lines[1].SetText(fmt::format("FPS: {}", fps.Update()));
-        ImGui_ImplFoundation_NewFrame(&event);
+        ImGui_ImplFoundation_ProcessEvent(&event);
+        ImGui_ImplFoundation_NewFrame();
         ImGui::NewFrame();
         ImGui::ShowDemoWindow();
         Examples_NewFrame(renderer);

@@ -1,3 +1,5 @@
+[[SpecializationConstant]] int mode;
+
 StructuredBuffer<uint32_t> globalMax;
 Texture2D<uint32_t> overdraw;
 Texture2D gbuffer;
@@ -31,7 +33,14 @@ float3 heatmapGradient(float t) {
 }
 [shader("fragment")]
 float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGET {
-    uint32_t draws = overdraw.Load((int3(fragCoord.x, fragCoord.y, 0)));
-    float hmax = globalMax[0];
-    return float4(heatmapGradient(draws/hmax), 1.0);
+    int3 coord = int3(fragCoord.x, fragCoord.y, 0);
+    if (mode == 0) {
+        float4 gbuffer = gbuffer.Load(coord);
+        return gbuffer;
+    }
+    if (mode == 1){
+        uint32_t draws = overdraw.Load(coord);
+        return float4(heatmapGradient((float)draws / globalMax[0]), 1.0);
+    }
+    return float4(0);
 }

@@ -125,8 +125,8 @@ namespace Foundation::RenderCore
         // Unique texture views
         Vector<ResourceHandle> texviews;
         /* -- Pipeline -- */
-        // Shader [path, entry point, stage]
-        Vector<Tuple<String, String, RHIShaderStage>> shaders;
+        // Shader [path, entry point, stage, specialization data]
+        Vector<Tuple<String, String, RHIShaderStage, Vector<char>>> shaders;
         // Bind points [view(tex) or buffer(buf), desc type, binding point]
         Vector<Tuple<ResourceHandle, RHIDescriptorType, String>> textureBindings, bufferBindings;
         // External Bind Sets [binding point, layout ptr, set index (set when built)]
@@ -134,8 +134,10 @@ namespace Foundation::RenderCore
         Vector<Tuple<String, RHIDeviceDescriptorSetLayout*, int>> externalBindings;
         // Samplers
         Vector<Pair<ResourceHandle, String>> samplers;
-        // Push Constants by [stage, offset, size]
+        // Push Constant
         Vector<RHIPipelineState::PipelineStateDesc::PushConstant> pushConstants;
+        // Specialization Constants by [stage, offset, value]
+        Vector<Tuple<RHIShaderStage, size_t, Vector<char>>> specializationConstants;
         // (Graphics Only) Render Target View[s], Blending Op
         Vector<Pair<ResourceHandle, RHIPipelineState::PipelineStateDesc::Attachment::Blending>> rtvs;
         // (Graphics Only) Depth Stencil View

@@ -401,7 +401,7 @@ namespace Foundation::RenderCore
          * Shaders are unique per stage, and may be omitted e.g. there's only a copy.
          */
         void BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point,
-                        const char* shader_path) const;
+                        const char* shader_path, Span<const char> specializationData = {}) const;
         /**
          * @brief Declares a range of Push Constant used in a stage.
          *

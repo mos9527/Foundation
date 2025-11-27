@@ -1,8 +1,9 @@
+extern bool EditorProcessEvent(SDL_Event*);
 extern bool EditorOnFrame(FContext*);
 bool /* should close */ mainLoop()
 {
     SDL_Event& event = GContext->event;
-    if (SDL_PollEvent(&event))
+    while (SDL_PollEvent(&event))
     {
         if (event.window.windowID != SDL_GetWindowID(GContext->window))
             return false;
@@ -13,11 +14,10 @@ bool /* should close */ mainLoop()
             if (GContext->renderer)
                 GContext->renderer->SetSwapchain(GContext->swapchain);
         }
-    } else
-    {
-        event = {};
+        if (EditorProcessEvent(&event))
+            return true;
     }
-    if (EditorOnFrame(GContext)) return true;
+    EditorOnFrame(GContext);
     return false;
 }
 

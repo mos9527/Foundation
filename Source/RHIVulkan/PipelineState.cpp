@@ -157,12 +157,25 @@ void VulkanPipelineState::InitializeGraphics()
     };
     Vector<vk::PipelineShaderStageCreateInfo> shaderStages(alloc.Ptr());
     for (auto& shader : mDesc.shaderStages)
+    {
+        vk::SpecializationInfo* pSpecializationInfo = nullptr;
+        if (!shader.desc.specializationData.empty())
+        {
+            pSpecializationInfo = Construct<vk::SpecializationInfo>(alloc.Ptr());
+            auto* entry = Construct<vk::SpecializationMapEntry>(alloc.Ptr());
+            entry->constantID = 0, entry->offset = 0, entry->size = shader.desc.specializationData.size_bytes();
+            pSpecializationInfo->mapEntryCount = 1;
+            pSpecializationInfo->pMapEntries = entry;
+            pSpecializationInfo->dataSize = shader.desc.specializationData.size_bytes();
+            pSpecializationInfo->pData = shader.desc.specializationData.data();
+        }
         shaderStages.push_back({
             .stage = vkFlagsToBits(vkShaderStageFlagsFromRHIShaderStage(shader.desc.stage)),
             .module = static_cast<VulkanShaderModule*>(shader.shaderModule)->GetVkShaderModule(),
             .pName = shader.desc.entryPoint,
-            .pSpecializationInfo = nullptr // TODO: Handle specialization info
+            .pSpecializationInfo = pSpecializationInfo
         });
+    }
     CHECK_MSG(!shaderStages.empty(), "At least one shader stage must be specified in a graphics pipeline");
     vk::GraphicsPipelineCreateInfo pipelineInfo{.pNext = &rendering_create_info,
                                                 .stageCount = static_cast<uint32_t>(shaderStages.size()),
