@@ -41,6 +41,11 @@ namespace Foundation::RenderCore
          * @note Set this to 0 to disable multithreaded command recording.
          */
         uint32_t threadCount{std::max(1u, std::thread::hardware_concurrency() - 1)};
+        /**
+         * @brief Optional PSO cache to potentially speed up pipeline state recompilation
+         *        in Setup time.
+         */
+        RHIPipelineStateCache* pipelineCache{nullptr};
     };
     /* -- Constants -- */
     // Maximum number of render passes per frame

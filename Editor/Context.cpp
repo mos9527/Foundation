@@ -37,6 +37,7 @@ FContext* CreateContext(SDL_Window* window, Allocator* allocator)
     context->window = window;
     context->application = ConstructBase<RHIApplication, VulkanApplication>(allocator, allocator);
     context->device = context->application->CreateDevice({}, window);
+    context->psoCache = context->device->CreatePipelineCache({});
     context->gpuScene = Construct<GPUScene>(allocator, context, GPUScene::GPUSceneDesc{
         .primitiveBudget = 1024 * (1u << 20) // 1 GB
     });

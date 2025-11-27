@@ -319,4 +319,15 @@ namespace Foundation::RHI {
             device->DestroySampler(handle);
         }
     };
+    template<> struct RHIObjectTraits<RHIDevice, RHIPipelineStateCache>
+    {
+        static RHIPipelineStateCache* Get(RHIDevice const* device, Handle handle)
+        {
+            return device->GetPipelineCache(handle);
+        }
+        static void Destroy(RHIDevice* device, Handle handle)
+        {
+            device->DestroyPipelineCache(handle);
+        }
+    };
 }

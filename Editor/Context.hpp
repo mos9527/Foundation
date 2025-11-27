@@ -16,6 +16,7 @@ struct FContext
     RHIApplication* application{};
     RHIApplicationScopedHandle<RHIDevice> device;
     RHIDeviceScopedHandle<RHISwapchain> swapchain;
+    RHIDeviceScopedHandle<RHIPipelineStateCache> psoCache;
 
     GPUScene* gpuScene{};
     Renderer* renderer{};

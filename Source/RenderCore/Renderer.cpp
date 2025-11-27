@@ -20,6 +20,7 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> dev
     LOG(Renderer, LogDebug, "Async Compute:\t{}", mDesc.asyncCompute);
     LOG(Renderer, LogDebug, "Presentation:\t{}", mDesc.present);
     LOG(Renderer, LogDebug, "Threads:\t{}", mDesc.threadCount);
+    LOG(Renderer, LogDebug, "PSO Cache:\t{:x}", reinterpret_cast<uintptr_t>(mDesc.pipelineCache));
 }
 
 void Renderer::BeginSetup()
@@ -775,6 +776,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
     if (!pso_stages.empty())
     {
         RHIPipelineState::PipelineStateDesc pso_desc{
+            .psoCache = mDesc.pipelineCache,
             .type = tracked.isComputePass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
             .vertexInput = {.bindings = tracked.vertexInputBindings, .attributes = tracked.vertexInputAttributes},
             .topology = RHIPipelineState::PipelineStateDesc::TriangleList,

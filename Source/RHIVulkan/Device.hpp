@@ -103,6 +103,10 @@ namespace Foundation::RHI {
         RHISwapchain* GetSwapchain(Handle handle) const override;
         void DestroySwapchain(Handle handle) override;
 
+        RHIDeviceScopedHandle<RHIPipelineStateCache> CreatePipelineCache(RHIPipelineStateCache::PipelineStateCacheDesc const& desc) override;
+        RHIPipelineStateCache* GetPipelineCache(Handle handle) const override;
+        void DestroyPipelineCache(Handle handle) override;
+
         RHIDeviceScopedHandle<RHIPipelineState> CreatePipelineState(RHIPipelineState::PipelineStateDesc const& desc) override;
         RHIPipelineState* GetPipelineState(Handle handle) const override;
         void DestroyPipelineState(Handle handle) override;

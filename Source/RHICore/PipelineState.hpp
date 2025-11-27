@@ -16,7 +16,7 @@ namespace Foundation::RHI {
         const PipelineStateCacheDesc mDesc;
         RHIPipelineStateCache(RHIDevice const& device, PipelineStateCacheDesc const& desc) : mDevice(device), mDesc(desc) {}
 
-        [[nodiscard]] virtual Span<const char> GetCachedData() const = 0;
+        [[nodiscard]] virtual size_t GetCachedData(void* dstBuffer = nullptr) const = 0;
         virtual void DebugSetObjectName(const char* name) = 0;
     };
     class RHIPipelineState : public RHIObject {

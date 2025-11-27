@@ -209,6 +209,16 @@ RHIDeviceScopedHandle<RHISwapchain> VulkanDevice::CreateSwapchain(RHISwapchain::
 }
 RHISwapchain* VulkanDevice::GetSwapchain(Handle handle) const { return mStorage.GetObjectPtr<RHISwapchain>(handle); };
 void VulkanDevice::DestroySwapchain(Handle handle) { mStorage.DestroyObject(handle); }
+RHIDeviceScopedHandle<RHIPipelineStateCache>
+VulkanDevice::CreatePipelineCache(RHIPipelineStateCache::PipelineStateCacheDesc const& desc)
+{
+    return {this, mStorage.CreateObject<VulkanPipelineStateCache>(*this, desc)};
+}
+RHIPipelineStateCache* VulkanDevice::GetPipelineCache(Handle handle) const
+{
+    return mStorage.GetObjectPtr<RHIPipelineStateCache>(handle);
+}
+void VulkanDevice::DestroyPipelineCache(Handle handle) { mStorage.DestroyObject(handle); }
 
 #include "PipelineState.hpp"
 RHIDeviceScopedHandle<RHIPipelineState>
