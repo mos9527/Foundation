@@ -99,48 +99,48 @@ namespace Foundation::RHI {
 
         Span<RHIResourceFormat const> GetSwapchainSupportedFormats() const override;
         Span<RHISwapchainPresentMode const> GetSwapchainSupportedPresentModes() const override;
-        RHIDeviceUniqueRef<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) override;
+        RHIDeviceScopedHandle<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) override;
         RHISwapchain* GetSwapchain(Handle handle) const override;
         void DestroySwapchain(Handle handle) override;
 
-        RHIDeviceUniqueRef<RHIPipelineState> CreatePipelineState(RHIPipelineState::PipelineStateDesc const& desc) override;
+        RHIDeviceScopedHandle<RHIPipelineState> CreatePipelineState(RHIPipelineState::PipelineStateDesc const& desc) override;
         RHIPipelineState* GetPipelineState(Handle handle) const override;
         void DestroyPipelineState(Handle handle) override;
 
-        RHIDeviceUniqueRef<RHIShaderModule> CreateShaderModule(RHIShaderModule::ShaderModuleDesc const& desc) override;
+        RHIDeviceScopedHandle<RHIShaderModule> CreateShaderModule(RHIShaderModule::ShaderModuleDesc const& desc) override;
         RHIShaderModule* GetShaderModule(Handle handle) const override;
         void DestroyShaderModule(Handle handle) override;
 
-        RHIDeviceUniqueRef<RHICommandPool> CreateCommandPool(RHICommandPool::PoolDesc desc) override;
+        RHIDeviceScopedHandle<RHICommandPool> CreateCommandPool(RHICommandPool::PoolDesc desc) override;
         RHICommandPool* GetCommandPool(Handle handle) const override;
         void DestroyCommandPool(Handle handle) override;
 
-        RHIDeviceUniqueRef<RHIDeviceSemaphore> CreateSemaphore(bool is_timeline) override;
+        RHIDeviceScopedHandle<RHIDeviceSemaphore> CreateSemaphore(bool is_timeline) override;
         RHIDeviceSemaphore* GetSemaphore(Handle handle) const override;
         void DestroySemaphore(Handle handle) override;
 
-        RHIDeviceUniqueRef<RHIDeviceFence> CreateFence(bool signaled) override;
+        RHIDeviceScopedHandle<RHIDeviceFence> CreateFence(bool signaled) override;
         RHIDeviceFence* GetFence(Handle handle) const override;
         void DestroyFence(Handle handle) override;
 
-        RHIDeviceUniqueRef<RHIBuffer> CreateBuffer(RHIBufferDesc const& desc) override;
+        RHIDeviceScopedHandle<RHIBuffer> CreateBuffer(RHIBufferDesc const& desc) override;
         RHIBuffer* GetBuffer(Handle handle) const override;
         void DestroyBuffer(Handle handle) override;
 
-        RHIDeviceUniqueRef<RHITexture> CreateTexture(RHITextureDesc const& desc) override;
+        RHIDeviceScopedHandle<RHITexture> CreateTexture(RHITextureDesc const& desc) override;
         RHITexture* GetImage(Handle handle) const override;
         void DestroyImage(Handle handle) override;
 
-        RHIDeviceUniqueRef<RHIDeviceDescriptorSetLayout> CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc) override;
+        RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout> CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc) override;
         RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout(Handle handle) const override;
         void DestroyDescriptorSetLayout(Handle handle) override;
 
-        RHIDeviceUniqueRef<RHIDeviceDescriptorPool> CreateDescriptorPool(
+        RHIDeviceScopedHandle<RHIDeviceDescriptorPool> CreateDescriptorPool(
             RHIDeviceDescriptorPool::PoolDesc const& desc) override;
         RHIDeviceDescriptorPool* GetDescriptorPool(Handle handle) const override;
         void DestroyDescriptorPool(Handle handle) override;
 
-        RHIDeviceUniqueRef<RHIDeviceSampler> CreateSampler(RHIDeviceSampler::SamplerDesc const& desc) override;
+        RHIDeviceScopedHandle<RHIDeviceSampler> CreateSampler(RHIDeviceSampler::SamplerDesc const& desc) override;
         RHIDeviceSampler* GetSampler(Handle handle) const override;
         void DestroySampler(Handle handle) override;
 

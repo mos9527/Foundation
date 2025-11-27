@@ -71,6 +71,19 @@ namespace Foundation::RHI {
     }
 
     class VulkanDevice;
+    class VulkanPipelineStateCache : public RHIPipelineStateCache
+    {
+        const VulkanDevice& mDevice;
+
+        vk::raii::PipelineCache mCache{nullptr};
+    public:
+        VulkanPipelineStateCache(const VulkanDevice& device, PipelineStateCacheDesc const& desc);
+
+        [[nodiscard]] auto const& GetVkPipelineCache() const { return mCache; }
+
+        [[nodiscard]] Span<const char> GetCachedData() const override;
+        void DebugSetObjectName(const char* name) override;
+    };
     class VulkanPipelineState : public RHIPipelineState {
         const VulkanDevice& mDevice;
 
@@ -82,8 +95,8 @@ namespace Foundation::RHI {
     public:
         VulkanPipelineState(const VulkanDevice& device, PipelineStateDesc const& desc);
 
-        [[nodiscard]] inline auto const& GetVkPipeline() const { return mPipeline; }
-        [[nodiscard]] inline auto const& GetVkPipelineLayout() const { return mPipelineLayout; }
+        [[nodiscard]] auto const& GetVkPipeline() const { return mPipeline; }
+        [[nodiscard]] auto const& GetVkPipelineLayout() const { return mPipelineLayout; }
 
         void DebugSetObjectName(const char* name) override;
     };

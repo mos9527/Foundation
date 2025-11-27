@@ -14,8 +14,8 @@ struct FContext
     SDL_Window* window{};
 
     RHIApplication* application{};
-    RHIApplicationUniqueRef<RHIDevice> device;
-    RHIDeviceUniqueRef<RHISwapchain> swapchain;
+    RHIApplicationScopedHandle<RHIDevice> device;
+    RHIDeviceScopedHandle<RHISwapchain> swapchain;
 
     GPUScene* gpuScene{};
     Renderer* renderer{};

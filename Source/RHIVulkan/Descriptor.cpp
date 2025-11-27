@@ -94,7 +94,7 @@ VulkanDeviceDescriptorPool::VulkanDeviceDescriptorPool(const VulkanDevice& devic
     CHECK(mPool != nullptr && "failed to create Vulkan descriptor pool");
 }
 RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> VulkanDeviceDescriptorPool::CreateDescriptorSet(
-    RHIDeviceRef<RHIDeviceDescriptorSetLayout> layout,
+    RHIDeviceHandle<RHIDeviceDescriptorSetLayout> layout,
     uint32_t max_variable_count
     ) {
     auto& vk_layout = layout.Get<VulkanDeviceDescriptorSetLayout>()->GetVkLayout();

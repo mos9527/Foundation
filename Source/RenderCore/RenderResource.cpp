@@ -36,7 +36,7 @@ namespace Foundation::RenderCore
             }
         };
         desc.VisitDefault([&](RHITextureDesc const& tex) { update_texture_desc(tex); },
-                   [&](RHIDeviceRef<RHITexture> const& tex) { update_texture_desc(tex->mDesc); },
+                   [&](RHIDeviceHandle<RHITexture> const& tex) { update_texture_desc(tex->mDesc); },
                    [&](const RHITexture* const tex) { update_texture_desc(tex->mDesc); }
                 );
     }

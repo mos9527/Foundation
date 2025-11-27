@@ -4,11 +4,27 @@
 #include "Descriptor.hpp"
 namespace Foundation::RHI {
     class RHIDevice;
+    class RHIPipelineStateCache : public RHIObject
+    {
+    protected:
+        const RHIDevice& mDevice;
+    public:
+        struct PipelineStateCacheDesc
+        {
+            Span<const char> initialData{};
+        };
+        const PipelineStateCacheDesc mDesc;
+        RHIPipelineStateCache(RHIDevice const& device, PipelineStateCacheDesc const& desc) : mDevice(device), mDesc(desc) {}
+
+        [[nodiscard]] virtual Span<const char> GetCachedData() const = 0;
+        virtual void DebugSetObjectName(const char* name) = 0;
+    };
     class RHIPipelineState : public RHIObject {
     protected:
         const RHIDevice& mDevice;
     public:
         struct PipelineStateDesc {
+            RHIPipelineStateCache* psoCache{nullptr};
             RHIDevicePipelineType type{ RHIDevicePipelineType::Graphics };
             // [Graphics] Vertex Input
             struct VertexInput {
@@ -157,4 +173,5 @@ namespace Foundation::RHI {
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };
+
 }

@@ -26,7 +26,7 @@ namespace Foundation::RenderCore
         Binding* binding = mBindings.Construct(Binding{0uLL, {view->GetTexture()}, {view}});
         return Update(binding->id = mBindings.Index(binding), view);
     }
-    uint32_t BindlessPool::Allocate(RHIDeviceUniqueRef<RHITexture>&& texture, RHITextureView* view)
+    uint32_t BindlessPool::Allocate(RHIDeviceScopedHandle<RHITexture>&& texture, RHITextureView* view)
     {
         Binding* binding = mBindings.Construct(Binding{0uLL, {std::move(texture)}, {view}});
         return Update(binding->id = mBindings.Index(binding), view);

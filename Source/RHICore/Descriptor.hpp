@@ -59,7 +59,7 @@ namespace Foundation::RHI {
             : mDevice(device), mDesc(desc) {
         }
         [[nodiscard]] virtual RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> CreateDescriptorSet(
-            RHIDeviceRef<RHIDeviceDescriptorSetLayout>, uint32_t max_variable_count = 0) = 0;
+            RHIDeviceHandle<RHIDeviceDescriptorSetLayout>, uint32_t max_variable_count = 0) = 0;
         [[nodiscard]] virtual RHIDeviceDescriptorSet* GetDescriptorSet(Handle handle) const = 0;
         virtual void DestroyDescriptorSet(Handle handle) = 0;
 

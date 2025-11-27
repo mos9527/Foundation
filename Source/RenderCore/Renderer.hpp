@@ -150,15 +150,15 @@ namespace Foundation::RenderCore
         uint32_t mCurrentSwap{0};
 
         UniquePtr<ExecuteResources> mResources;
-        RHIDeviceUniqueRef<RHIDeviceDescriptorPool> mDescPool;
+        RHIDeviceScopedHandle<RHIDeviceDescriptorPool> mDescPool;
         Mutex mDescPoolMutex;
 
         struct FrameSyncObjects
         {
             // Index of this swap
             const size_t swapIndex;
-            RHIDeviceUniqueRef<RHIDeviceSemaphore> render{}, present{};
-            RHIDeviceUniqueRef<RHIDeviceFence> graphicsFence{}, computeFence{};
+            RHIDeviceScopedHandle<RHIDeviceSemaphore> render{}, present{};
+            RHIDeviceScopedHandle<RHIDeviceFence> graphicsFence{}, computeFence{};
             // Texture view for the backbuffer
             RHITextureScopedHandle<RHITextureView> view{};
             RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> viewSet{};
@@ -166,14 +166,14 @@ namespace Foundation::RenderCore
             ResourceHandle backbuffer{kInvalidHandle};
             FrameSyncObjects(size_t swapIndex) : swapIndex(swapIndex) {}
         };
-        RHIDeviceUniqueRef<RHIDeviceDescriptorPool> mSwapDescriptorPool;
-        RHIDeviceUniqueRef<RHIDeviceDescriptorSetLayout> mSwapDescriptorSetLayout;
+        RHIDeviceScopedHandle<RHIDeviceDescriptorPool> mSwapDescriptorPool;
+        RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout> mSwapDescriptorSetLayout;
 
         Vector<FrameSyncObjects> mSwaps;
         // Semaphore for async compute
-        RHIDeviceUniqueRef<RHIDeviceSemaphore> mGraphicsTimeline{}, mComputeTimeline{};
-        RHIApplicationRef<RHIDevice> mDevice{};
-        RHIDeviceRef<RHISwapchain> mSwapchain{};
+        RHIDeviceScopedHandle<RHIDeviceSemaphore> mGraphicsTimeline{}, mComputeTimeline{};
+        RHIApplicationHandle<RHIDevice> mDevice{};
+        RHIDeviceHandle<RHISwapchain> mSwapchain{};
         RHIDeviceQueue *mGraphicsQueue{}, *mComputeQueue{};
 
         UniquePtr<RendererSetup> mSetup;
@@ -197,7 +197,7 @@ namespace Foundation::RenderCore
         ThreadPool mExecuteThreadPool;
         struct ExecutePerThreadCommandLists
         {
-            RHIDeviceUniqueRef<RHICommandPool> graphicsPool{}, computePool{};
+            RHIDeviceScopedHandle<RHICommandPool> graphicsPool{}, computePool{};
             Vector<RHICommandPoolScopedHandle<RHICommandList>> graphicsCmds, computeCmds;
             // Resets every frame
             size_t graphicsCtr{}, computeCtr{};
@@ -280,8 +280,8 @@ namespace Foundation::RenderCore
         RHIDeviceIdleGuard mWaitIdle; // Ensure device is idle on destruction
     public:
         Renderer() = delete;
-        Renderer(RendererDesc const& desc, RHIApplicationRef<RHIDevice> device,
-                 RHIDeviceRef<RHISwapchain> swapchain, Allocator* allocator);
+        Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> device,
+                 RHIDeviceHandle<RHISwapchain> swapchain, Allocator* allocator);
 
 #pragma region Render Graph Setup
         /**
@@ -797,7 +797,7 @@ namespace Foundation::RenderCore
          * @note You may want to re-create the entire @ref Renderer instead if your resources depend on
          *       the backbuffer size.
          */
-        void SetSwapchain(RHIDeviceRef<RHISwapchain> swapchain);
+        void SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain);
         /**
          * @brief Resets the temporary execution allocator , and waits for the possibly multi-buffered
          * next frame to finish rendering.

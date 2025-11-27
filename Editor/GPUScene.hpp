@@ -45,13 +45,13 @@ class GPUScene
     FContext* mContext;
 
     StreamingPool mStreaming;
-    RHIDeviceUniqueRef<RHIBuffer> mPrimitiveBuffer;
+    RHIDeviceScopedHandle<RHIBuffer> mPrimitiveBuffer;
     // XXX: Linear allocation. GPA would be needed if we'd upload & free
     //      at will. Not needed for Editor use-case currently.
     size_t mPrimitiveOffset{0};
 
     // Mapped as-is
-    RHIDeviceUniqueRef<RHIBuffer> mInstanceBuffer;
+    RHIDeviceScopedHandle<RHIBuffer> mInstanceBuffer;
     GSInstance *mInstanceBegin, *mInstanceRing, *mInstanceEnd;
 public:
     struct GPUSceneDesc

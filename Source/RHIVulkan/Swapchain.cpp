@@ -77,7 +77,7 @@ RHIExtent2D VulkanSwapchain::GetExtents() const
 {
     return mDesc.extents;
 }
-uint32_t VulkanSwapchain::GetNextImage(uint64_t timeout_ns, RHIDeviceRef<RHIDeviceSemaphore> semaphore, RHIDeviceRef<RHIDeviceFence> fence)
+uint32_t VulkanSwapchain::GetNextImage(uint64_t timeout_ns, RHIDeviceHandle<RHIDeviceSemaphore> semaphore, RHIDeviceHandle<RHIDeviceFence> fence)
 {
     auto [result, index] = mSwapchain.acquireNextImage(
         timeout_ns,

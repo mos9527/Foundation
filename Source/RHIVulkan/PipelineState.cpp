@@ -1,4 +1,17 @@
 using namespace Foundation::RHI;
+VulkanPipelineStateCache::VulkanPipelineStateCache(const VulkanDevice& device, PipelineStateCacheDesc const& desc)
+    : RHIPipelineStateCache(device, desc), mDevice(device)
+{
+
+}
+Span<const char> VulkanPipelineStateCache::GetCachedData() const
+{
+    return {};
+}
+void VulkanPipelineStateCache::DebugSetObjectName(const char* name)
+{
+
+}
 void VulkanPipelineState::InitializePipelineLayout() {
     StackArena<> arena; AllocatorStack alloc(arena);
     Vector<vk::DescriptorSetLayout> p_set_layouts(mDesc.descriptorSetLayouts.size(), alloc.Ptr());

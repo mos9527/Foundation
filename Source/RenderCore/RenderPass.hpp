@@ -147,24 +147,24 @@ namespace Foundation::RenderCore
         UniquePtr<RenderPass> pass;
         TrackedPass(Allocator* alloc, PassHandle handle, StringView name, RHIDeviceQueueType queue,
                     UniquePtr<RenderPass> renderPass, size_t priority);
-        /* -- States -- */
+        /* -- Pipeline states (built at PSO setup) -- */
         int groupIndex{}; // executionGroup index
         // All stages used in this pass
         RHIPipelineStageBits piplineStages{};
         // Pipeline states for the entire pass
-        RHIDeviceUniqueRef<RHIPipelineState> pso;
+        RHIDeviceScopedHandle<RHIPipelineState> pso;
         // PSO Creation parameters
         RHIPipelineState::PipelineStateDesc::Rasterizer psoRasterizer{};
         RHIPipelineState::PipelineStateDesc::DepthStencil psoDepthStencil{};
         // Layouts created by ourselves
-        Vector<RHIDeviceUniqueRef<RHIDeviceDescriptorSetLayout>> descriptorLayouts;
+        Vector<RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout>> descriptorLayouts;
         // Pointers. Can also contain external sets
         Vector<RHIDeviceDescriptorSetLayout*> pDescriptorLayouts;
         // Sets created by ourselves
         Vector<RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>> descriptorSets;
         // Pointers. Can also contain external sets
         Vector<RHIDeviceDescriptorSet*> pDescriptorSets;
-        // [Set Index, Set, Layout]
+        // [Set Index, Set, Layout], correspond to externalBindings
         Vector<Tuple<size_t, RHIDeviceDescriptorSetLayout*>> pExternalDescriptorSets;
     };
 }

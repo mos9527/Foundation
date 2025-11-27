@@ -11,7 +11,7 @@ namespace Foundation::RenderCore
     {
         using Resource = Variant<
             RHITexture*,
-            RHIDeviceUniqueRef<RHITexture>
+            RHIDeviceScopedHandle<RHITexture>
         >;
         using View = Variant<
             // Texture Views
@@ -30,8 +30,8 @@ namespace Foundation::RenderCore
 
         AtomicPool<Binding> mBindings;
 
-        RHIDeviceUniqueRef<RHIDeviceDescriptorSetLayout> mDescLayout;
-        RHIDeviceUniqueRef<RHIDeviceDescriptorPool> mDescPool;
+        RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout> mDescLayout;
+        RHIDeviceScopedHandle<RHIDeviceDescriptorPool> mDescPool;
         RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> mDescSet;
 
         Mutex mDescMutex;
@@ -54,7 +54,7 @@ namespace Foundation::RenderCore
         /**
          * @brief Takes ownership of the texture, and creates a binding for it.
          */
-        uint32_t Allocate(RHIDeviceUniqueRef<RHITexture>&& texture, RHITextureView* view);
+        uint32_t Allocate(RHIDeviceScopedHandle<RHITexture>&& texture, RHITextureView* view);
         /**
          * @brief Free a binding, and - with it - the owned resource (if any).
          */

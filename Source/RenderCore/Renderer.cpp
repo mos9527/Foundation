@@ -5,8 +5,8 @@
 using namespace Foundation::Core;
 using namespace Foundation::RenderCore;
 
-Renderer::Renderer(RendererDesc const& desc, RHIApplicationRef<RHIDevice> device,
-                   RHIDeviceRef<RHISwapchain> swapchain, Allocator* allocator) :
+Renderer::Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> device,
+                   RHIDeviceHandle<RHISwapchain> swapchain, Allocator* allocator) :
     mState(State::Undefined), mAllocator(allocator), mDesc(desc), mSwaps(mAllocator), mDevice(device),
     mSwapchain(swapchain), mExecuteArena(mAllocator, kExecuteArenaSize), mExecuteAlloc(mExecuteArena),
     mExecuteSubmits(nullptr), mExecuteThreadPool(mDesc.threadCount, kMaxCommandListsPerThread * 2, allocator, "Renderer"),
@@ -456,25 +456,22 @@ void Renderer::CullPasses(PassHandle epilogue) const
     LOG(Renderer, LogDebug, "** Render Graph Execution Order **\n{}", DbgDumpActivePasses());
     LOG(Renderer, LogDebug, "** Render Graph Execution Groups **\n{}", DbgDumpExecutionGroups());
 }
-/* -- PSO -- */
 void Renderer::BuildPipelineState(PassHandle pass)
 {
     auto& tracked = mSetup->trackedPasses[pass];
-    ZoneScoped;
-    ZoneNameF("Build %s PSO", tracked.name.c_str());
+#pragma region Shader Bytecode
+    /* -- Parse shader Bytecode -- */
     Vector<RHIPipelineState::PipelineStateDesc::ShaderStage> pso_stages(mAllocator);
-    // Load shader bytecode
     if (tracked.shaders.empty())
         return; // Pass with no shaders
     LOG(Renderer, LogInfo, "** Building PSO for {} [{}] **", tracked.name, pass);
     Vector<char> data(mAllocator);
-    Map<String, RHIDeviceUniqueRef<RHIShaderModule>> shaders(mAllocator);
+    Map<String, RHIDeviceScopedHandle<RHIShaderModule>> shaders(mAllocator);
     Map<String, UniquePtr<Shader>> reflections(mAllocator);
     for (auto const& [shader_path, entry_point, stage] : tracked.shaders)
     {
         if (!shaders.contains(shader_path))
         {
-            LOG(Renderer, LogDebug, "Loading shader {}", shader_path);
             std::error_code ec;
             auto size = std::filesystem::file_size(shader_path, ec);
             CHECK_MSG(!ec, "Failed to open shader file {}: {}", shader_path, ec.message());
@@ -517,6 +514,9 @@ void Renderer::BuildPipelineState(PassHandle pass)
         CHECK_MSG(shaders.size() == 1,
                   "Pass {} must have exactly 1 Compute Shader, and 0 of any other types, if CS is used.", tracked.name);
     }
+#pragma endregion
+#pragma region Descriptor Sets
+    /* -- Descriptor Set Build -- */
     // Check variable bindings to be consistent across stages
     // [name, [set, binding]]
     Map<String, Pair<uint32_t, uint32_t>> refl_var_bind_points(mAllocator);
@@ -568,7 +568,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
                   bind.first, bind.second, name, it->second, tracked.name);
         bind_unique[bind] = name;
     }
-    // Check contiguity
+    // Check per-set binding contiguity
     for (uint32_t set = 0; ; set++)
     {
         Pair<int, int> key {set, 0};
@@ -585,12 +585,12 @@ void Renderer::BuildPipelineState(PassHandle pass)
                   "Pass {} Binding set {} has non-contiguous bindings (max binding {}, count {}). Last binding {}.", tracked.name, set,
                   last_binding, cbindings, bind_unique[{set, last_binding}]);
     }
-    // Create descriptor set layout to be consistent across stages
+    // Check descriptor set layout to be consistent across stages
     Map<String, RHIDescriptorType> var_types(mAllocator);
     Map<String, ResourceHandle> var_handles(mAllocator);
     Map<String, ResourceHandle> var_samplers(mAllocator);
     Map<String, RHIDeviceDescriptorSetLayout*> var_ext_sets(mAllocator);
-    // Textures
+    // ...for Textures
     for (auto& [vhdl, dtype, binding] : tracked.textureBindings)
     {
         auto it = var_types.find(binding);
@@ -603,7 +603,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
             CHECK(dtype_prev == dtype && vhdl_prev == vhdl);
         }
     }
-    // Buffers
+    // ...for Buffers
     for (auto& [rhdl, dtype, binding] : tracked.bufferBindings)
     {
         auto it = var_types.find(binding);
@@ -616,7 +616,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
             CHECK(dtype_prev == dtype && rhdl_prev == rhdl);
         }
     }
-    // Samplers
+    // ...for Samplers
     for (auto& [sampler_handle, binding] : tracked.samplers)
     {
         auto it = var_types.find(binding);
@@ -629,12 +629,12 @@ void Renderer::BuildPipelineState(PassHandle pass)
             CHECK(dtype_prev == RHIDescriptorType::Sampler && var_handle == sampler_handle);
         }
     }
-    // External sets (e.g. @ref TexturePool)
-    Ranges::sort(tracked.externalBindings);
+    // External sets (e.g. @ref BindlessPool)
+    std::sort(tracked.externalBindings.begin(), tracked.externalBindings.end());
     for (auto& [binding, desc_set_layout, set] : tracked.externalBindings)
     {
-        // We don't create anything for the set - but do resolve these
-        // so we can map them later on
+        // We don't create anything for these sets, user provides the layouts - but we do resolve these
+        // to actual [set,binding] pairs so they can be bound by bind points (var names)
         if (refl_var_bind_points.contains(binding))
         {
             auto bind = refl_var_bind_points[binding];
@@ -650,23 +650,11 @@ void Renderer::BuildPipelineState(PassHandle pass)
         }
         var_ext_sets[binding] = desc_set_layout;
     }
+    // Sort by set index
     std::sort(tracked.pExternalDescriptorSets.begin(), tracked.pExternalDescriptorSets.end());
     tracked.pExternalDescriptorSets.erase(
         std::unique(tracked.pExternalDescriptorSets.begin(), tracked.pExternalDescriptorSets.end()),
         tracked.pExternalDescriptorSets.end());
-    if (!refl_var_bind_points.empty() || backbufferUAVUsage.has_value())
-    {
-        LOG(Renderer, LogDebug, "Pipeline Parameters");
-        for (auto& [name, dtype] : var_types)
-        {
-            if (!refl_var_bind_points.contains(name))
-                continue;
-            auto [set, binding] = refl_var_bind_points[name];
-            LOG(Renderer, LogDebug, "\t{}: set {}, binding {}, type {}", name, set, binding, dtype);
-        }
-        if (backbufferUAVUsage.has_value())
-            LOG(Renderer, LogDebug, "\tSet {}: Backbuffer UAV", backbufferUAVUsage.value());
-    }
     // [[set, binding], name]
     Vector<Pair<Pair<uint32_t, uint32_t>, String>> bindings(mAllocator);
     bindings.reserve(var_types.size());
@@ -675,14 +663,11 @@ void Renderer::BuildPipelineState(PassHandle pass)
         if (!var_ext_sets.contains(name))
             bindings.emplace_back(bind, name);
     }
-    Ranges::sort(bindings);
+    std::sort(bindings.begin(), bindings.end());
     // Separate into descriptor sets
     Vector<RHIDeviceDescriptorSetLayoutDesc::Binding> set_bindings(mAllocator);
     for (const auto& binding : bindings | Views::values)
     {
-        // TODO: Descriptor Arrays?
-        // Not currently used by Renderer APIs - and for use cases like bindless,
-        // we have @ref BindDescriptorSet to bind a pre-made descriptor set.
         CHECK_MSG(var_types.contains(binding) || var_ext_sets.contains(binding),
                   "Binding {} is not bound by pass {}, but is used by one of its shaders.", binding, tracked.name);
         set_bindings.push_back({.count = 1, .stage = RHIShaderStageBits::All, .type = var_types[binding]});
@@ -726,7 +711,6 @@ void Renderer::BuildPipelineState(PassHandle pass)
         ds->DebugSetObjectName(fmt::format("Descriptor Set {} of {} [{}]", set, tracked.name, pass).c_str());
         tracked.pDescriptorSets.push_back(ds.Get());
         // Update bindings
-        LOG(Renderer, LogDebug, "Descriptor Set {} Bindings", set);
         for (size_t k = i; k < j; k++)
         {
             auto const& [bind, name] = bindings[k];
@@ -744,7 +728,6 @@ void Renderer::BuildPipelineState(PassHandle pass)
                               "Shader expects a Sampler at {}, but it's not bound by pass {}", name, tracked.name);
                     auto& sampler_handle = var_samplers[name];
                     auto* sampler = DerefSampler(sampler_handle);
-                    LOG(Renderer, LogDebug, "\t[Sampler] {}: binding {}, type {}", name, binding, type);
                     ds->Update({.binding = binding, .type = type, .images = {{{.sampler = sampler}}}});
                     break;
                 }
@@ -752,7 +735,6 @@ void Renderer::BuildPipelineState(PassHandle pass)
             case StorageImage:
                 {
                     auto* view = DerefTextureView(hdl);
-                    LOG(Renderer, LogDebug, "\t[Texture] {}: binding {}, type {}", name, binding, type);
                     ds->Update({.binding = binding,
                                 .type = type,
                                 .images = {{{.imageView = view,
@@ -763,7 +745,6 @@ void Renderer::BuildPipelineState(PassHandle pass)
             case UniformBuffer:
             case StorageBuffer:
                 {
-                    LOG(Renderer, LogDebug, "\t[Buffer] {}: binding {}, type {}", name, binding, type);
                     auto* buf = DerefResource(hdl).Get<RHIBuffer*>();
                     ds->Update({.binding = binding, .type = type, .buffers = {{{.buffer = buf}}}});
                     break;
@@ -774,7 +755,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
         }
     }
     // Add external sets
-    // We've already established that these would not conflict, and has already been sorted
+    // We've already established that these would not conflict with our own sets, and has already been sorted
     for (auto const& [ptr, layout_ptr] : tracked.pExternalDescriptorSets)
     {
         tracked.pDescriptorLayouts.emplace_back(layout_ptr);
@@ -786,7 +767,11 @@ void Renderer::BuildPipelineState(PassHandle pass)
         tracked.pDescriptorLayouts.resize(std::max(tracked.pDescriptorLayouts.size(), static_cast<size_t>(set + 1u)));
         tracked.pDescriptorLayouts[set] = mSwapDescriptorSetLayout.Get();
     }
-    // Create PSO if we have shader stages
+#pragma endregion
+#pragma region PSO
+    /* -- Pipeline State Creation --
+     *
+     */
     if (!pso_stages.empty())
     {
         RHIPipelineState::PipelineStateDesc pso_desc{
@@ -827,6 +812,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
     {
         LOG(Renderer, LogDebug, "Pass {} has no shader stages, and thus no PSO is created.", tracked.name);
     }
+#pragma endregion
 }
 void Renderer::FinalizePSOs()
 {
@@ -912,8 +898,8 @@ void Renderer::FinalizeResources()
                     fmt::format("{} [{}]", res.name, handle).c_str());
             },
             // Borrowed
-            [&](RHIDeviceRef<RHIBuffer> const& hdl) { mResources->resources[handle] = hdl; },
-            [&](RHIDeviceRef<RHITexture> const& hdl) { mResources->resources[handle] = hdl; },
+            [&](RHIDeviceHandle<RHIBuffer> const& hdl) { mResources->resources[handle] = hdl; },
+            [&](RHIDeviceHandle<RHITexture> const& hdl) { mResources->resources[handle] = hdl; },
             [&](RHIBuffer* const ptr) { mResources->resources[handle] = ptr; },
             [&](RHITexture* const ptr) { mResources->resources[handle] = ptr; },
             [&](auto const&) { throw std::runtime_error("Unhandled resource type at creation time"); });
@@ -995,7 +981,7 @@ void Renderer::SetFrameSyncObjects()
     mComputeTimeline = mDevice->CreateSemaphore(true);
     mComputeTimeline->DebugSetObjectName(fmt::format("Async Compute Timeline Semaphore").c_str());
 }
-void Renderer::SetSwapchain(RHIDeviceRef<RHISwapchain> swapchain)
+void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
 {
     CHECK_MSG(mDesc.present, "Cannot set swapchain when the renderer is not created with Present support");
     CHECK_MSG(swapchain.IsValid(), "Cannot set swapchain when swapchain is not valid");

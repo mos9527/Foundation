@@ -200,13 +200,13 @@ namespace Foundation::RHI
 {
     class RHIApplication;
     template <typename T>
-    using RHIApplicationUniqueRef = RHIScopedHandle<RHIApplication, T>;
+    using RHIApplicationScopedHandle = RHIScopedHandle<RHIApplication, T>;
     template <typename T>
-    using RHIApplicationRef = RHIHandle<RHIApplication, T>;
+    using RHIApplicationHandle = RHIHandle<RHIApplication, T>;
 
     class RHIDevice;
     template <typename T>
-    using RHIDeviceUniqueRef = RHIScopedHandle<RHIDevice, T>;
+    using RHIDeviceScopedHandle = RHIScopedHandle<RHIDevice, T>;
     template <typename T>
-    using RHIDeviceRef = RHIHandle<RHIDevice, T>;
+    using RHIDeviceHandle = RHIHandle<RHIDevice, T>;
 } // namespace Foundation::RHI

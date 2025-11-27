@@ -32,8 +32,8 @@ namespace Foundation::RHI {
         VulkanApplication(Allocator* allocator, const char* appName = "Vulkan RHI", const char* engineName = "Foundation", uint32_t apiVersion = VK_API_VERSION_1_3);
         Span<const RHIDevice::DeviceDesc> EnumerateDevices() const override;
 
-        RHIApplicationUniqueRef<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc, SDL_Window* window) override;
-        RHIApplicationUniqueRef<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc)
+        RHIApplicationScopedHandle<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc, SDL_Window* window) override;
+        RHIApplicationScopedHandle<RHIDevice> CreateDevice(RHIDevice::DeviceDesc const& desc)
         {
             return CreateDevice(desc, nullptr);
         }

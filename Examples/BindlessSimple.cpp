@@ -22,7 +22,7 @@ int main()
     lines[0].x = lines[0].y = 16, lines[0].SetText("Bindless Simple");
     {
         BindlessPool bindings(device.Get(), GLOBAL_ALLOC, {.maxBindings = kNumTextures});
-        Vector<RHIDeviceUniqueRef<RHITexture>> textures(kNumTextures, GLOBAL_ALLOC);
+        Vector<RHIDeviceScopedHandle<RHITexture>> textures(kNumTextures, GLOBAL_ALLOC);
         // Prepare textures
         {
             ImmediateContext im(RHIDeviceQueueType::Graphics, device.Get());

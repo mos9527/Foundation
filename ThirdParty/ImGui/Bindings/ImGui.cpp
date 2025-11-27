@@ -94,7 +94,7 @@ void ImGui_ImplFoundation_ImplUpdateTexture(ImTextureData* tex)
         size_t upload_pitch = upload_w * tex->BytesPerPixel;
         auto [hdl, smp] = ImGui_ImplFoundation_DecodeImTextureID(tex->GetTexID());
         RHITexture* texture =
-            gImGuiTexturePool->GetResource(hdl).Visit([&](RHIDeviceUniqueRef<RHITexture> const& owned)
+            gImGuiTexturePool->GetResource(hdl).Visit([&](RHIDeviceScopedHandle<RHITexture> const& owned)
                                                       { return owned.Get(); }, [&](RHITexture* raw) { return raw; });
         auto staging = device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Upload,
                                                           .hostAccess = RHIResourceHostAccess::WriteOnly,

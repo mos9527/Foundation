@@ -17,7 +17,7 @@ namespace Foundation::RenderCore
         RHIDevice* const mDevice;
         RHIDeviceQueue* mQueue;
 
-        RHIDeviceUniqueRef<RHICommandPool> mCommandPool;
+        RHIDeviceScopedHandle<RHICommandPool> mCommandPool;
         RHICommandPoolScopedHandle<RHICommandList> mCommandList; // Persistent
     public:
         ImmediateContext(RHIDeviceQueueType type, RHIDevice* device);
