@@ -1,4 +1,4 @@
-#include "EMeshletCommon.slang"
+#include "EMeshletCommon.slangi"
 
 uniform UBO globalParams;
 RWStructuredBuffer<Atomic<uint>> counter;

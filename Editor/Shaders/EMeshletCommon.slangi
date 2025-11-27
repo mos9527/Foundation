@@ -1,4 +1,4 @@
-#include "EMath.slang"
+#include "EMath.slangi"
 static const uint kTaskShaderWG = 64;
 // Definitions From C++ sources
 static const uint kNumMeshDiscreteLODs = 5;

@@ -45,13 +45,6 @@ target_precompile_headers(
 )
 add_dependencies(
         Editor
-        Shader_ECSIndirectTaskGen
-        Shader_ECSInstanceTaskCull
-        Shader_EMSBasic
-        Shader_ETSMeshletCull
-        Shader_EPSBasic
-        Shader_EPSBlit
-        Shader_ECSOverdrawClear
-        Shader_ECSOverdrawReduce
+        Editor_Shaders
         Examples_SampleFiles
 )

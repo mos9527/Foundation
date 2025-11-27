@@ -1,4 +1,4 @@
-#include "EMeshletCommon.slang"
+#include "EMeshletCommon.slangi"
 
 uniform UBO globalParams;
 [[vk_binding(1,0)]] StructuredBuffer<GSInstance> instances;
