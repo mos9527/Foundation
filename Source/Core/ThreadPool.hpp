@@ -98,7 +98,7 @@ namespace Foundation::Core
         }
         /**
          * @brief Push a lambda job to the thread pool.
-         * @return @ref SharedFuture<func ReturnType> that will be set when the job is completed.
+         * @return @ref Future<func ReturnType> that will be set when the job is completed.
          */
         template <typename Lambda, typename... Args>
         auto Push(Lambda&& func, Args const&... args)
@@ -113,7 +113,7 @@ namespace Foundation::Core
             using LambdaType = decltype(LambdaObj);
             auto ptr = PushImpl<ThreadPoolLambdaJob<LambdaType, ReturnType>>(
                 std::forward<LambdaType>(LambdaObj));
-            return SharedFuture<ReturnType>(ptr->mPromise.get_future());
+            return ptr->mPromise.get_future();
         }
         /**
          * @brief Shutdown the @ref ThreadPool, potentially cancelling all pending jobs.

@@ -79,7 +79,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
                        vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
                        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT, vk::PhysicalDeviceMeshShaderFeaturesEXT>
         featureChain = {
-            {.features = {.samplerAnisotropy = true, .shaderInt16 = true}}, // vk::PhysicalDeviceFeatures2
+            {.features = {.samplerAnisotropy = true, .fragmentStoresAndAtomics = true, .shaderInt16 = true}}, // vk::PhysicalDeviceFeatures2
             {.storageBuffer16BitAccess = true,
              .uniformAndStorageBuffer16BitAccess = true,
              .shaderDrawParameters = true}, // vk::PhysicalDeviceVulkan11Features

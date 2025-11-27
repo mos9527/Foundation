@@ -21,11 +21,12 @@ namespace Foundation::RenderUtils {
                 r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/VSFullscreen.spv");
                 setup(self, r);
             },
-            [=](PassHandle self, Renderer* r, RHI::RHICommandList* cmd) {
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
                 auto const& img_wh = r->GetSwapchainExtent();
                 r->CmdSetPipeline(self, cmd);
                 record(self, r, cmd);
-                r->CmdBeginGraphics(self, cmd, img_wh, {}, {});
+                r->CmdBeginGraphics(self, cmd, img_wh, {{RHIClearColor{}}}, {});
                 cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
                     .SetScissor(0, 0, img_wh.x, img_wh.y);
                 cmd->Draw(3);

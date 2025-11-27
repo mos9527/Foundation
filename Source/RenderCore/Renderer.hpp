@@ -715,7 +715,7 @@ namespace Foundation::RenderCore
          * is undefined.
          */
         void CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2D const& extent,
-                              Optional<RHIClearColor> const& clear_rtv = RHIClearColor{},
+                              Span<const Optional<RHIClearColor>> clear_rtv = {},
                               Optional<RHIClearDepthStencil> const& clear_dsv = RHIClearDepthStencil{0.0f, 0u});
         /**
          * @brief Helper that sets a Push Constant range data with a single l-value.

@@ -50,5 +50,8 @@ add_dependencies(
         Shader_EMSBasic
         Shader_ETSMeshletCull
         Shader_EPSBasic
+        Shader_EPSBlit
+        Shader_ECSOverdrawClear
+        Shader_ECSOverdrawReduce
         Examples_SampleFiles
 )

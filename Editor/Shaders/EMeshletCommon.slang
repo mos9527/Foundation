@@ -115,5 +115,6 @@ public struct MeshletGroupShared {
 struct V2F
 {
     float4 pos : SV_POSITION;
+    float3 normal : NORMAL;
     uint32_t meshlet : ID;
 };

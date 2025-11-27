@@ -704,7 +704,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
             LOG(BuildPipelineState, LogError,
                 "Binding numbers must start from 0 in each descriptor set. Error at set {} binding {} in pass {}.", set,
                 bindings[i].first.second, tracked.name);
-            CHECK_MSG(false, "Binding binding numbers must start from 0.");
+            CHECK_MSG(false, "Binding binding must start from 0.");
         }
         while (j < bindings.size() && bindings[j].first.first == set)
             j++;
@@ -1614,23 +1614,28 @@ void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, String
     return CmdBindDescriptorSet(pass, cmd, set, descriptor_set);
 }
 void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2D const& extent,
-                                Optional<RHIClearColor> const& clear_rtv,
+                                Span<const Optional<RHIClearColor>> clear_rtv,
                                 Optional<RHIClearDepthStencil> const& clear_dsv)
 {
     CHECK(mState == State::Execute);
     auto& tpass = mSetup->trackedPasses[pass];
     Vector<RHICommandList::GraphicsDesc::Attachment> rtvs(mExecuteAlloc.Ptr());
     rtvs.reserve(tpass.rtvs.size() + 1);
+    const size_t rtv_count = tpass.rtvs.size() + (tpass.backbufferRTV ? 1 : 0);
+    CHECK_MSG(clear_rtv.size() == rtv_count, "RTV clear count mismatch. Got {}, expected {} for all RenderTargets", clear_rtv.size(), rtv_count);
     if (tpass.backbufferRTV)
-        rtvs.push_back({.imageView = mSwaps[GetSwap()].view.Get(), .clearColor = clear_rtv});
-    for (const auto& rtv : tpass.rtvs | std::views::keys)
+    {
+        rtvs.push_back({.imageView = mSwaps[GetSwap()].view.Get(), .clearColor = clear_rtv[0]});
+        clear_rtv = clear_rtv.subspan(1);
+    }
+    for (int i = 0; const auto& rtv : tpass.rtvs | std::views::keys)
     {
         auto const& [rhdl, desc] = mSetup->trackedViews[rtv];
         auto const& tres = mSetup->trackedResources[rhdl];
         RHITexture* res = DerefResource(rhdl).Get<RHITexture*>();
         CHECK_MSG(res->mDesc.extent.x >= extent.x && res->mDesc.extent.y >= extent.y,
                   "Graphics extent too large for Render Target on {}", tres.name);
-        rtvs.push_back({.imageView = DerefTextureView(rtv), .clearColor = clear_rtv});
+        rtvs.push_back({.imageView = DerefTextureView(rtv), .clearColor = clear_rtv[i]});
     }
     if (tpass.dsv != kInvalidHandle)
     {

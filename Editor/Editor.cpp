@@ -1,3 +1,6 @@
+#include <RenderUtils/PSFullscreen.hpp>
+#include <RenderUtils/CSClearBuffer.hpp>
+using namespace RenderUtils;
 enum FEditorState
 {
     FEInit,
@@ -39,18 +42,20 @@ struct ArcballCamera
 
     float3 center;
     float radius;
-    float pitch, yaw, roll;
+    quat rot;
     float zNear, fovY, aspect;
     mat4 view, proj;
     mat4 Update(SDL_Event const& event)
     {
-        quat rot = angleAxis(pitch, vec3(1, 0, 0)) * angleAxis(yaw, vec3(0, 1, 0)) * angleAxis(roll, vec3(0, 0, 1));
         if (event.type == SDL_EVENT_MOUSE_MOTION)
         {
             if (event.motion.state & SDL_BUTTON_LMASK)
             {
-                pitch -= event.motion.xrel * 1e-2f;
-                yaw -= event.motion.yrel * 1e-2f;
+                float yawDelta = -event.motion.xrel * 1e-2f;
+                float pitchDelta = -event.motion.yrel * 1e-2f;
+                quat yawRot = angleAxis(yawDelta, vec3(0, 1, 0));
+                quat pitchRot = angleAxis(pitchDelta, vec3(1, 0, 0));
+                rot = normalize(yawRot * rot * pitchRot);
             }
             if (event.motion.state & SDL_BUTTON_RMASK)
             {
@@ -75,10 +80,7 @@ struct ArcballCamera
 };
 static ArcballCamera GCamera{
     .center = float3{0, 0, 0},
-    .radius = 12.0f,
-    .pitch = 0.f,
-    .yaw = 0.f,
-    .roll = 0.f,
+    .radius = 5.0f,
     .zNear = 0.1f,
     .fovY = radians(60.f),
 };
@@ -174,6 +176,38 @@ void RendererSetup(FContext* context)
                                             RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil,
                                                            .extent = {w, h, 1},
                                                            .format = RHIResourceFormat::D32SignedFloat});
+    auto OverdrawBuffer = renderer->CreateResource("Overdraw Buffer",
+                                               RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
+                                                              .extent = {w, h, 1},
+                                                              .format = RHIResourceFormat::R32Uint});
+    auto GBuffer = renderer->CreateResource("GBuffer",
+                                            RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
+                                                           .extent = {w, h, 1},
+                                                           .format = RHIResourceFormat::R8G8B8A8Unorm});
+    auto ReduceBuffer = renderer->CreateResource("Reduced Values",
+                                                 RHIBufferDesc{.usage = StorageBuffer | TransferDestination,
+                                                               .size = sizeof(uint32_t) * 256});
+    renderer->CreatePass(
+                "Clear Overdraw+Reduce Buffer", RHIDeviceQueueType::Graphics, 0u,
+                [=](PassHandle self, Renderer* r)
+                {
+                    r->BindTextureUAV(self, OverdrawBuffer, "texture", RHIPipelineStageBits::ComputeShader,
+                                    { .format = RHIResourceFormat::R32Uint,
+                                      .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSOverdrawClear.spv");
+                    r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
+                    r->BindBufferCopyDst(self, ReduceBuffer);
+                },
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+                {
+                    auto* reduceBuffer = r->DerefResource(ReduceBuffer).Get<RHIBuffer*>();
+                    cmd->FillBuffer(reduceBuffer, 0u);
+                    RHIExtent2D wh = r->GetSwapchainExtent();
+                    CSClearBufferData cdata{float4{}, wh.x, wh.y};
+                    r->CmdSetPipeline(self, cmd);
+                    r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, cdata);
+                    r->CmdDispatch(self, cmd, {cdata.w, cdata.h, 1});
+                });
     renderer->CreatePass(
         "Main Pass", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -188,7 +222,12 @@ void RendererSetup(FContext* context)
             r->BindBufferStorageRead(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "counter");
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
-            r->BindBackbufferRTV(self);
+            r->BindTextureRTV(self, GBuffer,
+                { .format = RHIResourceFormat::R8G8B8A8Unorm,
+                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+            r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
+                { .format = RHIResourceFormat::R32Uint,
+                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
             r->BindTextureDSV(self, ZBuffer,
                               {.format = RHIResourceFormat::D32SignedFloat,
                                .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
@@ -197,11 +236,48 @@ void RendererSetup(FContext* context)
         {
             RHIExtent2D wh{w, h};
             auto* dispatchBuffer = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
-            r->CmdBeginGraphics(self, cmd, wh, RHIClearColor{}, RHIClearDepthStencil{0.0f, 0});
+            r->CmdBeginGraphics(self, cmd, wh, {{RHIClearColor{0,0,0,0}}}, RHIClearDepthStencil{0.0f, 0});
             r->CmdSetPipeline(self, cmd);
             cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
             cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
             cmd->EndGraphics();
+        });
+
+    renderer->CreatePass("Overdraw CS Reduce", RHIDeviceQueueType::Graphics, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSOverdrawReduce.spv");
+            r->BindTextureSRV(self, OverdrawBuffer, "texture", RHIPipelineStageBits::ComputeShader, RHITextureViewDesc{
+                .format = RHIResourceFormat::R32Uint,
+                .range = RHITextureSubresourceRange::Create()
+            });
+            r->BindBufferUnordered(self, ReduceBuffer, RHIPipelineStageBits::ComputeShader, "globalMax");
+            r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(RHIExtent2D));
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            RHIExtent2D wh = r->GetSwapchainExtent();
+            r->CmdSetPipeline(self, cmd);
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, wh);
+            r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
+        });
+    auto nearSampler =
+        renderer->CreateSampler({.filter = {.minFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor,
+                                            .magFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor}});
+    createPSFullscreenPass(renderer, "Blit Image",
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/EPSBlit.spv");
+            r->BindTextureSampler(self, nearSampler, "sampler");
+            r->BindTextureSRV(self, GBuffer, "gbuffer", RHIPipelineStageBits::FragmentShader, RHITextureViewDesc{
+                .format = RHIResourceFormat::B8G8R8A8Unrom,
+                .range = RHITextureSubresourceRange::Create()
+            });
+            r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader, RHITextureViewDesc{
+                .format = RHIResourceFormat::R32Uint,
+                .range = RHITextureSubresourceRange::Create()
+            });
+            r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader, "globalMax");
         });
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});
     renderer->EndSetup();
@@ -221,11 +297,9 @@ bool ExecuteInit()
     if (cameras.size())
     {
         auto& camera = cameras.front();
-        GCamera.radius = length(camera.transform.transform);
-        float3 eulers = eulerAngles(camera.transform.rotation);
-        GCamera.pitch = eulers.x;
-        GCamera.yaw = eulers.y;
-        GCamera.roll = eulers.z;
+        vec3 dir = camera.transform.rotation * vec3(0, 0, 1);
+        GCamera.center = camera.transform.transform - dir * GCamera.radius;
+        GCamera.rot = camera.transform.rotation;
         GCamera.fovY = camera.fovY;
     }
     // Load into GPUScene
@@ -276,7 +350,6 @@ bool ExecuteFrame()
     GShaderGlobals.firstInstance = off;
     GShaderGlobals.numInstances = GSInstances.size();
     // Global param update
-
     GCamera.aspect = GContext->swapchain->GetAspectRatio();
     auto& io = ImGui::GetIO();
     GShaderGlobals.view = GCamera.view;
@@ -289,10 +362,6 @@ bool ExecuteFrame()
     ImGui::Text("Instances | %zu", GSInstances.size());
     ImGui::SliderFloat("LOD Threshold | ", &GShaderGlobals.lodThreshold, 0.f, 1.f);
     ImGui::Separator();
-
-    ImGui::SliderAngle("Cam Pitch", &GCamera.pitch, -180.f, 180.f);
-    ImGui::SliderAngle("Cam Yaw", &GCamera.yaw, -180.f, 180.f);
-    ImGui::SliderAngle("Cam Roll", &GCamera.roll, -180.f, 180.f);
     ImGui::InputFloat3("Cam Center", &GCamera.center.x);
     ImGui::InputFloat("Cam Radius", &GCamera.radius);
     ImGui::InputFloat("Cam FOV Y", &GCamera.fovY);
@@ -306,7 +375,7 @@ bool ExecuteFrame()
     return false;
 }
 // Per-frame logic
-bool ShouldEditorClose(FContext*)
+bool EditorOnFrame(FContext*)
 {
     switch (FEState)
     {

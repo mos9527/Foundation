@@ -36,8 +36,10 @@ void main(
         FVertex vtx = primitive.Load<FVertex>(mesh.vtxOffset + ind * sizeof(FVertex));
         vtx.position = inst.rotation.rotate(vtx.position);
         vtx.position = vtx.position * inst.scale + inst.transform;
+        vtx.normal = inst.rotation.rotate(vtx.normal);
         V2F v2f;
         v2f.pos = mul(mul(globalParams.proj, globalParams.view), float4(vtx.position, 1.0));
+        v2f.normal = vtx.normal;
         v2f.meshlet = meshletID;
         verts[i] = v2f;
     }

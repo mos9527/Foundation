@@ -111,7 +111,7 @@ int main()
         [&](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             auto const& img_wh = r->GetSwapchainExtent();
-            r->CmdBeginGraphics(self, cmd, img_wh);
+            r->CmdBeginGraphics(self, cmd, img_wh, {{RHIClearColor{}}});
             r->CmdSetPipeline(self, cmd);
             // Simplest dispatch - spawn meshlets one by one to each Mesh Shader WG
             // We don't need a task shader - if unbound, DrawMeshTasks dispatches

@@ -1,6 +1,7 @@
 struct V2F
 {
     float4 pos : SV_POSITION;
+    float3 normal : NORMAL;
     uint32_t meshlet : ID;
 };
 //
@@ -26,10 +27,15 @@ struct Fragment
     float4 color : SV_Target;
 };
 
+// https://github.com/shader-slang/slang/issues/4120
+import glsl;
+[[vk_binding(5,0)]] RWTexture2D<uint32_t> overdraw;
+
 [shader("fragment")]
-Fragment main(V2F input)
+Fragment main(V2F input, float2 fragCoord : SV_Position /* pixel space */)
 {
     Fragment output;
-    output.color = float4(hash3(input.meshlet), 1.0);
+    output.color = float4(input.normal, 1.0);
+    imageAtomicAdd(overdraw, int2(fragCoord), 1);
     return output;
 }

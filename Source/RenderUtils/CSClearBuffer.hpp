@@ -7,18 +7,37 @@ namespace Foundation::RenderUtils
 #pragma pack(push,1)
     struct CSClearBufferData
     {
-        Math::float4 color;
+        float4 color;
         uint32_t w, h;
     };
 #pragma pack(pop)
-    inline PassHandle createCSClearBackBuffer(Renderer* r, StringView name, Math::float4 clearColor = {})
+    inline PassHandle createCSClearBackBuffer(Renderer* r, StringView name, float4 clearColor = {})
     {
         return r->CreatePass(
             name, RHIDeviceQueueType::Graphics, 0u,
             [=](PassHandle self, Renderer* r)
             {
                 r->BindBackbufferUAV(self, 0u);
-                r->BindShader(self, RHIShaderStageBits::Compute, "debugText", "data/shaders/CSClearBuffer.spv");
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/CSClearBuffer.spv");
+                r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                RHIExtent2D wh = r->GetSwapchainExtent();
+                CSClearBufferData cdata{clearColor, wh.x, wh.y};
+                r->CmdSetPipeline(self, cmd);
+                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, cdata);
+                r->CmdDispatch(self, cmd, {cdata.w, cdata.h, 1});
+            });
+    }
+    inline PassHandle createCSClearTexture(Renderer* r, StringView name, ResourceHandle resource, RHITextureViewDesc viewDesc, float4 clearColor)
+    {
+        return r->CreatePass(
+            name, RHIDeviceQueueType::Graphics, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindTextureUAV(self, resource, "texture", RHIPipelineStageBits::ComputeShader, viewDesc);
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/CSClearBuffer.spv");
                 r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
