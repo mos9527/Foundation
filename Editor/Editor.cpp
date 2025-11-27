@@ -335,17 +335,25 @@ bool ExecuteInit()
 
 bool ExecuteFrame()
 {
-    if (GContext->event.type == SDL_EVENT_WINDOW_RESIZED)
+    auto& event = GContext->event;
+    if (event.type == SDL_EVENT_WINDOW_RESIZED)
     {
         // Reset renderer to update framebuffer size changes
         // TODO: This *also* recompiles all PSOs. We should cache these.
         RendererSetup(GContext);
     }
+    if (event.type == SDL_EVENT_KEY_DOWN)
+    {
+        if (event.key.scancode == SDL_SCANCODE_R)
+        {
+            GContext->renderer->ReloadShaders();
+        }
+    }
     auto* renderer = GContext->renderer;
     auto* scene = GContext->gpuScene;
     // New frame
     renderer->BeginExecute();
-    ImGui_ImplFoundation_NewFrame(&GContext->event);
+    ImGui_ImplFoundation_NewFrame(&event);
     ImGui::NewFrame();
     // Upload instance data
     auto [ptr, off] = scene->InstanceAlloc(GSInstances.size());
@@ -370,7 +378,7 @@ bool ExecuteFrame()
     ImGui::InputFloat("Cam FOV Y", &GCamera.fovY);
     SDL_Event camEvent{};
     if (!io.WantCaptureMouse)
-        camEvent = GContext->event;
+        camEvent = event;
     GCamera.Update(camEvent);
     ImGui::End();
     renderer->ExecuteFrame();

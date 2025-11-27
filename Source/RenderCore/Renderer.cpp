@@ -297,7 +297,7 @@ void Renderer::EndSetup()
         }
         CullPasses(mSetup->epilogue);
         FinalizeResources();
-        FinalizePSOs();
+        FinalizePasses();
     }
     else
     {
@@ -320,7 +320,7 @@ void Renderer::CullPasses(PassHandle epilogue) const
         if (pass.handle >= in.size() || in[pass.handle] == 0)
             pq.emplace(pass.handle == epilogue ? std::numeric_limits<int>::max() : pass.priority, pass.handle);
     }
-    // Khan BFS with priority <pri then insertion order (handle value)>
+    // BFS with priority <pri then insertion order (handle value)>
     while (!pq.empty())
     {
         auto [pri, u] = pq.top();
@@ -457,8 +457,10 @@ void Renderer::CullPasses(PassHandle epilogue) const
     LOG(Renderer, LogDebug, "** Render Graph Execution Order **\n{}", DbgDumpActivePasses());
     LOG(Renderer, LogDebug, "** Render Graph Execution Groups **\n{}", DbgDumpExecutionGroups());
 }
+// NOTE: Assumes pass is fresh or already reset.
 void Renderer::BuildPipelineState(PassHandle pass)
 {
+    CHECK_MSG(mState == State::Setup || mState == State::PostSetup, "Invalid state {}", mState);
     auto& tracked = mSetup->trackedPasses[pass];
 #pragma region Shader Bytecode
     /* -- Parse shader Bytecode -- */
@@ -770,11 +772,10 @@ void Renderer::BuildPipelineState(PassHandle pass)
     }
 #pragma endregion
 #pragma region PSO
-    /* -- Pipeline State Creation --
-     *
-     */
+    /* -- Pipeline State Creation -- */
     if (!pso_stages.empty())
     {
+        tracked.pso.Reset();
         RHIPipelineState::PipelineStateDesc pso_desc{
             .psoCache = mDesc.pipelineCache,
             .type = tracked.isComputePass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
@@ -816,33 +817,12 @@ void Renderer::BuildPipelineState(PassHandle pass)
     }
 #pragma endregion
 }
-void Renderer::FinalizePSOs()
+void Renderer::BuildPipelineStateAll()
 {
-    CHECK(mState == State::Setup);
-    // Build descriptor pool
-    mDescPool.Reset();
-    if (!mSetup->bindingCounts.empty())
-    {
-        Vector<RHIDeviceDescriptorPool::PoolDesc::Binding> bindings(mAllocator);
-        bindings.reserve(mSetup->bindingCounts.size());
-        LOG(Renderer, LogDebug, "** Descriptor Pool **");
-        for (auto& [type, count] : mSetup->bindingCounts)
-        {
-            LOG(Renderer, LogDebug, "\t{}: {}", type, count);
-            bindings.push_back({.type = type, .maxCount = count});
-        }
-        mDescPool = mDevice->CreateDescriptorPool({bindings});
-        mDescPool->DebugSetObjectName("Renderer Descriptor Pool");
-    }
-    // Build PSOs for everything we need
+    CHECK(mState == State::Setup | mState == State::PostSetup);
     LOG(Renderer, LogInfo, "Compiling Shaders");
     ThreadPool pool(std::thread::hardware_concurrency(), kMaxRenderPasses, mAllocator, "PSOComp");
     Vector<SharedFuture<void>> futures(mAllocator);
-    //// ST vvv
-    //for (auto& pass : mSetup->trackedPasses)
-    //    BuildPipelineState(pass.handle);
-    //return;
-    // MT vvv
     for (auto& pass : mSetup->trackedPasses)
     {
         if (!pass.used)
@@ -863,6 +843,26 @@ void Renderer::FinalizePSOs()
         }
     }
     LOG(Renderer, LogInfo, "Compiled Shaders.");
+}
+void Renderer::FinalizePasses()
+{
+    CHECK(mState == State::Setup | mState == State::PostSetup);
+    // Build descriptor pool
+    mDescPool.Reset();
+    if (!mSetup->bindingCounts.empty())
+    {
+        Vector<RHIDeviceDescriptorPool::PoolDesc::Binding> bindings(mAllocator);
+        bindings.reserve(mSetup->bindingCounts.size());
+        LOG(Renderer, LogDebug, "** Descriptor Pool **");
+        for (auto& [type, count] : mSetup->bindingCounts)
+        {
+            LOG(Renderer, LogDebug, "\t{}: {}", type, count);
+            bindings.push_back({.type = type, .maxCount = count});
+        }
+        mDescPool = mDevice->CreateDescriptorPool({bindings});
+        mDescPool->DebugSetObjectName("Renderer Descriptor Pool");
+    }
+    BuildPipelineStateAll();
 }
 void Renderer::FinalizeResources()
 {
@@ -1033,6 +1033,20 @@ void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
     mSwapchain = swapchain;
     // Reset semaphores index and swapchain frame count
     mFrameSwapped = mCurrentSwap = mCurrentSync = 0;
+}
+void Renderer::ReloadShaders()
+{
+    CHECK_MSG(mState == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?", mState);
+    ZoneScoped;
+    mGraphicsQueue->WaitIdle();
+    mComputeQueue->WaitIdle();
+    // Reset all tracked passes
+    for (auto& pass : mSetup->trackedPasses)
+    {
+        if (!pass.used) continue;
+        pass.ResetPipeline();
+    }
+    BuildPipelineStateAll();
 }
 void Renderer::BeginExecute()
 {

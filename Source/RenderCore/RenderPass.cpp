@@ -6,5 +6,17 @@ namespace Foundation::RenderCore
         resources(alloc), texviews(alloc), shaders(alloc), textureBindings(alloc), bufferBindings(alloc),
         externalBindings(alloc), samplers(alloc), pushConstants(alloc), rtvs(alloc), vertexInputBindings(alloc),
         vertexInputAttributes(alloc), pass(std::move(renderPass)), descriptorLayouts(alloc), pDescriptorLayouts(alloc), descriptorSets(alloc),
-        pDescriptorSets(alloc), pExternalDescriptorSets(alloc) {};
+        pDescriptorSets(alloc), pExternalDescriptorSets(alloc) {
+    }
+    void TrackedPass::ResetPipeline()
+    {
+        piplineStages = {};
+        // Sets
+        descriptorSets.clear();
+        pDescriptorSets.clear();
+        pExternalDescriptorSets.clear();
+        // Layouts
+        descriptorLayouts.clear();
+        pDescriptorLayouts.clear();
+    }
 }

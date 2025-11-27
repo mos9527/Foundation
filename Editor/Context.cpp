@@ -56,6 +56,7 @@ void DestroyContext(FContext* context)
     SDL_DestroyWindow(context->window);
     Destruct(context->allocator, context->renderer);
     Destruct(context->allocator, context->gpuScene);
+    context->psoCache.Reset();
     context->swapchain.Reset();
     context->device.Reset();
     Destruct(context->allocator, context->application);

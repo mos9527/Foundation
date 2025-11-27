@@ -136,10 +136,10 @@ namespace Foundation::RenderCore
     public:
         enum class State
         {
-            Undefined,
-            Setup,
-            PostSetup,
-            Execute
+            Undefined, // Initialized
+            Setup, // During BeginSetup(), EndSetup(). No work on the GPU yet.
+            PostSetup, // Safe state (with a device wait), after EndSetup(), EndExecute()
+            Execute // During BeginExecute(), EndExecute()
         };
 
     private:
@@ -188,8 +188,9 @@ namespace Foundation::RenderCore
         // PostSetup
         void CullPasses(PassHandle epilogue) const;
         void BuildPipelineState(PassHandle pass);
+        void BuildPipelineStateAll();
         void FinalizeResources();
-        void FinalizePSOs();
+        void FinalizePasses();
         // Temporary memory arena for execution
         ScopedArena mExecuteArena;
         // Temporary allocator for execution
@@ -803,6 +804,12 @@ namespace Foundation::RenderCore
          *       the backbuffer size.
          */
         void SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain);
+        /**
+         * @brief Reloads shaders of all passes used.
+         *
+         * @note This MUST be called before entering Execute* functions.
+         */
+        void ReloadShaders();
         /**
          * @brief Resets the temporary execution allocator , and waits for the possibly multi-buffered
          * next frame to finish rendering.

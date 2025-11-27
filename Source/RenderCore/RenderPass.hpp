@@ -166,5 +166,7 @@ namespace Foundation::RenderCore
         Vector<RHIDeviceDescriptorSet*> pDescriptorSets;
         // [Set Index, Set, Layout], correspond to externalBindings
         Vector<Tuple<size_t, RHIDeviceDescriptorSetLayout*>> pExternalDescriptorSets;
+
+        void ResetPipeline();
     };
 }
