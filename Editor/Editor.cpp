@@ -19,7 +19,7 @@ void FInitEnter()
     Vector<FInstance> instances(GLOBAL_ALLOC);
     Vector<FCamera> cameras(GLOBAL_ALLOC);
     {
-        const char* scenePath = "/mnt/Windows/Scenes/glTFSponza/Sponza-glTF.bin";
+        const char* scenePath = "/mnt/Windows/Scenes/IntelSponza/Sponza.bin";
         std::error_code ec;
         auto size = std::filesystem::file_size(scenePath, ec);
         CHECK_MSG(!ec, "Failed to open scene file {}: {}", scenePath, ec.message());

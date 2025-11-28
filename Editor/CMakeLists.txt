@@ -4,6 +4,7 @@ FetchContent_MakeAvailable(stb)
 FetchContent_MakeAvailable(fast_obj)
 FetchContent_MakeAvailable(meshoptimizer)
 FetchContent_MakeAvailable(cgltf)
+FetchContent_MakeAvailable(lz4)
 
 file(
     GLOB SOURCES
@@ -18,7 +19,7 @@ file(
 
 add_subdirectory(Shaders)
 add_library(Editor_Assets)
-target_sources(Editor_Assets PUBLIC Mesh.cpp Scene.cpp)
+target_sources(Editor_Assets PUBLIC Mesh.cpp Scene.cpp "${lz4_SOURCE_DIR}/lib/lz4.c" "${lz4_SOURCE_DIR}/lib/xxhash.c")
 target_link_libraries(
     Editor_Assets PUBLIC
     Foundation_Math
@@ -26,7 +27,7 @@ target_link_libraries(
     meshoptimizer
 )
 target_include_directories(
-    Editor_Assets PUBLIC "${stb_SOURCE_DIR}" "${fast_obj_SOURCE_DIR}" "${cgltf_SOURCE_DIR}" "${meshoptimizer_SOURCE_DIR}/demo" ..
+    Editor_Assets PUBLIC "${stb_SOURCE_DIR}" "${fast_obj_SOURCE_DIR}" "${cgltf_SOURCE_DIR}" "${meshoptimizer_SOURCE_DIR}/demo" "${lz4_SOURCE_DIR}/lib" ..
 )
 
 add_executable(Editor)
@@ -39,11 +40,11 @@ target_link_libraries(
         ThirdParty_ImGui
         Editor_Assets
 )
-
+# https://cmake.org/cmake/help/latest/command/target_precompile_headers.html#:~:text=generator%20expressions
 target_precompile_headers(
         Editor
         PRIVATE
-        Precompiled.inc
+        "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc>"
 )
 add_dependencies(
         Editor

@@ -3,6 +3,7 @@
 #include "tracy/Tracy.hpp"
 
 #include <RenderCore/Bindless.hpp>
+#include <RenderCore/ImmediateContext.hpp>
 #include <SDL3/SDL.h>
 #include <imgui_impl_sdl3.h>
 

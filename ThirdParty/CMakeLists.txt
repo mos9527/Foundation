@@ -84,6 +84,13 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
+FetchContent_Declare(
+    lz4
+    GIT_REPOSITORY https://github.com/lz4/lz4
+    GIT_TAG v1.10.0
+    GIT_SHALLOW TRUE
+)
+
 # Font
 FetchContent_Declare(
     LxgwNeoXiHei

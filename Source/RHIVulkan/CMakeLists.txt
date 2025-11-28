@@ -30,5 +30,5 @@ target_include_directories(
 target_precompile_headers(
         Foundation_RHIVulkan
         PUBLIC
-        Precompiled.inc
+        "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc>"
 )

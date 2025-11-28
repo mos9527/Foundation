@@ -175,6 +175,7 @@ template<> void FDeserialize(FReader& r, FMesh& obj)
     FDeserialize(r, obj.lods, obj.lods.get_allocator().mResource);
     FDeserialize(r, obj.dag);
 }
+#include <lz4.h>
 const uint32_t kSceneMagic = 0xDEADDEAD;
 void SceneSerialize(FWriter& w, Vector<FMesh> const& meshes, Vector<FInstance> const& instances,
                  Vector<FCamera> const& cameras)

@@ -17,11 +17,14 @@ int main_scene(StringView srcPath, StringView dstPath)
 }
 int main(int argc, const char** argv)
 {
+    if (argc == 1)
+        goto END;
     if (strcmp(argv[1], "scene") == 0)
     {
         CHECK_MSG(argc - 2 == 2, "usage: util scene [src] [dst]");
         return main_scene(argv[2], argv[3]);
     }
+END:
     fmt::println("available tools:");
     fmt::println("\tscene");
     fmt::println("run 'util [tool name]' for more info");
