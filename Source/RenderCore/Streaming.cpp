@@ -73,7 +73,6 @@ namespace Foundation::RenderCore
             mResolvedCV.wait(lck);
             collect();
         }
-        LOG(Streaming, LogDebug, "StreamingPool collected {} pages", res);
         return res;
     }
     void StreamingPool::WritePages(std::unique_lock<Mutex>& lck, Span<const char> data, WriteList& outList, size_t alignment)
@@ -128,6 +127,7 @@ namespace Foundation::RenderCore
         }
         auto promise = ConstructShared<StreamingPromise>(mAllocator);
         mBufferCopies.emplace(cmds.size(), CmdEntry<BufferCopyCommand>{cmds, promise});
+        mCopyPendCV.notify_one();
         return promise->get_future();
     }
     StreamingFuture StreamingPool::Write(Span<const char> data, RHITexture* dst, RHITextureAspectFlag aspect,
@@ -174,9 +174,14 @@ namespace Foundation::RenderCore
         // (paraphrased) D:\a\_work\1\s\src\vctools\Compiler\CxxFE\sl\p1\c\CTAD.cpp#L372
         // mTextureCopies.emplace(cmds.size(), CmdEntry{cmds, promise});
         mTextureCopies.emplace(cmds.size(), CmdEntry<TextureCopyCommand>{cmds, promise});
+        mCopyPendCV.notify_one();
         return promise->get_future();
     }
-    StreamingPool::~StreamingPool() { mShutdown = true; }
+    StreamingPool::~StreamingPool()
+    {
+        mShutdown = true;
+        mCopyPendCV.notify_one();
+    }
     String StreamingPool::DbgGetStatistics() const
     {
         size_t allocated = 0, used = 0, refs = 0;
@@ -214,7 +219,8 @@ namespace Foundation::RenderCore
         while (!mPendingCompletions.empty())
         {
             auto& [ctr, pages, promises] = mPendingCompletions.front();
-            if (!mDevice->WaitForTimelineSemaphores({{{mTransferSemaphore.Get(), ctr}}}, 0 /* timeout */))
+            constexpr size_t kTimeout = static_cast<size_t>(1e9); // 1 second
+            if (!mDevice->WaitForTimelineSemaphores({{{mTransferSemaphore.Get(), ctr}}}, kTimeout))
             {
                 break; // In-progress. Ctr is monotonically increasing so terminate here
             }
@@ -231,7 +237,17 @@ namespace Foundation::RenderCore
         }
         // Schedule and submit
         if (mBufferCopies.empty() && mTextureCopies.empty())
+        {
+            if (mPendingCompletions.empty())
+            {
+                // No copies to perform, and there's nothing in flight.
+                // We're idling - don't burn cycles. Wait for work.
+                std::unique_lock lock(mCopyPendMutex);
+                mCopyPendCV.wait(lock);
+            }
             return;
+        }
+
         std::unique_lock lock(mPageMutex);
         Vector<SharedPtr<StreamingPromise>> promises(mAllocator);
         auto& cmd = mTransferCmds.emplace_back(mCommandPool->CreateCommandList());
@@ -250,7 +266,6 @@ namespace Foundation::RenderCore
             for (auto const& [pid, src, dst, region] : writing)
             {
                 cmd->CopyBuffer(src, dst, {{region}});
-                LOG(Streaming, LogDebug, "Push copy pid={} sz={} dst={} src={}", pid, region.size, region.dstOffset, region.srcOffset);
                 refs[pid]++;
             }
             // Finished this entry?
@@ -293,7 +308,6 @@ namespace Foundation::RenderCore
         }
         cmd->End();
         // Submit
-        LOG(StreamingPool, LogDebug, "Batch Submit cmds={}", mTransferCmds.size());
         if (mSubmitCtr)
             mTransferQueue->Submit(
                 {{RHIDeviceQueue::SubmitDesc{.timelineWaits = {{{mTransferSemaphore.Get(), mSubmitCtr}}},

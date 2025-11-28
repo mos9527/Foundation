@@ -7,16 +7,18 @@ FetchContent_MakeAvailable(cgltf)
 
 file(
     GLOB SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
-)
-file(
-    GLOB INCLUDES
-    "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
+    Context.cpp
+    Editor.cpp
+    GPUScene.cpp
+    Mesh.cpp
+    Scene.cpp
+    SDLMain.cpp
+    Renderer.cpp
 )
 
 add_subdirectory(Shaders)
 add_library(Editor_Assets)
-target_sources(Editor_Assets PUBLIC Mesh.cpp Mesh.hpp)
+target_sources(Editor_Assets PUBLIC Mesh.cpp Scene.cpp)
 target_link_libraries(
     Editor_Assets PUBLIC
     Foundation_Math
@@ -47,4 +49,11 @@ add_dependencies(
         Editor
         Editor_Shaders
         Examples_SampleFiles
+)
+
+add_executable(Editor_Util)
+target_sources(Editor_Util PRIVATE Util.cpp)
+target_link_libraries(
+    Editor_Util PRIVATE
+    Editor_Assets
 )

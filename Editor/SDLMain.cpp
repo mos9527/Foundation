@@ -7,7 +7,8 @@ bool /* should close */ mainLoop()
     {
         if (event.window.windowID != SDL_GetWindowID(GContext->window))
             return false;
-        if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) return true;
+        if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
+            return true;
         if (event.type == SDL_EVENT_WINDOW_RESIZED)
         {
             UpdateSwapchain(GContext);
@@ -26,5 +27,6 @@ int main()
 {
     CreateContext(SDL_CreateWindow("Editor", 800, 600, kSDLWindowFlagsVulkan));
     while (!mainLoop()) {}
+    LOG(SDLMain, LogInfo, "Quitting...");
     DestroyContext();
 }

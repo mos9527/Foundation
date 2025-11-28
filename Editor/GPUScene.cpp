@@ -66,7 +66,6 @@ Future<> GPUScene::Upload(FMesh const& src, GSMesh& mesh, uint32_t& outOffset)
     mesh.meshletTriOffset = outOffset + Write(src.dag.meshletTri.data(), sizeof(uint8_t) * src.dag.meshletTri.size());
     // GSMesh (data)
     std::memcpy(ptr, &mesh, sizeof(GSMesh));
-    LOG(GPUScene, LogDebug, "Mesh Write sz={}", data.size());
     return mStreaming.Write(data, mPrimitiveBuffer.Get(), outOffset);
 }
 String GPUScene::DbgGetStatistics() const

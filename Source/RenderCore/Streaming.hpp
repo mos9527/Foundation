@@ -99,6 +99,9 @@ namespace Foundation::RenderCore
         Thread mWorker;
 
         CondVar mResolvedCV;
+
+        Mutex mCopyPendMutex;
+        CondVar mCopyPendCV;
     public:
         struct StreamingPoolDesc
         {

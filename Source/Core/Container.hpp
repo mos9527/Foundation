@@ -63,8 +63,10 @@ namespace Foundation::Core {
     {
         return { reinterpret_cast<const char*>(data.data()), data.size_bytes() };
     }
-
-    template<typename T> Span<const T> AsSpan(T const& data)
+    /**
+     * @brief Helper to construct one const r-value as a single element span.
+     */
+    template <typename T> Span<const T> AsSpan(T const& data) requires std::is_trivially_copyable_v<T>
     {
         return { &data, 1 };
     }

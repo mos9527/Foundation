@@ -1,17 +1,19 @@
 #define CGLTF_IMPLEMENTATION
 #define CGLTF_VALIDATE_ENABLE_ASSERTS 1
 #include <cgltf.h>
+#include "Scene.hpp"
+#include "Mesh.hpp"
 
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#meshes
 FMesh LoadSubmesh(cgltf_primitive* submesh)
 {
     CHECK(submesh->type == cgltf_primitive_type_triangles);
-    FMesh mesh(GContext->allocator);
+    FMesh mesh(GLOBAL_ALLOC);
     // Vertex count would be the same across POSITION, NORMAL, etc. Getting any of those would be enough.
     size_t numVertices = submesh->attributes[0].data->count;
     // Worst storage case is VEC4
     {
-        Vector<float> unpack(numVertices * 4, GContext->allocator);
+        Vector<float> unpack(numVertices * 4, GLOBAL_ALLOC);
         mesh.vertices.resize(numVertices);
         if (auto acc = cgltf_find_accessor(submesh, cgltf_attribute_type_position, 0))
         {
@@ -48,7 +50,7 @@ FMesh LoadSubmesh(cgltf_primitive* submesh)
     return mesh;
 }
 
-void LoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outInstances, Vector<FCamera>& outCamera)
+void LoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outInstances, Vector<FCamera>& outCameras)
 {
     LOG(Scene, LogInfo, "Load GLTF Scene {}", path);
     cgltf_options options = {};
@@ -68,10 +70,10 @@ void LoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outI
         numSubmeshes += data->meshes[i].primitives_count;
     // Mesh's submesh children
     // These will be flattened later on into instances of themselves
-    Vector<Pair<size_t, size_t>> submeshIndices(GContext->allocator);
-    outMeshes.resize(numSubmeshes, GContext->allocator);
+    Vector<Pair<size_t, size_t>> submeshIndices(GLOBAL_ALLOC);
+    outMeshes.resize(numSubmeshes, GLOBAL_ALLOC);
     LOG(Scene, LogInfo, "Loading meshes. Sub total={}", numSubmeshes);
-    ThreadPool pool(std::thread::hardware_concurrency(), 4096, GContext->allocator, "meshopt");
+    ThreadPool pool(std::thread::hardware_concurrency(), 4096, GLOBAL_ALLOC, "meshopt");
     for (size_t mi = 0, i = 0; i < data->meshes_count; i++)
     {
         auto& mesh = data->meshes[i];
@@ -123,11 +125,72 @@ void LoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outI
         }
         if (node->camera)
         {
-            auto& camera = outCamera.emplace_back();
+            auto& camera = outCameras.emplace_back();
             getTransform(camera.transform);
             camera.fovY = node->camera->data.perspective.yfov;
         }
     }
     pool.Join();
     LOG(LoadGLTF, LogInfo, "Scene load complete");
+}
+
+/* -- Serialization -- */
+template<> void FSerialize(FWriter& w, FMesh::LOD const& obj)
+{
+    FSerialize(w, obj.indices);
+    FSerialize(w, obj.meshlets);
+    FSerialize(w, obj.meshletVtx);
+    FSerialize(w, obj.meshletTri);
+}
+template<> void FDeserialize(FReader& r, FMesh::LOD& obj)
+{
+    FDeserialize(r, obj.indices);
+    FDeserialize(r, obj.meshlets);
+    FDeserialize(r, obj.meshletVtx);
+    FDeserialize(r, obj.meshletTri);
+}
+template<> void FSerialize(FWriter& w, FMesh::DAG const& obj)
+{
+    FSerialize(w, obj.groups);
+    FSerialize(w, obj.meshlets);
+    FSerialize(w, obj.meshletVtx);
+    FSerialize(w, obj.meshletTri);
+}
+template<> void FDeserialize(FReader& r, FMesh::DAG& obj)
+{
+    FDeserialize(r, obj.groups);
+    FDeserialize(r, obj.meshlets);
+    FDeserialize(r, obj.meshletVtx);
+    FDeserialize(r, obj.meshletTri);
+}
+template<> void FSerialize(FWriter& w, FMesh const& obj)
+{
+    FSerialize(w, obj.vertices);
+    FSerialize(w, obj.lods);
+    FSerialize(w, obj.dag);
+}
+template<> void FDeserialize(FReader& r, FMesh& obj)
+{
+    FDeserialize(r, obj.vertices);
+    FDeserialize(r, obj.lods, obj.lods.get_allocator().mResource);
+    FDeserialize(r, obj.dag);
+}
+const uint32_t kSceneMagic = 0xDEADDEAD;
+void SceneSerialize(FWriter& w, Vector<FMesh> const& meshes, Vector<FInstance> const& instances,
+                 Vector<FCamera> const& cameras)
+{
+    FSerialize(w, kSceneMagic);
+    FSerialize(w, meshes);
+    FSerialize(w, instances);
+    FSerialize(w, cameras);
+}
+void SceneDeserialize(FReader& r, Vector<FMesh>& meshes, Vector<FInstance>& instances,
+                   Vector<FCamera>& cameras)
+{
+    uint32_t magic;
+    FDeserialize(r, magic);
+    CHECK_MSG(magic == kSceneMagic, "Bad magic. Expected {}, got {}", kSceneMagic, magic);
+    FDeserialize(r, meshes, meshes.get_allocator().mResource);
+    FDeserialize(r, instances);
+    FDeserialize(r, cameras);
 }
