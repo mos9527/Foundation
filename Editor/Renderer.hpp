@@ -5,7 +5,7 @@ struct UBO
 {
     uint32_t firstInstance;
     uint32_t numInstances;
-    float lodThreshold{0.01f};
+    float lodThreshold{0.25f};
     float zNear;
     float4x4 view;
     float4x4 proj;
