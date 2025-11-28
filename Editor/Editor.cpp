@@ -268,21 +268,22 @@ void RendererSetup(FContext* context)
     auto nearSampler =
         renderer->CreateSampler({.filter = {.minFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor,
                                             .magFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor}});
-    createPSFullscreenPass(
-        renderer, "Blit Image",
-        [=](PassHandle self, Renderer* r)
-        {
-            uint32_t mode = 0;
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/EPSBlit.spv", AsBytes(AsSpan(mode)));
-            r->BindTextureSampler(self, nearSampler, "sampler");
-            r->BindTextureSRV(self, GBuffer, "gbuffer", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
-                                                 .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
-                                                 .range = RHITextureSubresourceRange::Create()});
-            r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader, "globalMax");
-        });
+    createPSFullscreenPass(renderer, "Blit Image",
+                           [=](PassHandle self, Renderer* r)
+                           {
+                               uint32_t mode = 0;
+                               r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/EPSBlit.spv",
+                                             AsBytes(AsSpan(mode)));
+                               r->BindTextureSampler(self, nearSampler, "sampler");
+                               r->BindTextureSRV(self, GBuffer, "gbuffer", RHIPipelineStageBits::FragmentShader,
+                                                 RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                                                    .range = RHITextureSubresourceRange::Create()});
+                               r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
+                                                 RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
+                                                                    .range = RHITextureSubresourceRange::Create()});
+                               r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader,
+                                                        "globalMax");
+                           });
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});
     renderer->EndSetup();
 }
@@ -309,7 +310,7 @@ bool ExecuteInit()
     // Load into GPUScene
     auto* scene = GContext->gpuScene;
     Vector<Pair<uint32_t, GSMesh>> meshOffsets(GLOBAL_ALLOC);
-    Vector<SharedFuture<>> uploadFutures(GLOBAL_ALLOC);
+    Vector<Future<>> uploadFutures(GLOBAL_ALLOC);
     for (auto& src : meshes)
     {
         auto& [offset, dst] = meshOffsets.emplace_back();
@@ -346,16 +347,8 @@ bool EditorProcessEvent(SDL_Event* event)
     {
         if (event->key.scancode == SDL_SCANCODE_R)
         {
-            // Is Ctrl pressed?
             if (SDL_GetModState() & SDL_KMOD_LCTRL)
-            {
-                // Reload renderer
                 RendererSetup(GContext);
-            } else
-            {
-                // Only shaders
-                GContext->renderer->ReloadShaders();
-            }
         }
     }
     auto& io = ImGui::GetIO();

@@ -2,6 +2,7 @@ using namespace Foundation::RenderCore;
 using namespace Foundation::Core;
 void Shader::ParseSPIRV(const Span<const char> bytecode)
 {
+    // https://registry.khronos.org/SPIR-V/specs/1.0/SPIRV.pdf
     /* 2.3 Physical Layout of a SPIR-V Module and Instruction */
     // SPIRV shader bytecodes are always 32-bits words.    
     // NOTE: Pointer alignment can be tricky here - though with STL allocators
@@ -21,6 +22,7 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
         uint32_t type{};
         uint32_t descriptorSet{};
         uint32_t binding{};
+        Optional<uint32_t> specID{};
         /* -- debug -- */
         String name;
         uint32_t epIndex{};
@@ -103,6 +105,8 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
             // 2: Decoration
             switch (static_cast<spv::Decoration>(ins[2]))
             {
+            case spv::DecorationSpecId:
+                ID[id].specID = ins[3]; break;
             case spv::DecorationDescriptorSet:
                 ID[id].descriptorSet = ins[3]; break;
             case spv::DecorationBinding:
@@ -137,6 +141,10 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
     }
     CHECK(ins == end && "malformed SPIRV shader! (Incomplete read)");
     for (auto& element : ID) {
+        if (element.specID.has_value())
+        {
+            mSpecializationConstants.push_back({.id = element.specID.value(), .name = element.name });
+        }
         if (element.opcode == spv::OpVariable) {
             switch (static_cast<spv::StorageClass>(element.storageClass)) {
             case spv::StorageClassUniform:
@@ -170,7 +178,7 @@ void Shader::Sort()
 }
 
 Shader::Shader(Span<const char> bytecode, Allocator* alloc)
-    : mAllocator(alloc), mEntrypoints(alloc), mBindings(alloc), mPushConstants(alloc)
+    : mAllocator(alloc), mEntrypoints(alloc), mBindings(alloc), mPushConstants(alloc), mSpecializationConstants(alloc)
 {    
     ParseSPIRV(bytecode);
     Sort();

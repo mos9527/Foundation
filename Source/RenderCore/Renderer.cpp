@@ -505,6 +505,12 @@ void Renderer::BuildPipelineState(PassHandle pass)
         {
             if (ep.stage == stage && ep.name == entry_point)
             {
+                // Check specialization constant status
+                // Our RHI only allows zero or one decl, hence spec is only a binary blob for one element
+                auto& specDecl = reflections[shader_path]->mSpecializationConstants;
+                CHECK_MSG((!spec.empty() && specDecl.size() == 1) || (spec.empty() && specDecl.empty()), "Only zero or one Specialization Constants is allowed in shader bytecode. Got {}", specDecl.size());
+                if (!specDecl.empty())
+                    CHECK_MSG(specDecl.front().id == 0, "Expected Specialization Constant ID to be 0, got {}.", specDecl.front().id);
                 pso_stages.push_back(
                     {.desc = {
                         .stage = stage,
@@ -829,7 +835,7 @@ void Renderer::BuildPipelineStateAll()
     CHECK(mState == State::Setup | mState == State::PostSetup);
     LOG(Renderer, LogInfo, "Compiling Shaders");
     ThreadPool pool(std::thread::hardware_concurrency(), kMaxRenderPasses, mAllocator, "PSOComp");
-    Vector<SharedFuture<void>> futures(mAllocator);
+    Vector<Future<void>> futures(mAllocator);
     for (auto& pass : mSetup->trackedPasses)
     {
         if (!pass.used)
@@ -1040,20 +1046,6 @@ void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
     mSwapchain = swapchain;
     // Reset semaphores index and swapchain frame count
     mFrameSwapped = mCurrentSwap = mCurrentSync = 0;
-}
-void Renderer::ReloadShaders()
-{
-    CHECK_MSG(mState == State::PostSetup, "Renderer bad state ({}). Did you call EndSetup() or EndExecute()?", mState);
-    ZoneScoped;
-    mGraphicsQueue->WaitIdle();
-    mComputeQueue->WaitIdle();
-    // Reset all tracked passes
-    for (auto& pass : mSetup->trackedPasses)
-    {
-        if (!pass.used) continue;
-        pass.ResetPipeline();
-    }
-    BuildPipelineStateAll();
 }
 void Renderer::BeginExecute()
 {

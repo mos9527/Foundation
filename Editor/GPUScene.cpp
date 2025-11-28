@@ -33,7 +33,7 @@ Pair<GSInstance*, uint32_t> GPUScene::InstanceAlloc(uint32_t count)
     mInstanceRing += count;
     return {begin,offset};
 }
-SharedFuture<> GPUScene::Upload(FMesh const& src, GSMesh& mesh, uint32_t& outOffset)
+Future<> GPUScene::Upload(FMesh const& src, GSMesh& mesh, uint32_t& outOffset)
 {
     Vector<char> data(src.ApproximateSize() + sizeof(GSMesh), mContext->allocator);
     char* ptr = data.data(), *dst = ptr;

@@ -40,6 +40,12 @@ namespace Foundation::RenderCore {
             // Caller is also expected to know the layout of push constants - TODO for now.                      
         };
         Vector<PushConstant> mPushConstants;
+        struct SpecializationConstant
+        {
+            uint32_t id;
+            String name;
+        };
+        Vector<SpecializationConstant> mSpecializationConstants;
         Shader(Span<const char> bytecode, Allocator* alloc);
 
         [[nodiscard]] String DbgDumpShaderInfo() const;

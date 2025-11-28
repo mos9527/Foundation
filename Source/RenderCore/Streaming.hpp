@@ -24,7 +24,7 @@ namespace Foundation::RenderCore
         RHICommandList::CopyImageRegion region;
     };
     using StreamingPromise = Promise<void>;
-    using StreamingFuture = SharedFuture<void>;
+    using StreamingFuture = Future<void>;
     /**
      * @brief Simple dynamic pool + linear allocator for streaming data to the GPU.
      *        Thread-safety is guaranteed for public methods.

@@ -399,6 +399,9 @@ namespace Foundation::RenderCore
          * No allocation, or parsing of shader is performed until EndSetup() is called.
          *
          * Shaders are unique per stage, and may be omitted e.g. there's only a copy.
+         *
+         * @param specializationData Binary blob of specialization data, if any. Must be bound in shader at
+         *                           ID 0, offset 0.
          */
         void BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point,
                         const char* shader_path, Span<const char> specializationData = {}) const;
@@ -804,12 +807,6 @@ namespace Foundation::RenderCore
          *       the backbuffer size.
          */
         void SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain);
-        /**
-         * @brief Reloads shaders of all passes used.
-         *
-         * @note This MUST be called before entering Execute* functions.
-         */
-        void ReloadShaders();
         /**
          * @brief Resets the temporary execution allocator , and waits for the possibly multi-buffered
          * next frame to finish rendering.

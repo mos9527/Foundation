@@ -103,16 +103,10 @@ namespace Foundation::Core
         template <typename Lambda, typename... Args>
         auto Push(Lambda&& func, Args const&... args)
         {
-            using ReturnType = decltype(func(args...));
-            auto LambdaFn = [](Lambda&& fn, Args const&... fargs) // Capture erasure madness
-            {
-                return [func = std::forward<Lambda>(fn), ... args = fargs]
-                { return func(args...); };
-            };
-            auto LambdaObj = LambdaFn(std::forward<Lambda>(func), args...);
-            using LambdaType = decltype(LambdaObj);
-            auto ptr = PushImpl<ThreadPoolLambdaJob<LambdaType, ReturnType>>(
-                std::forward<LambdaType>(LambdaObj));
+            auto LambdaFn = [func = std::forward<Lambda>(func), ... args = args] { return func(args...); };
+            using LambdaType = decltype(LambdaFn);
+            using ReturnType = decltype(LambdaFn());
+            auto ptr = PushImpl<ThreadPoolLambdaJob<LambdaType, ReturnType>>(std::forward<LambdaType>(LambdaFn));
             return ptr->mPromise.get_future();
         }
         /**
@@ -134,13 +128,7 @@ namespace Foundation::Core
         {
             return mTotal.load(std::memory_order_relaxed) - mComplete.load(std::memory_order_relaxed);
         }
-        [[nodiscard]] size_t GetCompletedJobCount() const noexcept
-        {
-            return mComplete.load(std::memory_order_relaxed);
-        }
-        [[nodiscard]] size_t GetTotalJobCount() const noexcept
-        {
-            return mTotal.load(std::memory_order_relaxed);
-        }
+        [[nodiscard]] size_t GetCompletedJobCount() const noexcept { return mComplete.load(std::memory_order_relaxed); }
+        [[nodiscard]] size_t GetTotalJobCount() const noexcept { return mTotal.load(std::memory_order_relaxed); }
     };
 } // namespace Foundation::Core

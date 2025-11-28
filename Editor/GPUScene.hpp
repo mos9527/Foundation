@@ -76,7 +76,7 @@ public:
      * future is completed.
      * @note  source is copied internally, and thus is not required to be kept alive.
      */
-    SharedFuture<> Upload(FMesh const& source, GSMesh& outData, uint32_t& outOffset);
+    Future<> Upload(FMesh const& source, GSMesh& outData, uint32_t& outOffset);
 
     String DbgGetStatistics() const;
 
