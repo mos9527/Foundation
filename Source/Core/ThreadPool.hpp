@@ -106,8 +106,10 @@ namespace Foundation::Core
             auto LambdaFn = [func = std::forward<Lambda>(func), ... args = args] { return func(args...); };
             using LambdaType = decltype(LambdaFn);
             using ReturnType = decltype(LambdaFn());
-            auto ptr = PushImpl<ThreadPoolLambdaJob<LambdaType, ReturnType>>(std::forward<LambdaType>(LambdaFn));
-            return ptr->mPromise.get_future();
+            ThreadPoolLambdaJob<LambdaType, ReturnType> job(std::forward<LambdaType>(LambdaFn));
+            auto fut = job.mPromise.get_future();
+            PushImpl<ThreadPoolLambdaJob<LambdaType, ReturnType>>(std::move(job));
+            return std::move(fut);
         }
         /**
          * @brief Shutdown the @ref ThreadPool, potentially cancelling all pending jobs.

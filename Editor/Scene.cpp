@@ -1,9 +1,10 @@
 #define CGLTF_IMPLEMENTATION
 #define CGLTF_VALIDATE_ENABLE_ASSERTS 1
 #include <cgltf.h>
+#include <filesystem>
+#include <fstream>
 #include "Scene.hpp"
 #include "Mesh.hpp"
-
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#meshes
 FMesh LoadSubmesh(cgltf_primitive* submesh)
 {
@@ -107,9 +108,7 @@ void LoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outI
         {
             mat4 world;
             cgltf_node_transform_world(node, reinterpret_cast<float*>(&world));
-            float3 skew;
-            float4 presp; // unused
-            decompose(world, outTransform.scale, outTransform.rotation, outTransform.transform, skew, presp);
+            decompose(world, outTransform.scale, outTransform.rotation, outTransform.transform);
         };
         if (node->mesh)
         {
@@ -194,4 +193,23 @@ void SceneDeserialize(FReader& r, Vector<FMesh>& meshes, Vector<FInstance>& inst
     FDeserialize(r, meshes, meshes.get_allocator().mResource);
     FDeserialize(r, instances);
     FDeserialize(r, cameras);
+}
+void LoadFromFile(StringView scenePath, Vector<FMesh>& outMeshes, Vector<FInstance>& outInstances,
+                  Vector<FCamera>& outCameras)
+{
+    auto ext = std::filesystem::path(scenePath.data()).extension().string();
+    if (ext == ".gltf" || ext == ".glb")
+    {
+        LoadGLTF(scenePath, outMeshes, outInstances, outCameras);
+    } else
+    {
+        std::error_code ec;
+        auto size = std::filesystem::file_size(scenePath, ec);
+        CHECK_MSG(!ec, "Failed to open Editor scene file {}: {}", scenePath, ec.message());
+        Vector<char> data(size, GLOBAL_ALLOC);
+        std::ifstream file(scenePath.data(), std::ios::binary);
+        CHECK_MSG(file.is_open() && file.read(data.data(), size), "Failed to read Editor scene file {}", scenePath);
+        FReader reader(data);
+        SceneDeserialize(reader, outMeshes, outInstances, outCameras);
+    }
 }

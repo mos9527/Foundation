@@ -1,4 +1,5 @@
-[[SpecializationConstant]] int viewOverdraw;
+#include "EFlags.slangi"
+[[SpecializationConstant]] int flags;
 
 struct V2F
 {
@@ -37,8 +38,11 @@ import glsl;
 Fragment main(V2F input, float2 fragCoord : SV_Position /* pixel space */)
 {
     Fragment output;
-    output.color = float4(input.normal, 1.0);
-    if (viewOverdraw)
+    if (flags & kViewMeshlet)
+        output.color = float4(hash3(input.meshlet), 1.0);
+    else
+        output.color = float4(input.normal, 1.0);
+    if (flags & kViewOverdraw)
         imageAtomicAdd(overdraw, int2(fragCoord), 1);
     return output;
 }

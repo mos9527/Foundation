@@ -835,19 +835,20 @@ void Renderer::BuildPipelineStateAll()
     CHECK(mState == State::Setup | mState == State::PostSetup);
     LOG(Renderer, LogInfo, "Compiling Shaders");
     ThreadPool pool(std::thread::hardware_concurrency(), kMaxRenderPasses, mAllocator, "PSOComp");
-    Vector<Future<void>> futures(mAllocator);
+    Vector<Pair<PassHandle,Future<void>>> futures(mAllocator);
     for (auto& pass : mSetup->trackedPasses)
     {
         if (!pass.used)
             continue;
-        futures.emplace_back(pool.Push([&] { BuildPipelineState(pass.handle); }));
+        auto handle = pass.handle;
+        futures.emplace_back(handle, pool.Push([this, handle] { BuildPipelineState(handle); }));
     }
-    for (size_t i = 0; i < futures.size(); i++)
+    for (auto& [pass, future] : futures)
     {
-        auto& tpass = mSetup->trackedPasses[i];
+        auto& tpass = mSetup->trackedPasses[pass];
         try
         {
-            futures[i].get();
+            future.get();
         }
         catch (std::runtime_error const& e)
         {

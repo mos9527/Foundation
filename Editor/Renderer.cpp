@@ -164,9 +164,8 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererSetupFl
         {
             r->BindShader(self, RHIShaderStageBits::Task, "main", "data/shaders/ETSMeshletCull.spv");
             r->BindShader(self, RHIShaderStageBits::Mesh, "main", "data/shaders/EMSBasic.spv");
-            int viewOverdraw = flags & RendererSetupFlagsBits::DebugViewOverdraw;
             r->BindShader(self, RHIShaderStageBits::Fragment, "main", "data/shaders/EPSBasic.spv",
-                AsBytes(AsSpan(viewOverdraw)));
+                AsBytes(AsSpan(flags)));
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindBufferShaderRead(self, IndirectTaskDispatch,
                                     RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);
@@ -219,9 +218,8 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererSetupFl
     createPSFullscreenPass(renderer, "Blit Image",
                            [=](PassHandle self, Renderer* r)
                            {
-                               int viewOverdraw = flags & RendererSetupFlagsBits::DebugViewOverdraw;
                                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/EPSBlit.spv",
-                                             AsBytes(AsSpan(viewOverdraw)));
+                                             AsBytes(AsSpan(flags)));
                                r->BindTextureSampler(self, nearSampler, "sampler");
                                r->BindTextureSRV(self, GBuffer, "gbuffer", RHIPipelineStageBits::FragmentShader,
                                                  RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,

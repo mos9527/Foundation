@@ -1,6 +1,4 @@
 #include "Editor.hpp"
-#include <filesystem>
-#include <fstream>
 FEditorState FEState = FEInitEnter;
 /* -- Scene Data -- */
 static Vector<GSInstance> GSInstances(GLOBAL_ALLOC);
@@ -18,17 +16,8 @@ void FInitEnter()
     Vector<FMesh> meshes(GLOBAL_ALLOC);
     Vector<FInstance> instances(GLOBAL_ALLOC);
     Vector<FCamera> cameras(GLOBAL_ALLOC);
-    {
-        const char* scenePath = "/mnt/Windows/Scenes/IntelSponza/Sponza.bin";
-        std::error_code ec;
-        auto size = std::filesystem::file_size(scenePath, ec);
-        CHECK_MSG(!ec, "Failed to open scene file {}: {}", scenePath, ec.message());
-        Vector<char> data(size, GLOBAL_ALLOC);
-        std::ifstream file(scenePath, std::ios::binary);
-        CHECK_MSG(file.is_open() && file.read(data.data(), size), "Failed to read scene file {}", scenePath);
-        FReader reader(data);
-        SceneDeserialize(reader, meshes, instances, cameras);
-    }
+    CHECK_MSG(GContext->args.size() == 2, "Usage: Editor <scene path>");
+    LoadFromFile(GContext->args[1], meshes, instances, cameras);
     for (auto& mesh : meshes)
     {
         LOG(Editor, LogInfo, "Loaded Mesh | Vtx={} | LODGroups={} | ApproxSize={} B", mesh.vertices.size(),
@@ -126,6 +115,11 @@ void FRunning()
     if (ImGui::Button("Toggle Overdraw View"))
     {
         GRendererFlags ^= RendererSetupFlagsBits::DebugViewOverdraw;
+        FEState = FERunningEnter;
+    }
+    if (ImGui::Button("Toggle Meshlet View"))
+    {
+        GRendererFlags ^= RendererSetupFlagsBits::DebugViewMeshlet;
         FEState = FERunningEnter;
     }
     ImGui::End();

@@ -24,3 +24,5 @@ void LoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outI
 
 void SceneSerialize(FWriter& w, Vector<FMesh> const& meshes, Vector<FInstance> const& instances, Vector<FCamera> const& cameras);
 void SceneDeserialize(FReader& r, Vector<FMesh>& meshes, Vector<FInstance>& instances, Vector<FCamera>& cameras);
+
+void LoadFromFile(StringView scenePath, Vector<FMesh>& outMeshes, Vector<FInstance>& outInstances, Vector<FCamera>& outCameras);

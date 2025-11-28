@@ -9,6 +9,8 @@ using namespace Core;
 struct GPUScene;
 struct FContext
 {
+    Span<char*> args;
+
     Allocator* allocator{};
 
     SDL_Window* window{};

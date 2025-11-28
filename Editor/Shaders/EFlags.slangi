@@ -1,0 +1,2 @@
+static const int kViewOverdraw = 1 << 0;
+static const int kViewMeshlet = 1 << 1;

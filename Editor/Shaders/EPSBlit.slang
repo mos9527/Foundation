@@ -1,4 +1,5 @@
-[[SpecializationConstant]] int viewOverdraw;
+#include "EFlags.slangi"
+[[SpecializationConstant]] int flags;
 
 StructuredBuffer<uint32_t> globalMax;
 Texture2D<uint32_t> overdraw;
@@ -34,7 +35,7 @@ float3 heatmapGradient(float t) {
 [shader("fragment")]
 float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGET {
     int3 coord = int3(fragCoord.x, fragCoord.y, 0);
-    if (viewOverdraw){
+    if (flags & kViewOverdraw){
         uint32_t draws = overdraw.Load(coord);
         return float4(heatmapGradient((float)draws / globalMax[0]), 1.0);
     }
