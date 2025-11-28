@@ -87,9 +87,10 @@ void FInit()
     renderer->EndExecute();
     FEState = FEInit;
 }
+RendererSetupFlags GRendererFlags;
 void FRunningEnter()
 {
-    RendererSetup(GContext, &GShaderGlobals);
+    RendererSetup(GContext, &GShaderGlobals, GRendererFlags);
     FEState = FERunning;
 }
 void FRunning()
@@ -117,13 +118,19 @@ void FRunning()
     ImGui::Text("Instances | %zu", GSInstances.size());
     ImGui::SliderFloat("LOD Threshold | ", &GShaderGlobals.lodThreshold, 0.f, 1.f);
     ImGui::Separator();
-    ImGui::InputFloat3("Cam Center", &GCamera.center.x);
-    ImGui::InputFloat("Cam Radius", &GCamera.radius);
-    ImGui::InputFloat("Cam FOV Y", &GCamera.fovY);
+    ImGui::SliderFloat3("Cam Center", &GCamera.center.x, -50.0f, 50.0f);
+    ImGui::SliderFloat("Cam Radius", &GCamera.radius,0.0f, 100.0f);
+    ImGui::SliderAngle("Cam FOV Y", &GCamera.fovY);
+    ImGui::End();
+    ImGui::Begin("Rendering");
+    if (ImGui::Button("Toggle Overdraw View"))
+    {
+        GRendererFlags ^= RendererSetupFlagsBits::DebugViewOverdraw;
+        FEState = FERunningEnter;
+    }
     ImGui::End();
     renderer->ExecuteFrame();
     renderer->EndExecute();
-    FEState = FERunning;
 }
 bool EditorProcessEvent(SDL_Event* event)
 {
@@ -145,6 +152,8 @@ bool EditorProcessEvent(SDL_Event* event)
     auto& io = ImGui::GetIO();
     if (!io.WantCaptureMouse)
         GCamera.Update(*event);
+    else
+        GCamera.Update({});
     return false;
 }
 // Per-frame logic

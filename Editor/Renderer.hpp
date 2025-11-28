@@ -11,6 +11,8 @@ struct UBO
     float4x4 proj;
 };
 #pragma pack(pop)
-
+BITMASK_ENUM_BEGIN(RendererSetupFlags, uint32_t)
+    DebugViewOverdraw = 1u << 0,
+BITMASK_ENUM_END()
 extern void RendererSetupImGuiOnly(FContext* context);
-extern void RendererSetup(FContext* context, UBO const* pShaderGlobals);
+extern void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererSetupFlags flags = {});

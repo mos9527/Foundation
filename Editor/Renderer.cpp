@@ -32,7 +32,8 @@ void RendererSetupImGuiOnly(FContext* context)
     renderer->EndSetup();
 }
 // TODO: Make this part hot-reload?
-void RendererSetup(FContext* context, UBO const* pShaderGlobals)
+
+void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererSetupFlags flags)
 {
     if (context->renderer)
         Destruct(context->allocator, context->renderer);
@@ -163,7 +164,9 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals)
         {
             r->BindShader(self, RHIShaderStageBits::Task, "main", "data/shaders/ETSMeshletCull.spv");
             r->BindShader(self, RHIShaderStageBits::Mesh, "main", "data/shaders/EMSBasic.spv");
-            r->BindShader(self, RHIShaderStageBits::Fragment, "main", "data/shaders/EPSBasic.spv");
+            int viewOverdraw = flags & RendererSetupFlagsBits::DebugViewOverdraw;
+            r->BindShader(self, RHIShaderStageBits::Fragment, "main", "data/shaders/EPSBasic.spv",
+                AsBytes(AsSpan(viewOverdraw)));
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindBufferShaderRead(self, IndirectTaskDispatch,
                                     RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);
@@ -216,9 +219,9 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals)
     createPSFullscreenPass(renderer, "Blit Image",
                            [=](PassHandle self, Renderer* r)
                            {
-                               uint32_t mode = 0;
+                               int viewOverdraw = flags & RendererSetupFlagsBits::DebugViewOverdraw;
                                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/EPSBlit.spv",
-                                             AsBytes(AsSpan(mode)));
+                                             AsBytes(AsSpan(viewOverdraw)));
                                r->BindTextureSampler(self, nearSampler, "sampler");
                                r->BindTextureSRV(self, GBuffer, "gbuffer", RHIPipelineStageBits::FragmentShader,
                                                  RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,

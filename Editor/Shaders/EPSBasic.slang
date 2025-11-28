@@ -1,3 +1,5 @@
+[[SpecializationConstant]] int viewOverdraw;
+
 struct V2F
 {
     float4 pos : SV_POSITION;
@@ -36,6 +38,7 @@ Fragment main(V2F input, float2 fragCoord : SV_Position /* pixel space */)
 {
     Fragment output;
     output.color = float4(input.normal, 1.0);
-    imageAtomicAdd(overdraw, int2(fragCoord), 1);
+    if (viewOverdraw)
+        imageAtomicAdd(overdraw, int2(fragCoord), 1);
     return output;
 }
