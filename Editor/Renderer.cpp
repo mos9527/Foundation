@@ -20,7 +20,8 @@ struct MeshletTaskWork
     uint32_t numMeshlets;
 };
 #pragma pack(pop)
-constexpr size_t kMaxMeshletTaskWorkCount = 1e5;
+constexpr size_t kMaxMeshletCount = 1e6;
+constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / 64; // WorkGroup Size
 void RendererSetupImGuiOnly(FContext* context)
 {
     if (context->renderer)
@@ -39,8 +40,10 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig 
     if (context->renderer)
         Destruct(context->allocator, context->renderer);
     auto* renderer = context->renderer =
-        Construct<Renderer>(context->allocator, RendererDesc{.pipelineCache = context->psoCache.Get()}, context->device,
-                            context->swapchain, context->allocator);
+        Construct<Renderer>(context->allocator, RendererDesc{
+            .asyncCompute = true,
+            .pipelineCache = context->psoCache.Get()
+        }, context->device,context->swapchain, context->allocator);
     auto* scene = context->gpuScene;
     renderer->BeginSetup();
     /* UBO for everyone */
@@ -65,19 +68,26 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig 
     auto IndirectTaskDispatch = renderer->CreateResource(
         "Meshlet Task Indirect Dispatch Command (Single)",
         RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer, .size = sizeof(MeshletTaskDispatch)});
+    // We pack meshlet visibility in uint32 bitmaps
+    const size_t visBufferSize = AlignUp(kMaxMeshletCount, 32) / 32 * sizeof(uint32_t);
+    auto OcclusionVisibility = renderer->CreateResource(
+        "Occlusion Visibility Buffer",
+        RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = visBufferSize});
     // NOTE: Lambda captures
     // NONE of the handle values outlive the renderer. Therefore, ALWAYS capture by value.
     renderer->CreatePass(
-        "UBO Update", RHIDeviceQueueType::Compute, 0u,
+        "UBO Update & Init", RHIDeviceQueueType::Compute, 0u,
         [=](PassHandle self, Renderer* r)
         {
             r->BindBufferCopyDst(self, GlobalUBO);
             r->BindBufferCopyDst(self, IndirectTaskCounter);
+            r->BindBufferCopyDst(self, OcclusionVisibility);
         },
         [=](PassHandle, Renderer* r, RHICommandList* cmd)
         {
             auto* ubo = r->DerefResource(GlobalUBO).Get<RHIBuffer*>();
             auto* counter = r->DerefResource(IndirectTaskCounter).Get<RHIBuffer*>();
+            auto* occlusion = r->DerefResource(OcclusionVisibility).Get<RHIBuffer*>();
             // Fill, Update are considered Transfer operations
             // and would require proper barriers - which are automatically handled
             // by the Renderer *inter* passes.
@@ -86,6 +96,7 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig 
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(*pShaderGlobals)));
             /// ^^^ Footgun as noted in MeshShaderHierarchicalLOD.cpp ^^^
             cmd->FillBuffer(counter, 0u);
+            cmd->FillBuffer(occlusion, 0u);
         });
     renderer->CreatePass(
         "Meshlet Task Generation", RHIDeviceQueueType::Compute, 0u,
@@ -166,49 +177,73 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig 
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, cdata);
             r->CmdDispatch(self, cmd, {cdata.w, cdata.h, 1});
         });
-    renderer->CreatePass(
-        "Main Pass", RHIDeviceQueueType::Graphics, 0u,
-        [=](PassHandle self, Renderer* r)
+    {
+        auto AddMainPass = [=](bool early)
         {
-            r->BindShader(self, RHIShaderStageBits::Task, "main", "data/shaders/ETSMeshletCull.spv",
-                AsBytes(AsSpan(cfg.cullFlags)));
-            r->BindShader(self, RHIShaderStageBits::Mesh, "main", "data/shaders/EMSBasic.spv");
-            r->BindShader(self, RHIShaderStageBits::Fragment, "main", "data/shaders/EPSBasic.spv",
-                AsBytes(AsSpan(cfg.viewFlags)));
-            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-            r->BindBufferShaderRead(self, IndirectTaskDispatch,
-                                    RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);
-            r->BindBufferStorageRead(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "tasks");
-            r->BindBufferStorageRead(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "counter");
-            r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
-            r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
-            r->BindTextureRTV(self, GBuffer,
-                              {.format = RHIResourceFormat::R8G8B8A8Unorm,
-                               .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-            r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
-                              {.format = RHIResourceFormat::R32Uint,
-                               .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-            r->BindTextureDSV(self, ZBuffer,
-                              {.format = RHIResourceFormat::D32SignedFloat,
-                               .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
-        },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            RHIExtent2D wh{w, h};
-            auto* dispatchBuffer = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
-            r->CmdBeginGraphics(self, cmd, wh, {{RHIClearColor{0, 0, 0, 0}}}, RHIClearDepthStencil{0.0f, 0});
-            r->CmdSetPipeline(self, cmd);
-            cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
-            cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
-            cmd->EndGraphics();
-        });
-    createCSMipGenerationPasses(renderer, "Early HiZ", RHIDeviceQueueType::Compute, ZBuffer, HIZ,
-                                RHIExtent2D{w,h},
-                                RHITextureAspectFlagBits::Depth, RHIResourceFormat::D32SignedFloat,
-                                RHITextureAspectFlagBits::Color, RHIResourceFormat::R32SignedFloat,
-                                cfg.hizLevels, 0, {
-                                    .reduction = RHIDeviceSampler::SamplerDesc::Reduction::Min
-                                });
+            renderer->CreatePass(
+                early ? "Main [Stage 1]" : "Main [Stage 2]", RHIDeviceQueueType::Graphics, 0u,
+                [=](PassHandle self, Renderer* r)
+                {
+                    int TSFlags = cfg.cullFlags;
+                    if (early)
+                        TSFlags |= kCullStageFirst;
+                    else
+                        TSFlags |= kCullStageLate;
+                    r->BindShader(self, RHIShaderStageBits::Task, "main", "data/shaders/ETSMeshletCull.spv",
+                        AsBytes(AsSpan(TSFlags)));
+                    r->BindShader(self, RHIShaderStageBits::Mesh, "main", "data/shaders/EMSBasic.spv");
+                    r->BindShader(self, RHIShaderStageBits::Fragment, "main", "data/shaders/EPSBasic.spv",
+                        AsBytes(AsSpan(cfg.viewFlags)));
+                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                    r->BindBufferShaderRead(self, IndirectTaskDispatch,
+                                            RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);
+                    r->BindBufferStorageRead(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "tasks");
+                    r->BindBufferStorageRead(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "counter");
+                    r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
+                    r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
+                    r->BindBufferUnordered(self, OcclusionVisibility,
+                                           RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader,
+                                           "occlusion");
+                    r->BindTextureRTV(self, GBuffer,
+                                      {.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
+                                      {.format = RHIResourceFormat::R32Uint,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureDSV(self, ZBuffer,
+                                      {.format = RHIResourceFormat::D32SignedFloat,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
+                    r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader,
+                                      RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                                         .range = RHITextureSubresourceRange::Create(
+                                                             RHITextureAspectFlagBits::Color,
+                                                             0,
+                                                             cfg.hizLevels
+                                                         )});
+
+                },
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+                {
+                    RHIExtent2D wh{w, h};
+                    auto* dispatchBuffer = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
+                    r->CmdBeginGraphics(self, cmd, wh, {{RHIClearColor{0, 0, 0, 0}}}, RHIClearDepthStencil{0.0f, 0});
+                    r->CmdSetPipeline(self, cmd);
+                    cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
+                    cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
+                    cmd->EndGraphics();
+                });
+            if (early)
+                createCSMipGenerationPasses(renderer, "Early HiZ", RHIDeviceQueueType::Compute, ZBuffer, HIZ,
+                                            RHIExtent2D{w,h},
+                                            RHITextureAspectFlagBits::Depth, RHIResourceFormat::D32SignedFloat,
+                                            RHITextureAspectFlagBits::Color, RHIResourceFormat::R32SignedFloat,
+                                            cfg.hizLevels, 0, {
+                                                .reduction = RHIDeviceSampler::SamplerDesc::Reduction::Min
+                                            });
+        };
+        AddMainPass(true);
+        AddMainPass(false);
+    }
     renderer->CreatePass(
         "Overdraw CS Reduce", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)

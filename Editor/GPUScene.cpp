@@ -64,6 +64,8 @@ Future<> GPUScene::Upload(FMesh const& src, GSMesh& mesh, uint32_t& outOffset)
     mesh.meshletOffset = outOffset + Write(src.dag.meshlets.data(), sizeof(FMeshlet) * src.dag.meshlets.size());
     mesh.meshletVtxOffset = outOffset + Write(src.dag.meshletVtx.data(), sizeof(uint32_t) * src.dag.meshletVtx.size());
     mesh.meshletTriOffset = outOffset + Write(src.dag.meshletTri.data(), sizeof(uint8_t) * src.dag.meshletTri.size());
+    mesh.meshletGlobalIndex = mMeshletGlobalCounter;
+    mMeshletGlobalCounter += mesh.meshletCount;
     // GSMesh (data)
     std::memcpy(ptr, &mesh, sizeof(GSMesh));
     return mStreaming.Write(data, mPrimitiveBuffer.Get(), outOffset);

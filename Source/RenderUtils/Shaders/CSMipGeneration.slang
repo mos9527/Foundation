@@ -9,6 +9,6 @@ SamplerState sampler;
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void csMain(uint2 tid: SV_DispatchThreadID) {
-    float4 color = srcTexture.Sample(sampler, (tid + float2(0.5)) / extent);
+    float4 color = srcTexture.SampleGrad(sampler, (tid + float2(0.5)) / extent, float2(0), float2(0));
     dstTexture[tid] = color;
 }

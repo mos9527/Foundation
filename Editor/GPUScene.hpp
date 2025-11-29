@@ -24,6 +24,8 @@ struct GSMesh
     uint32_t meshletCount;
     uint32_t meshletVtxOffset;
     uint32_t meshletTriOffset;
+    // -- Global index (amongst all loaded meshes)
+    uint32_t meshletGlobalIndex;
 };
 struct GSInstance
 {
@@ -34,7 +36,7 @@ struct GSInstance
     uint32_t meshOffset; // In Primitive buffer (bytes)
 };
 #pragma pack(pop)
-static_assert(sizeof(GSMesh) == 32);
+static_assert(sizeof(GSMesh) == 36);
 static_assert(sizeof(GSInstance) == 44);
 
 /**
@@ -49,6 +51,9 @@ class GPUScene
     // XXX: Linear allocation. GPA would be needed if we'd upload & free
     //      at will. Not needed for Editor use-case currently.
     size_t mPrimitiveOffset{0};
+
+    // For @ref meshletGlobalIndex
+    uint32_t mMeshletGlobalCounter{0};
 
     // Mapped as-is
     RHIDeviceScopedHandle<RHIBuffer> mInstanceBuffer;

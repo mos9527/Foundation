@@ -1085,6 +1085,11 @@ void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, 
                                               ExecuteBarrierPCmdOrPBarrierList cmd) const
 {
     ZoneScoped;
+    if (access & kAllShaderWrites)
+    {
+        sta.lastProducer = pass;
+        sta.lastProducedFrame = mFrameSwapped;
+    }
     // RW resources need barriers even if the state doesn't change
     // because of potential WOW hazards
     if ((sta.access & kAllShaderWrites) != 0 || (access & kAllShaderWrites) != 0)
@@ -1107,11 +1112,6 @@ void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, 
     sta.access = access;
     sta.stage = stage;
     sta.layout = layout;
-    if (access & kAllShaderWrites)
-    {
-        sta.lastProducer = pass;
-        sta.lastProducedFrame = mFrameSwapped;
-    }
 }
 void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
                                          RHITextureSubresourceRange const& range, RHIResourceAccess access,
@@ -1119,7 +1119,6 @@ void Renderer::ExecuteBarrierSubresource(PassHandle pass, TrackedResource& tres,
                                          ExecuteBarrierPCmdOrPBarrierList cmd)
 {
     ZoneScoped;
-    CHECK_MSG(mState == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", mState);
     RHITexture* res = DerefResource(tres.handle).Get<RHITexture*>();
     bool any_range = false;
     for (auto& sta : tres.GetLastSubresourceStateOf(range))
@@ -1133,7 +1132,11 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
                                     RHIPipelineStage stage, ExecuteBarrierPCmdOrPBarrierList cmd)
 {
     ZoneScoped;
-    CHECK_MSG(mState == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", mState);
+    if (access & kAllShaderWrites)
+    {
+        tres.lastBufferState.lastProducer = pass;
+        tres.lastBufferState.lastProducedFrame = mFrameSwapped;
+    }
     RHIBuffer* res = DerefResource(tres.handle).Get<RHIBuffer*>();
     /* Same as textures */
     if ((tres.lastBufferState.access & kAllShaderWrites) != 0 || (access & kAllShaderWrites) != 0)
@@ -1152,16 +1155,10 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
               [&](ExecuteBarrierList* barrierList) { barrierList->emplace_back(res, desc); });
     tres.lastBufferState.access = access;
     tres.lastBufferState.stage = stage;
-    if (access & kAllShaderWrites)
-    {
-        tres.lastBufferState.lastProducer = pass;
-        tres.lastBufferState.lastProducedFrame = mFrameSwapped;
-    }
 }
 void Renderer::ExecuteBarriers(TrackedPass& pass, ExecuteBarrierPCmdOrPBarrierList cmd)
 {
     ZoneScoped;
-    CHECK_MSG(mState == State::Execute, "Renderer bad state ({}). Did you call BeginExecute()?", mState);
     // At this point the pass execution order has been determined
     // (execution) and so are the resources' access patterns.
     // Minimal synchronization barriers would always be the most optimal.
@@ -1282,11 +1279,11 @@ void Renderer::ExecuteFrame()
             switch (tpass.queue)
             {
             case RHIDeviceQueueType::Graphics:
-                graphicsWaitValue = std::max(graphicsValue, graphicsValue);
+                graphicsWaitValue = std::max(graphicsWaitValue, graphicsValue);
                 break;
             default:
             case RHIDeviceQueueType::Compute:
-                computeWaitValue = std::max(computeValue, computeValue);
+                computeWaitValue = std::max(computeWaitValue, computeValue);
                 break;
             }
         };

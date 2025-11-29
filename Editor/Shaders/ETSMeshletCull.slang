@@ -2,10 +2,12 @@
 [[SpecializationConstant]] int cullFlags;
 
 uniform UBO globalParams;
-[[vk_binding(1,0)]] StructuredBuffer<GSInstance> instances;
-[[vk_binding(2,0)]] ByteAddressBuffer primitive;
-[[vk_binding(3,0)]] RWStructuredBuffer<MeshletTaskWork> tasks;
-[[vk_binding(4,0)]] RWStructuredBuffer<Atomic<uint>> counter;
+StructuredBuffer<GSInstance> instances;
+ByteAddressBuffer primitive;
+RWStructuredBuffer<MeshletTaskWork> tasks;
+RWStructuredBuffer<Atomic<uint>> counter;
+Texture2D<float> hiz;
+RWStructuredBuffer<Atomic<uint>> overdraw;
 
 
 float3 pointToView(float3 point, GSInstance inst, float4x4 view) {
@@ -25,6 +27,34 @@ float projErrorSimple(float error, float3 center /* view */, float radius /* sca
     float d = max(length(center) - radius, zNear);
     return error / d * abs(P11) * 0.5f;
 }
+// 2D Polyhedral Bounds of a Clipped, Perspective-Projected 3D Sphere. Michael Mara, Morgan McGuire. 2013
+bool projSphereAABB(float3 c, float r, float znear, float P00, float P11, out float4 aabb)
+{
+    // f = 1 / tan(fovY / 2), a = aspect ratio
+    // P00 = f/a, P11 = f
+	if (c.z < r + znear) // clipping near plane
+		return false;
+
+    P00 = abs(P00);
+    P11 = abs(P11); // Ensure positive in case of NDC Y Flip
+
+	float3 cr = c * r;
+	float czr2 = c.z * c.z - r * r;
+
+	float vx = sqrt(c.x * c.x + czr2);
+	float minx = (vx * c.x - cr.z) / (vx * c.z + cr.x);
+	float maxx = (vx * c.x + cr.z) / (vx * c.z - cr.x);
+
+	float vy = sqrt(c.y * c.y + czr2);
+	float miny = (vy * c.y - cr.z) / (vy * c.z + cr.y);
+	float maxy = (vy * c.y + cr.z) / (vy * c.z - cr.y);
+
+	aabb = float4(minx * P00, miny * P11, maxx * P00, maxy * P11);
+	aabb = aabb.xwzy * float4(0.5f, -0.5f, 0.5f, -0.5f) + float4(0.5f); // clip space -> uv space
+
+	return true;
+}
+
 
 groupshared MeshletGroupShared shared;
 
@@ -46,7 +76,8 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     shared.meshletCount = 0;
     GroupMemoryBarrierWithGroupSync();
     float scale = max(max(inst.scale.x,inst.scale.y),inst.scale.z);
-    // Culling
+    // LOD selection
+    // Always runs - and deterministic regardless of cullFlags
     bool visible = false;
     FLODGroup group;
     float3 viewCenter;

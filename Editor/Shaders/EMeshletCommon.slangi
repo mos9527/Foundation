@@ -68,6 +68,8 @@ struct GSMesh
     uint32_t meshletCount;
     uint32_t meshletVtxOffset;
     uint32_t meshletTriOffset;
+    // -- Global index (amongst all loaded meshes)
+    uint32_t meshletGlobalIndex;
 };
 struct MIndex {
     uint8_t v0;

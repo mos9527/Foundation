@@ -308,14 +308,7 @@ namespace Foundation::RenderCore
         }
         cmd->End();
         // Submit
-        if (mSubmitCtr)
-            mTransferQueue->Submit(
-                {{RHIDeviceQueue::SubmitDesc{.timelineWaits = {{{mTransferSemaphore.Get(), mSubmitCtr}}},
-                                             .timelineSignals = {{{mTransferSemaphore.Get(), mSubmitCtr + 1}}},
-                                             .waitsStages = {{{RHIPipelineStageBits::Transfer}}},
-                                             .cmdLists = {{cmd.Get()}}}}});
-        else
-            mTransferQueue->Submit({{RHIDeviceQueue::SubmitDesc{
+        mTransferQueue->Submit({{RHIDeviceQueue::SubmitDesc{
                 .timelineSignals = {{{mTransferSemaphore.Get(), mSubmitCtr + 1}}}, .cmdLists = {{cmd.Get()}}}}});
         mSubmitCtr++;
         mPendingCompletions.emplace_back(mSubmitCtr, refs, std::move(promises));

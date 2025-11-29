@@ -90,6 +90,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
              .shaderInt8 = true,
              .descriptorBindingSampledImageUpdateAfterBind = true,
              .runtimeDescriptorArray = true,
+             .samplerFilterMinmax = true,
              .scalarBlockLayout = true,
              .uniformBufferStandardLayout = true,
              .timelineSemaphore = true}, // vk::PhysicalDeviceVulkan12Features

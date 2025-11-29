@@ -1,10 +1,10 @@
 #include "EMeshletCommon.slangi"
 
 uniform UBO globalParams;
-[[vk_binding(1,0)]] StructuredBuffer<GSInstance> instances;
-[[vk_binding(2,0)]] ByteAddressBuffer primitive;
-[[vk_binding(3,0)]] RWStructuredBuffer<MeshletTaskWork> tasks;
-[[vk_binding(4,0)]] RWStructuredBuffer<Atomic<uint>> counter;
+StructuredBuffer<GSInstance> instances;
+ByteAddressBuffer primitive;
+RWStructuredBuffer<MeshletTaskWork> tasks;
+RWStructuredBuffer<Atomic<uint>> counter;
 
 
 groupshared float3 sharedScreenSpaceVerts[kTaskShaderWG];

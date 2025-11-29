@@ -96,6 +96,7 @@ void FRunning()
     GShaderGlobals.firstInstance = off;
     GShaderGlobals.numInstances = GSInstances.size();
     // Global param update
+    GCamera.Update({});
     GCamera.aspect = GContext->swapchain->GetAspectRatio();
     GShaderGlobals.view = GCamera.view;
     GShaderGlobals.proj = GCamera.proj;
@@ -153,8 +154,6 @@ bool EditorProcessEvent(SDL_Event* event)
     auto& io = ImGui::GetIO();
     if (!io.WantCaptureMouse)
         GCamera.Update(*event);
-    else
-        GCamera.Update({});
     return false;
 }
 // Per-frame logic
