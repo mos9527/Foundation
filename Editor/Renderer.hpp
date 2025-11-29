@@ -10,11 +10,15 @@ struct UBO
     float4x4 view;
     float4x4 proj;
     float4 projPlanes; // ij:left, kl:top
+    uint32_t hizLevels;
+    uint32_t zbufferWidthP2;
+    uint32_t zbufferHeightP2;
 };
 #pragma pack(pop)
 
 static const int kViewOverdraw = 1 << 0;
 static const int kViewMeshlet = 1 << 1;
+static const int kViewHIZ = 1 << 2;
 
 static const int kCullFrustum = 1 << 0;
 static const int kCullOcclusion = 1 << 1;
@@ -25,8 +29,8 @@ static const int kCullStageLate = 1 << 17;
 
 struct RendererConfig
 {
-    unsigned viewFlags{0};
-    unsigned cullFlags{0};
+    unsigned viewFlags{kViewOverdraw};
+    unsigned cullFlags{kCullFrustum|kCullOcclusion|kCullBackface};
     unsigned hizLevels{9};
 };
 extern void RendererSetupImGuiOnly(FContext* context);

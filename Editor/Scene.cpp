@@ -3,6 +3,7 @@
 #include <cgltf.h>
 #include <filesystem>
 #include <fstream>
+#include <Math/Decompose.hpp>
 #include "Scene.hpp"
 #include "Mesh.hpp"
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#meshes

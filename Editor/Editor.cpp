@@ -76,10 +76,10 @@ void FInit()
     renderer->EndExecute();
     FEState = FEInit;
 }
-RendererConfig GRendererFlags;
+RendererConfig GRendererConfig;
 void FRunningEnter()
 {
-    RendererSetup(GContext, &GShaderGlobals, GRendererFlags);
+    RendererSetup(GContext, &GShaderGlobals, GRendererConfig);
     FEState = FERunning;
 }
 void FRunning()
@@ -102,6 +102,10 @@ void FRunning()
     GShaderGlobals.proj = GCamera.proj;
     GShaderGlobals.zNear = GCamera.zNear;
     GShaderGlobals.projPlanes = planeSymmetric(GShaderGlobals.proj);
+    GShaderGlobals.hizLevels = GRendererConfig.hizLevels;
+    auto [w,h] = renderer->GetSwapchainExtent();
+    GShaderGlobals.zbufferWidthP2 = log2(w);
+    GShaderGlobals.zbufferHeightP2 = log2(h);
     // ImGui
     ImGui::Begin("Debug");
     ImGui::TextUnformatted(FArcballCamera::kControlsText);
@@ -117,17 +121,27 @@ void FRunning()
     ImGui::Begin("Rendering");
     if (ImGui::Button("Toggle Overdraw View"))
     {
-        GRendererFlags.viewFlags ^= kViewOverdraw;
+        GRendererConfig.viewFlags ^= kViewOverdraw;
         FEState = FERunningEnter;
     }
     if (ImGui::Button("Toggle Meshlet View"))
     {
-        GRendererFlags.viewFlags ^= kViewMeshlet;
+        GRendererConfig.viewFlags ^= kViewMeshlet;
+        FEState = FERunningEnter;
+    }
+    if (ImGui::Button("Toggle HIZ View"))
+    {
+        GRendererConfig.viewFlags ^= kViewHIZ;
         FEState = FERunningEnter;
     }
     if (ImGui::Button("Toggle Frustum Culling"))
     {
-        GRendererFlags.cullFlags ^= kCullFrustum;
+        GRendererConfig.cullFlags ^= kCullFrustum;
+        FEState = FERunningEnter;
+    }
+    if (ImGui::Button("Toggle Occlusion Culling"))
+    {
+        GRendererConfig.cullFlags ^= kCullOcclusion;
         FEState = FERunningEnter;
     }
     ImGui::End();

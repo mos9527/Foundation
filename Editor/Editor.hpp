@@ -1,5 +1,7 @@
 #pragma once
 #include "Renderer.hpp"
+#include <Math/ModelViewProjection.hpp>
+#include <Math/Bits.hpp>
 enum FEditorState
 {
     FEInitEnter,

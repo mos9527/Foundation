@@ -178,6 +178,7 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig 
             r->CmdDispatch(self, cmd, {cdata.w, cdata.h, 1});
         });
     {
+        auto hizSampler = renderer->CreateSampler({.reduction = RHIDeviceSampler::SamplerDesc::Reduction::Min});
         auto AddMainPass = [=](bool early)
         {
             renderer->CreatePass(
@@ -213,6 +214,7 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig 
                     r->BindTextureDSV(self, ZBuffer,
                                       {.format = RHIResourceFormat::D32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
+                    r->BindTextureSampler(self, hizSampler, "hizSampler");
                     r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
                                                          .range = RHITextureSubresourceRange::Create(
@@ -220,13 +222,15 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig 
                                                              0,
                                                              cfg.hizLevels
                                                          )});
-
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
                     RHIExtent2D wh{w, h};
                     auto* dispatchBuffer = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
-                    r->CmdBeginGraphics(self, cmd, wh, {{RHIClearColor{0, 0, 0, 0}}}, RHIClearDepthStencil{0.0f, 0});
+                    if (early)
+                        r->CmdBeginGraphics(self, cmd, wh, {{RHIClearColor{0, 0, 0, 0}}}, RHIClearDepthStencil{0.0f, 0});
+                    else // Don't clear in stage 2 - we're appending false-positives back to it.
+                        r->CmdBeginGraphics(self, cmd, wh, {{{}}}, {});
                     r->CmdSetPipeline(self, cmd);
                     cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
                     cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
@@ -242,7 +246,8 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig 
                                             });
         };
         AddMainPass(true);
-        AddMainPass(false);
+        if (cfg.cullFlags & kCullOcclusion)
+            AddMainPass(false);
     }
     renderer->CreatePass(
         "Overdraw CS Reduce", RHIDeviceQueueType::Graphics, 0u,

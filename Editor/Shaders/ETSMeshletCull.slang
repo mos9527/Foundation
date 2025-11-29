@@ -6,8 +6,9 @@ StructuredBuffer<GSInstance> instances;
 ByteAddressBuffer primitive;
 RWStructuredBuffer<MeshletTaskWork> tasks;
 RWStructuredBuffer<Atomic<uint>> counter;
-Texture2D<float> hiz;
-RWStructuredBuffer<Atomic<uint>> overdraw;
+[[vk_binding(5,0)]] SamplerState hizSampler;
+[[vk_binding(6,0)]] Texture2D<float> hiz;
+[[vk_binding(7,0)]] RWStructuredBuffer<Atomic<uint>> occlusion;
 
 
 float3 pointToView(float3 point, GSInstance inst, float4x4 view) {
@@ -28,15 +29,13 @@ float projErrorSimple(float error, float3 center /* view */, float radius /* sca
     return error / d * abs(P11) * 0.5f;
 }
 // 2D Polyhedral Bounds of a Clipped, Perspective-Projected 3D Sphere. Michael Mara, Morgan McGuire. 2013
-bool projSphereAABB(float3 c, float r, float znear, float P00, float P11, out float4 aabb)
+// Returns (x1, y1, x2, y2) in UV space [0,1]
+bool projSphereAABB(float3 c /* view */, float r /* scaled */, float P00, float P11, float zNear, out float4 aabb)
 {
     // f = 1 / tan(fovY / 2), a = aspect ratio
     // P00 = f/a, P11 = f
-	if (c.z < r + znear) // clipping near plane
+	if (c.z + r > zNear) // clipping near plane
 		return false;
-
-    P00 = abs(P00);
-    P11 = abs(P11); // Ensure positive in case of NDC Y Flip
 
 	float3 cr = c * r;
 	float czr2 = c.z * c.z - r * r;
@@ -55,7 +54,6 @@ bool projSphereAABB(float3 c, float r, float znear, float P00, float P11, out fl
 	return true;
 }
 
-
 groupshared MeshletGroupShared shared;
 
 // Each WG of task shader processes up to kMaxTaskShaderWork meshlets from the same Instance,
@@ -63,26 +61,34 @@ groupshared MeshletGroupShared shared;
 [shader("amplification")]
 [numthreads(kTaskShaderWG, 1, 1)]
 void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
+    const bool early = cullFlags & kCullStageFirst;
+    const bool late = cullFlags & kCullStageLate;
+    const bool cullFrustum = cullFlags & kCullFrustum;
+    const bool cullOcclusion = cullFlags & kCullOcclusion;
+
     uint count = counter[0].load();
     uint dispatchIndex = dot(groupID, uint2(kTaskShaderWG, 1)); // ID of this group, flattened    
     if (dispatchIndex >= count)
-        return; // Group inactive. Should NOT happen.    
+        return; // Group inactive. Should NOT happen.
+    if (!cullOcclusion && late)
+        return; // Misuse. If so Phase 2 should not be run at all.
+    // -- Load --
     MeshletTaskWork work = tasks[dispatchIndex];
     GSInstance inst = instances[work.instanceID];
     GSMesh mesh = primitive.Load<GSMesh>(inst.meshOffset);
     uint32_t meshletID = work.firstMeshlet + groupIndex;
-    // Init
+    // -- Init --
     shared.instanceID = work.instanceID;
     shared.meshletCount = 0;
     GroupMemoryBarrierWithGroupSync();
     float scale = max(max(inst.scale.x,inst.scale.y),inst.scale.z);
-    // LOD selection
+    // -- LOD selection --
     // Always runs - and deterministic regardless of cullFlags
     bool visible = false;
     FLODGroup group;
     float3 viewCenter;
+    FMeshlet meshlet = primitive.Load<FMeshlet>(mesh.meshletOffset + meshletID * sizeof(FMeshlet));
     if (meshletID < mesh.meshletCount) {
-        FMeshlet meshlet = primitive.Load<FMeshlet>(mesh.meshletOffset + meshletID * sizeof(FMeshlet));
         // View-dependent culling
         group = primitive.Load<FLODGroup>(mesh.groupOffset + meshlet.group * sizeof(FLODGroup));
         viewCenter = pointToView(group.center, inst, globalParams.view);
@@ -99,9 +105,44 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
             visible &= refError <= globalParams.lodThreshold;
         }
     }
-    if ((cullFlags & kCullFrustum) && visible){
-        // Frustum cull
+    // -- Frustum Cull --
+    if (cullFrustum && visible){
         visible &= frustumCull(globalParams.projPlanes, viewCenter, group.radius * scale, globalParams.zNear);
+    }
+    // -- Occlusion Cull --
+    uint32_t meshletGlobalID = mesh.meshletGlobalIndex + meshletID;
+    if (cullOcclusion && visible) {
+        if (late) {
+            bool phase1Visible = occlusion[meshletGlobalID / 32].load() & (1u << (meshletGlobalID % 32));
+            if (phase1Visible)
+                visible = false; // Skip
+        }
+        if (visible) {
+            float4 aabb; // x1, y1, x2, y2 in UV
+            // Let anything past the near plane pass
+            const float hizWidth = 1u << globalParams.zbufferWidthP2;
+            const float hizHeight = 1u << globalParams.zbufferHeightP2;
+            viewCenter = pointToView(meshlet.centerRadius.xyz, inst, globalParams.view);
+            float radius = meshlet.centerRadius.w * scale;
+            if (projSphereAABB(viewCenter, radius, globalParams.proj[0][0], globalParams.proj[1][1], globalParams.zNear, aabb)) {
+                float width = hizWidth * (aabb.z - aabb.x);
+                float height = hizHeight * (aabb.w - aabb.y);
+                float l = max(width,height);
+                float lambda = min(floor(log2(max(l, 1.0f))), globalParams.hizLevels - 1.0f);
+                float2 texel = (aabb.xy + aabb.zw) / 2.0f;
+                float d = hiz.SampleLevel(hizSampler, texel, lambda).x;
+                // View space depth *decreases* with distance
+                float viewDepth = viewCenter.z + radius;
+                float dMax = globalParams.zNear / -viewDepth;
+                bool pass = d <= dMax;
+                visible &= pass;
+                // Commit to occlusion buffer if visible ONLY in early pass
+                if (early) {
+                    if (visible)
+                        occlusion[meshletGlobalID / 32].or(1u << (meshletGlobalID % 32));
+                }
+            }
+        }
     }
     if (visible) {
         // Output the visible meshlet

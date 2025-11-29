@@ -32,7 +32,7 @@ struct Fragment
 
 // https://github.com/shader-slang/slang/issues/4120
 import glsl;
-[[vk_binding(5,0)]] RWTexture2D<uint32_t> overdraw;
+[[vk_binding(8,0)]] RWTexture2D<uint32_t> overdraw;
 
 [shader("fragment")]
 Fragment main(V2F input, float2 fragCoord : SV_Position /* pixel space */)

@@ -108,6 +108,9 @@ struct UBO
     float4x4 view;
     float4x4 proj;
     float4 projPlanes; // ij:left, kl:top
+    uint32_t hizLevels;
+    uint32_t zbufferWidthP2;
+    uint32_t zbufferHeightP2;
 };
 // ^^^
 public struct MeshletGroupShared {

@@ -5,6 +5,7 @@ StructuredBuffer<uint32_t> globalMax;
 Texture2D<uint32_t> overdraw;
 Texture2D gbuffer;
 SamplerState sampler;
+Texture2D<float> hiz;
 
 float3 heatmapGradient(float t) {
     // These are the approximate keyframes for the "Inferno" palette
@@ -38,6 +39,10 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     if (flags & kViewOverdraw){
         uint32_t draws = overdraw.Load(coord);
         return float4(heatmapGradient((float)draws / globalMax[0]), 1.0);
+    }
+    if (flags & kViewHIZ) {
+        // Lazy - need range reduction too.
+        return float4(hiz.SampleLevel(sampler, uv, 0).xxx * 20.0f, 1);
     }
     float4 gbuffer = gbuffer.Load(coord);
     return gbuffer;
