@@ -6,8 +6,6 @@ ByteAddressBuffer primitive;
 RWStructuredBuffer<MeshletTaskWork> tasks;
 RWStructuredBuffer<Atomic<uint>> counter;
 
-
-groupshared float3 sharedScreenSpaceVerts[kTaskShaderWG];
 // Each WG of mesh shader processes one meshlet
 // Each thread in the WG processes zero, or more vertices/triangles
 [outputtopology("triangle")]

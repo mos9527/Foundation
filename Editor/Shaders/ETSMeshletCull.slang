@@ -10,11 +10,12 @@ RWStructuredBuffer<Atomic<uint>> counter;
 [[vk_binding(6,0)]] Texture2D<float> hiz;
 [[vk_binding(7,0)]] RWStructuredBuffer<Atomic<uint>> occlusion;
 
-
+// Model to view space
 float3 pointToView(float3 point, GSInstance inst, float4x4 view) {
     float3 worldPos = inst.rotation.rotate(point) * inst.scale + inst.transform;
     return mul(view, float4(worldPos, 1.0)).xyz;
 }
+
 bool frustumCull(float4 ijkl /* [left ac:ij] [top bc:kl] */, float3 center /* view */, float radius /* scaled */, float zNear) {
 
     float ix = abs(ijkl.x * center.x);
@@ -104,6 +105,13 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
             // the actual upper bound. So cull ourselves.
             visible &= refError <= globalParams.lodThreshold;
         }
+    }
+    // -- Cone Cull (FIXME) --
+    if (false && visible) {
+        float3 coneApex = inst.rotation.rotate(meshlet.coneApex) * inst.scale + inst.transform;
+        float3 camPosition = -float3(globalParams.view[0][3],globalParams.view[1][3],globalParams.view[2][3]);
+        bool pass = dot(normalize(coneApex - camPosition), meshlet.coneAxisAngle.xyz) < meshlet.coneAxisAngle.w;
+        visible &= pass;
     }
     // -- Frustum Cull --
     if (cullFrustum && visible){
