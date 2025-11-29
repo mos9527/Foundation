@@ -76,7 +76,7 @@ void FInit()
     renderer->EndExecute();
     FEState = FEInit;
 }
-RendererSetupFlags GRendererFlags;
+RendererConfig GRendererFlags;
 void FRunningEnter()
 {
     RendererSetup(GContext, &GShaderGlobals, GRendererFlags);

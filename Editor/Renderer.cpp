@@ -1,6 +1,7 @@
 #include "Renderer.hpp"
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
+#include <RenderUtils/CSMipGeneration.hpp>
 using namespace RenderUtils;
 #pragma pack(push, 1)
 struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
@@ -33,7 +34,7 @@ void RendererSetupImGuiOnly(FContext* context)
 }
 // TODO: Make this part hot-reload?
 
-void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererSetupFlags flags)
+void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig cfg)
 {
     if (context->renderer)
         Destruct(context->allocator, context->renderer);
@@ -120,9 +121,16 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererSetupFl
     /* Meshlet Drawing */
     auto [w, h] = renderer->GetSwapchainExtent();
     auto ZBuffer = renderer->CreateResource("ZBuffer",
-                                            RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil,
+                                            RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil | RHITextureUsageBits::SampledImage,
                                                            .extent = {w, h, 1},
                                                            .format = RHIResourceFormat::D32SignedFloat});
+    const int HIZResolution = 1u << (cfg.hizLevels - 1);
+    auto HIZ = renderer->CreateResource("HIZ",
+                                        RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
+                                                           RHITextureUsageBits::SampledImage,
+                                                       .extent = {HIZResolution, HIZResolution, 1},
+                                                       .format = RHIResourceFormat::R32SignedFloat,
+                                                        .mipLevels = cfg.hizLevels});
     auto OverdrawBuffer = renderer->CreateResource("Overdraw Buffer",
                                                    RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
                                                                       RHITextureUsageBits::StorageImage |
@@ -163,10 +171,10 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererSetupFl
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Task, "main", "data/shaders/ETSMeshletCull.spv",
-                AsBytes(AsSpan(flags.cullFlags)));
+                AsBytes(AsSpan(cfg.cullFlags)));
             r->BindShader(self, RHIShaderStageBits::Mesh, "main", "data/shaders/EMSBasic.spv");
             r->BindShader(self, RHIShaderStageBits::Fragment, "main", "data/shaders/EPSBasic.spv",
-                AsBytes(AsSpan(flags.viewFlags)));
+                AsBytes(AsSpan(cfg.viewFlags)));
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindBufferShaderRead(self, IndirectTaskDispatch,
                                     RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);
@@ -194,7 +202,13 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererSetupFl
             cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
             cmd->EndGraphics();
         });
-
+    createCSMipGenerationPasses(renderer, "Early HiZ", RHIDeviceQueueType::Compute, ZBuffer, HIZ,
+                                RHIExtent2D{w,h},
+                                RHITextureAspectFlagBits::Depth, RHIResourceFormat::D32SignedFloat,
+                                RHITextureAspectFlagBits::Color, RHIResourceFormat::R32SignedFloat,
+                                cfg.hizLevels, 0, {
+                                    .reduction = RHIDeviceSampler::SamplerDesc::Reduction::Min
+                                });
     renderer->CreatePass(
         "Overdraw CS Reduce", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -220,7 +234,7 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererSetupFl
                            [=](PassHandle self, Renderer* r)
                            {
                                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/EPSBlit.spv",
-                                             AsBytes(AsSpan(flags.viewFlags)));
+                                             AsBytes(AsSpan(cfg.viewFlags)));
                                r->BindTextureSampler(self, nearSampler, "sampler");
                                r->BindTextureSRV(self, GBuffer, "gbuffer", RHIPipelineStageBits::FragmentShader,
                                                  RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
@@ -228,6 +242,13 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererSetupFl
                                r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
                                                  RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                                     .range = RHITextureSubresourceRange::Create()});
+                               r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::FragmentShader,
+                                                 RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                                                    .range = RHITextureSubresourceRange::Create(
+                                                                        RHITextureAspectFlagBits::Color,
+                                                                        0,
+                                                                        cfg.hizLevels
+                                                                    )});
                                r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader,
                                                         "globalMax");
                            });

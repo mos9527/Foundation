@@ -122,6 +122,12 @@ namespace Foundation::RHI {
                 float min{ 0.0f }; // Minimum level of detail
                 float max{ 16.0f }; // Maximum level of detail                        
             } lod; // Level of detail settings;
+            enum class Reduction
+            {
+                WeightedAverage,
+                Min,
+                Max
+            } reduction{ Reduction::WeightedAverage };
         } const mDesc;
         RHIDeviceSampler(RHIDevice const& device, SamplerDesc const& desc)
             : mDevice(device), mDesc(desc) {

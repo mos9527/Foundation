@@ -7,23 +7,17 @@ namespace Foundation::RenderUtils
                                             RHIExtent2D srcExtent,
                                             RHITextureAspectFlagBits srcAspect, RHIResourceFormat srcFormat,
                                             RHITextureAspectFlagBits dstAspect, RHIResourceFormat dstFormat,
-                                            uint32_t maxMips = 16, uint32_t layer = 0
+                                            uint32_t maxMips = 16, uint32_t layer = 0, RHIDeviceSampler::SamplerDesc samplerDesc = {}
                                             )
     {
         using namespace Math;
-#pragma pack(push, 1)
-        struct PushConstant
-        {
-            vec2 srcExtent;
-        };
-#pragma pack(pop)
         for (uint32 i = 0; i < maxMips; ++i)
         {
             renderer->CreatePass(
                 fmt::format("Mip Gen {} {}", i, name), queue, 0u,
                 [=](PassHandle self, Renderer* r)
                 {
-                    auto sampler = renderer->CreateSampler({});
+                    auto sampler = renderer->CreateSampler(samplerDesc);
                     r->BindTextureSampler(self, sampler, "sampler");
                     r->BindShader(self, RHIShaderStageBits::Compute, "csMain", "data/shaders/CSMipGeneration.spv");
                     if (i == 0)
@@ -46,7 +40,7 @@ namespace Foundation::RenderUtils
                             .format = dstFormat,
                             .range = RHITextureSubresourceRange::Create(dstAspect, i, 1, layer, 1)
                         });
-                    r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(PushConstant));
+                    r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(float2));
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
@@ -55,9 +49,7 @@ namespace Foundation::RenderUtils
                     r->CmdSetPipeline(self,cmd);
                     uint32_t w = std::max(1u, extent.x >> i);
                     uint32_t h = std::max(1u, extent.y >> i);
-                    r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, PushConstant{
-                        .srcExtent = (i == 0 ? srcExtent : RHIExtent3D{w, h, 1}),
-                    });
+                    r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, float2{w,h});
                     r->CmdDispatch(self, cmd, {w,h,1});
                 },
                 [=](PassHandle, Renderer* r)

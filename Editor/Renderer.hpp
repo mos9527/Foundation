@@ -20,10 +20,11 @@ static const int kCullFrustum = 1 << 0;
 static const int kCullOcclusion = 1 << 1;
 static const int kCullBackface = 1 << 2;
 
-struct RendererSetupFlags
+struct RendererConfig
 {
-    int viewFlags{0};
-    int cullFlags{0};
+    unsigned viewFlags{0};
+    unsigned cullFlags{0};
+    unsigned hizLevels{9};
 };
 extern void RendererSetupImGuiOnly(FContext* context);
-extern void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererSetupFlags flags = {});
+extern void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig cfg = {});

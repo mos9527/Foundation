@@ -4,11 +4,8 @@
 
 using namespace Foundation::Core;
 using namespace Foundation::RHI;
-const char* kVulkanDeviceExtensions[] = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME,    
-    VK_EXT_MESH_SHADER_EXTENSION_NAME,
-    VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME
-};
+const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_MESH_SHADER_EXTENSION_NAME,
+                                         VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME};
 
 const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
 
@@ -24,14 +21,14 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     // Graphics, Compute, Transfer should be preferably mutually exclusive
     // NOTE: We never used dedicated transfer in the Renderer - offloading to compute is more than enough for such
     // tasks.
-    Pair<uint32_t, uint32_t> graphics{kInvalidQueueIndex,kInvalidQueueIndex},
-                   compute{kInvalidQueueIndex,kInvalidQueueIndex},
-                   transfer{kInvalidQueueIndex,kInvalidQueueIndex};
+    Pair<uint32_t, uint32_t> graphics{kInvalidQueueIndex, kInvalidQueueIndex},
+        compute{kInvalidQueueIndex, kInvalidQueueIndex}, transfer{kInvalidQueueIndex, kInvalidQueueIndex};
     Array<uint32_t, 256> queueCounts{};
     for (size_t i = 0; i < families.size(); ++i)
     {
         auto& family = families[i];
-        if (family.queueCount && family.queueFlags & vk::QueueFlagBits::eGraphics && graphics.first == kInvalidQueueIndex)
+        if (family.queueCount && family.queueFlags & vk::QueueFlagBits::eGraphics &&
+            graphics.first == kInvalidQueueIndex)
         {
             graphics = {i, queueCounts[i]++};
             family.queueCount--;
@@ -41,7 +38,8 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
             compute = {i, queueCounts[i]++};
             family.queueCount--;
         }
-        if (family.queueCount && family.queueFlags & vk::QueueFlagBits::eTransfer && transfer.first == kInvalidQueueIndex)
+        if (family.queueCount && family.queueFlags & vk::QueueFlagBits::eTransfer &&
+            transfer.first == kInvalidQueueIndex)
         {
             transfer = {i, queueCounts[i]++};
             family.queueCount--;
@@ -79,7 +77,9 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
                        vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
                        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT, vk::PhysicalDeviceMeshShaderFeaturesEXT>
         featureChain = {
-            {.features = {.samplerAnisotropy = true, .fragmentStoresAndAtomics = true, .shaderInt16 = true}}, // vk::PhysicalDeviceFeatures2
+            {.features = {.samplerAnisotropy = true,
+                          .fragmentStoresAndAtomics = true,
+                          .shaderInt16 = true}}, // vk::PhysicalDeviceFeatures2
             {.storageBuffer16BitAccess = true,
              .uniformAndStorageBuffer16BitAccess = true,
              .shaderDrawParameters = true}, // vk::PhysicalDeviceVulkan11Features
@@ -233,8 +233,7 @@ RHIPipelineState* VulkanDevice::GetPipelineState(Handle handle) const
 void VulkanDevice::DestroyPipelineState(Handle handle) { mStorage.DestroyObject(handle); }
 
 #include "Shader.hpp"
-RHIDeviceScopedHandle<RHIShaderModule>
-VulkanDevice::CreateShaderModule(RHIShaderModule::ShaderModuleDesc const& desc)
+RHIDeviceScopedHandle<RHIShaderModule> VulkanDevice::CreateShaderModule(RHIShaderModule::ShaderModuleDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanShaderModule>(*this, desc)};
 }
@@ -314,8 +313,7 @@ void VulkanDevice::ResetFences(Span<RHIDeviceFence* const> fences)
         vk_fences.emplace_back(static_cast<VulkanDeviceFence*>(fence)->GetVkFence());
     mDevice.resetFences(vk_fences);
 }
-bool VulkanDevice::WaitForFences(Span<RHIDeviceFence* const> fences, bool wait_all,
-                                 size_t timeout)
+bool VulkanDevice::WaitForFences(Span<RHIDeviceFence* const> fences, bool wait_all, size_t timeout)
 {
     StackArena arena;
     AllocatorStack alloc(arena);
@@ -331,18 +329,17 @@ bool VulkanDevice::WaitForFences(Span<RHIDeviceFence* const> fences, bool wait_a
     CHECK_MSG(false, "failed to wait for fence. result={}", vk::to_string(res));
 }
 
-void VulkanDevice::SignalTimelineSemaphores(
-    Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores)
+void VulkanDevice::SignalTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores)
 {
     for (auto const& [signal, val] : semaphores)
     {
         CHECK(signal->mIsTimeline);
-        vk::SemaphoreSignalInfo info{.semaphore = static_cast<VulkanDeviceSemaphore*>(signal)->GetVkSemaphore(), .value = val};
+        vk::SemaphoreSignalInfo info{.semaphore = static_cast<VulkanDeviceSemaphore*>(signal)->GetVkSemaphore(),
+                                     .value = val};
         mDevice.signalSemaphore(info);
     }
 }
-bool VulkanDevice::WaitForTimelineSemaphores(
-    Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores, size_t timeout)
+bool VulkanDevice::WaitForTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores, size_t timeout)
 {
     StackArena arena{};
     AllocatorStack alloc(arena);
@@ -352,7 +349,8 @@ bool VulkanDevice::WaitForTimelineSemaphores(
     for (auto const& [wait, val] : semaphores)
     {
         CHECK(wait->mIsTimeline);
-        vk_semaphores.emplace_back(static_cast<VulkanDeviceSemaphore*>(wait)->GetVkSemaphore()), vk_values.emplace_back(val);
+        vk_semaphores.emplace_back(static_cast<VulkanDeviceSemaphore*>(wait)->GetVkSemaphore()),
+            vk_values.emplace_back(val);
     }
     auto res =
         mDevice.waitSemaphores(vk::SemaphoreWaitInfo{.semaphoreCount = static_cast<uint32_t>(vk_semaphores.size()),
@@ -611,22 +609,38 @@ VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, SamplerDesc
             throw std::runtime_error("unsupported sampler address mode");
         }
     };
-    mSampler = vk::raii::Sampler(
-        mDevice.GetVkDevice(),
-        vk::SamplerCreateInfo{.magFilter = vkFilterFromRHISamplerFilter(desc.filter.magFilter),
-                              .minFilter = vkFilterFromRHISamplerFilter(desc.filter.minFilter),
-                              .mipmapMode = desc.mipmap.mipmapMode == SamplerDesc::Mipmap::Linear
-                                  ? vk::SamplerMipmapMode::eLinear
-                                  : vk::SamplerMipmapMode::eNearest,
-                              .addressModeU = vkSamplerAddressModeFromRHIAddressMode(desc.addressMode.u),
-                              .addressModeV = vkSamplerAddressModeFromRHIAddressMode(desc.addressMode.v),
-                              .addressModeW = vkSamplerAddressModeFromRHIAddressMode(desc.addressMode.w),
-                              .mipLodBias = desc.mipmap.bias,
-                              .anisotropyEnable = desc.anisotropy.enable,
-                              .maxAnisotropy = desc.anisotropy.maxLevel,
-                              .minLod = desc.lod.min,
-                              .maxLod = desc.lod.max},
-        mDevice.GetVkAllocatorCallbacks());
+    auto vkSamplerReductionModeFromRHIReductionMode = [](SamplerDesc::Reduction mode) -> vk::SamplerReductionMode
+    {
+        using enum SamplerDesc::Reduction;
+        switch (mode)
+        {
+        case WeightedAverage:
+            return vk::SamplerReductionMode::eWeightedAverage;
+        case Min:
+            return vk::SamplerReductionMode::eMin;
+        case Max:
+            return vk::SamplerReductionMode::eMax;
+        default:
+            throw std::runtime_error("unsupported sampler reduction mode");
+        }
+    };
+    vk::SamplerReductionModeCreateInfo reduction{.reductionMode =
+                                                     vkSamplerReductionModeFromRHIReductionMode(desc.reduction)};
+    vk::SamplerCreateInfo sampler{.magFilter = vkFilterFromRHISamplerFilter(desc.filter.magFilter),
+                                  .minFilter = vkFilterFromRHISamplerFilter(desc.filter.minFilter),
+                                  .mipmapMode = desc.mipmap.mipmapMode == SamplerDesc::Mipmap::Linear
+                                      ? vk::SamplerMipmapMode::eLinear
+                                      : vk::SamplerMipmapMode::eNearest,
+                                  .addressModeU = vkSamplerAddressModeFromRHIAddressMode(desc.addressMode.u),
+                                  .addressModeV = vkSamplerAddressModeFromRHIAddressMode(desc.addressMode.v),
+                                  .addressModeW = vkSamplerAddressModeFromRHIAddressMode(desc.addressMode.w),
+                                  .mipLodBias = desc.mipmap.bias,
+                                  .anisotropyEnable = desc.anisotropy.enable,
+                                  .maxAnisotropy = desc.anisotropy.maxLevel,
+                                  .minLod = desc.lod.min,
+                                  .maxLod = desc.lod.max};
+    sampler.setPNext(&reduction);
+    mSampler = vk::raii::Sampler(mDevice.GetVkDevice(), sampler, mDevice.GetVkAllocatorCallbacks());
     CHECK_MSG(mSampler != nullptr, "failed to create Vulkan sampler");
 }
 RHIDeviceScopedHandle<RHIDeviceSampler> VulkanDevice::CreateSampler(RHIDeviceSampler::SamplerDesc const& desc)
