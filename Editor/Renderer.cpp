@@ -162,10 +162,11 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererSetupFl
         "Main Pass", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Task, "main", "data/shaders/ETSMeshletCull.spv");
+            r->BindShader(self, RHIShaderStageBits::Task, "main", "data/shaders/ETSMeshletCull.spv",
+                AsBytes(AsSpan(flags.cullFlags)));
             r->BindShader(self, RHIShaderStageBits::Mesh, "main", "data/shaders/EMSBasic.spv");
             r->BindShader(self, RHIShaderStageBits::Fragment, "main", "data/shaders/EPSBasic.spv",
-                AsBytes(AsSpan(flags)));
+                AsBytes(AsSpan(flags.viewFlags)));
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindBufferShaderRead(self, IndirectTaskDispatch,
                                     RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);
@@ -219,7 +220,7 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererSetupFl
                            [=](PassHandle self, Renderer* r)
                            {
                                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/EPSBlit.spv",
-                                             AsBytes(AsSpan(flags)));
+                                             AsBytes(AsSpan(flags.viewFlags)));
                                r->BindTextureSampler(self, nearSampler, "sampler");
                                r->BindTextureSRV(self, GBuffer, "gbuffer", RHIPipelineStageBits::FragmentShader,
                                                  RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,

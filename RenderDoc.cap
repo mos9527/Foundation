@@ -2,7 +2,7 @@
     "rdocCaptureSettings": 1,
     "settings": {
         "autoStart": false,
-        "commandLine": "",
+        "commandLine": "/mnt/Windows/Scenes/RedRoom.bin ",
         "environment": [
             {
                 "separator": "Platform style",
@@ -23,7 +23,7 @@
                 "variable": "SDL_VIDEODRIVER"
             }
         ],
-        "executable": "/home/mos9527/Foundation/cmake-build-debug/bin/Example_MeshShaderBasic",
+        "executable": "/home/mos9527/Foundation/cmake-build-debug/bin/Editor",
         "inject": false,
         "numQueuedFrames": 0,
         "options": {

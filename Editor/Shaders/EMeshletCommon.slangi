@@ -1,4 +1,5 @@
 #include "EMath.slangi"
+#include "EFlags.slangi"
 static const uint kTaskShaderWG = 64;
 // Definitions From C++ sources
 static const uint kNumMeshDiscreteLODs = 5;
@@ -104,6 +105,7 @@ struct UBO
     float zNear;
     float4x4 view;
     float4x4 proj;
+    float4 projPlanes; // ij:left, kl:top
 };
 // ^^^
 public struct MeshletGroupShared {

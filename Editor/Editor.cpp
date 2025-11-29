@@ -100,6 +100,8 @@ void FRunning()
     GShaderGlobals.view = GCamera.view;
     GShaderGlobals.proj = GCamera.proj;
     GShaderGlobals.zNear = GCamera.zNear;
+    GShaderGlobals.projPlanes = planeSymmetric(GShaderGlobals.proj);
+    // ImGui
     ImGui::Begin("Debug");
     ImGui::TextUnformatted(FArcballCamera::kControlsText);
     ImGui::Text("FPS | %.2f", ImGui::GetIO().Framerate);
@@ -114,12 +116,17 @@ void FRunning()
     ImGui::Begin("Rendering");
     if (ImGui::Button("Toggle Overdraw View"))
     {
-        GRendererFlags ^= RendererSetupFlagsBits::DebugViewOverdraw;
+        GRendererFlags.viewFlags ^= kViewOverdraw;
         FEState = FERunningEnter;
     }
     if (ImGui::Button("Toggle Meshlet View"))
     {
-        GRendererFlags ^= RendererSetupFlagsBits::DebugViewMeshlet;
+        GRendererFlags.viewFlags ^= kViewMeshlet;
+        FEState = FERunningEnter;
+    }
+    if (ImGui::Button("Toggle Frustum Culling"))
+    {
+        GRendererFlags.cullFlags ^= kCullFrustum;
         FEState = FERunningEnter;
     }
     ImGui::End();

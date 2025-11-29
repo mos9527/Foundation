@@ -70,6 +70,18 @@ namespace Foundation::Math {
         view[3] = vec4(pos.x,pos.y,pos.z,1.0f);
         return inverse(view);
     }
+
+    // (i,j,k,l), where left/right planes are ix +- jz = 0, top/bottom planes are ky +- lz = 0
+    inline float4 planeSymmetric(mat4 proj)
+    {
+        mat4 projT = transpose(proj);
+        float4 left = projT[3] + projT[0];   // (m41 + m11, m42 + m12, m43 + m13, m44 + m14)
+        float4 bottom = projT[3] + projT[1];    // (m41 + m21, m42 + m22, m43 + m23, m44 + m24)
+        // Normalize
+        left /= length(left.xyz());
+        bottom /= length(bottom.xyz());
+        return {left.x, left.z, bottom.y, bottom.z};
+    }
 #pragma endregion
 
 #pragma region TRS
@@ -100,4 +112,5 @@ namespace Foundation::Math {
         rotation = quat_cast(basis);
         return true;
     }
+#pragma endregion
 }
