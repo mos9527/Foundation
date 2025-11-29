@@ -41,7 +41,7 @@ Fragment main(V2F input, float2 fragCoord : SV_Position /* pixel space */)
     if (flags & kViewMeshlet)
         output.color = float4(hash3(input.meshlet), 1.0);
     else
-        output.color = float4(input.normal, 1.0);
+        output.color = float4(float3(input.normal.y), 1.0);
     if (flags & kViewOverdraw)
         imageAtomicAdd(overdraw, int2(fragCoord), 1);
     return output;

@@ -174,9 +174,8 @@ template<> void FDeserialize(FReader& r, FMesh& obj)
     FDeserialize(r, obj.lods, obj.lods.get_allocator().mResource);
     FDeserialize(r, obj.dag);
 }
-#include <lz4.h>
 const uint32_t kSceneMagic = 0xDEADDEAD;
-void SceneSerialize(FWriter& w, Vector<FMesh> const& meshes, Vector<FInstance> const& instances,
+void FSerialize(FWriter& w, Vector<FMesh> const& meshes, Vector<FInstance> const& instances,
                  Vector<FCamera> const& cameras)
 {
     FSerialize(w, kSceneMagic);
@@ -184,7 +183,7 @@ void SceneSerialize(FWriter& w, Vector<FMesh> const& meshes, Vector<FInstance> c
     FSerialize(w, instances);
     FSerialize(w, cameras);
 }
-void SceneDeserialize(FReader& r, Vector<FMesh>& meshes, Vector<FInstance>& instances,
+void FDeserialize(FReader& r, Vector<FMesh>& meshes, Vector<FInstance>& instances,
                    Vector<FCamera>& cameras)
 {
     uint32_t magic;
@@ -210,6 +209,6 @@ void LoadFromFile(StringView scenePath, Vector<FMesh>& outMeshes, Vector<FInstan
         std::ifstream file(scenePath.data(), std::ios::binary);
         CHECK_MSG(file.is_open() && file.read(data.data(), size), "Failed to read Editor scene file {}", scenePath);
         FReader reader(data);
-        SceneDeserialize(reader, outMeshes, outInstances, outCameras);
+        FDeserialize(reader, outMeshes, outInstances, outCameras);
     }
 }
