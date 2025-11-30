@@ -30,7 +30,7 @@ float projErrorSimple(float error, float3 center /* view */, float radius /* sca
     return error / d * abs(P11) * 0.5f;
 }
 // 2D Polyhedral Bounds of a Clipped, Perspective-Projected 3D Sphere. Michael Mara, Morgan McGuire. 2013
-// Returns (x1, y1, x2, y2) in UV space [0,1], Y goes down
+// Returns (x1, y1, x2, y2) in UV space [0,1] from OpenGL NDC space
 bool projSphereAABB(float3 c /* view */, float r /* scaled */, float P00, float P11, float zNear, out float4 aabb)
 {
     // f = 1 / tan(fovY / 2), a = aspect ratio
@@ -50,7 +50,7 @@ bool projSphereAABB(float3 c /* view */, float r /* scaled */, float P00, float 
 	float maxy = (vy * c.y + cr.z) / (vy * c.z - cr.y);
 
 	aabb = float4(minx * P00, miny * P11, maxx * P00, maxy * P11);
-	aabb = aabb.xwzy * float4(0.5f, -0.5f, 0.5f, -0.5f) + float4(0.5f); // clip space -> uv space
+	aabb = aabb.xwzy * float4(0.5f, 0.5f, 0.5f, 0.5f) + float4(0.5f); // clip space -> uv space
 
 	return true;
 }
@@ -148,8 +148,6 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
                 float viewDepth = viewCenter.z + radius;
                 float dMax = globalParams.zNear / -viewDepth;
                 bool pass = d <= dMax;
-                if (!pass)
-                    printf("reject %d l=%.3f depth=%.3f d=%.3f uv=(%.3f,%.3f)\n", meshletGlobalID, lambda, dMax, d, texel.x, texel.y);
                 visible &= pass;
                 // Commit to occlusion buffer if visible ONLY in early pass
                 if (early) {
