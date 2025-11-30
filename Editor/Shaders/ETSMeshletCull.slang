@@ -139,7 +139,6 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
                 // ^^^ Lets anything clipping the near plane pass
                 float width = hizWidth * (aabb.z - aabb.x);
                 float height = hizHeight * (aabb.w - aabb.y);
-                printf("aabb %.3f %.3f %.3f %.3f w %.1f h %.1f\n", aabb.x, aabb.y, aabb.z, aabb.w, width, height);
                 float l = max(width,height);
                 float lambda = ceil(log2(max(l, 1.0f)));
                 float2 texel = (aabb.xy + aabb.zw) * 0.5f;
