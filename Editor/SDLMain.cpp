@@ -25,7 +25,7 @@ bool /* should close */ mainLoop()
 constexpr int kSDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_VULKAN;
 int main(int argc, char** argv)
 {
-    CreateContext(SDL_CreateWindow("Editor", 800, 600, kSDLWindowFlagsVulkan));
+    CreateContext(SDL_CreateWindow("Editor", 1600, 900, kSDLWindowFlagsVulkan));
     GContext->args = Span(argv, argv + argc);
     while (!mainLoop()) {}
     LOG(SDLMain, LogInfo, "Quitting...");

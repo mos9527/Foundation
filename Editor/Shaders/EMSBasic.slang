@@ -38,7 +38,7 @@ void main(
         V2F v2f;
         v2f.pos = mul(mul(globalParams.proj, globalParams.view), float4(vtx.position, 1.0));
         v2f.normal = vtx.normal;
-        v2f.meshlet = meshletID;
+        v2f.meshlet = mesh.meshletGlobalIndex + meshletID;
         verts[i] = v2f;
     }
     for (uint i = tid; i < triCount; i += kTaskShaderWG) {

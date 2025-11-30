@@ -11,8 +11,8 @@ struct UBO
     float4x4 proj;
     float4 projPlanes; // ij:left, kl:top
     uint32_t hizLevels;
-    uint32_t zbufferWidthP2;
-    uint32_t zbufferHeightP2;
+    uint32_t hizWidth;
+    uint32_t hizHeight;
 };
 #pragma pack(pop)
 
@@ -31,7 +31,6 @@ struct RendererConfig
 {
     unsigned viewFlags{kViewOverdraw};
     unsigned cullFlags{kCullFrustum|kCullOcclusion|kCullBackface};
-    unsigned hizLevels{9};
 };
 extern void RendererSetupImGuiOnly(FContext* context);
-extern void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig cfg = {});
+extern void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg = {});

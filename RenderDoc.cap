@@ -2,7 +2,7 @@
     "rdocCaptureSettings": 1,
     "settings": {
         "autoStart": false,
-        "commandLine": "/mnt/Windows/Scenes/RedRoom.bin ",
+        "commandLine": "/mnt/Windows/Scenes/glTFSponza/Sponza-glTF.bin",
         "environment": [
             {
                 "separator": "Platform style",

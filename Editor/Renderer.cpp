@@ -35,7 +35,7 @@ void RendererSetupImGuiOnly(FContext* context)
 }
 // TODO: Make this part hot-reload?
 
-void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig cfg)
+void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
 {
     if (context->renderer)
         Destruct(context->allocator, context->renderer);
@@ -135,13 +135,15 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig 
                                             RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil | RHITextureUsageBits::SampledImage,
                                                            .extent = {w, h, 1},
                                                            .format = RHIResourceFormat::D32SignedFloat});
-    const int HIZResolution = 1u << (cfg.hizLevels - 1);
+    const uint32_t HIZWidth = 1u << log2(w), HIZHeight = 1u << log2(h);
+    const uint32_t HIZMips = log2(std::max(HIZWidth, HIZHeight)) + 1u;
+    pShaderGlobals->hizWidth = HIZWidth, pShaderGlobals->hizHeight = HIZHeight, pShaderGlobals->hizLevels = HIZMips;
     auto HIZ = renderer->CreateResource("HIZ",
                                         RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
                                                            RHITextureUsageBits::SampledImage,
-                                                       .extent = {HIZResolution, HIZResolution, 1},
+                                                       .extent = {HIZWidth, HIZHeight, 1},
                                                        .format = RHIResourceFormat::R32SignedFloat,
-                                                        .mipLevels = cfg.hizLevels});
+                                                        .mipLevels = HIZMips});
     auto OverdrawBuffer = renderer->CreateResource("Overdraw Buffer",
                                                    RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
                                                                       RHITextureUsageBits::StorageImage |
@@ -220,7 +222,7 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig 
                                                          .range = RHITextureSubresourceRange::Create(
                                                              RHITextureAspectFlagBits::Color,
                                                              0,
-                                                             cfg.hizLevels
+                                                             HIZMips
                                                          )});
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -236,12 +238,12 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig 
                     cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
                     cmd->EndGraphics();
                 });
-            if (early)
+            if (early && cfg.cullFlags & kCullOcclusion)
                 createCSMipGenerationPasses(renderer, "Early HiZ", RHIDeviceQueueType::Compute, ZBuffer, HIZ,
                                             RHIExtent2D{w,h},
                                             RHITextureAspectFlagBits::Depth, RHIResourceFormat::D32SignedFloat,
                                             RHITextureAspectFlagBits::Color, RHIResourceFormat::R32SignedFloat,
-                                            cfg.hizLevels, 0, {
+                                            HIZMips, 0, {
                                                 .reduction = RHIDeviceSampler::SamplerDesc::Reduction::Min
                                             });
         };
@@ -287,7 +289,7 @@ void RendererSetup(FContext* context, UBO const* pShaderGlobals, RendererConfig 
                                                                     .range = RHITextureSubresourceRange::Create(
                                                                         RHITextureAspectFlagBits::Color,
                                                                         0,
-                                                                        cfg.hizLevels
+                                                                        HIZMips
                                                                     )});
                                r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader,
                                                         "globalMax");
