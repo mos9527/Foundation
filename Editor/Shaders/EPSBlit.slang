@@ -42,7 +42,8 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     }
     if (flags & kViewHIZ) {
         // Lazy - need range reduction too.
-        return float4(hiz.SampleLevel(sampler, uv, 0).xxx * 20.0f, 1);
+        float z = hiz.SampleLevel(sampler, uv, 0).x * 64;
+        return float4(z,0,0,1);
     }
     float4 gbuffer = gbuffer.Load(coord);
     return gbuffer;

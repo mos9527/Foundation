@@ -35,7 +35,7 @@ bool projSphereAABB(float3 c /* view */, float r /* scaled */, float P00, float 
 {
     // f = 1 / tan(fovY / 2), a = aspect ratio
     // P00 = f/a, P11 = f
-	if (c.z + r > zNear) // clipping near plane
+	if (c.z + r > -zNear) // clipping near plane
 		return false;
 
 	float3 cr = c * r;
@@ -50,11 +50,10 @@ bool projSphereAABB(float3 c /* view */, float r /* scaled */, float P00, float 
 	float maxy = (vy * c.y + cr.z) / (vy * c.z - cr.y);
 
 	aabb = float4(minx * P00, miny * P11, maxx * P00, maxy * P11);
-	aabb = aabb.xwzy * float4(0.5f, 0.5f, 0.5f, 0.5f) + float4(0.5f); // clip space -> uv space
+	aabb = aabb.zyxw * float4(-0.5f, 0.5f, -0.5f, 0.5f) + float4(0.5f); // OGL clip space -> uv space
 
 	return true;
 }
-
 groupshared MeshletGroupShared shared;
 
 // Each WG of task shader processes up to kMaxTaskShaderWork meshlets from the same Instance,
@@ -134,28 +133,29 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
         }
         if (visible) {
             float4 aabb; // x1, y1, x2, y2 in UV
-            // Let anything past the near plane pass
             const float hizWidth = globalParams.hizWidth;
             const float hizHeight = globalParams.hizHeight;
             if (projSphereAABB(viewCenter, radius, globalParams.proj[0][0], globalParams.proj[1][1], globalParams.zNear, aabb)) {
+                // ^^^ Lets anything clipping the near plane pass
                 float width = hizWidth * (aabb.z - aabb.x);
                 float height = hizHeight * (aabb.w - aabb.y);
+                printf("aabb %.3f %.3f %.3f %.3f w %.1f h %.1f\n", aabb.x, aabb.y, aabb.z, aabb.w, width, height);
                 float l = max(width,height);
-                float lambda = min(ceil(log2(max(l, 1.0f))), globalParams.hizLevels - 1.0f);
-                float2 texel = (aabb.xy + aabb.zw) / 2.0f;
+                float lambda = ceil(log2(max(l, 1.0f)));
+                float2 texel = (aabb.xy + aabb.zw) * 0.5f;
                 float d = hiz.SampleLevel(hizSampler, texel, lambda).x;
                 // View space depth *decreases* with distance
                 float viewDepth = viewCenter.z + radius;
                 float dMax = globalParams.zNear / -viewDepth;
                 bool pass = d <= dMax;
                 visible &= pass;
-                // Commit to occlusion buffer if visible ONLY in early pass
-                if (early) {
-                    if (visible)
-                        occlusion[meshletGlobalID / 32].or(1u << (meshletGlobalID % 32));
-                }
             }
         }
+    }
+    // Commit to occlusion buffer if visible ONLY in early pass
+    if (early) {
+        if (visible)
+            occlusion[meshletGlobalID / 32].or(1u << (meshletGlobalID % 32));
     }
     if (visible) {
         // Output the visible meshlet

@@ -135,9 +135,20 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                                             RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil | RHITextureUsageBits::SampledImage,
                                                            .extent = {w, h, 1},
                                                            .format = RHIResourceFormat::D32SignedFloat});
-    const uint32_t HIZWidth = 1u << log2(w), HIZHeight = 1u << log2(h);
+    uint32_t HIZWidth = 1u << log2(w/2), HIZHeight = 1u << log2(h/2);
+    if (HIZWidth * 2 < w) HIZWidth *= 2;
+    if (HIZHeight * 2 < w) HIZHeight *= 2;
     const uint32_t HIZMips = log2(std::max(HIZWidth, HIZHeight)) + 1u;
     pShaderGlobals->hizWidth = HIZWidth, pShaderGlobals->hizHeight = HIZHeight, pShaderGlobals->hizLevels = HIZMips;
+    RHIDeviceSampler::SamplerDesc HIZSamplerDesc{
+        .addressMode = {
+            .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+            .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+            .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge
+        },
+        .mipmap = { .mipmapMode = RHIDeviceSampler::SamplerDesc::Mipmap::Nearest},
+        .reduction = RHIDeviceSampler::SamplerDesc::Reduction::Min
+    };
     auto HIZ = renderer->CreateResource("HIZ",
                                         RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
                                                            RHITextureUsageBits::SampledImage,
@@ -180,7 +191,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             r->CmdDispatch(self, cmd, {cdata.w, cdata.h, 1});
         });
     {
-        auto hizSampler = renderer->CreateSampler({.reduction = RHIDeviceSampler::SamplerDesc::Reduction::Min});
+        auto hizSampler = renderer->CreateSampler(HIZSamplerDesc);
         auto AddMainPass = [=](bool early)
         {
             renderer->CreatePass(
@@ -243,9 +254,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                                             RHIExtent2D{w,h},
                                             RHITextureAspectFlagBits::Depth, RHIResourceFormat::D32SignedFloat,
                                             RHITextureAspectFlagBits::Color, RHIResourceFormat::R32SignedFloat,
-                                            HIZMips, 0, {
-                                                .reduction = RHIDeviceSampler::SamplerDesc::Reduction::Min
-                                            });
+                                            HIZMips, 0, HIZSamplerDesc);
         };
         AddMainPass(true);
         if (cfg.cullFlags & kCullOcclusion)
