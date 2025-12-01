@@ -157,7 +157,7 @@ namespace Foundation::RenderCore
         UniquePtr<ExecuteResources> mResources;
         RHIDeviceScopedHandle<RHIDeviceDescriptorPool> mDescPool;
         Mutex mDescPoolMutex;
-
+        // Per swap primitives
         struct FrameSyncObjects
         {
             // Index of this swap
@@ -169,7 +169,10 @@ namespace Foundation::RenderCore
             RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> viewSet{};
             // Tracked backbuffer handle
             ResourceHandle backbuffer{kInvalidHandle};
-            FrameSyncObjects(size_t swapIndex) : swapIndex(swapIndex) {}
+            // Timestamp Query Pool
+            RHIDeviceScopedHandle<RHIDeviceQueryPool> queryPool{};
+            Vector<uint64_t> queryPassTimestampsResults;
+            FrameSyncObjects(size_t swapIndex, Allocator* alloc) : swapIndex(swapIndex), queryPassTimestampsResults(alloc) {}
         };
         RHIDeviceScopedHandle<RHIDeviceDescriptorPool> mSwapDescriptorPool;
         RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout> mSwapDescriptorSetLayout;
@@ -783,6 +786,23 @@ namespace Foundation::RenderCore
          * @note This value is guaranteed to be monotonic.
          */
         [[nodiscard]] uint64_t GetSync() const { return mCurrentSync; }
+        /**
+         * @brief Retrieves timings for all passes executed in the **last** frame
+         *        associated with the specified sync index.
+         *        The values are refreshed upon @ref BeginExecute() call.
+         * @note  The values are laid out as follows:
+         *        [pass 0 start tick] [pass 0 end tick] [pass 1 start tick] [pass 1 end tick] ...
+         * @note  A span of size 0 is ALWAYS returned if no timing information is available.
+         */
+        Span<const uint64_t> GetPassTimings(uint64_t sync, float& resolutionNS) const;
+        /**
+         * @brief Retrieves an internal tracked pass associated with the given handle, read-only.
+         */
+        TrackedPass const& GetTrackedPass(PassHandle pass)
+        {
+            CHECK_MSG(mSetup && pass < mSetup->trackedPasses.size(), "No passes available or out of bounds");
+            return mSetup->trackedPasses[pass];
+        }
         /**
          * @brief Returns whether async compute is enabled.
          *

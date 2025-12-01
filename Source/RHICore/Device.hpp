@@ -151,6 +151,11 @@ namespace Foundation::RHI {
         RHIDeviceQueryPool(RHIDevice const& device, QueryPoolDesc const& desc)
             : mDevice(device), mDesc(desc) {}
 
+        // NOTE: In nanoseconds
+        virtual const float GetTimestampResolution() = 0;
+
+        virtual void Reset() = 0;
+
         virtual Span<const uint64_t> GetTimestampResults(bool wait = true) = 0;
         virtual void DebugSetObjectName(const char* name) = 0;
     };

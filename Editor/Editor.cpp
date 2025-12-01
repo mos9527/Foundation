@@ -88,6 +88,8 @@ void FRunning()
     auto* scene = GContext->gpuScene;
     // New frame
     renderer->BeginExecute();
+    float timingResolutionNS;
+    auto timings = renderer->GetPassTimings(renderer->GetSync(), timingResolutionNS);
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
     // Upload instance data
@@ -103,42 +105,86 @@ void FRunning()
     GShaderGlobals.zNear = GCamera.zNear;
     GShaderGlobals.projPlanes = planeSymmetric(GShaderGlobals.proj);
     // ImGui
-    ImGui::Begin("Debug");
-    ImGui::TextUnformatted(FArcballCamera::kControlsText);
-    ImGui::Text("FPS | %.2f", ImGui::GetIO().Framerate);
-    ImGui::Text("StreamingPool | %s", scene->DbgGetStatistics().c_str());
-    ImGui::Text("Instances | %zu", GSInstances.size());
-    ImGui::SliderFloat("LOD Threshold | ", &GShaderGlobals.lodThreshold, 0.f, 1.f);
-    ImGui::Separator();
-    ImGui::SliderFloat3("Cam Center", &GCamera.center.x, -50.0f, 50.0f);
-    ImGui::SliderFloat("Cam Radius", &GCamera.radius,0.0f, 100.0f);
-    ImGui::SliderAngle("Cam FOV Y", &GCamera.fovY);
+    if (ImGui::Begin("Debug"))
+    {
+        ImGui::TextUnformatted(FArcballCamera::kControlsText);
+        ImGui::Text("FPS | %.2f", ImGui::GetIO().Framerate);
+        ImGui::Text("StreamingPool | %s", scene->DbgGetStatistics().c_str());
+        ImGui::Text("Instances | %zu", GSInstances.size());
+        ImGui::SliderFloat("LOD Threshold | ", &GShaderGlobals.lodThreshold, 0.f, 1.f);
+        ImGui::Separator();
+        ImGui::SliderFloat3("Cam Center", &GCamera.center.x, -50.0f, 50.0f);
+        ImGui::SliderFloat("Cam Radius", &GCamera.radius,0.0f, 100.0f);
+        ImGui::SliderAngle("Cam FOV Y", &GCamera.fovY);
+    }
     ImGui::End();
-    ImGui::Begin("Rendering");
-    if (ImGui::Button("Toggle Overdraw View"))
+    if (ImGui::Begin("Rendering"))
     {
-        GRendererConfig.viewFlags ^= kViewOverdraw;
-        FEState = FERunningEnter;
+        if (ImGui::Button("Toggle Overdraw View"))
+        {
+            GRendererConfig.viewFlags ^= kViewOverdraw;
+            FEState = FERunningEnter;
+        }
+        if (ImGui::Button("Toggle Meshlet View"))
+        {
+            GRendererConfig.viewFlags ^= kViewMeshlet;
+            FEState = FERunningEnter;
+        }
+        if (ImGui::Button("Toggle HIZ View"))
+        {
+            GRendererConfig.viewFlags ^= kViewHIZ;
+            FEState = FERunningEnter;
+        }
+        if (ImGui::Button("Toggle Frustum Culling"))
+        {
+            GRendererConfig.cullFlags ^= kCullFrustum;
+            FEState = FERunningEnter;
+        }
+        if (ImGui::Button("Toggle Occlusion Culling"))
+        {
+            GRendererConfig.cullFlags ^= kCullOcclusion;
+            FEState = FERunningEnter;
+        }
     }
-    if (ImGui::Button("Toggle Meshlet View"))
+    ImGui::End();
+    if (ImGui::Begin("Profiling"))
     {
-        GRendererConfig.viewFlags ^= kViewMeshlet;
-        FEState = FERunningEnter;
-    }
-    if (ImGui::Button("Toggle HIZ View"))
-    {
-        GRendererConfig.viewFlags ^= kViewHIZ;
-        FEState = FERunningEnter;
-    }
-    if (ImGui::Button("Toggle Frustum Culling"))
-    {
-        GRendererConfig.cullFlags ^= kCullFrustum;
-        FEState = FERunningEnter;
-    }
-    if (ImGui::Button("Toggle Occlusion Culling"))
-    {
-        GRendererConfig.cullFlags ^= kCullOcclusion;
-        FEState = FERunningEnter;
+        if (timings.empty())
+        {
+            ImGui::Text("No Info");
+        } else
+        {
+            Vector<Tuple<size_t,size_t,PassHandle, int>> sorted(GLOBAL_ALLOC);
+            for (size_t i = 0; i < timings.size() / 2; i++)
+                sorted.emplace_back(timings[i * 2],timings[i * 2 + 1], i, 0);
+            std::sort(sorted.begin(), sorted.end());
+            // Partition into ranks - work has chance to overlap on the GPU.
+            int top = 0; PriorityQueue<Pair<size_t, int>, std::greater<>> Q(GLOBAL_ALLOC);
+            for (auto& [start, end, pass, rank] : sorted)
+            {
+                if (!Q.empty() && Q.top().first <= start)
+                {
+                    rank = Q.top().second; Q.pop();
+                    Q.emplace(end, rank);
+                }
+                else
+                {
+                    rank = top++;
+                    Q.emplace(end, rank);
+                }
+            }
+            Vector<float> rankTicks(top, GLOBAL_ALLOC);
+            ImGui::Text("Pass Timings (ns):");
+            size_t begin = std::get<0>(sorted.front());
+            for (auto& [start, end, pass, rank] : sorted)
+                start -= begin, end -= begin, rankTicks[rank] += end - start;
+            for (auto& [start, end, pass, rank] : sorted)
+            {
+                float duration = end - start;
+                float rankP = duration / rankTicks[rank];
+                ImGui::Text("%s | %.2fms | %.2f%% of Rank Time", renderer->GetTrackedPass(pass).name.c_str(), duration * timingResolutionNS * 1e-6f, rankP * 100.f);
+            }
+        }
     }
     ImGui::End();
     renderer->ExecuteFrame();

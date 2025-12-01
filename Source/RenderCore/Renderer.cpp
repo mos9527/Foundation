@@ -973,7 +973,7 @@ void Renderer::FinalizeResources()
 void Renderer::SetFrameSyncObjects()
 {
     while (mSwaps.size() < mFrameSwaps)
-        mSwaps.emplace_back(mSwaps.size());
+        mSwaps.emplace_back(mSwaps.size(), mAllocator);
     while (mExecutePerSwapCmds.size() < mFrameSwaps)
     {
         auto& threads = mExecutePerSwapCmds.emplace_back(mAllocator);
@@ -996,6 +996,11 @@ void Renderer::SetFrameSyncObjects()
     mGraphicsTimeline->DebugSetObjectName(fmt::format("Graphics Timeline Semaphore").c_str());
     mComputeTimeline = mDevice->CreateSemaphore(true);
     mComputeTimeline->DebugSetObjectName(fmt::format("Async Compute Timeline Semaphore").c_str());
+}
+Span<const uint64_t> Renderer::GetPassTimings(uint64_t sync, float& resolutionNS) const
+{
+    resolutionNS = mSwaps[sync].queryPool->GetTimestampResolution();
+    return mSwaps[sync].queryPassTimestampsResults;
 }
 void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
 {
@@ -1078,6 +1083,26 @@ void Renderer::BeginExecute()
         // Reset per-swap command lists
         for (auto& cmds : mExecutePerSwapCmds[mCurrentSync])
             cmds->Reset();
+    }
+    {
+        ZoneScopedN("Reset Query Pools");
+        // Query pool. Lazily initialized here
+        auto& queryPool = mSwaps[mCurrentSync].queryPool;
+        if (!queryPool)
+        {
+            queryPool = mDevice->CreateQueryPool({
+                .type = RHIDeviceQueryPool::QueryPoolDesc::Timestamp,
+                .count = static_cast<uint32_t>(mSetup->trackedPasses.size()) * 2 // Top, Bottom per pass
+            });
+            queryPool->Reset();
+        } else
+        {
+            auto queryResult = queryPool->GetTimestampResults(true /* wait */);
+            auto& queryTimestamps = mSwaps[mCurrentSync].queryPassTimestampsResults;
+            queryTimestamps.resize(queryResult.size());
+            Ranges::copy(queryResult, queryTimestamps.begin());
+            queryPool->Reset();
+        }
     }
 }
 void Renderer::ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, TrackedResource::SubresourceState& sta,
@@ -1349,6 +1374,7 @@ void Renderer::ExecuteFrame()
         }
         {
             ZoneScopedN("Schedule Records");
+            auto* queryPool = mSwaps[mCurrentSync].queryPool.Get();
             struct RecordJob : public ThreadPoolJob
             {
                 Renderer* r;
@@ -1356,11 +1382,12 @@ void Renderer::ExecuteFrame()
                 TrackedPass* pass;
                 RHICommandList** cmd;
                 size_t ord;
+                RHIDeviceQueryPool* queryPool;
                 // Write a lambda without writing a lambda
                 // For demonstration of custom job types - and that
                 // cmd buffers are thread-local, plus how we don't get thread_id in lambda in my implementation
                 RecordJob(Renderer* r, TrackedPass* pass, RHICommandList** cmd, size_t ord,
-                          ExecuteBarrierList* barriers) : r(r), barriers(barriers), pass(pass), cmd(cmd), ord(ord)
+                          ExecuteBarrierList* barriers, RHIDeviceQueryPool* queryPool) : r(r), barriers(barriers), pass(pass), cmd(cmd), ord(ord), queryPool(queryPool)
                 {
                 }
                 void Execute(size_t thread_id) noexcept override
@@ -1369,6 +1396,7 @@ void Renderer::ExecuteFrame()
                     ZoneNameF("<%s>", pass->name.c_str());
                     *cmd = r->ExecuteAllocateCommandList(pass->queue, thread_id);
                     (*cmd)->Begin();
+                    (*cmd)->WriteTimestamp(queryPool, RHIPipelineStageBits::TopOfPipe, pass->handle * 2);
                     (*cmd)->BeginTransition();
                     for (auto& [res, desc] : (*barriers))
                     {
@@ -1380,6 +1408,7 @@ void Renderer::ExecuteFrame()
                     pass->frameExec = r->mFrameSwapped;
                     pass->pass->Record(pass->handle, r, *cmd);
                     (*cmd)->DebugEnd();
+                    (*cmd)->WriteTimestamp(queryPool, RHIPipelineStageBits::BottomOfPipe, pass->handle * 2 + 1);
                     (*cmd)->End();
                 }
             };
@@ -1387,11 +1416,11 @@ void Renderer::ExecuteFrame()
             {
                 if (mDesc.threadCount)
                 {
-                    mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[active[i]], &passCmds[i], i, &passBarriers[i]);
+                    mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[active[i]], &passCmds[i], i, &passBarriers[i], queryPool);
                 }
                 else
                 {
-                    RecordJob job(this, &passes[active[i]], &passCmds[i], i, &passBarriers[i]);
+                    RecordJob job(this, &passes[active[i]], &passCmds[i], i, &passBarriers[i], queryPool);
                     job.Execute(-1); // Main thread
                 }
             }

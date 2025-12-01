@@ -75,6 +75,7 @@ namespace Foundation::RHI {
     class VulkanDeviceQueryPool : public RHIDeviceQueryPool
     {
         const VulkanDevice& mDevice;
+        const float mTimestampResolution;
         vk::raii::QueryPool mQueryPool{ nullptr };
 
         Vector<uint64_t> mTimestampResults;
@@ -82,7 +83,11 @@ namespace Foundation::RHI {
         VulkanDeviceQueryPool(const VulkanDevice& device, QueryPoolDesc const& desc);
         [[nodiscard]] auto const& GetVkQueryPool() const { return mQueryPool; }
 
-        Span<const uint64_t> GetTimestampResults(bool wait = true) override;
+        const float GetTimestampResolution() override { return mTimestampResolution; }
+
+        void Reset() override;
+
+        Span<const uint64_t> GetTimestampResults(bool wait) override;
         void DebugSetObjectName(const char* name) override;
     };
     class VulkanDevice : public RHIDevice {

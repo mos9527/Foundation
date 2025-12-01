@@ -169,27 +169,31 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                                                            .format = RHIResourceFormat::R8G8B8A8Unorm});
     auto ReduceBuffer = renderer->CreateResource(
         "Reduced Values", RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * 256});
-    renderer->CreatePass(
-        "Clear Overdraw+Reduce Buffer", RHIDeviceQueueType::Graphics, 0u,
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindTextureUAV(self, OverdrawBuffer, "texture", RHIPipelineStageBits::ComputeShader,
-                              {.format = RHIResourceFormat::R32Uint,
-                               .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-            r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSOverdrawClear.spv");
-            r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
-            r->BindBufferCopyDst(self, ReduceBuffer);
-        },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            auto* reduceBuffer = r->DerefResource(ReduceBuffer).Get<RHIBuffer*>();
-            cmd->FillBuffer(reduceBuffer, 0u);
-            RHIExtent2D wh = r->GetSwapchainExtent();
-            CSClearBufferData cdata{float4{}, wh.x, wh.y};
-            r->CmdSetPipeline(self, cmd);
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, cdata);
-            r->CmdDispatch(self, cmd, {cdata.w, cdata.h, 1});
-        });
+    if (cfg.viewFlags & kViewOverdraw)
+    {
+        renderer->CreatePass(
+            "Clear Overdraw+Reduce Buffer", RHIDeviceQueueType::Graphics, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindTextureUAV(self, OverdrawBuffer, "texture", RHIPipelineStageBits::ComputeShader,
+                                  {.format = RHIResourceFormat::R32Uint,
+                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSOverdrawClear.spv");
+                r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
+                r->BindBufferCopyDst(self, ReduceBuffer);
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                auto* reduceBuffer = r->DerefResource(ReduceBuffer).Get<RHIBuffer*>();
+                cmd->FillBuffer(reduceBuffer, 0u);
+                RHIExtent2D wh = r->GetSwapchainExtent();
+                CSClearBufferData cdata{float4{}, wh.x, wh.y};
+                r->CmdSetPipeline(self, cmd);
+                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, cdata);
+                r->CmdDispatch(self, cmd, {cdata.w, cdata.h, 1});
+            });
+    }
+    /* Main Pass */
     {
         auto hizSampler = renderer->CreateSampler(HIZSamplerDesc);
         auto AddMainPass = [=](bool early)

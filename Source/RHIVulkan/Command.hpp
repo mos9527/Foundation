@@ -88,6 +88,7 @@ namespace Foundation::RHI {
 
         RHICommandList& Dispatch(uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z) override;
 
+        RHICommandList& WriteTimestamp(RHIDeviceQueryPool* pool, RHIPipelineStageBits stage,uint32_t queryIndex) override;
         RHICommandList& DebugBegin(const char* message) override;
         RHICommandList& DebugInsertMarker(const char* message) override;
         RHICommandList& DebugEnd() override;

@@ -8,6 +8,7 @@ namespace Foundation::RHI {
     class RHIDeviceQueue;
     class RHICommandList;
     class RHICommandPool;
+    class RHIDeviceQueryPool;
     template<typename T> using RHICommandPoolHandle = RHIHandle<RHICommandPool, T>;
     template<typename T> using RHICommandPoolScopedHandle = RHIScopedHandle<RHICommandPool, T>;
     class RHICommandPool : public RHIObject {
@@ -137,6 +138,7 @@ namespace Foundation::RHI {
         virtual RHICommandList& Dispatch(uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z) = 0;
 #pragma endregion
 #pragma region Tags
+        virtual RHICommandList& WriteTimestamp(RHIDeviceQueryPool* pool,RHIPipelineStageBits stage,uint32_t queryIndex) = 0;
         virtual RHICommandList& DebugBegin(const char* message) = 0;
         virtual RHICommandList& DebugInsertMarker(const char* message) = 0;
         virtual RHICommandList& DebugEnd() = 0;

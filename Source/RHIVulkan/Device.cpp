@@ -5,7 +5,8 @@
 using namespace Foundation::Core;
 using namespace Foundation::RHI;
 const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_MESH_SHADER_EXTENSION_NAME,
-                                         VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME};
+                                         VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
+                                         VK_KHR_MAINTENANCE_9_EXTENSION_NAME};
 
 const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
 
@@ -93,6 +94,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
              .samplerFilterMinmax = true,
              .scalarBlockLayout = true,
              .uniformBufferStandardLayout = true,
+             .hostQueryReset = true,
              .timelineSemaphore = true}, // vk::PhysicalDeviceVulkan12Features
             {.synchronization2 = true,
              .dynamicRendering = true,
@@ -574,9 +576,10 @@ void VulkanDeviceSampler::DebugSetObjectName(const char* name)
                                                       .pObjectName = name});
 }
 VulkanDeviceQueryPool::VulkanDeviceQueryPool(const VulkanDevice& device, QueryPoolDesc const& desc) :
-    RHIDeviceQueryPool(device, desc), mDevice(device), mTimestampResults(device.GetAllocator())
+    RHIDeviceQueryPool(device, desc), mDevice(device), mTimestampResolution(mDevice.GetVkPhysicalDevice().getProperties().limits.timestampPeriod),
+    mTimestampResults(device.GetAllocator())
 {
-    vk::QueryPoolCreateInfo createInfo = {.queryCount = desc.count};
+    vk::QueryPoolCreateInfo createInfo = {.flags = vk::QueryPoolCreateFlagBits::eResetKHR, .queryCount = desc.count};
     switch (desc.type)
     {
     case QueryPoolDesc::Timestamp:
@@ -587,12 +590,16 @@ VulkanDeviceQueryPool::VulkanDeviceQueryPool(const VulkanDevice& device, QueryPo
     mQueryPool = vk::raii::QueryPool(mDevice.GetVkDevice(), createInfo, mDevice.GetVkAllocatorCallbacks());
     CHECK_MSG(mQueryPool != nullptr, "failed to create Vulkan query pool");
 }
+void VulkanDeviceQueryPool::Reset() { mQueryPool.reset(0, mDesc.count); }
 Span<const uint64_t> VulkanDeviceQueryPool::GetTimestampResults(bool wait)
 {
     CHECK_MSG(mDesc.type == QueryPoolDesc::Timestamp, "GetTimestampResults called on non-timestamp query pool");
-    vkGetQueryPoolResults(*mDevice.GetVkDevice(), *mQueryPool, 0, mDesc.count,
-                          sizeof(uint64_t) * mDesc.count, mTimestampResults.data(), sizeof(uint64_t),
-                          wait ? VK_QUERY_RESULT_WAIT_BIT | VK_QUERY_RESULT_64_BIT : VK_QUERY_RESULT_64_BIT);
+    VkResult res = vkGetQueryPoolResults(
+        *mDevice.GetVkDevice(), *mQueryPool, 0, mDesc.count, sizeof(uint64_t) * mDesc.count, mTimestampResults.data(),
+        sizeof(uint64_t), wait ? VK_QUERY_RESULT_WAIT_BIT | VK_QUERY_RESULT_64_BIT : VK_QUERY_RESULT_64_BIT);
+    if (res == VK_NOT_READY)
+        return {};
+    CHECK(res == VK_SUCCESS);
     return mTimestampResults;
 }
 void VulkanDeviceQueryPool::DebugSetObjectName(const char* name)
