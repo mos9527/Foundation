@@ -573,6 +573,35 @@ void VulkanDeviceSampler::DebugSetObjectName(const char* name)
                                                       .objectHandle = reinterpret_cast<uint64_t>(handle),
                                                       .pObjectName = name});
 }
+VulkanDeviceQueryPool::VulkanDeviceQueryPool(const VulkanDevice& device, QueryPoolDesc const& desc) :
+    RHIDeviceQueryPool(device, desc), mDevice(device), mTimestampResults(device.GetAllocator())
+{
+    vk::QueryPoolCreateInfo createInfo = {.queryCount = desc.count};
+    switch (desc.type)
+    {
+    case QueryPoolDesc::Timestamp:
+        createInfo.queryType = vk::QueryType::eTimestamp;
+        mTimestampResults.resize(desc.count);
+        break;
+    }
+    mQueryPool = vk::raii::QueryPool(mDevice.GetVkDevice(), createInfo, mDevice.GetVkAllocatorCallbacks());
+    CHECK_MSG(mQueryPool != nullptr, "failed to create Vulkan query pool");
+}
+Span<const uint64_t> VulkanDeviceQueryPool::GetTimestampResults(bool wait)
+{
+    CHECK_MSG(mDesc.type == QueryPoolDesc::Timestamp, "GetTimestampResults called on non-timestamp query pool");
+    vkGetQueryPoolResults(*mDevice.GetVkDevice(), *mQueryPool, 0, mDesc.count,
+                          sizeof(uint64_t) * mDesc.count, mTimestampResults.data(), sizeof(uint64_t),
+                          wait ? VK_QUERY_RESULT_WAIT_BIT | VK_QUERY_RESULT_64_BIT : VK_QUERY_RESULT_64_BIT);
+    return mTimestampResults;
+}
+void VulkanDeviceQueryPool::DebugSetObjectName(const char* name)
+{
+    VkQueryPool handle = *mQueryPool;
+    mDevice.GetVkDevice().setDebugUtilsObjectNameEXT({.objectType = vk::ObjectType::eQueryPool,
+                                                      .objectHandle = reinterpret_cast<uint64_t>(handle),
+                                                      .pObjectName = name});
+}
 
 VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, SamplerDesc const& desc) :
     RHIDeviceSampler(device, desc), mDevice(device)
@@ -653,3 +682,12 @@ RHIDeviceSampler* VulkanDevice::GetSampler(Handle handle) const
     return mStorage.GetObjectPtr<RHIDeviceSampler>(handle);
 }
 void VulkanDevice::DestroySampler(Handle handle) { mStorage.DestroyObject(handle); }
+RHIDeviceScopedHandle<RHIDeviceQueryPool> VulkanDevice::CreateQueryPool(RHIDeviceQueryPool::QueryPoolDesc const& desc)
+{
+    return {this, mStorage.CreateObject<VulkanDeviceQueryPool>(*this, desc)};
+}
+RHIDeviceQueryPool* VulkanDevice::GetQueryPool(Handle handle) const
+{
+    return mStorage.GetObjectPtr<RHIDeviceQueryPool>(handle);
+}
+void VulkanDevice::DestroyQueryPool(Handle handle) { mStorage.DestroyObject(handle); }

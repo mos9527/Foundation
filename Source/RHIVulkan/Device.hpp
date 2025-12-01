@@ -72,6 +72,19 @@ namespace Foundation::RHI {
 
         void DebugSetObjectName(const char* name) override;
     };
+    class VulkanDeviceQueryPool : public RHIDeviceQueryPool
+    {
+        const VulkanDevice& mDevice;
+        vk::raii::QueryPool mQueryPool{ nullptr };
+
+        Vector<uint64_t> mTimestampResults;
+    public:
+        VulkanDeviceQueryPool(const VulkanDevice& device, QueryPoolDesc const& desc);
+        [[nodiscard]] auto const& GetVkQueryPool() const { return mQueryPool; }
+
+        Span<const uint64_t> GetTimestampResults(bool wait = true) override;
+        void DebugSetObjectName(const char* name) override;
+    };
     class VulkanDevice : public RHIDevice {
         const VulkanApplication& mApp;
 
@@ -147,6 +160,11 @@ namespace Foundation::RHI {
         RHIDeviceScopedHandle<RHIDeviceSampler> CreateSampler(RHIDeviceSampler::SamplerDesc const& desc) override;
         RHIDeviceSampler* GetSampler(Handle handle) const override;
         void DestroySampler(Handle handle) override;
+
+        RHIDeviceScopedHandle<RHIDeviceQueryPool> CreateQueryPool(
+            RHIDeviceQueryPool::QueryPoolDesc const& desc) override;
+        RHIDeviceQueryPool* GetQueryPool(Handle handle) const override;
+        void DestroyQueryPool(Handle handle) override;
 
         void ResetFences(Span<RHIDeviceFence* const> fences) override;
         bool WaitForFences(Span<RHIDeviceFence* const> fences, bool wait_all, size_t timeout) override;

@@ -135,6 +135,25 @@ namespace Foundation::RHI {
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };
+    class RHIDeviceQueryPool : public RHIObject
+    {
+    protected:
+        const RHIDevice& mDevice;
+    public:
+        struct QueryPoolDesc
+        {
+            enum QueryType
+            {
+                Timestamp,
+            } type;
+            uint32_t count{ 1 };
+        } const mDesc;
+        RHIDeviceQueryPool(RHIDevice const& device, QueryPoolDesc const& desc)
+            : mDevice(device), mDesc(desc) {}
+
+        virtual Span<const uint64_t> GetTimestampResults(bool wait = true) = 0;
+        virtual void DebugSetObjectName(const char* name) = 0;
+    };
     class RHIDevice : public RHIObject {
     protected:
         const RHIApplication& mApp;
@@ -198,6 +217,11 @@ namespace Foundation::RHI {
             RHIDeviceSampler::SamplerDesc const& desc) = 0;
         [[nodiscard]] virtual RHIDeviceSampler* GetSampler(Handle handle) const = 0;
         virtual void DestroySampler(Handle handle) = 0;
+
+        [[nodiscard]] virtual RHIDeviceScopedHandle<RHIDeviceQueryPool> CreateQueryPool(
+            RHIDeviceQueryPool::QueryPoolDesc const& desc) = 0;
+        [[nodiscard]] virtual RHIDeviceQueryPool* GetQueryPool(Handle handle) const = 0;
+        virtual void DestroyQueryPool(Handle handle) = 0;
 
         virtual void ResetFences(Span<RHIDeviceFence* const> fences) = 0;
         /**
@@ -334,6 +358,17 @@ namespace Foundation::RHI {
         static void Destroy(RHIDevice* device, Handle handle)
         {
             device->DestroyPipelineCache(handle);
+        }
+    };
+    template<> struct RHIObjectTraits<RHIDevice, RHIDeviceQueryPool>
+    {
+        static RHIDeviceQueryPool* Get(RHIDevice const* device, Handle handle)
+        {
+            return device->GetQueryPool(handle);
+        }
+        static void Destroy(RHIDevice* device, Handle handle)
+        {
+            device->DestroyQueryPool(handle);
         }
     };
 }
