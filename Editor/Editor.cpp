@@ -39,7 +39,8 @@ void FInitEnter()
     for (auto& src : meshes)
     {
         auto& [offset, dst] = meshOffsets.emplace_back();
-        GUploadFutures.emplace_back(scene->Upload(src, dst, offset));
+        auto& fut = GUploadFutures.emplace_back(scene->Upload(src, dst, offset));
+        fut.wait(); // <- TODO: Somehow races. Revisit the whole 'streaming' idea.
     }
     GSInstances.clear();
     for (auto& src : instances)
