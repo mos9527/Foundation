@@ -1,16 +1,16 @@
 #pragma once
+#include <Math/Math.hpp>
+#include <RenderCore/Streaming.hpp>
 #include "Context.hpp"
 #include "Mesh.hpp"
-#include <RenderCore/Streaming.hpp>
-#include <Math/Math.hpp>
 using namespace Math;
 
 BITMASK_ENUM_BEGIN(GSData, uint8_t)
-    Mesh = 1 << 0,
-BITMASK_ENUM_END()
+Mesh = 1 << 0,
+    BITMASK_ENUM_END()
 
 #pragma pack(push, 1)
-struct GSMesh
+        struct GSMesh
 {
     // Offsets are absolute, and are in Primitive buffer (bytes).
     // @ref FVertex
@@ -30,9 +30,9 @@ struct GSMesh
 struct GSInstance
 {
     // TRS
-    float3 transform{0,0,0};
-    quat rotation{0,0,0,1};
-    float3 scale{1,1,1};
+    float3 transform{0, 0, 0};
+    quat rotation{0, 0, 0, 1};
+    float3 scale{1, 1, 1};
     uint32_t meshOffset; // In Primitive buffer (bytes)
 };
 #pragma pack(pop)
@@ -40,8 +40,8 @@ static_assert(sizeof(GSMesh) == 36);
 static_assert(sizeof(GSInstance) == 44);
 
 /**
-* @brief Async GPU scene data storage for Editor.
-*/
+ * @brief Async GPU scene data storage for Editor.
+ */
 class GPUScene
 {
     FContext* mContext;
@@ -57,11 +57,12 @@ class GPUScene
 
     // Mapped as-is
     RHIDeviceScopedHandle<RHIBuffer> mInstanceBuffer;
-    GSInstance *mInstanceBegin, *mInstanceRing, *mInstanceEnd;
+    GSInstance *mInstanceBegin, *mInstanceRingPrev, *mInstanceRing, *mInstanceEnd;
+
 public:
     struct GPUSceneDesc
     {
-        size_t primitiveBudget = 16 * (1u<<20); // 16MB
+        size_t primitiveBudget = 16 * (1u << 20); // 16MB
         size_t instanceBudget = (size_t)1e3; // # of instances
     };
     GPUScene(FContext* ctx, GPUSceneDesc const& desc);
@@ -83,7 +84,8 @@ public:
      */
     Future<> Upload(FMesh const& source, GSMesh& outData, uint32_t& outOffset);
 
-    String DbgGetStatistics() const;
+    String DbgGetStreamingStatistics() const { return mStreaming.DbgGetStatistics(); }
+    String DbgGetBufferStatistics() const;
 
     RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
     RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.Get(); }

@@ -179,6 +179,9 @@ namespace Foundation::RHI {
 
         void WaitIdle() const override;
 
+        void QueryBudget(size_t& used, size_t& budget) const override;
+        String QueryDeviceString() const override;
+
         Allocator* GetAllocator() const;
         vk::AllocationCallbacks const& GetVkAllocatorCallbacks() const;
 

@@ -1,5 +1,16 @@
 using namespace Foundation;
 using namespace Foundation::RHI;
+VmaMemoryUsage vmaMemoryUsageFlagsFromResource(RHIResourceDesc const& desc)
+{
+    switch (desc.heap)
+    {
+    case RHIDeviceHeapType::Local:
+        return VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    case RHIDeviceHeapType::Readback:
+    case RHIDeviceHeapType::Upload:
+        return VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    }
+}
 vk::BufferCreateInfo vkBufferCreateInfoFromRHIBufferDesc(RHIBufferDesc const& desc) {
     return vk::BufferCreateInfo{
         .size = desc.size,
@@ -67,7 +78,7 @@ VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc
         flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
     VmaAllocationCreateInfo allocInfo = {
         .flags = flags,
-        .usage = VMA_MEMORY_USAGE_AUTO,
+        .usage = vmaMemoryUsageFlagsFromResource(desc.resource),
         .requiredFlags = static_cast<VkMemoryPropertyFlags>(desc.resource.coherent ? VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : 0)
     };
     auto allocator = device.GetVkAllocator();
@@ -133,7 +144,7 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
     }
     VmaAllocationCreateInfo allocInfo = {
         .flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.hostAccess),
-        .usage = VMA_MEMORY_USAGE_AUTO,
+        .usage = vmaMemoryUsageFlagsFromResource(desc.resource),
         .requiredFlags = static_cast<VkMemoryPropertyFlags>(desc.resource.coherent ? VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : 0)
     };
     auto allocator = device.GetVkAllocator();

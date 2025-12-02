@@ -246,6 +246,9 @@ namespace Foundation::RHI {
 
         virtual void WaitIdle() const = 0;
 
+        virtual void QueryBudget(size_t& used, size_t& budget) const = 0;
+        virtual String QueryDeviceString() const = 0;
+
         virtual void DebugSetObjectName(const char* name) = 0;
     };
     /**

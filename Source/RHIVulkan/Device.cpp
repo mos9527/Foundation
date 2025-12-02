@@ -182,6 +182,26 @@ VulkanDevice::~VulkanDevice()
 }
 
 void VulkanDevice::WaitIdle() const { mDevice.waitIdle(); }
+void VulkanDevice::QueryBudget(size_t& used, size_t& budget) const
+{
+    VmaBudget budgets[VK_MAX_MEMORY_HEAPS]{};
+    vmaGetHeapBudgets(mVkAllocator, budgets);
+    used = 0, budget = 0;
+    for (const auto& b : budgets)
+        used += b.usage, budget += b.budget;
+}
+String VulkanDevice::QueryDeviceString() const
+{
+    auto properties = mPhysicalDevice.getProperties();
+    return fmt::format(
+        "{} ({}) on Vulkan {}.{}.{}",
+        &properties.deviceName[0],
+        kVulkanDeviceTypes[static_cast<size_t>(properties.deviceType)],
+        VK_VERSION_MAJOR(properties.apiVersion),
+        VK_VERSION_MINOR(properties.apiVersion),
+        VK_VERSION_PATCH(properties.apiVersion)
+    );
+}
 
 VulkanDeviceQueue* VulkanDeviceQueues::Get(Handle handle) const { return storage.GetObjectPtr(handle); }
 RHIDeviceQueue* VulkanDevice::GetDeviceQueue(RHIDeviceQueueType type) const

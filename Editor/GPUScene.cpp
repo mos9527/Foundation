@@ -21,7 +21,7 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
             },
         .usage = RHIBufferUsageBits::StorageBuffer,
         .size = desc.instanceBudget * sizeof(GSInstance)});
-    mInstanceBegin = mInstanceRing = mInstanceBuffer->Map<GSInstance>();
+    mInstanceBegin = mInstanceRing = mInstanceRingPrev = mInstanceBuffer->Map<GSInstance>();
     mInstanceEnd = mInstanceBegin + desc.instanceBudget;
 }
 Pair<GSInstance*, uint32_t> GPUScene::InstanceAlloc(uint32_t count)
@@ -30,7 +30,7 @@ Pair<GSInstance*, uint32_t> GPUScene::InstanceAlloc(uint32_t count)
     if (begin + count >= mInstanceEnd) // Wrap
         begin = mInstanceRing = mInstanceBegin;
     uint32_t offset = mInstanceRing - mInstanceBegin;
-    mInstanceRing += count;
+    mInstanceRingPrev = mInstanceRing, mInstanceRing += count;
     return {begin,offset};
 }
 Future<> GPUScene::Upload(FMesh const& src, GSMesh& mesh, uint32_t& outOffset)
@@ -70,9 +70,14 @@ Future<> GPUScene::Upload(FMesh const& src, GSMesh& mesh, uint32_t& outOffset)
     std::memcpy(ptr, &mesh, sizeof(GSMesh));
     return mStreaming.Write(data, mPrimitiveBuffer.Get(), outOffset);
 }
-String GPUScene::DbgGetStatistics() const
+String GPUScene::DbgGetBufferStatistics() const
 {
-    return fmt::format("Pool: {}", mStreaming.DbgGetStatistics());
+    String res;
+    fmt::format_to(std::back_inserter(res), "Primitive Buffer: Used {} / {} MB\n", mPrimitiveOffset / 1e6f,
+                   mPrimitiveBuffer->mDesc.size / 1e6f);
+    fmt::format_to(std::back_inserter(res), "Instance Buffer: Used {} / {} instances",
+                   mInstanceRing - mInstanceRingPrev, mInstanceEnd - mInstanceBegin);
+    return res;
 }
 void GPUScene::Reset()
 {

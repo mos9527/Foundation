@@ -44,7 +44,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
         Destruct(context->allocator, context->renderer);
     auto* renderer = context->renderer =
         Construct<Renderer>(context->allocator, RendererDesc{
-            .asyncCompute = false,
+            .asyncCompute = true,
             .pipelineCache = context->psoCache.Get()
         }, context->device,context->swapchain, context->allocator);
     auto* scene = context->gpuScene;
@@ -79,7 +79,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
     // NOTE: Lambda captures
     // NONE of the handle values outlive the renderer. Therefore, ALWAYS capture by value.
     renderer->CreatePass(
-        "UBO Update & Init", RHIDeviceQueueType::Compute, 0u,
+        "UBO Update & Init", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
             r->BindBufferCopyDst(self, GlobalUBO);
@@ -102,7 +102,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             cmd->FillBuffer(occlusion, 0u);
         });
     renderer->CreatePass(
-        "Meshlet Task Generation", RHIDeviceQueueType::Compute, 0u,
+        "Meshlet Task Generation", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSInstanceTaskCull.spv");
@@ -118,7 +118,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             r->CmdDispatch(self, cmd, {pShaderGlobals->numInstances, 1, 1});
         });
     renderer->CreatePass(
-        "Indirect Task Command Generation", RHIDeviceQueueType::Compute, 0u,
+        "Indirect Task Command Generation", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
             // Simply fills the dispatch buffer with the number of tasks to dispatch
@@ -175,7 +175,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
     if (cfg.viewFlags & kViewOverdraw)
     {
         renderer->CreatePass(
-            "Clear Overdraw+Reduce Buffer", RHIDeviceQueueType::Graphics, 0u,
+            "Clear Overdraw+Reduce Buffer", RHIDeviceQueueType::Compute, 0u,
             [=](PassHandle self, Renderer* r)
             {
                 r->BindTextureUAV(self, OverdrawBuffer, "texture", RHIPipelineStageBits::ComputeShader,
@@ -257,7 +257,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     cmd->EndGraphics();
                 });
             if (early && cfg.cullFlags & kCullOcclusion)
-                createCSMipGenerationPasses(renderer, "Early HiZ", RHIDeviceQueueType::Compute, ZBuffer, HIZ,
+                createCSMipGenerationPasses(renderer, "Early HiZ", RHIDeviceQueueType::Graphics, ZBuffer, HIZ,
                                             RHIExtent2D{w,h},
                                             RHITextureAspectFlagBits::Depth, RHIResourceFormat::D32SignedFloat,
                                             RHITextureAspectFlagBits::Color, RHIResourceFormat::R32SignedFloat,
@@ -270,7 +270,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
     if (cfg.viewFlags & kViewOverdraw)
     {
         renderer->CreatePass(
-            "Overdraw CS Reduce", RHIDeviceQueueType::Compute, 0u,
+            "Overdraw CS Reduce", RHIDeviceQueueType::Graphics, 0u,
             [=](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSOverdrawReduce.spv");

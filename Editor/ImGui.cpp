@@ -44,11 +44,10 @@ void ImProfilerDrawTimestampLabel(Span<const ImProfilerSample> samples, float re
     float height = style.ScrollbarSize, duration = samples.back().endTick - samples.front().startTick;
     for (int i = 0; i <= numLabels; i++)
     {
-        float u = float(i) / float(numLabels);
-        float tick = samples.front().startTick + duration * u;
+        float u = i / float(numLabels);
         float x = offset.x + region.x * u;
         cmd->AddLine({x, offset.y}, {x, offset.y + height}, IM_COL32(200, 200, 200, 255));
-        String label = fmt::format("{:.3f} ms", (tick - samples.front().startTick) * resolution * 1e-6f);
+        String label = fmt::format("{:.3f} ms", duration * u * resolution * 1e-6f);
         ImVec2 textSize = ImGui::CalcTextSize(label.c_str());
         cmd->AddText(font, height * 0.75f, {x - textSize.x, offset.y}, IM_COL32(255, 255, 255, 255),
                      label.c_str());

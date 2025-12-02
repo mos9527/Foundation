@@ -44,6 +44,11 @@ namespace Foundation::Core
         }
         constexpr operator bool() const noexcept { return mMemory != nullptr; }
 
+        void QueryBudget(size_t& used, size_t& budget) const override
+        {
+            used = mCurrent - reinterpret_cast<size_type>(mMemory);
+            budget = mEnd - reinterpret_cast<size_type>(mMemory);
+        }
     private:
         pointer mMemory{nullptr};
         Atomic<size_type> mCurrent{};

@@ -111,8 +111,6 @@ void FRunning()
     {
         ImGui::TextUnformatted(FArcballCamera::kControlsText);
         ImGui::Text("FPS | %.2f", ImGui::GetIO().Framerate);
-        ImGui::Text("StreamingPool | %s", scene->DbgGetStatistics().c_str());
-        ImGui::Text("Instances | %zu", GSInstances.size());
         ImGui::SliderFloat("LOD Threshold | ", &GShaderGlobals.lodThreshold, 0.f, 1.f);
         ImGui::Separator();
         ImGui::SliderFloat3("Cam Center", &GCamera.center.x, -50.0f, 50.0f);
@@ -149,7 +147,7 @@ void FRunning()
         }
     }
     ImGui::End();
-    if (ImGui::Begin("Profiling"))
+    if (ImGui::Begin("Profiler"))
     {
         if (timings.empty())
         {
@@ -157,46 +155,74 @@ void FRunning()
         }
         else
         {
-            static Vector<ImProfilerSample> samples(GLOBAL_ALLOC);
-            static bool pause = false;
-            static float presentTimingMS = 0.0f;
-            static float gpuTimingMS = 0.0f;
-            static int lanes = 0;
-            static float frametime = 0;
-            ImGui::Text("CPU to Present: %.3fms, Present to Present %.3fms, GPU: %.3fms, CPU/GPU Δ: %.3fms", presentTimingMS, frametime, gpuTimingMS, frametime - gpuTimingMS);
-            if (ImModalButton(pause ? "Resume" : "Pause"))
-                pause = !pause;
-            if (!pause)
+            if (ImGui::TreeNodeEx("Device", ImGuiTreeNodeFlags_DefaultOpen))
             {
-                samples.clear();
-                for (size_t i = 0; i < timings.size() / 2; i++)
                 {
-                    auto const& pass = renderer->GetTrackedPass(i);
-                    ImProfilerSample sample{
-                        .startTick = timings[i * 2],
-                        .endTick = timings[i * 2 + 1],
-                        .label = pass.name,
-                        .color = pass.queue == RHIDeviceQueueType::Graphics ? ImColor(1.0f, 0.5f, 0.0f, 1.0f)
-                                                                            : ImColor(0.0f, 0.5f, 0.0f, 1.0f),
-                    };
-                    samples.emplace_back(std::move(sample));
+                    size_t used, budget;
+                    GContext->device->QueryBudget(used, budget);
+                    static String name;
+                    if (name.empty())
+                        name = GContext->device->QueryDeviceString();
+                    ImGui::Text("%s", name.c_str());
+                    ImGui::Text("GPU Memory Usage: %.2f MB / %.2f MB", used / 1e6f, budget / 1e6f);
                 }
-                float presentTimingRes;
-                lanes = ImProfilerAssignLanes(samples);
-                gpuTimingMS = (samples.back().endTick - samples.front().startTick) * 1e-6;
-                gpuTimingMS *= gpuTimingRes;
-                presentTimingMS = renderer->DbgProfilePresentTiming(renderer->GetSync(), presentTimingRes) * 1e-6;
-                presentTimingMS *= presentTimingRes;
-                frametime = ImGui::GetIO().DeltaTime * 1e3f;
+                {
+                    size_t used, budget;
+                    GLOBAL_ALLOC->QueryBudget(used, budget);
+                    ImGui::Text("CPU Memory Usage: %.2f MB", used / 1e6f);
+                }
+                ImGui::TreePop();
             }
-            ImGui::SeparatorText("Timeline");
-            ImProfilerDrawTimestampLabel(samples, gpuTimingRes, 8u);
-            for (int lane = 0; lane < lanes; lane++)
-                ImProfilerDrawLane(samples, gpuTimingRes, lane);
-            if (ImGui::TreeNode("Tables"))
+            if (ImGui::TreeNodeEx("GPU Scene", ImGuiTreeNodeFlags_DefaultOpen))
             {
+                ImGui::Text("Streaming: %s", GContext->gpuScene->DbgGetStreamingStatistics().c_str());
+                ImGui::Text("Buffers:   %s", GContext->gpuScene->DbgGetBufferStatistics().c_str());
+                ImGui::TreePop();
+            }
+            if (ImGui::TreeNodeEx("Frametime", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                static Vector<ImProfilerSample> samples(GLOBAL_ALLOC);
+                static bool pause = false;
+                static float presentTimingMS = 0.0f;
+                static float gpuTimingMS = 0.0f;
+                static int lanes = 0;
+                static float frametime = 0;
+                ImGui::Text("CPU to Present: %.3fms, Present to Present %.3fms, GPU: %.3fms, CPU/GPU Δ: %.3fms", presentTimingMS, frametime, gpuTimingMS, frametime - gpuTimingMS);
+                if (ImModalButton(pause ? "Resume" : "Pause"))
+                    pause = !pause;
+                if (!pause)
+                {
+                    samples.clear();
+                    for (size_t i = 0; i < timings.size() / 2; i++)
+                    {
+                        auto const& pass = renderer->GetTrackedPass(i);
+                        ImProfilerSample sample{
+                            .startTick = timings[i * 2],
+                            .endTick = timings[i * 2 + 1],
+                            .label = pass.name,
+                            .color = pass.queue == RHIDeviceQueueType::Graphics ? ImColor(1.0f, 0.5f, 0.0f, 1.0f)
+                                                                                : ImColor(0.0f, 0.5f, 0.0f, 1.0f),
+                        };
+                        samples.emplace_back(std::move(sample));
+                    }
+                    float presentTimingRes;
+                    lanes = ImProfilerAssignLanes(samples);
+                    gpuTimingMS = (samples.back().endTick - samples.front().startTick) * 1e-6;
+                    gpuTimingMS *= gpuTimingRes;
+                    presentTimingMS = renderer->DbgProfilePresentTiming(renderer->GetSync(), presentTimingRes) * 1e-6;
+                    presentTimingMS *= presentTimingRes;
+                    frametime = ImGui::GetIO().DeltaTime * 1e3f;
+                }
+                ImGui::SeparatorText("Timeline");
+                ImProfilerDrawTimestampLabel(samples, gpuTimingRes, 8u);
                 for (int lane = 0; lane < lanes; lane++)
-                    ImProfilerDrawTable(samples, gpuTimingRes, lane);
+                    ImProfilerDrawLane(samples, gpuTimingRes, lane);
+                if (ImGui::TreeNode("Tables"))
+                {
+                    for (int lane = 0; lane < lanes; lane++)
+                        ImProfilerDrawTable(samples, gpuTimingRes, lane);
+                    ImGui::TreePop();
+                }
                 ImGui::TreePop();
             }
         }
