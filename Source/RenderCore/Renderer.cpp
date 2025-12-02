@@ -997,11 +997,6 @@ void Renderer::SetFrameSyncObjects()
     mComputeTimeline = mDevice->CreateSemaphore(true);
     mComputeTimeline->DebugSetObjectName(fmt::format("Async Compute Timeline Semaphore").c_str());
 }
-Span<const uint64_t> Renderer::GetPassTimings(uint64_t sync, float& resolutionNS) const
-{
-    resolutionNS = mSwaps[sync].queryPool->GetTimestampResolution();
-    return mSwaps[sync].queryPassTimestampsResults;
-}
 void Renderer::SetSwapchain(RHIDeviceHandle<RHISwapchain> swapchain)
 {
     CHECK_MSG(mDesc.present, "Cannot set swapchain when the renderer is not created with Present support");
@@ -1087,7 +1082,7 @@ void Renderer::BeginExecute()
     {
         ZoneScopedN("Reset Query Pools");
         // Query pool. Lazily initialized here
-        auto& queryPool = mSwaps[mCurrentSync].queryPool;
+        auto& queryPool = mSwaps[mCurrentSync].dbgQueryPool;
         if (!queryPool)
         {
             queryPool = mDevice->CreateQueryPool({
@@ -1098,7 +1093,7 @@ void Renderer::BeginExecute()
         } else
         {
             auto queryResult = queryPool->GetTimestampResults(true /* wait */);
-            auto& queryTimestamps = mSwaps[mCurrentSync].queryPassTimestampsResults;
+            auto& queryTimestamps = mSwaps[mCurrentSync].dbgQueryPassTimestampsResults;
             queryTimestamps.resize(queryResult.size());
             Ranges::copy(queryResult, queryTimestamps.begin());
             queryPool->Reset();
@@ -1374,7 +1369,7 @@ void Renderer::ExecuteFrame()
         }
         {
             ZoneScopedN("Schedule Records");
-            auto* queryPool = mSwaps[mCurrentSync].queryPool.Get();
+            auto* queryPool = mSwaps[mCurrentSync].dbgQueryPool.Get();
             struct RecordJob : public ThreadPoolJob
             {
                 Renderer* r;
@@ -1600,6 +1595,9 @@ void Renderer::EndExecute()
         ZoneScopedN("Present");
         mGraphicsQueue->Present(
             {.imageIndex = GetSwap(), .swapchain = mSwapchain.Get(), .waits = {{mSwaps[GetSwap()].render.Get()}}});
+        auto p2p = std::chrono::steady_clock::now() - mSwaps[mCurrentSync].dbgSwapLastPresentTick;
+        mSwaps[mCurrentSync].dbgSwapLastPresentTick = std::chrono::steady_clock::now();
+        mSwaps[mCurrentSync].dbgSwapLastPresentToPresentTicks = p2p.count();
     }
     mCurrentSync = (mCurrentSync + 1) % mFrameSwaps;
     mFrameSwapped++;
@@ -1773,4 +1771,16 @@ String Renderer::DbgDumpExecutionGroups() const
     }
     out.pop_back();
     return out;
+}
+
+Span<const uint64_t> Renderer::DbgProfilePassTiming(uint64_t sync, float& resolutionNS) const
+{
+    resolutionNS = mSwaps[sync].dbgQueryPool->GetTimestampResolution();
+    return mSwaps[sync].dbgQueryPassTimestampsResults;
+}
+
+uint64_t Renderer::DbgProfilePresentTiming(uint64_t sync, float& resolutionNS) const
+{
+    resolutionNS = 1 / (std::chrono::steady_clock::period::num * (1e9f / std::chrono::steady_clock::period::den));
+    return mSwaps[sync].dbgSwapLastPresentToPresentTicks;
 }

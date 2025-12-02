@@ -169,10 +169,13 @@ namespace Foundation::RenderCore
             RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> viewSet{};
             // Tracked backbuffer handle
             ResourceHandle backbuffer{kInvalidHandle};
-            // Timestamp Query Pool
-            RHIDeviceScopedHandle<RHIDeviceQueryPool> queryPool{};
-            Vector<uint64_t> queryPassTimestampsResults;
-            FrameSyncObjects(size_t swapIndex, Allocator* alloc) : swapIndex(swapIndex), queryPassTimestampsResults(alloc) {}
+            // [Profiling] Timestamp Query Pool
+            RHIDeviceScopedHandle<RHIDeviceQueryPool> dbgQueryPool{};
+            Vector<uint64_t> dbgQueryPassTimestampsResults;
+            // [Profiling] Present timings
+            std::chrono::steady_clock::time_point dbgSwapLastPresentTick{};
+            uint64_t dbgSwapLastPresentToPresentTicks{0};
+            FrameSyncObjects(size_t swapIndex, Allocator* alloc) : swapIndex(swapIndex), dbgQueryPassTimestampsResults(alloc) {}
         };
         RHIDeviceScopedHandle<RHIDeviceDescriptorPool> mSwapDescriptorPool;
         RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout> mSwapDescriptorSetLayout;
@@ -787,15 +790,6 @@ namespace Foundation::RenderCore
          */
         [[nodiscard]] uint64_t GetSync() const { return mCurrentSync; }
         /**
-         * @brief Retrieves timings for all passes executed in the **last** frame
-         *        associated with the specified sync index.
-         *        The values are refreshed upon @ref BeginExecute() call.
-         * @note  The values are laid out as follows:
-         *        [pass 0 start tick] [pass 0 end tick] [pass 1 start tick] [pass 1 end tick] ...
-         * @note  A span of size 0 is ALWAYS returned if no timing information is available.
-         */
-        Span<const uint64_t> GetPassTimings(uint64_t sync, float& resolutionNS) const;
-        /**
          * @brief Retrieves an internal tracked pass associated with the given handle, read-only.
          */
         TrackedPass const& GetTrackedPass(PassHandle pass)
@@ -871,6 +865,21 @@ namespace Foundation::RenderCore
         [[nodiscard]] String DbgDumpGraphviz() const;
         [[nodiscard]] String DbgDumpActivePasses() const;
         [[nodiscard]] String DbgDumpExecutionGroups() const;
+        /**
+         * @brief Retrieves timings for all passes executed in the **last** frame
+         *        associated with the specified sync index.
+         *        The values are refreshed upon @ref BeginExecute() call.
+         * @note  The values are laid out as follows:
+         *        [pass 0 start tick] [pass 0 end tick] [pass 1 start tick] [pass 1 end tick] ...
+         * @note  A span of size 0 is ALWAYS returned if no timing information is available.
+         */
+        Span<const uint64_t> DbgProfilePassTiming(uint64_t sync, float& resolutionNS) const;
+        /**
+         * @brief Retrieves the total ticks between two subsequent swapchain presents by @ref EndExecute,
+         *        measured on CPU with system's high-resolution timer.
+         *        The value is refreshed upon @ref EndExecute() call.
+         */
+        uint64_t DbgProfilePresentTiming(uint64_t sync, float& resolutionNS) const;
 #pragma endregion
     };
     ENUM_NAME_CONV_BEGIN(Renderer::State)

@@ -1,4 +1,6 @@
 #include "Editor.hpp"
+
+#include "imgui_internal.h"
 FEditorState FEState = FEInitEnter;
 /* -- Scene Data -- */
 static Vector<GSInstance> GSInstances(GLOBAL_ALLOC);
@@ -88,8 +90,8 @@ void FRunning()
     auto* scene = GContext->gpuScene;
     // New frame
     renderer->BeginExecute();
-    float timingResolutionNS;
-    auto timings = renderer->GetPassTimings(renderer->GetSync(), timingResolutionNS);
+    float gpuTimingRes;
+    auto timings = renderer->DbgProfilePassTiming(renderer->GetSync(), gpuTimingRes);
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
     // Upload instance data
@@ -114,7 +116,7 @@ void FRunning()
         ImGui::SliderFloat("LOD Threshold | ", &GShaderGlobals.lodThreshold, 0.f, 1.f);
         ImGui::Separator();
         ImGui::SliderFloat3("Cam Center", &GCamera.center.x, -50.0f, 50.0f);
-        ImGui::SliderFloat("Cam Radius", &GCamera.radius,0.0f, 100.0f);
+        ImGui::SliderFloat("Cam Radius", &GCamera.radius, 0.0f, 100.0f);
         ImGui::SliderAngle("Cam FOV Y", &GCamera.fovY);
     }
     ImGui::End();
@@ -152,37 +154,50 @@ void FRunning()
         if (timings.empty())
         {
             ImGui::Text("No Info");
-        } else
+        }
+        else
         {
-            Vector<Tuple<size_t,size_t,PassHandle, int>> sorted(GLOBAL_ALLOC);
-            for (size_t i = 0; i < timings.size() / 2; i++)
-                sorted.emplace_back(timings[i * 2],timings[i * 2 + 1], i, 0);
-            std::sort(sorted.begin(), sorted.end());
-            // Partition into ranks - work has chance to overlap on the GPU.
-            int top = 0; PriorityQueue<Pair<size_t, int>, std::greater<>> Q(GLOBAL_ALLOC);
-            for (auto& [start, end, pass, rank] : sorted)
+            static Vector<ImProfilerSample> samples(GLOBAL_ALLOC);
+            static bool pause = false;
+            static float presentTimingMS = 0.0f;
+            static float gpuTimingMS = 0.0f;
+            static int lanes = 0;
+            static float frametime = 0;
+            ImGui::Text("CPU to Present: %.3fms, Present to Present %.3fms, GPU: %.3fms, CPU/GPU Δ: %.3fms", presentTimingMS, frametime, gpuTimingMS, frametime - gpuTimingMS);
+            if (ImModalButton(pause ? "Resume" : "Pause"))
+                pause = !pause;
+            if (!pause)
             {
-                if (!Q.empty() && Q.top().first <= start)
+                samples.clear();
+                for (size_t i = 0; i < timings.size() / 2; i++)
                 {
-                    rank = Q.top().second; Q.pop();
-                    Q.emplace(end, rank);
+                    auto const& pass = renderer->GetTrackedPass(i);
+                    ImProfilerSample sample{
+                        .startTick = timings[i * 2],
+                        .endTick = timings[i * 2 + 1],
+                        .label = pass.name,
+                        .color = pass.queue == RHIDeviceQueueType::Graphics ? ImColor(1.0f, 0.5f, 0.0f, 1.0f)
+                                                                            : ImColor(0.0f, 0.5f, 0.0f, 1.0f),
+                    };
+                    samples.emplace_back(std::move(sample));
                 }
-                else
-                {
-                    rank = top++;
-                    Q.emplace(end, rank);
-                }
+                float presentTimingRes;
+                lanes = ImProfilerAssignLanes(samples);
+                gpuTimingMS = (samples.back().endTick - samples.front().startTick) * 1e-6;
+                gpuTimingMS *= gpuTimingRes;
+                presentTimingMS = renderer->DbgProfilePresentTiming(renderer->GetSync(), presentTimingRes) * 1e-6;
+                presentTimingMS *= presentTimingRes;
+                frametime = ImGui::GetIO().DeltaTime * 1e3f;
             }
-            Vector<float> rankTicks(top, GLOBAL_ALLOC);
-            ImGui::Text("Pass Timings (ns):");
-            size_t begin = std::get<0>(sorted.front());
-            for (auto& [start, end, pass, rank] : sorted)
-                start -= begin, end -= begin, rankTicks[rank] += end - start;
-            for (auto& [start, end, pass, rank] : sorted)
+            ImGui::SeparatorText("Timeline");
+            ImProfilerDrawTimestampLabel(samples, gpuTimingRes, 8u);
+            for (int lane = 0; lane < lanes; lane++)
+                ImProfilerDrawLane(samples, gpuTimingRes, lane);
+            if (ImGui::TreeNode("Tables"))
             {
-                float duration = end - start;
-                float rankP = duration / rankTicks[rank];
-                ImGui::Text("%s | %.2fms | %.2f%% of Rank Time", renderer->GetTrackedPass(pass).name.c_str(), duration * timingResolutionNS * 1e-6f, rankP * 100.f);
+                for (int lane = 0; lane < lanes; lane++)
+                    ImProfilerDrawTable(samples, gpuTimingRes, lane);
+                ImGui::TreePop();
             }
         }
     }

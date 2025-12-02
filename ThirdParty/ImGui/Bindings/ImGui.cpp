@@ -15,21 +15,28 @@ using namespace Math;
 
 constexpr size_t kMaxTextures = 1024;
 constexpr size_t kUploadBudget = 16 * (1u << 20);
-constexpr size_t kVertexBufferSize = 8 * (1u << 20);
-constexpr size_t kIndexBufferSize = 4 * (1u << 20);
+// NOTE: Should be large enough to accommodate most frames, or there will be a race.
+constexpr size_t kVertexBufferSize = 16 * (1u << 20);
+constexpr size_t kIndexBufferSize = 16 * (1u << 20);
 const char* kDefaultFontPath = "./data/assets/LXGWNeoXiHei.ttf";
 
 UniquePtr<BindlessPool> gImGuiTexturePool = nullptr;
 void* ImGui_ImplFoundation_MemAlloc(size_t sz, void*) { return GLOBAL_ALLOC->Allocate(sz, sizeof(std::max_align_t)); }
 void ImGui_ImplFoundation_MemFree(void* ptr, void*) { return GLOBAL_ALLOC->Deallocate(ptr); }
-
+struct ImGuiImplFoundationBd
+{
+    RHIDevice* device;
+    size_t vtxBufferOffset = 0;
+    size_t idxBufferOffset = 0;
+} gBackendData;
 void ImGui_ImplFoundation_Init(RHIDevice* device, SDL_Window* window)
 {
     // Reference being the official Vulkan implementation - sans Viewport support to keep things _really_ simple
     ImGuiIO& io = ImGui::GetIO();
     IM_ASSERT(io.BackendRendererUserData == nullptr && "Already initialized a renderer backend!");
-    auto bd = device;
-    io.BackendRendererUserData = static_cast<void*>(bd);
+    gBackendData.device = device;
+    gBackendData.vtxBufferOffset = gBackendData.idxBufferOffset = 0;
+    io.BackendRendererUserData = static_cast<void*>(&gBackendData);
     io.BackendRendererName = "imgui_impl_foundation";
     io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset; // We can honor the ImDrawCmd::VtxOffset field,
                                                                // allowing for large meshes.
@@ -68,7 +75,7 @@ ImTextureID ImGui_ImplFoundation_EncodeImTextureID(
 void ImGui_ImplFoundation_ImplUpdateTexture(ImTextureData* tex)
 {
     CHECK_MSG(gImGuiTexturePool, "Backend not initialized. Did you call ImGui_ImplFoundation_Init()?");
-    RHIDevice* device = static_cast<RHIDevice*>(ImGui::GetIO().BackendRendererUserData);
+    auto* device = static_cast<ImGuiImplFoundationBd*>(ImGui::GetIO().BackendRendererUserData)->device;
     if (tex->Status == ImTextureStatus_OK)
         return;
     // Allocation
@@ -224,14 +231,32 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
     // Upload vertex/index buffers
     auto* vtx = r->DerefResource(vtxBuffer).Get<RHIBuffer*>();
     auto* idx = r->DerefResource(idxBuffer).Get<RHIBuffer*>();
-    auto pVtx = vtx->MapSpan<ImDrawVert>();
-    auto pIdx = idx->MapSpan<ImDrawIdx>();
-    ImDrawVert* vtx_dst = pVtx.data();
-    ImDrawIdx* idx_dst = pIdx.data();
+    // Map. We're using a circular buffer here.
+    auto* bd = static_cast<ImGuiImplFoundationBd*>(ImGui::GetIO().BackendRendererUserData);
+    // Bump or rewind
+    {
+        int vtxBufferSize = kVertexBufferSize - bd->vtxBufferOffset, idxBufferSize = kIndexBufferSize - bd->idxBufferOffset;
+        for (const ImDrawList* draw_list : draw_data->CmdLists)
+        {
+            vtxBufferSize -= draw_list->VtxBuffer.size() * sizeof(ImDrawVert);
+            idxBufferSize -= draw_list->IdxBuffer.size() * sizeof(ImDrawIdx);
+        }
+        if (vtxBufferSize < 0)
+            bd->vtxBufferOffset = 0;
+        if (idxBufferSize < 0)
+            bd->idxBufferOffset = 0;
+    }
+    auto pVtx = vtx->Map<char>() + bd->vtxBufferOffset;
+    auto pIdx = idx->Map<char>() + bd->idxBufferOffset;
+    auto* vtx_dst = reinterpret_cast<ImDrawVert*>(pVtx);
+    auto* idx_dst = reinterpret_cast<ImDrawIdx*>(pIdx);
+    size_t vtx_offset = bd->vtxBufferOffset, idx_offset = bd->idxBufferOffset;
     for (const ImDrawList* draw_list : draw_data->CmdLists)
     {
         std::memcpy(vtx_dst, draw_list->VtxBuffer.Data, draw_list->VtxBuffer.Size * sizeof(ImDrawVert));
         std::memcpy(idx_dst, draw_list->IdxBuffer.Data, draw_list->IdxBuffer.Size * sizeof(ImDrawIdx));
+        bd->vtxBufferOffset += draw_list->VtxBuffer.size() * sizeof(ImDrawVert);
+        bd->idxBufferOffset += draw_list->IdxBuffer.size() * sizeof(ImDrawIdx);
         vtx_dst += draw_list->VtxBuffer.Size;
         idx_dst += draw_list->IdxBuffer.Size;
     }
@@ -247,8 +272,8 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
     // Setup states
     int fb_width = img_wh.x, fb_height = img_wh.y;
     cmd->SetViewport(0, 0, fb_width, fb_height); // Full screen
-    cmd->BindVertexBuffer(0, {{vtx}}, {{0}});
-    cmd->BindIndexBuffer(idx, 0, RHIResourceFormat::R16Uint);
+    cmd->BindVertexBuffer(0, {{vtx}}, {{vtx_offset}});
+    cmd->BindIndexBuffer(idx, idx_offset, RHIResourceFormat::R16Uint);
     // Setup scale and translation:
     // Our visible imgui space lies from draw_data->DisplayPps (top left) to
     // draw_data->DisplayPos+data_data->DisplaySize (bottom right). DisplayPos is (0,0) for single viewport apps.

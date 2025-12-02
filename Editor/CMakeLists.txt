@@ -15,6 +15,7 @@ file(
     Scene.cpp
     SDLMain.cpp
     Renderer.cpp
+    ImGui.cpp
 )
 
 add_subdirectory(Shaders)

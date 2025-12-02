@@ -27,7 +27,10 @@ void RendererSetupImGuiOnly(FContext* context)
     if (context->renderer)
         Destruct(context->allocator, context->renderer);
     auto* renderer = context->renderer =
-        Construct<Renderer>(context->allocator, RendererDesc{.pipelineCache = context->psoCache.Get()}, context->device,
+        Construct<Renderer>(context->allocator, RendererDesc{
+            .asyncCompute = false,
+            .pipelineCache = context->psoCache.Get()
+        }, context->device,
                             context->swapchain, context->allocator);
     renderer->BeginSetup();
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", true, FSetupDefault{});
@@ -41,7 +44,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
         Destruct(context->allocator, context->renderer);
     auto* renderer = context->renderer =
         Construct<Renderer>(context->allocator, RendererDesc{
-            .asyncCompute = true,
+            .asyncCompute = false,
             .pipelineCache = context->psoCache.Get()
         }, context->device,context->swapchain, context->allocator);
     auto* scene = context->gpuScene;
@@ -264,24 +267,27 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
         if (cfg.cullFlags & kCullOcclusion)
             AddMainPass(false);
     }
-    renderer->CreatePass(
-        "Overdraw CS Reduce", RHIDeviceQueueType::Graphics, 0u,
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSOverdrawReduce.spv");
-            r->BindTextureSRV(self, OverdrawBuffer, "texture", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
-                                                 .range = RHITextureSubresourceRange::Create()});
-            r->BindBufferUnordered(self, ReduceBuffer, RHIPipelineStageBits::ComputeShader, "globalMax");
-            r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(RHIExtent2D));
-        },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            RHIExtent2D wh = r->GetSwapchainExtent();
-            r->CmdSetPipeline(self, cmd);
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, wh);
-            r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
-        });
+    if (cfg.viewFlags & kViewOverdraw)
+    {
+        renderer->CreatePass(
+            "Overdraw CS Reduce", RHIDeviceQueueType::Compute, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSOverdrawReduce.spv");
+                r->BindTextureSRV(self, OverdrawBuffer, "texture", RHIPipelineStageBits::ComputeShader,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
+                                                     .range = RHITextureSubresourceRange::Create()});
+                r->BindBufferUnordered(self, ReduceBuffer, RHIPipelineStageBits::ComputeShader, "globalMax");
+                r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(RHIExtent2D));
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                RHIExtent2D wh = r->GetSwapchainExtent();
+                r->CmdSetPipeline(self, cmd);
+                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, wh);
+                r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
+            });
+    }
     auto nearSampler =
         renderer->CreateSampler({.filter = {.minFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor,
                                             .magFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor}});
