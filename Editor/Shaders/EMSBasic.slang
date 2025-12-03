@@ -3,13 +3,11 @@
 uniform UBO globalParams;
 StructuredBuffer<GSInstance> instances;
 ByteAddressBuffer primitive;
-RWStructuredBuffer<MeshletTaskWork> tasks;
-RWStructuredBuffer<Atomic<uint>> counter;
 
 // Each WG of mesh shader processes one meshlet
 // Each thread in the WG processes zero, or more vertices/triangles
 [outputtopology("triangle")]
-[numthreads(kTaskShaderWG, 1, 1)]
+[numthreads(kMeshWorkGroupSize, 1, 1)]
 void main(
     in payload MeshletGroupShared shared,
     in uint gid: SV_GroupID,
@@ -29,7 +27,7 @@ void main(
     uint32_t triCount = meshlet.triCount;
     SetMeshOutputCounts(vtxCount, triCount);
     // Each thread in the WG processes multiple vertices/triangles
-    for (uint i = tid; i < vtxCount; i += kTaskShaderWG) {
+    for (uint i = tid; i < vtxCount; i += kMeshWorkGroupSize) {
         uint ind = primitive.Load<uint32_t>(vtxBase + i * sizeof(uint32_t));
         FVertex vtx = primitive.Load<FVertex>(mesh.vtxOffset + ind * sizeof(FVertex));
         vtx.position = inst.rotation.rotate(vtx.position);
@@ -41,7 +39,7 @@ void main(
         v2f.meshlet = mesh.meshletGlobalIndex + meshletID;
         verts[i] = v2f;
     }
-    for (uint i = tid; i < triCount; i += kTaskShaderWG) {
+    for (uint i = tid; i < triCount; i += kMeshWorkGroupSize) {
         MIndex tri = primitive.Load<MIndex>(triBase + i * sizeof(MIndex));
         triangles[i] = uint3(tri.v0, tri.v1, tri.v2);
     }

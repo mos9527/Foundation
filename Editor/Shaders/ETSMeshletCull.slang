@@ -5,7 +5,7 @@ uniform UBO globalParams;
 StructuredBuffer<GSInstance> instances;
 ByteAddressBuffer primitive;
 RWStructuredBuffer<MeshletTaskWork> tasks;
-RWStructuredBuffer<Atomic<uint>> counter;
+RWStructuredBuffer<uint> counter;
 [[vk_binding(5,0)]] SamplerState hizSampler;
 [[vk_binding(6,0)]] Texture2D<float> hiz;
 [[vk_binding(7,0)]] RWStructuredBuffer<Atomic<uint>> occlusion;
@@ -58,16 +58,21 @@ groupshared MeshletGroupShared shared;
 
 // Each WG of task shader processes up to kMaxTaskShaderWork meshlets from the same Instance,
 // and each thread in the WG processes one meshlet.
+// NOTE: WaveSize seem to have no effect on generated SPIRV code. See also:
+// - https://github.com/shader-slang/slang/issues/3943
+// - https://github.com/microsoft/hlsl-specs/issues/137
 [shader("amplification")]
-[numthreads(kTaskShaderWG, 1, 1)]
+[numthreads(kMeshWorkGroupSize, 1, 1)]
+[WaveSize(kMeshWorkGroupSize)]
 void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     const bool early = cullFlags & kCullStageFirst;
     const bool late = cullFlags & kCullStageLate;
     const bool cullFrustum = cullFlags & kCullFrustum;
     const bool cullOcclusion = cullFlags & kCullOcclusion;
-
-    uint count = counter[0].load();
-    uint dispatchIndex = dot(groupID, uint2(kTaskShaderWG, 1)); // ID of this group, flattened    
+    shared.meshletCount = 0u;
+    GroupMemoryBarrierWithGroupSync();
+    uint count = counter[0];
+    uint dispatchIndex = dot(groupID, uint2(kMeshWorkGroupSize, 1)); // ID of this group, flattened    
     if (dispatchIndex >= count)
         return; // Group inactive. Should NOT happen.
     if (!cullOcclusion && late)
@@ -77,10 +82,6 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     GSInstance inst = instances[work.instanceID];
     GSMesh mesh = primitive.Load<GSMesh>(inst.meshOffset);
     uint32_t meshletID = work.firstMeshlet + groupIndex;
-    // -- Init --
-    shared.instanceID = work.instanceID;
-    shared.meshletCount = 0;
-    GroupMemoryBarrierWithGroupSync();
     float scale = max(max(inst.scale.x,inst.scale.y),inst.scale.z);
     // -- LOD selection --
     // Always runs - and deterministic regardless of cullFlags
@@ -152,17 +153,20 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
         }
     }
     // Commit to occlusion buffer if visible ONLY in early pass
-    if (early) {
-        if (visible)
-            occlusion[meshletGlobalID / 32].or(1u << (meshletGlobalID % 32));
+    if (early && visible)
+        occlusion[meshletGlobalID / 32].or(1u << (meshletGlobalID % 32));
+    uint waveVisibleCount = WaveActiveCountBits(visible);
+    if (waveVisibleCount > 0){
+        uint waveMeshletOffset = 0;
+        if (WaveIsFirstLane())
+            InterlockedAdd(shared.meshletCount, waveVisibleCount, waveMeshletOffset);
+        waveMeshletOffset = WaveActiveMax(waveMeshletOffset);
+        if (visible) {
+            // Output the visible meshlet
+            uint sum = WavePrefixCountBits(visible);
+            shared.meshletIndices[waveMeshletOffset + sum] = meshletID;
+        }
     }
-    if (visible) {
-        // Output the visible meshlet
-        // TODO: Wave intrinsics. See // https://gpuopen.com/learn/mesh_shaders/mesh_shaders-optimization_and_best_practices/
-        uint sharedCount;
-        InterlockedAdd(shared.meshletCount,1,sharedCount);
-        shared.meshletIndices[sharedCount] = meshletID;
-    }
-    GroupMemoryBarrierWithGroupSync();
+    shared.instanceID = work.instanceID;
     DispatchMesh(shared.meshletCount,1,1,shared);
 }

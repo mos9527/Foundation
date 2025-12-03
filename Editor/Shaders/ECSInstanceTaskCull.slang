@@ -20,13 +20,13 @@ void main(uint tid: SV_DispatchThreadID) {
     // Task and mesh shader dispatch is one-to-one, or one-to-zero.
     // Each task shader _group_ dispatch processes at most kMaxTaskShaderWork meshlets
     // and each task shader thread submits one mesh shader work.
-    uint groups = alignUp(mesh.meshletCount, kTaskShaderWG) / kTaskShaderWG;
+    uint groups = alignUp(mesh.meshletCount, kMeshWorkGroupSize) / kMeshWorkGroupSize;
     uint taskIndex = counter[0].add(groups);
     for (uint group = 0; group < groups; group++) {
         MeshletTaskWork task;
         task.instanceID = iid;
-        task.numMeshlets = min(mesh.meshletCount - group * kTaskShaderWG, kTaskShaderWG);
-        task.firstMeshlet = group * kTaskShaderWG;
+        task.numMeshlets = min(mesh.meshletCount - group * kMeshWorkGroupSize, kMeshWorkGroupSize);
+        task.firstMeshlet = group * kMeshWorkGroupSize;
         tasks[taskIndex + group] = task;
     }
 }

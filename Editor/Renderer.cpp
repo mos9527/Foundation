@@ -20,8 +20,9 @@ struct MeshletTaskWork
     uint32_t numMeshlets;
 };
 #pragma pack(pop)
+constexpr size_t kMeshWorkGroupSize = 64;
 constexpr size_t kMaxMeshletCount = 1e6;
-constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / 64; // WorkGroup Size
+constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
 void RendererSetupImGuiOnly(FContext* context)
 {
     if (context->renderer)

@@ -1,8 +1,7 @@
 #include "EMath.slangi"
 #include "EFlags.slangi"
-static const uint kTaskShaderWG = 64;
+static const uint kMeshWorkGroupSize = 64;
 // Definitions From C++ sources
-static const uint kNumMeshDiscreteLODs = 5;
 struct FVertex {
     float3 position;
     float3 normal;
@@ -116,7 +115,7 @@ struct UBO
 public struct MeshletGroupShared {
     uint32_t instanceID;
     uint32_t meshletCount;
-    uint32_t meshletIndices[kTaskShaderWG];
+    uint32_t meshletIndices[kMeshWorkGroupSize];
 };
 
 struct V2F
