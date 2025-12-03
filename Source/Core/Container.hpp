@@ -138,6 +138,17 @@ namespace Foundation::Core {
      */
     template<typename T, typename Predicate = std::less<T>>
     using Set = std::set<T, Predicate, StlAllocator<T>>;
+
+    /**
+     * @brief `std::multiset` with explicit @ref Foundation::Core::StlAllocator constructor
+     *
+     * Construction without an allocator is disallowed, and will result in a compile-time error.
+     *
+     * @note Thread-safety is _not_ guaranteed as with other STL containers.
+     */
+    template<typename T, typename Predicate = std::less<T>>
+    using MultiSet = std::multiset<T, Predicate, StlAllocator<T>>;
+
     /**
      * @brief `std::map` with explicit @ref Foundation::Core::StlAllocator constructor
      *
@@ -147,6 +158,16 @@ namespace Foundation::Core {
      */
     template<typename K, typename V, typename Predicate = std::less<K>>
     using Map = std::map<K, V, Predicate, StlAllocator<Pair<const K, V>>>;
+
+    /**
+     * @brief `std::multimap` with explicit @ref Foundation::Core::StlAllocator constructor
+     *
+     * Construction without an allocator is disallowed, and will result in a compile-time error.
+     *
+     * @note Thread-safety is _not_ guaranteed as with other STL containers.
+     */
+    template<typename K, typename V, typename Predicate = std::less<K>>
+    using MultiMap = std::multimap<K, V, Predicate, StlAllocator<Pair<const K, V>>>;
     /**
      * @brief `std::deque` with explicit @ref Foundation::Core::StlAllocator constructor
      *

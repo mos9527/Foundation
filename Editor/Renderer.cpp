@@ -258,7 +258,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     cmd->EndGraphics();
                 });
             if (early && cfg.cullFlags & kCullOcclusion)
-                createCSMipGenerationPasses(renderer, "Early HiZ", RHIDeviceQueueType::Graphics, ZBuffer, HIZ,
+                createCSMipGenerationPasses(renderer, "Early HiZ", RHIDeviceQueueType::Compute, ZBuffer, HIZ,
                                             RHIExtent2D{w,h},
                                             RHITextureAspectFlagBits::Depth, RHIResourceFormat::D32SignedFloat,
                                             RHITextureAspectFlagBits::Color, RHIResourceFormat::R32SignedFloat,

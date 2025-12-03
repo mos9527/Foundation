@@ -7,7 +7,62 @@ Tuple<ImVec2, ImVec2, ImDrawList*> ImWindowDrawOffsetRegionList()
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     return {offset, region, drawList};
 }
+void ImProfilerHistogram::push(unsigned data)
+{
+    // Pop ring buffer
+    if (samples.size() >= capacity)
+    {
+        unsigned old = samples.front();
+        samples.pop_front();
+        // Welford mean/std remove
+        float d = old - mean;
+        mean -= d / samples.size();
+        m2 -= d * (old - mean);
+    }
+    // Welford mean/std update
+    float d = data - mean;
+    mean += d / (samples.size() + 1);
+    m2 += d * (data - mean);
+    samples.push_back(data);
+}
+constexpr size_t ImProfilerTimestampLinear(size_t min, size_t max, size_t binCount, size_t binIndex)
+{
+    const size_t range = max - min + 1;
+    const size_t binSize = (range + binCount - 1) / binCount;
+    return min + std::min(binSize * binIndex, range);
+}
 
+constexpr size_t ImProfilerTimestampLog(size_t min, size_t max, size_t binCount, size_t binIndex)
+{
+    const float logMin = std::log10f(min);
+    const float binSize = (std::log10f(max) - logMin) / binCount;
+    return std::pow(10.0f, logMin + binSize * binIndex);
+}
+void ImProfilerHistogram::bin(Vector<unsigned>& bins, size_t binCount, bool logOrLinear)
+{
+    sorted.resize(samples.size());
+    Ranges::copy(samples, sorted.begin());
+    Ranges::sort(sorted);
+    size_t min = sorted.front(), max = sorted.back();
+    median = sorted[sorted.size() / 2];
+    bins.clear(), bins.resize(binCount, 0);
+    maxCount = 0;
+    auto it0 = sorted.begin();
+    for (size_t b = 1; b <= binCount; b++)
+    {
+        size_t end;
+        if (logOrLinear)
+            end = ImProfilerTimestampLinear(min, max, binCount, b);
+        else
+            end = ImProfilerTimestampLog(min, max, binCount, b);
+        auto it1 = std::lower_bound(it0, sorted.end(), end);
+        bins[b - 1] = it1 - it0;
+        maxCount = std::max(maxCount, bins[b - 1]);
+        if (maxCount == bins[b - 1])
+            mode = end;
+        it0 = it1;
+    }
+}
 bool ImModalButton(const char* label, int lineIndex, int lineTotal)
 {
     auto& style = ImGui::GetStyle();
@@ -44,19 +99,19 @@ void ImProfilerDrawTimestampLabel(Span<const ImProfilerSample> samples, float re
     float height = style.ScrollbarSize, duration = samples.back().endTick - samples.front().startTick;
     for (int i = 0; i <= numLabels; i++)
     {
-        float u = i / float(numLabels);
+        float u = i / static_cast<float>(numLabels);
         float x = offset.x + region.x * u;
         cmd->AddLine({x, offset.y}, {x, offset.y + height}, IM_COL32(200, 200, 200, 255));
         String label = fmt::format("{:.3f} ms", duration * u * resolution * 1e-6f);
         ImVec2 textSize = ImGui::CalcTextSize(label.c_str());
-        cmd->AddText(font, height * 0.75f, {x - textSize.x, offset.y}, IM_COL32(255, 255, 255, 255),
-                     label.c_str());
+        cmd->AddText(font, height * 0.75f, {x - textSize.x, offset.y}, IM_COL32(255, 255, 255, 255), label.c_str());
     }
     ImGui::Dummy({region.x, height + style.ItemSpacing.y});
 }
 
-void ImProfilerDrawLane(Span<const ImProfilerSample> samples, float resolution, int lane)
+int ImProfilerDrawLane(Span<const ImProfilerSample> samples, int lane)
 {
+    int selected = -1;
     auto& style = ImGui::GetStyle();
     auto* font = ImGui::GetFont();
     auto [offset, region, cmd] = ImWindowDrawOffsetRegionList();
@@ -78,20 +133,17 @@ void ImProfilerDrawLane(Span<const ImProfilerSample> samples, float resolution, 
                      wrapWidth);
         // Hover tooltip
         ImVec2 mousePos = ImGui::GetIO().MousePos;
-        if (mousePos.x >= rectMin.x && mousePos.x <= rectMax.x && mousePos.y >= rectMin.y &&
-            mousePos.y <= rectMax.y)
-        {
-            ImGui::SetTooltip("%s\n%.3f ms", sample.label.c_str(),
-                              (sample.endTick - sample.startTick) * resolution * 1e-6f);
-        }
+        if (mousePos.x >= rectMin.x && mousePos.x <= rectMax.x && mousePos.y >= rectMin.y && mousePos.y <= rectMax.y)
+            selected = sample.id;
     }
     ImGui::Dummy({region.x, height + style.ItemSpacing.y});
+    return selected;
 }
-void ImProfilerDrawTable(Span<const ImProfilerSample> samples, float resolution, int lane)
+int ImProfilerDrawTable(Span<const ImProfilerSample> samples, float resolution)
 {
+    int selected = -1;
     auto [offset, region, cmd] = ImWindowDrawOffsetRegionList();
     float duration = samples.back().endTick - samples.front().startTick;
-    ImGui::PushID(lane);
     if (ImGui::BeginTable("##", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable))
     {
         ImGui::TableSetupColumn("Pass");
@@ -100,11 +152,15 @@ void ImProfilerDrawTable(Span<const ImProfilerSample> samples, float resolution,
         ImGui::TableHeadersRow();
         for (auto const& sample : samples)
         {
-            if (sample.lane != lane)
-                continue;
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
             ImGui::TextUnformatted(sample.label.c_str());
+            // Mouse hover
+            ImVec2 mousePos = ImGui::GetIO().MousePos;
+            ImVec2 rowMin = ImGui::GetItemRectMin();
+            ImVec2 rowMax = ImGui::GetItemRectMax();
+            if (mousePos.x >= rowMin.x && mousePos.x <= rowMax.x && mousePos.y >= rowMin.y && mousePos.y <= rowMax.y)
+                selected = sample.id;
             ImGui::TableSetColumnIndex(1);
             float durMS = (sample.endTick - sample.startTick) * resolution * 1e-6f;
             ImGui::Text("%.3f ms", durMS);
@@ -115,5 +171,42 @@ void ImProfilerDrawTable(Span<const ImProfilerSample> samples, float resolution,
         }
         ImGui::EndTable();
     }
-    ImGui::PopID();
+    return selected;
+}
+
+void ImProfilerDrawHistogram(Vector<unsigned>& bins, ImProfilerHistogram const& histogram, size_t labelCount,
+                             float resolution, bool logOrLinear)
+{
+    unsigned min = histogram.sorted.front(), max = histogram.sorted.back(), maxCount = histogram.maxCount;
+    auto Getter = [](void* data, int idx) -> float
+    {
+        auto& bins = *static_cast<const Vector<unsigned>*>(data);
+        return bins[idx];
+    };
+    {
+        auto [offset, region, cmd] = ImWindowDrawOffsetRegionList();
+        ImGui::PlotHistogram("##Histogram", Getter, &bins, bins.size(), 0, nullptr, 0.0f, static_cast<float>(maxCount),
+                             ImVec2(region.x, region.y * 0.75f));
+    }
+    // X Axis labels
+    auto& style = ImGui::GetStyle();
+    auto* font = ImGui::GetFont();
+    auto [offset, region, cmd] = ImWindowDrawOffsetRegionList();
+    float labelHeight = style.ScrollbarSize;
+    for (size_t i = 0; i < labelCount; i++)
+    {
+        size_t binIndex = i * bins.size() / labelCount;
+        size_t ts;
+        if (logOrLinear)
+            ts = ImProfilerTimestampLinear(min, max, bins.size(), binIndex);
+        else
+            ts = ImProfilerTimestampLog(min, max, bins.size(), binIndex);
+        float u = (ts - min) / static_cast<float>(max - min);
+        float x = offset.x + region.x * u;
+        cmd->AddLine({x, offset.y}, {x, offset.y + labelHeight * 0.5f}, IM_COL32(200, 200, 200, 255));
+        String label = fmt::format("{:.3f} ms", ts * resolution * 1e-6f);
+        cmd->AddText(font, labelHeight * 0.75f, {x, offset.y + labelHeight}, IM_COL32(255, 255, 255, 255),
+                     label.c_str());
+    }
+    ImGui::Dummy({region.x, labelHeight + style.ItemSpacing.y});
 }

@@ -1,6 +1,7 @@
 #include "Editor.hpp"
 
-#include "imgui_internal.h"
+#include <imgui.h>
+#include <imgui_internal.h>
 FEditorState FEState = FEInitEnter;
 /* -- Scene Data -- */
 static Vector<GSInstance> GSInstances(GLOBAL_ALLOC);
@@ -111,7 +112,6 @@ void FRunning()
     if (ImGui::Begin("Debug"))
     {
         ImGui::TextUnformatted(FArcballCamera::kControlsText);
-        ImGui::Text("FPS | %.2f", ImGui::GetIO().Framerate);
         ImGui::SliderFloat("LOD Threshold | ", &GShaderGlobals.lodThreshold, 0.f, 1.f);
         ImGui::Separator();
         ImGui::SliderFloat3("Cam Center", &GCamera.center.x, -50.0f, 50.0f);
@@ -182,15 +182,24 @@ void FRunning()
             }
             if (ImGui::TreeNodeEx("Frametime", ImGuiTreeNodeFlags_DefaultOpen))
             {
+                static constexpr size_t kHistogramSamples = 5e3, kFrametimeSamples = 1e3;
                 static Vector<ImProfilerSample> samples(GLOBAL_ALLOC);
+                static Vector<ImProfilerHistogram> histograms(GLOBAL_ALLOC);
+                static ImProfilerHistogram frametime(kFrametimeSamples, GLOBAL_ALLOC);
                 static bool pause = false;
                 static float presentTimingMS = 0.0f;
                 static float gpuTimingMS = 0.0f;
                 static int lanes = 0;
-                static float frametime = 0;
-                ImGui::Text("CPU to Present: %.3fms, Present to Present %.3fms, GPU: %.3fms, CPU/GPU Δ: %.3fms", presentTimingMS, frametime, gpuTimingMS, frametime - gpuTimingMS);
-                if (ImModalButton(pause ? "Resume" : "Pause"))
+                float frametimeAvg = frametime.mean * 1e-6f;
+                ImGui::Text("CPU to Present: %.3fms, Present to Present Rolling Avg.: %.3fms (%.1f FPS), GPU: %.3fms, CPU/GPU Δ: %.3fms",
+                            presentTimingMS, frametimeAvg * 1e3f, 1 / frametimeAvg, gpuTimingMS, frametimeAvg * 1e3f - gpuTimingMS);
+                if (ImModalButton(pause ? "Resume" : "Pause",0,2))
                     pause = !pause;
+                if (ImModalButton("Flush", 1, 2))
+                {
+                    for (auto& hist : histograms)
+                        hist.clear();
+                }
                 if (!pause)
                 {
                     samples.clear();
@@ -198,6 +207,7 @@ void FRunning()
                     {
                         auto const& pass = renderer->GetTrackedPass(i);
                         ImProfilerSample sample{
+                            .id = static_cast<int>(i),
                             .startTick = timings[i * 2],
                             .endTick = timings[i * 2 + 1],
                             .label = pass.name,
@@ -205,6 +215,9 @@ void FRunning()
                                                                                 : ImColor(0.0f, 0.5f, 0.0f, 1.0f),
                         };
                         samples.emplace_back(std::move(sample));
+                        while (histograms.size() <= i)
+                            histograms.emplace_back(kHistogramSamples, GLOBAL_ALLOC);
+                        histograms[i].push(sample.endTick - sample.startTick);
                     }
                     float presentTimingRes;
                     lanes = ImProfilerAssignLanes(samples);
@@ -212,17 +225,42 @@ void FRunning()
                     gpuTimingMS *= gpuTimingRes;
                     presentTimingMS = renderer->DbgProfilePresentTiming(renderer->GetSync(), presentTimingRes) * 1e-6;
                     presentTimingMS *= presentTimingRes;
-                    frametime = ImGui::GetIO().DeltaTime * 1e3f;
+                    frametime.push(ImGui::GetIO().DeltaTime * 1e6f);
                 }
-                ImGui::SeparatorText("Timeline");
+                int selectedID = -1;
+                static int maxLanes = 0;
                 ImProfilerDrawTimestampLabel(samples, gpuTimingRes, 8u);
-                for (int lane = 0; lane < lanes; lane++)
-                    ImProfilerDrawLane(samples, gpuTimingRes, lane);
+                for (int lane = 0; lane < std::max(maxLanes, lanes); lane++)
+                    selectedID = std::max(selectedID, ImProfilerDrawLane(samples, lane));
+                maxLanes = std::max(maxLanes, lanes);
                 if (ImGui::TreeNode("Tables"))
                 {
-                    for (int lane = 0; lane < lanes; lane++)
-                        ImProfilerDrawTable(samples, gpuTimingRes, lane);
+                    Ranges::sort(samples, [](auto const& a, auto const& b) { return a.id < b.id; });
+                    selectedID = std::max(selectedID, ImProfilerDrawTable(samples, gpuTimingRes));
                     ImGui::TreePop();
+                }
+                if (selectedID >= 0)
+                {
+                    ImGui::SetNextWindowSize({ImGui::GetWindowSize().x * 0.75f, 0});
+                    if (ImGui::BeginTooltip())
+                    {
+                        auto it = Ranges::find_if(samples,
+                                                  [selectedID](auto const& sample) { return sample.id == selectedID; });
+                        ImGui::SeparatorText(it->label.c_str());
+                        if (it != samples.end())
+                        {
+                            auto& hist = histograms[selectedID];
+                            ImGui::SeparatorText("Histogram");
+                            Vector<unsigned> bins(GLOBAL_ALLOC);
+                            hist.bin(bins, 256, false /* log */);
+                            float mean = hist.mean * gpuTimingRes * 1e-6f,
+                                  median = hist.sorted[hist.sorted.size() / 2] * gpuTimingRes * 1e-6f,
+                                  stddev = hist.stddev() * gpuTimingRes * 1e-6f;
+                            ImGui::Text("Mean: %.3fms | Median: %.3fms | σ: %.3fms", mean, median, stddev);
+                            ImProfilerDrawHistogram(bins, hist, 8, gpuTimingRes, false /* log */);
+                        }
+                        ImGui::EndTooltip();
+                    }
                 }
                 ImGui::TreePop();
             }

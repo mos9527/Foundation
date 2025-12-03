@@ -29,7 +29,7 @@ static const int kCullStageLate = 1 << 17;
 
 struct RendererConfig
 {
-    unsigned viewFlags{kViewOverdraw};
+    unsigned viewFlags{kViewMeshlet};
     unsigned cullFlags{kCullFrustum|kCullOcclusion|kCullBackface};
 };
 extern void RendererSetupImGuiOnly(FContext* context);
