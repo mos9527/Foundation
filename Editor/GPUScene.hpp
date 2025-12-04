@@ -10,7 +10,7 @@ Mesh = 1 << 0,
     BITMASK_ENUM_END()
 
 #pragma pack(push, 1)
-        struct GSMesh
+struct GSMesh
 {
     // Offsets are absolute, and are in Primitive buffer (bytes).
     // @ref FVertex

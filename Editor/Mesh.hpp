@@ -10,9 +10,25 @@ struct FVertex
 {
     float3 position;
     float3 normal;
+    float3 tangent;
+    float bitangentSign;
     float2 uv;
 };
-static_assert(sizeof(FVertex) == 32); // TODO: Quantization
+static_assert(sizeof(FVertex) == 48);
+struct FQVertex
+{
+    uint16_t position[3]; // quantized FP16
+    uint32_t tbn32; // octahedral normal [10+10] + tangent rotation [10] + bitangent sign [2]
+    uint16_t uv[2]; // quantized UNORM16
+
+    static uint32_t PackTBN(const float3& normal, const float3& tangent, float bitangentSign);
+    static void UnpackTBN(uint32_t packed, float3& outNormal, float3& outTangent, float& outBitangentSign);
+
+    static FQVertex Pack(FVertex const& vertex);
+    static FVertex Unpack(FQVertex const& vertex);
+};
+static float QuantizationError(FQVertex const& quantized, FVertex const& src);
+static_assert(sizeof(FQVertex) == 16);
 struct FLODGroup // @ref clodGroup
 {
     // DAG level the group was generated at
@@ -32,7 +48,8 @@ struct FMeshlet // @ref meshopt_Meshlet
     /* meshlet group */
     /* ID of the @ref FLODGroup this meshlet belongs to in a hierarchy */
     uint32_t group;
-    /* ID of the @ref FLODGroup (with more triangles) that produced this meshlet during simplification (parent). ~0u if original geometry */
+    /* ID of the @ref FLODGroup (with more triangles) that produced this meshlet during simplification (parent). ~0u if
+     * original geometry */
     uint32_t refined;
 
     /* meshlet */
@@ -53,7 +70,8 @@ static_assert(sizeof(FMeshlet) == 68);
 
 struct FMesh
 {
-    Vector<FVertex> vertices;
+    Vector<FQVertex> quantizedVertices;
+    Vector<FVertex> rawVertices;
     struct LOD
     {
         Vector<uint32_t> indices;
@@ -68,47 +86,54 @@ struct FMesh
         struct Cluster
         {
             uint32_t group{~0u}; // ID of the FLODGroup this cluster belongs to
-            uint32_t refined{~0u}; // ID of the FLODGroup (with more triangles) that produced this cluster during simplification (parent). ~0u if original geometry
+            uint32_t refined{~0u}; // ID of the FLODGroup (with more triangles) that produced this cluster during
+                                   // simplification (parent). ~0u if original geometry
             Vector<uint32_t> indices;
             Cluster(Allocator* alloc) : indices(alloc) {}
         };
-        Vector<Cluster> clusters; // Note: scratch buffer
+        Vector<Cluster> _clusters; // NOTE: Scratch.
         // -- final DAG data
         Vector<FLODGroup> groups; // group error bounds
         Vector<FMeshlet> meshlets; // meshlets built from all clusters
         Vector<uint32_t> meshletVtx;
         Vector<uint8_t> meshletTri;
-        DAG(Allocator* alloc) : clusters(alloc), groups(alloc), meshlets(alloc), meshletVtx(alloc), meshletTri(alloc) {}
+        DAG(Allocator* alloc) : _clusters(alloc), groups(alloc), meshlets(alloc), meshletVtx(alloc), meshletTri(alloc) {}
     } dag;
 
     FMesh(Allocator* alloc);
-    /**
-     * @brief Load OBJ mesh from file
-     */
-    void Load(StringView path);
     /**
      * @brief Optimize vertex reuse with meshoptimizer
      */
     void Optimize();
     /**
-    * @brief Creates N LOD levels, iteratively scaling down by 'scale' factor
-    * @note Can be clusterized by @ref ClusterizeLOD afterward to create discrete LOD levels
-    */
+     * @brief Creates N LOD levels, iteratively scaling down by 'scale' factor
+     * @note Can be clusterized by @ref ClusterizeLOD afterward to create discrete LOD levels
+     */
     void SimplifyLOD(int levels, float scale);
     /**
-    * @brief Populates meshlet data for all LODs
-    */
+     * @brief Populates meshlet data for all LODs
+     */
     void ClusterizeLOD();
     /**
-    * @brief Partitions the clusters of LOD levels into a DAG
-    * @note This enables continuous LOD behaviour, and as such should NOT be used with discrete LOD
-    *       levels created by @ref ClusterizeLOD, or @ref SimplifyLOD.
-    */
+     * @brief Partitions the clusters of LOD levels into a DAG
+     * @note This enables continuous LOD behaviour, and as such should NOT be used with discrete LOD
+     *       levels created by @ref ClusterizeLOD, or @ref SimplifyLOD.
+     */
     void ClusterizeDAG();
+    /**
+     * @brief Quantizes vertex data into more compact representation
+     *        Fills @ref quantizedVertices with quantized data from @ref rawVertices
+     */
+    void Quantize();
+    /**
+     * @brief Dequantizes vertex data back into full precision representation
+     *        Fills @ref rawVertices with dequantized data from @ref quantizedVertices
+     */
+    void Dequantize();
     /**
      * @brief Returns an upper bound estimate of the size of the used mesh data when uploaded to GPU
      */
-    [[nodiscard]] size_t ApproximateSize() const;
+    [[nodiscard]] size_t ApproximateSizeQuantized() const;
 };
 
 void LoadObj(FMesh& mesh, StringView path);

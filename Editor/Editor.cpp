@@ -22,8 +22,8 @@ void FInitEnter()
     LoadFromFile(GContext->args[1], meshes, instances, cameras);
     for (auto& mesh : meshes)
     {
-        LOG(Editor, LogInfo, "Loaded Mesh | Vtx={} | LODGroups={} | ApproxSize={} B", mesh.vertices.size(),
-            mesh.dag.groups.size(), mesh.ApproximateSize());
+        LOG(Editor, LogInfo, "Loaded Mesh | Vtx={} | LODGroups={} | ApproxSize={} B", mesh.rawVertices.size(),
+            mesh.dag.groups.size(), mesh.ApproximateSizeQuantized());
     }
     if (cameras.size())
     {

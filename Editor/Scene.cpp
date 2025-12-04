@@ -16,13 +16,13 @@ FMesh LoadSubmesh(cgltf_primitive* submesh)
     // Worst storage case is VEC4
     {
         Vector<float> unpack(numVertices * 4, GLOBAL_ALLOC);
-        mesh.vertices.resize(numVertices);
+        mesh.rawVertices.resize(numVertices);
         if (auto acc = cgltf_find_accessor(submesh, cgltf_attribute_type_position, 0))
         {
             cgltf_accessor_unpack_floats(acc, unpack.data(), numVertices * 3); // VEC3
             for (size_t i = 0; i < numVertices; i++)
             {
-                auto& vtx = mesh.vertices[i];
+                auto& vtx = mesh.rawVertices[i];
                 vtx.position = {unpack[i * 3 + 0], unpack[i * 3 + 1], unpack[i * 3 + 2]};
             }
         }
@@ -31,8 +31,18 @@ FMesh LoadSubmesh(cgltf_primitive* submesh)
             cgltf_accessor_unpack_floats(acc, unpack.data(), numVertices * 3); // VEC3
             for (size_t i = 0; i < numVertices; i++)
             {
-                auto& vtx = mesh.vertices[i];
+                auto& vtx = mesh.rawVertices[i];
                 vtx.normal = {unpack[i * 3 + 0], unpack[i * 3 + 1], unpack[i * 3 + 2]};
+            }
+        }
+        if (auto acc = cgltf_find_accessor(submesh, cgltf_attribute_type_tangent, 0))
+        {
+            cgltf_accessor_unpack_floats(acc, unpack.data(), numVertices * 4); // VEC3 + sign
+            for (size_t i = 0; i < numVertices; i++)
+            {
+                auto& vtx = mesh.rawVertices[i];
+                vtx.tangent = {unpack[i * 4 + 0], unpack[i * 4 + 1], unpack[i * 4 + 2]};
+                vtx.bitangentSign = unpack[i * 4 + 3];
             }
         }
         if (auto acc = cgltf_find_accessor(submesh, cgltf_attribute_type_texcoord, 0))
@@ -40,7 +50,7 @@ FMesh LoadSubmesh(cgltf_primitive* submesh)
             cgltf_accessor_unpack_floats(acc, unpack.data(), numVertices * 2); // VEC3
             for (size_t i = 0; i < numVertices; i++)
             {
-                auto& vtx = mesh.vertices[i];
+                auto& vtx = mesh.rawVertices[i];
                 vtx.uv = {unpack[i * 2 + 0], unpack[i * 2 + 1]};
             }
         }
@@ -91,11 +101,12 @@ void LoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outI
                 [&](size_t index)
                 {
                     auto& submesh = outMeshes[index];
-                    LOG(Meshopt, LogInfo, "-- Optimizing {}, vtx: {}, idx: {}", index, submesh.vertices.size(),
+                    LOG(Meshopt, LogInfo, "-- Optimizing {}, vtx: {}, idx: {}", index, submesh.rawVertices.size(),
                         submesh.lods[0].indices.size());
                     submesh.Optimize();
                     submesh.ClusterizeDAG();
-                    LOG(Meshopt, LogInfo, "-- Completed meshopt for {}", index);
+                    submesh.Quantize();
+                    LOG(Meshopt, LogInfo, "-- Completed {}", index);
                 },
                 mi++);
         }
@@ -165,13 +176,13 @@ template<> void FDeserialize(FReader& r, FMesh::DAG& obj)
 }
 template<> void FSerialize(FWriter& w, FMesh const& obj)
 {
-    FSerialize(w, obj.vertices);
+    FSerialize(w, obj.rawVertices);
     FSerialize(w, obj.lods);
     FSerialize(w, obj.dag);
 }
 template<> void FDeserialize(FReader& r, FMesh& obj)
 {
-    FDeserialize(r, obj.vertices);
+    FDeserialize(r, obj.rawVertices);
     FDeserialize(r, obj.lods, obj.lods.get_allocator().mResource);
     FDeserialize(r, obj.dag);
 }

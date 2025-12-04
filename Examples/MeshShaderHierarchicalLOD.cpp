@@ -28,7 +28,7 @@ int main()
         LoadObj(src, "data/assets/bunny.obj");
         src.Optimize();
         src.ClusterizeDAG();
-        for (int i = 0; auto& cluster : src.dag.clusters)
+        for (int i = 0; auto& cluster : src.dag._clusters)
         {
             if (cluster.refined != ~0u)
                 fmt::println("Cluster {}: group {} (dep={} err={} center={} {} {} radius={}), refined {} (dep={} err={} center={} {} {} radius={}), indices {}", i++, cluster.group, src.dag.groups[cluster.group].depth,src.dag.groups[cluster.group].error, src.dag.groups[cluster.group].center.x,src.dag.groups[cluster.group].center.y,src.dag.groups[cluster.group].center.z, src.dag.groups[cluster.group].radius, cluster.refined, src.dag.groups[cluster.refined].depth,src.dag.groups[cluster.refined].error,src.dag.groups[cluster.refined].center.x,src.dag.groups[cluster.refined].center.y,src.dag.groups[cluster.refined].center.z, src.dag.groups[cluster.refined].radius,  cluster.indices.size());
@@ -45,8 +45,8 @@ int main()
             return off;
         };
         auto& mesh = ubo.mesh;
-        mesh.vtxCount = src.vertices.size();
-        mesh.vtxOffset = Write(src.vertices.data(), sizeof(FVertex) * src.vertices.size());
+        mesh.vtxCount = src.rawVertices.size();
+        mesh.vtxOffset = Write(src.rawVertices.data(), sizeof(FVertex) * src.rawVertices.size());
         // Group data
         mesh.groupCount = src.dag.groups.size();
         mesh.groupOffset = Write(src.dag.groups.data(), sizeof(FLODGroup) * src.dag.groups.size());

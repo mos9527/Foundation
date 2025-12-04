@@ -31,6 +31,8 @@ namespace Foundation::Math
     }
 
     // (i,j,k,l), where left/right planes are ix +- jz = 0, top/bottom planes are ky +- lz = 0
+    // See Fast Extraction of Viewing Frustum Planes from the WorldView-Projection Matrix
+    //     https://www.gamedevs.org/uploads/fast-extraction-viewing-frustum-planes-from-world-view-projection-matrix.pdf
     inline float4 planeSymmetric(mat4 proj)
     {
         mat4 projT = transpose(proj);

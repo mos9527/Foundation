@@ -5,6 +5,8 @@ static const uint kMeshWorkGroupSize = 64;
 struct FVertex {
     float3 position;
     float3 normal;
+    float3 tangent;
+    float bitangentSign;
     float2 uv;
 };
 struct FLODGroup // @ref clodGroup

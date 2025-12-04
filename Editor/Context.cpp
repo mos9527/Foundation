@@ -39,7 +39,7 @@ FContext* CreateContext(SDL_Window* window, Allocator* allocator)
     context->device = context->application->CreateDevice({}, window);
     context->psoCache = context->device->CreatePipelineCache({});
     context->gpuScene = Construct<GPUScene>(allocator, context, GPUScene::GPUSceneDesc{
-        .primitiveBudget = 1024 * (1u << 20) // 1 GB
+        .primitiveBudget = 128 * (1u << 20) // 128 MB
     });
     UpdateSwapchain(context);
     ImGui_ImplFoundation_SetupContextWithDefaultStyles();

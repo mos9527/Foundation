@@ -18,7 +18,7 @@ endif()
 set(GLM_ENABLE_CXX_20 ON CACHE BOOL "" FORCE)
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
-add_library(Foundation_Math ${SOURCES} ${INCLUDES} "Math.cpp")
+add_library(Foundation_Math ${SOURCES} ${INCLUDES} "Quantize.cpp")
 target_link_libraries(Foundation_Math PUBLIC glm)
 set_target_properties(Foundation_Math PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(

@@ -35,8 +35,8 @@ int main()
             return off;
         };
         auto& mesh = ubo.mesh;
-        mesh.vtxCount = src.vertices.size();
-        mesh.vtxOffset = Write(src.vertices.data(), sizeof(FVertex) * src.vertices.size());
+        mesh.vtxCount = src.rawVertices.size();
+        mesh.vtxOffset = Write(src.rawVertices.data(), sizeof(FVertex) * src.rawVertices.size());
         auto& m0 = mesh;
         auto& s0 = src.lods[0];
         m0.meshletCount = s0.meshlets.size();

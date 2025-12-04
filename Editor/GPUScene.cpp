@@ -41,7 +41,7 @@ String GPUScene::DbgGetBufferStatistics() const
 }
 size_t GPUScene::Upload(ImmediateUpload* ctx, FMesh const& src, GSMesh& outData, uint32_t& outOffset)
 {
-    const size_t size = src.ApproximateSize();
+    const size_t size = src.ApproximateSizeQuantized();
     // We need to ensure the *worst* alignment case fits per DXC docs
     // https://github.com/microsoft/DirectXShaderCompiler/wiki/ByteAddressBuffer-Load-Store-Additions
     // We can consider the GSMesh, FVertex, etc. as one struct - aligning to its largest member
@@ -62,8 +62,8 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FMesh const& src, GSMesh& outData,
     // GSMesh (stub)
     Write(&outData, sizeof(GSMesh));
     // Vertex data
-    outData.vtxCount = src.vertices.size();
-    outData.vtxOffset = outOffset + Write(src.vertices.data(), sizeof(FVertex) * src.vertices.size());
+    outData.vtxCount = src.quantizedVertices.size();
+    outData.vtxOffset = outOffset + Write(src.quantizedVertices.data(), sizeof(FVertex) * src.quantizedVertices.size());
     // LOD Group data
     outData.groupCount = src.dag.groups.size();
     outData.groupOffset = outOffset + Write(src.dag.groups.data(), sizeof(FLODGroup) * src.dag.groups.size());
