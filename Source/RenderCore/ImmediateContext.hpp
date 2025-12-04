@@ -1,8 +1,8 @@
 #pragma once
-#include <RHICore/Resource.hpp>
-#include <RHICore/Command.hpp>
-#include <Core/Variant.hpp>
 #include <Core/AtomicPool.hpp>
+#include <Core/Variant.hpp>
+#include <RHICore/Command.hpp>
+#include <RHICore/Resource.hpp>
 namespace Foundation::RenderCore
 {
     using namespace RHI;
@@ -29,4 +29,61 @@ namespace Foundation::RenderCore
 
         void WaitIdle();
     };
-}
+
+    /**
+     * @brief Single persistent staging buffer + immediate context for quick, batchable uploads.
+     */
+    struct ImmediateUpload
+    {
+        ImmediateContext ctx;
+        RHIDeviceScopedHandle<RHIBuffer> staging;
+
+        char *begin, *ptr, *end;
+        ImmediateUpload(RHIDevice* device, size_t capacity) :
+            ctx(RHIDeviceQueueType::Transfer, device),
+            staging(device->CreateBuffer({.resource =
+                                              {
+                                                  .heap = RHIDeviceHeapType::Upload,
+                                                  .shared = false, /* Transfer only */
+                                                  .coherent = true, /* No flush required */
+                                                  .staging = true,
+                                              },
+                                          .usage = RHIBufferUsageBits::TransferSource,
+                                          .size = capacity}))
+        {
+            begin = ptr = staging->Map<char>();
+            end = ptr + capacity;
+        }
+
+        /**
+         * Resets the upload context for a new series of uploads.
+         * This MUST be called before any Upload calls.
+         */
+        void Begin();
+
+        /**
+         * Uploads data to `dst` buffer with a staging copy.
+         * @return nullptr when upload fails (out of staging memory).
+         *         At which point, a flush with End() -> WaitIdle() -> Begin() is required.
+         */
+        char* Upload(RHIBuffer* dst, size_t dataSize, size_t dstOffset);
+        /**
+         * Uploads data to `dst` texture with a staging copy.
+         * @return nullptr when upload fails (out of staging memory).
+         *         At which point, a flush with End() -> WaitIdle() -> Begin() is required.
+         */
+        char* Upload(RHITexture* dst, size_t dataSize,
+                     RHITextureSubresourceLayer dstLayer = {.aspect = RHITextureAspectFlagBits::Color},
+                     RHIOffset2D dstOffset = {},
+                     RHIExtent2D dstExtent = {});
+
+        /**
+         * Finalizes the upload context, submitting the copy commands.
+         * @param completionFence Optional fence to signal upon completion.
+         */
+        void End(RHIDeviceFence* completionFence = nullptr);
+
+        void WaitIdle();
+    };
+
+} // namespace Foundation::RenderCore

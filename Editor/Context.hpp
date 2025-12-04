@@ -6,7 +6,7 @@ using namespace Foundation;
 using namespace RHI;
 using namespace RenderCore;
 using namespace Core;
-struct GPUScene;
+class GPUScene;
 struct FContext
 {
     Span<char*> args;

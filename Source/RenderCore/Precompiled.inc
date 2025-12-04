@@ -4,7 +4,6 @@
 #include "RenderPass.hpp"
 #include "RenderResource.hpp"
 #include "Shader.hpp"
-#include "Streaming.hpp"
 #include "Bindless.hpp"
 #include "ImmediateContext.hpp"
 #include <spirv/unified1/spirv.hpp>

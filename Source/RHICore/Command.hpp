@@ -97,7 +97,9 @@ namespace Foundation::RHI {
         struct CopyImageRegion {
             // Offset in the source buffer, used for CopyBufferToImage
             uint32_t srcBufferOffset = 0;
+            // Subresource layer of the source image, used for CopyImage
             RHITextureSubresourceLayer srcLayer;
+            // 3D offset of the source image, used for CopyImage
             RHIOffset3D srcOffset{ 0,0,0 };
             RHITextureSubresourceLayer dstLayer;
             RHIOffset3D dstOffset{ 0,0,0 };

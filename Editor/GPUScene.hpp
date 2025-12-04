@@ -1,8 +1,8 @@
 #pragma once
 #include <Math/Math.hpp>
-#include <RenderCore/Streaming.hpp>
 #include "Context.hpp"
 #include "Mesh.hpp"
+#include "RenderCore/ImmediateContext.hpp"
 using namespace Math;
 
 BITMASK_ENUM_BEGIN(GSData, uint8_t)
@@ -46,7 +46,6 @@ class GPUScene
 {
     FContext* mContext;
 
-    StreamingPool mStreaming;
     RHIDeviceScopedHandle<RHIBuffer> mPrimitiveBuffer;
     // XXX: Linear allocation. GPA would be needed if we'd upload & free
     //      at will. Not needed for Editor use-case currently.
@@ -58,12 +57,11 @@ class GPUScene
     // Mapped as-is
     RHIDeviceScopedHandle<RHIBuffer> mInstanceBuffer;
     GSInstance *mInstanceBegin, *mInstanceRingPrev, *mInstanceRing, *mInstanceEnd;
-
 public:
     struct GPUSceneDesc
     {
         size_t primitiveBudget = 16 * (1u << 20); // 16MB
-        size_t instanceBudget = (size_t)1e3; // # of instances
+        size_t instanceBudget = (size_t)1e4; // # of instances
     };
     GPUScene(FContext* ctx, GPUSceneDesc const& desc);
 
@@ -75,17 +73,9 @@ public:
      * @return Raw mapped memory ptr, offset (element wise) in buffer.
      */
     Pair<GSInstance*, uint32_t> InstanceAlloc(uint32_t count);
-
-    /**
-     * @brief Uploads mesh data asynchronously to GPU, returning a future that completes when upload is done.
-     *        outData is immediately filled with offsets/counts, but the actual GPU data will only be valid once the
-     * future is completed.
-     * @note  source is copied internally, and thus is not required to be kept alive.
-     */
-    Future<> Upload(FMesh const& source, GSMesh& outData, uint32_t& outOffset);
-
-    String DbgGetStreamingStatistics() const { return mStreaming.DbgGetStatistics(); }
     String DbgGetBufferStatistics() const;
+
+    size_t Upload(ImmediateUpload* ctx, FMesh const& source, GSMesh& outData, uint32_t& outOffset);
 
     RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
     RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.Get(); }

@@ -13,7 +13,6 @@ static FArcballCamera GCamera{
     .fovY = radians(60.f),
 };
 /* -- */
-List<Future<>> GUploadFutures(GLOBAL_ALLOC);
 void FInitEnter()
 {
     Vector<FMesh> meshes(GLOBAL_ALLOC);
@@ -37,11 +36,20 @@ void FInitEnter()
     // Load into GPUScene
     auto* scene = GContext->gpuScene;
     Vector<Pair<uint32_t, GSMesh>> meshOffsets(GLOBAL_ALLOC);
-    for (auto& src : meshes)
     {
-        auto& [offset, dst] = meshOffsets.emplace_back();
-        auto& fut = GUploadFutures.emplace_back(scene->Upload(src, dst, offset));
-        fut.wait(); // <- TODO: Somehow races. Revisit the whole 'streaming' idea.
+        ImmediateUpload upload(GContext->device.Get(), 64 * (1u << 20)); // 64MB staging
+        upload.Begin();
+        for (auto& src : meshes)
+        {
+            auto& [offset, dst] = meshOffsets.emplace_back();
+            if (!scene->Upload(&upload, src, dst, offset))
+            {
+                // Flush batched uploads
+                upload.End(), upload.WaitIdle(), upload.Begin();
+                CHECK_MSG(scene->Upload(&upload, src, dst, offset), "Staging buffer too small for single mesh upload");
+            }
+        }
+        upload.End(), upload.WaitIdle();
     }
     GSInstances.clear();
     for (auto& src : instances)
@@ -52,33 +60,11 @@ void FInitEnter()
         dst.scale = src.transform.scale;
         dst.meshOffset = meshOffsets[src.meshIndex].first;
     }
-    RendererSetupImGuiOnly(GContext);
-    // ^^^ XXX: See below.
     FEState = FEInit;
 }
 void FInit()
 {
-    if (GUploadFutures.empty())
-    {
-        FEState = FERunningEnter;
-        return;
-    }
-    // Collect upload progress
-    for (auto it = GUploadFutures.begin(); it != GUploadFutures.end();)
-    {
-        if (it->wait_for(std::chrono::microseconds(0)) == std::future_status::ready)
-            it->get(), it = GUploadFutures.erase(it);
-    }
-    auto* renderer = GContext->renderer;
-    renderer->BeginExecute();
-    ImGui_ImplFoundation_NewFrame();
-    ImGui::NewFrame();
-    ImGui::Begin("Editor");
-    ImGui::Text("%ld remaining", GUploadFutures.size());
-    ImGui::End();
-    renderer->ExecuteFrame();
-    renderer->EndExecute();
-    FEState = FEInit;
+    FEState = FERunningEnter;
 }
 RendererConfig GRendererConfig;
 void FRunningEnter()
@@ -109,10 +95,9 @@ void FRunning()
     GShaderGlobals.zNear = GCamera.zNear;
     GShaderGlobals.projPlanes = planeSymmetric(GShaderGlobals.proj);
     // ImGui
-    if (ImGui::Begin("Debug"))
+    if (ImGui::Begin("Camera"))
     {
         ImGui::TextUnformatted(FArcballCamera::kControlsText);
-        ImGui::SliderFloat("LOD Threshold | ", &GShaderGlobals.lodThreshold, 0.f, 1.f);
         ImGui::Separator();
         ImGui::SliderFloat3("Cam Center", &GCamera.center.x, -50.0f, 50.0f);
         ImGui::SliderFloat("Cam Radius", &GCamera.radius, 0.0f, 100.0f);
@@ -121,6 +106,9 @@ void FRunning()
     ImGui::End();
     if (ImGui::Begin("Rendering"))
     {
+        static float lodLogThreshold = 2;
+        ImGui::SliderFloat("LOD Threshold | ", &lodLogThreshold, 0, 8);
+        GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
         if (ImGui::Button("Toggle Overdraw View"))
         {
             GRendererConfig.viewFlags ^= kViewOverdraw;
@@ -176,8 +164,7 @@ void FRunning()
             }
             if (ImGui::TreeNodeEx("GPU Scene", ImGuiTreeNodeFlags_DefaultOpen))
             {
-                ImGui::Text("Streaming: %s", GContext->gpuScene->DbgGetStreamingStatistics().c_str());
-                ImGui::Text("Buffers:   %s", GContext->gpuScene->DbgGetBufferStatistics().c_str());
+                ImGui::Text("%s", GContext->gpuScene->DbgGetBufferStatistics().c_str());
                 ImGui::TreePop();
             }
             if (ImGui::TreeNodeEx("Frametime", ImGuiTreeNodeFlags_DefaultOpen))
@@ -191,15 +178,19 @@ void FRunning()
                 static float gpuTimingMS = 0.0f;
                 static int lanes = 0;
                 float frametimeAvg = frametime.mean * 1e-6f;
-                ImGui::Text("CPU to Present: %.3fms, Present to Present Rolling Avg.: %.3fms (%.1f FPS), GPU: %.3fms, CPU/GPU Δ: %.3fms",
-                            presentTimingMS, frametimeAvg * 1e3f, 1 / frametimeAvg, gpuTimingMS, frametimeAvg * 1e3f - gpuTimingMS);
-                if (ImModalButton(pause ? "Resume" : "Pause",0,2))
-                    pause = !pause;
-                if (ImModalButton("Flush", 1, 2))
+                ImGui::Text("CPU to Present: %.3fms, Present to Present Rolling Avg.: %.3fms (%.1f FPS), GPU: %.3fms, "
+                            "CPU/GPU Δ: %.3fms",
+                            presentTimingMS, frametimeAvg * 1e3f, 1 / frametimeAvg, gpuTimingMS,
+                            frametimeAvg * 1e3f - gpuTimingMS);
+                auto ClearHistogramData = []
                 {
                     for (auto& hist : histograms)
                         hist.clear();
-                }
+                };
+                if (ImModalButton(pause ? "Resume" : "Pause", 0, 2))
+                    pause = !pause;
+                if (ImModalButton("Flush", 1, 2))
+                    ClearHistogramData();
                 if (!pause)
                 {
                     samples.clear();
@@ -244,13 +235,15 @@ void FRunning()
                     ImGui::SetNextWindowSize({ImGui::GetWindowSize().x * 0.75f, 0});
                     if (ImGui::BeginTooltip())
                     {
+                        if (!pause)
+                            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f),
+                                               "Profiler still running. Please Pause for accurate Histogram data.");
                         auto it = Ranges::find_if(samples,
                                                   [selectedID](auto const& sample) { return sample.id == selectedID; });
                         ImGui::SeparatorText(it->label.c_str());
                         if (it != samples.end())
                         {
                             auto& hist = histograms[selectedID];
-                            ImGui::SeparatorText("Histogram");
                             Vector<unsigned> bins(GLOBAL_ALLOC);
                             hist.bin(bins, 256, false /* log */);
                             float mean = hist.mean * gpuTimingRes * 1e-6f,

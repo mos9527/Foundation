@@ -10,8 +10,45 @@ namespace Foundation::RenderCore
     {
         mQueue->Submit({{{.cmdLists = {{mCommandList.Get()}}}}}, completionFence);
     }
-    void ImmediateContext::WaitIdle()
+    void ImmediateContext::WaitIdle() { mQueue->WaitIdle(); }
+    void ImmediateUpload::Begin()
     {
-        mQueue->WaitIdle();
+        ctx->Reset();
+        ctx->Begin();
+        ptr = begin;
     }
+    char* ImmediateUpload::Upload(RHIBuffer* dst, size_t dataSize, size_t dstOffset)
+    {
+        if (ptr + dataSize >= end)
+            return nullptr;
+        ctx->CopyBuffer(
+            staging.Get(), dst,
+            {{{.srcOffset = static_cast<uint32_t>(ptr - begin), .dstOffset = dstOffset, .size = dataSize}}});
+        char* res = ptr;
+        ptr += dataSize;
+        return res;
+    }
+    char* ImmediateUpload::Upload(RHITexture* dst, size_t dataSize, RHITextureSubresourceLayer dstLayer,
+                                  RHIOffset2D dstOffset, RHIExtent2D dstExtent)
+    {
+        if (ptr + dataSize >= end)
+            return nullptr;
+        RHIExtent3D maxExtent = dst->mDesc.extent;
+        RHIOffset3D offset{dstOffset.x, dstOffset.y, 0};
+        RHIExtent3D extent{dstExtent.x ? dstExtent.x : maxExtent.x, dstExtent.y ? dstExtent.y : maxExtent.y, 1};
+        ctx->CopyBufferToImage(staging.Get(), dst, RHITextureLayout::TransferDst,
+                               {{{.srcBufferOffset = static_cast<uint32_t>(ptr - begin),
+                                  .dstLayer = dstLayer,
+                                  .dstOffset = offset,
+                                  .extent = extent}}});
+        char* res = ptr;
+        ptr += dataSize;
+        return res;
+    }
+    void ImmediateUpload::End(RHIDeviceFence* completionFence)
+    {
+        ctx->End();
+        ctx.Submit(completionFence);
+    }
+    void ImmediateUpload::WaitIdle() { ctx.WaitIdle(); }
 } // namespace Foundation::RenderCore
