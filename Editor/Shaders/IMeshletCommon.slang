@@ -1,5 +1,5 @@
-#include "EMath.slangi"
-#include "EFlags.slangi"
+#include "IMath.slang"
+#include "IFlags.slang"
 static const uint kMeshWorkGroupSize = 64;
 // Definitions From C++ sources
 struct FVertex {
@@ -9,6 +9,19 @@ struct FVertex {
     float bitangentSign;
     float2 uv;
 };
+struct FQVertex {
+    half3 position;
+    uint32_t tbn32;
+    uint32_t uv;
+};
+void FQDecode(in FQVertex v, out float3 position, out float3 normal, out float3 tangent, out float bitangentSign, out float2 uv) {
+    position = float3(v.position);
+    unpackTBN(v.tbn32, normal, tangent, bitangentSign);
+    uv = float2(
+        dequantizeSnormShifted(int32_t(bitfieldExtract(v.uv, 0, 16)), 16),
+        dequantizeSnormShifted(int32_t(bitfieldExtract(v.uv, 16, 16)), 16)
+    );
+}
 struct FLODGroup // @ref clodGroup
 {
     // DAG level the group was generated at
@@ -124,5 +137,8 @@ struct V2F
 {
     float4 pos : SV_POSITION;
     float3 normal : NORMAL;
+    float3 tangent : TANGENT;
+    float3 bitangent : BITANGENT;
+    float2 uv : TEXCOORD0;
     uint32_t meshlet : ID;
 };

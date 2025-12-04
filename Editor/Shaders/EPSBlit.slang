@@ -1,4 +1,4 @@
-#include "EFlags.slangi"
+#include "IFlags.slang"
 [[SpecializationConstant]] int flags;
 
 StructuredBuffer<uint32_t> globalMax;

@@ -1,15 +1,6 @@
-#include "EFlags.slangi"
+#include "IMeshletCommon.slang"
 [[SpecializationConstant]] int flags;
 
-struct V2F
-{
-    float4 pos : SV_POSITION;
-    float3 normal : NORMAL;
-    uint32_t meshlet : ID;
-};
-//
-// Fragment Shader
-//
 uint hash(uint a)
 {
     a = (a + 0x7ed55d16) + (a << 12);

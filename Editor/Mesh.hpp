@@ -18,7 +18,7 @@ static_assert(sizeof(FVertex) == 48);
 struct FQVertex
 {
     uint16_t position[3]; // quantized FP16
-    uint32_t tbn32; // octahedral normal [10+10] + tangent rotation [10] + bitangent sign [2]
+    uint32_t tbn32; // Octahedral normal [10+10] + tangent rotation [10] + bitangent sign [2]
     uint16_t uv[2]; // quantized UNORM16
 
     static uint32_t PackTBN(const float3& normal, const float3& tangent, float bitangentSign);
@@ -27,7 +27,6 @@ struct FQVertex
     static FQVertex Pack(FVertex const& vertex);
     static FVertex Unpack(FQVertex const& vertex);
 };
-static float QuantizationError(FQVertex const& quantized, FVertex const& src);
 static_assert(sizeof(FQVertex) == 16);
 struct FLODGroup // @ref clodGroup
 {
@@ -70,8 +69,8 @@ static_assert(sizeof(FMeshlet) == 68);
 
 struct FMesh
 {
-    Vector<FQVertex> quantizedVertices;
-    Vector<FVertex> rawVertices;
+    Vector<FQVertex> vertices; // Quantized
+    Vector<FVertex> rawVertices; // Full precision
     struct LOD
     {
         Vector<uint32_t> indices;

@@ -1,4 +1,4 @@
-#include "EMeshletCommon.slangi"
+#include "IMeshletCommon.slang"
 [[SpecializationConstant]] int cullFlags;
 
 uniform UBO globalParams;

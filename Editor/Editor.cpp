@@ -134,6 +134,8 @@ void FRunning()
             GRendererConfig.cullFlags ^= kCullOcclusion;
             FEState = FERunningEnter;
         }
+        if (ImGui::Button("Reload"))
+            FEState = FERunningEnter;
     }
     ImGui::End();
     if (ImGui::Begin("Profiler"))

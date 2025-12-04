@@ -8,6 +8,7 @@
 #include "Mesh.hpp"
 
 #include "Math/Quantize.hpp"
+#include "glm/gtc/packing.hpp"
 // -- quantize
 constexpr float EPS = 1e-6;
 // Building an Orthonormal Basis from a 3D Unit Vector Without Normalization - Frisvad, 2012
@@ -27,13 +28,13 @@ inline void BuildOrthonormalBasis(const float3 n, float3& b1, float3& b2)
 }
 // Normals Compression - Octahedron by iq
 // https://www.shadertoy.com/view/Mtfyzl
-const float2 PackUnitOctahedral(float3 v) {
+const float2 PackUnitOctahedralSnorm(float3 v) {
     v /= float3(fabsf(v.x) + fabsf(v.y) + fabsf(v.z));
     return v.z >= EPS ? v.xy() : (float2(1.0f) - abs(float2(v.yx()))) * sign(float2(v.xy() + EPS));
 }
 // Normals Compression - Octahedron by iq
 // https://www.shadertoy.com/view/Mtfyzl - Rune Stubbe's version
-const float3 UnpackUnitOctahedral(float2 v) {
+const float3 UnpackUnitOctahedralSnorm(float2 v) {
     float3 nor = float3(v.xy(), 1.0f - fabsf(v.x) - fabsf(v.y));
     float2 xy = nor.z >= EPS ? v.xy() : (float2(1.0f) - abs(float2(v.yx()))) * sign(float2(v.xy() + EPS));
     return normalize(float3(xy.x, xy.y ,nor.z));
@@ -42,15 +43,37 @@ const float3 UnpackUnitOctahedral(float2 v) {
 // Tangent is derived from orthonormal basis around normal with a rotation angle
 // Similar to 3 BYTE TANGENT FRAMES from "Rendering the Hellscape of Doom Eternal - SIGGRAPH 2020" by Jorge Jimenez et
 // al.
+// Octahedral normal [10+10] + tangent rotation [10] + bitangent sign [2]
+// As a side effect - with tangent of length 0, a valid frame is still reconstructed
 uint32_t FQVertex::PackTBN(const float3& normal, const float3& tangent, float bitangentSign)
 {
-    float3 b1, b2;
-    BuildOrthonormalBasis(normal, b1, b2);
+    float3 b1, b2; BuildOrthonormalBasis(normal, b1, b2);
     float cosAngle = dot(tangent, b1), sinAngle = dot(tangent, b2);
-    float2 octNormal = PackUnitOctahedral(normal);
-    return 0;
+    float angle = atan2(sinAngle, cosAngle) / pi<float>();
+    float2 oct = PackUnitOctahedralSnorm(normal);
+    uint32_t nX = quantizeSnormShifted(oct.x, 10), nY = quantizeSnormShifted(oct.y, 10);
+    uint32_t tA = quantizeSnormShifted(angle, 10);
+    uint32_t bS = bitangentSign >= 0.0f ? 1 : 0;
+    uint32_t tbn32 = 0;
+    tbn32 = bitfieldInsert(tbn32, nX, 0, 10);
+    tbn32 = bitfieldInsert(tbn32, nY, 10, 10);
+    tbn32 = bitfieldInsert(tbn32, tA, 20, 10);
+    tbn32 = bitfieldInsert(tbn32, bS, 30, 2);
+    return tbn32;
 }
-void FQVertex::UnpackTBN(uint32_t packed, float3& outNormal, float3& outTangent, float& outBitangentSign) {}
+void FQVertex::UnpackTBN(uint32_t packed, float3& outNormal, float3& outTangent, float& outBitangentSign)
+{
+    uint32_t nX = bitfieldExtract(packed, 0, 10);
+    uint32_t nY = bitfieldExtract(packed, 10, 10);
+    uint32_t tA = bitfieldExtract(packed, 20, 10);
+    uint32_t bS = bitfieldExtract(packed, 30, 2);
+    float2 normalOct = float2(dequantizeSnormShifted(nX, 10), dequantizeSnormShifted(nY, 10));
+    outNormal = UnpackUnitOctahedralSnorm(normalOct);
+    float angle = dequantizeSnormShifted(tA, 10) * pi<float>();
+    float3 b1, b2; BuildOrthonormalBasis(outNormal, b1, b2);
+    outTangent = cos(angle) * b1 + sin(angle) * b2;
+    outBitangentSign = bS == 1 ? 1.0f : -1.0f;
+}
 FQVertex FQVertex::Pack(FVertex const& vertex)
 {
     FQVertex result;
@@ -73,30 +96,17 @@ FVertex FQVertex::Unpack(FQVertex const& vertex)
     result.uv[1] = dequantizeUnorm(vertex.uv[1], 16);
     return result;
 }
-float QuantizationError(FQVertex const& quantized, FVertex const& src)
-{
-    FVertex dequantized = FQVertex::Unpack(quantized);
-    float posError = length(dequantized.position - src.position);
-    float normalError = length(dequantized.normal - src.normal);
-    float tangentError = length(dequantized.tangent - src.tangent);
-    float uvError = length(dequantized.uv - src.uv);
-    return posError + normalError + tangentError + uvError;
-}
 void FMesh::Quantize()
 {
-    quantizedVertices.resize(rawVertices.size());
+    vertices.resize(rawVertices.size());
     for (size_t i = 0; i < rawVertices.size(); i++)
-    {
-        quantizedVertices[i] = FQVertex::Pack(rawVertices[i]);
-        float err = QuantizationError(quantizedVertices[i], rawVertices[i]);
-        LOG(FMesh, LogDebug, "Err {}", err);
-    }
+        vertices[i] = FQVertex::Pack(rawVertices[i]);
 }
 void FMesh::Dequantize()
 {
-    rawVertices.resize(quantizedVertices.size());
-    for (size_t i = 0; i < quantizedVertices.size(); i++)
-        rawVertices[i] = FQVertex::Unpack(quantizedVertices[i]);
+    rawVertices.resize(vertices.size());
+    for (size_t i = 0; i < vertices.size(); i++)
+        rawVertices[i] = FQVertex::Unpack(vertices[i]);
 }
 // -- optimize
 template <typename Vertex, typename Index>
@@ -260,7 +270,7 @@ void FMesh::ClusterizeDAG()
 size_t FMesh::ApproximateSizeQuantized() const
 {
     size_t size = sizeof(FMesh);
-    size += quantizedVertices.size() * sizeof(FQVertex);
+    size += vertices.size() * sizeof(FQVertex);
     for (auto const& lod : lods)
     {
         size += sizeof(decltype(lod));
@@ -280,7 +290,7 @@ void FMesh::Optimize()
 {
     OptimizeVertexIndex(rawVertices, lods[0].indices);
 }
-FMesh::FMesh(Allocator* alloc) : quantizedVertices(alloc), rawVertices(alloc), lods(alloc), dag(alloc) { lods.resize(1u, alloc); }
+FMesh::FMesh(Allocator* alloc) : vertices(alloc), rawVertices(alloc), lods(alloc), dag(alloc) { lods.resize(1u, alloc); }
 // -- loading
 void LoadObj(FMesh& outMesh, StringView path)
 {

@@ -1,8 +1,9 @@
-#include "EMeshletCommon.slangi"
+#include "IMeshletCommon.slang"
 
 uniform UBO globalParams;
 StructuredBuffer<GSInstance> instances;
 ByteAddressBuffer primitive;
+
 
 // Each WG of mesh shader processes one meshlet
 // Each thread in the WG processes zero, or more vertices/triangles
@@ -29,13 +30,21 @@ void main(
     // Each thread in the WG processes multiple vertices/triangles
     for (uint i = tid; i < vtxCount; i += kMeshWorkGroupSize) {
         uint ind = primitive.Load<uint32_t>(vtxBase + i * sizeof(uint32_t));
-        FVertex vtx = primitive.Load<FVertex>(mesh.vtxOffset + ind * sizeof(FVertex));
-        vtx.position = inst.rotation.rotate(vtx.position);
-        vtx.position = vtx.position * inst.scale + inst.transform;
-        vtx.normal = inst.rotation.rotate(vtx.normal);
+        FQVertex fq = primitive.Load<FQVertex>(mesh.vtxOffset + ind * sizeof(FQVertex));
+        float3 position, normal, tangent;
+        float2 uv;
+        float bitangentSign;
+        FQDecode(fq, position, normal, tangent, bitangentSign, uv);
+        position = inst.rotation.rotate(position);
+        position = position * inst.scale + inst.transform;
+        normal = inst.rotation.rotate(normal);
+        tangent = inst.rotation.rotate(tangent);
         V2F v2f;
-        v2f.pos = mul(mul(globalParams.proj, globalParams.view), float4(vtx.position, 1.0));
-        v2f.normal = vtx.normal;
+        v2f.pos = mul(mul(globalParams.proj, globalParams.view), float4(position, 1.0));
+        v2f.normal = normal;
+        v2f.tangent = tangent;
+        v2f.bitangent = cross(normal, tangent) * bitangentSign;
+        v2f.uv = uv;
         v2f.meshlet = mesh.meshletGlobalIndex + meshletID;
         verts[i] = v2f;
     }

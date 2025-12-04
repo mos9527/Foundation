@@ -62,8 +62,8 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FMesh const& src, GSMesh& outData,
     // GSMesh (stub)
     Write(&outData, sizeof(GSMesh));
     // Vertex data
-    outData.vtxCount = src.quantizedVertices.size();
-    outData.vtxOffset = outOffset + Write(src.quantizedVertices.data(), sizeof(FVertex) * src.quantizedVertices.size());
+    outData.vtxCount = src.vertices.size();
+    outData.vtxOffset = outOffset + Write(src.vertices.data(), sizeof(FQVertex) * src.vertices.size());
     // LOD Group data
     outData.groupCount = src.dag.groups.size();
     outData.groupOffset = outOffset + Write(src.dag.groups.data(), sizeof(FLODGroup) * src.dag.groups.size());
