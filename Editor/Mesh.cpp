@@ -28,16 +28,18 @@ inline void BuildOrthonormalBasis(const float3 n, float3& b1, float3& b2)
 }
 // Normals Compression - Octahedron by iq
 // https://www.shadertoy.com/view/Mtfyzl
-const float2 PackUnitOctahedralSnorm(float3 v) {
+const float2 PackUnitOctahedralSnorm(float3 v)
+{
     v /= float3(fabsf(v.x) + fabsf(v.y) + fabsf(v.z));
     return v.z >= EPS ? v.xy() : (float2(1.0f) - abs(float2(v.yx()))) * sign(float2(v.xy() + EPS));
 }
 // Normals Compression - Octahedron by iq
 // https://www.shadertoy.com/view/Mtfyzl - Rune Stubbe's version
-const float3 UnpackUnitOctahedralSnorm(float2 v) {
+const float3 UnpackUnitOctahedralSnorm(float2 v)
+{
     float3 nor = float3(v.xy(), 1.0f - fabsf(v.x) - fabsf(v.y));
     float2 xy = nor.z >= EPS ? v.xy() : (float2(1.0f) - abs(float2(v.yx()))) * sign(float2(v.xy() + EPS));
-    return normalize(float3(xy.x, xy.y ,nor.z));
+    return normalize(float3(xy.x, xy.y, nor.z));
 }
 // Compact TBN frame packing
 // Tangent is derived from orthonormal basis around normal with a rotation angle
@@ -47,7 +49,8 @@ const float3 UnpackUnitOctahedralSnorm(float2 v) {
 // As a side effect - with tangent of length 0, a valid frame is still reconstructed
 uint32_t FQVertex::PackTBN(const float3& normal, const float3& tangent, float bitangentSign)
 {
-    float3 b1, b2; BuildOrthonormalBasis(normal, b1, b2);
+    float3 b1, b2;
+    BuildOrthonormalBasis(normal, b1, b2);
     float cosAngle = dot(tangent, b1), sinAngle = dot(tangent, b2);
     float angle = atan2(sinAngle, cosAngle) / pi<float>();
     float2 oct = PackUnitOctahedralSnorm(normal);
@@ -70,7 +73,8 @@ void FQVertex::UnpackTBN(uint32_t packed, float3& outNormal, float3& outTangent,
     float2 normalOct = float2(dequantizeSnormShifted(nX, 10), dequantizeSnormShifted(nY, 10));
     outNormal = UnpackUnitOctahedralSnorm(normalOct);
     float angle = dequantizeSnormShifted(tA, 10) * pi<float>();
-    float3 b1, b2; BuildOrthonormalBasis(outNormal, b1, b2);
+    float3 b1, b2;
+    BuildOrthonormalBasis(outNormal, b1, b2);
     outTangent = cos(angle) * b1 + sin(angle) * b2;
     outBitangentSign = bS == 1 ? 1.0f : -1.0f;
 }
@@ -98,15 +102,63 @@ FVertex FQVertex::Unpack(FQVertex const& vertex)
 }
 void FMesh::Quantize()
 {
-    vertices.resize(rawVertices.size());
-    for (size_t i = 0; i < rawVertices.size(); i++)
-        vertices[i] = FQVertex::Pack(rawVertices[i]);
+    verticesQuantized.resize(vertices.size());
+    for (size_t i = 0; i < vertices.size(); i++)
+        verticesQuantized[i] = FQVertex::Pack(vertices[i]);
 }
 void FMesh::Dequantize()
 {
-    rawVertices.resize(vertices.size());
-    for (size_t i = 0; i < vertices.size(); i++)
-        rawVertices[i] = FQVertex::Unpack(vertices[i]);
+    vertices.resize(verticesQuantized.size());
+    for (size_t i = 0; i < verticesQuantized.size(); i++)
+        vertices[i] = FQVertex::Unpack(verticesQuantized[i]);
+}
+void FMesh::Compress()
+{
+    CHECK_MSG(!verticesQuantized.empty(), "Mesh not quantized yet");
+    // Vertex data
+    verticesQuantizedCompressedCount = static_cast<uint32_t>(verticesQuantized.size());
+    verticesQuantizedCompressed.resize(
+        meshopt_encodeVertexBufferBound(verticesQuantizedCompressedCount, sizeof(FQVertex)));
+    size_t vtxSize =
+        meshopt_encodeVertexBuffer(verticesQuantizedCompressed.data(), verticesQuantizedCompressed.size(),
+                                   verticesQuantized.data(), verticesQuantizedCompressedCount, sizeof(FQVertex));
+    verticesQuantizedCompressed.resize(vtxSize);
+    // Index data
+    for (auto& lod : lods)
+    {
+        lod.indicesCompressedCount = lod.indices.size();
+        lod.indicesCompressed.resize(
+            meshopt_encodeIndexBufferBound(lod.indicesCompressedCount, verticesQuantizedCompressedCount));
+        size_t idxSize = meshopt_encodeIndexBuffer(lod.indicesCompressed.data(), lod.indicesCompressed.size(),
+                                                   lod.indices.data(), lod.indicesCompressedCount);
+        lod.indicesCompressed.resize(idxSize);
+    }
+    dag.meshletVtxCompressedCount = dag.meshletVtx.size();
+    dag.meshletVtxCompressed.resize(
+        meshopt_encodeIndexBufferBound(dag.meshletVtxCompressedCount, verticesQuantizedCompressedCount));
+    size_t idxSize = meshopt_encodeIndexBuffer(dag.meshletVtxCompressed.data(), dag.meshletVtxCompressed.size(),
+                                               dag.meshletVtx.data(), dag.meshletVtxCompressedCount);
+    dag.meshletVtxCompressed.resize(idxSize);
+}
+void FMesh::Decompress()
+{
+    // Vertex data
+    CHECK_MSG(verticesQuantizedCompressedCount > 0, "No compressed vertex data");
+    verticesQuantized.resize(verticesQuantizedCompressedCount);
+    CHECK(meshopt_decodeVertexBuffer(verticesQuantized.data(), verticesQuantizedCompressedCount, sizeof(FQVertex),
+                               verticesQuantizedCompressed.data(), verticesQuantizedCompressed.size()) == 0);
+    // Index data
+    for (auto& lod : lods)
+    {
+        CHECK_MSG(lod.indicesCompressedCount > 0, "No compressed index data");
+        lod.indices.resize(lod.indicesCompressedCount);
+        CHECK(meshopt_decodeIndexBuffer(lod.indices.data(), lod.indicesCompressedCount, lod.indicesCompressed.data(),
+                                  lod.indicesCompressed.size()) == 0);
+    }
+    CHECK_MSG(dag.meshletVtxCompressedCount > 0, "No compressed meshlet vertex data");
+    dag.meshletVtx.resize(dag.meshletVtxCompressedCount);
+    CHECK(meshopt_decodeIndexBuffer(dag.meshletVtx.data(), dag.meshletVtxCompressedCount, dag.meshletVtxCompressed.data(),
+                              dag.meshletVtxCompressed.size()) == 0);
 }
 // -- optimize
 template <typename Vertex, typename Index>
@@ -192,30 +244,31 @@ void FMesh::SimplifyLOD(int levels, float scale)
     for (int i = 1; i < levels; i++)
     {
         lods.emplace_back(lods.get_allocator().mResource);
-        GenerateLOD<FVertex, uint32_t>(lods[i].indices, rawVertices, lods[i - 1].indices, scale);
+        GenerateLOD<FVertex, uint32_t>(lods[i].indices, vertices, lods[i - 1].indices, scale);
     }
 }
-void FMesh::ClusterizeLOD()
+struct DAGCluster
 {
-    for (int i = 0; i < lods.size(); i++)
-    {
-        BuildMeshlets<FVertex, uint32_t>(lods[i].meshlets, lods[i].meshletVtx, lods[i].meshletTri, rawVertices,
-                                         lods[i].indices);
-    }
-}
+    uint32_t group{~0u}; // ID of the FLODGroup this cluster belongs to
+    uint32_t refined{~0u}; // ID of the FLODGroup (with more triangles) that produced this cluster during
+    // simplification (parent). ~0u if original geometry
+    Vector<uint32_t> indices;
+    DAGCluster(Allocator* alloc) : indices(alloc) {}
+};
 void FMesh::ClusterizeDAG()
 {
     clodConfig config = clodDefaultConfig(kMeshletMaxTriangles);
     const float attribute_weights[3] = {0.5f, 0.5f, 0.5f};
     clodMesh mesh{.indices = lods[0].indices.data(),
                   .index_count = lods[0].indices.size(),
-                  .vertex_count = rawVertices.size(),
-                  .vertex_positions = reinterpret_cast<const float*>(&rawVertices[0].position),
+                  .vertex_count = vertices.size(),
+                  .vertex_positions = reinterpret_cast<const float*>(&vertices[0].position),
                   .vertex_positions_stride = sizeof(FVertex),
-                  .vertex_attributes = reinterpret_cast<const float*>(&rawVertices[0].normal),
+                  .vertex_attributes = reinterpret_cast<const float*>(&vertices[0].normal),
                   .vertex_attributes_stride = sizeof(FVertex),
                   .attribute_weights = attribute_weights,
                   .attribute_count = 3};
+    Vector<DAGCluster> dagClusters(GLOBAL_ALLOC);
     clodBuild(config, mesh,
               [&](clodGroup group, const clodCluster* clusters, size_t cluster_count) -> int
               {
@@ -228,7 +281,7 @@ void FMesh::ClusterizeDAG()
                   for (size_t i = 0; i < cluster_count; i++)
                   {
                       auto& cluster = clusters[i];
-                      auto& lvl = dag._clusters.emplace_back(rawVertices.get_allocator().mResource);
+                      auto& lvl = dagClusters.emplace_back(vertices.get_allocator().mResource);
                       lvl.group = group_id, lvl.refined = cluster.refined;
                       auto& ind = lvl.indices;
                       ind.insert(ind.end(), cluster.indices, cluster.indices + cluster.index_count);
@@ -237,14 +290,14 @@ void FMesh::ClusterizeDAG()
               });
     // Done - build meshlets for each cluster
     size_t numIndices = 0;
-    for (auto& cluster : dag._clusters)
+    for (auto& cluster : dagClusters)
         numIndices += cluster.indices.size();
     // Worst bounds
     dag.meshletVtx.resize(numIndices), dag.meshletTri.resize(numIndices);
     uint32_t* vtx = dag.meshletVtx.data();
     uint8_t* tri = dag.meshletTri.data();
-    dag.meshlets.reserve(dag._clusters.size());
-    for (auto& cluster : dag._clusters)
+    dag.meshlets.reserve(dagClusters.size());
+    for (auto& cluster : dagClusters)
     {
         FMeshlet meshlet{
             .group = cluster.group,
@@ -258,39 +311,84 @@ void FMesh::ClusterizeDAG()
         // Compute bounds
         meshopt_Bounds bounds = meshopt_computeMeshletBounds(
             &dag.meshletVtx[meshlet.vtxOffset], &dag.meshletTri[meshlet.triOffset], meshlet.triCount,
-            reinterpret_cast<const float*>(&rawVertices[0]), rawVertices.size(), sizeof(FVertex));
+            reinterpret_cast<const float*>(&vertices[0]), vertices.size(), sizeof(FVertex));
         meshlet.centerRadius = float4(bounds.center[0], bounds.center[1], bounds.center[2], bounds.radius);
         meshlet.coneAxisAngle =
             float4(bounds.cone_axis[0], bounds.cone_axis[1], bounds.cone_axis[2], bounds.cone_cutoff);
         meshlet.coneApex = float3(bounds.cone_apex[0], bounds.cone_apex[1], bounds.cone_apex[2]);
         dag.meshlets.push_back(meshlet);
     }
-    dag._clusters = {}; // No longer needed
+    dagClusters = {}; // No longer needed
 }
-size_t FMesh::ApproximateSizeQuantized() const
+size_t FMesh::CalculateQuantizedBound(bool incLod, bool incDag) const
 {
-    size_t size = sizeof(FMesh);
-    size += vertices.size() * sizeof(FQVertex);
-    for (auto const& lod : lods)
+    size_t size = verticesQuantized.size() * sizeof(FQVertex);
+    if (incLod)
+        for (auto const& lod : lods)
+            size += lod.indices.size() * sizeof(uint32_t);
+    if (incDag)
     {
-        size += sizeof(decltype(lod));
-        size += lod.indices.size() * sizeof(uint32_t);
-        size += lod.meshlets.size() * sizeof(FMeshlet);
-        size += lod.meshletVtx.size() * sizeof(uint32_t);
-        size += lod.meshletTri.size() * sizeof(uint8_t);
+        size += dag.groups.size() * sizeof(FLODGroup);
+        size += dag.meshlets.size() * sizeof(FMeshlet);
+        size += dag.meshletVtx.size() * sizeof(uint32_t);
+        size += dag.meshletTri.size() * sizeof(uint8_t);
     }
-    size += sizeof(decltype(dag));
-    size += dag.groups.size() * sizeof(FLODGroup);
-    size += dag.meshlets.size() * sizeof(FMeshlet);
-    size += dag.meshletVtx.size() * sizeof(uint32_t);
-    size += dag.meshletTri.size() * sizeof(uint8_t);
     return size;
 }
-void FMesh::Optimize()
+bool FMesh::EnsureQuantized()
 {
-    OptimizeVertexIndex(rawVertices, lods[0].indices);
+    if (!verticesQuantized.empty())
+        return true;
+    // Not quantized. Calculate from full precision data available
+    if (!vertices.empty())
+    {
+        Quantize();
+        return true;
+    }
+    // Not quantized. Compressed data available has quantized data
+    if (!verticesQuantizedCompressed.empty())
+    {
+        Decompress();
+        return true;
+    }
+    return false;
 }
-FMesh::FMesh(Allocator* alloc) : vertices(alloc), rawVertices(alloc), lods(alloc), dag(alloc) { lods.resize(1u, alloc); }
+bool FMesh::EnsureCompressed()
+{
+    if (!verticesQuantizedCompressed.empty())
+        return true;
+    if (!EnsureQuantized())
+        return false;
+    // Not compressed, but guaranteed to be quantized.
+    Compress();
+    return true;
+}
+bool FMesh::EnsureRaw()
+{
+    if (!vertices.empty())
+        return true;
+    // Not decoded. But has quantized data.
+    if (!verticesQuantized.empty())
+    {
+        Dequantize();
+        return true;
+    }
+    // Not decoded. But has compressed data - which is quantized
+    if (!verticesQuantizedCompressed.empty())
+    {
+        Decompress();
+        Dequantize();
+        return true;
+    }
+    return false;
+}
+
+void FMesh::Optimize() { OptimizeVertexIndex(vertices, lods[0].indices); }
+FMesh::FMesh(Allocator* alloc) :
+    vertices(alloc), verticesQuantized(alloc), verticesQuantizedCompressed(alloc), lods(alloc), dag(alloc)
+{
+    lods.resize(1u, alloc);
+}
 // -- loading
 void LoadObj(FMesh& outMesh, StringView path)
 {
@@ -300,7 +398,7 @@ void LoadObj(FMesh& outMesh, StringView path)
     uint32_t vertexBound = 0; // Bound post triangulation
     for (uint32_t face = 0; face < mesh->face_count; face++)
         vertexBound += 3u * (mesh->face_vertices[face] - 2u);
-    outMesh.rawVertices.resize(vertexBound), outMesh.lods[0].indices.resize(vertexBound);
+    outMesh.vertices.resize(vertexBound), outMesh.lods[0].indices.resize(vertexBound);
     for (size_t vtx = 0, idx = 0, face = 0; face < mesh->face_count; face++)
     {
         for (uint32_t faceVtx = 0; faceVtx < mesh->face_vertices[face]; faceVtx++)
@@ -308,14 +406,16 @@ void LoadObj(FMesh& outMesh, StringView path)
             auto [p, t, n] = mesh->indices[idx + faceVtx];
             if (faceVtx >= 3) // CCW
             {
-                outMesh.rawVertices[vtx + 0] = outMesh.rawVertices[vtx - 3];
-                outMesh.rawVertices[vtx + 1] = outMesh.rawVertices[vtx - 1];
+                outMesh.vertices[vtx + 0] = outMesh.vertices[vtx - 3];
+                outMesh.vertices[vtx + 1] = outMesh.vertices[vtx - 1];
                 vtx += 2;
             }
-            outMesh.rawVertices[vtx++] = {{mesh->positions[p * 3 + 0], mesh->positions[p * 3 + 1], mesh->positions[p * 3 + 2]},
-                               {mesh->normals[n * 3 + 0], mesh->normals[n * 3 + 1], mesh->normals[n * 3 + 2]},
-                                {}, {}, // No tangent info
-                               {mesh->texcoords[t * 2 + 0], mesh->texcoords[t * 2 + 1]}};
+            outMesh.vertices[vtx++] = {
+                {mesh->positions[p * 3 + 0], mesh->positions[p * 3 + 1], mesh->positions[p * 3 + 2]},
+                {mesh->normals[n * 3 + 0], mesh->normals[n * 3 + 1], mesh->normals[n * 3 + 2]},
+                {},
+                {}, // No tangent info
+                {mesh->texcoords[t * 2 + 0], mesh->texcoords[t * 2 + 1]}};
         }
         idx += mesh->face_vertices[face];
     }

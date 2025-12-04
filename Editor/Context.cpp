@@ -52,6 +52,7 @@ void DestroyContext(FContext* context)
     context = context ? context : GContext;
     if (!context)
         return;
+    context->device->WaitIdle();
     ImGui_ImplFoundation_Shutdown();
     SDL_DestroyWindow(context->window);
     Destruct(context->allocator, context->renderer);

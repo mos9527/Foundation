@@ -41,13 +41,17 @@ String GPUScene::DbgGetBufferStatistics() const
 }
 size_t GPUScene::Upload(ImmediateUpload* ctx, FMesh const& src, GSMesh& outData, uint32_t& outOffset)
 {
-    const size_t size = src.ApproximateSizeQuantized();
+    // Only upload DAG data
+    const size_t size = sizeof(GSMesh) + src.CalculateQuantizedBound(false, true);
     // We need to ensure the *worst* alignment case fits per DXC docs
     // https://github.com/microsoft/DirectXShaderCompiler/wiki/ByteAddressBuffer-Load-Store-Additions
     // We can consider the GSMesh, FVertex, etc. as one struct - aligning to its largest member
     // uint32_t, in this case - would be sufficient.
     constexpr size_t kAlign = 4;
-    outOffset = AlignUp(mPrimitiveOffset, kAlign), mPrimitiveOffset += size;
+    outOffset = AlignUp(mPrimitiveOffset, kAlign);
+    CHECK_MSG(outOffset + size <= mPrimitiveBuffer->mDesc.size, "GPUScene primitive buffer overflow");
+    mPrimitiveOffset = outOffset + size;
+    // Allocate staging memory to upload into
     char* ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset), *dst = ptr;
     if (ptr == nullptr)
         return 0;
@@ -58,12 +62,11 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FMesh const& src, GSMesh& outData,
         dst += bytes;
         return off;
     };
-    CHECK_MSG(mPrimitiveOffset < mPrimitiveBuffer->mDesc.size, "GPUScene primitive buffer overflow");
     // GSMesh (stub)
     Write(&outData, sizeof(GSMesh));
     // Vertex data
-    outData.vtxCount = src.vertices.size();
-    outData.vtxOffset = outOffset + Write(src.vertices.data(), sizeof(FQVertex) * src.vertices.size());
+    outData.vtxCount = src.verticesQuantized.size();
+    outData.vtxOffset = outOffset + Write(src.verticesQuantized.data(), sizeof(FQVertex) * src.verticesQuantized.size());
     // LOD Group data
     outData.groupCount = src.dag.groups.size();
     outData.groupOffset = outOffset + Write(src.dag.groups.data(), sizeof(FLODGroup) * src.dag.groups.size());
@@ -76,6 +79,8 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FMesh const& src, GSMesh& outData,
     mMeshletGlobalCounter += outData.meshletCount;
     // GSMesh (data)
     std::memcpy(ptr, &outData, sizeof(GSMesh));
+    size_t written = dst - ptr;
+    CHECK_MSG(written == size, "Write mismatch: expected {} got {}", size, written);
     return dst - ptr;
 }
 void GPUScene::Reset()

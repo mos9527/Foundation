@@ -19,13 +19,8 @@ void FInitEnter()
     Vector<FInstance> instances(GLOBAL_ALLOC);
     Vector<FCamera> cameras(GLOBAL_ALLOC);
     CHECK_MSG(GContext->args.size() == 2, "Usage: Editor <scene path>");
-    LoadFromFile(GContext->args[1], meshes, instances, cameras);
-    for (auto& mesh : meshes)
-    {
-        LOG(Editor, LogInfo, "Loaded Mesh | Vtx={} | LODGroups={} | ApproxSize={} B", mesh.rawVertices.size(),
-            mesh.dag.groups.size(), mesh.ApproximateSizeQuantized());
-    }
-    if (cameras.size())
+    SceneLoadFromFile(GContext->args[1], meshes, instances, cameras);
+    if (!cameras.empty())
     {
         auto& camera = cameras.front();
         vec3 dir = camera.transform.rotation * vec3(0, 0, 1);
@@ -41,10 +36,11 @@ void FInitEnter()
         upload.Begin();
         for (auto& src : meshes)
         {
+            CHECK(src.EnsureQuantized());
             auto& [offset, dst] = meshOffsets.emplace_back();
             if (!scene->Upload(&upload, src, dst, offset))
             {
-                // Flush batched uploads
+                // Flush batched uploads - staging buffer full
                 upload.End(), upload.WaitIdle(), upload.Begin();
                 CHECK_MSG(scene->Upload(&upload, src, dst, offset), "Staging buffer too small for single mesh upload");
             }

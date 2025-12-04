@@ -1,54 +1,38 @@
-/* -- Generated with Gemini 3 Pro Preview */
 #pragma once
 #include <Core/Container.hpp>
 #include <concepts>
 #include <cstdint>
 #include <cstring>
 using namespace Foundation::Core;
+// RW primitives
 struct FWriter
 {
-    Vector<char> buffer;
-    FWriter(Allocator* alloc) : buffer(alloc) {}
-    void operator()(const void* data, size_t size)
-    {
-        auto* cdata = static_cast<const char*>(data);
-        buffer.insert(buffer.end(), cdata, cdata + size);
-    }
+    virtual ~FWriter() = default;
+    virtual void operator()(const void* data, size_t size) = 0;
 };
-
 struct FReader
 {
-    Span<const char> buffer;
-    void operator()(void* dest, size_t size)
-    {
-        CHECK(buffer.size_bytes() >= size);
-        std::memcpy(dest, buffer.data(), size);
-        buffer = buffer.subspan(size);
-    }
+    virtual ~FReader() = default;
+    virtual void operator()(void* dest, size_t size) = 0;
 };
 template <typename T>
 void FSerialize(FWriter& w, const T& obj);
 template <typename T>
 void FDeserialize(FReader& r, T& obj);
-// -----------------------------------------------------------------------------
-// 2. Generic SFINAE Templates
-// -----------------------------------------------------------------------------
-// Generic Serialize: Handles PODs automatically
+// POD Data
 template <typename T>
 void FSerialize(FWriter& writer, const T& obj)
     requires std::is_trivially_copyable_v<T>
 {
     writer(&obj, sizeof(T));
 }
-
-// Generic Deserialize: Handles PODs automatically
 template <typename T>
 void FDeserialize(FReader& reader, T& obj)
     requires std::is_trivially_copyable_v<T>
 {
     reader(&obj, sizeof(T));
 }
-
+// Custom serialization
 template <typename T>
 void FSerialize(FWriter& writer, const Vector<T>& vec)
 {
@@ -62,7 +46,6 @@ void FSerialize(FWriter& writer, const Vector<T>& vec)
             FSerialize(writer, item);
     }
 }
-
 template <typename T, typename... Args>
 void FDeserialize(FReader& reader, Vector<T>& vec, Args const&... args)
 {
@@ -77,3 +60,25 @@ void FDeserialize(FReader& reader, Vector<T>& vec, Args const&... args)
             FDeserialize(reader, vec[i]);
     }
 }
+// File IO
+struct FileWriter : FWriter
+{
+    FILE* fp;
+    FileWriter(StringView path)
+    {
+        fp = fopen(path.data(), "wb");
+        CHECK_MSG(fp != nullptr, "Can't open {}", path);
+    }
+    ~FileWriter() override { fflush(fp), fclose(fp); }
+    void operator()(const void* data, size_t size) override { fwrite(data, 1, size, fp); }
+};
+struct FileReader : FReader
+{
+    FILE* fp;
+    FileReader(StringView path)
+    {
+        fp = fopen(path.data(), "rb");
+        CHECK_MSG(fp != nullptr, "Can't open {}", path);
+    }
+    void operator()(void* dest, size_t size) override { fread(dest, 1, size, fp); }
+};

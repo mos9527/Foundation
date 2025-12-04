@@ -69,34 +69,27 @@ static_assert(sizeof(FMeshlet) == 68);
 
 struct FMesh
 {
-    Vector<FQVertex> vertices; // Quantized
-    Vector<FVertex> rawVertices; // Full precision
+    Vector<FVertex> vertices; // Full precision, raw vertices. Used by importers.
+    Vector<FQVertex> verticesQuantized; // Quantized vertex data for GPU upload.
+    Vector<unsigned char> verticesQuantizedCompressed; // Compressed, quantized post-optimization vertex data for disk.
+    uint32_t verticesQuantizedCompressedCount = 0; // Number of vertices in compressed data
     struct LOD
     {
-        Vector<uint32_t> indices;
-        Vector<FMeshlet> meshlets;
-        Vector<uint32_t> meshletVtx;
-        Vector<uint8_t> meshletTri;
-        LOD(Allocator* alloc) : indices(alloc), meshlets(alloc), meshletVtx(alloc), meshletTri(alloc) {}
+        Vector<uint32_t> indices; // Full precision triangle indices
+        Vector<unsigned char> indicesCompressed; // Compressed index data for disk
+        uint32_t indicesCompressedCount = 0; // Number of indices in compressed data
+        LOD(Allocator* alloc) : indices(alloc), indicesCompressed(alloc) {}
     };
     Vector<LOD> lods;
     struct DAG
     {
-        struct Cluster
-        {
-            uint32_t group{~0u}; // ID of the FLODGroup this cluster belongs to
-            uint32_t refined{~0u}; // ID of the FLODGroup (with more triangles) that produced this cluster during
-                                   // simplification (parent). ~0u if original geometry
-            Vector<uint32_t> indices;
-            Cluster(Allocator* alloc) : indices(alloc) {}
-        };
-        Vector<Cluster> _clusters; // NOTE: Scratch.
-        // -- final DAG data
-        Vector<FLODGroup> groups; // group error bounds
-        Vector<FMeshlet> meshlets; // meshlets built from all clusters
-        Vector<uint32_t> meshletVtx;
-        Vector<uint8_t> meshletTri;
-        DAG(Allocator* alloc) : _clusters(alloc), groups(alloc), meshlets(alloc), meshletVtx(alloc), meshletTri(alloc) {}
+        Vector<FLODGroup> groups; // LOD groups with error bounds
+        Vector<FMeshlet> meshlets; // Meshlets built from all clusters
+        Vector<uint8_t> meshletTri; // Meshlet local triangle indices
+        Vector<uint32_t> meshletVtx; // Meshlet vertex indices into vertices/verticesQuantized
+        Vector<unsigned char> meshletVtxCompressed; // Compressed meshlet vertex indices for disk
+        uint32_t meshletVtxCompressedCount = 0; // Number of indices in compressed data
+        DAG(Allocator* alloc) : groups(alloc), meshlets(alloc), meshletTri(alloc), meshletVtx(alloc), meshletVtxCompressed(alloc) {}
     } dag;
 
     FMesh(Allocator* alloc);
@@ -106,17 +99,11 @@ struct FMesh
     void Optimize();
     /**
      * @brief Creates N LOD levels, iteratively scaling down by 'scale' factor
-     * @note Can be clusterized by @ref ClusterizeLOD afterward to create discrete LOD levels
+     *        and populates @ref lods index data
      */
     void SimplifyLOD(int levels, float scale);
     /**
-     * @brief Populates meshlet data for all LODs
-     */
-    void ClusterizeLOD();
-    /**
      * @brief Partitions the clusters of LOD levels into a DAG
-     * @note This enables continuous LOD behaviour, and as such should NOT be used with discrete LOD
-     *       levels created by @ref ClusterizeLOD, or @ref SimplifyLOD.
      */
     void ClusterizeDAG();
     /**
@@ -125,14 +112,42 @@ struct FMesh
      */
     void Quantize();
     /**
-     * @brief Dequantizes vertex data back into full precision representation
+     * @brief Dequantizes quantized vertex back into full precision representation
      *        Fills @ref rawVertices with dequantized data from @ref quantizedVertices
      */
     void Dequantize();
     /**
-     * @brief Returns an upper bound estimate of the size of the used mesh data when uploaded to GPU
+     * @brief Compresses quantized vertex and index data for disk storage
      */
-    [[nodiscard]] size_t ApproximateSizeQuantized() const;
+    void Compress();
+    /**
+     * @brief Decompresses quantized vertex and index data from disk storage
+     */
+    void Decompress();
+    /**
+     * @brief Prepares quantized GPU data buffers from possibly full-precision, or compressed data.
+     * @return `true` when quantized and other buffers are available to be uploaded
+     */
+    bool EnsureQuantized();
+    [[nodiscard]] bool IsQuantized() const { return !verticesQuantized.empty(); }
+    /**
+     * @brief Prepares compressed buffers for saving to disk.
+     * @note  A compressed mesh implies quantized data.
+     */
+    bool EnsureCompressed();
+    [[nodiscard]] bool IsCompressed() const { return !verticesQuantizedCompressed.empty(); }
+    /**
+     * @brief Prepares full-precision data for CPU access
+     */
+    bool EnsureRaw();
+    [[nodiscard]] bool IsRaw() const { return !vertices.empty(); }
+    /**
+     * @brief Returns a lower bound estimate of the size of the quantized mesh data.
+     *        The size is conservative in that it's 100% accurate only when the data is written
+     *        sequentially, without alignment requirements.
+     * @note This is ONLY valid when @ref EnsureQuantized is true.
+     */
+    [[nodiscard]] size_t CalculateQuantizedBound(bool lod, bool dag) const;
 };
 
 void LoadObj(FMesh& mesh, StringView path);

@@ -1,6 +1,7 @@
 #pragma once
 #include "AtomicQueue.hpp"
 #include "Thread.hpp"
+#include <cmath>
 namespace Foundation::Core
 {
     /**
@@ -70,7 +71,7 @@ namespace Foundation::Core
         /**
          * @brief Construct a thread pool with the given number of worker threads.
          * @param numThreads Number of worker threads to spawn.
-         * @param maxTasks Max number of tasks that can be queued. Must be a power of two.
+         * @param maxTasks Max number of tasks that can be queued. Must be a power of two - see @ref getTaskSize
          * @param alloc Allocator to use for internal and job allocations
          * @param name Prefix for worker thread names ("name@id")
          */
@@ -132,5 +133,10 @@ namespace Foundation::Core
         }
         [[nodiscard]] size_t GetCompletedJobCount() const noexcept { return mComplete.load(std::memory_order_relaxed); }
         [[nodiscard]] size_t GetTotalJobCount() const noexcept { return mTotal.load(std::memory_order_relaxed); }
+
+        /**
+         * Aligns a number to upper, closest power of 2 so that it's a valid @ref maxTasks size.
+         */
+        constexpr static size_t getTaskSize(size_t size) { return 1ULL << static_cast<size_t>(.5f + std::log2f(size)); }
     };
 } // namespace Foundation::Core

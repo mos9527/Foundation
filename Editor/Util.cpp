@@ -1,18 +1,21 @@
-#include "Scene.hpp"
 #include <fstream>
+#include "Scene.hpp"
 int main_scene(StringView srcPath, StringView dstPath)
 {
     Vector<FMesh> meshes(GLOBAL_ALLOC);
     Vector<FInstance> instances(GLOBAL_ALLOC);
     Vector<FCamera> cameras(GLOBAL_ALLOC);
-    LoadGLTF(srcPath, meshes, instances, cameras);
-    FWriter writer(GLOBAL_ALLOC);
-    LOG(UtilScene, LogDebug, "Serializing data");
-    SceneSerialize(writer, meshes, instances, cameras);
-    LOG(UtilScene, LogDebug, "Size={}", writer.buffer.size());
-    // Write to file
-    std::ofstream f(dstPath.data(), std::ios::binary);
-    CHECK_MSG(f.write(writer.buffer.data(), writer.buffer.size()), "Failed to write data");
+    SceneLoadGLTF(srcPath, meshes, instances, cameras);
+    LOG(Util, LogDebug, "Compressing data");
+    {
+        ThreadPool pool(std::thread::hardware_concurrency(), ThreadPool::getTaskSize(meshes.size()), GLOBAL_ALLOC);
+        // Compress all meshes
+        for (auto& mesh : meshes)
+            pool.Push([&] { mesh.EnsureCompressed(); });
+        pool.Join();
+    }
+    LOG(Util, LogDebug, "Saving");
+    SceneSaveBinFile(dstPath, meshes, instances, cameras);
     return 0;
 }
 int main(int argc, const char** argv)

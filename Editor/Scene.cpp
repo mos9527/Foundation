@@ -1,13 +1,13 @@
 #define CGLTF_IMPLEMENTATION
 #define CGLTF_VALIDATE_ENABLE_ASSERTS 1
+#include "Scene.hpp"
+#include <Math/Decompose.hpp>
 #include <cgltf.h>
 #include <filesystem>
 #include <fstream>
-#include <Math/Decompose.hpp>
-#include "Scene.hpp"
 #include "Mesh.hpp"
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#meshes
-FMesh LoadSubmesh(cgltf_primitive* submesh)
+FMesh SceneLoadGLTFSubmesh(cgltf_primitive* submesh)
 {
     CHECK(submesh->type == cgltf_primitive_type_triangles);
     FMesh mesh(GLOBAL_ALLOC);
@@ -16,13 +16,13 @@ FMesh LoadSubmesh(cgltf_primitive* submesh)
     // Worst storage case is VEC4
     {
         Vector<float> unpack(numVertices * 4, GLOBAL_ALLOC);
-        mesh.rawVertices.resize(numVertices);
+        mesh.vertices.resize(numVertices);
         if (auto acc = cgltf_find_accessor(submesh, cgltf_attribute_type_position, 0))
         {
             cgltf_accessor_unpack_floats(acc, unpack.data(), numVertices * 3); // VEC3
             for (size_t i = 0; i < numVertices; i++)
             {
-                auto& vtx = mesh.rawVertices[i];
+                auto& vtx = mesh.vertices[i];
                 vtx.position = {unpack[i * 3 + 0], unpack[i * 3 + 1], unpack[i * 3 + 2]};
             }
         }
@@ -31,7 +31,7 @@ FMesh LoadSubmesh(cgltf_primitive* submesh)
             cgltf_accessor_unpack_floats(acc, unpack.data(), numVertices * 3); // VEC3
             for (size_t i = 0; i < numVertices; i++)
             {
-                auto& vtx = mesh.rawVertices[i];
+                auto& vtx = mesh.vertices[i];
                 vtx.normal = {unpack[i * 3 + 0], unpack[i * 3 + 1], unpack[i * 3 + 2]};
             }
         }
@@ -40,7 +40,7 @@ FMesh LoadSubmesh(cgltf_primitive* submesh)
             cgltf_accessor_unpack_floats(acc, unpack.data(), numVertices * 4); // VEC3 + sign
             for (size_t i = 0; i < numVertices; i++)
             {
-                auto& vtx = mesh.rawVertices[i];
+                auto& vtx = mesh.vertices[i];
                 vtx.tangent = {unpack[i * 4 + 0], unpack[i * 4 + 1], unpack[i * 4 + 2]};
                 vtx.bitangentSign = unpack[i * 4 + 3];
             }
@@ -50,7 +50,7 @@ FMesh LoadSubmesh(cgltf_primitive* submesh)
             cgltf_accessor_unpack_floats(acc, unpack.data(), numVertices * 2); // VEC3
             for (size_t i = 0; i < numVertices; i++)
             {
-                auto& vtx = mesh.rawVertices[i];
+                auto& vtx = mesh.vertices[i];
                 vtx.uv = {unpack[i * 2 + 0], unpack[i * 2 + 1]};
             }
         }
@@ -62,7 +62,8 @@ FMesh LoadSubmesh(cgltf_primitive* submesh)
     return mesh;
 }
 
-void LoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outInstances, Vector<FCamera>& outCameras)
+void SceneLoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outInstances,
+                   Vector<FCamera>& outCameras)
 {
     LOG(Scene, LogInfo, "Load GLTF Scene {}", path);
     cgltf_options options = {};
@@ -96,12 +97,12 @@ void LoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outI
             CHECK(sub->type == cgltf_primitive_type_triangles);
             // cgltf does not guarantee thread-safety with its accessors.
             // Load first - otherwise UB as I've seen from plenty of examples
-            outMeshes[mi] = LoadSubmesh(sub);
+            outMeshes[mi] = SceneLoadGLTFSubmesh(sub);
             pool.Push(
                 [&](size_t index)
                 {
                     auto& submesh = outMeshes[index];
-                    LOG(Meshopt, LogInfo, "-- Optimizing {}, vtx: {}, idx: {}", index, submesh.rawVertices.size(),
+                    LOG(Meshopt, LogInfo, "-- Optimizing {}, vtx: {}, idx: {}", index, submesh.vertices.size(),
                         submesh.lods[0].indices.size());
                     submesh.Optimize();
                     submesh.ClusterizeDAG();
@@ -146,57 +147,68 @@ void LoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outI
 }
 
 /* -- Serialization -- */
-template<> void FSerialize(FWriter& w, FMesh::LOD const& obj)
+template <>
+void FSerialize(FWriter& w, FMesh::LOD const& obj)
 {
-    FSerialize(w, obj.indices);
-    FSerialize(w, obj.meshlets);
-    FSerialize(w, obj.meshletVtx);
-    FSerialize(w, obj.meshletTri);
+    FSerialize(w, obj.indicesCompressed);
+    FSerialize(w, obj.indicesCompressedCount);
 }
-template<> void FDeserialize(FReader& r, FMesh::LOD& obj)
+template <>
+void FDeserialize(FReader& r, FMesh::LOD& obj)
 {
-    FDeserialize(r, obj.indices);
-    FDeserialize(r, obj.meshlets);
-    FDeserialize(r, obj.meshletVtx);
-    FDeserialize(r, obj.meshletTri);
+    FDeserialize(r, obj.indicesCompressed);
+    FDeserialize(r, obj.indicesCompressedCount);
 }
-template<> void FSerialize(FWriter& w, FMesh::DAG const& obj)
+template <>
+void FSerialize(FWriter& w, FMesh::DAG const& obj)
 {
     FSerialize(w, obj.groups);
     FSerialize(w, obj.meshlets);
-    FSerialize(w, obj.meshletVtx);
     FSerialize(w, obj.meshletTri);
+    FSerialize(w, obj.meshletVtxCompressed);
+    FSerialize(w, obj.meshletVtxCompressedCount);
 }
-template<> void FDeserialize(FReader& r, FMesh::DAG& obj)
+template <>
+void FDeserialize(FReader& r, FMesh::DAG& obj)
 {
     FDeserialize(r, obj.groups);
     FDeserialize(r, obj.meshlets);
-    FDeserialize(r, obj.meshletVtx);
     FDeserialize(r, obj.meshletTri);
+    FDeserialize(r, obj.meshletVtxCompressed);
+    FDeserialize(r, obj.meshletVtxCompressedCount);
 }
-template<> void FSerialize(FWriter& w, FMesh const& obj)
+template <>
+void FSerialize(FWriter& w, FMesh const& obj)
 {
-    FSerialize(w, obj.rawVertices);
+    CHECK_MSG(obj.IsCompressed(), "Mesh not compressed");
+    FSerialize(w, obj.verticesQuantizedCompressed);
+    FSerialize(w, obj.verticesQuantizedCompressedCount);
     FSerialize(w, obj.lods);
     FSerialize(w, obj.dag);
 }
-template<> void FDeserialize(FReader& r, FMesh& obj)
+template <>
+void FDeserialize(FReader& r, FMesh& obj)
 {
-    FDeserialize(r, obj.rawVertices);
+    FDeserialize(r, obj.verticesQuantizedCompressed);
+    FDeserialize(r, obj.verticesQuantizedCompressedCount);
     FDeserialize(r, obj.lods, obj.lods.get_allocator().mResource);
     FDeserialize(r, obj.dag);
+    CHECK_MSG(obj.IsCompressed(), "Mesh not compressed");
 }
-const uint32_t kSceneMagic = 0xDEADDEAD;
+constexpr uint32_t fourCC(const char a, const char b, const char c, const char d)
+{
+    return (a << 0) | (b << 8) | (c << 16) | (d << 24);
+}
+const uint32_t kSceneMagic = fourCC('F', 'S', 'C', 'N');
 void FSerialize(FWriter& w, Vector<FMesh> const& meshes, Vector<FInstance> const& instances,
-                 Vector<FCamera> const& cameras)
+                Vector<FCamera> const& cameras)
 {
     FSerialize(w, kSceneMagic);
     FSerialize(w, meshes);
     FSerialize(w, instances);
     FSerialize(w, cameras);
 }
-void FDeserialize(FReader& r, Vector<FMesh>& meshes, Vector<FInstance>& instances,
-                   Vector<FCamera>& cameras)
+void FDeserialize(FReader& r, Vector<FMesh>& meshes, Vector<FInstance>& instances, Vector<FCamera>& cameras)
 {
     uint32_t magic;
     FDeserialize(r, magic);
@@ -205,22 +217,23 @@ void FDeserialize(FReader& r, Vector<FMesh>& meshes, Vector<FInstance>& instance
     FDeserialize(r, instances);
     FDeserialize(r, cameras);
 }
-void LoadFromFile(StringView scenePath, Vector<FMesh>& outMeshes, Vector<FInstance>& outInstances,
-                  Vector<FCamera>& outCameras)
+void SceneLoadFromFile(StringView scenePath, Vector<FMesh>& outMeshes, Vector<FInstance>& outInstances,
+                       Vector<FCamera>& outCameras)
 {
     auto ext = std::filesystem::path(scenePath.data()).extension().string();
     if (ext == ".gltf" || ext == ".glb")
     {
-        LoadGLTF(scenePath, outMeshes, outInstances, outCameras);
-    } else
+        SceneLoadGLTF(scenePath, outMeshes, outInstances, outCameras);
+    }
+    else
     {
-        std::error_code ec;
-        auto size = std::filesystem::file_size(scenePath, ec);
-        CHECK_MSG(!ec, "Failed to open Editor scene file {}: {}", scenePath, ec.message());
-        Vector<char> data(size, GLOBAL_ALLOC);
-        std::ifstream file(scenePath.data(), std::ios::binary);
-        CHECK_MSG(file.is_open() && file.read(data.data(), size), "Failed to read Editor scene file {}", scenePath);
-        FReader reader(data);
+        FileReader reader(scenePath);
         FDeserialize(reader, outMeshes, outInstances, outCameras);
     }
+}
+void SceneSaveBinFile(StringView path, Vector<FMesh> const& meshes, Vector<FInstance> const& instances,
+                  Vector<FCamera> const& cameras)
+{
+    FileWriter writer(path);
+    FSerialize(writer, meshes, instances, cameras);
 }
