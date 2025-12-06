@@ -91,6 +91,12 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
+FetchContent_Declare(
+    KTX-Software
+    GIT_REPOSITORY https://github.com/KhronosGroup/KTX-Software
+    GIT_TAG v4.4.2
+    GIT_SHALLOW TRUE
+)
 # Font
 FetchContent_Declare(
     LxgwNeoXiHei

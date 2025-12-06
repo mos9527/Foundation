@@ -54,7 +54,7 @@ float3 unpackUnitOctahedralSnorm(float2 v)
     nor.xy = nor.z >= EPS ? nor.xy :  (float2(1.0f, 1.0f) - abs(nor.yx)) * sign(nor.xy + EPS);
     return normalize(nor);
 }
-// R2, L2 to L1 projection on unit circle
+// R2, L1 to L2 projection on unit circle
 float2 unpackUnitCircleSnorm(float v){
     float x = abs(v) * 2.0f - 1.0f;
     float y = 1.0f - abs(x);

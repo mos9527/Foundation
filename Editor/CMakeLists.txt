@@ -6,6 +6,10 @@ FetchContent_MakeAvailable(meshoptimizer)
 FetchContent_MakeAvailable(cgltf)
 FetchContent_MakeAvailable(lz4)
 
+set(KTX_FEATURE_TESTS OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(KTX-Software)
+
 file(
     GLOB SOURCES
     Context.cpp
@@ -19,13 +23,14 @@ file(
 )
 
 add_subdirectory(Shaders)
-add_library(Editor_Assets)
+add_library(Editor_Assets STATIC)
 target_sources(Editor_Assets PUBLIC Mesh.cpp Scene.cpp "${lz4_SOURCE_DIR}/lib/lz4.c" "${lz4_SOURCE_DIR}/lib/xxhash.c")
 target_link_libraries(
     Editor_Assets PUBLIC
     Foundation_Math
     Foundation_Core
     meshoptimizer
+    ktx
 )
 target_include_directories(
     Editor_Assets PUBLIC "${stb_SOURCE_DIR}" "${fast_obj_SOURCE_DIR}" "${cgltf_SOURCE_DIR}" "${meshoptimizer_SOURCE_DIR}/demo" "${lz4_SOURCE_DIR}/lib" ..

@@ -1,14 +1,12 @@
 #define FAST_OBJ_IMPLEMENTATION
 #include <fast_obj.h>
-
 #include <meshoptimizer.h>
 #define CLUSTERLOD_IMPLEMENTATION
 #include <clusterlod.h>
 
+#include <Math/Quantize.hpp>
 #include "Mesh.hpp"
 
-#include "Math/Quantize.hpp"
-#include "glm/gtc/packing.hpp"
 // -- quantize
 constexpr float EPS = 1e-6;
 // Building an Orthonormal Basis from a 3D Unit Vector Without Normalization - Frisvad, 2012
@@ -41,12 +39,12 @@ float3 unpackUnitOctahedralSnorm(float2 v)
     float2 xy = nor.z >= EPS ? v.xy() : (float2(1.0f) - abs(float2(v.yx()))) * sign(float2(v.xy() + EPS));
     return normalize(float3(xy.x, xy.y, nor.z));
 }
-// R2, L1 to L2 projection on unit circle
+// R2, L2 to L1 projection on unit circle
 float packUnitCircleSnorm(float2 v){
     v /= fabsf(v.x) + fabsf(v.y);
     return v.y >= EPS ? (v.x + 1.0f) * 0.5f : -(v.x + 1.0f) * 0.5f;
 }
-// R2, L2 to L1 projection on unit circle
+// R2, L1 to L2 projection on unit circle
 float2 unpackUnitCircleSnorm(float v){
     float x = fabsf(v) * 2.0f - 1.0f;
     float y = 1.0f - fabsf(x);

@@ -33,8 +33,8 @@ Pair<GSInstance*, uint32_t> GPUScene::InstanceAlloc(uint32_t count)
 String GPUScene::DbgGetBufferStatistics() const
 {
     String res;
-    fmt::format_to(std::back_inserter(res), "Primitive Buffer: Used {} / {} MB\n", mPrimitiveOffset / 1e6f,
-                   mPrimitiveBuffer->mDesc.size / 1e6f);
+    fmt::format_to(std::back_inserter(res), "Primitive Buffer: Used {} / {} MB\n", mPrimitiveOffset / static_cast<float>(1<<20u),
+                   mPrimitiveBuffer->mDesc.size / static_cast<float>(1<<20u));
     fmt::format_to(std::back_inserter(res), "Instance Buffer: Used {} / {} instances",
                    mInstanceRing - mInstanceRingPrev, mInstanceEnd - mInstanceBegin);
     return res;
