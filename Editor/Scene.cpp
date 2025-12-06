@@ -181,16 +181,16 @@ template <>
 void FSerialize(FWriter& w, FMesh const& obj)
 {
     CHECK_MSG(obj.IsCompressed(), "Mesh not compressed");
-    FSerialize(w, obj.verticesQuantizedCompressed);
-    FSerialize(w, obj.verticesQuantizedCompressedCount);
+    FSerialize(w, obj.verticesCompressed);
+    FSerialize(w, obj.verticesCompressedCount);
     FSerialize(w, obj.lods);
     FSerialize(w, obj.dag);
 }
 template <>
 void FDeserialize(FReader& r, FMesh& obj)
 {
-    FDeserialize(r, obj.verticesQuantizedCompressed);
-    FDeserialize(r, obj.verticesQuantizedCompressedCount);
+    FDeserialize(r, obj.verticesCompressed);
+    FDeserialize(r, obj.verticesCompressedCount);
     FDeserialize(r, obj.lods, obj.lods.get_allocator().mResource);
     FDeserialize(r, obj.dag);
     CHECK_MSG(obj.IsCompressed(), "Mesh not compressed");

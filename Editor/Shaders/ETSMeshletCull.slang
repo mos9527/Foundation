@@ -160,7 +160,7 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
         uint waveMeshletOffset = 0;
         if (WaveIsFirstLane())
             InterlockedAdd(shared.meshletCount, waveVisibleCount, waveMeshletOffset);
-        waveMeshletOffset = WaveActiveMax(waveMeshletOffset);
+        waveMeshletOffset = WaveReadLaneFirst(waveMeshletOffset);
         if (visible) {
             // Output the visible meshlet
             uint sum = WavePrefixCountBits(visible);

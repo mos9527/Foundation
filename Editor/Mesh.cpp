@@ -13,7 +13,7 @@
 constexpr float EPS = 1e-6;
 // Building an Orthonormal Basis from a 3D Unit Vector Without Normalization - Frisvad, 2012
 // https://backend.orbit.dtu.dk/ws/portalfiles/portal/126824972/onb_frisvad_jgt2012_v2.pdf
-inline void BuildOrthonormalBasis(const float3 n, float3& b1, float3& b2)
+inline void buildOrthonormalBasis(const float3 n, float3& b1, float3& b2)
 {
     if (n.z < -0.9999999)
     {
@@ -26,56 +26,68 @@ inline void BuildOrthonormalBasis(const float3 n, float3& b1, float3& b2)
     b1 = float3(1.0 - n.x * n.x * a, b, -n.x);
     b2 = float3(b, 1.0 - n.y * n.y * a, -n.y);
 }
-// Normals Compression - Octahedron by iq
-// https://www.shadertoy.com/view/Mtfyzl
-const float2 PackUnitOctahedralSnorm(float3 v)
+// Original formulation from: https://jcgt.org/published/0003/02/01/paper.pdf
+// R3, L2 to L1 projection on unit sphere
+float2 packUnitOctahedralSnorm(float3 v)
 {
     v /= float3(fabsf(v.x) + fabsf(v.y) + fabsf(v.z));
     return v.z >= EPS ? v.xy() : (float2(1.0f) - abs(float2(v.yx()))) * sign(float2(v.xy() + EPS));
 }
-// Normals Compression - Octahedron by iq
-// https://www.shadertoy.com/view/Mtfyzl - Rune Stubbe's version
-const float3 UnpackUnitOctahedralSnorm(float2 v)
+// Original formulation from: https://jcgt.org/published/0003/02/01/paper.pdf
+// R3, L1 to L2 projection on unit sphere
+float3 unpackUnitOctahedralSnorm(float2 v)
 {
     float3 nor = float3(v.xy(), 1.0f - fabsf(v.x) - fabsf(v.y));
     float2 xy = nor.z >= EPS ? v.xy() : (float2(1.0f) - abs(float2(v.yx()))) * sign(float2(v.xy() + EPS));
     return normalize(float3(xy.x, xy.y, nor.z));
 }
+// R2, L1 to L2 projection on unit circle
+float packUnitCircleSnorm(float2 v){
+    v /= fabsf(v.x) + fabsf(v.y);
+    return v.y >= EPS ? (v.x + 1.0f) * 0.5f : -(v.x + 1.0f) * 0.5f;
+}
+// R2, L2 to L1 projection on unit circle
+float2 unpackUnitCircleSnorm(float v){
+    float x = fabsf(v) * 2.0f - 1.0f;
+    float y = 1.0f - fabsf(x);
+    return v >= 0.0f ? float2(x, y) : float2(x, -y);
+}
 // Compact TBN frame packing
 // Tangent is derived from orthonormal basis around normal with a rotation angle
 // Similar to 3 BYTE TANGENT FRAMES from "Rendering the Hellscape of Doom Eternal - SIGGRAPH 2020" by Jorge Jimenez et
 // al.
-// Octahedral normal [10+10] + tangent rotation [10] + bitangent sign [2]
+// Octahedral normal [12+12] + tangent rotation [7] + bitangent sign [1]
 // As a side effect - with tangent of length 0, a valid frame is still reconstructed
 uint32_t FQVertex::PackTBN(const float3& normal, const float3& tangent, float bitangentSign)
 {
     float3 b1, b2;
-    BuildOrthonormalBasis(normal, b1, b2);
+    buildOrthonormalBasis(normal, b1, b2);
     float cosAngle = dot(tangent, b1), sinAngle = dot(tangent, b2);
-    float angle = atan2(sinAngle, cosAngle) / pi<float>();
-    float2 oct = PackUnitOctahedralSnorm(normal);
-    uint32_t nX = quantizeSnormShifted(oct.x, 10), nY = quantizeSnormShifted(oct.y, 10);
-    uint32_t tA = quantizeSnormShifted(angle, 10);
+    float octAngle = packUnitCircleSnorm(float2(cosAngle, sinAngle));
+    float2 oct = packUnitOctahedralSnorm(normal);
+    uint32_t nX = quantizeSnormShifted(oct.x, 12), nY = quantizeSnormShifted(oct.y, 12);
+    uint32_t tA = quantizeSnormShifted(octAngle, 7);
     uint32_t bS = bitangentSign >= 0.0f ? 1 : 0;
     uint32_t tbn32 = 0;
-    tbn32 = bitfieldInsert(tbn32, nX, 0, 10);
-    tbn32 = bitfieldInsert(tbn32, nY, 10, 10);
-    tbn32 = bitfieldInsert(tbn32, tA, 20, 10);
-    tbn32 = bitfieldInsert(tbn32, bS, 30, 2);
+    tbn32 = bitfieldInsert(tbn32, nX, 0, 12);
+    tbn32 = bitfieldInsert(tbn32, nY, 12, 12);
+    tbn32 = bitfieldInsert(tbn32, tA, 24, 7);
+    tbn32 = bitfieldInsert(tbn32, bS, 31, 1);
     return tbn32;
 }
 void FQVertex::UnpackTBN(uint32_t packed, float3& outNormal, float3& outTangent, float& outBitangentSign)
 {
-    uint32_t nX = bitfieldExtract(packed, 0, 10);
-    uint32_t nY = bitfieldExtract(packed, 10, 10);
-    uint32_t tA = bitfieldExtract(packed, 20, 10);
-    uint32_t bS = bitfieldExtract(packed, 30, 2);
-    float2 normalOct = float2(dequantizeSnormShifted(nX, 10), dequantizeSnormShifted(nY, 10));
-    outNormal = UnpackUnitOctahedralSnorm(normalOct);
-    float angle = dequantizeSnormShifted(tA, 10) * pi<float>();
+    uint32_t nX = bitfieldExtract(packed, 0, 12);
+    uint32_t nY = bitfieldExtract(packed, 12, 12);
+    uint32_t tA = bitfieldExtract(packed, 24, 7);
+    uint32_t bS = bitfieldExtract(packed, 31, 1);
+    float2 normalOct = float2(dequantizeSnormShifted(nX, 12), dequantizeSnormShifted(nY, 12));
+    outNormal = unpackUnitOctahedralSnorm(normalOct);
+    float octAngle = dequantizeSnormShifted(tA, 7);
+    float2 octXY = unpackUnitCircleSnorm(octAngle);
     float3 b1, b2;
-    BuildOrthonormalBasis(outNormal, b1, b2);
-    outTangent = cos(angle) * b1 + sin(angle) * b2;
+    buildOrthonormalBasis(outNormal, b1, b2);
+    outTangent = octXY.x * b1 + octXY.y * b2;
     outBitangentSign = bS == 1 ? 1.0f : -1.0f;
 }
 FQVertex FQVertex::Pack(FVertex const& vertex)
@@ -116,26 +128,26 @@ void FMesh::Compress()
 {
     CHECK_MSG(!verticesQuantized.empty(), "Mesh not quantized yet");
     // Vertex data
-    verticesQuantizedCompressedCount = static_cast<uint32_t>(verticesQuantized.size());
-    verticesQuantizedCompressed.resize(
-        meshopt_encodeVertexBufferBound(verticesQuantizedCompressedCount, sizeof(FQVertex)));
+    verticesCompressedCount = static_cast<uint32_t>(verticesQuantized.size());
+    verticesCompressed.resize(
+        meshopt_encodeVertexBufferBound(verticesCompressedCount, sizeof(FQVertex)));
     size_t vtxSize =
-        meshopt_encodeVertexBuffer(verticesQuantizedCompressed.data(), verticesQuantizedCompressed.size(),
-                                   verticesQuantized.data(), verticesQuantizedCompressedCount, sizeof(FQVertex));
-    verticesQuantizedCompressed.resize(vtxSize);
+        meshopt_encodeVertexBuffer(verticesCompressed.data(), verticesCompressed.size(),
+                                   verticesQuantized.data(), verticesCompressedCount, sizeof(FQVertex));
+    verticesCompressed.resize(vtxSize);
     // Index data
     for (auto& lod : lods)
     {
         lod.indicesCompressedCount = lod.indices.size();
         lod.indicesCompressed.resize(
-            meshopt_encodeIndexBufferBound(lod.indicesCompressedCount, verticesQuantizedCompressedCount));
+            meshopt_encodeIndexBufferBound(lod.indicesCompressedCount, verticesCompressedCount));
         size_t idxSize = meshopt_encodeIndexBuffer(lod.indicesCompressed.data(), lod.indicesCompressed.size(),
                                                    lod.indices.data(), lod.indicesCompressedCount);
         lod.indicesCompressed.resize(idxSize);
     }
     dag.meshletVtxCompressedCount = dag.meshletVtx.size();
     dag.meshletVtxCompressed.resize(
-        meshopt_encodeIndexBufferBound(dag.meshletVtxCompressedCount, verticesQuantizedCompressedCount));
+        meshopt_encodeIndexBufferBound(dag.meshletVtxCompressedCount, verticesCompressedCount));
     size_t idxSize = meshopt_encodeIndexBuffer(dag.meshletVtxCompressed.data(), dag.meshletVtxCompressed.size(),
                                                dag.meshletVtx.data(), dag.meshletVtxCompressedCount);
     dag.meshletVtxCompressed.resize(idxSize);
@@ -143,10 +155,10 @@ void FMesh::Compress()
 void FMesh::Decompress()
 {
     // Vertex data
-    CHECK_MSG(verticesQuantizedCompressedCount > 0, "No compressed vertex data");
-    verticesQuantized.resize(verticesQuantizedCompressedCount);
-    CHECK(meshopt_decodeVertexBuffer(verticesQuantized.data(), verticesQuantizedCompressedCount, sizeof(FQVertex),
-                               verticesQuantizedCompressed.data(), verticesQuantizedCompressed.size()) == 0);
+    CHECK_MSG(verticesCompressedCount > 0, "No compressed vertex data");
+    verticesQuantized.resize(verticesCompressedCount);
+    CHECK(meshopt_decodeVertexBuffer(verticesQuantized.data(), verticesCompressedCount, sizeof(FQVertex),
+                               verticesCompressed.data(), verticesCompressed.size()) == 0);
     // Index data
     for (auto& lod : lods)
     {
@@ -346,7 +358,7 @@ bool FMesh::EnsureQuantized()
         return true;
     }
     // Not quantized. Compressed data available has quantized data
-    if (!verticesQuantizedCompressed.empty())
+    if (!verticesCompressed.empty())
     {
         Decompress();
         return true;
@@ -355,7 +367,7 @@ bool FMesh::EnsureQuantized()
 }
 bool FMesh::EnsureCompressed()
 {
-    if (!verticesQuantizedCompressed.empty())
+    if (!verticesCompressed.empty())
         return true;
     if (!EnsureQuantized())
         return false;
@@ -374,7 +386,7 @@ bool FMesh::EnsureRaw()
         return true;
     }
     // Not decoded. But has compressed data - which is quantized
-    if (!verticesQuantizedCompressed.empty())
+    if (!verticesCompressed.empty())
     {
         Decompress();
         Dequantize();
@@ -385,7 +397,7 @@ bool FMesh::EnsureRaw()
 
 void FMesh::Optimize() { OptimizeVertexIndex(vertices, lods[0].indices); }
 FMesh::FMesh(Allocator* alloc) :
-    vertices(alloc), verticesQuantized(alloc), verticesQuantizedCompressed(alloc), lods(alloc), dag(alloc)
+    vertices(alloc), verticesQuantized(alloc), verticesCompressed(alloc), lods(alloc), dag(alloc)
 {
     lods.resize(1u, alloc);
 }

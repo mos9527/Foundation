@@ -54,15 +54,23 @@ float3 unpackUnitOctahedralSnorm(float2 v)
     nor.xy = nor.z >= EPS ? nor.xy :  (float2(1.0f, 1.0f) - abs(nor.yx)) * sign(nor.xy + EPS);
     return normalize(nor);
 }
+// R2, L2 to L1 projection on unit circle
+float2 unpackUnitCircleSnorm(float v){
+    float x = abs(v) * 2.0f - 1.0f;
+    float y = 1.0f - abs(x);
+    return v >= 0.0f ? float2(x, y) : float2(x, -y);
+}
 void unpackTBN(uint32_t packed, out float3 outNormal, out float3 outTangent, out float outBitangentSign) {
-    uint32_t nX = bitfieldExtract(packed, 0, 10);
-    uint32_t nY = bitfieldExtract(packed, 10, 10);
-    uint32_t tA = bitfieldExtract(packed, 20, 10);
-    uint32_t bS = bitfieldExtract(packed, 30, 2);
-    float2 normalOct = float2(dequantizeSnormShifted(nX, 10), dequantizeSnormShifted(nY, 10));
+    uint32_t nX = bitfieldExtract(packed, 0, 12);
+    uint32_t nY = bitfieldExtract(packed, 12, 12);
+    uint32_t tA = bitfieldExtract(packed, 24, 7);
+    uint32_t bS = bitfieldExtract(packed, 31, 1);
+    float2 normalOct = float2(dequantizeSnormShifted(nX, 12), dequantizeSnormShifted(nY, 12));
     outNormal = unpackUnitOctahedralSnorm(normalOct);
-    float angle = dequantizeSnormShifted(tA, 10) * PI;
-    float3 b1, b2; buildOrthonormalBasis(outNormal, b1, b2);
-    outTangent = cos(angle) * b1 + sin(angle) * b2;
+    float octAngle = dequantizeSnormShifted(tA, 7);
+    float2 octXY = unpackUnitCircleSnorm(octAngle);
+    float3 b1, b2;
+    buildOrthonormalBasis(outNormal, b1, b2);
+    outTangent = octXY.x * b1 + octXY.y * b2;
     outBitangentSign = bS == 1 ? 1.0f : -1.0f;
 }

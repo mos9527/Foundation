@@ -6,6 +6,7 @@ using namespace Core;
 using namespace Math;
 constexpr uint32_t kMeshletMaxVertices = 64; // max vertices per meshlet
 constexpr uint32_t kMeshletMaxTriangles = 96; // max triangles per meshlet (indices=3*triangles)
+#pragma pack(push,4)
 struct FVertex
 {
     float3 position;
@@ -17,8 +18,8 @@ struct FVertex
 static_assert(sizeof(FVertex) == 48);
 struct FQVertex
 {
-    uint16_t position[3]; // quantized FP16
-    uint32_t tbn32; // Octahedral normal [10+10] + tangent rotation [10] + bitangent sign [2]
+    uint16_t position[4]; // quantized FP16 [xyz] padding [w]
+    uint32_t tbn32; // packed tangent frame
     uint16_t uv[2]; // quantized UNORM16
 
     static uint32_t PackTBN(const float3& normal, const float3& tangent, float bitangentSign);
@@ -28,6 +29,7 @@ struct FQVertex
     static FVertex Unpack(FQVertex const& vertex);
 };
 static_assert(sizeof(FQVertex) == 16);
+#pragma pack(pop)
 struct FLODGroup // @ref clodGroup
 {
     // DAG level the group was generated at
@@ -71,8 +73,8 @@ struct FMesh
 {
     Vector<FVertex> vertices; // Full precision, raw vertices. Used by importers.
     Vector<FQVertex> verticesQuantized; // Quantized vertex data for GPU upload.
-    Vector<unsigned char> verticesQuantizedCompressed; // Compressed, quantized post-optimization vertex data for disk.
-    uint32_t verticesQuantizedCompressedCount = 0; // Number of vertices in compressed data
+    Vector<unsigned char> verticesCompressed; // Compressed, quantized post-optimization vertex data for disk.
+    uint32_t verticesCompressedCount = 0; // Number of vertices in compressed data
     struct LOD
     {
         Vector<uint32_t> indices; // Full precision triangle indices
@@ -135,7 +137,7 @@ struct FMesh
      * @note  A compressed mesh implies quantized data.
      */
     bool EnsureCompressed();
-    [[nodiscard]] bool IsCompressed() const { return !verticesQuantizedCompressed.empty(); }
+    [[nodiscard]] bool IsCompressed() const { return !verticesCompressed.empty(); }
     /**
      * @brief Prepares full-precision data for CPU access
      */
