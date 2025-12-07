@@ -146,60 +146,7 @@ void SceneLoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>&
     LOG(LoadGLTF, LogInfo, "Scene load complete");
 }
 
-/* -- Serialization -- */
-template <>
-void FSerialize(FWriter& w, FMesh::LOD const& obj)
-{
-    FSerialize(w, obj.indicesCompressed);
-    FSerialize(w, obj.indicesCompressedCount);
-}
-template <>
-void FDeserialize(FReader& r, FMesh::LOD& obj)
-{
-    FDeserialize(r, obj.indicesCompressed);
-    FDeserialize(r, obj.indicesCompressedCount);
-}
-template <>
-void FSerialize(FWriter& w, FMesh::DAG const& obj)
-{
-    FSerialize(w, obj.groups);
-    FSerialize(w, obj.meshlets);
-    FSerialize(w, obj.meshletTri);
-    FSerialize(w, obj.meshletVtxCompressed);
-    FSerialize(w, obj.meshletVtxCompressedCount);
-}
-template <>
-void FDeserialize(FReader& r, FMesh::DAG& obj)
-{
-    FDeserialize(r, obj.groups);
-    FDeserialize(r, obj.meshlets);
-    FDeserialize(r, obj.meshletTri);
-    FDeserialize(r, obj.meshletVtxCompressed);
-    FDeserialize(r, obj.meshletVtxCompressedCount);
-}
-template <>
-void FSerialize(FWriter& w, FMesh const& obj)
-{
-    CHECK_MSG(obj.IsCompressed(), "Mesh not compressed");
-    FSerialize(w, obj.verticesCompressed);
-    FSerialize(w, obj.verticesCompressedCount);
-    FSerialize(w, obj.lods);
-    FSerialize(w, obj.dag);
-}
-template <>
-void FDeserialize(FReader& r, FMesh& obj)
-{
-    FDeserialize(r, obj.verticesCompressed);
-    FDeserialize(r, obj.verticesCompressedCount);
-    FDeserialize(r, obj.lods, obj.lods.get_allocator().mResource);
-    FDeserialize(r, obj.dag);
-    CHECK_MSG(obj.IsCompressed(), "Mesh not compressed");
-}
-constexpr uint32_t fourCC(const char a, const char b, const char c, const char d)
-{
-    return (a << 0) | (b << 8) | (c << 16) | (d << 24);
-}
-const uint32_t kSceneMagic = fourCC('F', 'S', 'C', 'N');
+const uint32_t kSceneMagic = fourCC("FSCN");
 void FSerialize(FWriter& w, Vector<FMesh> const& meshes, Vector<FInstance> const& instances,
                 Vector<FCamera> const& cameras)
 {
@@ -213,7 +160,7 @@ void FDeserialize(FReader& r, Vector<FMesh>& meshes, Vector<FInstance>& instance
     uint32_t magic;
     FDeserialize(r, magic);
     CHECK_MSG(magic == kSceneMagic, "Bad magic. Expected {}, got {}", kSceneMagic, magic);
-    FDeserialize(r, meshes, meshes.get_allocator().mResource);
+    FDeserialize(r, meshes);
     FDeserialize(r, instances);
     FDeserialize(r, cameras);
 }

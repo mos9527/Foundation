@@ -33,7 +33,23 @@ namespace Foundation::RHI {
         R16G16B16A16SignedFloat,
         R32Uint,
         R16Uint,
-        D32SignedFloat
+        D32SignedFloat,
+        Bc1RgbUnorm,
+        Bc1RgbSrgb,
+        Bc1RgbaUnorm,
+        Bc1RgbaSrgb,
+        Bc2Unorm,
+        Bc2Srgb,
+        Bc3Unorm,
+        Bc3Srgb,
+        Bc4Unorm,
+        Bc4Snorm,
+        Bc5Unorm,
+        Bc5Snorm,
+        Bc6HUfloat,
+        Bc6HSfloat,
+        Bc7Unorm,
+        Bc7Srgb,
     };
     ENUM_NAME_CONV_BEGIN(RHIResourceFormat)
         ENUM_NAME(R8G8B8A8Unorm)
@@ -51,39 +67,23 @@ namespace Foundation::RHI {
         ENUM_NAME(R32Uint)
         ENUM_NAME(R16Uint)
         ENUM_NAME(D32SignedFloat)
+        ENUM_NAME(Bc1RgbUnorm)
+        ENUM_NAME(Bc1RgbSrgb)
+        ENUM_NAME(Bc1RgbaUnorm)
+        ENUM_NAME(Bc1RgbaSrgb)
+        ENUM_NAME(Bc2Unorm)
+        ENUM_NAME(Bc2Srgb)
+        ENUM_NAME(Bc3Unorm)
+        ENUM_NAME(Bc3Srgb)
+        ENUM_NAME(Bc4Unorm)
+        ENUM_NAME(Bc4Snorm)
+        ENUM_NAME(Bc5Unorm)
+        ENUM_NAME(Bc5Snorm)
+        ENUM_NAME(Bc6HUfloat)
+        ENUM_NAME(Bc6HSfloat)
+        ENUM_NAME(Bc7Unorm)
+        ENUM_NAME(Bc7Srgb)
     ENUM_NAME_CONV_END()
-
-    // In bytes
-    constexpr size_t RHIResourceFormatSize(RHIResourceFormat format) {
-        switch (format) {
-        case RHIResourceFormat::R8G8B8A8Unorm:
-        case RHIResourceFormat::R8G8B8A8Srgb:
-        case RHIResourceFormat::B8G8R8A8Unrom:
-        case RHIResourceFormat::B8G8R8A8Srgb:
-            return 4;
-        case RHIResourceFormat::R16SignedFloat:
-            return 2;
-        case RHIResourceFormat::R16G16SignedFloat:
-            return 4;
-        case RHIResourceFormat::R16G16B16SignedFloat:
-            return 6;
-        case RHIResourceFormat::R16G16B16A16SignedFloat:
-            return 8;
-        case RHIResourceFormat::R32SignedFloat:
-        case RHIResourceFormat::R32Uint:
-            return 4;
-        case RHIResourceFormat::R32G32SignedFloat:
-            return 8;
-        case RHIResourceFormat::R32G32B32SignedFloat:
-            return 12;
-        case RHIResourceFormat::R32G32B32A32SignedFloat:
-            return 16;
-        case RHIResourceFormat::D32SignedFloat:
-            return 4;
-        default:
-            throw std::runtime_error("RHIResourceFormatSize: Undefined format has no size");
-        }
-    }
 
     struct RHIVertexAttribute {
         uint32_t location; // Index into shader input

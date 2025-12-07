@@ -1,7 +1,5 @@
 #include "Editor.hpp"
 
-#include <imgui.h>
-#include <imgui_internal.h>
 FEditorState FEState = FEInitEnter;
 /* -- Scene Data -- */
 static Vector<GSInstance> GSInstances(GLOBAL_ALLOC);

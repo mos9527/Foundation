@@ -91,6 +91,11 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
+FetchContent_Declare(
+    bc7enc
+    GIT_REPOSITORY https://github.com/richgel999/bc7enc
+    GIT_SHALLOW TRUE
+)
 # Font
 FetchContent_Declare(
     LxgwNeoXiHei

@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Container.hpp>
 #include <Math/Math.hpp>
+#include "Serialization.hpp"
 using namespace Foundation;
 using namespace Core;
 using namespace Math;
@@ -153,3 +154,63 @@ struct FMesh
 };
 
 void LoadObj(FMesh& mesh, StringView path);
+
+/* -- Serialization -- */
+template <>
+inline void FSerialize(FWriter& w, FMesh::LOD const& obj)
+{
+    FSerialize(w, obj.indicesCompressed);
+    FSerialize(w, obj.indicesCompressedCount);
+}
+template <>
+inline void FDeserialize(FReader& r, FMesh::LOD& obj)
+{
+    FDeserialize(r, obj.indicesCompressed);
+    FDeserialize(r, obj.indicesCompressedCount);
+}
+template <>
+inline void FSerialize(FWriter& w, FMesh::DAG const& obj)
+{
+    FSerialize(w, obj.groups);
+    FSerialize(w, obj.meshlets);
+    FSerialize(w, obj.meshletTri);
+    FSerialize(w, obj.meshletVtxCompressed);
+    FSerialize(w, obj.meshletVtxCompressedCount);
+}
+template <>
+inline void FDeserialize(FReader& r, FMesh::DAG& obj)
+{
+    FDeserialize(r, obj.groups);
+    FDeserialize(r, obj.meshlets);
+    FDeserialize(r, obj.meshletTri);
+    FDeserialize(r, obj.meshletVtxCompressed);
+    FDeserialize(r, obj.meshletVtxCompressedCount);
+}
+template <>
+inline void FSerialize(FWriter& w, FMesh const& obj)
+{
+    CHECK_MSG(obj.IsCompressed(), "Mesh not compressed");
+    FSerialize(w, obj.verticesCompressed);
+    FSerialize(w, obj.verticesCompressedCount);
+    FSerialize(w, obj.lods);
+    FSerialize(w, obj.dag);
+}
+template <>
+inline void FDeserialize(FReader& r, FMesh& obj)
+{
+    FDeserialize(r, obj.verticesCompressed);
+    FDeserialize(r, obj.verticesCompressedCount);
+    FDeserialize(r, obj.lods, obj.lods.get_allocator().mResource);
+    FDeserialize(r, obj.dag);
+    CHECK_MSG(obj.IsCompressed(), "Mesh not compressed");
+}
+template<>
+inline void FSerialize(FWriter& w, Vector<FMesh> const& meshes)
+{
+    FSerialize(w, meshes);
+}
+template<>
+inline void FDeserialize(FReader& r, Vector<FMesh>& meshes)
+{
+    FDeserialize(r, meshes, meshes.get_allocator().mResource);
+}

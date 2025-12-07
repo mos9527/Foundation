@@ -65,12 +65,14 @@ namespace Foundation::RenderCore
          * Uploads data to `dst` buffer with a staging copy.
          * @return nullptr when upload fails (out of staging memory).
          *         At which point, a flush with End() -> WaitIdle() -> Begin() is required.
+         *         A mapped, writable pointer to the staging memory where the buffer data is expected to be written otherwise.
          */
         char* Upload(RHIBuffer* dst, size_t dataSize, size_t dstOffset);
         /**
          * Uploads data to `dst` texture with a staging copy.
          * @return nullptr when upload fails (out of staging memory).
          *         At which point, a flush with End() -> WaitIdle() -> Begin() is required.
+         *         A mapped, writable pointer to the staging memory where the texture data is expected to be written otherwise.
          */
         char* Upload(RHITexture* dst, size_t dataSize,
                      RHITextureSubresourceLayer dstLayer = {.aspect = RHITextureAspectFlagBits::Color},

@@ -55,7 +55,7 @@ namespace Foundation::Core {
     using StringView = std::basic_string_view<char>;
 
     /**
-     * @brief std::span with relaxed constructors for pointer-aliasing types and common containers.
+     * @brief Alias for `std::span`
      */
     template<typename T> using Span = std::span<T>;
 

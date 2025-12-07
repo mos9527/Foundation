@@ -26,6 +26,22 @@ namespace Foundation::RHI {
         case R32Uint: return vk::Format::eR32Uint;
         case R16Uint: return vk::Format::eR16Uint;
         case D32SignedFloat: return vk::Format::eD32Sfloat;
+        case Bc1RgbUnorm: return vk::Format::eBc1RgbUnormBlock;
+        case Bc1RgbSrgb: return vk::Format::eBc1RgbSrgbBlock;
+        case Bc1RgbaUnorm: return vk::Format::eBc1RgbaUnormBlock;
+        case Bc1RgbaSrgb: return vk::Format::eBc1RgbaSrgbBlock;
+        case Bc2Unorm: return vk::Format::eBc2UnormBlock;
+        case Bc2Srgb: return vk::Format::eBc2SrgbBlock;
+        case Bc3Unorm: return vk::Format::eBc3UnormBlock;
+        case Bc3Srgb: return vk::Format::eBc3SrgbBlock;
+        case Bc4Unorm: return vk::Format::eBc4UnormBlock;
+        case Bc4Snorm: return vk::Format::eBc4SnormBlock;
+        case Bc5Unorm: return vk::Format::eBc5UnormBlock;
+        case Bc5Snorm: return vk::Format::eBc5SnormBlock;
+        case Bc6HUfloat: return vk::Format::eBc6HUfloatBlock;
+        case Bc6HSfloat: return vk::Format::eBc6HSfloatBlock;
+        case Bc7Unorm: return vk::Format::eBc7UnormBlock;
+        case Bc7Srgb: return vk::Format::eBc7SrgbBlock;
         case Undefined:
         default:
             return vk::Format::eUndefined;

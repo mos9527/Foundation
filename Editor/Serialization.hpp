@@ -4,16 +4,26 @@
 #include <cstdint>
 #include <cstring>
 using namespace Foundation::Core;
+constexpr uint32_t fourCC(const char a, const char b, const char c, const char d)
+{
+    return (a << 0) | (b << 8) | (c << 16) | (d << 24);
+}
+constexpr uint32_t fourCC(char const str[5])
+{
+    return fourCC(str[0], str[1], str[2], str[3]);
+}
 // RW primitives
 struct FWriter
 {
     virtual ~FWriter() = default;
-    virtual void operator()(const void* data, size_t size) = 0;
+    virtual size_t write(const void* data, size_t size) = 0;
+    virtual size_t operator()(const void* data, size_t size) { return write(data, size); }
 };
 struct FReader
 {
     virtual ~FReader() = default;
-    virtual void operator()(void* dest, size_t size) = 0;
+    virtual size_t read(void* dest, size_t size) = 0;
+    virtual size_t operator()(void* dest, size_t size) { return read(dest, size); }
 };
 template <typename T>
 void FSerialize(FWriter& w, const T& obj);
@@ -70,7 +80,7 @@ struct FileWriter : FWriter
         CHECK_MSG(fp != nullptr, "Can't open {}", path);
     }
     ~FileWriter() override { fflush(fp), fclose(fp); }
-    void operator()(const void* data, size_t size) override { fwrite(data, 1, size, fp); }
+    size_t write(const void* data, size_t size) override { return fwrite(data, 1, size, fp); }
 };
 struct FileReader : FReader
 {
@@ -80,5 +90,5 @@ struct FileReader : FReader
         fp = fopen(path.data(), "rb");
         CHECK_MSG(fp != nullptr, "Can't open {}", path);
     }
-    void operator()(void* dest, size_t size) override { fread(dest, 1, size, fp); }
+    size_t read(void* dest, size_t size) override { return fread(dest, 1, size, fp); }
 };

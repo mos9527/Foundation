@@ -5,36 +5,49 @@ FetchContent_MakeAvailable(fast_obj)
 FetchContent_MakeAvailable(meshoptimizer)
 FetchContent_MakeAvailable(cgltf)
 FetchContent_MakeAvailable(lz4)
+FetchContent_MakeAvailable(bc7enc)
 
 file(
-    GLOB SOURCES
-    Context.cpp
-    Editor.cpp
-    GPUScene.cpp
-    Mesh.cpp
-    Scene.cpp
-    SDLMain.cpp
-    Renderer.cpp
-    ImGui.cpp
+        GLOB SOURCES
+        Context.cpp
+        Editor.cpp
+        GPUScene.cpp
+        Mesh.cpp
+        Scene.cpp
+        SDLMain.cpp
+        Renderer.cpp
+        ImGui.cpp
 )
 
 add_subdirectory(Shaders)
 add_library(Editor_Assets STATIC)
-target_sources(Editor_Assets PUBLIC Mesh.cpp Scene.cpp "${lz4_SOURCE_DIR}/lib/lz4.c" "${lz4_SOURCE_DIR}/lib/xxhash.c")
+target_sources(Editor_Assets PUBLIC
+        Mesh.cpp Scene.cpp Texture.cpp
+        "${lz4_SOURCE_DIR}/lib/lz4.c"
+        "${lz4_SOURCE_DIR}/lib/xxhash.c"
+        "${bc7enc_SOURCE_DIR}/bc7enc.c"
+)
 target_link_libraries(
-    Editor_Assets PUBLIC
-    Foundation_Math
-    Foundation_Core
-    meshoptimizer
+        Editor_Assets PUBLIC
+        Foundation_Math
+        Foundation_Core
+        meshoptimizer
 )
 target_include_directories(
-    Editor_Assets PUBLIC "${stb_SOURCE_DIR}" "${fast_obj_SOURCE_DIR}" "${cgltf_SOURCE_DIR}" "${meshoptimizer_SOURCE_DIR}/demo" "${lz4_SOURCE_DIR}/lib" ..
+        Editor_Assets PUBLIC
+        "${stb_SOURCE_DIR}"
+        "${fast_obj_SOURCE_DIR}"
+        "${cgltf_SOURCE_DIR}"
+        "${meshoptimizer_SOURCE_DIR}/demo"
+        "${lz4_SOURCE_DIR}/lib"
+        "${bc7enc_SOURCE_DIR}"
+        ..
 )
 
 add_executable(Editor)
-target_sources(Editor PRIVATE ${SOURCES} ${INCLUDES} )
+target_sources(Editor PRIVATE ${SOURCES} ${INCLUDES})
 target_link_libraries(
-        Editor PRIVATE        
+        Editor PRIVATE
         Foundation_RHIVulkan
         Foundation_RenderCore
         Foundation_RenderUtils
@@ -56,6 +69,6 @@ add_dependencies(
 add_executable(Editor_Util)
 target_sources(Editor_Util PRIVATE Util.cpp)
 target_link_libraries(
-    Editor_Util PRIVATE
-    Editor_Assets
+        Editor_Util PRIVATE
+        Editor_Assets
 )

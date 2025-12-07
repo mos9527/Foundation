@@ -1,0 +1,458 @@
+#pragma once
+#include <RHICore/Common.hpp>
+#include <cstddef>
+#include <cstdint>
+
+// NOLINTBEGIN
+// https://github.com/microsoft/DirectXTex/blob/main/DirectXTex/DDS.h
+#pragma pack(push, 1)
+enum class DXGI_FORMAT : uint32_t
+{
+    DXGI_FORMAT_UNKNOWN = 0,
+    DXGI_FORMAT_R32G32B32A32_TYPELESS = 1,
+    DXGI_FORMAT_R32G32B32A32_FLOAT = 2,
+    DXGI_FORMAT_R32G32B32A32_UINT = 3,
+    DXGI_FORMAT_R32G32B32A32_SINT = 4,
+    DXGI_FORMAT_R32G32B32_TYPELESS = 5,
+    DXGI_FORMAT_R32G32B32_FLOAT = 6,
+    DXGI_FORMAT_R32G32B32_UINT = 7,
+    DXGI_FORMAT_R32G32B32_SINT = 8,
+    DXGI_FORMAT_R16G16B16A16_TYPELESS = 9,
+    DXGI_FORMAT_R16G16B16A16_FLOAT = 10,
+    DXGI_FORMAT_R16G16B16A16_UNORM = 11,
+    DXGI_FORMAT_R16G16B16A16_UINT = 12,
+    DXGI_FORMAT_R16G16B16A16_SNORM = 13,
+    DXGI_FORMAT_R16G16B16A16_SINT = 14,
+    DXGI_FORMAT_R32G32_TYPELESS = 15,
+    DXGI_FORMAT_R32G32_FLOAT = 16,
+    DXGI_FORMAT_R32G32_UINT = 17,
+    DXGI_FORMAT_R32G32_SINT = 18,
+    DXGI_FORMAT_R32G8X24_TYPELESS = 19,
+    DXGI_FORMAT_D32_FLOAT_S8X24_UINT = 20,
+    DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS = 21,
+    DXGI_FORMAT_X32_TYPELESS_G8X24_UINT = 22,
+    DXGI_FORMAT_R10G10B10A2_TYPELESS = 23,
+    DXGI_FORMAT_R10G10B10A2_UNORM = 24,
+    DXGI_FORMAT_R10G10B10A2_UINT = 25,
+    DXGI_FORMAT_R11G11B10_FLOAT = 26,
+    DXGI_FORMAT_R8G8B8A8_TYPELESS = 27,
+    DXGI_FORMAT_R8G8B8A8_UNORM = 28,
+    DXGI_FORMAT_R8G8B8A8_UNORM_SRGB = 29,
+    DXGI_FORMAT_R8G8B8A8_UINT = 30,
+    DXGI_FORMAT_R8G8B8A8_SNORM = 31,
+    DXGI_FORMAT_R8G8B8A8_SINT = 32,
+    DXGI_FORMAT_R16G16_TYPELESS = 33,
+    DXGI_FORMAT_R16G16_FLOAT = 34,
+    DXGI_FORMAT_R16G16_UNORM = 35,
+    DXGI_FORMAT_R16G16_UINT = 36,
+    DXGI_FORMAT_R16G16_SNORM = 37,
+    DXGI_FORMAT_R16G16_SINT = 38,
+    DXGI_FORMAT_R32_TYPELESS = 39,
+    DXGI_FORMAT_D32_FLOAT = 40,
+    DXGI_FORMAT_R32_FLOAT = 41,
+    DXGI_FORMAT_R32_UINT = 42,
+    DXGI_FORMAT_R32_SINT = 43,
+    DXGI_FORMAT_R24G8_TYPELESS = 44,
+    DXGI_FORMAT_D24_UNORM_S8_UINT = 45,
+    DXGI_FORMAT_R24_UNORM_X8_TYPELESS = 46,
+    DXGI_FORMAT_X24_TYPELESS_G8_UINT = 47,
+    DXGI_FORMAT_R8G8_TYPELESS = 48,
+    DXGI_FORMAT_R8G8_UNORM = 49,
+    DXGI_FORMAT_R8G8_UINT = 50,
+    DXGI_FORMAT_R8G8_SNORM = 51,
+    DXGI_FORMAT_R8G8_SINT = 52,
+    DXGI_FORMAT_R16_TYPELESS = 53,
+    DXGI_FORMAT_R16_FLOAT = 54,
+    DXGI_FORMAT_D16_UNORM = 55,
+    DXGI_FORMAT_R16_UNORM = 56,
+    DXGI_FORMAT_R16_UINT = 57,
+    DXGI_FORMAT_R16_SNORM = 58,
+    DXGI_FORMAT_R16_SINT = 59,
+    DXGI_FORMAT_R8_TYPELESS = 60,
+    DXGI_FORMAT_R8_UNORM = 61,
+    DXGI_FORMAT_R8_UINT = 62,
+    DXGI_FORMAT_R8_SNORM = 63,
+    DXGI_FORMAT_R8_SINT = 64,
+    DXGI_FORMAT_A8_UNORM = 65,
+    DXGI_FORMAT_R1_UNORM = 66,
+    DXGI_FORMAT_R9G9B9E5_SHAREDEXP = 67,
+    DXGI_FORMAT_R8G8_B8G8_UNORM = 68,
+    DXGI_FORMAT_G8R8_G8B8_UNORM = 69,
+    DXGI_FORMAT_BC1_TYPELESS = 70,
+    DXGI_FORMAT_BC1_UNORM = 71,
+    DXGI_FORMAT_BC1_UNORM_SRGB = 72,
+    DXGI_FORMAT_BC2_TYPELESS = 73,
+    DXGI_FORMAT_BC2_UNORM = 74,
+    DXGI_FORMAT_BC2_UNORM_SRGB = 75,
+    DXGI_FORMAT_BC3_TYPELESS = 76,
+    DXGI_FORMAT_BC3_UNORM = 77,
+    DXGI_FORMAT_BC3_UNORM_SRGB = 78,
+    DXGI_FORMAT_BC4_TYPELESS = 79,
+    DXGI_FORMAT_BC4_UNORM = 80,
+    DXGI_FORMAT_BC4_SNORM = 81,
+    DXGI_FORMAT_BC5_TYPELESS = 82,
+    DXGI_FORMAT_BC5_UNORM = 83,
+    DXGI_FORMAT_BC5_SNORM = 84,
+    DXGI_FORMAT_B5G6R5_UNORM = 85,
+    DXGI_FORMAT_B5G5R5A1_UNORM = 86,
+    DXGI_FORMAT_B8G8R8A8_UNORM = 87,
+    DXGI_FORMAT_B8G8R8X8_UNORM = 88,
+    DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM = 89,
+    DXGI_FORMAT_B8G8R8A8_TYPELESS = 90,
+    DXGI_FORMAT_B8G8R8A8_UNORM_SRGB = 91,
+    DXGI_FORMAT_B8G8R8X8_TYPELESS = 92,
+    DXGI_FORMAT_B8G8R8X8_UNORM_SRGB = 93,
+    DXGI_FORMAT_BC6H_TYPELESS = 94,
+    DXGI_FORMAT_BC6H_UF16 = 95,
+    DXGI_FORMAT_BC6H_SF16 = 96,
+    DXGI_FORMAT_BC7_TYPELESS = 97,
+    DXGI_FORMAT_BC7_UNORM = 98,
+    DXGI_FORMAT_BC7_UNORM_SRGB = 99,
+    DXGI_FORMAT_AYUV = 100,
+    DXGI_FORMAT_Y410 = 101,
+    DXGI_FORMAT_Y416 = 102,
+    DXGI_FORMAT_NV12 = 103,
+    DXGI_FORMAT_P010 = 104,
+    DXGI_FORMAT_P016 = 105,
+    DXGI_FORMAT_420_OPAQUE = 106,
+    DXGI_FORMAT_YUY2 = 107,
+    DXGI_FORMAT_Y210 = 108,
+    DXGI_FORMAT_Y216 = 109,
+    DXGI_FORMAT_NV11 = 110,
+    DXGI_FORMAT_AI44 = 111,
+    DXGI_FORMAT_IA44 = 112,
+    DXGI_FORMAT_P8 = 113,
+    DXGI_FORMAT_A8P8 = 114,
+    DXGI_FORMAT_B4G4R4A4_UNORM = 115,
+    DXGI_FORMAT_P208 = 130,
+    DXGI_FORMAT_V208 = 131,
+    DXGI_FORMAT_V408 = 132,
+    DXGI_FORMAT_SAMPLER_FEEDBACK_MIN_MIP_OPAQUE = 189,
+    DXGI_FORMAT_SAMPLER_FEEDBACK_MIP_REGION_USED_OPAQUE = 190,
+    DXGI_FORMAT_FORCE_UINT = 0xffffffff
+};
+
+constexpr uint32_t DDS_MAGIC = 0x20534444; // "DDS "
+
+struct DDS_PIXELFORMAT
+{
+    uint32_t size;
+    uint32_t flags;
+    uint32_t fourCC;
+    uint32_t RGBBitCount;
+    uint32_t RBitMask;
+    uint32_t GBitMask;
+    uint32_t BBitMask;
+    uint32_t ABitMask;
+};
+
+#define DDS_FOURCC 0x00000004 // DDPF_FOURCC
+#define DDS_RGB 0x00000040 // DDPF_RGB
+#define DDS_RGBA 0x00000041 // DDPF_RGB | DDPF_ALPHAPIXELS
+#define DDS_LUMINANCE 0x00020000 // DDPF_LUMINANCE
+#define DDS_LUMINANCEA 0x00020001 // DDPF_LUMINANCE | DDPF_ALPHAPIXELS
+#define DDS_ALPHAPIXELS 0x00000001 // DDPF_ALPHAPIXELS
+#define DDS_ALPHA 0x00000002 // DDPF_ALPHA
+#define DDS_PAL8 0x00000020 // DDPF_PALETTEINDEXED8
+#define DDS_PAL8A 0x00000021 // DDPF_PALETTEINDEXED8 | DDPF_ALPHAPIXELS
+#define DDS_BUMPLUMINANCE 0x00040000 // DDPF_BUMPLUMINANCE
+#define DDS_BUMPDUDV 0x00080000 // DDPF_BUMPDUDV
+#define DDS_BUMPDUDVA 0x00080001 // DDPF_BUMPDUDV | DDPF_ALPHAPIXELS
+
+#ifndef MAKEFOURCC
+#define MAKEFOURCC(ch0, ch1, ch2, ch3)                                                                                 \
+    (static_cast<uint32_t>(static_cast<uint8_t>(ch0)) | (static_cast<uint32_t>(static_cast<uint8_t>(ch1)) << 8) |      \
+     (static_cast<uint32_t>(static_cast<uint8_t>(ch2)) << 16) |                                                        \
+     (static_cast<uint32_t>(static_cast<uint8_t>(ch3)) << 24))
+#endif /* MAKEFOURCC */
+
+constexpr DDS_PIXELFORMAT DDSPF_DXT1 = {
+    sizeof(DDS_PIXELFORMAT), DDS_FOURCC, MAKEFOURCC('D', 'X', 'T', '1'), 0, 0, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_DXT2 = {
+    sizeof(DDS_PIXELFORMAT), DDS_FOURCC, MAKEFOURCC('D', 'X', 'T', '2'), 0, 0, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_DXT3 = {
+    sizeof(DDS_PIXELFORMAT), DDS_FOURCC, MAKEFOURCC('D', 'X', 'T', '3'), 0, 0, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_DXT4 = {
+    sizeof(DDS_PIXELFORMAT), DDS_FOURCC, MAKEFOURCC('D', 'X', 'T', '4'), 0, 0, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_DXT5 = {
+    sizeof(DDS_PIXELFORMAT), DDS_FOURCC, MAKEFOURCC('D', 'X', 'T', '5'), 0, 0, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_BC4_UNORM = {
+    sizeof(DDS_PIXELFORMAT), DDS_FOURCC, MAKEFOURCC('B', 'C', '4', 'U'), 0, 0, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_BC4_SNORM = {
+    sizeof(DDS_PIXELFORMAT), DDS_FOURCC, MAKEFOURCC('B', 'C', '4', 'S'), 0, 0, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_BC5_UNORM = {
+    sizeof(DDS_PIXELFORMAT), DDS_FOURCC, MAKEFOURCC('B', 'C', '5', 'U'), 0, 0, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_BC5_SNORM = {
+    sizeof(DDS_PIXELFORMAT), DDS_FOURCC, MAKEFOURCC('B', 'C', '5', 'S'), 0, 0, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_R8G8_B8G8 = {
+    sizeof(DDS_PIXELFORMAT), DDS_FOURCC, MAKEFOURCC('R', 'G', 'B', 'G'), 0, 0, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_G8R8_G8B8 = {
+    sizeof(DDS_PIXELFORMAT), DDS_FOURCC, MAKEFOURCC('G', 'R', 'G', 'B'), 0, 0, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_YUY2 = {
+    sizeof(DDS_PIXELFORMAT), DDS_FOURCC, MAKEFOURCC('Y', 'U', 'Y', '2'), 0, 0, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_UYVY = {
+    sizeof(DDS_PIXELFORMAT), DDS_FOURCC, MAKEFOURCC('U', 'Y', 'V', 'Y'), 0, 0, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_A8R8G8B8 = {
+    sizeof(DDS_PIXELFORMAT), DDS_RGBA, 0, 32, 0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000};
+
+constexpr DDS_PIXELFORMAT DDSPF_X8R8G8B8 = {
+    sizeof(DDS_PIXELFORMAT), DDS_RGB, 0, 32, 0x00ff0000, 0x0000ff00, 0x000000ff, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_A8B8G8R8 = {
+    sizeof(DDS_PIXELFORMAT), DDS_RGBA, 0, 32, 0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000};
+
+constexpr DDS_PIXELFORMAT DDSPF_X8B8G8R8 = {
+    sizeof(DDS_PIXELFORMAT), DDS_RGB, 0, 32, 0x000000ff, 0x0000ff00, 0x00ff0000, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_G16R16 = {sizeof(DDS_PIXELFORMAT), DDS_RGB, 0, 32, 0x0000ffff, 0xffff0000, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_R5G6B5 = {sizeof(DDS_PIXELFORMAT), DDS_RGB, 0, 16, 0xf800, 0x07e0, 0x001f, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_A1R5G5B5 = {sizeof(DDS_PIXELFORMAT), DDS_RGBA, 0, 16, 0x7c00, 0x03e0, 0x001f, 0x8000};
+
+constexpr DDS_PIXELFORMAT DDSPF_X1R5G5B5 = {sizeof(DDS_PIXELFORMAT), DDS_RGB, 0, 16, 0x7c00, 0x03e0, 0x001f, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_A4R4G4B4 = {sizeof(DDS_PIXELFORMAT), DDS_RGBA, 0, 16, 0x0f00, 0x00f0, 0x000f, 0xf000};
+
+constexpr DDS_PIXELFORMAT DDSPF_X4R4G4B4 = {sizeof(DDS_PIXELFORMAT), DDS_RGB, 0, 16, 0x0f00, 0x00f0, 0x000f, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_R8G8B8 = {sizeof(DDS_PIXELFORMAT), DDS_RGB, 0, 24, 0xff0000, 0x00ff00, 0x0000ff, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_A8R3G3B2 = {sizeof(DDS_PIXELFORMAT), DDS_RGBA, 0, 16, 0x00e0, 0x001c, 0x0003, 0xff00};
+
+constexpr DDS_PIXELFORMAT DDSPF_R3G3B2 = {sizeof(DDS_PIXELFORMAT), DDS_RGB, 0, 8, 0xe0, 0x1c, 0x03, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_A4L4 = {sizeof(DDS_PIXELFORMAT), DDS_LUMINANCEA, 0, 8, 0x0f, 0, 0, 0xf0};
+
+constexpr DDS_PIXELFORMAT DDSPF_L8 = {sizeof(DDS_PIXELFORMAT), DDS_LUMINANCE, 0, 8, 0xff, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_L16 = {sizeof(DDS_PIXELFORMAT), DDS_LUMINANCE, 0, 16, 0xffff, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_A8L8 = {sizeof(DDS_PIXELFORMAT), DDS_LUMINANCEA, 0, 16, 0x00ff, 0, 0, 0xff00};
+
+constexpr DDS_PIXELFORMAT DDSPF_A8L8_ALT = {sizeof(DDS_PIXELFORMAT), DDS_LUMINANCEA, 0, 8, 0x00ff, 0, 0, 0xff00};
+
+constexpr DDS_PIXELFORMAT DDSPF_L8_NVTT1 = {sizeof(DDS_PIXELFORMAT), DDS_RGB, 0, 8, 0xff, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_L16_NVTT1 = {sizeof(DDS_PIXELFORMAT), DDS_RGB, 0, 16, 0xffff, 0, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_A8L8_NVTT1 = {sizeof(DDS_PIXELFORMAT), DDS_RGBA, 0, 16, 0x00ff, 0, 0, 0xff00};
+
+constexpr DDS_PIXELFORMAT DDSPF_A8 = {sizeof(DDS_PIXELFORMAT), DDS_ALPHA, 0, 8, 0, 0, 0, 0xff};
+
+constexpr DDS_PIXELFORMAT DDSPF_V8U8 = {sizeof(DDS_PIXELFORMAT), DDS_BUMPDUDV, 0, 16, 0x00ff, 0xff00, 0, 0};
+
+constexpr DDS_PIXELFORMAT DDSPF_Q8W8V8U8 = {
+    sizeof(DDS_PIXELFORMAT), DDS_BUMPDUDV, 0, 32, 0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000};
+
+constexpr DDS_PIXELFORMAT DDSPF_V16U16 = {sizeof(DDS_PIXELFORMAT), DDS_BUMPDUDV, 0, 32, 0x0000ffff, 0xffff0000, 0, 0};
+
+// D3DFMT_A2R10G10B10/D3DFMT_A2B10G10R10 should be written using DX10 extension to avoid D3DX 10:10:10:2 reversal
+// issue
+constexpr DDS_PIXELFORMAT DDSPF_A2R10G10B10 = {
+    sizeof(DDS_PIXELFORMAT), DDS_RGBA, 0, 32, 0x000003ff, 0x000ffc00, 0x3ff00000, 0xc0000000};
+constexpr DDS_PIXELFORMAT DDSPF_A2B10G10R10 = {
+    sizeof(DDS_PIXELFORMAT), DDS_RGBA, 0, 32, 0x3ff00000, 0x000ffc00, 0x000003ff, 0xc0000000};
+
+// The following legacy Direct3D 9 formats use 'mixed' signed & unsigned channels so requires special handling
+constexpr DDS_PIXELFORMAT DDSPF_A2W10V10U10 = {
+    sizeof(DDS_PIXELFORMAT), DDS_BUMPDUDVA, 0, 32, 0x3ff00000, 0x000ffc00, 0x000003ff, 0xc0000000};
+constexpr DDS_PIXELFORMAT DDSPF_L6V5U5 = {sizeof(DDS_PIXELFORMAT), DDS_BUMPLUMINANCE, 0, 16, 0x001f, 0x03e0, 0xfc00, 0};
+constexpr DDS_PIXELFORMAT DDSPF_X8L8V8U8 = {
+    sizeof(DDS_PIXELFORMAT), DDS_BUMPLUMINANCE, 0, 32, 0x000000ff, 0x0000ff00, 0x00ff0000, 0};
+
+// This indicates the DDS_HEADER_DXT10 extension is present (the format is in dxgiFormat)
+constexpr DDS_PIXELFORMAT DDSPF_DX10 = {
+    sizeof(DDS_PIXELFORMAT), DDS_FOURCC, MAKEFOURCC('D', 'X', '1', '0'), 0, 0, 0, 0, 0};
+
+#define DDS_HEADER_FLAGS_TEXTURE 0x00001007 // DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH | DDSD_PIXELFORMAT
+#define DDS_HEADER_FLAGS_MIPMAP 0x00020000 // DDSD_MIPMAPCOUNT
+#define DDS_HEADER_FLAGS_VOLUME 0x00800000 // DDSD_DEPTH
+#define DDS_HEADER_FLAGS_PITCH 0x00000008 // DDSD_PITCH
+#define DDS_HEADER_FLAGS_LINEARSIZE 0x00080000 // DDSD_LINEARSIZE
+
+#define DDS_HEIGHT 0x00000002 // DDSD_HEIGHT
+#define DDS_WIDTH 0x00000004 // DDSD_WIDTH
+
+#define DDS_SURFACE_FLAGS_TEXTURE 0x00001000 // DDSCAPS_TEXTURE
+#define DDS_SURFACE_FLAGS_MIPMAP 0x00400008 // DDSCAPS_COMPLEX | DDSCAPS_MIPMAP
+#define DDS_SURFACE_FLAGS_CUBEMAP 0x00000008 // DDSCAPS_COMPLEX
+
+#define DDS_CUBEMAP_POSITIVEX 0x00000600 // DDSCAPS2_CUBEMAP | DDSCAPS2_CUBEMAP_POSITIVEX
+#define DDS_CUBEMAP_NEGATIVEX 0x00000a00 // DDSCAPS2_CUBEMAP | DDSCAPS2_CUBEMAP_NEGATIVEX
+#define DDS_CUBEMAP_POSITIVEY 0x00001200 // DDSCAPS2_CUBEMAP | DDSCAPS2_CUBEMAP_POSITIVEY
+#define DDS_CUBEMAP_NEGATIVEY 0x00002200 // DDSCAPS2_CUBEMAP | DDSCAPS2_CUBEMAP_NEGATIVEY
+#define DDS_CUBEMAP_POSITIVEZ 0x00004200 // DDSCAPS2_CUBEMAP | DDSCAPS2_CUBEMAP_POSITIVEZ
+#define DDS_CUBEMAP_NEGATIVEZ 0x00008200 // DDSCAPS2_CUBEMAP | DDSCAPS2_CUBEMAP_NEGATIVEZ
+
+#define DDS_CUBEMAP_ALLFACES                                                                                           \
+    (DDS_CUBEMAP_POSITIVEX | DDS_CUBEMAP_NEGATIVEX | DDS_CUBEMAP_POSITIVEY | DDS_CUBEMAP_NEGATIVEY |                   \
+     DDS_CUBEMAP_POSITIVEZ | DDS_CUBEMAP_NEGATIVEZ)
+
+#define DDS_CUBEMAP 0x00000200 // DDSCAPS2_CUBEMAP
+
+#define DDS_FLAGS_VOLUME 0x00200000 // DDSCAPS2_VOLUME
+
+// Subset here matches D3D10_RESOURCE_DIMENSION and D3D11_RESOURCE_DIMENSION
+enum class DDS_RESOURCE_DIMENSION : uint32_t
+{
+    DDS_DIMENSION_TEXTURE1D = 2,
+    DDS_DIMENSION_TEXTURE2D = 3,
+    DDS_DIMENSION_TEXTURE3D = 4,
+};
+
+// Subset here matches D3D10_RESOURCE_MISC_FLAG and D3D11_RESOURCE_MISC_FLAG
+enum class DDS_RESOURCE_MISC_FLAG : uint32_t
+{
+    DDS_RESOURCE_MISC_TEXTURECUBE = 0x4L,
+};
+
+enum class DDS_MISC_FLAGS2 : uint32_t
+{
+    DDS_MISC_FLAGS2_ALPHA_MODE_MASK = 0x7L,
+};
+enum class DDS_ALPHA_MODE : uint32_t
+{
+    DDS_ALPHA_MODE_UNKNOWN = 0,
+    DDS_ALPHA_MODE_STRAIGHT = 1,
+    DDS_ALPHA_MODE_PREMULTIPLIED = 2,
+    DDS_ALPHA_MODE_OPAQUE = 3,
+    DDS_ALPHA_MODE_CUSTOM = 4,
+};
+
+struct DDS_HEADER
+{
+    uint32_t size;
+    uint32_t flags;
+    uint32_t height;
+    uint32_t width;
+    uint32_t pitchOrLinearSize;
+    uint32_t depth; // only if DDS_HEADER_FLAGS_VOLUME is set in flags
+    uint32_t mipMapCount;
+    uint32_t reserved1[11];
+    DDS_PIXELFORMAT ddspf;
+    uint32_t caps;
+    uint32_t caps2;
+    uint32_t caps3;
+    uint32_t caps4;
+    uint32_t reserved2;
+};
+
+struct DDS_HEADER_DXT10
+{
+    DXGI_FORMAT dxgiFormat;
+    DDS_RESOURCE_DIMENSION resourceDimension;
+    DDS_RESOURCE_MISC_FLAG miscFlag; // see D3D11_RESOURCE_MISC_FLAG
+    uint32_t arraySize;
+    DDS_MISC_FLAGS2 miscFlags2; // see DDS_MISC_FLAGS2
+};
+
+#pragma pack(pop)
+
+static_assert(sizeof(DDS_PIXELFORMAT) == 32, "DDS pixel format size mismatch");
+static_assert(sizeof(DDS_HEADER) == 124, "DDS Header size mismatch");
+static_assert(sizeof(DDS_HEADER_DXT10) == 20, "DDS DX10 Extended Header size mismatch");
+
+constexpr size_t DDS_MIN_HEADER_SIZE = sizeof(uint32_t) + sizeof(DDS_HEADER);
+constexpr size_t DDS_DX10_HEADER_SIZE = sizeof(uint32_t) + sizeof(DDS_HEADER) + sizeof(DDS_HEADER_DXT10);
+static_assert(DDS_DX10_HEADER_SIZE > DDS_MIN_HEADER_SIZE, "DDS DX10 Header should be larger than standard header");
+
+inline void ddsCreateHeader(DDS_HEADER& header, uint32_t width, uint32_t height, uint32_t mipCount)
+{
+    header.size = sizeof(DDS_HEADER);
+    header.flags = DDS_HEADER_FLAGS_TEXTURE;
+    header.height = height;
+    header.width = width;
+    if (mipCount > 1)
+        header.flags |= DDS_HEADER_FLAGS_MIPMAP;
+    header.mipMapCount = mipCount;
+    header.depth = 0;
+    header.caps = DDS_SURFACE_FLAGS_TEXTURE;
+    if (mipCount > 1)
+        header.caps |= DDS_SURFACE_FLAGS_MIPMAP;
+}
+
+inline void ddsSetFormat(DDS_HEADER& header, DDS_HEADER_DXT10& header10, uint32_t layerCount, Foundation::RHI::RHIResourceFormat format)
+{
+    header.ddspf = DDSPF_DX10;
+    header10.arraySize = layerCount;
+    header10.resourceDimension = DDS_RESOURCE_DIMENSION::DDS_DIMENSION_TEXTURE2D;
+    using enum DXGI_FORMAT;
+    using enum Foundation::RHI::RHIResourceFormat;
+    switch (format)
+    {
+    case Bc1RgbaUnorm:
+        header10.dxgiFormat = DXGI_FORMAT_BC1_UNORM;
+        break;
+    case Bc1RgbaSrgb:
+        header10.dxgiFormat = DXGI_FORMAT_BC1_UNORM_SRGB;
+        break;
+    case Bc2Unorm:
+        header10.dxgiFormat = DXGI_FORMAT_BC2_UNORM;
+        break;
+    case Bc2Srgb:
+        header10.dxgiFormat = DXGI_FORMAT_BC2_UNORM_SRGB;
+        break;
+    case Bc3Unorm:
+        header10.dxgiFormat = DXGI_FORMAT_BC3_UNORM;
+        break;
+    case Bc3Srgb:
+        header10.dxgiFormat = DXGI_FORMAT_BC3_UNORM_SRGB;
+        break;
+    case Bc4Unorm:
+        header10.dxgiFormat = DXGI_FORMAT_BC4_UNORM;
+        break;
+    case Bc4Snorm:
+        header10.dxgiFormat = DXGI_FORMAT_BC4_SNORM;
+        break;
+    case Bc5Unorm:
+        header10.dxgiFormat = DXGI_FORMAT_BC5_UNORM;
+        break;
+    case Bc5Snorm:
+        header10.dxgiFormat = DXGI_FORMAT_BC5_SNORM;
+        break;
+    case Bc6HUfloat:
+        header10.dxgiFormat = DXGI_FORMAT_BC6H_UF16;
+        break;
+    case Bc6HSfloat:
+        header10.dxgiFormat = DXGI_FORMAT_BC6H_SF16;
+        break;
+    case Bc7Unorm:
+        header10.dxgiFormat = DXGI_FORMAT_BC7_UNORM;
+        break;
+    case Bc7Srgb:
+        header10.dxgiFormat = DXGI_FORMAT_BC7_UNORM_SRGB;
+        break;
+    case R8G8B8A8Unorm:
+        header10.dxgiFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+        break;
+    case R8G8B8A8Srgb:
+        header10.dxgiFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+        break;
+    case B8G8R8A8Unrom:
+        header10.dxgiFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
+        break;
+    case B8G8R8A8Srgb:
+        header10.dxgiFormat = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+        break;
+    default:
+        header.ddspf.fourCC = 0;
+        header.ddspf.flags = 0;
+        header10.dxgiFormat = DXGI_FORMAT_UNKNOWN;
+        break;
+    }
+}
+// NOLINTEND
