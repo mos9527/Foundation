@@ -7,7 +7,7 @@
 #include <fstream>
 #include "Mesh.hpp"
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#meshes
-FMesh SceneLoadGLTFSubmesh(cgltf_primitive* submesh)
+FMesh loadGLTFSubmesh(cgltf_primitive* submesh)
 {
     CHECK(submesh->type == cgltf_primitive_type_triangles);
     FMesh mesh(GLOBAL_ALLOC);
@@ -62,8 +62,41 @@ FMesh SceneLoadGLTFSubmesh(cgltf_primitive* submesh)
     return mesh;
 }
 
-void SceneLoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outInstances,
-                   Vector<FCamera>& outCameras)
+FTexture2D createNullTexture()
+{
+    // 2x2 black/magenta checkerboard
+    const Array<uint32_t, 4> data{0xFF000000, 0xFFFF00FF, 0xFFFF00FF, 0xFF000000};
+    FTexture2D texture(GLOBAL_ALLOC);
+    ddsCreateHeader(texture.header, 2, 2, 1);
+    ddsSetFormat(texture.header, texture.header10, 1, RHIResourceFormat::B8G8R8A8Unrom);
+    texture.data.assign(data.begin(), data.end());
+    return texture;
+}
+
+// https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#images
+FTexture2D loadGLTFTexture(cgltf_texture* texture, StringView scenePath)
+{
+    if (texture->image)
+    {
+        if (auto* buf = texture->image->buffer_view)
+        {
+            FTexture2D res(GLOBAL_ALLOC);
+            Span imgData = {static_cast<const unsigned char*>(buf->buffer->data) + buf->offset, buf->size};
+            return LoadRGBA8(res, imgData, false), res;
+        }
+        auto imagePath = std::filesystem::path(scenePath.data()).parent_path() / texture->image->uri;
+        if (std::filesystem::exists(imagePath))
+        {
+            FTexture2D res(GLOBAL_ALLOC);
+            return LoadRGBA8(res, imagePath.string(), false), res;
+        }
+        LOG(Scene, LogWarn, "Texture image file not found: {}", imagePath.string());
+        return createNullTexture();
+    }
+    return createNullTexture();
+}
+
+void LoadGLTF(StringView path, FScene& scene)
 {
     LOG(Scene, LogInfo, "Load GLTF Scene {}", path);
     cgltf_options options = {};
@@ -77,16 +110,31 @@ void SceneLoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>&
         result = cgltf_validate(data);
         CHECK_MSG(result == cgltf_result_success, "Scene validate failure: {}", static_cast<int>(result));
     }
-    /* Meshes */
+    /* Textures and Meshes */
     size_t numSubmeshes = 0;
     for (size_t i = 0; i < data->meshes_count; i++)
         numSubmeshes += data->meshes[i].primitives_count;
+    ThreadPool pool(std::thread::hardware_concurrency(), ThreadPool::getTaskSize(data->textures_count + numSubmeshes),
+                    GLOBAL_ALLOC);
+    scene.mTextures.resize(data->textures_count + 1, GLOBAL_ALLOC);
+    // NOTE: 0 is reserved as the null texture
+    scene.mTextures[0] = createNullTexture();
+    for (size_t i = 0; i < data->textures_count; i++)
+        pool.Push(
+            [=](cgltf_texture* src, FTexture2D* dst, StringView basePath)
+            {
+                String name = src->name ? src->name : fmt::format("{}_{}", basePath, src - data->textures);
+                LOG(Scene, LogInfo, "Loading texture {}", name);
+                *dst = loadGLTFTexture(src, basePath);
+                LOG(Scene, LogInfo, "Encoding texture {} to BC7", name);
+                *dst = dst->EncodeBC7();
+                LOG(Scene, LogInfo, "Loaded texture {}", name);
+            },
+            &data->textures[i], &scene.mTextures[i + 1], path);
     // Mesh's submesh children
-    // These will be flattened later on into instances of themselves
+    // These will be flattened later on into @ref FInstance
     Vector<Pair<size_t, size_t>> submeshIndices(GLOBAL_ALLOC);
-    outMeshes.resize(numSubmeshes, GLOBAL_ALLOC);
-    LOG(Scene, LogInfo, "Loading meshes. Sub total={}", numSubmeshes);
-    ThreadPool pool(std::thread::hardware_concurrency(), 4096, GLOBAL_ALLOC, "meshopt");
+    scene.mMeshes.resize(scene.mMeshes.size() + numSubmeshes, GLOBAL_ALLOC);
     for (size_t mi = 0, i = 0; i < data->meshes_count; i++)
     {
         auto& mesh = data->meshes[i];
@@ -95,25 +143,55 @@ void SceneLoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>&
         {
             auto* sub = mesh.primitives + p;
             CHECK(sub->type == cgltf_primitive_type_triangles);
-            // cgltf does not guarantee thread-safety with its accessors.
-            // Load first - otherwise UB as I've seen from plenty of examples
-            outMeshes[mi] = SceneLoadGLTFSubmesh(sub);
+            scene.mMeshes[mi] = loadGLTFSubmesh(sub);
             pool.Push(
                 [&](size_t index)
                 {
-                    auto& submesh = outMeshes[index];
-                    LOG(Meshopt, LogInfo, "-- Optimizing {}, vtx: {}, idx: {}", index, submesh.vertices.size(),
+                    auto& submesh = scene.mMeshes[index];
+                    LOG(Meshopt, LogInfo, "Optimizing submesh {}, vtx: {}, idx: {}", index, submesh.vertices.size(),
                         submesh.lods[0].indices.size());
                     submesh.Optimize();
                     submesh.ClusterizeDAG();
                     submesh.Quantize();
-                    LOG(Meshopt, LogInfo, "-- Completed {}", index);
+                    LOG(Meshopt, LogInfo, "Optimized {}", index);
                 },
                 mi++);
         }
         mmax = mi;
     }
-    /* Instances */
+    /* Materials */
+    // NOTE: Material 0 is reserved as the default material:
+    // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#default-material
+    scene.mMaterials.clear();
+    scene.mMaterials.emplace_back();
+    for (size_t i = 0; i < data->materials_count; i++)
+    {
+        const cgltf_material* mat = &data->materials[i];
+        FMaterial material{};
+        if (mat->has_pbr_metallic_roughness)
+        {
+            material.baseColorFactor = {
+                mat->pbr_metallic_roughness.base_color_factor[0], mat->pbr_metallic_roughness.base_color_factor[1],
+                mat->pbr_metallic_roughness.base_color_factor[2], mat->pbr_metallic_roughness.base_color_factor[3]};
+            material.metallicFactor = mat->pbr_metallic_roughness.metallic_factor;
+            material.roughnessFactor = mat->pbr_metallic_roughness.roughness_factor;
+            if (mat->pbr_metallic_roughness.base_color_texture.texture)
+                material.baseColorTexture =
+                    cgltf_texture_index(data, mat->pbr_metallic_roughness.base_color_texture.texture) + 1u;
+            if (mat->pbr_metallic_roughness.metallic_roughness_texture.texture)
+                material.metallicRoughnessTexture =
+                    cgltf_texture_index(data, mat->pbr_metallic_roughness.metallic_roughness_texture.texture) + 1u;
+        }
+        if (mat->normal_texture.texture)
+            material.normalTexture = cgltf_texture_index(data, mat->normal_texture.texture) + 1u;
+        if (mat->emissive_texture.texture)
+            material.emissiveTexture = cgltf_texture_index(data, mat->emissive_texture.texture) + 1u;
+        material.emissiveFactor = {mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2]};
+        scene.mMaterials.emplace_back(material);
+    }
+    /* Instances & Cameras */
+    scene.mInstances.clear();
+    scene.mCameras.clear();
     for (size_t i = 0; i < data->nodes_count; i++)
     {
         const cgltf_node* node = &data->nodes[i];
@@ -131,56 +209,19 @@ void SceneLoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>&
             auto [mmin, mmax] = submeshIndices[meshIndex];
             for (size_t j = mmin; j < mmax; j++)
             {
+                auto* sub = node->mesh->primitives + j - mmin;
                 instance.meshIndex = j;
-                outInstances.emplace_back(instance);
+                if (sub->material)
+                    instance.materialIndex = cgltf_material_index(data, sub->material) + 1u;
+                scene.mInstances.emplace_back(instance);
             }
         }
         if (node->camera)
         {
-            auto& camera = outCameras.emplace_back();
+            auto& camera = scene.mCameras.emplace_back();
             getTransform(camera.transform);
             camera.fovY = node->camera->data.perspective.yfov;
         }
     }
     pool.Join();
-    LOG(LoadGLTF, LogInfo, "Scene load complete");
-}
-
-const uint32_t kSceneMagic = fourCC("FSCN");
-void FSerialize(FWriter& w, Vector<FMesh> const& meshes, Vector<FInstance> const& instances,
-                Vector<FCamera> const& cameras)
-{
-    FSerialize(w, kSceneMagic);
-    FSerialize(w, meshes);
-    FSerialize(w, instances);
-    FSerialize(w, cameras);
-}
-void FDeserialize(FReader& r, Vector<FMesh>& meshes, Vector<FInstance>& instances, Vector<FCamera>& cameras)
-{
-    uint32_t magic;
-    FDeserialize(r, magic);
-    CHECK_MSG(magic == kSceneMagic, "Bad magic. Expected {}, got {}", kSceneMagic, magic);
-    FDeserialize(r, meshes);
-    FDeserialize(r, instances);
-    FDeserialize(r, cameras);
-}
-void SceneLoadFromFile(StringView scenePath, Vector<FMesh>& outMeshes, Vector<FInstance>& outInstances,
-                       Vector<FCamera>& outCameras)
-{
-    auto ext = std::filesystem::path(scenePath.data()).extension().string();
-    if (ext == ".gltf" || ext == ".glb")
-    {
-        SceneLoadGLTF(scenePath, outMeshes, outInstances, outCameras);
-    }
-    else
-    {
-        FileReader reader(scenePath);
-        FDeserialize(reader, outMeshes, outInstances, outCameras);
-    }
-}
-void SceneSaveBinFile(StringView path, Vector<FMesh> const& meshes, Vector<FInstance> const& instances,
-                  Vector<FCamera> const& cameras)
-{
-    FileWriter writer(path);
-    FSerialize(writer, meshes, instances, cameras);
 }

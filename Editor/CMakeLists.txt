@@ -63,7 +63,6 @@ target_precompile_headers(
 add_dependencies(
         Editor
         Editor_Shaders
-        Examples_SampleFiles
 )
 
 add_executable(Editor_Util)

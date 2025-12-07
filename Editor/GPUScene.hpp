@@ -6,8 +6,8 @@
 using namespace Math;
 
 BITMASK_ENUM_BEGIN(GSData, uint8_t)
-Mesh = 1 << 0,
-    BITMASK_ENUM_END()
+    Mesh = 1 << 0,
+BITMASK_ENUM_END()
 
 #pragma pack(push, 1)
 struct GSMesh
@@ -34,11 +34,59 @@ struct GSInstance
     quat rotation{0, 0, 0, 1};
     float3 scale{1, 1, 1};
     uint32_t meshOffset; // In Primitive buffer (bytes)
+    uint32_t materialIndex; // In Material buffer (offset)
+};
+struct GSMaterial
+{
+    uint32_t baseColorTexture;
+    uint32_t emissiveTexture;
+    uint32_t metallicRoughnessTexture;
+    uint32_t normalTexture;
+    float4 baseColorFactor;
+    float3 emissiveFactor;
+    float metallicFactor;
+    float roughnessFactor;
 };
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 36);
-static_assert(sizeof(GSInstance) == 44);
+static_assert(sizeof(GSInstance) == 48);
 
+template <typename T>
+struct GPURingBuffer
+{
+    RHIDeviceScopedHandle<RHIBuffer> mBuffer;
+    T *mBegin, *mPrevRing, *mRing, *mEnd;
+
+    GPURingBuffer(RHIDevice* device, size_t budget)
+    {
+        mBuffer = device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Upload,
+                                                     .hostAccess = RHIResourceHostAccess::WriteOnly,
+                                                     .coherent = true},
+                                        .usage = RHIBufferUsageBits::StorageBuffer,
+                                        .size = budget * sizeof(T)});
+        mBegin = mRing = mPrevRing = mBuffer->Map<T>();
+        mEnd = mBegin + budget;
+    }
+    /**
+     * @breif Allocates `count` T elements in the ring buffer, returning a Span to the allocated memory.
+     *        It's up to the caller to fill in the data, which is usually write-only.
+     * @note There's no guard against allocating potentially still in-flight memory range.
+     *       Ensure enough memory budget to avoid overwriting.
+     * @return Raw mapped memory ptr, offset (element wise) in buffer.
+     */
+    Pair<T*, uint32_t> Allocate(uint32_t count)
+    {
+        T* begin = mRing;
+        if (begin + count >= mEnd) // Wrap
+            begin = mRing = mBegin;
+        uint32_t offset = mRing - mBegin;
+        mPrevRing = mRing, mRing += count;
+        return {begin, offset};
+    }
+    void Reset() { mRing = mBegin; }
+    [[nodiscard]] uint32_t Used() const { return mRing - mPrevRing; }
+    [[nodiscard]] uint32_t Capacity() const { return mEnd - mBegin; }
+};
 /**
  * @brief Async GPU scene data storage for Editor.
  */
@@ -54,9 +102,8 @@ class GPUScene
     // For @ref meshletGlobalIndex
     uint32_t mMeshletGlobalCounter{0};
 
-    // Mapped as-is
-    RHIDeviceScopedHandle<RHIBuffer> mInstanceBuffer;
-    GSInstance *mInstanceBegin, *mInstanceRingPrev, *mInstanceRing, *mInstanceEnd;
+    GPURingBuffer<GSInstance> mInstanceBuffer;
+
 public:
     struct GPUSceneDesc
     {
@@ -65,20 +112,14 @@ public:
     };
     GPUScene(FContext* ctx, GPUSceneDesc const& desc);
 
-    /**
-     * @breif Allocates `count` instances in the Instance ring buffer, returning a Span to the allocated memory.
-     *        It's up to the caller to fill in the data, which is usually write-only.
-     * @note There's no guard against allocating potentially still in-flight memory range.
-     *       Ensure enough @ref GPUSceneDesc::instanceBudget to avoid overwriting.
-     * @return Raw mapped memory ptr, offset (element wise) in buffer.
-     */
-    Pair<GSInstance*, uint32_t> InstanceAlloc(uint32_t count);
+    Pair<GSInstance*, uint32_t> AllocateInstance(uint32_t count);
+
     String DbgGetBufferStatistics() const;
 
     size_t Upload(ImmediateUpload* ctx, FMesh const& source, GSMesh& outData, uint32_t& outOffset);
 
     RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
-    RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.Get(); }
+    RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.mBuffer.Get(); }
 
     void Reset();
 };

@@ -2,6 +2,8 @@
 #include "Context.hpp"
 #include "Mesh.hpp"
 #include "Serialization.hpp"
+#include "Texture.hpp"
+
 // Components
 struct FTransform
 {
@@ -12,15 +14,76 @@ struct FTransform
 struct FInstance
 {
     FTransform transform;
+    // Index of @ref FMesh - or a *submesh* in glTF terms
+    // Each mesh is guaranteed to use a single material, if any.
     uint32_t meshIndex;
+    uint32_t materialIndex;
 };
 struct FCamera
 {
     FTransform transform;
     float fovY;
 };
+// https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#metallic-roughness-material
+// https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#additional-textures
+struct FMaterial
+{
+    // sRGB.
+    uint32_t baseColorTexture;
+    // sRGB
+    uint32_t emissiveTexture;
+    // Linear. B channel: metallic, G channel: roughness
+    uint32_t metallicRoughnessTexture;
+    // Linear. Tangent space XYZ, R [0.0 .. 1.0] to X [-1 .. 1], G [0.0 .. 1.0] to Y [-1 .. 1], B (0.5 .. 1.0] maps to Z
+    // (0 .. 1]
+    uint32_t normalTexture;
+    float4 baseColorFactor;
+    float3 emissiveFactor;
+    float metallicFactor;
+    float roughnessFactor;
+};
 
-void SceneLoadGLTF(StringView path, Vector<FMesh>& outMeshes, Vector<FInstance>& outInstances, Vector<FCamera>& outCameras);
-void SceneLoadFromFile(StringView scenePath, Vector<FMesh>& outMeshes, Vector<FInstance>& outInstances, Vector<FCamera>& outCameras);
-void SceneSaveBinFile(StringView path, Vector<FMesh> const& meshes, Vector<FInstance> const& instances,
-                 Vector<FCamera> const& cameras);
+static constexpr uint32_t kSceneMagic = fourCC("FSCN");
+struct FScene
+{
+    uint32_t mMagic;
+
+    Vector<FCamera> mCameras;
+    Vector<FInstance> mInstances;
+    Vector<FMaterial> mMaterials;
+    Vector<FMesh> mMeshes;
+    Vector<FTexture2D> mTextures;
+
+    FScene(Allocator* alloc) :
+        mMagic(kSceneMagic), mCameras(alloc), mInstances(alloc), mMaterials(alloc), mMeshes(alloc), mTextures(alloc)
+    {}
+};
+
+/**
+ * Loads a GLTF 2.0 file into @ref FScene, with requisite optimizations applied
+ * so that uploading can be just memcpy.
+ */
+void LoadGLTF(StringView path, FScene& scene);
+
+/* -- Serialization -- */
+template <>
+inline void FSerialize(FWriter& w, FScene const& obj)
+{
+    FSerialize(w, obj.mMagic);
+    FSerialize(w, obj.mCameras);
+    FSerialize(w, obj.mInstances);
+    FSerialize(w, obj.mMaterials);
+    FSerialize(w, obj.mMeshes);
+    FSerialize(w, obj.mTextures);
+}
+template <>
+inline void FDeserialize(FReader& r, FScene& obj)
+{
+    FDeserialize(r, obj.mMagic);
+    CHECK(obj.mMagic == kSceneMagic);
+    FDeserialize(r, obj.mCameras);
+    FDeserialize(r, obj.mInstances);
+    FDeserialize(r, obj.mMaterials);
+    FDeserialize(r, obj.mMeshes);
+    FDeserialize(r, obj.mTextures, obj.mTextures.get_allocator().mResource);
+}

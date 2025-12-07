@@ -13,40 +13,38 @@ static FArcballCamera GCamera{
 /* -- */
 void FInitEnter()
 {
-    Vector<FMesh> meshes(GLOBAL_ALLOC);
-    Vector<FInstance> instances(GLOBAL_ALLOC);
-    Vector<FCamera> cameras(GLOBAL_ALLOC);
+    FScene scene(GLOBAL_ALLOC);
     CHECK_MSG(GContext->args.size() == 2, "Usage: Editor <scene path>");
-    SceneLoadFromFile(GContext->args[1], meshes, instances, cameras);
-    if (!cameras.empty())
+    LoadGLTF(GContext->args[1], scene);
+    if (!scene.mCameras.empty())
     {
-        auto& camera = cameras.front();
+        auto& camera = scene.mCameras.front();
         vec3 dir = camera.transform.rotation * vec3(0, 0, 1);
         GCamera.center = camera.transform.transform - dir * GCamera.radius;
         GCamera.rot = camera.transform.rotation;
         GCamera.fovY = camera.fovY;
     }
     // Load into GPUScene
-    auto* scene = GContext->gpuScene;
+    auto* gpu = GContext->gpuScene;
     Vector<Pair<uint32_t, GSMesh>> meshOffsets(GLOBAL_ALLOC);
     {
         ImmediateUpload upload(GContext->device.Get(), 64 * (1u << 20)); // 64MB staging
         upload.Begin();
-        for (auto& src : meshes)
+        for (auto& src : scene.mMeshes)
         {
             CHECK(src.EnsureQuantized());
             auto& [offset, dst] = meshOffsets.emplace_back();
-            if (!scene->Upload(&upload, src, dst, offset))
+            if (!gpu->Upload(&upload, src, dst, offset))
             {
                 // Flush batched uploads - staging buffer full
                 upload.End(), upload.WaitIdle(), upload.Begin();
-                CHECK_MSG(scene->Upload(&upload, src, dst, offset), "Staging buffer too small for single mesh upload");
+                CHECK_MSG(gpu->Upload(&upload, src, dst, offset), "Staging buffer too small for single mesh upload");
             }
         }
         upload.End(), upload.WaitIdle();
     }
     GSInstances.clear();
-    for (auto& src : instances)
+    for (auto& src : scene.mInstances)
     {
         auto& dst = GSInstances.emplace_back();
         dst.transform = src.transform.transform;
@@ -77,7 +75,7 @@ void FRunning()
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
     // Upload instance data
-    auto [ptr, off] = scene->InstanceAlloc(GSInstances.size());
+    auto [ptr, off] = scene->AllocateInstance(GSInstances.size());
     std::memcpy(ptr, GSInstances.data(), GSInstances.size() * sizeof(GSInstance));
     GShaderGlobals.firstInstance = off;
     GShaderGlobals.numInstances = GSInstances.size();

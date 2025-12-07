@@ -15,7 +15,7 @@ struct FTexture2D
     DDS_HEADER_DXT10 header10{};
     mutable Vector<unsigned char> data;
 
-    FTexture2D(Allocator* alloc) : magic(DDS_MAGIC), data(alloc) {}
+    FTexture2D(Allocator* alloc);
     [[nodiscard]] uint32_t GetWidth() const { return header.width; }
     [[nodiscard]] uint32_t GetHeight() const { return header.height; }
     [[nodiscard]] uint32_t GetNumLayers() const
@@ -33,6 +33,7 @@ struct FTexture2D
     // Bits per pixel. NOTE: 0 for block-compressed formats
     [[nodiscard]] uint32_t GetBpp() const;
     [[nodiscard]] uint32_t GetSize() const;
+    // Get raw subresource slice that can be uploaded to the GPU directly
     [[nodiscard]] Span<unsigned char> GetSubresource(uint32_t mipLevel = 0, uint32_t arrayLayer = 0) const;
 
     /**
@@ -42,7 +43,7 @@ struct FTexture2D
     /**
      * Encodes the current, uncompressed R8G8B8A8 texture into BC7 format
      */
-    void EncodeBC7(FTexture2D& outTexture) const;
+    FTexture2D EncodeBC7() const;
 };
 
 /**
@@ -56,7 +57,12 @@ void LoadDDS(FTexture2D& texture, StringView path);
  * @param gamma Whether to load the image as sRGB (true) or linear (false) encoding.
  */
 void LoadRGBA8(FTexture2D& texture, StringView path, bool gamma = true);
-
+/**
+ * Loads standard image formats (PNG, JPG, etc.) via stb_image
+ * into an uncompressed R8G8B8A8 texture from memory
+ * @param gamma Whether to load the image as sRGB (true) or linear (false) encoding.
+ */
+void LoadRGBA8(FTexture2D& texture, Span<const unsigned char> data, bool gamma = true);
 /* -- Serialization -- */
 template <>
 inline void FSerialize(FWriter& w, FTexture2D const& obj)

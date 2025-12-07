@@ -231,7 +231,7 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
     // Upload vertex/index buffers
     auto* vtx = r->DerefResource(vtxBuffer).Get<RHIBuffer*>();
     auto* idx = r->DerefResource(idxBuffer).Get<RHIBuffer*>();
-    // Map. We're using a circular buffer here.
+    // Map. We're using a ring buffer here.
     auto* bd = static_cast<ImGuiImplFoundationBd*>(ImGui::GetIO().BackendRendererUserData);
     // Bump or rewind
     {

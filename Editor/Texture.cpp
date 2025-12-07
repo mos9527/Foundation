@@ -1,5 +1,12 @@
 #include "Texture.hpp"
+#include <bc7enc.h>
 using namespace Foundation::RHI;
+FTexture2D::FTexture2D(Allocator* alloc) : magic(DDS_MAGIC), data(alloc)
+{
+    static bool bc7encInitialized = false;
+    if (!bc7encInitialized)
+        bc7enc_compress_block_init(), bc7encInitialized = true;
+}
 RHIResourceFormat FTexture2D::GetFormat() const
 {
     using enum RHIResourceFormat;
@@ -246,23 +253,33 @@ void LoadRGBA8(FTexture2D& texture, StringView path, bool gamma)
 
     ddsCreateHeader(texture.header, width, height, 1);
     ddsSetFormat(texture.header, texture.header10, 1,
-                 gamma ? RHIResourceFormat::R8G8B8A8Srgb : RHIResourceFormat::B8G8R8A8Unrom);
+                 gamma ? RHIResourceFormat::R8G8B8A8Srgb : RHIResourceFormat::R8G8B8A8Unorm);
     texture.data.assign(imgData, imgData + width * height * 4);
 }
-#include <bc7enc.h>
-void FTexture2D::EncodeBC7(FTexture2D& outTexture) const
+void LoadRGBA8(FTexture2D& texture, Span<const unsigned char> data, bool gamma)
+{
+    int width, height, channels;
+    stbi_uc* imgData =
+        stbi_load_from_memory(data.data(), data.size_bytes(), &width, &height, &channels, STBI_rgb_alpha);
+    UniquePtr<stbi_uc, decltype(&stbi_image_free)> raii(imgData, &stbi_image_free);
+    CHECK_MSG(imgData != nullptr, "Failed to load image from memory");
+
+    ddsCreateHeader(texture.header, width, height, 1);
+    ddsSetFormat(texture.header, texture.header10, 1,
+                 gamma ? RHIResourceFormat::R8G8B8A8Srgb : RHIResourceFormat::R8G8B8A8Unorm);
+    texture.data.assign(imgData, imgData + width * height * 4);
+}
+FTexture2D FTexture2D::EncodeBC7() const
 {
     CHECK_MSG(GetFormat() == RHIResourceFormat::R8G8B8A8Unorm || GetFormat() == RHIResourceFormat::R8G8B8A8Srgb,
               "Source texture must be R8G8B8A8 format. Got {}", GetFormat());
-    ddsCreateHeader(outTexture.header, GetWidth(), GetHeight(), GetNumMips());
+    FTexture2D res(GLOBAL_ALLOC);
+    ddsCreateHeader(res.header, GetWidth(), GetHeight(), GetNumMips());
     RHIResourceFormat dstFormat =
         (GetFormat() == RHIResourceFormat::R8G8B8A8Srgb) ? RHIResourceFormat::Bc7Srgb : RHIResourceFormat::Bc7Unorm;
-    ddsSetFormat(outTexture.header, outTexture.header10, GetNumLayers(), dstFormat);
-    outTexture.data.resize(outTexture.GetSize());
+    ddsSetFormat(res.header, res.header10, GetNumLayers(), dstFormat);
+    res.data.resize(res.GetSize());
 
-    static bool bc7encInitialized = false;
-    if (!bc7encInitialized)
-        bc7enc_compress_block_init(), bc7encInitialized = true;
     bc7enc_compress_block_params pack_params;
     bc7enc_compress_block_params_init(&pack_params);
     for (uint32_t layer = 0; layer < GetNumLayers(); ++layer)
@@ -292,7 +309,7 @@ void FTexture2D::EncodeBC7(FTexture2D& outTexture) const
                         }
                     }
             };
-            Span<unsigned char> dstData = outTexture.GetSubresource(mip, layer);
+            Span<unsigned char> dstData = res.GetSubresource(mip, layer);
             for (uint32_t by = 0; by < blockY; ++by)
             {
                 for (uint32_t bx = 0; bx < blockX; ++bx)
@@ -308,4 +325,5 @@ void FTexture2D::EncodeBC7(FTexture2D& outTexture) const
             }
         }
     }
+    return res;
 }

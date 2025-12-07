@@ -152,7 +152,9 @@ struct FMesh
      */
     [[nodiscard]] size_t CalculateQuantizedBound(bool lod, bool dag) const;
 };
-
+/**
+ * Loads a Wavefront OBJ file into a mesh, with no optimization applied
+ */
 void LoadObj(FMesh& mesh, StringView path);
 
 /* -- Serialization -- */

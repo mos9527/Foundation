@@ -90,13 +90,25 @@ struct MIndex {
     uint8_t v1;
     uint8_t v2;
 }
-public struct GSInstance
+struct GSInstance
 {
     // TRS
     float3 transform;
     quat rotation;
     float3 scale;
     uint32_t meshOffset; // In Primitive buffer (bytes)
+    uint32_t materialIndex; // In Material buffer (offset)
+};
+struct GSMaterial
+{
+    uint32_t baseColorTexture;
+    uint32_t emissiveTexture;
+    uint32_t metallicRoughnessTexture;
+    uint32_t normalTexture;
+    float4 baseColorFactor;
+    float3 emissiveFactor;
+    float metallicFactor;
+    float roughnessFactor;
 };
 struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
 {

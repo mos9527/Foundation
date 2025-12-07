@@ -1,5 +1,5 @@
 GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
-    mContext(ctx)
+    mContext(ctx), mInstanceBuffer(ctx->device.Get(), desc.instanceBudget)
 {
     mPrimitiveBuffer = mContext->device->CreateBuffer(
     {
@@ -9,26 +9,10 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
             },
          .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer,
          .size = desc.primitiveBudget});
-    mInstanceBuffer = mContext->device->CreateBuffer(
-        {
-            .resource = {
-                .heap = RHIDeviceHeapType::Upload,
-                .hostAccess = RHIResourceHostAccess::WriteOnly,
-                .coherent = true
-            },
-        .usage = RHIBufferUsageBits::StorageBuffer,
-        .size = desc.instanceBudget * sizeof(GSInstance)});
-    mInstanceBegin = mInstanceRing = mInstanceRingPrev = mInstanceBuffer->Map<GSInstance>();
-    mInstanceEnd = mInstanceBegin + desc.instanceBudget;
 }
-Pair<GSInstance*, uint32_t> GPUScene::InstanceAlloc(uint32_t count)
+Pair<GSInstance*, uint32_t> GPUScene::AllocateInstance(uint32_t count)
 {
-    GSInstance* begin = mInstanceRing;
-    if (begin + count >= mInstanceEnd) // Wrap
-        begin = mInstanceRing = mInstanceBegin;
-    uint32_t offset = mInstanceRing - mInstanceBegin;
-    mInstanceRingPrev = mInstanceRing, mInstanceRing += count;
-    return {begin,offset};
+    return mInstanceBuffer.Allocate(count);
 }
 String GPUScene::DbgGetBufferStatistics() const
 {
@@ -36,7 +20,7 @@ String GPUScene::DbgGetBufferStatistics() const
     fmt::format_to(std::back_inserter(res), "Primitive Buffer: Used {} / {} MB\n", mPrimitiveOffset / static_cast<float>(1<<20u),
                    mPrimitiveBuffer->mDesc.size / static_cast<float>(1<<20u));
     fmt::format_to(std::back_inserter(res), "Instance Buffer: Used {} / {} instances",
-                   mInstanceRing - mInstanceRingPrev, mInstanceEnd - mInstanceBegin);
+                   mInstanceBuffer.Used(), mInstanceBuffer.Capacity());
     return res;
 }
 size_t GPUScene::Upload(ImmediateUpload* ctx, FMesh const& src, GSMesh& outData, uint32_t& outOffset)
@@ -86,5 +70,5 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FMesh const& src, GSMesh& outData,
 void GPUScene::Reset()
 {
     mPrimitiveOffset = 0;
-    mInstanceRing = mInstanceBegin;
+    mInstanceBuffer.Reset();
 }
