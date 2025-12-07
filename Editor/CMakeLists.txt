@@ -6,10 +6,6 @@ FetchContent_MakeAvailable(meshoptimizer)
 FetchContent_MakeAvailable(cgltf)
 FetchContent_MakeAvailable(lz4)
 
-set(KTX_FEATURE_TESTS OFF CACHE BOOL "" FORCE)
-
-FetchContent_MakeAvailable(KTX-Software)
-
 file(
     GLOB SOURCES
     Context.cpp
@@ -30,7 +26,6 @@ target_link_libraries(
     Foundation_Math
     Foundation_Core
     meshoptimizer
-    ktx
 )
 target_include_directories(
     Editor_Assets PUBLIC "${stb_SOURCE_DIR}" "${fast_obj_SOURCE_DIR}" "${cgltf_SOURCE_DIR}" "${meshoptimizer_SOURCE_DIR}/demo" "${lz4_SOURCE_DIR}/lib" ..
