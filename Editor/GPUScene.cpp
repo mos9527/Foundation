@@ -1,5 +1,7 @@
 GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
-    mContext(ctx), mInstanceBuffer(ctx->device.Get(), desc.instanceBudget)
+    mContext(ctx), mInstanceBuffer(ctx->device.Get(), desc.instanceBudget),
+mMaterialBuffer(ctx->device.Get(), desc.materialBudget), mTexturePool(ctx->device.Get(), ctx->allocator,
+    { .maxBindings = desc.texturesBudget })
 {
     mPrimitiveBuffer = mContext->device->CreateBuffer(
     {
@@ -13,6 +15,10 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
 Pair<GSInstance*, uint32_t> GPUScene::AllocateInstance(uint32_t count)
 {
     return mInstanceBuffer.Allocate(count);
+}
+Pair<GSMaterial*, uint32_t> GPUScene::AllocateMaterial(uint32_t count)
+{
+    return mMaterialBuffer.Allocate(count);
 }
 String GPUScene::DbgGetBufferStatistics() const
 {
@@ -66,6 +72,58 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FMesh const& src, GSMesh& outData,
     size_t written = dst - ptr;
     CHECK_MSG(written == size, "Write mismatch: expected {} got {}", size, written);
     return dst - ptr;
+}
+size_t GPUScene::Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t& outIndex)
+{
+    auto texture = mContext->device->CreateTexture(source.GetDesc());
+    size_t written = 0;
+    auto range = RHITextureSubresourceRange::Create(
+        RHITextureAspectFlagBits::Color,
+        0, source.GetNumMips(),
+        0, source.GetNumLayers());
+    auto* cmd = ctx->ctx.Get();
+    cmd->BeginTransition();
+    cmd->SetImageTransition(texture.Get(), {
+        .dstImgLayout = RHITextureLayout::TransferDst,
+        .srcImgRange = range
+    });
+    cmd->EndTransition();
+    for (uint32_t layer = 0; layer < source.GetNumLayers(); ++layer)
+    {
+        for (uint32_t mip = 0; mip < source.GetNumMips(); ++mip)
+        {
+            Span<const unsigned char> subresource = source.GetSubresource(mip, layer);
+            if (!ctx->Align(std::max(source.GetBpp() / 8,source.GetBlockSize())))
+                return 0;
+            char* ptr = ctx->Upload(texture.Get(), subresource.size_bytes(),
+                {
+                    .aspect = RHITextureAspectFlagBits::Color,
+                    .mipLevel = mip, .baseArrayLayer = layer, .layerCount = 1
+                },
+                { 0,0 }, { std::max(1u, source.GetWidth() >> mip),
+                    std::max(1u, source.GetHeight() >> mip) });
+            if (ptr == nullptr) // XXX: Pessimistic, we can't resume from a partial upload this way. Though
+                return 0;       // overhead should be minimal for most textures.
+            std::memcpy(ptr, subresource.data(), subresource.size_bytes());
+            written += subresource.size_bytes();
+        }
+    }
+    cmd->BeginTransition();
+    cmd->SetImageTransition(texture.Get(), {
+        .srcImgLayout = RHITextureLayout::TransferDst,
+        .dstImgLayout = RHITextureLayout::ShaderReadOnly,
+        .srcImgRange = range
+    });
+    cmd->EndTransition();
+    outIndex = mTexturePool.Allocate(std::move(texture), texture->CreateTextureView({
+        .format = source.GetFormat(),
+        .dimension = RHITextureDimension::E2D,
+        .range = RHITextureSubresourceRange::Create(
+            RHITextureAspectFlagBits::Color,
+            0, source.GetNumMips(),
+            0, source.GetNumLayers())
+    }).Release().Get());
+    return written;
 }
 void GPUScene::Reset()
 {

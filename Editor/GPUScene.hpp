@@ -1,16 +1,17 @@
 #pragma once
-#include <Math/Math.hpp>
+#include <RenderCore/Bindless.hpp>
+#include <RenderCore/ImmediateContext.hpp>
 #include "Context.hpp"
 #include "Mesh.hpp"
-#include "RenderCore/ImmediateContext.hpp"
+#include "Texture.hpp"
 using namespace Math;
 
 BITMASK_ENUM_BEGIN(GSData, uint8_t)
-    Mesh = 1 << 0,
-BITMASK_ENUM_END()
+Mesh = 1 << 0,
+    BITMASK_ENUM_END()
 
 #pragma pack(push, 1)
-struct GSMesh
+        struct GSMesh
 {
     // Offsets are absolute, and are in Primitive buffer (bytes).
     // @ref FVertex
@@ -103,23 +104,31 @@ class GPUScene
     uint32_t mMeshletGlobalCounter{0};
 
     GPURingBuffer<GSInstance> mInstanceBuffer;
+    GPURingBuffer<GSMaterial> mMaterialBuffer;
+
+    BindlessPool mTexturePool;
 
 public:
     struct GPUSceneDesc
     {
-        size_t primitiveBudget = 16 * (1u << 20); // 16MB
-        size_t instanceBudget = (size_t)1e4; // # of instances
+        uint32_t primitiveBudget = 16 * (1u << 20); // 16MB
+        uint32_t instanceBudget = static_cast<uint32_t>(1e4); // # of instances
+        uint32_t materialBudget = static_cast<uint32_t>(1e3); // # of materials
+        uint32_t texturesBudget = static_cast<uint32_t>(1e3); // # of textures
     };
     GPUScene(FContext* ctx, GPUSceneDesc const& desc);
 
     Pair<GSInstance*, uint32_t> AllocateInstance(uint32_t count);
+    Pair<GSMaterial*, uint32_t> AllocateMaterial(uint32_t count);
 
-    String DbgGetBufferStatistics() const;
+    [[nodiscard]] String DbgGetBufferStatistics() const;
 
     size_t Upload(ImmediateUpload* ctx, FMesh const& source, GSMesh& outData, uint32_t& outOffset);
+    size_t Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t& outIndex);
 
-    RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
-    RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.mBuffer.Get(); }
-
+    [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
+    [[nodiscard]] RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.mBuffer.Get(); }
+    [[nodiscard]] RHIBuffer* GetMaterialBuffer() const { return mMaterialBuffer.mBuffer.Get(); }
+    [[nodiscard]] BindlessPool* GetTexturePool() { return &mTexturePool; }
     void Reset();
 };

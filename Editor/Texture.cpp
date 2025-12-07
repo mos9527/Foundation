@@ -139,6 +139,18 @@ uint32_t FTexture2D::GetSize() const
     CHECK_MSG(blockSize && blockDim, "Unsupported texture format {}", GetFormat());
     return getImageSize(GetWidth(), GetHeight(), GetNumMips(), blockSize, blockDim) * GetNumLayers();
 }
+RHITextureDesc FTexture2D::GetDesc() const
+{
+    return RHITextureDesc{
+        .resource = { .shared = true },
+        .dimension = RHITextureDimension::E2D,
+        .usage = RHITextureUsageBits::TransferDestination | RHITextureUsageBits::SampledImage,
+        .extent = { GetWidth(), GetHeight(), 1 },
+        .format = GetFormat(),
+        .mipLevels = GetNumMips(),
+        .arrayLayers = GetNumLayers()
+    };
+}
 // https://learn.microsoft.com/en-us/windows/win32/direct3ddds/dx-graphics-dds-pguide#using-texture-arrays-in-direct3d-1011
 // [Layer 0 Mip 0][Layer 0 Mip 1]...[Layer 0 Mip N][Layer 1 Mip 0]...[Layer 1 Mip N]...
 Span<unsigned char> FTexture2D::GetSubresource(uint32_t mipLevel, uint32_t arrayLayer) const

@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Container.hpp>
 #include <Math/Math.hpp>
+#include <RHICore/Resource.hpp>
 #include "Serialization.hpp"
 #include "TextureDDS.hpp"
 using namespace Foundation;
@@ -16,6 +17,7 @@ struct FTexture2D
     mutable Vector<unsigned char> data;
 
     FTexture2D(Allocator* alloc);
+    [[nodiscard]] bool IsValid() const { return magic == DDS_MAGIC && GetSize(); }
     [[nodiscard]] uint32_t GetWidth() const { return header.width; }
     [[nodiscard]] uint32_t GetHeight() const { return header.height; }
     [[nodiscard]] uint32_t GetNumLayers() const
@@ -28,11 +30,13 @@ struct FTexture2D
     }
     [[nodiscard]] uint32_t GetNumMips() const { return header.mipMapCount > 0 ? header.mipMapCount : 1; }
     [[nodiscard]] RHIResourceFormat GetFormat() const;
-    // Bits per BC block. NOTE: 0 for non-block-compressed formats
+    // BYTES per BC block. NOTE: 0 for non-block-compressed formats
     [[nodiscard]] uint32_t GetBlockSize() const;
     // Bits per pixel. NOTE: 0 for block-compressed formats
     [[nodiscard]] uint32_t GetBpp() const;
     [[nodiscard]] uint32_t GetSize() const;
+
+    [[nodiscard]] RHITextureDesc GetDesc() const;
     // Get raw subresource slice that can be uploaded to the GPU directly
     [[nodiscard]] Span<unsigned char> GetSubresource(uint32_t mipLevel = 0, uint32_t arrayLayer = 0) const;
 

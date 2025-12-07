@@ -129,6 +129,8 @@ struct UBO
 {
     uint32_t firstInstance;
     uint32_t numInstances;
+    uint32_t firstMaterial;
+    uint32_t numMaterials;
     float lodThreshold;
     float zNear;
     float4x4 view;

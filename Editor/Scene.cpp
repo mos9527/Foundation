@@ -68,13 +68,14 @@ FTexture2D createNullTexture()
     const Array<uint32_t, 4> data{0xFF000000, 0xFFFF00FF, 0xFFFF00FF, 0xFF000000};
     FTexture2D texture(GLOBAL_ALLOC);
     ddsCreateHeader(texture.header, 2, 2, 1);
-    ddsSetFormat(texture.header, texture.header10, 1, RHIResourceFormat::B8G8R8A8Unrom);
-    texture.data.assign(data.begin(), data.end());
+    ddsSetFormat(texture.header, texture.header10, 1, RHIResourceFormat::R8G8B8A8Unorm);
+    texture.data.resize(4 * 4);
+    std::memcpy(texture.data.data(), data.data(), texture.data.size());
     return texture;
 }
 
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#images
-FTexture2D loadGLTFTexture(cgltf_texture* texture, StringView scenePath)
+Optional<FTexture2D> loadGLTFTexture(cgltf_texture* texture, StringView scenePath)
 {
     if (texture->image)
     {
@@ -91,9 +92,9 @@ FTexture2D loadGLTFTexture(cgltf_texture* texture, StringView scenePath)
             return LoadRGBA8(res, imagePath.string(), false), res;
         }
         LOG(Scene, LogWarn, "Texture image file not found: {}", imagePath.string());
-        return createNullTexture();
+        return {};
     }
-    return createNullTexture();
+    return {};
 }
 
 void LoadGLTF(StringView path, FScene& scene)
@@ -125,10 +126,15 @@ void LoadGLTF(StringView path, FScene& scene)
             {
                 String name = src->name ? src->name : fmt::format("{}_{}", basePath, src - data->textures);
                 LOG(Scene, LogInfo, "Loading texture {}", name);
-                *dst = loadGLTFTexture(src, basePath);
-                LOG(Scene, LogInfo, "Encoding texture {} to BC7", name);
-                *dst = dst->EncodeBC7();
-                LOG(Scene, LogInfo, "Loaded texture {}", name);
+                auto loaded = loadGLTFTexture(src, basePath);
+                if (loaded.has_value())
+                {
+                    LOG(Scene, LogInfo, "Encoding texture {} to BC7", name);
+                    *dst = loaded->EncodeBC7();
+                    LOG(Scene, LogInfo, "Loaded texture {}", name);
+                } else {
+                    LOG(Scene, LogWarn, "No texture loaded for {}", name);
+                }
             },
             &data->textures[i], &scene.mTextures[i + 1], path);
     // Mesh's submesh children

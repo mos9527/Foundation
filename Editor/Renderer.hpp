@@ -5,6 +5,8 @@ struct UBO
 {
     uint32_t firstInstance;
     uint32_t numInstances;
+    uint32_t firstMaterial;
+    uint32_t numMaterials;
     float lodThreshold{0.005f};
     float zNear;
     float4x4 view;

@@ -3,6 +3,7 @@
 FEditorState FEState = FEInitEnter;
 /* -- Scene Data -- */
 static Vector<GSInstance> GSInstances(GLOBAL_ALLOC);
+static Vector<GSMaterial> GSMaterials(GLOBAL_ALLOC);
 static UBO GShaderGlobals;
 static FArcballCamera GCamera{
     .center = float3{0, 0, 0},
@@ -27,6 +28,7 @@ void FInitEnter()
     // Load into GPUScene
     auto* gpu = GContext->gpuScene;
     Vector<Pair<uint32_t, GSMesh>> meshOffsets(GLOBAL_ALLOC);
+    Vector<uint32_t> textureIDMap(scene.mTextures.size(), GLOBAL_ALLOC);
     {
         ImmediateUpload upload(GContext->device.Get(), 64 * (1u << 20)); // 64MB staging
         upload.Begin();
@@ -41,6 +43,16 @@ void FInitEnter()
                 CHECK_MSG(gpu->Upload(&upload, src, dst, offset), "Staging buffer too small for single mesh upload");
             }
         }
+        for (int id = 0; auto& src : scene.mTextures)
+        {
+            if (!gpu->Upload(&upload, src, textureIDMap[id]))
+            {
+                upload.End(), upload.WaitIdle(), upload.Begin();
+                CHECK_MSG(gpu->Upload(&upload, src, textureIDMap[id]),
+                          "Staging buffer too small for single texture upload");
+            }
+            id++;
+        }
         upload.End(), upload.WaitIdle();
     }
     GSInstances.clear();
@@ -52,12 +64,22 @@ void FInitEnter()
         dst.scale = src.transform.scale;
         dst.meshOffset = meshOffsets[src.meshIndex].first;
     }
+    GSMaterials.clear();
+    for (auto& src : scene.mMaterials)
+    {
+        auto& dst = GSMaterials.emplace_back();
+        dst.baseColorFactor = src.baseColorFactor;
+        dst.emissiveFactor = src.emissiveFactor;
+        dst.metallicFactor = src.metallicFactor;
+        dst.roughnessFactor = src.roughnessFactor;
+        dst.baseColorTexture = textureIDMap[src.baseColorTexture];
+        dst.emissiveTexture = textureIDMap[src.baseColorTexture];
+        dst.metallicRoughnessTexture = textureIDMap[src.metallicRoughnessTexture];
+        dst.normalTexture = textureIDMap[src.normalTexture];
+    }
     FEState = FEInit;
 }
-void FInit()
-{
-    FEState = FERunningEnter;
-}
+void FInit() { FEState = FERunningEnter; }
 RendererConfig GRendererConfig;
 void FRunningEnter()
 {
@@ -75,10 +97,19 @@ void FRunning()
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
     // Upload instance data
-    auto [ptr, off] = scene->AllocateInstance(GSInstances.size());
-    std::memcpy(ptr, GSInstances.data(), GSInstances.size() * sizeof(GSInstance));
-    GShaderGlobals.firstInstance = off;
-    GShaderGlobals.numInstances = GSInstances.size();
+    {
+        auto [ptr, off] = scene->AllocateInstance(GSInstances.size());
+        std::memcpy(ptr, GSInstances.data(), GSInstances.size() * sizeof(GSInstance));
+        GShaderGlobals.firstInstance = off;
+        GShaderGlobals.numInstances = GSInstances.size();
+    }
+    // Upload material data
+    {
+        auto [ptr, off] = scene->AllocateMaterial(GSMaterials.size());
+        std::memcpy(ptr, GSMaterials.data(), GSMaterials.size() * sizeof(GSMaterial));
+        GShaderGlobals.firstMaterial = off;
+        GShaderGlobals.numMaterials = GSMaterials.size();
+    }
     // Global param update
     GCamera.Update({});
     GCamera.aspect = GContext->swapchain->GetAspectRatio();

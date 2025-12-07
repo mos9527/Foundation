@@ -45,6 +45,14 @@ namespace Foundation::RenderCore
         ptr += dataSize;
         return res;
     }
+    bool ImmediateUpload::Align(uint32_t alignment)
+    {
+        auto* pup = reinterpret_cast<char*>(AlignUp(reinterpret_cast<uintptr_t>(ptr), alignment));
+        if (pup >= end)
+            return false;
+        ptr = pup;
+        return true;
+    }
     void ImmediateUpload::End(RHIDeviceFence* completionFence)
     {
         ctx->End();

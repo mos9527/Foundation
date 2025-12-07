@@ -79,6 +79,7 @@ namespace Foundation::RenderCore
                      RHIOffset2D dstOffset = {},
                      RHIExtent2D dstExtent = {});
 
+        bool Align(uint32_t alignment);
         /**
          * Finalizes the upload context, submitting the copy commands.
          * @param completionFence Optional fence to signal upon completion.
