@@ -136,7 +136,6 @@ uint32_t FTexture2D::GetSize() const
     uint32_t blockSize = GetBlockSize(), blockDim = 4;
     if (!blockSize)
         blockSize = GetBpp() / 8, blockDim = 1;
-    CHECK_MSG(blockSize && blockDim, "Unsupported texture format {}", GetFormat());
     return getImageSize(GetWidth(), GetHeight(), GetNumMips(), blockSize, blockDim) * GetNumLayers();
 }
 RHITextureDesc FTexture2D::GetDesc() const
@@ -171,6 +170,7 @@ Span<unsigned char> FTexture2D::GetSubresource(uint32_t mipLevel, uint32_t array
 }
 void FTexture2D::GenerateMips()
 {
+    CHECK_MSG(GetNumMips() == 1, "Texture already has mipmaps");
     CHECK_MSG(GetFormat() == RHIResourceFormat::R8G8B8A8Unorm || GetFormat() == RHIResourceFormat::R8G8B8A8Srgb,
               "Source texture must be R8G8B8A8 format. Got {}", GetFormat());
     uint32_t numMips = std::max(GetWidth(), GetHeight());

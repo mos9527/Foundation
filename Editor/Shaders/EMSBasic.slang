@@ -44,6 +44,7 @@ void main(
         v2f.normal = normal;
         v2f.tangent = tangent;
         v2f.bitangent = cross(normal, tangent) * bitangentSign;
+        v2f.bitangentSign = bitangentSign;
         v2f.uv = uv;
         v2f.meshlet = mesh.meshletGlobalIndex + meshletID;
         v2f.materialIndex = inst.materialIndex;

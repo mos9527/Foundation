@@ -85,13 +85,30 @@ Optional<FTexture2D> loadGLTFTexture(cgltf_texture* texture, StringView scenePat
             Span imgData = {static_cast<const unsigned char*>(buf->buffer->data) + buf->offset, buf->size};
             return LoadRGBA8(res, imgData, false), res;
         }
-        auto imagePath = std::filesystem::path(scenePath.data()).parent_path() / texture->image->uri;
-        if (std::filesystem::exists(imagePath))
+        String imageNameWE = std::filesystem::path(texture->image->uri).stem().string();
+        std::filesystem::path dir = std::filesystem::path(scenePath.data()).parent_path();
+        dir = dir / std::filesystem::path(texture->image->uri).parent_path();
+        // Try common extensions
+        const char* extensions[] = {".png", ".jpg", ".jpeg", ".bmp"};
+        for (auto ext : extensions)
         {
-            FTexture2D res(GLOBAL_ALLOC);
-            return LoadRGBA8(res, imagePath.string(), false), res;
+            auto imagePath = dir / (imageNameWE + ext);
+            if (std::filesystem::exists(imagePath))
+            {
+                FTexture2D res(GLOBAL_ALLOC);
+                return LoadRGBA8(res, imagePath.string(), false), res;
+            }
         }
-        LOG(Scene, LogWarn, "Texture image file not found: {}", imagePath.string());
+        // DDS?
+        {
+            auto imagePath = dir / (imageNameWE + ".dds");
+            if (std::filesystem::exists(imagePath))
+            {
+                FTexture2D res(GLOBAL_ALLOC);
+                return LoadDDS(res, imagePath.string()), res;
+            }
+        }
+        LOG(Scene, LogWarn, "Texture image file not found: {}", texture->image->uri);
         return {};
     }
     return {};
@@ -117,8 +134,7 @@ void LoadGLTF(StringView path, FScene& scene)
         numSubmeshes += data->meshes[i].primitives_count;
     scene.mTextures.resize(data->textures_count + 1, GLOBAL_ALLOC);
     size_t jobCount = data->textures_count + numSubmeshes;
-    ThreadPool pool(std::thread::hardware_concurrency(), ThreadPool::getTaskSize(jobCount),
-                    GLOBAL_ALLOC);
+    ThreadPool pool(std::thread::hardware_concurrency(), ThreadPool::getTaskSize(jobCount), GLOBAL_ALLOC);
     // NOTE: 0 is reserved as the null texture
     scene.mTextures[0] = createNullTexture();
     for (size_t i = 0; i < data->textures_count; i++)
@@ -130,11 +146,19 @@ void LoadGLTF(StringView path, FScene& scene)
                 auto loaded = loadGLTFTexture(src, basePath);
                 if (loaded.has_value())
                 {
-                    loaded->GenerateMips();
-                    LOG(Scene, LogInfo, "Encoding texture {} to BC7", name);
-                    *dst = loaded->EncodeBC7();
+                    // Raw image. Compress to BC7 if needed
+                    if (loaded->GetFormat() == RHIResourceFormat::R8G8B8A8Unorm ||
+                        loaded->GetFormat() == RHIResourceFormat::R8G8B8A8Srgb)
+                    {
+                        loaded->GenerateMips();
+                        *dst = loaded->EncodeBC7();
+                    }
+                    else
+                        *dst = loaded.value();
                     LOG(Scene, LogInfo, "Loaded texture {}", name);
-                } else {
+                }
+                else
+                {
                     LOG(Scene, LogWarn, "No texture loaded for {}", name);
                 }
             },
@@ -249,4 +273,3 @@ void LoadScene(StringView path, FScene& scene)
     else
         LoadGLTF(path, scene);
 }
-

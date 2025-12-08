@@ -44,4 +44,12 @@ extern void ImProfilerDrawTimestampLabel(Span<const ImProfilerSample> samples, f
 extern int ImProfilerDrawLane(Span<const ImProfilerSample>, int lane);
 extern int ImProfilerDrawTable(Span<const ImProfilerSample>, float resolution /* ns = tick * resolution */);
 
-extern void ImProfilerDrawHistogram(Vector<unsigned>& bins, ImProfilerHistogram const& histogram, size_t labelCount, float resolution /* ns = tick * resolution */, bool logOrLinear = true);
+extern void ImProfilerDrawHistogram(Vector<unsigned>& bins, ImProfilerHistogram const& histogram, size_t labelCount,
+                                    float resolution /* ns = tick * resolution */, bool logOrLinear = true);
+
+extern bool ImBitmaskOptionPicker(unsigned& value, const char** labels, const unsigned* masks, unsigned count);
+template <size_t N>
+bool ImBitmaskOptionPicker(unsigned& value, const char* (&labels)[N], const unsigned (&masks)[N])
+{
+    return ImBitmaskOptionPicker(value, labels, masks, N);
+}

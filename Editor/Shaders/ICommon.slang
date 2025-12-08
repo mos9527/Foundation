@@ -106,6 +106,7 @@ struct GSMaterial
     float3 emissiveFactor;
     float metallicFactor;
     float roughnessFactor;
+    float anisotropy;
 };
 struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
 {
@@ -136,6 +137,10 @@ struct UBO
     uint32_t hizLevels;
     uint32_t hizWidth;
     uint32_t hizHeight;
+    // -- Lighting
+    float3 camDirection;
+    float3 sunDirection;
+    float3 ambientColor;
 };
 // ^^^
 public struct MeshletGroupShared {
@@ -150,6 +155,7 @@ struct V2F
     float3 normal : NORMAL;
     float3 tangent : TANGENT;
     float3 bitangent : BITANGENT;
+    float bitangentSign : BITSIGN;
     float2 uv : TEXCOORD0;
     uint32_t meshlet : ID;
     uint32_t materialIndex : MATID;

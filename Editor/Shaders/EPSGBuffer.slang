@@ -39,7 +39,10 @@ Fragment drawGBuffer(V2F input){
     // -- GBuffer Packing
     float3 normal = normalize(input.tangent * normalTBN.x + input.bitangent * normalTBN.y + input.normal * normalTBN.z);
     float3 normal888 = packTBN888(normal, input.tangent);
-    output.RT0 = float4(baseColor.xyz, input.materialIndex / 255.0f); // BaseColor, ID
+    uint ID = 0; // Material ID [7] Handness [1]
+    ID = bitfieldInsert(ID, input.materialIndex, 0, 7);
+    ID = bitfieldInsert(ID, input.bitangentSign >= 0.0f ? 1 : 0, 7, 1);
+    output.RT0 = float4(baseColor.xyz, (float)ID / 255.0f); // BaseColor, ID
     output.RT1 = float4(normal888, pbrMetalRough.y); // Normal 888, Metallic
     output.RT2 = float4(emissive.xyz, pbrMetalRough.x); // Emissive, Roughness
     return output;

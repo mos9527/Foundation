@@ -46,11 +46,18 @@ void FInitEnter()
         }
         for (int id = 0; auto& src : scene.mTextures)
         {
-            if (!gpu->Upload(&upload, src, textureIDMap[id]))
+            if (!src.IsValid())
             {
-                upload.End(), upload.WaitIdle(), upload.Begin();
-                CHECK_MSG(gpu->Upload(&upload, src, textureIDMap[id]),
-                          "Staging buffer too small for single texture upload");
+                textureIDMap[id] = 0; // Default texture
+            }
+            else
+            {
+                if (!gpu->Upload(&upload, src, textureIDMap[id]))
+                {
+                    upload.End(), upload.WaitIdle(), upload.Begin();
+                    CHECK_MSG(gpu->Upload(&upload, src, textureIDMap[id]),
+                              "Staging buffer too small for single texture upload");
+                }
             }
             id++;
         }
@@ -119,6 +126,7 @@ void FRunning()
     GShaderGlobals.proj = GCamera.proj;
     GShaderGlobals.zNear = GCamera.zNear;
     GShaderGlobals.projPlanes = planeSymmetric(GShaderGlobals.proj);
+    GShaderGlobals.camDirection = float3(0,0,-1) * GCamera.rot;
     // ImGui
     if (ImGui::Begin("Camera"))
     {
@@ -132,49 +140,29 @@ void FRunning()
     if (ImGui::Begin("Rendering"))
     {
         static float lodLogThreshold = 2;
-        ImGui::SliderFloat("LOD Threshold | ", &lodLogThreshold, 0, 8);
+        ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
         GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
-        if (ImGui::Button("Toggle Overdraw View"))
+        bool changed = false;
         {
-            GRendererConfig.viewFlags ^= kViewOverdraw;
-            FEState = FERunningEnter;
+            const char* items[] = {"Overdraw", "Meshlet", "HIZ Buffer"};
+            const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewHIZ};
+            ImGui::SeparatorText("Perf Debug View");
+            changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values);
         }
-        if (ImGui::Button("Toggle Meshlet View"))
         {
-            GRendererConfig.viewFlags ^= kViewMeshlet;
-            FEState = FERunningEnter;
+            const char* items[] = {"Frustum", "Occlusion"};
+            const unsigned values[] = {kCullFrustum, kCullOcclusion};
+            ImGui::SeparatorText("Culling");
+            changed |= ImBitmaskOptionPicker(GRendererConfig.cullFlags, items, values);
         }
-        if (ImGui::Button("Toggle HIZ View"))
         {
-            GRendererConfig.viewFlags ^= kViewHIZ;
-            FEState = FERunningEnter;
+            const char* items[] = {"BaseColor", "Normal", "MaterialID"};
+            const unsigned values[] = {kGBufferViewBaseColor, kGBufferViewNormal, kGBufferViewMaterialID};
+            ImGui::SeparatorText("GBuffer Debug View");
+            changed |= ImBitmaskOptionPicker(GRendererConfig.gbufferFlags, items, values);
         }
-        if (ImGui::Button("Toggle Frustum Culling"))
-        {
-            GRendererConfig.cullFlags ^= kCullFrustum;
-            FEState = FERunningEnter;
-        }
-        if (ImGui::Button("Toggle Occlusion Culling"))
-        {
-            GRendererConfig.cullFlags ^= kCullOcclusion;
-            FEState = FERunningEnter;
-        }
-        if (ImGui::Button("Toggle GBuffer BaseColor"))
-        {
-            GRendererConfig.gbufferFlags ^= kGBufferViewBaseColor;
-            FEState = FERunningEnter;
-        }
-        if (ImGui::Button("Toggle GBuffer Normal"))
-        {
-            GRendererConfig.gbufferFlags ^= kGBufferViewNormal;
-            FEState = FERunningEnter;
-        }
-        if (ImGui::Button("Toggle GBuffer MaterialID"))
-        {
-            GRendererConfig.gbufferFlags ^= kGBufferViewMaterialID;
-            FEState = FERunningEnter;
-        }
-        if (ImGui::Button("Reload"))
+        changed |= ImGui::Button("Reload");
+        if (changed)
             FEState = FERunningEnter;
     }
     ImGui::End();
@@ -211,7 +199,7 @@ void FRunning()
             }
             if (ImGui::TreeNodeEx("Frametime", ImGuiTreeNodeFlags_DefaultOpen))
             {
-                static constexpr size_t kHistogramSamples = 5e3, kFrametimeSamples = 1e3;
+                static constexpr size_t kHistogramSamples = 5e3, kFrametimeSamples = 3e2;
                 static Vector<ImProfilerSample> samples(GLOBAL_ALLOC);
                 static Vector<ImProfilerHistogram> histograms(GLOBAL_ALLOC);
                 static ImProfilerHistogram frametime(kFrametimeSamples, GLOBAL_ALLOC);

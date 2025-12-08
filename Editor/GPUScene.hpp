@@ -47,6 +47,7 @@ struct GSMaterial
     float3 emissiveFactor;
     float metallicFactor;
     float roughnessFactor;
+    float anisotropy;
 };
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 36);

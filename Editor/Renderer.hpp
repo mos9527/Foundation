@@ -15,6 +15,10 @@ struct UBO
     uint32_t hizLevels;
     uint32_t hizWidth;
     uint32_t hizHeight;
+    // -- Lighting
+    float3 camDirection;
+    float3 sunDirection{0, 1, 0};
+    float3 ambientColor{0.1, 0.1, 0.1};
 };
 #pragma pack(pop)
 
@@ -36,7 +40,7 @@ static const int kGBufferViewMaterialID = 1 << 2;
 struct RendererConfig
 {
     unsigned viewFlags{};
-    unsigned cullFlags{kCullFrustum|kCullOcclusion|kCullBackface};
+    unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
     unsigned gbufferFlags{};
 };
 extern void RendererSetupImGuiOnly(FContext* context);
