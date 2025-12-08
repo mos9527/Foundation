@@ -27,15 +27,62 @@ public struct quat
     // Overload
     public quat operator*(quat r) { return mul(r); }
 };
-// -- dequantization
+// -- de/quantization
 const static float EPS = 1e-6f;
+uint32_t quantizeUnorm(float v, int32_t N)
+{
+    float scale = (float)((1 << N) - 1);
+
+    v = (v >= 0) ? v : 0;
+    v = (v <= 1) ? v : 1;
+
+    return (uint32_t)(v * scale + 0.5f);
+}
+float dequantizeUnorm(int32_t q, int32_t Nbits) {
+    return q / (float)((1 << Nbits) - 1);
+}
+int32_t quantizeSnorm(float v, int32_t N)
+{
+    float scale = (float)((1 << (N - 1)) - 1);
+    float round = (v >= 0 ? 0.5f : -0.5f);
+
+    v = (v >= -1) ? v : -1;
+    v = (v <= +1) ? v : +1;
+
+    return (int32_t)(v * scale + round);
+}
 float dequantizeSnorm(int32_t q, int32_t Nbits) {
     return q / (float)((1 << (Nbits - 1)) - 1);
+}
+uint32_t quantizeSnormShifted(float v, int32_t Nbits)
+{
+    return quantizeSnorm(v, Nbits) + (1 << (Nbits - 1));
 }
 float dequantizeSnormShifted(int32_t q, int32_t Nbits) {
     return dequantizeSnorm(q - (1 << (Nbits - 1)), Nbits);
 }
-// -- tangent frame
+// -- unit L1~L2 projection
+float2 packUnitOctahedralSnorm(float3 v)
+{
+    v /= float3(abs(v.x) + abs(v.y) + abs(v.z));
+    return v.z >= EPS ? v.xy : (float2(1.0f) - abs(float2(v.yx))) * sign(float2(v.xy + EPS));
+}
+float3 unpackUnitOctahedralSnorm(float2 v)
+{
+    float3 nor = float3(v.xy, 1.0f - abs(v.x) - abs(v.y));
+    float2 xy = nor.z >= EPS ? v.xy : (float2(1.0f) - abs(float2(v.yx))) * sign(float2(v.xy + EPS));
+    return normalize(float3(xy.x, xy.y, nor.z));
+}
+float packUnitCircleSnorm(float2 v){
+    v /= abs(v.x) + abs(v.y);
+    return v.y >= EPS ? (v.x + 1.0f) * 0.5f : -(v.x + 1.0f) * 0.5f;
+}
+float2 unpackUnitCircleSnorm(float v){
+    float x = abs(v) * 2.0f - 1.0f;
+    float y = 1.0f - abs(x);
+    return v >= 0.0f ? float2(x, y) : float2(x, -y);
+}
+// -- tangent frame projection
 void buildOrthonormalBasis(const float3 n, out float3 b1,out float3 b2)
 {
     if (n.z < -0.9999999)
@@ -48,17 +95,22 @@ void buildOrthonormalBasis(const float3 n, out float3 b1,out float3 b2)
     b1 = float3(1.0 - n.x * n.x * a, b, -n.x);
     b2 = float3(b, 1.0 - n.y * n.y * a, -n.y);
 }
-float3 unpackUnitOctahedralSnorm(float2 v)
+uint32_t packTBN(in float3 normal, in float3 tangent, in float bitangentSign)
 {
-    float3 nor = float3(v.xy, 1.0f - abs(v.x) - abs(v.y));
-    nor.xy = nor.z >= EPS ? nor.xy :  (float2(1.0f, 1.0f) - abs(nor.yx)) * sign(nor.xy + EPS);
-    return normalize(nor);
-}
-// R2, L1 to L2 projection on unit circle
-float2 unpackUnitCircleSnorm(float v){
-    float x = abs(v) * 2.0f - 1.0f;
-    float y = 1.0f - abs(x);
-    return v >= 0.0f ? float2(x, y) : float2(x, -y);
+    float3 b1, b2;
+    buildOrthonormalBasis(normal, b1, b2);
+    float cosAngle = dot(tangent, b1), sinAngle = dot(tangent, b2);
+    float octAngle = packUnitCircleSnorm(float2(cosAngle, sinAngle));
+    float2 oct = packUnitOctahedralSnorm(normal);
+    uint32_t nX = quantizeSnormShifted(oct.x, 12), nY = quantizeSnormShifted(oct.y, 12);
+    uint32_t tA = quantizeSnormShifted(octAngle, 7);
+    uint32_t bS = bitangentSign >= 0.0f ? 1 : 0;
+    uint32_t tbn32 = 0;
+    tbn32 = bitfieldInsert(tbn32, nX, 0, 12);
+    tbn32 = bitfieldInsert(tbn32, nY, 12, 12);
+    tbn32 = bitfieldInsert(tbn32, tA, 24, 7);
+    tbn32 = bitfieldInsert(tbn32, bS, 31, 1);
+    return tbn32;
 }
 void unpackTBN(uint32_t packed, out float3 outNormal, out float3 outTangent, out float outBitangentSign) {
     uint32_t nX = bitfieldExtract(packed, 0, 12);
@@ -73,4 +125,35 @@ void unpackTBN(uint32_t packed, out float3 outNormal, out float3 outTangent, out
     buildOrthonormalBasis(outNormal, b1, b2);
     outTangent = octXY.x * b1 + octXY.y * b2;
     outBitangentSign = bS == 1 ? 1.0f : -1.0f;
+}
+// 3 byte tangent frame [UNORM xyz]
+float3 packTBN888(in float3 normal, in float3 tangent)
+{
+    float3 b1, b2;
+    buildOrthonormalBasis(normal, b1, b2);
+    float cosAngle = dot(tangent, b1), sinAngle = dot(tangent, b2);
+    float2 oct = packUnitOctahedralSnorm(normal);
+    float octAngle = packUnitCircleSnorm(float2(cosAngle, sinAngle));
+    return float3(oct * 0.5f + 0.5f, octAngle * 0.5f + 0.5f);
+}
+void unpackTBN888(in float3 packed, out float3 outNormal, out float3 outTangent) {
+    float2 normalOct = packed.xy * 2.0f - 1.0f;
+    outNormal = unpackUnitOctahedralSnorm(normalOct);
+    float octAngle = packed.z * 2.0f - 1.0f;
+    float2 octXY = unpackUnitCircleSnorm(octAngle);
+    float3 b1, b2;
+    buildOrthonormalBasis(outNormal, b1, b2);
+    outTangent = octXY.x * b1 + octXY.y * b2;
+}
+// -- hashing
+// https://burtleburtle.net/bob/hash/integer.html
+uint hash(uint a)
+{
+    a = (a + 0x7ed55d16) + (a << 12);
+    a = (a ^ 0xc761c23c) ^ (a >> 19);
+    a = (a + 0x165667b1) + (a << 5);
+    a = (a + 0xd3a2646c) ^ (a << 9);
+    a = (a + 0xfd7046c5) + (a << 3);
+    a = (a ^ 0xb55a4f09) ^ (a >> 16);
+    return a;
 }

@@ -8,3 +8,7 @@ static const int kCullBackface = 1 << 2;
 
 static const int kCullStageFirst = 1 << 16;
 static const int kCullStageLate = 1 << 17;
+
+static const int kGBufferViewBaseColor = 1 << 0;
+static const int kGBufferViewNormal = 1 << 1;
+static const int kGBufferViewMaterialID = 1 << 2;

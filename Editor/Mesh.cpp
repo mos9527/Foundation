@@ -95,8 +95,8 @@ FQVertex FQVertex::Pack(FVertex const& vertex)
     result.position[1] = quantizeFP16(vertex.position[1]);
     result.position[2] = quantizeFP16(vertex.position[2]);
     result.tbn32 = PackTBN(vertex.normal, vertex.tangent, vertex.bitangentSign);
-    result.uv[0] = quantizeUnorm(vertex.uv[0], 16);
-    result.uv[1] = quantizeUnorm(vertex.uv[1], 16);
+    result.uv[0] = quantizeFP16(vertex.uv[0]);
+    result.uv[1] = quantizeFP16(vertex.uv[1]);
     return result;
 }
 FVertex FQVertex::Unpack(FQVertex const& vertex)
@@ -106,8 +106,8 @@ FVertex FQVertex::Unpack(FQVertex const& vertex)
     result.position[1] = dequantizeFP16(vertex.position[1]);
     result.position[2] = dequantizeFP16(vertex.position[2]);
     UnpackTBN(vertex.tbn32, result.normal, result.tangent, result.bitangentSign);
-    result.uv[0] = dequantizeUnorm(vertex.uv[0], 16);
-    result.uv[1] = dequantizeUnorm(vertex.uv[1], 16);
+    result.uv[0] = dequantizeFP16(vertex.uv[0]);
+    result.uv[1] = dequantizeFP16(vertex.uv[1]);
     return result;
 }
 void FMesh::Quantize()
@@ -268,7 +268,8 @@ struct DAGCluster
 void FMesh::ClusterizeDAG()
 {
     clodConfig config = clodDefaultConfig(kMeshletMaxTriangles);
-    const float attribute_weights[3] = {0.5f, 0.5f, 0.5f};
+    const float attribute_weights[9] = {/* normal */ 0.5f, 0.5f, 0.5f, /* tangent */ 0.5f, 0.5f, 0.5f,
+                                        /* bitangent sign */ 0.5f, /* uv */ 1.0f, 1.0f};
     clodMesh mesh{.indices = lods[0].indices.data(),
                   .index_count = lods[0].indices.size(),
                   .vertex_count = vertices.size(),
@@ -277,7 +278,7 @@ void FMesh::ClusterizeDAG()
                   .vertex_attributes = reinterpret_cast<const float*>(&vertices[0].normal),
                   .vertex_attributes_stride = sizeof(FVertex),
                   .attribute_weights = attribute_weights,
-                  .attribute_count = 3};
+                  .attribute_count = 9};
     Vector<DAGCluster> dagClusters(GLOBAL_ALLOC);
     clodBuild(config, mesh,
               [&](clodGroup group, const clodCluster* clusters, size_t cluster_count) -> int

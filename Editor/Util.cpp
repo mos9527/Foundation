@@ -3,20 +3,19 @@
 #include "Texture.hpp"
 int main_scene(StringView srcPath, StringView dstPath)
 {
-    Vector<FMesh> meshes(GLOBAL_ALLOC);
-    Vector<FInstance> instances(GLOBAL_ALLOC);
-    Vector<FCamera> cameras(GLOBAL_ALLOC);
-    SceneLoadGLTF(srcPath, meshes, instances, cameras);
-    LOG(Util, LogDebug, "Compressing data");
+    FScene scene(GLOBAL_ALLOC);
+    LoadGLTF(srcPath, scene);
+    LOG(Util, LogDebug, "Compressing Mesh Data");
     {
-        ThreadPool pool(std::thread::hardware_concurrency(), ThreadPool::getTaskSize(meshes.size()), GLOBAL_ALLOC);
+        ThreadPool pool(std::thread::hardware_concurrency(), ThreadPool::getTaskSize(scene.mMeshes.size()), GLOBAL_ALLOC);
         // Compress all meshes
-        for (auto& mesh : meshes)
+        for (auto& mesh : scene.mMeshes)
             pool.Push([&] { mesh.EnsureCompressed(); });
         pool.Join();
     }
     LOG(Util, LogDebug, "Saving");
-    SceneSaveBinFile(dstPath, meshes, instances, cameras);
+    FileWriter writer(dstPath);
+    FSerialize(writer, scene);
     return 0;
 }
 int main_texture(StringView srcImagePath, StringView dstDDSPath)
@@ -24,12 +23,9 @@ int main_texture(StringView srcImagePath, StringView dstDDSPath)
     FTexture2D texture(GLOBAL_ALLOC);
     LoadRGBA8(texture, srcImagePath);
     texture.GenerateMips();
-
-    FTexture2D bc7texture(GLOBAL_ALLOC);
-    texture.EncodeBC7(bc7texture);
-
+    texture = texture.EncodeBC7();
     FileWriter writer(dstDDSPath);
-    FSerialize(writer, bc7texture);
+    FSerialize(writer, texture);
     return 0;
 }
 int main(int argc, const char** argv)
@@ -49,6 +45,7 @@ int main(int argc, const char** argv)
 END:
     fmt::println("available tools:");
     fmt::println("\tscene");
+    fmt::println("\ttexture");
     fmt::println("run 'util [tool name]' for more info");
     return 1;
 }

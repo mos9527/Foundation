@@ -1,7 +1,7 @@
 #include "Renderer.hpp"
 #include <RenderUtils/CSClearBuffer.hpp>
-#include <RenderUtils/PSFullscreen.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
+#include <RenderUtils/PSFullscreen.hpp>
 using namespace RenderUtils;
 #pragma pack(push, 1)
 struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
@@ -27,12 +27,9 @@ void RendererSetupImGuiOnly(FContext* context)
 {
     if (context->renderer)
         Destruct(context->allocator, context->renderer);
-    auto* renderer = context->renderer =
-        Construct<Renderer>(context->allocator, RendererDesc{
-            .asyncCompute = false,
-            .pipelineCache = context->psoCache.Get()
-        }, context->device,
-                            context->swapchain, context->allocator);
+    auto* renderer = context->renderer = Construct<Renderer>(
+        context->allocator, RendererDesc{.asyncCompute = false, .pipelineCache = context->psoCache.Get()},
+        context->device, context->swapchain, context->allocator);
     renderer->BeginSetup();
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", true, FSetupDefault{});
     renderer->EndSetup();
@@ -43,11 +40,9 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
 {
     if (context->renderer)
         Destruct(context->allocator, context->renderer);
-    auto* renderer = context->renderer =
-        Construct<Renderer>(context->allocator, RendererDesc{
-            .asyncCompute = true,
-            .pipelineCache = context->psoCache.Get()
-        }, context->device,context->swapchain, context->allocator);
+    auto* renderer = context->renderer = Construct<Renderer>(
+        context->allocator, RendererDesc{.asyncCompute = true, .pipelineCache = context->psoCache.Get()},
+        context->device, context->swapchain, context->allocator);
     auto* scene = context->gpuScene;
     renderer->BeginSetup();
     /* UBO for everyone */
@@ -58,6 +53,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
     /* Instance and Primitive buffers */
     auto InstanceBuffer = renderer->CreateResource("Instance Buffer", scene->GetInstanceBuffer());
     auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", scene->GetPrimitiveBuffer());
+    auto MaterialBuffer = renderer->CreateResource("Material Buffer", scene->GetMaterialBuffer());
     /* Indirect Task Buffers */
     using enum RHIBufferUsageBits;
     auto IndirectTasks =
@@ -74,9 +70,9 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
         RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer, .size = sizeof(MeshletTaskDispatch)});
     // We pack meshlet visibility in uint32 bitmaps
     const size_t visBufferSize = AlignUp(kMaxMeshletCount, 32) / 32 * sizeof(uint32_t);
-    auto OcclusionVisibility = renderer->CreateResource(
-        "Occlusion Visibility Buffer",
-        RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = visBufferSize});
+    auto OcclusionVisibility =
+        renderer->CreateResource("Occlusion Visibility Buffer",
+                                 RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = visBufferSize});
     // NOTE: Lambda captures
     // NONE of the handle values outlive the renderer. Therefore, ALWAYS capture by value.
     renderer->CreatePass(
@@ -135,42 +131,54 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
         });
     /* Meshlet Drawing */
     auto [w, h] = renderer->GetSwapchainExtent();
-    auto ZBuffer = renderer->CreateResource("ZBuffer",
-                                            RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil | RHITextureUsageBits::SampledImage,
-                                                           .extent = {w, h, 1},
-                                                           .format = RHIResourceFormat::D32SignedFloat});
-    uint32_t HIZWidth = 1u << log2(w/2), HIZHeight = 1u << log2(h/2);
-    if (HIZWidth * 2 < w) HIZWidth *= 2;
-    if (HIZHeight * 2 < w) HIZHeight *= 2;
+    auto ZBuffer = renderer->CreateResource(
+        "ZBuffer",
+        RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil | RHITextureUsageBits::SampledImage,
+                       .extent = {w, h, 1},
+                       .format = RHIResourceFormat::D32SignedFloat});
+    uint32_t HIZWidth = 1u << log2(w / 2), HIZHeight = 1u << log2(h / 2);
+    if (HIZWidth * 2 < w)
+        HIZWidth *= 2;
+    if (HIZHeight * 2 < w)
+        HIZHeight *= 2;
     const uint32_t HIZMips = log2(std::max(HIZWidth, HIZHeight)) + 1u;
     pShaderGlobals->hizWidth = HIZWidth, pShaderGlobals->hizHeight = HIZHeight, pShaderGlobals->hizLevels = HIZMips;
     RHIDeviceSampler::SamplerDesc HIZSamplerDesc{
-        .addressMode = {
-            .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
-            .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
-            .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge
-        },
-        .mipmap = { .mipmapMode = RHIDeviceSampler::SamplerDesc::Mipmap::Nearest},
-        .reduction = RHIDeviceSampler::SamplerDesc::Reduction::Min
-    };
-    auto HIZ = renderer->CreateResource("HIZ",
-                                        RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
-                                                           RHITextureUsageBits::SampledImage,
-                                                       .extent = {HIZWidth, HIZHeight, 1},
-                                                       .format = RHIResourceFormat::R32SignedFloat,
-                                                        .mipLevels = HIZMips});
+        .addressMode = {.u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+                        .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+                        .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge},
+        .mipmap = {.mipmapMode = RHIDeviceSampler::SamplerDesc::Mipmap::Nearest},
+        .reduction = RHIDeviceSampler::SamplerDesc::Reduction::Min};
+    auto HIZ = renderer->CreateResource(
+        "HIZ",
+        RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
+                       .extent = {HIZWidth, HIZHeight, 1},
+                       .format = RHIResourceFormat::R32SignedFloat,
+                       .mipLevels = HIZMips});
     auto OverdrawBuffer = renderer->CreateResource("Overdraw Buffer",
                                                    RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
                                                                       RHITextureUsageBits::StorageImage |
                                                                       RHITextureUsageBits::SampledImage,
                                                                   .extent = {w, h, 1},
                                                                   .format = RHIResourceFormat::R32Uint});
-    auto GBuffer = renderer->CreateResource("GBuffer",
-                                            RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
-                                                               RHITextureUsageBits::StorageImage |
-                                                               RHITextureUsageBits::SampledImage,
-                                                           .extent = {w, h, 1},
-                                                           .format = RHIResourceFormat::R8G8B8A8Unorm});
+    auto GBufferRT0 = renderer->CreateResource("GBuffer 0",
+                                               RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
+                                                                  RHITextureUsageBits::StorageImage |
+                                                                  RHITextureUsageBits::SampledImage,
+                                                              .extent = {w, h, 1},
+                                                              .format = RHIResourceFormat::R8G8B8A8Unorm});
+    auto GBufferRT1 = renderer->CreateResource("GBuffer 1",
+                                               RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
+                                                                  RHITextureUsageBits::StorageImage |
+                                                                  RHITextureUsageBits::SampledImage,
+                                                              .extent = {w, h, 1},
+                                                              .format = RHIResourceFormat::R8G8B8A8Unorm});
+    auto GBufferRT2 = renderer->CreateResource("GBuffer 2",
+                                               RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
+                                                                  RHITextureUsageBits::StorageImage |
+                                                                  RHITextureUsageBits::SampledImage,
+                                                              .extent = {w, h, 1},
+                                                              .format = RHIResourceFormat::R8G8B8A8Unorm});
     auto ReduceBuffer = renderer->CreateResource(
         "Reduced Values", RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * 256});
     if (cfg.viewFlags & kViewOverdraw)
@@ -200,6 +208,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
     /* Main Pass */
     {
         auto hizSampler = renderer->CreateSampler(HIZSamplerDesc);
+        auto textureSampler = renderer->CreateSampler({});
         auto AddMainPass = [=](bool early)
         {
             renderer->CreatePass(
@@ -212,10 +221,10 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     else
                         TSFlags |= kCullStageLate;
                     r->BindShader(self, RHIShaderStageBits::Task, "main", "data/shaders/ETSMeshletCull.spv",
-                        AsBytes(AsSpan(TSFlags)));
+                                  AsBytes(AsSpan(TSFlags)));
                     r->BindShader(self, RHIShaderStageBits::Mesh, "main", "data/shaders/EMSBasic.spv");
-                    r->BindShader(self, RHIShaderStageBits::Fragment, "main", "data/shaders/EPSBasic.spv",
-                        AsBytes(AsSpan(cfg.viewFlags)));
+                    r->BindShader(self, RHIShaderStageBits::Fragment, "main", "data/shaders/EPSGBuffer.spv",
+                                  AsBytes(AsSpan(cfg.viewFlags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
                     r->BindBufferShaderRead(self, IndirectTaskDispatch,
                                             RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);
@@ -223,10 +232,17 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     r->BindBufferStorageRead(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "counter");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
+                    r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
                     r->BindBufferUnordered(self, OcclusionVisibility,
                                            RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader,
                                            "occlusion");
-                    r->BindTextureRTV(self, GBuffer,
+                    r->BindTextureRTV(self, GBufferRT0,
+                                      {.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureRTV(self, GBufferRT1,
+                                      {.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureRTV(self, GBufferRT2,
                                       {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                     r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
@@ -236,33 +252,38 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                                       {.format = RHIResourceFormat::D32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
                     r->BindTextureSampler(self, hizSampler, "hizSampler");
-                    r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader,
+                    r->BindTextureSampler(self, textureSampler, "textureSampler");
+                    r->BindTextureSRV(self, HIZ, "hiz",
+                                      RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
                                                          .range = RHITextureSubresourceRange::Create(
-                                                             RHITextureAspectFlagBits::Color,
-                                                             0,
-                                                             HIZMips
-                                                         )});
+                                                             RHITextureAspectFlagBits::Color, 0, HIZMips)});
+                    r->BindDescriptorSet(self, "textures",
+                                         context->gpuScene->GetTexturePool()->GetDescriptorSetLayout());
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
                     RHIExtent2D wh{w, h};
                     auto* dispatchBuffer = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
                     if (early)
-                        r->CmdBeginGraphics(self, cmd, wh, {{RHIClearColor{0, 0, 0, 0}}}, RHIClearDepthStencil{0.0f, 0});
+                        r->CmdBeginGraphics(
+                            self, cmd, wh,
+                            {{RHIClearColor{0, 0, 0, 0}, RHIClearColor{0, 0, 0, 0}, RHIClearColor{0, 0, 0, 0}}},
+                            RHIClearDepthStencil{0.0f, 0});
                     else // Don't clear in stage 2 - we're appending false-positives back to it.
-                        r->CmdBeginGraphics(self, cmd, wh, {{{}}}, {});
+                        r->CmdBeginGraphics(self, cmd, wh, {{{}, {}, {}}}, {});
                     r->CmdSetPipeline(self, cmd);
+                    r->CmdBindDescriptorSet(self, cmd, "textures",
+                                            context->gpuScene->GetTexturePool()->GetDescriptorSet());
                     cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
                     cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
                     cmd->EndGraphics();
                 });
             if (early && cfg.cullFlags & kCullOcclusion)
                 createCSMipGenerationPasses(renderer, "Early HiZ", RHIDeviceQueueType::Graphics, ZBuffer, HIZ,
-                                            RHIExtent2D{w,h},
-                                            RHITextureAspectFlagBits::Depth, RHIResourceFormat::D32SignedFloat,
-                                            RHITextureAspectFlagBits::Color, RHIResourceFormat::R32SignedFloat,
-                                            HIZMips, 0, HIZSamplerDesc);
+                                            RHIExtent2D{w, h}, RHITextureAspectFlagBits::Depth,
+                                            RHIResourceFormat::D32SignedFloat, RHITextureAspectFlagBits::Color,
+                                            RHIResourceFormat::R32SignedFloat, HIZMips, 0, HIZSamplerDesc);
         };
         AddMainPass(true);
         if (cfg.cullFlags & kCullOcclusion)
@@ -289,16 +310,49 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                 r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
             });
     }
-    auto nearSampler =
+    auto NearSampler =
         renderer->CreateSampler({.filter = {.minFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor,
                                             .magFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor}});
+    auto LightingBuffer = renderer->CreateResource(
+        "Lighting",
+        RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
+                       .extent = {w, h, 1},
+                       .format = RHIResourceFormat::R8G8B8A8Unorm});
+    renderer->CreatePass(
+        "Lighting", RHIDeviceQueueType::Graphics, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSLighting.spv",
+                          AsBytes(AsSpan(cfg.gbufferFlags)));
+            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+            r->BindTextureSRV(self, GBufferRT0, "RT0", RHIPipelineStageBits::ComputeShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSRV(self, GBufferRT1, "RT1", RHIPipelineStageBits::ComputeShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSRV(self, GBufferRT2, "RT2", RHIPipelineStageBits::ComputeShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureUAV(self, LightingBuffer, "output", RHIPipelineStageBits::ComputeShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(RHIExtent2D));
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            RHIExtent2D wh = r->GetSwapchainExtent();
+            r->CmdSetPipeline(self, cmd);
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, wh);
+            r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
+        });
     createPSFullscreenPass(renderer, "Blit Image",
                            [=](PassHandle self, Renderer* r)
                            {
                                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/EPSBlit.spv",
                                              AsBytes(AsSpan(cfg.viewFlags)));
-                               r->BindTextureSampler(self, nearSampler, "sampler");
-                               r->BindTextureSRV(self, GBuffer, "gbuffer", RHIPipelineStageBits::FragmentShader,
+                               r->BindTextureSampler(self, NearSampler, "sampler");
+                               r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::FragmentShader,
                                                  RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
                                                                     .range = RHITextureSubresourceRange::Create()});
                                r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
@@ -307,10 +361,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                                r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::FragmentShader,
                                                  RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
                                                                     .range = RHITextureSubresourceRange::Create(
-                                                                        RHITextureAspectFlagBits::Color,
-                                                                        0,
-                                                                        HIZMips
-                                                                    )});
+                                                                        RHITextureAspectFlagBits::Color, 0, HIZMips)});
                                r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader,
                                                         "globalMax");
                            });

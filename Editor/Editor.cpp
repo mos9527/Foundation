@@ -16,7 +16,7 @@ void FInitEnter()
 {
     FScene scene(GLOBAL_ALLOC);
     CHECK_MSG(GContext->args.size() == 2, "Usage: Editor <scene path>");
-    LoadGLTF(GContext->args[1], scene);
+    LoadScene(GContext->args[1], scene);
     if (!scene.mCameras.empty())
     {
         auto& camera = scene.mCameras.front();
@@ -29,8 +29,9 @@ void FInitEnter()
     auto* gpu = GContext->gpuScene;
     Vector<Pair<uint32_t, GSMesh>> meshOffsets(GLOBAL_ALLOC);
     Vector<uint32_t> textureIDMap(scene.mTextures.size(), GLOBAL_ALLOC);
+    LOG(Editor, LogInfo, "Uploading scene to GPU");
     {
-        ImmediateUpload upload(GContext->device.Get(), 64 * (1u << 20)); // 64MB staging
+        ImmediateUpload upload(GContext->device.Get(), 128 * (1u << 20)); // MB
         upload.Begin();
         for (auto& src : scene.mMeshes)
         {
@@ -63,6 +64,7 @@ void FInitEnter()
         dst.rotation = src.transform.rotation;
         dst.scale = src.transform.scale;
         dst.meshOffset = meshOffsets[src.meshIndex].first;
+        dst.materialIndex = src.materialIndex;
     }
     GSMaterials.clear();
     for (auto& src : scene.mMaterials)
@@ -157,6 +159,21 @@ void FRunning()
             GRendererConfig.cullFlags ^= kCullOcclusion;
             FEState = FERunningEnter;
         }
+        if (ImGui::Button("Toggle GBuffer BaseColor"))
+        {
+            GRendererConfig.gbufferFlags ^= kGBufferViewBaseColor;
+            FEState = FERunningEnter;
+        }
+        if (ImGui::Button("Toggle GBuffer Normal"))
+        {
+            GRendererConfig.gbufferFlags ^= kGBufferViewNormal;
+            FEState = FERunningEnter;
+        }
+        if (ImGui::Button("Toggle GBuffer MaterialID"))
+        {
+            GRendererConfig.gbufferFlags ^= kGBufferViewMaterialID;
+            FEState = FERunningEnter;
+        }
         if (ImGui::Button("Reload"))
             FEState = FERunningEnter;
     }
@@ -183,7 +200,7 @@ void FRunning()
                 {
                     size_t used, budget;
                     GLOBAL_ALLOC->QueryBudget(used, budget);
-                    ImGui::Text("CPU Memory Usage: %.2f MB", used / 1e6f);
+                    ImGui::Text("CPU RSS Memory: %.2f MB", used / 1e6f);
                 }
                 ImGui::TreePop();
             }

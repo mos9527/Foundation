@@ -47,7 +47,7 @@ FMesh loadGLTFSubmesh(cgltf_primitive* submesh)
         }
         if (auto acc = cgltf_find_accessor(submesh, cgltf_attribute_type_texcoord, 0))
         {
-            cgltf_accessor_unpack_floats(acc, unpack.data(), numVertices * 2); // VEC3
+            cgltf_accessor_unpack_floats(acc, unpack.data(), numVertices * 2); // VEC2
             for (size_t i = 0; i < numVertices; i++)
             {
                 auto& vtx = mesh.vertices[i];
@@ -115,9 +115,10 @@ void LoadGLTF(StringView path, FScene& scene)
     size_t numSubmeshes = 0;
     for (size_t i = 0; i < data->meshes_count; i++)
         numSubmeshes += data->meshes[i].primitives_count;
-    ThreadPool pool(std::thread::hardware_concurrency(), ThreadPool::getTaskSize(data->textures_count + numSubmeshes),
-                    GLOBAL_ALLOC);
     scene.mTextures.resize(data->textures_count + 1, GLOBAL_ALLOC);
+    size_t jobCount = data->textures_count + numSubmeshes;
+    ThreadPool pool(std::thread::hardware_concurrency(), ThreadPool::getTaskSize(jobCount),
+                    GLOBAL_ALLOC);
     // NOTE: 0 is reserved as the null texture
     scene.mTextures[0] = createNullTexture();
     for (size_t i = 0; i < data->textures_count; i++)
@@ -129,6 +130,7 @@ void LoadGLTF(StringView path, FScene& scene)
                 auto loaded = loadGLTFTexture(src, basePath);
                 if (loaded.has_value())
                 {
+                    loaded->GenerateMips();
                     LOG(Scene, LogInfo, "Encoding texture {} to BC7", name);
                     *dst = loaded->EncodeBC7();
                     LOG(Scene, LogInfo, "Loaded texture {}", name);
@@ -169,7 +171,10 @@ void LoadGLTF(StringView path, FScene& scene)
     // NOTE: Material 0 is reserved as the default material:
     // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#default-material
     scene.mMaterials.clear();
-    scene.mMaterials.emplace_back();
+    scene.mMaterials.emplace_back(FMaterial{
+        .baseColorTexture = 0,
+        .baseColorFactor = {1.0f, 1.0f, 1.0f, 1.0f},
+    });
     for (size_t i = 0; i < data->materials_count; i++)
     {
         const cgltf_material* mat = &data->materials[i];
@@ -231,3 +236,17 @@ void LoadGLTF(StringView path, FScene& scene)
     }
     pool.Join();
 }
+void LoadFSCN(StringView path, FScene& scene)
+{
+    FileReader reader(path);
+    FDeserialize(reader, scene);
+}
+void LoadScene(StringView path, FScene& scene)
+{
+    auto ext = std::filesystem::path(path.data()).extension().string();
+    if (ext == ".fscn")
+        LoadFSCN(path, scene);
+    else
+        LoadGLTF(path, scene);
+}
+

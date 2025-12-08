@@ -2,7 +2,7 @@
     "rdocCaptureSettings": 1,
     "settings": {
         "autoStart": false,
-        "commandLine": "/mnt/Windows/Scenes/glTFSponza/Sponza-glTF.bin",
+        "commandLine": "/mnt/Windows/Scenes/Helmet.fscn",
         "environment": [
             {
                 "separator": "Platform style",

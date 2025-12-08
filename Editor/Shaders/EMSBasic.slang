@@ -1,4 +1,4 @@
-#include "IMeshletCommon.slang"
+#include "ICommon.slang"
 
 uniform UBO globalParams;
 StructuredBuffer<GSInstance> instances;
@@ -46,6 +46,7 @@ void main(
         v2f.bitangent = cross(normal, tangent) * bitangentSign;
         v2f.uv = uv;
         v2f.meshlet = mesh.meshletGlobalIndex + meshletID;
+        v2f.materialIndex = inst.materialIndex;
         verts[i] = v2f;
     }
     for (uint i = tid; i < triCount; i += kMeshWorkGroupSize) {

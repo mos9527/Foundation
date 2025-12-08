@@ -9,7 +9,8 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> dev
                    RHIDeviceHandle<RHISwapchain> swapchain, Allocator* allocator) :
     mState(State::Undefined), mAllocator(allocator), mDesc(desc), mSwaps(mAllocator), mDevice(device),
     mSwapchain(swapchain), mExecuteArena(mAllocator, kExecuteArenaSize), mExecuteAlloc(mExecuteArena),
-    mExecuteSubmits(nullptr), mExecuteThreadPool(mDesc.threadCount, kMaxCommandListsPerThread * 2, allocator, "Renderer"),
+    mExecuteSubmits(nullptr),
+    mExecuteThreadPool(mDesc.threadCount, kMaxCommandListsPerThread * 2, allocator, "Renderer"),
     mExecutePerSwapCmds(allocator), mWaitIdle(device.Get())
 {
     mGraphicsQueue = mDevice->GetDeviceQueue(RHIDeviceQueueType::Graphics);
@@ -94,7 +95,8 @@ void Renderer::DeclareTextureAccess(PassHandle pass, ResourceHandle handle, RHIP
 }
 
 /* -- binding -- */
-void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point, const char* shader_path, Span<const char> specializationData) const
+void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point, const char* shader_path,
+                          Span<const char> specializationData) const
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(stage.is_bitmask(), "Only one stage can be bound to a shader per pass");
@@ -103,7 +105,8 @@ void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entr
                   "Shader stage {} already bound to {} in this pass. There can be at most one shader program per "
                   "shader stage per pass",
                   st, path);
-    auto& [path, ep, st, spec] = mSetup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage, mAllocator);
+    auto& [path, ep, st, spec] =
+        mSetup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage, mAllocator);
     spec.insert(spec.end(), specializationData.begin(), specializationData.end());
 }
 void Renderer::BindVertexInput(PassHandle pass, RHIPipelineState::PipelineStateDesc::VertexInput const& info) const
@@ -508,15 +511,20 @@ void Renderer::BuildPipelineState(PassHandle pass)
                 // Check specialization constant status
                 // Our RHI only allows zero or one decl, hence spec is only a binary blob for one element
                 auto& specDecl = reflections[shader_path]->mSpecializationConstants;
-                CHECK_MSG((!spec.empty() && specDecl.size() == 1) || (spec.empty() && specDecl.empty()), "Only zero or one Specialization Constants is allowed in shader bytecode. Got {}", specDecl.size());
+                CHECK_MSG((!spec.empty() && specDecl.size() == 1) || (spec.empty() && specDecl.empty()),
+                          "Only zero or one Specialization Constants is allowed in shader bytecode. Shader wants {}, "
+                          "declared {} in {}",
+                          specDecl.size(), spec.empty() ? 0 : 1, tracked.name);
                 if (!specDecl.empty())
-                    CHECK_MSG(specDecl.front().id == 0, "Expected Specialization Constant ID to be 0, got {}.", specDecl.front().id);
-                pso_stages.push_back(
-                    {.desc = {
-                        .stage = stage,
-                        .entryPoint = ep.name.c_str(),
-                        .specializationData = specializations[shader_path],
-                    }, .shaderModule = module.Get()});
+                    CHECK_MSG(specDecl.front().id == 0, "Expected Specialization Constant ID to be 0, got {}.",
+                              specDecl.front().id);
+                pso_stages.push_back({.desc =
+                                          {
+                                              .stage = stage,
+                                              .entryPoint = ep.name.c_str(),
+                                              .specializationData = specializations[shader_path],
+                                          },
+                                      .shaderModule = module.Get()});
                 if (stage & (RHIShaderStageBits::Compute | RHIShaderStageBits::Mesh | RHIShaderStageBits::Task))
                     tracked.groupLocalSize = ep.groupLocalSize;
                 found = true;
@@ -576,7 +584,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
         }
     }
     // Check that all [set,binding] are unique, and bindings per set is contiguous
-    Map<Pair<int,int>, String> bind_unique(mAllocator); // set, binding, name
+    Map<Pair<int, int>, String> bind_unique(mAllocator); // set, binding, name
     for (auto& [name, bind] : refl_var_bind_points)
     {
         auto it = bind_unique.find(bind);
@@ -585,21 +593,21 @@ void Renderer::BuildPipelineState(PassHandle pass)
         bind_unique[bind] = name;
     }
     // Check per-set binding contiguity
-    for (uint32_t set = 0; ; set++)
+    for (uint32_t set = 0;; set++)
     {
-        Pair<int, int> key {set, 0};
+        Pair<int, int> key{set, 0};
         auto it = bind_unique.find(key);
         if (it == bind_unique.end())
             break;
         int cbindings = 0, last_binding = 0;
         for (; it != bind_unique.end() && it->first.first == set; it++)
-        {        
+        {
             last_binding = it->first.second;
             cbindings++;
         }
         CHECK_MSG(last_binding == cbindings - 1,
-                  "Pass {} Binding set {} has non-contiguous bindings (max binding {}, count {}). Last binding {}.", tracked.name, set,
-                  last_binding, cbindings, bind_unique[{set, last_binding}]);
+                  "Pass {} Binding set {} has non-contiguous bindings (max binding {}, count {}). Last binding {}.",
+                  tracked.name, set, last_binding, cbindings, bind_unique[{set, last_binding}]);
     }
     // Check descriptor set layout to be consistent across stages
     Map<String, RHIDescriptorType> var_types(mAllocator);
@@ -835,7 +843,7 @@ void Renderer::BuildPipelineStateAll()
     CHECK(mState == State::Setup | mState == State::PostSetup);
     LOG(Renderer, LogInfo, "Compiling Shaders");
     ThreadPool pool(std::thread::hardware_concurrency(), kMaxRenderPasses, mAllocator, "PSOComp");
-    Vector<Pair<PassHandle,Future<void>>> futures(mAllocator);
+    Vector<Pair<PassHandle, Future<void>>> futures(mAllocator);
     for (auto& pass : mSetup->trackedPasses)
     {
         if (!pass.used)
@@ -1090,7 +1098,8 @@ void Renderer::BeginExecute()
                 .count = static_cast<uint32_t>(mSetup->trackedPasses.size()) * 2 // Top, Bottom per pass
             });
             queryPool->Reset();
-        } else
+        }
+        else
         {
             auto queryResult = queryPool->GetTimestampResults(true /* wait */);
             auto& queryTimestamps = mSwaps[mCurrentSync].dbgQueryPassTimestampsResults;
@@ -1382,7 +1391,8 @@ void Renderer::ExecuteFrame()
                 // For demonstration of custom job types - and that
                 // cmd buffers are thread-local, plus how we don't get thread_id in lambda in my implementation
                 RecordJob(Renderer* r, TrackedPass* pass, RHICommandList** cmd, size_t ord,
-                          ExecuteBarrierList* barriers, RHIDeviceQueryPool* queryPool) : r(r), barriers(barriers), pass(pass), cmd(cmd), ord(ord), queryPool(queryPool)
+                          ExecuteBarrierList* barriers, RHIDeviceQueryPool* queryPool) :
+                    r(r), barriers(barriers), pass(pass), cmd(cmd), ord(ord), queryPool(queryPool)
                 {
                 }
                 void Execute(size_t thread_id) noexcept override
@@ -1411,7 +1421,8 @@ void Renderer::ExecuteFrame()
             {
                 if (mDesc.threadCount)
                 {
-                    mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[active[i]], &passCmds[i], i, &passBarriers[i], queryPool);
+                    mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[active[i]], &passCmds[i], i, &passBarriers[i],
+                                                           queryPool);
                 }
                 else
                 {
@@ -1648,7 +1659,8 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
     Vector<RHICommandList::GraphicsDesc::Attachment> rtvs(mExecuteAlloc.Ptr());
     rtvs.reserve(tpass.rtvs.size() + 1);
     const size_t rtv_count = tpass.rtvs.size() + (tpass.backbufferRTV ? 1 : 0);
-    CHECK_MSG(clear_rtv.size() == rtv_count, "RTV clear count mismatch. Got {}, expected {} for all RenderTargets", clear_rtv.size(), rtv_count);
+    CHECK_MSG(clear_rtv.size() == rtv_count, "RTV clear count mismatch. Got {}, expected {} for all RenderTargets",
+              clear_rtv.size(), rtv_count);
     if (tpass.backbufferRTV)
     {
         rtvs.push_back({.imageView = mSwaps[GetSwap()].view.Get(), .clearColor = clear_rtv[0]});
@@ -1710,7 +1722,8 @@ String Renderer::DbgDumpGraphviz() const
     for (auto& group : mSetup->executionGroups)
     {
         fmt::format_to(std::back_inserter(out), "    subgraph cluster_{} {{\n", group.groupIndex);
-        fmt::format_to(std::back_inserter(out), "        label=\"Group {} (Queue={})\";\n", group.groupIndex, group.queue);
+        fmt::format_to(std::back_inserter(out), "        label=\"Group {} (Queue={})\";\n", group.groupIndex,
+                       group.queue);
         for (auto& pass_handle : group.passes)
         {
             auto& pass = passes[pass_handle];
@@ -1720,7 +1733,8 @@ String Renderer::DbgDumpGraphviz() const
     }
     for (auto& pass : passes)
     {
-        if (pass.handle == mSetup->epilogue) continue;
+        if (pass.handle == mSetup->epilogue)
+            continue;
         fmt::format_to(std::back_inserter(out), "    \"{}@{}\" [ shape=box style={} fillcolor=\"{}\" ];\n", pass.name,
                        pass.handle, pass.used ? "filled" : "unfilled",
                        pass.queue == RHIDeviceQueueType::Graphics ? "#d0e0f0" : "#f0d0e0");

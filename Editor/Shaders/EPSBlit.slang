@@ -3,7 +3,7 @@
 
 StructuredBuffer<uint32_t> globalMax;
 Texture2D<uint32_t> overdraw;
-Texture2D gbuffer;
+Texture2D lighting;
 SamplerState sampler;
 Texture2D<float> hiz;
 
@@ -45,7 +45,7 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
         float z = hiz.SampleLevel(sampler, uv, 0).x * 64;
         return float4(z,0,0,1);
     }
-    float4 gbuffer = gbuffer.Load(coord);
-    return gbuffer;
+    float4 lighting = lighting.Load(coord);
+    return lighting;
     return float4(0);
 }

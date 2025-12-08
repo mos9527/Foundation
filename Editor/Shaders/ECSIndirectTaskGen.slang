@@ -1,4 +1,4 @@
-#include "IMeshletCommon.slang"
+#include "ICommon.slang"
 
 RWStructuredBuffer<Atomic<uint>> counter;
 RWStructuredBuffer<MeshletTaskDispatch> dispatch;

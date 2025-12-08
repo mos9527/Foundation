@@ -56,7 +56,8 @@ struct FScene
 
     FScene(Allocator* alloc) :
         mMagic(kSceneMagic), mCameras(alloc), mInstances(alloc), mMaterials(alloc), mMeshes(alloc), mTextures(alloc)
-    {}
+    {
+    }
 };
 
 /**
@@ -64,7 +65,14 @@ struct FScene
  * so that uploading can be just memcpy.
  */
 void LoadGLTF(StringView path, FScene& scene);
-
+/**
+ * Wrapper for @ref FDeserialize
+ */
+void LoadFSCN(StringView path, FScene& scene);
+/**
+ * Loads a scene from a path, inferring format from extension
+ */
+void LoadScene(StringView path, FScene& scene);
 /* -- Serialization -- */
 template <>
 inline void FSerialize(FWriter& w, FScene const& obj)
@@ -84,6 +92,6 @@ inline void FDeserialize(FReader& r, FScene& obj)
     FDeserialize(r, obj.mCameras);
     FDeserialize(r, obj.mInstances);
     FDeserialize(r, obj.mMaterials);
-    FDeserialize(r, obj.mMeshes);
+    FDeserialize(r, obj.mMeshes, obj.mMeshes.get_allocator().mResource);
     FDeserialize(r, obj.mTextures, obj.mTextures.get_allocator().mResource);
 }

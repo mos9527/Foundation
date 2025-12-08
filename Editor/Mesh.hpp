@@ -21,7 +21,7 @@ struct FQVertex
 {
     uint16_t position[4]; // quantized FP16 [xyz] padding [w]
     uint32_t tbn32; // packed tangent frame
-    uint16_t uv[2]; // quantized UNORM16
+    uint16_t uv[2]; // quantized FP16 [uv]
 
     static uint32_t PackTBN(const float3& normal, const float3& tangent, float bitangentSign);
     static void UnpackTBN(uint32_t packed, float3& outNormal, float3& outTangent, float& outBitangentSign);
@@ -205,14 +205,4 @@ inline void FDeserialize(FReader& r, FMesh& obj)
     FDeserialize(r, obj.lods, obj.lods.get_allocator().mResource);
     FDeserialize(r, obj.dag);
     CHECK_MSG(obj.IsCompressed(), "Mesh not compressed");
-}
-template<>
-inline void FSerialize(FWriter& w, Vector<FMesh> const& meshes)
-{
-    FSerialize(w, meshes);
-}
-template<>
-inline void FDeserialize(FReader& r, Vector<FMesh>& meshes)
-{
-    FDeserialize(r, meshes, meshes.get_allocator().mResource);
 }

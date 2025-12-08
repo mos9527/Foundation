@@ -201,15 +201,28 @@ void VulkanPipelineState::InitializeGraphics()
 }
 void VulkanPipelineState::InitializeCompute()
 {
+    StackArena<> arena;
+    AllocatorStack alloc(arena);
     CHECK_MSG(mDesc.shaderStages.size() == 1, "Compute pipeline must have exactly 1 shader stage.");
-    auto const& shader_stage = mDesc.shaderStages[0];
-    CHECK_MSG(shader_stage.desc.stage.is_bitmask() && shader_stage.desc.stage == RHIShaderStageBits::Compute,
+    auto const& shader = mDesc.shaderStages[0];
+    CHECK_MSG(shader.desc.stage.is_bitmask() && shader.desc.stage == RHIShaderStageBits::Compute,
               "Compute stage must contain only Compute shaders");
+    vk::SpecializationInfo* pSpecializationInfo = nullptr;
+    if (!shader.desc.specializationData.empty())
+    {
+        pSpecializationInfo = Construct<vk::SpecializationInfo>(alloc.Ptr());
+        auto* entry = Construct<vk::SpecializationMapEntry>(alloc.Ptr());
+        entry->constantID = 0, entry->offset = 0, entry->size = shader.desc.specializationData.size_bytes();
+        pSpecializationInfo->mapEntryCount = 1;
+        pSpecializationInfo->pMapEntries = entry;
+        pSpecializationInfo->dataSize = shader.desc.specializationData.size_bytes();
+        pSpecializationInfo->pData = shader.desc.specializationData.data();
+    }
     vk::PipelineShaderStageCreateInfo stage_info{
         .stage = vk::ShaderStageFlagBits::eCompute,
-        .module = static_cast<VulkanShaderModule*>(shader_stage.shaderModule)->GetVkShaderModule(),
-        .pName = shader_stage.desc.entryPoint,
-        .pSpecializationInfo = nullptr // TODO: Handle specialization info
+        .module = static_cast<VulkanShaderModule*>(shader.shaderModule)->GetVkShaderModule(),
+        .pName = shader.desc.entryPoint,
+        .pSpecializationInfo = pSpecializationInfo
     };
     vk::ComputePipelineCreateInfo pipelineInfo{.stage = stage_info, .layout = mPipelineLayout};
     const vk::raii::PipelineCache noCache{nullptr};

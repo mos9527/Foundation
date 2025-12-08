@@ -12,15 +12,12 @@ struct FVertex {
 struct FQVertex {
     half4 position;
     uint32_t tbn32;
-    uint32_t uv;
+    half2 uv;
 };
 void FQDecode(in FQVertex v, out float3 position, out float3 normal, out float3 tangent, out float bitangentSign, out float2 uv) {
     position = float3(v.position.xyz);
     unpackTBN(v.tbn32, normal, tangent, bitangentSign);
-    uv = float2(
-        dequantizeSnormShifted(int32_t(bitfieldExtract(v.uv, 0, 16)), 16),
-        dequantizeSnormShifted(int32_t(bitfieldExtract(v.uv, 16, 16)), 16)
-    );
+    uv = float2(v.uv);
 }
 struct FLODGroup // @ref clodGroup
 {
@@ -155,4 +152,5 @@ struct V2F
     float3 bitangent : BITANGENT;
     float2 uv : TEXCOORD0;
     uint32_t meshlet : ID;
+    uint32_t materialIndex : MATID;
 };

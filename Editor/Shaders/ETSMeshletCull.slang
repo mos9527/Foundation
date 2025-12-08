@@ -1,4 +1,4 @@
-#include "IMeshletCommon.slang"
+#include "ICommon.slang"
 [[SpecializationConstant]] int cullFlags;
 
 uniform UBO globalParams;
@@ -88,10 +88,11 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     bool visible = false;
     float3 viewCenter;
     float radius;
-    FMeshlet meshlet = primitive.Load<FMeshlet>(mesh.meshletOffset + meshletID * sizeof(FMeshlet));
+    FMeshlet meshlet;
     {
         FLODGroup group;
         if (meshletID < mesh.meshletCount) {
+            meshlet = primitive.Load<FMeshlet>(mesh.meshletOffset + meshletID * sizeof(FMeshlet));
             // View-dependent culling
             group = primitive.Load<FLODGroup>(mesh.groupOffset + meshlet.group * sizeof(FLODGroup));
             viewCenter = pointToView(group.center, inst, globalParams.view);
