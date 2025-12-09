@@ -224,7 +224,7 @@ void LoadGLTF(StringView path, FScene& scene)
         material.emissiveFactor = {mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2]};
         scene.mMaterials.emplace_back(material);
     }
-    /* Instances & Cameras */
+    /* Instances / Cameras / Light */
     scene.mInstances.clear();
     scene.mCameras.clear();
     for (size_t i = 0; i < data->nodes_count; i++)
@@ -256,6 +256,13 @@ void LoadGLTF(StringView path, FScene& scene)
             auto& camera = scene.mCameras.emplace_back();
             getTransform(camera.transform);
             camera.fovY = node->camera->data.perspective.yfov;
+        }
+        if (node->light)
+        {
+            auto& light = scene.mLights.emplace_back();
+            getTransform(light.transform);
+            light.color = {node->light->color[0], node->light->color[1], node->light->color[2]};
+            light.intensity = node->light->intensity;
         }
     }
     pool.Join();

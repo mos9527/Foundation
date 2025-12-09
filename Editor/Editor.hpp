@@ -13,7 +13,7 @@ struct FArcballCamera
 {
     static constexpr char kControlsText[] = "Mouse Left: Rotate | Mouse Right: Pan | Mouse Wheel: Zoom";
 
-    float3 center;
+    float3 center, position;
     float radius;
     quat rot;
     float zNear, fovY, aspect;
@@ -47,7 +47,8 @@ struct FArcballCamera
         // ---
         proj = infinitePerspectiveRHReverseZ(fovY, aspect, zNear);
         vec3 dir = rot * vec3(0, 0, 1);
-        view = viewMatrixRHReverseZ(center + radius * dir, rot);
+        position = center + radius * dir;
+        view = viewMatrixRHReverseZ(position, rot);
         mat4 viewProj = proj * view;
         return viewProj;
     }

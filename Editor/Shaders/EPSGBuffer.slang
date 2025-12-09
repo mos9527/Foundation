@@ -43,8 +43,8 @@ Fragment drawGBuffer(V2F input){
     ID = bitfieldInsert(ID, input.materialIndex, 0, 7);
     ID = bitfieldInsert(ID, input.bitangentSign >= 0.0f ? 1 : 0, 7, 1);
     output.RT0 = float4(baseColor.xyz, (float)ID / 255.0f); // BaseColor, ID
-    output.RT1 = float4(normal888, pbrMetalRough.y); // Normal 888, Metallic
-    output.RT2 = float4(emissive.xyz, pbrMetalRough.x); // Emissive, Roughness
+    output.RT1 = float4(normal888, pbrMetalRough.z); // Normal 888, Metallic
+    output.RT2 = float4(emissive.xyz, pbrMetalRough.y); // Emissive, Roughness
     return output;
 }
 

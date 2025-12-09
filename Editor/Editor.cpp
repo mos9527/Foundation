@@ -7,7 +7,7 @@ static Vector<GSMaterial> GSMaterials(GLOBAL_ALLOC);
 static UBO GShaderGlobals;
 static FArcballCamera GCamera{
     .center = float3{0, 0, 0},
-    .radius = 5.0f,
+    .radius = 1.0f,
     .zNear = 0.1f,
     .fovY = radians(60.f),
 };
@@ -25,6 +25,12 @@ void FInitEnter()
         GCamera.rot = camera.transform.rotation;
         GCamera.fovY = camera.fovY;
     }
+    if (!scene.mLights.empty())
+    {
+        auto& light = scene.mLights.front();
+        GShaderGlobals.sunDirection = normalize(light.transform.rotation * float3(0, 0, -1));
+        GShaderGlobals.sunIntensity = light.intensity;
+    }
     // Load into GPUScene
     auto* gpu = GContext->gpuScene;
     Vector<Pair<uint32_t, GSMesh>> meshOffsets(GLOBAL_ALLOC);
@@ -36,6 +42,7 @@ void FInitEnter()
         for (auto& src : scene.mMeshes)
         {
             CHECK(src.EnsureQuantized());
+            CHECK(src.EnsureRaw());
             auto& [offset, dst] = meshOffsets.emplace_back();
             if (!gpu->Upload(&upload, src, dst, offset))
             {
@@ -126,10 +133,12 @@ void FRunning()
     GShaderGlobals.frameNumber = renderer->GetFrame();
     GShaderGlobals.view = GCamera.view;
     GShaderGlobals.proj = GCamera.proj;
+    GShaderGlobals.inverseViewProj = inverse(GShaderGlobals.proj * GShaderGlobals.view);
     GShaderGlobals.zNear = GCamera.zNear;
     GShaderGlobals.projPlanes = planeSymmetric(GShaderGlobals.proj);
     GShaderGlobals.camAdaptCoeff = 1.0f - std::exp(-io.DeltaTime * GCamera.adaptRate);
-    GShaderGlobals.camDirection = float3(0, 0, -1) * GCamera.rot;
+    GShaderGlobals.camPosition = GCamera.position;
+    GShaderGlobals.camDirection = GCamera.rot * float3(0, 0, -1);
     GShaderGlobals.fbWidth = static_cast<float>(renderer->GetSwapchainExtent().x);
     GShaderGlobals.fbHeight = static_cast<float>(renderer->GetSwapchainExtent().y);
     // ImGui
@@ -152,22 +161,22 @@ void FRunning()
         GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
         bool changed = false;
         {
-            const char* items[] = {"Overdraw", "Meshlet", "HIZ Buffer"};
-            const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewHIZ};
+            const char* items[] = {"Overdraw", "Meshlet", "Material ID"};
+            const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID};
             ImGui::SeparatorText("Perf Debug View");
-            changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values);
+            changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
+        }
+        {
+            const char* items[] = {"Position", "BaseColor", "Normal", "Diffuse", "Specular"};
+            const unsigned values[] = {kViewPosition, kViewBaseColor, kViewNormal, kViewGBufferDiffuse, kViewGBufferSpecular};
+            ImGui::SeparatorText("GBuffer View");
+            changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
         }
         {
             const char* items[] = {"Frustum", "Occlusion"};
             const unsigned values[] = {kCullFrustum, kCullOcclusion};
             ImGui::SeparatorText("Culling");
             changed |= ImBitmaskOptionPicker(GRendererConfig.cullFlags, items, values);
-        }
-        {
-            const char* items[] = {"BaseColor", "Normal", "MaterialID"};
-            const unsigned values[] = {kGBufferViewBaseColor, kGBufferViewNormal, kGBufferViewMaterialID};
-            ImGui::SeparatorText("GBuffer Debug View");
-            changed |= ImBitmaskOptionPicker(GRendererConfig.gbufferFlags, items, values);
         }
         changed |= ImGui::Button("Reload");
         if (changed)

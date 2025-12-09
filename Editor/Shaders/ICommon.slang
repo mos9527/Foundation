@@ -134,6 +134,7 @@ struct UBO
     float zNear;
     float4x4 view;
     float4x4 proj;
+    float4x4 inverseViewProj;
     float4 projPlanes; // ij:left, kl:top
     float fbWidth;
     float fbHeight;
@@ -144,6 +145,7 @@ struct UBO
     float camMinEV;
     float camMaxEV;
     float camAdaptCoeff;
+    float3 camPosition;
     float3 camDirection;
     float3 sunDirection;
     float sunIntensity;

@@ -330,7 +330,8 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
         "Lighting", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSLighting.spv");
+            r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSLighting.spv",
+                AsBytes(AsSpan(cfg.viewFlags)));
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindTextureSRV(self, GBufferRT0, "RT0", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
@@ -349,13 +350,11 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             r->BindTextureUAV(self, LightingBuffer, "output", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
                                                  .range = RHITextureSubresourceRange::Create()});
-            r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(RHIExtent2D));
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             RHIExtent2D wh = r->GetSwapchainExtent();
             r->CmdSetPipeline(self, cmd);
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, wh);
             r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
         });
     renderer->CreatePass(
@@ -398,10 +397,6 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
         {
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/EPSBlit.spv",
                           AsBytes(AsSpan(cfg.viewFlags)));
-            r->BindTextureSampler(self, NearSampler, "sampler");
-            r->BindTextureSRV(self, GBufferRT0, "RT0", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
-                                                 .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
                                                  .range = RHITextureSubresourceRange::Create(
@@ -409,10 +404,6 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                  .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
-                                                 .range = RHITextureSubresourceRange::Create(
-                                                     RHITextureAspectFlagBits::Color, 0, HIZMips)});
             r->BindBufferStorageRead(self, LightingAverageLuma, RHIPipelineStageBits::ComputeShader, "sceneLuma");
             r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader, "globalMax");
         });

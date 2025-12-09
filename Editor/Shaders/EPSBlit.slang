@@ -4,8 +4,6 @@
 StructuredBuffer<uint32_t> globalMax;
 Texture2D<uint32_t> overdraw;
 Texture2D lighting;
-SamplerState sampler;
-Texture2D<float> hiz;
 StructuredBuffer<float> sceneLuma;
 
 float3 heatmapGradient(float t) {
@@ -40,14 +38,12 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     if (flags & kViewOverdraw){
         uint32_t draws = overdraw.Load(coord);
         return float4(heatmapGradient((float)draws / globalMax[0]), 1.0);
-    }
-    else if (flags & kViewHIZ) {
-        // Lazy - need range reduction too.
-        float z = hiz.SampleLevel(sampler, uv, 0).x * 64;
-        return float4(z,0,0,1);
     } else if (flags & kViewMeshlet){
         float4 lighting = lighting.Load(coord);
         return lighting;
+    } else if (flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition)) {
+        // Do not post process these
+        return lighting.Load(coord);
     } else {
         // Main postprocess routine
         float Lavg = sceneLuma.Load(0u);
