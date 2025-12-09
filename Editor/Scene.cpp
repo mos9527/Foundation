@@ -75,7 +75,7 @@ FTexture2D createNullTexture()
 }
 
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#images
-Optional<FTexture2D> loadGLTFTexture(cgltf_texture* texture, StringView scenePath)
+Optional<FTexture2D> loadGLTFTexture(cgltf_texture* texture, StringView scenePath, bool gamma = false)
 {
     if (texture->image)
     {
@@ -83,7 +83,7 @@ Optional<FTexture2D> loadGLTFTexture(cgltf_texture* texture, StringView scenePat
         {
             FTexture2D res(GLOBAL_ALLOC);
             Span imgData = {static_cast<const unsigned char*>(buf->buffer->data) + buf->offset, buf->size};
-            return LoadRGBA8(res, imgData, false), res;
+            return LoadRGBA8(res, imgData, gamma), res;
         }
         String imageNameWE = std::filesystem::path(texture->image->uri).stem().string();
         std::filesystem::path dir = std::filesystem::path(scenePath.data()).parent_path();
@@ -96,7 +96,7 @@ Optional<FTexture2D> loadGLTFTexture(cgltf_texture* texture, StringView scenePat
             if (std::filesystem::exists(imagePath))
             {
                 FTexture2D res(GLOBAL_ALLOC);
-                return LoadRGBA8(res, imagePath.string(), false), res;
+                return LoadRGBA8(res, imagePath.string(), gamma), res;
             }
         }
         // DDS?
@@ -128,6 +128,45 @@ void LoadGLTF(StringView path, FScene& scene)
         result = cgltf_validate(data);
         CHECK_MSG(result == cgltf_result_success, "Scene validate failure: {}", static_cast<int>(result));
     }
+    /* Materials */
+    // NOTE: Material 0 is reserved as the default material:
+    // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#default-material
+    scene.mMaterials.clear();
+    scene.mMaterials.emplace_back(FMaterial{
+        .baseColorTexture = 0,
+        .baseColorFactor = {1.0f, 1.0f, 1.0f, 1.0f},
+    });
+    // Extra texture flags. Mostly used for sRGB to linear conversion
+    constexpr unsigned kTextureInSRGB = 1 << 0;
+    Vector<unsigned> textureFlags(data->textures_count + 1, 0, GLOBAL_ALLOC);
+    for (size_t i = 0; i < data->materials_count; i++)
+    {
+        const cgltf_material* mat = &data->materials[i];
+        FMaterial material{};
+        if (mat->has_pbr_metallic_roughness)
+        {
+            material.baseColorFactor = {
+                mat->pbr_metallic_roughness.base_color_factor[0], mat->pbr_metallic_roughness.base_color_factor[1],
+                mat->pbr_metallic_roughness.base_color_factor[2], mat->pbr_metallic_roughness.base_color_factor[3]};
+            material.metallicFactor = mat->pbr_metallic_roughness.metallic_factor;
+            material.roughnessFactor = mat->pbr_metallic_roughness.roughness_factor;
+            if (mat->pbr_metallic_roughness.base_color_texture.texture)
+            {
+                size_t index = cgltf_texture_index(data, mat->pbr_metallic_roughness.base_color_texture.texture);
+                textureFlags[index] |= kTextureInSRGB;
+                material.baseColorTexture = index + 1u;
+            }
+            if (mat->pbr_metallic_roughness.metallic_roughness_texture.texture)
+                material.metallicRoughnessTexture =
+                    cgltf_texture_index(data, mat->pbr_metallic_roughness.metallic_roughness_texture.texture) + 1u;
+        }
+        if (mat->normal_texture.texture)
+            material.normalTexture = cgltf_texture_index(data, mat->normal_texture.texture) + 1u;
+        if (mat->emissive_texture.texture)
+            material.emissiveTexture = cgltf_texture_index(data, mat->emissive_texture.texture) + 1u;
+        material.emissiveFactor = {mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2]};
+        scene.mMaterials.emplace_back(material);
+    }
     /* Textures and Meshes */
     size_t numSubmeshes = 0;
     for (size_t i = 0; i < data->meshes_count; i++)
@@ -139,11 +178,13 @@ void LoadGLTF(StringView path, FScene& scene)
     scene.mTextures[0] = createNullTexture();
     for (size_t i = 0; i < data->textures_count; i++)
         pool.Push(
-            [=](cgltf_texture* src, FTexture2D* dst, StringView basePath)
+            [&](cgltf_texture* src, FTexture2D* dst, StringView basePath)
             {
-                String name = src->name ? src->name : fmt::format("{}_{}", basePath, src - data->textures);
+                size_t index = cgltf_texture_index(data, src);
+                String name = src->name ? src->name : fmt::format("{}_{}", basePath, index);
+                unsigned flags = textureFlags[index];
                 LOG(Scene, LogInfo, "Loading texture {}", name);
-                auto loaded = loadGLTFTexture(src, basePath);
+                auto loaded = loadGLTFTexture(src, basePath, flags & kTextureInSRGB);
                 if (loaded.has_value())
                 {
                     // Raw image. Compress to BC7 if needed
@@ -190,39 +231,6 @@ void LoadGLTF(StringView path, FScene& scene)
                 mi++);
         }
         mmax = mi;
-    }
-    /* Materials */
-    // NOTE: Material 0 is reserved as the default material:
-    // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#default-material
-    scene.mMaterials.clear();
-    scene.mMaterials.emplace_back(FMaterial{
-        .baseColorTexture = 0,
-        .baseColorFactor = {1.0f, 1.0f, 1.0f, 1.0f},
-    });
-    for (size_t i = 0; i < data->materials_count; i++)
-    {
-        const cgltf_material* mat = &data->materials[i];
-        FMaterial material{};
-        if (mat->has_pbr_metallic_roughness)
-        {
-            material.baseColorFactor = {
-                mat->pbr_metallic_roughness.base_color_factor[0], mat->pbr_metallic_roughness.base_color_factor[1],
-                mat->pbr_metallic_roughness.base_color_factor[2], mat->pbr_metallic_roughness.base_color_factor[3]};
-            material.metallicFactor = mat->pbr_metallic_roughness.metallic_factor;
-            material.roughnessFactor = mat->pbr_metallic_roughness.roughness_factor;
-            if (mat->pbr_metallic_roughness.base_color_texture.texture)
-                material.baseColorTexture =
-                    cgltf_texture_index(data, mat->pbr_metallic_roughness.base_color_texture.texture) + 1u;
-            if (mat->pbr_metallic_roughness.metallic_roughness_texture.texture)
-                material.metallicRoughnessTexture =
-                    cgltf_texture_index(data, mat->pbr_metallic_roughness.metallic_roughness_texture.texture) + 1u;
-        }
-        if (mat->normal_texture.texture)
-            material.normalTexture = cgltf_texture_index(data, mat->normal_texture.texture) + 1u;
-        if (mat->emissive_texture.texture)
-            material.emissiveTexture = cgltf_texture_index(data, mat->emissive_texture.texture) + 1u;
-        material.emissiveFactor = {mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2]};
-        scene.mMaterials.emplace_back(material);
     }
     /* Instances / Cameras / Light */
     scene.mInstances.clear();

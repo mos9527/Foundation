@@ -93,6 +93,20 @@ void FInitEnter()
         dst.metallicRoughnessTexture = textureIDMap[src.metallicRoughnessTexture];
         dst.normalTexture = textureIDMap[src.normalTexture];
     }
+    // Upload instance data
+    {
+        auto [ptr, off] = gpu->AllocateInstance(GSInstances.size());
+        std::memcpy(ptr, GSInstances.data(), GSInstances.size() * sizeof(GSInstance));
+        GShaderGlobals.firstInstance = off;
+        GShaderGlobals.numInstances = GSInstances.size();
+    }
+    // Upload material data
+    {
+        auto [ptr, off] = gpu->AllocateMaterial(GSMaterials.size());
+        std::memcpy(ptr, GSMaterials.data(), GSMaterials.size() * sizeof(GSMaterial));
+        GShaderGlobals.firstMaterial = off;
+        GShaderGlobals.numMaterials = GSMaterials.size();
+    }
     FEState = FEInit;
 }
 void FInit() { FEState = FERunningEnter; }
@@ -105,27 +119,12 @@ void FRunningEnter()
 void FRunning()
 {
     auto* renderer = GContext->renderer;
-    auto* scene = GContext->gpuScene;
     // New frame
     renderer->BeginExecute();
     float gpuTimingRes;
     auto timings = renderer->DbgProfilePassTiming(renderer->GetSync(), gpuTimingRes);
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
-    // Upload instance data
-    {
-        auto [ptr, off] = scene->AllocateInstance(GSInstances.size());
-        std::memcpy(ptr, GSInstances.data(), GSInstances.size() * sizeof(GSInstance));
-        GShaderGlobals.firstInstance = off;
-        GShaderGlobals.numInstances = GSInstances.size();
-    }
-    // Upload material data
-    {
-        auto [ptr, off] = scene->AllocateMaterial(GSMaterials.size());
-        std::memcpy(ptr, GSMaterials.data(), GSMaterials.size() * sizeof(GSMaterial));
-        GShaderGlobals.firstMaterial = off;
-        GShaderGlobals.numMaterials = GSMaterials.size();
-    }
     // Global param update
     auto& io = ImGui::GetIO();
     GCamera.Update({});

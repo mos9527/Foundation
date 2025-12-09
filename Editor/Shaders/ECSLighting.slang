@@ -78,35 +78,35 @@ void main(uint2 tid: SV_DispatchThreadID) {
         float NoV = abs(dot(n,v)) + EPS;
         float NoL = saturate(dot(n,l));
 
-
         float3 lighting = float3(NoL) * globalParams.sunIntensity + globalParams.ambientColor;
 
         // Diffuse
         // https://seblagarde.wordpress.com/2012/01/08/pi-or-not-to-pi-in-game-lighting-equation/
-        float3 Fd = lighting * baseColor;
+        float3 Fd = baseColor / PI;
 
         // Specular
         float anisotropy = material.anisotropy;
         roughness = roughness * roughness;
         float at = max(roughness * (1.0 + anisotropy), 0.001);
         float ab = max(roughness * (1.0 - anisotropy), 0.001);
-        float3 F = F_Schlick(LoH, lerp(baseColor, float3(0), metallic));
         float D = D_GGX_Anisotropic(NoH, h, t, b, at, ab);
         float V = V_SmithGGXCorrelated_Anisotropic(at, ab, ToV, BoV, ToL, BoL, NoV, NoL);
-        // float D = D_GGX(NoH, roughness);
-        // float V = V_SmithGGXCorrelated(NoV, NoL, roughness);
-        float3 Fr = lighting * D * V * F;
 
+        // glTF spec calls D*V the specular BRDF, F is introduced later.
+        float Fs = D * V;
+        // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#metal-brdf-and-dielectric-brdf
+        float3 metalBRDF = Fs * F_Schlick(LoH, baseColor);
+        float3 dielectricBRDF = lerp(Fd, Fs, F_Schlick(LoH, float3(0.04)));
+        float3 material = lerp(dielectricBRDF, metalBRDF, metallic) * lighting;
         // Final color
         if (flags & kViewGBufferDiffuse) {
-            output[tid] = float4(Fd, 1.0f);
+            output[tid] = float4(Fd * lighting, 1.0f);
             return;
         } else if (flags & kViewGBufferSpecular) {
-            output[tid] = float4(Fr, 1.0f);
+            output[tid] = float4(float3(Fs) * lighting, 1.0f);
             return;
         } else {
-            float3 Fx = Fd + Fr + emissive;
-            output[tid] = float4(Fx, 1.0f);
+            output[tid] = float4(material + emissive, 1.0f);
         }
     }
 }

@@ -3,8 +3,8 @@ FContext* GContext = nullptr;
 void UpdateSwapchain(FContext* context)
 {
     constexpr RHIResourceFormat kFormatPreferenceList[] = {
-        RHIResourceFormat::R8G8B8A8Unorm, RHIResourceFormat::B8G8R8A8Unrom, RHIResourceFormat::R8G8B8A8Srgb,
-        RHIResourceFormat::B8G8R8A8Srgb};
+        RHIResourceFormat::R8G8B8A8Unorm, RHIResourceFormat::B8G8R8A8Unrom
+    };
     constexpr RHISwapchainPresentMode kPresentModePreferenceList[] = {
         RHISwapchainPresentMode::Mailbox, RHISwapchainPresentMode::Tearing, RHISwapchainPresentMode::Fifo};
     int w, h;
