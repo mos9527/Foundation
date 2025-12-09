@@ -15,6 +15,9 @@ namespace Foundation::RHI {
         case R8G8B8A8Srgb: return vk::Format::eR8G8B8A8Srgb;
         case B8G8R8A8Unrom: return vk::Format::eB8G8R8A8Unorm;
         case B8G8R8A8Srgb: return vk::Format::eB8G8R8A8Srgb;
+        case A2R10G10B10Unorm: return vk::Format::eA2B10G10R10UnormPack32;
+        case A2R10G10B10Snorm: return vk::Format::eA2B10G10R10SnormPack32;
+        case B10G11R11Ufloat: return vk::Format::eB10G11R11UfloatPack32;
         case R32SignedFloat: return vk::Format::eR32Sfloat;
         case R32G32SignedFloat: return vk::Format::eR32G32Sfloat;
         case R32G32B32SignedFloat: return vk::Format::eR32G32B32Sfloat;

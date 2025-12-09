@@ -18,6 +18,7 @@ struct FArcballCamera
     quat rot;
     float zNear, fovY, aspect;
     mat4 view, proj;
+    float adaptRate = 5.0f;
     mat4 Update(SDL_Event const& event)
     {
         if (event.type == SDL_EVENT_MOUSE_MOTION)

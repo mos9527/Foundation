@@ -120,13 +120,18 @@ void FRunning()
         GShaderGlobals.numMaterials = GSMaterials.size();
     }
     // Global param update
+    auto& io = ImGui::GetIO();
     GCamera.Update({});
     GCamera.aspect = GContext->swapchain->GetAspectRatio();
+    GShaderGlobals.frameNumber = renderer->GetFrame();
     GShaderGlobals.view = GCamera.view;
     GShaderGlobals.proj = GCamera.proj;
     GShaderGlobals.zNear = GCamera.zNear;
     GShaderGlobals.projPlanes = planeSymmetric(GShaderGlobals.proj);
-    GShaderGlobals.camDirection = float3(0,0,-1) * GCamera.rot;
+    GShaderGlobals.camAdaptCoeff = 1.0f - std::exp(-io.DeltaTime * GCamera.adaptRate);
+    GShaderGlobals.camDirection = float3(0, 0, -1) * GCamera.rot;
+    GShaderGlobals.fbWidth = static_cast<float>(renderer->GetSwapchainExtent().x);
+    GShaderGlobals.fbHeight = static_cast<float>(renderer->GetSwapchainExtent().y);
     // ImGui
     if (ImGui::Begin("Camera"))
     {
@@ -135,6 +140,9 @@ void FRunning()
         ImGui::SliderFloat3("Cam Center", &GCamera.center.x, -50.0f, 50.0f);
         ImGui::SliderFloat("Cam Radius", &GCamera.radius, 0.0f, 100.0f);
         ImGui::SliderAngle("Cam FOV Y", &GCamera.fovY);
+        ImGui::SliderFloat("Min EV", &GShaderGlobals.camMinEV, -16.0f, 16.0f);
+        ImGui::SliderFloat("Max EV", &GShaderGlobals.camMaxEV, -16.0f, 16.0f);
+        ImGui::SliderFloat("Adapt Rate", &GCamera.adaptRate, 0.0f, 100.0f);
     }
     ImGui::End();
     if (ImGui::Begin("Rendering"))

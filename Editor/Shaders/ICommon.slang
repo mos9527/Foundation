@@ -125,6 +125,7 @@ struct MeshletTaskWork
 };
 struct UBO
 {
+    uint32_t frameNumber;
     uint32_t firstInstance;
     uint32_t numInstances;
     uint32_t firstMaterial;
@@ -134,12 +135,18 @@ struct UBO
     float4x4 view;
     float4x4 proj;
     float4 projPlanes; // ij:left, kl:top
+    float fbWidth;
+    float fbHeight;
     uint32_t hizLevels;
     uint32_t hizWidth;
     uint32_t hizHeight;
     // -- Lighting
+    float camMinEV;
+    float camMaxEV;
+    float camAdaptCoeff;
     float3 camDirection;
     float3 sunDirection;
+    float sunIntensity;
     float3 ambientColor;
 };
 // ^^^

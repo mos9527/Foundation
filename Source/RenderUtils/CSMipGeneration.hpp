@@ -13,6 +13,8 @@ namespace Foundation::RenderUtils
         using namespace Math;
         for (uint32 i = 0; i < maxMips; ++i)
         {
+            if (i == 0 && src == dst)
+                continue;
             renderer->CreatePass(
                 fmt::format("Mip Gen {} {}", i, name), queue, 0u,
                 [=](PassHandle self, Renderer* r)
@@ -51,11 +53,6 @@ namespace Foundation::RenderUtils
                     uint32_t h = std::max(1u, extent.y >> i);
                     r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, float2{w,h});
                     r->CmdDispatch(self, cmd, {w,h,1});
-                },
-                [=](PassHandle, Renderer* r)
-                {
-                    RHITexture* dstTex = r->DerefResource(dst).Get<RHITexture*>();
-                    return (src == dst && i == 0) || i >= dstTex->mDesc.mipLevels;
                 });
         }
     }

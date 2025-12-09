@@ -343,17 +343,13 @@ namespace Foundation::RenderCore
          * @param priority Priority of this pass. Higher priority passes are scheduled earlier.
          * @param setup Lambda of type `void(PassHandle self, Renderer*)` called at Setup time.
          * @param record Lambda of type `void(PassHandle self, Renderer*, RHICommandList*)` called at Record time.
-         * @param skip (Optional) Lambda of type `bool(PassHandle self, Renderer*)` called at Record time
-         *                        to determine whether this pass should be skipped if true. This is by default always
-         * false.
          */
-        template <typename FSetup, typename FRecord, typename FSkip = FSkipDefault>
+        template <typename FSetup, typename FRecord>
         PassHandle CreatePass(StringView name, RHIDeviceQueueType queue, size_t priority,
-                                                       FSetup&& setup, FRecord&& record, FSkip&& skip = {})
+                                                       FSetup&& setup, FRecord&& record)
         {
-            return CreatePassImpl<LambdaPass<FSetup, FRecord, FSkip>>(
-                name, queue, priority, std::forward<FSetup>(setup), std::forward<FRecord>(record),
-                std::forward<FSkip>(skip));
+            return CreatePassImpl<LambdaPass<FSetup, FRecord>>(
+                name, queue, priority, std::forward<FSetup>(setup), std::forward<FRecord>(record));
         }
         /**
          * @brief Create a new resource to be used in the render graph.

@@ -1351,10 +1351,8 @@ void Renderer::ExecuteFrame()
         Vector<PassHandle> active(mExecuteAlloc.Ptr());
         active.reserve(groups.size() + 1);
         for (auto handle : group.passes)
-        {
-            if (!passes[handle].pass->IsSkipped(handle, this))
+            if (passes[handle].used)
                 active.emplace_back(handle);
-        }
         // Record all the active tasks
         // If this is the last group and present is needed
         const bool needPresent = static_cast<size_t>(group.groupIndex) == groups.size() - 1 && mDesc.present;

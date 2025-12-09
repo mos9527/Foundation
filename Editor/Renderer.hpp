@@ -3,6 +3,7 @@
 #pragma pack(push, 1)
 struct UBO
 {
+    uint32_t frameNumber;
     uint32_t firstInstance;
     uint32_t numInstances;
     uint32_t firstMaterial;
@@ -12,12 +13,18 @@ struct UBO
     float4x4 view;
     float4x4 proj;
     float4 projPlanes; // ij:left, kl:top
+    float fbWidth;
+    float fbHeight;
     uint32_t hizLevels;
     uint32_t hizWidth;
     uint32_t hizHeight;
     // -- Lighting
+    float camMinEV{-2.0f};
+    float camMaxEV{5.0f};
+    float camAdaptCoeff; // 1 - exp(-dt * tau)
     float3 camDirection;
     float3 sunDirection{0, 1, 0};
+    float sunIntensity{1.0f};
     float3 ambientColor{0.1, 0.1, 0.1};
 };
 #pragma pack(pop)

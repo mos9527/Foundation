@@ -38,17 +38,6 @@ namespace Foundation::RenderCore
          * should ensure thread safety if accessing shared data.
          */
         virtual void Record(PassHandle self, Renderer* r, RHICommandList* cmd) = 0;
-        /**
-         * @brief Determine whether this pass should be skipped during Record time
-         *
-         * @return Whether this pass should be skipped during execution.
-         *
-         * This is only executed after EndSetup() has been called,
-         * and when the render graph is actually executed.
-         *
-         * @note This is always called from the main (renderer's) thread.
-         */
-        virtual bool IsSkipped(PassHandle self, Renderer* r) const { return false; }
     };
     /**
      * @brief Default "no-op" functor for Setup()
@@ -65,31 +54,21 @@ namespace Foundation::RenderCore
         void operator()(PassHandle, Renderer*, RHICommandList*) const { /* nop */ }
     };
     /**
-     * @brief Default "not skipped" functor for IsSkipped()
-     */
-    struct FSkipDefault
-    {
-        bool operator()(PassHandle, Renderer*) const { return false; }
-    };
-    /**
      * @brief Functional wrapper for a render pass
      *
      * This is a convenience wrapper for stateless passes, and should be created via @ref Renderer::CreatePass()
      */
-    template <typename FSetup, typename FRecord, typename FSkip>
-    struct LambdaPass : public RenderPass
+    template <typename FSetup, typename FRecord>
+    struct LambdaPass : RenderPass
     {
         FSetup mSetup;
         FRecord mRecord;
-        FSkip mSkip;
-        LambdaPass(FSetup&& setup, FRecord&& record, FSkip&& skip = {}) :
-            mSetup(std::forward<FSetup>(setup)), mRecord(std::forward<FRecord>(record)),
-            mSkip(std::forward<FSkip>(skip))
+        LambdaPass(FSetup&& setup, FRecord&& record) :
+            mSetup(std::forward<FSetup>(setup)), mRecord(std::forward<FRecord>(record))
         {
         }
         void Setup(PassHandle self, Renderer* r) override { mSetup(self, r); }
         void Record(PassHandle self, Renderer* r, RHICommandList* cmd) override { mRecord(self, r, cmd); }
-        bool IsSkipped(PassHandle self, Renderer* r) const override { return mSkip(self, r); }
     };
     /**
      * @brief Internal tracking information for a render pass in the frame graph.

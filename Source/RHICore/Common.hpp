@@ -23,6 +23,9 @@ namespace Foundation::RHI {
         R8G8B8A8Srgb,
         B8G8R8A8Unrom,
         B8G8R8A8Srgb,
+        A2R10G10B10Unorm,
+        A2R10G10B10Snorm,
+        B10G11R11Ufloat,
         R32SignedFloat,
         R32G32SignedFloat,
         R32G32B32SignedFloat,
@@ -56,6 +59,9 @@ namespace Foundation::RHI {
         ENUM_NAME(R8G8B8A8Srgb)
         ENUM_NAME(B8G8R8A8Unrom)
         ENUM_NAME(B8G8R8A8Srgb)
+        ENUM_NAME(A2R10G10B10Unorm)
+        ENUM_NAME(A2R10G10B10Snorm)
+        ENUM_NAME(B10G11R11Ufloat)
         ENUM_NAME(R32SignedFloat)
         ENUM_NAME(R32G32SignedFloat)
         ENUM_NAME(R32G32B32SignedFloat)
