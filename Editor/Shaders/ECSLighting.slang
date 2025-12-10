@@ -70,7 +70,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
         float3 l = -globalParams.sunDirection;
         float3 h = normalize(v + l);
         float NoH = saturate(dot(n,h));
-        float LoH = saturate(dot(l,h));
+        float VoH = saturate(dot(v,h));
         float ToV = saturate(dot(t,v));
         float BoV = saturate(dot(b,v));
         float ToL = saturate(dot(t,l));
@@ -95,8 +95,8 @@ void main(uint2 tid: SV_DispatchThreadID) {
         // glTF spec calls D*V the specular BRDF, F is introduced later.
         float Fs = D * V;
         // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#metal-brdf-and-dielectric-brdf
-        float3 metalBRDF = Fs * F_Schlick(LoH, baseColor);
-        float3 dielectricBRDF = lerp(Fd, Fs, F_Schlick(LoH, float3(0.04)));
+        float3 metalBRDF = Fs * F_Schlick(VoH, baseColor);
+        float3 dielectricBRDF = lerp(Fd, Fs, F_Schlick(VoH, float3(0.04)));
         float3 material = lerp(dielectricBRDF, metalBRDF, metallic) * lighting;
         // Final color
         if (flags & kViewGBufferDiffuse) {
