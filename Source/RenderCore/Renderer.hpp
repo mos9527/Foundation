@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/Logging.hpp>
 #include <Core/ThreadPool.hpp>
 #include <Core/AllocatorStack.hpp>
 #include "RenderPass.hpp"

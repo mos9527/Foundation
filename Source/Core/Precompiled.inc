@@ -1,6 +1,4 @@
 #pragma once
-#include <fmt/base.h>
-#include <fmt/format.h>
 #include "Allocator.hpp"
 #include "AllocatorHeap.hpp"
 #include "AllocatorStack.hpp"

@@ -3,6 +3,7 @@
 #include <vk_mem_alloc.h>
 
 #include "Common.hpp"
+#include "RHICore/Resource.hpp"
 namespace Foundation::RHI {
     inline VmaAllocationCreateFlags vmaAllocationFlagsFromRHIResourceHostAccess(RHIResourceHostAccess access) {
         using enum RHIResourceHostAccess;
@@ -40,6 +41,7 @@ namespace Foundation::RHI {
         void Flush(size_t offset, size_t size) override;
         void Unmap() override;
 
+        vk::DeviceAddress GetBufferAddress() const;
         RHIBufferScopedHandle<RHIBuffer> CreateAliasedBuffer(RHIBufferDesc const& desc, size_t offset) override;
         RHIBuffer* GetAliasedBuffer(Handle handle) const override;
         void DestroyAliasedBuffer(Handle handle) override;
@@ -104,7 +106,9 @@ namespace Foundation::RHI {
         VulkanAccelerationStructure(VulkanDevice const& device, RHIAccelerationStructureDesc const& desc);
 
         [[nodiscard]] auto const& GetVkAS() const { return mAS; }
-
+        vk::DeviceAddress GetASAddress() const;
         void DebugSetObjectName(const char* name) override;
-    }
+    };
+    vk::AccelerationStructureGeometryTrianglesDataKHR vkAccelerationTriangleDataFromRHI(RHIAccelerationStructureGeometryDesc::TriangleData const& desc);
+    vk::AccelerationStructureInstanceKHR vkAccelerationInstanceFromRHI(RHIAccelerationStructureGeometryDesc::InstanceData const& desc);
 }

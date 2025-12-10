@@ -158,6 +158,12 @@ namespace Foundation::RHI {
         TopLevel
     };
 
+    enum class RHIAccelerationStructureBuildOp
+    {
+        Build,
+        Update
+    };
+
     enum class RHIAccelerationGeometryType
     {
         Triangles,

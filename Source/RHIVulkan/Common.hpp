@@ -213,4 +213,24 @@ namespace Foundation::RHI {
         return flags;
     }
 
+    inline vk::AccelerationStructureTypeKHR vkAccelerationStructureTypeFromRHIAccelerationStructureType(RHIAccelerationStructureType type) {
+        using enum RHIAccelerationStructureType;
+        switch (type) {
+        case TopLevel: return vk::AccelerationStructureTypeKHR::eTopLevel;
+        case BottomLevel: return vk::AccelerationStructureTypeKHR::eBottomLevel;
+        default:
+            return vk::AccelerationStructureTypeKHR::eTopLevel;
+        }
+    }
+
+    inline vk::BuildAccelerationStructureModeKHR vkBuildAccelerationStructureModeFromRHIAccelerationStructureBuildOp(RHIAccelerationStructureBuildOp op)
+    {
+        using enum RHIAccelerationStructureBuildOp;
+        switch (op) {
+        case Build: return vk::BuildAccelerationStructureModeKHR::eBuild;
+        case Update: return vk::BuildAccelerationStructureModeKHR::eUpdate;
+        default:
+            return vk::BuildAccelerationStructureModeKHR::eBuild;
+        }
+    }
 }

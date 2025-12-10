@@ -2,7 +2,6 @@
 #include <SDL3/SDL.h>
 #include <vk_mem_alloc.h>
 #include <RHICore/Device.hpp>
-#include <Core/Logging.hpp>
 #include "Common.hpp"
 namespace Foundation::RHI {
     class VulkanApplication;
@@ -21,7 +20,7 @@ namespace Foundation::RHI {
             case RHIDeviceQueueType::Present:
             case RHIDeviceQueueType::Graphics: return Get(graphics);
             default:
-                CHECK_MSG(false, "Unknown queue type {}", type);
+                return nullptr;
             }
         }
         bool IsValid() const {
@@ -207,7 +206,7 @@ namespace Foundation::RHI {
         VulkanDeviceQueue(const VulkanDevice& device, uint32_t family_index, uint32_t queue_index)
             : RHIDeviceQueue(device), mDevice(device), mQueueIndex(queue_index), mFamilyIndex(family_index),
         mQueue(device.GetVkDevice(), family_index, queue_index) {
-        };
+        }
 
         [[nodiscard]] const VulkanDevice& GetVulkanDevice() const { return mDevice; }
         [[nodiscard]] vk::raii::Queue GetVkQueue() const { return mQueue; }

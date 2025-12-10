@@ -197,6 +197,12 @@ namespace Foundation::RHI {
         virtual void DebugSetObjectName(const char* name) = 0;
     };
     class RHIAccelerationStructure;
+    struct RHIAccelerationStructureSizeInfo
+    {
+        uint32_t accelerationStructureSize;
+        uint32_t buildScratchSize;
+        uint32_t updateScratchSize;
+    };
     struct RHIAccelerationStructureDesc
     {
         RHIAccelerationStructureType type;
@@ -214,10 +220,10 @@ namespace Foundation::RHI {
             uint32_t vertexOffset; // Bytes
             uint32_t vertexCount;
             uint32_t vertexStride;
+            RHIResourceFormat indexFormat; // Must be RHIResourceFormat::R32Uint or RHIResourceFormat::R16Uint
             RHIBuffer* indexBuffer;
             uint32_t indexOffset; // Bytes
             uint32_t indexCount;
-
         } triangleData;
         struct InstanceData
         {

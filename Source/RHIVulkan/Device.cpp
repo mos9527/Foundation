@@ -518,6 +518,42 @@ RHIDeviceScopedHandle<RHITexture> VulkanDevice::CreateTexture(RHITextureDesc con
 RHITexture* VulkanDevice::GetTexture(Handle handle) const { return mStorage.GetObjectPtr<RHITexture>(handle); }
 void VulkanDevice::DestroyTexture(Handle handle) { mStorage.DestroyObject(handle); }
 
+RHIAccelerationStructureSizeInfo QuerySizeBLAS(RHIDevice* device, RHIAccelerationStructureType type, RHIAccelerationStructureBuildOp op,
+                                             Span<const RHIAccelerationStructureGeometryDesc> geometries)
+{
+    auto* vkDevice = static_cast<VulkanDevice*>(device);
+    Vector<vk::AccelerationStructureGeometryKHR> geos(vkDevice->GetAllocator());
+    Vector<uint32_t> primitiveCounts(vkDevice->GetAllocator());
+    geos.resize(geometries.size()), primitiveCounts.resize(geometries.size());
+    for (size_t i = 0; i < geometries.size(); ++i)
+    {
+        auto& src = geometries[i];
+        auto& dst = geos[i];
+        switch (src.type)
+        {
+        case RHIAccelerationGeometryType::Triangles:
+            dst.geometryType = vk::GeometryTypeKHR::eTriangles;
+            dst.geometry.triangles = vkAccelerationTriangleDataFromRHI(src.triangleData);
+            break;
+        case RHIAccelerationGeometryType::Instances:
+            CHECK_MSG(false, "Budget query for instance geometries is not supported.");
+        }
+    }
+    vk::AccelerationStructureBuildGeometryInfoKHR info{
+        .type = vkAccelerationStructureTypeFromRHIAccelerationStructureType(type),
+        .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace,
+        .mode = vkBuildAccelerationStructureModeFromRHIAccelerationStructureBuildOp(op),
+        .geometryCount = static_cast<uint32_t>(geos.size()),
+        .pGeometries = geos.data()};
+    auto res = vkDevice->GetVkDevice().getAccelerationStructureBuildSizesKHR(vk::AccelerationStructureBuildTypeKHR::eDevice, info,
+                                                             primitiveCounts);
+    return RHIAccelerationStructureSizeInfo{
+        .accelerationStructureSize = static_cast<uint32_t>(res.accelerationStructureSize),
+        .buildScratchSize = static_cast<uint32_t>(res.buildScratchSize),
+        .updateScratchSize = static_cast<uint32_t>(res.updateScratchSize),
+    };
+}
+
 RHIDeviceScopedHandle<RHIAccelerationStructure>
 VulkanDevice::CreateAccelerationStructure(RHIAccelerationStructureDesc const& desc)
 {

@@ -1,10 +1,6 @@
 #pragma once
-#include <cstdio>
-#include <chrono>
-#include <string_view>
+#include <fmt/base.h>
 #include <fmt/format.h>
-#include <fmt/chrono.h>
-
 enum LogLevel
 {
     LogDebug,
