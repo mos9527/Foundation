@@ -7,6 +7,7 @@ using namespace Foundation::RHI;
 const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_MESH_SHADER_EXTENSION_NAME,
                                          VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
                                          VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+                                         VK_KHR_RAY_QUERY_EXTENSION_NAME,
                                          VK_KHR_MAINTENANCE_9_EXTENSION_NAME /*CPU side query pool reset - XXX remove it*/};
 
 const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
@@ -79,7 +80,8 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
                        vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
                        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT,
                        vk::PhysicalDeviceMeshShaderFeaturesEXT,
-                       vk::PhysicalDeviceAccelerationStructureFeaturesKHR
+                       vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+                       vk::PhysicalDeviceRayQueryFeaturesKHR
     >
         featureChain = {
             {.features = {.samplerAnisotropy = true,
@@ -106,7 +108,8 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
              .shaderIntegerDotProduct = true}, // vk::PhysicalDeviceVulkan13Features
             {.extendedDynamicState = true}, // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
             {.taskShader = true, .meshShader = true}, // vk::PhysicalDeviceMeshShaderFeaturesEXT
-            {.accelerationStructure = true,} // vk::PhysicalDeviceAccelerationStructureFeaturesKHR
+            {.accelerationStructure = true,}, // vk::PhysicalDeviceAccelerationStructureFeaturesKHR
+            {.rayQuery = true} // vk::PhysicalDeviceRayQueryFeaturesKHR
         };
     vk::DeviceCreateInfo device_info{.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
                                      .queueCreateInfoCount = static_cast<uint32_t>(queue_info.size()),

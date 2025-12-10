@@ -181,7 +181,8 @@ namespace Foundation::RHI {
         SampledImage,
         StorageImage,
         UniformBuffer,
-        StorageBuffer
+        StorageBuffer,
+        AccelerationStructure
     };
 
     ENUM_NAME_CONV_BEGIN(RHIDescriptorType)
@@ -190,6 +191,7 @@ namespace Foundation::RHI {
         ENUM_NAME(StorageImage)
         ENUM_NAME(UniformBuffer)
         ENUM_NAME(StorageBuffer)
+        ENUM_NAME(AccelerationStructure)
     ENUM_NAME_CONV_END()
 
     enum class RHIMultisampleCount {

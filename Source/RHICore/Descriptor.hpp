@@ -6,6 +6,7 @@ namespace Foundation::RHI {
     class RHIDeviceSampler;
     class RHIDeviceDescriptorPool;
     class RHIDeviceDescriptorSetLayout;
+    class RHIAccelerationStructure;
     template<typename T> using RHIDeviceDescriptorPoolHandle = RHIHandle<RHIDeviceDescriptorPool, T>;
     template<typename T> using RHIDeviceDescriptorPoolScopedHandle = RHIScopedHandle<RHIDeviceDescriptorPool, T>;
     class RHIDeviceDescriptorSet : public RHIObject {
@@ -29,6 +30,11 @@ namespace Foundation::RHI {
                 RHITextureLayout layout{}; // Layout of the image
             };
             Span<const Image> images; // Applies to type of Sampler, SampledImage
+            struct AccelerationStructure
+            {
+                RHIAccelerationStructure* as{ nullptr }; // Acceleration structure to bind
+            };
+            Span<const AccelerationStructure> accelerationStructures; // Applies to type of AccelerationStructure
         };
         // NOTE: `desc.type` is used to determine which of the next spans is used                
         // to update the descriptors.

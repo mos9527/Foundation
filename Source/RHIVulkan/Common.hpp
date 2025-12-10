@@ -5,7 +5,7 @@
 
 #include <RHICore/Common.hpp>
 namespace Foundation::RHI {
-    template<typename Bits> inline Bits vkFlagsToBits(vk::Flags<Bits> flags) {
+    template<typename Bits> Bits vkFlagsToBits(vk::Flags<Bits> flags) {
         return static_cast<Bits>(static_cast<std::underlying_type_t<Bits>>(flags));
     }
     inline vk::Format vkFormatFromRHIFormat(RHIResourceFormat format) {
@@ -169,17 +169,21 @@ namespace Foundation::RHI {
             return vk::DescriptorType::eStorageImage;
         case StorageBuffer:
             return vk::DescriptorType::eStorageBuffer;
-        default:
         case UniformBuffer:
             return vk::DescriptorType::eUniformBuffer;
+        case AccelerationStructure:
+            return vk::DescriptorType::eAccelerationStructureKHR;
+        default:
+            return {};
         }
     }
 
     inline vk::PipelineBindPoint vkPipelineBindPointFromRHIDevicePipelineType(RHIDevicePipelineType type) {
         switch (type) {
         case RHIDevicePipelineType::Compute:  return vk::PipelineBindPoint::eCompute;
-        default:
         case RHIDevicePipelineType::Graphics: return vk::PipelineBindPoint::eGraphics;
+        default:
+            return {};
         }
     }
 
@@ -202,9 +206,9 @@ namespace Foundation::RHI {
         case E4: return vk::SampleCountFlagBits::e4;
         case E8: return vk::SampleCountFlagBits::e8;
         case E16: return vk::SampleCountFlagBits::e16;
-        case E1:
+        case E1: return vk::SampleCountFlagBits::e1;
         default:
-            return vk::SampleCountFlagBits::e1;
+            return {};
         }
     }
 
@@ -223,7 +227,7 @@ namespace Foundation::RHI {
         case TopLevel: return vk::AccelerationStructureTypeKHR::eTopLevel;
         case BottomLevel: return vk::AccelerationStructureTypeKHR::eBottomLevel;
         default:
-            return vk::AccelerationStructureTypeKHR::eTopLevel;
+            return {};
         }
     }
 
@@ -234,7 +238,7 @@ namespace Foundation::RHI {
         case Build: return vk::BuildAccelerationStructureModeKHR::eBuild;
         case Update: return vk::BuildAccelerationStructureModeKHR::eUpdate;
         default:
-            return vk::BuildAccelerationStructureModeKHR::eBuild;
+            return {};
         }
     }
 }

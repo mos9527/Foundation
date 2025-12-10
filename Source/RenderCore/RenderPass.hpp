@@ -99,7 +99,7 @@ namespace Foundation::RenderCore
             textureUsages; // Referenced texture sub resources
         Vector<Tuple<ResourceHandle, RHIResourceAccess,
                      RHIPipelineStage>> bufferUsages; // Referenced buffers
-        // Unique referenced resources (tex/buf)
+        // Unique referenced resources (tex/buf/AS)
         Vector<ResourceHandle> resources;
         // Unique texture views
         Vector<ResourceHandle> texviews;
@@ -107,7 +107,7 @@ namespace Foundation::RenderCore
         // Shader [path, entry point, stage, specialization data]
         Vector<Tuple<String, String, RHIShaderStage, Vector<char>>> shaders;
         // Bind points [view(tex) or buffer(buf), desc type, binding point]
-        Vector<Tuple<ResourceHandle, RHIDescriptorType, String>> textureBindings, bufferBindings;
+        Vector<Tuple<ResourceHandle, RHIDescriptorType, String>> textureBindings, bufferBindings, asBindings;
         // External Bind Sets [binding point, layout ptr, set index (set when built)]
         // Sorted lexicographically if the pipeline is built.
         Vector<Tuple<String, RHIDeviceDescriptorSetLayout*, int>> externalBindings;

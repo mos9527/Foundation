@@ -279,6 +279,15 @@ void Renderer::BindTextureCopySrc(PassHandle pass, ResourceHandle texture,
     DeclareTextureAccess(pass, texture, RHIPipelineStageBits::Transfer, range, RHIResourceAccessBits::TransferRead,
                          RHITextureLayout::TransferSrc);
 }
+void Renderer::BindAcceleartionStructureSRV(PassHandle pass, ResourceHandle as, RHIPipelineStage stage,
+                                            StringView bind_point) const
+{
+    CHECK(mState == State::Setup);
+    // TODO: Declare AS Access - not performed as there's no write access yet
+    mSetup->trackedPasses[pass].resources.emplace_back(as);
+    mSetup->trackedPasses[pass].asBindings.emplace_back(as, RHIDescriptorType::AccelerationStructure, bind_point);
+    mSetup->bindingCounts[RHIDescriptorType::AccelerationStructure]++;
+}
 void Renderer::PassSetRasterizerFlags(PassHandle pass,
                                       RHIPipelineState::PipelineStateDesc::Rasterizer const& rasterizer,
                                       RHIPipelineState::PipelineStateDesc::DepthStencil const& depth_stencil) const
@@ -614,30 +623,20 @@ void Renderer::BuildPipelineState(PassHandle pass)
     Map<String, ResourceHandle> var_handles(mAllocator);
     Map<String, ResourceHandle> var_samplers(mAllocator);
     Map<String, RHIDeviceDescriptorSetLayout*> var_ext_sets(mAllocator);
-    // ...for Textures
-    for (auto& [vhdl, dtype, binding] : tracked.textureBindings)
+    // ...for Resources
+    for (auto& bindings : {tracked.textureBindings, tracked.bufferBindings, tracked.asBindings})
     {
-        auto it = var_types.find(binding);
-        if (it == var_types.end())
-            var_types[binding] = dtype, var_handles[binding] = vhdl;
-        else
+        for (auto& [hdl, dtype, binding] : bindings)
         {
-            auto& dtype_prev = it->second;
-            auto& vhdl_prev = var_handles[binding];
-            CHECK(dtype_prev == dtype && vhdl_prev == vhdl);
-        }
-    }
-    // ...for Buffers
-    for (auto& [rhdl, dtype, binding] : tracked.bufferBindings)
-    {
-        auto it = var_types.find(binding);
-        if (it == var_types.end())
-            var_types[binding] = dtype, var_handles[binding] = rhdl;
-        else
-        {
-            auto& dtype_prev = it->second;
-            auto& rhdl_prev = var_handles[binding];
-            CHECK(dtype_prev == dtype && rhdl_prev == rhdl);
+            auto it = var_types.find(binding);
+            if (it == var_types.end())
+                var_types[binding] = dtype, var_handles[binding] = hdl;
+            else
+            {
+                auto& dtype_prev = it->second;
+                auto& vhdl_prev = var_handles[binding];
+                CHECK(dtype_prev == dtype && vhdl_prev == hdl);
+            }
         }
     }
     // ...for Samplers
@@ -771,6 +770,12 @@ void Renderer::BuildPipelineState(PassHandle pass)
                 {
                     auto* buf = DerefResource(hdl).Get<RHIBuffer*>();
                     ds->Update({.binding = binding, .type = type, .buffers = {{{.buffer = buf}}}});
+                    break;
+                }
+            case AccelerationStructure:
+                {
+                    auto* as = DerefResource(hdl).Get<RHIAccelerationStructure*>();
+                    ds->Update({.binding = binding, .type = type, .accelerationStructures = {{{.as = as}}}});
                     break;
                 }
             default:
@@ -922,10 +927,9 @@ void Renderer::FinalizeResources()
                     fmt::format("{} [{}]", res.name, handle).c_str());
             },
             // Borrowed
-            [&](RHIDeviceHandle<RHIBuffer> const& hdl) { mResources->resources[handle] = hdl; },
-            [&](RHIDeviceHandle<RHITexture> const& hdl) { mResources->resources[handle] = hdl; },
             [&](RHIBuffer* const ptr) { mResources->resources[handle] = ptr; },
             [&](RHITexture* const ptr) { mResources->resources[handle] = ptr; },
+            [&](RHIAccelerationStructure* const ptr) { mResources->resources[handle] = ptr; },
             [&](auto const&) { throw std::runtime_error("Unhandled resource type at creation time"); });
     }
     // Add back buffers (if we need to present)

@@ -142,12 +142,13 @@ public:
     size_t Upload(ImmediateUpload* ctx, FMesh const& source, GSMesh& outData, uint32_t& outOffset);
     size_t Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t& outIndex);
 
-    void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices, uint32_t& outPrimitiveCount);
+    void BuildBLASIncremental(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices, uint32_t& outPrimitiveCount);
     void BuildTLAS(ImmediateContext* ctx, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, uint32_t primitiveCount);
 
     [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.mBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetMaterialBuffer() const { return mMaterialBuffer.mBuffer.Get(); }
     [[nodiscard]] BindlessPool* GetTexturePool() { return &mTexturePool; }
+    [[nodiscard]] RHIAccelerationStructure* GetTLAS() const { return mTLAS.Get(); }
     void Reset();
 };

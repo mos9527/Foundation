@@ -10,6 +10,22 @@ Texture2D<float> depth;
 RWTexture2D<float4> output;
 StructuredBuffer<GSMaterial> materials;
 
+RaytracingAccelerationStructure AS;
+
+bool shadow(float3 p, float3 l)
+{
+    RayDesc ray;
+    ray.Origin = p;
+    ray.Direction = l;
+    ray.TMin = EPS;
+    ray.TMax = 1e2;
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
+    q.TraceRayInline(AS, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, ray);
+    q.Proceed();
+    bool hit = q.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
+    return hit;
+}
+
 [shader("compute")]
 [numthreads(16, 16, 1)]
 void main(uint2 tid: SV_DispatchThreadID) {
@@ -79,6 +95,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
         float NoL = saturate(dot(n,l));
 
         float3 lighting = float3(NoL) * globalParams.sunIntensity + globalParams.ambientColor;
+        lighting *= shadow(p, l);
 
         // Diffuse
         // https://seblagarde.wordpress.com/2012/01/08/pi-or-not-to-pi-in-game-lighting-equation/

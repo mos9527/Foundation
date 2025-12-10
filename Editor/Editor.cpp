@@ -115,7 +115,7 @@ void FInitEnter()
         Vector<uint32_t> blasIndices(meshes.size(), GLOBAL_ALLOC);
         uint32_t numPrimitives;
         LOG(Editor, LogDebug, "Building BLAS");
-        gpu->BuildBLAS(&ctx, meshes, blasIndices, numPrimitives);
+        gpu->BuildBLASIncremental(&ctx, meshes, blasIndices, numPrimitives);
         LOG(Editor, LogDebug, "Building TLAS");
         gpu->BuildTLAS(&ctx, GSInstances, blasIndices, numPrimitives);
     }

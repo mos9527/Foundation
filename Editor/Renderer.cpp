@@ -316,16 +316,13 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                 r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
             });
     }
-    auto NearSampler =
-        renderer->CreateSampler({.filter = {.minFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor,
-                                            .magFilter = RHIDeviceSampler::SamplerDesc::Filter::NearestNeighbor}});
-
     auto LightingBuffer = renderer->CreateResource(
         "Lighting",
         RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
                        .extent = {w, h, 1},
                        .format = RHIResourceFormat::B10G11R11Ufloat,
                        .mipLevels = FullMips});
+    auto TLAS = renderer->CreateResource("Scene TLAS", scene->GetTLAS());
     renderer->CreatePass(
         "Lighting", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -347,6 +344,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                 RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
             r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::ComputeShader, "materials");
+            r->BindAcceleartionStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
             r->BindTextureUAV(self, LightingBuffer, "output", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
                                                  .range = RHITextureSubresourceRange::Create()});

@@ -283,7 +283,7 @@ VulkanAccelerationStructure::VulkanAccelerationStructure(VulkanDevice const& dev
                                                    : vk::AccelerationStructureTypeKHR::eBottomLevel},
         device.GetVkAllocatorCallbacks());
 }
-vk::DeviceAddress VulkanAccelerationStructure::GetASAddress() const
+vk::DeviceAddress VulkanAccelerationStructure::GetVkAcceleartionStructureAddress() const
 {
     return mDevice.GetVkDevice().getAccelerationStructureAddressKHR({.accelerationStructure = mAS});
 }
@@ -354,9 +354,9 @@ RHI::vkAccelerationBuildGeoInfoFromRHI(RHIAccelerationStructureBuildDesc const& 
         res.scratchData = {.deviceAddress = vkBuffer->GetBufferAddress() + desc.scratchBufferOffset};
     }
     if (desc.srcAS)
-        res.srcAccelerationStructure = static_cast<VulkanAccelerationStructure*>(desc.srcAS)->GetVkAS();
+        res.srcAccelerationStructure = static_cast<VulkanAccelerationStructure*>(desc.srcAS)->GetVkAccelerationStructure();
     if (desc.dstAS)
-        res.dstAccelerationStructure = static_cast<VulkanAccelerationStructure*>(desc.dstAS)->GetVkAS();
+        res.dstAccelerationStructure = static_cast<VulkanAccelerationStructure*>(desc.dstAS)->GetVkAccelerationStructure();
     return res;
 }
 vk::AccelerationStructureBuildRangeInfoKHR

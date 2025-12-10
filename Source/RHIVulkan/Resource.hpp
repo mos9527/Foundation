@@ -119,8 +119,8 @@ namespace Foundation::RHI
     public:
         VulkanAccelerationStructure(VulkanDevice const& device, RHIAccelerationStructureDesc const& desc);
 
-        [[nodiscard]] auto const& GetVkAS() const { return mAS; }
-        [[nodiscard]] vk::DeviceAddress GetASAddress() const;
+        [[nodiscard]] auto& GetVkAccelerationStructure() { return mAS; }
+        [[nodiscard]] vk::DeviceAddress GetVkAcceleartionStructureAddress() const;
         void DebugSetObjectName(const char* name) override;
     };
     vk::AccelerationStructureGeometryTrianglesDataKHR

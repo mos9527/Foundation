@@ -153,7 +153,7 @@ RHIDeviceScopedHandle<RHIBuffer> GPUScene::CreateASBuffer(size_t size)
 // Reference:
 // - https://github.com/zeux/niagara/blob/master/src/scenert.cpp
 // - https://docs.vulkan.org/tutorial/latest/courses/18_Ray_tracing/02_Acceleration_structures.html
-void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices, uint32_t& outPrimitiveCount)
+void GPUScene::BuildBLASIncremental(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices, uint32_t& outPrimitiveCount)
 {
     CHECK_MSG(meshes.size() == outBLASIndices.size(), "Mismatched BLAS indices size");
     auto* device = mContext->device.Get();
@@ -262,7 +262,7 @@ void GPUScene::BuildTLAS(ImmediateContext* ctx, Span<const GSInstance> instances
     {
         vkInstances[i] = ConvertInstance(const_cast<GSInstance*>(&instances[i]));
         auto blas = static_cast<VulkanAccelerationStructure*>(mBLASes[blasIndices[i]].Get());
-        vkInstances[i].accelerationStructureReference = blas->GetASAddress();
+        vkInstances[i].accelerationStructureReference = blas->GetVkAcceleartionStructureAddress();
     }
     instanceData->Flush();
     RHIAccelerationStructureGeometryInstanceData instance{
