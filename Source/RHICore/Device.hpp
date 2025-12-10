@@ -242,6 +242,10 @@ namespace Foundation::RHI
         [[nodiscard]] virtual RHITexture* GetTexture(Handle handle) const = 0;
         virtual void DestroyTexture(Handle handle) = 0;
 
+        [[nodiscard]] virtual RHIAccelerationStructureSizeInfo GetAccelerationStructureSizeInfo(
+            RHIAccelerationStructureBuildDesc const& desc
+        ) const = 0;
+
         [[nodiscard]] virtual RHIDeviceScopedHandle<RHIAccelerationStructure>
         CreateAccelerationStructure(RHIAccelerationStructureDesc const& desc) = 0;
         [[nodiscard]] virtual RHIAccelerationStructure* GetAccelerationStructure(Handle handle) const = 0;

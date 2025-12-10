@@ -275,13 +275,12 @@ VulkanAccelerationStructure::VulkanAccelerationStructure(VulkanDevice const& dev
     RHIAccelerationStructure(device, desc), mDevice(device)
 {
     mAS = device.GetVkDevice().createAccelerationStructureKHR(
-        vk::AccelerationStructureCreateInfoKHR{
-            .buffer = static_cast<VulkanBuffer*>(desc.buffer)->GetVkBuffer(),
-            .offset = desc.offset,
-            .size = desc.size,
-            .type = desc.type == RHIAccelerationStructureType::TopLevel
-                ? vk::AccelerationStructureTypeKHR::eTopLevel
-                : vk::AccelerationStructureTypeKHR::eBottomLevel},
+        vk::AccelerationStructureCreateInfoKHR{.buffer = static_cast<VulkanBuffer*>(desc.buffer)->GetVkBuffer(),
+                                               .offset = desc.offset,
+                                               .size = desc.size,
+                                               .type = desc.type == RHIAccelerationStructureType::TopLevel
+                                                   ? vk::AccelerationStructureTypeKHR::eTopLevel
+                                                   : vk::AccelerationStructureTypeKHR::eBottomLevel},
         device.GetVkAllocatorCallbacks());
 }
 vk::DeviceAddress VulkanAccelerationStructure::GetASAddress() const
@@ -291,7 +290,7 @@ vk::DeviceAddress VulkanAccelerationStructure::GetASAddress() const
 void VulkanAccelerationStructure::DebugSetObjectName(const char* name) {}
 
 vk::AccelerationStructureGeometryTrianglesDataKHR
-RHI::vkAccelerationTriangleDataFromRHI(RHIAccelerationStructureGeometryDesc::TriangleData const& src)
+RHI::vkAccelerationTriangleDataFromRHI(RHIAccelerationStructureGeometryTriangleData const& src)
 {
     auto vbuf = static_cast<VulkanBuffer*>(src.vertexBuffer)->GetBufferAddress() + src.vertexOffset;
     auto ibuf = static_cast<VulkanBuffer*>(src.indexBuffer)->GetBufferAddress() + src.indexOffset;
@@ -305,19 +304,43 @@ RHI::vkAccelerationTriangleDataFromRHI(RHIAccelerationStructureGeometryDesc::Tri
         .indexData = vk::DeviceOrHostAddressConstKHR{.deviceAddress = ibuf},
     };
 }
-vk::AccelerationStructureInstanceKHR
-RHI::vkAccelerationInstanceFromRHI(RHIAccelerationStructureGeometryDesc::InstanceData const& desc)
+
+vk::AccelerationStructureBuildGeometryInfoKHR
+RHI::vkAccelerationBuildGeoInfoFromRHI(RHIAccelerationStructureBuildDesc const& desc,
+                                       Vector<vk::AccelerationStructureGeometryKHR>& geometries,
+                                       Vector<uint32_t>& primitiveCounts)
 {
-    vk::TransformMatrixKHR transform;
-    std::memcpy(transform.matrix[0], desc.xformBasisRowMajor[0], sizeof(float) * 3);
-    std::memcpy(transform.matrix[1], desc.xformBasisRowMajor[1], sizeof(float) * 3);
-    std::memcpy(transform.matrix[2], desc.xformBasisRowMajor[2], sizeof(float) * 3);
-    transform.matrix[0][3] = desc.xformTranslation[0];
-    transform.matrix[1][3] = desc.xformTranslation[1];
-    transform.matrix[2][3] = desc.xformTranslation[2];
-    auto as = static_cast<VulkanAccelerationStructure*>(desc.accelerationStructure)->GetASAddress();
-    return vk::AccelerationStructureInstanceKHR{.transform = transform,
-                                                .instanceCustomIndex = desc.instanceID,
-                                                .mask = 0xFF, // TODO
-                                                .accelerationStructureReference = as};
+    geometries.resize(desc.geometries.size()), primitiveCounts.clear();
+    for (size_t i = 0; auto const& src : desc.geometries)
+    {
+        auto& geo = geometries[i];
+        switch (src.type)
+        {
+        case RHIAccelerationGeometryType::Triangles:
+            {
+                geo.geometryType = vk::GeometryTypeKHR::eTriangles;
+                geo.geometry.triangles = vkAccelerationTriangleDataFromRHI(src.triangleData);
+                primitiveCounts.push_back(src.triangleData.indexCount / 3);
+                break;
+            }
+        case RHIAccelerationGeometryType::Instances:
+            {
+                auto addr = static_cast<VulkanBuffer*>(src.instanceData.instanceBuffer)->GetBufferAddress();
+                geo.geometryType = vk::GeometryTypeKHR::eInstances;
+                geo.geometry.instances.data = {.deviceAddress = addr + src.instanceData.instanceOffset};
+                break;
+            }
+        }
+        i++;
+    }
+    return vk::AccelerationStructureBuildGeometryInfoKHR{
+        .type = desc.type == RHIAccelerationStructureType::TopLevel ? vk::AccelerationStructureTypeKHR::eTopLevel
+                                                                    : vk::AccelerationStructureTypeKHR::eBottomLevel,
+        .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace,
+        .mode = desc.operation == RHIAccelerationStructureBuildOp::Build
+            ? vk::BuildAccelerationStructureModeKHR::eBuild
+            : vk::BuildAccelerationStructureModeKHR::eUpdate,
+        .geometryCount = static_cast<uint32_t>(geometries.size()),
+        .pGeometries = geometries.data(),
+    };
 }

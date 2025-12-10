@@ -88,7 +88,8 @@ namespace Foundation::RHI {
 
         RHICommandList& Dispatch(uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z) override;
 
-        RHICommandList& BuildAccelerationStructures(Span<const RayTracingASBuildDesc> desc) override;
+
+        RHICommandList& BuildAccelerationStructure(Span<const RHIAccelerationStructureBuildDesc> desc) override;
 
         RHICommandList& WriteTimestamp(RHIDeviceQueryPool* pool, RHIPipelineStageBits stage,uint32_t queryIndex) override;
         RHICommandList& DebugBegin(const char* message) override;
