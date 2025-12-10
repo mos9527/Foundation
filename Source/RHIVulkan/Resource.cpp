@@ -333,14 +333,34 @@ RHI::vkAccelerationBuildGeoInfoFromRHI(RHIAccelerationStructureBuildDesc const& 
         }
         i++;
     }
-    return vk::AccelerationStructureBuildGeometryInfoKHR{
+    auto res = vk::AccelerationStructureBuildGeometryInfoKHR{
         .type = desc.type == RHIAccelerationStructureType::TopLevel ? vk::AccelerationStructureTypeKHR::eTopLevel
                                                                     : vk::AccelerationStructureTypeKHR::eBottomLevel,
-        .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace,
+        .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace, // TODO: Other flags
         .mode = desc.operation == RHIAccelerationStructureBuildOp::Build
             ? vk::BuildAccelerationStructureModeKHR::eBuild
             : vk::BuildAccelerationStructureModeKHR::eUpdate,
         .geometryCount = static_cast<uint32_t>(geometries.size()),
         .pGeometries = geometries.data(),
+    };
+    if (desc.scratchBuffer)
+    {
+        auto* vkBuffer = static_cast<VulkanBuffer*>(desc.scratchBuffer);
+        res.scratchData = {.deviceAddress = vkBuffer->GetBufferAddress() + desc.scratchBufferOffset};
+    }
+    if (desc.srcAS)
+        res.srcAccelerationStructure = static_cast<VulkanAccelerationStructure*>(desc.srcAS)->GetVkAS();
+    if (desc.dstAS)
+        res.dstAccelerationStructure = static_cast<VulkanAccelerationStructure*>(desc.dstAS)->GetVkAS();
+    return res;
+}
+vk::AccelerationStructureBuildRangeInfoKHR
+RHI::vkAccelerationBuildRangeInfoFromRHI(RHIAccelerationStructureBuildRangeInfo const& desc)
+{
+    return vk::AccelerationStructureBuildRangeInfoKHR{
+        .primitiveCount = desc.primitiveCount,
+        .primitiveOffset = desc.primitiveOffset,
+        .firstVertex = desc.firstVertex,
+        .transformOffset = desc.transformOffset,
     };
 }

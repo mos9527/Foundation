@@ -401,7 +401,7 @@ RHICommandList& VulkanCommandList::BindIndexBuffer(RHIBuffer* buffer, size_t off
         throw std::runtime_error("unsupported index format");
     }
     auto* vulkan_buffer = static_cast<VulkanBuffer*>(buffer);
-    mCommandBuffer.bindIndexBuffer(*vulkan_buffer->GetVkBuffer(), static_cast<vk::DeviceSize>(offset), type);
+    mCommandBuffer.bindIndexBuffer(*vulkan_buffer->GetVkBuffer(), offset, type);
     return *this;
 }
 
@@ -439,9 +439,28 @@ RHICommandList& VulkanCommandList::Dispatch(uint32_t group_count_x, uint32_t gro
     mCommandBuffer.dispatch(group_count_x, group_count_y, group_count_z);
     return *this;
 }
-RHICommandList& VulkanCommandList::BuildAccelerationStructure(Span<const RHIAccelerationStructureBuildDesc> desc)
+RHICommandList& VulkanCommandList::BuildAccelerationStructure(Span<const RHIAccelerationStructureBuildDesc> descs)
 {
     CHECK(mAllocator && "Invalid command list states.");
+    Vector<vk::AccelerationStructureBuildGeometryInfoKHR> infos(mAllocator);
+    Vector<Vector<vk::AccelerationStructureBuildRangeInfoKHR>> ranges(mAllocator);
+    Vector<Vector<vk::AccelerationStructureGeometryKHR>> geos(mAllocator);
+    Vector<Vector<uint32_t>> primitiveCounts(mAllocator);
+    for (auto const& desc : descs)
+    {
+        auto& geoBuf = geos.emplace_back(mAllocator);
+        auto& primBuf = primitiveCounts.emplace_back(mAllocator);
+        auto& rangeBuf = ranges.emplace_back(mAllocator);
+        infos.emplace_back(vkAccelerationBuildGeoInfoFromRHI(desc, geoBuf, primBuf));
+        CHECK(desc.ranges.size() == desc.geometries.size());
+        for (auto const& range : desc.ranges)
+            rangeBuf.push_back(vkAccelerationBuildRangeInfoFromRHI(range));
+    }
+    CHECK(infos.size() == geos.size() && infos.size() == ranges.size());
+    Vector<vk::AccelerationStructureBuildRangeInfoKHR*> pRanges(mAllocator);
+    for (auto& rangeBuf : ranges)
+        pRanges.emplace_back(rangeBuf.data());
+    mCommandBuffer.buildAccelerationStructuresKHR(infos, pRanges);
     return *this;
 }
 RHICommandList& VulkanCommandList::WriteTimestamp(RHIDeviceQueryPool* pool, RHIPipelineStageBits stage,

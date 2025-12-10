@@ -60,6 +60,8 @@ namespace Foundation::RHI {
         if (usage & IndirectBuffer) flags |= vk::BufferUsageFlagBits::eIndirectBuffer;
         if (usage & TransferSource) flags |= vk::BufferUsageFlagBits::eTransferSrc;
         if (usage & TransferDestination) flags |= vk::BufferUsageFlagBits::eTransferDst;
+        if (usage & DeviceAddress) flags |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
+        if (usage & AccelerationStructureStorage) flags |= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR;
         return flags;
     }
 
@@ -108,6 +110,7 @@ namespace Foundation::RHI {
         if (stage & Transfer) flags |= vk::PipelineStageFlagBits::eTransfer;
         if (stage & EarlyFragmentTests) flags |= vk::PipelineStageFlagBits::eEarlyFragmentTests;
         if (stage & LateFragmentTests) flags |= vk::PipelineStageFlagBits::eLateFragmentTests;
+        if (stage & AccelerationBuild) flags |= vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR;
         if (stage & TopOfPipe) flags |= vk::PipelineStageFlagBits::eTopOfPipe;
         if (stage & BottomOfPipe) flags |= vk::PipelineStageFlagBits::eBottomOfPipe;
         if (stage & AllGraphics) flags |= vk::PipelineStageFlagBits::eAllGraphics;

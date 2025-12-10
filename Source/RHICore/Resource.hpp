@@ -266,6 +266,10 @@ namespace Foundation::RHI
     {
         RHIAccelerationStructureType type;
         RHIAccelerationStructureBuildOp operation;
+        RHIAccelerationStructure* srcAS{nullptr};
+        RHIAccelerationStructure* dstAS{nullptr};
+        RHIBuffer* scratchBuffer{nullptr};
+        uint32_t scratchBufferOffset;
         Span<const RHIAccelerationStructureGeometryInfo> geometries;
         Span<const RHIAccelerationStructureBuildRangeInfo> ranges;
     };

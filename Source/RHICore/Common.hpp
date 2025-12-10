@@ -263,7 +263,8 @@ namespace Foundation::RHI {
         RenderTargetOutput      = 1 << 8,
         Transfer                = 1 << 9,
         EarlyFragmentTests      = 1 << 10,
-        LateFragmentTests       = 1 << 11,        
+        LateFragmentTests       = 1 << 11,
+        AccelerationBuild       = 1 << 12,
         // ---
         Host                    = 1 << 27,
         AllGraphics             = 1 << 28,
@@ -280,7 +281,9 @@ namespace Foundation::RHI {
         StorageBuffer = 1 << 3,
         IndirectBuffer = 1 << 4,
         TransferSource = 1 << 5,
-        TransferDestination = 1 << 6
+        TransferDestination = 1 << 6,
+        DeviceAddress = 1 << 7,
+        AccelerationStructureStorage = 1 << 8
     BITMASK_ENUM_END();
 
     BITMASK_ENUM_BEGIN(RHITextureUsage, uint32_t)

@@ -11,12 +11,15 @@ Mesh = 1 << 0,
     BITMASK_ENUM_END()
 
 #pragma pack(push, 1)
-        struct GSMesh
+struct GSMesh
 {
     // Offsets are absolute, and are in Primitive buffer (bytes).
     // @ref FVertex
     uint32_t vtxOffset;
     uint32_t vtxCount;
+    // LOD0 UINT32 indices
+    uint32_t idxOffset;
+    uint32_t idxCount;
     // -- DAG LOD Group @ref FLODGroup
     uint32_t groupOffset;
     uint32_t groupCount;
@@ -50,7 +53,7 @@ struct GSMaterial
     float anisotropy;
 };
 #pragma pack(pop)
-static_assert(sizeof(GSMesh) == 36);
+static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 48);
 
 template <typename T>
@@ -109,6 +112,16 @@ class GPUScene
 
     BindlessPool mTexturePool;
 
+    // Acceleration Structures
+    RHIDeviceScopedHandle<RHIBuffer> mBLASBuffer;
+    Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mBLASes;
+    RHIDeviceScopedHandle<RHIBuffer> mTLASBuffer;
+    RHIDeviceScopedHandle<RHIAccelerationStructure> mTLAS;
+    // Same as mPrimitiveOffset
+    size_t mBLASOffset{0};
+
+    RHIDeviceScopedHandle<RHIBuffer> CreateScratchBuffer(size_t size);
+    RHIDeviceScopedHandle<RHIBuffer> CreateASBuffer(size_t size);
 public:
     struct GPUSceneDesc
     {
@@ -116,6 +129,8 @@ public:
         uint32_t instanceBudget = static_cast<uint32_t>(1e4); // # of instances
         uint32_t materialBudget = static_cast<uint32_t>(1e3); // # of materials
         uint32_t texturesBudget = static_cast<uint32_t>(1e3); // # of textures
+        uint32_t blasBudget = 64 * (1u << 20); // 64MB
+        uint32_t tlasBudget = 16 * (1u << 20); // 16MB
     };
     GPUScene(FContext* ctx, GPUSceneDesc const& desc);
 
@@ -126,6 +141,9 @@ public:
 
     size_t Upload(ImmediateUpload* ctx, FMesh const& source, GSMesh& outData, uint32_t& outOffset);
     size_t Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t& outIndex);
+
+    void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices, uint32_t& outPrimitiveCount);
+    void BuildTLAS(ImmediateContext* ctx, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, uint32_t primitiveCount);
 
     [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.mBuffer.Get(); }

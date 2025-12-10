@@ -120,7 +120,7 @@ namespace Foundation::RHI
         VulkanAccelerationStructure(VulkanDevice const& device, RHIAccelerationStructureDesc const& desc);
 
         [[nodiscard]] auto const& GetVkAS() const { return mAS; }
-        vk::DeviceAddress GetASAddress() const;
+        [[nodiscard]] vk::DeviceAddress GetASAddress() const;
         void DebugSetObjectName(const char* name) override;
     };
     vk::AccelerationStructureGeometryTrianglesDataKHR
@@ -129,4 +129,6 @@ namespace Foundation::RHI
     vkAccelerationBuildGeoInfoFromRHI(RHIAccelerationStructureBuildDesc const& desc,
                                       Vector<vk::AccelerationStructureGeometryKHR>& geometries,
                                       Vector<uint32_t>& primitiveCounts);
+    vk::AccelerationStructureBuildRangeInfoKHR
+    vkAccelerationBuildRangeInfoFromRHI(RHIAccelerationStructureBuildRangeInfo const& desc);
 } // namespace Foundation::RHI
