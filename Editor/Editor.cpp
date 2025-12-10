@@ -33,7 +33,8 @@ void FInitEnter()
     }
     // Load into GPUScene
     auto* gpu = GContext->gpuScene;
-    Vector<Pair<uint32_t, GSMesh>> meshOffsets(GLOBAL_ALLOC);
+    Vector<GSMesh> meshes(GLOBAL_ALLOC);
+    Vector<uint32_t> meshOffsets(GLOBAL_ALLOC);
     Vector<uint32_t> textureIDMap(scene.mTextures.size(), GLOBAL_ALLOC);
     LOG(Editor, LogInfo, "Uploading scene to GPU");
     {
@@ -43,7 +44,8 @@ void FInitEnter()
         {
             CHECK(src.EnsureQuantized());
             CHECK(src.EnsureRaw());
-            auto& [offset, dst] = meshOffsets.emplace_back();
+            auto& dst = meshes.emplace_back();
+            auto& offset = meshOffsets.emplace_back();
             if (!gpu->Upload(&upload, src, dst, offset))
             {
                 // Flush batched uploads - staging buffer full
@@ -77,7 +79,7 @@ void FInitEnter()
         dst.transform = src.transform.transform;
         dst.rotation = src.transform.rotation;
         dst.scale = src.transform.scale;
-        dst.meshOffset = meshOffsets[src.meshIndex].first;
+        dst.meshOffset = meshOffsets[src.meshIndex];
         dst.materialIndex = src.materialIndex;
     }
     GSMaterials.clear();
@@ -106,6 +108,16 @@ void FInitEnter()
         std::memcpy(ptr, GSMaterials.data(), GSMaterials.size() * sizeof(GSMaterial));
         GShaderGlobals.firstMaterial = off;
         GShaderGlobals.numMaterials = GSMaterials.size();
+    }
+    // Build RT AS
+    {
+        ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
+        Vector<uint32_t> blasIndices(meshes.size(), GLOBAL_ALLOC);
+        uint32_t numPrimitives;
+        LOG(Editor, LogDebug, "Building BLAS");
+        gpu->BuildBLAS(&ctx, meshes, blasIndices, numPrimitives);
+        LOG(Editor, LogDebug, "Building TLAS");
+        gpu->BuildTLAS(&ctx, GSInstances, blasIndices, numPrimitives);
     }
     FEState = FEInit;
 }

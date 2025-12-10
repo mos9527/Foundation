@@ -8,7 +8,7 @@ mTexturePool(ctx->device.Get(), ctx->allocator, {.maxBindings = desc.texturesBud
                 .heap = RHIDeviceHeapType::Local,
                 .shared = true
             },
-         .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress,
+         .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
          .size = desc.primitiveBudget});
 }
 Pair<GSInstance*, uint32_t> GPUScene::AllocateInstance(uint32_t count)
@@ -178,7 +178,9 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
             .vertexCount = mesh.vtxCount,
             .vertexStride = sizeof(FQVertex),
             .indexFormat = RHIResourceFormat::R32Uint,
+            .indexBuffer = primitiveBuffer,
             .indexOffset = mesh.idxOffset,
+            .indexCount = mesh.idxCount
         };
         range = RHIAccelerationStructureBuildRangeInfo{
             .primitiveCount = mesh.idxCount / 3
@@ -194,7 +196,7 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
         sizeInfo[i] = device->GetAccelerationStructureSizeInfo(desc);
         blasOffsets[i] = mBLASOffset;
         // minAccelerationStructureScratchOffsetAlignment is 256
-        mBLASOffset = AlignUp(mBLASOffset, 256u) + sizeInfo[i].accelerationStructureSize;
+        mBLASOffset = AlignUp(mBLASOffset + sizeInfo[i].accelerationStructureSize, 256u);
         scratchFootprint = std::max(scratchFootprint, sizeInfo[i].buildScratchSize);
     }
     auto scratch = CreateScratchBuffer(scratchFootprint);
@@ -248,9 +250,11 @@ void GPUScene::BuildTLAS(ImmediateContext* ctx, Span<const GSInstance> instances
     auto instanceData = mContext->device->CreateBuffer(
     {
             .resource = {
-                .heap = RHIDeviceHeapType::Upload
+                .heap = RHIDeviceHeapType::Upload,
+                .staging = true
             },
-         .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::TransferSource,
+         .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::TransferSource |
+                RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
         .size = instances.size() * sizeof(vk::AccelerationStructureInstanceKHR)
     });
     auto* vkInstances = instanceData->Map<vk::AccelerationStructureInstanceKHR>();
@@ -262,7 +266,8 @@ void GPUScene::BuildTLAS(ImmediateContext* ctx, Span<const GSInstance> instances
     }
     instanceData->Flush();
     RHIAccelerationStructureGeometryInstanceData instance{
-        .instanceBuffer = instanceData.Get()
+        .instanceBuffer = instanceData.Get(),
+        .totalPrimitives = primitiveCount
     };
     RHIAccelerationStructureGeometryInfo geometry{
         .type = RHIAccelerationGeometryType::Instances,

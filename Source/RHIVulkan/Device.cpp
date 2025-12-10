@@ -6,7 +6,8 @@ using namespace Foundation::Core;
 using namespace Foundation::RHI;
 const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_MESH_SHADER_EXTENSION_NAME,
                                          VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
-                                         VK_KHR_MAINTENANCE_9_EXTENSION_NAME};
+                                         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+                                         VK_KHR_MAINTENANCE_9_EXTENSION_NAME /*CPU side query pool reset - XXX remove it*/};
 
 const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
 
@@ -76,7 +77,10 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     }
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
                        vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
-                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT, vk::PhysicalDeviceMeshShaderFeaturesEXT>
+                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT,
+                       vk::PhysicalDeviceMeshShaderFeaturesEXT,
+                       vk::PhysicalDeviceAccelerationStructureFeaturesKHR
+    >
         featureChain = {
             {.features = {.samplerAnisotropy = true,
                           .fragmentStoresAndAtomics = true,
@@ -95,17 +99,18 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
              .scalarBlockLayout = true,
              .uniformBufferStandardLayout = true,
              .hostQueryReset = true,
-             .timelineSemaphore = true}, // vk::PhysicalDeviceVulkan12Features
+             .timelineSemaphore = true,
+             .bufferDeviceAddress = true}, // vk::PhysicalDeviceVulkan12Features
             {.synchronization2 = true,
              .dynamicRendering = true,
              .shaderIntegerDotProduct = true}, // vk::PhysicalDeviceVulkan13Features
             {.extendedDynamicState = true}, // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
-            {.taskShader = true, .meshShader = true} // vk::PhysicalDeviceMeshShaderFeaturesEXT
+            {.taskShader = true, .meshShader = true}, // vk::PhysicalDeviceMeshShaderFeaturesEXT
+            {.accelerationStructure = true,} // vk::PhysicalDeviceAccelerationStructureFeaturesKHR
         };
     vk::DeviceCreateInfo device_info{.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
                                      .queueCreateInfoCount = static_cast<uint32_t>(queue_info.size()),
                                      .pQueueCreateInfos = queue_info.data(),
-                                     .enabledLayerCount = 0,
                                      .enabledExtensionCount = std::size(kVulkanDeviceExtensions),
                                      .ppEnabledExtensionNames = kVulkanDeviceExtensions};
     mDevice = vk::raii::Device(mPhysicalDevice, device_info, GetVkAllocatorCallbacks());
@@ -117,6 +122,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     mQueues->transfer = mQueues->storage.CreateObject<VulkanDeviceQueue>(*this, transfer.first, transfer.second);
     // Initialize VMA
     const VmaAllocatorCreateInfo allocator_info{
+        .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
         .physicalDevice = *mPhysicalDevice,
         .device = *mDevice,
         .pAllocationCallbacks = reinterpret_cast<const VkAllocationCallbacks*>(&GetVkAllocatorCallbacks()),
@@ -523,7 +529,6 @@ VulkanDevice::GetAccelerationStructureSizeInfo(RHIAccelerationStructureBuildDesc
 {
     Vector<vk::AccelerationStructureGeometryKHR> geos(GetAllocator());
     Vector<uint32_t> primitiveCounts(GetAllocator());
-    CHECK_MSG(primitiveCounts.size() == geos.size(), "Invalid build desc (mixing triangles with other types?)");
     auto buildInfo = vkAccelerationBuildGeoInfoFromRHI(desc, geos, primitiveCounts);
     vk::AccelerationStructureBuildSizesInfoKHR sizeInfo = mDevice.getAccelerationStructureBuildSizesKHR(
         vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCounts);

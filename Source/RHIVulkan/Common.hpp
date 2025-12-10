@@ -62,6 +62,7 @@ namespace Foundation::RHI {
         if (usage & TransferDestination) flags |= vk::BufferUsageFlagBits::eTransferDst;
         if (usage & DeviceAddress) flags |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
         if (usage & AccelerationStructureStorage) flags |= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR;
+        if (usage & AccelerationStructureBuildReadOnly) flags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
         return flags;
     }
 

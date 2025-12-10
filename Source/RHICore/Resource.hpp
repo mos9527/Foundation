@@ -247,6 +247,7 @@ namespace Foundation::RHI
     {
         RHIBuffer* instanceBuffer;
         uint32_t instanceOffset; // Bytes
+        uint32_t totalPrimitives;
     };
     struct RHIAccelerationStructureGeometryInfo
     {

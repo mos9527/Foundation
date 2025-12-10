@@ -318,7 +318,10 @@ RHI::vkAccelerationBuildGeoInfoFromRHI(RHIAccelerationStructureBuildDesc const& 
         {
         case RHIAccelerationGeometryType::Triangles:
             {
+                CHECK(src.triangleData.indexCount && src.triangleData.indexCount % 3 == 0);
                 geo.geometryType = vk::GeometryTypeKHR::eTriangles;
+                // vvv Unions don't initialize these themselves.
+                geo.geometry.triangles.sType = vk::StructureType::eAccelerationStructureGeometryTrianglesDataKHR;
                 geo.geometry.triangles = vkAccelerationTriangleDataFromRHI(src.triangleData);
                 primitiveCounts.push_back(src.triangleData.indexCount / 3);
                 break;
@@ -327,7 +330,9 @@ RHI::vkAccelerationBuildGeoInfoFromRHI(RHIAccelerationStructureBuildDesc const& 
             {
                 auto addr = static_cast<VulkanBuffer*>(src.instanceData.instanceBuffer)->GetBufferAddress();
                 geo.geometryType = vk::GeometryTypeKHR::eInstances;
+                geo.geometry.instances.sType = vk::StructureType::eAccelerationStructureGeometryInstancesDataKHR;
                 geo.geometry.instances.data = {.deviceAddress = addr + src.instanceData.instanceOffset};
+                primitiveCounts.push_back(src.instanceData.totalPrimitives);
                 break;
             }
         }

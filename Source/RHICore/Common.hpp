@@ -283,7 +283,8 @@ namespace Foundation::RHI {
         TransferSource = 1 << 5,
         TransferDestination = 1 << 6,
         DeviceAddress = 1 << 7,
-        AccelerationStructureStorage = 1 << 8
+        AccelerationStructureStorage = 1 << 8,
+        AccelerationStructureBuildReadOnly = 1 << 9,
     BITMASK_ENUM_END();
 
     BITMASK_ENUM_BEGIN(RHITextureUsage, uint32_t)
