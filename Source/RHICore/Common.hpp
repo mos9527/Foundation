@@ -152,6 +152,18 @@ namespace Foundation::RHI {
         ShaderReadOnly,
     };
 
+    enum class RHIAccelerationStructureType
+    {
+        BottomLevel,
+        TopLevel
+    };
+
+    enum class RHIAccelerationGeometryType
+    {
+        Triangles,
+        Instances
+    };
+
     enum class RHIResourceHostAccess {
         Invisible,
         ReadWrite, // r/w are possible

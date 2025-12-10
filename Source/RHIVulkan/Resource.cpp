@@ -279,3 +279,12 @@ void VulkanTextureView::DebugSetObjectName(const char* name) {
         .pObjectName = name
         });
 }
+VulkanAccelerationStructure::VulkanAccelerationStructure(VulkanDevice const& device,
+                                                         RHIAccelerationStructureDesc const& desc)
+{
+
+}
+void VulkanAccelerationStructure::DebugSetObjectName(const char* name)
+{
+
+}

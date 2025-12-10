@@ -94,4 +94,17 @@ namespace Foundation::RHI {
 
         void DebugSetObjectName(const char* name) override;
     };
+
+    class VulkanAccelerationStructure : public RHIAccelerationStructure
+    {
+    protected:
+        VulkanDevice const& mDevice;
+        vk::raii::AccelerationStructureKHR mAS{nullptr};
+    public:
+        VulkanAccelerationStructure(VulkanDevice const& device, RHIAccelerationStructureDesc const& desc);
+
+        [[nodiscard]] auto const& GetVkAS() const { return mAS; }
+
+        void DebugSetObjectName(const char* name) override;
+    }
 }

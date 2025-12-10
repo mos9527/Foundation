@@ -2,6 +2,7 @@
 #include <SDL3/SDL.h>
 #include <vk_mem_alloc.h>
 #include <RHICore/Device.hpp>
+#include <Core/Logging.hpp>
 #include "Common.hpp"
 namespace Foundation::RHI {
     class VulkanApplication;
@@ -150,8 +151,12 @@ namespace Foundation::RHI {
         void DestroyBuffer(Handle handle) override;
 
         RHIDeviceScopedHandle<RHITexture> CreateTexture(RHITextureDesc const& desc) override;
-        RHITexture* GetImage(Handle handle) const override;
-        void DestroyImage(Handle handle) override;
+        RHITexture* GetTexture(Handle handle) const override;
+        void DestroyTexture(Handle handle) override;
+
+        [[nodiscard]] RHIDeviceScopedHandle<RHIAccelerationStructure> CreateAccelerationStructure(RHIAccelerationStructureDesc const& desc) override;
+        [[nodiscard]] RHIAccelerationStructure* GetAccelerationStructure(Handle handle) const override;
+        void DestroyAccelerationStructure(Handle handle) override;
 
         RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout> CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc) override;
         RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout(Handle handle) const override;

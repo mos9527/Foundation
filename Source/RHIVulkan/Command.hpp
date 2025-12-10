@@ -74,19 +74,21 @@ namespace Foundation::RHI {
         RHICommandList& DrawMeshTasks(uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z) override;
         RHICommandList& DrawMeshTasksIndirect(RHIBuffer* cmd_buffer, size_t cmd_offset, size_t draw_count, size_t stride) override;
 
-        RHICommandList& PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Core::Span<const char> data) override;
-        RHICommandList& UpdateBuffer(RHIBuffer* buffer, size_t offset, Span<const char> data);
+        RHICommandList& PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset, Span<const char> data) override;
+        RHICommandList& UpdateBuffer(RHIBuffer* buffer, size_t offset, Span<const char> data) override;
         RHICommandList& FillBuffer(RHIBuffer* buffer, uint32_t value, size_t offset = 0, size_t size = kFullSize) override;
-        RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Core::Span<const CopyBufferRegion> regions) override;
-        RHICommandList& CopyImage(RHITexture* src_image, RHITextureLayout src_layout, RHITexture* dst_image, RHITextureLayout dst_layout, Core::Span<const CopyImageRegion> regions) override;
-        RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image, RHITextureLayout dst_layout, Core::Span<const CopyImageRegion> regions) override;
+        RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Span<const CopyBufferRegion> regions) override;
+        RHICommandList& CopyImage(RHITexture* src_image, RHITextureLayout src_layout, RHITexture* dst_image, RHITextureLayout dst_layout, Span<const CopyImageRegion> regions) override;
+        RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image, RHITextureLayout dst_layout, Span<const CopyImageRegion> regions) override;
 
         RHICommandList& BeginGraphics(GraphicsDesc const& desc) override;
-        RHICommandList& BindVertexBuffer(uint32_t index, Core::Span<RHIBuffer* const> buffers, Core::Span<const size_t> offsets) override;
+        RHICommandList& BindVertexBuffer(uint32_t index, Span<RHIBuffer* const> buffers, Span<const size_t> offsets) override;
         RHICommandList& BindIndexBuffer(RHIBuffer* buffer, size_t offset, RHIResourceFormat format) override;
         RHICommandList& EndGraphics() override;
 
         RHICommandList& Dispatch(uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z) override;
+
+        RHICommandList& BuildAccelerationStructures(Span<const RayTracingASBuildDesc> desc) override;
 
         RHICommandList& WriteTimestamp(RHIDeviceQueryPool* pool, RHIPipelineStageBits stage,uint32_t queryIndex) override;
         RHICommandList& DebugBegin(const char* message) override;

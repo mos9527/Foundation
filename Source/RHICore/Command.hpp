@@ -139,6 +139,16 @@ namespace Foundation::RHI {
 #pragma region Compute        
         virtual RHICommandList& Dispatch(uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z) = 0;
 #pragma endregion
+#pragma region Raytracing
+        struct RayTracingASBuildDesc
+        {
+            RHIBuffer* srcBuffer;
+            uint32_t srcOffset;
+            RHIAccelerationStructure* dstAS;
+            uint32_t numPrimitives;
+        };
+        virtual RHICommandList& BuildAccelerationStructures(Span<const RayTracingASBuildDesc> desc) = 0;
+#pragma endregion
 #pragma region Tags
         virtual RHICommandList& WriteTimestamp(RHIDeviceQueryPool* pool,RHIPipelineStageBits stage,uint32_t queryIndex) = 0;
         virtual RHICommandList& DebugBegin(const char* message) = 0;

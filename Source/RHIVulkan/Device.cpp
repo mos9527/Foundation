@@ -193,14 +193,10 @@ void VulkanDevice::QueryBudget(size_t& used, size_t& budget) const
 String VulkanDevice::QueryDeviceString() const
 {
     auto properties = mPhysicalDevice.getProperties();
-    return fmt::format(
-        "{} ({}) on Vulkan {}.{}.{}",
-        &properties.deviceName[0],
-        kVulkanDeviceTypes[static_cast<size_t>(properties.deviceType)],
-        VK_VERSION_MAJOR(properties.apiVersion),
-        VK_VERSION_MINOR(properties.apiVersion),
-        VK_VERSION_PATCH(properties.apiVersion)
-    );
+    return fmt::format("{} ({}) on Vulkan {}.{}.{}", &properties.deviceName[0],
+                       kVulkanDeviceTypes[static_cast<size_t>(properties.deviceType)],
+                       VK_VERSION_MAJOR(properties.apiVersion), VK_VERSION_MINOR(properties.apiVersion),
+                       VK_VERSION_PATCH(properties.apiVersion));
 }
 
 VulkanDeviceQueue* VulkanDeviceQueues::Get(Handle handle) const { return storage.GetObjectPtr(handle); }
@@ -519,8 +515,19 @@ RHIDeviceScopedHandle<RHITexture> VulkanDevice::CreateTexture(RHITextureDesc con
 {
     return {this, mStorage.CreateObject<VulkanTexture>(*this, desc)};
 }
-RHITexture* VulkanDevice::GetImage(Handle handle) const { return mStorage.GetObjectPtr<RHITexture>(handle); }
-void VulkanDevice::DestroyImage(Handle handle) { mStorage.DestroyObject(handle); }
+RHITexture* VulkanDevice::GetTexture(Handle handle) const { return mStorage.GetObjectPtr<RHITexture>(handle); }
+void VulkanDevice::DestroyTexture(Handle handle) { mStorage.DestroyObject(handle); }
+
+RHIDeviceScopedHandle<RHIAccelerationStructure>
+VulkanDevice::CreateAccelerationStructure(RHIAccelerationStructureDesc const& desc)
+{
+    return {this, mStorage.CreateObject<VulkanAccelerationStructure>(*this, desc)};
+}
+RHIAccelerationStructure* VulkanDevice::GetAccelerationStructure(Handle handle) const
+{
+    return mStorage.GetObjectPtr<RHIAccelerationStructure>(handle);
+}
+void VulkanDevice::DestroyAccelerationStructure(Handle handle) { mStorage.DestroyObject(handle); }
 
 void VulkanDeviceDescriptorSetLayout::DebugSetObjectName(const char* name)
 {
@@ -596,7 +603,8 @@ void VulkanDeviceSampler::DebugSetObjectName(const char* name)
                                                       .pObjectName = name});
 }
 VulkanDeviceQueryPool::VulkanDeviceQueryPool(const VulkanDevice& device, QueryPoolDesc const& desc) :
-    RHIDeviceQueryPool(device, desc), mDevice(device), mTimestampResolution(mDevice.GetVkPhysicalDevice().getProperties().limits.timestampPeriod),
+    RHIDeviceQueryPool(device, desc), mDevice(device),
+    mTimestampResolution(mDevice.GetVkPhysicalDevice().getProperties().limits.timestampPeriod),
     mTimestampResults(device.GetAllocator())
 {
     vk::QueryPoolCreateInfo createInfo = {.flags = vk::QueryPoolCreateFlagBits::eResetKHR, .queryCount = desc.count};

@@ -1,6 +1,5 @@
 #pragma once
 #include "Common.hpp"
-#include "Core/Logging.hpp"
 namespace Foundation::RHI {
     class RHIDevice;
     struct RHIResourceDesc {
@@ -85,7 +84,6 @@ namespace Foundation::RHI {
             void* p = Map();
             if (count == kFullSize)
                 count = mDesc.size / sizeof(T);
-            CHECK_MSG(count * sizeof(T) <= mDesc.size, "Buffer map range out of bounds");
             return { static_cast<T*>(p) , count };
         }
         /**
@@ -129,11 +127,11 @@ namespace Foundation::RHI {
         // Number of mip levels in the range
         uint32_t mipCount;
         /* @brief Mip level used (inclusive) */
-        [[nodiscard]] inline Pair<uint32_t, uint32_t> GetMipLevelRange() const {
+        [[nodiscard]] Pair<uint32_t, uint32_t> GetMipLevelRange() const {
             return { layer.mipLevel, layer.mipLevel + mipCount - 1 };
         }
         /* @brief Array layers used (inclusive) */
-        [[nodiscard]] inline Pair<uint32_t, uint32_t> GetArrayLayerRange() const {
+        [[nodiscard]] Pair<uint32_t, uint32_t> GetArrayLayerRange() const {
             return { layer.baseArrayLayer, layer.baseArrayLayer + layer.layerCount - 1 };
         }
         /**
@@ -156,7 +154,6 @@ namespace Foundation::RHI {
                 },
                 .mipCount = mip_count,
             };
-            CHECK_MSG(res.IsValid(), "Invalid Subresource Range is being created!");
             return res;
         }
         [[nodiscard]] constexpr bool IsValid() const
@@ -197,6 +194,48 @@ namespace Foundation::RHI {
             : mImage(image), mDesc(desc) {
         }
         [[nodiscard]] virtual RHITexture* GetTexture() const = 0;
+        virtual void DebugSetObjectName(const char* name) = 0;
+    };
+    class RHIAccelerationStructure;
+    struct RHIAccelerationStructureDesc
+    {
+        RHIAccelerationStructureType type;
+        RHIBuffer* buffer;
+        uint32_t offset;
+        uint32_t size;
+    };
+    struct RHIAccelerationStructureGeometryDesc
+    {
+        RHIAccelerationGeometryType type;
+        struct TriangleData
+        {
+            RHIResourceFormat vertexFormat;
+            RHIBuffer* vertexBuffer;
+            uint32_t vertexOffset; // Bytes
+            uint32_t vertexCount;
+            uint32_t vertexStride;
+            RHIBuffer* indexBuffer;
+            uint32_t indexOffset; // Bytes
+            uint32_t indexCount;
+
+        } triangleData;
+        struct InstanceData
+        {
+            RHIAccelerationStructure* accelerationStructure;
+            float xformBasisRowMajor[3][3];
+            float xformTranslation[3];
+            uint32_t instanceID;
+        } instanceData;
+        bool allowUpdate{false};
+    };
+    class RHIAccelerationStructure : public RHIObject
+    {
+    protected:
+        const RHIDevice& mDevice;
+        const RHIAccelerationStructureDesc& mDesc;
+    public:
+        RHIAccelerationStructure(const RHIDevice& device, RHIAccelerationStructureDesc const& desc) : mDevice(device), mDesc(desc) {}
+
         virtual void DebugSetObjectName(const char* name) = 0;
     };
     template<> struct RHIObjectTraits<RHITexture, RHITextureView> {

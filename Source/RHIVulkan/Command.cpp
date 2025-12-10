@@ -439,6 +439,12 @@ RHICommandList& VulkanCommandList::Dispatch(uint32_t group_count_x, uint32_t gro
     mCommandBuffer.dispatch(group_count_x, group_count_y, group_count_z);
     return *this;
 }
+RHICommandList& VulkanCommandList::BuildAccelerationStructures(Span<const RayTracingASBuildDesc> desc)
+{
+    CHECK(mAllocator && "Invalid command list states.");
+    // TODO
+    return *this;
+}
 RHICommandList& VulkanCommandList::WriteTimestamp(RHIDeviceQueryPool* pool, RHIPipelineStageBits stage,
                                                   uint32_t queryIndex)
 {
