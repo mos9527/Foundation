@@ -234,7 +234,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             // Note that we don't actually use Task Shaders - for inexplicable reasons described
             // in ECSCullMeshlets.
             renderer->CreatePass(
-                early ? "Indirect Meshlet Cull Dispatch [Early]" : "Indirect Meshlet Cull Dispatch [Late]", RHIDeviceQueueType::Compute, 0u,
+                early ? "Indirect Meshlet Cull Dispatch [Early]" : "Indirect Meshlet Cull Dispatch [Late]", RHIDeviceQueueType::Graphics, 0u,
                 [=](PassHandle self, Renderer* r)
                 {
                     int flags = cfg.cullFlags;
@@ -251,6 +251,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     r->BindBufferUnordered(self, Visibility,
                                            RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
                                            "visibility");
+                    r->BindTextureSampler(self, HIZSampler, "hizSampler");
                     r->BindTextureSRV(self, HIZ, "hiz",
                                       RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
@@ -261,10 +262,10 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                                              "inTasksCounter");
                     r->BindBufferUnordered(self, IndirectMeshlets,
                                            RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
-                                           "outMeshlets");
+                                           "outMeshletIndices");
                     r->BindBufferUnordered(self, IndirectMeshletCounter,
                                            RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
-                                           "outMeshletsCounter");
+                                           "outMeshletCounter");
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
@@ -274,7 +275,9 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     cmd->BeginTransition();
                     cmd->SetBufferTransition(counter, {
                         .srcAccess = RHIResourceAccessBits::TransferWrite,
-                        .dstAccess = RHIResourceAccessBits::ShaderWrite
+                        .dstAccess = RHIResourceAccessBits::ShaderWrite,
+                        .srcStage = RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::Transfer,
+                        .dstStage = RHIPipelineStageBits::ComputeShader
                     });
                     cmd->EndTransition();
                     r->CmdSetPipeline(self, cmd);
@@ -319,6 +322,11 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     r->BindTextureDSV(self, ZBuffer,
                                       {.format = RHIResourceFormat::D32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
+                    r->BindBufferStorageRead(self, IndirectMeshletCounter, RHIPipelineStageBits::ComputeShader,
+                                             "inMeshletCounter");
+                    r->BindBufferUnordered(self, IndirectMeshlets,
+                                           RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
+                                           "inMeshletIndices");
                     r->BindTextureSampler(self, TexSampler, "textureSampler");
                     r->BindDescriptorSet(self, "textures",
                                          context->gpuScene->GetTexturePool()->GetDescriptorSetLayout());

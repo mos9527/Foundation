@@ -1,9 +1,9 @@
 #include "ICommon.slang"
 [[SpecializationConstant]] int flags;
 uniform UBO globalParams;
-[[vk_binding(8,0)]] RWTexture2D<uint32_t> overdraw;
-[[vk_binding(9,0)]] StructuredBuffer<GSMaterial> materials;
-[[vk_binding(10,0)]] SamplerState textureSampler;
+[[vk_binding(5,0)]] RWTexture2D<uint32_t> overdraw;
+[[vk_binding(6,0)]] StructuredBuffer<GSMaterial> materials;
+[[vk_binding(7,0)]] SamplerState textureSampler;
 [[vk_binding(0,1)]] Texture2D<float4> textures[];
 
 struct Fragment

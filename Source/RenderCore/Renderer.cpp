@@ -614,9 +614,22 @@ void Renderer::BuildPipelineState(PassHandle pass)
             last_binding = it->first.second;
             cbindings++;
         }
+        String diagnostic;
+        if (last_binding != cbindings - 1)
+        {
+            fmt::format_to(std::back_inserter(diagnostic), "\n== Bindings for Set {} ==", set);
+            for (int b = 0; b <= last_binding; b++)
+            {
+                auto itb = bind_unique.find({set, static_cast<uint32_t>(b)});
+                if (itb != bind_unique.end())
+                    fmt::format_to(std::back_inserter(diagnostic), "\n  Binding {}: {}", b, itb->second);
+                else
+                    fmt::format_to(std::back_inserter(diagnostic), "\n  Binding {}: ! missing !", b);
+            }
+        }
         CHECK_MSG(last_binding == cbindings - 1,
-                  "Pass {} Binding set {} has non-contiguous bindings (max binding {}, count {}). Last binding {}.",
-                  tracked.name, set, last_binding, cbindings, bind_unique[{set, last_binding}]);
+                  "Pass {} Binding set {} has non-contiguous bindings (max binding {}, count {}). Last binding {}. Diagnostic: {}",
+                  tracked.name, set, last_binding, cbindings, bind_unique[{set, last_binding}], diagnostic);
     }
     // Check descriptor set layout to be consistent across stages
     Map<String, RHIDescriptorType> var_types(mAllocator);

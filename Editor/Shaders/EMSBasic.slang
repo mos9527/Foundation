@@ -1,11 +1,11 @@
 #include "ICommon.slang"
 
 uniform UBO globalParams;
-StructuredBuffer<GSInstance> instances;
-ByteAddressBuffer primitive;
 
-RWStructuredBuffer<uint> inMeshletCounter;
-RWStructuredBuffer<uint2> inMeshletIndices; // (x: Meshlet ID, y: Instance ID)
+[[vk_binding(1,0)]] StructuredBuffer<GSInstance> instances;
+[[vk_binding(2,0)]] ByteAddressBuffer primitive;
+[[vk_binding(3,0)]] RWStructuredBuffer<uint> inMeshletCounter;
+[[vk_binding(4,0)]] RWStructuredBuffer<uint2> inMeshletIndices; // (x: Meshlet ID, y: Instance ID)
 
 // Each WG of mesh shader processes one meshlet
 // Each thread in the WG processes zero, or more vertices/triangles
