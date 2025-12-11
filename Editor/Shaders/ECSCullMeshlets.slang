@@ -79,6 +79,8 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
         return; // Misuse. If so Phase 2 should not be run at all.
     // -- Load --
     MeshletTaskWork work = inTasks[dispatchIndex];
+    if (groupIndex >= work.numMeshlets)
+        return; // Inactive
     GSInstance inst = instances[work.instanceID];
     GSMesh mesh = primitive.Load<GSMesh>(inst.meshOffset);
     uint32_t meshletID = work.firstMeshlet + groupIndex;

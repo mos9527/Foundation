@@ -14,7 +14,7 @@ void main(uint tid: SV_DispatchThreadID) {
     MeshletTaskDispatch command;
     uint N = counter[0].load();    
     command.groupCountX = (N + kMeshWorkGroupSize - 1) / kMeshWorkGroupSize;
-    command.groupCountY = kMeshWorkGroupSize;
+    command.groupCountY = min(N, kMeshWorkGroupSize);
     command.groupCountZ = 1;
     dispatch[0] = command;
 }

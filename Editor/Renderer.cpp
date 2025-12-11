@@ -275,7 +275,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     cmd->BeginTransition();
                     cmd->SetBufferTransition(counter, {
                         .srcAccess = RHIResourceAccessBits::TransferWrite,
-                        .dstAccess = RHIResourceAccessBits::ShaderWrite,
+                        .dstAccess = RHIResourceAccessBits::ShaderWrite | RHIResourceAccessBits::ShaderRead,
                         .srcStage = RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::Transfer,
                         .dstStage = RHIPipelineStageBits::ComputeShader
                     });
@@ -472,7 +472,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                  .range = RHITextureSubresourceRange::Create()});
-            r->BindBufferStorageRead(self, LightingAverageLuma, RHIPipelineStageBits::ComputeShader, "sceneLuma");
+            r->BindBufferStorageRead(self, LightingAverageLuma, RHIPipelineStageBits::FragmentShader, "sceneLuma");
             r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader, "globalMax");
         });
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});
