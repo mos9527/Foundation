@@ -30,6 +30,7 @@ namespace Foundation::RHI
         /// How the buffer can be used by the device, initially
         RHIBufferUsage usage{};
         size_t size{}; // size in bytes
+        size_t alignment{4}; // alignment in bytes, may be ignored by implementations
 
         static RHIBufferDesc CreateStagingDesc(size_t size)
         {

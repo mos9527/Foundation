@@ -68,13 +68,13 @@ uint32_t FillQueueFamilies(VulkanDevice const& device, uint32_t* dst, RHIDeviceQ
 VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc) :
     RHIBuffer(device, desc), mDevice(device), mAliases(device.GetAllocator())
 {
-    vk::BufferCreateInfo buffer_info = vkBufferCreateInfoFromRHIBufferDesc(desc);
+    vk::BufferCreateInfo bufferInfo = vkBufferCreateInfoFromRHIBufferDesc(desc);
 
     uint32_t queueFamilies[8]{};
     if (desc.resource.shared)
     {
-        buffer_info.pQueueFamilyIndices = queueFamilies;
-        buffer_info.queueFamilyIndexCount = FillQueueFamilies(device, &queueFamilies[0], desc.resource.sharedQueues);
+        bufferInfo.pQueueFamilyIndices = queueFamilies;
+        bufferInfo.queueFamilyIndexCount = FillQueueFamilies(device, &queueFamilies[0], desc.resource.sharedQueues);
     }
 
     auto flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.hostAccess);
@@ -87,7 +87,8 @@ VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc
                                              desc.resource.coherent ? VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : 0)};
     auto allocator = device.GetVkAllocator();
     VkBuffer buffer;
-    auto res = vmaCreateBuffer(allocator, &*buffer_info, &allocInfo, &buffer, &mAllocation, nullptr);
+    auto res = vmaCreateBufferWithAlignment(allocator, &*bufferInfo, &allocInfo, desc.alignment, &buffer, &mAllocation,
+                                            nullptr);
     CHECK(res == VK_SUCCESS && "failed to create Vulkan buffer");
     mBuffer = vk::raii::Buffer(device.GetVkDevice(), vk::Buffer(buffer), device.GetVkAllocatorCallbacks());
 }
@@ -354,9 +355,11 @@ RHI::vkAccelerationBuildGeoInfoFromRHI(RHIAccelerationStructureBuildDesc const& 
         res.scratchData = {.deviceAddress = vkBuffer->GetBufferAddress() + desc.scratchBufferOffset};
     }
     if (desc.srcAS)
-        res.srcAccelerationStructure = static_cast<VulkanAccelerationStructure*>(desc.srcAS)->GetVkAccelerationStructure();
+        res.srcAccelerationStructure =
+            static_cast<VulkanAccelerationStructure*>(desc.srcAS)->GetVkAccelerationStructure();
     if (desc.dstAS)
-        res.dstAccelerationStructure = static_cast<VulkanAccelerationStructure*>(desc.dstAS)->GetVkAccelerationStructure();
+        res.dstAccelerationStructure =
+            static_cast<VulkanAccelerationStructure*>(desc.dstAS)->GetVkAccelerationStructure();
     return res;
 }
 vk::AccelerationStructureBuildRangeInfoKHR

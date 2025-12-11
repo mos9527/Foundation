@@ -135,7 +135,8 @@ RHIDeviceScopedHandle<RHIBuffer> GPUScene::CreateScratchBuffer(size_t size)
                 .shared = false
             },
          .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress,
-         .size = size
+         .size = size,
+         .alignment = 256 // Aligned to spec. See also BuildBLASIncremental
     });
 }
 RHIDeviceScopedHandle<RHIBuffer> GPUScene::CreateASBuffer(size_t size)
