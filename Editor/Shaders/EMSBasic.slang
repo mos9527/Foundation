@@ -40,6 +40,7 @@ void main(
     uint32_t triBase = group.mesh.meshletTriOffset + group.meshlet.triOffset * sizeof(uint8_t);
     uint32_t triCount = group.meshlet.triCount;
     // Each thread in the WG processes multiple vertices/triangles
+    SetMeshOutputCounts(vtxCount, triCount);
     for (uint i = tid; i < vtxCount; i += kMeshWorkGroupSize) {
         uint ind = primitive.Load<uint32_t>(vtxBase + i * sizeof(uint32_t));
         FQVertex fq = primitive.Load<FQVertex>(group.mesh.vtxOffset + ind * sizeof(FQVertex));
