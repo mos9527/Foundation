@@ -234,7 +234,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             // Note that we don't actually use Task Shaders - for inexplicable reasons described
             // in ECSCullMeshlets.
             renderer->CreatePass(
-                early ? "Indirect Meshlet Cull Dispatch [Early]" : "Indirect Meshlet Cull Dispatch [Late]", RHIDeviceQueueType::Graphics, 0u,
+                early ? "Indirect Meshlet Cull Dispatch [Stage 1]" : "Indirect Meshlet Cull Dispatch [Stage 2]", RHIDeviceQueueType::Graphics, 0u,
                 [=](PassHandle self, Renderer* r)
                 {
                     int flags = cfg.cullFlags;
@@ -322,10 +322,10 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     r->BindTextureDSV(self, ZBuffer,
                                       {.format = RHIResourceFormat::D32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
+                    r->BindBufferShaderRead(self, IndirectMeshletDispatch, RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);
                     r->BindBufferStorageRead(self, IndirectMeshletCounter, RHIPipelineStageBits::ComputeShader,
                                              "inMeshletCounter");
-                    r->BindBufferUnordered(self, IndirectMeshlets,
-                                           RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
+                    r->BindBufferUnordered(self, IndirectMeshlets, RHIPipelineStageBits::ComputeShader,
                                            "inMeshletIndices");
                     r->BindTextureSampler(self, TexSampler, "textureSampler");
                     r->BindDescriptorSet(self, "textures",
