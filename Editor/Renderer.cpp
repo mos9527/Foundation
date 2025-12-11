@@ -28,7 +28,10 @@ void RendererSetupImGuiOnly(FContext* context)
     if (context->renderer)
         Destruct(context->allocator, context->renderer);
     auto* renderer = context->renderer = Construct<Renderer>(
-        context->allocator, RendererDesc{.asyncCompute = false, .pipelineCache = context->psoCache.Get()},
+        context->allocator, RendererDesc{
+            .asyncCompute = true,
+            .pipelineCache = context->psoCache.Get(),
+        },
         context->device, context->swapchain, context->allocator);
     renderer->BeginSetup();
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", true, FSetupDefault{});
@@ -41,7 +44,10 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
     if (context->renderer)
         Destruct(context->allocator, context->renderer);
     auto* renderer = context->renderer = Construct<Renderer>(
-        context->allocator, RendererDesc{.asyncCompute = true, .pipelineCache = context->psoCache.Get()},
+        context->allocator, RendererDesc{
+            .asyncCompute = true,
+            .pipelineCache = context->psoCache.Get(),
+        },
         context->device, context->swapchain, context->allocator);
     auto* scene = context->gpuScene;
     renderer->BeginSetup();

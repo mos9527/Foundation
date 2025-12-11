@@ -47,6 +47,16 @@ namespace Foundation::RenderCore
          *        in Setup time.
          */
         RHIPipelineStateCache* pipelineCache{nullptr};
+        /**
+         * @brief Enable or disable GPU profiling for the frame graph execution.
+         *
+         * @note When enabled, each pass will be wrapped in GPU timestamp queries,
+         *       and the results can be retrieved via @ref DbgGetPassProfiles().
+         *
+         * @note This may introduce some overhead, especially with a large number of passes.
+         *       And may not be supported by all platforms.
+         */
+        bool profilePasses{true};
     };
     /* -- Constants -- */
     // Maximum number of render passes per frame

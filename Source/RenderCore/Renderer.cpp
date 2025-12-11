@@ -1091,7 +1091,7 @@ void Renderer::BeginExecute()
         for (auto& cmds : mExecutePerSwapCmds[mCurrentSync])
             cmds->Reset();
     }
-    {
+    if (mDesc.profilePasses) {
         ZoneScopedN("Reset Query Pools");
         // Query pool. Lazily initialized here
         auto& queryPool = mSwaps[mCurrentSync].dbgQueryPool;
@@ -1380,7 +1380,7 @@ void Renderer::ExecuteFrame()
         }
         {
             ZoneScopedN("Schedule Records");
-            auto* queryPool = mSwaps[mCurrentSync].dbgQueryPool.Get();
+            auto* queryPool = mDesc.profilePasses ? mSwaps[mCurrentSync].dbgQueryPool.Get() : nullptr;
             struct RecordJob : public ThreadPoolJob
             {
                 Renderer* r;
@@ -1403,7 +1403,8 @@ void Renderer::ExecuteFrame()
                     ZoneNameF("<%s>", pass->name.c_str());
                     *cmd = r->ExecuteAllocateCommandList(pass->queue, thread_id);
                     (*cmd)->Begin();
-                    (*cmd)->WriteTimestamp(queryPool, RHIPipelineStageBits::TopOfPipe, pass->handle * 2);
+                    if (queryPool)
+                        (*cmd)->WriteTimestamp(queryPool, RHIPipelineStageBits::TopOfPipe, pass->handle * 2);
                     (*cmd)->BeginTransition();
                     for (auto& [res, desc] : (*barriers))
                     {
@@ -1415,7 +1416,8 @@ void Renderer::ExecuteFrame()
                     pass->frameExec = r->mFrameSwapped;
                     pass->pass->Record(pass->handle, r, *cmd);
                     (*cmd)->DebugEnd();
-                    (*cmd)->WriteTimestamp(queryPool, RHIPipelineStageBits::BottomOfPipe, pass->handle * 2 + 1);
+                    if (queryPool)
+                        (*cmd)->WriteTimestamp(queryPool, RHIPipelineStageBits::BottomOfPipe, pass->handle * 2 + 1);
                     (*cmd)->End();
                 }
             };
@@ -1791,8 +1793,12 @@ String Renderer::DbgDumpExecutionGroups() const
 
 Span<const uint64_t> Renderer::DbgProfilePassTiming(uint64_t sync, float& resolutionNS) const
 {
-    resolutionNS = mSwaps[sync].dbgQueryPool->GetTimestampResolution();
-    return mSwaps[sync].dbgQueryPassTimestampsResults;
+    if (mDesc.profilePasses)
+    {
+        resolutionNS = mSwaps[sync].dbgQueryPool->GetTimestampResolution();
+        return mSwaps[sync].dbgQueryPassTimestampsResults;
+    }
+    return {};
 }
 
 uint64_t Renderer::DbgProfilePresentTiming(uint64_t sync, float& resolutionNS) const

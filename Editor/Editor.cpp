@@ -115,7 +115,17 @@ void FInitEnter()
         Vector<uint32_t> blasIndices(meshes.size(), GLOBAL_ALLOC);
         uint32_t numPrimitives;
         LOG(Editor, LogDebug, "Building BLAS");
-        gpu->BuildBLASIncremental(&ctx, meshes, blasIndices, numPrimitives);
+        constexpr size_t kBLASBuildBatch = 1u;
+        for (size_t i = 0; i < meshes.size(); i += kBLASBuildBatch)
+        {
+            Span meshesBatch = meshes;
+            Span indicesBatch = blasIndices;
+            size_t batchSize = std::min(kBLASBuildBatch, meshes.size() - i);
+            meshesBatch = meshesBatch.subspan(i, batchSize);
+            indicesBatch = indicesBatch.subspan(i, batchSize);
+            LOG(Editor, LogDebug, "Building BLAS {} to {}", i, i + batchSize);
+            gpu->BuildBLASIncremental(&ctx, meshesBatch, indicesBatch, numPrimitives);
+        }
         LOG(Editor, LogDebug, "Building TLAS");
         gpu->BuildTLAS(&ctx, GSInstances, blasIndices, numPrimitives);
     }

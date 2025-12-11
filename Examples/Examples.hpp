@@ -2,6 +2,7 @@
 #include <RHIVulkan/Application.hpp>
 #include <RenderCore/Renderer.hpp>
 #include <Math/Math.hpp>
+#include <Math/ModelViewProjection.hpp>
 using namespace Foundation;
 using namespace Core;
 using namespace Math;

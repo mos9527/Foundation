@@ -7,8 +7,7 @@ using namespace Foundation::RHI;
 const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_MESH_SHADER_EXTENSION_NAME,
                                          VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
                                          VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-                                         VK_KHR_RAY_QUERY_EXTENSION_NAME,
-                                         VK_KHR_MAINTENANCE_9_EXTENSION_NAME /*CPU side query pool reset - XXX remove it*/};
+                                         VK_KHR_RAY_QUERY_EXTENSION_NAME};
 
 const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
 
@@ -629,7 +628,7 @@ VulkanDeviceQueryPool::VulkanDeviceQueryPool(const VulkanDevice& device, QueryPo
     mTimestampResolution(mDevice.GetVkPhysicalDevice().getProperties().limits.timestampPeriod),
     mTimestampResults(device.GetAllocator())
 {
-    vk::QueryPoolCreateInfo createInfo = {.flags = vk::QueryPoolCreateFlagBits::eResetKHR, .queryCount = desc.count};
+    vk::QueryPoolCreateInfo createInfo = {.queryCount = desc.count};
     switch (desc.type)
     {
     case QueryPoolDesc::Timestamp:
