@@ -1,5 +1,4 @@
 #pragma once
-#include "Context.hpp"
 #include "Mesh.hpp"
 #include "Serialization.hpp"
 #include "Texture.hpp"

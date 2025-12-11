@@ -37,7 +37,7 @@ void meshMain(
     OutputIndices<uint3, 96> triangles,
 ) {
     // Each WG of mesh shader processes *exactly* one meshlet per dispatch
-    FMeshlet meshlet = mesh.Load<FMeshlet>(globalParams.mesh.meshletOffset + gid * sizeof(FMeshlet));
+    FMeshlet meshlet = mesh.Load<FMeshlet>(globalParams.mesh.meshletOffset + gid * sizeof(FMeshlet));    
     uint32_t vtxBase = globalParams.mesh.meshletVtxOffset + meshlet.vtxOffset * sizeof(uint32_t);
     uint32_t vtxCount = meshlet.vtxCount;
     uint32_t triBase = globalParams.mesh.meshletTriOffset + meshlet.triOffset * sizeof(uint8_t);

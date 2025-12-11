@@ -18,12 +18,13 @@ int main()
         int x, y, n;
         stbi_uc* data = stbi_load("data/assets/cameraman.jpg", &x, &y, &n, 4u);
         CHECK_MSG(data, "Image did not load.");
+        unsigned numMips = static_cast<uint32_t>(std::ceil(std::log2(std::max(x, y))));
         auto texture =
             device->CreateTexture({.usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::StorageImage |
                                        RHITextureUsageBits::TransferDestination,
                                    .extent = {static_cast<uint32_t>(x), static_cast<uint32_t>(y), 1},
                                    .format = RHIResourceFormat::R8G8B8A8Unorm,
-                                   .mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::min(x, y)))) + 1u});
+                                   .mipLevels = numMips});
         // Upload base level
         {
             ImmediateContext im(RHIDeviceQueueType::Graphics, device.Get());
@@ -66,7 +67,7 @@ int main()
         ResourceHandle sampler = renderer->CreateSampler({});
         createCSMipGenerationPasses(renderer, "Mip Generation", RHIDeviceQueueType::Compute, hdl, hdl, {x, y},
                                     RHITextureAspectFlagBits::Color, RHIResourceFormat::B8G8R8A8Unrom,
-                                    RHITextureAspectFlagBits::Color, RHIResourceFormat::B8G8R8A8Unrom);
+                                    RHITextureAspectFlagBits::Color, RHIResourceFormat::B8G8R8A8Unrom, numMips);
         float blurAmount = 0.0f; // [0,1]
         renderer->CreatePass("Draw Blurred", RHIDeviceQueueType::Graphics, 0u,
         [&](PassHandle self, Renderer* r)

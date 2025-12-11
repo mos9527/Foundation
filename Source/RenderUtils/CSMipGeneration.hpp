@@ -7,7 +7,7 @@ namespace Foundation::RenderUtils
                                             RHIExtent2D srcExtent,
                                             RHITextureAspectFlagBits srcAspect, RHIResourceFormat srcFormat,
                                             RHITextureAspectFlagBits dstAspect, RHIResourceFormat dstFormat,
-                                            uint32_t maxMips = 16, uint32_t layer = 0, RHIDeviceSampler::SamplerDesc samplerDesc = {}
+                                            uint32_t maxMips, uint32_t layer = 0, RHIDeviceSampler::SamplerDesc samplerDesc = {}
                                             )
     {
         using namespace Math;

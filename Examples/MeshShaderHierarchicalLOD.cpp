@@ -3,6 +3,7 @@
 #include <RenderUtils/CSDebugText.hpp>
 #include "Examples.hpp"
 using namespace RenderUtils;
+#pragma pack(push, 1)
 struct UBO
 {
     float4x4 view;
@@ -11,6 +12,7 @@ struct UBO
     float threshold;
     GSMesh mesh;
 };
+#pragma pack(pop)
 int main()
 {
     SDL_Window* window = SDL_CreateWindow("Mesh Shader Hierarchical LOD", 800, 600, Examples_SDLWindowFlagsVulkan);
