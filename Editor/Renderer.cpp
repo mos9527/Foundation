@@ -147,13 +147,13 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
         RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil | RHITextureUsageBits::SampledImage,
                        .extent = {w, h, 1},
                        .format = RHIResourceFormat::D32SignedFloat});
-    uint32_t HIZWidth = 1u << log2(w / 2), HIZHeight = 1u << log2(h / 2);
+    uint32_t HIZWidth = 1u << glm::log2(w / 2), HIZHeight = 1u << glm::log2(h / 2);
     if (HIZWidth * 2 < w)
         HIZWidth *= 2;
     if (HIZHeight * 2 < w)
         HIZHeight *= 2;
-    const uint32_t HIZMips = log2(std::max(HIZWidth, HIZHeight)) + 1u;
-    const uint32_t FullMips = log2(std::max(w, h)) + 1u;
+    const uint32_t HIZMips = glm::log2(std::max(HIZWidth, HIZHeight)) + 1u;
+    const uint32_t FullMips = glm::log2(std::max(w, h)) + 1u;
     pShaderGlobals->hizWidth = HIZWidth, pShaderGlobals->hizHeight = HIZHeight, pShaderGlobals->hizLevels = HIZMips;
     RHIDeviceSampler::SamplerDesc HIZSamplerDesc{
         .addressMode = {.u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
@@ -274,7 +274,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                                          context->gpuScene->GetTexturePool()->GetDescriptorSetLayout());
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-                {
+                {                    
                     RHIExtent2D wh{w, h};
                     auto* dispatchBuffer = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
                     if (early)
@@ -285,10 +285,10 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     else // Don't clear in stage 2 - we're appending false-positives back to it.
                         r->CmdBeginGraphics(self, cmd, wh, {{{}, {}, {}}}, {});
                     r->CmdSetPipeline(self, cmd);
-                    r->CmdBindDescriptorSet(self, cmd, "textures",
-                                            context->gpuScene->GetTexturePool()->GetDescriptorSet());
                     cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
-                    cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
+                    r->CmdBindDescriptorSet(self, cmd, "textures",
+                                            context->gpuScene->GetTexturePool()->GetDescriptorSet());                    
+                    //cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 0, sizeof(MeshletTaskDispatch));
                     cmd->EndGraphics();
                 });
             if (early && cfg.cullFlags & kCullOcclusion)

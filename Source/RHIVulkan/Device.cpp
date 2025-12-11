@@ -4,7 +4,8 @@
 
 using namespace Foundation::Core;
 using namespace Foundation::RHI;
-const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_MESH_SHADER_EXTENSION_NAME,
+const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, 
+                                         VK_EXT_MESH_SHADER_EXTENSION_NAME,                                          
                                          VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
                                          VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
                                          VK_KHR_RAY_QUERY_EXTENSION_NAME};
@@ -65,7 +66,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     }
     // Create the device queues
     Vector<vk::DeviceQueueCreateInfo> queue_info(GetAllocator());
-    const float priority = 1.0f;
+    static const float priority = 1.0f;
     for (uint32_t i = 0; i < families.size(); ++i)
     {
         if (queueCounts[i])

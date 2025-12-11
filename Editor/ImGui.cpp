@@ -25,14 +25,14 @@ void ImProfilerHistogram::push(unsigned data)
     m2 += d * (data - mean);
     samples.push_back(data);
 }
-constexpr size_t ImProfilerTimestampLinear(size_t min, size_t max, size_t binCount, size_t binIndex)
+const size_t ImProfilerTimestampLinear(size_t min, size_t max, size_t binCount, size_t binIndex)
 {
     const size_t range = max - min + 1;
     const size_t binSize = (range + binCount - 1) / binCount;
     return min + std::min(binSize * binIndex, range);
 }
 
-constexpr size_t ImProfilerTimestampLog(size_t min, size_t max, size_t binCount, size_t binIndex)
+const size_t ImProfilerTimestampLog(size_t min, size_t max, size_t binCount, size_t binIndex)
 {
     const float logMin = std::log10f(min);
     const float binSize = (std::log10f(max) - logMin) / binCount;
