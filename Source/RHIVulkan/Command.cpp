@@ -439,6 +439,13 @@ RHICommandList& VulkanCommandList::Dispatch(uint32_t group_count_x, uint32_t gro
     mCommandBuffer.dispatch(group_count_x, group_count_y, group_count_z);
     return *this;
 }
+RHICommandList& VulkanCommandList::DispatchIndirect(RHIBuffer* cmd_buffer, size_t cmd_offset)
+{
+    CHECK(mAllocator && "Invalid command list states.");
+    auto* vulkan_buffer = static_cast<VulkanBuffer*>(cmd_buffer);
+    mCommandBuffer.dispatchIndirect(vulkan_buffer->GetVkBuffer(), cmd_offset);
+    return *this;
+}
 RHICommandList& VulkanCommandList::BuildAccelerationStructure(Span<const RHIAccelerationStructureBuildDesc> descs)
 {
     CHECK(mAllocator && "Invalid command list states.");

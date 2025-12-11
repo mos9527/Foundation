@@ -87,7 +87,7 @@ namespace Foundation::RHI {
         RHICommandList& EndGraphics() override;
 
         RHICommandList& Dispatch(uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z) override;
-
+        RHICommandList& DispatchIndirect(RHIBuffer* cmd_buffer, size_t cmd_offset) override;
 
         RHICommandList& BuildAccelerationStructure(Span<const RHIAccelerationStructureBuildDesc> desc) override;
 

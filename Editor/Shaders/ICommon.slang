@@ -109,9 +109,11 @@ struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
 struct MeshletTaskWork
 {
     uint32_t instanceID; // Absolute
-    // Task shader can *only* dispatch zero or one meshlet per work thread.
-    // Hence, batching is required here. Whereas in Mesh Shader multiple verts/tris
-    // can be processed per thread.
+    // We're not using task shaders - but with a dedicated compute shader
+    // to further cull meshlets and generate indirect meshlet dispatches.
+    // In principle they work the same, however with no GS memory woes and
+    // actually works on AMD proprietary drivers.
+    // Sigh.
     uint32_t firstMeshlet;
     uint32_t numMeshlets;
 };
@@ -144,11 +146,6 @@ struct UBO
     float3 ambientColor;
 };
 // ^^^
-public struct MeshletGroupShared {
-    uint32_t instanceID;
-    uint32_t meshletCount;
-    uint32_t meshletIndices[kMeshWorkGroupSize];
-};
 
 struct V2F
 {

@@ -160,6 +160,7 @@ namespace Foundation::RHI
 #pragma endregion
 #pragma region Compute
         virtual RHICommandList& Dispatch(uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z) = 0;
+        virtual RHICommandList& DispatchIndirect(RHIBuffer* cmd_buffer, size_t cmd_offset) = 0;
 #pragma endregion
 #pragma region Raytracing
         virtual RHICommandList&

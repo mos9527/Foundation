@@ -4,22 +4,25 @@ uniform UBO globalParams;
 StructuredBuffer<GSInstance> instances;
 ByteAddressBuffer primitive;
 
+RWStructuredBuffer<uint> inMeshletCounter;
+RWStructuredBuffer<uint2> inMeshletIndices; // (x: Meshlet ID, y: Instance ID)
 
 // Each WG of mesh shader processes one meshlet
 // Each thread in the WG processes zero, or more vertices/triangles
 [outputtopology("triangle")]
 [numthreads(kMeshWorkGroupSize, 1, 1)]
 void main(
-    in payload MeshletGroupShared shared,
-    in uint gid: SV_GroupID,
+    in uint2 groupID: SV_GroupID,
     in uint tid: SV_GroupIndex,
     OutputVertices<V2F, 96> verts,
     OutputIndices<uint3, 96> triangles
 ) {
-    if (gid > shared.meshletCount)
-        return;
-    uint meshletID = shared.meshletIndices[gid];
-    GSInstance inst = instances[shared.instanceID];
+    uint gid = dot(groupID, uint2(kMeshWorkGroupSize, 1)); // ID of this group, flattened
+    if (gid >= inMeshletCounter[0])
+        return; // Group inactive
+    uint2 indices = inMeshletIndices[gid];
+    uint meshletID = indices.x, instanceID = indices.y;
+    GSInstance inst = instances[instanceID];
     GSMesh mesh = primitive.Load<GSMesh>(inst.meshOffset);
     FMeshlet meshlet = primitive.Load<FMeshlet>(mesh.meshletOffset + meshletID * sizeof(FMeshlet));
     uint32_t vtxBase = mesh.meshletVtxOffset + meshlet.vtxOffset * sizeof(uint32_t);

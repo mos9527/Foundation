@@ -95,7 +95,6 @@ void main(uint2 tid: SV_DispatchThreadID) {
         float NoL = saturate(dot(n,l));
 
         float3 lighting = float3(NoL) * globalParams.sunIntensity + globalParams.ambientColor;
-        lighting *= shadow(p, l);
 
         // Diffuse
         // https://seblagarde.wordpress.com/2012/01/08/pi-or-not-to-pi-in-game-lighting-equation/
