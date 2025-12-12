@@ -93,6 +93,9 @@ namespace Foundation::RHI
                                               uint32_t group_count_z) = 0;
         virtual RHICommandList& DrawMeshTasksIndirect(RHIBuffer* cmd_buffer, size_t cmd_offset, size_t draw_count,
                                                       size_t stride) = 0;
+        virtual RHICommandList& DrawMeshTasksIndirectCount(RHIBuffer* cmd_buffer, size_t cmd_offset,
+                                                         RHIBuffer* count_buffer, size_t count_offset,
+                                                           uint32_t max_draw_count, uint32_t cmd_stride) = 0;
 #pragma endregion
         virtual RHICommandList& PushConstant(RHIPipelineState* pipeline, RHIShaderStage stage, uint32_t offset,
                                              Span<const char> data) = 0;

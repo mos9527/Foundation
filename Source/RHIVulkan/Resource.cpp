@@ -74,7 +74,10 @@ VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc
     if (desc.resource.shared)
     {
         bufferInfo.pQueueFamilyIndices = queueFamilies;
-        bufferInfo.queueFamilyIndexCount = FillQueueFamilies(device, &queueFamilies[0], desc.resource.sharedQueues);
+        bufferInfo.queueFamilyIndexCount = FillQueueFamilies(device, &queueFamilies[0], desc.resource.sharedQueues);        
+        // Fallback. VVL complians otherwise.
+        if (bufferInfo.queueFamilyIndexCount < 2)
+            bufferInfo.sharingMode = vk::SharingMode::eExclusive;        
     }
 
     auto flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.hostAccess);
@@ -145,12 +148,15 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
 {
     CHECK_MSG(desc.extent.x > 0 && desc.extent.y > 0 && desc.extent.z > 0,
               "Extents must be greater than 0. Current x={},y={},z={}", desc.extent.x, desc.extent.y, desc.extent.z);
-    vk::ImageCreateInfo image_info = vkImageCreateInfoFromRHITextureDesc(desc);
+    vk::ImageCreateInfo imageInfo = vkImageCreateInfoFromRHITextureDesc(desc);
     uint32_t queueFamilies[8]{};
     if (desc.resource.shared)
     {
-        image_info.pQueueFamilyIndices = queueFamilies;
-        image_info.queueFamilyIndexCount = FillQueueFamilies(device, &queueFamilies[0], desc.resource.sharedQueues);
+        imageInfo.pQueueFamilyIndices = queueFamilies;
+        imageInfo.queueFamilyIndexCount = FillQueueFamilies(device, &queueFamilies[0], desc.resource.sharedQueues);
+        // Fallback. VVL complians otherwise.
+        if (imageInfo.queueFamilyIndexCount < 2)
+            imageInfo.sharingMode = vk::SharingMode::eExclusive;        
     }
     VmaAllocationCreateInfo allocInfo = {.flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.hostAccess),
                                          .usage = vmaMemoryUsageFlagsFromResource(desc.resource),
@@ -158,7 +164,7 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
                                              desc.resource.coherent ? VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : 0)};
     auto allocator = device.GetVkAllocator();
     VkImage image;
-    auto res = vmaCreateImage(allocator, &*image_info, &allocInfo, &image, &mAllocation, nullptr);
+    auto res = vmaCreateImage(allocator, &*imageInfo, &allocInfo, &image, &mAllocation, nullptr);
     CHECK_MSG(res == VK_SUCCESS, "failed to create Vulkan image");
     mImage = vk::raii::Image(device.GetVkDevice(), vk::Image(image), device.GetVkAllocatorCallbacks());
 }

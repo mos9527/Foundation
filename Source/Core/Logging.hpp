@@ -13,10 +13,10 @@ constexpr const char* format_as(LogLevel level)
 {
     switch (level)
     {
-    case LogDebug: return "D";
-    case LogInfo: return  "I";
-    case LogError: return "E";
-    case LogWarn: return "W";
+    case LogDebug: return "\033[34mD";
+    case LogInfo: return  "\033[37mI";
+    case LogError: return "\033[31mE";
+    case LogWarn: return "\033[33mW";
     }
 }
 

@@ -8,6 +8,7 @@ const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
                                          VK_EXT_MESH_SHADER_EXTENSION_NAME,                                          
                                          VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
                                          VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+                                         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
                                          VK_KHR_RAY_QUERY_EXTENSION_NAME};
 
 const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
@@ -66,14 +67,14 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     }
     // Create the device queues
     Vector<vk::DeviceQueueCreateInfo> queue_info(GetAllocator());
-    static const float priority = 1.0f;
+    static const float priority[16] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f  };
     for (uint32_t i = 0; i < families.size(); ++i)
     {
         if (queueCounts[i])
             queue_info.emplace_back(vk::DeviceQueueCreateInfo{
                 .queueFamilyIndex = i,
                 .queueCount = queueCounts[i],
-                .pQueuePriorities = &priority // All queues have the same priority
+                .pQueuePriorities = priority // All queues have the same priority
             });
     }
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,

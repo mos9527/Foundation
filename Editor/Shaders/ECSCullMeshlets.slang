@@ -15,6 +15,7 @@ RWStructuredBuffer<MeshletTaskWork> inTasks;
 // vvv Cleared before dispatch
 RWStructuredBuffer<Atomic<uint>> outMeshletCounter;
 RWStructuredBuffer<uint2> outMeshletIndices; // (x: Meshlet ID, y: Instance ID)
+RWStructuredBuffer<MeshletTaskDispatch> outMeshletDispatches;
 
 // Model to view space
 float3 pointToView(float3 point, GSInstance inst, float4x4 view) {
@@ -168,6 +169,8 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
             // Output the visible meshlet
             uint pos = WavePrefixCountBits(visible);
             outMeshletIndices[waveMeshletOffset + pos] = uint2(meshletID, work.instanceID);
+            // One dispatch per
+            outMeshletDispatches[waveMeshletOffset + pos] = MeshletTaskDispatch(1, 1, 1);
         }
     }
     // If this was a Task Shader (which it was): DispatchMesh(shared.meshletCount,1,1,shared);

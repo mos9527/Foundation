@@ -4,8 +4,7 @@ uniform UBO globalParams;
 
 [[vk_binding(1,0)]] StructuredBuffer<GSInstance> instances;
 [[vk_binding(2,0)]] ByteAddressBuffer primitive;
-[[vk_binding(3,0)]] RWStructuredBuffer<uint> inMeshletCounter;
-[[vk_binding(4,0)]] RWStructuredBuffer<uint2> inMeshletIndices; // (x: Meshlet ID, y: Instance ID)
+[[vk_binding(3,0)]] RWStructuredBuffer<uint2> inMeshletIndices; // (x: Meshlet ID, y: Instance ID)
 
 struct MSGroup {
     GSInstance instance;
@@ -19,14 +18,11 @@ groupshared MSGroup group;
 [outputtopology("triangle")]
 [numthreads(kMeshWorkGroupSize, 1, 1)]
 void main(
-    in uint2 groupID: SV_GroupID,
+    uint gid : SV_DrawIndex,
     in uint tid: SV_GroupIndex,
     OutputVertices<V2F, 96> verts,
     OutputIndices<uint3, 96> triangles
-) {
-    uint gid = dot(groupID, uint2(kMeshWorkGroupSize, 1)); // ID of this group, flattened
-    if (gid >= inMeshletCounter[0])
-        return; // Group inactive
+) {        
     if (tid == 0){
         uint2 indices = inMeshletIndices[gid];
         group.meshletID = indices.x;

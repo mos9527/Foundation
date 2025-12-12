@@ -61,8 +61,7 @@ void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPi
     auto& resource = mSetup->trackedResources[handle];
     // Check for overlap
     for (auto const& [h, _access, _stage] : mSetup->trackedPasses[pass].bufferUsages)
-        if (h == handle)
-            throw std::runtime_error("Overlap detected. Buffer access must be global.");
+        CHECK_MSG(h != handle, "Redeclaration of buffer resource {} in pass {} detected.", resource.name, mSetup->trackedPasses[pass].name);
     // Add edge
     if (resource.lastBufferState.producer != kInvalidHandle)
         mSetup->add_edge(pass, resource.lastBufferState.producer, handle);

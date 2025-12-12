@@ -1,9 +1,9 @@
 #include "ICommon.slang"
 [[SpecializationConstant]] int flags;
 uniform UBO globalParams;
-[[vk_binding(5,0)]] RWTexture2D<uint32_t> overdraw;
-[[vk_binding(6,0)]] StructuredBuffer<GSMaterial> materials;
-[[vk_binding(7,0)]] SamplerState textureSampler;
+[[vk_binding(4,0)]] RWTexture2D<uint32_t> overdraw;
+[[vk_binding(5,0)]] StructuredBuffer<GSMaterial> materials;
+[[vk_binding(6,0)]] SamplerState textureSampler;
 [[vk_binding(0,1)]] Texture2D<float4> textures[];
 
 struct Fragment
@@ -23,7 +23,7 @@ Fragment drawMeshlet(V2F input)
 
 Fragment drawGBuffer(V2F input){
     Fragment output;
-    GSMaterial material = materials[0];
+    GSMaterial material = materials[input.materialIndex];
     float4 baseColor = material.baseColorFactor;
     if (material.baseColorTexture)
         baseColor *= textures[material.baseColorTexture].Sample(textureSampler, input.uv);

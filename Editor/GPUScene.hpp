@@ -150,5 +150,6 @@ public:
     [[nodiscard]] RHIBuffer* GetMaterialBuffer() const { return mMaterialBuffer.mBuffer.Get(); }
     [[nodiscard]] BindlessPool* GetTexturePool() { return &mTexturePool; }
     [[nodiscard]] RHIAccelerationStructure* GetTLAS() const { return mTLAS.Get(); }
+    [[nodiscard]] uint32_t GetMeshletGlobalCount() const { return mMeshletGlobalCounter; }
     void Reset();
 };
