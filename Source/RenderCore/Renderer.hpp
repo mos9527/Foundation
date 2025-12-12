@@ -158,7 +158,7 @@ namespace Foundation::RenderCore
         State mState;
         Allocator* mAllocator{nullptr};
 
-        const RendererDesc mDesc{};
+        RendererDesc mDesc{};
 
         uint64_t mFrameSwapped{0}; // Frame rendered in the current Swapchain
 

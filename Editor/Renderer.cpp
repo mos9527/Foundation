@@ -30,6 +30,7 @@ void RendererSetupImGuiOnly(FContext* context)
     auto* renderer = context->renderer = Construct<Renderer>(context->allocator,
                                                              RendererDesc{
                                                                  .asyncCompute = true,
+                                                                 .threadCount = 0u,
                                                                  .pipelineCache = context->psoCache.Get(),
                                                              },
                                                              context->device, context->swapchain, context->allocator);
@@ -91,7 +92,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
     // NOTE: Lambda captures
     // NONE of the handle values outlive the renderer. Therefore, ALWAYS capture by value.
     renderer->CreatePass(
-        "UBO Update & Init", RHIDeviceQueueType::Compute, 0u,
+        "UBO Update & Init", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
             r->BindBufferCopyDst(self, GlobalUBO);
@@ -113,7 +114,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             cmd->FillBuffer(occlusion, 0u);
         });
     renderer->CreatePass(
-        "Indirect Meshlet Cull Generation", RHIDeviceQueueType::Compute, 0u,
+        "Indirect Meshlet Cull Generation", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSCullInstances.spv");
@@ -131,7 +132,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
     auto AddIndirectFromCounter = [&](StringView name, ResourceHandle counter, ResourceHandle indirectCmd)
     {
         renderer->CreatePass(
-            name, RHIDeviceQueueType::Compute, 0u,
+            name, RHIDeviceQueueType::Graphics, 0u,
             [=](PassHandle self, Renderer* r)
             {
                 // Simply fills the dispatch buffer with the number of tasks to dispatch

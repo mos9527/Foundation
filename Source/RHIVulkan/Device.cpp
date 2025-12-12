@@ -22,32 +22,60 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
 {
     auto families = mPhysicalDevice.getQueueFamilyProperties();
     // Find queues
-    // Graphics, Compute, Transfer should be preferably mutually exclusive
-    // NOTE: We never used dedicated transfer in the Renderer - offloading to compute is more than enough for such
-    // tasks.
-    Pair<uint32_t, uint32_t> graphics{kInvalidQueueIndex, kInvalidQueueIndex},
-        compute{kInvalidQueueIndex, kInvalidQueueIndex}, transfer{kInvalidQueueIndex, kInvalidQueueIndex};
-    Array<uint32_t, 256> queueCounts{};
-    for (size_t i = 0; i < families.size(); ++i)
+    // Graphics, Compute, Transfer should be preferably mutually exclusive    
+    // vvv [Family, Index]
+    Vector<uint32_t> vis(families.size(), GetAllocator());
+    using QueuePair = Pair<uint32_t, uint32_t>;
+    QueuePair graphics{kInvalidQueueIndex, 0}, compute{kInvalidQueueIndex, 0},
+        transfer{kInvalidQueueIndex, 0};
+    Pair<QueuePair*, vk::QueueFlagBits> dstPairs[] = {
+        {&graphics, vk::QueueFlagBits::eGraphics},
+        {&compute, vk::QueueFlagBits::eCompute},
+        {&transfer, vk::QueueFlagBits::eTransfer},
+    };
+    for (auto& [dstPair, flag] : dstPairs)
     {
-        auto& family = families[i];
-        if (family.queueCount && family.queueFlags & vk::QueueFlagBits::eGraphics &&
-            graphics.first == kInvalidQueueIndex)
+        for (int i = 0; i < families.size(); ++i)
         {
-            graphics = {i, queueCounts[i]++};
-            family.queueCount--;
+            auto& family = families[i];
+            if (family.queueCount && (family.queueFlags & flag) && !vis[i])
+            {
+                dstPair->first = i;
+                dstPair->second = vis[i]++;
+                family.queueCount--;                
+                break;
+            }
         }
-        if (family.queueCount && family.queueFlags & vk::QueueFlagBits::eCompute && compute.first == kInvalidQueueIndex)
+    }
+    // Unassigned - use remaining queues
+    // Create the device queues
+    for (auto& [dstPair, flag] : dstPairs)
+    {
+        if (dstPair->first != kInvalidQueueIndex)
+            continue;
+        for (int i = 0; i < families.size(); ++i)
         {
-            compute = {i, queueCounts[i]++};
-            family.queueCount--;
+            auto& family = families[i];
+            if (family.queueCount && (family.queueFlags & flag))
+            {
+                dstPair->first = i;
+                dstPair->second = vis[i]++;
+                family.queueCount--;
+                break;
+            }
         }
-        if (family.queueCount && family.queueFlags & vk::QueueFlagBits::eTransfer &&
-            transfer.first == kInvalidQueueIndex)
-        {
-            transfer = {i, queueCounts[i]++};
-            family.queueCount--;
-        }
+    }
+    Vector<vk::DeviceQueueCreateInfo> queueInfos(GetAllocator());
+    static const float priority[16] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+                                       1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+    for (uint32_t i = 0; i < families.size(); ++i)
+    {
+        if (vis[i])
+            queueInfos.emplace_back(vk::DeviceQueueCreateInfo{
+                .queueFamilyIndex = i,
+                .queueCount = vis[i],
+                .pQueuePriorities = priority // All queues have the same priority
+            });
     }
     CHECK(graphics.first != kInvalidQueueIndex);
     CHECK(compute.first != kInvalidQueueIndex);
@@ -64,18 +92,6 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         // - https://github.com/KhronosGroup/Vulkan-Hpp/blob/main/RAII_Samples/05_InitSwapchain/05_InitSwapchain.cpp#L45
         // - https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/blob/master/src/VulkanSample.cpp#L1850
         CHECK(mPhysicalDevice.getSurfaceSupportKHR(graphics.first, *mSurface));
-    }
-    // Create the device queues
-    Vector<vk::DeviceQueueCreateInfo> queue_info(GetAllocator());
-    static const float priority[16] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f  };
-    for (uint32_t i = 0; i < families.size(); ++i)
-    {
-        if (queueCounts[i])
-            queue_info.emplace_back(vk::DeviceQueueCreateInfo{
-                .queueFamilyIndex = i,
-                .queueCount = queueCounts[i],
-                .pQueuePriorities = priority // All queues have the same priority
-            });
     }
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
                        vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
@@ -113,8 +129,8 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
             {.rayQuery = true} // vk::PhysicalDeviceRayQueryFeaturesKHR
         };
     vk::DeviceCreateInfo device_info{.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
-                                     .queueCreateInfoCount = static_cast<uint32_t>(queue_info.size()),
-                                     .pQueueCreateInfos = queue_info.data(),
+                                     .queueCreateInfoCount = static_cast<uint32_t>(queueInfos.size()),
+                                     .pQueueCreateInfos = queueInfos.data(),
                                      .enabledExtensionCount = std::size(kVulkanDeviceExtensions),
                                      .ppEnabledExtensionNames = kVulkanDeviceExtensions};
     mDevice = vk::raii::Device(mPhysicalDevice, device_info, GetVkAllocatorCallbacks());
@@ -214,12 +230,12 @@ RHIDeviceQueue* VulkanDevice::GetDeviceQueue(RHIDeviceQueueType type) const
 {
     switch (type)
     {
+    case RHIDeviceQueueType::Graphics:
+        return mQueues->Get(mQueues->graphics);
     case RHIDeviceQueueType::Compute:
         return mQueues->Get(mQueues->compute);
     case RHIDeviceQueueType::Transfer:
-        return mQueues->Get(mQueues->transfer);
-    case RHIDeviceQueueType::Graphics:
-        return mQueues->Get(mQueues->graphics);
+        return mQueues->Get(mQueues->transfer);    
     default:
         break;
     }

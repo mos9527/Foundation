@@ -17,6 +17,19 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> dev
     mGraphicsQueue->DebugSetObjectName("Graphics Queue");
     mComputeQueue = mDevice->GetDeviceQueue(RHIDeviceQueueType::Compute);
     mComputeQueue->DebugSetObjectName("Compute Queue");
+    if (mDesc.asyncCompute)
+    {
+        if (mGraphicsQueue == mComputeQueue)
+        {
+            LOG(Renderer, LogWarn, "Async compute requested, but compute and graphics queues are the same.");
+            mDesc.asyncCompute = false;
+        }
+        else
+        {
+            LOG(Renderer, LogInfo, "Async compute enabled.");
+            mComputeQueue->DebugSetObjectName("Compute Queue");
+        }
+    }
     LOG(Renderer, LogDebug, "** Renderer Init **");
     LOG(Renderer, LogDebug, "Async Compute:\t{}", mDesc.asyncCompute);
     LOG(Renderer, LogDebug, "Presentation:\t{}", mDesc.present);
