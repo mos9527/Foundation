@@ -23,6 +23,7 @@ struct MeshletTaskWork
 constexpr size_t kMeshWorkGroupSize = 64;
 constexpr size_t kMaxMeshletCount = 1e6;
 constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
+constexpr size_t kMeshIndirectPerDrawMeshlets = 64;
 void RendererSetupImGuiOnly(FContext* context)
 {
     if (context->renderer)
@@ -71,19 +72,25 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
         "Indirect Meshlet Cull CS Counter",
         RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(int)});
     // vvv Used to launch the actual culling CS
-    auto IndirectTaskDispatch = renderer->CreateResource(
-        "Indirect Meshlet Cull CS Dispatch",
-        RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer, .size = sizeof(MeshletTaskDispatch)});
-    auto IndirectMeshlets = renderer->CreateResource(
-        "Indirect Draw MS Buffer", // Task Work -> UINT2 Meshlet IDs [x: Meshlet, y: Instance]
-        RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer, .size = 2 * sizeof(int) * kMaxMeshletCount});
+    auto IndirectTaskDispatch =
+        renderer->CreateResource("Indirect Meshlet Cull CS Dispatch",
+                                 RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
+                                               .size = sizeof(MeshletTaskDispatch)});
+    auto IndirectMeshlets =
+        renderer->CreateResource("Indirect Draw MS Buffer", // Task Work -> UINT2 Meshlet IDs [x: Meshlet, y: Instance]
+                                 RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
+                                               .size = 2 * sizeof(int) * kMaxMeshletCount});
     auto IndirectMeshletCounter = renderer->CreateResource(
         "Indirect Draw MS Counter",
         RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(int)});
+    auto IndirectMeshletDispatchCounter = renderer->CreateResource(
+        "Indirect Draw MS Dispatch Counter",
+        RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(int)});
     // vvv Used to launch the actual mesh shader draws
-    auto IndirectMeshletDispatch = renderer->CreateResource(
-        "Indirect Draw MS Dispatch",
-        RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer, .size = sizeof(MeshletTaskDispatch) * kMaxMeshletCount});
+    auto IndirectMeshletDispatch =
+        renderer->CreateResource("Indirect Draw MS Dispatch",
+                                 RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
+                                               .size = sizeof(MeshletTaskDispatch) * kMaxMeshletCount});
     // We pack meshlet visibility in uint32 bitmaps
     auto Visibility =
         renderer->CreateResource("Visibility Buffer",
@@ -113,6 +120,11 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             cmd->FillBuffer(counter, 0u);
             cmd->FillBuffer(occlusion, 0u);
         });
+    const auto kBufferClearTransition = RHICommandList::TransitionDesc{
+        .srcAccess = RHIResourceAccessBits::TransferWrite,
+        .dstAccess = RHIResourceAccessBits::ShaderWrite | RHIResourceAccessBits::ShaderRead,
+        .srcStage = RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::Transfer,
+        .dstStage = RHIPipelineStageBits::ComputeShader};
     renderer->CreatePass(
         "Indirect Meshlet Cull Generation", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -123,31 +135,18 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
             r->BindBufferUnordered(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "outTasks");
             r->BindBufferUnordered(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "outTasksCounter");
+            r->BindBufferUnordered(self, IndirectTaskDispatch, RHIPipelineStageBits::ComputeShader, "outTasksDispatch");
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
+            auto* taskDispatch = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
+            cmd->FillBuffer(taskDispatch, 0u);
+            cmd->BeginTransition();
+            cmd->SetBufferTransition(taskDispatch, kBufferClearTransition);
+            cmd->EndTransition();
             r->CmdSetPipeline(self, cmd);
             r->CmdDispatch(self, cmd, {pShaderGlobals->numInstances, 1, 1});
         });
-    auto AddIndirectFromCounter = [&](StringView name, ResourceHandle counter, ResourceHandle indirectCmd)
-    {
-        renderer->CreatePass(
-            name, RHIDeviceQueueType::Graphics, 0u,
-            [=](PassHandle self, Renderer* r)
-            {
-                // Simply fills the dispatch buffer with the number of tasks to dispatch
-                // A roundtrip back to the CPU would be expensive, so we do it all on the GPU side.
-                r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSIndirectFromCounter.spv");
-                r->BindBufferStorageRead(self, counter, RHIPipelineStageBits::ComputeShader, "counter");
-                r->BindBufferUnordered(self, indirectCmd, RHIPipelineStageBits::ComputeShader, "dispatch");
-            },
-            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-            {
-                r->CmdSetPipeline(self, cmd);
-                r->CmdDispatch(self, cmd, {1, 1, 1});
-            });
-    };
-    AddIndirectFromCounter("Indirect Meshlet Cull Dispatch Command", IndirectTaskCounter, IndirectTaskDispatch);
     /* Meshlet Drawing */
     auto [w, h] = renderer->GetSwapchainExtent();
     auto ZBuffer = renderer->CreateResource(
@@ -272,23 +271,44 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     r->BindBufferUnordered(self, IndirectMeshletDispatch,
                                            RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
                                            "outMeshletDispatches");
+                    r->BindBufferUnordered(self, IndirectMeshletDispatchCounter,
+                                           RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
+                                           "outMeshletDispatchCounter");
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
                     // Clear the counter
-                    auto* counter = r->DerefResource(IndirectMeshletCounter).Get<RHIBuffer*>();
-                    cmd->FillBuffer(counter, 0u);
+                    auto* msCounter = r->DerefResource(IndirectMeshletCounter).Get<RHIBuffer*>();
+                    auto* dispatchCounter = r->DerefResource(IndirectMeshletDispatchCounter).Get<RHIBuffer*>();
+                    cmd->FillBuffer(msCounter, 0u);
+                    cmd->FillBuffer(dispatchCounter, 0u);
                     cmd->BeginTransition();
-                    cmd->SetBufferTransition(
-                        counter,
-                        {.srcAccess = RHIResourceAccessBits::TransferWrite,
-                         .dstAccess = RHIResourceAccessBits::ShaderWrite | RHIResourceAccessBits::ShaderRead,
-                         .srcStage = RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::Transfer,
-                         .dstStage = RHIPipelineStageBits::ComputeShader});
+                    cmd->SetBufferTransition(msCounter, kBufferClearTransition);
+                    cmd->SetBufferTransition(dispatchCounter, kBufferClearTransition);
                     cmd->EndTransition();
                     r->CmdSetPipeline(self, cmd);
                     auto* dispatchBuffer = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
                     cmd->DispatchIndirect(dispatchBuffer, 0);
+                });
+            renderer->CreatePass(
+                early ? "Indirect Meshlet Cull Indirect Command Prep [Stage 1]"
+                      : "Indirect Meshlet Cull Indirect Command Prep [Stage 2]",
+                RHIDeviceQueueType::Graphics, 0u,
+                [=](PassHandle self, Renderer* r)
+                {
+                    r->BindShader(self, RHIShaderStageBits::Compute, "main",
+                                  "data/shaders/ECSCullMeshletsIndirect.spv");
+                    r->BindBufferStorageRead(self, IndirectMeshletCounter,
+                                             RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
+                                             "counter");
+                    r->BindBufferUnordered(self, IndirectMeshletDispatch,
+                                           RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
+                                           "dispatch");
+                },
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+                {
+                    r->CmdSetPipeline(self, cmd);
+                    cmd->Dispatch(1, 1, 1);
                 });
         };
         auto AddMainPass = [=](bool early)
@@ -323,10 +343,13 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     r->BindTextureDSV(self, ZBuffer,
                                       {.format = RHIResourceFormat::D32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
-                    r->BindBufferShaderRead(self, IndirectMeshletDispatch,
-                                            RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);                    
-                    r->BindBufferUnordered(self, IndirectMeshlets, RHIPipelineStageBits::ComputeShader,
-                                           "inMeshletIndices");
+                    r->BindBufferShaderRead(self, IndirectMeshletDispatchCounter,
+                                            RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);
+                    r->BindBufferStorageRead(self, IndirectMeshletCounter,
+                                             RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
+                                             "inMeshletCounter");
+                    r->BindBufferStorageRead(self, IndirectMeshlets, RHIPipelineStageBits::ComputeShader,
+                                             "inMeshletIndices");
                     r->BindTextureSampler(self, TexSampler, "textureSampler");
                     r->BindDescriptorSet(self, "textures",
                                          context->gpuScene->GetTexturePool()->GetDescriptorSetLayout());
@@ -346,10 +369,12 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     r->CmdBindDescriptorSet(self, cmd, "textures",
                                             context->gpuScene->GetTexturePool()->GetDescriptorSet());
                     auto* dispatchBuffer = r->DerefResource(IndirectMeshletDispatch).Get<RHIBuffer*>();
-                    auto* dispatchCount = r->DerefResource(IndirectMeshletCounter).Get<RHIBuffer*>();
-                    cmd->DrawMeshTasksIndirectCount(dispatchBuffer, 0, dispatchCount, 0,
-                                                    context->gpuScene->GetMeshletGlobalCount(),
-                                                    sizeof(MeshletTaskDispatch));
+                    auto* dispatchCounter = r->DerefResource(IndirectMeshletDispatchCounter).Get<RHIBuffer*>();
+                    cmd->DrawMeshTasksIndirectCount(
+                        dispatchBuffer, 0, dispatchCounter, 0,
+                        (context->gpuScene->GetMeshletGlobalCount() + kMeshIndirectPerDrawMeshlets - 1) /
+                            kMeshIndirectPerDrawMeshlets,
+                        sizeof(MeshletTaskDispatch));
                     cmd->EndGraphics();
                 });
             if (early && cfg.cullFlags & kCullOcclusion)

@@ -15,6 +15,8 @@ RWStructuredBuffer<MeshletTaskWork> inTasks;
 // vvv Cleared before dispatch
 RWStructuredBuffer<Atomic<uint>> outMeshletCounter;
 RWStructuredBuffer<uint2> outMeshletIndices; // (x: Meshlet ID, y: Instance ID)
+// vvv Cleared before dispatch
+RWStructuredBuffer<Atomic<uint>> outMeshletDispatchCounter;
 RWStructuredBuffer<MeshletTaskDispatch> outMeshletDispatches;
 
 // Model to view space
@@ -164,13 +166,28 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
         uint waveMeshletOffset = 0;
         if (WaveIsFirstLane())
             waveMeshletOffset = outMeshletCounter[0].add(waveVisibleCount);
+        // Boardcast
         waveMeshletOffset = WaveReadLaneFirst(waveMeshletOffset);
+        // Spill the big indices list into multiple dispatches
+        // of kMaxMeshletsPerDispatch each.
+        uint waveMeshletCount = waveMeshletOffset + waveVisibleCount;
+        waveMeshletCount = WaveReadLaneFirst(waveMeshletCount);
+        if (WaveIsFirstLane())
+            outMeshletDispatchCounter[0].max((waveMeshletCount + kMeshIndirectPerDrawMeshlets - 1) / kMeshIndirectPerDrawMeshlets);
         if (visible) {
             // Output the visible meshlet
             uint pos = WavePrefixCountBits(visible);
-            outMeshletIndices[waveMeshletOffset + pos] = uint2(meshletID, work.instanceID);
-            // One dispatch per
-            outMeshletDispatches[waveMeshletOffset + pos] = MeshletTaskDispatch(1, 1, 1);
+            uint outPos = waveMeshletOffset + pos;
+            outMeshletIndices[outPos] = uint2(meshletID, work.instanceID);
+            if (outPos % kMeshIndirectPerDrawMeshlets == 0){
+                // Guaranteed to write only once
+                uint dispatchID = outPos / kMeshIndirectPerDrawMeshlets;
+                outMeshletDispatches[dispatchID].groupCountX = kMeshIndirectPerDrawMeshlets;
+                // ^^ Last dispatch may over commit
+                // This is patched by another CS later.
+                outMeshletDispatches[dispatchID].groupCountY = 1;
+                outMeshletDispatches[dispatchID].groupCountZ = 1;
+            }
         }
     }
     // If this was a Task Shader (which it was): DispatchMesh(shared.meshletCount,1,1,shared);

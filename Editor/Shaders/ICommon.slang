@@ -1,6 +1,7 @@
 #include "IMath.slang"
 #include "IFlags.slang"
 static const uint kMeshWorkGroupSize = 64;
+static const uint kMeshIndirectPerDrawMeshlets = 64;
 // Definitions From C++ sources
 struct FVertex {
     float3 position;

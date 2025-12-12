@@ -18,13 +18,16 @@ groupshared MSGroup group;
 [outputtopology("triangle")]
 [numthreads(kMeshWorkGroupSize, 1, 1)]
 void main(
-    uint gid : SV_DrawIndex,
+    uint gid: SV_GroupID,
+    uint did : SV_DrawIndex,
     in uint tid: SV_GroupIndex,
     OutputVertices<V2F, 96> verts,
     OutputIndices<uint3, 96> triangles
-) {        
+) {
+    uint drawID = did * kMeshIndirectPerDrawMeshlets + gid;
     if (tid == 0){
-        uint2 indices = inMeshletIndices[gid];
+        // Linear dispatch, grouped by kMeshIndirectPerDrawMeshlets
+        uint2 indices = inMeshletIndices[drawID];
         group.meshletID = indices.x;
         group.instance = instances[indices.y];
         group.mesh = primitive.Load<GSMesh>(group.instance.meshOffset);
