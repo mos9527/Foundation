@@ -23,7 +23,7 @@ struct MeshletTaskWork
 constexpr size_t kMeshWorkGroupSize = 64;
 constexpr size_t kMaxMeshletCount = 1e6;
 constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
-constexpr size_t kMeshIndirectPerDrawMeshlets = 64;
+constexpr size_t kMeshIndirectPerDrawMeshlets = 65536;
 void RendererSetupImGuiOnly(FContext* context)
 {
     if (context->renderer)
@@ -345,7 +345,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
                     r->BindBufferShaderRead(self, IndirectMeshletDispatchCounter,
                                             RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);
-                    r->BindBufferStorageRead(self, IndirectMeshletCounter,
+                    r->BindBufferStorageRead(self, IndirectMeshletDispatch,
                                              RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
                                              "inMeshletCounter");
                     r->BindBufferStorageRead(self, IndirectMeshlets, RHIPipelineStageBits::ComputeShader,
