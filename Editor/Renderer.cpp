@@ -76,7 +76,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
         RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer, .size = sizeof(MeshletTaskDispatch)});
     auto IndirectMeshlets = renderer->CreateResource(
         "Indirect Draw MS Buffer", // Task Work -> UINT2 Meshlet IDs [x: Meshlet, y: Instance]
-        RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer, .size = 2 * sizeof(int) * kMaxMeshletTaskWorkCount});
+        RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer, .size = 2 * sizeof(int) * kMaxMeshletCount});
     auto IndirectMeshletCounter = renderer->CreateResource(
         "Indirect Draw MS Counter",
         RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(int)});
@@ -391,7 +391,9 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                        .mipLevels = FullMips});
     auto HistogramBins = renderer->CreateResource(
         "Histogram", RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * 64});
-    auto TLAS = renderer->CreateResource("Scene TLAS", scene->GetTLAS());
+    auto TLAS = kInvalidHandle;
+    if (scene->GetTLAS())
+        TLAS = renderer->CreateResource("Scene TLAS", scene->GetTLAS());
     renderer->CreatePass(
         "Lighting", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -413,7 +415,8 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                 RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
             r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::ComputeShader, "materials");
-            r->BindAcceleartionStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
+            if (TLAS != kInvalidHandle)
+                r->BindAcceleartionStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
             r->BindTextureUAV(self, LightingBuffer, "output", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
                                                  .range = RHITextureSubresourceRange::Create()});

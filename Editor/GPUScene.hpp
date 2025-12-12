@@ -11,7 +11,7 @@ Mesh = 1 << 0,
     BITMASK_ENUM_END()
 
 #pragma pack(push, 1)
-struct GSMesh
+        struct GSMesh
 {
     // Offsets are absolute, and are in Primitive buffer (bytes).
     // @ref FVertex
@@ -122,6 +122,7 @@ class GPUScene
 
     RHIDeviceScopedHandle<RHIBuffer> CreateScratchBuffer(size_t size);
     RHIDeviceScopedHandle<RHIBuffer> CreateASBuffer(size_t size);
+
 public:
     struct GPUSceneDesc
     {
@@ -142,14 +143,16 @@ public:
     size_t Upload(ImmediateUpload* ctx, FMesh const& source, GSMesh& outData, uint32_t& outOffset);
     size_t Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t& outIndex);
 
-    void BuildBLASIncremental(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices, uint32_t& outPrimitiveCount);
-    void BuildTLAS(ImmediateContext* ctx, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, uint32_t primitiveCount);
+    void BuildBLASIncremental(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices,
+                              uint32_t& outPrimitiveCount);
+    void BuildTLAS(ImmediateContext* ctx, Span<const GSInstance> instances, Span<const uint32_t> blasIndices,
+                   uint32_t primitiveCount);
 
     [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.mBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetMaterialBuffer() const { return mMaterialBuffer.mBuffer.Get(); }
     [[nodiscard]] BindlessPool* GetTexturePool() { return &mTexturePool; }
-    [[nodiscard]] RHIAccelerationStructure* GetTLAS() const { return mTLAS.Get(); }
+    [[nodiscard]] RHIAccelerationStructure* GetTLAS() const { return mTLAS ? mTLAS.Get() : nullptr; }
     [[nodiscard]] uint32_t GetMeshletGlobalCount() const { return mMeshletGlobalCounter; }
     void Reset();
 };

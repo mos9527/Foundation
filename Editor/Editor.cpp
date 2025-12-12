@@ -110,7 +110,7 @@ void FInitEnter()
         GShaderGlobals.numMaterials = GSMaterials.size();
     }
     // Build RT AS
-    {
+    if (false) {
         ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
         Vector<uint32_t> blasIndices(meshes.size(), GLOBAL_ALLOC);
         uint32_t numPrimitives;
