@@ -83,14 +83,11 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
     auto IndirectMeshletCounter = renderer->CreateResource(
         "Indirect Draw MS Counter",
         RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(int)});
-    auto IndirectMeshletDispatchCounter = renderer->CreateResource(
-        "Indirect Draw MS Dispatch Counter",
-        RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination, .size = sizeof(int)});
     // vvv Used to launch the actual mesh shader draws
     auto IndirectMeshletDispatch =
         renderer->CreateResource("Indirect Draw MS Dispatch",
                                  RHIBufferDesc{.usage = IndirectBuffer | StorageBuffer | TransferDestination,
-                                               .size = sizeof(MeshletTaskDispatch) * kMaxMeshletCount});
+                                               .size = sizeof(MeshletTaskDispatch)});
     // We pack meshlet visibility in uint32 bitmaps
     auto Visibility =
         renderer->CreateResource("Visibility Buffer",
@@ -271,44 +268,21 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     r->BindBufferUnordered(self, IndirectMeshletDispatch,
                                            RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
                                            "outMeshletDispatches");
-                    r->BindBufferUnordered(self, IndirectMeshletDispatchCounter,
-                                           RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
-                                           "outMeshletDispatchCounter");
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
                     // Clear the counter
                     auto* msCounter = r->DerefResource(IndirectMeshletCounter).Get<RHIBuffer*>();
-                    auto* dispatchCounter = r->DerefResource(IndirectMeshletDispatchCounter).Get<RHIBuffer*>();
+                    auto* msDispatches = r->DerefResource(IndirectMeshletDispatch).Get<RHIBuffer*>();
                     cmd->FillBuffer(msCounter, 0u);
-                    cmd->FillBuffer(dispatchCounter, 0u);
+                    cmd->FillBuffer(msDispatches, 0u);
                     cmd->BeginTransition();
                     cmd->SetBufferTransition(msCounter, kBufferClearTransition);
-                    cmd->SetBufferTransition(dispatchCounter, kBufferClearTransition);
+                    cmd->SetBufferTransition(msDispatches, kBufferClearTransition);
                     cmd->EndTransition();
                     r->CmdSetPipeline(self, cmd);
                     auto* dispatchBuffer = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
                     cmd->DispatchIndirect(dispatchBuffer, 0);
-                });
-            renderer->CreatePass(
-                early ? "Indirect Meshlet Cull Indirect Command Prep [Stage 1]"
-                      : "Indirect Meshlet Cull Indirect Command Prep [Stage 2]",
-                RHIDeviceQueueType::Graphics, 0u,
-                [=](PassHandle self, Renderer* r)
-                {
-                    r->BindShader(self, RHIShaderStageBits::Compute, "main",
-                                  "data/shaders/ECSCullMeshletsIndirect.spv");
-                    r->BindBufferStorageRead(self, IndirectMeshletCounter,
-                                             RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
-                                             "counter");
-                    r->BindBufferUnordered(self, IndirectMeshletDispatch,
-                                           RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
-                                           "dispatch");
-                },
-                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-                {
-                    r->CmdSetPipeline(self, cmd);
-                    cmd->Dispatch(1, 1, 1);
                 });
         };
         auto AddMainPass = [=](bool early)
@@ -343,8 +317,6 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     r->BindTextureDSV(self, ZBuffer,
                                       {.format = RHIResourceFormat::D32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
-                    r->BindBufferShaderRead(self, IndirectMeshletDispatchCounter,
-                                            RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);
                     r->BindBufferStorageRead(self, IndirectMeshletDispatch,
                                              RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
                                              "inMeshletCounter");
@@ -360,21 +332,16 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     if (early)
                         r->CmdBeginGraphics(
                             self, cmd, wh,
-                            {{RHIClearColor{0, 0, 0, 0}, RHIClearColor{0, 0, 0, 0}, RHIClearColor{0, 0, 0, 0}}},
+                            {{{}, {}, {}}}, // No need. Depth is used to reject undrawn pixels
                             RHIClearDepthStencil{0.0f, 0});
-                    else // Don't clear in stage 2 - we're appending false-positives back to it.
+                    else // Don't clear depth in stage 2.
                         r->CmdBeginGraphics(self, cmd, wh, {{{}, {}, {}}}, {});
                     r->CmdSetPipeline(self, cmd);
                     cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
                     r->CmdBindDescriptorSet(self, cmd, "textures",
                                             context->gpuScene->GetTexturePool()->GetDescriptorSet());
                     auto* dispatchBuffer = r->DerefResource(IndirectMeshletDispatch).Get<RHIBuffer*>();
-                    auto* dispatchCounter = r->DerefResource(IndirectMeshletDispatchCounter).Get<RHIBuffer*>();
-                    cmd->DrawMeshTasksIndirectCount(
-                        dispatchBuffer, 0, dispatchCounter, 0,
-                        (context->gpuScene->GetMeshletGlobalCount() + kMeshIndirectPerDrawMeshlets - 1) /
-                            kMeshIndirectPerDrawMeshlets,
-                        sizeof(MeshletTaskDispatch));
+                    cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
                     cmd->EndGraphics();
                 });
             if (early && cfg.cullFlags & kCullOcclusion)
@@ -416,6 +383,9 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                        .mipLevels = FullMips});
     auto HistogramBins = renderer->CreateResource(
         "Histogram", RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * 64});
+    bool kDebugViewUnlit = cfg.viewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewMeshlet);
+    auto LightingAverageLuma = renderer->CreateResource("Lighting Average Luminance",
+                                                        RHIBufferDesc{.usage = StorageBuffer, .size = sizeof(float)});
     auto TLAS = kInvalidHandle;
     if (scene->GetTLAS())
         TLAS = renderer->CreateResource("Scene TLAS", scene->GetTLAS());
@@ -456,40 +426,41 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             r->CmdSetPipeline(self, cmd);
             r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
         });
-    renderer->CreatePass(
-        "Histogram Binning", RHIDeviceQueueType::Graphics, 0u,
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSHistogramBinning.spv");
-            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-            r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
-                                                 .range = RHITextureSubresourceRange::Create(
-                                                     RHITextureAspectFlagBits::Color, 0, FullMips)});
-            r->BindBufferUnordered(self, HistogramBins, RHIPipelineStageBits::ComputeShader, "bins");
-        },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            RHIExtent2D wh = r->GetSwapchainExtent();
-            r->CmdSetPipeline(self, cmd);
-            r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
-        });
-    auto LightingAverageLuma = renderer->CreateResource("Lighting Average Luminance",
-                                                        RHIBufferDesc{.usage = StorageBuffer, .size = sizeof(float)});
-    renderer->CreatePass(
-        "Histogram Binning Reduce", RHIDeviceQueueType::Graphics, 0u,
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindShader(self, RHIShaderStageBits::Compute, "reduce", "data/shaders/ECSHistogramReduce.spv");
-            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-            r->BindBufferStorageRead(self, HistogramBins, RHIPipelineStageBits::ComputeShader, "bins");
-            r->BindBufferUnordered(self, LightingAverageLuma, RHIPipelineStageBits::ComputeShader, "output");
-        },
-        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        {
-            r->CmdSetPipeline(self, cmd);
-            cmd->Dispatch(1, 1, 1);
-        });
+    if (!kDebugViewUnlit)
+    {
+        renderer->CreatePass(
+            "Histogram Binning", RHIDeviceQueueType::Graphics, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSHistogramBinning.spv");
+                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::ComputeShader,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
+                                                     .range = RHITextureSubresourceRange::Create(
+                                                         RHITextureAspectFlagBits::Color, 0, FullMips)});
+                r->BindBufferUnordered(self, HistogramBins, RHIPipelineStageBits::ComputeShader, "bins");
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                RHIExtent2D wh = r->GetSwapchainExtent();
+                r->CmdSetPipeline(self, cmd);
+                r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
+            });
+        renderer->CreatePass(
+            "Histogram Binning Reduce", RHIDeviceQueueType::Graphics, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindShader(self, RHIShaderStageBits::Compute, "reduce", "data/shaders/ECSHistogramReduce.spv");
+                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
+                r->BindBufferStorageRead(self, HistogramBins, RHIPipelineStageBits::ComputeShader, "bins");
+                r->BindBufferUnordered(self, LightingAverageLuma, RHIPipelineStageBits::ComputeShader, "output");
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                r->CmdSetPipeline(self, cmd);
+                cmd->Dispatch(1, 1, 1);
+            });
+    }
     createPSFullscreenPass(
         renderer, "Blit Image",
         [=](PassHandle self, Renderer* r)

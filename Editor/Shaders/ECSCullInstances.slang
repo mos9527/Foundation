@@ -31,6 +31,7 @@ void main(uint tid: SV_DispatchThreadID, uint gid: SV_GroupIndex) {
         outTasks[taskIndex + group] = task;
     }
     uint groupIndex = taskIndex + groups;
+    groupIndex = WaveActiveMax(groupIndex);
     // Update dispatch count
     // We used to do this with another tiny CS - this will do too, and saves a barrier.
     // Same trick is used in meshlet culling CS as well.
@@ -39,10 +40,12 @@ void main(uint tid: SV_DispatchThreadID, uint gid: SV_GroupIndex) {
     // Local size for task (and compute) shader is [kMeshWorkGroupSize,1 ,1]
     // We'll do [ceil(N/kMeshWorkGroupSize),min(N,kMeshWorkGroupSize),1] dispatches for N tasks - task shaders can read the
     // actual task count from the prepared count buffer
-    uint groupX = (groupIndex + kMeshWorkGroupSize - 1) / kMeshWorkGroupSize;
-    uint groupY = min(groupIndex, kMeshWorkGroupSize);
-    uint groupZ = 1;
-    InterlockedMax(outTasksDispatch[0].groupCountX, groupX);
-    InterlockedMax(outTasksDispatch[0].groupCountY, groupY);
-    outTasksDispatch[0].groupCountZ = groupZ; // const
+    if (WaveIsFirstLane()){
+        uint groupX = (groupIndex + kMeshWorkGroupSize - 1) / kMeshWorkGroupSize;
+        uint groupY = min(groupIndex, kMeshWorkGroupSize);
+        uint groupZ = 1;
+        InterlockedMax(outTasksDispatch[0].groupCountX, groupX);
+        InterlockedMax(outTasksDispatch[0].groupCountY, groupY);
+        outTasksDispatch[0].groupCountZ = groupZ; // const
+    }
 }

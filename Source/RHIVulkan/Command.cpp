@@ -202,7 +202,7 @@ RHICommandList& VulkanCommandList::DrawMeshTasksIndirect(RHIBuffer* cmd_buffer, 
     return *this;
 }
 
-RHICommandList& Foundation::RHI::VulkanCommandList::DrawMeshTasksIndirectCount(RHIBuffer* cmd_buffer, size_t cmd_offset,
+RHICommandList& VulkanCommandList::DrawMeshTasksIndirectCount(RHIBuffer* cmd_buffer, size_t cmd_offset,
                                                                                RHIBuffer* count_buffer,
                                                                                size_t count_offset,
                                                                                uint32_t max_draw_count,
