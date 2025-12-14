@@ -80,6 +80,8 @@ namespace Foundation::RHI {
         if (state & UniformRead) flags |= vk::AccessFlagBits2::eUniformRead;
         if (state & HostWrite) flags |= vk::AccessFlagBits2::eHostWrite;
         if (state & HostRead) flags |= vk::AccessFlagBits2::eHostRead;
+        if (state & AccelerationStructureRead) flags |= vk::AccessFlagBits2::eAccelerationStructureReadKHR;
+        if (state & AccelerationStructureWrite) flags |= vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
         return flags;
     }
 
@@ -133,6 +135,7 @@ namespace Foundation::RHI {
         if (stage & Transfer) flags |= vk::PipelineStageFlagBits2::eTransfer;
         if (stage & EarlyFragmentTests) flags |= vk::PipelineStageFlagBits2::eEarlyFragmentTests;
         if (stage & LateFragmentTests) flags |= vk::PipelineStageFlagBits2::eLateFragmentTests;
+        if (stage & AccelerationBuild) flags |= vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR;
         if (stage & TopOfPipe) flags |= vk::PipelineStageFlagBits2::eTopOfPipe;
         if (stage & BottomOfPipe) flags |= vk::PipelineStageFlagBits2::eBottomOfPipe;
         if (stage & AllGraphics) flags |= vk::PipelineStageFlagBits2::eAllGraphics;
@@ -240,5 +243,17 @@ namespace Foundation::RHI {
         default:
             return {};
         }
+    }
+
+    inline vk::BuildAccelerationStructureFlagsKHR vkBuildAccelerationStructureFlagsFromRHIAccelerationStructureBuildFlags(RHIAccelerationStructureBuildFlags flags)
+    {
+        using enum RHIAccelerationStructureBuildFlagsBits;
+        vk::BuildAccelerationStructureFlagsKHR vkFlags{};
+        if (flags & AllowUpdate) vkFlags |= vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate;
+        if (flags & AllowCompaction) vkFlags |= vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction;
+        if (flags & PreferFastTrace) vkFlags |= vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
+        if (flags & PreferFastBuild) vkFlags |= vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild;
+        if (flags & LowMemory) vkFlags |= vk::BuildAccelerationStructureFlagBitsKHR::eLowMemory;
+        return vkFlags;
     }
 }

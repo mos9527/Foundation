@@ -74,10 +74,10 @@ VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc
     if (desc.resource.shared)
     {
         bufferInfo.pQueueFamilyIndices = queueFamilies;
-        bufferInfo.queueFamilyIndexCount = FillQueueFamilies(device, &queueFamilies[0], desc.resource.sharedQueues);        
+        bufferInfo.queueFamilyIndexCount = FillQueueFamilies(device, &queueFamilies[0], desc.resource.sharedQueues);
         // Fallback. VVL complians otherwise.
         if (bufferInfo.queueFamilyIndexCount < 2)
-            bufferInfo.sharingMode = vk::SharingMode::eExclusive;        
+            bufferInfo.sharingMode = vk::SharingMode::eExclusive;
     }
 
     auto flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.hostAccess);
@@ -156,7 +156,7 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
         imageInfo.queueFamilyIndexCount = FillQueueFamilies(device, &queueFamilies[0], desc.resource.sharedQueues);
         // Fallback. VVL complians otherwise.
         if (imageInfo.queueFamilyIndexCount < 2)
-            imageInfo.sharingMode = vk::SharingMode::eExclusive;        
+            imageInfo.sharingMode = vk::SharingMode::eExclusive;
     }
     VmaAllocationCreateInfo allocInfo = {.flags = vmaAllocationFlagsFromRHIResourceHostAccess(desc.resource.hostAccess),
                                          .usage = vmaMemoryUsageFlagsFromResource(desc.resource),
@@ -281,16 +281,18 @@ VulkanAccelerationStructure::VulkanAccelerationStructure(VulkanDevice const& dev
                                                          RHIAccelerationStructureDesc const& desc) :
     RHIAccelerationStructure(device, desc), mDevice(device)
 {
+    mBuffer = static_cast<VulkanBuffer*>(desc.buffer);
     mAS = device.GetVkDevice().createAccelerationStructureKHR(
-        vk::AccelerationStructureCreateInfoKHR{.buffer = static_cast<VulkanBuffer*>(desc.buffer)->GetVkBuffer(),
-                                               .offset = desc.offset,
-                                               .size = desc.size,
-                                               .type = desc.type == RHIAccelerationStructureType::TopLevel
-                                                   ? vk::AccelerationStructureTypeKHR::eTopLevel
-                                                   : vk::AccelerationStructureTypeKHR::eBottomLevel},
+        vk::AccelerationStructureCreateInfoKHR{
+            .buffer = mBuffer->GetVkBuffer(),
+            .offset = desc.offset,
+            .size = desc.size,
+            .type = desc.type == RHIAccelerationStructureType::TopLevel
+                ? vk::AccelerationStructureTypeKHR::eTopLevel
+                : vk::AccelerationStructureTypeKHR::eBottomLevel},
         device.GetVkAllocatorCallbacks());
 }
-vk::DeviceAddress VulkanAccelerationStructure::GetVkAcceleartionStructureAddress() const
+vk::DeviceAddress VulkanAccelerationStructure::GetVkAccelerationStructureAddress() const
 {
     return mDevice.GetVkDevice().getAccelerationStructureAddressKHR({.accelerationStructure = mAS});
 }
@@ -335,7 +337,9 @@ RHI::vkAccelerationBuildGeoInfoFromRHI(RHIAccelerationStructureBuildDesc const& 
             }
         case RHIAccelerationGeometryType::Instances:
             {
-                auto addr = static_cast<VulkanBuffer*>(src.instanceData.instanceBuffer)->GetBufferAddress();
+                auto* buf = static_cast<VulkanBuffer*>(src.instanceData.instanceBuffer);
+                auto addr = buf->GetBufferAddress();
+                CHECK(src.instanceData.instanceOffset < buf->mDesc.size);
                 geo.geometryType = vk::GeometryTypeKHR::eInstances;
                 geo.geometry.instances.sType = vk::StructureType::eAccelerationStructureGeometryInstancesDataKHR;
                 geo.geometry.instances.data = {.deviceAddress = addr + src.instanceData.instanceOffset};
@@ -348,7 +352,7 @@ RHI::vkAccelerationBuildGeoInfoFromRHI(RHIAccelerationStructureBuildDesc const& 
     auto res = vk::AccelerationStructureBuildGeometryInfoKHR{
         .type = desc.type == RHIAccelerationStructureType::TopLevel ? vk::AccelerationStructureTypeKHR::eTopLevel
                                                                     : vk::AccelerationStructureTypeKHR::eBottomLevel,
-        .flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace, // TODO: Other flags
+        .flags = vkBuildAccelerationStructureFlagsFromRHIAccelerationStructureBuildFlags(desc.flags),
         .mode = desc.operation == RHIAccelerationStructureBuildOp::Build
             ? vk::BuildAccelerationStructureModeKHR::eBuild
             : vk::BuildAccelerationStructureModeKHR::eUpdate,

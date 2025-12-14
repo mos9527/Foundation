@@ -7,6 +7,8 @@ static const int kViewPosition = 1 << 5;
 static const int kViewGBufferDiffuse = 1 << 6;
 static const int kViewGBufferSpecular = 1 << 7;
 
+static const int kViewEnableRaytracing = 1 << 16;
+
 static const int kCullFrustum = 1 << 0;
 static const int kCullOcclusion = 1 << 1;
 static const int kCullBackface = 1 << 2;

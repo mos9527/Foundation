@@ -563,7 +563,7 @@ size_t VulkanDevice::WriteAccelerationStructureInstanceData(RHIAccelerationStruc
             .instanceCustomIndex = static_cast<uint32_t>(data.instanceID),
             .mask = data.mask,
             .accelerationStructureReference =
-                static_cast<VulkanAccelerationStructure*>(data.blas)->GetVkAcceleartionStructureAddress()};
+                static_cast<const VulkanAccelerationStructure*>(data.blas)->GetVkAccelerationStructureAddress()};
         std::memcpy(res.transform.matrix[0], &data.transformBasisRowMajor[0], sizeof(float) * 3);
         std::memcpy(res.transform.matrix[1], &data.transformBasisRowMajor[1], sizeof(float) * 3);
         std::memcpy(res.transform.matrix[2], &data.transformBasisRowMajor[2], sizeof(float) * 3);

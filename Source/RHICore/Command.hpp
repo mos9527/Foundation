@@ -61,6 +61,8 @@ namespace Foundation::RHI
         virtual RHICommandList& BeginTransition() = 0;
         virtual RHICommandList& SetBufferTransition(RHIBuffer* buffer, TransitionDesc const& desc) = 0;
         virtual RHICommandList& SetImageTransition(RHITexture* image, TransitionDesc const& desc) = 0;
+        virtual RHICommandList& SetAccelerationStructureTransition(RHIAccelerationStructure* as,
+                                                                TransitionDesc const& desc) = 0;
         virtual RHICommandList& EndTransition() = 0;
 #pragma endregion
 #pragma region PSO

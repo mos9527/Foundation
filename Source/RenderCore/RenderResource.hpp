@@ -98,9 +98,14 @@ namespace Foundation::RenderCore
                                state.mip <= mip_end && state.layer >= layer_begin && state.layer <= layer_end;
                        });
         }
+
+        using AccelerationStructureState = BufferState;
+        // (Acceleration Structure) Last known state
+        AccelerationStructureState lastASState{};
         void ResetStates()
         {
             lastBufferState = {};
+            lastASState = {};
             for (auto& sta : lastSubresourceStates)
                 sta.reset();
         }

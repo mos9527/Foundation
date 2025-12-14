@@ -3,7 +3,8 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     mMaterialBuffer(ctx->device.Get(), desc.materialBudget),
     mTexturePool(ctx->device.Get(), ctx->allocator, {.maxBindings = desc.texturesBudget}), mBLASes(ctx->allocator),
     mBLASBuffers(ctx->allocator),
-    mTLASInstances(ctx->device.Get(), desc.instanceBudget)
+    mTLASInstanceStride(mContext->device->WriteAccelerationStructureInstanceData({}, nullptr)),
+    mTLASInstances(ctx->device.Get(), desc.instanceBudget * mTLASInstanceStride)
 {
     mPrimitiveBuffer = mContext->device->CreateBuffer(
         {.resource = {.heap = RHIDeviceHeapType::Local, .shared = true},
@@ -29,6 +30,12 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
          .size = desc.tlasScratchBudget,
          .alignment = 256 // Aligned to Vulkan spec. Should be large enough for other APIs as well?
     });
+    RHIAccelerationStructureDesc tlasDesc{
+        .type = RHIAccelerationStructureType::TopLevel,
+        .buffer = mTLASBuffer.Get(),
+        .size = desc.tlasBudget
+    };
+    mTLAS = mContext->device->CreateAccelerationStructure(tlasDesc);
 }
 Pair<GSInstance*, uint32_t> GPUScene::AllocateInstance(uint32_t count)
 {
@@ -186,6 +193,7 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
         auto& desc = buildDesc[i];
         desc = RHIAccelerationStructureBuildDesc{
             .type = RHIAccelerationStructureType::BottomLevel,
+            .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace | RHIAccelerationStructureBuildFlagsBits::AllowUpdate | RHIAccelerationStructureBuildFlagsBits::AllowCompaction,
             .operation = RHIAccelerationStructureBuildOp::Build,
             .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&geo, 1},
             .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&range, 1}
@@ -261,8 +269,8 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
         res.transformTranslation[2] = src->transform.z;
         return res;
     };
-    const size_t kTLASInstanceStride = mContext->device->WriteAccelerationStructureInstanceData({}, nullptr);
-    auto [pInstances, instancesOffset] = mTLASInstances.Allocate(kTLASInstanceStride * instances.size());
+    // NOTE: Byte buffers
+    auto [pInstances, instancesOffset] = mTLASInstances.Allocate(mTLASInstanceStride * instances.size());
     for (size_t i = 0; i < instances.size(); i++)
     {
         auto data = ConvertInstance(&instances[i]);
@@ -271,7 +279,7 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
     }
     RHIAccelerationStructureGeometryInstanceData instance{
         .instanceBuffer = mTLASInstances.mBuffer.Get(),
-        .instanceOffset = static_cast<uint32_t>(instancesOffset * kTLASInstanceStride),
+        .instanceOffset = instancesOffset,
         .totalPrimitives = primitiveCount
     };
     RHIAccelerationStructureGeometryInfo geometry{
@@ -283,18 +291,21 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
     };
     RHIAccelerationStructureBuildDesc desc{
         .type = RHIAccelerationStructureType::TopLevel,
+        .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace | RHIAccelerationStructureBuildFlagsBits::AllowUpdate  | RHIAccelerationStructureBuildFlagsBits::AllowCompaction,
         .operation = update ? RHIAccelerationStructureBuildOp::Update : RHIAccelerationStructureBuildOp::Build,
         .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&geometry, 1},
         .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&range, 1}
     };
     auto size = device->GetAccelerationStructureSizeInfo(desc);
+    CHECK_MSG(size.accelerationStructureSize <= mTLASBuffer->mDesc.size, "TLAS buffer overflow");
     desc.scratchBuffer = mScratchBufferTLAS.Get();
     desc.scratchBufferOffset = mScratchOffsetTLAS;
-    CHECK_MSG(size.accelerationStructureSize <= mTLASBuffer->mDesc.size, "TLAS buffer overflow");
     if (update)
         mScratchOffsetTLAS = AlignUp(mScratchOffsetTLAS + size.updateScratchSize, 256u);
     else
         mScratchOffsetTLAS = AlignUp(mScratchOffsetTLAS + size.buildScratchSize, 256u);
+    if (mScratchOffsetTLAS >= mScratchBufferTLAS->mDesc.size)
+        desc.scratchBufferOffset = mScratchOffsetTLAS = 0; // Ring
     desc.srcAS = desc.dstAS = mTLAS.Get();
     cmd->BuildAccelerationStructure({{{desc}}});
 }

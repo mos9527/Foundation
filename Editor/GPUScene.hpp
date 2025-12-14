@@ -7,11 +7,11 @@
 using namespace Math;
 
 BITMASK_ENUM_BEGIN(GSData, uint8_t)
-Mesh = 1 << 0,
-    BITMASK_ENUM_END()
+    Mesh = 1 << 0
+BITMASK_ENUM_END()
 
 #pragma pack(push, 1)
-        struct GSMesh
+struct GSMesh
 {
     // Offsets are absolute, and are in Primitive buffer (bytes).
     // @ref FVertex
@@ -67,7 +67,7 @@ struct UploadGPURingBuffer
         mBuffer = device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Upload,
                                                      .hostAccess = RHIResourceHostAccess::WriteOnly,
                                                      .coherent = true},
-                                        .usage = RHIBufferUsageBits::StorageBuffer,
+                                        .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
                                         .size = budget * sizeof(T)});
         mBegin = mRing = mPrevRing = mBuffer->Map<T>();
         mEnd = mBegin + budget;
@@ -115,6 +115,7 @@ class GPUScene
     Vector<RHIDeviceScopedHandle<RHIBuffer>> mBLASBuffers;
     size_t mBLASOffset{0};
     // TLAS
+    uint32_t mTLASInstanceStride{0}; // In bytes, read only once
     RHIDeviceScopedHandle<RHIBuffer> mTLASBuffer, mScratchBufferTLAS;
     RHIDeviceScopedHandle<RHIAccelerationStructure> mTLAS;
     UploadGPURingBuffer<char> mTLASInstances;

@@ -74,7 +74,8 @@ void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPi
     auto& resource = mSetup->trackedResources[handle];
     // Check for overlap
     for (auto const& [h, _access, _stage] : mSetup->trackedPasses[pass].bufferUsages)
-        CHECK_MSG(h != handle, "Redeclaration of buffer resource {} in pass {} detected.", resource.name, mSetup->trackedPasses[pass].name);
+        CHECK_MSG(h != handle, "Redeclaration of buffer resource {} in pass {} detected.", resource.name,
+                  mSetup->trackedPasses[pass].name);
     // Add edge
     if (resource.lastBufferState.producer != kInvalidHandle)
         mSetup->add_edge(pass, resource.lastBufferState.producer, handle);
@@ -291,14 +292,27 @@ void Renderer::BindTextureCopySrc(PassHandle pass, ResourceHandle texture,
     DeclareTextureAccess(pass, texture, RHIPipelineStageBits::Transfer, range, RHIResourceAccessBits::TransferRead,
                          RHITextureLayout::TransferSrc);
 }
-void Renderer::BindAcceleartionStructureSRV(PassHandle pass, ResourceHandle as, RHIPipelineStage stage,
+void Renderer::BindAccelerationStructureWrite(PassHandle pass, ResourceHandle as) const
+{
+    CHECK(mState == State::Setup);
+    mSetup->trackedPasses[pass].resources.emplace_back(as);
+    mSetup->trackedPasses[pass].asUsages.emplace_back(
+        as,RHIResourceAccessBits::AccelerationStructureWrite, RHIPipelineStageBits::AccelerationBuild);
+    if (mSetup->trackedResources[as].lastASState.lastProducer != kInvalidHandle)
+        mSetup->add_edge(pass, mSetup->trackedResources[as].lastASState.lastProducer, as);
+    mSetup->trackedResources[as].lastASState.lastProducer = pass;
+}
+void Renderer::BindAccelerationStructureSRV(PassHandle pass, ResourceHandle as, RHIPipelineStage stage,
                                             StringView bind_point) const
 {
     CHECK(mState == State::Setup);
-    // TODO: Declare AS Access - not performed as there's no write access yet
     mSetup->trackedPasses[pass].resources.emplace_back(as);
     mSetup->trackedPasses[pass].asBindings.emplace_back(as, RHIDescriptorType::AccelerationStructure, bind_point);
+    mSetup->trackedPasses[pass].asUsages.emplace_back(
+        as, RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::AccelerationStructureRead, stage);
     mSetup->bindingCounts[RHIDescriptorType::AccelerationStructure]++;
+    if (mSetup->trackedResources[as].lastASState.lastProducer != kInvalidHandle)
+        mSetup->add_edge(pass, mSetup->trackedResources[as].lastASState.lastProducer, as);
 }
 void Renderer::PassSetRasterizerFlags(PassHandle pass,
                                       RHIPipelineState::PipelineStateDesc::Rasterizer const& rasterizer,
@@ -640,7 +654,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
             }
         }
         CHECK_MSG(last_binding == cbindings - 1,
-                  "Pass {} Binding set {} has non-contiguous bindings (max binding {}, count {}). Last binding {}. Diagnostic: {}",
+                  "Pass {} Binding set {} has non-contiguous bindings (max binding {}, count {}). Last binding {}. "
+                  "Diagnostic: {}",
                   tracked.name, set, last_binding, cbindings, bind_unique[{set, last_binding}], diagnostic);
     }
     // Check descriptor set layout to be consistent across stages
@@ -1116,7 +1131,8 @@ void Renderer::BeginExecute()
         for (auto& cmds : mExecutePerSwapCmds[mCurrentSync])
             cmds->Reset();
     }
-    if (mDesc.profilePasses) {
+    if (mDesc.profilePasses)
+    {
         ZoneScopedN("Reset Query Pools");
         // Query pool. Lazily initialized here
         auto& queryPool = mSwaps[mCurrentSync].dbgQueryPool;
@@ -1214,6 +1230,34 @@ void Renderer::ExecuteBarrierBuffer(PassHandle pass, TrackedResource& tres, RHIR
     tres.lastBufferState.access = access;
     tres.lastBufferState.stage = stage;
 }
+void Renderer::ExecuteBarrierAccelerationStructure(PassHandle pass, TrackedResource& tres, RHIResourceAccess access,
+                                                   RHIPipelineStage stage, ExecuteBarrierPCmdOrPBarrierList cmd)
+{
+    ZoneScoped;
+    if (access & kAllShaderWrites)
+    {
+        tres.lastASState.lastProducer = pass;
+        tres.lastASState.lastProducedFrame = mFrameSwapped;
+    }
+    RHIAccelerationStructure* res = DerefResource(tres.handle).Get<RHIAccelerationStructure*>();
+    /* Same as textures */
+    if ((tres.lastASState.access & kAllShaderWrites) != 0 || (access & kAllShaderWrites) != 0)
+    {
+        /* always barrier */
+    }
+    else if (mFrameSwapped != 0 && tres.lastASState.access == access && tres.lastASState.stage == stage)
+        return;
+    RHICommandList::TransitionDesc desc{
+        .srcAccess = tres.lastASState.access,
+        .dstAccess = access,
+        .srcStage = tres.lastASState.stage,
+        .dstStage = stage,
+    };
+    cmd.Visit([&](RHICommandList* cmdList) { cmdList->SetAccelerationStructureTransition(res, desc); },
+              [&](ExecuteBarrierList* barrierList) { barrierList->emplace_back(res, desc); });
+    tres.lastASState.access = access;
+    tres.lastASState.stage = stage;
+}
 void Renderer::ExecuteBarriers(TrackedPass& pass, ExecuteBarrierPCmdOrPBarrierList cmd)
 {
     ZoneScoped;
@@ -1254,6 +1298,12 @@ void Renderer::ExecuteBarriers(TrackedPass& pass, ExecuteBarrierPCmdOrPBarrierLi
     {
         auto& tres = mSetup->trackedResources[hdl];
         ExecuteBarrierBuffer(pass.handle, tres, access, stage, cmd);
+    }
+    /* -- Acceleration Structures -- */
+    for (auto [hdl, access, stage] : pass.asUsages)
+    {
+        auto& tres = mSetup->trackedResources[hdl];
+        ExecuteBarrierAccelerationStructure(pass.handle, tres, access, stage, cmd);
     }
 }
 Renderer::ExecutePerThreadCommandLists::ExecutePerThreadCommandLists(RHIDevice* device, const size_t maxPerThread,
@@ -1434,7 +1484,8 @@ void Renderer::ExecuteFrame()
                     for (auto& [res, desc] : (*barriers))
                     {
                         res.Visit([&](RHIBuffer* p) { (*cmd)->SetBufferTransition(p, desc); },
-                                  [&](RHITexture* p) { (*cmd)->SetImageTransition(p, desc); });
+                                  [&](RHITexture* p) { (*cmd)->SetImageTransition(p, desc); },
+                                  [&](RHIAccelerationStructure* p) { (*cmd)->SetAccelerationStructureTransition(p, desc); });
                     }
                     (*cmd)->EndTransition();
                     (*cmd)->DebugBegin(pass->name.c_str());

@@ -228,6 +228,7 @@ namespace Foundation::RHI
     struct RHIAccelerationStructureDesc
     {
         RHIAccelerationStructureType type;
+        RHIAccelerationStructureBuildFlags flags;
         RHIBuffer* buffer;
         uint32_t offset;
         uint32_t size;
@@ -276,6 +277,7 @@ namespace Foundation::RHI
     struct RHIAccelerationStructureBuildDesc
     {
         RHIAccelerationStructureType type;
+        RHIAccelerationStructureBuildFlags flags;
         RHIAccelerationStructureBuildOp operation;
         RHIAccelerationStructure* srcAS{nullptr};
         RHIAccelerationStructure* dstAS{nullptr};

@@ -259,7 +259,7 @@ namespace Foundation::RenderCore
                 throw std::runtime_error("Unhandled queue type");
             }
         }
-        using ExecuteBarrierList = Vector<Pair<Variant<RHIBuffer*, RHITexture*>, RHICommandList::TransitionDesc>>;
+        using ExecuteBarrierList = Vector<Pair<Variant<RHIBuffer*, RHITexture*, RHIAccelerationStructure*>, RHICommandList::TransitionDesc>>;
         using ExecuteBarrierPCmdOrPBarrierList = Variant<RHICommandList*, ExecuteBarrierList*>;
         void ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, TrackedResource::SubresourceState& sta,
                                             RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout,
@@ -275,6 +275,12 @@ namespace Foundation::RenderCore
          */
         void ExecuteBarrierBuffer(PassHandle pass, TrackedResource& res, RHIResourceAccess access,
                                   RHIPipelineStage stage, ExecuteBarrierPCmdOrPBarrierList cmd);
+        /**
+         * @brief Executes barriers for an acceleration structure
+         */
+        void ExecuteBarrierAccelerationStructure(PassHandle pass, TrackedResource& res,
+                                             RHIResourceAccess access, RHIPipelineStage stage,
+                                             ExecuteBarrierPCmdOrPBarrierList cmd);
         /**
          * @brief Executes all barriers for a pass
          */
@@ -586,12 +592,15 @@ namespace Foundation::RenderCore
         void BindTextureCopySrc(PassHandle pass, ResourceHandle texture,
                                 RHITextureSubresourceRange const& range = {}) const;
         /**
-         * @brief Declares that this pass has shaders that will read from this texture.
-         *
-         * TODO: Passes cannot write to AS as of now. Figure out if we need that.
+         * @brief Declares that this pass will build, or update the AS.
          */
-        void BindAcceleartionStructureSRV(PassHandle pass, ResourceHandle as, RHIPipelineStage stage,
+        void BindAccelerationStructureWrite(PassHandle pass, ResourceHandle as) const;
+        /**
+         * @brief Declares that this pass has shaders that will read from this AS.
+         */
+        void BindAccelerationStructureSRV(PassHandle pass, ResourceHandle as, RHIPipelineStage stage,
                                           StringView bind_point) const;
+
 #pragma endregion
 #pragma region PSO Flags
         /**

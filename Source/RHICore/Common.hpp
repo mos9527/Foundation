@@ -249,7 +249,9 @@ namespace Foundation::RHI {
         ShaderRead = 1 << 7,
         UniformRead = 1 << 8,
         HostWrite = 1 << 9,
-        HostRead = 1 << 10
+        HostRead = 1 << 10,
+        AccelerationStructureRead = 1 << 11,
+        AccelerationStructureWrite = 1 << 12,
     BITMASK_ENUM_END();
 
     // https://gpuopen.com/learn/vulkan-barriers-explained/
@@ -303,4 +305,12 @@ namespace Foundation::RHI {
         Depth = 1 << 1,
         Stencil = 1 << 2
     BITMASK_ENUM_END();
+
+    BITMASK_ENUM_BEGIN(RHIAccelerationStructureBuildFlags, uint32_t)
+        AllowUpdate = 1 << 0,
+        AllowCompaction = 1 << 1,
+        PreferFastTrace = 1 << 2,
+        PreferFastBuild = 1 << 3,
+        LowMemory = 1 << 4
+    BITMASK_ENUM_END()
 }

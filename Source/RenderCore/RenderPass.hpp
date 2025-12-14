@@ -99,6 +99,8 @@ namespace Foundation::RenderCore
             textureUsages; // Referenced texture sub resources
         Vector<Tuple<ResourceHandle, RHIResourceAccess,
                      RHIPipelineStage>> bufferUsages; // Referenced buffers
+        Vector<Tuple<ResourceHandle, RHIResourceAccess,
+             RHIPipelineStage>> asUsages; // Referenced Acceleration Structures
         // Unique referenced resources (tex/buf/AS)
         Vector<ResourceHandle> resources;
         // Unique texture views

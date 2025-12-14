@@ -40,6 +40,8 @@ static const int kViewPosition = 1 << 5;
 static const int kViewGBufferDiffuse = 1 << 6;
 static const int kViewGBufferSpecular = 1 << 7;
 
+static const int kViewEnableRaytracing = 1 << 16;
+
 static const int kCullFrustum = 1 << 0;
 static const int kCullOcclusion = 1 << 1;
 static const int kCullBackface = 1 << 2;
@@ -47,10 +49,19 @@ static const int kCullBackface = 1 << 2;
 static const int kCullStageEarly = 1 << 16;
 static const int kCullStageLate = 1 << 17;
 
+extern void RendererSetupImGuiOnly(FContext* context);
 struct RendererConfig
 {
-    unsigned viewFlags{};
+    unsigned viewFlags{kViewEnableRaytracing};
     unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
 };
-extern void RendererSetupImGuiOnly(FContext* context);
-extern void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg = {});
+struct RendererScene
+{
+    UBO* gsGlobals;
+    Vector<GSInstance>* gsInstances;
+    Vector<GSMaterial>* gsMaterials;
+    Vector<GSMesh>* gsMeshes;
+    Vector<uint32_t>* gsBLASes;
+    uint32_t* gsBLASNumPrimitives;
+};
+extern void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene);

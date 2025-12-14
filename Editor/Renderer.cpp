@@ -41,7 +41,7 @@ void RendererSetupImGuiOnly(FContext* context)
 }
 // TODO: Make this part hot-reload?
 
-void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
+void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
 {
     if (context->renderer)
         Destruct(context->allocator, context->renderer);
@@ -51,7 +51,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                                                                  .pipelineCache = context->psoCache.Get(),
                                                              },
                                                              context->device, context->swapchain, context->allocator);
-    auto* scene = context->gpuScene;
+    auto* gpu = context->gpuScene;
     renderer->BeginSetup();
     /* UBO for everyone */
     auto GlobalUBO = renderer->CreateResource(
@@ -59,9 +59,9 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
                       .size = sizeof(UBO)});
     /* Instance and Primitive buffers */
-    auto InstanceBuffer = renderer->CreateResource("Instance Buffer", scene->GetInstanceBuffer());
-    auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", scene->GetPrimitiveBuffer());
-    auto MaterialBuffer = renderer->CreateResource("Material Buffer", scene->GetMaterialBuffer());
+    auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
+    auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
+    auto MaterialBuffer = renderer->CreateResource("Material Buffer", gpu->GetMaterialBuffer());
     /* Indirect Task Buffers */
     using enum RHIBufferUsageBits;
     auto IndirectTasks =
@@ -113,10 +113,25 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             // by the Renderer *inter* passes.
             // Note that usage before a Dispatch, etc, may be valid but is still a ROW hazard.
             // TODO: Document these.
-            cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(*pShaderGlobals)));
+            cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(*scene.gsGlobals)));
             cmd->FillBuffer(counter, 0u);
             cmd->FillBuffer(occlusion, 0u);
         });
+    // Raytracing
+    auto TLAS = renderer->CreateResource("Scene TLAS", gpu->GetTLAS());
+    if (cfg.viewFlags & kViewEnableRaytracing)
+    {
+        renderer->CreatePass(
+            "TLAS Update", RHIDeviceQueueType::Compute, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindAccelerationStructureWrite(self, TLAS);
+            },
+            [=](PassHandle, Renderer* r, RHICommandList* cmd)
+            {
+                gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsBLASNumPrimitives, true);
+            });
+    }
     const auto kIndirectBufferClearTransition = RHICommandList::TransitionDesc{
         .srcAccess = RHIResourceAccessBits::TransferWrite,
         .dstAccess = RHIResourceAccessBits::ShaderWrite | RHIResourceAccessBits::ShaderRead,
@@ -142,7 +157,8 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             cmd->SetBufferTransition(taskDispatch, kIndirectBufferClearTransition);
             cmd->EndTransition();
             r->CmdSetPipeline(self, cmd);
-            r->CmdDispatch(self, cmd, {pShaderGlobals->numInstances, 1, 1});
+            // TODO: This limits us to 65536 instances
+            r->CmdDispatch(self, cmd, {scene.gsGlobals->numInstances, 1, 1});
         });
     /* Meshlet Drawing */
     auto [w, h] = renderer->GetSwapchainExtent();
@@ -158,7 +174,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
         HIZHeight *= 2;
     const uint32_t HIZMips = glm::log2(std::max(HIZWidth, HIZHeight)) + 1u;
     const uint32_t FullMips = glm::log2(std::max(w, h)) + 1u;
-    pShaderGlobals->hizWidth = HIZWidth, pShaderGlobals->hizHeight = HIZHeight, pShaderGlobals->hizLevels = HIZMips;
+    scene.gsGlobals->hizWidth = HIZWidth, scene.gsGlobals->hizHeight = HIZHeight, scene.gsGlobals->hizLevels = HIZMips;
     RHIDeviceSampler::SamplerDesc HIZSamplerDesc{
         .addressMode = {.u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
                         .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
@@ -330,10 +346,9 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                 {
                     RHIExtent2D wh{w, h};
                     if (early)
-                        r->CmdBeginGraphics(
-                            self, cmd, wh,
-                            {{{}, {}, {}}}, // No need. Depth is used to reject undrawn pixels
-                            RHIClearDepthStencil{0.0f, 0});
+                        r->CmdBeginGraphics(self, cmd, wh,
+                                            {{{}, {}, {}}}, // No need. Depth is used to reject undrawn pixels
+                                            RHIClearDepthStencil{0.0f, 0});
                     else // Don't clear depth in stage 2.
                         r->CmdBeginGraphics(self, cmd, wh, {{{}, {}, {}}}, {});
                     r->CmdSetPipeline(self, cmd);
@@ -386,9 +401,6 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
     bool kDebugViewUnlit = cfg.viewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewMeshlet);
     auto LightingAverageLuma = renderer->CreateResource("Lighting Average Luminance",
                                                         RHIBufferDesc{.usage = StorageBuffer, .size = sizeof(float)});
-    auto TLAS = kInvalidHandle;
-    if (scene->GetTLAS())
-        TLAS = renderer->CreateResource("Scene TLAS", scene->GetTLAS());
     renderer->CreatePass(
         "Lighting", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -410,8 +422,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                 RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
             r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::ComputeShader, "materials");
-            if (TLAS != kInvalidHandle)
-                r->BindAcceleartionStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
+            r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
             r->BindTextureUAV(self, LightingBuffer, "output", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
                                                  .range = RHITextureSubresourceRange::Create()});

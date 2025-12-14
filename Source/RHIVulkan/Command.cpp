@@ -111,6 +111,23 @@ RHICommandList& VulkanCommandList::SetImageTransition(RHITexture* image, Transit
                              .layerCount = desc.srcImgRange.layer.layerCount}});
     return *this;
 }
+RHICommandList& VulkanCommandList::SetAccelerationStructureTransition(RHIAccelerationStructure* as,
+                                                                      TransitionDesc const& desc)
+{
+    CHECK(mBarriers && "Invalid barrier states.");
+    auto* res = static_cast<VulkanAccelerationStructure*>(as);
+    mBarriers->buffer.push_back(vk::BufferMemoryBarrier2{
+        .srcStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.srcStage),
+        .srcAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.srcAccess),
+        .dstStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.dstStage),
+        .dstAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.dstAccess),
+        .srcQueueFamilyIndex = desc.srcQueueIndex,
+        .dstQueueFamilyIndex = desc.dstQueueIndex,
+        .buffer = *res->GetVkBuffer(),
+        .offset = 0,
+        .size = VK_WHOLE_SIZE});
+    return *this;
+}
 RHICommandList& VulkanCommandList::EndTransition()
 {
     CHECK(mBarriers && "Invalid barrier states.");

@@ -57,6 +57,8 @@ namespace Foundation::RHI {
         RHICommandList& BeginTransition() override;
         RHICommandList& SetBufferTransition(RHIBuffer* image, TransitionDesc const& desc) override;
         RHICommandList& SetImageTransition(RHITexture* image, TransitionDesc const& desc) override;
+        RHICommandList& SetAccelerationStructureTransition(RHIAccelerationStructure* as,
+                                                        TransitionDesc const& desc) override;
         RHICommandList& EndTransition() override;
 
         RHICommandList& SetPipeline(PipelineDesc const& desc) override;

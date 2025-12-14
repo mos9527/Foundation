@@ -115,12 +115,13 @@ namespace Foundation::RHI
     protected:
         VulkanDevice const& mDevice;
         vk::raii::AccelerationStructureKHR mAS{nullptr};
-
+        VulkanBuffer* mBuffer{nullptr};
     public:
         VulkanAccelerationStructure(VulkanDevice const& device, RHIAccelerationStructureDesc const& desc);
 
+        [[nodiscard]] auto& GetVkBuffer() const { return mBuffer->GetVkBuffer(); }
         [[nodiscard]] auto& GetVkAccelerationStructure() { return mAS; }
-        [[nodiscard]] vk::DeviceAddress GetVkAcceleartionStructureAddress() const;
+        [[nodiscard]] vk::DeviceAddress GetVkAccelerationStructureAddress() const;
         void DebugSetObjectName(const char* name) override;
     };
     vk::AccelerationStructureGeometryTrianglesDataKHR
