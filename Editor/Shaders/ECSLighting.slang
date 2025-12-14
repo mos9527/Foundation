@@ -17,11 +17,14 @@ bool shadow(float3 p, float3 l)
     RayDesc ray;
     ray.Origin = p;
     ray.Direction = l;
-    ray.TMin = EPS;
+    ray.TMin = 1e-1;
     ray.TMax = 1e2;
     RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
     q.TraceRayInline(AS, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, ray);
-    q.Proceed();
+    while (q.Proceed()){
+        // Not alpha tested. A hit is a shadow.
+        q.CommitNonOpaqueTriangleHit();
+    }
     bool hit = q.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
     return hit;
 }
@@ -94,8 +97,10 @@ void main(uint2 tid: SV_DispatchThreadID) {
         float NoV = abs(dot(n,v)) + EPS;
         float NoL = saturate(dot(n,l));
 
-        float3 lighting = float3(NoL) * globalParams.sunIntensity + globalParams.ambientColor;
-        // float shadow = shadow(p, l) ? 0.0f : 1.0f;
+        float3 lighting = float3(NoL) * globalParams.sunIntensity;
+        float shadow = shadow(p, l) ? 0.0f : 1.0f;
+        lighting *= shadow;
+        lighting += globalParams.ambientColor;
 
         // Diffuse
         // https://seblagarde.wordpress.com/2012/01/08/pi-or-not-to-pi-in-game-lighting-equation/

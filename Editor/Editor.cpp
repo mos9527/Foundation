@@ -187,7 +187,7 @@ void FRunning()
     ImGui::End();
     if (ImGui::Begin("Rendering"))
     {
-        static float lodLogThreshold = 2;
+        static float lodLogThreshold = 3;
         ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
         GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
         bool changed = false;
