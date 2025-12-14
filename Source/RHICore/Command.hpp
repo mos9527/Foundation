@@ -149,6 +149,8 @@ namespace Foundation::RHI
                 // Clear values for depth and stencil attachments, if applicable.
                 // If both are set, the depth will be cleared first, then stencil.
                 Optional<RHIClearDepthStencil> clearDepthStencil{};
+                // If true, with no clear values set, the attachment will not be loaded.
+                bool loadDontCare{false};
                 [[nodiscard]] constexpr bool IsValid() const { return imageView; }
             };
             Span<const Attachment> colorAttachments;

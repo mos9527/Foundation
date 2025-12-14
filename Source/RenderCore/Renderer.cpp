@@ -1743,17 +1743,17 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
               clear_rtv.size(), rtv_count);
     if (tpass.backbufferRTV)
     {
-        rtvs.push_back({.imageView = mSwaps[GetSwap()].view.Get(), .clearColor = clear_rtv[0]});
+        rtvs.push_back({.imageView = mSwaps[GetSwap()].view.Get(), .clearColor = clear_rtv[0], .loadDontCare = true});
         clear_rtv = clear_rtv.subspan(1);
     }
-    for (int i = 0; const auto& rtv : tpass.rtvs | std::views::keys)
+    for (int i = 0; const auto& [rtv, blending] : tpass.rtvs)
     {
         auto const& [rhdl, desc] = mSetup->trackedViews[rtv];
         auto const& tres = mSetup->trackedResources[rhdl];
         RHITexture* res = DerefResource(rhdl).Get<RHITexture*>();
         CHECK_MSG(res->mDesc.extent.x >= extent.x && res->mDesc.extent.y >= extent.y,
                   "Graphics extent too large for Render Target on {}", tres.name);
-        rtvs.push_back({.imageView = DerefTextureView(rtv), .clearColor = clear_rtv[i]});
+        rtvs.push_back({.imageView = DerefTextureView(rtv), .clearColor = clear_rtv[i], .loadDontCare = !blending.enabled});
     }
     if (tpass.dsv != kInvalidHandle)
     {

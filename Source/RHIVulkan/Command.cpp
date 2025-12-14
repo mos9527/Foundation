@@ -367,6 +367,8 @@ RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc)
         vk::AttachmentLoadOp loadOp = attachment.clearColor || attachment.clearDepthStencil
             ? vk::AttachmentLoadOp::eClear
             : vk::AttachmentLoadOp::eLoad;
+        if (loadOp == vk::AttachmentLoadOp::eLoad && attachment.loadDontCare)
+            loadOp = vk::AttachmentLoadOp::eDontCare;
         return vk::RenderingAttachmentInfo{
             .imageView = attachment.imageView
                 ? static_cast<const VulkanTextureView*>(attachment.imageView)->GetVkImageView()
