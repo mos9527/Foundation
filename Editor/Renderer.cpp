@@ -117,7 +117,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             cmd->FillBuffer(counter, 0u);
             cmd->FillBuffer(occlusion, 0u);
         });
-    const auto kBufferClearTransition = RHICommandList::TransitionDesc{
+    const auto kIndirectBufferClearTransition = RHICommandList::TransitionDesc{
         .srcAccess = RHIResourceAccessBits::TransferWrite,
         .dstAccess = RHIResourceAccessBits::ShaderWrite | RHIResourceAccessBits::ShaderRead,
         .srcStage = RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::Transfer,
@@ -139,7 +139,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
             auto* taskDispatch = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
             cmd->FillBuffer(taskDispatch, 0u);
             cmd->BeginTransition();
-            cmd->SetBufferTransition(taskDispatch, kBufferClearTransition);
+            cmd->SetBufferTransition(taskDispatch, kIndirectBufferClearTransition);
             cmd->EndTransition();
             r->CmdSetPipeline(self, cmd);
             r->CmdDispatch(self, cmd, {pShaderGlobals->numInstances, 1, 1});
@@ -277,8 +277,8 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
                     cmd->FillBuffer(msCounter, 0u);
                     cmd->FillBuffer(msDispatches, 0u);
                     cmd->BeginTransition();
-                    cmd->SetBufferTransition(msCounter, kBufferClearTransition);
-                    cmd->SetBufferTransition(msDispatches, kBufferClearTransition);
+                    cmd->SetBufferTransition(msCounter, kIndirectBufferClearTransition);
+                    cmd->SetBufferTransition(msDispatches, kIndirectBufferClearTransition);
                     cmd->EndTransition();
                     r->CmdSetPipeline(self, cmd);
                     auto* dispatchBuffer = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
@@ -357,7 +357,7 @@ void RendererSetup(FContext* context, UBO* pShaderGlobals, RendererConfig cfg)
     if (cfg.viewFlags & kViewOverdraw)
     {
         renderer->CreatePass(
-            "Overdraw CS Reduce", RHIDeviceQueueType::Graphics, 0u,
+            "Overdraw CS Reduce", RHIDeviceQueueType::Compute, 0u,
             [=](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSOverdrawReduce.spv");

@@ -57,12 +57,12 @@ static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 48);
 
 template <typename T>
-struct GPURingBuffer
+struct UploadGPURingBuffer
 {
     RHIDeviceScopedHandle<RHIBuffer> mBuffer;
     T *mBegin, *mPrevRing, *mRing, *mEnd;
 
-    GPURingBuffer(RHIDevice* device, size_t budget)
+    UploadGPURingBuffer(RHIDevice* device, size_t budget)
     {
         mBuffer = device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Upload,
                                                      .hostAccess = RHIResourceHostAccess::WriteOnly,
@@ -98,40 +98,37 @@ struct GPURingBuffer
 class GPUScene
 {
     FContext* mContext;
-
+    /* Geometry */
     RHIDeviceScopedHandle<RHIBuffer> mPrimitiveBuffer;
     // XXX: Linear allocation. GPA would be needed if we'd upload & free
     //      at will. Not needed for Editor use-case currently.
     size_t mPrimitiveOffset{0};
-
     // For @ref meshletGlobalIndex
     uint32_t mMeshletGlobalCounter{0};
-
-    GPURingBuffer<GSInstance> mInstanceBuffer;
-    GPURingBuffer<GSMaterial> mMaterialBuffer;
-
+    UploadGPURingBuffer<GSInstance> mInstanceBuffer;
+    UploadGPURingBuffer<GSMaterial> mMaterialBuffer;
+    /* Textures */
     BindlessPool mTexturePool;
-
-    // Acceleration Structures
-    RHIDeviceScopedHandle<RHIBuffer> mBLASBuffer;
+    /* AS */
+    // BLAS
     Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mBLASes;
-    RHIDeviceScopedHandle<RHIBuffer> mTLASBuffer;
-    RHIDeviceScopedHandle<RHIAccelerationStructure> mTLAS;
-    // Same as mPrimitiveOffset
+    Vector<RHIDeviceScopedHandle<RHIBuffer>> mBLASBuffers;
     size_t mBLASOffset{0};
-
-    RHIDeviceScopedHandle<RHIBuffer> CreateScratchBuffer(size_t size);
-    RHIDeviceScopedHandle<RHIBuffer> CreateASBuffer(size_t size);
-
+    // TLAS
+    RHIDeviceScopedHandle<RHIBuffer> mTLASBuffer, mScratchBufferTLAS;
+    RHIDeviceScopedHandle<RHIAccelerationStructure> mTLAS;
+    UploadGPURingBuffer<char> mTLASInstances;
+    size_t mScratchOffsetTLAS{0};
 public:
     struct GPUSceneDesc
     {
         uint32_t primitiveBudget = 16 * (1u << 20); // 16MB
-        uint32_t instanceBudget = static_cast<uint32_t>(1e4); // # of instances
-        uint32_t materialBudget = static_cast<uint32_t>(1e3); // # of materials
+        uint32_t instanceBudget = static_cast<uint32_t>(1e4); // # of instances (ring)
+        uint32_t materialBudget = static_cast<uint32_t>(1e3); // # of materials (ring)
         uint32_t texturesBudget = static_cast<uint32_t>(1e3); // # of textures
         uint32_t blasBudget = 64 * (1u << 20); // 64MB
         uint32_t tlasBudget = 16 * (1u << 20); // 16MB
+        uint32_t tlasScratchBudget = 32 * (1u << 20); // 32MB (ring)
     };
     GPUScene(FContext* ctx, GPUSceneDesc const& desc);
 
@@ -143,16 +140,19 @@ public:
     size_t Upload(ImmediateUpload* ctx, FMesh const& source, GSMesh& outData, uint32_t& outOffset);
     size_t Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t& outIndex);
 
-    void BuildBLASIncremental(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices,
+    void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices,
                               uint32_t& outPrimitiveCount);
-    void BuildTLAS(ImmediateContext* ctx, Span<const GSInstance> instances, Span<const uint32_t> blasIndices,
-                   uint32_t primitiveCount);
 
+    void BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices,
+                   uint32_t primitiveCount, bool update = false);
+
+    /* Geometry */
     [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.mBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetMaterialBuffer() const { return mMaterialBuffer.mBuffer.Get(); }
+    /* Textures */
     [[nodiscard]] BindlessPool* GetTexturePool() { return &mTexturePool; }
+    /* AS */
     [[nodiscard]] RHIAccelerationStructure* GetTLAS() const { return mTLAS ? mTLAS.Get() : nullptr; }
-    [[nodiscard]] uint32_t GetMeshletGlobalCount() const { return mMeshletGlobalCounter; }
     void Reset();
 };

@@ -1,15 +1,34 @@
 GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
-    mContext(ctx), mInstanceBuffer(ctx->device.Get(), desc.instanceBudget), mMaterialBuffer(ctx->device.Get(), desc.materialBudget),
-mTexturePool(ctx->device.Get(), ctx->allocator, {.maxBindings = desc.texturesBudget}), mBLASes(ctx->allocator)
+    mContext(ctx), mInstanceBuffer(ctx->device.Get(), desc.instanceBudget),
+    mMaterialBuffer(ctx->device.Get(), desc.materialBudget),
+    mTexturePool(ctx->device.Get(), ctx->allocator, {.maxBindings = desc.texturesBudget}), mBLASes(ctx->allocator),
+    mBLASBuffers(ctx->allocator),
+    mTLASInstances(ctx->device.Get(), desc.instanceBudget)
 {
     mPrimitiveBuffer = mContext->device->CreateBuffer(
+        {.resource = {.heap = RHIDeviceHeapType::Local, .shared = true},
+         .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
+             RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
+         .size = desc.primitiveBudget});
+    mTLASBuffer = mContext->device->CreateBuffer(
+{
+        .resource = {
+            .heap = RHIDeviceHeapType::Local,
+            .shared = false
+        },
+     .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureStorage,
+     .size = desc.tlasBudget
+    });
+    mScratchBufferTLAS = mContext->device->CreateBuffer(
     {
             .resource = {
                 .heap = RHIDeviceHeapType::Local,
-                .shared = true
+                .shared = false
             },
-         .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
-         .size = desc.primitiveBudget});
+         .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress,
+         .size = desc.tlasScratchBudget,
+         .alignment = 256 // Aligned to Vulkan spec. Should be large enough for other APIs as well?
+    });
 }
 Pair<GSInstance*, uint32_t> GPUScene::AllocateInstance(uint32_t count)
 {
@@ -126,35 +145,12 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t
     }).Release().Get());
     return written;
 }
-RHIDeviceScopedHandle<RHIBuffer> GPUScene::CreateScratchBuffer(size_t size)
-{
-    return mContext->device->CreateBuffer(
-    {
-            .resource = {
-                .heap = RHIDeviceHeapType::Local,
-                .shared = false
-            },
-         .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress,
-         .size = size,
-         .alignment = 256 // Aligned to spec. See also BuildBLASIncremental
-    });
-}
-RHIDeviceScopedHandle<RHIBuffer> GPUScene::CreateASBuffer(size_t size)
-{
-    return mContext->device->CreateBuffer(
-{
-        .resource = {
-            .heap = RHIDeviceHeapType::Local,
-            .shared = false
-        },
-     .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureStorage,
-     .size = size
-    });
-}
+
 // Reference:
 // - https://github.com/zeux/niagara/blob/master/src/scenert.cpp
 // - https://docs.vulkan.org/tutorial/latest/courses/18_Ray_tracing/02_Acceleration_structures.html
-void GPUScene::BuildBLASIncremental(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices, uint32_t& outPrimitiveCount)
+// - https://docs.vulkan.org/tutorial/latest/courses/18_Ray_tracing/04_TLAS_animation.html
+void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices, uint32_t& outPrimitiveCount)
 {
     CHECK_MSG(meshes.size() == outBLASIndices.size(), "Mismatched BLAS indices size");
     auto* device = mContext->device.Get();
@@ -200,15 +196,32 @@ void GPUScene::BuildBLASIncremental(ImmediateContext* ctx, Span<const GSMesh> me
         mBLASOffset = AlignUp(mBLASOffset + sizeInfo[i].accelerationStructureSize, 256u);
         scratchFootprint = std::max(scratchFootprint, sizeInfo[i].buildScratchSize);
     }
-    auto scratch = CreateScratchBuffer(scratchFootprint);
-    mBLASBuffer = CreateASBuffer(mBLASOffset);
+    auto scratch = mContext->device->CreateBuffer(
+    {
+            .resource = {
+                .heap = RHIDeviceHeapType::Local,
+                .shared = false
+            },
+         .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress,
+         .size = scratchFootprint,
+         .alignment = 256 // Aligned to Vulkan spec. Should be large enough for other APIs as well?
+    });
+    auto& buffer = mBLASBuffers.emplace_back(mContext->device->CreateBuffer(
+{
+        .resource = {
+            .heap = RHIDeviceHeapType::Local,
+            .shared = false
+        },
+     .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureStorage,
+     .size = mBLASOffset
+    }));
     auto* cmd = ctx->Get();
     cmd->Begin();
     for (size_t i = 0; i < meshes.size(); i++)
     {
         RHIAccelerationStructureDesc as{
             .type = RHIAccelerationStructureType::BottomLevel,
-            .buffer = mBLASBuffer.Get(),
+            .buffer = buffer.Get(),
             .offset = blasOffsets[i],
             .size = sizeInfo[i].accelerationStructureSize
         };
@@ -229,45 +242,36 @@ void GPUScene::BuildBLASIncremental(ImmediateContext* ctx, Span<const GSMesh> me
     cmd->End();
     ctx->Submit(), ctx->WaitIdle();
 }
-void GPUScene::BuildTLAS(ImmediateContext* ctx, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, uint32_t primitiveCount)
+void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, uint32_t primitiveCount, bool update)
 {
     CHECK_MSG(instances.size() == blasIndices.size(), "Mismatched BLAS indices size");
     auto* device = mContext->device.Get();
-    auto ConvertInstance = [&](GSInstance* src) -> vk::AccelerationStructureInstanceKHR
+    auto ConvertInstance = [&](const GSInstance* src) -> RHIAccelerationStructureGeometryInstance
     {
-        vk::AccelerationStructureInstanceKHR res{
-            .instanceCustomIndex = static_cast<uint32_t>(src - instances.data()),
-            .flags = 0xFF,
+        RHIAccelerationStructureGeometryInstance res{
+            .instanceID = static_cast<uint32_t>(src - instances.data()),
+            .mask = 0xFF,
         };
         mat3 basis = transpose(mat3(scale(src->scale)) * mat3_cast(src->rotation));
-        std::memcpy(res.transform.matrix[0], &basis[0], sizeof(float) * 3);
-        std::memcpy(res.transform.matrix[1], &basis[1], sizeof(float) * 3);
-        std::memcpy(res.transform.matrix[2], &basis[2], sizeof(float) * 3);
-        res.transform.matrix[0][3] = src->transform.x;
-        res.transform.matrix[1][3] = src->transform.y;
-        res.transform.matrix[2][3] = src->transform.z;
+        std::memcpy(res.transformBasisRowMajor[0], &basis[0], sizeof(float) * 3);
+        std::memcpy(res.transformBasisRowMajor[1], &basis[1], sizeof(float) * 3);
+        std::memcpy(res.transformBasisRowMajor[2], &basis[2], sizeof(float) * 3);
+        res.transformTranslation[0] = src->transform.x;
+        res.transformTranslation[1] = src->transform.y;
+        res.transformTranslation[2] = src->transform.z;
         return res;
     };
-    auto instanceData = mContext->device->CreateBuffer(
-    {
-            .resource = {
-                .heap = RHIDeviceHeapType::Upload,
-                .staging = true
-            },
-         .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::TransferSource |
-                RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
-        .size = instances.size() * sizeof(vk::AccelerationStructureInstanceKHR)
-    });
-    auto* vkInstances = instanceData->Map<vk::AccelerationStructureInstanceKHR>();
+    const size_t kTLASInstanceStride = mContext->device->WriteAccelerationStructureInstanceData({}, nullptr);
+    auto [pInstances, instancesOffset] = mTLASInstances.Allocate(kTLASInstanceStride * instances.size());
     for (size_t i = 0; i < instances.size(); i++)
     {
-        vkInstances[i] = ConvertInstance(const_cast<GSInstance*>(&instances[i]));
-        auto blas = static_cast<VulkanAccelerationStructure*>(mBLASes[blasIndices[i]].Get());
-        vkInstances[i].accelerationStructureReference = blas->GetVkAcceleartionStructureAddress();
+        auto data = ConvertInstance(&instances[i]);
+        data.blas = mBLASes[blasIndices[i]].Get();
+        pInstances += mContext->device->WriteAccelerationStructureInstanceData(data, pInstances);
     }
-    instanceData->Flush();
     RHIAccelerationStructureGeometryInstanceData instance{
-        .instanceBuffer = instanceData.Get(),
+        .instanceBuffer = mTLASInstances.mBuffer.Get(),
+        .instanceOffset = static_cast<uint32_t>(instancesOffset * kTLASInstanceStride),
         .totalPrimitives = primitiveCount
     };
     RHIAccelerationStructureGeometryInfo geometry{
@@ -279,26 +283,20 @@ void GPUScene::BuildTLAS(ImmediateContext* ctx, Span<const GSInstance> instances
     };
     RHIAccelerationStructureBuildDesc desc{
         .type = RHIAccelerationStructureType::TopLevel,
-        .operation = RHIAccelerationStructureBuildOp::Build,
+        .operation = update ? RHIAccelerationStructureBuildOp::Update : RHIAccelerationStructureBuildOp::Build,
         .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&geometry, 1},
         .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&range, 1}
     };
     auto size = device->GetAccelerationStructureSizeInfo(desc);
-    auto scratch = CreateScratchBuffer(size.buildScratchSize);
-    mTLASBuffer = CreateASBuffer(size.accelerationStructureSize);
-    RHIAccelerationStructureDesc tlasDesc{
-        .type = RHIAccelerationStructureType::TopLevel,
-        .buffer = mTLASBuffer.Get(),
-        .size = size.accelerationStructureSize
-    };
-    mTLAS = device->CreateAccelerationStructure(tlasDesc);
+    desc.scratchBuffer = mScratchBufferTLAS.Get();
+    desc.scratchBufferOffset = mScratchOffsetTLAS;
+    CHECK_MSG(size.accelerationStructureSize <= mTLASBuffer->mDesc.size, "TLAS buffer overflow");
+    if (update)
+        mScratchOffsetTLAS = AlignUp(mScratchOffsetTLAS + size.updateScratchSize, 256u);
+    else
+        mScratchOffsetTLAS = AlignUp(mScratchOffsetTLAS + size.buildScratchSize, 256u);
     desc.srcAS = desc.dstAS = mTLAS.Get();
-    desc.scratchBuffer = scratch.Get();
-    auto* cmd = ctx->Get();
-    cmd->Begin();
     cmd->BuildAccelerationStructure({{{desc}}});
-    cmd->End();
-    ctx->Submit(), ctx->WaitIdle();
 }
 void GPUScene::Reset()
 {
@@ -306,6 +304,7 @@ void GPUScene::Reset()
     mBLASOffset = 0;
     mTLAS.Reset();
     mBLASes.clear();
+    mBLASBuffers.clear();
     mMaterialBuffer.Reset();
     mInstanceBuffer.Reset();
 }

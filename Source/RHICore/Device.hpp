@@ -242,10 +242,6 @@ namespace Foundation::RHI
         [[nodiscard]] virtual RHITexture* GetTexture(Handle handle) const = 0;
         virtual void DestroyTexture(Handle handle) = 0;
 
-        [[nodiscard]] virtual RHIAccelerationStructureSizeInfo GetAccelerationStructureSizeInfo(
-            RHIAccelerationStructureBuildDesc const& desc
-        ) const = 0;
-
         [[nodiscard]] virtual RHIDeviceScopedHandle<RHIAccelerationStructure>
         CreateAccelerationStructure(RHIAccelerationStructureDesc const& desc) = 0;
         [[nodiscard]] virtual RHIAccelerationStructure* GetAccelerationStructure(Handle handle) const = 0;
@@ -270,6 +266,16 @@ namespace Foundation::RHI
         CreateQueryPool(RHIDeviceQueryPool::QueryPoolDesc const& desc) = 0;
         [[nodiscard]] virtual RHIDeviceQueryPool* GetQueryPool(Handle handle) const = 0;
         virtual void DestroyQueryPool(Handle handle) = 0;
+
+        [[nodiscard]] virtual RHIAccelerationStructureSizeInfo
+        GetAccelerationStructureSizeInfo(RHIAccelerationStructureBuildDesc const& desc) const = 0;
+        /**
+         * @param dest If nullptr, only the size is calculated.
+         * @return Stride size of the written instance data.
+         */
+        [[nodiscard]] virtual size_t
+        WriteAccelerationStructureInstanceData(RHIAccelerationStructureGeometryInstance const& data,
+                                               void* dest) const = 0;
 
         virtual void ResetFences(Span<RHIDeviceFence* const> fences) = 0;
         /**

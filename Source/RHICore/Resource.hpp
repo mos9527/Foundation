@@ -244,6 +244,15 @@ namespace Foundation::RHI
         uint32_t indexOffset; // Bytes
         uint32_t indexCount;
     };
+    // For use with @ref RHIDevice::WriteAccelerationStructureInstanceData
+    struct RHIAccelerationStructureGeometryInstance
+    {
+        RHIAccelerationStructure const* blas;
+        float transformBasisRowMajor[3][3];
+        float transformTranslation[3];
+        uint32_t instanceID;
+        uint32_t mask;
+    };
     struct RHIAccelerationStructureGeometryInstanceData
     {
         RHIBuffer* instanceBuffer;

@@ -124,10 +124,10 @@ void FInitEnter()
             meshesBatch = meshesBatch.subspan(i, batchSize);
             indicesBatch = indicesBatch.subspan(i, batchSize);
             LOG(Editor, LogDebug, "Building BLAS {} to {}", i, i + batchSize);
-            gpu->BuildBLASIncremental(&ctx, meshesBatch, indicesBatch, numPrimitives);
+            gpu->BuildBLAS(&ctx, meshesBatch, indicesBatch, numPrimitives);
         }
         LOG(Editor, LogDebug, "Building TLAS");
-        gpu->BuildTLAS(&ctx, GSInstances, blasIndices, numPrimitives);
+        // gpu->BuildTLAS(&ctx, GSInstances, blasIndices, numPrimitives);
     }
     FEState = FEInit;
 }

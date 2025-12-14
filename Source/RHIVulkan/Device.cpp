@@ -4,8 +4,8 @@
 
 using namespace Foundation::Core;
 using namespace Foundation::RHI;
-const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, 
-                                         VK_EXT_MESH_SHADER_EXTENSION_NAME,                                          
+const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+                                         VK_EXT_MESH_SHADER_EXTENSION_NAME,
                                          VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
                                          VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
                                          VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
@@ -22,12 +22,11 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
 {
     auto families = mPhysicalDevice.getQueueFamilyProperties();
     // Find queues
-    // Graphics, Compute, Transfer should be preferably mutually exclusive    
+    // Graphics, Compute, Transfer should be preferably mutually exclusive
     // vvv [Family, Index]
     Vector<uint32_t> vis(families.size(), GetAllocator());
     using QueuePair = Pair<uint32_t, uint32_t>;
-    QueuePair graphics{kInvalidQueueIndex, 0}, compute{kInvalidQueueIndex, 0},
-        transfer{kInvalidQueueIndex, 0};
+    QueuePair graphics{kInvalidQueueIndex, 0}, compute{kInvalidQueueIndex, 0}, transfer{kInvalidQueueIndex, 0};
     Pair<QueuePair*, vk::QueueFlagBits> dstPairs[] = {
         {&graphics, vk::QueueFlagBits::eGraphics},
         {&compute, vk::QueueFlagBits::eCompute},
@@ -42,7 +41,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
             {
                 dstPair->first = i;
                 dstPair->second = vis[i]++;
-                family.queueCount--;                
+                family.queueCount--;
                 break;
             }
         }
@@ -95,11 +94,8 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     }
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
                        vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
-                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT,
-                       vk::PhysicalDeviceMeshShaderFeaturesEXT,
-                       vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
-                       vk::PhysicalDeviceRayQueryFeaturesKHR
-    >
+                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT, vk::PhysicalDeviceMeshShaderFeaturesEXT,
+                       vk::PhysicalDeviceAccelerationStructureFeaturesKHR, vk::PhysicalDeviceRayQueryFeaturesKHR>
         featureChain = {
             {.features = {.samplerAnisotropy = true,
                           .fragmentStoresAndAtomics = true,
@@ -125,7 +121,9 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
              .shaderIntegerDotProduct = true}, // vk::PhysicalDeviceVulkan13Features
             {.extendedDynamicState = true}, // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
             {.taskShader = true, .meshShader = true}, // vk::PhysicalDeviceMeshShaderFeaturesEXT
-            {.accelerationStructure = true,}, // vk::PhysicalDeviceAccelerationStructureFeaturesKHR
+            {
+                .accelerationStructure = true,
+            }, // vk::PhysicalDeviceAccelerationStructureFeaturesKHR
             {.rayQuery = true} // vk::PhysicalDeviceRayQueryFeaturesKHR
         };
     vk::DeviceCreateInfo device_info{.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
@@ -235,7 +233,7 @@ RHIDeviceQueue* VulkanDevice::GetDeviceQueue(RHIDeviceQueueType type) const
     case RHIDeviceQueueType::Compute:
         return mQueues->Get(mQueues->compute);
     case RHIDeviceQueueType::Transfer:
-        return mQueues->Get(mQueues->transfer);    
+        return mQueues->Get(mQueues->transfer);
     default:
         break;
     }
@@ -555,6 +553,26 @@ VulkanDevice::GetAccelerationStructureSizeInfo(RHIAccelerationStructureBuildDesc
     return {.accelerationStructureSize = static_cast<uint32_t>(sizeInfo.accelerationStructureSize),
             .buildScratchSize = static_cast<uint32_t>(sizeInfo.buildScratchSize),
             .updateScratchSize = static_cast<uint32_t>(sizeInfo.updateScratchSize)};
+}
+size_t VulkanDevice::WriteAccelerationStructureInstanceData(RHIAccelerationStructureGeometryInstance const& data,
+                                                            void* dest) const
+{
+    if (dest)
+    {
+        vk::AccelerationStructureInstanceKHR res{
+            .instanceCustomIndex = static_cast<uint32_t>(data.instanceID),
+            .mask = data.mask,
+            .accelerationStructureReference =
+                static_cast<VulkanAccelerationStructure*>(data.blas)->GetVkAcceleartionStructureAddress()};
+        std::memcpy(res.transform.matrix[0], &data.transformBasisRowMajor[0], sizeof(float) * 3);
+        std::memcpy(res.transform.matrix[1], &data.transformBasisRowMajor[1], sizeof(float) * 3);
+        std::memcpy(res.transform.matrix[2], &data.transformBasisRowMajor[2], sizeof(float) * 3);
+        res.transform.matrix[0][3] = data.transformTranslation[0];
+        res.transform.matrix[1][3] = data.transformTranslation[1];
+        res.transform.matrix[2][3] = data.transformTranslation[2];
+        std::memcpy(dest, &res, sizeof(vk::AccelerationStructureInstanceKHR));
+    }
+    return sizeof(vk::AccelerationStructureInstanceKHR);
 }
 
 RHIDeviceScopedHandle<RHIAccelerationStructure>

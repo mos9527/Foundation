@@ -169,10 +169,6 @@ namespace Foundation::RHI
         RHITexture* GetTexture(Handle handle) const override;
         void DestroyTexture(Handle handle) override;
 
-        [[nodiscard]] RHIAccelerationStructureSizeInfo GetAccelerationStructureSizeInfo(
-                    RHIAccelerationStructureBuildDesc const& desc
-        ) const override;
-
         [[nodiscard]] RHIDeviceScopedHandle<RHIAccelerationStructure>
         CreateAccelerationStructure(RHIAccelerationStructureDesc const& desc) override;
         [[nodiscard]] RHIAccelerationStructure* GetAccelerationStructure(Handle handle) const override;
@@ -196,6 +192,13 @@ namespace Foundation::RHI
         CreateQueryPool(RHIDeviceQueryPool::QueryPoolDesc const& desc) override;
         RHIDeviceQueryPool* GetQueryPool(Handle handle) const override;
         void DestroyQueryPool(Handle handle) override;
+
+        [[nodiscard]] RHIAccelerationStructureSizeInfo GetAccelerationStructureSizeInfo(
+                    RHIAccelerationStructureBuildDesc const& desc
+        ) const override;
+        [[nodiscard]] size_t
+        WriteAccelerationStructureInstanceData(RHIAccelerationStructureGeometryInstance const& data,
+                                               void* dest) const override;
 
         void ResetFences(Span<RHIDeviceFence* const> fences) override;
         bool WaitForFences(Span<RHIDeviceFence* const> fences, bool wait_all, size_t timeout) override;

@@ -5,11 +5,11 @@ uniform UBO globalParams;
 Texture2D<float4> lighting;
 RWStructuredBuffer<Atomic<uint>> bins; // 64 bins. Don't forget to clear.
 
-groupshared Atomic<uint> binGS[64];
+groupshared uint binGS[64];
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void main(uint2 tid: SV_DispatchThreadID, uint gid : SV_GroupIndex) {
-    binGS[gid].store(0u);
+    binGS[gid] = 0;
     GroupMemoryBarrierWithGroupSync();
 
     float4 value = 0u;
@@ -18,8 +18,8 @@ void main(uint2 tid: SV_DispatchThreadID, uint gid : SV_GroupIndex) {
     float luma = dot(value.xyz, float3(0.2126, 0.7152, 0.0722));
     float EV = log2(luma + EPS);
     int bin = clamp((int)floor(saturate((EV - globalParams.camMinEV) / (globalParams.camMaxEV - globalParams.camMinEV)) * 64.0),0, 63);
-
-    binGS[bin].add(1);
+    InterlockedAdd(binGS[bin], 1);
+    // Collect GS results into global
     GroupMemoryBarrierWithGroupSync();
-    bins[gid].add(binGS[gid].load());
+    bins[gid].add(binGS[gid]);
 }

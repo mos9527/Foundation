@@ -7,7 +7,7 @@ StructuredBuffer<GSInstance> instances;
 
 SamplerState hizSampler;
 Texture2D<float> hiz;
-RWStructuredBuffer<Atomic<uint>> visibility;
+RWStructuredBuffer<uint> visibility;
 
 RWStructuredBuffer<uint> inTasksCounter;
 RWStructuredBuffer<MeshletTaskWork> inTasks;
@@ -120,8 +120,8 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     }
     // -- Cone Cull (FIXME. False positives.) --
     if (false && visible) {
-        float3 coneApex = inst.rotation.rotate(meshlet.coneApex) * inst.scale + inst.transform;
-        float3 camPosition = -float3(globalParams.view[0][3],globalParams.view[1][3],globalParams.view[2][3]);
+        float3 coneApex = inst.rotation.rotate(meshlet.coneApex) * scale + inst.transform;
+        float3 camPosition = globalParams.camPosition;
         bool pass = dot(normalize(coneApex - camPosition), meshlet.coneAxisAngle.xyz) < meshlet.coneAxisAngle.w;
         visible &= pass;
     }
@@ -133,7 +133,7 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     uint32_t meshletGlobalID = mesh.meshletGlobalIndex + meshletID;
     if (cullOcclusion && visible) {
         if (late) {
-            uint32_t phase1Visible = visibility[meshletGlobalID / 32].load() & (1u << (meshletGlobalID % 32));
+            bool phase1Visible = visibility[meshletGlobalID / 32] & (1u << (meshletGlobalID % 32));
             if (phase1Visible)
                 visible = false; // Skip
         }
@@ -157,9 +157,9 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
             }
         }
     }
-    // Commit to visibility buffer if visible ONLY in early pass
-    if (early && visible)
-        visibility[meshletGlobalID / 32].or(1u << (meshletGlobalID % 32));
+    // Commit to visibility buffer for occlusion if visible ONLY in early pass
+    if (cullOcclusion && early && visible)
+        InterlockedOr(visibility[meshletGlobalID / 32], 1u << (meshletGlobalID % 32));
     uint waveVisibleCount = WaveActiveCountBits(visible);
     if (waveVisibleCount > 0){
         uint waveMeshletOffset = 0;
