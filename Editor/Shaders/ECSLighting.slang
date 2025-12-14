@@ -17,7 +17,7 @@ bool shadow(float3 p, float3 l)
     RayDesc ray;
     ray.Origin = p;
     ray.Direction = l;
-    ray.TMin = 1e-1;
+    ray.TMin = 1e-2;
     ray.TMax = 1e2;
     RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
     q.TraceRayInline(AS, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, ray);

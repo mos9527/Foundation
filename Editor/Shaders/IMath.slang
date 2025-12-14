@@ -85,10 +85,11 @@ float2 unpackUnitCircleSnorm(float v){
 // -- tangent frame projection
 void buildOrthonormalBasis(const float3 n, out float3 b1,out float3 b2)
 {
-    if (n.z < -0.9999999)
+    if (n.z < -1 + EPS)
     {
         b1 = float3(0.0, -1.0, 0.0);
         b2 = float3(-1.0, 0.0, 0.0);
+        return;
     }
     float a = 1.0 / (1.0 + n.z);
     float b = -n.x * n.y * a;

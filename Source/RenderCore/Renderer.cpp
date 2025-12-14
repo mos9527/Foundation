@@ -1753,7 +1753,7 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
         RHITexture* res = DerefResource(rhdl).Get<RHITexture*>();
         CHECK_MSG(res->mDesc.extent.x >= extent.x && res->mDesc.extent.y >= extent.y,
                   "Graphics extent too large for Render Target on {}", tres.name);
-        rtvs.push_back({.imageView = DerefTextureView(rtv), .clearColor = clear_rtv[i], .loadDontCare = !blending.enabled});
+        rtvs.push_back({.imageView = DerefTextureView(rtv), .clearColor = clear_rtv[i]});
     }
     if (tpass.dsv != kInvalidHandle)
     {
