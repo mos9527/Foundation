@@ -140,11 +140,9 @@ public:
     size_t Upload(ImmediateUpload* ctx, FMesh const& source, GSMesh& outData, uint32_t& outOffset);
     size_t Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t& outIndex);
 
-    void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices,
-                              uint32_t& outPrimitiveCount);
+    void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices);
 
-    void BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices,
-                   uint32_t primitiveCount, bool update = false);
+    void BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, bool update = false);
 
     /* Geometry */
     [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }

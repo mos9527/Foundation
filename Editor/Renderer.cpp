@@ -129,7 +129,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             },
             [=](PassHandle, Renderer* r, RHICommandList* cmd)
             {
-                gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsBLASNumPrimitives, true);
+                gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, true);
             });
     }
     const auto kIndirectBufferClearTransition = RHICommandList::TransitionDesc{

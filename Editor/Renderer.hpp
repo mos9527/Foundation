@@ -61,7 +61,6 @@ struct RendererScene
     Vector<GSInstance>* gsInstances;
     Vector<GSMaterial>* gsMaterials;
     Vector<GSMesh>* gsMeshes;
-    Vector<uint32_t>* gsBLASes;
-    uint32_t* gsBLASNumPrimitives;
+    Vector<uint32_t>* gsBLASes;   
 };
 extern void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene);

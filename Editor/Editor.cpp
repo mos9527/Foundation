@@ -6,7 +6,6 @@ static Vector<GSInstance> GSInstances(GLOBAL_ALLOC);
 static Vector<GSMaterial> GSMaterials(GLOBAL_ALLOC);
 static Vector<GSMesh> GSMeshes(GLOBAL_ALLOC);
 static Vector<uint32_t> GSBLASes(GLOBAL_ALLOC);
-uint32_t GSNumPrimitives;
 /* -- Camera & Globals -- */
 static UBO GShaderGlobals;
 static FArcballCamera GCamera{
@@ -118,8 +117,7 @@ void FInitEnter()
         ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
         GSBLASes.resize(GSMeshes.size());
         LOG(Editor, LogDebug, "Building BLAS");
-        constexpr size_t kBLASBuildBatch = 1u; // XXX: Hangs > 1?
-        GSNumPrimitives = 0;
+        constexpr size_t kBLASBuildBatch = 1u; // XXX: Hangs > 1?        
         for (size_t i = 0; i < GSMeshes.size(); i += kBLASBuildBatch)
         {
             Span meshesBatch = GSMeshes;
@@ -128,11 +126,11 @@ void FInitEnter()
             meshesBatch = meshesBatch.subspan(i, batchSize);
             indicesBatch = indicesBatch.subspan(i, batchSize);
             LOG(Editor, LogDebug, "Building BLAS {} to {}", i, i + batchSize);
-            gpu->BuildBLAS(&ctx, meshesBatch, indicesBatch, GSNumPrimitives);
+            gpu->BuildBLAS(&ctx, meshesBatch, indicesBatch);
         }
         LOG(Editor, LogDebug, "Building TLAS");
         ctx->Begin();
-        gpu->BuildTLAS(ctx.Get(), GSInstances, GSBLASes, GSNumPrimitives, false);
+        gpu->BuildTLAS(ctx.Get(), GSInstances, GSBLASes, false);
         ctx->End(), ctx.Submit(), ctx.WaitIdle();
     }
     FEState = FEInit;
@@ -146,8 +144,7 @@ void FRunningEnter()
         .gsInstances = &GSInstances,
         .gsMaterials = &GSMaterials,
         .gsMeshes = &GSMeshes,
-        .gsBLASes = &GSBLASes,
-        .gsBLASNumPrimitives = &GSNumPrimitives
+        .gsBLASes = &GSBLASes        
     });
     FEState = FERunning;
 }

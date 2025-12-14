@@ -157,7 +157,7 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t
 // - https://github.com/zeux/niagara/blob/master/src/scenert.cpp
 // - https://docs.vulkan.org/tutorial/latest/courses/18_Ray_tracing/02_Acceleration_structures.html
 // - https://docs.vulkan.org/tutorial/latest/courses/18_Ray_tracing/04_TLAS_animation.html
-void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices, uint32_t& outPrimitiveCount)
+void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices)
 {
     CHECK_MSG(meshes.size() == outBLASIndices.size(), "Mismatched BLAS indices size");
     auto* device = mContext->device.Get();
@@ -167,8 +167,7 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
     Vector<RHIAccelerationStructureSizeInfo> sizeInfo(meshes.size(), mContext->allocator);
     Vector<uint32_t> blasOffsets(meshes.size(), mContext->allocator);
     auto* primitiveBuffer = mPrimitiveBuffer.Get();
-    uint32_t scratchFootprint = 0;
-    outPrimitiveCount = 0;
+    uint32_t scratchFootprint = 0;    
     for (size_t i = 0; i < meshes.size(); i++){
         auto const& mesh = meshes[i];
         auto& geo = geometries[i];
@@ -188,8 +187,7 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
         };
         range = RHIAccelerationStructureBuildRangeInfo{
             .primitiveCount = mesh.idxCount / 3
-        };
-        outPrimitiveCount += range.primitiveCount;
+        };        
         auto& desc = buildDesc[i];
         desc = RHIAccelerationStructureBuildDesc{
             .type = RHIAccelerationStructureType::BottomLevel,
@@ -250,7 +248,7 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
     cmd->End();
     ctx->Submit(), ctx->WaitIdle();
 }
-void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, uint32_t primitiveCount, bool update)
+void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, bool update)
 {
     CHECK_MSG(instances.size() == blasIndices.size(), "Mismatched BLAS indices size");
     auto* device = mContext->device.Get();
@@ -280,14 +278,13 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
     RHIAccelerationStructureGeometryInstanceData instance{
         .instanceBuffer = mTLASInstances.mBuffer.Get(),
         .instanceOffset = instancesOffset,
-        .totalPrimitives = primitiveCount
+        .totalPrimitives = static_cast<uint32_t>(instances.size())
     };
     RHIAccelerationStructureGeometryInfo geometry{
         .type = RHIAccelerationGeometryType::Instances,
         .instanceData = instance
     };
-    RHIAccelerationStructureBuildRangeInfo range{
-        .primitiveCount = primitiveCount
+    RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = static_cast<uint32_t>(instances.size())
     };
     RHIAccelerationStructureBuildDesc desc{
         .type = RHIAccelerationStructureType::TopLevel,
