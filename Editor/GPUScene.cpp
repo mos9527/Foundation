@@ -299,13 +299,7 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
     auto size = device->GetAccelerationStructureSizeInfo(desc);
     CHECK_MSG(size.accelerationStructureSize <= mTLASBuffer->mDesc.size, "TLAS buffer overflow");
     desc.scratchBuffer = mScratchBufferTLAS.Get();
-    desc.scratchBufferOffset = mScratchOffsetTLAS;
-    if (update)
-        mScratchOffsetTLAS = AlignUp(mScratchOffsetTLAS + size.updateScratchSize, 256u);
-    else
-        mScratchOffsetTLAS = AlignUp(mScratchOffsetTLAS + size.buildScratchSize, 256u);
-    if (mScratchOffsetTLAS >= mScratchBufferTLAS->mDesc.size)
-        desc.scratchBufferOffset = mScratchOffsetTLAS = 0; // Ring
+    desc.scratchBufferOffset = 0;
     desc.srcAS = desc.dstAS = mTLAS.Get();
     cmd->BuildAccelerationStructure({{{desc}}});
 }

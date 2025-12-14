@@ -119,7 +119,6 @@ class GPUScene
     RHIDeviceScopedHandle<RHIBuffer> mTLASBuffer, mScratchBufferTLAS;
     RHIDeviceScopedHandle<RHIAccelerationStructure> mTLAS;
     UploadGPURingBuffer<char> mTLASInstances;
-    size_t mScratchOffsetTLAS{0};
 public:
     struct GPUSceneDesc
     {
