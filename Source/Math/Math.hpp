@@ -29,6 +29,7 @@ namespace Foundation::Math {
     using int2 = ivec2;
     using int3 = ivec3;
     using int4 = ivec4;
+    using uint = unsigned int;
     using uint2 = uvec2;
     using uint3 = uvec3;
     using uint4 = uvec4;

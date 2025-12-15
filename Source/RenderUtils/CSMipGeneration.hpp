@@ -80,6 +80,14 @@ namespace Foundation::RenderUtils
                                               dstAspect, std::min(dst != src ? mip : (std::max(1u, mip)), numMips - 1u),
                                               1, 0, numLayer),
                                       });
+                    if (mip == 6)
+                        r->BindTextureUAV(self, dst, "imgDst6", RHIPipelineStageBits::ComputeShader,
+                                          {
+                                              .format = dstFormat,
+                                              .dimension = RHITextureDimension::E2DArray,
+                                              .range = RHITextureSubresourceRange::Create(
+                                                  dstAspect, std::min(mip, numMips - 1u), 1, 0, numLayer),
+                                          });
                 }
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)

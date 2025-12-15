@@ -4,6 +4,7 @@
 
 using namespace Foundation::Core;
 using namespace Foundation::RenderCore;
+using namespace Foundation::Math;
 
 Renderer::Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> device,
                    RHIDeviceHandle<RHISwapchain> swapchain, Allocator* allocator) :
