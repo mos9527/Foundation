@@ -354,11 +354,22 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                     cmd->EndGraphics();
                 });
             if (early && cfg.cullFlags & kCullOcclusion)
-                createCSMipGenerationSinglePass(renderer, "Early HiZ Mip Gen", RHIDeviceQueueType::Graphics, ZBuffer,
-                                                HIZ, RHIResourceFormat::D32SignedFloat,
-                                                RHIResourceFormat::R32SignedFloat, RHITextureAspectFlagBits::Depth,
-                                                RHITextureAspectFlagBits::Color, HIZSampler, HIZMips, 1,
-                                                HIZSamplerDesc.reduction);
+            {
+                // Don't bother going Async for now - this is used immediately after and there's no other work
+                // to overlap with.
+                // XXX: SPD doesn't perform very well on my APU due to register pressure. Test this again
+                //      once I got a dGPU. Someday, somehow...         
+                if (false)
+                    createCSMipGenerationSinglePass(renderer, "Early HiZ Mip Gen", RHIDeviceQueueType::Graphics, ZBuffer,
+                                                    HIZ, RHIResourceFormat::D32SignedFloat,
+                                                    RHIResourceFormat::R32SignedFloat, RHITextureAspectFlagBits::Depth,
+                                                    RHITextureAspectFlagBits::Color, HIZSampler, HIZMips, 1,
+                                                    HIZSamplerDesc.reduction);
+                createCSMipGenerationPasses(renderer, "Early HiZ Mip Gen", RHIDeviceQueueType::Graphics, ZBuffer, HIZ,
+                                            RHIResourceFormat::D32SignedFloat, RHIResourceFormat::R32SignedFloat,
+                                            RHITextureAspectFlagBits::Depth, RHITextureAspectFlagBits::Color,
+                                            HIZSampler, HIZMips);
+            }
         };
         AddCullPass(true), AddMainPass(true);
         if (cfg.cullFlags & kCullOcclusion)
