@@ -527,7 +527,7 @@ namespace Foundation::RenderCore
          *
          * No view is created until EndSetup() is called.
          */
-        ResourceHandle BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point,
+        void BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                       RHIPipelineStage stage, RHITextureViewDesc const& desc) const;
         /**
          * @brief Binds a texture for unordered (UAV) read-write access in shaders.
@@ -539,7 +539,7 @@ namespace Foundation::RenderCore
          *
          * No view is created until EndSetup() is called.
          */
-        ResourceHandle BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView bind_point,
+        void BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                       RHIPipelineStage stage, RHITextureViewDesc const& desc) const;
         /**
          * @brief Binds a texture as a Render Target View (color attachment) for a graphics pass.
@@ -551,7 +551,7 @@ namespace Foundation::RenderCore
          *
          * The order of multiple render targets is the same as the insertion order of the RTVs.
          */
-        ResourceHandle
+        void
         BindTextureRTV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc,
                        RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending = {}) const;
         /**
@@ -562,7 +562,7 @@ namespace Foundation::RenderCore
          *
          * This can be automatically bound to the pipeline with CmdBeginGraphics().
          */
-        ResourceHandle BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc) const;
+        void BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc) const;
         /**
          * @breif Binds the backbuffer as the first Render Target.
          * @note  If this is used, the first RTV will always be the Backbuffer itself.

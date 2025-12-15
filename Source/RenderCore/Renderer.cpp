@@ -190,7 +190,7 @@ void Renderer::BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDevi
     CHECK(mState == State::Setup);
     mSetup->trackedPasses[pass].externalBindings.emplace_back(bind_point, layout, ~0u);
 }
-ResourceHandle Renderer::BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point,
+void Renderer::BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                         RHIPipelineStage stage, RHITextureViewDesc const& desc) const
 {
     CHECK(mState == State::Setup);
@@ -201,9 +201,8 @@ ResourceHandle Renderer::BindTextureSRV(PassHandle pass, ResourceHandle texture,
     ResourceHandle view = CreateTextureView(pass, texture, desc);
     mSetup->trackedPasses[pass].textureBindings.emplace_back(view, RHIDescriptorType::SampledImage, bind_point);
     mSetup->bindingCounts[RHIDescriptorType::SampledImage]++;
-    return view;
 }
-ResourceHandle Renderer::BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView bind_point,
+void Renderer::BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                         RHIPipelineStage stage, RHITextureViewDesc const& desc) const
 {
     CHECK(mState == State::Setup);
@@ -215,9 +214,8 @@ ResourceHandle Renderer::BindTextureUAV(PassHandle pass, ResourceHandle texture,
     ResourceHandle view = CreateTextureView(pass, texture, desc);
     mSetup->trackedPasses[pass].textureBindings.emplace_back(view, RHIDescriptorType::StorageImage, bind_point);
     mSetup->bindingCounts[RHIDescriptorType::StorageImage]++;
-    return view;
 }
-ResourceHandle Renderer::BindTextureRTV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc,
+void Renderer::BindTextureRTV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc,
                                         RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending) const
 {
     CHECK(mState == State::Setup);
@@ -233,9 +231,8 @@ ResourceHandle Renderer::BindTextureRTV(PassHandle pass, ResourceHandle texture,
                          RHIResourceAccessBits::RenderTargetWrite, RHITextureLayout::RenderTarget);
     ResourceHandle view = CreateTextureView(pass, texture, desc);
     tpass.rtvs.emplace_back(view, blending);
-    return view;
 }
-ResourceHandle Renderer::BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc) const
+void Renderer::BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc) const
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(desc.range.IsValid(), "Binding DSV on {} is of invalid range! Did you specify `desc.range`?",
@@ -252,7 +249,6 @@ ResourceHandle Renderer::BindTextureDSV(PassHandle pass, ResourceHandle texture,
                          RHITextureLayout::DepthStencil);
     ResourceHandle view = CreateTextureView(pass, texture, desc);
     tpass.dsv = view;
-    return view;
 }
 void Renderer::BindBackbufferRTV(PassHandle pass,
                                  RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending) const
@@ -759,7 +755,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
         // Check and create descriptors
         // In short - we ensure that there'd be no undefined access from the shaders
         // thus all _shader_ bindings are guaranteed to be bound
-        // We do not check if _all_ bound resources are used by shaders - unused, unbound
+        // We do not check if _all_ bound resources are used by shaders - unused, bound
         // resources are allowed.
         tracked.descriptorLayouts.push_back(
             mDevice->CreateDescriptorSetLayout({.bindings = {set_bindings.cbegin() + i, set_bindings.cbegin() + j}}));
