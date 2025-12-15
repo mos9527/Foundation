@@ -4,7 +4,6 @@ struct PushConstants {
     uint2 extents;
     uint mips;
     uint numWorkGroups;
-    uint sameSrcDst;
 };
 [[vk::push_constant]] PushConstants pc;
 SamplerState srcSampler;
@@ -88,13 +87,11 @@ void SpdStoreIntermediateH(AU1 x, AU1 y, AH4 value)
 }
 AH4 SpdReduce4H(AH4 v0, AH4 v1, AH4 v2, AH4 v3)
 {
-    switch (reductionMode){
-    case 1:
+    if (reductionMode == 1)
         return min(min(v0, v1), min(v2, v3));
-    case 2:
-        return max(max(v0, v1), max(v2, v3));
-    }
-    return (v0+v1+v2+v3)*0.25;
+    if (reductionMode == 2)
+        return max(max(v0, v1), max(v2, v3));    
+    return (v0+v1+v2+v3)*half(0.25);
 }
 #include "ThirdParty/ffx_spd.h"
 // -- end SPD definitions
@@ -109,22 +106,4 @@ void csMain(uint3 WorkGroupId : SV_GroupID, uint LocalThreadIndex : SV_GroupInde
         AU1(pc.numWorkGroups),
         AU1(WorkGroupId.z),
         AU2(0, 0));
-    // Needs a copy for MIP 0. We work on 64x64 tiles
-    if (!pc.sameSrcDst)
-    {
-        uint2 tile = WorkGroupId.xy;
-        uint2 tileOffset = tile * 64;
-        uint2 threadOffset = uint2(LocalThreadIndex % 16, LocalThreadIndex / 16) * 4;
-        uint2 pixelCoord = tileOffset + threadOffset;
-        for (uint y = 0; y < 4; ++y)
-        for (uint x = 0; x < 4; ++x)
-        {
-            uint2 coord = pixelCoord + uint2(x, y);
-            if (coord.x < pc.extents.x && coord.y < pc.extents.y)
-            {
-                float4 value = SpdLoadSourceImageH(AF2(coord), AU1(WorkGroupId.z));
-                imgDst[0][uint3(coord, 0)] = value;
-            }
-        }
-    }
 }

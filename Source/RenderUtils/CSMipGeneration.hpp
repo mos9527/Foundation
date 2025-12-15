@@ -4,6 +4,49 @@
 namespace Foundation::RenderUtils
 {
     using namespace RenderCore;
+    inline void createCSMipGenerationPasses(Renderer* renderer, StringView name, RHIDeviceQueueType queue,
+                                            ResourceHandle src, ResourceHandle dst, RHIResourceFormat srcFormat,
+                                            RHIResourceFormat dstFormat, RHITextureAspectFlagBits srcAspect,
+                                            RHITextureAspectFlagBits dstAspect, ResourceHandle srcSampler,
+                                            uint32_t numMips, uint32_t layer = 0)
+    {
+        using namespace Math;
+        for (uint32 i = 0; i < numMips; ++i)
+        {
+            if (i == 0 && src == dst)
+                continue;
+            renderer->CreatePass(
+                fmt::format("Mip Gen {} {}", i, name), queue, 0u,
+                [=](PassHandle self, Renderer* r)
+                {
+                    r->BindTextureSampler(self, srcSampler, "sampler");
+                    r->BindShader(self, RHIShaderStageBits::Compute, "csMain", "data/shaders/CSMipGeneration.spv");
+                    if (i == 0)
+                        r->BindTextureSRV(self, src, "srcTexture", RHIPipelineStageBits::ComputeShader,
+                                          {.format = srcFormat,
+                                           .range = RHITextureSubresourceRange::Create(srcAspect, 0, 1, layer, 1)});
+                    else
+                        r->BindTextureSRV(self, dst, "srcTexture", RHIPipelineStageBits::ComputeShader,
+                                          {.format = dstFormat,
+                                           .range = RHITextureSubresourceRange::Create(dstAspect, i - 1, 1, layer, 1)});
+                    r->BindTextureUAV(
+                        self, dst, "dstTexture", RHIPipelineStageBits::ComputeShader,
+                        {.format = dstFormat, .range = RHITextureSubresourceRange::Create(dstAspect, i, 1, layer, 1)});
+                    r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(float2));
+                },
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+                {
+                    RHITexture* dstTex = r->DerefResource(dst).Get<RHITexture*>();
+                    RHIExtent3D extent = dstTex->mDesc.extent;
+                    r->CmdSetPipeline(self, cmd);
+                    uint32_t w = std::max(1u, extent.x >> i);
+                    uint32_t h = std::max(1u, extent.y >> i);
+                    r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, float2{w, h});
+                    r->CmdDispatch(self, cmd, {w, h, 1});
+                });
+        }
+    }
+
     inline void createCSMipGenerationSinglePass(
         Renderer* renderer, StringView name, RHIDeviceQueueType queue, ResourceHandle src, ResourceHandle dst,
         RHIResourceFormat srcFormat, RHIResourceFormat dstFormat, RHITextureAspectFlag srcAspect,
@@ -16,7 +59,6 @@ namespace Foundation::RenderUtils
             uint2 srcExtents;
             uint mips;
             uint numWorkGroups;
-            uint sameSrcDst;
         };
         // From ffx_spd.h
         auto SpdSetup = [](uint2& dispatchThreadGroupCountXY, // CPU side: dispatch thread group count xy
@@ -37,6 +79,16 @@ namespace Foundation::RenderUtils
                                                        .usage = RHIBufferUsageBits::StorageBuffer,
                                                        .size = sizeof(uint) * 6,
                                                    });
+        // Lend thy strength. And save me some registers for actual downsampling.       
+        if (src != dst) 
+            for (int layer = 0; layer < numLayer; layer++)
+                createCSMipGenerationPasses(
+                    renderer, fmt::format("{} Blit", name),
+                    queue, src, dst, 
+                    srcFormat, dstFormat, 
+                    srcAspect, dstAspect, 
+                    srcSampler, 1, layer
+                );
         renderer->CreatePass(
             name, queue, 0u,
             [=](PassHandle self, Renderer* r)
@@ -93,57 +145,12 @@ namespace Foundation::RenderUtils
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
                 auto* dstTex = r->DerefResource(dst).Get<RHITexture*>();
-                PushConstants pc{.srcExtents = {dstTex->mDesc.extent.x, dstTex->mDesc.extent.y},
-                                 .mips = numMips,
-                                 .sameSrcDst = src == dst};
+                PushConstants pc{.srcExtents = {dstTex->mDesc.extent.x, dstTex->mDesc.extent.y}, .mips = numMips};
                 uint2 dispatchThreadGroupCountXY;
                 SpdSetup(dispatchThreadGroupCountXY, pc.numWorkGroups, pc.srcExtents);
                 r->CmdSetPipeline(self, cmd);
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, pc);
                 cmd->Dispatch(dispatchThreadGroupCountXY.x, dispatchThreadGroupCountXY.y, 1);
             });
-    }
-
-    inline void createCSMipGenerationPasses(Renderer* renderer, StringView name, RHIDeviceQueueType queue,
-                                            ResourceHandle src, ResourceHandle dst, RHIResourceFormat srcFormat,
-                                            RHIResourceFormat dstFormat, RHITextureAspectFlagBits srcAspect,
-                                            RHITextureAspectFlagBits dstAspect, ResourceHandle srcSampler,
-                                            uint32_t numMips, uint32_t layer = 0)
-    {
-        using namespace Math;
-        for (uint32 i = 0; i < numMips; ++i)
-        {
-            if (i == 0 && src == dst)
-                continue;
-            renderer->CreatePass(
-                fmt::format("Mip Gen {} {}", i, name), queue, 0u,
-                [=](PassHandle self, Renderer* r)
-                {
-                    r->BindTextureSampler(self, srcSampler, "sampler");
-                    r->BindShader(self, RHIShaderStageBits::Compute, "csMain", "data/shaders/CSMipGeneration.spv");
-                    if (i == 0)
-                        r->BindTextureSRV(self, src, "srcTexture", RHIPipelineStageBits::ComputeShader,
-                                          {.format = srcFormat,
-                                           .range = RHITextureSubresourceRange::Create(srcAspect, 0, 1, layer, 1)});
-                    else
-                        r->BindTextureSRV(self, dst, "srcTexture", RHIPipelineStageBits::ComputeShader,
-                                          {.format = dstFormat,
-                                           .range = RHITextureSubresourceRange::Create(dstAspect, i - 1, 1, layer, 1)});
-                    r->BindTextureUAV(
-                        self, dst, "dstTexture", RHIPipelineStageBits::ComputeShader,
-                        {.format = dstFormat, .range = RHITextureSubresourceRange::Create(dstAspect, i, 1, layer, 1)});
-                    r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(float2));
-                },
-                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-                {
-                    RHITexture* dstTex = r->DerefResource(dst).Get<RHITexture*>();
-                    RHIExtent3D extent = dstTex->mDesc.extent;
-                    r->CmdSetPipeline(self, cmd);
-                    uint32_t w = std::max(1u, extent.x >> i);
-                    uint32_t h = std::max(1u, extent.y >> i);
-                    r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, float2{w, h});
-                    r->CmdDispatch(self, cmd, {w, h, 1});
-                });
-        }
     }
 } // namespace Foundation::RenderUtils
