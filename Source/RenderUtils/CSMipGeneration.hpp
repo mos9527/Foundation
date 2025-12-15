@@ -119,7 +119,7 @@ namespace Foundation::RenderUtils
                                       .dimension = RHITextureDimension::E2DArray,
                                       .range = RHITextureSubresourceRange::Create(srcAspect, 0, 1, 0, numLayer),
                                   });
-                for (uint mip = 0; mip <= 12; mip++)
+                for (uint mip = 1; mip <= 12; mip++)
                 {
                     r->BindTextureUAV(self, dst, "imgDst", RHIPipelineStageBits::ComputeShader,
                                       {
