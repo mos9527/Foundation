@@ -120,7 +120,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
              .dynamicRendering = true,
              .shaderIntegerDotProduct = true}, // vk::PhysicalDeviceVulkan13Features
             {.extendedDynamicState = true}, // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
-            {.taskShader = true, .meshShader = true}, // vk::PhysicalDeviceMeshShaderFeaturesEXT
+            {.taskShader = true /*...try not to use it*/, .meshShader = true}, // vk::PhysicalDeviceMeshShaderFeaturesEXT
             {
                 .accelerationStructure = true,
             }, // vk::PhysicalDeviceAccelerationStructureFeaturesKHR
