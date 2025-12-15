@@ -69,7 +69,7 @@ namespace Foundation::RenderUtils
                                   });
                 for (uint mip = 0; mip <= 12; mip++)
                 {
-                    r->BindTextureUAV(self, dst, fmt::format("imgDst{}", mip), RHIPipelineStageBits::ComputeShader,
+                    r->BindTextureUAV(self, dst, "imgDst", RHIPipelineStageBits::ComputeShader,
                                       {
                                           .format = dstFormat,
                                           .dimension = RHITextureDimension::E2DArray,

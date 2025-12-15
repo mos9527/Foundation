@@ -460,6 +460,9 @@ namespace Foundation::RenderCore
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          *
+         * Multiple bind declarations to the same bind point will create array-style bindings,
+         * indexed by order of declaration.
+         *
          * This can be automatically bound to the pipeline with CmdSetPipeline()
          */
         void BindBufferUniform(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
@@ -471,6 +474,9 @@ namespace Foundation::RenderCore
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          *
+         * Multiple bind declarations to the same bind point will create array-style bindings,
+         * indexed by order of declaration.
+         *
          * This can be automatically bound to the pipeline with CmdSetPipeline()
          */
         void BindBufferStorageRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
@@ -481,6 +487,9 @@ namespace Foundation::RenderCore
          * This is only available at Setup time.
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
+         *
+         * Multiple bind declarations to the same bind point will create array-style bindings,
+         * indexed by order of declaration.
          *
          * This can be automatically bound to the pipeline with CmdSetPipeline()
          */
@@ -511,6 +520,9 @@ namespace Foundation::RenderCore
          * @brief Binds a sampler to the shader.
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
+         *
+         * Multiple bind declarations to the same bind point will create array-style bindings,
+         * indexed by order of declaration.
          */
         void BindTextureSampler(PassHandle pass, ResourceHandle sampler, StringView bind_point) const;
         /**
@@ -525,6 +537,9 @@ namespace Foundation::RenderCore
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          *
+         * Multiple bind declarations to the same bind point will create array-style bindings,
+         * indexed by order of declaration.
+         *
          * No view is created until EndSetup() is called.
          */
         void BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point,
@@ -533,6 +548,9 @@ namespace Foundation::RenderCore
          * @brief Binds a texture for unordered (UAV) read-write access in shaders.
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
+         *
+         * Multiple bind declarations to the same bind point will create array-style bindings,
+         * indexed by order of declaration.
          *
          * Declares ShaderRead | ShaderWrite access and sets layout to General (or equivalent),
          * bound as StorageImage, and creates a view.
@@ -597,6 +615,9 @@ namespace Foundation::RenderCore
         void BindAccelerationStructureWrite(PassHandle pass, ResourceHandle as) const;
         /**
          * @brief Declares that this pass has shaders that will read from this AS.
+         *
+         * Multiple bind declarations to the same bind point will create array-style bindings,
+         * indexed by order of declaration.
          */
         void BindAccelerationStructureSRV(PassHandle pass, ResourceHandle as, RHIPipelineStage stage,
                                           StringView bind_point) const;

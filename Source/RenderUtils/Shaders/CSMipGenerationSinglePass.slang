@@ -12,40 +12,8 @@ SamplerState srcSampler;
 Texture2DArray<float4> imgSrc;
 // XXX: Renderer doesn't do automatic SRV/UAV Array binding yet.
 // Since there's no other usage that may require arrays of which, this is used as a workaround.
-RWTexture2DArray<float4> imgDst0;
-RWTexture2DArray<float4> imgDst1;
-RWTexture2DArray<float4> imgDst2;
-RWTexture2DArray<float4> imgDst3;
-RWTexture2DArray<float4> imgDst4;
-RWTexture2DArray<float4> imgDst5;
+RWTexture2DArray<float4> imgDst[];
 globallycoherent RWTexture2DArray<float4> imgDst6;
-RWTexture2DArray<float4> imgDst7;
-RWTexture2DArray<float4> imgDst8;
-RWTexture2DArray<float4> imgDst9;
-RWTexture2DArray<float4> imgDst10;
-RWTexture2DArray<float4> imgDst11;
-RWTexture2DArray<float4> imgDst12;
-void imgStore(uint mip, uint3 location, float4 value)
-{
-    switch (mip)
-    {
-        case 0: return imgDst0.Store(location,value);
-        case 1: return imgDst1.Store(location,value);
-        case 2: return imgDst2.Store(location,value);
-        case 3: return imgDst3.Store(location,value);
-        case 4: return imgDst4.Store(location,value);
-        case 5: return imgDst5.Store(location,value);
-        case 6: return imgDst6.Store(location,value);
-        case 7: return imgDst7.Store(location,value);
-        case 8: return imgDst8.Store(location,value);
-        case 9: return imgDst9.Store(location,value);
-        case 10: return imgDst10.Store(location,value);
-        case 11: return imgDst11.Store(location,value);
-        case 12: return imgDst12.Store(location,value);
-        default: return imgDst0.Store(location,value);
-    }
-}
-
 // -- begin SPD definitions
 struct SpdGlobalAtomicBuffer
 {
@@ -72,7 +40,10 @@ AF4 SpdLoad(ASU2 tex, AU1 slice)
 }
 void SpdStore(ASU2 pix, AF4 outValue, AU1 index, AU1 slice)
 {
-    imgStore(index + 1,uint3(pix, slice), outValue);
+    if (index != 5)
+        imgDst[index + 1][uint3(pix, slice)] = outValue;
+   else
+        imgDst6[uint3(pix, slice)] = outValue;
 }
 void SpdIncreaseAtomicCounter(AU1 slice)
 {
@@ -138,7 +109,7 @@ void csMain(uint3 WorkGroupId : SV_GroupID, uint LocalThreadIndex : SV_GroupInde
             if (coord.x < pc.extents.x && coord.y < pc.extents.y)
             {
                 float4 value = SpdLoadSourceImage(AF2(coord), AU1(WorkGroupId.z));
-                imgStore(0, uint3(coord, 0), value);
+                imgDst[0][uint3(coord, 0)] = value;
             }
         }
     }

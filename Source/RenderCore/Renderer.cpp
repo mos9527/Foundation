@@ -661,8 +661,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
     }
     // Check descriptor set layout to be consistent across stages
     Map<String, RHIDescriptorType> var_types(mAllocator);
-    Map<String, ResourceHandle> var_handles(mAllocator);
-    Map<String, ResourceHandle> var_samplers(mAllocator);
+    Map<String, Vector<ResourceHandle>> var_handles(mAllocator);
+    Map<String, Vector<ResourceHandle>> var_samplers(mAllocator);
     Map<String, RHIDeviceDescriptorSetLayout*> var_ext_sets(mAllocator);
     // ...for Resources
     for (auto& bindings : {tracked.textureBindings, tracked.bufferBindings, tracked.asBindings})
@@ -671,13 +671,19 @@ void Renderer::BuildPipelineState(PassHandle pass)
         {
             auto it = var_types.find(binding);
             if (it == var_types.end())
-                var_types[binding] = dtype, var_handles[binding] = hdl;
+            {
+                var_types[binding] = dtype;
+            }
             else
             {
                 auto& dtype_prev = it->second;
-                auto& vhdl_prev = var_handles[binding];
-                CHECK(dtype_prev == dtype && vhdl_prev == hdl);
+                CHECK_MSG(dtype_prev == dtype,
+                          "Array-style declaration of variable {} has inconsistent descriptor types "
+                          "across shader stages in pass {} (was {}, now {}).",
+                          binding, tracked.name, dtype_prev, dtype);
             }
+            auto [p, ins] = var_handles.emplace(binding, Vector<ResourceHandle>(mAllocator));
+            p->second.emplace_back(hdl);
         }
     }
     // ...for Samplers
@@ -685,13 +691,16 @@ void Renderer::BuildPipelineState(PassHandle pass)
     {
         auto it = var_types.find(binding);
         if (it == var_types.end())
-            var_types[binding] = RHIDescriptorType::Sampler, var_samplers[binding] = sampler_handle;
+        {
+            var_types[binding] = RHIDescriptorType::Sampler;
+        }
         else
         {
             auto& dtype_prev = it->second;
-            auto& var_handle = var_samplers[binding];
-            CHECK(dtype_prev == RHIDescriptorType::Sampler && var_handle == sampler_handle);
+            CHECK(dtype_prev == RHIDescriptorType::Sampler);
         }
+        auto [p, ins] = var_samplers.emplace(binding, Vector<ResourceHandle>(mAllocator));
+        p->second.emplace_back(sampler_handle);
     }
     // External sets (e.g. @ref BindlessPool)
     std::sort(tracked.externalBindings.begin(), tracked.externalBindings.end());
@@ -734,7 +743,15 @@ void Renderer::BuildPipelineState(PassHandle pass)
     {
         CHECK_MSG(var_types.contains(binding) || var_ext_sets.contains(binding),
                   "Binding {} is not bound by pass {}, but is used by one of its shaders.", binding, tracked.name);
-        set_bindings.push_back({.count = 1, .stage = RHIShaderStageBits::All, .type = var_types[binding]});
+        uint32_t num_elems = 0;
+        if (var_samplers.contains(binding))
+            num_elems += var_samplers.find(binding)->second.size();
+        if (var_handles.contains(binding))
+            num_elems += var_handles.find(binding)->second.size();
+        CHECK_MSG(num_elems > 0 || var_ext_sets.contains(binding),
+                  "Binding {} is bound with zero elements in pass {}, but is used by one of its shaders.", binding,
+                  tracked.name);
+        set_bindings.push_back({.count = num_elems, .stage = RHIShaderStageBits::All, .type = var_types[binding]});
     }
     // Check if our first set is not 0
     if (!bindings.empty() && bindings[0].first.first != 0)
@@ -779,7 +796,6 @@ void Renderer::BuildPipelineState(PassHandle pass)
         {
             auto const& [bind, name] = bindings[k];
             auto const& [binding_set, binding] = bind;
-            auto const& hdl = var_handles[name];
             CHECK_MSG(var_types.contains(name),
                       "Binding {} is undefined in pass {}, but referenced by one of its shaders", name, tracked.name);
             auto const& type = var_types[name];
@@ -790,34 +806,61 @@ void Renderer::BuildPipelineState(PassHandle pass)
                 {
                     CHECK_MSG(var_samplers.contains(name),
                               "Shader expects a Sampler at {}, but it's not bound by pass {}", name, tracked.name);
-                    auto& sampler_handle = var_samplers[name];
-                    auto* sampler = DerefSampler(sampler_handle);
-                    ds->Update({.binding = binding, .type = type, .images = {{{.sampler = sampler}}}});
+                    auto samplers = var_samplers.find(name)->second;
+                    for (uint e = 0; e < samplers.size(); e++)
+                    {
+                        ds->Update({.binding = binding,
+                                    .startIndex = e,
+                                    .type = type,
+                                    .images = {{{.sampler = DerefSampler(samplers[e])}}}});
+                    }
                     break;
                 }
             case SampledImage:
             case StorageImage:
                 {
-                    auto* view = DerefTextureView(hdl);
-                    ds->Update({.binding = binding,
-                                .type = type,
-                                .images = {{{.imageView = view,
-                                             .layout = type == SampledImage ? RHITextureLayout::ShaderReadOnly
-                                                                            : RHITextureLayout::General}}}});
+                    CHECK_MSG(var_handles.contains(name),
+                              "Shader expects an Image at {}, but it's not bound by pass {}", name, tracked.name);
+                    auto images = var_handles.find(name)->second;
+                    for (uint e = 0; e < images.size(); e++)
+                    {
+                        auto* view = DerefTextureView(images[e]);
+                        ds->Update({.binding = binding,
+                                    .startIndex = e,
+                                    .type = type,
+                                    .images = {{{.imageView = view,
+                                                 .layout = type == SampledImage ? RHITextureLayout::ShaderReadOnly
+                                                                                : RHITextureLayout::General}}}});
+                    }
                     break;
                 }
             case UniformBuffer:
             case StorageBuffer:
                 {
-                    auto* buf = DerefResource(hdl).Get<RHIBuffer*>();
-                    ds->Update({.binding = binding, .type = type, .buffers = {{{.buffer = buf}}}});
+                    CHECK_MSG(var_handles.contains(name),
+                              "Shader expects an Buffer at {}, but it's not bound by pass {}", name, tracked.name);
+                    auto buffers = var_handles.find(name)->second;
+                    for (uint e = 0; e < buffers.size(); e++)
+                    {
+                        auto* buf = DerefResource(buffers[e]).Get<RHIBuffer*>();
+                        ds->Update({.binding = binding, .startIndex = e, .type = type, .buffers = {{{.buffer = buf}}}});
+                    }
                     break;
                 }
             case AccelerationStructure:
                 {
-                    auto* as = DerefResource(hdl).Get<RHIAccelerationStructure*>();
-                    ds->Update({.binding = binding, .type = type, .accelerationStructures = {{{.as = as}}}});
-                    break;
+                    CHECK_MSG(var_handles.contains(name),
+                              "Shader expects an Acceleration Structure at {}, but it's not bound by pass {}", name,
+                              tracked.name);
+                    auto asses = var_handles.find(name)->second;
+                    for (uint e = 0; e < asses.size(); e++)
+                    {
+                        auto* as = DerefResource(asses[e]).Get<RHIAccelerationStructure*>();
+                        ds->Update({.binding = binding,
+                                    .startIndex = e,
+                                    .type = type,
+                                    .accelerationStructures = {{{.as = as}}}});
+                    }
                 }
             default:
                 break;
