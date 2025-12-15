@@ -204,9 +204,19 @@ RHITextureScopedHandle<RHITextureView> VulkanTexture::CreateTextureView(RHITextu
         type = vk::ImageViewType::e2D;
         break;
     case E3D:
-    default:
         type = vk::ImageViewType::e3D;
         break;
+    case ECube:
+        type = vk::ImageViewType::eCube;
+        break;
+    case E1DArray:
+        type = vk::ImageViewType::e1DArray;
+        break;
+    case E2DArray:
+        type = vk::ImageViewType::e2DArray;
+        break;
+    case ECubeArray:
+        type = vk::ImageViewType::eCubeArray;
     }
     auto image_view = device.createImageView(
         vk::ImageViewCreateInfo{

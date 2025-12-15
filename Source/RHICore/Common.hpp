@@ -200,7 +200,8 @@ namespace Foundation::RHI {
         E1, E2, E4, E8, E16
     };
     enum class RHITextureDimension {
-        E1D, E2D, E3D
+        E1D, E2D, E3D,
+        ECube, E1DArray,E2DArray, ECubeArray
     };
 
     BITMASK_ENUM_BEGIN(RHIShaderStage, uint32_t)

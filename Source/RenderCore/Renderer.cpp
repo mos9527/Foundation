@@ -77,7 +77,7 @@ void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPi
         CHECK_MSG(h != handle, "Redeclaration of buffer resource {} in pass {} detected.", resource.name,
                   mSetup->trackedPasses[pass].name);
     // Add edge
-    if (resource.lastBufferState.producer != kInvalidHandle)
+    if (resource.lastBufferState.producer != kInvalidHandle && resource.lastBufferState.producer != pass)
         mSetup->add_edge(pass, resource.lastBufferState.producer, handle);
     // Set producer
     if (access & kAllShaderWrites)
@@ -96,7 +96,7 @@ void Renderer::DeclareTextureAccess(PassHandle pass, ResourceHandle handle, RHIP
     for (auto& sta : resource.GetLastSubresourceStateOf(range))
     {
         // Add edge
-        if (sta.producer != kInvalidHandle)
+        if (sta.producer != kInvalidHandle && sta.producer != pass)
             mSetup->add_edge(pass, sta.producer, handle);
         // Set producer
         if (access & kAllShaderWrites)
@@ -190,8 +190,8 @@ void Renderer::BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDevi
     CHECK(mState == State::Setup);
     mSetup->trackedPasses[pass].externalBindings.emplace_back(bind_point, layout, ~0u);
 }
-void Renderer::BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point,
-                                        RHIPipelineStage stage, RHITextureViewDesc const& desc) const
+void Renderer::BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point, RHIPipelineStage stage,
+                              RHITextureViewDesc const& desc) const
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(desc.range.IsValid(), "Binding SRV on {} is of invalid range! Did you specify `desc.range`?",
@@ -202,8 +202,8 @@ void Renderer::BindTextureSRV(PassHandle pass, ResourceHandle texture, StringVie
     mSetup->trackedPasses[pass].textureBindings.emplace_back(view, RHIDescriptorType::SampledImage, bind_point);
     mSetup->bindingCounts[RHIDescriptorType::SampledImage]++;
 }
-void Renderer::BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView bind_point,
-                                        RHIPipelineStage stage, RHITextureViewDesc const& desc) const
+void Renderer::BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView bind_point, RHIPipelineStage stage,
+                              RHITextureViewDesc const& desc) const
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(desc.range.IsValid(), "Binding UAV on {} is of invalid range! Did you specify `desc.range`?",
@@ -216,7 +216,7 @@ void Renderer::BindTextureUAV(PassHandle pass, ResourceHandle texture, StringVie
     mSetup->bindingCounts[RHIDescriptorType::StorageImage]++;
 }
 void Renderer::BindTextureRTV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc,
-                                        RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending) const
+                              RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending) const
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(desc.range.IsValid(), "Binding RTV on {} is of invalid range! Did you specify `desc.range`?",
@@ -292,9 +292,10 @@ void Renderer::BindAccelerationStructureWrite(PassHandle pass, ResourceHandle as
 {
     CHECK(mState == State::Setup);
     mSetup->trackedPasses[pass].resources.emplace_back(as);
-    mSetup->trackedPasses[pass].asUsages.emplace_back(
-        as,RHIResourceAccessBits::AccelerationStructureWrite, RHIPipelineStageBits::AccelerationBuild);
-    if (mSetup->trackedResources[as].lastASState.lastProducer != kInvalidHandle)
+    mSetup->trackedPasses[pass].asUsages.emplace_back(as, RHIResourceAccessBits::AccelerationStructureWrite,
+                                                      RHIPipelineStageBits::AccelerationBuild);
+    if (mSetup->trackedResources[as].lastASState.lastProducer != kInvalidHandle &&
+        mSetup->trackedResources[as].lastASState.lastProducer != pass)
         mSetup->add_edge(pass, mSetup->trackedResources[as].lastASState.lastProducer, as);
     mSetup->trackedResources[as].lastASState.lastProducer = pass;
 }
@@ -307,7 +308,8 @@ void Renderer::BindAccelerationStructureSRV(PassHandle pass, ResourceHandle as, 
     mSetup->trackedPasses[pass].asUsages.emplace_back(
         as, RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::AccelerationStructureRead, stage);
     mSetup->bindingCounts[RHIDescriptorType::AccelerationStructure]++;
-    if (mSetup->trackedResources[as].lastASState.lastProducer != kInvalidHandle)
+    if (mSetup->trackedResources[as].lastASState.lastProducer != kInvalidHandle &&
+        mSetup->trackedResources[as].lastASState.lastProducer != pass)
         mSetup->add_edge(pass, mSetup->trackedResources[as].lastASState.lastProducer, as);
 }
 void Renderer::PassSetRasterizerFlags(PassHandle pass,
@@ -372,6 +374,9 @@ void Renderer::CullPasses(PassHandle epilogue) const
             }
         }
     }
+    // Check for cycles
+    for (size_t u = 0; u < in.size(); u++)
+        CHECK_MSG(in[u] == 0, "Cycle detected in RenderGraph at pass {}!!!", mSetup->trackedPasses[u].name);
     // Sort by longest path
     // Ordering is still valid topological order
     Ranges::sort(topo, [&](auto const& a, auto const& b) { return dis[a] > dis[b]; });
@@ -1479,9 +1484,9 @@ void Renderer::ExecuteFrame()
                     (*cmd)->BeginTransition();
                     for (auto& [res, desc] : (*barriers))
                     {
-                        res.Visit([&](RHIBuffer* p) { (*cmd)->SetBufferTransition(p, desc); },
-                                  [&](RHITexture* p) { (*cmd)->SetImageTransition(p, desc); },
-                                  [&](RHIAccelerationStructure* p) { (*cmd)->SetAccelerationStructureTransition(p, desc); });
+                        res.Visit([&](RHIBuffer* p) { (*cmd)->SetBufferTransition(p, desc); }, [&](RHITexture* p)
+                                  { (*cmd)->SetImageTransition(p, desc); }, [&](RHIAccelerationStructure* p)
+                                  { (*cmd)->SetAccelerationStructureTransition(p, desc); });
                     }
                     (*cmd)->EndTransition();
                     (*cmd)->DebugBegin(pass->name.c_str());

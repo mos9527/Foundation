@@ -122,15 +122,9 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
     if (cfg.viewFlags & kViewEnableRaytracing)
     {
         renderer->CreatePass(
-            "TLAS Update", RHIDeviceQueueType::Compute, 0u,
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindAccelerationStructureWrite(self, TLAS);
-            },
-            [=](PassHandle, Renderer* r, RHICommandList* cmd)
-            {
-                gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, true);
-            });
+            "TLAS Update", RHIDeviceQueueType::Compute, 0u, [=](PassHandle self, Renderer* r)
+            { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
+            { gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, true); });
     }
     const auto kIndirectBufferClearTransition = RHICommandList::TransitionDesc{
         .srcAccess = RHIResourceAccessBits::TransferWrite,
@@ -360,10 +354,11 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                     cmd->EndGraphics();
                 });
             if (early && cfg.cullFlags & kCullOcclusion)
-                createCSMipGenerationPasses(renderer, "Early HiZ", RHIDeviceQueueType::Graphics, ZBuffer, HIZ,
-                                            RHIExtent2D{w, h}, RHITextureAspectFlagBits::Depth,
-                                            RHIResourceFormat::D32SignedFloat, RHITextureAspectFlagBits::Color,
-                                            RHIResourceFormat::R32SignedFloat, HIZMips, 0, HIZSamplerDesc);
+                createCSMipGenerationSinglePass(renderer, "Early HiZ Mip Gen", RHIDeviceQueueType::Graphics, ZBuffer,
+                                                HIZ, RHIResourceFormat::D32SignedFloat,
+                                                RHIResourceFormat::R32SignedFloat, RHITextureAspectFlagBits::Depth,
+                                                RHITextureAspectFlagBits::Color, HIZSampler, HIZMips, 1,
+                                                HIZSamplerDesc.reduction);
         };
         AddCullPass(true), AddMainPass(true);
         if (cfg.cullFlags & kCullOcclusion)
