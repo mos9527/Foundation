@@ -31,9 +31,10 @@ namespace Foundation::RenderUtils
                                           {.format = srcFormat,
                                            .range = RHITextureSubresourceRange::Create(srcAspect, 0, 1, layer, 1)});
                     else
-                        r->BindTextureSRV(self, dst, "srcTexture", RHIPipelineStageBits::ComputeShader,
-                                          {.format = dstFormat,
-                                           .range = RHITextureSubresourceRange::Create(dstAspect, dstMipLevel - 1, 1, layer, 1)});
+                        r->BindTextureSRV(
+                            self, dst, "srcTexture", RHIPipelineStageBits::ComputeShader,
+                            {.format = dstFormat,
+                             .range = RHITextureSubresourceRange::Create(dstAspect, dstMipLevel - 1, 1, layer, 1)});
                     r->BindTextureUAV(
                         self, dst, "dstTexture", RHIPipelineStageBits::ComputeShader,
                         {.format = dstFormat,
@@ -86,11 +87,12 @@ namespace Foundation::RenderUtils
 
             numWorkGroups = (dispatchThreadGroupCountXY[0]) * (dispatchThreadGroupCountXY[1]);
         };
-        auto SpdCounter = renderer->CreateResource(fmt::format("{} SPD Atomics", name),
-                                                   RHIBufferDesc{
-                                                       .usage = RHIBufferUsageBits::StorageBuffer,
-                                                       .size = sizeof(uint) * 6,
-                                                   });
+        auto SpdCounter = renderer->CreateResource(
+            fmt::format("{} SPD Atomics", name),
+            RHIBufferDesc{
+                .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
+                .size = sizeof(uint) * 6,
+            });
         renderer->CreatePass(
             name, queue, 0u,
             [=](PassHandle self, Renderer* r)
@@ -152,6 +154,21 @@ namespace Foundation::RenderUtils
                     pc.extents *= 2, pc.mips++;
                 uint2 dispatchThreadGroupCountXY;
                 SpdSetup(dispatchThreadGroupCountXY, pc.numWorkGroups, pc.extents);
+                if (r->GetFrame() == 0)
+                {
+                    auto* ctr = r->DerefResource(SpdCounter).Get<RHIBuffer*>();
+                    cmd->FillBuffer(ctr, 0u);
+                    cmd->BeginTransition();
+                    cmd->SetBufferTransition(
+                        ctr,
+                        {
+                            .srcAccess = RHIResourceAccessBits::TransferWrite,
+                            .dstAccess = RHIResourceAccessBits::ShaderWrite,
+                            .srcStage = RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::Transfer,
+                            .dstStage = RHIPipelineStageBits::ComputeShader,
+                        });
+                    cmd->EndTransition();
+                }
                 r->CmdSetPipeline(self, cmd);
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, pc);
                 cmd->Dispatch(dispatchThreadGroupCountXY.x, dispatchThreadGroupCountXY.y, 1);
