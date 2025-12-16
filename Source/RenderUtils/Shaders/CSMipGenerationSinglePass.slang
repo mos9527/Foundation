@@ -53,10 +53,11 @@ AH4 SpdLoadH(ASU2 tex, AU1 slice)
 }
 void SpdStoreH(ASU2 pix, AH4 outValue, AU1 index, AU1 slice)
 {
-    if (index != 5)
+    if (index != 5){
         imgDst[index][uint3(pix, slice)] = outValue;
-   else
-        imgDst6[uint3(pix, slice)] = outValue;
+        return;
+    }
+    imgDst6[uint3(pix, slice)] = outValue;
 }
 void SpdIncreaseAtomicCounter(AU1 slice)
 {

@@ -6,8 +6,7 @@ namespace Foundation::RenderUtils
     using namespace RenderCore;
     /**
      * @brief Generates full mip-chain with multiple compute dispatches.
-     * @note MIP 0 is NEVER copied when src != dst.
-     *       You need a separate copy, or a blit if you *really* want that. This can usually be avoided.
+     * @note When src != dst, the first *generated* mip (i.e. mip 1 of the src) is written to the dst's mip *0*.
      */
     inline void createCSMipGenerationPasses(Renderer* renderer, StringView name, RHIDeviceQueueType queue,
                                             ResourceHandle src, ResourceHandle dst, RHIResourceFormat srcFormat,
@@ -24,6 +23,9 @@ namespace Foundation::RenderUtils
                 {
                     r->BindTextureSampler(self, srcSampler, "sampler");
                     r->BindShader(self, RHIShaderStageBits::Compute, "csMain", "data/shaders/CSMipGeneration.spv");
+                    uint32_t dstMipLevel = i;
+                    if (src != dst)
+                        dstMipLevel--;
                     if (i == 1)
                         r->BindTextureSRV(self, src, "srcTexture", RHIPipelineStageBits::ComputeShader,
                                           {.format = srcFormat,
@@ -31,10 +33,11 @@ namespace Foundation::RenderUtils
                     else
                         r->BindTextureSRV(self, dst, "srcTexture", RHIPipelineStageBits::ComputeShader,
                                           {.format = dstFormat,
-                                           .range = RHITextureSubresourceRange::Create(dstAspect, i - 1, 1, layer, 1)});
+                                           .range = RHITextureSubresourceRange::Create(dstAspect, dstMipLevel - 1, 1, layer, 1)});
                     r->BindTextureUAV(
                         self, dst, "dstTexture", RHIPipelineStageBits::ComputeShader,
-                        {.format = dstFormat, .range = RHITextureSubresourceRange::Create(dstAspect, i, 1, layer, 1)});
+                        {.format = dstFormat,
+                         .range = RHITextureSubresourceRange::Create(dstAspect, dstMipLevel, 1, layer, 1)});
                     r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(float2));
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -42,8 +45,11 @@ namespace Foundation::RenderUtils
                     RHITexture* dstTex = r->DerefResource(dst).Get<RHITexture*>();
                     RHIExtent3D extent = dstTex->mDesc.extent;
                     r->CmdSetPipeline(self, cmd);
-                    uint32_t w = std::max(1u, extent.x >> i);
-                    uint32_t h = std::max(1u, extent.y >> i);
+                    uint32_t mipIndex = i;
+                    if (src != dst)
+                        mipIndex--;
+                    uint32_t w = std::max(1u, extent.x >> mipIndex);
+                    uint32_t h = std::max(1u, extent.y >> mipIndex);
                     r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, float2{w, h});
                     r->CmdDispatch(self, cmd, {w, h, 1});
                 });
@@ -51,8 +57,7 @@ namespace Foundation::RenderUtils
     }
     /**
      * @brief Generates full mip-chain with a single compute dispatch.
-     * @note MIP 0 is NEVER copied when src != dst.
-     *       You need a separate copy, or a blit if you *really* want that. This can usually be avoided.
+     * @note When src != dst, the first *generated* mip (i.e. mip 1 of the src) is written to the dst's mip *0*.
      */
     inline void createCSMipGenerationSinglePass(
         Renderer* renderer, StringView name, RHIDeviceQueueType queue, ResourceHandle src, ResourceHandle dst,
@@ -63,7 +68,7 @@ namespace Foundation::RenderUtils
         using namespace Math;
         struct PushConstants
         {
-            uint2 srcExtents;
+            uint2 extents;
             uint mips;
             uint numWorkGroups;
         };
@@ -118,33 +123,35 @@ namespace Foundation::RenderUtils
                                   });
                 for (uint mip = 1; mip <= 12; mip++)
                 {
-                    r->BindTextureUAV(self, dst, "imgDst", RHIPipelineStageBits::ComputeShader,
-                                      {
-                                          .format = dstFormat,
-                                          .dimension = RHITextureDimension::E2DArray,
-                                          // Later mip levels won't be used by shader if numMips is smaller
-                                          // Binding is still required, so repeat the last one.
-                                          // Furthermore, for same src/dst, the MIP 0 is not written to.
-                                          .range = RHITextureSubresourceRange::Create(
-                                              dstAspect, std::min(dst != src ? mip : (std::max(1u, mip)), numMips - 1u),
-                                              1, 0, numLayer),
-                                      });
+                    uint32_t dstMipLevel = mip;
+                    if (src != dst)
+                        dstMipLevel--;
+                    dstMipLevel = std::min(dstMipLevel, numMips - 1);
+                    r->BindTextureUAV(
+                        self, dst, "imgDst", RHIPipelineStageBits::ComputeShader,
+                        {
+                            .format = dstFormat,
+                            .dimension = RHITextureDimension::E2DArray,
+                            .range = RHITextureSubresourceRange::Create(dstAspect, dstMipLevel, 1, 0, numLayer),
+                        });
                     if (mip == 6)
-                        r->BindTextureUAV(self, dst, "imgDst6", RHIPipelineStageBits::ComputeShader,
-                                          {
-                                              .format = dstFormat,
-                                              .dimension = RHITextureDimension::E2DArray,
-                                              .range = RHITextureSubresourceRange::Create(
-                                                  dstAspect, std::min(mip, numMips - 1u), 1, 0, numLayer),
-                                          });
+                        r->BindTextureUAV(
+                            self, dst, "imgDst6", RHIPipelineStageBits::ComputeShader,
+                            {
+                                .format = dstFormat,
+                                .dimension = RHITextureDimension::E2DArray,
+                                .range = RHITextureSubresourceRange::Create(dstAspect, dstMipLevel, 1, 0, numLayer),
+                            });
                 }
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
                 auto* dstTex = r->DerefResource(dst).Get<RHITexture*>();
-                PushConstants pc{.srcExtents = {dstTex->mDesc.extent.x, dstTex->mDesc.extent.y}, .mips = numMips};
+                PushConstants pc{.extents = {dstTex->mDesc.extent.x, dstTex->mDesc.extent.y}, .mips = numMips};
+                if (src != dst) // Work starts from src mip 0
+                    pc.extents *= 2, pc.mips++;
                 uint2 dispatchThreadGroupCountXY;
-                SpdSetup(dispatchThreadGroupCountXY, pc.numWorkGroups, pc.srcExtents);
+                SpdSetup(dispatchThreadGroupCountXY, pc.numWorkGroups, pc.extents);
                 r->CmdSetPipeline(self, cmd);
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, pc);
                 cmd->Dispatch(dispatchThreadGroupCountXY.x, dispatchThreadGroupCountXY.y, 1);

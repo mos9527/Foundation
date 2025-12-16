@@ -23,7 +23,6 @@ struct MeshletTaskWork
 constexpr size_t kMeshWorkGroupSize = 64;
 constexpr size_t kMaxMeshletCount = 1e6;
 constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
-constexpr size_t kMeshIndirectPerDrawMeshlets = 65536;
 void RendererSetupImGuiOnly(FContext* context)
 {
     if (context->renderer)
@@ -166,6 +165,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         HIZWidth *= 2;
     if (HIZHeight * 2 < w)
         HIZHeight *= 2;
+    HIZWidth /= 2, HIZHeight /= 2;
     const uint32_t HIZMips = glm::log2(std::max(HIZWidth, HIZHeight)) + 1u;
     const uint32_t FullMips = glm::log2(std::max(w, h)) + 1u;
     scene.gsGlobals->hizWidth = HIZWidth, scene.gsGlobals->hizHeight = HIZHeight, scene.gsGlobals->hizLevels = HIZMips;
