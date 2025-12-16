@@ -20,14 +20,14 @@ struct UBO
     uint32_t hizWidth;
     uint32_t hizHeight;
     // -- Lighting
-    float camMinEV{9.0f};
+    float camMinEV{2.0f};
     float camMaxEV{16.0f};
     float camAdaptCoeff; // 1 - exp(-dt * tau)
     float3 camPosition;
     float3 camDirection;
     float3 sunDirection{0, 0, -1};
     float sunIntensity{120'000.0f};
-    float3 ambientColor{2e4,2e4,2e4};
+    float3 ambientColor{1e2,1e2,1e2};
 };
 #pragma pack(pop)
 

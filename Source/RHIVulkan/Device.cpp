@@ -113,6 +113,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
              .samplerFilterMinmax = true,
              .scalarBlockLayout = true,
              .uniformBufferStandardLayout = true,
+             .shaderSubgroupExtendedTypes = true,
              .hostQueryReset = true,
              .timelineSemaphore = true,
              .bufferDeviceAddress = true}, // vk::PhysicalDeviceVulkan12Features

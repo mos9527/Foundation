@@ -4,6 +4,11 @@
 namespace Foundation::RenderUtils
 {
     using namespace RenderCore;
+    /**
+     * @brief Generates full mip-chain with multiple compute dispatches.
+     * @note MIP 0 is NEVER copied when src != dst.
+     *       You need a separate copy, or a blit if you *really* want that. This can usually be avoided.
+     */
     inline void createCSMipGenerationPasses(Renderer* renderer, StringView name, RHIDeviceQueueType queue,
                                             ResourceHandle src, ResourceHandle dst, RHIResourceFormat srcFormat,
                                             RHIResourceFormat dstFormat, RHITextureAspectFlagBits srcAspect,
@@ -11,17 +16,15 @@ namespace Foundation::RenderUtils
                                             uint32_t numMips, uint32_t layer = 0)
     {
         using namespace Math;
-        for (uint32 i = 0; i < numMips; ++i)
+        for (uint32 i = 1; i < numMips; ++i)
         {
-            if (i == 0 && src == dst)
-                continue;
             renderer->CreatePass(
                 fmt::format("Mip Gen {} {}", i, name), queue, 0u,
                 [=](PassHandle self, Renderer* r)
                 {
                     r->BindTextureSampler(self, srcSampler, "sampler");
                     r->BindShader(self, RHIShaderStageBits::Compute, "csMain", "data/shaders/CSMipGeneration.spv");
-                    if (i == 0)
+                    if (i == 1)
                         r->BindTextureSRV(self, src, "srcTexture", RHIPipelineStageBits::ComputeShader,
                                           {.format = srcFormat,
                                            .range = RHITextureSubresourceRange::Create(srcAspect, 0, 1, layer, 1)});
@@ -46,7 +49,11 @@ namespace Foundation::RenderUtils
                 });
         }
     }
-
+    /**
+     * @brief Generates full mip-chain with a single compute dispatch.
+     * @note MIP 0 is NEVER copied when src != dst.
+     *       You need a separate copy, or a blit if you *really* want that. This can usually be avoided.
+     */
     inline void createCSMipGenerationSinglePass(
         Renderer* renderer, StringView name, RHIDeviceQueueType queue, ResourceHandle src, ResourceHandle dst,
         RHIResourceFormat srcFormat, RHIResourceFormat dstFormat, RHITextureAspectFlag srcAspect,
@@ -79,16 +86,6 @@ namespace Foundation::RenderUtils
                                                        .usage = RHIBufferUsageBits::StorageBuffer,
                                                        .size = sizeof(uint) * 6,
                                                    });
-        // Lend thy strength. And save me some registers for actual downsampling.       
-        if (src != dst) 
-            for (int layer = 0; layer < numLayer; layer++)
-                createCSMipGenerationPasses(
-                    renderer, fmt::format("{} Blit", name),
-                    queue, src, dst, 
-                    srcFormat, dstFormat, 
-                    srcAspect, dstAspect, 
-                    srcSampler, 1, layer
-                );
         renderer->CreatePass(
             name, queue, 0u,
             [=](PassHandle self, Renderer* r)

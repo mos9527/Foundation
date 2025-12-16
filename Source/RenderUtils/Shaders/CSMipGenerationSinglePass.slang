@@ -9,9 +9,7 @@ struct PushConstants {
 SamplerState srcSampler;
 
 Texture2DArray<float4> imgSrc;
-// XXX: Renderer doesn't do automatic SRV/UAV Array binding yet.
-// Since there's no other usage that may require arrays of which, this is used as a workaround.
-RWTexture2DArray<float4> imgDst[];
+RWTexture2DArray<float4> imgDst[12];
 globallycoherent RWTexture2DArray<float4> imgDst6;
 // -- begin SPD definitions
 struct SpdGlobalAtomicBuffer
@@ -90,7 +88,7 @@ AH4 SpdReduce4H(AH4 v0, AH4 v1, AH4 v2, AH4 v3)
     if (reductionMode == 1)
         return min(min(v0, v1), min(v2, v3));
     if (reductionMode == 2)
-        return max(max(v0, v1), max(v2, v3));    
+        return max(max(v0, v1), max(v2, v3));
     return (v0+v1+v2+v3)*half(0.25);
 }
 #include "ThirdParty/ffx_spd.h"

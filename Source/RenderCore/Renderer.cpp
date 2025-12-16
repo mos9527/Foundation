@@ -454,6 +454,8 @@ void Renderer::CullPasses(PassHandle epilogue) const
             j++;
             if (queue == RHIDeviceQueueType::Graphics && nextProducedByCompute && !currentProducedByCompute)
                 break; // Start new group
+            if (queue == RHIDeviceQueueType::Graphics && currentProducedByCompute)
+                break; // Start new group
         }
         auto& group =
             groups.emplace_back(static_cast<int>(groups.size()), mSetup->trackedPasses[exec[i]].queue, mAllocator);
@@ -1798,7 +1800,9 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
         RHITexture* res = DerefResource(rhdl).Get<RHITexture*>();
         CHECK_MSG(res->mDesc.extent.x >= extent.x && res->mDesc.extent.y >= extent.y,
                   "Graphics extent too large for Render Target on {}", tres.name);
-        rtvs.push_back({.imageView = DerefTextureView(rtv), .clearColor = clear_rtv[i]});
+        // Skip clear if possible.
+        // This is applied when clearColor is not set, and blending is also disabled.
+        rtvs.push_back({.imageView = DerefTextureView(rtv), .clearColor = clear_rtv[i], .loadDontCare = !blending.enabled});
     }
     if (tpass.dsv != kInvalidHandle)
     {
