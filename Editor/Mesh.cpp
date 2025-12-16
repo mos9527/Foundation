@@ -143,12 +143,6 @@ void FMesh::Compress()
                                                    lod.indices.data(), lod.indicesCompressedCount);
         lod.indicesCompressed.resize(idxSize);
     }
-    dag.meshletVtxCompressedCount = dag.meshletVtx.size();
-    dag.meshletVtxCompressed.resize(
-        meshopt_encodeIndexBufferBound(dag.meshletVtxCompressedCount, verticesCompressedCount));
-    size_t idxSize = meshopt_encodeIndexBuffer(dag.meshletVtxCompressed.data(), dag.meshletVtxCompressed.size(),
-                                               dag.meshletVtx.data(), dag.meshletVtxCompressedCount);
-    dag.meshletVtxCompressed.resize(idxSize);
 }
 void FMesh::Decompress()
 {
@@ -165,10 +159,6 @@ void FMesh::Decompress()
         CHECK(meshopt_decodeIndexBuffer(lod.indices.data(), lod.indicesCompressedCount, lod.indicesCompressed.data(),
                                   lod.indicesCompressed.size()) == 0);
     }
-    CHECK_MSG(dag.meshletVtxCompressedCount > 0, "No compressed meshlet vertex data");
-    dag.meshletVtx.resize(dag.meshletVtxCompressedCount);
-    CHECK(meshopt_decodeIndexBuffer(dag.meshletVtx.data(), dag.meshletVtxCompressedCount, dag.meshletVtxCompressed.data(),
-                              dag.meshletVtxCompressed.size()) == 0);
 }
 // -- optimize
 template <typename Vertex, typename Index>

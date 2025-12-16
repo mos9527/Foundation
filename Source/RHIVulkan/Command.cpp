@@ -64,6 +64,7 @@ RHICommandList& VulkanCommandList::Begin()
                                                               : vk::CommandBufferUsageFlags{}};
     mCommandBuffer.begin(beginInfo);
     mAllocator = mCommandPool.GetDevice().GetAllocator();
+    mLastPSO = nullptr;
     return *this;
 }
 RHICommandList& VulkanCommandList::BeginTransition()
@@ -151,6 +152,7 @@ RHICommandList& VulkanCommandList::SetPipeline(PipelineDesc const& desc)
     CHECK(desc.pipeline && "Pipeline is invalid.");
     mCommandBuffer.bindPipeline(vkPipelineBindPointFromRHIDevicePipelineType(desc.type),
                                 *static_cast<VulkanPipelineState*>(desc.pipeline)->GetVkPipeline());
+    mLastPSO = desc.pipeline;
     return *this;
 }
 
@@ -513,6 +515,14 @@ RHICommandList& VulkanCommandList::BuildAccelerationStructure(Span<const RHIAcce
     mCommandBuffer.buildAccelerationStructuresKHR(infos, pRanges);
     return *this;
 }
+
+RHICommandList& VulkanCommandList::TraceRays(uint32_t width, uint32_t height, uint32_t depth)
+{
+    CHECK(mAllocator && "Invalid command list states.");
+    // TODO.
+    return *this;
+}
+
 RHICommandList& VulkanCommandList::WriteTimestamp(RHIDeviceQueryPool* pool, RHIPipelineStageBits stage,
                                                   uint32_t queryIndex)
 {

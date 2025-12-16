@@ -114,11 +114,6 @@ void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entr
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(stage.is_bitmask(), "Only one stage can be bound to a shader per pass");
-    for (auto const& [path, ep, st, spec] : mSetup->trackedPasses[pass].shaders)
-        CHECK_MSG(!(st & stage),
-                  "Shader stage {} already bound to {} in this pass. There can be at most one shader program per "
-                  "shader stage per pass",
-                  st, path);
     auto& [path, ep, st, spec] =
         mSetup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage, mAllocator);
     spec.insert(spec.end(), specializationData.begin(), specializationData.end());
@@ -534,6 +529,9 @@ void Renderer::BuildPipelineState(PassHandle pass)
         // In BindShader we have already guaranteed these to be unique per stage
         if (stage & RHIShaderStageBits::Compute)
             tracked.isComputePass = true, tracked.piplineStages |= RHIPipelineStageBits::ComputeShader;
+        if (stage & (RHIShaderStageBits::RayAnyHit | RHIShaderStageBits::RayClosestHit | RHIShaderStageBits::RayMiss |
+                      RHIShaderStageBits::RayIntersection | RHIShaderStageBits::RayGeneration))
+            tracked.isRayTracingPass = true, tracked.piplineStages |= RHIPipelineStageBits::RayTracingShader;
         if (stage & RHIShaderStageBits::Fragment)
             tracked.piplineStages |= RHIPipelineStageBits::FragmentShader;
         if (stage & RHIShaderStageBits::Vertex)
@@ -891,7 +889,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
         tracked.pso.Reset();
         RHIPipelineState::PipelineStateDesc pso_desc{
             .psoCache = mDesc.pipelineCache,
-            .type = tracked.isComputePass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
+            .type = tracked.GetPipelineType(),
             .vertexInput = {.bindings = tracked.vertexInputBindings, .attributes = tracked.vertexInputAttributes},
             .topology = RHIPipelineState::PipelineStateDesc::TriangleList,
             .rasterizer = tracked.psoRasterizer,
@@ -1748,9 +1746,9 @@ void Renderer::CmdSetPipeline(PassHandle pass, RHICommandList* cmd) const
     auto& tpass = mSetup->trackedPasses[pass];
     CHECK_MSG(tpass.pso.IsValid(), "Current pass {} has no Pipeline state.", tpass.name);
     cmd->SetPipeline({.pipeline = tpass.pso.Get(),
-                      .type = tpass.isComputePass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics});
+                      .type = tpass.GetPipelineType()});
     if (!tpass.pDescriptorSets.empty())
-        cmd->BindDescriptorSet(tpass.isComputePass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
+        cmd->BindDescriptorSet(tpass.GetPipelineType(),
                                tpass.pso.Get(), tpass.pDescriptorSets, 0);
     if (tpass.backbufferUAV)
         CmdBindDescriptorSet(pass, cmd, tpass.backbufferUAV.value(), mSwaps[GetSwap()].viewSet.Get());
@@ -1761,7 +1759,7 @@ void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, uint32
     CHECK(mState == State::Execute);
     auto& tpass = mSetup->trackedPasses[pass];
     CHECK_MSG(tpass.pso.IsValid(), "Current pass has no Pipeline state.");
-    cmd->BindDescriptorSet(tpass.isComputePass ? RHIDevicePipelineType::Compute : RHIDevicePipelineType::Graphics,
+    cmd->BindDescriptorSet(tpass.GetPipelineType(),
                            tpass.pso.Get(), {{descriptor_set}}, set_index);
 }
 void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, StringView bind_point,

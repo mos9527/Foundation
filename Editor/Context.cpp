@@ -42,8 +42,6 @@ FContext* CreateContext(SDL_Window* window, Allocator* allocator)
         .primitiveBudget = 512 * (1u << 20) // 512 MB
     });
     UpdateSwapchain(context);
-    ImGui_ImplFoundation_SetupContextWithDefaultStyles();
-    ImGui_ImplFoundation_Init(context->device.Get(), context->window);
     return GContext = context;
 }
 
@@ -53,7 +51,6 @@ void DestroyContext(FContext* context)
     if (!context)
         return;
     context->device->WaitIdle();
-    ImGui_ImplFoundation_Shutdown();
     SDL_DestroyWindow(context->window);
     Destruct(context->allocator, context->renderer);
     Destruct(context->allocator, context->gpuScene);

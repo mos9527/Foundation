@@ -64,3 +64,5 @@ struct RendererScene
     Vector<uint32_t>* gsBLASes;   
 };
 extern void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene);
+extern void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene);
+

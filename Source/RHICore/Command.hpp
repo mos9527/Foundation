@@ -173,6 +173,8 @@ namespace Foundation::RHI
 #pragma region Raytracing
         virtual RHICommandList&
         BuildAccelerationStructure(Span<const RHIAccelerationStructureBuildDesc> desc) = 0;
+        virtual RHICommandList&
+        TraceRays(uint32_t width, uint32_t height, uint32_t depth) = 0;
 #pragma endregion
 #pragma region Tags & Query
         virtual RHICommandList& WriteTimestamp(RHIDeviceQueryPool* pool, RHIPipelineStageBits stage,

@@ -87,6 +87,9 @@ namespace Foundation::RenderCore
         // Uses compute shader? (not necessarily in a compute queue)
         // Should be mutually exclusive with write_backbuffer and other graphics states
         bool isComputePass{false};
+        // Uses RayGen/RayHit/RayMiss at all?
+        // Should be compatible with most graphics states, and can be run on either queue
+        bool isRayTracingPass{false};
         // Local size for compute/mesh shaders        
         Tuple<uint32_t, uint32_t, uint32_t> groupLocalSize{};
         size_t depth{}; // Depth in RG
@@ -150,6 +153,13 @@ namespace Foundation::RenderCore
         // [Set Index, Set, Layout], correspond to externalBindings
         Vector<Tuple<size_t, RHIDeviceDescriptorSetLayout*>> pExternalDescriptorSets;
 
+
+        RHIDevicePipelineType GetPipelineType() const
+        {
+            if (isComputePass) return RHIDevicePipelineType::Compute;
+            if (isRayTracingPass) return RHIDevicePipelineType::RayTracing;
+            return RHIDevicePipelineType::Graphics;
+        }
         void ResetPipeline();
     };
 }

@@ -106,7 +106,6 @@ namespace Foundation::RHI
 
         SDL_Window* mWindow;
 
-        vk::PhysicalDeviceProperties mProperties;
         vk::raii::PhysicalDevice mPhysicalDevice{nullptr};
         vk::raii::Device mDevice{nullptr};
         vk::raii::SurfaceKHR mSurface{nullptr};

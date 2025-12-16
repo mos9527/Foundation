@@ -1,3 +1,4 @@
+#include "ImGui.hpp"
 extern bool EditorProcessEvent(SDL_Event*);
 extern bool EditorOnFrame(FContext*);
 bool /* should close */ mainLoop()
@@ -25,9 +26,12 @@ bool /* should close */ mainLoop()
 constexpr int kSDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_VULKAN;
 int main(int argc, char** argv)
 {
-    CreateContext(SDL_CreateWindow("Editor", 2100/1.5, 900/1.5, kSDLWindowFlagsVulkan));
+    CreateContext(SDL_CreateWindow("Editor", 1920, 1080, kSDLWindowFlagsVulkan));
+    ImGui_ImplFoundation_SetupContextWithDefaultStyles();
+    ImGui_ImplFoundation_Init(GContext->device.Get(), GContext->window);
     GContext->args = Span(argv, argv + argc);
     while (!mainLoop()) {}
     LOG(SDLMain, LogInfo, "Quitting...");
+    ImGui_ImplFoundation_Shutdown();
     DestroyContext();
 }

@@ -131,10 +131,12 @@ namespace Foundation::RHI {
     enum class RHIDevicePipelineType {
         Graphics,
         Compute,
+        RayTracing
     };
     ENUM_NAME_CONV_BEGIN(RHIDevicePipelineType)
         ENUM_NAME(Graphics)
         ENUM_NAME(Compute)
+        ENUM_NAME(RayTracing)
     ENUM_NAME_CONV_END()
 
     enum class RHIDeviceHeapType {
@@ -292,6 +294,7 @@ namespace Foundation::RHI {
         DeviceAddress = 1 << 7,
         AccelerationStructureStorage = 1 << 8,
         AccelerationStructureBuildReadOnly = 1 << 9,
+        ShaderBindingTable = 1 << 10
     BITMASK_ENUM_END();
 
     BITMASK_ENUM_BEGIN(RHITextureUsage, uint32_t)

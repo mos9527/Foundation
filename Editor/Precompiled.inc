@@ -5,4 +5,3 @@
 #include "Scene.hpp"
 #include "Serialization.hpp"
 #include "Texture.hpp"
-#include "ImGui.hpp"

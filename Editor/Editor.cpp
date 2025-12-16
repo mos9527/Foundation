@@ -139,7 +139,7 @@ void FInit() { FEState = FERunningEnter; }
 RendererConfig GRendererConfig;
 void FRunningEnter()
 {
-    RendererSetup(GContext, GRendererConfig, {
+    PathTracerSetup(GContext, GRendererConfig, {
         .gsGlobals = &GShaderGlobals,
         .gsInstances = &GSInstances,
         .gsMaterials = &GSMaterials,

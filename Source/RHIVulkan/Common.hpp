@@ -65,6 +65,7 @@ namespace Foundation::RHI {
         if (usage & DeviceAddress) flags |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
         if (usage & AccelerationStructureStorage) flags |= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR;
         if (usage & AccelerationStructureBuildReadOnly) flags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
+        if (usage & ShaderBindingTable) flags |= vk::BufferUsageFlagBits::eShaderBindingTableKHR;
         return flags;
     }
 
