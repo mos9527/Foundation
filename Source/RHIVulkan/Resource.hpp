@@ -120,7 +120,7 @@ namespace Foundation::RHI
         VulkanAccelerationStructure(VulkanDevice const& device, RHIAccelerationStructureDesc const& desc);
 
         [[nodiscard]] auto& GetVkBuffer() const { return mBuffer->GetVkBuffer(); }
-        [[nodiscard]] auto& GetVkAccelerationStructure() { return mAS; }
+        [[nodiscard]] auto& GetVkAccelerationStructure()  { return mAS; }
         [[nodiscard]] vk::DeviceAddress GetVkAccelerationStructureAddress() const;
         void DebugSetObjectName(const char* name) override;
     };

@@ -84,6 +84,7 @@ namespace Foundation::RHI {
         RHICommandList& CopyBuffer(RHIBuffer* src_buffer, RHIBuffer* dst_buffer, Span<const CopyBufferRegion> regions) override;
         RHICommandList& CopyImage(RHITexture* src_image, RHITextureLayout src_layout, RHITexture* dst_image, RHITextureLayout dst_layout, Span<const CopyImageRegion> regions) override;
         RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image, RHITextureLayout dst_layout, Span<const CopyImageRegion> regions) override;
+        RHICommandList& CopyAccelerationStructure(RHIAccelerationStructure* src, RHIAccelerationStructure* dst, bool compact) override;
 
         RHICommandList& BeginGraphics(GraphicsDesc const& desc) override;
         RHICommandList& BindVertexBuffer(uint32_t index, Span<RHIBuffer* const> buffers, Span<const size_t> offsets) override;
@@ -96,6 +97,8 @@ namespace Foundation::RHI {
         RHICommandList& BuildAccelerationStructure(Span<const RHIAccelerationStructureBuildDesc> desc) override;
 
         RHICommandList& WriteTimestamp(RHIDeviceQueryPool* pool, RHIPipelineStageBits stage,uint32_t queryIndex) override;
+        RHICommandList& WriteAccelerationStructureCompactedSize(Span<RHIAccelerationStructure* const> as,
+                                                                 RHIDeviceQueryPool* pool, size_t queryIndex) override;
         RHICommandList& DebugBegin(const char* message) override;
         RHICommandList& DebugInsertMarker(const char* message) override;
         RHICommandList& DebugEnd() override;

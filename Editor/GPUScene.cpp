@@ -161,13 +161,15 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
 {
     CHECK_MSG(meshes.size() == outBLASIndices.size(), "Mismatched BLAS indices size");
     auto* device = mContext->device.Get();
+    // Build
     Vector<RHIAccelerationStructureGeometryInfo> geometries(meshes.size(), mContext->allocator);
     Vector<RHIAccelerationStructureBuildRangeInfo> buildRanges(meshes.size(), mContext->allocator);
     Vector<RHIAccelerationStructureBuildDesc> buildDesc(meshes.size(), mContext->allocator);
     Vector<RHIAccelerationStructureSizeInfo> sizeInfo(meshes.size(), mContext->allocator);
     Vector<uint32_t> blasOffsets(meshes.size(), mContext->allocator);
+    Vector<uint32_t> scratchOffsets(meshes.size(), mContext->allocator);
     auto* primitiveBuffer = mPrimitiveBuffer.Get();
-    uint32_t scratchFootprint = 0;    
+    uint32_t scratchOffset = 0, blasOffset = 0;
     for (size_t i = 0; i < meshes.size(); i++){
         auto const& mesh = meshes[i];
         auto& geo = geometries[i];
@@ -187,7 +189,7 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
         };
         range = RHIAccelerationStructureBuildRangeInfo{
             .primitiveCount = mesh.idxCount / 3
-        };        
+        };
         auto& desc = buildDesc[i];
         desc = RHIAccelerationStructureBuildDesc{
             .type = RHIAccelerationStructureType::BottomLevel,
@@ -197,10 +199,11 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
             .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&range, 1}
         };
         sizeInfo[i] = device->GetAccelerationStructureSizeInfo(desc);
-        blasOffsets[i] = mBLASOffset;
+        blasOffsets[i] = blasOffset;
         // minAccelerationStructureScratchOffsetAlignment is 256
-        mBLASOffset = AlignUp(mBLASOffset + sizeInfo[i].accelerationStructureSize, 256u);
-        scratchFootprint = std::max(scratchFootprint, sizeInfo[i].buildScratchSize);
+        blasOffset = AlignUp(blasOffset + sizeInfo[i].accelerationStructureSize, 256u);
+        scratchOffsets[i] = scratchOffset;
+        scratchOffset = AlignUp(scratchOffset + sizeInfo[i].buildScratchSize, 256u);
     }
     auto scratch = mContext->device->CreateBuffer(
     {
@@ -209,31 +212,34 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
                 .shared = false
             },
          .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress,
-         .size = scratchFootprint,
+         .size = scratchOffset,
          .alignment = 256 // Aligned to Vulkan spec. Should be large enough for other APIs as well?
     });
-    auto& buffer = mBLASBuffers.emplace_back(mContext->device->CreateBuffer(
+    auto buffer = mContext->device->CreateBuffer(
 {
         .resource = {
             .heap = RHIDeviceHeapType::Local,
             .shared = false
         },
      .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureStorage,
-     .size = mBLASOffset
-    }));
+     .size = blasOffset
+    });
+    Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> newBlases(mContext->allocator);
+    Vector<RHIAccelerationStructure*> newBlasPtrs( mContext->allocator);
     auto* cmd = ctx->Get();
     cmd->Begin();
     for (size_t i = 0; i < meshes.size(); i++)
     {
         RHIAccelerationStructureDesc as{
             .type = RHIAccelerationStructureType::BottomLevel,
+            .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace | RHIAccelerationStructureBuildFlagsBits::AllowCompaction,
             .buffer = buffer.Get(),
             .offset = blasOffsets[i],
             .size = sizeInfo[i].accelerationStructureSize
         };
-        outBLASIndices[i] = mBLASes.size();
-        auto& blas = mBLASes.emplace_back(device->CreateAccelerationStructure(as));
+        auto& blas = newBlases.emplace_back(device->CreateAccelerationStructure(as));
         auto& desc = buildDesc[i];
+        newBlasPtrs.push_back(blas.Get());
         cmd->BeginTransition();
         cmd->SetBufferTransition(scratch.Get(), {
             .srcStage = RHIPipelineStageBits::AccelerationBuild,
@@ -241,12 +247,57 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
         });
         cmd->EndTransition();
         desc.scratchBuffer = scratch.Get();
-        desc.scratchBufferOffset = 0;
+        desc.scratchBufferOffset = scratchOffsets[i];
         desc.dstAS = blas.Get();
         cmd->BuildAccelerationStructure({{{desc}}});
     }
     cmd->End();
     ctx->Submit(), ctx->WaitIdle();
+    // Compact
+    auto queryPool = device->CreateQueryPool({
+        .type = RHIDeviceQueryPool::QueryPoolDesc::AccelerationStructureCompactedSize,
+        .count = static_cast<uint32_t>(meshes.size())
+    });
+    queryPool->Reset();
+    cmd->Begin();
+    cmd->WriteAccelerationStructureCompactedSize(newBlasPtrs, queryPool.Get(), 0);
+    cmd->End(), ctx->Submit(), ctx->WaitIdle();
+    uint32_t compactOffset = 0;
+    Vector<uint32_t> compactOffsets(meshes.size(), mContext->allocator);
+    auto compactSizes = queryPool->GetResults();
+    for (size_t i = 0; i < meshes.size(); i++)
+    {
+        auto compactedSize = compactSizes[i];
+        compactOffsets[i] = compactOffset;
+        compactOffset = AlignUp(compactOffset + static_cast<uint32_t>(compactedSize), 256u);
+    }
+    auto& compactBuffer = mBLASBuffers.emplace_back(mContext->device->CreateBuffer(
+{
+            .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
+            .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureStorage,
+            .size = compactOffset
+    }));
+    cmd->Begin();
+    for (size_t i = 0; i < meshes.size(); i++)
+    {
+        RHIAccelerationStructureDesc as{
+            .type = RHIAccelerationStructureType::BottomLevel,
+            .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace | RHIAccelerationStructureBuildFlagsBits::AllowCompaction,
+            .buffer = compactBuffer.Get(),
+            .offset = compactOffsets[i],
+            .size = static_cast<uint32_t>(compactSizes[i])
+        };
+        outBLASIndices[i] = static_cast<uint32_t>(mBLASes.size());
+        auto& blas = mBLASes.emplace_back(device->CreateAccelerationStructure(as));
+        cmd->CopyAccelerationStructure(
+            newBlases[i].Get(), blas.Get(), true /* compact */
+        );
+    }
+    cmd->End(), ctx->Submit(), ctx->WaitIdle();
+    LOG(GPUScene, LogDebug, "BLAS Upload Complete: {} BLASes, {} MB used (compacted from {} MB)",
+        meshes.size(),
+        compactOffset / 1e6,
+        blasOffset / 1e6);
 }
 void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, bool update)
 {
@@ -303,7 +354,6 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
 void GPUScene::Reset()
 {
     mPrimitiveOffset = 0;
-    mBLASOffset = 0;
     mTLAS.Reset();
     mBLASes.clear();
     mBLASBuffers.clear();

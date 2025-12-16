@@ -87,7 +87,7 @@ namespace Foundation::RHI
         const float mTimestampResolution;
         vk::raii::QueryPool mQueryPool{nullptr};
 
-        Vector<uint64_t> mTimestampResults;
+        Vector<uint64_t> mResults;
 
     public:
         VulkanDeviceQueryPool(const VulkanDevice& device, QueryPoolDesc const& desc);
@@ -97,7 +97,7 @@ namespace Foundation::RHI
 
         void Reset() override;
 
-        Span<const uint64_t> GetTimestampResults(bool wait) override;
+        Span<const uint64_t> GetResults(bool wait) override;
         void DebugSetObjectName(const char* name) override;
     };
     class VulkanDevice : public RHIDevice

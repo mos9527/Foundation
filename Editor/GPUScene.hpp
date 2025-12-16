@@ -113,7 +113,7 @@ class GPUScene
     // BLAS
     Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mBLASes;
     Vector<RHIDeviceScopedHandle<RHIBuffer>> mBLASBuffers;
-    size_t mBLASOffset{0};
+    size_t blasOffset{0};
     // TLAS
     uint32_t mTLASInstanceStride{0}; // In bytes, read only once
     RHIDeviceScopedHandle<RHIBuffer> mTLASBuffer, mScratchBufferTLAS;

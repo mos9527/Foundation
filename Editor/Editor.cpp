@@ -117,7 +117,7 @@ void FInitEnter()
         ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
         GSBLASes.resize(GSMeshes.size());
         LOG(Editor, LogDebug, "Building BLAS");
-        constexpr size_t kBLASBuildBatch = 1u; // XXX: Hangs > 1?        
+        constexpr size_t kBLASBuildBatch = 32u;
         for (size_t i = 0; i < GSMeshes.size(); i += kBLASBuildBatch)
         {
             Span meshesBatch = GSMeshes;

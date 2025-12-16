@@ -171,6 +171,7 @@ namespace Foundation::RHI
             enum QueryType
             {
                 Timestamp,
+                AccelerationStructureCompactedSize
             } type;
             uint32_t count{1};
         } const mDesc;
@@ -181,7 +182,7 @@ namespace Foundation::RHI
 
         virtual void Reset() = 0;
 
-        virtual Span<const uint64_t> GetTimestampResults(bool wait = true) = 0;
+        virtual Span<const uint64_t> GetResults(bool wait = true) = 0;
         virtual void DebugSetObjectName(const char* name) = 0;
     };
     class RHIDevice : public RHIObject

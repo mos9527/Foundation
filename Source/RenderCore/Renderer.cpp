@@ -1193,7 +1193,7 @@ void Renderer::BeginExecute()
         }
         else
         {
-            auto queryResult = queryPool->GetTimestampResults(true /* wait */);
+            auto queryResult = queryPool->GetResults(true /* wait */);
             auto& queryTimestamps = mSwaps[mCurrentSync].dbgQueryPassTimestampsResults;
             queryTimestamps.resize(queryResult.size());
             Ranges::copy(queryResult, queryTimestamps.begin());

@@ -160,6 +160,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil | RHITextureUsageBits::SampledImage,
                        .extent = {w, h, 1},
                        .format = RHIResourceFormat::D32SignedFloat});
+    // Half-res as we start downsampling from mip 1
     uint32_t HIZWidth = 1u << glm::log2(w / 2), HIZHeight = 1u << glm::log2(h / 2);
     if (HIZWidth * 2 < w)
         HIZWidth *= 2;

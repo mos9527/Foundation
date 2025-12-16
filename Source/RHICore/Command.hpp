@@ -136,6 +136,7 @@ namespace Foundation::RHI
                                           RHITextureLayout dst_layout, Span<const CopyImageRegion> regions) = 0;
         virtual RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image,
                                                   RHITextureLayout dst_layout, Span<const CopyImageRegion> regions) = 0;
+        virtual RHICommandList& CopyAccelerationStructure(RHIAccelerationStructure* src, RHIAccelerationStructure* dst, bool compact = true) = 0;
 #pragma endregion
 #pragma region Graphics Pipeline
         struct GraphicsDesc
@@ -173,9 +174,11 @@ namespace Foundation::RHI
         virtual RHICommandList&
         BuildAccelerationStructure(Span<const RHIAccelerationStructureBuildDesc> desc) = 0;
 #pragma endregion
-#pragma region Tags
+#pragma region Tags & Query
         virtual RHICommandList& WriteTimestamp(RHIDeviceQueryPool* pool, RHIPipelineStageBits stage,
                                                uint32_t queryIndex) = 0;
+        virtual RHICommandList& WriteAccelerationStructureCompactedSize(Span<RHIAccelerationStructure* const> as,
+                                                                 RHIDeviceQueryPool* pool, size_t queryIndex) = 0;
         virtual RHICommandList& DebugBegin(const char* message) = 0;
         virtual RHICommandList& DebugInsertMarker(const char* message) = 0;
         virtual RHICommandList& DebugEnd() = 0;

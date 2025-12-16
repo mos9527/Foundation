@@ -116,16 +116,16 @@ RHICommandList& VulkanCommandList::SetAccelerationStructureTransition(RHIAcceler
 {
     CHECK(mBarriers && "Invalid barrier states.");
     auto* res = static_cast<VulkanAccelerationStructure*>(as);
-    mBarriers->buffer.push_back(vk::BufferMemoryBarrier2{
-        .srcStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.srcStage),
-        .srcAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.srcAccess),
-        .dstStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.dstStage),
-        .dstAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.dstAccess),
-        .srcQueueFamilyIndex = desc.srcQueueIndex,
-        .dstQueueFamilyIndex = desc.dstQueueIndex,
-        .buffer = *res->GetVkBuffer(),
-        .offset = 0,
-        .size = VK_WHOLE_SIZE});
+    mBarriers->buffer.push_back(
+        vk::BufferMemoryBarrier2{.srcStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.srcStage),
+                                 .srcAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.srcAccess),
+                                 .dstStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.dstStage),
+                                 .dstAccessMask = vkAccessFlagsFromRHIResourceAccess(desc.dstAccess),
+                                 .srcQueueFamilyIndex = desc.srcQueueIndex,
+                                 .dstQueueFamilyIndex = desc.dstQueueIndex,
+                                 .buffer = *res->GetVkBuffer(),
+                                 .offset = 0,
+                                 .size = VK_WHOLE_SIZE});
     return *this;
 }
 RHICommandList& VulkanCommandList::EndTransition()
@@ -220,10 +220,8 @@ RHICommandList& VulkanCommandList::DrawMeshTasksIndirect(RHIBuffer* cmd_buffer, 
 }
 
 RHICommandList& VulkanCommandList::DrawMeshTasksIndirectCount(RHIBuffer* cmd_buffer, size_t cmd_offset,
-                                                                               RHIBuffer* count_buffer,
-                                                                               size_t count_offset,
-                                                                               uint32_t max_draw_count,
-                                                                               uint32_t cmd_stride)
+                                                              RHIBuffer* count_buffer, size_t count_offset,
+                                                              uint32_t max_draw_count, uint32_t cmd_stride)
 {
     CHECK(mAllocator && "Invalid command list states.");
     mCommandBuffer.drawMeshTasksIndirectCountEXT(static_cast<VulkanBuffer*>(cmd_buffer)->GetVkBuffer(), cmd_offset,
@@ -344,6 +342,19 @@ RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHIT
     mCommandBuffer.copyBufferToImage(*src_vulkan_buffer->GetVkBuffer(), *dst_vulkan_image->GetVkImage(),
                                      vkImageLayoutFromRHITextureLayout(dst_layout), vk_regions);
 
+    return *this;
+}
+RHICommandList& VulkanCommandList::CopyAccelerationStructure(RHIAccelerationStructure* src,
+                                                             RHIAccelerationStructure* dst, bool compact)
+{
+    CHECK(mAllocator && "Invalid command list states.");
+    CHECK(src && dst && "Source and destination AS must be valid.");
+    auto* vkSrc = static_cast<VulkanAccelerationStructure*>(src);
+    auto* vkDst = static_cast<VulkanAccelerationStructure*>(dst);
+    mCommandBuffer.copyAccelerationStructureKHR({.src = vkSrc->GetVkAccelerationStructure(),
+                                                 .dst = vkDst->GetVkAccelerationStructure(),
+                                                 .mode = compact ? vk::CopyAccelerationStructureModeKHR::eCompact
+                                                                 : vk::CopyAccelerationStructureModeKHR::eClone});
     return *this;
 }
 
@@ -509,6 +520,19 @@ RHICommandList& VulkanCommandList::WriteTimestamp(RHIDeviceQueryPool* pool, RHIP
     auto* vkPool = static_cast<VulkanDeviceQueryPool*>(pool);
     mCommandBuffer.writeTimestamp(vkFlagsToBits(vkPipelineStageFlagsFromRHIPipelineStage(stage)),
                                   *vkPool->GetVkQueryPool(), queryIndex);
+    return *this;
+}
+RHICommandList& VulkanCommandList::WriteAccelerationStructureCompactedSize(Span<RHIAccelerationStructure* const> as,
+                                                                           RHIDeviceQueryPool* pool, size_t queryIndex)
+{
+    CHECK(mAllocator && "Invalid command list states.");
+    auto* vkPool = static_cast<VulkanDeviceQueryPool*>(pool);
+    Vector<vk::AccelerationStructureKHR> vkAS(mAllocator);
+    for (auto* accelerationStructure : as)
+        vkAS.push_back(static_cast<VulkanAccelerationStructure*>(accelerationStructure)->GetVkAccelerationStructure());
+    mCommandBuffer.writeAccelerationStructuresPropertiesKHR(vkAS, vk::QueryType::eAccelerationStructureCompactedSizeKHR,
+                                                            *vkPool->GetVkQueryPool(),
+                                                            static_cast<uint32_t>(queryIndex));
     return *this;
 }
 

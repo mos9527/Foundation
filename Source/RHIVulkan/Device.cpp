@@ -1,4 +1,7 @@
 #define VMA_IMPLEMENTATION
+#include "RHICore/Device.hpp"
+
+
 #include <queue>
 #include <vk_mem_alloc.h>
 
@@ -121,7 +124,8 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
              .dynamicRendering = true,
              .shaderIntegerDotProduct = true}, // vk::PhysicalDeviceVulkan13Features
             {.extendedDynamicState = true}, // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
-            {.taskShader = true /*...try not to use it*/, .meshShader = true}, // vk::PhysicalDeviceMeshShaderFeaturesEXT
+            {.taskShader = true /*...try not to use it*/,
+             .meshShader = true}, // vk::PhysicalDeviceMeshShaderFeaturesEXT
             {
                 .accelerationStructure = true,
             }, // vk::PhysicalDeviceAccelerationStructureFeaturesKHR
@@ -663,30 +667,32 @@ void VulkanDeviceSampler::DebugSetObjectName(const char* name)
 VulkanDeviceQueryPool::VulkanDeviceQueryPool(const VulkanDevice& device, QueryPoolDesc const& desc) :
     RHIDeviceQueryPool(device, desc), mDevice(device),
     mTimestampResolution(mDevice.GetVkPhysicalDevice().getProperties().limits.timestampPeriod),
-    mTimestampResults(device.GetAllocator())
+    mResults(device.GetAllocator())
 {
     vk::QueryPoolCreateInfo createInfo = {.queryCount = desc.count};
     switch (desc.type)
     {
     case QueryPoolDesc::Timestamp:
         createInfo.queryType = vk::QueryType::eTimestamp;
-        mTimestampResults.resize(desc.count);
+        break;
+    case QueryPoolDesc::AccelerationStructureCompactedSize:
+        createInfo.queryType = vk::QueryType::eAccelerationStructureCompactedSizeKHR;
         break;
     }
+    mResults.resize(desc.count);
     mQueryPool = vk::raii::QueryPool(mDevice.GetVkDevice(), createInfo, mDevice.GetVkAllocatorCallbacks());
     CHECK_MSG(mQueryPool != nullptr, "failed to create Vulkan query pool");
 }
 void VulkanDeviceQueryPool::Reset() { mQueryPool.reset(0, mDesc.count); }
-Span<const uint64_t> VulkanDeviceQueryPool::GetTimestampResults(bool wait)
+Span<const uint64_t> VulkanDeviceQueryPool::GetResults(bool wait)
 {
-    CHECK_MSG(mDesc.type == QueryPoolDesc::Timestamp, "GetTimestampResults called on non-timestamp query pool");
     VkResult res = vkGetQueryPoolResults(
-        *mDevice.GetVkDevice(), *mQueryPool, 0, mDesc.count, sizeof(uint64_t) * mDesc.count, mTimestampResults.data(),
+        *mDevice.GetVkDevice(), *mQueryPool, 0, mDesc.count, sizeof(uint64_t) * mDesc.count, mResults.data(),
         sizeof(uint64_t), wait ? VK_QUERY_RESULT_WAIT_BIT | VK_QUERY_RESULT_64_BIT : VK_QUERY_RESULT_64_BIT);
     if (res == VK_NOT_READY)
         return {};
     CHECK(res == VK_SUCCESS);
-    return mTimestampResults;
+    return mResults;
 }
 void VulkanDeviceQueryPool::DebugSetObjectName(const char* name)
 {
