@@ -1,4 +1,5 @@
 using namespace Foundation::RHI;
+
 VulkanCommandPool::VulkanCommandPool(const VulkanDevice& device, PoolDesc const& desc, Allocator* allocator) :
     RHICommandPool(device, desc), mAllocator(allocator), mDevice(device), mStorage(allocator)
 {
@@ -34,10 +35,12 @@ RHICommandPoolScopedHandle<RHICommandList> VulkanCommandPool::CreateCommandList(
 {
     return {this, mStorage.CreateObject<VulkanCommandList>(*this)};
 }
+
 RHICommandList* VulkanCommandPool::GetCommandList(Handle handle) const
 {
     return mStorage.GetObjectPtr<RHICommandList>(handle);
 }
+
 void VulkanCommandPool::DestroyCommandList(Handle handle) { mStorage.DestroyObject(handle); }
 
 void VulkanCommandPool::ResetAllCommandLists(bool freeResources)
@@ -60,20 +63,24 @@ VulkanCommandList::VulkanCommandList(const VulkanCommandPool& commandPool) :
 RHICommandList& VulkanCommandList::Begin()
 {
     bool isTransient = mCommandPool.mDesc.type == RHICommandPoolType::Transient;
-    vk::CommandBufferBeginInfo beginInfo{.flags = isTransient ? vk::CommandBufferUsageFlagBits::eOneTimeSubmit
-                                                              : vk::CommandBufferUsageFlags{}};
+    vk::CommandBufferBeginInfo beginInfo{.flags = isTransient
+        ? vk::CommandBufferUsageFlagBits::eOneTimeSubmit
+        : vk::CommandBufferUsageFlags{}};
     mCommandBuffer.begin(beginInfo);
     mAllocator = mCommandPool.GetDevice().GetAllocator();
     mLastPSO = nullptr;
     return *this;
 }
+
 RHICommandList& VulkanCommandList::BeginTransition()
 {
     CHECK(mAllocator && "Invalid command list states.");
     mBarriers = ConstructUnique<Barriers>(mAllocator, mAllocator);
     return *this;
 }
+
 #include "Resource.hpp"
+
 RHICommandList& VulkanCommandList::SetBufferTransition(RHIBuffer* image, TransitionDesc const& desc)
 {
     CHECK(mBarriers && "Invalid barrier states.");
@@ -90,6 +97,7 @@ RHICommandList& VulkanCommandList::SetBufferTransition(RHIBuffer* image, Transit
                                  .size = desc.srcBufferSize == kFullSize ? VK_WHOLE_SIZE : desc.srcBufferSize});
     return *this;
 }
+
 RHICommandList& VulkanCommandList::SetImageTransition(RHITexture* image, TransitionDesc const& desc)
 {
     CHECK(mBarriers && "Invalid barrier states.");
@@ -112,6 +120,7 @@ RHICommandList& VulkanCommandList::SetImageTransition(RHITexture* image, Transit
                              .layerCount = desc.srcImgRange.layer.layerCount}});
     return *this;
 }
+
 RHICommandList& VulkanCommandList::SetAccelerationStructureTransition(RHIAccelerationStructure* as,
                                                                       TransitionDesc const& desc)
 {
@@ -129,6 +138,7 @@ RHICommandList& VulkanCommandList::SetAccelerationStructureTransition(RHIAcceler
                                  .size = VK_WHOLE_SIZE});
     return *this;
 }
+
 RHICommandList& VulkanCommandList::EndTransition()
 {
     CHECK(mBarriers && "Invalid barrier states.");
@@ -146,6 +156,7 @@ RHICommandList& VulkanCommandList::EndTransition()
 }
 
 #include "PipelineState.hpp"
+
 RHICommandList& VulkanCommandList::SetPipeline(PipelineDesc const& desc)
 {
     CHECK(mAllocator && "Invalid command list states.");
@@ -241,6 +252,7 @@ RHICommandList& VulkanCommandList::PushConstant(RHIPipelineState* pipeline, RHIS
                        data.size(), data.data());
     return *this;
 }
+
 RHICommandList& VulkanCommandList::UpdateBuffer(RHIBuffer* buffer, size_t offset, Span<const char> data)
 {
     CHECK(mAllocator && "Invalid command list states.");
@@ -248,6 +260,7 @@ RHICommandList& VulkanCommandList::UpdateBuffer(RHIBuffer* buffer, size_t offset
     mCommandBuffer.updateBuffer<const char>(vulkan_buffer->GetVkBuffer(), offset, data);
     return *this;
 }
+
 RHICommandList& VulkanCommandList::FillBuffer(RHIBuffer* buffer, uint32_t value, size_t offset, size_t size)
 {
     CHECK(mAllocator && "Invalid command list states.");
@@ -346,6 +359,7 @@ RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHIT
 
     return *this;
 }
+
 RHICommandList& VulkanCommandList::CopyAccelerationStructure(RHIAccelerationStructure* src,
                                                              RHIAccelerationStructure* dst, bool compact)
 {
@@ -355,8 +369,9 @@ RHICommandList& VulkanCommandList::CopyAccelerationStructure(RHIAccelerationStru
     auto* vkDst = static_cast<VulkanAccelerationStructure*>(dst);
     mCommandBuffer.copyAccelerationStructureKHR({.src = vkSrc->GetVkAccelerationStructure(),
                                                  .dst = vkDst->GetVkAccelerationStructure(),
-                                                 .mode = compact ? vk::CopyAccelerationStructureModeKHR::eCompact
-                                                                 : vk::CopyAccelerationStructureModeKHR::eClone});
+                                                 .mode = compact
+                                                 ? vk::CopyAccelerationStructureModeKHR::eCompact
+                                                 : vk::CopyAccelerationStructureModeKHR::eClone});
     return *this;
 }
 
@@ -384,8 +399,8 @@ RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc)
             loadOp = vk::AttachmentLoadOp::eDontCare;
         return vk::RenderingAttachmentInfo{
             .imageView = attachment.imageView
-                ? static_cast<const VulkanTextureView*>(attachment.imageView)->GetVkImageView()
-                : vk::ImageView{nullptr},
+            ? static_cast<const VulkanTextureView*>(attachment.imageView)->GetVkImageView()
+            : vk::ImageView{nullptr},
             .imageLayout = vkImageLayoutFromRHITextureLayout(attachment.imageLayout),
             .loadOp = loadOp,
             .storeOp = vk::AttachmentStoreOp::eStore,
@@ -451,6 +466,7 @@ RHICommandList& VulkanCommandList::BindIndexBuffer(RHIBuffer* buffer, size_t off
 }
 
 #include "Descriptor.hpp"
+
 RHICommandList& VulkanCommandList::BindDescriptorSet(RHIDevicePipelineType bindpoint, RHIPipelineState* pipeline,
                                                      Span<RHIDeviceDescriptorSet* const> sets, size_t first,
                                                      Span<const uint32_t> dynamicOffsets)
@@ -484,6 +500,7 @@ RHICommandList& VulkanCommandList::Dispatch(uint32_t group_count_x, uint32_t gro
     mCommandBuffer.dispatch(group_count_x, group_count_y, group_count_z);
     return *this;
 }
+
 RHICommandList& VulkanCommandList::DispatchIndirect(RHIBuffer* cmd_buffer, size_t cmd_offset)
 {
     CHECK(mAllocator && "Invalid command list states.");
@@ -491,6 +508,7 @@ RHICommandList& VulkanCommandList::DispatchIndirect(RHIBuffer* cmd_buffer, size_
     mCommandBuffer.dispatchIndirect(vulkan_buffer->GetVkBuffer(), cmd_offset);
     return *this;
 }
+
 RHICommandList& VulkanCommandList::BuildAccelerationStructure(Span<const RHIAccelerationStructureBuildDesc> descs)
 {
     CHECK(mAllocator && "Invalid command list states.");
@@ -519,7 +537,11 @@ RHICommandList& VulkanCommandList::BuildAccelerationStructure(Span<const RHIAcce
 RHICommandList& VulkanCommandList::TraceRays(uint32_t width, uint32_t height, uint32_t depth)
 {
     CHECK(mAllocator && "Invalid command list states.");
-    // TODO.
+    auto* vkPSO = static_cast<VulkanPipelineState*>(mLastPSO);
+    auto& sbt = vkPSO->GetVkSBT();
+    mCommandBuffer.traceRaysKHR(
+        sbt.raygen, sbt.miss, sbt.hit, sbt.callable, width, height, depth
+        );
     return *this;
 }
 
@@ -532,6 +554,7 @@ RHICommandList& VulkanCommandList::WriteTimestamp(RHIDeviceQueryPool* pool, RHIP
                                   *vkPool->GetVkQueryPool(), queryIndex);
     return *this;
 }
+
 RHICommandList& VulkanCommandList::WriteAccelerationStructureCompactedSize(Span<RHIAccelerationStructure* const> as,
                                                                            RHIDeviceQueryPool* pool, size_t queryIndex)
 {
@@ -566,6 +589,7 @@ RHICommandList& VulkanCommandList::DebugBegin(const char* message)
     mCommandBuffer.beginDebugUtilsLabelEXT({.pLabelName = message});
     return *this;
 }
+
 RHICommandList& VulkanCommandList::DebugInsertMarker(const char* message)
 {
     CHECK(mAllocator && "Invalid command list states.");
@@ -573,6 +597,7 @@ RHICommandList& VulkanCommandList::DebugInsertMarker(const char* message)
     mCommandBuffer.insertDebugUtilsLabelEXT({.pLabelName = message});
     return *this;
 }
+
 RHICommandList& VulkanCommandList::DebugEnd()
 {
     CHECK(mAllocator && "Invalid command list states.");
@@ -584,7 +609,7 @@ void VulkanCommandList::DebugSetObjectName(const char* name)
 {
     VkCommandBuffer handle = *mCommandBuffer;
     mCommandPool.GetDevice().GetVkDevice().setDebugUtilsObjectNameEXT(
-        {.objectType = vk::ObjectType::eCommandBuffer,
-         .objectHandle = reinterpret_cast<uint64_t>(handle),
-         .pObjectName = name});
+    {.objectType = vk::ObjectType::eCommandBuffer,
+     .objectHandle = reinterpret_cast<uint64_t>(handle),
+     .pObjectName = name});
 }

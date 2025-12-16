@@ -591,6 +591,7 @@ namespace Foundation::RenderCore
                                RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending = {}) const;
         /**
          * @brief Binds the backbuffer as RW access at binding 0 of set index
+         * @note The set index MUST be the last set index bound in the pass.
          */
         void BindBackbufferUAV(PassHandle pass, int set_index) const;
         /**

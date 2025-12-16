@@ -188,6 +188,7 @@ namespace Foundation::RHI {
         switch (type) {
         case RHIDevicePipelineType::Compute:  return vk::PipelineBindPoint::eCompute;
         case RHIDevicePipelineType::Graphics: return vk::PipelineBindPoint::eGraphics;
+        case RHIDevicePipelineType::RayTracing: return vk::PipelineBindPoint::eRayTracingKHR;
         default:
             return {};
         }

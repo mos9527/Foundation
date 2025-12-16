@@ -31,7 +31,10 @@ void VulkanPipelineState::InitializePipelineLayout()
     AllocatorStack alloc(arena);
     Vector<vk::DescriptorSetLayout> p_set_layouts(mDesc.descriptorSetLayouts.size(), alloc.Ptr());
     for (size_t i = 0; i < mDesc.descriptorSetLayouts.size(); ++i)
+    {
+        CHECK_MSG(mDesc.descriptorSetLayouts[i], "Descriptor set layout MUST NOT be null");
         p_set_layouts[i] = static_cast<VulkanDeviceDescriptorSetLayout*>(mDesc.descriptorSetLayouts[i])->GetVkLayout();
+    }
     Vector<vk::PushConstantRange> push_constants(mDesc.pushConstants.size(), alloc.Ptr());
     for (size_t i = 0; i < mDesc.pushConstants.size(); i++)
     {
@@ -346,15 +349,12 @@ void VulkanPipelineState::InitializeRayTracing()
     const uint32_t handleStride = AlignUp(handleSize, handleAlignment);
 
     uint32_t rgenCount = 1;
-    uint32_t missCount = static_cast<uint32_t>(missShaders.size());
-    uint32_t hitCount = static_cast<uint32_t>(hitShaders.size());
+    auto missCount = static_cast<uint32_t>(missShaders.size());
+    auto hitCount = static_cast<uint32_t>(hitShaders.size());
 
-    mSBT.raygen.stride = handleStride;
-    mSBT.raygen.size = AlignUp(rgenCount * handleStride, baseAlignment);
-    mSBT.miss.stride = handleStride;
-    mSBT.miss.size = AlignUp(missCount * handleStride, baseAlignment);
-    mSBT.hit.stride = handleStride;
-    mSBT.hit.size = AlignUp(hitCount * handleStride, baseAlignment);
+    mSBT.raygen.stride = mSBT.raygen.size = AlignUp(rgenCount * handleStride, baseAlignment);
+    mSBT.miss.stride = mSBT.miss.size = AlignUp(missCount * handleStride, baseAlignment);
+    mSBT.hit.stride = mSBT.hit.size = AlignUp(hitCount * handleStride, baseAlignment);
     // Create Buffer
     vk::DeviceSize sbtSize = mSBT.raygen.size + mSBT.miss.size + mSBT.hit.size;
     mSBTBuffer = mDevice.CreateBuffer(RHIBufferDesc{

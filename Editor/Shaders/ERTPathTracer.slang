@@ -14,8 +14,8 @@ void RayGen()
     ndcPosition.y = 1 - ndcPosition.y;
     ndcPosition.xy = ndcPosition.xy * 2.0f - 1.0f;
     float4 wsPosition = mul(globalParams.inverseViewProj, ndcPosition);
-    float3 dir = wsPosition.xyz / wsPosition.w;
+    float3 p = wsPosition.xyz / wsPosition.w;
     float3 eye = globalParams.camPosition;
-
-    output[pix] = float4(dir, 1.0);
+    float3 dir = normalize(p - eye);
+    output[pix] = float4(dir * 0.5 + 0.5, 1.0);
 }

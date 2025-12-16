@@ -86,10 +86,10 @@ namespace Foundation::RHI {
     };
     struct VulkanPipelineRayTracingSBT
     {
-        VkStridedDeviceAddressRegionKHR raygen{};
-        VkStridedDeviceAddressRegionKHR miss{};
-        VkStridedDeviceAddressRegionKHR hit{};
-        VkStridedDeviceAddressRegionKHR callable{};
+        vk::StridedDeviceAddressRegionKHR raygen{};
+        vk::StridedDeviceAddressRegionKHR miss{};
+        vk::StridedDeviceAddressRegionKHR hit{};
+        vk::StridedDeviceAddressRegionKHR callable{};
     };
     class VulkanPipelineState : public RHIPipelineState {
         VulkanDevice& mDevice;
