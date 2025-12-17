@@ -53,7 +53,6 @@ ByteAddressBuffer primitives;
 StructuredBuffer<GSMaterial> materials;
 SamplerState textureSampler;
 RWTexture2D<float4> accumulation;
-RWTexture2D<float4> output;
 [[vk_binding(0,1)]] Texture2D<float4> textures[];
 
 
@@ -289,7 +288,6 @@ void RayGeneration()
     // Welford mean update
     float3 newAvg = prevAvg + (radiance - prevAvg) / frameCount;
     accumulation[pix] = float4(newAvg, 1.0);
-    output[pix] = float4(newAvg, 1.0f);
 }
 
 [shader("closesthit")]
