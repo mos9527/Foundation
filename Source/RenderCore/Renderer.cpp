@@ -750,7 +750,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
         }
         else
         {
-            CHECK_MSG(false, "External descriptor set binding {} is not used by any shader in pass {}", binding,
+            CHECK_MSG(false, "External descriptor set binding {} is not used by any shader in pass {}. Has the set been used by e.g. Backbuffer?", binding,
                       tracked.name);
         }
         var_ext_sets[binding] = desc_set_layout;

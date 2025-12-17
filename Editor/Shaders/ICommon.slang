@@ -20,6 +20,10 @@ void FQDecode(in FQVertex v, out float3 position, out float3 normal, out float3 
     unpackTBN(v.tbn32, normal, tangent, bitangentSign);
     uv = float2(v.uv);
 }
+void FQDecode(in FQVertex v, out float3 normal, out float3 tangent, out float bitangentSign, out float2 uv) {
+    unpackTBN(v.tbn32, normal, tangent, bitangentSign);
+    uv = float2(v.uv);
+}
 struct FLODGroup // @ref clodGroup
 {
     // DAG level the group was generated at

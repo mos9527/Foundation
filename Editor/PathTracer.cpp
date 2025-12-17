@@ -38,18 +38,31 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         {
             gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, true);
         });
+    auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
+    auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
+    auto MaterialBuffer = renderer->CreateResource("Material Buffer", gpu->GetMaterialBuffer());
+    auto TexSampler = renderer->CreateSampler({});
     renderer->CreatePass(
         "Trace", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindBackbufferUAV(self, 1u);
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::RayTracingShader, "globalParams");
             r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::RayTracingShader, "AS");
-            r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGen", "data/shaders/ERTPathTracer.spv");
+            r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", "data/shaders/ERTPathTracer.spv");
+            r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RayClosestHit", "data/shaders/ERTPathTracer.spv");
+            r->BindShader(self, RHIShaderStageBits::RayMiss, "RayMiss", "data/shaders/ERTPathTracer.spv");
+            r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
+            r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitives");
+            r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
+            r->BindTextureSampler(self, TexSampler, "textureSampler");
+            r->BindDescriptorSet(self, "textures", gpu->GetTexturePool()->GetDescriptorSetLayout());
+            r->BindBackbufferUAV(self, 2u);
+
         }, [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             RHIExtent2D wh = r->GetSwapchainExtent();
             r->CmdSetPipeline(self, cmd);
+            r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexturePool()->GetDescriptorSet());
             cmd->TraceRays(wh.x, wh.y, 1);
         });
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});
