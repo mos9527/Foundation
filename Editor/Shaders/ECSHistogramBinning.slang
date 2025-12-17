@@ -15,7 +15,7 @@ void main(uint2 tid: SV_DispatchThreadID, uint gid : SV_GroupIndex) {
     float4 value = 0u;
     if (tid.x < globalParams.fbWidth && tid.y < globalParams.fbHeight)
         value = lighting.Load(int3(tid.x,tid.y,0));
-    float luma = dot(value.xyz, float3(0.2126, 0.7152, 0.0722));
+    float luma = dot(value.xyz, LUMINANCE_RGB);
     float EV = log2(luma + EPS);
     int bin = clamp((int)floor(saturate((EV - globalParams.camMinEV) / (globalParams.camMaxEV - globalParams.camMinEV)) * 64.0),0, 63);
     InterlockedAdd(binGS[bin], 1);

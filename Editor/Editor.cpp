@@ -148,6 +148,7 @@ void FRunningEnter()
     });
     FEState = FERunning;
 }
+bool cameraUpdated = true;
 void FRunning()
 {
     auto* renderer = GContext->renderer;
@@ -177,13 +178,17 @@ void FRunning()
     {
         ImGui::TextUnformatted(FArcballCamera::kControlsText);
         ImGui::Separator();
-        ImGui::SliderFloat3("Cam Center", &GCamera.center.x, -50.0f, 50.0f);
-        ImGui::SliderFloat("Cam Radius", &GCamera.radius, 0.0f, 100.0f);
-        ImGui::SliderAngle("Cam FOV Y", &GCamera.fovY);
+        cameraUpdated |= ImGui::SliderFloat3("Cam Center", &GCamera.center.x, -50.0f, 50.0f);
+        cameraUpdated |= ImGui::SliderFloat("Cam Radius", &GCamera.radius, 0.0f, 100.0f);
+        cameraUpdated |= ImGui::SliderAngle("Cam FOV Y", &GCamera.fovY);
         ImGui::SliderFloat("Min EV", &GShaderGlobals.camMinEV, -16.0f, 16.0f);
         ImGui::SliderFloat("Max EV", &GShaderGlobals.camMaxEV, -16.0f, 16.0f);
         ImGui::SliderFloat("Adapt Rate", &GCamera.adaptRate, 0.0f, 100.0f);
+        ImGui::Text("PT Accumulation: %d", GShaderGlobals.ptAccumualatedFrames);
+        ImGui::Text("PT SPP: %d", GShaderGlobals.ptMaxBounces);
     }
+    if (cameraUpdated)
+        GShaderGlobals.ptAccumualatedFrames = 0, cameraUpdated = false;
     ImGui::End();
     if (ImGui::Begin("Rendering"))
     {
@@ -340,6 +345,7 @@ void FRunning()
     ImGui::End();
     renderer->ExecuteFrame();
     renderer->EndExecute();
+    GShaderGlobals.ptAccumualatedFrames++;
 }
 bool EditorProcessEvent(SDL_Event* event)
 {
@@ -360,7 +366,7 @@ bool EditorProcessEvent(SDL_Event* event)
     ImGui_ImplFoundation_ProcessEvent(event);
     auto& io = ImGui::GetIO();
     if (!io.WantCaptureMouse)
-        GCamera.Update(*event);
+        cameraUpdated |= GCamera.Update(*event);
     return false;
 }
 // Per-frame logic

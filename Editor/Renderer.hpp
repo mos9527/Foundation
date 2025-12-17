@@ -27,7 +27,10 @@ struct UBO
     float3 camDirection;
     float3 sunDirection{0, 0, -1};
     float sunIntensity{120'000.0f};
-    float3 ambientColor{1e2,1e2,1e2};
+    float3 ambientColor{1e2, 1e2, 1e2};
+    // -- Path Tracing
+    uint32_t ptAccumualatedFrames{0u};
+    uint32_t ptMaxBounces{3u};
 };
 #pragma pack(pop)
 
@@ -50,19 +53,21 @@ static const int kCullStageEarly = 1 << 16;
 static const int kCullStageLate = 1 << 17;
 
 extern void RendererSetupImGuiOnly(FContext* context);
+
 struct RendererConfig
 {
     unsigned viewFlags{kViewEnableRaytracing};
     unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
 };
+
 struct RendererScene
 {
     UBO* gsGlobals;
     Vector<GSInstance>* gsInstances;
     Vector<GSMaterial>* gsMaterials;
     Vector<GSMesh>* gsMeshes;
-    Vector<uint32_t>* gsBLASes;   
+    Vector<uint32_t>* gsBLASes;
 };
+
 extern void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene);
 extern void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene);
-

@@ -42,6 +42,13 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
     auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
     auto MaterialBuffer = renderer->CreateResource("Material Buffer", gpu->GetMaterialBuffer());
     auto TexSampler = renderer->CreateSampler({});
+    auto [w,h] = renderer->GetSwapchainExtent();
+    auto AccumulatedBuffer = renderer->CreateResource("ABuffer", RHITextureDesc{
+                                                          .usage = RHITextureUsageBits::StorageImage |
+                                                          RHITextureUsageBits::SampledImage,
+                                                          .extent = {w, h, 1},
+                                                          .format = RHIResourceFormat::R16G16B16A16SignedFloat});
+
     renderer->CreatePass(
         "Trace", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -54,6 +61,9 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitives");
             r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
+            r->BindTextureUAV(self, AccumulatedBuffer, "accumulation", RHIPipelineStageBits::RayTracingShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
+                                                 .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSampler(self, TexSampler, "textureSampler");
             r->BindDescriptorSet(self, "textures", gpu->GetTexturePool()->GetDescriptorSetLayout());
             r->BindBackbufferUAV(self, 2u);

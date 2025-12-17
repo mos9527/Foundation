@@ -2,6 +2,7 @@
 #include "IFlags.slang"
 static const uint kMeshWorkGroupSize = 64;
 static const uint kMeshIndirectPerDrawMeshlets = 65536;
+static const float3 LUMINANCE_RGB = float3(0.2126f, 0.7152f, 0.0722f);
 // Definitions From C++ sources
 struct FVertex {
     float3 position;
@@ -149,6 +150,9 @@ struct UBO
     float3 sunDirection;
     float sunIntensity;
     float3 ambientColor;
+    // -- Path Tracing
+    uint32_t ptAccumualatedFrames;
+    uint32_t ptMaxBounces;
 };
 // ^^^
 

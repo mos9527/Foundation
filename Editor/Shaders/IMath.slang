@@ -1,4 +1,5 @@
 static const float PI = acos(-1);
+static const float INV_PI = 1.0f / PI;
 // -- bits
 public const uint32_t alignUp(uint32_t value, uint32_t alignment) {
     return (value + alignment - 1) & ~(alignment - 1);
@@ -23,6 +24,9 @@ public struct quat
             q.w * r.q.z + q.x * r.q.y - q.y * r.q.x + q.z * r.q.w,
             q.w * r.q.w - q.x * r.q.x - q.y * r.q.y - q.z * r.q.z
         ));
+    }
+    public quat inverted() {
+        return quat(-q.xyz, q.w);
     }
     // Overload
     public quat operator*(quat r) { return mul(r); }

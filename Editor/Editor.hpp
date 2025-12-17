@@ -20,8 +20,9 @@ struct FArcballCamera
     float zNear, fovY, aspect;
     mat4 view, proj;
     float adaptRate = 5.0f;
-    mat4 Update(SDL_Event const& event)
+    bool Update(SDL_Event const& event)
     {
+        bool updated = false;
         if (event.type == SDL_EVENT_MOUSE_MOTION)
         {
             if (event.motion.state & SDL_BUTTON_LMASK)
@@ -31,6 +32,7 @@ struct FArcballCamera
                 quat yawRot = angleAxis(yawDelta, vec3(0, 1, 0));
                 quat pitchRot = angleAxis(pitchDelta, vec3(1, 0, 0));
                 rot = normalize(yawRot * rot * pitchRot);
+                updated = true;
             }
             if (event.motion.state & SDL_BUTTON_RMASK)
             {
@@ -38,19 +40,20 @@ struct FArcballCamera
                 vec3 up = rot * vec3(0, 1, 0);
                 center -= right * (event.motion.xrel * radius * 1e-3f);
                 center += up * (event.motion.yrel * radius * 1e-3f);
+                updated = true;
             }
         }
         if (event.type == SDL_EVENT_MOUSE_WHEEL)
         {
             radius -= event.wheel.y * radius * 1e-1f;
             radius = radius < 1e-3f ? 1e-3f : radius;
+            updated = true;
         }
         // ---
         proj = infinitePerspectiveRHReverseZ(fovY, aspect, zNear);
         vec3 dir = rot * vec3(0, 0, 1);
         position = center + radius * dir;
         view = viewMatrixRHReverseZ(position, rot);
-        mat4 viewProj = proj * view;
-        return viewProj;
+        return updated;
     }
 };
