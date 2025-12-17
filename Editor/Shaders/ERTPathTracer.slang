@@ -284,13 +284,12 @@ void RayGeneration()
     }
     // Transform world space point
     // Accumulation
-    float4 previous = accumulation[pix];
-    if (globalParams.ptAccumualatedFrames == 0)
-        previous = float4(0);
-    float4 current = previous + float4(radiance, 0);
-    accumulation[pix] = current;
-    float4 average = current / float(globalParams.ptAccumualatedFrames + 1);
-    output[pix] = float4(average.xyz, 1.0f);
+    float frameCount = float(globalParams.ptAccumualatedFrames + 1);
+    float3 prevAvg = (globalParams.ptAccumualatedFrames == 0) ? float3(0) : accumulation[pix].xyz;
+    // Welford mean update
+    float3 newAvg = prevAvg + (radiance - prevAvg) / frameCount;
+    accumulation[pix] = float4(newAvg, 1.0);
+    output[pix] = float4(newAvg, 1.0f);
 }
 
 [shader("closesthit")]
