@@ -30,7 +30,7 @@ Fragment drawGBuffer(V2F input){
     float4 normalTBN = float4(0,0,1,0);
     if (material.normalTexture)
         normalTBN = textures[NonUniformResourceIndex(material.normalTexture)].Sample(textureSampler, input.uv) * 2 - float4(1);
-    float4 pbrMetalRough = float4(1, material.metallicFactor, material.roughnessFactor, 1);
+    float4 pbrMetalRough = float4(1, material.roughnessFactor, material.metallicFactor, 1);
     if (material.metallicRoughnessTexture)
         pbrMetalRough *= textures[NonUniformResourceIndex(material.metallicRoughnessTexture)].Sample(textureSampler, input.uv);
     float4 emissive = float4(material.emissiveFactor,0);

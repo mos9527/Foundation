@@ -20,8 +20,8 @@ struct UBO
     uint32_t hizWidth;
     uint32_t hizHeight;
     // -- Lighting
-    float camMinEV{2.0f};
-    float camMaxEV{16.0f};
+    float camMinEV{-3.0f};
+    float camMaxEV{1.0f};
     float camAdaptCoeff; // 1 - exp(-dt * tau)
     float3 camPosition;
     float3 camDirection;

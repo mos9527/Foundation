@@ -403,8 +403,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         "Lighting",
         RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
                        .extent = {w, h, 1},
-                       .format = RHIResourceFormat::B10G11R11Ufloat,
-                       .mipLevels = FullMips});
+                       .format = RHIResourceFormat::B10G11R11Ufloat});
     auto HistogramBins = renderer->CreateResource(
         "Histogram", RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * 64});
     bool kDebugViewUnlit = cfg.viewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewMeshlet);

@@ -26,13 +26,13 @@ public struct quat
         ));
     }
     public quat inverted() {
-        return quat(-q.xyz, q.w);
+        return quat(float4(-q.xyz, q.w));
     }
     // Overload
     public quat operator*(quat r) { return mul(r); }
 };
 // -- de/quantization
-const static float EPS = 1e-6f;
+const static float EPS = 1e-5f;
 uint32_t quantizeUnorm(float v, int32_t N)
 {
     float scale = (float)((1 << N) - 1);
