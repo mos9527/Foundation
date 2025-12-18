@@ -1,7 +1,7 @@
 #include "ICommon.slang"
 
 uniform UBO globalParams;
-StructuredBuffer<uint> bins;
+RWStructuredBuffer<uint> bins;
 RWStructuredBuffer<float> output; // Final scene avg. luminance
 groupshared Atomic<uint> countGS, weightGS;
 [shader("compute")]
@@ -20,6 +20,7 @@ void reduce(uint gid : SV_GroupIndex, uint groupID : SV_GroupID) {
         weightGS.add(weightWave);
     }
     GroupMemoryBarrierWithGroupSync();
+    bins[gid] = 0; // Clear for next frame
     if (gid == 0) {
         // sum = Num_i * (EV_i - min)/(max-min)*64
         uint countAll = countGS.load(); // No. samples in range

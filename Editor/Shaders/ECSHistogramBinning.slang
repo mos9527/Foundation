@@ -11,7 +11,6 @@ groupshared uint binGS[64];
 void main(uint2 tid: SV_DispatchThreadID, uint gid : SV_GroupIndex) {
     binGS[gid] = 0;
     GroupMemoryBarrierWithGroupSync();
-
     float4 value = 0u;
     if (tid.x < globalParams.fbWidth && tid.y < globalParams.fbHeight)
         value = lighting.Load(int3(tid.x,tid.y,0));

@@ -44,6 +44,10 @@ public struct PCG
         state = pcg4d(state);
         return uintToFloat(state.x);
     }
+    [mutating] public float2 sample2()
+    {
+        return float2(sample(), sample());
+    }
 }
 
 // -- Scene
@@ -162,7 +166,7 @@ float3 OffsetRay(float3 worldPosition, float3 offsetDirection)
 
 float3 GeneratePrimaryRay(uint2 pixel, PCG rng)
 {
-    float2 jitter = lerp(float2(-0.5f), float2(0.5f), float2(rng.sample(), rng.sample()));
+    float2 jitter = lerp(float2(-0.5f), float2(0.5f), rng.sample2());
     float2 uv = float2(pixel + jitter + 0.5f) / DispatchRaysDimensions().xy;
     float4 ndcPosition = float4(uv, 1.0f, 1.0f);
     ndcPosition.y = 1 - ndcPosition.y;
@@ -275,8 +279,9 @@ void RayGeneration()
         quat toWorld = toLocal.inverted();
         float3 vLocal = normalize(toLocal.rotate(v));
         float3 nLocal = float3(0,0,1);
-        float2 u = float2(rng.sample(), rng.sample());
+        float2 u = rng.sample2();
         float3 rayLocal;
+        // Multiple importance sampling
         float PspecIndirect = EvalSpecularBRDFProbability(baseColor, metallic, v, n);
         if (rng.sample() < PspecIndirect){
             // Specular
@@ -299,7 +304,6 @@ void RayGeneration()
             rayLocal = SampleCosineHemisphere(u);
             // ^^ Samping/BRDF PDF (1/pi) cancels each other out vv
             throughput *= DiffuseReflectance(baseColor, metallic) / (1 - PspecIndirect);
-            // Weighted with Specular by fresnel mix
             float3 hLocal = SampleGGXVNDF(vLocal, float2(alpha), u);
             float VoH = clamp(dot(vLocal, hLocal), EPS, 1.0f);
             float3 specularF0 = SpecularF0(baseColor, metallic);
@@ -315,10 +319,11 @@ void RayGeneration()
     }
     // Transform world space point
     // Accumulation
+    float3 output = clamp(radiance, float3(0), float3(65536));
     float frameCount = float(globalParams.ptAccumualatedFrames + 1);
     float3 prevAvg = (globalParams.ptAccumualatedFrames == 0) ? float3(0) : accumulation[pix].xyz;
     // Welford mean update
-    float3 newAvg = prevAvg + (radiance - prevAvg) / frameCount;
+    float3 newAvg = prevAvg + (output - prevAvg) / frameCount;
     accumulation[pix] = float4(newAvg, 1.0);
 }
 [shader("anyhit")] // Hit Group 0

@@ -17,6 +17,24 @@ float D_GGX(float alphaSq, float NoH) {
 	float b = ((alphaSq - 1.0f) * NoH * NoH + 1.0f);
 	return alphaSq / (PI * b * b);
 }
+float G1_SmithGGX(float3 v, float alpha) {
+    float NdotV = v.z;
+    if (NdotV <= 0.0f) return 0.0f;
+
+    float alpha2 = alpha * alpha;
+    float NdotV2 = NdotV * NdotV;
+
+    // Lambda function for GGX
+    float tanTheta2 = (1.0f - NdotV2) / NdotV2;
+    float lambda = 0.5f * (sqrt(1.0f + alpha2 * tanTheta2) - 1.0f);
+
+    return 1.0f / (1.0f + lambda);
+}
+// Smith G1 term (masking function) optimized for GGX distribution (by substituting G_Lambda_GGX into G1)
+float G1_SmithGGX(float a) {
+	float a2 = a * a;
+	return 2.0f / (sqrt((a2 + 1.0f) / a2) + 1.0f);
+}
 // Smith G1 term (masking function) further optimized for GGX distribution (by substituting G_a into G1_GGX)
 float G1_SmithGGX(float alpha, float alphaSq, float NoSsq) {
 	return 2.0f / (sqrt(((alphaSq * (1.0f - NoSsq)) + NoSsq) / NoSsq) + 1.0f);
@@ -74,7 +92,7 @@ float EvalSpecularBRDFProbability(float3 baseColor, float metallic, float3 v, fl
     float VoN = saturate(dot(v, n)); // Half-vector not known
     float Fspec = dot(LUMINANCE_RGB, F_Schlick(VoN, SpecularF0(baseColor, metallic)));
     float Fdiff = dot(LUMINANCE_RGB, DiffuseReflectance(baseColor, metallic)) * (1 - Fspec);
-    return clamp(Fspec / max(EPS, Fspec + Fdiff), 0.1f, 0.9f);
+    return clamp(Fspec / max(EPS, Fspec + Fdiff), EPS, 1.0f - EPS);
 }
 // https://jcgt.org/published/0007/04/01/
 // PDF is 'G1(NoV) * D'
@@ -102,7 +120,7 @@ float3 SampleGGXVNDF(float3 Ve, float2 alpha2D, float2 u) {
 	// Section 3.4: transforming the normal back to the ellipsoid configuration
 	return normalize(float3(alpha2D.x * Nh.x, alpha2D.y * Nh.y, max(0.0f, Nh.z)));
 }
-// This should have D_GGX canceled out
+// This should have D_GGX canceled out. Use SampleGGXVNDFWeight instead
 float SampleGGXVNDFPdf(float alpha, float alphaSq, float NoH, float NoV, float LoH) {
 	NoH = max(EPS, NoH);
 	NoV = max(EPS, NoV);

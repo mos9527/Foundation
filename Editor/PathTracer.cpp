@@ -21,7 +21,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
                       .size = sizeof(UBO)});
     renderer->CreatePass(
-        "UBO Update & Init", RHIDeviceQueueType::Graphics, 0u,
+        "UBO Update", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
             r->BindBufferCopyDst(self, GlobalUBO);
@@ -113,7 +113,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "reduce", "data/shaders/ECSHistogramReduce.spv");
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-            r->BindBufferStorageRead(self, HistogramBins, RHIPipelineStageBits::ComputeShader, "bins");
+            r->BindBufferUnordered(self, HistogramBins, RHIPipelineStageBits::ComputeShader, "bins");
             r->BindBufferUnordered(self, LightingAverageLuma, RHIPipelineStageBits::ComputeShader, "output");
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)

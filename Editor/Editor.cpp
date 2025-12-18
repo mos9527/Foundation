@@ -189,8 +189,6 @@ void FRunning()
         ImGui::SliderFloat("Min EV", &GShaderGlobals.camMinEV, -16.0f, 16.0f);
         ImGui::SliderFloat("Max EV", &GShaderGlobals.camMaxEV, -16.0f, 16.0f);
         ImGui::SliderFloat("Adapt Rate", &GCamera.adaptRate, 0.0f, 100.0f);
-        ImGui::Text("PT Accumulation: %d", GShaderGlobals.ptAccumualatedFrames);
-        ImGui::SliderInt("PT Bounces", &GShaderGlobals.ptMaxBounces, 1, 16);
     }
     if (cameraUpdated)
         GShaderGlobals.ptAccumualatedFrames = 0, cameraUpdated = false;
@@ -199,6 +197,8 @@ void FRunning()
     {
         static float lodLogThreshold = 3;
         ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
+        ImGui::Text("PT Accumulation: %d", GShaderGlobals.ptAccumualatedFrames);
+        ImGui::SliderInt("PT Bounces", &GShaderGlobals.ptMaxBounces, 1, 16);
         GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
         bool changed = false;
         {
