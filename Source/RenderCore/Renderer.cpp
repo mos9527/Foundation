@@ -115,12 +115,12 @@ void Renderer::DeclareTextureAccess(PassHandle pass, ResourceHandle handle, RHIP
 
 /* -- binding -- */
 void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point, const char* shader_path,
-                          Span<const char> specializationData) const
+                          Span<const char> specializationData, uint32_t rtHitGroupIndex) const
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(stage.is_bitmask(), "Only one stage can be bound to a shader per pass");
-    auto& [path, ep, st, spec] =
-        mSetup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage, mAllocator);
+    auto& [path, ep, st, spec, rtGroup] =
+        mSetup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage, mAllocator, rtHitGroupIndex);
     spec.insert(spec.end(), specializationData.begin(), specializationData.end());
 }
 
@@ -541,7 +541,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
     Map<String, RHIDeviceScopedHandle<RHIShaderModule>> shaders(mAllocator);
     Map<String, UniquePtr<Shader>> reflections(mAllocator);
     Map<String, Span<const char>> specializations(mAllocator);
-    for (auto const& [shader_path, entry_point, stage, spec] : tracked.shaders)
+    Map<String, uint32_t> rtHitGroups(mAllocator);
+    for (auto const& [shader_path, entry_point, stage, spec, rtHitGroup] : tracked.shaders)
     {
         if (!shaders.contains(shader_path))
         {
@@ -554,8 +555,9 @@ void Renderer::BuildPipelineState(PassHandle pass)
             reflections.emplace(shader_path, ConstructUnique<Shader>(mAllocator, data, mAllocator));
             shaders[shader_path] = mDevice->CreateShaderModule({.source = data});
             shaders[shader_path]->DebugSetObjectName(shader_path.c_str());
-            specializations[shader_path] = spec;
         }
+        specializations[entry_point] = spec;
+        rtHitGroups[entry_point] = rtHitGroup;
         auto& module = shaders[shader_path];
         // In BindShader we have already guaranteed these to be unique per stage
         if (stage & RHIShaderStageBits::Compute)
@@ -590,7 +592,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
                                       {
                                           .stage = stage,
                                           .entryPoint = ep.name.c_str(),
-                                          .specializationData = specializations[shader_path],
+                                          .specializationData = specializations[entry_point],
+                                          .raytracingHitGroupIndex = rtHitGroups[entry_point],
                                       },
                                       .shaderModule = module.Get()});
                 if (stage & (RHIShaderStageBits::Compute | RHIShaderStageBits::Mesh | RHIShaderStageBits::Task))
@@ -750,8 +753,11 @@ void Renderer::BuildPipelineState(PassHandle pass)
         }
         else
         {
-            CHECK_MSG(false, "External descriptor set binding {} is not used by any shader in pass {}. Has the set been used by e.g. Backbuffer?", binding,
-                      tracked.name);
+            CHECK_MSG(
+                false,
+                "External descriptor set binding {} is not used by any shader in pass {}. Has the set been used by e.g. Backbuffer?",
+                binding,
+                tracked.name);
         }
         var_ext_sets[binding] = desc_set_layout;
     }
@@ -911,7 +917,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
     {
         auto set = backbufferUAVUsage.value();
         CHECK_MSG(set == tracked.pDescriptorLayouts.size(),
-                  "Backbuffer UAV View MUST be the last descriptor set in pass {}. Declared {}, but pass only has {} sets.", tracked.name,
+                  "Backbuffer UAV View MUST be the last descriptor set in pass {}. Declared {}, but pass only has {} sets.",
+                  tracked.name,
                   set, tracked.pDescriptorLayouts.size());
         tracked.pDescriptorLayouts.emplace_back(mSwapDescriptorSetLayout.Get());
     }

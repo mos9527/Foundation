@@ -270,7 +270,7 @@ void LoadGLTF(StringView path, FScene& scene)
             auto& light = scene.mLights.emplace_back();
             getTransform(light.transform);
             light.color = {node->light->color[0], node->light->color[1], node->light->color[2]};
-            light.intensity = node->light->intensity;
+            light.intensity = node->light->intensity / 683.0f; // Convert from lm to W for white light
         }
     }
     pool.Join();

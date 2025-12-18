@@ -28,6 +28,12 @@ float G2_Over_G1_SmithHeightCorrelated(float alpha, float alphaSq, float NoL, fl
 	float G1L = G1_SmithGGX(alpha, alphaSq, NoL * NoL);
 	return G1L / (G1V + G1L - G1V * G1L);
 }
+float V_SmithGGXCorrelated(float NoV, float NoL, float a) {
+    float a2 = a * a;
+    float GGXL = NoV * sqrt((-NoL * a2 + NoL) * NoL + a2);
+    float GGXV = NoL * sqrt((-NoV * a2 + NoV) * NoV + a2);
+    return 0.5 / (GGXV + GGXL);
+}
 float V_SmithGGXCorrelated_Anisotropic(float at, float ab, float ToV, float BoV,
         float ToL, float BoL, float NoV, float NoL) {
     float lambdaV = NoL * length(float3(at * ToV, ab * BoV, NoV));

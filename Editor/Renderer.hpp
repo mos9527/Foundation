@@ -27,10 +27,10 @@ struct UBO
     float3 camDirection;
     float3 sunDirection{0, 0, -1};
     float sunIntensity{120'000.0f};
-    float3 ambientColor{1e2, 1e2, 1e2};
+    float3 ambientColor{5,5,5};
     // -- Path Tracing
     uint32_t ptAccumualatedFrames{0u};
-    uint32_t ptMaxBounces{3u};
+    int32_t ptMaxBounces{3u};
 };
 #pragma pack(pop)
 

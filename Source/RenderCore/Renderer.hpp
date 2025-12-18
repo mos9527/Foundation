@@ -429,7 +429,7 @@ namespace Foundation::RenderCore
          *                           ID 0, offset 0.
          */
         void BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point, const char* shader_path,
-                        Span<const char> specializationData = {}) const;
+                        Span<const char> specializationData = {}, uint32_t rtHitGroupIndex = 0) const;
         /**
          * @brief Declares a range of Push Constant used in a stage.
          *

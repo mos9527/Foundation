@@ -65,8 +65,14 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", "data/shaders/ERTPathTracer.spv",
                           AsBytes(AsSpan(cfg.viewFlags)));
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RayClosestHit", "data/shaders/ERTPathTracer.spv",
-                          AsBytes(AsSpan(cfg.viewFlags)));
+                          AsBytes(AsSpan(cfg.viewFlags)), /*hit group*/ 0);
+            r->BindShader(self, RHIShaderStageBits::RayAnyHit, "RayOpacityAnyHit", "data/shaders/ERTPathTracer.spv",
+              AsBytes(AsSpan(cfg.viewFlags)), /*hit group*/ 0);
             r->BindShader(self, RHIShaderStageBits::RayMiss, "RayMiss", "data/shaders/ERTPathTracer.spv",
+                          AsBytes(AsSpan(cfg.viewFlags)));
+            r->BindShader(self, RHIShaderStageBits::RayAnyHit, "ShadowRayAnyHit", "data/shaders/ERTPathTracer.spv",
+                          AsBytes(AsSpan(cfg.viewFlags)), /*hit group*/ 1);
+            r->BindShader(self, RHIShaderStageBits::RayMiss, "ShadowRayMiss", "data/shaders/ERTPathTracer.spv",
                           AsBytes(AsSpan(cfg.viewFlags)));
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitives");

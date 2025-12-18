@@ -152,6 +152,8 @@ namespace Foundation::RHI {
                     const char* entryPoint;
                     // Only one specialization info per stage for simplicity
                     Span<const char> specializationData{};
+                    // For ray tracing shaders - which hit group index this shader belongs to
+                    const uint32_t raytracingHitGroupIndex{0};
                 } desc;
                 RHIShaderModule* shaderModule;
             };

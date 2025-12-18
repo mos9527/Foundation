@@ -184,6 +184,21 @@ struct HitPayload
 
     bool IsHit() { return instance != INSTANCE_NO_HIT; }
 };
+struct ShadowPayload
+{
+    bool hit;
+};
+bool TraceShadowRay(float3 origin, float3 direction)
+{
+    RayDesc ray;
+    ray.Origin = origin;
+    ray.Direction = direction;
+    ray.TMin = 0.0f;
+    ray.TMax = 1e9;
+    ShadowPayload payload;
+    TraceRay(AS, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, 1, 1, 1, ray, payload);
+    return payload.hit;
+}
 [[SpecializationConstant]] int flags;
 [shader("raygeneration")]
 void RayGeneration()
@@ -214,6 +229,11 @@ void RayGeneration()
         float metallic, roughness;
         uint materialID;
         DecodePayload(payload, p, n, t, b, geometricNormal, materialID, baseColor, emissive, metallic, roughness);
+        float alpha = roughness * roughness;
+        float3 v = -ray.Direction;
+        // Ensure normals are always front facing
+        if (dot(geometricNormal, v) < 0.0f) geometricNormal *= -1;
+        if (dot(geometricNormal, n) < 0.0f) n *= -1;
         // -- vv Debug View
         if (flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition)) {
             if (flags & kViewBaseColor) {
@@ -230,10 +250,26 @@ void RayGeneration()
         // -- ^^ Debug View
         // Emissive
         radiance += throughput * emissive;
-        // Lights
-        // TODO
-        // Importance sample next ray
-        float3 v = -ray.Direction;
+        // Direct - we only have a sun light for now
+        if (globalParams.sunIntensity > EPS) {
+            float3 l = -globalParams.sunDirection;
+            if (!TraceShadowRay(p, l)){
+                float3 h = normalize(v + l);
+                float NoL = saturate(dot(n, l));
+                float NoH = saturate(dot(n, h));
+                float NoV = saturate(dot(n, v));
+                float VoH = saturate(dot(v, h));
+                float3 Fd = DiffuseReflectance(baseColor, metallic) / PI;
+                float D = D_GGX(alpha * alpha, NoH);
+                float V = V_SmithGGXCorrelated(NoV, NoL, roughness);
+                float Fs = D * V;
+                float3 metalBRDF = Fs * F_Schlick(VoH, baseColor);
+                float3 dielectricBRDF = lerp(Fd, Fs, F_Schlick(VoH, float3(0.04)));
+                float3 light = lerp(dielectricBRDF, metalBRDF, metallic);
+                radiance += throughput * light * float3(globalParams.sunIntensity) * NoL;
+            }
+        }
+        // Indirect - Importance sample next ray
         // Local space
         quat toLocal = QuatRotateToZ(n);
         quat toWorld = toLocal.inverted();
@@ -241,11 +277,7 @@ void RayGeneration()
         float3 nLocal = float3(0,0,1);
         float2 u = float2(rng.sample(), rng.sample());
         float3 rayLocal;
-        // Ensure normals are always front facing
-        if (dot(geometricNormal, v) < 0.0f) geometricNormal *= -1;
-        if (dot(geometricNormal, n) < 0.0f) n *= -1;
         float PspecIndirect = EvalSpecularBRDFProbability(baseColor, metallic, v, n);
-        float alpha = roughness * roughness;
         if (rng.sample() < PspecIndirect){
             // Specular
             float3 hLocal;
@@ -289,8 +321,12 @@ void RayGeneration()
     float3 newAvg = prevAvg + (radiance - prevAvg) / frameCount;
     accumulation[pix] = float4(newAvg, 1.0);
 }
-
-[shader("closesthit")]
+[shader("anyhit")] // Hit Group 0
+void RayOpacityAnyHit(inout ShadowPayload payload)
+{
+    // TODO: Opacity map
+}
+[shader("closesthit")] // Hit Group 0
 void RayClosestHit(inout HitPayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
     uint instance = InstanceIndex();
@@ -300,9 +336,19 @@ void RayClosestHit(inout HitPayload payload, in BuiltInTriangleIntersectionAttri
     payload.instance = instance;
     payload.material = inst.materialIndex;
 }
-
-[shader("miss")]
+[shader("anyhit")] // Hit Group 1
+void ShadowRayAnyHit(inout ShadowPayload payload)
+{
+    payload.hit = true;
+    AcceptHitAndEndSearch();
+}
+[shader("miss")] // Miss 0
 void RayMiss(inout HitPayload payload)
 {
     payload.instance = INSTANCE_NO_HIT;
+}
+[shader("miss")] // Miss 1
+void ShadowRayMiss(inout ShadowPayload payload)
+{
+    payload.hit = false;
 }

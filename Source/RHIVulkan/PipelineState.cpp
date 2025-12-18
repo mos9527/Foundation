@@ -252,7 +252,6 @@ void VulkanPipelineState::InitializeRayTracing()
     const PipelineStateDesc::ShaderStage* rayGenShader = nullptr;
     Vector<const PipelineStateDesc::ShaderStage*> missShaders(alloc.Ptr());
     Vector<const PipelineStateDesc::ShaderStage*> hitShaders(alloc.Ptr());
-
     for (auto& shader : mDesc.shaderStages)
     {
         if (shader.desc.stage & RHIShaderStageBits::RayGeneration)
@@ -313,17 +312,39 @@ void VulkanPipelineState::InitializeRayTracing()
         g.anyHitShader = VK_SHADER_UNUSED_KHR;
         g.intersectionShader = VK_SHADER_UNUSED_KHR;
     }
-    // Hit
+    // Hits
+    // Needs to be grouped by hit group
+    uint32_t hitGroups = 0;
     for (auto* s : hitShaders)
     {
+        hitGroups = std::max(hitGroups, s->desc.raytracingHitGroupIndex + 1);
+    }
+    for (size_t i = 0; i < hitGroups; i++)
+        groups.push_back({
+            .type = vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
+            .generalShader = VK_SHADER_UNUSED_KHR,
+            .closestHitShader = VK_SHADER_UNUSED_KHR,
+            .anyHitShader = VK_SHADER_UNUSED_KHR,
+            .intersectionShader = VK_SHADER_UNUSED_KHR
+        });
+    Span hitSpan = groups;
+    hitSpan = hitSpan.subspan(hitSpan.size() - hitGroups, hitGroups);
+    for (auto s : hitShaders)
+    {
         uint32_t stageIdx = AddShaderStage(s);
-        auto& g = groups.emplace_back();
-        g.type = vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup;
-        g.generalShader = VK_SHADER_UNUSED_KHR;
-
-        g.closestHitShader = (s->desc.stage & RHIShaderStageBits::RayClosestHit) ? stageIdx : VK_SHADER_UNUSED_KHR;
-        g.anyHitShader = (s->desc.stage & RHIShaderStageBits::RayAnyHit) ? stageIdx : VK_SHADER_UNUSED_KHR;
-        g.intersectionShader = (s->desc.stage & RHIShaderStageBits::RayIntersection) ? stageIdx : VK_SHADER_UNUSED_KHR;
+        auto& g = hitSpan[s->desc.raytracingHitGroupIndex];
+        if (s->desc.stage & RHIShaderStageBits::RayClosestHit)
+        {
+            CHECK_MSG(g.closestHitShader == VK_SHADER_UNUSED_KHR,
+                      "Multiple closest hit shaders specified for hit group {}", s->desc.raytracingHitGroupIndex);
+            g.closestHitShader = stageIdx;
+        }
+        if (s->desc.stage & RHIShaderStageBits::RayAnyHit)
+        {
+            CHECK_MSG(g.anyHitShader == VK_SHADER_UNUSED_KHR,
+                      "Multiple closest hit shaders specified for hit group {}", s->desc.raytracingHitGroupIndex);
+            g.anyHitShader = stageIdx;
+        }
     }
     vk::RayTracingPipelineCreateInfoKHR pipelineInfo{
         .stageCount = static_cast<uint32_t>(stages.size()),
@@ -348,13 +369,12 @@ void VulkanPipelineState::InitializeRayTracing()
     const uint32_t baseAlignment = rtProps.shaderGroupBaseAlignment;
     const uint32_t handleStride = AlignUp(handleSize, handleAlignment);
 
-    uint32_t rgenCount = 1;
+    uint32_t kRgenCount = 1;
     auto missCount = static_cast<uint32_t>(missShaders.size());
-    auto hitCount = static_cast<uint32_t>(hitShaders.size());
-
-    mSBT.raygen.stride = mSBT.raygen.size = AlignUp(rgenCount * handleStride, baseAlignment);
-    mSBT.miss.stride = mSBT.miss.size = AlignUp(missCount * handleStride, baseAlignment);
-    mSBT.hit.stride = mSBT.hit.size = AlignUp(hitCount * handleStride, baseAlignment);
+    const auto hitCount = hitGroups;
+    mSBT.raygen.stride = mSBT.raygen.size = AlignUp(kRgenCount * handleStride, baseAlignment);
+    mSBT.miss.stride = handleStride, mSBT.miss.size = AlignUp(missCount * handleStride, baseAlignment);
+    mSBT.hit.stride = handleStride, mSBT.hit.size = AlignUp(hitCount * handleStride, baseAlignment);
     // Create Buffer
     vk::DeviceSize sbtSize = mSBT.raygen.size + mSBT.miss.size + mSBT.hit.size;
     mSBTBuffer = mDevice.CreateBuffer(RHIBufferDesc{
@@ -379,15 +399,15 @@ void VulkanPipelineState::InitializeRayTracing()
     };
     // RayGen
     mSBT.raygen.deviceAddress = sbtAddr;
-    CopyHandlesToSBT(0, rgenCount, 0);
+    CopyHandlesToSBT(0, kRgenCount, 0);
     // Miss
     uint32_t missOffset = mSBT.raygen.size;
     mSBT.miss.deviceAddress = sbtAddr + missOffset;
-    CopyHandlesToSBT(rgenCount, missCount, missOffset);
+    CopyHandlesToSBT(kRgenCount, missCount, missOffset);
     // Hit
     uint32_t hitOffset = missOffset + mSBT.miss.size;
     mSBT.hit.deviceAddress = sbtAddr + hitOffset;
-    CopyHandlesToSBT(rgenCount + missCount, hitCount, hitOffset);
+    CopyHandlesToSBT(kRgenCount + missCount, hitCount, hitOffset);
 }
 
 VulkanPipelineState::VulkanPipelineState(VulkanDevice& device, PipelineStateDesc const& desc) :

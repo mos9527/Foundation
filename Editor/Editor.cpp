@@ -33,6 +33,11 @@ void FInitEnter()
         auto& light = scene.mLights.front();
         GShaderGlobals.sunDirection = normalize(light.transform.rotation * float3(0, 0, -1));
         GShaderGlobals.sunIntensity = light.intensity;
+        GShaderGlobals.camMinEV = 0.0f;
+        GShaderGlobals.camMaxEV = log2f(light.intensity * 0.25f);
+    } else
+    {
+        GShaderGlobals.sunIntensity = 0.0f;
     }
     // Load into GPUScene
     auto* gpu = GContext->gpuScene;
@@ -185,7 +190,7 @@ void FRunning()
         ImGui::SliderFloat("Max EV", &GShaderGlobals.camMaxEV, -16.0f, 16.0f);
         ImGui::SliderFloat("Adapt Rate", &GCamera.adaptRate, 0.0f, 100.0f);
         ImGui::Text("PT Accumulation: %d", GShaderGlobals.ptAccumualatedFrames);
-        ImGui::Text("PT SPP: %d", GShaderGlobals.ptMaxBounces);
+        ImGui::SliderInt("PT Bounces", &GShaderGlobals.ptMaxBounces, 1, 16);
     }
     if (cameraUpdated)
         GShaderGlobals.ptAccumualatedFrames = 0, cameraUpdated = false;

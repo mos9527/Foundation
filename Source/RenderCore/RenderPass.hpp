@@ -109,8 +109,8 @@ namespace Foundation::RenderCore
         // Unique texture views
         Vector<ResourceHandle> texviews;
         /* -- Pipeline -- */
-        // Shader [path, entry point, stage, specialization data]
-        Vector<Tuple<String, String, RHIShaderStage, Vector<char>>> shaders;
+        // Shader [path, entry point, stage, specialization data, RT hit group]
+        Vector<Tuple<String, String, RHIShaderStage, Vector<char>, uint32_t>> shaders;
         // Bind points [view(tex) or buffer(buf), desc type, binding point]
         Vector<Tuple<ResourceHandle, RHIDescriptorType, String>> textureBindings, bufferBindings, asBindings;
         // External Bind Sets [binding point, layout ptr, set index (set when built)]
