@@ -120,7 +120,7 @@ void DecodePayload(HitPayload payload,
 }
 float3 EvalSkyDome(float3 dir)
 {
-    return float3(0.1735); // Furnace
+    return float3(1.0f); // Furnace
 }
 // Quaternion that rotates input vector to (0, 0, 1)
 quat QuatRotateToZ(float3 input) {
