@@ -224,6 +224,8 @@ void RayGeneration()
         BSDFSample sample = diffuse.Sample_f(wo, rng.sample(), rng.sample2());
         if (sample.IsValid())
             throughput *= sample.f / sample.pdf * AbsCosTheta(sample.wi);
+        else
+            break;
         // -- Next ray
         ray.Direction = normalize(toWorld.rotate(sample.wi));
         ray.Origin = OffsetRay(hit.position, hit.geometricNormal);

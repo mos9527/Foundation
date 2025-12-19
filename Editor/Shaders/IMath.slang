@@ -1,6 +1,7 @@
 public static const float Pi = acos(-1);
 public static const float InvPi = 1.0f / Pi;
 public static const float INF = 1e18f;
+public static const float EPS = 1e-6f;
 // -- bits
 public const uint32_t alignUp(uint32_t value, uint32_t alignment) {
     return (value + alignment - 1) & ~(alignment - 1);
@@ -40,7 +41,6 @@ public quat quatRotateToZ(float3 input) {
 	return quat(normalize(float4(input.y, -input.x, 0.0f, 1.0f + input.z)));
 }
 // -- de/quantization
-public static const float EPS = 1e-5f;
 public uint32_t quantizeUnorm(float v, int32_t N)
 {
     float scale = (float)((1 << N) - 1);
@@ -95,9 +95,10 @@ public float2 unpackUnitCircleSnorm(float v){
     return normalize(v >= 0.0f ? float2(x, y) : float2(x, -y));
 }
 // -- tangent frame projection
+// Building an Orthonormal Basis from a 3D Unit Vector Without Normalization - Frisvad, 2012
 public void buildOrthonormalBasis(const float3 n, out float3 b1,out float3 b2)
 {
-    if (n.z < -1 + EPS)
+    if (n.z < EPS - 1)
     {
         b1 = float3(0.0, -1.0, 0.0);
         b2 = float3(-1.0, 0.0, 0.0);
