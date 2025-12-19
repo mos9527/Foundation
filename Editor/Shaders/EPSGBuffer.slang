@@ -1,4 +1,6 @@
-#include "ICommon.slang"
+import ICommon;
+import IFlags;
+import IMath;
 [[SpecializationConstant]] int flags;
 uniform UBO globalParams;
 [[vk_binding(4,0)]] RWTexture2D<uint32_t> overdraw;

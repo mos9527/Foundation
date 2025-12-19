@@ -1,4 +1,6 @@
-#include "ICommon.slang"
+import ICommon;
+import IFlags;
+import IMath;
 [[SpecializationConstant]] int cullFlags;
 uniform UBO globalParams;
 

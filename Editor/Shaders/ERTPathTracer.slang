@@ -3,53 +3,11 @@
 // - RAY TRACING GEMS II - Chapter 14
 // - https://github.com/boksajak/referencePT/blob/master/shaders/PathTracer.hlsl
 // - https://github.com/nvpro-samples/vk_gltf_renderer/blob/master/shaders/gltf_pathtrace.slang
-#include "ICommon.slang"
-#include "IBRDF.slang"
+import IFlags;
+import IMath;
+import ICommon;
+import IBRDF;
 uniform UBO globalParams;
-// -- Math
-// In [0, 1) range
-float uintToFloat(uint x) {
-	return asfloat(0x3f800000 | (x >> 9)) - 1.0f;
-}
-// PCG random numbers generator
-// Source: "Hash Functions for GPU Rendering" by Jarzynski & Olano
-public struct PCG
-{
-    uint4 pcg4d(uint4 v)
-    {
-    	v = v * 1664525u + 1013904223u;
-
-    	v.x += v.y * v.w;
-    	v.y += v.z * v.x;
-    	v.z += v.x * v.y;
-    	v.w += v.y * v.z;
-
-    	v = v ^ (v >> 16u);
-
-    	v.x += v.y * v.w;
-    	v.y += v.z * v.x;
-    	v.z += v.x * v.y;
-    	v.w += v.y * v.z;
-
-    	return v;
-    }
-    uint4 state;
-    public __init(uint2 pixel, uint seed = 0)
-    {
-        state = uint4(pixel, globalParams.frameNumber, seed);
-    }
-    [mutating] public float sample()
-    {
-        state.w++;
-        state = pcg4d(state);
-        return uintToFloat(state.x);
-    }
-    [mutating] public float2 sample2()
-    {
-        return float2(sample(), sample());
-    }
-}
-
 // -- Scene
 RaytracingAccelerationStructure AS;
 StructuredBuffer<GSInstance> instances;
@@ -58,7 +16,6 @@ StructuredBuffer<GSMaterial> materials;
 SamplerState textureSampler;
 RWTexture2D<float4> accumulation;
 [[vk_binding(0,1)]] Texture2D<float4> textures[];
-
 
 void IntersectTriangle(uint meshOffset, uint primitive, float2 bary, out float3 position, out float3 normal, out float3 tangent, out float2 uv, out float bitangentSign){
     GSMesh mesh = primitives.Load<GSMesh>(meshOffset);
@@ -99,39 +56,66 @@ void SampleMaterials(GSMaterial material, float2 uv,
     if (material.emissiveTexture != 0)
         emissive *= textures[NonUniformResourceIndex(material.emissiveTexture)].SampleLevel(textureSampler, uv, 0);
 }
-void DecodePayload(HitPayload payload,
-    out float3 position, out float3 n, out float3 t, out float3 b, out float3 geometricNormal,
-    out uint materialID, out float3 baseColor, out float3 emissive, out float metallic, out float roughness)
+static const uint32_t INSTANCE_NO_HIT = ~0u;
+struct HitPayload
+{
+    // Model space
+    float3 position;
+    float3 normal;
+    float4 tangent;
+    float2 uv;
+    uint32_t instance;
+    uint32_t material;
+
+    bool IsHit() { return instance != INSTANCE_NO_HIT; }
+};
+struct ShadowPayload
+{
+    bool hit;
+};
+struct Payload {
+    float3 position;
+    float3 normal;
+    float3 tangent;
+    float3 bitangent;
+    float3 geometricNormal;
+    uint materialID;
+    float3 baseColor;
+    float3 emissive;
+    float metallic;
+    float roughness;
+
+    [mutating] void EnsureFrontFacing(float3 wo){
+        if (dot(geometricNormal, wo) < 0.0f) geometricNormal *= -1;
+        if (dot(geometricNormal, normal) < 0.0f) normal *= -1;
+    }
+};
+Payload SamplePayload(HitPayload payload)
 {
     GSInstance inst = instances[NonUniformResourceIndex(payload.instance)];
-    materialID = inst.materialIndex;
-    GSMaterial material = materials[NonUniformResourceIndex(materialID)];
+    Payload res;
+    res.materialID = inst.materialIndex;
+    GSMaterial material = materials[NonUniformResourceIndex(res.materialID)];
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
     SampleMaterials(material, payload.uv, baseColor4, normalTBN, pbrMetalRough, emissive4);
-    baseColor = baseColor4.xyz;
-    emissive = emissive4.xyz;
-    roughness = pbrMetalRough.y;
-    metallic = pbrMetalRough.z;
-    n = normalize(payload.normal);
-    t = normalize(payload.tangent.xyz);
-    n = inst.rotation.rotate(n);
-    t = inst.rotation.rotate(t);
-    position = inst.rotation.rotate(payload.position);
-    position = position * inst.scale + inst.transform;
-    b = cross(n, t) * (payload.tangent.w > 0.0f ? 1 : -1);
-    geometricNormal = n;
-    n = normalize(t * normalTBN.x + b * normalTBN.y + n * normalTBN.z);
+    res.baseColor = baseColor4.xyz;
+    res.emissive = emissive4.xyz;
+    res.roughness = pbrMetalRough.y;
+    res.metallic = pbrMetalRough.z;
+    res.normal = normalize(payload.normal);
+    res.tangent = normalize(payload.tangent.xyz);
+    res.normal = inst.rotation.rotate(res.normal);
+    res.tangent = inst.rotation.rotate(res.tangent);
+    res.position = inst.rotation.rotate(payload.position);
+    res.position = res.position * inst.scale + inst.transform;
+    res.bitangent = cross(res.normal, res.tangent) * (payload.tangent.w > 0.0f ? 1 : -1);
+    res.geometricNormal = res.normal;
+    res.normal = normalize(res.tangent * normalTBN.x + res.bitangent * normalTBN.y + res.normal * normalTBN.z);
+    return res;
 }
 float3 EvalSkyDome(float3 dir)
 {
     return float3(1.0f); // Furnace
-}
-// Quaternion that rotates input vector to (0, 0, 1)
-quat QuatRotateToZ(float3 input) {
-
-	// Handle special case when input is exact or near opposite of (0, 0, 1)
-	if (input.z < EPS - 1.0f) return quat(float4(1.0f, 0.0f, 0.0f, 0.0f));
-	return quat(normalize(float4(input.y, -input.x, 0.0f, 1.0f + input.z)));
 }
 // The safeOffsetRay function shifts a point on a surface so that a ray
 // bouncing off the surface is no longer treated as intersecting the surface
@@ -163,7 +147,7 @@ float3 OffsetRay(float3 worldPosition, float3 offsetDirection)
       abs(worldPosition.y) < origin ? worldPosition.y + floatScale * offsetDirection.y : offsetPosition.y,
       abs(worldPosition.z) < origin ? worldPosition.z + floatScale * offsetDirection.z : offsetPosition.z);
 }
-
+// Primary ray with jitter for AA
 float3 GeneratePrimaryRay(uint2 pixel, PCG rng)
 {
     float2 jitter = lerp(float2(-0.5f), float2(0.5f), rng.sample2());
@@ -175,23 +159,6 @@ float3 GeneratePrimaryRay(uint2 pixel, PCG rng)
     return normalize(wsPosition.xyz / wsPosition.w - globalParams.camPosition);
 }
 // -- Main Shader Routines
-static const uint32_t INSTANCE_NO_HIT = ~0u;
-struct HitPayload
-{
-    // Model space
-    float3 position;
-    float3 normal;
-    float4 tangent;
-    float2 uv;
-    uint32_t instance;
-    uint32_t material;
-
-    bool IsHit() { return instance != INSTANCE_NO_HIT; }
-};
-struct ShadowPayload
-{
-    bool hit;
-};
 bool TraceShadowRay(float3 origin, float3 direction)
 {
     RayDesc ray;
@@ -208,7 +175,7 @@ bool TraceShadowRay(float3 origin, float3 direction)
 void RayGeneration()
 {
     uint2 pix = DispatchRaysIndex().xy;
-    PCG rng = PCG(pix);
+    PCG rng = PCG(pix, globalParams.frameNumber);
     // Generate primary ray with jitter for AA
     // Trace
     float3 radiance = float3(0);
@@ -218,9 +185,9 @@ void RayGeneration()
     ray.Origin = globalParams.camPosition;
     ray.Direction = GeneratePrimaryRay(pix, rng);
     ray.TMin = 0.0f;
-    ray.TMax = 1e9;
-    HitPayload payload;
+    ray.TMax = INF;
     for (uint bounce = 0; bounce < globalParams.ptMaxBounces; bounce++){
+        HitPayload payload;
         TraceRay(AS, 0, 0xFF, 0, 0, 0, ray, payload);
         if (!payload.IsHit()){
             // Miss - environment
@@ -228,93 +195,41 @@ void RayGeneration()
             break;
         }
         // Decode
-        float3 p, n, t, b, geometricNormal;
-        float3 baseColor, emissive;
-        float metallic, roughness;
-        uint materialID;
-        DecodePayload(payload, p, n, t, b, geometricNormal, materialID, baseColor, emissive, metallic, roughness);
-        float alpha = roughness * roughness;
-        float3 v = -ray.Direction;
-        // Ensure normals are always front facing
-        if (dot(geometricNormal, v) < 0.0f) geometricNormal *= -1;
-        if (dot(geometricNormal, n) < 0.0f) n *= -1;
+        float3 view = -ray.Direction; // Outgoing direction
+        Payload hit = SamplePayload(payload);
+        hit.EnsureFrontFacing(view);
         // -- vv Debug View
         if (flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition)) {
             if (flags & kViewBaseColor) {
-                radiance = baseColor;
+                radiance = hit.baseColor;
             } else if (flags & kViewNormal) {
-                radiance = n * 0.5f + 0.5f;
+                radiance = hit.normal * 0.5f + 0.5f;
             } else if (flags & kViewMaterialID) {
-                radiance = unpackUnorm4x8ToFloat(hash(materialID)).xyz;
+                radiance = unpackUnorm4x8ToFloat(hash(hit.materialID)).xyz;
             } else if (flags & kViewPosition) {
-                radiance = p;
+                radiance = hit.position;
             }
             break;
         }
         // -- ^^ Debug View
         // Emissive
-        radiance += throughput * emissive;
-        // Direct - we only have a sun light for now
-        if (globalParams.sunIntensity > EPS) {
-            float3 l = -globalParams.sunDirection;
-            if (!TraceShadowRay(p, l)){
-                float3 h = normalize(v + l);
-                float NoL = saturate(dot(n, l));
-                float NoH = saturate(dot(n, h));
-                float NoV = saturate(dot(n, v));
-                float VoH = saturate(dot(v, h));
-                float3 Fd = DiffuseReflectance(baseColor, metallic) / PI;
-                float D = D_GGX(alpha * alpha, NoH);
-                float V = V_SmithGGXCorrelated(NoV, NoL, roughness);
-                float Fs = D * V;
-                float3 metalBRDF = Fs * F_Schlick(VoH, baseColor);
-                float3 dielectricBRDF = lerp(Fd, Fs, F_Schlick(VoH, float3(0.04)));
-                float3 light = lerp(dielectricBRDF, metalBRDF, metallic);
-                radiance += throughput * light * float3(globalParams.sunIntensity) * NoL;
-            }
-        }
-        // Indirect - Importance sample next ray
-        // Local space
-        quat toLocal = QuatRotateToZ(n);
+        radiance += throughput * hit.emissive;
+        // Indirect
+        quat toLocal = quatRotateToZ(hit.normal);
         quat toWorld = toLocal.inverted();
-        float3 vLocal = normalize(toLocal.rotate(v));
-        float3 nLocal = float3(0,0,1);
-        float2 u = rng.sample2();
-        float3 rayLocal;
-        // Multiple importance sampling
-        float PspecIndirect = EvalSpecularBRDFProbability(baseColor, metallic, v, n);
-        if (rng.sample() < PspecIndirect){
-            // Specular
-            float3 hLocal;
-            if (alpha <= EPS)
-                hLocal = float3(0,0,1); // Perfect reflector
-            else
-                hLocal = SampleGGXVNDF(vLocal, float2(alpha), u);
-            float3 lLocal = reflect(-vLocal, hLocal);
-            float HoL = clamp(dot(hLocal, lLocal), EPS, 1.0f);
-            float NoL = clamp(dot(nLocal, lLocal), EPS, 1.0f);
-            float NoV = clamp(dot(nLocal, vLocal), EPS, 1.0f);
-            float NoH = clamp(dot(nLocal, hLocal), EPS, 1.0f);
-            float3 specularF0 = SpecularF0(baseColor, metallic);
-            float3 F = F_Schlick(HoL, specularF0);
-            rayLocal = lLocal;
-            throughput *= F * SampleGGXVNDFWeight(alpha, alpha * alpha, NoL, NoV) / PspecIndirect;
-        } else {
-            // Diffuse
-            rayLocal = SampleCosineHemisphere(u);
-            // ^^ Samping/BRDF PDF (1/pi) cancels each other out vv
-            throughput *= DiffuseReflectance(baseColor, metallic) / (1 - PspecIndirect);
-            float3 hLocal = SampleGGXVNDF(vLocal, float2(alpha), u);
-            float VoH = clamp(dot(vLocal, hLocal), EPS, 1.0f);
-            float3 specularF0 = SpecularF0(baseColor, metallic);
-            float3 F = F_Schlick(VoH, specularF0);
-            throughput *= float3(1) - F;
-        }
-        ray.Direction = normalize(toWorld.rotate(rayLocal));
-        ray.Origin = OffsetRay(p, geometricNormal);
+        float3 wo = normalize(toLocal.rotate(view)); // Local outgoing
+        // -- MIS BSDFs
+        // Diffuse lobe
+        DiffuseBxDF diffuse = DiffuseBxDF(hit.baseColor);
+        BSDFSample sample = diffuse.Sample_f(wo, rng.sample(), rng.sample2());
+        if (sample.IsValid())
+            throughput *= sample.f / sample.pdf * AbsCosTheta(sample.wi);
+        // -- Next ray
+        ray.Direction = normalize(toWorld.rotate(sample.wi));
+        ray.Origin = OffsetRay(hit.position, hit.geometricNormal);
         if (dot(LUMINANCE_RGB,throughput) < EPS)
             break; // No contribution
-        if (dot(ray.Direction, geometricNormal) < 0)
+        if (dot(ray.Direction, hit.geometricNormal) < 0)
             break; // Terminate if ray goes below the surface
     }
     // Transform world space point
