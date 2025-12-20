@@ -170,6 +170,7 @@ bool TraceShadowRay(float3 origin, float3 direction)
     TraceRay(AS, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, 1, 1, 1, ray, payload);
     return payload.hit;
 }
+
 [[SpecializationConstant]] int flags;
 [shader("raygeneration")]
 void RayGeneration()
@@ -220,8 +221,14 @@ void RayGeneration()
         float3 wo = normalize(toLocal.rotate(view)); // Local outgoing
         // -- MIS BSDFs
         // Diffuse lobe
+        float alpha_x, alpha_y;
+        alpha_x = max(0.001f, hit.roughness * hit.roughness);
+        alpha_y = alpha_x;
         DiffuseBxDF diffuse = DiffuseBxDF(hit.baseColor);
-        BSDFSample sample = diffuse.Sample_f(wo, rng.sample(), rng.sample2());
+        ConductorBxDF metal = ConductorBxDF(float3(1.5f), float3(0.0f), alpha_x, alpha_y);
+        DielectricBxDF dielectric = DielectricBxDF(1.5f, alpha_x, alpha_y);
+        IBxDF bsdf = diffuse;
+        BSDFSample sample = bsdf.Sample_f(wo, rng.sample(), rng.sample2());
         if (sample.IsValid())
             throughput *= sample.f / sample.pdf * AbsCosTheta(sample.wi);
         else

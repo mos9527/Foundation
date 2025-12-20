@@ -12,6 +12,26 @@ public enum BxDFReflTransFlags {
     Transmission = 1 << 1,
     All = 0b11
 }
+public enum BxDFFlags {
+    Unset = 0,
+    Reflection = 1 << 0,    // 0b00001
+    Transmission = 1 << 1,  // 0b00010
+    Diffuse = 1 << 2,       // 0b00100
+    Glossy = 1 << 3,        // 0b01000, Rough surface
+    Specular = 1 << 4,      // 0b10000, Perfect mirror-like
+    // Composite types
+    DiffuseReflection = 0b00101,
+    DiffuseTransmission = 0b00110,
+    GlossyReflection = 0b01001,
+    GlossyTransmission = 0b01010,
+    SpecularReflection = 0b10001,
+    SpecularTransmission = 0b10010,
+    All = 0b11111
+}
+public enum TransportMode {
+    Radiance, // Towards camera
+    Importance // Toward light source for non-symmetric BSDFs
+}
 // https://www.pbr-book.org/4ed/Reflection_Models/BSDF_Representation
 public struct BSDFSample {
     // Value of the BSDF
@@ -22,14 +42,21 @@ public struct BSDFSample {
     // For dirac delta distributions, this should be 1 to match
     // that of the BxDFs sampled.
     public float pdf;
+    // Which type of BxDF was sampled - useful for MIS
+    BxDFFlags flags;
+    // For transmission BxDFs, the relative IOR between
+    // incident and transmitted mediums
+    float eta;
 
-    public __init(float3 f = float3(0), float3 wi = float3(0), float pdf = 0.0) {
+    public __init(float3 f = float3(0), float3 wi = float3(0), float pdf = 0.0, BxDFFlags flags = BxDFFlags::Unset, float eta = 1.0f) {
         this.f = f;
         this.wi = wi;
         this.pdf = pdf;
+        this.flags = flags;
+        this.eta = eta;
     }
     public bool IsValid() {
-        return pdf > 0.0;
+        return pdf > 0.0 && flags != BxDFFlags.Unset;
     }
 };
 typedef float3 SampledSpectrum; // RGB spectrum
@@ -37,17 +64,17 @@ typedef float3 SampledSpectrum; // RGB spectrum
 // * wo, wi are in local space (+z is normal direction)
 public interface IBxDF {
     // Evaluates the BxDF for given pair of directions
-    public SampledSpectrum f(float3 wo, float3 wi);
+    public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode = TransportMode::Radiance);
 
     // Samples the BxDF given outgoing direction wo and 2D random, uniform
     // samples uc and u.
     // PDF of the sampler is returned in the BSDFSample struct,
     // which should be a form of Importance Sampling and thus non-zero.
-    public BSDFSample Sample_f(float3 wo, float uc, float2 u, BxDFReflTransFlags flags = BxDFReflTransFlags::All);
+    public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode = TransportMode::Radiance, BxDFReflTransFlags flags = BxDFReflTransFlags::All);
 
     // Evaluates the PDF of the BxDF for a given pair of directions, used in MIS
     // Returns 1 for dirac delta distributions
-    public float PDF(float3 wo, float3 wi, BxDFReflTransFlags flags = BxDFReflTransFlags::All);
+    public float PDF(float3 wo, float3 wi, TransportMode mode = TransportMode::Radiance, BxDFReflTransFlags flags = BxDFReflTransFlags::All);
 };
 // -- Spherical Geometry Utilities
 public float AbsDot(float2 v1, float2 v2) { return abs(dot(v1, v2)); }
@@ -81,7 +108,7 @@ public float CosDPhi(float3 wa, float3 wb) {
 public bool SameHemisphere(float3 w, float3 wp) {
     return w.z * wp.z > 0.0;
 }
-public float3 FaceForward(float3 v, float3 n) {
+public float3 FaceForward(float3 n, float3 v) {
     return dot(v, n) < 0.0 ? -n : n;
 }
 // -- Light Transport
@@ -91,7 +118,7 @@ public float3 Reflect(float3 wo, float3 n) {
     return -wo + 2 * dot(wo, n) * n;
 }
 // https://www.pbr-book.org/4ed/Reflection_Models/Specular_Reflection_and_Transmission#SnellrsquosLaw
-public bool Refract(float3 wi, float3 n, float eta /* IOR */, out float3 wt){
+public bool Refract(float3 wi, float3 n, float eta /* IOR */, out float3 wt, out float etap){
     float cosTheta_i = dot(n, wi);
     if (cosTheta_i < 0) { // Inside an object?
         eta = 1 / eta;
@@ -104,6 +131,7 @@ public bool Refract(float3 wi, float3 n, float eta /* IOR */, out float3 wt){
         return false;
     float cosTheta_t = SafeSqrt(1 - sin2Theta_t);
     wt = eta * -wi + (eta * cosTheta_i - cosTheta_t) * n;
+    etap = eta;
     return true;
 }
 // https://www.pbr-book.org/4ed/Reflection_Models/Specular_Reflection_and_Transmission#TheFresnelEquations
@@ -174,7 +202,7 @@ public float3 SampleUniformSphere(float2 u) {
     float z = 1 - 2 * u[0];
     float r = SafeSqrt(1 - Sqr(z));
     float phi = 2 * Pi * u[1];
-    return float3(r * cos(phi), r * (phi), z);
+    return float3(r * cos(phi), r * sin(phi), z);
 }
 // https://pbr-book.org/4ed/Sampling_Algorithms/Sampling_Multidimensional_Functions#Cosine-WeightedHemisphereSampling
 public float3 SampleCosineHemisphere(float2 u) {
@@ -268,23 +296,23 @@ public struct DiffuseBxDF : IBxDF {
     // BRDF evaluation
     // Constant reflection distribution where:
     // \int_H^2 f(wo,wi) CosTheta(wi) dwi = R
-    public SampledSpectrum f(float3 wo, float3 wi) {
+    public SampledSpectrum f(float3 wo, float3 wi, TransportMode) {
         if (!SameHemisphere(wo, wi)) {
             return float3(0.0, 0.0, 0.0);
         }
         return R * InvPi;
     }
     // Draw a sample from cosine-weighted hemisphere
-    public BSDFSample Sample_f(float3 wo, float uc, float2 u, BxDFReflTransFlags flags) {
+    public BSDFSample Sample_f(float3 wo, float uc, float2 u,TransportMode, BxDFReflTransFlags flags) {
         if (!(flags & BxDFReflTransFlags::Reflection))
             return BSDFSample();
         float3 wi = SampleCosineHemisphere(u);
         if (wo.z < 0.0) wi.z *= -1.0; // Ensure same hemisphere
         float pdf = CosineHemispherePDF(AbsCosTheta(wi));
-        return BSDFSample(R * InvPi, wi, pdf);
+        return BSDFSample(R * InvPi, wi, pdf, BxDFFlags::DiffuseReflection);
     }
     // Evaluated PDF for a pair of directions
-    public float PDF(float3 wo, float3 wi, BxDFReflTransFlags flags) {
+    public float PDF(float3 wo, float3 wi,TransportMode, BxDFReflTransFlags flags) {
         if (!(flags & BxDFReflTransFlags::Reflection) || !SameHemisphere(wo, wi))
             return 0.0;
         return CosineHemispherePDF(AbsCosTheta(wi));
@@ -301,7 +329,7 @@ public struct ConductorBxDF : IBxDF {
         this.mfDistrib = TrowbridgeReitzDistribution(alpha_x, alpha_y);
     }
     // Torrance-Sparrow PDF
-    public float PDF(float3 wo, float3 wi, BxDFReflTransFlags flags) {
+    public float PDF(float3 wo, float3 wi, TransportMode, BxDFReflTransFlags flags) {
         if (!(flags & BxDFReflTransFlags::Reflection) || !SameHemisphere(wo, wi))
             return 0.0;
         if (mfDistrib.EffectivelySmooth())
@@ -314,18 +342,18 @@ public struct ConductorBxDF : IBxDF {
         // --
         // https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory#x5-TheHalf-DirectionTransform
         // For square jacobian (R3->R3) here, both in spherical coords, we have:
-        //   \frac{dwm}{dwi} = \frac{sin theta_m dtheta_m dphi_m}{sin theta_i dtheta_i dphi_i}
+        //   \frac{dwm}{dwi} = \frac{sin theta_m d theta_m d phi_m}{sin theta_i d theta_i d phi_i}
         // Recall that theta_r = theta_i and that on a flat 2D scenario:
         //   theta_m = (theta_i + theta_o) / 2
         // And in this case assume theta_o is infinitely small (viewing from normal direction):
         //   theta_m = theta_i / 2
         // Plugging it back, we have the simplified form:
-        //  \frac{dwm}{dwi} = \frac{sin theta_m dtheta_m dphi_m}{sin 2theta_m 2dtheta_m 2dphi_m}
+        //  \frac{dwm}{dwi} = \frac{sin theta_m d theta_m d phi_m}{sin 2theta_m 2 d theta_m 2 d phi_m}
         // Which gives the final jacobian in the vvv denom vvv
         return mfDistrib.PDF(wo, wm) / (4 * AbsDot(wo, wm));
     }
     // Torrance-Sparrow BRDF Sampling
-    public BSDFSample Sample_f(float3 wo, float uc, float2 u, BxDFReflTransFlags flags) {
+    public BSDFSample Sample_f(float3 wo, float uc, float2 u,TransportMode, BxDFReflTransFlags flags) {
         if (!(flags & BxDFReflTransFlags::Reflection))
             return BSDFSample();
         if (mfDistrib.EffectivelySmooth()){
@@ -344,7 +372,7 @@ public struct ConductorBxDF : IBxDF {
             // Remember that cos theta_r = cos theta_i, which gives the following impl:
             float3 wi = float3(-wo.x, -wo.y, wo.z);
             SampledSpectrum F = FrComplex(AbsCosTheta(wi), eta, k) / AbsCosTheta(wi);
-            return BSDFSample(F, wi, 1.0);
+            return BSDFSample(F, wi, 1.0, BxDFFlags::SpecularReflection);
         } else {
             // https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory#TheTorrancendashSparrowModel
             // https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory#x5-TorrancendashSparrowSampling
@@ -366,7 +394,7 @@ public struct ConductorBxDF : IBxDF {
             if (!SameHemisphere(wo, wi))
                 return BSDFSample(); // Absorbed...
             // 2. Compute the scaled PDF for the sampled direction
-            // Jacobian from previous derivation
+            // Using Jacobian from previous derivation vvvv
             float pdf = mfDistrib.PDF(wo, wm) / (4 * AbsDot(wo, wm));
             // 3. Calculate Fresnel for amount of reflection
             SampledSpectrum F = FrComplex(AbsDot(wo, wm), eta, k);
@@ -374,11 +402,11 @@ public struct ConductorBxDF : IBxDF {
             float cosTheta_o = AbsCosTheta(wo), cosTheta_i = AbsCosTheta(wi);
             SampledSpectrum f = mfDistrib.D(wm) * F * mfDistrib.G(wo, wi) /
                                 (4 * cosTheta_i * cosTheta_o);
-            return BSDFSample(f, wi, pdf);
+            return BSDFSample(f, wi, pdf, BxDFFlags::GlossyReflection);
        }
     }
    // BRDF evaluation
-   public SampledSpectrum f(float3 wo, float3 wi) {
+   public SampledSpectrum f(float3 wo, float3 wi, TransportMode) {
         if (!SameHemisphere(wo, wi)) return {};
         // For specular peaks - this is generally unreachable by sampled cases with e.g.
         // analytical lights - return 0 to avoid infinities/fireflies.
@@ -393,4 +421,160 @@ public struct ConductorBxDF : IBxDF {
         return mfDistrib.D(wm) * F * mfDistrib.G(wo, wi) /
                             (4 * cosTheta_i * cosTheta_o);
    }
-}
+};
+public struct DielectricBxDF : IBxDF {
+    float eta; // IOR
+    TrowbridgeReitzDistribution mfDistrib; // Microfacet distribution
+    public __init(float eta, float alpha_x, float alpha_y) {
+        this.eta = eta;
+        this.mfDistrib = TrowbridgeReitzDistribution(alpha_x, alpha_y);
+    }
+   public float PDF(float3 wo, float3 wi, TransportMode, BxDFReflTransFlags flags) {
+        if (eta == 1 || mfDistrib.EffectivelySmooth())
+            return 0;
+        // https://www.pbr-book.org/4ed/Reflection_Models/Rough_Dielectric_BSDF#sec:rough-dielectric
+        // 1. Determine half-vector
+        float cosTheta_o = CosTheta(wo), cosTheta_i = CosTheta(wi);
+        // \frac{sin in}{sin out} > n -> Over critical angle -> no transmission, equivalent to IOR=1.0
+        bool reflected = cosTheta_i * cosTheta_o > 0;
+        float etap = 1;
+        if (!reflected)
+           etap = (cosTheta_o > 0) ? eta : 1 / eta;
+        float3 wm = wi * etap + wo;
+        if (cosTheta_i == 0 || cosTheta_o == 0 || LengthSquared(wm) == 0) return {};
+        wm = FaceForward(normalize(wm), float3(0, 0, 1));
+        // 2. Discard back-facing microfacets to either in/out directions
+        if (dot(wm,wi) * cosTheta_i < 0 || dot(wm,wo) * cosTheta_o < 0)
+           return 0;
+        // 3. Determine reflectance
+        float R = FrDielectric(dot(wo, wm), eta), T = 1 - R;
+        // 4. Compute probabilities
+        float pr = R, pt = T;
+        if (!(flags & BxDFReflTransFlags::Reflection)) pr = 0;
+        if (!(flags & BxDFReflTransFlags::Transmission)) pt = 0;
+        float pdf;
+        if (reflected){
+            // Reflection only, same as Torrance-Sparrow but with probability weighting
+            pdf = mfDistrib.PDF(wo, wm) / (4 * AbsDot(wo, wm)) * pr / (pr + pt);
+        } else {
+            // Another Jacobian for transmission case
+            // ---
+            // See formulation at:
+            //   https://www.pbr-book.org/4ed/Reflection_Models/Rough_Dielectric_BSDF#eq:mf-transmission-change-of-vars
+            float denom = Sqr(dot(wi, wm) + dot(wo,wm) / etap);
+            float dwm_dwi = AbsDot(wi, wm) / denom;
+            pdf = mfDistrib.PDF(wo, wm) * dwm_dwi * pt / (pr + pt);
+        }
+        return pdf;
+   }
+    public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode transport, BxDFReflTransFlags flags){
+        if (eta == 1 || mfDistrib.EffectivelySmooth()){
+            // Sample from either reflection or transmission based on Fresnel
+            float R = FrDielectric(CosTheta(wo), eta), T = 1 - R;
+            float pr = R, pt = T;
+            if (!(flags & BxDFReflTransFlags::Reflection)) pr = 0;
+            if (!(flags & BxDFReflTransFlags::Transmission)) pt = 0;
+            if (pr == 0 && pt == 0)
+                return BSDFSample();
+            if (uc < pr / (pr + pt)){
+                // Sample perfectly specular BRDF
+                // The same as the ConductorBxDF's smooth case
+                float3 wi = float3(-wo.x, -wo.y, wo.z);
+                SampledSpectrum F = float3(R) / AbsCosTheta(wi);
+                return BSDFSample(F, wi, pr / (pr + pt), BxDFFlags::SpecularReflection);
+            } else {
+                // Sample perfectly specular BTDF
+                float etap; float3 wi;
+                // vvv Shouldn't be possible to fail since T won't be 0 vvv
+                if (!Refract(wo, float3(0,0,1), eta, wi, etap))
+                    return BSDFSample();
+                SampledSpectrum ft = float3(T) / AbsCosTheta(wi);
+                // Adjust for non-symmetric transport
+                // https://www.pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF#Non-SymmetricScatteringandRefraction
+                // ...I didn't read into this part, so I'll just copy the formula here.
+                if (transport == TransportMode::Radiance)
+                    ft /= Sqr(etap);
+                return BSDFSample(ft, wi, pt / (pr + pt), BxDFFlags::SpecularTransmission, etap);
+            }
+        } else {
+            // https://www.pbr-book.org/4ed/Reflection_Models/Rough_Dielectric_BSDF#x0-RoughDielectricSampling
+            // 1. Sample microfacet normal from VNDF
+            float3 wm = mfDistrib.Sample_wm(wo, u);
+            float R = FrDielectric(dot(wo, wm), eta), T = 1 - R;
+            float pr = R, pt = T;
+            if (!(flags & BxDFReflTransFlags::Reflection)) pr = 0;
+            if (!(flags & BxDFReflTransFlags::Transmission)) pt = 0;
+            if (pr == 0 && pt == 0)
+                return BSDFSample();
+            if (uc < pr / (pr + pt)){
+                // Sample rough BRDF
+                float3 wi = Reflect(wo, wm);
+                if (!SameHemisphere(wo, wi))
+                    return BSDFSample(); // We're not in BTDF, so discard
+                // 2. Compute PDF
+                // Same Jacobian again, with scaling for prob selection
+                float pdf = mfDistrib.PDF(wo, wm) / (4 * AbsDot(wo, wm)) * pr / (pr + pt);
+                // 3. Compute final BRDF value
+                float cosTheta_o = AbsCosTheta(wo), cosTheta_i = AbsCosTheta(wi);
+                // vvv Note: Fresnel is accounted for in the prob selection vvv
+                SampledSpectrum f = R * mfDistrib.D(wm) * mfDistrib.G(wo, wi) /
+                                    (4 * cosTheta_i * cosTheta_o);
+                return BSDFSample(f, wi, pdf, BxDFFlags::GlossyReflection);
+            } else {
+                // Sample rough BTDF
+                float etap;
+                float3 wi;
+                if (!Refract(wo, wm, eta, wi, etap) || SameHemisphere(wo, wi) || wi.z == 0)
+                    return BSDFSample(); // Total internal reflection or invalid sample
+                // 2. Compute PDF
+                // The same Jacobian for transmission case in PDF(), with prob scaling
+                float denom = Sqr(dot(wi, wm) + dot(wo,wm) / etap);
+                float dwm_dwi = AbsDot(wi, wm) / denom;
+                float pdf = mfDistrib.PDF(wo, wm) * dwm_dwi * pt / (pr + pt);
+                // 3. Compute final BTDF value
+                SampledSpectrum f = T * mfDistrib.D(wm) * mfDistrib.G(wo, wi) *
+                                    abs(dot(wi,wm) * dot(wo,wm)) /
+                                    (CosTheta(wi) * CosTheta(wo) * denom);
+                // 4. Adjust for non-symmetric transport
+                if (transport == TransportMode::Radiance)
+                    f /= Sqr(etap);
+                return BSDFSample(f, wi, pdf, BxDFFlags::GlossyTransmission, etap);
+            }
+        }
+   }
+   public SampledSpectrum f(float3 wo, float3 wi, TransportMode transport) {
+        // Same as the Conductor case again.
+        if (eta == 1 || mfDistrib.EffectivelySmooth()) return {};
+        // https://www.pbr-book.org/4ed/Reflection_Models/Rough_Dielectric_BSDF#x0-RoughDielectricBSDF
+        // 1. Sample Half Vector
+        float cosTheta_o = CosTheta(wo), cosTheta_i = CosTheta(wi);
+        // \frac{sin in}{sin out} > n -> Over critical angle -> no transmission, equivalent to IOR=1.0
+        bool reflected = cosTheta_i * cosTheta_o > 0;
+        float etap = 1;
+        if (!reflected)
+           etap = (cosTheta_o > 0) ? eta : 1 / eta;
+        float3 wm = wi * etap + wo;
+        if (cosTheta_i == 0 || cosTheta_o == 0 || LengthSquared(wm) == 0) return {};
+        wm = FaceForward(normalize(wm), float3(0, 0, 1));
+        // 2. Discard back-facing microfacets to either in/out directions
+        if (dot(wm,wi) * cosTheta_i < 0 || dot(wm,wo) * cosTheta_o < 0)
+           return 0;
+        // 3. Determine reflectance
+        float R = FrDielectric(dot(wo, wm), eta), T = 1 - R;
+        if (reflected) {
+            // 4. Eval rough reflection
+            return SampledSpectrum(R * mfDistrib.D(wm) * mfDistrib.G(wo, wi) /
+                                (4 * AbsCosTheta(wi) * AbsCosTheta(wo)));
+        } else {
+            // 4. Eval rough transmission
+            // Same Jacobian as seen in previous transmission cases
+            float denom = Sqr(dot(wi, wm) + dot(wo,wm) / etap) * abs(cosTheta_i * cosTheta_o);
+            float ft = T * mfDistrib.D(wm) * mfDistrib.G(wo, wi) *
+                                abs(dot(wi,wm) * dot(wo,wm) / denom);
+            // 5. Adjust for non-symmetric transport
+            if (transport == TransportMode::Radiance)
+                ft /= Sqr(etap);
+            return ft;
+        }
+   }
+};
