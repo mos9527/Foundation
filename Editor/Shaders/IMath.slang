@@ -6,6 +6,48 @@ public static const float EPS = 1e-6f;
 public const uint32_t alignUp(uint32_t value, uint32_t alignment) {
     return (value + alignment - 1) & ~(alignment - 1);
 }
+// -- complex numbers
+public struct complex
+{
+    float2 c; // (real, imag)
+    public __init(float re, float im = 0.0f) { c = float2(re, im); }
+    public __init(float2 v) { c = v; }
+    public complex mul(complex r) {
+        return complex(float2(
+            c.x * r.c.x - c.y * r.c.y,
+            c.x * r.c.y + c.y * r.c.x
+        ));
+    }
+    public complex conj() {
+        return complex(float2(c.x, -c.y));
+    }
+    public float real() { return c.x; }
+    public float imag() { return c.y; }
+    public float norm() { return c.x * c.x + c.y * c.y; }
+    public float abs() { return sqrt(norm()); }
+    public complex sqrt() {
+        float n = abs(), t1 = sqrt(0.5f * (n + real())), t2 = sqrt(0.5f * (n - imag())) / t1;
+        if (n == 0) return complex(0.0f);
+        if (real() > 0)
+            return complex(t1, t2);
+        else
+            return complex(abs(t2), copysign(t1, imag()));
+    }
+};
+// Overload
+public complex operator+(complex l, complex r) { return complex(l.c + r.c); }
+public complex operator-(complex l, complex r) { return complex(l.c - r.c); }
+public complex operator*(complex l, complex r) { return l.mul(r); }
+public complex operator/(complex l, complex r) {
+    float denom = r.c.x * r.c.x + r.c.y * r.c.y + EPS;
+    complex num = l.mul(r.conj());
+    return complex(float2(num.c.x / denom, num.c.y / denom));
+}
+public float real(complex c) { return c.real(); }
+public float imag(complex c) { return c.imag(); }
+public float norm(complex c) { return c.norm(); }
+public float abs(complex c) { return c.abs(); }
+public complex sqrt(complex c) { return c.sqrt(); }
 // -- quaternion
 public struct quat
 {
