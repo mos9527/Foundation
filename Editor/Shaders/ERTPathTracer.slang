@@ -92,6 +92,8 @@ struct Payload {
 };
 Payload SamplePayload(HitPayload payload)
 {
+    if (!payload.IsHit()) // Misuse
+        return {};
     GSInstance inst = instances[NonUniformResourceIndex(payload.instance)];
     Payload res;
     res.materialID = inst.materialIndex;
@@ -177,11 +179,9 @@ void RayGeneration()
 {
     uint2 pix = DispatchRaysIndex().xy;
     PCG rng = PCG(pix, globalParams.frameNumber);
-    // Generate primary ray with jitter for AA
-    // Trace
-    float3 radiance = float3(0);
-    float3 throughput = float3(1);
-    // Multiple bounces
+    float3 L = float3(0);
+    float3 beta = float3(1);
+    // Initial ray with jitter for AA
     RayDesc ray;
     ray.Origin = globalParams.camPosition;
     ray.Direction = GeneratePrimaryRay(pix, rng);
@@ -190,60 +190,62 @@ void RayGeneration()
     for (uint bounce = 0; bounce < globalParams.ptMaxBounces; bounce++){
         HitPayload payload;
         TraceRay(AS, 0, 0xFF, 0, 0, 0, ray, payload);
+        // Outgoing direction
+        float3 view = -ray.Direction;
         if (!payload.IsHit()){
             // Miss - environment
-            radiance += throughput * EvalSkyDome(ray.Direction);
+            L += beta * EvalSkyDome(ray.Direction);
             break;
         }
-        // Decode
-        float3 view = -ray.Direction; // Outgoing direction
         Payload hit = SamplePayload(payload);
         hit.EnsureFrontFacing(view);
         // -- vv Debug View
         if (flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition)) {
             if (flags & kViewBaseColor) {
-                radiance = hit.baseColor;
+                L = hit.baseColor;
             } else if (flags & kViewNormal) {
-                radiance = hit.normal * 0.5f + 0.5f;
+                L = hit.normal * 0.5f + 0.5f;
             } else if (flags & kViewMaterialID) {
-                radiance = unpackUnorm4x8ToFloat(hash(hit.materialID)).xyz;
+                L = unpackUnorm4x8ToFloat(hash(hit.materialID)).xyz;
             } else if (flags & kViewPosition) {
-                radiance = hit.position;
+                L = hit.position;
             }
             break;
         }
         // -- ^^ Debug View
+        /** Path Integrator **/
+        // Local frame setup
+        float3x3 tbn = float3x3(hit.tangent, hit.bitangent, hit.normal);
+        float3x3 toWorld     = tbn;
+        float3x3 toLocal     = transpose(tbn);
+        float3 n = float3(0,0,1);
+        float3 wo = normalize(mul(toLocal, view));
+        float3 wi = float3(0);
         // Emissive
-        radiance += throughput * hit.emissive;
-        // Indirect
-        quat toLocal = quatRotateToZ(hit.normal);
-        quat toWorld = toLocal.inverted();
-        float3 wo = normalize(toLocal.rotate(view)); // Local outgoing
-        // -- MIS BSDFs
-        // Diffuse lobe
-        float alpha_x, alpha_y;
-        alpha_x = max(0.001f, hit.roughness * hit.roughness);
-        alpha_y = alpha_x;
+        L += beta * hit.emissive;
+        // Sample the BSDFs [Test]
+        const float alpha = hit.roughness * hit.roughness;
         DiffuseBxDF diffuse = DiffuseBxDF(hit.baseColor);
-        ConductorBxDF metal = ConductorBxDF(float3(1.5f), float3(0.0f), alpha_x, alpha_y);
-        DielectricBxDF dielectric = DielectricBxDF(1.5f, alpha_x, alpha_y);
+        ConductorBxDF metal = ConductorBxDF(1.5f, 1.0f, alpha, alpha);
+        DielectricBxDF dielectric = DielectricBxDF(1.5f, alpha, alpha);
         IBxDF bsdf = diffuse;
-        BSDFSample sample = bsdf.Sample_f(wo, rng.sample(), rng.sample2());
-        if (sample.IsValid())
-            throughput *= sample.f / sample.pdf * AbsCosTheta(sample.wi);
-        else
+        // -- Test
+        BSDFSample sample = bsdf.Sample_f(wo, rng.sample(), rng.sample2(), TransportMode::Radiance, BxDFReflTransFlags::Reflection);
+        if (!sample.IsValid()){
+            L = float3(1,0,0);
             break;
-        // -- Next ray
-        ray.Direction = normalize(toWorld.rotate(sample.wi));
+        }
+        wi = sample.wi;
+        beta *= sample.f * AbsCosTheta(wi) / sample.pdf;
+        // Select next ray to sample from current position
+        ray.Direction = normalize(mul(toWorld, wi));
         ray.Origin = OffsetRay(hit.position, hit.geometricNormal);
-        if (dot(LUMINANCE_RGB,throughput) < EPS)
-            break; // No contribution
-        if (dot(ray.Direction, hit.geometricNormal) < 0)
-            break; // Terminate if ray goes below the surface
+        if (dot(LUMINANCE_RGB,beta) < EPS)
+            break;
     }
     // Transform world space point
     // Accumulation
-    float3 output = clamp(radiance, float3(0), float3(65536));
+    float3 output = L;
     float frameCount = float(globalParams.ptAccumualatedFrames + 1);
     float3 prevAvg = (globalParams.ptAccumualatedFrames == 0) ? float3(0) : accumulation[pix].xyz;
     // Welford mean update

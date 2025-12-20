@@ -6,47 +6,54 @@ public static const float EPS = 1e-6f;
 public const uint32_t alignUp(uint32_t value, uint32_t alignment) {
     return (value + alignment - 1) & ~(alignment - 1);
 }
-// -- complex numbers
 public struct complex
 {
-    float2 c; // (real, imag)
+    public float2 c; // (real, imag)
+
     public __init(float re, float im = 0.0f) { c = float2(re, im); }
     public __init(float2 v) { c = v; }
+
+    // Use properties for cleaner access
+    public property real: float { get { return c.x; } }
+    public property imag: float { get { return c.y; } }
+
+    public complex conj() { return complex(c.x, -c.y); }
+    public float norm() { return dot(c, c); }
+    public float abs() { return length(c); }
+
     public complex mul(complex r) {
-        return complex(float2(
+        return complex(
             c.x * r.c.x - c.y * r.c.y,
             c.x * r.c.y + c.y * r.c.x
-        ));
+        );
     }
-    public complex conj() {
-        return complex(float2(c.x, -c.y));
-    }
-    public float real() { return c.x; }
-    public float imag() { return c.y; }
-    public float norm() { return c.x * c.x + c.y * c.y; }
-    public float abs() { return sqrt(norm()); }
+
     public complex sqrt() {
-        float n = abs(), t1 = sqrt(0.5f * (n + real())), t2 = sqrt(0.5f * (n - imag())) / t1;
-        if (n == 0) return complex(0.0f);
-        if (real() > 0)
-            return complex(t1, t2);
-        else
-            return complex(abs(t2), copysign(t1, imag()));
+        float m = length(c);
+        if (m <= 0.0f) return complex(0.0f, 0.0f);
+        float term1 = sqrt(0.5f * (m + abs(c.x)));
+        float term2 = 0.5f * c.y / term1;
+        if (c.x >= 0.0f) {
+            return complex(term1, term2);
+        } else {
+            return complex(abs(term2), (c.y >= 0.0f) ? term1 : -term1);
+        }
     }
 };
-// Overload
+
+// Overloads
 public complex operator+(complex l, complex r) { return complex(l.c + r.c); }
 public complex operator-(complex l, complex r) { return complex(l.c - r.c); }
 public complex operator*(complex l, complex r) { return l.mul(r); }
 public complex operator/(complex l, complex r) {
-    float denom = r.c.x * r.c.x + r.c.y * r.c.y + EPS;
+    float denom = dot(r.c, r.c);
     complex num = l.mul(r.conj());
-    return complex(float2(num.c.x / denom, num.c.y / denom));
+    return complex(num.c / denom);
 }
-public float real(complex c) { return c.real(); }
-public float imag(complex c) { return c.imag(); }
+public float real(complex c) { return c.real; }
+public float imag(complex c) { return c.imag; }
+public float abs(complex c)  { return c.abs(); }
 public float norm(complex c) { return c.norm(); }
-public float abs(complex c) { return c.abs(); }
 public complex sqrt(complex c) { return c.sqrt(); }
 // -- quaternion
 public struct quat
@@ -75,13 +82,6 @@ public struct quat
     // Overload
     public quat operator*(quat r) { return mul(r); }
 };
-// Quaternion that rotates input vector to +Z=(0, 0, 1)
-public quat quatRotateToZ(float3 input) {
-
-	// Handle special case when input is exact or near opposite of (0, 0, 1)
-	if (input.z < EPS - 1.0f) return quat(float4(1.0f, 0.0f, 0.0f, 0.0f));
-	return quat(normalize(float4(input.y, -input.x, 0.0f, 1.0f + input.z)));
-}
 // -- de/quantization
 public uint32_t quantizeUnorm(float v, int32_t N)
 {

@@ -115,6 +115,7 @@ public float3 FaceForward(float3 n, float3 v) {
 // GLSL/HLSL reflect()
 // Inverse is n = normalize(wo + wr)
 public float3 Reflect(float3 wo, float3 n) {
+    //     vvv wo is flipped (pointing away)
     return -wo + 2 * dot(wo, n) * n;
 }
 // https://www.pbr-book.org/4ed/Reflection_Models/Specular_Reflection_and_Transmission#SnellrsquosLaw
@@ -213,6 +214,7 @@ public float3 SampleCosineHemisphere(float2 u) {
 public float CosineHemispherePDF(float cosTheta) {
     return cosTheta * InvPi;
 }
+
 // https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory
 // Trowbridge-Reitz (GGX) distribution/shadow-masking functions
 public struct TrowbridgeReitzDistribution {
@@ -279,11 +281,14 @@ public struct TrowbridgeReitzDistribution {
         // 3. Sample uniformly distributed point on a unit disk and project to clipped hemisphere
         float2 p = SampleUniformDiskPolar(u);
         float h = sqrt(1 - Sqr(p.x)); // Max height on hemisphere
-        p.y = lerp((1 + wh.z) / 2, h, p.y); // Project to clipped hemisphere
+        float s = (1 + wh.z) / 2;
+        // !!! PBRT used a lerp here. This is undefined when p.y is outside [0,1] !!!
+        // The original formulation is implemented here (t2 = (1.0 - s) * sqrt(1.0 - t1 * t1) + s * t2)
+        p.y = (1-s) * h + s * p.y; // Project to clipped hemisphere
         float pz = sqrt(max(0, 1 - LengthSquared(p)));
         float3 nh = p.x * T1 + p.y * T2 + pz * wh; // Apply TBN
         // 4. Reverse the anisotropic scaling to get the sampled microfacet normal
-        return normalize(float3(alpha_x * nh.x, alpha_y * nh.y, max(EPS, nh.z)));
+        return normalize(float3(alpha_x * nh.x, alpha_y * nh.y, max(1e-6f, nh.z)));
     }
 }
 // -- BSDFs
@@ -392,14 +397,16 @@ public struct ConductorBxDF : IBxDF {
             float3 wm = mfDistrib.Sample_wm(wo, u);
             float3 wi = Reflect(wo, wm);
             if (!SameHemisphere(wo, wi))
-                return BSDFSample(); // Absorbed...
+                return BSDFSample(); // Absorbed, or failed to scatter. Multi-scatter is required to solve this.
             // 2. Compute the scaled PDF for the sampled direction
             // Using Jacobian from previous derivation vvvv
             float pdf = mfDistrib.PDF(wo, wm) / (4 * AbsDot(wo, wm));
+            float cosTheta_o = AbsCosTheta(wo), cosTheta_i = AbsCosTheta(wi);
+            if (cosTheta_o == 0 || cosTheta_i == 0)
+                return BSDFSample(); // Grazing
             // 3. Calculate Fresnel for amount of reflection
             SampledSpectrum F = FrComplex(AbsDot(wo, wm), eta, k);
             // 4. Final BSDF value following previous derivation
-            float cosTheta_o = AbsCosTheta(wo), cosTheta_i = AbsCosTheta(wi);
             SampledSpectrum f = mfDistrib.D(wm) * F * mfDistrib.G(wo, wi) /
                                 (4 * cosTheta_i * cosTheta_o);
             return BSDFSample(f, wi, pdf, BxDFFlags::GlossyReflection);
@@ -578,3 +585,31 @@ public struct DielectricBxDF : IBxDF {
         }
    }
 };
+// Utilities
+// These are not from PBRT, but from other references where implementing the glTF
+// model is concerned.
+// --
+// vvv From https://github.com/nvpro-samples/nvpro_core2/tree/main/nvshaders/pbr_ggx_microfacet.h.slang
+public float ClampedDot(float2 v1, float2 v2) { return clamp(dot(v1, v2), 0, 1.0); }
+public float ClampedDot(float3 v1, float3 v2) { return clamp(dot(v1, v2), 0, 1.0); }
+// Schlick Fresnel approximation
+public float SchlickFresnel(float F0, float F90, float VdotH)
+{
+  return F0 + (F90 - F0) * pow(1.0F - VdotH, 5.0F);
+}
+
+// Schlick Fresnel approximation for vectors
+public float3 SchlickFresnel(float3 F0, float3 F90, float VdotH)
+{
+  return F0 + (F90 - F0) * pow(1.0F - VdotH, 5.0F);
+}
+
+// Schlick Fresnel approximation for float
+public float SchlickFresnel(float ior, float VdotH)
+{
+  // Calculate reflectance at normal incidence (R0)
+  float R0 = pow((1.0F - ior) / (1.0F + ior), 2.0F);
+
+  // Fresnel reflectance using Schlick's approximation
+  return R0 + (1.0F - R0) * pow(1.0F - VdotH, 5.0F);
+}
