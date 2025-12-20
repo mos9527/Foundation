@@ -17,7 +17,7 @@ SamplerState textureSampler;
 RWTexture2D<float4> accumulation;
 [[vk_binding(0,1)]] Texture2D<float4> textures[];
 
-void IntersectTriangle(uint meshOffset, uint primitive, float2 bary, out float3 position, out float3 normal, out float3 tangent, out float2 uv, out float bitangentSign){
+void IntersectTriangle(uint meshOffset, uint primitive, float2 bary, out float3 position, out float3 normal, out float3 geometryNormal, out float3 tangent, out float2 uv, out float bitangentSign){
     GSMesh mesh = primitives.Load<GSMesh>(meshOffset);
     uint i0 = primitives.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 0) * sizeof(uint32_t));
     uint i1 = primitives.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 1) * sizeof(uint32_t));
@@ -38,6 +38,8 @@ void IntersectTriangle(uint meshOffset, uint primitive, float2 bary, out float3 
     tangent = normalize(t0 * (1 - bary.x - bary.y) + t1 * bary.x + t2 * bary.y);
     bitangentSign = bi0 * (1 - bary.x - bary.y) + bi1 * bary.x + bi2 * bary.y;
     uv = u0 * (1 - bary.x - bary.y) + u1 * bary.x + u2 * bary.y;
+    float3 e20 = p2 - p0, e10 = p1 - p0;
+    geometryNormal = normalize(cross(e10, e20));
 }
 
 void SampleMaterials(GSMaterial material, float2 uv,
@@ -62,6 +64,7 @@ struct HitPayload
     // Model space
     float3 position;
     float3 normal;
+    float3 geometryNormal;
     float4 tangent;
     float2 uv;
     uint32_t instance;
@@ -78,7 +81,7 @@ struct Payload {
     float3 normal;
     float3 tangent;
     float3 bitangent;
-    float3 geometricNormal;
+    float3 geometryNormal;
     uint materialID;
     float3 baseColor;
     float3 emissive;
@@ -86,8 +89,8 @@ struct Payload {
     float roughness;
 
     [mutating] void EnsureFrontFacing(float3 wo){
-        if (dot(geometricNormal, wo) < 0.0f) geometricNormal *= -1;
-        if (dot(geometricNormal, normal) < 0.0f) normal *= -1;
+        if (dot(geometryNormal, wo) < 0.0f) geometryNormal *= -1;
+        if (dot(geometryNormal, normal) < 0.0f) normal *= -1;
     }
 };
 Payload SamplePayload(HitPayload payload)
@@ -106,13 +109,17 @@ Payload SamplePayload(HitPayload payload)
     res.metallic = pbrMetalRough.z;
     res.normal = normalize(payload.normal);
     res.tangent = normalize(payload.tangent.xyz);
+    res.geometryNormal = normalize(payload.geometryNormal);
     res.normal = inst.rotation.rotate(res.normal);
     res.tangent = inst.rotation.rotate(res.tangent);
+    res.geometryNormal = inst.rotation.rotate(res.geometryNormal);
     res.position = inst.rotation.rotate(payload.position);
     res.position = res.position * inst.scale + inst.transform;
     res.bitangent = cross(res.normal, res.tangent) * (payload.tangent.w > 0.0f ? 1 : -1);
-    res.geometricNormal = res.normal;
     res.normal = normalize(res.tangent * normalTBN.x + res.bitangent * normalTBN.y + res.normal * normalTBN.z);
+    // Orthogonalize tangent and bitangent
+    res.tangent = normalize(res.tangent - dot(res.tangent, res.normal) * res.normal);
+    res.bitangent = cross(res.normal, res.tangent) * (payload.tangent.w > 0.0f ? 1 : -1);
     return res;
 }
 float3 EvalSkyDome(float3 dir)
@@ -215,6 +222,8 @@ void RayGeneration()
         // -- ^^ Debug View
         /** Path Integrator **/
         // Local frame setup
+        // vvv Investigate, supplied TBN frame shows lots of artifacts vvv
+        buildOrthonormalBasis(-hit.normal, hit.tangent, hit.bitangent);
         float3x3 tbn = float3x3(hit.tangent, hit.bitangent, hit.normal);
         float3x3 toWorld     = tbn;
         float3x3 toLocal     = transpose(tbn);
@@ -223,23 +232,24 @@ void RayGeneration()
         float3 wi = float3(0);
         // Emissive
         L += beta * hit.emissive;
-        // Sample the BSDFs [Test]
         const float alpha = hit.roughness * hit.roughness;
+        float3 specularF0 = lerp(float3(0.04f), hit.baseColor, hit.metallic);
+        float3 eta, k;
+        FresnelFromF0(specularF0, float3(0.04f), eta, k);
+        // Sample the BSDFs
+        // glTF uses a fresnel mix of diffuse&metal
         DiffuseBxDF diffuse = DiffuseBxDF(hit.baseColor);
-        ConductorBxDF metal = ConductorBxDF(1.5f, 1.0f, alpha, alpha);
-        DielectricBxDF dielectric = DielectricBxDF(1.5f, alpha, alpha);
-        IBxDF bsdf = diffuse;
+        ConductorBxDF metal = ConductorBxDF(eta, k, alpha, alpha);
+        IBxDF bsdf = metal;
         // -- Test
         BSDFSample sample = bsdf.Sample_f(wo, rng.sample(), rng.sample2(), TransportMode::Radiance, BxDFReflTransFlags::Reflection);
-        if (!sample.IsValid()){
-            L = float3(1,0,0);
+        if (!sample.IsValid())
             break;
-        }
         wi = sample.wi;
         beta *= sample.f * AbsCosTheta(wi) / sample.pdf;
         // Select next ray to sample from current position
         ray.Direction = normalize(mul(toWorld, wi));
-        ray.Origin = OffsetRay(hit.position, hit.geometricNormal);
+        ray.Origin = OffsetRay(hit.position, hit.geometryNormal);
         if (dot(LUMINANCE_RGB,beta) < EPS)
             break;
     }
@@ -263,7 +273,7 @@ void RayClosestHit(inout HitPayload payload, in BuiltInTriangleIntersectionAttri
     uint instance = InstanceIndex();
     GSInstance inst = instances[NonUniformResourceIndex(instance)];
     GSMaterial material = materials[NonUniformResourceIndex(inst.materialIndex)];
-    IntersectTriangle(inst.meshOffset, PrimitiveIndex(), attr.barycentrics.xy, payload.position, payload.normal, payload.tangent.xyz, payload.uv, payload.tangent.w);
+    IntersectTriangle(inst.meshOffset, PrimitiveIndex(), attr.barycentrics.xy, payload.position, payload.normal, payload.geometryNormal, payload.tangent.xyz, payload.uv, payload.tangent.w);
     payload.instance = instance;
     payload.material = inst.materialIndex;
 }

@@ -613,3 +613,14 @@ public float SchlickFresnel(float ior, float VdotH)
   // Fresnel reflectance using Schlick's approximation
   return R0 + (1.0F - R0) * pow(1.0F - VdotH, 5.0F);
 }
+// Translate F0 to Complex Fresnel IOR terms
+// "Artist Friendly Metallic Fresnel", Gulbrandsen 2014, https://jcgt.org/published/0003/04/03/paper.pdf
+public void FresnelFromF0(float r /* baseColor */, float g /* specularTint */, out float n, out float k){
+    r = clamp(0.01, 0.99, r);
+    n = (1-r)/(1+r) * g + (1-g) * (1+sqrt(r))/(1-sqrt(r));
+    k = sqrt( 1/(1-r) * (r * (n+1)*(n+1) - (n-1)*(n-1)));
+}
+public void FresnelFromF0(float3 r /* baseColor */, float3 g /* specularTint */, out float3 n, out float3 k){
+    for (int i = 0; i < 3; i++)
+        FresnelFromF0(r[i], g[i], n[i], k[i]);
+}

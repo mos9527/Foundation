@@ -368,6 +368,15 @@ bool EditorProcessEvent(SDL_Event* event)
             break;
         }
     }
+    if (event->type == SDL_EVENT_KEY_DOWN)
+    {
+        if (event->key.key == SDLK_SPACE)
+        {
+            GCamera.radius = std::max(length(GCamera.center), 1.0f);
+            GCamera.center = {};
+            cameraUpdated |= true;
+        }
+    }
     ImGui_ImplFoundation_ProcessEvent(event);
     auto& io = ImGui::GetIO();
     if (!io.WantCaptureMouse)
