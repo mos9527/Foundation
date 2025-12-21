@@ -33,8 +33,8 @@ void FInitEnter()
         auto& light = scene.mLights.front();
         GShaderGlobals.sunDirection = normalize(light.transform.rotation * float3(0, 0, -1));
         GShaderGlobals.sunIntensity = light.intensity;
-        // GShaderGlobals.camMinEV = 0.0f;
-        // GShaderGlobals.camMaxEV = log2f(light.intensity * 0.25f);
+        GShaderGlobals.camMinEV = 0.0f;
+        GShaderGlobals.camMaxEV = log2f(light.intensity * 0.25f);
     } else
     {
         GShaderGlobals.sunIntensity = 0.0f;

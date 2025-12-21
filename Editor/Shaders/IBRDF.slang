@@ -1040,6 +1040,7 @@ public float3 glTFFresnelMix(float VdotH, float3 bottom, float3 top, float ior =
     return lerp(bottom, top, F);
 }
 // Fresnel sampling approximation of layered materials
+// This is the above formulation in a statistical form.
 float glTFGlossyProb(float NdotV, float metallic, float ior = 1.5f)
 {
     float F0 = pow((ior - 1) / (ior + 1), 2); // IOR=1.5->0.04

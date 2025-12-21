@@ -117,10 +117,6 @@ Payload SamplePayload(HitPayload payload)
     res.position = res.position * inst.scale + inst.transform;
     res.bitangent = cross(res.normal, res.tangent) * (payload.tangent.w > 0.0f ? 1 : -1);
     res.normal = normalize(res.tangent * normalTBN.x + res.bitangent * normalTBN.y + res.normal * normalTBN.z);
-    // vv Orthogonalize tangent and bitangent
-    // res.tangent = normalize(res.tangent - dot(res.tangent, res.normal) * res.normal);
-    // res.bitangent = cross(res.normal, res.tangent) * (payload.tangent.w > 0.0f ? 1 : -1);
-    buildOrthonormalBasis(-res.normal, res.tangent, res.bitangent);
     return res;
 }
 float3 EvalSkyDome(float3 dir)
@@ -224,23 +220,36 @@ void RayGeneration()
         /** Path Integrator **/
         // Local frame setup
         // vvv Investigate, supplied TBN frame shows lots of artifacts vvv
-        float3x3 tbn = float3x3(hit.tangent, hit.bitangent, hit.normal);
-        float3x3 toWorld     = tbn;
-        float3x3 toLocal     = transpose(tbn);
+        quat toLocal     = quatRotateToZ(hit.normal);
+        quat toWorld     = toLocal.inverted();
         float3 n = float3(0,0,1);
-        float3 wo = normalize(mul(toLocal, view));
+        float3 wo = toLocal.rotate(view);
         float3 wi = float3(0);
+        // Direct Lighting
+        // We only do one direct light sample for now.
+        if (globalParams.sunIntensity > EPS){
+            // Sample sun direction
+            float3 sunDir = normalize(-globalParams.sunDirection);
+            float3 w = toLocal.rotate(sunDir);
+            BSDFSample bsdf = glTFEval(wo, w, hit.baseColor, hit.metallic, hit.roughness, float3(1.0f) /* tint */);
+            if (bsdf.IsValid()){
+                float3 f = bsdf.f * ClampedCosTheta(w);
+                // Shadow ray
+                float3 origin = OffsetRay(hit.position, hit.geometryNormal);
+                bool occluded = TraceShadowRay(origin, sunDir);
+                if (!occluded)
+                    L += beta * f * globalParams.sunIntensity;
+            }
+        }
         // Emissive
         L += beta * hit.emissive;
-        BSDFSample sample = glTFSample(rng, wo, hit.baseColor, hit.metallic, hit.roughness, 1.0f);
-        if (!sample.IsValid()){
-            // L = float3(1,0,0);
+        BSDFSample sample = glTFSample(rng, wo, hit.baseColor, hit.metallic, hit.roughness, 1.0f /* tint */);
+        if (!sample.IsValid())
             break;
-        }
         wi = sample.wi;
         beta *= sample.f * AbsCosTheta(wi) / sample.pdf;
         // Select next ray to sample from current position
-        ray.Direction = normalize(mul(toWorld, wi));
+        ray.Direction = toWorld.rotate(wi);
         ray.Origin = OffsetRay(hit.position, hit.geometryNormal);
         if (dot(LUMINANCE_RGB,beta) < EPS)
             break;

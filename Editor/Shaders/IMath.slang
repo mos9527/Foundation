@@ -84,6 +84,14 @@ public struct quat
     // Overload
     public quat operator*(quat r) { return mul(r); }
 };
+// Quaternion that rotates input vector to (0, 0, 1)
+// Same as PBRT's Frame::ToZ, tangent frame is implicitly defined by this rotation
+public quat quatRotateToZ(float3 input) {
+
+	// Handle special case when input is exact or near opposite of (0, 0, 1)
+	if (input.z < -0.9999f) return quat(float4(1.0f, 0.0f, 0.0f, 0.0f));
+	return quat(normalize(float4(input.y, -input.x, 0.0f, 1.0f + input.z)));
+}
 // -- de/quantization
 public uint32_t quantizeUnorm(float v, int32_t N)
 {
