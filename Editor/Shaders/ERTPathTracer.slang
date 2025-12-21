@@ -117,9 +117,10 @@ Payload SamplePayload(HitPayload payload)
     res.position = res.position * inst.scale + inst.transform;
     res.bitangent = cross(res.normal, res.tangent) * (payload.tangent.w > 0.0f ? 1 : -1);
     res.normal = normalize(res.tangent * normalTBN.x + res.bitangent * normalTBN.y + res.normal * normalTBN.z);
-    // Orthogonalize tangent and bitangent
-    res.tangent = normalize(res.tangent - dot(res.tangent, res.normal) * res.normal);
-    res.bitangent = cross(res.normal, res.tangent) * (payload.tangent.w > 0.0f ? 1 : -1);
+    // vv Orthogonalize tangent and bitangent
+    // res.tangent = normalize(res.tangent - dot(res.tangent, res.normal) * res.normal);
+    // res.bitangent = cross(res.normal, res.tangent) * (payload.tangent.w > 0.0f ? 1 : -1);
+    buildOrthonormalBasis(-res.normal, res.tangent, res.bitangent);
     return res;
 }
 float3 EvalSkyDome(float3 dir)
@@ -159,7 +160,7 @@ float3 OffsetRay(float3 worldPosition, float3 offsetDirection)
 // Primary ray with jitter for AA
 float3 GeneratePrimaryRay(uint2 pixel, PCG rng)
 {
-    float2 jitter = lerp(float2(-0.5f), float2(0.5f), rng.sample2());
+    float2 jitter = lerp(float2(-0.5f), float2(0.5f), rng.sample2D());
     float2 uv = float2(pixel + jitter + 0.5f) / DispatchRaysDimensions().xy;
     float4 ndcPosition = float4(uv, 1.0f, 1.0f);
     ndcPosition.y = 1 - ndcPosition.y;
@@ -223,7 +224,6 @@ void RayGeneration()
         /** Path Integrator **/
         // Local frame setup
         // vvv Investigate, supplied TBN frame shows lots of artifacts vvv
-        buildOrthonormalBasis(-hit.normal, hit.tangent, hit.bitangent);
         float3x3 tbn = float3x3(hit.tangent, hit.bitangent, hit.normal);
         float3x3 toWorld     = tbn;
         float3x3 toLocal     = transpose(tbn);
@@ -232,19 +232,11 @@ void RayGeneration()
         float3 wi = float3(0);
         // Emissive
         L += beta * hit.emissive;
-        const float alpha = hit.roughness * hit.roughness;
-        float3 specularF0 = lerp(float3(0.04f), hit.baseColor, hit.metallic);
-        float3 eta, k;
-        FresnelFromF0(specularF0, float3(0.04f), eta, k);
-        // Sample the BSDFs
-        // glTF uses a fresnel mix of diffuse&metal
-        DiffuseBxDF diffuse = DiffuseBxDF(hit.baseColor);
-        ConductorBxDF metal = ConductorBxDF(eta, k, alpha, alpha);
-        IBxDF bsdf = metal;
-        // -- Test
-        BSDFSample sample = bsdf.Sample_f(wo, rng.sample(), rng.sample2(), TransportMode::Radiance, BxDFReflTransFlags::Reflection);
-        if (!sample.IsValid())
+        BSDFSample sample = glTFSample(rng, wo, hit.baseColor, hit.metallic, hit.roughness, 1.0f);
+        if (!sample.IsValid()){
+            // L = float3(1,0,0);
             break;
+        }
         wi = sample.wi;
         beta *= sample.f * AbsCosTheta(wi) / sample.pdf;
         // Select next ray to sample from current position

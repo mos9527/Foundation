@@ -1,7 +1,6 @@
 import IMath;
 public static const uint kMeshWorkGroupSize = 64;
 public static const uint kMeshIndirectPerDrawMeshlets = 65536;
-public static const float3 LUMINANCE_RGB = float3(0.2126f, 0.7152f, 0.0722f);
 // Definitions From C++ sources
 public struct FVertex {
     public float3 position;

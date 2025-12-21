@@ -28,6 +28,14 @@ public enum BxDFFlags {
     SpecularTransmission = 0b10010,
     All = 0b11111
 }
+public bool IsReflection(BxDFFlags f) { return f & BxDFFlags::Reflection; }
+public bool IsTransmission(BxDFFlags f) { return f & BxDFFlags::Transmission; }
+public bool IsDiffuse(BxDFFlags f) { return f & BxDFFlags::Diffuse; }
+public bool IsGlossy(BxDFFlags f) { return f & BxDFFlags::Glossy; }
+public bool IsSpecular(BxDFFlags f) { return f & BxDFFlags::Specular; }
+public bool IsNonSpecular(BxDFFlags f) {
+    return f & (BxDFFlags::Diffuse | BxDFFlags::Glossy);
+ }
 public enum TransportMode {
     Radiance, // Towards camera
     Importance // Toward light source for non-symmetric BSDFs
@@ -56,7 +64,18 @@ public struct BSDFSample {
         this.eta = eta;
     }
     public bool IsValid() {
-        return pdf > 0.0 && flags != BxDFFlags.Unset;
+        return pdf > 0.0 && flags != BxDFFlags::Unset;
+    }
+};
+// https://pbr-book.org/4ed/Volume_Scattering/Phase_Functions#
+public struct PhaseFunctionSample {
+    float p;
+    float3 wi;
+    float pdf;
+    public __init(float p = 0.0, float3 wi = float3(0), float pdf = 0.0) {
+        this.p = p;
+        this.wi = wi;
+        this.pdf = pdf;
     }
 };
 typedef float3 SampledSpectrum; // RGB spectrum
@@ -75,8 +94,13 @@ public interface IBxDF {
     // Evaluates the PDF of the BxDF for a given pair of directions, used in MIS
     // Returns 1 for dirac delta distributions
     public float PDF(float3 wo, float3 wi, TransportMode mode = TransportMode::Radiance, BxDFReflTransFlags flags = BxDFReflTransFlags::All);
+
+    // Returns the type flags of this BxDF
+    public BxDFFlags Flags();
 };
 // -- Spherical Geometry Utilities
+public float MaxComponent(float3 v) { return max(max(v.x, v.y), v.z); }
+public float MaxComponent(float2 v) { return max(v.x, v.y); }
 public float AbsDot(float2 v1, float2 v2) { return abs(dot(v1, v2)); }
 public float AbsDot(float3 v1, float3 v2) { return abs(dot(v1, v2)); }
 public float Sqr(float v) { return v * v; }
@@ -87,6 +111,7 @@ public float SafeSqrt(float x) { return sqrt(max(0.f, x)); }
 public float CosTheta(float3 w) { return w.z; }
 public float Cos2Theta(float3 w) { return w.z * w.z; }
 public float AbsCosTheta(float3 w) { return abs(w.z); }
+public float ClampedCosTheta(float3 w) { return clamp(w.z, 0, 1); }
 public float Sin2Theta(float3 w) { return max(0, 1 - Cos2Theta(w)); }
 public float SinTheta(float3 w) { return sqrt(Sin2Theta(w)); }
 public float TanTheta(float3 w) { return SinTheta(w) / CosTheta(w); }
@@ -110,6 +135,9 @@ public bool SameHemisphere(float3 w, float3 wp) {
 }
 public float3 FaceForward(float3 n, float3 v) {
     return dot(v, n) < 0.0 ? -n : n;
+}
+public float3 SphericalDirection(float sinTheta, float cosTheta, float phi) {
+    return float3(clamp(sinTheta, -1, 1) * cos(phi), clamp(sinTheta, -1, 1) * sin(phi), clamp(cosTheta, -1, 1));
 }
 // -- Light Transport
 // GLSL/HLSL reflect()
@@ -291,12 +319,68 @@ public struct TrowbridgeReitzDistribution {
         return normalize(float3(alpha_x * nh.x, alpha_y * nh.y, max(1e-6f, nh.z)));
     }
 }
+// https://pbr-book.org/4ed/Volume_Scattering/Phase_Functions#HenyeyGreenstein
+float HenyeyGreenstein(float cosTheta, float g) {
+    g = clamp(g, -.99, .99);
+    float denom = 1 + Sqr(g) + 2 * g * cosTheta;
+    return Inv4Pi * (1 - Sqr(g)) / (denom * SafeSqrt(denom));
+}
+float3 SampleHenyeyGreenstein(float3 wo, float g, float2 u, out float pdf) {
+    g = clamp(g, -.99, .99);
+
+    float cosTheta;
+    if (abs(g) < 1e-3f)
+        cosTheta = 1 - 2 * u[0];
+    else
+        cosTheta = -1 / (2 * g) * (1 + Sqr(g) - Sqr((1 - Sqr(g)) / (1 + g - 2 * g * u[0])));
+    pdf = HenyeyGreenstein(cosTheta, g);
+
+    // Compute direction _wi_ for Henyey--Greenstein sample
+    float sinTheta = SafeSqrt(1 - Sqr(cosTheta));
+    float phi = 2 * Pi * u[1];
+    float3 t1, t2;
+    buildOrthonormalBasis(wo, t1, t2);
+    float3 wi = SphericalDirection(sinTheta, cosTheta, phi);
+    return wi.x * wo + wi.y * t1 + wi.z * t2;
+}
+public struct HGPhaseFunction {
+    float g;
+    public __init(float g) {
+        this.g = g;
+    }
+    float p(float3 wo, float3 wi) {
+        return HenyeyGreenstein(dot(wo, wi), g);
+    }
+    PhaseFunctionSample Sample_p(float3 wo, float2 u) {
+        float pdf;
+        float3 wi = SampleHenyeyGreenstein(wo, g, u, pdf);
+        return PhaseFunctionSample(pdf, wi, pdf);
+    }
+    float PDF(float3 wo, float3 wi) {
+        return HenyeyGreenstein(dot(wo, wi), g);
+    }
+}
+// https://pbr-book.org/4ed/Sampling_Algorithms/Sampling_1D_Functions#SampleExponential
+public float SampleExponential(float u, float a) {
+    return -log(1 - u) / a;
+}
+// https://pbr-book.org/4ed/Monte_Carlo_Integration/Improving_Efficiency#PowerHeuristic
+public float BalanceHeuristic(int nf, float fPdf, int ng, float gPdf) {
+    return (nf * fPdf) / (nf * fPdf + ng * gPdf);
+}
+public float PowerHeuristic(int nf, float fPdf, int ng, float gPdf) {
+    float f = nf * fPdf, g = ng * gPdf;
+    return Sqr(f) / (Sqr(f) + Sqr(g));
+}
 // -- BSDFs
 // https://www.pbr-book.org/4ed/Reflection_Models/Diffuse_Reflection
 public struct DiffuseBxDF : IBxDF {
     SampledSpectrum R;
     public __init(SampledSpectrum R) {
         this.R = R;
+    }
+    public BxDFFlags Flags(){
+        return BxDFFlags::DiffuseReflection;
     }
     // BRDF evaluation
     // Constant reflection distribution where:
@@ -332,6 +416,12 @@ public struct ConductorBxDF : IBxDF {
         this.eta = eta;
         this.k = k;
         this.mfDistrib = TrowbridgeReitzDistribution(alpha_x, alpha_y);
+    }
+    public BxDFFlags Flags(){
+        if (mfDistrib.EffectivelySmooth())
+            return BxDFFlags::SpecularReflection;
+        else
+            return BxDFFlags::GlossyReflection;
     }
     // Torrance-Sparrow PDF
     public float PDF(float3 wo, float3 wi, TransportMode, BxDFReflTransFlags flags) {
@@ -429,12 +519,17 @@ public struct ConductorBxDF : IBxDF {
                             (4 * cosTheta_i * cosTheta_o);
    }
 };
+// https://www.pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF
 public struct DielectricBxDF : IBxDF {
     float eta; // IOR
     TrowbridgeReitzDistribution mfDistrib; // Microfacet distribution
     public __init(float eta, float alpha_x, float alpha_y) {
         this.eta = eta;
         this.mfDistrib = TrowbridgeReitzDistribution(alpha_x, alpha_y);
+    }
+    public BxDFFlags Flags(){
+        BxDFFlags flags = (eta == 1) ? BxDFFlags::Transmission : BxDFFlags::Transmission | BxDFFlags::Reflection;
+        return flags | (mfDistrib.EffectivelySmooth() ? BxDFFlags::Specular : BxDFFlags::Glossy);
     }
    public float PDF(float3 wo, float3 wi, TransportMode, BxDFReflTransFlags flags) {
         if (eta == 1 || mfDistrib.EffectivelySmooth())
@@ -585,34 +680,324 @@ public struct DielectricBxDF : IBxDF {
         }
    }
 };
+// https://pbr-book.org/4ed/Light_Transport_II_Volume_Rendering/Scattering_from_Layered_Materials
+// **********************************************************************
+// ATTENTION: This is basically copy-pasted...haven't read the Volume chapter yet.
+//            And LayeredBxDF is *extremely* heavy to evaluate/sample due to lots of Random Walk.
+//            A faster approximation would be using FresnelMix, which is single-scattering.
+// **********************************************************************
+public struct LayeredBxDF : IBxDF {
+    IBxDF top;
+    IBxDF bottom;
+    float thickness;
+    float g;
+    SampledSpectrum albedo;
+    int maxDepth, nSamples;
+    bool twoSided;
+
+    public __init(IBxDF top, IBxDF bottom, SampledSpectrum albedo, float thickness, float g, int maxDepth, int nSamples, bool twoSided) {
+        this.top = top;
+        this.bottom = bottom;
+        this.albedo = albedo;
+        this.thickness = thickness;
+        this.g = g;
+        this.maxDepth = maxDepth;
+        this.nSamples = nSamples;
+        this.twoSided = twoSided;
+    }
+
+    float Tr(float dz, float3 w) {
+        if (abs(dz) <= 1e-6f) return 1.0f;
+        return exp(-abs(dz / w.z));
+    }
+
+    public BxDFFlags Flags() {
+        BxDFFlags topFlags = top.Flags();
+        BxDFFlags bottomFlags = bottom.Flags();
+        BxDFFlags flags = BxDFFlags::Reflection;
+
+        if ((topFlags & BxDFFlags::Specular) != 0) flags = flags | BxDFFlags::Specular;
+
+        if ((topFlags & BxDFFlags::Diffuse) != 0 || (bottomFlags & BxDFFlags::Diffuse) != 0 || dot(albedo,LUMINANCE_RGB) > 0)
+            flags = flags | BxDFFlags::Diffuse;
+        else if ((topFlags & BxDFFlags::Glossy) != 0 || (bottomFlags & BxDFFlags::Glossy) != 0)
+            flags = flags |  BxDFFlags::Glossy;
+
+        if (((topFlags & BxDFFlags::Transmission) != 0) && ((bottomFlags & BxDFFlags::Transmission) != 0))
+            flags = flags |  BxDFFlags::Transmission;
+
+        return flags;
+    }
+
+    public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
+        float3 wo = wo;
+        float3 wi = wi;
+        if (twoSided && wo.z < 0) {
+            wo = -wo;
+            wi = -wi;
+        }
+
+        IBxDF enterInterface;
+        if (twoSided || wo.z > 0)
+            enterInterface = top;
+        else
+            enterInterface = bottom;
+        bool enteredTop = (twoSided || wo.z > 0);
+
+        IBxDF exitInterface, nonExitInterface;
+        if (SameHemisphere(wo, wi) ^ enteredTop) {
+            exitInterface = bottom;
+            nonExitInterface = top;
+        } else {
+            exitInterface = top;
+            nonExitInterface = bottom;
+        }
+        float exitZ = (SameHemisphere(wo, wi) ^ enteredTop) ? 0 : thickness;
+
+        SampledSpectrum fSum = SampledSpectrum(0.0f);
+        if (SameHemisphere(wo, wi))
+            fSum = float(nSamples) * enterInterface.f(wo, wi, mode);
+
+        PCG rng = PCG(float4(wi, dot(wi,wo)));
+
+        for (int s = 0; s < nSamples; ++s) {
+            // Sample transmission through entrance
+            BSDFSample wos = enterInterface.Sample_f(wo, rng.sample(), rng.sample2D(), mode, BxDFReflTransFlags::Transmission);
+            if (!wos.IsValid() || wos.wi.z == 0) continue;
+
+            // Sample virtual light direction from wi
+            BSDFSample wis = exitInterface.Sample_f(wi, rng.sample(), rng.sample2D(), !mode, BxDFReflTransFlags::Transmission);
+            if (!wis.IsValid() || wis.wi.z == 0) continue;
+
+            SampledSpectrum beta = wos.f * AbsCosTheta(wos.wi) / wos.pdf;
+            float z = enteredTop ? thickness : 0;
+            float3 w = wos.wi;
+            HGPhaseFunction phase = HGPhaseFunction(g);
+
+            for (int depth = 0; depth < maxDepth; ++depth) {
+                // Russian Roulette
+                if (depth > 3 && MaxComponent(beta) < 0.25f) {
+                    float q = max(0.0f, 1.0f - MaxComponent(beta));
+                    if (rng.sample() < q) break;
+                    beta /= (1.0f - q);
+                }
+
+                if (MaxComponent(albedo) < EPS) {
+                    // No scattering
+                    z = (z == thickness) ? 0 : thickness;
+                    beta *= Tr(thickness, w);
+                } else {
+                    const float sigma_t = 1.0f;
+                    float dz = SampleExponential(rng.sample(), sigma_t / abs(w.z));
+                    float zp = w.z > 0 ? (z + dz) : (z - dz);
+                    if (zp > 0 && zp < thickness) {
+                        // NEE via volume scattering
+                        float wt = 1.0f;
+                        if ((exitInterface.Flags() & BxDFFlags::Specular) == 0)
+                            wt = PowerHeuristic(1, wis.pdf, 1, phase.PDF(-w, -wis.wi));
+
+                        fSum += beta * albedo * phase.p(-w, -wis.wi) * wt * Tr(abs(zp - exitZ), wis.wi) * wis.f / wis.pdf;
+
+                        // Sample Phase Function
+                        PhaseFunctionSample ps = phase.Sample_p(-w, rng.sample2D());
+                        if (ps.pdf == 0 || ps.wi.z == 0) break;
+                        beta *= albedo * ps.p / ps.pdf;
+                        w = ps.wi;
+                        z = zp;
+
+                        // Account for direct escape after scattering
+                        if (((z < exitZ && w.z > 0) || (z > exitZ && w.z < 0)) && (exitInterface.Flags() & BxDFFlags::Specular) == 0) {
+                            SampledSpectrum fExit = exitInterface.f(-w, wi, mode);
+                            if (MaxComponent(fExit) > EPS) {
+                                float exitPDF = exitInterface.PDF(-w, wi, mode, BxDFReflTransFlags::Transmission);
+                                float wt2 = PowerHeuristic(1, ps.pdf, 1, exitPDF);
+                                fSum += beta * Tr(abs(zp - exitZ), w) * fExit * wt2;
+                            }
+                        }
+                        continue;
+                    }
+                    z = clamp(zp, 0.0f, thickness);
+                }
+
+                // Interface scattering
+                if (z == exitZ) {
+                    BSDFSample bs = exitInterface.Sample_f(-w, rng.sample(), rng.sample2D(), mode, BxDFReflTransFlags::Reflection);
+                    if (!bs.IsValid() || bs.wi.z == 0) break;
+                    beta *= bs.f * AbsCosTheta(bs.wi) / bs.pdf;
+                    w = bs.wi;
+                } else {
+                    if ((nonExitInterface.Flags() & BxDFFlags::Specular) == 0) {
+                        float wt = 1.0f;
+                        if ((exitInterface.Flags() & BxDFFlags::Specular) == 0)
+                            wt = PowerHeuristic(1, wis.pdf, 1, nonExitInterface.PDF(-w, -wis.wi, mode));
+                        fSum += beta * nonExitInterface.f(-w, -wis.wi, mode) * AbsCosTheta(wis.wi) * wt * Tr(thickness, wis.wi) * wis.f / wis.pdf;
+                    }
+
+                    BSDFSample bs = nonExitInterface.Sample_f(-w, rng.sample(), rng.sample2D(), mode, BxDFReflTransFlags::Reflection);
+                    if (!bs.IsValid() || bs.wi.z == 0) break;
+                    beta *= bs.f * AbsCosTheta(bs.wi) / bs.pdf;
+                    w = bs.wi;
+
+                    if ((exitInterface.Flags() & BxDFFlags::Specular) == 0) {
+                        SampledSpectrum fExit = exitInterface.f(-w, wi, mode);
+                        if (MaxComponent(fExit) > EPS) {
+                            float wt = 1.0f;
+                            if ((nonExitInterface.Flags() & BxDFFlags::Specular) == 0) {
+                                float exitPDF = exitInterface.PDF(-w, wi, mode, BxDFReflTransFlags::Transmission);
+                                wt = PowerHeuristic(1, bs.pdf, 1, exitPDF);
+                            }
+                            fSum += beta * Tr(thickness, bs.wi) * fExit * wt;
+                        }
+                    }
+                }
+            }
+        }
+        return fSum / float(nSamples);
+    }
+
+    public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags sampleFlags = BxDFReflTransFlags::All) {
+        bool flipWi = false;
+        float3 wo = wo;
+        if (twoSided && wo.z < 0) {
+            wo = -wo;
+            flipWi = true;
+        }
+
+        bool enteredTop = twoSided || wo.z > 0;
+        IBxDF entryInterface;
+        if (enteredTop)
+            entryInterface = top;
+        else
+            entryInterface = bottom;
+
+        BSDFSample bs = entryInterface.Sample_f(wo, uc, u, mode);
+        if (!bs.IsValid() || bs.wi.z == 0) return BSDFSample();
+
+        if (IsReflection(bs.flags)) {
+            if (flipWi) bs.wi = -bs.wi;
+            return bs;
+        }
+
+        float3 w = bs.wi;
+        bool specularPath = IsSpecular(bs.flags);
+        SampledSpectrum f = bs.f * AbsCosTheta(bs.wi);
+        float pdf = bs.pdf;
+        float z = enteredTop ? thickness : 0;
+        HGPhaseFunction phase = HGPhaseFunction(g);
+        PCG rng = PCG(float4(w, dot(w,wo)));
+
+        for (int depth = 0; depth < maxDepth; ++depth) {
+            // Russian Roulette
+            float rrBeta = MaxComponent(f) / pdf;
+            if (depth > 3 && rrBeta < 0.25f) {
+                float q = max(0.0f, 1.0f - rrBeta);
+                if (rng.sample() < q) return BSDFSample();
+                pdf *= (1.0f - q);
+            }
+
+            if (MaxComponent(albedo) > EPS) {
+                float dz = SampleExponential(rng.sample(), 1.0f / AbsCosTheta(w));
+                float zp = w.z > 0 ? (z + dz) : (z - dz);
+                if (zp > 0 && zp < thickness) {
+                    PhaseFunctionSample ps = phase.Sample_p(-w, rng.sample2D());
+                    if (ps.pdf == 0 || ps.wi.z == 0) return BSDFSample();
+                    f *= albedo * ps.p;
+                    pdf *= ps.pdf;
+                    specularPath = false;
+                    w = ps.wi;
+                    z = zp;
+                    continue;
+                }
+                z = clamp(zp, 0.0f, thickness);
+            } else {
+                z = (z == thickness) ? 0 : thickness;
+                f *= Tr(thickness, w);
+            }
+
+            IBxDF currInterface;
+            if (z == 0) currInterface = bottom;
+            else currInterface = top;
+            BSDFSample bs_int = currInterface.Sample_f(-w, rng.sample(), rng.sample2D(), mode);
+            if (!bs_int.IsValid() || bs_int.wi.z == 0) return BSDFSample();
+
+            f *= bs_int.f;
+            pdf *= bs_int.pdf;
+            specularPath = specularPath && IsSpecular(bs_int.flags);
+            w = bs_int.wi;
+
+            if (IsTransmission(bs_int.flags)) {
+                BxDFFlags flags = SameHemisphere(wo, w) ? BxDFFlags::Reflection : BxDFFlags::Transmission;
+                flags = flags | (specularPath ? BxDFFlags::Specular : BxDFFlags::Glossy);
+                if (flipWi) w = -w;
+                return BSDFSample(f, w, pdf, flags);
+            }
+            f *= AbsCosTheta(bs_int.wi);
+        }
+        return BSDFSample();
+    }
+
+    public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
+        float3 wo = wo;
+        float3 wi = wi;
+        if (twoSided && wo.z < 0) {
+            wo = -wo;
+            wi = -wi;
+        }
+
+        PCG rng = PCG(float4(wi, dot(wi,wo)));
+        bool enteredTop = twoSided || wo.z > 0;
+        float pdfSum = 0;
+
+        if (SameHemisphere(wo, wi)) {
+            pdfSum += float(nSamples) * (enteredTop ? top.PDF(wo, wi, mode, flags) : bottom.PDF(wo, wi, mode, flags));
+        }
+
+        for (int s = 0; s < nSamples; ++s) {
+            if (SameHemisphere(wo, wi)) {
+                // TRT estimate
+                IBxDF rInterface;
+                IBxDF tInterface;
+                if (enteredTop) { rInterface = bottom; tInterface = top; }
+                else { rInterface = top; tInterface = bottom; }
+                BSDFSample wos = tInterface.Sample_f(wo, rng.sample(), rng.sample2D(), mode, BxDFReflTransFlags::Transmission);
+                BSDFSample wis = tInterface.Sample_f(wi, rng.sample(), rng.sample2D(), !mode, BxDFReflTransFlags::Transmission);
+
+                if (wos.IsValid() && wis.IsValid()) {
+                    if ((tInterface.Flags() & BxDFFlags::Specular) != 0) {
+                        pdfSum += rInterface.PDF(-wos.wi, -wis.wi, mode);
+                    } else {
+                        BSDFSample rs = rInterface.Sample_f(-wos.wi, rng.sample(), rng.sample2D(), mode);
+                        if (rs.IsValid()) {
+                            float rPDF = rInterface.PDF(-wos.wi, -wis.wi, mode);
+                            pdfSum += PowerHeuristic(1, wis.pdf, 1, rPDF) * rPDF;
+                            float tPDF = tInterface.PDF(-rs.wi, wi, mode);
+                            pdfSum += PowerHeuristic(1, rs.pdf, 1, tPDF) * tPDF;
+                        }
+                    }
+                }
+            } else {
+                // TT estimate
+                IBxDF toInterface;
+                IBxDF tiInterface;
+                if (enteredTop) { toInterface = top; tiInterface = bottom; }
+                else { toInterface = bottom; tiInterface = top; }
+                BSDFSample wos = toInterface.Sample_f(wo, rng.sample(), rng.sample2D(), mode);
+                if (!wos.IsValid() || IsReflection(wos.flags)) continue;
+                BSDFSample wis = tiInterface.Sample_f(wi, rng.sample(), rng.sample2D(), !mode);
+                if (!wis.IsValid() || IsReflection(wis.flags)) continue;
+
+                if ((toInterface.Flags() & BxDFFlags::Specular) != 0) pdfSum += tiInterface.PDF(-wos.wi, wi, mode);
+                else if ((tiInterface.Flags() & BxDFFlags::Specular) != 0) pdfSum += toInterface.PDF(wo, -wis.wi, mode);
+                else pdfSum += (toInterface.PDF(wo, -wis.wi, mode) + tiInterface.PDF(-wos.wi, wi, mode)) * 0.5f;
+            }
+        }
+        return lerp(Inv4Pi, pdfSum / float(nSamples), 0.9f);
+    }
+};
 // Utilities
 // These are not from PBRT, but from other references where implementing the glTF
 // model is concerned.
 // --
-// vvv From https://github.com/nvpro-samples/nvpro_core2/tree/main/nvshaders/pbr_ggx_microfacet.h.slang
-public float ClampedDot(float2 v1, float2 v2) { return clamp(dot(v1, v2), 0, 1.0); }
-public float ClampedDot(float3 v1, float3 v2) { return clamp(dot(v1, v2), 0, 1.0); }
-// Schlick Fresnel approximation
-public float SchlickFresnel(float F0, float F90, float VdotH)
-{
-  return F0 + (F90 - F0) * pow(1.0F - VdotH, 5.0F);
-}
-
-// Schlick Fresnel approximation for vectors
-public float3 SchlickFresnel(float3 F0, float3 F90, float VdotH)
-{
-  return F0 + (F90 - F0) * pow(1.0F - VdotH, 5.0F);
-}
-
-// Schlick Fresnel approximation for float
-public float SchlickFresnel(float ior, float VdotH)
-{
-  // Calculate reflectance at normal incidence (R0)
-  float R0 = pow((1.0F - ior) / (1.0F + ior), 2.0F);
-
-  // Fresnel reflectance using Schlick's approximation
-  return R0 + (1.0F - R0) * pow(1.0F - VdotH, 5.0F);
-}
 // Translate F0 to Complex Fresnel IOR terms
 // "Artist Friendly Metallic Fresnel", Gulbrandsen 2014, https://jcgt.org/published/0003/04/03/paper.pdf
 public void FresnelFromF0(float r /* baseColor */, float g /* specularTint */, out float n, out float k){
@@ -623,4 +1008,106 @@ public void FresnelFromF0(float r /* baseColor */, float g /* specularTint */, o
 public void FresnelFromF0(float3 r /* baseColor */, float3 g /* specularTint */, out float3 n, out float3 k){
     for (int i = 0; i < 3; i++)
         FresnelFromF0(r[i], g[i], n[i], k[i]);
+}
+// --
+// vvv From https://github.com/nvpro-samples/nvpro_core2/tree/main/nvshaders/pbr_ggx_microfacet.h.slang
+public float ClampedDot(float2 v1, float2 v2) { return clamp(dot(v1, v2), 0, 1.0); }
+public float ClampedDot(float3 v1, float3 v2) { return clamp(dot(v1, v2), 0, 1.0); }
+// Schlick Fresnel approximation
+public float SchlickFresnel(float F0, float F90, float VdotH)
+{
+  return F0 + (F90 - F0) * pow(1.0F - VdotH, 5.0F);
+}
+// Schlick Fresnel approximation for vectors
+public float3 SchlickFresnel(float3 F0, float3 F90, float VdotH)
+{
+  return F0 + (F90 - F0) * pow(1.0F - VdotH, 5.0F);
+}
+// Schlick Fresnel approximation for float
+public float SchlickFresnel(float ior, float VdotH)
+{
+  // Calculate reflectance at normal incidence (R0)
+  float R0 = pow((1.0F - ior) / (1.0F + ior), 2.0F);
+
+  // Fresnel reflectance using Schlick's approximation
+  return R0 + (1.0F - R0) * pow(1.0F - VdotH, 5.0F);
+}
+// Fresnel eval approximation of layered materials
+// See https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#fresnel
+public float3 glTFFresnelMix(float VdotH, float3 bottom, float3 top, float ior = 1.5f){
+    float F0 = pow((ior - 1) / (ior + 1), 2);
+    float3 F = SchlickFresnel(F0, 1.0f, VdotH);
+    return lerp(bottom, top, F);
+}
+// Fresnel sampling approximation of layered materials
+float glTFGlossyProb(float NdotV, float metallic, float ior = 1.5f)
+{
+    float F0 = pow((ior - 1) / (ior + 1), 2); // IOR=1.5->0.04
+    float F = SchlickFresnel(F0, 1.0f, NdotV);
+    return lerp(F, 1.0F, metallic);
+}
+// Adapted from nvpro_core2's bsdfSampleSimple, bsdfEvalSimple
+// Cheap LayeredBxDF alternative with glTF's metallic-roughness model
+// See also Appendix B. https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#material-structure
+public BSDFSample glTFEval(float3 wo, float3 wi, float3 baseColor, float metallic, float roughness, float3 specularTint){
+    if (wo.z <= 0 || wi.z <= 0) return BSDFSample(0); // Only mirror reflection.
+    float3 wm = normalize(wo + wi);
+    float NdotV = ClampedCosTheta(wo);
+    float NdotL = ClampedCosTheta(wi);
+    float NdotH = ClampedCosTheta(wm);
+    float VdotH = ClampedDot(wo, wm);
+    // We combine the metallic and specular lobes into a single glossy lobe.
+    // The metallic weight is     metallic *    fresnel(f0 = baseColor)
+    // The specular weight is (1-metallic) *    fresnel(f0 = c_min_reflectance)
+    // The diffuse weight is  (1-metallic) * (1-fresnel(f0 = c_min_reflectance)) * baseColor
+    float c_min_reflectance = 0.04f;
+    float3 f0 = lerp(float3(c_min_reflectance), baseColor, metallic);
+    float3 fGlossy = SchlickFresnel(f0, 1.0f, VdotH);
+    float3 fDiffuse = SchlickFresnel(1.0f - c_min_reflectance, 0.0f, VdotH) * (1.0f - metallic);
+    // Draw from microfacet distribution
+    // We don't use ConductorBxDF/DielectricBxDF as-is since our F0 is based on RGB values.
+    // Usage of FresnelFromF0 should be investigated
+    float alpha = roughness * roughness;
+    float diffusePDF = InvPi * NdotL;
+    SampledSpectrum diffuseBSDF = baseColor * fDiffuse * InvPi;
+    float specularPDF;
+    SampledSpectrum specularBSDF;
+    TrowbridgeReitzDistribution mfDistrib = TrowbridgeReitzDistribution(alpha, alpha);
+    if (mfDistrib.EffectivelySmooth()){
+        // PDF is dirac delta, which for eval is impossible to represent
+        specularPDF = 0.0f;
+        specularBSDF = 0.0f;
+    } else {
+        specularPDF = mfDistrib.PDF(wo, wm) / (4 * VdotH);
+        specularBSDF = mfDistrib.D(wm) * fGlossy * mfDistrib.G(wo, wi) / (4 * NdotV * NdotL);
+    }
+    return BSDFSample(specularBSDF + diffuseBSDF,
+                      wi,
+                      lerp(diffusePDF, specularPDF, glTFGlossyProb(NdotV, metallic)),
+                      BxDFFlags::GlossyReflection);
+}
+public BSDFSample glTFSample(inout PCG rng, float3 wo, float3 baseColor, float metallic, float roughness, float3 specularTint)
+{
+    float c_min_reflectance = 0.04f;
+    float3 f0 = lerp(float3(c_min_reflectance), baseColor, metallic);
+    float3 wi;
+    float2 u = rng.sample2D();
+    float alpha = roughness * roughness;
+    TrowbridgeReitzDistribution mfDistrib = TrowbridgeReitzDistribution(alpha, alpha);
+    if (rng.sample() <= glTFGlossyProb(ClampedCosTheta(wo), metallic)) {
+        // Sample Specular
+        if (mfDistrib.EffectivelySmooth()) {
+            // Dirac delta case
+            wi = float3(-wo.x, -wo.y, wo.z);
+            return BSDFSample(f0, wi, 1.0f, BxDFFlags::SpecularReflection);
+        } else {
+            float3 wm = mfDistrib.Sample_wm(wo, u);
+            wi = Reflect(wo, wm);
+        }
+    } else {
+        // Sample Diffuse
+        wi = SampleCosineHemisphere(u);
+    }
+    wi = FaceForward(wi, float3(0,0,1));
+    return glTFEval(wo, wi, baseColor, metallic, roughness, specularTint);
 }

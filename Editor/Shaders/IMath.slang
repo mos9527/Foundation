@@ -1,7 +1,9 @@
 public static const float Pi = acos(-1);
 public static const float InvPi = 1.0f / Pi;
+public static const float Inv4Pi = 1.0f / (4.0f * Pi);
 public static const float INF = 1e18f;
 public static const float EPS = 1e-6f;
+public static const float3 LUMINANCE_RGB = float3(0.2126f, 0.7152f, 0.0722f);
 // -- bits
 public const uint32_t alignUp(uint32_t value, uint32_t alignment) {
     return (value + alignment - 1) & ~(alignment - 1);
@@ -245,13 +247,17 @@ public struct PCG
     {
         state = uint4(pixel, frameNo, seed);
     }
+    public __init(float4 initState)
+    {
+        state = asuint(initState);
+    }
     [mutating] public float sample()
     {
         state.w++;
         state = pcg4d(state);
         return uintToFloat(state.x);
     }
-    public float2 sample2()
+    public float2 sample2D()
     {
         return float2(sample(), sample());
     }
