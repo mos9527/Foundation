@@ -35,7 +35,8 @@ void FInitEnter()
         GShaderGlobals.sunIntensity = light.intensity;
         GShaderGlobals.camMinEV = 0.0f;
         GShaderGlobals.camMaxEV = log2f(light.intensity * 0.25f);
-    } else
+    }
+    else
     {
         GShaderGlobals.sunIntensity = 0.0f;
     }
@@ -140,44 +141,29 @@ void FInitEnter()
     }
     FEState = FEInit;
 }
+
 void FInit() { FEState = FERunningEnter; }
 RendererConfig GRendererConfig;
+
 void FRunningEnter()
 {
     PathTracerSetup(GContext, GRendererConfig, {
-        .gsGlobals = &GShaderGlobals,
-        .gsInstances = &GSInstances,
-        .gsMaterials = &GSMaterials,
-        .gsMeshes = &GSMeshes,
-        .gsBLASes = &GSBLASes        
-    });
+                        .gsGlobals = &GShaderGlobals,
+                        .gsInstances = &GSInstances,
+                        .gsMaterials = &GSMaterials,
+                        .gsMeshes = &GSMeshes,
+                        .gsBLASes = &GSBLASes
+                    });
     FEState = FERunning;
 }
+
 bool cameraUpdated = true;
-void FRunning()
+
+void FRunningImGui()
 {
     auto* renderer = GContext->renderer;
-    // New frame
-    renderer->BeginExecute();
     float gpuTimingRes;
     auto timings = renderer->DbgProfilePassTiming(renderer->GetSync(), gpuTimingRes);
-    ImGui_ImplFoundation_NewFrame();
-    ImGui::NewFrame();
-    // Global param update
-    auto& io = ImGui::GetIO();
-    GCamera.Update({});
-    GCamera.aspect = GContext->swapchain->GetAspectRatio();
-    GShaderGlobals.frameNumber = renderer->GetFrame();
-    GShaderGlobals.view = GCamera.view;
-    GShaderGlobals.proj = GCamera.proj;
-    GShaderGlobals.inverseViewProj = inverse(GShaderGlobals.proj * GShaderGlobals.view);
-    GShaderGlobals.zNear = GCamera.zNear;
-    GShaderGlobals.projPlanes = planeSymmetric(GShaderGlobals.proj);
-    GShaderGlobals.camAdaptCoeff = 1.0f - std::exp(-io.DeltaTime * GCamera.adaptRate);
-    GShaderGlobals.camPosition = GCamera.position;
-    GShaderGlobals.camDirection = GCamera.rot * float3(0, 0, -1);
-    GShaderGlobals.fbWidth = static_cast<float>(renderer->GetSwapchainExtent().x);
-    GShaderGlobals.fbHeight = static_cast<float>(renderer->GetSwapchainExtent().y);
     // ImGui
     if (ImGui::Begin("Camera"))
     {
@@ -190,8 +176,6 @@ void FRunning()
         ImGui::SliderFloat("Max EV", &GShaderGlobals.camMaxEV, -16.0f, 16.0f);
         ImGui::SliderFloat("Adapt Rate", &GCamera.adaptRate, 0.0f, 100.0f);
     }
-    if (cameraUpdated)
-        GShaderGlobals.ptAccumualatedFrames = 0, cameraUpdated = false;
     ImGui::End();
     if (ImGui::Begin("Rendering"))
     {
@@ -209,7 +193,8 @@ void FRunning()
         }
         {
             const char* items[] = {"Position", "BaseColor", "Normal", "Diffuse", "Specular"};
-            const unsigned values[] = {kViewPosition, kViewBaseColor, kViewNormal, kViewGBufferDiffuse, kViewGBufferSpecular};
+            const unsigned values[] = {kViewPosition, kViewBaseColor, kViewNormal, kViewGBufferDiffuse,
+                                       kViewGBufferSpecular};
             ImGui::SeparatorText("GBuffer View");
             changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
         }
@@ -290,8 +275,9 @@ void FRunning()
                             .startTick = timings[i * 2],
                             .endTick = timings[i * 2 + 1],
                             .label = pass.name,
-                            .color = pass.queue == RHIDeviceQueueType::Graphics ? ImColor(1.0f, 0.5f, 0.0f, 1.0f)
-                                                                                : ImColor(0.0f, 0.5f, 0.0f, 1.0f),
+                            .color = pass.queue == RHIDeviceQueueType::Graphics
+                            ? ImColor(1.0f, 0.5f, 0.0f, 1.0f)
+                            : ImColor(0.0f, 0.5f, 0.0f, 1.0f),
                         };
                         samples.emplace_back(std::move(sample));
                         while (histograms.size() <= i)
@@ -348,10 +334,41 @@ void FRunning()
         }
     }
     ImGui::End();
+}
+static bool enableImGui = false;
+void FRunning()
+{
+    auto* renderer = GContext->renderer;
+    // New frame
+    renderer->BeginExecute();
+    ImGui_ImplFoundation_NewFrame();
+    ImGui::NewFrame();
+    if (enableImGui)
+        FRunningImGui();
+    // Global param update
+    GCamera.Update({});
+    GCamera.aspect = GContext->swapchain->GetAspectRatio();
+    GShaderGlobals.frameNumber = renderer->GetFrame();
+    GShaderGlobals.view = GCamera.view;
+    GShaderGlobals.proj = GCamera.proj;
+    GShaderGlobals.inverseViewProj = inverse(GShaderGlobals.proj * GShaderGlobals.view);
+    GShaderGlobals.zNear = GCamera.zNear;
+    GShaderGlobals.projPlanes = planeSymmetric(GShaderGlobals.proj);
+    static float prevTime = 0.0f;
+    float deltaTime = SDL_GetTicks() - prevTime;
+    prevTime = SDL_GetTicks();
+    GShaderGlobals.camAdaptCoeff = 1.0f - std::exp(-deltaTime * GCamera.adaptRate);
+    GShaderGlobals.camPosition = GCamera.position;
+    GShaderGlobals.camDirection = GCamera.rot * float3(0, 0, -1);
+    GShaderGlobals.fbWidth = static_cast<float>(renderer->GetSwapchainExtent().x);
+    GShaderGlobals.fbHeight = static_cast<float>(renderer->GetSwapchainExtent().y);
+    if (cameraUpdated)
+        GShaderGlobals.ptAccumualatedFrames = 0, cameraUpdated = false;
     renderer->ExecuteFrame();
     renderer->EndExecute();
     GShaderGlobals.ptAccumualatedFrames++;
 }
+
 bool EditorProcessEvent(SDL_Event* event)
 {
     if (event->type == SDL_EVENT_WINDOW_RESIZED)
@@ -376,6 +393,10 @@ bool EditorProcessEvent(SDL_Event* event)
             GCamera.center = {};
             cameraUpdated |= true;
         }
+        if (event->key.key == SDLK_TAB)
+        {
+            enableImGui = !enableImGui;
+        }
     }
     ImGui_ImplFoundation_ProcessEvent(event);
     auto& io = ImGui::GetIO();
@@ -383,6 +404,7 @@ bool EditorProcessEvent(SDL_Event* event)
         cameraUpdated |= GCamera.Update(*event);
     return false;
 }
+
 // Per-frame logic
 bool EditorOnFrame(FContext*)
 {

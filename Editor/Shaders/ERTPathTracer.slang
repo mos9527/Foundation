@@ -224,17 +224,17 @@ void RayGeneration()
         quat toWorld     = toLocal.inverted();
         float3 n = float3(0,0,1);
         float3 wo = toLocal.rotate(view);
-        float3 wi = float3(0);
+        // vvv glTF Material Model
+        IBxDF bsdf = glTFBSDF(hit.baseColor, hit.metallic, hit.roughness);
         // Direct Lighting
         // We only do one direct light sample for now.
-        if (globalParams.sunIntensity > EPS){
+        if (globalParams.sunIntensity > EPS) {
             // Sample sun direction
             float3 sunDir = normalize(-globalParams.sunDirection);
             float3 w = toLocal.rotate(sunDir);
-            BSDFSample bsdf = glTFEval(wo, w, hit.baseColor, hit.metallic, hit.roughness, float3(1.0f) /* tint */);
-            if (bsdf.IsValid()){
-                float3 f = bsdf.f * ClampedCosTheta(w);
-                // Shadow ray
+            float3 f = bsdf.f(wo, w) * ClampedCosTheta(w);
+            // Shadow ray
+            if (AnyLuminance(f)){
                 float3 origin = OffsetRay(hit.position, hit.geometryNormal);
                 bool occluded = TraceShadowRay(origin, sunDir);
                 if (!occluded)
@@ -243,13 +243,12 @@ void RayGeneration()
         }
         // Emissive
         L += beta * hit.emissive;
-        BSDFSample sample = glTFSample(rng, wo, hit.baseColor, hit.metallic, hit.roughness, 1.0f /* tint */);
+        BSDFSample sample = bsdf.Sample_f(wo, rng.sample(), rng.sample2D());
         if (!sample.IsValid())
             break;
-        wi = sample.wi;
-        beta *= sample.f * AbsCosTheta(wi) / sample.pdf;
+        beta *= sample.f * AbsCosTheta(sample.wi) / sample.pdf;
         // Select next ray to sample from current position
-        ray.Direction = toWorld.rotate(wi);
+        ray.Direction = toWorld.rotate(sample.wi);
         ray.Origin = OffsetRay(hit.position, hit.geometryNormal);
         if (dot(LUMINANCE_RGB,beta) < EPS)
             break;

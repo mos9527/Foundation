@@ -26,7 +26,7 @@ bool /* should close */ mainLoop()
 constexpr int kSDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_VULKAN;
 int main(int argc, char** argv)
 {
-    CreateContext(SDL_CreateWindow("Foundation Editor", 1280, 720, kSDLWindowFlagsVulkan));
+    CreateContext(SDL_CreateWindow("Foundation Editor", 800, 450, kSDLWindowFlagsVulkan));
     ImGui_ImplFoundation_SetupContextWithDefaultStyles();
     ImGui_ImplFoundation_Init(GContext->device.Get(), GContext->window);
     GContext->args = Span(argv, argv + argc);
