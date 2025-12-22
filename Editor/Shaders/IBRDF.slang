@@ -1074,6 +1074,7 @@ public struct glTFBSDF : IBxDF {
         float VdotH = ClampedDot(wo, wm);
         // We combine the metallic and specular lobes into a single glossy lobe.
         // The metallic weight is     metallic *    fresnel(f0 = baseColor)
+        // ^^^ This is not directly expressed - F0 is mixed below ^^^
         // The specular weight is (1-metallic) *    fresnel(f0 = c_min_reflectance)
         // The diffuse weight is  (1-metallic) * (1-fresnel(f0 = c_min_reflectance)) * baseColor
         float c_min_reflectance = 0.04f;
@@ -1085,20 +1086,22 @@ public struct glTFBSDF : IBxDF {
         // Usage of FresnelFromF0 should be investigated
         float diffusePDF = CosineHemispherePDF(NdotL);
         SampledSpectrum diffuseBSDF = baseColor * fDiffuse * InvPi;
-        float specularPDF;
-        SampledSpectrum specularBSDF;
+        float probGlossy = glTFGlossyProb(NdotV, metallic);
         if (mfDistrib.EffectivelySmooth()){
             // PDF is dirac delta, which for eval is impossible to represent
-            specularPDF = 1.0f;
-            specularBSDF = fGlossy / NdotV;
+            // This is the specular case again, so eval has zero contribution - this
+            // path is NOT touched by Sample_f
+            return BSDFSample(diffuseBSDF, wi,
+                              diffusePDF * (1.0f - probGlossy),
+                              BxDFFlags::DiffuseReflection);
         } else {
-            specularPDF = mfDistrib.PDF(wo, wm) / (4 * VdotH);
-            specularBSDF = mfDistrib.D(wm) * fGlossy * mfDistrib.G(wo, wi) / (4 * NdotV * NdotL);
+            float specularPDF = mfDistrib.PDF(wo, wm) / (4 * VdotH);
+            SampledSpectrum specularBSDF = mfDistrib.D(wm) * fGlossy * mfDistrib.G(wo, wi) / (4 * NdotV * NdotL);
+            return BSDFSample(specularBSDF + diffuseBSDF,
+                              wi,
+                              lerp(diffusePDF, specularPDF, probGlossy),
+                              BxDFFlags::GlossyReflection);
         }
-        return BSDFSample(specularBSDF + diffuseBSDF,
-                          wi,
-                          lerp(diffusePDF, specularPDF, glTFGlossyProb(NdotV, metallic)),
-                          BxDFFlags::GlossyReflection);
     }
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode) {
         BSDFSample bs = glTFEval(wo, wi);
@@ -1112,11 +1115,17 @@ public struct glTFBSDF : IBxDF {
         float c_min_reflectance = 0.04f;
         float3 f0 = lerp(float3(c_min_reflectance), baseColor, metallic);
         float3 wi;
-        if (uc < glTFGlossyProb(ClampedCosTheta(wo), metallic)) {
+        float probGlossy = glTFGlossyProb(ClampedCosTheta(wo), metallic);
+        if (uc < probGlossy) {
             // Sample Specular
             if (mfDistrib.EffectivelySmooth()) {
                 // Dirac delta case
+                // Our metallic/glossy lobe can be considered merged into a single specular lobe here
+                // for this, and glTFEval since F0 is mixed (see glTFEval comments)
                 wi = float3(-wo.x, -wo.y, wo.z); // = wr
+                float3 f0 = lerp(float3(0.04f), baseColor, metallic);
+                float3 fGlossy = SchlickFresnel(f0, 1.0f, AbsCosTheta(wi));
+                return BSDFSample(fGlossy / AbsCosTheta(wi), wi, probGlossy, BxDFFlags::SpecularReflection);
             } else {
                 float3 wm = mfDistrib.Sample_wm(wo, u);
                 wi = Reflect(wo, wm);

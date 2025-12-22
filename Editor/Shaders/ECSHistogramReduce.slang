@@ -10,7 +10,7 @@ void reduce(uint gid : SV_GroupIndex, uint groupID : SV_GroupID) {
     countGS.store(0u); weightGS.store(0u);
     GroupMemoryBarrierWithGroupSync();
     // Drop extremities
-    bool keep = (gid >= 2 && gid <= 48);
+    bool keep = (gid >= 2 && gid <= 32);
     uint count = bins[gid] * keep;
     uint weighted = count * gid;
     uint countWave = WaveActiveSum(count);
