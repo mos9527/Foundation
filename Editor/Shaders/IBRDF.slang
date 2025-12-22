@@ -1089,8 +1089,8 @@ public struct glTFBSDF : IBxDF {
         SampledSpectrum specularBSDF;
         if (mfDistrib.EffectivelySmooth()){
             // PDF is dirac delta, which for eval is impossible to represent
-            specularPDF = 0.0f;
-            specularBSDF = 0.0f;
+            specularPDF = 1.0f;
+            specularBSDF = fGlossy / NdotV;
         } else {
             specularPDF = mfDistrib.PDF(wo, wm) / (4 * VdotH);
             specularBSDF = mfDistrib.D(wm) * fGlossy * mfDistrib.G(wo, wi) / (4 * NdotV * NdotL);
@@ -1117,8 +1117,6 @@ public struct glTFBSDF : IBxDF {
             if (mfDistrib.EffectivelySmooth()) {
                 // Dirac delta case
                 wi = float3(-wo.x, -wo.y, wo.z); // = wr
-                float3 F = SchlickFresnel(f0, 1.0f, AbsCosTheta(wi));
-                return BSDFSample(F / AbsCosTheta(wi), wi, 1.0f, BxDFFlags::SpecularReflection);
             } else {
                 float3 wm = mfDistrib.Sample_wm(wo, u);
                 wi = Reflect(wo, wm);

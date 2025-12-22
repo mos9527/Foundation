@@ -7,6 +7,7 @@ import IFlags;
 import IMath;
 import ICommon;
 import IBRDF;
+import ILight;
 uniform UBO globalParams;
 // -- Scene
 RaytracingAccelerationStructure AS;
@@ -119,10 +120,6 @@ Payload SamplePayload(HitPayload payload)
     res.normal = normalize(res.tangent * normalTBN.x + res.bitangent * normalTBN.y + res.normal * normalTBN.z);
     return res;
 }
-float3 EvalSkyDome(float3 dir)
-{
-    return float3(1.0f); // Furnace
-}
 // The safeOffsetRay function shifts a point on a surface so that a ray
 // bouncing off the surface is no longer treated as intersecting the surface
 // from which it originated when tMin = 0.0.
@@ -196,9 +193,11 @@ void RayGeneration()
         TraceRay(AS, 0, 0xFF, 0, 0, 0, ray, payload);
         // Outgoing direction
         float3 view = -ray.Direction;
+        UniformInfiniteLight env = UniformInfiniteLight(globalParams.ambientColor, 1.0f);
         if (!payload.IsHit()){
             // Miss - environment
-            L += beta * EvalSkyDome(ray.Direction);
+            // Since we're using MIS, ambient light is effectively a constant
+            L += beta * env.Le(view);
             break;
         }
         Payload hit = SamplePayload(payload);
@@ -229,15 +228,17 @@ void RayGeneration()
         // IBxDF bsdf = DiffuseBxDF(hit.baseColor);
         // Direct Lighting
         // We only do one direct light sample for now.
-        if (globalParams.sunIntensity > EPS) {
+        LightSampleContext ctx = LightSampleContext(hit.position, hit.geometryNormal, hit.normal);
+        DistantLight sun = DistantLight(SampledSpectrum(globalParams.sunIntensity), globalParams.sunDirection);
+        LightLiSample sunSample = sun.Sample_Li(ctx , rng.sample2D());
+        if (AnyLuminance(sunSample.Li)) {
             // Sample sun direction
-            float3 sunDir = normalize(-globalParams.sunDirection);
-            float3 w = toLocal.rotate(sunDir);
+            float3 w = toLocal.rotate(sunSample.wi);
             float3 f = bsdf.f(wo, w) * ClampedCosTheta(w);
             // Shadow ray
             if (AnyLuminance(f)){
                 float3 origin = OffsetRay(hit.position, hit.geometryNormal);
-                bool occluded = TraceShadowRay(origin, sunDir);
+                bool occluded = TraceShadowRay(origin, sunSample.wi);
                 if (!occluded)
                     L += beta * f * globalParams.sunIntensity;
             }
@@ -251,8 +252,11 @@ void RayGeneration()
         // Select next ray to sample from current position
         ray.Direction = toWorld.rotate(sample.wi);
         ray.Origin = OffsetRay(hit.position, hit.geometryNormal);
-        if (dot(LUMINANCE_RGB,beta) < EPS)
+        // Russian Roulette
+        float rrPCount = min(MaxComponent(beta) + 0.01f, 0.95f);
+        if (rng.sample() > rrPCount) // Contribution is low, may terminate early
             break;
+        beta /= rrPCount; // Boost non-terminated paths
     }
     // Transform world space point
     // Accumulation
