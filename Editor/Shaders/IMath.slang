@@ -1,3 +1,6 @@
+// -- typedef
+public typedef float3 SampledSpectrum; // RGB spectrum
+// -- const
 public static const float Pi = acos(-1);
 public static const float InvPi = 1.0f / Pi;
 public static const float Inv4Pi = 1.0f / (4.0f * Pi);

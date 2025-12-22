@@ -226,6 +226,7 @@ void RayGeneration()
         float3 wo = toLocal.rotate(view);
         // vvv glTF Material Model
         IBxDF bsdf = glTFBSDF(hit.baseColor, hit.metallic, hit.roughness);
+        // IBxDF bsdf = DiffuseBxDF(hit.baseColor);
         // Direct Lighting
         // We only do one direct light sample for now.
         if (globalParams.sunIntensity > EPS) {

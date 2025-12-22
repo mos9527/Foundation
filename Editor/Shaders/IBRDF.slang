@@ -78,7 +78,6 @@ public struct PhaseFunctionSample {
         this.pdf = pdf;
     }
 };
-typedef float3 SampledSpectrum; // RGB spectrum
 // https://www.pbr-book.org/4ed/Reflection_Models/BSDF_Representation#BxDFInterface
 // * wo, wi are in local space (+z is normal direction)
 public interface IBxDF {
@@ -234,6 +233,9 @@ public float3 SampleUniformSphere(float2 u) {
     float r = SafeSqrt(1 - Sqr(z));
     float phi = 2 * Pi * u[1];
     return float3(r * cos(phi), r * sin(phi), z);
+}
+public float UniformSpherePDF() {
+    return Inv4Pi;
 }
 // https://pbr-book.org/4ed/Sampling_Algorithms/Sampling_Multidimensional_Functions#Cosine-WeightedHemisphereSampling
 public float3 SampleCosineHemisphere(float2 u) {
@@ -1110,11 +1112,11 @@ public struct glTFBSDF : IBxDF {
         float c_min_reflectance = 0.04f;
         float3 f0 = lerp(float3(c_min_reflectance), baseColor, metallic);
         float3 wi;
-        if (uc <= glTFGlossyProb(ClampedCosTheta(wo), metallic)) {
+        if (uc < glTFGlossyProb(ClampedCosTheta(wo), metallic)) {
             // Sample Specular
             if (mfDistrib.EffectivelySmooth()) {
                 // Dirac delta case
-                wi = float3(-wo.x, -wo.y, wo.z);
+                wi = float3(-wo.x, -wo.y, wo.z); // = wr
                 float3 F = SchlickFresnel(f0, 1.0f, AbsCosTheta(wi));
                 return BSDFSample(F / AbsCosTheta(wi), wi, 1.0f, BxDFFlags::SpecularReflection);
             } else {
