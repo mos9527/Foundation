@@ -1000,12 +1000,13 @@ public struct LayeredBxDF : IBxDF {
 // These are not from PBRT, but from other references where implementing the glTF
 // model is concerned.
 // --
-// Translate F0 to Complex Fresnel IOR terms
+// Approx F0 to Complex Fresnel IOR terms
 // "Artist Friendly Metallic Fresnel", Gulbrandsen 2014, https://jcgt.org/published/0003/04/03/paper.pdf
 public void FresnelFromF0(float r /* baseColor */, float g /* specularTint */, out float n, out float k){
     r = clamp(0.01, 0.99, r);
-    n = (1-r)/(1+r) * g + (1-g) * (1+sqrt(r))/(1-sqrt(r));
-    k = sqrt( 1/(1-r) * (r * (n+1)*(n+1) - (n-1)*(n-1)));
+    float sqrt_r = sqrt(r);
+    n = lerp((1.0f + sqrt_r) / (1.0f - sqrt_r), (1.0f - r) / (1.0f + r), g);
+    k = SafeSqrt((r * Sqr(n + 1) - Sqr(n - 1)) / (1.0f - r));
 }
 public void FresnelFromF0(float3 r /* baseColor */, float3 g /* specularTint */, out float3 n, out float3 k){
     for (int i = 0; i < 3; i++)
@@ -1042,15 +1043,14 @@ public float3 glTFFresnelMix(float VdotH, float3 bottom, float3 top, float ior =
     return lerp(bottom, top, F);
 }
 // Fresnel sampling approximation of layered materials
-// This is the above formulation in a statistical form.
-public float glTFGlossyProb(float NdotV, float metallic, float ior = 1.5f)
+// This is glTFFresnelMix in a statistical form.
+public float glTFFresnelNEE(float NdotV, float ior = 1.5f)
 {
     float F0 = pow((ior - 1) / (ior + 1), 2); // IOR=1.5->0.04
-    float F = SchlickFresnel(F0, 1.0f, NdotV);
-    return lerp(F, 1.0F, metallic);
+    return SchlickFresnel(F0, 1.0f, NdotV);
 }
-// Adapted from nvpro_core2's bsdfSampleSimple, bsdfEvaluateSimple
-// Cheap LayeredBxDF alternative with glTF's metallic-roughness model
+
+// Cheap, single-scattering LayeredBxDF alternative with glTF's metallic-roughness model
 // See also Appendix B. https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#material-structure
 public struct glTFBSDF : IBxDF {
     float3 baseColor;
@@ -1065,76 +1065,74 @@ public struct glTFBSDF : IBxDF {
     public BxDFFlags Flags() {
         return BxDFFlags::Reflection | BxDFFlags::Glossy;
     }
-    public BSDFSample glTFEval(float3 wo, float3 wi){
-        if (wo.z <= 0 || wi.z <= 0) return BSDFSample(0); // Only mirror reflection.
-        float3 wm = normalize(wo + wi);
-        float NdotV = ClampedCosTheta(wo);
-        float NdotL = ClampedCosTheta(wi);
-        float NdotH = ClampedCosTheta(wm);
-        float VdotH = ClampedDot(wo, wm);
-        // We combine the metallic and specular lobes into a single glossy lobe.
-        // The metallic weight is     metallic *    fresnel(f0 = baseColor)
-        // ^^^ This is not directly expressed - F0 is mixed below ^^^
-        // The specular weight is (1-metallic) *    fresnel(f0 = c_min_reflectance)
-        // The diffuse weight is  (1-metallic) * (1-fresnel(f0 = c_min_reflectance)) * baseColor
-        float c_min_reflectance = 0.04f;
-        float3 f0 = lerp(float3(c_min_reflectance), baseColor, metallic);
-        float3 fGlossy = SchlickFresnel(f0, 1.0f, VdotH);
-        float3 fDiffuse = SchlickFresnel(1.0f - c_min_reflectance, 0.0f, VdotH) * (1.0f - metallic);
-        // Draw from microfacet distribution
-        // We don't use ConductorBxDF/DielectricBxDF as-is since our F0 is based on RGB values.
-        // Usage of FresnelFromF0 should be investigated
-        float diffusePDF = CosineHemispherePDF(NdotL);
-        SampledSpectrum diffuseBSDF = baseColor * fDiffuse * InvPi;
-        float probGlossy = glTFGlossyProb(NdotV, metallic);
-        if (mfDistrib.EffectivelySmooth()){
-            // PDF is dirac delta, which for eval is impossible to represent
-            // This is the specular case again, so eval has zero contribution - this
-            // path is NOT touched by Sample_f
-            return BSDFSample(diffuseBSDF, wi,
-                              diffusePDF * (1.0f - probGlossy),
-                              BxDFFlags::DiffuseReflection);
-        } else {
-            float specularPDF = mfDistrib.PDF(wo, wm) / (4 * VdotH);
-            SampledSpectrum specularBSDF = mfDistrib.D(wm) * fGlossy * mfDistrib.G(wo, wi) / (4 * NdotV * NdotL);
-            return BSDFSample(specularBSDF + diffuseBSDF,
-                              wi,
-                              lerp(diffusePDF, specularPDF, probGlossy),
-                              BxDFFlags::GlossyReflection);
-        }
-    }
-    public SampledSpectrum f(float3 wo, float3 wi, TransportMode) {
-        BSDFSample bs = glTFEval(wo, wi);
-        return bs.IsValid() ?  bs.f : SampledSpectrum(0);
-    }
-    public float PDF(float3 wo, float3 wi, TransportMode, BxDFReflTransFlags) {
-        BSDFSample bs = glTFEval(wo, wi);
-        return bs.pdf;
+    public float NEEGlossyProb(float3 wo) {
+        float probGlossy = glTFFresnelNEE(ClampedCosTheta(wo));
+        return lerp(probGlossy, 1.0f, metallic); // Fully metallic means there's no diffuse lobe
     }
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode, BxDFReflTransFlags) {
         float c_min_reflectance = 0.04f;
-        float3 f0 = lerp(float3(c_min_reflectance), baseColor, metallic);
-        float3 wi;
-        float probGlossy = glTFGlossyProb(ClampedCosTheta(wo), metallic);
+        // Mixed Metallic/Dielectric Fresnel F0
+        float3 F0 = lerp(float3(c_min_reflectance), baseColor, metallic);
+        float probGlossy = NEEGlossyProb(wo);
         if (uc < probGlossy) {
-            // Sample Specular
+            // Sample Glossy
             if (mfDistrib.EffectivelySmooth()) {
                 // Dirac delta case
-                // Our metallic/glossy lobe can be considered merged into a single specular lobe here
-                // for this, and glTFEval since F0 is mixed (see glTFEval comments)
-                wi = float3(-wo.x, -wo.y, wo.z); // = wr
-                float3 f0 = lerp(float3(0.04f), baseColor, metallic);
-                float3 fGlossy = SchlickFresnel(f0, 1.0f, AbsCosTheta(wi));
-                return BSDFSample(fGlossy / AbsCosTheta(wi), wi, probGlossy, BxDFFlags::SpecularReflection);
+                float3 wi = float3(-wo.x, -wo.y, wo.z); // = wr
+                float3 fGlossy = SchlickFresnel(F0, 1.0f, AbsCosTheta(wi));
+                // Sampled PDF would be delta, but we represent them as 1s w/o weighting
+                // With NEE this is what you get:
+                return BSDFSample(fGlossy / AbsCosTheta(wi), wi, 1 * probGlossy, BxDFFlags::SpecularReflection);
             } else {
                 float3 wm = mfDistrib.Sample_wm(wo, u);
-                wi = Reflect(wo, wm);
+                // NEE weighting vvvvv
+                float pdf = probGlossy * mfDistrib.PDF(wo, wm) / (4 * AbsDot(wo, wm));
+                float3 wi = Reflect(wo, wm);
+                wi = FaceForward(wi, float3(0,0,1));
+                float3 fGlossy = SchlickFresnel(F0, 1.0f, AbsCosTheta(wi));
+                float3 f = mfDistrib.D(wm) * fGlossy * mfDistrib.G(wo, wi) / (4 * AbsCosTheta(wi) * AbsCosTheta(wo));
+                return BSDFSample(f, wi, pdf, BxDFFlags::GlossyReflection);
             }
         } else {
             // Sample Diffuse
-            wi = SampleCosineHemisphere(u);
+            float3 wi = SampleCosineHemisphere(u);
+            wi = FaceForward(wi, float3(0,0,1));
+            float3 wm = normalize(wi + wo);
+            // NEE weighting vvvvvvvvvvv
+            float pdf = (1 - probGlossy) * CosineHemispherePDF(ClampedCosTheta(wi));
+            // Diffuse lobe is the bottom lobe. Exiting from the dielectric we have an IOR of 1/1.5,
+            // which very conveniently - still approx to a F0=0.04 for dielectrics.
+            // This time though - we want the transmittance (1-reflectance).
+            float fDiffuse = (1.0f - SchlickFresnel(c_min_reflectance, 1.0f, ClampedDot(wo, wm))) ;
+            return BSDFSample(baseColor * fDiffuse * (1.0f - metallic) * InvPi, wi, pdf, BxDFFlags::DiffuseReflection);
         }
-        wi = FaceForward(wi, float3(0,0,1));
-        return glTFEval(wo, wi);
+    }
+    public SampledSpectrum f(float3 wo, float3 wi, TransportMode) {
+        if (wo.z <= 0 || wi.z <= 0) return 0; // Only mirror reflection.
+        float3 wm = normalize(wo + wi);
+        float c_min_reflectance = 0.04f;
+        float3 f0 = lerp(float3(c_min_reflectance), baseColor, metallic);
+        // Same fresnel terms as before.
+        float3 fGlossy = SchlickFresnel(f0, 1.0f, AbsCosTheta(wi));
+        float3 fDiffuse = (1.0f - SchlickFresnel(c_min_reflectance, 1.0f, ClampedDot(wo, wm))) ;
+        // The two lobes - remember NEE only affects the PDF in sampling, not the eval.
+        SampledSpectrum diffuseBSDF = baseColor * fDiffuse * (1.0f - metallic) * InvPi;
+        SampledSpectrum specularBSDF = mfDistrib.D(wm) * fGlossy * mfDistrib.G(wo, wi) / (4 * AbsCosTheta(wi) * AbsCosTheta(wo));
+        // NEE for the combined lobe
+        if (mfDistrib.EffectivelySmooth()){
+            // PDF is dirac delta, which for eval is impossible to represent
+            // This is the specular case again, so eval there has zero contribution
+            return diffuseBSDF;
+        } else {
+            return diffuseBSDF + specularBSDF;
+        }
+    }
+    public float PDF(float3 wo, float3 wi, TransportMode, BxDFReflTransFlags) {
+        float3 wm = normalize(wo + wi);
+        float diffusePDF = CosineHemispherePDF(ClampedCosTheta(wi));
+        float specularPDF = mfDistrib.PDF(wo, wm) / (4 * ClampedDot(wo, wm));
+        if (mfDistrib.EffectivelySmooth())
+            specularPDF = 0.0f;
+        return diffusePDF * (1 - NEEGlossyProb(wo)) + specularPDF * NEEGlossyProb(wo);
     }
 };
