@@ -1079,7 +1079,8 @@ public struct glTFBSDF : IBxDF {
             if (mfDistrib.EffectivelySmooth()) {
                 // Dirac delta case
                 float3 wi = float3(-wo.x, -wo.y, wo.z); // = wr
-                float3 fGlossy = SchlickFresnel(F0, 1.0f, AbsCosTheta(wi));
+                float3 wm = normalize(wi + wo);
+                float3 fGlossy = SchlickFresnel(F0, 1.0f, ClampedDot(wo, wm));
                 // Sampled PDF would be delta, but we represent them as 1s w/o weighting
                 // With NEE this is what you get:
                 return BSDFSample(fGlossy / AbsCosTheta(wi), wi, 1 * probGlossy, BxDFFlags::SpecularReflection);
@@ -1089,7 +1090,7 @@ public struct glTFBSDF : IBxDF {
                 float pdf = probGlossy * mfDistrib.PDF(wo, wm) / (4 * AbsDot(wo, wm));
                 float3 wi = Reflect(wo, wm);
                 wi = FaceForward(wi, float3(0,0,1));
-                float3 fGlossy = SchlickFresnel(F0, 1.0f, AbsCosTheta(wi));
+                float3 fGlossy = SchlickFresnel(F0, 1.0f, ClampedDot(wo, wm));
                 float3 f = mfDistrib.D(wm) * fGlossy * mfDistrib.G(wo, wi) / (4 * AbsCosTheta(wi) * AbsCosTheta(wo));
                 return BSDFSample(f, wi, pdf, BxDFFlags::GlossyReflection);
             }
@@ -1113,7 +1114,7 @@ public struct glTFBSDF : IBxDF {
         float c_min_reflectance = 0.04f;
         float3 f0 = lerp(float3(c_min_reflectance), baseColor, metallic);
         // Same fresnel terms as before.
-        float3 fGlossy = SchlickFresnel(f0, 1.0f, AbsCosTheta(wi));
+        float3 fGlossy = SchlickFresnel(f0, 1.0f, ClampedDot(wo, wm));
         float3 fDiffuse = (1.0f - SchlickFresnel(c_min_reflectance, 1.0f, ClampedDot(wo, wm))) ;
         // The two lobes - remember NEE only affects the PDF in sampling, not the eval.
         SampledSpectrum diffuseBSDF = baseColor * fDiffuse * (1.0f - metallic) * InvPi;
