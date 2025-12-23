@@ -1035,6 +1035,13 @@ public float SchlickFresnel(float ior, float cosTheta)
   // Fresnel reflectance using Schlick's approximation
   return R0 + (1.0F - R0) * pow(1.0F - cosTheta, 5.0F);
 }
+// Integral of 2*cosI * (1 - cosI)^exponent over 0...1.
+// Also used by:
+//  https://projects.blender.org/blender/blender/src/commit/91800d13ff20aa4aae5c0b767014fafbab383107/intern/cycles/kernel/closure/bsdf_microfacet.h#L862
+public float3 SchlickFresnelAverage(float3 F0, float3 F90 = 1.0f, float n = 5.0f){
+    float s = 2.0f / ((n+3)*n+2);
+    return lerp(F0, F90, s);
+}
 // Fresnel eval approximation of layered materials
 // See https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#fresnel
 public float3 glTFFresnelMix(float cosTheta, float3 bottom, float3 top, float ior = 1.5f){
@@ -1099,11 +1106,16 @@ public struct glTFBSDF : IBxDF {
             wi = FaceForward(wi, float3(0,0,1));
             // NEE weighting vvvvvvvvvvv
             float pdf = (1 - probGlossy) * CosineHemispherePDF(ClampedCosTheta(wi));
-            // Diffuse lobe is the bottom lobe. Exiting from the dielectric we have an IOR of 1/1.5,
+            // Transmittance from upper dielectric layer
+            // Diffuse lobe is the bottom lobe. Exiting *towards* the dielectric we have an IOR of 1/1.5,
             // which very conveniently - still approx to a F0=0.04 for dielectrics.
-            // This time though - we want the transmittance (1-reflectance).
-            float fDiffuse = (1.0f - SchlickFresnel(c_min_reflectance, 1.0f, AbsCosTheta(wo))) ;
-            return BSDFSample(baseColor * fDiffuse * (1.0f - metallic) * InvPi, wi, pdf, BxDFFlags::DiffuseReflection);
+            // We don't need to actually do a explicit Fresnel transmittance here since
+            // the average is trivial to calculate, and is bound to be correct for energy conservation:
+            float3 Tavg = 1.0f - SchlickFresnelAverage(c_min_reflectance, 1.0f, 5.0f); // 1 - 1/21 for n=5
+            //     ^^^^ This only makes sense if the glossy BSDF is energy conserving, and
+            //          it's here to eliminate energy *gain* from the layered model.
+            float3 Favg = baseColor * (1.0f - metallic) * Tavg;
+            return BSDFSample(Favg * InvPi, wi, pdf, BxDFFlags::DiffuseReflection);
         }
     }
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode) {
@@ -1113,7 +1125,7 @@ public struct glTFBSDF : IBxDF {
         float3 f0 = lerp(float3(c_min_reflectance), baseColor, metallic);
         // Same fresnel terms as before.
         float3 fGlossy = SchlickFresnel(f0, 1.0f, ClampedDot(wo, wm));
-        float3 fDiffuse = (1.0f - SchlickFresnel(c_min_reflectance, 1.0f, ClampedDot(wo, wm))) ;
+        float3 fDiffuse = (1.0f - SchlickFresnel(c_min_reflectance, 1.0f, AbsCosTheta(wo))) ;
         // The two lobes - remember NEE only affects the PDF in sampling, not the eval.
         SampledSpectrum diffuseBSDF = baseColor * fDiffuse * (1.0f - metallic) * InvPi;
         SampledSpectrum specularBSDF = mfDistrib.D(wm) * fGlossy * mfDistrib.G(wo, wi) / (4 * AbsCosTheta(wi) * AbsCosTheta(wo));
