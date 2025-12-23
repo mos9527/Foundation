@@ -1017,37 +1017,37 @@ public void FresnelFromF0(float3 r /* baseColor */, float3 g /* specularTint */,
 public float ClampedDot(float2 v1, float2 v2) { return clamp(dot(v1, v2), 0, 1.0); }
 public float ClampedDot(float3 v1, float3 v2) { return clamp(dot(v1, v2), 0, 1.0); }
 // Schlick Fresnel approximation
-public float SchlickFresnel(float F0, float F90, float VdotH)
+public float SchlickFresnel(float F0, float F90, float cosTheta)
 {
-  return F0 + (F90 - F0) * pow(1.0F - VdotH, 5.0F);
+  return F0 + (F90 - F0) * pow(1.0F - cosTheta, 5.0F);
 }
 // Schlick Fresnel approximation for vectors
-public float3 SchlickFresnel(float3 F0, float3 F90, float VdotH)
+public float3 SchlickFresnel(float3 F0, float3 F90, float cosTheta)
 {
-  return F0 + (F90 - F0) * pow(1.0F - VdotH, 5.0F);
+  return F0 + (F90 - F0) * pow(1.0F - cosTheta, 5.0F);
 }
 // Schlick Fresnel approximation for float
-public float SchlickFresnel(float ior, float VdotH)
+public float SchlickFresnel(float ior, float cosTheta)
 {
   // Calculate reflectance at normal incidence (R0)
   float R0 = pow((1.0F - ior) / (1.0F + ior), 2.0F);
 
   // Fresnel reflectance using Schlick's approximation
-  return R0 + (1.0F - R0) * pow(1.0F - VdotH, 5.0F);
+  return R0 + (1.0F - R0) * pow(1.0F - cosTheta, 5.0F);
 }
 // Fresnel eval approximation of layered materials
 // See https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#fresnel
-public float3 glTFFresnelMix(float VdotH, float3 bottom, float3 top, float ior = 1.5f){
+public float3 glTFFresnelMix(float cosTheta, float3 bottom, float3 top, float ior = 1.5f){
     float F0 = pow((ior - 1) / (ior + 1), 2);
-    float3 F = SchlickFresnel(F0, 1.0f, VdotH);
+    float3 F = SchlickFresnel(F0, 1.0f, cosTheta);
     return lerp(bottom, top, F);
 }
 // Fresnel sampling approximation of layered materials
 // This is glTFFresnelMix in a statistical form.
-public float glTFFresnelNEE(float NdotV, float ior = 1.5f)
+public float glTFFresnelNEE(float cosTheta, float ior = 1.5f)
 {
     float F0 = pow((ior - 1) / (ior + 1), 2); // IOR=1.5->0.04
-    return SchlickFresnel(F0, 1.0f, NdotV);
+    return SchlickFresnel(F0, 1.0f, cosTheta);
 }
 
 // Cheap, single-scattering LayeredBxDF alternative with glTF's metallic-roughness model
@@ -1079,8 +1079,7 @@ public struct glTFBSDF : IBxDF {
             if (mfDistrib.EffectivelySmooth()) {
                 // Dirac delta case
                 float3 wi = float3(-wo.x, -wo.y, wo.z); // = wr
-                float3 wm = normalize(wi + wo);
-                float3 fGlossy = SchlickFresnel(F0, 1.0f, ClampedDot(wo, wm));
+                float3 fGlossy = SchlickFresnel(F0, 1.0f, AbsCosTheta(wi));
                 // Sampled PDF would be delta, but we represent them as 1s w/o weighting
                 // With NEE this is what you get:
                 return BSDFSample(fGlossy / AbsCosTheta(wi), wi, 1 * probGlossy, BxDFFlags::SpecularReflection);
@@ -1098,13 +1097,12 @@ public struct glTFBSDF : IBxDF {
             // Sample Diffuse
             float3 wi = SampleCosineHemisphere(u);
             wi = FaceForward(wi, float3(0,0,1));
-            float3 wm = normalize(wi + wo);
             // NEE weighting vvvvvvvvvvv
             float pdf = (1 - probGlossy) * CosineHemispherePDF(ClampedCosTheta(wi));
             // Diffuse lobe is the bottom lobe. Exiting from the dielectric we have an IOR of 1/1.5,
             // which very conveniently - still approx to a F0=0.04 for dielectrics.
             // This time though - we want the transmittance (1-reflectance).
-            float fDiffuse = (1.0f - SchlickFresnel(c_min_reflectance, 1.0f, ClampedDot(wo, wm))) ;
+            float fDiffuse = (1.0f - SchlickFresnel(c_min_reflectance, 1.0f, AbsCosTheta(wo))) ;
             return BSDFSample(baseColor * fDiffuse * (1.0f - metallic) * InvPi, wi, pdf, BxDFFlags::DiffuseReflection);
         }
     }
