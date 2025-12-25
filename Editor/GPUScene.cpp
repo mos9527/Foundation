@@ -1,6 +1,6 @@
 #include "Tables.hpp"
 template <typename T>
-RHIDeviceScopedHandle<RHITexture> UploadLUT(const T* data, RHIResourceFormat format, uint32_t width, uint32_t height,
+RHIDeviceScopedHandle<RHITexture> UploadLUT(const float* data, RHIResourceFormat format, uint32_t width, uint32_t height,
                                             FContext* ctx)
 {
     auto tex = ctx->device->CreateTexture(RHITextureDesc{
@@ -79,8 +79,8 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
         .size = desc.tlasBudget
     };
     mTLAS = mContext->device->CreateAccelerationStructure(tlasDesc);
-    mGGXlutE = UploadLUT(kGGXlutE, RHIResourceFormat::R32SignedFloat, 32, 32, mContext);
-    mGGXlutEavg = UploadLUT(kGGXlutEavg, RHIResourceFormat::R32SignedFloat, 32, 1, mContext);
+    mGGXlutE = UploadLUT<float2>(kGGXlutE, RHIResourceFormat::R32G32SignedFloat, 32, 32, mContext);
+    mGGXlutEavg = UploadLUT<float>(kGGXlutEavg, RHIResourceFormat::R32SignedFloat, 32, 1, mContext);
 }
 
 Pair<GSInstance*, uint32_t> GPUScene::AllocateInstance(uint32_t count)

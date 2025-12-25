@@ -58,6 +58,13 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                                                                       .size = sizeof(float)});
     auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
     auto GGXlutEavg = renderer->CreateResource("GGX LUT Eavg", gpu->GetGGXlutEavg());
+    auto LUTSampler = renderer->CreateSampler({
+        .addressMode = {
+            .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+            .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+            .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+        }
+    });
     renderer->CreatePass(
         "Trace", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -80,12 +87,12 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitives");
             r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
             r->BindTextureSampler(self, TexSampler, "textureSampler");
-            r->BindTextureSampler(self, TexSampler, "lutSampler");
+            r->BindTextureSampler(self, LUTSampler, "lutSampler");
             r->BindTextureUAV(self, AccumulatedBuffer, "accumulation", RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::RayTracingShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSRV(self, GGXlutEavg, "ggxLutEavg", RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,

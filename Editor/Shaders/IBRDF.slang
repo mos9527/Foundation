@@ -1016,3 +1016,22 @@ public void FresnelFromF0(float3 r /* baseColor */, float3 g /* specularTint */,
 // vvv From https://github.com/nvpro-samples/nvpro_core2/tree/main/nvshaders/pbr_ggx_microfacet.h.slang
 public float ClampedDot(float2 v1, float2 v2) { return clamp(dot(v1, v2), 0, 1.0); }
 public float ClampedDot(float3 v1, float3 v2) { return clamp(dot(v1, v2), 0, 1.0); }
+// Schlick Fresnel approximation
+public float SchlickFresnel(float F0, float F90, float cosTheta)
+{
+  return F0 + (F90 - F0) * pow(1.0F - cosTheta, 5.0F);
+}
+// Schlick Fresnel approximation for vectors
+public float3 SchlickFresnel(float3 F0, float3 F90, float cosTheta)
+{
+  return F0 + (F90 - F0) * pow(1.0F - cosTheta, 5.0F);
+}
+// Schlick Fresnel approximation for float
+public float SchlickFresnel(float ior, float cosTheta)
+{
+  // Calculate reflectance at normal incidence (R0)
+  float R0 = pow((1.0F - ior) / (1.0F + ior), 2.0F);
+
+  // Fresnel reflectance using Schlick's approximation
+  return R0 + (1.0F - R0) * pow(1.0F - cosTheta, 5.0F);
+}
