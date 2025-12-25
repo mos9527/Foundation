@@ -19,7 +19,7 @@ namespace Foundation::RenderCore
     }
     char* ImmediateUpload::Upload(RHIBuffer* dst, size_t dataSize, size_t dstOffset)
     {
-        if (ptr + dataSize >= end)
+        if (ptr + dataSize > end)
             return nullptr;
         ctx->CopyBuffer(
             staging.Get(), dst,
@@ -31,7 +31,7 @@ namespace Foundation::RenderCore
     char* ImmediateUpload::Upload(RHITexture* dst, size_t dataSize, RHITextureSubresourceLayer dstLayer,
                                   RHIOffset2D dstOffset, RHIExtent2D dstExtent)
     {
-        if (ptr + dataSize >= end)
+        if (ptr + dataSize > end)
             return nullptr;
         RHIExtent3D maxExtent = dst->mDesc.extent;
         RHIOffset3D offset{dstOffset.x, dstOffset.y, 0};

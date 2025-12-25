@@ -109,6 +109,8 @@ class GPUScene
     UploadGPURingBuffer<GSMaterial> mMaterialBuffer;
     /* Textures */
     BindlessPool mTexturePool;
+    // Precomputed LUTs
+    RHIDeviceScopedHandle<RHITexture> mGGXlutE, mGGXlutEavg;
     /* AS */
     // BLAS
     Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mBLASes;
@@ -149,6 +151,8 @@ public:
     [[nodiscard]] RHIBuffer* GetMaterialBuffer() const { return mMaterialBuffer.mBuffer.Get(); }
     /* Textures */
     [[nodiscard]] BindlessPool* GetTexturePool() { return &mTexturePool; }
+    [[nodiscard]] RHITexture* GetGGXlutE() const { return mGGXlutE.Get(); }
+    [[nodiscard]] RHITexture* GetGGXlutEavg() const { return mGGXlutEavg.Get(); }
     /* AS */
     [[nodiscard]] RHIAccelerationStructure* GetTLAS() const { return mTLAS ? mTLAS.Get() : nullptr; }
     void Reset();

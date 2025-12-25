@@ -7,12 +7,12 @@ float sampleGGX_E(float rough, float cosTheta, float uc, float2 u){
     float alpha = Sqr(rough);
     TrowbridgeReitzDistribution mfDistrib = TrowbridgeReitzDistribution(alpha, alpha);
     if (mfDistrib.EffectivelySmooth())
-        return 1.0f; // Dirac delta - though we're conuting energy, so return 1
+        return 1.0f; // Dirac delta - though we're counting energy, so return 1
     float3 wo = float3(sqrt(1.0 - cosTheta * cosTheta), 0.0, cosTheta);
     float3 wm = mfDistrib.Sample_wm(wo, u);
     float3 wi = Reflect(wo, wm);    
     if (!SameHemisphere(wo, wi))
-        return 0.0f; // Absorbtion
+        return 0.0f; // Absorption
     float pdf = mfDistrib.PDF(wo, wm) / (4 * AbsDot(wo, wm));
     float f = mfDistrib.D(wm)  * mfDistrib.G(wo, wi) / (4 * AbsCosTheta(wi) * AbsCosTheta(wo));
     return f * AbsCosTheta(wi) / pdf;
@@ -39,7 +39,7 @@ void integrateGGX_E(uint2 p : SV_DispatchThreadID)
 [numthreads(32,1,1)]
 void integrateGGX_Eavg(uint2 p : SV_DispatchThreadID)
 {
-    static const uint kSamples = 1 << 14;
+    static const uint kSamples = 1 << 16;
     float sum = 0.0f, samples = 0.0f;
     float u = (float(p.x) + 0.5f) / 32.0f;
     PCG rng = PCG(uint4(p, 0, 0));

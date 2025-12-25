@@ -56,6 +56,8 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
     auto LightingAverageLuma = renderer->CreateResource("Lighting Average Luminance",
                                                         RHIBufferDesc{.usage = RHIBufferUsageBits::StorageBuffer,
                                                                       .size = sizeof(float)});
+    auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
+    auto GGXlutEavg = renderer->CreateResource("GGX LUT Eavg", gpu->GetGGXlutEavg());
     renderer->CreatePass(
         "Trace", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -67,7 +69,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RayClosestHit", "data/shaders/ERTPathTracer.spv",
                           AsBytes(AsSpan(cfg.viewFlags)), /*hit group*/ 0);
             r->BindShader(self, RHIShaderStageBits::RayAnyHit, "RayOpacityAnyHit", "data/shaders/ERTPathTracer.spv",
-              AsBytes(AsSpan(cfg.viewFlags)), /*hit group*/ 0);
+                          AsBytes(AsSpan(cfg.viewFlags)), /*hit group*/ 0);
             r->BindShader(self, RHIShaderStageBits::RayMiss, "RayMiss", "data/shaders/ERTPathTracer.spv",
                           AsBytes(AsSpan(cfg.viewFlags)));
             r->BindShader(self, RHIShaderStageBits::RayAnyHit, "ShadowRayAnyHit", "data/shaders/ERTPathTracer.spv",
@@ -78,11 +80,17 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitives");
             r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
             r->BindTextureSampler(self, TexSampler, "textureSampler");
-            r->BindDescriptorSet(self, "textures", gpu->GetTexturePool()->GetDescriptorSetLayout());
+            r->BindTextureSampler(self, TexSampler, "lutSampler");
             r->BindTextureUAV(self, AccumulatedBuffer, "accumulation", RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
-
+            r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::RayTracingShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSRV(self, GGXlutEavg, "ggxLutEavg", RHIPipelineStageBits::RayTracingShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindDescriptorSet(self, "textures", gpu->GetTexturePool()->GetDescriptorSetLayout());
         }, [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             RHIExtent2D wh = r->GetSwapchainExtent();
