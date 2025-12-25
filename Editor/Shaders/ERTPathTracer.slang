@@ -80,9 +80,11 @@ public struct glTFBSDF : IBxDF {
             // Sample Diffuse
             float3 wi = SampleCosineHemisphere(u);
             wi = FaceForward(wi, float3(0,0,1));
+            float3 wm = normalize(wo + wi);
 
             float3 cdiff = baseColor * (1.0f - metallic);
-            float3 f = cdiff * InvPi;
+            float3 Fss = 1 - SchlickFresnel(c_min_reflectance, 1.0f, AbsDot(wo, wm));
+            float3 f = Fss * cdiff * InvPi;
 
             float pdf = (1 - probGlossy) * CosineHemispherePDF(ClampedCosTheta(wi));
             return BSDFSample(f, wi, pdf, BxDFFlags::DiffuseReflection);
