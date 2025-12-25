@@ -38,17 +38,6 @@ namespace Foundation::RenderCore
          * should ensure thread safety if accessing shared data.
          */
         virtual void Record(PassHandle self, Renderer* r, RHICommandList* cmd) = 0;
-        /**
-         * @brief Determine whether this pass should be skipped during Record time
-         *
-         * @return Whether this pass should be skipped during execution.
-         *
-         * This is only executed after EndSetup() has been called,
-         * and when the render graph is actually executed.
-         *
-         * @note This is always called from the main (renderer's) thread.
-         */
-        virtual bool IsSkipped(PassHandle self, Renderer* r) const { return false; }
     };
     /**
      * @brief Default "no-op" functor for Setup()
@@ -65,31 +54,21 @@ namespace Foundation::RenderCore
         void operator()(PassHandle, Renderer*, RHICommandList*) const { /* nop */ }
     };
     /**
-     * @brief Default "not skipped" functor for IsSkipped()
-     */
-    struct FSkipDefault
-    {
-        bool operator()(PassHandle, Renderer*) const { return false; }
-    };
-    /**
      * @brief Functional wrapper for a render pass
      *
      * This is a convenience wrapper for stateless passes, and should be created via @ref Renderer::CreatePass()
      */
-    template <typename FSetup, typename FRecord, typename FSkip>
-    struct LambdaPass : public RenderPass
+    template <typename FSetup, typename FRecord>
+    struct LambdaPass : RenderPass
     {
         FSetup mSetup;
         FRecord mRecord;
-        FSkip mSkip;
-        LambdaPass(FSetup&& setup, FRecord&& record, FSkip&& skip = {}) :
-            mSetup(std::forward<FSetup>(setup)), mRecord(std::forward<FRecord>(record)),
-            mSkip(std::forward<FSkip>(skip))
+        LambdaPass(FSetup&& setup, FRecord&& record) :
+            mSetup(std::forward<FSetup>(setup)), mRecord(std::forward<FRecord>(record))
         {
         }
         void Setup(PassHandle self, Renderer* r) override { mSetup(self, r); }
         void Record(PassHandle self, Renderer* r, RHICommandList* cmd) override { mRecord(self, r, cmd); }
-        bool IsSkipped(PassHandle self, Renderer* r) const override { return mSkip(self, r); }
     };
     /**
      * @brief Internal tracking information for a render pass in the frame graph.
@@ -108,6 +87,9 @@ namespace Foundation::RenderCore
         // Uses compute shader? (not necessarily in a compute queue)
         // Should be mutually exclusive with write_backbuffer and other graphics states
         bool isComputePass{false};
+        // Uses RayGen/RayHit/RayMiss at all?
+        // Should be compatible with most graphics states, and can be run on either queue
+        bool isRayTracingPass{false};
         // Local size for compute/mesh shaders        
         Tuple<uint32_t, uint32_t, uint32_t> groupLocalSize{};
         size_t depth{}; // Depth in RG
@@ -120,15 +102,17 @@ namespace Foundation::RenderCore
             textureUsages; // Referenced texture sub resources
         Vector<Tuple<ResourceHandle, RHIResourceAccess,
                      RHIPipelineStage>> bufferUsages; // Referenced buffers
-        // Unique referenced resources (tex/buf)
+        Vector<Tuple<ResourceHandle, RHIResourceAccess,
+             RHIPipelineStage>> asUsages; // Referenced Acceleration Structures
+        // Unique referenced resources (tex/buf/AS)
         Vector<ResourceHandle> resources;
         // Unique texture views
         Vector<ResourceHandle> texviews;
         /* -- Pipeline -- */
-        // Shader [path, entry point, stage, specialization data]
-        Vector<Tuple<String, String, RHIShaderStage, Vector<char>>> shaders;
+        // Shader [path, entry point, stage, specialization data, RT hit group]
+        Vector<Tuple<String, String, RHIShaderStage, Vector<char>, uint32_t>> shaders;
         // Bind points [view(tex) or buffer(buf), desc type, binding point]
-        Vector<Tuple<ResourceHandle, RHIDescriptorType, String>> textureBindings, bufferBindings;
+        Vector<Tuple<ResourceHandle, RHIDescriptorType, String>> textureBindings, bufferBindings, asBindings;
         // External Bind Sets [binding point, layout ptr, set index (set when built)]
         // Sorted lexicographically if the pipeline is built.
         Vector<Tuple<String, RHIDeviceDescriptorSetLayout*, int>> externalBindings;
@@ -169,6 +153,13 @@ namespace Foundation::RenderCore
         // [Set Index, Set, Layout], correspond to externalBindings
         Vector<Tuple<size_t, RHIDeviceDescriptorSetLayout*>> pExternalDescriptorSets;
 
+
+        RHIDevicePipelineType GetPipelineType() const
+        {
+            if (isComputePass) return RHIDevicePipelineType::Compute;
+            if (isRayTracingPass) return RHIDevicePipelineType::RayTracing;
+            return RHIDevicePipelineType::Graphics;
+        }
         void ResetPipeline();
     };
 }

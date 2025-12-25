@@ -7,7 +7,7 @@ namespace Foundation::RHI {
         const RHIDevice& mDevice;
     public:
         struct ShaderModuleDesc {
-            Core::Span<char> source;
+            Span<char> source;
         };
         const ShaderModuleDesc mDesc;
 

@@ -1,9 +1,11 @@
-#include "ICommon.slang"
+import ICommon;
+import IFlags;
+import IMath;
 [[SpecializationConstant]] int flags;
 uniform UBO globalParams;
-[[vk_binding(8,0)]] RWTexture2D<uint32_t> overdraw;
-[[vk_binding(9,0)]] StructuredBuffer<GSMaterial> materials;
-[[vk_binding(10,0)]] SamplerState textureSampler;
+[[vk_binding(4,0)]] RWTexture2D<uint32_t> overdraw;
+[[vk_binding(5,0)]] StructuredBuffer<GSMaterial> materials;
+[[vk_binding(6,0)]] SamplerState textureSampler;
 [[vk_binding(0,1)]] Texture2D<float4> textures[];
 
 struct Fragment
@@ -23,19 +25,19 @@ Fragment drawMeshlet(V2F input)
 
 Fragment drawGBuffer(V2F input){
     Fragment output;
-    GSMaterial material = materials[input.materialIndex + globalParams.firstMaterial];
+    GSMaterial material = materials[input.materialIndex];
     float4 baseColor = material.baseColorFactor;
     if (material.baseColorTexture)
-        baseColor *= textures[material.baseColorTexture].Sample(textureSampler, input.uv);
+        baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].Sample(textureSampler, input.uv);
     float4 normalTBN = float4(0,0,1,0);
     if (material.normalTexture)
-        normalTBN = textures[material.normalTexture].Sample(textureSampler, input.uv) * 2 - float4(1);
-    float4 pbrMetalRough = float4(1, material.metallicFactor, material.roughnessFactor, 1);
+        normalTBN = textures[NonUniformResourceIndex(material.normalTexture)].Sample(textureSampler, input.uv) * 2 - float4(1);
+    float4 pbrMetalRough = float4(1, material.roughnessFactor, material.metallicFactor, 1);
     if (material.metallicRoughnessTexture)
-        pbrMetalRough *= textures[material.metallicRoughnessTexture].Sample(textureSampler, input.uv);
+        pbrMetalRough *= textures[NonUniformResourceIndex(material.metallicRoughnessTexture)].Sample(textureSampler, input.uv);
     float4 emissive = float4(material.emissiveFactor,0);
     if (material.emissiveTexture)
-        emissive *= textures[material.emissiveTexture].Sample(textureSampler, input.uv);
+        emissive *= textures[NonUniformResourceIndex(material.emissiveTexture)].Sample(textureSampler, input.uv);
     // -- GBuffer Packing
     float3 normal = normalize(input.tangent * normalTBN.x + input.bitangent * normalTBN.y + input.normal * normalTBN.z);
     float3 normal888 = packTBN888(normal, input.tangent);
@@ -43,8 +45,8 @@ Fragment drawGBuffer(V2F input){
     ID = bitfieldInsert(ID, input.materialIndex, 0, 7);
     ID = bitfieldInsert(ID, input.bitangentSign >= 0.0f ? 1 : 0, 7, 1);
     output.RT0 = float4(baseColor.xyz, (float)ID / 255.0f); // BaseColor, ID
-    output.RT1 = float4(normal888, pbrMetalRough.y); // Normal 888, Metallic
-    output.RT2 = float4(emissive.xyz, pbrMetalRough.x); // Emissive, Roughness
+    output.RT1 = float4(normal888, pbrMetalRough.z); // Normal 888, Metallic
+    output.RT2 = float4(emissive.xyz, pbrMetalRough.y); // Emissive, Roughness
     return output;
 }
 

@@ -1,8 +1,68 @@
-static const float PI = acos(-1);
+// -- typedef
+public typedef float3 SampledSpectrum; // RGB spectrum
+// -- const
+public static const float Pi = acos(-1);
+public static const float InvPi = 1.0f / Pi;
+public static const float Inv4Pi = 1.0f / (4.0f * Pi);
+public static const float INF = 1e18f;
+public static const float EPS = 1e-6f;
+public static const float3 LUMINANCE_RGB = float3(0.2126f, 0.7152f, 0.0722f);
+public bool AnyLuminance(float3 rgb) {
+    return dot(rgb, LUMINANCE_RGB) > EPS;
+}
 // -- bits
 public const uint32_t alignUp(uint32_t value, uint32_t alignment) {
     return (value + alignment - 1) & ~(alignment - 1);
 }
+public struct complex
+{
+    public float2 c; // (real, imag)
+
+    public __init(float re, float im = 0.0f) { c = float2(re, im); }
+    public __init(float2 v) { c = v; }
+
+    // Use properties for cleaner access
+    public property real: float { get { return c.x; } }
+    public property imag: float { get { return c.y; } }
+
+    public complex conj() { return complex(c.x, -c.y); }
+    public float norm() { return dot(c, c); }
+    public float abs() { return length(c); }
+
+    public complex mul(complex r) {
+        return complex(
+            c.x * r.c.x - c.y * r.c.y,
+            c.x * r.c.y + c.y * r.c.x
+        );
+    }
+
+    public complex sqrt() {
+        float m = length(c);
+        if (m <= 0.0f) return complex(0.0f, 0.0f);
+        float term1 = sqrt(0.5f * (m + abs(c.x)));
+        float term2 = 0.5f * c.y / term1;
+        if (c.x >= 0.0f) {
+            return complex(term1, term2);
+        } else {
+            return complex(abs(term2), (c.y >= 0.0f) ? term1 : -term1);
+        }
+    }
+};
+
+// Overloads
+public complex operator+(complex l, complex r) { return complex(l.c + r.c); }
+public complex operator-(complex l, complex r) { return complex(l.c - r.c); }
+public complex operator*(complex l, complex r) { return l.mul(r); }
+public complex operator/(complex l, complex r) {
+    float denom = dot(r.c, r.c);
+    complex num = l.mul(r.conj());
+    return complex(num.c / denom);
+}
+public float real(complex c) { return c.real; }
+public float imag(complex c) { return c.imag; }
+public float abs(complex c)  { return c.abs(); }
+public float norm(complex c) { return c.norm(); }
+public complex sqrt(complex c) { return c.sqrt(); }
 // -- quaternion
 public struct quat
 {
@@ -24,12 +84,22 @@ public struct quat
             q.w * r.q.w - q.x * r.q.x - q.y * r.q.y - q.z * r.q.z
         ));
     }
+    public quat inverted() {
+        return quat(float4(-q.xyz, q.w));
+    }
     // Overload
     public quat operator*(quat r) { return mul(r); }
 };
+// Quaternion that rotates input vector to (0, 0, 1)
+// Same as PBRT's Frame::ToZ, tangent frame is implicitly defined by this rotation
+public quat quatRotateToZ(float3 input) {
+
+	// Handle special case when input is exact or near opposite of (0, 0, 1)
+	if (input.z < -0.9999f) return quat(float4(1.0f, 0.0f, 0.0f, 0.0f));
+	return quat(normalize(float4(input.y, -input.x, 0.0f, 1.0f + input.z)));
+}
 // -- de/quantization
-const static float EPS = 1e-6f;
-uint32_t quantizeUnorm(float v, int32_t N)
+public uint32_t quantizeUnorm(float v, int32_t N)
 {
     float scale = (float)((1 << N) - 1);
 
@@ -38,10 +108,10 @@ uint32_t quantizeUnorm(float v, int32_t N)
 
     return (uint32_t)(v * scale + 0.5f);
 }
-float dequantizeUnorm(int32_t q, int32_t Nbits) {
+public float dequantizeUnorm(int32_t q, int32_t Nbits) {
     return q / (float)((1 << Nbits) - 1);
 }
-int32_t quantizeSnorm(float v, int32_t N)
+public int32_t quantizeSnorm(float v, int32_t N)
 {
     float scale = (float)((1 << (N - 1)) - 1);
     float round = (v >= 0 ? 0.5f : -0.5f);
@@ -51,75 +121,77 @@ int32_t quantizeSnorm(float v, int32_t N)
 
     return (int32_t)(v * scale + round);
 }
-float dequantizeSnorm(int32_t q, int32_t Nbits) {
+public float dequantizeSnorm(int32_t q, int32_t Nbits) {
     return q / (float)((1 << (Nbits - 1)) - 1);
 }
-uint32_t quantizeSnormShifted(float v, int32_t Nbits)
+public uint32_t quantizeSnormShifted(float v, int32_t Nbits)
 {
     return quantizeSnorm(v, Nbits) + (1 << (Nbits - 1));
 }
-float dequantizeSnormShifted(int32_t q, int32_t Nbits) {
+public float dequantizeSnormShifted(int32_t q, int32_t Nbits) {
     return dequantizeSnorm(q - (1 << (Nbits - 1)), Nbits);
 }
 // -- unit L1~L2 projection
-float2 packUnitOctahedralSnorm(float3 v)
+public float2 packUnitOctahedralSnorm(float3 v)
 {
     v /= float3(abs(v.x) + abs(v.y) + abs(v.z));
     return v.z >= EPS ? v.xy : (float2(1.0f) - abs(float2(v.yx))) * sign(float2(v.xy + EPS));
 }
-float3 unpackUnitOctahedralSnorm(float2 v)
+public float3 unpackUnitOctahedralSnorm(float2 v)
 {
     float3 nor = float3(v.xy, 1.0f - abs(v.x) - abs(v.y));
     float2 xy = nor.z >= EPS ? v.xy : (float2(1.0f) - abs(float2(v.yx))) * sign(float2(v.xy + EPS));
     return normalize(float3(xy.x, xy.y, nor.z));
 }
-float packUnitCircleSnorm(float2 v){
+public float packUnitCircleSnorm(float2 v){
     v /= abs(v.x) + abs(v.y);
     return v.y >= EPS ? (v.x + 1.0f) * 0.5f : -(v.x + 1.0f) * 0.5f;
 }
-float2 unpackUnitCircleSnorm(float v){
+public float2 unpackUnitCircleSnorm(float v){
     float x = abs(v) * 2.0f - 1.0f;
     float y = 1.0f - abs(x);
-    return v >= 0.0f ? float2(x, y) : float2(x, -y);
+    return normalize(v >= 0.0f ? float2(x, y) : float2(x, -y));
 }
 // -- tangent frame projection
-void buildOrthonormalBasis(const float3 n, out float3 b1,out float3 b2)
+// Building an Orthonormal Basis from a 3D Unit Vector Without Normalization - Frisvad, 2012
+public void buildOrthonormalBasis(const float3 n, out float3 b1,out float3 b2)
 {
-    if (n.z < -0.9999999)
+    if (n.z < EPS - 1)
     {
         b1 = float3(0.0, -1.0, 0.0);
         b2 = float3(-1.0, 0.0, 0.0);
+        return;
     }
     float a = 1.0 / (1.0 + n.z);
     float b = -n.x * n.y * a;
     b1 = float3(1.0 - n.x * n.x * a, b, -n.x);
     b2 = float3(b, 1.0 - n.y * n.y * a, -n.y);
 }
-uint32_t packTBN(in float3 normal, in float3 tangent, in float bitangentSign)
+public uint32_t packTBN(in float3 normal, in float3 tangent, in float bitangentSign)
 {
     float3 b1, b2;
     buildOrthonormalBasis(normal, b1, b2);
     float cosAngle = dot(tangent, b1), sinAngle = dot(tangent, b2);
     float octAngle = packUnitCircleSnorm(float2(cosAngle, sinAngle));
     float2 oct = packUnitOctahedralSnorm(normal);
-    uint32_t nX = quantizeSnormShifted(oct.x, 12), nY = quantizeSnormShifted(oct.y, 12);
-    uint32_t tA = quantizeSnormShifted(octAngle, 7);
+    uint32_t nX = quantizeSnormShifted(oct.x, 10), nY = quantizeSnormShifted(oct.y, 10);
+    uint32_t tA = quantizeSnormShifted(octAngle, 10);
     uint32_t bS = bitangentSign >= 0.0f ? 1 : 0;
     uint32_t tbn32 = 0;
-    tbn32 = bitfieldInsert(tbn32, nX, 0, 12);
-    tbn32 = bitfieldInsert(tbn32, nY, 12, 12);
-    tbn32 = bitfieldInsert(tbn32, tA, 24, 7);
-    tbn32 = bitfieldInsert(tbn32, bS, 31, 1);
+    tbn32 = bitfieldInsert(tbn32, nX, 0, 10);
+    tbn32 = bitfieldInsert(tbn32, nY, 10, 10);
+    tbn32 = bitfieldInsert(tbn32, tA, 20, 10);
+    tbn32 = bitfieldInsert(tbn32, bS, 30, 2);
     return tbn32;
 }
-void unpackTBN(uint32_t packed, out float3 outNormal, out float3 outTangent, out float outBitangentSign) {
-    uint32_t nX = bitfieldExtract(packed, 0, 12);
-    uint32_t nY = bitfieldExtract(packed, 12, 12);
-    uint32_t tA = bitfieldExtract(packed, 24, 7);
-    uint32_t bS = bitfieldExtract(packed, 31, 1);
-    float2 normalOct = float2(dequantizeSnormShifted(nX, 12), dequantizeSnormShifted(nY, 12));
+public void unpackTBN(uint32_t packed, out float3 outNormal, out float3 outTangent, out float outBitangentSign) {
+    uint32_t nX = bitfieldExtract(packed, 0, 10);
+    uint32_t nY = bitfieldExtract(packed, 10, 10);
+    uint32_t tA = bitfieldExtract(packed, 20, 10);
+    uint32_t bS = bitfieldExtract(packed, 30, 2);
+    float2 normalOct = float2(dequantizeSnormShifted(nX, 10), dequantizeSnormShifted(nY, 10));
     outNormal = unpackUnitOctahedralSnorm(normalOct);
-    float octAngle = dequantizeSnormShifted(tA, 7);
+    float octAngle = dequantizeSnormShifted(tA, 10);
     float2 octXY = unpackUnitCircleSnorm(octAngle);
     float3 b1, b2;
     buildOrthonormalBasis(outNormal, b1, b2);
@@ -127,7 +199,7 @@ void unpackTBN(uint32_t packed, out float3 outNormal, out float3 outTangent, out
     outBitangentSign = bS == 1 ? 1.0f : -1.0f;
 }
 // 3 byte tangent frame [UNORM xyz]
-float3 packTBN888(in float3 normal, in float3 tangent)
+public float3 packTBN888(in float3 normal, in float3 tangent)
 {
     float3 b1, b2;
     buildOrthonormalBasis(normal, b1, b2);
@@ -136,7 +208,7 @@ float3 packTBN888(in float3 normal, in float3 tangent)
     float octAngle = packUnitCircleSnorm(float2(cosAngle, sinAngle));
     return float3(oct * 0.5f + 0.5f, octAngle * 0.5f + 0.5f);
 }
-void unpackTBN888(in float3 packed, out float3 outNormal, out float3 outTangent) {
+public void unpackTBN888(in float3 packed, out float3 outNormal, out float3 outTangent) {
     float2 normalOct = packed.xy * 2.0f - 1.0f;
     outNormal = unpackUnitOctahedralSnorm(normalOct);
     float octAngle = packed.z * 2.0f - 1.0f;
@@ -147,7 +219,7 @@ void unpackTBN888(in float3 packed, out float3 outNormal, out float3 outTangent)
 }
 // -- hashing
 // https://burtleburtle.net/bob/hash/integer.html
-uint hash(uint a)
+public uint hash(uint a)
 {
     a = (a + 0x7ed55d16) + (a << 12);
     a = (a ^ 0xc761c23c) ^ (a >> 19);
@@ -156,4 +228,51 @@ uint hash(uint a)
     a = (a + 0xfd7046c5) + (a << 3);
     a = (a ^ 0xb55a4f09) ^ (a >> 16);
     return a;
+}
+// -- RNG
+// In [0, 1) range
+float uintToFloat(uint x) {
+	return asfloat(0x3f800000 | (x >> 9)) - 1.0f;
+}
+// PCG random numbers generator
+// Source: "Hash Functions for GPU Rendering" by Jarzynski & Olano
+public struct PCG
+{
+    uint4 pcg4d(uint4 v)
+    {
+    	v = v * 1664525u + 1013904223u;
+
+    	v.x += v.y * v.w;
+    	v.y += v.z * v.x;
+    	v.z += v.x * v.y;
+    	v.w += v.y * v.z;
+
+    	v = v ^ (v >> 16u);
+
+    	v.x += v.y * v.w;
+    	v.y += v.z * v.x;
+    	v.z += v.x * v.y;
+    	v.w += v.y * v.z;
+
+    	return v;
+    }
+    uint4 state;
+    public __init(uint2 pixel, uint frameNo, uint seed = 0)
+    {
+        state = uint4(pixel, frameNo, seed);
+    }
+    public __init(float4 initState)
+    {
+        state = asuint(initState);
+    }
+    [mutating] public float sample()
+    {
+        state.w++;
+        state = pcg4d(state);
+        return uintToFloat(state.x);
+    }
+    public float2 sample2D()
+    {
+        return float2(sample(), sample());
+    }
 }

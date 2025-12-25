@@ -21,7 +21,7 @@ target_link_libraries(
 )
 add_dependencies(Foundation_RenderUtils Shader_VSFullscreen)
 add_dependencies(Foundation_RenderUtils Shader_PSCopy)
-add_dependencies(Foundation_RenderUtils Shader_CSMipGeneration)
+add_dependencies(Foundation_RenderUtils Shader_CSMipGeneration Shader_CSMipGenerationSinglePass)
 add_dependencies(Foundation_RenderUtils Shader_CSDebugText)
 add_dependencies(Foundation_RenderUtils Shader_CSClearBuffer)
 target_include_directories(

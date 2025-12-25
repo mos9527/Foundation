@@ -90,9 +90,7 @@ struct FMesh
         Vector<FMeshlet> meshlets; // Meshlets built from all clusters
         Vector<uint8_t> meshletTri; // Meshlet local triangle indices
         Vector<uint32_t> meshletVtx; // Meshlet vertex indices into vertices/verticesQuantized
-        Vector<unsigned char> meshletVtxCompressed; // Compressed meshlet vertex indices for disk
-        uint32_t meshletVtxCompressedCount = 0; // Number of indices in compressed data
-        DAG(Allocator* alloc) : groups(alloc), meshlets(alloc), meshletTri(alloc), meshletVtx(alloc), meshletVtxCompressed(alloc) {}
+        DAG(Allocator* alloc) : groups(alloc), meshlets(alloc), meshletTri(alloc), meshletVtx(alloc) {}
     } dag;
 
     FMesh(Allocator* alloc);
@@ -176,8 +174,7 @@ inline void FSerialize(FWriter& w, FMesh::DAG const& obj)
     FSerialize(w, obj.groups);
     FSerialize(w, obj.meshlets);
     FSerialize(w, obj.meshletTri);
-    FSerialize(w, obj.meshletVtxCompressed);
-    FSerialize(w, obj.meshletVtxCompressedCount);
+    FSerialize(w, obj.meshletVtx);
 }
 template <>
 inline void FDeserialize(FReader& r, FMesh::DAG& obj)
@@ -185,8 +182,7 @@ inline void FDeserialize(FReader& r, FMesh::DAG& obj)
     FDeserialize(r, obj.groups);
     FDeserialize(r, obj.meshlets);
     FDeserialize(r, obj.meshletTri);
-    FDeserialize(r, obj.meshletVtxCompressed);
-    FDeserialize(r, obj.meshletVtxCompressedCount);
+    FDeserialize(r, obj.meshletVtx);
 }
 template <>
 inline void FSerialize(FWriter& w, FMesh const& obj)

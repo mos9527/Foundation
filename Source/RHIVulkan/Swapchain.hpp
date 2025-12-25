@@ -19,16 +19,16 @@ namespace Foundation::RHI {
         vk::raii::SwapchainKHR mSwapchain{ nullptr };
         std::array<uint32_t, 2> mQueueFamilyIndices{};
         UniquePtr<RHIObjectPool<VulkanTexture>> mImages;
-        Core::Vector<RHITexture*> mImagesPtrs;
+        Vector<RHITexture*> mImagesPtrs;
 
         void Instantiate();
         vk::SwapchainCreateInfoKHR vkSwapchainCreateInfoFromSwapchainDesc(SwapchainDesc desc);
     public:
         VulkanSwapchain(const VulkanDevice& device, SwapchainDesc const& desc);
 
-        [[nodiscard]] Core::Span<RHITexture* const> GetImages() const override;
+        [[nodiscard]] Span<RHITexture* const> GetImages() const override;
 
-        [[nodiscard]] inline auto const& GetVkSwapchain() const { return mSwapchain; }
+        [[nodiscard]] auto const& GetVkSwapchain() const { return mSwapchain; }
         [[nodiscard]] RHIExtent2D GetExtents() const override;
         uint32_t GetNextImage(
             uint64_t timeout_ns,

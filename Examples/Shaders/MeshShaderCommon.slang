@@ -3,6 +3,8 @@ static const size_t kNumMeshDiscreteLODs = 5;
 struct FVertex {
     float3 position;
     float3 normal;
+    float3 tangent;
+    float bitangentSign;
     float2 uv;
 };
 struct FLODGroup // @ref clodGroup
@@ -46,6 +48,9 @@ struct GSMesh
     // @ref FVertex
     uint32_t vtxOffset;
     uint32_t vtxCount;
+    // LOD0 UINT32 indices
+    uint32_t idxOffset;
+    uint32_t idxCount;
     // -- DAG LOD Group @ref FLODGroup
     uint32_t groupOffset;
     uint32_t groupCount;
@@ -54,6 +59,8 @@ struct GSMesh
     uint32_t meshletCount;
     uint32_t meshletVtxOffset;
     uint32_t meshletTriOffset;
+    // -- Global index (amongst all loaded meshes)
+    uint32_t meshletGlobalIndex;
 };
 struct MIndex {
     uint8_t v0;

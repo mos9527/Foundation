@@ -3,6 +3,7 @@
 #include <RenderUtils/CSDebugText.hpp>
 #include "Examples.hpp"
 using namespace RenderUtils;
+#pragma pack(push, 1)
 struct UBO
 {
     float4x4 view;
@@ -11,6 +12,7 @@ struct UBO
     float threshold;
     GSMesh mesh;
 };
+#pragma pack(pop)
 int main()
 {
     SDL_Window* window = SDL_CreateWindow("Mesh Shader Hierarchical LOD", 800, 600, Examples_SDLWindowFlagsVulkan);
@@ -28,13 +30,6 @@ int main()
         LoadObj(src, "data/assets/bunny.obj");
         src.Optimize();
         src.ClusterizeDAG();
-        for (int i = 0; auto& cluster : src.dag._clusters)
-        {
-            if (cluster.refined != ~0u)
-                fmt::println("Cluster {}: group {} (dep={} err={} center={} {} {} radius={}), refined {} (dep={} err={} center={} {} {} radius={}), indices {}", i++, cluster.group, src.dag.groups[cluster.group].depth,src.dag.groups[cluster.group].error, src.dag.groups[cluster.group].center.x,src.dag.groups[cluster.group].center.y,src.dag.groups[cluster.group].center.z, src.dag.groups[cluster.group].radius, cluster.refined, src.dag.groups[cluster.refined].depth,src.dag.groups[cluster.refined].error,src.dag.groups[cluster.refined].center.x,src.dag.groups[cluster.refined].center.y,src.dag.groups[cluster.refined].center.z, src.dag.groups[cluster.refined].radius,  cluster.indices.size());
-            else
-                fmt::println("Cluster {}: group {} (dep={} err={}), indices {}", i++, cluster.group, src.dag.groups[cluster.group].depth,src.dag.groups[cluster.group].error, cluster.indices.size());
-        }
         auto staging = device->CreateBuffer(RHIBufferDesc::CreateStagingDesc(meshData->mDesc.size));
         char *ptr = static_cast<char*>(staging->Map()), *dst = ptr;
         auto Write = [&](const void* pData, size_t bytes)
@@ -45,8 +40,8 @@ int main()
             return off;
         };
         auto& mesh = ubo.mesh;
-        mesh.vtxCount = src.rawVertices.size();
-        mesh.vtxOffset = Write(src.rawVertices.data(), sizeof(FVertex) * src.rawVertices.size());
+        mesh.vtxCount = src.vertices.size();
+        mesh.vtxOffset = Write(src.vertices.data(), sizeof(FVertex) * src.vertices.size());
         // Group data
         mesh.groupCount = src.dag.groups.size();
         mesh.groupOffset = Write(src.dag.groups.data(), sizeof(FLODGroup) * src.dag.groups.size());
@@ -68,7 +63,7 @@ int main()
         im.WaitIdle();
     }
     renderer->BeginSetup();
-    auto meshHandle = renderer->CreateResource("Mesh Storage", meshData);
+    auto meshHandle = renderer->CreateResource("Mesh Storage", meshData.Get());
     auto uboHandle = renderer->CreateResource(
         "UBO",
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
@@ -78,7 +73,7 @@ int main()
                                                                  .extent = {4096, 4096, 1},
                                                                  .format = RHIResourceFormat::D32SignedFloat});
     renderer->CreatePass(
-        "UBO Update", RHIDeviceQueueType::Compute, 0u,
+        "UBO Update", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
             r->BindBufferCopyDst(self, uboHandle);            
@@ -86,7 +81,7 @@ int main()
         [&](PassHandle, Renderer* r, RHICommandList* cmd)
         {
             auto* uboData = r->DerefResource(uboHandle).Get<RHIBuffer*>();
-            // Possible footgun here - capturing by *value* copys ubo at its 
+            // Possible footgun here - capturing by *value* copies ubo at its
             // initial state.
             // XXX: Figure out how to make this less error-prone.
             cmd->UpdateBuffer(uboData, 0, AsBytes(AsSpan(ubo)));            

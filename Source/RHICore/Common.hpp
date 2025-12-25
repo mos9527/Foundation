@@ -23,6 +23,9 @@ namespace Foundation::RHI {
         R8G8B8A8Srgb,
         B8G8R8A8Unrom,
         B8G8R8A8Srgb,
+        A2R10G10B10Unorm,
+        A2R10G10B10Snorm,
+        B10G11R11Ufloat,
         R32SignedFloat,
         R32G32SignedFloat,
         R32G32B32SignedFloat,
@@ -33,7 +36,9 @@ namespace Foundation::RHI {
         R16G16B16A16SignedFloat,
         R32Uint,
         R16Uint,
+        R16Unorm,
         D32SignedFloat,
+        D16Unorm,
         Bc1RgbUnorm,
         Bc1RgbSrgb,
         Bc1RgbaUnorm,
@@ -56,6 +61,9 @@ namespace Foundation::RHI {
         ENUM_NAME(R8G8B8A8Srgb)
         ENUM_NAME(B8G8R8A8Unrom)
         ENUM_NAME(B8G8R8A8Srgb)
+        ENUM_NAME(A2R10G10B10Unorm)
+        ENUM_NAME(A2R10G10B10Snorm)
+        ENUM_NAME(B10G11R11Ufloat)
         ENUM_NAME(R32SignedFloat)
         ENUM_NAME(R32G32SignedFloat)
         ENUM_NAME(R32G32B32SignedFloat)
@@ -123,10 +131,12 @@ namespace Foundation::RHI {
     enum class RHIDevicePipelineType {
         Graphics,
         Compute,
+        RayTracing
     };
     ENUM_NAME_CONV_BEGIN(RHIDevicePipelineType)
         ENUM_NAME(Graphics)
         ENUM_NAME(Compute)
+        ENUM_NAME(RayTracing)
     ENUM_NAME_CONV_END()
 
     enum class RHIDeviceHeapType {
@@ -146,6 +156,24 @@ namespace Foundation::RHI {
         ShaderReadOnly,
     };
 
+    enum class RHIAccelerationStructureType
+    {
+        BottomLevel,
+        TopLevel
+    };
+
+    enum class RHIAccelerationStructureBuildOp
+    {
+        Build,
+        Update
+    };
+
+    enum class RHIAccelerationGeometryType
+    {
+        Triangles,
+        Instances
+    };
+
     enum class RHIResourceHostAccess {
         Invisible,
         ReadWrite, // r/w are possible
@@ -157,7 +185,8 @@ namespace Foundation::RHI {
         SampledImage,
         StorageImage,
         UniformBuffer,
-        StorageBuffer
+        StorageBuffer,
+        AccelerationStructure
     };
 
     ENUM_NAME_CONV_BEGIN(RHIDescriptorType)
@@ -166,13 +195,15 @@ namespace Foundation::RHI {
         ENUM_NAME(StorageImage)
         ENUM_NAME(UniformBuffer)
         ENUM_NAME(StorageBuffer)
+        ENUM_NAME(AccelerationStructure)
     ENUM_NAME_CONV_END()
 
     enum class RHIMultisampleCount {
         E1, E2, E4, E8, E16
     };
     enum class RHITextureDimension {
-        E1D, E2D, E3D
+        E1D, E2D, E3D,
+        ECube, E1DArray,E2DArray, ECubeArray
     };
 
     BITMASK_ENUM_BEGIN(RHIShaderStage, uint32_t)
@@ -223,7 +254,9 @@ namespace Foundation::RHI {
         ShaderRead = 1 << 7,
         UniformRead = 1 << 8,
         HostWrite = 1 << 9,
-        HostRead = 1 << 10
+        HostRead = 1 << 10,
+        AccelerationStructureRead = 1 << 11,
+        AccelerationStructureWrite = 1 << 12,
     BITMASK_ENUM_END();
 
     // https://gpuopen.com/learn/vulkan-barriers-explained/
@@ -239,7 +272,8 @@ namespace Foundation::RHI {
         RenderTargetOutput      = 1 << 8,
         Transfer                = 1 << 9,
         EarlyFragmentTests      = 1 << 10,
-        LateFragmentTests       = 1 << 11,        
+        LateFragmentTests       = 1 << 11,
+        AccelerationBuild       = 1 << 12,
         // ---
         Host                    = 1 << 27,
         AllGraphics             = 1 << 28,
@@ -256,7 +290,11 @@ namespace Foundation::RHI {
         StorageBuffer = 1 << 3,
         IndirectBuffer = 1 << 4,
         TransferSource = 1 << 5,
-        TransferDestination = 1 << 6
+        TransferDestination = 1 << 6,
+        DeviceAddress = 1 << 7,
+        AccelerationStructureStorage = 1 << 8,
+        AccelerationStructureBuildReadOnly = 1 << 9,
+        ShaderBindingTable = 1 << 10
     BITMASK_ENUM_END();
 
     BITMASK_ENUM_BEGIN(RHITextureUsage, uint32_t)
@@ -273,4 +311,12 @@ namespace Foundation::RHI {
         Depth = 1 << 1,
         Stencil = 1 << 2
     BITMASK_ENUM_END();
+
+    BITMASK_ENUM_BEGIN(RHIAccelerationStructureBuildFlags, uint32_t)
+        AllowUpdate = 1 << 0,
+        AllowCompaction = 1 << 1,
+        PreferFastTrace = 1 << 2,
+        PreferFastBuild = 1 << 3,
+        LowMemory = 1 << 4
+    BITMASK_ENUM_END()
 }

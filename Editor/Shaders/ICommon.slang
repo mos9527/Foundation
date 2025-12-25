@@ -1,162 +1,167 @@
-#include "IMath.slang"
-#include "IFlags.slang"
-static const uint kMeshWorkGroupSize = 64;
+import IMath;
+public static const uint kMeshWorkGroupSize = 64;
+public static const uint kMeshIndirectPerDrawMeshlets = 65536;
 // Definitions From C++ sources
-struct FVertex {
-    float3 position;
-    float3 normal;
-    float3 tangent;
-    float bitangentSign;
-    float2 uv;
+public struct FVertex {
+    public float3 position;
+    public float3 normal;
+    public float3 tangent;
+    public float bitangentSign;
+    public float2 uv;
 };
-struct FQVertex {
-    half4 position;
-    uint32_t tbn32;
-    half2 uv;
+public struct FQVertex {
+    public half4 position;
+    public uint32_t tbn32;
+    public half2 uv;
 };
-void FQDecode(in FQVertex v, out float3 position, out float3 normal, out float3 tangent, out float bitangentSign, out float2 uv) {
+public void FQDecode(in FQVertex v, out float3 position, out float3 normal, out float3 tangent, out float bitangentSign, out float2 uv) {
     position = float3(v.position.xyz);
     unpackTBN(v.tbn32, normal, tangent, bitangentSign);
     uv = float2(v.uv);
 }
-struct FLODGroup // @ref clodGroup
+public void FQDecode(in FQVertex v, out float3 normal, out float3 tangent, out float bitangentSign, out float2 uv) {
+    unpackTBN(v.tbn32, normal, tangent, bitangentSign);
+    uv = float2(v.uv);
+}
+public struct FLODGroup // @ref clodGroup
 {
     // DAG level the group was generated at
-    int depth;
+    public int depth;
 
     // sphere bounds, in mesh coordinate space
-    float3 center;
-    float radius;
+    public float3 center;
+    public float radius;
 
     // combined simplification error, in mesh coordinate space
     // FLT_MAX for terminal groups
-    float error;
+    public float error;
 };
-struct FMeshlet // @ref meshopt_Meshlet
+public struct FMeshlet // @ref meshopt_Meshlet
 {
     /* meshlet group */
     /* ID of the @ref FLODGroup this meshlet belongs to in a hierarchy */
-    uint32_t group;
+    public uint32_t group;
     /* ID of the @ref FLODGroup (with more triangles) that produced this meshlet during simplification (parent). ~0u if original geometry */
-    uint32_t refined;
+    public uint32_t refined;
 
     /* meshlet */
     /* offsets within meshletVtx and meshletTri arrays with meshlet data */
-    uint32_t vtxOffset; // in vertices
-    uint32_t triOffset; // in indices (3*triangles)
+    public uint32_t vtxOffset; // in vertices
+    public uint32_t triOffset; // in indices (3*triangles)
     /* number of vertices and triangles used in the meshlet; data is stored in consecutive range defined by offset and
      * count */
-    uint32_t vtxCount;
-    uint32_t triCount;
+    public uint32_t vtxCount;
+    public uint32_t triCount;
 
     /* bounds */
-    float4 centerRadius; // (x,y,z,r)
-    float4 coneAxisAngle; // (x,y,z,cos(half solid angle))
-    float3 coneApex; // (x,y,z)
+    public float4 centerRadius; // (x,y,z,r)
+    public float4 coneAxisAngle; // (x,y,z,cos(half solid angle))
+    public float3 coneApex; // (x,y,z)
 };
-struct GSMeshLOD
-{
-    // -- VS pipeline
-    uint32_t indOffset;
-    uint32_t indCount;
-    // -- MS pipeline @ref FMeshlet
-    uint32_t meshletOffset;
-    uint32_t meshletCount;
-    uint32_t meshletVtxOffset;
-    uint32_t meshletTriOffset;
-};
-struct GSMesh
+public struct GSMesh
 {
     // Offsets are absolute, and are in Primitive buffer (bytes).
     // @ref FVertex
-    uint32_t vtxOffset;
-    uint32_t vtxCount;
+    public uint32_t vtxOffset;
+    public uint32_t vtxCount;
+    // LOD0 UINT32 indices
+    public uint32_t idxOffset;
+    public uint32_t idxCount;
     // -- DAG LOD Group @ref FLODGroup
-    uint32_t groupOffset;
-    uint32_t groupCount;
+    public uint32_t groupOffset;
+    public uint32_t groupCount;
     // -- DAG Meshlets @ref FMeshlet
-    uint32_t meshletOffset;
-    uint32_t meshletCount;
-    uint32_t meshletVtxOffset;
-    uint32_t meshletTriOffset;
+    public uint32_t meshletOffset;
+    public uint32_t meshletCount;
+    public uint32_t meshletVtxOffset;
+    public uint32_t meshletTriOffset;
     // -- Global index (amongst all loaded meshes)
-    uint32_t meshletGlobalIndex;
+    public uint32_t meshletGlobalIndex;
 };
-struct MIndex {
-    uint8_t v0;
-    uint8_t v1;
-    uint8_t v2;
+public struct MIndex {
+    public uint8_t v0;
+    public uint8_t v1;
+    public uint8_t v2;
 }
-struct GSInstance
+public struct GSInstance
 {
     // TRS
-    float3 transform;
-    quat rotation;
-    float3 scale;
-    uint32_t meshOffset; // In Primitive buffer (bytes)
-    uint32_t materialIndex; // In Material buffer (offset)
+    public float3 transform;
+    public quat rotation;
+    public float3 scale;
+    public uint32_t meshOffset; // In Primitive buffer (bytes)
+    public uint32_t materialIndex; // In Material buffer (offset)
 };
-struct GSMaterial
+public struct GSMaterial
 {
-    uint32_t baseColorTexture;
-    uint32_t emissiveTexture;
-    uint32_t metallicRoughnessTexture;
-    uint32_t normalTexture;
-    float4 baseColorFactor;
-    float3 emissiveFactor;
-    float metallicFactor;
-    float roughnessFactor;
-    float anisotropy;
+    public uint32_t baseColorTexture;
+    public uint32_t emissiveTexture;
+    public uint32_t metallicRoughnessTexture;
+    public uint32_t normalTexture;
+    public float4 baseColorFactor;
+    public float3 emissiveFactor;
+    public float metallicFactor;
+    public float roughnessFactor;
+    public float anisotropy;
 };
-struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
+public struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
 {
-    uint32_t groupCountX;
-    uint32_t groupCountY;
-    uint32_t groupCountZ;
+    public uint32_t groupCountX;
+    public uint32_t groupCountY;
+    public uint32_t groupCountZ;
 };
-struct MeshletTaskWork
+public struct MeshletTaskWork
 {
-    uint32_t instanceID; // Absolute
-    // Task shader can *only* dispatch zero or one meshlet per work thread.
-    // Hence, batching is required here. Whereas in Mesh Shader multiple verts/tris
-    // can be processed per thread.
-    uint32_t firstMeshlet;
-    uint32_t numMeshlets;
+    public uint32_t instanceID; // Absolute
+    // We're not using task shaders - but with a dedicated compute shader
+    // to further cull meshlets and generate indirect meshlet dispatches.
+    // In principle they work the same, however with no GS memory woes and
+    // actually works on AMD proprietary drivers.
+    // Sigh.
+    public uint32_t firstMeshlet;
+    public uint32_t numMeshlets;
 };
-struct UBO
+public struct UBO
 {
-    uint32_t firstInstance;
-    uint32_t numInstances;
-    uint32_t firstMaterial;
-    uint32_t numMaterials;
-    float lodThreshold;
-    float zNear;
-    float4x4 view;
-    float4x4 proj;
-    float4 projPlanes; // ij:left, kl:top
-    uint32_t hizLevels;
-    uint32_t hizWidth;
-    uint32_t hizHeight;
+    public uint32_t frameNumber;
+    public uint32_t firstInstance;
+    public uint32_t numInstances;
+    public uint32_t firstMaterial;
+    public uint32_t numMaterials;
+    public float lodThreshold;
+    public float zNear;
+    public float4x4 view;
+    public float4x4 proj;
+    public float4x4 inverseViewProj;
+    public float4 projPlanes; // ij:left, kl:top
+    public float fbWidth;
+    public float fbHeight;
+    public uint32_t hizLevels;
+    public uint32_t hizWidth;
+    public uint32_t hizHeight;
     // -- Lighting
-    float3 camDirection;
-    float3 sunDirection;
-    float3 ambientColor;
+    public float camMinEV;
+    public float camMaxEV;
+    public float camAdaptCoeff;
+    public float3 camPosition;
+    public float3 camDirection;
+    public float3 sunDirection;
+    public float sunIntensity;
+    public float3 ambientColor;
+    // -- Path Tracing
+    public uint32_t ptAccumualatedFrames;
+    public uint32_t ptMaxBounces;
 };
 // ^^^
-public struct MeshletGroupShared {
-    uint32_t instanceID;
-    uint32_t meshletCount;
-    uint32_t meshletIndices[kMeshWorkGroupSize];
-};
 
-struct V2F
+public struct V2F
 {
-    float4 pos : SV_POSITION;
-    float3 normal : NORMAL;
-    float3 tangent : TANGENT;
-    float3 bitangent : BITANGENT;
-    float bitangentSign : BITSIGN;
-    float2 uv : TEXCOORD0;
-    uint32_t meshlet : ID;
-    uint32_t materialIndex : MATID;
+    public float4 pos : SV_POSITION;
+    public float3 normal : NORMAL;
+    public float3 tangent : TANGENT;
+    public float3 bitangent : BITANGENT;
+    public float bitangentSign : BITSIGN;
+    public float2 uv : TEXCOORD0;
+    public uint32_t meshlet : ID;
+    public uint32_t materialIndex : MATID;
 };

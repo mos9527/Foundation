@@ -4,10 +4,13 @@ FEditorState FEState = FEInitEnter;
 /* -- Scene Data -- */
 static Vector<GSInstance> GSInstances(GLOBAL_ALLOC);
 static Vector<GSMaterial> GSMaterials(GLOBAL_ALLOC);
+static Vector<GSMesh> GSMeshes(GLOBAL_ALLOC);
+static Vector<uint32_t> GSBLASes(GLOBAL_ALLOC);
+/* -- Camera & Globals -- */
 static UBO GShaderGlobals;
 static FArcballCamera GCamera{
     .center = float3{0, 0, 0},
-    .radius = 5.0f,
+    .radius = 1.0f,
     .zNear = 0.1f,
     .fovY = radians(60.f),
 };
@@ -25,18 +28,33 @@ void FInitEnter()
         GCamera.rot = camera.transform.rotation;
         GCamera.fovY = camera.fovY;
     }
+    if (!scene.mLights.empty())
+    {
+        auto& light = scene.mLights.front();
+        GShaderGlobals.sunDirection = normalize(light.transform.rotation * float3(0, 0, -1));
+        GShaderGlobals.sunIntensity = light.intensity;
+        GShaderGlobals.camMinEV = 0.0f;
+        GShaderGlobals.camMaxEV = log2f(light.intensity * 0.25f);
+    }
+    else
+    {
+        GShaderGlobals.sunIntensity = 0.0f;
+    }
     // Load into GPUScene
     auto* gpu = GContext->gpuScene;
-    Vector<Pair<uint32_t, GSMesh>> meshOffsets(GLOBAL_ALLOC);
+    Vector<uint32_t> meshOffsets(GLOBAL_ALLOC);
     Vector<uint32_t> textureIDMap(scene.mTextures.size(), GLOBAL_ALLOC);
     LOG(Editor, LogInfo, "Uploading scene to GPU");
+    GSMeshes.clear();
     {
         ImmediateUpload upload(GContext->device.Get(), 128 * (1u << 20)); // MB
         upload.Begin();
         for (auto& src : scene.mMeshes)
         {
             CHECK(src.EnsureQuantized());
-            auto& [offset, dst] = meshOffsets.emplace_back();
+            CHECK(src.EnsureRaw());
+            auto& dst = GSMeshes.emplace_back();
+            auto& offset = meshOffsets.emplace_back();
             if (!gpu->Upload(&upload, src, dst, offset))
             {
                 // Flush batched uploads - staging buffer full
@@ -70,7 +88,7 @@ void FInitEnter()
         dst.transform = src.transform.transform;
         dst.rotation = src.transform.rotation;
         dst.scale = src.transform.scale;
-        dst.meshOffset = meshOffsets[src.meshIndex].first;
+        dst.meshOffset = meshOffsets[src.meshIndex];
         dst.materialIndex = src.materialIndex;
     }
     GSMaterials.clear();
@@ -86,80 +104,105 @@ void FInitEnter()
         dst.metallicRoughnessTexture = textureIDMap[src.metallicRoughnessTexture];
         dst.normalTexture = textureIDMap[src.normalTexture];
     }
-    FEState = FEInit;
-}
-void FInit() { FEState = FERunningEnter; }
-RendererConfig GRendererConfig;
-void FRunningEnter()
-{
-    RendererSetup(GContext, &GShaderGlobals, GRendererConfig);
-    FEState = FERunning;
-}
-void FRunning()
-{
-    auto* renderer = GContext->renderer;
-    auto* scene = GContext->gpuScene;
-    // New frame
-    renderer->BeginExecute();
-    float gpuTimingRes;
-    auto timings = renderer->DbgProfilePassTiming(renderer->GetSync(), gpuTimingRes);
-    ImGui_ImplFoundation_NewFrame();
-    ImGui::NewFrame();
     // Upload instance data
     {
-        auto [ptr, off] = scene->AllocateInstance(GSInstances.size());
+        auto [ptr, off] = gpu->AllocateInstance(GSInstances.size());
         std::memcpy(ptr, GSInstances.data(), GSInstances.size() * sizeof(GSInstance));
         GShaderGlobals.firstInstance = off;
         GShaderGlobals.numInstances = GSInstances.size();
     }
     // Upload material data
     {
-        auto [ptr, off] = scene->AllocateMaterial(GSMaterials.size());
+        auto [ptr, off] = gpu->AllocateMaterial(GSMaterials.size());
         std::memcpy(ptr, GSMaterials.data(), GSMaterials.size() * sizeof(GSMaterial));
         GShaderGlobals.firstMaterial = off;
         GShaderGlobals.numMaterials = GSMaterials.size();
     }
-    // Global param update
-    GCamera.Update({});
-    GCamera.aspect = GContext->swapchain->GetAspectRatio();
-    GShaderGlobals.view = GCamera.view;
-    GShaderGlobals.proj = GCamera.proj;
-    GShaderGlobals.zNear = GCamera.zNear;
-    GShaderGlobals.projPlanes = planeSymmetric(GShaderGlobals.proj);
-    GShaderGlobals.camDirection = float3(0,0,-1) * GCamera.rot;
+    // Build RT AS
+    {
+        ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
+        GSBLASes.resize(GSMeshes.size());
+        LOG(Editor, LogDebug, "Building BLAS");
+        constexpr size_t kBLASBuildBatch = 32u;
+        for (size_t i = 0; i < GSMeshes.size(); i += kBLASBuildBatch)
+        {
+            Span meshesBatch = GSMeshes;
+            Span indicesBatch = GSBLASes;
+            size_t batchSize = std::min(kBLASBuildBatch, GSMeshes.size() - i);
+            meshesBatch = meshesBatch.subspan(i, batchSize);
+            indicesBatch = indicesBatch.subspan(i, batchSize);
+            LOG(Editor, LogDebug, "Building BLAS {} to {}", i, i + batchSize);
+            gpu->BuildBLAS(&ctx, meshesBatch, indicesBatch);
+        }
+        LOG(Editor, LogDebug, "Building TLAS");
+        ctx->Begin();
+        gpu->BuildTLAS(ctx.Get(), GSInstances, GSBLASes, false);
+        ctx->End(), ctx.Submit(), ctx.WaitIdle();
+    }
+    FEState = FEInit;
+}
+
+void FInit() { FEState = FERunningEnter; }
+RendererConfig GRendererConfig;
+
+void FRunningEnter()
+{
+    PathTracerSetup(GContext, GRendererConfig, {
+                        .gsGlobals = &GShaderGlobals,
+                        .gsInstances = &GSInstances,
+                        .gsMaterials = &GSMaterials,
+                        .gsMeshes = &GSMeshes,
+                        .gsBLASes = &GSBLASes
+                    });
+    FEState = FERunning;
+}
+
+bool cameraUpdated = true;
+
+void FRunningImGui()
+{
+    auto* renderer = GContext->renderer;
+    float gpuTimingRes;
+    auto timings = renderer->DbgProfilePassTiming(renderer->GetSync(), gpuTimingRes);
     // ImGui
     if (ImGui::Begin("Camera"))
     {
         ImGui::TextUnformatted(FArcballCamera::kControlsText);
         ImGui::Separator();
-        ImGui::SliderFloat3("Cam Center", &GCamera.center.x, -50.0f, 50.0f);
-        ImGui::SliderFloat("Cam Radius", &GCamera.radius, 0.0f, 100.0f);
-        ImGui::SliderAngle("Cam FOV Y", &GCamera.fovY);
+        cameraUpdated |= ImGui::SliderFloat3("Cam Center", &GCamera.center.x, -50.0f, 50.0f);
+        cameraUpdated |= ImGui::SliderFloat("Cam Radius", &GCamera.radius, 0.0f, 100.0f);
+        cameraUpdated |= ImGui::SliderAngle("Cam FOV Y", &GCamera.fovY);
+        ImGui::SliderFloat("Min EV", &GShaderGlobals.camMinEV, -16.0f, 16.0f);
+        ImGui::SliderFloat("Max EV", &GShaderGlobals.camMaxEV, -16.0f, 16.0f);
+        ImGui::SliderFloat("Adapt Rate", &GCamera.adaptRate, 0.0f, 100.0f);
     }
     ImGui::End();
     if (ImGui::Begin("Rendering"))
     {
-        static float lodLogThreshold = 2;
+        static float lodLogThreshold = 3;
         ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
+        ImGui::Text("PT Accumulation: %d", GShaderGlobals.ptAccumualatedFrames);
+        ImGui::SliderInt("PT Bounces", &GShaderGlobals.ptMaxBounces, 1, 16);
         GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
         bool changed = false;
         {
-            const char* items[] = {"Overdraw", "Meshlet", "HIZ Buffer"};
-            const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewHIZ};
+            const char* items[] = {"Overdraw", "Meshlet", "Material ID"};
+            const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID};
             ImGui::SeparatorText("Perf Debug View");
-            changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values);
+            changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
+        }
+        {
+            const char* items[] = {"Position", "BaseColor", "Normal", "Diffuse", "Specular"};
+            const unsigned values[] = {kViewPosition, kViewBaseColor, kViewNormal, kViewGBufferDiffuse,
+                                       kViewGBufferSpecular};
+            ImGui::SeparatorText("GBuffer View");
+            changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
         }
         {
             const char* items[] = {"Frustum", "Occlusion"};
             const unsigned values[] = {kCullFrustum, kCullOcclusion};
             ImGui::SeparatorText("Culling");
             changed |= ImBitmaskOptionPicker(GRendererConfig.cullFlags, items, values);
-        }
-        {
-            const char* items[] = {"BaseColor", "Normal", "MaterialID"};
-            const unsigned values[] = {kGBufferViewBaseColor, kGBufferViewNormal, kGBufferViewMaterialID};
-            ImGui::SeparatorText("GBuffer Debug View");
-            changed |= ImBitmaskOptionPicker(GRendererConfig.gbufferFlags, items, values);
         }
         changed |= ImGui::Button("Reload");
         if (changed)
@@ -232,8 +275,9 @@ void FRunning()
                             .startTick = timings[i * 2],
                             .endTick = timings[i * 2 + 1],
                             .label = pass.name,
-                            .color = pass.queue == RHIDeviceQueueType::Graphics ? ImColor(1.0f, 0.5f, 0.0f, 1.0f)
-                                                                                : ImColor(0.0f, 0.5f, 0.0f, 1.0f),
+                            .color = pass.queue == RHIDeviceQueueType::Graphics
+                            ? ImColor(1.0f, 0.5f, 0.0f, 1.0f)
+                            : ImColor(0.0f, 0.5f, 0.0f, 1.0f),
                         };
                         samples.emplace_back(std::move(sample));
                         while (histograms.size() <= i)
@@ -290,9 +334,41 @@ void FRunning()
         }
     }
     ImGui::End();
+}
+static bool enableImGui = false;
+void FRunning()
+{
+    auto* renderer = GContext->renderer;
+    // New frame
+    renderer->BeginExecute();
+    ImGui_ImplFoundation_NewFrame();
+    ImGui::NewFrame();
+    if (enableImGui)
+        FRunningImGui();
+    // Global param update
+    GCamera.Update({});
+    GCamera.aspect = GContext->swapchain->GetAspectRatio();
+    GShaderGlobals.frameNumber = renderer->GetFrame();
+    GShaderGlobals.view = GCamera.view;
+    GShaderGlobals.proj = GCamera.proj;
+    GShaderGlobals.inverseViewProj = inverse(GShaderGlobals.proj * GShaderGlobals.view);
+    GShaderGlobals.zNear = GCamera.zNear;
+    GShaderGlobals.projPlanes = planeSymmetric(GShaderGlobals.proj);
+    static float prevTime = 0.0f;
+    float deltaTime = SDL_GetTicks() - prevTime;
+    prevTime = SDL_GetTicks();
+    GShaderGlobals.camAdaptCoeff = 1.0f - std::exp(-deltaTime * GCamera.adaptRate);
+    GShaderGlobals.camPosition = GCamera.position;
+    GShaderGlobals.camDirection = GCamera.rot * float3(0, 0, -1);
+    GShaderGlobals.fbWidth = static_cast<float>(renderer->GetSwapchainExtent().x);
+    GShaderGlobals.fbHeight = static_cast<float>(renderer->GetSwapchainExtent().y);
+    if (cameraUpdated)
+        GShaderGlobals.ptAccumualatedFrames = 0, cameraUpdated = false;
     renderer->ExecuteFrame();
     renderer->EndExecute();
+    GShaderGlobals.ptAccumualatedFrames++;
 }
+
 bool EditorProcessEvent(SDL_Event* event)
 {
     if (event->type == SDL_EVENT_WINDOW_RESIZED)
@@ -309,12 +385,26 @@ bool EditorProcessEvent(SDL_Event* event)
             break;
         }
     }
+    if (event->type == SDL_EVENT_KEY_DOWN)
+    {
+        if (event->key.key == SDLK_SPACE)
+        {
+            GCamera.radius = std::max(length(GCamera.center), 1.0f);
+            GCamera.center = {};
+            cameraUpdated |= true;
+        }
+        if (event->key.key == SDLK_TAB)
+        {
+            enableImGui = !enableImGui;
+        }
+    }
     ImGui_ImplFoundation_ProcessEvent(event);
     auto& io = ImGui::GetIO();
     if (!io.WantCaptureMouse)
-        GCamera.Update(*event);
+        cameraUpdated |= GCamera.Update(*event);
     return false;
 }
+
 // Per-frame logic
 bool EditorOnFrame(FContext*)
 {

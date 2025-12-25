@@ -7,18 +7,6 @@ FetchContent_MakeAvailable(cgltf)
 FetchContent_MakeAvailable(lz4)
 FetchContent_MakeAvailable(bc7enc)
 
-file(
-        GLOB SOURCES
-        Context.cpp
-        Editor.cpp
-        GPUScene.cpp
-        Mesh.cpp
-        Scene.cpp
-        SDLMain.cpp
-        Renderer.cpp
-        ImGui.cpp
-)
-
 add_subdirectory(Shaders)
 add_library(Editor_Assets STATIC)
 target_sources(Editor_Assets PUBLIC
@@ -43,23 +31,31 @@ target_include_directories(
         "${bc7enc_SOURCE_DIR}"
         ..
 )
-
-add_executable(Editor)
-target_sources(Editor PRIVATE ${SOURCES} ${INCLUDES})
+add_library(Editor_Context)
+target_sources(Editor_Context PRIVATE
+        Context.cpp
+        GPUScene.cpp
+)
 target_link_libraries(
-        Editor PRIVATE
+        Editor_Context PUBLIC
+        Editor_Assets
         Foundation_RHIVulkan
         Foundation_RenderCore
         Foundation_RenderUtils
-        ThirdParty_ImGui
-        Editor_Assets
 )
 # https://cmake.org/cmake/help/latest/command/target_precompile_headers.html#:~:text=generator%20expressions
 target_precompile_headers(
-        Editor
-        PRIVATE
+        Editor_Context
+        PUBLIC
         "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc>"
 )
+
+add_executable(Editor)
+target_sources(Editor PRIVATE SDLMain.cpp ImGui.cpp Editor.cpp Renderer.cpp PathTracer.cpp)
+target_link_libraries(
+        Editor PRIVATE Editor_Context Foundation_RHIVulkan ThirdParty_ImGui
+)
+
 add_dependencies(
         Editor
         Editor_Shaders

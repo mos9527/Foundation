@@ -15,8 +15,10 @@ FetchContent_MakeAvailable(VulkanMemoryAllocator)
 add_library(Foundation_RHIVulkan ${SOURCES} ${INCLUDES})
 
 if (FOUNDATION_RHIVULKAN_VALIDATION_LAYER)
+    message(STATUS "Vulkan Valiation Layer ENABLED")
     target_compile_definitions(Foundation_RHIVulkan PUBLIC FOUNDATION_RHIVULKAN_VVL=1)
 else ()
+    message(STATUS "Vulkan Valiation Layer DISABLED")
     target_compile_definitions(Foundation_RHIVulkan PUBLIC FOUNDATION_RHIVULKAN_VVL=0)
 endif ()
 

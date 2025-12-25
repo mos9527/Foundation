@@ -26,6 +26,13 @@ namespace Foundation::Math {
     using float3 = vec3;
     using float2 = vec2;
     using float4x4 = mat4;
+    using int2 = ivec2;
+    using int3 = ivec3;
+    using int4 = ivec4;
+    using uint = unsigned int;
+    using uint2 = uvec2;
+    using uint3 = uvec3;
+    using uint4 = uvec4;
     // No Surprises.
     // Shaders are compiled with -fvk-use-scalar-layout
     // so interexchange should always be dense

@@ -5,7 +5,7 @@
 
 #include <RHICore/Common.hpp>
 namespace Foundation::RHI {
-    template<typename Bits> inline Bits vkFlagsToBits(vk::Flags<Bits> flags) {
+    template<typename Bits> Bits vkFlagsToBits(vk::Flags<Bits> flags) {
         return static_cast<Bits>(static_cast<std::underlying_type_t<Bits>>(flags));
     }
     inline vk::Format vkFormatFromRHIFormat(RHIResourceFormat format) {
@@ -15,6 +15,9 @@ namespace Foundation::RHI {
         case R8G8B8A8Srgb: return vk::Format::eR8G8B8A8Srgb;
         case B8G8R8A8Unrom: return vk::Format::eB8G8R8A8Unorm;
         case B8G8R8A8Srgb: return vk::Format::eB8G8R8A8Srgb;
+        case A2R10G10B10Unorm: return vk::Format::eA2B10G10R10UnormPack32;
+        case A2R10G10B10Snorm: return vk::Format::eA2B10G10R10SnormPack32;
+        case B10G11R11Ufloat: return vk::Format::eB10G11R11UfloatPack32;
         case R32SignedFloat: return vk::Format::eR32Sfloat;
         case R32G32SignedFloat: return vk::Format::eR32G32Sfloat;
         case R32G32B32SignedFloat: return vk::Format::eR32G32B32Sfloat;
@@ -25,7 +28,9 @@ namespace Foundation::RHI {
         case R16G16B16A16SignedFloat: return vk::Format::eR16G16B16A16Sfloat;
         case R32Uint: return vk::Format::eR32Uint;
         case R16Uint: return vk::Format::eR16Uint;
+        case R16Unorm: return vk::Format::eR16Unorm;
         case D32SignedFloat: return vk::Format::eD32Sfloat;
+        case D16Unorm: return vk::Format::eD16Unorm;
         case Bc1RgbUnorm: return vk::Format::eBc1RgbUnormBlock;
         case Bc1RgbSrgb: return vk::Format::eBc1RgbSrgbBlock;
         case Bc1RgbaUnorm: return vk::Format::eBc1RgbaUnormBlock;
@@ -57,6 +62,10 @@ namespace Foundation::RHI {
         if (usage & IndirectBuffer) flags |= vk::BufferUsageFlagBits::eIndirectBuffer;
         if (usage & TransferSource) flags |= vk::BufferUsageFlagBits::eTransferSrc;
         if (usage & TransferDestination) flags |= vk::BufferUsageFlagBits::eTransferDst;
+        if (usage & DeviceAddress) flags |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
+        if (usage & AccelerationStructureStorage) flags |= vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR;
+        if (usage & AccelerationStructureBuildReadOnly) flags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
+        if (usage & ShaderBindingTable) flags |= vk::BufferUsageFlagBits::eShaderBindingTableKHR;
         return flags;
     }
 
@@ -74,6 +83,8 @@ namespace Foundation::RHI {
         if (state & UniformRead) flags |= vk::AccessFlagBits2::eUniformRead;
         if (state & HostWrite) flags |= vk::AccessFlagBits2::eHostWrite;
         if (state & HostRead) flags |= vk::AccessFlagBits2::eHostRead;
+        if (state & AccelerationStructureRead) flags |= vk::AccessFlagBits2::eAccelerationStructureReadKHR;
+        if (state & AccelerationStructureWrite) flags |= vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
         return flags;
     }
 
@@ -105,6 +116,7 @@ namespace Foundation::RHI {
         if (stage & Transfer) flags |= vk::PipelineStageFlagBits::eTransfer;
         if (stage & EarlyFragmentTests) flags |= vk::PipelineStageFlagBits::eEarlyFragmentTests;
         if (stage & LateFragmentTests) flags |= vk::PipelineStageFlagBits::eLateFragmentTests;
+        if (stage & AccelerationBuild) flags |= vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR;
         if (stage & TopOfPipe) flags |= vk::PipelineStageFlagBits::eTopOfPipe;
         if (stage & BottomOfPipe) flags |= vk::PipelineStageFlagBits::eBottomOfPipe;
         if (stage & AllGraphics) flags |= vk::PipelineStageFlagBits::eAllGraphics;
@@ -126,6 +138,7 @@ namespace Foundation::RHI {
         if (stage & Transfer) flags |= vk::PipelineStageFlagBits2::eTransfer;
         if (stage & EarlyFragmentTests) flags |= vk::PipelineStageFlagBits2::eEarlyFragmentTests;
         if (stage & LateFragmentTests) flags |= vk::PipelineStageFlagBits2::eLateFragmentTests;
+        if (stage & AccelerationBuild) flags |= vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR;
         if (stage & TopOfPipe) flags |= vk::PipelineStageFlagBits2::eTopOfPipe;
         if (stage & BottomOfPipe) flags |= vk::PipelineStageFlagBits2::eBottomOfPipe;
         if (stage & AllGraphics) flags |= vk::PipelineStageFlagBits2::eAllGraphics;
@@ -162,17 +175,22 @@ namespace Foundation::RHI {
             return vk::DescriptorType::eStorageImage;
         case StorageBuffer:
             return vk::DescriptorType::eStorageBuffer;
-        default:
         case UniformBuffer:
             return vk::DescriptorType::eUniformBuffer;
+        case AccelerationStructure:
+            return vk::DescriptorType::eAccelerationStructureKHR;
+        default:
+            return {};
         }
     }
 
     inline vk::PipelineBindPoint vkPipelineBindPointFromRHIDevicePipelineType(RHIDevicePipelineType type) {
         switch (type) {
         case RHIDevicePipelineType::Compute:  return vk::PipelineBindPoint::eCompute;
-        default:
         case RHIDevicePipelineType::Graphics: return vk::PipelineBindPoint::eGraphics;
+        case RHIDevicePipelineType::RayTracing: return vk::PipelineBindPoint::eRayTracingKHR;
+        default:
+            return {};
         }
     }
 
@@ -195,9 +213,9 @@ namespace Foundation::RHI {
         case E4: return vk::SampleCountFlagBits::e4;
         case E8: return vk::SampleCountFlagBits::e8;
         case E16: return vk::SampleCountFlagBits::e16;
-        case E1:
+        case E1: return vk::SampleCountFlagBits::e1;
         default:
-            return vk::SampleCountFlagBits::e1;
+            return {};
         }
     }
 
@@ -210,4 +228,36 @@ namespace Foundation::RHI {
         return flags;
     }
 
+    inline vk::AccelerationStructureTypeKHR vkAccelerationStructureTypeFromRHIAccelerationStructureType(RHIAccelerationStructureType type) {
+        using enum RHIAccelerationStructureType;
+        switch (type) {
+        case TopLevel: return vk::AccelerationStructureTypeKHR::eTopLevel;
+        case BottomLevel: return vk::AccelerationStructureTypeKHR::eBottomLevel;
+        default:
+            return {};
+        }
+    }
+
+    inline vk::BuildAccelerationStructureModeKHR vkBuildAccelerationStructureModeFromRHIAccelerationStructureBuildOp(RHIAccelerationStructureBuildOp op)
+    {
+        using enum RHIAccelerationStructureBuildOp;
+        switch (op) {
+        case Build: return vk::BuildAccelerationStructureModeKHR::eBuild;
+        case Update: return vk::BuildAccelerationStructureModeKHR::eUpdate;
+        default:
+            return {};
+        }
+    }
+
+    inline vk::BuildAccelerationStructureFlagsKHR vkBuildAccelerationStructureFlagsFromRHIAccelerationStructureBuildFlags(RHIAccelerationStructureBuildFlags flags)
+    {
+        using enum RHIAccelerationStructureBuildFlagsBits;
+        vk::BuildAccelerationStructureFlagsKHR vkFlags{};
+        if (flags & AllowUpdate) vkFlags |= vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate;
+        if (flags & AllowCompaction) vkFlags |= vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction;
+        if (flags & PreferFastTrace) vkFlags |= vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
+        if (flags & PreferFastBuild) vkFlags |= vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild;
+        if (flags & LowMemory) vkFlags |= vk::BuildAccelerationStructureFlagBitsKHR::eLowMemory;
+        return vkFlags;
+    }
 }

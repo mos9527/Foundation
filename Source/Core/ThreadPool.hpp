@@ -137,6 +137,6 @@ namespace Foundation::Core
         /**
          * Aligns a number to upper, closest power of 2 so that it's a valid @ref maxTasks size.
          */
-        constexpr static size_t getTaskSize(size_t size) { return 1ULL << static_cast<size_t>(std::ceil(std::log2f(size))); }
+        const static size_t getTaskSize(size_t size) { return 1ULL << static_cast<size_t>(std::ceil(std::log2f(size))); }
     };
 } // namespace Foundation::Core

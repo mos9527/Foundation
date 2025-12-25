@@ -25,15 +25,14 @@ function(slangc_compile TARGET)
     # https://shader-slang.org/slang/user-guide/spirv-target-specific.html
     # https://shader-slang.org/docs/coming-from-hlsl/
     set(SLANGC_ARGS
-        "${ARG_SOURCE}"
-        -o "${OUTPUT_FILENAME}"
-        -target spirv
-        -profile spirv_1_4
-        -emit-spirv-directly
-        -matrix-layout-column-major
-        -fvk-use-entrypoint-name
-        -fvk-use-scalar-layout # Dense packing
-        -depfile "${OUTPUT_DEPNAME}"
+            "${ARG_SOURCE}"
+            -o "${OUTPUT_FILENAME}"
+            -target spirv
+            -profile spirv_1_4
+            -matrix-layout-column-major
+            -fvk-use-entrypoint-name
+            -fvk-use-scalar-layout # Dense packing
+            -depfile "${OUTPUT_DEPNAME}"
     )
     foreach(DEFINE ${ARG_DEFINES})
         list(APPEND SLANGC_ARGS -D${DEFINE})
@@ -43,12 +42,12 @@ function(slangc_compile TARGET)
     endforeach()
 
     add_custom_command(
-        OUTPUT  "${OUTPUT_FILENAME}"
-        COMMAND ${SLANGC_EXECUTABLE} ${SLANGC_ARGS}
-        DEPENDS "${ARG_SOURCE}"
-        COMMENT "${SOURCE_FILENAME}.slang -> ${OUTPUT_FILENAME}"
-        DEPFILE "${OUTPUT_DEPNAME}"
-        VERBATIM
+            OUTPUT  "${OUTPUT_FILENAME}"
+            COMMAND ${SLANGC_EXECUTABLE} ${SLANGC_ARGS}
+            DEPENDS "${ARG_SOURCE}"
+            COMMENT "${SOURCE_FILENAME}.slang -> ${OUTPUT_FILENAME}"
+            DEPFILE "${OUTPUT_DEPNAME}"
+            VERBATIM
     )
     add_custom_target(${TARGET} ALL DEPENDS ${OUTPUT_FILENAME})
 endfunction()

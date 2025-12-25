@@ -1,12 +1,19 @@
 #define VMA_IMPLEMENTATION
+#include "RHICore/Device.hpp"
+
+
 #include <queue>
 #include <vk_mem_alloc.h>
 
 using namespace Foundation::Core;
 using namespace Foundation::RHI;
-const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_MESH_SHADER_EXTENSION_NAME,
+const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+                                         VK_EXT_MESH_SHADER_EXTENSION_NAME,
                                          VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
-                                         VK_KHR_MAINTENANCE_9_EXTENSION_NAME};
+                                         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+                                         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+                                         VK_KHR_RAY_QUERY_EXTENSION_NAME,
+                                         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME};
 
 const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
 
@@ -20,31 +27,58 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     auto families = mPhysicalDevice.getQueueFamilyProperties();
     // Find queues
     // Graphics, Compute, Transfer should be preferably mutually exclusive
-    // NOTE: We never used dedicated transfer in the Renderer - offloading to compute is more than enough for such
-    // tasks.
-    Pair<uint32_t, uint32_t> graphics{kInvalidQueueIndex, kInvalidQueueIndex},
-        compute{kInvalidQueueIndex, kInvalidQueueIndex}, transfer{kInvalidQueueIndex, kInvalidQueueIndex};
-    Array<uint32_t, 256> queueCounts{};
-    for (size_t i = 0; i < families.size(); ++i)
+    // vvv [Family, Index]
+    Vector<uint32_t> vis(families.size(), GetAllocator());
+    using QueuePair = Pair<uint32_t, uint32_t>;
+    QueuePair graphics{kInvalidQueueIndex, 0}, compute{kInvalidQueueIndex, 0}, transfer{kInvalidQueueIndex, 0};
+    Pair<QueuePair*, vk::QueueFlagBits> dstPairs[] = {
+        {&graphics, vk::QueueFlagBits::eGraphics},
+        {&compute, vk::QueueFlagBits::eCompute},
+        {&transfer, vk::QueueFlagBits::eTransfer},
+    };
+    for (auto& [dstPair, flag] : dstPairs)
     {
-        auto& family = families[i];
-        if (family.queueCount && family.queueFlags & vk::QueueFlagBits::eGraphics &&
-            graphics.first == kInvalidQueueIndex)
+        for (int i = 0; i < families.size(); ++i)
         {
-            graphics = {i, queueCounts[i]++};
-            family.queueCount--;
+            auto& family = families[i];
+            if (family.queueCount && (family.queueFlags & flag) && !vis[i])
+            {
+                dstPair->first = i;
+                dstPair->second = vis[i]++;
+                family.queueCount--;
+                break;
+            }
         }
-        if (family.queueCount && family.queueFlags & vk::QueueFlagBits::eCompute && compute.first == kInvalidQueueIndex)
+    }
+    // Unassigned - use remaining queues
+    // Create the device queues
+    for (auto& [dstPair, flag] : dstPairs)
+    {
+        if (dstPair->first != kInvalidQueueIndex)
+            continue;
+        for (int i = 0; i < families.size(); ++i)
         {
-            compute = {i, queueCounts[i]++};
-            family.queueCount--;
+            auto& family = families[i];
+            if (family.queueCount && (family.queueFlags & flag))
+            {
+                dstPair->first = i;
+                dstPair->second = vis[i]++;
+                family.queueCount--;
+                break;
+            }
         }
-        if (family.queueCount && family.queueFlags & vk::QueueFlagBits::eTransfer &&
-            transfer.first == kInvalidQueueIndex)
-        {
-            transfer = {i, queueCounts[i]++};
-            family.queueCount--;
-        }
+    }
+    Vector<vk::DeviceQueueCreateInfo> queueInfos(GetAllocator());
+    static const float priority[16] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+                                       1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+    for (uint32_t i = 0; i < families.size(); ++i)
+    {
+        if (vis[i])
+            queueInfos.emplace_back(vk::DeviceQueueCreateInfo{
+                .queueFamilyIndex = i,
+                .queueCount = vis[i],
+                .pQueuePriorities = priority // All queues have the same priority
+            });
     }
     CHECK(graphics.first != kInvalidQueueIndex);
     CHECK(compute.first != kInvalidQueueIndex);
@@ -54,7 +88,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         // Check for a present queue
         VkSurfaceKHR surface;
         CHECK_MSG(SDL_Vulkan_CreateSurface(window, *mApp.GetVkInstance(),
-                                           nullptr /* Doesn't work well with SDL_DestroyWindow */, &surface),
+                      nullptr /* Doesn't work well with SDL_DestroyWindow */, &surface),
                   "failed to create window surface: {}", SDL_GetError());
         mSurface = vk::raii::SurfaceKHR(mApp.GetVkInstance(), surface);
         // Having present and graphics queues as the same avoids copies and is typically the case
@@ -62,21 +96,11 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         // - https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/blob/master/src/VulkanSample.cpp#L1850
         CHECK(mPhysicalDevice.getSurfaceSupportKHR(graphics.first, *mSurface));
     }
-    // Create the device queues
-    Vector<vk::DeviceQueueCreateInfo> queue_info(GetAllocator());
-    const float priority = 1.0f;
-    for (uint32_t i = 0; i < families.size(); ++i)
-    {
-        if (queueCounts[i])
-            queue_info.emplace_back(vk::DeviceQueueCreateInfo{
-                .queueFamilyIndex = i,
-                .queueCount = queueCounts[i],
-                .pQueuePriorities = &priority // All queues have the same priority
-            });
-    }
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
                        vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
-                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT, vk::PhysicalDeviceMeshShaderFeaturesEXT>
+                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT, vk::PhysicalDeviceMeshShaderFeaturesEXT,
+                       vk::PhysicalDeviceAccelerationStructureFeaturesKHR, vk::PhysicalDeviceRayQueryFeaturesKHR,
+                       vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>
         featureChain = {
             {.features = {.samplerAnisotropy = true,
                           .fragmentStoresAndAtomics = true,
@@ -94,18 +118,25 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
              .samplerFilterMinmax = true,
              .scalarBlockLayout = true,
              .uniformBufferStandardLayout = true,
+             .shaderSubgroupExtendedTypes = true,
              .hostQueryReset = true,
-             .timelineSemaphore = true}, // vk::PhysicalDeviceVulkan12Features
+             .timelineSemaphore = true,
+             .bufferDeviceAddress = true}, // vk::PhysicalDeviceVulkan12Features
             {.synchronization2 = true,
              .dynamicRendering = true,
              .shaderIntegerDotProduct = true}, // vk::PhysicalDeviceVulkan13Features
             {.extendedDynamicState = true}, // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
-            {.taskShader = true, .meshShader = true} // vk::PhysicalDeviceMeshShaderFeaturesEXT
+            {.taskShader = true /*...try not to use it*/,
+             .meshShader = true}, // vk::PhysicalDeviceMeshShaderFeaturesEXT
+            {
+                .accelerationStructure = true,
+            }, // vk::PhysicalDeviceAccelerationStructureFeaturesKHR
+            {.rayQuery = true}, // vk::PhysicalDeviceRayQueryFeaturesKHR
+            {.rayTracingPipeline = true} // vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
         };
     vk::DeviceCreateInfo device_info{.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
-                                     .queueCreateInfoCount = static_cast<uint32_t>(queue_info.size()),
-                                     .pQueueCreateInfos = queue_info.data(),
-                                     .enabledLayerCount = 0,
+                                     .queueCreateInfoCount = static_cast<uint32_t>(queueInfos.size()),
+                                     .pQueueCreateInfos = queueInfos.data(),
                                      .enabledExtensionCount = std::size(kVulkanDeviceExtensions),
                                      .ppEnabledExtensionNames = kVulkanDeviceExtensions};
     mDevice = vk::raii::Device(mPhysicalDevice, device_info, GetVkAllocatorCallbacks());
@@ -117,6 +148,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     mQueues->transfer = mQueues->storage.CreateObject<VulkanDeviceQueue>(*this, transfer.first, transfer.second);
     // Initialize VMA
     const VmaAllocatorCreateInfo allocator_info{
+        .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
         .physicalDevice = *mPhysicalDevice,
         .device = *mDevice,
         .pAllocationCallbacks = reinterpret_cast<const VkAllocationCallbacks*>(&GetVkAllocatorCallbacks()),
@@ -182,6 +214,7 @@ VulkanDevice::~VulkanDevice()
 }
 
 void VulkanDevice::WaitIdle() const { mDevice.waitIdle(); }
+
 void VulkanDevice::QueryBudget(size_t& used, size_t& budget) const
 {
     VmaBudget budgets[VK_MAX_MEMORY_HEAPS]{};
@@ -190,30 +223,28 @@ void VulkanDevice::QueryBudget(size_t& used, size_t& budget) const
     for (const auto& b : budgets)
         used += b.usage, budget += b.budget;
 }
+
 String VulkanDevice::QueryDeviceString() const
 {
     auto properties = mPhysicalDevice.getProperties();
-    return fmt::format(
-        "{} ({}) on Vulkan {}.{}.{}",
-        &properties.deviceName[0],
-        kVulkanDeviceTypes[static_cast<size_t>(properties.deviceType)],
-        VK_VERSION_MAJOR(properties.apiVersion),
-        VK_VERSION_MINOR(properties.apiVersion),
-        VK_VERSION_PATCH(properties.apiVersion)
-    );
+    return fmt::format("{} ({}) on Vulkan {}.{}.{}", &properties.deviceName[0],
+                       kVulkanDeviceTypes[static_cast<size_t>(properties.deviceType)],
+                       VK_VERSION_MAJOR(properties.apiVersion), VK_VERSION_MINOR(properties.apiVersion),
+                       VK_VERSION_PATCH(properties.apiVersion));
 }
 
 VulkanDeviceQueue* VulkanDeviceQueues::Get(Handle handle) const { return storage.GetObjectPtr(handle); }
+
 RHIDeviceQueue* VulkanDevice::GetDeviceQueue(RHIDeviceQueueType type) const
 {
     switch (type)
     {
+    case RHIDeviceQueueType::Graphics:
+        return mQueues->Get(mQueues->graphics);
     case RHIDeviceQueueType::Compute:
         return mQueues->Get(mQueues->compute);
     case RHIDeviceQueueType::Transfer:
         return mQueues->Get(mQueues->transfer);
-    case RHIDeviceQueueType::Graphics:
-        return mQueues->Get(mQueues->graphics);
     default:
         break;
     }
@@ -222,59 +253,74 @@ RHIDeviceQueue* VulkanDevice::GetDeviceQueue(RHIDeviceQueueType type) const
 
 #include "Swapchain.hpp"
 Span<RHIResourceFormat const> VulkanDevice::GetSwapchainSupportedFormats() const { return mSwapchainFormats; }
+
 Span<RHISwapchainPresentMode const> VulkanDevice::GetSwapchainSupportedPresentModes() const
 {
     return mSwapchainPresentModes;
 }
+
 RHIDeviceScopedHandle<RHISwapchain> VulkanDevice::CreateSwapchain(RHISwapchain::SwapchainDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanSwapchain>(*this, desc)};
 }
+
 RHISwapchain* VulkanDevice::GetSwapchain(Handle handle) const { return mStorage.GetObjectPtr<RHISwapchain>(handle); };
 void VulkanDevice::DestroySwapchain(Handle handle) { mStorage.DestroyObject(handle); }
+
 RHIDeviceScopedHandle<RHIPipelineStateCache>
 VulkanDevice::CreatePipelineCache(RHIPipelineStateCache::PipelineStateCacheDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanPipelineStateCache>(*this, desc)};
 }
+
 RHIPipelineStateCache* VulkanDevice::GetPipelineCache(Handle handle) const
 {
     return mStorage.GetObjectPtr<RHIPipelineStateCache>(handle);
 }
+
 void VulkanDevice::DestroyPipelineCache(Handle handle) { mStorage.DestroyObject(handle); }
 
 #include "PipelineState.hpp"
+
 RHIDeviceScopedHandle<RHIPipelineState>
 VulkanDevice::CreatePipelineState(RHIPipelineState::PipelineStateDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanPipelineState>(*this, desc)};
 }
+
 RHIPipelineState* VulkanDevice::GetPipelineState(Handle handle) const
 {
     return mStorage.GetObjectPtr<RHIPipelineState>(handle);
 }
+
 void VulkanDevice::DestroyPipelineState(Handle handle) { mStorage.DestroyObject(handle); }
 
 #include "Shader.hpp"
+
 RHIDeviceScopedHandle<RHIShaderModule> VulkanDevice::CreateShaderModule(RHIShaderModule::ShaderModuleDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanShaderModule>(*this, desc)};
 }
+
 RHIShaderModule* VulkanDevice::GetShaderModule(Handle handle) const
 {
     return mStorage.GetObjectPtr<RHIShaderModule>(handle);
 }
+
 void VulkanDevice::DestroyShaderModule(Handle handle) { mStorage.DestroyObject(handle); }
 
 #include "Command.hpp"
+
 RHIDeviceScopedHandle<RHICommandPool> VulkanDevice::CreateCommandPool(RHICommandPool::PoolDesc desc)
 {
     return {this, mStorage.CreateObject<VulkanCommandPool>(*this, desc, GetAllocator())};
 }
+
 RHICommandPool* VulkanDevice::GetCommandPool(Handle handle) const
 {
     return mStorage.GetObjectPtr<RHICommandPool>(handle);
 }
+
 void VulkanDevice::DestroyCommandPool(Handle handle) { mStorage.DestroyObject(handle); }
 
 VulkanDeviceSemaphore::VulkanDeviceSemaphore(const VulkanDevice& device, bool is_timeline) :
@@ -286,6 +332,7 @@ VulkanDeviceSemaphore::VulkanDeviceSemaphore(const VulkanDevice& device, bool is
         info.setPNext(&tinfo);
     mSemaphore = vk::raii::Semaphore(mDevice.GetVkDevice(), info, device.GetVkAllocatorCallbacks());
 }
+
 void VulkanDeviceSemaphore::DebugSetObjectName(const char* name)
 {
     VkSemaphore handle = *mSemaphore;
@@ -293,6 +340,7 @@ void VulkanDeviceSemaphore::DebugSetObjectName(const char* name)
                                                       .objectHandle = reinterpret_cast<uint64_t>(handle),
                                                       .pObjectName = name});
 }
+
 VulkanDeviceFence::VulkanDeviceFence(const VulkanDevice& device, bool signaled) :
     RHIDeviceFence(device), mDevice(device),
     mFence(vk::raii::Fence(
@@ -301,6 +349,7 @@ VulkanDeviceFence::VulkanDeviceFence(const VulkanDevice& device, bool signaled) 
         device.GetVkAllocatorCallbacks()))
 {
 }
+
 void VulkanDeviceFence::DebugSetObjectName(const char* name)
 {
     VkFence handle = *mFence;
@@ -313,16 +362,19 @@ RHIDeviceScopedHandle<RHIDeviceSemaphore> VulkanDevice::CreateSemaphore(bool is_
 {
     return {this, mStorage.CreateObject<VulkanDeviceSemaphore>(*this, is_timeline)};
 }
+
 RHIDeviceSemaphore* VulkanDevice::GetSemaphore(Handle handle) const
 {
     return mStorage.GetObjectPtr<RHIDeviceSemaphore>(handle);
 }
+
 void VulkanDevice::DestroySemaphore(Handle handle) { mStorage.DestroyObject(handle); }
 
 auto VulkanDevice::CreateFence(bool signaled) -> RHIDeviceScopedHandle<RHIDeviceFence>
 {
     return {this, mStorage.CreateObject<VulkanDeviceFence>(*this, signaled)};
 }
+
 RHIDeviceFence* VulkanDevice::GetFence(Handle handle) const { return mStorage.GetObjectPtr<RHIDeviceFence>(handle); }
 void VulkanDevice::DestroyFence(Handle handle) { mStorage.DestroyObject(handle); }
 
@@ -336,6 +388,7 @@ void VulkanDevice::ResetFences(Span<RHIDeviceFence* const> fences)
         vk_fences.emplace_back(static_cast<VulkanDeviceFence*>(fence)->GetVkFence());
     mDevice.resetFences(vk_fences);
 }
+
 bool VulkanDevice::WaitForFences(Span<RHIDeviceFence* const> fences, bool wait_all, size_t timeout)
 {
     StackArena arena;
@@ -362,6 +415,7 @@ void VulkanDevice::SignalTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*,
         mDevice.signalSemaphore(info);
     }
 }
+
 bool VulkanDevice::WaitForTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*, size_t>> semaphores, size_t timeout)
 {
     StackArena arena{};
@@ -396,6 +450,7 @@ void VulkanDevice::DebugSetObjectName(const char* name)
 }
 
 void VulkanDeviceQueue::WaitIdle() const { mQueue.waitIdle(); }
+
 void VulkanDeviceQueue::Submit(Span<const SubmitDesc> descs, RHIDeviceFence* completionFence) const
 {
     StackArena<4096> arena{};
@@ -469,6 +524,7 @@ void VulkanDeviceQueue::Submit(Span<const SubmitDesc> descs, RHIDeviceFence* com
     mQueue.submit(
         submits, completionFence ? static_cast<VulkanDeviceFence*>(completionFence)->GetVkFence() : vk::Fence(nullptr));
 }
+
 void VulkanDeviceQueue::Present(PresentDesc const& desc) const
 {
     StackArena<4096> arena{};
@@ -512,6 +568,7 @@ RHIDeviceScopedHandle<RHIBuffer> VulkanDevice::CreateBuffer(RHIBufferDesc const&
 {
     return {this, mStorage.CreateObject<VulkanBuffer>(*this, desc)};
 }
+
 RHIBuffer* VulkanDevice::GetBuffer(Handle handle) const { return mStorage.GetObjectPtr<RHIBuffer>(handle); }
 void VulkanDevice::DestroyBuffer(Handle handle) { mStorage.DestroyObject(handle); }
 
@@ -519,8 +576,56 @@ RHIDeviceScopedHandle<RHITexture> VulkanDevice::CreateTexture(RHITextureDesc con
 {
     return {this, mStorage.CreateObject<VulkanTexture>(*this, desc)};
 }
-RHITexture* VulkanDevice::GetImage(Handle handle) const { return mStorage.GetObjectPtr<RHITexture>(handle); }
-void VulkanDevice::DestroyImage(Handle handle) { mStorage.DestroyObject(handle); }
+
+RHITexture* VulkanDevice::GetTexture(Handle handle) const { return mStorage.GetObjectPtr<RHITexture>(handle); }
+void VulkanDevice::DestroyTexture(Handle handle) { mStorage.DestroyObject(handle); }
+
+RHIAccelerationStructureSizeInfo
+VulkanDevice::GetAccelerationStructureSizeInfo(RHIAccelerationStructureBuildDesc const& desc) const
+{
+    Vector<vk::AccelerationStructureGeometryKHR> geos(GetAllocator());
+    Vector<uint32_t> primitiveCounts(GetAllocator());
+    auto buildInfo = vkAccelerationBuildGeoInfoFromRHI(desc, geos, primitiveCounts);
+    vk::AccelerationStructureBuildSizesInfoKHR sizeInfo = mDevice.getAccelerationStructureBuildSizesKHR(
+        vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCounts);
+    return {.accelerationStructureSize = static_cast<uint32_t>(sizeInfo.accelerationStructureSize),
+            .buildScratchSize = static_cast<uint32_t>(sizeInfo.buildScratchSize),
+            .updateScratchSize = static_cast<uint32_t>(sizeInfo.updateScratchSize)};
+}
+
+size_t VulkanDevice::WriteAccelerationStructureInstanceData(RHIAccelerationStructureGeometryInstance const& data,
+                                                            void* dest) const
+{
+    if (dest)
+    {
+        vk::AccelerationStructureInstanceKHR res{
+            .instanceCustomIndex = static_cast<uint32_t>(data.instanceID),
+            .mask = data.mask,
+            .accelerationStructureReference =
+            static_cast<const VulkanAccelerationStructure*>(data.blas)->GetVkAccelerationStructureAddress()};
+        std::memcpy(res.transform.matrix[0], &data.transformBasisRowMajor[0], sizeof(float) * 3);
+        std::memcpy(res.transform.matrix[1], &data.transformBasisRowMajor[1], sizeof(float) * 3);
+        std::memcpy(res.transform.matrix[2], &data.transformBasisRowMajor[2], sizeof(float) * 3);
+        res.transform.matrix[0][3] = data.transformTranslation[0];
+        res.transform.matrix[1][3] = data.transformTranslation[1];
+        res.transform.matrix[2][3] = data.transformTranslation[2];
+        std::memcpy(dest, &res, sizeof(vk::AccelerationStructureInstanceKHR));
+    }
+    return sizeof(vk::AccelerationStructureInstanceKHR);
+}
+
+RHIDeviceScopedHandle<RHIAccelerationStructure>
+VulkanDevice::CreateAccelerationStructure(RHIAccelerationStructureDesc const& desc)
+{
+    return {this, mStorage.CreateObject<VulkanAccelerationStructure>(*this, desc)};
+}
+
+RHIAccelerationStructure* VulkanDevice::GetAccelerationStructure(Handle handle) const
+{
+    return mStorage.GetObjectPtr<RHIAccelerationStructure>(handle);
+}
+
+void VulkanDevice::DestroyAccelerationStructure(Handle handle) { mStorage.DestroyObject(handle); }
 
 void VulkanDeviceDescriptorSetLayout::DebugSetObjectName(const char* name)
 {
@@ -557,34 +662,40 @@ VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDev
         mDevice.GetVkDevice(),
         vk::DescriptorSetLayoutCreateInfo{.pNext = &bindInfo,
                                           .flags = desc.updateAfterBind
-                                              ? vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool
-                                              : vk::DescriptorSetLayoutCreateFlagBits{},
+                                          ? vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool
+                                          : vk::DescriptorSetLayoutCreateFlagBits{},
                                           .bindingCount = static_cast<uint32_t>(bindings.size()),
                                           .pBindings = bindings.data()},
         mDevice.GetVkAllocatorCallbacks());
     CHECK_MSG(mLayout != nullptr, "failed to create Vulkan descriptor set layout");
 }
+
 RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout>
 VulkanDevice::CreateDescriptorSetLayout(RHIDeviceDescriptorSetLayoutDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanDeviceDescriptorSetLayout>(*this, desc)};
 }
+
 RHIDeviceDescriptorSetLayout* VulkanDevice::GetDescriptorSetLayout(Handle handle) const
 {
     return mStorage.GetObjectPtr<RHIDeviceDescriptorSetLayout>(handle);
 }
+
 void VulkanDevice::DestroyDescriptorSetLayout(Handle handle) { mStorage.DestroyObject(handle); }
 
 #include "Descriptor.hpp"
+
 RHIDeviceScopedHandle<RHIDeviceDescriptorPool>
 VulkanDevice::CreateDescriptorPool(RHIDeviceDescriptorPool::PoolDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanDeviceDescriptorPool>(*this, desc)};
 }
+
 RHIDeviceDescriptorPool* VulkanDevice::GetDescriptorPool(Handle handle) const
 {
     return mStorage.GetObjectPtr<RHIDeviceDescriptorPool>(handle);
 }
+
 void VulkanDevice::DestroyDescriptorPool(Handle handle) { mStorage.DestroyObject(handle); }
 
 
@@ -595,33 +706,40 @@ void VulkanDeviceSampler::DebugSetObjectName(const char* name)
                                                       .objectHandle = reinterpret_cast<uint64_t>(handle),
                                                       .pObjectName = name});
 }
+
 VulkanDeviceQueryPool::VulkanDeviceQueryPool(const VulkanDevice& device, QueryPoolDesc const& desc) :
-    RHIDeviceQueryPool(device, desc), mDevice(device), mTimestampResolution(mDevice.GetVkPhysicalDevice().getProperties().limits.timestampPeriod),
-    mTimestampResults(device.GetAllocator())
+    RHIDeviceQueryPool(device, desc), mDevice(device),
+    mTimestampResolution(mDevice.GetVkPhysicalDevice().getProperties().limits.timestampPeriod),
+    mResults(device.GetAllocator())
 {
-    vk::QueryPoolCreateInfo createInfo = {.flags = vk::QueryPoolCreateFlagBits::eResetKHR, .queryCount = desc.count};
+    vk::QueryPoolCreateInfo createInfo = {.queryCount = desc.count};
     switch (desc.type)
     {
     case QueryPoolDesc::Timestamp:
         createInfo.queryType = vk::QueryType::eTimestamp;
-        mTimestampResults.resize(desc.count);
+        break;
+    case QueryPoolDesc::AccelerationStructureCompactedSize:
+        createInfo.queryType = vk::QueryType::eAccelerationStructureCompactedSizeKHR;
         break;
     }
+    mResults.resize(desc.count);
     mQueryPool = vk::raii::QueryPool(mDevice.GetVkDevice(), createInfo, mDevice.GetVkAllocatorCallbacks());
     CHECK_MSG(mQueryPool != nullptr, "failed to create Vulkan query pool");
 }
+
 void VulkanDeviceQueryPool::Reset() { mQueryPool.reset(0, mDesc.count); }
-Span<const uint64_t> VulkanDeviceQueryPool::GetTimestampResults(bool wait)
+
+Span<const uint64_t> VulkanDeviceQueryPool::GetResults(bool wait)
 {
-    CHECK_MSG(mDesc.type == QueryPoolDesc::Timestamp, "GetTimestampResults called on non-timestamp query pool");
     VkResult res = vkGetQueryPoolResults(
-        *mDevice.GetVkDevice(), *mQueryPool, 0, mDesc.count, sizeof(uint64_t) * mDesc.count, mTimestampResults.data(),
+        *mDevice.GetVkDevice(), *mQueryPool, 0, mDesc.count, sizeof(uint64_t) * mDesc.count, mResults.data(),
         sizeof(uint64_t), wait ? VK_QUERY_RESULT_WAIT_BIT | VK_QUERY_RESULT_64_BIT : VK_QUERY_RESULT_64_BIT);
     if (res == VK_NOT_READY)
         return {};
     CHECK(res == VK_SUCCESS);
-    return mTimestampResults;
+    return mResults;
 }
+
 void VulkanDeviceQueryPool::DebugSetObjectName(const char* name)
 {
     VkQueryPool handle = *mQueryPool;
@@ -682,12 +800,12 @@ VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, SamplerDesc
         }
     };
     vk::SamplerReductionModeCreateInfo reduction{.reductionMode =
-                                                     vkSamplerReductionModeFromRHIReductionMode(desc.reduction)};
+        vkSamplerReductionModeFromRHIReductionMode(desc.reduction)};
     vk::SamplerCreateInfo sampler{.magFilter = vkFilterFromRHISamplerFilter(desc.filter.magFilter),
                                   .minFilter = vkFilterFromRHISamplerFilter(desc.filter.minFilter),
                                   .mipmapMode = desc.mipmap.mipmapMode == SamplerDesc::Mipmap::Linear
-                                      ? vk::SamplerMipmapMode::eLinear
-                                      : vk::SamplerMipmapMode::eNearest,
+                                  ? vk::SamplerMipmapMode::eLinear
+                                  : vk::SamplerMipmapMode::eNearest,
                                   .addressModeU = vkSamplerAddressModeFromRHIAddressMode(desc.addressMode.u),
                                   .addressModeV = vkSamplerAddressModeFromRHIAddressMode(desc.addressMode.v),
                                   .addressModeW = vkSamplerAddressModeFromRHIAddressMode(desc.addressMode.w),
@@ -700,21 +818,27 @@ VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, SamplerDesc
     mSampler = vk::raii::Sampler(mDevice.GetVkDevice(), sampler, mDevice.GetVkAllocatorCallbacks());
     CHECK_MSG(mSampler != nullptr, "failed to create Vulkan sampler");
 }
+
 RHIDeviceScopedHandle<RHIDeviceSampler> VulkanDevice::CreateSampler(RHIDeviceSampler::SamplerDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanDeviceSampler>(*this, desc)};
 }
+
 RHIDeviceSampler* VulkanDevice::GetSampler(Handle handle) const
 {
     return mStorage.GetObjectPtr<RHIDeviceSampler>(handle);
 }
+
 void VulkanDevice::DestroySampler(Handle handle) { mStorage.DestroyObject(handle); }
+
 RHIDeviceScopedHandle<RHIDeviceQueryPool> VulkanDevice::CreateQueryPool(RHIDeviceQueryPool::QueryPoolDesc const& desc)
 {
     return {this, mStorage.CreateObject<VulkanDeviceQueryPool>(*this, desc)};
 }
+
 RHIDeviceQueryPool* VulkanDevice::GetQueryPool(Handle handle) const
 {
     return mStorage.GetObjectPtr<RHIDeviceQueryPool>(handle);
 }
+
 void VulkanDevice::DestroyQueryPool(Handle handle) { mStorage.DestroyObject(handle); }

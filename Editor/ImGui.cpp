@@ -1,3 +1,4 @@
+#include "ImGui.hpp"
 // Only useful if you're manipulating the DrawList which has positions
 // that are _NOT_ window local
 Tuple<ImVec2, ImVec2, ImDrawList*> ImWindowDrawOffsetRegionList()
@@ -25,14 +26,14 @@ void ImProfilerHistogram::push(unsigned data)
     m2 += d * (data - mean);
     samples.push_back(data);
 }
-constexpr size_t ImProfilerTimestampLinear(size_t min, size_t max, size_t binCount, size_t binIndex)
+const size_t ImProfilerTimestampLinear(size_t min, size_t max, size_t binCount, size_t binIndex)
 {
     const size_t range = max - min + 1;
     const size_t binSize = (range + binCount - 1) / binCount;
     return min + std::min(binSize * binIndex, range);
 }
 
-constexpr size_t ImProfilerTimestampLog(size_t min, size_t max, size_t binCount, size_t binIndex)
+const size_t ImProfilerTimestampLog(size_t min, size_t max, size_t binCount, size_t binIndex)
 {
     const float logMin = std::log10f(min);
     const float binSize = (std::log10f(max) - logMin) / binCount;
@@ -210,22 +211,31 @@ void ImProfilerDrawHistogram(Vector<unsigned>& bins, ImProfilerHistogram const& 
     }
     ImGui::Dummy({region.x, labelHeight + style.ItemSpacing.y});
 }
-bool ImBitmaskOptionPicker(unsigned& value, const char** labels, const unsigned* masks, unsigned count)
+bool ImBitmaskOptionPicker(unsigned& value, const char** labels, const unsigned* masks, unsigned count, bool solo)
 {
-    bool picked = false;
+    bool any = false;
     for (unsigned i = 0; i < count; i++)
     {
         bool selected = (value & masks[i]) != 0;
         if (ImGui::Checkbox(labels[i], &selected))
         {
-            if (selected)
-                value |= masks[i];
-            else
-                value &= ~masks[i];
-            picked = true;
+            if (solo)
+            {
+                if (selected)
+                    value = masks[i];
+                else
+                    value = 0;
+            } else
+            {
+                if (selected)
+                    value |= masks[i];
+                else
+                    value &= ~masks[i];
+            }
+            any = true;
         }
         if (i != count - 1)
             ImGui::SameLine();
     }
-    return picked;
+    return any;
 }

@@ -84,19 +84,31 @@ namespace Foundation::RHI {
         [[nodiscard]] size_t GetCachedData(void* dstBuffer) const override;
         void DebugSetObjectName(const char* name) override;
     };
+    struct VulkanPipelineRayTracingSBT
+    {
+        vk::StridedDeviceAddressRegionKHR raygen{};
+        vk::StridedDeviceAddressRegionKHR miss{};
+        vk::StridedDeviceAddressRegionKHR hit{};
+        vk::StridedDeviceAddressRegionKHR callable{};
+    };
     class VulkanPipelineState : public RHIPipelineState {
-        const VulkanDevice& mDevice;
+        VulkanDevice& mDevice;
 
         vk::raii::Pipeline mPipeline{ nullptr };
         vk::raii::PipelineLayout mPipelineLayout{ nullptr };
         void InitializePipelineLayout();
         void InitializeGraphics();
         void InitializeCompute();
+        void InitializeRayTracing();
+
+        RHIDeviceScopedHandle<RHIBuffer> mSBTBuffer;
+        VulkanPipelineRayTracingSBT mSBT;
     public:
-        VulkanPipelineState(const VulkanDevice& device, PipelineStateDesc const& desc);
+        VulkanPipelineState(VulkanDevice& device, PipelineStateDesc const& desc);
 
         [[nodiscard]] auto const& GetVkPipeline() const { return mPipeline; }
         [[nodiscard]] auto const& GetVkPipelineLayout() const { return mPipelineLayout; }
+        [[nodiscard]] VulkanPipelineRayTracingSBT const& GetVkSBT() const { return mSBT; }
 
         void DebugSetObjectName(const char* name) override;
     };

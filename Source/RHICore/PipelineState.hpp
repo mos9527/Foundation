@@ -142,7 +142,7 @@ namespace Foundation::RHI {
                 } renderTarget{};
             };
             // [Graphics] Attachments/Alpha Blending
-            Span<const Attachment> attachments;
+            Span<const Attachment> attachments{};
             // Stages
             struct ShaderStage {
                 struct StageDesc {
@@ -152,19 +152,21 @@ namespace Foundation::RHI {
                     const char* entryPoint;
                     // Only one specialization info per stage for simplicity
                     Span<const char> specializationData{};
+                    // For ray tracing shaders - which hit group index this shader belongs to
+                    const uint32_t raytracingHitGroupIndex{0};
                 } desc;
                 RHIShaderModule* shaderModule;
             };
-            Span<const ShaderStage> shaderStages;
+            Span<const ShaderStage> shaderStages{};
             // Descriptors
-            Span<RHIDeviceDescriptorSetLayout* const> descriptorSetLayouts;
+            Span<RHIDeviceDescriptorSetLayout* const> descriptorSetLayouts{};
             // Push Constants
             struct PushConstant {
                 RHIShaderStage stage;
                 size_t offset;
                 size_t size;
             };
-            Span<const PushConstant> pushConstants;
+            Span<const PushConstant> pushConstants{};
         };
         const PipelineStateDesc mDesc;
 

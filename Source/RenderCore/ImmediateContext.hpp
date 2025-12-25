@@ -21,8 +21,9 @@ namespace Foundation::RenderCore
         RHICommandPoolScopedHandle<RHICommandList> mCommandList; // Persistent
     public:
         ImmediateContext(RHIDeviceQueueType type, RHIDevice* device);
+        ImmediateContext(RHIDevice* device) : ImmediateContext(RHIDeviceQueueType::Graphics, device) {}
 
-        RHICommandList* Get() const { return mCommandList.Get(); }
+        [[nodiscard]] RHICommandList* Get() const { return mCommandList.Get(); }
         RHICommandList* operator->() { return mCommandList.Get(); }
 
         void Submit(RHIDeviceFence* completionFence = nullptr);
@@ -40,7 +41,7 @@ namespace Foundation::RenderCore
 
         char *begin, *ptr, *end;
         ImmediateUpload(RHIDevice* device, size_t capacity) :
-            ctx(RHIDeviceQueueType::Transfer, device),
+            ctx(RHIDeviceQueueType::Graphics, device),
             staging(device->CreateBuffer({.resource =
                                               {
                                                   .heap = RHIDeviceHeapType::Upload,

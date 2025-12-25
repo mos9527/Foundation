@@ -1,6 +1,6 @@
-#include "Examples.hpp"
 #include <RenderUtils/CSDebugText.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
+#include "Examples.hpp"
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 using namespace RenderUtils;
@@ -18,12 +18,13 @@ int main()
         int x, y, n;
         stbi_uc* data = stbi_load("data/assets/cameraman.jpg", &x, &y, &n, 4u);
         CHECK_MSG(data, "Image did not load.");
+        auto numMips = static_cast<uint32_t>(std::ceil(std::log2(std::max(x, y)))) + 1;
         auto texture =
             device->CreateTexture({.usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::StorageImage |
                                        RHITextureUsageBits::TransferDestination,
                                    .extent = {static_cast<uint32_t>(x), static_cast<uint32_t>(y), 1},
                                    .format = RHIResourceFormat::R8G8B8A8Unorm,
-                                   .mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::min(x, y)))) + 1u});
+                                   .mipLevels = numMips});
         // Upload base level
         {
             ImmediateContext im(RHIDeviceQueueType::Graphics, device.Get());
@@ -64,12 +65,14 @@ int main()
         renderer->BeginSetup();
         ResourceHandle hdl = renderer->CreateResource("Mip Image", texture.Get());
         ResourceHandle sampler = renderer->CreateSampler({});
-        createCSMipGenerationPasses(renderer, "Mip Generation", RHIDeviceQueueType::Compute, hdl, hdl, {x, y},
-                                    RHITextureAspectFlagBits::Color, RHIResourceFormat::B8G8R8A8Unrom,
-                                    RHITextureAspectFlagBits::Color, RHIResourceFormat::B8G8R8A8Unrom);
+        createCSMipGenerationSinglePass(renderer, "Mip Generation", RHIDeviceQueueType::Compute, hdl, hdl,
+                                        RHIResourceFormat::R8G8B8A8Unorm, RHIResourceFormat::R8G8B8A8Unorm,
+                                        RHITextureAspectFlagBits::Color, RHITextureAspectFlagBits::Color, sampler,
+                                        numMips);
         float blurAmount = 0.0f; // [0,1]
-        renderer->CreatePass("Draw Blurred", RHIDeviceQueueType::Graphics, 0u,
-        [&](PassHandle self, Renderer* r)
+        renderer->CreatePass(
+            "Draw Blurred", RHIDeviceQueueType::Graphics, 0u,
+            [&](PassHandle self, Renderer* r)
             {
                 r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/VSFullscreen.spv");
                 r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MipGenerationBlur.spv");
@@ -86,12 +89,12 @@ int main()
                 auto const& img_wh = r->GetSwapchainExtent();
                 r->CmdBeginGraphics(self, cmd, img_wh, {{Optional<RHIClearColor>{}}}, {});
                 r->CmdSetPipeline(self, cmd);
-                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, blurAmount * texture->mDesc.mipLevels);
+                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0,
+                                      blurAmount * texture->mDesc.mipLevels);
                 cmd->SetViewport(0, 0, img_wh.x, img_wh.y).SetScissor(0, 0, img_wh.x, img_wh.y);
                 cmd->Draw(3);
                 cmd->EndGraphics();
-            }
-        );
+            });
         createCSDebugTextPassBackBuffer(renderer, "Debug Text", lines);
         renderer->EndSetup();
         SDL_Event event;
@@ -103,7 +106,9 @@ int main()
             {
                 blurAmount = std::clamp(blurAmount + event.wheel.y * 0.05f, 0.0f, 1.0f);
             }
-            lines[2].x = 16; lines[2].y = 64; lines[2].SetText(fmt::format("Blur (MWHEEL): {:.2f}", blurAmount));
+            lines[2].x = 16;
+            lines[2].y = 64;
+            lines[2].SetText(fmt::format("Blur (MWHEEL): {:.2f}", blurAmount));
             Examples_NewFrame(renderer);
         }
         texture.Release(); // Release - destructs with the device

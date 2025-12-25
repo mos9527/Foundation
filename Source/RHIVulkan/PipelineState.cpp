@@ -1,12 +1,13 @@
 using namespace Foundation::RHI;
+
 VulkanPipelineStateCache::VulkanPipelineStateCache(const VulkanDevice& device, PipelineStateCacheDesc const& desc) :
     RHIPipelineStateCache(device, desc), mDevice(device)
 {
     mCache =
         vk::raii::PipelineCache(device.GetVkDevice(), vk::PipelineCacheCreateInfo{
-            .initialDataSize = desc.initialData.size_bytes(),
-            .pInitialData =  desc.initialData.data()
-        }, mDevice.GetVkAllocatorCallbacks());
+                                    .initialDataSize = desc.initialData.size_bytes(),
+                                    .pInitialData = desc.initialData.data()
+                                }, mDevice.GetVkAllocatorCallbacks());
 }
 
 size_t VulkanPipelineStateCache::GetCachedData(void* dstBuffer) const
@@ -15,6 +16,7 @@ size_t VulkanPipelineStateCache::GetCachedData(void* dstBuffer) const
     CHECK(vkGetPipelineCacheData(*mDevice.GetVkDevice(), *mCache, &size, dstBuffer) == VK_SUCCESS);
     return size;
 }
+
 void VulkanPipelineStateCache::DebugSetObjectName(const char* name)
 {
     VkPipelineCache handle = *mCache;
@@ -22,13 +24,17 @@ void VulkanPipelineStateCache::DebugSetObjectName(const char* name)
                                                       .objectHandle = reinterpret_cast<uint64_t>(handle),
                                                       .pObjectName = name});
 }
+
 void VulkanPipelineState::InitializePipelineLayout()
 {
     StackArena<> arena;
     AllocatorStack alloc(arena);
     Vector<vk::DescriptorSetLayout> p_set_layouts(mDesc.descriptorSetLayouts.size(), alloc.Ptr());
     for (size_t i = 0; i < mDesc.descriptorSetLayouts.size(); ++i)
+    {
+        CHECK_MSG(mDesc.descriptorSetLayouts[i], "Descriptor set layout MUST NOT be null");
         p_set_layouts[i] = static_cast<VulkanDeviceDescriptorSetLayout*>(mDesc.descriptorSetLayouts[i])->GetVkLayout();
+    }
     Vector<vk::PushConstantRange> push_constants(mDesc.pushConstants.size(), alloc.Ptr());
     for (size_t i = 0; i < mDesc.pushConstants.size(); i++)
     {
@@ -44,6 +50,7 @@ void VulkanPipelineState::InitializePipelineLayout()
                                      .pPushConstantRanges = push_constants.data()},
         mDevice.GetVkAllocatorCallbacks());
 }
+
 void VulkanPipelineState::InitializeGraphics()
 {
     StackArena<> arena;
@@ -137,13 +144,13 @@ void VulkanPipelineState::InitializeGraphics()
             .dstAlphaBlendFactor = GetVulkanBlendFactorFromDesc(attachment.blending.dstAlphaBlendFactor),
             .alphaBlendOp = GetVulkanBlendOpFromDesc(attachment.blending.alphaBlendOp),
             .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-                vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA};
+            vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA};
         blend_attachments.push_back(blend_attachment);
     }
     vk::PipelineColorBlendStateCreateInfo color_blending{.logicOpEnable = VK_FALSE,
                                                          .logicOp = vk::LogicOp::eCopy, // TODO - logicOp unused for now
                                                          .attachmentCount =
-                                                             static_cast<uint32_t>(blend_attachments.size()),
+                                                         static_cast<uint32_t>(blend_attachments.size()),
                                                          .pAttachments = blend_attachments.data(),
                                                          .blendConstants = Array<float, 4>{1.0f, 1.0f, 1.0f, 1.0f}};
     vk::DynamicState dynamic_states[2]{vk::DynamicState::eViewport, vk::DynamicState::eScissor};
@@ -199,6 +206,7 @@ void VulkanPipelineState::InitializeGraphics()
     }
     mPipeline = vk::raii::Pipeline(mDevice.GetVkDevice(), *pPSOCache, pipelineInfo, mDevice.GetVkAllocatorCallbacks());
 }
+
 void VulkanPipelineState::InitializeCompute()
 {
     StackArena<> arena;
@@ -234,7 +242,175 @@ void VulkanPipelineState::InitializeCompute()
     }
     mPipeline = vk::raii::Pipeline(mDevice.GetVkDevice(), *pPSOCache, pipelineInfo, mDevice.GetVkAllocatorCallbacks());
 }
-VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineStateDesc const& desc) :
+
+void VulkanPipelineState::InitializeRayTracing()
+{
+    StackArena<> arena;
+    AllocatorStack alloc(arena);
+    auto [physProps, rtProps] = mDevice.GetVkPhysicalDevice().getProperties2<
+        vk::PhysicalDeviceProperties2, vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
+    const PipelineStateDesc::ShaderStage* rayGenShader = nullptr;
+    Vector<const PipelineStateDesc::ShaderStage*> missShaders(alloc.Ptr());
+    Vector<const PipelineStateDesc::ShaderStage*> hitShaders(alloc.Ptr());
+    for (auto& shader : mDesc.shaderStages)
+    {
+        if (shader.desc.stage & RHIShaderStageBits::RayGeneration)
+        {
+            CHECK_MSG(!rayGenShader, "Only one ray generation shader can be specified per ray tracing pipeline");
+            rayGenShader = &shader;
+        }
+        else if (shader.desc.stage & RHIShaderStageBits::RayMiss)
+            missShaders.push_back(&shader);
+        else if (shader.desc.stage & (RHIShaderStageBits::RayClosestHit | RHIShaderStageBits::RayAnyHit |
+            RHIShaderStageBits::RayIntersection))
+            hitShaders.push_back(&shader);
+    }
+    CHECK_MSG(rayGenShader, "One ray generation shader must be specified per ray tracing pipeline");
+    Vector<vk::PipelineShaderStageCreateInfo> stages(alloc.Ptr());
+    Vector<vk::RayTracingShaderGroupCreateInfoKHR> groups(alloc.Ptr());
+    // This is incredibly obtuse.
+    auto AddShaderStage = [&](const PipelineStateDesc::ShaderStage* s) -> uint32_t
+    {
+        vk::SpecializationInfo* pSpecializationInfo = nullptr;
+        if (!s->desc.specializationData.empty())
+        {
+            pSpecializationInfo = Construct<vk::SpecializationInfo>(alloc.Ptr());
+            auto* entry = Construct<vk::SpecializationMapEntry>(alloc.Ptr());
+            entry->constantID = 0, entry->offset = 0, entry->size = s->desc.specializationData.size_bytes();
+            pSpecializationInfo->mapEntryCount = 1;
+            pSpecializationInfo->pMapEntries = entry;
+            pSpecializationInfo->dataSize = s->desc.specializationData.size_bytes();
+            pSpecializationInfo->pData = s->desc.specializationData.data();
+        }
+        vk::PipelineShaderStageCreateInfo stageInfo = {
+            .stage = vkFlagsToBits(vkShaderStageFlagsFromRHIShaderStage(s->desc.stage)),
+            .module = static_cast<VulkanShaderModule*>(s->shaderModule)->GetVkShaderModule(),
+            .pName = s->desc.entryPoint,
+            .pSpecializationInfo = pSpecializationInfo
+        };
+        stages.push_back(stageInfo);
+        return static_cast<uint32_t>(stages.size() - 1); // Return index
+    };
+    // RayGen
+    {
+        uint32_t stageIdx = AddShaderStage(rayGenShader);
+        auto& g = groups.emplace_back();
+        g.type = vk::RayTracingShaderGroupTypeKHR::eGeneral;
+        g.generalShader = stageIdx;
+        g.closestHitShader = VK_SHADER_UNUSED_KHR;
+        g.anyHitShader = VK_SHADER_UNUSED_KHR;
+        g.intersectionShader = VK_SHADER_UNUSED_KHR;
+    }
+    // Miss
+    for (auto* s : missShaders)
+    {
+        uint32_t stageIdx = AddShaderStage(s);
+        auto& g = groups.emplace_back();
+        g.type = vk::RayTracingShaderGroupTypeKHR::eGeneral;
+        g.generalShader = stageIdx;
+        g.closestHitShader = VK_SHADER_UNUSED_KHR;
+        g.anyHitShader = VK_SHADER_UNUSED_KHR;
+        g.intersectionShader = VK_SHADER_UNUSED_KHR;
+    }
+    // Hits
+    // Needs to be grouped by hit group
+    uint32_t hitGroups = 0;
+    for (auto* s : hitShaders)
+    {
+        hitGroups = std::max(hitGroups, s->desc.raytracingHitGroupIndex + 1);
+    }
+    for (size_t i = 0; i < hitGroups; i++)
+        groups.push_back({
+            .type = vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
+            .generalShader = VK_SHADER_UNUSED_KHR,
+            .closestHitShader = VK_SHADER_UNUSED_KHR,
+            .anyHitShader = VK_SHADER_UNUSED_KHR,
+            .intersectionShader = VK_SHADER_UNUSED_KHR
+        });
+    Span hitSpan = groups;
+    hitSpan = hitSpan.subspan(hitSpan.size() - hitGroups, hitGroups);
+    for (auto s : hitShaders)
+    {
+        uint32_t stageIdx = AddShaderStage(s);
+        auto& g = hitSpan[s->desc.raytracingHitGroupIndex];
+        if (s->desc.stage & RHIShaderStageBits::RayClosestHit)
+        {
+            CHECK_MSG(g.closestHitShader == VK_SHADER_UNUSED_KHR,
+                      "Multiple closest hit shaders specified for hit group {}", s->desc.raytracingHitGroupIndex);
+            g.closestHitShader = stageIdx;
+        }
+        if (s->desc.stage & RHIShaderStageBits::RayAnyHit)
+        {
+            CHECK_MSG(g.anyHitShader == VK_SHADER_UNUSED_KHR,
+                      "Multiple closest hit shaders specified for hit group {}", s->desc.raytracingHitGroupIndex);
+            g.anyHitShader = stageIdx;
+        }
+    }
+    vk::RayTracingPipelineCreateInfoKHR pipelineInfo{
+        .stageCount = static_cast<uint32_t>(stages.size()),
+        .pStages = stages.data(),
+        .groupCount = static_cast<uint32_t>(groups.size()),
+        .pGroups = groups.data(),
+        .maxPipelineRayRecursionDepth = std::min(rtProps.maxRayRecursionDepth, 3u),
+        .layout = mPipelineLayout,
+    };
+    const vk::raii::PipelineCache noCache{nullptr};
+    vk::raii::PipelineCache const* pPSOCache{&noCache};
+    if (mDesc.psoCache)
+    {
+        auto* vkCache = static_cast<VulkanPipelineStateCache*>(mDesc.psoCache);
+        pPSOCache = &vkCache->GetVkPipelineCache();
+    }
+    mPipeline = vk::raii::Pipeline(mDevice.GetVkDevice(), nullptr, *pPSOCache,
+                                   pipelineInfo,
+                                   mDevice.GetVkAllocatorCallbacks());
+    const uint32_t handleSize = rtProps.shaderGroupHandleSize;
+    const uint32_t handleAlignment = rtProps.shaderGroupHandleAlignment;
+    const uint32_t baseAlignment = rtProps.shaderGroupBaseAlignment;
+    const uint32_t handleStride = AlignUp(handleSize, handleAlignment);
+
+    uint32_t kRgenCount = 1;
+    auto missCount = static_cast<uint32_t>(missShaders.size());
+    const auto hitCount = hitGroups;
+    mSBT.raygen.stride = mSBT.raygen.size = AlignUp(kRgenCount * handleStride, baseAlignment);
+    mSBT.miss.stride = handleStride, mSBT.miss.size = AlignUp(missCount * handleStride, baseAlignment);
+    mSBT.hit.stride = handleStride, mSBT.hit.size = AlignUp(hitCount * handleStride, baseAlignment);
+    // Create Buffer
+    vk::DeviceSize sbtSize = mSBT.raygen.size + mSBT.miss.size + mSBT.hit.size;
+    mSBTBuffer = mDevice.CreateBuffer(RHIBufferDesc{
+        .resource = {
+            .hostAccess = RHIResourceHostAccess::WriteOnly
+        },
+        .usage = RHIBufferUsageBits::ShaderBindingTable | RHIBufferUsageBits::DeviceAddress,
+        .size = sbtSize,
+    });
+    auto handles = mPipeline.getRayTracingShaderGroupHandlesKHR<uint8_t>(
+        0, static_cast<uint32_t>(groups.size()), handleSize * groups.size());
+    auto pData = mSBTBuffer->Map<uint8_t>();
+    vk::DeviceAddress sbtAddr = static_cast<VulkanBuffer*>(mSBTBuffer.Get())->GetBufferAddress();
+    auto CopyHandlesToSBT = [&](uint32_t startGroupIdx, uint32_t count, uint32_t bufferOffset)
+    {
+        for (uint32_t i = 0; i < count; i++)
+        {
+            const uint8_t* src = handles.data() + (startGroupIdx + i) * handleSize;
+            uint8_t* dst = pData + bufferOffset + (i * handleStride);
+            std::memcpy(dst, src, handleSize);
+        }
+    };
+    // RayGen
+    mSBT.raygen.deviceAddress = sbtAddr;
+    CopyHandlesToSBT(0, kRgenCount, 0);
+    // Miss
+    uint32_t missOffset = mSBT.raygen.size;
+    mSBT.miss.deviceAddress = sbtAddr + missOffset;
+    CopyHandlesToSBT(kRgenCount, missCount, missOffset);
+    // Hit
+    uint32_t hitOffset = missOffset + mSBT.miss.size;
+    mSBT.hit.deviceAddress = sbtAddr + hitOffset;
+    CopyHandlesToSBT(kRgenCount + missCount, hitCount, hitOffset);
+}
+
+VulkanPipelineState::VulkanPipelineState(VulkanDevice& device, PipelineStateDesc const& desc) :
     RHIPipelineState(device, desc), mDevice(device)
 {
     InitializePipelineLayout();
@@ -245,6 +421,9 @@ VulkanPipelineState::VulkanPipelineState(const VulkanDevice& device, PipelineSta
         break;
     case RHIDevicePipelineType::Compute:
         InitializeCompute();
+        break;
+    case RHIDevicePipelineType::RayTracing:
+        InitializeRayTracing();
         break;
     }
 }

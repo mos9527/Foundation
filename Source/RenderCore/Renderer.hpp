@@ -1,6 +1,7 @@
 #pragma once
-#include <Core/ThreadPool.hpp>
 #include <Core/AllocatorStack.hpp>
+#include <Core/Logging.hpp>
+#include <Core/ThreadPool.hpp>
 #include "RenderPass.hpp"
 #include "RenderResource.hpp"
 #include "Shader.hpp"
@@ -46,6 +47,16 @@ namespace Foundation::RenderCore
          *        in Setup time.
          */
         RHIPipelineStateCache* pipelineCache{nullptr};
+        /**
+         * @brief Enable or disable GPU profiling for the frame graph execution.
+         *
+         * @note When enabled, each pass will be wrapped in GPU timestamp queries,
+         *       and the results can be retrieved via @ref DbgGetPassProfiles().
+         *
+         * @note This may introduce some overhead, especially with a large number of passes.
+         *       And may not be supported by all platforms.
+         */
+        bool profilePasses{true};
     };
     /* -- Constants -- */
     // Maximum number of render passes per frame
@@ -127,12 +138,13 @@ namespace Foundation::RenderCore
                 in[v]++;
             }
             explicit RendererSetup(Allocator* allocator) :
-                graph(allocator), in(allocator), trackedPasses(allocator), trackedResources(allocator), trackedViews(allocator),
-                trackedSamplers(allocator), activeResources(allocator), execution(allocator), bindingCounts(allocator),
-                executionGroups(allocator)
+                graph(allocator), in(allocator), trackedPasses(allocator), trackedResources(allocator),
+                trackedViews(allocator), trackedSamplers(allocator), activeResources(allocator), execution(allocator),
+                bindingCounts(allocator), executionGroups(allocator)
             {
             }
         };
+
     public:
         enum class State
         {
@@ -146,7 +158,7 @@ namespace Foundation::RenderCore
         State mState;
         Allocator* mAllocator{nullptr};
 
-        const RendererDesc mDesc{};
+        RendererDesc mDesc{};
 
         uint64_t mFrameSwapped{0}; // Frame rendered in the current Swapchain
 
@@ -175,7 +187,10 @@ namespace Foundation::RenderCore
             // [Profiling] Present timings
             std::chrono::steady_clock::time_point dbgSwapLastPresentTick{};
             uint64_t dbgSwapLastPresentToPresentTicks{0};
-            FrameSyncObjects(size_t swapIndex, Allocator* alloc) : swapIndex(swapIndex), dbgQueryPassTimestampsResults(alloc) {}
+            FrameSyncObjects(size_t swapIndex, Allocator* alloc) :
+                swapIndex(swapIndex), dbgQueryPassTimestampsResults(alloc)
+            {
+            }
         };
         RHIDeviceScopedHandle<RHIDeviceDescriptorPool> mSwapDescriptorPool;
         RHIDeviceScopedHandle<RHIDeviceDescriptorSetLayout> mSwapDescriptorSetLayout;
@@ -204,7 +219,7 @@ namespace Foundation::RenderCore
         AllocatorStack mExecuteAlloc;
         // Temporary storage for submits calls
         // This is reset every frame, and only guaranteed to be valid during Execute state.
-        Vector<Pair<RHIDeviceQueueType, RHIDeviceQueue::SubmitDesc>> *mExecuteSubmits;
+        Vector<Pair<RHIDeviceQueueType, RHIDeviceQueue::SubmitDesc>>* mExecuteSubmits;
         // Thread pool for concurrent command list recording
         ThreadPool mExecuteThreadPool;
         struct ExecutePerThreadCommandLists
@@ -244,7 +259,7 @@ namespace Foundation::RenderCore
                 throw std::runtime_error("Unhandled queue type");
             }
         }
-        using ExecuteBarrierList = Vector<Pair<Variant<RHIBuffer*, RHITexture*>, RHICommandList::TransitionDesc>>;
+        using ExecuteBarrierList = Vector<Pair<Variant<RHIBuffer*, RHITexture*, RHIAccelerationStructure*>, RHICommandList::TransitionDesc>>;
         using ExecuteBarrierPCmdOrPBarrierList = Variant<RHICommandList*, ExecuteBarrierList*>;
         void ExecuteBarrierSubresourceState(PassHandle pass, RHITexture* res, TrackedResource::SubresourceState& sta,
                                             RHIResourceAccess access, RHIPipelineStage stage, RHITextureLayout layout,
@@ -260,6 +275,12 @@ namespace Foundation::RenderCore
          */
         void ExecuteBarrierBuffer(PassHandle pass, TrackedResource& res, RHIResourceAccess access,
                                   RHIPipelineStage stage, ExecuteBarrierPCmdOrPBarrierList cmd);
+        /**
+         * @brief Executes barriers for an acceleration structure
+         */
+        void ExecuteBarrierAccelerationStructure(PassHandle pass, TrackedResource& res,
+                                             RHIResourceAccess access, RHIPipelineStage stage,
+                                             ExecuteBarrierPCmdOrPBarrierList cmd);
         /**
          * @brief Executes all barriers for a pass
          */
@@ -343,17 +364,13 @@ namespace Foundation::RenderCore
          * @param priority Priority of this pass. Higher priority passes are scheduled earlier.
          * @param setup Lambda of type `void(PassHandle self, Renderer*)` called at Setup time.
          * @param record Lambda of type `void(PassHandle self, Renderer*, RHICommandList*)` called at Record time.
-         * @param skip (Optional) Lambda of type `bool(PassHandle self, Renderer*)` called at Record time
-         *                        to determine whether this pass should be skipped if true. This is by default always
-         * false.
          */
-        template <typename FSetup, typename FRecord, typename FSkip = FSkipDefault>
-        PassHandle CreatePass(StringView name, RHIDeviceQueueType queue, size_t priority,
-                                                       FSetup&& setup, FRecord&& record, FSkip&& skip = {})
+        template <typename FSetup, typename FRecord>
+        PassHandle CreatePass(StringView name, RHIDeviceQueueType queue, size_t priority, FSetup&& setup,
+                              FRecord&& record)
         {
-            return CreatePassImpl<LambdaPass<FSetup, FRecord, FSkip>>(
-                name, queue, priority, std::forward<FSetup>(setup), std::forward<FRecord>(record),
-                std::forward<FSkip>(skip));
+            return CreatePassImpl<LambdaPass<FSetup, FRecord>>(name, queue, priority, std::forward<FSetup>(setup),
+                                                               std::forward<FRecord>(record));
         }
         /**
          * @brief Create a new resource to be used in the render graph.
@@ -363,12 +380,12 @@ namespace Foundation::RenderCore
          *
          * All resources created by a pass that is not culled will be created, regardless of usage.
          *
-         * Resources can be imported by passing in RHIDeviceRef<RHIBuffer> or
-         * RHIDeviceRef<RHITexture>.
+         * Resources can be imported by passing in RHIDeviceHandle<RHIBuffer> or
+         * RHIDeviceHandle<RHITexture>.
          *
-         * @param desc Resources can be created by passing in @ref RHIBufferDesc, @ref RHITextureDesc,
-         * and can be imported by passing in @ref RHIDeviceRef<RHIBuffer>, @ref
-         * RHIDeviceRef<RHITexture>, or raw, pinned pointers @ref RHIBuffer*, or @ref RHITexture*
+         * @param desc Resources can be created by passing in @ref RHIBufferDesc, @ref RHITextureDesc, @ref
+         * RHIAccelerationStructureDesc and can be imported by passing in @ref RHIBuffer*, @ref RHITexture*, @ref
+         * RHIAccelerationStructure*.
          *
          * @note ALWAYS ENSURE that your IMPORTED resources OUTLIVE the @ref Renderer. There's
          *       NO reference counting or tracking of the underlying resource lifetime.
@@ -376,7 +393,9 @@ namespace Foundation::RenderCore
         template <typename T>
         [[nodiscard]] ResourceHandle CreateResource(StringView name, T const& desc)
         {
+
             CHECK(mState == State::Setup);
+
             ResourceHandle index = mSetup->trackedResources.size();
             mSetup->trackedResources.emplace_back(index, name, desc, mAllocator);
             return mSetup->trackedResources.size() - 1;
@@ -409,8 +428,8 @@ namespace Foundation::RenderCore
          * @param specializationData Binary blob of specialization data, if any. Must be bound in shader at
          *                           ID 0, offset 0.
          */
-        void BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point,
-                        const char* shader_path, Span<const char> specializationData = {}) const;
+        void BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point, const char* shader_path,
+                        Span<const char> specializationData = {}, uint32_t rtHitGroupIndex = 0) const;
         /**
          * @brief Declares a range of Push Constant used in a stage.
          *
@@ -441,6 +460,9 @@ namespace Foundation::RenderCore
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          *
+         * Multiple bind declarations to the same bind point will create array-style bindings,
+         * indexed by order of declaration.
+         *
          * This can be automatically bound to the pipeline with CmdSetPipeline()
          */
         void BindBufferUniform(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
@@ -452,16 +474,22 @@ namespace Foundation::RenderCore
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          *
+         * Multiple bind declarations to the same bind point will create array-style bindings,
+         * indexed by order of declaration.
+         *
          * This can be automatically bound to the pipeline with CmdSetPipeline()
          */
         void BindBufferStorageRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
-                               StringView bind_point) const;
+                                   StringView bind_point) const;
         /**
          * @brief Binds a buffer for unordered (UAV) access from shaders (read and/or write in any order).
          *
          * This is only available at Setup time.
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
+         *
+         * Multiple bind declarations to the same bind point will create array-style bindings,
+         * indexed by order of declaration.
          *
          * This can be automatically bound to the pipeline with CmdSetPipeline()
          */
@@ -492,12 +520,16 @@ namespace Foundation::RenderCore
          * @brief Binds a sampler to the shader.
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
+         *
+         * Multiple bind declarations to the same bind point will create array-style bindings,
+         * indexed by order of declaration.
          */
         void BindTextureSampler(PassHandle pass, ResourceHandle sampler, StringView bind_point) const;
         /**
          * @brief Manually bind an existing descriptor set (layout) to the pipeline.
          *
-         * @note This applies to the bind point's *whole* set. You'll need to call @ref CmdBindDescriptorSet at Record time to bind the set to the pipeline.
+         * @note This applies to the bind point's *whole* set. You'll need to call @ref CmdBindDescriptorSet at Record
+         * time to bind the set to the pipeline.
          */
         void BindDescriptorSet(PassHandle pass, StringView bind_point, RHIDeviceDescriptorSetLayout* layout);
         /**
@@ -505,21 +537,27 @@ namespace Foundation::RenderCore
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          *
+         * Multiple bind declarations to the same bind point will create array-style bindings,
+         * indexed by order of declaration.
+         *
          * No view is created until EndSetup() is called.
          */
-        ResourceHandle BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point,
+        void BindTextureSRV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                       RHIPipelineStage stage, RHITextureViewDesc const& desc) const;
         /**
          * @brief Binds a texture for unordered (UAV) read-write access in shaders.
          *
          * Bind points are effectively shader variable names, which will be automatically dereferenced.
          *
+         * Multiple bind declarations to the same bind point will create array-style bindings,
+         * indexed by order of declaration.
+         *
          * Declares ShaderRead | ShaderWrite access and sets layout to General (or equivalent),
          * bound as StorageImage, and creates a view.
          *
          * No view is created until EndSetup() is called.
          */
-        ResourceHandle BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView bind_point,
+        void BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                       RHIPipelineStage stage, RHITextureViewDesc const& desc) const;
         /**
          * @brief Binds a texture as a Render Target View (color attachment) for a graphics pass.
@@ -531,7 +569,9 @@ namespace Foundation::RenderCore
          *
          * The order of multiple render targets is the same as the insertion order of the RTVs.
          */
-        ResourceHandle BindTextureRTV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc, RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending = {}) const;
+        void
+        BindTextureRTV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc,
+                       RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending = {}) const;
         /**
          * @brief Binds a texture as a Depth-Stencil View for a graphics pass.
          *
@@ -540,16 +580,18 @@ namespace Foundation::RenderCore
          *
          * This can be automatically bound to the pipeline with CmdBeginGraphics().
          */
-        ResourceHandle BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc) const;
+        void BindTextureDSV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc) const;
         /**
          * @breif Binds the backbuffer as the first Render Target.
          * @note  If this is used, the first RTV will always be the Backbuffer itself.
          *
          *        This can be automatically bound to the pipeline with CmdBeginGraphics().
          */
-        void BindBackbufferRTV(PassHandle pass, RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending = {}) const;
+        void BindBackbufferRTV(PassHandle pass,
+                               RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending = {}) const;
         /**
          * @brief Binds the backbuffer as RW access at binding 0 of set index
+         * @note The set index MUST be the last set index bound in the pass.
          */
         void BindBackbufferUAV(PassHandle pass, int set_index) const;
         /**
@@ -568,20 +610,30 @@ namespace Foundation::RenderCore
          */
         void BindTextureCopySrc(PassHandle pass, ResourceHandle texture,
                                 RHITextureSubresourceRange const& range = {}) const;
-        /* TODO: Push Constants */
+        /**
+         * @brief Declares that this pass will build, or update the AS.
+         */
+        void BindAccelerationStructureWrite(PassHandle pass, ResourceHandle as) const;
+        /**
+         * @brief Declares that this pass has shaders that will read from this AS.
+         *
+         * Multiple bind declarations to the same bind point will create array-style bindings,
+         * indexed by order of declaration.
+         */
+        void BindAccelerationStructureSRV(PassHandle pass, ResourceHandle as, RHIPipelineStage stage,
+                                          StringView bind_point) const;
+
 #pragma endregion
 #pragma region PSO Flags
         /**
-        * @brief Sets the rasterizer and depth-stencil state for a graphics pass.
-        * 
-        * If shaders are bound to the pass, a pipeline state object will be automatically created.
-        * The parameters here will be used for the PSO creation, instead of the defaults.
-        */
-        void PassSetRasterizerFlags(
-            PassHandle pass, 
-            RHIPipelineState::PipelineStateDesc::Rasterizer const& rasterizer = {},
-            RHIPipelineState::PipelineStateDesc::DepthStencil const& depth_stencil = {}
-        ) const;
+         * @brief Sets the rasterizer and depth-stencil state for a graphics pass.
+         *
+         * If shaders are bound to the pass, a pipeline state object will be automatically created.
+         * The parameters here will be used for the PSO creation, instead of the defaults.
+         */
+        void PassSetRasterizerFlags(PassHandle pass,
+                                    RHIPipelineState::PipelineStateDesc::Rasterizer const& rasterizer = {},
+                                    RHIPipelineState::PipelineStateDesc::DepthStencil const& depth_stencil = {}) const;
 #pragma endregion
         /**
          * @brief Finish setting up the render graph.
@@ -624,14 +676,16 @@ namespace Foundation::RenderCore
          *
          * @note This returns a rvalue @ref Variant - do not use a reference to the return value!
          */
-        [[nodiscard]] Variant<RHIBuffer*, RHITexture*> DerefResource(const ResourceHandle handle) const
+        [[nodiscard]] Variant<RHIBuffer*, RHITexture*, RHIAccelerationStructure*>
+        DerefResource(const ResourceHandle handle) const
         {
             CHECK(mResources && handle < mResources->resources.size());
-            using Tv = Variant<RHIBuffer*, RHITexture*>;
+            using Tv = Variant<RHIBuffer*, RHITexture*, RHIAccelerationStructure*>;
             auto& res = mResources->resources[handle];
             CHECK_MSG(!res.valueless_by_exception(), "Resource handle {} is valueless", handle);
-            return res.Visit([](auto* ptr) -> Tv { return ptr; },
-                                                        [](auto& hdl) -> Tv { return hdl.Get(); });
+            auto ptr = res.Visit([](auto* ptr) -> Tv { return ptr; }, [](auto& hdl) -> Tv { return hdl.Get(); });
+            CHECK_MSG(!ptr.valueless_by_exception(), "Resource handle {} is null", handle);
+            return ptr;
         }
         /**
          * @brief Dereference a texture view handle to its underlying RHI texture view.
@@ -883,9 +937,9 @@ namespace Foundation::RenderCore
 #pragma endregion
     };
     ENUM_NAME_CONV_BEGIN(Renderer::State)
-        ENUM_NAME(Undefined);
-        ENUM_NAME(Setup);
-        ENUM_NAME(PostSetup);
-        ENUM_NAME(Execute);
+    ENUM_NAME(Undefined);
+    ENUM_NAME(Setup);
+    ENUM_NAME(PostSetup);
+    ENUM_NAME(Execute);
     ENUM_NAME_CONV_END();
 } // namespace Foundation::RenderCore

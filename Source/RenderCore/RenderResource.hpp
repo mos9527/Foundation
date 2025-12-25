@@ -6,8 +6,10 @@ namespace Foundation::RenderCore
 {
     using namespace RHI;
     using namespace Core;
-    using ResourceDefinition = Variant<RHIBufferDesc, RHITextureDesc, RHIDeviceHandle<RHIBuffer>,
-                                       RHIDeviceHandle<RHITexture>, RHIBuffer*, RHITexture*>;
+    using ResourceDefinition = Variant<
+        RHIBufferDesc, RHITextureDesc, /* RHIAccelerationStructureDesc - not yet. Do we want to do this in RG at all? */
+        RHIBuffer*, RHITexture*, RHIAccelerationStructure*
+    >;
     const size_t kTextureAspectCount = 3; // Color, depth, stencil @ref RHITextureAspectFlag
     /**
      * @brief Internal tracking information for a resource in the frame graph.
@@ -96,9 +98,14 @@ namespace Foundation::RenderCore
                                state.mip <= mip_end && state.layer >= layer_begin && state.layer <= layer_end;
                        });
         }
+
+        using AccelerationStructureState = BufferState;
+        // (Acceleration Structure) Last known state
+        AccelerationStructureState lastASState{};
         void ResetStates()
         {
             lastBufferState = {};
+            lastASState = {};
             for (auto& sta : lastSubresourceStates)
                 sta.reset();
         }
@@ -110,8 +117,9 @@ namespace Foundation::RenderCore
      */
     struct ExecuteResources
     {
-        Vector<Variant<RHIBuffer*, RHIDeviceHandle<RHIBuffer>, RHIDeviceScopedHandle<RHIBuffer>,
-                       RHITexture*, RHIDeviceHandle<RHITexture>, RHIDeviceScopedHandle<RHITexture>>>
+        Vector<Variant<RHIBuffer*, RHIDeviceScopedHandle<RHIBuffer>,
+                       RHITexture*, RHIDeviceScopedHandle<RHITexture>,
+                       RHIAccelerationStructure*>>
             resources;
         Vector<Variant<RHITextureScopedHandle<RHITextureView>, RHITextureHandle<RHITextureView>>> views;
         Vector<RHIDeviceScopedHandle<RHIDeviceSampler>> samplers;

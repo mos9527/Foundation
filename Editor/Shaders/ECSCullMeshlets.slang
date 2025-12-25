@@ -1,14 +1,24 @@
-#include "ICommon.slang"
+import ICommon;
+import IFlags;
+import IMath;
 [[SpecializationConstant]] int cullFlags;
-
 uniform UBO globalParams;
-StructuredBuffer<GSInstance> instances;
+
 ByteAddressBuffer primitive;
-RWStructuredBuffer<MeshletTaskWork> tasks;
-RWStructuredBuffer<uint> counter;
-[[vk_binding(5,0)]] SamplerState hizSampler;
-[[vk_binding(6,0)]] Texture2D<float> hiz;
-[[vk_binding(7,0)]] RWStructuredBuffer<Atomic<uint>> occlusion;
+StructuredBuffer<GSInstance> instances;
+
+SamplerState hizSampler;
+Texture2D<float> hiz;
+RWStructuredBuffer<uint> visibility;
+
+RWStructuredBuffer<uint> inTasksCounter;
+RWStructuredBuffer<MeshletTaskWork> inTasks;
+
+// vvv Cleared before dispatch
+RWStructuredBuffer<Atomic<uint>> outMeshletCounter;
+RWStructuredBuffer<uint2> outMeshletIndices; // (x: Meshlet ID, y: Instance ID)
+// vvv Cleared before dispatch
+RWStructuredBuffer<MeshletTaskDispatch> outMeshletDispatches;
 
 // Model to view space
 float3 pointToView(float3 point, GSInstance inst, float4x4 view) {
@@ -54,31 +64,27 @@ bool projSphereAABB(float3 c /* view */, float r /* scaled */, float P00, float 
 
 	return true;
 }
-groupshared MeshletGroupShared shared;
 
 // Each WG of task shader processes up to kMaxTaskShaderWork meshlets from the same Instance,
 // and each thread in the WG processes one meshlet.
-// NOTE: WaveSize seem to have no effect on generated SPIRV code. See also:
-// - https://github.com/shader-slang/slang/issues/3943
-// - https://github.com/microsoft/hlsl-specs/issues/137
-[shader("amplification")]
+[shader("compute")]
 [numthreads(kMeshWorkGroupSize, 1, 1)]
-[WaveSize(kMeshWorkGroupSize)]
 void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     const bool early = cullFlags & kCullStageFirst;
     const bool late = cullFlags & kCullStageLate;
     const bool cullFrustum = cullFlags & kCullFrustum;
     const bool cullOcclusion = cullFlags & kCullOcclusion;
-    shared.meshletCount = 0u;
-    GroupMemoryBarrierWithGroupSync();
-    uint count = counter[0];
+    // -- Global Load --
+    uint count = inTasksCounter[0];
     uint dispatchIndex = dot(groupID, uint2(kMeshWorkGroupSize, 1)); // ID of this group, flattened    
     if (dispatchIndex >= count)
         return; // Group inactive. Should NOT happen.
     if (!cullOcclusion && late)
         return; // Misuse. If so Phase 2 should not be run at all.
     // -- Load --
-    MeshletTaskWork work = tasks[dispatchIndex];
+    MeshletTaskWork work = inTasks[dispatchIndex];
+    if (groupIndex >= work.numMeshlets)
+        return; // Inactive
     GSInstance inst = instances[work.instanceID];
     GSMesh mesh = primitive.Load<GSMesh>(inst.meshOffset);
     uint32_t meshletID = work.firstMeshlet + groupIndex;
@@ -116,8 +122,8 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     }
     // -- Cone Cull (FIXME. False positives.) --
     if (false && visible) {
-        float3 coneApex = inst.rotation.rotate(meshlet.coneApex) * inst.scale + inst.transform;
-        float3 camPosition = -float3(globalParams.view[0][3],globalParams.view[1][3],globalParams.view[2][3]);
+        float3 coneApex = inst.rotation.rotate(meshlet.coneApex) * scale + inst.transform;
+        float3 camPosition = globalParams.camPosition;
         bool pass = dot(normalize(coneApex - camPosition), meshlet.coneAxisAngle.xyz) < meshlet.coneAxisAngle.w;
         visible &= pass;
     }
@@ -129,8 +135,8 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     uint32_t meshletGlobalID = mesh.meshletGlobalIndex + meshletID;
     if (cullOcclusion && visible) {
         if (late) {
-            uint32_t phase1Visible = occlusion[meshletGlobalID / 32].load() & (1u << (meshletGlobalID % 32));
-            if (phase1Visible != 0)
+            bool phase1Visible = visibility[meshletGlobalID / 32] & (1u << (meshletGlobalID % 32));
+            if (phase1Visible)
                 visible = false; // Skip
         }
         if (visible) {
@@ -153,21 +159,42 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
             }
         }
     }
-    // Commit to occlusion buffer if visible ONLY in early pass
-    if (early && visible)
-        occlusion[meshletGlobalID / 32].or(1u << (meshletGlobalID % 32));
+    // Commit to visibility buffer for occlusion if visible ONLY in early pass
+    if (cullOcclusion && early && visible)
+        InterlockedOr(visibility[meshletGlobalID / 32], 1u << (meshletGlobalID % 32));
     uint waveVisibleCount = WaveActiveCountBits(visible);
     if (waveVisibleCount > 0){
         uint waveMeshletOffset = 0;
         if (WaveIsFirstLane())
-            InterlockedAdd(shared.meshletCount, waveVisibleCount, waveMeshletOffset);
+            waveMeshletOffset = outMeshletCounter[0].add(waveVisibleCount);
+        // Boardcast
         waveMeshletOffset = WaveReadLaneFirst(waveMeshletOffset);
+        // Spill the big indices list into multiple dispatches
+        // of kMaxMeshletsPerDispatch each.
+        uint waveMeshletCount = waveMeshletOffset + waveVisibleCount;
+        waveMeshletCount = WaveReadLaneFirst(waveMeshletCount);
+        if (WaveIsFirstLane()){
+            uint groupCountX = (waveMeshletCount + kMeshIndirectPerDrawMeshlets - 1) / kMeshIndirectPerDrawMeshlets;
+            uint groupCountY = min(waveMeshletCount, kMeshIndirectPerDrawMeshlets);
+            uint groupCountZ = 1;
+            InterlockedMax(outMeshletDispatches[0].groupCountX, groupCountX);
+            InterlockedMax(outMeshletDispatches[0].groupCountY, groupCountY);
+            outMeshletDispatches[0].groupCountZ = 1;
+        }
         if (visible) {
             // Output the visible meshlet
-            uint sum = WavePrefixCountBits(visible);
-            shared.meshletIndices[waveMeshletOffset + sum] = meshletID;
+            uint pos = WavePrefixCountBits(visible);
+            uint outPos = waveMeshletOffset + pos;
+            outMeshletIndices[outPos] = uint2(meshletID, work.instanceID);
         }
     }
-    shared.instanceID = work.instanceID;
-    DispatchMesh(shared.meshletCount,1,1,shared);
+    // If this was a Task Shader (which it was): DispatchMesh(shared.meshletCount,1,1,shared);
+    // But - Don't bother. See also https://themaister.net/blog/2024/01/17/modernizing-granites-mesh-rendering/
+    // on "Task Shader Woes".
+    // Also, I couldn't get this to work with AMDPRO drivers anyway. We'll aggregate
+    // the mesh dispatches here and use vkCmdDrawMeshTasksIndirectCountEXT without involving Task Shader later.
+    //
+    // An added benefit is that we can also use this buffer to use traditional raster pipeline if needed
+    // since Vulkan supports 8-bit indices for mesh tasks indirect draws.
+    // Alan Wake 2 falls back to this path (and is thus indescribably slow) on older GPUs.
 }

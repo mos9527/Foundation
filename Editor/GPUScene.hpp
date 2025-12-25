@@ -7,16 +7,19 @@
 using namespace Math;
 
 BITMASK_ENUM_BEGIN(GSData, uint8_t)
-Mesh = 1 << 0,
-    BITMASK_ENUM_END()
+    Mesh = 1 << 0
+BITMASK_ENUM_END()
 
 #pragma pack(push, 1)
-        struct GSMesh
+struct GSMesh
 {
     // Offsets are absolute, and are in Primitive buffer (bytes).
     // @ref FVertex
     uint32_t vtxOffset;
     uint32_t vtxCount;
+    // LOD0 UINT32 indices
+    uint32_t idxOffset;
+    uint32_t idxCount;
     // -- DAG LOD Group @ref FLODGroup
     uint32_t groupOffset;
     uint32_t groupCount;
@@ -50,21 +53,21 @@ struct GSMaterial
     float anisotropy;
 };
 #pragma pack(pop)
-static_assert(sizeof(GSMesh) == 36);
+static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 48);
 
 template <typename T>
-struct GPURingBuffer
+struct UploadGPURingBuffer
 {
     RHIDeviceScopedHandle<RHIBuffer> mBuffer;
     T *mBegin, *mPrevRing, *mRing, *mEnd;
 
-    GPURingBuffer(RHIDevice* device, size_t budget)
+    UploadGPURingBuffer(RHIDevice* device, size_t budget)
     {
         mBuffer = device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Upload,
                                                      .hostAccess = RHIResourceHostAccess::WriteOnly,
                                                      .coherent = true},
-                                        .usage = RHIBufferUsageBits::StorageBuffer,
+                                        .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
                                         .size = budget * sizeof(T)});
         mBegin = mRing = mPrevRing = mBuffer->Map<T>();
         mEnd = mBegin + budget;
@@ -95,27 +98,39 @@ struct GPURingBuffer
 class GPUScene
 {
     FContext* mContext;
-
+    /* Geometry */
     RHIDeviceScopedHandle<RHIBuffer> mPrimitiveBuffer;
     // XXX: Linear allocation. GPA would be needed if we'd upload & free
     //      at will. Not needed for Editor use-case currently.
     size_t mPrimitiveOffset{0};
-
     // For @ref meshletGlobalIndex
     uint32_t mMeshletGlobalCounter{0};
-
-    GPURingBuffer<GSInstance> mInstanceBuffer;
-    GPURingBuffer<GSMaterial> mMaterialBuffer;
-
+    UploadGPURingBuffer<GSInstance> mInstanceBuffer;
+    UploadGPURingBuffer<GSMaterial> mMaterialBuffer;
+    /* Textures */
     BindlessPool mTexturePool;
-
+    // Precomputed LUTs
+    RHIDeviceScopedHandle<RHITexture> mGGXlutE, mGGXlutEavg;
+    /* AS */
+    // BLAS
+    Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mBLASes;
+    Vector<RHIDeviceScopedHandle<RHIBuffer>> mBLASBuffers;
+    size_t blasOffset{0};
+    // TLAS
+    uint32_t mTLASInstanceStride{0}; // In bytes, read only once
+    RHIDeviceScopedHandle<RHIBuffer> mTLASBuffer, mScratchBufferTLAS;
+    RHIDeviceScopedHandle<RHIAccelerationStructure> mTLAS;
+    UploadGPURingBuffer<char> mTLASInstances;
 public:
     struct GPUSceneDesc
     {
         uint32_t primitiveBudget = 16 * (1u << 20); // 16MB
-        uint32_t instanceBudget = static_cast<uint32_t>(1e4); // # of instances
-        uint32_t materialBudget = static_cast<uint32_t>(1e3); // # of materials
+        uint32_t instanceBudget = static_cast<uint32_t>(1e4); // # of instances (ring)
+        uint32_t materialBudget = static_cast<uint32_t>(1e3); // # of materials (ring)
         uint32_t texturesBudget = static_cast<uint32_t>(1e3); // # of textures
+        uint32_t blasBudget = 64 * (1u << 20); // 64MB
+        uint32_t tlasBudget = 16 * (1u << 20); // 16MB
+        uint32_t tlasScratchBudget = 32 * (1u << 20); // 32MB (ring)
     };
     GPUScene(FContext* ctx, GPUSceneDesc const& desc);
 
@@ -127,9 +142,18 @@ public:
     size_t Upload(ImmediateUpload* ctx, FMesh const& source, GSMesh& outData, uint32_t& outOffset);
     size_t Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t& outIndex);
 
+    void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices);
+    void BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, bool update = false);
+
+    /* Geometry */
     [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.mBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetMaterialBuffer() const { return mMaterialBuffer.mBuffer.Get(); }
+    /* Textures */
     [[nodiscard]] BindlessPool* GetTexturePool() { return &mTexturePool; }
+    [[nodiscard]] RHITexture* GetGGXlutE() const { return mGGXlutE.Get(); }
+    [[nodiscard]] RHITexture* GetGGXlutEavg() const { return mGGXlutEavg.Get(); }
+    /* AS */
+    [[nodiscard]] RHIAccelerationStructure* GetTLAS() const { return mTLAS ? mTLAS.Get() : nullptr; }
     void Reset();
 };
