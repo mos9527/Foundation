@@ -14,3 +14,5 @@ https://mos9527.com/posts/foundation/pt-3-profiler-and-wave-intrinsics/
 https://mos9527.com/posts/foundation/pt-4-mesh-quantization/
 
 https://mos9527.com/posts/foundation/pt-5-texture-compression-and-gbuffer/
+
+https://mos9527.com/posts/foundation/pt-6-path-tracing-adventures/
