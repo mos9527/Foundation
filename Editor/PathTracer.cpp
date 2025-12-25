@@ -49,7 +49,12 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                                                           .usage = RHITextureUsageBits::StorageImage |
                                                           RHITextureUsageBits::SampledImage,
                                                           .extent = {w, h, 1},
-                                                          .format = RHIResourceFormat::R16G16B16A16SignedFloat});
+                                                          .format = RHIResourceFormat::R32G32B32A32SignedFloat});
+    auto LightingBuffer = renderer->CreateResource("Lighting Buffer", RHITextureDesc{
+                                                       .usage = RHITextureUsageBits::StorageImage |
+                                                       RHITextureUsageBits::SampledImage,
+                                                       .extent = {w, h, 1},
+                                                       .format = RHIResourceFormat::R16G16B16A16SignedFloat});
     auto HistogramBins = renderer->CreateResource(
         "Histogram", RHIBufferDesc{.usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
                                    .size = sizeof(uint32_t) * 64});
@@ -89,6 +94,9 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindTextureSampler(self, TexSampler, "textureSampler");
             r->BindTextureSampler(self, LUTSampler, "lutSampler");
             r->BindTextureUAV(self, AccumulatedBuffer, "accumulation", RHIPipelineStageBits::RayTracingShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureUAV(self, LightingBuffer, "lighting", RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::RayTracingShader,
@@ -111,7 +119,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSHistogramBinning.spv");
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-            r->BindTextureSRV(self, AccumulatedBuffer, "lighting", RHIPipelineStageBits::ComputeShader,
+            r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindBufferUnordered(self, HistogramBins, RHIPipelineStageBits::ComputeShader, "bins");
@@ -142,7 +150,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         {
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/EPSBlitPT.spv",
                           AsBytes(AsSpan(cfg.viewFlags)));
-            r->BindTextureSRV(self, AccumulatedBuffer, "lighting", RHIPipelineStageBits::FragmentShader,
+            r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindBufferStorageRead(self, LightingAverageLuma, RHIPipelineStageBits::FragmentShader, "sceneLuma");

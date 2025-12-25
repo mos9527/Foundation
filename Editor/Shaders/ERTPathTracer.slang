@@ -9,6 +9,17 @@ import ICommon;
 import IBRDF;
 import ILight;
 uniform UBO globalParams;
+
+
+// -- Scene
+RaytracingAccelerationStructure AS;
+StructuredBuffer<GSInstance> instances;
+ByteAddressBuffer primitives;
+StructuredBuffer<GSMaterial> materials;
+SamplerState textureSampler;
+RWTexture2D<float4> accumulation;
+RWTexture2D<float4> lighting;
+[[vk_binding(0,2)]] Texture2D<float4> textures[];
 // -- glTF BSDF
 // Energy compensation LUTs. See https://mos9527.com/posts/foundation/pt-6-path-tracing-adventures/#ee_avg-%E9%A2%84%E7%A7%AF%E5%88%86
 [[vk_binding(0,1)]] SamplerState lutSampler;
@@ -133,15 +144,6 @@ public struct glTFBSDF : IBxDF {
         return diffusePDF * (1 - NEEGlossyProb(wo)) + specularPDF * NEEGlossyProb(wo);
     }
 };
-
-// -- Scene
-RaytracingAccelerationStructure AS;
-StructuredBuffer<GSInstance> instances;
-ByteAddressBuffer primitives;
-StructuredBuffer<GSMaterial> materials;
-SamplerState textureSampler;
-RWTexture2D<float4> accumulation;
-[[vk_binding(0,2)]] Texture2D<float4> textures[];
 
 void IntersectTriangle(uint meshOffset, uint primitive, float2 bary, out float3 position, out float3 normal, out float3 geometryNormal, out float3 tangent, out float2 uv, out float bitangentSign){
     GSMesh mesh = primitives.Load<GSMesh>(meshOffset);
@@ -388,12 +390,14 @@ void RayGeneration()
     }
     // Transform world space point
     // Accumulation
-    float3 output = L;
+    float4 output = float4(L, 1.0f);
     float frameCount = float(globalParams.ptAccumualatedFrames + 1);
-    float3 prevAvg = (globalParams.ptAccumualatedFrames == 0) ? float3(0) : accumulation[pix].xyz;
-    // Welford mean update
-    float3 newAvg = prevAvg + (output - prevAvg) / frameCount;
-    accumulation[pix] = float4(newAvg, 1.0);
+    if (frameCount == 1){
+        accumulation[pix] = lighting[pix] = output;
+    } else {
+        accumulation[pix] += output;
+        lighting[pix] = accumulation[pix] / frameCount;
+    }
 }
 [shader("anyhit")] // Hit Group 0
 void RayOpacityAnyHit(inout ShadowPayload payload)
