@@ -28,12 +28,15 @@ public struct glTFBSDF : IBxDF {
     float metallic;
     float roughness;
     TrowbridgeReitzDistribution mfDistrib;
-    public __init(float3 baseColor, float metallic, float roughness) {
+
+    bool energyCompensation;
+    public __init(float3 baseColor, float metallic, float roughness, bool energyCompensation = true) {
         this.baseColor = baseColor;
         this.metallic = metallic;
         this.roughness = roughness;
         float alpha = roughness * roughness;
         this.mfDistrib = TrowbridgeReitzDistribution(alpha, alpha);
+        this.energyCompensation = energyCompensation;
     }
     public BxDFFlags Flags() {
         return BxDFFlags::Reflection | BxDFFlags::Glossy;
@@ -59,10 +62,18 @@ public struct glTFBSDF : IBxDF {
             if (mfDistrib.EffectivelySmooth()) {
                 // Dirac delta case
                 float3 wi = float3(-wo.x, -wo.y, wo.z); // = wr
-                float3 fGlossy = SchlickFresnel(F0, 1.0f, AbsCosTheta(wi));
+                wi = FaceForward(wi, float3(0,0,1));
+                float3 wm = normalize(wi + wo);
+
+                float3 Fss = SchlickFresnel(F0, 1.0f, AbsDot(wo, wm));
+                float3 Fms = F0 * (1/Epp - 1) * Fss;
+                if (!energyCompensation)
+                    Fms = 0;
+                float3 f = (Fss+Fms) / AbsCosTheta(wi);
                 // Sampled PDF would be delta, but we represent them as 1s w/o weighting
                 // With NEE this is what you get:
-                return BSDFSample(fGlossy / AbsCosTheta(wi), wi, 1 * probGlossy, BxDFFlags::SpecularReflection);
+                float pdf = 1.0f * probGlossy;
+                return BSDFSample(f, wi, pdf, BxDFFlags::SpecularReflection);
             } else {
                 float3 wm = mfDistrib.Sample_wm(wo, u);
                 float3 wi = Reflect(wo, wm);
@@ -71,6 +82,8 @@ public struct glTFBSDF : IBxDF {
 
                 float3 Fss = SchlickFresnel(F0, 1.0f, AbsDot(wo, wm));
                 float3 Fms = F0 * (1/Epp - 1) * Fss;
+                if (!energyCompensation)
+                    Fms = 0;
                 float3 f = (Fms + Fss) * mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4 * AbsCosTheta(wi) * AbsCosTheta(wo));
 
                 float pdf = probGlossy * mfDistrib.PDF(wo, wm) / (4 * AbsDot(wo, wm));
@@ -83,8 +96,9 @@ public struct glTFBSDF : IBxDF {
             float3 wm = normalize(wo + wi);
 
             float3 cdiff = baseColor * (1.0f - metallic);
-            float3 Fss = 1 - SchlickFresnel(c_min_reflectance, 1.0f, AbsDot(wo, wm));
-            float3 f = Fss * cdiff * InvPi;
+            float3 f = cdiff * InvPi;
+            if (energyCompensation)
+                f *= 1 - Epp;
 
             float pdf = (1 - probGlossy) * CosineHemispherePDF(ClampedCosTheta(wi));
             return BSDFSample(f, wi, pdf, BxDFFlags::DiffuseReflection);
@@ -299,6 +313,9 @@ void RayGeneration()
     ray.Direction = GeneratePrimaryRay(pix, rng);
     ray.TMin = 0.0f;
     ray.TMax = INF;
+    // Firefly reduction seen in nvpro-samples
+    // TODO: "Next ray is at least as rough as previous ray" fixes it? - why?
+    float maxRoughness = 0.0f;
     for (uint bounce = 0; bounce < globalParams.ptMaxBounces; bounce++){
         HitPayload payload;
         TraceRay(AS, 0, 0xFF, 0, 0, 0, ray, payload);
@@ -334,7 +351,8 @@ void RayGeneration()
         quat toWorld     = toLocal.inverted();
         float3 n = float3(0,0,1);
         float3 wo = toLocal.rotate(view);
-        IBxDF bsdf = glTFBSDF(hit.baseColor, hit.metallic, hit.roughness);
+        maxRoughness = max(maxRoughness, hit.roughness);
+        IBxDF bsdf = glTFBSDF(hit.baseColor, hit.metallic, maxRoughness, true /* energy comp */);
         // IBxDF bsdf = DiffuseBxDF(hit.baseColor);
         // Direct Lighting
         // We only do one direct light sample for now.
