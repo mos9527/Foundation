@@ -40,8 +40,7 @@ static const int kViewBaseColor = 1 << 2;
 static const int kViewNormal = 1 << 3;
 static const int kViewMaterialID = 1 << 4;
 static const int kViewPosition = 1 << 5;
-static const int kViewGBufferDiffuse = 1 << 6;
-static const int kViewGBufferSpecular = 1 << 7;
+static const int kViewPTDirect = 1 << 6;
 
 static const int kViewEnableRaytracing = 1 << 16;
 

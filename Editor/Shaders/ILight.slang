@@ -28,7 +28,7 @@ public struct LightLiSample {
     public SampledSpectrum Li; // Light leaving the source towards pi
     public float3 wi;          // Direction from pi to light source
     public float pdf;          // PDF for this sample
-    public __init(SampledSpectrum Li, float3 wi, float pdf) {
+    public __init(SampledSpectrum Li = 0, float3 wi = 0, float pdf = 0) {
         this.Li = Li;
         this.wi = wi;
         this.pdf = pdf;
@@ -71,8 +71,13 @@ public struct UniformInfiniteLight : ILight {
         pdfPos = 0.0f;
         pdfDir = UniformSpherePDF();
     }
-    // Not defined - we don't need sampling here.
-    public float PDF_Li(LightSampleContext, float3, bool allowIncompletePDF) { return 0.0f; }
+    public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
+        float3 wi = SampleUniformSphere(u);
+        return LightLiSample(Lemit, wi, UniformSpherePDF());
+    }
+    public float PDF_Li(LightSampleContext ctx, float3 w, bool allowIncompletePDF) {
+        return UniformSpherePDF();
+    }
 };
 // https://pbr-book.org/4ed/Light_Sources/Distant_Lights#DistantLight
 public struct DistantLight : ILight {
@@ -96,7 +101,7 @@ public struct DistantLight : ILight {
     // Not defined
     public void PDF_Le(LightSampleContext, float3, out float pdfPos, out float pdfDir){
         pdfPos = 0.0f;
-        pdfDir = 0.0f;
+        pdfDir = 0.0f; // Dirac
     }
     // Dirac
     public float PDF_Li(LightSampleContext, float3, bool allowIncompletePDF) {

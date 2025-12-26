@@ -145,15 +145,20 @@ void FInitEnter()
 void FInit() { FEState = FERunningEnter; }
 RendererConfig GRendererConfig;
 
+static bool rasterOrPT = true;
 void FRunningEnter()
 {
-    PathTracerSetup(GContext, GRendererConfig, {
-                        .gsGlobals = &GShaderGlobals,
-                        .gsInstances = &GSInstances,
-                        .gsMaterials = &GSMaterials,
-                        .gsMeshes = &GSMeshes,
-                        .gsBLASes = &GSBLASes
-                    });
+    RendererScene scene{
+        .gsGlobals = &GShaderGlobals,
+        .gsInstances = &GSInstances,
+        .gsMaterials = &GSMaterials,
+        .gsMeshes = &GSMeshes,
+        .gsBLASes = &GSBLASes
+    };
+    if (rasterOrPT)
+        PathTracerSetup(GContext, GRendererConfig, scene);
+    else
+        RendererSetup(GContext, GRendererConfig, scene);
     FEState = FERunning;
 }
 
@@ -181,8 +186,11 @@ void FRunningImGui()
     {
         static float lodLogThreshold = 3;
         ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
-        ImGui::Text("PT Accumulation: %d", GShaderGlobals.ptAccumualatedFrames);
-        ImGui::SliderInt("PT Bounces", &GShaderGlobals.ptMaxBounces, 1, 16);
+        if (rasterOrPT)
+        {
+            ImGui::Text("PT Accumulation: %d", GShaderGlobals.ptAccumualatedFrames);
+            ImGui::SliderInt("PT Bounces", &GShaderGlobals.ptMaxBounces, 1, 16);
+        }
         GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
         bool changed = false;
         {
@@ -192,10 +200,15 @@ void FRunningImGui()
             changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
         }
         {
-            const char* items[] = {"Position", "BaseColor", "Normal", "Diffuse", "Specular"};
-            const unsigned values[] = {kViewPosition, kViewBaseColor, kViewNormal, kViewGBufferDiffuse,
-                                       kViewGBufferSpecular};
+            const char* items[] = {"Position", "BaseColor", "Normal"};
+            const unsigned values[] = {kViewPosition, kViewBaseColor, kViewNormal};
             ImGui::SeparatorText("GBuffer View");
+            changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
+        }
+        {
+            const char* items[] = {"PT Direct Only"};
+            const unsigned values[] = {kViewPTDirect};
+            ImGui::SeparatorText("Path Tracer View");
             changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
         }
         {
@@ -396,6 +409,11 @@ bool EditorProcessEvent(SDL_Event* event)
         if (event->key.key == SDLK_TAB)
         {
             enableImGui = !enableImGui;
+        }
+        if (event->key.key == SDLK_R)
+        {
+            rasterOrPT = !rasterOrPT;
+            FEState = FERunningEnter;
         }
     }
     ImGui_ImplFoundation_ProcessEvent(event);

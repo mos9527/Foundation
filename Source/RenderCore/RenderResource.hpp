@@ -86,8 +86,10 @@ namespace Foundation::RenderCore
         {
             auto [mip_begin, mip_end] = range.GetMipLevelRange();
             auto [layer_begin, layer_end] = range.GetArrayLayerRange();
+            CHECK(mip_end < textureMips);
+            CHECK(layer_end < textureLayers);
             uint32_t mip_stride = textureLayers * kTextureAspectCount;
-            return Views::all(Span<SubresourceState>{
+            return Views::all(Span{
                        lastSubresourceStates.begin() + mip_begin * mip_stride,
                        lastSubresourceStates.begin() + (mip_end + 1) * mip_stride,
                    }) |

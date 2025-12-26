@@ -39,7 +39,6 @@ void RendererSetupImGuiOnly(FContext* context)
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", true, FSetupDefault{});
     renderer->EndSetup();
 }
-// TODO: Make this part hot-reload?
 
 void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
 {
@@ -429,7 +428,6 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                 self, ZBuffer, "depth", RHIPipelineStageBits::ComputeShader,
                 RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
-            r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::ComputeShader, "materials");
             r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
             r->BindTextureUAV(self, LightingBuffer, "output", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
@@ -456,7 +454,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                 r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::ComputeShader,
                                   RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
                                                      .range = RHITextureSubresourceRange::Create(
-                                                         RHITextureAspectFlagBits::Color, 0, FullMips)});
+                                                         RHITextureAspectFlagBits::Color, 0, 1)});
                 r->BindBufferUnordered(self, HistogramBins, RHIPipelineStageBits::ComputeShader, "bins");
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -489,7 +487,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
                                                  .range = RHITextureSubresourceRange::Create(
-                                                     RHITextureAspectFlagBits::Color, 0, FullMips)});
+                                                     RHITextureAspectFlagBits::Color, 0, 1)});
             r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                  .range = RHITextureSubresourceRange::Create()});

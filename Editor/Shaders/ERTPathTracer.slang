@@ -4,12 +4,11 @@
 // - https://github.com/boksajak/referencePT/blob/master/shaders/PathTracer.hlsl
 // - https://github.com/nvpro-samples/vk_gltf_renderer/blob/master/shaders/gltf_pathtrace.slang
 import IFlags;
-import IMath;
 import ICommon;
-import IBRDF;
 import ILight;
+// vvv Optionally needs samplers
+#include "IBRDF_glTF.slang"
 uniform UBO globalParams;
-
 
 // -- Scene
 RaytracingAccelerationStructure AS;
@@ -20,130 +19,6 @@ SamplerState textureSampler;
 RWTexture2D<float4> accumulation;
 RWTexture2D<float4> lighting;
 [[vk_binding(0,2)]] Texture2D<float4> textures[];
-// -- glTF BSDF
-// Energy compensation LUTs. See https://mos9527.com/posts/foundation/pt-6-path-tracing-adventures/#ee_avg-%E9%A2%84%E7%A7%AF%E5%88%86
-[[vk_binding(0,1)]] SamplerState lutSampler;
-[[vk_binding(1,1)]] Texture2D<float2> ggxLutE;
-[[vk_binding(2,1)]] Texture2D<float> ggxLutEavg;
-// Fresnel eval approximation of layered materials
-// See https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#fresnel
-public float3 glTFFresnelMix(float cosTheta, float3 bottom, float3 top, float ior = 1.5f){
-    float F0 = pow((ior - 1) / (ior + 1), 2);
-    float3 F = SchlickFresnel(F0, 1.0f, cosTheta);
-    return lerp(bottom, top, F);
-}
-// Cheap, single-scattering LayeredBxDF alternative with glTF's metallic-roughness model
-// See also Appendix B. https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#material-structure
-public struct glTFBSDF : IBxDF {
-    float3 baseColor;
-    float metallic;
-    float roughness;
-    TrowbridgeReitzDistribution mfDistrib;
-
-    bool energyCompensation;
-    public __init(float3 baseColor, float metallic, float roughness, bool energyCompensation = true) {
-        this.baseColor = baseColor;
-        this.metallic = metallic;
-        this.roughness = roughness;
-        float alpha = roughness * roughness;
-        this.mfDistrib = TrowbridgeReitzDistribution(alpha, alpha);
-        this.energyCompensation = energyCompensation;
-    }
-    public BxDFFlags Flags() {
-        return BxDFFlags::Reflection | BxDFFlags::Glossy;
-    }
-    public float NEEGlossyProb(float3 wo) {
-        // float F0 = pow((ior - 1) / (ior + 1), 2); // IOR=1.5->0.04
-        float probGlossy = SchlickFresnel(0.04, 1.0f, ClampedCosTheta(wo));
-        return lerp(probGlossy, 1.0f, metallic); // Fully metallic means there's no diffuse lobe
-    }
-    public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode, BxDFReflTransFlags) {
-        float c_min_reflectance = 0.04f;
-        // Mixed Metallic/Dielectric Fresnel F0
-        const float3 F0 = lerp(float3(c_min_reflectance), baseColor, metallic);
-        const float3 F90 = 1.0f; // As per glTF spec
-        // Multi-scatter compensation
-        // https://mos9527.com/posts/foundation/pt-6-path-tracing-adventures/#%E8%83%BD%E9%87%8F%E5%AE%88%E6%81%92%E6%94%B9%E8%BF%9B
-        const float mu = AbsCosTheta(wo);
-        const float2 EEp = ggxLutE.SampleLevel(lutSampler, float2(mu, roughness), 0);
-        const float3 Epp = F0 * EEp.x + (F90 - F0) * EEp.y;
-        float probGlossy = NEEGlossyProb(wo);
-        if (uc < probGlossy) {
-            // Sample Glossy
-            if (mfDistrib.EffectivelySmooth()) {
-                // Dirac delta case
-                float3 wi = float3(-wo.x, -wo.y, wo.z); // = wr
-                wi = FaceForward(wi, float3(0,0,1));
-                float3 wm = normalize(wi + wo);
-
-                float3 Fss = SchlickFresnel(F0, 1.0f, AbsDot(wo, wm));
-                float3 Fms = F0 * (1/Epp - 1) * Fss;
-                if (!energyCompensation)
-                    Fms = 0;
-                float3 f = (Fss+Fms) / AbsCosTheta(wi);
-                // Sampled PDF would be delta, but we represent them as 1s w/o weighting
-                // With NEE this is what you get:
-                float pdf = 1.0f * probGlossy;
-                return BSDFSample(f, wi, pdf, BxDFFlags::SpecularReflection);
-            } else {
-                float3 wm = mfDistrib.Sample_wm(wo, u);
-                float3 wi = Reflect(wo, wm);
-                if (!SameHemisphere(wo, wi))
-                    return BSDFSample(); // Absorption
-
-                float3 Fss = SchlickFresnel(F0, 1.0f, AbsDot(wo, wm));
-                float3 Fms = F0 * (1/Epp - 1) * Fss;
-                if (!energyCompensation)
-                    Fms = 0;
-                float3 f = (Fms + Fss) * mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4 * AbsCosTheta(wi) * AbsCosTheta(wo));
-
-                float pdf = probGlossy * mfDistrib.PDF(wo, wm) / (4 * AbsDot(wo, wm));
-                return BSDFSample(f, wi, pdf, BxDFFlags::GlossyReflection);
-            }
-        } else {
-            // Sample Diffuse
-            float3 wi = SampleCosineHemisphere(u);
-            wi = FaceForward(wi, float3(0,0,1));
-            float3 wm = normalize(wo + wi);
-
-            float3 cdiff = baseColor * (1.0f - metallic);
-            float3 f = cdiff * InvPi;
-            if (energyCompensation)
-                f *= 1 - Epp;
-
-            float pdf = (1 - probGlossy) * CosineHemispherePDF(ClampedCosTheta(wi));
-            return BSDFSample(f, wi, pdf, BxDFFlags::DiffuseReflection);
-        }
-    }
-    public SampledSpectrum f(float3 wo, float3 wi, TransportMode) {
-        if (wo.z <= 0 || wi.z <= 0) return 0; // Only mirror reflection.
-        float3 wm = normalize(wo + wi);
-        float c_min_reflectance = 0.04f;
-        float3 f0 = lerp(float3(c_min_reflectance), baseColor, metallic);
-        // Same fresnel terms as before.
-        float3 fGlossy = SchlickFresnel(f0, 1.0f, ClampedDot(wo, wm));
-        float3 fDiffuse = (1.0f - SchlickFresnel(c_min_reflectance, 1.0f, AbsCosTheta(wo))) ;
-        // The two lobes - remember NEE only affects the PDF in sampling, not the eval.
-        SampledSpectrum diffuseBSDF = baseColor * fDiffuse * (1.0f - metallic) * InvPi;
-        SampledSpectrum specularBSDF = mfDistrib.D(wm) * fGlossy * mfDistrib.G(wo, wi) / (4 * AbsCosTheta(wi) * AbsCosTheta(wo));
-        // NEE for the combined lobe
-        if (mfDistrib.EffectivelySmooth()){
-            // PDF is dirac delta, which for eval is impossible to represent
-            // This is the specular case again, so eval there has zero contribution
-            return diffuseBSDF;
-        } else {
-            return diffuseBSDF + specularBSDF;
-        }
-    }
-    public float PDF(float3 wo, float3 wi, TransportMode, BxDFReflTransFlags) {
-        float3 wm = normalize(wo + wi);
-        float diffusePDF = CosineHemispherePDF(ClampedCosTheta(wi));
-        float specularPDF = mfDistrib.PDF(wo, wm) / (4 * ClampedDot(wo, wm));
-        if (mfDistrib.EffectivelySmooth())
-            specularPDF = 0.0f;
-        return diffusePDF * (1 - NEEGlossyProb(wo)) + specularPDF * NEEGlossyProb(wo);
-    }
-};
 
 void IntersectTriangle(uint meshOffset, uint primitive, float2 bary, out float3 position, out float3 normal, out float3 geometryNormal, out float3 tangent, out float2 uv, out float bitangentSign){
     GSMesh mesh = primitives.Load<GSMesh>(meshOffset);
@@ -315,9 +190,8 @@ void RayGeneration()
     ray.Direction = GeneratePrimaryRay(pix, rng);
     ray.TMin = 0.0f;
     ray.TMax = INF;
-    // Firefly reduction seen in nvpro-samples
-    // TODO: "Next ray is at least as rough as previous ray" fixes it? - why?
-    float maxRoughness = 0.0f;
+    // Combine the miss hit with the last light sample
+    float lastSamplePDF = 0.0f;
     for (uint bounce = 0; bounce < globalParams.ptMaxBounces; bounce++){
         HitPayload payload;
         TraceRay(AS, 0, 0xFF, 0, 0, 0, ray, payload);
@@ -325,9 +199,16 @@ void RayGeneration()
         float3 view = -ray.Direction;
         UniformInfiniteLight env = UniformInfiniteLight(globalParams.ambientColor, 1.0f);
         if (!payload.IsHit()){
+            LightSampleContext ctx; /* UNUSED */
             // Miss - environment
-            // Since we're using MIS, ambient light is effectively a constant
-            L += beta * env.Le(view);
+            if (bounce == 0){
+                L += env.Le(-view);
+                break;
+            }
+            // Final miss, weight by last sample
+            float pdf = env.PDF_Li(ctx, -view, true);
+            float mis = PowerHeuristic(1, lastSamplePDF, 1, pdf);
+            L += beta * env.Le(-view) * mis;
             break;
         }
         Payload hit = SamplePayload(payload);
@@ -353,31 +234,58 @@ void RayGeneration()
         quat toWorld     = toLocal.inverted();
         float3 n = float3(0,0,1);
         float3 wo = toLocal.rotate(view);
-        maxRoughness = max(maxRoughness, hit.roughness);
-        IBxDF bsdf = glTFBSDF(hit.baseColor, hit.metallic, maxRoughness, true /* energy comp */);
-        // IBxDF bsdf = DiffuseBxDF(hit.baseColor);
-        // Direct Lighting
-        // We only do one direct light sample for now.
+        IBxDF bsdf = glTFBSDF(hit.baseColor, hit.metallic, hit.roughness, true /* energy comp */);
+        // Light sampling [TODO. Really read into this chapter once my tests are done with...]
+        // https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling
         LightSampleContext ctx = LightSampleContext(hit.position, hit.geometryNormal, hit.normal);
-        DistantLight sun = DistantLight(SampledSpectrum(globalParams.sunIntensity), globalParams.sunDirection);
-        LightLiSample sunSample = sun.Sample_Li(ctx , rng.sample2D());
-        if (AnyLuminance(sunSample.Li)) {
-            // Sample sun direction
-            float3 w = toLocal.rotate(sunSample.wi);
-            float3 f = bsdf.f(wo, w) * ClampedCosTheta(w);
-            // Shadow ray
-            if (AnyLuminance(f)){
-                float3 origin = OffsetRay(hit.position, hit.geometryNormal);
-                bool occluded = TraceShadowRay(origin, sunSample.wi);
-                if (!occluded)
-                    L += beta * f * globalParams.sunIntensity;
+        LightLiSample Li = LightLiSample();
+        SampledSpectrum radiance = 0;
+        {
+            DistantLight sun = DistantLight(SampledSpectrum(globalParams.sunIntensity), globalParams.sunDirection);
+            // We only have the sun and the ambient light. For uniform MIS these have equal weights.
+            float pSun = globalParams.sunIntensity > EPS ? 0.5f : 0.0f;
+            float pEnv = 1.0f - pSun;
+            bool sampleSun = rng.sample() < pSun;
+
+            float samplePDF, pSample, otherPDF;
+            if (sampleSun){
+                Li = sun.Sample_Li(ctx, rng.sample2D());
+                radiance = Li.Li / (Li.pdf * pSun);
+                otherPDF = env.PDF_Li(ctx, Li.wi, true);
+                samplePDF = Li.pdf;
+                pSample = pSun;
+            } else {
+                Li = env.Sample_Li(ctx, rng.sample2D());
+                radiance = Li.Li / (Li.pdf * pEnv);
+                otherPDF = sun.PDF_Li(ctx, Li.wi, true);
+                samplePDF = Li.pdf;
+                pSample = pEnv;
             }
+            // https://www.pbr-book.org/4ed/Monte_Carlo_Integration/Improving_Efficiency#MultipleImportanceSampling
+            float mis = PowerHeuristic(1, samplePDF, 1, otherPDF);
+            radiance *= mis;
+            Li.pdf = pSample * samplePDF + (1 - pSample) * otherPDF;
+            // Shadow catcher
+            bool shadowed = TraceShadowRay(OffsetRay(hit.position, hit.geometryNormal), Li.wi);
+            if (shadowed)
+                Li.pdf = 0.0f;
         }
+        // Eval and add light contribution
+        float3 wi = toLocal.rotate(Li.wi);
+        float3 f = bsdf.f(wo, wi) * ClampedCosTheta(wi);
+        float pdf = bsdf.PDF(wo, wi);
+        if (Li.pdf > EPS){
+            float mis = PowerHeuristic(1, Li.pdf, 1, pdf);
+            L += beta * f * radiance * mis;
+        }
+        if (flags & kViewPTDirect)
+            break;
         // Emissive
         L += beta * hit.emissive;
         BSDFSample sample = bsdf.Sample_f(wo, rng.sample(), rng.sample2D());
         if (!sample.IsValid())
             break;
+        lastSamplePDF = sample.pdf;
         beta *= sample.f * AbsCosTheta(sample.wi) / sample.pdf;
         // Select next ray to sample from current position
         ray.Direction = toWorld.rotate(sample.wi);

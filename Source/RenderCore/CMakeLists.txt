@@ -32,3 +32,12 @@ target_precompile_headers(
 	PUBLIC
 	"$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc>"
 )
+if (FOUNDATION_WITH_ASAN)
+	if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+		target_compile_options(Foundation_RenderCore PUBLIC "/fsanitize=thread")
+		target_link_options(Foundation_RenderCore PUBLIC "/fsanitize=thread")
+	else ()
+		add_compile_options(Foundation_RenderCore PUBLIC "-fsanitize=thread")
+		add_link_options(Foundation_RenderCore PUBLIC "-fsanitize=thread")
+	endif ()
+endif()

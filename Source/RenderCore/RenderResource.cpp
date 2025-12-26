@@ -29,6 +29,7 @@ namespace Foundation::RenderCore
                     {
                         uint32_t i = mip * (textureLayers * kTextureAspectCount) + layer * kTextureAspectCount + aspect;
                         auto& state = lastSubresourceStates[i];
+                        state.producer = state.lastProducer = kInvalidHandle;
                         state.aspect = RHITextureAspectFlag(1u << aspect);
                         state.mip = mip, state.layer = layer;
                     }

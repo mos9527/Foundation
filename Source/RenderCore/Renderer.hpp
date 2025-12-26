@@ -130,6 +130,7 @@ namespace Foundation::RenderCore
             int executionNumGraphicsGroups{0}, executionNumComputeGroups{0};
             void add_edge(const PassHandle u, const PassHandle v, const ResourceHandle hdl)
             {
+                CHECK(u < kMaxRenderPasses && v < kMaxRenderPasses);
                 while (u >= graph.size())
                     graph.emplace_back(graph.get_allocator());
                 graph[u].emplace_back(v, hdl);

@@ -219,19 +219,20 @@ bool ImBitmaskOptionPicker(unsigned& value, const char** labels, const unsigned*
         bool selected = (value & masks[i]) != 0;
         if (ImGui::Checkbox(labels[i], &selected))
         {
-            if (solo)
+            if (selected)
             {
-                if (selected)
-                    value = masks[i];
-                else
-                    value = 0;
-            } else
-            {
-                if (selected)
-                    value |= masks[i];
-                else
-                    value &= ~masks[i];
+                value |= masks[i];
+                if (solo)
+                {
+                    for (unsigned j = 0; j < count; j++)
+                    {
+                        if (j != i)
+                            value &= ~masks[j];
+                    }
+                }
             }
+            else
+                value &= ~masks[i];
             any = true;
         }
         if (i != count - 1)

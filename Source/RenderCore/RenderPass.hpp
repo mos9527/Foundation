@@ -7,8 +7,8 @@ namespace Foundation::RenderCore
 {
     using namespace RHI;
     class Renderer;
-    using PassHandle = size_t; // Index in the pass definitions vector
-    using ResourceHandle = size_t; // Index in the resource definitions vector
+    using PassHandle = Handle; // Index in the pass definitions vector
+    using ResourceHandle = Handle; // Index in the resource definitions vector
     /**
      * @brief Interface for a render pass.
      */
