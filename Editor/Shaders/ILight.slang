@@ -2,7 +2,7 @@
 * PBRTv4-style interface for physically modeled light sources
 */
 import IMath;
-import IBRDF;
+import IBxDF;
 public enum class LightType {
     DeltaPosition,  // Point light
     DeltaDirection, // Directional light

@@ -1035,3 +1035,15 @@ public float SchlickFresnel(float ior, float cosTheta)
   // Fresnel reflectance using Schlick's approximation
   return R0 + (1.0F - R0) * pow(1.0F - cosTheta, 5.0F);
 }
+// Select event based on p with uniform probability u - with rescaling
+public bool Select(inout float u, float p){
+    if (p <= 0.0f) return false;
+    if (p >= 1.0f) return true;
+    if (u < p) {
+        u = u / p;
+        return true;
+    } else {
+        u = (u - p) / (1.0f - p);
+        return false;
+    }
+}

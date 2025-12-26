@@ -1,5 +1,5 @@
 #include "ICommon.slang"
-#include "IBRDF_glTF.slang"
+#include "IBSDF.slang"
 import IFlags;
 import IMath;
 [[SpecializationConstant]] int flags;
@@ -86,7 +86,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
         float3 L = 0;
 
         // Direct
-        glTFBSDF bsdf = glTFBSDF(baseColor, metallic, roughness);
+        PrincipledBSDF bsdf = PrincipledBSDF(baseColor, metallic, roughness);
         quat toLocal     = quatRotateToZ(n);
         quat toWorld     = toLocal.inverted();
         float3 n = float3(0,0,1);
@@ -97,9 +97,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
         L += beta * pdf /* dirac - this formulation on itself is not accurate */ * globalParams.sunIntensity;
 
         // Indirect
-        L += baseColor * globalParams.ambientColor;
-        // ^^^ Inaccurate. There's no AO.
-        // This needs to be a proper IBL someday - though approximating it with a diffuse lobe is acceptable for now.
+        // This needs to be a proper IBL someday.
         // We've long prepared the Eavg parts, however. I'll implement this once I finish pre-filtering as well.
 
         // Final color

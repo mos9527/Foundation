@@ -62,7 +62,6 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                                                         RHIBufferDesc{.usage = RHIBufferUsageBits::StorageBuffer,
                                                                       .size = sizeof(float)});
     auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
-    auto GGXlutEavg = renderer->CreateResource("GGX LUT Eavg", gpu->GetGGXlutEavg());
     auto LUTSampler = renderer->CreateSampler({
         .addressMode = {
             .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
@@ -101,9 +100,6 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
-                                                 .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureSRV(self, GGXlutEavg, "ggxLutEavg", RHIPipelineStageBits::RayTracingShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindDescriptorSet(self, "textures", gpu->GetTexturePool()->GetDescriptorSetLayout());
         }, [=](PassHandle self, Renderer* r, RHICommandList* cmd)

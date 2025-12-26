@@ -6,8 +6,7 @@
 import IFlags;
 import ICommon;
 import ILight;
-// vvv Optionally needs samplers
-#include "IBRDF_glTF.slang"
+#include "IBSDF.slang"
 uniform UBO globalParams;
 
 // -- Scene
@@ -207,13 +206,13 @@ void RayGeneration()
             }
             // Final miss, weight by last sample
             float pdf = env.PDF_Li(ctx, -view, true);
-            float mis = PowerHeuristic(1, lastSamplePDF, 1, pdf);
+            float mis = lastSamplePDF > EPS ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
             L += beta * env.Le(-view) * mis;
             break;
         }
         Payload hit = SamplePayload(payload);
         hit.EnsureFrontFacing(view);
-        // -- vv Debug View
+        // Debug View
         if (flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition)) {
             if (flags & kViewBaseColor) {
                 L = hit.baseColor;
@@ -226,7 +225,6 @@ void RayGeneration()
             }
             break;
         }
-        // -- ^^ Debug View
         /** Path Integrator **/
         // Local frame setup
         // vvv Investigate, supplied TBN frame shows lots of artifacts vvv
@@ -234,49 +232,52 @@ void RayGeneration()
         quat toWorld     = toLocal.inverted();
         float3 n = float3(0,0,1);
         float3 wo = toLocal.rotate(view);
-        IBxDF bsdf = glTFBSDF(hit.baseColor, hit.metallic, hit.roughness, true /* energy comp */);
+        IBxDF bsdf = PrincipledBSDF(hit.baseColor, hit.metallic, hit.roughness, true /* energy comp */);
         // Light sampling [TODO. Really read into this chapter once my tests are done with...]
         // https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling
-        LightSampleContext ctx = LightSampleContext(hit.position, hit.geometryNormal, hit.normal);
-        LightLiSample Li = LightLiSample();
-        SampledSpectrum radiance = 0;
         {
-            DistantLight sun = DistantLight(SampledSpectrum(globalParams.sunIntensity), globalParams.sunDirection);
-            // We only have the sun and the ambient light. For uniform MIS these have equal weights.
-            float pSun = globalParams.sunIntensity > EPS ? 0.5f : 0.0f;
-            float pEnv = 1.0f - pSun;
-            bool sampleSun = rng.sample() < pSun;
+            LightSampleContext ctx = LightSampleContext(hit.position, hit.geometryNormal, hit.normal);
+            LightLiSample Li = LightLiSample();
+            SampledSpectrum radiance = 0;
+            {
+                DistantLight sun = DistantLight(SampledSpectrum(globalParams.sunIntensity), globalParams.sunDirection);
+                // UniformInfiniteLight env [defined above]
+                // We only have the sun and the ambient light. For uniform MIS these have equal weights.
+                float pSun = globalParams.sunIntensity > EPS ? 0.5f : 0.0f;
+                float pEnv = 1.0f - pSun;
+                bool sampleSun = rng.sample() < pSun;
 
-            float samplePDF, pSample, otherPDF;
-            if (sampleSun){
-                Li = sun.Sample_Li(ctx, rng.sample2D());
-                radiance = Li.Li / (Li.pdf * pSun);
-                otherPDF = env.PDF_Li(ctx, Li.wi, true);
-                samplePDF = Li.pdf;
-                pSample = pSun;
-            } else {
-                Li = env.Sample_Li(ctx, rng.sample2D());
-                radiance = Li.Li / (Li.pdf * pEnv);
-                otherPDF = sun.PDF_Li(ctx, Li.wi, true);
-                samplePDF = Li.pdf;
-                pSample = pEnv;
+                float samplePDF, pSample, otherPDF;
+                if (sampleSun){
+                    Li = sun.Sample_Li(ctx, rng.sample2D());
+                    radiance = Li.Li / (Li.pdf * pSun);
+                    otherPDF = env.PDF_Li(ctx, Li.wi, true);
+                    samplePDF = Li.pdf;
+                    pSample = pSun;
+                } else {
+                    Li = env.Sample_Li(ctx, rng.sample2D());
+                    radiance = Li.Li / (Li.pdf * pEnv);
+                    otherPDF = sun.PDF_Li(ctx, Li.wi, true);
+                    samplePDF = Li.pdf;
+                    pSample = pEnv;
+                }
+                // https://www.pbr-book.org/4ed/Monte_Carlo_Integration/Improving_Efficiency#MultipleImportanceSampling
+                float mis = PowerHeuristic(1, samplePDF, 1, otherPDF);
+                radiance *= mis;
+                Li.pdf = pSample * samplePDF + (1 - pSample) * otherPDF;
+                // Shadow catcher
+                bool shadowed = TraceShadowRay(OffsetRay(hit.position, hit.geometryNormal), Li.wi);
+                if (shadowed)
+                    Li.pdf = 0.0f;
             }
-            // https://www.pbr-book.org/4ed/Monte_Carlo_Integration/Improving_Efficiency#MultipleImportanceSampling
-            float mis = PowerHeuristic(1, samplePDF, 1, otherPDF);
-            radiance *= mis;
-            Li.pdf = pSample * samplePDF + (1 - pSample) * otherPDF;
-            // Shadow catcher
-            bool shadowed = TraceShadowRay(OffsetRay(hit.position, hit.geometryNormal), Li.wi);
-            if (shadowed)
-                Li.pdf = 0.0f;
-        }
-        // Eval and add light contribution
-        float3 wi = toLocal.rotate(Li.wi);
-        float3 f = bsdf.f(wo, wi) * ClampedCosTheta(wi);
-        float pdf = bsdf.PDF(wo, wi);
-        if (Li.pdf > EPS){
-            float mis = PowerHeuristic(1, Li.pdf, 1, pdf);
-            L += beta * f * radiance * mis;
+            // Eval and add light contribution
+            float3 wi = toLocal.rotate(Li.wi);
+            float3 f = bsdf.f(wo, wi) * ClampedCosTheta(wi);
+            float pdf = bsdf.PDF(wo, wi);
+            if (Li.pdf > EPS){
+                float mis = PowerHeuristic(1, Li.pdf, 1, pdf);
+                L += beta * f * radiance * mis;
+            }
         }
         if (flags & kViewPTDirect)
             break;

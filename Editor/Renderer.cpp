@@ -408,6 +408,14 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
     bool kDebugViewUnlit = cfg.viewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewMeshlet);
     auto LightingAverageLuma = renderer->CreateResource("Lighting Average Luminance",
                                                         RHIBufferDesc{.usage = StorageBuffer, .size = sizeof(float)});
+    auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
+    auto LUTSampler = renderer->CreateSampler({
+    .addressMode = {
+        .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+        .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+        .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
+    }
+});
     renderer->CreatePass(
         "Lighting", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -429,6 +437,10 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                 RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
             r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
+            r->BindTextureSampler(self, LUTSampler, "lutSampler");
+            r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::RayTracingShader,
+                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
+                                     .range = RHITextureSubresourceRange::Create()});
             r->BindTextureUAV(self, LightingBuffer, "output", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
                                                  .range = RHITextureSubresourceRange::Create()});
