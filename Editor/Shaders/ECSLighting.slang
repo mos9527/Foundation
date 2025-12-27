@@ -94,11 +94,13 @@ void main(uint2 tid: SV_DispatchThreadID) {
         float3 wo = toLocal.rotate(v);
         float3 beta = bsdf.f(wo, wi) * AbsCosTheta(wi);
         float pdf = shadow(p, l) ? 0.0f : 1.0f;
-        L += beta * pdf /* dirac - this formulation on itself is not accurate */ * globalParams.sunIntensity;
+        L += beta * pdf * globalParams.sunIntensity;
 
-        // Indirect
-        // This needs to be a proper IBL someday.
-        // We've long prepared the Eavg parts, however. I'll implement this once I finish pre-filtering as well.
+        // Raster path really needs some love...
+        // The right thing to do here is a [pre]integrated environment BRDF lookup.
+        // vvv This is absolutely incorrect vvv
+        L += baseColor * globalParams.ambientColor;
+        // IBL would also be TODO. Until winter vacation...
 
         // Final color
         output[tid] = float4(L + emissive, 1.0f);

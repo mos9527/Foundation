@@ -364,7 +364,6 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
 void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices,
                          bool update)
 {
-    CHECK_MSG(instances.size() == blasIndices.size(), "Mismatched BLAS indices size");
     auto* device = mContext->device.Get();
     auto ConvertInstance = [&](const GSInstance* src) -> RHIAccelerationStructureGeometryInstance
     {
@@ -383,10 +382,10 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
     };
     // NOTE: Byte buffers
     auto [pInstances, instancesOffset] = mTLASInstances.Allocate(mTLASInstanceStride * instances.size());
-    for (size_t i = 0; i < instances.size(); i++)
+    for (const auto & instance : instances)
     {
-        auto data = ConvertInstance(&instances[i]);
-        data.blas = mBLASes[blasIndices[i]].Get();
+        auto data = ConvertInstance(&instance);
+        data.blas = mBLASes[blasIndices[instance.meshIndex]].Get();
         pInstances += mContext->device->WriteAccelerationStructureInstanceData(data, pInstances);
     }
     RHIAccelerationStructureGeometryInstanceData instance{

@@ -229,6 +229,18 @@ public uint hash(uint a)
     a = (a ^ 0xb55a4f09) ^ (a >> 16);
     return a;
 }
+public uint hash(uint2 v)
+{
+    return hash(v.x ^ hash(v.y));
+}
+public uint hash(uint3 v)
+{
+    return hash(v.x ^ hash(v.y ^ hash(v.z)));
+}
+public uint hash(uint4 v)
+{
+    return hash(v.x ^ hash(v.y ^ hash(v.z ^ hash(v.w))));
+}
 // -- RNG
 // In [0, 1) range
 float uintToFloat(uint x) {

@@ -91,6 +91,7 @@ public struct GSInstance
     public float3 scale;
     public uint32_t meshOffset; // In Primitive buffer (bytes)
     public uint32_t materialIndex; // In Material buffer (offset)
+    public uint32_t meshIndex; // Debug use
 };
 public struct GSMaterial
 {
@@ -146,7 +147,7 @@ public struct UBO
     public float3 camPosition;
     public float3 camDirection;
     public float3 sunDirection;
-    public float sunIntensity;
+    public float3 sunIntensity;
     public float3 ambientColor;
     // -- Path Tracing
     public uint32_t ptAccumualatedFrames;

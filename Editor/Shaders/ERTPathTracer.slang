@@ -243,7 +243,7 @@ void RayGeneration()
                 DistantLight sun = DistantLight(SampledSpectrum(globalParams.sunIntensity), globalParams.sunDirection);
                 // UniformInfiniteLight env [defined above]
                 // We only have the sun and the ambient light. For uniform MIS these have equal weights.
-                float pSun = globalParams.sunIntensity > EPS ? 0.5f : 0.0f;
+                float pSun = AnyLuminance(globalParams.sunIntensity) ? 0.5f : 0.0f;
                 float pEnv = 1.0f - pSun;
                 bool sampleSun = rng.sample() < pSun;
 
@@ -308,11 +308,52 @@ void RayGeneration()
         lighting[pix] = accumulation[pix] / frameCount;
     }
 }
-[shader("anyhit")] // Hit Group 0
-void RayOpacityAnyHit(inout ShadowPayload payload)
+// Naive stochastic opacity map implementation
+// This could get a LOT more involved with ray differentials for sampling
+// (our engine provides full mip chains for all textures - use it!)
+// And as of today we got Opacity Micro Maps for acceleration too.
+//  https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_opacity_micromap.html
+//  https://devblogs.microsoft.com/directx/omm/
+// ...This will do for now until I get more time (winter vacation!).
+// Final week is coming soon - I have yet to prepare for any of my exams :/
+float DecodeOpacity(GSMaterial material, float2 uv)
 {
-    // TODO: Opacity map
+    float4 baseColor = material.baseColorFactor;
+    if (material.baseColorTexture != 0)
+        baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, uv, 0);
+    return baseColor.a;
 }
+bool AnyHitOpacityIgnore(inout PCG rng, uint instance, uint primitive, BuiltInTriangleIntersectionAttributes attr){
+    HitPayload payload;
+    GSInstance inst = instances[NonUniformResourceIndex(instance)];
+    GSMaterial material = materials[NonUniformResourceIndex(inst.materialIndex)];
+    IntersectTriangle(inst.meshOffset, primitive, attr.barycentrics.xy, payload.position, payload.normal, payload.geometryNormal, payload.tangent.xyz, payload.uv, payload.tangent.w);
+    float opacity = DecodeOpacity(material, payload.uv);
+    if (opacity == 1.0f)
+        return false;
+    return rng.sample() > opacity;
+}
+[shader("anyhit")] // Hit Group 0
+void RayOpacityAnyHit(in BuiltInTriangleIntersectionAttributes attr)
+{
+    uint instance = InstanceIndex();
+    uint primitive = PrimitiveIndex();
+    PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
+    if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
+        return IgnoreHit();
+}
+[shader("anyhit")] // Hit Group 1
+void ShadowRayAnyHit(inout ShadowPayload payload, in BuiltInTriangleIntersectionAttributes attr)
+{
+    uint instance = InstanceIndex();
+    uint primitive = PrimitiveIndex();
+    PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
+    if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
+        return IgnoreHit();
+    payload.hit = true;
+    AcceptHitAndEndSearch();
+}
+
 [shader("closesthit")] // Hit Group 0
 void RayClosestHit(inout HitPayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
@@ -323,12 +364,7 @@ void RayClosestHit(inout HitPayload payload, in BuiltInTriangleIntersectionAttri
     payload.instance = instance;
     payload.material = inst.materialIndex;
 }
-[shader("anyhit")] // Hit Group 1
-void ShadowRayAnyHit(inout ShadowPayload payload)
-{
-    payload.hit = true;
-    AcceptHitAndEndSearch();
-}
+
 [shader("miss")] // Miss 0
 void RayMiss(inout HitPayload payload)
 {

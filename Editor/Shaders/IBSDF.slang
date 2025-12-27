@@ -51,8 +51,8 @@ public struct PrincipledBSDF /* glTF Core Spec ver */ : IBxDF {
         // A helpful assumption is that the energy entering the diffuse lobe *always*
         // gets out uniformly.
         // A real mixing node would do a Random Walk with volume attenuation. Check LayeredBxDF in IBxDF.slang
-        float3 dielEpp = max(dielF0 * lutE.x + (dielF90 - dielF0) * lutE.y, MIN_ALPHA);
         float3 diffuseBSDF = baseColor * InvPi;
+        float3 dielEpp = max(dielF0 * lutE.x + (dielF90 - dielF0) * lutE.y, MIN_ALPHA);
         if (energyCompensation) // Transmitted energy
             diffuseBSDF *= (1.0f - dielEpp);
 
@@ -93,22 +93,19 @@ public struct PrincipledBSDF /* glTF Core Spec ver */ : IBxDF {
         return pdf;
     }
 
+    public float3 PerfectReflectancePreserveEnergy(float3 wo, float3 wi, float2 lutE, float3 F0, float3 F90) {
+        float3 Epp = max(F0 * lutE.x + (F90 - F0) * lutE.y, MIN_ALPHA);
+        float3 Fss = SchlickFresnel(F0, F90, AbsDot(wo, normalize(wi+wo)));
+        float3 Fms = energyCompensation ? (F0 * (1.0f/Epp - 1.0f) * Fss) : float3(0);
+        return (Fss + Fms) / AbsCosTheta(wi);
+    }
 
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
         float3 wi;
         BxDFFlags sampledFlag;
 
-        float glossy = SchlickFresnel(0.04f, 1.0f, AbsCosTheta(wo));
-        bool isGlossy = false;
-        bool isMetal = false;
-        // Hierarchical sampling
-        // Select scales the uc term as it goes - don't worry about the uniformity
-        if (Select(uc, metallic))
-            isMetal = isGlossy = true;
-        else {
-            if (Select(uc, glossy))
-                isGlossy = true;
-        }
+        float glossy = lerp(SchlickFresnel(0.04f, 1.0f, AbsCosTheta(wo)), 1.0f, metallic);
+        bool isGlossy = Select(uc, glossy);
 
         if (isGlossy) {
             // Glossy (dielectric/metal) sample
@@ -119,22 +116,21 @@ public struct PrincipledBSDF /* glTF Core Spec ver */ : IBxDF {
                 wi = float3(-wo.x, -wo.y, wo.z);
                 wi = FaceForward(wi, float3(0,0,1));
 
-                // Mixing F0 stops making sense here as we rely on it to calculate
-                // energy compensation terms.
-                // NVPRO examples mixes F0 to express this mixture only because they're single-scattering.
-                // Thus we make metal/dielectric mix discrete events as well.
-                float3 F0 = isMetal ? baseColor : float3(0.04f);
-                float3 F90 = float3(1.0f);
+                float3 dielF0 = float3(0.04f);
+                float3 dielF90 = float3(1.0f);
+                float3 dielBSDF = PerfectReflectancePreserveEnergy(wo, wi, lutE, dielF0, dielF90);
 
-                float3 Epp = max(F0 * lutE.x + (F90 - F0) * lutE.y, MIN_ALPHA);
-                float3 Fss = SchlickFresnel(F0, F90, AbsDot(wo, normalize(wi+wo)));
-                float3 Fms = energyCompensation ? (F0 * (1.0f/Epp - 1.0f) * Fss) : float3(0);
+                float3 bsdf = dielBSDF;
 
-                float pdf = lerp(glossy, 1.0f, metallic);
-                // vvv Handle PDF like other PBRT impls. Base event is delta -> 1
-                pdf = 1.0f * pdf;
+                float3 metalF0 = baseColor;
+                float3 metalF90 = float3(1.0f);
+                float3 metalBSDF = PerfectReflectancePreserveEnergy(wo, wi, lutE, metalF0, metalF90);
+                bsdf = lerp(bsdf, metalBSDF, metallic);
 
-                return BSDFSample((Fss + Fms) / AbsCosTheta(wi), wi, pdf, BxDFFlags::SpecularReflection);
+                // Delta, we'll express base event as pdf=1 in sampling
+                float pdf = 1.0f * glossy;
+
+                return BSDFSample(bsdf, wi, pdf, BxDFFlags::SpecularReflection);
             }
             float3 wm = mfDistrib.Sample_wm(wo, u);
             wi = Reflect(wo, wm);

@@ -32,13 +32,13 @@ void FInitEnter()
     {
         auto& light = scene.mLights.front();
         GShaderGlobals.sunDirection = normalize(light.transform.rotation * float3(0, 0, -1));
-        GShaderGlobals.sunIntensity = light.intensity;
+        GShaderGlobals.sunIntensity = light.color * light.intensity;
         GShaderGlobals.camMinEV = 0.0f;
         GShaderGlobals.camMaxEV = log2f(light.intensity * 0.25f);
     }
     else
     {
-        GShaderGlobals.sunIntensity = 0.0f;
+        GShaderGlobals.sunIntensity = {};
     }
     // Load into GPUScene
     auto* gpu = GContext->gpuScene;
@@ -90,6 +90,7 @@ void FInitEnter()
         dst.scale = src.transform.scale;
         dst.meshOffset = meshOffsets[src.meshIndex];
         dst.materialIndex = src.materialIndex;
+        dst.meshIndex = src.meshIndex;
     }
     GSMaterials.clear();
     for (auto& src : scene.mMaterials)

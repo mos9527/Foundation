@@ -39,6 +39,7 @@ struct GSInstance
     float3 scale{1, 1, 1};
     uint32_t meshOffset; // In Primitive buffer (bytes)
     uint32_t materialIndex; // In Material buffer (offset)
+    uint32_t meshIndex; // Debug use
 };
 struct GSMaterial
 {
@@ -54,7 +55,7 @@ struct GSMaterial
 };
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
-static_assert(sizeof(GSInstance) == 48);
+static_assert(sizeof(GSInstance) == 52);
 
 template <typename T>
 struct UploadGPURingBuffer
