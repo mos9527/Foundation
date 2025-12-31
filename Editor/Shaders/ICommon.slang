@@ -133,8 +133,11 @@ public struct UBO
     public float zNear;
     public float4x4 view;
     public float4x4 proj;
+    public float4x4 inverseView;
     public float4x4 inverseViewProj;
     public float4 projPlanes; // ij:left, kl:top
+    public float aperture;
+    public float focalDistance;
     public float fbWidth;
     public float fbHeight;
     public uint32_t hizLevels;

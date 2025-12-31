@@ -178,6 +178,8 @@ void FRunningImGui()
         cameraUpdated |= ImGui::SliderFloat3("Cam Center", &GCamera.center.x, -50.0f, 50.0f);
         cameraUpdated |= ImGui::SliderFloat("Cam Radius", &GCamera.radius, 0.0f, 100.0f);
         cameraUpdated |= ImGui::SliderAngle("Cam FOV Y", &GCamera.fovY);
+        cameraUpdated |= ImGui::SliderFloat("Aperture", &GShaderGlobals.aperture, 1e-5f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic);
+        cameraUpdated |= ImGui::SliderFloat("Focal Distance", &GShaderGlobals.focalDistance, 0.1f, 1000.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("Min EV", &GShaderGlobals.camMinEV, -16.0f, 16.0f);
         ImGui::SliderFloat("Max EV", &GShaderGlobals.camMaxEV, -16.0f, 16.0f);
         ImGui::SliderFloat("Adapt Rate", &GCamera.adaptRate, 0.0f, 100.0f);
@@ -365,6 +367,7 @@ void FRunning()
     GShaderGlobals.frameNumber = renderer->GetFrame();
     GShaderGlobals.view = GCamera.view;
     GShaderGlobals.proj = GCamera.proj;
+    GShaderGlobals.inverseView = inverse(GShaderGlobals.view);
     GShaderGlobals.inverseViewProj = inverse(GShaderGlobals.proj * GShaderGlobals.view);
     GShaderGlobals.zNear = GCamera.zNear;
     GShaderGlobals.projPlanes = planeSymmetric(GShaderGlobals.proj);

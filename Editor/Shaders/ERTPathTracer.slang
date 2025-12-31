@@ -189,6 +189,19 @@ void RayGeneration()
     ray.Direction = GeneratePrimaryRay(pix, rng);
     ray.TMin = 0.0f;
     ray.TMax = INF;
+    // Simple Physical Lens
+    // https://www.pbr-book.org/4ed/Cameras_and_Film/Projective_Camera_Models#fragment-Computepointonplaneoffocus-0
+    // https://github.com/nvpro-samples/vk_gltf_renderer/blob/master/shaders/gltf_pathtrace.slang#L922
+    if (globalParams.focalDistance > EPS){
+        float3 focalPoint = globalParams.focalDistance * ray.Direction;
+        // Sample point on lens in world space
+        float3 T = mul(globalParams.inverseView, float4(1,0,0,0)).xyz;
+        float3 B = mul(globalParams.inverseView, float4(0,1,0,0)).xyz;
+        float2 lensSample = SampleConcentricDisk(rng.sample2D()) * globalParams.aperture * rng.sample();
+        float3 lensPoint = lensSample.x * T + lensSample.y * B;
+        ray.Origin += lensPoint;
+        ray.Direction = normalize(focalPoint - lensPoint);
+    }
     // Combine the miss hit with the last light sample
     float lastSamplePDF = 0.0f;
     for (uint bounce = 0; bounce < globalParams.ptMaxBounces; bounce++){

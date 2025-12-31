@@ -12,8 +12,12 @@ struct UBO
     float zNear;
     float4x4 view;
     float4x4 proj;
+    float4x4 inverseView;
     float4x4 inverseViewProj;
     float4 projPlanes; // ij:left, kl:top
+    float aperture{1e-3};
+    float focalDistance{1e1};
+    // -- Framebuffers
     float fbWidth;
     float fbHeight;
     uint32_t hizLevels;
@@ -30,7 +34,7 @@ struct UBO
     float3 ambientColor{1,1,1};
     // -- Path Tracing
     uint32_t ptAccumualatedFrames{0u};
-    int32_t ptMaxBounces{32u};
+    int32_t ptMaxBounces{4u};
 };
 #pragma pack(pop)
 
