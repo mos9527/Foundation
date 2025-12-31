@@ -101,7 +101,7 @@ void FInitEnter()
         dst.metallicFactor = src.metallicFactor;
         dst.roughnessFactor = src.roughnessFactor;
         dst.baseColorTexture = textureIDMap[src.baseColorTexture];
-        dst.emissiveTexture = textureIDMap[src.baseColorTexture];
+        dst.emissiveTexture = textureIDMap[src.emissiveTexture];
         dst.metallicRoughnessTexture = textureIDMap[src.metallicRoughnessTexture];
         dst.normalTexture = textureIDMap[src.normalTexture];
     }

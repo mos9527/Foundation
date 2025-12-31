@@ -34,7 +34,7 @@ struct UBO
     float3 ambientColor{1,1,1};
     // -- Path Tracing
     uint32_t ptAccumualatedFrames{0u};
-    int32_t ptMaxBounces{4u};
+    int32_t ptMaxBounces{8u};
 };
 #pragma pack(pop)
 
