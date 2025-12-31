@@ -1,6 +1,6 @@
 // Reference: https://projects.blender.org/blender/blender/src/commit/00546eb2f34cc95976a640d268deb371b7ca9210/intern/cycles/app/cycles_precompute.cpp
 import "../Editor/Shaders/IMath";
-import "../Editor/Shaders/IBRDF";
+import "../Editor/Shaders/IBxDF";
 RWStructuredBuffer<float2> ggxE;
 
 float sampleGGX_E(float rough, float cosTheta, float uc, float2 u, out float VdotH){
@@ -29,7 +29,7 @@ float sampleGGX_E(float rough, float cosTheta, float uc, float2 u, out float Vdo
 [numthreads(32,32,1)]
 void integrateGGX_E(uint2 p : SV_DispatchThreadID)
 {
-    static const uint kSamples = 1 << 12;
+    static const uint kSamples = 1 << 20;
     float E = 0.0f, Eprime = 0.0f, samples = 0.0f;
     float u = p.x / 31.0f, v = p.y / 31.0f;    
     PCG rng = PCG(uint4(p, 0, 0));

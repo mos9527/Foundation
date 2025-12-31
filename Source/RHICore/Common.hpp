@@ -319,4 +319,8 @@ namespace Foundation::RHI {
         PreferFastBuild = 1 << 3,
         LowMemory = 1 << 4
     BITMASK_ENUM_END()
+
+    BITMASK_ENUM_BEGIN(RHIAccelerationGeometryInstanceFlags, uint32_t)
+        TriangleCullDisable = 1 << 0,
+    BITMASK_ENUM_END()
 }

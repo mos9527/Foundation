@@ -1035,7 +1035,9 @@ public float SchlickFresnel(float ior, float cosTheta)
   // Fresnel reflectance using Schlick's approximation
   return R0 + (1.0F - R0) * pow(1.0F - cosTheta, 5.0F);
 }
-// Select event based on p with uniform probability u - with rescaling
+// Stratified Sampling
+// https://www.pbr-book.org/4ed/Monte_Carlo_Integration/Improving_Efficiency#StratifiedSampling
+// u is rescaled so it's always uniform in [0,1]
 public bool Select(inout float u, float p){
     if (p <= 0.0f) return false;
     if (p >= 1.0f) return true;

@@ -609,6 +609,8 @@ size_t VulkanDevice::WriteAccelerationStructureInstanceData(RHIAccelerationStruc
         res.transform.matrix[0][3] = data.transformTranslation[0];
         res.transform.matrix[1][3] = data.transformTranslation[1];
         res.transform.matrix[2][3] = data.transformTranslation[2];
+        if (data.flags & RHIAccelerationGeometryInstanceFlagsBits::TriangleCullDisable)
+            res.flags |= VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
         std::memcpy(dest, &res, sizeof(vk::AccelerationStructureInstanceKHR));
     }
     return sizeof(vk::AccelerationStructureInstanceKHR);

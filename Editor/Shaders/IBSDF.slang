@@ -4,10 +4,35 @@ import IMath;
 [[vk_binding(0,1)]] SamplerState lutSampler;
 [[vk_binding(1,1)]] Texture2D<float2> ggxLutE;
 
-const static float MIN_ALPHA = 1e-3;
+public float2 SampleGGXLutE(float mu, float roughness) {
+    return ggxLutE.SampleLevel(lutSampler, float2(mu, roughness), 0);
+}
+// -- OSL stdlib routines
+import glsl;
+// Directional Albedo
+public float reflectance(float F0, float F90, float2 lutE) {
+    return F0 * lutE.x + (F90 - F0) * lutE.y;
+}
+public float3 reflectance(float3 F0, float3 F90, float2 lutE) {
+    return F0 * lutE.x + (F90 - F0) * lutE.y;
+}
+// BSDF Layering function
+// https://open-shading-language.readthedocs.io/en/v1.13.12.0/stdlib.html#layering-and-signaling-closures
+public float layer(float base, float top, float topReflectance /* from reflectance() */) {
+    return top + base * (1.0f - topReflectance);
+}
+public float3 layer(float3 base, float3 top, float3 topReflectance /* from reflectance() */) {
+    return top + base * (1.0f - topReflectance);
+}
+
 // Inspired by Blender's OSL implementation
 //  https://projects.blender.org/blender/blender/src/commit/96d715c643888c78e5dbaa8bd3c3c79ce599c0a3/intern/cycles/kernel/osl/shaders/node_principled_bsdf.osl#L15
 public struct PrincipledBSDF /* glTF Core Spec ver */ : IBxDF {
+    const static float dielF0 = 0.04f;
+    const static float dielF90 = 1.0f;
+    // const static float3 metalF0 -> baseColor
+    const static float metalF90 = 1.0f;
+
     float3 baseColor;
     float metallic;
     float roughness;
@@ -18,10 +43,14 @@ public struct PrincipledBSDF /* glTF Core Spec ver */ : IBxDF {
     public __init(float3 baseColor, float metallic, float roughness, bool energyCompensation = true) {
         this.baseColor = baseColor;
         this.metallic = metallic;
+
+        // Keep it simple - we don't need to deal with EffectivelySmooth this way
+        roughness = max(EPS, roughness);
+
         this.roughness = roughness;
         this.energyCompensation = energyCompensation;
 
-        float alpha = max(MIN_ALPHA, roughness * roughness);
+        float alpha = roughness * roughness;
         this.mfDistrib = TrowbridgeReitzDistribution(alpha, alpha);
     }
 
@@ -34,7 +63,7 @@ public struct PrincipledBSDF /* glTF Core Spec ver */ : IBxDF {
         float3 Fss = SchlickFresnel(F0, F90, AbsDot(wo, wm));
         float3 Fms = 0.0f;
         if (energyCompensation) {
-            float3 Epp = max(F0 * lutE.x + (F90 - F0) * lutE.y, MIN_ALPHA);
+            float3 Epp = max(F0 * lutE.x + (F90 - F0) * lutE.y, EPS);
             Fms = F0 * (1.0f / Epp - 1.0f) * Fss;
         }
         return (Fss + Fms) * mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4.0f * AbsCosTheta(wo) * AbsCosTheta(wi));
@@ -42,96 +71,69 @@ public struct PrincipledBSDF /* glTF Core Spec ver */ : IBxDF {
 
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         if (wo.z <= 0 || wi.z <= 0) return 0; // Reflection only
-        float2 lutE = ggxLutE.SampleLevel(lutSampler, float2(AbsCosTheta(wo), roughness), 0);
-        
-        float3 dielF0 = float3(0.04f);
-        float3 dielF90 = float3(1.0f);
-        float3 dielBSDF = TorranceSparrowPreserveEnergy(wo, wi, dielF0, dielF90, lutE);
-        // 1 - R
-        // A helpful assumption is that the energy entering the diffuse lobe *always*
-        // gets out uniformly.
-        // A real mixing node would do a Random Walk with volume attenuation. Check LayeredBxDF in IBxDF.slang
+        float2 lutE = SampleGGXLutE(AbsCosTheta(wo), roughness);
+
+        // Dielectric top/bottom
         float3 diffuseBSDF = baseColor * InvPi;
-        float3 dielEpp = max(dielF0 * lutE.x + (dielF90 - dielF0) * lutE.y, MIN_ALPHA);
-        if (energyCompensation) // Transmitted energy
-            diffuseBSDF *= (1.0f - dielEpp);
-
+        float3 dielBSDF = TorranceSparrowPreserveEnergy(wo, wi, dielF0, dielF90, lutE);
         // Base Layer
-        float3 bsdf = dielBSDF + diffuseBSDF;
-
+        float3 bsdf = layer(diffuseBSDF, dielBSDF, reflectance(dielF0, dielF90, lutE));
         // Metal
         // There's no diffuse lobe anymore (completely absorbed!)
         // Blender has a F82 tint model for modeling F0, but for convenience's sake
         // (since glTF never does that) we'll use baseColor for that.
-        float3 metalF0 = baseColor;
-        float3 metalF90 = float3(1.0f);
-        float3 metalBSDF = TorranceSparrowPreserveEnergy(wo, wi, metalF0, metalF90, lutE);
-        bsdf = lerp(bsdf, metalBSDF, metallic);
-        
+        float3 metalBSDF = TorranceSparrowPreserveEnergy(wo, wi, baseColor, metalF90, lutE);
+
+        bsdf = mix(bsdf, metalBSDF, metallic);
         return bsdf;
     }
 
+
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
         float3 wm = normalize(wo + wi);
-        // Probability of choosing glossy vs diffuse
-        // This is not physically *accurate*, as this uses the single-scattering
-        // transmittance approximation for the dielectric layer only.
-        // See also previous 1-Epp for diffuse energy.
-        float sampleGlossy = SchlickFresnel(0.04f, 1.0f, AbsCosTheta(wo));
 
-        // Component PDFs
-        float pdfGlossy = mfDistrib.PDF(wo, wm) / (4.0f * AbsDot(wo, wm));
-        float pdfDiffuse = CosineHemispherePDF(AbsCosTheta(wi));
-        if (mfDistrib.EffectivelySmooth()) pdfGlossy = 0.0f; // Delta handling
+        float sampleGlossy = reflectance(dielF0, dielF90, SampleGGXLutE(AbsCosTheta(wo), roughness));
 
-        // Base Layer
-        float pdf = sampleGlossy * pdfGlossy + (1.0f - sampleGlossy) * pdfDiffuse;
+        float glossyPDF =  mfDistrib.PDF(wo, wm) / (4.0f * AbsDot(wo, wm));
+        // Dielectric top/bottom
+        float dielPDF = glossyPDF;
+        float diffusePDF = CosineHemispherePDF(AbsCosTheta(wi));
 
-        // Metal
-        float metal = pdfGlossy;
-        pdf = lerp(pdf, metal, metallic);
+        // Base Layer (MIS)
+        // https://pbr-book.org/4ed/Monte_Carlo_Integration/Improving_Efficiency#MultipleImportanceSampling
+        // ---
+        // Two sampling methods (techniques) can arrive here, with p(f) of glossyPDF and diffusePDF
+        // with probabilities of sampleGlossy and (1 - sampleGlossy) respectively.
+        // Assuming we'd use Balance Heuristic, the single sample model would be:
+        //  Fs = fGlossy/pdfGlossy * (1/sampleGlossy) * BalanceHeuristic(1, pdfGlossy * sampleGlossy, 1, pdfDiffuse * (1 - sampleGlossy))
+        // and for diffuse
+        //  Fd = fDiffuse/pdfDiffuse * (1/(1 - sampleGlossy)) * BalanceHeuristic(1, pdfDiffuse * (1-sampleGlossy), 1, pdfGlossy * sampleGlossy)
+        // ...Take the glossy path for example and simplify:
+        //  Fs = fGlossy/pdfGlossy * (1/sampleGlossy) * ((pdfGlossy * sampleGlossy) / (pdfGlossy * sampleGlossy + pdfDiffuse * (1 - sampleGlossy)))
+        //     = fGlossy / (pdfGlossy * sampleGlossy + pdfDiffuse * (1 - sampleGlossy))
+        //  Fd = ...
+        //     = fDiffuse / (pdfDiffuse * (1 - sampleGlossy) + pdfGlossy * sampleGlossy)
+        // Denominator is the same! Thus the final PDF is simply:
+        // PDF = pdfGlossy * sampleGlossy + pdfDiffuse * (1 - sampleGlossy)
+        float pdf = diffusePDF * (1.0f - sampleGlossy) + dielPDF * sampleGlossy;
+
+        // Metal (Linearly mixed)
+        float metal = glossyPDF;
+        pdf = mix(pdf, metal, metallic);
         return pdf;
-    }
-
-    public float3 PerfectReflectancePreserveEnergy(float3 wo, float3 wi, float2 lutE, float3 F0, float3 F90) {
-        float3 Epp = max(F0 * lutE.x + (F90 - F0) * lutE.y, MIN_ALPHA);
-        float3 Fss = SchlickFresnel(F0, F90, AbsDot(wo, normalize(wi+wo)));
-        float3 Fms = energyCompensation ? (F0 * (1.0f/Epp - 1.0f) * Fss) : float3(0);
-        return (Fss + Fms) / AbsCosTheta(wi);
     }
 
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
         float3 wi;
         BxDFFlags sampledFlag;
 
-        float glossy = lerp(SchlickFresnel(0.04f, 1.0f, AbsCosTheta(wo)), 1.0f, metallic);
-        bool isGlossy = Select(uc, glossy);
+        float sampleGlossy = reflectance(dielF0, dielF90, SampleGGXLutE(AbsCosTheta(wo), roughness));
 
-        if (isGlossy) {
+        bool isGlossy = Select(uc, sampleGlossy);
+        bool isMetal = Select(uc, metallic);
+
+        if (isGlossy | isMetal) {
             // Glossy (dielectric/metal) sample
-            if (mfDistrib.EffectivelySmooth()) {
-                // Delta case. This is not possible to be generated by f() or PDF()
-                // and this case - in itself - is discrete.
-                float2 lutE = ggxLutE.SampleLevel(lutSampler, float2(AbsCosTheta(wo), roughness), 0);
-                wi = float3(-wo.x, -wo.y, wo.z);
-                wi = FaceForward(wi, float3(0,0,1));
-
-                float3 dielF0 = float3(0.04f);
-                float3 dielF90 = float3(1.0f);
-                float3 dielBSDF = PerfectReflectancePreserveEnergy(wo, wi, lutE, dielF0, dielF90);
-
-                float3 bsdf = dielBSDF;
-
-                float3 metalF0 = baseColor;
-                float3 metalF90 = float3(1.0f);
-                float3 metalBSDF = PerfectReflectancePreserveEnergy(wo, wi, lutE, metalF0, metalF90);
-                bsdf = lerp(bsdf, metalBSDF, metallic);
-
-                // Delta, we'll express base event as pdf=1 in sampling
-                float pdf = 1.0f * glossy;
-
-                return BSDFSample(bsdf, wi, pdf, BxDFFlags::SpecularReflection);
-            }
             float3 wm = mfDistrib.Sample_wm(wo, u);
             wi = Reflect(wo, wm);
             sampledFlag = BxDFFlags::GlossyReflection;
@@ -141,7 +143,6 @@ public struct PrincipledBSDF /* glTF Core Spec ver */ : IBxDF {
             wi = FaceForward(wi, float3(0,0,1));
             sampledFlag = BxDFFlags::DiffuseReflection;
         }
-
         if (!SameHemisphere(wo, wi)) return BSDFSample();
         SampledSpectrum val = this.f(wo, wi, mode);
         float pdf = this.PDF(wo, wi, mode, flags);

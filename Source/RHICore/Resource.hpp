@@ -253,6 +253,7 @@ namespace Foundation::RHI
         float transformTranslation[3];
         uint32_t instanceID;
         uint32_t mask;
+        RHIAccelerationGeometryInstanceFlags flags;
     };
     struct RHIAccelerationStructureGeometryInstanceData
     {

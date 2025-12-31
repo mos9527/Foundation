@@ -206,7 +206,9 @@ void RayGeneration()
             }
             // Final miss, weight by last sample
             float pdf = env.PDF_Li(ctx, -view, true);
-            float mis = lastSamplePDF > EPS ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
+            // We can arrive at a environment sample either from the direct sample path before,
+            // or the environment itself.
+            float mis = lastSamplePDF > EPS ? BalanceHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
             L += beta * env.Le(-view) * mis;
             break;
         }
@@ -262,8 +264,10 @@ void RayGeneration()
                     pSample = pEnv;
                 }
                 // https://www.pbr-book.org/4ed/Monte_Carlo_Integration/Improving_Efficiency#MultipleImportanceSampling
-                float mis = PowerHeuristic(1, samplePDF, 1, otherPDF);
+                float mis = BalanceHeuristic(1, samplePDF, 1, otherPDF);
                 radiance *= mis;
+                // vvv Similar to PrincipledBSDF's PDF calculation
+                // You can derive these from single sample situations
                 Li.pdf = pSample * samplePDF + (1 - pSample) * otherPDF;
                 // Shadow catcher
                 bool shadowed = TraceShadowRay(OffsetRay(hit.position, hit.geometryNormal), Li.wi);
@@ -271,11 +275,13 @@ void RayGeneration()
                     Li.pdf = 0.0f;
             }
             // Eval and add light contribution
+            // Li is now effectively the 'combined' sample here.
             float3 wi = toLocal.rotate(Li.wi);
             float3 f = bsdf.f(wo, wi) * ClampedCosTheta(wi);
             float pdf = bsdf.PDF(wo, wi);
-            if (Li.pdf > EPS){
-                float mis = PowerHeuristic(1, Li.pdf, 1, pdf);
+            // Light can arrive from the light itself, or the sampled BSDF path
+            if (pdf > EPS){
+                float mis = BalanceHeuristic(1, Li.pdf, 1, pdf);
                 L += beta * f * radiance * mis;
             }
         }
@@ -316,19 +322,17 @@ void RayGeneration()
 //  https://devblogs.microsoft.com/directx/omm/
 // ...This will do for now until I get more time (winter vacation!).
 // Final week is coming soon - I have yet to prepare for any of my exams :/
-float DecodeOpacity(GSMaterial material, float2 uv)
-{
-    float4 baseColor = material.baseColorFactor;
-    if (material.baseColorTexture != 0)
-        baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, uv, 0);
-    return baseColor.a;
-}
 bool AnyHitOpacityIgnore(inout PCG rng, uint instance, uint primitive, BuiltInTriangleIntersectionAttributes attr){
-    HitPayload payload;
     GSInstance inst = instances[NonUniformResourceIndex(instance)];
     GSMaterial material = materials[NonUniformResourceIndex(inst.materialIndex)];
-    IntersectTriangle(inst.meshOffset, primitive, attr.barycentrics.xy, payload.position, payload.normal, payload.geometryNormal, payload.tangent.xyz, payload.uv, payload.tangent.w);
-    float opacity = DecodeOpacity(material, payload.uv);
+    float4 baseColor = material.baseColorFactor;
+    if (material.baseColorTexture != 0){
+        HitPayload payload;
+        IntersectTriangle(inst.meshOffset, primitive, attr.barycentrics.xy, payload.position, payload.normal, payload.geometryNormal, payload.tangent.xyz, payload.uv, payload.tangent.w);
+        baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, payload.uv, 0);
+    }
+    float opacity = baseColor.a;
+
     if (opacity == 1.0f)
         return false;
     return rng.sample() > opacity;
