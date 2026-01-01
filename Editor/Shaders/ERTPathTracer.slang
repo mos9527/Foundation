@@ -89,7 +89,13 @@ struct Payload {
     float3 emissive;
     float metallic;
     float roughness;
+    float transmission;
     float ior;
+
+    [mutating] void EnsureFrontFacing(float3 wo){
+        if (dot(geometryNormal, wo) < 0.0f) geometryNormal *= -1;
+        if (dot(geometryNormal, normal) < 0.0f) normal *= -1;
+    }
 };
 Payload SamplePayload(HitPayload payload)
 {
@@ -116,6 +122,7 @@ Payload SamplePayload(HitPayload payload)
     res.bitangent = cross(res.normal, res.tangent) * (payload.tangent.w > 0.0f ? 1 : -1);
     res.normal = normalize(res.tangent * normalTBN.x + res.bitangent * normalTBN.y + res.normal * normalTBN.z);
     res.ior = 1.5f; // TODO
+    res.transmission = material.transmissionFactor;
     return res;
 }
 // The safeOffsetRay function shifts a point on a surface so that a ray
@@ -166,7 +173,7 @@ bool TraceShadowRay(float3 origin, float3 direction)
     ray.Origin = origin;
     ray.Direction = direction;
     ray.TMin = 0.0f;
-    ray.TMax = 1e9;
+    ray.TMax = INF;
     ShadowPayload payload;
     TraceRay(AS, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, 1, 1, 1, ray, payload);
     return payload.hit;
@@ -184,7 +191,7 @@ void RayGeneration()
     RayDesc ray;
     ray.Origin = globalParams.camPosition;
     ray.Direction = GeneratePrimaryRay(pix, rng);
-    ray.TMin = EPS;
+    ray.TMin = 0.0f;
     ray.TMax = INF;
     // Simple Physical Lens
     // https://www.pbr-book.org/4ed/Cameras_and_Film/Projective_Camera_Models#fragment-Computepointonplaneoffocus-0
@@ -238,12 +245,11 @@ void RayGeneration()
         }
         /** Path Integrator **/
         // Local frame setup
-        // vvv Investigate, supplied TBN frame shows lots of artifacts vvv
         quat toLocal     = quatRotateToZ(hit.normal);
         quat toWorld     = toLocal.inverted();
         float3 n = float3(0,0,1);
         float3 wo = toLocal.rotate(view);
-        IBxDF bsdf = PrincipledBSDF(hit.baseColor, 0.0f, hit.roughness, 1.0f, hit.ior);
+        IBxDF bsdf = PrincipledBSDF(hit.baseColor, hit.metallic, hit.roughness, hit.transmission, hit.ior, true);
         // Light sampling [TODO. Really read into this chapter once my tests are done with...]
         // https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling
         {
@@ -278,8 +284,8 @@ void RayGeneration()
                 // vvv Similar to PrincipledBSDF's PDF calculation
                 // You can derive these from single sample situations
                 Li.pdf = pSample * samplePDF + (1 - pSample) * otherPDF;
-                // Shadow catcher
-                float3 shadowOrigin = OffsetRay(hit.position, dot(hit.geometryNormal, Li.wi) > 0 ? hit.geometryNormal : -hit.geometryNormal);
+                // AO and Direct shadow ray
+                float3 shadowOrigin = OffsetRay(hit.position, hit.geometryNormal);
                 bool shadowed = TraceShadowRay(shadowOrigin, Li.wi);
                 if (shadowed)
                     Li.pdf = 0.0f;
@@ -290,7 +296,7 @@ void RayGeneration()
             float3 f = bsdf.f(wo, wi) * ClampedCosTheta(wi);
             float pdf = bsdf.PDF(wo, wi);
             // Light can arrive from the light itself, or the sampled BSDF path
-            if (pdf > EPS){
+            if (Li.pdf > EPS && pdf > EPS){
                 float mis = BalanceHeuristic(1, Li.pdf, 1, pdf);
                 L += beta * f * radiance * mis;
             }
@@ -304,13 +310,8 @@ void RayGeneration()
             break;
         lastSamplePDF = sample.pdf;
         beta *= sample.f * AbsCosTheta(sample.wi) / sample.pdf;
-        // Select next ray to sample from current position
         ray.Direction = toWorld.rotate(sample.wi);
-        // Inside or outside?
-        bool backside = dot(ray.Direction, hit.geometryNormal) < 0;
-        if (backside && !IsTransmission(sample.flags))
-            break;
-        ray.Origin = OffsetRay(hit.position, backside ? -hit.geometryNormal : hit.geometryNormal);
+        ray.Origin = OffsetRay(hit.position, hit.geometryNormal);
         // Russian Roulette
         float rrPCount = min(MaxComponent(beta) + 0.01f, 0.95f);
         if (rng.sample() > rrPCount) // Contribution is low, may terminate early
@@ -336,7 +337,7 @@ void RayGeneration()
 //  https://devblogs.microsoft.com/directx/omm/
 // ...This will do for now until I get more time (winter vacation!).
 // Final week is coming soon - I have yet to prepare for any of my exams :/
-bool AnyHitOpacityIgnore(inout PCG rng, uint instance, uint primitive, BuiltInTriangleIntersectionAttributes attr){
+bool AnyHitOpacityIgnore(inout PCG rng, uint instance, uint primitive, BuiltInTriangleIntersectionAttributes attr, bool isShadowRay = false){
     GSInstance inst = instances[NonUniformResourceIndex(instance)];
     GSMaterial material = materials[NonUniformResourceIndex(inst.materialIndex)];
     float4 baseColor = material.baseColorFactor;
@@ -349,7 +350,12 @@ bool AnyHitOpacityIgnore(inout PCG rng, uint instance, uint primitive, BuiltInTr
 
     if (opacity == 1.0f)
         return false;
-    return rng.sample() > opacity;
+
+    if (rng.sample() < 1.0f - opacity)
+        return true;
+    if (isShadowRay && rng.sample() < material.transmissionFactor)
+        return true;
+    return false;
 }
 [shader("anyhit")] // Hit Group 0
 void RayOpacityAnyHit(in BuiltInTriangleIntersectionAttributes attr)
@@ -366,7 +372,7 @@ void ShadowRayAnyHit(inout ShadowPayload payload, in BuiltInTriangleIntersection
     uint instance = InstanceIndex();
     uint primitive = PrimitiveIndex();
     PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
-    if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
+    if (AnyHitOpacityIgnore(rng, instance, primitive, attr, true /* shadow transmission */))
         return IgnoreHit();
     payload.hit = true;
     AcceptHitAndEndSearch();

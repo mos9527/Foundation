@@ -51,6 +51,7 @@ struct GSMaterial
     float3 emissiveFactor;
     float metallicFactor;
     float roughnessFactor;
+    float transmissionFactor;
     float anisotropy;
 };
 #pragma pack(pop)

@@ -148,21 +148,16 @@ public float3 Reflect(float3 wo, float3 n) {
     return -wo + 2 * dot(wo, n) * n;
 }
 // https://www.pbr-book.org/4ed/Reflection_Models/Specular_Reflection_and_Transmission#SnellrsquosLaw
-public bool Refract(float3 wi, float3 n, float eta /* IOR */, out float3 wt, out float etap){
-    float cosTheta_i = dot(n, wi);
-    if (cosTheta_i < 0) { // Inside an object?
-        eta = 1 / eta;
-        cosTheta_i = -cosTheta_i;
-        n = -n;
-    }
-    float sin2Theta_i = 1 - Sqr(cosTheta_i);
-    float sin2Theta_t = sin2Theta_i / Sqr(eta);
-    if (sin2Theta_t >= 1) // Total internal reflection - transmission impossible
-        return false;
-    float cosTheta_t = SafeSqrt(1 - sin2Theta_t);
-    wt = eta * -wi + (eta * cosTheta_i - cosTheta_t) * n;
-    etap = eta;
-    return true;
+// https://github.com/nvpro-samples/nvpro_core2/blob/2915dc93c2b5dea002851c7f90f49f5bdd1fe372/nvshaders/pbr_ggx_microfacet.h.slang#L330
+public float3 Refract(const float3 k,         // direction (pointing from surface)
+               const float3 n,                // normal
+               const float  b,                // (reflected side IOR) / (transmitted side IOR)
+               out bool tir)                  // total internal reflection
+{
+    const float nk = dot(n,k);
+    const float refraction = b * b * (1.0f - nk * nk);
+    tir = (1.0f <= refraction);
+    return (tir) ? (n * (nk + nk) - k) : normalize((-k * b + n * (b * nk - sqrt(1.0f - refraction))));
 }
 // https://www.pbr-book.org/4ed/Reflection_Models/Specular_Reflection_and_Transmission#TheFresnelEquations
 // Percentage of light reflected (or otherwise transmitted) at a dielectric interface
@@ -588,9 +583,11 @@ public struct DielectricBxDF : IBxDF {
                 return BSDFSample(F, wi, pr / (pr + pt), BxDFFlags::SpecularReflection);
             } else {
                 // Sample perfectly specular BTDF
-                float etap; float3 wi;
+                float etap;
                 // vvv Shouldn't be possible to fail since T won't be 0 vvv
-                if (!Refract(wo, float3(0,0,1), eta, wi, etap))
+                bool tir;
+                float3 wi = Refract(wo, float3(0,0,1), eta, tir);
+                if (tir)
                     return BSDFSample();
                 SampledSpectrum ft = float3(T) / AbsCosTheta(wi);
                 // Adjust for non-symmetric transport
@@ -627,8 +624,9 @@ public struct DielectricBxDF : IBxDF {
             } else {
                 // Sample rough BTDF
                 float etap;
-                float3 wi;
-                if (!Refract(wo, wm, eta, wi, etap) || SameHemisphere(wo, wi) || wi.z == 0)
+                bool tir;
+                float3 wi = Refract(wo, float3(0,0,1), eta, tir);
+                if (tir || SameHemisphere(wo, wi) || wi.z == 0)
                     return BSDFSample(); // Total internal reflection or invalid sample
                 // 2. Compute PDF
                 // The same Jacobian for transmission case in PDF(), with prob scaling

@@ -104,6 +104,7 @@ void FInitEnter()
         dst.emissiveTexture = textureIDMap[src.emissiveTexture];
         dst.metallicRoughnessTexture = textureIDMap[src.metallicRoughnessTexture];
         dst.normalTexture = textureIDMap[src.normalTexture];
+        dst.transmissionFactor = src.transmissionFactor;
     }
     // Upload instance data
     {

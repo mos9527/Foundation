@@ -166,6 +166,7 @@ void LoadGLTF(StringView path, FScene& scene)
             material.emissiveTexture = cgltf_texture_index(data, mat->emissive_texture.texture) + 1u;
         material.emissiveFactor = {mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2]};
         material.emissiveFactor *= mat->emissive_strength.emissive_strength;
+        material.transmissionFactor = mat->transmission.transmission_factor;
         scene.mMaterials.emplace_back(material);
     }
     /* Textures and Meshes */

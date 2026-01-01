@@ -103,6 +103,7 @@ public struct GSMaterial
     public float3 emissiveFactor;
     public float metallicFactor;
     public float roughnessFactor;
+    public float transmissionFactor;
     public float anisotropy;
 };
 public struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT

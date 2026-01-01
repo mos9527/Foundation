@@ -40,6 +40,7 @@ struct FMaterial
     float3 emissiveFactor;
     float metallicFactor;
     float roughnessFactor;
+    float transmissionFactor;
 };
 struct FLight
 {
