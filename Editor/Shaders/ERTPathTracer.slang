@@ -89,11 +89,7 @@ struct Payload {
     float3 emissive;
     float metallic;
     float roughness;
-
-    [mutating] void EnsureFrontFacing(float3 wo){
-        if (dot(geometryNormal, wo) < 0.0f) geometryNormal *= -1;
-        if (dot(geometryNormal, normal) < 0.0f) normal *= -1;
-    }
+    float ior;
 };
 Payload SamplePayload(HitPayload payload)
 {
@@ -119,6 +115,7 @@ Payload SamplePayload(HitPayload payload)
     res.position = res.position * inst.scale + inst.transform;
     res.bitangent = cross(res.normal, res.tangent) * (payload.tangent.w > 0.0f ? 1 : -1);
     res.normal = normalize(res.tangent * normalTBN.x + res.bitangent * normalTBN.y + res.normal * normalTBN.z);
+    res.ior = 1.5f; // TODO
     return res;
 }
 // The safeOffsetRay function shifts a point on a surface so that a ray
@@ -187,7 +184,7 @@ void RayGeneration()
     RayDesc ray;
     ray.Origin = globalParams.camPosition;
     ray.Direction = GeneratePrimaryRay(pix, rng);
-    ray.TMin = 0.0f;
+    ray.TMin = EPS;
     ray.TMax = INF;
     // Simple Physical Lens
     // https://www.pbr-book.org/4ed/Cameras_and_Film/Projective_Camera_Models#fragment-Computepointonplaneoffocus-0
@@ -226,7 +223,6 @@ void RayGeneration()
             break;
         }
         Payload hit = SamplePayload(payload);
-        hit.EnsureFrontFacing(view);
         // Debug View
         if (flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition)) {
             if (flags & kViewBaseColor) {
@@ -247,7 +243,7 @@ void RayGeneration()
         quat toWorld     = toLocal.inverted();
         float3 n = float3(0,0,1);
         float3 wo = toLocal.rotate(view);
-        IBxDF bsdf = PrincipledBSDF(hit.baseColor, hit.metallic, hit.roughness, true /* energy comp */);
+        IBxDF bsdf = PrincipledBSDF(hit.baseColor, 0.0f, hit.roughness, 1.0f, hit.ior);
         // Light sampling [TODO. Really read into this chapter once my tests are done with...]
         // https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling
         {
@@ -283,7 +279,8 @@ void RayGeneration()
                 // You can derive these from single sample situations
                 Li.pdf = pSample * samplePDF + (1 - pSample) * otherPDF;
                 // Shadow catcher
-                bool shadowed = TraceShadowRay(OffsetRay(hit.position, hit.geometryNormal), Li.wi);
+                float3 shadowOrigin = OffsetRay(hit.position, dot(hit.geometryNormal, Li.wi) > 0 ? hit.geometryNormal : -hit.geometryNormal);
+                bool shadowed = TraceShadowRay(shadowOrigin, Li.wi);
                 if (shadowed)
                     Li.pdf = 0.0f;
             }
@@ -309,7 +306,11 @@ void RayGeneration()
         beta *= sample.f * AbsCosTheta(sample.wi) / sample.pdf;
         // Select next ray to sample from current position
         ray.Direction = toWorld.rotate(sample.wi);
-        ray.Origin = OffsetRay(hit.position, hit.geometryNormal);
+        // Inside or outside?
+        bool backside = dot(ray.Direction, hit.geometryNormal) < 0;
+        if (backside && !IsTransmission(sample.flags))
+            break;
+        ray.Origin = OffsetRay(hit.position, backside ? -hit.geometryNormal : hit.geometryNormal);
         // Russian Roulette
         float rrPCount = min(MaxComponent(beta) + 0.01f, 0.95f);
         if (rng.sample() > rrPCount) // Contribution is low, may terminate early

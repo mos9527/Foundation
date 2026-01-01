@@ -51,10 +51,10 @@ public struct BSDFSample {
     // that of the BxDFs sampled.
     public float pdf;
     // Which type of BxDF was sampled - useful for MIS
-    BxDFFlags flags;
+    public BxDFFlags flags;
     // For transmission BxDFs, the relative IOR between
     // incident and transmitted mediums
-    float eta;
+    public float eta;
 
     public __init(float3 f = float3(0), float3 wi = float3(0), float pdf = 0.0, BxDFFlags flags = BxDFFlags::Unset, float eta = 1.0f) {
         this.f = f;
@@ -673,8 +673,7 @@ public struct DielectricBxDF : IBxDF {
             // 4. Eval rough transmission
             // Same Jacobian as seen in previous transmission cases
             float denom = Sqr(dot(wi, wm) + dot(wo,wm) / etap) * abs(cosTheta_i * cosTheta_o);
-            float ft = T * mfDistrib.D(wm) * mfDistrib.G(wo, wi) *
-                                abs(dot(wi,wm) * dot(wo,wm) / denom);
+            float ft = T * mfDistrib.D(wm) * mfDistrib.G(wo, wi) * abs(dot(wi,wm) * dot(wo,wm) / denom);
             // 5. Adjust for non-symmetric transport
             if (transport == TransportMode::Radiance)
                 ft /= Sqr(etap);
@@ -1026,11 +1025,15 @@ public float3 SchlickFresnel(float3 F0, float3 F90, float cosTheta)
 {
   return F0 + (F90 - F0) * pow(1.0F - cosTheta, 5.0F);
 }
+public float F0FromIor(float ior)
+{
+    return Sqr((ior - 1.0F) / (ior + 1.0F));
+}
 // Schlick Fresnel approximation for float
 public float SchlickFresnel(float ior, float cosTheta)
 {
   // Calculate reflectance at normal incidence (R0)
-  float R0 = pow((1.0F - ior) / (1.0F + ior), 2.0F);
+  float R0 = F0FromIor(ior);
 
   // Fresnel reflectance using Schlick's approximation
   return R0 + (1.0F - R0) * pow(1.0F - cosTheta, 5.0F);

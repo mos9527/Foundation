@@ -86,7 +86,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
         float3 L = 0;
 
         // Direct
-        PrincipledBSDF bsdf = PrincipledBSDF(baseColor, metallic, roughness);
+        PrincipledBSDF bsdf = PrincipledBSDF(baseColor, metallic, roughness, 0);
         quat toLocal     = quatRotateToZ(n);
         quat toWorld     = toLocal.inverted();
         float3 n = float3(0,0,1);
