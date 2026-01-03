@@ -304,8 +304,10 @@ void RayGeneration()
         // Emissive
         L += beta * hit.emissive;
         BSDFSample sample = bsdf.Sample_f(wo, rng.sample(), rng.sample2D());
-        if (!sample.IsValid())
+        if (!sample.IsValid()) {
+            L = float3(1, 0, 0);
             break;
+        }
         lastSamplePDF = sample.pdf;
         beta *= sample.f * AbsCosTheta(sample.wi) / sample.pdf;
         ray.Direction = toWorld.rotate(sample.wi);

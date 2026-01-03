@@ -80,12 +80,16 @@ public struct PrincipledBSDF : IBxDF {
         return (Fss + Fms) * mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4.0f * AbsCosTheta(wo) * AbsCosTheta(wi));
     }
 
+    private float GetEta(float3 wo) {
+        return wo.z > 0 ? 1 / eta :  eta;
+    }
+
     // NOTE: wo, wi must be in two hemispheres (both z > 0 -> reflection)
     private float3 TorranceSparrowPreserveEnergyTransmittance(float3 wo, float3 wi, float3 F0, float3 F90, float2 lutE) {
         if (SameHemisphere(wo,wi)) return 0;
 
-        float etap = 1 / eta;
-        float3 wm = normalize(wo + wi * eta);
+        float etap = 1 / GetEta(wo);
+        float3 wm = normalize(wo + wi * etap);
         if (wm.z < 0) wm = -wm;
 
         float3 Fss = SchlickFresnel(F0, F90, AbsDot(wo, wm));
@@ -109,7 +113,7 @@ public struct PrincipledBSDF : IBxDF {
         float3 diffuseBSDF = baseColor * InvPi * (1.0f - reflectance(dielF0, dielF90, lutE));
         float3 transmittanceBTDF = reflected ? 0 : baseColor * TorranceSparrowPreserveEnergyTransmittance(wo, wi, dielF0, dielF90, lutE);
 
-        float etap = 1 / eta;
+        float etap = 1 / GetEta(wo);
         // Adjust for non-symmetric transport
         if (mode == TransportMode::Radiance)
             transmittanceBTDF *= Sqr(etap);
@@ -137,19 +141,17 @@ public struct PrincipledBSDF : IBxDF {
     }
 
     public float PDFTransmittance(float3 wo, float3 wi) {
-        float etap = 1 / eta;
-        float3 wm = normalize(wo + wi * eta);
+        float etap = 1 / GetEta(wo);
+        float3 wm = normalize(wo + wi * etap);
         wm = FaceForward(wm, float3(0,0,1));
         // Jacobian for transmission
         // https://www.pbr-book.org/4ed/Reflection_Models/Rough_Dielectric_BSDF#eq:mf-transmission-change-of-vars
         float denom = Sqr(dot(wi, wm) + dot(wo,wm) / etap);
-        float dwm_dwi = AbsDot(wi, wm) / denom * Sqr(etap);
+        float dwm_dwi = AbsDot(wi, wm) / denom;
         return mfDistrib.PDF(wo, wm) * dwm_dwi;
     }
 
-    public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
-        float3 wm = normalize(wo + wi);
-
+    public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {        
         bool reflected = SameHemisphere(wo, wi);
         // Diffuse/transmittance
         float transmittancePDF = reflected ? 0.0f : PDFTransmittance(wo, wi);
@@ -164,7 +166,8 @@ public struct PrincipledBSDF : IBxDF {
         // Effectively this raises the probability of sampling reflection
         if (reflected && transmission > EPS) {
             bool tir;
-            Refract(wo, wm, eta, tir);
+            float3 wm = normalize(wo + wi);
+            Refract(wo, wm, GetEta(wo), tir);
             if (tir)
                 pdf += transmission * glossyPDF;
         }
@@ -212,7 +215,7 @@ public struct PrincipledBSDF : IBxDF {
                 bool tir;// Total internal reflection
                 // Drop the sample, or we'll break the PDF since it's
                 // not expected to have a reflection ray sampled here.                
-                wi = Refract(wo, wm, eta, tir);
+                wi = Refract(wo, wm, GetEta(wo), tir);
                 if (tir) {
                     wi = Reflect(wo, wm);
                     sampledFlag = BxDFFlags::GlossyReflection;
@@ -230,9 +233,6 @@ public struct PrincipledBSDF : IBxDF {
             return BSDFSample();
         SampledSpectrum val = this.f(wo, wi, mode);
         float pdf = this.PDF(wo, wi, mode, flags);
-        if (IsTransmission(sampledFlag)){
-            printf("--debug T PDF:%f wi:%f,%f,%f wo:%f,%f,%f\n", pdf, wi.x, wi.y, wi.z, wo.x, wo.y, wo.z);
-        }
         return BSDFSample(val, wi, pdf, sampledFlag, eta);
     }
 };

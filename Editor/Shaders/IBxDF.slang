@@ -149,15 +149,16 @@ public float3 Reflect(float3 wo, float3 n) {
 }
 // https://www.pbr-book.org/4ed/Reflection_Models/Specular_Reflection_and_Transmission#SnellrsquosLaw
 // https://github.com/nvpro-samples/nvpro_core2/blob/2915dc93c2b5dea002851c7f90f49f5bdd1fe372/nvshaders/pbr_ggx_microfacet.h.slang#L330
-public float3 Refract(const float3 k,         // direction (pointing from surface)
-               const float3 n,                // normal
-               const float  b,                // (reflected side IOR) / (transmitted side IOR)
-               out bool tir)                  // total internal reflection
-{
-    const float nk = dot(n,k);
-    const float refraction = b * b * (1.0f - nk * nk);
-    tir = (1.0f <= refraction);
-    return (tir) ? (n * (nk + nk) - k) : normalize((-k * b + n * (b * nk - sqrt(1.0f - refraction))));
+public float3 Refract(float3 wi, float3 n, float eta, out bool tir) {
+    float cosTheta_i = dot(n, wi);
+    float sin2Theta_i = max(0.0f, 1.0f - Sqr(cosTheta_i));
+    float sin2Theta_t = Sqr(eta) * sin2Theta_i;
+
+    tir = sin2Theta_t >= 1.0f;
+    if (tir) return float3(0.0f);
+
+    float cosTheta_t = sqrt(1.0f - sin2Theta_t);    
+    return eta * -wi + (eta * cosTheta_i - cosTheta_t) * n;
 }
 // https://www.pbr-book.org/4ed/Reflection_Models/Specular_Reflection_and_Transmission#TheFresnelEquations
 // Percentage of light reflected (or otherwise transmitted) at a dielectric interface
