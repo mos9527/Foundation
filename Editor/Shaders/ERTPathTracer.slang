@@ -91,11 +91,6 @@ struct Payload {
     float roughness;
     float transmission;
     float ior;
-
-    [mutating] void EnsureFrontFacing(float3 wo){
-        if (dot(geometryNormal, wo) < 0.0f) geometryNormal *= -1;
-        if (dot(geometryNormal, normal) < 0.0f) normal *= -1;
-    }
 };
 Payload SamplePayload(HitPayload payload)
 {
@@ -208,6 +203,7 @@ void RayGeneration()
     }
     // Combine the miss hit with the last light sample
     float lastSamplePDF = 0.0f;
+    bool isInside = false;
     for (uint bounce = 0; bounce < globalParams.ptMaxBounces; bounce++){
         HitPayload payload;
         TraceRay(AS, 0, 0xFF, 0, 0, 0, ray, payload);
@@ -229,7 +225,7 @@ void RayGeneration()
             L += beta * env.Le(-view) * mis;
             break;
         }
-        Payload hit = SamplePayload(payload);
+        Payload hit = SamplePayload(payload);        
         // Debug View
         if (flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition)) {
             if (flags & kViewBaseColor) {
@@ -245,11 +241,12 @@ void RayGeneration()
         }
         /** Path Integrator **/
         // Local frame setup
-        quat toLocal     = quatRotateToZ(hit.normal);
+        quat toLocal = quatRotateToZ(hit.normal);
         quat toWorld     = toLocal.inverted();
         float3 n = float3(0,0,1);
         float3 wo = toLocal.rotate(view);
-        IBxDF bsdf = PrincipledBSDF(hit.baseColor, hit.metallic, hit.roughness, hit.transmission, hit.ior, true);
+        float eta = isInside ? hit.ior : 1/hit.ior;
+        IBxDF bsdf = PrincipledBSDF(hit.baseColor, hit.metallic, hit.roughness, eta, hit.transmission, true);
         // Light sampling [TODO. Really read into this chapter once my tests are done with...]
         // https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling
         {
@@ -283,9 +280,10 @@ void RayGeneration()
                 radiance *= mis;
                 // vvv Similar to PrincipledBSDF's PDF calculation
                 // You can derive these from single sample situations
-                Li.pdf = pSample * samplePDF + (1 - pSample) * otherPDF;
+                Li.pdf = mix(otherPDF, samplePDF, pSample);
                 // AO and Direct shadow ray
-                float3 shadowOrigin = OffsetRay(hit.position, hit.geometryNormal);
+                float3 shadowNormalFF = dot(Li.wi, hit.geometryNormal) < 0.0f ? -hit.geometryNormal : hit.geometryNormal;
+                float3 shadowOrigin = OffsetRay(hit.position, shadowNormalFF);
                 bool shadowed = TraceShadowRay(shadowOrigin, Li.wi);
                 if (shadowed)
                     Li.pdf = 0.0f;
@@ -293,7 +291,7 @@ void RayGeneration()
             // Eval and add light contribution
             // Li is now effectively the 'combined' sample here.
             float3 wi = toLocal.rotate(Li.wi);
-            float3 f = bsdf.f(wo, wi) * ClampedCosTheta(wi);
+            float3 f = bsdf.f(wo, wi) * AbsCosTheta(wi);
             float pdf = bsdf.PDF(wo, wi);
             // Light can arrive from the light itself, or the sampled BSDF path
             if (Li.pdf > EPS && pdf > EPS){
@@ -311,7 +309,10 @@ void RayGeneration()
         lastSamplePDF = sample.pdf;
         beta *= sample.f * AbsCosTheta(sample.wi) / sample.pdf;
         ray.Direction = toWorld.rotate(sample.wi);
-        ray.Origin = OffsetRay(hit.position, hit.geometryNormal);
+        float3 rayNormal = dot(ray.Direction, hit.geometryNormal) < 0.0f ? -hit.geometryNormal : hit.geometryNormal;
+        ray.Origin = OffsetRay(hit.position, rayNormal);
+        if (IsTransmission(sample.flags))
+            isInside = !isInside;
         // Russian Roulette
         float rrPCount = min(MaxComponent(beta) + 0.01f, 0.95f);
         if (rng.sample() > rrPCount) // Contribution is low, may terminate early
@@ -363,7 +364,7 @@ void RayOpacityAnyHit(in BuiltInTriangleIntersectionAttributes attr)
     uint instance = InstanceIndex();
     uint primitive = PrimitiveIndex();
     PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
-    if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
+    if (AnyHitOpacityIgnore(rng, instance, primitive, attr, false))
         return IgnoreHit();
 }
 [shader("anyhit")] // Hit Group 1
