@@ -170,9 +170,13 @@ public bool Refract(
     return true;
 }
 public bool IsTIR(float3 wo, float3 wi, float eta) {
+    if (!SameHemisphere(wo,wi)) return false;
+    float etap = (CosTheta(wo) > 0) ? eta : 1 / eta;
     float3 wm = normalize(wo + wi);
     float cosTheta_i = AbsDot(wo, wm);
-    return 1.0f < Sqr(eta) * (1 - Sqr(cosTheta_i));
+    float sin2Theta_i = 1 - Sqr(cosTheta_i);
+    float sin2Theta_t = sin2Theta_i / Sqr(etap);
+    return sin2Theta_t >= 1;
 }
 // https://www.pbr-book.org/4ed/Reflection_Models/Specular_Reflection_and_Transmission#TheFresnelEquations
 // Percentage of light reflected (or otherwise transmitted) at a dielectric interface

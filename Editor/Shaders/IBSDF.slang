@@ -54,7 +54,7 @@ public struct PrincipledBSDF : IBxDF {
         this.dielF0 = F0FromIor(ior);
         this.metalF0 = baseColor;
         // Keep it simple - we don't need to deal with EffectivelySmooth this way
-        roughness = max(sqrt(1e-3), roughness);
+        roughness = max(1e-2, roughness);
 
         this.roughness = roughness;
         this.energyCompensation = energyCompensation;
@@ -68,8 +68,6 @@ public struct PrincipledBSDF : IBxDF {
     }
 
     private float3 TorranceSparrowPreserveEnergyReflection(float3 wo, float3 wi, float3 F0, float3 F90, float2 lutE) {
-        if (!SameHemisphere(wo,wi)) return 0;
-
         float3 wm = normalize(wo + wi);
         float3 Fss = SchlickFresnel(F0, F90, AbsDot(wo, wm));
         float3 Fms = 0.0f;
@@ -83,8 +81,6 @@ public struct PrincipledBSDF : IBxDF {
 
     // NOTE: wo, wi must be in two hemispheres (both z > 0 -> reflection)
     private float3 TorranceSparrowPreserveEnergyTransmittance(float3 wo, float3 wi, float3 F0, float3 F90, float2 lutE) {
-        if (SameHemisphere(wo,wi)) return 0;
-
         float etap = (CosTheta(wo) > 0) ? eta : 1 / eta;
         float3 wm = normalize(wo + wi * etap);
         wm = FaceForward(wm, float3(0, 0, 1));
@@ -108,9 +104,12 @@ public struct PrincipledBSDF : IBxDF {
 
         // Diffuse/transmittance
         float3 diffuseBSDF = baseColor * InvPi * (1.0f - reflectance(dielF0, dielF90, lutE));
-        float3 transmittanceBTDF = reflected ? 0 : baseColor * TorranceSparrowPreserveEnergyTransmittance(wo, wi, dielF0, dielF90, lutE);
 
         float etap = (CosTheta(wo) > 0) ? eta : 1 / eta;
+
+        float3 transmittanceF0 = F0FromIor(etap);
+        float3 transmittanceBTDF = reflected ? 0 : baseColor * TorranceSparrowPreserveEnergyTransmittance(wo, wi, transmittanceF0, dielF90, lutE);
+
         // Adjust for non-symmetric transport
         if (mode == TransportMode::Radiance)
             transmittanceBTDF /= Sqr(etap);
