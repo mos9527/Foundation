@@ -245,8 +245,8 @@ void RayGeneration()
         quat toWorld     = toLocal.inverted();
         float3 n = float3(0,0,1);
         float3 wo = toLocal.rotate(view);
-        float eta = isInside ? hit.ior : 1/hit.ior;
-        IBxDF bsdf = PrincipledBSDF(hit.baseColor, hit.metallic, hit.roughness, eta, hit.transmission, true);
+        IBxDF bsdf1 = PrincipledBSDF(hit.baseColor, hit.metallic, hit.roughness, hit.ior, hit.transmission, true);
+        IBxDF bsdf = DielectricBxDF(hit.ior, 0.1f, 0.1f);
         // Light sampling [TODO. Really read into this chapter once my tests are done with...]
         // https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling
         {
@@ -304,11 +304,9 @@ void RayGeneration()
         // Emissive
         L += beta * hit.emissive;
         BSDFSample sample = bsdf.Sample_f(wo, rng.sample(), rng.sample2D());
-        if (!sample.IsValid()) {
-            L = float3(1, 0, 0);
+        if (!sample.IsValid())
             break;
-        }
-        lastSamplePDF = sample.pdf;
+        lastSamplePDF = sample.pdf + bsdf1.PDF(0, 0) * 1e-18f;
         beta *= sample.f * AbsCosTheta(sample.wi) / sample.pdf;
         ray.Direction = toWorld.rotate(sample.wi);
         float3 rayNormal = dot(ray.Direction, hit.geometryNormal) < 0.0f ? -hit.geometryNormal : hit.geometryNormal;

@@ -148,17 +148,26 @@ public float3 Reflect(float3 wo, float3 n) {
     return -wo + 2 * dot(wo, n) * n;
 }
 // https://www.pbr-book.org/4ed/Reflection_Models/Specular_Reflection_and_Transmission#SnellrsquosLaw
-// https://github.com/nvpro-samples/nvpro_core2/blob/2915dc93c2b5dea002851c7f90f49f5bdd1fe372/nvshaders/pbr_ggx_microfacet.h.slang#L330
-public float3 Refract(float3 wi, float3 n, float eta, out bool tir) {
+public bool Refract(
+    float3 wi, float3 n,
+    float eta /* Relative IOR, interior/outside. Air to glass would be 1.5  */,
+    out float3 wt, 
+    out float etap
+    ) {
     float cosTheta_i = dot(n, wi);
-    float sin2Theta_i = max(0.0f, 1.0f - Sqr(cosTheta_i));
-    float sin2Theta_t = Sqr(eta) * sin2Theta_i;
-
-    tir = sin2Theta_t >= 1.0f;
-    if (tir) return float3(0.0f);
-
-    float cosTheta_t = sqrt(1.0f - sin2Theta_t);    
-    return eta * -wi + (eta * cosTheta_i - cosTheta_t) * n;
+    if (cosTheta_i < 0) { // Inside an object?
+        eta = 1 / eta;
+        cosTheta_i = -cosTheta_i;
+        n = -n;
+    }
+    float sin2Theta_i = 1 - Sqr(cosTheta_i);
+    float sin2Theta_t = sin2Theta_i / Sqr(eta);
+    if (sin2Theta_t >= 1) // Total internal reflection - transmission impossible
+        return false;
+    float cosTheta_t = SafeSqrt(1 - sin2Theta_t);
+    wt = eta * -wi + (eta * cosTheta_i - cosTheta_t) * n;
+    etap = eta;
+    return true;
 }
 // https://www.pbr-book.org/4ed/Reflection_Models/Specular_Reflection_and_Transmission#TheFresnelEquations
 // Percentage of light reflected (or otherwise transmitted) at a dielectric interface
@@ -519,7 +528,7 @@ public struct ConductorBxDF : IBxDF {
 };
 // https://www.pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF
 public struct DielectricBxDF : IBxDF {
-    float eta; // IOR
+    float eta; // IOR ratio of incident to transmitted
     TrowbridgeReitzDistribution mfDistrib; // Microfacet distribution
     public __init(float eta, float alpha_x, float alpha_y) {
         this.eta = eta;
@@ -567,8 +576,8 @@ public struct DielectricBxDF : IBxDF {
         }
         return pdf;
    }
-    public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode transport, BxDFReflTransFlags flags){
-        if (eta == 1 || mfDistrib.EffectivelySmooth()){
+   public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode transport, BxDFReflTransFlags flags) {       
+       if (eta == 1 || mfDistrib.EffectivelySmooth()){
             // Sample from either reflection or transmission based on Fresnel
             float R = FrDielectric(CosTheta(wo), eta), T = 1 - R;
             float pr = R, pt = T;
@@ -584,18 +593,17 @@ public struct DielectricBxDF : IBxDF {
                 return BSDFSample(F, wi, pr / (pr + pt), BxDFFlags::SpecularReflection);
             } else {
                 // Sample perfectly specular BTDF
+                float3 wi;
                 float etap;
-                // vvv Shouldn't be possible to fail since T won't be 0 vvv
-                bool tir;
-                float3 wi = Refract(wo, float3(0,0,1), eta, tir);
+                bool tir = !Refract(wo, float3(0, 0, 1), eta, wi, etap);
                 if (tir)
                     return BSDFSample();
                 SampledSpectrum ft = float3(T) / AbsCosTheta(wi);
                 // Adjust for non-symmetric transport
                 // https://www.pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF#Non-SymmetricScatteringandRefraction
-                // ...I didn't read into this part, so I'll just copy the formula here.
+                // Entering denser medium reduces solid angle and 'compresses' radiance
                 if (transport == TransportMode::Radiance)
-                    ft /= Sqr(etap);
+                    ft /= Sqr(etap);                
                 return BSDFSample(ft, wi, pt / (pr + pt), BxDFFlags::SpecularTransmission, etap);
             }
         } else {
@@ -624,9 +632,9 @@ public struct DielectricBxDF : IBxDF {
                 return BSDFSample(f, wi, pdf, BxDFFlags::GlossyReflection);
             } else {
                 // Sample rough BTDF
+                float3 wi;
                 float etap;
-                bool tir;
-                float3 wi = Refract(wo, float3(0,0,1), eta, tir);
+                bool tir = !Refract(wo, wm, eta, wi, etap);
                 if (tir || SameHemisphere(wo, wi) || wi.z == 0)
                     return BSDFSample(); // Total internal reflection or invalid sample
                 // 2. Compute PDF
@@ -636,8 +644,8 @@ public struct DielectricBxDF : IBxDF {
                 float pdf = mfDistrib.PDF(wo, wm) * dwm_dwi * pt / (pr + pt);
                 // 3. Compute final BTDF value
                 SampledSpectrum f = T * mfDistrib.D(wm) * mfDistrib.G(wo, wi) *
-                                    abs(dot(wi,wm) * dot(wo,wm)) /
-                                    (CosTheta(wi) * CosTheta(wo) * denom);
+                                    abs(dot(wi,wm) * dot(wo,wm) /
+                                    (CosTheta(wi) * CosTheta(wo) * denom));
                 // 4. Adjust for non-symmetric transport
                 if (transport == TransportMode::Radiance)
                     f /= Sqr(etap);
