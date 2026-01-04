@@ -241,7 +241,7 @@ void RayGeneration()
         /** Path Integrator **/
         // Local frame setup
         quat toLocal = quatRotateToZ(hit.normal);
-        quat toWorld     = toLocal.inverted();
+        quat toWorld = toLocal.inverted();
         float3 n = float3(0,0,1);
         float3 wo = toLocal.rotate(view);
         IBxDF bsdf = PrincipledBSDF(hit.baseColor, hit.metallic, hit.roughness, hit.ior, hit.transmission, true);

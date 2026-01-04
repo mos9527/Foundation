@@ -13,9 +13,9 @@ Demo (Path Tracer)
 
 <img width="1200" height="675" alt="image" src="https://github.com/user-attachments/assets/5f4ea058-c51a-4011-a449-a0a1d4cfcfac" />
 
-> "Bathroom by imperfection.png" from [Blend Swap](https://www.blendswap.com/blend/29184)
+> "Dining room by MaTTeSr" from [Blend Swap](https://www.blendswap.com/blend/18762)
 
-<img width="1200" alt="image" src="https://github.com/user-attachments/assets/d20afaf3-91f8-4894-ac9a-986cf0176b73" />
+<img width="1198" height="1024" alt="image" src="https://github.com/user-attachments/assets/a47bd8d4-f394-43f7-9d5a-336e8181151f" />
 
 
 Links
