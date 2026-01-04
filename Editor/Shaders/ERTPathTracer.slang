@@ -203,7 +203,6 @@ void RayGeneration()
     }
     // Combine the miss hit with the last light sample
     float lastSamplePDF = 0.0f;
-    bool isInside = false;
     for (uint bounce = 0; bounce < globalParams.ptMaxBounces; bounce++){
         HitPayload payload;
         TraceRay(AS, 0, 0xFF, 0, 0, 0, ray, payload);
@@ -245,8 +244,7 @@ void RayGeneration()
         quat toWorld     = toLocal.inverted();
         float3 n = float3(0,0,1);
         float3 wo = toLocal.rotate(view);
-        IBxDF bsdf1 = PrincipledBSDF(hit.baseColor, hit.metallic, hit.roughness, hit.ior, hit.transmission, true);
-        IBxDF bsdf = DielectricBxDF(hit.ior, 0.1f, 0.1f);
+        IBxDF bsdf = PrincipledBSDF(hit.baseColor, hit.metallic, hit.roughness, hit.ior, hit.transmission, true);
         // Light sampling [TODO. Really read into this chapter once my tests are done with...]
         // https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling
         {
@@ -304,15 +302,14 @@ void RayGeneration()
         // Emissive
         L += beta * hit.emissive;
         BSDFSample sample = bsdf.Sample_f(wo, rng.sample(), rng.sample2D());
-        if (!sample.IsValid())
+        if (!sample.IsValid()) {
             break;
-        lastSamplePDF = sample.pdf + bsdf1.PDF(0, 0) * 1e-18f;
+        }
+        lastSamplePDF = sample.pdf;
         beta *= sample.f * AbsCosTheta(sample.wi) / sample.pdf;
         ray.Direction = toWorld.rotate(sample.wi);
         float3 rayNormal = dot(ray.Direction, hit.geometryNormal) < 0.0f ? -hit.geometryNormal : hit.geometryNormal;
         ray.Origin = OffsetRay(hit.position, rayNormal);
-        if (IsTransmission(sample.flags))
-            isInside = !isInside;
         // Russian Roulette
         float rrPCount = min(MaxComponent(beta) + 0.01f, 0.95f);
         if (rng.sample() > rrPCount) // Contribution is low, may terminate early

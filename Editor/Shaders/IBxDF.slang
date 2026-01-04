@@ -169,6 +169,11 @@ public bool Refract(
     etap = eta;
     return true;
 }
+public bool IsTIR(float3 wo, float3 wi, float eta) {
+    float3 wm = normalize(wo + wi);
+    float cosTheta_i = AbsDot(wo, wm);
+    return 1.0f < Sqr(eta) * (1 - Sqr(cosTheta_i));
+}
 // https://www.pbr-book.org/4ed/Reflection_Models/Specular_Reflection_and_Transmission#TheFresnelEquations
 // Percentage of light reflected (or otherwise transmitted) at a dielectric interface
 // with respect of incident angle theta and IOR eta

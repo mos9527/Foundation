@@ -49,11 +49,12 @@ public struct PrincipledBSDF : IBxDF {
         this.metallic = metallic;
         this.transmission = transmission;
 
+        ior = max(1.0f + 1e-3, ior);
         this.eta = ior;
         this.dielF0 = F0FromIor(ior);
         this.metalF0 = baseColor;
         // Keep it simple - we don't need to deal with EffectivelySmooth this way
-        roughness = max(EPS, roughness);
+        roughness = max(sqrt(1e-3), roughness);
 
         this.roughness = roughness;
         this.energyCompensation = energyCompensation;
@@ -112,7 +113,7 @@ public struct PrincipledBSDF : IBxDF {
         float etap = (CosTheta(wo) > 0) ? eta : 1 / eta;
         // Adjust for non-symmetric transport
         if (mode == TransportMode::Radiance)
-            transmittanceBTDF *= Sqr(etap);
+            transmittanceBTDF /= Sqr(etap);
 
         float3 bsdf = mix(diffuseBSDF, transmittanceBTDF, transmission);
 
@@ -144,7 +145,8 @@ public struct PrincipledBSDF : IBxDF {
         // https://www.pbr-book.org/4ed/Reflection_Models/Rough_Dielectric_BSDF#eq:mf-transmission-change-of-vars
         float denom = Sqr(dot(wi, wm) + dot(wo,wm) / etap);
         float dwm_dwi = AbsDot(wi, wm) / denom;
-        return mfDistrib.PDF(wo, wm) * dwm_dwi;
+        float pdf = mfDistrib.PDF(wo, wm);
+        return pdf * dwm_dwi;
     }
 
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {        
@@ -154,19 +156,9 @@ public struct PrincipledBSDF : IBxDF {
         float diffusePDF = reflected ? CosineHemispherePDF(AbsCosTheta(wi)) : 0.0f;
         float pdf = mix(diffusePDF, transmittancePDF, transmission);
         // Dielectric specular
-        float glossyPDF = reflected ? PDFGlossy(wo, wi) : 0.0f;
+        float glossyPDF = PDFGlossy(wo, wi);
         float dielPDF = reflected ? glossyPDF : 0.0f;
 
-        // Compensate for TIR in transmission PDF
-        // Effectively this raises the probability of sampling reflection
-        if (reflected && transmission > EPS) {            
-            float3 wm = normalize(wo + wi);
-            float etap;
-            float3 wip;
-            bool tir = !Refract(wo, wm, eta, wip, etap);
-            if (tir)
-                pdf += transmission * glossyPDF;
-        }
         // https://pbr-book.org/4ed/Monte_Carlo_Integration/Improving_Efficiency#MultipleImportanceSampling
         // ---
         // Two sampling methods (techniques) can arrive here, with p(f) of glossyPDF and diffusePDF
@@ -184,6 +176,13 @@ public struct PrincipledBSDF : IBxDF {
         // PDF = pdfTransmit * (1 - sampleGlossy) + pdfGlossy * sampleGlossy
         float sampleGlossy = reflectance(dielF0, dielF90, SampleGGXLutE(AbsCosTheta(wo), roughness));
         pdf = mix(pdf, dielPDF, sampleGlossy);
+
+        // Compensate for TIR in transmission PDF
+        // Effectively this raises the probability of sampling reflection
+        if (reflected && transmission > EPS) {
+            if (IsTIR(wo, wi, eta))
+                pdf += transmission * glossyPDF * sampleGlossy;
+        }
 
         // Metal (Linearly mixed)
         float metalPDF = reflected ? glossyPDF : 0.0f;
