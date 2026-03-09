@@ -68,6 +68,11 @@ public struct PrincipledBSDF : IBxDF {
     }
 
     private float3 TorranceSparrowPreserveEnergyReflection(float3 wo, float3 wi, float3 F0, float3 F90, float2 lutE) {
+        float cosWo = AbsCosTheta(wo);
+        float cosWi = AbsCosTheta(wi);
+        if (cosWo < EPS || cosWi < EPS)
+            return 0.0f;
+
         float3 wm = normalize(wo + wi);
         float3 Fss = SchlickFresnel(F0, F90, AbsDot(wo, wm));
         float3 Fms = 0.0f;
@@ -76,8 +81,9 @@ public struct PrincipledBSDF : IBxDF {
             Fms = F0 * (1.0f / Epp - 1.0f) * Fss;
         }
         // Jacobian from wm to wi. See ConductorBxDF in IBxDF.slang
-        return (Fss + Fms) * mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4.0f * AbsCosTheta(wo) * AbsCosTheta(wi));
+        return (Fss + Fms) * mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4.0f * cosWo * cosWi);
     }
+
 
     // NOTE: wo, wi must be in two hemispheres (both z > 0 -> reflection)
     private float3 TorranceSparrowPreserveEnergyTransmittance(float3 wo, float3 wi, float3 F0, float3 F90, float2 lutE) {
@@ -94,8 +100,11 @@ public struct PrincipledBSDF : IBxDF {
         float3 T = 1 - (Fss + Fms);
         // Another jacobian for transmittance. See DielectricBxDF in IBxDF.slang
         float denom = Sqr(dot(wi, wm) + dot(wo,wm) / etap) * abs(CosTheta(wi) * CosTheta(wo));
+        if (denom < EPS)
+            return 0.0f;
         return T * mfDistrib.D(wm) * mfDistrib.G(wo, wi) * abs(dot(wi,wm) * dot(wo,wm) / denom);
     }
+
 
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         bool reflected = SameHemisphere(wo, wi);
@@ -133,8 +142,12 @@ public struct PrincipledBSDF : IBxDF {
     public float PDFGlossy(float3 wo, float3 wi) {
         float3 wm = normalize(wo + wi);
         // Jacobian for reflection
-        return mfDistrib.PDF(wo, wm) / (4.0f * AbsDot(wo, wm));
+        float denom = 4.0f * AbsDot(wo, wm);
+        if (denom < EPS)
+            return 0.0f;
+        return mfDistrib.PDF(wo, wm) / denom;
     }
+
 
     public float PDFTransmittance(float3 wo, float3 wi) {
         float etap = (CosTheta(wo) > 0) ? eta : 1 / eta;
@@ -143,10 +156,13 @@ public struct PrincipledBSDF : IBxDF {
         // Jacobian for transmission
         // https://www.pbr-book.org/4ed/Reflection_Models/Rough_Dielectric_BSDF#eq:mf-transmission-change-of-vars
         float denom = Sqr(dot(wi, wm) + dot(wo,wm) / etap);
+        if (denom < EPS)
+            return 0.0f;
         float dwm_dwi = AbsDot(wi, wm) / denom;
         float pdf = mfDistrib.PDF(wo, wm);
         return pdf * dwm_dwi;
     }
+
 
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {        
         bool reflected = SameHemisphere(wo, wi);

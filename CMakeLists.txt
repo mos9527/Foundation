@@ -14,9 +14,10 @@ option(FOUNDATION_CORE_USES_OS_ALLOC "Use OS allocator instead of mimalloc for H
 option(FOUNDATION_RHIVULKAN_VALIDATION_LAYER "[RHIVulkan] Build with Vulkan Validation Layer (VVL)" ON)
 
 if (FOUNDATION_WITH_PROFILING)
-    add_compile_definitions(TRACY_ENABLE=1)
+    add_compile_definitions(TRACY_ENABLE)    
+    set(TRACY_ENABLE ON CACHE BOOL "" FORCE)
 else ()
-    add_compile_definitions(TRACY_ENABLE=0)
+    set(TRACY_ENABLE OFF CACHE BOOL "" FORCE)
 endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")

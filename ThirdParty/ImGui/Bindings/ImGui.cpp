@@ -383,6 +383,6 @@ void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
     {
         io.Fonts->Clear();
         ImFontConfig font_cfg;
-        io.Fonts->AddFontFromFileTTF(kDefaultFontPath, 16.0f, &font_cfg);
+        io.Fonts->AddFontFromFileTTF(kDefaultFontPath, 12.0f, &font_cfg);
     }
 }

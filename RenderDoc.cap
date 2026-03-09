@@ -2,34 +2,16 @@
     "rdocCaptureSettings": 1,
     "settings": {
         "autoStart": false,
-        "commandLine": "/mnt/Windows/Scenes/Helmet.fscn",
+        "commandLine": "\"C:\\Users\\komahuang\\Scenes\\02_MonkeyTransmittance\\Monkey.glb\"",
         "environment": [
-            {
-                "separator": "Platform style",
-                "type": "Set",
-                "value": "1",
-                "variable": "MIMALLOC_VERBOSE"
-            },
-            {
-                "separator": "Platform style",
-                "type": "Set",
-                "value": "1",
-                "variable": "MIMALLOC_SHOW_ERRORS"
-            },
-            {
-                "separator": "Platform style",
-                "type": "Set",
-                "value": "x11",
-                "variable": "SDL_VIDEODRIVER"
-            }
         ],
-        "executable": "/home/mos9527/Foundation/cmake-build-debug/bin/Editor",
+        "executable": "C:\\Users\\komahuang\\Foundation\\out\\build\\x64-Debug\\bin\\Editor.exe",
         "inject": false,
         "numQueuedFrames": 0,
         "options": {
-            "allowFullscreen": false,
+            "allowFullscreen": true,
             "allowVSync": true,
-            "apiValidation": true,
+            "apiValidation": false,
             "captureAllCmdLists": false,
             "captureCallstacks": false,
             "captureCallstacksOnlyDraws": false,
@@ -38,7 +20,7 @@
             "hookIntoChildren": false,
             "refAllResources": false,
             "softMemoryLimit": 0,
-            "verifyBufferAccess": true
+            "verifyBufferAccess": false
         },
         "queuedFrameCap": 0,
         "workingDir": ""

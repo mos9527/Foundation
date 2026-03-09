@@ -308,18 +308,27 @@ void RayGeneration()
         }
         lastSamplePDF = sample.pdf + bsdf1.PDF(0,0) * 1e-18;
         beta *= sample.f * AbsCosTheta(sample.wi) / sample.pdf;
+        if (any(isnan(beta)) || any(isinf(beta)))
+            break;
         ray.Direction = toWorld.rotate(sample.wi);
+
         float3 rayNormal = dot(ray.Direction, hit.geometryNormal) < 0.0f ? -hit.geometryNormal : hit.geometryNormal;
         ray.Origin = OffsetRay(hit.position, rayNormal);
-        // Russian Roulette
-        float rrPCount = min(MaxComponent(beta) + 0.01f, 0.95f);
-        if (rng.sample() > rrPCount) // Contribution is low, may terminate early
-            break;
-        beta /= rrPCount; // Boost non-terminated paths
+        // Russian Roulette (after 2nd bounce)
+        if (bounce >= 2)
+        {
+            float rrPCount = min(MaxComponent(beta) + 0.01f, 0.95f);
+            if (rng.sample() > rrPCount) // Contribution is low, may terminate early
+                break;
+            beta /= rrPCount; // Boost non-terminated paths
+        }
     }
     // Transform world space point
     // Accumulation
+    if (any(isnan(L)) || any(isinf(L)))
+        L = float3(0.0f);
     float4 output = float4(L, 1.0f);
+
     float frameCount = float(globalParams.ptAccumualatedFrames + 1);
     if (frameCount == 1){
         accumulation[pix] = lighting[pix] = output;
