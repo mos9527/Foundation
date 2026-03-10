@@ -9,18 +9,34 @@ enum LogLevel
     LogError
 };
 // NOLINTBEGIN
+template<bool Ansi = true>
 constexpr const char* format_as(LogLevel level)
 {
-    switch (level)
+    if constexpr (Ansi)
     {
-    case LogDebug: return "\033[34mD";
-    case LogInfo: return  "\033[37mI";
-    case LogError: return "\033[31mE";
-    case LogWarn: return "\033[33mW";
+        switch (level)
+        {
+        case LogDebug: return "\033[34mD";
+        case LogInfo:  return "\033[37mI";
+        case LogWarn:  return "\033[33mW";
+        case LogError: return "\033[31mE";
+        }
     }
+    else
+    {
+        switch (level)
+        {
+        case LogDebug: return "D";
+        case LogInfo:  return "I";
+        case LogWarn:  return "W";
+        case LogError: return "E";
+        }
+    }
+    return "?";
 }
 
 // NOLINTEND
+
 
 extern void Foundation_LogImpl(LogLevel level, const char* tag, std::string_view formatted);
 template<typename ...Args>

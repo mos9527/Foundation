@@ -1,6 +1,10 @@
 using namespace Foundation;
 using namespace Core;
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 Mutex gLogImplMutex;
 void Foundation_LogImpl(LogLevel level, const char* tag, std::string_view formatted)
@@ -11,4 +15,11 @@ void Foundation_LogImpl(LogLevel level, const char* tag, std::string_view format
     auto str = fmt::format("{}|+{:>5.5f}s|{} {}", level, ns / 1e9, tag, formatted);
     std::unique_lock lock(gLogImplMutex);
     fprintf(stderr, "%s\n", str.c_str());
+#if defined(_WIN32)
+    if (IsDebuggerPresent())
+    {
+        auto windbg = fmt::format("{}|+{:>5.5f}s|{} {}\n", format_as<false>(level), ns / 1e9, tag, formatted);
+        OutputDebugStringA(windbg.c_str());
+    }
+#endif
 }
