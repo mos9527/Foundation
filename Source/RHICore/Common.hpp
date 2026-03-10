@@ -17,6 +17,20 @@ namespace Foundation::RHI {
     // [Depth Clear Value, Stencil Clear Value]
     using RHIClearDepthStencil = Pair<float, uint32_t>;
 
+    enum class RHIAttachmentLoadOp  { Load, Clear, DontCare };
+    enum class RHIAttachmentStoreOp { Store, DontCare };
+
+    struct RHIColorAttachmentLoad
+    {
+        RHIAttachmentLoadOp loadOp{RHIAttachmentLoadOp::Load};
+        RHIClearColor       clearColor{};
+    };
+    struct RHIDepthAttachmentLoad
+    {
+        RHIAttachmentLoadOp     loadOp{RHIAttachmentLoadOp::Load};
+        RHIClearDepthStencil    clearValue{0.0f, 0u};
+    };
+
     enum class RHIResourceFormat {
         Undefined = 0,
         R8G8B8A8Unorm,

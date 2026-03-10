@@ -87,7 +87,7 @@ int main()
             [&](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
                 auto const& img_wh = r->GetSwapchainExtent();
-                r->CmdBeginGraphics(self, cmd, img_wh, {{Optional<RHIClearColor>{}}}, {});
+                r->CmdBeginGraphics(self, cmd, img_wh, {{RHIAttachmentLoadOp::DontCare}}, {RHIAttachmentLoadOp::DontCare});
                 r->CmdSetPipeline(self, cmd);
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0,
                                       blurAmount * texture->mDesc.mipLevels);

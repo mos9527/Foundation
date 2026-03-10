@@ -20,7 +20,7 @@ int main()
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             auto const& img_wh = r->GetSwapchainExtent();
-            r->CmdBeginGraphics(self, cmd, img_wh, {{RHIClearColor{}}});
+            r->CmdBeginGraphics(self, cmd, img_wh, {{RHIAttachmentLoadOp::Clear}});
             r->CmdSetPipeline(self, cmd);
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Task, 0, Examples_GetTime());
             cmd->SetViewport(0, 0, img_wh.x, img_wh.y)

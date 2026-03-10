@@ -1872,20 +1872,23 @@ void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, String
 }
 
 void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2D const& extent,
-                                Span<const Optional<RHIClearColor>> clear_rtv,
-                                Optional<RHIClearDepthStencil> const& clear_dsv)
+                                Span<const RHIColorAttachmentLoad> rtv_loads,
+                                RHIDepthAttachmentLoad dsv_load)
 {
     CHECK(mState == State::Execute);
     auto& tpass = mSetup->trackedPasses[pass];
     Vector<RHICommandList::GraphicsDesc::Attachment> rtvs(mExecuteAlloc.Ptr());
     rtvs.reserve(tpass.rtvs.size() + 1);
     const size_t rtv_count = tpass.rtvs.size() + (tpass.backbufferRTV ? 1 : 0);
-    CHECK_MSG(clear_rtv.size() == rtv_count, "RTV clear count mismatch. Got {}, expected {} for all RenderTargets",
-              clear_rtv.size(), rtv_count);
+    CHECK_MSG(rtv_loads.size() == rtv_count, "RTV load count mismatch. Got {}, expected {} for all RenderTargets",
+              rtv_loads.size(), rtv_count);
     if (tpass.backbufferRTV)
     {
-        rtvs.push_back({.imageView = mSwaps[GetSwap()].view.Get(), .clearColor = clear_rtv[0], .loadDontCare = true});
-        clear_rtv = clear_rtv.subspan(1);
+        rtvs.push_back({.imageView = mSwaps[GetSwap()].view.Get(),
+                        .loadOp    = rtv_loads[0].loadOp,
+                        .storeOp   = RHIAttachmentStoreOp::Store,
+                        .clearColor = rtv_loads[0].clearColor});
+        rtv_loads = rtv_loads.subspan(1);
     }
     for (int i = 0; const auto& [rtv, blending] : tpass.rtvs)
     {
@@ -1894,10 +1897,11 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
         RHITexture* res = DerefResource(rhdl).Get<RHITexture*>();
         CHECK_MSG(res->mDesc.extent.x >= extent.x && res->mDesc.extent.y >= extent.y,
                   "Graphics extent too large for Render Target on {}", tres.name);
-        // Skip clear if possible.
-        // This is applied when clearColor is not set, and blending is also disabled.
-        rtvs.push_back({.imageView = DerefTextureView(rtv), .clearColor = clear_rtv[i],
-                        .loadDontCare = !blending.enabled});
+        rtvs.push_back({.imageView  = DerefTextureView(rtv),
+                        .loadOp     = rtv_loads[i].loadOp,
+                        .storeOp    = RHIAttachmentStoreOp::Store,
+                        .clearColor = rtv_loads[i].clearColor});
+        ++i;
     }
     if (tpass.dsv != kInvalidHandle)
     {
@@ -1907,9 +1911,11 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
         CHECK_MSG(res->mDesc.extent.x >= extent.x && res->mDesc.extent.y >= extent.y,
                   "Graphics extent too large for Depth buffer {}", tres.name);
         cmd->BeginGraphics({.colorAttachments = rtvs,
-                            .depthAttachment = {.imageView = DerefTextureView(tpass.dsv),
-                                                .imageLayout = RHITextureLayout::DepthStencil,
-                                                .clearDepthStencil = clear_dsv},
+                            .depthAttachment  = {.imageView          = DerefTextureView(tpass.dsv),
+                                                 .imageLayout        = RHITextureLayout::DepthStencil,
+                                                 .loadOp             = dsv_load.loadOp,
+                                                 .storeOp            = RHIAttachmentStoreOp::Store,
+                                                 .clearDepthStencil  = dsv_load.clearValue},
                             .width = extent.x,
                             .height = extent.y});
     }

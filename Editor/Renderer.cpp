@@ -344,10 +344,16 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                     RHIExtent2D wh{w, h};
                     if (early)
                         r->CmdBeginGraphics(self, cmd, wh,
-                                            {{{}, {}, {}}}, // No need. Depth is used to reject undrawn pixels
-                                            RHIClearDepthStencil{0.0f, 0});
+                                            {{{RHIAttachmentLoadOp::Clear},
+                                              {RHIAttachmentLoadOp::Clear},
+                                              {RHIAttachmentLoadOp::Clear}}},
+                                            {RHIAttachmentLoadOp::Clear, {0.0f, 0}});
                     else // Don't clear depth in stage 2.
-                        r->CmdBeginGraphics(self, cmd, wh, {{{}, {}, {}}}, {});
+                        r->CmdBeginGraphics(self, cmd, wh,
+                                            {{{RHIAttachmentLoadOp::Load},
+                                              {RHIAttachmentLoadOp::Load},
+                                              {RHIAttachmentLoadOp::Load}}},
+                                            {RHIAttachmentLoadOp::Load});
                     r->CmdSetPipeline(self, cmd);
                     cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
                     r->CmdBindDescriptorSet(self, cmd, "textures",

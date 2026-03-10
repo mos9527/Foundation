@@ -145,13 +145,10 @@ namespace Foundation::RHI
             {
                 RHITextureView* imageView{nullptr};
                 RHITextureLayout imageLayout{RHITextureLayout::RenderTarget};
-                // Clear values for the color attachment, if applicable.
-                Optional<RHIClearColor> clearColor{};
-                // Clear values for depth and stencil attachments, if applicable.
-                // If both are set, the depth will be cleared first, then stencil.
-                Optional<RHIClearDepthStencil> clearDepthStencil{};
-                // If true, with no clear values set, the attachment will not be loaded.
-                bool loadDontCare{false};
+                RHIAttachmentLoadOp  loadOp {RHIAttachmentLoadOp::Load};
+                RHIAttachmentStoreOp storeOp{RHIAttachmentStoreOp::Store};
+                RHIClearColor clearColor{};
+                RHIClearDepthStencil clearDepthStencil{};
                 [[nodiscard]] constexpr bool IsValid() const { return imageView; }
             };
             Span<const Attachment> colorAttachments;

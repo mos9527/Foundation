@@ -382,28 +382,33 @@ RHICommandList& VulkanCommandList::BeginGraphics(GraphicsDesc const& desc)
         [](const GraphicsDesc::Attachment& attachment) -> vk::RenderingAttachmentInfo
     {
         vk::ClearValue clear_value{.color = vk::ClearColorValue{}};
-        if (attachment.clearColor)
+        if (attachment.loadOp == RHIAttachmentLoadOp::Clear)
         {
-            clear_value.color = vk::ClearColorValue{std::array{attachment.clearColor->x, attachment.clearColor->y,
-                                                               attachment.clearColor->z, attachment.clearColor->w}};
+            if (attachment.imageLayout == RHITextureLayout::DepthStencil)
+                clear_value.depthStencil = vk::ClearDepthStencilValue{attachment.clearDepthStencil.first,
+                                                                       attachment.clearDepthStencil.second};
+            else
+                clear_value.color = vk::ClearColorValue{std::array{attachment.clearColor.x, attachment.clearColor.y,
+                                                                    attachment.clearColor.z, attachment.clearColor.w}};
         }
-        else if (attachment.clearDepthStencil)
-        {
-            clear_value.depthStencil =
-                vk::ClearDepthStencilValue{attachment.clearDepthStencil->first, attachment.clearDepthStencil->second};
-        }
-        vk::AttachmentLoadOp loadOp = attachment.clearColor || attachment.clearDepthStencil
-            ? vk::AttachmentLoadOp::eClear
-            : vk::AttachmentLoadOp::eLoad;
-        if (loadOp == vk::AttachmentLoadOp::eLoad && attachment.loadDontCare)
-            loadOp = vk::AttachmentLoadOp::eDontCare;
+        constexpr auto toLoadOp = [](RHIAttachmentLoadOp op) {
+            switch (op) {
+            case RHIAttachmentLoadOp::Clear:    return vk::AttachmentLoadOp::eClear;
+            case RHIAttachmentLoadOp::DontCare: return vk::AttachmentLoadOp::eDontCare;
+            default:                            return vk::AttachmentLoadOp::eLoad;
+            }
+        };
+        constexpr auto toStoreOp = [](RHIAttachmentStoreOp op) {
+            return op == RHIAttachmentStoreOp::DontCare ? vk::AttachmentStoreOp::eDontCare
+                                                        : vk::AttachmentStoreOp::eStore;
+        };
         return vk::RenderingAttachmentInfo{
             .imageView = attachment.imageView
             ? static_cast<const VulkanTextureView*>(attachment.imageView)->GetVkImageView()
             : vk::ImageView{nullptr},
             .imageLayout = vkImageLayoutFromRHITextureLayout(attachment.imageLayout),
-            .loadOp = loadOp,
-            .storeOp = vk::AttachmentStoreOp::eStore,
+            .loadOp  = toLoadOp(attachment.loadOp),
+            .storeOp = toStoreOp(attachment.storeOp),
             .clearValue = clear_value};
     };
     Vector<vk::RenderingAttachmentInfo> attachments(mAllocator);
