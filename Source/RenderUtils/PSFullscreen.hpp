@@ -26,7 +26,8 @@ namespace Foundation::RenderUtils {
                 auto const& img_wh = r->GetSwapchainExtent();
                 r->CmdSetPipeline(self, cmd);
                 record(self, r, cmd);
-                r->CmdBeginGraphics(self, cmd, img_wh, {{{}}}, {}); // No clear necessary
+                r->CmdBeginGraphics(self, cmd, img_wh, {{RHIColorAttachmentLoad{RHIAttachmentLoadOp::DontCare}}},
+                                    {RHIAttachmentLoadOp::DontCare}); // No clear necessary
                 cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
                     .SetScissor(0, 0, img_wh.x, img_wh.y);
                 cmd->Draw(3);

@@ -265,10 +265,7 @@ void ImGui_ImplFoundation_ImplPassRecord(PassHandle self, Renderer* r, bool clea
     // the time of the next device queue submit - so extra barriers are not needed.
     r->CmdSetPipeline(self, cmd);
     r->CmdBindDescriptorSet(self, cmd, "textures", gImGuiTexturePool->GetDescriptorSet());
-    Optional<RHIClearColor> clearColor;
-    if (clear)
-        clearColor = RHIClearColor{};
-    r->CmdBeginGraphics(self, cmd, img_wh, {{clearColor}});
+    r->CmdBeginGraphics(self, cmd, img_wh, {{{clear ? RHIAttachmentLoadOp::Clear : RHIAttachmentLoadOp::Load}}});
     // Setup states
     int fb_width = img_wh.x, fb_height = img_wh.y;
     cmd->SetViewport(0, 0, fb_width, fb_height); // Full screen

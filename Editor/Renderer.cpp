@@ -140,7 +140,8 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
             r->BindBufferUnordered(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "outTasks");
             r->BindBufferUnordered(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "outTasksCounter");
-            r->BindBufferUnordered(self, IndirectTaskDispatch, RHIPipelineStageBits::ComputeShader, "outTasksDispatch");
+            r->BindBufferUnordered(self, IndirectTaskDispatch, RHIPipelineStageBits::ComputeShader, "outTasksDispatch",
+                                   RHIPipelineStageBits::Transfer, RHIResourceAccessBits::TransferWrite);
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
@@ -254,8 +255,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                     r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSCullMeshlets.spv",
                                   AsBytes(AsSpan(flags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-                    r->BindBufferShaderRead(self, IndirectTaskDispatch,
-                                            RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::DrawIndirect);
+                    r->BindBufferIndirectRead(self, IndirectTaskDispatch);
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
                     r->BindBufferUnordered(self, Visibility,
@@ -275,10 +275,12 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                                            "outMeshletIndices");
                     r->BindBufferUnordered(self, IndirectMeshletCounter,
                                            RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
-                                           "outMeshletCounter");
+                                           "outMeshletCounter",
+                                           RHIPipelineStageBits::Transfer, RHIResourceAccessBits::TransferWrite);
                     r->BindBufferUnordered(self, IndirectMeshletDispatch,
                                            RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
-                                           "outMeshletDispatches");
+                                           "outMeshletDispatches",
+                                           RHIPipelineStageBits::Transfer, RHIResourceAccessBits::TransferWrite);
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
@@ -342,10 +344,16 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                     RHIExtent2D wh{w, h};
                     if (early)
                         r->CmdBeginGraphics(self, cmd, wh,
-                                            {{{}, {}, {}}}, // No need. Depth is used to reject undrawn pixels
-                                            RHIClearDepthStencil{0.0f, 0});
+                                            {{{RHIAttachmentLoadOp::Clear},
+                                              {RHIAttachmentLoadOp::Clear},
+                                              {RHIAttachmentLoadOp::Clear}}},
+                                            {RHIAttachmentLoadOp::Clear, {0.0f, 0}});
                     else // Don't clear depth in stage 2.
-                        r->CmdBeginGraphics(self, cmd, wh, {{{}, {}, {}}}, {});
+                        r->CmdBeginGraphics(self, cmd, wh,
+                                            {{{RHIAttachmentLoadOp::Load},
+                                              {RHIAttachmentLoadOp::Load},
+                                              {RHIAttachmentLoadOp::Load}}},
+                                            {RHIAttachmentLoadOp::Load});
                     r->CmdSetPipeline(self, cmd);
                     cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
                     r->CmdBindDescriptorSet(self, cmd, "textures",
@@ -438,7 +446,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
             r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
             r->BindTextureSampler(self, LUTSampler, "lutSampler");
-            r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::RayTracingShader,
+            r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::ComputeShader,
                   RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
                                      .range = RHITextureSubresourceRange::Create()});
             r->BindTextureUAV(self, LightingBuffer, "output", RHIPipelineStageBits::ComputeShader,

@@ -77,10 +77,19 @@ void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPi
 {
     CHECK(mState == State::Setup);
     auto& resource = mSetup->trackedResources[handle];
-    // Check for overlap
-    for (auto const& [h, _access, _stage] : mSetup->trackedPasses[pass].bufferUsages)
-        CHECK_MSG(h != handle, "Redeclaration of buffer resource {} in pass {} detected.", resource.name,
-              mSetup->trackedPasses[pass].name);
+    // Merge accesses if the buffer is already declared in this pass
+    for (auto& [h, _access, _stage] : mSetup->trackedPasses[pass].bufferUsages)
+    {
+        if (h == handle)
+        {
+            _access |= access;
+            _stage |= stage;
+            mSetup->trackedPasses[pass].piplineStages |= stage;
+            if (access & kAllShaderWrites)
+                resource.lastBufferState.producer = pass;
+            return;
+        }
+    }
     // Add edge
     if (resource.lastBufferState.producer != kInvalidHandle && resource.lastBufferState.producer != pass)
         mSetup->add_edge(pass, resource.lastBufferState.producer, handle);
@@ -163,18 +172,31 @@ void Renderer::BindBufferStorageRead(PassHandle pass, ResourceHandle buffer, RHI
 }
 
 void Renderer::BindBufferUnordered(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
-                                   StringView bind_point) const
+                                   StringView bind_point, RHIPipelineStage extraStage,
+                                   RHIResourceAccess extraAccess) const
 {
     CHECK(mState == State::Setup);
     DeclareBufferAccess(pass, buffer, stage, RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite);
+    if (extraAccess)
+        DeclareBufferAccess(pass, buffer, extraStage, extraAccess);
     mSetup->trackedPasses[pass].bufferBindings.emplace_back(buffer, RHIDescriptorType::StorageBuffer, bind_point);
     mSetup->bindingCounts[RHIDescriptorType::StorageBuffer]++;
 }
 
-void Renderer::BindBufferShaderRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage) const
+void Renderer::BindBufferShaderRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
+                                    RHIPipelineStage extraStage, RHIResourceAccess extraAccess) const
 {
     CHECK(mState == State::Setup);
     DeclareBufferAccess(pass, buffer, stage, RHIResourceAccessBits::ShaderRead);
+    if (extraAccess)
+        DeclareBufferAccess(pass, buffer, extraStage, extraAccess);
+}
+
+void Renderer::BindBufferIndirectRead(PassHandle pass, ResourceHandle buffer) const
+{
+    CHECK(mState == State::Setup);
+    DeclareBufferAccess(pass, buffer, RHIPipelineStageBits::DrawIndirect,
+                        RHIResourceAccessBits::IndirectCommandRead);
 }
 
 void Renderer::BindBufferCopyDst(PassHandle pass, ResourceHandle buffer) const
@@ -1330,14 +1352,15 @@ void Renderer::ExecuteBarrierAccelerationStructure(PassHandle pass, TrackedResou
                                                    RHIPipelineStage stage, ExecuteBarrierPCmdOrPBarrierList cmd)
 {
     ZoneScoped;
-    if (access & kAllShaderWrites)
+    const RHIResourceAccess kASWrites = kAllShaderWrites | RHIResourceAccessBits::AccelerationStructureWrite;
+    if (access & kASWrites)
     {
         tres.lastASState.lastProducer = pass;
         tres.lastASState.lastProducedFrame = mFrameSwapped;
     }
     RHIAccelerationStructure* res = DerefResource(tres.handle).Get<RHIAccelerationStructure*>();
     /* Same as textures */
-    if ((tres.lastASState.access & kAllShaderWrites) != 0 || (access & kAllShaderWrites) != 0)
+    if ((tres.lastASState.access & kASWrites) != 0 || (access & kASWrites) != 0)
     {
         /* always barrier */
     }
@@ -1519,6 +1542,12 @@ void Renderer::ExecuteFrame()
             {
                 auto& tres = mSetup->trackedResources[hdl];
                 UpdateSyncGroup(tres.lastBufferState.lastProducer, tres.lastBufferState.lastProducedFrame);
+            }
+            // Acceleration Structures
+            for (auto [hdl, access, stage] : pass.asUsages)
+            {
+                auto& tres = mSetup->trackedResources[hdl];
+                UpdateSyncGroup(tres.lastASState.lastProducer, tres.lastASState.lastProducedFrame);
             }
             // Backbuffer
             if (pass.backbufferRTV || pass.backbufferUAV)
@@ -1844,20 +1873,23 @@ void Renderer::CmdBindDescriptorSet(PassHandle pass, RHICommandList* cmd, String
 }
 
 void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2D const& extent,
-                                Span<const Optional<RHIClearColor>> clear_rtv,
-                                Optional<RHIClearDepthStencil> const& clear_dsv)
+                                Span<const RHIColorAttachmentLoad> rtv_loads,
+                                RHIDepthAttachmentLoad dsv_load)
 {
     CHECK(mState == State::Execute);
     auto& tpass = mSetup->trackedPasses[pass];
     Vector<RHICommandList::GraphicsDesc::Attachment> rtvs(mExecuteAlloc.Ptr());
     rtvs.reserve(tpass.rtvs.size() + 1);
     const size_t rtv_count = tpass.rtvs.size() + (tpass.backbufferRTV ? 1 : 0);
-    CHECK_MSG(clear_rtv.size() == rtv_count, "RTV clear count mismatch. Got {}, expected {} for all RenderTargets",
-              clear_rtv.size(), rtv_count);
+    CHECK_MSG(rtv_loads.size() == rtv_count, "RTV load count mismatch. Got {}, expected {} for all RenderTargets",
+              rtv_loads.size(), rtv_count);
     if (tpass.backbufferRTV)
     {
-        rtvs.push_back({.imageView = mSwaps[GetSwap()].view.Get(), .clearColor = clear_rtv[0], .loadDontCare = true});
-        clear_rtv = clear_rtv.subspan(1);
+        rtvs.push_back({.imageView = mSwaps[GetSwap()].view.Get(),
+                        .loadOp    = rtv_loads[0].loadOp,
+                        .storeOp   = RHIAttachmentStoreOp::Store,
+                        .clearColor = rtv_loads[0].clearColor});
+        rtv_loads = rtv_loads.subspan(1);
     }
     for (int i = 0; const auto& [rtv, blending] : tpass.rtvs)
     {
@@ -1866,10 +1898,11 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
         RHITexture* res = DerefResource(rhdl).Get<RHITexture*>();
         CHECK_MSG(res->mDesc.extent.x >= extent.x && res->mDesc.extent.y >= extent.y,
                   "Graphics extent too large for Render Target on {}", tres.name);
-        // Skip clear if possible.
-        // This is applied when clearColor is not set, and blending is also disabled.
-        rtvs.push_back({.imageView = DerefTextureView(rtv), .clearColor = clear_rtv[i],
-                        .loadDontCare = !blending.enabled});
+        rtvs.push_back({.imageView  = DerefTextureView(rtv),
+                        .loadOp     = rtv_loads[i].loadOp,
+                        .storeOp    = RHIAttachmentStoreOp::Store,
+                        .clearColor = rtv_loads[i].clearColor});
+        ++i;
     }
     if (tpass.dsv != kInvalidHandle)
     {
@@ -1879,9 +1912,11 @@ void Renderer::CmdBeginGraphics(PassHandle pass, RHICommandList* cmd, RHIExtent2
         CHECK_MSG(res->mDesc.extent.x >= extent.x && res->mDesc.extent.y >= extent.y,
                   "Graphics extent too large for Depth buffer {}", tres.name);
         cmd->BeginGraphics({.colorAttachments = rtvs,
-                            .depthAttachment = {.imageView = DerefTextureView(tpass.dsv),
-                                                .imageLayout = RHITextureLayout::DepthStencil,
-                                                .clearDepthStencil = clear_dsv},
+                            .depthAttachment  = {.imageView          = DerefTextureView(tpass.dsv),
+                                                 .imageLayout        = RHITextureLayout::DepthStencil,
+                                                 .loadOp             = dsv_load.loadOp,
+                                                 .storeOp            = RHIAttachmentStoreOp::Store,
+                                                 .clearDepthStencil  = dsv_load.clearValue},
                             .width = extent.x,
                             .height = extent.y});
     }
