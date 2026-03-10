@@ -257,6 +257,7 @@ namespace Foundation::RHI {
         HostRead = 1 << 10,
         AccelerationStructureRead = 1 << 11,
         AccelerationStructureWrite = 1 << 12,
+        IndirectCommandRead = 1 << 13,
     BITMASK_ENUM_END();
 
     // https://gpuopen.com/learn/vulkan-barriers-explained/

@@ -77,10 +77,19 @@ void Renderer::DeclareBufferAccess(PassHandle pass, ResourceHandle handle, RHIPi
 {
     CHECK(mState == State::Setup);
     auto& resource = mSetup->trackedResources[handle];
-    // Check for overlap
-    for (auto const& [h, _access, _stage] : mSetup->trackedPasses[pass].bufferUsages)
-        CHECK_MSG(h != handle, "Redeclaration of buffer resource {} in pass {} detected.", resource.name,
-              mSetup->trackedPasses[pass].name);
+    // Merge accesses if the buffer is already declared in this pass
+    for (auto& [h, _access, _stage] : mSetup->trackedPasses[pass].bufferUsages)
+    {
+        if (h == handle)
+        {
+            _access |= access;
+            _stage |= stage;
+            mSetup->trackedPasses[pass].piplineStages |= stage;
+            if (access & kAllShaderWrites)
+                resource.lastBufferState.producer = pass;
+            return;
+        }
+    }
     // Add edge
     if (resource.lastBufferState.producer != kInvalidHandle && resource.lastBufferState.producer != pass)
         mSetup->add_edge(pass, resource.lastBufferState.producer, handle);
@@ -163,18 +172,31 @@ void Renderer::BindBufferStorageRead(PassHandle pass, ResourceHandle buffer, RHI
 }
 
 void Renderer::BindBufferUnordered(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
-                                   StringView bind_point) const
+                                   StringView bind_point, RHIPipelineStage extraStage,
+                                   RHIResourceAccess extraAccess) const
 {
     CHECK(mState == State::Setup);
     DeclareBufferAccess(pass, buffer, stage, RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite);
+    if (extraAccess)
+        DeclareBufferAccess(pass, buffer, extraStage, extraAccess);
     mSetup->trackedPasses[pass].bufferBindings.emplace_back(buffer, RHIDescriptorType::StorageBuffer, bind_point);
     mSetup->bindingCounts[RHIDescriptorType::StorageBuffer]++;
 }
 
-void Renderer::BindBufferShaderRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage) const
+void Renderer::BindBufferShaderRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
+                                    RHIPipelineStage extraStage, RHIResourceAccess extraAccess) const
 {
     CHECK(mState == State::Setup);
     DeclareBufferAccess(pass, buffer, stage, RHIResourceAccessBits::ShaderRead);
+    if (extraAccess)
+        DeclareBufferAccess(pass, buffer, extraStage, extraAccess);
+}
+
+void Renderer::BindBufferIndirectRead(PassHandle pass, ResourceHandle buffer) const
+{
+    CHECK(mState == State::Setup);
+    DeclareBufferAccess(pass, buffer, RHIPipelineStageBits::DrawIndirect,
+                        RHIResourceAccessBits::IndirectCommandRead);
 }
 
 void Renderer::BindBufferCopyDst(PassHandle pass, ResourceHandle buffer) const
@@ -1519,6 +1541,12 @@ void Renderer::ExecuteFrame()
             {
                 auto& tres = mSetup->trackedResources[hdl];
                 UpdateSyncGroup(tres.lastBufferState.lastProducer, tres.lastBufferState.lastProducedFrame);
+            }
+            // Acceleration Structures
+            for (auto [hdl, access, stage] : pass.asUsages)
+            {
+                auto& tres = mSetup->trackedResources[hdl];
+                UpdateSyncGroup(tres.lastASState.lastProducer, tres.lastASState.lastProducedFrame);
             }
             // Backbuffer
             if (pass.backbufferRTV || pass.backbufferUAV)

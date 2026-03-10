@@ -495,7 +495,9 @@ namespace Foundation::RenderCore
          * This can be automatically bound to the pipeline with CmdSetPipeline()
          */
         void BindBufferUnordered(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
-                                 StringView bind_point) const;
+                                 StringView bind_point,
+                                 RHIPipelineStage extraStage = {},
+                                 RHIResourceAccess extraAccess = {}) const;
         /**
          * @brief Declares this pass has shaders that will read from this buffer.
          * e.g. Vertex, Index
@@ -504,7 +506,16 @@ namespace Foundation::RenderCore
          * cmd->BindVertexBuffer(), cmd->BindIndexBuffer() at Record time to
          * use the buffer.
          */
-        void BindBufferShaderRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage) const;
+        void BindBufferShaderRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
+                                  RHIPipelineStage extraStage = {},
+                                  RHIResourceAccess extraAccess = {}) const;
+        /**
+         * @brief Declares that this pass will consume this buffer as the source of an indirect draw/dispatch command.
+         *
+         * This does not bind the buffer to any shader. You must call cmd->DrawIndirect(),
+         * cmd->DrawMeshTasksIndirect(), or cmd->DispatchIndirect() at Record time to consume it.
+         */
+        void BindBufferIndirectRead(PassHandle pass, ResourceHandle buffer) const;
         /**
          * @brief Declares that this pass will write to the buffer via copy.
          *

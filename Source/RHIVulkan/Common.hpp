@@ -85,6 +85,7 @@ namespace Foundation::RHI {
         if (state & HostRead) flags |= vk::AccessFlagBits2::eHostRead;
         if (state & AccelerationStructureRead) flags |= vk::AccessFlagBits2::eAccelerationStructureReadKHR;
         if (state & AccelerationStructureWrite) flags |= vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
+        if (state & IndirectCommandRead) flags |= vk::AccessFlagBits2::eIndirectCommandRead;
         return flags;
     }
 
