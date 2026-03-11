@@ -64,7 +64,7 @@ public struct PrincipledBSDF : IBxDF {
     }
 
     public BxDFFlags Flags() {
-        return BxDFFlags::Reflection | BxDFFlags::Glossy;
+        return BxDFFlags::Reflection | BxDFFlags::Transmission | BxDFFlags::Glossy;
     }
 
     private float3 TorranceSparrowPreserveEnergyReflection(float3 wo, float3 wi, float3 F0, float3 F90, float2 lutE) {
@@ -82,6 +82,16 @@ public struct PrincipledBSDF : IBxDF {
         }
         // Jacobian from wm to wi. See ConductorBxDF in IBxDF.slang
         return (Fss + Fms) * mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4.0f * cosWo * cosWi);
+    }
+
+    private float3 TorranceSparrowTotalInternalReflection(float3 wo, float3 wi) {
+        float cosWo = AbsCosTheta(wo);
+        float cosWi = AbsCosTheta(wi);
+        if (cosWo < EPS || cosWi < EPS)
+            return 0.0f;
+
+        float3 wm = normalize(wo + wi);
+        return mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4.0f * cosWo * cosWi);
     }
 
 
@@ -108,6 +118,7 @@ public struct PrincipledBSDF : IBxDF {
 
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         bool reflected = SameHemisphere(wo, wi);
+        bool tir = reflected && transmission > EPS && IsTIR(wo, wi, eta);
 
         float2 lutE = SampleGGXLutE(AbsCosTheta(wo), roughness);
 
@@ -126,7 +137,7 @@ public struct PrincipledBSDF : IBxDF {
         float3 bsdf = mix(diffuseBSDF, transmittanceBTDF, transmission);
 
         // Dielectric specular
-        float3 dielBSDF = reflected ? TorranceSparrowPreserveEnergyReflection(wo, wi, dielF0, dielF90, lutE) : 0;
+        float3 dielBSDF = reflected ? (tir ? TorranceSparrowTotalInternalReflection(wo, wi) : TorranceSparrowPreserveEnergyReflection(wo, wi, dielF0, dielF90, lutE)) : 0;
         bsdf = dielBSDF + bsdf;
 
         // Metal
@@ -196,7 +207,7 @@ public struct PrincipledBSDF : IBxDF {
         // Effectively this raises the probability of sampling reflection
         if (reflected && transmission > EPS) {
             if (IsTIR(wo, wi, eta))
-                pdf += transmission * glossyPDF * sampleGlossy;
+                pdf += transmission * glossyPDF * (1.0f - sampleGlossy);
         }
 
         // Metal (Linearly mixed)
@@ -208,6 +219,7 @@ public struct PrincipledBSDF : IBxDF {
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
         float3 wi;
         BxDFFlags sampledFlag;
+        float sampledEta = 1.0f;
 
         float sampleGlossy = reflectance(dielF0, dielF90, SampleGGXLutE(AbsCosTheta(wo), roughness));
         // Select rescales uc
@@ -227,8 +239,10 @@ public struct PrincipledBSDF : IBxDF {
                 if (tir) {
                     wi = Reflect(wo, wm);
                     sampledFlag = BxDFFlags::GlossyReflection;
-                } else
+                } else {
                     sampledFlag = BxDFFlags::Transmission;
+                    sampledEta = etap;
+                }
             } else {
                 // Diffuse Sample
                 wi = SampleCosineHemisphere(u);
@@ -241,6 +255,6 @@ public struct PrincipledBSDF : IBxDF {
             return BSDFSample();
         SampledSpectrum val = this.f(wo, wi, mode);
         float pdf = this.PDF(wo, wi, mode, flags);            
-        return BSDFSample(val, wi, pdf, sampledFlag, eta);
+        return BSDFSample(val, wi, pdf, sampledFlag, sampledEta);
     }
 };
