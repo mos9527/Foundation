@@ -1068,3 +1068,106 @@ public bool Select(inout float u, float p){
         return false;
     }
 }
+
+// -- N-Lobe Stochastic Mixture Framework
+// Implements an unbiased mixture BSDF over up to 4 lobes.
+// Sampling: pick lobe i ~ Categorical(w_i / weightSum), delegate Sample_f,
+//           then divide by mixture PDF p_mix = Σ_j (w_j/weightSum) * pdf_j(ω).
+// Eval/PDF: sum over all active lobes weighted by normalized weights.
+// This guarantees sample/eval/pdf consistency and correct MIS integration.
+struct LobeEntry {
+    IBxDF bxdf;
+    float weight; // 未归一化的原始权重
+};
+
+public struct LobeMixture : IBxDF {
+    LobeEntry lobes[4];
+    int       lobeCount;
+    float     weightSum; // 归一化分母，由 Finalize() 计算
+
+    public __init() {
+        lobeCount = 0;
+        weightSum = 0.0f;
+    }
+
+    // 添加一个 lobe 及其原始权重（调用 Finalize() 前有效）
+    [mutating] public void AddLobe(IBxDF b, float w) {
+        if (lobeCount >= 4 || w <= 0.0f) return;
+        lobes[lobeCount].bxdf    = b;
+        lobes[lobeCount].weight  = w;
+        lobeCount++;
+    }
+
+    // 计算归一化分母；必须在所有 AddLobe 之后、使用前调用
+    [mutating] public void Finalize() {
+        weightSum = 0.0f;
+        for (int i = 0; i < lobeCount; i++)
+            weightSum += lobes[i].weight;
+        if (weightSum <= 0.0f) weightSum = 1.0f; // 防止除零
+    }
+
+    // 所有活跃 lobe 的 flags 取并集
+    public BxDFFlags Flags() {
+        BxDFFlags result = BxDFFlags::Unset;
+        for (int i = 0; i < lobeCount; i++)
+            result = result | lobes[i].bxdf.Flags();
+        return result;
+    }
+
+    // eval: Σ_i (w_i / weightSum) * f_i(wo, wi)
+    public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
+        SampledSpectrum result = SampledSpectrum(0.0f);
+        for (int i = 0; i < lobeCount; i++) {
+            float nw = lobes[i].weight / weightSum;
+            result += nw * lobes[i].bxdf.f(wo, wi, mode);
+        }
+        return result;
+    }
+
+    // mixture PDF: Σ_i (w_i / weightSum) * pdf_i(wo, wi)
+    public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
+        float result = 0.0f;
+        for (int i = 0; i < lobeCount; i++) {
+            float nw = lobes[i].weight / weightSum;
+            result += nw * lobes[i].bxdf.PDF(wo, wi, mode, flags);
+        }
+        return result;
+    }
+
+    // 按归一化权重做 categorical 采样，再调用选中 lobe 的 Sample_f，
+    // 最终 pdf 替换为 mixture PDF（保证无偏）
+    public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
+        if (lobeCount == 0 || weightSum <= 0.0f)
+            return BSDFSample();
+
+        // 1. 选择 lobe（categorical 采样）
+        int chosen = lobeCount - 1;
+        float cumulative = 0.0f;
+        for (int i = 0; i < lobeCount; i++) {
+            cumulative += lobes[i].weight / weightSum;
+            if (uc < cumulative) {
+                chosen = i;
+                // 将 uc 重映射到 [0,1] 供选中 lobe 使用
+                float lo = cumulative - lobes[i].weight / weightSum;
+                float hi = cumulative;
+                uc = (hi > lo) ? clamp((uc - lo) / (hi - lo), 0.0f, 1.0f) : 0.0f;
+                break;
+            }
+        }
+
+        // 2. 委托给选中 lobe 采样方向
+        BSDFSample bs = lobes[chosen].bxdf.Sample_f(wo, uc, u, mode, flags);
+        if (!bs.IsValid())
+            return BSDFSample();
+
+        // 3. 用 mixture PDF 替换单 lobe PDF（核心：保证无偏）
+        float pMix = this.PDF(wo, bs.wi, mode, flags);
+        if (pMix < 1e-7f)
+            return BSDFSample();
+
+        // 4. 重新用 mixture eval 替换单 lobe f（保证 eval/pdf 一致性）
+        SampledSpectrum fMix = this.f(wo, bs.wi, mode);
+
+        return BSDFSample(fMix, bs.wi, pMix, bs.flags, bs.eta);
+    }
+};
