@@ -1352,14 +1352,15 @@ void Renderer::ExecuteBarrierAccelerationStructure(PassHandle pass, TrackedResou
                                                    RHIPipelineStage stage, ExecuteBarrierPCmdOrPBarrierList cmd)
 {
     ZoneScoped;
-    if (access & kAllShaderWrites)
+    const RHIResourceAccess kASWrites = kAllShaderWrites | RHIResourceAccessBits::AccelerationStructureWrite;
+    if (access & kASWrites)
     {
         tres.lastASState.lastProducer = pass;
         tres.lastASState.lastProducedFrame = mFrameSwapped;
     }
     RHIAccelerationStructure* res = DerefResource(tres.handle).Get<RHIAccelerationStructure*>();
     /* Same as textures */
-    if ((tres.lastASState.access & kAllShaderWrites) != 0 || (access & kAllShaderWrites) != 0)
+    if ((tres.lastASState.access & kASWrites) != 0 || (access & kASWrites) != 0)
     {
         /* always barrier */
     }
