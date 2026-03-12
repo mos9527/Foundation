@@ -1,5 +1,6 @@
 #include "ImGui.hpp"
 #include <filesystem>
+#include <Core/Paths.hpp>
 #include "tracy/Tracy.hpp"
 
 #include <RenderCore/Bindless.hpp>
@@ -18,7 +19,7 @@ constexpr size_t kUploadBudget = 16 * (1u << 20);
 // NOTE: Should be large enough to accommodate most frames, or there will be a race.
 constexpr size_t kVertexBufferSize = 16 * (1u << 20);
 constexpr size_t kIndexBufferSize = 16 * (1u << 20);
-const char* kDefaultFontPath = "./data/assets/LXGWNeoXiHei.ttf";
+static const char* kDefaultFontPath = "data/assets/LXGWNeoXiHei.ttf";
 
 UniquePtr<BindlessPool> gImGuiTexturePool = nullptr;
 void* ImGui_ImplFoundation_MemAlloc(size_t sz, void*) { return GLOBAL_ALLOC->Allocate(sz, sizeof(std::max_align_t)); }
@@ -200,8 +201,8 @@ void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHa
     r->BindBufferCopyDst(self, vtxBuffer);
     r->BindBufferCopyDst(self, idxBuffer);
     r->BindPushConstant(self, RHIShaderStageBits::Vertex, 0, sizeof(PushConstants));
-    r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/ImGui.spv");
-    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/ImGui.spv");
+    r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", Foundation::Core::PathsResolve("data/shaders/ImGui.spv"));
+    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("data/shaders/ImGui.spv"));
     r->BindDescriptorSet(self, "textures", gImGuiTexturePool->GetDescriptorSetLayout());
     // We have fixed samplers for ImGui - quite enough for UI elements
     r->BindTextureSampler(self, linSampler, "linSampler");
@@ -372,14 +373,15 @@ void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
     style.Colors[ImGuiCol_ButtonHovered] = ImVec4(1.0f, 0.0f, 0.0f, 0.6f);
     style.Colors[ImGuiCol_ButtonActive] = ImVec4(1.0f, 0.0f, 0.0f, 0.8f);
     // Font from https://github.com/lxgw/LxgwNeoXiHei
-    if (!std::filesystem::exists(kDefaultFontPath))
+    auto resolvedFontPath = Foundation::Core::PathsResolve(kDefaultFontPath);
+    if (!std::filesystem::exists(resolvedFontPath))
     {
-        LOG(ImGui, LogError, "Font file {} not found! ImGui will use default font.", kDefaultFontPath);
+        LOG(ImGui, LogError, "Font file {} not found! ImGui will use default font.", resolvedFontPath);
     }
     else
     {
         io.Fonts->Clear();
         ImFontConfig font_cfg;
-        io.Fonts->AddFontFromFileTTF(kDefaultFontPath, 12.0f, &font_cfg);
+        io.Fonts->AddFontFromFileTTF(resolvedFontPath.c_str(), 12.0f, &font_cfg);
     }
 }

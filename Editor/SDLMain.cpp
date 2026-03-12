@@ -1,4 +1,5 @@
 #include "ImGui.hpp"
+#include "Paths.hpp"
 extern bool EditorProcessEvent(SDL_Event*);
 extern bool EditorOnFrame(FContext*);
 bool /* should close */ mainLoop()
@@ -26,6 +27,7 @@ bool /* should close */ mainLoop()
 constexpr int kSDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_VULKAN;
 int main(int argc, char** argv)
 {
+    Paths::Init(argv[0]);
     CreateContext(SDL_CreateWindow("Foundation Editor", 1920, 1080, kSDLWindowFlagsVulkan));
     ImGui_ImplFoundation_SetupContextWithDefaultStyles();
     ImGui_ImplFoundation_Init(GContext->device.Get(), GContext->window);

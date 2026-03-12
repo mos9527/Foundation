@@ -303,7 +303,6 @@ void RayGeneration()
         L += beta * hit.emissive;
         BSDFSample sample = bsdf.Sample_f(wo, rng.sample(), rng.sample2D());
         if (!sample.IsValid()) {
-            L += float3(1, 0, 0);
             break;
         }
         lastSamplePDF = sample.pdf;

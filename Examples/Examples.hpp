@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/Paths.hpp>
 #include <RHIVulkan/Application.hpp>
 #include <RenderCore/Renderer.hpp>
 #include <Math/Math.hpp>
@@ -46,6 +47,7 @@ namespace details
 constexpr int Examples_SDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_VULKAN;
 inline auto Examples_InitVulkan(SDL_Window* window, RendererDesc const& desc = {})
 {
+    PathsInitFromDir(SDL_GetBasePath());
     auto app = Construct<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC);
     auto device = app->CreateDevice({}, window);
     RHIDeviceScopedHandle<RHISwapchain> swap;

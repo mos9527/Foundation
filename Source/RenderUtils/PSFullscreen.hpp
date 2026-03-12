@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/Paths.hpp>
 #include <RenderCore/Renderer.hpp>
 namespace Foundation::RenderUtils {
     using namespace RenderCore;
@@ -18,7 +19,7 @@ namespace Foundation::RenderUtils {
         return r->CreatePass(name, RHIDeviceQueueType::Graphics, 0u,
             [=](PassHandle self, Renderer* r) {
                 r->BindBackbufferRTV(self);
-                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", "data/shaders/VSFullscreen.spv");
+                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", Foundation::Core::PathsResolve("data/shaders/VSFullscreen.spv"));
                 setup(self, r);
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -62,7 +63,7 @@ namespace Foundation::RenderUtils {
                     .format = srcFormat,
                     .range = RHITextureSubresourceRange::Create()
                 });
-                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/PSCopy.spv");
+                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("data/shaders/PSCopy.spv"));
             },
             [](PassHandle, Renderer*, RHICommandList*) {}
         );
