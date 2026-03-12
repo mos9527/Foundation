@@ -57,7 +57,9 @@ float3 TorranceSparrowTransmittance(
     TrowbridgeReitzDistribution mfDistrib)
 {
     float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
-    float3 wm = normalize(wo + wi * etap);
+    // Note: our Refract() uses eta = eta_t/eta_i. The corresponding transmission half-vector is
+    // wm = normalize(eta * wo + wi), not normalize(wo + eta * wi).
+    float3 wm = normalize(wo * etap + wi);
     wm = FaceForward(wm, float3(0, 0, 1));
     float3 Fss = SchlickFresnel(F0, F90, AbsDot(wo, wm));
     float3 T = max(1.0f - Fss, 0.0f);
@@ -76,8 +78,9 @@ float PDFGlossy(float3 wo, float3 wi, TrowbridgeReitzDistribution mfDistrib) {
 
 // Transmittance PDF (rough dielectric Jacobian)
 float PDFTransmittance(float3 wo, float3 wi, float eta, TrowbridgeReitzDistribution mfDistrib) {
-    float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
-    float3 wm = normalize(wo + wi * etap);
+float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
+    // Must match Refract()'s eta convention (eta_t/eta_i)
+    float3 wm = normalize(wo * etap + wi);
     wm = FaceForward(wm, float3(0, 0, 1));
     float denom = Sqr(dot(wi, wm) + dot(wo, wm) / etap);
     if (denom < EPS) return 0.0f;
