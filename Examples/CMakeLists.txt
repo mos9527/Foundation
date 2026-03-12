@@ -28,10 +28,8 @@ target_link_libraries(Example_DebugText PUBLIC Example_Common)
 add_executable(Example_ImGui "ImGui.cpp")
 target_link_libraries(Example_ImGui PUBLIC Example_Common ThirdParty_ImGui)
 
-FetchContent_MakeAvailable(stb)
 add_executable(Example_MipGeneration "MipGeneration.cpp")
-target_link_libraries(Example_MipGeneration PUBLIC Example_Common ThirdParty_ImGui)
-target_include_directories(Example_MipGeneration PUBLIC "${stb_SOURCE_DIR}")
+target_link_libraries(Example_MipGeneration PUBLIC Example_Common ThirdParty_ImGui ThirdParty_STB)
 add_dependencies(Example_MipGeneration Shader_MipGenerationBlur Examples_SampleFiles)
 
 add_executable(Example_MeshShaderHello "MeshShaderHello.cpp")

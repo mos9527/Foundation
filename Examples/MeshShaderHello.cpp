@@ -12,9 +12,9 @@ int main()
         [=](PassHandle self, Renderer* r)
         {
             r->BindBackbufferRTV(self);
-            r->BindShader(self, RHIShaderStageBits::Task, "taskMain", "data/shaders/MeshShaderHelloTask.spv");
-            r->BindShader(self, RHIShaderStageBits::Mesh, "meshMain", "data/shaders/MeshShaderHelloMesh.spv");
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/MeshShaderHelloFrag.spv");
+            r->BindShader(self, RHIShaderStageBits::Task, "taskMain", Foundation::Core::PathsResolve("data/shaders/MeshShaderHelloTask.spv"));
+            r->BindShader(self, RHIShaderStageBits::Mesh, "meshMain", Foundation::Core::PathsResolve("data/shaders/MeshShaderHelloMesh.spv"));
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("data/shaders/MeshShaderHelloFrag.spv"));
             r->BindPushConstant(self, RHIShaderStageBits::Task, 0, sizeof(float));
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)

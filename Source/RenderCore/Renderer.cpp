@@ -123,7 +123,7 @@ void Renderer::DeclareTextureAccess(PassHandle pass, ResourceHandle handle, RHIP
 }
 
 /* -- binding -- */
-void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point, const char* shader_path,
+void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point, StringView shader_path,
                           Span<const char> specializationData, uint32_t rtHitGroupIndex) const
 {
     CHECK(mState == State::Setup);

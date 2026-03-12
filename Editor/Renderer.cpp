@@ -1,4 +1,5 @@
 #include "ImGui.hpp"
+#include "Paths.hpp"
 #include "Renderer.hpp"
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
@@ -134,7 +135,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         "Indirect Meshlet Cull Generation", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSCullInstances.spv");
+            r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSCullInstances.spv"));
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
@@ -220,7 +221,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                 r->BindTextureUAV(self, OverdrawBuffer, "texture", RHIPipelineStageBits::ComputeShader,
                                   {.format = RHIResourceFormat::R32Uint,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSOverdrawClear.spv");
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSOverdrawClear.spv"));
                 r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
                 r->BindBufferCopyDst(self, ReduceBuffer);
             },
@@ -252,7 +253,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                         flags |= kCullStageEarly;
                     else
                         flags |= kCullStageLate;
-                    r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSCullMeshlets.spv",
+                    r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSCullMeshlets.spv"),
                                   AsBytes(AsSpan(flags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
                     r->BindBufferIndirectRead(self, IndirectTaskDispatch);
@@ -306,10 +307,10 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                 {
                     // This is what we could've had. Instead of AddCullPass if it actually works on all platforms.
                     // It should. But it doesn't.
-                    // r->BindShader(self, RHIShaderStageBits::Task, "main", "data/shaders/ETSMeshletCull.spv",
+                    // r->BindShader(self, RHIShaderStageBits::Task, "main", Paths::Resolve("data/shaders/ETSMeshletCull.spv"),
                     // AsBytes(AsSpan(TSFlags)));
-                    r->BindShader(self, RHIShaderStageBits::Mesh, "main", "data/shaders/EMSBasic.spv");
-                    r->BindShader(self, RHIShaderStageBits::Fragment, "main", "data/shaders/EPSGBuffer.spv",
+                    r->BindShader(self, RHIShaderStageBits::Mesh, "main", Paths::Resolve("data/shaders/EMSBasic.spv"));
+                    r->BindShader(self, RHIShaderStageBits::Fragment, "main", Paths::Resolve("data/shaders/EPSGBuffer.spv"),
                                   AsBytes(AsSpan(cfg.viewFlags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
@@ -391,7 +392,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             "Overdraw CS Reduce", RHIDeviceQueueType::Compute, 0u,
             [=](PassHandle self, Renderer* r)
             {
-                r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSOverdrawReduce.spv");
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSOverdrawReduce.spv"));
                 r->BindTextureSRV(self, OverdrawBuffer, "texture", RHIPipelineStageBits::ComputeShader,
                                   RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                      .range = RHITextureSubresourceRange::Create()});
@@ -428,7 +429,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         "Lighting", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSLighting.spv",
+            r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSLighting.spv"),
                           AsBytes(AsSpan(cfg.viewFlags)));
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindTextureSRV(self, GBufferRT0, "RT0", RHIPipelineStageBits::ComputeShader,
@@ -469,7 +470,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             "Histogram Binning", RHIDeviceQueueType::Graphics, 0u,
             [=](PassHandle self, Renderer* r)
             {
-                r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSHistogramBinning.spv");
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSHistogramBinning.spv"));
                 r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
                 r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::ComputeShader,
                                   RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
@@ -487,7 +488,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             "Histogram Binning Reduce", RHIDeviceQueueType::Graphics, 0u,
             [=](PassHandle self, Renderer* r)
             {
-                r->BindShader(self, RHIShaderStageBits::Compute, "reduce", "data/shaders/ECSHistogramReduce.spv");
+                r->BindShader(self, RHIShaderStageBits::Compute, "reduce", Paths::Resolve("data/shaders/ECSHistogramReduce.spv"));
                 r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
                 r->BindBufferUnordered(self, HistogramBins, RHIPipelineStageBits::ComputeShader, "bins");
                 r->BindBufferUnordered(self, LightingAverageLuma, RHIPipelineStageBits::ComputeShader, "output");
@@ -502,7 +503,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         renderer, "Blit Image",
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/EPSBlit.spv",
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Paths::Resolve("data/shaders/EPSBlit.spv"),
                           AsBytes(AsSpan(cfg.viewFlags)));
             r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,

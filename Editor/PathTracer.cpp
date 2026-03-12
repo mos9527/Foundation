@@ -1,4 +1,5 @@
 #include "ImGui.hpp"
+#include "Paths.hpp"
 #include "Renderer.hpp"
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
@@ -75,17 +76,17 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         {
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::RayTracingShader, "globalParams");
             r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::RayTracingShader, "AS");
-            r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", "data/shaders/ERTPathTracer.spv",
+            r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", Paths::Resolve("data/shaders/ERTPathTracer.spv"),
                           AsBytes(AsSpan(cfg.viewFlags)));
-            r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RayClosestHit", "data/shaders/ERTPathTracer.spv",
+            r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RayClosestHit", Paths::Resolve("data/shaders/ERTPathTracer.spv"),
                           AsBytes(AsSpan(cfg.viewFlags)), /*hit group*/ 0);
-            r->BindShader(self, RHIShaderStageBits::RayAnyHit, "RayOpacityAnyHit", "data/shaders/ERTPathTracer.spv",
+            r->BindShader(self, RHIShaderStageBits::RayAnyHit, "RayOpacityAnyHit", Paths::Resolve("data/shaders/ERTPathTracer.spv"),
                           AsBytes(AsSpan(cfg.viewFlags)), /*hit group*/ 0);
-            r->BindShader(self, RHIShaderStageBits::RayMiss, "RayMiss", "data/shaders/ERTPathTracer.spv",
+            r->BindShader(self, RHIShaderStageBits::RayMiss, "RayMiss", Paths::Resolve("data/shaders/ERTPathTracer.spv"),
                           AsBytes(AsSpan(cfg.viewFlags)));
-            r->BindShader(self, RHIShaderStageBits::RayAnyHit, "ShadowRayAnyHit", "data/shaders/ERTPathTracer.spv",
+            r->BindShader(self, RHIShaderStageBits::RayAnyHit, "ShadowRayAnyHit", Paths::Resolve("data/shaders/ERTPathTracer.spv"),
                           AsBytes(AsSpan(cfg.viewFlags)), /*hit group*/ 1);
-            r->BindShader(self, RHIShaderStageBits::RayMiss, "ShadowRayMiss", "data/shaders/ERTPathTracer.spv",
+            r->BindShader(self, RHIShaderStageBits::RayMiss, "ShadowRayMiss", Paths::Resolve("data/shaders/ERTPathTracer.spv"),
                           AsBytes(AsSpan(cfg.viewFlags)));
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitives");
@@ -113,7 +114,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         "Histogram Binning", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Compute, "main", "data/shaders/ECSHistogramBinning.spv");
+            r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSHistogramBinning.spv"));
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
@@ -130,7 +131,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         "Histogram Binning Reduce", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Compute, "reduce", "data/shaders/ECSHistogramReduce.spv");
+            r->BindShader(self, RHIShaderStageBits::Compute, "reduce", Paths::Resolve("data/shaders/ECSHistogramReduce.spv"));
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindBufferUnordered(self, HistogramBins, RHIPipelineStageBits::ComputeShader, "bins");
             r->BindBufferUnordered(self, LightingAverageLuma, RHIPipelineStageBits::ComputeShader, "output");
@@ -144,7 +145,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         renderer, "Blit Image",
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", "data/shaders/EPSBlitPT.spv",
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Paths::Resolve("data/shaders/EPSBlitPT.spv"),
                           AsBytes(AsSpan(cfg.viewFlags)));
             r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,

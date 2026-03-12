@@ -429,7 +429,7 @@ namespace Foundation::RenderCore
          * @param specializationData Binary blob of specialization data, if any. Must be bound in shader at
          *                           ID 0, offset 0.
          */
-        void BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point, const char* shader_path,
+        void BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point, StringView shader_path,
                         Span<const char> specializationData = {}, uint32_t rtHitGroupIndex = 0) const;
         /**
          * @brief Declares a range of Push Constant used in a stage.
