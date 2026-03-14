@@ -128,8 +128,8 @@ void FInitEnter()
         constexpr size_t kBLASBuildBatch = 32u;
         for (size_t i = 0; i < GSMeshes.size(); i += kBLASBuildBatch)
         {
-            Span meshesBatch = GSMeshes;
-            Span indicesBatch = GSBLASes;
+            Span<GSMesh> meshesBatch = GSMeshes;
+            Span<uint32_t> indicesBatch = GSBLASes;
             size_t batchSize = std::min(kBLASBuildBatch, GSMeshes.size() - i);
             meshesBatch = meshesBatch.subspan(i, batchSize);
             indicesBatch = indicesBatch.subspan(i, batchSize);
