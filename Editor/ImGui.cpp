@@ -35,8 +35,8 @@ const size_t ImProfilerTimestampLinear(size_t min, size_t max, size_t binCount, 
 
 const size_t ImProfilerTimestampLog(size_t min, size_t max, size_t binCount, size_t binIndex)
 {
-    const float logMin = std::log10f(min);
-    const float binSize = (std::log10f(max) - logMin) / binCount;
+    const float logMin = std::log10(min);
+    const float binSize = (std::log10(max) - logMin) / binCount;
     return std::pow(10.0f, logMin + binSize * binIndex);
 }
 void ImProfilerHistogram::bin(Vector<unsigned>& bins, size_t binCount, bool logOrLinear)
