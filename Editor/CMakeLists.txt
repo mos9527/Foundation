@@ -17,6 +17,7 @@ target_sources(Editor_Assets PUBLIC
 )
 target_link_libraries(
         Editor_Assets PUBLIC
+        ThirdParty_STB
         Foundation_Math
         Foundation_Core
         meshoptimizer

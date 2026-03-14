@@ -26,6 +26,8 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     add_compile_options("/utf-8")    
 else()
     add_compile_options("-Wall")
+    # Link against libatomic for 16-byte atomic operations on GCC/MinGW
+    link_libraries(atomic)
 endif()
 
 set(MI_TRACK_ASAN ${FOUNDATION_WITH_ASAN} CACHE BOOL "" FORCE)

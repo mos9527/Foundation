@@ -31,7 +31,7 @@ int main(int argc, char** argv)
     CreateContext(SDL_CreateWindow("Foundation Editor", 1920, 1080, kSDLWindowFlagsVulkan));
     ImGui_ImplFoundation_SetupContextWithDefaultStyles();
     ImGui_ImplFoundation_Init(GContext->device.Get(), GContext->window);
-    GContext->args = Span(argv, argv + argc);
+    GContext->args = Span<char*>(argv, argv + argc);
     while (!mainLoop()) {}
     LOG(SDLMain, LogInfo, "Quitting...");
     ImGui_ImplFoundation_Shutdown();

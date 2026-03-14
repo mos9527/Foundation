@@ -89,10 +89,10 @@ namespace Foundation::RenderCore
             CHECK(mip_end < textureMips);
             CHECK(layer_end < textureLayers);
             uint32_t mip_stride = textureLayers * kTextureAspectCount;
-            return Views::all(Span{
+            return Views::all(Span<SubresourceState>(
                        lastSubresourceStates.begin() + mip_begin * mip_stride,
-                       lastSubresourceStates.begin() + (mip_end + 1) * mip_stride,
-                   }) |
+                       lastSubresourceStates.begin() + (mip_end + 1) * mip_stride
+                   )) |
                 Views::filter(
                        [=](const SubresourceState& state)
                        {

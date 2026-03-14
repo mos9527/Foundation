@@ -1,7 +1,6 @@
 #include <RenderUtils/CSDebugText.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
 #include "Examples.hpp"
-#define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 using namespace RenderUtils;
 int main()

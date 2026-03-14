@@ -254,7 +254,6 @@ void LoadDDS(FTexture2D& texture, StringView path)
     FileReader reader(path);
     FDeserialize(reader, texture);
 }
-#define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 void LoadRGBA8(FTexture2D& texture, StringView path, bool gamma)
 {

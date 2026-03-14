@@ -327,7 +327,7 @@ void VulkanPipelineState::InitializeRayTracing()
             .anyHitShader = VK_SHADER_UNUSED_KHR,
             .intersectionShader = VK_SHADER_UNUSED_KHR
         });
-    Span hitSpan = groups;
+    Span<vk::RayTracingShaderGroupCreateInfoKHR> hitSpan(groups);
     hitSpan = hitSpan.subspan(hitSpan.size() - hitGroups, hitGroups);
     for (auto s : hitShaders)
     {

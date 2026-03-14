@@ -82,7 +82,7 @@ Optional<FTexture2D> loadGLTFTexture(cgltf_texture* texture, StringView scenePat
         if (auto* buf = texture->image->buffer_view)
         {
             FTexture2D res(GLOBAL_ALLOC);
-            Span imgData = {static_cast<const unsigned char*>(buf->buffer->data) + buf->offset, buf->size};
+            Span<const unsigned char> imgData = {static_cast<const unsigned char*>(buf->buffer->data) + buf->offset, buf->size};
             return LoadRGBA8(res, imgData, gamma), res;
         }
         String imageNameWE = std::filesystem::path(texture->image->uri).stem().string();

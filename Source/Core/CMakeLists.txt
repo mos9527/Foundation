@@ -44,6 +44,9 @@ target_precompile_headers(
     "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc>"
 )
 
+if (WIN32)
+    target_link_libraries(Foundation_Core PUBLIC ws2_32 dbghelp)
+endif()
 
 if (FOUNDATION_WITH_ASAN)
     if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
