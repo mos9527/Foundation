@@ -263,8 +263,10 @@ void Renderer::BindTextureRTV(PassHandle pass, ResourceHandle texture, RHITextur
     RHITextureAspectFlag kRTVBits = RHITextureAspectFlagBits::Color;
     CHECK_MSG(((desc.range.layer.aspect | kRTVBits) == kRTVBits) && (desc.range.layer.aspect & kRTVBits),
               "RTV view must have exactly one layer, and the access flag must be Color.");
+    // vvv XXX: Conservative
     DeclareTextureAccess(pass, texture, RHIPipelineStageBits::RenderTargetOutput, desc.range,
-                         RHIResourceAccessBits::RenderTargetWrite, RHITextureLayout::RenderTarget);
+                         RHIResourceAccessBits::RenderTargetRead | RHIResourceAccessBits::RenderTargetWrite,
+                         RHITextureLayout::RenderTarget);
     ResourceHandle view = CreateTextureView(pass, texture, desc);
     tpass.rtvs.emplace_back(view, blending);
 }

@@ -1,7 +1,8 @@
 #pragma once
 #include <Core/Paths.hpp>
 #include <RenderCore/Renderer.hpp>
-#include "RHICore/Device.hpp"
+#include <RHICore/Device.hpp>
+#include <Math/Math.hpp>
 namespace Foundation::RenderUtils
 {
     using namespace RenderCore;
@@ -64,24 +65,24 @@ namespace Foundation::RenderUtils
     inline void createCSMipGenerationSinglePass(
         Renderer* renderer, StringView name, RHIDeviceQueueType queue, ResourceHandle src, ResourceHandle dst,
         RHIResourceFormat srcFormat, RHIResourceFormat dstFormat, RHITextureAspectFlag srcAspect,
-        RHITextureAspectFlag dstAspect, ResourceHandle srcSampler, uint numMips, uint numLayer = 1,
+        RHITextureAspectFlag dstAspect, ResourceHandle srcSampler, uint32_t numMips, uint32_t numLayer = 1,
         RHIDeviceSampler::SamplerDesc::Reduction reduction = RHIDeviceSampler::SamplerDesc::Reduction::WeightedAverage)
     {
         using namespace Math;
         struct PushConstants
         {
             uint2 extents;
-            uint mips;
-            uint numWorkGroups;
+            uint32_t mips;
+            uint32_t numWorkGroups;
         };
         // From ffx_spd.h
         auto SpdSetup = [](uint2& dispatchThreadGroupCountXY, // CPU side: dispatch thread group count xy
-                           uint& numWorkGroups, // GPU side: pass in as constant
+                           uint32_t& numWorkGroups, // GPU side: pass in as constant
                            uint2 extent // width, height
                         )
         {
-            uint endIndexX = (extent[0] - 1) / 64; // rectInfo[0] = left, rectInfo[2] = width
-            uint endIndexY = (extent[1] - 1) / 64; // rectInfo[1] = top, rectInfo[3] = height
+            uint32_t endIndexX = (extent[0] - 1) / 64; // rectInfo[0] = left, rectInfo[2] = width
+            uint32_t endIndexY = (extent[1] - 1) / 64; // rectInfo[1] = top, rectInfo[3] = height
 
             dispatchThreadGroupCountXY[0] = endIndexX + 1;
             dispatchThreadGroupCountXY[1] = endIndexY + 1;
@@ -92,7 +93,7 @@ namespace Foundation::RenderUtils
             fmt::format("{} SPD Atomics", name),
             RHIBufferDesc{
                 .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
-                .size = sizeof(uint) * 6,
+                .size = sizeof(uint32_t) * 6,
             });
         renderer->CreatePass(
             name, queue, 0u,
@@ -124,7 +125,7 @@ namespace Foundation::RenderUtils
                                       .dimension = RHITextureDimension::E2DArray,
                                       .range = RHITextureSubresourceRange::Create(srcAspect, 0, 1, 0, numLayer),
                                   });
-                for (uint mip = 1; mip <= 12; mip++)
+                for (uint32_t mip = 1; mip <= 12; mip++)
                 {
                     uint32_t dstMipLevel = mip;
                     if (src != dst)

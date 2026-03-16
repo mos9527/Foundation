@@ -117,9 +117,10 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             cmd->FillBuffer(counter, 0u);
             cmd->FillBuffer(occlusion, 0u);
         });
+    bool kDebugViewUnlit = cfg.viewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewMeshlet);
     // Raytracing
     auto TLAS = renderer->CreateResource("Scene TLAS", gpu->GetTLAS());
-    if (cfg.viewFlags & kViewEnableRaytracing)
+    if (cfg.viewFlags & kViewEnableRaytracing && !kDebugViewUnlit)
     {
         renderer->CreatePass(
             "TLAS Update", RHIDeviceQueueType::Compute, 0u, [=](PassHandle self, Renderer* r)
@@ -263,8 +264,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                                            RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
                                            "visibility");
                     r->BindTextureSampler(self, HIZSampler, "hizSampler");
-                    r->BindTextureSRV(self, HIZ, "hiz",
-                                      RHIPipelineStageBits::AllGraphics | RHIPipelineStageBits::ComputeShader,
+                    r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
                                                          .range = RHITextureSubresourceRange::Create(
                                                              RHITextureAspectFlagBits::Color, 0, HIZMips)});
@@ -414,7 +414,6 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                        .format = RHIResourceFormat::B10G11R11Ufloat});
     auto HistogramBins = renderer->CreateResource(
         "Histogram", RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * 64});
-    bool kDebugViewUnlit = cfg.viewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewMeshlet);
     auto LightingAverageLuma = renderer->CreateResource("Lighting Average Luminance",
                                                         RHIBufferDesc{.usage = StorageBuffer, .size = sizeof(float)});
     auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
