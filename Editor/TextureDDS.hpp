@@ -448,6 +448,15 @@ inline void ddsSetFormat(DDS_HEADER& header, DDS_HEADER_DXT10& header10, uint32_
     case B8G8R8A8Srgb:
         header10.dxgiFormat = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
         break;
+    case R32SignedFloat:
+        header10.dxgiFormat = DXGI_FORMAT_R32_FLOAT;
+        break;
+    case R32G32SignedFloat:
+        header10.dxgiFormat = DXGI_FORMAT_R32G32_FLOAT;
+        break;
+    case R32G32B32A32SignedFloat:
+        header10.dxgiFormat = DXGI_FORMAT_R32G32B32A32_FLOAT;
+        break;
     default:
         header.ddspf.fourCC = 0;
         header.ddspf.flags = 0;

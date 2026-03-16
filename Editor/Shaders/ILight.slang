@@ -51,31 +51,58 @@ public interface ILight {
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u);
 };
 // -- Lights
-// https://pbr-book.org/4ed/Light_Sources/Infinite_Area_Lights#UniformInfiniteLights
-public struct UniformInfiniteLight : ILight {
-    SampledSpectrum Lemit;
+
+// Module-level env map resources — bound by the integrator.
+// When no env map is loaded a 1×1 black fallback is bound so sampling is always safe.
+public Texture2D<float4> envMapTexture;
+public SamplerState        envMapSampler;
+
+// Direction → equirectangular UV (azimuth-elevation mapping)
+// φ = atan2(d.z, d.x) ∈ [-π,π],  θ = acos(d.y) ∈ [0,π]
+float2 EnvMapDirToUV(float3 d) {
+    float phi   = atan2(d.z, d.x);
+    float theta = acos(clamp(d.y, -1, 1));
+    return float2(0.5f + phi * (0.5f * InvPi), theta * InvPi);
+}
+
+float3 SampleEnvMapTexture(float3 dir) {
+    return envMapTexture.SampleLevel(envMapSampler, EnvMapDirToUV(dir), 0).xyz;
+}
+
+// https://pbr-book.org/4ed/Light_Sources/Infinite_Area_Lights
+// Unified infinite light: when hasEnvMap is true, radiance comes from the
+// equirectangular env map texture; otherwise it falls back to a constant color.
+// Sampling is always uniform-sphere (importance sampling the map is a TODO).
+public struct InfiniteLight : ILight {
+    SampledSpectrum fallbackColor; // constant Lemit when no env map
     float scale;
-    public __init(SampledSpectrum Lemit, float scale){
-        this.Lemit = Lemit;
-        this.scale = scale;
+    bool  hasEnvMap;
+
+    public __init(SampledSpectrum fallbackColor, float scale, bool hasEnvMap = false) {
+        this.fallbackColor = fallbackColor;
+        this.scale         = scale;
+        this.hasEnvMap     = hasEnvMap;
     }
+
     public LightType Type() {
         return LightType::Infinite;
     }
-    // Not defined
+    // Not defined for infinite lights
     public SampledSpectrum L(float3 p, float3 n, float3 uv, float3 w) {
         return {};
     }
     public SampledSpectrum Le(float3 w) {
-        return Lemit * scale;
+        if (hasEnvMap)
+            return SampledSpectrum(SampleEnvMapTexture(w)) * scale;
+        return fallbackColor * scale;
     }
-    public void PDF_Le(LightSampleContext, float3, out float pdfPos, out float pdfDir){
+    public void PDF_Le(LightSampleContext, float3, out float pdfPos, out float pdfDir) {
         pdfPos = 0.0f;
         pdfDir = UniformSpherePDF();
     }
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
         float3 wi = SampleUniformSphere(u);
-        return LightLiSample(Lemit, wi, UniformSpherePDF());
+        return LightLiSample(Le(wi), wi, UniformSpherePDF());
     }
     public float PDF_Li(LightSampleContext ctx, float3 w, bool allowIncompletePDF) {
         return UniformSpherePDF();

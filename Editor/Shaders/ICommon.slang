@@ -153,6 +153,8 @@ public struct UBO
     public float3 sunDirection;
     public float3 sunIntensity;
     public float3 ambientColor;
+    public uint32_t useEnvMap;
+    public float envMapScale;
     // -- Path Tracing
     public uint32_t ptAccumualatedFrames;
     public uint32_t ptMaxBounces;

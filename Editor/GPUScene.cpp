@@ -1,42 +1,11 @@
 #include "Tables.hpp"
-template <typename T>
-RHIDeviceScopedHandle<RHITexture> UploadLUT(const float* data, RHIResourceFormat format, uint32_t width, uint32_t height,
-                                            FContext* ctx)
+static FTexture2D MakeLUT(const float* data, RHIResourceFormat format, uint32_t width, uint32_t height)
 {
-    auto tex = ctx->device->CreateTexture(RHITextureDesc{
-        .resource = {
-            .heap = RHIDeviceHeapType::Local,
-            .shared = false
-        },
-        .dimension = RHITextureDimension::E2D,
-        .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
-        .extent = {width, height, 1},
-        .format = format,
-    });
-    const uint32_t size = width * height * sizeof(T);
-    ImmediateUpload upload(ctx->device.Get(), size);
-    upload.Begin();
-    upload.ctx->BeginTransition();
-    upload.ctx->SetImageTransition(tex.Get(), {
-        .dstAccess = RHIResourceAccessBits::TransferWrite,
-        .dstStage = RHIPipelineStageBits::Transfer,
-        .dstImgLayout =  RHITextureLayout::TransferDst,
-        .srcImgRange = RHITextureSubresourceRange::Create()
-    });
-    upload.ctx->EndTransition();
-    char* ptr = upload.Upload(tex.Get(), size);
-    CHECK(ptr);
-    std::memcpy(ptr, data, size);
-    upload.ctx->BeginTransition();
-    upload.ctx->SetImageTransition(tex.Get(), {
-        .dstAccess = RHIResourceAccessBits::ShaderRead,
-        .dstStage = RHIPipelineStageBits::AllGraphics,
-        .dstImgLayout =  RHITextureLayout::ShaderReadOnly,
-        .srcImgRange = RHITextureSubresourceRange::Create()
-    });
-    upload.ctx->EndTransition();
-    upload.End();
-    upload.WaitIdle();
+    FTexture2D tex(GLOBAL_ALLOC);
+    ddsCreateHeader(tex.header, width, height, 1);
+    ddsSetFormat(tex.header, tex.header10, 1, format);
+    const auto* bytes = reinterpret_cast<const unsigned char*>(data);
+    tex.data.assign(bytes, bytes + tex.GetSize());
     return tex;
 }
 
@@ -79,8 +48,17 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
         .size = desc.tlasBudget
     };
     mTLAS = mContext->device->CreateAccelerationStructure(tlasDesc);
-    mGGXlutE = UploadLUT<float2>(kGGXlutE, RHIResourceFormat::R32G32SignedFloat, 32, 32, mContext);
-    mGGXlutEavg = UploadLUT<float>(kGGXlutEavg, RHIResourceFormat::R32SignedFloat, 32, 1, mContext);
+    {
+        auto lutE = MakeLUT(kGGXlutE, RHIResourceFormat::R32G32SignedFloat, 32, 32);
+        auto lutEavg = MakeLUT(kGGXlutEavg, RHIResourceFormat::R32SignedFloat, 32, 1);
+        const size_t budget = lutE.GetSize() + lutEavg.GetSize();
+        ImmediateUpload upload(mContext->device.Get(), budget);
+        upload.Begin();
+        Upload(&upload, lutE, mGGXlutEIndex);
+        Upload(&upload, lutEavg, mGGXlutEavgIndex);
+        upload.End();
+        upload.WaitIdle();
+    }
 }
 
 Pair<GSInstance*, uint32_t> GPUScene::AllocateInstance(uint32_t count)
@@ -413,6 +391,38 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
     desc.scratchBufferOffset = 0;
     desc.srcAS = desc.dstAS = mTLAS.Get();
     cmd->BuildAccelerationStructure({{{desc}}});
+}
+
+void GPUScene::UploadEnvMap(ImmediateUpload* ctx, FTexture2D const& source)
+{
+    Upload(ctx, source, mEnvMapIndex);
+    LOG(GPUScene, LogInfo, "Environment map uploaded: {}x{}", source.GetWidth(), source.GetHeight());
+}
+
+static RHITexture* ResolvePoolTexture(BindlessPool& pool, uint32_t index)
+{
+    if (index == UINT32_MAX)
+        return nullptr;
+    auto& res = pool.GetResource(index);
+    return res.Visit(
+        [](RHITexture* tex) -> RHITexture* { return tex; },
+        [](RHIDeviceScopedHandle<RHITexture> const& tex) -> RHITexture* { return tex.Get(); }
+    );
+}
+
+RHITexture* GPUScene::GetEnvMap() const
+{
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mEnvMapIndex);
+}
+
+RHITexture* GPUScene::GetGGXlutE() const
+{
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mGGXlutEIndex);
+}
+
+RHITexture* GPUScene::GetGGXlutEavg() const
+{
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mGGXlutEavgIndex);
 }
 
 void GPUScene::Reset()

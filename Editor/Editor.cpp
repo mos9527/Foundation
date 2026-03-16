@@ -100,10 +100,10 @@ void FInitEnter()
         dst.emissiveFactor = src.emissiveFactor;
         dst.metallicFactor = src.metallicFactor;
         dst.roughnessFactor = src.roughnessFactor;
-        dst.baseColorTexture = textureIDMap[src.baseColorTexture];
-        dst.emissiveTexture = textureIDMap[src.emissiveTexture];
-        dst.metallicRoughnessTexture = textureIDMap[src.metallicRoughnessTexture];
-        dst.normalTexture = textureIDMap[src.normalTexture];
+        dst.baseColorTexture = src.baseColorTexture ? textureIDMap[src.baseColorTexture] : 0u;
+        dst.emissiveTexture = src.emissiveTexture ? textureIDMap[src.emissiveTexture] : 0u;
+        dst.metallicRoughnessTexture = src.metallicRoughnessTexture ? textureIDMap[src.metallicRoughnessTexture] : 0u;
+        dst.normalTexture = src.normalTexture ? textureIDMap[src.normalTexture] : 0u;
         dst.transmissionFactor = src.transmissionFactor;
     }
     // Upload instance data

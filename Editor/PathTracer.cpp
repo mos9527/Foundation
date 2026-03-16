@@ -63,6 +63,19 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                                                         RHIBufferDesc{.usage = RHIBufferUsageBits::StorageBuffer,
                                                                       .size = sizeof(float)});
     auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
+    ResourceHandle EnvMapTex;
+    if (gpu->GetEnvMap()) {
+        EnvMapTex = renderer->CreateResource("Env Map", gpu->GetEnvMap());
+    } else {
+        EnvMapTex = renderer->CreateResource("Env Map Fallback", RHITextureDesc{
+            .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
+            .extent = {1, 1, 1},
+            .format = RHIResourceFormat::R8G8B8A8Unorm});
+    }
+    auto EnvMapSampler = renderer->CreateSampler({
+        .filter = {RHIDeviceSampler::SamplerDesc::Filter::Linear,
+                   RHIDeviceSampler::SamplerDesc::Filter::Linear},
+    });
     auto LUTSampler = renderer->CreateSampler({
         .addressMode = {
             .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
@@ -102,6 +115,12 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSRV(self, EnvMapTex, "envMapTexture", RHIPipelineStageBits::RayTracingShader,
+                              RHITextureViewDesc{.format = gpu->GetEnvMap()
+                                                     ? RHIResourceFormat::R32G32B32A32SignedFloat
+                                                     : RHIResourceFormat::R8G8B8A8Unorm,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSampler(self, EnvMapSampler, "envMapSampler");
             r->BindDescriptorSet(self, "textures", gpu->GetTexturePool()->GetDescriptorSetLayout());
         }, [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
