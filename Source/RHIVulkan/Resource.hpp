@@ -116,6 +116,7 @@ namespace Foundation::RHI
         VulkanDevice const& mDevice;
         vk::raii::AccelerationStructureKHR mAS{nullptr};
         VulkanBuffer* mBuffer{nullptr};
+        vk::DeviceAddress mASAddress{0};
     public:
         VulkanAccelerationStructure(VulkanDevice const& device, RHIAccelerationStructureDesc const& desc);
 

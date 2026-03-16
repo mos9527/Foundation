@@ -301,12 +301,18 @@ VulkanAccelerationStructure::VulkanAccelerationStructure(VulkanDevice const& dev
                 ? vk::AccelerationStructureTypeKHR::eTopLevel
                 : vk::AccelerationStructureTypeKHR::eBottomLevel},
         device.GetVkAllocatorCallbacks());
+    mASAddress = mDevice.GetVkDevice().getAccelerationStructureAddressKHR({.accelerationStructure = mAS});
 }
 vk::DeviceAddress VulkanAccelerationStructure::GetVkAccelerationStructureAddress() const
 {
-    return mDevice.GetVkDevice().getAccelerationStructureAddressKHR({.accelerationStructure = mAS});
+    return mASAddress;
 }
-void VulkanAccelerationStructure::DebugSetObjectName(const char* name) {}
+void VulkanAccelerationStructure::DebugSetObjectName(const char* name) { 
+    VkAccelerationStructureKHR handle = *mAS;
+    mDevice.GetVkDevice().setDebugUtilsObjectNameEXT({.objectType = vk::ObjectType::eAccelerationStructureKHR,
+        .objectHandle = reinterpret_cast<uint64_t>(handle),
+		.pObjectName = name});
+}
 
 vk::AccelerationStructureGeometryTrianglesDataKHR
 RHI::vkAccelerationTriangleDataFromRHI(RHIAccelerationStructureGeometryTriangleData const& src)

@@ -41,7 +41,7 @@ namespace Foundation::RenderCore
          * @brief Number of worker threads to use for recording command lists.
          * @note Set this to 0 to disable multithreaded command recording.
          */
-        uint32_t threadCount{std::max(1u, std::thread::hardware_concurrency() - 1)};
+        uint32_t threadCount{4u};
         /**
          * @brief Optional PSO cache to potentially speed up pipeline state recompilation
          *        in Setup time.
