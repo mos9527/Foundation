@@ -74,8 +74,8 @@ namespace Foundation::RenderCore
         RHIResourceAccessBits::RenderTargetWrite | RHIResourceAccessBits::DepthStencilWrite |
         RHIResourceAccessBits::TransferWrite | RHIResourceAccessBits::HostWrite;
     const RHIResourceAccessBits kAllShaderReads = RHIResourceAccessBits::ShaderRead |
-        RHIResourceAccessBits::RenderTargetRead | RHIResourceAccessBits::UniformRead |
-        RHIResourceAccessBits::TransferRead | RHIResourceAccessBits::HostRead;
+        RHIResourceAccessBits::RenderTargetRead | RHIResourceAccessBits::DepthStencilRead |
+        RHIResourceAccessBits::UniformRead | RHIResourceAccessBits::TransferRead | RHIResourceAccessBits::HostRead;
     /**
      * @brief Renderer implementing a Frame Graph system with automatic resource tracking and synchronization.
      *

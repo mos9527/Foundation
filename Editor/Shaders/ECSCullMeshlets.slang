@@ -133,7 +133,7 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     }
     // -- Occlusion Cull --
     uint32_t meshletGlobalID = mesh.meshletGlobalIndex + meshletID;
-    if (cullOcclusion && visible) {
+    if (cullOcclusion && visible && globalParams.frameNumber > 0) {
         if (late) {
             bool phase1Visible = visibility[meshletGlobalID / 32] & (1u << (meshletGlobalID % 32));
             if (phase1Visible)
