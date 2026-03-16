@@ -213,25 +213,32 @@ void RayGeneration()
     }
     // Combine the miss hit with the last light sample
     float lastSamplePDF = 0.0f;
+    // Scene lights
+    DistantLight sun = DistantLight(SampledSpectrum(globalParams.sunIntensity), globalParams.sunDirection);
+    UniformInfiniteLight env = UniformInfiniteLight(globalParams.ambientColor, 1.0f);
+    LightMixture light = LightMixture();
     for (uint bounce = 0; bounce < globalParams.ptMaxBounces; bounce++) {
         HitPayload payload;
         TraceRay(AS, 0, 0xFF, 0, 0, 0, ray, payload);
         // Outgoing direction
         float3 view = -ray.Direction;
-        UniformInfiniteLight env = UniformInfiniteLight(globalParams.ambientColor, 1.0f);
+        if (AnyLuminance(globalParams.sunIntensity))
+            light.AddLight(sun, 0.5f);
+        light.AddLight(env, 0.5f);
+        light.Finalize();
         if (!payload.IsHit()) {
             LightSampleContext ctx; /* UNUSED */
             // Miss - environment
             if (bounce == 0) {
-                L += env.Le(-view);
+                L += light.Le(-view);
                 break;
             }
             // Final miss, weight by last sample
-            float pdf = env.PDF_Li(ctx, -view, true);
+            float pdf = light.PDF_Li(ctx, -view);
             // We can arrive at a environment sample either from the direct sample path before,
             // or the environment itself.
             float mis = lastSamplePDF > EPS ? BalanceHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
-            L += beta * env.Le(-view) * mis;
+            L += beta * light.Le(-view) * mis;
             break;
         }
         Payload hit = SamplePayload(payload);
@@ -255,41 +262,15 @@ void RayGeneration()
         quat toWorld = toLocal.inverted();
         float3 wo = toLocal.rotate(view);
         IBxDF bsdf = PrincipledBSDF(hit.baseColor, hit.metallic, hit.roughness, hit.ior, hit.transmission, true);
-        // Light sampling
+        // Light sampling via LightMixture
         // https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling
         {
             LightSampleContext ctx = LightSampleContext(hit.position, hit.geometryNormal, hit.normal);
-            LightLiSample Li = LightLiSample();
-            SampledSpectrum radiance = 0;
-            {
-                DistantLight sun = DistantLight(SampledSpectrum(globalParams.sunIntensity), globalParams.sunDirection);
-                // UniformInfiniteLight env [defined above]
-                // We only have the sun and the ambient light. For uniform MIS these have equal weights.
-                float pSun = AnyLuminance(globalParams.sunIntensity) ? 0.5f : 0.0f;
-                float pEnv = 1.0f - pSun;
-                bool sampleSun = rng.sample() < pSun;
-
-                float samplePDF, pSample, otherPDF;
-                if (sampleSun) {
-                    Li = sun.Sample_Li(ctx, rng.sample2D());
-                    radiance = Li.Li / (Li.pdf * pSun);
-                    otherPDF = env.PDF_Li(ctx, Li.wi, true);
-                    samplePDF = Li.pdf;
-                    pSample = pSun;
-                } else {
-                    Li = env.Sample_Li(ctx, rng.sample2D());
-                    radiance = Li.Li / (Li.pdf * pEnv);
-                    otherPDF = sun.PDF_Li(ctx, Li.wi, true);
-                    samplePDF = Li.pdf;
-                    pSample = pEnv;
-                }
-                // https://www.pbr-book.org/4ed/Monte_Carlo_Integration/Improving_Efficiency#MultipleImportanceSampling
-                float mis = BalanceHeuristic(1, samplePDF, 1, otherPDF);
-                radiance *= mis;
-                // vvv Similar to PrincipledBSDF's PDF calculation
-                // You can derive these from single sample situations
-                Li.pdf = mix(otherPDF, samplePDF, pSample);
-                // AO and Direct shadow ray
+            // Sample_Li returns: radiance = Li/(pdf*pChoice), pdf = mixture PDF
+            LightLiSample Li = light.Sample_Li(ctx, rng.sample(), rng.sample2D());
+            SampledSpectrum radiance = Li.Li;
+            // Shadow ray
+            if (Li.pdf > EPS) {
                 float3 shadowNormalFF = dot(Li.wi, hit.geometryNormal) < 0.0f ? -hit.geometryNormal : hit.geometryNormal;
                 float3 shadowOrigin = OffsetRay(hit.position, shadowNormalFF);
                 bool shadowed = TraceShadowRay(shadowOrigin, Li.wi);
@@ -297,11 +278,10 @@ void RayGeneration()
                     Li.pdf = 0.0f;
             }
             // Eval and add light contribution
-            // Li is now effectively the 'combined' sample here.
             float3 wi = toLocal.rotate(Li.wi);
             float3 f = bsdf.f(wo, wi) * AbsCosTheta(wi);
             float pdf = bsdf.PDF(wo, wi);
-            // Light can arrive from the light itself, or the sampled BSDF path
+            // MIS between light sampling path and BSDF sampling path
             if (Li.pdf > EPS && pdf > EPS) {
                 float mis = BalanceHeuristic(1, Li.pdf, 1, pdf);
                 L += beta * f * radiance * mis;
