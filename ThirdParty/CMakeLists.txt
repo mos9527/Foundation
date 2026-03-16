@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.26)
 
+find_package(Git REQUIRED)
+message(STATUS "** Git found: ${GIT_EXECUTABLE} (version ${GIT_VERSION_STRING})")
+
 include(FetchContent)
 
 FetchContent_Declare(
