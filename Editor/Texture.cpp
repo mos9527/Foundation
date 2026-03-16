@@ -69,6 +69,12 @@ RHIResourceFormat FTexture2D::GetFormat() const
                 return B8G8R8A8Unrom;
             case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
                 return B8G8R8A8Srgb;
+            case DXGI_FORMAT_R32_FLOAT:
+                return R32SignedFloat;
+            case DXGI_FORMAT_R32G32_FLOAT:
+                return R32G32SignedFloat;
+            case DXGI_FORMAT_R32G32B32A32_FLOAT:
+                return R32G32B32A32SignedFloat;
             default:
                 return Undefined;
             }
@@ -127,6 +133,12 @@ uint32_t FTexture2D::GetBpp() const
     case B8G8R8A8Unrom:
     case B8G8R8A8Srgb:
         return 32;
+    case R32SignedFloat:
+        return 32;
+    case R32G32SignedFloat:
+        return 64;
+    case R32G32B32A32SignedFloat:
+        return 128;
     default:
         return 0;
     }
@@ -279,6 +291,19 @@ void LoadRGBA8(FTexture2D& texture, Span<const unsigned char> data, bool gamma)
     ddsSetFormat(texture.header, texture.header10, 1,
                  gamma ? RHIResourceFormat::R8G8B8A8Srgb : RHIResourceFormat::R8G8B8A8Unorm);
     texture.data.assign(imgData, imgData + width * height * 4);
+}
+void LoadHDR(FTexture2D& texture, StringView path)
+{
+    int width, height, channels;
+    float* imgData = stbi_loadf(path.data(), &width, &height, &channels, STBI_rgb_alpha);
+    UniquePtr<float, decltype(&stbi_image_free)> raii(imgData, reinterpret_cast<void(*)(void*)>(&stbi_image_free));
+    CHECK_MSG(imgData != nullptr, "Failed to load HDR image {}", path);
+
+    ddsCreateHeader(texture.header, width, height, 1);
+    ddsSetFormat(texture.header, texture.header10, 1, RHIResourceFormat::R32G32B32A32SignedFloat);
+    const size_t size = width * height * 4 * sizeof(float);
+    const auto* bytes = reinterpret_cast<const unsigned char*>(imgData);
+    texture.data.assign(bytes, bytes + size);
 }
 FTexture2D FTexture2D::EncodeBC7() const
 {

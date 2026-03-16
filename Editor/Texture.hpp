@@ -67,6 +67,11 @@ void LoadRGBA8(FTexture2D& texture, StringView path, bool gamma = true);
  * @param gamma Whether to load the image as sRGB (true) or linear (false) encoding.
  */
 void LoadRGBA8(FTexture2D& texture, Span<const unsigned char> data, bool gamma = true);
+/**
+ * Loads HDR image formats (.hdr) via stb_image into an R32G32B32A32Float texture.
+ * Used for environment maps.
+ */
+void LoadHDR(FTexture2D& texture, StringView path);
 /* -- Serialization -- */
 template <>
 inline void FSerialize(FWriter& w, FTexture2D const& obj)

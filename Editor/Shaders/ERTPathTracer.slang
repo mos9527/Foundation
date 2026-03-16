@@ -215,7 +215,12 @@ void RayGeneration()
     float lastSamplePDF = 0.0f;
     // Scene lights
     DistantLight sun = DistantLight(SampledSpectrum(globalParams.sunIntensity), globalParams.sunDirection);
-    UniformInfiniteLight env = UniformInfiniteLight(globalParams.ambientColor, 1.0f);
+    // Unified infinite light — falls back to constant color when no env map is bound
+    InfiniteLight env = InfiniteLight(
+        SampledSpectrum(globalParams.ambientColor),
+        globalParams.envMapScale,
+        globalParams.useEnvMap
+    );
     LightMixture light = LightMixture();
     for (uint bounce = 0; bounce < globalParams.ptMaxBounces; bounce++) {
         HitPayload payload;
@@ -228,15 +233,13 @@ void RayGeneration()
         light.Finalize();
         if (!payload.IsHit()) {
             LightSampleContext ctx; /* UNUSED */
-            // Miss - environment
+            // Miss — environment
             if (bounce == 0) {
                 L += light.Le(-view);
                 break;
             }
-            // Final miss, weight by last sample
+            // Final miss, MIS-weight against the last BSDF sample
             float pdf = light.PDF_Li(ctx, -view);
-            // We can arrive at a environment sample either from the direct sample path before,
-            // or the environment itself.
             float mis = lastSamplePDF > EPS ? BalanceHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
             L += beta * light.Le(-view) * mis;
             break;

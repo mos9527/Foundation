@@ -111,8 +111,10 @@ class GPUScene
     UploadGPURingBuffer<GSMaterial> mMaterialBuffer;
     /* Textures */
     BindlessPool mTexturePool;
-    // Precomputed LUTs
-    RHIDeviceScopedHandle<RHITexture> mGGXlutE, mGGXlutEavg;
+    // Precomputed LUTs (stored in texture pool)
+    uint32_t mGGXlutEIndex{UINT32_MAX}, mGGXlutEavgIndex{UINT32_MAX};
+    // Environment map (stored in texture pool)
+    uint32_t mEnvMapIndex{UINT32_MAX};
     /* AS */
     // BLAS
     Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mBLASes;
@@ -153,8 +155,11 @@ public:
     [[nodiscard]] RHIBuffer* GetMaterialBuffer() const { return mMaterialBuffer.mBuffer.Get(); }
     /* Textures */
     [[nodiscard]] BindlessPool* GetTexturePool() { return &mTexturePool; }
-    [[nodiscard]] RHITexture* GetGGXlutE() const { return mGGXlutE.Get(); }
-    [[nodiscard]] RHITexture* GetGGXlutEavg() const { return mGGXlutEavg.Get(); }
+    [[nodiscard]] RHITexture* GetGGXlutE() const;
+    [[nodiscard]] RHITexture* GetGGXlutEavg() const;
+    // Environment map
+    void UploadEnvMap(ImmediateUpload* ctx, FTexture2D const& source);
+    [[nodiscard]] RHITexture* GetEnvMap() const;
     /* AS */
     [[nodiscard]] RHIAccelerationStructure* GetTLAS() const { return mTLAS ? mTLAS.Get() : nullptr; }
     void Reset();
