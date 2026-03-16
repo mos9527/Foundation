@@ -50,6 +50,7 @@ float3 TorranceSparrowReflection(
 }
 
 // Torrance-Sparrow transmittance with Schlick Fresnel (no energy compensation)
+// TODO: Pre-integrate IOR multi-scatter
 float3 TorranceSparrowTransmittance(
     float3 wo, float3 wi,
     float3 F0, float3 F90,
@@ -304,10 +305,10 @@ public struct PrincipledBSDF : IBxDF {
         float wDiffuse  = (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
 
         mixture = LobeMixture();
-        if (wDiffuse  > 1e-6f) mixture.AddLobe(PrincipledDiffuseLobe(baseColor, dielF0, roughness),                    wDiffuse);
-        if (wTrans    > 1e-6f) mixture.AddLobe(PrincipledTransmittanceLobe(baseColor, ior, roughness, energyCompensation), wTrans);
-        if (wDielSpec > 1e-6f) mixture.AddLobe(PrincipledDielectricLobe(dielF0, roughness, energyCompensation),        wDielSpec);
-        if (wMetal    > 1e-6f) mixture.AddLobe(PrincipledMetalLobe(baseColor, roughness, energyCompensation),          wMetal);
+        if (wDiffuse  > EPS) mixture.AddLobe(PrincipledDiffuseLobe(baseColor, dielF0, roughness),                    wDiffuse);
+        if (wTrans    > EPS) mixture.AddLobe(PrincipledTransmittanceLobe(baseColor, ior, roughness, energyCompensation), wTrans);
+        if (wDielSpec > EPS) mixture.AddLobe(PrincipledDielectricLobe(dielF0, roughness, energyCompensation),        wDielSpec);
+        if (wMetal    > EPS) mixture.AddLobe(PrincipledMetalLobe(baseColor, roughness, energyCompensation),          wMetal);
         mixture.Finalize();
     }
 
