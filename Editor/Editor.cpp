@@ -147,7 +147,7 @@ void FInitEnter()
 void FInit() { FEState = FERunningEnter; }
 RendererConfig GRendererConfig;
 
-static bool rasterOrPT = false;
+static bool rasterOrPT = true;
 void FRunningEnter()
 {
     RendererScene scene{
