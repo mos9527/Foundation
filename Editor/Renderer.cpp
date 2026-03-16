@@ -45,6 +45,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
 {
     if (context->renderer)
         Destruct(context->allocator, context->renderer);
+    // XXX: Issues with async compute on NVIDIA. Investigate?
     auto* renderer = context->renderer = Construct<Renderer>(context->allocator,
                                                              RendererDesc{
                                                                  .asyncCompute = true,
@@ -123,7 +124,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
     if (cfg.viewFlags & kViewEnableRaytracing && !kDebugViewUnlit)
     {
         renderer->CreatePass(
-            "TLAS Update", RHIDeviceQueueType::Compute, 0u, [=](PassHandle self, Renderer* r)
+            "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
             { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
             { gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, true); });
     }
