@@ -70,6 +70,30 @@ void FDeserialize(FReader& reader, Vector<T>& vec, Args const&... args)
             FDeserialize(reader, vec[i]);
     }
 }
+// Optional<T>
+template <typename T>
+void FSerialize(FWriter& writer, const Optional<T>& opt)
+{
+    uint8_t hasValue = opt.has_value() ? 1 : 0;
+    FSerialize(writer, hasValue);
+    if (hasValue)
+        FSerialize(writer, *opt);
+}
+template <typename T, typename... Args>
+void FDeserialize(FReader& reader, Optional<T>& opt, Args const&... args)
+{
+    uint8_t hasValue = 0;
+    FDeserialize(reader, hasValue);
+    if (hasValue)
+    {
+        opt.emplace(args...);
+        FDeserialize(reader, *opt);
+    }
+    else
+    {
+        opt = std::nullopt;
+    }
+}
 // File IO
 struct FileWriter : FWriter
 {
