@@ -12,6 +12,7 @@ static Vector<uint32_t> GSBLASes(GLOBAL_ALLOC);
 static FScene GPersistentScene(GLOBAL_ALLOC);
 static String GCurrentSavePath;
 static int GSelectedInstance = -1;
+static int GSelectedMaterial = -1;
 static bool GShowImGui = true;
 /* -- Camera & Globals -- */
 static UBO GShaderGlobals;
@@ -28,6 +29,7 @@ static void SaveScene(StringView path);
 static void LoadEnvMap(StringView path);
 static void EditorDockSpaceAndMenuBar();
 static void FHierarchyPanel();
+static void FMaterialPanel();
 
 /* -- */
 void FInitEnter()
@@ -67,6 +69,7 @@ static void ReplaceScene(StringView path)
     GSBLASes.clear();
     GPersistentScene = FScene(GLOBAL_ALLOC);
     GSelectedInstance = -1;
+    GSelectedMaterial = -1;
 
     auto* gpu = GContext->gpuScene;
     gpu->Reset();
@@ -294,6 +297,8 @@ static void EditorDockSpaceAndMenuBar()
 
         ImGui::DockBuilderDockWindow("Hierarchy", dockLeft);
         ImGui::DockBuilderDockWindow("Inspector", dockLeft);
+        ImGui::DockBuilderDockWindow("Materials", dockLeft);
+        ImGui::DockBuilderDockWindow("Material Inspector", dockLeft);
         ImGui::DockBuilderDockWindow("Camera", dockRight);
         ImGui::DockBuilderDockWindow("Rendering", dockRight);
         ImGui::DockBuilderDockWindow("Profiler", dockRight);
@@ -378,7 +383,7 @@ static void FHierarchyPanel()
     }
     ImGui::End();
 
-    // Inspector面板
+    // Inspector面板 (Instance)
     if (ImGui::Begin("Inspector"))
     {
         if (GSelectedInstance >= 0 && GSelectedInstance < static_cast<int>(GSInstances.size()))
@@ -427,6 +432,91 @@ static void FHierarchyPanel()
     ImGui::End();
 }
 
+/* ==================== Material Panel ==================== */
+static void FMaterialPanel()
+{
+    if (ImGui::Begin("Materials"))
+    {
+        if (GSMaterials.empty())
+        {
+            ImGui::TextDisabled("No materials loaded");
+        }
+        else
+        {
+            ImGui::Text("%zu materials", GSMaterials.size());
+            ImGui::Separator();
+            for (size_t i = 0; i < GSMaterials.size(); i++)
+            {
+                char label[128];
+                snprintf(label, sizeof(label), "Material %zu", i);
+                bool selected = (GSelectedMaterial == static_cast<int>(i));
+                if (ImGui::Selectable(label, selected))
+                    GSelectedMaterial = static_cast<int>(i);
+            }
+        }
+    }
+    ImGui::End();
+
+    // Material Inspector
+    if (ImGui::Begin("Material Inspector"))
+    {
+        if (GSelectedMaterial >= 0 && GSelectedMaterial < static_cast<int>(GSMaterials.size()))
+        {
+            auto& mat = GSMaterials[GSelectedMaterial];
+            ImGui::Text("Material %d", GSelectedMaterial);
+            ImGui::Separator();
+            bool changed = false;
+
+            // Base Color
+            changed |= ImGui::ColorEdit4("Base Color", &mat.baseColorFactor.x, ImGuiColorEditFlags_Float);
+
+            // Emissive
+            changed |= ImGui::ColorEdit3("Emissive", &mat.emissiveFactor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
+
+            // PBR factors
+            changed |= ImGui::SliderFloat("Metallic", &mat.metallicFactor, 0.0f, 1.0f);
+            changed |= ImGui::SliderFloat("Roughness", &mat.roughnessFactor, 0.0f, 1.0f);
+            changed |= ImGui::SliderFloat("Transmission", &mat.transmissionFactor, 0.0f, 1.0f);
+            changed |= ImGui::SliderFloat("Anisotropy", &mat.anisotropy, -1.0f, 1.0f);
+
+            // Texture info (read-only)
+            ImGui::Separator();
+            ImGui::Text("Base Color Tex: %s", mat.baseColorTexture != UINT32_MAX ? "Yes" : "None");
+            ImGui::Text("Emissive Tex:   %s", mat.emissiveTexture != UINT32_MAX ? "Yes" : "None");
+            ImGui::Text("Metal/Rough Tex:%s", mat.metallicRoughnessTexture != UINT32_MAX ? "Yes" : "None");
+            ImGui::Text("Normal Tex:     %s", mat.normalTexture != UINT32_MAX ? "Yes" : "None");
+
+            if (changed)
+            {
+                // 重新上传材质数组到GPU
+                auto* gpu = GContext->gpuScene;
+                auto [ptr, off] = gpu->AllocateMaterial(GSMaterials.size());
+                std::memcpy(ptr, GSMaterials.data(), GSMaterials.size() * sizeof(GSMaterial));
+                GShaderGlobals.firstMaterial = off;
+
+                // 同步到持久场景
+                if (GSelectedMaterial < static_cast<int>(GPersistentScene.mMaterials.size()))
+                {
+                    auto& pm = GPersistentScene.mMaterials[GSelectedMaterial];
+                    pm.baseColorFactor = mat.baseColorFactor;
+                    pm.emissiveFactor = mat.emissiveFactor;
+                    pm.metallicFactor = mat.metallicFactor;
+                    pm.roughnessFactor = mat.roughnessFactor;
+                    pm.transmissionFactor = mat.transmissionFactor;
+                }
+
+                // 重置PT累积帧数
+                GShaderGlobals.ptAccumualatedFrames = 0;
+            }
+        }
+        else
+        {
+            ImGui::TextDisabled("No material selected");
+        }
+    }
+    ImGui::End();
+}
+
 void FInit()
 {
     // Task 10: FInit状态下显示UI，等待用户加载场景
@@ -443,6 +533,7 @@ void FInit()
     {
         EditorDockSpaceAndMenuBar();
         FHierarchyPanel();
+        FMaterialPanel();
     }
     GCamera.Update({});
     GCamera.aspect = GContext->swapchain->GetAspectRatio();
@@ -704,6 +795,7 @@ void FRunning()
     {
         EditorDockSpaceAndMenuBar();
         FHierarchyPanel();
+        FMaterialPanel();
         FRunningImGui();
     }
     // Global param update
