@@ -25,6 +25,7 @@ static FArcballCamera GCamera{
 /* -- 前向声明 -- */
 static void ReplaceScene(StringView path);
 static void SaveScene(StringView path);
+static void LoadEnvMap(StringView path);
 static void EditorDockSpaceAndMenuBar();
 static void FHierarchyPanel();
 
@@ -182,6 +183,18 @@ static void ReplaceScene(StringView path)
         ctx->End(), ctx.Submit(), ctx.WaitIdle();
     }
 
+    // 上传环境贴图（如果场景自带）
+    if (newScene.mEnvMap.has_value() && newScene.mEnvMap->IsValid())
+    {
+        ImmediateUpload upload(GContext->device.Get(), 128 * (1u << 20));
+        upload.Begin();
+        gpu->UploadEnvMap(&upload, *newScene.mEnvMap);
+        upload.End(), upload.WaitIdle();
+        GPersistentScene.mEnvMap = std::move(newScene.mEnvMap);
+        GShaderGlobals.useEnvMap = 1u;
+        LOG(Editor, LogInfo, "Uploaded scene env map");
+    }
+
     // 接受相机和灯光数据
     {
         if (!newScene.mCameras.empty())
@@ -211,6 +224,32 @@ static void ReplaceScene(StringView path)
 
     // 触发渲染器重新配置
     FEState = FERunningEnter;
+}
+
+/* ==================== LoadEnvMap ==================== */
+static void LoadEnvMap(StringView path)
+{
+    LOG(Editor, LogInfo, "Loading HDRI env map: {}", path);
+    auto* gpu = GContext->gpuScene;
+    try
+    {
+        FTexture2D tex(GLOBAL_ALLOC);
+        LoadHDR(tex, path);
+        ImmediateUpload upload(GContext->device.Get(), 128 * (1u << 20));
+        upload.Begin();
+        gpu->UploadEnvMap(&upload, tex);
+        upload.End(), upload.WaitIdle();
+        GPersistentScene.mEnvMap = std::move(tex);
+        GShaderGlobals.useEnvMap = 1u;
+        GShaderGlobals.ptAccumualatedFrames = 0;
+        // 需要重建渲染器以重新绑定环境贴图资源
+        FEState = FERunningEnter;
+        LOG(Editor, LogInfo, "HDRI env map loaded successfully");
+    }
+    catch (...)
+    {
+        LOG(Editor, LogError, "Failed to load HDRI env map: {}", path);
+    }
 }
 
 /* ==================== SaveScene (Task 6) ==================== */
@@ -294,6 +333,15 @@ static void EditorDockSpaceAndMenuBar()
                     L"Save Scene As", L"fscn");
                 if (path.has_value())
                     SaveScene(path.value());
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Load HDRI..."))
+            {
+                auto path = OpenFileDialog(
+                    L"HDR Images\0*.hdr;*.hdri\0All Files\0*.*\0",
+                    L"Load HDRI Environment Map");
+                if (path.has_value())
+                    LoadEnvMap(path.value());
             }
             ImGui::EndMenu();
         }
@@ -481,6 +529,32 @@ void FRunningImGui()
             const unsigned values[] = {kViewPTDirect};
             ImGui::SeparatorText("Path Tracer View");
             changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
+        }
+        {
+            ImGui::SeparatorText("Environment Map");
+            bool hasEnv = GShaderGlobals.useEnvMap != 0u;
+            ImGui::Text(hasEnv ? "HDRI Loaded" : "No HDRI");
+            if (hasEnv)
+            {
+                bool envChanged = false;
+                envChanged |= ImGui::SliderFloat("Env Scale", &GShaderGlobals.envMapScale, 0.0f, 10.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+                bool envEnabled = GShaderGlobals.useEnvMap != 0u;
+                if (ImGui::Checkbox("Enable Env Map", &envEnabled))
+                {
+                    GShaderGlobals.useEnvMap = envEnabled ? 1u : 0u;
+                    envChanged = true;
+                }
+                if (envChanged)
+                    GShaderGlobals.ptAccumualatedFrames = 0;
+            }
+            if (ImGui::Button("Load HDRI..."))
+            {
+                auto path = OpenFileDialog(
+                    L"HDR Images\0*.hdr;*.hdri\0All Files\0*.*\0",
+                    L"Load HDRI Environment Map");
+                if (path.has_value())
+                    LoadEnvMap(path.value());
+            }
         }
         {
             const char* items[] = {"Frustum", "Occlusion"};
