@@ -27,16 +27,16 @@ Fragment drawGBuffer(V2F input){
     Fragment output;
     GSMaterial material = materials[input.materialIndex];
     float4 baseColor = material.baseColorFactor;
-    if (material.baseColorTexture)
+    if (material.baseColorTexture != ~0u)
         baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].Sample(textureSampler, input.uv);
     float4 normalTBN = float4(0,0,1,0);
-    if (material.normalTexture)
+    if (material.normalTexture != ~0u)
         normalTBN = textures[NonUniformResourceIndex(material.normalTexture)].Sample(textureSampler, input.uv) * 2 - float4(1);
     float4 pbrMetalRough = float4(1, material.roughnessFactor, material.metallicFactor, 1);
-    if (material.metallicRoughnessTexture)
+    if (material.metallicRoughnessTexture != ~0u)
         pbrMetalRough *= textures[NonUniformResourceIndex(material.metallicRoughnessTexture)].Sample(textureSampler, input.uv);
     float4 emissive = float4(material.emissiveFactor,0);
-    if (material.emissiveTexture)
+    if (material.emissiveTexture != ~0u)
         emissive *= textures[NonUniformResourceIndex(material.emissiveTexture)].Sample(textureSampler, input.uv);
     // -- GBuffer Packing
     float3 normal = normalize(input.tangent * normalTBN.x + input.bitangent * normalTBN.y + input.normal * normalTBN.z);

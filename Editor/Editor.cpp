@@ -1,4 +1,6 @@
 #include "Editor.hpp"
+#include "FileDialog.hpp"
+#include <imgui_internal.h>
 
 FEditorState FEState = FEInitEnter;
 /* -- Scene Data -- */
@@ -6,6 +8,11 @@ static Vector<GSInstance> GSInstances(GLOBAL_ALLOC);
 static Vector<GSMaterial> GSMaterials(GLOBAL_ALLOC);
 static Vector<GSMesh> GSMeshes(GLOBAL_ALLOC);
 static Vector<uint32_t> GSBLASes(GLOBAL_ALLOC);
+/* -- Persistent CPU Scene (Task 3) -- */
+static FScene GPersistentScene(GLOBAL_ALLOC);
+static String GCurrentSavePath;
+static int GSelectedInstance = -1;
+static bool GShowImGui = true;
 /* -- Camera & Globals -- */
 static UBO GShaderGlobals;
 static FArcballCamera GCamera{
@@ -14,42 +21,64 @@ static FArcballCamera GCamera{
     .zNear = 0.1f,
     .fovY = radians(60.f),
 };
+
+/* -- 前向声明 -- */
+static void ReplaceScene(StringView path);
+static void SaveScene(StringView path);
+static void EditorDockSpaceAndMenuBar();
+static void FHierarchyPanel();
+
 /* -- */
 void FInitEnter()
 {
-    FScene scene(GLOBAL_ALLOC);
-    CHECK_MSG(GContext->args.size() == 2, "Usage: Editor <scene path>");
-    LoadScene(GContext->args[1], scene);
-    if (!scene.mCameras.empty())
+    // Task 2: 支持无CLI参数启动
+    if (GContext->args.size() < 2)
     {
-        auto& camera = scene.mCameras.front();
-        vec3 dir = camera.transform.rotation * vec3(0, 0, 1);
-        GCamera.center = camera.transform.transform - dir * GCamera.radius;
-        GCamera.rot = camera.transform.rotation;
-        GCamera.fovY = camera.fovY;
+        LOG(Editor, LogInfo, "No scene path provided, starting with empty scene");
+        RendererSetupImGuiOnly(GContext);
+        FEState = FEInit;
+        return;
     }
-    if (!scene.mLights.empty())
+    ReplaceScene(GContext->args[1]);
+    if (FEState != FERunningEnter)
+        FEState = FEInit;
+}
+
+/* ==================== ReplaceScene ==================== */
+static void ReplaceScene(StringView path)
+{
+    LOG(Editor, LogInfo, "Loading scene: {}", path);
+    FScene newScene(GLOBAL_ALLOC);
+    try
     {
-        auto& light = scene.mLights.front();
-        GShaderGlobals.sunDirection = normalize(light.transform.rotation * float3(0, 0, -1));
-        GShaderGlobals.sunIntensity = light.color * light.intensity;
-        GShaderGlobals.camMinEV = 0.0f;
-        GShaderGlobals.camMaxEV = log2f(light.intensity * 0.25f);
+        LoadScene(path, newScene);
     }
-    else
+    catch (...)
     {
-        GShaderGlobals.sunIntensity = {};
+        LOG(Editor, LogError, "Failed to load scene: {}", path);
+        return;
     }
-    // Load into GPUScene
-    auto* gpu = GContext->gpuScene;
-    Vector<uint32_t> meshOffsets(GLOBAL_ALLOC);
-    Vector<uint32_t> textureIDMap(scene.mTextures.size(), GLOBAL_ALLOC);
-    LOG(Editor, LogInfo, "Uploading scene to GPU");
+
+    // 清空编辑器侧数据
+    GSInstances.clear();
+    GSMaterials.clear();
     GSMeshes.clear();
+    GSBLASes.clear();
+    GPersistentScene = FScene(GLOBAL_ALLOC);
+    GSelectedInstance = -1;
+
+    auto* gpu = GContext->gpuScene;
+    gpu->Reset();
+
+    Vector<uint32_t> meshOffsets(GLOBAL_ALLOC);
+    Vector<uint32_t> textureIDMap(newScene.mTextures.size(), GLOBAL_ALLOC);
+
+    LOG(Editor, LogInfo, "Uploading new scene data to GPU");
+    // 上传Mesh和Texture
     {
-        ImmediateUpload upload(GContext->device.Get(), 128 * (1u << 20)); // MB
+        ImmediateUpload upload(GContext->device.Get(), 128 * (1u << 20));
         upload.Begin();
-        for (auto& src : scene.mMeshes)
+        for (auto& src : newScene.mMeshes)
         {
             CHECK(src.EnsureQuantized());
             CHECK(src.EnsureRaw());
@@ -57,16 +86,15 @@ void FInitEnter()
             auto& offset = meshOffsets.emplace_back();
             if (!gpu->Upload(&upload, src, dst, offset))
             {
-                // Flush batched uploads - staging buffer full
                 upload.End(), upload.WaitIdle(), upload.Begin();
                 CHECK_MSG(gpu->Upload(&upload, src, dst, offset), "Staging buffer too small for single mesh upload");
             }
         }
-        for (int id = 0; auto& src : scene.mTextures)
+        for (int id = 0; auto& src : newScene.mTextures)
         {
             if (!src.IsValid())
             {
-                textureIDMap[id] = 0; // Default texture
+                textureIDMap[id] = UINT32_MAX;
             }
             else
             {
@@ -81,9 +109,35 @@ void FInitEnter()
         }
         upload.End(), upload.WaitIdle();
     }
-    GSInstances.clear();
-    for (auto& src : scene.mInstances)
+
+    // 移动到持久场景
+    for (auto& m : newScene.mMeshes)
+        GPersistentScene.mMeshes.emplace_back(std::move(m));
+    for (auto& t : newScene.mTextures)
+        GPersistentScene.mTextures.emplace_back(std::move(t));
+
+    // 材质：映射纹理索引
+    for (auto& src : newScene.mMaterials)
     {
+        GPersistentScene.mMaterials.emplace_back(src);
+
+        auto& dst = GSMaterials.emplace_back();
+        dst.baseColorFactor = src.baseColorFactor;
+        dst.emissiveFactor = src.emissiveFactor;
+        dst.metallicFactor = src.metallicFactor;
+        dst.roughnessFactor = src.roughnessFactor;
+        dst.baseColorTexture = src.baseColorTexture != kInvalidTexture ? textureIDMap[src.baseColorTexture] : UINT32_MAX;
+        dst.emissiveTexture = src.emissiveTexture != kInvalidTexture ? textureIDMap[src.emissiveTexture] : UINT32_MAX;
+        dst.metallicRoughnessTexture = src.metallicRoughnessTexture != kInvalidTexture ? textureIDMap[src.metallicRoughnessTexture] : UINT32_MAX;
+        dst.normalTexture = src.normalTexture != kInvalidTexture ? textureIDMap[src.normalTexture] : UINT32_MAX;
+        dst.transmissionFactor = src.transmissionFactor;
+    }
+
+    // 实例
+    for (auto& src : newScene.mInstances)
+    {
+        GPersistentScene.mInstances.emplace_back(src);
+
         auto& dst = GSInstances.emplace_back();
         dst.transform = src.transform.transform;
         dst.rotation = src.transform.rotation;
@@ -92,39 +146,25 @@ void FInitEnter()
         dst.materialIndex = src.materialIndex;
         dst.meshIndex = src.meshIndex;
     }
-    GSMaterials.clear();
-    for (auto& src : scene.mMaterials)
-    {
-        auto& dst = GSMaterials.emplace_back();
-        dst.baseColorFactor = src.baseColorFactor;
-        dst.emissiveFactor = src.emissiveFactor;
-        dst.metallicFactor = src.metallicFactor;
-        dst.roughnessFactor = src.roughnessFactor;
-        dst.baseColorTexture = src.baseColorTexture ? textureIDMap[src.baseColorTexture] : 0u;
-        dst.emissiveTexture = src.emissiveTexture ? textureIDMap[src.emissiveTexture] : 0u;
-        dst.metallicRoughnessTexture = src.metallicRoughnessTexture ? textureIDMap[src.metallicRoughnessTexture] : 0u;
-        dst.normalTexture = src.normalTexture ? textureIDMap[src.normalTexture] : 0u;
-        dst.transmissionFactor = src.transmissionFactor;
-    }
-    // Upload instance data
+
+    // 重新上传完整的实例和材质数组到GPU
     {
         auto [ptr, off] = gpu->AllocateInstance(GSInstances.size());
         std::memcpy(ptr, GSInstances.data(), GSInstances.size() * sizeof(GSInstance));
         GShaderGlobals.firstInstance = off;
         GShaderGlobals.numInstances = GSInstances.size();
     }
-    // Upload material data
     {
         auto [ptr, off] = gpu->AllocateMaterial(GSMaterials.size());
         std::memcpy(ptr, GSMaterials.data(), GSMaterials.size() * sizeof(GSMaterial));
         GShaderGlobals.firstMaterial = off;
         GShaderGlobals.numMaterials = GSMaterials.size();
     }
-    // Build RT AS
+
+    // 构建BLAS并重建TLAS
     {
         ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
         GSBLASes.resize(GSMeshes.size());
-        LOG(Editor, LogDebug, "Building BLAS");
         constexpr size_t kBLASBuildBatch = 32u;
         for (size_t i = 0; i < GSMeshes.size(); i += kBLASBuildBatch)
         {
@@ -136,20 +176,247 @@ void FInitEnter()
             LOG(Editor, LogDebug, "Building BLAS {} to {}", i, i + batchSize);
             gpu->BuildBLAS(&ctx, meshesBatch, indicesBatch);
         }
-        LOG(Editor, LogDebug, "Building TLAS");
+        LOG(Editor, LogDebug, "Rebuilding TLAS");
         ctx->Begin();
         gpu->BuildTLAS(ctx.Get(), GSInstances, GSBLASes, false);
         ctx->End(), ctx.Submit(), ctx.WaitIdle();
     }
-    FEState = FEInit;
+
+    // 接受相机和灯光数据
+    {
+        if (!newScene.mCameras.empty())
+        {
+            auto& camera = newScene.mCameras.front();
+            vec3 dir = camera.transform.rotation * vec3(0, 0, 1);
+            GCamera.center = camera.transform.transform - dir * GCamera.radius;
+            GCamera.rot = camera.transform.rotation;
+            GCamera.fovY = camera.fovY;
+        }
+        if (!newScene.mLights.empty())
+        {
+            auto& light = newScene.mLights.front();
+            GShaderGlobals.sunDirection = normalize(light.transform.rotation * float3(0, 0, -1));
+            GShaderGlobals.sunIntensity = light.color * light.intensity;
+            GShaderGlobals.camMinEV = 0.0f;
+            GShaderGlobals.camMaxEV = log2f(light.intensity * 0.25f);
+        }
+        for (auto& c : newScene.mCameras)
+            GPersistentScene.mCameras.emplace_back(c);
+        for (auto& l : newScene.mLights)
+            GPersistentScene.mLights.emplace_back(l);
+    }
+
+    LOG(Editor, LogInfo, "Scene load complete: {} meshes, {} instances, {} materials",
+        newScene.mMeshes.size(), newScene.mInstances.size(), newScene.mMaterials.size());
+
+    // 触发渲染器重新配置
+    FEState = FERunningEnter;
 }
 
-void FInit() { FEState = FERunningEnter; }
+/* ==================== SaveScene (Task 6) ==================== */
+static void SaveScene(StringView path)
+{
+    LOG(Editor, LogInfo, "Saving scene to: {}", path);
+    try
+    {
+        FileWriter writer(path);
+        FSerialize(writer, GPersistentScene);
+        GCurrentSavePath = String(path);
+        LOG(Editor, LogInfo, "Scene saved successfully");
+    }
+    catch (...)
+    {
+        LOG(Editor, LogError, "Failed to save scene to: {}", path);
+    }
+}
+
+/* ==================== DockSpace + Menu Bar (Tasks 1, 7, 9) ==================== */
+static void EditorDockSpaceAndMenuBar()
+{
+    // 半透明窗口背景
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
+
+    // DockSpace覆盖整个视口，背景透明以显示backbuffer
+    ImGuiID dockspaceID = ImGui::DockSpaceOverViewport(0, nullptr, ImGuiDockNodeFlags_PassthruCentralNode);
+
+    // 首次启动时设置默认布局 (Task 9)
+    static bool firstTime = true;
+    if (firstTime)
+    {
+        firstTime = false;
+        ImGui::DockBuilderRemoveNode(dockspaceID);
+        ImGui::DockBuilderAddNode(dockspaceID, ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodeSize(dockspaceID, ImGui::GetMainViewport()->Size);
+
+        ImGuiID dockLeft, dockCenter;
+        ImGui::DockBuilderSplitNode(dockspaceID, ImGuiDir_Left, 0.20f, &dockLeft, &dockCenter);
+        ImGuiID dockRight;
+        ImGui::DockBuilderSplitNode(dockCenter, ImGuiDir_Right, 0.25f, &dockRight, &dockCenter);
+
+        ImGui::DockBuilderDockWindow("Hierarchy", dockLeft);
+        ImGui::DockBuilderDockWindow("Inspector", dockLeft);
+        ImGui::DockBuilderDockWindow("Camera", dockRight);
+        ImGui::DockBuilderDockWindow("Rendering", dockRight);
+        ImGui::DockBuilderDockWindow("Profiler", dockRight);
+        ImGui::DockBuilderFinish(dockspaceID);
+    }
+
+    // 主菜单栏 (Task 7)
+    if (ImGui::BeginMainMenuBar())
+    {
+        if (ImGui::BeginMenu("File"))
+        {
+            if (ImGui::MenuItem("Open...", "Ctrl+O"))
+            {
+                auto path = OpenFileDialog(
+                    L"Scene Files\0*.gltf;*.glb;*.fscn\0All Files\0*.*\0",
+                    L"Open Scene");
+                if (path.has_value())
+                    ReplaceScene(path.value());
+            }
+            if (ImGui::MenuItem("Save", "Ctrl+S"))
+            {
+                if (!GCurrentSavePath.empty())
+                    SaveScene(GCurrentSavePath);
+                else
+                {
+                    auto path = SaveFileDialog(
+                        L"Foundation Scene\0*.fscn\0",
+                        L"Save Scene As", L"fscn");
+                    if (path.has_value())
+                        SaveScene(path.value());
+                }
+            }
+            if (ImGui::MenuItem("Save As..."))
+            {
+                auto path = SaveFileDialog(
+                    L"Foundation Scene\0*.fscn\0",
+                    L"Save Scene As", L"fscn");
+                if (path.has_value())
+                    SaveScene(path.value());
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMainMenuBar();
+    }
+
+    ImGui::PopStyleColor(); // WindowBg
+}
+
+/* ==================== Hierarchy Panel (Task 8) ==================== */
+static void FHierarchyPanel()
+{
+    if (ImGui::Begin("Hierarchy"))
+    {
+        if (GSInstances.empty())
+        {
+            ImGui::TextDisabled("No instances loaded");
+        }
+        else
+        {
+            ImGui::Text("%zu instances", GSInstances.size());
+            ImGui::Separator();
+            for (size_t i = 0; i < GSInstances.size(); i++)
+            {
+                auto& inst = GSInstances[i];
+                char label[128];
+                snprintf(label, sizeof(label), "Instance %zu -- Mesh %u, Mat %u",
+                         i, inst.meshIndex, inst.materialIndex);
+                bool selected = (GSelectedInstance == static_cast<int>(i));
+                if (ImGui::Selectable(label, selected))
+                    GSelectedInstance = static_cast<int>(i);
+            }
+        }
+    }
+    ImGui::End();
+
+    // Inspector面板
+    if (ImGui::Begin("Inspector"))
+    {
+        if (GSelectedInstance >= 0 && GSelectedInstance < static_cast<int>(GSInstances.size()))
+        {
+            auto& inst = GSInstances[GSelectedInstance];
+            ImGui::Text("Instance %d", GSelectedInstance);
+            ImGui::Separator();
+            bool changed = false;
+            changed |= ImGui::DragFloat3("Position", &inst.transform.x, 0.01f);
+            changed |= ImGui::DragFloat4("Rotation", &inst.rotation.x, 0.001f);
+            changed |= ImGui::DragFloat3("Scale",    &inst.scale.x, 0.01f);
+            if (changed)
+            {
+                // 重新上传实例数组到GPU
+                auto* gpu = GContext->gpuScene;
+                auto [ptr, off] = gpu->AllocateInstance(GSInstances.size());
+                std::memcpy(ptr, GSInstances.data(), GSInstances.size() * sizeof(GSInstance));
+                GShaderGlobals.firstInstance = off;
+                // 同步到持久场景
+                if (GSelectedInstance < static_cast<int>(GPersistentScene.mInstances.size()))
+                {
+                    auto& pi = GPersistentScene.mInstances[GSelectedInstance];
+                    pi.transform.transform = inst.transform;
+                    pi.transform.rotation  = inst.rotation;
+                    pi.transform.scale     = inst.scale;
+                }
+                // 重建TLAS并重置PT累积
+                {
+                    ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
+                    ctx->Begin();
+                    gpu->BuildTLAS(ctx.Get(), GSInstances, GSBLASes, false);
+                    ctx->End(), ctx.Submit(), ctx.WaitIdle();
+                }
+                GShaderGlobals.ptAccumualatedFrames = 0;
+            }
+            ImGui::Separator();
+            ImGui::Text("Mesh Offset: %u", inst.meshOffset);
+            ImGui::Text("Material Index: %u", inst.materialIndex);
+            ImGui::Text("Mesh Index: %u", inst.meshIndex);
+        }
+        else
+        {
+            ImGui::TextDisabled("No instance selected");
+        }
+    }
+    ImGui::End();
+}
+
+void FInit()
+{
+    // Task 10: FInit状态下显示UI，等待用户加载场景
+    auto* renderer = GContext->renderer;
+    if (!renderer)
+    {
+        RendererSetupImGuiOnly(GContext);
+        renderer = GContext->renderer;
+    }
+    renderer->BeginExecute();
+    ImGui_ImplFoundation_NewFrame();
+    ImGui::NewFrame();
+    if (GShowImGui)
+    {
+        EditorDockSpaceAndMenuBar();
+        FHierarchyPanel();
+    }
+    GCamera.Update({});
+    GCamera.aspect = GContext->swapchain->GetAspectRatio();
+    renderer->ExecuteFrame();
+    renderer->EndExecute();
+
+    // 当有场景数据时，转移到 FERunningEnter
+    if (!GSInstances.empty())
+        FEState = FERunningEnter;
+}
 RendererConfig GRendererConfig;
 
 static bool rasterOrPT = true;
 void FRunningEnter()
 {
+    // Task 2: 空场景时使用ImGui-only渲染器
+    if (GSInstances.empty())
+    {
+        RendererSetupImGuiOnly(GContext);
+        FEState = FEInit;
+        return;
+    }
     RendererScene scene{
         .gsGlobals = &GShaderGlobals,
         .gsInstances = &GSInstances,
@@ -352,7 +619,6 @@ void FRunningImGui()
     }
     ImGui::End();
 }
-static bool enableImGui = false;
 void FRunning()
 {
     auto* renderer = GContext->renderer;
@@ -360,8 +626,12 @@ void FRunning()
     renderer->BeginExecute();
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
-    if (enableImGui)
+    if (GShowImGui)
+    {
+        EditorDockSpaceAndMenuBar();
+        FHierarchyPanel();
         FRunningImGui();
+    }
     // Global param update
     GCamera.Update({});
     GCamera.aspect = GContext->swapchain->GetAspectRatio();
@@ -413,7 +683,7 @@ bool EditorProcessEvent(SDL_Event* event)
         }
         if (event->key.key == SDLK_TAB)
         {
-            enableImGui = !enableImGui;
+            GShowImGui = !GShowImGui;
         }
         if (event->key.key == SDLK_R)
         {

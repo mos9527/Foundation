@@ -25,17 +25,19 @@ struct FCamera
 };
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#metallic-roughness-material
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#additional-textures
+// Sentinel value for "no texture bound"
+static constexpr uint32_t kInvalidTexture = UINT32_MAX;
 struct FMaterial
 {
     // sRGB.
-    uint32_t baseColorTexture;
+    uint32_t baseColorTexture = kInvalidTexture;
     // sRGB
-    uint32_t emissiveTexture;
+    uint32_t emissiveTexture = kInvalidTexture;
     // Linear. B channel: metallic, G channel: roughness
-    uint32_t metallicRoughnessTexture;
+    uint32_t metallicRoughnessTexture = kInvalidTexture;
     // Linear. Tangent space XYZ, R [0.0 .. 1.0] to X [-1 .. 1], G [0.0 .. 1.0] to Y [-1 .. 1], B (0.5 .. 1.0] maps to Z
     // (0 .. 1]
-    uint32_t normalTexture;
+    uint32_t normalTexture = kInvalidTexture;
     float4 baseColorFactor;
     float3 emissiveFactor;
     float metallicFactor;

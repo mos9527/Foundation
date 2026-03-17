@@ -56,6 +56,9 @@ target_sources(Editor PRIVATE SDLMain.cpp ImGui.cpp Editor.cpp Renderer.cpp Path
 target_link_libraries(
         Editor PRIVATE Editor_Context Foundation_RHIVulkan ThirdParty_ImGui
 )
+if(WIN32)
+    target_link_libraries(Editor PRIVATE comdlg32)
+endif()
 
 add_dependencies(
         Editor
