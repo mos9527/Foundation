@@ -60,6 +60,8 @@ struct FScene
     Vector<FMesh> mMeshes;
     Vector<FTexture2D> mTextures;
     Vector<FLight> mLights;
+    // Optional environment map
+    Optional<FTexture2D> mEnvMap;
 
     FScene(Allocator* alloc) :
         mMagic(kSceneMagic), mCameras(alloc), mInstances(alloc), mMaterials(alloc), mMeshes(alloc), mTextures(alloc), mLights(alloc)
@@ -91,6 +93,7 @@ inline void FSerialize(FWriter& w, FScene const& obj)
     FSerialize(w, obj.mMeshes);
     FSerialize(w, obj.mTextures);
     FSerialize(w, obj.mLights);
+    FSerialize(w, obj.mEnvMap);
 }
 template <>
 inline void FDeserialize(FReader& r, FScene& obj)
@@ -103,4 +106,5 @@ inline void FDeserialize(FReader& r, FScene& obj)
     FDeserialize(r, obj.mMeshes, obj.mMeshes.get_allocator().mResource);
     FDeserialize(r, obj.mTextures, obj.mTextures.get_allocator().mResource);
     FDeserialize(r, obj.mLights);
+    FDeserialize(r, obj.mEnvMap, obj.mTextures.get_allocator().mResource);
 }
