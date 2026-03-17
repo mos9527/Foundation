@@ -29,6 +29,9 @@ namespace Foundation::Core {
     }
     void AllocatorHeap::QueryBudget(size_t& used, size_t& budget) const
     {
+#if FOUNDATION_CORE_USES_OS_ALLOC
+        used = budget = 0;
+#else
         size_t elapsed_msecs,  user_msecs,  system_msecs,
                                      current_rss,  peak_rss,
                                      current_commit,  peak_commit,  page_faults;
@@ -36,6 +39,7 @@ namespace Foundation::Core {
                         &current_commit, &peak_commit, &page_faults);
         used = current_rss;
         budget = SIZE_MAX; // No budget info available
+#endif
     }
     void AllocatorHeap::Deallocate(pointer ptr) {
 #if FOUNDATION_CORE_USES_OS_ALLOC
