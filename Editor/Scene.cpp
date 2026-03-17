@@ -62,18 +62,6 @@ FMesh loadGLTFSubmesh(cgltf_primitive* submesh)
     return mesh;
 }
 
-FTexture2D createNullTexture()
-{
-    // 2x2 black/magenta checkerboard
-    const Array<uint32_t, 4> data{0xFF000000, 0xFFFF00FF, 0xFFFF00FF, 0xFF000000};
-    FTexture2D texture(GLOBAL_ALLOC);
-    ddsCreateHeader(texture.header, 2, 2, 1);
-    ddsSetFormat(texture.header, texture.header10, 1, RHIResourceFormat::R8G8B8A8Unorm);
-    texture.data.resize(4 * 4);
-    std::memcpy(texture.data.data(), data.data(), texture.data.size());
-    return texture;
-}
-
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#images
 Optional<FTexture2D> loadGLTFTexture(cgltf_texture* texture, StringView scenePath, bool gamma = false)
 {
@@ -133,12 +121,11 @@ void LoadGLTF(StringView path, FScene& scene)
     // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#default-material
     scene.mMaterials.clear();
     scene.mMaterials.emplace_back(FMaterial{
-        .baseColorTexture = 0,
         .baseColorFactor = {1.0f, 1.0f, 1.0f, 1.0f},
     });
     // Extra texture flags. Mostly used for sRGB to linear conversion
     constexpr unsigned kTextureInSRGB = 1 << 0;
-    Vector<unsigned> textureFlags(data->textures_count + 1, 0, GLOBAL_ALLOC);
+    Vector<unsigned> textureFlags(data->textures_count, 0, GLOBAL_ALLOC);
     for (size_t i = 0; i < data->materials_count; i++)
     {
         const cgltf_material* mat = &data->materials[i];
@@ -154,16 +141,16 @@ void LoadGLTF(StringView path, FScene& scene)
             {
                 size_t index = cgltf_texture_index(data, mat->pbr_metallic_roughness.base_color_texture.texture);
                 textureFlags[index] |= kTextureInSRGB;
-                material.baseColorTexture = index + 1u;
+                material.baseColorTexture = static_cast<uint32_t>(index);
             }
             if (mat->pbr_metallic_roughness.metallic_roughness_texture.texture)
                 material.metallicRoughnessTexture =
-                    cgltf_texture_index(data, mat->pbr_metallic_roughness.metallic_roughness_texture.texture) + 1u;
+                    static_cast<uint32_t>(cgltf_texture_index(data, mat->pbr_metallic_roughness.metallic_roughness_texture.texture));
         }
         if (mat->normal_texture.texture)
-            material.normalTexture = cgltf_texture_index(data, mat->normal_texture.texture) + 1u;
+            material.normalTexture = static_cast<uint32_t>(cgltf_texture_index(data, mat->normal_texture.texture));
         if (mat->emissive_texture.texture)
-            material.emissiveTexture = cgltf_texture_index(data, mat->emissive_texture.texture) + 1u;
+            material.emissiveTexture = static_cast<uint32_t>(cgltf_texture_index(data, mat->emissive_texture.texture));
         material.emissiveFactor = {mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2]};
         material.emissiveFactor *= mat->emissive_strength.emissive_strength;
         material.transmissionFactor = mat->transmission.transmission_factor;
@@ -173,11 +160,9 @@ void LoadGLTF(StringView path, FScene& scene)
     size_t numSubmeshes = 0;
     for (size_t i = 0; i < data->meshes_count; i++)
         numSubmeshes += data->meshes[i].primitives_count;
-    scene.mTextures.resize(data->textures_count + 1, GLOBAL_ALLOC);
+    scene.mTextures.resize(data->textures_count, GLOBAL_ALLOC);
     size_t jobCount = data->textures_count + numSubmeshes;
     ThreadPool pool(std::thread::hardware_concurrency(), ThreadPool::getTaskSize(jobCount), GLOBAL_ALLOC);
-    // NOTE: 0 is reserved as the null texture
-    scene.mTextures[0] = createNullTexture();
     for (size_t i = 0; i < data->textures_count; i++)
         pool.Push(
             [&](cgltf_texture* src, FTexture2D* dst, StringView basePath)
@@ -205,7 +190,7 @@ void LoadGLTF(StringView path, FScene& scene)
                     LOG(Scene, LogWarn, "No texture loaded for {}", name);
                 }
             },
-            &data->textures[i], &scene.mTextures[i + 1], path);
+            &data->textures[i], &scene.mTextures[i], path);
     // Mesh's submesh children
     // These will be flattened later on into @ref FInstance
     Vector<Pair<size_t, size_t>> submeshIndices(GLOBAL_ALLOC);

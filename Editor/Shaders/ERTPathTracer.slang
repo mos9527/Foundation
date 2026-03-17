@@ -51,16 +51,16 @@ void SampleMaterials(GSMaterial material, float2 uv,
     out float4 baseColor, out float4 normalTBN, out float4 pbrMetalRough, out float4 emissive)
 {
     baseColor = material.baseColorFactor;
-    if (material.baseColorTexture != 0)
+    if (material.baseColorTexture != ~0u)
         baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, uv, 0);
     normalTBN = float4(0, 0, 1, 0);
-    if (material.normalTexture != 0)
+    if (material.normalTexture != ~0u)
         normalTBN = textures[NonUniformResourceIndex(material.normalTexture)].SampleLevel(textureSampler, uv, 0) * 2 - float4(1);
     pbrMetalRough = float4(1, material.roughnessFactor, material.metallicFactor, 1);
-    if (material.metallicRoughnessTexture != 0)
+    if (material.metallicRoughnessTexture != ~0u)
         pbrMetalRough *= textures[NonUniformResourceIndex(material.metallicRoughnessTexture)].SampleLevel(textureSampler, uv, 0);
     emissive = float4(material.emissiveFactor, 0);
-    if (material.emissiveTexture != 0)
+    if (material.emissiveTexture != ~0u)
         emissive *= textures[NonUniformResourceIndex(material.emissiveTexture)].SampleLevel(textureSampler, uv, 0);
 }
 
@@ -339,7 +339,7 @@ bool AnyHitOpacityIgnore(inout PCG rng, uint instance, uint primitive,
     GSInstance inst = instances[NonUniformResourceIndex(instance)];
     GSMaterial material = materials[NonUniformResourceIndex(inst.materialIndex)];
     float4 baseColor = material.baseColorFactor;
-    if (material.baseColorTexture != 0) {
+    if (material.baseColorTexture != ~0u) {
         HitPayload payload;
         IntersectTriangle(inst.meshOffset, primitive, attr.barycentrics.xy, payload.position, payload.normal, payload.geometryNormal, payload.tangent.xyz, payload.uv, payload.tangent.w);
         baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, payload.uv, 0);

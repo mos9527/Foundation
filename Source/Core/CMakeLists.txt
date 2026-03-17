@@ -48,6 +48,11 @@ if (WIN32)
     target_link_libraries(Foundation_Core PUBLIC ws2_32 dbghelp)
 endif()
 
+# MinGW/GCC needs libatomic for 128-bit CAS used in AtomicPool
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_link_libraries(Foundation_Core PUBLIC atomic)
+endif()
+
 if (FOUNDATION_WITH_ASAN)
     if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         target_compile_options(Foundation_Core PUBLIC "/fsanitize=thread")

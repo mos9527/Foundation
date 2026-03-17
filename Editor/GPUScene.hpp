@@ -43,10 +43,10 @@ struct GSInstance
 };
 struct GSMaterial
 {
-    uint32_t baseColorTexture;
-    uint32_t emissiveTexture;
-    uint32_t metallicRoughnessTexture;
-    uint32_t normalTexture;
+    uint32_t baseColorTexture = UINT32_MAX;
+    uint32_t emissiveTexture = UINT32_MAX;
+    uint32_t metallicRoughnessTexture = UINT32_MAX;
+    uint32_t normalTexture = UINT32_MAX;
     float4 baseColorFactor;
     float3 emissiveFactor;
     float metallicFactor;

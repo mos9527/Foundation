@@ -342,6 +342,10 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
 void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices,
                          bool update)
 {
+    // Task 2: 空实例时直接返回
+    if (instances.empty())
+        return;
+
     auto* device = mContext->device.Get();
     auto ConvertInstance = [&](const GSInstance* src) -> RHIAccelerationStructureGeometryInstance
     {
@@ -428,9 +432,11 @@ RHITexture* GPUScene::GetGGXlutEavg() const
 void GPUScene::Reset()
 {
     mPrimitiveOffset = 0;
-    mTLAS.Reset();
+    mMeshletGlobalCounter = 0;
     mBLASes.clear();
     mBLASBuffers.clear();
     mMaterialBuffer.Reset();
     mInstanceBuffer.Reset();
+    // NOTE: mTexturePool is append-only; old bindings become dead entries.
+    //       mTLAS is kept alive and rebuilt in-place by BuildTLAS.
 }
