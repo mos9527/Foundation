@@ -212,7 +212,6 @@ namespace Foundation::RHI
         String QueryDeviceString() const override;
 
         Allocator* GetAllocator() const;
-        vk::AllocationCallbacks const& GetVkAllocatorCallbacks() const;
 
         auto const& GetVkQueues() const { return mQueues; }
         auto const& GetVkDevice() const { return mDevice; }

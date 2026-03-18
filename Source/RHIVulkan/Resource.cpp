@@ -93,7 +93,7 @@ VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc
     auto res = vmaCreateBufferWithAlignment(allocator, &*bufferInfo, &allocInfo, desc.alignment, &buffer, &mAllocation,
                                             nullptr);
     CHECK(res == VK_SUCCESS && "failed to create Vulkan buffer");
-    mBuffer = vk::raii::Buffer(device.GetVkDevice(), vk::Buffer(buffer), device.GetVkAllocatorCallbacks());
+    mBuffer = vk::raii::Buffer(device.GetVkDevice(), vk::Buffer(buffer), nullptr);
 }
 VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc, vk::raii::Buffer&& buffer,
                            bool shared) :
@@ -166,7 +166,7 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
     VkImage image;
     auto res = vmaCreateImage(allocator, &*imageInfo, &allocInfo, &image, &mAllocation, nullptr);
     CHECK_MSG(res == VK_SUCCESS, "failed to create Vulkan image");
-    mImage = vk::raii::Image(device.GetVkDevice(), vk::Image(image), device.GetVkAllocatorCallbacks());
+    mImage = vk::raii::Image(device.GetVkDevice(), vk::Image(image), nullptr);
 }
 
 VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& desc, vk::raii::Image&& image,
@@ -229,7 +229,7 @@ RHITextureScopedHandle<RHITextureView> VulkanTexture::CreateTextureView(RHITextu
                                           .levelCount = desc.range.mipCount,
                                           .baseArrayLayer = desc.range.layer.baseArrayLayer,
                                           .layerCount = desc.range.layer.layerCount}},
-        mDevice.GetVkAllocatorCallbacks());
+        nullptr);
     return {this, mViews.CreateObject<VulkanTextureView>(*this, desc, std::move(image_view))};
 }
 RHITextureView* VulkanTexture::GetImageView(Handle handle) const { return mViews.GetObjectPtr<RHITextureView>(handle); }
@@ -300,7 +300,7 @@ VulkanAccelerationStructure::VulkanAccelerationStructure(VulkanDevice const& dev
             .type = desc.type == RHIAccelerationStructureType::TopLevel
                 ? vk::AccelerationStructureTypeKHR::eTopLevel
                 : vk::AccelerationStructureTypeKHR::eBottomLevel},
-        device.GetVkAllocatorCallbacks());
+        nullptr);
     mASAddress = mDevice.GetVkDevice().getAccelerationStructureAddressKHR({.accelerationStructure = mAS});
 }
 vk::DeviceAddress VulkanAccelerationStructure::GetVkAccelerationStructureAddress() const

@@ -29,7 +29,6 @@ static void SaveScene(StringView path);
 static void LoadEnvMap(StringView path);
 static void EditorDockSpaceAndMenuBar();
 static void FHierarchyPanel();
-static void FMaterialPanel();
 
 /* -- */
 void FInitEnter()
@@ -297,8 +296,6 @@ static void EditorDockSpaceAndMenuBar()
 
         ImGui::DockBuilderDockWindow("Hierarchy", dockLeft);
         ImGui::DockBuilderDockWindow("Inspector", dockLeft);
-        ImGui::DockBuilderDockWindow("Materials", dockLeft);
-        ImGui::DockBuilderDockWindow("Material Inspector", dockLeft);
         ImGui::DockBuilderDockWindow("Camera", dockRight);
         ImGui::DockBuilderDockWindow("Rendering", dockRight);
         ImGui::DockBuilderDockWindow("Profiler", dockRight);
@@ -432,90 +429,6 @@ static void FHierarchyPanel()
     ImGui::End();
 }
 
-/* ==================== Material Panel ==================== */
-static void FMaterialPanel()
-{
-    if (ImGui::Begin("Materials"))
-    {
-        if (GSMaterials.empty())
-        {
-            ImGui::TextDisabled("No materials loaded");
-        }
-        else
-        {
-            ImGui::Text("%zu materials", GSMaterials.size());
-            ImGui::Separator();
-            for (size_t i = 0; i < GSMaterials.size(); i++)
-            {
-                char label[128];
-                snprintf(label, sizeof(label), "Material %zu", i);
-                bool selected = (GSelectedMaterial == static_cast<int>(i));
-                if (ImGui::Selectable(label, selected))
-                    GSelectedMaterial = static_cast<int>(i);
-            }
-        }
-    }
-    ImGui::End();
-
-    // Material Inspector
-    if (ImGui::Begin("Material Inspector"))
-    {
-        if (GSelectedMaterial >= 0 && GSelectedMaterial < static_cast<int>(GSMaterials.size()))
-        {
-            auto& mat = GSMaterials[GSelectedMaterial];
-            ImGui::Text("Material %d", GSelectedMaterial);
-            ImGui::Separator();
-            bool changed = false;
-
-            // Base Color
-            changed |= ImGui::ColorEdit4("Base Color", &mat.baseColorFactor.x, ImGuiColorEditFlags_Float);
-
-            // Emissive
-            changed |= ImGui::ColorEdit3("Emissive", &mat.emissiveFactor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
-
-            // PBR factors
-            changed |= ImGui::SliderFloat("Metallic", &mat.metallicFactor, 0.0f, 1.0f);
-            changed |= ImGui::SliderFloat("Roughness", &mat.roughnessFactor, 0.0f, 1.0f);
-            changed |= ImGui::SliderFloat("Transmission", &mat.transmissionFactor, 0.0f, 1.0f);
-            changed |= ImGui::SliderFloat("Anisotropy", &mat.anisotropy, -1.0f, 1.0f);
-
-            // Texture info (read-only)
-            ImGui::Separator();
-            ImGui::Text("Base Color Tex: %s", mat.baseColorTexture != UINT32_MAX ? "Yes" : "None");
-            ImGui::Text("Emissive Tex:   %s", mat.emissiveTexture != UINT32_MAX ? "Yes" : "None");
-            ImGui::Text("Metal/Rough Tex:%s", mat.metallicRoughnessTexture != UINT32_MAX ? "Yes" : "None");
-            ImGui::Text("Normal Tex:     %s", mat.normalTexture != UINT32_MAX ? "Yes" : "None");
-
-            if (changed)
-            {
-                // 重新上传材质数组到GPU
-                auto* gpu = GContext->gpuScene;
-                auto [ptr, off] = gpu->AllocateMaterial(GSMaterials.size());
-                std::memcpy(ptr, GSMaterials.data(), GSMaterials.size() * sizeof(GSMaterial));
-                GShaderGlobals.firstMaterial = off;
-
-                // 同步到持久场景
-                if (GSelectedMaterial < static_cast<int>(GPersistentScene.mMaterials.size()))
-                {
-                    auto& pm = GPersistentScene.mMaterials[GSelectedMaterial];
-                    pm.baseColorFactor = mat.baseColorFactor;
-                    pm.emissiveFactor = mat.emissiveFactor;
-                    pm.metallicFactor = mat.metallicFactor;
-                    pm.roughnessFactor = mat.roughnessFactor;
-                    pm.transmissionFactor = mat.transmissionFactor;
-                }
-
-                // 重置PT累积帧数
-                GShaderGlobals.ptAccumualatedFrames = 0;
-            }
-        }
-        else
-        {
-            ImGui::TextDisabled("No material selected");
-        }
-    }
-    ImGui::End();
-}
 
 void FInit()
 {
@@ -533,7 +446,6 @@ void FInit()
     {
         EditorDockSpaceAndMenuBar();
         FHierarchyPanel();
-        FMaterialPanel();
     }
     GCamera.Update({});
     GCamera.aspect = GContext->swapchain->GetAspectRatio();
@@ -700,7 +612,7 @@ void FRunningImGui()
                 static float gpuTimingMS = 0.0f;
                 static int lanes = 0;
                 float frametimeAvg = frametime.mean * 1e-6f;
-                ImGui::Text("CPU to Present: %.3fms, Present to Present Rolling Avg.: %.3fms (%.1f FPS), GPU: %.3fms, "
+                ImGui::Text("CPU to Present: %.3fms\nP2P: %.3fms (%.1f FPS)\nGPU: %.3fms\n"
                             "CPU/GPU Δ: %.3fms",
                             presentTimingMS, frametimeAvg * 1e3f, 1 / frametimeAvg, gpuTimingMS,
                             frametimeAvg * 1e3f - gpuTimingMS);
@@ -794,8 +706,7 @@ void FRunning()
     if (GShowImGui)
     {
         EditorDockSpaceAndMenuBar();
-        FHierarchyPanel();
-        FMaterialPanel();
+        FHierarchyPanel();       
         FRunningImGui();
     }
     // Global param update

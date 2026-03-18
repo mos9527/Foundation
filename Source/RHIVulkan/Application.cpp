@@ -14,7 +14,7 @@ VkDebugLayerCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::Debu
 }
 VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, const char* engineName,
                                      const uint32_t apiVersion) :
-    mVkAllocatorCpuCallbacks(vkCreateVulkanCpuAllocationCallbacks(allocator)), mAllocator(allocator),
+    mAllocator(allocator),
     mDevices(allocator), mStorage(allocator), mName(appName), mVulkanApiVersion(apiVersion)
 {
     auto vkAppInfo = vk::ApplicationInfo{
@@ -90,29 +90,4 @@ RHIApplicationScopedHandle<RHIDevice> VulkanApplication::CreateDevice(RHIDevice:
 }
 RHIDevice* VulkanApplication::GetDevice(Handle handle) const { return mStorage.GetObjectPtr<RHIDevice>(handle); }
 void VulkanApplication::DestroyDevice(Handle handle) { mStorage.DestroyObject(handle); }
-// Vulkan Custom Allocation Callbacks
-namespace Foundation::RHI
-{
-    extern "C" {
-    void* vkCustomCpuAllocation(Allocator* alloc, size_t size, size_t alignment, vk::SystemAllocationScope)
-    {
-        return alloc->Allocate(size, alignment);
-    }
-    void* vkCustomCpuReallocation(Allocator* alloc, void* pOriginal, size_t size, size_t alignment,
-                                  vk::SystemAllocationScope)
-    {
-        return alloc->Reallocate(pOriginal, size, alignment);
-    }
-    void vkCustomCpuFree(Allocator* alloc, void* pMemory) { alloc->Deallocate(pMemory); }
-    }
-    vk::AllocationCallbacks vkCreateVulkanCpuAllocationCallbacks(Allocator* alloc)
-    {
-        return vk::AllocationCallbacks{
-            .pUserData = alloc,
-            .pfnAllocation = reinterpret_cast<vk::PFN_AllocationFunction>(vkCustomCpuAllocation),
-            .pfnReallocation = reinterpret_cast<vk::PFN_ReallocationFunction>(vkCustomCpuReallocation),
-            .pfnFree = reinterpret_cast<vk::PFN_FreeFunction>(vkCustomCpuFree),
-            .pfnInternalAllocation = nullptr,
-            .pfnInternalFree = nullptr};
-    }
-} // namespace Foundation::RHI
+
