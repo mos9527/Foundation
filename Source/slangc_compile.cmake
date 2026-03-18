@@ -28,7 +28,7 @@ function(slangc_compile TARGET)
             "${ARG_SOURCE}"
             -o "${OUTPUT_FILENAME}"
             -target spirv
-            -profile spirv_1_4
+            -profile spirv_1_6
             -matrix-layout-column-major
             -fvk-use-entrypoint-name
             -fvk-use-scalar-layout # Dense packing

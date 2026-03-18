@@ -91,7 +91,7 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     float scale = max(max(inst.scale.x,inst.scale.y),inst.scale.z);
     // -- LOD selection --
     // Always runs - and deterministic regardless of cullFlags
-    bool visible = false;
+    bool valid = false;
     float3 viewCenter;
     float radius;
     FMeshlet meshlet;
@@ -105,73 +105,75 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
             float selfError = projErrorSimple(group.error, viewCenter, group.radius * scale, globalParams.proj[1][1], globalParams.zNear);
             // Remember - we take the upper_bound of the acceptable clusters
             // where it's the *first* LOD that exceeds the error threshold
-            visible = selfError > globalParams.lodThreshold;
+            valid = selfError > globalParams.lodThreshold;
             if (meshlet.refined != ~0u){
                 group = primitive.Load<FLODGroup>(mesh.groupOffset + meshlet.refined * sizeof(FLODGroup));
                 viewCenter = pointToView(group.center, inst, globalParams.view);
                 float refError = projErrorSimple(group.error, viewCenter, group.radius * scale, globalParams.proj[1][1], globalParams.zNear);
                 // The refined ones exceeds it too - impossible unless it's closer to
                 // the actual upper bound. So cull ourselves.
-                visible &= refError <= globalParams.lodThreshold;
+                valid &= refError <= globalParams.lodThreshold;
             }
         }
     }
-    if (visible){
+    if (valid) {
         viewCenter = pointToView(meshlet.centerRadius.xyz, inst, globalParams.view);
         radius = meshlet.centerRadius.w * scale;
     }
-    // -- Cone Cull (FIXME. False positives.) --
-    if (false && visible) {
-        float3 coneApex = inst.rotation.rotate(meshlet.coneApex) * scale + inst.transform;
-        float3 camPosition = globalParams.camPosition;
-        bool pass = dot(normalize(coneApex - camPosition), meshlet.coneAxisAngle.xyz) < meshlet.coneAxisAngle.w;
-        visible &= pass;
-    }
+    bool draw = valid;
     // -- Frustum Cull --
-    if (cullFrustum && visible){
-        visible &= frustumCull(globalParams.projPlanes, viewCenter, radius, globalParams.zNear);
+    if (cullFrustum && draw) {
+        draw &= frustumCull(globalParams.projPlanes, viewCenter, radius, globalParams.zNear);
+    }
+    // -- Two-phase --
+    uint32_t meshletGlobalID = mesh.meshletGlobalIndex + meshletID;
+    if (cullOcclusion && draw) {
+        // Draw during...
+        // Early: visible in last frame?
+        // Late:  *not* visible in Early?
+        bool prev = (visibility[meshletGlobalID / 32] & (1u << (meshletGlobalID % 32))) != 0u;
+        if (early && !prev) draw = false;
+        if (late && prev) draw = false;
     }
     // -- Occlusion Cull --
-    uint32_t meshletGlobalID = mesh.meshletGlobalIndex + meshletID;
-    if (cullOcclusion && visible && globalParams.frameNumber > 0) {
-        if (late) {
-            bool phase1Visible = visibility[meshletGlobalID / 32] & (1u << (meshletGlobalID % 32));
-            if (phase1Visible)
-                visible = false; // Skip
-        }
-        if (visible) {
-            float4 aabb; // x1, y1, x2, y2 in UV
-            const float hizWidth = globalParams.hizWidth;
-            const float hizHeight = globalParams.hizHeight;
-            if (projSphereAABB(viewCenter, radius, globalParams.proj[0][0], globalParams.proj[1][1], globalParams.zNear, aabb)) {
-                // ^^^ Lets anything clipping the near plane pass
-                float width = hizWidth * (aabb.z - aabb.x);
-                float height = hizHeight * (aabb.w - aabb.y);
-                float l = max(width,height);
-                float lambda = ceil(log2(max(l, 1.0f)));
-                float2 texel = (aabb.xy + aabb.zw) * 0.5f;
-                float d = hiz.SampleLevel(hizSampler, texel, lambda).x;
-                // View space depth *decreases* with distance
-                float viewDepth = viewCenter.z + radius;
-                float dMax = globalParams.zNear / -viewDepth;
-                bool pass = d <= dMax;
-                visible &= pass;
-            }
-        }
+    // Use HZB from early
+    if (cullOcclusion && draw && late) {
+        float4 aabb; // x1, y1, x2, y2 in UV
+        const float hizWidth = globalParams.hizWidth;
+        const float hizHeight = globalParams.hizHeight;
+        if (projSphereAABB(viewCenter, radius, globalParams.proj[0][0], globalParams.proj[1][1], globalParams.zNear, aabb)) {
+            // ^^^ Lets anything clipping the near plane pass
+            float width = hizWidth * (aabb.z - aabb.x);
+            float height = hizHeight * (aabb.w - aabb.y);
+            float l = max(width, height);
+            float lambda = ceil(log2(max(l, 1.0f)));
+            float2 texel = (aabb.xy + aabb.zw) * 0.5f;
+            float d = hiz.SampleLevel(hizSampler, texel, lambda).x;
+            // View space depth *decreases* with distance
+            float viewDepth = viewCenter.z + radius;
+            float dMax = globalParams.zNear / -viewDepth;
+            bool pass = d <= dMax;
+            draw &= pass;
+         }
     }
-    // Commit to visibility buffer for occlusion if visible ONLY in early pass
-    if (cullOcclusion && early && visible)
-        InterlockedOr(visibility[meshletGlobalID / 32], 1u << (meshletGlobalID % 32));
-    uint waveVisibleCount = WaveActiveCountBits(visible);
-    if (waveVisibleCount > 0){
+    // Commit to visibility buffer for the next frame
+    if (cullOcclusion && valid && late) {
+        if (draw)
+            InterlockedOr(visibility[meshletGlobalID / 32], 1u << (meshletGlobalID % 32));
+        else
+            InterlockedAnd(visibility[meshletGlobalID / 32], ~(1u << (meshletGlobalID % 32)));
+    }
+    // Submit
+    uint waveDrawCount = WaveActiveCountBits(draw);
+    if (waveDrawCount > 0){
         uint waveMeshletOffset = 0;
         if (WaveIsFirstLane())
-            waveMeshletOffset = outMeshletCounter[0].add(waveVisibleCount);
+            waveMeshletOffset = outMeshletCounter[0].add(waveDrawCount);
         // Boardcast
         waveMeshletOffset = WaveReadLaneFirst(waveMeshletOffset);
         // Spill the big indices list into multiple dispatches
         // of kMaxMeshletsPerDispatch each.
-        uint waveMeshletCount = waveMeshletOffset + waveVisibleCount;
+        uint waveMeshletCount = waveMeshletOffset + waveDrawCount;
         waveMeshletCount = WaveReadLaneFirst(waveMeshletCount);
         if (WaveIsFirstLane()){
             uint groupCountX = (waveMeshletCount + kMeshIndirectPerDrawMeshlets - 1) / kMeshIndirectPerDrawMeshlets;
@@ -181,9 +183,9 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
             InterlockedMax(outMeshletDispatches[0].groupCountY, groupCountY);
             outMeshletDispatches[0].groupCountZ = 1;
         }
-        if (visible) {
+        if (draw) {
             // Output the visible meshlet
-            uint pos = WavePrefixCountBits(visible);
+            uint pos = WavePrefixCountBits(draw);
             uint outPos = waveMeshletOffset + pos;
             outMeshletIndices[outPos] = uint2(meshletID, work.instanceID);
         }
