@@ -1,6 +1,8 @@
 #include "Editor.hpp"
 #include "FileDialog.hpp"
 #include <imgui_internal.h>
+#include <ImGuizmo.h>
+#include <Math/Decompose.hpp>
 
 FEditorState FEState = FEInitEnter;
 /* -- Scene Data -- */
@@ -8,12 +10,15 @@ static Vector<GSInstance> GSInstances(GLOBAL_ALLOC);
 static Vector<GSMaterial> GSMaterials(GLOBAL_ALLOC);
 static Vector<GSMesh> GSMeshes(GLOBAL_ALLOC);
 static Vector<uint32_t> GSBLASes(GLOBAL_ALLOC);
-/* -- Persistent CPU Scene (Task 3) -- */
-static FScene GPersistentScene(GLOBAL_ALLOC);
+/* -- CPU Scene for saving -- */
+static FScene GScene(GLOBAL_ALLOC);
 static String GCurrentSavePath;
 static int GSelectedInstance = -1;
 static int GSelectedMaterial = -1;
 static bool GShowImGui = true;
+/* -- Gizmo -- */
+static ImGuizmo::OPERATION GGizmoOp = ImGuizmo::TRANSLATE;
+static ImGuizmo::MODE GGizmoMode = ImGuizmo::WORLD;
 /* -- Camera & Globals -- */
 static UBO GShaderGlobals;
 static FArcballCamera GCamera{
@@ -50,10 +55,10 @@ void FInitEnter()
 static void ReplaceScene(StringView path)
 {
     LOG(Editor, LogInfo, "Loading scene: {}", path);
-    FScene newScene(GLOBAL_ALLOC);
+    GScene = FScene(GLOBAL_ALLOC);
     try
     {
-        LoadScene(path, newScene);
+        LoadScene(path, GScene);
     }
     catch (...)
     {
@@ -66,7 +71,7 @@ static void ReplaceScene(StringView path)
     GSMaterials.clear();
     GSMeshes.clear();
     GSBLASes.clear();
-    GPersistentScene = FScene(GLOBAL_ALLOC);
+    
     GSelectedInstance = -1;
     GSelectedMaterial = -1;
 
@@ -74,14 +79,14 @@ static void ReplaceScene(StringView path)
     gpu->Reset();
 
     Vector<uint32_t> meshOffsets(GLOBAL_ALLOC);
-    Vector<uint32_t> textureIDMap(newScene.mTextures.size(), GLOBAL_ALLOC);
+    Vector<uint32_t> textureIDMap(GScene.mTextures.size(), GLOBAL_ALLOC);
 
     LOG(Editor, LogInfo, "Uploading new scene data to GPU");
     // 上传Mesh和Texture
     {
         ImmediateUpload upload(GContext->device.Get(), 128 * (1u << 20));
         upload.Begin();
-        for (auto& src : newScene.mMeshes)
+        for (auto& src : GScene.mMeshes)
         {
             CHECK(src.EnsureQuantized());
             CHECK(src.EnsureRaw());
@@ -93,7 +98,7 @@ static void ReplaceScene(StringView path)
                 CHECK_MSG(gpu->Upload(&upload, src, dst, offset), "Staging buffer too small for single mesh upload");
             }
         }
-        for (int id = 0; auto& src : newScene.mTextures)
+        for (int id = 0; auto& src : GScene.mTextures)
         {
             if (!src.IsValid())
             {
@@ -113,17 +118,9 @@ static void ReplaceScene(StringView path)
         upload.End(), upload.WaitIdle();
     }
 
-    // 移动到持久场景
-    for (auto& m : newScene.mMeshes)
-        GPersistentScene.mMeshes.emplace_back(std::move(m));
-    for (auto& t : newScene.mTextures)
-        GPersistentScene.mTextures.emplace_back(std::move(t));
-
     // 材质：映射纹理索引
-    for (auto& src : newScene.mMaterials)
+    for (auto& src : GScene.mMaterials)
     {
-        GPersistentScene.mMaterials.emplace_back(src);
-
         auto& dst = GSMaterials.emplace_back();
         dst.baseColorFactor = src.baseColorFactor;
         dst.emissiveFactor = src.emissiveFactor;
@@ -134,13 +131,12 @@ static void ReplaceScene(StringView path)
         dst.metallicRoughnessTexture = src.metallicRoughnessTexture != kInvalidTexture ? textureIDMap[src.metallicRoughnessTexture] : UINT32_MAX;
         dst.normalTexture = src.normalTexture != kInvalidTexture ? textureIDMap[src.normalTexture] : UINT32_MAX;
         dst.transmissionFactor = src.transmissionFactor;
+        dst.ior = src.ior;
     }
 
     // 实例
-    for (auto& src : newScene.mInstances)
+    for (auto& src : GScene.mInstances)
     {
-        GPersistentScene.mInstances.emplace_back(src);
-
         auto& dst = GSInstances.emplace_back();
         dst.transform = src.transform.transform;
         dst.rotation = src.transform.rotation;
@@ -152,16 +148,11 @@ static void ReplaceScene(StringView path)
 
     // 重新上传完整的实例和材质数组到GPU
     {
-        auto [ptr, off] = gpu->AllocateInstance(GSInstances.size());
-        std::memcpy(ptr, GSInstances.data(), GSInstances.size() * sizeof(GSInstance));
-        GShaderGlobals.firstInstance = off;
-        GShaderGlobals.numInstances = GSInstances.size();
-    }
-    {
-        auto [ptr, off] = gpu->AllocateMaterial(GSMaterials.size());
-        std::memcpy(ptr, GSMaterials.data(), GSMaterials.size() * sizeof(GSMaterial));
-        GShaderGlobals.firstMaterial = off;
-        GShaderGlobals.numMaterials = GSMaterials.size();
+        auto res = gpu->UpdateGPUScene(GSInstances, GSMaterials);
+        GShaderGlobals.firstInstance = res.firstInstance;
+        GShaderGlobals.numInstances  = res.numInstances;
+        GShaderGlobals.firstMaterial = res.firstMaterial;
+        GShaderGlobals.numMaterials  = res.numMaterials;
     }
 
     // 构建BLAS并重建TLAS
@@ -186,43 +177,42 @@ static void ReplaceScene(StringView path)
     }
 
     // 上传环境贴图（如果场景自带）
-    if (newScene.mEnvMap.has_value() && newScene.mEnvMap->IsValid())
+    if (GScene.mEnvMap.has_value() && GScene.mEnvMap->IsValid())
     {
         ImmediateUpload upload(GContext->device.Get(), 128 * (1u << 20));
         upload.Begin();
-        gpu->UploadEnvMap(&upload, *newScene.mEnvMap);
+        gpu->UploadEnvMap(&upload, *GScene.mEnvMap);
         upload.End(), upload.WaitIdle();
-        GPersistentScene.mEnvMap = std::move(newScene.mEnvMap);
+        GScene.mEnvMap = std::move(GScene.mEnvMap);
         GShaderGlobals.useEnvMap = 1u;
         LOG(Editor, LogInfo, "Uploaded scene env map");
     }
 
     // 接受相机和灯光数据
     {
-        if (!newScene.mCameras.empty())
+        if (!GScene.mCameras.empty())
         {
-            auto& camera = newScene.mCameras.front();
+            auto& camera = GScene.mCameras.front();
             vec3 dir = camera.transform.rotation * vec3(0, 0, 1);
             GCamera.center = camera.transform.transform - dir * GCamera.radius;
             GCamera.rot = camera.transform.rotation;
             GCamera.fovY = camera.fovY;
         }
-        if (!newScene.mLights.empty())
+        if (!GScene.mLights.empty())
         {
-            auto& light = newScene.mLights.front();
+            auto& light = GScene.mLights.front();
             GShaderGlobals.sunDirection = normalize(light.transform.rotation * float3(0, 0, -1));
             GShaderGlobals.sunIntensity = light.color * light.intensity;
-            GShaderGlobals.camMinEV = 0.0f;
-            GShaderGlobals.camMaxEV = log2f(light.intensity * 0.25f);
+        GShaderGlobals.camEV = log2f(light.intensity * 0.25f);
         }
-        for (auto& c : newScene.mCameras)
-            GPersistentScene.mCameras.emplace_back(c);
-        for (auto& l : newScene.mLights)
-            GPersistentScene.mLights.emplace_back(l);
+        for (auto& c : GScene.mCameras)
+            GScene.mCameras.emplace_back(c);
+        for (auto& l : GScene.mLights)
+            GScene.mLights.emplace_back(l);
     }
 
     LOG(Editor, LogInfo, "Scene load complete: {} meshes, {} instances, {} materials",
-        newScene.mMeshes.size(), newScene.mInstances.size(), newScene.mMaterials.size());
+        GScene.mMeshes.size(), GScene.mInstances.size(), GScene.mMaterials.size());
 
     // 触发渲染器重新配置
     FEState = FERunningEnter;
@@ -241,7 +231,7 @@ static void LoadEnvMap(StringView path)
         upload.Begin();
         gpu->UploadEnvMap(&upload, tex);
         upload.End(), upload.WaitIdle();
-        GPersistentScene.mEnvMap = std::move(tex);
+        GScene.mEnvMap = std::move(tex);
         GShaderGlobals.useEnvMap = 1u;
         GShaderGlobals.ptAccumualatedFrames = 0;
         // 需要重建渲染器以重新绑定环境贴图资源
@@ -261,7 +251,7 @@ static void SaveScene(StringView path)
     try
     {
         FileWriter writer(path);
-        FSerialize(writer, GPersistentScene);
+        FSerialize(writer, GScene);
         GCurrentSavePath = String(path);
         LOG(Editor, LogInfo, "Scene saved successfully");
     }
@@ -294,8 +284,10 @@ static void EditorDockSpaceAndMenuBar()
         ImGuiID dockRight;
         ImGui::DockBuilderSplitNode(dockCenter, ImGuiDir_Right, 0.25f, &dockRight, &dockCenter);
 
-        ImGui::DockBuilderDockWindow("Hierarchy", dockLeft);
-        ImGui::DockBuilderDockWindow("Inspector", dockLeft);
+        ImGuiID dockLeftTop, dockLeftBottom;
+        ImGui::DockBuilderSplitNode(dockLeft, ImGuiDir_Up, 0.5f, &dockLeftTop, &dockLeftBottom);
+        ImGui::DockBuilderDockWindow("Hierarchy", dockLeftTop);
+        ImGui::DockBuilderDockWindow("Inspector", dockLeftBottom);
         ImGui::DockBuilderDockWindow("Camera", dockRight);
         ImGui::DockBuilderDockWindow("Rendering", dockRight);
         ImGui::DockBuilderDockWindow("Profiler", dockRight);
@@ -383,40 +375,75 @@ static void FHierarchyPanel()
     // Inspector面板 (Instance)
     if (ImGui::Begin("Inspector"))
     {
-        if (GSelectedInstance >= 0 && GSelectedInstance < static_cast<int>(GSInstances.size()))
+        if (GSelectedInstance >= 0 && GSelectedInstance < static_cast<int>(GScene.mInstances.size()))
         {
-            auto& inst = GSInstances[GSelectedInstance];
+            auto& pi = GScene.mInstances[GSelectedInstance];
             ImGui::Text("Instance %d", GSelectedInstance);
             ImGui::Separator();
             bool changed = false;
-            changed |= ImGui::DragFloat3("Position", &inst.transform.x, 0.01f);
-            changed |= ImGui::DragFloat4("Rotation", &inst.rotation.x, 0.001f);
-            changed |= ImGui::DragFloat3("Scale",    &inst.scale.x, 0.01f);
+            changed |= ImGui::DragFloat3("Position", &pi.transform.transform.x, 0.01f);
+            changed |= ImGui::DragFloat4("Rotation", &pi.transform.rotation.x, 0.001f);
+            changed |= ImGui::DragFloat3("Scale",    &pi.transform.scale.x, 0.01f);
+
+            // -- Gizmo控件 --
+            ImGui::Separator();
+            if (ImGui::RadioButton("Translate (W)", GGizmoOp == ImGuizmo::TRANSLATE))
+                GGizmoOp = ImGuizmo::TRANSLATE;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Rotate (E)", GGizmoOp == ImGuizmo::ROTATE))
+                GGizmoOp = ImGuizmo::ROTATE;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Scale (Q)", GGizmoOp == ImGuizmo::SCALE))
+                GGizmoOp = ImGuizmo::SCALE;
+            if (GGizmoOp != ImGuizmo::SCALE)
+            {
+                if (ImGui::RadioButton("Local", GGizmoMode == ImGuizmo::LOCAL))
+                    GGizmoMode = ImGuizmo::LOCAL;
+                ImGui::SameLine();
+                if (ImGui::RadioButton("World", GGizmoMode == ImGuizmo::WORLD))
+                    GGizmoMode = ImGuizmo::WORLD;
+            }
+
+            // 构建模型矩阵 (TRS -> mat4)
+            mat4 modelMatrix = translate(mat4(1.0f), vec3(pi.transform.transform))
+                             * mat4_cast(pi.transform.rotation)
+                             * glm::scale(mat4(1.0f), vec3(pi.transform.scale));
+
+            // ImGuizmo渲染
+            ImGuizmo::BeginFrame();
+            ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
+            auto& io = ImGui::GetIO();
+            ImGuizmo::SetRect(0,0,io.DisplaySize.x, io.DisplaySize.y);
+            // 注意: ImGuizmo使用列主序 float[16]，与GLM mat4内存布局一致            
+            if (ImGuizmo::Manipulate(&GCamera.view[0][0], &GCamera.proj[0][0],
+                                     GGizmoOp, GGizmoMode, &modelMatrix[0][0]))
+            {
+                // 分解回 TRS
+                float3 newTranslation;
+                quat newRotation;
+                float3 newScale;
+                Foundation::Math::decompose(modelMatrix, newScale, newRotation, newTranslation);
+                pi.transform.transform = newTranslation;
+                pi.transform.rotation  = newRotation;
+                pi.transform.scale     = newScale;
+                changed = true;
+            }
             if (changed)
             {
+                // 同步CPU场景到GPU侧数据
+                auto& inst = GSInstances[GSelectedInstance];
+                inst.transform = pi.transform.transform;
+                inst.rotation  = pi.transform.rotation;
+                inst.scale     = pi.transform.scale;
                 // 重新上传实例数组到GPU
                 auto* gpu = GContext->gpuScene;
-                auto [ptr, off] = gpu->AllocateInstance(GSInstances.size());
-                std::memcpy(ptr, GSInstances.data(), GSInstances.size() * sizeof(GSInstance));
-                GShaderGlobals.firstInstance = off;
-                // 同步到持久场景
-                if (GSelectedInstance < static_cast<int>(GPersistentScene.mInstances.size()))
-                {
-                    auto& pi = GPersistentScene.mInstances[GSelectedInstance];
-                    pi.transform.transform = inst.transform;
-                    pi.transform.rotation  = inst.rotation;
-                    pi.transform.scale     = inst.scale;
-                }
-                // 重建TLAS并重置PT累积
-                {
-                    ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
-                    ctx->Begin();
-                    gpu->BuildTLAS(ctx.Get(), GSInstances, GSBLASes, false);
-                    ctx->End(), ctx.Submit(), ctx.WaitIdle();
-                }
+                auto res = gpu->UpdateGPUScene(GSInstances, GSMaterials);
+                GShaderGlobals.firstInstance = res.firstInstance;
+                GShaderGlobals.firstMaterial = res.firstMaterial;
                 GShaderGlobals.ptAccumualatedFrames = 0;
             }
             ImGui::Separator();
+            auto& inst = GSInstances[GSelectedInstance];
             ImGui::Text("Mesh Offset: %u", inst.meshOffset);
             ImGui::Text("Material Index: %u", inst.materialIndex);
             ImGui::Text("Mesh Index: %u", inst.meshIndex);
@@ -499,9 +526,7 @@ void FRunningImGui()
         cameraUpdated |= ImGui::SliderAngle("Cam FOV Y", &GCamera.fovY);
         cameraUpdated |= ImGui::SliderFloat("Aperture", &GShaderGlobals.aperture, 1e-5f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic);
         cameraUpdated |= ImGui::SliderFloat("Focal Distance", &GShaderGlobals.focalDistance, 0.1f, 1000.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
-        ImGui::SliderFloat("Min EV", &GShaderGlobals.camMinEV, -16.0f, 16.0f);
-        ImGui::SliderFloat("Max EV", &GShaderGlobals.camMaxEV, -16.0f, 16.0f);
-        ImGui::SliderFloat("Adapt Rate", &GCamera.adaptRate, 0.0f, 100.0f);
+        ImGui::SliderFloat("Exposure (EV)", &GShaderGlobals.camEV, -16.0f, 16.0f);
     }
     ImGui::End();
     if (ImGui::Begin("Rendering"))
@@ -719,10 +744,7 @@ void FRunning()
     GShaderGlobals.inverseViewProj = inverse(GShaderGlobals.proj * GShaderGlobals.view);
     GShaderGlobals.zNear = GCamera.zNear;
     GShaderGlobals.projPlanes = planeSymmetric(GShaderGlobals.proj);
-    static float prevTime = 0.0f;
-    float deltaTime = SDL_GetTicks() - prevTime;
-    prevTime = SDL_GetTicks();
-    GShaderGlobals.camAdaptCoeff = 1.0f - std::exp(-deltaTime * GCamera.adaptRate);
+
     GShaderGlobals.camPosition = GCamera.position;
     GShaderGlobals.camDirection = GCamera.rot * float3(0, 0, -1);
     GShaderGlobals.fbWidth = static_cast<float>(renderer->GetSwapchainExtent().x);
@@ -767,10 +789,17 @@ bool EditorProcessEvent(SDL_Event* event)
             rasterOrPT = !rasterOrPT;
             FEState = FERunningEnter;
         }
+        // Gizmo快捷键
+        if (event->key.key == SDLK_W)
+            GGizmoOp = ImGuizmo::TRANSLATE;
+        if (event->key.key == SDLK_E)
+            GGizmoOp = ImGuizmo::ROTATE;
+        if (event->key.key == SDLK_Q)
+            GGizmoOp = ImGuizmo::SCALE;
     }
     ImGui_ImplFoundation_ProcessEvent(event);
     auto& io = ImGui::GetIO();
-    if (!io.WantCaptureMouse)
+    if (!io.WantCaptureMouse && !ImGuizmo::IsUsing())
         cameraUpdated |= GCamera.Update(*event);
     return false;
 }

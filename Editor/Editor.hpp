@@ -19,7 +19,6 @@ struct FArcballCamera
     quat rot;
     float zNear, fovY, aspect;
     mat4 view, proj;
-    float adaptRate = 5.0f;
     bool Update(SDL_Event const& event)
     {
         bool updated = false;

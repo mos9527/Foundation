@@ -43,6 +43,7 @@ struct FMaterial
     float metallicFactor;
     float roughnessFactor;
     float transmissionFactor;
+    float ior = 1.5f;
 };
 struct FLight
 {

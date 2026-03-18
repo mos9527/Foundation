@@ -154,6 +154,7 @@ void LoadGLTF(StringView path, FScene& scene)
         material.emissiveFactor = {mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2]};
         material.emissiveFactor *= mat->emissive_strength.emissive_strength;
         material.transmissionFactor = mat->transmission.transmission_factor;
+        material.ior = mat->has_ior ? mat->ior.ior : 1.5f;
         scene.mMaterials.emplace_back(material);
     }
     /* Textures and Meshes */

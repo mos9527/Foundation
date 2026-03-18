@@ -104,6 +104,7 @@ public struct GSMaterial
     public float metallicFactor;
     public float roughnessFactor;
     public float transmissionFactor;
+    public float ior;
     public float anisotropy;
 };
 public struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
@@ -145,9 +146,7 @@ public struct UBO
     public uint32_t hizWidth;
     public uint32_t hizHeight;
     // -- Lighting
-    public float camMinEV;
-    public float camMaxEV;
-    public float camAdaptCoeff;
+    public float camEV;
     public float3 camPosition;
     public float3 camDirection;
     public float3 sunDirection;
