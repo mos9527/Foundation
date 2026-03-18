@@ -79,7 +79,7 @@ float PDFGlossy(float3 wo, float3 wi, TrowbridgeReitzDistribution mfDistrib) {
 
 // Transmittance PDF (rough dielectric Jacobian)
 float PDFTransmittance(float3 wo, float3 wi, float eta, TrowbridgeReitzDistribution mfDistrib) {
-float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
+    float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
     // Must match Refract()'s eta convention (eta_t/eta_i)
     float3 wm = normalize(wo * etap + wi);
     wm = FaceForward(wm, float3(0, 0, 1));
@@ -178,7 +178,6 @@ public struct PrincipledTransmittanceLobe : IBxDF {
         }
         if (SameHemisphere(wo, wi) || wi.z == 0) return BSDFSample();
         float pdf = PDFTransmittance(wo, wi, eta, mfDistrib);
-        if (pdf < 1e-7f) return BSDFSample();
         return BSDFSample(this.f(wo, wi, mode), wi, pdf, BxDFFlags::GlossyTransmission, etap);
     }
 
@@ -287,8 +286,8 @@ public struct PrincipledBSDF : IBxDF {
     LobeMixture mixture;
 
     public __init(float3 baseColor, float metallic, float roughness, float ior, float transmission = 0.0f, bool energyCompensation = true) {
-        ior       = max(1.0f + 1e-3f, ior);
-        roughness = max(1e-2f, roughness);
+        ior       = max(1.0f + 5e-3f, ior);
+        roughness = max(5e-3f, roughness);
 
         float dielF0 = F0FromIor(ior);
         // sampleGlossy: energy-weighted probability of sampling the dielectric specular lobe
