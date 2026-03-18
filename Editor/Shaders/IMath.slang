@@ -95,7 +95,7 @@ public struct quat
 public quat quatRotateToZ(float3 input) {
 
 	// Handle special case when input is exact or near opposite of (0, 0, 1)
-	if (input.z < -0.9999f) return quat(float4(1.0f, 0.0f, 0.0f, 0.0f));
+	if (input.z < EPS - 1) return quat(float4(1.0f, 0.0f, 0.0f, 0.0f));
 	return quat(normalize(float4(input.y, -input.x, 0.0f, 1.0f + input.z)));
 }
 // -- de/quantization
@@ -174,24 +174,24 @@ public uint32_t packTBN(in float3 normal, in float3 tangent, in float bitangentS
     float cosAngle = dot(tangent, b1), sinAngle = dot(tangent, b2);
     float octAngle = packUnitCircleSnorm(float2(cosAngle, sinAngle));
     float2 oct = packUnitOctahedralSnorm(normal);
-    uint32_t nX = quantizeSnormShifted(oct.x, 10), nY = quantizeSnormShifted(oct.y, 10);
-    uint32_t tA = quantizeSnormShifted(octAngle, 10);
+    uint32_t nX = quantizeSnormShifted(oct.x, 12), nY = quantizeSnormShifted(oct.y, 12);
+    uint32_t tA = quantizeSnormShifted(octAngle, 7);
     uint32_t bS = bitangentSign >= 0.0f ? 1 : 0;
     uint32_t tbn32 = 0;
-    tbn32 = bitfieldInsert(tbn32, nX, 0, 10);
-    tbn32 = bitfieldInsert(tbn32, nY, 10, 10);
-    tbn32 = bitfieldInsert(tbn32, tA, 20, 10);
-    tbn32 = bitfieldInsert(tbn32, bS, 30, 2);
+    tbn32 = bitfieldInsert(tbn32, nX, 0, 12);
+    tbn32 = bitfieldInsert(tbn32, nY, 12, 12);
+    tbn32 = bitfieldInsert(tbn32, tA, 24, 7);
+    tbn32 = bitfieldInsert(tbn32, bS, 31, 1);
     return tbn32;
 }
 public void unpackTBN(uint32_t packed, out float3 outNormal, out float3 outTangent, out float outBitangentSign) {
-    uint32_t nX = bitfieldExtract(packed, 0, 10);
-    uint32_t nY = bitfieldExtract(packed, 10, 10);
-    uint32_t tA = bitfieldExtract(packed, 20, 10);
-    uint32_t bS = bitfieldExtract(packed, 30, 2);
-    float2 normalOct = float2(dequantizeSnormShifted(nX, 10), dequantizeSnormShifted(nY, 10));
+    uint32_t nX = bitfieldExtract(packed, 0, 12);
+    uint32_t nY = bitfieldExtract(packed, 12, 12);
+    uint32_t tA = bitfieldExtract(packed, 24, 7);
+    uint32_t bS = bitfieldExtract(packed, 31, 1);
+    float2 normalOct = float2(dequantizeSnormShifted(nX, 12), dequantizeSnormShifted(nY, 12));
     outNormal = unpackUnitOctahedralSnorm(normalOct);
-    float octAngle = dequantizeSnormShifted(tA, 10);
+    float octAngle = dequantizeSnormShifted(tA, 7);
     float2 octXY = unpackUnitCircleSnorm(octAngle);
     float3 b1, b2;
     buildOrthonormalBasis(outNormal, b1, b2);

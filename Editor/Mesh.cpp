@@ -54,8 +54,7 @@ float2 unpackUnitCircleSnorm(float v){
 // Tangent is derived from orthonormal basis around normal with a rotation angle
 // Similar to 3 BYTE TANGENT FRAMES from "Rendering the Hellscape of Doom Eternal - SIGGRAPH 2020" by Jorge Jimenez et
 // al.
-// Octahedral normal [10+10] + tangent rotation [10] + bitangent sign [2]
-// As a side effect - with tangent of length 0, a valid frame is still reconstructed
+// Octahedral normal [12+12] + tangent rotation [7] + bitangent sign [1]
 uint32_t FQVertex::PackTBN(const float3& normal, const float3& tangent, float bitangentSign)
 {
     float3 b1, b2;
@@ -63,25 +62,25 @@ uint32_t FQVertex::PackTBN(const float3& normal, const float3& tangent, float bi
     float cosAngle = dot(tangent, b1), sinAngle = dot(tangent, b2);
     float octAngle = packUnitCircleSnorm(float2(cosAngle, sinAngle));
     float2 oct = packUnitOctahedralSnorm(normal);
-    uint32_t nX = quantizeSnormShifted(oct.x, 10), nY = quantizeSnormShifted(oct.y, 10);
-    uint32_t tA = quantizeSnormShifted(octAngle, 10);
+    uint32_t nX = quantizeSnormShifted(oct.x, 12), nY = quantizeSnormShifted(oct.y, 12);
+    uint32_t tA = quantizeSnormShifted(octAngle, 7);
     uint32_t bS = bitangentSign >= 0.0f ? 1 : 0;
     uint32_t tbn32 = 0;
-    tbn32 = bitfieldInsert(tbn32, nX, 0, 10);
-    tbn32 = bitfieldInsert(tbn32, nY, 10, 10);
-    tbn32 = bitfieldInsert(tbn32, tA, 20, 10);
-    tbn32 = bitfieldInsert(tbn32, bS, 30, 2);
+    tbn32 = bitfieldInsert(tbn32, nX, 0, 12);
+    tbn32 = bitfieldInsert(tbn32, nY, 12, 12);
+    tbn32 = bitfieldInsert(tbn32, tA, 24, 7);
+    tbn32 = bitfieldInsert(tbn32, bS, 31, 1);
     return tbn32;
 }
 void FQVertex::UnpackTBN(uint32_t packed, float3& outNormal, float3& outTangent, float& outBitangentSign)
 {
-    uint32_t nX = bitfieldExtract(packed, 0, 10);
-    uint32_t nY = bitfieldExtract(packed, 10, 10);
-    uint32_t tA = bitfieldExtract(packed, 20, 10);
-    uint32_t bS = bitfieldExtract(packed, 30, 2);
-    float2 normalOct = float2(dequantizeSnormShifted(nX, 10), dequantizeSnormShifted(nY, 10));
+    uint32_t nX = bitfieldExtract(packed, 0, 12);
+    uint32_t nY = bitfieldExtract(packed, 12, 12);
+    uint32_t tA = bitfieldExtract(packed, 24, 7);
+    uint32_t bS = bitfieldExtract(packed, 31, 1);
+    float2 normalOct = float2(dequantizeSnormShifted(nX, 12), dequantizeSnormShifted(nY, 12));
     outNormal = unpackUnitOctahedralSnorm(normalOct);
-    float octAngle = dequantizeSnormShifted(tA, 10);
+    float octAngle = dequantizeSnormShifted(tA, 7);
     float2 octXY = unpackUnitCircleSnorm(octAngle);
     float3 b1, b2;
     buildOrthonormalBasis(outNormal, b1, b2);
