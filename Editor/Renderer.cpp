@@ -413,10 +413,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
                        .extent = {w, h, 1},
                        .format = RHIResourceFormat::B10G11R11Ufloat});
-    auto HistogramBins = renderer->CreateResource(
-        "Histogram", RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * 64});
-    auto LightingAverageLuma = renderer->CreateResource("Lighting Average Luminance",
-                                                        RHIBufferDesc{.usage = StorageBuffer, .size = sizeof(float)});
+
     auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
     auto LUTSampler = renderer->CreateSampler({
     .addressMode = {
@@ -453,52 +450,15 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindTextureUAV(self, LightingBuffer, "output", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
                                                  .range = RHITextureSubresourceRange::Create()});
-            // Clear for Binning
-            r->BindBufferCopyDst(self, HistogramBins);
+
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
-            auto* histogram = r->DerefResource(HistogramBins).Get<RHIBuffer*>();
-            cmd->FillBuffer(histogram, 0u);
             RHIExtent2D wh = r->GetSwapchainExtent();
             r->CmdSetPipeline(self, cmd);
             r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
         });
-    if (!kDebugViewUnlit)
-    {
-        renderer->CreatePass(
-            "Histogram Binning", RHIDeviceQueueType::Graphics, 0u,
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSHistogramBinning.spv"));
-                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-                r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::ComputeShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
-                                                     .range = RHITextureSubresourceRange::Create(
-                                                         RHITextureAspectFlagBits::Color, 0, 1)});
-                r->BindBufferUnordered(self, HistogramBins, RHIPipelineStageBits::ComputeShader, "bins");
-            },
-            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-            {
-                RHIExtent2D wh = r->GetSwapchainExtent();
-                r->CmdSetPipeline(self, cmd);
-                r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
-            });
-        renderer->CreatePass(
-            "Histogram Binning Reduce", RHIDeviceQueueType::Graphics, 0u,
-            [=](PassHandle self, Renderer* r)
-            {
-                r->BindShader(self, RHIShaderStageBits::Compute, "reduce", Paths::Resolve("data/shaders/ECSHistogramReduce.spv"));
-                r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-                r->BindBufferUnordered(self, HistogramBins, RHIPipelineStageBits::ComputeShader, "bins");
-                r->BindBufferUnordered(self, LightingAverageLuma, RHIPipelineStageBits::ComputeShader, "output");
-            },
-            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-            {
-                r->CmdSetPipeline(self, cmd);
-                cmd->Dispatch(1, 1, 1);
-            });
-    }
+
     createPSFullscreenPass(
         renderer, "Blit Image",
         [=](PassHandle self, Renderer* r)
@@ -512,7 +472,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                  .range = RHITextureSubresourceRange::Create()});
-            r->BindBufferStorageRead(self, LightingAverageLuma, RHIPipelineStageBits::FragmentShader, "sceneLuma");
+            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
             r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader, "globalMax");
         });
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});

@@ -1,7 +1,8 @@
 #include "IFlags.slang"
+#include "ICommon.slang"
 [[SpecializationConstant]] int flags;
 Texture2D lighting;
-StructuredBuffer<float> sceneLuma;
+uniform UBO globalParams;
 
 
 // https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
@@ -23,10 +24,9 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
         return lighting.Load(coord);
     } else {
         // Main postprocess routine
-        float Lavg = sceneLuma.Load(0u);
         float3 Lpix = lighting.Load(coord).xyz;
-        // Exposure
-        float3 L = Lpix/(Lavg * 9.6f);
+        // Manual EV exposure
+        float3 L = Lpix * exp2(-globalParams.camEV);
         // ACES
         L = ACESFilm(L);
         // Inverse Gamma EOTF

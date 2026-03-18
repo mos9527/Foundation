@@ -52,6 +52,7 @@ struct GSMaterial
     float metallicFactor;
     float roughnessFactor;
     float transmissionFactor;
+    float ior;
     float anisotropy;
 };
 #pragma pack(pop)
@@ -140,6 +141,23 @@ public:
 
     Pair<GSInstance*, uint32_t> AllocateInstance(uint32_t count);
     Pair<GSMaterial*, uint32_t> AllocateMaterial(uint32_t count);
+
+    /**
+     * @brief Result of UpdateGPUScene: ring-buffer offsets and element counts
+     *        for instances and materials, ready to be written into the UBO.
+     */
+    struct UpdateResult
+    {
+        uint32_t firstInstance;
+        uint32_t numInstances;
+        uint32_t firstMaterial;
+        uint32_t numMaterials;
+    };
+    /**
+     * @brief Bulk-copies GS instance and material arrays into the GPU ring buffers.
+     * @return Offsets / counts to populate the UBO with.
+     */
+    UpdateResult UpdateGPUScene(Span<const GSInstance> instances, Span<const GSMaterial> materials);
 
     [[nodiscard]] String DbgGetBufferStatistics() const;
 

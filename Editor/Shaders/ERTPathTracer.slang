@@ -19,14 +19,34 @@ RWTexture2D<float4> accumulation;
 RWTexture2D<float4> lighting;
 [[vk_binding(0,2)]] Texture2D<float4> textures[];
 
-void IntersectTriangle(uint meshOffset, uint primitive, float2 bary,
-    out float3 position, out float3 normal, out float3 geometryNormal,
-    out float3 tangent, out float2 uv, out float bitangentSign)
+// World-space hit geometry
+struct HitState
 {
+    float3 position;
+    float3 normal;
+    float3 geometryNormal;
+    float3 tangent;
+    float3 bitangent;
+    float2 uv;
+};
+
+HitState getHitState(uint meshOffset, uint primitive, float2 bary, GSInstance inst, float3 rayOrigin, float3 rayDirection, float hitT)
+{
+    HitState hit;
+
+    // Construct position from ray equation (more robust than interpolation + transform)
+    hit.position  = rayOrigin + rayDirection * hitT;
+
+    // Barycentric weights
+    const float3 barycentrics = float3(1.0 - bary.x - bary.y, bary.x, bary.y);
+
+    // Fetch triangle indices
     GSMesh mesh = primitives.Load<GSMesh>(meshOffset);
     uint i0 = primitives.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 0) * sizeof(uint32_t));
     uint i1 = primitives.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 1) * sizeof(uint32_t));
     uint i2 = primitives.Load<uint32_t>(mesh.idxOffset + (primitive * 3 + 2) * sizeof(uint32_t));
+
+    // Fetch and decode vertices
     FQVertex vq0 = primitives.Load<FQVertex>(mesh.vtxOffset + i0 * sizeof(FQVertex));
     FQVertex vq1 = primitives.Load<FQVertex>(mesh.vtxOffset + i1 * sizeof(FQVertex));
     FQVertex vq2 = primitives.Load<FQVertex>(mesh.vtxOffset + i2 * sizeof(FQVertex));
@@ -38,13 +58,23 @@ void IntersectTriangle(uint meshOffset, uint primitive, float2 bary,
     FQDecode(vq0, p0, n0, t0, bi0, u0);
     FQDecode(vq1, p1, n1, t1, bi1, u1);
     FQDecode(vq2, p2, n2, t2, bi2, u2);
-    position = p0 * (1 - bary.x - bary.y) + p1 * bary.x + p2 * bary.y;
-    normal = normalize(n0 * (1 - bary.x - bary.y) + n1 * bary.x + n2 * bary.y);
-    tangent = normalize(t0 * (1 - bary.x - bary.y) + t1 * bary.x + t2 * bary.y);
-    bitangentSign = bi0 * (1 - bary.x - bary.y) + bi1 * bary.x + bi2 * bary.y;
-    uv = u0 * (1 - bary.x - bary.y) + u1 * bary.x + u2 * bary.y;
-    float3 e20 = p2 - p0, e10 = p1 - p0;
-    geometryNormal = normalize(cross(e10, e20));
+
+    // Interpolate vertex attributes (model space)
+    const float3 normal         = normalize(n0 * barycentrics.x + n1 * barycentrics.y + n2 * barycentrics.z);
+    const float3 tangent        = normalize(t0 * barycentrics.x + t1 * barycentrics.y + t2 * barycentrics.z);
+    const float  bitangentSign  = bi0 * barycentrics.x + bi1 * barycentrics.y + bi2 * barycentrics.z;
+    hit.uv                      = u0 * barycentrics.x + u1 * barycentrics.y + u2 * barycentrics.z;
+
+    // Geometry normal from triangle edges
+    const float3 geoNormal = normalize(cross(p1 - p0, p2 - p0));
+
+    // Transform normals/tangents to world space via instance TRS
+    hit.normal         = normalize(inst.rotation.rotate(normal / inst.scale));
+    hit.tangent        = normalize(inst.rotation.rotate(tangent / inst.scale));
+    hit.geometryNormal = normalize(inst.rotation.rotate(geoNormal / inst.scale));
+    hit.bitangent      = cross(hit.normal, hit.tangent) * (bitangentSign > 0.0f ? 1 : -1);
+
+    return hit;
 }
 
 void SampleMaterials(GSMaterial material, float2 uv,
@@ -68,14 +98,10 @@ static const uint32_t INSTANCE_NO_HIT = ~0u;
 
 struct HitPayload
 {
-    // Model space
-    float3 position;
-    float3 normal;
-    float3 geometryNormal;
-    float4 tangent;
-    float2 uv;
     uint32_t instance;
-    uint32_t material;
+    uint32_t primitive;
+    float2 bary;
+    float hitT;
 
     bool IsHit() { return instance != INSTANCE_NO_HIT; }
 };
@@ -87,11 +113,7 @@ struct ShadowPayload
 
 struct Payload
 {
-    float3 position;
-    float3 normal;
-    float3 tangent;
-    float3 bitangent;
-    float3 geometryNormal;
+    HitState hit;
     uint materialID;
     float3 baseColor;
     float3 emissive;
@@ -100,31 +122,24 @@ struct Payload
     float transmission;
     float ior;
 };
-Payload SamplePayload(HitPayload payload)
+Payload SamplePayload(HitPayload payload, RayDesc ray)
 {
     if (!payload.IsHit()) // Misuse
         return {};
     GSInstance inst = instances[NonUniformResourceIndex(payload.instance)];
     Payload res;
     res.materialID = inst.materialIndex;
+    res.hit = getHitState(inst.meshOffset, payload.primitive, payload.bary, inst, ray.Origin, ray.Direction, payload.hitT);
     GSMaterial material = materials[NonUniformResourceIndex(res.materialID)];
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
-    SampleMaterials(material, payload.uv, baseColor4, normalTBN, pbrMetalRough, emissive4);
+    SampleMaterials(material, res.hit.uv, baseColor4, normalTBN, pbrMetalRough, emissive4);
     res.baseColor = baseColor4.xyz;
     res.emissive = emissive4.xyz;
     res.roughness = pbrMetalRough.y;
     res.metallic = pbrMetalRough.z;
-    res.normal = normalize(payload.normal);
-    res.tangent = normalize(payload.tangent.xyz);
-    res.geometryNormal = normalize(payload.geometryNormal);
-    res.normal = inst.rotation.rotate(res.normal);
-    res.tangent = inst.rotation.rotate(res.tangent);
-    res.geometryNormal = inst.rotation.rotate(res.geometryNormal);
-    res.position = inst.rotation.rotate(payload.position);
-    res.position = res.position * inst.scale + inst.transform;
-    res.bitangent = cross(res.normal, res.tangent) * (payload.tangent.w > 0.0f ? 1 : -1);
-    res.normal = normalize(res.tangent * normalTBN.x + res.bitangent * normalTBN.y + res.normal * normalTBN.z);
-    res.ior = 1.5f; // TODO
+    // Apply normal map in tangent space
+    res.hit.normal = normalize(res.hit.tangent * normalTBN.x + res.hit.bitangent * normalTBN.y + res.hit.normal * normalTBN.z);
+    res.ior = material.ior;
     res.transmission = material.transmissionFactor;
     return res;
 }
@@ -244,38 +259,38 @@ void RayGeneration()
             L += beta * light.Le(-view) * mis;
             break;
         }
-        Payload hit = SamplePayload(payload);
+        Payload surface = SamplePayload(payload, ray);
 
         // Debug View
         if (flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition)) {
             if (flags & kViewBaseColor) {
-                L = hit.baseColor;
+                L = surface.baseColor;
             } else if (flags & kViewNormal) {
-                L = hit.normal * 0.5f + 0.5f;
+                L = surface.hit.normal * 0.5f + 0.5f;
             } else if (flags & kViewMaterialID) {
-                L = unpackUnorm4x8ToFloat(hash(hit.materialID)).xyz;
+                L = unpackUnorm4x8ToFloat(hash(surface.materialID)).xyz;
             } else if (flags & kViewPosition) {
-                L = hit.position;
+                L = surface.hit.position;
             }
             break;
         }
         // -- Path Integrator
         // Local frame setup
-        quat toLocal = quatRotateToZ(hit.normal);
+        quat toLocal = quatRotateToZ(surface.hit.normal);
         quat toWorld = toLocal.inverted();
         float3 wo = toLocal.rotate(view);
-        IBxDF bsdf = PrincipledBSDF(hit.baseColor, hit.metallic, hit.roughness, hit.ior, hit.transmission, true);
+        IBxDF bsdf = PrincipledBSDF(surface.baseColor, surface.metallic, surface.roughness, surface.ior, surface.transmission, true);
         // Light sampling via LightMixture
         // https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling
         {
-            LightSampleContext ctx = LightSampleContext(hit.position, hit.geometryNormal, hit.normal);
+            LightSampleContext ctx = LightSampleContext(surface.hit.position, surface.hit.geometryNormal, surface.hit.normal);
             // Sample_Li returns: radiance = Li/(pdf*pChoice), pdf = mixture PDF
             LightLiSample Li = light.Sample_Li(ctx, rng.sample(), rng.sample2D());
             SampledSpectrum radiance = Li.Li;
             // Shadow ray
             if (Li.pdf > EPS) {
-                float3 shadowNormalFF = dot(Li.wi, hit.geometryNormal) < 0.0f ? -hit.geometryNormal : hit.geometryNormal;
-                float3 shadowOrigin = OffsetRay(hit.position, shadowNormalFF);
+                float3 shadowNormalFF = dot(Li.wi, surface.hit.geometryNormal) < 0.0f ? surface.hit.geometryNormal : surface.hit.geometryNormal;
+                float3 shadowOrigin = OffsetRay(surface.hit.position, shadowNormalFF);
                 bool shadowed = TraceShadowRay(shadowOrigin, Li.wi);
                 if (shadowed)
                     Li.pdf = 0.0f;
@@ -293,7 +308,7 @@ void RayGeneration()
         if (flags & kViewPTDirect)
             break;
         // Emissive
-        L += beta * hit.emissive;
+        L += beta * surface.emissive;
         BSDFSample sample = bsdf.Sample_f(wo, rng.sample(), rng.sample2D());
         if (!sample.IsValid()) {
             break;
@@ -304,8 +319,8 @@ void RayGeneration()
             break;
         ray.Direction = toWorld.rotate(sample.wi);
 
-        float3 rayNormal = dot(ray.Direction, hit.geometryNormal) < 0.0f ? -hit.geometryNormal : hit.geometryNormal;
-        ray.Origin = OffsetRay(hit.position, rayNormal);
+        float3 rayNormal = dot(ray.Direction, surface.hit.geometryNormal) < 0.0f ? -surface.hit.geometryNormal : surface.hit.geometryNormal;
+        ray.Origin = OffsetRay(surface.hit.position, rayNormal);
         // Russian Roulette (after 2nd bounce)
         if (bounce >= 2) {
             float rrPCount = min(MaxComponent(beta) + 0.01f, 0.95f);
@@ -340,9 +355,8 @@ bool AnyHitOpacityIgnore(inout PCG rng, uint instance, uint primitive,
     GSMaterial material = materials[NonUniformResourceIndex(inst.materialIndex)];
     float4 baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u) {
-        HitPayload payload;
-        IntersectTriangle(inst.meshOffset, primitive, attr.barycentrics.xy, payload.position, payload.normal, payload.geometryNormal, payload.tangent.xyz, payload.uv, payload.tangent.w);
-        baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, payload.uv, 0);
+        HitState hs = getHitState(inst.meshOffset, primitive, attr.barycentrics.xy, inst, WorldRayOrigin(), WorldRayDirection(), RayTCurrent());
+        baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, hs.uv, 0);
     }
     float opacity = baseColor.a;
     if (opacity == 1.0f)
@@ -380,12 +394,10 @@ void ShadowRayAnyHit(inout ShadowPayload payload, in BuiltInTriangleIntersection
 [shader("closesthit")] // Hit Group 0
 void RayClosestHit(inout HitPayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
-    uint instance = InstanceIndex();
-    GSInstance inst = instances[NonUniformResourceIndex(instance)];
-    GSMaterial material = materials[NonUniformResourceIndex(inst.materialIndex)];
-    IntersectTriangle(inst.meshOffset, PrimitiveIndex(), attr.barycentrics.xy, payload.position, payload.normal, payload.geometryNormal, payload.tangent.xyz, payload.uv, payload.tangent.w);
-    payload.instance = instance;
-    payload.material = inst.materialIndex;
+    payload.instance = InstanceIndex();
+    payload.primitive = PrimitiveIndex();
+    payload.bary = attr.barycentrics.xy;
+    payload.hitT = RayTCurrent();
 }
 
 [shader("miss")] // Miss 0

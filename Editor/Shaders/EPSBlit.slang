@@ -1,10 +1,11 @@
 #include "IFlags.slang"
+#include "ICommon.slang"
 [[SpecializationConstant]] int flags;
 
 StructuredBuffer<uint32_t> globalMax;
 Texture2D<uint32_t> overdraw;
 Texture2D lighting;
-StructuredBuffer<float> sceneLuma;
+uniform UBO globalParams;
 
 float3 heatmapGradient(float t) {
     float3 c0 = float3(0.000, 0.000, 0.002);
@@ -50,10 +51,9 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
         return lighting.Load(coord);
     } else {
         // Main postprocess routine
-        float Lavg = sceneLuma.Load(0u);
         float3 Lpix = lighting.Load(coord).xyz;
-        // Exposure
-        float3 L = Lpix/(Lavg * 9.6f);
+        // Manual EV exposure
+        float3 L = Lpix * exp2(-globalParams.camEV);
         // ACES
         L = ACESFilm(L);
         // Inverse Gamma EOTF

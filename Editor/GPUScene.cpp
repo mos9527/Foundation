@@ -71,6 +71,24 @@ Pair<GSMaterial*, uint32_t> GPUScene::AllocateMaterial(uint32_t count)
     return mMaterialBuffer.Allocate(count);
 }
 
+GPUScene::UpdateResult GPUScene::UpdateGPUScene(Span<const GSInstance> instances, Span<const GSMaterial> materials)
+{
+    UpdateResult res{};
+    {
+        auto [ptr, off] = AllocateInstance(static_cast<uint32_t>(instances.size()));
+        std::memcpy(ptr, instances.data(), instances.size() * sizeof(GSInstance));
+        res.firstInstance = off;
+        res.numInstances = static_cast<uint32_t>(instances.size());
+    }
+    {
+        auto [ptr, off] = AllocateMaterial(static_cast<uint32_t>(materials.size()));
+        std::memcpy(ptr, materials.data(), materials.size() * sizeof(GSMaterial));
+        res.firstMaterial = off;
+        res.numMaterials = static_cast<uint32_t>(materials.size());
+    }
+    return res;
+}
+
 String GPUScene::DbgGetBufferStatistics() const
 {
     String res;
