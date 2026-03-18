@@ -5,16 +5,8 @@
 #include "Common.hpp"
 #include "Device.hpp"
 namespace Foundation::RHI {
-    extern "C" {
-        // Custom allocation callbacks for Vulkan on CPU
-        void* vkCustomCpuAllocation(Allocator* alloc, size_t size, size_t alignment, vk::SystemAllocationScope allocationScope);
-        void* vkCustomCpuReallocation(Allocator* alloc, void* pOriginal, size_t size, size_t alignment, vk::SystemAllocationScope allocationScope);
-        void vkCustomCpuFree(Allocator* alloc, void* pMemory);
-    }
-    vk::AllocationCallbacks vkCreateVulkanCpuAllocationCallbacks(Allocator* alloc);
     class VulkanDevice;
     class VulkanApplication : public RHIApplication {
-        vk::AllocationCallbacks mVkAllocatorCpuCallbacks;
         vk::raii::PhysicalDevices mPhysicalDevices{ nullptr };
         vk::raii::Instance mInstance{ nullptr };
         Allocator* mAllocator;
@@ -41,7 +33,6 @@ namespace Foundation::RHI {
         void DestroyDevice(Handle handle) override;
 
         Allocator* GetAllocator() const { return mAllocator; }
-        vk::AllocationCallbacks const& GetVkAllocatorCallbacks() const { return mVkAllocatorCpuCallbacks; }
         auto const& GetVkInstance() const { return mInstance; }
     };
 }

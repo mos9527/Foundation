@@ -55,10 +55,10 @@ void VulkanSwapchain::Instantiate() {
     mImages.reset();
     mImages = ConstructUnique<RHIObjectPool<VulkanTexture>>(mDevice.GetAllocator(), mDevice.GetAllocator());
     mImagesPtrs.clear();
-    mSwapchain = vk::raii::SwapchainKHR(device, create_info, mDevice.GetVkAllocatorCallbacks());
+    mSwapchain = vk::raii::SwapchainKHR(device, create_info, nullptr);
     auto images = mSwapchain.getImages();
     for (auto& image : images) {
-        const Handle handle = mImages->CreateObject<VulkanTexture>(mDevice, RHITextureDesc{}, vk::raii::Image(device, image, mDevice.GetVkAllocatorCallbacks()), true /*shared=true*/);
+        const Handle handle = mImages->CreateObject<VulkanTexture>(mDevice, RHITextureDesc{}, vk::raii::Image(device, image, nullptr), true /*shared=true*/);
         mImagesPtrs.push_back(mImages->GetObjectPtr(handle));
     }
     // Update actual extents
