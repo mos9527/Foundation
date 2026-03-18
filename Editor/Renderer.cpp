@@ -102,13 +102,11 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         {
             r->BindBufferCopyDst(self, GlobalUBO);
             r->BindBufferCopyDst(self, IndirectTaskCounter);
-            r->BindBufferCopyDst(self, Visibility);
         },
         [=](PassHandle, Renderer* r, RHICommandList* cmd)
         {
             auto* ubo = r->DerefResource(GlobalUBO).Get<RHIBuffer*>();
             auto* counter = r->DerefResource(IndirectTaskCounter).Get<RHIBuffer*>();
-            auto* occlusion = r->DerefResource(Visibility).Get<RHIBuffer*>();
             // Fill, Update are considered Transfer operations
             // and would require proper barriers - which are automatically handled
             // by the Renderer *inter* passes.
@@ -116,7 +114,6 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             // TODO: Document these.
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(*scene.gsGlobals)));
             cmd->FillBuffer(counter, 0u);
-            cmd->FillBuffer(occlusion, 0u);
         });
     bool kDebugViewUnlit = cfg.viewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewMeshlet);
     // Raytracing
@@ -124,7 +121,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
     if (cfg.viewFlags & kViewEnableRaytracing && !kDebugViewUnlit)
     {
         renderer->CreatePass(
-            "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
+            "TLAS Update", RHIDeviceQueueType::Compute, 0u, [=](PassHandle self, Renderer* r)
             { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
             { gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, true); });
     }
@@ -289,6 +286,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                     // Clear the counter
                     auto* msCounter = r->DerefResource(IndirectMeshletCounter).Get<RHIBuffer*>();
                     auto* msDispatches = r->DerefResource(IndirectMeshletDispatch).Get<RHIBuffer*>();
+                    auto* msVisibility = r->DerefResource(Visibility).Get<RHIBuffer*>();
                     cmd->FillBuffer(msCounter, 0u);
                     cmd->FillBuffer(msDispatches, 0u);
                     cmd->BeginTransition();
