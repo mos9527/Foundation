@@ -128,6 +128,17 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         .srcStage = RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::Transfer,
         .dstStage = RHIPipelineStageBits::ComputeShader};
     renderer->CreatePass(
+        "Indirect Meshlet Cull Clear", RHIDeviceQueueType::Graphics, 0u,
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindBufferCopyDst(self, IndirectTaskDispatch);
+        },
+        [=](PassHandle, Renderer* r, RHICommandList* cmd)
+        {
+            auto* taskDispatch = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
+            cmd->FillBuffer(taskDispatch, 0u);
+        });
+    renderer->CreatePass(
         "Indirect Meshlet Cull Generation", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
@@ -137,16 +148,10 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
             r->BindBufferUnordered(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "outTasks");
             r->BindBufferUnordered(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "outTasksCounter");
-            r->BindBufferUnordered(self, IndirectTaskDispatch, RHIPipelineStageBits::ComputeShader, "outTasksDispatch",
-                                   RHIPipelineStageBits::Transfer, RHIResourceAccessBits::TransferWrite);
+            r->BindBufferUnordered(self, IndirectTaskDispatch, RHIPipelineStageBits::ComputeShader, "outTasksDispatch");
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
-            auto* taskDispatch = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
-            cmd->FillBuffer(taskDispatch, 0u);
-            cmd->BeginTransition();
-            cmd->SetBufferTransition(taskDispatch, kIndirectBufferClearTransition);
-            cmd->EndTransition();
             r->CmdSetPipeline(self, cmd);
             // TODO: This limits us to 65536 instances
             r->CmdDispatch(self, cmd, {scene.gsGlobals->numInstances, 1, 1});
@@ -240,6 +245,21 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             // Note that we don't actually use Task Shaders - for inexplicable reasons described
             // in ECSCullMeshlets.
             renderer->CreatePass(
+                early ? "Indirect Meshlet Cull Clear [Stage 1]" : "Indirect Meshlet Cull Clear [Stage 2]",
+                RHIDeviceQueueType::Graphics, 0u,
+                [=](PassHandle self, Renderer* r)
+                {
+                    r->BindBufferCopyDst(self, IndirectMeshletCounter);
+                    r->BindBufferCopyDst(self, IndirectMeshletDispatch);
+                },
+                [=](PassHandle, Renderer* r, RHICommandList* cmd)
+                {
+                    auto* msCounter = r->DerefResource(IndirectMeshletCounter).Get<RHIBuffer*>();
+                    auto* msDispatches = r->DerefResource(IndirectMeshletDispatch).Get<RHIBuffer*>();
+                    cmd->FillBuffer(msCounter, 0u);
+                    cmd->FillBuffer(msDispatches, 0u);
+                });
+            renderer->CreatePass(
                 early ? "Indirect Meshlet Cull Dispatch [Stage 1]" : "Indirect Meshlet Cull Dispatch [Stage 2]",
                 RHIDeviceQueueType::Graphics, 0u,
                 [=](PassHandle self, Renderer* r)
@@ -255,9 +275,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                     r->BindBufferIndirectRead(self, IndirectTaskDispatch);
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
-                    r->BindBufferUnordered(self, Visibility,
-                                           RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
-                                           "visibility");
+                    r->BindBufferUnordered(self, Visibility, RHIPipelineStageBits::ComputeShader, "visibility");
                     r->BindTextureSampler(self, HIZSampler, "hizSampler");
                     r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
@@ -267,29 +285,17 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                     r->BindBufferStorageRead(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader,
                                              "inTasksCounter");
                     r->BindBufferUnordered(self, IndirectMeshlets,
-                                           RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
+                                           RHIPipelineStageBits::ComputeShader,
                                            "outMeshletIndices");
                     r->BindBufferUnordered(self, IndirectMeshletCounter,
-                                           RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
-                                           "outMeshletCounter",
-                                           RHIPipelineStageBits::Transfer, RHIResourceAccessBits::TransferWrite);
+                                           RHIPipelineStageBits::ComputeShader,
+                                           "outMeshletCounter");
                     r->BindBufferUnordered(self, IndirectMeshletDispatch,
-                                           RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
-                                           "outMeshletDispatches",
-                                           RHIPipelineStageBits::Transfer, RHIResourceAccessBits::TransferWrite);
+                                           RHIPipelineStageBits::ComputeShader,
+                                           "outMeshletDispatches");
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
-                    // Clear the counter
-                    auto* msCounter = r->DerefResource(IndirectMeshletCounter).Get<RHIBuffer*>();
-                    auto* msDispatches = r->DerefResource(IndirectMeshletDispatch).Get<RHIBuffer*>();
-                    auto* msVisibility = r->DerefResource(Visibility).Get<RHIBuffer*>();
-                    cmd->FillBuffer(msCounter, 0u);
-                    cmd->FillBuffer(msDispatches, 0u);
-                    cmd->BeginTransition();
-                    cmd->SetBufferTransition(msCounter, kIndirectBufferClearTransition);
-                    cmd->SetBufferTransition(msDispatches, kIndirectBufferClearTransition);
-                    cmd->EndTransition();
                     r->CmdSetPipeline(self, cmd);
                     auto* dispatchBuffer = r->DerefResource(IndirectTaskDispatch).Get<RHIBuffer*>();
                     cmd->DispatchIndirect(dispatchBuffer, 0);

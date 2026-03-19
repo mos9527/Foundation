@@ -88,11 +88,7 @@ float PDFTransmittance(float3 wo, float3 wi, float eta, TrowbridgeReitzDistribut
     return mfDistrib.PDF(wo, wm) * AbsDot(wi, wm) / denom;
 }
 
-// ============================================================
-// Lobe 1: Principled Diffuse
-// Lambertian reflection, attenuated by dielectric Fresnel energy
-// ============================================================
-public struct PrincipledDiffuseLobe : IBxDF {
+public struct DiffuseBSDF : IBxDF {
     float3 baseColor;
     float  dielF0;
     float  roughness;
@@ -125,11 +121,7 @@ public struct PrincipledDiffuseLobe : IBxDF {
     }
 };
 
-// ============================================================
-// Lobe 2: Principled Transmittance
-// Rough dielectric BTDF; handles TIR by falling back to reflection
-// ============================================================
-public struct PrincipledTransmittanceLobe : IBxDF {
+public struct GlassBSDF : IBxDF {
     float3 baseColor;
     float  eta;
     float  roughness;
@@ -192,11 +184,7 @@ public struct PrincipledTransmittanceLobe : IBxDF {
     }
 };
 
-// ============================================================
-// Lobe 3: Principled Dielectric Specular
-// Torrance-Sparrow reflection with dielectric Fresnel
-// ============================================================
-public struct PrincipledDielectricLobe : IBxDF {
+public struct GlossyBSDF : IBxDF {
     float  dielF0;
     float  roughness;
     bool   energyCompensation;
@@ -234,11 +222,7 @@ public struct PrincipledDielectricLobe : IBxDF {
     }
 };
 
-// ============================================================
-// Lobe 4: Principled Metal
-// Torrance-Sparrow reflection with conductor Fresnel (baseColor as F0)
-// ============================================================
-public struct PrincipledMetalLobe : IBxDF {
+public struct MetallicBSDF : IBxDF {
     float3 metalF0;
     float  roughness;
     bool   energyCompensation;
@@ -276,12 +260,6 @@ public struct PrincipledMetalLobe : IBxDF {
     }
 };
 
-// ============================================================
-// PrincipledBSDF — LobeMixture factory
-// Layered model: [ [Diffuse (mix) Transmittance] (layer) Dielectric Specular ] (mix) Metal
-// Lobe weights mirror the old Select() probabilities, now expressed as
-// normalized mixture weights for unbiased stochastic sampling.
-// ============================================================
 public struct PrincipledBSDF : IBxDF {
     float3 baseColor;
     float  metallic;
@@ -317,10 +295,10 @@ public struct PrincipledBSDF : IBxDF {
         float wDiffuse  = (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
 
         LobeMixture mix = LobeMixture();
-        if (wDiffuse  > EPS) mix.AddLobe(PrincipledDiffuseLobe(baseColor, dielF0, roughness),                    wDiffuse);
-        if (wTrans    > EPS) mix.AddLobe(PrincipledTransmittanceLobe(baseColor, ior, roughness, energyCompensation), wTrans);
-        if (wDielSpec > EPS) mix.AddLobe(PrincipledDielectricLobe(dielF0, roughness, energyCompensation),        wDielSpec);
-        if (wMetal    > EPS) mix.AddLobe(PrincipledMetalLobe(baseColor, roughness, energyCompensation),          wMetal);
+        if (wDiffuse  > EPS) mix.AddLobe(DiffuseBSDF(baseColor, dielF0, roughness), wDiffuse);
+        if (wTrans    > EPS) mix.AddLobe(GlassBSDF(baseColor, ior, roughness, energyCompensation), wTrans);
+        if (wDielSpec > EPS) mix.AddLobe(GlossyBSDF(dielF0, roughness, energyCompensation), wDielSpec);
+        if (wMetal    > EPS) mix.AddLobe(MetallicBSDF(baseColor, roughness, energyCompensation), wMetal);
         mix.Finalize();
         return mix;
     }
