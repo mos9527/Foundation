@@ -7,8 +7,6 @@ uniform UBO globalParams;
 ByteAddressBuffer primitive;
 StructuredBuffer<GSInstance> instances;
 
-SamplerState hizSampler;
-Texture2D<float> hiz;
 RWStructuredBuffer<uint> visibility;
 
 RWStructuredBuffer<uint> inTasksCounter;
@@ -19,6 +17,9 @@ RWStructuredBuffer<Atomic<uint>> outMeshletCounter;
 RWStructuredBuffer<uint2> outMeshletIndices; // (x: Meshlet ID, y: Instance ID)
 // vvv Cleared before dispatch
 RWStructuredBuffer<MeshletTaskDispatch> outMeshletDispatches;
+
+SamplerState hizSampler;
+Texture2D<float> hiz;
 
 // Model to view space
 float3 pointToView(float3 point, GSInstance inst, float4x4 view) {
@@ -127,20 +128,15 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     }
     // -- Two-phase --
     uint32_t meshletGlobalID = mesh.meshletGlobalIndex + meshletID;
-    if (cullOcclusion && draw) {
-        // Draw during...
-        // Early: visible in last frame?
-        // Late:  *not* visible in Early?
-        bool prev = (visibility[meshletGlobalID / 32] & (1u << (meshletGlobalID % 32))) != 0u;
-        if (early && !prev) draw = false;
-        if (late && prev) draw = false;
-    }
     // -- Occlusion Cull --
-    // Use HZB from early
-    if (cullOcclusion && draw && late) {
+    // Kill when:
+    //  Early: occluded by last frame?
+    //  Late:  visible or occluded by early?
+    if (cullOcclusion && draw) {
         float4 aabb; // x1, y1, x2, y2 in UV
         const float hizWidth = globalParams.hizWidth;
         const float hizHeight = globalParams.hizHeight;
+        bool occluded = false;
         if (projSphereAABB(viewCenter, radius, globalParams.proj[0][0], globalParams.proj[1][1], globalParams.zNear, aabb)) {
             // ^^^ Lets anything clipping the near plane pass
             float width = hizWidth * (aabb.z - aabb.x);
@@ -148,16 +144,23 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
             float l = max(width, height);
             float lambda = ceil(log2(max(l, 1.0f)));
             float2 texel = (aabb.xy + aabb.zw) * 0.5f;
-            float d = hiz.SampleLevel(hizSampler, texel, lambda).x;
+            float dMax = hiz.SampleLevel(hizSampler, texel, lambda);
             // View space depth *decreases* with distance
             float viewDepth = viewCenter.z + radius;
-            float dMax = globalParams.zNear / -viewDepth;
-            bool pass = d <= dMax;
-            draw &= pass;
+            float d = globalParams.zNear / -viewDepth;
+            occluded = d <= dMax;
+        }
+         if (early)
+             if (occluded) draw = false;
+             else draw = true;
+         if (late) {
+             bool earlyVis = (visibility[meshletGlobalID / 32] & (1u << (meshletGlobalID % 32))) != 0u;
+             if (!earlyVis && !occluded) draw = true;
+             else draw = false;
          }
     }
-    // Commit to visibility buffer for the next frame
-    if (cullOcclusion && valid && late) {
+    // Commit to visibility buffer for the late
+    if (cullOcclusion && early) {
         if (draw)
             InterlockedOr(visibility[meshletGlobalID / 32], 1u << (meshletGlobalID % 32));
         else

@@ -28,6 +28,13 @@ static FArcballCamera GCamera{
     .fovY = radians(60.f),
 };
 
+enum class ERendererMode
+{
+    PathTracer,
+    Raster
+};
+static ERendererMode GRendererMode = ERendererMode::PathTracer;
+
 /* -- 前向声明 -- */
 static void ReplaceScene(StringView path);
 static void SaveScene(StringView path);
@@ -37,18 +44,15 @@ static void FHierarchyPanel();
 
 /* -- */
 void FInitEnter()
-{
-    // Task 2: 支持无CLI参数启动
+{   
     if (GContext->args.size() < 2)
     {
         LOG(Editor, LogInfo, "No scene path provided, starting with empty scene");
         RendererSetupImGuiOnly(GContext);
-        FEState = FEInit;
-        return;
-    }
-    ReplaceScene(GContext->args[1]);
-    if (FEState != FERunningEnter)
-        FEState = FEInit;
+    }        
+    else
+        ReplaceScene(GContext->args[1]);
+    FEState = FEInit;
 }
 
 /* ==================== ReplaceScene ==================== */
@@ -339,6 +343,43 @@ static void EditorDockSpaceAndMenuBar()
             }
             ImGui::EndMenu();
         }
+
+        // Right-aligned PT / Raster toggle
+        {
+            const char* labelPT = " PT ";
+            const char* labelRaster = "RSTR";
+            float btnW_PT = ImGui::CalcTextSize(labelPT).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+            float btnW_R  = ImGui::CalcTextSize(labelRaster).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+            float totalW  = btnW_PT + btnW_R;
+            float avail   = ImGui::GetContentRegionAvail().x;
+            if (avail > totalW)
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - totalW);
+
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+            if (GRendererMode == ERendererMode::PathTracer)
+                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+            else
+                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
+            if (ImGui::Button(labelPT))
+            {
+                if (GRendererMode != ERendererMode::PathTracer) { GRendererMode = ERendererMode::PathTracer; FEState = FERunningEnter; }
+            }
+            ImGui::PopStyleColor();
+
+            ImGui::SameLine();
+
+            if (GRendererMode == ERendererMode::Raster)
+                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+            else
+                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
+            if (ImGui::Button(labelRaster))
+            {
+                if (GRendererMode != ERendererMode::Raster) { GRendererMode = ERendererMode::Raster; FEState = FERunningEnter; }
+            }
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
+        }
+
         ImGui::EndMainMenuBar();
     }
 
@@ -348,6 +389,7 @@ static void EditorDockSpaceAndMenuBar()
 /* ==================== Hierarchy Panel (Task 8) ==================== */
 static void FHierarchyPanel()
 {
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Hierarchy"))
     {
         if (GSInstances.empty())
@@ -371,8 +413,10 @@ static void FHierarchyPanel()
         }
     }
     ImGui::End();
+    ImGui::PopStyleColor();
 
     // Inspector面板 (Instance)
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Inspector"))
     {
         if (GSelectedInstance >= 0 && GSelectedInstance < static_cast<int>(GScene.mInstances.size()))
@@ -387,10 +431,10 @@ static void FHierarchyPanel()
 
             // -- Gizmo控件 --
             ImGui::Separator();
-            if (ImGui::RadioButton("Translate (W)", GGizmoOp == ImGuizmo::TRANSLATE))
+            if (ImGui::RadioButton("Translate (G)", GGizmoOp == ImGuizmo::TRANSLATE))
                 GGizmoOp = ImGuizmo::TRANSLATE;
             ImGui::SameLine();
-            if (ImGui::RadioButton("Rotate (E)", GGizmoOp == ImGuizmo::ROTATE))
+            if (ImGui::RadioButton("Rotate (R)", GGizmoOp == ImGuizmo::ROTATE))
                 GGizmoOp = ImGuizmo::ROTATE;
             ImGui::SameLine();
             if (ImGui::RadioButton("Scale (Q)", GGizmoOp == ImGuizmo::SCALE))
@@ -454,6 +498,7 @@ static void FHierarchyPanel()
         }
     }
     ImGui::End();
+    ImGui::PopStyleColor();
 }
 
 
@@ -474,6 +519,9 @@ void FInit()
         EditorDockSpaceAndMenuBar();
         FHierarchyPanel();
     }
+    float dt = ImGui::GetIO().DeltaTime;
+    bool cameraUpdated = false;
+    cameraUpdated |= GCamera.UpdateMovement(dt);
     GCamera.Update({});
     GCamera.aspect = GContext->swapchain->GetAspectRatio();
     renderer->ExecuteFrame();
@@ -485,16 +533,8 @@ void FInit()
 }
 RendererConfig GRendererConfig;
 
-static bool rasterOrPT = true;
 void FRunningEnter()
 {
-    // Task 2: 空场景时使用ImGui-only渲染器
-    if (GSInstances.empty())
-    {
-        RendererSetupImGuiOnly(GContext);
-        FEState = FEInit;
-        return;
-    }
     RendererScene scene{
         .gsGlobals = &GShaderGlobals,
         .gsInstances = &GSInstances,
@@ -502,7 +542,7 @@ void FRunningEnter()
         .gsMeshes = &GSMeshes,
         .gsBLASes = &GSBLASes
     };
-    if (rasterOrPT)
+    if (GRendererMode == ERendererMode::PathTracer)
         PathTracerSetup(GContext, GRendererConfig, scene);
     else
         RendererSetup(GContext, GRendererConfig, scene);
@@ -517,6 +557,7 @@ void FRunningImGui()
     float gpuTimingRes;
     auto timings = renderer->DbgProfilePassTiming(renderer->GetSync(), gpuTimingRes);
     // ImGui
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Camera"))
     {
         ImGui::TextUnformatted(FArcballCamera::kControlsText);
@@ -527,13 +568,17 @@ void FRunningImGui()
         cameraUpdated |= ImGui::SliderFloat("Aperture", &GShaderGlobals.aperture, 1e-5f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic);
         cameraUpdated |= ImGui::SliderFloat("Focal Distance", &GShaderGlobals.focalDistance, 0.1f, 1000.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("Exposure (EV)", &GShaderGlobals.camEV, -16.0f, 16.0f);
+        ImGui::Separator();
+        ImGui::SliderFloat("WASD Speed", &GCamera.moveSpeed, 0.1f, 50.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
     }
     ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Rendering"))
     {
         static float lodLogThreshold = 3;
         ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
-        if (rasterOrPT)
+        if (GRendererMode == ERendererMode::PathTracer)
         {
             ImGui::Text("PT Accumulation: %d", GShaderGlobals.ptAccumualatedFrames);
             ImGui::SliderInt("PT Bounces", &GShaderGlobals.ptMaxBounces, 1, 16);
@@ -595,6 +640,8 @@ void FRunningImGui()
             FEState = FERunningEnter;
     }
     ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Profiler"))
     {
         if (timings.empty())
@@ -638,7 +685,7 @@ void FRunningImGui()
                 static int lanes = 0;
                 float frametimeAvg = frametime.mean * 1e-6f;
                 ImGui::Text("CPU to Present: %.3fms\nP2P: %.3fms (%.1f FPS)\nGPU: %.3fms\n"
-                            "CPU/GPU Δ: %.3fms",
+                            "CPU/GPU dt: %.3fms",
                             presentTimingMS, frametimeAvg * 1e3f, 1 / frametimeAvg, gpuTimingMS,
                             frametimeAvg * 1e3f - gpuTimingMS);
                 auto ClearHistogramData = []
@@ -720,6 +767,7 @@ void FRunningImGui()
         }
     }
     ImGui::End();
+    ImGui::PopStyleColor();
 }
 void FRunning()
 {
@@ -735,6 +783,8 @@ void FRunning()
         FRunningImGui();
     }
     // Global param update
+    float dt = ImGui::GetIO().DeltaTime;
+    cameraUpdated |= GCamera.UpdateMovement(dt);
     GCamera.Update({});
     GCamera.aspect = GContext->swapchain->GetAspectRatio();
     GShaderGlobals.frameNumber = renderer->GetFrame();
@@ -784,15 +834,10 @@ bool EditorProcessEvent(SDL_Event* event)
         {
             GShowImGui = !GShowImGui;
         }
-        if (event->key.key == SDLK_R)
-        {
-            rasterOrPT = !rasterOrPT;
-            FEState = FERunningEnter;
-        }
         // Gizmo快捷键
-        if (event->key.key == SDLK_W)
+        if (event->key.key == SDLK_G)
             GGizmoOp = ImGuizmo::TRANSLATE;
-        if (event->key.key == SDLK_E)
+        if (event->key.key == SDLK_R)
             GGizmoOp = ImGuizmo::ROTATE;
         if (event->key.key == SDLK_Q)
             GGizmoOp = ImGuizmo::SCALE;
@@ -801,6 +846,28 @@ bool EditorProcessEvent(SDL_Event* event)
     auto& io = ImGui::GetIO();
     if (!io.WantCaptureMouse && !ImGuizmo::IsUsing())
         cameraUpdated |= GCamera.Update(*event);
+    // 始终让相机追踪WASD键状态（仅当ImGui不需要键盘时）
+    if (!io.WantCaptureKeyboard)
+    {
+        if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP)
+        {
+            bool pressed = (event->type == SDL_EVENT_KEY_DOWN);
+            switch (event->key.key)
+            {
+            case SDLK_W: GCamera.keyW = pressed; break;
+            case SDLK_A: GCamera.keyA = pressed; break;
+            case SDLK_S: GCamera.keyS = pressed; break;
+            case SDLK_D: GCamera.keyD = pressed; break;
+            case SDLK_LSHIFT: case SDLK_RSHIFT: GCamera.keyShift = pressed; break;
+            default: break;
+            }
+        }
+    }
+    else
+    {
+        // ImGui要求键盘时，清除所有移动键状态防止卡键
+        GCamera.keyW = GCamera.keyA = GCamera.keyS = GCamera.keyD = GCamera.keyShift = false;
+    }
     return false;
 }
 

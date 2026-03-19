@@ -105,14 +105,6 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/richgel999/bc7enc
     GIT_SHALLOW TRUE
 )
-# Font
-FetchContent_Declare(
-    LxgwNeoXiHei
-    URL https://github.com/lxgw/LxgwNeoXiHei/releases/download/v1.227/LXGWNeoXiHei.ttf
-    DOWNLOAD_NO_EXTRACT TRUE
-    DOWNLOAD_DIR ${ASSET_BUILD_DIR}
-)
-FetchContent_MakeAvailable(LxgwNeoXiHei)
 
 FetchContent_MakeAvailable(stb)
 add_library(ThirdParty_STB STATIC stb_image.cpp)

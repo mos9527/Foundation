@@ -2,7 +2,7 @@
     "rdocCaptureSettings": 1,
     "settings": {
         "autoStart": false,
-        "commandLine": "\"D:\\benedikt-scenes-mitsuba\\bathroom.fscn\"",
+        "commandLine": "\"K:\\benedikt-scenes-mitsuba\\veach-mis.fscn\"",
         "environment": [
         ],
         "executable": "C:\\Users\\komahuang\\Foundation\\out\\build\\x64-Debug\\bin\\Editor.exe",

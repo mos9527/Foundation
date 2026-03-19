@@ -34,7 +34,7 @@ struct UBO
     float envMapScale{1.0f};
     // -- Path Tracing
     uint32_t ptAccumualatedFrames{0u};
-    int32_t ptMaxBounces{32u};
+    int32_t ptMaxBounces{8u};
 };
 #pragma pack(pop)
 
