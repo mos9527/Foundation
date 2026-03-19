@@ -9,3 +9,5 @@ docs/
 127.0.0.1* 
 # No, Visual Studio.
 /CMakeSettings.json
+.claude/
+.codebuddy/
