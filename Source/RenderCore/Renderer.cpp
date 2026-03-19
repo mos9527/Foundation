@@ -172,24 +172,18 @@ void Renderer::BindBufferStorageRead(PassHandle pass, ResourceHandle buffer, RHI
 }
 
 void Renderer::BindBufferUnordered(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
-                                   StringView bind_point, RHIPipelineStage extraStage,
-                                   RHIResourceAccess extraAccess) const
+                                   StringView bind_point) const
 {
     CHECK(mState == State::Setup);
     DeclareBufferAccess(pass, buffer, stage, RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite);
-    if (extraAccess)
-        DeclareBufferAccess(pass, buffer, extraStage, extraAccess);
     mSetup->trackedPasses[pass].bufferBindings.emplace_back(buffer, RHIDescriptorType::StorageBuffer, bind_point);
     mSetup->bindingCounts[RHIDescriptorType::StorageBuffer]++;
 }
 
-void Renderer::BindBufferShaderRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage,
-                                    RHIPipelineStage extraStage, RHIResourceAccess extraAccess) const
+void Renderer::BindBufferShaderRead(PassHandle pass, ResourceHandle buffer, RHIPipelineStage stage) const
 {
     CHECK(mState == State::Setup);
     DeclareBufferAccess(pass, buffer, stage, RHIResourceAccessBits::ShaderRead);
-    if (extraAccess)
-        DeclareBufferAccess(pass, buffer, extraStage, extraAccess);
 }
 
 void Renderer::BindBufferIndirectRead(PassHandle pass, ResourceHandle buffer) const
