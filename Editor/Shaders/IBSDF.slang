@@ -283,17 +283,30 @@ public struct PrincipledMetalLobe : IBxDF {
 // normalized mixture weights for unbiased stochastic sampling.
 // ============================================================
 public struct PrincipledBSDF : IBxDF {
-    LobeMixture mixture;
+    float3 baseColor;
+    float  metallic;
+    float  roughness;
+    float  ior;
+    float  transmission;
+    bool   energyCompensation;
+    float  dielF0;
 
     public __init(float3 baseColor, float metallic, float roughness, float ior, float transmission = 0.0f, bool energyCompensation = true) {
-        ior       = max(1.0f + 5e-3f, ior);
-        roughness = max(5e-3f, roughness);
+        this.ior                = max(1.0f + 5e-3f, ior);
+        this.roughness          = max(5e-3f, roughness);
+        this.baseColor          = baseColor;
+        this.metallic           = metallic;
+        this.transmission       = transmission;
+        this.energyCompensation = energyCompensation;
+        this.dielF0             = F0FromIor(this.ior);
+    }
 
-        float dielF0 = F0FromIor(ior);
-        // sampleGlossy: energy-weighted probability of sampling the dielectric specular lobe
-        float sampleGlossy = reflectance(dielF0, 1.0f, SampleGGXLutE(0.5f, roughness));
+    // Build the lobe mixture with view-dependent Fresnel weighting for wo
+    LobeMixture BuildMixture(float3 wo) {
+        // sampleGlossy: energy-weighted probability using actual viewing angle
+        float sampleGlossy = reflectance(dielF0, 1.0f, SampleGGXLutE(AbsCosTheta(wo), roughness));
 
-        // Lobe weights (unnormalized, matching old Select() branching probabilities):
+        // Lobe weights (unnormalized):
         //   metal  lobe weight = metallic
         //   dielectric specular weight = (1 - metallic) * sampleGlossy
         //   transmittance weight = (1 - metallic) * (1 - sampleGlossy) * transmission
@@ -303,25 +316,29 @@ public struct PrincipledBSDF : IBxDF {
         float wTrans    = (1.0f - metallic) * (1.0f - sampleGlossy) * transmission;
         float wDiffuse  = (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
 
-        mixture = LobeMixture();
-        if (wDiffuse  > EPS) mixture.AddLobe(PrincipledDiffuseLobe(baseColor, dielF0, roughness),                    wDiffuse);
-        if (wTrans    > EPS) mixture.AddLobe(PrincipledTransmittanceLobe(baseColor, ior, roughness, energyCompensation), wTrans);
-        if (wDielSpec > EPS) mixture.AddLobe(PrincipledDielectricLobe(dielF0, roughness, energyCompensation),        wDielSpec);
-        if (wMetal    > EPS) mixture.AddLobe(PrincipledMetalLobe(baseColor, roughness, energyCompensation),          wMetal);
-        mixture.Finalize();
+        LobeMixture mix = LobeMixture();
+        if (wDiffuse  > EPS) mix.AddLobe(PrincipledDiffuseLobe(baseColor, dielF0, roughness),                    wDiffuse);
+        if (wTrans    > EPS) mix.AddLobe(PrincipledTransmittanceLobe(baseColor, ior, roughness, energyCompensation), wTrans);
+        if (wDielSpec > EPS) mix.AddLobe(PrincipledDielectricLobe(dielF0, roughness, energyCompensation),        wDielSpec);
+        if (wMetal    > EPS) mix.AddLobe(PrincipledMetalLobe(baseColor, roughness, energyCompensation),          wMetal);
+        mix.Finalize();
+        return mix;
     }
 
-    public BxDFFlags Flags() { return mixture.Flags(); }
+    public BxDFFlags Flags() {
+        // Flags are view-independent; build with a default cosTheta of 0.5
+        return BuildMixture(float3(0, 0, 1)).Flags();
+    }
 
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
-        return mixture.f(wo, wi, mode);
+        return BuildMixture(wo).f(wo, wi, mode);
     }
 
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
-        return mixture.PDF(wo, wi, mode, flags);
+        return BuildMixture(wo).PDF(wo, wi, mode, flags);
     }
 
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
-        return mixture.Sample_f(wo, uc, u, mode, flags);
+        return BuildMixture(wo).Sample_f(wo, uc, u, mode, flags);
     }
 };
