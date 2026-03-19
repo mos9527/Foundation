@@ -43,9 +43,6 @@ void RendererSetupImGuiOnly(FContext* context)
 
 void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
 {
-    if (context->renderer)
-        Destruct(context->allocator, context->renderer);
-    // XXX: Issues with async compute on NVIDIA. Investigate?
     auto* renderer = context->renderer = Construct<Renderer>(context->allocator,
                                                              RendererDesc{
                                                                  .asyncCompute = true,

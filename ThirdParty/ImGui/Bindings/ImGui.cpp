@@ -19,7 +19,6 @@ constexpr size_t kUploadBudget = 16 * (1u << 20);
 // NOTE: Should be large enough to accommodate most frames, or there will be a race.
 constexpr size_t kVertexBufferSize = 16 * (1u << 20);
 constexpr size_t kIndexBufferSize = 16 * (1u << 20);
-static const char* kDefaultFontPath = "data/assets/LXGWNeoXiHei.ttf";
 
 UniquePtr<BindlessPool> gImGuiTexturePool = nullptr;
 void* ImGui_ImplFoundation_MemAlloc(size_t sz, void*) { return GLOBAL_ALLOC->Allocate(sz, sizeof(std::max_align_t)); }
@@ -356,32 +355,64 @@ void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
     // Styles from
     // https://github.com/KhronosGroup/Vulkan-Samples/blob/b9961792604af2ede4c9d0868947de2a8eccd549/framework/gui.h#L338
     ImGuiStyle& style = ImGui::GetStyle();
-    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.005f, 0.005f, 0.005f, 0.94f);
-    style.Colors[ImGuiCol_TitleBg] = ImVec4(1.0f, 0.0f, 0.0f, 0.6f);
-    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(1.0f, 0.0f, 0.0f, 0.8f);
-    style.Colors[ImGuiCol_MenuBarBg] = ImVec4(1.0f, 0.0f, 0.0f, 0.4f);
-    style.Colors[ImGuiCol_Header] = ImVec4(1.0f, 0.0f, 0.0f, 0.4f);
-    style.Colors[ImGuiCol_HeaderActive] = ImVec4(1.0f, 0.0f, 0.0f, 0.4f);
-    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(1.0f, 0.0f, 0.0f, 0.4f);
-    style.Colors[ImGuiCol_FrameBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.8f);
+    style.Colors[ImGuiCol_Text] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+    style.Colors[ImGuiCol_TextDisabled] = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.96f);
+    style.Colors[ImGuiCol_ChildBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    style.Colors[ImGuiCol_PopupBg] = ImVec4(0.03f, 0.03f, 0.03f, 0.98f);
+    style.Colors[ImGuiCol_Border] = ImVec4(1.0f, 0.0f, 0.0f, 0.5f);
+    style.Colors[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    style.Colors[ImGuiCol_FrameBg] = ImVec4(0.05f, 0.05f, 0.05f, 0.9f);
+    style.Colors[ImGuiCol_FrameBgHovered] = ImVec4(0.4f, 0.0f, 0.0f, 0.5f);
+    style.Colors[ImGuiCol_FrameBgActive] = ImVec4(0.6f, 0.0f, 0.0f, 0.6f);
+    style.Colors[ImGuiCol_TitleBg] = ImVec4(0.6f, 0.0f, 0.0f, 0.8f);
+    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.9f, 0.0f, 0.0f, 1.0f);
+    style.Colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.4f, 0.0f, 0.0f, 0.6f);
+    style.Colors[ImGuiCol_MenuBarBg] = ImVec4(0.5f, 0.0f, 0.0f, 0.6f);
+    style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.02f, 0.02f, 0.02f, 0.6f);
+    style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.7f, 0.0f, 0.0f, 0.6f);
+    style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.9f, 0.1f, 0.1f, 0.8f);
+    style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(1.0f, 0.15f, 0.15f, 1.0f);
     style.Colors[ImGuiCol_CheckMark] = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
-    style.Colors[ImGuiCol_SliderGrab] = ImVec4(1.0f, 0.0f, 0.0f, 0.4f);
-    style.Colors[ImGuiCol_SliderGrabActive] = ImVec4(1.0f, 0.0f, 0.0f, 0.8f);
-    style.Colors[ImGuiCol_FrameBgHovered] = ImVec4(1.0f, 1.0f, 1.0f, 0.1f);
-    style.Colors[ImGuiCol_FrameBgActive] = ImVec4(1.0f, 1.0f, 1.0f, 0.2f);
-    style.Colors[ImGuiCol_Button] = ImVec4(1.0f, 0.0f, 0.0f, 0.4f);
-    style.Colors[ImGuiCol_ButtonHovered] = ImVec4(1.0f, 0.0f, 0.0f, 0.6f);
-    style.Colors[ImGuiCol_ButtonActive] = ImVec4(1.0f, 0.0f, 0.0f, 0.8f);
-    // Font from https://github.com/lxgw/LxgwNeoXiHei
-    auto resolvedFontPath = Foundation::Core::PathsResolve(kDefaultFontPath);
-    if (!std::filesystem::exists(resolvedFontPath))
-    {
-        LOG(ImGui, LogError, "Font file {} not found! ImGui will use default font.", resolvedFontPath);
-    }
-    else
-    {
-        io.Fonts->Clear();
-        ImFontConfig font_cfg;
-        io.Fonts->AddFontFromFileTTF(resolvedFontPath.c_str(), 12.0f, &font_cfg);
-    }
+    style.Colors[ImGuiCol_SliderGrab] = ImVec4(0.9f, 0.0f, 0.0f, 0.7f);
+    style.Colors[ImGuiCol_SliderGrabActive] = ImVec4(1.0f, 0.15f, 0.15f, 1.0f);
+    style.Colors[ImGuiCol_Button] = ImVec4(0.7f, 0.0f, 0.0f, 0.6f);
+    style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.9f, 0.1f, 0.1f, 0.8f);
+    style.Colors[ImGuiCol_ButtonActive] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
+    style.Colors[ImGuiCol_Header] = ImVec4(0.6f, 0.0f, 0.0f, 0.5f);
+    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.8f, 0.05f, 0.05f, 0.7f);
+    style.Colors[ImGuiCol_HeaderActive] = ImVec4(1.0f, 0.1f, 0.1f, 0.9f);
+    style.Colors[ImGuiCol_Separator] = ImVec4(0.8f, 0.0f, 0.0f, 0.5f);
+    style.Colors[ImGuiCol_SeparatorHovered] = ImVec4(1.0f, 0.1f, 0.1f, 0.8f);
+    style.Colors[ImGuiCol_SeparatorActive] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
+    style.Colors[ImGuiCol_ResizeGrip] = ImVec4(0.8f, 0.0f, 0.0f, 0.4f);
+    style.Colors[ImGuiCol_ResizeGripHovered] = ImVec4(1.0f, 0.1f, 0.1f, 0.8f);
+    style.Colors[ImGuiCol_ResizeGripActive] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
+    style.Colors[ImGuiCol_InputTextCursor] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+    style.Colors[ImGuiCol_TabHovered] = ImVec4(0.9f, 0.1f, 0.1f, 0.8f);
+    style.Colors[ImGuiCol_Tab] = ImVec4(0.4f, 0.0f, 0.0f, 0.6f);
+    style.Colors[ImGuiCol_TabSelected] = ImVec4(0.9f, 0.0f, 0.0f, 1.0f);
+    style.Colors[ImGuiCol_TabSelectedOverline] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
+    style.Colors[ImGuiCol_TabDimmed] = ImVec4(0.2f, 0.0f, 0.0f, 0.5f);
+    style.Colors[ImGuiCol_TabDimmedSelected] = ImVec4(0.5f, 0.0f, 0.0f, 0.8f);
+    style.Colors[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.6f, 0.0f, 0.0f, 1.0f);
+    style.Colors[ImGuiCol_DockingPreview] = ImVec4(1.0f, 0.0f, 0.0f, 0.6f);
+    style.Colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.02f, 0.02f, 0.02f, 1.0f);
+    style.Colors[ImGuiCol_PlotLines] = ImVec4(1.0f, 1.0f, 1.0f, 0.8f);
+    style.Colors[ImGuiCol_PlotLinesHovered] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
+    style.Colors[ImGuiCol_PlotHistogram] = ImVec4(0.9f, 0.0f, 0.0f, 0.8f);
+    style.Colors[ImGuiCol_PlotHistogramHovered] = ImVec4(1.0f, 0.15f, 0.15f, 1.0f);
+    style.Colors[ImGuiCol_TableHeaderBg] = ImVec4(0.3f, 0.0f, 0.0f, 0.8f);
+    style.Colors[ImGuiCol_TableBorderStrong] = ImVec4(1.0f, 0.0f, 0.0f, 0.6f);
+    style.Colors[ImGuiCol_TableBorderLight] = ImVec4(0.8f, 0.0f, 0.0f, 0.3f);
+    style.Colors[ImGuiCol_TableRowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    style.Colors[ImGuiCol_TableRowBgAlt] = ImVec4(1.0f, 1.0f, 1.0f, 0.06f);
+    style.Colors[ImGuiCol_TextLink] = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+    style.Colors[ImGuiCol_TextSelectedBg] = ImVec4(0.9f, 0.0f, 0.0f, 0.6f);
+    style.Colors[ImGuiCol_TreeLines] = ImVec4(0.6f, 0.6f, 0.6f, 0.6f);
+    style.Colors[ImGuiCol_DragDropTarget] = ImVec4(1.0f, 1.0f, 0.0f, 0.9f);
+    style.Colors[ImGuiCol_NavCursor] = ImVec4(1.0f, 0.1f, 0.1f, 1.0f);
+    style.Colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.0f, 1.0f, 1.0f, 0.8f);
+    style.Colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.1f, 0.1f, 0.1f, 0.3f);
+    style.Colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.5f);
 }
