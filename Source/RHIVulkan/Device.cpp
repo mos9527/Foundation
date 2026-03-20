@@ -3,18 +3,19 @@
 
 
 #include <queue>
+#include <string_view>
 #include <vk_mem_alloc.h>
 
 using namespace Foundation::Core;
 using namespace Foundation::RHI;
-const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-                                         VK_EXT_MESH_SHADER_EXTENSION_NAME,
-                                         VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
-                                         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-                                         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-                                         VK_KHR_RAY_QUERY_EXTENSION_NAME,
-                                         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-                                         VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME};
+const char* kVulkanDesiredDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+                                                VK_EXT_MESH_SHADER_EXTENSION_NAME,
+                                                VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
+                                                VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+                                                VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+                                                VK_KHR_RAY_QUERY_EXTENSION_NAME,
+                                                VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+                                                VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME};
 
 const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
 
@@ -83,6 +84,43 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     CHECK(graphics.first != kInvalidQueueIndex);
     CHECK(compute.first != kInvalidQueueIndex);
     CHECK(transfer.first != kInvalidQueueIndex);
+    auto availableExtensions = mPhysicalDevice.enumerateDeviceExtensionProperties();
+    auto isExtensionAvailable = [&](const char* extName) -> bool
+    {
+        for (auto const& ext : availableExtensions)
+        {
+            if (std::string_view(ext.extensionName.data()) == extName)
+                return true;
+        }
+        return false;
+    };
+    Vector<const char*> enabledExtensions(GetAllocator());
+    for (auto* desired : kVulkanDesiredDeviceExtensions)
+    {
+        if (isExtensionAvailable(desired))
+        {
+            enabledExtensions.push_back(desired);
+        }
+        else
+        {
+            LOG(VulkanDevice, LogWarn, "Device extension '{}' is not available and will not be enabled.", desired);
+        }
+    }
+    auto isExtensionEnabled = [&](const char* extName) -> bool
+    {
+        for (auto* ext : enabledExtensions)
+        {
+            if (std::string_view(ext) == extName)
+                return true;
+        }
+        return false;
+    };
+    const bool hasMeshShader = isExtensionEnabled(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+    const bool hasAccelerationStructure = isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+    const bool hasRayQuery = isExtensionEnabled(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+    const bool hasRayTracingPipeline = isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+    const bool hasRayTracingInvocationReorder =
+        isExtensionEnabled(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
     if (window)
     {
         // Check for a present queue
@@ -136,11 +174,21 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
             {.rayTracingPipeline = true}, // vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
             {.rayTracingInvocationReorder = true} // vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT
         };
+    if (!hasMeshShader)
+        featureChain.unlink<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
+    if (!hasAccelerationStructure)
+        featureChain.unlink<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
+    if (!hasRayQuery)
+        featureChain.unlink<vk::PhysicalDeviceRayQueryFeaturesKHR>();
+    if (!hasRayTracingPipeline)
+        featureChain.unlink<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
+    if (!hasRayTracingInvocationReorder)
+        featureChain.unlink<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>();
     vk::DeviceCreateInfo device_info{.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
                                      .queueCreateInfoCount = static_cast<uint32_t>(queueInfos.size()),
                                      .pQueueCreateInfos = queueInfos.data(),
-                                     .enabledExtensionCount = std::size(kVulkanDeviceExtensions),
-                                     .ppEnabledExtensionNames = kVulkanDeviceExtensions};
+                                     .enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size()),
+                                     .ppEnabledExtensionNames = enabledExtensions.data()};
     mDevice = vk::raii::Device(mPhysicalDevice, device_info, nullptr);
     CHECK(mDevice != nullptr && "failed to create Vulkan device");
     // Allocate the queues

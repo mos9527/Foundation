@@ -581,7 +581,7 @@ void FRunningImGui()
         if (GRendererMode == ERendererMode::PathTracer)
         {
             ImGui::Text("PT Accumulation: %d", GShaderGlobals.ptAccumualatedFrames);
-            ImGui::SliderInt("PT Bounces", &GShaderGlobals.ptMaxBounces, 1, 16);
+            ImGui::SliderInt("PT Bounces", &GShaderGlobals.ptMaxBounces, 1, 64);
         }
         GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
         bool changed = false;
