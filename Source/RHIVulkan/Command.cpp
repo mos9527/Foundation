@@ -500,8 +500,6 @@ RHICommandList& VulkanCommandList::EndGraphics()
 RHICommandList& VulkanCommandList::Dispatch(uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z)
 {
     CHECK(mAllocator && "Invalid command list states.");
-    CHECK_MSG(group_count_x > 0 && group_count_y > 0 && group_count_z > 0,
-              "Dispatch group counts must be greater than zero.");
     mCommandBuffer.dispatch(group_count_x, group_count_y, group_count_z);
     return *this;
 }

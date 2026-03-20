@@ -323,7 +323,7 @@ static void EditorDockSpaceAndMenuBar()
         }
 
         // Right-aligned PT / Raster toggle
-        {
+        if (!GSInstances.empty()) {
             const char* labelPT = " PT ";
             const char* labelRaster = "RSTR";
             float btnW_PT = ImGui::CalcTextSize(labelPT).x + ImGui::GetStyle().FramePadding.x * 2.0f;
@@ -482,32 +482,33 @@ static void FHierarchyPanel()
 
 void FInit()
 {
-    // Task 10: FInit状态下显示UI，等待用户加载场景
-    auto* renderer = GContext->renderer;
-    if (!renderer)
-    {
-        RendererSetupImGuiOnly(GContext);
-        renderer = GContext->renderer;
-    }
-    renderer->BeginExecute();
-    ImGui_ImplFoundation_NewFrame();
-    ImGui::NewFrame();
-    if (GShowImGui)
-    {
-        EditorDockSpaceAndMenuBar();
-        FHierarchyPanel();
-    }
-    float dt = ImGui::GetIO().DeltaTime;
-    bool cameraUpdated = false;
-    cameraUpdated |= GCamera.UpdateMovement(dt);
-    GCamera.Update({});
-    GCamera.aspect = GContext->swapchain->GetAspectRatio();
-    renderer->ExecuteFrame();
-    renderer->EndExecute();
-
     // 当有场景数据时，转移到 FERunningEnter
     if (!GSInstances.empty())
         FEState = FERunningEnter;
+    else
+    {
+        auto* renderer = GContext->renderer;
+        if (!renderer)
+        {
+            RendererSetupImGuiOnly(GContext);
+            renderer = GContext->renderer;
+        }
+        renderer->BeginExecute();
+        ImGui_ImplFoundation_NewFrame();
+        ImGui::NewFrame();
+        if (GShowImGui)
+        {
+            EditorDockSpaceAndMenuBar();
+            FHierarchyPanel();
+        }
+        float dt = ImGui::GetIO().DeltaTime;
+        bool cameraUpdated = false;
+        cameraUpdated |= GCamera.UpdateMovement(dt);
+        GCamera.Update({});
+        GCamera.aspect = GContext->swapchain->GetAspectRatio();
+        renderer->ExecuteFrame();
+        renderer->EndExecute();
+    }
 }
 RendererConfig GRendererConfig;
 

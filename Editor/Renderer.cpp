@@ -37,7 +37,20 @@ void RendererSetupImGuiOnly(FContext* context)
                                                              },
                                                              context->device, context->swapchain, context->allocator);
     renderer->BeginSetup();
-    ImGui_ImplFoundation_CreatePass(renderer, "ImGui", true, FSetupDefault{});
+    createPSFullscreenPass(
+        renderer, "Idle",
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
+                          Foundation::Core::PathsResolve("data/shaders/EPSIdle.spv"));
+            r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(float2));
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0,
+                                  float2{SDL_GetTicks() / 1000.0f, (float)r->GetSwapchainExtent().x / r->GetSwapchainExtent().y });
+        });
+    ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});
     renderer->EndSetup();
 }
 
