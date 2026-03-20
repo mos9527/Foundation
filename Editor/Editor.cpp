@@ -598,12 +598,8 @@ void FRunningImGui()
             changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
         }
         {
-            const char* items[] = {"Diffuse Direct", "Diffuse Indirect",
-                                   "Specular Direct", "Specular Indirect",
-                                   "Trans Direct", "Trans Indirect"};
-            const unsigned values[] = {kViewAOVDiffuseDirect, kViewAOVDiffuseIndirect,
-                                       kViewAOVSpecularDirect, kViewAOVSpecularIndirect,
-                                       kViewAOVTransDirect, kViewAOVTransIndirect};
+            const char* items[] = {"Diffuse", "Specular"};
+            const unsigned values[] = {kViewAOVDiffuse, kViewAOVSpecular};
             ImGui::SeparatorText("Path Tracer View");
             changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
         }

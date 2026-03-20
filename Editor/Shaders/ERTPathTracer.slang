@@ -15,21 +15,12 @@ StructuredBuffer<GSInstance> instances;
 ByteAddressBuffer primitives;
 StructuredBuffer<GSMaterial> materials;
 SamplerState textureSampler;
-RWTexture2D<float4> accumulation;
-RWTexture2D<float4> lighting;
-// -- Per-lobe AOV buffers (Diffuse/Specular/Transmission × Direct/Indirect)
-RWTexture2D<float4> accumDiffuseDirect;
-RWTexture2D<float4> accumDiffuseIndirect;
-RWTexture2D<float4> accumSpecularDirect;
-RWTexture2D<float4> accumSpecularIndirect;
-RWTexture2D<float4> accumTransDirect;
-RWTexture2D<float4> accumTransIndirect;
-RWTexture2D<float4> aovDiffuseDirect;
-RWTexture2D<float4> aovDiffuseIndirect;
-RWTexture2D<float4> aovSpecularDirect;
-RWTexture2D<float4> aovSpecularIndirect;
-RWTexture2D<float4> aovTransDirect;
-RWTexture2D<float4> aovTransIndirect;
+// -- Accumulation buffers (raw sums, averaged in blit pass)
+RWTexture2D<float4> accumDiffuse;   // Diffuse lobe radiance
+RWTexture2D<float4> accumSpecular;  // Specular lobe radiance (incl. transmission)
+RWTexture2D<float4> accumGBuffer0;  // BaseColor.rgb, MaterialID (packed)
+RWTexture2D<float4> accumGBuffer1;  // Normal.xyz * 0.5 + 0.5, 0
+RWTexture2D<float4> accumGBuffer2;  // Position.xyz, 0
 [[vk_binding(0,2)]] Texture2D<float4> textures[];
 
 // World-space hit geometry
@@ -212,38 +203,20 @@ bool TraceShadowRay(float3 origin, float3 direction)
     return payload.hit;
 }
 
-// 辅助：将贡献累加到对应的 AOV 类别
-void AddToAOV(AOVCategory cat, bool isDirect,
-              inout float3 dd, inout float3 di,
-              inout float3 sd, inout float3 si,
-              inout float3 td, inout float3 ti,
-              float3 contrib) {
-    if (cat == AOVCategory::Diffuse) {
-        if (isDirect) dd += contrib; else di += contrib;
-    } else if (cat == AOVCategory::Transmission) {
-        if (isDirect) td += contrib; else ti += contrib;
-    } else {
-        if (isDirect) sd += contrib; else si += contrib;
-    }
-}
-
 [[SpecializationConstant]] int flags;
 [shader("raygeneration")]
 void RayGeneration()
 {
     uint2 pix = DispatchRaysIndex().xy;
     PCG rng = PCG(pix, globalParams.frameNumber);
-    float3 L = float3(0);
     float3 beta = float3(1);
-    // Per-lobe AOV accumulators
-    float3 LDiffuseDirect   = float3(0);
-    float3 LDiffuseIndirect = float3(0);
-    float3 LSpecDirect      = float3(0);
-    float3 LSpecIndirect    = float3(0);
-    float3 LTransDirect     = float3(0);
-    float3 LTransIndirect   = float3(0);
-    // 首次弹射分类（bounce > 0 的间接贡献归属）
-    AOVCategory firstBounceCategory = AOVCategory::Diffuse;
+    // Per-lobe AOV accumulators (Diffuse / Specular)
+    float3 LDiffuse  = float3(0);
+    float3 LSpecular = float3(0);    
+    AOVCategory firstBounceCategory = AOVCategory::Undefined;
+    // GBuffer written on primary hit
+    bool gbufferWritten = false;
+    float frameCount = float(globalParams.ptAccumualatedFrames + 1);
     // Initial ray with jitter for AA
     RayDesc ray;
     ray.Origin = globalParams.camPosition;
@@ -287,37 +260,39 @@ void RayGeneration()
             LightSampleContext ctx; /* UNUSED */
             // Miss — environment
             if (bounce == 0) {
+                // 环境光未经表面，归入 specular（背景光）
                 float3 envLe = light.Le(-view);
-                L += envLe;
-                // 环境光未经表面，不归入任何 AOV lobe
+                LSpecular += envLe;
                 break;
             }
             // Final miss, MIS-weight against the last BSDF sample
             float pdf = light.PDF_Li(ctx, -view);
             float mis = lastSamplePDF > EPS ? BalanceHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
             float3 contrib = beta * light.Le(-view) * mis;
-            L += contrib;
             // Bounce > 0 的环境光视为 indirect，归属首次弹射类别
-            AddToAOV(firstBounceCategory, false,
-                     LDiffuseDirect, LDiffuseIndirect,
-                     LSpecDirect, LSpecIndirect,
-                     LTransDirect, LTransIndirect, contrib);
+            if (firstBounceCategory == AOVCategory::Diffuse)
+                LDiffuse += contrib;
+            else
+                LSpecular += contrib;
             break;
         }
         Payload surface = SamplePayload(payload, ray);
 
-        // Debug View
-        if (flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition)) {
-            if (flags & kViewBaseColor) {
-                L = surface.baseColor;
-            } else if (flags & kViewNormal) {
-                L = surface.hit.normal * 0.5f + 0.5f;
-            } else if (flags & kViewMaterialID) {
-                L = unpackUnorm4x8ToFloat(hash(surface.materialID)).xyz;
-            } else if (flags & kViewPosition) {
-                L = surface.hit.position;
+        // Accumulate GBuffer on primary hit
+        if (bounce == 0 && !gbufferWritten) {
+            float4 g0 = float4(surface.baseColor, float(surface.materialID) / 255.0f);
+            float4 g1 = float4(surface.hit.normal * 0.5f + 0.5f, 0);
+            float4 g2 = float4(surface.hit.position, 0);
+            if (frameCount == 1) {
+                accumGBuffer0[pix] = g0;
+                accumGBuffer1[pix] = g1;
+                accumGBuffer2[pix] = g2;
+            } else {
+                accumGBuffer0[pix] += g0;
+                accumGBuffer1[pix] += g1;
+                accumGBuffer2[pix] += g2;
             }
-            break;
+            gbufferWritten = true;
         }
         // -- Path Integrator
         // Local frame setup
@@ -350,26 +325,20 @@ void RayGeneration()
             if (Li.pdf > EPS && bsdfPdf > EPS) {
                 float mis = BalanceHeuristic(1, Li.pdf, 1, bsdfPdf);
                 if (bounce == 0) {
-                    // 首次弹射：逐 lobe 拆分直接光
-                    float3 fD, fS, fT;
-                    bsdf.f_split(wo, wi, TransportMode::Radiance, fD, fS, fT);
+                    // 首次弹射：按 lobe 拆分直接光
+                    float3 fD, fS;
+                    bsdf.f_split(wo, wi, TransportMode::Radiance, fD, fS);
                     float3 scale = beta * AbsCosTheta(wi) * radiance * mis;
-                    float3 cD = fD * scale;
-                    float3 cS = fS * scale;
-                    float3 cT = fT * scale;
-                    LDiffuseDirect += cD;
-                    LSpecDirect    += cS;
-                    LTransDirect   += cT;
-                    L += cD + cS + cT;
+                    LDiffuse  += fD * scale;
+                    LSpecular += fS * scale;
                 } else {
-                    // 后续弹射：全部直接光归属首次弹射类别（indirect）
+                    // 后续弹射：全部归属首次弹射类别（indirect）
                     float3 f = bsdf.f(wo, wi, TransportMode::Radiance) * AbsCosTheta(wi);
                     float3 contrib = beta * f * radiance * mis;
-                    L += contrib;
-                    AddToAOV(firstBounceCategory, false,
-                             LDiffuseDirect, LDiffuseIndirect,
-                             LSpecDirect, LSpecIndirect,
-                             LTransDirect, LTransIndirect, contrib);
+                    if (firstBounceCategory == AOVCategory::Diffuse)
+                        LDiffuse += contrib;
+                    else
+                        LSpecular += contrib;
                 }
             }
         }
@@ -378,15 +347,14 @@ void RayGeneration()
         // Emissive
         {
             float3 emContrib = beta * surface.emissive;
-            L += emContrib;
             if (bounce == 0) {
-                // 首次弹射 emissive 归入 diffuse direct
-                LDiffuseDirect += emContrib;
+                // 首次弹射 emissive 归入 diffuse
+                LDiffuse += emContrib;
             } else {
-                AddToAOV(firstBounceCategory, false,
-                         LDiffuseDirect, LDiffuseIndirect,
-                         LSpecDirect, LSpecIndirect,
-                         LTransDirect, LTransIndirect, emContrib);
+                if (firstBounceCategory == AOVCategory::Diffuse)
+                    LDiffuse += emContrib;
+                else
+                    LSpecular += emContrib;
             }
         }
         // BSDF 采样（间接光路径）
@@ -417,48 +385,35 @@ void RayGeneration()
             beta /= rrPCount; // Boost non-terminated paths
         }
     }
+    // Write default GBuffer if no hit (miss on primary ray)
+    if (!gbufferWritten) {
+        float4 g0 = float4(0, 0, 0, 0);
+        float4 g1 = float4(0.5f, 0.5f, 1.0f, 0);  // neutral normal
+        float4 g2 = float4(0, 0, 0, 0);
+        if (frameCount == 1) {
+            accumGBuffer0[pix] = g0;
+            accumGBuffer1[pix] = g1;
+            accumGBuffer2[pix] = g2;
+        } else {
+            accumGBuffer0[pix] += g0;
+            accumGBuffer1[pix] += g1;
+            accumGBuffer2[pix] += g2;
+        }
+    }
     // Sanitize
-    if (any(isnan(L)) || any(isinf(L))) L = float3(0.0f);
-    if (any(isnan(LDiffuseDirect))   || any(isinf(LDiffuseDirect)))   LDiffuseDirect   = float3(0);
-    if (any(isnan(LDiffuseIndirect))  || any(isinf(LDiffuseIndirect)))  LDiffuseIndirect  = float3(0);
-    if (any(isnan(LSpecDirect))      || any(isinf(LSpecDirect)))      LSpecDirect      = float3(0);
-    if (any(isnan(LSpecIndirect))    || any(isinf(LSpecIndirect)))    LSpecIndirect    = float3(0);
-    if (any(isnan(LTransDirect))     || any(isinf(LTransDirect)))     LTransDirect     = float3(0);
-    if (any(isnan(LTransIndirect))   || any(isinf(LTransIndirect)))   LTransIndirect   = float3(0);
+    if (any(isnan(LDiffuse))  || any(isinf(LDiffuse)))  LDiffuse  = float3(0);
+    if (any(isnan(LSpecular)) || any(isinf(LSpecular))) LSpecular = float3(0);
 
-    float4 output = float4(L, 1.0f);
-    float4 outDD = float4(LDiffuseDirect, 1.0f);
-    float4 outDI = float4(LDiffuseIndirect, 1.0f);
-    float4 outSD = float4(LSpecDirect, 1.0f);
-    float4 outSI = float4(LSpecIndirect, 1.0f);
-    float4 outTD = float4(LTransDirect, 1.0f);
-    float4 outTI = float4(LTransIndirect, 1.0f);
+    float4 outD = float4(LDiffuse, 1.0f);
+    float4 outS = float4(LSpecular, 1.0f);
 
-    // Accumulation
-    float frameCount = float(globalParams.ptAccumualatedFrames + 1);
+    // Raw accumulation only — averaging and compositing done in blit pass
     if (frameCount == 1) {
-        accumulation[pix] = lighting[pix] = output;
-        accumDiffuseDirect[pix]   = aovDiffuseDirect[pix]   = outDD;
-        accumDiffuseIndirect[pix] = aovDiffuseIndirect[pix] = outDI;
-        accumSpecularDirect[pix]  = aovSpecularDirect[pix]  = outSD;
-        accumSpecularIndirect[pix]= aovSpecularIndirect[pix]= outSI;
-        accumTransDirect[pix]     = aovTransDirect[pix]     = outTD;
-        accumTransIndirect[pix]   = aovTransIndirect[pix]   = outTI;
+        accumDiffuse[pix]  = outD;
+        accumSpecular[pix] = outS;
     } else {
-        accumulation[pix] += output;
-        lighting[pix] = accumulation[pix] / frameCount;
-        accumDiffuseDirect[pix]   += outDD;
-        accumDiffuseIndirect[pix] += outDI;
-        accumSpecularDirect[pix]  += outSD;
-        accumSpecularIndirect[pix]+= outSI;
-        accumTransDirect[pix]     += outTD;
-        accumTransIndirect[pix]   += outTI;
-        aovDiffuseDirect[pix]   = accumDiffuseDirect[pix]   / frameCount;
-        aovDiffuseIndirect[pix] = accumDiffuseIndirect[pix] / frameCount;
-        aovSpecularDirect[pix]  = accumSpecularDirect[pix]  / frameCount;
-        aovSpecularIndirect[pix]= accumSpecularIndirect[pix]/ frameCount;
-        aovTransDirect[pix]     = accumTransDirect[pix]     / frameCount;
-        aovTransIndirect[pix]   = accumTransIndirect[pix]   / frameCount;
+        accumDiffuse[pix]  += outD;
+        accumSpecular[pix] += outS;
     }
 }
 // Naive stochastic opacity map implementation
