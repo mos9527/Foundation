@@ -262,16 +262,16 @@ public struct MetallicBSDF : IBxDF {
 
 // ============================================================
 // AOV Lobe Categories — used by the integrator for per-lobe splitting
+// Transmission is merged with Specular (denoiser-friendly: 2 signals)
 // ============================================================
 public enum AOVCategory {
-    Diffuse      = 0,
-    Specular     = 1,  // Glossy + Metallic
-    Transmission = 2
+    Undefined = -1,
+    Diffuse  = 0,
+    Specular = 1   // Glossy + Metallic + Transmission
 };
 
 public AOVCategory CategoryFromFlags(BxDFFlags f) {
-    if (IsDiffuse(f))       return AOVCategory::Diffuse;
-    if (IsTransmission(f))  return AOVCategory::Transmission;
+    if (IsDiffuse(f)) return AOVCategory::Diffuse;
     return AOVCategory::Specular;
 }
 
@@ -336,23 +336,22 @@ public struct PrincipledBSDFLobes {
     }
 
     // ----- 按 AOV 类别评估各 lobe 的 f 贡献 -----
-    // 返回 diffuse, specular(glossy+metal), transmission 三路 f 值
+    // 返回 diffuse, specular(glossy+metal+glass) 两路 f 值
     public void f_split(float3 wo, float3 wi, TransportMode mode,
-                        out float3 fDiffuse, out float3 fSpecular, out float3 fTransmission) {
-        fDiffuse      = float3(0);
-        fSpecular     = float3(0);
-        fTransmission = float3(0);
-        if (hasDiffuse)  fDiffuse      = wDiffuse  * diffuse.f(wo, wi, mode);
-        if (hasTrans)    fTransmission = wTrans    * glass.f(wo, wi, mode);
-        if (hasDielSpec) fSpecular    += wDielSpec * glossy.f(wo, wi, mode);
-        if (hasMetal)    fSpecular    += wMetal    * metallic.f(wo, wi, mode);
+                        out float3 fDiffuse, out float3 fSpecular) {
+        fDiffuse  = float3(0);
+        fSpecular = float3(0);
+        if (hasDiffuse)  fDiffuse   = wDiffuse  * diffuse.f(wo, wi, mode);
+        if (hasTrans)    fSpecular += wTrans    * glass.f(wo, wi, mode);
+        if (hasDielSpec) fSpecular += wDielSpec * glossy.f(wo, wi, mode);
+        if (hasMetal)    fSpecular += wMetal    * metallic.f(wo, wi, mode);
     }
 
     // 混合 f（全部 lobe 求和）
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
-        float3 d, s, t;
-        f_split(wo, wi, mode, d, s, t);
-        return d + s + t;
+        float3 d, s;
+        f_split(wo, wi, mode, d, s);
+        return d + s;
     }
 
     // 混合 PDF
@@ -390,7 +389,7 @@ public struct PrincipledBSDFLobes {
                 float lo = cumulative - wTrans;
                 uc = (cumulative > lo) ? clamp((uc - lo) / (cumulative - lo), 0.0f, 1.0f) : 0.0f;
                 chosen = glass; chosenWeight = wTrans;
-                category = AOVCategory::Transmission; found = true;
+                category = AOVCategory::Specular; found = true;
             }
         }
         if (hasDielSpec) {
