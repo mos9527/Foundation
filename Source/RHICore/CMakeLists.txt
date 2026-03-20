@@ -8,7 +8,7 @@ add_library(Foundation_RHICore INTERFACE ${INCLUDES})
 set_target_properties(Foundation_RHICore PROPERTIES LINKER_LANGUAGE CXX)
 
 FetchContent_MakeAvailable(SDL3)
-target_link_libraries(Foundation_RHICore INTERFACE Foundation_Core Foundation_Math SDL3::SDL3)
+target_link_libraries(Foundation_RHICore INTERFACE Foundation_Core Foundation_Math SDL3::SDL3-static)
 
 target_include_directories(
     Foundation_RHICore

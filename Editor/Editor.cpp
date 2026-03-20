@@ -1,8 +1,8 @@
 #include "Editor.hpp"
-#include "FileDialog.hpp"
 #include <imgui_internal.h>
 #include <ImGuizmo.h>
 #include <Math/Decompose.hpp>
+#include <filesystem>
 
 FEditorState FEState = FEInitEnter;
 /* -- Scene Data -- */
@@ -41,19 +41,6 @@ static void SaveScene(StringView path);
 static void LoadEnvMap(StringView path);
 static void EditorDockSpaceAndMenuBar();
 static void FHierarchyPanel();
-
-/* -- */
-void FInitEnter()
-{   
-    if (GContext->args.size() < 2)
-    {
-        LOG(Editor, LogInfo, "No scene path provided, starting with empty scene");
-        RendererSetupImGuiOnly(GContext);
-    }        
-    else
-        ReplaceScene(GContext->args[1]);
-    FEState = FEInit;
-}
 
 /* ==================== ReplaceScene ==================== */
 static void ReplaceScene(StringView path)
@@ -303,49 +290,40 @@ static void EditorDockSpaceAndMenuBar()
     {
         if (ImGui::BeginMenu("File"))
         {
-            if (ImGui::MenuItem("Open...", "Ctrl+O"))
-            {
-                auto path = OpenFileDialog(
-                    L"Scene Files\0*.gltf;*.glb;*.fscn\0All Files\0*.*\0",
-                    L"Open Scene");
-                if (path.has_value())
-                    ReplaceScene(path.value());
-            }
+            ImGui::TextDisabled("Drag & drop .gltf/.glb/.fscn to open scene");
+            ImGui::TextDisabled("Drag & drop .hdr/.hdri to load env map");
+            ImGui::Separator();
             if (ImGui::MenuItem("Save", "Ctrl+S"))
             {
                 if (!GCurrentSavePath.empty())
                     SaveScene(GCurrentSavePath);
-                else
-                {
-                    auto path = SaveFileDialog(
-                        L"Foundation Scene\0*.fscn\0",
-                        L"Save Scene As", L"fscn");
-                    if (path.has_value())
-                        SaveScene(path.value());
-                }
             }
             if (ImGui::MenuItem("Save As..."))
             {
-                auto path = SaveFileDialog(
-                    L"Foundation Scene\0*.fscn\0",
-                    L"Save Scene As", L"fscn");
-                if (path.has_value())
-                    SaveScene(path.value());
-            }
-            ImGui::Separator();
-            if (ImGui::MenuItem("Load HDRI..."))
-            {
-                auto path = OpenFileDialog(
-                    L"HDR Images\0*.hdr;*.hdri\0All Files\0*.*\0",
-                    L"Load HDRI Environment Map");
-                if (path.has_value())
-                    LoadEnvMap(path.value());
+                static char saveBuf[512] = {};
+                ImGui::SetNextWindowSize({400, 0}, ImGuiCond_FirstUseEver);
+                ImGui::OpenPopup("Save As");
             }
             ImGui::EndMenu();
         }
+        // Save As 弹窗（放在菜单外以免随菜单关闭）
+        if (ImGui::BeginPopupModal("Save As", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            static char saveBuf[512] = {};
+            ImGui::InputText("Path", saveBuf, sizeof(saveBuf));
+            if (ImGui::Button("Save") && saveBuf[0] != '\0')
+            {
+                SaveScene(saveBuf);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel"))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
 
         // Right-aligned PT / Raster toggle
-        {
+        if (!GSInstances.empty()) {
             const char* labelPT = " PT ";
             const char* labelRaster = "RSTR";
             float btnW_PT = ImGui::CalcTextSize(labelPT).x + ImGui::GetStyle().FramePadding.x * 2.0f;
@@ -504,32 +482,33 @@ static void FHierarchyPanel()
 
 void FInit()
 {
-    // Task 10: FInit状态下显示UI，等待用户加载场景
-    auto* renderer = GContext->renderer;
-    if (!renderer)
-    {
-        RendererSetupImGuiOnly(GContext);
-        renderer = GContext->renderer;
-    }
-    renderer->BeginExecute();
-    ImGui_ImplFoundation_NewFrame();
-    ImGui::NewFrame();
-    if (GShowImGui)
-    {
-        EditorDockSpaceAndMenuBar();
-        FHierarchyPanel();
-    }
-    float dt = ImGui::GetIO().DeltaTime;
-    bool cameraUpdated = false;
-    cameraUpdated |= GCamera.UpdateMovement(dt);
-    GCamera.Update({});
-    GCamera.aspect = GContext->swapchain->GetAspectRatio();
-    renderer->ExecuteFrame();
-    renderer->EndExecute();
-
     // 当有场景数据时，转移到 FERunningEnter
     if (!GSInstances.empty())
         FEState = FERunningEnter;
+    else
+    {
+        auto* renderer = GContext->renderer;
+        if (!renderer)
+        {
+            RendererSetupImGuiOnly(GContext);
+            renderer = GContext->renderer;
+        }
+        renderer->BeginExecute();
+        ImGui_ImplFoundation_NewFrame();
+        ImGui::NewFrame();
+        if (GShowImGui)
+        {
+            EditorDockSpaceAndMenuBar();
+            FHierarchyPanel();
+        }
+        float dt = ImGui::GetIO().DeltaTime;
+        bool cameraUpdated = false;
+        cameraUpdated |= GCamera.UpdateMovement(dt);
+        GCamera.Update({});
+        GCamera.aspect = GContext->swapchain->GetAspectRatio();
+        renderer->ExecuteFrame();
+        renderer->EndExecute();
+    }
 }
 RendererConfig GRendererConfig;
 
@@ -620,14 +599,7 @@ void FRunningImGui()
                 if (envChanged)
                     GShaderGlobals.ptAccumualatedFrames = 0;
             }
-            if (ImGui::Button("Load HDRI..."))
-            {
-                auto path = OpenFileDialog(
-                    L"HDR Images\0*.hdr;*.hdri\0All Files\0*.*\0",
-                    L"Load HDRI Environment Map");
-                if (path.has_value())
-                    LoadEnvMap(path.value());
-            }
+            ImGui::TextDisabled("Drag & drop .hdr/.hdri to load");
         }
         {
             const char* items[] = {"Frustum", "Occlusion"};
@@ -806,8 +778,53 @@ void FRunning()
     GShaderGlobals.ptAccumualatedFrames++;
 }
 
+/* -- 拖放文件处理：根据扩展名分发到对应加载函数 -- */
+static void HandleFile(const char* filePath)
+{
+    auto ext = std::filesystem::path(filePath).extension().string();
+    // 统一转小写
+    for (auto& c : ext)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (ext == ".gltf" || ext == ".glb" || ext == ".fscn")
+    {
+        ReplaceScene(filePath);
+    }
+    else if (ext == ".hdr" || ext == ".hdri")
+    {
+        LoadEnvMap(filePath);
+    }
+    else
+    {
+        LOG(Editor, LogWarn, "Unknown file type dropped: '{}'", filePath);
+    }
+}
+
+/* -- */
+void FInitEnter()
+{
+    if (GContext->args.size() < 2)
+    {
+        LOG(Editor, LogInfo, "No scene path provided, starting with empty scene");
+        RendererSetupImGuiOnly(GContext);
+    }
+    else
+        for (int i = 1; i < GContext->args.size(); i++)
+            HandleFile(GContext->args[i]);
+    FEState = FEInit;
+}
+
 bool EditorProcessEvent(SDL_Event* event)
 {
+    // 处理拖放文件事件
+    if (event->type == SDL_EVENT_DROP_FILE)
+    {
+        const char* droppedFile = event->drop.data;
+        if (droppedFile)
+        {
+            LOG(Editor, LogInfo, "File dropped: {}", droppedFile);
+            HandleFile(droppedFile);
+        }
+    }
     if (event->type == SDL_EVENT_WINDOW_RESIZED)
     {
         switch (FEState)
