@@ -47,9 +47,9 @@ extern int ImProfilerDrawTable(Span<const ImProfilerSample>, float resolution /*
 extern void ImProfilerDrawHistogram(Vector<unsigned>& bins, ImProfilerHistogram const& histogram, size_t labelCount,
                                     float resolution /* ns = tick * resolution */, bool logOrLinear = true);
 
-extern bool ImBitmaskOptionPicker(unsigned& value, const char** labels, const unsigned* masks, unsigned count, bool solo = false);
+extern bool ImBitmaskOptionPicker(unsigned& value, const char** labels, const unsigned* masks, unsigned count, bool solo = false, int columns = 1);
 template <size_t N>
-bool ImBitmaskOptionPicker(unsigned& value, const char* (&labels)[N], const unsigned (&masks)[N], bool solo = false)
+bool ImBitmaskOptionPicker(unsigned& value, const char* (&labels)[N], const unsigned (&masks)[N], bool solo = false, int columns = 1)
 {
-    return ImBitmaskOptionPicker(value, labels, masks, N, solo);
+    return ImBitmaskOptionPicker(value, labels, masks, N, solo, columns);
 }

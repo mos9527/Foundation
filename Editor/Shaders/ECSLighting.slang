@@ -86,13 +86,12 @@ void main(uint2 tid: SV_DispatchThreadID) {
         float3 L = 0;
 
         // Direct
-        PrincipledBSDF bsdf = PrincipledBSDF(baseColor, metallic, roughness, 0);
         quat toLocal     = quatRotateToZ(n);
         quat toWorld     = toLocal.inverted();
         float3 n = float3(0,0,1);
         float3 wi = toLocal.rotate(l);
         float3 wo = toLocal.rotate(v);
-        float3 beta = bsdf.f(wo, wi) * AbsCosTheta(wi);
+        float3 beta = /* nothing here yet */ AbsCosTheta(wi);
         float pdf = shadow(p, l) ? 0.0f : 1.0f;
         L += beta * pdf * globalParams.sunIntensity;
 
