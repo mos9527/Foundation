@@ -42,11 +42,8 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     int3 coord = int3(fragCoord.x, fragCoord.y, 0);
     if (flags & kViewOverdraw){
         uint32_t draws = overdraw.Load(coord);
-        return float4(heatmapGradient((float)draws / globalMax[0]), 1.0);
-    } else if (flags & kViewMeshlet){
-        float4 lighting = lighting.Load(coord);
-        return lighting;
-    } else if (flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition)) {
+        return float4(heatmapGradient((float)draws / globalMax[0]), 1.0);    
+    } else if (flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewMeshlet)) {
         // Do not post process these
         return lighting.Load(coord);
     } else {
