@@ -211,7 +211,7 @@ void ImProfilerDrawHistogram(Vector<unsigned>& bins, ImProfilerHistogram const& 
     }
     ImGui::Dummy({region.x, labelHeight + style.ItemSpacing.y});
 }
-bool ImBitmaskOptionPicker(unsigned& value, const char** labels, const unsigned* masks, unsigned count, bool solo)
+bool ImBitmaskOptionPicker(unsigned& value, const char** labels, const unsigned* masks, unsigned count, bool solo, int columns)
 {
     bool any = false;
     for (unsigned i = 0; i < count; i++)
@@ -235,7 +235,7 @@ bool ImBitmaskOptionPicker(unsigned& value, const char** labels, const unsigned*
                 value &= ~masks[i];
             any = true;
         }
-        if (i != count - 1)
+        if (i != count - 1 && (i + 1) % columns != 0)
             ImGui::SameLine();
     }
     return any;

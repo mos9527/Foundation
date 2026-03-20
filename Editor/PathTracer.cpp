@@ -57,6 +57,32 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                                                        .extent = {w, h, 1},
                                                        .format = RHIResourceFormat::R16G16B16A16SignedFloat});
 
+    // -- Per-lobe AOV buffers (Diffuse/Specular/Transmission × Direct/Indirect)
+    auto aovTexDesc = [&](const char* name) {
+        return renderer->CreateResource(name, RHITextureDesc{
+            .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
+            .extent = {w, h, 1},
+            .format = RHIResourceFormat::R32G32B32A32SignedFloat});
+    };
+    auto aovDisplayDesc = [&](const char* name) {
+        return renderer->CreateResource(name, RHITextureDesc{
+            .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
+            .extent = {w, h, 1},
+            .format = RHIResourceFormat::R16G16B16A16SignedFloat});
+    };
+    auto AccumDiffuseDirect   = aovTexDesc("Accum Diffuse Direct");
+    auto AccumDiffuseIndirect = aovTexDesc("Accum Diffuse Indirect");
+    auto AccumSpecularDirect  = aovTexDesc("Accum Specular Direct");
+    auto AccumSpecularIndirect= aovTexDesc("Accum Specular Indirect");
+    auto AccumTransDirect     = aovTexDesc("Accum Trans Direct");
+    auto AccumTransIndirect   = aovTexDesc("Accum Trans Indirect");
+    auto AOVDiffuseDirect     = aovDisplayDesc("AOV Diffuse Direct");
+    auto AOVDiffuseIndirect   = aovDisplayDesc("AOV Diffuse Indirect");
+    auto AOVSpecularDirect    = aovDisplayDesc("AOV Specular Direct");
+    auto AOVSpecularIndirect  = aovDisplayDesc("AOV Specular Indirect");
+    auto AOVTransDirect       = aovDisplayDesc("AOV Trans Direct");
+    auto AOVTransIndirect     = aovDisplayDesc("AOV Trans Indirect");
+
     auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
     ResourceHandle EnvMapTex;
     if (gpu->GetEnvMap()) {
@@ -107,6 +133,29 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindTextureUAV(self, LightingBuffer, "lighting", RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
+            // Per-lobe AOV UAVs
+            auto bindAOVAccum = [&](ResourceHandle h, const char* name) {
+                r->BindTextureUAV(self, h, name, RHIPipelineStageBits::RayTracingShader,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                                     .range = RHITextureSubresourceRange::Create()});
+            };
+            auto bindAOVDisplay = [&](ResourceHandle h, const char* name) {
+                r->BindTextureUAV(self, h, name, RHIPipelineStageBits::RayTracingShader,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
+                                                     .range = RHITextureSubresourceRange::Create()});
+            };
+            bindAOVAccum(AccumDiffuseDirect,    "accumDiffuseDirect");
+            bindAOVAccum(AccumDiffuseIndirect,   "accumDiffuseIndirect");
+            bindAOVAccum(AccumSpecularDirect,    "accumSpecularDirect");
+            bindAOVAccum(AccumSpecularIndirect,  "accumSpecularIndirect");
+            bindAOVAccum(AccumTransDirect,       "accumTransDirect");
+            bindAOVAccum(AccumTransIndirect,     "accumTransIndirect");
+            bindAOVDisplay(AOVDiffuseDirect,     "aovDiffuseDirect");
+            bindAOVDisplay(AOVDiffuseIndirect,   "aovDiffuseIndirect");
+            bindAOVDisplay(AOVSpecularDirect,    "aovSpecularDirect");
+            bindAOVDisplay(AOVSpecularIndirect,  "aovSpecularIndirect");
+            bindAOVDisplay(AOVTransDirect,       "aovTransDirect");
+            bindAOVDisplay(AOVTransIndirect,     "aovTransIndirect");
             r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
@@ -134,6 +183,18 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
+            // Per-lobe AOV SRVs for the blit pass
+            auto bindAOVSRV = [&](ResourceHandle h, const char* name) {
+                r->BindTextureSRV(self, h, name, RHIPipelineStageBits::FragmentShader,
+                                  RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
+                                                     .range = RHITextureSubresourceRange::Create()});
+            };
+            bindAOVSRV(AOVDiffuseDirect,     "aovDiffuseDirectTex");
+            bindAOVSRV(AOVDiffuseIndirect,   "aovDiffuseIndirectTex");
+            bindAOVSRV(AOVSpecularDirect,    "aovSpecularDirectTex");
+            bindAOVSRV(AOVSpecularIndirect,  "aovSpecularIndirectTex");
+            bindAOVSRV(AOVTransDirect,       "aovTransDirectTex");
+            bindAOVSRV(AOVTransIndirect,     "aovTransIndirectTex");
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
         });
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});

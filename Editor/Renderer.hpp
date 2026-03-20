@@ -46,6 +46,14 @@ static const int kViewMaterialID = 1 << 4;
 static const int kViewPosition = 1 << 5;
 static const int kViewPTDirect = 1 << 6;
 
+// Per-lobe AOV view flags
+static const int kViewAOVDiffuseDirect    = 1 << 7;
+static const int kViewAOVDiffuseIndirect  = 1 << 8;
+static const int kViewAOVSpecularDirect   = 1 << 9;
+static const int kViewAOVSpecularIndirect = 1 << 10;
+static const int kViewAOVTransDirect      = 1 << 11;
+static const int kViewAOVTransIndirect    = 1 << 12;
+
 static const int kViewEnableRaytracing = 1 << 16;
 
 static const int kCullFrustum = 1 << 0;

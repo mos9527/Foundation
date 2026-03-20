@@ -260,63 +260,167 @@ public struct MetallicBSDF : IBxDF {
     }
 };
 
-public struct PrincipledBSDF : IBxDF {
-    float3 baseColor;
-    float  metallic;
-    float  roughness;
-    float  ior;
-    float  transmission;
-    bool   energyCompensation;
-    float  dielF0;
+// ============================================================
+// AOV Lobe Categories — used by the integrator for per-lobe splitting
+// ============================================================
+public enum AOVCategory {
+    Diffuse      = 0,
+    Specular     = 1,  // Glossy + Metallic
+    Transmission = 2
+};
 
-    public __init(float3 baseColor, float metallic, float roughness, float ior, float transmission = 0.0f, bool energyCompensation = true) {
-        this.ior                = max(1.0f + 5e-3f, ior);
-        this.roughness          = max(5e-3f, roughness);
-        this.baseColor          = baseColor;
-        this.metallic           = metallic;
-        this.transmission       = transmission;
-        this.energyCompensation = energyCompensation;
-        this.dielF0             = F0FromIor(this.ior);
-    }
+public AOVCategory CategoryFromFlags(BxDFFlags f) {
+    if (IsDiffuse(f))       return AOVCategory::Diffuse;
+    if (IsTransmission(f))  return AOVCategory::Transmission;
+    return AOVCategory::Specular;
+}
 
-    // Build the lobe mixture with view-dependent Fresnel weighting for wo
-    LobeMixture BuildMixture(float3 wo) {
-        // sampleGlossy: energy-weighted probability using actual viewing angle
+// ============================================================
+// PrincipledBSDFLobes — replaces PrincipledBSDF + LobeMixture
+// 构建各个独立 lobe 及其权重，由积分器自行拆分评估
+// ============================================================
+public struct PrincipledBSDFLobes {
+    // 各 lobe 实例
+    DiffuseBSDF   diffuse;
+    GlassBSDF     glass;
+    GlossyBSDF    glossy;
+    MetallicBSDF  metallic;
+
+    // 归一化后的权重
+    float wDiffuse;
+    float wTrans;
+    float wDielSpec;
+    float wMetal;
+
+    // 活跃标志
+    bool hasDiffuse;
+    bool hasTrans;
+    bool hasDielSpec;
+    bool hasMetal;
+
+    float weightSum;
+
+    public __init(float3 baseColor, float metallic, float roughness, float ior,
+                  float transmission = 0.0f, bool energyCompensation = true, float3 wo = float3(0,0,1)) {
+        ior       = max(1.0f + 5e-3f, ior);
+        roughness = max(5e-3f, roughness);
+        float dielF0 = F0FromIor(ior);
+
+        // 视角相关 Fresnel 权重
         float sampleGlossy = reflectance(dielF0, 1.0f, SampleGGXLutE(AbsCosTheta(wo), roughness));
 
-        // Lobe weights (unnormalized):
-        //   metal  lobe weight = metallic
-        //   dielectric specular weight = (1 - metallic) * sampleGlossy
-        //   transmittance weight = (1 - metallic) * (1 - sampleGlossy) * transmission
-        //   diffuse weight = (1 - metallic) * (1 - sampleGlossy) * (1 - transmission)
-        float wMetal    = metallic;
-        float wDielSpec = (1.0f - metallic) * sampleGlossy;
-        float wTrans    = (1.0f - metallic) * (1.0f - sampleGlossy) * transmission;
-        float wDiffuse  = (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
+        // 未归一化权重
+        float rawMetal    = metallic;
+        float rawDielSpec = (1.0f - metallic) * sampleGlossy;
+        float rawTrans    = (1.0f - metallic) * (1.0f - sampleGlossy) * transmission;
+        float rawDiffuse  = (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
 
-        LobeMixture mix = LobeMixture();
-        if (wDiffuse  > EPS) mix.AddLobe(DiffuseBSDF(baseColor, dielF0, roughness), wDiffuse);
-        if (wTrans    > EPS) mix.AddLobe(GlassBSDF(baseColor, ior, roughness, energyCompensation), wTrans);
-        if (wDielSpec > EPS) mix.AddLobe(GlossyBSDF(dielF0, roughness, energyCompensation), wDielSpec);
-        if (wMetal    > EPS) mix.AddLobe(MetallicBSDF(baseColor, roughness, energyCompensation), wMetal);
-        mix.Finalize();
-        return mix;
+        this.hasDiffuse  = rawDiffuse  > EPS;
+        this.hasTrans    = rawTrans    > EPS;
+        this.hasDielSpec = rawDielSpec > EPS;
+        this.hasMetal    = rawMetal    > EPS;
+
+        this.weightSum = rawDiffuse + rawTrans + rawDielSpec + rawMetal;
+        if (this.weightSum <= 0.0f) this.weightSum = 1.0f;
+
+        this.wDiffuse  = rawDiffuse  / this.weightSum;
+        this.wTrans    = rawTrans    / this.weightSum;
+        this.wDielSpec = rawDielSpec / this.weightSum;
+        this.wMetal    = rawMetal    / this.weightSum;
+
+        // 构建各 lobe
+        this.diffuse  = DiffuseBSDF(baseColor, dielF0, roughness);
+        this.glass     = GlassBSDF(baseColor, ior, roughness, energyCompensation);
+        this.glossy    = GlossyBSDF(dielF0, roughness, energyCompensation);
+        this.metallic  = MetallicBSDF(baseColor, roughness, energyCompensation);
     }
 
-    public BxDFFlags Flags() {
-        // Flags are view-independent; build with a default cosTheta of 0.5
-        return BuildMixture(float3(0, 0, 1)).Flags();
+    // ----- 按 AOV 类别评估各 lobe 的 f 贡献 -----
+    // 返回 diffuse, specular(glossy+metal), transmission 三路 f 值
+    public void f_split(float3 wo, float3 wi, TransportMode mode,
+                        out float3 fDiffuse, out float3 fSpecular, out float3 fTransmission) {
+        fDiffuse      = float3(0);
+        fSpecular     = float3(0);
+        fTransmission = float3(0);
+        if (hasDiffuse)  fDiffuse      = wDiffuse  * diffuse.f(wo, wi, mode);
+        if (hasTrans)    fTransmission = wTrans    * glass.f(wo, wi, mode);
+        if (hasDielSpec) fSpecular    += wDielSpec * glossy.f(wo, wi, mode);
+        if (hasMetal)    fSpecular    += wMetal    * metallic.f(wo, wi, mode);
     }
 
+    // 混合 f（全部 lobe 求和）
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
-        return BuildMixture(wo).f(wo, wi, mode);
+        float3 d, s, t;
+        f_split(wo, wi, mode, d, s, t);
+        return d + s + t;
     }
 
+    // 混合 PDF
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
-        return BuildMixture(wo).PDF(wo, wi, mode, flags);
+        float result = 0.0f;
+        if (hasDiffuse)  result += wDiffuse  * diffuse.PDF(wo, wi, mode, flags);
+        if (hasTrans)    result += wTrans    * glass.PDF(wo, wi, mode, flags);
+        if (hasDielSpec) result += wDielSpec * glossy.PDF(wo, wi, mode, flags);
+        if (hasMetal)    result += wMetal    * metallic.PDF(wo, wi, mode, flags);
+        return result;
     }
 
-    public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
-        return BuildMixture(wo).Sample_f(wo, uc, u, mode, flags);
+    // 随机选择 lobe 采样方向，返回 mixture f/pdf 及选中的 AOV 类别
+    public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags,
+                               out AOVCategory category) {
+        category = AOVCategory::Diffuse;
+        // Categorical 采样
+        float cumulative = 0.0f;
+        IBxDF chosen = diffuse;
+        float chosenWeight = 0.0f;
+        bool found = false;
+
+        if (hasDiffuse) {
+            cumulative += wDiffuse;
+            if (!found && uc < cumulative) {
+                float lo = cumulative - wDiffuse;
+                uc = (cumulative > lo) ? clamp((uc - lo) / (cumulative - lo), 0.0f, 1.0f) : 0.0f;
+                chosen = diffuse; chosenWeight = wDiffuse;
+                category = AOVCategory::Diffuse; found = true;
+            }
+        }
+        if (hasTrans) {
+            cumulative += wTrans;
+            if (!found && uc < cumulative) {
+                float lo = cumulative - wTrans;
+                uc = (cumulative > lo) ? clamp((uc - lo) / (cumulative - lo), 0.0f, 1.0f) : 0.0f;
+                chosen = glass; chosenWeight = wTrans;
+                category = AOVCategory::Transmission; found = true;
+            }
+        }
+        if (hasDielSpec) {
+            cumulative += wDielSpec;
+            if (!found && uc < cumulative) {
+                float lo = cumulative - wDielSpec;
+                uc = (cumulative > lo) ? clamp((uc - lo) / (cumulative - lo), 0.0f, 1.0f) : 0.0f;
+                chosen = glossy; chosenWeight = wDielSpec;
+                category = AOVCategory::Specular; found = true;
+            }
+        }
+        if (!found) {
+            // 最后一个 lobe (metal) 或 fallback
+            if (hasMetal) {
+                chosen = metallic; chosenWeight = wMetal;
+                category = AOVCategory::Specular; found = true;
+            } else {
+                return BSDFSample();
+            }
+        }
+
+        BSDFSample bs = chosen.Sample_f(wo, uc, u, mode, flags);
+        if (!bs.IsValid())
+            return BSDFSample();
+
+        // Mixture PDF 和 f 保证无偏
+        float pMix = this.PDF(wo, bs.wi, mode, flags);
+        if (pMix < 1e-7f)
+            return BSDFSample();
+        SampledSpectrum fMix = this.f(wo, bs.wi, mode);
+        return BSDFSample(fMix, bs.wi, pMix, bs.flags, bs.eta);
     }
 };
