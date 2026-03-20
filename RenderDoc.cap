@@ -2,10 +2,10 @@
     "rdocCaptureSettings": 1,
     "settings": {
         "autoStart": false,
-        "commandLine": "\"K:\\benedikt-scenes-mitsuba\\veach-mis.fscn\"",
+        "commandLine": "\"K:\\custom-scenes\\monkey-see.glb\"",
         "environment": [
         ],
-        "executable": "C:\\Users\\komahuang\\Foundation\\out\\build\\x64-Debug\\bin\\Editor.exe",
+        "executable": "C:\\Users\\komahuang\\Foundation\\out\\build\\x64-Release\\bin\\Editor.exe",
         "inject": false,
         "numQueuedFrames": 0,
         "options": {

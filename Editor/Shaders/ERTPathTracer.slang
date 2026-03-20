@@ -23,6 +23,10 @@ RWTexture2D<float4> accumGBuffer1;  // Normal.xyz * 0.5 + 0.5, 0
 RWTexture2D<float4> accumGBuffer2;  // Position.xyz, 0
 [[vk_binding(0,2)]] Texture2D<float4> textures[];
 
+// SER coherence hint 位数 — 覆盖 materialID 所需的位数
+// 8 bits 足够 256 种材质，与 GBuffer packing 一致
+static const uint kSERCoherenceHintBits = 8u;
+
 // World-space hit geometry
 struct HitState
 {
@@ -191,6 +195,14 @@ float3 GeneratePrimaryRay(uint2 pixel, PCG rng)
 
 // -- Main Shader Routines
 
+// TraceRay via HitObject — returns a hit object without invoking closest hit.
+// Used by SER to reorder threads before shading.
+HitObject TraceHitObject(RayDesc ray)
+{
+    HitPayload payload;
+    return HitObject.TraceRay(AS, 0, 0xFF, 0, 0, 0, ray, payload);
+}
+
 bool TraceShadowRay(float3 origin, float3 direction)
 {
     RayDesc ray;
@@ -249,7 +261,20 @@ void RayGeneration()
     LightMixture light = LightMixture();
     for (uint bounce = 0; bounce < globalParams.ptMaxBounces; bounce++) {
         HitPayload payload;
-        TraceRay(AS, 0, 0xFF, 0, 0, 0, ray, payload);
+        // SER
+        // https://www.khronos.org/blog/boosting-ray-tracing-performance-with-shader-execution-reordering-introducing-vk-ext-ray-tracing-invocation-reorder
+        // https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_invocation_reorder/README.html
+        HitObject hitObj = TraceHitObject(ray);
+        // 从命中的 instance 中提取 materialID 作为一致性提示
+        // Miss 用 0xFFu 标识（与任何有效材质不同）
+        uint coherenceHint = 0xFFu;
+        if (hitObj.IsHit()) {
+            GSInstance inst = instances[NonUniformResourceIndex(hitObj.GetInstanceIndex())];
+            coherenceHint = inst.materialIndex & 0xFFu;
+        }
+        ReorderThread(hitObj, coherenceHint, kSERCoherenceHintBits);
+        // 触发 closest hit / miss，填充 payload
+        HitObject::Invoke(AS, hitObj, payload);
         // Outgoing direction
         float3 view = -ray.Direction;
         if (AnyLuminance(globalParams.sunIntensity))

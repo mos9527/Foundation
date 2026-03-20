@@ -13,7 +13,8 @@ const char* kVulkanDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
                                          VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
                                          VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
                                          VK_KHR_RAY_QUERY_EXTENSION_NAME,
-                                         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME};
+                                         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+                                         VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME};
 
 const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
 
@@ -99,7 +100,8 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
                        vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
                        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT, vk::PhysicalDeviceMeshShaderFeaturesEXT,
                        vk::PhysicalDeviceAccelerationStructureFeaturesKHR, vk::PhysicalDeviceRayQueryFeaturesKHR,
-                       vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>
+                       vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
+                       vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>
         featureChain = {
             {.features = {.samplerAnisotropy = true,
                           .fragmentStoresAndAtomics = true,
@@ -131,7 +133,8 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
                 .accelerationStructure = true,
             }, // vk::PhysicalDeviceAccelerationStructureFeaturesKHR
             {.rayQuery = true}, // vk::PhysicalDeviceRayQueryFeaturesKHR
-            {.rayTracingPipeline = true} // vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
+            {.rayTracingPipeline = true}, // vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
+            {.rayTracingInvocationReorder = true} // vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT
         };
     vk::DeviceCreateInfo device_info{.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
                                      .queueCreateInfoCount = static_cast<uint32_t>(queueInfos.size()),
