@@ -2,7 +2,7 @@
     "rdocCaptureSettings": 1,
     "settings": {
         "autoStart": false,
-        "commandLine": "\"K:\\custom-scenes\\monkey-see.glb\"",
+        "commandLine": "\"K:\\benedikt-scenes-mitsuba\\bedroom.fscn\"",
         "environment": [
         ],
         "executable": "C:\\Users\\komahuang\\Foundation\\out\\build\\x64-Release\\bin\\Editor.exe",
