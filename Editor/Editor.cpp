@@ -22,7 +22,7 @@ static bool GShowImGui = true;
 static PTReadbackHandles GPTReadback;
 /* -- HDR Rendering State -- */
 static int GHDRTargetSamples = 0;
-static int GHDRSamplePopupInput = 256;
+static int GHDRSamplePopupInput = 4096;
 static bool GOpenHDRPopup = false;
 static String GHDROutputPath;
 /* -- Gizmo -- */
