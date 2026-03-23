@@ -181,6 +181,13 @@ float3 OffsetRay(float3 worldPosition, float3 offsetDirection)
         abs(worldPosition.y) < origin ? worldPosition.y + floatScale * offsetDirection.y : offsetPosition.y,
         abs(worldPosition.z) < origin ? worldPosition.z + floatScale * offsetDirection.z : offsetPosition.z);
 }
+void AddRadiance(inout float3 L, float3 v)
+{
+    if (any(isnan(v)) || any(isinf(v)))
+        return;
+    L += max(float3(0.0f), v);
+}
+
 // Primary ray with jitter for AA
 float3 GeneratePrimaryRay(uint2 pixel, PCG rng)
 {
@@ -287,7 +294,7 @@ void RayGeneration()
             if (bounce == 0) {
                 // 环境光未经表面，归入 specular（背景光）
                 float3 envLe = light.Le(-view);
-                LSpecular += envLe;
+                AddRadiance(LSpecular, envLe);
                 break;
             }
             // Final miss, MIS-weight against the last BSDF sample
@@ -296,9 +303,9 @@ void RayGeneration()
             float3 contrib = beta * light.Le(-view) * mis;
             // Bounce > 0 的环境光视为 indirect，归属首次弹射类别
             if (firstBounceCategory == AOVCategory::Diffuse)
-                LDiffuse += contrib;
+                AddRadiance(LDiffuse, contrib);
             else
-                LSpecular += contrib;
+                AddRadiance(LSpecular, contrib);
             break;
         }
         Payload surface = SamplePayload(payload, ray);
@@ -354,16 +361,16 @@ void RayGeneration()
                     float3 fD, fS;
                     bsdf.f_split(wo, wi, TransportMode::Radiance, fD, fS);
                     float3 scale = beta * AbsCosTheta(wi) * radiance * mis;
-                    LDiffuse  += fD * scale;
-                    LSpecular += fS * scale;
+                    AddRadiance(LDiffuse,   fD * scale);
+                    AddRadiance(LSpecular, fS * scale);
                 } else {
                     // 后续弹射：全部归属首次弹射类别（indirect）
                     float3 f = bsdf.f(wo, wi, TransportMode::Radiance) * AbsCosTheta(wi);
                     float3 contrib = beta * f * radiance * mis;
                     if (firstBounceCategory == AOVCategory::Diffuse)
-                        LDiffuse += contrib;
+                        AddRadiance(LDiffuse, contrib);
                     else
-                        LSpecular += contrib;
+                        AddRadiance(LSpecular, contrib);
                 }
             }
         }
@@ -374,12 +381,12 @@ void RayGeneration()
             float3 emContrib = beta * surface.emissive;
             if (bounce == 0) {
                 // 首次弹射 emissive 归入 diffuse
-                LDiffuse += emContrib;
+                AddRadiance(LDiffuse, emContrib);
             } else {
                 if (firstBounceCategory == AOVCategory::Diffuse)
-                    LDiffuse += emContrib;
+                    AddRadiance(LDiffuse, emContrib);
                 else
-                    LSpecular += emContrib;
+                    AddRadiance(LSpecular, emContrib);
             }
         }
         // BSDF 采样（间接光路径）
@@ -425,10 +432,7 @@ void RayGeneration()
             accumGBuffer2[pix] += g2;
         }
     }
-    // Sanitize
-    if (any(isnan(LDiffuse))  || any(isinf(LDiffuse)))  LDiffuse  = float3(0);
-    if (any(isnan(LSpecular)) || any(isinf(LSpecular))) LSpecular = float3(0);
-
+    // Per-contribution sanitize already done via AddRadiance / AddRadiance
     float4 outD = float4(LDiffuse, 1.0f);
     float4 outS = float4(LSpecular, 1.0f);
 
