@@ -7,7 +7,8 @@ enum FEditorState
     FEInitEnter,
     FEInit,
     FERunningEnter,
-    FERunning
+    FERunning,
+    FERenderingHDR
 };
 
 struct FArcballCamera

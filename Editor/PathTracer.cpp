@@ -6,7 +6,7 @@
 #include <RenderUtils/PSFullscreen.hpp>
 using namespace RenderUtils;
 
-void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
+void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene, PTReadbackHandles& outHandles)
 {
     auto* renderer = context->renderer = Construct<Renderer>(context->allocator,
                                                              RendererDesc{
@@ -49,10 +49,10 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
 
     // -- Accumulation buffers (Welford online mean, all F32)
     auto Diffuse  = renderer->CreateResource("Diffuse", RHITextureDesc{
-        .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
+        .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferSource,
         .extent = {w, h, 1}, .format = RHIResourceFormat::R32G32B32A32SignedFloat});
     auto Specular = renderer->CreateResource("Specular", RHITextureDesc{
-        .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
+        .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferSource,
         .extent = {w, h, 1}, .format = RHIResourceFormat::R32G32B32A32SignedFloat});
     auto GBuffer0 = renderer->CreateResource("GBuffer 0", RHITextureDesc{
         .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
@@ -63,6 +63,10 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
     auto GBuffer2 = renderer->CreateResource("GBuffer 2", RHITextureDesc{
         .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
         .extent = {w, h, 1}, .format = RHIResourceFormat::R32G32B32A32SignedFloat});
+
+    // 保存句柄供编辑器 HDR 导出使用
+    outHandles.diffuse = Diffuse;
+    outHandles.specular = Specular;
 
     auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
     ResourceHandle EnvMapTex;

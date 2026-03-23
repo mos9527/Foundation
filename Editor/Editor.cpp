@@ -1,4 +1,6 @@
 #include "Editor.hpp"
+#include "Texture.hpp"
+#include <RenderCore/ImmediateContext.hpp>
 #include <imgui_internal.h>
 #include <ImGuizmo.h>
 #include <Math/Decompose.hpp>
@@ -16,6 +18,11 @@ static String GCurrentSavePath;
 static int GSelectedInstance = -1;
 static int GSelectedMaterial = -1;
 static bool GShowImGui = true;
+static PTReadbackHandles GPTReadback;
+/* -- HDR Rendering State -- */
+static int GHDRTargetSamples = 0;
+static int GHDRSamplePopupInput = 256;
+static bool GOpenHDRPopup = false;
 /* -- Gizmo -- */
 static ImGuizmo::OPERATION GGizmoOp = ImGuizmo::TRANSLATE;
 static ImGuizmo::MODE GGizmoMode = ImGuizmo::WORLD;
@@ -304,6 +311,12 @@ static void EditorDockSpaceAndMenuBar()
                 ImGui::SetNextWindowSize({400, 0}, ImGuiCond_FirstUseEver);
                 ImGui::OpenPopup("Save As");
             }
+            ImGui::Separator();
+            if (GRendererMode == ERendererMode::PathTracer && !GSInstances.empty())
+            {
+                if (ImGui::MenuItem("Render .hdr..."))
+                    GOpenHDRPopup = true;
+            }
             ImGui::EndMenu();
         }
         // Save As 弹窗（放在菜单外以免随菜单关闭）
@@ -314,6 +327,30 @@ static void EditorDockSpaceAndMenuBar()
             if (ImGui::Button("Save") && saveBuf[0] != '\0')
             {
                 SaveScene(saveBuf);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel"))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+
+        // HDR Render Settings modal popup (opened from File menu)
+        if (GOpenHDRPopup)
+        {
+            ImGui::OpenPopup("HDR Render Settings");
+            GOpenHDRPopup = false;
+        }
+        if (ImGui::BeginPopupModal("HDR Render Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::Text("Configure HDR render:");
+            ImGui::InputInt("Samples (frames)", &GHDRSamplePopupInput);
+            if (GHDRSamplePopupInput < 1) GHDRSamplePopupInput = 1;
+            if (ImGui::Button("Start Render"))
+            {
+                GHDRTargetSamples = GHDRSamplePopupInput;
+                GShaderGlobals.ptAccumulatedFrames = 0;
+                FEState = FERenderingHDR;
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
@@ -514,6 +551,8 @@ RendererConfig GRendererConfig;
 
 void FRunningEnter()
 {
+    // 重建渲染器时先失效旧的 PT readback 句柄
+    GPTReadback = {};
     RendererScene scene{
         .gsGlobals = &GShaderGlobals,
         .gsInstances = &GSInstances,
@@ -522,7 +561,7 @@ void FRunningEnter()
         .gsBLASes = &GSBLASes
     };
     if (GRendererMode == ERendererMode::PathTracer)
-        PathTracerSetup(GContext, GRendererConfig, scene);
+        PathTracerSetup(GContext, GRendererConfig, scene, GPTReadback);
     else
         RendererSetup(GContext, GRendererConfig, scene);
     FEState = FERunning;
@@ -742,6 +781,166 @@ void FRunningImGui()
     ImGui::End();
     ImGui::PopStyleColor();
 }
+/* ==================== HDR Rendering State ==================== */
+static void DoHDRReadback()
+{
+    auto* renderer = GContext->renderer;
+    auto [w, h] = renderer->GetSwapchainExtent();
+    const size_t pixelCount = static_cast<size_t>(w) * h;
+    const size_t imageBytes = pixelCount * 4 * sizeof(float); // RGBA32F
+
+    auto* diffuseTex  = renderer->DerefResource(GPTReadback.diffuse).Get<RHITexture*>();
+    auto* specularTex = renderer->DerefResource(GPTReadback.specular).Get<RHITexture*>();
+
+    auto readbackBuf = GContext->device->CreateBuffer({
+        .resource = {.heap = RHIDeviceHeapType::Readback,
+                     .hostAccess = RHIResourceHostAccess::ReadWrite,
+                     .coherent = true},
+        .usage = RHIBufferUsageBits::TransferDestination,
+        .size = imageBytes * 2});
+
+    {
+        ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
+        auto* cmd = ctx.Get();
+        cmd->Begin();
+        cmd->BeginTransition();
+        cmd->SetImageTransition(diffuseTex, {
+            .srcAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
+            .dstAccess = RHIResourceAccessBits::TransferRead,
+            .srcStage = RHIPipelineStageBits::BottomOfPipe,
+            .dstStage = RHIPipelineStageBits::Transfer,
+            .srcImgLayout = RHITextureLayout::General,
+            .dstImgLayout = RHITextureLayout::TransferSrc,
+            .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        cmd->SetImageTransition(specularTex, {
+            .srcAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
+            .dstAccess = RHIResourceAccessBits::TransferRead,
+            .srcStage = RHIPipelineStageBits::BottomOfPipe,
+            .dstStage = RHIPipelineStageBits::Transfer,
+            .srcImgLayout = RHITextureLayout::General,
+            .dstImgLayout = RHITextureLayout::TransferSrc,
+            .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        cmd->EndTransition();
+        cmd->CopyImageToBuffer(diffuseTex, RHITextureLayout::TransferSrc, readbackBuf.Get(),
+            {{{.dstBufferOffset = 0,
+               .srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
+               .extent = {w, h, 1}}}});
+        cmd->CopyImageToBuffer(specularTex, RHITextureLayout::TransferSrc, readbackBuf.Get(),
+            {{{.dstBufferOffset = static_cast<uint32_t>(imageBytes),
+               .srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
+               .extent = {w, h, 1}}}});
+        cmd->BeginTransition();
+        cmd->SetImageTransition(diffuseTex, {
+            .srcAccess = RHIResourceAccessBits::TransferRead,
+            .dstAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
+            .srcStage = RHIPipelineStageBits::Transfer,
+            .dstStage = RHIPipelineStageBits::TopOfPipe,
+            .srcImgLayout = RHITextureLayout::TransferSrc,
+            .dstImgLayout = RHITextureLayout::General,
+            .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        cmd->SetImageTransition(specularTex, {
+            .srcAccess = RHIResourceAccessBits::TransferRead,
+            .dstAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
+            .srcStage = RHIPipelineStageBits::Transfer,
+            .dstStage = RHIPipelineStageBits::TopOfPipe,
+            .srcImgLayout = RHITextureLayout::TransferSrc,
+            .dstImgLayout = RHITextureLayout::General,
+            .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        cmd->EndTransition();
+        cmd->End();
+        ctx.Submit();
+        ctx.WaitIdle();
+    }
+
+    auto* mapped = readbackBuf->Map<float>();
+    const float* diffuseData  = mapped;
+    const float* specularData = mapped + pixelCount * 4;
+    Vector<float> combined(pixelCount * 4, GLOBAL_ALLOC);
+    for (size_t i = 0; i < pixelCount; ++i)
+    {
+        combined[i * 4 + 0] = diffuseData[i * 4 + 0] + specularData[i * 4 + 0];
+        combined[i * 4 + 1] = diffuseData[i * 4 + 1] + specularData[i * 4 + 1];
+        combined[i * 4 + 2] = diffuseData[i * 4 + 2] + specularData[i * 4 + 2];
+        combined[i * 4 + 3] = 1.0f;
+    }
+    readbackBuf->Unmap();
+
+    SaveHDR(combined.data(), static_cast<int>(w), static_cast<int>(h), "render_output.hdr");
+    LOG(Editor, LogInfo, "HDR image saved to render_output.hdr ({}x{}, {} samples)",
+        w, h, GShaderGlobals.ptAccumulatedFrames);
+}
+
+void FRenderingHDR()
+{
+    auto* renderer = GContext->renderer;
+    renderer->BeginExecute();
+    ImGui_ImplFoundation_NewFrame();
+    ImGui::NewFrame();
+
+    bool cancelRendering = false;
+    // 顶部全宽进度条
+    {
+        auto& io = ImGui::GetIO();
+        float margin = 16.0f;
+        float barH = 28.0f;
+        float barW = io.DisplaySize.x - margin * 2.0f;
+        ImGui::SetNextWindowPos(ImVec2(margin, margin));
+        ImGui::SetNextWindowSize(ImVec2(barW, barH + ImGui::GetStyle().WindowPadding.y * 2.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 4));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(0, 0));
+        ImGui::Begin("##HDRProgressBar", nullptr,
+            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
+            ImGuiWindowFlags_AlwaysAutoResize);
+        float fraction = GHDRTargetSamples > 0
+            ? static_cast<float>(GShaderGlobals.ptAccumulatedFrames) / static_cast<float>(GHDRTargetSamples)
+            : 0.0f;
+        char overlay[128];
+        snprintf(overlay, sizeof(overlay), "%d / %d samples",
+                 GShaderGlobals.ptAccumulatedFrames, GHDRTargetSamples);
+        ImGui::ProgressBar(fraction, ImVec2(barW, barH), overlay);
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+    }
+    // 底部右角取消按钮
+    {
+        auto& io = ImGui::GetIO();
+        const char* cancelLabel = "  Cancel  ";
+        ImVec2 textSize = ImGui::CalcTextSize(cancelLabel);
+        float btnW = textSize.x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        float btnH = textSize.y + ImGui::GetStyle().FramePadding.y * 2.0f;
+        float margin = 24.0f;
+        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - btnW - margin, io.DisplaySize.y - btnH - margin));
+        ImGui::SetNextWindowSize(ImVec2(btnW, btnH));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(0, 0));
+        ImGui::Begin("##HDRCancel", nullptr,
+            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
+            ImGuiWindowFlags_AlwaysAutoResize);
+        cancelRendering = ImGui::Button(cancelLabel, ImVec2(btnW, btnH));
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+    }
+    GShaderGlobals.frameNumber = renderer->GetFrame();
+    renderer->ExecuteFrame();
+    renderer->EndExecute();
+    GShaderGlobals.ptAccumulatedFrames++;
+    
+    // 用户点击取消：直接回到正常模式，不保存
+    if (cancelRendering)
+    {
+        FEState = FERunning;
+    }
+    // 达到目标采样数：执行readback保存HDR
+    else if (GShaderGlobals.ptAccumulatedFrames >= static_cast<uint32_t>(GHDRTargetSamples))
+    {
+        if (GPTReadback.diffuse != kInvalidHandle && GPTReadback.specular != kInvalidHandle)
+            DoHDRReadback();
+        FEState = FERunning;
+    }
+}
+
 void FRunning()
 {
     auto* renderer = GContext->renderer;
@@ -905,6 +1104,9 @@ bool EditorOnFrame(FContext*)
         break;
     case FERunning:
         FRunning();
+        break;
+    case FERenderingHDR:
+        FRenderingHDR();
         break;
     default:
         return true;

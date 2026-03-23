@@ -1,5 +1,6 @@
 #include "Texture.hpp"
 #include <bc7enc.h>
+#include <stb_image_write.h>
 using namespace Foundation::RHI;
 FTexture2D::FTexture2D(Allocator* alloc) : magic(DDS_MAGIC), data(alloc)
 {
@@ -304,6 +305,20 @@ void LoadHDR(FTexture2D& texture, StringView path)
     const size_t size = width * height * 4 * sizeof(float);
     const auto* bytes = reinterpret_cast<const unsigned char*>(imgData);
     texture.data.assign(bytes, bytes + size);
+}
+
+void SaveHDR(const float* data, int width, int height, StringView path)
+{
+    // stbi_write_hdr 期望 RGB 3通道数据，需要从 RGBA 4通道中提取
+    Vector<float> rgb(static_cast<size_t>(width) * height * 3, GLOBAL_ALLOC);
+    for (int i = 0; i < width * height; ++i)
+    {
+        rgb[i * 3 + 0] = data[i * 4 + 0];
+        rgb[i * 3 + 1] = data[i * 4 + 1];
+        rgb[i * 3 + 2] = data[i * 4 + 2];
+    }
+    CHECK_MSG(stbi_write_hdr(path.data(), width, height, 3, rgb.data()),
+              "Failed to write HDR image to {}", path);
 }
 FTexture2D FTexture2D::EncodeBC7() const
 {

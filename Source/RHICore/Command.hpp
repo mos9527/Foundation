@@ -121,6 +121,8 @@ namespace Foundation::RHI
         {
             // Offset in the source buffer, used for CopyBufferToImage
             uint32_t srcBufferOffset = 0;
+            // Offset in the destination buffer, used for CopyImageToBuffer
+            uint32_t dstBufferOffset = 0;
             // Subresource layer of the source image, used for CopyImage
             RHITextureSubresourceLayer srcLayer;
             // 3D offset of the source image, used for CopyImage
@@ -136,6 +138,8 @@ namespace Foundation::RHI
                                           RHITextureLayout dst_layout, Span<const CopyImageRegion> regions) = 0;
         virtual RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image,
                                                   RHITextureLayout dst_layout, Span<const CopyImageRegion> regions) = 0;
+        virtual RHICommandList& CopyImageToBuffer(RHITexture* src_image, RHITextureLayout src_layout,
+                                                  RHIBuffer* dst_buffer, Span<const CopyImageRegion> regions) = 0;
         virtual RHICommandList& CopyAccelerationStructure(RHIAccelerationStructure* src, RHIAccelerationStructure* dst, bool compact = true) = 0;
 #pragma endregion
 #pragma region Graphics Pipeline
