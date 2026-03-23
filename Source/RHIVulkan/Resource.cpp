@@ -8,6 +8,7 @@ VmaMemoryUsage vmaMemoryUsageFlagsFromResource(RHIResourceDesc const& desc)
         return VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     case RHIDeviceHeapType::Readback:
     case RHIDeviceHeapType::Upload:
+    default:
         return VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     }
 }
@@ -136,6 +137,7 @@ void VulkanBuffer::Unmap()
 {
     if (mMapped)
         vmaUnmapMemory(mDevice.GetVkAllocator(), mAllocation);
+    mMapped = nullptr;
 }
 vk::DeviceAddress VulkanBuffer::GetBufferAddress() const
 {

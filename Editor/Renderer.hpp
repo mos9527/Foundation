@@ -1,5 +1,6 @@
 #pragma once
 #include "Scene.hpp"
+#include <RenderCore/RenderPass.hpp>
 #pragma pack(push, 1)
 struct UBO
 {
@@ -78,4 +79,15 @@ struct RendererScene
 };
 
 extern void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene);
-extern void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene);
+
+/**
+ * @brief 保存路径追踪器当前累积结果的 HDR 资源句柄。
+ * 由 PathTracerSetup 设置，供编辑器在帧结束后读取。
+ */
+struct PTReadbackHandles
+{
+    ResourceHandle diffuse{kInvalidHandle};
+    ResourceHandle specular{kInvalidHandle};
+};
+
+extern void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene, PTReadbackHandles& outHandles);

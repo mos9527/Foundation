@@ -72,6 +72,14 @@ void LoadRGBA8(FTexture2D& texture, Span<const unsigned char> data, bool gamma =
  * Used for environment maps.
  */
 void LoadHDR(FTexture2D& texture, StringView path);
+/**
+ * Saves float data as an HDR (.hdr) file via stb_image_write.
+ * @param data Pointer to float RGBA pixel data (4 floats per pixel).
+ * @param width Image width in pixels.
+ * @param height Image height in pixels.
+ * @param path Output file path.
+ */
+void SaveHDR(const float* data, int width, int height, StringView path);
 /* -- Serialization -- */
 template <>
 inline void FSerialize(FWriter& w, FTexture2D const& obj)

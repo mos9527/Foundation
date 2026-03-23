@@ -109,6 +109,8 @@ namespace Foundation::RHI
                                   RHITextureLayout dst_layout, Span<const CopyImageRegion> regions) override;
         RHICommandList& CopyBufferToImage(RHIBuffer* src_buffer, RHITexture* dst_image, RHITextureLayout dst_layout,
                                           Span<const CopyImageRegion> regions) override;
+        RHICommandList& CopyImageToBuffer(RHITexture* src_image, RHITextureLayout src_layout,
+                                          RHIBuffer* dst_buffer, Span<const CopyImageRegion> regions) override;
         RHICommandList& CopyAccelerationStructure(RHIAccelerationStructure* src, RHIAccelerationStructure* dst,
                                                   bool compact) override;
 

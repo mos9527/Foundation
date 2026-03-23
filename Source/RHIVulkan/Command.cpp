@@ -360,6 +360,38 @@ RHICommandList& VulkanCommandList::CopyBufferToImage(RHIBuffer* src_buffer, RHIT
     return *this;
 }
 
+RHICommandList& VulkanCommandList::CopyImageToBuffer(RHITexture* src_image, RHITextureLayout src_layout,
+                                                     RHIBuffer* dst_buffer, Span<const CopyImageRegion> regions)
+{
+    CHECK(mAllocator && "Invalid command list states.");
+    CHECK(src_image && dst_buffer && "Source image and destination buffer must be valid.");
+
+    auto* src_vulkan_image = static_cast<VulkanTexture*>(src_image);
+    auto* dst_vulkan_buffer = static_cast<VulkanBuffer*>(dst_buffer);
+
+    Vector<vk::BufferImageCopy> vk_regions(mAllocator);
+    vk_regions.reserve(regions.size());
+    for (auto const& region : regions)
+    {
+        vk_regions.push_back(vk::BufferImageCopy{
+            .bufferOffset = region.dstBufferOffset,
+            .bufferRowLength = 0, // Tightly packed
+            .bufferImageHeight = 0, // Tightly packed
+            .imageSubresource = {.aspectMask = vkImageAspectFlagFromRHITextureAspect(region.srcLayer.aspect),
+                                 .mipLevel = region.srcLayer.mipLevel,
+                                 .baseArrayLayer = region.srcLayer.baseArrayLayer,
+                                 .layerCount = region.srcLayer.layerCount},
+            .imageOffset = {region.srcOffset.x, region.srcOffset.y, region.srcOffset.z},
+            .imageExtent = {region.extent.x, region.extent.y, region.extent.z}});
+    }
+
+    mCommandBuffer.copyImageToBuffer(*src_vulkan_image->GetVkImage(),
+                                     vkImageLayoutFromRHITextureLayout(src_layout),
+                                     *dst_vulkan_buffer->GetVkBuffer(), vk_regions);
+
+    return *this;
+}
+
 RHICommandList& VulkanCommandList::CopyAccelerationStructure(RHIAccelerationStructure* src,
                                                              RHIAccelerationStructure* dst, bool compact)
 {
