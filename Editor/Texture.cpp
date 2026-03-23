@@ -320,6 +320,13 @@ void SaveHDR(const float* data, int width, int height, StringView path)
     CHECK_MSG(stbi_write_hdr(path.data(), width, height, 3, rgb.data()),
               "Failed to write HDR image to {}", path);
 }
+
+void SavePNG(const unsigned char* data, int width, int height, StringView path)
+{
+    // stbi_write_png：RGBA 4通道，stride = width * 4
+    CHECK_MSG(stbi_write_png(path.data(), width, height, 4, data, width * 4),
+              "Failed to write PNG image to {}", path);
+}
 FTexture2D FTexture2D::EncodeBC7() const
 {
     CHECK_MSG(GetFormat() == RHIResourceFormat::R8G8B8A8Unorm || GetFormat() == RHIResourceFormat::R8G8B8A8Srgb,

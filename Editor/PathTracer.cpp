@@ -151,25 +151,41 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
             cmd->TraceRays(wh.x, wh.y, 1);
         });
 
-    createPSFullscreenPass(
-        renderer, "Blit Image",
-        [=](PassHandle self, Renderer* r)
-        {
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Paths::Resolve("data/shaders/EPSBlitPT.spv"),
-                          AsBytes(AsSpan(cfg.viewFlags)));
-            // Bind all buffers as SRVs — blit pass does compositing + tone map
-            auto bindSRV = [&](ResourceHandle h, const char* name) {
-                r->BindTextureSRV(self, h, name, RHIPipelineStageBits::FragmentShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
-                                                     .range = RHITextureSubresourceRange::Create()});
-            };
-            bindSRV(Diffuse,  "diffuseTex");
-            bindSRV(Specular, "specularTex");
-            bindSRV(GBuffer0, "gBuffer0Tex");
-            bindSRV(GBuffer1, "gBuffer1Tex");
-            bindSRV(GBuffer2, "gBuffer2Tex");
-            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
-        });
+    // 共用的 blit setup lambda — 绑定 EPSBlitPT 着色器 + 所有 SRV
+    auto blitSetup = [=](PassHandle self, Renderer* r)
+    {
+        r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Paths::Resolve("data/shaders/EPSBlitPT.spv"),
+                      AsBytes(AsSpan(cfg.viewFlags)));
+        // Bind all buffers as SRVs — blit pass does compositing + tone map
+        auto bindSRV = [&](ResourceHandle h, const char* name) {
+            r->BindTextureSRV(self, h, name, RHIPipelineStageBits::FragmentShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                                 .range = RHITextureSubresourceRange::Create()});
+        };
+        bindSRV(Diffuse,  "diffuseTex");
+        bindSRV(Specular, "specularTex");
+        bindSRV(GBuffer0, "gBuffer0Tex");
+        bindSRV(GBuffer1, "gBuffer1Tex");
+        bindSRV(GBuffer2, "gBuffer2Tex");
+        r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
+    };
+
+    createPSFullscreenPass(renderer, "Blit Image", blitSetup);
+
+    // -- SDR render target：与交换链同尺寸的 R8G8B8A8 纹理，供 PNG 导出使用
+    auto SDRTarget = renderer->CreateResource("SDR Render Target", RHITextureDesc{
+        .usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::TransferSource,
+        .extent = {w, h, 1},
+        .format = RHIResourceFormat::R8G8B8A8Unorm});
+    outHandles.sdrRenderTarget = SDRTarget;
+
+    createPSFullscreenPassRTV(
+        renderer, "Render SDR",
+        SDRTarget,
+        RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
+                           .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)},
+        blitSetup);
+
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});
     renderer->EndSetup();
 }
