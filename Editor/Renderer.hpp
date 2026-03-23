@@ -35,6 +35,7 @@ struct UBO
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};
     int32_t ptMaxBounces{32u};
+    float ptFireflyClamp{10.0f};
 };
 #pragma pack(pop)
 

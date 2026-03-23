@@ -561,6 +561,7 @@ void FRunningImGui()
         {
             ImGui::Text("PT Accumulation: %d", GShaderGlobals.ptAccumulatedFrames);
             ImGui::SliderInt("PT Bounces", &GShaderGlobals.ptMaxBounces, 1, 64);
+            ImGui::SliderFloat("Firefly Clamp", &GShaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
         }
         GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
         bool changed = false;

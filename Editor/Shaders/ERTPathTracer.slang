@@ -185,7 +185,12 @@ void AddRadiance(inout float3 L, float3 v)
 {
     if (any(isnan(v)) || any(isinf(v)))
         return;
-    L += max(float3(0.0f), v);
+    v = max(float3(0.0f), v);
+    // Firefly clamp — cap per-sample contribution to suppress extreme outliers
+    float maxComp = MaxComponent(v);
+    if (maxComp > globalParams.ptFireflyClamp)
+        v *= globalParams.ptFireflyClamp / maxComp;
+    L += v;
 }
 
 // Primary ray with jitter for AA
@@ -299,7 +304,7 @@ void RayGeneration()
             }
             // Final miss, MIS-weight against the last BSDF sample
             float pdf = light.PDF_Li(ctx, -view);
-            float mis = lastSamplePDF > EPS ? BalanceHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
+            float mis = lastSamplePDF > EPS ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
             float3 contrib = beta * light.Le(-view) * mis;
             // Bounce > 0 的环境光视为 indirect，归属首次弹射类别
             if (firstBounceCategory == AOVCategory::Diffuse)
@@ -356,7 +361,7 @@ void RayGeneration()
             float bsdfPdf = bsdf.PDF(wo, wi, TransportMode::Radiance, BxDFReflTransFlags::All);
             // MIS between light sampling path and BSDF sampling path
             if (Li.pdf > EPS && bsdfPdf > EPS) {
-                float mis = BalanceHeuristic(1, Li.pdf, 1, bsdfPdf);
+                float mis = PowerHeuristic(1, Li.pdf, 1, bsdfPdf);
                 if (bounce == 0) {
                     // 首次弹射：按 lobe 拆分直接光
                     float3 fD, fS;
