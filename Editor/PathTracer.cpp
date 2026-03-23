@@ -16,7 +16,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                                                              context->device, context->swapchain, context->allocator);
     auto* gpu = context->gpuScene;
     renderer->BeginSetup();
-    scene.gsGlobals->ptAccumualatedFrames = 0u;
+    scene.gsGlobals->ptAccumulatedFrames = 0u;
     auto GlobalUBO = renderer->CreateResource(
         "Global UBO",
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
@@ -47,20 +47,20 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
     auto TexSampler = renderer->CreateSampler({});
     auto [w,h] = renderer->GetSwapchainExtent();
 
-    // -- Accumulation buffers (raw sums, all F32 — averaged in blit pass)
-    auto AccumDiffuse  = renderer->CreateResource("Accum Diffuse", RHITextureDesc{
+    // -- Accumulation buffers (Welford online mean, all F32)
+    auto Diffuse  = renderer->CreateResource("Diffuse", RHITextureDesc{
         .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
         .extent = {w, h, 1}, .format = RHIResourceFormat::R32G32B32A32SignedFloat});
-    auto AccumSpecular = renderer->CreateResource("Accum Specular", RHITextureDesc{
+    auto Specular = renderer->CreateResource("Specular", RHITextureDesc{
         .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
         .extent = {w, h, 1}, .format = RHIResourceFormat::R32G32B32A32SignedFloat});
-    auto AccumGBuffer0 = renderer->CreateResource("Accum GBuffer 0", RHITextureDesc{
+    auto GBuffer0 = renderer->CreateResource("GBuffer 0", RHITextureDesc{
         .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
         .extent = {w, h, 1}, .format = RHIResourceFormat::R32G32B32A32SignedFloat});
-    auto AccumGBuffer1 = renderer->CreateResource("Accum GBuffer 1", RHITextureDesc{
+    auto GBuffer1 = renderer->CreateResource("GBuffer 1", RHITextureDesc{
         .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
         .extent = {w, h, 1}, .format = RHIResourceFormat::R32G32B32A32SignedFloat});
-    auto AccumGBuffer2 = renderer->CreateResource("Accum GBuffer 2", RHITextureDesc{
+    auto GBuffer2 = renderer->CreateResource("GBuffer 2", RHITextureDesc{
         .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
         .extent = {w, h, 1}, .format = RHIResourceFormat::R32G32B32A32SignedFloat});
 
@@ -108,20 +108,25 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
             r->BindTextureSampler(self, TexSampler, "textureSampler");
             r->BindTextureSampler(self, LUTSampler, "lutSampler");
-            // Accumulation UAVs (all F32 raw sums)
-            r->BindTextureUAV(self, AccumDiffuse, "accumDiffuse", RHIPipelineStageBits::RayTracingShader,
+            // Accumulation UAVs (Welford online mean)
+            r->BindTextureUAV(self, Diffuse, "diffuse",
+                              RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureUAV(self, AccumSpecular, "accumSpecular", RHIPipelineStageBits::RayTracingShader,
+            r->BindTextureUAV(self, Specular, "specular",
+                              RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureUAV(self, AccumGBuffer0, "accumGBuffer0", RHIPipelineStageBits::RayTracingShader,
+            r->BindTextureUAV(self, GBuffer0, "gBuffer0",
+                              RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureUAV(self, AccumGBuffer1, "accumGBuffer1", RHIPipelineStageBits::RayTracingShader,
+            r->BindTextureUAV(self, GBuffer1, "gBuffer1",
+                              RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureUAV(self, AccumGBuffer2, "accumGBuffer2", RHIPipelineStageBits::RayTracingShader,
+            r->BindTextureUAV(self, GBuffer2, "gBuffer2",
+                              RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::RayTracingShader,
@@ -148,17 +153,17 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         {
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Paths::Resolve("data/shaders/EPSBlitPT.spv"),
                           AsBytes(AsSpan(cfg.viewFlags)));
-            // Bind all accumulation buffers as SRVs — blit pass does averaging + compositing
-            auto bindAccumSRV = [&](ResourceHandle h, const char* name) {
+            // Bind all buffers as SRVs — blit pass does compositing + tone map
+            auto bindSRV = [&](ResourceHandle h, const char* name) {
                 r->BindTextureSRV(self, h, name, RHIPipelineStageBits::FragmentShader,
                                   RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                      .range = RHITextureSubresourceRange::Create()});
             };
-            bindAccumSRV(AccumDiffuse,  "accumDiffuseTex");
-            bindAccumSRV(AccumSpecular, "accumSpecularTex");
-            bindAccumSRV(AccumGBuffer0, "accumGBuffer0Tex");
-            bindAccumSRV(AccumGBuffer1, "accumGBuffer1Tex");
-            bindAccumSRV(AccumGBuffer2, "accumGBuffer2Tex");
+            bindSRV(Diffuse,  "diffuseTex");
+            bindSRV(Specular, "specularTex");
+            bindSRV(GBuffer0, "gBuffer0Tex");
+            bindSRV(GBuffer1, "gBuffer1Tex");
+            bindSRV(GBuffer2, "gBuffer2Tex");
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
         });
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});

@@ -15,12 +15,12 @@ StructuredBuffer<GSInstance> instances;
 ByteAddressBuffer primitives;
 StructuredBuffer<GSMaterial> materials;
 SamplerState textureSampler;
-// -- Accumulation buffers (raw sums, averaged in blit pass)
-RWTexture2D<float4> accumDiffuse;   // Diffuse lobe radiance
-RWTexture2D<float4> accumSpecular;  // Specular lobe radiance (incl. transmission)
-RWTexture2D<float4> accumGBuffer0;  // BaseColor.rgb, MaterialID (packed)
-RWTexture2D<float4> accumGBuffer1;  // Normal.xyz * 0.5 + 0.5, 0
-RWTexture2D<float4> accumGBuffer2;  // Position.xyz, 0
+// -- Accumulation buffers (Welford online mean)
+RWTexture2D<float4> gBuffer0;  // BaseColor.rgb, MaterialID (packed)
+RWTexture2D<float4> gBuffer1;  // Normal.xyz * 0.5 + 0.5, 0
+RWTexture2D<float4> gBuffer2;  // Position.xyz, 0
+RWTexture2D<float4> diffuse;   // Diffuse lobe radiance
+RWTexture2D<float4> specular;  // Specular lobe radiance (incl. transmission)
 [[vk_binding(0,2)]] Texture2D<float4> textures[];
 
 // SER coherence hint 位数 — 覆盖 materialID 所需的位数
@@ -235,7 +235,7 @@ void RayGeneration()
     AOVCategory firstBounceCategory = AOVCategory::Undefined;
     // GBuffer written on primary hit
     bool gbufferWritten = false;
-    float frameCount = float(globalParams.ptAccumualatedFrames + 1);
+    float frameCount = float(globalParams.ptAccumulatedFrames + 1);
     // Initial ray with jitter for AA
     RayDesc ray;
     ray.Origin = globalParams.camPosition;
@@ -310,19 +310,20 @@ void RayGeneration()
         }
         Payload surface = SamplePayload(payload, ray);
 
-        // Accumulate GBuffer on primary hit
+        // Accumulate GBuffer on primary hit (Welford online mean)
         if (bounce == 0 && !gbufferWritten) {
             float4 g0 = float4(surface.baseColor, float(surface.materialID) / 255.0f);
             float4 g1 = float4(surface.hit.normal * 0.5f + 0.5f, 0);
             float4 g2 = float4(surface.hit.position, 0);
             if (frameCount == 1) {
-                accumGBuffer0[pix] = g0;
-                accumGBuffer1[pix] = g1;
-                accumGBuffer2[pix] = g2;
+                gBuffer0[pix] = g0;
+                gBuffer1[pix] = g1;
+                gBuffer2[pix] = g2;
             } else {
-                accumGBuffer0[pix] += g0;
-                accumGBuffer1[pix] += g1;
-                accumGBuffer2[pix] += g2;
+                float invN = 1.0f / frameCount;
+                gBuffer0[pix] += (g0 - gBuffer0[pix]) * invN;
+                gBuffer1[pix] += (g1 - gBuffer1[pix]) * invN;
+                gBuffer2[pix] += (g2 - gBuffer2[pix]) * invN;
             }
             gbufferWritten = true;
         }
@@ -417,32 +418,34 @@ void RayGeneration()
             beta /= rrPCount; // Boost non-terminated paths
         }
     }
-    // Write default GBuffer if no hit (miss on primary ray)
+    // Write default GBuffer if no hit (miss on primary ray, Welford online mean)
     if (!gbufferWritten) {
         float4 g0 = float4(0, 0, 0, 0);
         float4 g1 = float4(0.5f, 0.5f, 1.0f, 0);  // neutral normal
         float4 g2 = float4(0, 0, 0, 0);
         if (frameCount == 1) {
-            accumGBuffer0[pix] = g0;
-            accumGBuffer1[pix] = g1;
-            accumGBuffer2[pix] = g2;
+            gBuffer0[pix] = g0;
+            gBuffer1[pix] = g1;
+            gBuffer2[pix] = g2;
         } else {
-            accumGBuffer0[pix] += g0;
-            accumGBuffer1[pix] += g1;
-            accumGBuffer2[pix] += g2;
+            float invN = 1.0f / frameCount;
+            gBuffer0[pix] += (g0 - gBuffer0[pix]) * invN;
+            gBuffer1[pix] += (g1 - gBuffer1[pix]) * invN;
+            gBuffer2[pix] += (g2 - gBuffer2[pix]) * invN;
         }
     }
-    // Per-contribution sanitize already done via AddRadiance / AddRadiance
+    // Per-contribution sanitize already done via AddRadiance
     float4 outD = float4(LDiffuse, 1.0f);
     float4 outS = float4(LSpecular, 1.0f);
 
-    // Raw accumulation only — averaging and compositing done in blit pass
+    // Welford online mean — buffer always holds the current average (immediate HDR)
     if (frameCount == 1) {
-        accumDiffuse[pix]  = outD;
-        accumSpecular[pix] = outS;
+        diffuse[pix]  = outD;
+        specular[pix] = outS;
     } else {
-        accumDiffuse[pix]  += outD;
-        accumSpecular[pix] += outS;
+        float invN = 1.0f / frameCount;
+        diffuse[pix]  += (outD - diffuse[pix])  * invN;
+        specular[pix] += (outS - specular[pix]) * invN;
     }
 }
 // Naive stochastic opacity map implementation

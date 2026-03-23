@@ -224,7 +224,7 @@ static void LoadEnvMap(StringView path)
         upload.End(), upload.WaitIdle();
         GScene.mEnvMap = std::move(tex);
         GShaderGlobals.useEnvMap = 1u;
-        GShaderGlobals.ptAccumualatedFrames = 0;
+        GShaderGlobals.ptAccumulatedFrames = 0;
         // 需要重建渲染器以重新绑定环境贴图资源
         FEState = FERunningEnter;
         LOG(Editor, LogInfo, "HDRI env map loaded successfully");
@@ -462,7 +462,7 @@ static void FHierarchyPanel()
                 auto res = gpu->UpdateGPUScene(GSInstances, GSMaterials);
                 GShaderGlobals.firstInstance = res.firstInstance;
                 GShaderGlobals.firstMaterial = res.firstMaterial;
-                GShaderGlobals.ptAccumualatedFrames = 0;
+                GShaderGlobals.ptAccumulatedFrames = 0;
             }
             ImGui::Separator();
             auto& inst = GSInstances[GSelectedInstance];
@@ -559,7 +559,7 @@ void FRunningImGui()
         ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
         if (GRendererMode == ERendererMode::PathTracer)
         {
-            ImGui::Text("PT Accumulation: %d", GShaderGlobals.ptAccumualatedFrames);
+            ImGui::Text("PT Accumulation: %d", GShaderGlobals.ptAccumulatedFrames);
             ImGui::SliderInt("PT Bounces", &GShaderGlobals.ptMaxBounces, 1, 64);
         }
         GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
@@ -597,7 +597,7 @@ void FRunningImGui()
                     envChanged = true;
                 }
                 if (envChanged)
-                    GShaderGlobals.ptAccumualatedFrames = 0;
+                    GShaderGlobals.ptAccumulatedFrames = 0;
             }
             ImGui::TextDisabled("Drag & drop .hdr/.hdri to load");
         }
@@ -772,10 +772,10 @@ void FRunning()
     GShaderGlobals.fbWidth = static_cast<float>(renderer->GetSwapchainExtent().x);
     GShaderGlobals.fbHeight = static_cast<float>(renderer->GetSwapchainExtent().y);
     if (cameraUpdated)
-        GShaderGlobals.ptAccumualatedFrames = 0, cameraUpdated = false;
+        GShaderGlobals.ptAccumulatedFrames = 0, cameraUpdated = false;
     renderer->ExecuteFrame();
     renderer->EndExecute();
-    GShaderGlobals.ptAccumualatedFrames++;
+    GShaderGlobals.ptAccumulatedFrames++;
 }
 
 /* -- 拖放文件处理：根据扩展名分发到对应加载函数 -- */
