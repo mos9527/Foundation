@@ -3,6 +3,7 @@
 #include <RenderCore/ImmediateContext.hpp>
 #include <imgui_internal.h>
 #include <ImGuizmo.h>
+#include <ImGuiFileDialog.h>
 #include <Math/Decompose.hpp>
 #include <filesystem>
 
@@ -23,6 +24,7 @@ static PTReadbackHandles GPTReadback;
 static int GHDRTargetSamples = 0;
 static int GHDRSamplePopupInput = 256;
 static bool GOpenHDRPopup = false;
+static String GHDROutputPath;
 /* -- Gizmo -- */
 static ImGuizmo::OPERATION GGizmoOp = ImGuizmo::TRANSLATE;
 static ImGuizmo::MODE GGizmoMode = ImGuizmo::WORLD;
@@ -297,8 +299,20 @@ static void EditorDockSpaceAndMenuBar()
     {
         if (ImGui::BeginMenu("File"))
         {
-            ImGui::TextDisabled("Drag & drop .gltf/.glb/.fscn to open scene");
-            ImGui::TextDisabled("Drag & drop .hdr/.hdri to load env map");
+            if (ImGui::MenuItem("Open Scene..."))
+            {
+                IGFD::FileDialogConfig config;
+                config.path = ".";
+                ImGuiFileDialog::Instance()->OpenDialog(
+                    "OpenSceneDlg", "Open Scene", ".gltf,.glb,.fscn", config);
+            }
+            if (ImGui::MenuItem("Open HDR..."))
+            {
+                IGFD::FileDialogConfig config;
+                config.path = ".";
+                ImGuiFileDialog::Instance()->OpenDialog(
+                    "OpenHDRDlg", "Open HDR Environment Map", ".hdr,.hdri", config);
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Save", "Ctrl+S"))
             {
@@ -307,35 +321,28 @@ static void EditorDockSpaceAndMenuBar()
             }
             if (ImGui::MenuItem("Save As..."))
             {
-                static char saveBuf[512] = {};
-                ImGui::SetNextWindowSize({400, 0}, ImGuiCond_FirstUseEver);
-                ImGui::OpenPopup("Save As");
+                IGFD::FileDialogConfig config;
+                config.path = ".";
+                config.flags = ImGuiFileDialogFlags_ConfirmOverwrite;
+                ImGuiFileDialog::Instance()->OpenDialog(
+                    "SaveAsDlg", "Save Scene As", ".fscn", config);
             }
             ImGui::Separator();
             if (GRendererMode == ERendererMode::PathTracer && !GSInstances.empty())
             {
                 if (ImGui::MenuItem("Render .hdr..."))
-                    GOpenHDRPopup = true;
+                {
+                    IGFD::FileDialogConfig config;
+                    config.path = ".";
+                    config.flags = ImGuiFileDialogFlags_ConfirmOverwrite;
+                    ImGuiFileDialog::Instance()->OpenDialog(
+                        "RenderHDRDlg", "Save Render Output", ".hdr", config);
+                }
             }
             ImGui::EndMenu();
         }
-        // Save As 弹窗（放在菜单外以免随菜单关闭）
-        if (ImGui::BeginPopupModal("Save As", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-        {
-            static char saveBuf[512] = {};
-            ImGui::InputText("Path", saveBuf, sizeof(saveBuf));
-            if (ImGui::Button("Save") && saveBuf[0] != '\0')
-            {
-                SaveScene(saveBuf);
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Cancel"))
-                ImGui::CloseCurrentPopup();
-            ImGui::EndPopup();
-        }
 
-        // HDR Render Settings modal popup (opened from File menu)
+        // HDR Render Settings modal popup (opened after file dialog)
         if (GOpenHDRPopup)
         {
             ImGui::OpenPopup("HDR Render Settings");
@@ -344,6 +351,8 @@ static void EditorDockSpaceAndMenuBar()
         if (ImGui::BeginPopupModal("HDR Render Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::Text("Configure HDR render:");
+            ImGui::Text("Output: %s", GHDROutputPath.c_str());
+            ImGui::Separator();
             ImGui::InputInt("Samples (frames)", &GHDRSamplePopupInput);
             if (GHDRSamplePopupInput < 1) GHDRSamplePopupInput = 1;
             if (ImGui::Button("Start Render"))
@@ -396,6 +405,50 @@ static void EditorDockSpaceAndMenuBar()
         }
 
         ImGui::EndMainMenuBar();
+    }
+
+    // ImGuiFileDialog 弹窗渲染
+    ImVec2 minSize(600, 400);
+    ImVec2 maxSize(FLT_MAX, FLT_MAX);
+
+    if (ImGuiFileDialog::Instance()->Display("OpenSceneDlg", ImGuiWindowFlags_NoCollapse, minSize, maxSize))
+    {
+        if (ImGuiFileDialog::Instance()->IsOk())
+        {
+            std::string filePath = ImGuiFileDialog::Instance()->GetFilePathName();
+            ReplaceScene(filePath.c_str());
+        }
+        ImGuiFileDialog::Instance()->Close();
+    }
+
+    if (ImGuiFileDialog::Instance()->Display("OpenHDRDlg", ImGuiWindowFlags_NoCollapse, minSize, maxSize))
+    {
+        if (ImGuiFileDialog::Instance()->IsOk())
+        {
+            std::string filePath = ImGuiFileDialog::Instance()->GetFilePathName();
+            LoadEnvMap(filePath.c_str());
+        }
+        ImGuiFileDialog::Instance()->Close();
+    }
+
+    if (ImGuiFileDialog::Instance()->Display("SaveAsDlg", ImGuiWindowFlags_NoCollapse, minSize, maxSize))
+    {
+        if (ImGuiFileDialog::Instance()->IsOk())
+        {
+            std::string filePath = ImGuiFileDialog::Instance()->GetFilePathName();
+            SaveScene(filePath.c_str());
+        }
+        ImGuiFileDialog::Instance()->Close();
+    }
+
+    if (ImGuiFileDialog::Instance()->Display("RenderHDRDlg", ImGuiWindowFlags_NoCollapse, minSize, maxSize))
+    {
+        if (ImGuiFileDialog::Instance()->IsOk())
+        {
+            GHDROutputPath = ImGuiFileDialog::Instance()->GetFilePathName();
+            GOpenHDRPopup = true;
+        }
+        ImGuiFileDialog::Instance()->Close();
     }
 
     ImGui::PopStyleColor(); // WindowBg
@@ -865,9 +918,10 @@ static void DoHDRReadback()
     }
     readbackBuf->Unmap();
 
-    SaveHDR(combined.data(), static_cast<int>(w), static_cast<int>(h), "render_output.hdr");
-    LOG(Editor, LogInfo, "HDR image saved to render_output.hdr ({}x{}, {} samples)",
-        w, h, GShaderGlobals.ptAccumulatedFrames);
+    const char* hdrPath = GHDROutputPath.empty() ? "render_output.hdr" : GHDROutputPath.c_str();
+    SaveHDR(combined.data(), static_cast<int>(w), static_cast<int>(h), hdrPath);
+    LOG(Editor, LogInfo, "HDR image saved to {} ({}x{}, {} samples)",
+        hdrPath, w, h, GShaderGlobals.ptAccumulatedFrames);
 }
 
 void FRenderingHDR()

@@ -109,6 +109,13 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
+FetchContent_Declare(
+    ImGuiFileDialog
+    GIT_REPOSITORY https://github.com/aiekick/ImGuiFileDialog
+    GIT_TAG v0.6.7
+    GIT_SHALLOW TRUE
+)
+
 FetchContent_MakeAvailable(stb)
 add_library(ThirdParty_STB STATIC stb_image.cpp)
 target_include_directories(ThirdParty_STB PUBLIC ${stb_SOURCE_DIR})
