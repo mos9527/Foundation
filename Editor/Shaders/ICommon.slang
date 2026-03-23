@@ -155,7 +155,7 @@ public struct UBO
     public uint32_t useEnvMap;
     public float envMapScale;
     // -- Path Tracing
-    public uint32_t ptAccumualatedFrames;
+    public uint32_t ptAccumulatedFrames;
     public uint32_t ptMaxBounces;
 };
 // ^^^
