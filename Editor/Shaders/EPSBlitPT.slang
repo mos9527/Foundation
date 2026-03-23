@@ -23,7 +23,7 @@ float3 ACESFilm(float3 x)
 }
 
 float3 ToneMap(float3 hdr) {
-    float3 L = hdr * exp2(-globalParams.camEV);
+    float3 L = hdr * exp2(globalParams.camEV);
     L = ACESFilm(L);
     return pow(L, 1.0f/2.2f);
 }

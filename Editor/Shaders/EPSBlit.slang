@@ -50,7 +50,7 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
         // Main postprocess routine
         float3 Lpix = lighting.Load(coord).xyz;
         // Manual EV exposure
-        float3 L = Lpix * exp2(-globalParams.camEV);
+        float3 L = Lpix * exp2(globalParams.camEV);
         // ACES
         L = ACESFilm(L);
         // Inverse Gamma EOTF
