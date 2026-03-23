@@ -157,6 +157,7 @@ public struct UBO
     // -- Path Tracing
     public uint32_t ptAccumulatedFrames;
     public uint32_t ptMaxBounces;
+    public float ptFireflyClamp;
 };
 // ^^^
 
