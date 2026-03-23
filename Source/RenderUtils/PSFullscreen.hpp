@@ -44,6 +44,54 @@ namespace Foundation::RenderUtils {
         return createPSFullscreenPass(r, name, std::forward<FSetup>(setup), FRecordDefault{});
     }
     /**
+     * @brief Creates a full-screen triangle pass that writes to an arbitrary texture RTV
+     *        instead of the backbuffer.
+     *
+     * @param rtvTexture  Resource handle of the texture to render into.
+     * @param rtvViewDesc View descriptor for the render target (format, subresource range, etc.).
+     * @param setup       Called once during setup phase, after fullscreen vertex stage is bound.
+     * @param record      Called once per frame during execution phase, after the pipeline is set.
+     */
+    template<typename FSetup, typename FRecord>
+    PassHandle createPSFullscreenPassRTV(
+        Renderer* r,
+        StringView name,
+        ResourceHandle rtvTexture,
+        RHITextureViewDesc const& rtvViewDesc,
+        FSetup&& setup,
+        FRecord&& record
+    ) {
+        return r->CreatePass(name, RHIDeviceQueueType::Graphics, 0u,
+            [=](PassHandle self, Renderer* r) {
+                r->BindTextureRTV(self, rtvTexture, rtvViewDesc);
+                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", Foundation::Core::PathsResolve("data/shaders/VSFullscreen.spv"));
+                setup(self, r);
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                auto const& img_wh = r->GetSwapchainExtent();
+                r->CmdSetPipeline(self, cmd);
+                record(self, r, cmd);
+                r->CmdBeginGraphics(self, cmd, img_wh, {{RHIColorAttachmentLoad{RHIAttachmentLoadOp::DontCare}}},
+                                    {RHIAttachmentLoadOp::DontCare});
+                cmd->SetViewport(0, 0, img_wh.x, img_wh.y)
+                    .SetScissor(0, 0, img_wh.x, img_wh.y);
+                cmd->Draw(3);
+                cmd->EndGraphics();
+            });
+    }
+    template<typename FSetup>
+    PassHandle createPSFullscreenPassRTV(
+        Renderer* r,
+        StringView name,
+        ResourceHandle rtvTexture,
+        RHITextureViewDesc const& rtvViewDesc,
+        FSetup&& setup)
+    {
+        return createPSFullscreenPassRTV(r, name, rtvTexture, rtvViewDesc,
+                                         std::forward<FSetup>(setup), FRecordDefault{});
+    }
+    /**
      * @brief Creates a full-screen triangle pass that renders a texture
      * to the current backbuffer.
      */

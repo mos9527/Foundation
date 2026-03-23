@@ -88,6 +88,7 @@ struct PTReadbackHandles
 {
     ResourceHandle diffuse{kInvalidHandle};
     ResourceHandle specular{kInvalidHandle};
+    ResourceHandle sdrRenderTarget{kInvalidHandle};
 };
 
 extern void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene, PTReadbackHandles& outHandles);

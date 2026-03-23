@@ -80,6 +80,14 @@ void LoadHDR(FTexture2D& texture, StringView path);
  * @param path Output file path.
  */
 void SaveHDR(const float* data, int width, int height, StringView path);
+/**
+ * Saves RGBA8 data as a PNG (.png) file via stb_image_write.
+ * @param data Pointer to uint8 RGBA pixel data (4 bytes per pixel).
+ * @param width Image width in pixels.
+ * @param height Image height in pixels.
+ * @param path Output file path.
+ */
+void SavePNG(const unsigned char* data, int width, int height, StringView path);
 /* -- Serialization -- */
 template <>
 inline void FSerialize(FWriter& w, FTexture2D const& obj)

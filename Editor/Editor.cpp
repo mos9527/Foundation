@@ -20,11 +20,13 @@ static int GSelectedInstance = -1;
 static int GSelectedMaterial = -1;
 static bool GShowImGui = true;
 static PTReadbackHandles GPTReadback;
-/* -- HDR Rendering State -- */
-static int GHDRTargetSamples = 0;
-static int GHDRSamplePopupInput = 4096;
-static bool GOpenHDRPopup = false;
-static String GHDROutputPath;
+/* -- Offline Rendering State -- */
+enum class ERenderFormat { HDR, SDR };
+static ERenderFormat GRenderFormat = ERenderFormat::HDR;
+static int GRenderTargetSamples = 0;
+static int GRenderSamplePopupInput = 4096;
+static bool GOpenRenderPopup = false;
+static String GRenderOutputPath;
 /* -- Gizmo -- */
 static ImGuizmo::OPERATION GGizmoOp = ImGuizmo::TRANSLATE;
 static ImGuizmo::MODE GGizmoMode = ImGuizmo::WORLD;
@@ -338,28 +340,37 @@ static void EditorDockSpaceAndMenuBar()
                     ImGuiFileDialog::Instance()->OpenDialog(
                         "RenderHDRDlg", "Save Render Output", ".hdr", config);
                 }
+                if (ImGui::MenuItem("Render .png..."))
+                {
+                    IGFD::FileDialogConfig config;
+                    config.path = ".";
+                    config.flags = ImGuiFileDialogFlags_ConfirmOverwrite;
+                    ImGuiFileDialog::Instance()->OpenDialog(
+                        "RenderSDRDlg", "Save Render Output", ".png", config);
+                }
             }
             ImGui::EndMenu();
         }
 
-        // HDR Render Settings modal popup (opened after file dialog)
-        if (GOpenHDRPopup)
+        // Render Settings modal popup (opened after file dialog)
+        if (GOpenRenderPopup)
         {
-            ImGui::OpenPopup("HDR Render Settings");
-            GOpenHDRPopup = false;
+            ImGui::OpenPopup("Render Settings");
+            GOpenRenderPopup = false;
         }
-        if (ImGui::BeginPopupModal("HDR Render Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        if (ImGui::BeginPopupModal("Render Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
-            ImGui::Text("Configure HDR render:");
-            ImGui::Text("Output: %s", GHDROutputPath.c_str());
+            const char* fmtLabel = GRenderFormat == ERenderFormat::HDR ? "HDR" : "SDR (PNG)";
+            ImGui::Text("Configure %s render:", fmtLabel);
+            ImGui::Text("Output: %s", GRenderOutputPath.c_str());
             ImGui::Separator();
-            ImGui::InputInt("Samples (frames)", &GHDRSamplePopupInput);
-            if (GHDRSamplePopupInput < 1) GHDRSamplePopupInput = 1;
+            ImGui::InputInt("Samples (frames)", &GRenderSamplePopupInput);
+            if (GRenderSamplePopupInput < 1) GRenderSamplePopupInput = 1;
             if (ImGui::Button("Start Render"))
             {
-                GHDRTargetSamples = GHDRSamplePopupInput;
+                GRenderTargetSamples = GRenderSamplePopupInput;
                 GShaderGlobals.ptAccumulatedFrames = 0;
-                FEState = FERenderingHDR;
+                FEState = FERendering;
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
@@ -445,8 +456,20 @@ static void EditorDockSpaceAndMenuBar()
     {
         if (ImGuiFileDialog::Instance()->IsOk())
         {
-            GHDROutputPath = ImGuiFileDialog::Instance()->GetFilePathName();
-            GOpenHDRPopup = true;
+            GRenderOutputPath = ImGuiFileDialog::Instance()->GetFilePathName();
+            GRenderFormat = ERenderFormat::HDR;
+            GOpenRenderPopup = true;
+        }
+        ImGuiFileDialog::Instance()->Close();
+    }
+
+    if (ImGuiFileDialog::Instance()->Display("RenderSDRDlg", ImGuiWindowFlags_NoCollapse, minSize, maxSize))
+    {
+        if (ImGuiFileDialog::Instance()->IsOk())
+        {
+            GRenderOutputPath = ImGuiFileDialog::Instance()->GetFilePathName();
+            GRenderFormat = ERenderFormat::SDR;
+            GOpenRenderPopup = true;
         }
         ImGuiFileDialog::Instance()->Close();
     }
@@ -918,13 +941,72 @@ static void DoHDRReadback()
     }
     readbackBuf->Unmap();
 
-    const char* hdrPath = GHDROutputPath.empty() ? "render_output.hdr" : GHDROutputPath.c_str();
+    const char* hdrPath = GRenderOutputPath.empty() ? "render_output.hdr" : GRenderOutputPath.c_str();
     SaveHDR(combined.data(), static_cast<int>(w), static_cast<int>(h), hdrPath);
     LOG(Editor, LogInfo, "HDR image saved to {} ({}x{}, {} samples)",
         hdrPath, w, h, GShaderGlobals.ptAccumulatedFrames);
 }
 
-void FRenderingHDR()
+/* ==================== SDR (PNG) Rendering State ==================== */
+static void DoSDRReadback()
+{
+    auto* renderer = GContext->renderer;
+    auto [w, h] = renderer->GetSwapchainExtent();
+    const size_t pixelCount = static_cast<size_t>(w) * h;
+    const size_t imageBytes = pixelCount * 4; // RGBA8 — 1 byte per channel
+
+    auto* sdrTex = renderer->DerefResource(GPTReadback.sdrRenderTarget).Get<RHITexture*>();
+
+    auto readbackBuf = GContext->device->CreateBuffer({
+        .resource = {.heap = RHIDeviceHeapType::Readback,
+                     .hostAccess = RHIResourceHostAccess::ReadWrite,
+                     .coherent = true},
+        .usage = RHIBufferUsageBits::TransferDestination,
+        .size = imageBytes});
+
+    {
+        ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
+        auto* cmd = ctx.Get();
+        cmd->Begin();
+        cmd->BeginTransition();
+        cmd->SetImageTransition(sdrTex, {
+            .srcAccess = RHIResourceAccessBits::RenderTargetRead | RHIResourceAccessBits::RenderTargetWrite,
+            .dstAccess = RHIResourceAccessBits::TransferRead,
+            .srcStage = RHIPipelineStageBits::RenderTargetOutput,
+            .dstStage = RHIPipelineStageBits::Transfer,
+            .srcImgLayout = RHITextureLayout::RenderTarget,
+            .dstImgLayout = RHITextureLayout::TransferSrc,
+            .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        cmd->EndTransition();
+        cmd->CopyImageToBuffer(sdrTex, RHITextureLayout::TransferSrc, readbackBuf.Get(),
+            {{{.dstBufferOffset = 0,
+               .srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
+               .extent = {w, h, 1}}}});
+        cmd->BeginTransition();
+        cmd->SetImageTransition(sdrTex, {
+            .srcAccess = RHIResourceAccessBits::TransferRead,
+            .dstAccess = RHIResourceAccessBits::RenderTargetRead | RHIResourceAccessBits::RenderTargetWrite,
+            .srcStage = RHIPipelineStageBits::Transfer,
+            .dstStage = RHIPipelineStageBits::TopOfPipe,
+            .srcImgLayout = RHITextureLayout::TransferSrc,
+            .dstImgLayout = RHITextureLayout::RenderTarget,
+            .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        cmd->EndTransition();
+        cmd->End();
+        ctx.Submit();
+        ctx.WaitIdle();
+    }
+
+    auto* mapped = readbackBuf->Map<unsigned char>();
+    const char* pngPath = GRenderOutputPath.empty() ? "render_output.png" : GRenderOutputPath.c_str();
+    SavePNG(mapped, static_cast<int>(w), static_cast<int>(h), pngPath);
+    readbackBuf->Unmap();
+
+    LOG(Editor, LogInfo, "SDR image saved to {} ({}x{}, {} samples)",
+        pngPath, w, h, GShaderGlobals.ptAccumulatedFrames);
+}
+
+void FRendering()
 {
     auto* renderer = GContext->renderer;
     renderer->BeginExecute();
@@ -942,16 +1024,16 @@ void FRenderingHDR()
         ImGui::SetNextWindowSize(ImVec2(barW, barH + ImGui::GetStyle().WindowPadding.y * 2.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 4));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(0, 0));
-        ImGui::Begin("##HDRProgressBar", nullptr,
+        ImGui::Begin("##RenderProgressBar", nullptr,
             ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
             ImGuiWindowFlags_AlwaysAutoResize);
-        float fraction = GHDRTargetSamples > 0
-            ? static_cast<float>(GShaderGlobals.ptAccumulatedFrames) / static_cast<float>(GHDRTargetSamples)
+        float fraction = GRenderTargetSamples > 0
+            ? static_cast<float>(GShaderGlobals.ptAccumulatedFrames) / static_cast<float>(GRenderTargetSamples)
             : 0.0f;
         char overlay[128];
         snprintf(overlay, sizeof(overlay), "%d / %d samples",
-                 GShaderGlobals.ptAccumulatedFrames, GHDRTargetSamples);
+                 GShaderGlobals.ptAccumulatedFrames, GRenderTargetSamples);
         ImGui::ProgressBar(fraction, ImVec2(barW, barH), overlay);
         ImGui::End();
         ImGui::PopStyleVar(2);
@@ -968,7 +1050,7 @@ void FRenderingHDR()
         ImGui::SetNextWindowSize(ImVec2(btnW, btnH));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(0, 0));
-        ImGui::Begin("##HDRCancel", nullptr,
+        ImGui::Begin("##RenderCancel", nullptr,
             ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
             ImGuiWindowFlags_AlwaysAutoResize);
@@ -980,17 +1062,23 @@ void FRenderingHDR()
     renderer->ExecuteFrame();
     renderer->EndExecute();
     GShaderGlobals.ptAccumulatedFrames++;
-    
-    // 用户点击取消：直接回到正常模式，不保存
+
     if (cancelRendering)
     {
         FEState = FERunning;
     }
-    // 达到目标采样数：执行readback保存HDR
-    else if (GShaderGlobals.ptAccumulatedFrames >= static_cast<uint32_t>(GHDRTargetSamples))
+    else if (GShaderGlobals.ptAccumulatedFrames >= static_cast<uint32_t>(GRenderTargetSamples))
     {
-        if (GPTReadback.diffuse != kInvalidHandle && GPTReadback.specular != kInvalidHandle)
-            DoHDRReadback();
+        if (GRenderFormat == ERenderFormat::HDR)
+        {
+            if (GPTReadback.diffuse != kInvalidHandle && GPTReadback.specular != kInvalidHandle)
+                DoHDRReadback();
+        }
+        else
+        {
+            if (GPTReadback.sdrRenderTarget != kInvalidHandle)
+                DoSDRReadback();
+        }
         FEState = FERunning;
     }
 }
@@ -1159,8 +1247,8 @@ bool EditorOnFrame(FContext*)
     case FERunning:
         FRunning();
         break;
-    case FERenderingHDR:
-        FRenderingHDR();
+    case FERendering:
+        FRendering();
         break;
     default:
         return true;
