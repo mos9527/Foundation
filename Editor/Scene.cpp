@@ -147,6 +147,27 @@ void LoadGLTF(StringView path, FScene& scene)
                 material.metallicRoughnessTexture =
                     static_cast<uint32_t>(cgltf_texture_index(data, mat->pbr_metallic_roughness.metallic_roughness_texture.texture));
         }
+        if (mat->has_pbr_specular_glossiness)
+        {
+            const auto& sg = mat->pbr_specular_glossiness;
+            // Diffuse factor → base color factor
+            material.baseColorFactor = {sg.diffuse_factor[0], sg.diffuse_factor[1], sg.diffuse_factor[2], sg.diffuse_factor[3]};
+            // Glossiness → roughness
+            material.roughnessFactor = 1.0f - sg.glossiness_factor;
+            // Approximate metallic from specular luminance (perceived brightness)
+            float specLuminance = 0.2126f * sg.specular_factor[0] + 0.7152f * sg.specular_factor[1] + 0.0722f * sg.specular_factor[2];
+            // Dielectric F0 ≈ 0.04; anything significantly above that is metallic
+            constexpr float kDielectricF0 = 0.04f;
+            material.metallicFactor = std::clamp((specLuminance - kDielectricF0) / (1.0f - kDielectricF0), 0.0f, 1.0f);
+            // Diffuse texture → base color texture (sRGB)
+            if (sg.diffuse_texture.texture)
+            {
+                size_t index = cgltf_texture_index(data, sg.diffuse_texture.texture);
+                textureFlags[index] |= kTextureInSRGB;
+                material.baseColorTexture = static_cast<uint32_t>(index);
+            }
+            // NOTE: specular_glossiness_texture is not mapped — no separate metallic/roughness texture slot for it
+        }
         if (mat->normal_texture.texture)
             material.normalTexture = static_cast<uint32_t>(cgltf_texture_index(data, mat->normal_texture.texture));
         if (mat->emissive_texture.texture)
