@@ -205,7 +205,6 @@ static void ReplaceScene(StringView path)
             auto& light = GScene.mLights.front();
             GShaderGlobals.sunDirection = normalize(light.transform.rotation * float3(0, 0, -1));
             GShaderGlobals.sunIntensity = light.color * light.intensity;
-        GShaderGlobals.camEV = log2f(light.intensity * 0.25f);
         }
         for (auto& c : GScene.mCameras)
             GScene.mCameras.emplace_back(c);
