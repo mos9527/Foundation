@@ -52,6 +52,7 @@ static void SaveScene(StringView path);
 static void LoadEnvMap(StringView path);
 static void EditorDockSpaceAndMenuBar();
 static void FHierarchyPanel();
+static void FLightingPanel();
 
 /* ==================== ReplaceScene ==================== */
 static void ReplaceScene(StringView path)
@@ -290,6 +291,7 @@ static void EditorDockSpaceAndMenuBar()
         ImGui::DockBuilderDockWindow("Hierarchy", dockLeftTop);
         ImGui::DockBuilderDockWindow("Inspector", dockLeftBottom);
         ImGui::DockBuilderDockWindow("Camera", dockRight);
+        ImGui::DockBuilderDockWindow("Lighting", dockRight);
         ImGui::DockBuilderDockWindow("Rendering", dockRight);
         ImGui::DockBuilderDockWindow("Profiler", dockRight);
         ImGui::DockBuilderFinish(dockspaceID);
@@ -612,6 +614,7 @@ void FInit()
         {
             EditorDockSpaceAndMenuBar();
             FHierarchyPanel();
+            FLightingPanel();
         }
         float dt = ImGui::GetIO().DeltaTime;
         bool cameraUpdated = false;
@@ -728,6 +731,7 @@ void FRunningImGui()
     }
     ImGui::End();
     ImGui::PopStyleColor();
+    FLightingPanel();
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Profiler"))
     {
@@ -856,6 +860,115 @@ void FRunningImGui()
     ImGui::End();
     ImGui::PopStyleColor();
 }
+/* ==================== Lighting Panel ==================== */
+static void FLightingPanel()
+{
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
+    if (ImGui::Begin("Lighting"))
+    {
+        // ---- Directional Light (Sun) ----
+        if (ImGui::CollapsingHeader("Directional Light", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            bool lightChanged = false;
+
+            // 方向：使用欧拉角（度）编辑，内部转换为方向向量
+            // 从当前 sunDirection 反推欧拉角
+            static float sunEuler[2] = {0.0f, 0.0f}; // [pitch, yaw] 度
+            static bool eulerInitialized = false;
+            if (!eulerInitialized)
+            {
+                float3 d = GShaderGlobals.sunDirection;
+                // pitch = asin(-d.y), yaw = atan2(d.x, d.z)
+                sunEuler[0] = degrees(std::asin(std::clamp(-d.y, -1.0f, 1.0f)));
+                sunEuler[1] = degrees(std::atan2(d.x, d.z));
+                eulerInitialized = true;
+            }
+
+            lightChanged |= ImGui::SliderFloat("Pitch", &sunEuler[0], -90.0f, 90.0f, "%.1f deg");
+            lightChanged |= ImGui::SliderFloat("Yaw",   &sunEuler[1], -180.0f, 180.0f, "%.1f deg");
+
+            if (lightChanged)
+            {
+                float pitchRad = radians(sunEuler[0]);
+                float yawRad   = radians(sunEuler[1]);
+                // 从欧拉角重建方向向量
+                GShaderGlobals.sunDirection = normalize(float3{
+                    std::sin(yawRad) * std::cos(pitchRad),
+                    -std::sin(pitchRad),
+                    std::cos(yawRad) * std::cos(pitchRad)
+                });
+            }
+
+            // 颜色和强度分离编辑
+            // sunIntensity = color * intensity，拆分为归一化颜色 + 标量强度
+            static float3 sunColor = {1.0f, 1.0f, 1.0f};
+            static float sunIntensityScalar = 1.0f;
+            static bool intensityInitialized = false;
+            if (!intensityInitialized)
+            {
+                float maxComp = std::max({GShaderGlobals.sunIntensity.x,
+                                          GShaderGlobals.sunIntensity.y,
+                                          GShaderGlobals.sunIntensity.z});
+                if (maxComp > 0.0f)
+                {
+                    sunIntensityScalar = maxComp;
+                    sunColor = GShaderGlobals.sunIntensity / maxComp;
+                }
+                else
+                {
+                    sunIntensityScalar = 0.0f;
+                    sunColor = {1.0f, 1.0f, 1.0f};
+                }
+                intensityInitialized = true;
+            }
+
+            lightChanged |= ImGui::ColorEdit3("Sun Color", &sunColor.x, ImGuiColorEditFlags_Float);
+            lightChanged |= ImGui::SliderFloat("Sun Intensity", &sunIntensityScalar, 0.0f, 100.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+
+            if (lightChanged)
+            {
+                GShaderGlobals.sunIntensity = sunColor * sunIntensityScalar;
+                GShaderGlobals.ptAccumulatedFrames = 0;
+            }
+
+            // 同步回 CPU 场景数据（如果有灯光）
+            if (lightChanged && !GScene.mLights.empty())
+            {
+                auto& light = GScene.mLights.front();
+                light.color = sunColor;
+                light.intensity = sunIntensityScalar;
+                // 从方向向量重建旋转四元数
+                float3 dir = GShaderGlobals.sunDirection;
+                // 灯光默认朝向 (0,0,-1)，求从 (0,0,-1) 到 dir 的旋转
+                float3 from = float3(0, 0, -1);
+                float3 to = dir;
+                float d = dot(from, to);
+                if (d < -0.9999f)
+                    light.transform.rotation = quat(0, 1, 0, 0); // 180度翻转
+                else
+                {
+                    float3 c = cross(from, to);
+                    float w = 1.0f + d;
+                    light.transform.rotation = normalize(quat(w, c.x, c.y, c.z));
+                }
+            }
+
+            ImGui::Separator();
+        }
+
+        // ---- Ambient ----
+        if (ImGui::CollapsingHeader("Ambient", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            bool ambientChanged = false;
+            ambientChanged |= ImGui::ColorEdit3("Ambient Color", &GShaderGlobals.ambientColor.x, ImGuiColorEditFlags_Float);
+            if (ambientChanged)
+                GShaderGlobals.ptAccumulatedFrames = 0;
+        }
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+}
+
 /* ==================== HDR Rendering State ==================== */
 static void DoHDRReadback()
 {
