@@ -9,7 +9,7 @@ using namespace Core;
 class GPUScene;
 struct FContext
 {
-    Span<char*> args;
+    Span<const char*> files;
 
     Allocator* allocator{};
 
@@ -30,5 +30,5 @@ extern FContext* GContext;
 
 extern void UpdateSwapchain(FContext* context);
 
-extern FContext* CreateContext(SDL_Window* window, Allocator* allocator = GLOBAL_ALLOC);
+extern FContext* CreateContext(SDL_Window* window, Allocator* allocator = GLOBAL_ALLOC, RHIDevice::DeviceDesc const& deviceDesc = {});
 extern void DestroyContext(FContext* context = nullptr /* global */);

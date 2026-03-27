@@ -6,6 +6,7 @@ FetchContent_MakeAvailable(meshoptimizer)
 FetchContent_MakeAvailable(cgltf)
 FetchContent_MakeAvailable(lz4)
 FetchContent_MakeAvailable(bc7enc)
+FetchContent_MakeAvailable(argh)
 
 add_subdirectory(Shaders)
 add_library(Editor_Assets STATIC)
@@ -54,7 +55,7 @@ target_precompile_headers(
 add_executable(Editor)
 target_sources(Editor PRIVATE SDLMain.cpp ImGui.cpp Editor.cpp Renderer.cpp PathTracer.cpp)
 target_link_libraries(
-        Editor PRIVATE Editor_Context Foundation_RHIVulkan ThirdParty_ImGui
+        Editor PRIVATE Editor_Context Foundation_RHIVulkan ThirdParty_ImGui argh
 )
 if(WIN32)
     target_link_libraries(Editor PRIVATE comdlg32)

@@ -23,17 +23,14 @@ VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, 
         .apiVersion = apiVersion,
     };
     uint32_t count = 0;
+    if (!SDL_Vulkan_GetInstanceExtensions(&count))
+        count = 0;
     char const* const* extensions = SDL_Vulkan_GetInstanceExtensions(&count);
     Vector<const char*> instanceExtensions(mAllocator);
     instanceExtensions.insert(instanceExtensions.end(), extensions, extensions + count);
     // Add our own extensions
     instanceExtensions.insert(instanceExtensions.end(), kVulkanInstanceExtensions,
                               kVulkanInstanceExtensions + std::size(kVulkanInstanceExtensions));
-    LOG(VulkanApplication, LogDebug, "Enabling Extensions:")
-    for (auto ext : instanceExtensions)
-    {
-        LOG(VulkanApplication, LogDebug, "\t{}", ext);
-    }
     Vector<const char*> instanceLayers(mAllocator);
 #if FOUNDATION_RHIVULKAN_VVL
     instanceLayers.push_back("VK_LAYER_KHRONOS_validation");
@@ -84,7 +81,9 @@ Span<const RHIDevice::DeviceDesc> VulkanApplication::EnumerateDevices() const
 RHIApplicationScopedHandle<RHIDevice> VulkanApplication::CreateDevice(RHIDevice::DeviceDesc const& desc,
                                                                             SDL_Window* window)
 {
+    CHECK_MSG(desc.id < mPhysicalDevices.size(), "Invalid device id. Total {} devices, requested {}", mPhysicalDevices.size(), desc.id);
     auto& phys_device = mPhysicalDevices[desc.id];
+    LOG(VulkanApplication, LogInfo, "Using device {} (#{})", mDevices[desc.id].name, desc.id);
     Handle handle = mStorage.CreateObject<VulkanDevice>(*this, phys_device, window);
     return {this, handle};
 }

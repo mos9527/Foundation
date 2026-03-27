@@ -1256,14 +1256,14 @@ static void HandleFile(const char* filePath)
 /* -- */
 void FInitEnter()
 {
-    if (GContext->args.size() < 2)
+    if (GContext->files.size() < 1)
     {
         LOG(Editor, LogInfo, "No scene path provided, starting with empty scene");
         RendererSetupImGuiOnly(GContext);
     }
     else
-        for (int i = 1; i < GContext->args.size(); i++)
-            HandleFile(GContext->args[i]);
+        for (int i = 0; i < GContext->files.size(); i++)
+            HandleFile(GContext->files[i]);
     FEState = FEInit;
 }
 

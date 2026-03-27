@@ -30,13 +30,13 @@ void UpdateSwapchain(FContext* context)
     });
 }
 
-FContext* CreateContext(SDL_Window* window, Allocator* allocator)
+FContext* CreateContext(SDL_Window* window, Allocator* allocator, RHIDevice::DeviceDesc const& deviceDesc)
 {
     auto* context = Construct<FContext>(allocator);
     context->allocator = allocator;
     context->window = window;
     context->application = ConstructBase<RHIApplication, VulkanApplication>(allocator, allocator);
-    context->device = context->application->CreateDevice({}, window);
+    context->device = context->application->CreateDevice(deviceDesc, window);
     context->psoCache = context->device->CreatePipelineCache({});
     context->gpuScene = Construct<GPUScene>(allocator, context, GPUScene::GPUSceneDesc{
         .primitiveBudget = 512 * (1u << 20) // 512 MB

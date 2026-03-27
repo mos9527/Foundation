@@ -194,7 +194,7 @@ namespace Foundation::RHI
         struct DeviceDesc
         {
             uint32_t id = 0;
-            const char* name = nullptr;
+            String name = "RHIDevice";
         };
         RHIDevice(RHIApplication const& app) : mApp(app) {}
 
