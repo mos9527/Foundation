@@ -437,6 +437,19 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
         .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
     }
 });
+    ResourceHandle EnvMapTex;
+    if (gpu->GetEnvMap()) {
+        EnvMapTex = renderer->CreateResource("Env Map", gpu->GetEnvMap());
+    } else {
+        EnvMapTex = renderer->CreateResource("Env Map Fallback", RHITextureDesc{
+            .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
+            .extent = {1, 1, 1},
+            .format = RHIResourceFormat::R8G8B8A8Unorm});
+    }
+    auto EnvMapSampler = renderer->CreateSampler({
+        .filter = {RHIDeviceSampler::SamplerDesc::Filter::Linear,
+                   RHIDeviceSampler::SamplerDesc::Filter::Linear},
+    });
     renderer->CreatePass(
         "Lighting", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -462,6 +475,12 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::ComputeShader,
                   RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
                                      .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSRV(self, EnvMapTex, "envMapTexture", RHIPipelineStageBits::RayTracingShader,
+                              RHITextureViewDesc{.format = gpu->GetEnvMap()
+                                                     ? RHIResourceFormat::R32G32B32A32SignedFloat
+                                                     : RHIResourceFormat::R8G8B8A8Unorm,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSampler(self, EnvMapSampler, "envMapSampler");
             r->BindTextureUAV(self, LightingBuffer, "output", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
                                                  .range = RHITextureSubresourceRange::Create()});
