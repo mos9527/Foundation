@@ -327,8 +327,8 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                     r->BindShader(self, RHIShaderStageBits::Mesh, "main", Paths::Resolve("data/shaders/EMSBasic.spv"));
                     r->BindShader(self, RHIShaderStageBits::Fragment, "main", Paths::Resolve("data/shaders/EPSGBuffer.spv"),
                                   AsBytes(AsSpan(cfg.viewFlags)));
-                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
-                    r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
+                    r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
+                    r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
                     r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
                     r->BindTextureRTV(self, GBufferRT0,
@@ -346,10 +346,11 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                     r->BindTextureDSV(self, ZBuffer,
                                       {.format = RHIResourceFormat::D32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
-                    r->BindBufferStorageRead(self, IndirectMeshletDispatch,
-                                             RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::DrawIndirect,
+                    r->BindBufferIndirectRead(self, IndirectMeshletDispatch);
+                    r->BindBufferStorageRead(self, IndirectMeshletCounter,
+                                             RHIPipelineStageBits::MeshShader,
                                              "inMeshletCounter");
-                    r->BindBufferStorageRead(self, IndirectMeshlets, RHIPipelineStageBits::ComputeShader,
+                    r->BindBufferStorageRead(self, IndirectMeshlets, RHIPipelineStageBits::MeshShader,
                                              "inMeshletIndices");
                     r->BindTextureSampler(self, TexSampler, "textureSampler");
                     r->BindDescriptorSet(self, "textures",

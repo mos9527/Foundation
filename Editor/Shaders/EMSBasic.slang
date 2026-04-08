@@ -4,7 +4,8 @@ uniform UBO globalParams;
 
 [[vk_binding(1,0)]] StructuredBuffer<GSInstance> instances;
 [[vk_binding(2,0)]] ByteAddressBuffer primitive;
-[[vk_binding(3,0)]] RWStructuredBuffer<uint2> inMeshletIndices; // (x: Meshlet ID, y: Instance ID)
+[[vk_binding(3,0)]] StructuredBuffer<uint> inMeshletCounter;
+[[vk_binding(4,0)]] StructuredBuffer<uint2> inMeshletIndices; // (x: Meshlet ID, y: Instance ID)
 
 struct MSGroup {
     GSInstance instance;
@@ -24,6 +25,7 @@ void main(
     OutputIndices<uint3, 96> triangles
 ) {
     uint drawID = dot(gid, uint2(kMeshIndirectPerDrawMeshlets, 1));
+    if (drawID >= inMeshletCounter[0]) return;
     if (tid == 0){
         // Linear dispatch, grouped by kMeshIndirectPerDrawMeshlets
         uint2 indices = inMeshletIndices[drawID];

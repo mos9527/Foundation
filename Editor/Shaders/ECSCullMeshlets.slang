@@ -173,11 +173,10 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
         if (WaveIsFirstLane())
             waveMeshletOffset = outMeshletCounter[0].add(waveDrawCount);
         // Boardcast
-        waveMeshletOffset = WaveReadLaneFirst(waveMeshletOffset);
+        waveMeshletOffset = WaveActiveMax(waveMeshletOffset);
         // Spill the big indices list into multiple dispatches
         // of kMaxMeshletsPerDispatch each.
         uint waveMeshletCount = waveMeshletOffset + waveDrawCount;
-        waveMeshletCount = WaveReadLaneFirst(waveMeshletCount);
         if (WaveIsFirstLane()){
             uint groupCountX = (waveMeshletCount + kMeshIndirectPerDrawMeshlets - 1) / kMeshIndirectPerDrawMeshlets;
             uint groupCountY = min(waveMeshletCount, kMeshIndirectPerDrawMeshlets);
