@@ -82,45 +82,11 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
             });
     }
     CHECK(graphics.first != kInvalidQueueIndex);
-    CHECK(compute.first != kInvalidQueueIndex);
-    CHECK(transfer.first != kInvalidQueueIndex);
-    auto availableExtensions = mPhysicalDevice.enumerateDeviceExtensionProperties();
-    auto isExtensionAvailable = [&](const char* extName) -> bool
-    {
-        for (auto const& ext : availableExtensions)
-        {
-            if (std::string_view(ext.extensionName.data()) == extName)
-                return true;
-        }
-        return false;
-    };
-    Vector<const char*> enabledExtensions(GetAllocator());
-    for (auto* desired : kVulkanDesiredDeviceExtensions)
-    {
-        if (isExtensionAvailable(desired))
-        {
-            enabledExtensions.push_back(desired);
-        }
-        else
-        {
-            LOG(VulkanDevice, LogWarn, "Device extension '{}' is not available and will not be enabled.", desired);
-        }
-    }
-    auto isExtensionEnabled = [&](const char* extName) -> bool
-    {
-        for (auto* ext : enabledExtensions)
-        {
-            if (std::string_view(ext) == extName)
-                return true;
-        }
-        return false;
-    };
-    const bool hasMeshShader = isExtensionEnabled(VK_EXT_MESH_SHADER_EXTENSION_NAME);
-    const bool hasAccelerationStructure = isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
-    const bool hasRayQuery = isExtensionEnabled(VK_KHR_RAY_QUERY_EXTENSION_NAME);
-    const bool hasRayTracingPipeline = isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
-    const bool hasRayTracingInvocationReorder =
-        isExtensionEnabled(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
+    // Fallback to graphics queue
+    if (compute.first == kInvalidQueueIndex)
+        compute = graphics;
+    if (transfer.first == kInvalidQueueIndex)
+        transfer = graphics;
     if (window)
     {
         // Check for a present queue
@@ -165,7 +131,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
              .dynamicRendering = true,
              .shaderIntegerDotProduct = true}, // vk::PhysicalDeviceVulkan13Features
             {.extendedDynamicState = true}, // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
-            {.taskShader = true /*...try not to use it*/,
+            {.taskShader = false /*...try not to use it*/,
              .meshShader = true}, // vk::PhysicalDeviceMeshShaderFeaturesEXT
             {
                 .accelerationStructure = true,
@@ -174,16 +140,162 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
             {.rayTracingPipeline = true}, // vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
             {.rayTracingInvocationReorder = true} // vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT
         };
+
+    // 查询设备支持的扩展，过滤掉不支持的
+    auto availableExtensions = mPhysicalDevice.enumerateDeviceExtensionProperties();
+    auto isExtensionAvailable = [&](const char* extName) -> bool
+    {
+        for (auto const& ext : availableExtensions)
+        {
+            if (std::string_view(ext.extensionName.data()) == extName)
+                return true;
+        }
+        return false;
+    };
+    Vector<const char*> enabledExtensions(GetAllocator());
+    for (auto* desired : kVulkanDesiredDeviceExtensions)
+    {
+        if (isExtensionAvailable(desired))
+        {
+            enabledExtensions.push_back(desired);
+        }
+        else
+        {
+            LOG(VulkanDevice, LogWarn, "Device extension '{}' is not available and will not be enabled.", desired);
+        }
+    }
+    auto isExtensionEnabled = [&](const char* extName) -> bool
+    {
+        for (auto* ext : enabledExtensions)
+        {
+            if (std::string_view(ext) == extName)
+                return true;
+        }
+        return false;
+    };
+    const bool hasMeshShader = isExtensionEnabled(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+    const bool hasAccelerationStructure = isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+    const bool hasRayQuery = isExtensionEnabled(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+    const bool hasRayTracingPipeline = isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+    const bool hasRayTracingInvocationReorder =
+        isExtensionEnabled(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
+
+    // 查询设备实际支持的特性，关闭不支持的特性并 log
+    vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
+                       vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
+                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT, vk::PhysicalDeviceMeshShaderFeaturesEXT,
+                       vk::PhysicalDeviceAccelerationStructureFeaturesKHR, vk::PhysicalDeviceRayQueryFeaturesKHR,
+                       vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
+                       vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>
+        supportedChain{};
     if (!hasMeshShader)
-        featureChain.unlink<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
+        supportedChain.unlink<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
     if (!hasAccelerationStructure)
-        featureChain.unlink<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
+        supportedChain.unlink<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
     if (!hasRayQuery)
-        featureChain.unlink<vk::PhysicalDeviceRayQueryFeaturesKHR>();
+        supportedChain.unlink<vk::PhysicalDeviceRayQueryFeaturesKHR>();
     if (!hasRayTracingPipeline)
-        featureChain.unlink<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
+        supportedChain.unlink<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
     if (!hasRayTracingInvocationReorder)
+        supportedChain.unlink<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>();
+    (*mPhysicalDevice).getFeatures2(&supportedChain.get<vk::PhysicalDeviceFeatures2>());
+
+    // 对比请求的特性与设备支持的特性，关闭不支持的并 log
+    // 辅助 lambda：若请求了某特性但设备不支持，则关闭并 log
+    auto checkFeature = [](vk::Bool32& req, vk::Bool32 sup, const char* name)
+    {
+        if (req && !sup)
+        {
+            LOG(VulkanDevice, LogWarn, "Device feature '{}' is not supported and will be disabled.", name);
+            req = false;
+        }
+    };
+    {
+        auto& req = featureChain.get<vk::PhysicalDeviceFeatures2>().features;
+        auto const& sup = supportedChain.get<vk::PhysicalDeviceFeatures2>().features;
+        checkFeature(req.samplerAnisotropy,       sup.samplerAnisotropy,       "VkPhysicalDeviceFeatures::samplerAnisotropy");
+        checkFeature(req.fragmentStoresAndAtomics, sup.fragmentStoresAndAtomics, "VkPhysicalDeviceFeatures::fragmentStoresAndAtomics");
+        checkFeature(req.shaderInt16,             sup.shaderInt16,             "VkPhysicalDeviceFeatures::shaderInt16");
+    }
+    {
+        auto& req = featureChain.get<vk::PhysicalDeviceVulkan11Features>();
+        auto const& sup = supportedChain.get<vk::PhysicalDeviceVulkan11Features>();
+        checkFeature(req.storageBuffer16BitAccess,          sup.storageBuffer16BitAccess,          "VkPhysicalDeviceVulkan11Features::storageBuffer16BitAccess");
+        checkFeature(req.uniformAndStorageBuffer16BitAccess, sup.uniformAndStorageBuffer16BitAccess, "VkPhysicalDeviceVulkan11Features::uniformAndStorageBuffer16BitAccess");
+        checkFeature(req.shaderDrawParameters,              sup.shaderDrawParameters,              "VkPhysicalDeviceVulkan11Features::shaderDrawParameters");
+    }
+    {
+        auto& req = featureChain.get<vk::PhysicalDeviceVulkan12Features>();
+        auto const& sup = supportedChain.get<vk::PhysicalDeviceVulkan12Features>();
+        checkFeature(req.drawIndirectCount,                        sup.drawIndirectCount,                        "VkPhysicalDeviceVulkan12Features::drawIndirectCount");
+        checkFeature(req.storageBuffer8BitAccess,                  sup.storageBuffer8BitAccess,                  "VkPhysicalDeviceVulkan12Features::storageBuffer8BitAccess");
+        checkFeature(req.uniformAndStorageBuffer8BitAccess,        sup.uniformAndStorageBuffer8BitAccess,        "VkPhysicalDeviceVulkan12Features::uniformAndStorageBuffer8BitAccess");
+        checkFeature(req.shaderFloat16,                            sup.shaderFloat16,                            "VkPhysicalDeviceVulkan12Features::shaderFloat16");
+        checkFeature(req.shaderInt8,                               sup.shaderInt8,                               "VkPhysicalDeviceVulkan12Features::shaderInt8");
+        checkFeature(req.descriptorBindingSampledImageUpdateAfterBind, sup.descriptorBindingSampledImageUpdateAfterBind, "VkPhysicalDeviceVulkan12Features::descriptorBindingSampledImageUpdateAfterBind");
+        checkFeature(req.runtimeDescriptorArray,                   sup.runtimeDescriptorArray,                   "VkPhysicalDeviceVulkan12Features::runtimeDescriptorArray");
+        checkFeature(req.samplerFilterMinmax,                      sup.samplerFilterMinmax,                      "VkPhysicalDeviceVulkan12Features::samplerFilterMinmax");
+        checkFeature(req.scalarBlockLayout,                        sup.scalarBlockLayout,                        "VkPhysicalDeviceVulkan12Features::scalarBlockLayout");
+        checkFeature(req.uniformBufferStandardLayout,              sup.uniformBufferStandardLayout,              "VkPhysicalDeviceVulkan12Features::uniformBufferStandardLayout");
+        checkFeature(req.shaderSubgroupExtendedTypes,              sup.shaderSubgroupExtendedTypes,              "VkPhysicalDeviceVulkan12Features::shaderSubgroupExtendedTypes");
+        checkFeature(req.hostQueryReset,                           sup.hostQueryReset,                           "VkPhysicalDeviceVulkan12Features::hostQueryReset");
+        checkFeature(req.timelineSemaphore,                        sup.timelineSemaphore,                        "VkPhysicalDeviceVulkan12Features::timelineSemaphore");
+        checkFeature(req.bufferDeviceAddress,                      sup.bufferDeviceAddress,                      "VkPhysicalDeviceVulkan12Features::bufferDeviceAddress");
+    }
+    {
+        auto& req = featureChain.get<vk::PhysicalDeviceVulkan13Features>();
+        auto const& sup = supportedChain.get<vk::PhysicalDeviceVulkan13Features>();
+        checkFeature(req.synchronization2,        sup.synchronization2,        "VkPhysicalDeviceVulkan13Features::synchronization2");
+        checkFeature(req.dynamicRendering,        sup.dynamicRendering,        "VkPhysicalDeviceVulkan13Features::dynamicRendering");
+        checkFeature(req.shaderIntegerDotProduct, sup.shaderIntegerDotProduct, "VkPhysicalDeviceVulkan13Features::shaderIntegerDotProduct");
+    }
+    {
+        auto& req = featureChain.get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
+        auto const& sup = supportedChain.get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
+        checkFeature(req.extendedDynamicState, sup.extendedDynamicState, "VkPhysicalDeviceExtendedDynamicStateFeaturesEXT::extendedDynamicState");
+    }
+    if (hasMeshShader)
+    {
+        auto& req = featureChain.get<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
+        auto const& sup = supportedChain.get<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
+        checkFeature(req.taskShader, sup.taskShader, "VkPhysicalDeviceMeshShaderFeaturesEXT::taskShader");
+        checkFeature(req.meshShader, sup.meshShader, "VkPhysicalDeviceMeshShaderFeaturesEXT::meshShader");
+    }
+    else
+        featureChain.unlink<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
+    if (hasAccelerationStructure)
+    {
+        auto& req = featureChain.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
+        auto const& sup = supportedChain.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
+        checkFeature(req.accelerationStructure, sup.accelerationStructure, "VkPhysicalDeviceAccelerationStructureFeaturesKHR::accelerationStructure");
+    }
+    else
+        featureChain.unlink<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
+    if (hasRayQuery)
+    {
+        auto& req = featureChain.get<vk::PhysicalDeviceRayQueryFeaturesKHR>();
+        auto const& sup = supportedChain.get<vk::PhysicalDeviceRayQueryFeaturesKHR>();
+        checkFeature(req.rayQuery, sup.rayQuery, "VkPhysicalDeviceRayQueryFeaturesKHR::rayQuery");
+    }
+    else
+        featureChain.unlink<vk::PhysicalDeviceRayQueryFeaturesKHR>();
+    if (hasRayTracingPipeline)
+    {
+        auto& req = featureChain.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
+        auto const& sup = supportedChain.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
+        checkFeature(req.rayTracingPipeline, sup.rayTracingPipeline, "VkPhysicalDeviceRayTracingPipelineFeaturesKHR::rayTracingPipeline");
+    }
+    else
+        featureChain.unlink<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
+    if (hasRayTracingInvocationReorder)
+    {
+        auto& req = featureChain.get<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>();
+        auto const& sup = supportedChain.get<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>();
+        checkFeature(req.rayTracingInvocationReorder, sup.rayTracingInvocationReorder, "VkPhysicalDeviceRayTracingInvocationReorderFeaturesEXT::rayTracingInvocationReorder");
+    }
+    else
         featureChain.unlink<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>();
+
     vk::DeviceCreateInfo device_info{.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
                                      .queueCreateInfoCount = static_cast<uint32_t>(queueInfos.size()),
                                      .pQueueCreateInfos = queueInfos.data(),
