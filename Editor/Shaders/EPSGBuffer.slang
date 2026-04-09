@@ -13,6 +13,7 @@ struct Fragment
     float4 RT0 : SV_Target0;
     float4 RT1 : SV_Target1;
     float4 RT2 : SV_Target2;
+    uint32_t RT3 : SV_Target3; // Instance ID map for picking
 };
 
 Fragment drawMeshlet(V2F input)
@@ -20,6 +21,9 @@ Fragment drawMeshlet(V2F input)
     Fragment output;
     uint32_t hashed = hash(input.meshlet);
     output.RT0 = float4(unpackUnorm4x8(hashed).xyz, 1.0);
+    output.RT1 = float4(0);
+    output.RT2 = float4(0);
+    output.RT3 = input.instanceID;
     return output;
 }
 
@@ -47,6 +51,7 @@ Fragment drawGBuffer(V2F input){
     output.RT0 = float4(baseColor.xyz, (float)ID / 255.0f); // BaseColor, ID
     output.RT1 = float4(normal888, pbrMetalRough.z); // Normal 888, Metallic
     output.RT2 = float4(emissive.xyz, pbrMetalRough.y); // Emissive, Roughness
+    output.RT3 = input.instanceID;
     return output;
 }
 

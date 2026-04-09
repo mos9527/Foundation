@@ -54,7 +54,7 @@ void RendererSetupImGuiOnly(FContext* context)
     renderer->EndSetup();
 }
 
-void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
+void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, RasterReadbackHandles& outHandles)
 {
     auto* renderer = context->renderer = Construct<Renderer>(context->allocator,
                                                              RendererDesc{
@@ -224,6 +224,21 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                                                                   RHITextureUsageBits::SampledImage,
                                                               .extent = {w, h, 1},
                                                               .format = RHIResourceFormat::R8G8B8A8Unorm});
+    // Instance ID map: R32_UINT, one uint per pixel storing the absolute instance index.
+    // ~0u means "no object" (cleared each frame).
+    auto PickIDBuffer = renderer->CreateResource("Pick ID Buffer",
+                                                RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
+                                                                   RHITextureUsageBits::SampledImage,
+                                                               .extent = {w, h, 1},
+                                                               .format = RHIResourceFormat::R32Uint});
+    // 4-byte persistently-mapped readback buffer: Blit PS writes the picked instanceID here.
+    // ~0u = no object / no pending pick.
+    auto PickResultBuffer = renderer->CreateResource("Pick Result Buffer",
+        RHIBufferDesc{.resource = {.heap = RHIDeviceHeapType::Readback,
+                                   .hostAccess = RHIResourceHostAccess::ReadWrite,
+                                   .coherent = true},
+                      .usage = RHIBufferUsageBits::StorageBuffer,
+                      .size = sizeof(uint32_t)});
     auto ReduceBuffer = renderer->CreateResource(
         "Reduced Values", RHIBufferDesc{.usage = StorageBuffer | TransferDestination, .size = sizeof(uint32_t) * 256});
     if (cfg.viewFlags & kViewOverdraw)
@@ -340,6 +355,9 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                     r->BindTextureRTV(self, GBufferRT2,
                                       {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindTextureRTV(self, PickIDBuffer,
+                                      {.format = RHIResourceFormat::R32Uint,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                     r->BindTextureUAV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
                                       {.format = RHIResourceFormat::R32Uint,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
@@ -363,11 +381,13 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
                         r->CmdBeginGraphics(self, cmd, wh,
                                             {{{RHIAttachmentLoadOp::Clear},
                                               {RHIAttachmentLoadOp::Clear},
+                                              {RHIAttachmentLoadOp::Clear},
                                               {RHIAttachmentLoadOp::Clear}}},
                                             {RHIAttachmentLoadOp::Clear, {0.0f, 0}});
                     else // Don't clear depth in stage 2.
                         r->CmdBeginGraphics(self, cmd, wh,
                                             {{{RHIAttachmentLoadOp::Load},
+                                              {RHIAttachmentLoadOp::Load},
                                               {RHIAttachmentLoadOp::Load},
                                               {RHIAttachmentLoadOp::Load}}},
                                             {RHIAttachmentLoadOp::Load});
@@ -506,9 +526,20 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
             r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                  .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSRV(self, PickIDBuffer, "pickIDBuffer", RHIPipelineStageBits::FragmentShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
+                                                 .range = RHITextureSubresourceRange::Create()});
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
             r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader, "globalMax");
+            r->BindBufferUnordered(self, PickResultBuffer, RHIPipelineStageBits::FragmentShader, "pickResult");
+            r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(int2));
+        },
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            // Push pick pixel coordinate every frame; (-1,-1) = no pending pick
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, *scene.gsPickPixel);
         });
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});
     renderer->EndSetup();
+    outHandles.pickResultBuffer = PickResultBuffer;
 }

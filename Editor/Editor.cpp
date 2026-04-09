@@ -20,6 +20,10 @@ static int GSelectedInstance = -1;
 static int GSelectedMaterial = -1;
 static bool GShowImGui = true;
 static PTReadbackHandles GPTReadback;
+// Pending GPU pick: pixel coordinate to sample next frame, (-1,-1) = none
+static int2 GPendingPickPixel{-1, -1};
+// Persistently-mapped 4-byte buffer written by the Blit PS with the picked instanceID
+static RHIBuffer* GPickResultBuffer{nullptr};
 /* -- Offline Rendering State -- */
 enum class ERenderFormat { HDR, SDR };
 static ERenderFormat GRenderFormat = ERenderFormat::HDR;
@@ -636,12 +640,20 @@ void FRunningEnter()
         .gsInstances = &GSInstances,
         .gsMaterials = &GSMaterials,
         .gsMeshes = &GSMeshes,
-        .gsBLASes = &GSBLASes
+        .gsBLASes = &GSBLASes,
+        .gsPickPixel = &GPendingPickPixel
     };
     if (GRendererMode == ERendererMode::PathTracer)
+    {
         PathTracerSetup(GContext, GRendererConfig, scene, GPTReadback);
+        GPickResultBuffer = GContext->renderer->DerefResource(GPTReadback.pickResultBuffer).Get<RHIBuffer*>();
+    }
     else
-        RendererSetup(GContext, GRendererConfig, scene);
+    {
+        RasterReadbackHandles rasterHandles;
+        RendererSetup(GContext, GRendererConfig, scene, rasterHandles);
+        GPickResultBuffer = GContext->renderer->DerefResource(rasterHandles.pickResultBuffer).Get<RHIBuffer*>();
+    }
     FEState = FERunning;
 }
 
@@ -969,6 +981,22 @@ static void FLightingPanel()
     ImGui::PopStyleColor();
 }
 
+/* ==================== GPU Picking Readback ==================== */
+/**
+ * @brief Reads the pick result written by the Blit PS this frame.
+ *        No GPU stall — just Map() the persistently-mapped readback buffer.
+ */
+static void DoPickReadback()
+{
+    if (!GPickResultBuffer)
+        return;
+    uint32_t instanceID = *GPickResultBuffer->Map<uint32_t>();
+    if (instanceID == ~0u)
+        GSelectedInstance = -1; // clicked on background
+    else
+        GSelectedInstance = GRendererMode == ERendererMode::Raster ? static_cast<int>(instanceID - GShaderGlobals.firstInstance) : static_cast<int>(instanceID);
+}
+
 /* ==================== HDR Rendering State ==================== */
 static void DoHDRReadback()
 {
@@ -1229,6 +1257,13 @@ void FRunning()
         GShaderGlobals.ptAccumulatedFrames = 0, cameraUpdated = false;
     renderer->ExecuteFrame();
     renderer->EndExecute();
+    // GPU picking: the Blit PS already wrote the result this frame if a click was pending.
+    // Just Map() and read — no stall needed. Reset pixel so next frame push constant is (-1,-1).
+    if (GPendingPickPixel.x >= 0)
+    {
+        DoPickReadback();
+        GPendingPickPixel = {-1, -1};
+    }
     GShaderGlobals.ptAccumulatedFrames++;
 }
 
@@ -1317,6 +1352,14 @@ bool EditorProcessEvent(SDL_Event* event)
     auto& io = ImGui::GetIO();
     if (!io.WantCaptureMouse && !ImGuizmo::IsUsing())
         cameraUpdated |= GCamera.Update(*event);
+    // GPU picking: record click pixel on left mouse button release (not dragging)
+    if (!io.WantCaptureMouse && !ImGuizmo::IsUsing())
+    {
+        if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_LEFT)
+        {
+            GPendingPickPixel = {(int)event->button.x, (int)event->button.y};
+        }
+    }
     // Always track WASD key state for the camera (only when ImGui does not need the keyboard)
     if (!io.WantCaptureKeyboard)
     {

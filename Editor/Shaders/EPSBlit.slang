@@ -4,8 +4,13 @@
 
 StructuredBuffer<uint32_t> globalMax;
 Texture2D<uint32_t> overdraw;
+Texture2D<uint32_t> pickIDBuffer; // Instance ID map (R32_UINT), ~0u = no object
+RWStructuredBuffer<uint32_t> pickResult; // [0] written when fragCoord == pickPixel
 Texture2D lighting;
 uniform UBO globalParams;
+
+struct PickPC { int px; int py; };
+[[vk::push_constant]] PickPC pickPC;
 
 float3 heatmapGradient(float t) {
     float3 c0 = float3(0.000, 0.000, 0.002);
@@ -40,6 +45,9 @@ float3 ACESFilm(float3 x)
 [shader("fragment")]
 float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGET {
     int3 coord = int3(fragCoord.x, fragCoord.y, 0);
+    // GPU picking: if this pixel is the clicked one, write instanceID to result buffer
+    if (pickPC.px >= 0 && int(fragCoord.x) == pickPC.px && int(fragCoord.y) == pickPC.py)
+        pickResult[0] = pickIDBuffer.Load(coord);
     if (flags & kViewOverdraw){
         uint32_t draws = overdraw.Load(coord);
         return float4(heatmapGradient((float)draws / globalMax[0]), 1.0);    

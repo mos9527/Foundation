@@ -171,4 +171,5 @@ public struct V2F
     public float2 uv : TEXCOORD0;
     public uint32_t meshlet : ID;
     public uint32_t materialIndex : MATID;
+    public uint32_t instanceID : INSTID;
 };

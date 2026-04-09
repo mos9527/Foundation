@@ -63,10 +63,22 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
     auto GBuffer2 = renderer->CreateResource("GBuffer 2", RHITextureDesc{
         .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
         .extent = {w, h, 1}, .format = RHIResourceFormat::R32G32B32A32SignedFloat});
+    // Instance ID map: R32_UINT, written every frame on primary hit (no accumulation)
+    auto PickIDBuffer = renderer->CreateResource("Pick ID Buffer", RHITextureDesc{
+        .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
+        .extent = {w, h, 1}, .format = RHIResourceFormat::R32Uint});
+    // 4-byte persistently-mapped readback buffer: Blit PS writes the picked instanceID here.
+    auto PickResultBuffer = renderer->CreateResource("Pick Result Buffer",
+        RHIBufferDesc{.resource = {.heap = RHIDeviceHeapType::Readback,
+                                   .hostAccess = RHIResourceHostAccess::ReadWrite,
+                                   .coherent = true},
+                      .usage = RHIBufferUsageBits::StorageBuffer,
+                      .size = sizeof(uint32_t)});
 
     // Save handles for editor HDR export
     outHandles.diffuse = Diffuse;
     outHandles.specular = Specular;
+    outHandles.pickResultBuffer = PickResultBuffer;
 
     auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
     ResourceHandle EnvMapTex;
@@ -133,6 +145,10 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
                               RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureUAV(self, PickIDBuffer, "pickIDBuffer",
+                              RHIPipelineStageBits::RayTracingShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
+                                                 .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
@@ -167,10 +183,20 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
         bindSRV(GBuffer0, "gBuffer0Tex");
         bindSRV(GBuffer1, "gBuffer1Tex");
         bindSRV(GBuffer2, "gBuffer2Tex");
+        r->BindTextureSRV(self, PickIDBuffer, "pickIDBuffer", RHIPipelineStageBits::FragmentShader,
+                          RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
+                                             .range = RHITextureSubresourceRange::Create()});
+        r->BindBufferUnordered(self, PickResultBuffer, RHIPipelineStageBits::FragmentShader, "pickResult");
+        r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(int2));
         r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
     };
 
-    createPSFullscreenPass(renderer, "Blit Image", blitSetup);
+    auto blitRecord = [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+    {
+        r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, *scene.gsPickPixel);
+    };
+
+    createPSFullscreenPass(renderer, "Blit Image", blitSetup, blitRecord);
 
     // -- SDR render target: same dimensions as swapchain, R8G8B8A8, for PNG export
     auto SDRTarget = renderer->CreateResource("SDR Render Target", RHITextureDesc{
@@ -184,7 +210,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
         SDRTarget,
         RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
                            .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)},
-        blitSetup);
+        blitSetup, blitRecord);
 
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});
     renderer->EndSetup();

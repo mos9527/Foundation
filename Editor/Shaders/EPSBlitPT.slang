@@ -8,7 +8,12 @@ Texture2D specularTex;
 Texture2D gBuffer0Tex;  // BaseColor.rgb, MaterialID (packed)
 Texture2D gBuffer1Tex;  // Normal.xyz * 0.5 + 0.5, 0
 Texture2D gBuffer2Tex;  // Position.xyz, 0
+Texture2D<uint32_t> pickIDBuffer; // Instance ID map (R32_UINT), ~0u = no object
+RWStructuredBuffer<uint32_t> pickResult; // [0] written when fragCoord == pickPixel
 uniform UBO globalParams;
+
+struct PickPC { int px; int py; };
+[[vk::push_constant]] PickPC pickPC;
 
 
 // https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
@@ -31,7 +36,9 @@ float3 ToneMap(float3 hdr) {
 [shader("fragment")]
 float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGET {
     int3 coord = int3(fragCoord.x, fragCoord.y, 0);
-
+    // GPU picking: if this pixel is the clicked one, write instanceID to result buffer
+    if (pickPC.px >= 0 && int(fragCoord.x) == pickPC.px && int(fragCoord.y) == pickPC.py)
+        pickResult[0] = pickIDBuffer.Load(coord);
     // GBuffer debug views — buffers already hold running averages (Welford)
     if (flags & kViewBaseColor) {
         float3 baseColor = gBuffer0Tex.Load(coord).xyz;

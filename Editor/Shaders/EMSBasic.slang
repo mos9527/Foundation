@@ -61,6 +61,7 @@ void main(
         v2f.uv = uv;
         v2f.meshlet = group.mesh.meshletGlobalIndex + group.meshletID;
         v2f.materialIndex = group.instance.materialIndex;
+        v2f.instanceID = inMeshletIndices[drawID].y;
         verts[i] = v2f;
     }
     for (uint i = tid; i < triCount; i += kMeshWorkGroupSize) {

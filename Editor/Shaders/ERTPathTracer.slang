@@ -21,6 +21,7 @@ RWTexture2D<float4> gBuffer1;  // Normal.xyz * 0.5 + 0.5, 0
 RWTexture2D<float4> gBuffer2;  // Position.xyz, 0
 RWTexture2D<float4> diffuse;   // Diffuse lobe radiance
 RWTexture2D<float4> specular;  // Specular lobe radiance (incl. transmission)
+RWTexture2D<uint32_t> pickIDBuffer; // Instance ID map, ~0u = no object (written on primary hit only)
 [[vk_binding(0,2)]] Texture2D<float4> textures[];
 
 // Number of SER coherence hint bits — enough to cover all materialID values
@@ -330,6 +331,8 @@ void RayGeneration()
                 gBuffer1[pix] += (g1 - gBuffer1[pix]) * invN;
                 gBuffer2[pix] += (g2 - gBuffer2[pix]) * invN;
             }
+            // pickIDBuffer: always overwrite with current frame's instance (no accumulation)
+            pickIDBuffer[pix] = payload.instance;
             gbufferWritten = true;
         }
         // -- Path Integrator
@@ -438,6 +441,7 @@ void RayGeneration()
             gBuffer1[pix] += (g1 - gBuffer1[pix]) * invN;
             gBuffer2[pix] += (g2 - gBuffer2[pix]) * invN;
         }
+        pickIDBuffer[pix] = ~0u; // no object
     }
     // Per-contribution sanitize already done via AddRadiance
     float4 outD = float4(LDiffuse, 1.0f);

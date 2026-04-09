@@ -76,9 +76,24 @@ struct RendererScene
     Vector<GSMaterial>* gsMaterials;
     Vector<GSMesh>* gsMeshes;
     Vector<uint32_t>* gsBLASes;
+    int2* gsPickPixel; // Points to GPendingPickPixel; (-1,-1) = no pending pick
 };
 
-extern void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene);
+/**
+ * @brief Resource handles for the rasterizer path, for editor readback.
+ */
+struct RasterReadbackHandles
+{
+    ResourceHandle pickResultBuffer{kInvalidHandle}; // R32_UINT, 4 bytes, persistently mapped
+};
+
+extern void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, RasterReadbackHandles& outHandles);
+// Convenience overload — discards readback handles
+inline void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
+{
+    RasterReadbackHandles dummy;
+    RendererSetup(context, cfg, scene, dummy);
+}
 
 /**
  * @brief HDR resource handles holding the current accumulated path tracer result.
@@ -89,6 +104,7 @@ struct PTReadbackHandles
     ResourceHandle diffuse{kInvalidHandle};
     ResourceHandle specular{kInvalidHandle};
     ResourceHandle sdrRenderTarget{kInvalidHandle};
+    ResourceHandle pickResultBuffer{kInvalidHandle}; // R32_UINT, 4 bytes, persistently mapped
 };
 
 extern void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene, PTReadbackHandles& outHandles);
