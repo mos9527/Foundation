@@ -46,7 +46,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
     float ndcDepth = depth.Load(uint3(tid,0));
     if (ndcDepth <= EPS) {
         // Infinite depth
-        output[tid] = float4(globalParams.ambientColor, 1.0f);
+        output[tid] = float4(globalParams.ambientColor.xyz, 1.0f);
         return;
     }
 
@@ -56,7 +56,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
     float4 wsPosition = mul(globalParams.inverseViewProj, ndcPosition);
 
     float3 p = wsPosition.xyz / wsPosition.w;
-    float3 eye = globalParams.camPosition;
+    float3 eye = globalParams.camPosition.xyz;
 
     float3 n, t, b;
     unpackTBN888(color1.xyz, n, t);
@@ -81,7 +81,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
         return;
     } else {
         float3 v = normalize(eye - p);
-        float3 l = -globalParams.sunDirection;
+        float3 l = -globalParams.sunDirection.xyz;
 
         float3 L = 0;
 
@@ -96,8 +96,8 @@ void main(uint2 tid: SV_DispatchThreadID) {
         float3 f = bsdf.f(wo, wi, TransportMode::Radiance);
 
         float pdf = shadow(p, l) ? 0.0f : 1.0f;
-        L += f * AbsCosTheta(wi) * pdf * globalParams.sunIntensity;
-        L += baseColor * globalParams.ambientColor;
+        L += f * AbsCosTheta(wi) * pdf * globalParams.sunIntensity.xyz;
+        L += baseColor * globalParams.ambientColor.xyz;
 
         // Final color
         output[tid] = float4(L + emissive, 1.0f);

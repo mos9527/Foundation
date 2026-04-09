@@ -208,8 +208,8 @@ static void ReplaceScene(StringView path)
         if (!GScene.mLights.empty())
         {
             auto& light = GScene.mLights.front();
-            GShaderGlobals.sunDirection = normalize(light.transform.rotation * float3(0, 0, -1));
-            GShaderGlobals.sunIntensity = light.color * light.intensity;
+            GShaderGlobals.sunDirection = float4(normalize(light.transform.rotation * float3(0, 0, -1)), 0);
+            GShaderGlobals.sunIntensity = float4(light.color * light.intensity, 0);
         }
         for (auto& c : GScene.mCameras)
             GScene.mCameras.emplace_back(c);
@@ -689,7 +689,7 @@ void FRunningImGui()
         if (GRendererMode == ERendererMode::PathTracer)
         {
             ImGui::Text("PT Accumulation: %d", GShaderGlobals.ptAccumulatedFrames);
-            ImGui::SliderInt("PT Bounces", &GShaderGlobals.ptMaxBounces, 1, 64);
+            ImGui::SliderInt("PT Bounces", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBounces), 1, 64);
             ImGui::SliderFloat("Firefly Clamp", &GShaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
         }
         GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
@@ -889,7 +889,7 @@ static void FLightingPanel()
             static bool eulerInitialized = false;
             if (!eulerInitialized)
             {
-                float3 d = GShaderGlobals.sunDirection;
+                float4 d = GShaderGlobals.sunDirection;
                 // pitch = asin(-d.y), yaw = atan2(d.x, d.z)
                 sunEuler[0] = degrees(std::asin(std::clamp(-d.y, -1.0f, 1.0f)));
                 sunEuler[1] = degrees(std::atan2(d.x, d.z));
@@ -904,11 +904,11 @@ static void FLightingPanel()
                 float pitchRad = radians(sunEuler[0]);
                 float yawRad   = radians(sunEuler[1]);
                 // Rebuild direction vector from Euler angles
-                GShaderGlobals.sunDirection = normalize(float3{
+                GShaderGlobals.sunDirection = float4(normalize(float3{
                     std::sin(yawRad) * std::cos(pitchRad),
                     -std::sin(pitchRad),
                     std::cos(yawRad) * std::cos(pitchRad)
-                });
+                }), 0);
             }
 
             // Separate color and intensity editing
@@ -924,7 +924,7 @@ static void FLightingPanel()
                 if (maxComp > 0.0f)
                 {
                     sunIntensityScalar = maxComp;
-                    sunColor = GShaderGlobals.sunIntensity / maxComp;
+                    sunColor = float3(GShaderGlobals.sunIntensity.x, GShaderGlobals.sunIntensity.y, GShaderGlobals.sunIntensity.z) / maxComp;
                 }
                 else
                 {
@@ -939,7 +939,7 @@ static void FLightingPanel()
 
             if (lightChanged)
             {
-                GShaderGlobals.sunIntensity = sunColor * sunIntensityScalar;
+                GShaderGlobals.sunIntensity = float4(sunColor * sunIntensityScalar, 0);
                 GShaderGlobals.ptAccumulatedFrames = 0;
             }
 
@@ -950,7 +950,7 @@ static void FLightingPanel()
                 light.color = sunColor;
                 light.intensity = sunIntensityScalar;
                 // Rebuild rotation quaternion from direction vector
-                float3 dir = GShaderGlobals.sunDirection;
+                float3 dir = GShaderGlobals.sunDirection.xyz();
                 // Light default forward is (0,0,-1); find rotation from (0,0,-1) to dir
                 float3 from = float3(0, 0, -1);
                 float3 to = dir;
@@ -1217,7 +1217,7 @@ void FRunning()
     if (GShowImGui)
     {
         EditorDockSpaceAndMenuBar();
-        FHierarchyPanel();       
+        FHierarchyPanel();
         FRunningImGui();
     }
     // Global param update
@@ -1233,8 +1233,8 @@ void FRunning()
     GShaderGlobals.zNear = GCamera.zNear;
     GShaderGlobals.projPlanes = planeSymmetric(GShaderGlobals.proj);
 
-    GShaderGlobals.camPosition = GCamera.position;
-    GShaderGlobals.camDirection = GCamera.rot * float3(0, 0, -1);
+    GShaderGlobals.camPosition = float4(GCamera.position, 0);
+    GShaderGlobals.camDirection = float4(GCamera.rot * float3(0, 0, -1), 0);
     GShaderGlobals.fbWidth = static_cast<float>(renderer->GetSwapchainExtent().x);
     GShaderGlobals.fbHeight = static_cast<float>(renderer->GetSwapchainExtent().y);
     if (cameraUpdated)
@@ -1324,6 +1324,7 @@ bool EditorProcessEvent(SDL_Event* event)
         if (event->key.key == SDLK_TAB)
         {
             GShowImGui = !GShowImGui;
+            GShaderGlobals.postShowOutline = GShowImGui;
         }
         // Gizmo hotkeys
         if (event->key.key == SDLK_G)

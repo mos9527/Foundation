@@ -71,7 +71,7 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     }
 
     // Cross filter for a simple outline
-    if (pickID != ~0u) {
+    if (globalParams.postShowOutline != 0 && pickID != ~0u) {
         bool isSel  = (instanceID == pickID);
         bool selL = (pickIDBuffer.Load(coord + int3(-1, 0, 0)) == pickID);
         bool selR = (pickIDBuffer.Load(coord + int3( 1, 0, 0)) == pickID);

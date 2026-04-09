@@ -147,17 +147,19 @@ public struct UBO
     public uint32_t hizHeight;
     // -- Lighting
     public float camEV;
-    public float3 camPosition;
-    public float3 camDirection;
-    public float3 sunDirection;
-    public float3 sunIntensity;
-    public float3 ambientColor;
+    public float4 camPosition;
+    public float4 camDirection;
+    public float4 sunDirection;
+    public float4 sunIntensity;
+    public float4 ambientColor;
     public uint32_t useEnvMap;
     public float envMapScale;
     // -- Path Tracing
     public uint32_t ptAccumulatedFrames;
     public uint32_t ptMaxBounces;
     public float ptFireflyClamp;
+    // -- Debug
+    public uint32_t postShowOutline;
 };
 // ^^^
 

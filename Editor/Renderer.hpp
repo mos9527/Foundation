@@ -1,7 +1,7 @@
 #pragma once
 #include "Scene.hpp"
 #include <RenderCore/RenderPass.hpp>
-#pragma pack(push, 1)
+#pragma pack(push, 4)
 struct UBO
 {
     uint32_t frameNumber;
@@ -26,17 +26,19 @@ struct UBO
     uint32_t hizHeight;
     // -- Lighting
     float camEV{0.0f};
-    float3 camPosition;
-    float3 camDirection;
-    float3 sunDirection{0, 0, -1};
-    float3 sunIntensity{0.0f};
-    float3 ambientColor{0.25,0.25,0.25};
+    float4 camPosition;
+    float4 camDirection;
+    float4 sunDirection{0, 0, -1, 0};
+    float4 sunIntensity{0.0f};
+    float4 ambientColor{0.25,0.25,0.25,0};
     uint32_t useEnvMap{0u};
     float envMapScale{1.0f};
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};
-    int32_t ptMaxBounces{32u};
+    uint32_t ptMaxBounces{32u};
     float ptFireflyClamp{10.0f};
+    // -- Debug
+    uint32_t postShowOutline{1u};
 };
 #pragma pack(pop)
 

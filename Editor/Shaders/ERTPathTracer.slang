@@ -203,7 +203,7 @@ float3 GeneratePrimaryRay(uint2 pixel, PCG rng)
     ndcPosition.y = 1 - ndcPosition.y;
     ndcPosition.xy = ndcPosition.xy * 2.0f - 1.0f;
     float4 wsPosition = mul(globalParams.inverseViewProj, ndcPosition);
-    return normalize(wsPosition.xyz / wsPosition.w - globalParams.camPosition);
+    return normalize(wsPosition.xyz / wsPosition.w - globalParams.camPosition.xyz);
 }
 
 // -- Main Shader Routines
@@ -244,7 +244,7 @@ void RayGeneration()
     float frameCount = float(globalParams.ptAccumulatedFrames + 1);
     // Initial ray with jitter for AA
     RayDesc ray;
-    ray.Origin = globalParams.camPosition;
+    ray.Origin = globalParams.camPosition.xyz;
     ray.Direction = GeneratePrimaryRay(pix, rng);
     ray.TMin = 0.0f;
     ray.TMax = INF;
@@ -264,10 +264,10 @@ void RayGeneration()
     // Combine the miss hit with the last light sample
     float lastSamplePDF = 0.0f;
     // Scene lights
-    DistantLight sun = DistantLight(SampledSpectrum(globalParams.sunIntensity), globalParams.sunDirection);
+    DistantLight sun = DistantLight(SampledSpectrum(globalParams.sunIntensity.xyz), globalParams.sunDirection.xyz);
     // Unified infinite light — falls back to constant color when no env map is bound
     InfiniteLight env = InfiniteLight(
-        SampledSpectrum(globalParams.ambientColor),
+        SampledSpectrum(globalParams.ambientColor.xyz),
         globalParams.envMapScale,
         globalParams.useEnvMap
     );
@@ -290,7 +290,7 @@ void RayGeneration()
         HitObject::Invoke(AS, hitObj, payload);
         // Outgoing direction
         float3 view = -ray.Direction;
-        if (AnyLuminance(globalParams.sunIntensity))
+        if (AnyLuminance(globalParams.sunIntensity.xyz))
             light.AddLight(sun, 0.5f);
         light.AddLight(env, 0.5f);
         light.Finalize();
