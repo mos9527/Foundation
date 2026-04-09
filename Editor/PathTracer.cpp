@@ -64,7 +64,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
         .usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
         .extent = {w, h, 1}, .format = RHIResourceFormat::R32G32B32A32SignedFloat});
 
-    // 保存句柄供编辑器 HDR 导出使用
+    // Save handles for editor HDR export
     outHandles.diffuse = Diffuse;
     outHandles.specular = Specular;
 
@@ -151,7 +151,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
             cmd->TraceRays(wh.x, wh.y, 1);
         });
 
-    // 共用的 blit setup lambda — 绑定 EPSBlitPT 着色器 + 所有 SRV
+    // Shared blit setup lambda — binds EPSBlitPT shader + all SRVs
     auto blitSetup = [=](PassHandle self, Renderer* r)
     {
         r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Paths::Resolve("data/shaders/EPSBlitPT.spv"),
@@ -172,7 +172,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
 
     createPSFullscreenPass(renderer, "Blit Image", blitSetup);
 
-    // -- SDR render target：与交换链同尺寸的 R8G8B8A8 纹理，供 PNG 导出使用
+    // -- SDR render target: same dimensions as swapchain, R8G8B8A8, for PNG export
     auto SDRTarget = renderer->CreateResource("SDR Render Target", RHITextureDesc{
         .usage = RHITextureUsageBits::RenderTarget | RHITextureUsageBits::TransferSource,
         .extent = {w, h, 1},

@@ -309,7 +309,7 @@ void LoadHDR(FTexture2D& texture, StringView path)
 
 void SaveHDR(const float* data, int width, int height, StringView path)
 {
-    // stbi_write_hdr 期望 RGB 3通道数据，需要从 RGBA 4通道中提取
+    // stbi_write_hdr expects RGB 3-channel data; extract from RGBA 4-channel input
     Vector<float> rgb(static_cast<size_t>(width) * height * 3, GLOBAL_ALLOC);
     for (int i = 0; i < width * height; ++i)
     {
@@ -323,7 +323,7 @@ void SaveHDR(const float* data, int width, int height, StringView path)
 
 void SavePNG(const unsigned char* data, int width, int height, StringView path)
 {
-    // stbi_write_png：RGBA 4通道，stride = width * 4
+    // stbi_write_png: RGBA 4-channel, stride = width * 4
     CHECK_MSG(stbi_write_png(path.data(), width, height, 4, data, width * 4),
               "Failed to write PNG image to {}", path);
 }

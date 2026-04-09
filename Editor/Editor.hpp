@@ -24,11 +24,11 @@ struct FArcballCamera
     // WASD key state
     bool keyW = false, keyA = false, keyS = false, keyD = false;
     bool keyShift = false;
-    // 每帧调用：根据WASD状态持续移动center
+    // Called every frame: continuously move center based on WASD state
     bool UpdateMovement(float dt)
     {
         vec3 moveDir(0.0f);
-        vec3 forward = rot * vec3(0, 0, -1); // 相机前方（注意：视线方向是-Z）
+        vec3 forward = rot * vec3(0, 0, -1); // camera forward (note: view direction is -Z)
         vec3 right   = rot * vec3(1, 0, 0);
         vec3 up      = vec3(0, 1, 0);
         if (keyW) moveDir += forward;

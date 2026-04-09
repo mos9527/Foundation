@@ -360,7 +360,7 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
 void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices,
                          bool update)
 {
-    // Task 2: 空实例时直接返回
+    // Task 2: return immediately when there are no instances
     if (instances.empty())
         return;
 

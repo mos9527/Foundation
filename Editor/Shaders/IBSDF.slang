@@ -277,22 +277,23 @@ public AOVCategory CategoryFromFlags(BxDFFlags f) {
 
 // ============================================================
 // PrincipledBSDFLobes — replaces PrincipledBSDF + LobeMixture
-// 构建各个独立 lobe 及其权重，由积分器自行拆分评估
+// Constructs individual lobes with their weights; the integrator
+// evaluates and splits them independently.
 // ============================================================
 public struct PrincipledBSDFLobes {
-    // 各 lobe 实例
+    // Lobe instances
     DiffuseBSDF   diffuse;
     GlassBSDF     glass;
     GlossyBSDF    glossy;
     MetallicBSDF  metallic;
 
-    // 归一化后的权重
+    // Normalized weights
     float wDiffuse;
     float wTrans;
     float wDielSpec;
     float wMetal;
 
-    // 活跃标志
+    // Active flags
     bool hasDiffuse;
     bool hasTrans;
     bool hasDielSpec;
@@ -306,10 +307,10 @@ public struct PrincipledBSDFLobes {
         roughness = max(5e-3f, roughness);
         float dielF0 = F0FromIor(ior);
 
-        // 视角相关 Fresnel 权重
+        // View-dependent Fresnel weight
         float sampleGlossy = reflectance(dielF0, 1.0f, SampleGGXLutE(AbsCosTheta(wo), roughness));
 
-        // 未归一化权重
+        // Unnormalized weights
         float rawMetal    = metallic;
         float rawDielSpec = (1.0f - metallic) * sampleGlossy;
         float rawTrans    = (1.0f - metallic) * (1.0f - sampleGlossy) * transmission;
@@ -328,15 +329,15 @@ public struct PrincipledBSDFLobes {
         this.wDielSpec = rawDielSpec / this.weightSum;
         this.wMetal    = rawMetal    / this.weightSum;
 
-        // 构建各 lobe
+        // Construct each lobe
         this.diffuse  = DiffuseBSDF(baseColor, dielF0, roughness);
         this.glass     = GlassBSDF(baseColor, ior, roughness, energyCompensation);
         this.glossy    = GlossyBSDF(dielF0, roughness, energyCompensation);
         this.metallic  = MetallicBSDF(baseColor, roughness, energyCompensation);
     }
 
-    // ----- 按 AOV 类别评估各 lobe 的 f 贡献 -----
-    // 返回 diffuse, specular(glossy+metal+glass) 两路 f 值
+    // ----- Evaluate per-lobe f contribution split by AOV category -----
+    // Returns separate f values for diffuse and specular (glossy+metal+glass)
     public void f_split(float3 wo, float3 wi, TransportMode mode,
                         out float3 fDiffuse, out float3 fSpecular) {
         fDiffuse  = float3(0);
@@ -347,14 +348,14 @@ public struct PrincipledBSDFLobes {
         if (hasMetal)    fSpecular += wMetal    * metallic.f(wo, wi, mode);
     }
 
-    // 混合 f（全部 lobe 求和）
+    // Mixture f (sum over all lobes)
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         float3 d, s;
         f_split(wo, wi, mode, d, s);
         return d + s;
     }
 
-    // 混合 PDF
+    // Mixture PDF
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
         float result = 0.0f;
         if (hasDiffuse)  result += wDiffuse  * diffuse.PDF(wo, wi, mode, flags);
@@ -364,11 +365,11 @@ public struct PrincipledBSDFLobes {
         return result;
     }
 
-    // 随机选择 lobe 采样方向，返回 mixture f/pdf 及选中的 AOV 类别
+    // Stochastically select a lobe to sample; returns mixture f/pdf and the chosen AOV category
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags,
                                out AOVCategory category) {
         category = AOVCategory::Diffuse;
-        // Categorical 采样
+        // Categorical sampling
         float cumulative = 0.0f;
         IBxDF chosen = diffuse;
         float chosenWeight = 0.0f;
@@ -402,7 +403,7 @@ public struct PrincipledBSDFLobes {
             }
         }
         if (!found) {
-            // 最后一个 lobe (metal) 或 fallback
+            // Last lobe (metal) or fallback
             if (hasMetal) {
                 chosen = metallic; chosenWeight = wMetal;
                 category = AOVCategory::Specular; found = true;
@@ -415,7 +416,7 @@ public struct PrincipledBSDFLobes {
         if (!bs.IsValid())
             return BSDFSample();
 
-        // Mixture PDF 和 f 保证无偏
+        // Mixture PDF and f ensure unbiased estimator
         float pMix = this.PDF(wo, bs.wi, mode, flags);
         if (pMix < 1e-7f)
             return BSDFSample();

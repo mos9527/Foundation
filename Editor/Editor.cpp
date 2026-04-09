@@ -46,7 +46,7 @@ enum class ERendererMode
 };
 static ERendererMode GRendererMode = ERendererMode::PathTracer;
 
-/* -- 前向声明 -- */
+/* -- Forward declarations -- */
 static void ReplaceScene(StringView path);
 static void SaveScene(StringView path);
 static void LoadEnvMap(StringView path);
@@ -69,7 +69,7 @@ static void ReplaceScene(StringView path)
         return;
     }
 
-    // 清空编辑器侧数据
+    // Clear editor-side data
     GSInstances.clear();
     GSMaterials.clear();
     GSMeshes.clear();
@@ -85,7 +85,7 @@ static void ReplaceScene(StringView path)
     Vector<uint32_t> textureIDMap(GScene.mTextures.size(), GLOBAL_ALLOC);
 
     LOG(Editor, LogInfo, "Uploading new scene data to GPU");
-    // 上传Mesh和Texture
+    // Upload meshes and textures
     {
         ImmediateUpload upload(GContext->device.Get(), 128 * (1u << 20));
         upload.Begin();
@@ -121,7 +121,7 @@ static void ReplaceScene(StringView path)
         upload.End(), upload.WaitIdle();
     }
 
-    // 材质：映射纹理索引
+    // Materials: remap texture indices
     for (auto& src : GScene.mMaterials)
     {
         auto& dst = GSMaterials.emplace_back();
@@ -137,7 +137,7 @@ static void ReplaceScene(StringView path)
         dst.ior = src.ior;
     }
 
-    // 实例
+    // Instances
     for (auto& src : GScene.mInstances)
     {
         auto& dst = GSInstances.emplace_back();
@@ -149,7 +149,7 @@ static void ReplaceScene(StringView path)
         dst.meshIndex = src.meshIndex;
     }
 
-    // 重新上传完整的实例和材质数组到GPU
+    // Re-upload the full instance and material arrays to the GPU
     {
         auto res = gpu->UpdateGPUScene(GSInstances, GSMaterials);
         GShaderGlobals.firstInstance = res.firstInstance;
@@ -158,7 +158,7 @@ static void ReplaceScene(StringView path)
         GShaderGlobals.numMaterials  = res.numMaterials;
     }
 
-    // 构建BLAS并重建TLAS
+    // Build BLASes and rebuild TLAS
     {
         ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
         GSBLASes.resize(GSMeshes.size());
@@ -179,7 +179,7 @@ static void ReplaceScene(StringView path)
         ctx->End(), ctx.Submit(), ctx.WaitIdle();
     }
 
-    // 上传环境贴图（如果场景自带）
+    // Upload environment map if the scene provides one
     if (GScene.mEnvMap.has_value() && GScene.mEnvMap->IsValid())
     {
         ImmediateUpload upload(GContext->device.Get(), 128 * (1u << 20));
@@ -191,7 +191,7 @@ static void ReplaceScene(StringView path)
         LOG(Editor, LogInfo, "Uploaded scene env map");
     }
 
-    // 接受相机和灯光数据
+    // Apply camera and lighting data
     {
         if (!GScene.mCameras.empty())
         {
@@ -216,7 +216,7 @@ static void ReplaceScene(StringView path)
     LOG(Editor, LogInfo, "Scene load complete: {} meshes, {} instances, {} materials",
         GScene.mMeshes.size(), GScene.mInstances.size(), GScene.mMaterials.size());
 
-    // 触发渲染器重新配置
+    // Trigger renderer reconfiguration
     FEState = FERunningEnter;
 }
 
@@ -236,7 +236,7 @@ static void LoadEnvMap(StringView path)
         GScene.mEnvMap = std::move(tex);
         GShaderGlobals.useEnvMap = 1u;
         GShaderGlobals.ptAccumulatedFrames = 0;
-        // 需要重建渲染器以重新绑定环境贴图资源
+        // Renderer must be rebuilt to rebind the environment map resource
         FEState = FERunningEnter;
         LOG(Editor, LogInfo, "HDRI env map loaded successfully");
     }
@@ -266,13 +266,13 @@ static void SaveScene(StringView path)
 /* ==================== DockSpace + Menu Bar (Tasks 1, 7, 9) ==================== */
 static void EditorDockSpaceAndMenuBar()
 {
-    // 半透明窗口背景
+    // Semi-transparent window background
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
 
-    // DockSpace覆盖整个视口，背景透明以显示backbuffer
+    // DockSpace covers the full viewport; transparent background to show the backbuffer
     ImGuiID dockspaceID = ImGui::DockSpaceOverViewport(0, nullptr, ImGuiDockNodeFlags_PassthruCentralNode);
 
-    // 首次启动时设置默认布局 (Task 9)
+    // Set up default layout on first launch (Task 9)
     static bool firstTime = true;
     if (firstTime)
     {
@@ -297,7 +297,7 @@ static void EditorDockSpaceAndMenuBar()
         ImGui::DockBuilderFinish(dockspaceID);
     }
 
-    // 主菜单栏 (Task 7)
+    // Main menu bar (Task 7)
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::BeginMenu("File"))
@@ -419,7 +419,7 @@ static void EditorDockSpaceAndMenuBar()
         ImGui::EndMainMenuBar();
     }
 
-    // ImGuiFileDialog 弹窗渲染
+    // ImGuiFileDialog popup rendering
     ImVec2 minSize(600, 400);
     ImVec2 maxSize(FLT_MAX, FLT_MAX);
 
@@ -507,7 +507,7 @@ static void FHierarchyPanel()
     ImGui::End();
     ImGui::PopStyleColor();
 
-    // Inspector面板 (Instance)
+    // Inspector panel (Instance)
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Inspector"))
     {
@@ -521,7 +521,7 @@ static void FHierarchyPanel()
             changed |= ImGui::DragFloat4("Rotation", &pi.transform.rotation.x, 0.001f);
             changed |= ImGui::DragFloat3("Scale",    &pi.transform.scale.x, 0.01f);
 
-            // -- Gizmo控件 --
+            // -- Gizmo controls --
             ImGui::Separator();
             if (ImGui::RadioButton("Translate (G)", GGizmoOp == ImGuizmo::TRANSLATE))
                 GGizmoOp = ImGuizmo::TRANSLATE;
@@ -540,21 +540,21 @@ static void FHierarchyPanel()
                     GGizmoMode = ImGuizmo::WORLD;
             }
 
-            // 构建模型矩阵 (TRS -> mat4)
+            // Build model matrix (TRS -> mat4)
             mat4 modelMatrix = translate(mat4(1.0f), vec3(pi.transform.transform))
                              * mat4_cast(pi.transform.rotation)
                              * glm::scale(mat4(1.0f), vec3(pi.transform.scale));
 
-            // ImGuizmo渲染
+            // ImGuizmo rendering
             ImGuizmo::BeginFrame();
             ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
             auto& io = ImGui::GetIO();
             ImGuizmo::SetRect(0,0,io.DisplaySize.x, io.DisplaySize.y);
-            // 注意: ImGuizmo使用列主序 float[16]，与GLM mat4内存布局一致            
+            // Note: ImGuizmo uses column-major float[16], matching GLM mat4 memory layout
             if (ImGuizmo::Manipulate(&GCamera.view[0][0], &GCamera.proj[0][0],
                                      GGizmoOp, GGizmoMode, &modelMatrix[0][0]))
             {
-                // 分解回 TRS
+                // Decompose back to TRS
                 float3 newTranslation;
                 quat newRotation;
                 float3 newScale;
@@ -566,12 +566,12 @@ static void FHierarchyPanel()
             }
             if (changed)
             {
-                // 同步CPU场景到GPU侧数据
+                // Sync CPU scene to GPU-side data
                 auto& inst = GSInstances[GSelectedInstance];
                 inst.transform = pi.transform.transform;
                 inst.rotation  = pi.transform.rotation;
                 inst.scale     = pi.transform.scale;
-                // 重新上传实例数组到GPU
+                // Re-upload instance array to GPU
                 auto* gpu = GContext->gpuScene;
                 auto res = gpu->UpdateGPUScene(GSInstances, GSMaterials);
                 GShaderGlobals.firstInstance = res.firstInstance;
@@ -596,7 +596,7 @@ static void FHierarchyPanel()
 
 void FInit()
 {
-    // 当有场景数据时，转移到 FERunningEnter
+    // Transition to FERunningEnter when scene data is available
     if (!GSInstances.empty())
         FEState = FERunningEnter;
     else
@@ -629,7 +629,7 @@ RendererConfig GRendererConfig;
 
 void FRunningEnter()
 {
-    // 重建渲染器时先失效旧的 PT readback 句柄
+    // Invalidate stale PT readback handles before rebuilding the renderer
     GPTReadback = {};
     RendererScene scene{
         .gsGlobals = &GShaderGlobals,
@@ -871,9 +871,9 @@ static void FLightingPanel()
         {
             bool lightChanged = false;
 
-            // 方向：使用欧拉角（度）编辑，内部转换为方向向量
-            // 从当前 sunDirection 反推欧拉角
-            static float sunEuler[2] = {0.0f, 0.0f}; // [pitch, yaw] 度
+            // Direction: edited as Euler angles (degrees), converted internally to a direction vector
+            // Back-compute Euler angles from the current sunDirection
+            static float sunEuler[2] = {0.0f, 0.0f}; // [pitch, yaw] degrees
             static bool eulerInitialized = false;
             if (!eulerInitialized)
             {
@@ -891,7 +891,7 @@ static void FLightingPanel()
             {
                 float pitchRad = radians(sunEuler[0]);
                 float yawRad   = radians(sunEuler[1]);
-                // 从欧拉角重建方向向量
+                // Rebuild direction vector from Euler angles
                 GShaderGlobals.sunDirection = normalize(float3{
                     std::sin(yawRad) * std::cos(pitchRad),
                     -std::sin(pitchRad),
@@ -899,8 +899,8 @@ static void FLightingPanel()
                 });
             }
 
-            // 颜色和强度分离编辑
-            // sunIntensity = color * intensity，拆分为归一化颜色 + 标量强度
+            // Separate color and intensity editing
+            // sunIntensity = color * intensity, split into normalized color + scalar intensity
             static float3 sunColor = {1.0f, 1.0f, 1.0f};
             static float sunIntensityScalar = 1.0f;
             static bool intensityInitialized = false;
@@ -931,20 +931,20 @@ static void FLightingPanel()
                 GShaderGlobals.ptAccumulatedFrames = 0;
             }
 
-            // 同步回 CPU 场景数据（如果有灯光）
+            // Sync back to CPU scene data (if lights exist)
             if (lightChanged && !GScene.mLights.empty())
             {
                 auto& light = GScene.mLights.front();
                 light.color = sunColor;
                 light.intensity = sunIntensityScalar;
-                // 从方向向量重建旋转四元数
+                // Rebuild rotation quaternion from direction vector
                 float3 dir = GShaderGlobals.sunDirection;
-                // 灯光默认朝向 (0,0,-1)，求从 (0,0,-1) 到 dir 的旋转
+                // Light default forward is (0,0,-1); find rotation from (0,0,-1) to dir
                 float3 from = float3(0, 0, -1);
                 float3 to = dir;
                 float d = dot(from, to);
                 if (d < -0.9999f)
-                    light.transform.rotation = quat(0, 1, 0, 0); // 180度翻转
+                    light.transform.rotation = quat(0, 1, 0, 0); // 180-degree flip
                 else
                 {
                     float3 c = cross(from, to);
@@ -1126,7 +1126,7 @@ void FRendering()
     ImGui::NewFrame();
 
     bool cancelRendering = false;
-    // 顶部全宽进度条
+    // Full-width progress bar at the top
     {
         auto& io = ImGui::GetIO();
         float margin = 16.0f;
@@ -1150,7 +1150,7 @@ void FRendering()
         ImGui::End();
         ImGui::PopStyleVar(2);
     }
-    // 底部右角取消按钮
+    // Cancel button at the bottom-right corner
     {
         auto& io = ImGui::GetIO();
         const char* cancelLabel = "  Cancel  ";
@@ -1232,11 +1232,11 @@ void FRunning()
     GShaderGlobals.ptAccumulatedFrames++;
 }
 
-/* -- 拖放文件处理：根据扩展名分发到对应加载函数 -- */
+/* -- Drag-and-drop file handler: dispatch to the appropriate loader based on file extension -- */
 static void HandleFile(const char* filePath)
 {
     auto ext = std::filesystem::path(filePath).extension().string();
-    // 统一转小写
+    // Normalize to lowercase
     for (auto& c : ext)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     if (ext == ".gltf" || ext == ".glb" || ext == ".fscn")
@@ -1269,7 +1269,7 @@ void FInitEnter()
 
 bool EditorProcessEvent(SDL_Event* event)
 {
-    // 处理拖放文件事件
+    // Handle drag-and-drop file events
     if (event->type == SDL_EVENT_DROP_FILE)
     {
         const char* droppedFile = event->drop.data;
@@ -1305,7 +1305,7 @@ bool EditorProcessEvent(SDL_Event* event)
         {
             GShowImGui = !GShowImGui;
         }
-        // Gizmo快捷键
+        // Gizmo hotkeys
         if (event->key.key == SDLK_G)
             GGizmoOp = ImGuizmo::TRANSLATE;
         if (event->key.key == SDLK_R)
@@ -1317,7 +1317,7 @@ bool EditorProcessEvent(SDL_Event* event)
     auto& io = ImGui::GetIO();
     if (!io.WantCaptureMouse && !ImGuizmo::IsUsing())
         cameraUpdated |= GCamera.Update(*event);
-    // 始终让相机追踪WASD键状态（仅当ImGui不需要键盘时）
+    // Always track WASD key state for the camera (only when ImGui does not need the keyboard)
     if (!io.WantCaptureKeyboard)
     {
         if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP)
@@ -1336,7 +1336,7 @@ bool EditorProcessEvent(SDL_Event* event)
     }
     else
     {
-        // ImGui要求键盘时，清除所有移动键状态防止卡键
+        // When ImGui wants the keyboard, clear all movement key states to prevent stuck keys
         GCamera.keyW = GCamera.keyA = GCamera.keyS = GCamera.keyD = GCamera.keyShift = false;
     }
     return false;

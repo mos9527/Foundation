@@ -23,8 +23,8 @@ RWTexture2D<float4> diffuse;   // Diffuse lobe radiance
 RWTexture2D<float4> specular;  // Specular lobe radiance (incl. transmission)
 [[vk_binding(0,2)]] Texture2D<float4> textures[];
 
-// SER coherence hint 位数 — 覆盖 materialID 所需的位数
-// 8 bits 足够 256 种材质，与 GBuffer packing 一致
+// Number of SER coherence hint bits — enough to cover all materialID values
+// 8 bits is sufficient for 256 materials, consistent with GBuffer packing
 static const uint kSERCoherenceHintBits = 8u;
 
 // World-space hit geometry
@@ -277,15 +277,15 @@ void RayGeneration()
         // https://www.khronos.org/blog/boosting-ray-tracing-performance-with-shader-execution-reordering-introducing-vk-ext-ray-tracing-invocation-reorder
         // https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_invocation_reorder/README.html
         HitObject hitObj = TraceHitObject(ray);
-        // 从命中的 instance 中提取 materialID 作为一致性提示
-        // Miss 用 0xFFu 标识（与任何有效材质不同）
+        // Extract materialID from the hit instance as a coherence hint
+        // Miss is identified by 0xFFu (distinct from any valid material)
         uint coherenceHint = 0xFFu;
         if (hitObj.IsHit()) {
             GSInstance inst = instances[NonUniformResourceIndex(hitObj.GetInstanceIndex())];
             coherenceHint = inst.materialIndex & 0xFFu;
         }
         ReorderThread(hitObj, coherenceHint, kSERCoherenceHintBits);
-        // 触发 closest hit / miss，填充 payload
+        // Invoke closest hit / miss to populate the payload
         HitObject::Invoke(AS, hitObj, payload);
         // Outgoing direction
         float3 view = -ray.Direction;
@@ -297,7 +297,7 @@ void RayGeneration()
             LightSampleContext ctx; /* UNUSED */
             // Miss — environment
             if (bounce == 0) {
-                // 环境光未经表面，归入 specular（背景光）
+            // Environment light with no surface hit — classify as specular (background)
                 float3 envLe = light.Le(-view);
                 AddRadiance(LSpecular, envLe);
                 break;
@@ -306,7 +306,7 @@ void RayGeneration()
             float pdf = light.PDF_Li(ctx, -view);
             float mis = lastSamplePDF > EPS ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
             float3 contrib = beta * light.Le(-view) * mis;
-            // Bounce > 0 的环境光视为 indirect，归属首次弹射类别
+            // Environment contribution at bounce > 0 is indirect — attribute to first-bounce category
             if (firstBounceCategory == AOVCategory::Diffuse)
                 AddRadiance(LDiffuse, contrib);
             else
@@ -337,7 +337,7 @@ void RayGeneration()
         quat toLocal = quatRotateToZ(surface.hit.normal);
         quat toWorld = toLocal.inverted();
         float3 wo = toLocal.rotate(view);
-        // 构建各独立 lobe 及其权重
+        // Construct individual lobes with their weights
         PrincipledBSDFLobes bsdf = PrincipledBSDFLobes(
             surface.baseColor, surface.metallic, surface.roughness,
             surface.ior, surface.transmission, true, wo);
@@ -363,14 +363,14 @@ void RayGeneration()
             if (Li.pdf > EPS && bsdfPdf > EPS) {
                 float mis = PowerHeuristic(1, Li.pdf, 1, bsdfPdf);
                 if (bounce == 0) {
-                    // 首次弹射：按 lobe 拆分直接光
+                // First bounce: split direct lighting by lobe
                     float3 fD, fS;
                     bsdf.f_split(wo, wi, TransportMode::Radiance, fD, fS);
                     float3 scale = beta * AbsCosTheta(wi) * radiance * mis;
                     AddRadiance(LDiffuse,   fD * scale);
                     AddRadiance(LSpecular, fS * scale);
                 } else {
-                    // 后续弹射：全部归属首次弹射类别（indirect）
+                // Subsequent bounces: attribute all to the first-bounce category (indirect)
                     float3 f = bsdf.f(wo, wi, TransportMode::Radiance) * AbsCosTheta(wi);
                     float3 contrib = beta * f * radiance * mis;
                     if (firstBounceCategory == AOVCategory::Diffuse)
@@ -386,7 +386,7 @@ void RayGeneration()
         {
             float3 emContrib = beta * surface.emissive;
             if (bounce == 0) {
-                // 首次弹射 emissive 归入 diffuse
+            // First-bounce emissive goes into diffuse
                 AddRadiance(LDiffuse, emContrib);
             } else {
                 if (firstBounceCategory == AOVCategory::Diffuse)
@@ -395,7 +395,7 @@ void RayGeneration()
                     AddRadiance(LSpecular, emContrib);
             }
         }
-        // BSDF 采样（间接光路径）
+        // BSDF sampling (indirect lighting path)
         AOVCategory sampleCategory;
         BSDFSample sample = bsdf.Sample_f(wo, rng.sample(), rng.sample2D(),
                                           TransportMode::Radiance, BxDFReflTransFlags::All,
@@ -403,7 +403,7 @@ void RayGeneration()
         if (!sample.IsValid()) {
             break;
         }
-        // 首次弹射记录 lobe 类别
+        // AOV first bounce
         if (bounce == 0) {
             firstBounceCategory = sampleCategory;
         }

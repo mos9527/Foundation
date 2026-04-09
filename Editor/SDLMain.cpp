@@ -46,11 +46,11 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    // --gpu / -g: 指定 GPU 设备索引
+    // --gpu / -g: specify GPU device index
     int gpuId = 0;
     cmdl({"-g", "--gpu"}, 0) >> gpuId;
 
-    // --list-gpus: 列出可用 GPU 设备后退出
+    // --list-gpus: list available GPU devices and exit
     if (cmdl[{"-l", "--list-gpus"}])
     {
         auto* app = ConstructBase<RHIApplication, VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC);
@@ -65,8 +65,8 @@ int main(int argc, char** argv)
     ImGui_ImplFoundation_SetupContextWithDefaultStyles();
     ImGui_ImplFoundation_Init(GContext->device.Get(), GContext->window);
 
-    // 位置参数（非 flag/option）作为文件路径传入 Editor
-    // argh 的 pos_args() 第 0 个是程序名，从第 1 个开始是真正的文件路径
+    // Positional arguments (non-flag/option) are treated as file paths passed to the Editor
+    // argh's pos_args() index 0 is the program name; file paths start from index 1
     Vector<const char*> files(GLOBAL_ALLOC);
     for (size_t i = 1; i < cmdl.pos_args().size(); ++i)
         files.push_back(cmdl.pos_args()[i].c_str());

@@ -8,9 +8,9 @@
 
 #include "IMath.slang"
 [[vk::push_constant]] float2 timeXY;
-// --- 基于 hash 的梯度噪声（无需外部纹理） ---
+// --- Hash-based gradient noise (no external textures required) ---
 
-// 从整数坐标生成伪随机 2D 梯度向量
+// Generate a pseudo-random 2D gradient vector from integer coordinates
 float2 gradient(int2 ip)
 {
     uint h = hash(uint2(uint(ip.x), uint(ip.y)));
@@ -18,13 +18,13 @@ float2 gradient(int2 ip)
     return float2(cos(angle), sin(angle));
 }
 
-// 经典 quintic 插值曲线  6t^5 - 15t^4 + 10t^3
+// Classic quintic interpolation curve: 6t^5 - 15t^4 + 10t^3
 float2 quintic(float2 t)
 {
     return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
 }
 
-// 2D 梯度噪声 [-1, 1]
+// 2D gradient noise in [-1, 1]
 float gradientNoise(float2 p)
 {
     int2 ip = int2(floor(p));
@@ -42,28 +42,28 @@ float gradientNoise(float2 p)
 
 // --- Flow FBM ---
 
-// 每个八度旋转矩阵（黄金角偏移，打破轴对齐）
-static const float kOctRot = 1.618033988 * Pi; // 黄金角 ≈ 137.5°
+// Per-octave rotation matrix (golden angle offset to break axis alignment)
+static const float kOctRot = 1.618033988 * Pi; // golden angle ≈ 137.5°
 float2x2 rot2(float a)
 {
     float c = cos(a), s = sin(a);
     return float2x2(c, -s, s, c);
 }
 
-// 带时间流动的 FBM
-// flowSpeed 控制每层噪声的相位偏移速度
+// Time-animated FBM
+// flowSpeed controls the phase-shift rate of each noise octave
 float flowFBM(float2 p, float t, int octaves, float flowSpeed)
 {
     float value = 0.0;
     float amplitude = 0.5;
     float frequency = 1.0;
 
-    // 每个八度使用不同的旋转角，避免方向性伪影
+    // Use a different rotation angle per octave to avoid directional artifacts
     float2x2 octRotMat = rot2(kOctRot);
 
     for (int i = 0; i < octaves; i++)
     {
-        // Flow: 每层噪声的采样域随时间以不同速率平移
+        // Flow: shift each octave's sample domain over time at a different rate
         float phase = t * flowSpeed * (1.0 + float(i) * 0.3);
         float2 flowOffset = float2(
             cos(phase * 0.7 + float(i) * 1.3),
@@ -75,22 +75,22 @@ float flowFBM(float2 p, float t, int octaves, float flowSpeed)
 
         amplitude *= 0.5;
         frequency *= 2.0;
-        p = mul(octRotMat, p); // 旋转域
+        p = mul(octRotMat, p); // rotate domain
     }
 
     return value;
 }
 
-// --- 域翘曲（domain warping）产生流体感 ---
+// --- Domain warping for a fluid-like appearance ---
 float warpedFBM(float2 p, float t)
 {
-    // 第一级翘曲
+    // First warp level
     float2 q = float2(
         flowFBM(p + float2(0.0, 0.0), t, 5, 0.4),
         flowFBM(p + float2(5.2, 1.3), t, 5, 0.4)
     );
 
-    // 第二级翘曲
+    // Second warp level
     float2 r = float2(
         flowFBM(p + 4.0 * q + float2(1.7, 9.2), t, 5, 0.3),
         flowFBM(p + 4.0 * q + float2(8.3, 2.8), t, 5, 0.3)
@@ -99,31 +99,31 @@ float warpedFBM(float2 p, float t)
     return flowFBM(p + 4.0 * r, t, 6, 0.25);
 }
 
-// --- 调色板 ---
+// --- Color palette ---
 float3 palette(float t, float3 a, float3 b, float3 c, float3 d)
 {
     return a + b * cos(2.0 * Pi * (c * t + d));
 }
 
-// --- 片段着色器入口 ---
+// --- Fragment shader entry point ---
 [shader("fragment")]
 float4 fragMain(float2 p : TEXCOORD0) : SV_Target
 {
-    // 将 UV [0,1] 映射到以中心为原点的坐标
+    // Remap UV [0,1] to centered coordinates
     float2 uv = (p - 0.5) * 3.0;
     uv *= float2(timeXY.y, 1.0f);
 
     float t = timeXY.x * 0.15;
 
-    // 带域翘曲的 flow FBM
+    // Flow FBM with domain warping
     float f = warpedFBM(uv, t);
 
     float3 col = f;
-    // 叠加明暗层次    
-    col *= 0.8 + 0.4 * f;                        // 噪声亮度调制
-    col += 0.02 * float3(0.8, 0.9, 1.0) * (1.0 - f); // 雾气高光
+    // Layer brightness
+    col *= 0.8 + 0.4 * f;                        // noise brightness modulation
+    col += 0.02 * float3(0.8, 0.9, 1.0) * (1.0 - f); // atmospheric highlight
 
-    // Vignette 暗角
+    // Vignette
     float vig = 1.0 - 0.4 * dot(p - 0.5, p - 0.5);
     col *= vig;
 

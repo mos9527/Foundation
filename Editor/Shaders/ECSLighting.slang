@@ -92,14 +92,13 @@ void main(uint2 tid: SV_DispatchThreadID) {
         float3 wi = toLocal.rotate(l);
         float3 wo = toLocal.rotate(v);
         float3 beta = /* nothing here yet */ AbsCosTheta(wi);
-        float pdf = shadow(p, l) ? 0.0f : 1.0f;
-        L += beta * pdf * globalParams.sunIntensity;
 
-        // Raster path really needs some love...
-        // The right thing to do here is a [pre]integrated environment BRDF lookup.
-        // vvv This is absolutely incorrect vvv
+        PrincipledBSDFLobes bsdf = PrincipledBSDFLobes(baseColor, metallic, roughness, 1.5f, 0.0f, true, wo);
+        float3 f = bsdf.f(wo, wi, TransportMode::Radiance);
+
+        float pdf = shadow(p, l) ? 0.0f : 1.0f;
+        L += f * AbsCosTheta(wi) * pdf * globalParams.sunIntensity;
         L += baseColor * globalParams.ambientColor;
-        // IBL would also be TODO. Until winter vacation...
 
         // Final color
         output[tid] = float4(L + emissive, 1.0f);

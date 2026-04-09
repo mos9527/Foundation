@@ -81,8 +81,8 @@ struct RendererScene
 extern void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene);
 
 /**
- * @brief 保存路径追踪器当前累积结果的 HDR 资源句柄。
- * 由 PathTracerSetup 设置，供编辑器在帧结束后读取。
+ * @brief HDR resource handles holding the current accumulated path tracer result.
+ * Set by PathTracerSetup; read by the editor at the end of each frame.
  */
 struct PTReadbackHandles
 {

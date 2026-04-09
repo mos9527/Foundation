@@ -141,7 +141,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
             {.rayTracingInvocationReorder = true} // vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT
         };
 
-    // 查询设备支持的扩展，过滤掉不支持的
+    // Query available device extensions and filter out unsupported ones
     auto availableExtensions = mPhysicalDevice.enumerateDeviceExtensionProperties();
     auto isExtensionAvailable = [&](const char* extName) -> bool
     {
@@ -180,7 +180,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
     const bool hasRayTracingInvocationReorder =
         isExtensionEnabled(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
 
-    // 查询设备实际支持的特性，关闭不支持的特性并 log
+    // Query the device's actually supported features and disable unsupported ones with a log warning
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
                        vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
                        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT, vk::PhysicalDeviceMeshShaderFeaturesEXT,
@@ -200,8 +200,8 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         supportedChain.unlink<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>();
     (*mPhysicalDevice).getFeatures2(&supportedChain.get<vk::PhysicalDeviceFeatures2>());
 
-    // 对比请求的特性与设备支持的特性，关闭不支持的并 log
-    // 辅助 lambda：若请求了某特性但设备不支持，则关闭并 log
+    // Compare requested features against device-supported features; disable and log any unsupported ones
+    // Helper lambda: if a feature is requested but not supported, disable it and log a warning
     auto checkFeature = [](vk::Bool32& req, vk::Bool32 sup, const char* name)
     {
         if (req && !sup)
