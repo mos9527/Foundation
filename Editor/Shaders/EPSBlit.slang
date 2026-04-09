@@ -45,15 +45,19 @@ float3 ACESFilm(float3 x)
 [shader("fragment")]
 float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGET {
     int3 coord = int3(fragCoord.x, fragCoord.y, 0);
+    uint32_t instanceID = pickIDBuffer.Load(coord);
+    uint32_t pickID = pickResult[0];
     // GPU picking: if this pixel is the clicked one, write instanceID to result buffer
     if (pickPC.px >= 0 && int(fragCoord.x) == pickPC.px && int(fragCoord.y) == pickPC.py)
-        pickResult[0] = pickIDBuffer.Load(coord);
+        pickResult[0] = instanceID;
+
+    float4 result;
     if (flags & kViewOverdraw){
         uint32_t draws = overdraw.Load(coord);
-        return float4(heatmapGradient((float)draws / globalMax[0]), 1.0);    
+        result = float4(heatmapGradient((float)draws / globalMax[0]), 1.0);
     } else if (flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewMeshlet)) {
         // Do not post process these
-        return lighting.Load(coord);
+        result = lighting.Load(coord);
     } else {
         // Main postprocess routine
         float3 Lpix = lighting.Load(coord).xyz;
@@ -63,6 +67,19 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
         L = ACESFilm(L);
         // Inverse Gamma EOTF
         L = pow(L, 1.0f/2.2f);
-        return float4(L, 1.0f);
+        result = float4(L, 1.0f);
     }
+
+    // Cross filter for a simple outline
+    if (pickID != ~0u) {
+        bool isSel  = (instanceID == pickID);
+        bool selL = (pickIDBuffer.Load(coord + int3(-1, 0, 0)) == pickID);
+        bool selR = (pickIDBuffer.Load(coord + int3( 1, 0, 0)) == pickID);
+        bool selT = (pickIDBuffer.Load(coord + int3( 0,-1, 0)) == pickID);
+        bool selB = (pickIDBuffer.Load(coord + int3( 0, 1, 0)) == pickID);
+        bool isEdge = isSel && !(selL && selR && selT && selB);
+        if (isEdge)
+            result = float4(1.0, 0.6, 0.1, 1.0);
+    }
+    return result;
 }

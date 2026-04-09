@@ -363,8 +363,8 @@ void RayGeneration()
             float3 wi = toLocal.rotate(Li.wi);
             float bsdfPdf = bsdf.PDF(wo, wi, TransportMode::Radiance, BxDFReflTransFlags::All);
             // MIS between light sampling path and BSDF sampling path
-            if (Li.pdf > EPS && bsdfPdf > EPS) {
-                float mis = PowerHeuristic(1, Li.pdf, 1, bsdfPdf);
+            if (Li.pdf > EPS) {
+                float mis = Li.isDelta ? 1.0f : PowerHeuristic(1, Li.pdf, 1, bsdfPdf);
                 if (bounce == 0) {
                 // First bounce: split direct lighting by lobe
                     float3 fD, fS;

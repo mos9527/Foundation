@@ -28,10 +28,12 @@ public struct LightLiSample {
     public SampledSpectrum Li; // Light leaving the source towards pi
     public float3 wi;          // Direction from pi to light source
     public float pdf;          // PDF for this sample
-    public __init(SampledSpectrum Li = 0, float3 wi = 0, float pdf = 0) {
+    public bool isDelta;
+    public __init(SampledSpectrum Li = 0, float3 wi = 0, float pdf = 0, bool isDelta = false) {
         this.Li = Li;
         this.wi = wi;
         this.pdf = pdf;
+        this.isDelta = isDelta;
     }
 };
 // The light interface
@@ -102,7 +104,7 @@ public struct InfiniteLight : ILight {
     }
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
         float3 wi = SampleUniformSphere(u);
-        return LightLiSample(Le(wi), wi, UniformSpherePDF());
+        return LightLiSample(Le(wi), wi, UniformSpherePDF(), false);
     }
     public float PDF_Li(LightSampleContext ctx, float3 w, bool allowIncompletePDF) {
         return UniformSpherePDF();
@@ -137,7 +139,7 @@ public struct DistantLight : ILight {
         return 0.0f;
     }
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
-        return LightLiSample(Lemit, -direction, 1.0f);
+        return LightLiSample(Lemit, -direction, 1.0f, true);
     }
 };
 
@@ -208,11 +210,13 @@ public struct LightMixture {
         // 3. Scale radiance: Li / (light_pdf * selection_prob)
         SampledSpectrum radiance = Li.Li / (Li.pdf * pChoice);
 
+        bool isDelta = IsDeltaLight(lights[chosen].light.Type());
+
         // 4. Compute mixture PDF for MIS: Σ_j (w_j/W) * pdf_j(wi)
-        float mixPDF = this.PDF_Li(ctx, Li.wi);
+        float mixPDF = isDelta ? Li.pdf : this.PDF_Li(ctx, Li.wi);
 
         // 5. Return with mixture PDF
-        return LightLiSample(radiance, Li.wi, mixPDF);
+        return LightLiSample(radiance, Li.wi, mixPDF, isDelta);
     }
 
     // Mixture PDF: Σ_i (w_i / weightSum) * pdf_i(wi)

@@ -23,7 +23,7 @@ Fragment drawMeshlet(V2F input)
     output.RT0 = float4(unpackUnorm4x8(hashed).xyz, 1.0);
     output.RT1 = float4(0);
     output.RT2 = float4(0);
-    output.RT3 = input.instanceID;
+    output.RT3 = input.instanceID - globalParams.firstInstance;
     return output;
 }
 
@@ -51,7 +51,7 @@ Fragment drawGBuffer(V2F input){
     output.RT0 = float4(baseColor.xyz, (float)ID / 255.0f); // BaseColor, ID
     output.RT1 = float4(normal888, pbrMetalRough.z); // Normal 888, Metallic
     output.RT2 = float4(emissive.xyz, pbrMetalRough.y); // Emissive, Roughness
-    output.RT3 = input.instanceID;
+    output.RT3 = input.instanceID - globalParams.firstInstance;
     return output;
 }
 

@@ -981,22 +981,6 @@ static void FLightingPanel()
     ImGui::PopStyleColor();
 }
 
-/* ==================== GPU Picking Readback ==================== */
-/**
- * @brief Reads the pick result written by the Blit PS this frame.
- *        No GPU stall — just Map() the persistently-mapped readback buffer.
- */
-static void DoPickReadback()
-{
-    if (!GPickResultBuffer)
-        return;
-    uint32_t instanceID = *GPickResultBuffer->Map<uint32_t>();
-    if (instanceID == ~0u)
-        GSelectedInstance = -1; // clicked on background
-    else
-        GSelectedInstance = GRendererMode == ERendererMode::Raster ? static_cast<int>(instanceID - GShaderGlobals.firstInstance) : static_cast<int>(instanceID);
-}
-
 /* ==================== HDR Rendering State ==================== */
 static void DoHDRReadback()
 {
@@ -1257,11 +1241,12 @@ void FRunning()
         GShaderGlobals.ptAccumulatedFrames = 0, cameraUpdated = false;
     renderer->ExecuteFrame();
     renderer->EndExecute();
-    // GPU picking: the Blit PS already wrote the result this frame if a click was pending.
-    // Just Map() and read — no stall needed. Reset pixel so next frame push constant is (-1,-1).
-    if (GPendingPickPixel.x >= 0)
+    // GPU picking: Blit PS wrote pickResult[0] this frame if a click was pending.
+    // Readback buffer is coherent+persistently mapped — just read it directly.
+    if (GPendingPickPixel.x >= 0 && GPickResultBuffer)
     {
-        DoPickReadback();
+        uint32_t id = *GPickResultBuffer->Map<uint32_t>();
+        GSelectedInstance = (id == ~0u) ? -1 : static_cast<int>(id);
         GPendingPickPixel = {-1, -1};
     }
     GShaderGlobals.ptAccumulatedFrames++;

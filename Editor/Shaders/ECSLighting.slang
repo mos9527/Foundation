@@ -91,7 +91,6 @@ void main(uint2 tid: SV_DispatchThreadID) {
         float3 n = float3(0,0,1);
         float3 wi = toLocal.rotate(l);
         float3 wo = toLocal.rotate(v);
-        float3 beta = /* nothing here yet */ AbsCosTheta(wi);
 
         PrincipledBSDFLobes bsdf = PrincipledBSDFLobes(baseColor, metallic, roughness, 1.5f, 0.0f, true, wo);
         float3 f = bsdf.f(wo, wi, TransportMode::Radiance);
