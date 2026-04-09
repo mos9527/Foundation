@@ -353,7 +353,7 @@ void RayGeneration()
             SampledSpectrum radiance = Li.Li;
             // Shadow ray
             if (Li.pdf > EPS) {
-                float3 shadowNormalFF = dot(Li.wi, surface.hit.geometryNormal) < 0.0f ? surface.hit.geometryNormal : surface.hit.geometryNormal;
+                float3 shadowNormalFF = dot(Li.wi, surface.hit.geometryNormal) < 0.0f ? -surface.hit.geometryNormal : surface.hit.geometryNormal;
                 float3 shadowOrigin = OffsetRay(surface.hit.position, shadowNormalFF);
                 bool shadowed = TraceShadowRay(shadowOrigin, Li.wi);
                 if (shadowed)
@@ -474,7 +474,7 @@ bool AnyHitOpacityIgnore(inout PCG rng, uint instance, uint primitive,
         baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, hs.uv, 0);
     }
     float opacity = baseColor.a;
-    if (opacity == 1.0f)
+    if (opacity == 1.0f && (!isShadowRay || material.transmissionFactor == 0.0f))
         return false;
 
     if (rng.sample() < 1.0f - opacity)
