@@ -143,6 +143,281 @@ public struct DistantLight : ILight {
     }
 };
 
+public struct PointLight : ILight {
+    SampledSpectrum I;
+    float3 position;
+
+    public __init(SampledSpectrum I, float3 position) {
+        this.I = I;
+        this.position = position;
+    }
+
+    public LightType Type() {
+        return LightType::DeltaPosition;
+    }
+
+    public SampledSpectrum L(float3 p, float3 n, float3 uv, float3 w) {
+        return {};
+    }
+
+    public SampledSpectrum Le(float3 w) {
+        return {};
+    }
+
+    public void PDF_Le(LightSampleContext ctx, float3 wi, out float pdfPos, out float pdfDir) {
+        pdfPos = 0.0f;
+        pdfDir = 0.0f;
+    }
+
+    public float PDF_Li(LightSampleContext ctx, float3 wi, bool allowIncompletePDF) {
+        return 0.0f;
+    }
+
+    public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
+        float3 wi = position - ctx.p();
+        float dist2 = dot(wi, wi);
+        if (dist2 == 0.0f) return LightLiSample();
+        
+        float dist = sqrt(dist2);
+        wi /= dist;
+        
+        SampledSpectrum Li = I / dist2;
+        return LightLiSample(Li, wi, 1.0f, true);
+    }
+};
+
+public struct SpotLight : ILight {
+    SampledSpectrum I;
+    float3 position;
+    float3 direction;
+    float cosTotalWidth;
+    float cosFalloffStart;
+
+    public __init(SampledSpectrum I, float3 position, float3 direction, float totalWidth, float falloffStart) {
+        this.I = I;
+        this.position = position;
+        this.direction = normalize(direction);
+        this.cosTotalWidth = cos(totalWidth);
+        this.cosFalloffStart = cos(falloffStart);
+    }
+
+    public LightType Type() {
+        return LightType::DeltaPosition;
+    }
+
+    public SampledSpectrum L(float3 p, float3 n, float3 uv, float3 w) {
+        return {};
+    }
+
+    public SampledSpectrum Le(float3 w) {
+        return {};
+    }
+
+    public void PDF_Le(LightSampleContext ctx, float3 wi, out float pdfPos, out float pdfDir) {
+        pdfPos = 0.0f;
+        pdfDir = 0.0f;
+    }
+
+    public float PDF_Li(LightSampleContext ctx, float3 wi, bool allowIncompletePDF) {
+        return 0.0f;
+    }
+
+    float Falloff(float3 w) {
+        float cosTheta = dot(direction, w);
+        if (cosTheta < cosTotalWidth) return 0.0f;
+        if (cosTheta > cosFalloffStart) return 1.0f;
+        float delta = (cosTheta - cosTotalWidth) / (cosFalloffStart - cosTotalWidth);
+        return (delta * delta) * (delta * delta);
+    }
+
+    public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
+        float3 wi = position - ctx.p();
+        float dist2 = dot(wi, wi);
+        if (dist2 == 0.0f) return LightLiSample();
+        
+        float dist = sqrt(dist2);
+        wi /= dist;
+        
+        float falloff = Falloff(-wi);
+        if (falloff == 0.0f) return LightLiSample();
+
+        SampledSpectrum Li = I * falloff / dist2;
+        return LightLiSample(Li, wi, 1.0f, true);
+    }
+};
+
+// https://pbr-book.org/4ed/Light_Sources/Area_Lights
+public struct DiskLight : ILight {
+    SampledSpectrum Lemit;
+    float3 position;
+    float3 normal;
+    float3 dpdu;
+    float3 dpdv;
+    float radius;
+    float area;
+    bool twoSided;
+
+    public __init(SampledSpectrum Lemit, float3 position, float3 normal, float3 dpdu, float radius, bool twoSided = false) {
+        this.Lemit = Lemit;
+        this.position = position;
+        this.normal = normalize(normal);
+        this.dpdu = normalize(dpdu);
+        this.dpdv = cross(this.normal, this.dpdu);
+        this.radius = radius;
+        this.area = Pi * radius * radius;
+        this.twoSided = twoSided;
+    }
+
+    public __init(SampledSpectrum Lemit, float3 position, float3 normal, float radius, bool twoSided = false) {
+        this.Lemit = Lemit;
+        this.position = position;
+        this.normal = normalize(normal);
+        buildOrthonormalBasis(this.normal, this.dpdu, this.dpdv);
+        this.radius = radius;
+        this.area = Pi * radius * radius;
+        this.twoSided = twoSided;
+    }
+
+    public LightType Type() {
+        return LightType::Area;
+    }
+
+    public SampledSpectrum L(float3 p, float3 n, float3 uv, float3 w) {
+        if (!twoSided && dot(n, w) < 0.0f) return SampledSpectrum(0.0f);
+        return Lemit;
+    }
+
+    public SampledSpectrum Le(float3 w) {
+        return SampledSpectrum(0.0f);
+    }
+
+    public void PDF_Le(LightSampleContext ctx, float3 wi, out float pdfPos, out float pdfDir) {
+        pdfPos = 0.0f;
+        pdfDir = 0.0f;
+    }
+
+    public float PDF_Li(LightSampleContext ctx, float3 wi, bool allowIncompletePDF) {
+        float cosTheta = dot(normal, wi);
+        if (cosTheta == 0.0f) return 0.0f;
+        
+        // wi is direction from shading point to light.
+        // Light normal should face opposite to wi.
+        if (!twoSided && cosTheta > 0.0f) return 0.0f;
+
+        // Ray-plane intersection
+        float t = dot(normal, position - ctx.p()) / cosTheta;
+        if (t <= 0.0f) return 0.0f;
+
+        float3 pDisk = ctx.p() + t * wi;
+        float dist2 = dot(pDisk - position, pDisk - position);
+        if (dist2 > radius * radius) return 0.0f;
+
+        float pdfArea = 1.0f / area;
+        return pdfArea * (t * t) / abs(cosTheta);
+    }
+
+    public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
+        float2 pd = SampleConcentricDisk(u) * radius;
+        float3 pDisk = position + pd.x * dpdu + pd.y * dpdv;
+        
+        float3 wi = pDisk - ctx.p();
+        float dist2 = dot(wi, wi);
+        if (dist2 == 0.0f) return LightLiSample();
+        
+        float dist = sqrt(dist2);
+        wi /= dist;
+
+        float cosTheta = dot(normal, -wi);
+        if (!twoSided && cosTheta <= 0.0f) return LightLiSample();
+
+        // Solid angle PDF
+        float pdf = dist2 / (area * abs(cosTheta));
+        return LightLiSample(Lemit, wi, pdf, false);
+    }
+};
+
+public struct RectLight : ILight {
+    SampledSpectrum Lemit;
+    float3 position;
+    float3 normal;
+    float3 dpdu;
+    float3 dpdv;
+    float area;
+    bool twoSided;
+
+    public __init(SampledSpectrum Lemit, float3 position, float3 dpdu, float3 dpdv, bool twoSided = false) {
+        this.Lemit = Lemit;
+        this.position = position;
+        this.dpdu = dpdu;
+        this.dpdv = dpdv;
+        float3 crossProd = cross(dpdu, dpdv);
+        this.area = length(crossProd) * 4.0f;
+        this.normal = normalize(crossProd);
+        this.twoSided = twoSided;
+    }
+
+    public LightType Type() {
+        return LightType::Area;
+    }
+
+    public SampledSpectrum L(float3 p, float3 n, float3 uv, float3 w) {
+        if (!twoSided && dot(n, w) < 0.0f) return SampledSpectrum(0.0f);
+        return Lemit;
+    }
+
+    public SampledSpectrum Le(float3 w) {
+        return SampledSpectrum(0.0f);
+    }
+
+    public void PDF_Le(LightSampleContext ctx, float3 wi, out float pdfPos, out float pdfDir) {
+        pdfPos = 0.0f;
+        pdfDir = 0.0f;
+    }
+
+    public float PDF_Li(LightSampleContext ctx, float3 wi, bool allowIncompletePDF) {
+        float cosTheta = dot(normal, wi);
+        if (cosTheta == 0.0f) return 0.0f;
+        
+        if (!twoSided && cosTheta > 0.0f) return 0.0f;
+
+        // Ray-plane intersection
+        float t = dot(normal, position - ctx.p()) / cosTheta;
+        if (t <= 0.0f) return 0.0f;
+
+        float3 pRect = ctx.p() + t * wi;
+        float3 d = pRect - position;
+        
+        float l2_u = dot(dpdu, dpdu);
+        float l2_v = dot(dpdv, dpdv);
+        float u = dot(d, dpdu) / l2_u;
+        float v = dot(d, dpdv) / l2_v;
+
+        if (abs(u) > 1.0f || abs(v) > 1.0f) return 0.0f;
+
+        float pdfArea = 1.0f / area;
+        return pdfArea * (t * t) / abs(cosTheta);
+    }
+
+    public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
+        float2 pd = u * 2.0f - 1.0f;
+        float3 pRect = position + pd.x * dpdu + pd.y * dpdv;
+        
+        float3 wi = pRect - ctx.p();
+        float dist2 = dot(wi, wi);
+        if (dist2 == 0.0f) return LightLiSample();
+        
+        float dist = sqrt(dist2);
+        wi /= dist;
+
+        float cosTheta = dot(normal, -wi);
+        if (!twoSided && cosTheta <= 0.0f) return LightLiSample();
+
+        // Solid angle PDF
+        float pdf = dist2 / (area * abs(cosTheta));
+        return LightLiSample(Lemit, wi, pdf, false);
+    }
+};
+
 // ============================================================
 // N-Light Weighted Mixture Sampler (analogous to LobeMixture)
 // ============================================================

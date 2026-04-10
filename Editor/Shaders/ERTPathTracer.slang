@@ -265,6 +265,9 @@ void RayGeneration()
     float lastSamplePDF = 0.0f;
     // Scene lights
     DistantLight sun = DistantLight(SampledSpectrum(globalParams.sunIntensity.xyz), globalParams.sunDirection.xyz);
+    // DiskLight sun = DiskLight(SampledSpectrum(globalParams.sunIntensity.xyz) * 1000.0f, globalParams.sunDirection.xyz * 100.0f, -globalParams.sunDirection.xyz, 10.0f);
+    // PointLight sun = PointLight(SampledSpectrum(globalParams.sunIntensity.xyz) * 10000.0f, globalParams.sunDirection.xyz * 100.0f);
+    // RectLight sun = RectLight(SampledSpectrum(globalParams.sunIntensity.xyz) * 1000.0f, globalParams.sunDirection.xyz * 0.0f, float3(1, 0, 0), float3(0, 0, 1));
     // Unified infinite light — falls back to constant color when no env map is bound
     InfiniteLight env = InfiniteLight(
         SampledSpectrum(globalParams.ambientColor.xyz),
@@ -366,14 +369,14 @@ void RayGeneration()
             if (Li.pdf > EPS) {
                 float mis = Li.isDelta ? 1.0f : PowerHeuristic(1, Li.pdf, 1, bsdfPdf);
                 if (bounce == 0) {
-                // First bounce: split direct lighting by lobe
+                    // First bounce: split direct lighting by lobe
                     float3 fD, fS;
                     bsdf.f_split(wo, wi, TransportMode::Radiance, fD, fS);
                     float3 scale = beta * AbsCosTheta(wi) * radiance * mis;
                     AddRadiance(LDiffuse,   fD * scale);
                     AddRadiance(LSpecular, fS * scale);
                 } else {
-                // Subsequent bounces: attribute all to the first-bounce category (indirect)
+                    // Subsequent bounces: attribute all to the first-bounce category (indirect)
                     float3 f = bsdf.f(wo, wi, TransportMode::Radiance) * AbsCosTheta(wi);
                     float3 contrib = beta * f * radiance * mis;
                     if (firstBounceCategory == AOVCategory::Diffuse)
