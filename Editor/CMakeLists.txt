@@ -53,7 +53,11 @@ target_precompile_headers(
 )
 
 add_executable(Editor)
-target_sources(Editor PRIVATE SDLMain.cpp ImGui.cpp Editor.cpp Render/Rasterizer.cpp Render/Pathtracer.cpp)
+target_sources(Editor PRIVATE
+        SDLMain.cpp ImGui.cpp
+        EditorState.cpp Editor.cpp EditorScene.cpp EditorPanels.cpp
+        Render/Rasterizer.cpp Render/Pathtracer.cpp
+)
 target_link_libraries(
         Editor PRIVATE Editor_Context Foundation_RHIVulkan ThirdParty_ImGui argh
 )

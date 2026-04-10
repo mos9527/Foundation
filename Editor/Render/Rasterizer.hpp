@@ -97,7 +97,7 @@ struct RendererScene
     Vector<GSMaterial>* gsMaterials;
     Vector<GSMesh>* gsMeshes;
     Vector<uint32_t>* gsBLASes;
-    int2* gsPickPixel; // Points to GPendingPickPixel; (-1,-1) = no pending pick
+    int2* gsPickPixel; // Points to sPendingPickPixel in Editor.cpp; (-1,-1) = no pending pick
 };
 
 /**
