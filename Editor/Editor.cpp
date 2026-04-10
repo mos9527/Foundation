@@ -58,7 +58,7 @@ static void EditorDockSpaceAndMenuBar();
 static void FHierarchyPanel();
 static void FLightingPanel();
 
-// Sync FScene lights → UBO GPULight array
+// Sync FScene lights → UBO GSLight array
 static void SyncSceneLightsToUBO()
 {
     uint32_t count = std::min(static_cast<uint32_t>(GScene.mLights.size()), kMaxSceneLights);

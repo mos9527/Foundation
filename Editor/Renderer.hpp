@@ -35,7 +35,7 @@ struct UBO
     // Scene lights (up to kMaxSceneLights)
     uint32_t numSceneLights{0u};
     uint32_t _lightPad0{0u};
-    struct GPULight
+    struct GSLight
     {
         uint32_t type{0u};       // 0=Directional, 1=Point, 2=Spot, 3=Disk, 4=Rect
         float3 color{1,1,1};
@@ -51,7 +51,7 @@ struct UBO
         float radius{0.5f};     // Disk radius
         uint32_t twoSided{0u};
     };
-    GPULight sceneLights[8]{}; // kMaxSceneLights
+    GSLight sceneLights[8]{}; // kMaxSceneLights
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};
     uint32_t ptMaxBounces{32u};

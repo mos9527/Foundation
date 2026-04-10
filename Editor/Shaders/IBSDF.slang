@@ -275,11 +275,6 @@ public AOVCategory CategoryFromFlags(BxDFFlags f) {
     return AOVCategory::Specular;
 }
 
-// ============================================================
-// PrincipledBSDFLobes — replaces PrincipledBSDF + LobeMixture
-// Constructs individual lobes with their weights; the integrator
-// evaluates and splits them independently.
-// ============================================================
 public struct PrincipledBSDFLobes {
     // Lobe instances
     DiffuseBSDF   diffuse;

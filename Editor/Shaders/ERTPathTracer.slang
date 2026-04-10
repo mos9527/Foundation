@@ -228,6 +228,140 @@ bool TraceShadowRay(float3 origin, float3 direction)
     return payload.hit;
 }
 
+static const float kEnvLightSelectionWeight = 0.5f;
+
+float GetSceneLightSelectionWeight(GSLight gl)
+{
+    SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.intensity);
+    if (!AnyLuminance(Lemit))
+        return 0.0f;
+    return dot(LUMINANCE_RGB, Lemit);
+}
+
+float ComputeSceneLightWeightSum()
+{
+    float weightSum = kEnvLightSelectionWeight;
+    for (uint li = 0; li < globalParams.numSceneLights; li++)
+        weightSum += GetSceneLightSelectionWeight(globalParams.sceneLights[li]);
+    return weightSum;
+}
+
+LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
+{
+    SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.intensity);
+    switch (gl.type) {
+    case 0: {
+        DistantLight light = DistantLight(Lemit, gl.direction);
+        return light.Sample_Li(ctx, u);
+    }
+    case 1: {
+        PointLight light = PointLight(Lemit, gl.position);
+        return light.Sample_Li(ctx, u);
+    }
+    case 2: {
+        SpotLight light = SpotLight(Lemit, gl.position, gl.direction,
+            acos(gl.spotOuterCosAngle), acos(gl.spotInnerCosAngle));
+        return light.Sample_Li(ctx, u);
+    }
+    case 3: {
+        DiskLight light = DiskLight(Lemit, gl.position, gl.direction,
+            gl.dpdu, gl.radius, gl.twoSided != 0);
+        return light.Sample_Li(ctx, u);
+    }
+    case 4: {
+        RectLight light = RectLight(Lemit, gl.position,
+            gl.dpdu, gl.dpdv, gl.twoSided != 0);
+        return light.Sample_Li(ctx, u);
+    }
+    default:
+        return LightLiSample();
+    }
+}
+
+float SceneLightPDF_Li(GSLight gl, LightSampleContext ctx, float3 wi)
+{
+    SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.intensity);
+    switch (gl.type) {
+    case 0: {
+        DistantLight light = DistantLight(Lemit, gl.direction);
+        return light.PDF_Li(ctx, wi, true);
+    }
+    case 1: {
+        PointLight light = PointLight(Lemit, gl.position);
+        return light.PDF_Li(ctx, wi, true);
+    }
+    case 2: {
+        SpotLight light = SpotLight(Lemit, gl.position, gl.direction,
+            acos(gl.spotOuterCosAngle), acos(gl.spotInnerCosAngle));
+        return light.PDF_Li(ctx, wi, true);
+    }
+    case 3: {
+        DiskLight light = DiskLight(Lemit, gl.position, gl.direction,
+            gl.dpdu, gl.radius, gl.twoSided != 0);
+        return light.PDF_Li(ctx, wi, true);
+    }
+    case 4: {
+        RectLight light = RectLight(Lemit, gl.position,
+            gl.dpdu, gl.dpdv, gl.twoSided != 0);
+        return light.PDF_Li(ctx, wi, true);
+    }
+    default:
+        return 0.0f;
+    }
+}
+
+float SceneLightPDF_Li(LightSampleContext ctx, float3 wi, InfiniteLight env, float weightSum)
+{
+    if (weightSum <= 0.0f)
+        return 0.0f;
+
+    float pdf = (kEnvLightSelectionWeight / weightSum) * env.PDF_Li(ctx, wi, true);
+    for (uint li = 0; li < globalParams.numSceneLights; li++) {
+        GSLight gl = globalParams.sceneLights[li];
+        float w = GetSceneLightSelectionWeight(gl);
+        if (w <= 0.0f)
+            continue;
+        pdf += (w / weightSum) * SceneLightPDF_Li(gl, ctx, wi);
+    }
+    return pdf;
+}
+
+LightLiSample SampleSceneLight(LightSampleContext ctx, InfiniteLight env, float uc, float2 u, float weightSum)
+{
+    if (weightSum <= 0.0f)
+        return LightLiSample();
+
+    float target = uc * weightSum;
+    float cumulative = 0.0f;
+    for (uint li = 0; li < globalParams.numSceneLights; li++) {
+        GSLight gl = globalParams.sceneLights[li];
+        float w = GetSceneLightSelectionWeight(gl);
+        if (w <= 0.0f)
+            continue;
+
+        cumulative += w;
+        if (target < cumulative) {
+            LightLiSample Li = SampleSceneLight(gl, ctx, u);
+            if (Li.pdf <= 0.0f)
+                return LightLiSample();
+
+            float pChoice = w / weightSum;
+            SampledSpectrum radiance = Li.Li / (Li.pdf * pChoice);
+            float mixPDF = Li.isDelta ? Li.pdf : SceneLightPDF_Li(ctx, Li.wi, env, weightSum);
+            return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta);
+        }
+    }
+
+    LightLiSample Li = env.Sample_Li(ctx, u);
+    if (Li.pdf <= 0.0f)
+        return LightLiSample();
+
+    float pChoice = kEnvLightSelectionWeight / weightSum;
+    SampledSpectrum radiance = Li.Li / (Li.pdf * pChoice);
+    float mixPDF = Li.isDelta ? Li.pdf : SceneLightPDF_Li(ctx, Li.wi, env, weightSum);
+    return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta);
+}
+
 [[SpecializationConstant]] int flags;
 [shader("raygeneration")]
 void RayGeneration()
@@ -269,7 +403,8 @@ void RayGeneration()
         globalParams.envMapScale,
         globalParams.useEnvMap
     );
-    LightMixture light;
+    float totalLightWeight = ComputeSceneLightWeightSum();
+    LightSampleContext lastLightCtx = LightSampleContext(float3(0), float3(0), float3(0));
     for (uint bounce = 0; bounce < globalParams.ptMaxBounces; bounce++) {
         HitPayload payload;
         // SER
@@ -288,60 +423,18 @@ void RayGeneration()
         HitObject::Invoke(AS, hitObj, payload);
         // Outgoing direction
         float3 view = -ray.Direction;
-        // Build light mixture from UBO scene lights
-        light = LightMixture();
-        for (uint li = 0; li < globalParams.numSceneLights; li++) {
-            GPULight gl = globalParams.sceneLights[li];
-            SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.intensity);
-            float power = dot(LUMINANCE_RGB, Lemit);
-            if (!AnyLuminance(Lemit)) continue;
-            switch (gl.type) {
-            case 0: { // Directional
-                DistantLight dl = DistantLight(Lemit, gl.direction);
-                light.AddLight(dl, power);
-                break;
-            }
-            case 1: { // Point
-                PointLight pl = PointLight(Lemit, gl.position);
-                light.AddLight(pl, power);
-                break;
-            }
-            case 2: { // Spot
-                SpotLight sl = SpotLight(Lemit, gl.position, gl.direction,
-                    acos(gl.spotOuterCosAngle), acos(gl.spotInnerCosAngle));
-                light.AddLight(sl, power);
-                break;
-            }
-            case 3: { // Disk
-                DiskLight dl = DiskLight(Lemit, gl.position, gl.direction,
-                    gl.dpdu, gl.radius, gl.twoSided != 0);
-                light.AddLight(dl, power);
-                break;
-            }
-            case 4: { // Rect
-                RectLight rl = RectLight(Lemit, gl.position,
-                    gl.dpdu, gl.dpdv, gl.twoSided != 0);
-                light.AddLight(rl, power);
-                break;
-            }
-            default: break;
-            }
-        }
-        light.AddLight(env, 0.5f);
-        light.Finalize();
         if (!payload.IsHit()) {
-            LightSampleContext ctx; /* UNUSED */
             // Miss — environment
             if (bounce == 0) {
             // Environment light with no surface hit — classify as specular (background)
-                float3 envLe = light.Le(-view);
+                float3 envLe = env.Le(-view);
                 AddRadiance(LSpecular, envLe);
                 break;
             }
             // Final miss, MIS-weight against the last BSDF sample
-            float pdf = light.PDF_Li(ctx, -view);
+            float pdf = SceneLightPDF_Li(lastLightCtx, -view, env, totalLightWeight);
             float mis = lastSamplePDF > EPS ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
-            float3 contrib = beta * light.Le(-view) * mis;
+            float3 contrib = beta * env.Le(-view) * mis;
             // Environment contribution at bounce > 0 is indirect — attribute to first-bounce category
             if (firstBounceCategory == AOVCategory::Diffuse)
                 AddRadiance(LDiffuse, contrib);
@@ -379,12 +472,13 @@ void RayGeneration()
         PrincipledBSDFLobes bsdf = PrincipledBSDFLobes(
             surface.baseColor, surface.metallic, surface.roughness,
             surface.ior, surface.transmission, true, wo);
-        // Light sampling via LightMixture (NEE / Direct Lighting)
+        // Light sampling via Scene concrete-light MIS (NEE / Direct Lighting)
         // https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling
         {
             LightSampleContext ctx = LightSampleContext(surface.hit.position, surface.hit.geometryNormal, surface.hit.normal);
-            // Sample_Li returns: radiance = Li/(pdf*pChoice), pdf = mixture PDF
-            LightLiSample Li = light.Sample_Li(ctx, rng.sample(), rng.sample2D());
+            lastLightCtx = ctx;
+            // SampleSceneLight returns: radiance = Li/(pdf*pChoice), pdf = mixture PDF
+            LightLiSample Li = SampleSceneLight(ctx, env, rng.sample(), rng.sample2D(), totalLightWeight);
             SampledSpectrum radiance = Li.Li;
             // Shadow ray
             if (Li.pdf > EPS) {

@@ -58,6 +58,7 @@ public struct FMeshlet // @ref meshopt_Meshlet
     public float4 coneAxisAngle; // (x,y,z,cos(half solid angle))
     public float3 coneApex; // (x,y,z)
 };
+// NOTE: GS -> GPU Scene
 public struct GSMesh
 {
     // Offsets are absolute, and are in Primitive buffer (bytes).
@@ -124,7 +125,7 @@ public struct MeshletTaskWork
     public uint32_t firstMeshlet;
     public uint32_t numMeshlets;
 };
-public struct GPULight
+public struct GSLight
 {
     public uint32_t type;       // 0=Directional, 1=Point, 2=Spot, 3=Disk, 4=Rect
     public float3 color;
@@ -172,7 +173,7 @@ public struct UBO
     // Scene lights (up to 8)
     public uint32_t numSceneLights;
     public uint32_t _lightPad0;
-    public GPULight sceneLights[8];
+    public GSLight sceneLights[8];
     // -- Path Tracing
     public uint32_t ptAccumulatedFrames;
     public uint32_t ptMaxBounces;
