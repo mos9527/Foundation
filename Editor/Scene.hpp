@@ -45,12 +45,30 @@ struct FMaterial
     float transmissionFactor;
     float ior = 1.5f;
 };
+enum class FLightType : uint32_t
+{
+    Directional = 0,
+    Point = 1,
+    Spot = 2,
+    Disk = 3,
+    Rect = 4,
+};
+inline constexpr uint32_t kMaxSceneLights = 8;
 struct FLight
 {
     FTransform transform;
+    FLightType type{FLightType::Directional};
     float3 color;
-    // Directional: Lux, Point: Lumen
     float intensity;
+    float range{0.0f};              // 0 = infinite (directional default)
+    float spotInnerConeAngle{0.0f}; // radians
+    float spotOuterConeAngle{0.7853981f}; // radians, default ~45 deg
+    // Disk light
+    float radius{0.5f};
+    // Rect light (half-extents)
+    float width{1.0f};
+    float height{1.0f};
+    bool twoSided{false};
 };
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
 struct FScene

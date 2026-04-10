@@ -280,6 +280,25 @@ void LoadGLTF(StringView path, FScene& scene)
             getTransform(light.transform);
             light.color = {node->light->color[0], node->light->color[1], node->light->color[2]};
             light.intensity = node->light->intensity / 683.0f; // Convert from lm to W for white light
+            light.range = node->light->range; // 0 = infinite
+            // Map glTF light type
+            switch (node->light->type)
+            {
+            case cgltf_light_type_directional:
+                light.type = FLightType::Directional;
+                break;
+            case cgltf_light_type_point:
+                light.type = FLightType::Point;
+                break;
+            case cgltf_light_type_spot:
+                light.type = FLightType::Spot;
+                light.spotInnerConeAngle = node->light->spot_inner_cone_angle;
+                light.spotOuterConeAngle = node->light->spot_outer_cone_angle;
+                break;
+            default:
+                light.type = FLightType::Directional;
+                break;
+            }
         }
     }
     pool.Join();

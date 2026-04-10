@@ -263,18 +263,13 @@ void RayGeneration()
     }
     // Combine the miss hit with the last light sample
     float lastSamplePDF = 0.0f;
-    // Scene lights
-    DistantLight sun = DistantLight(SampledSpectrum(globalParams.sunIntensity.xyz), globalParams.sunDirection.xyz);
-    // DiskLight sun = DiskLight(SampledSpectrum(globalParams.sunIntensity.xyz) * 1000.0f, globalParams.sunDirection.xyz * 100.0f, -globalParams.sunDirection.xyz, 10.0f);
-    // PointLight sun = PointLight(SampledSpectrum(globalParams.sunIntensity.xyz) * 10000.0f, globalParams.sunDirection.xyz * 100.0f);
-    // RectLight sun = RectLight(SampledSpectrum(globalParams.sunIntensity.xyz) * 1000.0f, globalParams.sunDirection.xyz * 0.0f, float3(1, 0, 0), float3(0, 0, 1));
     // Unified infinite light — falls back to constant color when no env map is bound
     InfiniteLight env = InfiniteLight(
         SampledSpectrum(globalParams.ambientColor.xyz),
         globalParams.envMapScale,
         globalParams.useEnvMap
     );
-    LightMixture light = LightMixture();
+    LightMixture light;
     for (uint bounce = 0; bounce < globalParams.ptMaxBounces; bounce++) {
         HitPayload payload;
         // SER
@@ -293,8 +288,45 @@ void RayGeneration()
         HitObject::Invoke(AS, hitObj, payload);
         // Outgoing direction
         float3 view = -ray.Direction;
-        if (AnyLuminance(globalParams.sunIntensity.xyz))
-            light.AddLight(sun, 0.5f);
+        // Build light mixture from UBO scene lights
+        light = LightMixture();
+        for (uint li = 0; li < globalParams.numSceneLights; li++) {
+            GPULight gl = globalParams.sceneLights[li];
+            SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.intensity);
+            float power = dot(LUMINANCE_RGB, Lemit);
+            if (!AnyLuminance(Lemit)) continue;
+            switch (gl.type) {
+            case 0: { // Directional
+                DistantLight dl = DistantLight(Lemit, gl.direction);
+                light.AddLight(dl, power);
+                break;
+            }
+            case 1: { // Point
+                PointLight pl = PointLight(Lemit, gl.position);
+                light.AddLight(pl, power);
+                break;
+            }
+            case 2: { // Spot
+                SpotLight sl = SpotLight(Lemit, gl.position, gl.direction,
+                    acos(gl.spotOuterCosAngle), acos(gl.spotInnerCosAngle));
+                light.AddLight(sl, power);
+                break;
+            }
+            case 3: { // Disk
+                DiskLight dl = DiskLight(Lemit, gl.position, gl.direction,
+                    gl.dpdu, gl.radius, gl.twoSided != 0);
+                light.AddLight(dl, power);
+                break;
+            }
+            case 4: { // Rect
+                RectLight rl = RectLight(Lemit, gl.position,
+                    gl.dpdu, gl.dpdv, gl.twoSided != 0);
+                light.AddLight(rl, power);
+                break;
+            }
+            default: break;
+            }
+        }
         light.AddLight(env, 0.5f);
         light.Finalize();
         if (!payload.IsHit()) {

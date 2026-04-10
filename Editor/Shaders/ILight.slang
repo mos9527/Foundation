@@ -430,7 +430,7 @@ struct LightEntry {
 };
 
 public struct LightMixture {
-    LightEntry lights[4];
+    LightEntry lights[9]; // 1 env + up to 8 scene lights
     int        lightCount;
     float      weightSum;
 
@@ -442,7 +442,7 @@ public struct LightMixture {
     // Add a light with an unnormalized importance weight (e.g. luminance).
     // Zero-weight lights are silently skipped.
     [mutating] public void AddLight(ILight l, float w) {
-        if (lightCount >= 4 || w <= 0.0f) return;
+        if (lightCount >= 9 || w <= 0.0f) return;
         lights[lightCount].light  = l;
         lights[lightCount].weight = w;
         lightCount++;

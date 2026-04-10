@@ -124,6 +124,22 @@ public struct MeshletTaskWork
     public uint32_t firstMeshlet;
     public uint32_t numMeshlets;
 };
+public struct GPULight
+{
+    public uint32_t type;       // 0=Directional, 1=Point, 2=Spot, 3=Disk, 4=Rect
+    public float3 color;
+    public float3 position;
+    public float3 direction;
+    public float intensity;
+    public float range;
+    public float spotInnerCosAngle;
+    public float spotOuterCosAngle;
+    // Area lights (Disk / Rect)
+    public float3 dpdu;         // tangent u-axis (Rect: half-extent u)
+    public float3 dpdv;         // tangent v-axis (Rect: half-extent v)
+    public float radius;        // Disk radius
+    public uint32_t twoSided;
+};
 public struct UBO
 {
     public uint32_t frameNumber;
@@ -149,11 +165,14 @@ public struct UBO
     public float camEV;
     public float4 camPosition;
     public float4 camDirection;
-    public float4 sunDirection;
-    public float4 sunIntensity;
+    // Environment light
     public float4 ambientColor;
     public uint32_t useEnvMap;
     public float envMapScale;
+    // Scene lights (up to 8)
+    public uint32_t numSceneLights;
+    public uint32_t _lightPad0;
+    public GPULight sceneLights[8];
     // -- Path Tracing
     public uint32_t ptAccumulatedFrames;
     public uint32_t ptMaxBounces;

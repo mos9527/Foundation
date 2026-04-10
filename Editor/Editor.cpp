@@ -58,6 +58,53 @@ static void EditorDockSpaceAndMenuBar();
 static void FHierarchyPanel();
 static void FLightingPanel();
 
+// Sync FScene lights → UBO GPULight array
+static void SyncSceneLightsToUBO()
+{
+    uint32_t count = std::min(static_cast<uint32_t>(GScene.mLights.size()), kMaxSceneLights);
+    GShaderGlobals.numSceneLights = count;
+    for (uint32_t i = 0; i < count; i++)
+    {
+        auto& src = GScene.mLights[i];
+        auto& dst = GShaderGlobals.sceneLights[i];
+        dst.type = static_cast<uint32_t>(src.type);
+        dst.color = src.color;
+        dst.intensity = src.intensity;
+        dst.range = src.range;
+        // Position from transform
+        dst.position = src.transform.transform;
+        // Direction from rotation (default forward is (0,0,-1))
+        dst.direction = normalize(src.transform.rotation * float3(0, 0, -1));
+        dst.spotInnerCosAngle = std::cos(src.spotInnerConeAngle);
+        dst.spotOuterCosAngle = std::cos(src.spotOuterConeAngle);
+        // Area light fields
+        dst.radius = src.radius;
+        dst.twoSided = src.twoSided ? 1u : 0u;
+        // Build tangent frame from direction for area lights
+        if (src.type == FLightType::Disk || src.type == FLightType::Rect)
+        {
+            float3 dir = dst.direction;
+            // Build orthonormal basis from direction
+            float3 up = std::abs(dir.y) < 0.999f ? float3(0, 1, 0) : float3(1, 0, 0);
+            float3 u = normalize(cross(up, dir));
+            float3 v = cross(dir, u);
+            if (src.type == FLightType::Disk)
+            {
+                dst.dpdu = u; // Unit tangent; radius is separate
+                dst.dpdv = v;
+            }
+            else // Rect
+            {
+                dst.dpdu = u * src.width;  // half-extent along u
+                dst.dpdv = v * src.height; // half-extent along v
+            }
+        }
+    }
+    // Zero out unused slots
+    for (uint32_t i = count; i < kMaxSceneLights; i++)
+        GShaderGlobals.sceneLights[i] = {};
+}
+
 /* ==================== ReplaceScene ==================== */
 static void ReplaceScene(StringView path)
 {
@@ -205,16 +252,7 @@ static void ReplaceScene(StringView path)
             GCamera.rot = camera.transform.rotation;
             GCamera.fovY = camera.fovY;
         }
-        if (!GScene.mLights.empty())
-        {
-            auto& light = GScene.mLights.front();
-            GShaderGlobals.sunDirection = float4(normalize(light.transform.rotation * float3(0, 0, -1)), 0);
-            GShaderGlobals.sunIntensity = float4(light.color * light.intensity, 0);
-        }
-        for (auto& c : GScene.mCameras)
-            GScene.mCameras.emplace_back(c);
-        for (auto& l : GScene.mLights)
-            GScene.mLights.emplace_back(l);
+        SyncSceneLightsToUBO();
     }
 
     LOG(Editor, LogInfo, "Scene load complete: {} meshes, {} instances, {} materials",
@@ -905,78 +943,170 @@ static void FLightingPanel()
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Lighting"))
     {
-        // ---- Directional Light (Sun) ----
-        if (ImGui::CollapsingHeader("Directional Light", ImGuiTreeNodeFlags_DefaultOpen))
+        bool anyChanged = false;
+        static const char* kLightTypeNames[] = {"Directional", "Point", "Spot", "Disk", "Rect"};
+        static constexpr int kLightTypeCount = 5;
+
+        // ---- Scene Lights ----
+        if (ImGui::CollapsingHeader("Scene Lights", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            bool lightChanged = false;
-
-            // Direction: edited as Euler angles (degrees), converted internally to a direction vector
-            // Back-compute Euler angles from the current sunDirection
-            static float sunEuler[2] = {0.0f, 0.0f}; // [pitch, yaw] degrees
-            static bool eulerInitialized = false;
-            if (!eulerInitialized)
+            // Add light button
+            if (GScene.mLights.size() < kMaxSceneLights)
             {
-                float4 d = GShaderGlobals.sunDirection;
-                // pitch = asin(-d.y), yaw = atan2(d.x, d.z)
-                sunEuler[0] = degrees(std::asin(std::clamp(-d.y, -1.0f, 1.0f)));
-                sunEuler[1] = degrees(std::atan2(d.x, d.z));
-                eulerInitialized = true;
-            }
-
-            lightChanged |= ImGui::SliderFloat("Pitch", &sunEuler[0], -90.0f, 90.0f, "%.1f deg");
-            lightChanged |= ImGui::SliderFloat("Yaw",   &sunEuler[1], -180.0f, 180.0f, "%.1f deg");
-
-            if (lightChanged)
-            {
-                float pitchRad = radians(sunEuler[0]);
-                float yawRad   = radians(sunEuler[1]);
-                // Rebuild direction vector from Euler angles
-                GShaderGlobals.sunDirection = float4(normalize(float3{
-                    std::sin(yawRad) * std::cos(pitchRad),
-                    -std::sin(pitchRad),
-                    std::cos(yawRad) * std::cos(pitchRad)
-                }), 0);
-            }
-
-            lightChanged |= ImHDRColorEdit("Sun", GShaderGlobals.sunIntensity);
-
-            if (lightChanged)
-                GShaderGlobals.ptAccumulatedFrames = 0;
-
-            // Sync back to CPU scene data (if lights exist)
-            if (lightChanged && !GScene.mLights.empty())
-            {
-                auto& light = GScene.mLights.front();
-                float3 si{GShaderGlobals.sunIntensity.x, GShaderGlobals.sunIntensity.y, GShaderGlobals.sunIntensity.z};
-                float maxComp = std::max({si.x, si.y, si.z});
-                light.intensity = maxComp;
-                light.color = maxComp > 0.0f ? si / maxComp : float3(1.0f);
-                // Rebuild rotation quaternion from direction vector
-                float3 dir = GShaderGlobals.sunDirection.xyz();
-                // Light default forward is (0,0,-1); find rotation from (0,0,-1) to dir
-                float3 from = float3(0, 0, -1);
-                float3 to = dir;
-                float d = dot(from, to);
-                if (d < -0.9999f)
-                    light.transform.rotation = quat(0, 1, 0, 0); // 180-degree flip
-                else
+                if (ImGui::Button("+ Add Light"))
                 {
-                    float3 c = cross(from, to);
-                    float w = 1.0f + d;
-                    light.transform.rotation = normalize(quat(w, c.x, c.y, c.z));
+                    FLight newLight{};
+                    newLight.type = FLightType::Directional;
+                    newLight.color = {1, 1, 1};
+                    newLight.intensity = 1.0f;
+                    newLight.transform.rotation = quat(1, 0, 0, 0);
+                    newLight.transform.scale = {1, 1, 1};
+                    GScene.mLights.emplace_back(newLight);
+                    anyChanged = true;
                 }
             }
+            else
+            {
+                ImGui::TextDisabled("Max %u lights reached", kMaxSceneLights);
+            }
 
-            ImGui::Separator();
+            int removeIndex = -1;
+            for (int i = 0; i < static_cast<int>(GScene.mLights.size()); i++)
+            {
+                auto& light = GScene.mLights[i];
+                ImGui::PushID(i);
+
+                char header[64];
+                snprintf(header, sizeof(header), "Light %d (%s)", i, kLightTypeNames[static_cast<int>(light.type)]);
+                if (ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    bool lightChanged = false;
+
+                    // Type selector
+                    int typeInt = static_cast<int>(light.type);
+                    if (ImGui::Combo("Type", &typeInt, kLightTypeNames, kLightTypeCount))
+                    {
+                        light.type = static_cast<FLightType>(typeInt);
+                        lightChanged = true;
+                    }
+
+                    // Color + Intensity
+                    lightChanged |= ImGui::ColorEdit3("Color", &light.color.x, ImGuiColorEditFlags_Float);
+                    lightChanged |= ImGui::SliderFloat("Intensity", &light.intensity, 0.0f, 100.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+
+                    // Direction (Euler angles) for lights with orientation
+                    bool hasDirection = (light.type == FLightType::Directional ||
+                                         light.type == FLightType::Spot ||
+                                         light.type == FLightType::Disk ||
+                                         light.type == FLightType::Rect);
+                    if (hasDirection)
+                    {
+                        float3 dir = normalize(light.transform.rotation * float3(0, 0, -1));
+                        float pitch = degrees(std::asin(std::clamp(-dir.y, -1.0f, 1.0f)));
+                        float yaw = degrees(std::atan2(dir.x, dir.z));
+                        bool dirChanged = false;
+                        dirChanged |= ImGui::SliderFloat("Pitch", &pitch, -90.0f, 90.0f, "%.1f deg");
+                        dirChanged |= ImGui::SliderFloat("Yaw", &yaw, -180.0f, 180.0f, "%.1f deg");
+                        if (dirChanged)
+                        {
+                            float pitchRad = radians(pitch);
+                            float yawRad = radians(yaw);
+                            float3 newDir = normalize(float3{
+                                std::sin(yawRad) * std::cos(pitchRad),
+                                -std::sin(pitchRad),
+                                std::cos(yawRad) * std::cos(pitchRad)});
+                            float3 from = float3(0, 0, -1);
+                            float d = dot(from, newDir);
+                            if (d < -0.9999f)
+                                light.transform.rotation = quat(0, 0, 1, 0); // 180° around Y
+                            else
+                            {
+                                float3 c = cross(from, newDir);
+                                light.transform.rotation = normalize(quat(1.0f + d, c.x, c.y, c.z));
+                            }
+                            lightChanged = true;
+                        }
+                    }
+
+                    // Position for positional lights
+                    bool hasPosition = (light.type == FLightType::Point ||
+                                        light.type == FLightType::Spot ||
+                                        light.type == FLightType::Disk ||
+                                        light.type == FLightType::Rect);
+                    if (hasPosition)
+                    {
+                        lightChanged |= ImGui::DragFloat3("Position", &light.transform.transform.x, 0.1f);
+                    }
+
+                    // Range for Point and Spot
+                    if (light.type == FLightType::Point || light.type == FLightType::Spot)
+                    {
+                        lightChanged |= ImGui::DragFloat("Range", &light.range, 0.1f, 0.0f, 1000.0f, "%.2f (0=inf)");
+                    }
+
+                    // Spot cone angles
+                    if (light.type == FLightType::Spot)
+                    {
+                        float innerDeg = degrees(light.spotInnerConeAngle);
+                        float outerDeg = degrees(light.spotOuterConeAngle);
+                        bool coneChanged = false;
+                        coneChanged |= ImGui::SliderFloat("Inner Cone", &innerDeg, 0.0f, outerDeg, "%.1f deg");
+                        coneChanged |= ImGui::SliderFloat("Outer Cone", &outerDeg, innerDeg, 90.0f, "%.1f deg");
+                        if (coneChanged)
+                        {
+                            light.spotInnerConeAngle = radians(innerDeg);
+                            light.spotOuterConeAngle = radians(outerDeg);
+                            lightChanged = true;
+                        }
+                    }
+
+                    // Disk light radius
+                    if (light.type == FLightType::Disk)
+                    {
+                        lightChanged |= ImGui::DragFloat("Radius", &light.radius, 0.01f, 0.001f, 100.0f, "%.3f");
+                    }
+
+                    // Rect light dimensions
+                    if (light.type == FLightType::Rect)
+                    {
+                        lightChanged |= ImGui::DragFloat("Width", &light.width, 0.01f, 0.001f, 100.0f, "%.3f");
+                        lightChanged |= ImGui::DragFloat("Height", &light.height, 0.01f, 0.001f, 100.0f, "%.3f");
+                    }
+
+                    // Two-sided toggle for area lights
+                    if (light.type == FLightType::Disk || light.type == FLightType::Rect)
+                    {
+                        lightChanged |= ImGui::Checkbox("Two-Sided", &light.twoSided);
+                    }
+
+                    if (ImGui::SmallButton("Remove"))
+                        removeIndex = i;
+
+                    if (lightChanged)
+                        anyChanged = true;
+
+                    ImGui::Separator();
+                }
+                ImGui::PopID();
+            }
+
+            if (removeIndex >= 0)
+            {
+                GScene.mLights.erase(GScene.mLights.begin() + removeIndex);
+                anyChanged = true;
+            }
         }
 
-        // ---- Ambient ----
-        if (ImGui::CollapsingHeader("Ambient", ImGuiTreeNodeFlags_DefaultOpen))
+        // ---- Ambient / Environment ----
+        if (ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            bool ambientChanged = false;
-            ambientChanged |= ImHDRColorEdit("Ambient", GShaderGlobals.ambientColor);
-            if (ambientChanged)
-                GShaderGlobals.ptAccumulatedFrames = 0;
+            anyChanged |= ImHDRColorEdit("Ambient", GShaderGlobals.ambientColor);
+        }
+
+        if (anyChanged)
+        {
+            SyncSceneLightsToUBO();
+            GShaderGlobals.ptAccumulatedFrames = 0;
         }
     }
     ImGui::End();

@@ -28,11 +28,30 @@ struct UBO
     float camEV{0.0f};
     float4 camPosition;
     float4 camDirection;
-    float4 sunDirection{0, 0, -1, 0};
-    float4 sunIntensity{0.0f};
+    // Environment light
     float4 ambientColor{0.25,0.25,0.25,0};
     uint32_t useEnvMap{0u};
     float envMapScale{1.0f};
+    // Scene lights (up to kMaxSceneLights)
+    uint32_t numSceneLights{0u};
+    uint32_t _lightPad0{0u};
+    struct GPULight
+    {
+        uint32_t type{0u};       // 0=Directional, 1=Point, 2=Spot, 3=Disk, 4=Rect
+        float3 color{1,1,1};
+        float3 position{0,0,0};
+        float3 direction{0,0,-1};
+        float intensity{0.0f};
+        float range{0.0f};
+        float spotInnerCosAngle{1.0f};
+        float spotOuterCosAngle{0.7071f};
+        // Area lights (Disk / Rect)
+        float3 dpdu{1,0,0};     // tangent u-axis (Rect: half-extent u)
+        float3 dpdv{0,1,0};     // tangent v-axis (Rect: half-extent v)
+        float radius{0.5f};     // Disk radius
+        uint32_t twoSided{0u};
+    };
+    GPULight sceneLights[8]{}; // kMaxSceneLights
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};
     uint32_t ptMaxBounces{32u};

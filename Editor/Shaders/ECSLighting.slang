@@ -81,22 +81,49 @@ void main(uint2 tid: SV_DispatchThreadID) {
         return;
     } else {
         float3 v = normalize(eye - p);
-        float3 l = -globalParams.sunDirection.xyz;
 
         float3 L = 0;
 
-        // Direct
+        // Direct lighting from scene lights
         quat toLocal     = quatRotateToZ(n);
-        quat toWorld     = toLocal.inverted();
         float3 n = float3(0,0,1);
-        float3 wi = toLocal.rotate(l);
         float3 wo = toLocal.rotate(v);
 
         PrincipledBSDFLobes bsdf = PrincipledBSDFLobes(baseColor, metallic, roughness, 1.5f, 0.0f, true, wo);
-        float3 f = bsdf.f(wo, wi, TransportMode::Radiance);
 
-        float pdf = shadow(p, l) ? 0.0f : 1.0f;
-        L += f * AbsCosTheta(wi) * pdf * globalParams.sunIntensity.xyz;
+        for (uint li = 0; li < globalParams.numSceneLights; li++) {
+            GPULight gl = globalParams.sceneLights[li];
+            float3 lightColor = gl.color * gl.intensity;
+            if (!any(lightColor > 0.0f)) continue;
+
+            float3 l;
+            float atten = 1.0f;
+            if (gl.type == 0) { // Directional
+                l = -gl.direction;
+            } else { // Point or Spot
+                float3 toLight = gl.position - p;
+                float dist2 = dot(toLight, toLight);
+                if (dist2 < 1e-8f) continue;
+                float dist = sqrt(dist2);
+                l = toLight / dist;
+                atten = 1.0f / dist2;
+                if (gl.range > 0.0f && dist > gl.range) continue;
+                if (gl.type == 2) { // Spot
+                    float cosTheta = dot(gl.direction, -l);
+                    if (cosTheta < gl.spotOuterCosAngle) continue;
+                    if (cosTheta < gl.spotInnerCosAngle) {
+                        float delta = (cosTheta - gl.spotOuterCosAngle) / (gl.spotInnerCosAngle - gl.spotOuterCosAngle);
+                        atten *= (delta * delta) * (delta * delta);
+                    }
+                }
+            }
+
+            float3 wi = toLocal.rotate(l);
+            float3 f = bsdf.f(wo, wi, TransportMode::Radiance);
+            float vis = shadow(p, l) ? 0.0f : 1.0f;
+            L += f * AbsCosTheta(wi) * vis * lightColor * atten;
+        }
+
         L += baseColor * globalParams.ambientColor.xyz;
 
         // Final color
