@@ -11,7 +11,7 @@ FetchContent_MakeAvailable(argh)
 add_subdirectory(Shaders)
 add_library(Editor_Assets STATIC)
 target_sources(Editor_Assets PUBLIC
-        Mesh.cpp Scene.cpp Texture.cpp
+        Scene/Mesh.cpp Scene/Scene.cpp Scene/Texture.cpp
         "${lz4_SOURCE_DIR}/lib/lz4.c"
         "${lz4_SOURCE_DIR}/lib/xxhash.c"
         "${bc7enc_SOURCE_DIR}/bc7enc.c"
@@ -36,7 +36,7 @@ target_include_directories(
 add_library(Editor_Context)
 target_sources(Editor_Context PRIVATE
         Context.cpp
-        GPUScene.cpp
+        Scene/GPUScene.cpp
 )
 target_link_libraries(
         Editor_Context PUBLIC
@@ -53,7 +53,7 @@ target_precompile_headers(
 )
 
 add_executable(Editor)
-target_sources(Editor PRIVATE SDLMain.cpp ImGui.cpp Editor.cpp Renderer.cpp PathTracer.cpp)
+target_sources(Editor PRIVATE SDLMain.cpp ImGui.cpp Editor.cpp Render/Rasterizer.cpp Render/Pathtracer.cpp)
 target_link_libraries(
         Editor PRIVATE Editor_Context Foundation_RHIVulkan ThirdParty_ImGui argh
 )

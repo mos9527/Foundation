@@ -1,5 +1,5 @@
 #pragma once
-#include "Scene.hpp"
+#include "../Scene/Scene.hpp"
 #include <RenderCore/RenderPass.hpp>
 #pragma pack(push, 4)
 struct UBO

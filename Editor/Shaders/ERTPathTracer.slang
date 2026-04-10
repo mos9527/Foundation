@@ -216,6 +216,8 @@ HitObject TraceHitObject(RayDesc ray)
     return HitObject.TraceRay(AS, 0, 0xFF, 0, 0, 0, ray, payload);
 }
 
+// -- Light Sampling
+
 bool TraceShadowRay(float3 origin, float3 direction)
 {
     RayDesc ray;
@@ -444,7 +446,7 @@ void RayGeneration()
         }
         Payload surface = SamplePayload(payload, ray);
 
-        // Accumulate GBuffer on primary hit (Welford online mean)
+        // Accumulate GBuffer on primary hit
         if (bounce == 0 && !gbufferWritten) {
             float4 g0 = float4(surface.baseColor, float(surface.materialID) / 255.0f);
             float4 g1 = float4(surface.hit.normal * 0.5f + 0.5f, 0);
@@ -459,7 +461,8 @@ void RayGeneration()
                 gBuffer1[pix] += (g1 - gBuffer1[pix]) * invN;
                 gBuffer2[pix] += (g2 - gBuffer2[pix]) * invN;
             }
-            // pickIDBuffer: always overwrite with current frame's instance (no accumulation)
+            // R32Uint, so primary hit only.
+            // TODO: Quite noisy!
             pickIDBuffer[pix] = payload.instance;
             gbufferWritten = true;
         }
@@ -555,7 +558,7 @@ void RayGeneration()
             beta /= rrPCount; // Boost non-terminated paths
         }
     }
-    // Write default GBuffer if no hit (miss on primary ray, Welford online mean)
+    // Write default GBuffer if no hit
     if (!gbufferWritten) {
         float4 g0 = float4(0, 0, 0, 0);
         float4 g1 = float4(0.5f, 0.5f, 1.0f, 0);  // neutral normal
@@ -587,9 +590,7 @@ void RayGeneration()
     }
 }
 // Naive stochastic opacity map implementation
-// This could get a LOT more involved with ray differentials for sampling
-// (our engine provides full mip chains for all textures - use it!)
-// And as of today we got Opacity Micro Maps for acceleration too.
+// TODO: OMM? Maybe one day.
 //  https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_opacity_micromap.html
 //  https://devblogs.microsoft.com/directx/omm/
 bool AnyHitOpacityIgnore(inout PCG rng, uint instance, uint primitive,

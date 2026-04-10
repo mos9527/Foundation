@@ -1,6 +1,6 @@
 #include <fstream>
-#include "Scene.hpp"
-#include "Texture.hpp"
+#include "Scene/Scene.hpp"
+#include "Scene/Texture.hpp"
 int main_scene(StringView srcPath, StringView dstPath)
 {
     FScene scene(GLOBAL_ALLOC);

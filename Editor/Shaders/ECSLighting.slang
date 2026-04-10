@@ -91,6 +91,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
 
         PrincipledBSDFLobes bsdf = PrincipledBSDFLobes(baseColor, metallic, roughness, 1.5f, 0.0f, true, wo);
 
+        // TODO: Area lights.
         for (uint li = 0; li < globalParams.numSceneLights; li++) {
             GSLight gl = globalParams.sceneLights[li];
             float3 lightColor = gl.color * gl.intensity;

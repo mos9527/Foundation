@@ -1,6 +1,6 @@
-#include "ImGui.hpp"
-#include "Paths.hpp"
-#include "Renderer.hpp"
+#include "../ImGui.hpp"
+#include "../Paths.hpp"
+#include "Rasterizer.hpp"
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
