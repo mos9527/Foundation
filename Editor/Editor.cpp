@@ -873,6 +873,33 @@ void FRunningImGui()
     ImGui::PopStyleColor();
 }
 /* ==================== Lighting Panel ==================== */
+
+// HDR color control: decomposes a float4 into normalized color + scalar intensity each frame,
+// presents ColorEdit3 + logarithmic slider, and writes back color * intensity.
+// Returns true if the value was modified.
+static bool ImHDRColorEdit(const char* label, float4& value, float maxScale = 100.0f)
+{
+    bool changed = false;
+    ImGui::PushID(label);
+
+    // Decompose: extract max component as intensity, normalize the rest
+    float3 rgb{value.x, value.y, value.z};
+    float  scale = std::max({rgb.x, rgb.y, rgb.z});
+    float3 color = scale > 0.0f ? rgb / scale : float3(1.0f);
+
+    changed |= ImGui::ColorEdit3(label, &color.x, ImGuiColorEditFlags_Float);
+    // Build a "<label> Intensity" string for the slider
+    char sliderLabel[128];
+    snprintf(sliderLabel, sizeof(sliderLabel), "%s Intensity", label);
+    changed |= ImGui::SliderFloat(sliderLabel, &scale, 0.0f, maxScale, "%.3f", ImGuiSliderFlags_Logarithmic);
+
+    if (changed)
+        value = float4(color * scale, value.w);
+
+    ImGui::PopID();
+    return changed;
+}
+
 static void FLightingPanel()
 {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
@@ -911,44 +938,19 @@ static void FLightingPanel()
                 }), 0);
             }
 
-            // Separate color and intensity editing
-            // sunIntensity = color * intensity, split into normalized color + scalar intensity
-            static float3 sunColor = {1.0f, 1.0f, 1.0f};
-            static float sunIntensityScalar = 1.0f;
-            static bool intensityInitialized = false;
-            if (!intensityInitialized)
-            {
-                float maxComp = std::max({GShaderGlobals.sunIntensity.x,
-                                          GShaderGlobals.sunIntensity.y,
-                                          GShaderGlobals.sunIntensity.z});
-                if (maxComp > 0.0f)
-                {
-                    sunIntensityScalar = maxComp;
-                    sunColor = float3(GShaderGlobals.sunIntensity.x, GShaderGlobals.sunIntensity.y, GShaderGlobals.sunIntensity.z) / maxComp;
-                }
-                else
-                {
-                    sunIntensityScalar = 0.0f;
-                    sunColor = {1.0f, 1.0f, 1.0f};
-                }
-                intensityInitialized = true;
-            }
-
-            lightChanged |= ImGui::ColorEdit3("Sun Color", &sunColor.x, ImGuiColorEditFlags_Float);
-            lightChanged |= ImGui::SliderFloat("Sun Intensity", &sunIntensityScalar, 0.0f, 100.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+            lightChanged |= ImHDRColorEdit("Sun", GShaderGlobals.sunIntensity);
 
             if (lightChanged)
-            {
-                GShaderGlobals.sunIntensity = float4(sunColor * sunIntensityScalar, 0);
                 GShaderGlobals.ptAccumulatedFrames = 0;
-            }
 
             // Sync back to CPU scene data (if lights exist)
             if (lightChanged && !GScene.mLights.empty())
             {
                 auto& light = GScene.mLights.front();
-                light.color = sunColor;
-                light.intensity = sunIntensityScalar;
+                float3 si{GShaderGlobals.sunIntensity.x, GShaderGlobals.sunIntensity.y, GShaderGlobals.sunIntensity.z};
+                float maxComp = std::max({si.x, si.y, si.z});
+                light.intensity = maxComp;
+                light.color = maxComp > 0.0f ? si / maxComp : float3(1.0f);
                 // Rebuild rotation quaternion from direction vector
                 float3 dir = GShaderGlobals.sunDirection.xyz();
                 // Light default forward is (0,0,-1); find rotation from (0,0,-1) to dir
@@ -972,7 +974,7 @@ static void FLightingPanel()
         if (ImGui::CollapsingHeader("Ambient", ImGuiTreeNodeFlags_DefaultOpen))
         {
             bool ambientChanged = false;
-            ambientChanged |= ImGui::ColorEdit3("Ambient Color", &GShaderGlobals.ambientColor.x, ImGuiColorEditFlags_Float);
+            ambientChanged |= ImHDRColorEdit("Ambient", GShaderGlobals.ambientColor);
             if (ambientChanged)
                 GShaderGlobals.ptAccumulatedFrames = 0;
         }

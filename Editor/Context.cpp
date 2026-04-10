@@ -39,7 +39,7 @@ FContext* CreateContext(SDL_Window* window, Allocator* allocator, RHIDevice::Dev
     context->device = context->application->CreateDevice(deviceDesc, window);
     context->psoCache = context->device->CreatePipelineCache({});
     context->gpuScene = Construct<GPUScene>(allocator, context, GPUScene::GPUSceneDesc{
-        .primitiveBudget = 512 * (1u << 20) // 512 MB
+        .primitiveBudget = 1024 * (1u << 20) // 1024 MB
     });
     UpdateSwapchain(context);
     return GContext = context;
