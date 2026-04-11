@@ -409,6 +409,7 @@ void RayGeneration()
     LightSampleContext lastLightCtx = LightSampleContext(float3(0), float3(0), float3(0));
     for (uint bounce = 0; bounce < globalParams.ptMaxBounces; bounce++) {
         HitPayload payload;
+        #ifdef TODO_USE_SER
         // SER
         // https://www.khronos.org/blog/boosting-ray-tracing-performance-with-shader-execution-reordering-introducing-vk-ext-ray-tracing-invocation-reorder
         // https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_invocation_reorder/README.html
@@ -423,6 +424,9 @@ void RayGeneration()
         ReorderThread(hitObj, coherenceHint, kSERCoherenceHintBits);
         // Invoke closest hit / miss to populate the payload
         HitObject::Invoke(AS, hitObj, payload);
+        #else
+        TraceRay(AS, 0, 0xFF, 0, 0, 0, ray, payload);
+        #endif
         // Outgoing direction
         float3 view = -ray.Direction;
         if (!payload.IsHit()) {

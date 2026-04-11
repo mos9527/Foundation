@@ -60,8 +60,6 @@ Refer to https://docs.vulkan.org/tutorial/latest/02_Development_environment.html
 # Enable [extra-testing] in /etc/pacman.conf for the latest validation layers et al
 sudo pacman -S vulkan-validation-layers vulkan-tools vulkan-radeon vulkan-headers
 ```
-### macOS
-Refer to https://docs.vulkan.org/tutorial/latest/02_Development_environment.html#_macos for setting up the Vulkan SDK on macOS.
 
 ### Building from command line
 The following commands will create a build directory, generate the build system files, and build all targets with 8 parallel jobs.
