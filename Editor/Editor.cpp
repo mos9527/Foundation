@@ -122,7 +122,8 @@ static void FRunning()
         GDoc.selectedInstance = (id == ~0u) ? -1 : static_cast<int>(id);
         sPendingPickPixel = {-1, -1};
     }
-    GShaderGlobals.ptAccumulatedFrames++;
+    if (!GRenderWF.renderPaused)
+        GShaderGlobals.ptAccumulatedFrames++;
 }
 
 /* ==================== Event Processing ==================== */

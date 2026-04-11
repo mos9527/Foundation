@@ -111,6 +111,7 @@ void EditorDockSpaceAndMenuBar()
             if (ImGui::Button("Start Render"))
             {
                 GRenderWF.targetSamples = GRenderWF.samplePopupInput;
+                GRenderWF.renderPaused = false;
                 GShaderGlobals.ptAccumulatedFrames = 0;
                 FEState = FERendering;
                 ImGui::CloseCurrentPopup();
@@ -123,10 +124,8 @@ void EditorDockSpaceAndMenuBar()
 
         // Right-aligned PT / Raster toggle
         if (!GDoc.instances.empty()) {
-            const char* labelPT = " PT ";
-            const char* labelRaster = "RSTR";
-            float btnW_PT = ImGui::CalcTextSize(labelPT).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-            float btnW_R  = ImGui::CalcTextSize(labelRaster).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+            float btnW_PT = ImGui::CalcTextSize("######").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+            float btnW_R  = ImGui::CalcTextSize("######").x + ImGui::GetStyle().FramePadding.x * 2.0f;
             float totalW  = btnW_PT + btnW_R;
             float avail   = ImGui::GetContentRegionAvail().x;
             if (avail > totalW)
@@ -137,9 +136,15 @@ void EditorDockSpaceAndMenuBar()
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
             else
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
-            if (ImGui::Button(labelPT))
+            const char* labelPTPause[] = {"  PT  ", "", "PAUSED", ""};
+            if (ImGui::Button(labelPTPause[GRenderWF.renderPaused ? (SDL_GetTicks() >> 9 & 3) : 0], ImVec2(btnW_PT, 0)))
             {
-                if (GRendererMode != ERendererMode::PathTracer) { GRendererMode = ERendererMode::PathTracer; FEState = FERunningEnter; }
+                if (GRendererMode != ERendererMode::PathTracer)
+                {
+                    GRendererMode = ERendererMode::PathTracer; FEState = FERunningEnter;
+                    GRenderWF.renderPaused = false;
+                }
+                else GRenderWF.renderPaused ^= 1;
             }
             ImGui::PopStyleColor();
 
@@ -149,7 +154,7 @@ void EditorDockSpaceAndMenuBar()
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
             else
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
-            if (ImGui::Button(labelRaster))
+            if (ImGui::Button("RASTER"))
             {
                 if (GRendererMode != ERendererMode::Raster) { GRendererMode = ERendererMode::Raster; FEState = FERunningEnter; }
             }

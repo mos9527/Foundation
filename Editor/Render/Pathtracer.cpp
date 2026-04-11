@@ -3,6 +3,7 @@
 #include <RenderUtils/PSFullscreen.hpp>
 #include "../ImGui.hpp"
 #include "../Paths.hpp"
+#include "Editor/EditorState.hpp"
 #include "Render.hpp"
 using namespace RenderUtils;
 
@@ -164,7 +165,8 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
             RHIExtent2D wh = r->GetSwapchainExtent();
             r->CmdSetPipeline(self, cmd);
             r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexturePool()->GetDescriptorSet());
-            cmd->TraceRays(wh.x, wh.y, 1);
+            if (!GRenderWF.renderPaused)
+                cmd->TraceRays(wh.x, wh.y, 1);
         });
 
     // Shared blit setup lambda — binds EPSBlitPT shader + all SRVs

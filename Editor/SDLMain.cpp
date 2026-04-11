@@ -59,8 +59,9 @@ int main(int argc, char** argv)
         Destruct(GLOBAL_ALLOC, app);
         return 0;
     }
-
-    CreateContext(SDL_CreateWindow("Foundation Editor", 1920, 1080, kSDLWindowFlagsVulkan),
+    SDL_Rect disp;
+    SDL_GetDisplayBounds(SDL_GetPrimaryDisplay(), &disp);
+    CreateContext(SDL_CreateWindow("Foundation Editor", disp.w / 2, disp.h / 2, kSDLWindowFlagsVulkan),
                   GLOBAL_ALLOC, RHIDevice::DeviceDesc{.id = static_cast<uint32_t>(gpuId)});
     ImGui_ImplFoundation_SetupContextWithDefaultStyles();
     ImGui_ImplFoundation_Init(GContext->device.Get(), GContext->window);

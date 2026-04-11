@@ -105,6 +105,7 @@ struct RenderWorkflow
     int           targetSamples     = 0;
     int           samplePopupInput  = 4096;
     bool          openRenderPopup   = false;
+    bool          renderPaused      = false;
     String        outputPath;
 };
 
