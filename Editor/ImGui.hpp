@@ -53,3 +53,4 @@ bool ImBitmaskOptionPicker(unsigned& value, const char* (&labels)[N], const unsi
 {
     return ImBitmaskOptionPicker(value, labels, masks, N, solo, columns);
 }
+bool ImHDRColorEdit(const char* label, float3& color, float& power, float maxScale = 100.0f);

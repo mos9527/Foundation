@@ -58,8 +58,8 @@ struct FLight
 {
     FTransform transform;
     FLightType type{FLightType::Directional};
-    float3 color;
-    float intensity;
+    float3 color{1,1,1};            // Normalized RGB color
+    float power{1.0f};              // Radiant power (type-dependent unit)
     float range{0.0f};              // 0 = infinite (directional default)
     float spotInnerConeAngle{0.0f}; // radians
     float spotOuterConeAngle{0.7853981f}; // radians, default ~45 deg

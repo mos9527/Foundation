@@ -1,7 +1,7 @@
 #include "EditorState.hpp"
 
 EditorDocument  GDoc;
-RenderWorkflow  GRenderWF;
+RenderWorkflow  GRenderImageTask;
 GizmoState      GGizmo;
 RendererConfig  GRendererConfig;
 ERendererMode   GRendererMode = ERendererMode::PathTracer;

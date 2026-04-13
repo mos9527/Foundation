@@ -55,9 +55,26 @@ struct GSMaterial
     float ior;
     float anisotropy;
 };
+struct GSLight
+{
+    uint32_t type{0u};       // 0=Directional, 1=Point, 2=Spot, 3=Disk, 4=Rect
+    float3 color{1,1,1};    // Normalized RGB color
+    float power{1.0f};      // Radiant power (type-dependent unit)
+    float3 position{0,0,0};
+    float3 direction{0,0,-1};
+    float range{0.0f};
+    float spotInnerCosAngle{1.0f};
+    float spotOuterCosAngle{0.7071f};
+    // Area lights (Disk / Rect)
+    float3 dpdu{1,0,0};     // tangent u-axis (Rect: half-extent u)
+    float3 dpdv{0,1,0};     // tangent v-axis (Rect: half-extent v)
+    float radius{0.5f};     // Disk radius
+    uint32_t twoSided{0u};
+};
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 52);
+static_assert(sizeof(GSLight) == 88);
 
 template <typename T>
 struct UploadGPURingBuffer

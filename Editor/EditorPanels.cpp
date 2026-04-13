@@ -1,8 +1,8 @@
-#include "EditorState.hpp"
 #include <ImGuiFileDialog.h>
-#include <imgui_internal.h>
 #include <Math/Decompose.hpp>
 #include <RenderCore/ImmediateContext.hpp>
+#include <imgui_internal.h>
+#include "EditorState.hpp"
 
 /* ==================== DockSpace + Menu Bar ==================== */
 void EditorDockSpaceAndMenuBar()
@@ -47,20 +47,18 @@ void EditorDockSpaceAndMenuBar()
             {
                 IGFD::FileDialogConfig config;
                 config.path = ".";
-                ImGuiFileDialog::Instance()->OpenDialog(
-                    "OpenSceneDlg", "Open Scene", ".gltf,.glb,.fscn", config);
+                ImGuiFileDialog::Instance()->OpenDialog("OpenSceneDlg", "Open Scene", ".gltf,.glb,.fscn", config);
             }
             if (ImGui::MenuItem("Open HDR..."))
             {
                 IGFD::FileDialogConfig config;
                 config.path = ".";
-                ImGuiFileDialog::Instance()->OpenDialog(
-                    "OpenHDRDlg", "Open HDR Environment Map", ".hdr,.hdri", config);
+                ImGuiFileDialog::Instance()->OpenDialog("OpenHDRDlg", "Open HDR Environment Map", ".hdr,.hdri", config);
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Save", "Ctrl+S"))
             {
-            if (!GDoc.currentSavePath.empty())
+                if (!GDoc.currentSavePath.empty())
                     SaveScene(GDoc.currentSavePath);
             }
             if (ImGui::MenuItem("Save As..."))
@@ -68,8 +66,7 @@ void EditorDockSpaceAndMenuBar()
                 IGFD::FileDialogConfig config;
                 config.path = ".";
                 config.flags = ImGuiFileDialogFlags_ConfirmOverwrite;
-                ImGuiFileDialog::Instance()->OpenDialog(
-                    "SaveAsDlg", "Save Scene As", ".fscn", config);
+                ImGuiFileDialog::Instance()->OpenDialog("SaveAsDlg", "Save Scene As", ".fscn", config);
             }
             ImGui::Separator();
             if (GRendererMode == ERendererMode::PathTracer && !GDoc.instances.empty())
@@ -79,30 +76,30 @@ void EditorDockSpaceAndMenuBar()
                     IGFD::FileDialogConfig config;
                     config.path = ".";
                     config.flags = ImGuiFileDialogFlags_ConfirmOverwrite;
-                    ImGuiFileDialog::Instance()->OpenDialog(
-                        "RenderHDRDlg", "Save Render Output", ".hdr", config);
+                    ImGuiFileDialog::Instance()->OpenDialog("RenderHDRDlg", "Save Render Output", ".hdr", config);
                 }
             }
             ImGui::EndMenu();
         }
 
         // Render Settings modal popup (opened after file dialog)
-        if (GRenderWF.openRenderPopup)
+        if (GRenderImageTask.openRenderPopup)
         {
             ImGui::OpenPopup("Render Settings");
-            GRenderWF.openRenderPopup = false;
+            GRenderImageTask.openRenderPopup = false;
         }
         if (ImGui::BeginPopupModal("Render Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::Text("Configure HDR render:");
-            ImGui::Text("Output: %s", GRenderWF.outputPath.c_str());
+            ImGui::Text("Output: %s", GRenderImageTask.outputPath.c_str());
             ImGui::Separator();
-            ImGui::InputInt("Samples (frames)", &GRenderWF.samplePopupInput);
-            if (GRenderWF.samplePopupInput < 1) GRenderWF.samplePopupInput = 1;
+            ImGui::InputInt("Samples (frames)", &GRenderImageTask.samplePopupInput);
+            if (GRenderImageTask.samplePopupInput < 1)
+                GRenderImageTask.samplePopupInput = 1;
             if (ImGui::Button("Start Render"))
             {
-                GRenderWF.targetSamples = GRenderWF.samplePopupInput;
-                GRenderWF.renderPaused = false;
+                GRenderImageTask.targetSamples = GRenderImageTask.samplePopupInput;
+                GRenderImageTask.renderPaused = false;
                 GShaderGlobals.ptAccumulatedFrames = 0;
                 FEState = FERendering;
                 ImGui::CloseCurrentPopup();
@@ -114,11 +111,12 @@ void EditorDockSpaceAndMenuBar()
         }
 
         // Right-aligned PT / Raster toggle
-        if (!GDoc.instances.empty()) {
+        if (!GDoc.instances.empty())
+        {
             float btnW_PT = ImGui::CalcTextSize("######").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-            float btnW_R  = ImGui::CalcTextSize("######").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-            float totalW  = btnW_PT + btnW_R;
-            float avail   = ImGui::GetContentRegionAvail().x;
+            float btnW_R = ImGui::CalcTextSize("######").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+            float totalW = btnW_PT + btnW_R;
+            float avail = ImGui::GetContentRegionAvail().x;
             if (avail > totalW)
                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - totalW);
 
@@ -128,14 +126,17 @@ void EditorDockSpaceAndMenuBar()
             else
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
             const char* labelPTPause[] = {"  PT  ", "", "PAUSED", ""};
-            if (ImGui::Button(labelPTPause[GRenderWF.renderPaused ? (SDL_GetTicks() >> 9 & 3) : 0], ImVec2(btnW_PT, 0)))
+            if (ImGui::Button(labelPTPause[GRenderImageTask.renderPaused ? (SDL_GetTicks() >> 9 & 3) : 0],
+                              ImVec2(btnW_PT, 0)))
             {
                 if (GRendererMode != ERendererMode::PathTracer)
                 {
-                    GRendererMode = ERendererMode::PathTracer; FEState = FERunningEnter;
-                    GRenderWF.renderPaused = false;
+                    GRendererMode = ERendererMode::PathTracer;
+                    FEState = FERunningEnter;
+                    GRenderImageTask.renderPaused = false;
                 }
-                else GRenderWF.renderPaused ^= 1;
+                else
+                    GRenderImageTask.renderPaused ^= 1;
             }
             ImGui::PopStyleColor();
 
@@ -147,7 +148,11 @@ void EditorDockSpaceAndMenuBar()
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
             if (ImGui::Button("RASTER"))
             {
-                if (GRendererMode != ERendererMode::Raster) { GRendererMode = ERendererMode::Raster; FEState = FERunningEnter; }
+                if (GRendererMode != ERendererMode::Raster)
+                {
+                    GRendererMode = ERendererMode::Raster;
+                    FEState = FERunningEnter;
+                }
             }
             ImGui::PopStyleColor();
             ImGui::PopStyleVar();
@@ -165,7 +170,7 @@ void EditorDockSpaceAndMenuBar()
         if (ImGuiFileDialog::Instance()->IsOk())
         {
             std::string filePath = ImGuiFileDialog::Instance()->GetFilePathName();
-            ReplaceScene(filePath.c_str());
+            ReplaceScene(filePath);
         }
         ImGuiFileDialog::Instance()->Close();
     }
@@ -175,7 +180,7 @@ void EditorDockSpaceAndMenuBar()
         if (ImGuiFileDialog::Instance()->IsOk())
         {
             std::string filePath = ImGuiFileDialog::Instance()->GetFilePathName();
-            LoadEnvMap(filePath.c_str());
+            LoadEnvMap(filePath);
         }
         ImGuiFileDialog::Instance()->Close();
     }
@@ -185,7 +190,7 @@ void EditorDockSpaceAndMenuBar()
         if (ImGuiFileDialog::Instance()->IsOk())
         {
             std::string filePath = ImGuiFileDialog::Instance()->GetFilePathName();
-            SaveScene(filePath.c_str());
+            SaveScene(filePath);
         }
         ImGuiFileDialog::Instance()->Close();
     }
@@ -194,9 +199,9 @@ void EditorDockSpaceAndMenuBar()
     {
         if (ImGuiFileDialog::Instance()->IsOk())
         {
-            GRenderWF.outputPath = ImGuiFileDialog::Instance()->GetFilePathName();
-            GRenderWF.format = ERenderFormat::HDR;
-            GRenderWF.openRenderPopup = true;
+            GRenderImageTask.outputPath = ImGuiFileDialog::Instance()->GetFilePathName();
+            GRenderImageTask.format = ERenderFormat::HDR;
+            GRenderImageTask.openRenderPopup = true;
         }
         ImGuiFileDialog::Instance()->Close();
     }
@@ -222,8 +227,8 @@ void FHierarchyPanel()
             {
                 auto& inst = GDoc.instances[i];
                 char label[128];
-                snprintf(label, sizeof(label), "Instance %zu -- Mesh %u, Mat %u",
-                         i, inst.meshIndex, inst.materialIndex);
+                snprintf(label, sizeof(label), "Instance %zu -- Mesh %u, Mat %u", i, inst.meshIndex,
+                         inst.materialIndex);
                 bool selected = (GDoc.selectedInstance == static_cast<int>(i));
                 if (ImGui::Selectable(label, selected))
                     GDoc.selectedInstance = static_cast<int>(i);
@@ -245,7 +250,7 @@ void FHierarchyPanel()
             bool changed = false;
             changed |= ImGui::DragFloat3("Position", &pi.transform.transform.x, 0.01f);
             changed |= ImGui::DragFloat4("Rotation", &pi.transform.rotation.x, 0.001f);
-            changed |= ImGui::DragFloat3("Scale",    &pi.transform.scale.x, 0.01f);
+            changed |= ImGui::DragFloat3("Scale", &pi.transform.scale.x, 0.01f);
 
             // -- Gizmo controls --
             ImGui::Separator();
@@ -267,27 +272,26 @@ void FHierarchyPanel()
             }
 
             // Build model matrix (TRS -> mat4)
-            mat4 modelMatrix = translate(mat4(1.0f), vec3(pi.transform.transform))
-                             * mat4_cast(pi.transform.rotation)
-                             * glm::scale(mat4(1.0f), vec3(pi.transform.scale));
+            mat4 modelMatrix = translate(mat4(1.0f), vec3(pi.transform.transform)) * mat4_cast(pi.transform.rotation) *
+                glm::scale(mat4(1.0f), vec3(pi.transform.scale));
 
             // ImGuizmo rendering
             ImGuizmo::BeginFrame();
             ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
             auto& io = ImGui::GetIO();
-            ImGuizmo::SetRect(0,0,io.DisplaySize.x, io.DisplaySize.y);
+            ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
             // Note: ImGuizmo uses column-major float[16], matching GLM mat4 memory layout
-            if (ImGuizmo::Manipulate(&GCamera.view[0][0], &GCamera.proj[0][0],
-                                     GGizmo.op, GGizmo.mode, &modelMatrix[0][0]))
+            if (ImGuizmo::Manipulate(&GCamera.view[0][0], &GCamera.proj[0][0], GGizmo.op, GGizmo.mode,
+                                     &modelMatrix[0][0]))
             {
                 // Decompose back to TRS
                 float3 newTranslation;
                 quat newRotation;
                 float3 newScale;
-                Foundation::Math::decompose(modelMatrix, newScale, newRotation, newTranslation);
+                Math::decompose(modelMatrix, newScale, newRotation, newTranslation);
                 pi.transform.transform = newTranslation;
-                pi.transform.rotation  = newRotation;
-                pi.transform.scale     = newScale;
+                pi.transform.rotation = newRotation;
+                pi.transform.scale = newScale;
                 changed = true;
             }
             if (changed)
@@ -295,8 +299,8 @@ void FHierarchyPanel()
                 // Sync CPU scene to GPU-side data
                 auto& inst = GDoc.instances[GDoc.selectedInstance];
                 inst.transform = pi.transform.transform;
-                inst.rotation  = pi.transform.rotation;
-                inst.scale     = pi.transform.scale;
+                inst.rotation = pi.transform.rotation;
+                inst.scale = pi.transform.scale;
                 // Re-upload instance array to GPU
                 auto* gpu = GContext->gpuScene;
                 auto res = gpu->UpdateGPUScene(GDoc.instances, GDoc.materials);
@@ -319,30 +323,6 @@ void FHierarchyPanel()
     ImGui::PopStyleColor();
 }
 
-/* ==================== HDR Color Edit Helper ==================== */
-bool ImHDRColorEdit(const char* label, float4& value, float maxScale)
-{
-    bool changed = false;
-    ImGui::PushID(label);
-
-    // Decompose: extract max component as intensity, normalize the rest
-    float3 rgb{value.x, value.y, value.z};
-    float  scale = std::max({rgb.x, rgb.y, rgb.z});
-    float3 color = scale > 0.0f ? rgb / scale : float3(1.0f);
-
-    changed |= ImGui::ColorEdit3(label, &color.x, ImGuiColorEditFlags_Float);
-    // Build a "<label> Intensity" string for the slider
-    char sliderLabel[128];
-    snprintf(sliderLabel, sizeof(sliderLabel), "%s Intensity", label);
-    changed |= ImGui::SliderFloat(sliderLabel, &scale, 0.0f, maxScale, "%.3f", ImGuiSliderFlags_Logarithmic);
-
-    if (changed)
-        value = float4(color * scale, value.w);
-
-    ImGui::PopID();
-    return changed;
-}
-
 /* ==================== Lighting Panel ==================== */
 void FLightingPanel()
 {
@@ -357,14 +337,14 @@ void FLightingPanel()
         if (ImGui::CollapsingHeader("Scene Lights", ImGuiTreeNodeFlags_DefaultOpen))
         {
             // Add light button
-        if (GDoc.scene.mLights.size() < kMaxSceneLights)
+            if (GDoc.scene.mLights.size() < kMaxSceneLights)
             {
                 if (ImGui::Button("+ Add Light"))
                 {
                     FLight newLight{};
                     newLight.type = FLightType::Directional;
                     newLight.color = {1, 1, 1};
-                    newLight.intensity = 1.0f;
+                    newLight.power = 1.0f;
                     newLight.transform.rotation = quat(1, 0, 0, 0);
                     newLight.transform.scale = {1, 1, 1};
                     GDoc.scene.mLights.emplace_back(newLight);
@@ -372,9 +352,7 @@ void FLightingPanel()
                 }
             }
             else
-            {
                 ImGui::TextDisabled("Max %u lights reached", kMaxSceneLights);
-            }
 
             int removeIndex = -1;
             for (int i = 0; i < static_cast<int>(GDoc.scene.mLights.size()); i++)
@@ -396,15 +374,12 @@ void FLightingPanel()
                         lightChanged = true;
                     }
 
-                    // Color + Intensity
-                    lightChanged |= ImGui::ColorEdit3("Color", &light.color.x, ImGuiColorEditFlags_Float);
-                    lightChanged |= ImGui::SliderFloat("Intensity", &light.intensity, 0.0f, 100.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+                    // Color + Power
+                    lightChanged |= ImHDRColorEdit("Color", light.color, light.power);
 
                     // Direction (Euler angles) for lights with orientation
-                    bool hasDirection = (light.type == FLightType::Directional ||
-                                         light.type == FLightType::Spot ||
-                                         light.type == FLightType::Disk ||
-                                         light.type == FLightType::Rect);
+                    bool hasDirection = (light.type == FLightType::Directional || light.type == FLightType::Spot ||
+                                         light.type == FLightType::Disk || light.type == FLightType::Rect);
                     if (hasDirection)
                     {
                         // Decompose quaternion → Euler yaw/pitch (YXZ intrinsic order).
@@ -412,15 +387,19 @@ void FLightingPanel()
                         // rotation = rotateY(yaw) * rotateX(pitch)
                         // Extract pitch and yaw directly from the quaternion to avoid
                         // direction-vector round-trip instabilities at the poles.
-                        float sinP = 2.0f * (light.transform.rotation.w * light.transform.rotation.x
-                                            - light.transform.rotation.y * light.transform.rotation.z);
+                        float sinP = 2.0f *
+                            (light.transform.rotation.w * light.transform.rotation.x -
+                             light.transform.rotation.y * light.transform.rotation.z);
                         sinP = std::clamp(sinP, -1.0f, 1.0f);
                         float pitch = degrees(std::asin(sinP));
 
-                        float sinY = 2.0f * (light.transform.rotation.w * light.transform.rotation.y
-                                            + light.transform.rotation.x * light.transform.rotation.z);
-                        float cosY = 1.0f - 2.0f * (light.transform.rotation.x * light.transform.rotation.x
-                                                    + light.transform.rotation.y * light.transform.rotation.y);
+                        float sinY = 2.0f *
+                            (light.transform.rotation.w * light.transform.rotation.y +
+                             light.transform.rotation.x * light.transform.rotation.z);
+                        float cosY = 1.0f -
+                            2.0f *
+                                (light.transform.rotation.x * light.transform.rotation.x +
+                                 light.transform.rotation.y * light.transform.rotation.y);
                         float yaw = degrees(std::atan2(sinY, cosY));
 
                         bool dirChanged = false;
@@ -429,7 +408,7 @@ void FLightingPanel()
                         if (dirChanged)
                         {
                             // Reconstruct quaternion directly: rotateY(yaw) * rotateX(pitch)
-                            quat yawQ   = angleAxis(radians(yaw),   vec3(0, 1, 0));
+                            quat yawQ = angleAxis(radians(yaw), vec3(0, 1, 0));
                             quat pitchQ = angleAxis(radians(pitch), vec3(1, 0, 0));
                             light.transform.rotation = normalize(yawQ * pitchQ);
                             lightChanged = true;
@@ -437,10 +416,8 @@ void FLightingPanel()
                     }
 
                     // Position for positional lights
-                    bool hasPosition = (light.type == FLightType::Point ||
-                                        light.type == FLightType::Spot ||
-                                        light.type == FLightType::Disk ||
-                                        light.type == FLightType::Rect);
+                    bool hasPosition = (light.type == FLightType::Point || light.type == FLightType::Spot ||
+                                        light.type == FLightType::Disk || light.type == FLightType::Rect);
                     if (hasPosition)
                     {
                         lightChanged |= ImGui::DragFloat3("Position", &light.transform.transform.x, 0.1f);
@@ -508,12 +485,12 @@ void FLightingPanel()
         // ---- Ambient / Environment ----
         if (ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            anyChanged |= ImHDRColorEdit("Ambient", GShaderGlobals.ambientColor);
+            anyChanged |= ImHDRColorEdit("Ambient", GShaderGlobals.ambientColor, GShaderGlobals.ambientPower);
         }
 
         if (anyChanged)
         {
-            SyncSceneLightsToUBO();
+            UpdateSceneLights();
             GShaderGlobals.ptAccumulatedFrames = 0;
         }
     }
@@ -536,8 +513,10 @@ void FRunningImGui()
         cameraUpdated |= ImGui::SliderFloat3("Cam Center", &GCamera.center.x, -50.0f, 50.0f);
         cameraUpdated |= ImGui::SliderFloat("Cam Radius", &GCamera.radius, 0.0f, 100.0f);
         cameraUpdated |= ImGui::SliderAngle("Cam FOV Y", &GCamera.fovY);
-        cameraUpdated |= ImGui::SliderFloat("Aperture", &GShaderGlobals.aperture, 1e-5f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic);
-        cameraUpdated |= ImGui::SliderFloat("Focal Distance", &GShaderGlobals.focalDistance, 0.1f, 1000.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+        cameraUpdated |=
+            ImGui::SliderFloat("Aperture", &GShaderGlobals.aperture, 1e-5f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic);
+        cameraUpdated |= ImGui::SliderFloat("Focal Distance", &GShaderGlobals.focalDistance, 0.1f, 1000.0f, "%.3f",
+                                            ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("Exposure (EV)", &GShaderGlobals.camEV, -16.0f, 16.0f);
         ImGui::Separator();
         ImGui::SliderFloat("WASD Speed", &GCamera.moveSpeed, 0.1f, 50.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
@@ -600,7 +579,8 @@ void FRunningImGui()
             if (hasEnv)
             {
                 bool envChanged = false;
-                envChanged |= ImGui::SliderFloat("Env Scale", &GShaderGlobals.envMapScale, 0.0f, 10.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+                envChanged |= ImGui::SliderFloat("Env Scale", &GShaderGlobals.envMapScale, 0.0f, 10.0f, "%.3f",
+                                                 ImGuiSliderFlags_Logarithmic);
                 bool envEnabled = GShaderGlobals.useEnvMap != 0u;
                 if (ImGui::Checkbox("Enable Env Map", &envEnabled))
                 {
@@ -686,9 +666,8 @@ void FRunningImGui()
                             .startTick = timings[i * 2],
                             .endTick = timings[i * 2 + 1],
                             .label = pass.name,
-                            .color = pass.queue == RHIDeviceQueueType::Graphics
-                            ? ImColor(1.0f, 0.5f, 0.0f, 1.0f)
-                            : ImColor(0.0f, 0.5f, 0.0f, 1.0f),
+                            .color = pass.queue == RHIDeviceQueueType::Graphics ? ImColor(1.0f, 0.5f, 0.0f, 1.0f)
+                                                                                : ImColor(0.0f, 0.5f, 0.0f, 1.0f),
                         };
                         samples.emplace_back(std::move(sample));
                         while (histograms.size() <= i)
@@ -756,63 +735,61 @@ void DoHDRReadback(PTReadbackHandles const& handles)
     const size_t pixelCount = static_cast<size_t>(w) * h;
     const size_t imageBytes = pixelCount * 4 * sizeof(float); // RGBA32F
 
-    auto* diffuseTex  = renderer->DerefResource(handles.diffuse).Get<RHITexture*>();
+    auto* diffuseTex = renderer->DerefResource(handles.diffuse).Get<RHITexture*>();
     auto* specularTex = renderer->DerefResource(handles.specular).Get<RHITexture*>();
 
-    auto readbackBuf = GContext->device->CreateBuffer({
-        .resource = {.heap = RHIDeviceHeapType::Readback,
-                     .hostAccess = RHIResourceHostAccess::ReadWrite,
-                     .coherent = true},
-        .usage = RHIBufferUsageBits::TransferDestination,
-        .size = imageBytes * 2});
+    auto readbackBuf = GContext->device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Readback,
+                                                                    .hostAccess = RHIResourceHostAccess::ReadWrite,
+                                                                    .coherent = true},
+                                                       .usage = RHIBufferUsageBits::TransferDestination,
+                                                       .size = imageBytes * 2});
 
     {
         ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
         auto* cmd = ctx.Get();
         cmd->Begin();
         cmd->BeginTransition();
-        cmd->SetImageTransition(diffuseTex, {
-            .srcAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
-            .dstAccess = RHIResourceAccessBits::TransferRead,
-            .srcStage = RHIPipelineStageBits::BottomOfPipe,
-            .dstStage = RHIPipelineStageBits::Transfer,
-            .srcImgLayout = RHITextureLayout::General,
-            .dstImgLayout = RHITextureLayout::TransferSrc,
-            .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
-        cmd->SetImageTransition(specularTex, {
-            .srcAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
-            .dstAccess = RHIResourceAccessBits::TransferRead,
-            .srcStage = RHIPipelineStageBits::BottomOfPipe,
-            .dstStage = RHIPipelineStageBits::Transfer,
-            .srcImgLayout = RHITextureLayout::General,
-            .dstImgLayout = RHITextureLayout::TransferSrc,
-            .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        cmd->SetImageTransition(diffuseTex,
+                                {.srcAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
+                                 .dstAccess = RHIResourceAccessBits::TransferRead,
+                                 .srcStage = RHIPipelineStageBits::BottomOfPipe,
+                                 .dstStage = RHIPipelineStageBits::Transfer,
+                                 .srcImgLayout = RHITextureLayout::General,
+                                 .dstImgLayout = RHITextureLayout::TransferSrc,
+                                 .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        cmd->SetImageTransition(specularTex,
+                                {.srcAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
+                                 .dstAccess = RHIResourceAccessBits::TransferRead,
+                                 .srcStage = RHIPipelineStageBits::BottomOfPipe,
+                                 .dstStage = RHIPipelineStageBits::Transfer,
+                                 .srcImgLayout = RHITextureLayout::General,
+                                 .dstImgLayout = RHITextureLayout::TransferSrc,
+                                 .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
         cmd->EndTransition();
-        cmd->CopyImageToBuffer(diffuseTex, RHITextureLayout::TransferSrc, readbackBuf.Get(),
-            {{{.dstBufferOffset = 0,
-               .srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
-               .extent = {w, h, 1}}}});
+        cmd->CopyImageToBuffer(
+            diffuseTex, RHITextureLayout::TransferSrc, readbackBuf.Get(),
+            {{{.dstBufferOffset = 0, .srcLayer = {.aspect = RHITextureAspectFlagBits::Color}, .extent = {w, h, 1}}}});
         cmd->CopyImageToBuffer(specularTex, RHITextureLayout::TransferSrc, readbackBuf.Get(),
-            {{{.dstBufferOffset = static_cast<uint32_t>(imageBytes),
-               .srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
-               .extent = {w, h, 1}}}});
+                               {{{.dstBufferOffset = static_cast<uint32_t>(imageBytes),
+                                  .srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
+                                  .extent = {w, h, 1}}}});
         cmd->BeginTransition();
-        cmd->SetImageTransition(diffuseTex, {
-            .srcAccess = RHIResourceAccessBits::TransferRead,
-            .dstAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
-            .srcStage = RHIPipelineStageBits::Transfer,
-            .dstStage = RHIPipelineStageBits::TopOfPipe,
-            .srcImgLayout = RHITextureLayout::TransferSrc,
-            .dstImgLayout = RHITextureLayout::General,
-            .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
-        cmd->SetImageTransition(specularTex, {
-            .srcAccess = RHIResourceAccessBits::TransferRead,
-            .dstAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
-            .srcStage = RHIPipelineStageBits::Transfer,
-            .dstStage = RHIPipelineStageBits::TopOfPipe,
-            .srcImgLayout = RHITextureLayout::TransferSrc,
-            .dstImgLayout = RHITextureLayout::General,
-            .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        cmd->SetImageTransition(diffuseTex,
+                                {.srcAccess = RHIResourceAccessBits::TransferRead,
+                                 .dstAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
+                                 .srcStage = RHIPipelineStageBits::Transfer,
+                                 .dstStage = RHIPipelineStageBits::TopOfPipe,
+                                 .srcImgLayout = RHITextureLayout::TransferSrc,
+                                 .dstImgLayout = RHITextureLayout::General,
+                                 .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        cmd->SetImageTransition(specularTex,
+                                {.srcAccess = RHIResourceAccessBits::TransferRead,
+                                 .dstAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
+                                 .srcStage = RHIPipelineStageBits::Transfer,
+                                 .dstStage = RHIPipelineStageBits::TopOfPipe,
+                                 .srcImgLayout = RHITextureLayout::TransferSrc,
+                                 .dstImgLayout = RHITextureLayout::General,
+                                 .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
         cmd->EndTransition();
         cmd->End();
         ctx.Submit();
@@ -820,7 +797,7 @@ void DoHDRReadback(PTReadbackHandles const& handles)
     }
 
     auto* mapped = readbackBuf->Map<float>();
-    const float* diffuseData  = mapped;
+    const float* diffuseData = mapped;
     const float* specularData = mapped + pixelCount * 4;
     Vector<float> combined(pixelCount * 4, GLOBAL_ALLOC);
     for (size_t i = 0; i < pixelCount; ++i)
@@ -832,10 +809,11 @@ void DoHDRReadback(PTReadbackHandles const& handles)
     }
     readbackBuf->Unmap();
 
-    const char* hdrPath = GRenderWF.outputPath.empty() ? "render_output.hdr" : GRenderWF.outputPath.c_str();
+    const char* hdrPath =
+        GRenderImageTask.outputPath.empty() ? "render_output.hdr" : GRenderImageTask.outputPath.c_str();
     SaveHDR(combined.data(), static_cast<int>(w), static_cast<int>(h), hdrPath);
-    LOG(Editor, LogInfo, "HDR image saved to {} ({}x{}, {} samples)",
-        hdrPath, w, h, GShaderGlobals.ptAccumulatedFrames);
+    LOG(Editor, LogInfo, "HDR image saved to {} ({}x{}, {} samples)", hdrPath, w, h,
+        GShaderGlobals.ptAccumulatedFrames);
 }
 
 /* ==================== FRendering (offline render loop) ==================== */
@@ -858,15 +836,14 @@ void FRendering(PTReadbackHandles const& handles)
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 4));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(0, 0));
         ImGui::Begin("##RenderProgressBar", nullptr,
-            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
-            ImGuiWindowFlags_AlwaysAutoResize);
-        float fraction = GRenderWF.targetSamples > 0
-            ? static_cast<float>(GShaderGlobals.ptAccumulatedFrames) / static_cast<float>(GRenderWF.targetSamples)
-            : 0.0f;
+                     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                         ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize);
+        float fraction = GRenderImageTask.targetSamples > 0 ? static_cast<float>(GShaderGlobals.ptAccumulatedFrames) /
+                static_cast<float>(GRenderImageTask.targetSamples)
+                                                            : 0.0f;
         char overlay[128];
-        snprintf(overlay, sizeof(overlay), "%d / %d samples",
-                 GShaderGlobals.ptAccumulatedFrames, GRenderWF.targetSamples);
+        snprintf(overlay, sizeof(overlay), "%d / %d samples", GShaderGlobals.ptAccumulatedFrames,
+                 GRenderImageTask.targetSamples);
         ImGui::ProgressBar(fraction, ImVec2(barW, barH), overlay);
         ImGui::End();
         ImGui::PopStyleVar(2);
@@ -884,9 +861,8 @@ void FRendering(PTReadbackHandles const& handles)
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(0, 0));
         ImGui::Begin("##RenderCancel", nullptr,
-            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
-            ImGuiWindowFlags_AlwaysAutoResize);
+                     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                         ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize);
         cancelRendering = ImGui::Button(cancelLabel, ImVec2(btnW, btnH));
         ImGui::End();
         ImGui::PopStyleVar(2);
@@ -900,7 +876,7 @@ void FRendering(PTReadbackHandles const& handles)
     {
         FEState = FERunning;
     }
-    else if (GShaderGlobals.ptAccumulatedFrames >= static_cast<uint32_t>(GRenderWF.targetSamples))
+    else if (GShaderGlobals.ptAccumulatedFrames >= static_cast<uint32_t>(GRenderImageTask.targetSamples))
     {
         if (handles.diffuse != kInvalidHandle && handles.specular != kInvalidHandle)
             DoHDRReadback(handles);

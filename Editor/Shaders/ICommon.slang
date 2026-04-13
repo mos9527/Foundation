@@ -128,10 +128,10 @@ public struct MeshletTaskWork
 public struct GSLight
 {
     public uint32_t type;       // 0=Directional, 1=Point, 2=Spot, 3=Disk, 4=Rect
-    public float3 color;
+    public float3 color;        // Normalized RGB color
+    public float power;         // Radiant power (type-dependent unit)
     public float3 position;
     public float3 direction;
-    public float intensity;
     public float range;
     public float spotInnerCosAngle;
     public float spotOuterCosAngle;
@@ -167,7 +167,8 @@ public struct UBO
     public float4 camPosition;
     public float4 camDirection;
     // Environment light
-    public float4 ambientColor;
+    public float3 ambientColor;
+    public float ambientPower;
     public uint32_t useEnvMap;
     public float envMapScale;
     // Scene lights (up to 8)

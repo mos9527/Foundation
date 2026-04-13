@@ -211,7 +211,8 @@ void ImProfilerDrawHistogram(Vector<unsigned>& bins, ImProfilerHistogram const& 
     }
     ImGui::Dummy({region.x, labelHeight + style.ItemSpacing.y});
 }
-bool ImBitmaskOptionPicker(unsigned& value, const char** labels, const unsigned* masks, unsigned count, bool solo, int columns)
+bool ImBitmaskOptionPicker(unsigned& value, const char** labels, const unsigned* masks, unsigned count, bool solo,
+                           int columns)
 {
     bool any = false;
     for (unsigned i = 0; i < count; i++)
@@ -239,4 +240,18 @@ bool ImBitmaskOptionPicker(unsigned& value, const char** labels, const unsigned*
             ImGui::SameLine();
     }
     return any;
+}
+bool ImHDRColorEdit(const char* label, float3& color, float& power, float maxScale)
+{
+    bool changed = false;
+    ImGui::PushID(label);
+
+    changed |= ImGui::ColorEdit3(label, &color.x, ImGuiColorEditFlags_Float);
+    // Build a "<label> Power" string for the slider
+    char sliderLabel[128];
+    snprintf(sliderLabel, sizeof(sliderLabel), "%s Power", label);
+    changed |= ImGui::SliderFloat(sliderLabel, &power, 0.0f, maxScale, "%.3f", ImGuiSliderFlags_Logarithmic);
+
+    ImGui::PopID();
+    return changed;
 }

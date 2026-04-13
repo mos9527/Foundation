@@ -1,9 +1,43 @@
 #include "EditorState.hpp"
+#include "Scene/Mesh.hpp"
 #include <RenderCore/ImmediateContext.hpp>
 #include <filesystem>
 
-// Sync FScene lights → UBO GSLight array
-void SyncSceneLightsToUBO()
+void FLightToGSLight(FLight const& src, GSLight& dst)
+{
+    dst.type = static_cast<uint32_t>(src.type);
+    dst.color = src.color;
+    dst.power = src.power;
+    dst.range = src.range;
+    // Position from transform
+    dst.position = src.transform.transform;
+    // Direction from rotation (default forward is (0,0,-1))
+    dst.direction = normalize(src.transform.rotation * float3(0, 0, -1));
+    dst.spotInnerCosAngle = std::cos(src.spotInnerConeAngle);
+    dst.spotOuterCosAngle = std::cos(src.spotOuterConeAngle);
+    // Area light fields
+    dst.radius = src.radius;
+    dst.twoSided = src.twoSided ? 1u : 0u;
+    // Build tangent frame from direction for area lights
+    if (src.type == FLightType::Disk || src.type == FLightType::Rect)
+    {
+        float3 n = dst.direction;
+        float3 u, v;
+        buildOrthonormalBasis(n, u, v);
+        if (src.type == FLightType::Disk)
+        {
+            dst.dpdu = u; // Unit tangent; radius is separate
+            dst.dpdv = v;
+        }
+        else // Rect
+        {
+            dst.dpdu = u * src.width;  // half-extent along u
+            dst.dpdv = v * src.height; // half-extent along v
+        }
+    }
+}
+
+void UpdateSceneLights()
 {
     uint32_t count = std::min(static_cast<uint32_t>(GDoc.scene.mLights.size()), kMaxSceneLights);
     GShaderGlobals.numSceneLights = count;
@@ -11,38 +45,7 @@ void SyncSceneLightsToUBO()
     {
         auto& src = GDoc.scene.mLights[i];
         auto& dst = GShaderGlobals.sceneLights[i];
-        dst.type = static_cast<uint32_t>(src.type);
-        dst.color = src.color;
-        dst.intensity = src.intensity;
-        dst.range = src.range;
-        // Position from transform
-        dst.position = src.transform.transform;
-        // Direction from rotation (default forward is (0,0,-1))
-        dst.direction = normalize(src.transform.rotation * float3(0, 0, -1));
-        dst.spotInnerCosAngle = std::cos(src.spotInnerConeAngle);
-        dst.spotOuterCosAngle = std::cos(src.spotOuterConeAngle);
-        // Area light fields
-        dst.radius = src.radius;
-        dst.twoSided = src.twoSided ? 1u : 0u;
-        // Build tangent frame from direction for area lights
-        if (src.type == FLightType::Disk || src.type == FLightType::Rect)
-        {
-            float3 dir = dst.direction;
-            // Build orthonormal basis from direction
-            float3 up = std::abs(dir.y) < 0.999f ? float3(0, 1, 0) : float3(1, 0, 0);
-            float3 u = normalize(cross(up, dir));
-            float3 v = cross(dir, u);
-            if (src.type == FLightType::Disk)
-            {
-                dst.dpdu = u; // Unit tangent; radius is separate
-                dst.dpdv = v;
-            }
-            else // Rect
-            {
-                dst.dpdu = u * src.width;  // half-extent along u
-                dst.dpdv = v * src.height; // half-extent along v
-            }
-        }
+        FLightToGSLight(src, dst);
     }
     // Zero out unused slots
     for (uint32_t i = count; i < kMaxSceneLights; i++)
@@ -195,7 +198,7 @@ void ReplaceScene(StringView path)
             GCamera.rot = camera.transform.rotation;
             GCamera.fovY = camera.fovY;
         }
-        SyncSceneLightsToUBO();
+        UpdateSceneLights();
     }
 
     LOG(Editor, LogInfo, "Scene load complete: {} meshes, {} instances, {} materials",

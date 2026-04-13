@@ -154,36 +154,7 @@ Payload SamplePayload(HitPayload payload, RayDesc ray)
     res.transmission = material.transmissionFactor;
     return res;
 }
-// The safeOffsetRay function shifts a point on a surface so that a ray
-// bouncing off the surface is no longer treated as intersecting the surface
-// from which it originated when tMin = 0.0.
-//
-// This uses the technique by Carsten Wächter and Nikolaus Binder
-// from "A Fast and Robust Method for Avoiding Self-Intersection" in Ray
-// Tracing Gems (2019).
-// The offset direction is typically the surface normal or its negation,
-// depending on whether the ray exits or enters the surface.
-float3 OffsetRay(float3 worldPosition, float3 offsetDirection)
-{
-    // Convert the offset direction to an integer offset.
-    const float scaleValue = 256.0f;
-    const int3 scaleInt = int3(scaleValue * offsetDirection);
 
-    // Offset each component of worldPosition using its binary representation.
-    // Handle the sign bits correctly.
-    const float3 offsetPosition = float3(
-        asfloat(asint(worldPosition.x) + ((worldPosition.x < 0) ? -scaleInt.x : scaleInt.x)),
-        asfloat(asint(worldPosition.y) + ((worldPosition.y < 0) ? -scaleInt.y : scaleInt.y)),
-        asfloat(asint(worldPosition.z) + ((worldPosition.z < 0) ? -scaleInt.z : scaleInt.z)));
-
-    // Use a floating-point offset instead for points near (0,0,0), the origin.
-    const float origin = 1.0f / 32.0f;
-    const float floatScale = 1.0f / 65536.0f;
-    return float3(
-        abs(worldPosition.x) < origin ? worldPosition.x + floatScale * offsetDirection.x : offsetPosition.x,
-        abs(worldPosition.y) < origin ? worldPosition.y + floatScale * offsetDirection.y : offsetPosition.y,
-        abs(worldPosition.z) < origin ? worldPosition.z + floatScale * offsetDirection.z : offsetPosition.z);
-}
 void AddRadiance(inout float3 L, float3 v)
 {
     if (any(isnan(v)) || any(isinf(v)))
@@ -220,13 +191,13 @@ HitObject TraceHitObject(RayDesc ray)
 
 // -- Light Sampling
 
-bool TraceShadowRay(float3 origin, float3 direction)
+bool TraceShadowRay(float3 origin, float3 direction, float tMax = INF)
 {
     RayDesc ray;
     ray.Origin = origin;
     ray.Direction = direction;
-    ray.TMin = 0.0f;
-    ray.TMax = INF;
+    ray.TMin = EPS_TMin;
+    ray.TMax = tMax;
     ShadowPayload payload;
     TraceRay(AS, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, 1, 1, 1, ray, payload);
     return payload.hit;
@@ -236,7 +207,7 @@ static const float kEnvLightSelectionWeight = 0.5f;
 
 float GetSceneLightSelectionWeight(GSLight gl)
 {
-    SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.intensity);
+    SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.power);
     if (!AnyLuminance(Lemit))
         return 0.0f;
     return dot(LUMINANCE_RGB, Lemit);
@@ -252,7 +223,7 @@ float ComputeSceneLightWeightSum()
 
 LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
 {
-    SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.intensity);
+    SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.power);
     switch (gl.type) {
     case 0: {
         DistantLight light = DistantLight(Lemit, gl.direction);
@@ -284,7 +255,7 @@ LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
 
 float SceneLightPDF_Li(GSLight gl, LightSampleContext ctx, float3 wi)
 {
-    SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.intensity);
+    SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.power);
     switch (gl.type) {
     case 0: {
         DistantLight light = DistantLight(Lemit, gl.direction);
@@ -354,7 +325,7 @@ LightLiSample SampleSceneLight(LightSampleContext ctx, InfiniteLight env, float 
             float pChoice = w / weightSum;
             SampledSpectrum radiance = Li.Li / (Li.pdf * pChoice);
             float mixPDF = Li.isDelta ? Li.pdf : SceneLightPDF_Li(ctx, Li.wi, env, weightSum);
-            return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta);
+            return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist);
         }
     }
 
@@ -365,7 +336,7 @@ LightLiSample SampleSceneLight(LightSampleContext ctx, InfiniteLight env, float 
     float pChoice = kEnvLightSelectionWeight / weightSum;
     SampledSpectrum radiance = Li.Li / (Li.pdf * pChoice);
     float mixPDF = Li.isDelta ? Li.pdf : SceneLightPDF_Li(ctx, Li.wi, env, weightSum);
-    return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta);
+    return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist);
 }
 
 [shader("raygeneration")]
@@ -385,7 +356,7 @@ void RayGeneration()
     RayDesc ray;
     ray.Origin = globalParams.camPosition.xyz;
     ray.Direction = GeneratePrimaryRay(pix, rng);
-    ray.TMin = 0.0f;
+    ray.TMin = EPS_TMin;
     ray.TMax = INF;
     // Simple Physical Lens
     // https://www.pbr-book.org/4ed/Cameras_and_Film/Projective_Camera_Models#fragment-Computepointonplaneoffocus-0
@@ -404,7 +375,7 @@ void RayGeneration()
     float lastSamplePDF = 0.0f;
     // Unified infinite light — falls back to constant color when no env map is bound
     InfiniteLight env = InfiniteLight(
-        SampledSpectrum(globalParams.ambientColor.xyz),
+        SampledSpectrum(globalParams.ambientColor * globalParams.ambientPower),
         globalParams.envMapScale,
         globalParams.useEnvMap
     );
@@ -493,7 +464,7 @@ void RayGeneration()
             if (Li.pdf > EPS) {
                 float3 shadowNormalFF = dot(Li.wi, surface.hit.geometryNormal) < 0.0f ? -surface.hit.geometryNormal : surface.hit.geometryNormal;
                 float3 shadowOrigin = OffsetRay(surface.hit.position, shadowNormalFF);
-                bool shadowed = TraceShadowRay(shadowOrigin, Li.wi);
+                bool shadowed = TraceShadowRay(shadowOrigin, Li.wi, Li.dist);
                 if (shadowed)
                     Li.pdf = 0.0f;
             }

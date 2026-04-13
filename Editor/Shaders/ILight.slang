@@ -29,11 +29,13 @@ public struct LightLiSample {
     public float3 wi;          // Direction from pi to light source
     public float pdf;          // PDF for this sample
     public bool isDelta;
-    public __init(SampledSpectrum Li = 0, float3 wi = 0, float pdf = 0, bool isDelta = false) {
+    public float dist;         // Distance from shading point to sampled light point (INF for infinite/distant)
+    public __init(SampledSpectrum Li = 0, float3 wi = 0, float pdf = 0, bool isDelta = false, float dist = INF) {
         this.Li = Li;
         this.wi = wi;
         this.pdf = pdf;
         this.isDelta = isDelta;
+        this.dist = dist;
     }
 };
 // The light interface
@@ -104,7 +106,7 @@ public struct InfiniteLight : ILight {
     }
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
         float3 wi = SampleUniformSphere(u);
-        return LightLiSample(Le(wi), wi, UniformSpherePDF(), false);
+        return LightLiSample(Le(wi), wi, UniformSpherePDF(), false, INF);
     }
     public float PDF_Li(LightSampleContext ctx, float3 w, bool allowIncompletePDF) {
         return UniformSpherePDF();
@@ -139,7 +141,7 @@ public struct DistantLight : ILight {
         return 0.0f;
     }
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
-        return LightLiSample(Lemit, -direction, 1.0f, true);
+        return LightLiSample(Lemit, -direction, 1.0f, true, INF);
     }
 };
 
@@ -182,7 +184,7 @@ public struct PointLight : ILight {
         wi /= dist;
         
         SampledSpectrum Li = I / dist2;
-        return LightLiSample(Li, wi, 1.0f, true);
+        return LightLiSample(Li, wi, 1.0f, true, dist);
     }
 };
 
@@ -242,7 +244,7 @@ public struct SpotLight : ILight {
         if (falloff == 0.0f) return LightLiSample();
 
         SampledSpectrum Li = I * falloff / dist2;
-        return LightLiSample(Li, wi, 1.0f, true);
+        return LightLiSample(Li, wi, 1.0f, true, dist);
     }
 };
 
@@ -332,7 +334,7 @@ public struct DiskLight : ILight {
 
         // Solid angle PDF
         float pdf = dist2 / (area * abs(cosTheta));
-        return LightLiSample(Lemit, wi, pdf, false);
+        return LightLiSample(Lemit, wi, pdf, false, dist);
     }
 };
 
@@ -414,6 +416,6 @@ public struct RectLight : ILight {
 
         // Solid angle PDF
         float pdf = dist2 / (area * abs(cosTheta));
-        return LightLiSample(Lemit, wi, pdf, false);
+        return LightLiSample(Lemit, wi, pdf, false, dist);
     }
 };

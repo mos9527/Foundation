@@ -12,13 +12,13 @@ Texture2D<float> depth;
 RWTexture2D<float4> output;
 RaytracingAccelerationStructure AS;
 
-bool shadow(float3 p, float3 l)
+bool shadow(float3 p, float3 l, float tMax = INF)
 {
     RayDesc ray;
     ray.Origin = p;
     ray.Direction = l;
-    ray.TMin = 1e-2;
-    ray.TMax = 1e2;
+    ray.TMin = EPS_TMin;
+    ray.TMax = tMax;
     RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
     q.TraceRayInline(AS, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, ray);
     while (q.Proceed()){
@@ -46,7 +46,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
     float ndcDepth = depth.Load(uint3(tid,0));
     if (ndcDepth <= EPS) {
         // Infinite depth
-        output[tid] = float4(globalParams.ambientColor.xyz, 1.0f);
+        output[tid] = float4(globalParams.ambientColor * globalParams.ambientPower, 1.0f);
         return;
     }
 
@@ -94,11 +94,12 @@ void main(uint2 tid: SV_DispatchThreadID) {
         // TODO: Area lights.
         for (uint li = 0; li < globalParams.numSceneLights; li++) {
             GSLight gl = globalParams.sceneLights[li];
-            float3 lightColor = gl.color * gl.intensity;
+            float3 lightColor = gl.color * gl.power;
             if (!any(lightColor > 0.0f)) continue;
 
             float3 l;
             float atten = 1.0f;
+            float lightDist = INF;
             if (gl.type == 0) { // Directional
                 l = -gl.direction;
             } else { // Point or Spot
@@ -107,6 +108,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
                 if (dist2 < 1e-8f) continue;
                 float dist = sqrt(dist2);
                 l = toLight / dist;
+                lightDist = dist;
                 atten = 1.0f / dist2;
                 if (gl.range > 0.0f && dist > gl.range) continue;
                 if (gl.type == 2) { // Spot
@@ -122,14 +124,17 @@ void main(uint2 tid: SV_DispatchThreadID) {
             float3 wi = toLocal.rotate(l);
             float3 f = bsdf.f(wo, wi, TransportMode::Radiance);
             float vis;
-            if (flags & kEnableRasterRTShadows)
-                vis = shadow(p, l) ? 0.0f : 1.0f;
+            if (flags & kEnableRasterRTShadows) {
+                float3 shadowNormalFF = dot(l, n) < 0.0f ? -n : n;
+                float3 shadowOrigin = OffsetRay(p, n);
+                vis = shadow(shadowOrigin, l, lightDist) ? 0.0f : 1.0f;
+            }
             else
                 vis = 1.0f;
             L += f * AbsCosTheta(wi) * vis * lightColor * atten;
         }
 
-        L += baseColor * globalParams.ambientColor.xyz;
+        L += baseColor * globalParams.ambientColor * globalParams.ambientPower;
 
         // Final color
         output[tid] = float4(L + emissive, 1.0f);

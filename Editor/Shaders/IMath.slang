@@ -288,3 +288,34 @@ public struct PCG
         return float2(sample(), sample());
     }
 }
+public static const float EPS_TMin = 1e-2;
+// The safeOffsetRay function shifts a point on a surface so that a ray
+// bouncing off the surface is no longer treated as intersecting the surface
+// from which it originated when tMin = 0.0.
+//
+// This uses the technique by Carsten Wächter and Nikolaus Binder
+// from "A Fast and Robust Method for Avoiding Self-Intersection" in Ray
+// Tracing Gems (2019).
+// The offset direction is typically the surface normal or its negation,
+// depending on whether the ray exits or enters the surface.
+public float3 OffsetRay(float3 worldPosition, float3 offsetDirection)
+{
+    // Convert the offset direction to an integer offset.
+    const float scaleValue = 256.0f;
+    const int3 scaleInt = int3(scaleValue * offsetDirection);
+
+    // Offset each component of worldPosition using its binary representation.
+    // Handle the sign bits correctly.
+    const float3 offsetPosition = float3(
+        asfloat(asint(worldPosition.x) + ((worldPosition.x < 0) ? -scaleInt.x : scaleInt.x)),
+        asfloat(asint(worldPosition.y) + ((worldPosition.y < 0) ? -scaleInt.y : scaleInt.y)),
+        asfloat(asint(worldPosition.z) + ((worldPosition.z < 0) ? -scaleInt.z : scaleInt.z)));
+
+    // Use a floating-point offset instead for points near (0,0,0), the origin.
+    const float origin = 1.0f / 32.0f;
+    const float floatScale = 1.0f / 65536.0f;
+    return float3(
+        abs(worldPosition.x) < origin ? worldPosition.x + floatScale * offsetDirection.x : offsetPosition.x,
+        abs(worldPosition.y) < origin ? worldPosition.y + floatScale * offsetDirection.y : offsetPosition.y,
+        abs(worldPosition.z) < origin ? worldPosition.z + floatScale * offsetDirection.z : offsetPosition.z);
+}

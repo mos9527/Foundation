@@ -124,13 +124,13 @@ extern bool            cameraUpdated;
 extern bool            GShowImGui;
 
 extern EditorDocument  GDoc;
-extern RenderWorkflow  GRenderWF;
+extern RenderWorkflow  GRenderImageTask;
 extern GizmoState      GGizmo;
 extern RendererConfig  GRendererConfig;
 extern ERendererMode   GRendererMode;
 
 /* -- Cross-file editor functions -- */
-void SyncSceneLightsToUBO();
+void UpdateSceneLights();
 void ReplaceScene(StringView path);
 void SaveScene(StringView path);
 void LoadEnvMap(StringView path);

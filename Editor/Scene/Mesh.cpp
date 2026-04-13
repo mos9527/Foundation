@@ -11,7 +11,7 @@
 constexpr float EPS = 1e-6;
 // Building an Orthonormal Basis from a 3D Unit Vector Without Normalization - Frisvad, 2012
 // https://backend.orbit.dtu.dk/ws/portalfiles/portal/126824972/onb_frisvad_jgt2012_v2.pdf
-inline void buildOrthonormalBasis(const float3 n, float3& b1, float3& b2)
+void buildOrthonormalBasis(const float3 n, float3& b1, float3& b2)
 {
     if (n.z < -0.9999999)
     {

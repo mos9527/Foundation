@@ -202,3 +202,10 @@ inline void FDeserialize(FReader& r, FMesh& obj)
     FDeserialize(r, obj.dag);
     CHECK_MSG(obj.IsCompressed(), "Mesh not compressed");
 }
+
+/* -- Math Exports -- */
+void buildOrthonormalBasis(const float3 n, float3& b1, float3& b2);
+float2 packUnitOctahedralSnorm(float3 v);
+float3 unpackUnitOctahedralSnorm(float2 v);
+float packUnitCircleSnorm(float2 v);
+float2 unpackUnitCircleSnorm(float v);

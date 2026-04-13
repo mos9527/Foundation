@@ -25,7 +25,7 @@ namespace Foundation::Core
         struct alignas(2 * sizeof(Node*)) Node
         {
             Node* next;
-            uintptr_t used{0};
+            Atomic<uintptr_t> used{0};
             T data;            
             
         };
@@ -103,9 +103,11 @@ namespace Foundation::Core
             // We know the memory layout is Node.data, so we can get the Node* from T*
             // Hacky - though guaranteed to work by standard layout.
             Node* node = reinterpret_cast<Node*>(reinterpret_cast<uintptr_t>(ptr) - offsetof(Node, data));
-            node->used = false;
-            node->data.~T();            
-            DeallocateNode(node);
+            if (node->used.compare_exchange_weak(true, false, std::memory_order_relaxed, std::memory_order_relaxed))
+            {
+                node->data.~T();
+                DeallocateNode(node);
+            }
         }
         /**
          * @brief Returns the index of the given pointer in the pool.
