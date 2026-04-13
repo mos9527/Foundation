@@ -343,6 +343,8 @@ LightLiSample SampleSceneLight(LightSampleContext ctx, InfiniteLight env, float 
         if (w <= 0.0f)
             continue;
 
+        // https://www.pbr-book.org/4ed/Monte_Carlo_Integration/Sampling_Using_the_Inversion_Method#SampleDiscrete
+        // TODO: Alias table? Reservoirs?
         cumulative += w;
         if (target < cumulative) {
             LightLiSample Li = SampleSceneLight(gl, ctx, u);
