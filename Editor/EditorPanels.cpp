@@ -231,7 +231,10 @@ void FHierarchyPanel()
                          inst.materialIndex);
                 bool selected = (GDoc.selectedInstance == static_cast<int>(i));
                 if (ImGui::Selectable(label, selected))
+                {
                     GDoc.selectedInstance = static_cast<int>(i);
+                    GDoc.selectedLight = -1; // deselect light when selecting instance
+                }
             }
         }
     }
@@ -275,24 +278,27 @@ void FHierarchyPanel()
             mat4 modelMatrix = translate(mat4(1.0f), vec3(pi.transform.transform)) * mat4_cast(pi.transform.rotation) *
                 glm::scale(mat4(1.0f), vec3(pi.transform.scale));
 
-            // ImGuizmo rendering
-            ImGuizmo::BeginFrame();
-            ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
-            auto& io = ImGui::GetIO();
-            ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
-            // Note: ImGuizmo uses column-major float[16], matching GLM mat4 memory layout
-            if (ImGuizmo::Manipulate(&GCamera.view[0][0], &GCamera.proj[0][0], GGizmo.op, GGizmo.mode,
-                                     &modelMatrix[0][0]))
+            // ImGuizmo rendering — only when no light is selected (mutual exclusion)
+            if (GDoc.selectedLight < 0)
             {
-                // Decompose back to TRS
-                float3 newTranslation;
-                quat newRotation;
-                float3 newScale;
-                Math::decompose(modelMatrix, newScale, newRotation, newTranslation);
-                pi.transform.transform = newTranslation;
-                pi.transform.rotation = newRotation;
-                pi.transform.scale = newScale;
-                changed = true;
+                ImGuizmo::BeginFrame();
+                ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
+                auto& io = ImGui::GetIO();
+                ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+                // Note: ImGuizmo uses column-major float[16], matching GLM mat4 memory layout
+                if (ImGuizmo::Manipulate(&GCamera.view[0][0], &GCamera.proj[0][0], GGizmo.op, GGizmo.mode,
+                                         &modelMatrix[0][0]))
+                {
+                    // Decompose back to TRS
+                    float3 newTranslation;
+                    quat newRotation;
+                    float3 newScale;
+                    Math::decompose(modelMatrix, newScale, newRotation, newTranslation);
+                    pi.transform.transform = newTranslation;
+                    pi.transform.rotation = newRotation;
+                    pi.transform.scale = newScale;
+                    changed = true;
+                }
             }
             if (changed)
             {
@@ -362,7 +368,17 @@ void FLightingPanel()
 
                 char header[64];
                 snprintf(header, sizeof(header), "Light %d (%s)", i, kLightTypeNames[static_cast<int>(light.type)]);
-                if (ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen))
+                bool isLightSelected = (GDoc.selectedLight == i);
+                ImGuiTreeNodeFlags headerFlags = ImGuiTreeNodeFlags_DefaultOpen;
+                if (isLightSelected)
+                    headerFlags |= ImGuiTreeNodeFlags_Selected;
+                bool headerOpen = ImGui::CollapsingHeader(header, headerFlags);
+                if (ImGui::IsItemClicked())
+                {
+                    GDoc.selectedLight = i;
+                    GDoc.selectedInstance = -1; // deselect instance when selecting light
+                }
+                if (headerOpen)
                 {
                     bool lightChanged = false;
 
@@ -478,6 +494,11 @@ void FLightingPanel()
             if (removeIndex >= 0)
             {
                 GDoc.scene.mLights.erase(GDoc.scene.mLights.begin() + removeIndex);
+                // Fix up light selection after removal
+                if (GDoc.selectedLight == removeIndex)
+                    GDoc.selectedLight = -1;
+                else if (GDoc.selectedLight > removeIndex)
+                    GDoc.selectedLight--;
                 anyChanged = true;
             }
         }
@@ -496,6 +517,9 @@ void FLightingPanel()
     }
     ImGui::End();
     ImGui::PopStyleColor();
+
+    // Draw light shape overlays and ImGuizmo manipulator
+    DrawLightGizmos();
 }
 
 /* ==================== Running ImGui (Camera, Rendering, Profiler) ==================== */

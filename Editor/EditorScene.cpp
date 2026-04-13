@@ -75,6 +75,7 @@ void ReplaceScene(StringView path)
     
     GDoc.selectedInstance = -1;
     GDoc.selectedMaterial = -1;
+    GDoc.selectedLight = -1;
 
     auto* gpu = GContext->gpuScene;
     gpu->Reset();

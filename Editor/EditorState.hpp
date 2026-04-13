@@ -96,6 +96,7 @@ struct EditorDocument
     String             currentSavePath;
     int                selectedInstance = -1;
     int                selectedMaterial = -1;
+    int                selectedLight    = -1;
 };
 
 // Offline render workflow state: flows from file dialog → popup → readback
@@ -139,6 +140,7 @@ void HandleFile(const char* filePath);
 void EditorDockSpaceAndMenuBar();
 void FHierarchyPanel();
 void FLightingPanel();
+void DrawLightGizmos();
 void FRunningImGui();
 bool ImHDRColorEdit(const char* label, float4& value, float maxScale = 100.0f);
 

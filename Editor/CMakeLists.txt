@@ -55,7 +55,7 @@ target_precompile_headers(
 add_executable(Editor)
 target_sources(Editor PRIVATE
         SDLMain.cpp ImGui.cpp
-        EditorState.cpp Editor.cpp EditorScene.cpp EditorPanels.cpp
+        EditorState.cpp Editor.cpp EditorScene.cpp EditorPanels.cpp EditorGizmos.cpp
         Render/Rasterizer.cpp Render/Pathtracer.cpp
 )
 target_link_libraries(
