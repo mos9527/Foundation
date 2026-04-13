@@ -127,7 +127,10 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
         draw &= frustumCull(globalParams.projPlanes, viewCenter, radius, globalParams.zNear);
     }
     // -- Two-phase --
-    uint32_t meshletGlobalID = mesh.meshletGlobalIndex + meshletID;
+    // vvv Wrong if instanced
+    // uint32_t meshletGlobalID = mesh.meshletGlobalIndex + meshletID;
+    // Stable across WGs
+    uint32_t meshletGlobalID = dispatchIndex * kMeshWorkGroupSize + groupIndex;
     // -- Occlusion Cull --
     // Kill when:
     //  Early: occluded by last frame?
