@@ -73,7 +73,7 @@ static const int kViewPTDirect = 1 << 6;
 static const int kViewAOVDiffuse  = 1 << 7;
 static const int kViewAOVSpecular = 1 << 8;
 
-static const int kViewEnableRaytracing = 1 << 16;
+static const int kEnableRasterRTShadows = 1 << 16;
 
 static const int kCullFrustum = 1 << 0;
 static const int kCullOcclusion = 1 << 1;
@@ -86,7 +86,7 @@ extern void RendererSetupImGuiOnly(FContext* context);
 
 struct RendererConfig
 {
-    unsigned viewFlags{kViewEnableRaytracing};
+    unsigned viewFlags{kEnableRasterRTShadows};
     unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
 };
 
@@ -124,7 +124,6 @@ struct PTReadbackHandles
 {
     ResourceHandle diffuse{kInvalidHandle};
     ResourceHandle specular{kInvalidHandle};
-    ResourceHandle sdrRenderTarget{kInvalidHandle};
     ResourceHandle pickResultBuffer{kInvalidHandle}; // R32_UINT, 4 bytes, persistently mapped
 };
 

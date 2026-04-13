@@ -34,7 +34,7 @@ function(slangc_compile TARGET)
             -fvk-use-scalar-layout # Dense packing
             -depfile "${OUTPUT_DEPNAME}"
             -g # Debug info
-            -capability spvShaderInvocationReorderEXT
+            -capability spvShaderInvocationReorderEXT # Otherwise emits VK_NV_ray_tracing_invocation_reorder. Eugh.
     )
     foreach(DEFINE ${ARG_DEFINES})
         list(APPEND SLANGC_ARGS -D${DEFINE})

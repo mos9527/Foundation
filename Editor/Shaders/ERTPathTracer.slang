@@ -27,6 +27,8 @@ RWTexture2D<uint32_t> pickIDBuffer; // Instance ID map, ~0u = no object (written
 // Number of SER coherence hint bits — enough to cover all materialID values
 // 8 bits is sufficient for 256 materials, consistent with GBuffer packing
 static const uint kSERCoherenceHintBits = 8u;
+// Capability flags. Used with SER only for now.
+[[SpecializationConstant]] int capabilityFlags;
 
 // World-space hit geometry
 struct HitState
@@ -364,7 +366,6 @@ LightLiSample SampleSceneLight(LightSampleContext ctx, InfiniteLight env, float 
     return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta);
 }
 
-[[SpecializationConstant]] int flags;
 [shader("raygeneration")]
 void RayGeneration()
 {
@@ -409,24 +410,23 @@ void RayGeneration()
     LightSampleContext lastLightCtx = LightSampleContext(float3(0), float3(0), float3(0));
     for (uint bounce = 0; bounce < globalParams.ptMaxBounces; bounce++) {
         HitPayload payload;
-        #ifdef TODO_USE_SER
-        // SER
-        // https://www.khronos.org/blog/boosting-ray-tracing-performance-with-shader-execution-reordering-introducing-vk-ext-ray-tracing-invocation-reorder
-        // https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_invocation_reorder/README.html
-        HitObject hitObj = TraceHitObject(ray);
-        // Extract materialID from the hit instance as a coherence hint
-        // Miss is identified by 0xFFu (distinct from any valid material)
-        uint coherenceHint = 0xFFu;
-        if (hitObj.IsHit()) {
-            GSInstance inst = instances[NonUniformResourceIndex(hitObj.GetInstanceIndex())];
-            coherenceHint = inst.materialIndex & 0xFFu;
-        }
-        ReorderThread(hitObj, coherenceHint, kSERCoherenceHintBits);
-        // Invoke closest hit / miss to populate the payload
-        HitObject::Invoke(AS, hitObj, payload);
-        #else
-        TraceRay(AS, 0, 0xFF, 0, 0, 0, ray, payload);
-        #endif
+        if (capabilityFlags != 0 /* SER */) {
+            // SER
+            // https://www.khronos.org/blog/boosting-ray-tracing-performance-with-shader-execution-reordering-introducing-vk-ext-ray-tracing-invocation-reorder
+            // https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_invocation_reorder/README.html
+            HitObject hitObj = TraceHitObject(ray);
+            // Extract materialID from the hit instance as a coherence hint
+            // Miss is identified by 0xFFu (distinct from any valid material)
+            uint coherenceHint = 0xFFu;
+            if (hitObj.IsHit()) {
+                GSInstance inst = instances[NonUniformResourceIndex(hitObj.GetInstanceIndex())];
+                coherenceHint = inst.materialIndex & 0xFFu;
+            }
+            ReorderThread(hitObj, coherenceHint, kSERCoherenceHintBits);
+            // Invoke closest hit / miss to populate the payload
+            HitObject::Invoke(AS, hitObj, payload);
+        } else
+            TraceRay(AS, 0, 0xFF, 0, 0, 0, ray, payload);
         // Outgoing direction
         float3 view = -ray.Direction;
         if (!payload.IsHit()) {
@@ -519,8 +519,6 @@ void RayGeneration()
                 }
             }
         }
-        if (flags & kViewPTDirect)
-            break;
         // Emissive
         {
             float3 emContrib = beta * surface.emissive;

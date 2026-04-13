@@ -185,6 +185,15 @@ namespace Foundation::RHI
         virtual Span<const uint64_t> GetResults(bool wait = true) = 0;
         virtual void DebugSetObjectName(const char* name) = 0;
     };
+    struct RHIDeviceCapabilities
+    {
+        bool dedicatedCompute;
+        bool dedicatedTransfer;
+        bool shaderExecutionReordering;
+        bool meshShaders;
+        bool raytracingInline;
+        bool raytracingPipeline;
+    };
     class RHIDevice : public RHIObject
     {
     protected:
@@ -198,6 +207,7 @@ namespace Foundation::RHI
         };
         RHIDevice(RHIApplication const& app) : mApp(app) {}
 
+        [[nodiscard]] virtual RHIDeviceCapabilities GetCapabilities() const = 0;
         [[nodiscard]] virtual Span<RHIResourceFormat const> GetSwapchainSupportedFormats() const = 0;
         [[nodiscard]] virtual Span<RHISwapchainPresentMode const> GetSwapchainSupportedPresentModes() const = 0;
         [[nodiscard]] virtual RHIDeviceScopedHandle<RHISwapchain>

@@ -82,14 +82,6 @@ void EditorDockSpaceAndMenuBar()
                     ImGuiFileDialog::Instance()->OpenDialog(
                         "RenderHDRDlg", "Save Render Output", ".hdr", config);
                 }
-                if (ImGui::MenuItem("Render .png..."))
-                {
-                    IGFD::FileDialogConfig config;
-                    config.path = ".";
-                    config.flags = ImGuiFileDialogFlags_ConfirmOverwrite;
-                    ImGuiFileDialog::Instance()->OpenDialog(
-                        "RenderSDRDlg", "Save Render Output", ".png", config);
-                }
             }
             ImGui::EndMenu();
         }
@@ -102,8 +94,7 @@ void EditorDockSpaceAndMenuBar()
         }
         if (ImGui::BeginPopupModal("Render Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
-            const char* fmtLabel = GRenderWF.format == ERenderFormat::HDR ? "HDR" : "SDR (PNG)";
-            ImGui::Text("Configure %s render:", fmtLabel);
+            ImGui::Text("Configure HDR render:");
             ImGui::Text("Output: %s", GRenderWF.outputPath.c_str());
             ImGui::Separator();
             ImGui::InputInt("Samples (frames)", &GRenderWF.samplePopupInput);
@@ -205,17 +196,6 @@ void EditorDockSpaceAndMenuBar()
         {
             GRenderWF.outputPath = ImGuiFileDialog::Instance()->GetFilePathName();
             GRenderWF.format = ERenderFormat::HDR;
-            GRenderWF.openRenderPopup = true;
-        }
-        ImGuiFileDialog::Instance()->Close();
-    }
-
-    if (ImGuiFileDialog::Instance()->Display("RenderSDRDlg", ImGuiWindowFlags_NoCollapse, minSize, maxSize))
-    {
-        if (ImGuiFileDialog::Instance()->IsOk())
-        {
-            GRenderWF.outputPath = ImGuiFileDialog::Instance()->GetFilePathName();
-            GRenderWF.format = ERenderFormat::SDR;
             GRenderWF.openRenderPopup = true;
         }
         ImGuiFileDialog::Instance()->Close();
@@ -577,22 +557,40 @@ void FRunningImGui()
         }
         GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
         bool changed = false;
+        if (GRendererMode == ERendererMode::Raster)
         {
-            const char* items[] = {"Overdraw", "Meshlet", "Material ID"};
-            const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID};
-            ImGui::SeparatorText("Perf Debug View");
-            changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
+            {
+                const char* items[] = {"Overdraw", "Meshlet", "Material ID"};
+                const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID};
+                ImGui::SeparatorText("Raster Debug View");
+                changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
+            }
+            {
+                const char* items[] = {"RT Shadows"};
+                const unsigned values[] = {kEnableRasterRTShadows};
+                ImGui::SeparatorText("Raster Options");
+                changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values);
+            }
+            {
+                const char* items[] = {"Frustum", "Occlusion"};
+                const unsigned values[] = {kCullFrustum, kCullOcclusion};
+                ImGui::SeparatorText("Raster Cull Options");
+                changed |= ImBitmaskOptionPicker(GRendererConfig.cullFlags, items, values);
+            }
+        }
+        if (GRendererMode == ERendererMode::PathTracer)
+        {
+            {
+                const char* items[] = {"Diffuse", "Specular"};
+                const unsigned values[] = {kViewAOVDiffuse, kViewAOVSpecular};
+                ImGui::SeparatorText("Path Tracer View");
+                changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
+            }
         }
         {
             const char* items[] = {"Position", "BaseColor", "Normal"};
             const unsigned values[] = {kViewPosition, kViewBaseColor, kViewNormal};
             ImGui::SeparatorText("GBuffer View");
-            changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
-        }
-        {
-            const char* items[] = {"Diffuse", "Specular"};
-            const unsigned values[] = {kViewAOVDiffuse, kViewAOVSpecular};
-            ImGui::SeparatorText("Path Tracer View");
             changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
         }
         {
@@ -613,12 +611,6 @@ void FRunningImGui()
                     GShaderGlobals.ptAccumulatedFrames = 0;
             }
             ImGui::TextDisabled("Drag & drop .hdr/.hdri to load");
-        }
-        {
-            const char* items[] = {"Frustum", "Occlusion"};
-            const unsigned values[] = {kCullFrustum, kCullOcclusion};
-            ImGui::SeparatorText("Culling");
-            changed |= ImBitmaskOptionPicker(GRendererConfig.cullFlags, items, values);
         }
         changed |= ImGui::Button("Reload");
         if (changed)
@@ -846,65 +838,6 @@ void DoHDRReadback(PTReadbackHandles const& handles)
         hdrPath, w, h, GShaderGlobals.ptAccumulatedFrames);
 }
 
-/* ==================== SDR (PNG) Readback ==================== */
-void DoSDRReadback(PTReadbackHandles const& handles)
-{
-    auto* renderer = GContext->renderer;
-    auto [w, h] = renderer->GetSwapchainExtent();
-    const size_t pixelCount = static_cast<size_t>(w) * h;
-    const size_t imageBytes = pixelCount * 4; // RGBA8 — 1 byte per channel
-
-    auto* sdrTex = renderer->DerefResource(handles.sdrRenderTarget).Get<RHITexture*>();
-
-    auto readbackBuf = GContext->device->CreateBuffer({
-        .resource = {.heap = RHIDeviceHeapType::Readback,
-                     .hostAccess = RHIResourceHostAccess::ReadWrite,
-                     .coherent = true},
-        .usage = RHIBufferUsageBits::TransferDestination,
-        .size = imageBytes});
-
-    {
-        ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
-        auto* cmd = ctx.Get();
-        cmd->Begin();
-        cmd->BeginTransition();
-        cmd->SetImageTransition(sdrTex, {
-            .srcAccess = RHIResourceAccessBits::RenderTargetRead | RHIResourceAccessBits::RenderTargetWrite,
-            .dstAccess = RHIResourceAccessBits::TransferRead,
-            .srcStage = RHIPipelineStageBits::RenderTargetOutput,
-            .dstStage = RHIPipelineStageBits::Transfer,
-            .srcImgLayout = RHITextureLayout::RenderTarget,
-            .dstImgLayout = RHITextureLayout::TransferSrc,
-            .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
-        cmd->EndTransition();
-        cmd->CopyImageToBuffer(sdrTex, RHITextureLayout::TransferSrc, readbackBuf.Get(),
-            {{{.dstBufferOffset = 0,
-               .srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
-               .extent = {w, h, 1}}}});
-        cmd->BeginTransition();
-        cmd->SetImageTransition(sdrTex, {
-            .srcAccess = RHIResourceAccessBits::TransferRead,
-            .dstAccess = RHIResourceAccessBits::RenderTargetRead | RHIResourceAccessBits::RenderTargetWrite,
-            .srcStage = RHIPipelineStageBits::Transfer,
-            .dstStage = RHIPipelineStageBits::TopOfPipe,
-            .srcImgLayout = RHITextureLayout::TransferSrc,
-            .dstImgLayout = RHITextureLayout::RenderTarget,
-            .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
-        cmd->EndTransition();
-        cmd->End();
-        ctx.Submit();
-        ctx.WaitIdle();
-    }
-
-    auto* mapped = readbackBuf->Map<unsigned char>();
-    const char* pngPath = GRenderWF.outputPath.empty() ? "render_output.png" : GRenderWF.outputPath.c_str();
-    SavePNG(mapped, static_cast<int>(w), static_cast<int>(h), pngPath);
-    readbackBuf->Unmap();
-
-    LOG(Editor, LogInfo, "SDR image saved to {} ({}x{}, {} samples)",
-        pngPath, w, h, GShaderGlobals.ptAccumulatedFrames);
-}
-
 /* ==================== FRendering (offline render loop) ==================== */
 void FRendering(PTReadbackHandles const& handles)
 {
@@ -969,16 +902,8 @@ void FRendering(PTReadbackHandles const& handles)
     }
     else if (GShaderGlobals.ptAccumulatedFrames >= static_cast<uint32_t>(GRenderWF.targetSamples))
     {
-        if (GRenderWF.format == ERenderFormat::HDR)
-        {
-            if (handles.diffuse != kInvalidHandle && handles.specular != kInvalidHandle)
-                DoHDRReadback(handles);
-        }
-        else
-        {
-            if (handles.sdrRenderTarget != kInvalidHandle)
-                DoSDRReadback(handles);
-        }
+        if (handles.diffuse != kInvalidHandle && handles.specular != kInvalidHandle)
+            DoHDRReadback(handles);
         FEState = FERunning;
     }
 }

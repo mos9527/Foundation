@@ -56,6 +56,7 @@ void RendererSetupImGuiOnly(FContext* context)
 
 void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, RasterReadbackHandles& outHandles)
 {
+    CHECK(context->device->GetCapabilities().meshShaders);
     auto* renderer = context->renderer = Construct<Renderer>(context->allocator,
                                                              RendererDesc{
                                                                  .asyncCompute = true,
@@ -128,18 +129,13 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
     bool kDebugViewUnlit = cfg.viewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewMeshlet);
     // Raytracing
     auto TLAS = renderer->CreateResource("Scene TLAS", gpu->GetTLAS());
-    if (cfg.viewFlags & kViewEnableRaytracing && !kDebugViewUnlit)
+    if (cfg.viewFlags & kEnableRasterRTShadows && !kDebugViewUnlit)
     {
         renderer->CreatePass(
             "TLAS Update", RHIDeviceQueueType::Compute, 0u, [=](PassHandle self, Renderer* r)
             { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
             { gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, true); });
     }
-    const auto kIndirectBufferClearTransition = RHICommandList::TransitionDesc{
-        .srcAccess = RHIResourceAccessBits::TransferWrite,
-        .dstAccess = RHIResourceAccessBits::ShaderWrite | RHIResourceAccessBits::ShaderRead,
-        .srcStage = RHIPipelineStageBits::ComputeShader | RHIPipelineStageBits::Transfer,
-        .dstStage = RHIPipelineStageBits::ComputeShader};
     renderer->CreatePass(
         "Indirect Meshlet Cull Clear", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)

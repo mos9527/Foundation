@@ -100,201 +100,138 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         // - https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/blob/master/src/VulkanSample.cpp#L1850
         CHECK(mPhysicalDevice.getSurfaceSupportKHR(graphics.first, *mSurface));
     }
-    vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
-                       vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
-                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT, vk::PhysicalDeviceMeshShaderFeaturesEXT,
-                       vk::PhysicalDeviceAccelerationStructureFeaturesKHR, vk::PhysicalDeviceRayQueryFeaturesKHR,
-                       vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
-                       vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>
-        featureChain = {
-            {.features = {.samplerAnisotropy = true,
-                          .fragmentStoresAndAtomics = true,
-                          .shaderInt16 = true}}, // vk::PhysicalDeviceFeatures2
-            {.storageBuffer16BitAccess = true,
-             .uniformAndStorageBuffer16BitAccess = true,
-             .shaderDrawParameters = true}, // vk::PhysicalDeviceVulkan11Features
-            {.drawIndirectCount = true,
-             .storageBuffer8BitAccess = true,
-             .uniformAndStorageBuffer8BitAccess = true,
-             .shaderFloat16 = true,
-             .shaderInt8 = true,
-             .descriptorBindingSampledImageUpdateAfterBind = true,
-             .runtimeDescriptorArray = true,
-             .samplerFilterMinmax = true,
-             .scalarBlockLayout = true,
-             .uniformBufferStandardLayout = true,
-             .shaderSubgroupExtendedTypes = true,
-             .hostQueryReset = true,
-             .timelineSemaphore = true,
-             .bufferDeviceAddress = true}, // vk::PhysicalDeviceVulkan12Features
-            {.synchronization2 = true,
-             .dynamicRendering = true,
-             .shaderIntegerDotProduct = true}, // vk::PhysicalDeviceVulkan13Features
-            {.extendedDynamicState = true}, // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
-            {.taskShader = false /*...try not to use it*/,
-             .meshShader = true}, // vk::PhysicalDeviceMeshShaderFeaturesEXT
-            {
-                .accelerationStructure = true,
-            }, // vk::PhysicalDeviceAccelerationStructureFeaturesKHR
-            {.rayQuery = true}, // vk::PhysicalDeviceRayQueryFeaturesKHR
-            {.rayTracingPipeline = true}, // vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
-            {.rayTracingInvocationReorder = true} // vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT
-        };
+// Define the type once so you aren't copy-pasting the template list everywhere.
+    using DeviceFeatureChain = vk::StructureChain<
+        vk::PhysicalDeviceFeatures2,
+        vk::PhysicalDeviceVulkan11Features,
+        vk::PhysicalDeviceVulkan12Features,
+        vk::PhysicalDeviceVulkan13Features,
+        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT,
+        vk::PhysicalDeviceMeshShaderFeaturesEXT,
+        vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+        vk::PhysicalDeviceRayQueryFeaturesKHR,
+        vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
+        vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>;
 
-    // Query available device extensions and filter out unsupported ones
+    // featureChain is zero-initialized (everything defaults to false).
+    // supportedChain will hold what the physical device actually supports.
+    DeviceFeatureChain featureChain{};
+    DeviceFeatureChain supportedChain{};
+
+    // --- Extension Querying ---
     auto availableExtensions = mPhysicalDevice.enumerateDeviceExtensionProperties();
-    auto isExtensionAvailable = [&](const char* extName) -> bool
-    {
-        for (auto const& ext : availableExtensions)
-        {
-            if (std::string_view(ext.extensionName.data()) == extName)
-                return true;
+    auto isExtensionAvailable = [&](const char* extName) -> bool {
+        for (auto const& ext : availableExtensions) {
+            if (std::string_view(ext.extensionName.data()) == extName) return true;
         }
         return false;
     };
+
     Vector<const char*> enabledExtensions(GetAllocator());
-    for (auto* desired : kVulkanDesiredDeviceExtensions)
-    {
-        if (isExtensionAvailable(desired))
-        {
+    for (auto* desired : kVulkanDesiredDeviceExtensions) {
+        if (isExtensionAvailable(desired)) {
             enabledExtensions.push_back(desired);
-        }
-        else
-        {
+        } else {
             LOG(VulkanDevice, LogWarn, "Device extension '{}' is not available and will not be enabled.", desired);
         }
     }
-    auto isExtensionEnabled = [&](const char* extName) -> bool
-    {
-        for (auto* ext : enabledExtensions)
-        {
-            if (std::string_view(ext) == extName)
-                return true;
+
+    auto isExtensionEnabled = [&](const char* extName) -> bool {
+        for (auto* ext : enabledExtensions) {
+            if (std::string_view(ext) == extName) return true;
         }
         return false;
     };
+
     const bool hasMeshShader = isExtensionEnabled(VK_EXT_MESH_SHADER_EXTENSION_NAME);
     const bool hasAccelerationStructure = isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
     const bool hasRayQuery = isExtensionEnabled(VK_KHR_RAY_QUERY_EXTENSION_NAME);
     const bool hasRayTracingPipeline = isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
-    const bool hasRayTracingInvocationReorder =
-        isExtensionEnabled(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
-
-    // Query the device's actually supported features and disable unsupported ones with a log warning
-    vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
-                       vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
-                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT, vk::PhysicalDeviceMeshShaderFeaturesEXT,
-                       vk::PhysicalDeviceAccelerationStructureFeaturesKHR, vk::PhysicalDeviceRayQueryFeaturesKHR,
-                       vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
-                       vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>
-        supportedChain{};
-    if (!hasMeshShader)
-        supportedChain.unlink<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
-    if (!hasAccelerationStructure)
-        supportedChain.unlink<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
-    if (!hasRayQuery)
-        supportedChain.unlink<vk::PhysicalDeviceRayQueryFeaturesKHR>();
-    if (!hasRayTracingPipeline)
-        supportedChain.unlink<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
-    if (!hasRayTracingInvocationReorder)
-        supportedChain.unlink<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>();
+    const bool hasRayTracingInvocationReorder = isExtensionEnabled(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
+    #define UNLINK_IF_UNSUPPORTED(FLAG, STRUCT_TYPE) \
+        if (!(FLAG)) { \
+            featureChain.unlink<STRUCT_TYPE>(); \
+            supportedChain.unlink<STRUCT_TYPE>(); \
+        }
+    UNLINK_IF_UNSUPPORTED(hasMeshShader, vk::PhysicalDeviceMeshShaderFeaturesEXT)
+    UNLINK_IF_UNSUPPORTED(hasAccelerationStructure, vk::PhysicalDeviceAccelerationStructureFeaturesKHR)
+    UNLINK_IF_UNSUPPORTED(hasRayQuery, vk::PhysicalDeviceRayQueryFeaturesKHR)
+    UNLINK_IF_UNSUPPORTED(hasRayTracingPipeline, vk::PhysicalDeviceRayTracingPipelineFeaturesKHR)
+    UNLINK_IF_UNSUPPORTED(hasRayTracingInvocationReorder, vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT)
+    #undef UNLINK_IF_UNSUPPORTED
     (*mPhysicalDevice).getFeatures2(&supportedChain.get<vk::PhysicalDeviceFeatures2>());
 
-    // Compare requested features against device-supported features; disable and log any unsupported ones
-    // Helper lambda: if a feature is requested but not supported, disable it and log a warning
-    auto checkFeature = [](vk::Bool32& req, vk::Bool32 sup, const char* name)
-    {
-        if (req && !sup)
-        {
-            LOG(VulkanDevice, LogWarn, "Device feature '{}' is not supported and will be disabled.", name);
-            req = false;
+    // Special case for VkPhysicalDeviceFeatures since it's nested inside PhysicalDeviceFeatures2.features
+    #define REQUEST_BASE_FEATURE(FEATURE_MEMBER) \
+        if (supportedChain.get<vk::PhysicalDeviceFeatures2>().features.FEATURE_MEMBER) { \
+            featureChain.get<vk::PhysicalDeviceFeatures2>().features.FEATURE_MEMBER = VK_TRUE; \
+        } else { \
+            LOG(VulkanDevice, LogWarn, "Device feature 'VkPhysicalDeviceFeatures::" #FEATURE_MEMBER "' is not supported and will remain disabled."); \
         }
-    };
-    {
-        auto& req = featureChain.get<vk::PhysicalDeviceFeatures2>().features;
-        auto const& sup = supportedChain.get<vk::PhysicalDeviceFeatures2>().features;
-        checkFeature(req.samplerAnisotropy,       sup.samplerAnisotropy,       "VkPhysicalDeviceFeatures::samplerAnisotropy");
-        checkFeature(req.fragmentStoresAndAtomics, sup.fragmentStoresAndAtomics, "VkPhysicalDeviceFeatures::fragmentStoresAndAtomics");
-        checkFeature(req.shaderInt16,             sup.shaderInt16,             "VkPhysicalDeviceFeatures::shaderInt16");
+    // Base Features
+    REQUEST_BASE_FEATURE(samplerAnisotropy)
+    REQUEST_BASE_FEATURE(fragmentStoresAndAtomics)
+    REQUEST_BASE_FEATURE(shaderInt16)
+
+    #define REQUEST_FEATURE(STRUCT_TYPE, FEATURE_MEMBER) \
+        if (supportedChain.get<STRUCT_TYPE>().FEATURE_MEMBER) { \
+            featureChain.get<STRUCT_TYPE>().FEATURE_MEMBER = VK_TRUE; \
+        } else { \
+            LOG(VulkanDevice, LogWarn, "Device feature '" #STRUCT_TYPE "::" #FEATURE_MEMBER "' is not supported and will remain disabled."); \
+        }
+
+    // Vulkan 1.1 Features
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan11Features, storageBuffer16BitAccess)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan11Features, uniformAndStorageBuffer16BitAccess)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan11Features, shaderDrawParameters)
+
+    // Vulkan 1.2 Features
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan12Features, drawIndirectCount)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan12Features, storageBuffer8BitAccess)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan12Features, uniformAndStorageBuffer8BitAccess)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan12Features, shaderFloat16)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan12Features, shaderInt8)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan12Features, descriptorIndexing)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan12Features, descriptorBindingSampledImageUpdateAfterBind)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan12Features, runtimeDescriptorArray)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan12Features, samplerFilterMinmax)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan12Features, scalarBlockLayout)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan12Features, uniformBufferStandardLayout)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan12Features, shaderSubgroupExtendedTypes)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan12Features, hostQueryReset)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan12Features, timelineSemaphore)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan12Features, bufferDeviceAddress)
+
+    // Vulkan 1.3 Features
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan13Features, synchronization2)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan13Features, dynamicRendering)
+    REQUEST_FEATURE(vk::PhysicalDeviceVulkan13Features, shaderIntegerDotProduct)
+
+    // Extended Dynamic State
+    REQUEST_FEATURE(vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT, extendedDynamicState)
+
+    // Optional Extension Features (Only checked if the extension was actually enabled)
+    if (hasMeshShader) {
+        REQUEST_FEATURE(vk::PhysicalDeviceMeshShaderFeaturesEXT, meshShader)
+        // You specifically didn't want taskShader enabled in your original snippet,
+        // so we simply don't request it here. It stays false.
     }
-    {
-        auto& req = featureChain.get<vk::PhysicalDeviceVulkan11Features>();
-        auto const& sup = supportedChain.get<vk::PhysicalDeviceVulkan11Features>();
-        checkFeature(req.storageBuffer16BitAccess,          sup.storageBuffer16BitAccess,          "VkPhysicalDeviceVulkan11Features::storageBuffer16BitAccess");
-        checkFeature(req.uniformAndStorageBuffer16BitAccess, sup.uniformAndStorageBuffer16BitAccess, "VkPhysicalDeviceVulkan11Features::uniformAndStorageBuffer16BitAccess");
-        checkFeature(req.shaderDrawParameters,              sup.shaderDrawParameters,              "VkPhysicalDeviceVulkan11Features::shaderDrawParameters");
+
+    if (hasAccelerationStructure) {
+        REQUEST_FEATURE(vk::PhysicalDeviceAccelerationStructureFeaturesKHR, accelerationStructure)
     }
-    {
-        auto& req = featureChain.get<vk::PhysicalDeviceVulkan12Features>();
-        auto const& sup = supportedChain.get<vk::PhysicalDeviceVulkan12Features>();
-        checkFeature(req.drawIndirectCount,                        sup.drawIndirectCount,                        "VkPhysicalDeviceVulkan12Features::drawIndirectCount");
-        checkFeature(req.storageBuffer8BitAccess,                  sup.storageBuffer8BitAccess,                  "VkPhysicalDeviceVulkan12Features::storageBuffer8BitAccess");
-        checkFeature(req.uniformAndStorageBuffer8BitAccess,        sup.uniformAndStorageBuffer8BitAccess,        "VkPhysicalDeviceVulkan12Features::uniformAndStorageBuffer8BitAccess");
-        checkFeature(req.shaderFloat16,                            sup.shaderFloat16,                            "VkPhysicalDeviceVulkan12Features::shaderFloat16");
-        checkFeature(req.shaderInt8,                               sup.shaderInt8,                               "VkPhysicalDeviceVulkan12Features::shaderInt8");
-        checkFeature(req.descriptorBindingSampledImageUpdateAfterBind, sup.descriptorBindingSampledImageUpdateAfterBind, "VkPhysicalDeviceVulkan12Features::descriptorBindingSampledImageUpdateAfterBind");
-        checkFeature(req.runtimeDescriptorArray,                   sup.runtimeDescriptorArray,                   "VkPhysicalDeviceVulkan12Features::runtimeDescriptorArray");
-        checkFeature(req.samplerFilterMinmax,                      sup.samplerFilterMinmax,                      "VkPhysicalDeviceVulkan12Features::samplerFilterMinmax");
-        checkFeature(req.scalarBlockLayout,                        sup.scalarBlockLayout,                        "VkPhysicalDeviceVulkan12Features::scalarBlockLayout");
-        checkFeature(req.uniformBufferStandardLayout,              sup.uniformBufferStandardLayout,              "VkPhysicalDeviceVulkan12Features::uniformBufferStandardLayout");
-        checkFeature(req.shaderSubgroupExtendedTypes,              sup.shaderSubgroupExtendedTypes,              "VkPhysicalDeviceVulkan12Features::shaderSubgroupExtendedTypes");
-        checkFeature(req.hostQueryReset,                           sup.hostQueryReset,                           "VkPhysicalDeviceVulkan12Features::hostQueryReset");
-        checkFeature(req.timelineSemaphore,                        sup.timelineSemaphore,                        "VkPhysicalDeviceVulkan12Features::timelineSemaphore");
-        checkFeature(req.bufferDeviceAddress,                      sup.bufferDeviceAddress,                      "VkPhysicalDeviceVulkan12Features::bufferDeviceAddress");
+
+    if (hasRayQuery) {
+        REQUEST_FEATURE(vk::PhysicalDeviceRayQueryFeaturesKHR, rayQuery)
     }
-    {
-        auto& req = featureChain.get<vk::PhysicalDeviceVulkan13Features>();
-        auto const& sup = supportedChain.get<vk::PhysicalDeviceVulkan13Features>();
-        checkFeature(req.synchronization2,        sup.synchronization2,        "VkPhysicalDeviceVulkan13Features::synchronization2");
-        checkFeature(req.dynamicRendering,        sup.dynamicRendering,        "VkPhysicalDeviceVulkan13Features::dynamicRendering");
-        checkFeature(req.shaderIntegerDotProduct, sup.shaderIntegerDotProduct, "VkPhysicalDeviceVulkan13Features::shaderIntegerDotProduct");
+
+    if (hasRayTracingPipeline) {
+        REQUEST_FEATURE(vk::PhysicalDeviceRayTracingPipelineFeaturesKHR, rayTracingPipeline)
     }
-    {
-        auto& req = featureChain.get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
-        auto const& sup = supportedChain.get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
-        checkFeature(req.extendedDynamicState, sup.extendedDynamicState, "VkPhysicalDeviceExtendedDynamicStateFeaturesEXT::extendedDynamicState");
+
+    if (hasRayTracingInvocationReorder) {
+        REQUEST_FEATURE(vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT, rayTracingInvocationReorder)
     }
-    if (hasMeshShader)
-    {
-        auto& req = featureChain.get<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
-        auto const& sup = supportedChain.get<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
-        checkFeature(req.taskShader, sup.taskShader, "VkPhysicalDeviceMeshShaderFeaturesEXT::taskShader");
-        checkFeature(req.meshShader, sup.meshShader, "VkPhysicalDeviceMeshShaderFeaturesEXT::meshShader");
-    }
-    else
-        featureChain.unlink<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
-    if (hasAccelerationStructure)
-    {
-        auto& req = featureChain.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
-        auto const& sup = supportedChain.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
-        checkFeature(req.accelerationStructure, sup.accelerationStructure, "VkPhysicalDeviceAccelerationStructureFeaturesKHR::accelerationStructure");
-    }
-    else
-        featureChain.unlink<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>();
-    if (hasRayQuery)
-    {
-        auto& req = featureChain.get<vk::PhysicalDeviceRayQueryFeaturesKHR>();
-        auto const& sup = supportedChain.get<vk::PhysicalDeviceRayQueryFeaturesKHR>();
-        checkFeature(req.rayQuery, sup.rayQuery, "VkPhysicalDeviceRayQueryFeaturesKHR::rayQuery");
-    }
-    else
-        featureChain.unlink<vk::PhysicalDeviceRayQueryFeaturesKHR>();
-    if (hasRayTracingPipeline)
-    {
-        auto& req = featureChain.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
-        auto const& sup = supportedChain.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
-        checkFeature(req.rayTracingPipeline, sup.rayTracingPipeline, "VkPhysicalDeviceRayTracingPipelineFeaturesKHR::rayTracingPipeline");
-    }
-    else
-        featureChain.unlink<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>();
-    if (hasRayTracingInvocationReorder)
-    {
-        auto& req = featureChain.get<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>();
-        auto const& sup = supportedChain.get<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>();
-        checkFeature(req.rayTracingInvocationReorder, sup.rayTracingInvocationReorder, "VkPhysicalDeviceRayTracingInvocationReorderFeaturesEXT::rayTracingInvocationReorder");
-    }
-    else
-        featureChain.unlink<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>();
 
     vk::DeviceCreateInfo device_info{.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
                                      .queueCreateInfoCount = static_cast<uint32_t>(queueInfos.size()),
@@ -363,6 +300,15 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
             }
         }
     }
+    // Fill in device capabilities
+    mDeviceCaps = {
+        .dedicatedCompute = mQueues->graphics != mQueues->compute,
+        .dedicatedTransfer = mQueues->graphics != mQueues->transfer,
+        .shaderExecutionReordering = hasRayTracingInvocationReorder,
+        .meshShaders = hasMeshShader,
+        .raytracingInline = hasRayQuery,
+        .raytracingPipeline = hasRayTracingPipeline,
+    };
 }
 
 VulkanDevice::~VulkanDevice()

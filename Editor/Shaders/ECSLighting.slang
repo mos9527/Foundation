@@ -121,7 +121,11 @@ void main(uint2 tid: SV_DispatchThreadID) {
 
             float3 wi = toLocal.rotate(l);
             float3 f = bsdf.f(wo, wi, TransportMode::Radiance);
-            float vis = shadow(p, l) ? 0.0f : 1.0f;
+            float vis;
+            if (flags & kEnableRasterRTShadows)
+                vis = shadow(p, l) ? 0.0f : 1.0f;
+            else
+                vis = 1.0f;
             L += f * AbsCosTheta(wi) * vis * lightColor * atten;
         }
 

@@ -601,7 +601,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
                 auto& specDecl = reflections[shader_path]->mSpecializationConstants;
                 CHECK_MSG((!spec.empty() && specDecl.size() == 1) || (spec.empty() && specDecl.empty()),
                           "Only zero or one Specialization Constants is allowed in shader bytecode. Shader wants {}, "
-                          "declared {} in {}",
+                          "declared {} in {}.\n"
+                          "NOTE: No. of Specialization Constants must be uniform across all shader bytecode uint even for different entry points.",
                           specDecl.size(), spec.empty() ? 0 : 1, tracked.name);
                 if (!specDecl.empty())
                     CHECK_MSG(specDecl.front().id == 0, "Expected Specialization Constant ID to be 0, got {}.",

@@ -33,8 +33,6 @@ namespace Foundation::RHI
         {
             return graphics != kInvalidHandle && compute != kInvalidHandle && transfer != kInvalidHandle;
         }
-        bool IsDedicatedCompute() const { return IsValid() && compute != graphics; }
-        bool IsDedicatedTransfer() const { return IsValid() && transfer != graphics; }
     };
     class VulkanDevice;
     class VulkanDeviceSemaphore : public RHIDeviceSemaphore
@@ -120,10 +118,13 @@ namespace Foundation::RHI
         // Queues
         UniquePtr<VulkanDeviceQueues> mQueues{nullptr};
 
+        RHIDeviceCapabilities mDeviceCaps{};
     public:
         VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice,
                      SDL_Window* window = nullptr);
         ~VulkanDevice() override;
+
+        RHIDeviceCapabilities GetCapabilities() const override { return mDeviceCaps; }
 
         RHIDeviceQueue* GetDeviceQueue(RHIDeviceQueueType type) const override;
 
