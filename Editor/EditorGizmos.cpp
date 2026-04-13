@@ -70,12 +70,36 @@ static void DrawDirectionalOverlay(FLight const& light, mat4 const& vp, ImDrawLi
 static void DrawPointOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl, ImVec2 ds, ImU32 col)
 {
     vec3 pos = vec3(light.transform.transform);
-    float r = (light.range > 0.0f) ? light.range : 1.0f;
+    ImVec2 center = WorldToScreen(pos, vp, ds);
+    if (center.x < -1e3f) return; // behind camera
 
-    // 3 orthogonal wireframe circles
-    DrawWireCircle(dl, pos, {1, 0, 0}, {0, 1, 0}, r, vp, ds, col, 1.5f);
-    DrawWireCircle(dl, pos, {0, 1, 0}, {0, 0, 1}, r, vp, ds, col, 1.5f);
-    DrawWireCircle(dl, pos, {1, 0, 0}, {0, 0, 1}, r, vp, ds, col, 1.5f);
+    // Compute outer ring radius in pixels.
+    // Only the center is projected; radius is derived analytically.
+    float outerPx;
+    if (light.range > 0.0f)
+    {
+        float dist = glm::length(pos - GCamera.position);
+        float pixelsPerUnit = (ds.y * 0.5f) / (dist * tanf(GCamera.fovY * 0.5f));
+        outerPx = std::max(light.range * pixelsPerUnit, 8.0f);
+    }
+    else
+    {
+        outerPx = 28.0f; // fixed screen-space size
+    }
+
+    // Concentric 2D rings — omnidirectional, no axis bias
+    constexpr int kRings = 3;
+    for (int i = 0; i < kRings; i++)
+    {
+        float t = static_cast<float>(i + 1) / kRings;
+        float radius = outerPx * t;
+        // Fade inner rings slightly
+        ImU32 ringCol = (col & 0x00FFFFFF) | (static_cast<ImU32>((col >> 24) * (0.4f + 0.6f * t)) << 24);
+        dl->AddCircle(center, radius, ringCol, 32, 1.5f);
+    }
+
+    // Small filled dot at center
+    dl->AddCircleFilled(center, 3.0f, col, 12);
 }
 
 static void DrawSpotOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl, ImVec2 ds, ImU32 col)

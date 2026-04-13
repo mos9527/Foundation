@@ -361,7 +361,7 @@ void RayGeneration()
     // Simple Physical Lens
     // https://www.pbr-book.org/4ed/Cameras_and_Film/Projective_Camera_Models#fragment-Computepointonplaneoffocus-0
     // https://github.com/nvpro-samples/vk_gltf_renderer/blob/master/shaders/gltf_pathtrace.slang#L922
-    if (globalParams.focalDistance > EPS) {
+    if (globalParams.aperture > EPS) {
         float3 focalPoint = globalParams.focalDistance * ray.Direction;
         // Sample point on lens in world space
         float3 T = mul(globalParams.inverseView, float4(1, 0, 0, 0)).xyz;
@@ -405,7 +405,7 @@ void RayGeneration()
         if (!payload.IsHit()) {
             // Miss — environment
             if (bounce == 0) {
-            // Environment light with no surface hit — classify as specular (background)
+                // Environment light with no surface hit — classify as specular (background)
                 float3 envLe = env.Le(-view);
                 AddRadiance(LSpecular, envLe);
                 break;
@@ -439,7 +439,6 @@ void RayGeneration()
                 gBuffer2[pix] += (g2 - gBuffer2[pix]) * invN;
             }
             // R32Uint, so primary hit only.
-            // TODO: Quite noisy!
             pickIDBuffer[pix] = payload.instance;
             gbufferWritten = true;
         }

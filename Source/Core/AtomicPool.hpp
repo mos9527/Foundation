@@ -103,7 +103,8 @@ namespace Foundation::Core
             // We know the memory layout is Node.data, so we can get the Node* from T*
             // Hacky - though guaranteed to work by standard layout.
             Node* node = reinterpret_cast<Node*>(reinterpret_cast<uintptr_t>(ptr) - offsetof(Node, data));
-            if (node->used.compare_exchange_weak(true, false, std::memory_order_relaxed, std::memory_order_relaxed))
+            uintptr_t old_used = true;
+            if (node->used.compare_exchange_strong(old_used, false, std::memory_order_acquire, std::memory_order_relaxed))
             {
                 node->data.~T();
                 DeallocateNode(node);
