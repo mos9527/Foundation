@@ -568,7 +568,7 @@ void RayGeneration()
 //  https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_opacity_micromap.html
 //  https://devblogs.microsoft.com/directx/omm/
 bool AnyHitOpacityIgnore(inout PCG rng, uint instance, uint primitive,
-    BuiltInTriangleIntersectionAttributes attr, bool isShadowRay = false)
+    BuiltInTriangleIntersectionAttributes attr)
 {
     GSInstance inst = instances[NonUniformResourceIndex(instance)];
     GSMaterial material = materials[NonUniformResourceIndex(inst.materialIndex)];
@@ -578,12 +578,10 @@ bool AnyHitOpacityIgnore(inout PCG rng, uint instance, uint primitive,
         baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, hs.uv, 0);
     }
     float opacity = baseColor.a;
-    if (opacity == 1.0f && (!isShadowRay || material.transmissionFactor == 0.0f))
+    if (opacity == 1.0f)
         return false;
 
     if (rng.sample() < 1.0f - opacity)
-        return true;
-    if (isShadowRay && rng.sample() < material.transmissionFactor)
         return true;
     return false;
 }
@@ -594,7 +592,7 @@ void RayOpacityAnyHit(in BuiltInTriangleIntersectionAttributes attr)
     uint instance = InstanceIndex();
     uint primitive = PrimitiveIndex();
     PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
-    if (AnyHitOpacityIgnore(rng, instance, primitive, attr, false))
+    if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
         return IgnoreHit();
 }
 
@@ -604,7 +602,7 @@ void ShadowRayAnyHit(inout ShadowPayload payload, in BuiltInTriangleIntersection
     uint instance = InstanceIndex();
     uint primitive = PrimitiveIndex();
     PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
-    if (AnyHitOpacityIgnore(rng, instance, primitive, attr, true /* shadow transmission */))
+    if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
         return IgnoreHit();
     payload.hit = true;
     AcceptHitAndEndSearch();
