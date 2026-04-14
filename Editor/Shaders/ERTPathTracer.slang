@@ -41,6 +41,11 @@ struct HitState
     float2 uv;
 };
 
+uint GetInstanceBufferIndex(uint localInstanceIndex)
+{
+    return globalParams.firstInstance + localInstanceIndex;
+}
+
 HitState getHitState(uint meshOffset, uint primitive, float2 bary, GSInstance inst, float3 rayOrigin, float3 rayDirection, float hitT)
 {
     HitState hit;
@@ -80,9 +85,9 @@ HitState getHitState(uint meshOffset, uint primitive, float2 bary, GSInstance in
     const float3 geoNormal = normalize(cross(p1 - p0, p2 - p0));
 
     // Transform normals/tangents to world space via instance TRS
-    hit.normal         = normalize(inst.rotation.rotate(normal / inst.scale));
-    hit.tangent        = normalize(inst.rotation.rotate(tangent / inst.scale));
-    hit.geometryNormal = normalize(inst.rotation.rotate(geoNormal / inst.scale));
+    hit.normal         = normalize(inst.rotation.rotate(normal));
+    hit.tangent        = normalize(inst.rotation.rotate(tangent));
+    hit.geometryNormal = normalize(inst.rotation.rotate(geoNormal));
     hit.bitangent      = cross(hit.normal, hit.tangent) * (bitangentSign > 0.0f ? 1 : -1);
 
     return hit;
@@ -137,7 +142,7 @@ Payload SamplePayload(HitPayload payload, RayDesc ray)
 {
     if (!payload.IsHit()) // Misuse
         return {};
-    GSInstance inst = instances[NonUniformResourceIndex(payload.instance)];
+    GSInstance inst = instances[NonUniformResourceIndex(GetInstanceBufferIndex(payload.instance))];
     Payload res;
     res.materialID = inst.materialIndex;
     res.hit = getHitState(inst.meshOffset, payload.primitive, payload.bary, inst, ray.Origin, ray.Direction, payload.hitT);
@@ -347,7 +352,7 @@ void RayGeneration()
     float3 beta = float3(1);
     // Per-lobe AOV accumulators (Diffuse / Specular)
     float3 LDiffuse  = float3(0);
-    float3 LSpecular = float3(0);    
+    float3 LSpecular = float3(0);
     AOVCategory firstBounceCategory = AOVCategory::Undefined;
     // GBuffer written on primary hit
     bool gbufferWritten = false;
