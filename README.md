@@ -3,6 +3,23 @@ Foundation
 
 Docs are available at: https://mos9527.com/Foundation
 
+TODO (Path Tracer)
+---
+- [ ] Glass BSDF energy compensation
+- [ ] Transparent shadows (caustics, approximation)
+- [ ] Volume rendering
+- [ ] Denoising (SVGF? NRD?)
+- [ ] Spatial Reuse ([SHaRC](https://github.com/NVIDIA-RTX/SHARC)?)
+- [x] Importance sampling Infinite Image Lights
+
+TODO (Raster)
+---
+- [ ] IBL
+- [ ] LTC Area lights
+- [ ] Screen Space Diffuse GI (SSGI)
+- [ ] Screen Space Reflections 
+- [ ] HBAO
+
 Demo (Path Tracer)
 ---
 > "Stormtrooper Star Wars VII by ScottGraham" from [Blend Swap](https://www.blendswap.com/blend/13953)
