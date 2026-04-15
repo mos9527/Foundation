@@ -89,7 +89,10 @@ HitState getHitState(uint meshOffset, uint primitive, float2 bary, GSInstance in
     hit.tangent        = normalize(inst.rotation.rotate(tangent));
     hit.geometryNormal = normalize(inst.rotation.rotate(geoNormal));
     hit.bitangent      = cross(hit.normal, hit.tangent) * (bitangentSign > 0.0f ? 1 : -1);
-
+    if (dot(hit.geometryNormal, rayDirection) > 0.0f)
+        hit.geometryNormal = -hit.geometryNormal;
+    if (dot(hit.geometryNormal, hit.normal) < 0.0f)
+        hit.normal = -hit.normal;
     return hit;
 }
 
@@ -526,9 +529,7 @@ void RayGeneration()
         if (any(isnan(beta)) || any(isinf(beta)))
             break;
         ray.Direction = toWorld.rotate(sample.wi);
-
-        float3 rayNormal = dot(ray.Direction, surface.hit.geometryNormal) < 0.0f ? -surface.hit.geometryNormal : surface.hit.geometryNormal;
-        ray.Origin = OffsetRay(surface.hit.position, rayNormal);
+        ray.Origin = OffsetRay(surface.hit.position, surface.hit.geometryNormal);
         // Russian Roulette (after 2nd bounce)
         if (bounce >= 2) {
             float rrPCount = min(MaxComponent(beta) + 0.01f, 0.95f);

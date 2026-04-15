@@ -165,7 +165,8 @@ public bool Refract(
     if (sin2Theta_t >= 1) // Total internal reflection - transmission impossible
         return false;
     float cosTheta_t = SafeSqrt(1 - sin2Theta_t);
-    wt = eta * -wi + (eta * cosTheta_i - cosTheta_t) * n;
+    float invEta = 1.0f / eta;
+    wt = invEta * -wi + (invEta * cosTheta_i - cosTheta_t) * n;
     etap = eta;
     return true;
 }
@@ -579,8 +580,8 @@ public struct DielectricBxDF : IBxDF {
             // ---
             // See formulation at:
             //   https://www.pbr-book.org/4ed/Reflection_Models/Rough_Dielectric_BSDF#eq:mf-transmission-change-of-vars
-            float denom = Sqr(dot(wi, wm) + dot(wo,wm) / etap);
-            float dwm_dwi = AbsDot(wi, wm) / denom;
+            float denom = Sqr(dot(wo, wm) + dot(wi,wm) * etap);
+            float dwm_dwi = AbsDot(wi, wm) * Sqr(etap) / denom;
             pdf = mfDistrib.PDF(wo, wm) * dwm_dwi * pt / (pr + pt);
         }
         return pdf;
@@ -612,7 +613,7 @@ public struct DielectricBxDF : IBxDF {
                 // https://www.pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF#Non-SymmetricScatteringandRefraction
                 // Entering denser medium reduces solid angle and 'compresses' radiance
                 if (transport == TransportMode::Radiance)
-                    ft /= Sqr(etap);                
+                    ft *= Sqr(etap);
                 return BSDFSample(ft, wi, pt / (pr + pt), BxDFFlags::SpecularTransmission, etap);
             }
         } else {
@@ -648,8 +649,8 @@ public struct DielectricBxDF : IBxDF {
                     return BSDFSample(); // Total internal reflection or invalid sample
                 // 2. Compute PDF
                 // The same Jacobian for transmission case in PDF(), with prob scaling
-                float denom = Sqr(dot(wi, wm) + dot(wo,wm) / etap);
-                float dwm_dwi = AbsDot(wi, wm) / denom;
+                float denom = Sqr(dot(wo, wm) + dot(wi,wm) * etap);
+                float dwm_dwi = AbsDot(wi, wm) * Sqr(etap) / denom;
                 float pdf = mfDistrib.PDF(wo, wm) * dwm_dwi * pt / (pr + pt);
                 // 3. Compute final BTDF value
                 SampledSpectrum f = T * mfDistrib.D(wm) * mfDistrib.G(wo, wi) *
@@ -657,7 +658,7 @@ public struct DielectricBxDF : IBxDF {
                                     (CosTheta(wi) * CosTheta(wo) * denom));
                 // 4. Adjust for non-symmetric transport
                 if (transport == TransportMode::Radiance)
-                    f /= Sqr(etap);
+                    f *= Sqr(etap);
                 return BSDFSample(f, wi, pdf, BxDFFlags::GlossyTransmission, etap);
             }
         }

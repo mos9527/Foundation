@@ -59,12 +59,12 @@ float3 TorranceSparrowTransmittance(
 {
     float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
     // Note: our Refract() uses eta = eta_t/eta_i. The corresponding transmission half-vector is
-    // wm = normalize(eta * wo + wi), not normalize(wo + eta * wi).
-    float3 wm = normalize(wo * etap + wi);
+    // wm = normalize(wo + eta * wi), not normalize(eta * wo + wi).
+    float3 wm = normalize(wo + wi * etap);
     wm = FaceForward(wm, float3(0, 0, 1));
     float3 Fss = SchlickFresnel(F0, F90, AbsDot(wo, wm));
     float3 T = max(1.0f - Fss, 0.0f);
-    float denom = Sqr(dot(wi, wm) + dot(wo, wm) / etap) * abs(CosTheta(wi) * CosTheta(wo));
+    float denom = Sqr(dot(wo, wm) + dot(wi, wm) * etap) * abs(CosTheta(wi) * CosTheta(wo));
     if (denom < EPS) return 0.0f;
     return T * mfDistrib.D(wm) * mfDistrib.G(wo, wi) * abs(dot(wi, wm) * dot(wo, wm) / denom);
 }
@@ -81,11 +81,11 @@ float PDFGlossy(float3 wo, float3 wi, TrowbridgeReitzDistribution mfDistrib) {
 float PDFTransmittance(float3 wo, float3 wi, float eta, TrowbridgeReitzDistribution mfDistrib) {
     float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
     // Must match Refract()'s eta convention (eta_t/eta_i)
-    float3 wm = normalize(wo * etap + wi);
+    float3 wm = normalize(wo + wi * etap);
     wm = FaceForward(wm, float3(0, 0, 1));
-    float denom = Sqr(dot(wi, wm) + dot(wo, wm) / etap);
+    float denom = Sqr(dot(wo, wm) + dot(wi, wm) * etap);
     if (denom < EPS) return 0.0f;
-    return mfDistrib.PDF(wo, wm) * AbsDot(wi, wm) / denom;
+    return mfDistrib.PDF(wo, wm) * AbsDot(wi, wm) * Sqr(etap) / denom;
 }
 
 public struct DiffuseBSDF : IBxDF {
@@ -153,7 +153,7 @@ public struct GlassBSDF : IBxDF {
         } else {
             float3 val = baseColor * TorranceSparrowTransmittance(wo, wi, transmittanceF0, float3(1.0f), eta, mfDistrib);
             if (mode == TransportMode::Radiance)
-                val /= Sqr(etap);
+                val *= Sqr(etap);
             return val;
         }
     }
@@ -299,7 +299,7 @@ public struct PrincipledBSDFLobes {
     public __init(float3 baseColor, float metallic, float roughness, float ior,
                   float transmission = 0.0f, bool energyCompensation = true, float3 wo = float3(0,0,1)) {
         ior       = max(1.0f + 5e-3f, ior);
-        roughness = max(5e-3f, roughness);
+        roughness = max(8e-3f, roughness);
         float dielF0 = F0FromIor(ior);
 
         // View-dependent Fresnel weight
