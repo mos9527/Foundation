@@ -12,6 +12,7 @@ add_subdirectory(Shaders)
 add_library(Editor_Assets STATIC)
 target_sources(Editor_Assets PUBLIC
         Scene/Mesh.cpp Scene/Scene.cpp Scene/Texture.cpp
+        Render/Precompute.cpp
         "${lz4_SOURCE_DIR}/lib/lz4.c"
         "${lz4_SOURCE_DIR}/lib/xxhash.c"
         "${bc7enc_SOURCE_DIR}/bc7enc.c"
@@ -52,7 +53,6 @@ target_precompile_headers(
         "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc>"
 )
 
-add_executable(Editor)
 target_sources(Editor PRIVATE
         SDLMain.cpp ImGui.cpp
         EditorState.cpp Editor.cpp EditorScene.cpp EditorPanels.cpp EditorGizmos.cpp
