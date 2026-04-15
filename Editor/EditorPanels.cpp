@@ -507,6 +507,25 @@ void FLightingPanel()
         if (ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen))
         {
             anyChanged |= ImHDRColorEdit("Ambient", GShaderGlobals.ambientColor, GShaderGlobals.ambientPower);
+
+            ImGui::Separator();
+            bool hasEnv = GShaderGlobals.useEnvMap != 0u;
+            ImGui::Text(hasEnv ? "HDRI Loaded" : "No HDRI");
+            if (hasEnv)
+            {
+                bool envChanged = false;
+                envChanged |= ImGui::SliderFloat("Env Scale", &GShaderGlobals.envMapScale, 0.0f, 10.0f, "%.3f",
+                                                 ImGuiSliderFlags_Logarithmic);
+                bool envEnabled = GShaderGlobals.useEnvMap != 0u;
+                if (ImGui::Checkbox("Enable Env Map", &envEnabled))
+                {
+                    GShaderGlobals.useEnvMap = envEnabled ? 1u : 0u;
+                    envChanged = true;
+                }
+                if (envChanged)
+                    anyChanged = true;
+            }
+            ImGui::TextDisabled("Drag & drop .hdr/.hdri to load");
         }
 
         if (anyChanged)
@@ -596,26 +615,7 @@ void FRunningImGui()
             ImGui::SeparatorText("GBuffer View");
             changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
         }
-        {
-            ImGui::SeparatorText("Environment Map");
-            bool hasEnv = GShaderGlobals.useEnvMap != 0u;
-            ImGui::Text(hasEnv ? "HDRI Loaded" : "No HDRI");
-            if (hasEnv)
-            {
-                bool envChanged = false;
-                envChanged |= ImGui::SliderFloat("Env Scale", &GShaderGlobals.envMapScale, 0.0f, 10.0f, "%.3f",
-                                                 ImGuiSliderFlags_Logarithmic);
-                bool envEnabled = GShaderGlobals.useEnvMap != 0u;
-                if (ImGui::Checkbox("Enable Env Map", &envEnabled))
-                {
-                    GShaderGlobals.useEnvMap = envEnabled ? 1u : 0u;
-                    envChanged = true;
-                }
-                if (envChanged)
-                    GShaderGlobals.ptAccumulatedFrames = 0;
-            }
-            ImGui::TextDisabled("Drag & drop .hdr/.hdri to load");
-        }
+
         changed |= ImGui::Button("Reload");
         if (changed)
             FEState = FERunningEnter;

@@ -133,6 +133,8 @@ class GPUScene
     uint32_t mGGXlutEIndex{UINT32_MAX}, mGGXlutEavgIndex{UINT32_MAX};
     // Environment map (stored in texture pool)
     uint32_t mEnvMapIndex{UINT32_MAX};
+    RHIDeviceScopedHandle<RHIBuffer> mEnvMapMarginalCDF;
+    uint32_t mEnvMapConditionalCDFIndex{UINT32_MAX};
     /* AS */
     // BLAS
     Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mBLASes;
@@ -195,6 +197,8 @@ public:
     // Environment map
     void UploadEnvMap(ImmediateUpload* ctx, FTexture2D const& source);
     [[nodiscard]] RHITexture* GetEnvMap() const;
+    [[nodiscard]] RHIBuffer* GetEnvMapMarginalCDF() const { return mEnvMapMarginalCDF.Get(); }
+    [[nodiscard]] RHITexture* GetEnvMapConditionalCDF() const;
     /* AS */
     [[nodiscard]] RHIAccelerationStructure* GetTLAS() const { return mTLAS ? mTLAS.Get() : nullptr; }
     void Reset();

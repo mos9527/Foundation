@@ -52,7 +52,7 @@ target_precompile_headers(
         PUBLIC
         "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc>"
 )
-
+add_executable(Editor)
 target_sources(Editor PRIVATE
         SDLMain.cpp ImGui.cpp
         EditorState.cpp Editor.cpp EditorScene.cpp EditorPanels.cpp EditorGizmos.cpp

@@ -178,17 +178,6 @@ void ReplaceScene(StringView path)
         ctx->End(), ctx.Submit(), ctx.WaitIdle();
     }
 
-    // Upload environment map if the scene provides one
-    if (GDoc.scene.mEnvMap.has_value() && GDoc.scene.mEnvMap->IsValid())
-    {
-        ImmediateUpload upload(GContext->device.Get(), 128 * (1u << 20));
-        upload.Begin();
-        gpu->UploadEnvMap(&upload, *GDoc.scene.mEnvMap);
-        upload.End(), upload.WaitIdle();
-        GShaderGlobals.useEnvMap = 1u;
-        LOG(Editor, LogInfo, "Uploaded scene env map");
-    }
-
     // Apply camera and lighting data
     {
         if (!GDoc.scene.mCameras.empty())
@@ -218,11 +207,10 @@ void LoadEnvMap(StringView path)
     {
         FTexture2D tex(GLOBAL_ALLOC);
         LoadHDR(tex, path);
-        ImmediateUpload upload(GContext->device.Get(), 128 * (1u << 20));
+        ImmediateUpload upload(GContext->device.Get(), 256 * (1u << 20));
         upload.Begin();
         gpu->UploadEnvMap(&upload, tex);
         upload.End(), upload.WaitIdle();
-        GDoc.scene.mEnvMap = std::move(tex);
         GShaderGlobals.useEnvMap = 1u;
         GShaderGlobals.ptAccumulatedFrames = 0;
         // Renderer must be rebuilt to rebind the environment map resource

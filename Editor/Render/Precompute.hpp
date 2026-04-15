@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/Container.hpp>
+#include <Math/Math.hpp>
 using namespace Foundation;
 using namespace Core;
 using namespace Math;
@@ -12,6 +13,7 @@ struct PiecewiseConstant1D
     PiecewiseConstant1D(Span<const float> f, Allocator* alloc);
 
     float Int() const { return mInt; }
+    // Uniform location in [0,1]
     float Sample(float u, float& pdf, uint& offset) const;
     float PDF(float sample) const {
         uint offset = clamp(static_cast<uint>(sample * mF.size()), 0u, static_cast<uint>(mF.size() - 1));

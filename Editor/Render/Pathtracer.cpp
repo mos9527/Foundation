@@ -92,9 +92,13 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
 
     auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
     ResourceHandle EnvMapTex;
+    ResourceHandle EnvMapMarginalCDF;
+    ResourceHandle EnvMapConditionalCDF;
     if (gpu->GetEnvMap())
     {
         EnvMapTex = renderer->CreateResource("Env Map", gpu->GetEnvMap());
+        EnvMapMarginalCDF = renderer->CreateResource("Env Map Marginal CDF", gpu->GetEnvMapMarginalCDF());
+        EnvMapConditionalCDF = renderer->CreateResource("Env Map Conditional CDF", gpu->GetEnvMapConditionalCDF());
     }
     else
     {
@@ -103,6 +107,14 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
             RHITextureDesc{.usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
                            .extent = {1, 1, 1},
                            .format = RHIResourceFormat::R8G8B8A8Unorm});
+        EnvMapMarginalCDF = renderer->CreateResource(
+            "Env Map Marginal CDF Fallback",
+            RHIBufferDesc{.usage = RHIBufferUsageBits::StorageBuffer, .size = sizeof(float) * 2});
+        EnvMapConditionalCDF = renderer->CreateResource(
+            "Env Map Conditional CDF Fallback",
+            RHITextureDesc{.usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
+                           .extent = {1, 1, 1},
+                           .format = RHIResourceFormat::R32SignedFloat});
     }
     auto EnvMapSampler = renderer->CreateSampler({
         .filter = {RHIDeviceSampler::SamplerDesc::Filter::Linear, RHIDeviceSampler::SamplerDesc::Filter::Linear},
@@ -166,6 +178,10 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
                                                                             : RHIResourceFormat::R8G8B8A8Unorm,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSampler(self, EnvMapSampler, "envMapSampler");
+            r->BindBufferStorageRead(self, EnvMapMarginalCDF, RHIPipelineStageBits::RayTracingShader, "envMapMarginalCDF");
+            r->BindTextureSRV(self, EnvMapConditionalCDF, "envMapConditionalCDF", RHIPipelineStageBits::RayTracingShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                                 .range = RHITextureSubresourceRange::Create()});
             r->BindDescriptorSet(self, "textures", gpu->GetTexturePool()->GetDescriptorSetLayout());
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)

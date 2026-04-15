@@ -1,4 +1,5 @@
 #include "Tables.hpp"
+#include "../Render/Precompute.hpp"
 static FTexture2D MakeLUT(const float* data, RHIResourceFormat format, uint32_t width, uint32_t height)
 {
     FTexture2D tex(GLOBAL_ALLOC);
@@ -418,6 +419,55 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
 void GPUScene::UploadEnvMap(ImmediateUpload* ctx, FTexture2D const& source)
 {
     Upload(ctx, source, mEnvMapIndex);
+    
+    // Compute CDFs for importance sampling
+    uint32_t width = source.GetWidth();
+    uint32_t height = source.GetHeight();
+    Span<const unsigned char> data = source.GetSubresource(0, 0);
+    const float4* pixels = reinterpret_cast<const float4*>(data.data());
+    
+    Vector<float> f(width * height, mContext->allocator);
+    for (uint32_t y = 0; y < height; ++y)
+    {
+        float v = (y + 0.5f) / height;
+        float sinTheta = std::sin(pi<float>() * v);
+        for (uint32_t x = 0; x < width; ++x)
+        {
+            float4 pixel = pixels[y * width + x];
+            float luminance = 0.2126f * pixel.x + 0.7152f * pixel.y + 0.0722f * pixel.z;
+            f[y * width + x] = luminance * sinTheta;
+        }
+    }
+    
+    PiecewiseConstant2D cdf(f, width, height, mContext->allocator);
+    
+    // Upload Marginal CDF
+    size_t marginalSize = cdf.mMarginal->mCDF.size() * sizeof(float);
+    mEnvMapMarginalCDF = mContext->device->CreateBuffer({
+        .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
+        .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
+        .size = marginalSize
+    });
+    char* marginalPtr = ctx->Upload(mEnvMapMarginalCDF.Get(), marginalSize, 0);
+    std::memcpy(marginalPtr, cdf.mMarginal->mCDF.data(), marginalSize);
+    
+    // Upload Conditional CDF as Texture2D
+    FTexture2D conditionalTex(mContext->allocator);
+    ddsCreateHeader(conditionalTex.header, cdf.mConditional[0]->mCDF.size(), height, 1);
+    ddsSetFormat(conditionalTex.header, conditionalTex.header10, 1, RHIResourceFormat::R32SignedFloat);
+    
+    size_t conditionalSize = height * cdf.mConditional[0]->mCDF.size() * sizeof(float);
+    conditionalTex.data.resize(conditionalSize);
+    
+    for (uint32_t y = 0; y < height; ++y)
+    {
+        std::memcpy(conditionalTex.data.data() + y * cdf.mConditional[0]->mCDF.size() * sizeof(float),
+                    cdf.mConditional[y]->mCDF.data(),
+                    cdf.mConditional[y]->mCDF.size() * sizeof(float));
+    }
+    
+    Upload(ctx, conditionalTex, mEnvMapConditionalCDFIndex);
+
     LOG(GPUScene, LogInfo, "Environment map uploaded: {}x{}", source.GetWidth(), source.GetHeight());
 }
 
@@ -445,6 +495,11 @@ RHITexture* GPUScene::GetGGXlutE() const
 RHITexture* GPUScene::GetGGXlutEavg() const
 {
     return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mGGXlutEavgIndex);
+}
+
+RHITexture* GPUScene::GetEnvMapConditionalCDF() const
+{
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mEnvMapConditionalCDFIndex);
 }
 
 void GPUScene::Reset()

@@ -60,6 +60,8 @@ public interface ILight {
 // When no env map is loaded a 1×1 black fallback is bound so sampling is always safe.
 public Texture2D<float4> envMapTexture;
 public SamplerState        envMapSampler;
+public StructuredBuffer<float> envMapMarginalCDF;
+public Texture2D<float> envMapConditionalCDF;
 
 // Direction → equirectangular UV (azimuth-elevation mapping)
 // φ = atan2(d.z, d.x) ∈ [-π,π],  θ = acos(d.y) ∈ [0,π]
@@ -71,6 +73,99 @@ float2 EnvMapDirToUV(float3 d) {
 
 float3 SampleEnvMapTexture(float3 dir) {
     return envMapTexture.SampleLevel(envMapSampler, EnvMapDirToUV(dir), 0).xyz;
+}
+// See also Render/Precompute.cpp
+// Helper: Binary search on a 1D CDF buffer
+uint FindInterval(StructuredBuffer<float> cdf, uint baseIdx, uint numBins, float u) 
+{
+    uint first = 0;
+    uint len = numBins + 1;
+    
+    while (len > 0) {
+        uint half_len = len >> 1;
+        uint middle = first + half_len;
+        
+        if (cdf[baseIdx + middle] <= u) {
+            first = middle + 1;
+            len -= half_len + 1;
+        } else {
+            len = half_len;
+        }
+    }
+    
+    return clamp(first - 1, 0, numBins - 1);
+}
+
+// 1D Sampling Function
+float Sample1D(StructuredBuffer<float> cdf, uint baseIdx, uint numBins, float u, out float pdf, out uint offset) 
+{
+    offset = FindInterval(cdf, baseIdx, numBins, u);
+    
+    float cdf0 = cdf[baseIdx + offset];
+    float cdf1 = cdf[baseIdx + offset + 1];
+    
+    pdf = (cdf1 - cdf0) * numBins;
+    
+    float du = (cdf1 > cdf0) ? (u - cdf0) / (cdf1 - cdf0) : 0.0;
+    
+    return (offset + du) / numBins;
+}
+
+// 2D Sampling Function
+float2 Sample2D(StructuredBuffer<float> marginalCDF, uint sizeY, 
+                Texture2D<float> conditionalCDF, uint sizeX, 
+                float2 u, out float pdf, out uint2 offset) 
+{
+    float pdfY, pdfX;
+    
+    float v = Sample1D(marginalCDF, 0, sizeY, u.y, pdfY, offset.y);
+    
+    // Binary search on the texture row
+    uint first = 0;
+    uint len = sizeX + 1;
+    
+    while (len > 0) {
+        uint half_len = len >> 1;
+        uint middle = first + half_len;
+        
+        if (conditionalCDF.Load(int3(middle, offset.y, 0)) <= u.x) {
+            first = middle + 1;
+            len -= half_len + 1;
+        } else {
+            len = half_len;
+        }
+    }
+    
+    offset.x = clamp(first - 1, 0, sizeX - 1);
+    
+    float cdfX0 = conditionalCDF.Load(int3(offset.x, offset.y, 0));
+    float cdfX1 = conditionalCDF.Load(int3(offset.x + 1, offset.y, 0));
+    
+    pdfX = (cdfX1 - cdfX0) * sizeX;
+    
+    float du = (cdfX1 > cdfX0) ? (u.x - cdfX0) / (cdfX1 - cdfX0) : 0.0;
+    float u_coord = (offset.x + du) / sizeX;
+    
+    pdf = pdfX * pdfY;
+    
+    return float2(u_coord, v);
+}
+
+float PDF2D(StructuredBuffer<float> marginalCDF, uint sizeY, 
+            Texture2D<float> conditionalCDF, uint sizeX, 
+            float2 uv)
+{
+    uint2 offset = uint2(clamp(uint(uv.x * sizeX), 0, sizeX - 1), clamp(uint(uv.y * sizeY), 0, sizeY - 1));
+    
+    float cdfY0 = marginalCDF[offset.y];
+    float cdfY1 = marginalCDF[offset.y + 1];
+    float pdfY = (cdfY1 - cdfY0) * sizeY;
+    
+    float cdfX0 = conditionalCDF.Load(int3(offset.x, offset.y, 0));
+    float cdfX1 = conditionalCDF.Load(int3(offset.x + 1, offset.y, 0));
+    float pdfX = (cdfX1 - cdfX0) * sizeX;
+    
+    return pdfX * pdfY;
 }
 
 // https://pbr-book.org/4ed/Light_Sources/Infinite_Area_Lights
@@ -105,11 +200,48 @@ public struct InfiniteLight : ILight {
         pdfDir = UniformSpherePDF();
     }
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
-        float3 wi = SampleUniformSphere(u);
-        return LightLiSample(Le(wi), wi, UniformSpherePDF(), false, INF);
+        if (hasEnvMap) {
+            uint width, height;
+            envMapTexture.GetDimensions(width, height);
+            float pdf;
+            uint2 offset;
+            float2 uv = Sample2D(envMapMarginalCDF, height, envMapConditionalCDF, width, u, pdf, offset);
+            
+            float theta = uv.y * Pi;
+            float phi = (uv.x - 0.5f) * 2.0f * Pi;
+            float sinTheta = sin(theta);
+            float cosTheta = cos(theta);
+            float sinPhi = sin(phi);
+            float cosPhi = cos(phi);
+            
+            float3 wi = float3(sinTheta * cosPhi, cosTheta, sinTheta * sinPhi);
+            
+            if (sinTheta == 0.0f) pdf = 0.0f;
+            else pdf /= (2.0f * Pi * Pi * sinTheta);
+            
+            if (pdf == 0.0f) return LightLiSample();
+            
+            return LightLiSample(Le(wi), wi, pdf, false, INF);
+        } else {
+            float3 wi = SampleUniformSphere(u);
+            return LightLiSample(Le(wi), wi, UniformSpherePDF(), false, INF);
+        }
     }
     public float PDF_Li(LightSampleContext ctx, float3 w, bool allowIncompletePDF) {
-        return UniformSpherePDF();
+        if (hasEnvMap) {
+            uint width, height;
+            envMapTexture.GetDimensions(width, height);
+            float2 uv = EnvMapDirToUV(w);
+            float pdf = PDF2D(envMapMarginalCDF, height, envMapConditionalCDF, width, uv);
+            
+            float theta = uv.y * Pi;
+            float sinTheta = sin(theta);
+            
+            if (sinTheta == 0.0f) return 0.0f;
+            return pdf / (2.0f * Pi * Pi * sinTheta);
+        } else {
+            return UniformSpherePDF();
+        }
     }
 };
 // https://pbr-book.org/4ed/Light_Sources/Distant_Lights#DistantLight
