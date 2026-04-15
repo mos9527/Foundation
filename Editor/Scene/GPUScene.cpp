@@ -435,6 +435,7 @@ void GPUScene::UploadEnvMap(ImmediateUpload* ctx, FTexture2D const& source)
         {
             float4 pixel = pixels[y * width + x];
             float luminance = 0.2126f * pixel.x + 0.7152f * pixel.y + 0.0722f * pixel.z;
+            // dw = dPhi dTheta sinTheta, account for solid angle (area)
             f[y * width + x] = luminance * sinTheta;
         }
     }
