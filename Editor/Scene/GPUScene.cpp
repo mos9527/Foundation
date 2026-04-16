@@ -1,5 +1,5 @@
-#include "Tables.hpp"
 #include "../Render/Precompute.hpp"
+#include "../Render/Tables.hpp"
 static FTexture2D MakeLUT(const float* data, RHIResourceFormat format, uint32_t width, uint32_t height)
 {
     FTexture2D tex(GLOBAL_ALLOC);
@@ -49,14 +49,28 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
         .size = desc.tlasBudget
     };
     mTLAS = mContext->device->CreateAccelerationStructure(tlasDesc);
+    
+    mSobolMatricesBuffer = mContext->device->CreateBuffer(
+    {
+        .resource = {
+            .heap = RHIDeviceHeapType::Local,
+            .shared = false
+        },
+        .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
+        .size = sizeof(kSobolMatrices32)
+    });
+    mSobolMatricesBuffer->DebugSetObjectName("Sobol Matrices");
+
     {
         auto lutE = MakeLUT(kGGXlutE, RHIResourceFormat::R32G32SignedFloat, 32, 32);
         auto lutEavg = MakeLUT(kGGXlutEavg, RHIResourceFormat::R32SignedFloat, 32, 1);
-        const size_t budget = lutE.GetSize() + lutEavg.GetSize();
+        const size_t budget = lutE.GetSize() + lutEavg.GetSize() + sizeof(kSobolMatrices32);
         ImmediateUpload upload(mContext->device.Get(), budget);
         upload.Begin();
         Upload(&upload, lutE, mGGXlutEIndex);
         Upload(&upload, lutEavg, mGGXlutEavgIndex);
+        char* ptr = upload.Upload(mSobolMatricesBuffer.Get(), sizeof(kSobolMatrices32), 0);
+        std::memcpy(ptr, kSobolMatrices32, sizeof(kSobolMatrices32));
         upload.End();
         upload.WaitIdle();
     }
@@ -501,6 +515,11 @@ RHITexture* GPUScene::GetGGXlutEavg() const
 RHITexture* GPUScene::GetEnvMapConditionalCDF() const
 {
     return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mEnvMapConditionalCDFIndex);
+}
+
+RHIBuffer* GPUScene::GetSobolMatricesBuffer() const
+{
+    return mSobolMatricesBuffer.Get();
 }
 
 void GPUScene::Reset()

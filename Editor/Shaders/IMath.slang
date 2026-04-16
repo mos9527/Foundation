@@ -246,9 +246,16 @@ public uint hash(uint4 v)
 float uintToFloat(uint x) {
 	return asfloat(0x3f800000 | (x >> 9)) - 1.0f;
 }
+
+public interface ISampler
+{
+    [mutating] float sample();
+    [mutating] float2 sample2D();
+}
+
 // PCG random numbers generator
 // Source: "Hash Functions for GPU Rendering" by Jarzynski & Olano
-public struct PCG
+public struct PCG : ISampler
 {
     uint4 pcg4d(uint4 v)
     {
@@ -283,11 +290,44 @@ public struct PCG
         state = pcg4d(state);
         return uintToFloat(state.x);
     }
-    public float2 sample2D()
+    [mutating] public float2 sample2D()
     {
         return float2(sample(), sample());
     }
 }
+// https://www.pbr-book.org/4ed/Sampling_and_Reconstruction/Sobol_Samplers#SobolSample
+public struct Sobol : ISampler
+{
+    uint sampleIndex;
+    uint dimension;
+    uint seed;
+    StructuredBuffer<uint> matrices;
+
+    public __init(uint2 pixel, uint frameNo, StructuredBuffer<uint> sobolMatrices)
+    {
+        sampleIndex = frameNo;
+        dimension = 0;
+        seed = hash(pixel);
+        matrices = sobolMatrices;
+    }
+    [mutating] public float sample()
+    {
+        uint v = 0, index = sampleIndex;
+        // See Render/Tables.hpp
+        for (uint i = dimension * 52; index != 0; index >>= 1, i++)
+            if ((index & 1) != 0)
+                v ^= matrices[i];
+        dimension++;
+        // Hash Scramble
+        v ^= hash(uint2(seed, dimension));
+        return float(v) * (1.0f / 4294967296.0f);
+    }
+    [mutating] public float2 sample2D()
+    {
+        return float2(sample(), sample());
+    }
+}
+
 public static const float EPS_TMin = 1e-2;
 // The safeOffsetRay function shifts a point on a surface so that a ray
 // bouncing off the surface is no longer treated as intersecting the surface

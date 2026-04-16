@@ -179,6 +179,7 @@ public struct UBO
     public uint32_t ptAccumulatedFrames;
     public uint32_t ptMaxBounces;
     public float ptFireflyClamp;
+    public uint32_t ptSampler; // 0: PCG, 1: Sobol
     // -- Debug
     public uint32_t postShowOutline;
 };

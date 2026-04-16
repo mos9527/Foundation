@@ -573,9 +573,15 @@ void FRunningImGui()
         ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
         if (GRendererMode == ERendererMode::PathTracer)
         {
-            ImGui::Text("PT Accumulation: %d", GShaderGlobals.ptAccumulatedFrames);
-            ImGui::SliderInt("PT Bounces", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBounces), 1, 64);
-            ImGui::SliderFloat("Firefly Clamp", &GShaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
+            ImGui::Text("Samples: %d", GShaderGlobals.ptAccumulatedFrames);
+            ImGui::SliderInt("Bounces", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBounces), 1, 64);
+            ImGui::SliderFloat("Max Energy", &GShaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
+            
+            const char* samplerItems[] = {"PCG (Independent)", "Sobol (Quasi-Monte Carlo)"};
+            if (ImGui::Combo("Sampler", reinterpret_cast<int*>(&GShaderGlobals.ptSampler), samplerItems, 2))
+            {
+                GShaderGlobals.ptAccumulatedFrames = 0; // Reset accumulation on sampler change
+            }
         }
         GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
         bool changed = false;

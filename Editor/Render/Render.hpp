@@ -40,6 +40,7 @@ struct UBO
     uint32_t ptAccumulatedFrames{0u};
     uint32_t ptMaxBounces{32u};
     float ptFireflyClamp{10.0f};
+    uint32_t ptSampler{1u}; // 0: PCG, 1: Sobol
     // -- Debug
     uint32_t postShowOutline{1u};
 };

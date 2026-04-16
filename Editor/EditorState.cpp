@@ -14,6 +14,6 @@ FArcballCamera GCamera{
     .zNear = 0.1f,
     .fovY = radians(60.f),
 };
-bool GShowImGui = true;
+bool GShowImGui = false;
 FEditorState FEState = FEInitEnter;
 bool cameraUpdated = true;

@@ -145,6 +145,8 @@ class GPUScene
     RHIDeviceScopedHandle<RHIBuffer> mTLASBuffer, mScratchBufferTLAS;
     RHIDeviceScopedHandle<RHIAccelerationStructure> mTLAS;
     UploadGPURingBuffer<char> mTLASInstances;
+    // Samplers
+    RHIDeviceScopedHandle<RHIBuffer> mSobolMatricesBuffer;
 public:
     struct GPUSceneDesc
     {
@@ -200,6 +202,9 @@ public:
     [[nodiscard]] RHIBuffer* GetEnvMapMarginalCDF() const { return mEnvMapMarginalCDF.Get(); }
     [[nodiscard]] RHITexture* GetEnvMapConditionalCDF() const;
     /* AS */
-    [[nodiscard]] RHIAccelerationStructure* GetTLAS() const { return mTLAS ? mTLAS.Get() : nullptr; }
+    [[nodiscard]] RHIAccelerationStructure* GetTLAS() const { return mTLAS.Get(); }
+    /* Samplers */
+    [[nodiscard]] RHIBuffer* GetSobolMatricesBuffer() const;
+
     void Reset();
 };

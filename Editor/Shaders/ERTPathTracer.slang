@@ -15,6 +15,7 @@ StructuredBuffer<GSInstance> instances;
 ByteAddressBuffer primitives;
 StructuredBuffer<GSMaterial> materials;
 SamplerState textureSampler;
+StructuredBuffer<uint> sobolMatrices;
 // -- Accumulation buffers (Welford online mean)
 RWTexture2D<float4> gBuffer0;  // BaseColor.rgb, MaterialID (packed)
 RWTexture2D<float4> gBuffer1;  // Normal.xyz * 0.5 + 0.5, 0
@@ -176,7 +177,7 @@ void AddRadiance(inout float3 L, float3 v)
 }
 
 // Primary ray with jitter for AA
-float3 GeneratePrimaryRay(uint2 pixel, PCG rng)
+float3 GeneratePrimaryRay<S : ISampler>(uint2 pixel, inout S rng)
 {
     float2 jitter = lerp(float2(-0.5f), float2(0.5f), rng.sample2D());
     float2 uv = float2(pixel + jitter + 0.5f) / DispatchRaysDimensions().xy;
@@ -351,7 +352,22 @@ LightLiSample SampleSceneLight(LightSampleContext ctx, InfiniteLight env, float 
 void RayGeneration()
 {
     uint2 pix = DispatchRaysIndex().xy;
-    PCG rng = PCG(pix, globalParams.frameNumber);
+
+    // PCG or Sobol
+    if (globalParams.ptSampler == 0)
+    {
+        PCG rng = PCG(pix, globalParams.frameNumber);
+        PathTrace(pix, rng);
+    }
+    else
+    {
+        Sobol rng = Sobol(pix, globalParams.frameNumber, sobolMatrices);
+        PathTrace(pix, rng);
+    }
+}
+
+void PathTrace<S : ISampler>(uint2 pix, inout S rng)
+{
     float3 beta = float3(1);
     // Per-lobe AOV accumulators (Diffuse / Specular)
     float3 LDiffuse  = float3(0);
@@ -573,7 +589,7 @@ void RayGeneration()
 // TODO: OMM? Maybe one day.
 //  https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_opacity_micromap.html
 //  https://devblogs.microsoft.com/directx/omm/
-bool AnyHitOpacityIgnore(inout PCG rng, uint instance, uint primitive,
+bool AnyHitOpacityIgnore<S : ISampler>(inout S rng, uint instance, uint primitive,
     BuiltInTriangleIntersectionAttributes attr)
 {
     GSInstance inst = instances[NonUniformResourceIndex(instance)];

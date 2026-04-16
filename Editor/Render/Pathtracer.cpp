@@ -40,6 +40,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
     auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
     auto MaterialBuffer = renderer->CreateResource("Material Buffer", gpu->GetMaterialBuffer());
     auto TexSampler = renderer->CreateSampler({});
+    auto SobolMatrices = renderer->CreateResource("Sobol Matrices", gpu->GetSobolMatricesBuffer());
     auto [w, h] = renderer->GetSwapchainExtent();
 
     // -- Accumulation buffers (Welford online mean, all F32)
@@ -149,6 +150,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitives");
             r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
+            r->BindBufferStorageRead(self, SobolMatrices, RHIPipelineStageBits::RayTracingShader, "sobolMatrices");
             r->BindTextureSampler(self, TexSampler, "textureSampler");
             r->BindTextureSampler(self, LUTSampler, "lutSampler");
             // Accumulation UAVs (Welford online mean)
