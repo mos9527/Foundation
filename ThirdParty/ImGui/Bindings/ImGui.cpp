@@ -352,6 +352,7 @@ void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; // Enable Docking
     io.ConfigDpiScaleFonts = true; // [Experimental] Automatically overwrite style.FontScaleDpi in Begin() when Monitor
                                    // DPI changes. This will scale fonts but _NOT_ scale sizes/padding for now.
+    io.Fonts->AddFontDefaultVector();
     // Styles from
     // https://github.com/KhronosGroup/Vulkan-Samples/blob/b9961792604af2ede4c9d0868947de2a8eccd549/framework/gui.h#L338
     ImGuiStyle& style = ImGui::GetStyle();

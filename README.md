@@ -3,6 +3,11 @@ Foundation
 
 Docs are available at: https://mos9527.com/Foundation
 
+TODO (Editor)
+---
+- [ ] HDR Display Output
+
+
 TODO (Path Tracer)
 ---
 - [ ] Glass BSDF energy compensation
