@@ -112,7 +112,7 @@ FetchContent_Declare(
 FetchContent_Declare(
     ImGuiFileDialog
     GIT_REPOSITORY https://github.com/aiekick/ImGuiFileDialog
-    GIT_TAG v0.6.7
+    GIT_TAG v0.6.8
     GIT_SHALLOW TRUE
 )
 
