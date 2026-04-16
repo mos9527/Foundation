@@ -10,7 +10,7 @@ TODO (Path Tracer)
 - [ ] Volume rendering
 - [ ] Denoising (SVGF? NRD?)
 - [ ] Spatial Reuse ([SHaRC](https://github.com/NVIDIA-RTX/SHARC)?)
-- [ ] PCG (Independent) -> Sobol
+- [x] PCG (Independent), Sobol Samplers
 - [x] Importance sampling Infinite Image Lights
 
 TODO (Raster)
