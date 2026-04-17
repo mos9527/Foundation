@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.26)
 
 FetchContent_MakeAvailable(stb)
 FetchContent_MakeAvailable(fast_obj)
+FetchContent_MakeAvailable(nativefiledialog-extended)
 FetchContent_MakeAvailable(meshoptimizer)
 FetchContent_MakeAvailable(cgltf)
 FetchContent_MakeAvailable(lz4)
@@ -59,11 +60,9 @@ target_sources(Editor PRIVATE
         Render/Rasterizer.cpp Render/Pathtracer.cpp
 )
 target_link_libraries(
-        Editor PRIVATE Editor_Context Foundation_RHIVulkan ThirdParty_ImGui argh
+        Editor PRIVATE Editor_Context Foundation_RHIVulkan ThirdParty_ImGui argh nfd
 )
-if(WIN32)
-    target_link_libraries(Editor PRIVATE comdlg32)
-endif()
+
 
 add_dependencies(
         Editor

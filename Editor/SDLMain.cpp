@@ -1,6 +1,7 @@
 #include "ImGui.hpp"
 #include "Paths.hpp"
 #include <argh.h>
+#include <nfd.h>
 extern bool EditorProcessEvent(SDL_Event*);
 extern bool EditorOnFrame(FContext*);
 bool /* should close */ mainLoop()
@@ -65,6 +66,7 @@ int main(int argc, char** argv)
                   GLOBAL_ALLOC, RHIDevice::DeviceDesc{.id = static_cast<uint32_t>(gpuId)});
     ImGui_ImplFoundation_SetupContextWithDefaultStyles();
     ImGui_ImplFoundation_Init(GContext->device.Get(), GContext->window);
+    NFD_Init();
 
     // Positional arguments (non-flag/option) are treated as file paths passed to the Editor
     // argh's pos_args() index 0 is the program name; file paths start from index 1
@@ -75,6 +77,7 @@ int main(int argc, char** argv)
 
     while (!mainLoop()) {}
     LOG(SDLMain, LogInfo, "Quitting...");
+    NFD_Quit();
     ImGui_ImplFoundation_Shutdown();
     DestroyContext();
 }

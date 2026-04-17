@@ -110,9 +110,9 @@ FetchContent_Declare(
 )
 
 FetchContent_Declare(
-    ImGuiFileDialog
-    GIT_REPOSITORY https://github.com/aiekick/ImGuiFileDialog
-    GIT_TAG v0.6.8
+    nativefiledialog-extended
+    GIT_REPOSITORY https://github.com/btzy/nativefiledialog-extended.git
+    GIT_TAG v1.2.1
     GIT_SHALLOW TRUE
 )
 

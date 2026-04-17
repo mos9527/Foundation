@@ -1,4 +1,4 @@
-#include <ImGuiFileDialog.h>
+#include <nfd.h>
 #include <Math/Decompose.hpp>
 #include <RenderCore/ImmediateContext.hpp>
 #include <imgui_internal.h>
@@ -45,15 +45,29 @@ void EditorDockSpaceAndMenuBar()
         {
             if (ImGui::MenuItem("Open Scene..."))
             {
-                IGFD::FileDialogConfig config;
-                config.path = ".";
-                ImGuiFileDialog::Instance()->OpenDialog("OpenSceneDlg", "Open Scene", ".gltf,.glb,.fscn", config);
+                nfdu8filteritem_t filters[] = {{"Scene Files", "gltf,glb,fscn"}};
+                nfdopendialogu8args_t args = {0};
+                args.filterList = filters;
+                args.filterCount = 1;
+                nfdu8char_t* outPath = nullptr;
+                if (NFD_OpenDialogU8_With(&outPath, &args) == NFD_OKAY)
+                {
+                    ReplaceScene(outPath);
+                    NFD_FreePathU8(outPath);
+                }
             }
             if (ImGui::MenuItem("Open HDR..."))
             {
-                IGFD::FileDialogConfig config;
-                config.path = ".";
-                ImGuiFileDialog::Instance()->OpenDialog("OpenHDRDlg", "Open HDR Environment Map", ".hdr,.hdri", config);
+                nfdu8filteritem_t filters[] = {{"HDR Images", "hdr,hdri"}};
+                nfdopendialogu8args_t args = {0};
+                args.filterList = filters;
+                args.filterCount = 1;
+                nfdu8char_t* outPath = nullptr;
+                if (NFD_OpenDialogU8_With(&outPath, &args) == NFD_OKAY)
+                {
+                    LoadEnvMap(outPath);
+                    NFD_FreePathU8(outPath);
+                }
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Save", "Ctrl+S"))
@@ -63,20 +77,34 @@ void EditorDockSpaceAndMenuBar()
             }
             if (ImGui::MenuItem("Save As..."))
             {
-                IGFD::FileDialogConfig config;
-                config.path = ".";
-                config.flags = ImGuiFileDialogFlags_ConfirmOverwrite;
-                ImGuiFileDialog::Instance()->OpenDialog("SaveAsDlg", "Save Scene As", ".fscn", config);
+                nfdu8filteritem_t filters[] = {{"Scene Files", "fscn"}};
+                nfdsavedialogu8args_t args = {0};
+                args.filterList = filters;
+                args.filterCount = 1;
+                nfdu8char_t* outPath = nullptr;
+                if (NFD_SaveDialogU8_With(&outPath, &args) == NFD_OKAY)
+                {
+                    SaveScene(outPath);
+                    NFD_FreePathU8(outPath);
+                }
             }
             ImGui::Separator();
             if (GRendererMode == ERendererMode::PathTracer && !GDoc.instances.empty())
             {
                 if (ImGui::MenuItem("Render .hdr..."))
                 {
-                    IGFD::FileDialogConfig config;
-                    config.path = ".";
-                    config.flags = ImGuiFileDialogFlags_ConfirmOverwrite;
-                    ImGuiFileDialog::Instance()->OpenDialog("RenderHDRDlg", "Save Render Output", ".hdr", config);
+                    nfdu8filteritem_t filters[] = {{"HDR Images", "hdr"}};
+                    nfdsavedialogu8args_t args = {0};
+                    args.filterList = filters;
+                    args.filterCount = 1;
+                    nfdu8char_t* outPath = nullptr;
+                    if (NFD_SaveDialogU8_With(&outPath, &args) == NFD_OKAY)
+                    {
+                        GRenderImageTask.outputPath = outPath;
+                        GRenderImageTask.format = ERenderFormat::HDR;
+                        GRenderImageTask.openRenderPopup = true;
+                        NFD_FreePathU8(outPath);
+                    }
                 }
             }
             ImGui::EndMenu();
@@ -159,51 +187,6 @@ void EditorDockSpaceAndMenuBar()
         }
 
         ImGui::EndMainMenuBar();
-    }
-
-    // ImGuiFileDialog popup rendering
-    ImVec2 minSize(600, 400);
-    ImVec2 maxSize(FLT_MAX, FLT_MAX);
-
-    if (ImGuiFileDialog::Instance()->Display("OpenSceneDlg", ImGuiWindowFlags_NoCollapse, minSize, maxSize))
-    {
-        if (ImGuiFileDialog::Instance()->IsOk())
-        {
-            std::string filePath = ImGuiFileDialog::Instance()->GetFilePathName();
-            ReplaceScene(filePath);
-        }
-        ImGuiFileDialog::Instance()->Close();
-    }
-
-    if (ImGuiFileDialog::Instance()->Display("OpenHDRDlg", ImGuiWindowFlags_NoCollapse, minSize, maxSize))
-    {
-        if (ImGuiFileDialog::Instance()->IsOk())
-        {
-            std::string filePath = ImGuiFileDialog::Instance()->GetFilePathName();
-            LoadEnvMap(filePath);
-        }
-        ImGuiFileDialog::Instance()->Close();
-    }
-
-    if (ImGuiFileDialog::Instance()->Display("SaveAsDlg", ImGuiWindowFlags_NoCollapse, minSize, maxSize))
-    {
-        if (ImGuiFileDialog::Instance()->IsOk())
-        {
-            std::string filePath = ImGuiFileDialog::Instance()->GetFilePathName();
-            SaveScene(filePath);
-        }
-        ImGuiFileDialog::Instance()->Close();
-    }
-
-    if (ImGuiFileDialog::Instance()->Display("RenderHDRDlg", ImGuiWindowFlags_NoCollapse, minSize, maxSize))
-    {
-        if (ImGuiFileDialog::Instance()->IsOk())
-        {
-            GRenderImageTask.outputPath = ImGuiFileDialog::Instance()->GetFilePathName();
-            GRenderImageTask.format = ERenderFormat::HDR;
-            GRenderImageTask.openRenderPopup = true;
-        }
-        ImGuiFileDialog::Instance()->Close();
     }
 
     ImGui::PopStyleColor(); // WindowBg
