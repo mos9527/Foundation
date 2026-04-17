@@ -22,20 +22,21 @@ vk::SwapchainCreateInfoKHR VulkanSwapchain::vkSwapchainCreateInfoFromSwapchainDe
         desc.minBufferCount, surface_caps.minImageCount
     );
     vk::Format vk_format = vkFormatFromRHIFormat(desc.format);
-    Optional<vk::ColorSpaceKHR> color_space;
+    vk::ColorSpaceKHR vk_color_space = vkColorSpaceFromRHIColorSpace(desc.colorSpace);
+    bool format_supported = false;
     auto formats = mDevice.GetVkPhysicalDevice().getSurfaceFormatsKHR(surface);
     for (auto const& fmt : formats) {
-        if (fmt.format == vk_format) {
-            color_space = fmt.colorSpace;
+        if (fmt.format == vk_format && fmt.colorSpace == vk_color_space) {
+            format_supported = true;
             break;
         }
     }
-    CHECK_MSG(color_space.has_value(), "Swapchain format {} not supported", desc.format);
+    CHECK_MSG(format_supported, "Swapchain format {} with color space {} not supported", desc.format, desc.colorSpace);
     vk::SwapchainCreateInfoKHR create_info{
         .surface = surface,
         .minImageCount = desc.minBufferCount,
         .imageFormat = vk_format,
-        .imageColorSpace = color_space.value(),
+        .imageColorSpace = vk_color_space,
         .imageExtent = vk::Extent2D(desc.extents.x, desc.extents.y),
         .imageArrayLayers = 1, // 1 layer for 2D images
         .imageUsage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eStorage,

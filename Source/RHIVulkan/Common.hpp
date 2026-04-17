@@ -15,8 +15,10 @@ namespace Foundation::RHI {
         case R8G8B8A8Srgb: return vk::Format::eR8G8B8A8Srgb;
         case B8G8R8A8Unrom: return vk::Format::eB8G8R8A8Unorm;
         case B8G8R8A8Srgb: return vk::Format::eB8G8R8A8Srgb;
-        case A2R10G10B10Unorm: return vk::Format::eA2B10G10R10UnormPack32;
-        case A2R10G10B10Snorm: return vk::Format::eA2B10G10R10SnormPack32;
+        case A2R10G10B10Unorm: return vk::Format::eA2R10G10B10UnormPack32;
+        case A2R10G10B10Snorm: return vk::Format::eA2R10G10B10SnormPack32;
+        case A2B10G10R10Unorm: return vk::Format::eA2B10G10R10UnormPack32;
+        case A2B10G10R10Snorm: return vk::Format::eA2B10G10R10SnormPack32;
         case B10G11R11Ufloat: return vk::Format::eB10G11R11UfloatPack32;
         case R32SignedFloat: return vk::Format::eR32Sfloat;
         case R32G32SignedFloat: return vk::Format::eR32G32Sfloat;
@@ -52,6 +54,29 @@ namespace Foundation::RHI {
             return vk::Format::eUndefined;
         }
     }
+
+    inline vk::ColorSpaceKHR vkColorSpaceFromRHIColorSpace(RHIColorSpace colorSpace) {
+        using enum RHIColorSpace;
+        switch (colorSpace) {
+        case SrgbNonLinear: return vk::ColorSpaceKHR::eSrgbNonlinear;
+        case ExtendedSrgbLinear: return vk::ColorSpaceKHR::eExtendedSrgbLinearEXT;
+        case Hdr10St2084: return vk::ColorSpaceKHR::eHdr10St2084EXT;
+        default:
+            return vk::ColorSpaceKHR::eSrgbNonlinear;
+        }
+    }
+
+    inline RHIColorSpace rhiColorSpaceFromVkColorSpace(vk::ColorSpaceKHR colorSpace) {
+        using enum RHIColorSpace;
+        switch (colorSpace) {
+        case vk::ColorSpaceKHR::eSrgbNonlinear: return SrgbNonLinear;
+        case vk::ColorSpaceKHR::eExtendedSrgbLinearEXT: return ExtendedSrgbLinear;
+        case vk::ColorSpaceKHR::eHdr10St2084EXT: return Hdr10St2084;
+        default:
+            return SrgbNonLinear;
+        }
+    }
+
     inline vk::BufferUsageFlags vkBufferUsageFromRHIBufferUsage(RHIBufferUsage usage) {
         using enum RHIBufferUsageBits;
         vk::BufferUsageFlags flags{};

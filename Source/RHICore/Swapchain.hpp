@@ -23,6 +23,7 @@ namespace Foundation::RHI {
         struct SwapchainDesc {
             // Name for the swap chain, used for debugging purposes.
             RHIResourceFormat format;
+            RHIColorSpace colorSpace;
             // Swapchain buffer sizes.
             RHIExtent2D extents;
             // Min number of buffers in the swap chain. i.e. double buffering = 2, triple buffering = 3, etc.

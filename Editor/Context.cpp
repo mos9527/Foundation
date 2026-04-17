@@ -2,8 +2,10 @@ FContext* GContext = nullptr;
 
 void UpdateSwapchain(FContext* context)
 {
-    constexpr RHIResourceFormat kFormatPreferenceList[] = {
-        RHIResourceFormat::R8G8B8A8Unorm, RHIResourceFormat::B8G8R8A8Unrom
+    constexpr RHISurfaceFormat kFormatPreferenceList[] = {
+        {RHIResourceFormat::A2B10G10R10Unorm, RHIColorSpace::Hdr10St2084},
+        {RHIResourceFormat::R8G8B8A8Unorm, RHIColorSpace::SrgbNonLinear},
+        {RHIResourceFormat::B8G8R8A8Unrom, RHIColorSpace::SrgbNonLinear}
     };
     constexpr RHISwapchainPresentMode kPresentModePreferenceList[] = {
         RHISwapchainPresentMode::Mailbox, RHISwapchainPresentMode::Tearing, RHISwapchainPresentMode::Fifo};
@@ -13,17 +15,19 @@ void UpdateSwapchain(FContext* context)
     context->device->WaitIdle();
     if (context->swapchain)
         context->swapchain.Reset();
+    auto supportedFormats = context->device->GetSwapchainSupportedFormats();
     auto format = Ranges::FirstOf(Views::all(kFormatPreferenceList) |
-                                  Views::filter(Ranges::ContainedBy(context->device->GetSwapchainSupportedFormats())));
+                                  Views::filter(Ranges::ContainedBy(supportedFormats)));
     auto present =
         Ranges::FirstOf(Views::all(kPresentModePreferenceList) |
                         Views::filter(Ranges::ContainedBy(context->device->GetSwapchainSupportedPresentModes())));
     CHECK_MSG(format.has_value(), "No supported swapchain format found!");
-    LOG(Editor, LogDebug, "Selected swapchain format: {}", format.value());
+    LOG(Editor, LogDebug, "Selected swapchain format: {} with color space: {}", format.value().format, format.value().colorSpace);
     CHECK_MSG(present.has_value(), "No supported presentation mode found!");
     LOG(Editor, LogDebug, "Selected swapchain present mode: {}", present.value());
     context->swapchain = context->device->CreateSwapchain(RHISwapchain::SwapchainDesc{
-        .format = format.value(),
+        .format = format.value().format,
+        .colorSpace = format.value().colorSpace,
         .extents = RHIExtent3D{w, h, 1},
         .minBufferCount = 3,
         .presentMode = present.value(),

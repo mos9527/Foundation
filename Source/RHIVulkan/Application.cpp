@@ -2,7 +2,8 @@ using namespace Foundation;
 using namespace Core;
 using namespace RHI;
 const char* kVulkanInstanceExtensions[] = {
-    VK_EXT_DEBUG_UTILS_EXTENSION_NAME
+    VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+    VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME
 };
 static VKAPI_ATTR vk::Bool32 VKAPI_CALL
 VkDebugLayerCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::DebugUtilsMessageTypeFlagsEXT,

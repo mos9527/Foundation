@@ -9,9 +9,12 @@ using namespace Core;
 using namespace Math;
 using namespace RenderCore;
 
-constexpr RHIResourceFormat kFormatPreferenceList[] = {
-    RHIResourceFormat::R8G8B8A8Unorm, RHIResourceFormat::B8G8R8A8Unrom, RHIResourceFormat::R8G8B8A8Srgb,
-    RHIResourceFormat::B8G8R8A8Srgb};
+constexpr RHISurfaceFormat kFormatPreferenceList[] = {
+    {RHIResourceFormat::R8G8B8A8Unorm, RHIColorSpace::SrgbNonLinear},
+    {RHIResourceFormat::B8G8R8A8Unrom, RHIColorSpace::SrgbNonLinear},
+    {RHIResourceFormat::R8G8B8A8Srgb, RHIColorSpace::SrgbNonLinear},
+    {RHIResourceFormat::B8G8R8A8Srgb, RHIColorSpace::SrgbNonLinear}
+};
 
 constexpr RHISwapchainPresentMode kPresentModePreferenceList[] = {
     RHISwapchainPresentMode::Mailbox, RHISwapchainPresentMode::Tearing, RHISwapchainPresentMode::Fifo};
@@ -32,11 +35,12 @@ namespace details
         auto present = Ranges::FirstOf(Views::all(kPresentModePreferenceList) |
                                        Views::filter(Ranges::ContainedBy(device->GetSwapchainSupportedPresentModes())));
         CHECK_MSG(format.has_value(), "No supported swapchain format found!");
-        LOG(RenderApplication, LogDebug, "Selected swapchain format: {}", format.value());
+        LOG(RenderApplication, LogDebug, "Selected swapchain format: {} with color space: {}", format.value().format, format.value().colorSpace);
         CHECK_MSG(present.has_value(), "No supported presentation mode found!");
         LOG(RenderApplication, LogDebug, "Selected swapchain present mode: {}", present.value());
         outSwap = device->CreateSwapchain(RHISwapchain::SwapchainDesc{
-            .format = format.value(),
+            .format = format.value().format,
+            .colorSpace = format.value().colorSpace,
             .extents = RHIExtent3D{w, h, 1},
             .minBufferCount = 3,
             .presentMode = present.value(),

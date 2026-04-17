@@ -39,6 +39,8 @@ namespace Foundation::RHI {
         B8G8R8A8Srgb,
         A2R10G10B10Unorm,
         A2R10G10B10Snorm,
+        A2B10G10R10Unorm,
+        A2B10G10R10Snorm,
         B10G11R11Ufloat,
         R32SignedFloat,
         R32G32SignedFloat,
@@ -77,6 +79,8 @@ namespace Foundation::RHI {
         ENUM_NAME(B8G8R8A8Srgb)
         ENUM_NAME(A2R10G10B10Unorm)
         ENUM_NAME(A2R10G10B10Snorm)
+        ENUM_NAME(A2B10G10R10Unorm)
+        ENUM_NAME(A2B10G10R10Snorm)
         ENUM_NAME(B10G11R11Ufloat)
         ENUM_NAME(R32SignedFloat)
         ENUM_NAME(R32G32SignedFloat)
@@ -106,6 +110,26 @@ namespace Foundation::RHI {
         ENUM_NAME(Bc7Unorm)
         ENUM_NAME(Bc7Srgb)
     ENUM_NAME_CONV_END()
+
+    enum class RHIColorSpace {
+        SrgbNonLinear,
+        ExtendedSrgbLinear,
+        Hdr10St2084,
+    };
+    ENUM_NAME_CONV_BEGIN(RHIColorSpace)
+        ENUM_NAME(SrgbNonLinear)
+        ENUM_NAME(ExtendedSrgbLinear)
+        ENUM_NAME(Hdr10St2084)
+    ENUM_NAME_CONV_END()
+
+    struct RHISurfaceFormat {
+        RHIResourceFormat format;
+        RHIColorSpace colorSpace;
+
+        bool operator==(const RHISurfaceFormat& other) const {
+            return format == other.format && colorSpace == other.colorSpace;
+        }
+    };
 
     struct RHIVertexAttribute {
         uint32_t location; // Index into shader input

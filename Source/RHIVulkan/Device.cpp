@@ -261,23 +261,41 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         for (auto& fmt : formats)
         {
             using enum RHIResourceFormat;
+            using enum RHIColorSpace;
+            RHIResourceFormat rhiFormat = Undefined;
             switch (fmt.format)
             {
             case vk::Format::eR8G8B8A8Unorm:
-                mSwapchainFormats.emplace_back(R8G8B8A8Unorm);
+                rhiFormat = R8G8B8A8Unorm;
                 break;
             case vk::Format::eR8G8B8A8Srgb:
-                mSwapchainFormats.emplace_back(R8G8B8A8Srgb);
+                rhiFormat = R8G8B8A8Srgb;
                 break;
             case vk::Format::eB8G8R8A8Unorm:
-                mSwapchainFormats.emplace_back(B8G8R8A8Unrom);
+                rhiFormat = B8G8R8A8Unrom;
                 break;
             case vk::Format::eB8G8R8A8Srgb:
-                mSwapchainFormats.emplace_back(B8G8R8A8Srgb);
+                rhiFormat = B8G8R8A8Srgb;
+                break;
+            case vk::Format::eA2B10G10R10UnormPack32:
+                rhiFormat = A2B10G10R10Unorm;
+                break;
+            case vk::Format::eA2B10G10R10SnormPack32:
+                rhiFormat = A2B10G10R10Snorm;
+                break;
+            case vk::Format::eA2R10G10B10UnormPack32:
+                rhiFormat = A2R10G10B10Unorm;
+                break;
+            case vk::Format::eA2R10G10B10SnormPack32:
+                rhiFormat = A2R10G10B10Snorm;
                 break;
             default:
                 // TODO: More formats? HDR?
                 break;
+            }
+            if (rhiFormat != Undefined)
+            {
+                mSwapchainFormats.emplace_back(RHISurfaceFormat{rhiFormat, rhiColorSpaceFromVkColorSpace(fmt.colorSpace)});
             }
         }
         auto modes = mPhysicalDevice.getSurfacePresentModesKHR(mSurface);
@@ -360,7 +378,7 @@ RHIDeviceQueue* VulkanDevice::GetDeviceQueue(RHIDeviceQueueType type) const
 }
 
 #include "Swapchain.hpp"
-Span<RHIResourceFormat const> VulkanDevice::GetSwapchainSupportedFormats() const { return mSwapchainFormats; }
+Span<RHISurfaceFormat const> VulkanDevice::GetSwapchainSupportedFormats() const { return mSwapchainFormats; }
 
 Span<RHISwapchainPresentMode const> VulkanDevice::GetSwapchainSupportedPresentModes() const
 {

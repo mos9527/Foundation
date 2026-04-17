@@ -108,7 +108,7 @@ namespace Foundation::RHI
         vk::raii::Device mDevice{nullptr};
         vk::raii::SurfaceKHR mSurface{nullptr};
 
-        Vector<RHIResourceFormat> mSwapchainFormats;
+        Vector<RHISurfaceFormat> mSwapchainFormats;
         Vector<RHISwapchainPresentMode> mSwapchainPresentModes;
 
         VmaAllocator mVkAllocator{nullptr};
@@ -128,7 +128,7 @@ namespace Foundation::RHI
 
         RHIDeviceQueue* GetDeviceQueue(RHIDeviceQueueType type) const override;
 
-        Span<RHIResourceFormat const> GetSwapchainSupportedFormats() const override;
+        Span<RHISurfaceFormat const> GetSwapchainSupportedFormats() const override;
         Span<RHISwapchainPresentMode const> GetSwapchainSupportedPresentModes() const override;
         RHIDeviceScopedHandle<RHISwapchain> CreateSwapchain(RHISwapchain::SwapchainDesc const& desc) override;
         RHISwapchain* GetSwapchain(Handle handle) const override;
