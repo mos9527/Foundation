@@ -61,6 +61,7 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
         // Manual EV exposure
         float4 L = float4(Lpix * exp2(globalParams.camEV), 1.0f);
         L.xyz = Postprocess(L.xyz, pp);
+        result = L;
     }
 
     // Cross filter for a simple outline
