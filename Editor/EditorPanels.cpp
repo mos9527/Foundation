@@ -571,8 +571,10 @@ void FRunningImGui()
         if (GRendererMode == ERendererMode::PathTracer)
         {
             ImGui::Text("Samples: %d", GShaderGlobals.ptAccumulatedFrames);
-            ImGui::SliderInt("Bounces", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBounces), 1, 64);
-            ImGui::SliderFloat("Max Energy", &GShaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
+            ImGui::SliderInt("Diffuse Bounces", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBouncesDiffuse), 0, 64);
+            ImGui::SliderInt("Specular Bounces", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBouncesSpecular), 0, 64);
+            ImGui::SliderInt("Transmission Bounces", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBouncesTransmission), 0, 64);
+            ImGui::SliderFloat("Energy Clamp", &GShaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
             
             const char* samplerItems[] = {"PCG (Independent)", "Sobol (Quasi-Monte Carlo)"};
             if (ImGui::Combo("Sampler", reinterpret_cast<int*>(&GShaderGlobals.ptSampler), samplerItems, 2))

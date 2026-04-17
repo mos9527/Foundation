@@ -164,15 +164,17 @@ Payload SamplePayload(HitPayload payload, RayDesc ray)
     return res;
 }
 
-void AddRadiance(inout float3 L, float3 v)
+void AddRadiance(inout float3 L, float3 v, bool direct = false)
 {
     if (any(isnan(v)) || any(isinf(v)))
         return;
     v = max(float3(0.0f), v);
-    // Firefly clamp — cap per-sample contribution to suppress extreme outliers
-    float maxComp = MaxComponent(v);
-    if (maxComp > globalParams.ptFireflyClamp)
-        v *= globalParams.ptFireflyClamp / maxComp;
+    if (!direct){
+        // Firefly clamp — cap per-sample contribution to suppress extreme outliers
+        float maxComp = MaxComponent(v);
+        if (maxComp > globalParams.ptFireflyClamp)
+            v *= globalParams.ptFireflyClamp / maxComp;
+    }
     L += v;
 }
 
@@ -405,7 +407,10 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
     );
     float totalLightWeight = ComputeSceneLightWeightSum();
     LightSampleContext lastLightCtx = LightSampleContext(float3(0), float3(0), float3(0));
-    for (uint bounce = 0; bounce < globalParams.ptMaxBounces; bounce++) {
+    uint diffuseBounces = 0;
+    uint specularBounces = 0;
+    uint transmissionBounces = 0;
+    for (uint bounce = 0; ; bounce++) {
         HitPayload payload;
         if (capabilityFlags != 0 /* SER */) {
             // SER
@@ -502,16 +507,16 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
                     float3 fD, fS;
                     bsdf.f_split(wo, wi, TransportMode::Radiance, fD, fS);
                     float3 scale = beta * AbsCosTheta(wi) * radiance * mis;
-                    AddRadiance(LDiffuse,   fD * scale);
-                    AddRadiance(LSpecular, fS * scale);
+                    AddRadiance(LDiffuse, fD * scale, true);
+                    AddRadiance(LSpecular, fS * scale, true);
                 } else {
                     // Subsequent bounces: attribute all to the first-bounce category (indirect)
                     float3 f = bsdf.f(wo, wi, TransportMode::Radiance) * AbsCosTheta(wi);
                     float3 contrib = beta * f * radiance * mis;
                     if (firstBounceCategory == AOVCategory::Diffuse)
-                        AddRadiance(LDiffuse, contrib);
+                        AddRadiance(LDiffuse, contrib, true);
                     else
-                        AddRadiance(LSpecular, contrib);
+                        AddRadiance(LSpecular, contrib, true);
                 }
             }
         }
@@ -536,6 +541,17 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         if (!sample.IsValid()) {
             break;
         }
+
+        if (IsTransmission(sample.flags)) transmissionBounces++;
+        else if (IsDiffuse(sample.flags)) diffuseBounces++;
+        else specularBounces++;
+
+        if (diffuseBounces > globalParams.ptMaxBouncesDiffuse ||
+            specularBounces > globalParams.ptMaxBouncesSpecular ||
+            transmissionBounces > globalParams.ptMaxBouncesTransmission) {
+            break;
+        }
+
         // AOV first bounce
         if (bounce == 0) {
             firstBounceCategory = sampleCategory;

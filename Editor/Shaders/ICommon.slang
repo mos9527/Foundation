@@ -177,7 +177,9 @@ public struct UBO
     public GSLight sceneLights[8];
     // -- Path Tracing
     public uint32_t ptAccumulatedFrames;
-    public uint32_t ptMaxBounces;
+    public uint32_t ptMaxBouncesDiffuse;
+    public uint32_t ptMaxBouncesSpecular;
+    public uint32_t ptMaxBouncesTransmission;
     public float ptFireflyClamp;
     public uint32_t ptSampler; // 0: PCG, 1: Sobol
     // -- Display

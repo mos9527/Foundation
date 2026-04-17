@@ -38,8 +38,10 @@ struct UBO
     GSLight sceneLights[8]{}; // kMaxSceneLights
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};
-    uint32_t ptMaxBounces{64u};
-    float ptFireflyClamp{100.0f};
+    uint32_t ptMaxBouncesDiffuse{4u};
+    uint32_t ptMaxBouncesSpecular{4u};
+    uint32_t ptMaxBouncesTransmission{12u};
+    float ptFireflyClamp{10.0f};
     uint32_t ptSampler{1u}; // 0: PCG, 1: Sobol
     // -- Display
     uint32_t enableHDR{0u};
