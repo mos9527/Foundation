@@ -24,6 +24,8 @@ struct FContext
     Renderer* renderer{};
 
     SDL_Event event;
+
+    bool enableHDR{false};
 };
 
 extern FContext* GContext;

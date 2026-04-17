@@ -1,5 +1,7 @@
-#include "IFlags.slang"
-#include "ICommon.slang"
+import IFlags;
+import ICommon;
+import IPostprocess;
+import IMath;
 import glsl;
 [[SpecializationConstant]] int flags;
 // Buffers (Welford online mean — already averaged)
@@ -15,24 +17,6 @@ uniform UBO globalParams;
 struct PickPC { int px; int py; };
 [[vk::push_constant]] PickPC pickPC;
 
-
-// https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
-float3 ACESFilm(float3 x)
-{
-    float a = 2.51f;
-    float b = 0.03f;
-    float c = 2.43f;
-    float d = 0.59f;
-    float e = 0.14f;
-    return saturate((x*(a*x+b))/(x*(c*x+d)+e));
-}
-
-float3 ToneMap(float3 hdr) {
-    float3 L = hdr * exp2(globalParams.camEV);
-    L = ACESFilm(L);
-    return pow(L, 1.0f/2.2f);
-}
-
 [shader("fragment")]
 float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGET {
     int3 coord = int3(fragCoord.x, fragCoord.y, 0);
@@ -41,6 +25,11 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     // GPU picking: if this pixel is the clicked one, write instanceID to result buffer
     if (pickPC.px >= 0 && int(fragCoord.x) == pickPC.px && int(fragCoord.y) == pickPC.py)
         pickResult[0] = instanceID;
+
+    PostprocessInfo pp;
+    pp.Exposure = globalParams.camEV;
+    pp.HdrEnabled = globalParams.enableHDR;
+    pp.HdrPaperWhiteNits = globalParams.paperWhiteNits;
     // GBuffer debug views — buffers already hold running averages (Welford)
     float4 result;
     if (flags & kViewBaseColor) {
@@ -61,13 +50,13 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
         float3 aov = float3(0);
         if (flags & kViewAOVDiffuse)  aov = diffuseTex.Load(coord).xyz;
         if (flags & kViewAOVSpecular) aov = specularTex.Load(coord).xyz;
-        result = float4(ToneMap(aov), 1.0f);
+        result = float4(Postprocess(aov, pp), 1.0f);
     } else {
         // Composite lighting = diffuse + specular (already averaged), then tone map
         float3 diffuse  = diffuseTex.Load(coord).xyz;
         float3 specular = specularTex.Load(coord).xyz;
         float3 Lpix = diffuse + specular;
-        result = float4(ToneMap(Lpix), 1.0f);
+        result = float4(Postprocess(Lpix, pp), 1.0f);
     }
 
     // Cross filter for a simple outline

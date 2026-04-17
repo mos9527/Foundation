@@ -2,8 +2,13 @@ FContext* GContext = nullptr;
 
 void UpdateSwapchain(FContext* context)
 {
-    constexpr RHISurfaceFormat kFormatPreferenceList[] = {
+    constexpr RHISurfaceFormat kFormatPreferenceListHDR[] = {
         {RHIResourceFormat::A2B10G10R10Unorm, RHIColorSpace::Hdr10St2084},
+        {RHIResourceFormat::A2R10G10B10Unorm, RHIColorSpace::Hdr10St2084},
+        {RHIResourceFormat::R8G8B8A8Unorm, RHIColorSpace::SrgbNonLinear},
+        {RHIResourceFormat::B8G8R8A8Unrom, RHIColorSpace::SrgbNonLinear}
+    };
+    constexpr RHISurfaceFormat kFormatPreferenceListSDR[] = {
         {RHIResourceFormat::R8G8B8A8Unorm, RHIColorSpace::SrgbNonLinear},
         {RHIResourceFormat::B8G8R8A8Unrom, RHIColorSpace::SrgbNonLinear}
     };
@@ -16,14 +21,22 @@ void UpdateSwapchain(FContext* context)
     if (context->swapchain)
         context->swapchain.Reset();
     auto supportedFormats = context->device->GetSwapchainSupportedFormats();
-    auto format = Ranges::FirstOf(Views::all(kFormatPreferenceList) |
+    auto firstHDR = Ranges::FirstOf(Views::all(kFormatPreferenceListHDR) |
                                   Views::filter(Ranges::ContainedBy(supportedFormats)));
+    auto firstSDR = Ranges::FirstOf(Views::all(kFormatPreferenceListSDR) |
+                                  Views::filter(Ranges::ContainedBy(supportedFormats)));
+    auto format = context->enableHDR ? firstHDR : firstSDR;
+    if (!format.has_value() && firstSDR.has_value())
+    {
+        LOG(RenderApplication, LogError, "Fallback to SDR {} as HDR is not supported", firstSDR.value().format);
+        format = firstSDR;
+    }
+    CHECK_MSG(format.has_value(), "No supported swapchain format found!");
     auto present =
         Ranges::FirstOf(Views::all(kPresentModePreferenceList) |
                         Views::filter(Ranges::ContainedBy(context->device->GetSwapchainSupportedPresentModes())));
-    CHECK_MSG(format.has_value(), "No supported swapchain format found!");
-    LOG(Editor, LogDebug, "Selected swapchain format: {} with color space: {}", format.value().format, format.value().colorSpace);
     CHECK_MSG(present.has_value(), "No supported presentation mode found!");
+    LOG(Editor, LogDebug, "Selected swapchain format: {} with color space: {}", format.value().format, format.value().colorSpace);
     LOG(Editor, LogDebug, "Selected swapchain present mode: {}", present.value());
     context->swapchain = context->device->CreateSwapchain(RHISwapchain::SwapchainDesc{
         .format = format.value().format,

@@ -41,6 +41,9 @@ struct UBO
     uint32_t ptMaxBounces{32u};
     float ptFireflyClamp{10.0f};
     uint32_t ptSampler{1u}; // 0: PCG, 1: Sobol
+    // -- Display
+    uint32_t enableHDR{0u};
+    float paperWhiteNits{100.0f};
     // -- Debug
     uint32_t postShowOutline{1u};
 };

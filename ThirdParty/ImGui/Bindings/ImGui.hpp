@@ -23,7 +23,9 @@ void ImGui_ImplFoundation_ImplPassSetup(Foundation::RenderCore::PassHandle self,
                                         Foundation::RenderCore::ResourceHandle vtxBuffer,
                                         Foundation::RenderCore::ResourceHandle idxBuffer,
                                         Foundation::RenderCore::ResourceHandle linSampler,
-                                        Foundation::RenderCore::ResourceHandle nearSampler);
+                                        Foundation::RenderCore::ResourceHandle nearSampler,
+                                        Foundation::Core::StringView customVS = "",
+                                        Foundation::Core::StringView customFS = "");
 void ImGui_ImplFoundation_ImplPassRecord(Foundation::RenderCore::PassHandle self,
                                          Foundation::RenderCore::Renderer* renderer, bool clear,
                                          Foundation::RHI::RHICommandList* cmd,

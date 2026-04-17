@@ -180,6 +180,9 @@ public struct UBO
     public uint32_t ptMaxBounces;
     public float ptFireflyClamp;
     public uint32_t ptSampler; // 0: PCG, 1: Sobol
+    // -- Display
+    public uint32_t enableHDR;
+    public float paperWhiteNits;
     // -- Debug
     public uint32_t postShowOutline;
 };

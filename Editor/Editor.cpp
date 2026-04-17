@@ -55,6 +55,7 @@ static void FInit()
 /* ==================== FRunningEnter ==================== */
 static void FRunningEnter()
 {
+    UpdateSwapchain(GContext);
     // Invalidate stale PT readback handles before rebuilding the renderer
     sPTReadback = {};
     RendererScene scene{
@@ -110,6 +111,11 @@ static void FRunning()
     GShaderGlobals.camDirection = float4(GCamera.rot * float3(0, 0, -1), 0);
     GShaderGlobals.fbWidth = static_cast<float>(renderer->GetSwapchainExtent().x);
     GShaderGlobals.fbHeight = static_cast<float>(renderer->GetSwapchainExtent().y);
+    
+    // Sync HDR parameters
+    GShaderGlobals.enableHDR = GContext->enableHDR ? 1 : 0;
+    // paperWhiteNits is updated directly in EditorPanels.cpp
+
     if (cameraUpdated)
         GShaderGlobals.ptAccumulatedFrames = 0, cameraUpdated = false;
     renderer->ExecuteFrame();

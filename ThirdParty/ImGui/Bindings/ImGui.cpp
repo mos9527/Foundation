@@ -194,7 +194,7 @@ struct PushConstants
 #pragma pack(pop)
 
 void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHandle vtxBuffer,
-                                        ResourceHandle idxBuffer, ResourceHandle linSampler, ResourceHandle nearSampler)
+                                        ResourceHandle idxBuffer, ResourceHandle linSampler, ResourceHandle nearSampler, StringView customVS, StringView customFS)
 {
     r->BindBackbufferRTV(self, RHIPipelineState::PipelineStateDesc::Attachment::Blending::GetAlphaBlending());
     r->BindBufferCopyDst(self, vtxBuffer);

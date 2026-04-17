@@ -1,5 +1,6 @@
 #include "IFlags.slang"
 #include "ICommon.slang"
+#include "IPostprocess.slang"
 [[SpecializationConstant]] int flags;
 
 StructuredBuffer<uint32_t> globalMax;
@@ -9,9 +10,11 @@ RWStructuredBuffer<uint32_t> pickResult; // [0] written when fragCoord == pickPi
 Texture2D lighting;
 uniform UBO globalParams;
 
-struct PickPC { int px; int py; };
-[[vk::push_constant]] PickPC pickPC;
-
+struct BlitPC { 
+    int px; 
+    int py; 
+};
+[[vk::push_constant]] BlitPC blitPC;
 float3 heatmapGradient(float t) {
     float3 c0 = float3(0.000, 0.000, 0.002);
     float3 c1 = float3(0.250, 0.000, 0.350);
@@ -31,25 +34,19 @@ float3 heatmapGradient(float t) {
     return col;
 }
 
-// https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
-float3 ACESFilm(float3 x)
-{
-    float a = 2.51f;
-    float b = 0.03f;
-    float c = 2.43f;
-    float d = 0.59f;
-    float e = 0.14f;
-    return saturate((x*(a*x+b))/(x*(c*x+d)+e));
-}
-
 [shader("fragment")]
 float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGET {
     int3 coord = int3(fragCoord.x, fragCoord.y, 0);
     uint32_t instanceID = pickIDBuffer.Load(coord);
     uint32_t pickID = pickResult[0];
     // GPU picking: if this pixel is the clicked one, write instanceID to result buffer
-    if (pickPC.px >= 0 && int(fragCoord.x) == pickPC.px && int(fragCoord.y) == pickPC.py)
+    if (blitPC.px >= 0 && int(fragCoord.x) == blitPC.px && int(fragCoord.y) == blitPC.py)
         pickResult[0] = instanceID;
+
+    PostprocessInfo pp;
+    pp.Exposure = globalParams.camEV;
+    pp.HdrEnabled = globalParams.enableHDR;
+    pp.HdrPaperWhiteNits = globalParams.paperWhiteNits;
 
     float4 result;
     if (flags & kViewOverdraw){
@@ -62,12 +59,8 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
         // Main postprocess routine
         float3 Lpix = lighting.Load(coord).xyz;
         // Manual EV exposure
-        float3 L = Lpix * exp2(globalParams.camEV);
-        // ACES
-        L = ACESFilm(L);
-        // Inverse Gamma EOTF
-        L = pow(L, 1.0f/2.2f);
-        result = float4(L, 1.0f);
+        float4 L = float4(Lpix * exp2(globalParams.camEV), 1.0f);
+        L.xyz = Postprocess(L.xyz, pp);
     }
 
     // Cross filter for a simple outline

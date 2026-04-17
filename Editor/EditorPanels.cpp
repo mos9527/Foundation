@@ -554,6 +554,20 @@ void FRunningImGui()
     {
         static float lodLogThreshold = 3;
         ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
+
+        bool changed = false;
+
+        ImGui::SeparatorText("Display");
+        if (ImGui::Checkbox("Enable HDR", &GContext->enableHDR))
+        {
+            FEState = FERunningEnter;
+            GShaderGlobals.enableHDR = GContext->enableHDR ? 1 : 0;
+            changed = true;
+        }
+        if (GContext->enableHDR)
+        {
+            ImGui::SliderFloat("Paper White Nits", &GShaderGlobals.paperWhiteNits, 50.0f, 500.0f, "%.0f");
+        }
         if (GRendererMode == ERendererMode::PathTracer)
         {
             ImGui::Text("Samples: %d", GShaderGlobals.ptAccumulatedFrames);
@@ -567,7 +581,7 @@ void FRunningImGui()
             }
         }
         GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
-        bool changed = false;
+        
         if (GRendererMode == ERendererMode::Raster)
         {
             {
