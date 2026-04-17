@@ -525,12 +525,12 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             float3 emContrib = beta * surface.emissive;
             if (bounce == 0) {
             // First-bounce emissive goes into diffuse
-                AddRadiance(LDiffuse, emContrib);
+                AddRadiance(LDiffuse, emContrib, true);
             } else {
                 if (firstBounceCategory == AOVCategory::Diffuse)
-                    AddRadiance(LDiffuse, emContrib);
+                    AddRadiance(LDiffuse, emContrib, true);
                 else
-                    AddRadiance(LSpecular, emContrib);
+                    AddRadiance(LSpecular, emContrib, true);
             }
         }
         // BSDF sampling (indirect lighting path)
