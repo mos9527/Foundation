@@ -185,13 +185,13 @@ public struct GlassBSDF : IBxDF {
 };
 
 public struct GlossyBSDF : IBxDF {
-    float  dielF0;
+    float  glossyF0;
     float  roughness;
     bool   energyCompensation;
     TrowbridgeReitzDistribution mfDistrib;
 
-    public __init(float dielF0, float roughness, bool energyCompensation) {
-        this.dielF0             = dielF0;
+    public __init(float glossyF0, float roughness, bool energyCompensation) {
+        this.glossyF0             = glossyF0;
         this.roughness          = roughness;
         this.energyCompensation = energyCompensation;
         float alpha = roughness * roughness;
@@ -203,7 +203,7 @@ public struct GlossyBSDF : IBxDF {
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         if (!SameHemisphere(wo, wi)) return 0.0f;
         float2 lutE = SampleGGXLutE(AbsCosTheta(wo), roughness);
-        return TorranceSparrowReflection(wo, wi, float3(dielF0), float3(1.0f), lutE, mfDistrib, energyCompensation);
+        return TorranceSparrowReflection(wo, wi, float3(glossyF0), float3(1.0f), lutE, mfDistrib, energyCompensation);
     }
 
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
@@ -288,6 +288,12 @@ public struct PrincipledBSDFLobes {
     float wDielSpec;
     float wMetal;
 
+    // Structural weights
+    float cDiffuse;
+    float cTrans;
+    float cDielSpec;
+    float cMetal;
+
     // Active flags
     bool hasDiffuse;
     bool hasTrans;
@@ -324,6 +330,11 @@ public struct PrincipledBSDFLobes {
         this.wDielSpec = rawDielSpec / this.weightSum;
         this.wMetal    = rawMetal    / this.weightSum;
 
+        this.cDiffuse  = (1.0f - metallic) * (1.0f - transmission);
+        this.cTrans    = (1.0f - metallic) * transmission;
+        this.cDielSpec = 1.0f - metallic;
+        this.cMetal    = metallic;
+
         // Construct each lobe
         this.diffuse  = DiffuseBSDF(baseColor, dielF0, roughness);
         this.glass     = GlassBSDF(baseColor, ior, roughness, energyCompensation);
@@ -337,10 +348,10 @@ public struct PrincipledBSDFLobes {
                         out float3 fDiffuse, out float3 fSpecular) {
         fDiffuse  = float3(0);
         fSpecular = float3(0);
-        if (hasDiffuse)  fDiffuse   = wDiffuse  * diffuse.f(wo, wi, mode);
-        if (hasTrans)    fSpecular += wTrans    * glass.f(wo, wi, mode);
-        if (hasDielSpec) fSpecular += wDielSpec * glossy.f(wo, wi, mode);
-        if (hasMetal)    fSpecular += wMetal    * metallic.f(wo, wi, mode);
+        if (hasDiffuse)  fDiffuse   = cDiffuse  * diffuse.f(wo, wi, mode);
+        if (hasTrans)    fSpecular += cTrans    * glass.f(wo, wi, mode);
+        if (hasDielSpec) fSpecular += cDielSpec * glossy.f(wo, wi, mode);
+        if (hasMetal)    fSpecular += cMetal    * metallic.f(wo, wi, mode);
     }
 
     // Mixture f (sum over all lobes)
