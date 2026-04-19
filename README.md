@@ -28,6 +28,8 @@ TODO (Raster)
 
 Demo (Path Tracer)
 ---
+Scenes used can be found at [Foundation-Resources](https://github.com/mos9527/Foundation-Resources)
+
 > "Stormtrooper Star Wars VII by ScottGraham" from [Blend Swap](https://www.blendswap.com/blend/13953)
 
 <img  width="1200" alt="image" src="https://github.com/user-attachments/assets/793b95f1-fae1-40a9-ae89-50da476d49bb" />
