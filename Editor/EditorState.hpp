@@ -22,7 +22,6 @@ struct FArcballCamera
         vec3 moveDir(0.0f);
         vec3 forward = rot * vec3(0, 0, -1); // camera forward (note: view direction is -Z)
         vec3 right   = rot * vec3(1, 0, 0);
-        vec3 up      = vec3(0, 1, 0);
         if (keyW) moveDir += forward;
         if (keyS) moveDir -= forward;
         if (keyA) moveDir -= right;

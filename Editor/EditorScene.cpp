@@ -243,13 +243,20 @@ void SaveScene(StringView path)
 /* -- Drag-and-drop file handler: dispatch to the appropriate loader based on file extension -- */
 void HandleFile(const char* filePath)
 {
-    auto ext = std::filesystem::path(filePath).extension().string();
+    auto path = std::filesystem::path(filePath);
+    auto ext = path.extension().string();
     // Normalize to lowercase
     for (auto& c : ext)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     if (ext == ".gltf" || ext == ".glb" || ext == ".fscn")
     {
         ReplaceScene(filePath);
+        // And, with HDRIs sharing the same filename (if any), load them up too
+        String hdriPath = path.string().substr(0, path.string().length() - ext.length());
+        if (std::filesystem::exists(hdriPath + ".hdr"))
+            LoadEnvMap(hdriPath + ".hdr");
+        else if (std::filesystem::exists(hdriPath + ".hdri"))
+            LoadEnvMap(hdriPath + ".hdri");
     }
     else if (ext == ".hdr" || ext == ".hdri")
     {
