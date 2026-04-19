@@ -63,17 +63,6 @@ public SamplerState        envMapSampler;
 public StructuredBuffer<float> envMapMarginalCDF;
 public Texture2D<float> envMapConditionalCDF;
 
-// Direction → equirectangular UV (azimuth-elevation mapping)
-// φ = atan2(d.z, d.x) ∈ [-π,π],  θ = acos(d.y) ∈ [0,π]
-float2 EnvMapDirToUV(float3 d) {
-    float phi   = atan2(d.z, d.x);
-    float theta = acos(clamp(d.y, -1, 1));
-    return float2(0.5f + phi * (0.5f * InvPi), theta * InvPi);
-}
-
-float3 SampleEnvMapTexture(float3 dir) {
-    return envMapTexture.SampleLevel(envMapSampler, EnvMapDirToUV(dir), 0).xyz;
-}
 // See also Render/Precompute.cpp
 // Helper: Binary search on a 1D CDF buffer
 uint FindInterval(StructuredBuffer<float> cdf, uint baseIdx, uint numBins, float u) 
@@ -171,16 +160,30 @@ float PDF2D(StructuredBuffer<float> marginalCDF, uint sizeY,
 // https://pbr-book.org/4ed/Light_Sources/Infinite_Area_Lights
 // Unified infinite light: when hasEnvMap is true, radiance comes from the
 // equirectangular env map texture; otherwise it falls back to a constant color.
-// Sampling is always uniform-sphere (importance sampling the map is a TODO).
 public struct InfiniteLight : ILight {
     SampledSpectrum fallbackColor; // constant Lemit when no env map
     float scale;
     bool  hasEnvMap;
 
-    public __init(SampledSpectrum fallbackColor, float scale, bool hasEnvMap = false) {
+    float azimuthOffset; // For rotating the env map, in radians
+    public __init(SampledSpectrum fallbackColor, float scale, bool hasEnvMap = false, float azimuthOffset = 0.0f) {
         this.fallbackColor = fallbackColor;
         this.scale         = scale;
         this.hasEnvMap     = hasEnvMap;
+        this.azimuthOffset = azimuthOffset / 180.0f * Pi; // radians
+    }
+
+    // Direction → equirectangular UV (azimuth-elevation mapping)
+    // φ = atan2(d.z, d.x) ∈ [-π,π],  θ = acos(d.y) ∈ [0,π]
+    float2 EnvMapDirToUV(float3 d) {
+        // w. offset, -azimuth to go back to local texture space
+        float phi   = atan2(d.z, d.x) - azimuthOffset;
+        float theta = acos(clamp(d.y, -1, 1));
+        return float2(frac(0.5f + phi * (0.5f * InvPi)), theta * InvPi);
+    }
+
+    float3 SampleEnvMapTexture(float3 dir) {
+        return envMapTexture.SampleLevel(envMapSampler, EnvMapDirToUV(dir), 0).xyz;
     }
 
     public LightType Type() {
@@ -206,18 +209,35 @@ public struct InfiniteLight : ILight {
             float pdf;
             uint2 offset;
             float2 uv = Sample2D(envMapMarginalCDF, height, envMapConditionalCDF, width, u, pdf, offset);
-            
+
+            float phi = (uv.x - 0.5f) * 2.0f * Pi; // radians
             float theta = uv.y * Pi;
-            float phi = (uv.x - 0.5f) * 2.0f * Pi;
+            // local sample, bring to world
+            phi += azimuthOffset;
             float sinTheta = sin(theta);
             float cosTheta = cos(theta);
             float sinPhi = sin(phi);
             float cosPhi = cos(phi);
             
             float3 wi = float3(sinTheta * cosPhi, cosTheta, sinTheta * sinPhi);
-            
+
+            /**
+            Jacobian change of var:
+            phi = 2pi * u, theta = pi * v
+            du = dphi/2pi, dv = dtheta/pi
+            --
+            p(phi, theta) dphi dtheta = p(u,v) du dv
+            p(phi, theta) = p(u,v) / 2pi^2
+            --
+            PDFs are again measured w.r.t. solid angles. Recap..
+            dω = sin(theta) dtheta dphi
+            p(ω) dω = p(phi, theta) dphi dtheta
+            p(ω) = p(phi, theta) / sin(theta) = p(u,v) / (2pi^2 * sin(theta))
+            **/
+
             if (sinTheta == 0.0f) pdf = 0.0f;
             else pdf /= (2.0f * Pi * Pi * sinTheta);
+            // ^^^ offset, no change in jacobian.
             
             if (pdf == 0.0f) return LightLiSample();
             

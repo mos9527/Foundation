@@ -32,6 +32,7 @@ struct UBO
     float ambientPower{0.25f};
     uint32_t useEnvMap{0u};
     float envMapScale{1.0f};
+    float envAzimuthOffset{0.0f}; // [-180, 180]
     // Scene lights (up to kMaxSceneLights)
     uint32_t numSceneLights{0u};
     uint32_t _lightPad0{0u};

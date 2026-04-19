@@ -499,6 +499,8 @@ void FLightingPanel()
                 bool envChanged = false;
                 envChanged |= ImGui::SliderFloat("Env Scale", &GShaderGlobals.envMapScale, 0.0f, 10.0f, "%.3f",
                                                  ImGuiSliderFlags_Logarithmic);
+                envChanged |= ImGui::SliderFloat("Azimuth Offset", &GShaderGlobals.envAzimuthOffset, -180.0f, 180.0f,
+                                              "%.1f deg");
                 bool envEnabled = GShaderGlobals.useEnvMap != 0u;
                 if (ImGui::Checkbox("Enable Env Map", &envEnabled))
                 {

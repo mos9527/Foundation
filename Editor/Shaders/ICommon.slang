@@ -171,6 +171,7 @@ public struct UBO
     public float ambientPower;
     public uint32_t useEnvMap;
     public float envMapScale;
+    public float envAzimuthOffset;
     // Scene lights (up to 8)
     public uint32_t numSceneLights;
     public uint32_t _lightPad0;

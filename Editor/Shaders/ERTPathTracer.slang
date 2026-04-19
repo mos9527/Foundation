@@ -403,7 +403,8 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
     InfiniteLight env = InfiniteLight(
         SampledSpectrum(globalParams.ambientColor * globalParams.ambientPower),
         globalParams.envMapScale,
-        globalParams.useEnvMap
+        globalParams.useEnvMap,
+        globalParams.envAzimuthOffset
     );
     float totalLightWeight = ComputeSceneLightWeightSum();
     LightSampleContext lastLightCtx = LightSampleContext(float3(0), float3(0), float3(0));
