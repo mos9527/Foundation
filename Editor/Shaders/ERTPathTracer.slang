@@ -446,9 +446,9 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             float3 contrib = beta * env.Le(-view) * mis;
             // Environment contribution at bounce > 0 is indirect — attribute to first-bounce category
             if (firstBounceCategory == AOVCategory::Diffuse)
-                AddRadiance(LDiffuse, contrib, true);
+                AddRadiance(LDiffuse, contrib, false);
             else
-                AddRadiance(LSpecular, contrib, true);
+                AddRadiance(LSpecular, contrib, false);
             break;
         }
         Payload surface = SamplePayload(payload, ray);
