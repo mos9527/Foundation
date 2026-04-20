@@ -5,22 +5,44 @@ Docs are available at: https://mos9527.com/Foundation
 
 TODO (Editor)
 ---
+- [ ] Color Science/Grading pipeline. OCIO?
+- [ ] Animation (Skinning, BlendShapes...why not)
+
+Good to have, not necessary.
+- [ ] Scene Graph, instead of AoS to represent instances.
+
+Already done.
 - [x] HDR Display Output (Standard PQ OOTF+EOTF)
 
 
 TODO (Path Tracer)
 ---
-- [ ] BUG: Light leaks through thin surfaces. OffsetRay?
-- [ ] Glass BSDF energy compensation
-- [ ] Transparent shadows (caustics, approximation)
-- [ ] Volume rendering
-- [ ] Denoising (SVGF? NRD?)
+Also w/ blog post series update on:
+- [ ] Light Tree ([BVH Light Sampling](https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling))
+- [ ] ReSTIR
+  - OG https://research.nvidia.com/sites/default/files/pubs/2020-07_Spatiotemporal-reservoir-resampling/ReSTIR.pdf
+  - NV released [this (2026)](https://research.nvidia.com/labs/rtr/publication/lin2026restirptenhanced/lin2026restirptenhanced.pdf) recently too. Lots of new tricks I've not heard of :D 
 - [ ] Spatial Reuse ([SHaRC](https://github.com/NVIDIA-RTX/SHARC)?)
+- [ ] Denoising (SVGF? NRD? Integrate with DLSS-RR or FSR4-RGEN?)
+- 
+Some time in the future:
+- [ ] Glass BSDF energy compensation 
+- [ ] Volume rendering
+- [ ] Skin. Random Walk SSS?
+- [ ] Transparent shadows (caustics, approximation)
+- [ ] Cluster Acceleration Structures (CLAS)
+  - [DXR 2.0 will arrive sometime this year/2026](https://asawicki.info/news_1801_directx_12_news_from_gdc_2026_-_my_comments)! Once
+    this is no longer NV only I'll have a shot.
+  
+Already done!
 - [x] PCG (Independent), Sobol Samplers
 - [x] Importance sampling Infinite Image Lights
 
 TODO (Raster)
 ---
+Unfortunately not the favourite child. Maybe one day.
+- [ ] Speed up meshlet continuous LOD selection.
+  - We're O(N). Nanite does it O (log N) via BVH
 - [ ] IBL
 - [ ] LTC Area lights
 - [ ] Screen Space Diffuse GI (SSGI)
