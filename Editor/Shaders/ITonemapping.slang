@@ -15,23 +15,20 @@ public interface ITonemapper {
     float3 Perform(TonemapInfo info, float3 L);
 }
 
-// https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
-public struct AcesOOTF : IOOTF {
+public struct SrgbOOTF : IOOTF {
     float3 Transfer(TonemapInfo info, float3 x) {
-        float a = 2.51f;
-        float b = 0.03f;
-        float c = 2.43f;
-        float d = 0.59f;
-        float e = 0.14f;
-        return saturate((x.xyz*(a*x.xyz+b))/(x.xyz*(c*x.xyz+d)+e));
+        return x;
     }
 }
-
+// https://www.w3.org/Graphics/Color/srgb
 // https://registry.khronos.org/DataFormat/specs/1.3/dataformat.1.3.html#TRANSFER_CONVERSION
 public struct SrgbEOTF : IEOTF {
     float3 Inverse(TonemapInfo info, float3 L) {
-        // Simple gamma 2.2 inverse EOTF
-        return pow(L.xyz, 1.0f/2.2f);
+        L = saturate(L);
+        float3 Ep = 1.055f * pow(L, 1.0f / 2.4f) - 0.055f;
+        float3 sel = float3(L > float3(0.0031308f));
+        Ep = lerp(12.92f * L, Ep, sel);
+        return Ep;
     }
 }
 
@@ -46,6 +43,7 @@ public struct PqOOTF : IOOTF {
         // Solve for Fd = PaperWhite -> E' = 1 -> pow(59.5208x', 0.45) = 1.0
         // So div first to linearly map x' to x
         x = x / 59.5208f;
+        x = saturate(x);
         float3 Ep = 1.099 * pow((59.5208f * x), 0.45f) - 0.099;
         float3 sel = float3(x > float3(0.0003024));
         Ep = lerp(267.84 * x, Ep, sel);
@@ -87,5 +85,5 @@ public struct Tonemapper<OO, EO> : ITonemapper
     }
 }
 
-public typealias AcesSrgbTonemapper = Tonemapper<AcesOOTF, SrgbEOTF> ;
+public typealias StandardSrgbTonemapper = Tonemapper<SrgbOOTF, SrgbEOTF> ;
 public typealias StandardPqTonemapper = Tonemapper<PqOOTF, PqEOTF> ;

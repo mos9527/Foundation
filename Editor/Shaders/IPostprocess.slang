@@ -15,7 +15,7 @@ public float3 Tonemap(float3 L,PostprocessInfo pp) {
     if (pp.HdrEnabled) {
         op = StandardPqTonemapper();
     } else {
-        op = AcesSrgbTonemapper();
+        op = StandardSrgbTonemapper();
     }
     return op.Perform(info, L);
 }
