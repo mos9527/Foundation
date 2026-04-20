@@ -39,11 +39,17 @@ public struct SrgbEOTF : IEOTF {
 // https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.2100-3-202502-I!!PDF-C.pdf
 public struct PqOOTF : IOOTF {
     float3 Transfer(TonemapInfo info, float3 x) {
-        // E' = G709[E], E=x, post exposure
+        // E' = G709[E], E=x, post exposure, in [0,1]
+        // Note that when E=1.0
+        // E' = 6.81, Fd = 100 * (6.81)^2.4 = 9989.714 Nits
+        // This is _NOT_ our definition of E, where x=1.0 maps to  paperwhite brightness instead
+        // Solve for Fd = PaperWhite -> E' = 1 -> pow(59.5208x', 0.45) = 1.0
+        // So div first to linearly map x' to x
+        x = x / 59.5208f;
         float3 Ep = 1.099 * pow((59.5208f * x), 0.45f) - 0.099;
         float3 sel = float3(x > float3(0.0003024));
         Ep = lerp(267.84 * x, Ep, sel);
-        float3 Fd = info.HdrPaperWhiteNits * pow(Ep, 2.4f); // paper white=100nits by the doc
+        float3 Fd = info.HdrPaperWhiteNits * pow(Ep, 2.4f); // NOTE: default paper white=100nits by the doc
         return Fd;
     }
 }
