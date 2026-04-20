@@ -437,7 +437,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             if (bounce == 0) {
                 // Environment light with no surface hit — classify as specular (background)
                 float3 envLe = env.Le(-view);
-                AddRadiance(LSpecular, envLe);
+                AddRadiance(LSpecular, envLe, true);
                 break;
             }
             // Final miss, MIS-weight against the last BSDF sample
@@ -446,9 +446,9 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             float3 contrib = beta * env.Le(-view) * mis;
             // Environment contribution at bounce > 0 is indirect — attribute to first-bounce category
             if (firstBounceCategory == AOVCategory::Diffuse)
-                AddRadiance(LDiffuse, contrib);
+                AddRadiance(LDiffuse, contrib, true);
             else
-                AddRadiance(LSpecular, contrib);
+                AddRadiance(LSpecular, contrib, true);
             break;
         }
         Payload surface = SamplePayload(payload, ray);
@@ -515,9 +515,9 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
                     float3 f = bsdf.f(wo, wi, TransportMode::Radiance) * AbsCosTheta(wi);
                     float3 contrib = beta * f * radiance * mis;
                     if (firstBounceCategory == AOVCategory::Diffuse)
-                        AddRadiance(LDiffuse, contrib, true);
+                        AddRadiance(LDiffuse, contrib, false);
                     else
-                        AddRadiance(LSpecular, contrib, true);
+                        AddRadiance(LSpecular, contrib, false);
                 }
             }
         }
@@ -525,13 +525,13 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         {
             float3 emContrib = beta * surface.emissive;
             if (bounce == 0) {
-            // First-bounce emissive goes into diffuse
+                // First-bounce emissive goes into diffuse
                 AddRadiance(LDiffuse, emContrib, true);
             } else {
                 if (firstBounceCategory == AOVCategory::Diffuse)
-                    AddRadiance(LDiffuse, emContrib, true);
+                    AddRadiance(LDiffuse, emContrib, false);
                 else
-                    AddRadiance(LSpecular, emContrib, true);
+                    AddRadiance(LSpecular, emContrib, false);
             }
         }
         // BSDF sampling (indirect lighting path)
