@@ -5,11 +5,12 @@ Docs are available at: https://mos9527.com/Foundation
 
 TODO (Editor)
 ---
-- [ ] HDR Display Output
+- [x] HDR Display Output (Standard PQ OOTF+EOTF)
 
 
 TODO (Path Tracer)
 ---
+- [ ] BUG: Light leaks through thin surfaces. OffsetRay?
 - [ ] Glass BSDF energy compensation
 - [ ] Transparent shadows (caustics, approximation)
 - [ ] Volume rendering
@@ -28,7 +29,7 @@ TODO (Raster)
 
 Demo (Path Tracer)
 ---
-Scenes used can be found at [Foundation-Resources](https://github.com/mos9527/Foundation-Resources)
+Some scenes used here can be found at [Foundation-Resources](https://github.com/mos9527/Foundation-Resources)
 
 > "Stormtrooper Star Wars VII by ScottGraham" from [Blend Swap](https://www.blendswap.com/blend/13953)
 
