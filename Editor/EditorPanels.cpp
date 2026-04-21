@@ -58,7 +58,7 @@ void EditorDockSpaceAndMenuBar()
             }
             if (ImGui::MenuItem("Open HDR..."))
             {
-                nfdu8filteritem_t filters[] = {{"HDR Images", "hdr,hdri"}};
+                nfdu8filteritem_t filters[] = {{"HDR Images", "hdr,hdri,exr"}};
                 nfdopendialogu8args_t args = {0};
                 args.filterList = filters;
                 args.filterCount = 1;
@@ -91,12 +91,17 @@ void EditorDockSpaceAndMenuBar()
             ImGui::Separator();
             if (GRendererMode == ERendererMode::PathTracer && !GDoc.instances.empty())
             {
-                if (ImGui::MenuItem("Render .hdr..."))
+                if (ImGui::MenuItem("Render HDR..."))
                 {
-                    nfdu8filteritem_t filters[] = {{"HDR Images", "hdr"}};
+                    // Two save filters -> NFD shows a dropdown. User-picked extension determines
+                    // the encoder used by SaveHDR (ext-based dispatch).
+                    nfdu8filteritem_t filters[] = {
+                        {"Radiance HDR", "hdr"},
+                        {"OpenEXR",      "exr"},
+                    };
                     nfdsavedialogu8args_t args = {0};
                     args.filterList = filters;
-                    args.filterCount = 1;
+                    args.filterCount = 2;
                     nfdu8char_t* outPath = nullptr;
                     if (NFD_SaveDialogU8_With(&outPath, &args) == NFD_OKAY)
                     {
@@ -504,7 +509,7 @@ void FLightingPanel()
                 if (envChanged)
                     anyChanged = true;
             }
-            ImGui::TextDisabled("Drag & drop .hdr/.hdri to load");
+            ImGui::TextDisabled("Drag & drop .hdr/.hdri/.exr to load");
         }
 
         if (anyChanged)

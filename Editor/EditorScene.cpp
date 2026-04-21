@@ -257,8 +257,10 @@ void HandleFile(const char* filePath)
             LoadEnvMap(hdriPath + ".hdr");
         else if (std::filesystem::exists(hdriPath + ".hdri"))
             LoadEnvMap(hdriPath + ".hdri");
+        else if (std::filesystem::exists(hdriPath + ".exr"))
+            LoadEnvMap(hdriPath + ".exr");
     }
-    else if (ext == ".hdr" || ext == ".hdri")
+    else if (ext == ".hdr" || ext == ".hdri" || ext == ".exr")
     {
         LoadEnvMap(filePath);
     }

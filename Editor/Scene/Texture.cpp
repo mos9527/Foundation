@@ -268,6 +268,7 @@ void LoadDDS(FTexture2D& texture, StringView path)
     FDeserialize(reader, texture);
 }
 #include <stb_image.h>
+#include <tinyexr.h>
 void LoadRGBA8(FTexture2D& texture, StringView path, bool gamma)
 {
     int width, height, channels;
@@ -295,7 +296,47 @@ void LoadRGBA8(FTexture2D& texture, Span<const unsigned char> data, bool gamma)
 }
 void LoadHDR(FTexture2D& texture, StringView path)
 {
-    int width, height, channels;
+    // Case-insensitive ".exr" suffix check
+    auto endsWithExr = [](StringView s)
+    {
+        constexpr StringView ext = ".exr";
+        if (s.size() < ext.size())
+            return false;
+        const size_t off = s.size() - ext.size();
+        for (size_t i = 0; i < ext.size(); ++i)
+        {
+            const char a = static_cast<char>(std::tolower(static_cast<unsigned char>(s[off + i])));
+            const char b = ext[i];
+            if (a != b)
+                return false;
+        }
+        return true;
+    };
+
+    int width = 0, height = 0;
+    if (endsWithExr(path))
+    {
+        float* imgData = nullptr;
+        const char* err = nullptr;
+        const int ret = LoadEXR(&imgData, &width, &height, path.data(), &err);
+        UniquePtr<float, decltype(&free)> raii(imgData, &free);
+        if (ret != TINYEXR_SUCCESS)
+        {
+            String msg = err ? String(err) : String("unknown");
+            if (err)
+                FreeEXRErrorMessage(err);
+            CHECK_MSG(false, "Failed to load EXR image {}: {}", path, msg);
+        }
+
+        ddsCreateHeader(texture.header, width, height, 1);
+        ddsSetFormat(texture.header, texture.header10, 1, RHIResourceFormat::R32G32B32A32SignedFloat);
+        const size_t size = static_cast<size_t>(width) * height * 4 * sizeof(float);
+        const auto* bytes = reinterpret_cast<const unsigned char*>(imgData);
+        texture.data.assign(bytes, bytes + size);
+        return;
+    }
+
+    int channels = 0;
     float* imgData = stbi_loadf(path.data(), &width, &height, &channels, STBI_rgb_alpha);
     UniquePtr<float, decltype(&stbi_image_free)> raii(imgData, reinterpret_cast<void(*)(void*)>(&stbi_image_free));
     CHECK_MSG(imgData != nullptr, "Failed to load HDR image {}", path);
@@ -309,6 +350,39 @@ void LoadHDR(FTexture2D& texture, StringView path)
 
 void SaveHDR(const float* data, int width, int height, StringView path)
 {
+    // Case-insensitive ".exr" suffix check
+    auto endsWithExr = [](StringView s)
+    {
+        constexpr StringView ext = ".exr";
+        if (s.size() < ext.size())
+            return false;
+        const size_t off = s.size() - ext.size();
+        for (size_t i = 0; i < ext.size(); ++i)
+        {
+            const char a = static_cast<char>(std::tolower(static_cast<unsigned char>(s[off + i])));
+            const char b = ext[i];
+            if (a != b)
+                return false;
+        }
+        return true;
+    };
+
+    if (endsWithExr(path))
+    {
+        // tinyexr SaveEXR writes RGBA float32 directly (channels = 4), no repacking needed.
+        // save_as_fp16 = 0 keeps full float32 precision; set to 1 to halve file size via HALF.
+        const char* err = nullptr;
+        const int ret = SaveEXR(data, width, height, /*channels*/ 4, /*save_as_fp16*/ 0, path.data(), &err);
+        if (ret != TINYEXR_SUCCESS)
+        {
+            String msg = err ? String(err) : String("unknown");
+            if (err)
+                FreeEXRErrorMessage(err);
+            CHECK_MSG(false, "Failed to write EXR image to {}: {}", path, msg);
+        }
+        return;
+    }
+
     // stbi_write_hdr expects RGB 3-channel data; extract from RGBA 4-channel input
     Vector<float> rgb(static_cast<size_t>(width) * height * 3, GLOBAL_ALLOC);
     for (int i = 0; i < width * height; ++i)

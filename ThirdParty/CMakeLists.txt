@@ -64,6 +64,15 @@ FetchContent_Declare(
 )
 
 FetchContent_Declare(
+    tinyexr
+    GIT_REPOSITORY https://github.com/syoyo/tinyexr.git
+    GIT_TAG        v1.0.9
+    GIT_SHALLOW TRUE
+)
+set(TINYEXR_BUILD_SAMPLE OFF CACHE BOOL "" FORCE)
+set(TINYEXR_USE_MINIZ    ON  CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
     fast_obj
     GIT_REPOSITORY https://github.com/thisistherk/fast_obj
     GIT_TAG v1.3
@@ -129,3 +138,13 @@ target_include_directories(ThirdParty_STB PUBLIC ${stb_SOURCE_DIR})
 # STB_IMAGE on GCC Debug builds without optimization fails to propagate constants to intrinsics -> "argument must be an immediate"
 # Force optimization on this specific file/target to fix it.
 target_compile_options(ThirdParty_STB PRIVATE $<$<CXX_COMPILER_ID:GNU>:-O2>)
+
+FetchContent_MakeAvailable(tinyexr)
+add_library(ThirdParty_TinyEXR STATIC
+    tinyexr.cpp
+    ${tinyexr_SOURCE_DIR}/deps/miniz/miniz.c
+)
+target_include_directories(ThirdParty_TinyEXR PUBLIC
+    ${tinyexr_SOURCE_DIR}
+    ${tinyexr_SOURCE_DIR}/deps/miniz
+)

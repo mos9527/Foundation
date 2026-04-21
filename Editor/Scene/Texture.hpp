@@ -73,7 +73,10 @@ void LoadRGBA8(FTexture2D& texture, Span<const unsigned char> data, bool gamma =
  */
 void LoadHDR(FTexture2D& texture, StringView path);
 /**
- * Saves float data as an HDR (.hdr) file via stb_image_write.
+ * Saves float RGBA pixel data as an HDR image.
+ * Output format is selected by file extension:
+ *   - ".exr" -> OpenEXR (tinyexr), RGBA float32, preserves the alpha channel.
+ *   - otherwise -> Radiance HDR (stb_image_write), RGB only (alpha discarded).
  * @param data Pointer to float RGBA pixel data (4 floats per pixel).
  * @param width Image width in pixels.
  * @param height Image height in pixels.

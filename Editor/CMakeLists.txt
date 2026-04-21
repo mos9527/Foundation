@@ -21,6 +21,7 @@ target_sources(Editor_Assets PUBLIC
 target_link_libraries(
         Editor_Assets PUBLIC
         ThirdParty_STB
+        ThirdParty_TinyEXR
         Foundation_Math
         Foundation_Core
         meshoptimizer
