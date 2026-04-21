@@ -2,9 +2,12 @@
 #define CGLTF_VALIDATE_ENABLE_ASSERTS 1
 #include "Scene.hpp"
 #include <Math/Decompose.hpp>
+#include <algorithm>
 #include <cgltf.h>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <numbers>
 #include "Mesh.hpp"
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#meshes
 FMesh loadGLTFSubmesh(cgltf_primitive* submesh)
@@ -299,6 +302,46 @@ void LoadGLTF(StringView path, FScene& scene)
                 light.type = FLightType::Directional;
                 break;
             }
+        }
+        // EXT_lights_area: rectangle / disk area lights.
+        // https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Vendor/EXT_lights_area
+        if (node->light_area)
+        {
+            auto& light = scene.mLights.emplace_back();
+            getTransform(light.transform);
+            // "world scale" per spec: largest absolute component of node's world scale.
+            float ws = std::max({std::abs(light.transform.scale.x), std::abs(light.transform.scale.y),
+                                 std::abs(light.transform.scale.z)});
+            // Fold world-scale into half-extents so downstream (FLightToGSLight) can ignore transform.scale,
+            // which matches how punctual lights are handled.
+            light.transform.scale = float3{1, 1, 1};
+
+            const cgltf_light_area* la = node->light_area;
+            light.color = float3{la->color[0], la->color[1], la->color[2]};
+            light.range = 0.0f; // EXT_lights_area has no range
+            light.twoSided = false; // Spec: emits from one side (-Z local)
+            light.normalize = true; // Treat `power` below as total flux; FLightToGSLight divides by area*pi → nits
+
+            // glTF size → full width/height; FLight stores *half-extents*.
+            // rect:  width = size * aspect, height = size
+            // disk:  diameter = size  →  radius = size / 2 on both axes
+            float fullW = 1.0f, fullH = 1.0f;
+            if (la->type == cgltf_light_area_type_disk)
+            {
+                light.type = FLightType::Disk;
+                fullW = fullH = la->size * ws;
+            }
+            else // rect (and default)
+            {
+                light.type = FLightType::Rect;
+                fullW = la->size * la->rect_aspect * ws;
+                fullH = la->size * ws;
+            }
+            light.width = fullW * 0.5f;
+            light.height = fullH * 0.5f;
+
+            // Defined for unit areas
+            light.power = la->intensity;
         }
     }
     pool.Join();

@@ -81,9 +81,7 @@ FetchContent_Declare(
 
 FetchContent_Declare(
     cgltf
-    GIT_REPOSITORY https://github.com/jkuhlmann/cgltf
-    GIT_TAG v1.15
-    GIT_SHALLOW TRUE
+    GIT_REPOSITORY https://github.com/mos9527/cgltf
 )
 
 FetchContent_Declare(
