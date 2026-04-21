@@ -214,7 +214,14 @@ bool TraceShadowRay(float3 origin, float3 direction, float tMax = INF)
     return payload.hit;
 }
 
-static const float kEnvLightSelectionWeight = 0.5f;
+float GetEnvLightSelectionWeight()
+{
+    SampledSpectrum Lemit = SampledSpectrum(globalParams.ambientPower);
+    float w = dot(LUMINANCE_RGB, Lemit);
+    if (globalParams.useEnvMap != 0)
+        w *= globalParams.envMapScale;
+    return w;
+}
 
 float GetSceneLightSelectionWeight(GSLight gl)
 {
@@ -226,7 +233,7 @@ float GetSceneLightSelectionWeight(GSLight gl)
 
 float ComputeSceneLightWeightSum()
 {
-    float weightSum = kEnvLightSelectionWeight;
+    float weightSum = GetEnvLightSelectionWeight();
     for (uint li = 0; li < globalParams.numSceneLights; li++)
         weightSum += GetSceneLightSelectionWeight(globalParams.sceneLights[li]);
     return weightSum;
@@ -299,7 +306,7 @@ float SceneLightPDF_Li(LightSampleContext ctx, float3 wi, InfiniteLight env, flo
     if (weightSum <= 0.0f)
         return 0.0f;
 
-    float pdf = (kEnvLightSelectionWeight / weightSum) * env.PDF_Li(ctx, wi, true);
+    float pdf = (GetEnvLightSelectionWeight() / weightSum) * env.PDF_Li(ctx, wi, true);
     for (uint li = 0; li < globalParams.numSceneLights; li++) {
         GSLight gl = globalParams.sceneLights[li];
         float w = GetSceneLightSelectionWeight(gl);
@@ -342,7 +349,7 @@ LightLiSample SampleSceneLight(LightSampleContext ctx, InfiniteLight env, float 
     if (Li.pdf <= 0.0f)
         return LightLiSample();
 
-    float pChoice = kEnvLightSelectionWeight / weightSum;
+    float pChoice = GetEnvLightSelectionWeight() / weightSum;
     SampledSpectrum radiance = Li.Li / (Li.pdf * pChoice);
     float mixPDF = Li.isDelta ? Li.pdf : SceneLightPDF_Li(ctx, Li.wi, env, weightSum);
     return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist);

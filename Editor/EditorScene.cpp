@@ -45,7 +45,7 @@ void FLightToGSLight(FLight const& src, GSLight& dst)
                 area = 4.0f * src.width * src.height;
             
             float totalArea = src.twoSided ? (2.0f * area) : area;
-            dst.power = src.power / (totalArea * std::numbers::pi_v<float>);
+            dst.power = src.power / totalArea;
         }
     }
 }

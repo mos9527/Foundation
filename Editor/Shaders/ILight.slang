@@ -158,6 +158,7 @@ float PDF2D(StructuredBuffer<float> marginalCDF, uint sizeY,
 }
 
 // https://pbr-book.org/4ed/Light_Sources/Infinite_Area_Lights
+// https://projects.blender.org/blender/blender/src/branch/main/intern/cycles/kernel/light/background.h
 // Unified infinite light: when hasEnvMap is true, radiance comes from the
 // equirectangular env map texture; otherwise it falls back to a constant color.
 public struct InfiniteLight : ILight {
