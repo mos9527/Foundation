@@ -172,10 +172,10 @@ public struct UBO
     public uint32_t useEnvMap;
     public float envMapScale;
     public float envAzimuthOffset;
-    // Scene lights (up to 8)
+    // Scene lights (up to 32)
     public uint32_t numSceneLights;
     public uint32_t _lightPad0;
-    public GSLight sceneLights[8];
+    public GSLight sceneLights[32];
     // -- Path Tracing
     public uint32_t ptAccumulatedFrames;
     public uint32_t ptMaxBouncesDiffuse;

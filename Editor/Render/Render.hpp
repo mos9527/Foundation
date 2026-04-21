@@ -36,7 +36,7 @@ struct UBO
     // Scene lights (up to kMaxSceneLights)
     uint32_t numSceneLights{0u};
     uint32_t _lightPad0{0u};
-    GSLight sceneLights[8]{}; // kMaxSceneLights
+    GSLight sceneLights[32]{}; // kMaxSceneLights
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};
     uint32_t ptMaxBouncesDiffuse{4u};

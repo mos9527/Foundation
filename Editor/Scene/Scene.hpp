@@ -53,7 +53,7 @@ enum class FLightType : uint32_t
     Disk = 3,
     Rect = 4,
 };
-inline constexpr uint32_t kMaxSceneLights = 8;
+inline constexpr uint32_t kMaxSceneLights = 32;
 struct FLight
 {
     FTransform transform;
