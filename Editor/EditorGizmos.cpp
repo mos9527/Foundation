@@ -18,7 +18,7 @@ static ImVec2 WorldToScreen(vec3 worldPos, mat4 const& viewProj, ImVec2 displayS
 }
 
 // Draw a wireframe circle in world space via ImDrawList
-static void DrawWireCircle(ImDrawList* dl, vec3 center, vec3 u, vec3 v, float radius,
+static void DrawWireCircle(ImDrawList* dl, vec3 center, vec3 u, vec3 v, vec2 radius,
                            mat4 const& viewProj, ImVec2 displaySize, ImU32 color, float thickness,
                            int segments = 32)
 {
@@ -26,8 +26,8 @@ static void DrawWireCircle(ImDrawList* dl, vec3 center, vec3 u, vec3 v, float ra
     {
         float a0 = i * 6.2831853f / segments;
         float a1 = (i + 1) * 6.2831853f / segments;
-        vec3 p0 = center + (u * cosf(a0) + v * sinf(a0)) * radius;
-        vec3 p1 = center + (u * cosf(a1) + v * sinf(a1)) * radius;
+        vec3 p0 = center + u * (cosf(a0) * radius.x) + v * (sinf(a0) * radius.y);
+        vec3 p1 = center + u * (cosf(a1) * radius.x) + v * (sinf(a1) * radius.y);
         dl->AddLine(WorldToScreen(p0, viewProj, displaySize),
                     WorldToScreen(p1, viewProj, displaySize), color, thickness);
     }
@@ -64,7 +64,7 @@ static void DrawDirectionalOverlay(FLight const& light, mat4 const& vp, ImDrawLi
     }
 
     // Small sun-like circle at origin
-    DrawWireCircle(dl, pos, u, v, 0.15f, vp, ds, col, 1.5f, 16);
+    DrawWireCircle(dl, pos, u, v, vec2(0.15f), vp, ds, col, 1.5f, 16);
 }
 
 static void DrawPointOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl, ImVec2 ds, ImU32 col)
@@ -114,7 +114,7 @@ static void DrawSpotOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl,
     vec3 tip = pos + dir * coneLen;
 
     // Base circle at cone end
-    DrawWireCircle(dl, tip, u, v, outerR, vp, ds, col, 1.5f, 24);
+    DrawWireCircle(dl, tip, u, v, vec2(outerR), vp, ds, col, 1.5f, 24);
 
     // 4 cone edge lines from apex to base
     for (int i = 0; i < 4; i++)
@@ -128,7 +128,7 @@ static void DrawSpotOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl,
     if (light.spotInnerConeAngle > 0.001f)
     {
         float innerR = coneLen * tanf(light.spotInnerConeAngle);
-        DrawWireCircle(dl, tip, u, v, innerR, vp, ds, col & 0x80FFFFFF, 1.0f, 24);
+        DrawWireCircle(dl, tip, u, v, vec2(innerR), vp, ds, col & 0x80FFFFFF, 1.0f, 24);
     }
 }
 
@@ -141,10 +141,10 @@ static void DrawDiskOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl,
     buildOrthonormalBasis(dir, u, v);
 
     // Disk circle
-    DrawWireCircle(dl, pos, u, v, light.radius, vp, ds, col, 1.5f);
+    DrawWireCircle(dl, pos, u, v, vec2(light.width, light.height), vp, ds, col, 1.5f);
 
     // Normal arrow
-    DrawWorldLine(dl, pos, pos + dir * light.radius * 1.5f, vp, ds, col, 2.0f);
+    DrawWorldLine(dl, pos, pos + dir * std::max(light.width, light.height) * 1.5f, vp, ds, col, 2.0f);
 }
 
 static void DrawRectOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl, ImVec2 ds, ImU32 col)

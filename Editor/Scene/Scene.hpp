@@ -63,9 +63,7 @@ struct FLight
     float range{0.0f};              // 0 = infinite (directional default)
     float spotInnerConeAngle{0.0f}; // radians
     float spotOuterConeAngle{0.7853981f}; // radians, default ~45 deg
-    // Disk light
-    float radius{0.5f};
-    // Rect light (half-extents)
+    // Disk/Rect light (half-extents)
     float width{1.0f};
     float height{1.0f};
     bool twoSided{false};

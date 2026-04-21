@@ -138,7 +138,7 @@ public struct GSLight
     // Area lights (Disk / Rect)
     public float3 dpdu;         // tangent u-axis (Rect: half-extent u)
     public float3 dpdv;         // tangent v-axis (Rect: half-extent v)
-    public float radius;        // Disk radius
+    public float2 radius;       // Disk radius (x, y for ellipse)
     public uint32_t twoSided;
 };
 public struct UBO

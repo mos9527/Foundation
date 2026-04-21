@@ -407,28 +407,18 @@ public struct DiskLight : ILight {
     float3 normal;
     float3 dpdu;
     float3 dpdv;
-    float radius;
+    float2 radius;
     float area;
     bool twoSided;
 
-    public __init(SampledSpectrum Lemit, float3 position, float3 normal, float3 dpdu, float radius, bool twoSided = false) {
+    public __init(SampledSpectrum Lemit, float3 position, float3 dpdu, float3 dpdv, float2 radius, bool twoSided = false) {
         this.Lemit = Lemit;
         this.position = position;
-        this.normal = normalize(normal);
         this.dpdu = normalize(dpdu);
-        this.dpdv = cross(this.normal, this.dpdu);
+        this.dpdv = normalize(dpdv);
+        this.normal = normalize(cross(this.dpdu, this.dpdv));
         this.radius = radius;
-        this.area = Pi * radius * radius;
-        this.twoSided = twoSided;
-    }
-
-    public __init(SampledSpectrum Lemit, float3 position, float3 normal, float radius, bool twoSided = false) {
-        this.Lemit = Lemit;
-        this.position = position;
-        this.normal = normalize(normal);
-        buildOrthonormalBasis(this.normal, this.dpdu, this.dpdv);
-        this.radius = radius;
-        this.area = Pi * radius * radius;
+        this.area = Pi * radius.x * radius.y;
         this.twoSided = twoSided;
     }
 
@@ -463,18 +453,21 @@ public struct DiskLight : ILight {
         if (t <= 0.0f) return 0.0f;
 
         float3 pDisk = ctx.p() + t * wi;
-        float dist2 = dot(pDisk - position, pDisk - position);
-        if (dist2 > radius * radius) return 0.0f;
+        float3 d = pDisk - position;
+        float u = dot(d, dpdu) / radius.x;
+        float v = dot(d, dpdv) / radius.y;
+        if (u * u + v * v > 1.0f) return 0.0f;
 
         float pdfArea = 1.0f / area;
         return pdfArea * (t * t) / abs(cosTheta);
     }
 
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
-        float2 pd = SampleConcentricDisk(u) * radius;
-        float3 pDisk = position + pd.x * dpdu + pd.y * dpdv;
+        // Sample point on disk
+        float2 pd = SampleConcentricDisk(u);
+        float3 pLight = position + pd.x * radius.x * dpdu + pd.y * radius.y * dpdv;
         
-        float3 wi = pDisk - ctx.p();
+        float3 wi = pLight - ctx.p();
         float dist2 = dot(wi, wi);
         if (dist2 == 0.0f) return LightLiSample();
         

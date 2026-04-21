@@ -444,14 +444,8 @@ void FLightingPanel()
                         }
                     }
 
-                    // Disk light radius
-                    if (light.type == FLightType::Disk)
-                    {
-                        lightChanged |= ImGui::DragFloat("Radius", &light.radius, 0.01f, 0.001f, 100.0f, "%.3f");
-                    }
-
-                    // Rect light dimensions
-                    if (light.type == FLightType::Rect)
+                    // Disk/Rect extents
+                    if (light.type == FLightType::Disk || light.type == FLightType::Rect)
                     {
                         lightChanged |= ImGui::DragFloat("Width", &light.width, 0.01f, 0.001f, 100.0f, "%.3f");
                         lightChanged |= ImGui::DragFloat("Height", &light.height, 0.01f, 0.001f, 100.0f, "%.3f");

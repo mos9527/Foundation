@@ -16,7 +16,7 @@ void FLightToGSLight(FLight const& src, GSLight& dst)
     dst.spotInnerCosAngle = std::cos(src.spotInnerConeAngle);
     dst.spotOuterCosAngle = std::cos(src.spotOuterConeAngle);
     // Area light fields
-    dst.radius = src.radius;
+    dst.radius = float2(src.width, src.height);
     dst.twoSided = src.twoSided ? 1u : 0u;
     // Build tangent frame from direction for area lights
     if (src.type == FLightType::Disk || src.type == FLightType::Rect)

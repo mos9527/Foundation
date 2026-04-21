@@ -68,13 +68,13 @@ struct GSLight
     // Area lights (Disk / Rect)
     float3 dpdu{1,0,0};     // tangent u-axis (Rect: half-extent u)
     float3 dpdv{0,1,0};     // tangent v-axis (Rect: half-extent v)
-    float radius{0.5f};     // Disk radius
+    float2 radius{0.5f, 0.5f}; // Disk radius (x, y for ellipse)
     uint32_t twoSided{0u};
 };
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 52);
-static_assert(sizeof(GSLight) == 88);
+static_assert(sizeof(GSLight) == 92);
 
 template <typename T>
 struct UploadGPURingBuffer

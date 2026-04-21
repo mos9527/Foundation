@@ -250,8 +250,7 @@ LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
         return light.Sample_Li(ctx, u);
     }
     case 3: {
-        DiskLight light = DiskLight(Lemit, gl.position, gl.direction,
-            gl.dpdu, gl.radius, gl.twoSided != 0);
+        DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.radius, gl.twoSided != 0);
         return light.Sample_Li(ctx, u);
     }
     case 4: {
@@ -282,8 +281,7 @@ float SceneLightPDF_Li(GSLight gl, LightSampleContext ctx, float3 wi)
         return light.PDF_Li(ctx, wi, true);
     }
     case 3: {
-        DiskLight light = DiskLight(Lemit, gl.position, gl.direction,
-            gl.dpdu, gl.radius, gl.twoSided != 0);
+        DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.radius, gl.twoSided != 0);
         return light.PDF_Li(ctx, wi, true);
     }
     case 4: {
