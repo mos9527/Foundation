@@ -2,6 +2,7 @@
 #include "Scene/Mesh.hpp"
 #include <RenderCore/ImmediateContext.hpp>
 #include <filesystem>
+#include <numbers>
 
 void FLightToGSLight(FLight const& src, GSLight& dst)
 {
@@ -33,6 +34,18 @@ void FLightToGSLight(FLight const& src, GSLight& dst)
         {
             dst.dpdu = u * src.width;  // half-extent along u
             dst.dpdv = v * src.height; // half-extent along v
+        }
+
+        if (src.normalize)
+        {
+            float area = 1.0f;
+            if (src.type == FLightType::Disk)
+                area = std::numbers::pi_v<float> * src.width * src.height;
+            else
+                area = 4.0f * src.width * src.height;
+            
+            float totalArea = src.twoSided ? (2.0f * area) : area;
+            dst.power = src.power / (totalArea * std::numbers::pi_v<float>);
         }
     }
 }

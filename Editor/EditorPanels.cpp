@@ -460,6 +460,8 @@ void FLightingPanel()
                     if (light.type == FLightType::Disk || light.type == FLightType::Rect)
                     {
                         lightChanged |= ImGui::Checkbox("Two-Sided", &light.twoSided);
+                        ImGui::SameLine();
+                        lightChanged |= ImGui::Checkbox("Normalize", &light.normalize);
                     }
 
                     if (ImGui::SmallButton("Remove"))

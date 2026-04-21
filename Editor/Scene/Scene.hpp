@@ -67,6 +67,7 @@ struct FLight
     float width{1.0f};
     float height{1.0f};
     bool twoSided{false};
+    bool normalize{true};
 };
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
 struct FScene
