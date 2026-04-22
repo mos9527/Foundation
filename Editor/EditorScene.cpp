@@ -54,17 +54,18 @@ void UpdateSceneLights()
 {
     uint32_t count = static_cast<uint32_t>(GDoc.scene.mLights.size());
     GShaderGlobals.numSceneLights = count;
-    
-    Vector<GSLight> gsLights(count, GLOBAL_ALLOC);
+
+    GDoc.lights.clear();
+    GDoc.lights.resize(count);
     for (uint32_t i = 0; i < count; i++)
     {
         auto& src = GDoc.scene.mLights[i];
-        FLightToGSLight(src, gsLights[i]);
+        FLightToGSLight(src, GDoc.lights[i]);
     }
-    
+
     // Update GPU scene with lights
     auto* gpu = GContext->gpuScene;
-    auto res = gpu->UpdateGPUScene(GDoc.instances, GDoc.materials, gsLights);
+    auto res = gpu->UpdateGPUScene(GDoc.instances, GDoc.materials, GDoc.lights);
     GShaderGlobals.firstInstance = res.firstInstance;
     GShaderGlobals.numInstances  = res.numInstances;
     GShaderGlobals.firstMaterial = res.firstMaterial;
@@ -94,6 +95,7 @@ void ReplaceScene(StringView path)
     GDoc.materials.clear();
     GDoc.meshes.clear();
     GDoc.blases.clear();
+    GDoc.lights.clear();
     
     GDoc.selectedInstance = -1;
     GDoc.selectedMaterial = -1;
@@ -200,7 +202,9 @@ void ReplaceScene(StringView path)
         }
         LOG(Editor, LogDebug, "Rebuilding TLAS");
         ctx->Begin();
-        gpu->BuildTLAS(ctx.Get(), GDoc.instances, GDoc.blases, false);
+        if (GDoc.instances.empty())
+            return;
+        gpu->BuildTLAS(ctx.Get(), GDoc.instances, GDoc.blases, GDoc.lights, false);
         ctx->End(), ctx.Submit(), ctx.WaitIdle();
     }
 

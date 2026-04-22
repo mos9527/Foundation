@@ -24,17 +24,23 @@ Also w/ blog post series update on:
   - NV released [this (2026)](https://research.nvidia.com/labs/rtr/publication/lin2026restirptenhanced/lin2026restirptenhanced.pdf) recently too. Lots of new tricks I've not heard of :D 
 - [ ] Spatial Reuse ([SHaRC](https://github.com/NVIDIA-RTX/SHARC)?)
 - [ ] Denoising (SVGF? NRD? Integrate with DLSS-RR or FSR4-RGEN?)
-- 
+
 Some time in the future:
 - [ ] Glass BSDF energy compensation 
 - [ ] Volume rendering
 - [ ] Skin. Random Walk SSS?
-- [ ] Transparent shadows (caustics, approximation)
 - [ ] Cluster Acceleration Structures (CLAS)
   - [DXR 2.0 will arrive sometime this year/2026](https://asawicki.info/news_1801_directx_12_news_from_gdc_2026_-_my_comments)! Once
     this is no longer NV only I'll have a shot.
   
 Already done!
+- [x] Transparent shadows (caustics, approximation)
+  - Environment lights and emissive objects naturally cast caustics.
+  - Area lights are now added as actual geometry into TLAS, allowing them to be hit by BSDF rays and evaluated with MIS.
+  - Cheap approximation still - unbiased, yes. But very slow to converge. Crank up the fireflies!
+  - Not done for analytical lights (Point/Directional) as they are delta distributions and cannot be hit by BSDF rays.
+    - Conversion to small disk lights is feasible, or another O(N) loop to evaluate all of those inline w/o going through scene BVH
+- [x] Alias Sampling scene lights
 - [x] PCG (Independent), Sobol Samplers
 - [x] Importance sampling Infinite Image Lights
 

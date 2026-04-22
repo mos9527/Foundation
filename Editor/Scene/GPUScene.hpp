@@ -71,11 +71,26 @@ struct GSLight
     float3 dpdv{0,1,0};     // tangent v-axis (Rect: half-extent v)
     float2 radius{0.5f, 0.5f}; // Disk radius (x, y for ellipse)
     uint32_t twoSided{0u};
+    float selectionWeight{0.0f};
+
+    float GetSelectionWeight(uint32_t ptLightSampler) const
+    {
+        float weight = 1.0f;
+        if (ptLightSampler == 1) { // Power
+            float luminance = 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
+            weight = luminance * power;
+            if (type == 3)
+                weight *= radius.x * radius.y * pi<float>() * (twoSided != 0 ? 2.0f : 1.0f);
+            else if (type == 4)
+                weight *= cross(dpdu, dpdv).length() * 4.0f * (twoSided != 0 ? 2.0f : 1.0f);
+        }
+        return std::max(0.0f, weight);
+    }
 };
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 52);
-static_assert(sizeof(GSLight) == 92);
+static_assert(sizeof(GSLight) == 96);
 
 template <typename T>
 struct UploadGPURingBuffer
@@ -150,6 +165,12 @@ class GPUScene
     UploadGPURingBuffer<char> mTLASInstances;
     // Samplers
     RHIDeviceScopedHandle<RHIBuffer> mSobolMatricesBuffer;
+    
+    // Light BLAS
+    RHIDeviceScopedHandle<RHIBuffer> mLightGeometryBuffer;
+    RHIDeviceScopedHandle<RHIAccelerationStructure> mRectBLAS;
+    RHIDeviceScopedHandle<RHIAccelerationStructure> mDiskBLAS;
+    RHIDeviceScopedHandle<RHIBuffer> mLightBLASBuffer;
 public:
     enum class LightSamplerType
     {
@@ -203,7 +224,7 @@ public:
     size_t Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t& outIndex);
 
     void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices);
-    void BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, bool update = false);
+    void BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, Span<const GSLight> lights, bool update = false);
 
     /* Geometry */
     [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }

@@ -63,6 +63,152 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     });
     mSobolMatricesBuffer->DebugSetObjectName("Sobol Matrices");
 
+    // Initialize Light BLAS
+    {
+        struct LightGeo {
+            float4 rectVertices[4];
+            uint32_t rectIndices[6];
+            float4 diskVertices[33];
+            uint32_t diskIndices[32 * 3];
+        } geo;
+        
+        geo.rectVertices[0] = {-1, -1, 0, 1};
+        geo.rectVertices[1] = { 1, -1, 0, 1};
+        geo.rectVertices[2] = { 1,  1, 0, 1};
+        geo.rectVertices[3] = {-1,  1, 0, 1};
+        geo.rectIndices[0] = 0; geo.rectIndices[1] = 1; geo.rectIndices[2] = 2;
+        geo.rectIndices[3] = 0; geo.rectIndices[4] = 2; geo.rectIndices[5] = 3;
+        
+        geo.diskVertices[0] = {0, 0, 0, 1};
+        for (int i = 0; i < 32; ++i) {
+            float theta = i * 2.0f * pi<float>() / 32.0f;
+            geo.diskVertices[i + 1] = {std::cos(theta), std::sin(theta), 0, 1};
+            geo.diskIndices[i * 3 + 0] = 0;
+            geo.diskIndices[i * 3 + 1] = i + 1;
+            geo.diskIndices[i * 3 + 2] = (i + 1) % 32 + 1;
+        }
+
+        mLightGeometryBuffer = mContext->device->CreateBuffer({
+            .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
+            .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
+            .size = sizeof(LightGeo)
+        });
+
+        ImmediateUpload upload(mContext->device.Get(), sizeof(LightGeo));
+        upload.Begin();
+        char* ptr = upload.Upload(mLightGeometryBuffer.Get(), sizeof(LightGeo), 0);
+        std::memcpy(ptr, &geo, sizeof(LightGeo));
+        upload.End();
+        upload.WaitIdle();
+
+        // Build BLAS
+        RHIAccelerationStructureGeometryInfo rectGeoInfo{
+            .type = RHIAccelerationGeometryType::Triangles,
+            .triangleData = {
+                .vertexFormat = RHIResourceFormat::R32G32B32A32SignedFloat,
+                .vertexBuffer = mLightGeometryBuffer.Get(),
+                .vertexOffset = offsetof(LightGeo, rectVertices),
+                .vertexCount = 4,
+                .vertexStride = sizeof(float4),
+                .indexFormat = RHIResourceFormat::R32Uint,
+                .indexBuffer = mLightGeometryBuffer.Get(),
+                .indexOffset = offsetof(LightGeo, rectIndices),
+                .indexCount = 6
+            }
+        };
+        RHIAccelerationStructureBuildRangeInfo rectRange{.primitiveCount = 2};
+
+        RHIAccelerationStructureGeometryInfo diskGeoInfo{
+            .type = RHIAccelerationGeometryType::Triangles,
+            .triangleData = {
+                .vertexFormat = RHIResourceFormat::R32G32B32A32SignedFloat,
+                .vertexBuffer = mLightGeometryBuffer.Get(),
+                .vertexOffset = offsetof(LightGeo, diskVertices),
+                .vertexCount = 33,
+                .vertexStride = sizeof(float4),
+                .indexFormat = RHIResourceFormat::R32Uint,
+                .indexBuffer = mLightGeometryBuffer.Get(),
+                .indexOffset = offsetof(LightGeo, diskIndices),
+                .indexCount = 32 * 3
+            }
+        };
+        RHIAccelerationStructureBuildRangeInfo diskRange{.primitiveCount = 32};
+
+        RHIAccelerationStructureBuildDesc rectDesc{
+            .type = RHIAccelerationStructureType::BottomLevel,
+            .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace,
+            .operation = RHIAccelerationStructureBuildOp::Build,
+            .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&rectGeoInfo, 1},
+            .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&rectRange, 1}
+        };
+        RHIAccelerationStructureBuildDesc diskDesc{
+            .type = RHIAccelerationStructureType::BottomLevel,
+            .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace,
+            .operation = RHIAccelerationStructureBuildOp::Build,
+            .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&diskGeoInfo, 1},
+            .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&diskRange, 1}
+        };
+
+        auto rectSize = mContext->device->GetAccelerationStructureSizeInfo(rectDesc);
+        auto diskSize = mContext->device->GetAccelerationStructureSizeInfo(diskDesc);
+
+        uint32_t rectOffset = 0;
+        uint32_t diskOffset = AlignUp(rectSize.accelerationStructureSize, 256u);
+        uint32_t totalSize = diskOffset + diskSize.accelerationStructureSize;
+
+        mLightBLASBuffer = mContext->device->CreateBuffer({
+            .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
+            .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureStorage,
+            .size = totalSize
+        });
+
+        uint32_t scratchSize = std::max(rectSize.buildScratchSize, diskSize.buildScratchSize);
+        auto scratch = mContext->device->CreateBuffer({
+            .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
+            .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress,
+            .size = scratchSize,
+            .alignment = 256
+        });
+
+        mRectBLAS = mContext->device->CreateAccelerationStructure({
+            .type = RHIAccelerationStructureType::BottomLevel,
+            .buffer = mLightBLASBuffer.Get(),
+            .offset = rectOffset,
+            .size = rectSize.accelerationStructureSize
+        });
+        mDiskBLAS = mContext->device->CreateAccelerationStructure({
+            .type = RHIAccelerationStructureType::BottomLevel,
+            .buffer = mLightBLASBuffer.Get(),
+            .offset = diskOffset,
+            .size = diskSize.accelerationStructureSize
+        });
+
+        ImmediateContext ctx(mContext->device.Get());
+        auto* cmd = ctx.Get();
+        cmd->Begin();
+        
+        rectDesc.scratchBuffer = scratch.Get();
+        rectDesc.scratchBufferOffset = 0;
+        rectDesc.dstAS = mRectBLAS.Get();
+        cmd->BuildAccelerationStructure({{{rectDesc}}});
+
+        cmd->BeginTransition();
+        cmd->SetBufferTransition(scratch.Get(), {
+            .srcStage = RHIPipelineStageBits::AccelerationBuild,
+            .dstStage = RHIPipelineStageBits::AccelerationBuild
+        });
+        cmd->EndTransition();
+
+        diskDesc.scratchBuffer = scratch.Get();
+        diskDesc.scratchBufferOffset = 0;
+        diskDesc.dstAS = mDiskBLAS.Get();
+        cmd->BuildAccelerationStructure({{{diskDesc}}});
+
+        cmd->End();
+        ctx.Submit();
+        ctx.WaitIdle();
+    }
+
     {
         auto lutE = MakeLUT(kGGXlutE, RHIResourceFormat::R32G32SignedFloat, 32, 32);
         auto lutEavg = MakeLUT(kGGXlutEavg, RHIResourceFormat::R32SignedFloat, 32, 1);
@@ -116,28 +262,24 @@ GPUScene::UpdateResult GPUScene::UpdateGPUScene(Span<const GSInstance> instances
     if (!lights.empty()) {
         auto [ptr, off] = AllocateLight(static_cast<uint32_t>(lights.size()));
         auto [aliasPtr, aliasOff] = AllocateLightAliasTable(static_cast<uint32_t>(lights.size()));
-        std::memcpy(ptr, lights.data(), lights.size() * sizeof(GSLight));
-        res.firstLight = off;
-        res.numLights = static_cast<uint32_t>(lights.size());
+        
         // Alias table
         Vector<float> powers(lights.size(), mContext->allocator);
         float weightSum = 0.0f;
-        for (size_t i = 0; i < lights.size(); ++i)
+        
+        // We need a mutable copy of lights to write selectionWeight
+        Vector<GSLight> lightsCopy(lights.begin(), lights.end(), mContext->allocator);
+        for (size_t i = 0; i < lightsCopy.size(); ++i)
         {
-            float weight = 1.0f; // Uniform weight by default
-            if (mLightSamplerType == LightSamplerType::Power)
-            {
-                float luminance = 0.2126f * lights[i].color.x + 0.7152f * lights[i].color.y + 0.0722f * lights[i].color.z;
-                weight = luminance * lights[i].power;
-                // For Area lights, power is per-unit. Its *total emission* would be a better weight
-                if (lights[i].type == 3) // Disk
-                    weight *= lights[i].radius.x * lights[i].radius.y * pi<float>() * (lights[i].twoSided ? 2.0f : 1.0f);
-                else if (lights[i].type == 4) // Rectangle
-                    weight *= cross(lights[i].dpdu, lights[i].dpdv).length() * 4.0f * (lights[i].twoSided ? 2.0f : 1.0f);
-            }
-            powers[i] = std::max(0.0f, weight);
+            powers[i] = lightsCopy[i].GetSelectionWeight(mLightSamplerType == LightSamplerType::Power ? 1 : 0);
+            lightsCopy[i].selectionWeight = powers[i];
             weightSum += powers[i];
         }
+        
+        std::memcpy(ptr, lightsCopy.data(), lightsCopy.size() * sizeof(GSLight));
+        res.firstLight = off;
+        res.numLights = static_cast<uint32_t>(lights.size());
+        
         res.sceneLightWeightSum = weightSum;
         AliasTable table(powers, mContext->allocator);
         std::memcpy(aliasPtr, table.mBins.data(), table.mBins.size() * sizeof(Alias));
@@ -414,11 +556,18 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
         blasOffset / 1e6);
 }
 
-void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices,
+void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, Span<const GSLight> lights,
                          bool update)
 {
+    uint32_t numAreaLights = 0;
+    for (const auto& light : lights)
+    {
+        if (light.type == 3 || light.type == 4)
+            numAreaLights++;
+    }
+
     // Task 2: return immediately when there are no instances
-    if (instances.empty())
+    if (instances.empty() && numAreaLights == 0)
         return;
 
     auto* device = mContext->device.Get();
@@ -426,7 +575,7 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
     {
         RHIAccelerationStructureGeometryInstance res{
             .instanceID = static_cast<uint32_t>(src - instances.data()),
-            .mask = 0xFF,
+            .mask = 0x01, // MESH_MASK
         };
         mat3 basis = transpose(mat3(scale(src->scale)) * mat3_cast(src->rotation));
         std::memcpy(res.transformBasisRowMajor[0], &basis[0], sizeof(float) * 3);
@@ -437,24 +586,59 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
         res.transformTranslation[2] = src->transform.z;
         return res;
     };
+
+    auto ConvertLight = [&](const GSLight* src) -> RHIAccelerationStructureGeometryInstance
+    {
+        RHIAccelerationStructureGeometryInstance res{
+            .instanceID = static_cast<uint32_t>(src - lights.data()) | (1u << 23),
+            .mask = 0x02, // LIGHT_MASK
+        };
+        float3 u = src->dpdu;
+        float3 v = src->dpdv;
+        if (src->type == 3) // Disk
+        {
+            u *= src->radius.x;
+            v *= src->radius.y;
+        }
+        float3 n = normalize(cross(u, v));
+        mat3 basis = transpose(mat3(u, v, n));
+        std::memcpy(res.transformBasisRowMajor[0], &basis[0], sizeof(float) * 3);
+        std::memcpy(res.transformBasisRowMajor[1], &basis[1], sizeof(float) * 3);
+        std::memcpy(res.transformBasisRowMajor[2], &basis[2], sizeof(float) * 3);
+        res.transformTranslation[0] = src->position.x;
+        res.transformTranslation[1] = src->position.y;
+        res.transformTranslation[2] = src->position.z;
+        res.blas = (src->type == 3) ? mDiskBLAS.Get() : mRectBLAS.Get();
+        return res;
+    };
+
     // NOTE: Byte buffers
-    auto [pInstances, instancesOffset] = mTLASInstances.Allocate(mTLASInstanceStride * instances.size());
+    uint32_t totalInstances = static_cast<uint32_t>(instances.size()) + numAreaLights;
+    auto [pInstances, instancesOffset] = mTLASInstances.Allocate(mTLASInstanceStride * totalInstances);
     for (const auto & instance : instances)
     {
         auto data = ConvertInstance(&instance);
         data.blas = mBLASes[blasIndices[instance.meshIndex]].Get();
         pInstances += mContext->device->WriteAccelerationStructureInstanceData(data, pInstances);
     }
+    for (const auto & light : lights)
+    {
+        if (light.type == 3 || light.type == 4)
+        {
+            auto data = ConvertLight(&light);
+            pInstances += mContext->device->WriteAccelerationStructureInstanceData(data, pInstances);
+        }
+    }
     RHIAccelerationStructureGeometryInstanceData instance{
         .instanceBuffer = mTLASInstances.mBuffer.Get(),
         .instanceOffset = instancesOffset,
-        .totalPrimitives = static_cast<uint32_t>(instances.size())
+        .totalPrimitives = totalInstances
     };
     RHIAccelerationStructureGeometryInfo geometry{
         .type = RHIAccelerationGeometryType::Instances,
         .instanceData = instance
     };
-    RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = static_cast<uint32_t>(instances.size())
+    RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = totalInstances
     };
     RHIAccelerationStructureBuildDesc desc{
         .type = RHIAccelerationStructureType::TopLevel,

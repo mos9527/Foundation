@@ -140,6 +140,21 @@ public struct GSLight
     public float3 dpdv;         // tangent v-axis (Rect: half-extent v)
     public float2 radius;       // Disk radius (x, y for ellipse)
     public uint32_t twoSided;
+    public float selectionWeight;
+
+    public float GetSelectionWeight(uint ptLightSampler)
+    {
+        float weight = 1.0f;
+        if (ptLightSampler == 1) { // Power
+            float luminance = 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
+            weight = luminance * power;
+            if (type == 3)
+                weight *= radius.x * radius.y * Pi * (twoSided != 0 ? 2.0f : 1.0f);
+            else if (type == 4)
+                weight *= length(cross(dpdu, dpdv)) * 4.0f * (twoSided != 0 ? 2.0f : 1.0f);
+        }
+        return max(0.0f, weight);
+    }
 };
 public struct UBO
 {
@@ -183,9 +198,9 @@ public struct UBO
     public uint32_t ptMaxBouncesDiffuse;
     public uint32_t ptMaxBouncesSpecular;
     public uint32_t ptMaxBouncesTransmission;
+    public float ptFireflyClamp;
     public uint32_t ptSampler;
     public uint32_t ptLightSampler;
-    public float ptFireflyClamp;
     // -- Display
     public uint32_t enableHDR;
     public float paperWhiteNits;

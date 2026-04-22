@@ -216,17 +216,13 @@ bool TraceShadowRay(float3 origin, float3 direction, float tMax = INF)
     ray.TMin = EPS_TMin;
     ray.TMax = tMax;
     ShadowPayload payload;
-    TraceRay(AS, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, 1, 1, 1, ray, payload);
+    TraceRay(AS, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0x01, 1, 1, 1, ray, payload);
     return payload.hit;
 }
 
 float GetEnvLightSelectionWeight()
 {
-    SampledSpectrum Lemit = SampledSpectrum(globalParams.ambientPower);
-    float w = dot(LUMINANCE_RGB, Lemit);
-    if (globalParams.useEnvMap != 0)
-        w *= globalParams.envMapScale;
-    return w;
+    return globalParams.useEnvMap ? globalParams.envMapScale : globalParams.ambientPower;
 }
 
 LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
@@ -380,8 +376,11 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             // Miss is identified by 0xFFu (distinct from any valid material)
             uint coherenceHint = 0xFFu;
             if (hitObj.IsHit()) {
-                GSInstance inst = instances[NonUniformResourceIndex(hitObj.GetInstanceIndex())];
-                coherenceHint = inst.materialIndex & 0xFFu;
+                uint instanceID = hitObj.GetInstanceID();
+                if ((instanceID & (1u << 23)) == 0) {
+                    GSInstance inst = instances[NonUniformResourceIndex(instanceID)];
+                    coherenceHint = inst.materialIndex & 0xFFu;
+                }
             }
             ReorderThread(hitObj, coherenceHint, kSERCoherenceHintBits);
             // Invoke closest hit / miss to populate the payload
@@ -390,6 +389,56 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             TraceRay(AS, 0, 0xFF, 0, 0, 0, ray, payload);
         // Outgoing direction
         float3 view = -ray.Direction;
+
+        // Special case for Area Lights
+        // These act both in the NEE path and in the emissive path (BSDF), where paths
+        // can be intersected with as well, contributing to e.g. transmission indirect.
+        // Easy caustics! Albeit with low convergence just like the emissive case.
+        // 
+        if (payload.IsHit() && (payload.instance & (1u << 23))) {
+            uint lightIndex = payload.instance & ~(1u << 23);
+            GSLight gl = lights[globalParams.firstLight + lightIndex];
+            
+            float3 hitPoint = ray.Origin + ray.Direction * payload.hitT;
+            
+            SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.power);
+            SampledSpectrum Le = SampledSpectrum(0.0f);
+            float pdf_Li = 0.0f;
+            
+            if (gl.type == 3) {
+                DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.radius, gl.twoSided != 0);
+                float3 normal = normalize(cross(gl.dpdu, gl.dpdv));
+                Le = light.L(hitPoint, normal, float3(0), view);
+                pdf_Li = light.PDF_Li(lastLightCtx, ray.Direction, true);
+            } else if (gl.type == 4) {
+                RectLight light = RectLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.twoSided != 0);
+                float3 normal = normalize(cross(gl.dpdu, gl.dpdv));
+                Le = light.L(hitPoint, normal, float3(0), view);
+                pdf_Li = light.PDF_Li(lastLightCtx, ray.Direction, true);
+            }
+            
+            if (any(Le > 0.0f)) {
+                float lightWeight = gl.selectionWeight;
+                float pdf_light_selection = totalLightWeight > 0.0f ? (lightWeight / totalLightWeight) : 0.0f;
+                float pdf = pdf_light_selection * pdf_Li;
+                float mis = lastSamplePDF > EPS ? BalanceHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
+                float3 contrib = beta * Le * mis;
+                printf("V %d", lightIndex);
+                if (bounce == 0) {
+                    AddRadiance(LSpecular, contrib, true);
+                } else {
+                    if (firstBounceCategory == AOVCategory::Diffuse)
+                        AddRadiance(LDiffuse, contrib, false);
+                    else
+                        AddRadiance(LSpecular, contrib, false);
+                }
+            }
+            
+            ray.Origin = hitPoint + ray.Direction * EPS_TMin;
+            bounce--; // Don't count this as a bounce
+            continue;
+        }
+
         if (!payload.IsHit()) {
             // Miss — environment
             if (bounce == 0) {
@@ -568,6 +617,9 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
 bool AnyHitOpacityIgnore<S : ISampler>(inout S rng, uint instance, uint primitive,
     BuiltInTriangleIntersectionAttributes attr)
 {
+    if (instance & (1u << 23))
+        return false; // Light instance
+
     GSInstance inst = instances[NonUniformResourceIndex(instance)];
     GSMaterial material = materials[NonUniformResourceIndex(inst.materialIndex)];
     float4 baseColor = material.baseColorFactor;
@@ -587,7 +639,7 @@ bool AnyHitOpacityIgnore<S : ISampler>(inout S rng, uint instance, uint primitiv
 [shader("anyhit")] // Hit Group 0
 void RayOpacityAnyHit(in BuiltInTriangleIntersectionAttributes attr)
 {
-    uint instance = InstanceIndex();
+    uint instance = InstanceID();
     uint primitive = PrimitiveIndex();
     PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
     if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
@@ -597,7 +649,7 @@ void RayOpacityAnyHit(in BuiltInTriangleIntersectionAttributes attr)
 [shader("anyhit")] // Hit Group 1
 void ShadowRayAnyHit(inout ShadowPayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
-    uint instance = InstanceIndex();
+    uint instance = InstanceID();
     uint primitive = PrimitiveIndex();
     PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
     if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
@@ -609,7 +661,7 @@ void ShadowRayAnyHit(inout ShadowPayload payload, in BuiltInTriangleIntersection
 [shader("closesthit")] // Hit Group 0
 void RayClosestHit(inout HitPayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
-    payload.instance = InstanceIndex();
+    payload.instance = InstanceID();
     payload.primitive = PrimitiveIndex();
     payload.bary = attr.barycentrics.xy;
     payload.hitT = RayTCurrent();

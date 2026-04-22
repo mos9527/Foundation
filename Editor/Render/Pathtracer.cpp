@@ -35,7 +35,11 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
     renderer->CreatePass(
         "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
         { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
-        { gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, true); });
+        {
+            if (scene.gsInstances->empty())
+                return;
+            gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsLights, true);
+        });
     /* Instance and Primitive buffers */
     auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
     auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());

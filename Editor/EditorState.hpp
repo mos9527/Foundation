@@ -91,6 +91,7 @@ struct EditorDocument
     Vector<GSMaterial> materials{GLOBAL_ALLOC};
     Vector<GSMesh>     meshes{GLOBAL_ALLOC};
     Vector<uint32_t>   blases{GLOBAL_ALLOC};
+    Vector<GSLight>    lights{GLOBAL_ALLOC};
     FScene             scene{GLOBAL_ALLOC};
     String             currentSavePath;
     int                selectedInstance = -1;

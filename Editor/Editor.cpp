@@ -64,6 +64,7 @@ static void FRunningEnter()
         .gsMaterials = &GDoc.materials,
         .gsMeshes = &GDoc.meshes,
         .gsBLASes = &GDoc.blases,
+        .gsLights = &GDoc.lights,
         .gsPickPixel = &sPendingPickPixel
     };
     if (GRendererMode == ERendererMode::PathTracer)

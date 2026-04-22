@@ -148,7 +148,11 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
         renderer->CreatePass(
             "TLAS Update", RHIDeviceQueueType::Compute, 0u, [=](PassHandle self, Renderer* r)
             { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
-            { gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, true); });
+            { 
+                if (scene.gsInstances->empty())
+                    return;
+                gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsLights, true); 
+            });
     }
     renderer->CreatePass(
         "Indirect Meshlet Cull Clear", RHIDeviceQueueType::Graphics, 0u,
@@ -314,23 +318,16 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
                     r->BindBufferUnordered(self, Visibility, RHIPipelineStageBits::ComputeShader, "visibility");
+                    r->BindBufferUnordered(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader, "inTasksCounter");
+                    r->BindBufferUnordered(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "inTasks");
+                    r->BindBufferUnordered(self, IndirectMeshletCounter, RHIPipelineStageBits::ComputeShader, "outMeshletCounter");
+                    r->BindBufferUnordered(self, IndirectMeshlets, RHIPipelineStageBits::ComputeShader, "outMeshletIndices");
+                    r->BindBufferUnordered(self, IndirectMeshletDispatch, RHIPipelineStageBits::ComputeShader, "outMeshletDispatches");
                     r->BindTextureSampler(self, HIZSampler, "hizSampler");
                     r->BindTextureSRV(self, HIZ, "hiz", RHIPipelineStageBits::ComputeShader,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
                                                          .range = RHITextureSubresourceRange::Create(
                                                              RHITextureAspectFlagBits::Color, 0, HIZMips)});
-                    r->BindBufferStorageRead(self, IndirectTasks, RHIPipelineStageBits::ComputeShader, "inTasks");
-                    r->BindBufferStorageRead(self, IndirectTaskCounter, RHIPipelineStageBits::ComputeShader,
-                                             "inTasksCounter");
-                    r->BindBufferUnordered(self, IndirectMeshlets,
-                                           RHIPipelineStageBits::ComputeShader,
-                                           "outMeshletIndices");
-                    r->BindBufferUnordered(self, IndirectMeshletCounter,
-                                           RHIPipelineStageBits::ComputeShader,
-                                           "outMeshletCounter");
-                    r->BindBufferUnordered(self, IndirectMeshletDispatch,
-                                           RHIPipelineStageBits::ComputeShader,
-                                           "outMeshletDispatches");
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
@@ -353,10 +350,11 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
                     r->BindShader(self, RHIShaderStageBits::Fragment, "main", Paths::Resolve("data/shaders/EPSGBuffer.spv"),
                                   AsBytes(AsSpan(cfg.viewFlags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
-                    r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitives");
+                    r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
                     r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
-                    r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::AllGraphics, "lights");
+                    r->BindBufferStorageRead(self, IndirectMeshletCounter, RHIPipelineStageBits::AllGraphics, "inMeshletCounter");
+                    r->BindBufferStorageRead(self, IndirectMeshlets, RHIPipelineStageBits::AllGraphics, "inMeshletIndices");
                     r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::AllGraphics,
                                       RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
                                                          .range = RHITextureSubresourceRange::Create()});
@@ -379,11 +377,6 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
                                       {.format = RHIResourceFormat::D32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
                     r->BindBufferIndirectRead(self, IndirectMeshletDispatch);
-                    r->BindBufferStorageRead(self, IndirectMeshletCounter,
-                                             RHIPipelineStageBits::MeshShader,
-                                             "inMeshletCounter");
-                    r->BindBufferStorageRead(self, IndirectMeshlets, RHIPipelineStageBits::MeshShader,
-                                             "inMeshletIndices");
                     r->BindTextureSampler(self, TexSampler, "textureSampler");
                     r->BindDescriptorSet(self, "textures",
                                          context->gpuScene->GetTexturePool()->GetDescriptorSetLayout());
@@ -495,6 +488,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
                 RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
             r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
+            r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
             r->BindTextureSampler(self, LUTSampler, "lutSampler");
             r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::ComputeShader,
                   RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
