@@ -81,7 +81,7 @@ FetchContent_Declare(
 
 FetchContent_Declare(
     cgltf
-    GIT_REPOSITORY https://github.com/mos9527/cgltf
+    GIT_REPOSITORY https://github.com/mos9527/Foundation-cgltf
 )
 
 FetchContent_Declare(
