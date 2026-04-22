@@ -1,18 +1,18 @@
 #include "Precompute.hpp"
 AliasTable::AliasTable(Span<const float> f, Allocator* alloc) :
-    mProb(f.size(), alloc), mSelect(f.size(), alloc), mAlias(f.size(), alloc)
+    mBins(f.size(), alloc)
 {
     // Normalize
     const uint n = f.size();
     const double sum = std::accumulate(f.begin(), f.end(), 0.0);
     for (uint i = 0; i < n; ++i)
-        mProb[i] = f[i] / sum;
+        mBins[i].prob = f[i] / sum;
     // Two-halves by average
     // p_under (<1), p_over(>1) stores prob mass, therefore *n
     Vector<Pair<double, uint>> under(n, alloc), over(n, alloc);
     for (uint i = 0; i < n; ++i)
     {
-        double prob = mProb[i] * n;
+        double prob = mBins[i].prob * n;
         if (prob >= 1.0)
             over.push_back({ prob, i });
         else
@@ -24,9 +24,9 @@ AliasTable::AliasTable(Span<const float> f, Allocator* alloc) :
         const auto [p_under, i_under] = under.back();
         const auto [p_over, i_over] = over.back();
         // p_under can always be stored as prob (<1)
-        mSelect[i_under] = p_under;
+        mBins[i_under].select = p_under;
         // Excessive prob comes from over
-        mAlias[i_under] = i_over;
+        mBins[i_under].alias = i_over;
         under.pop_back(), over.pop_back();
         // One bin consumes 1 mass
         double excess = p_over + p_under - 1.0;
@@ -40,44 +40,49 @@ AliasTable::AliasTable(Span<const float> f, Allocator* alloc) :
     // Don't have anything to pair with (e.g. uniform input)
     // Alias to themselves
     for (const auto [p, i] : under)
-        mSelect[i] = 1.0f, mAlias[i] = i;
+        mBins[i].select = 1.0f, mBins[i].alias = i;
     for (const auto [p, i] : over)
-        mSelect[i] = 1.0f, mAlias[i] = i;
+        mBins[i].select = 1.0f, mBins[i].alias = i;
 }
 uint AliasTable::Sample(float u, float& pdf) const
 {
-    const uint n = mProb.size();
+    const uint n = mBins.size();
     uint i = std::min(static_cast<uint>(u * n), n - 1);
     // Get another i.i.d. for i or its alias
     u = u * n - i;
     // Self or alias?
-    if (u > mSelect[i])
-        i = mAlias[i];
-    pdf = mProb[i];
+    if (u > mBins[i].select)
+        i = mBins[i].alias;
+    pdf = mBins[i].prob;
     return i;
 }
 PiecewiseConstant1D::PiecewiseConstant1D(Span<const float> f, Allocator* alloc):
-    mF(f.begin(), f.end(), alloc), mCDF(f.size() + 1, alloc)
+    mF(f.begin(), f.end(), alloc), mCDF(f.size(), alloc)
 {
     const uint n = f.size();
-    for (uint i = 1; i < mCDF.size(); ++i)
-        mCDF[i] = mCDF[i - 1] + abs(f[i - 1]) / n;
+    mCDF[0] = abs(f[0]) / n;
+    for (uint i = 1; i < n; ++i)
+        mCDF[i] = mCDF[i - 1] + abs(f[i]) / n;
 
     mInt = mCDF.back();
     if (mInt == 0.0f)  // Uniform if PDF=0 across the domain
-        for (uint i = 1; i < mCDF.size(); ++i)
-            mCDF[i] = static_cast<float>(i) / n;
+        for (uint i = 0; i < n; ++i)
+            mCDF[i] = static_cast<float>(i + 1) / n;
     else
-        for (uint i = 1; i < mCDF.size() - 1; ++i)
+    {
+        for (uint i = 0; i < n - 1; ++i)
             mCDF[i] /= mInt;
+        mCDF.back() = 1.0f;
+    }
 }
 float PiecewiseConstant1D::Sample(float u, float& pdf, uint& offset) const
 {
     const uint n = mF.size();
-    offset = Ranges::upper_bound(mCDF, u) - mCDF.begin() - 1;
+    offset = Ranges::upper_bound(mCDF, u) - mCDF.begin();
     offset = clamp(offset, 0u, n - 1);
     
-    const float l = mCDF[offset], h = mCDF[offset + 1];
+    const float l = offset == 0 ? 0.0f : mCDF[offset - 1];
+    const float h = mCDF[offset];
     pdf = mInt > 0.0f ? mF[offset] / mInt : 0.0f;
 
     // Lerp between straddled values

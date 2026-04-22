@@ -68,7 +68,7 @@ public Texture2D<float> envMapConditionalCDF;
 uint FindInterval(StructuredBuffer<float> cdf, uint baseIdx, uint numBins, float u) 
 {
     uint first = 0;
-    uint len = numBins + 1;
+    uint len = numBins;
     
     while (len > 0) {
         uint half_len = len >> 1;
@@ -82,7 +82,7 @@ uint FindInterval(StructuredBuffer<float> cdf, uint baseIdx, uint numBins, float
         }
     }
     
-    return clamp(first - 1, 0, numBins - 1);
+    return clamp(first, 0, numBins - 1);
 }
 
 // 1D Sampling Function
@@ -90,8 +90,8 @@ float Sample1D(StructuredBuffer<float> cdf, uint baseIdx, uint numBins, float u,
 {
     offset = FindInterval(cdf, baseIdx, numBins, u);
     
-    float cdf0 = cdf[baseIdx + offset];
-    float cdf1 = cdf[baseIdx + offset + 1];
+    float cdf0 = offset == 0 ? 0.0 : cdf[baseIdx + offset - 1];
+    float cdf1 = cdf[baseIdx + offset];
     
     pdf = (cdf1 - cdf0) * numBins;
     
@@ -111,7 +111,7 @@ float2 Sample2D(StructuredBuffer<float> marginalCDF, uint sizeY,
     
     // Binary search on the texture row
     uint first = 0;
-    uint len = sizeX + 1;
+    uint len = sizeX;
     
     while (len > 0) {
         uint half_len = len >> 1;
@@ -125,10 +125,10 @@ float2 Sample2D(StructuredBuffer<float> marginalCDF, uint sizeY,
         }
     }
     
-    offset.x = clamp(first - 1, 0, sizeX - 1);
+    offset.x = clamp(first, 0, sizeX - 1);
     
-    float cdfX0 = conditionalCDF.Load(int3(offset.x, offset.y, 0));
-    float cdfX1 = conditionalCDF.Load(int3(offset.x + 1, offset.y, 0));
+    float cdfX0 = offset.x == 0 ? 0.0 : conditionalCDF.Load(int3(offset.x - 1, offset.y, 0));
+    float cdfX1 = conditionalCDF.Load(int3(offset.x, offset.y, 0));
     
     pdfX = (cdfX1 - cdfX0) * sizeX;
     
@@ -146,12 +146,12 @@ float PDF2D(StructuredBuffer<float> marginalCDF, uint sizeY,
 {
     uint2 offset = uint2(clamp(uint(uv.x * sizeX), 0, sizeX - 1), clamp(uint(uv.y * sizeY), 0, sizeY - 1));
     
-    float cdfY0 = marginalCDF[offset.y];
-    float cdfY1 = marginalCDF[offset.y + 1];
+    float cdfY0 = offset.y == 0 ? 0.0 : marginalCDF[offset.y - 1];
+    float cdfY1 = marginalCDF[offset.y];
     float pdfY = (cdfY1 - cdfY0) * sizeY;
     
-    float cdfX0 = conditionalCDF.Load(int3(offset.x, offset.y, 0));
-    float cdfX1 = conditionalCDF.Load(int3(offset.x + 1, offset.y, 0));
+    float cdfX0 = offset.x == 0 ? 0.0 : conditionalCDF.Load(int3(offset.x - 1, offset.y, 0));
+    float cdfX1 = conditionalCDF.Load(int3(offset.x, offset.y, 0));
     float pdfX = (cdfX1 - cdfX0) * sizeX;
     
     return pdfX * pdfY;
