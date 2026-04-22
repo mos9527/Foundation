@@ -13,6 +13,8 @@ static FTexture2D MakeLUT(const float* data, RHIResourceFormat format, uint32_t 
 GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     mContext(ctx), mInstanceBuffer(ctx->device.Get(), desc.instanceBudget),
     mMaterialBuffer(ctx->device.Get(), desc.materialBudget),
+    mLightBuffer(ctx->device.Get(), desc.lightBudget),
+    mLightAliasTableBuffer(ctx->device.Get(), desc.lightBudget),
     mTexturePool(ctx->device.Get(), ctx->allocator, {.maxBindings = desc.texturesBudget}), mBLASes(ctx->allocator),
     mBLASBuffers(ctx->allocator),
     mTLASInstanceStride(mContext->device->WriteAccelerationStructureInstanceData({}, nullptr)),
@@ -86,20 +88,55 @@ Pair<GSMaterial*, uint32_t> GPUScene::AllocateMaterial(uint32_t count)
     return mMaterialBuffer.Allocate(count);
 }
 
-GPUScene::UpdateResult GPUScene::UpdateGPUScene(Span<const GSInstance> instances, Span<const GSMaterial> materials)
+Pair<GSLight*, uint32_t> GPUScene::AllocateLight(uint32_t count)
+{
+    return mLightBuffer.Allocate(count);
+}
+
+Pair<Alias*, uint32_t> GPUScene::AllocateLightAliasTable(uint32_t count)
+{
+    return mLightAliasTableBuffer.Allocate(count);
+}
+
+GPUScene::UpdateResult GPUScene::UpdateGPUScene(Span<const GSInstance> instances, Span<const GSMaterial> materials, Span<const GSLight> lights)
 {
     UpdateResult res{};
-    {
+    if (!instances.empty()) {
         auto [ptr, off] = AllocateInstance(static_cast<uint32_t>(instances.size()));
         std::memcpy(ptr, instances.data(), instances.size() * sizeof(GSInstance));
         res.firstInstance = off;
         res.numInstances = static_cast<uint32_t>(instances.size());
     }
-    {
+    if (!materials.empty()) {
         auto [ptr, off] = AllocateMaterial(static_cast<uint32_t>(materials.size()));
         std::memcpy(ptr, materials.data(), materials.size() * sizeof(GSMaterial));
         res.firstMaterial = off;
         res.numMaterials = static_cast<uint32_t>(materials.size());
+    }
+    if (!lights.empty()) {
+        auto [ptr, off] = AllocateLight(static_cast<uint32_t>(lights.size()));
+        auto [aliasPtr, aliasOff] = AllocateLightAliasTable(static_cast<uint32_t>(lights.size()));
+        std::memcpy(ptr, lights.data(), lights.size() * sizeof(GSLight));
+        res.firstLight = off;
+        res.numLights = static_cast<uint32_t>(lights.size());
+        // Alias table
+        Vector<float> powers(lights.size(), mContext->allocator);
+        float weightSum = 0.0f;
+        for (size_t i = 0; i < lights.size(); ++i)
+        {
+            float weight = 1.0f; // Uniform weight by default
+            if (mLightSamplerType == LightSamplerType::Power)
+            {
+                float luminance = 0.2126f * lights[i].color.x + 0.7152f * lights[i].color.y + 0.0722f * lights[i].color.z;
+                weight = luminance * lights[i].power;
+            }
+            powers[i] = weight;
+            weightSum += weight;
+        }
+        res.sceneLightWeightSum = weightSum;
+        AliasTable table(powers, mContext->allocator);
+        std::memcpy(aliasPtr, table.mBins.data(), table.mBins.size() * sizeof(Alias));
+        res.firstLightAliasTable = aliasOff;
     }
     return res;
 }
@@ -530,6 +567,8 @@ void GPUScene::Reset()
     mBLASBuffers.clear();
     mMaterialBuffer.Reset();
     mInstanceBuffer.Reset();
+    mLightBuffer.Reset();
+    mLightAliasTableBuffer.Reset();
     // NOTE: mTexturePool is append-only; old bindings become dead entries.
     //       mTLAS is kept alive and rebuilt in-place by BuildTLAS.
 }

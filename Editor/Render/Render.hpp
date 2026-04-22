@@ -33,10 +33,12 @@ struct UBO
     uint32_t useEnvMap{0u};
     float envMapScale{1.0f};
     float envAzimuthOffset{0.0f}; // [-180, 180]
-    // Scene lights (up to kMaxSceneLights)
+    // Scene lights
+    uint32_t firstLight{0u};
+    uint32_t firstLightAliasTable{0u};
     uint32_t numSceneLights{0u};
+    float sceneLightWeightSum{0.0f};
     uint32_t _lightPad0{0u};
-    GSLight sceneLights[32]{}; // kMaxSceneLights
     // -- Path Tracing
     uint32_t ptAccumulatedFrames{0u};
     uint32_t ptMaxBouncesDiffuse{4u};
@@ -44,6 +46,7 @@ struct UBO
     uint32_t ptMaxBouncesTransmission{12u};
     float ptFireflyClamp{10.0f};
     uint32_t ptSampler{1u}; // 0: PCG, 1: Sobol
+    uint32_t ptLightSampler{1u}; // 0: Uniform, 1: Power
     // -- Display
     uint32_t enableHDR{0u};
     float paperWhiteNits{100.0f};

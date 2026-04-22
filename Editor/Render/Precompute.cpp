@@ -9,7 +9,9 @@ AliasTable::AliasTable(Span<const float> f, Allocator* alloc) :
         mBins[i].prob = f[i] / sum;
     // Two-halves by average
     // p_under (<1), p_over(>1) stores prob mass, therefore *n
-    Vector<Pair<double, uint>> under(n, alloc), over(n, alloc);
+    Vector<Pair<double, uint>> under(alloc), over(alloc);
+    under.reserve(n);
+    over.reserve(n);
     for (uint i = 0; i < n; ++i)
     {
         double prob = mBins[i].prob * n;
@@ -115,4 +117,3 @@ float PiecewiseConstant2D::PDF(float2 sample) const
     offset = clamp(offset, uint2(0), domain - uint2(1));
     return mMarginal->Int() > 0.0f ? mConditional[offset.y]->mF[offset.x] / mMarginal->Int() : 0.0f;
 }
-

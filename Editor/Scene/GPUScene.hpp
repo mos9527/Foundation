@@ -2,6 +2,7 @@
 #include <RenderCore/Bindless.hpp>
 #include <RenderCore/ImmediateContext.hpp>
 #include "../Context.hpp"
+#include "../Render/Precompute.hpp"
 #include "Mesh.hpp"
 #include "Texture.hpp"
 using namespace Math;
@@ -127,6 +128,8 @@ class GPUScene
     uint32_t mMeshletGlobalCounter{0};
     UploadGPURingBuffer<GSInstance> mInstanceBuffer;
     UploadGPURingBuffer<GSMaterial> mMaterialBuffer;
+    UploadGPURingBuffer<GSLight> mLightBuffer;
+    UploadGPURingBuffer<Alias> mLightAliasTableBuffer;
     /* Textures */
     BindlessPool mTexturePool;
     // Precomputed LUTs (stored in texture pool)
@@ -148,11 +151,19 @@ class GPUScene
     // Samplers
     RHIDeviceScopedHandle<RHIBuffer> mSobolMatricesBuffer;
 public:
+    enum class LightSamplerType
+    {
+        Uniform,
+        Power
+    };
+    LightSamplerType mLightSamplerType = LightSamplerType::Power;
+
     struct GPUSceneDesc
     {
         uint32_t primitiveBudget = 16 * (1u << 20); // 16MB
         uint32_t instanceBudget = static_cast<uint32_t>(1e4); // # of instances (ring)
         uint32_t materialBudget = static_cast<uint32_t>(1e3); // # of materials (ring)
+        uint32_t lightBudget = static_cast<uint32_t>(1e4); // # of lights (ring)
         uint32_t texturesBudget = static_cast<uint32_t>(1e3); // # of textures
         uint32_t blasBudget = 64 * (1u << 20); // 64MB
         uint32_t tlasBudget = 16 * (1u << 20); // 16MB
@@ -162,6 +173,8 @@ public:
 
     Pair<GSInstance*, uint32_t> AllocateInstance(uint32_t count);
     Pair<GSMaterial*, uint32_t> AllocateMaterial(uint32_t count);
+    Pair<GSLight*, uint32_t> AllocateLight(uint32_t count);
+    Pair<Alias*, uint32_t> AllocateLightAliasTable(uint32_t count);
 
     /**
      * @brief Result of UpdateGPUScene: ring-buffer offsets and element counts
@@ -173,12 +186,16 @@ public:
         uint32_t numInstances;
         uint32_t firstMaterial;
         uint32_t numMaterials;
+        uint32_t firstLight;
+        uint32_t firstLightAliasTable;
+        uint32_t numLights;
+        float sceneLightWeightSum;
     };
     /**
      * @brief Bulk-copies GS instance and material arrays into the GPU ring buffers.
      * @return Offsets / counts to populate the UBO with.
      */
-    UpdateResult UpdateGPUScene(Span<const GSInstance> instances, Span<const GSMaterial> materials);
+    UpdateResult UpdateGPUScene(Span<const GSInstance> instances, Span<const GSMaterial> materials, Span<const GSLight> lights);
 
     [[nodiscard]] String DbgGetBufferStatistics() const;
 
@@ -192,6 +209,8 @@ public:
     [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.mBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetMaterialBuffer() const { return mMaterialBuffer.mBuffer.Get(); }
+    [[nodiscard]] RHIBuffer* GetLightBuffer() const { return mLightBuffer.mBuffer.Get(); }
+    [[nodiscard]] RHIBuffer* GetLightAliasTableBuffer() const { return mLightAliasTableBuffer.mBuffer.Get(); }
     /* Textures */
     [[nodiscard]] BindlessPool* GetTexturePool() { return &mTexturePool; }
     [[nodiscard]] RHITexture* GetGGXlutE() const;

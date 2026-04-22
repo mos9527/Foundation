@@ -5,6 +5,7 @@ import IMath;
 [[SpecializationConstant]] int flags;
 
 uniform UBO globalParams;
+StructuredBuffer<GSLight> lights;
 Texture2D<float4> RT0;
 Texture2D<float4> RT1;
 Texture2D<float4> RT2;
@@ -92,8 +93,9 @@ void main(uint2 tid: SV_DispatchThreadID) {
         PrincipledBSDFLobes bsdf = PrincipledBSDFLobes(baseColor, metallic, roughness, 1.5f, 0.0f, true, wo);
 
         // TODO: Area lights.
-        for (uint li = 0; li < globalParams.numSceneLights; li++) {
-            GSLight gl = globalParams.sceneLights[li];
+        uint32_t numLights = min(globalParams.numSceneLights, 4u);
+        for (uint li = 0; li < numLights; li++) {
+            GSLight gl = lights[globalParams.firstLight + li];
             float3 lightColor = gl.color * gl.power;
             if (!any(lightColor > 0.0f)) continue;
 

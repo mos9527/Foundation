@@ -9,11 +9,17 @@ import ILight;
 #include "IBSDF.slang"
 uniform UBO globalParams;
 
+struct Alias {
+    float prob, select;
+    uint alias;
+}
 // -- Scene
 RaytracingAccelerationStructure AS;
 StructuredBuffer<GSInstance> instances;
 ByteAddressBuffer primitives;
 StructuredBuffer<GSMaterial> materials;
+StructuredBuffer<GSLight> lights;
+StructuredBuffer<Alias> lightAliasTable;
 SamplerState textureSampler;
 StructuredBuffer<uint> sobolMatrices;
 // -- Accumulation buffers (Welford online mean)
@@ -223,22 +229,6 @@ float GetEnvLightSelectionWeight()
     return w;
 }
 
-float GetSceneLightSelectionWeight(GSLight gl)
-{
-    SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.power);
-    if (!AnyLuminance(Lemit))
-        return 0.0f;
-    return dot(LUMINANCE_RGB, Lemit);
-}
-
-float ComputeSceneLightWeightSum()
-{
-    float weightSum = GetEnvLightSelectionWeight();
-    for (uint li = 0; li < globalParams.numSceneLights; li++)
-        weightSum += GetSceneLightSelectionWeight(globalParams.sceneLights[li]);
-    return weightSum;
-}
-
 LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
 {
     SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.power);
@@ -270,89 +260,52 @@ LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
     }
 }
 
-float SceneLightPDF_Li(GSLight gl, LightSampleContext ctx, float3 wi)
-{
-    SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.power);
-    switch (gl.type) {
-    case 0: {
-        DistantLight light = DistantLight(Lemit, gl.direction);
-        return light.PDF_Li(ctx, wi, true);
-    }
-    case 1: {
-        PointLight light = PointLight(Lemit, gl.position);
-        return light.PDF_Li(ctx, wi, true);
-    }
-    case 2: {
-        SpotLight light = SpotLight(Lemit, gl.position, gl.direction,
-            acos(gl.spotOuterCosAngle), acos(gl.spotInnerCosAngle));
-        return light.PDF_Li(ctx, wi, true);
-    }
-    case 3: {
-        DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.radius, gl.twoSided != 0);
-        return light.PDF_Li(ctx, wi, true);
-    }
-    case 4: {
-        RectLight light = RectLight(Lemit, gl.position,
-            gl.dpdu, gl.dpdv, gl.twoSided != 0);
-        return light.PDF_Li(ctx, wi, true);
-    }
-    default:
-        return 0.0f;
-    }
-}
-
-float SceneLightPDF_Li(LightSampleContext ctx, float3 wi, InfiniteLight env, float weightSum)
-{
-    if (weightSum <= 0.0f)
-        return 0.0f;
-
-    float pdf = (GetEnvLightSelectionWeight() / weightSum) * env.PDF_Li(ctx, wi, true);
-    for (uint li = 0; li < globalParams.numSceneLights; li++) {
-        GSLight gl = globalParams.sceneLights[li];
-        float w = GetSceneLightSelectionWeight(gl);
-        if (w <= 0.0f)
-            continue;
-        pdf += (w / weightSum) * SceneLightPDF_Li(gl, ctx, wi);
-    }
-    return pdf;
-}
-
 LightLiSample SampleSceneLight(LightSampleContext ctx, InfiniteLight env, float uc, float2 u, float weightSum)
 {
     if (weightSum <= 0.0f)
         return LightLiSample();
 
-    float target = uc * weightSum;
-    float cumulative = 0.0f;
-    for (uint li = 0; li < globalParams.numSceneLights; li++) {
-        GSLight gl = globalParams.sceneLights[li];
-        float w = GetSceneLightSelectionWeight(gl);
-        if (w <= 0.0f)
-            continue;
+    float envWeight = GetEnvLightSelectionWeight();
+    
+    // Decide whether to sample env light or scene light
+    if (uc * weightSum < envWeight) {
+        LightLiSample Li = env.Sample_Li(ctx, u);
+        if (Li.pdf <= 0.0f)
+            return LightLiSample();
 
-        // https://www.pbr-book.org/4ed/Monte_Carlo_Integration/Sampling_Using_the_Inversion_Method#SampleDiscrete
-        // TODO: Alias table? Reservoirs?
-        cumulative += w;
-        if (target < cumulative) {
-            LightLiSample Li = SampleSceneLight(gl, ctx, u);
-            if (Li.pdf <= 0.0f)
-                return LightLiSample();
+        float pChoice = envWeight / weightSum;
+        SampledSpectrum radiance = Li.Li / (Li.pdf * pChoice);
+        float mixPDF = Li.isDelta ? Li.pdf : (Li.pdf * pChoice);
+        return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist);
+    }
+    
+    // Sample scene light using alias table
+    if (globalParams.numSceneLights > 0) {
+        // Re-scale uc for scene lights
+        uc = (uc * weightSum - envWeight) / (weightSum - envWeight);
+        
+        uint numLights = globalParams.numSceneLights;
+        uint idx = min(uint(uc * numLights), numLights - 1);
+        Alias bin = lightAliasTable[globalParams.firstLightAliasTable + idx];
+        // Get another i.i.d.
+        uc = uc * numLights - idx;
+        idx = uc > bin.select ? bin.alias : idx;
+        // Final selection
+        float prob = lightAliasTable[globalParams.firstLightAliasTable + idx].prob;
+        // Draw sample from selected light
+        GSLight gl = lights[globalParams.firstLight + idx];
+        LightLiSample Li = SampleSceneLight(gl, ctx, u);
+        if (Li.pdf > 0.0f) {
+            float pSceneLights = (weightSum - envWeight) / weightSum;
+            float pChoice = pSceneLights * prob;
 
-            float pChoice = w / weightSum;
             SampledSpectrum radiance = Li.Li / (Li.pdf * pChoice);
-            float mixPDF = Li.isDelta ? Li.pdf : SceneLightPDF_Li(ctx, Li.wi, env, weightSum);
+            float mixPDF = Li.isDelta ? Li.pdf : (Li.pdf * pChoice);
             return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist);
         }
     }
 
-    LightLiSample Li = env.Sample_Li(ctx, u);
-    if (Li.pdf <= 0.0f)
-        return LightLiSample();
-
-    float pChoice = GetEnvLightSelectionWeight() / weightSum;
-    SampledSpectrum radiance = Li.Li / (Li.pdf * pChoice);
-    float mixPDF = Li.isDelta ? Li.pdf : SceneLightPDF_Li(ctx, Li.wi, env, weightSum);
-    return LightLiSample(radiance, Li.wi, mixPDF, Li.isDelta, Li.dist);
+    return LightLiSample();
 }
 
 [shader("raygeneration")]
@@ -411,7 +364,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         globalParams.useEnvMap,
         globalParams.envAzimuthOffset
     );
-    float totalLightWeight = ComputeSceneLightWeightSum();
+    float totalLightWeight = globalParams.sceneLightWeightSum + GetEnvLightSelectionWeight();
     LightSampleContext lastLightCtx = LightSampleContext(float3(0), float3(0), float3(0));
     uint diffuseBounces = 0;
     uint specularBounces = 0;
@@ -446,7 +399,8 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
                 break;
             }
             // Final miss, MIS-weight against the last BSDF sample
-            float pdf = SceneLightPDF_Li(lastLightCtx, -view, env, totalLightWeight);
+            float envWeight = GetEnvLightSelectionWeight();
+            float pdf = totalLightWeight > 0.0f ? (envWeight / totalLightWeight) * env.PDF_Li(lastLightCtx, -view, true) : 0.0f;
             float mis = lastSamplePDF > EPS ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
             float3 contrib = beta * env.Le(-view) * mis;
             // Environment contribution at bounce > 0 is indirect — attribute to first-bounce category

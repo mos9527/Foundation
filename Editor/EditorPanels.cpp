@@ -297,9 +297,10 @@ void FHierarchyPanel()
                 inst.scale = pi.transform.scale;
                 // Re-upload instance array to GPU
                 auto* gpu = GContext->gpuScene;
-                auto res = gpu->UpdateGPUScene(GDoc.instances, GDoc.materials);
+                auto res = gpu->UpdateGPUScene(GDoc.instances, {}, {});
                 GShaderGlobals.firstInstance = res.firstInstance;
                 GShaderGlobals.firstMaterial = res.firstMaterial;
+                GShaderGlobals.firstLight = res.firstLight;
                 GShaderGlobals.ptAccumulatedFrames = 0;
             }
             ImGui::Separator();
@@ -583,6 +584,20 @@ void FRunningImGui()
             if (ImGui::Combo("Sampler", reinterpret_cast<int*>(&GShaderGlobals.ptSampler), samplerItems, 2))
             {
                 GShaderGlobals.ptAccumulatedFrames = 0; // Reset accumulation on sampler change
+            }
+            const char* lightSamplerItems[] = { "Uniform", "Power" };
+            if (ImGui::Combo("Light Sampler", reinterpret_cast<int*>(&GShaderGlobals.ptLightSampler), lightSamplerItems, 2))
+            {
+                GShaderGlobals.ptAccumulatedFrames = 0;
+                if (GContext && GContext->gpuScene)
+                {
+                    GContext->gpuScene->mLightSamplerType = static_cast<GPUScene::LightSamplerType>(GShaderGlobals.ptLightSampler);
+                    UpdateSceneLights();
+                }
+            }
+            if (ImGui::DragFloat("Firefly Clamp", &GShaderGlobals.ptFireflyClamp, 0.1f, 0.0f, 1000.0f))
+            {
+                GShaderGlobals.ptAccumulatedFrames = 0;
             }
         }
         GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);

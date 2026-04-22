@@ -172,17 +172,20 @@ public struct UBO
     public uint32_t useEnvMap;
     public float envMapScale;
     public float envAzimuthOffset;
-    // Scene lights (up to 32)
+    // Scene lights
+    public uint32_t firstLight;
+    public uint32_t firstLightAliasTable;
     public uint32_t numSceneLights;
+    public float sceneLightWeightSum;
     public uint32_t _lightPad0;
-    public GSLight sceneLights[32];
     // -- Path Tracing
     public uint32_t ptAccumulatedFrames;
     public uint32_t ptMaxBouncesDiffuse;
     public uint32_t ptMaxBouncesSpecular;
     public uint32_t ptMaxBouncesTransmission;
+    public uint32_t ptSampler;
+    public uint32_t ptLightSampler;
     public float ptFireflyClamp;
-    public uint32_t ptSampler; // 0: PCG, 1: Sobol
     // -- Display
     public uint32_t enableHDR;
     public float paperWhiteNits;

@@ -52,17 +52,26 @@ void FLightToGSLight(FLight const& src, GSLight& dst)
 
 void UpdateSceneLights()
 {
-    uint32_t count = std::min(static_cast<uint32_t>(GDoc.scene.mLights.size()), kMaxSceneLights);
+    uint32_t count = static_cast<uint32_t>(GDoc.scene.mLights.size());
     GShaderGlobals.numSceneLights = count;
+    
+    Vector<GSLight> gsLights(count, GLOBAL_ALLOC);
     for (uint32_t i = 0; i < count; i++)
     {
         auto& src = GDoc.scene.mLights[i];
-        auto& dst = GShaderGlobals.sceneLights[i];
-        FLightToGSLight(src, dst);
+        FLightToGSLight(src, gsLights[i]);
     }
-    // Zero out unused slots
-    for (uint32_t i = count; i < kMaxSceneLights; i++)
-        GShaderGlobals.sceneLights[i] = {};
+    
+    // Update GPU scene with lights
+    auto* gpu = GContext->gpuScene;
+    auto res = gpu->UpdateGPUScene(GDoc.instances, GDoc.materials, gsLights);
+    GShaderGlobals.firstInstance = res.firstInstance;
+    GShaderGlobals.numInstances  = res.numInstances;
+    GShaderGlobals.firstMaterial = res.firstMaterial;
+    GShaderGlobals.numMaterials  = res.numMaterials;
+    GShaderGlobals.firstLight    = res.firstLight;
+    GShaderGlobals.firstLightAliasTable = res.firstLightAliasTable;
+    GShaderGlobals.sceneLightWeightSum = res.sceneLightWeightSum;
 }
 
 /* ==================== ReplaceScene ==================== */
@@ -161,13 +170,17 @@ void ReplaceScene(StringView path)
         dst.meshIndex = src.meshIndex;
     }
 
-    // Re-upload the full instance and material arrays to the GPU
+    // Apply camera and lighting data (needs to be done before UpdateGPUScene to have lights ready)
     {
-        auto res = gpu->UpdateGPUScene(GDoc.instances, GDoc.materials);
-        GShaderGlobals.firstInstance = res.firstInstance;
-        GShaderGlobals.numInstances  = res.numInstances;
-        GShaderGlobals.firstMaterial = res.firstMaterial;
-        GShaderGlobals.numMaterials  = res.numMaterials;
+        if (!GDoc.scene.mCameras.empty())
+        {
+            auto& camera = GDoc.scene.mCameras.front();
+            vec3 dir = camera.transform.rotation * vec3(0, 0, 1);
+            GCamera.center = camera.transform.transform - dir * GCamera.radius;
+            GCamera.rot = camera.transform.rotation;
+            GCamera.fovY = camera.fovY;
+        }
+        UpdateSceneLights();
     }
 
     // Build BLASes and rebuild TLAS
@@ -189,19 +202,6 @@ void ReplaceScene(StringView path)
         ctx->Begin();
         gpu->BuildTLAS(ctx.Get(), GDoc.instances, GDoc.blases, false);
         ctx->End(), ctx.Submit(), ctx.WaitIdle();
-    }
-
-    // Apply camera and lighting data
-    {
-        if (!GDoc.scene.mCameras.empty())
-        {
-            auto& camera = GDoc.scene.mCameras.front();
-            vec3 dir = camera.transform.rotation * vec3(0, 0, 1);
-            GCamera.center = camera.transform.transform - dir * GCamera.radius;
-            GCamera.rot = camera.transform.rotation;
-            GCamera.fovY = camera.fovY;
-        }
-        UpdateSceneLights();
     }
 
     LOG(Editor, LogInfo, "Scene load complete: {} meshes, {} instances, {} materials",

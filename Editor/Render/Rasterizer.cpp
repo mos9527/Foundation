@@ -71,9 +71,11 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
                       .size = sizeof(UBO)});
     /* Instance and Primitive buffers */
-    auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
     auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
+    auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
     auto MaterialBuffer = renderer->CreateResource("Material Buffer", gpu->GetMaterialBuffer());
+    auto LightBuffer = renderer->CreateResource("Light Buffer", gpu->GetLightBuffer());
+    auto TexturePool = gpu->GetTexturePool();
     /* Indirect Task Buffers */
     using enum RHIBufferUsageBits;
     auto IndirectTasks =
@@ -105,6 +107,18 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
         renderer->CreateResource("Visibility Buffer",
                                  RHIBufferDesc{.usage = StorageBuffer | TransferDestination,
                                                .size = AlignUp(kMaxMeshletCount, 32) / 32 * sizeof(uint32_t)});
+    
+    auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
+    ResourceHandle EnvMapTex;
+    if (gpu->GetEnvMap()) {
+        EnvMapTex = renderer->CreateResource("Env Map", gpu->GetEnvMap());
+    } else {
+        EnvMapTex = renderer->CreateResource("Env Map Fallback", RHITextureDesc{
+            .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
+            .extent = {1, 1, 1},
+            .format = RHIResourceFormat::R8G8B8A8Unorm});
+    }
+
     // NOTE: Lambda captures
     // NONE of the handle values outlive the renderer. Therefore, ALWAYS capture by value.
     renderer->CreatePass(
@@ -339,9 +353,13 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
                     r->BindShader(self, RHIShaderStageBits::Fragment, "main", Paths::Resolve("data/shaders/EPSGBuffer.spv"),
                                   AsBytes(AsSpan(cfg.viewFlags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
+                    r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitives");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");
-                    r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
                     r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
+                    r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::AllGraphics, "lights");
+                    r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::AllGraphics,
+                                      RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
+                                                         .range = RHITextureSubresourceRange::Create()});
                     r->BindTextureRTV(self, GBufferRT0,
                                       {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
@@ -445,7 +463,6 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
                        .extent = {w, h, 1},
                        .format = RHIResourceFormat::B10G11R11Ufloat});
 
-    auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
     auto LUTSampler = renderer->CreateSampler({
     .addressMode = {
         .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
@@ -453,15 +470,6 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
         .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
     }
 });
-    ResourceHandle EnvMapTex;
-    if (gpu->GetEnvMap()) {
-        EnvMapTex = renderer->CreateResource("Env Map", gpu->GetEnvMap());
-    } else {
-        EnvMapTex = renderer->CreateResource("Env Map Fallback", RHITextureDesc{
-            .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
-            .extent = {1, 1, 1},
-            .format = RHIResourceFormat::R8G8B8A8Unorm});
-    }
     auto EnvMapSampler = renderer->CreateSampler({
         .filter = {RHIDeviceSampler::SamplerDesc::Filter::Linear,
                    RHIDeviceSampler::SamplerDesc::Filter::Linear},

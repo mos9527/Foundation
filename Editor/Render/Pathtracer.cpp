@@ -36,11 +36,26 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
         "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
         { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
         { gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, true); });
-    auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
+    /* Instance and Primitive buffers */
     auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
+    auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
     auto MaterialBuffer = renderer->CreateResource("Material Buffer", gpu->GetMaterialBuffer());
+    auto LightBuffer = renderer->CreateResource("Light Buffer", gpu->GetLightBuffer());
+    auto LightAliasTableBuffer = renderer->CreateResource("Light Alias Table Buffer", gpu->GetLightAliasTableBuffer());
+    auto SobolMatricesBuffer = renderer->CreateResource("Sobol Matrices Buffer", gpu->GetSobolMatricesBuffer());
+    
+    auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
+    auto GGXlutEavg = renderer->CreateResource("GGX LUT Eavg", gpu->GetGGXlutEavg());
+    ResourceHandle EnvMapTex;
+    if (gpu->GetEnvMap()) {
+        EnvMapTex = renderer->CreateResource("Env Map", gpu->GetEnvMap());
+    } else {
+        EnvMapTex = renderer->CreateResource("Env Map Fallback", RHITextureDesc{
+            .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
+            .extent = {1, 1, 1},
+            .format = RHIResourceFormat::R8G8B8A8Unorm});
+    }
     auto TexSampler = renderer->CreateSampler({});
-    auto SobolMatrices = renderer->CreateResource("Sobol Matrices", gpu->GetSobolMatricesBuffer());
     auto [w, h] = renderer->GetSwapchainExtent();
 
     // -- Accumulation buffers (Welford online mean, all F32)
@@ -91,23 +106,15 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
     outHandles.specular = Specular;
     outHandles.pickResultBuffer = PickResultBuffer;
 
-    auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
-    ResourceHandle EnvMapTex;
     ResourceHandle EnvMapMarginalCDF;
     ResourceHandle EnvMapConditionalCDF;
     if (gpu->GetEnvMap())
     {
-        EnvMapTex = renderer->CreateResource("Env Map", gpu->GetEnvMap());
         EnvMapMarginalCDF = renderer->CreateResource("Env Map Marginal CDF", gpu->GetEnvMapMarginalCDF());
         EnvMapConditionalCDF = renderer->CreateResource("Env Map Conditional CDF", gpu->GetEnvMapConditionalCDF());
     }
     else
     {
-        EnvMapTex = renderer->CreateResource(
-            "Env Map Fallback",
-            RHITextureDesc{.usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
-                           .extent = {1, 1, 1},
-                           .format = RHIResourceFormat::R8G8B8A8Unorm});
         EnvMapMarginalCDF = renderer->CreateResource(
             "Env Map Marginal CDF Fallback",
             RHIBufferDesc{.usage = RHIBufferUsageBits::StorageBuffer, .size = sizeof(float) * 2});
@@ -147,10 +154,27 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
                           /*hit group*/ 1);
             r->BindShader(self, RHIShaderStageBits::RayMiss, "ShadowRayMiss",
                           Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(capabilityFlags)));
+            r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitives");
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
-            r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitives");
-            r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
-            r->BindBufferStorageRead(self, SobolMatrices, RHIPipelineStageBits::RayTracingShader, "sobolMatrices");
+            r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::ComputeShader, "materials");
+            r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
+            r->BindBufferStorageRead(self, LightAliasTableBuffer, RHIPipelineStageBits::ComputeShader, "lightAliasTable");
+            r->BindTextureSRV(self, EnvMapTex, "envMap", RHIPipelineStageBits::ComputeShader,
+                              RHITextureViewDesc{.format = gpu->GetEnvMap()
+                                                     ? RHIResourceFormat::R32G32B32A32SignedFloat
+                                                     : RHIResourceFormat::R8G8B8A8Unorm,
+                                                .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSRV(self, EnvMapConditionalCDF, "envMapConditionalCDF", RHIPipelineStageBits::ComputeShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                                .range = RHITextureSubresourceRange::Create()});
+            r->BindBufferStorageRead(self, EnvMapMarginalCDF, RHIPipelineStageBits::ComputeShader, "envMapMarginalCDF");
+            r->BindBufferStorageRead(self, SobolMatricesBuffer, RHIPipelineStageBits::ComputeShader, "sobolMatrices");
+            r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::ComputeShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
+                                                .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSRV(self, GGXlutEavg, "ggxLutEavg", RHIPipelineStageBits::ComputeShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                                .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSampler(self, TexSampler, "textureSampler");
             r->BindTextureSampler(self, LUTSampler, "lutSampler");
             // Accumulation UAVs (Welford online mean)
