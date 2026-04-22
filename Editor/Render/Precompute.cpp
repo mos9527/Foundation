@@ -6,7 +6,7 @@ AliasTable::AliasTable(Span<const float> f, Allocator* alloc) :
     const uint n = f.size();
     const double sum = std::accumulate(f.begin(), f.end(), 0.0);
     for (uint i = 0; i < n; ++i)
-        mBins[i].prob = f[i] / sum;
+        mBins[i].prob = sum > 0.0 ? f[i] / sum : 1.0 / n;
     // Two-halves by average
     // p_under (<1), p_over(>1) stores prob mass, therefore *n
     Vector<Pair<double, uint>> under(alloc), over(alloc);
@@ -53,7 +53,7 @@ uint AliasTable::Sample(float u, float& pdf) const
     // Get another i.i.d. for i or its alias
     u = u * n - i;
     // Self or alias?
-    if (u > mBins[i].select)
+    if (u >= mBins[i].select)
         i = mBins[i].alias;
     pdf = mBins[i].prob;
     return i;

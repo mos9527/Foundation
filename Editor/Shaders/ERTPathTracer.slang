@@ -289,7 +289,7 @@ LightLiSample SampleSceneLight(LightSampleContext ctx, InfiniteLight env, float 
         Alias bin = lightAliasTable[globalParams.firstLightAliasTable + idx];
         // Get another i.i.d.
         uc = uc * numLights - idx;
-        idx = uc > bin.select ? bin.alias : idx;
+        idx = uc >= bin.select ? bin.alias : idx;
         // Final selection
         float prob = lightAliasTable[globalParams.firstLightAliasTable + idx].prob;
         // Draw sample from selected light

@@ -129,9 +129,14 @@ GPUScene::UpdateResult GPUScene::UpdateGPUScene(Span<const GSInstance> instances
             {
                 float luminance = 0.2126f * lights[i].color.x + 0.7152f * lights[i].color.y + 0.0722f * lights[i].color.z;
                 weight = luminance * lights[i].power;
+                // For Area lights, power is per-unit. Its *total emission* would be a better weight
+                if (lights[i].type == 3) // Disk
+                    weight *= lights[i].radius.x * lights[i].radius.y * pi<float>() * (lights[i].twoSided ? 2.0f : 1.0f);
+                else if (lights[i].type == 4) // Rectangle
+                    weight *= cross(lights[i].dpdu, lights[i].dpdv).length() * 4.0f * (lights[i].twoSided ? 2.0f : 1.0f);
             }
-            powers[i] = weight;
-            weightSum += weight;
+            powers[i] = std::max(0.0f, weight);
+            weightSum += powers[i];
         }
         res.sceneLightWeightSum = weightSum;
         AliasTable table(powers, mContext->allocator);
