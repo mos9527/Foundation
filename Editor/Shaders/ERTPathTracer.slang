@@ -423,7 +423,6 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
                 float pdf = pdf_light_selection * pdf_Li;
                 float mis = lastSamplePDF > EPS ? BalanceHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
                 float3 contrib = beta * Le * mis;
-                printf("V %d", lightIndex);
                 if (bounce == 0) {
                     AddRadiance(LSpecular, contrib, true);
                 } else {

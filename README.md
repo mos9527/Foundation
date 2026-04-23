@@ -36,7 +36,7 @@ Some time in the future:
 Already done!
 - [x] Transparent shadows (caustics, approximation)
   - Environment lights and emissive objects naturally cast caustics.
-  - Area lights are now added as actual geometry into TLAS, allowing them to be hit by BSDF rays and evaluated with MIS.
+  - Area lights are also added as actual geometry into TLAS, allowing them to be hit by BSDF rays and evaluated with MIS w/ NEE.
   - Cheap approximation still - unbiased, yes. But very slow to converge. Crank up the fireflies!
   - Not done for analytical lights (Point/Directional) as they are delta distributions and cannot be hit by BSDF rays.
     - Conversion to small disk lights is feasible, or another O(N) loop to evaluate all of those inline w/o going through scene BVH
