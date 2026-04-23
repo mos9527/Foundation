@@ -92,14 +92,12 @@ HitState getHitState(uint meshOffset, uint primitive, float2 bary, GSInstance in
     const float3 geoNormal = normalize(cross(p1 - p0, p2 - p0));
 
     // Transform normals/tangents to world space via instance TRS
-    hit.normal         = normalize(inst.rotation.rotate(normal));
-    hit.tangent        = normalize(inst.rotation.rotate(tangent));
-    hit.geometryNormal = normalize(inst.rotation.rotate(geoNormal));
+    // For normals, we need to multiply by inverse transpose of scale, which is 1.0 / scale
+    float3 invScale = 1.0f / inst.scale;
+    hit.normal         = normalize(inst.rotation.rotate(normal * invScale));
+    hit.tangent        = normalize(inst.rotation.rotate(tangent * inst.scale));
+    hit.geometryNormal = normalize(inst.rotation.rotate(geoNormal * invScale));
     hit.bitangent      = cross(hit.normal, hit.tangent) * (bitangentSign > 0.0f ? 1 : -1);
-    if (dot(hit.geometryNormal, rayDirection) > 0.0f)
-        hit.geometryNormal = -hit.geometryNormal;
-    if (dot(hit.geometryNormal, hit.normal) < 0.0f)
-        hit.normal = -hit.normal;
     return hit;
 }
 
@@ -178,8 +176,9 @@ void AddRadiance(inout float3 L, float3 v, bool direct = false)
     if (!direct){
         // Firefly clamp — cap per-sample contribution to suppress extreme outliers
         float maxComp = MaxComponent(v);
-        if (maxComp > globalParams.ptFireflyClamp)
-            v *= globalParams.ptFireflyClamp / maxComp;
+        float clampEnergy = exp10(globalParams.ptFireflyClamp);
+        if (maxComp > clampEnergy)
+            v *= clampEnergy / maxComp;
     }
     L += v;
 }
@@ -569,7 +568,8 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         if (any(isnan(beta)) || any(isinf(beta)))
             break;
         ray.Direction = toWorld.rotate(sample.wi);
-        ray.Origin = OffsetRay(surface.hit.position, surface.hit.geometryNormal);
+        float3 rayNormalFF = dot(ray.Direction, surface.hit.geometryNormal) < 0.0f ? -surface.hit.geometryNormal : surface.hit.geometryNormal;
+        ray.Origin = OffsetRay(surface.hit.position, rayNormalFF);
         // Russian Roulette (after 2nd bounce)
         if (bounce >= 2) {
             float rrPCount = min(MaxComponent(beta) + 0.01f, 0.95f);
