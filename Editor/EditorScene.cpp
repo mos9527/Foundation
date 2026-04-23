@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <numbers>
 
-void FLightToGSLight(FLight const& src, GSLight& dst)
+void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamplerType sampler)
 {
     dst.type = static_cast<uint32_t>(src.type);
     dst.color = src.color;
@@ -48,6 +48,17 @@ void FLightToGSLight(FLight const& src, GSLight& dst)
             dst.power = src.power / totalArea;
         }
     }
+    // Selection weight
+    float weight = 1.0f;
+    if (sampler == GPUScene::LightSamplerType::Power) {
+        float luminance = 0.2126f * dst.color.x + 0.7152f * dst.color.y + 0.0722f * dst.color.z;
+        weight = luminance * dst.power;
+        if (dst.type == 3)
+            weight *= dst.radius.x * dst.radius.y * pi<float>() * (dst.twoSided != 0 ? 2.0f : 1.0f);
+        else if (dst.type == 4)
+            weight *= cross(dst.dpdu, dst.dpdv).length() * 4.0f * (dst.twoSided != 0 ? 2.0f : 1.0f);
+    }
+    dst.selectionWeight = std::max(0.0f, weight);
 }
 
 void UpdateSceneLights()
@@ -60,7 +71,7 @@ void UpdateSceneLights()
     for (uint32_t i = 0; i < count; i++)
     {
         auto& src = GDoc.scene.mLights[i];
-        FLightToGSLight(src, GDoc.lights[i]);
+        FLightToGSLight(src, GDoc.lights[i], GContext->gpuScene->mLightSamplerType);
     }
 
     // Update GPU scene with lights
@@ -202,8 +213,6 @@ void ReplaceScene(StringView path)
         }
         LOG(Editor, LogDebug, "Rebuilding TLAS");
         ctx->Begin();
-        if (GDoc.instances.empty())
-            return;
         gpu->BuildTLAS(ctx.Get(), GDoc.instances, GDoc.blases, GDoc.lights, false);
         ctx->End(), ctx.Submit(), ctx.WaitIdle();
     }

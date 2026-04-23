@@ -72,20 +72,6 @@ struct GSLight
     float2 radius{0.5f, 0.5f}; // Disk radius (x, y for ellipse)
     uint32_t twoSided{0u};
     float selectionWeight{0.0f};
-
-    float GetSelectionWeight(uint32_t ptLightSampler) const
-    {
-        float weight = 1.0f;
-        if (ptLightSampler == 1) { // Power
-            float luminance = 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
-            weight = luminance * power;
-            if (type == 3)
-                weight *= radius.x * radius.y * pi<float>() * (twoSided != 0 ? 2.0f : 1.0f);
-            else if (type == 4)
-                weight *= cross(dpdu, dpdv).length() * 4.0f * (twoSided != 0 ? 2.0f : 1.0f);
-        }
-        return std::max(0.0f, weight);
-    }
 };
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
@@ -160,6 +146,7 @@ class GPUScene
     size_t blasOffset{0};
     // TLAS
     uint32_t mTLASInstanceStride{0}; // In bytes, read only once
+    uint32_t mLastTLASInstancesCount{0};
     RHIDeviceScopedHandle<RHIBuffer> mTLASBuffer, mScratchBufferTLAS;
     RHIDeviceScopedHandle<RHIAccelerationStructure> mTLAS;
     UploadGPURingBuffer<char> mTLASInstances;

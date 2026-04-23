@@ -46,7 +46,6 @@ struct UBO
     uint32_t ptMaxBouncesTransmission{12u};
     float ptFireflyClamp{10.0f};
     uint32_t ptSampler{1u}; // 0: PCG, 1: Sobol
-    uint32_t ptLightSampler{1u}; // 0: Uniform, 1: Power
     // -- Display
     uint32_t enableHDR{0u};
     float paperWhiteNits{100.0f};

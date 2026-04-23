@@ -586,14 +586,9 @@ void FRunningImGui()
                 GShaderGlobals.ptAccumulatedFrames = 0; // Reset accumulation on sampler change
             }
             const char* lightSamplerItems[] = { "Uniform", "Power" };
-            if (ImGui::Combo("Light Sampler", reinterpret_cast<int*>(&GShaderGlobals.ptLightSampler), lightSamplerItems, 2))
+            if (ImGui::Combo("Light Sampler", reinterpret_cast<int*>(&GContext->gpuScene->mLightSamplerType), lightSamplerItems, 2))
             {
                 GShaderGlobals.ptAccumulatedFrames = 0;
-                if (GContext && GContext->gpuScene)
-                {
-                    GContext->gpuScene->mLightSamplerType = static_cast<GPUScene::LightSamplerType>(GShaderGlobals.ptLightSampler);
-                    UpdateSceneLights();
-                }
             }
             if (ImGui::DragFloat("Firefly Clamp", &GShaderGlobals.ptFireflyClamp, 0.1f, 0.0f, 1000.0f))
             {

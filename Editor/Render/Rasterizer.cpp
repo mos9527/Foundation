@@ -71,6 +71,14 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
                       .size = sizeof(UBO)});
     /* Instance and Primitive buffers */
+    auto TLAS = renderer->CreateResource("Scene TLAS", gpu->GetTLAS());
+    renderer->CreatePass(
+        "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
+        { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
+        {
+            gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsLights, true);
+        });
+
     auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
     auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
     auto MaterialBuffer = renderer->CreateResource("Material Buffer", gpu->GetMaterialBuffer());
@@ -142,16 +150,15 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
         });
     bool kDebugViewUnlit = cfg.viewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewMeshlet);
     // Raytracing
-    auto TLAS = renderer->CreateResource("Scene TLAS", gpu->GetTLAS());
     if (cfg.viewFlags & kEnableRasterRTShadows && !kDebugViewUnlit)
     {
         renderer->CreatePass(
-            "TLAS Update", RHIDeviceQueueType::Compute, 0u, [=](PassHandle self, Renderer* r)
+            "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
             { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
-            { 
-                if (scene.gsInstances->empty())
+            {
+                if (scene.gsInstances->empty() && scene.gsLights->empty())
                     return;
-                gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsLights, true); 
+                gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsLights, true);
             });
     }
     renderer->CreatePass(

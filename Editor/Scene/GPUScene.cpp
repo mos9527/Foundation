@@ -270,28 +270,25 @@ GPUScene::UpdateResult GPUScene::UpdateGPUScene(Span<const GSInstance> instances
     if (!lights.empty()) {
         auto [ptr, off] = AllocateLight(static_cast<uint32_t>(lights.size()));
         auto [aliasPtr, aliasOff] = AllocateLightAliasTable(static_cast<uint32_t>(lights.size()));
-        
+
         // Alias table
         Vector<float> powers(lights.size(), mContext->allocator);
         float weightSum = 0.0f;
-        
-        // We need a mutable copy of lights to write selectionWeight
-        Vector<GSLight> lightsCopy(lights.begin(), lights.end(), mContext->allocator);
-        for (size_t i = 0; i < lightsCopy.size(); ++i)
+        for (size_t i = 0; i < lights.size(); ++i)
         {
-            powers[i] = lightsCopy[i].GetSelectionWeight(mLightSamplerType == LightSamplerType::Power ? 1 : 0);
-            lightsCopy[i].selectionWeight = powers[i];
+            powers[i] = lights[i].selectionWeight;
             weightSum += powers[i];
         }
-        
-        std::memcpy(ptr, lightsCopy.data(), lightsCopy.size() * sizeof(GSLight));
-        res.firstLight = off;
-        res.numLights = static_cast<uint32_t>(lights.size());
-        
+        res.firstLightAliasTable = aliasOff;
         res.sceneLightWeightSum = weightSum;
         AliasTable table(powers, mContext->allocator);
         std::memcpy(aliasPtr, table.mBins.data(), table.mBins.size() * sizeof(Alias));
-        res.firstLightAliasTable = aliasOff;
+
+        // Lights
+        std::memcpy(ptr, lights.data(), lights.size() * sizeof(GSLight));
+        res.firstLight = off;
+        res.numLights = static_cast<uint32_t>(lights.size());
+
     }
     return res;
 }
@@ -574,9 +571,12 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
             numAreaLights++;
     }
 
-    // Task 2: return immediately when there are no instances
-    if (instances.empty() && numAreaLights == 0)
-        return;
+    uint32_t totalInstances = static_cast<uint32_t>(instances.size()) + numAreaLights;
+    if (totalInstances != mLastTLASInstancesCount)
+    {
+        update = false;
+        mLastTLASInstancesCount = totalInstances;
+    }
 
     auto* device = mContext->device.Get();
     auto ConvertInstance = [&](const GSInstance* src) -> RHIAccelerationStructureGeometryInstance
@@ -621,7 +621,6 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
     };
 
     // NOTE: Byte buffers
-    uint32_t totalInstances = static_cast<uint32_t>(instances.size()) + numAreaLights;
     auto [pInstances, instancesOffset] = mTLASInstances.Allocate(mTLASInstanceStride * totalInstances);
     for (const auto & instance : instances)
     {
@@ -760,6 +759,7 @@ void GPUScene::Reset()
 {
     mPrimitiveOffset = 0;
     mMeshletGlobalCounter = 0;
+    mLastTLASInstancesCount = 0;
     mBLASes.clear();
     mBLASBuffers.clear();
     mMaterialBuffer.Reset();
