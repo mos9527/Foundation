@@ -297,7 +297,7 @@ void FHierarchyPanel()
                 inst.scale = pi.transform.scale;
                 // Re-upload instance array to GPU
                 auto* gpu = GContext->gpuScene;
-                auto res = gpu->UpdateGPUScene(GDoc.instances, {}, {});
+                auto res = gpu->UpdateGPUScene(GDoc.instances, GDoc.materials, GDoc.lights);
                 GShaderGlobals.firstInstance = res.firstInstance;
                 GShaderGlobals.firstMaterial = res.firstMaterial;
                 GShaderGlobals.firstLight = res.firstLight;
