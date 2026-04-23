@@ -72,8 +72,8 @@ void EditorDockSpaceAndMenuBar()
             ImGui::Separator();
             if (ImGui::MenuItem("Save", "Ctrl+S"))
             {
-                if (!GDoc.currentSavePath.empty())
-                    SaveScene(GDoc.currentSavePath);
+                if (!GEditor.doc.currentSavePath.empty())
+                    SaveScene(GEditor.doc.currentSavePath);
             }
             if (ImGui::MenuItem("Save As..."))
             {
@@ -89,7 +89,7 @@ void EditorDockSpaceAndMenuBar()
                 }
             }
             ImGui::Separator();
-            if (GRendererMode == ERendererMode::PathTracer && !GDoc.instances.empty())
+            if (GEditor.rendererMode == ERendererMode::PathTracer && !GEditor.doc.instances.empty())
             {
                 if (ImGui::MenuItem("Render HDR..."))
                 {
@@ -105,9 +105,9 @@ void EditorDockSpaceAndMenuBar()
                     nfdu8char_t* outPath = nullptr;
                     if (NFD_SaveDialogU8_With(&outPath, &args) == NFD_OKAY)
                     {
-                        GRenderImageTask.outputPath = outPath;
-                        GRenderImageTask.format = ERenderFormat::HDR;
-                        GRenderImageTask.openRenderPopup = true;
+                        GEditor.renderTask.outputPath = outPath;
+                        GEditor.renderTask.format = ERenderFormat::HDR;
+                        GEditor.renderTask.openRenderPopup = true;
                         NFD_FreePathU8(outPath);
                     }
                 }
@@ -116,25 +116,25 @@ void EditorDockSpaceAndMenuBar()
         }
 
         // Render Settings modal popup (opened after file dialog)
-        if (GRenderImageTask.openRenderPopup)
+        if (GEditor.renderTask.openRenderPopup)
         {
             ImGui::OpenPopup("Render Settings");
-            GRenderImageTask.openRenderPopup = false;
+            GEditor.renderTask.openRenderPopup = false;
         }
         if (ImGui::BeginPopupModal("Render Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::Text("Configure HDR render:");
-            ImGui::Text("Output: %s", GRenderImageTask.outputPath.c_str());
+            ImGui::Text("Output: %s", GEditor.renderTask.outputPath.c_str());
             ImGui::Separator();
-            ImGui::InputInt("Samples (frames)", &GRenderImageTask.samplePopupInput);
-            if (GRenderImageTask.samplePopupInput < 1)
-                GRenderImageTask.samplePopupInput = 1;
+            ImGui::InputInt("Samples (frames)", &GEditor.renderTask.samplePopupInput);
+            if (GEditor.renderTask.samplePopupInput < 1)
+                GEditor.renderTask.samplePopupInput = 1;
             if (ImGui::Button("Start Render"))
             {
-                GRenderImageTask.targetSamples = GRenderImageTask.samplePopupInput;
-                GRenderImageTask.renderPaused = false;
-                GShaderGlobals.ptAccumulatedFrames = 0;
-                FEState = FERendering;
+                GEditor.renderTask.targetSamples = GEditor.renderTask.samplePopupInput;
+                GEditor.renderTask.renderPaused = false;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.state = FERendering;
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
@@ -144,7 +144,7 @@ void EditorDockSpaceAndMenuBar()
         }
 
         // Right-aligned PT / Raster toggle
-        if (!GDoc.instances.empty())
+        if (!GEditor.doc.instances.empty())
         {
             float btnW_PT = ImGui::CalcTextSize("######").x + ImGui::GetStyle().FramePadding.x * 2.0f;
             float btnW_R = ImGui::CalcTextSize("######").x + ImGui::GetStyle().FramePadding.x * 2.0f;
@@ -154,37 +154,37 @@ void EditorDockSpaceAndMenuBar()
                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - totalW);
 
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-            if (GRendererMode == ERendererMode::PathTracer)
+            if (GEditor.rendererMode == ERendererMode::PathTracer)
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
             else
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
             const char* labelPTPause[] = {"  PT  ", "", "PAUSED", ""};
-            if (ImGui::Button(labelPTPause[GRenderImageTask.renderPaused ? (SDL_GetTicks() >> 9 & 3) : 0],
+            if (ImGui::Button(labelPTPause[GEditor.renderTask.renderPaused ? (SDL_GetTicks() >> 9 & 3) : 0],
                               ImVec2(btnW_PT, 0)))
             {
-                if (GRendererMode != ERendererMode::PathTracer)
+                if (GEditor.rendererMode != ERendererMode::PathTracer)
                 {
-                    GRendererMode = ERendererMode::PathTracer;
-                    FEState = FERunningEnter;
-                    GRenderImageTask.renderPaused = false;
+                    GEditor.rendererMode = ERendererMode::PathTracer;
+                    GEditor.state = FERunningEnter;
+                    GEditor.renderTask.renderPaused = false;
                 }
                 else
-                    GRenderImageTask.renderPaused ^= 1;
+                    GEditor.renderTask.renderPaused ^= 1;
             }
             ImGui::PopStyleColor();
 
             ImGui::SameLine();
 
-            if (GRendererMode == ERendererMode::Raster)
+            if (GEditor.rendererMode == ERendererMode::Raster)
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
             else
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
             if (ImGui::Button("RASTER"))
             {
-                if (GRendererMode != ERendererMode::Raster)
+                if (GEditor.rendererMode != ERendererMode::Raster)
                 {
-                    GRendererMode = ERendererMode::Raster;
-                    FEState = FERunningEnter;
+                    GEditor.rendererMode = ERendererMode::Raster;
+                    GEditor.state = FERunningEnter;
                 }
             }
             ImGui::PopStyleColor();
@@ -203,25 +203,25 @@ void FHierarchyPanel()
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Hierarchy"))
     {
-        if (GDoc.instances.empty())
+        if (GEditor.doc.instances.empty())
         {
             ImGui::TextDisabled("No instances loaded");
         }
         else
         {
-            ImGui::Text("%zu instances", GDoc.instances.size());
+            ImGui::Text("%zu instances", GEditor.doc.instances.size());
             ImGui::Separator();
-            for (size_t i = 0; i < GDoc.instances.size(); i++)
+            for (size_t i = 0; i < GEditor.doc.instances.size(); i++)
             {
-                auto& inst = GDoc.instances[i];
+                auto& inst = GEditor.doc.instances[i];
                 char label[128];
                 snprintf(label, sizeof(label), "Instance %zu -- Mesh %u, Mat %u", i, inst.meshIndex,
                          inst.materialIndex);
-                bool selected = (GDoc.selectedInstance == static_cast<int>(i));
+                bool selected = (GEditor.doc.selectedInstance == static_cast<int>(i));
                 if (ImGui::Selectable(label, selected))
                 {
-                    GDoc.selectedInstance = static_cast<int>(i);
-                    GDoc.selectedLight = -1; // deselect light when selecting instance
+                    GEditor.doc.selectedInstance = static_cast<int>(i);
+                    GEditor.doc.selectedLight = -1; // deselect light when selecting instance
                 }
             }
         }
@@ -233,10 +233,10 @@ void FHierarchyPanel()
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Inspector"))
     {
-        if (GDoc.selectedInstance >= 0 && GDoc.selectedInstance < static_cast<int>(GDoc.scene.mInstances.size()))
+        if (GEditor.doc.selectedInstance >= 0 && GEditor.doc.selectedInstance < static_cast<int>(GEditor.doc.scene.mInstances.size()))
         {
-            auto& pi = GDoc.scene.mInstances[GDoc.selectedInstance];
-            ImGui::Text("Instance %d", GDoc.selectedInstance);
+            auto& pi = GEditor.doc.scene.mInstances[GEditor.doc.selectedInstance];
+            ImGui::Text("Instance %d", GEditor.doc.selectedInstance);
             ImGui::Separator();
             bool changed = false;
             changed |= ImGui::DragFloat3("Position", &pi.transform.transform.x, 0.01f);
@@ -245,21 +245,21 @@ void FHierarchyPanel()
 
             // -- Gizmo controls --
             ImGui::Separator();
-            if (ImGui::RadioButton("Translate (G)", GGizmo.op == ImGuizmo::TRANSLATE))
-                GGizmo.op = ImGuizmo::TRANSLATE;
+            if (ImGui::RadioButton("Translate (G)", GEditor.gizmo.op == ImGuizmo::TRANSLATE))
+                GEditor.gizmo.op = ImGuizmo::TRANSLATE;
             ImGui::SameLine();
-            if (ImGui::RadioButton("Rotate (R)", GGizmo.op == ImGuizmo::ROTATE))
-                GGizmo.op = ImGuizmo::ROTATE;
+            if (ImGui::RadioButton("Rotate (R)", GEditor.gizmo.op == ImGuizmo::ROTATE))
+                GEditor.gizmo.op = ImGuizmo::ROTATE;
             ImGui::SameLine();
-            if (ImGui::RadioButton("Scale (Q)", GGizmo.op == ImGuizmo::SCALE))
-                GGizmo.op = ImGuizmo::SCALE;
-            if (GGizmo.op != ImGuizmo::SCALE)
+            if (ImGui::RadioButton("Scale (Q)", GEditor.gizmo.op == ImGuizmo::SCALE))
+                GEditor.gizmo.op = ImGuizmo::SCALE;
+            if (GEditor.gizmo.op != ImGuizmo::SCALE)
             {
-                if (ImGui::RadioButton("Local", GGizmo.mode == ImGuizmo::LOCAL))
-                    GGizmo.mode = ImGuizmo::LOCAL;
+                if (ImGui::RadioButton("Local", GEditor.gizmo.mode == ImGuizmo::LOCAL))
+                    GEditor.gizmo.mode = ImGuizmo::LOCAL;
                 ImGui::SameLine();
-                if (ImGui::RadioButton("World", GGizmo.mode == ImGuizmo::WORLD))
-                    GGizmo.mode = ImGuizmo::WORLD;
+                if (ImGui::RadioButton("World", GEditor.gizmo.mode == ImGuizmo::WORLD))
+                    GEditor.gizmo.mode = ImGuizmo::WORLD;
             }
 
             // Build model matrix (TRS -> mat4)
@@ -267,14 +267,14 @@ void FHierarchyPanel()
                 glm::scale(mat4(1.0f), vec3(pi.transform.scale));
 
             // ImGuizmo rendering — only when no light is selected (mutual exclusion)
-            if (GDoc.selectedLight < 0)
+            if (GEditor.doc.selectedLight < 0)
             {
                 ImGuizmo::BeginFrame();
                 ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
                 auto& io = ImGui::GetIO();
                 ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
                 // Note: ImGuizmo uses column-major float[16], matching GLM mat4 memory layout
-                if (ImGuizmo::Manipulate(&GCamera.view[0][0], &GCamera.proj[0][0], GGizmo.op, GGizmo.mode,
+                if (ImGuizmo::Manipulate(&GEditor.camera.view[0][0], &GEditor.camera.proj[0][0], GEditor.gizmo.op, GEditor.gizmo.mode,
                                          &modelMatrix[0][0]))
                 {
                     // Decompose back to TRS
@@ -291,20 +291,20 @@ void FHierarchyPanel()
             if (changed)
             {
                 // Sync CPU scene to GPU-side data
-                auto& inst = GDoc.instances[GDoc.selectedInstance];
+                auto& inst = GEditor.doc.instances[GEditor.doc.selectedInstance];
                 inst.transform = pi.transform.transform;
                 inst.rotation = pi.transform.rotation;
                 inst.scale = pi.transform.scale;
                 // Re-upload instance array to GPU
                 auto* gpu = GContext->gpuScene;
-                auto res = gpu->UpdateGPUScene(GDoc.instances, GDoc.materials, GDoc.lights);
-                GShaderGlobals.firstInstance = res.firstInstance;
-                GShaderGlobals.firstMaterial = res.firstMaterial;
-                GShaderGlobals.firstLight = res.firstLight;
-                GShaderGlobals.ptAccumulatedFrames = 0;
+                auto res = gpu->UpdateGPUScene(GEditor.doc.instances, GEditor.doc.materials, GEditor.doc.lights);
+                GEditor.shaderGlobals.firstInstance = res.firstInstance;
+                GEditor.shaderGlobals.firstMaterial = res.firstMaterial;
+                GEditor.shaderGlobals.firstLight = res.firstLight;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             ImGui::Separator();
-            auto& inst = GDoc.instances[GDoc.selectedInstance];
+            auto& inst = GEditor.doc.instances[GEditor.doc.selectedInstance];
             ImGui::Text("Mesh Offset: %u", inst.meshOffset);
             ImGui::Text("Material Index: %u", inst.materialIndex);
             ImGui::Text("Mesh Index: %u", inst.meshIndex);
@@ -332,7 +332,7 @@ void FLightingPanel()
         if (ImGui::CollapsingHeader("Scene Lights", ImGuiTreeNodeFlags_DefaultOpen))
         {
             // Add light button
-            if (GDoc.scene.mLights.size() < kMaxSceneLights)
+            if (GEditor.doc.scene.mLights.size() < kMaxSceneLights)
             {
                 if (ImGui::Button("+ Add Light"))
                 {
@@ -342,7 +342,7 @@ void FLightingPanel()
                     newLight.power = 1.0f;
                     newLight.transform.rotation = quat(1, 0, 0, 0);
                     newLight.transform.scale = {1, 1, 1};
-                    GDoc.scene.mLights.emplace_back(newLight);
+                    GEditor.doc.scene.mLights.emplace_back(newLight);
                     anyChanged = true;
                 }
             }
@@ -350,22 +350,22 @@ void FLightingPanel()
                 ImGui::TextDisabled("Max %u lights reached", kMaxSceneLights);
 
             int removeIndex = -1;
-            for (int i = 0; i < static_cast<int>(GDoc.scene.mLights.size()); i++)
+            for (int i = 0; i < static_cast<int>(GEditor.doc.scene.mLights.size()); i++)
             {
-                auto& light = GDoc.scene.mLights[i];
+                auto& light = GEditor.doc.scene.mLights[i];
                 ImGui::PushID(i);
 
                 char header[64];
                 snprintf(header, sizeof(header), "Light %d (%s)", i, kLightTypeNames[static_cast<int>(light.type)]);
-                bool isLightSelected = (GDoc.selectedLight == i);
+                bool isLightSelected = (GEditor.doc.selectedLight == i);
                 ImGuiTreeNodeFlags headerFlags = ImGuiTreeNodeFlags_DefaultOpen;
                 if (isLightSelected)
                     headerFlags |= ImGuiTreeNodeFlags_Selected;
                 bool headerOpen = ImGui::CollapsingHeader(header, headerFlags);
                 if (ImGui::IsItemClicked())
                 {
-                    GDoc.selectedLight = i;
-                    GDoc.selectedInstance = -1; // deselect instance when selecting light
+                    GEditor.doc.selectedLight = i;
+                    GEditor.doc.selectedInstance = -1; // deselect instance when selecting light
                 }
                 if (headerOpen)
                 {
@@ -478,12 +478,12 @@ void FLightingPanel()
 
             if (removeIndex >= 0)
             {
-                GDoc.scene.mLights.erase(GDoc.scene.mLights.begin() + removeIndex);
+                GEditor.doc.scene.mLights.erase(GEditor.doc.scene.mLights.begin() + removeIndex);
                 // Fix up light selection after removal
-                if (GDoc.selectedLight == removeIndex)
-                    GDoc.selectedLight = -1;
-                else if (GDoc.selectedLight > removeIndex)
-                    GDoc.selectedLight--;
+                if (GEditor.doc.selectedLight == removeIndex)
+                    GEditor.doc.selectedLight = -1;
+                else if (GEditor.doc.selectedLight > removeIndex)
+                    GEditor.doc.selectedLight--;
                 anyChanged = true;
             }
         }
@@ -491,22 +491,22 @@ void FLightingPanel()
         // ---- Ambient / Environment ----
         if (ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            anyChanged |= ImHDRColorEdit("Ambient", GShaderGlobals.ambientColor, GShaderGlobals.ambientPower);
+            anyChanged |= ImHDRColorEdit("Ambient", GEditor.shaderGlobals.ambientColor, GEditor.shaderGlobals.ambientPower);
 
             ImGui::Separator();
-            bool hasEnv = GShaderGlobals.useEnvMap != 0u;
+            bool hasEnv = GEditor.shaderGlobals.useEnvMap != 0u;
             ImGui::Text(hasEnv ? "HDRI Loaded" : "No HDRI");
             if (hasEnv)
             {
                 bool envChanged = false;
-                envChanged |= ImGui::SliderFloat("Env Scale", &GShaderGlobals.envMapScale, 0.0f, 10.0f, "%.3f",
+                envChanged |= ImGui::SliderFloat("Env Scale", &GEditor.shaderGlobals.envMapScale, 0.0f, 10.0f, "%.3f",
                                                  ImGuiSliderFlags_Logarithmic);
-                envChanged |= ImGui::SliderFloat("Azimuth Offset", &GShaderGlobals.envAzimuthOffset, -180.0f, 180.0f,
+                envChanged |= ImGui::SliderFloat("Azimuth Offset", &GEditor.shaderGlobals.envAzimuthOffset, -180.0f, 180.0f,
                                               "%.1f deg");
-                bool envEnabled = GShaderGlobals.useEnvMap != 0u;
+                bool envEnabled = GEditor.shaderGlobals.useEnvMap != 0u;
                 if (ImGui::Checkbox("Enable Env Map", &envEnabled))
                 {
-                    GShaderGlobals.useEnvMap = envEnabled ? 1u : 0u;
+                    GEditor.shaderGlobals.useEnvMap = envEnabled ? 1u : 0u;
                     envChanged = true;
                 }
                 if (envChanged)
@@ -518,7 +518,7 @@ void FLightingPanel()
         if (anyChanged)
         {
             UpdateSceneLights();
-            GShaderGlobals.ptAccumulatedFrames = 0;
+            GEditor.shaderGlobals.ptAccumulatedFrames = 0;
         }
     }
     ImGui::End();
@@ -540,16 +540,16 @@ void FRunningImGui()
     {
         ImGui::TextUnformatted(FArcballCamera::kControlsText);
         ImGui::Separator();
-        cameraUpdated |= ImGui::SliderFloat3("Cam Center", &GCamera.center.x, -50.0f, 50.0f);
-        cameraUpdated |= ImGui::SliderFloat("Cam Radius", &GCamera.radius, 0.0f, 100.0f);
-        cameraUpdated |= ImGui::SliderAngle("Cam FOV Y", &GCamera.fovY);
-        cameraUpdated |=
-            ImGui::SliderFloat("Aperture", &GShaderGlobals.aperture, 1e-5f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic);
-        cameraUpdated |= ImGui::SliderFloat("Focal Distance", &GShaderGlobals.focalDistance, 0.1f, 1000.0f, "%.3f",
+        GEditor.cameraUpdated |= ImGui::SliderFloat3("Cam Center", &GEditor.camera.center.x, -50.0f, 50.0f);
+        GEditor.cameraUpdated |= ImGui::SliderFloat("Cam Radius", &GEditor.camera.radius, 0.0f, 100.0f);
+        GEditor.cameraUpdated |= ImGui::SliderAngle("Cam FOV Y", &GEditor.camera.fovY);
+        GEditor.cameraUpdated |=
+            ImGui::SliderFloat("Aperture", &GEditor.shaderGlobals.aperture, 1e-5f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic);
+        GEditor.cameraUpdated |= ImGui::SliderFloat("Focal Distance", &GEditor.shaderGlobals.focalDistance, 0.1f, 1000.0f, "%.3f",
                                             ImGuiSliderFlags_Logarithmic);
-        ImGui::SliderFloat("Exposure (EV)", &GShaderGlobals.camEV, -16.0f, 16.0f);
+        ImGui::SliderFloat("Exposure (EV)", &GEditor.shaderGlobals.camEV, -16.0f, 16.0f);
         ImGui::Separator();
-        ImGui::SliderFloat("WASD Speed", &GCamera.moveSpeed, 0.1f, 50.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("WASD Speed", &GEditor.camera.moveSpeed, 0.1f, 50.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
     }
     ImGui::End();
     ImGui::PopStyleColor();
@@ -560,100 +560,100 @@ void FRunningImGui()
         ImGui::SeparatorText("Display");
         if (ImGui::Checkbox("Enable HDR", &GContext->enableHDR))
         {
-            FEState = FERunningEnter;
-            GShaderGlobals.enableHDR = GContext->enableHDR ? 1 : 0;
+            GEditor.state = FERunningEnter;
+            GEditor.shaderGlobals.enableHDR = GContext->enableHDR ? 1 : 0;
             changed = true;
         }
         if (GContext->enableHDR)
         {
-            ImGui::SliderFloat("Paper White Nits", &GShaderGlobals.paperWhiteNits, 50.0f, 500.0f, "%.0f");
+            ImGui::SliderFloat("Paper White Nits", &GEditor.shaderGlobals.paperWhiteNits, 50.0f, 500.0f, "%.0f");
         }
-        if (GRendererMode == ERendererMode::PathTracer)
+        if (GEditor.rendererMode == ERendererMode::PathTracer)
         {
             ImGui::SeparatorText("Path Tracer");
             if (ImModalButton("Fast", 0, 3))
             {
-                GShaderGlobals.ptMaxBouncesDiffuse = 4;
-                GShaderGlobals.ptMaxBouncesSpecular = 4;
-                GShaderGlobals.ptMaxBouncesTransmission = 12;
-                GShaderGlobals.ptFireflyClamp = 1.0f;
-                GShaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.ptMaxBouncesDiffuse = 4;
+                GEditor.shaderGlobals.ptMaxBouncesSpecular = 4;
+                GEditor.shaderGlobals.ptMaxBouncesTransmission = 12;
+                GEditor.shaderGlobals.ptFireflyClamp = 1.0f;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             if (ImModalButton("Full", 1, 3))
             {
-                GShaderGlobals.ptMaxBouncesDiffuse = 32;
-                GShaderGlobals.ptMaxBouncesSpecular = 32;
-                GShaderGlobals.ptMaxBouncesTransmission = 32;
-                GShaderGlobals.ptFireflyClamp = 1.0f;
-                GShaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.ptMaxBouncesDiffuse = 32;
+                GEditor.shaderGlobals.ptMaxBouncesSpecular = 32;
+                GEditor.shaderGlobals.ptMaxBouncesTransmission = 32;
+                GEditor.shaderGlobals.ptFireflyClamp = 1.0f;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             if (ImModalButton("Über", 2, 3))
             {
-                GShaderGlobals.ptMaxBouncesDiffuse = 32;
-                GShaderGlobals.ptMaxBouncesSpecular = 32;
-                GShaderGlobals.ptMaxBouncesTransmission = 32;
-                GShaderGlobals.ptFireflyClamp = 100.0f;
-                GShaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.ptMaxBouncesDiffuse = 32;
+                GEditor.shaderGlobals.ptMaxBouncesSpecular = 32;
+                GEditor.shaderGlobals.ptMaxBouncesTransmission = 32;
+                GEditor.shaderGlobals.ptFireflyClamp = 100.0f;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             ImGui::SeparatorText("Ray Bounce");
-            ImGui::SliderInt("Diffuse", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBouncesDiffuse), 0, 64);
-            ImGui::SliderInt("Specular", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBouncesSpecular), 0, 64);
-            ImGui::SliderInt("Transmission", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBouncesTransmission), 0, 64);
+            ImGui::SliderInt("Diffuse", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesDiffuse), 0, 64);
+            ImGui::SliderInt("Specular", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesSpecular), 0, 64);
+            ImGui::SliderInt("Transmission", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesTransmission), 0, 64);
             ImGui::SeparatorText("Sampling");
-            ImGui::SliderFloat("Max Energy", &GShaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
+            ImGui::SliderFloat("Max Energy", &GEditor.shaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
             const char* samplerItems[] = {"PCG (Independent)", "Sobol (Quasi-Monte Carlo)"};
-            if (ImGui::Combo("Sampler", reinterpret_cast<int*>(&GShaderGlobals.ptSampler), samplerItems, 2))
+            if (ImGui::Combo("Sampler", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptSampler), samplerItems, 2))
             {
-                GShaderGlobals.ptAccumulatedFrames = 0; // Reset accumulation on sampler change
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0; // Reset accumulation on sampler change
             }
             const char* lightSamplerItems[] = { "Uniform", "Power" };
             if (ImGui::Combo("Light Sampler", reinterpret_cast<int*>(&GContext->gpuScene->mLightSamplerType), lightSamplerItems, 2))
             {
-                GShaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
         }
-        if (GRendererMode == ERendererMode::Raster)
+        if (GEditor.rendererMode == ERendererMode::Raster)
         {
             ImGui::SeparatorText("Rasterizer");
             static float lodLogThreshold = 3;
             ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
-            GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
+            GEditor.shaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
             {
                 const char* items[] = {"Overdraw", "Meshlet", "Material ID"};
                 const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID};
                 ImGui::SeparatorText("Debug View");
-                changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
+                changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
             }
             {
                 const char* items[] = {"RT Shadows"};
                 const unsigned values[] = {kEnableRasterRTShadows};
                 ImGui::SeparatorText("Options");
-                changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values);
+                changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values);
             }
             {
                 const char* items[] = {"Frustum", "Occlusion"};
                 const unsigned values[] = {kCullFrustum, kCullOcclusion};
                 ImGui::SeparatorText("Culling");
-                changed |= ImBitmaskOptionPicker(GRendererConfig.cullFlags, items, values);
+                changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.cullFlags, items, values);
             }
         }
-        if (GRendererMode == ERendererMode::PathTracer)
+        if (GEditor.rendererMode == ERendererMode::PathTracer)
         {
             {
                 const char* items[] = {"Diffuse Buffer", "Specular Buffer"};
                 const unsigned values[] = {kViewAOVDiffuse, kViewAOVSpecular};
                 ImGui::SeparatorText("AOV View");
-                changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
+                changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
             }
         }
         {
             const char* items[] = {"Position", "BaseColor", "Normal"};
             const unsigned values[] = {kViewPosition, kViewBaseColor, kViewNormal};
             ImGui::SeparatorText("GBuffer View");
-            changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
+            changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
         }
         if (changed)
-            FEState = FERunningEnter;
+            GEditor.state = FERunningEnter;
     }
     ImGui::End();
     ImGui::PopStyleColor();
@@ -869,10 +869,10 @@ void DoHDRReadback(PTReadbackHandles const& handles)
     readbackBuf->Unmap();
 
     const char* hdrPath =
-        GRenderImageTask.outputPath.empty() ? "render_output.hdr" : GRenderImageTask.outputPath.c_str();
+        GEditor.renderTask.outputPath.empty() ? "render_output.hdr" : GEditor.renderTask.outputPath.c_str();
     SaveHDR(combined.data(), static_cast<int>(w), static_cast<int>(h), hdrPath);
     LOG(Editor, LogInfo, "HDR image saved to {} ({}x{}, {} samples)", hdrPath, w, h,
-        GShaderGlobals.ptAccumulatedFrames);
+        GEditor.shaderGlobals.ptAccumulatedFrames);
 }
 
 /* ==================== FRendering (offline render loop) ==================== */
@@ -897,12 +897,12 @@ void FRendering(PTReadbackHandles const& handles)
         ImGui::Begin("##RenderProgressBar", nullptr,
                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                          ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize);
-        float fraction = GRenderImageTask.targetSamples > 0 ? static_cast<float>(GShaderGlobals.ptAccumulatedFrames) /
-                static_cast<float>(GRenderImageTask.targetSamples)
+        float fraction = GEditor.renderTask.targetSamples > 0 ? static_cast<float>(GEditor.shaderGlobals.ptAccumulatedFrames) /
+                static_cast<float>(GEditor.renderTask.targetSamples)
                                                             : 0.0f;
         char overlay[128];
-        snprintf(overlay, sizeof(overlay), "%d / %d samples", GShaderGlobals.ptAccumulatedFrames,
-                 GRenderImageTask.targetSamples);
+        snprintf(overlay, sizeof(overlay), "%d / %d samples", GEditor.shaderGlobals.ptAccumulatedFrames,
+                 GEditor.renderTask.targetSamples);
         ImGui::ProgressBar(fraction, ImVec2(barW, barH), overlay);
         ImGui::End();
         ImGui::PopStyleVar(2);
@@ -926,19 +926,19 @@ void FRendering(PTReadbackHandles const& handles)
         ImGui::End();
         ImGui::PopStyleVar(2);
     }
-    GShaderGlobals.frameNumber = renderer->GetFrame();
+    GEditor.shaderGlobals.frameNumber = renderer->GetFrame();
     renderer->ExecuteFrame();
     renderer->EndExecute();
-    GShaderGlobals.ptAccumulatedFrames++;
+    GEditor.shaderGlobals.ptAccumulatedFrames++;
 
     if (cancelRendering)
     {
-        FEState = FERunning;
+        GEditor.state = FERunning;
     }
-    else if (GShaderGlobals.ptAccumulatedFrames >= static_cast<uint32_t>(GRenderImageTask.targetSamples))
+    else if (GEditor.shaderGlobals.ptAccumulatedFrames >= static_cast<uint32_t>(GEditor.renderTask.targetSamples))
     {
         if (handles.diffuse != kInvalidHandle && handles.specular != kInvalidHandle)
             DoHDRReadback(handles);
-        FEState = FERunning;
+        GEditor.state = FERunning;
     }
 }

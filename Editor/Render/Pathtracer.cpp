@@ -217,7 +217,7 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
             RHIExtent2D wh = r->GetSwapchainExtent();
             r->CmdSetPipeline(self, cmd);
             r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexturePool()->GetDescriptorSet());
-            if (!GRenderImageTask.renderPaused)
+            if (!GEditor.renderTask.renderPaused)
                 cmd->TraceRays(wh.x, wh.y, 1);
         });
 

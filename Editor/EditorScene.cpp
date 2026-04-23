@@ -63,37 +63,37 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamplerType
 
 void UpdateSceneLights()
 {
-    uint32_t count = static_cast<uint32_t>(GDoc.scene.mLights.size());
-    GShaderGlobals.numSceneLights = count;
+    uint32_t count = static_cast<uint32_t>(GEditor.doc.scene.mLights.size());
+    GEditor.shaderGlobals.numSceneLights = count;
 
-    GDoc.lights.clear();
-    GDoc.lights.resize(count);
+    GEditor.doc.lights.clear();
+    GEditor.doc.lights.resize(count);
     for (uint32_t i = 0; i < count; i++)
     {
-        auto& src = GDoc.scene.mLights[i];
-        FLightToGSLight(src, GDoc.lights[i], GContext->gpuScene->mLightSamplerType);
+        auto& src = GEditor.doc.scene.mLights[i];
+        FLightToGSLight(src, GEditor.doc.lights[i], GContext->gpuScene->mLightSamplerType);
     }
 
     // Update GPU scene with lights
     auto* gpu = GContext->gpuScene;
-    auto res = gpu->UpdateGPUScene(GDoc.instances, GDoc.materials, GDoc.lights);
-    GShaderGlobals.firstInstance = res.firstInstance;
-    GShaderGlobals.numInstances  = res.numInstances;
-    GShaderGlobals.firstMaterial = res.firstMaterial;
-    GShaderGlobals.numMaterials  = res.numMaterials;
-    GShaderGlobals.firstLight    = res.firstLight;
-    GShaderGlobals.firstLightAliasTable = res.firstLightAliasTable;
-    GShaderGlobals.sceneLightWeightSum = res.sceneLightWeightSum;
+    auto res = gpu->UpdateGPUScene(GEditor.doc.instances, GEditor.doc.materials, GEditor.doc.lights);
+    GEditor.shaderGlobals.firstInstance = res.firstInstance;
+    GEditor.shaderGlobals.numInstances  = res.numInstances;
+    GEditor.shaderGlobals.firstMaterial = res.firstMaterial;
+    GEditor.shaderGlobals.numMaterials  = res.numMaterials;
+    GEditor.shaderGlobals.firstLight    = res.firstLight;
+    GEditor.shaderGlobals.firstLightAliasTable = res.firstLightAliasTable;
+    GEditor.shaderGlobals.sceneLightWeightSum = res.sceneLightWeightSum;
 }
 
 /* ==================== ReplaceScene ==================== */
 void ReplaceScene(StringView path)
 {
     LOG(Editor, LogInfo, "Loading scene: {}", path);
-    GDoc.scene = FScene(GLOBAL_ALLOC);
+    GEditor.doc.scene = FScene(GLOBAL_ALLOC);
     try
     {
-        LoadScene(path, GDoc.scene);
+        LoadScene(path, GEditor.doc.scene);
     }
     catch (...)
     {
@@ -102,32 +102,32 @@ void ReplaceScene(StringView path)
     }
 
     // Clear editor-side data
-    GDoc.instances.clear();
-    GDoc.materials.clear();
-    GDoc.meshes.clear();
-    GDoc.blases.clear();
-    GDoc.lights.clear();
+    GEditor.doc.instances.clear();
+    GEditor.doc.materials.clear();
+    GEditor.doc.meshes.clear();
+    GEditor.doc.blases.clear();
+    GEditor.doc.lights.clear();
     
-    GDoc.selectedInstance = -1;
-    GDoc.selectedMaterial = -1;
-    GDoc.selectedLight = -1;
+    GEditor.doc.selectedInstance = -1;
+    GEditor.doc.selectedMaterial = -1;
+    GEditor.doc.selectedLight = -1;
 
     auto* gpu = GContext->gpuScene;
     gpu->Reset();
 
     Vector<uint32_t> meshOffsets(GLOBAL_ALLOC);
-    Vector<uint32_t> textureIDMap(GDoc.scene.mTextures.size(), GLOBAL_ALLOC);
+    Vector<uint32_t> textureIDMap(GEditor.doc.scene.mTextures.size(), GLOBAL_ALLOC);
 
     LOG(Editor, LogInfo, "Uploading new scene data to GPU");
     // Upload meshes and textures
     {
         ImmediateUpload upload(GContext->device.Get(), 128 * (1u << 20));
         upload.Begin();
-        for (auto& src : GDoc.scene.mMeshes)
+        for (auto& src : GEditor.doc.scene.mMeshes)
         {
             CHECK(src.EnsureQuantized());
             CHECK(src.EnsureRaw());
-            auto& dst = GDoc.meshes.emplace_back();
+            auto& dst = GEditor.doc.meshes.emplace_back();
             auto& offset = meshOffsets.emplace_back();
             if (!gpu->Upload(&upload, src, dst, offset))
             {
@@ -135,7 +135,7 @@ void ReplaceScene(StringView path)
                 CHECK_MSG(gpu->Upload(&upload, src, dst, offset), "Staging buffer too small for single mesh upload");
             }
         }
-        for (int id = 0; auto& src : GDoc.scene.mTextures)
+        for (int id = 0; auto& src : GEditor.doc.scene.mTextures)
         {
             if (!src.IsValid())
             {
@@ -156,9 +156,9 @@ void ReplaceScene(StringView path)
     }
 
     // Materials: remap texture indices
-    for (auto& src : GDoc.scene.mMaterials)
+    for (auto& src : GEditor.doc.scene.mMaterials)
     {
-        auto& dst = GDoc.materials.emplace_back();
+        auto& dst = GEditor.doc.materials.emplace_back();
         dst.baseColorFactor = src.baseColorFactor;
         dst.emissiveFactor = src.emissiveFactor;
         dst.metallicFactor = src.metallicFactor;
@@ -172,9 +172,9 @@ void ReplaceScene(StringView path)
     }
 
     // Instances
-    for (auto& src : GDoc.scene.mInstances)
+    for (auto& src : GEditor.doc.scene.mInstances)
     {
-        auto& dst = GDoc.instances.emplace_back();
+        auto& dst = GEditor.doc.instances.emplace_back();
         dst.transform = src.transform.transform;
         dst.rotation = src.transform.rotation;
         dst.scale = src.transform.scale;
@@ -185,13 +185,13 @@ void ReplaceScene(StringView path)
 
     // Apply camera and lighting data (needs to be done before UpdateGPUScene to have lights ready)
     {
-        if (!GDoc.scene.mCameras.empty())
+        if (!GEditor.doc.scene.mCameras.empty())
         {
-            auto& camera = GDoc.scene.mCameras.front();
+            auto& camera = GEditor.doc.scene.mCameras.front();
             vec3 dir = camera.transform.rotation * vec3(0, 0, 1);
-            GCamera.center = camera.transform.transform - dir * GCamera.radius;
-            GCamera.rot = camera.transform.rotation;
-            GCamera.fovY = camera.fovY;
+            GEditor.camera.center = camera.transform.transform - dir * GEditor.camera.radius;
+            GEditor.camera.rot = camera.transform.rotation;
+            GEditor.camera.fovY = camera.fovY;
         }
         UpdateSceneLights();
     }
@@ -199,13 +199,13 @@ void ReplaceScene(StringView path)
     // Build BLASes and rebuild TLAS
     {
         ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
-        GDoc.blases.resize(GDoc.meshes.size());
+        GEditor.doc.blases.resize(GEditor.doc.meshes.size());
         constexpr size_t kBLASBuildBatch = 32u;
-        for (size_t i = 0; i < GDoc.meshes.size(); i += kBLASBuildBatch)
+        for (size_t i = 0; i < GEditor.doc.meshes.size(); i += kBLASBuildBatch)
         {
-            Span<GSMesh> meshesBatch = GDoc.meshes;
-            Span<uint32_t> indicesBatch = GDoc.blases;
-            size_t batchSize = std::min(kBLASBuildBatch, GDoc.meshes.size() - i);
+            Span<GSMesh> meshesBatch = GEditor.doc.meshes;
+            Span<uint32_t> indicesBatch = GEditor.doc.blases;
+            size_t batchSize = std::min(kBLASBuildBatch, GEditor.doc.meshes.size() - i);
             meshesBatch = meshesBatch.subspan(i, batchSize);
             indicesBatch = indicesBatch.subspan(i, batchSize);
             LOG(Editor, LogDebug, "Building BLAS {} to {}", i, i + batchSize);
@@ -213,15 +213,15 @@ void ReplaceScene(StringView path)
         }
         LOG(Editor, LogDebug, "Rebuilding TLAS");
         ctx->Begin();
-        gpu->BuildTLAS(ctx.Get(), GDoc.instances, GDoc.blases, GDoc.lights, false);
+        gpu->BuildTLAS(ctx.Get(), GEditor.doc.instances, GEditor.doc.blases, GEditor.doc.lights, false);
         ctx->End(), ctx.Submit(), ctx.WaitIdle();
     }
 
     LOG(Editor, LogInfo, "Scene load complete: {} meshes, {} instances, {} materials",
-        GDoc.scene.mMeshes.size(), GDoc.scene.mInstances.size(), GDoc.scene.mMaterials.size());
+        GEditor.doc.scene.mMeshes.size(), GEditor.doc.scene.mInstances.size(), GEditor.doc.scene.mMaterials.size());
 
     // Trigger renderer reconfiguration
-    FEState = FERunningEnter;
+    GEditor.state = FERunningEnter;
 }
 
 /* ==================== LoadEnvMap ==================== */
@@ -237,10 +237,10 @@ void LoadEnvMap(StringView path)
         upload.Begin();
         gpu->UploadEnvMap(&upload, tex);
         upload.End(), upload.WaitIdle();
-        GShaderGlobals.useEnvMap = 1u;
-        GShaderGlobals.ptAccumulatedFrames = 0;
+        GEditor.shaderGlobals.useEnvMap = 1u;
+        GEditor.shaderGlobals.ptAccumulatedFrames = 0;
         // Renderer must be rebuilt to rebind the environment map resource
-        FEState = FERunningEnter;
+        GEditor.state = FERunningEnter;
         LOG(Editor, LogInfo, "HDRI env map loaded successfully");
     }
     catch (...)
@@ -256,8 +256,8 @@ void SaveScene(StringView path)
     try
     {
         FileWriter writer(path);
-        FSerialize(writer, GDoc.scene);
-        GDoc.currentSavePath = String(path);
+        FSerialize(writer, GEditor.doc.scene);
+        GEditor.doc.currentSavePath = String(path);
         LOG(Editor, LogInfo, "Scene saved successfully");
     }
     catch (...)

@@ -78,8 +78,8 @@ static void DrawPointOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl
     float outerPx;
     if (light.range > 0.0f)
     {
-        float dist = glm::length(pos - GCamera.position);
-        float pixelsPerUnit = (ds.y * 0.5f) / (dist * tanf(GCamera.fovY * 0.5f));
+        float dist = glm::length(pos - GEditor.camera.position);
+        float pixelsPerUnit = (ds.y * 0.5f) / (dist * tanf(GEditor.camera.fovY * 0.5f));
         outerPx = std::max(light.range * pixelsPerUnit, 8.0f);
     }
     else
@@ -173,19 +173,19 @@ static void DrawRectOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl,
 
 void DrawLightGizmos()
 {
-    auto& lights = GDoc.scene.mLights;
+    auto& lights = GEditor.doc.scene.mLights;
     if (lights.empty())
         return;
 
     auto& io = ImGui::GetIO();
     ImVec2 displaySize = io.DisplaySize;
     ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-    mat4 viewProj = GCamera.proj * GCamera.view;
+    mat4 viewProj = GEditor.camera.proj * GEditor.camera.view;
 
     // -- Shape overlays for all lights --
     for (int i = 0; i < static_cast<int>(lights.size()); i++)
     {
-        bool selected = (i == GDoc.selectedLight);
+        bool selected = (i == GEditor.doc.selectedLight);
         ImU32 color = selected ? IM_COL32(255, 200, 50, 255)   // gold for selected
                                : IM_COL32(255, 255, 100, 100); // dim yellow for others
 
@@ -201,10 +201,10 @@ void DrawLightGizmos()
     }
 
     // -- ImGuizmo manipulator for the selected light --
-    if (GDoc.selectedLight < 0 || GDoc.selectedLight >= static_cast<int>(lights.size()))
+    if (GEditor.doc.selectedLight < 0 || GEditor.doc.selectedLight >= static_cast<int>(lights.size()))
         return;
 
-    auto& light = lights[GDoc.selectedLight];
+    auto& light = lights[GEditor.doc.selectedLight];
     bool hasPosition = (light.type != FLightType::Directional);
 
     // Build model matrix from light transform (no scale — lights don't scale)
@@ -216,12 +216,12 @@ void DrawLightGizmos()
     ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 
     // Directional: rotate only. Others: translate + rotate (never scale).
-    ImGuizmo::OPERATION op = hasPosition ? GGizmo.op : ImGuizmo::ROTATE;
+    ImGuizmo::OPERATION op = hasPosition ? GEditor.gizmo.op : ImGuizmo::ROTATE;
     if (op == ImGuizmo::SCALE)
         op = ImGuizmo::TRANSLATE; // lights don't have meaningful uniform scale
 
-    if (ImGuizmo::Manipulate(&GCamera.view[0][0], &GCamera.proj[0][0],
-                             op, GGizmo.mode, &modelMatrix[0][0]))
+    if (ImGuizmo::Manipulate(&GEditor.camera.view[0][0], &GEditor.camera.proj[0][0],
+                             op, GEditor.gizmo.mode, &modelMatrix[0][0]))
     {
         float3 newTranslation;
         quat newRotation;
@@ -231,6 +231,6 @@ void DrawLightGizmos()
         light.transform.rotation = newRotation;
         // Sync to GPU
         UpdateSceneLights();
-        GShaderGlobals.ptAccumulatedFrames = 0;
+        GEditor.shaderGlobals.ptAccumulatedFrames = 0;
     }
 }

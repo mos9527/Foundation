@@ -16,15 +16,15 @@ static void FInitEnter()
     else
         for (int i = 0; i < GContext->files.size(); i++)
             HandleFile(GContext->files[i]);
-    FEState = FEInit;
+    GEditor.state = FEInit;
 }
 
 /* ==================== FInit ==================== */
 static void FInit()
 {
     // Transition to FERunningEnter when scene data is available
-    if (!GDoc.instances.empty())
-        FEState = FERunningEnter;
+    if (!GEditor.doc.instances.empty())
+        GEditor.state = FERunningEnter;
     else
     {
         auto* renderer = GContext->renderer;
@@ -36,7 +36,7 @@ static void FInit()
         renderer->BeginExecute();
         ImGui_ImplFoundation_NewFrame();
         ImGui::NewFrame();
-        if (GShowImGui)
+        if (GEditor.showImGui)
         {
             EditorDockSpaceAndMenuBar();
             FHierarchyPanel();
@@ -44,9 +44,9 @@ static void FInit()
         }
         float dt = ImGui::GetIO().DeltaTime;
         bool camMoved = false;
-        camMoved |= GCamera.UpdateMovement(dt);
-        GCamera.Update({});
-        GCamera.aspect = GContext->swapchain->GetAspectRatio();
+        camMoved |= GEditor.camera.UpdateMovement(dt);
+        GEditor.camera.Update({});
+        GEditor.camera.aspect = GContext->swapchain->GetAspectRatio();
         renderer->ExecuteFrame();
         renderer->EndExecute();
     }
@@ -59,26 +59,26 @@ static void FRunningEnter()
     // Invalidate stale PT readback handles before rebuilding the renderer
     sPTReadback = {};
     RendererScene scene{
-        .gsGlobals = &GShaderGlobals,
-        .gsInstances = &GDoc.instances,
-        .gsMaterials = &GDoc.materials,
-        .gsMeshes = &GDoc.meshes,
-        .gsBLASes = &GDoc.blases,
-        .gsLights = &GDoc.lights,
+        .gsGlobals = &GEditor.shaderGlobals,
+        .gsInstances = &GEditor.doc.instances,
+        .gsMaterials = &GEditor.doc.materials,
+        .gsMeshes = &GEditor.doc.meshes,
+        .gsBLASes = &GEditor.doc.blases,
+        .gsLights = &GEditor.doc.lights,
         .gsPickPixel = &sPendingPickPixel
     };
-    if (GRendererMode == ERendererMode::PathTracer)
+    if (GEditor.rendererMode == ERendererMode::PathTracer)
     {
-        PathTracerSetup(GContext, GRendererConfig, scene, sPTReadback);
+        PathTracerSetup(GContext, GEditor.rendererConfig, scene, sPTReadback);
         sPickResultBuffer = GContext->renderer->DerefResource(sPTReadback.pickResultBuffer).Get<RHIBuffer*>();
     }
     else
     {
         RasterReadbackHandles rasterHandles;
-        RendererSetup(GContext, GRendererConfig, scene, rasterHandles);
+        RendererSetup(GContext, GEditor.rendererConfig, scene, rasterHandles);
         sPickResultBuffer = GContext->renderer->DerefResource(rasterHandles.pickResultBuffer).Get<RHIBuffer*>();
     }
-    FEState = FERunning;
+    GEditor.state = FERunning;
 }
 
 /* ==================== FRunning ==================== */
@@ -89,7 +89,7 @@ static void FRunning()
     renderer->BeginExecute();
     ImGui_ImplFoundation_NewFrame();
     ImGui::NewFrame();
-    if (GShowImGui)
+    if (GEditor.showImGui)
     {
         EditorDockSpaceAndMenuBar();
         FHierarchyPanel();
@@ -97,28 +97,28 @@ static void FRunning()
     }
     // Global param update
     float dt = ImGui::GetIO().DeltaTime;
-    cameraUpdated |= GCamera.UpdateMovement(dt);
-    GCamera.Update({});
-    GCamera.aspect = GContext->swapchain->GetAspectRatio();
-    GShaderGlobals.frameNumber = renderer->GetFrame();
-    GShaderGlobals.view = GCamera.view;
-    GShaderGlobals.proj = GCamera.proj;
-    GShaderGlobals.inverseView = inverse(GShaderGlobals.view);
-    GShaderGlobals.inverseViewProj = inverse(GShaderGlobals.proj * GShaderGlobals.view);
-    GShaderGlobals.zNear = GCamera.zNear;
-    GShaderGlobals.projPlanes = planeSymmetric(GShaderGlobals.proj);
+    GEditor.cameraUpdated |= GEditor.camera.UpdateMovement(dt);
+    GEditor.camera.Update({});
+    GEditor.camera.aspect = GContext->swapchain->GetAspectRatio();
+    GEditor.shaderGlobals.frameNumber = renderer->GetFrame();
+    GEditor.shaderGlobals.view = GEditor.camera.view;
+    GEditor.shaderGlobals.proj = GEditor.camera.proj;
+    GEditor.shaderGlobals.inverseView = inverse(GEditor.shaderGlobals.view);
+    GEditor.shaderGlobals.inverseViewProj = inverse(GEditor.shaderGlobals.proj * GEditor.shaderGlobals.view);
+    GEditor.shaderGlobals.zNear = GEditor.camera.zNear;
+    GEditor.shaderGlobals.projPlanes = planeSymmetric(GEditor.shaderGlobals.proj);
 
-    GShaderGlobals.camPosition = float4(GCamera.position, 0);
-    GShaderGlobals.camDirection = float4(GCamera.rot * float3(0, 0, -1), 0);
-    GShaderGlobals.fbWidth = static_cast<float>(renderer->GetSwapchainExtent().x);
-    GShaderGlobals.fbHeight = static_cast<float>(renderer->GetSwapchainExtent().y);
+    GEditor.shaderGlobals.camPosition = float4(GEditor.camera.position, 0);
+    GEditor.shaderGlobals.camDirection = float4(GEditor.camera.rot * float3(0, 0, -1), 0);
+    GEditor.shaderGlobals.fbWidth = static_cast<float>(renderer->GetSwapchainExtent().x);
+    GEditor.shaderGlobals.fbHeight = static_cast<float>(renderer->GetSwapchainExtent().y);
     
     // Sync HDR parameters
-    GShaderGlobals.enableHDR = GContext->enableHDR ? 1 : 0;
+    GEditor.shaderGlobals.enableHDR = GContext->enableHDR ? 1 : 0;
     // paperWhiteNits is updated directly in EditorPanels.cpp
 
-    if (cameraUpdated)
-        GShaderGlobals.ptAccumulatedFrames = 0, cameraUpdated = false;
+    if (GEditor.cameraUpdated)
+        GEditor.shaderGlobals.ptAccumulatedFrames = 0, GEditor.cameraUpdated = false;
     renderer->ExecuteFrame();
     renderer->EndExecute();
     // GPU picking: Blit PS wrote pickResult[0] this frame if a click was pending.
@@ -126,11 +126,11 @@ static void FRunning()
     if (sPendingPickPixel.x >= 0 && sPickResultBuffer)
     {
         uint32_t id = *sPickResultBuffer->Map<uint32_t>();
-        GDoc.selectedInstance = (id == ~0u) ? -1 : static_cast<int>(id);
+        GEditor.doc.selectedInstance = (id == ~0u) ? -1 : static_cast<int>(id);
         sPendingPickPixel = {-1, -1};
     }
-    if (!GRenderImageTask.renderPaused)
-        GShaderGlobals.ptAccumulatedFrames++;
+    if (!GEditor.renderTask.renderPaused)
+        GEditor.shaderGlobals.ptAccumulatedFrames++;
 }
 
 /* ==================== Event Processing ==================== */
@@ -148,13 +148,13 @@ bool EditorProcessEvent(SDL_Event* event)
     }
     if (event->type == SDL_EVENT_WINDOW_RESIZED)
     {
-        switch (FEState)
+        switch (GEditor.state)
         {
         case FEInit:
             RendererSetupImGuiOnly(GContext);
             break;
         case FERunning:
-            FEState = FERunningEnter;
+            GEditor.state = FERunningEnter;
             break;
         default:
             break;
@@ -164,27 +164,27 @@ bool EditorProcessEvent(SDL_Event* event)
     {
         if (event->key.key == SDLK_SPACE)
         {
-            GCamera.radius = std::max(length(GCamera.center), 1.0f);
-            GCamera.center = {};
-            cameraUpdated |= true;
+            GEditor.camera.radius = std::max(length(GEditor.camera.center), 1.0f);
+            GEditor.camera.center = {};
+            GEditor.cameraUpdated |= true;
         }
         if (event->key.key == SDLK_TAB)
         {
-            GShowImGui = !GShowImGui;
-            GShaderGlobals.postShowOutline = GShowImGui;
+            GEditor.showImGui = !GEditor.showImGui;
+            GEditor.shaderGlobals.postShowOutline = GEditor.showImGui;
         }
         // Gizmo hotkeys
         if (event->key.key == SDLK_G)
-            GGizmo.op = ImGuizmo::TRANSLATE;
+            GEditor.gizmo.op = ImGuizmo::TRANSLATE;
         if (event->key.key == SDLK_R)
-            GGizmo.op = ImGuizmo::ROTATE;
+            GEditor.gizmo.op = ImGuizmo::ROTATE;
         if (event->key.key == SDLK_Q)
-            GGizmo.op = ImGuizmo::SCALE;
+            GEditor.gizmo.op = ImGuizmo::SCALE;
     }
     ImGui_ImplFoundation_ProcessEvent(event);
     auto& io = ImGui::GetIO();
     if (!io.WantCaptureMouse && !ImGuizmo::IsUsing())
-        cameraUpdated |= GCamera.Update(*event);
+        GEditor.cameraUpdated |= GEditor.camera.Update(*event);
     // GPU picking: record click pixel on left mouse button release (not dragging)
     if (!io.WantCaptureMouse && !ImGuizmo::IsUsing())
     {
@@ -201,11 +201,11 @@ bool EditorProcessEvent(SDL_Event* event)
             bool pressed = (event->type == SDL_EVENT_KEY_DOWN);
             switch (event->key.key)
             {
-            case SDLK_W: GCamera.keyW = pressed; break;
-            case SDLK_A: GCamera.keyA = pressed; break;
-            case SDLK_S: GCamera.keyS = pressed; break;
-            case SDLK_D: GCamera.keyD = pressed; break;
-            case SDLK_LSHIFT: case SDLK_RSHIFT: GCamera.keyShift = pressed; break;
+            case SDLK_W: GEditor.camera.keyW = pressed; break;
+            case SDLK_A: GEditor.camera.keyA = pressed; break;
+            case SDLK_S: GEditor.camera.keyS = pressed; break;
+            case SDLK_D: GEditor.camera.keyD = pressed; break;
+            case SDLK_LSHIFT: case SDLK_RSHIFT: GEditor.camera.keyShift = pressed; break;
             default: break;
             }
         }
@@ -213,7 +213,7 @@ bool EditorProcessEvent(SDL_Event* event)
     else
     {
         // When ImGui wants the keyboard, clear all movement key states to prevent stuck keys
-        GCamera.keyW = GCamera.keyA = GCamera.keyS = GCamera.keyD = GCamera.keyShift = false;
+        GEditor.camera.keyW = GEditor.camera.keyA = GEditor.camera.keyS = GEditor.camera.keyD = GEditor.camera.keyShift = false;
     }
     return false;
 }
@@ -221,7 +221,7 @@ bool EditorProcessEvent(SDL_Event* event)
 /* ==================== Per-frame dispatch ==================== */
 bool EditorOnFrame(FContext*)
 {
-    switch (FEState)
+    switch (GEditor.state)
     {
     case FEInitEnter:
         FInitEnter();

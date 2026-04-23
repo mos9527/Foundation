@@ -117,18 +117,29 @@ struct GizmoState
     ImGuizmo::MODE      mode = ImGuizmo::WORLD;
 };
 
-/* -- Extern globals (defined in EditorState.cpp) -- */
-extern FEditorState    FEState;
-extern UBO             GShaderGlobals;
-extern FArcballCamera  GCamera;
-extern bool            cameraUpdated;
-extern bool            GShowImGui;
+/* -- Grouped editor state structs -- */
+struct EditorState
+{
+    EditorDocument  doc;
+    RenderWorkflow  renderTask;
+    GizmoState      gizmo;
+    RendererConfig  rendererConfig;
+    ERendererMode   rendererMode = ERendererMode::PathTracer;
 
-extern EditorDocument  GDoc;
-extern RenderWorkflow  GRenderImageTask;
-extern GizmoState      GGizmo;
-extern RendererConfig  GRendererConfig;
-extern ERendererMode   GRendererMode;
+    UBO             shaderGlobals;
+    FArcballCamera  camera{
+        .center = float3{0, 0, 0},
+        .radius = 1.0f,
+        .zNear = 0.1f,
+        .fovY = radians(60.f),
+    };
+    bool            showImGui = false;
+    FEditorState    state = FEInitEnter;
+    bool            cameraUpdated = true;
+};
+
+/* -- Extern globals (defined in EditorState.cpp) -- */
+extern EditorState GEditor;
 
 /* -- Cross-file editor functions -- */
 void UpdateSceneLights();
