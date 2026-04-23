@@ -174,7 +174,11 @@ void AddRadiance(inout float3 L, float3 v, bool direct = false)
         return;
     v = max(float3(0.0f), v);
     if (!direct){
-        // Firefly clamp — cap per-sample contribution to suppress extreme outliers
+        // Firefly clamp
+        // Accounts for samples with very, very low PDFs, such as indirect emission that went through
+        // a transmissive object (caustic refraction) or reflected off another specular surface (caustic reflection).
+        // A low clamp value helps to reduce variance, albeit at the cost of accuracy (adding bias!)
+        // Note that this is _not_ meant for _numerical errors_, which should not present themselves in the first place.
         float maxComp = MaxComponent(v);
         float clampEnergy = exp10(globalParams.ptFireflyClamp);
         if (maxComp > clampEnergy)
@@ -183,7 +187,7 @@ void AddRadiance(inout float3 L, float3 v, bool direct = false)
     L += v;
 }
 
-// Primary ray with jitter for AA
+// Primary ray with jitter
 float3 GeneratePrimaryRay<S : ISampler>(uint2 pixel, inout S rng)
 {
     float2 jitter = lerp(float2(-0.5f), float2(0.5f), rng.sample2D());

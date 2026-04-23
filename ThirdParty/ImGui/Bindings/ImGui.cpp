@@ -356,6 +356,9 @@ void ImGui_ImplFoundation_SetupContextWithDefaultStyles()
     // Styles from
     // https://github.com/KhronosGroup/Vulkan-Samples/blob/b9961792604af2ede4c9d0868947de2a8eccd549/framework/gui.h#L338
     ImGuiStyle& style = ImGui::GetStyle();
+    style.FrameRounding = 8.0f;
+    style.CircleTessellationMaxError = 0.01f;
+    style.FramePadding = ImVec2(8.0f, 8.0f);
     style.Colors[ImGuiCol_Text] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
     style.Colors[ImGuiCol_TextDisabled] = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
     style.Colors[ImGuiCol_WindowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.96f);

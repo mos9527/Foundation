@@ -556,11 +556,7 @@ void FRunningImGui()
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Rendering"))
     {
-        static float lodLogThreshold = 3;
-        ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
-
         bool changed = false;
-
         ImGui::SeparatorText("Display");
         if (ImGui::Checkbox("Enable HDR", &GContext->enableHDR))
         {
@@ -574,12 +570,37 @@ void FRunningImGui()
         }
         if (GRendererMode == ERendererMode::PathTracer)
         {
-            ImGui::Text("Samples: %d", GShaderGlobals.ptAccumulatedFrames);
-            ImGui::SliderInt("Diffuse Bounces", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBouncesDiffuse), 0, 64);
-            ImGui::SliderInt("Specular Bounces", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBouncesSpecular), 0, 64);
-            ImGui::SliderInt("Transmission Bounces", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBouncesTransmission), 0, 64);
-            ImGui::SliderFloat("Energy Clamp", &GShaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
-            
+            ImGui::SeparatorText("Path Tracer");
+            if (ImModalButton("Fast", 0, 3))
+            {
+                GShaderGlobals.ptMaxBouncesDiffuse = 4;
+                GShaderGlobals.ptMaxBouncesSpecular = 4;
+                GShaderGlobals.ptMaxBouncesTransmission = 12;
+                GShaderGlobals.ptFireflyClamp = 1.0f;
+                GShaderGlobals.ptAccumulatedFrames = 0;
+            }
+            if (ImModalButton("Full", 1, 3))
+            {
+                GShaderGlobals.ptMaxBouncesDiffuse = 32;
+                GShaderGlobals.ptMaxBouncesSpecular = 32;
+                GShaderGlobals.ptMaxBouncesTransmission = 32;
+                GShaderGlobals.ptFireflyClamp = 1.0f;
+                GShaderGlobals.ptAccumulatedFrames = 0;
+            }
+            if (ImModalButton("Über", 2, 3))
+            {
+                GShaderGlobals.ptMaxBouncesDiffuse = 32;
+                GShaderGlobals.ptMaxBouncesSpecular = 32;
+                GShaderGlobals.ptMaxBouncesTransmission = 32;
+                GShaderGlobals.ptFireflyClamp = 100.0f;
+                GShaderGlobals.ptAccumulatedFrames = 0;
+            }
+            ImGui::SeparatorText("Ray Bounce");
+            ImGui::SliderInt("Diffuse", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBouncesDiffuse), 0, 64);
+            ImGui::SliderInt("Specular", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBouncesSpecular), 0, 64);
+            ImGui::SliderInt("Transmission", reinterpret_cast<int*>(&GShaderGlobals.ptMaxBouncesTransmission), 0, 64);
+            ImGui::SeparatorText("Sampling");
+            ImGui::SliderFloat("Max Energy", &GShaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
             const char* samplerItems[] = {"PCG (Independent)", "Sobol (Quasi-Monte Carlo)"};
             if (ImGui::Combo("Sampler", reinterpret_cast<int*>(&GShaderGlobals.ptSampler), samplerItems, 2))
             {
@@ -590,40 +611,38 @@ void FRunningImGui()
             {
                 GShaderGlobals.ptAccumulatedFrames = 0;
             }
-            if (ImGui::DragFloat("Firefly Clamp", &GShaderGlobals.ptFireflyClamp, 0.1f, 0.0f, 1000.0f))
-            {
-                GShaderGlobals.ptAccumulatedFrames = 0;
-            }
         }
-        GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
-        
         if (GRendererMode == ERendererMode::Raster)
         {
+            ImGui::SeparatorText("Rasterizer");
+            static float lodLogThreshold = 3;
+            ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
+            GShaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
             {
                 const char* items[] = {"Overdraw", "Meshlet", "Material ID"};
                 const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID};
-                ImGui::SeparatorText("Raster Debug View");
+                ImGui::SeparatorText("Debug View");
                 changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
             }
             {
                 const char* items[] = {"RT Shadows"};
                 const unsigned values[] = {kEnableRasterRTShadows};
-                ImGui::SeparatorText("Raster Options");
+                ImGui::SeparatorText("Options");
                 changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values);
             }
             {
                 const char* items[] = {"Frustum", "Occlusion"};
                 const unsigned values[] = {kCullFrustum, kCullOcclusion};
-                ImGui::SeparatorText("Raster Cull Options");
+                ImGui::SeparatorText("Culling");
                 changed |= ImBitmaskOptionPicker(GRendererConfig.cullFlags, items, values);
             }
         }
         if (GRendererMode == ERendererMode::PathTracer)
         {
             {
-                const char* items[] = {"Diffuse", "Specular"};
+                const char* items[] = {"Diffuse Buffer", "Specular Buffer"};
                 const unsigned values[] = {kViewAOVDiffuse, kViewAOVSpecular};
-                ImGui::SeparatorText("Path Tracer View");
+                ImGui::SeparatorText("AOV View");
                 changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
             }
         }
@@ -633,8 +652,6 @@ void FRunningImGui()
             ImGui::SeparatorText("GBuffer View");
             changed |= ImBitmaskOptionPicker(GRendererConfig.viewFlags, items, values, true /* solo */);
         }
-
-        changed |= ImGui::Button("Reload");
         if (changed)
             FEState = FERunningEnter;
     }
