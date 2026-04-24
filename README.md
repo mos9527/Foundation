@@ -24,6 +24,10 @@ Also w/ blog post series update on:
   - NV released [this (2026)](https://research.nvidia.com/labs/rtr/publication/lin2026restirptenhanced/lin2026restirptenhanced.pdf) recently too. Lots of new tricks I've not heard of :D 
 - [ ] Spatial Reuse ([SHaRC](https://github.com/NVIDIA-RTX/SHARC)?)
 - [ ] Denoising (SVGF? NRD? Integrate with DLSS-RR or FSR4-RGEN?)
+- [ ] MNEE (Manifold NEE) for *much* better caustics convergence
+  - https://jo.dreggn.org/home/2015_mnee_talk.pdf
+- [ ] Texture sampling rate via ray differentials
+  - Easy for camera rays, not so much for ones bouncing off BSDFs
 
 Some time in the future:
 - [ ] Glass BSDF energy compensation 
@@ -34,7 +38,7 @@ Some time in the future:
     this is no longer NV only I'll have a shot.
   
 Already done!
-- [x] Transparent shadows (caustics, approximation)
+- [x] Transparent shadows (caustics, EXTREMELY SLOW approximation)
   - Environment lights and emissive objects naturally cast caustics.
   - Area lights are also added as actual geometry into TLAS, allowing them to be hit by BSDF rays and evaluated with MIS w/ NEE.
   - Cheap approximation still - unbiased, yes. But very slow to converge. Crank up the fireflies!
