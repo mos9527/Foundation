@@ -584,7 +584,7 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptMaxBouncesDiffuse = 32;
                 GEditor.shaderGlobals.ptMaxBouncesSpecular = 32;
                 GEditor.shaderGlobals.ptMaxBouncesTransmission = 32;
-                GEditor.shaderGlobals.ptFireflyClamp = 1.0f;
+                GEditor.shaderGlobals.ptFireflyClamp = 2.0f;
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             if (ImModalButton("Über", 2, 3))
