@@ -117,12 +117,19 @@ struct GizmoState
     ImGuizmo::MODE      mode = ImGuizmo::WORLD;
 };
 
+struct CameraApertureState
+{
+    float fStop = 2.8f;
+    float sensorHeightMm = 36.0f;
+};
+
 /* -- Grouped editor state structs -- */
 struct EditorState
 {
     EditorDocument  doc;
     RenderWorkflow  renderTask;
     GizmoState      gizmo;
+    CameraApertureState aperture;
     RendererConfig  rendererConfig;
     ERendererMode   rendererMode = ERendererMode::PathTracer;
 

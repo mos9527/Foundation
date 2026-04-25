@@ -1,9 +1,20 @@
+#include <cmath>
 #include "EditorState.hpp"
 
 // File-local renderer state: written in FRunningEnter, consumed in FRunning/FRendering
 static PTReadbackHandles sPTReadback;
 static RHIBuffer*        sPickResultBuffer = nullptr;
 static int2              sPendingPickPixel{-1, -1};
+
+static float ApertureRadiusFromFStop(float fStop, float sensorHeightMm, float fovY)
+{
+    if (fStop <= 0.0f || sensorHeightMm <= 0.0f)
+        return 0.0f;
+
+    float sensorHeightMeters = sensorHeightMm * 1e-3f;
+    float focalLengthMeters = (0.5f * sensorHeightMeters) / std::tan(fovY * 0.5f);
+    return focalLengthMeters / (2.0f * fStop);
+}
 
 /* ==================== FInitEnter ==================== */
 static void FInitEnter()
@@ -110,6 +121,8 @@ static void FRunning()
 
     GEditor.shaderGlobals.camPosition = float4(GEditor.camera.position, 0);
     GEditor.shaderGlobals.camDirection = float4(GEditor.camera.rot * float3(0, 0, -1), 0);
+    GEditor.shaderGlobals.aperture =
+        ApertureRadiusFromFStop(GEditor.aperture.fStop, GEditor.aperture.sensorHeightMm, GEditor.camera.fovY);
     GEditor.shaderGlobals.fbWidth = static_cast<float>(renderer->GetSwapchainExtent().x);
     GEditor.shaderGlobals.fbHeight = static_cast<float>(renderer->GetSwapchainExtent().y);
     

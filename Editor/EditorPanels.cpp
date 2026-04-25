@@ -1,8 +1,57 @@
+#include <cmath>
 #include <nfd.h>
 #include <Math/Decompose.hpp>
 #include <RenderCore/ImmediateContext.hpp>
 #include <imgui_internal.h>
 #include "EditorState.hpp"
+
+static constexpr float kPi = 3.14159265358979323846f;
+
+static float ApertureRadiusFromFStopMm(float fStop, float sensorHeightMm, float fovY)
+{
+    if (fStop <= 0.0f || sensorHeightMm <= 0.0f)
+        return 0.0f;
+
+    float focalLengthMm = (0.5f * sensorHeightMm) / std::tan(fovY * 0.5f);
+    return focalLengthMm / (2.0f * fStop);
+}
+
+static void DrawAperturePreview(uint32_t blades, float rotation, float ratio)
+{
+    ImVec2 avail = ImGui::GetContentRegionAvail();
+    float size = avail.x < 160.0f ? avail.x : 160.0f;
+    size = size < 80.0f ? 80.0f : size;
+
+    ImVec2 p0 = ImGui::GetCursorScreenPos();
+    ImGui::InvisibleButton("AperturePreview", ImVec2(size, size));
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    ImVec2 center = ImVec2(p0.x + size * 0.5f, p0.y + size * 0.5f);
+    ImU32 bg = ImGui::GetColorU32(ImVec4(0.12f, 0.12f, 0.12f, 0.55f));
+    ImU32 fill = ImGui::GetColorU32(ImVec4(0.72f, 0.72f, 0.72f, 0.55f));
+    ImU32 outline = ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.90f));
+
+    drawList->AddRectFilled(p0, ImVec2(p0.x + size, p0.y + size), bg, 4.0f);
+    drawList->AddRect(p0, ImVec2(p0.x + size, p0.y + size), outline, 4.0f);
+
+    ImVec2 points[64];
+    int pointCount = blades >= 3u ? static_cast<int>(blades) : 64;
+    pointCount = pointCount > 64 ? 64 : pointCount;
+
+    float ratioSafe = ratio > 1e-3f ? ratio : 1e-3f;
+    float xScale = 1.0f / ratioSafe;
+    float fitScale = size * 0.42f / (xScale > 1.0f ? xScale : 1.0f);
+
+    for (int i = 0; i < pointCount; ++i)
+    {
+        float theta = rotation + (2.0f * kPi * float(i)) / float(pointCount);
+        points[i] = ImVec2(center.x + std::cos(theta) * xScale * fitScale,
+                           center.y + std::sin(theta) * fitScale);
+    }
+
+    drawList->AddConvexPolyFilled(points, pointCount, fill);
+    drawList->AddPolyline(points, pointCount, outline, ImDrawFlags_Closed, 2.0f);
+}
 
 /* ==================== DockSpace + Menu Bar ==================== */
 void EditorDockSpaceAndMenuBar()
@@ -544,9 +593,26 @@ void FRunningImGui()
         GEditor.cameraUpdated |= ImGui::SliderFloat("Cam Radius", &GEditor.camera.radius, 0.0f, 100.0f);
         GEditor.cameraUpdated |= ImGui::SliderAngle("Cam FOV Y", &GEditor.camera.fovY);
         GEditor.cameraUpdated |=
-            ImGui::SliderFloat("Aperture", &GEditor.shaderGlobals.aperture, 1e-5f, 1.0f, "%.5f", ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderFloat("F-Stop", &GEditor.aperture.fStop, 0.1f, 128.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+        GEditor.cameraUpdated |= ImGui::SliderFloat("Sensor Height", &GEditor.aperture.sensorHeightMm, 1.0f, 100.0f,
+                                                    "%.2f mm", ImGuiSliderFlags_Logarithmic);
         GEditor.cameraUpdated |= ImGui::SliderFloat("Focal Distance", &GEditor.shaderGlobals.focalDistance, 0.1f, 1000.0f, "%.3f",
                                             ImGuiSliderFlags_Logarithmic);
+        int apertureBlades = static_cast<int>(GEditor.shaderGlobals.apertureBlades);
+        if (ImGui::SliderInt("Blades", &apertureBlades, 0, 16))
+        {
+            GEditor.shaderGlobals.apertureBlades = static_cast<uint32_t>(apertureBlades);
+            GEditor.cameraUpdated = true;
+        }
+        GEditor.cameraUpdated |= ImGui::SliderAngle("Rotation", &GEditor.shaderGlobals.apertureRotation, -180.0f, 180.0f,
+                                                    "%.1f deg");
+        GEditor.cameraUpdated |=
+            ImGui::SliderFloat("Ratio", &GEditor.shaderGlobals.apertureRatio, 0.01f, 16.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+        float apertureRadiusMm =
+            ApertureRadiusFromFStopMm(GEditor.aperture.fStop, GEditor.aperture.sensorHeightMm, GEditor.camera.fovY);
+        ImGui::Text("Aperture Radius: %.3f mm", apertureRadiusMm);
+        DrawAperturePreview(GEditor.shaderGlobals.apertureBlades, GEditor.shaderGlobals.apertureRotation,
+                            GEditor.shaderGlobals.apertureRatio);
         ImGui::SliderFloat("Exposure (EV)", &GEditor.shaderGlobals.camEV, -16.0f, 16.0f);
         ImGui::Separator();
         ImGui::SliderFloat("WASD Speed", &GEditor.camera.moveSpeed, 0.1f, 50.0f, "%.1f", ImGuiSliderFlags_Logarithmic);

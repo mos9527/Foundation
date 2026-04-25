@@ -158,6 +158,9 @@ public struct UBO
     public float4 projPlanes; // ij:left, kl:top
     public float aperture;
     public float focalDistance;
+    public uint32_t apertureBlades;
+    public float apertureRotation;
+    public float apertureRatio;
     public float fbWidth;
     public float fbHeight;
     public uint32_t hizLevels;

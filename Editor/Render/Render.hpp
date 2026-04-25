@@ -15,8 +15,11 @@ struct UBO
     float4x4 inverseView;
     float4x4 inverseViewProj;
     float4 projPlanes; // ij:left, kl:top
-    float aperture{0.0f};
+    float aperture{0.0f}; // Aperture radius in world units
     float focalDistance{1e1};
+    uint32_t apertureBlades{0u};
+    float apertureRotation{0.0f};
+    float apertureRatio{1.0f};
     // -- Framebuffers
     float fbWidth;
     float fbHeight;

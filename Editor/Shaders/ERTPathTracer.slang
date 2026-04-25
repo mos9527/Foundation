@@ -199,6 +199,35 @@ float3 GeneratePrimaryRay<S : ISampler>(uint2 pixel, inout S rng)
     return normalize(wsPosition.xyz / wsPosition.w - globalParams.camPosition.xyz);
 }
 
+float2 SampleRegularPolygonLens(float corners /* blades */, float rotation /* radians */, float2 u)
+{
+    float corner = floor(u.x * corners);
+    u.x = u.x * corners - corner;
+
+    u.x = sqrt(u.x);
+    u.y *= u.x;
+    u.x = 1.0f - u.x;
+
+    float angle = Pi / corners;
+    float2 p = float2((u.x + u.y) * cos(angle), (u.x - u.y) * sin(angle));
+
+    rotation += corner * 2.0f * angle;
+    float cr = cos(rotation);
+    float sr = sin(rotation);
+    return float2(cr * p.x - sr * p.y, sr * p.x + cr * p.y);
+}
+
+float2 SampleAnamorphicLens(float2 u)
+{
+    uint blades = globalParams.apertureBlades;
+    float2 bokeh = blades < 3u
+        ? SampleConcentricDisk(u)
+        : SampleRegularPolygonLens(float(blades), globalParams.apertureRotation, u);
+
+    bokeh.x *= 1.0f / max(globalParams.apertureRatio, EPS);
+    return bokeh;
+}
+
 // -- Main Shader Routines
 
 // TraceRay via HitObject — returns a hit object without invoking closest hit.
@@ -225,7 +254,7 @@ bool TraceShadowRay(float3 origin, float3 direction, float tMax = INF)
 
 float GetEnvLightSelectionWeight()
 {
-    return globalParams.useEnvMap ? globalParams.envMapScale : globalParams.ambientPower;
+    return globalParams.useEnvMap != 0u ? globalParams.envMapScale : globalParams.ambientPower;
 }
 
 LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
@@ -349,7 +378,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         // Sample point on lens in world space
         float3 T = mul(globalParams.inverseView, float4(1, 0, 0, 0)).xyz;
         float3 B = mul(globalParams.inverseView, float4(0, 1, 0, 0)).xyz;
-        float2 lensSample = SampleConcentricDisk(rng.sample2D()) * globalParams.aperture * rng.sample();
+        float2 lensSample = SampleAnamorphicLens(rng.sample2D()) * globalParams.aperture;
         float3 lensPoint = lensSample.x * T + lensSample.y * B;
         ray.Origin += lensPoint;
         ray.Direction = normalize(focalPoint - lensPoint);
@@ -360,7 +389,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
     InfiniteLight env = InfiniteLight(
         SampledSpectrum(globalParams.ambientColor * globalParams.ambientPower),
         globalParams.envMapScale,
-        globalParams.useEnvMap,
+        globalParams.useEnvMap != 0u,
         globalParams.envAzimuthOffset
     );
     float totalLightWeight = globalParams.sceneLightWeightSum + GetEnvLightSelectionWeight();
@@ -398,7 +427,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         // can be intersected with as well, contributing to e.g. transmission indirect.
         // Easy caustics! Albeit with low convergence just like the emissive case.
         // 
-        if (payload.IsHit() && (payload.instance & (1u << 23))) {
+        if (payload.IsHit() && ((payload.instance & (1u << 23)) != 0u)) {
             uint lightIndex = payload.instance & ~(1u << 23);
             GSLight gl = lights[globalParams.firstLight + lightIndex];
             
@@ -620,7 +649,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
 bool AnyHitOpacityIgnore<S : ISampler>(inout S rng, uint instance, uint primitive,
     BuiltInTriangleIntersectionAttributes attr)
 {
-    if (instance & (1u << 23))
+    if ((instance & (1u << 23)) != 0u)
         return false; // Light instance
 
     GSInstance inst = instances[NonUniformResourceIndex(instance)];
