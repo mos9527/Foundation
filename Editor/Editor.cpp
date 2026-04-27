@@ -121,8 +121,9 @@ static void FRunning()
 
     GEditor.shaderGlobals.camPosition = float4(GEditor.camera.position, 0);
     GEditor.shaderGlobals.camDirection = float4(GEditor.camera.rot * float3(0, 0, -1), 0);
-    GEditor.shaderGlobals.aperture =
-        ApertureRadiusFromFStop(GEditor.aperture.fStop, GEditor.aperture.sensorHeightMm, GEditor.camera.fovY);
+    GEditor.shaderGlobals.aperture = GEditor.aperture.dofEnabled
+        ? ApertureRadiusFromFStop(GEditor.aperture.fStop, GEditor.aperture.sensorHeightMm, GEditor.camera.fovY)
+        : 0.0f;
     GEditor.shaderGlobals.fbWidth = static_cast<float>(renderer->GetSwapchainExtent().x);
     GEditor.shaderGlobals.fbHeight = static_cast<float>(renderer->GetSwapchainExtent().y);
     

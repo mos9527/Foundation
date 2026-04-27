@@ -114,11 +114,12 @@ struct RenderWorkflow
 struct GizmoState
 {
     ImGuizmo::OPERATION op   = ImGuizmo::TRANSLATE;
-    ImGuizmo::MODE      mode = ImGuizmo::WORLD;
+    ImGuizmo::MODE      mode = ImGuizmo::LOCAL;
 };
 
 struct CameraApertureState
 {
+    bool dofEnabled = false;
     float fStop = 2.8f;
     float sensorHeightMm = 36.0f;
 };
