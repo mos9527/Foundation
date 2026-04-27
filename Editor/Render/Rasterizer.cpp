@@ -28,7 +28,10 @@ constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSiz
 void RendererSetupImGuiOnly(FContext* context)
 {
     if (context->renderer)
+    {
         Destruct(context->allocator, context->renderer);
+        context->renderer = nullptr;
+    }
     auto* renderer = context->renderer = Construct<Renderer>(context->allocator,
                                                              RendererDesc{
                                                                  .asyncCompute = true,
@@ -57,6 +60,11 @@ void RendererSetupImGuiOnly(FContext* context)
 void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, RasterReadbackHandles& outHandles)
 {
     CHECK(context->device->GetCapabilities().meshShaders);
+    if (context->renderer)
+    {
+        Destruct(context->allocator, context->renderer);
+        context->renderer = nullptr;
+    }
     auto* renderer = context->renderer = Construct<Renderer>(context->allocator,
                                                              RendererDesc{
                                                                  .asyncCompute = true,

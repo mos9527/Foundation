@@ -1,0 +1,10 @@
+---
+description: Build environment requirements for this CMake/MSVC project
+alwaysApply: true
+---
+
+# Build Environment
+
+- Before running `cmake --build`, `ninja`, or direct `cl.exe` commands on Windows, make sure the shell has Visual Studio/VC environment variables loaded. Missing VC env vars commonly show up as failures to include standard headers such as `cmath` or `float.h`.
+- Prefer launching builds from a Developer PowerShell/Command Prompt, or initialize the current shell with the appropriate Visual Studio environment script before building.
+- If a change touches headers, precompiled-header inputs, or include structure and the build reports stale or inconsistent PCH errors, rebuild the PCH target or clean the affected build directory before continuing.

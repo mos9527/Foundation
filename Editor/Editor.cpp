@@ -66,6 +66,14 @@ static void FInit()
 /* ==================== FRunningEnter ==================== */
 static void FRunningEnter()
 {
+    // Renderer setup owns mode-specific render graph resources. Drop the old graph
+    // before recreating the swapchain and building the new mode.
+    sPickResultBuffer = nullptr;
+    if (GContext->renderer)
+    {
+        Destruct(GContext->allocator, GContext->renderer);
+        GContext->renderer = nullptr;
+    }
     UpdateSwapchain(GContext);
     // Invalidate stale PT readback handles before rebuilding the renderer
     sPTReadback = {};

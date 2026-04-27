@@ -10,6 +10,11 @@ using namespace RenderUtils;
 void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene, PTReadbackHandles& outHandles)
 {
     CHECK(context->device->GetCapabilities().raytracingPipeline);
+    if (context->renderer)
+    {
+        Destruct(context->allocator, context->renderer);
+        context->renderer = nullptr;
+    }
     auto* renderer = context->renderer = Construct<Renderer>(context->allocator,
                                                              RendererDesc{
                                                                  .asyncCompute = true,
