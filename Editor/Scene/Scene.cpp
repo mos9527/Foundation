@@ -76,9 +76,13 @@ Optional<FTexture2D> loadGLTFTexture(cgltf_texture* texture, StringView scenePat
             Span<const unsigned char> imgData = {static_cast<const unsigned char*>(buf->buffer->data) + buf->offset, buf->size};
             return LoadRGBA8(res, imgData, gamma), res;
         }
-        String imageNameWE = std::filesystem::path(texture->image->uri).stem().string();
+        // cgltf only decodes percent-encoding on paths it opens itself (buffer files);
+        // image URIs in cgltf_data are left as-is, so do it ourselves before touching the FS.
+        String uri = texture->image->uri;
+        uri.resize(cgltf_decode_uri(uri.data()));
+        String imageNameWE = std::filesystem::path(uri).stem().string();
         std::filesystem::path dir = std::filesystem::path(scenePath.data()).parent_path();
-        dir = dir / std::filesystem::path(texture->image->uri).parent_path();
+        dir = dir / std::filesystem::path(uri).parent_path();
         // Try common extensions
         const char* extensions[] = {".png", ".jpg", ".jpeg", ".bmp"};
         for (auto ext : extensions)
@@ -99,7 +103,7 @@ Optional<FTexture2D> loadGLTFTexture(cgltf_texture* texture, StringView scenePat
                 return LoadDDS(res, imagePath.string()), res;
             }
         }
-        LOG(Scene, LogWarn, "Texture image file not found: {}", texture->image->uri);
+        LOG(Scene, LogWarn, "Texture image file not found: {}", uri);
         return {};
     }
     return {};
