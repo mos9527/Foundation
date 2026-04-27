@@ -72,7 +72,7 @@ inline bool Examples_ShouldClose(SDL_Window* window, Renderer* renderer, RHIDevi
         return false;
     if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) return true;
     // Resize swapchain if necessary
-    if (event.type == SDL_EVENT_WINDOW_RESIZED)
+    if (event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_MAXIMIZED || event.type == SDL_EVENT_WINDOW_RESTORED)
     {
         details::CreateSwapchain(window, swap.mFactory,swap);
         renderer->SetSwapchain(swap);
