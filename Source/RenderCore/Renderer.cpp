@@ -1220,7 +1220,9 @@ void Renderer::BeginExecute()
     mExecuteAlloc.Reset(mExecuteArena);
     mExecuteSubmits = Construct<Vector<Pair<RHIDeviceQueueType, RHIDeviceQueue::SubmitDesc>>>(mExecuteAlloc.Ptr(),
         mExecuteAlloc.Ptr());
+    mExecuteSubmits->reserve(mSetup->executionGroups.size());
     Vector<RHIDeviceFence*> wait(mExecuteAlloc.Ptr());
+    wait.reserve(2);
     if (mSetup->executionAnyGraphics)
         wait.push_back(mSwaps[mCurrentSync].graphicsFence.Get());
     if (mSetup->executionAnyCompute)
@@ -1557,7 +1559,7 @@ void Renderer::ExecuteFrame()
         /* -- Recording -- */
         // Count only the non-skipped ones
         Vector<PassHandle> active(mExecuteAlloc.Ptr());
-        active.reserve(groups.size() + 1);
+        active.reserve(group.passes.size());
         for (auto handle : group.passes)
             if (passes[handle].used)
                 active.emplace_back(handle);
@@ -1607,7 +1609,7 @@ void Renderer::ExecuteFrame()
                     ZoneScoped;
                     ZoneNameF("<%s>", pass->name.c_str());
                     *cmd = r->ExecuteAllocateCommandList(pass->queue, thread_id);
-                    (*cmd)->Begin();
+                    (*cmd)->Begin(r->mExecuteAlloc.Ptr());
                     if (queryPool)
                         (*cmd)->WriteTimestamp(queryPool, RHIPipelineStageBits::TopOfPipe, pass->handle * 2);
                     (*cmd)->BeginTransition();
@@ -1635,8 +1637,8 @@ void Renderer::ExecuteFrame()
             {
                 if (mDesc.threadCount)
                 {
-                    mExecuteThreadPool.PushImpl<RecordJob>(this, &passes[active[i]], &passCmds[i], i, &passBarriers[i],
-                                                           queryPool);
+                    mExecuteThreadPool.PushImplAlloc<RecordJob>(mExecuteAlloc.Ptr(), this, &passes[active[i]],
+                                                                &passCmds[i], i, &passBarriers[i], queryPool);
                 }
                 else
                 {
@@ -1653,7 +1655,7 @@ void Renderer::ExecuteFrame()
                 // Declare that the first pass from the next group handled the transition
                 PassHandle executorPass = groups[nextGroupIndex].passes.front();
                 auto cmd = ExecuteAllocateCommandList(RHIDeviceQueueType::Graphics, -1);
-                cmd->Begin();
+                cmd->Begin(mExecuteAlloc.Ptr());
                 cmd->DebugBegin("Graphics Pre Compute");
                 cmd->BeginTransition();
                 for (PassHandle pass : groups[nextGroupIndex].passes)
@@ -1714,7 +1716,7 @@ void Renderer::ExecuteFrame()
             {
                 // Transition the Backbuffer to Present.
                 auto cmd = ExecuteAllocateCommandList(RHIDeviceQueueType::Graphics, -1);
-                cmd->Begin();
+                cmd->Begin(mExecuteAlloc.Ptr());
                 cmd->BeginTransition();
                 ExecuteBarrierSubresource(kInvalidHandle, mSetup->trackedResources[mSwaps[GetSwap()].backbuffer],
                                           RHITextureSubresourceRange::Create(), {}, RHIPipelineStageBits::BottomOfPipe,
@@ -1738,6 +1740,8 @@ void Renderer::ExecuteFrame()
             // https://www.lunarg.com/wp-content/uploads/2021/08/Vulkan-Synchronization-SIGGRAPH-2021.pdf
             auto* wait = Construct<Vector<RHIDeviceQueue::TimelinePair>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
             auto* waitStage = Construct<Vector<RHIPipelineStage>>(mExecuteAlloc.Ptr(), mExecuteAlloc.Ptr());
+            wait->reserve(2);
+            waitStage->reserve(3);
             RHIPipelineStage allStages{};
             for (auto pass_handle : group.passes)
             {

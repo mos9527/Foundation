@@ -1,9 +1,18 @@
 #pragma once
 #include "AtomicQueue.hpp"
 #include "Thread.hpp"
+#include <array>
 #include <cmath>
 namespace Foundation::Core
 {
+    enum class JobPriority : size_t
+    {
+        Low,
+        Normal,
+        High,
+    };
+    inline constexpr size_t kJobPriorityCount = static_cast<size_t>(JobPriority::High) + 1;
+
     /**
      * @brief Job interface for use with @ref ThreadPool
      *
@@ -51,6 +60,7 @@ namespace Foundation::Core
      * @brief Backing job queue type for @ref ThreadPool
      */
     using JobQueue = MPMCQueue<UniquePtr<ThreadPoolJob>>;
+    using JobQueues = std::array<JobQueue, kJobPriorityCount>;
     /**
      * @brief Atomic, lock-free Thread Pool implementation with fixed bounds
      */
@@ -62,16 +72,45 @@ namespace Foundation::Core
         Atomic<size_t> mComplete{0};
         Atomic<size_t> mTotal{0};
 
-        JobQueue mJobs;
+        JobQueues mJobs;
         // Ensure threads are joined first on destruction
         Vector<Thread> mThreads;
         void ThreadPoolWorker(size_t id);
+        static constexpr size_t PriorityIndex(JobPriority priority) noexcept { return static_cast<size_t>(priority); }
+        template <typename T, typename... Args>
+            requires std::is_base_of_v<ThreadPoolJob, T>
+        T* PushImplInternal(JobPriority priority, Allocator* jobAllocator, Args&&... args)
+        {
+            if (mShutdown)
+                throw std::runtime_error("ThreadPool shutting down");
+            if (PriorityIndex(priority) >= kJobPriorityCount)
+                throw std::runtime_error("Invalid job priority");
+            Allocator* allocator = jobAllocator ? jobAllocator : mAllocator;
+            auto task = ConstructUniqueBase<ThreadPoolJob, T>(allocator, std::forward<Args>(args)...);
+            T* ptr = static_cast<T*>(task.get());
+            if (!mJobs[PriorityIndex(priority)].Push(std::move(task)))
+                throw std::runtime_error("Jobs full");
+            mTotal.fetch_add(1, std::memory_order_relaxed);
+            mTotal.notify_one();
+            return ptr;
+        }
+        template <typename Lambda, typename... Args>
+        auto PushLambdaInternal(JobPriority priority, Allocator* jobAllocator, Lambda&& func, Args const&... args)
+        {
+            auto LambdaFn = [func = std::forward<Lambda>(func), ... args = args] { return func(args...); };
+            using LambdaType = decltype(LambdaFn);
+            using ReturnType = decltype(LambdaFn());
+            ThreadPoolLambdaJob<LambdaType, ReturnType> job(std::forward<LambdaType>(LambdaFn));
+            auto fut = job.mPromise.get_future();
+            PushImplInternal<ThreadPoolLambdaJob<LambdaType, ReturnType>>(priority, jobAllocator, std::move(job));
+            return std::move(fut);
+        }
 
     public:
         /**
          * @brief Construct a thread pool with the given number of worker threads.
          * @param numThreads Number of worker threads to spawn.
-         * @param maxTasks Max number of tasks that can be queued. Must be a power of two - see @ref getTaskSize
+         * @param maxTasks Max number of tasks that can be queued per priority. Must be a power of two - see @ref getTaskSize
          * @param alloc Allocator to use for internal and job allocations
          * @param name Prefix for worker thread names ("name@id")
          */
@@ -85,32 +124,60 @@ namespace Foundation::Core
          */
         template <typename T, typename... Args>
             requires std::is_base_of_v<ThreadPoolJob, T>
+        T* PushImpl(JobPriority priority, Args&&... args)
+        {
+            return PushImplInternal<T>(priority, nullptr, std::forward<Args>(args)...);
+        }
+        template <typename T, typename... Args>
+            requires std::is_base_of_v<ThreadPoolJob, T>
         T* PushImpl(Args&&... args)
         {
-            if (mShutdown)
-                throw std::runtime_error("ThreadPool shutting down");
-            auto task = ConstructUniqueBase<ThreadPoolJob, T>(mAllocator, std::forward<Args>(args)...);
-            T* ptr = static_cast<T*>(task.get());
-            if (!mJobs.Push(std::move(task)))
-                throw std::runtime_error("Jobs full");
-            mTotal.fetch_add(1, std::memory_order_relaxed);
-            mTotal.notify_one();
-            return ptr;
+            return PushImplInternal<T>(JobPriority::Normal, nullptr, std::forward<Args>(args)...);
+        }
+        /**
+         * @brief Push a job with an explicit allocator for the job object.
+         * @param jobAllocator Optional allocator for the job object. If null, the thread pool allocator is used.
+         * @return Stable pointer of the pushed job. Lifetime guaranteed until the job's completion.
+         */
+        template <typename T, typename... Args>
+            requires std::is_base_of_v<ThreadPoolJob, T>
+        T* PushImplAlloc(Allocator* jobAllocator, Args&&... args)
+        {
+            return PushImplInternal<T>(JobPriority::Normal, jobAllocator, std::forward<Args>(args)...);
+        }
+        template <typename T, typename... Args>
+            requires std::is_base_of_v<ThreadPoolJob, T>
+        T* PushImplAlloc(JobPriority priority, Allocator* jobAllocator, Args&&... args)
+        {
+            return PushImplInternal<T>(priority, jobAllocator, std::forward<Args>(args)...);
         }
         /**
          * @brief Push a lambda job to the thread pool.
          * @return @ref Future<func ReturnType> that will be set when the job is completed.
          */
         template <typename Lambda, typename... Args>
+        auto Push(JobPriority priority, Lambda&& func, Args const&... args)
+        {
+            return PushLambdaInternal(priority, nullptr, std::forward<Lambda>(func), args...);
+        }
+        template <typename Lambda, typename... Args>
         auto Push(Lambda&& func, Args const&... args)
         {
-            auto LambdaFn = [func = std::forward<Lambda>(func), ... args = args] { return func(args...); };
-            using LambdaType = decltype(LambdaFn);
-            using ReturnType = decltype(LambdaFn());
-            ThreadPoolLambdaJob<LambdaType, ReturnType> job(std::forward<LambdaType>(LambdaFn));
-            auto fut = job.mPromise.get_future();
-            PushImpl<ThreadPoolLambdaJob<LambdaType, ReturnType>>(std::move(job));
-            return std::move(fut);
+            return PushLambdaInternal(JobPriority::Normal, nullptr, std::forward<Lambda>(func), args...);
+        }
+        /**
+         * @brief Push a lambda job with an explicit allocator for the job object.
+         * @param jobAllocator Optional allocator for the job object. If null, the thread pool allocator is used.
+         */
+        template <typename Lambda, typename... Args>
+        auto PushAlloc(Allocator* jobAllocator, Lambda&& func, Args const&... args)
+        {
+            return PushLambdaInternal(JobPriority::Normal, jobAllocator, std::forward<Lambda>(func), args...);
+        }
+        template <typename Lambda, typename... Args>
+        auto PushAlloc(JobPriority priority, Allocator* jobAllocator, Lambda&& func, Args const&... args)
+        {
+            return PushLambdaInternal(priority, jobAllocator, std::forward<Lambda>(func), args...);
         }
         /**
          * @brief Shutdown the @ref ThreadPool, potentially cancelling all pending jobs.

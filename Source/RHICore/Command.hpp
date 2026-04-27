@@ -185,7 +185,7 @@ namespace Foundation::RHI
         virtual RHICommandList& DebugBegin(const char* message) = 0;
         virtual RHICommandList& DebugInsertMarker(const char* message) = 0;
         virtual RHICommandList& DebugEnd() = 0;
-        virtual RHICommandList& Begin() = 0;
+        virtual RHICommandList& Begin(Allocator* scratchAllocator = nullptr) = 0;
         virtual void End() = 0;
         virtual void Reset() = 0;
 #pragma endregion

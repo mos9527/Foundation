@@ -59,6 +59,7 @@ namespace Foundation::RHI
         // VTable can in-fact get corrupted otherwise - we need a better solution
         // to safeguard this type of issue.
         UniquePtr<Barriers> mBarriers;
+        bool mInTransition = false;
 
         RHIPipelineState* mLastPSO = nullptr;
     public:
@@ -66,7 +67,7 @@ namespace Foundation::RHI
 
         [[nodiscard]] auto const& GetVkCommandBuffer() const { return mCommandBuffer; }
 
-        RHICommandList& Begin() override;
+        RHICommandList& Begin(Allocator* scratchAllocator = nullptr) override;
 
         RHICommandList& BeginTransition() override;
         RHICommandList& SetBufferTransition(RHIBuffer* image, TransitionDesc const& desc) override;

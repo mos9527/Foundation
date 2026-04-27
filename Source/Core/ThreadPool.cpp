@@ -1,8 +1,12 @@
+#include "ThreadPool.hpp"
 #include <tracy/TracyC.h>
 namespace Foundation::Core
 {
     ThreadPool::ThreadPool(size_t numThreads, size_t maxTasks, Allocator* alloc, StringView name):
-        mAllocator(alloc), mName(name), mJobs(maxTasks, alloc), mThreads(alloc)
+        mAllocator(alloc),
+        mName(name),
+        mJobs{JobQueue(maxTasks, alloc), JobQueue(maxTasks, alloc), JobQueue(maxTasks, alloc)},
+        mThreads(alloc)
     {
         for (size_t i = 0; i < numThreads; ++i)
             mThreads.emplace_back(&ThreadPool::ThreadPoolWorker, this, i);
@@ -42,11 +46,15 @@ namespace Foundation::Core
             // before letting the OS primitive take over
             total++;
             UniquePtr<ThreadPoolJob> job;
-            if (mJobs.Pop(job))
+            for (size_t priority = kJobPriorityCount; priority-- > 0;)
             {
-                job->Execute(id);
-                mComplete.fetch_add(1, std::memory_order_relaxed);
-                mComplete.notify_one();
+                if (mJobs[priority].Pop(job))
+                {
+                    job->Execute(id);
+                    mComplete.fetch_add(1, std::memory_order_relaxed);
+                    mComplete.notify_one();
+                    break;
+                }
             }
         }
     }

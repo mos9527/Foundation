@@ -60,14 +60,15 @@ VulkanCommandList::VulkanCommandList(const VulkanCommandPool& commandPool) :
     CHECK(mCommandBuffer != nullptr && "failed to allocate Vulkan command buffer");
 }
 
-RHICommandList& VulkanCommandList::Begin()
+RHICommandList& VulkanCommandList::Begin(Allocator* scratchAllocator)
 {
     bool isTransient = mCommandPool.mDesc.type == RHICommandPoolType::Transient;
     vk::CommandBufferBeginInfo beginInfo{.flags = isTransient
         ? vk::CommandBufferUsageFlagBits::eOneTimeSubmit
         : vk::CommandBufferUsageFlags{}};
     mCommandBuffer.begin(beginInfo);
-    mAllocator = mCommandPool.GetDevice().GetAllocator();
+    mAllocator = scratchAllocator ? scratchAllocator : mCommandPool.GetDevice().GetAllocator();
+    mInTransition = false;
     mLastPSO = nullptr;
     return *this;
 }
@@ -75,7 +76,9 @@ RHICommandList& VulkanCommandList::Begin()
 RHICommandList& VulkanCommandList::BeginTransition()
 {
     CHECK(mAllocator && "Invalid command list states.");
+    CHECK(!mInTransition && "Transition already begun.");
     mBarriers = ConstructUnique<Barriers>(mAllocator, mAllocator);
+    mInTransition = true;
     return *this;
 }
 
@@ -83,7 +86,7 @@ RHICommandList& VulkanCommandList::BeginTransition()
 
 RHICommandList& VulkanCommandList::SetBufferTransition(RHIBuffer* image, TransitionDesc const& desc)
 {
-    CHECK(mBarriers && "Invalid barrier states.");
+    CHECK(mInTransition && mBarriers && "Invalid barrier states.");
     auto* res = static_cast<VulkanBuffer*>(image);
     mBarriers->buffer.push_back(
         vk::BufferMemoryBarrier2{.srcStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.srcStage),
@@ -100,7 +103,7 @@ RHICommandList& VulkanCommandList::SetBufferTransition(RHIBuffer* image, Transit
 
 RHICommandList& VulkanCommandList::SetImageTransition(RHITexture* image, TransitionDesc const& desc)
 {
-    CHECK(mBarriers && "Invalid barrier states.");
+    CHECK(mInTransition && mBarriers && "Invalid barrier states.");
     CHECK_MSG(desc.srcImgRange.layer.aspect.value, "Aspect flag on transition subresource is NULL!!");
     auto* res = static_cast<VulkanTexture*>(image);
     mBarriers->image.push_back(vk::ImageMemoryBarrier2{
@@ -124,7 +127,7 @@ RHICommandList& VulkanCommandList::SetImageTransition(RHITexture* image, Transit
 RHICommandList& VulkanCommandList::SetAccelerationStructureTransition(RHIAccelerationStructure* as,
                                                                       TransitionDesc const& desc)
 {
-    CHECK(mBarriers && "Invalid barrier states.");
+    CHECK(mInTransition && mBarriers && "Invalid barrier states.");
     auto* res = static_cast<VulkanAccelerationStructure*>(as);
     mBarriers->buffer.push_back(
         vk::BufferMemoryBarrier2{.srcStageMask = vkPipelineStageFlags2FromRHIPipelineStage(desc.srcStage),
@@ -141,9 +144,13 @@ RHICommandList& VulkanCommandList::SetAccelerationStructureTransition(RHIAcceler
 
 RHICommandList& VulkanCommandList::EndTransition()
 {
-    CHECK(mBarriers && "Invalid barrier states.");
+    CHECK(mInTransition && mBarriers && "Invalid barrier states.");
     if (mBarriers->image.empty() && mBarriers->buffer.empty())
+    {
+        mBarriers.reset();
+        mInTransition = false;
         return *this; // No transitions to apply
+    }
     vk::DependencyInfo dependency_info{
         .bufferMemoryBarrierCount = static_cast<uint32_t>(mBarriers->buffer.size()),
         .pBufferMemoryBarriers = mBarriers->buffer.data(),
@@ -152,6 +159,7 @@ RHICommandList& VulkanCommandList::EndTransition()
     };
     mCommandBuffer.pipelineBarrier2(dependency_info);
     mBarriers.reset();
+    mInTransition = false;
     return *this;
 }
 
@@ -607,12 +615,16 @@ RHICommandList& VulkanCommandList::WriteAccelerationStructureCompactedSize(Span<
 void VulkanCommandList::End()
 {
     CHECK(mAllocator && "Invalid command list states.");
+    CHECK(!mInTransition && "Cannot end command list while a transition is open.");
     mCommandBuffer.end();
+    mBarriers.reset();
     mAllocator = nullptr;
 }
 
 void VulkanCommandList::Reset()
 {
+    mBarriers.reset();
+    mInTransition = false;
     mAllocator = nullptr;
     mCommandBuffer.reset();
 }
