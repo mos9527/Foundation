@@ -194,7 +194,8 @@ namespace Foundation::RHI
         void DestroyQueryPool(Handle handle) override;
 
         [[nodiscard]] RHIAccelerationStructureSizeInfo GetAccelerationStructureSizeInfo(
-                    RHIAccelerationStructureBuildDesc const& desc
+                    RHIAccelerationStructureBuildDesc const& desc,
+                    Allocator* scratchAllocator = nullptr
         ) const override;
         [[nodiscard]] size_t
         WriteAccelerationStructureInstanceData(RHIAccelerationStructureGeometryInstance const& data,

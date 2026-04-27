@@ -12,20 +12,45 @@ static_assert(false, "aligned_alloc not defined on this platform");
 #endif
 #endif 
 #endif
+#include <tracy/Tracy.hpp>
+
 namespace Foundation::Core {
+    namespace
+    {
+        constexpr int kTracyAllocatorCallstackDepth = 16;
+        constexpr const char* kTracyAllocatorName = "AllocatorHeap";
+    }
+
     pointer AllocatorHeap::Allocate(size_type size, size_t alignment) {
 #if FOUNDATION_CORE_USES_OS_ALLOC     
-        return aligned_alloc(alignment, size);
+        auto* ptr = aligned_alloc(alignment, size);
 #else
-        return mi_malloc_aligned(size, alignment);
+        auto* ptr = mi_malloc_aligned(size, alignment);
 #endif
+        if (ptr)
+            TracyAllocNS(ptr, size, kTracyAllocatorCallstackDepth, kTracyAllocatorName);
+        return ptr;
     }
     pointer AllocatorHeap::Reallocate(pointer ptr, size_type new_size, size_t alignment) {
+        if (!ptr)
+            return Allocate(new_size, alignment);
+        if (new_size == 0)
+        {
+            Deallocate(ptr);
+            return nullptr;
+        }
 #if FOUNDATION_CORE_USES_OS_ALLOC
-        return aligned_realloc(ptr, new_size, alignment);
+        auto* newPtr = aligned_realloc(ptr, new_size, alignment);
 #else
-        return mi_realloc_aligned(ptr, new_size, alignment);
+        auto* newPtr = mi_realloc_aligned(ptr, new_size, alignment);
 #endif
+        if (newPtr)
+        {
+            if (ptr)
+                TracyFreeNS(ptr, kTracyAllocatorCallstackDepth, kTracyAllocatorName);
+            TracyAllocNS(newPtr, new_size, kTracyAllocatorCallstackDepth, kTracyAllocatorName);
+        }
+        return newPtr;
     }
     void AllocatorHeap::QueryBudget(size_t& used, size_t& budget) const
     {
@@ -42,6 +67,8 @@ namespace Foundation::Core {
 #endif
     }
     void AllocatorHeap::Deallocate(pointer ptr) {
+        if (ptr)
+            TracyFreeNS(ptr, kTracyAllocatorCallstackDepth, kTracyAllocatorName);
 #if FOUNDATION_CORE_USES_OS_ALLOC
         return aligned_free(ptr);
 #else

@@ -33,6 +33,7 @@ namespace Foundation::RHI
     };
 
     constexpr size_t kCommandBarrierReserveSize = 256;
+    constexpr size_t kDefaultCommandScratchSize = 64 * 1024;
 
     class VulkanCommandList : public RHICommandList
     {
@@ -40,6 +41,8 @@ namespace Foundation::RHI
         const VulkanCommandPool& mCommandPool;
         vk::raii::CommandBuffer mCommandBuffer{nullptr};
         Allocator* mAllocator = nullptr;
+        UniquePtr<ScopedArena> mDefaultScratchArena;
+        UniquePtr<AllocatorStack> mDefaultScratchAllocator;
 
         struct Barriers
         {

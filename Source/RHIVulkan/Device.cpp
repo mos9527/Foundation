@@ -707,10 +707,12 @@ RHITexture* VulkanDevice::GetTexture(Handle handle) const { return mStorage.GetO
 void VulkanDevice::DestroyTexture(Handle handle) { mStorage.DestroyObject(handle); }
 
 RHIAccelerationStructureSizeInfo
-VulkanDevice::GetAccelerationStructureSizeInfo(RHIAccelerationStructureBuildDesc const& desc) const
+VulkanDevice::GetAccelerationStructureSizeInfo(RHIAccelerationStructureBuildDesc const& desc,
+                                               Allocator* scratchAllocator) const
 {
-    Vector<vk::AccelerationStructureGeometryKHR> geos(GetAllocator());
-    Vector<uint32_t> primitiveCounts(GetAllocator());
+    auto* alloc = scratchAllocator ? scratchAllocator : GetAllocator();
+    Vector<vk::AccelerationStructureGeometryKHR> geos(alloc);
+    Vector<uint32_t> primitiveCounts(alloc);
     auto buildInfo = vkAccelerationBuildGeoInfoFromRHI(desc, geos, primitiveCounts);
     vk::AccelerationStructureBuildSizesInfoKHR sizeInfo = mDevice.getAccelerationStructureBuildSizesKHR(
         vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCounts);

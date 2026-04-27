@@ -39,7 +39,7 @@ FetchContent_Declare(
 FetchContent_Declare(
     tracy
     GIT_REPOSITORY https://github.com/wolfpld/tracy.git
-    GIT_TAG v0.12.2
+    GIT_TAG v0.13.1
     GIT_SHALLOW TRUE
 )
 

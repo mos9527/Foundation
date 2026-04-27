@@ -241,8 +241,9 @@ bool EditorProcessEvent(SDL_Event* event)
 }
 
 /* ==================== Per-frame dispatch ==================== */
-bool EditorOnFrame(FContext*)
+bool EditorOnFrame(FContext* context)
 {
+    ResetEditorFrameScratch(context);
     switch (GEditor.state)
     {
     case FEInitEnter:

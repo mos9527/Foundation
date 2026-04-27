@@ -5,8 +5,6 @@
 #include <imgui_internal.h>
 #include "EditorState.hpp"
 
-static constexpr float kPi = 3.14159265358979323846f;
-
 static float ApertureRadiusFromFStopMm(float fStop, float sensorHeightMm, float fovY)
 {
     if (fStop <= 0.0f || sensorHeightMm <= 0.0f)
@@ -44,7 +42,7 @@ static void DrawAperturePreview(uint32_t blades, float rotation, float ratio)
 
     for (int i = 0; i < pointCount; ++i)
     {
-        float theta = rotation + (2.0f * kPi * float(i)) / float(pointCount);
+        float theta = rotation + (2.0f * pi<float>() * float(i)) / float(pointCount);
         points[i] = ImVec2(center.x + std::cos(theta) * xScale * fitScale,
                            center.y + std::sin(theta) * fitScale);
     }
@@ -762,6 +760,7 @@ void FRunningImGui()
             }
             if (ImGui::TreeNodeEx("Frametime", ImGuiTreeNodeFlags_DefaultOpen))
             {
+                Allocator* frameScratch = GContext->editorFrameScratch ? GContext->editorFrameScratch.get() : GLOBAL_ALLOC;
                 static constexpr size_t kHistogramSamples = 5e3, kFrametimeSamples = 3e2;
                 static Vector<ImProfilerSample> samples(GLOBAL_ALLOC);
                 static Vector<ImProfilerHistogram> histograms(GLOBAL_ALLOC);
@@ -804,7 +803,7 @@ void FRunningImGui()
                         histograms[i].push(sample.endTick - sample.startTick);
                     }
                     float presentTimingRes;
-                    lanes = ImProfilerAssignLanes(samples);
+                    lanes = ImProfilerAssignLanes(samples, frameScratch);
                     gpuTimingMS = (samples.back().endTick - samples.front().startTick) * 1e-6;
                     gpuTimingMS *= gpuTimingRes;
                     presentTimingMS = renderer->DbgProfilePresentTiming(renderer->GetSync(), presentTimingRes) * 1e-6;
@@ -837,7 +836,7 @@ void FRunningImGui()
                         if (it != samples.end())
                         {
                             auto& hist = histograms[selectedID];
-                            Vector<unsigned> bins(GLOBAL_ALLOC);
+                            Vector<unsigned> bins(frameScratch);
                             hist.bin(bins, 256, false /* log */);
                             float mean = hist.mean * gpuTimingRes * 1e-6f,
                                   median = hist.sorted[hist.sorted.size() / 2] * gpuTimingRes * 1e-6f,

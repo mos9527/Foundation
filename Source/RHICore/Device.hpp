@@ -279,7 +279,8 @@ namespace Foundation::RHI
         virtual void DestroyQueryPool(Handle handle) = 0;
 
         [[nodiscard]] virtual RHIAccelerationStructureSizeInfo
-        GetAccelerationStructureSizeInfo(RHIAccelerationStructureBuildDesc const& desc) const = 0;
+        GetAccelerationStructureSizeInfo(RHIAccelerationStructureBuildDesc const& desc,
+                                         Allocator* scratchAllocator = nullptr) const = 0;
         /**
          * @param dest If nullptr, only the size is calculated.
          * @return Stride size of the written instance data.

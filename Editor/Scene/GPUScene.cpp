@@ -1,5 +1,6 @@
 #include "../Render/Precompute.hpp"
 #include "../Render/Tables.hpp"
+#include <Core/AllocatorStack.hpp>
 #include <Math/Quantize.hpp>
 static FTexture2D MakeLUT(const float* data, RHIResourceFormat format, uint32_t width, uint32_t height)
 {
@@ -157,8 +158,11 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
             .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&diskRange, 1}
         };
 
-        auto rectSize = mContext->device->GetAccelerationStructureSizeInfo(rectDesc);
-        auto diskSize = mContext->device->GetAccelerationStructureSizeInfo(diskDesc);
+        StackArena<4096> sizeInfoArena;
+        AllocatorStack sizeInfoScratch(sizeInfoArena);
+        auto rectSize = mContext->device->GetAccelerationStructureSizeInfo(rectDesc, sizeInfoScratch.Ptr());
+        sizeInfoScratch.Reset(sizeInfoArena);
+        auto diskSize = mContext->device->GetAccelerationStructureSizeInfo(diskDesc, sizeInfoScratch.Ptr());
 
         uint32_t rectOffset = 0;
         uint32_t diskOffset = AlignUp(rectSize.accelerationStructureSize, 256u);
@@ -270,9 +274,10 @@ GPUScene::UpdateResult GPUScene::UpdateGPUScene(Span<const GSInstance> instances
     if (!lights.empty()) {
         auto [ptr, off] = AllocateLight(static_cast<uint32_t>(lights.size()));
         auto [aliasPtr, aliasOff] = AllocateLightAliasTable(static_cast<uint32_t>(lights.size()));
+        Allocator* scratch = mContext->editorFrameScratch ? mContext->editorFrameScratch.get() : mContext->allocator;
 
         // Alias table
-        Vector<float> powers(lights.size(), mContext->allocator);
+        Vector<float> powers(lights.size(), scratch);
         float weightSum = 0.0f;
         for (size_t i = 0; i < lights.size(); ++i)
         {
@@ -281,7 +286,7 @@ GPUScene::UpdateResult GPUScene::UpdateGPUScene(Span<const GSInstance> instances
         }
         res.firstLightAliasTable = aliasOff;
         res.sceneLightWeightSum = weightSum;
-        AliasTable table(powers, mContext->allocator);
+        AliasTable table(powers, scratch);
         std::memcpy(aliasPtr, table.mBins.data(), table.mBins.size() * sizeof(Alias));
 
         // Lights
@@ -422,6 +427,8 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
     Vector<RHIAccelerationStructureSizeInfo> sizeInfo(meshes.size(), mContext->allocator);
     Vector<uint32_t> blasOffsets(meshes.size(), mContext->allocator);
     Vector<uint32_t> scratchOffsets(meshes.size(), mContext->allocator);
+    StackArena<4096> sizeInfoArena;
+    AllocatorStack sizeInfoScratch(sizeInfoArena);
     auto* primitiveBuffer = mPrimitiveBuffer.Get();
     uint32_t scratchOffset = 0, blasOffset = 0;
     for (size_t i = 0; i < meshes.size(); i++)
@@ -455,7 +462,8 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
             .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&geo, 1},
             .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&range, 1}
         };
-        sizeInfo[i] = device->GetAccelerationStructureSizeInfo(desc);
+        sizeInfoScratch.Reset(sizeInfoArena);
+        sizeInfo[i] = device->GetAccelerationStructureSizeInfo(desc, sizeInfoScratch.Ptr());
         blasOffsets[i] = blasOffset;
         // minAccelerationStructureScratchOffsetAlignment is 256
         blasOffset = AlignUp(blasOffset + sizeInfo[i].accelerationStructureSize, 256u);
@@ -660,8 +668,15 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
         .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&geometry, 1},
         .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&range, 1}
     };
-    auto size = device->GetAccelerationStructureSizeInfo(desc);
-    CHECK_MSG(size.accelerationStructureSize <= mTLASBuffer->mDesc.size, "TLAS buffer overflow");
+    if (!update)
+    {
+        StackArena<4096> sizeInfoArena;
+        AllocatorStack sizeInfoScratch(sizeInfoArena);
+        auto size = device->GetAccelerationStructureSizeInfo(desc, sizeInfoScratch.Ptr());
+        CHECK_MSG(size.accelerationStructureSize <= mTLASBuffer->mDesc.size, "TLAS buffer overflow");
+        CHECK_MSG(size.buildScratchSize <= mScratchBufferTLAS->mDesc.size, "TLAS build scratch buffer overflow");
+        CHECK_MSG(size.updateScratchSize <= mScratchBufferTLAS->mDesc.size, "TLAS update scratch buffer overflow");
+    }
     desc.scratchBuffer = mScratchBufferTLAS.Get();
     desc.scratchBufferOffset = 0;
     desc.dstAS = mTLAS.Get();

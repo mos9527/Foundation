@@ -1,4 +1,5 @@
 #include "ImGui.hpp"
+#include <cstdio>
 // Only useful if you're manipulating the DrawList which has positions
 // that are _NOT_ window local
 Tuple<ImVec2, ImVec2, ImDrawList*> ImWindowDrawOffsetRegionList()
@@ -74,11 +75,11 @@ bool ImModalButton(const char* label, int lineIndex, int lineTotal)
     return ImGui::Button(label, lineTotal > 1 ? ImVec2{width - padding, 0} : ImVec2{width, 0});
 }
 
-int ImProfilerAssignLanes(Span<ImProfilerSample> samples)
+int ImProfilerAssignLanes(Span<ImProfilerSample> samples, Allocator* alloc)
 {
     std::sort(samples.begin(), samples.end());
     // Partition into lanes - work has chance to overlap on the GPU.
-    Map<int, size_t> Q(GLOBAL_ALLOC);
+    Map<int, size_t> Q(alloc);
     for (auto& sample : samples)
     {
         for (int lane = 0;; lane++)
@@ -103,9 +104,10 @@ void ImProfilerDrawTimestampLabel(Span<const ImProfilerSample> samples, float re
         float u = i / static_cast<float>(numLabels);
         float x = offset.x + region.x * u;
         cmd->AddLine({x, offset.y}, {x, offset.y + height}, IM_COL32(200, 200, 200, 255));
-        String label = fmt::format("{:.3f} ms", duration * u * resolution * 1e-6f);
-        ImVec2 textSize = ImGui::CalcTextSize(label.c_str());
-        cmd->AddText(font, height * 0.75f, {x - textSize.x, offset.y}, IM_COL32(255, 255, 255, 255), label.c_str());
+        char label[32];
+        std::snprintf(label, sizeof(label), "%.3f ms", duration * u * resolution * 1e-6f);
+        ImVec2 textSize = ImGui::CalcTextSize(label);
+        cmd->AddText(font, height * 0.75f, {x - textSize.x, offset.y}, IM_COL32(255, 255, 255, 255), label);
     }
     ImGui::Dummy({region.x, height + style.ItemSpacing.y});
 }
@@ -167,8 +169,9 @@ int ImProfilerDrawTable(Span<const ImProfilerSample> samples, float resolution)
             ImGui::Text("%.3f ms", durMS);
             ImGui::TableSetColumnIndex(2);
             float perc = (sample.endTick - sample.startTick) / duration;
-            auto pstr = fmt::format("{:.3f}%", perc * 100.0f);
-            ImGui::ProgressBar(perc, ImVec2(region.x * 0.25f, 0), pstr.c_str());
+            char pstr[32];
+            std::snprintf(pstr, sizeof(pstr), "%.3f%%", perc * 100.0f);
+            ImGui::ProgressBar(perc, ImVec2(region.x * 0.25f, 0), pstr);
         }
         ImGui::EndTable();
     }
@@ -205,9 +208,10 @@ void ImProfilerDrawHistogram(Vector<unsigned>& bins, ImProfilerHistogram const& 
         float u = (ts - min) / static_cast<float>(max - min);
         float x = offset.x + region.x * u;
         cmd->AddLine({x, offset.y}, {x, offset.y + labelHeight * 0.5f}, IM_COL32(200, 200, 200, 255));
-        String label = fmt::format("{:.3f} ms", ts * resolution * 1e-6f);
+        char label[32];
+        std::snprintf(label, sizeof(label), "%.3f ms", ts * resolution * 1e-6f);
         cmd->AddText(font, labelHeight * 0.75f, {x, offset.y + labelHeight}, IM_COL32(255, 255, 255, 255),
-                     label.c_str());
+                     label);
     }
     ImGui::Dummy({region.x, labelHeight + style.ItemSpacing.y});
 }

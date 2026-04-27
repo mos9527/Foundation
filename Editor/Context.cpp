@@ -1,5 +1,13 @@
 FContext* GContext = nullptr;
 
+void ResetEditorFrameScratch(FContext* context)
+{
+    context = context ? context : GContext;
+    if (!context || !context->editorFrameArena || !context->editorFrameScratch)
+        return;
+    context->editorFrameScratch->Reset(static_cast<Arena>(*context->editorFrameArena));
+}
+
 void UpdateSwapchain(FContext* context)
 {
     constexpr RHISurfaceFormat kFormatPreferenceListHDR[] = {
@@ -51,6 +59,9 @@ FContext* CreateContext(SDL_Window* window, Allocator* allocator, RHIDevice::Dev
 {
     auto* context = Construct<FContext>(allocator);
     context->allocator = allocator;
+    context->editorFrameArena = ConstructUnique<ScopedArena>(allocator, allocator, kEditorFrameScratchSize);
+    context->editorFrameScratch = ConstructUnique<AllocatorStack>(
+        allocator, static_cast<Arena>(*context->editorFrameArena));
     context->window = window;
     context->application = ConstructBase<RHIApplication, VulkanApplication>(allocator, allocator);
     context->device = context->application->CreateDevice(deviceDesc, window);
