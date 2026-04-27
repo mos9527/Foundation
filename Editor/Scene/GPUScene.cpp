@@ -572,6 +572,8 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
     }
 
     uint32_t totalInstances = static_cast<uint32_t>(instances.size()) + numAreaLights;
+    if (totalInstances == 0)
+        return;
     if (totalInstances != mLastTLASInstancesCount)
     {
         update = false;
@@ -647,10 +649,13 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
     };
     RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = totalInstances
     };
+    RHIAccelerationStructureBuildFlags buildFlags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace |
+        RHIAccelerationStructureBuildFlagsBits::AllowUpdate;
+    if (!update)
+        buildFlags |= RHIAccelerationStructureBuildFlagsBits::AllowCompaction;
     RHIAccelerationStructureBuildDesc desc{
         .type = RHIAccelerationStructureType::TopLevel,
-        .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace |
-        RHIAccelerationStructureBuildFlagsBits::AllowUpdate | RHIAccelerationStructureBuildFlagsBits::AllowCompaction,
+        .flags = buildFlags,
         .operation = update ? RHIAccelerationStructureBuildOp::Update : RHIAccelerationStructureBuildOp::Build,
         .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&geometry, 1},
         .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&range, 1}
@@ -659,13 +664,16 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
     CHECK_MSG(size.accelerationStructureSize <= mTLASBuffer->mDesc.size, "TLAS buffer overflow");
     desc.scratchBuffer = mScratchBufferTLAS.Get();
     desc.scratchBufferOffset = 0;
-    desc.srcAS = desc.dstAS = mTLAS.Get();
+    desc.dstAS = mTLAS.Get();
+    if (update)
+        desc.srcAS = mTLAS.Get();
     cmd->BuildAccelerationStructure({{{desc}}});
 }
 
 void GPUScene::UploadEnvMap(ImmediateUpload* ctx, FTexture2D const& source)
 {
     Upload(ctx, source, mEnvMapIndex);
+
     
     // Compute CDFs for importance sampling
     uint32_t width = source.GetWidth();

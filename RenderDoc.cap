@@ -2,7 +2,7 @@
     "rdocCaptureSettings": 1,
     "settings": {
         "autoStart": false,
-        "commandLine": "\"E:\\glTF-Sample-Assets\\Models\\FlightHelmet\\glTF\\FlightHelmet.gltf\"",
+        "commandLine": "\"E:\\Custom-Scenes\\SF90.gltf\"",
         "environment": [
         ],
         "executable": "E:\\Foundation\\cmake-build-debug\\bin\\Editor.exe",

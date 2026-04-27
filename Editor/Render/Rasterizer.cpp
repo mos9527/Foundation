@@ -72,14 +72,8 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
                       .size = sizeof(UBO)});
     /* Instance and Primitive buffers */
     auto TLAS = renderer->CreateResource("Scene TLAS", gpu->GetTLAS());
-    renderer->CreatePass(
-        "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
-        { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
-        {
-            gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsLights, true);
-        });
-
     auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
+
     auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
     auto MaterialBuffer = renderer->CreateResource("Material Buffer", gpu->GetMaterialBuffer());
     auto LightBuffer = renderer->CreateResource("Light Buffer", gpu->GetLightBuffer());
