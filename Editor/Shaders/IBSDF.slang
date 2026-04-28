@@ -276,6 +276,29 @@ public AOVCategory CategoryFromFlags(BxDFFlags f) {
     return AOVCategory::Specular;
 }
 
+public float PrincipledBSSRDFBranchProbability(
+    float metallic,
+    float roughness,
+    float ior,
+    float transmission,
+    float subsurface,
+    float3 wo)
+{
+    ior = max(1.0f + 5e-3f, ior);
+    roughness = max(8e-3f, roughness);
+    subsurface = clamp(subsurface, 0.0f, 1.0f);
+
+    float dielF0 = F0FromIor(ior);
+    float sampleGlossy = reflectance(dielF0, 1.0f, SampleGGXLutE(AbsCosTheta(wo), roughness));
+    float rawDiffuseFamily = (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
+    float rawMetal    = metallic;
+    float rawDielSpec = (1.0f - metallic) * sampleGlossy;
+    float rawTrans    = (1.0f - metallic) * (1.0f - sampleGlossy) * transmission;
+    float rawSubsurface = rawDiffuseFamily * subsurface;
+    float weightSum = rawDiffuseFamily + rawTrans + rawDielSpec + rawMetal;
+    return weightSum > 0.0f ? rawSubsurface / weightSum : 0.0f;
+}
+
 public struct PrincipledBSDFLobes {
     // Lobe instances
     DiffuseBSDF   diffuse;
@@ -324,25 +347,27 @@ public struct PrincipledBSDFLobes {
         float rawDielSpec = (1.0f - metallic) * sampleGlossy;
         float rawTrans    = (1.0f - metallic) * (1.0f - sampleGlossy) * transmission;
         float rawDiffuse  = rawDiffuseFamily * (1.0f - subsurface);
+        // True BSSRDF is sampled by the path integrator as a spatial event.
+        // Keep it out of the local BSDF mixture.
         float rawSubsurface = rawDiffuseFamily * subsurface;
 
         this.hasDiffuse  = rawDiffuse  > EPS;
-        this.hasSubsurface = rawSubsurface > EPS;
+        this.hasSubsurface = false;
         this.hasTrans    = rawTrans    > EPS;
         this.hasDielSpec = rawDielSpec > EPS;
         this.hasMetal    = rawMetal    > EPS;
 
-        this.weightSum = rawDiffuse + rawSubsurface + rawTrans + rawDielSpec + rawMetal;
+        this.weightSum = rawDiffuse + rawTrans + rawDielSpec + rawMetal;
         if (this.weightSum <= 0.0f) this.weightSum = 1.0f;
 
         this.wDiffuse  = rawDiffuse  / this.weightSum;
-        this.wSubsurface = rawSubsurface / this.weightSum;
+        this.wSubsurface = 0.0f;
         this.wTrans    = rawTrans    / this.weightSum;
         this.wDielSpec = rawDielSpec / this.weightSum;
         this.wMetal    = rawMetal    / this.weightSum;
 
         this.cDiffuse  = (1.0f - metallic) * (1.0f - transmission) * (1.0f - subsurface);
-        this.cSubsurface = (1.0f - metallic) * (1.0f - transmission) * subsurface;
+        this.cSubsurface = 0.0f;
         this.cTrans    = (1.0f - metallic) * transmission;
         this.cDielSpec = 1.0f - metallic;
         this.cMetal    = metallic;

@@ -28,7 +28,6 @@ Also w/ blog post series update on:
   - https://jo.dreggn.org/home/2015_mnee_talk.pdf
 - [ ] Texture sampling rate via ray differentials
   - Easy for camera rays, not so much for ones bouncing off BSDFs
-- [ ] Skin BSSDF
 - [ ] Volume rendering
 
 Some time in the future:
@@ -38,6 +37,9 @@ Some time in the future:
     this is no longer NV only I'll have a shot.
   
 Already done!
+- [x] Path Traced Skin BSSRDF
+  - Disney BSSRDF from [PBRTv3](https://github.com/mmp/pbrt-v3/blob/master/src/materials/disney.cpp)
+  - Uniformly selects exitance point on scattered path via AnyHit + reservoir sampling
 - [x] Transparent shadows (caustics, EXTREMELY SLOW approximation)
   - Environment lights and emissive objects naturally cast caustics.
   - Area lights are also added as actual geometry into TLAS, allowing them to be hit by BSDF rays and evaluated with MIS w/ NEE.

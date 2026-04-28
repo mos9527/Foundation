@@ -253,6 +253,52 @@ public interface ISampler
     [mutating] float2 sample2D();
 }
 
+// https://www.pbr-book.org/4ed/Sampling_Algorithms/Reservoir_Sampling
+public interface IReservoirCandidate
+{
+    bool IsValid();
+}
+
+public struct WeightedReservoir<T : IReservoirCandidate>
+{
+    public T selected;
+    public float selectedWeight;
+    public float weightSum;
+    public uint32_t sampleCount;
+
+    public __init()
+    {
+        this.selected = T();
+        this.selectedWeight = 0.0f;
+        this.weightSum = 0.0f;
+        this.sampleCount = 0u;
+    }
+
+    [mutating] public void Add(T candidate, float weight, float u)
+    {
+        if (!candidate.IsValid() || weight <= 0.0f || any(isnan(float3(weight, u, this.weightSum))))
+            return;
+
+        this.sampleCount++;
+        this.weightSum += weight;
+        if (u * this.weightSum < weight)
+        {
+            this.selected = candidate;
+            this.selectedWeight = weight;
+        }
+    }
+
+    public bool HasSample()
+    {
+        return this.sampleCount > 0u && this.weightSum > 0.0f && this.selected.IsValid();
+    }
+
+    public float SelectionPDF()
+    {
+        return this.weightSum > 0.0f ? this.selectedWeight / this.weightSum : 0.0f;
+    }
+}
+
 // PCG random numbers generator
 // Source: "Hash Functions for GPU Rendering" by Jarzynski & Olano
 public struct PCG : ISampler

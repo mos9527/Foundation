@@ -161,6 +161,11 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
                           /*hit group*/ 1);
             r->BindShader(self, RHIShaderStageBits::RayMiss, "ShadowRayMiss",
                           Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(capabilityFlags)));
+            r->BindShader(self, RHIShaderStageBits::RayAnyHit, "BSSRDFQueryAnyHit",
+                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(capabilityFlags)),
+                          /*hit group*/ 2);
+            r->BindShader(self, RHIShaderStageBits::RayMiss, "BSSRDFQueryMiss",
+                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(capabilityFlags)));
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitives");
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
             r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::ComputeShader, "materials");

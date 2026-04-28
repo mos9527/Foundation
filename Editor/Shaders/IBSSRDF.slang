@@ -61,6 +61,29 @@ public struct DisneyBurleyBSSRDF
     }
 };
 
+public struct BSSRDFSurfaceCandidate : IReservoirCandidate
+{
+    public uint32_t instance;
+    public uint32_t primitive;
+    public float2 bary;
+    public float hitT;
+
+    public __init(uint32_t instance = ~0u, uint32_t primitive = ~0u,
+                  float2 bary = float2(0.0f), float hitT = 0.0f)
+    {
+        this.instance = instance;
+        this.primitive = primitive;
+        this.bary = bary;
+        this.hitT = hitT;
+    }
+
+    public bool IsValid()
+    {
+        return this.instance != ~0u;
+    }
+};
+
+// NOTE: Unused
 // "Fake" subsurface scattering lobe, based on the Hanrahan-Krueger BRDF
 // approximation of the BSSRDF.
 // See also
