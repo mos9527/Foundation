@@ -36,7 +36,7 @@ Some time in the future:
   - [DXR 2.0 will arrive sometime this year/2026](https://asawicki.info/news_1801_directx_12_news_from_gdc_2026_-_my_comments)! Once
     this is no longer NV only I'll have a shot.
   
-Already done!
+Done, awaiting Blog Update:
 - [x] Path Traced Skin BSSRDF
   - Disney BSSRDF from [PBRTv3](https://github.com/mmp/pbrt-v3/blob/master/src/materials/disney.cpp)
   - Uniformly selects exitance point on scattered path via AnyHit + reservoir sampling
