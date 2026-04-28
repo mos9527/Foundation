@@ -298,6 +298,9 @@ void LoadGLTF(StringView path, FScene& scene)
                 camera.sensorHeightMm = node->camera->lens.sensor_size;
                 camera.fStop = node->camera->lens.fstop;
                 camera.focusDistance = node->camera->lens.focus_distance;
+                camera.apertureBlades = node->camera->lens.aperture_blades;
+                camera.apertureRotation = node->camera->lens.aperture_rotation;
+                camera.apertureRatio = node->camera->lens.aperture_ratio;
             }
         }
         if (node->light)

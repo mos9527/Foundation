@@ -201,6 +201,9 @@ void ReplaceScene(StringView path)
                 GEditor.aperture.sensorHeightMm = camera.sensorHeightMm;
                 GEditor.aperture.fStop = camera.fStop;
                 GEditor.shaderGlobals.focalDistance = camera.focusDistance;
+                GEditor.shaderGlobals.apertureBlades = camera.apertureBlades;
+                GEditor.shaderGlobals.apertureRotation = camera.apertureRotation;
+                GEditor.shaderGlobals.apertureRatio = camera.apertureRatio;
             }
         }
         UpdateSceneLights();

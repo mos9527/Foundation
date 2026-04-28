@@ -26,6 +26,9 @@ struct FCamera
     float sensorHeightMm{36.0f};
     float fStop{2.8f};
     float focusDistance{10.0f};
+    uint32_t apertureBlades{0u};
+    float apertureRotation{0.0f};
+    float apertureRatio{1.0f};
 };
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#metallic-roughness-material
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#additional-textures
