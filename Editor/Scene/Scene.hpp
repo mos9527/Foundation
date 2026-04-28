@@ -22,6 +22,10 @@ struct FCamera
 {
     FTransform transform;
     float fovY;
+    bool lensEnabled{false};
+    float sensorHeightMm{36.0f};
+    float fStop{2.8f};
+    float focusDistance{10.0f};
 };
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#metallic-roughness-material
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#additional-textures
@@ -73,7 +77,8 @@ struct FLight
     bool normalize{true};
 };
 static constexpr uint32_t kSceneMagicV1 = fourCC("FSCN");
-static constexpr uint32_t kSceneMagic = fourCC("FSC2");
+static constexpr uint32_t kSceneMagicV2 = fourCC("FSC2");
+static constexpr uint32_t kSceneMagic = fourCC("FSC3");
 struct FScene
 {
     uint32_t mMagic;
@@ -120,10 +125,34 @@ template <>
 inline void FDeserialize(FReader& r, FScene& obj)
 {
     FDeserialize(r, obj.mMagic);
-    CHECK(obj.mMagic == kSceneMagic || obj.mMagic == kSceneMagicV1);
-    FDeserialize(r, obj.mCameras);
+    CHECK(obj.mMagic == kSceneMagic || obj.mMagic == kSceneMagicV2 || obj.mMagic == kSceneMagicV1);
+    uint32_t sourceMagic = obj.mMagic;
+    if (sourceMagic == kSceneMagic)
+    {
+        FDeserialize(r, obj.mCameras);
+    }
+    else
+    {
+        struct FCameraV2
+        {
+            FTransform transform;
+            float fovY;
+        };
+
+        uint64_t count = 0;
+        FDeserialize(r, count);
+        obj.mCameras.resize(count);
+        for (size_t i = 0; i < count; ++i)
+        {
+            FCameraV2 src{};
+            FDeserialize(r, src);
+            auto& dst = obj.mCameras[i];
+            dst.transform = src.transform;
+            dst.fovY = src.fovY;
+        }
+    }
     FDeserialize(r, obj.mInstances);
-    if (obj.mMagic == kSceneMagicV1)
+    if (sourceMagic == kSceneMagicV1)
     {
         struct FMaterialV1
         {

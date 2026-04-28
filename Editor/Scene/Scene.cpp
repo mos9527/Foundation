@@ -292,6 +292,13 @@ void LoadGLTF(StringView path, FScene& scene)
             auto& camera = scene.mCameras.emplace_back();
             getTransform(camera.transform);
             camera.fovY = node->camera->data.perspective.yfov;
+            if (node->camera->has_lens)
+            {
+                camera.lensEnabled = true;
+                camera.sensorHeightMm = node->camera->lens.sensor_size;
+                camera.fStop = node->camera->lens.fstop;
+                camera.focusDistance = node->camera->lens.focus_distance;
+            }
         }
         if (node->light)
         {

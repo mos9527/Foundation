@@ -195,6 +195,13 @@ void ReplaceScene(StringView path)
             GEditor.camera.center = camera.transform.transform - dir * GEditor.camera.radius;
             GEditor.camera.rot = camera.transform.rotation;
             GEditor.camera.fovY = camera.fovY;
+            GEditor.aperture.dofEnabled = camera.lensEnabled;
+            if (camera.lensEnabled)
+            {
+                GEditor.aperture.sensorHeightMm = camera.sensorHeightMm;
+                GEditor.aperture.fStop = camera.fStop;
+                GEditor.shaderGlobals.focalDistance = camera.focusDistance;
+            }
         }
         UpdateSceneLights();
     }
