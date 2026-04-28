@@ -185,7 +185,8 @@ void LoadGLTF(StringView path, FScene& scene)
         material.ior = mat->has_ior ? mat->ior.ior : 1.5f;
         material.subsurfaceFactor = 0.0f;
         material.subsurfaceColor = {1.0f, 1.0f, 1.0f};
-        material.subsurfaceRadius = {1.0f, 1.0f, 1.0f};
+        // Blender defaults
+        material.subsurfaceRadius = float3{1.0f, 0.2f, 0.1f} * 0.05f;
         if (mat->has_subsurface)
         {
             material.subsurfaceFactor = std::clamp(mat->subsurface.subsurface_weight, 0.0f, 1.0f);
