@@ -53,6 +53,11 @@ uint GetInstanceBufferIndex(uint localInstanceIndex)
     return globalParams.firstInstance + localInstanceIndex;
 }
 
+uint GetMaterialBufferIndex(uint localMaterialIndex)
+{
+    return globalParams.firstMaterial + localMaterialIndex;
+}
+
 HitState getHitState(uint meshOffset, uint primitive, float2 bary, GSInstance inst, float3 rayOrigin, float3 rayDirection, float hitT)
 {
     HitState hit;
@@ -145,6 +150,9 @@ struct Payload
     float roughness;
     float transmission;
     float ior;
+    float subsurface;
+    float3 subsurfaceColor;
+    float3 subsurfaceRadius;
 };
 Payload SamplePayload(HitPayload payload, RayDesc ray)
 {
@@ -154,7 +162,7 @@ Payload SamplePayload(HitPayload payload, RayDesc ray)
     Payload res;
     res.materialID = inst.materialIndex;
     res.hit = getHitState(inst.meshOffset, payload.primitive, payload.bary, inst, ray.Origin, ray.Direction, payload.hitT);
-    GSMaterial material = materials[NonUniformResourceIndex(res.materialID)];
+    GSMaterial material = materials[NonUniformResourceIndex(GetMaterialBufferIndex(res.materialID))];
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
     SampleMaterials(material, res.hit.uv, baseColor4, normalTBN, pbrMetalRough, emissive4);
     res.baseColor = baseColor4.xyz;
@@ -165,6 +173,9 @@ Payload SamplePayload(HitPayload payload, RayDesc ray)
     res.hit.normal = normalize(res.hit.tangent * normalTBN.x + res.hit.bitangent * normalTBN.y + res.hit.normal * normalTBN.z);
     res.ior = material.ior;
     res.transmission = material.transmissionFactor;
+    res.subsurface = material.subsurfaceFactor;
+    res.subsurfaceColor = material.subsurfaceColor;
+    res.subsurfaceRadius = material.subsurfaceRadius;
     return res;
 }
 
@@ -519,7 +530,8 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         // Construct individual lobes with their weights
         PrincipledBSDFLobes bsdf = PrincipledBSDFLobes(
             surface.baseColor, surface.metallic, surface.roughness,
-            surface.ior, surface.transmission, true, wo);
+            surface.ior, surface.transmission, true, wo,
+            surface.subsurface, surface.subsurfaceColor, surface.subsurfaceRadius);
         // Light sampling via Scene concrete-light MIS (NEE / Direct Lighting)
         // https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling
         {
@@ -653,7 +665,7 @@ bool AnyHitOpacityIgnore<S : ISampler>(inout S rng, uint instance, uint primitiv
         return false; // Light instance
 
     GSInstance inst = instances[NonUniformResourceIndex(instance)];
-    GSMaterial material = materials[NonUniformResourceIndex(inst.materialIndex)];
+    GSMaterial material = materials[NonUniformResourceIndex(GetMaterialBufferIndex(inst.materialIndex))];
     float4 baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u) {
         HitState hs = getHitState(inst.meshOffset, primitive, attr.barycentrics.xy, inst, WorldRayOrigin(), WorldRayDirection(), RayTCurrent());

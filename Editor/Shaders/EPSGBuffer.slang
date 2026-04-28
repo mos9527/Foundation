@@ -29,7 +29,7 @@ Fragment drawMeshlet(V2F input)
 
 Fragment drawGBuffer(V2F input){
     Fragment output;
-    GSMaterial material = materials[input.materialIndex];
+    GSMaterial material = materials[globalParams.firstMaterial + input.materialIndex];
     float4 baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u)
         baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].Sample(textureSampler, input.uv);

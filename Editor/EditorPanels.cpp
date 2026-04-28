@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cfloat>
 #include <nfd.h>
 #include <Math/Decompose.hpp>
 #include <RenderCore/ImmediateContext.hpp>
@@ -51,6 +52,56 @@ static void DrawAperturePreview(uint32_t blades, float rotation, float ratio)
     drawList->AddPolyline(points, pointCount, outline, ImDrawFlags_Closed, 2.0f);
 }
 
+static bool IsSelectedInstanceValid()
+{
+    return GEditor.doc.selectedInstance >= 0 &&
+           GEditor.doc.selectedInstance < static_cast<int>(GEditor.doc.instances.size()) &&
+           GEditor.doc.selectedInstance < static_cast<int>(GEditor.doc.scene.mInstances.size());
+}
+
+static int GetSelectedInstanceMaterialIndex()
+{
+    if (!IsSelectedInstanceValid())
+        return GEditor.doc.selectedMaterial;
+    return static_cast<int>(GEditor.doc.instances[GEditor.doc.selectedInstance].materialIndex);
+}
+
+static bool IsMaterialIndexValid(int materialIndex)
+{
+    return materialIndex >= 0 &&
+           materialIndex < static_cast<int>(GEditor.doc.materials.size()) &&
+           materialIndex < static_cast<int>(GEditor.doc.scene.mMaterials.size());
+}
+
+static void UploadSceneMaterialEdits()
+{
+    auto* gpu = GContext->gpuScene;
+    auto res = gpu->UpdateGPUScene(GEditor.doc.instances, GEditor.doc.materials, GEditor.doc.lights);
+    GEditor.shaderGlobals.firstInstance = res.firstInstance;
+    GEditor.shaderGlobals.numInstances = res.numInstances;
+    GEditor.shaderGlobals.firstMaterial = res.firstMaterial;
+    GEditor.shaderGlobals.numMaterials = res.numMaterials;
+    GEditor.shaderGlobals.firstLight = res.firstLight;
+    GEditor.shaderGlobals.firstLightAliasTable = res.firstLightAliasTable;
+    GEditor.shaderGlobals.sceneLightWeightSum = res.sceneLightWeightSum;
+    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+}
+
+static void SyncMaterialToGPU(uint32_t materialIndex)
+{
+    auto& src = GEditor.doc.scene.mMaterials[materialIndex];
+    auto& dst = GEditor.doc.materials[materialIndex];
+    dst.baseColorFactor = src.baseColorFactor;
+    dst.emissiveFactor = src.emissiveFactor;
+    dst.metallicFactor = src.metallicFactor;
+    dst.roughnessFactor = src.roughnessFactor;
+    dst.transmissionFactor = src.transmissionFactor;
+    dst.ior = src.ior;
+    dst.subsurfaceFactor = src.subsurfaceFactor;
+    dst.subsurfaceColor = src.subsurfaceColor;
+    dst.subsurfaceRadius = src.subsurfaceRadius;
+}
+
 /* ==================== DockSpace + Menu Bar ==================== */
 void EditorDockSpaceAndMenuBar()
 {
@@ -78,6 +129,7 @@ void EditorDockSpaceAndMenuBar()
         ImGui::DockBuilderSplitNode(dockLeft, ImGuiDir_Up, 0.5f, &dockLeftTop, &dockLeftBottom);
         ImGui::DockBuilderDockWindow("Hierarchy", dockLeftTop);
         ImGui::DockBuilderDockWindow("Inspector", dockLeftBottom);
+        ImGui::DockBuilderDockWindow("Material", dockLeftBottom);
         ImGui::DockBuilderDockWindow("Camera", dockRight);
         ImGui::DockBuilderDockWindow("Lighting", dockRight);
         ImGui::DockBuilderDockWindow("Rendering", dockRight);
@@ -268,9 +320,63 @@ void FHierarchyPanel()
                 if (ImGui::Selectable(label, selected))
                 {
                     GEditor.doc.selectedInstance = static_cast<int>(i);
+                    GEditor.doc.selectedMaterial = static_cast<int>(inst.materialIndex);
                     GEditor.doc.selectedLight = -1; // deselect light when selecting instance
                 }
             }
+        }
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+
+    // Material panel for the selected instance
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
+    if (ImGui::Begin("Material"))
+    {
+        int materialIndex = GetSelectedInstanceMaterialIndex();
+        if (IsMaterialIndexValid(materialIndex))
+        {
+            GEditor.doc.selectedMaterial = materialIndex;
+
+            auto& material = GEditor.doc.scene.mMaterials[materialIndex];
+            auto& gpuMaterial = GEditor.doc.materials[materialIndex];
+            ImGui::Text("Material %d", materialIndex);
+            if (IsSelectedInstanceValid())
+                ImGui::Text("From Instance %d", GEditor.doc.selectedInstance);
+            ImGui::Separator();
+
+            bool changed = false;
+            changed |= ImGui::ColorEdit4("Base Color", &material.baseColorFactor.x);
+            changed |= ImGui::DragFloat3("Emissive", &material.emissiveFactor.x, 0.01f, 0.0f, FLT_MAX, "%.3f");
+            changed |= ImGui::SliderFloat("Metallic", &material.metallicFactor, 0.0f, 1.0f, "%.3f");
+            changed |= ImGui::SliderFloat("Roughness", &material.roughnessFactor, 0.0f, 1.0f, "%.3f");
+            changed |= ImGui::SliderFloat("Transmission", &material.transmissionFactor, 0.0f, 1.0f, "%.3f");
+            changed |= ImGui::SliderFloat("IOR", &material.ior, 1.0f, 3.0f, "%.3f");
+
+            ImGui::SeparatorText("Subsurface");
+            changed |= ImGui::SliderFloat("Weight", &material.subsurfaceFactor, 0.0f, 1.0f, "%.3f");
+            changed |= ImGui::ColorEdit3("Color", &material.subsurfaceColor.x);
+            changed |= ImGui::DragFloat3("Radius", &material.subsurfaceRadius.x, 0.001f, 0.0f, FLT_MAX, "%.4f");
+
+            ImGui::SeparatorText("Textures");
+            ImGui::Text("Base Color: %u", gpuMaterial.baseColorTexture);
+            ImGui::Text("Emissive: %u", gpuMaterial.emissiveTexture);
+            ImGui::Text("Metallic/Roughness: %u", gpuMaterial.metallicRoughnessTexture);
+            ImGui::Text("Normal: %u", gpuMaterial.normalTexture);
+
+            if (changed)
+            {
+                SyncMaterialToGPU(static_cast<uint32_t>(materialIndex));
+                UploadSceneMaterialEdits();
+            }
+        }
+        else if (IsSelectedInstanceValid())
+        {
+            ImGui::TextDisabled("Selected instance has invalid material index");
+        }
+        else
+        {
+            ImGui::TextDisabled("No instance selected");
         }
     }
     ImGui::End();
@@ -346,8 +452,12 @@ void FHierarchyPanel()
                 auto* gpu = GContext->gpuScene;
                 auto res = gpu->UpdateGPUScene(GEditor.doc.instances, GEditor.doc.materials, GEditor.doc.lights);
                 GEditor.shaderGlobals.firstInstance = res.firstInstance;
+                GEditor.shaderGlobals.numInstances = res.numInstances;
                 GEditor.shaderGlobals.firstMaterial = res.firstMaterial;
+                GEditor.shaderGlobals.numMaterials = res.numMaterials;
                 GEditor.shaderGlobals.firstLight = res.firstLight;
+                GEditor.shaderGlobals.firstLightAliasTable = res.firstLightAliasTable;
+                GEditor.shaderGlobals.sceneLightWeightSum = res.sceneLightWeightSum;
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
             ImGui::Separator();
@@ -413,6 +523,7 @@ void FLightingPanel()
                 {
                     GEditor.doc.selectedLight = i;
                     GEditor.doc.selectedInstance = -1; // deselect instance when selecting light
+                    GEditor.doc.selectedMaterial = -1;
                 }
                 if (headerOpen)
                 {

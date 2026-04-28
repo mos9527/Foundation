@@ -28,11 +28,11 @@ Also w/ blog post series update on:
   - https://jo.dreggn.org/home/2015_mnee_talk.pdf
 - [ ] Texture sampling rate via ray differentials
   - Easy for camera rays, not so much for ones bouncing off BSDFs
+- [ ] Skin BSSDF
+- [ ] Volume rendering
 
 Some time in the future:
 - [ ] Glass BSDF energy compensation 
-- [ ] Volume rendering
-- [ ] Skin. Random Walk SSS?
 - [ ] Cluster Acceleration Structures (CLAS)
   - [DXR 2.0 will arrive sometime this year/2026](https://asawicki.info/news_1801_directx_12_news_from_gdc_2026_-_my_comments)! Once
     this is no longer NV only I'll have a shot.

@@ -107,6 +107,9 @@ public struct GSMaterial
     public float transmissionFactor;
     public float ior;
     public float anisotropy;
+    public float subsurfaceFactor;
+    public float3 subsurfaceColor;
+    public float3 subsurfaceRadius;
 };
 public struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
 {

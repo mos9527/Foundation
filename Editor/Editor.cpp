@@ -149,6 +149,16 @@ static void FRunning()
     {
         uint32_t id = *sPickResultBuffer->Map<uint32_t>();
         GEditor.doc.selectedInstance = (id == ~0u) ? -1 : static_cast<int>(id);
+        if (GEditor.doc.selectedInstance >= 0 &&
+            GEditor.doc.selectedInstance < static_cast<int>(GEditor.doc.instances.size()))
+        {
+            GEditor.doc.selectedMaterial = static_cast<int>(GEditor.doc.instances[GEditor.doc.selectedInstance].materialIndex);
+            GEditor.doc.selectedLight = -1;
+        }
+        else
+        {
+            GEditor.doc.selectedMaterial = -1;
+        }
         sPendingPickPixel = {-1, -1};
     }
     if (!GEditor.renderTask.renderPaused)

@@ -183,6 +183,18 @@ void LoadGLTF(StringView path, FScene& scene)
         material.emissiveFactor *= mat->emissive_strength.emissive_strength;
         material.transmissionFactor = mat->transmission.transmission_factor;
         material.ior = mat->has_ior ? mat->ior.ior : 1.5f;
+        material.subsurfaceFactor = 0.0f;
+        material.subsurfaceColor = {1.0f, 1.0f, 1.0f};
+        material.subsurfaceRadius = {1.0f, 1.0f, 1.0f};
+        if (mat->has_subsurface)
+        {
+            material.subsurfaceFactor = std::clamp(mat->subsurface.subsurface_weight, 0.0f, 1.0f);
+            material.subsurfaceRadius = {
+                mat->subsurface.subsurface_radius[0] * mat->subsurface.subsurface_scale,
+                mat->subsurface.subsurface_radius[1] * mat->subsurface.subsurface_scale,
+                mat->subsurface.subsurface_radius[2] * mat->subsurface.subsurface_scale
+            };
+        }
         scene.mMaterials.emplace_back(material);
     }
     /* Textures and Meshes */
