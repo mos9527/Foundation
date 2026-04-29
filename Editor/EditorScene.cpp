@@ -171,6 +171,7 @@ void ReplaceScene(StringView path)
         dst.normalTexture = src.normalTexture != kInvalidTexture ? textureIDMap[src.normalTexture] : UINT32_MAX;
         dst.transmissionFactor = src.transmissionFactor;
         dst.ior = src.ior;
+        dst.specularFactor = src.specularFactor;
         dst.subsurfaceFactor = src.subsurfaceFactor;
         dst.subsurfaceColor = src.subsurfaceColor;
         dst.subsurfaceRadius = src.subsurfaceRadius;

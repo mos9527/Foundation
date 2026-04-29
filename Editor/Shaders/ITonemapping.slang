@@ -1,7 +1,17 @@
+// NOTE: Assume Linear BT.709/sRGB for linear color primaries
+
+// Linear BT.709/sRGB to linear BT.2020, for HDR10/PQ output.
+// See also Scripts/ColorPrimaries.ipynb
+public static const float3x3 BT709_BT2020 = float3x3(
+    0.627403896f, 0.329283038f, 0.043313066f,
+    0.069097289f, 0.919540395f, 0.011362316f,
+    0.016391439f, 0.088013308f, 0.895595253f);
+
 public struct TonemapInfo
 {
     public float HdrPaperWhiteNits;
 }
+
 
 public interface IOOTF {
     float3 Transfer(TonemapInfo info, float3 L);
@@ -15,6 +25,8 @@ public interface ITonemapper {
     float3 Perform(TonemapInfo info, float3 L);
 }
 
+// BT709->BT709
+// Identity OOTF
 public struct SrgbOOTF : IOOTF {
     float3 Transfer(TonemapInfo info, float3 x) {
         return x;
@@ -34,8 +46,10 @@ public struct SrgbEOTF : IEOTF {
 
 // Reference PQ OOTF
 // https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.2100-3-202502-I!!PDF-C.pdf
+// Post BT709->BT2020 OOTF
 public struct PqOOTF : IOOTF {
     float3 Transfer(TonemapInfo info, float3 x) {
+        x = mul(BT709_BT2020, x);
         // E' = G709[E], E=x, post exposure, in [0,1]
         // Note that when E=1.0
         // E' = 6.81, Fd = 100 * (6.81)^2.4 = 9989.714 Nits
