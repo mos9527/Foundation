@@ -114,15 +114,13 @@ void LoadGLTF(StringView path, FScene& scene)
     LOG(Scene, LogInfo, "Load GLTF Scene {}", path);
     cgltf_options options = {};
     cgltf_data* data = nullptr;
+    cgltf_result result = cgltf_parse_file(&options, path.data(), &data);
+    CHECK_MSG(result == cgltf_result_success, "Scene load failure: {}", static_cast<int>(result));
     UniquePtr<cgltf_data, decltype(&cgltf_free)> raii(data, &cgltf_free);
-    {
-        cgltf_result result = cgltf_parse_file(&options, path.data(), &data);
-        CHECK_MSG(result == cgltf_result_success, "Scene load failure: {}", static_cast<int>(result));
-        result = cgltf_load_buffers(&options, data, path.data());
-        CHECK_MSG(result == cgltf_result_success, "Buffer load failure: {}", static_cast<int>(result));
-        result = cgltf_validate(data);
-        CHECK_MSG(result == cgltf_result_success, "Scene validate failure: {}", static_cast<int>(result));
-    }
+    result = cgltf_load_buffers(&options, data, path.data());
+    CHECK_MSG(result == cgltf_result_success, "Buffer load failure: {}", static_cast<int>(result));
+    result = cgltf_validate(data);
+    CHECK_MSG(result == cgltf_result_success, "Scene validate failure: {}", static_cast<int>(result));
     /* Materials */
     // NOTE: Material 0 is reserved as the default material:
     // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#default-material

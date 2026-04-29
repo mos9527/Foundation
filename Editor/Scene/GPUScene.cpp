@@ -658,9 +658,8 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
     RHIAccelerationStructureBuildRangeInfo range{.primitiveCount = totalInstances
     };
     RHIAccelerationStructureBuildFlags buildFlags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace |
-        RHIAccelerationStructureBuildFlagsBits::AllowUpdate;
-    if (!update)
-        buildFlags |= RHIAccelerationStructureBuildFlagsBits::AllowCompaction;
+        RHIAccelerationStructureBuildFlagsBits::AllowUpdate |
+        RHIAccelerationStructureBuildFlagsBits::AllowCompaction;
     RHIAccelerationStructureBuildDesc desc{
         .type = RHIAccelerationStructureType::TopLevel,
         .flags = buildFlags,
