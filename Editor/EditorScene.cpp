@@ -52,8 +52,7 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamplerType
     // Selection weight
     float weight = 1.0f;
     if (sampler == GPUScene::LightSamplerType::Power) {
-        float luminance = 0.2126f * dst.color.x + 0.7152f * dst.color.y + 0.0722f * dst.color.z;
-        weight = luminance * dst.power;
+        weight = dst.power;
         if (dst.type == 3)
             weight *= dst.radius.x * dst.radius.y * pi<float>() * std::numbers::pi_v<float> *
                       (dst.twoSided != 0 ? 2.0f : 1.0f);
@@ -172,7 +171,6 @@ void ReplaceScene(StringView path)
         dst.normalTexture = src.normalTexture != kInvalidTexture ? textureIDMap[src.normalTexture] : UINT32_MAX;
         dst.transmissionFactor = src.transmissionFactor;
         dst.ior = src.ior;
-        dst.specularFactor = src.specularFactor;
         dst.subsurfaceFactor = src.subsurfaceFactor;
         dst.subsurfaceColor = src.subsurfaceColor;
         dst.subsurfaceRadius = src.subsurfaceRadius;

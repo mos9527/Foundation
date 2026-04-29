@@ -736,7 +736,7 @@ public struct LayeredBxDF : IBxDF {
 
         if ((topFlags & BxDFFlags::Specular) != 0) flags = flags | BxDFFlags::Specular;
 
-        if ((topFlags & BxDFFlags::Diffuse) != 0 || (bottomFlags & BxDFFlags::Diffuse) != 0 || dot(albedo,LUMINANCE_RGB) > 0)
+        if ((topFlags & BxDFFlags::Diffuse) != 0 || (bottomFlags & BxDFFlags::Diffuse) != 0 || dot(albedo, float3(1.0f)) > 0)
             flags = flags | BxDFFlags::Diffuse;
         else if ((topFlags & BxDFFlags::Glossy) != 0 || (bottomFlags & BxDFFlags::Glossy) != 0)
             flags = flags |  BxDFFlags::Glossy;

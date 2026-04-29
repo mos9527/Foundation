@@ -160,7 +160,7 @@ void LoadGLTF(StringView path, FScene& scene)
             // Glossiness → roughness
             material.roughnessFactor = 1.0f - sg.glossiness_factor;
             // Approximate metallic from specular luminance (perceived brightness)
-            float specLuminance = 0.2126f * sg.specular_factor[0] + 0.7152f * sg.specular_factor[1] + 0.0722f * sg.specular_factor[2];
+            float specLuminance = max(sg.specular_factor[0], max(sg.specular_factor[1], sg.specular_factor[2]));
             // Dielectric F0 ≈ 0.04; anything significantly above that is metallic
             constexpr float kDielectricF0 = 0.04f;
             material.metallicFactor = std::clamp((specLuminance - kDielectricF0) / (1.0f - kDielectricF0), 0.0f, 1.0f);
