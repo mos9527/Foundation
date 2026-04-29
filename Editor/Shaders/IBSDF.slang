@@ -17,6 +17,12 @@ public float reflectance(float F0, float F90, float2 lutE) {
 public float3 reflectance(float3 F0, float3 F90, float2 lutE) {
     return F0 * lutE.x + (F90 - F0) * lutE.y;
 }
+public void CalcGlossyFresnel(float ior, float specularFactor, out float F0, out float F90) {
+    ior = max(1.0f + 5e-3f, ior);
+    specularFactor = clamp(specularFactor, 0.0f, 1.0f);
+    F0 = clamp(F0FromIor(ior) * specularFactor, 0.0f, 1.0f);
+    F90 = F0 > EPS ? 1.0f : 0.0f;
+}
 // BSDF Layering function
 public float layer(float base, float top, float topReflectance) {
     return top + base * (1.0f - topReflectance);
@@ -290,13 +296,11 @@ public float PrincipledBSSRDFBranchProbability(
     float subsurface,
     float3 wo)
 {
-    ior = max(1.0f + 5e-3f, ior);
     roughness = max(8e-3f, roughness);
-    specularFactor = clamp(specularFactor, 0.0f, 1.0f);
     subsurface = clamp(subsurface, 0.0f, 1.0f);
 
-    float dielF0 = F0FromIor(ior) * specularFactor;
-    float dielF90 = specularFactor;
+    float dielF0, dielF90;
+    CalcGlossyFresnel(ior, specularFactor, dielF0, dielF90);
     float sampleGlossy = reflectance(dielF0, dielF90, SampleGGXLutE(AbsCosTheta(wo), roughness));
     float rawDiffuseFamily = (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
     float rawMetal    = metallic;
@@ -341,12 +345,10 @@ public struct PrincipledBSDFLobes {
     public __init(float3 baseColor, float metallic, float roughness, float ior, float specularFactor = 1.0f,
                   float transmission = 0.0f, bool energyCompensation = true, float3 wo = float3(0,0,1),
                   float subsurface = 0.0f, float3 subsurfaceColor = float3(1.0f), float3 subsurfaceRadius = float3(1.0f)) {
-        ior       = max(1.0f + 5e-3f, ior);
         roughness = max(8e-3f, roughness);
-        specularFactor = clamp(specularFactor, 0.0f, 1.0f);
         subsurface = clamp(subsurface, 0.0f, 1.0f);
-        float dielF0 = F0FromIor(ior) * specularFactor;
-        float dielF90 = specularFactor;
+        float dielF0, dielF90;
+        CalcGlossyFresnel(ior, specularFactor, dielF0, dielF90);
 
         // View-dependent Fresnel weight
         float sampleGlossy = reflectance(dielF0, dielF90, SampleGGXLutE(AbsCosTheta(wo), roughness));
