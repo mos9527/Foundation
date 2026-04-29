@@ -21,7 +21,7 @@ public void CalcGlossyFresnel(float ior, float specularFactor, out float F0, out
     ior = max(1.0f + 5e-3f, ior);
     specularFactor = clamp(specularFactor, 0.0f, 1.0f);
     F0 = clamp(F0FromIor(ior) * specularFactor, 0.0f, 1.0f);
-    F90 = F0 > EPS ? 1.0f : 0.0f;
+    F90 = specularFactor;
 }
 // BSDF Layering function
 public float layer(float base, float top, float topReflectance) {
@@ -347,6 +347,7 @@ public struct PrincipledBSDFLobes {
                   float subsurface = 0.0f, float3 subsurfaceColor = float3(1.0f), float3 subsurfaceRadius = float3(1.0f)) {
         roughness = max(8e-3f, roughness);
         subsurface = clamp(subsurface, 0.0f, 1.0f);
+        ior = max(1+5e-3f, ior);
         float dielF0, dielF90;
         CalcGlossyFresnel(ior, specularFactor, dielF0, dielF90);
 

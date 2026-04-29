@@ -92,7 +92,7 @@ static void SyncMaterialToGPU(uint32_t materialIndex)
     auto& src = GEditor.doc.scene.mMaterials[materialIndex];
     auto& dst = GEditor.doc.materials[materialIndex];
     dst.baseColorFactor = src.baseColorFactor;
-    dst.emissiveFactor = src.emissiveFactor;
+    dst.emissiveFactor = src.emissiveFactor * src.emissiveFactor.w;
     dst.metallicFactor = src.metallicFactor;
     dst.roughnessFactor = src.roughnessFactor;
     dst.transmissionFactor = src.transmissionFactor;
@@ -356,7 +356,7 @@ void FHierarchyPanel()
 
             bool changed = false;
             changed |= ImGui::ColorEdit4("Base Color", &material.baseColorFactor.x);
-            changed |= ImGui::DragFloat3("Emissive", &material.emissiveFactor.x, 0.01f, 0.0f, FLT_MAX, "%.3f");
+            changed |= ImHDRColorEdit("Emissive", reinterpret_cast<float3&>(material.emissiveFactor), material.emissiveFactor.w /* otherwise unused */);
             changed |= ImGui::SliderFloat("Metallic", &material.metallicFactor, 0.0f, 1.0f, "%.3f");
             changed |= ImGui::SliderFloat("Roughness", &material.roughnessFactor, 0.0f, 1.0f, "%.3f");
             changed |= ImGui::SliderFloat("Transmission", &material.transmissionFactor, 0.0f, 1.0f, "%.3f");

@@ -46,7 +46,7 @@ struct FMaterial
     // (0 .. 1]
     uint32_t normalTexture = kInvalidTexture;
     float4 baseColorFactor;
-    float3 emissiveFactor;
+    float4 emissiveFactor;
     float metallicFactor;
     float roughnessFactor;
     float transmissionFactor;
