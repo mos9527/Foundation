@@ -163,6 +163,6 @@ void DrawLightGizmos();
 void FRunningImGui();
 bool ImHDRColorEdit(const char* label, float4& value, float maxScale = 100.0f);
 
-void DoHDRReadback(PTReadbackHandles const& handles);
-void DoSDRReadback(PTReadbackHandles const& handles);
-void FRendering(PTReadbackHandles const& handles);
+void DoHDRReadback(RenderReadbackHandles const& handles);
+void DoSDRReadback(RenderReadbackHandles const& handles);
+void FRendering(RenderReadbackHandles const& handles);

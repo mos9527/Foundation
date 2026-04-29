@@ -45,7 +45,8 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamplerType
                 area = 4.0f * src.width * src.height;
             
             float totalArea = src.twoSided ? (2.0f * area) : area;
-            dst.power = src.power / totalArea;
+            // For a Lambertian emitter, total flux Phi = L * A * pi per emitting side.
+            dst.power = src.power / (totalArea * std::numbers::pi_v<float>);
         }
     }
     // Selection weight
@@ -54,9 +55,11 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamplerType
         float luminance = 0.2126f * dst.color.x + 0.7152f * dst.color.y + 0.0722f * dst.color.z;
         weight = luminance * dst.power;
         if (dst.type == 3)
-            weight *= dst.radius.x * dst.radius.y * pi<float>() * (dst.twoSided != 0 ? 2.0f : 1.0f);
+            weight *= dst.radius.x * dst.radius.y * pi<float>() * std::numbers::pi_v<float> *
+                      (dst.twoSided != 0 ? 2.0f : 1.0f);
         else if (dst.type == 4)
-            weight *= cross(dst.dpdu, dst.dpdv).length() * 4.0f * (dst.twoSided != 0 ? 2.0f : 1.0f);
+            weight *= cross(dst.dpdu, dst.dpdv).length() * 4.0f * std::numbers::pi_v<float> *
+                      (dst.twoSided != 0 ? 2.0f : 1.0f);
     }
     dst.selectionWeight = std::max(0.0f, weight);
 }

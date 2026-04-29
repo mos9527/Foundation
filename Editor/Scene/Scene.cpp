@@ -347,7 +347,7 @@ void LoadGLTF(StringView path, FScene& scene)
             light.color = float3{la->color[0], la->color[1], la->color[2]};
             light.range = 0.0f; // EXT_lights_area has no range
             light.twoSided = false; // Spec: emits from one side (-Z local)
-            light.normalize = true; // Treat `power` below as total flux; FLightToGSLight divides by area*pi → nits
+            light.normalize = true; // Treat `power` below as total flux; FLightToGSLight divides by area*pi -> radiance
 
             // glTF size → full width/height; FLight stores *half-extents*.
             // rect:  width = size * aspect, height = size
@@ -367,7 +367,7 @@ void LoadGLTF(StringView path, FScene& scene)
             light.width = fullW * 0.5f;
             light.height = fullH * 0.5f;
 
-            // Defined for unit areas
+            // Treated as total emitted flux for normalized area lights.
             light.power = la->intensity;
         }
     }

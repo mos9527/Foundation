@@ -57,7 +57,7 @@ void RendererSetupImGuiOnly(FContext* context)
     renderer->EndSetup();
 }
 
-void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, RasterReadbackHandles& outHandles)
+void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, RenderReadbackHandles& outHandles)
 {
     CHECK(context->device->GetCapabilities().meshShaders);
     if (context->renderer)
@@ -461,9 +461,11 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
     }
     auto LightingBuffer = renderer->CreateResource(
         "Lighting",
-        RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
+        RHITextureDesc{.usage = RHITextureUsageBits::StorageImage |
+                                  RHITextureUsageBits::SampledImage |
+                                  RHITextureUsageBits::TransferSource,
                        .extent = {w, h, 1},
-                       .format = RHIResourceFormat::B10G11R11Ufloat});
+                       .format = RHIResourceFormat::R32G32B32A32SignedFloat});
 
     auto LUTSampler = renderer->CreateSampler({
     .addressMode = {
@@ -509,7 +511,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSampler(self, EnvMapSampler, "envMapSampler");
             r->BindTextureUAV(self, LightingBuffer, "output", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
 
         },
@@ -527,7 +529,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Paths::Resolve("data/shaders/EPSBlit.spv"),
                           AsBytes(AsSpan(cfg.viewFlags)));
             r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::B10G11R11Ufloat,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create(
                                                      RHITextureAspectFlagBits::Color, 0, 1)});
             r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
@@ -548,5 +550,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
         });
     ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});
     renderer->EndSetup();
+    outHandles.hdrColor[0] = LightingBuffer;
+    outHandles.hdrColorCount = 1u;
     outHandles.pickResultBuffer = PickResultBuffer;
 }

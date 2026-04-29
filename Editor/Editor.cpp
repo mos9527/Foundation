@@ -2,7 +2,7 @@
 #include "EditorState.hpp"
 
 // File-local renderer state: written in FRunningEnter, consumed in FRunning/FRendering
-static PTReadbackHandles sPTReadback;
+static RenderReadbackHandles sRenderReadback;
 static RHIBuffer*        sPickResultBuffer = nullptr;
 static int2              sPendingPickPixel{-1, -1};
 
@@ -75,8 +75,8 @@ static void FRunningEnter()
         GContext->renderer = nullptr;
     }
     UpdateSwapchain(GContext);
-    // Invalidate stale PT readback handles before rebuilding the renderer
-    sPTReadback = {};
+    // Invalidate stale readback handles before rebuilding the renderer
+    sRenderReadback = {};
     RendererScene scene{
         .gsGlobals = &GEditor.shaderGlobals,
         .gsInstances = &GEditor.doc.instances,
@@ -88,14 +88,13 @@ static void FRunningEnter()
     };
     if (GEditor.rendererMode == ERendererMode::PathTracer)
     {
-        PathTracerSetup(GContext, GEditor.rendererConfig, scene, sPTReadback);
-        sPickResultBuffer = GContext->renderer->DerefResource(sPTReadback.pickResultBuffer).Get<RHIBuffer*>();
+        PathTracerSetup(GContext, GEditor.rendererConfig, scene, sRenderReadback);
+        sPickResultBuffer = GContext->renderer->DerefResource(sRenderReadback.pickResultBuffer).Get<RHIBuffer*>();
     }
     else
     {
-        RasterReadbackHandles rasterHandles;
-        RendererSetup(GContext, GEditor.rendererConfig, scene, rasterHandles);
-        sPickResultBuffer = GContext->renderer->DerefResource(rasterHandles.pickResultBuffer).Get<RHIBuffer*>();
+        RendererSetup(GContext, GEditor.rendererConfig, scene, sRenderReadback);
+        sPickResultBuffer = GContext->renderer->DerefResource(sRenderReadback.pickResultBuffer).Get<RHIBuffer*>();
     }
     GEditor.state = FERunning;
 }
@@ -269,7 +268,7 @@ bool EditorOnFrame(FContext* context)
         FRunning();
         break;
     case FERendering:
-        FRendering(sPTReadback);
+        FRendering(sRenderReadback);
         break;
     default:
         return true;

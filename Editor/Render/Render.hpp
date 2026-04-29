@@ -32,7 +32,7 @@ struct UBO
     float4 camDirection;
     // Environment light
     float3 ambientColor{1,1,1};
-    float ambientPower{0.25f};
+    float ambientPower{0.05f};
     uint32_t useEnvMap{0u};
     float envMapScale{1.0f};
     float envAzimuthOffset{0.0f}; // [-180, 180]
@@ -53,7 +53,7 @@ struct UBO
     uint32_t enableHDR{0u};
     float paperWhiteNits{100.0f};
     // -- Debug
-    uint32_t postShowOutline{1u};
+    uint32_t postShowOutline{0u};
 };
 #pragma pack(pop)
 
@@ -98,30 +98,25 @@ struct RendererScene
 };
 
 /**
- * @brief Resource handles for the rasterizer path, for editor readback.
+ * @brief Editor-side readback resources shared by both renderer paths.
+ *
+ * hdrColor receives one or more RGBA32F lighting textures. The editor sums them
+ * before writing HDR/EXR, so PT can export diffuse + specular while Raster exports
+ * its single lighting buffer.
  */
-struct RasterReadbackHandles
+struct RenderReadbackHandles
 {
+    ResourceHandle hdrColor[2]{kInvalidHandle, kInvalidHandle};
+    uint32_t hdrColorCount{0u};
     ResourceHandle pickResultBuffer{kInvalidHandle}; // R32_UINT, 4 bytes, persistently mapped
 };
 
-extern void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, RasterReadbackHandles& outHandles);
+extern void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, RenderReadbackHandles& outHandles);
 // Convenience overload — discards readback handles
 inline void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
 {
-    RasterReadbackHandles dummy;
+    RenderReadbackHandles dummy;
     RendererSetup(context, cfg, scene, dummy);
 }
 
-/**
- * @brief HDR resource handles holding the current accumulated path tracer result.
- * Set by PathTracerSetup; read by the editor at the end of each frame.
- */
-struct PTReadbackHandles
-{
-    ResourceHandle diffuse{kInvalidHandle};
-    ResourceHandle specular{kInvalidHandle};
-    ResourceHandle pickResultBuffer{kInvalidHandle}; // R32_UINT, 4 bytes, persistently mapped
-};
-
-extern void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene, PTReadbackHandles& outHandles);
+extern void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene, RenderReadbackHandles& outHandles);

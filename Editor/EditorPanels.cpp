@@ -188,7 +188,7 @@ void EditorDockSpaceAndMenuBar()
                 }
             }
             ImGui::Separator();
-            if (GEditor.rendererMode == ERendererMode::PathTracer && !GEditor.doc.instances.empty())
+            if (!GEditor.doc.instances.empty())
             {
                 if (ImGui::MenuItem("Render HDR..."))
                 {
@@ -222,15 +222,23 @@ void EditorDockSpaceAndMenuBar()
         }
         if (ImGui::BeginPopupModal("Render Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
-            ImGui::Text("Configure HDR render:");
+            const bool pathTracerRender = GEditor.rendererMode == ERendererMode::PathTracer;
+            ImGui::Text("Configure %s HDR render:", pathTracerRender ? "path tracer" : "raster");
             ImGui::Text("Output: %s", GEditor.renderTask.outputPath.c_str());
             ImGui::Separator();
-            ImGui::InputInt("Samples (frames)", &GEditor.renderTask.samplePopupInput);
-            if (GEditor.renderTask.samplePopupInput < 1)
-                GEditor.renderTask.samplePopupInput = 1;
+            if (pathTracerRender)
+            {
+                ImGui::InputInt("Samples (frames)", &GEditor.renderTask.samplePopupInput);
+                if (GEditor.renderTask.samplePopupInput < 1)
+                    GEditor.renderTask.samplePopupInput = 1;
+            }
+            else
+            {
+                ImGui::TextUnformatted("Raster export captures the next rendered frame.");
+            }
             if (ImGui::Button("Start Render"))
             {
-                GEditor.renderTask.targetSamples = GEditor.renderTask.samplePopupInput;
+                GEditor.renderTask.targetSamples = pathTracerRender ? GEditor.renderTask.samplePopupInput : 1;
                 GEditor.renderTask.renderPaused = false;
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
                 GEditor.state = FERendering;
@@ -967,68 +975,61 @@ void FRunningImGui()
 }
 
 /* ==================== HDR Readback ==================== */
-void DoHDRReadback(PTReadbackHandles const& handles)
+void DoHDRReadback(RenderReadbackHandles const& handles)
 {
     auto* renderer = GContext->renderer;
     auto [w, h] = renderer->GetSwapchainExtent();
     const size_t pixelCount = static_cast<size_t>(w) * h;
     const size_t imageBytes = pixelCount * 4 * sizeof(float); // RGBA32F
 
-    auto* diffuseTex = renderer->DerefResource(handles.diffuse).Get<RHITexture*>();
-    auto* specularTex = renderer->DerefResource(handles.specular).Get<RHITexture*>();
+    CHECK_MSG(handles.hdrColorCount > 0u && handles.hdrColorCount <= 2u, "Invalid HDR readback texture count");
+    RHITexture* hdrTextures[2]{nullptr, nullptr};
+    for (uint32_t i = 0; i < handles.hdrColorCount; ++i)
+        hdrTextures[i] = renderer->DerefResource(handles.hdrColor[i]).Get<RHITexture*>();
 
     auto readbackBuf = GContext->device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Readback,
                                                                     .hostAccess = RHIResourceHostAccess::ReadWrite,
                                                                     .coherent = true},
                                                        .usage = RHIBufferUsageBits::TransferDestination,
-                                                       .size = imageBytes * 2});
+                                                       .size = imageBytes * handles.hdrColorCount});
 
     {
         ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
         auto* cmd = ctx.Get();
         cmd->Begin();
         cmd->BeginTransition();
-        cmd->SetImageTransition(diffuseTex,
-                                {.srcAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
-                                 .dstAccess = RHIResourceAccessBits::TransferRead,
-                                 .srcStage = RHIPipelineStageBits::BottomOfPipe,
-                                 .dstStage = RHIPipelineStageBits::Transfer,
-                                 .srcImgLayout = RHITextureLayout::General,
-                                 .dstImgLayout = RHITextureLayout::TransferSrc,
-                                 .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
-        cmd->SetImageTransition(specularTex,
-                                {.srcAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
-                                 .dstAccess = RHIResourceAccessBits::TransferRead,
-                                 .srcStage = RHIPipelineStageBits::BottomOfPipe,
-                                 .dstStage = RHIPipelineStageBits::Transfer,
-                                 .srcImgLayout = RHITextureLayout::General,
-                                 .dstImgLayout = RHITextureLayout::TransferSrc,
-                                 .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        for (uint32_t i = 0; i < handles.hdrColorCount; ++i)
+        {
+            cmd->SetImageTransition(hdrTextures[i],
+                                    {.srcAccess = RHIResourceAccessBits::ShaderRead,
+                                     .dstAccess = RHIResourceAccessBits::TransferRead,
+                                     .srcStage = RHIPipelineStageBits::FragmentShader,
+                                     .dstStage = RHIPipelineStageBits::Transfer,
+                                     .srcImgLayout = RHITextureLayout::ShaderReadOnly,
+                                     .dstImgLayout = RHITextureLayout::TransferSrc,
+                                     .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        }
         cmd->EndTransition();
-        cmd->CopyImageToBuffer(
-            diffuseTex, RHITextureLayout::TransferSrc, readbackBuf.Get(),
-            {{{.dstBufferOffset = 0, .srcLayer = {.aspect = RHITextureAspectFlagBits::Color}, .extent = {w, h, 1}}}});
-        cmd->CopyImageToBuffer(specularTex, RHITextureLayout::TransferSrc, readbackBuf.Get(),
-                               {{{.dstBufferOffset = static_cast<uint32_t>(imageBytes),
-                                  .srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
-                                  .extent = {w, h, 1}}}});
+        for (uint32_t i = 0; i < handles.hdrColorCount; ++i)
+        {
+            cmd->CopyImageToBuffer(
+                hdrTextures[i], RHITextureLayout::TransferSrc, readbackBuf.Get(),
+                {{{.dstBufferOffset = static_cast<uint32_t>(i * imageBytes),
+                   .srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
+                   .extent = {w, h, 1}}}});
+        }
         cmd->BeginTransition();
-        cmd->SetImageTransition(diffuseTex,
-                                {.srcAccess = RHIResourceAccessBits::TransferRead,
-                                 .dstAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
-                                 .srcStage = RHIPipelineStageBits::Transfer,
-                                 .dstStage = RHIPipelineStageBits::TopOfPipe,
-                                 .srcImgLayout = RHITextureLayout::TransferSrc,
-                                 .dstImgLayout = RHITextureLayout::General,
-                                 .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
-        cmd->SetImageTransition(specularTex,
-                                {.srcAccess = RHIResourceAccessBits::TransferRead,
-                                 .dstAccess = RHIResourceAccessBits::ShaderRead | RHIResourceAccessBits::ShaderWrite,
-                                 .srcStage = RHIPipelineStageBits::Transfer,
-                                 .dstStage = RHIPipelineStageBits::TopOfPipe,
-                                 .srcImgLayout = RHITextureLayout::TransferSrc,
-                                 .dstImgLayout = RHITextureLayout::General,
-                                 .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        for (uint32_t i = 0; i < handles.hdrColorCount; ++i)
+        {
+            cmd->SetImageTransition(hdrTextures[i],
+                                    {.srcAccess = RHIResourceAccessBits::TransferRead,
+                                     .dstAccess = RHIResourceAccessBits::ShaderRead,
+                                     .srcStage = RHIPipelineStageBits::Transfer,
+                                     .dstStage = RHIPipelineStageBits::FragmentShader,
+                                     .srcImgLayout = RHITextureLayout::TransferSrc,
+                                     .dstImgLayout = RHITextureLayout::ShaderReadOnly,
+                                     .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        }
         cmd->EndTransition();
         cmd->End();
         ctx.Submit();
@@ -1036,27 +1037,36 @@ void DoHDRReadback(PTReadbackHandles const& handles)
     }
 
     auto* mapped = readbackBuf->Map<float>();
-    const float* diffuseData = mapped;
-    const float* specularData = mapped + pixelCount * 4;
     Vector<float> combined(pixelCount * 4, GLOBAL_ALLOC);
     for (size_t i = 0; i < pixelCount; ++i)
     {
-        combined[i * 4 + 0] = diffuseData[i * 4 + 0] + specularData[i * 4 + 0];
-        combined[i * 4 + 1] = diffuseData[i * 4 + 1] + specularData[i * 4 + 1];
-        combined[i * 4 + 2] = diffuseData[i * 4 + 2] + specularData[i * 4 + 2];
+        combined[i * 4 + 0] = 0.0f;
+        combined[i * 4 + 1] = 0.0f;
+        combined[i * 4 + 2] = 0.0f;
         combined[i * 4 + 3] = 1.0f;
+    }
+    for (uint32_t sourceIndex = 0; sourceIndex < handles.hdrColorCount; ++sourceIndex)
+    {
+        const float* sourceData = mapped + sourceIndex * pixelCount * 4;
+        for (size_t i = 0; i < pixelCount; ++i)
+        {
+            combined[i * 4 + 0] += sourceData[i * 4 + 0];
+            combined[i * 4 + 1] += sourceData[i * 4 + 1];
+            combined[i * 4 + 2] += sourceData[i * 4 + 2];
+        }
     }
     readbackBuf->Unmap();
 
     const char* hdrPath =
         GEditor.renderTask.outputPath.empty() ? "render_output.hdr" : GEditor.renderTask.outputPath.c_str();
     SaveHDR(combined.data(), static_cast<int>(w), static_cast<int>(h), hdrPath);
-    LOG(Editor, LogInfo, "HDR image saved to {} ({}x{}, {} samples)", hdrPath, w, h,
+    LOG(Editor, LogInfo, "{} HDR image saved to {} ({}x{}, {} frames)",
+        GEditor.rendererMode == ERendererMode::PathTracer ? "Path tracer" : "Raster", hdrPath, w, h,
         GEditor.shaderGlobals.ptAccumulatedFrames);
 }
 
 /* ==================== FRendering (offline render loop) ==================== */
-void FRendering(PTReadbackHandles const& handles)
+void FRendering(RenderReadbackHandles const& handles)
 {
     auto* renderer = GContext->renderer;
     renderer->BeginExecute();
@@ -1081,8 +1091,9 @@ void FRendering(PTReadbackHandles const& handles)
                 static_cast<float>(GEditor.renderTask.targetSamples)
                                                             : 0.0f;
         char overlay[128];
-        snprintf(overlay, sizeof(overlay), "%d / %d samples", GEditor.shaderGlobals.ptAccumulatedFrames,
-                 GEditor.renderTask.targetSamples);
+        snprintf(overlay, sizeof(overlay), "%d / %d %s", GEditor.shaderGlobals.ptAccumulatedFrames,
+                 GEditor.renderTask.targetSamples,
+                 GEditor.rendererMode == ERendererMode::PathTracer ? "samples" : "frames");
         ImGui::ProgressBar(fraction, ImVec2(barW, barH), overlay);
         ImGui::End();
         ImGui::PopStyleVar(2);
@@ -1117,7 +1128,7 @@ void FRendering(PTReadbackHandles const& handles)
     }
     else if (GEditor.shaderGlobals.ptAccumulatedFrames >= static_cast<uint32_t>(GEditor.renderTask.targetSamples))
     {
-        if (handles.diffuse != kInvalidHandle && handles.specular != kInvalidHandle)
+        if (handles.hdrColorCount > 0u)
             DoHDRReadback(handles);
         GEditor.state = FERunning;
     }

@@ -7,7 +7,7 @@
 #include "Render.hpp"
 using namespace RenderUtils;
 
-void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene, PTReadbackHandles& outHandles)
+void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene, RenderReadbackHandles& outHandles)
 {
     CHECK(context->device->GetCapabilities().raytracingPipeline);
     if (context->renderer)
@@ -109,8 +109,9 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
                                                .size = sizeof(uint32_t)});
 
     // Save handles for editor HDR export
-    outHandles.diffuse = Diffuse;
-    outHandles.specular = Specular;
+    outHandles.hdrColor[0] = Diffuse;
+    outHandles.hdrColor[1] = Specular;
+    outHandles.hdrColorCount = 2u;
     outHandles.pickResultBuffer = PickResultBuffer;
 
     ResourceHandle EnvMapMarginalCDF;
