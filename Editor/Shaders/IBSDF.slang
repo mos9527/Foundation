@@ -92,11 +92,13 @@ float PDFTransmittance(float3 wo, float3 wi, float eta, TrowbridgeReitzDistribut
 public struct DiffuseBSDF : IBxDF {
     float3 baseColor;
     float  dielF0;
+    float  dielF90;
     float  roughness;
 
-    public __init(float3 baseColor, float dielF0, float roughness) {
+    public __init(float3 baseColor, float dielF0, float dielF90, float roughness) {
         this.baseColor = baseColor;
         this.dielF0    = dielF0;
+        this.dielF90   = dielF90;
         this.roughness = roughness;
     }
 
@@ -105,7 +107,8 @@ public struct DiffuseBSDF : IBxDF {
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         if (!SameHemisphere(wo, wi)) return 0.0f;
         float2 lutE = SampleGGXLutE(AbsCosTheta(wo), roughness);
-        return baseColor * InvPi * (1.0f - reflectance(dielF0, 1.0f, lutE));
+        float specularReflectance = reflectance(dielF0, dielF90, lutE);
+        return baseColor * InvPi * max(1.0f - specularReflectance, 0.0f);
     }
 
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
@@ -187,12 +190,14 @@ public struct GlassBSDF : IBxDF {
 
 public struct GlossyBSDF : IBxDF {
     float  glossyF0;
+    float  glossyF90;
     float  roughness;
     bool   energyCompensation;
     TrowbridgeReitzDistribution mfDistrib;
 
-    public __init(float glossyF0, float roughness, bool energyCompensation) {
-        this.glossyF0             = glossyF0;
+    public __init(float glossyF0, float glossyF90, float roughness, bool energyCompensation) {
+        this.glossyF0           = glossyF0;
+        this.glossyF90          = glossyF90;
         this.roughness          = roughness;
         this.energyCompensation = energyCompensation;
         float alpha = roughness * roughness;
@@ -204,7 +209,7 @@ public struct GlossyBSDF : IBxDF {
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         if (!SameHemisphere(wo, wi)) return 0.0f;
         float2 lutE = SampleGGXLutE(AbsCosTheta(wo), roughness);
-        return TorranceSparrowReflection(wo, wi, float3(glossyF0), float3(1.0f), lutE, mfDistrib, energyCompensation);
+        return TorranceSparrowReflection(wo, wi, float3(glossyF0), float3(glossyF90), lutE, mfDistrib, energyCompensation);
     }
 
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
@@ -280,16 +285,19 @@ public float PrincipledBSSRDFBranchProbability(
     float metallic,
     float roughness,
     float ior,
+    float specularFactor,
     float transmission,
     float subsurface,
     float3 wo)
 {
     ior = max(1.0f + 5e-3f, ior);
     roughness = max(8e-3f, roughness);
+    specularFactor = clamp(specularFactor, 0.0f, 1.0f);
     subsurface = clamp(subsurface, 0.0f, 1.0f);
 
-    float dielF0 = F0FromIor(ior);
-    float sampleGlossy = reflectance(dielF0, 1.0f, SampleGGXLutE(AbsCosTheta(wo), roughness));
+    float dielF0 = F0FromIor(ior) * specularFactor;
+    float dielF90 = specularFactor;
+    float sampleGlossy = reflectance(dielF0, dielF90, SampleGGXLutE(AbsCosTheta(wo), roughness));
     float rawDiffuseFamily = (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
     float rawMetal    = metallic;
     float rawDielSpec = (1.0f - metallic) * sampleGlossy;
@@ -330,16 +338,18 @@ public struct PrincipledBSDFLobes {
 
     float weightSum;
 
-    public __init(float3 baseColor, float metallic, float roughness, float ior,
+    public __init(float3 baseColor, float metallic, float roughness, float ior, float specularFactor = 1.0f,
                   float transmission = 0.0f, bool energyCompensation = true, float3 wo = float3(0,0,1),
                   float subsurface = 0.0f, float3 subsurfaceColor = float3(1.0f), float3 subsurfaceRadius = float3(1.0f)) {
         ior       = max(1.0f + 5e-3f, ior);
         roughness = max(8e-3f, roughness);
+        specularFactor = clamp(specularFactor, 0.0f, 1.0f);
         subsurface = clamp(subsurface, 0.0f, 1.0f);
-        float dielF0 = F0FromIor(ior);
+        float dielF0 = F0FromIor(ior) * specularFactor;
+        float dielF90 = specularFactor;
 
         // View-dependent Fresnel weight
-        float sampleGlossy = reflectance(dielF0, 1.0f, SampleGGXLutE(AbsCosTheta(wo), roughness));
+        float sampleGlossy = reflectance(dielF0, dielF90, SampleGGXLutE(AbsCosTheta(wo), roughness));
 
         // Unnormalized weights
         float rawDiffuseFamily = (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
@@ -373,10 +383,10 @@ public struct PrincipledBSDFLobes {
         this.cMetal    = metallic;
 
         // Construct each lobe
-        this.diffuse  = DiffuseBSDF(baseColor, dielF0, roughness);
+        this.diffuse  = DiffuseBSDF(baseColor, dielF0, dielF90, roughness);
         this.subsurface = DisneyFakeSS(baseColor * subsurfaceColor, roughness);
         this.glass     = GlassBSDF(baseColor, ior, roughness, energyCompensation);
-        this.glossy    = GlossyBSDF(dielF0, roughness, energyCompensation);
+        this.glossy    = GlossyBSDF(dielF0, dielF90, roughness, energyCompensation);
         this.metallic  = MetallicBSDF(baseColor, roughness, energyCompensation);
     }
 

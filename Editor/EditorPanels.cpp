@@ -97,6 +97,7 @@ static void SyncMaterialToGPU(uint32_t materialIndex)
     dst.roughnessFactor = src.roughnessFactor;
     dst.transmissionFactor = src.transmissionFactor;
     dst.ior = src.ior;
+    dst.specularFactor = src.specularFactor;
     dst.subsurfaceFactor = src.subsurfaceFactor;
     dst.subsurfaceColor = src.subsurfaceColor;
     dst.subsurfaceRadius = src.subsurfaceRadius;
@@ -360,6 +361,7 @@ void FHierarchyPanel()
             changed |= ImGui::SliderFloat("Roughness", &material.roughnessFactor, 0.0f, 1.0f, "%.3f");
             changed |= ImGui::SliderFloat("Transmission", &material.transmissionFactor, 0.0f, 1.0f, "%.3f");
             changed |= ImGui::SliderFloat("IOR", &material.ior, 1.0f, 3.0f, "%.3f");
+            changed |= ImGui::SliderFloat("Specular", &material.specularFactor, 0.0f, 1.0f, "%.3f");
 
             ImGui::SeparatorText("Subsurface");
             changed |= ImGui::SliderFloat("Weight", &material.subsurfaceFactor, 0.0f, 1.0f, "%.3f");

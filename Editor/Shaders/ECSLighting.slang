@@ -90,7 +90,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
         float3 n = float3(0,0,1);
         float3 wo = toLocal.rotate(v);
 
-        PrincipledBSDFLobes bsdf = PrincipledBSDFLobes(baseColor, metallic, roughness, 1.5f, 0.0f, true, wo);
+        PrincipledBSDFLobes bsdf = PrincipledBSDFLobes(baseColor, metallic, roughness, 1.5f, 1.0f, 0.0f, true, wo);
 
         // TODO: Area lights.
         uint32_t numLights = min(globalParams.numSceneLights, 4u);

@@ -181,6 +181,7 @@ void LoadGLTF(StringView path, FScene& scene)
         material.emissiveFactor *= mat->emissive_strength.emissive_strength;
         material.transmissionFactor = mat->transmission.transmission_factor;
         material.ior = mat->has_ior ? mat->ior.ior : 1.5f;
+        material.specularFactor = mat->has_specular ? mat->specular.specular_factor : 1.0f;
         material.subsurfaceFactor = 0.0f;
         material.subsurfaceColor = {1.0f, 1.0f, 1.0f};
         // Blender defaults

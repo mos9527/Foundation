@@ -51,6 +51,7 @@ struct FMaterial
     float roughnessFactor;
     float transmissionFactor;
     float ior = 1.5f;
+    float specularFactor = 1.0f;
     float subsurfaceFactor = 0.0f;
     float3 subsurfaceColor{1.0f, 1.0f, 1.0f};
     float3 subsurfaceRadius{1.0f, 1.0f, 1.0f};
@@ -79,9 +80,7 @@ struct FLight
     bool twoSided{false};
     bool normalize{true};
 };
-static constexpr uint32_t kSceneMagicV1 = fourCC("FSCN");
-static constexpr uint32_t kSceneMagicV2 = fourCC("FSC2");
-static constexpr uint32_t kSceneMagic = fourCC("FSC3");
+static constexpr uint32_t kSceneMagic = fourCC("FSCN");
 struct FScene
 {
     uint32_t mMagic;
@@ -128,73 +127,11 @@ template <>
 inline void FDeserialize(FReader& r, FScene& obj)
 {
     FDeserialize(r, obj.mMagic);
-    CHECK(obj.mMagic == kSceneMagic || obj.mMagic == kSceneMagicV2 || obj.mMagic == kSceneMagicV1);
-    uint32_t sourceMagic = obj.mMagic;
-    if (sourceMagic == kSceneMagic)
-    {
-        FDeserialize(r, obj.mCameras);
-    }
-    else
-    {
-        struct FCameraV2
-        {
-            FTransform transform;
-            float fovY;
-        };
-
-        uint64_t count = 0;
-        FDeserialize(r, count);
-        obj.mCameras.resize(count);
-        for (size_t i = 0; i < count; ++i)
-        {
-            FCameraV2 src{};
-            FDeserialize(r, src);
-            auto& dst = obj.mCameras[i];
-            dst.transform = src.transform;
-            dst.fovY = src.fovY;
-        }
-    }
+    CHECK(obj.mMagic == kSceneMagic);
+    FDeserialize(r, obj.mCameras);
     FDeserialize(r, obj.mInstances);
-    if (sourceMagic == kSceneMagicV1)
-    {
-        struct FMaterialV1
-        {
-            uint32_t baseColorTexture;
-            uint32_t emissiveTexture;
-            uint32_t metallicRoughnessTexture;
-            uint32_t normalTexture;
-            float4 baseColorFactor;
-            float3 emissiveFactor;
-            float metallicFactor;
-            float roughnessFactor;
-            float transmissionFactor;
-            float ior;
-        };
-
-        uint64_t count = 0;
-        FDeserialize(r, count);
-        obj.mMaterials.resize(count);
-        for (size_t i = 0; i < count; ++i)
-        {
-            FMaterialV1 src{};
-            FDeserialize(r, src);
-            auto& dst = obj.mMaterials[i];
-            dst.baseColorTexture = src.baseColorTexture;
-            dst.emissiveTexture = src.emissiveTexture;
-            dst.metallicRoughnessTexture = src.metallicRoughnessTexture;
-            dst.normalTexture = src.normalTexture;
-            dst.baseColorFactor = src.baseColorFactor;
-            dst.emissiveFactor = src.emissiveFactor;
-            dst.metallicFactor = src.metallicFactor;
-            dst.roughnessFactor = src.roughnessFactor;
-            dst.transmissionFactor = src.transmissionFactor;
-            dst.ior = src.ior;
-        }
-    }
-    else
-        FDeserialize(r, obj.mMaterials);
+    FDeserialize(r, obj.mMaterials);
     FDeserialize(r, obj.mMeshes, obj.mMeshes.get_allocator().mResource);
     FDeserialize(r, obj.mTextures, obj.mTextures.get_allocator().mResource);
     FDeserialize(r, obj.mLights);
-    obj.mMagic = kSceneMagic;
 }

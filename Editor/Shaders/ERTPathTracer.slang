@@ -161,6 +161,7 @@ struct Payload
     float roughness;
     float transmission;
     float ior;
+    float specularFactor;
     float subsurface;
     float3 subsurfaceColor;
     float3 subsurfaceRadius;
@@ -224,6 +225,7 @@ Payload SamplePayload(HitPayload payload, RayDesc ray)
     // Apply normal map in tangent space
     res.hit.normal = normalize(res.hit.tangent * normalTBN.x + res.hit.bitangent * normalTBN.y + res.hit.normal * normalTBN.z);
     res.ior = material.ior;
+    res.specularFactor = material.specularFactor;
     res.transmission = material.transmissionFactor;
     res.subsurface = material.subsurfaceFactor;
     res.subsurfaceColor = material.subsurfaceColor;
@@ -822,12 +824,12 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         // Construct local lobes with their weights
         PrincipledBSDFLobes bsdf = PrincipledBSDFLobes(
             surface.baseColor, surface.metallic, surface.roughness,
-            surface.ior, surface.transmission, true, wo,
+            surface.ior, surface.specularFactor, surface.transmission, true, wo,
             surface.subsurface, surface.subsurfaceColor, surface.subsurfaceRadius);
         // Subsurface lobes are non-local. We take care of those paths ab initio with a different branch
         float pSampleBSSRDF = HasUsableBSSRDF(surface)
             ? PrincipledBSSRDFBranchProbability(surface.metallic, surface.roughness, surface.ior,
-                                                surface.transmission, surface.subsurface, wo)
+                                                surface.specularFactor, surface.transmission, surface.subsurface, wo)
             : 0.0f;
         pSampleBSSRDF = clamp(pSampleBSSRDF, 0.0f, 1.0f);
         bool sampleBSSRDF = pSampleBSSRDF > EPS && (pSampleBSSRDF >= 1.0f || rng.sample() < pSampleBSSRDF);

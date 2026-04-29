@@ -106,6 +106,7 @@ public struct GSMaterial
     public float roughnessFactor;
     public float transmissionFactor;
     public float ior;
+    public float specularFactor;
     public float anisotropy;
     public float subsurfaceFactor;
     public float3 subsurfaceColor;
