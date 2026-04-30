@@ -56,7 +56,7 @@ void ImGui_ImplFoundation_NewFrame()
     ImGui_ImplSDL3_NewFrame();
 }
 void ImGui_ImplFoundation_Shutdown() { gImGuiTexturePool.reset(); }
-
+// Tagged pointer.
 Pair<uint32_t, ImGui_ImplFoundation_ImageSampler> ImGui_ImplFoundation_DecodeImTextureID(ImTextureID id)
 {
     uint32_t handle = (id & ~0u) - 1; // 0 reserved

@@ -78,45 +78,36 @@ static const int kCullBackface = 1 << 2;
 static const int kCullStageEarly = 1 << 16;
 static const int kCullStageLate = 1 << 17;
 
-extern void RendererSetupImGuiOnly(FContext* context);
-
 struct RendererConfig
 {
     unsigned viewFlags{kEnableRasterRTShadows};
     unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
 };
 
+struct RendererPicking
+{
+    int2 pendingPixel{-1, -1}; // (-1,-1) = no pending pick
+};
+
 struct RendererScene
 {
     UBO* gsGlobals;
     Vector<GSInstance>* gsInstances;
-    Vector<GSMaterial>* gsMaterials;
-    Vector<GSMesh>* gsMeshes;
     Vector<uint32_t>* gsBLASes;
     Vector<GSLight>* gsLights;
-    int2* gsPickPixel; // Points to sPendingPickPixel in Editor.cpp; (-1,-1) = no pending pick
+    RendererPicking* picking;
 };
 
-/**
- * @brief Editor-side readback resources shared by both renderer paths.
- *
- * hdrColor receives one or more RGBA32F lighting textures. The editor sums them
- * before writing HDR/EXR, so PT can export diffuse + specular while Raster exports
- * its single lighting buffer.
- */
-struct RenderReadbackHandles
+struct RendererHandles
 {
-    ResourceHandle hdrColor[2]{kInvalidHandle, kInvalidHandle};
-    uint32_t hdrColorCount{0u};
-    ResourceHandle pickResultBuffer{kInvalidHandle}; // R32_UINT, 4 bytes, persistently mapped
+    ResourceHandle hdrRT[2]{kInvalidHandle, kInvalidHandle};
+    uint32_t numHdrRT{0u};
+    ResourceHandle pickBuffer{kInvalidHandle}; // R32_UINT, 4 bytes, persistently mapped
+
 };
 
-extern void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, RenderReadbackHandles& outHandles);
-// Convenience overload — discards readback handles
-inline void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene)
-{
-    RenderReadbackHandles dummy;
-    RendererSetup(context, cfg, scene, dummy);
-}
-
-extern void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene, RenderReadbackHandles& outHandles);
+extern void BuildIdleRenderGraph(FContext* context, float const* timeSeconds);
+extern void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene scene, RHIExtent2D renderExtent,
+                                   RendererHandles& outHandles);
+extern void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererScene scene, RHIExtent2D renderExtent,
+                                       RendererHandles& outHandles, bool const* renderPaused);

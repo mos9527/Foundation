@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <numbers>
 
-void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamplerType sampler)
+static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamplerType sampler)
 {
     dst.type = static_cast<uint32_t>(src.type);
     dst.color = src.color;
@@ -63,6 +63,111 @@ void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamplerType
     dst.selectionWeight = std::max(0.0f, weight);
 }
 
+void CommitSceneToGPU(bool resetAccumulation)
+{
+    auto res = GContext->gpuScene->UpdateGPUScene(GEditor.doc.instances, GEditor.doc.materials, GEditor.doc.lights);
+    GEditor.shaderGlobals.firstInstance = res.firstInstance;
+    GEditor.shaderGlobals.numInstances  = res.numInstances;
+    GEditor.shaderGlobals.firstMaterial = res.firstMaterial;
+    GEditor.shaderGlobals.numMaterials  = res.numMaterials;
+    GEditor.shaderGlobals.firstLight    = res.firstLight;
+    GEditor.shaderGlobals.firstLightAliasTable = res.firstLightAliasTable;
+    GEditor.shaderGlobals.sceneLightWeightSum = res.sceneLightWeightSum;
+    if (resetAccumulation)
+        GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+}
+
+void DoHDRReadback(RendererHandles const& handles)
+{
+    auto* renderer = GContext->renderer;
+
+    CHECK_MSG(handles.numHdrRT > 0u && handles.numHdrRT <= 2u, "Invalid HDR readback texture count");
+    RHITexture* hdrTextures[2]{nullptr, nullptr};
+    for (uint32_t i = 0; i < handles.numHdrRT; ++i)
+        hdrTextures[i] = renderer->DerefResource(handles.hdrRT[i]).Get<RHITexture*>();
+    uint32_t w = hdrTextures[0]->mDesc.extent.x;
+    uint32_t h = hdrTextures[0]->mDesc.extent.y;
+    const size_t pixelCount = static_cast<size_t>(w) * h;
+    const size_t imageBytes = pixelCount * 4 * sizeof(float); // RGBA32F
+
+    auto readbackBuf = GContext->device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Readback,
+                                                                    .hostAccess = RHIResourceHostAccess::ReadWrite,
+                                                                    .coherent = true},
+                                                       .usage = RHIBufferUsageBits::TransferDestination,
+                                                       .size = imageBytes * handles.numHdrRT});
+
+    {
+        ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
+        auto* cmd = ctx.Get();
+        cmd->Begin();
+        cmd->BeginTransition();
+        for (uint32_t i = 0; i < handles.numHdrRT; ++i)
+        {
+            cmd->SetImageTransition(hdrTextures[i],
+                                    {.srcAccess = RHIResourceAccessBits::ShaderRead,
+                                     .dstAccess = RHIResourceAccessBits::TransferRead,
+                                     .srcStage = RHIPipelineStageBits::FragmentShader,
+                                     .dstStage = RHIPipelineStageBits::Transfer,
+                                     .srcImgLayout = RHITextureLayout::ShaderReadOnly,
+                                     .dstImgLayout = RHITextureLayout::TransferSrc,
+                                     .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        }
+        cmd->EndTransition();
+        for (uint32_t i = 0; i < handles.numHdrRT; ++i)
+        {
+            cmd->CopyImageToBuffer(
+                hdrTextures[i], RHITextureLayout::TransferSrc, readbackBuf.Get(),
+                {{{.dstBufferOffset = static_cast<uint32_t>(i * imageBytes),
+                   .srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
+                   .extent = {w, h, 1}}}});
+        }
+        cmd->BeginTransition();
+        for (uint32_t i = 0; i < handles.numHdrRT; ++i)
+        {
+            cmd->SetImageTransition(hdrTextures[i],
+                                    {.srcAccess = RHIResourceAccessBits::TransferRead,
+                                     .dstAccess = RHIResourceAccessBits::ShaderRead,
+                                     .srcStage = RHIPipelineStageBits::Transfer,
+                                     .dstStage = RHIPipelineStageBits::FragmentShader,
+                                     .srcImgLayout = RHITextureLayout::TransferSrc,
+                                     .dstImgLayout = RHITextureLayout::ShaderReadOnly,
+                                     .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        }
+        cmd->EndTransition();
+        cmd->End();
+        ctx.Submit();
+        ctx.WaitIdle();
+    }
+
+    auto* mapped = readbackBuf->Map<float>();
+    Vector<float> combined(pixelCount * 4, GLOBAL_ALLOC);
+    for (size_t i = 0; i < pixelCount; ++i)
+    {
+        combined[i * 4 + 0] = 0.0f;
+        combined[i * 4 + 1] = 0.0f;
+        combined[i * 4 + 2] = 0.0f;
+        combined[i * 4 + 3] = 1.0f;
+    }
+    for (uint32_t sourceIndex = 0; sourceIndex < handles.numHdrRT; ++sourceIndex)
+    {
+        const float* sourceData = mapped + sourceIndex * pixelCount * 4;
+        for (size_t i = 0; i < pixelCount; ++i)
+        {
+            combined[i * 4 + 0] += sourceData[i * 4 + 0];
+            combined[i * 4 + 1] += sourceData[i * 4 + 1];
+            combined[i * 4 + 2] += sourceData[i * 4 + 2];
+        }
+    }
+    readbackBuf->Unmap();
+
+    const char* hdrPath =
+        GEditor.renderTask.outputPath.empty() ? "render_output.hdr" : GEditor.renderTask.outputPath.c_str();
+    SaveHDR(combined.data(), static_cast<int>(w), static_cast<int>(h), hdrPath);
+    LOG(Editor, LogInfo, "{} HDR image saved to {} ({}x{}, {} frames)",
+        GEditor.rendererMode == ERendererMode::PathTracer ? "Path tracer" : "Raster", hdrPath, w, h,
+        GEditor.shaderGlobals.ptAccumulatedFrames);
+}
+
 void UpdateSceneLights()
 {
     uint32_t count = static_cast<uint32_t>(GEditor.doc.scene.mLights.size());
@@ -76,19 +181,72 @@ void UpdateSceneLights()
         FLightToGSLight(src, GEditor.doc.lights[i], GContext->gpuScene->mLightSamplerType);
     }
 
-    // Update GPU scene with lights
-    auto* gpu = GContext->gpuScene;
-    auto res = gpu->UpdateGPUScene(GEditor.doc.instances, GEditor.doc.materials, GEditor.doc.lights);
-    GEditor.shaderGlobals.firstInstance = res.firstInstance;
-    GEditor.shaderGlobals.numInstances  = res.numInstances;
-    GEditor.shaderGlobals.firstMaterial = res.firstMaterial;
-    GEditor.shaderGlobals.numMaterials  = res.numMaterials;
-    GEditor.shaderGlobals.firstLight    = res.firstLight;
-    GEditor.shaderGlobals.firstLightAliasTable = res.firstLightAliasTable;
-    GEditor.shaderGlobals.sceneLightWeightSum = res.sceneLightWeightSum;
+    CommitSceneToGPU(false);
 }
 
-/* ==================== ReplaceScene ==================== */
+static uint32_t RemapTextureIndex(Vector<uint32_t> const& textureIDMap, uint32_t sourceIndex)
+{
+    return sourceIndex != kInvalidTexture ? textureIDMap[sourceIndex] : UINT32_MAX;
+}
+
+static void BuildEditorMaterials(Vector<uint32_t> const& textureIDMap)
+{
+    for (auto& src : GEditor.doc.scene.mMaterials)
+    {
+        auto& dst = GEditor.doc.materials.emplace_back();
+        dst.baseColorFactor = src.baseColorFactor;
+        dst.emissiveFactor = src.emissiveFactor;
+        dst.metallicFactor = src.metallicFactor;
+        dst.roughnessFactor = src.roughnessFactor;
+        dst.baseColorTexture = RemapTextureIndex(textureIDMap, src.baseColorTexture);
+        dst.emissiveTexture = RemapTextureIndex(textureIDMap, src.emissiveTexture);
+        dst.metallicRoughnessTexture = RemapTextureIndex(textureIDMap, src.metallicRoughnessTexture);
+        dst.normalTexture = RemapTextureIndex(textureIDMap, src.normalTexture);
+        dst.transmissionFactor = src.transmissionFactor;
+        dst.ior = src.ior;
+        dst.specularFactor = src.specularFactor;
+        dst.subsurfaceFactor = src.subsurfaceFactor;
+        dst.subsurfaceColor = src.subsurfaceColor;
+        dst.subsurfaceRadius = src.subsurfaceRadius;
+    }
+}
+
+static void BuildEditorInstances(Vector<uint32_t> const& meshOffsets)
+{
+    for (auto& src : GEditor.doc.scene.mInstances)
+    {
+        auto& dst = GEditor.doc.instances.emplace_back();
+        dst.transform = src.transform.transform;
+        dst.rotation = src.transform.rotation;
+        dst.scale = src.transform.scale;
+        dst.meshOffset = meshOffsets[src.meshIndex];
+        dst.materialIndex = src.materialIndex;
+        dst.meshIndex = src.meshIndex;
+    }
+}
+
+static void ApplySceneCamera()
+{
+    if (GEditor.doc.scene.mCameras.empty())
+        return;
+
+    auto& camera = GEditor.doc.scene.mCameras.front();
+    vec3 dir = camera.transform.rotation * vec3(0, 0, 1);
+    GEditor.camera.center = camera.transform.transform - dir * GEditor.camera.radius;
+    GEditor.camera.rot = camera.transform.rotation;
+    GEditor.camera.fovY = camera.fovY;
+    GEditor.aperture.dofEnabled = camera.lensEnabled;
+    if (camera.lensEnabled)
+    {
+        GEditor.aperture.sensorHeightMm = camera.sensorHeightMm;
+        GEditor.aperture.fStop = camera.fStop;
+        GEditor.shaderGlobals.focalDistance = camera.focusDistance;
+        GEditor.shaderGlobals.apertureBlades = camera.apertureBlades;
+        GEditor.shaderGlobals.apertureRotation = camera.apertureRotation;
+        GEditor.shaderGlobals.apertureRatio = camera.apertureRatio;
+    }
+}
+
 void ReplaceScene(StringView path)
 {
     LOG(Editor, LogInfo, "Loading scene: {}", path);
@@ -157,58 +315,12 @@ void ReplaceScene(StringView path)
         upload.End(), upload.WaitIdle();
     }
 
-    // Materials: remap texture indices
-    for (auto& src : GEditor.doc.scene.mMaterials)
-    {
-        auto& dst = GEditor.doc.materials.emplace_back();
-        dst.baseColorFactor = src.baseColorFactor;
-        dst.emissiveFactor = src.emissiveFactor;
-        dst.metallicFactor = src.metallicFactor;
-        dst.roughnessFactor = src.roughnessFactor;
-        dst.baseColorTexture = src.baseColorTexture != kInvalidTexture ? textureIDMap[src.baseColorTexture] : UINT32_MAX;
-        dst.emissiveTexture = src.emissiveTexture != kInvalidTexture ? textureIDMap[src.emissiveTexture] : UINT32_MAX;
-        dst.metallicRoughnessTexture = src.metallicRoughnessTexture != kInvalidTexture ? textureIDMap[src.metallicRoughnessTexture] : UINT32_MAX;
-        dst.normalTexture = src.normalTexture != kInvalidTexture ? textureIDMap[src.normalTexture] : UINT32_MAX;
-        dst.transmissionFactor = src.transmissionFactor;
-        dst.ior = src.ior;
-        dst.specularFactor = src.specularFactor;
-        dst.subsurfaceFactor = src.subsurfaceFactor;
-        dst.subsurfaceColor = src.subsurfaceColor;
-        dst.subsurfaceRadius = src.subsurfaceRadius;
-    }
-
-    // Instances
-    for (auto& src : GEditor.doc.scene.mInstances)
-    {
-        auto& dst = GEditor.doc.instances.emplace_back();
-        dst.transform = src.transform.transform;
-        dst.rotation = src.transform.rotation;
-        dst.scale = src.transform.scale;
-        dst.meshOffset = meshOffsets[src.meshIndex];
-        dst.materialIndex = src.materialIndex;
-        dst.meshIndex = src.meshIndex;
-    }
+    BuildEditorMaterials(textureIDMap);
+    BuildEditorInstances(meshOffsets);
 
     // Apply camera and lighting data (needs to be done before UpdateGPUScene to have lights ready)
     {
-        if (!GEditor.doc.scene.mCameras.empty())
-        {
-            auto& camera = GEditor.doc.scene.mCameras.front();
-            vec3 dir = camera.transform.rotation * vec3(0, 0, 1);
-            GEditor.camera.center = camera.transform.transform - dir * GEditor.camera.radius;
-            GEditor.camera.rot = camera.transform.rotation;
-            GEditor.camera.fovY = camera.fovY;
-            GEditor.aperture.dofEnabled = camera.lensEnabled;
-            if (camera.lensEnabled)
-            {
-                GEditor.aperture.sensorHeightMm = camera.sensorHeightMm;
-                GEditor.aperture.fStop = camera.fStop;
-                GEditor.shaderGlobals.focalDistance = camera.focusDistance;
-                GEditor.shaderGlobals.apertureBlades = camera.apertureBlades;
-                GEditor.shaderGlobals.apertureRotation = camera.apertureRotation;
-                GEditor.shaderGlobals.apertureRatio = camera.apertureRatio;
-            }
-        }
+        ApplySceneCamera();
         UpdateSceneLights();
     }
 
@@ -240,7 +352,6 @@ void ReplaceScene(StringView path)
     GEditor.state = FERunningEnter;
 }
 
-/* ==================== LoadEnvMap ==================== */
 void LoadEnvMap(StringView path)
 {
     LOG(Editor, LogInfo, "Loading HDRI env map: {}", path);
@@ -265,7 +376,6 @@ void LoadEnvMap(StringView path)
     }
 }
 
-/* ==================== SaveScene ==================== */
 void SaveScene(StringView path)
 {
     LOG(Editor, LogInfo, "Saving scene to: {}", path);
@@ -282,7 +392,6 @@ void SaveScene(StringView path)
     }
 }
 
-/* -- Drag-and-drop file handler: dispatch to the appropriate loader based on file extension -- */
 void HandleFile(const char* filePath)
 {
     auto path = std::filesystem::path(filePath);

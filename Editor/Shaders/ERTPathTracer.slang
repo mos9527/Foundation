@@ -3,10 +3,15 @@
 // - RAY TRACING GEMS II - Chapter 14
 // - https://github.com/boksajak/referencePT/blob/master/shaders/PathTracer.hlsl
 // - https://github.com/nvpro-samples/vk_gltf_renderer/blob/master/shaders/gltf_pathtrace.slang
+// And many more. Respective includes will tell.
 import IFlags;
 import ICommon;
 import ILight;
-#include "IBSDF.slang"
+import IBSDF;
+import IBSSRDF;
+import IMath;
+import IBxDF;
+
 uniform UBO globalParams;
 
 struct Alias {
@@ -40,6 +45,7 @@ static const uint kSERCoherenceHintBits = 8u;
 static const uint kRayTypeSurface = 0u;
 static const uint kRayTypeShadow = 1u;
 static const uint kRayTypeBSSRDFQuery = 2u;
+static const uint32_t kLightInstanceBit = 1u << 23;
 
 // World-space hit geometry
 struct HitState
@@ -60,6 +66,31 @@ uint GetInstanceBufferIndex(uint localInstanceIndex)
 uint GetMaterialBufferIndex(uint localMaterialIndex)
 {
     return globalParams.firstMaterial + localMaterialIndex;
+}
+
+bool IsLightInstance(uint instance)
+{
+    return (instance & kLightInstanceBit) != 0u;
+}
+
+uint GetLightIndex(uint lightInstance)
+{
+    return lightInstance & ~kLightInstanceBit;
+}
+
+GSInstance LoadSceneInstance(uint localInstanceIndex)
+{
+    return instances[NonUniformResourceIndex(GetInstanceBufferIndex(localInstanceIndex))];
+}
+
+GSMaterial LoadMaterial(uint localMaterialIndex)
+{
+    return materials[NonUniformResourceIndex(GetMaterialBufferIndex(localMaterialIndex))];
+}
+
+GSLight LoadSceneLight(uint localLightIndex)
+{
+    return lights[NonUniformResourceIndex(globalParams.firstLight + localLightIndex)];
 }
 
 HitState getHitState(uint meshOffset, uint primitive, float2 bary, GSInstance inst, float3 rayOrigin, float3 rayDirection, float hitT)
@@ -183,7 +214,7 @@ struct BSSRDFSurfaceSample
     }
 };
 
-struct Path
+struct PathSample
 {
     bool valid;
     float3 beta;
@@ -207,15 +238,41 @@ struct Path
     }
 };
 
+struct PathRadiance
+{
+    float3 diffuse;
+    float3 specular;
+
+    __init()
+    {
+        this.diffuse = float3(0.0f);
+        this.specular = float3(0.0f);
+    }
+};
+
+struct DirectLightingState
+{
+    InfiniteLight env;
+    float totalLightWeight;
+    LightSampleContext lastLightCtx;
+
+    __init(InfiniteLight env, float totalLightWeight)
+    {
+        this.env = env;
+        this.totalLightWeight = totalLightWeight;
+        this.lastLightCtx = LightSampleContext(float3(0), float3(0), float3(0));
+    }
+};
+
 Payload SamplePayload(HitPayload payload, RayDesc ray)
 {
     if (!payload.IsHit()) // Misuse
         return {};
-    GSInstance inst = instances[NonUniformResourceIndex(GetInstanceBufferIndex(payload.instance))];
+    GSInstance inst = LoadSceneInstance(payload.instance);
     Payload res;
     res.materialID = inst.materialIndex;
     res.hit = getHitState(inst.meshOffset, payload.primitive, payload.bary, inst, ray.Origin, ray.Direction, payload.hitT);
-    GSMaterial material = materials[NonUniformResourceIndex(GetMaterialBufferIndex(res.materialID))];
+    GSMaterial material = LoadMaterial(res.materialID);
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
     SampleMaterials(material, res.hit.uv, baseColor4, normalTBN, pbrMetalRough, emissive4);
     res.baseColor = baseColor4.xyz;
@@ -275,6 +332,31 @@ float2 SampleAnamorphicLens(float2 u)
     return bokeh;
 }
 
+RayDesc GenerateCameraRay<S : ISampler>(uint2 pixel, inout S rng)
+{
+    RayDesc ray;
+    ray.Origin = globalParams.camPosition.xyz;
+    ray.Direction = GeneratePrimaryRay(pixel, rng);
+    ray.TMin = EPS_TMin;
+    ray.TMax = INF;
+
+    // Simple Physical Lens
+    // https://www.pbr-book.org/4ed/Cameras_and_Film/Projective_Camera_Models#fragment-Computepointonplaneoffocus-0
+    // https://github.com/nvpro-samples/vk_gltf_renderer/blob/master/shaders/gltf_pathtrace.slang#L922
+    if (globalParams.aperture > EPS)
+    {
+        float3 focalPoint = globalParams.focalDistance * ray.Direction;
+        float3 T = mul(globalParams.inverseView, float4(1, 0, 0, 0)).xyz;
+        float3 B = mul(globalParams.inverseView, float4(0, 1, 0, 0)).xyz;
+        float2 lensSample = SampleAnamorphicLens(rng.sample2D()) * globalParams.aperture;
+        float3 lensPoint = lensSample.x * T + lensSample.y * B;
+        ray.Origin += lensPoint;
+        ray.Direction = normalize(focalPoint - lensPoint);
+    }
+
+    return ray;
+}
+
 // -- Main Shader Routines
 
 // TraceRay via HitObject — returns a hit object without invoking closest hit.
@@ -307,6 +389,16 @@ bool HasUsableBSSRDF(Payload surface)
            MaxComponent(surface.baseColor * surface.subsurfaceColor) > EPS;
 }
 
+BSSRDFSurfaceInteraction MakeBSSRDFPo(HitState hit)
+{
+    return BSSRDFSurfaceInteraction(hit.position, hit.normal, hit.tangent, hit.bitangent);
+}
+
+BSSRDFSurfaceInteraction MakeBSSRDFPi(HitState hit)
+{
+    return BSSRDFSurfaceInteraction(hit.position, hit.geometryNormal, hit.tangent, hit.bitangent);
+}
+
 bool SeparableBSSRDF_SampleSp<S : ISampler>(
     Payload surface,
     uint32_t sourceInstance,
@@ -318,48 +410,17 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
         return false;
 
     ISeparableBSSRDF bssrdf = DisneyBurleyBSSRDF(surface.baseColor * surface.subsurfaceColor, surface.subsurfaceRadius);
-
-    float axisSample = rng.sample();
-    float3 vx, vy, vz;
-    if (axisSample < 0.5f)
-    {
-        vx = surface.hit.tangent;
-        vy = surface.hit.bitangent;
-        vz = surface.hit.normal;
-    }
-    else if (axisSample < 0.75f)
-    {
-        vx = surface.hit.bitangent;
-        vy = surface.hit.normal;
-        vz = surface.hit.tangent;
-    }
-    else
-    {
-        vx = surface.hit.normal;
-        vy = surface.hit.tangent;
-        vz = surface.hit.bitangent;
-    }
-
-    uint channel = min(uint(rng.sample() * 3.0f), 2u);
-    float r = bssrdf.Sample_Sr(channel, rng.sample());
-    float rMax = bssrdf.Sample_Sr(channel, 0.999f);
-    if (r < 0.0f || r >= rMax)
+    BSSRDFSurfaceInteraction poBSSRDF = MakeBSSRDFPo(surface.hit);
+    BSSRDFSampleRaySegment segment =
+        bssrdf.Sample_SpRay(poBSSRDF, rng.sample(), rng.sample(), rng.sample(), rng.sample());
+    if (!segment.valid)
         return false;
-
-    float phi = 2.0f * Pi * rng.sample();
-    float segmentLength = 2.0f * sqrt(max(rMax * rMax - r * r, 0.0f));
-    if (segmentLength <= EPS_TMin)
-        return false;
-
-    float3 base = surface.hit.position +
-                  r * (vx * cos(phi) + vy * sin(phi)) -
-                  0.5f * segmentLength * vz;
 
     RayDesc queryRay;
-    queryRay.Origin = base;
-    queryRay.Direction = vz;
+    queryRay.Origin = segment.origin;
+    queryRay.Direction = segment.direction;
     queryRay.TMin = EPS_TMin;
-    queryRay.TMax = segmentLength;
+    queryRay.TMax = segment.tMax;
 
     BSSRDFQueryPayload queryPayload;
     queryPayload.targetInstance = sourceInstance;
@@ -379,12 +440,7 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
 
     Payload pi = SamplePayload(selectedHit, queryRay);
     float selectionPdf = queryPayload.reservoir.SelectionPDF();
-    BSSRDFSurfaceInteraction poBSSRDF =
-        BSSRDFSurfaceInteraction(surface.hit.position, surface.hit.normal,
-                                 surface.hit.tangent, surface.hit.bitangent);
-    BSSRDFSurfaceInteraction piBSSRDF =
-        BSSRDFSurfaceInteraction(pi.hit.position, pi.hit.geometryNormal,
-                                 pi.hit.tangent, pi.hit.bitangent);
+    BSSRDFSurfaceInteraction piBSSRDF = MakeBSSRDFPi(pi.hit);
     float pdfSp = bssrdf.Pdf_Sp(poBSSRDF, piBSSRDF) * selectionPdf;
     float3 Sp = bssrdf.Sp(poBSSRDF, piBSSRDF);
     if (pdfSp <= EPS || MaxComponent(Sp) <= EPS)
@@ -466,7 +522,7 @@ LightLiSample SampleSceneLight(LightSampleContext ctx, InfiniteLight env, float 
         // Final selection
         float prob = lightAliasTable[globalParams.firstLightAliasTable + idx].prob;
         // Draw sample from selected light
-        GSLight gl = lights[globalParams.firstLight + idx];
+        GSLight gl = LoadSceneLight(idx);
         LightLiSample Li = SampleSceneLight(gl, ctx, u);
         if (Li.pdf > 0.0f) {
             float pSceneLights = (weightSum - envWeight) / weightSum;
@@ -482,8 +538,7 @@ LightLiSample SampleSceneLight(LightSampleContext ctx, InfiniteLight env, float 
 }
 
 void AddRadianceByCategory(
-    inout float3 LDiffuse,
-    inout float3 LSpecular,
+    inout PathRadiance radiance,
     float3 contrib,
     uint bounce,
     AOVCategory firstBounceCategory,
@@ -492,9 +547,9 @@ void AddRadianceByCategory(
 {
     AOVCategory category = bounce == 0 ? currentCategory : firstBounceCategory;
     if (category == AOVCategory::Diffuse)
-        AddRadiance(LDiffuse, contrib, direct);
+        AddRadiance(radiance.diffuse, contrib, direct);
     else
-        AddRadiance(LSpecular, contrib, direct);
+        AddRadiance(radiance.specular, contrib, direct);
 }
 
 bool SampleVisibleSceneLight<S : ISampler>(
@@ -526,22 +581,19 @@ void AddLocalDirectLighting<S : ISampler>(
     float3 beta,
     uint bounce,
     AOVCategory firstBounceCategory,
-    InfiniteLight env,
     inout S rng,
-    float totalLightWeight,
-    inout LightSampleContext lastLightCtx,
-    inout float3 LDiffuse,
-    inout float3 LSpecular)
+    inout DirectLightingState lighting,
+    inout PathRadiance radiance)
 {
     LightSampleContext ctx;
     LightLiSample Li;
-    if (!SampleVisibleSceneLight(surface.hit, env, rng, totalLightWeight, ctx, Li))
+    if (!SampleVisibleSceneLight(surface.hit, lighting.env, rng, lighting.totalLightWeight, ctx, Li))
     {
-        lastLightCtx = ctx;
+        lighting.lastLightCtx = ctx;
         return;
     }
 
-    lastLightCtx = ctx;
+    lighting.lastLightCtx = ctx;
     float3 wi = toLocal.rotate(Li.wi);
     float bsdfPdf = bsdf.PDF(wo, wi, TransportMode::Radiance, BxDFReflTransFlags::All);
     float mis = Li.isDelta ? 1.0f : PowerHeuristic(1, Li.pdf, 1, bsdfPdf);
@@ -551,13 +603,13 @@ void AddLocalDirectLighting<S : ISampler>(
         float3 fD, fS;
         bsdf.f_split(wo, wi, TransportMode::Radiance, fD, fS);
         float3 scale = beta * AbsCosTheta(wi) * Li.Li * mis;
-        AddRadiance(LDiffuse, fD * scale, true);
-        AddRadiance(LSpecular, fS * scale, true);
+        AddRadiance(radiance.diffuse, fD * scale, true);
+        AddRadiance(radiance.specular, fS * scale, true);
     }
     else
     {
         float3 f = bsdf.f(wo, wi, TransportMode::Radiance) * AbsCosTheta(wi);
-        AddRadianceByCategory(LDiffuse, LSpecular, beta * f * Li.Li * mis,
+        AddRadianceByCategory(radiance, beta * f * Li.Li * mis,
                               bounce, firstBounceCategory, AOVCategory::Diffuse, false);
     }
 }
@@ -570,27 +622,24 @@ void AddDiffuseDirectLighting<S : ISampler>(
     uint bounce,
     AOVCategory firstBounceCategory,
     AOVCategory currentCategory,
-    InfiniteLight env,
     inout S rng,
-    float totalLightWeight,
-    inout LightSampleContext lastLightCtx,
-    inout float3 LDiffuse,
-    inout float3 LSpecular)
+    inout DirectLightingState lighting,
+    inout PathRadiance radiance)
 {
     LightSampleContext ctx;
     LightLiSample Li;
-    if (!SampleVisibleSceneLight(hit, env, rng, totalLightWeight, ctx, Li))
+    if (!SampleVisibleSceneLight(hit, lighting.env, rng, lighting.totalLightWeight, ctx, Li))
     {
-        lastLightCtx = ctx;
+        lighting.lastLightCtx = ctx;
         return;
     }
 
-    lastLightCtx = ctx;
+    lighting.lastLightCtx = ctx;
     float3 wi = toLocal.rotate(Li.wi);
     float diffusePdf = CosineHemispherePDF(AbsCosTheta(wi));
     float mis = Li.isDelta ? 1.0f : PowerHeuristic(1, Li.pdf, 1, diffusePdf);
     float3 contrib = beta * f * AbsCosTheta(wi) * Li.Li * mis;
-    AddRadianceByCategory(LDiffuse, LSpecular, contrib, bounce, firstBounceCategory, currentCategory, true);
+    AddRadianceByCategory(radiance, contrib, bounce, firstBounceCategory, currentCategory, true);
 }
 
 void AddSurfaceEmissive(
@@ -598,11 +647,125 @@ void AddSurfaceEmissive(
     float3 beta,
     uint bounce,
     AOVCategory firstBounceCategory,
-    inout float3 LDiffuse,
-    inout float3 LSpecular)
+    inout PathRadiance radiance)
 {
-    AddRadianceByCategory(LDiffuse, LSpecular, beta * surface.emissive,
+    AddRadianceByCategory(radiance, beta * surface.emissive,
                           bounce, firstBounceCategory, AOVCategory::Diffuse, bounce == 0);
+}
+
+void AccumulateGBuffer(uint2 pix, float4 g0, float4 g1, float4 g2, uint32_t pickID, float frameCount)
+{
+    if (frameCount == 1)
+    {
+        gBuffer0[pix] = g0;
+        gBuffer1[pix] = g1;
+        gBuffer2[pix] = g2;
+    }
+    else
+    {
+        float invN = 1.0f / frameCount;
+        gBuffer0[pix] += (g0 - gBuffer0[pix]) * invN;
+        gBuffer1[pix] += (g1 - gBuffer1[pix]) * invN;
+        gBuffer2[pix] += (g2 - gBuffer2[pix]) * invN;
+    }
+
+    pickIDBuffer[pix] = pickID;
+}
+
+void AccumulateSurfaceGBuffer(uint2 pix, Payload surface, uint32_t instance, float frameCount)
+{
+    float4 g0 = float4(surface.baseColor, float(surface.materialID) / 255.0f);
+    float4 g1 = float4(surface.hit.normal * 0.5f + 0.5f, 0);
+    float4 g2 = float4(surface.hit.position, 0);
+    AccumulateGBuffer(pix, g0, g1, g2, instance, frameCount);
+}
+
+void AccumulateDefaultGBuffer(uint2 pix, float frameCount)
+{
+    float4 g0 = float4(0, 0, 0, 0);
+    float4 g1 = float4(0.5f, 0.5f, 1.0f, 0);
+    float4 g2 = float4(0, 0, 0, 0);
+    AccumulateGBuffer(pix, g0, g1, g2, ~0u, frameCount);
+}
+
+bool AddAreaLightHitEmission(
+    HitPayload payload,
+    RayDesc ray,
+    float3 view,
+    float3 beta,
+    uint bounce,
+    AOVCategory firstBounceCategory,
+    float lastSamplePDF,
+    DirectLightingState lighting,
+    inout PathRadiance radiance,
+    out float3 hitPoint)
+{
+    hitPoint = float3(0.0f);
+    if (!payload.IsHit() || !IsLightInstance(payload.instance))
+        return false;
+
+    uint lightIndex = GetLightIndex(payload.instance);
+    GSLight gl = LoadSceneLight(lightIndex);
+    hitPoint = ray.Origin + ray.Direction * payload.hitT;
+
+    SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.power);
+    SampledSpectrum Le = SampledSpectrum(0.0f);
+    float pdfLi = 0.0f;
+
+    if (gl.type == 3)
+    {
+        DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.radius, gl.twoSided != 0);
+        float3 normal = normalize(cross(gl.dpdu, gl.dpdv));
+        Le = light.L(hitPoint, normal, float3(0), view);
+        pdfLi = light.PDF_Li(lighting.lastLightCtx, ray.Direction, true);
+    }
+    else if (gl.type == 4)
+    {
+        RectLight light = RectLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.twoSided != 0);
+        float3 normal = normalize(cross(gl.dpdu, gl.dpdv));
+        Le = light.L(hitPoint, normal, float3(0), view);
+        pdfLi = light.PDF_Li(lighting.lastLightCtx, ray.Direction, true);
+    }
+
+    if (any(Le > 0.0f))
+    {
+        float pLightSelection = lighting.totalLightWeight > 0.0f
+            ? (gl.selectionWeight / lighting.totalLightWeight)
+            : 0.0f;
+        float pdf = pLightSelection * pdfLi;
+        float mis = lastSamplePDF > EPS ? BalanceHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
+        float3 contrib = beta * Le * mis;
+        if (bounce == 0)
+            AddRadiance(radiance.specular, contrib, true);
+        else
+            AddRadianceByCategory(radiance, contrib, bounce, firstBounceCategory, AOVCategory::Specular, false);
+    }
+
+    return true;
+}
+
+void AddEnvironmentMiss(
+    float3 view,
+    float3 beta,
+    uint bounce,
+    AOVCategory firstBounceCategory,
+    float lastSamplePDF,
+    DirectLightingState lighting,
+    inout PathRadiance radiance)
+{
+    if (bounce == 0)
+    {
+        AddRadiance(radiance.specular, lighting.env.Le(-view), true);
+        return;
+    }
+
+    float envWeight = GetEnvLightSelectionWeight();
+    float pdf = lighting.totalLightWeight > 0.0f
+        ? (envWeight / lighting.totalLightWeight) * lighting.env.PDF_Li(lighting.lastLightCtx, -view, true)
+        : 0.0f;
+    float mis = lastSamplePDF > EPS ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
+    float3 contrib = beta * lighting.env.Le(-view) * mis;
+    AddRadianceByCategory(radiance, contrib, bounce, firstBounceCategory, AOVCategory::Specular, false);
 }
 
 [shader("raygeneration")]
@@ -626,32 +789,11 @@ void RayGeneration()
 void PathTrace<S : ISampler>(uint2 pix, inout S rng)
 {
     float3 beta = float3(1);
-    // Per-lobe AOV accumulators (Diffuse / Specular)
-    float3 LDiffuse  = float3(0);
-    float3 LSpecular = float3(0);
+    PathRadiance radiance = PathRadiance();
     AOVCategory firstBounceCategory = AOVCategory::Undefined;
-    // GBuffer written on primary hit
     bool gbufferWritten = false;
     float frameCount = float(globalParams.ptAccumulatedFrames + 1);
-    // Initial ray with jitter for AA
-    RayDesc ray;
-    ray.Origin = globalParams.camPosition.xyz;
-    ray.Direction = GeneratePrimaryRay(pix, rng);
-    ray.TMin = EPS_TMin;
-    ray.TMax = INF;
-    // Simple Physical Lens
-    // https://www.pbr-book.org/4ed/Cameras_and_Film/Projective_Camera_Models#fragment-Computepointonplaneoffocus-0
-    // https://github.com/nvpro-samples/vk_gltf_renderer/blob/master/shaders/gltf_pathtrace.slang#L922
-    if (globalParams.aperture > EPS) {
-        float3 focalPoint = globalParams.focalDistance * ray.Direction;
-        // Sample point on lens in world space
-        float3 T = mul(globalParams.inverseView, float4(1, 0, 0, 0)).xyz;
-        float3 B = mul(globalParams.inverseView, float4(0, 1, 0, 0)).xyz;
-        float2 lensSample = SampleAnamorphicLens(rng.sample2D()) * globalParams.aperture;
-        float3 lensPoint = lensSample.x * T + lensSample.y * B;
-        ray.Origin += lensPoint;
-        ray.Direction = normalize(focalPoint - lensPoint);
-    }
+    RayDesc ray = GenerateCameraRay(pix, rng);
     // Combine the miss hit with the last light sample
     float lastSamplePDF = 0.0f;
     // Unified infinite light — falls back to constant color when no env map is bound
@@ -662,7 +804,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         globalParams.envAzimuthOffset
     );
     float totalLightWeight = globalParams.sceneLightWeightSum + GetEnvLightSelectionWeight();
-    LightSampleContext lastLightCtx = LightSampleContext(float3(0), float3(0), float3(0));
+    DirectLightingState lighting = DirectLightingState(env, totalLightWeight);
     uint diffuseBounces = 0;
     uint specularBounces = 0;
     uint transmissionBounces = 0;
@@ -678,8 +820,8 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             uint coherenceHint = 0xFFu;
             if (hitObj.IsHit()) {
                 uint instanceID = hitObj.GetInstanceID();
-                if ((instanceID & (1u << 23)) == 0) {
-                    GSInstance inst = instances[NonUniformResourceIndex(instanceID)];
+                if (!IsLightInstance(instanceID)) {
+                    GSInstance inst = LoadSceneInstance(instanceID);
                     coherenceHint = inst.materialIndex & 0xFFu;
                 }
             }
@@ -691,93 +833,26 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         // Outgoing direction
         float3 view = -ray.Direction;
 
-        // Special case for Area Lights
-        // These act both in the NEE path and in the emissive path (BSDF), where paths
-        // can be intersected with as well, contributing to e.g. transmission indirect.
-        // Caustics... Albeit with low convergence just like the emissive case.
-        // TODO Manifold NEE
-        if (payload.IsHit() && ((payload.instance & (1u << 23)) != 0u)) {
-            uint lightIndex = payload.instance & ~(1u << 23);
-            GSLight gl = lights[globalParams.firstLight + lightIndex];
-            
-            float3 hitPoint = ray.Origin + ray.Direction * payload.hitT;
-            
-            SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.power);
-            SampledSpectrum Le = SampledSpectrum(0.0f);
-            float pdf_Li = 0.0f;
-            
-            if (gl.type == 3) {
-                DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.radius, gl.twoSided != 0);
-                float3 normal = normalize(cross(gl.dpdu, gl.dpdv));
-                Le = light.L(hitPoint, normal, float3(0), view);
-                pdf_Li = light.PDF_Li(lastLightCtx, ray.Direction, true);
-            } else if (gl.type == 4) {
-                RectLight light = RectLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.twoSided != 0);
-                float3 normal = normalize(cross(gl.dpdu, gl.dpdv));
-                Le = light.L(hitPoint, normal, float3(0), view);
-                pdf_Li = light.PDF_Li(lastLightCtx, ray.Direction, true);
-            }
-            
-            if (any(Le > 0.0f)) {
-                float lightWeight = gl.selectionWeight;
-                float pdf_light_selection = totalLightWeight > 0.0f ? (lightWeight / totalLightWeight) : 0.0f;
-                float pdf = pdf_light_selection * pdf_Li;
-                float mis = lastSamplePDF > EPS ? BalanceHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
-                float3 contrib = beta * Le * mis;
-                if (bounce == 0) {
-                    AddRadiance(LSpecular, contrib, true);
-                } else {
-                    if (firstBounceCategory == AOVCategory::Diffuse)
-                        AddRadiance(LDiffuse, contrib, false);
-                    else
-                        AddRadiance(LSpecular, contrib, false);
-                }
-            }
-            
+        float3 hitPoint;
+        if (AddAreaLightHitEmission(payload, ray, view, beta, bounce, firstBounceCategory,
+                                    lastSamplePDF, lighting, radiance, hitPoint))
+        {
             ray.Origin = hitPoint + ray.Direction * EPS_TMin;
             bounce--; // Don't count this as a bounce
             continue;
         }
 
-        if (!payload.IsHit()) {
-            // Miss — environment
-            if (bounce == 0) {
-                // Environment light with no surface hit — classify as specular (background)
-                float3 envLe = env.Le(-view);
-                AddRadiance(LSpecular, envLe, true);
-                break;
-            }
-            // Final miss, MIS-weight against the last BSDF sample
-            float envWeight = GetEnvLightSelectionWeight();
-            float pdf = totalLightWeight > 0.0f ? (envWeight / totalLightWeight) * env.PDF_Li(lastLightCtx, -view, true) : 0.0f;
-            float mis = lastSamplePDF > EPS ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
-            float3 contrib = beta * env.Le(-view) * mis;
-            // Environment contribution at bounce > 0 is indirect — attribute to first-bounce category
-            if (firstBounceCategory == AOVCategory::Diffuse)
-                AddRadiance(LDiffuse, contrib, false);
-            else
-                AddRadiance(LSpecular, contrib, false);
+        if (!payload.IsHit())
+        {
+            AddEnvironmentMiss(view, beta, bounce, firstBounceCategory, lastSamplePDF, lighting, radiance);
             break;
         }
         Payload surface = SamplePayload(payload, ray);
 
         // Accumulate GBuffer on primary hit
-        if (bounce == 0 && !gbufferWritten) {
-            float4 g0 = float4(surface.baseColor, float(surface.materialID) / 255.0f);
-            float4 g1 = float4(surface.hit.normal * 0.5f + 0.5f, 0);
-            float4 g2 = float4(surface.hit.position, 0);
-            if (frameCount == 1) {
-                gBuffer0[pix] = g0;
-                gBuffer1[pix] = g1;
-                gBuffer2[pix] = g2;
-            } else {
-                float invN = 1.0f / frameCount;
-                gBuffer0[pix] += (g0 - gBuffer0[pix]) * invN;
-                gBuffer1[pix] += (g1 - gBuffer1[pix]) * invN;
-                gBuffer2[pix] += (g2 - gBuffer2[pix]) * invN;
-            }
-            // R32Uint, so primary hit only.
-            pickIDBuffer[pix] = payload.instance;
+        if (bounce == 0 && !gbufferWritten)
+        {
+            AccumulateSurfaceGBuffer(pix, surface, payload.instance, frameCount);
             gbufferWritten = true;
         }
         // -- Path Integrator
@@ -789,7 +864,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         PrincipledBSDFLobes bsdf = PrincipledBSDFLobes(
             surface.baseColor, surface.metallic, surface.roughness,
             surface.ior, surface.specularFactor, surface.transmission, true, wo,
-            surface.subsurface, surface.subsurfaceColor, surface.subsurfaceRadius);
+            surface.subsurface);
         // Subsurface lobes are non-local. We take care of those paths ab initio with a different branch
         float pSampleBSSRDF = HasUsableBSSRDF(surface)
             ? PrincipledBSSRDFBranchProbability(surface.metallic, surface.roughness, surface.ior,
@@ -798,7 +873,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         pSampleBSSRDF = clamp(pSampleBSSRDF, 0.0f, 1.0f);
         bool sampleBSSRDF = pSampleBSSRDF > EPS && (pSampleBSSRDF >= 1.0f || rng.sample() < pSampleBSSRDF);
         // -- Path Trace
-        Path path = Path();
+        PathSample nextSample = PathSample();
         // TODO Volumetrics
         if (sampleBSSRDF)
         {
@@ -817,7 +892,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             const float3 exitF = float3(InvPi);
             AddDiffuseDirectLighting(exitSurface.hit, exitToLocal, exitF, localBeta,
                                      bounce, firstBounceCategory, AOVCategory::Diffuse,
-                                     env, rng, totalLightWeight, lastLightCtx, LDiffuse, LSpecular);
+                                     rng, lighting, radiance);
 
             float3 exitWi = SampleCosineHemisphere(rng.sample2D());
             exitWi = FaceForward(exitWi, float3(0, 0, 1));
@@ -825,14 +900,14 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             if (exitPdf <= EPS)
                 break;
 
-            path.valid = true;
-            path.beta = localBeta * exitF * AbsCosTheta(exitWi) / exitPdf;
-            path.wi = exitWi;
-            path.pdf = exitPdf;
-            path.flags = BxDFFlags::DiffuseReflection;
-            path.category = AOVCategory::Diffuse;
-            path.hit = exitSurface.hit;
-            path.toWorld = exitToWorld;
+            nextSample.valid = true;
+            nextSample.beta = localBeta * exitF * AbsCosTheta(exitWi) / exitPdf;
+            nextSample.wi = exitWi;
+            nextSample.pdf = exitPdf;
+            nextSample.flags = BxDFFlags::DiffuseReflection;
+            nextSample.category = AOVCategory::Diffuse;
+            nextSample.hit = exitSurface.hit;
+            nextSample.toWorld = exitToWorld;
         }
         else
         {
@@ -840,9 +915,8 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             float3 localBeta = beta / pLocal;
 
             AddLocalDirectLighting(surface, bsdf, wo, toLocal, localBeta,
-                                   bounce, firstBounceCategory, env, rng, totalLightWeight,
-                                   lastLightCtx, LDiffuse, LSpecular);
-            AddSurfaceEmissive(surface, localBeta, bounce, firstBounceCategory, LDiffuse, LSpecular);
+                                   bounce, firstBounceCategory, rng, lighting, radiance);
+            AddSurfaceEmissive(surface, localBeta, bounce, firstBounceCategory, radiance);
 
             AOVCategory sampleCategory;
             BSDFSample sample = bsdf.Sample_f(wo, rng.sample(), rng.sample2D(),
@@ -852,21 +926,21 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
                 break;
             }
 
-            path.valid = true;
-            path.beta = localBeta * sample.f * AbsCosTheta(sample.wi) / sample.pdf;
-            path.wi = sample.wi;
-            path.pdf = sample.pdf;
-            path.flags = sample.flags;
-            path.category = sampleCategory;
-            path.hit = surface.hit;
-            path.toWorld = toWorld;
+            nextSample.valid = true;
+            nextSample.beta = localBeta * sample.f * AbsCosTheta(sample.wi) / sample.pdf;
+            nextSample.wi = sample.wi;
+            nextSample.pdf = sample.pdf;
+            nextSample.flags = sample.flags;
+            nextSample.category = sampleCategory;
+            nextSample.hit = surface.hit;
+            nextSample.toWorld = toWorld;
         }
 
-        if (!path.valid)
+        if (!nextSample.valid)
             break;
 
-        if (IsTransmission(path.flags)) transmissionBounces++;
-        else if (IsDiffuse(path.flags)) diffuseBounces++;
+        if (IsTransmission(nextSample.flags)) transmissionBounces++;
+        else if (IsDiffuse(nextSample.flags)) diffuseBounces++;
         else specularBounces++;
 
         if (diffuseBounces > globalParams.ptMaxBouncesDiffuse ||
@@ -876,16 +950,16 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         }
 
         if (bounce == 0)
-            firstBounceCategory = path.category;
+            firstBounceCategory = nextSample.category;
 
-        lastSamplePDF = path.pdf;
-        beta = path.beta;
+        lastSamplePDF = nextSample.pdf;
+        beta = nextSample.beta;
         if (any(isnan(beta)) || any(isinf(beta)))
             break;
 
-        ray.Direction = path.toWorld.rotate(path.wi);
-        float3 rayNormalFF = dot(ray.Direction, path.hit.geometryNormal) < 0.0f ? -path.hit.geometryNormal : path.hit.geometryNormal;
-        ray.Origin = OffsetRay(path.hit.position, rayNormalFF);
+        ray.Direction = nextSample.toWorld.rotate(nextSample.wi);
+        float3 rayNormalFF = dot(ray.Direction, nextSample.hit.geometryNormal) < 0.0f ? -nextSample.hit.geometryNormal : nextSample.hit.geometryNormal;
+        ray.Origin = OffsetRay(nextSample.hit.position, rayNormalFF);
 
         // Russian Roulette (after 2nd bounce)
         if (bounce >= 2) {
@@ -896,25 +970,12 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         }
     }
     // Write default GBuffer if no hit
-    if (!gbufferWritten) {
-        float4 g0 = float4(0, 0, 0, 0);
-        float4 g1 = float4(0.5f, 0.5f, 1.0f, 0);  // neutral normal
-        float4 g2 = float4(0, 0, 0, 0);
-        if (frameCount == 1) {
-            gBuffer0[pix] = g0;
-            gBuffer1[pix] = g1;
-            gBuffer2[pix] = g2;
-        } else {
-            float invN = 1.0f / frameCount;
-            gBuffer0[pix] += (g0 - gBuffer0[pix]) * invN;
-            gBuffer1[pix] += (g1 - gBuffer1[pix]) * invN;
-            gBuffer2[pix] += (g2 - gBuffer2[pix]) * invN;
-        }
-        pickIDBuffer[pix] = ~0u; // no object
-    }
+    if (!gbufferWritten)
+        AccumulateDefaultGBuffer(pix, frameCount);
+
     // Per-contribution sanitize already done via AddRadiance
-    float4 outD = float4(LDiffuse, 1.0f);
-    float4 outS = float4(LSpecular, 1.0f);
+    float4 outD = float4(radiance.diffuse, 1.0f);
+    float4 outS = float4(radiance.specular, 1.0f);
 
     // Welford online mean — buffer always holds the current average (immediate HDR)
     if (frameCount == 1) {
@@ -933,11 +994,11 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
 bool AnyHitOpacityIgnore<S : ISampler>(inout S rng, uint instance, uint primitive,
     BuiltInTriangleIntersectionAttributes attr)
 {
-    if ((instance & (1u << 23)) != 0u)
+    if (IsLightInstance(instance))
         return false; // Light instance
 
-    GSInstance inst = instances[NonUniformResourceIndex(instance)];
-    GSMaterial material = materials[NonUniformResourceIndex(GetMaterialBufferIndex(inst.materialIndex))];
+    GSInstance inst = LoadSceneInstance(instance);
+    GSMaterial material = LoadMaterial(inst.materialIndex);
     float4 baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u) {
         HitState hs = getHitState(inst.meshOffset, primitive, attr.barycentrics.xy, inst, WorldRayOrigin(), WorldRayDirection(), RayTCurrent());
@@ -979,7 +1040,7 @@ void BSSRDFQueryAnyHit(inout BSSRDFQueryPayload payload, in BuiltInTriangleInter
 {
     uint instance = InstanceID();
     uint primitive = PrimitiveIndex();
-    if ((instance & (1u << 23)) != 0u)
+    if (IsLightInstance(instance))
         return IgnoreHit();
 
     PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber,
@@ -987,7 +1048,7 @@ void BSSRDFQueryAnyHit(inout BSSRDFQueryPayload payload, in BuiltInTriangleInter
     if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
         return IgnoreHit();
 
-    GSInstance inst = instances[NonUniformResourceIndex(GetInstanceBufferIndex(instance))];
+    GSInstance inst = LoadSceneInstance(instance);
     if (instance == payload.targetInstance && inst.materialIndex == payload.targetMaterial)
     {
         BSSRDFSurfaceCandidate candidate =

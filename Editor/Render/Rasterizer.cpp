@@ -1,7 +1,7 @@
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
-#include "../ImGui.hpp"
+#include <algorithm>
 #include "../Paths.hpp"
 #include "Render.hpp"
 using namespace RenderUtils;
@@ -25,54 +25,32 @@ struct MeshletTaskWork
 constexpr size_t kMeshWorkGroupSize = 64;
 constexpr size_t kMaxMeshletCount = 1e6;
 constexpr size_t kMaxMeshletTaskWorkCount = kMaxMeshletCount / kMeshWorkGroupSize;
-void RendererSetupImGuiOnly(FContext* context)
+void BuildIdleRenderGraph(FContext* context, float const* timeSeconds)
 {
-    if (context->renderer)
-    {
-        Destruct(context->allocator, context->renderer);
-        context->renderer = nullptr;
-    }
-    auto* renderer = context->renderer = Construct<Renderer>(context->allocator,
-                                                             RendererDesc{
-                                                                 .asyncCompute = true,
-                                                                 .threadCount = 0u,
-                                                                 .pipelineCache = context->psoCache.Get(),
-                                                             },
-                                                             context->device, context->swapchain, context->allocator);
-    renderer->BeginSetup();
+    auto* renderer = context->renderer;
+    CHECK(renderer);
     createPSFullscreenPass(
         renderer, "Idle",
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                          Foundation::Core::PathsResolve("data/shaders/EPSIdle.spv"));
+                          Paths::Resolve("data/shaders/EPSIdle.spv"));
             r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(float2));
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0,
-                                  float2{SDL_GetTicks() / 1000.0f, (float)r->GetSwapchainExtent().x / r->GetSwapchainExtent().y });
+                                  float2{*timeSeconds, (float)r->GetSwapchainExtent().x / r->GetSwapchainExtent().y });
         });
-    ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});
-    renderer->EndSetup();
 }
 
-void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, RenderReadbackHandles& outHandles)
+void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene scene, RHIExtent2D renderExtent,
+                            RendererHandles& outHandles)
 {
     CHECK(context->device->GetCapabilities().meshShaders);
-    if (context->renderer)
-    {
-        Destruct(context->allocator, context->renderer);
-        context->renderer = nullptr;
-    }
-    auto* renderer = context->renderer = Construct<Renderer>(context->allocator,
-                                                             RendererDesc{
-                                                                 .asyncCompute = true,
-                                                                 .pipelineCache = context->psoCache.Get(),
-                                                             },
-                                                             context->device, context->swapchain, context->allocator);
+    auto* renderer = context->renderer;
+    CHECK(renderer);
     auto* gpu = context->gpuScene;
-    renderer->BeginSetup();
     /* UBO for everyone */
     auto GlobalUBO = renderer->CreateResource(
         "Global UBO",
@@ -85,7 +63,6 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
     auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
     auto MaterialBuffer = renderer->CreateResource("Material Buffer", gpu->GetMaterialBuffer());
     auto LightBuffer = renderer->CreateResource("Light Buffer", gpu->GetLightBuffer());
-    auto TexturePool = gpu->GetTexturePool();
     /* Indirect Task Buffers */
     using enum RHIBufferUsageBits;
     auto IndirectTasks =
@@ -193,7 +170,8 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
             r->CmdDispatch(self, cmd, {scene.gsGlobals->numInstances, 1, 1});
         });
     /* Meshlet Drawing */
-    auto [w, h] = renderer->GetSwapchainExtent();
+    uint32_t w = std::max(renderExtent.x, 16u);
+    uint32_t h = std::max(renderExtent.y, 16u);
     auto ZBuffer = renderer->CreateResource(
         "ZBuffer",
         RHITextureDesc{.usage = RHITextureUsageBits::DepthStencil | RHITextureUsageBits::SampledImage,
@@ -203,11 +181,10 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
     uint32_t HIZWidth = 1u << glm::log2(w / 2), HIZHeight = 1u << glm::log2(h / 2);
     if (HIZWidth * 2 < w)
         HIZWidth *= 2;
-    if (HIZHeight * 2 < w)
+    if (HIZHeight * 2 < h)
         HIZHeight *= 2;
     HIZWidth /= 2, HIZHeight /= 2;
     const uint32_t HIZMips = glm::log2(std::max(HIZWidth, HIZHeight)) + 1u;
-    const uint32_t FullMips = glm::log2(std::max(w, h)) + 1u;
     scene.gsGlobals->hizWidth = HIZWidth, scene.gsGlobals->hizHeight = HIZHeight, scene.gsGlobals->hizLevels = HIZMips;
     RHIDeviceSampler::SamplerDesc HIZSamplerDesc{
         .addressMode = {.u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
@@ -281,7 +258,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
             {
                 auto* reduceBuffer = r->DerefResource(ReduceBuffer).Get<RHIBuffer*>();
                 cmd->FillBuffer(reduceBuffer, 0u);
-                RHIExtent2D wh = r->GetSwapchainExtent();
+                RHIExtent2D wh{w, h};
                 CSClearBufferData cdata{float4{}, wh.x, wh.y};
                 r->CmdSetPipeline(self, cmd);
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, cdata);
@@ -453,7 +430,7 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
-                RHIExtent2D wh = r->GetSwapchainExtent();
+                RHIExtent2D wh{w, h};
                 r->CmdSetPipeline(self, cmd);
                 r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, wh);
                 r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
@@ -517,9 +494,8 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
-            RHIExtent2D wh = r->GetSwapchainExtent();
             r->CmdSetPipeline(self, cmd);
-            r->CmdDispatch(self, cmd, {wh.x, wh.y, 1});
+            r->CmdDispatch(self, cmd, {w, h, 1});
         });
 
     createPSFullscreenPass(
@@ -546,11 +522,9 @@ void RendererSetup(FContext* context, RendererConfig cfg, RendererScene scene, R
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             // Push pick pixel coordinate every frame; (-1,-1) = no pending pick
-            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, *scene.gsPickPixel);
+            r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, scene.picking->pendingPixel);
         });
-    ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});
-    renderer->EndSetup();
-    outHandles.hdrColor[0] = LightingBuffer;
-    outHandles.hdrColorCount = 1u;
-    outHandles.pickResultBuffer = PickResultBuffer;
+    outHandles.hdrRT[0] = LightingBuffer;
+    outHandles.numHdrRT = 1u;
+    outHandles.pickBuffer = PickResultBuffer;
 }

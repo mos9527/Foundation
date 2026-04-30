@@ -58,6 +58,7 @@ namespace Foundation::RenderUtils {
         StringView name,
         ResourceHandle rtvTexture,
         RHITextureViewDesc const& rtvViewDesc,
+        RHIExtent2D extent,
         FSetup&& setup,
         FRecord&& record
     ) {
@@ -69,7 +70,7 @@ namespace Foundation::RenderUtils {
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
             {
-                auto const& img_wh = r->GetSwapchainExtent();
+                RHIExtent2D img_wh = extent.x != 0u && extent.y != 0u ? extent : r->GetSwapchainExtent();
                 r->CmdSetPipeline(self, cmd);
                 record(self, r, cmd);
                 r->CmdBeginGraphics(self, cmd, img_wh, {{RHIColorAttachmentLoad{RHIAttachmentLoadOp::DontCare}}},
@@ -88,7 +89,7 @@ namespace Foundation::RenderUtils {
         RHITextureViewDesc const& rtvViewDesc,
         FSetup&& setup)
     {
-        return createPSFullscreenPassRTV(r, name, rtvTexture, rtvViewDesc,
+        return createPSFullscreenPassRTV(r, name, rtvTexture, rtvViewDesc, RHIExtent2D{0u, 0u},
                                          std::forward<FSetup>(setup), FRecordDefault{});
     }
     /**

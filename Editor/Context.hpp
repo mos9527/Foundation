@@ -37,6 +37,6 @@ extern FContext* GContext;
 
 extern void UpdateSwapchain(FContext* context);
 extern void ResetEditorFrameScratch(FContext* context);
-
+extern void DestroyEditorRenderer(FContext* context = nullptr);
 extern FContext* CreateContext(SDL_Window* window, Allocator* allocator = GLOBAL_ALLOC, RHIDevice::DeviceDesc const& deviceDesc = {});
 extern void DestroyContext(FContext* context = nullptr /* global */);

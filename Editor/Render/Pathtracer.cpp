@@ -1,28 +1,18 @@
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
 #include <RenderUtils/PSFullscreen.hpp>
-#include "../ImGui.hpp"
+#include <algorithm>
 #include "../Paths.hpp"
-#include "Editor/EditorState.hpp"
 #include "Render.hpp"
 using namespace RenderUtils;
 
-void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene, RenderReadbackHandles& outHandles)
+void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererScene scene, RHIExtent2D renderExtent,
+                                RendererHandles& outHandles, bool const* renderPaused)
 {
     CHECK(context->device->GetCapabilities().raytracingPipeline);
-    if (context->renderer)
-    {
-        Destruct(context->allocator, context->renderer);
-        context->renderer = nullptr;
-    }
-    auto* renderer = context->renderer = Construct<Renderer>(context->allocator,
-                                                             RendererDesc{
-                                                                 .asyncCompute = true,
-                                                                 .pipelineCache = context->psoCache.Get(),
-                                                             },
-                                                             context->device, context->swapchain, context->allocator);
+    auto* renderer = context->renderer;
+    CHECK(renderer);
     auto* gpu = context->gpuScene;
-    renderer->BeginSetup();
     scene.gsGlobals->ptAccumulatedFrames = 0u;
     auto GlobalUBO = renderer->CreateResource(
         "Global UBO",
@@ -63,7 +53,8 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
             .format = RHIResourceFormat::R8G8B8A8Unorm});
     }
     auto TexSampler = renderer->CreateSampler({});
-    auto [w, h] = renderer->GetSwapchainExtent();
+    uint32_t w = std::max(renderExtent.x, 1u);
+    uint32_t h = std::max(renderExtent.y, 1u);
 
     // -- Accumulation buffers (Welford online mean, all F32)
     auto Diffuse = renderer->CreateResource("Diffuse",
@@ -107,12 +98,11 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
                                                             .coherent = true},
                                                .usage = RHIBufferUsageBits::StorageBuffer,
                                                .size = sizeof(uint32_t)});
-
     // Save handles for editor HDR export
-    outHandles.hdrColor[0] = Diffuse;
-    outHandles.hdrColor[1] = Specular;
-    outHandles.hdrColorCount = 2u;
-    outHandles.pickResultBuffer = PickResultBuffer;
+    outHandles.hdrRT[0] = Diffuse;
+    outHandles.hdrRT[1] = Specular;
+    outHandles.numHdrRT = 2u;
+    outHandles.pickBuffer = PickResultBuffer;
 
     ResourceHandle EnvMapMarginalCDF;
     ResourceHandle EnvMapConditionalCDF;
@@ -225,11 +215,10 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
-            RHIExtent2D wh = r->GetSwapchainExtent();
             r->CmdSetPipeline(self, cmd);
             r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexturePool()->GetDescriptorSet());
-            if (!GEditor.renderTask.renderPaused)
-                cmd->TraceRays(wh.x, wh.y, 1);
+            if (!renderPaused || !*renderPaused)
+                cmd->TraceRays(w, h, 1);
         });
 
     createPSFullscreenPass(
@@ -258,8 +247,5 @@ void PathTracerSetup(FContext* context, RendererConfig cfg, RendererScene scene,
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        { r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, *scene.gsPickPixel); });
-
-    ImGui_ImplFoundation_CreatePass(renderer, "ImGui", false, FSetupDefault{});
-    renderer->EndSetup();
+        { r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, scene.picking->pendingPixel); });
 }

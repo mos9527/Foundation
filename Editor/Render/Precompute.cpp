@@ -41,9 +41,9 @@ AliasTable::AliasTable(Span<const float> f, Allocator* alloc) :
     // Remaining bins
     // Don't have anything to pair with (e.g. uniform input)
     // Alias to themselves
-    for (const auto [p, i] : under)
+    for (const auto& [p, i] : under)
         mBins[i].select = 1.0f, mBins[i].alias = i;
-    for (const auto [p, i] : over)
+    for (const auto& [p, i] : over)
         mBins[i].select = 1.0f, mBins[i].alias = i;
 }
 uint AliasTable::Sample(float u, float& pdf) const

@@ -2,6 +2,8 @@
 #include "Editor.hpp"
 #include "Scene/Texture.hpp"
 #include <ImGuizmo.h>
+#include <algorithm>
+#include <cmath>
 
 struct FArcballCamera
 {
@@ -124,6 +126,61 @@ struct CameraApertureState
     float sensorHeightMm = 36.0f;
 };
 
+struct EditorViewportState
+{
+    ImVec2 contentMin{0.0f, 0.0f};
+    ImVec2 contentMax{0.0f, 0.0f};
+    RHIExtent2D renderExtent{1280u, 720u};
+    bool visible{false};
+
+    ImVec2 Size() const
+    {
+        return {
+            std::max(contentMax.x - contentMin.x, 0.0f),
+            std::max(contentMax.y - contentMin.y, 0.0f)
+        };
+    }
+
+    bool HasRect() const
+    {
+        ImVec2 size = Size();
+        return size.x > 0.0f && size.y > 0.0f;
+    }
+
+    bool Contains(ImVec2 pos) const
+    {
+        return HasRect() &&
+            pos.x >= contentMin.x && pos.x < contentMax.x &&
+            pos.y >= contentMin.y && pos.y < contentMax.y;
+    }
+
+    bool WindowPointToRenderPixel(ImVec2 pos, int2& outPixel) const
+    {
+        if (!Contains(pos) || renderExtent.x == 0u || renderExtent.y == 0u)
+            return false;
+
+        ImVec2 size = Size();
+        float u = (pos.x - contentMin.x) / size.x;
+        float v = (pos.y - contentMin.y) / size.y;
+        int x = static_cast<int>(u * static_cast<float>(renderExtent.x));
+        int y = static_cast<int>(v * static_cast<float>(renderExtent.y));
+        outPixel = {
+            std::clamp(x, 0, static_cast<int>(renderExtent.x) - 1),
+            std::clamp(y, 0, static_cast<int>(renderExtent.y) - 1)
+        };
+        return true;
+    }
+};
+
+inline float ApertureRadiusFromFStop(float fStop, float sensorHeight, float fovY)
+{
+    if (fStop <= 0.0f || sensorHeight <= 0.0f)
+        return 0.0f;
+
+    float focalLength = (0.5f * sensorHeight) / std::tan(fovY * 0.5f);
+    return focalLength / (2.0f * fStop);
+}
+
 /* -- Grouped editor state structs -- */
 struct EditorState
 {
@@ -131,6 +188,7 @@ struct EditorState
     RenderWorkflow  renderTask;
     GizmoState      gizmo;
     CameraApertureState aperture;
+    EditorViewportState viewport;
     RendererConfig  rendererConfig;
     ERendererMode   rendererMode = ERendererMode::PathTracer;
 
@@ -150,6 +208,7 @@ struct EditorState
 extern EditorState GEditor;
 
 /* -- Cross-file editor functions -- */
+void CommitSceneToGPU(bool resetAccumulation = true);
 void UpdateSceneLights();
 void ReplaceScene(StringView path);
 void SaveScene(StringView path);
@@ -159,10 +218,7 @@ void HandleFile(const char* filePath);
 void EditorDockSpaceAndMenuBar();
 void FHierarchyPanel();
 void FLightingPanel();
-void DrawLightGizmos();
 void FRunningImGui();
-bool ImHDRColorEdit(const char* label, float4& value, float maxScale = 100.0f);
 
-void DoHDRReadback(RenderReadbackHandles const& handles);
-void DoSDRReadback(RenderReadbackHandles const& handles);
-void FRendering(RenderReadbackHandles const& handles);
+void DoHDRReadback(RendererHandles const& handles);
+void FRendering(RendererHandles const& handles);

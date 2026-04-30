@@ -30,15 +30,33 @@ public struct BSSRDFSurfaceInteraction
     }
 }
 
+public struct BSSRDFSampleRaySegment
+{
+    public bool valid;
+    public float3 origin;
+    public float3 direction;
+    public float tMax;
+
+    public __init(bool valid = false, float3 origin = float3(0.0f),
+                  float3 direction = float3(0.0f, 0.0f, 1.0f), float tMax = 0.0f)
+    {
+        this.valid = valid;
+        this.origin = origin;
+        this.direction = direction;
+        this.tMax = tMax;
+    }
+}
+
 public interface ISeparableBSSRDF
 {
     // Radial profile evaluated at distance r.
     public float3 Sr(float r);
     public float3 Sp(BSSRDFSurfaceInteraction po, BSSRDFSurfaceInteraction pi);
+    public BSSRDFSampleRaySegment Sample_SpRay(
+        BSSRDFSurfaceInteraction po, float uAxis, float uChannel, float uRadius, float uPhi);
     public float Sample_Sr(uint channel, float u);
     public float Pdf_Sr(uint channel, float r);
     public float Pdf_Sp(BSSRDFSurfaceInteraction po, BSSRDFSurfaceInteraction pi);
-    // See also SeparableBSSRDF_SampleSp in the integrator
 }
 
 // 2.4 Subsurface diffusion [Burley15]
@@ -66,6 +84,47 @@ public struct DisneyBurleyBSSRDF : ISeparableBSSRDF
     public float3 Sp(BSSRDFSurfaceInteraction po, BSSRDFSurfaceInteraction pi)
     {
         return Sr(length(po.position - pi.position));
+    }
+
+    public BSSRDFSampleRaySegment Sample_SpRay(
+        BSSRDFSurfaceInteraction po, float uAxis, float uChannel, float uRadius, float uPhi)
+    {
+        float3 vx, vy, vz;
+        if (uAxis < 0.5f)
+        {
+            vx = po.tangent;
+            vy = po.bitangent;
+            vz = po.normal;
+        }
+        else if (uAxis < 0.75f)
+        {
+            vx = po.bitangent;
+            vy = po.normal;
+            vz = po.tangent;
+        }
+        else
+        {
+            vx = po.normal;
+            vy = po.tangent;
+            vz = po.bitangent;
+        }
+
+        uint channel = min(uint(uChannel * 3.0f), 2u);
+        float r = Sample_Sr(channel, uRadius);
+        float rMax = Sample_Sr(channel, 0.999f);
+        if (r < 0.0f || r >= rMax)
+            return BSSRDFSampleRaySegment();
+
+        float phi = 2.0f * Pi * uPhi;
+        float segmentLength = 2.0f * sqrt(max(rMax * rMax - r * r, 0.0f));
+        if (segmentLength <= EPS_TMin)
+            return BSSRDFSampleRaySegment();
+
+        float3 origin = po.position +
+                        r * (vx * cos(phi) + vy * sin(phi)) -
+                        0.5f * segmentLength * vz;
+
+        return BSSRDFSampleRaySegment(true, origin, vz, segmentLength);
     }
 
     // ...onto a radial profile, which would be Pr = 2pi * r * Sr (reflectance omitted)

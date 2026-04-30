@@ -568,6 +568,13 @@ namespace Foundation::RenderCore
         void BindTextureUAV(PassHandle pass, ResourceHandle texture, StringView bind_point,
                                       RHIPipelineStage stage, RHITextureViewDesc const& desc) const;
         /**
+         * @brief Declares a shader read dependency for a texture without creating an internal binding.
+         *
+         * Use this when an external descriptor set samples a renderer-managed texture.
+         */
+        void BindTextureShaderRead(PassHandle pass, ResourceHandle texture, RHIPipelineStage stage,
+                                   RHITextureSubresourceRange const& range) const;
+        /**
          * @brief Binds a texture as a Render Target View (color attachment) for a graphics pass.
          *
          * The pass must execute on a graphics-capable queue. Multiple RTVs may be bound.

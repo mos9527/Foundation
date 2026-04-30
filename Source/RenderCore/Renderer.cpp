@@ -245,6 +245,16 @@ void Renderer::BindTextureUAV(PassHandle pass, ResourceHandle texture, StringVie
     mSetup->bindingCounts[RHIDescriptorType::StorageImage]++;
 }
 
+void Renderer::BindTextureShaderRead(PassHandle pass, ResourceHandle texture, RHIPipelineStage stage,
+                                     RHITextureSubresourceRange const& range) const
+{
+    CHECK(mState == State::Setup);
+    CHECK_MSG(range.IsValid(), "Declaring shader read on {} is of invalid range! Did you specify `range`?",
+              mSetup->trackedResources[texture].name);
+    DeclareTextureAccess(pass, texture, stage, range, RHIResourceAccessBits::ShaderRead,
+                         RHITextureLayout::ShaderReadOnly);
+}
+
 void Renderer::BindTextureRTV(PassHandle pass, ResourceHandle texture, RHITextureViewDesc const& desc,
                               RHIPipelineState::PipelineStateDesc::Attachment::Blending const& blending) const
 {
@@ -393,12 +403,7 @@ void Renderer::CullPasses(PassHandle epilogue) const
     Vector<PassHandle> topo(mAllocator);
     Vector<int> dis(mSetup->trackedPasses.size(), 0, mAllocator);
     auto& in = mSetup->in;
-    for (auto& pass : mSetup->trackedPasses)
-    {
-        // Always visit epilogue first
-        if (pass.handle >= in.size() || in[pass.handle] == 0)
-            pq.emplace(pass.handle == epilogue ? std::numeric_limits<int>::max() : pass.priority, pass.handle);
-    }
+    pq.emplace(std::numeric_limits<int>::max(), epilogue);
     // BFS with priority <pri then insertion order (handle value)>
     while (!pq.empty())
     {
@@ -416,9 +421,6 @@ void Renderer::CullPasses(PassHandle epilogue) const
             }
         }
     }
-    // Check for cycles
-    for (size_t u = 0; u < in.size(); u++)
-        CHECK_MSG(in[u] == 0, "Cycle detected in RenderGraph at pass {}!!!", mSetup->trackedPasses[u].name);
     // Sort by longest path
     // Ordering is still valid topological order
     Ranges::sort(topo, [&](auto const& a, auto const& b) { return dis[a] > dis[b]; });
@@ -429,6 +431,7 @@ void Renderer::CullPasses(PassHandle epilogue) const
     for (PassHandle ord = 0; ord < exec.size(); ord++)
     {
         auto& pass = mSetup->trackedPasses[exec[ord]];
+        CHECK_MSG(exec[ord] == epilogue || in[exec[ord]] == 0, "Cycles in render graph. Pass {} has at least one cycle connecting to it.", pass.name);
         pass.used = true;
         // Derive lifetimes for resources from execution order
         // FinalizeResources() uses this to overlap resources.

@@ -105,8 +105,10 @@ void ImGui_ImplFoundation_RemoveImage(ImTextureID textureID);
  * @param name A name for the pass, for debugging purposes.
  * @param clear Whether to clear the render target before drawing.
  */
-template <typename FSetup>
-Foundation::RenderCore::PassHandle ImGui_ImplFoundation_CreatePass(Foundation::RenderCore::Renderer* renderer, Foundation::Core::StringView name, bool clear, FSetup&& setup)
+template <typename FSetup, typename FRecordPrologue>
+Foundation::RenderCore::PassHandle ImGui_ImplFoundation_CreatePass(Foundation::RenderCore::Renderer* renderer,
+                                                                   Foundation::Core::StringView name, bool clear,
+                                                                   FSetup&& setup, FRecordPrologue&& recordPrologue)
 {
     using namespace Foundation;
     using namespace RenderCore;
@@ -121,7 +123,17 @@ Foundation::RenderCore::PassHandle ImGui_ImplFoundation_CreatePass(Foundation::R
             setup(self, r);
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
-        { ImGui_ImplFoundation_ImplPassRecord(self, r, clear, cmd, vtxBuffer, idxBuffer); });
+        {
+            recordPrologue(self, r, cmd);
+            ImGui_ImplFoundation_ImplPassRecord(self, r, clear, cmd, vtxBuffer, idxBuffer);
+        });
+}
+
+template <typename FSetup>
+Foundation::RenderCore::PassHandle ImGui_ImplFoundation_CreatePass(Foundation::RenderCore::Renderer* renderer, Foundation::Core::StringView name, bool clear, FSetup&& setup)
+{
+    return ImGui_ImplFoundation_CreatePass(renderer, name, clear, std::forward<FSetup>(setup),
+                                           Foundation::RenderCore::FRecordDefault{});
 }
 
 

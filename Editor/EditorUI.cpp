@@ -2,18 +2,11 @@
 #include <cfloat>
 #include <nfd.h>
 #include <Math/Decompose.hpp>
-#include <RenderCore/ImmediateContext.hpp>
 #include <imgui_internal.h>
 #include "EditorState.hpp"
+#include "Scene/Mesh.hpp"
 
-static float ApertureRadiusFromFStopMm(float fStop, float sensorHeightMm, float fovY)
-{
-    if (fStop <= 0.0f || sensorHeightMm <= 0.0f)
-        return 0.0f;
-
-    float focalLengthMm = (0.5f * sensorHeightMm) / std::tan(fovY * 0.5f);
-    return focalLengthMm / (2.0f * fStop);
-}
+static void DrawLightGizmos();
 
 static void DrawAperturePreview(uint32_t blades, float rotation, float ratio)
 {
@@ -73,20 +66,6 @@ static bool IsMaterialIndexValid(int materialIndex)
            materialIndex < static_cast<int>(GEditor.doc.scene.mMaterials.size());
 }
 
-static void UploadSceneMaterialEdits()
-{
-    auto* gpu = GContext->gpuScene;
-    auto res = gpu->UpdateGPUScene(GEditor.doc.instances, GEditor.doc.materials, GEditor.doc.lights);
-    GEditor.shaderGlobals.firstInstance = res.firstInstance;
-    GEditor.shaderGlobals.numInstances = res.numInstances;
-    GEditor.shaderGlobals.firstMaterial = res.firstMaterial;
-    GEditor.shaderGlobals.numMaterials = res.numMaterials;
-    GEditor.shaderGlobals.firstLight = res.firstLight;
-    GEditor.shaderGlobals.firstLightAliasTable = res.firstLightAliasTable;
-    GEditor.shaderGlobals.sceneLightWeightSum = res.sceneLightWeightSum;
-    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
-}
-
 static void SyncMaterialToGPU(uint32_t materialIndex)
 {
     auto& src = GEditor.doc.scene.mMaterials[materialIndex];
@@ -103,13 +82,12 @@ static void SyncMaterialToGPU(uint32_t materialIndex)
     dst.subsurfaceRadius = src.subsurfaceRadius;
 }
 
-/* ==================== DockSpace + Menu Bar ==================== */
 void EditorDockSpaceAndMenuBar()
 {
     // Semi-transparent window background
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
 
-    // DockSpace covers the full viewport; transparent background to show the backbuffer
+    // DockSpace covers the full viewport; transparent background to show the backbuffer.
     ImGuiID dockspaceID = ImGui::DockSpaceOverViewport(0, nullptr, ImGuiDockNodeFlags_PassthruCentralNode);
 
     // Set up default layout on first launch
@@ -305,7 +283,6 @@ void EditorDockSpaceAndMenuBar()
     ImGui::PopStyleColor(); // WindowBg
 }
 
-/* ==================== Hierarchy Panel ==================== */
 void FHierarchyPanel()
 {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
@@ -377,7 +354,7 @@ void FHierarchyPanel()
             if (changed)
             {
                 SyncMaterialToGPU(static_cast<uint32_t>(materialIndex));
-                UploadSceneMaterialEdits();
+                CommitSceneToGPU(true);
             }
         }
         else if (IsSelectedInstanceValid())
@@ -430,12 +407,13 @@ void FHierarchyPanel()
                 glm::scale(mat4(1.0f), vec3(pi.transform.scale));
 
             // ImGuizmo rendering — only when no light is selected (mutual exclusion)
-            if (GEditor.doc.selectedLight < 0)
+            if (GEditor.doc.selectedLight < 0 && GEditor.viewport.HasRect())
             {
                 ImGuizmo::BeginFrame();
                 ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
-                auto& io = ImGui::GetIO();
-                ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+                ImVec2 viewportSize = GEditor.viewport.Size();
+                ImGuizmo::SetRect(GEditor.viewport.contentMin.x, GEditor.viewport.contentMin.y,
+                                  viewportSize.x, viewportSize.y);
                 // Note: ImGuizmo uses column-major float[16], matching GLM mat4 memory layout
                 if (ImGuizmo::Manipulate(&GEditor.camera.view[0][0], &GEditor.camera.proj[0][0], GEditor.gizmo.op, GEditor.gizmo.mode,
                                          &modelMatrix[0][0]))
@@ -458,17 +436,7 @@ void FHierarchyPanel()
                 inst.transform = pi.transform.transform;
                 inst.rotation = pi.transform.rotation;
                 inst.scale = pi.transform.scale;
-                // Re-upload instance array to GPU
-                auto* gpu = GContext->gpuScene;
-                auto res = gpu->UpdateGPUScene(GEditor.doc.instances, GEditor.doc.materials, GEditor.doc.lights);
-                GEditor.shaderGlobals.firstInstance = res.firstInstance;
-                GEditor.shaderGlobals.numInstances = res.numInstances;
-                GEditor.shaderGlobals.firstMaterial = res.firstMaterial;
-                GEditor.shaderGlobals.numMaterials = res.numMaterials;
-                GEditor.shaderGlobals.firstLight = res.firstLight;
-                GEditor.shaderGlobals.firstLightAliasTable = res.firstLightAliasTable;
-                GEditor.shaderGlobals.sceneLightWeightSum = res.sceneLightWeightSum;
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                CommitSceneToGPU(true);
             }
             ImGui::Separator();
             auto& inst = GEditor.doc.instances[GEditor.doc.selectedInstance];
@@ -485,7 +453,6 @@ void FHierarchyPanel()
     ImGui::PopStyleColor();
 }
 
-/* ==================== Lighting Panel ==================== */
 void FLightingPanel()
 {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
@@ -696,7 +663,6 @@ void FLightingPanel()
     DrawLightGizmos();
 }
 
-/* ==================== Running ImGui (Camera, Rendering, Profiler) ==================== */
 void FRunningImGui()
 {
     auto* renderer = GContext->renderer;
@@ -734,7 +700,7 @@ void FRunningImGui()
             GEditor.cameraUpdated |=
                 ImGui::SliderFloat("Ratio", &GEditor.shaderGlobals.apertureRatio, 0.01f, 16.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
             float apertureRadiusMm =
-                ApertureRadiusFromFStopMm(GEditor.aperture.fStop, GEditor.aperture.sensorHeightMm, GEditor.camera.fovY);
+                ApertureRadiusFromFStop(GEditor.aperture.fStop, GEditor.aperture.sensorHeightMm, GEditor.camera.fovY);
             ImGui::Text("Aperture Radius: %.3f mm", apertureRadiusMm);
             DrawAperturePreview(GEditor.shaderGlobals.apertureBlades, GEditor.shaderGlobals.apertureRotation,
                                 GEditor.shaderGlobals.apertureRatio);
@@ -976,99 +942,7 @@ void FRunningImGui()
     ImGui::PopStyleColor();
 }
 
-/* ==================== HDR Readback ==================== */
-void DoHDRReadback(RenderReadbackHandles const& handles)
-{
-    auto* renderer = GContext->renderer;
-    auto [w, h] = renderer->GetSwapchainExtent();
-    const size_t pixelCount = static_cast<size_t>(w) * h;
-    const size_t imageBytes = pixelCount * 4 * sizeof(float); // RGBA32F
-
-    CHECK_MSG(handles.hdrColorCount > 0u && handles.hdrColorCount <= 2u, "Invalid HDR readback texture count");
-    RHITexture* hdrTextures[2]{nullptr, nullptr};
-    for (uint32_t i = 0; i < handles.hdrColorCount; ++i)
-        hdrTextures[i] = renderer->DerefResource(handles.hdrColor[i]).Get<RHITexture*>();
-
-    auto readbackBuf = GContext->device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Readback,
-                                                                    .hostAccess = RHIResourceHostAccess::ReadWrite,
-                                                                    .coherent = true},
-                                                       .usage = RHIBufferUsageBits::TransferDestination,
-                                                       .size = imageBytes * handles.hdrColorCount});
-
-    {
-        ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
-        auto* cmd = ctx.Get();
-        cmd->Begin();
-        cmd->BeginTransition();
-        for (uint32_t i = 0; i < handles.hdrColorCount; ++i)
-        {
-            cmd->SetImageTransition(hdrTextures[i],
-                                    {.srcAccess = RHIResourceAccessBits::ShaderRead,
-                                     .dstAccess = RHIResourceAccessBits::TransferRead,
-                                     .srcStage = RHIPipelineStageBits::FragmentShader,
-                                     .dstStage = RHIPipelineStageBits::Transfer,
-                                     .srcImgLayout = RHITextureLayout::ShaderReadOnly,
-                                     .dstImgLayout = RHITextureLayout::TransferSrc,
-                                     .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
-        }
-        cmd->EndTransition();
-        for (uint32_t i = 0; i < handles.hdrColorCount; ++i)
-        {
-            cmd->CopyImageToBuffer(
-                hdrTextures[i], RHITextureLayout::TransferSrc, readbackBuf.Get(),
-                {{{.dstBufferOffset = static_cast<uint32_t>(i * imageBytes),
-                   .srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
-                   .extent = {w, h, 1}}}});
-        }
-        cmd->BeginTransition();
-        for (uint32_t i = 0; i < handles.hdrColorCount; ++i)
-        {
-            cmd->SetImageTransition(hdrTextures[i],
-                                    {.srcAccess = RHIResourceAccessBits::TransferRead,
-                                     .dstAccess = RHIResourceAccessBits::ShaderRead,
-                                     .srcStage = RHIPipelineStageBits::Transfer,
-                                     .dstStage = RHIPipelineStageBits::FragmentShader,
-                                     .srcImgLayout = RHITextureLayout::TransferSrc,
-                                     .dstImgLayout = RHITextureLayout::ShaderReadOnly,
-                                     .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
-        }
-        cmd->EndTransition();
-        cmd->End();
-        ctx.Submit();
-        ctx.WaitIdle();
-    }
-
-    auto* mapped = readbackBuf->Map<float>();
-    Vector<float> combined(pixelCount * 4, GLOBAL_ALLOC);
-    for (size_t i = 0; i < pixelCount; ++i)
-    {
-        combined[i * 4 + 0] = 0.0f;
-        combined[i * 4 + 1] = 0.0f;
-        combined[i * 4 + 2] = 0.0f;
-        combined[i * 4 + 3] = 1.0f;
-    }
-    for (uint32_t sourceIndex = 0; sourceIndex < handles.hdrColorCount; ++sourceIndex)
-    {
-        const float* sourceData = mapped + sourceIndex * pixelCount * 4;
-        for (size_t i = 0; i < pixelCount; ++i)
-        {
-            combined[i * 4 + 0] += sourceData[i * 4 + 0];
-            combined[i * 4 + 1] += sourceData[i * 4 + 1];
-            combined[i * 4 + 2] += sourceData[i * 4 + 2];
-        }
-    }
-    readbackBuf->Unmap();
-
-    const char* hdrPath =
-        GEditor.renderTask.outputPath.empty() ? "render_output.hdr" : GEditor.renderTask.outputPath.c_str();
-    SaveHDR(combined.data(), static_cast<int>(w), static_cast<int>(h), hdrPath);
-    LOG(Editor, LogInfo, "{} HDR image saved to {} ({}x{}, {} frames)",
-        GEditor.rendererMode == ERendererMode::PathTracer ? "Path tracer" : "Raster", hdrPath, w, h,
-        GEditor.shaderGlobals.ptAccumulatedFrames);
-}
-
-/* ==================== FRendering (offline render loop) ==================== */
-void FRendering(RenderReadbackHandles const& handles)
+void FRendering(RendererHandles const& handles)
 {
     auto* renderer = GContext->renderer;
     renderer->BeginExecute();
@@ -1130,8 +1004,238 @@ void FRendering(RenderReadbackHandles const& handles)
     }
     else if (GEditor.shaderGlobals.ptAccumulatedFrames >= static_cast<uint32_t>(GEditor.renderTask.targetSamples))
     {
-        if (handles.hdrColorCount > 0u)
+        if (handles.numHdrRT > 0u)
             DoHDRReadback(handles);
         GEditor.state = FERunning;
+    }
+}
+
+
+// Project a world-space point to screen-space ImVec2
+static ImVec2 WorldToScreen(vec3 worldPos, mat4 const& viewProj, ImVec2 displaySize)
+{
+    vec4 clip = viewProj * vec4(worldPos, 1.0f);
+    if (clip.w <= 0.0f)
+        return {-1e4f, -1e4f}; // behind camera — off-screen sentinel
+    vec3 ndc = vec3(clip) / clip.w;
+    return {
+        GEditor.viewport.contentMin.x + (ndc.x * 0.5f + 0.5f) * displaySize.x,
+        GEditor.viewport.contentMin.y + (-ndc.y * 0.5f + 0.5f) * displaySize.y // flip Y for screen coords
+    };
+}
+
+// Draw a wireframe circle in world space via ImDrawList
+static void DrawWireCircle(ImDrawList* dl, vec3 center, vec3 u, vec3 v, vec2 radius,
+                           mat4 const& viewProj, ImVec2 displaySize, ImU32 color, float thickness,
+                           int segments = 32)
+{
+    for (int i = 0; i < segments; i++)
+    {
+        float a0 = i * 6.2831853f / segments;
+        float a1 = (i + 1) * 6.2831853f / segments;
+        vec3 p0 = center + u * (cosf(a0) * radius.x) + v * (sinf(a0) * radius.y);
+        vec3 p1 = center + u * (cosf(a1) * radius.x) + v * (sinf(a1) * radius.y);
+        dl->AddLine(WorldToScreen(p0, viewProj, displaySize),
+                    WorldToScreen(p1, viewProj, displaySize), color, thickness);
+    }
+}
+
+// Draw a line between two world-space points
+static void DrawWorldLine(ImDrawList* dl, vec3 a, vec3 b,
+                          mat4 const& viewProj, ImVec2 displaySize, ImU32 color, float thickness)
+{
+    dl->AddLine(WorldToScreen(a, viewProj, displaySize),
+                WorldToScreen(b, viewProj, displaySize), color, thickness);
+}
+
+
+static void DrawDirectionalOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl, ImVec2 ds, ImU32 col)
+{
+    vec3 pos = vec3(light.transform.transform);
+    vec3 dir = normalize(light.transform.rotation * vec3(0, 0, -1));
+    float len = 2.0f;
+
+    // Main direction arrow
+    DrawWorldLine(dl, pos, pos + dir * len, vp, ds, col, 2.0f);
+
+    // Arrowhead: 3 lines from tip back
+    float3 u, v;
+    buildOrthonormalBasis(dir, u, v);
+    vec3 tip = pos + dir * len;
+    for (int i = 0; i < 3; i++)
+    {
+        float a = i * 2.0943951f; // 120° apart
+        vec3 base = tip - dir * 0.3f + (u * cosf(a) + v * sinf(a)) * 0.15f;
+        DrawWorldLine(dl, tip, base, vp, ds, col, 2.0f);
+    }
+
+    // Small sun-like circle at origin
+    DrawWireCircle(dl, pos, u, v, vec2(0.15f), vp, ds, col, 1.5f, 16);
+}
+
+static void DrawPointOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl, ImVec2 ds, ImU32 col)
+{
+    vec3 pos = vec3(light.transform.transform);
+    ImVec2 center = WorldToScreen(pos, vp, ds);
+    if (center.x < -1e3f) return; // behind camera
+
+    // Compute outer ring radius in pixels.
+    // Only the center is projected; radius is derived analytically.
+    float outerPx;
+    if (light.range > 0.0f)
+    {
+        float dist = glm::length(pos - GEditor.camera.position);
+        float pixelsPerUnit = (ds.y * 0.5f) / (dist * tanf(GEditor.camera.fovY * 0.5f));
+        outerPx = std::max(light.range * pixelsPerUnit, 8.0f);
+    }
+    else
+    {
+        outerPx = 28.0f; // fixed screen-space size
+    }
+
+    // Concentric 2D rings — omnidirectional, no axis bias
+    constexpr int kRings = 3;
+    for (int i = 0; i < kRings; i++)
+    {
+        float t = static_cast<float>(i + 1) / kRings;
+        float radius = outerPx * t;
+        // Fade inner rings slightly
+        ImU32 ringCol = (col & 0x00FFFFFF) | (static_cast<ImU32>((col >> 24) * (0.4f + 0.6f * t)) << 24);
+        dl->AddCircle(center, radius, ringCol, 32, 1.5f);
+    }
+
+    // Small filled dot at center
+    dl->AddCircleFilled(center, 3.0f, col, 12);
+}
+
+static void DrawSpotOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl, ImVec2 ds, ImU32 col)
+{
+    vec3 pos = vec3(light.transform.transform);
+    vec3 dir = normalize(light.transform.rotation * vec3(0, 0, -1));
+    float coneLen = (light.range > 0.0f) ? light.range : 3.0f;
+    float outerR = coneLen * tanf(light.spotOuterConeAngle);
+
+    float3 u, v;
+    buildOrthonormalBasis(dir, u, v);
+    vec3 tip = pos + dir * coneLen;
+
+    // Base circle at cone end
+    DrawWireCircle(dl, tip, u, v, vec2(outerR), vp, ds, col, 1.5f, 24);
+
+    // 4 cone edge lines from apex to base
+    for (int i = 0; i < 4; i++)
+    {
+        float a = i * 1.5707963f; // 90° apart
+        vec3 base = tip + (u * cosf(a) + v * sinf(a)) * outerR;
+        DrawWorldLine(dl, pos, base, vp, ds, col, 1.5f);
+    }
+
+    // Inner cone circle (if different from outer)
+    if (light.spotInnerConeAngle > 0.001f)
+    {
+        float innerR = coneLen * tanf(light.spotInnerConeAngle);
+        DrawWireCircle(dl, tip, u, v, vec2(innerR), vp, ds, col & 0x80FFFFFF, 1.0f, 24);
+    }
+}
+
+static void DrawDiskOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl, ImVec2 ds, ImU32 col)
+{
+    vec3 pos = vec3(light.transform.transform);
+    vec3 dir = normalize(light.transform.rotation * vec3(0, 0, -1));
+
+    float3 u, v;
+    buildOrthonormalBasis(dir, u, v);
+
+    // Disk circle
+    DrawWireCircle(dl, pos, u, v, vec2(light.width, light.height), vp, ds, col, 1.5f);
+
+    // Normal arrow
+    DrawWorldLine(dl, pos, pos + dir * std::max(light.width, light.height) * 1.5f, vp, ds, col, 2.0f);
+}
+
+static void DrawRectOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl, ImVec2 ds, ImU32 col)
+{
+    vec3 pos = vec3(light.transform.transform);
+    vec3 dir = normalize(light.transform.rotation * vec3(0, 0, -1));
+
+    float3 u, v;
+    buildOrthonormalBasis(dir, u, v);
+
+    // Rectangle corners (half-extents)
+    vec3 corners[4] = {
+        pos + u * light.width + v * light.height,
+        pos - u * light.width + v * light.height,
+        pos - u * light.width - v * light.height,
+        pos + u * light.width - v * light.height,
+    };
+    for (int i = 0; i < 4; i++)
+        DrawWorldLine(dl, corners[i], corners[(i + 1) % 4], vp, ds, col, 1.5f);
+
+    // Normal arrow from center
+    DrawWorldLine(dl, pos, pos + dir * 0.5f, vp, ds, col, 2.0f);
+}
+
+
+static void DrawLightGizmos()
+{
+    auto& lights = GEditor.doc.scene.mLights;
+    if (lights.empty() || !GEditor.viewport.HasRect())
+        return;
+
+    ImVec2 displaySize = GEditor.viewport.Size();
+    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+    mat4 viewProj = GEditor.camera.proj * GEditor.camera.view;
+
+    // -- Shape overlays for all lights --
+    for (int i = 0; i < static_cast<int>(lights.size()); i++)
+    {
+        bool selected = (i == GEditor.doc.selectedLight);
+        ImU32 color = selected ? IM_COL32(255, 200, 50, 255)   // gold for selected
+                               : IM_COL32(255, 255, 100, 100); // dim yellow for others
+
+        auto& light = lights[i];
+        switch (light.type)
+        {
+        case FLightType::Directional: DrawDirectionalOverlay(light, viewProj, drawList, displaySize, color); break;
+        case FLightType::Point:       DrawPointOverlay(light, viewProj, drawList, displaySize, color);       break;
+        case FLightType::Spot:        DrawSpotOverlay(light, viewProj, drawList, displaySize, color);        break;
+        case FLightType::Disk:        DrawDiskOverlay(light, viewProj, drawList, displaySize, color);        break;
+        case FLightType::Rect:        DrawRectOverlay(light, viewProj, drawList, displaySize, color);        break;
+        }
+    }
+
+    // -- ImGuizmo manipulator for the selected light --
+    if (GEditor.doc.selectedLight < 0 || GEditor.doc.selectedLight >= static_cast<int>(lights.size()))
+        return;
+
+    auto& light = lights[GEditor.doc.selectedLight];
+    bool hasPosition = (light.type != FLightType::Directional);
+
+    // Build model matrix from light transform (no scale — lights don't scale)
+    mat4 modelMatrix = translate(mat4(1.0f), vec3(light.transform.transform))
+                     * mat4_cast(light.transform.rotation);
+
+    ImGuizmo::BeginFrame();
+    ImGuizmo::SetDrawlist(drawList);
+    ImGuizmo::SetRect(GEditor.viewport.contentMin.x, GEditor.viewport.contentMin.y,
+                      displaySize.x, displaySize.y);
+
+    // Directional: rotate only. Others: translate + rotate (never scale).
+    ImGuizmo::OPERATION op = hasPosition ? GEditor.gizmo.op : ImGuizmo::ROTATE;
+    if (op == ImGuizmo::SCALE)
+        op = ImGuizmo::TRANSLATE; // lights don't have meaningful uniform scale
+
+    if (ImGuizmo::Manipulate(&GEditor.camera.view[0][0], &GEditor.camera.proj[0][0],
+                             op, GEditor.gizmo.mode, &modelMatrix[0][0]))
+    {
+        float3 newTranslation;
+        quat newRotation;
+        float3 newScale;
+        Math::decompose(modelMatrix, newScale, newRotation, newTranslation);
+        light.transform.transform = newTranslation;
+        light.transform.rotation = newRotation;
+        // Sync to GPU
+        UpdateSceneLights();
+        GEditor.shaderGlobals.ptAccumulatedFrames = 0;
     }
 }
