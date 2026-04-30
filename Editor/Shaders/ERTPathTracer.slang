@@ -264,24 +264,6 @@ float3 GeneratePrimaryRay<S : ISampler>(uint2 pixel, inout S rng)
     return normalize(wsPosition.xyz / wsPosition.w - globalParams.camPosition.xyz);
 }
 
-float2 SampleRegularPolygonLens(float corners /* blades */, float rotation /* radians */, float2 u)
-{
-    float corner = floor(u.x * corners);
-    u.x = u.x * corners - corner;
-
-    u.x = sqrt(u.x);
-    u.y *= u.x;
-    u.x = 1.0f - u.x;
-
-    float angle = Pi / corners;
-    float2 p = float2((u.x + u.y) * cos(angle), (u.x - u.y) * sin(angle));
-
-    rotation += corner * 2.0f * angle;
-    float cr = cos(rotation);
-    float sr = sin(rotation);
-    return float2(cr * p.x - sr * p.y, sr * p.x + cr * p.y);
-}
-
 float2 SampleAnamorphicLens(float2 u)
 {
     uint blades = globalParams.apertureBlades;
@@ -318,29 +300,6 @@ bool TraceShadowRay(float3 origin, float3 direction, float tMax = INF)
     return payload.hit;
 }
 
-float BSSRDFPdfSp(DisneyBurleyBSSRDF bssrdf, HitState po, HitState pi)
-{
-    float3 d = po.position - pi.position;
-    float3 dLocal = float3(dot(po.tangent, d), dot(po.bitangent, d), dot(po.normal, d));
-    float3 nLocal = float3(dot(po.tangent, pi.geometryNormal),
-                           dot(po.bitangent, pi.geometryNormal),
-                           dot(po.normal, pi.geometryNormal));
-
-    float rProjX = sqrt(dLocal.y * dLocal.y + dLocal.z * dLocal.z);
-    float rProjY = sqrt(dLocal.z * dLocal.z + dLocal.x * dLocal.x);
-    float rProjZ = sqrt(dLocal.x * dLocal.x + dLocal.y * dLocal.y);
-
-    float pdf = 0.0f;
-    const float chProb = 1.0f / 3.0f;
-    for (uint ch = 0u; ch < 3u; ++ch)
-    {
-        pdf += 0.25f * chProb * abs(nLocal.x) * bssrdf.Pdf_Sr(ch, rProjX);
-        pdf += 0.25f * chProb * abs(nLocal.y) * bssrdf.Pdf_Sr(ch, rProjY);
-        pdf += 0.50f * chProb * abs(nLocal.z) * bssrdf.Pdf_Sr(ch, rProjZ);
-    }
-    return pdf;
-}
-
 bool HasUsableBSSRDF(Payload surface)
 {
     return surface.subsurface > EPS &&
@@ -348,7 +307,7 @@ bool HasUsableBSSRDF(Payload surface)
            MaxComponent(surface.baseColor * surface.subsurfaceColor) > EPS;
 }
 
-bool SampleBSSRDFSurface<S : ISampler>(
+bool SeparableBSSRDF_SampleSp<S : ISampler>(
     Payload surface,
     uint32_t sourceInstance,
     inout S rng,
@@ -358,8 +317,7 @@ bool SampleBSSRDFSurface<S : ISampler>(
     if (!HasUsableBSSRDF(surface))
         return false;
 
-    DisneyBurleyBSSRDF bssrdf =
-        DisneyBurleyBSSRDF(surface.baseColor * surface.subsurfaceColor, surface.subsurfaceRadius);
+    ISeparableBSSRDF bssrdf = DisneyBurleyBSSRDF(surface.baseColor * surface.subsurfaceColor, surface.subsurfaceRadius);
 
     float axisSample = rng.sample();
     float3 vx, vy, vz;
@@ -421,8 +379,14 @@ bool SampleBSSRDFSurface<S : ISampler>(
 
     Payload pi = SamplePayload(selectedHit, queryRay);
     float selectionPdf = queryPayload.reservoir.SelectionPDF();
-    float pdfSp = BSSRDFPdfSp(bssrdf, surface.hit, pi.hit) * selectionPdf;
-    float3 Sp = bssrdf.Sr(length(surface.hit.position - pi.hit.position));
+    BSSRDFSurfaceInteraction poBSSRDF =
+        BSSRDFSurfaceInteraction(surface.hit.position, surface.hit.normal,
+                                 surface.hit.tangent, surface.hit.bitangent);
+    BSSRDFSurfaceInteraction piBSSRDF =
+        BSSRDFSurfaceInteraction(pi.hit.position, pi.hit.geometryNormal,
+                                 pi.hit.tangent, pi.hit.bitangent);
+    float pdfSp = bssrdf.Pdf_Sp(poBSSRDF, piBSSRDF) * selectionPdf;
+    float3 Sp = bssrdf.Sp(poBSSRDF, piBSSRDF);
     if (pdfSp <= EPS || MaxComponent(Sp) <= EPS)
         return false;
 
@@ -839,7 +803,7 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
         if (sampleBSSRDF)
         {
             BSSRDFSurfaceSample sample;
-            if (!SampleBSSRDFSurface(surface, payload.instance, rng, sample))
+            if (!SeparableBSSRDF_SampleSp(surface, payload.instance, rng, sample))
                 break;
 
             float3 localBeta = beta * sample.Sp / max(pSampleBSSRDF * sample.pdf, EPS);
@@ -849,9 +813,8 @@ void PathTrace<S : ISampler>(uint2 pix, inout S rng)
             Payload exitSurface = sample.surface;
             quat exitToLocal = quatRotateToZ(exitSurface.hit.normal);
             quat exitToWorld = exitToLocal.inverted();
-            // The separable BSSRDF exit adapter is diffuse for this MVP.
+            // Lambertian assumed for subsurface interactions
             const float3 exitF = float3(InvPi);
-
             AddDiffuseDirectLighting(exitSurface.hit, exitToLocal, exitF, localBeta,
                                      bounce, firstBounceCategory, AOVCategory::Diffuse,
                                      env, rng, totalLightWeight, lastLightCtx, LDiffuse, LSpecular);

@@ -262,6 +262,26 @@ public float CosineHemispherePDF(float cosTheta) {
     return cosTheta * InvPi;
 }
 
+// Lens helpers
+
+public float2 SampleRegularPolygonLens(float corners /* blades */, float rotation /* radians */, float2 u)
+{
+    float corner = floor(u.x * corners);
+    u.x = u.x * corners - corner;
+
+    u.x = sqrt(u.x);
+    u.y *= u.x;
+    u.x = 1.0f - u.x;
+
+    float angle = Pi / corners;
+    float2 p = float2((u.x + u.y) * cos(angle), (u.x - u.y) * sin(angle));
+
+    rotation += corner * 2.0f * angle;
+    float cr = cos(rotation);
+    float sr = sin(rotation);
+    return float2(cr * p.x - sr * p.y, sr * p.x + cr * p.y);
+}
+
 // https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory
 // Trowbridge-Reitz (GGX) distribution/shadow-masking functions
 public struct TrowbridgeReitzDistribution {

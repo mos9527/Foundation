@@ -12,13 +12,37 @@
 
 import IBxDF;
 import IMath;
-public float DisneySchlickWeight(float cosTheta)
+
+public struct BSSRDFSurfaceInteraction
 {
-    float m = clamp(1.0f - cosTheta, 0.0f, 1.0f);
-    return m * m * m * m * m;
+    public float3 position;
+    public float3 normal;
+    public float3 tangent;
+    public float3 bitangent;
+
+    public __init(float3 position = float3(0.0f), float3 normal = float3(0.0f, 0.0f, 1.0f),
+                  float3 tangent = float3(1.0f, 0.0f, 0.0f), float3 bitangent = float3(0.0f, 1.0f, 0.0f))
+    {
+        this.position = position;
+        this.normal = normal;
+        this.tangent = tangent;
+        this.bitangent = bitangent;
+    }
 }
 
-public struct DisneyBurleyBSSRDF
+public interface ISeparableBSSRDF
+{
+    // Radial profile evaluated at distance r.
+    public float3 Sr(float r);
+    public float3 Sp(BSSRDFSurfaceInteraction po, BSSRDFSurfaceInteraction pi);
+    public float Sample_Sr(uint channel, float u);
+    public float Pdf_Sr(uint channel, float r);
+    public float Pdf_Sp(BSSRDFSurfaceInteraction po, BSSRDFSurfaceInteraction pi);
+    // See also SeparableBSSRDF_SampleSp in the integrator
+}
+
+// 2.4 Subsurface diffusion [Burley15]
+public struct DisneyBurleyBSSRDF : ISeparableBSSRDF
 {
     public float3 reflectance;
     public float3 scatterDistance;
@@ -30,7 +54,7 @@ public struct DisneyBurleyBSSRDF
         this.scatterDistance = max(0.2f * scatterDistance, float3(EPS));
     }
 
-    // Diffusion profile from Burley 2015, eq. (5).
+    // Exp fit of eq. (5), normalized to 1 over an infinite _surface_...
     public float3 Sr(float r)
     {
         r = max(r, 1e-6f);
@@ -39,6 +63,25 @@ public struct DisneyBurleyBSSRDF
                (8.0f * Pi * d * r);
     }
 
+    public float3 Sp(BSSRDFSurfaceInteraction po, BSSRDFSurfaceInteraction pi)
+    {
+        return Sr(length(po.position - pi.position));
+    }
+
+    // ...onto a radial profile, which would be Pr = 2pi * r * Sr (reflectance omitted)
+    // Pr = (exp(-r/d) + exp(-r/(3d))) / (4d)
+    //    = 0.25 * exp(-r/d) / d + 0.75 * exp(-r/(3d)) / (3d)
+    // Integrate Pr to get CDF, which is trivial:
+    //  F = 0.25 * (1 - exp(-r/d)) + 0.75 * (1 - exp(-r/(3d)))
+    // Inversion can also be done in closed form:
+    //  - Let x = exp(-r / (3d)), we have F = u = 1 - 0.25 x^3 - 0.75 x
+    //  - x^3 + 3x = 4(1 - F)
+    // Solve the cubic, one real root. You can go with closed form one like this via hyperbolics,
+    // Note that [sinh(3a) = 3sinh(a) + 4sinh^3(a)] holds:
+    //  - r = -3d * log(2sinh(asinh(2(1 - u)) / 3))
+    // Or go with MIS. Indivdual Exp 'lobes' are nice to invert:
+    //  - [0.25 part] r = d * log(1 / (1 - u))
+    //  - [0.75 part] r = 3d * log(1 / (1 - u))
     public float Sample_Sr(uint channel, float u)
     {
         float d = scatterDistance[channel];
@@ -47,17 +90,44 @@ public struct DisneyBurleyBSSRDF
             u = min(u * 4.0f, 0.99999994f);
             return d * log(1.0f / (1.0f - u));
         }
-
+    
         u = min((u - 0.25f) / 0.75f, 0.99999994f);
         return 3.0f * d * log(1.0f / (1.0f - u));
     }
 
+    // PDF can be then derived via balance heuristic, again it's simply a weighted sum here.
     public float Pdf_Sr(uint channel, float r)
     {
-        r = max(r, 1e-6f);
+        r = max(r, 1e-6f); // Avoid singularity at r == 0.
+
+        // Weight the two individual PDFs as per the sampling frequency in
+        // Sample_Sr().
         float d = scatterDistance[channel];
         return 0.25f * exp(-r / d) / (2.0f * Pi * d * r) +
                0.75f * exp(-r / (3.0f * d)) / (6.0f * Pi * d * r);
+    }
+
+    public float Pdf_Sp(BSSRDFSurfaceInteraction po, BSSRDFSurfaceInteraction pi)
+    {
+        float3 d = po.position - pi.position;
+        float3 dLocal = float3(dot(po.tangent, d), dot(po.bitangent, d), dot(po.normal, d));
+        float3 nLocal = float3(dot(po.tangent, pi.normal),
+                               dot(po.bitangent, pi.normal),
+                               dot(po.normal, pi.normal));
+
+        float rProjX = sqrt(dLocal.y * dLocal.y + dLocal.z * dLocal.z);
+        float rProjY = sqrt(dLocal.z * dLocal.z + dLocal.x * dLocal.x);
+        float rProjZ = sqrt(dLocal.x * dLocal.x + dLocal.y * dLocal.y);
+
+        float pdf = 0.0f;
+        const float chProb = 1.0f / 3.0f;
+        for (uint ch = 0u; ch < 3u; ++ch)
+        {
+            pdf += 0.25f * chProb * abs(nLocal.x) * Pdf_Sr(ch, rProjX);
+            pdf += 0.25f * chProb * abs(nLocal.y) * Pdf_Sr(ch, rProjY);
+            pdf += 0.50f * chProb * abs(nLocal.z) * Pdf_Sr(ch, rProjZ);
+        }
+        return pdf;
     }
 };
 
@@ -89,6 +159,7 @@ public struct BSSRDFSurfaceCandidate : IReservoirCandidate
 // See also
 //   - https://github.com/mmp/pbrt-v3/blob/master/src/materials/disney.cpp#L123
 //   - https://dl.acm.org/doi/10.1145/166117.166139 [Krueger93]
+//   - 2.3 Dielectric BRDF with integrated subsurface scattering [Burley15]
 public struct DisneyFakeSS : IBxDF
 {
     float3 color;
@@ -102,6 +173,12 @@ public struct DisneyFakeSS : IBxDF
 
     public BxDFFlags Flags() { return BxDFFlags::DiffuseReflection; }
 
+    float DisneySchlickWeight(float cosTheta)
+    {
+        float m = clamp(1.0f - cosTheta, 0.0f, 1.0f);
+        return m * m * m * m * m;
+    }
+
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode)
     {
         if (!SameHemisphere(wo, wi)) return 0.0f;
@@ -112,8 +189,9 @@ public struct DisneyFakeSS : IBxDF
 
         float cosThetaD = dot(wi, wh);
         float fss90 = cosThetaD * cosThetaD * roughness;
-        float Fo = DisneySchlickWeight(AbsCosTheta(wo));
-        float Fi = DisneySchlickWeight(AbsCosTheta(wi));
+        // 'DisneyRetro'
+        float Fo = DisneySchlickWeight(AbsCosTheta(wo)); // FL
+        float Fi = DisneySchlickWeight(AbsCosTheta(wi)); // FV
         float Fss = lerp(1.0f, fss90, Fo) * lerp(1.0f, fss90, Fi);
 
         float cosSum = max(AbsCosTheta(wo) + AbsCosTheta(wi), EPS);
