@@ -211,7 +211,7 @@ static void FRunning()
         sPicking.pendingPixel = {-1, -1};
     }
     if (!GEditor.renderTask.renderPaused)
-        GEditor.shaderGlobals.ptAccumulatedFrames++;
+        GEditor.shaderGlobals.ptAccumulatedFrames += PTSamplesPerDispatch(GEditor.shaderGlobals);
 }
 
 static ImVec2 EventMousePosition(SDL_Event const& event)

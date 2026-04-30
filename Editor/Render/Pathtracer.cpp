@@ -218,7 +218,10 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             r->CmdSetPipeline(self, cmd);
             r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexturePool()->GetDescriptorSet());
             if (!renderPaused || !*renderPaused)
-                cmd->TraceRays(w, h, 1);
+            {
+                uint32_t tileSide = PTDispatchTileSide(*scene.gsGlobals);
+                cmd->TraceRays((w - 1u) / tileSide + 1u, (h - 1u) / tileSide + 1u, 1);
+            }
         });
 
     createPSFullscreenPass(

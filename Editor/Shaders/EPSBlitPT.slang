@@ -19,7 +19,7 @@ struct PickPC { int px; int py; };
 
 [shader("fragment")]
 float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGET {
-    int3 coord = int3(fragCoord.x, fragCoord.y, 0);
+    int3 coord = int3(int(fragCoord.x), int(fragCoord.y), 0);
     uint32_t instanceID = pickIDBuffer.Load(coord);
     uint32_t pickID = pickResult[0];
     // GPU picking: if this pixel is the clicked one, write instanceID to result buffer
@@ -32,24 +32,24 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     pp.HdrPaperWhiteNits = globalParams.paperWhiteNits;
     // GBuffer debug views — buffers already hold running averages (Welford)
     float4 result;
-    if (flags & kViewBaseColor) {
+    if ((flags & kViewBaseColor) != 0) {
         float3 baseColor = gBuffer0Tex.Load(coord).xyz;
         result = float4(baseColor, 1.0f);
-    } else if (flags & kViewNormal) {
+    } else if ((flags & kViewNormal) != 0) {
         float3 normal = gBuffer1Tex.Load(coord).xyz;
         result = float4(normal, 1.0f);
-    } else if (flags & kViewMaterialID) {
+    } else if ((flags & kViewMaterialID) != 0) {
         float matIDPacked = gBuffer0Tex.Load(coord).w;
         uint materialID = uint(matIDPacked * 255.0f + 0.5f);
         result = float4(unpackUnorm4x8ToFloat(hash(materialID)).xyz, 1.0f);
-    } else if (flags & kViewPosition) {
+    } else if ((flags & kViewPosition) != 0) {
         float3 position = gBuffer2Tex.Load(coord).xyz;
         result = float4(position, 1.0f);
-    } else if (flags & (kViewAOVDiffuse | kViewAOVSpecular)) {
+    } else if ((flags & (kViewAOVDiffuse | kViewAOVSpecular)) != 0) {
         // Per-lobe AOV isolation views (tone mapped)
         float3 aov = float3(0);
-        if (flags & kViewAOVDiffuse)  aov = diffuseTex.Load(coord).xyz;
-        if (flags & kViewAOVSpecular) aov = specularTex.Load(coord).xyz;
+        if ((flags & kViewAOVDiffuse) != 0)  aov = diffuseTex.Load(coord).xyz;
+        if ((flags & kViewAOVSpecular) != 0) aov = specularTex.Load(coord).xyz;
         result = float4(Postprocess(aov, pp), 1.0f);
     } else {
         // Composite lighting = diffuse + specular (already averaged), then tone map

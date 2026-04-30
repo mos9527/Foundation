@@ -47,6 +47,71 @@ static const uint kRayTypeShadow = 1u;
 static const uint kRayTypeBSSRDFQuery = 2u;
 static const uint32_t kLightInstanceBit = 1u << 23;
 
+uint GetPTTileSide()
+{
+    return max(globalParams.ptDispatchTileSide, 1u);
+}
+
+uint GetPTSamplesPerDispatch()
+{
+    return max(globalParams.ptSamplesPerPixel, 1u);
+}
+
+uint GetPTTileSampleCount()
+{
+    uint tileSide = GetPTTileSide();
+    return max(tileSide * tileSide, 1u);
+}
+
+uint GetPTBasePixelSampleCount()
+{
+    return globalParams.ptAccumulatedFrames / GetPTTileSampleCount();
+}
+
+uint2 GetPTPixel()
+{
+    uint tileSide = GetPTTileSide();
+    uint sampleIndex = globalParams.ptAccumulatedFrames % GetPTTileSampleCount();
+    uint2 sampleOffset = uint2(sampleIndex % tileSide, sampleIndex / tileSide);
+    return DispatchRaysIndex().xy * tileSide + sampleOffset;
+}
+
+bool IsPTPixelInBounds(uint2 pix)
+{
+    return pix.x < uint(globalParams.fbWidth) && pix.y < uint(globalParams.fbHeight);
+}
+
+void ClearPTTile()
+{
+    uint tileSide = GetPTTileSide();
+    if (tileSide <= 1u || globalParams.ptAccumulatedFrames != 0u)
+        return;
+
+    uint2 tileOrigin = DispatchRaysIndex().xy * tileSide;
+    uint2 extent = uint2(uint(globalParams.fbWidth), uint(globalParams.fbHeight));
+    for (uint y = 0u; y < tileSide; y++)
+    {
+        for (uint x = 0u; x < tileSide; x++)
+        {
+            uint2 clearPix = tileOrigin + uint2(x, y);
+            if (any(clearPix >= extent))
+                continue;
+
+            diffuse[clearPix] = float4(0);
+            specular[clearPix] = float4(0);
+            gBuffer0[clearPix] = float4(0);
+            gBuffer1[clearPix] = float4(0.5f, 0.5f, 1.0f, 0.0f);
+            gBuffer2[clearPix] = float4(0);
+            pickIDBuffer[clearPix] = ~0u;
+        }
+    }
+}
+
+uint GetPTPixelSampleCount(uint subSample)
+{
+    return GetPTBasePixelSampleCount() + subSample + 1u;
+}
+
 // World-space hit geometry
 struct HitState
 {
@@ -313,7 +378,7 @@ void AddRadiance(inout float3 L, float3 v, bool direct = false)
 float3 GeneratePrimaryRay<S : ISampler>(uint2 pixel, inout S rng)
 {
     float2 jitter = lerp(float2(-0.5f), float2(0.5f), rng.sample2D());
-    float2 uv = float2(pixel + jitter + 0.5f) / DispatchRaysDimensions().xy;
+    float2 uv = float2(pixel + jitter + 0.5f) / float2(globalParams.fbWidth, globalParams.fbHeight);
     float4 ndcPosition = float4(uv, 1.0f, 1.0f);
     ndcPosition.y = 1 - ndcPosition.y;
     ndcPosition.xy = ndcPosition.xy * 2.0f - 1.0f;
@@ -771,28 +836,37 @@ void AddEnvironmentMiss(
 [shader("raygeneration")]
 void RayGeneration()
 {
-    uint2 pix = DispatchRaysIndex().xy;
+    ClearPTTile();
 
-    // PCG or Sobol
-    if (globalParams.ptSampler == 0)
+    uint2 pix = GetPTPixel();
+    if (!IsPTPixelInBounds(pix))
+        return;
+
+    for (uint subSample = 0; subSample < GetPTSamplesPerDispatch(); subSample++)
     {
-        PCG rng = PCG(pix, globalParams.frameNumber);
-        PathTrace(pix, rng);
-    }
-    else
-    {
-        Sobol rng = Sobol(pix, globalParams.frameNumber, sobolMatrices);
-        PathTrace(pix, rng);
+        uint sampleIndex = GetPTBasePixelSampleCount() + subSample;
+
+        // PCG or Sobol
+        if (globalParams.ptSampler == 0)
+        {
+            PCG rng = PCG(pix, sampleIndex);
+            PathTrace(pix, subSample, rng);
+        }
+        else
+        {
+            Sobol rng = Sobol(pix, sampleIndex, sobolMatrices);
+            PathTrace(pix, subSample, rng);
+        }
     }
 }
 
-void PathTrace<S : ISampler>(uint2 pix, inout S rng)
+void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
 {
     float3 beta = float3(1);
     PathRadiance radiance = PathRadiance();
     AOVCategory firstBounceCategory = AOVCategory::Undefined;
     bool gbufferWritten = false;
-    float frameCount = float(globalParams.ptAccumulatedFrames + 1);
+    float frameCount = float(GetPTPixelSampleCount(subSample));
     RayDesc ray = GenerateCameraRay(pix, rng);
     // Combine the miss hit with the last light sample
     float lastSamplePDF = 0.0f;
@@ -1018,7 +1092,7 @@ void RayOpacityAnyHit(in BuiltInTriangleIntersectionAttributes attr)
 {
     uint instance = InstanceID();
     uint primitive = PrimitiveIndex();
-    PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
+    PCG rng = PCG(GetPTPixel(), globalParams.frameNumber, hash(uint2(instance, primitive)));
     if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
         return IgnoreHit();
 }
@@ -1028,7 +1102,7 @@ void ShadowRayAnyHit(inout ShadowPayload payload, in BuiltInTriangleIntersection
 {
     uint instance = InstanceID();
     uint primitive = PrimitiveIndex();
-    PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber, hash(uint2(instance, primitive)));
+    PCG rng = PCG(GetPTPixel(), globalParams.frameNumber, hash(uint2(instance, primitive)));
     if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
         return IgnoreHit();
     payload.hit = true;
@@ -1043,7 +1117,7 @@ void BSSRDFQueryAnyHit(inout BSSRDFQueryPayload payload, in BuiltInTriangleInter
     if (IsLightInstance(instance))
         return IgnoreHit();
 
-    PCG rng = PCG(DispatchRaysIndex().xy, globalParams.frameNumber,
+    PCG rng = PCG(GetPTPixel(), globalParams.frameNumber,
                   hash(uint3(instance, primitive, payload.reservoir.sampleCount)));
     if (AnyHitOpacityIgnore(rng, instance, primitive, attr))
         return IgnoreHit();

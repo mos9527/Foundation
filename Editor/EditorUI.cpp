@@ -1,5 +1,6 @@
 #include <cmath>
 #include <cfloat>
+#include <algorithm>
 #include <nfd.h>
 #include <Math/Decompose.hpp>
 #include <imgui_internal.h>
@@ -7,6 +8,52 @@
 #include "Scene/Mesh.hpp"
 
 static void DrawLightGizmos();
+
+struct PTSPPOption
+{
+    const char* label;
+    uint32_t samplesPerPixel;
+    uint32_t dispatchTileSide;
+};
+
+static constexpr PTSPPOption kPTSPPOptions[] = {
+    {"1/64", 1u, 8u},
+    {"1/49", 1u, 7u},
+    {"1/36", 1u, 6u},
+    {"1/25", 1u, 5u},
+    {"1/16", 1u, 4u},
+    {"1/9",  1u, 3u},
+    {"1/4",  1u, 2u},
+    {"1",    1u, 1u},
+    {"2",    2u, 1u},
+    {"3",    3u, 1u},
+    {"4",    4u, 1u},
+    {"5",    5u, 1u},
+};
+static constexpr int kPTSPPOptionCount = static_cast<int>(sizeof(kPTSPPOptions) / sizeof(kPTSPPOptions[0]));
+
+static int PTSPPOptionIndex(UBO const& ubo)
+{
+    uint32_t samplesPerPixel = PTSamplesPerDispatch(ubo);
+    uint32_t dispatchTileSide = PTDispatchTileSide(ubo);
+    for (int i = 0; i < kPTSPPOptionCount; ++i)
+        if (kPTSPPOptions[i].samplesPerPixel == samplesPerPixel &&
+            kPTSPPOptions[i].dispatchTileSide == dispatchTileSide)
+            return i;
+    return 3; // 1/25 SPP
+}
+
+static void SetPTSPPOption(int index)
+{
+    PTSPPOption const& option = kPTSPPOptions[std::clamp(index, 0, kPTSPPOptionCount - 1)];
+    if (GEditor.shaderGlobals.ptSamplesPerPixel != option.samplesPerPixel ||
+        GEditor.shaderGlobals.ptDispatchTileSide != option.dispatchTileSide)
+    {
+        GEditor.shaderGlobals.ptSamplesPerPixel = option.samplesPerPixel;
+        GEditor.shaderGlobals.ptDispatchTileSide = option.dispatchTileSide;
+        GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+    }
+}
 
 static void DrawAperturePreview(uint32_t blades, float rotation, float ratio)
 {
@@ -207,9 +254,13 @@ void EditorDockSpaceAndMenuBar()
             ImGui::Separator();
             if (pathTracerRender)
             {
-                ImGui::InputInt("Samples (frames)", &GEditor.renderTask.samplePopupInput);
+                ImGui::InputInt("Samples / pixel", &GEditor.renderTask.samplePopupInput);
                 if (GEditor.renderTask.samplePopupInput < 1)
                     GEditor.renderTask.samplePopupInput = 1;
+                uint32_t dispatchFrames = PTDispatchesForPixelSamples(
+                    GEditor.shaderGlobals, static_cast<uint32_t>(GEditor.renderTask.samplePopupInput));
+                ImGui::Text("Current SPP: %s, dispatch frames: %u",
+                            kPTSPPOptions[PTSPPOptionIndex(GEditor.shaderGlobals)].label, dispatchFrames);
             }
             else
             {
@@ -756,6 +807,11 @@ void FRunningImGui()
             ImGui::SliderInt("Transmission", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesTransmission), 0, 64);
             ImGui::SeparatorText("Sampling");
             ImGui::SliderFloat("Max Energy", &GEditor.shaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
+            static int ptSPPIndex = 3; // 1/25 SPP
+            ptSPPIndex = PTSPPOptionIndex(GEditor.shaderGlobals);
+            if (ImGui::SliderInt("SPP", &ptSPPIndex, 0, kPTSPPOptionCount - 1,
+                                 kPTSPPOptions[ptSPPIndex].label, ImGuiSliderFlags_AlwaysClamp))
+                SetPTSPPOption(ptSPPIndex);
             const char* samplerItems[] = {"PCG (Independent)", "Sobol (Quasi-Monte Carlo)"};
             if (ImGui::Combo("Sampler", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptSampler), samplerItems, 2))
             {
@@ -950,6 +1006,9 @@ void FRendering(RendererHandles const& handles)
     ImGui::NewFrame();
 
     bool cancelRendering = false;
+    uint32_t targetFrames = GEditor.rendererMode == ERendererMode::PathTracer
+        ? PTAccumulationStepTarget(GEditor.shaderGlobals, static_cast<uint32_t>(GEditor.renderTask.targetSamples))
+        : static_cast<uint32_t>(GEditor.renderTask.targetSamples);
     // Full-width progress bar at the top
     {
         auto& io = ImGui::GetIO();
@@ -963,11 +1022,14 @@ void FRendering(RendererHandles const& handles)
         ImGui::Begin("##RenderProgressBar", nullptr,
                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                          ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize);
-        float fraction = GEditor.renderTask.targetSamples > 0 ? static_cast<float>(GEditor.shaderGlobals.ptAccumulatedFrames) /
+        uint32_t completedSamples = GEditor.rendererMode == ERendererMode::PathTracer
+            ? PTCompletedPixelSamples(GEditor.shaderGlobals)
+            : GEditor.shaderGlobals.ptAccumulatedFrames;
+        float fraction = GEditor.renderTask.targetSamples > 0 ? static_cast<float>(completedSamples) /
                 static_cast<float>(GEditor.renderTask.targetSamples)
                                                             : 0.0f;
         char overlay[128];
-        snprintf(overlay, sizeof(overlay), "%d / %d %s", GEditor.shaderGlobals.ptAccumulatedFrames,
+        snprintf(overlay, sizeof(overlay), "%d / %d %s", completedSamples,
                  GEditor.renderTask.targetSamples,
                  GEditor.rendererMode == ERendererMode::PathTracer ? "samples" : "frames");
         ImGui::ProgressBar(fraction, ImVec2(barW, barH), overlay);
@@ -996,13 +1058,13 @@ void FRendering(RendererHandles const& handles)
     GEditor.shaderGlobals.frameNumber = renderer->GetFrame();
     renderer->ExecuteFrame();
     renderer->EndExecute();
-    GEditor.shaderGlobals.ptAccumulatedFrames++;
+    GEditor.shaderGlobals.ptAccumulatedFrames += PTSamplesPerDispatch(GEditor.shaderGlobals);
 
     if (cancelRendering)
     {
         GEditor.state = FERunning;
     }
-    else if (GEditor.shaderGlobals.ptAccumulatedFrames >= static_cast<uint32_t>(GEditor.renderTask.targetSamples))
+    else if (GEditor.shaderGlobals.ptAccumulatedFrames >= targetFrames)
     {
         if (handles.numHdrRT > 0u)
             DoHDRReadback(handles);

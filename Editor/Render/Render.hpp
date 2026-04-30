@@ -49,6 +49,8 @@ struct UBO
     uint32_t ptMaxBouncesTransmission{12u};
     float ptFireflyClamp{1.0f}; // 10^x
     uint32_t ptSampler{1u}; // 0: PCG, 1: Sobol
+    uint32_t ptSamplesPerPixel{1u}; // Always >= 1; fractional SPP uses ptDispatchTileSide instead.
+    uint32_t ptDispatchTileSide{5u}; // 1 = full dispatch, n > 1 = 1/(n*n) tile dispatch.
     // -- Display
     uint32_t enableHDR{0u};
     float paperWhiteNits{100.0f};
@@ -56,6 +58,39 @@ struct UBO
     uint32_t postShowOutline{0u};
 };
 #pragma pack(pop)
+
+inline uint32_t PTDispatchTileSide(UBO const& ubo)
+{
+    return ubo.ptDispatchTileSide > 0u ? ubo.ptDispatchTileSide : 1u;
+}
+
+inline uint32_t PTTileSampleCount(UBO const& ubo)
+{
+    uint32_t tileSide = PTDispatchTileSide(ubo);
+    return tileSide * tileSide;
+}
+
+inline uint32_t PTSamplesPerDispatch(UBO const& ubo)
+{
+    return ubo.ptSamplesPerPixel > 0u ? ubo.ptSamplesPerPixel : 1u;
+}
+
+inline uint32_t PTCompletedPixelSamples(UBO const& ubo)
+{
+    return ubo.ptAccumulatedFrames / PTTileSampleCount(ubo);
+}
+
+inline uint32_t PTAccumulationStepTarget(UBO const& ubo, uint32_t targetSamples)
+{
+    return targetSamples * PTTileSampleCount(ubo);
+}
+
+inline uint32_t PTDispatchesForPixelSamples(UBO const& ubo, uint32_t targetSamples)
+{
+    uint32_t samplesPerDispatch = PTSamplesPerDispatch(ubo);
+    uint32_t targetSteps = PTAccumulationStepTarget(ubo, targetSamples);
+    return (targetSteps + samplesPerDispatch - 1u) / samplesPerDispatch;
+}
 
 static const int kViewOverdraw = 1 << 0;
 static const int kViewMeshlet = 1 << 1;
