@@ -1,0 +1,10 @@
+---
+description: FSCN serialization format compatibility policy
+alwaysApply: true
+---
+
+# Serialization Format
+
+- Unless explicitly requested, do not preserve backwards compatibility with old FSCN serialization formats.
+- When changing serialized scene structs or layout, keep the code clean and store the new values directly.
+- Prefer bumping the FSCN magic/version and failing fast on older files over adding upgrade shims, legacy structs, or compatibility branches.

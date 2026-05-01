@@ -185,15 +185,17 @@ void LoadGLTF(StringView path, FScene& scene)
         material.subsurfaceFactor = 0.0f;
         material.subsurfaceColor = {1.0f, 1.0f, 1.0f};
         // Blender defaults
-        material.subsurfaceRadius = float3{1.0f, 0.2f, 0.1f} * 0.05f;
+        material.subsurfaceRadius = {1.0f, 0.2f, 0.1f};
+        material.subsurfaceScale = 0.05f;
         if (mat->has_subsurface)
         {
             material.subsurfaceFactor = std::clamp(mat->subsurface.subsurface_weight, 0.0f, 1.0f);
             material.subsurfaceRadius = {
-                mat->subsurface.subsurface_radius[0] * mat->subsurface.subsurface_scale,
-                mat->subsurface.subsurface_radius[1] * mat->subsurface.subsurface_scale,
-                mat->subsurface.subsurface_radius[2] * mat->subsurface.subsurface_scale
+                mat->subsurface.subsurface_radius[0],
+                mat->subsurface.subsurface_radius[1],
+                mat->subsurface.subsurface_radius[2]
             };
+            material.subsurfaceScale = mat->subsurface.subsurface_scale;
         }
         scene.mMaterials.emplace_back(material);
     }

@@ -109,6 +109,7 @@ public struct GSMaterial
     public float specularFactor;
     public float anisotropy;
     public float subsurfaceFactor;
+    public float subsurfaceScale;
     public float3 subsurfaceColor;
     public float3 subsurfaceRadius;
 };

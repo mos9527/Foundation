@@ -259,6 +259,7 @@ struct Payload
     float ior;
     float specularFactor;
     float subsurface;
+    float subsurfaceScale;
     float3 subsurfaceColor;
     float3 subsurfaceRadius;
 };
@@ -350,6 +351,7 @@ Payload SamplePayload(HitPayload payload, RayDesc ray)
     res.specularFactor = material.specularFactor;
     res.transmission = material.transmissionFactor;
     res.subsurface = material.subsurfaceFactor;
+    res.subsurfaceScale = material.subsurfaceScale;
     res.subsurfaceColor = material.subsurfaceColor;
     res.subsurfaceRadius = material.subsurfaceRadius;
     return res;
@@ -450,7 +452,7 @@ bool TraceShadowRay(float3 origin, float3 direction, float tMax = INF)
 bool HasUsableBSSRDF(Payload surface)
 {
     return surface.subsurface > EPS &&
-           MaxComponent(surface.subsurfaceRadius) > EPS &&
+           MaxComponent(surface.subsurfaceRadius * surface.subsurfaceScale) > EPS &&
            MaxComponent(surface.baseColor * surface.subsurfaceColor) > EPS;
 }
 
@@ -474,7 +476,8 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
     if (!HasUsableBSSRDF(surface))
         return false;
 
-    ISeparableBSSRDF bssrdf = DisneyBurleyBSSRDF(surface.baseColor * surface.subsurfaceColor, surface.subsurfaceRadius);
+    ISeparableBSSRDF bssrdf = DisneyBurleyBSSRDF(surface.baseColor * surface.subsurfaceColor,
+                                                surface.subsurfaceRadius * surface.subsurfaceScale);
     BSSRDFSurfaceInteraction poBSSRDF = MakeBSSRDFPo(surface.hit);
     BSSRDFSampleRaySegment segment =
         bssrdf.Sample_SpRay(poBSSRDF, rng.sample(), rng.sample(), rng.sample(), rng.sample());

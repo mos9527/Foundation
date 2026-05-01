@@ -29,6 +29,7 @@ Also w/ blog post series update on:
 - [ ] Texture sampling rate via ray differentials
   - Easy for camera rays, not so much for ones bouncing off BSDFs
 - [ ] Volume rendering
+- [ ] Curve (hair, fur) rendering
 
 Some time in the future:
 - [ ] Glass BSDF energy compensation 

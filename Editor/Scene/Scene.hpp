@@ -53,8 +53,9 @@ struct FMaterial
     float ior = 1.5f;
     float specularFactor = 1.0f;
     float subsurfaceFactor = 0.0f;
+    float subsurfaceScale = 0.05f;
     float3 subsurfaceColor{1.0f, 1.0f, 1.0f};
-    float3 subsurfaceRadius{1.0f, 1.0f, 1.0f};
+    float3 subsurfaceRadius{1.0f, 0.2f, 0.1f};
 };
 enum class FLightType : uint32_t
 {
@@ -80,7 +81,7 @@ struct FLight
     bool twoSided{false};
     bool normalize{true};
 };
-static constexpr uint32_t kSceneMagic = fourCC("FSCN");
+static constexpr uint32_t kSceneMagic = fourCC("FSC2");
 struct FScene
 {
     uint32_t mMagic;

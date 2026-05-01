@@ -57,6 +57,7 @@ struct GSMaterial
     float specularFactor;
     float anisotropy;
     float subsurfaceFactor;
+    float subsurfaceScale;
     float3 subsurfaceColor;
     float3 subsurfaceRadius;
 };
@@ -80,7 +81,7 @@ struct GSLight
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 52);
-static_assert(sizeof(GSMaterial) == 96);
+static_assert(sizeof(GSMaterial) == 100);
 static_assert(sizeof(GSLight) == 96);
 
 template <typename T>

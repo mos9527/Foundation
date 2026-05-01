@@ -125,6 +125,7 @@ static void SyncMaterialToGPU(uint32_t materialIndex)
     dst.ior = src.ior;
     dst.specularFactor = src.specularFactor;
     dst.subsurfaceFactor = src.subsurfaceFactor;
+    dst.subsurfaceScale = src.subsurfaceScale;
     dst.subsurfaceColor = src.subsurfaceColor;
     dst.subsurfaceRadius = src.subsurfaceRadius;
 }
@@ -395,6 +396,7 @@ void FHierarchyPanel()
             changed |= ImGui::SliderFloat("Weight", &material.subsurfaceFactor, 0.0f, 1.0f, "%.3f");
             changed |= ImGui::ColorEdit3("Color", &material.subsurfaceColor.x);
             changed |= ImGui::DragFloat3("Radius", &material.subsurfaceRadius.x, 0.001f, 0.0f, FLT_MAX, "%.4f");
+            changed |= ImGui::SliderFloat("Scale", &material.subsurfaceScale, 0.0f, 1.0f, "%.4f");
 
             ImGui::SeparatorText("Textures");
             ImGui::Text("Base Color: %u", gpuMaterial.baseColorTexture);

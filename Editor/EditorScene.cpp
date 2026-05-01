@@ -206,6 +206,7 @@ static void BuildEditorMaterials(Vector<uint32_t> const& textureIDMap)
         dst.ior = src.ior;
         dst.specularFactor = src.specularFactor;
         dst.subsurfaceFactor = src.subsurfaceFactor;
+        dst.subsurfaceScale = src.subsurfaceScale;
         dst.subsurfaceColor = src.subsurfaceColor;
         dst.subsurfaceRadius = src.subsurfaceRadius;
     }
