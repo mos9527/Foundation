@@ -81,7 +81,7 @@ FetchContent_Declare(
 
 FetchContent_Declare(
     cgltf
-    GIT_REPOSITORY https://github.com/mos9527/Foundation-cgltf
+    SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/cgltf"
 )
 
 FetchContent_Declare(

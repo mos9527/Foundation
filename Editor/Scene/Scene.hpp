@@ -18,6 +18,12 @@ struct FInstance
     uint32_t meshIndex;
     uint32_t materialIndex;
 };
+struct FCurveInstance
+{
+    FTransform transform;
+    uint32_t curveIndex;
+    uint32_t materialIndex;
+};
 struct FCamera
 {
     FTransform transform;
@@ -92,20 +98,48 @@ struct FLight
     bool twoSided{false};
     bool normalize{true};
 };
-static constexpr uint32_t kSceneMagic = fourCC("FSC2");
+struct FCurvePoint
+{
+    float3 position;
+    float radius;
+};
+enum class FCurveBasis : uint32_t
+{
+    Linear = 0,
+    Bezier = 1,
+    BSpline = 2,
+    CatmullRom = 3,
+};
+enum class FCurveRenderMode : uint32_t
+{
+    Capsule = 0,
+};
+struct FCurveSet
+{
+    Vector<FCurvePoint> points;
+    Vector<uint32_t> curveVertexCounts;
+    FCurveBasis basis{FCurveBasis::Linear};
+    FCurveRenderMode renderMode{FCurveRenderMode::Capsule};
+    uint32_t materialIndex{0};
+
+    FCurveSet(Allocator* alloc) : points(alloc), curveVertexCounts(alloc) {}
+};
+static constexpr uint32_t kSceneMagic = fourCC("FSC3");
 struct FScene
 {
     uint32_t mMagic;
 
     Vector<FCamera> mCameras;
     Vector<FInstance> mInstances;
+    Vector<FCurveInstance> mCurveInstances;
     Vector<FMaterial> mMaterials;
     Vector<FMesh> mMeshes;
+    Vector<FCurveSet> mCurves;
     Vector<FTexture2D> mTextures;
     Vector<FLight> mLights;
 
     FScene(Allocator* alloc) :
-        mMagic(kSceneMagic), mCameras(alloc), mInstances(alloc), mMaterials(alloc), mMeshes(alloc), mTextures(alloc), mLights(alloc)
+        mMagic(kSceneMagic), mCameras(alloc), mInstances(alloc), mCurveInstances(alloc), mMaterials(alloc), mMeshes(alloc), mCurves(alloc), mTextures(alloc), mLights(alloc)
     {
     }
 };
@@ -125,13 +159,33 @@ void LoadFSCN(StringView path, FScene& scene);
 void LoadScene(StringView path, FScene& scene);
 /* -- Serialization -- */
 template <>
+inline void FSerialize(FWriter& w, FCurveSet const& obj)
+{
+    FSerialize(w, obj.points);
+    FSerialize(w, obj.curveVertexCounts);
+    FSerialize(w, obj.basis);
+    FSerialize(w, obj.renderMode);
+    FSerialize(w, obj.materialIndex);
+}
+template <>
+inline void FDeserialize(FReader& r, FCurveSet& obj)
+{
+    FDeserialize(r, obj.points);
+    FDeserialize(r, obj.curveVertexCounts);
+    FDeserialize(r, obj.basis);
+    FDeserialize(r, obj.renderMode);
+    FDeserialize(r, obj.materialIndex);
+}
+template <>
 inline void FSerialize(FWriter& w, FScene const& obj)
 {
     FSerialize(w, obj.mMagic);
     FSerialize(w, obj.mCameras);
     FSerialize(w, obj.mInstances);
+    FSerialize(w, obj.mCurveInstances);
     FSerialize(w, obj.mMaterials);
     FSerialize(w, obj.mMeshes);
+    FSerialize(w, obj.mCurves);
     FSerialize(w, obj.mTextures);
     FSerialize(w, obj.mLights);
 }
@@ -142,8 +196,10 @@ inline void FDeserialize(FReader& r, FScene& obj)
     CHECK(obj.mMagic == kSceneMagic);
     FDeserialize(r, obj.mCameras);
     FDeserialize(r, obj.mInstances);
+    FDeserialize(r, obj.mCurveInstances);
     FDeserialize(r, obj.mMaterials);
     FDeserialize(r, obj.mMeshes, obj.mMeshes.get_allocator().mResource);
+    FDeserialize(r, obj.mCurves, obj.mCurves.get_allocator().mResource);
     FDeserialize(r, obj.mTextures, obj.mTextures.get_allocator().mResource);
     FDeserialize(r, obj.mLights);
 }

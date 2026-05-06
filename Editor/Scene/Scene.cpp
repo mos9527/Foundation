@@ -109,6 +109,58 @@ Optional<FTexture2D> loadGLTFTexture(cgltf_texture* texture, StringView scenePat
     return {};
 }
 
+FCurveBasis loadGLTFCurveBasis(cgltf_curve_basis basis)
+{
+    switch (basis)
+    {
+    case cgltf_curve_basis_bezier:
+        return FCurveBasis::Bezier;
+    case cgltf_curve_basis_bspline:
+        return FCurveBasis::BSpline;
+    case cgltf_curve_basis_catmull_rom:
+        return FCurveBasis::CatmullRom;
+    case cgltf_curve_basis_linear:
+    default:
+        return FCurveBasis::Linear;
+    }
+}
+
+void loadGLTFCurve(cgltf_data* data, cgltf_curve* src, FCurveSet& curve)
+{
+    CHECK(src->points);
+    CHECK(src->curve_vertex_counts);
+    CHECK(src->points->type == cgltf_type_vec4);
+    CHECK(src->points->component_type == cgltf_component_type_r_32f);
+    CHECK(src->curve_vertex_counts->type == cgltf_type_scalar);
+
+    curve.basis = loadGLTFCurveBasis(src->basis);
+    curve.renderMode = FCurveRenderMode::Capsule;
+    curve.materialIndex = src->material ? static_cast<uint32_t>(cgltf_material_index(data, src->material) + 1u) : 0u;
+
+    size_t pointCount = src->points->count;
+    Vector<float> unpack(pointCount * 4, GLOBAL_ALLOC);
+    cgltf_accessor_unpack_floats(src->points, unpack.data(), unpack.size());
+    curve.points.resize(pointCount);
+    for (size_t i = 0; i < pointCount; i++)
+    {
+        curve.points[i] = FCurvePoint{
+            .position = {unpack[i * 4 + 0], unpack[i * 4 + 1], unpack[i * 4 + 2]},
+            .radius = unpack[i * 4 + 3],
+        };
+    }
+
+    curve.curveVertexCounts.resize(src->curve_vertex_counts->count);
+    uint64_t referencedPoints = 0;
+    for (size_t i = 0; i < src->curve_vertex_counts->count; i++)
+    {
+        cgltf_uint count = 0;
+        CHECK(cgltf_accessor_read_uint(src->curve_vertex_counts, i, &count, 1));
+        curve.curveVertexCounts[i] = count;
+        referencedPoints += count;
+    }
+    CHECK(referencedPoints <= pointCount);
+}
+
 void LoadGLTF(StringView path, FScene& scene)
 {
     LOG(Scene, LogInfo, "Load GLTF Scene {}", path);
@@ -287,8 +339,16 @@ void LoadGLTF(StringView path, FScene& scene)
         }
         mmax = mi;
     }
+    scene.mCurves.clear();
+    scene.mCurves.reserve(data->curves_count);
+    for (size_t i = 0; i < data->curves_count; i++)
+    {
+        auto& curve = scene.mCurves.emplace_back(GLOBAL_ALLOC);
+        loadGLTFCurve(data, &data->curves[i], curve);
+    }
     /* Instances / Cameras / Light */
     scene.mInstances.clear();
+    scene.mCurveInstances.clear();
     scene.mCameras.clear();
     for (size_t i = 0; i < data->nodes_count; i++)
     {
@@ -313,6 +373,14 @@ void LoadGLTF(StringView path, FScene& scene)
                     instance.materialIndex = cgltf_material_index(data, sub->material) + 1u;
                 scene.mInstances.emplace_back(instance);
             }
+        }
+        if (node->curve)
+        {
+            FCurveInstance instance{};
+            getTransform(instance.transform);
+            instance.curveIndex = static_cast<uint32_t>(cgltf_curve_index(data, node->curve));
+            instance.materialIndex = scene.mCurves[instance.curveIndex].materialIndex;
+            scene.mCurveInstances.emplace_back(instance);
         }
         if (node->camera)
         {
