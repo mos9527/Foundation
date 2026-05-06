@@ -2,10 +2,12 @@
 #include "../Render/Tables.hpp"
 #include <Core/AllocatorStack.hpp>
 #include <Math/Quantize.hpp>
+#include "Scene.hpp"
 
 // Must match the procedural light hit-group bindings in Render/Pathtracer.cpp.
 static constexpr uint32_t kRectLightSBTOffset = 3u;
 static constexpr uint32_t kDiskLightSBTOffset = 4u;
+static constexpr uint32_t kCurveSBTOffset = 5u;
 
 static FTexture2D MakeLUT(const float* data, RHIResourceFormat format, uint32_t width, uint32_t height)
 {
@@ -19,11 +21,13 @@ static FTexture2D MakeLUT(const float* data, RHIResourceFormat format, uint32_t 
 
 GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     mContext(ctx), mInstanceBuffer(ctx->device.Get(), desc.instanceBudget),
+    mCurveInstanceBuffer(ctx->device.Get(), desc.instanceBudget),
     mMaterialBuffer(ctx->device.Get(), desc.materialBudget),
     mLightBuffer(ctx->device.Get(), desc.lightBudget),
     mLightAliasTableBuffer(ctx->device.Get(), desc.lightBudget),
     mTexturePool(ctx->device.Get(), ctx->allocator, {.maxBindings = desc.texturesBudget}), mBLASes(ctx->allocator),
     mBLASBuffers(ctx->allocator),
+    mCurveBLASes(ctx->allocator), mCurveBLASBuffers(ctx->allocator),
     mTLASInstanceStride(mContext->device->WriteAccelerationStructureInstanceData({}, nullptr)),
     mTLASInstances(ctx->device.Get(), desc.instanceBudget * mTLASInstanceStride)
 {
@@ -32,6 +36,11 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
      .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
      RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
      .size = desc.primitiveBudget});
+    mCurveAABBBuffer = mContext->device->CreateBuffer(
+    {.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
+     .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
+     RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
+     .size = desc.curveAABBBudget});
     mTLASBuffer = mContext->device->CreateBuffer(
     {
         .resource = {
@@ -216,6 +225,11 @@ Pair<GSInstance*, uint32_t> GPUScene::AllocateInstance(uint32_t count)
     return mInstanceBuffer.Allocate(count);
 }
 
+Pair<GSCurveInstance*, uint32_t> GPUScene::AllocateCurveInstance(uint32_t count)
+{
+    return mCurveInstanceBuffer.Allocate(count);
+}
+
 Pair<GSMaterial*, uint32_t> GPUScene::AllocateMaterial(uint32_t count)
 {
     return mMaterialBuffer.Allocate(count);
@@ -231,7 +245,7 @@ Pair<Alias*, uint32_t> GPUScene::AllocateLightAliasTable(uint32_t count)
     return mLightAliasTableBuffer.Allocate(count);
 }
 
-GPUScene::UpdateResult GPUScene::UpdateGPUScene(Span<const GSInstance> instances, Span<const GSMaterial> materials, Span<const GSLight> lights)
+GPUScene::UpdateResult GPUScene::UpdateGPUScene(Span<const GSInstance> instances, Span<const GSCurveInstance> curveInstances, Span<const GSMaterial> materials, Span<const GSLight> lights)
 {
     UpdateResult res{};
     if (!instances.empty()) {
@@ -239,6 +253,12 @@ GPUScene::UpdateResult GPUScene::UpdateGPUScene(Span<const GSInstance> instances
         std::memcpy(ptr, instances.data(), instances.size() * sizeof(GSInstance));
         res.firstInstance = off;
         res.numInstances = static_cast<uint32_t>(instances.size());
+    }
+    if (!curveInstances.empty()) {
+        auto [ptr, off] = AllocateCurveInstance(static_cast<uint32_t>(curveInstances.size()));
+        std::memcpy(ptr, curveInstances.data(), curveInstances.size() * sizeof(GSCurveInstance));
+        res.firstCurveInstance = off;
+        res.numCurveInstances = static_cast<uint32_t>(curveInstances.size());
     }
     if (!materials.empty()) {
         auto [ptr, off] = AllocateMaterial(static_cast<uint32_t>(materials.size()));
@@ -279,6 +299,9 @@ String GPUScene::DbgGetBufferStatistics() const
     fmt::format_to(std::back_inserter(res), "Primitive Buffer: Used {} / {} MB\n",
                    mPrimitiveOffset / static_cast<float>(1 << 20u),
                    mPrimitiveBuffer->mDesc.size / static_cast<float>(1 << 20u));
+    fmt::format_to(std::back_inserter(res), "Curve AABB Buffer: Used {} / {} MB\n",
+                   mCurveAABBOffset / static_cast<float>(1 << 20u),
+                   mCurveAABBBuffer->mDesc.size / static_cast<float>(1 << 20u));
     fmt::format_to(std::back_inserter(res), "Instance Buffer: Used {} / {} instances",
                    mInstanceBuffer.Used(), mInstanceBuffer.Capacity());
     return res;
@@ -332,6 +355,93 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FMesh const& src, GSMesh& outData,
     size_t written = dst - ptr;
     CHECK_MSG(written == size, "Write mismatch: expected {} got {}", size, written);
     return dst - ptr;
+}
+
+size_t GPUScene::Upload(ImmediateUpload* ctx, FCurveSet const& src, GSCurveSet& outData, uint32_t& outOffset)
+{
+    uint32_t segmentCount = 0;
+    for (uint32_t count : src.curveVertexCounts)
+        segmentCount += count > 1 ? count - 1 : 0;
+    CHECK_MSG(!src.points.empty() && segmentCount > 0, "Curve set has no renderable segments");
+
+    Vector<GSCurvePoint> points(src.points.size(), GLOBAL_ALLOC);
+    for (size_t i = 0; i < src.points.size(); ++i)
+        points[i] = GSCurvePoint{.position = src.points[i].position, .radius = src.points[i].radius};
+
+    Vector<GSCurveSegment> segments(GLOBAL_ALLOC);
+    segments.reserve(segmentCount);
+    Vector<RHIAccelerationStructureAABB> aabbs(GLOBAL_ALLOC);
+    aabbs.reserve(segmentCount);
+
+    uint32_t pointCursor = 0;
+    for (uint32_t count : src.curveVertexCounts)
+    {
+        CHECK_MSG(pointCursor + count <= points.size(), "Curve set references more points than it stores");
+        if (count <= 1)
+        {
+            pointCursor += count;
+            continue;
+        }
+        float invSegmentCount = 1.0f / float(count - 1);
+        for (uint32_t i = 0; i + 1 < count; ++i)
+        {
+            uint32_t p0 = pointCursor + i;
+            uint32_t p1 = pointCursor + i + 1;
+            segments.push_back(GSCurveSegment{
+                .p0 = p0,
+                .p1 = p1,
+                .u0 = float(i) * invSegmentCount,
+                .u1 = float(i + 1) * invSegmentCount,
+            });
+
+            const auto& a = points[p0];
+            const auto& b = points[p1];
+            float radius = std::max(a.radius, b.radius);
+            float3 mn = min(a.position, b.position) - float3(radius);
+            float3 mx = max(a.position, b.position) + float3(radius);
+            aabbs.push_back(RHIAccelerationStructureAABB{mn.x, mn.y, mn.z, mx.x, mx.y, mx.z});
+        }
+        pointCursor += count;
+    }
+
+    const size_t size = sizeof(GSCurveSet) + sizeof(GSCurvePoint) * points.size() + sizeof(GSCurveSegment) * segments.size();
+    constexpr size_t kAlign = 4;
+    outOffset = AlignUp(mPrimitiveOffset, kAlign);
+    CHECK_MSG(outOffset + size <= mPrimitiveBuffer->mDesc.size, "GPUScene primitive buffer overflow");
+    mPrimitiveOffset = outOffset + size;
+
+    char* ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset);
+    if (ptr == nullptr)
+        return 0;
+    char* dst = ptr;
+    auto Write = [&](const void* pData, size_t bytes)
+    {
+        std::memcpy(dst, pData, bytes);
+        uint32_t off = static_cast<uint32_t>(dst - ptr);
+        dst += bytes;
+        return off;
+    };
+
+    Write(&outData, sizeof(GSCurveSet));
+    outData.pointCount = static_cast<uint32_t>(points.size());
+    outData.pointOffset = outOffset + Write(points.data(), sizeof(GSCurvePoint) * points.size());
+    outData.segmentCount = static_cast<uint32_t>(segments.size());
+    outData.segmentOffset = outOffset + Write(segments.data(), sizeof(GSCurveSegment) * segments.size());
+    outData.materialIndex = src.materialIndex;
+
+    const size_t aabbSize = sizeof(RHIAccelerationStructureAABB) * aabbs.size();
+    outData.aabbOffset = static_cast<uint32_t>(AlignUp(mCurveAABBOffset, alignof(RHIAccelerationStructureAABB)));
+    CHECK_MSG(outData.aabbOffset + aabbSize <= mCurveAABBBuffer->mDesc.size, "GPUScene curve AABB buffer overflow");
+    mCurveAABBOffset = outData.aabbOffset + aabbSize;
+    char* aabbPtr = ctx->Upload(mCurveAABBBuffer.Get(), aabbSize, outData.aabbOffset);
+    if (aabbPtr == nullptr)
+        return 0;
+    std::memcpy(aabbPtr, aabbs.data(), aabbSize);
+
+    std::memcpy(ptr, &outData, sizeof(GSCurveSet));
+    size_t written = dst - ptr;
+    CHECK_MSG(written == size, "Write mismatch: expected {} got {}", size, written);
+    return written + aabbSize;
 }
 
 size_t GPUScene::Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t& outIndex)
@@ -544,9 +654,95 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
         blasOffset / 1e6);
 }
 
-void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, Span<const GSLight> lights,
-                         bool update)
+void GPUScene::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curves, Span<uint32_t> outBLASIndices)
 {
+    CHECK_MSG(curves.size() == outBLASIndices.size(), "Mismatched curve BLAS indices size");
+    if (curves.empty())
+        return;
+
+    auto* device = mContext->device.Get();
+    Vector<RHIAccelerationStructureGeometryInfo> geometries(curves.size(), mContext->allocator);
+    Vector<RHIAccelerationStructureBuildRangeInfo> buildRanges(curves.size(), mContext->allocator);
+    Vector<RHIAccelerationStructureBuildDesc> buildDesc(curves.size(), mContext->allocator);
+    Vector<RHIAccelerationStructureSizeInfo> sizeInfo(curves.size(), mContext->allocator);
+    Vector<uint32_t> blasOffsets(curves.size(), mContext->allocator);
+    Vector<uint32_t> scratchOffsets(curves.size(), mContext->allocator);
+    StackArena<4096> sizeInfoArena;
+    AllocatorStack sizeInfoScratch(sizeInfoArena);
+    uint32_t scratchOffset = 0, blasOffset = 0;
+    for (size_t i = 0; i < curves.size(); i++)
+    {
+        auto const& curve = curves[i];
+        auto& geo = geometries[i];
+        auto& range = buildRanges[i];
+        geo.type = RHIAccelerationGeometryType::AABBs;
+        geo.aabbData = RHIAccelerationStructureGeometryAABBData{
+            .aabbBuffer = mCurveAABBBuffer.Get(),
+            .offset = curve.aabbOffset,
+            .count = curve.segmentCount,
+            .stride = sizeof(RHIAccelerationStructureAABB)
+        };
+        range = RHIAccelerationStructureBuildRangeInfo{.primitiveCount = curve.segmentCount};
+        auto& desc = buildDesc[i];
+        desc = RHIAccelerationStructureBuildDesc{
+            .type = RHIAccelerationStructureType::BottomLevel,
+            .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace,
+            .operation = RHIAccelerationStructureBuildOp::Build,
+            .geometries = Span<const RHIAccelerationStructureGeometryInfo>{&geo, 1},
+            .ranges = Span<const RHIAccelerationStructureBuildRangeInfo>{&range, 1}
+        };
+        sizeInfoScratch.Reset(sizeInfoArena);
+        sizeInfo[i] = device->GetAccelerationStructureSizeInfo(desc, sizeInfoScratch.Ptr());
+        blasOffsets[i] = blasOffset = AlignUp(blasOffset, 256u);
+        blasOffset += sizeInfo[i].accelerationStructureSize;
+        scratchOffsets[i] = scratchOffset = AlignUp(scratchOffset, 256u);
+        scratchOffset += sizeInfo[i].buildScratchSize;
+    }
+
+    mCurveBLASBuffers.emplace_back(device->CreateBuffer({
+        .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
+        .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress |
+        RHIBufferUsageBits::AccelerationStructureStorage,
+        .size = blasOffset
+    }));
+    auto scratchBuffer = device->CreateBuffer({
+        .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
+        .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress,
+        .size = scratchOffset,
+        .alignment = 256
+    });
+
+    RHIBuffer* blasBuffer = mCurveBLASBuffers.back().Get();
+    Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> newBLASes(curves.size(), mContext->allocator);
+    auto* cmd = ctx->Get();
+    cmd->Begin();
+    for (size_t i = 0; i < curves.size(); i++)
+    {
+        auto& desc = buildDesc[i];
+        RHIAccelerationStructureDesc as{
+            .type = RHIAccelerationStructureType::BottomLevel,
+            .flags = RHIAccelerationStructureBuildFlagsBits::PreferFastTrace,
+            .buffer = blasBuffer,
+            .offset = blasOffsets[i],
+            .size = sizeInfo[i].accelerationStructureSize
+        };
+        outBLASIndices[i] = static_cast<uint32_t>(mCurveBLASes.size());
+        auto& blas = mCurveBLASes.emplace_back(device->CreateAccelerationStructure(as));
+        desc.scratchBuffer = scratchBuffer.Get();
+        desc.scratchBufferOffset = scratchOffsets[i];
+        desc.dstAS = blas.Get();
+        cmd->BuildAccelerationStructure({{{desc}}});
+    }
+    cmd->End(), ctx->Submit(), ctx->WaitIdle();
+    LOG(GPUScene, LogDebug, "Curve BLAS Upload Complete: {} BLASes, {} MB used",
+        curves.size(), blasOffset / 1e6);
+}
+
+void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices,
+                         Span<const GSCurveInstance> curveInstances, Span<const uint32_t> curveBLASIndices,
+                         Span<const GSLight> lights, bool update)
+{
+    CHECK_MSG(curveInstances.size() == curveBLASIndices.size(), "Mismatched curve TLAS BLAS indices size");
     uint32_t numAreaLights = 0;
     for (const auto& light : lights)
     {
@@ -554,7 +750,7 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
             numAreaLights++;
     }
 
-    uint32_t totalInstances = static_cast<uint32_t>(instances.size()) + numAreaLights;
+    uint32_t totalInstances = static_cast<uint32_t>(instances.size() + curveInstances.size()) + numAreaLights;
     if (totalInstances == 0)
         return;
     if (totalInstances != mLastTLASInstancesCount)
@@ -606,12 +802,35 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
         return res;
     };
 
+    auto ConvertCurve = [&](const GSCurveInstance* src) -> RHIAccelerationStructureGeometryInstance
+    {
+        RHIAccelerationStructureGeometryInstance res{
+            .instanceID = static_cast<uint32_t>(src - curveInstances.data()) | (1u << 22),
+            .mask = 0x04, // CURVE_MASK
+            .shaderBindingTableRecordOffset = kCurveSBTOffset,
+        };
+        mat3 basis = transpose(mat3(scale(src->scale)) * mat3_cast(src->rotation));
+        std::memcpy(res.transformBasisRowMajor[0], &basis[0], sizeof(float) * 3);
+        std::memcpy(res.transformBasisRowMajor[1], &basis[1], sizeof(float) * 3);
+        std::memcpy(res.transformBasisRowMajor[2], &basis[2], sizeof(float) * 3);
+        res.transformTranslation[0] = src->transform.x;
+        res.transformTranslation[1] = src->transform.y;
+        res.transformTranslation[2] = src->transform.z;
+        return res;
+    };
+
     // NOTE: Byte buffers
     auto [pInstances, instancesOffset] = mTLASInstances.Allocate(mTLASInstanceStride * totalInstances);
     for (const auto & instance : instances)
     {
         auto data = ConvertInstance(&instance);
         data.blas = mBLASes[blasIndices[instance.meshIndex]].Get();
+        pInstances += mContext->device->WriteAccelerationStructureInstanceData(data, pInstances);
+    }
+    for (const auto & curveInstance : curveInstances)
+    {
+        auto data = ConvertCurve(&curveInstance);
+        data.blas = mCurveBLASes[curveBLASIndices[curveInstance.curveIndex]].Get();
         pInstances += mContext->device->WriteAccelerationStructureInstanceData(data, pInstances);
     }
     for (const auto & light : lights)
@@ -756,12 +975,16 @@ RHIBuffer* GPUScene::GetSobolMatricesBuffer() const
 void GPUScene::Reset()
 {
     mPrimitiveOffset = 0;
+    mCurveAABBOffset = 0;
     mMeshletGlobalCounter = 0;
     mLastTLASInstancesCount = 0;
     mBLASes.clear();
     mBLASBuffers.clear();
+    mCurveBLASes.clear();
+    mCurveBLASBuffers.clear();
     mMaterialBuffer.Reset();
     mInstanceBuffer.Reset();
+    mCurveInstanceBuffer.Reset();
     mLightBuffer.Reset();
     mLightAliasTableBuffer.Reset();
     // NOTE: mTexturePool is append-only; old bindings become dead entries.

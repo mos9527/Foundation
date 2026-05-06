@@ -65,9 +65,12 @@ static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamp
 
 void CommitSceneToGPU(bool resetAccumulation)
 {
-    auto res = GContext->gpuScene->UpdateGPUScene(GEditor.doc.instances, GEditor.doc.materials, GEditor.doc.lights);
+    auto res = GContext->gpuScene->UpdateGPUScene(GEditor.doc.instances, GEditor.doc.curveInstances,
+                                                  GEditor.doc.materials, GEditor.doc.lights);
     GEditor.shaderGlobals.firstInstance = res.firstInstance;
     GEditor.shaderGlobals.numInstances  = res.numInstances;
+    GEditor.shaderGlobals.firstCurveInstance = res.firstCurveInstance;
+    GEditor.shaderGlobals.numCurveInstances  = res.numCurveInstances;
     GEditor.shaderGlobals.firstMaterial = res.firstMaterial;
     GEditor.shaderGlobals.numMaterials  = res.numMaterials;
     GEditor.shaderGlobals.firstLight    = res.firstLight;
@@ -233,6 +236,20 @@ static void BuildEditorInstances(Vector<uint32_t> const& meshOffsets)
     }
 }
 
+static void BuildEditorCurveInstances(Vector<uint32_t> const& curveOffsets)
+{
+    for (auto& src : GEditor.doc.scene.mCurveInstances)
+    {
+        auto& dst = GEditor.doc.curveInstances.emplace_back();
+        dst.transform = src.transform.transform;
+        dst.rotation = src.transform.rotation;
+        dst.scale = src.transform.scale;
+        dst.curveOffset = curveOffsets[src.curveIndex];
+        dst.materialIndex = src.materialIndex;
+        dst.curveIndex = src.curveIndex;
+    }
+}
+
 static void ApplySceneCamera()
 {
     if (GEditor.doc.scene.mCameras.empty())
@@ -274,6 +291,9 @@ void ReplaceScene(StringView path)
     GEditor.doc.materials.clear();
     GEditor.doc.meshes.clear();
     GEditor.doc.blases.clear();
+    GEditor.doc.curveInstances.clear();
+    GEditor.doc.curves.clear();
+    GEditor.doc.curveBlases.clear();
     GEditor.doc.lights.clear();
     
     GEditor.doc.selectedInstance = -1;
@@ -284,6 +304,7 @@ void ReplaceScene(StringView path)
     gpu->Reset();
 
     Vector<uint32_t> meshOffsets(GLOBAL_ALLOC);
+    Vector<uint32_t> curveOffsets(GLOBAL_ALLOC);
     Vector<uint32_t> textureIDMap(GEditor.doc.scene.mTextures.size(), GLOBAL_ALLOC);
 
     LOG(Editor, LogInfo, "Uploading new scene data to GPU");
@@ -301,6 +322,16 @@ void ReplaceScene(StringView path)
             {
                 upload.End(), upload.WaitIdle(), upload.Begin();
                 CHECK_MSG(gpu->Upload(&upload, src, dst, offset), "Staging buffer too small for single mesh upload");
+            }
+        }
+        for (auto& src : GEditor.doc.scene.mCurves)
+        {
+            auto& dst = GEditor.doc.curves.emplace_back();
+            auto& offset = curveOffsets.emplace_back();
+            if (!gpu->Upload(&upload, src, dst, offset))
+            {
+                upload.End(), upload.WaitIdle(), upload.Begin();
+                CHECK_MSG(gpu->Upload(&upload, src, dst, offset), "Staging buffer too small for single curve upload");
             }
         }
         for (int id = 0; auto& src : GEditor.doc.scene.mTextures)
@@ -325,6 +356,7 @@ void ReplaceScene(StringView path)
 
     BuildEditorMaterials(textureIDMap);
     BuildEditorInstances(meshOffsets);
+    BuildEditorCurveInstances(curveOffsets);
 
     // Apply camera and lighting data (needs to be done before UpdateGPUScene to have lights ready)
     {
@@ -336,6 +368,7 @@ void ReplaceScene(StringView path)
     {
         ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
         GEditor.doc.blases.resize(GEditor.doc.meshes.size());
+        GEditor.doc.curveBlases.resize(GEditor.doc.curves.size());
         constexpr size_t kBLASBuildBatch = 32u;
         for (size_t i = 0; i < GEditor.doc.meshes.size(); i += kBLASBuildBatch)
         {
@@ -347,14 +380,26 @@ void ReplaceScene(StringView path)
             LOG(Editor, LogDebug, "Building BLAS {} to {}", i, i + batchSize);
             gpu->BuildBLAS(&ctx, meshesBatch, indicesBatch);
         }
+        for (size_t i = 0; i < GEditor.doc.curves.size(); i += kBLASBuildBatch)
+        {
+            Span<GSCurveSet> curvesBatch = GEditor.doc.curves;
+            Span<uint32_t> indicesBatch = GEditor.doc.curveBlases;
+            size_t batchSize = std::min(kBLASBuildBatch, GEditor.doc.curves.size() - i);
+            curvesBatch = curvesBatch.subspan(i, batchSize);
+            indicesBatch = indicesBatch.subspan(i, batchSize);
+            LOG(Editor, LogDebug, "Building curve BLAS {} to {}", i, i + batchSize);
+            gpu->BuildCurveBLAS(&ctx, curvesBatch, indicesBatch);
+        }
         LOG(Editor, LogDebug, "Rebuilding TLAS");
         ctx->Begin();
-        gpu->BuildTLAS(ctx.Get(), GEditor.doc.instances, GEditor.doc.blases, GEditor.doc.lights, false);
+        gpu->BuildTLAS(ctx.Get(), GEditor.doc.instances, GEditor.doc.blases,
+                       GEditor.doc.curveInstances, GEditor.doc.curveBlases, GEditor.doc.lights, false);
         ctx->End(), ctx.Submit(), ctx.WaitIdle();
     }
 
-    LOG(Editor, LogInfo, "Scene load complete: {} meshes, {} instances, {} materials",
-        GEditor.doc.scene.mMeshes.size(), GEditor.doc.scene.mInstances.size(), GEditor.doc.scene.mMaterials.size());
+    LOG(Editor, LogInfo, "Scene load complete: {} meshes, {} mesh instances, {} curves, {} curve instances, {} materials",
+        GEditor.doc.scene.mMeshes.size(), GEditor.doc.scene.mInstances.size(),
+        GEditor.doc.scene.mCurves.size(), GEditor.doc.scene.mCurveInstances.size(), GEditor.doc.scene.mMaterials.size());
 
     // Trigger renderer reconfiguration
     GEditor.state = FERunningEnter;

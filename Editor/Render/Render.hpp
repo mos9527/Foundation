@@ -6,6 +6,8 @@ struct UBO
     uint32_t frameNumber;
     uint32_t firstInstance;
     uint32_t numInstances;
+    uint32_t firstCurveInstance;
+    uint32_t numCurveInstances;
     uint32_t firstMaterial;
     uint32_t numMaterials;
     float lodThreshold{0.005f};
@@ -143,6 +145,8 @@ struct RendererScene
     UBO* gsGlobals;
     Vector<GSInstance>* gsInstances;
     Vector<uint32_t>* gsBLASes;
+    Vector<GSCurveInstance>* gsCurveInstances;
+    Vector<uint32_t>* gsCurveBLASes;
     Vector<GSLight>* gsLights;
     RendererPicking* picking;
 };

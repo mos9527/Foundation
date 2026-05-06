@@ -90,9 +90,12 @@ enum class ERenderFormat { HDR, SDR };
 struct EditorDocument
 {
     Vector<GSInstance> instances{GLOBAL_ALLOC};
+    Vector<GSCurveInstance> curveInstances{GLOBAL_ALLOC};
     Vector<GSMaterial> materials{GLOBAL_ALLOC};
     Vector<GSMesh>     meshes{GLOBAL_ALLOC};
     Vector<uint32_t>   blases{GLOBAL_ALLOC};
+    Vector<GSCurveSet> curves{GLOBAL_ALLOC};
+    Vector<uint32_t>   curveBlases{GLOBAL_ALLOC};
     Vector<GSLight>    lights{GLOBAL_ALLOC};
     FScene             scene{GLOBAL_ALLOC};
     String             currentSavePath;

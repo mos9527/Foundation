@@ -71,6 +71,7 @@ public struct quat
     }
     // Rotate a vector by this quaternion
     public float3 rotate(float3 v) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }
+    public quat conjugate() { return quat(float4(-q.xyz, q.w)); }
     // Multiply two quaternions
     public quat mul(quat r) {
         return quat(float4(

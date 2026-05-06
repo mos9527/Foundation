@@ -97,7 +97,7 @@ static void FInitEnter()
 static void FInit()
 {
     // Transition to FERunningEnter when scene data is available
-    if (!GEditor.doc.instances.empty())
+    if (!GEditor.doc.instances.empty() || !GEditor.doc.curveInstances.empty())
         GEditor.state = FERunningEnter;
     else
     {
@@ -139,6 +139,8 @@ static void FRunningEnter()
         .gsGlobals = &GEditor.shaderGlobals,
         .gsInstances = &GEditor.doc.instances,
         .gsBLASes = &GEditor.doc.blases,
+        .gsCurveInstances = &GEditor.doc.curveInstances,
+        .gsCurveBLASes = &GEditor.doc.curveBlases,
         .gsLights = &GEditor.doc.lights,
         .picking = &sPicking
     };

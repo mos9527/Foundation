@@ -94,6 +94,36 @@ public struct GSInstance
     public uint32_t materialIndex; // In Material buffer (offset)
     public uint32_t meshIndex; // Debug use
 };
+public struct GSCurveSet
+{
+    public uint32_t pointOffset;
+    public uint32_t pointCount;
+    public uint32_t segmentOffset;
+    public uint32_t segmentCount;
+    public uint32_t aabbOffset;
+    public uint32_t materialIndex;
+};
+public struct GSCurvePoint
+{
+    public float3 position;
+    public float radius;
+};
+public struct GSCurveSegment
+{
+    public uint32_t p0;
+    public uint32_t p1;
+    public float u0;
+    public float u1;
+};
+public struct GSCurveInstance
+{
+    public float3 transform;
+    public quat rotation;
+    public float3 scale;
+    public uint32_t curveOffset;
+    public uint32_t materialIndex;
+    public uint32_t curveIndex;
+};
 public struct GSMaterial
 {
     public uint32_t baseColorTexture;
@@ -158,6 +188,8 @@ public struct UBO
     public uint32_t frameNumber;
     public uint32_t firstInstance;
     public uint32_t numInstances;
+    public uint32_t firstCurveInstance;
+    public uint32_t numCurveInstances;
     public uint32_t firstMaterial;
     public uint32_t numMaterials;
     public float lodThreshold;

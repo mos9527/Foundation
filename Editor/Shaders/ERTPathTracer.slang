@@ -21,6 +21,7 @@ struct Alias {
 // -- Scene
 RaytracingAccelerationStructure AS;
 StructuredBuffer<GSInstance> instances;
+StructuredBuffer<GSCurveInstance> curveInstances;
 ByteAddressBuffer primitives;
 StructuredBuffer<GSMaterial> materials;
 StructuredBuffer<GSLight> lights;
@@ -49,6 +50,9 @@ static const uint kRayTypeSurface = 0u;
 static const uint kRayTypeShadow = 1u;
 static const uint kRayTypeBSSRDFQuery = 2u;
 static const uint32_t kLightInstanceBit = 1u << 23;
+static const uint32_t kCurveInstanceBit = 1u << 22;
+static const uint kMeshMask = 0x01;
+static const uint kCurveMask = 0x04;
 
 uint GetPTTileSide()
 {
@@ -174,6 +178,11 @@ uint GetInstanceBufferIndex(uint localInstanceIndex)
     return globalParams.firstInstance + localInstanceIndex;
 }
 
+uint GetCurveInstanceBufferIndex(uint localCurveInstanceIndex)
+{
+    return globalParams.firstCurveInstance + localCurveInstanceIndex;
+}
+
 uint GetMaterialBufferIndex(uint localMaterialIndex)
 {
     return globalParams.firstMaterial + localMaterialIndex;
@@ -184,14 +193,29 @@ bool IsLightInstance(uint instance)
     return (instance & kLightInstanceBit) != 0u;
 }
 
+bool IsCurveInstance(uint instance)
+{
+    return (instance & kCurveInstanceBit) != 0u;
+}
+
 uint GetLightIndex(uint lightInstance)
 {
     return lightInstance & ~kLightInstanceBit;
 }
 
+uint GetCurveIndex(uint curveInstance)
+{
+    return curveInstance & ~kCurveInstanceBit;
+}
+
 GSInstance LoadSceneInstance(uint localInstanceIndex)
 {
     return instances[NonUniformResourceIndex(GetInstanceBufferIndex(localInstanceIndex))];
+}
+
+GSCurveInstance LoadSceneCurveInstance(uint localCurveInstanceIndex)
+{
+    return curveInstances[NonUniformResourceIndex(GetCurveInstanceBufferIndex(localCurveInstanceIndex))];
 }
 
 GSMaterial LoadMaterial(uint localMaterialIndex)
@@ -249,6 +273,39 @@ HitState getHitState(uint meshOffset, uint primitive, float2 bary, GSInstance in
     hit.tangent        = normalize(inst.rotation.rotate(tangent * inst.scale));
     hit.geometryNormal = normalize(inst.rotation.rotate(geoNormal * invScale));
     hit.bitangent      = cross(hit.normal, hit.tangent) * (bitangentSign > 0.0f ? 1 : -1);
+    return hit;
+}
+
+HitState getCurveHitState(uint curveOffset, uint primitive, float2 uv, GSCurveInstance inst,
+                          float3 rayOrigin, float3 rayDirection, float hitT)
+{
+    HitState hit;
+    hit.position = rayOrigin + rayDirection * hitT;
+    hit.uv = uv;
+
+    GSCurveSet curve = primitives.Load<GSCurveSet>(curveOffset);
+    GSCurveSegment segment = primitives.Load<GSCurveSegment>(curve.segmentOffset + primitive * sizeof(GSCurveSegment));
+    GSCurvePoint p0 = primitives.Load<GSCurvePoint>(curve.pointOffset + segment.p0 * sizeof(GSCurvePoint));
+    GSCurvePoint p1 = primitives.Load<GSCurvePoint>(curve.pointOffset + segment.p1 * sizeof(GSCurvePoint));
+
+    float3 localPosition = inst.rotation.conjugate().rotate(hit.position - inst.transform) / inst.scale;
+    float3 axis = p1.position - p0.position;
+    float axisLen2 = max(dot(axis, axis), 1e-12f);
+    float u = saturate(dot(localPosition - p0.position, axis) / axisLen2);
+    float3 closest = lerp(p0.position, p1.position, u);
+    float3 tangent = normalize(axis);
+    float3 radial = localPosition - closest;
+    radial = LengthSquared(radial) > 1e-12f ? normalize(radial) : normalize(cross(tangent, float3(0.0f, 1.0f, 0.0f)));
+    float radiusSlope = (p1.radius - p0.radius) * rsqrt(axisLen2);
+    float3 localNormal = normalize(radial - tangent * radiusSlope);
+    if (any(isnan(localNormal)))
+        localNormal = float3(1.0f, 0.0f, 0.0f);
+
+    float3 invScale = 1.0f / inst.scale;
+    hit.normal = normalize(inst.rotation.rotate(localNormal * invScale));
+    hit.geometryNormal = hit.normal;
+    hit.tangent = normalize(inst.rotation.rotate(tangent * inst.scale));
+    hit.bitangent = normalize(cross(hit.normal, hit.tangent));
     return hit;
 }
 
@@ -350,7 +407,7 @@ bool IsAnalyticLightHit(HitKind kind)
 
 bool IsMaterialSurfaceHit(HitKind kind)
 {
-    return kind == HitKind::Triangle;
+    return kind == HitKind::Triangle || kind == HitKind::Curve;
 }
 
 HitRecord MakeHitRecord(HitPayload payload, RayDesc ray)
@@ -365,6 +422,11 @@ HitRecord MakeHitRecord(HitPayload payload, RayDesc ray)
     {
         hit.lightIndex = GetLightIndex(payload.instance);
         hit.kind = HitKindFromLight(LoadSceneLight(hit.lightIndex));
+        return hit;
+    }
+    if (IsCurveInstance(payload.instance))
+    {
+        hit.kind = HitKind::Curve;
         return hit;
     }
 
@@ -496,6 +558,36 @@ Payload SamplePayload(HitPayload payload, RayDesc ray)
     return res;
 }
 
+Payload SampleCurvePayload(HitPayload payload, RayDesc ray)
+{
+    if (!payload.IsHit())
+        return {};
+
+    GSCurveInstance inst = LoadSceneCurveInstance(GetCurveIndex(payload.instance));
+    Payload res;
+    res.materialID = inst.materialIndex;
+    res.hit = getCurveHitState(inst.curveOffset, payload.primitive, payload.bary, inst,
+                               ray.Origin, ray.Direction, payload.hitT);
+    GSMaterial material = LoadMaterial(res.materialID);
+    float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
+    float2 anisotropyDirection;
+    SampleMaterials(material, res.hit.uv, baseColor4, normalTBN, pbrMetalRough, emissive4,
+                    res.transmission, res.specularFactor, res.specularColorFactor,
+                    res.anisotropyStrength, anisotropyDirection);
+    res.baseColor = baseColor4.xyz;
+    res.emissive = emissive4.xyz;
+    res.roughness = pbrMetalRough.y;
+    res.metallic = pbrMetalRough.z;
+    SetHitShadingNormal(res.hit, res.hit.tangent * normalTBN.x + res.hit.bitangent * normalTBN.y + res.hit.normal * normalTBN.z);
+    RotateHitTangentFrame(res.hit, anisotropyDirection);
+    res.ior = material.ior;
+    res.subsurface = 0.0f;
+    res.subsurfaceScale = material.subsurfaceScale;
+    res.subsurfaceColor = material.subsurfaceColor;
+    res.subsurfaceRadius = material.subsurfaceRadius;
+    return res;
+}
+
 void AddRadiance(inout float3 L, float3 v, bool direct = false)
 {
     if (any(isnan(v)) || any(isinf(v)))
@@ -584,7 +676,7 @@ bool TraceShadowRay(float3 origin, float3 direction, float tMax = INF)
     ray.TMax = tMax;
     ShadowPayload payload;
     TraceRay(AS, RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
-             0x01, kRayTypeShadow, 1, 1, ray, payload);
+             kMeshMask | kCurveMask, kRayTypeShadow, 1, 1, ray, payload);
     return payload.hit;
 }
 
@@ -1032,7 +1124,11 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             uint coherenceHint = 0xFFu;
             if (hitObj.IsHit()) {
                 uint instanceID = hitObj.GetInstanceID();
-                if (!IsLightInstance(instanceID)) {
+                if (IsCurveInstance(instanceID)) {
+                    GSCurveInstance inst = LoadSceneCurveInstance(GetCurveIndex(instanceID));
+                    coherenceHint = inst.materialIndex & 0xFFu;
+                }
+                else if (!IsLightInstance(instanceID)) {
                     GSInstance inst = LoadSceneInstance(instanceID);
                     coherenceHint = inst.materialIndex & 0xFFu;
                 }
@@ -1063,7 +1159,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         if (!IsMaterialSurfaceHit(hit.kind))
             break;
 
-        Payload surface = SamplePayload(hit.raw, ray);
+        Payload surface = hit.kind == HitKind::Curve ? SampleCurvePayload(hit.raw, ray) : SamplePayload(hit.raw, ray);
 
         // Accumulate GBuffer on primary hit
         if (bounce == 0 && !gbufferWritten)
@@ -1285,6 +1381,96 @@ void FillProceduralLightHit(inout HitPayload payload, ProceduralHitAttributes at
     payload.hitT = RayTCurrent();
 }
 
+struct CurveHitAttributes
+{
+    float2 uv;
+};
+
+bool TryUpdateCurveHit(float t, float u, inout float bestT, inout float bestU)
+{
+    if (t < RayTMin() || t > RayTCurrent() || t >= bestT)
+        return false;
+    bestT = t;
+    bestU = u;
+    return true;
+}
+
+void TryIntersectCurveCap(float3 ro, float3 rd, float3 center, float radius, float u,
+                          inout float bestT, inout float bestU)
+{
+    float3 oc = ro - center;
+    float a = dot(rd, rd);
+    float b = dot(oc, rd);
+    float c = dot(oc, oc) - radius * radius;
+    float h = b * b - a * c;
+    if (h < 0.0f || a <= 1e-12f)
+        return;
+
+    float root = sqrt(h);
+    float t = (-b - root) / a;
+    if (!TryUpdateCurveHit(t, u, bestT, bestU))
+        TryUpdateCurveHit((-b + root) / a, u, bestT, bestU);
+}
+
+[shader("intersection")]
+void CurveIntersection()
+{
+    GSCurveInstance inst = LoadSceneCurveInstance(GetCurveIndex(InstanceID()));
+    GSCurveSet curve = primitives.Load<GSCurveSet>(inst.curveOffset);
+    GSCurveSegment segment = primitives.Load<GSCurveSegment>(curve.segmentOffset + PrimitiveIndex() * sizeof(GSCurveSegment));
+    GSCurvePoint p0 = primitives.Load<GSCurvePoint>(curve.pointOffset + segment.p0 * sizeof(GSCurvePoint));
+    GSCurvePoint p1 = primitives.Load<GSCurvePoint>(curve.pointOffset + segment.p1 * sizeof(GSCurvePoint));
+
+    float maxRadius = max(p0.radius, p1.radius);
+    if (maxRadius <= 0.0f)
+        return;
+
+    float3 ro = ObjectRayOrigin();
+    float3 rd = ObjectRayDirection();
+    float3 ba = p1.position - p0.position;
+    float3 oa = ro - p0.position;
+    float baba = dot(ba, ba);
+
+    float bestT = RayTCurrent();
+    float bestU = segment.u0;
+
+    if (baba > 1e-12f)
+    {
+        float bard = dot(ba, rd);
+        float baoa = dot(ba, oa);
+        float3 rdPerp = rd - ba * (bard / baba);
+        float3 oaPerp = oa - ba * (baoa / baba);
+        float r0 = p0.radius;
+        float radiusDelta = p1.radius - p0.radius;
+        float k0 = r0 + radiusDelta * baoa / baba;
+        float k1 = radiusDelta * bard / baba;
+        float a = dot(rdPerp, rdPerp) - k1 * k1;
+        float b = dot(oaPerp, rdPerp) - k0 * k1;
+        float c = dot(oaPerp, oaPerp) - k0 * k0;
+        float h = b * b - a * c;
+        if (h >= 0.0f && abs(a) > 1e-12f)
+        {
+            float t = (-b - sqrt(h)) / a;
+            float y = baoa + t * bard;
+            if (y >= 0.0f && y <= baba)
+            {
+                float u = y / baba;
+                TryUpdateCurveHit(t, lerp(segment.u0, segment.u1, u), bestT, bestU);
+            }
+        }
+    }
+
+    TryIntersectCurveCap(ro, rd, p0.position, p0.radius, segment.u0, bestT, bestU);
+    TryIntersectCurveCap(ro, rd, p1.position, p1.radius, segment.u1, bestT, bestU);
+
+    if (bestT < RayTCurrent())
+    {
+        CurveHitAttributes attr;
+        attr.uv = float2(bestU, 0.0f);
+        ReportHit(bestT, 0, attr);
+    }
+}
+
 [shader("closesthit")]
 void RectLightClosestHit(inout HitPayload payload, in ProceduralHitAttributes attr)
 {
@@ -1295,6 +1481,22 @@ void RectLightClosestHit(inout HitPayload payload, in ProceduralHitAttributes at
 void DiskLightClosestHit(inout HitPayload payload, in ProceduralHitAttributes attr)
 {
     FillProceduralLightHit(payload, attr);
+}
+
+[shader("closesthit")]
+void CurveClosestHit(inout HitPayload payload, in CurveHitAttributes attr)
+{
+    payload.instance = InstanceID();
+    payload.primitive = PrimitiveIndex();
+    payload.bary = attr.uv;
+    payload.hitT = RayTCurrent();
+}
+
+[shader("anyhit")]
+void CurveShadowAnyHit(inout ShadowPayload payload, in CurveHitAttributes attr)
+{
+    payload.hit = true;
+    AcceptHitAndEndSearch();
 }
 
 [shader("anyhit")] // Hit Group 0
