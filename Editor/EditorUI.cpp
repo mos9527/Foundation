@@ -825,9 +825,12 @@ void FRunningImGui()
                                  kPTSPPOptions[ptSPPIndex].label, ImGuiSliderFlags_AlwaysClamp))
                 SetPTSPPOption(ptSPPIndex);
             const char* samplerItems[] = {"PCG (Independent)", "Sobol (Quasi-Monte Carlo)"};
-            if (ImGui::Combo("Sampler", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptSampler), samplerItems, 2))
+            int ptSampler = static_cast<int>(GEditor.rendererConfig.ptSampler);
+            if (ImGui::Combo("Sampler", &ptSampler, samplerItems, 2))
             {
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0; // Reset accumulation on sampler change
+                GEditor.rendererConfig.ptSampler = static_cast<uint32_t>(ptSampler);
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.state = FERunningEnter;
             }
             const char* lightSamplerItems[] = { "Uniform", "Power" };
             if (ImGui::Combo("Light Sampler", reinterpret_cast<int*>(&GContext->gpuScene->mLightSamplerType), lightSamplerItems, 2))

@@ -39,8 +39,11 @@ RWTexture2D<uint32_t> pickIDBuffer; // Instance ID map, ~0u = no object (written
 // Number of SER coherence hint bits — enough to cover all materialID values
 // 8 bits is sufficient for 256 materials, consistent with GBuffer packing
 static const uint kSERCoherenceHintBits = 8u;
-// Capability flags. Used with SER only for now.
-[[SpecializationConstant]] int capabilityFlags;
+// Packed path-tracer compile options. Must match Render.hpp.
+static const uint kPTCompileOptionShaderExecutionReordering = 1u << 0;
+static const uint kPTCompileOptionSamplerSobol = 1u << 1;
+static const uint kPTCompileOptionSamplerPCG = 1u << 2;
+[[SpecializationConstant]] uint ptCompileOptions;
 
 static const uint kRayTypeSurface = 0u;
 static const uint kRayTypeShadow = 1u;
@@ -982,7 +985,7 @@ void RayGeneration()
         uint sampleIndex = GetPTBasePixelSampleCount() + subSample;
 
         // PCG or Sobol
-        if (globalParams.ptSampler == 0)
+        if ((ptCompileOptions & kPTCompileOptionSamplerPCG) != 0)
         {
             PCG rng = PCG(pix, sampleIndex);
             PathTrace(pix, subSample, rng);
@@ -1019,7 +1022,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     uint transmissionBounces = 0;
     for (uint bounce = 0; ; bounce++) {
         HitPayload payload;
-        if (capabilityFlags != 0 /* SER */) {
+        if ((ptCompileOptions & kPTCompileOptionShaderExecutionReordering) != 0 /* SER */) {
             // SER
             // https://www.khronos.org/blog/boosting-ray-tracing-performance-with-shader-execution-reordering-introducing-vk-ext-ray-tracing-invocation-reorder
             // https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_invocation_reorder/README.html

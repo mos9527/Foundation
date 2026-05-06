@@ -48,7 +48,6 @@ struct UBO
     uint32_t ptMaxBouncesSpecular{4u};
     uint32_t ptMaxBouncesTransmission{12u};
     float ptFireflyClamp{1.0f}; // 10^x
-    uint32_t ptSampler{1u}; // 0: PCG, 1: Sobol
     uint32_t ptSamplesPerPixel{1u}; // Always >= 1; fractional SPP uses ptDispatchTileSide instead.
     uint32_t ptDispatchTileSide{5u}; // 1 = full dispatch, n > 1 = 1/(n*n) tile dispatch.
     // -- Display
@@ -113,10 +112,25 @@ static const int kCullBackface = 1 << 2;
 static const int kCullStageEarly = 1 << 16;
 static const int kCullStageLate = 1 << 17;
 
+static constexpr uint32_t kPTSamplerPCG = 0u;
+static constexpr uint32_t kPTSamplerSobol = 1u;
+
+static constexpr uint32_t kPTCompileOptionShaderExecutionReordering = 1u << 0;
+static constexpr uint32_t kPTCompileOptionSamplerSobol = 1u << 1;
+static constexpr uint32_t kPTCompileOptionSamplerPCG = 1u << 2;
+
+inline uint32_t PTPackCompileOptions(bool shaderExecutionReordering, uint32_t sampler)
+{
+    uint32_t options = shaderExecutionReordering ? kPTCompileOptionShaderExecutionReordering : 0u;
+    options |= sampler == kPTSamplerPCG ? kPTCompileOptionSamplerPCG : kPTCompileOptionSamplerSobol;
+    return options;
+}
+
 struct RendererConfig
 {
     unsigned viewFlags{kEnableRasterRTShadows};
     unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
+    uint32_t ptSampler{kPTSamplerSobol};
 };
 
 struct RendererPicking
