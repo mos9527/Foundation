@@ -123,6 +123,49 @@ struct HitState
     float2 uv;
 };
 
+float3 WorldToShadingLocal(HitState hit, float3 v)
+{
+    return float3(dot(v, hit.tangent), dot(v, hit.bitangent), dot(v, hit.normal));
+}
+
+float3 ShadingLocalToWorld(HitState hit, float3 v)
+{
+    return v.x * hit.tangent + v.y * hit.bitangent + v.z * hit.normal;
+}
+
+void SetHitShadingNormal(inout HitState hit, float3 normal)
+{
+    float bitangentSign = dot(cross(hit.normal, hit.tangent), hit.bitangent) >= 0.0f ? 1.0f : -1.0f;
+    if (LengthSquared(normal) <= 1e-8f)
+        normal = hit.normal;
+    hit.normal = normalize(normal);
+
+    float3 tangent = hit.tangent - hit.normal * dot(hit.tangent, hit.normal);
+    if (LengthSquared(tangent) <= 1e-8f)
+    {
+        float3 fallbackBitangent;
+        buildOrthonormalBasis(hit.normal, tangent, fallbackBitangent);
+        hit.tangent = normalize(tangent);
+        hit.bitangent = normalize(fallbackBitangent) * bitangentSign;
+        return;
+    }
+
+    hit.tangent = normalize(tangent);
+    hit.bitangent = normalize(cross(hit.normal, hit.tangent)) * bitangentSign;
+}
+
+void RotateHitTangentFrame(inout HitState hit, float2 direction)
+{
+    if (LengthSquared(direction) <= 1e-8f)
+        direction = float2(1.0f, 0.0f);
+    direction = normalize(direction);
+
+    float3 tangent = hit.tangent;
+    float3 bitangent = hit.bitangent;
+    hit.tangent = normalize(direction.x * tangent + direction.y * bitangent);
+    hit.bitangent = normalize(-direction.y * tangent + direction.x * bitangent);
+}
+
 uint GetInstanceBufferIndex(uint localInstanceIndex)
 {
     return globalParams.firstInstance + localInstanceIndex;
@@ -207,7 +250,9 @@ HitState getHitState(uint meshOffset, uint primitive, float2 bary, GSInstance in
 }
 
 void SampleMaterials(GSMaterial material, float2 uv,
-    out float4 baseColor, out float4 normalTBN, out float4 pbrMetalRough, out float4 emissive)
+    out float4 baseColor, out float4 normalTBN, out float4 pbrMetalRough, out float4 emissive,
+    out float transmission, out float specularFactor, out float3 specularColorFactor,
+    out float anisotropyStrength, out float2 anisotropyDirection)
 {
     baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u)
@@ -221,6 +266,32 @@ void SampleMaterials(GSMaterial material, float2 uv,
     emissive = float4(material.emissiveFactor, 0);
     if (material.emissiveTexture != ~0u)
         emissive *= textures[NonUniformResourceIndex(material.emissiveTexture)].SampleLevel(textureSampler, uv, 0);
+
+    transmission = material.transmissionFactor;
+    if (material.transmissionTexture != ~0u)
+        transmission *= textures[NonUniformResourceIndex(material.transmissionTexture)].SampleLevel(textureSampler, uv, 0).r;
+
+    specularFactor = material.specularFactor;
+    if (material.specularTexture != ~0u)
+        specularFactor *= textures[NonUniformResourceIndex(material.specularTexture)].SampleLevel(textureSampler, uv, 0).a;
+
+    specularColorFactor = material.specularColorFactor;
+    if (material.specularColorTexture != ~0u)
+        specularColorFactor *= textures[NonUniformResourceIndex(material.specularColorTexture)].SampleLevel(textureSampler, uv, 0).rgb;
+
+    float c = cos(material.anisotropyRotation);
+    float s = sin(material.anisotropyRotation);
+    anisotropyStrength = material.anisotropyStrength;
+    anisotropyDirection = float2(c, s);
+    if (material.anisotropyTexture != ~0u)
+    {
+        float3 anisotropyTex = textures[NonUniformResourceIndex(material.anisotropyTexture)].SampleLevel(textureSampler, uv, 0).rgb;
+        float2 texDirection = anisotropyTex.rg * 2.0f - float2(1.0f);
+        texDirection = LengthSquared(texDirection) > 1e-8f ? normalize(texDirection) : float2(1.0f, 0.0f);
+        anisotropyDirection = float2(c * texDirection.x - s * texDirection.y,
+                                     s * texDirection.x + c * texDirection.y);
+        anisotropyStrength *= anisotropyTex.b;
+    }
 }
 
 static const uint32_t INSTANCE_NO_HIT = ~0u;
@@ -258,6 +329,8 @@ struct Payload
     float transmission;
     float ior;
     float specularFactor;
+    float3 specularColorFactor;
+    float anisotropyStrength;
     float subsurface;
     float subsurfaceScale;
     float3 subsurfaceColor;
@@ -289,7 +362,6 @@ struct PathSample
     BxDFFlags flags;
     AOVCategory category;
     HitState hit;
-    quat toWorld;
 
     __init()
     {
@@ -300,7 +372,6 @@ struct PathSample
         this.flags = BxDFFlags::Unset;
         this.category = AOVCategory::Diffuse;
         this.hit = {};
-        this.toWorld = quat(float4(0, 0, 0, 1));
     }
 };
 
@@ -340,16 +411,18 @@ Payload SamplePayload(HitPayload payload, RayDesc ray)
     res.hit = getHitState(inst.meshOffset, payload.primitive, payload.bary, inst, ray.Origin, ray.Direction, payload.hitT);
     GSMaterial material = LoadMaterial(res.materialID);
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
-    SampleMaterials(material, res.hit.uv, baseColor4, normalTBN, pbrMetalRough, emissive4);
+    float2 anisotropyDirection;
+    SampleMaterials(material, res.hit.uv, baseColor4, normalTBN, pbrMetalRough, emissive4,
+                    res.transmission, res.specularFactor, res.specularColorFactor,
+                    res.anisotropyStrength, anisotropyDirection);
     res.baseColor = baseColor4.xyz;
     res.emissive = emissive4.xyz;
     res.roughness = pbrMetalRough.y;
     res.metallic = pbrMetalRough.z;
     // Apply normal map in tangent space
-    res.hit.normal = normalize(res.hit.tangent * normalTBN.x + res.hit.bitangent * normalTBN.y + res.hit.normal * normalTBN.z);
+    SetHitShadingNormal(res.hit, res.hit.tangent * normalTBN.x + res.hit.bitangent * normalTBN.y + res.hit.normal * normalTBN.z);
+    RotateHitTangentFrame(res.hit, anisotropyDirection);
     res.ior = material.ior;
-    res.specularFactor = material.specularFactor;
-    res.transmission = material.transmissionFactor;
     res.subsurface = material.subsurfaceFactor;
     res.subsurfaceScale = material.subsurfaceScale;
     res.subsurfaceColor = material.subsurfaceColor;
@@ -645,7 +718,6 @@ void AddLocalDirectLighting<S : ISampler>(
     Payload surface,
     PrincipledBSDFLobes bsdf,
     float3 wo,
-    quat toLocal,
     float3 beta,
     uint bounce,
     AOVCategory firstBounceCategory,
@@ -662,7 +734,7 @@ void AddLocalDirectLighting<S : ISampler>(
     }
 
     lighting.lastLightCtx = ctx;
-    float3 wi = toLocal.rotate(Li.wi);
+    float3 wi = WorldToShadingLocal(surface.hit, Li.wi);
     float bsdfPdf = bsdf.PDF(wo, wi, TransportMode::Radiance, BxDFReflTransFlags::All);
     float mis = Li.isDelta ? 1.0f : PowerHeuristic(1, Li.pdf, 1, bsdfPdf);
 
@@ -684,7 +756,6 @@ void AddLocalDirectLighting<S : ISampler>(
 
 void AddDiffuseDirectLighting<S : ISampler>(
     HitState hit,
-    quat toLocal,
     float3 f,
     float3 beta,
     uint bounce,
@@ -703,7 +774,7 @@ void AddDiffuseDirectLighting<S : ISampler>(
     }
 
     lighting.lastLightCtx = ctx;
-    float3 wi = toLocal.rotate(Li.wi);
+    float3 wi = WorldToShadingLocal(hit, Li.wi);
     float diffusePdf = CosineHemispherePDF(AbsCosTheta(wi));
     float mis = Li.isDelta ? 1.0f : PowerHeuristic(1, Li.pdf, 1, diffusePdf);
     float3 contrib = beta * f * AbsCosTheta(wi) * Li.Li * mis;
@@ -934,18 +1005,17 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         }
         // -- Path Integrator
         // Local frame setup
-        quat toLocal = quatRotateToZ(surface.hit.normal);
-        quat toWorld = toLocal.inverted();
-        float3 wo = toLocal.rotate(view);
+        float3 wo = WorldToShadingLocal(surface.hit, view);
         // Construct local lobes with their weights
         PrincipledBSDFLobes bsdf = PrincipledBSDFLobes(
             surface.baseColor, surface.metallic, surface.roughness,
             surface.ior, surface.specularFactor, surface.transmission, true, wo,
-            surface.subsurface);
+            surface.subsurface, surface.anisotropyStrength, surface.specularColorFactor);
         // Subsurface lobes are non-local. We take care of those paths ab initio with a different branch
         float pSampleBSSRDF = HasUsableBSSRDF(surface)
             ? PrincipledBSSRDFBranchProbability(surface.metallic, surface.roughness, surface.ior,
-                                                surface.specularFactor, surface.transmission, surface.subsurface, wo)
+                                                surface.specularFactor, surface.transmission, surface.subsurface, wo,
+                                                surface.specularColorFactor)
             : 0.0f;
         pSampleBSSRDF = clamp(pSampleBSSRDF, 0.0f, 1.0f);
         bool sampleBSSRDF = pSampleBSSRDF > EPS && (pSampleBSSRDF >= 1.0f || rng.sample() < pSampleBSSRDF);
@@ -963,11 +1033,9 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
                 break;
 
             Payload exitSurface = sample.surface;
-            quat exitToLocal = quatRotateToZ(exitSurface.hit.normal);
-            quat exitToWorld = exitToLocal.inverted();
             // Lambertian assumed for subsurface interactions
             const float3 exitF = float3(InvPi);
-            AddDiffuseDirectLighting(exitSurface.hit, exitToLocal, exitF, localBeta,
+            AddDiffuseDirectLighting(exitSurface.hit, exitF, localBeta,
                                      bounce, firstBounceCategory, AOVCategory::Diffuse,
                                      rng, lighting, radiance);
 
@@ -984,14 +1052,13 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             nextSample.flags = BxDFFlags::DiffuseReflection;
             nextSample.category = AOVCategory::Diffuse;
             nextSample.hit = exitSurface.hit;
-            nextSample.toWorld = exitToWorld;
         }
         else
         {
             float pLocal = max(1.0f - pSampleBSSRDF, EPS);
             float3 localBeta = beta / pLocal;
 
-            AddLocalDirectLighting(surface, bsdf, wo, toLocal, localBeta,
+            AddLocalDirectLighting(surface, bsdf, wo, localBeta,
                                    bounce, firstBounceCategory, rng, lighting, radiance);
             AddSurfaceEmissive(surface, localBeta, bounce, firstBounceCategory, radiance);
 
@@ -1010,7 +1077,6 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             nextSample.flags = sample.flags;
             nextSample.category = sampleCategory;
             nextSample.hit = surface.hit;
-            nextSample.toWorld = toWorld;
         }
 
         if (!nextSample.valid)
@@ -1034,7 +1100,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         if (any(isnan(beta)) || any(isinf(beta)))
             break;
 
-        ray.Direction = nextSample.toWorld.rotate(nextSample.wi);
+        ray.Direction = normalize(ShadingLocalToWorld(nextSample.hit, nextSample.wi));
         float3 rayNormalFF = dot(ray.Direction, nextSample.hit.geometryNormal) < 0.0f ? -nextSample.hit.geometryNormal : nextSample.hit.geometryNormal;
         ray.Origin = OffsetRay(nextSample.hit.position, rayNormalFF);
 

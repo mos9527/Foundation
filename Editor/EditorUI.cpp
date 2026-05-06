@@ -124,6 +124,9 @@ static void SyncMaterialToGPU(uint32_t materialIndex)
     dst.transmissionFactor = src.transmissionFactor;
     dst.ior = src.ior;
     dst.specularFactor = src.specularFactor;
+    dst.specularColorFactor = src.specularColorFactor;
+    dst.anisotropyStrength = src.anisotropyStrength;
+    dst.anisotropyRotation = src.anisotropyRotation;
     dst.subsurfaceFactor = src.subsurfaceFactor;
     dst.subsurfaceScale = src.subsurfaceScale;
     dst.subsurfaceColor = src.subsurfaceColor;
@@ -391,6 +394,9 @@ void FHierarchyPanel()
             changed |= ImGui::SliderFloat("Transmission", &material.transmissionFactor, 0.0f, 1.0f, "%.3f");
             changed |= ImGui::SliderFloat("IOR", &material.ior, 1.0f, 3.0f, "%.3f");
             changed |= ImGui::SliderFloat("Specular", &material.specularFactor, 0.0f, 1.0f, "%.3f");
+            changed |= ImGui::DragFloat3("Specular Color", &material.specularColorFactor.x, 0.01f, 0.0f, FLT_MAX, "%.3f");
+            changed |= ImGui::SliderFloat("Anisotropy Strength", &material.anisotropyStrength, 0.0f, 1.0f, "%.3f");
+            changed |= ImGui::DragFloat("Anisotropy Rotation", &material.anisotropyRotation, 0.01f, -FLT_MAX, FLT_MAX, "%.3f rad");
 
             ImGui::SeparatorText("Subsurface");
             changed |= ImGui::SliderFloat("Weight", &material.subsurfaceFactor, 0.0f, 1.0f, "%.3f");
@@ -403,6 +409,10 @@ void FHierarchyPanel()
             ImGui::Text("Emissive: %u", gpuMaterial.emissiveTexture);
             ImGui::Text("Metallic/Roughness: %u", gpuMaterial.metallicRoughnessTexture);
             ImGui::Text("Normal: %u", gpuMaterial.normalTexture);
+            ImGui::Text("Transmission: %u", gpuMaterial.transmissionTexture);
+            ImGui::Text("Specular: %u", gpuMaterial.specularTexture);
+            ImGui::Text("Specular Color: %u", gpuMaterial.specularColorTexture);
+            ImGui::Text("Anisotropy: %u", gpuMaterial.anisotropyTexture);
 
             if (changed)
             {

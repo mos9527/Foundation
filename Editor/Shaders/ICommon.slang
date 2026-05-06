@@ -100,6 +100,10 @@ public struct GSMaterial
     public uint32_t emissiveTexture;
     public uint32_t metallicRoughnessTexture;
     public uint32_t normalTexture;
+    public uint32_t transmissionTexture;
+    public uint32_t specularTexture;
+    public uint32_t specularColorTexture;
+    public uint32_t anisotropyTexture;
     public float4 baseColorFactor;
     public float3 emissiveFactor;
     public float metallicFactor;
@@ -107,7 +111,9 @@ public struct GSMaterial
     public float transmissionFactor;
     public float ior;
     public float specularFactor;
-    public float anisotropy;
+    public float3 specularColorFactor;
+    public float anisotropyStrength;
+    public float anisotropyRotation;
     public float subsurfaceFactor;
     public float subsurfaceScale;
     public float3 subsurfaceColor;

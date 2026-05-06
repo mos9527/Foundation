@@ -202,9 +202,16 @@ static void BuildEditorMaterials(Vector<uint32_t> const& textureIDMap)
         dst.emissiveTexture = RemapTextureIndex(textureIDMap, src.emissiveTexture);
         dst.metallicRoughnessTexture = RemapTextureIndex(textureIDMap, src.metallicRoughnessTexture);
         dst.normalTexture = RemapTextureIndex(textureIDMap, src.normalTexture);
+        dst.transmissionTexture = RemapTextureIndex(textureIDMap, src.transmissionTexture);
+        dst.specularTexture = RemapTextureIndex(textureIDMap, src.specularTexture);
+        dst.specularColorTexture = RemapTextureIndex(textureIDMap, src.specularColorTexture);
+        dst.anisotropyTexture = RemapTextureIndex(textureIDMap, src.anisotropyTexture);
         dst.transmissionFactor = src.transmissionFactor;
         dst.ior = src.ior;
         dst.specularFactor = src.specularFactor;
+        dst.specularColorFactor = src.specularColorFactor;
+        dst.anisotropyStrength = src.anisotropyStrength;
+        dst.anisotropyRotation = src.anisotropyRotation;
         dst.subsurfaceFactor = src.subsurfaceFactor;
         dst.subsurfaceScale = src.subsurfaceScale;
         dst.subsurfaceColor = src.subsurfaceColor;

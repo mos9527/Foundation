@@ -48,6 +48,10 @@ struct GSMaterial
     uint32_t emissiveTexture = UINT32_MAX;
     uint32_t metallicRoughnessTexture = UINT32_MAX;
     uint32_t normalTexture = UINT32_MAX;
+    uint32_t transmissionTexture = UINT32_MAX;
+    uint32_t specularTexture = UINT32_MAX;
+    uint32_t specularColorTexture = UINT32_MAX;
+    uint32_t anisotropyTexture = UINT32_MAX;
     float4 baseColorFactor;
     float3 emissiveFactor;
     float metallicFactor;
@@ -55,7 +59,9 @@ struct GSMaterial
     float transmissionFactor;
     float ior;
     float specularFactor;
-    float anisotropy;
+    float3 specularColorFactor;
+    float anisotropyStrength;
+    float anisotropyRotation;
     float subsurfaceFactor;
     float subsurfaceScale;
     float3 subsurfaceColor;
@@ -81,7 +87,7 @@ struct GSLight
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
 static_assert(sizeof(GSInstance) == 52);
-static_assert(sizeof(GSMaterial) == 100);
+static_assert(sizeof(GSMaterial) == 132);
 static_assert(sizeof(GSLight) == 96);
 
 template <typename T>

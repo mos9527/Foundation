@@ -179,9 +179,34 @@ void LoadGLTF(StringView path, FScene& scene)
             material.emissiveTexture = static_cast<uint32_t>(cgltf_texture_index(data, mat->emissive_texture.texture));
         material.emissiveFactor = {mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2], 1.0f};
         material.emissiveFactor *= mat->emissive_strength.emissive_strength;
-        material.transmissionFactor = mat->transmission.transmission_factor;
+        material.transmissionFactor = mat->has_transmission ? mat->transmission.transmission_factor : 0.0f;
+        if (mat->has_transmission && mat->transmission.transmission_texture.texture)
+            material.transmissionTexture = static_cast<uint32_t>(cgltf_texture_index(data, mat->transmission.transmission_texture.texture));
         material.ior = mat->has_ior ? mat->ior.ior : 1.5f;
         material.specularFactor = mat->has_specular ? mat->specular.specular_factor : 1.0f;
+        if (mat->has_specular)
+        {
+            material.specularColorFactor = {
+                mat->specular.specular_color_factor[0],
+                mat->specular.specular_color_factor[1],
+                mat->specular.specular_color_factor[2]
+            };
+            if (mat->specular.specular_texture.texture)
+                material.specularTexture = static_cast<uint32_t>(cgltf_texture_index(data, mat->specular.specular_texture.texture));
+            if (mat->specular.specular_color_texture.texture)
+            {
+                size_t index = cgltf_texture_index(data, mat->specular.specular_color_texture.texture);
+                textureFlags[index] |= kTextureInSRGB;
+                material.specularColorTexture = static_cast<uint32_t>(index);
+            }
+        }
+        if (mat->has_anisotropy)
+        {
+            material.anisotropyStrength = std::clamp(mat->anisotropy.anisotropy_strength, 0.0f, 1.0f);
+            material.anisotropyRotation = mat->anisotropy.anisotropy_rotation;
+            if (mat->anisotropy.anisotropy_texture.texture)
+                material.anisotropyTexture = static_cast<uint32_t>(cgltf_texture_index(data, mat->anisotropy.anisotropy_texture.texture));
+        }
         material.subsurfaceFactor = 0.0f;
         material.subsurfaceColor = {1.0f, 1.0f, 1.0f};
         // Blender defaults

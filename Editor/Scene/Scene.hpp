@@ -45,6 +45,14 @@ struct FMaterial
     // Linear. Tangent space XYZ, R [0.0 .. 1.0] to X [-1 .. 1], G [0.0 .. 1.0] to Y [-1 .. 1], B (0.5 .. 1.0] maps to Z
     // (0 .. 1]
     uint32_t normalTexture = kInvalidTexture;
+    // Linear. R channel.
+    uint32_t transmissionTexture = kInvalidTexture;
+    // Linear. A channel.
+    uint32_t specularTexture = kInvalidTexture;
+    // sRGB. RGB channels.
+    uint32_t specularColorTexture = kInvalidTexture;
+    // Linear. RG direction in tangent space, B strength.
+    uint32_t anisotropyTexture = kInvalidTexture;
     float4 baseColorFactor;
     float4 emissiveFactor;
     float metallicFactor;
@@ -52,6 +60,9 @@ struct FMaterial
     float transmissionFactor;
     float ior = 1.5f;
     float specularFactor = 1.0f;
+    float3 specularColorFactor{1.0f, 1.0f, 1.0f};
+    float anisotropyStrength = 0.0f;
+    float anisotropyRotation = 0.0f;
     float subsurfaceFactor = 0.0f;
     float subsurfaceScale = 0.05f;
     float3 subsurfaceColor{1.0f, 1.0f, 1.0f};
