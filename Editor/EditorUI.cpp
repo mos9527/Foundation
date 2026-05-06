@@ -983,6 +983,7 @@ void FRunningImGui()
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
             }
         }
+        if (GEditor.rendererMode == ERendererMode::Raster)
         {
             const char* items[] = {"Position", "BaseColor", "Normal"};
             const unsigned values[] = {kViewPosition, kViewBaseColor, kViewNormal};

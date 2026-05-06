@@ -18,18 +18,15 @@ Already done.
 TODO (Path Tracer)
 ---
 Also w/ blog post series update on:
+- [ ] Denoising
 - [ ] Light Tree ([BVH Light Sampling](https://www.pbr-book.org/4ed/Light_Sources/Light_Sampling))
-- [ ] ReSTIR
-  - OG https://research.nvidia.com/sites/default/files/pubs/2020-07_Spatiotemporal-reservoir-resampling/ReSTIR.pdf
-  - NV released [this (2026)](https://research.nvidia.com/labs/rtr/publication/lin2026restirptenhanced/lin2026restirptenhanced.pdf) recently too. Lots of new tricks I've not heard of :D 
+- [ ] ReSTIR Spatial + Temporal Reuse
 - [ ] Spatial Reuse ([SHaRC](https://github.com/NVIDIA-RTX/SHARC)?)
-- [ ] Denoising (SVGF? NRD? Integrate with DLSS-RR or FSR4-RGEN?)
 - [ ] MNEE (Manifold NEE) for *much* better caustics convergence
   - https://jo.dreggn.org/home/2015_mnee_talk.pdf
 - [ ] Texture sampling rate via ray differentials
   - Easy for camera rays, not so much for ones bouncing off BSDFs
 - [ ] Volume rendering
-- [ ] Curve (hair, fur) rendering
 
 Some time in the future:
 - [ ] Glass BSDF energy compensation 
@@ -38,15 +35,19 @@ Some time in the future:
     this is no longer NV only I'll have a shot.
   
 Done, awaiting Blog Update:
+- [x] Curve (hair, fur) rendering
+  - Line segments as capsules
+  - Procedurally traced, data exchange done via our own Blender IO (https://github.com/mos9527/Foundation-Blender-IO)
 - [x] Path Traced Skin BSSRDF
   - Disney BSSRDF from [PBRTv3](https://github.com/mmp/pbrt-v3/blob/master/src/materials/disney.cpp)
   - Uniformly selects exitance point on scattered path via AnyHit + reservoir sampling
-- [x] Transparent shadows (caustics, EXTREMELY SLOW approximation)
+- [x] Transparent shadows from Area Lights
   - Environment lights and emissive objects naturally cast caustics.
-  - Area lights are also added as actual geometry into TLAS, allowing them to be hit by BSDF rays and evaluated with MIS w/ NEE.
-  - Cheap approximation still - unbiased, yes. But very slow to converge. Crank up the fireflies!
+  - Area lights are also added as procedural geometry into TLAS, allowing them to be hit by BSDF rays and evaluated with MIS w/ NEE.
+  - Needs a large energy/firefly clamp.
   - Not done for analytical lights (Point/Directional) as they are delta distributions and cannot be hit by BSDF rays.
     - Conversion to small disk lights is feasible, or another O(N) loop to evaluate all of those inline w/o going through scene BVH
+    - Not worth it nonetheless. This is merely brute-forcing.
 - [x] Alias Sampling scene lights
 - [x] PCG (Independent), Sobol Samplers
 - [x] Importance sampling Infinite Image Lights

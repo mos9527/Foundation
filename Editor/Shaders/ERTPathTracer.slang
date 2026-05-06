@@ -28,10 +28,7 @@ StructuredBuffer<GSLight> lights;
 StructuredBuffer<Alias> lightAliasTable;
 SamplerState textureSampler;
 StructuredBuffer<uint> sobolMatrices;
-// -- Accumulation buffers (Welford online mean)
-RWTexture2D<float4> gBuffer0;  // BaseColor.rgb, MaterialID (packed)
-RWTexture2D<float4> gBuffer1;  // Normal.xyz * 0.5 + 0.5, 0
-RWTexture2D<float4> gBuffer2;  // Position.xyz, 0
+// -- Path radiance accumulation buffers (Welford online mean)
 RWTexture2D<float4> diffuse;   // Diffuse lobe radiance
 RWTexture2D<float4> specular;  // Specular lobe radiance (incl. transmission)
 RWTexture2D<uint32_t> pickIDBuffer; // Instance ID map, ~0u = no object (written on primary hit only)
@@ -107,9 +104,6 @@ void ClearPTTile()
 
             diffuse[clearPix] = float4(0);
             specular[clearPix] = float4(0);
-            gBuffer0[clearPix] = float4(0);
-            gBuffer1[clearPix] = float4(0.5f, 0.5f, 1.0f, 0.0f);
-            gBuffer2[clearPix] = float4(0);
             pickIDBuffer[clearPix] = ~0u;
         }
     }
@@ -1037,39 +1031,24 @@ void AddSurfaceEmissive(
                           bounce, firstBounceCategory, AOVCategory::Diffuse, bounce == 0);
 }
 
-void AccumulateGBuffer(uint2 pix, float4 g0, float4 g1, float4 g2, uint32_t pickID, float frameCount)
+void WritePrimaryPickID(uint2 pix, uint32_t pickID)
 {
-    if (frameCount == 1)
-    {
-        gBuffer0[pix] = g0;
-        gBuffer1[pix] = g1;
-        gBuffer2[pix] = g2;
-    }
-    else
-    {
-        float invN = 1.0f / frameCount;
-        gBuffer0[pix] += (g0 - gBuffer0[pix]) * invN;
-        gBuffer1[pix] += (g1 - gBuffer1[pix]) * invN;
-        gBuffer2[pix] += (g2 - gBuffer2[pix]) * invN;
-    }
-
     pickIDBuffer[pix] = pickID;
 }
 
-void AccumulateSurfaceGBuffer(uint2 pix, Payload surface, uint32_t instance, float frameCount)
+void AccumulatePathRadiance(uint2 pix, PathRadiance radiance, float frameCount)
 {
-    float4 g0 = float4(surface.baseColor, float(surface.materialID) / 255.0f);
-    float4 g1 = float4(surface.hit.normal * 0.5f + 0.5f, 0);
-    float4 g2 = float4(surface.hit.position, 0);
-    AccumulateGBuffer(pix, g0, g1, g2, instance, frameCount);
-}
+    float4 outD = float4(radiance.diffuse, 1.0f);
+    float4 outS = float4(radiance.specular, 1.0f);
 
-void AccumulateDefaultGBuffer(uint2 pix, float frameCount)
-{
-    float4 g0 = float4(0, 0, 0, 0);
-    float4 g1 = float4(0.5f, 0.5f, 1.0f, 0);
-    float4 g2 = float4(0, 0, 0, 0);
-    AccumulateGBuffer(pix, g0, g1, g2, ~0u, frameCount);
+    if (frameCount == 1) {
+        diffuse[pix]  = outD;
+        specular[pix] = outS;
+    } else {
+        float invN = 1.0f / frameCount;
+        diffuse[pix]  += (outD - diffuse[pix])  * invN;
+        specular[pix] += (outS - specular[pix]) * invN;
+    }
 }
 
 bool AddAnalyticLightHitEmission(
@@ -1182,7 +1161,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     float3 beta = float3(1);
     PathRadiance radiance = PathRadiance();
     AOVCategory firstBounceCategory = AOVCategory::Undefined;
-    bool gbufferWritten = false;
+    bool primaryPickWritten = false;
     float frameCount = float(GetPTPixelSampleCount(subSample));
     RayDesc ray = GenerateCameraRay(pix, rng);
     // Combine the miss hit with the last light sample
@@ -1235,11 +1214,10 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
 
         Payload surface = hit.kind == HitKind::Curve ? SampleCurvePayload(hit.raw, ray) : SamplePayload(hit.raw, ray);
 
-        // Accumulate GBuffer on primary hit
-        if (bounce == 0 && !gbufferWritten)
+        if (bounce == 0 && !primaryPickWritten)
         {
-            AccumulateSurfaceGBuffer(pix, surface, hit.raw.instance, frameCount);
-            gbufferWritten = true;
+            WritePrimaryPickID(pix, hit.raw.instance);
+            primaryPickWritten = true;
         }
         // -- Path Integrator
         // Local frame setup
@@ -1350,23 +1328,10 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             beta /= rrPCount; // Boost non-terminated paths
         }
     }
-    // Write default GBuffer if no hit
-    if (!gbufferWritten)
-        AccumulateDefaultGBuffer(pix, frameCount);
+    if (!primaryPickWritten)
+        WritePrimaryPickID(pix, ~0u);
 
-    // Per-contribution sanitize already done via AddRadiance
-    float4 outD = float4(radiance.diffuse, 1.0f);
-    float4 outS = float4(radiance.specular, 1.0f);
-
-    // Welford online mean — buffer always holds the current average (immediate HDR)
-    if (frameCount == 1) {
-        diffuse[pix]  = outD;
-        specular[pix] = outS;
-    } else {
-        float invN = 1.0f / frameCount;
-        diffuse[pix]  += (outD - diffuse[pix])  * invN;
-        specular[pix] += (outS - specular[pix]) * invN;
-    }
+    AccumulatePathRadiance(pix, radiance, frameCount);
 }
 // Naive stochastic opacity map implementation
 // TODO: OMM? Maybe one day.

@@ -71,21 +71,6 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
                                                                 RHITextureUsageBits::TransferSource,
                                                             .extent = {w, h, 1},
                                                             .format = RHIResourceFormat::R32G32B32A32SignedFloat});
-    auto GBuffer0 = renderer->CreateResource(
-        "GBuffer 0",
-        RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
-                       .extent = {w, h, 1},
-                       .format = RHIResourceFormat::R32G32B32A32SignedFloat});
-    auto GBuffer1 = renderer->CreateResource(
-        "GBuffer 1",
-        RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
-                       .extent = {w, h, 1},
-                       .format = RHIResourceFormat::R32G32B32A32SignedFloat});
-    auto GBuffer2 = renderer->CreateResource(
-        "GBuffer 2",
-        RHITextureDesc{.usage = RHITextureUsageBits::StorageImage | RHITextureUsageBits::SampledImage,
-                       .extent = {w, h, 1},
-                       .format = RHIResourceFormat::R32G32B32A32SignedFloat});
     // Instance ID map: R32_UINT, written every frame on primary hit (no accumulation)
     auto PickIDBuffer = renderer->CreateResource(
         "Pick ID Buffer",
@@ -217,15 +202,6 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             r->BindTextureUAV(self, Specular, "specular", RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureUAV(self, GBuffer0, "gBuffer0", RHIPipelineStageBits::RayTracingShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
-                                                 .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureUAV(self, GBuffer1, "gBuffer1", RHIPipelineStageBits::RayTracingShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
-                                                 .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureUAV(self, GBuffer2, "gBuffer2", RHIPipelineStageBits::RayTracingShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
-                                                 .range = RHITextureSubresourceRange::Create()});
             r->BindTextureUAV(self, PickIDBuffer, "pickIDBuffer", RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                  .range = RHITextureSubresourceRange::Create()});
@@ -269,9 +245,6 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             };
             bindSRV(Diffuse, "diffuseTex");
             bindSRV(Specular, "specularTex");
-            bindSRV(GBuffer0, "gBuffer0Tex");
-            bindSRV(GBuffer1, "gBuffer1Tex");
-            bindSRV(GBuffer2, "gBuffer2Tex");
             r->BindTextureSRV(self, PickIDBuffer, "pickIDBuffer", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                  .range = RHITextureSubresourceRange::Create()});
