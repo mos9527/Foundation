@@ -139,8 +139,9 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             using RTHitGroupType = RHIPipelineState::PipelineStateDesc::RayTracingHitGroupType;
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::RayTracingShader, "globalParams");
             r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::RayTracingShader, "AS");
-            const uint ptCompileOptions = PTPackCompileOptions(
-                context->device->GetCapabilities().shaderExecutionReordering, cfg.ptSampler);
+            const bool shaderExecutionReordering =
+                cfg.ptShaderExecutionReordering && context->device->GetCapabilities().shaderExecutionReordering;
+            const uint ptCompileOptions = PTPackCompileOptions(shaderExecutionReordering, cfg.ptSampler);
             r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration",
                           Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)));
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RayClosestHit",

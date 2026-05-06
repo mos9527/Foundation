@@ -911,6 +911,19 @@ void FRunningImGui()
                 GEditor.shaderGlobals.ptFireflyClamp = 100.0f;
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
             }
+            ImGui::SeparatorText("Performance");
+            const bool serSupported = GContext->device->GetCapabilities().shaderExecutionReordering;
+            bool serEnabled = serSupported && GEditor.rendererConfig.ptShaderExecutionReordering;
+            ImGui::BeginDisabled(!serSupported);
+            if (ImGui::Checkbox("Shader Execution Reordering", &serEnabled))
+            {
+                GEditor.rendererConfig.ptShaderExecutionReordering = serEnabled;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.state = FERunningEnter;
+            }
+            ImGui::EndDisabled();
+            if (!serSupported)
+                ImGui::TextDisabled("SER is not supported by this device.");
             ImGui::SeparatorText("Ray Bounce");
             ImGui::SliderInt("Diffuse", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesDiffuse), 0, 64);
             ImGui::SliderInt("Specular", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesSpecular), 0, 64);

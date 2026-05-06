@@ -133,6 +133,7 @@ struct RendererConfig
     unsigned viewFlags{kEnableRasterRTShadows};
     unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
     uint32_t ptSampler{kPTSamplerSobol};
+    bool ptShaderExecutionReordering{true};
 };
 
 struct RendererPicking
