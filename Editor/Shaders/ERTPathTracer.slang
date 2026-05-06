@@ -37,8 +37,9 @@ RWTexture2D<float4> specular;  // Specular lobe radiance (incl. transmission)
 RWTexture2D<uint32_t> pickIDBuffer; // Instance ID map, ~0u = no object (written on primary hit only)
 [[vk_binding(0,2)]] Texture2D<float4> textures[];
 
-// Number of SER coherence hint bits — enough to cover all materialID values
-// 8 bits is sufficient for 256 materials, consistent with GBuffer packing
+// SER coherence hint layout:
+//   [7:6] hit class (miss, analytic light, triangle, curve)
+//   [5:0] mixed material/light key
 static const uint kSERCoherenceHintBits = 8u;
 // Packed path-tracer compile options. Must match Render.hpp.
 static const uint kPTCompileOptionShaderExecutionReordering = 1u << 0;
@@ -665,6 +666,92 @@ HitObject TraceHitObject(RayDesc ray)
     return HitObject.TraceRay(AS, 0, 0xFF, kRayTypeSurface, 0, 0, ray, payload);
 }
 
+uint SERHashCombine(uint hash, uint value)
+{
+    return hash * 31u + value;
+}
+
+uint GetSERMaterialFamily(GSMaterial material, bool isCurve)
+{
+    if (!isCurve &&
+        material.subsurfaceFactor > EPS &&
+        material.subsurfaceScale > EPS &&
+        MaxComponent(material.subsurfaceRadius) > EPS)
+        return 3u;
+
+    if (material.transmissionFactor > EPS || material.transmissionTexture != ~0u)
+        return 2u;
+
+    if (material.metallicFactor > 0.5f ||
+        material.roughnessFactor < 0.25f ||
+        material.specularFactor > 1.25f ||
+        material.anisotropyStrength > EPS ||
+        material.anisotropyTexture != ~0u)
+        return 1u;
+
+    return 0u;
+}
+
+uint GetSERMaterialFeatureFlags(GSMaterial material)
+{
+    uint flags = 0u;
+    if (material.baseColorTexture != ~0u ||
+        material.metallicRoughnessTexture != ~0u ||
+        material.transmissionTexture != ~0u ||
+        material.specularTexture != ~0u ||
+        material.specularColorTexture != ~0u)
+        flags |= 1u;
+    if (material.normalTexture != ~0u)
+        flags |= 2u;
+    if (material.anisotropyStrength > EPS || material.anisotropyTexture != ~0u)
+        flags |= 4u;
+    if (MaxComponent(material.emissiveFactor) > EPS || material.emissiveTexture != ~0u)
+        flags |= 8u;
+    return flags;
+}
+
+uint BuildSERMaterialKey(uint materialIndex, GSMaterial material, bool isCurve, uint bounce)
+{
+    uint hash = 17u;
+    hash = SERHashCombine(hash, GetSERMaterialFamily(material, isCurve));
+    hash = SERHashCombine(hash, GetSERMaterialFeatureFlags(material));
+    hash = SERHashCombine(hash, min(bounce, 3u));
+    hash = SERHashCombine(hash, materialIndex);
+    return hash & 0x3Fu;
+}
+
+uint BuildSERCoherenceHint(HitObject hitObj, uint bounce)
+{
+    if (!hitObj.IsHit())
+        return 0u;
+
+    uint instanceID = hitObj.GetInstanceID();
+    if (IsLightInstance(instanceID))
+    {
+        GSLight light = LoadSceneLight(GetLightIndex(instanceID));
+        uint hash = SERHashCombine(17u, light.type);
+        hash = SERHashCombine(hash, min(bounce, 3u));
+        return (1u << 6) | (hash & 0x3Fu);
+    }
+
+    bool isCurve = IsCurveInstance(instanceID);
+    uint materialIndex;
+    if (isCurve)
+    {
+        GSCurveInstance inst = LoadSceneCurveInstance(GetCurveIndex(instanceID));
+        materialIndex = inst.materialIndex;
+    }
+    else
+    {
+        GSInstance inst = LoadSceneInstance(instanceID);
+        materialIndex = inst.materialIndex;
+    }
+
+    GSMaterial material = LoadMaterial(materialIndex);
+    uint hitClass = isCurve ? 3u : 2u;
+    return (hitClass << 6) | BuildSERMaterialKey(materialIndex, material, isCurve, bounce);
+}
+
 // -- Light Sampling
 
 bool TraceShadowRay(float3 origin, float3 direction, float tMax = INF)
@@ -1119,20 +1206,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             // https://www.khronos.org/blog/boosting-ray-tracing-performance-with-shader-execution-reordering-introducing-vk-ext-ray-tracing-invocation-reorder
             // https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_invocation_reorder/README.html
             HitObject hitObj = TraceHitObject(ray);
-            // Extract materialID from the hit instance as a coherence hint
-            // Miss is identified by 0xFFu (distinct from any valid material)
-            uint coherenceHint = 0xFFu;
-            if (hitObj.IsHit()) {
-                uint instanceID = hitObj.GetInstanceID();
-                if (IsCurveInstance(instanceID)) {
-                    GSCurveInstance inst = LoadSceneCurveInstance(GetCurveIndex(instanceID));
-                    coherenceHint = inst.materialIndex & 0xFFu;
-                }
-                else if (!IsLightInstance(instanceID)) {
-                    GSInstance inst = LoadSceneInstance(instanceID);
-                    coherenceHint = inst.materialIndex & 0xFFu;
-                }
-            }
+            uint coherenceHint = BuildSERCoherenceHint(hitObj, bounce);
             ReorderThread(hitObj, coherenceHint, kSERCoherenceHintBits);
             // Invoke closest hit / miss to populate the payload
             HitObject::Invoke(AS, hitObj, payload);
