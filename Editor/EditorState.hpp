@@ -100,6 +100,7 @@ struct EditorDocument
     FScene             scene{GLOBAL_ALLOC};
     String             currentSavePath;
     int                selectedInstance = -1;
+    int                selectedCurveInstance = -1;
     int                selectedMaterial = -1;
     int                selectedLight    = -1;
 };

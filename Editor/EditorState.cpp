@@ -8,6 +8,7 @@ static RendererHandles sRenderReadback;
 static RHIBuffer*        sPickResultBuffer = nullptr;
 static RendererPicking   sPicking;
 static float             sIdleTimeSeconds = 0.0f;
+static constexpr uint32_t kCurveInstanceBit = 1u << 22;
 
 static RHIExtent2D ClampViewportExtent(RHIExtent2D extent)
 {
@@ -199,16 +200,24 @@ static void FRunning()
     if (sPicking.pendingPixel.x >= 0 && sPickResultBuffer)
     {
         uint32_t id = *sPickResultBuffer->Map<uint32_t>();
-        GEditor.doc.selectedInstance = (id == ~0u) ? -1 : static_cast<int>(id);
-        if (GEditor.doc.selectedInstance >= 0 &&
-            GEditor.doc.selectedInstance < static_cast<int>(GEditor.doc.instances.size()))
+        GEditor.doc.selectedInstance = -1;
+        GEditor.doc.selectedCurveInstance = -1;
+        GEditor.doc.selectedMaterial = -1;
+        if (id != ~0u && (id & kCurveInstanceBit) != 0u)
         {
+            int curveIndex = static_cast<int>(id & ~kCurveInstanceBit);
+            if (curveIndex >= 0 && curveIndex < static_cast<int>(GEditor.doc.curveInstances.size()))
+            {
+                GEditor.doc.selectedCurveInstance = curveIndex;
+                GEditor.doc.selectedMaterial = static_cast<int>(GEditor.doc.curveInstances[curveIndex].materialIndex);
+                GEditor.doc.selectedLight = -1;
+            }
+        }
+        else if (id != ~0u && id < GEditor.doc.instances.size())
+        {
+            GEditor.doc.selectedInstance = static_cast<int>(id);
             GEditor.doc.selectedMaterial = static_cast<int>(GEditor.doc.instances[GEditor.doc.selectedInstance].materialIndex);
             GEditor.doc.selectedLight = -1;
-        }
-        else
-        {
-            GEditor.doc.selectedMaterial = -1;
         }
         sPicking.pendingPixel = {-1, -1};
     }

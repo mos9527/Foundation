@@ -297,6 +297,7 @@ void ReplaceScene(StringView path)
     GEditor.doc.lights.clear();
     
     GEditor.doc.selectedInstance = -1;
+    GEditor.doc.selectedCurveInstance = -1;
     GEditor.doc.selectedMaterial = -1;
     GEditor.doc.selectedLight = -1;
 
