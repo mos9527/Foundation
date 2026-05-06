@@ -245,6 +245,18 @@ namespace Foundation::RHI
         uint32_t indexOffset; // Bytes
         uint32_t indexCount;
     };
+    struct RHIAccelerationStructureAABB
+    {
+        float minX, minY, minZ;
+        float maxX, maxY, maxZ;
+    };
+    struct RHIAccelerationStructureGeometryAABBData
+    {
+        RHIBuffer* aabbBuffer;
+        uint32_t offset; // Bytes
+        uint32_t count;
+        uint32_t stride; // Bytes. Must be >= sizeof(RHIAccelerationStructureAABB).
+    };
     // For use with @ref RHIDevice::WriteAccelerationStructureInstanceData
     struct RHIAccelerationStructureGeometryInstance
     {
@@ -253,6 +265,7 @@ namespace Foundation::RHI
         float transformTranslation[3];
         uint32_t instanceID;
         uint32_t mask;
+        uint32_t shaderBindingTableRecordOffset{0};
         RHIAccelerationGeometryInstanceFlags flags;
     };
     struct RHIAccelerationStructureGeometryInstanceData
@@ -265,6 +278,7 @@ namespace Foundation::RHI
     {
         RHIAccelerationGeometryType type;
         RHIAccelerationStructureGeometryTriangleData triangleData;
+        RHIAccelerationStructureGeometryAABBData aabbData;
         RHIAccelerationStructureGeometryInstanceData instanceData;
         bool allowUpdate{false};
     };

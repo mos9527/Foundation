@@ -2,6 +2,11 @@
 #include "../Render/Tables.hpp"
 #include <Core/AllocatorStack.hpp>
 #include <Math/Quantize.hpp>
+
+// Must match the procedural light hit-group bindings in Render/Pathtracer.cpp.
+static constexpr uint32_t kRectLightSBTOffset = 3u;
+static constexpr uint32_t kDiskLightSBTOffset = 4u;
+
 static FTexture2D MakeLUT(const float* data, RHIResourceFormat format, uint32_t width, uint32_t height)
 {
     FTexture2D tex(GLOBAL_ALLOC);
@@ -65,83 +70,53 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     });
     mSobolMatricesBuffer->DebugSetObjectName("Sobol Matrices");
 
-    // Initialize Light BLAS
+    // Initialize procedural light BLASes. Intersections are done in shader against the
+    // unit disk/rect in object space; TLAS instances provide the light transform.
     {
-        struct LightGeo {
-            uint16_t vertices[4 + 33][4];
-            uint32_t indices[6 + 32 * 3];
+        struct LightAABBs {
+            RHIAccelerationStructureAABB rect;
+            RHIAccelerationStructureAABB disk;
         } geo;
-        
-        auto SetVertex = [&](int idx, float x, float y, float z) {
-            geo.vertices[idx][0] = Math::quantizeFP16(x);
-            geo.vertices[idx][1] = Math::quantizeFP16(y);
-            geo.vertices[idx][2] = Math::quantizeFP16(z);
-            geo.vertices[idx][3] = Math::quantizeFP16(1.0f);
-        };
-
-        // Rect
-        SetVertex(0, -1, -1, 0);
-        SetVertex(1,  1, -1, 0);
-        SetVertex(2,  1,  1, 0);
-        SetVertex(3, -1,  1, 0);
-        geo.indices[0] = 0; geo.indices[1] = 1; geo.indices[2] = 2;
-        geo.indices[3] = 0; geo.indices[4] = 2; geo.indices[5] = 3;
-        
-        // Disk
-        SetVertex(4, 0, 0, 0);
-        for (int i = 0; i < 32; ++i) {
-            float theta = i * 2.0f * pi<float>() / 32.0f;
-            SetVertex(5 + i, std::cos(theta), std::sin(theta), 0);
-            geo.indices[6 + i * 3 + 0] = 4;
-            geo.indices[6 + i * 3 + 1] = 5 + i;
-            geo.indices[6 + i * 3 + 2] = 5 + (i + 1) % 32;
-        }
+        constexpr float kLightAABBThickness = 1e-3f;
+        geo.rect = RHIAccelerationStructureAABB{-1.0f, -1.0f, -kLightAABBThickness,
+                                                 1.0f,  1.0f,  kLightAABBThickness};
+        geo.disk = geo.rect;
 
         mLightGeometryBuffer = mContext->device->CreateBuffer({
             .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
             .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
-            .size = sizeof(LightGeo)
+            .size = sizeof(LightAABBs)
         });
 
-        ImmediateUpload upload(mContext->device.Get(), sizeof(LightGeo));
+        ImmediateUpload upload(mContext->device.Get(), sizeof(LightAABBs));
         upload.Begin();
-        char* ptr = upload.Upload(mLightGeometryBuffer.Get(), sizeof(LightGeo), 0);
-        std::memcpy(ptr, &geo, sizeof(LightGeo));
+        char* ptr = upload.Upload(mLightGeometryBuffer.Get(), sizeof(LightAABBs), 0);
+        std::memcpy(ptr, &geo, sizeof(LightAABBs));
         upload.End();
         upload.WaitIdle();
 
         // Build BLAS
         RHIAccelerationStructureGeometryInfo rectGeoInfo{
-            .type = RHIAccelerationGeometryType::Triangles,
-            .triangleData = {
-                .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
-                .vertexBuffer = mLightGeometryBuffer.Get(),
-                .vertexOffset = offsetof(LightGeo, vertices),
-                .vertexCount = 4,
-                .vertexStride = sizeof(uint16_t) * 4,
-                .indexFormat = RHIResourceFormat::R32Uint,
-                .indexBuffer = mLightGeometryBuffer.Get(),
-                .indexOffset = offsetof(LightGeo, indices),
-                .indexCount = 6
+            .type = RHIAccelerationGeometryType::AABBs,
+            .aabbData = {
+                .aabbBuffer = mLightGeometryBuffer.Get(),
+                .offset = offsetof(LightAABBs, rect),
+                .count = 1,
+                .stride = sizeof(RHIAccelerationStructureAABB)
             }
         };
-        RHIAccelerationStructureBuildRangeInfo rectRange{.primitiveCount = 2};
+        RHIAccelerationStructureBuildRangeInfo rectRange{.primitiveCount = 1};
 
         RHIAccelerationStructureGeometryInfo diskGeoInfo{
-            .type = RHIAccelerationGeometryType::Triangles,
-            .triangleData = {
-                .vertexFormat = RHIResourceFormat::R16G16B16A16SignedFloat,
-                .vertexBuffer = mLightGeometryBuffer.Get(),
-                .vertexOffset = offsetof(LightGeo, vertices) + 4 * sizeof(uint16_t) * 4,
-                .vertexCount = 33,
-                .vertexStride = sizeof(uint16_t) * 4,
-                .indexFormat = RHIResourceFormat::R32Uint,
-                .indexBuffer = mLightGeometryBuffer.Get(),
-                .indexOffset = offsetof(LightGeo, indices) + 6 * sizeof(uint32_t),
-                .indexCount = 32 * 3
+            .type = RHIAccelerationGeometryType::AABBs,
+            .aabbData = {
+                .aabbBuffer = mLightGeometryBuffer.Get(),
+                .offset = offsetof(LightAABBs, disk),
+                .count = 1,
+                .stride = sizeof(RHIAccelerationStructureAABB)
             }
         };
-        RHIAccelerationStructureBuildRangeInfo diskRange{.primitiveCount = 32};
+        RHIAccelerationStructureBuildRangeInfo diskRange{.primitiveCount = 1};
 
         RHIAccelerationStructureBuildDesc rectDesc{
             .type = RHIAccelerationStructureType::BottomLevel,
@@ -627,6 +602,7 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
         res.transformTranslation[1] = src->position.y;
         res.transformTranslation[2] = src->position.z;
         res.blas = (src->type == 3) ? mDiskBLAS.Get() : mRectBLAS.Get();
+        res.shaderBindingTableRecordOffset = (src->type == 3) ? kDiskLightSBTOffset : kRectLightSBTOffset;
         return res;
     };
 

@@ -319,9 +319,22 @@ void VulkanPipelineState::InitializeRayTracing()
     {
         hitGroups = std::max(hitGroups, s->desc.raytracingHitGroupIndex + 1);
     }
+    Vector<PipelineStateDesc::RayTracingHitGroupType> hitGroupTypes(hitGroups, alloc.Ptr());
+    for (auto& type : hitGroupTypes)
+        type = PipelineStateDesc::RayTracingHitGroupType::Triangles;
+    for (auto* s : hitShaders)
+    {
+        auto type = s->desc.raytracingHitGroupType;
+        if (s->desc.stage & RHIShaderStageBits::RayIntersection)
+            type = PipelineStateDesc::RayTracingHitGroupType::Procedural;
+        if (type == PipelineStateDesc::RayTracingHitGroupType::Procedural)
+            hitGroupTypes[s->desc.raytracingHitGroupIndex] = type;
+    }
     for (size_t i = 0; i < hitGroups; i++)
         groups.push_back({
-            .type = vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
+            .type = hitGroupTypes[i] == PipelineStateDesc::RayTracingHitGroupType::Procedural
+                ? vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup
+                : vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
             .generalShader = VK_SHADER_UNUSED_KHR,
             .closestHitShader = VK_SHADER_UNUSED_KHR,
             .anyHitShader = VK_SHADER_UNUSED_KHR,
@@ -342,9 +355,24 @@ void VulkanPipelineState::InitializeRayTracing()
         if (s->desc.stage & RHIShaderStageBits::RayAnyHit)
         {
             CHECK_MSG(g.anyHitShader == VK_SHADER_UNUSED_KHR,
-                      "Multiple closest hit shaders specified for hit group {}", s->desc.raytracingHitGroupIndex);
+                      "Multiple any hit shaders specified for hit group {}", s->desc.raytracingHitGroupIndex);
             g.anyHitShader = stageIdx;
         }
+        if (s->desc.stage & RHIShaderStageBits::RayIntersection)
+        {
+            CHECK_MSG(g.type == vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup,
+                      "Intersection shader specified for non-procedural hit group {}", s->desc.raytracingHitGroupIndex);
+            CHECK_MSG(g.intersectionShader == VK_SHADER_UNUSED_KHR,
+                      "Multiple intersection shaders specified for hit group {}", s->desc.raytracingHitGroupIndex);
+            g.intersectionShader = stageIdx;
+        }
+    }
+    for (uint32_t i = 0; i < hitGroups; ++i)
+    {
+        auto& g = hitSpan[i];
+        if (g.type == vk::RayTracingShaderGroupTypeKHR::eProceduralHitGroup)
+            CHECK_MSG(g.intersectionShader != VK_SHADER_UNUSED_KHR,
+                      "Procedural hit group {} requires an intersection shader", i);
     }
     vk::RayTracingPipelineCreateInfoKHR pipelineInfo{
         .stageCount = static_cast<uint32_t>(stages.size()),

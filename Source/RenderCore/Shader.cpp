@@ -61,6 +61,8 @@ void Shader::ParseSPIRV(const Span<const char> bytecode)
                 ep.stage = RHIShaderStageBits::RayClosestHit; break;
             case spv::ExecutionModelMissKHR:
                 ep.stage = RHIShaderStageBits::RayMiss; break;
+            case spv::ExecutionModelIntersectionKHR:
+                ep.stage = RHIShaderStageBits::RayIntersection; break;
             default:
                 break;
             }

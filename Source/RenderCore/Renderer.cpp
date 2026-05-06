@@ -124,12 +124,14 @@ void Renderer::DeclareTextureAccess(PassHandle pass, ResourceHandle handle, RHIP
 
 /* -- binding -- */
 void Renderer::BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point, StringView shader_path,
-                          Span<const char> specializationData, uint32_t rtHitGroupIndex) const
+                          Span<const char> specializationData, uint32_t rtHitGroupIndex,
+                          RHIPipelineState::PipelineStateDesc::RayTracingHitGroupType rtHitGroupType) const
 {
     CHECK(mState == State::Setup);
     CHECK_MSG(stage.is_bitmask(), "Only one stage can be bound to a shader per pass");
-    auto& [path, ep, st, spec, rtGroup] =
-        mSetup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage, mAllocator, rtHitGroupIndex);
+    auto& [path, ep, st, spec, rtGroup, rtGroupType] =
+        mSetup->trackedPasses[pass].shaders.emplace_back(shader_path, entry_point, stage, mAllocator, rtHitGroupIndex,
+                                                         rtHitGroupType);
     spec.insert(spec.end(), specializationData.begin(), specializationData.end());
 }
 
@@ -563,7 +565,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
     Map<String, UniquePtr<Shader>> reflections(mAllocator);
     Map<String, Span<const char>> specializations(mAllocator);
     Map<String, uint32_t> rtHitGroups(mAllocator);
-    for (auto const& [shader_path, entry_point, stage, spec, rtHitGroup] : tracked.shaders)
+    Map<String, RHIPipelineState::PipelineStateDesc::RayTracingHitGroupType> rtHitGroupTypes(mAllocator);
+    for (auto const& [shader_path, entry_point, stage, spec, rtHitGroup, rtHitGroupType] : tracked.shaders)
     {
         if (!shaders.contains(shader_path))
         {
@@ -579,6 +582,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
         }
         specializations[entry_point] = spec;
         rtHitGroups[entry_point] = rtHitGroup;
+        rtHitGroupTypes[entry_point] = rtHitGroupType;
         auto& module = shaders[shader_path];
         // In BindShader we have already guaranteed these to be unique per stage
         if (stage & RHIShaderStageBits::Compute)
@@ -616,6 +620,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
                                           .entryPoint = ep.name.c_str(),
                                           .specializationData = specializations[entry_point],
                                           .raytracingHitGroupIndex = rtHitGroups[entry_point],
+                                          .raytracingHitGroupType = rtHitGroupTypes[entry_point],
                                       },
                                       .shaderModule = module.Get()});
                 if (stage & (RHIShaderStageBits::Compute | RHIShaderStageBits::Mesh | RHIShaderStageBits::Task))

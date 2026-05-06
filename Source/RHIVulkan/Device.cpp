@@ -729,6 +729,7 @@ size_t VulkanDevice::WriteAccelerationStructureInstanceData(RHIAccelerationStruc
         vk::AccelerationStructureInstanceKHR res{
             .instanceCustomIndex = static_cast<uint32_t>(data.instanceID),
             .mask = data.mask,
+            .instanceShaderBindingTableRecordOffset = data.shaderBindingTableRecordOffset,
             .accelerationStructureReference =
             static_cast<const VulkanAccelerationStructure*>(data.blas)->GetVkAccelerationStructureAddress()};
         std::memcpy(res.transform.matrix[0], &data.transformBasisRowMajor[0], sizeof(float) * 3);

@@ -430,7 +430,9 @@ namespace Foundation::RenderCore
          *                           ID 0, offset 0.
          */
         void BindShader(PassHandle pass, RHIShaderStage stage, StringView entry_point, StringView shader_path,
-                        Span<const char> specializationData = {}, uint32_t rtHitGroupIndex = 0) const;
+                        Span<const char> specializationData = {}, uint32_t rtHitGroupIndex = 0,
+                        RHIPipelineState::PipelineStateDesc::RayTracingHitGroupType rtHitGroupType =
+                            RHIPipelineState::PipelineStateDesc::RayTracingHitGroupType::Triangles) const;
         /**
          * @brief Declares a range of Push Constant used in a stage.
          *

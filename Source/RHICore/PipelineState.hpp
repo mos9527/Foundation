@@ -144,6 +144,11 @@ namespace Foundation::RHI {
             // [Graphics] Attachments/Alpha Blending
             Span<const Attachment> attachments{};
             // Stages
+            enum class RayTracingHitGroupType
+            {
+                Triangles,
+                Procedural
+            };
             struct ShaderStage {
                 struct StageDesc {
                     // Stage this shader participates in
@@ -154,6 +159,7 @@ namespace Foundation::RHI {
                     Span<const char> specializationData{};
                     // For ray tracing shaders - which hit group index this shader belongs to
                     const uint32_t raytracingHitGroupIndex{0};
+                    RayTracingHitGroupType raytracingHitGroupType{RayTracingHitGroupType::Triangles};
                 } desc;
                 RHIShaderModule* shaderModule;
             };

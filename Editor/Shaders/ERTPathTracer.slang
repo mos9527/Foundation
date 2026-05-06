@@ -296,6 +296,15 @@ void SampleMaterials(GSMaterial material, float2 uv,
 
 static const uint32_t INSTANCE_NO_HIT = ~0u;
 
+enum HitKind
+{
+    None = 0,
+    Triangle = 1,
+    Disk = 2,
+    Rect = 3,
+    Curve = 4
+};
+
 struct HitPayload
 {
     uint32_t instance;
@@ -305,6 +314,60 @@ struct HitPayload
 
     bool IsHit() { return instance != INSTANCE_NO_HIT; }
 };
+
+struct HitRecord
+{
+    HitKind kind;
+    HitPayload raw;
+    uint32_t lightIndex;
+    float3 position;
+
+    __init()
+    {
+        this.kind = HitKind::None;
+        this.raw = {};
+        this.lightIndex = ~0u;
+        this.position = float3(0.0f);
+    }
+};
+
+HitKind HitKindFromLight(GSLight light)
+{
+    if (light.type == 3)
+        return HitKind::Disk;
+    if (light.type == 4)
+        return HitKind::Rect;
+    return HitKind::None;
+}
+
+bool IsAnalyticLightHit(HitKind kind)
+{
+    return kind == HitKind::Disk || kind == HitKind::Rect;
+}
+
+bool IsMaterialSurfaceHit(HitKind kind)
+{
+    return kind == HitKind::Triangle;
+}
+
+HitRecord MakeHitRecord(HitPayload payload, RayDesc ray)
+{
+    HitRecord hit = HitRecord();
+    hit.raw = payload;
+    if (!payload.IsHit())
+        return hit;
+
+    hit.position = ray.Origin + ray.Direction * payload.hitT;
+    if (IsLightInstance(payload.instance))
+    {
+        hit.lightIndex = GetLightIndex(payload.instance);
+        hit.kind = HitKindFromLight(LoadSceneLight(hit.lightIndex));
+        return hit;
+    }
+
+    hit.kind = HitKind::Triangle;
+    return hit;
+}
 
 struct ShadowPayload
 {
@@ -827,9 +890,9 @@ void AccumulateDefaultGBuffer(uint2 pix, float frameCount)
     AccumulateGBuffer(pix, g0, g1, g2, ~0u, frameCount);
 }
 
-bool AddAreaLightHitEmission(
-    HitPayload payload,
-    RayDesc ray,
+bool AddAnalyticLightHitEmission(
+    HitRecord hit,
+    float3 rayDirection,
     float3 view,
     float3 beta,
     uint bounce,
@@ -839,31 +902,29 @@ bool AddAreaLightHitEmission(
     inout PathRadiance radiance,
     out float3 hitPoint)
 {
-    hitPoint = float3(0.0f);
-    if (!payload.IsHit() || !IsLightInstance(payload.instance))
+    hitPoint = hit.position;
+    if (!IsAnalyticLightHit(hit.kind))
         return false;
 
-    uint lightIndex = GetLightIndex(payload.instance);
-    GSLight gl = LoadSceneLight(lightIndex);
-    hitPoint = ray.Origin + ray.Direction * payload.hitT;
+    GSLight gl = LoadSceneLight(hit.lightIndex);
 
     SampledSpectrum Lemit = SampledSpectrum(gl.color * gl.power);
     SampledSpectrum Le = SampledSpectrum(0.0f);
     float pdfLi = 0.0f;
 
-    if (gl.type == 3)
+    if (hit.kind == HitKind::Disk)
     {
         DiskLight light = DiskLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.radius, gl.twoSided != 0);
         float3 normal = normalize(cross(gl.dpdu, gl.dpdv));
         Le = light.L(hitPoint, normal, float3(0), view);
-        pdfLi = light.PDF_Li(lighting.lastLightCtx, ray.Direction, true);
+        pdfLi = light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
     }
-    else if (gl.type == 4)
+    else if (hit.kind == HitKind::Rect)
     {
         RectLight light = RectLight(Lemit, gl.position, gl.dpdu, gl.dpdv, gl.twoSided != 0);
         float3 normal = normalize(cross(gl.dpdu, gl.dpdv));
         Le = light.L(hitPoint, normal, float3(0), view);
-        pdfLi = light.PDF_Li(lighting.lastLightCtx, ray.Direction, true);
+        pdfLi = light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
     }
 
     if (any(Le > 0.0f))
@@ -980,27 +1041,31 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             TraceRay(AS, 0, 0xFF, kRayTypeSurface, 0, 0, ray, payload);
         // Outgoing direction
         float3 view = -ray.Direction;
+        HitRecord hit = MakeHitRecord(payload, ray);
 
         float3 hitPoint;
-        if (AddAreaLightHitEmission(payload, ray, view, beta, bounce, firstBounceCategory,
-                                    lastSamplePDF, lighting, radiance, hitPoint))
+        if (AddAnalyticLightHitEmission(hit, ray.Direction, view, beta, bounce, firstBounceCategory,
+                                        lastSamplePDF, lighting, radiance, hitPoint))
         {
             ray.Origin = hitPoint + ray.Direction * EPS_TMin;
             bounce--; // Don't count this as a bounce
             continue;
         }
 
-        if (!payload.IsHit())
+        if (hit.kind == HitKind::None)
         {
             AddEnvironmentMiss(view, beta, bounce, firstBounceCategory, lastSamplePDF, lighting, radiance);
             break;
         }
-        Payload surface = SamplePayload(payload, ray);
+        if (!IsMaterialSurfaceHit(hit.kind))
+            break;
+
+        Payload surface = SamplePayload(hit.raw, ray);
 
         // Accumulate GBuffer on primary hit
         if (bounce == 0 && !gbufferWritten)
         {
-            AccumulateSurfaceGBuffer(pix, surface, payload.instance, frameCount);
+            AccumulateSurfaceGBuffer(pix, surface, hit.raw.instance, frameCount);
             gbufferWritten = true;
         }
         // -- Path Integrator
@@ -1025,7 +1090,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         if (sampleBSSRDF)
         {
             BSSRDFSurfaceSample sample;
-            if (!SeparableBSSRDF_SampleSp(surface, payload.instance, rng, sample))
+            if (!SeparableBSSRDF_SampleSp(surface, hit.raw.instance, rng, sample))
                 break;
 
             float3 localBeta = beta * sample.Sp / max(pSampleBSSRDF * sample.pdf, EPS);
@@ -1154,6 +1219,79 @@ bool AnyHitOpacityIgnore<S : ISampler>(inout S rng, uint instance, uint primitiv
     if (rng.sample() < 1.0f - opacity)
         return true;
     return false;
+}
+
+struct ProceduralHitAttributes
+{
+    float2 localPosition;
+};
+
+bool IntersectUnitLightPlane(out float t, out float2 localPosition)
+{
+    float3 ro = ObjectRayOrigin();
+    float3 rd = ObjectRayDirection();
+    t = 0.0f;
+    localPosition = float2(0.0f);
+    if (abs(rd.z) < 1e-7f)
+        return false;
+
+    t = -ro.z / rd.z;
+    if (t < RayTMin() || t > RayTCurrent())
+        return false;
+
+    float3 p = ro + rd * t;
+    localPosition = p.xy;
+    return true;
+}
+
+[shader("intersection")]
+void RectLightIntersection()
+{
+    float t;
+    float2 p;
+    if (!IntersectUnitLightPlane(t, p))
+        return;
+    if (any(abs(p) > 1.0f))
+        return;
+
+    ProceduralHitAttributes attr;
+    attr.localPosition = p;
+    ReportHit(t, 0, attr);
+}
+
+[shader("intersection")]
+void DiskLightIntersection()
+{
+    float t;
+    float2 p;
+    if (!IntersectUnitLightPlane(t, p))
+        return;
+    if (dot(p, p) > 1.0f)
+        return;
+
+    ProceduralHitAttributes attr;
+    attr.localPosition = p;
+    ReportHit(t, 0, attr);
+}
+
+void FillProceduralLightHit(inout HitPayload payload, ProceduralHitAttributes attr)
+{
+    payload.instance = InstanceID();
+    payload.primitive = PrimitiveIndex();
+    payload.bary = attr.localPosition;
+    payload.hitT = RayTCurrent();
+}
+
+[shader("closesthit")]
+void RectLightClosestHit(inout HitPayload payload, in ProceduralHitAttributes attr)
+{
+    FillProceduralLightHit(payload, attr);
+}
+
+[shader("closesthit")]
+void DiskLightClosestHit(inout HitPayload payload, in ProceduralHitAttributes attr)
+{
+    FillProceduralLightHit(payload, attr);
 }
 
 [shader("anyhit")] // Hit Group 0

@@ -332,6 +332,21 @@ RHI::vkAccelerationTriangleDataFromRHI(RHIAccelerationStructureGeometryTriangleD
     };
 }
 
+vk::AccelerationStructureGeometryAabbsDataKHR
+RHI::vkAccelerationAABBDataFromRHI(RHIAccelerationStructureGeometryAABBData const& src)
+{
+    auto* buf = static_cast<VulkanBuffer*>(src.aabbBuffer);
+    auto addr = buf->GetBufferAddress() + src.offset;
+    CHECK(src.count > 0);
+    CHECK(src.offset < buf->mDesc.size);
+    CHECK(src.stride >= sizeof(RHIAccelerationStructureAABB));
+    CHECK(src.offset + static_cast<uint64_t>(src.count) * src.stride <= buf->mDesc.size);
+    return vk::AccelerationStructureGeometryAabbsDataKHR{
+        .data = vk::DeviceOrHostAddressConstKHR{.deviceAddress = addr},
+        .stride = src.stride,
+    };
+}
+
 vk::AccelerationStructureBuildGeometryInfoKHR
 RHI::vkAccelerationBuildGeoInfoFromRHI(RHIAccelerationStructureBuildDesc const& desc,
                                        Vector<vk::AccelerationStructureGeometryKHR>& geometries,
@@ -351,6 +366,14 @@ RHI::vkAccelerationBuildGeoInfoFromRHI(RHIAccelerationStructureBuildDesc const& 
                 geo.geometry.triangles.sType = vk::StructureType::eAccelerationStructureGeometryTrianglesDataKHR;
                 geo.geometry.triangles = vkAccelerationTriangleDataFromRHI(src.triangleData);
                 primitiveCounts.push_back(src.triangleData.indexCount / 3);
+                break;
+            }
+        case RHIAccelerationGeometryType::AABBs:
+            {
+                geo.geometryType = vk::GeometryTypeKHR::eAabbs;
+                geo.geometry.aabbs.sType = vk::StructureType::eAccelerationStructureGeometryAabbsDataKHR;
+                geo.geometry.aabbs = vkAccelerationAABBDataFromRHI(src.aabbData);
+                primitiveCounts.push_back(src.aabbData.count);
                 break;
             }
         case RHIAccelerationGeometryType::Instances:

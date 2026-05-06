@@ -209,6 +209,7 @@ namespace Foundation::RHI {
     enum class RHIAccelerationGeometryType
     {
         Triangles,
+        AABBs,
         Instances
     };
 

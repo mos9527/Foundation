@@ -134,6 +134,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
         "Trace", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
+            using RTHitGroupType = RHIPipelineState::PipelineStateDesc::RayTracingHitGroupType;
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::RayTracingShader, "globalParams");
             r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::RayTracingShader, "AS");
             const uint capabilityFlags = context->device->GetCapabilities().shaderExecutionReordering;
@@ -157,6 +158,18 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
                           /*hit group*/ 2);
             r->BindShader(self, RHIShaderStageBits::RayMiss, "BSSRDFQueryMiss",
                           Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(capabilityFlags)));
+            r->BindShader(self, RHIShaderStageBits::RayIntersection, "RectLightIntersection",
+                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(capabilityFlags)),
+                          /*hit group*/ 3, RTHitGroupType::Procedural);
+            r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RectLightClosestHit",
+                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(capabilityFlags)),
+                          /*hit group*/ 3, RTHitGroupType::Procedural);
+            r->BindShader(self, RHIShaderStageBits::RayIntersection, "DiskLightIntersection",
+                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(capabilityFlags)),
+                          /*hit group*/ 4, RTHitGroupType::Procedural);
+            r->BindShader(self, RHIShaderStageBits::RayClosestHit, "DiskLightClosestHit",
+                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(capabilityFlags)),
+                          /*hit group*/ 4, RTHitGroupType::Procedural);
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitives");
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
             r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::ComputeShader, "materials");

@@ -127,6 +127,8 @@ namespace Foundation::RHI
     };
     vk::AccelerationStructureGeometryTrianglesDataKHR
     vkAccelerationTriangleDataFromRHI(RHIAccelerationStructureGeometryTriangleData const& desc);
+    vk::AccelerationStructureGeometryAabbsDataKHR
+    vkAccelerationAABBDataFromRHI(RHIAccelerationStructureGeometryAABBData const& desc);
     vk::AccelerationStructureBuildGeometryInfoKHR
     vkAccelerationBuildGeoInfoFromRHI(RHIAccelerationStructureBuildDesc const& desc,
                                       Vector<vk::AccelerationStructureGeometryKHR>& geometries,
