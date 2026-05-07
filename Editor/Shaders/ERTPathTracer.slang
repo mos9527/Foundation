@@ -9,6 +9,7 @@ import ICommon;
 import ILight;
 import IBSDF;
 import IBSSRDF;
+import IMaterial;
 import IMath;
 import IBxDF;
 
@@ -52,6 +53,7 @@ static const uint32_t kCurveInstanceBit = 1u << 22;
 static const uint kMeshMask = 0x01;
 static const uint kCurveMask = 0x04;
 
+// Tiling helpers
 uint GetPTTileSide()
 {
     return max(globalParams.ptDispatchTileSide, 1u);
@@ -114,7 +116,7 @@ uint GetPTPixelSampleCount(uint subSample)
     return GetPTBasePixelSampleCount() + subSample + 1u;
 }
 
-// World-space hit geometry
+// Hit state helpers
 struct HitState
 {
     float3 position;
@@ -223,7 +225,7 @@ GSLight LoadSceneLight(uint localLightIndex)
     return lights[NonUniformResourceIndex(globalParams.firstLight + localLightIndex)];
 }
 
-HitState getHitState(uint meshOffset, uint primitive, float2 bary, GSInstance inst, float3 rayOrigin, float3 rayDirection, float hitT)
+HitState GetHitState(uint meshOffset, uint primitive, float2 bary, GSInstance inst, float3 rayOrigin, float3 rayDirection, float hitT)
 {
     HitState hit;
 
@@ -271,7 +273,7 @@ HitState getHitState(uint meshOffset, uint primitive, float2 bary, GSInstance in
     return hit;
 }
 
-HitState getCurveHitState(uint curveOffset, uint primitive, float2 uv, GSCurveInstance inst,
+HitState GetCurveHitState(uint curveOffset, uint primitive, float2 uv, GSCurveInstance inst,
                           float3 rayOrigin, float3 rayDirection, float hitT)
 {
     HitState hit;
@@ -302,51 +304,6 @@ HitState getCurveHitState(uint curveOffset, uint primitive, float2 uv, GSCurveIn
     hit.tangent = normalize(inst.rotation.rotate(tangent * inst.scale));
     hit.bitangent = normalize(cross(hit.normal, hit.tangent));
     return hit;
-}
-
-void SampleMaterials(GSMaterial material, float2 uv,
-    out float4 baseColor, out float4 normalTBN, out float4 pbrMetalRough, out float4 emissive,
-    out float transmission, out float specularFactor, out float3 specularColorFactor,
-    out float anisotropyStrength, out float2 anisotropyDirection)
-{
-    baseColor = material.baseColorFactor;
-    if (material.baseColorTexture != ~0u)
-        baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, uv, 0);
-    normalTBN = float4(0, 0, 1, 0);
-    if (material.normalTexture != ~0u)
-        normalTBN = textures[NonUniformResourceIndex(material.normalTexture)].SampleLevel(textureSampler, uv, 0) * 2 - float4(1);
-    pbrMetalRough = float4(1, material.roughnessFactor, material.metallicFactor, 1);
-    if (material.metallicRoughnessTexture != ~0u)
-        pbrMetalRough *= textures[NonUniformResourceIndex(material.metallicRoughnessTexture)].SampleLevel(textureSampler, uv, 0);
-    emissive = float4(material.emissiveFactor, 0);
-    if (material.emissiveTexture != ~0u)
-        emissive *= textures[NonUniformResourceIndex(material.emissiveTexture)].SampleLevel(textureSampler, uv, 0);
-
-    transmission = material.transmissionFactor;
-    if (material.transmissionTexture != ~0u)
-        transmission *= textures[NonUniformResourceIndex(material.transmissionTexture)].SampleLevel(textureSampler, uv, 0).r;
-
-    specularFactor = material.specularFactor;
-    if (material.specularTexture != ~0u)
-        specularFactor *= textures[NonUniformResourceIndex(material.specularTexture)].SampleLevel(textureSampler, uv, 0).a;
-
-    specularColorFactor = material.specularColorFactor;
-    if (material.specularColorTexture != ~0u)
-        specularColorFactor *= textures[NonUniformResourceIndex(material.specularColorTexture)].SampleLevel(textureSampler, uv, 0).rgb;
-
-    float c = cos(material.anisotropyRotation);
-    float s = sin(material.anisotropyRotation);
-    anisotropyStrength = material.anisotropyStrength;
-    anisotropyDirection = float2(c, s);
-    if (material.anisotropyTexture != ~0u)
-    {
-        float3 anisotropyTex = textures[NonUniformResourceIndex(material.anisotropyTexture)].SampleLevel(textureSampler, uv, 0).rgb;
-        float2 texDirection = anisotropyTex.rg * 2.0f - float2(1.0f);
-        texDirection = LengthSquared(texDirection) > 1e-8f ? normalize(texDirection) : float2(1.0f, 0.0f);
-        anisotropyDirection = float2(c * texDirection.x - s * texDirection.y,
-                                     s * texDirection.x + c * texDirection.y);
-        anisotropyStrength *= anisotropyTex.b;
-    }
 }
 
 static const uint32_t INSTANCE_NO_HIT = ~0u;
@@ -429,16 +386,10 @@ HitRecord MakeHitRecord(HitPayload payload, RayDesc ray)
     return hit;
 }
 
+// Hit Payload helpers
 struct ShadowPayload
 {
     bool hit;
-};
-
-struct BSSRDFQueryPayload
-{
-    uint32_t targetInstance;
-    uint32_t targetMaterial;
-    WeightedReservoir<BSSRDFSurfaceCandidate> reservoir;
 };
 
 struct Payload
@@ -460,6 +411,12 @@ struct Payload
     float3 subsurfaceRadius;
 };
 
+struct BSSRDFQueryPayload
+{
+    uint32_t targetInstance;
+    uint32_t targetMaterial;
+    WeightedReservoir<BSSRDFSurfaceCandidate> reservoir;
+};
 struct BSSRDFSurfaceSample
 {
     bool valid;
@@ -513,16 +470,74 @@ struct PathRadiance
 struct DirectLightingState
 {
     InfiniteLight env;
-    float totalLightWeight;
+    float lightTotalWeight;
     LightSampleContext lastLightCtx;
 
-    __init(InfiniteLight env, float totalLightWeight)
+    __init(InfiniteLight env, float lightTotalWeight)
     {
         this.env = env;
-        this.totalLightWeight = totalLightWeight;
+        this.lightTotalWeight = lightTotalWeight;
         this.lastLightCtx = LightSampleContext(float3(0), float3(0), float3(0));
     }
 };
+
+// Material helpers
+// vvvvv TODO More materials? Custom ones?
+//       One uber shader here is surely insufficent. Need to compile ad-hoc shaders _here_.
+IMaterial MakeMaterial(Payload surface, float3 wo)
+{
+    return PrincipledMaterial(
+        surface.baseColor, surface.metallic, surface.roughness,
+        surface.ior, surface.specularFactor, surface.transmission, true, wo,
+        surface.subsurface, surface.subsurfaceColor, surface.subsurfaceRadius, surface.subsurfaceScale,
+        surface.anisotropyStrength, surface.specularColorFactor);
+}
+
+
+void SampleMaterials(GSMaterial material, float2 uv,
+    out float4 baseColor, out float4 normalTBN, out float4 pbrMetalRough, out float4 emissive,
+    out float transmission, out float specularFactor, out float3 specularColorFactor,
+    out float anisotropyStrength, out float2 anisotropyDirection)
+{
+    baseColor = material.baseColorFactor;
+    if (material.baseColorTexture != ~0u)
+        baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, uv, 0);
+    normalTBN = float4(0, 0, 1, 0);
+    if (material.normalTexture != ~0u)
+        normalTBN = textures[NonUniformResourceIndex(material.normalTexture)].SampleLevel(textureSampler, uv, 0) * 2 - float4(1);
+    pbrMetalRough = float4(1, material.roughnessFactor, material.metallicFactor, 1);
+    if (material.metallicRoughnessTexture != ~0u)
+        pbrMetalRough *= textures[NonUniformResourceIndex(material.metallicRoughnessTexture)].SampleLevel(textureSampler, uv, 0);
+    emissive = float4(material.emissiveFactor, 0);
+    if (material.emissiveTexture != ~0u)
+        emissive *= textures[NonUniformResourceIndex(material.emissiveTexture)].SampleLevel(textureSampler, uv, 0);
+
+    transmission = material.transmissionFactor;
+    if (material.transmissionTexture != ~0u)
+        transmission *= textures[NonUniformResourceIndex(material.transmissionTexture)].SampleLevel(textureSampler, uv, 0).r;
+
+    specularFactor = material.specularFactor;
+    if (material.specularTexture != ~0u)
+        specularFactor *= textures[NonUniformResourceIndex(material.specularTexture)].SampleLevel(textureSampler, uv, 0).a;
+
+    specularColorFactor = material.specularColorFactor;
+    if (material.specularColorTexture != ~0u)
+        specularColorFactor *= textures[NonUniformResourceIndex(material.specularColorTexture)].SampleLevel(textureSampler, uv, 0).rgb;
+
+    float c = cos(material.anisotropyRotation);
+    float s = sin(material.anisotropyRotation);
+    anisotropyStrength = material.anisotropyStrength;
+    anisotropyDirection = float2(c, s);
+    if (material.anisotropyTexture != ~0u)
+    {
+        float3 anisotropyTex = textures[NonUniformResourceIndex(material.anisotropyTexture)].SampleLevel(textureSampler, uv, 0).rgb;
+        float2 texDirection = anisotropyTex.rg * 2.0f - float2(1.0f);
+        texDirection = LengthSquared(texDirection) > 1e-8f ? normalize(texDirection) : float2(1.0f, 0.0f);
+        anisotropyDirection = float2(c * texDirection.x - s * texDirection.y,
+                                     s * texDirection.x + c * texDirection.y);
+        anisotropyStrength *= anisotropyTex.b;
+    }
+}
 
 Payload SamplePayload(HitPayload payload, RayDesc ray)
 {
@@ -531,7 +546,7 @@ Payload SamplePayload(HitPayload payload, RayDesc ray)
     GSInstance inst = LoadSceneInstance(payload.instance);
     Payload res;
     res.materialID = inst.materialIndex;
-    res.hit = getHitState(inst.meshOffset, payload.primitive, payload.bary, inst, ray.Origin, ray.Direction, payload.hitT);
+    res.hit = GetHitState(inst.meshOffset, payload.primitive, payload.bary, inst, ray.Origin, ray.Direction, payload.hitT);
     GSMaterial material = LoadMaterial(res.materialID);
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
     float2 anisotropyDirection;
@@ -561,7 +576,7 @@ Payload SampleCurvePayload(HitPayload payload, RayDesc ray)
     GSCurveInstance inst = LoadSceneCurveInstance(GetCurveIndex(payload.instance));
     Payload res;
     res.materialID = inst.materialIndex;
-    res.hit = getCurveHitState(inst.curveOffset, payload.primitive, payload.bary, inst,
+    res.hit = GetCurveHitState(inst.curveOffset, payload.primitive, payload.bary, inst,
                                ray.Origin, ray.Direction, payload.hitT);
     GSMaterial material = LoadMaterial(res.materialID);
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
@@ -761,13 +776,6 @@ bool TraceShadowRay(float3 origin, float3 direction, float tMax = INF)
     return payload.hit;
 }
 
-bool HasUsableBSSRDF(Payload surface)
-{
-    return surface.subsurface > EPS &&
-           MaxComponent(surface.subsurfaceRadius * surface.subsurfaceScale) > EPS &&
-           MaxComponent(surface.baseColor * surface.subsurfaceColor) > EPS;
-}
-
 BSSRDFSurfaceInteraction MakeBSSRDFPo(HitState hit)
 {
     return BSSRDFSurfaceInteraction(hit.position, hit.normal, hit.tangent, hit.bitangent);
@@ -781,15 +789,12 @@ BSSRDFSurfaceInteraction MakeBSSRDFPi(HitState hit)
 bool SeparableBSSRDF_SampleSp<S : ISampler>(
     Payload surface,
     uint32_t sourceInstance,
+    IBSSRDF bssrdf,
     inout S rng,
     out BSSRDFSurfaceSample result)
 {
     result = BSSRDFSurfaceSample();
-    if (!HasUsableBSSRDF(surface))
-        return false;
 
-    ISeparableBSSRDF bssrdf = DisneyBurleyBSSRDF(surface.baseColor * surface.subsurfaceColor,
-                                                surface.subsurfaceRadius * surface.subsurfaceScale);
     BSSRDFSurfaceInteraction poBSSRDF = MakeBSSRDFPo(surface.hit);
     BSSRDFSampleRaySegment segment =
         bssrdf.Sample_SpRay(poBSSRDF, rng.sample(), rng.sample(), rng.sample(), rng.sample());
@@ -936,12 +941,12 @@ bool SampleVisibleSceneLight<S : ISampler>(
     HitState hit,
     InfiniteLight env,
     inout S rng,
-    float totalLightWeight,
+    float lightTotalWeight,
     out LightSampleContext ctx,
     out LightLiSample Li)
 {
     ctx = LightSampleContext(hit.position, hit.geometryNormal, hit.normal);
-    Li = SampleSceneLight(ctx, env, rng.sample(), rng.sample2D(), totalLightWeight);
+    Li = SampleSceneLight(ctx, env, rng.sample(), rng.sample2D(), lightTotalWeight);
     if (Li.pdf <= EPS)
         return false;
 
@@ -953,9 +958,31 @@ bool SampleVisibleSceneLight<S : ISampler>(
     return Li.pdf > EPS;
 }
 
+void BSDF_f(IBSDF bsdf, float3 wo, float3 wi, TransportMode mode,
+            out float3 fDiffuse, out float3 fSpecular)
+{
+    bsdf.f(wo, wi, mode, fDiffuse, fSpecular);
+}
+
+SampledSpectrum BSDF_f(IBSDF bsdf, float3 wo, float3 wi, TransportMode mode)
+{
+    return bsdf.f(wo, wi, mode);
+}
+
+float BSDF_PDF(IBSDF bsdf, float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags)
+{
+    return bsdf.PDF(wo, wi, mode, flags);
+}
+
+BSDFSample BSDF_SampleF(IBSDF bsdf, float3 wo, float uc, float2 u, TransportMode mode,
+                        BxDFReflTransFlags flags, out AOVCategory category)
+{
+    return bsdf.Sample_f(wo, uc, u, mode, flags, category);
+}
+
 void AddLocalDirectLighting<S : ISampler>(
     Payload surface,
-    PrincipledBSDFLobes bsdf,
+    IBSDF bsdf,
     float3 wo,
     float3 beta,
     uint bounce,
@@ -966,7 +993,7 @@ void AddLocalDirectLighting<S : ISampler>(
 {
     LightSampleContext ctx;
     LightLiSample Li;
-    if (!SampleVisibleSceneLight(surface.hit, lighting.env, rng, lighting.totalLightWeight, ctx, Li))
+    if (!SampleVisibleSceneLight(surface.hit, lighting.env, rng, lighting.lightTotalWeight, ctx, Li))
     {
         lighting.lastLightCtx = ctx;
         return;
@@ -974,20 +1001,20 @@ void AddLocalDirectLighting<S : ISampler>(
 
     lighting.lastLightCtx = ctx;
     float3 wi = WorldToShadingLocal(surface.hit, Li.wi);
-    float bsdfPdf = bsdf.PDF(wo, wi, TransportMode::Radiance, BxDFReflTransFlags::All);
+    float bsdfPdf = BSDF_PDF(bsdf, wo, wi, TransportMode::Radiance, BxDFReflTransFlags::All);
     float mis = Li.isDelta ? 1.0f : PowerHeuristic(1, Li.pdf, 1, bsdfPdf);
 
     if (bounce == 0)
     {
         float3 fD, fS;
-        bsdf.f_split(wo, wi, TransportMode::Radiance, fD, fS);
+        BSDF_f(bsdf, wo, wi, TransportMode::Radiance, fD, fS);
         float3 scale = beta * AbsCosTheta(wi) * Li.Li * mis;
         AddRadiance(radiance.diffuse, fD * scale, true);
         AddRadiance(radiance.specular, fS * scale, true);
     }
     else
     {
-        float3 f = bsdf.f(wo, wi, TransportMode::Radiance) * AbsCosTheta(wi);
+        float3 f = BSDF_f(bsdf, wo, wi, TransportMode::Radiance) * AbsCosTheta(wi);
         AddRadianceByCategory(radiance, beta * f * Li.Li * mis,
                               bounce, firstBounceCategory, AOVCategory::Diffuse, false);
     }
@@ -1006,7 +1033,7 @@ void AddDiffuseDirectLighting<S : ISampler>(
 {
     LightSampleContext ctx;
     LightLiSample Li;
-    if (!SampleVisibleSceneLight(hit, lighting.env, rng, lighting.totalLightWeight, ctx, Li))
+    if (!SampleVisibleSceneLight(hit, lighting.env, rng, lighting.lightTotalWeight, ctx, Li))
     {
         lighting.lastLightCtx = ctx;
         return;
@@ -1090,8 +1117,8 @@ bool AddAnalyticLightHitEmission(
 
     if (any(Le > 0.0f))
     {
-        float pLightSelection = lighting.totalLightWeight > 0.0f
-            ? (gl.selectionWeight / lighting.totalLightWeight)
+        float pLightSelection = lighting.lightTotalWeight > 0.0f
+            ? (gl.selectionWeight / lighting.lightTotalWeight)
             : 0.0f;
         float pdf = pLightSelection * pdfLi;
         float mis = lastSamplePDF > EPS ? BalanceHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
@@ -1121,8 +1148,8 @@ void AddEnvironmentMiss(
     }
 
     float envWeight = GetEnvLightSelectionWeight();
-    float pdf = lighting.totalLightWeight > 0.0f
-        ? (envWeight / lighting.totalLightWeight) * lighting.env.PDF_Li(lighting.lastLightCtx, -view, true)
+    float pdf = lighting.lightTotalWeight > 0.0f
+        ? (envWeight / lighting.lightTotalWeight) * lighting.env.PDF_Li(lighting.lastLightCtx, -view, true)
         : 0.0f;
     float mis = lastSamplePDF > EPS ? PowerHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
     float3 contrib = beta * lighting.env.Le(-view) * mis;
@@ -1161,23 +1188,21 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     float3 beta = float3(1);
     PathRadiance radiance = PathRadiance();
     AOVCategory firstBounceCategory = AOVCategory::Undefined;
-    bool primaryPickWritten = false;
-    float frameCount = float(GetPTPixelSampleCount(subSample));
-    RayDesc ray = GenerateCameraRay(pix, rng);
-    // Combine the miss hit with the last light sample
+    bool pickingWritten = false;
+    float frameCount = float(GetPTPixelSampleCount(subSample));    
     float lastSamplePDF = 0.0f;
-    // Unified infinite light — falls back to constant color when no env map is bound
     InfiniteLight env = InfiniteLight(
         SampledSpectrum(globalParams.ambientColor * globalParams.ambientPower),
         globalParams.envMapScale,
         globalParams.useEnvMap != 0u,
         globalParams.envAzimuthOffset
     );
-    float totalLightWeight = globalParams.sceneLightWeightSum + GetEnvLightSelectionWeight();
-    DirectLightingState lighting = DirectLightingState(env, totalLightWeight);
+    float lightTotalWeight = globalParams.sceneLightWeightSum + GetEnvLightSelectionWeight();
+    DirectLightingState lighting = DirectLightingState(env, lightTotalWeight);
     uint diffuseBounces = 0;
     uint specularBounces = 0;
     uint transmissionBounces = 0;
+    RayDesc ray = GenerateCameraRay(pix, rng);
     for (uint bounce = 0; ; bounce++) {
         HitPayload payload;
         if ((ptCompileOptions & kPTCompileOptionShaderExecutionReordering) != 0 /* SER */) {
@@ -1214,37 +1239,30 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
 
         Payload surface = hit.kind == HitKind::Curve ? SampleCurvePayload(hit.raw, ray) : SamplePayload(hit.raw, ray);
 
-        if (bounce == 0 && !primaryPickWritten)
+        if (bounce == 0 && !pickingWritten)
         {
             WritePrimaryPickID(pix, hit.raw.instance);
-            primaryPickWritten = true;
+            pickingWritten = true;
         }
-        // -- Path Integrator
         // Local frame setup
         float3 wo = WorldToShadingLocal(surface.hit, view);
-        // Construct local lobes with their weights
-        PrincipledBSDFLobes bsdf = PrincipledBSDFLobes(
-            surface.baseColor, surface.metallic, surface.roughness,
-            surface.ior, surface.specularFactor, surface.transmission, true, wo,
-            surface.subsurface, surface.anisotropyStrength, surface.specularColorFactor);
-        // Subsurface lobes are non-local. We take care of those paths ab initio with a different branch
-        float pSampleBSSRDF = HasUsableBSSRDF(surface)
-            ? PrincipledBSSRDFBranchProbability(surface.metallic, surface.roughness, surface.ior,
-                                                surface.specularFactor, surface.transmission, surface.subsurface, wo,
-                                                surface.specularColorFactor)
-            : 0.0f;
-        pSampleBSSRDF = clamp(pSampleBSSRDF, 0.0f, 1.0f);
-        bool sampleBSSRDF = pSampleBSSRDF > EPS && (pSampleBSSRDF >= 1.0f || rng.sample() < pSampleBSSRDF);
-        // -- Path Trace
+        IMaterial material = MakeMaterial(surface, wo);
+        // Subsurface events are non-local. The closure picks the event
+        // the integrator performs the scene query.
+        float pSampleSubsurface = material.ProbSampleSubsurface();
+        float pSampleSurface = material.ProbSampleSurface();
+        pSampleSurface = max(pSampleSurface, EPS);
+        bool sampleSubsurface = rng.sample() < pSampleSubsurface;
         PathSample nextSample = PathSample();
         // TODO Volumetrics
-        if (sampleBSSRDF)
+        if (sampleSubsurface)
         {
             BSSRDFSurfaceSample sample;
-            if (!SeparableBSSRDF_SampleSp(surface, hit.raw.instance, rng, sample))
+            IBSSRDF bssrdf = material.GetSubsurface();
+            if (!SeparableBSSRDF_SampleSp(surface, hit.raw.instance, bssrdf, rng, sample))
                 break;
 
-            float3 localBeta = beta * sample.Sp / max(pSampleBSSRDF * sample.pdf, EPS);
+            float3 localBeta = beta * sample.Sp / max(pSampleSubsurface * sample.pdf, EPS);
             if (any(isnan(localBeta)) || any(isinf(localBeta)))
                 break;
 
@@ -1271,17 +1289,16 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         }
         else
         {
-            float pLocal = max(1.0f - pSampleBSSRDF, EPS);
-            float3 localBeta = beta / pLocal;
-
+            float3 localBeta = beta / pSampleSurface;
+            IBSDF bsdf = material.GetSurface();
             AddLocalDirectLighting(surface, bsdf, wo, localBeta,
                                    bounce, firstBounceCategory, rng, lighting, radiance);
             AddSurfaceEmissive(surface, localBeta, bounce, firstBounceCategory, radiance);
 
             AOVCategory sampleCategory;
-            BSDFSample sample = bsdf.Sample_f(wo, rng.sample(), rng.sample2D(),
-                                              TransportMode::Radiance, BxDFReflTransFlags::All,
-                                              sampleCategory);
+            BSDFSample sample = BSDF_SampleF(bsdf, wo, rng.sample(), rng.sample2D(),
+                                             TransportMode::Radiance, BxDFReflTransFlags::All,
+                                             sampleCategory);
             if (!sample.IsValid()) {
                 break;
             }
@@ -1328,7 +1345,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             beta /= rrPCount; // Boost non-terminated paths
         }
     }
-    if (!primaryPickWritten)
+    if (!pickingWritten)
         WritePrimaryPickID(pix, ~0u);
 
     AccumulatePathRadiance(pix, radiance, frameCount);
@@ -1347,7 +1364,7 @@ bool AnyHitOpacityIgnore<S : ISampler>(inout S rng, uint instance, uint primitiv
     GSMaterial material = LoadMaterial(inst.materialIndex);
     float4 baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u) {
-        HitState hs = getHitState(inst.meshOffset, primitive, attr.barycentrics.xy, inst, WorldRayOrigin(), WorldRayDirection(), RayTCurrent());
+        HitState hs = GetHitState(inst.meshOffset, primitive, attr.barycentrics.xy, inst, WorldRayOrigin(), WorldRayDirection(), RayTCurrent());
         baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, hs.uv, 0);
     }
     float opacity = baseColor.a;

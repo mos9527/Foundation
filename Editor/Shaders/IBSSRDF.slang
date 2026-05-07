@@ -47,7 +47,7 @@ public struct BSSRDFSampleRaySegment
     }
 }
 
-public interface ISeparableBSSRDF
+public interface IBSSRDF
 {
     // Radial profile evaluated at distance r.
     public float3 Sr(float r);
@@ -60,7 +60,7 @@ public interface ISeparableBSSRDF
 }
 
 // 2.4 Subsurface diffusion [Burley15]
-public struct DisneyBurleyBSSRDF : ISeparableBSSRDF
+public struct DisneyBurleyBSSRDF : IBSSRDF
 {
     public float3 reflectance;
     public float3 scatterDistance;

@@ -300,36 +300,16 @@ public AOVCategory CategoryFromFlags(BxDFFlags f) {
     return AOVCategory::Specular;
 }
 
-public float PrincipledBSSRDFBranchProbability(
-    float metallic,
-    float roughness,
-    float ior,
-    float specularFactor,
-    float transmission,
-    float subsurface,
-    float3 wo,
-    float3 specularColorFactor = float3(1.0f))
-{
-    roughness = max(8e-3f, roughness);
-    subsurface = clamp(subsurface, 0.0f, 1.0f);
+public interface IBSDF {
+    public void f(float3 wo, float3 wi, TransportMode mode, out float3 fDiffuse, out float3 fSpecular);
+    public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode);
+    public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags);
+    public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags,
+                               out AOVCategory category);
+};
 
-    float3 dielF0, dielF90;
-    CalcGlossyFresnel(ior, specularFactor, specularColorFactor, dielF0, dielF90);
-    float sampleGlossy = MaxComponent(reflectance(dielF0, dielF90, SampleGGXLutE(AbsCosTheta(wo), roughness)));
-    float rawDiffuseFamily = (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
-    float rawMetal    = metallic;
-    float rawDielSpec = (1.0f - metallic) * sampleGlossy;
-    float rawTrans    = (1.0f - metallic) * (1.0f - sampleGlossy) * transmission;
-    float rawSubsurface = rawDiffuseFamily * subsurface;
-    float weightSum = rawDiffuseFamily + rawTrans + rawDielSpec + rawMetal;
-    return weightSum > 0.0f ? rawSubsurface / weightSum : 0.0f;
-}
-
-public struct PrincipledBSDFLobes {
+public struct PrincipledBSDF : IBSDF {
     // Lobe instances
-    // NOTE: BSSRDF (subsurface) is not integrated via BSDF.
-    //       It is sampled by the path integrator as a spatial event.
-    //       Keep it out of the local BSDF mixture.
     DiffuseBSDF   diffuse;
     GlassBSDF     glass;
     GlossyBSDF    glossy;
@@ -357,24 +337,17 @@ public struct PrincipledBSDFLobes {
 
     public __init(float3 baseColor, float metallic, float roughness, float ior, float specularFactor = 1.0f,
                   float transmission = 0.0f, bool energyCompensation = true, float3 wo = float3(0,0,1),
-                  float subsurface = 0.0f, float anisotropyStrength = 0.0f,
+                  float diffuseWeight = 1.0f, float anisotropyStrength = 0.0f,
                   float3 specularColorFactor = float3(1.0f)) {
-        roughness = max(8e-3f, roughness);
-        anisotropyStrength = clamp(anisotropyStrength, 0.0f, 1.0f);
-        subsurface = clamp(subsurface, 0.0f, 1.0f);
-        ior = max(1+5e-3f, ior);
         float3 dielF0, dielF90;
         CalcGlossyFresnel(ior, specularFactor, specularColorFactor, dielF0, dielF90);
 
-        // View-dependent Fresnel weight
         float sampleGlossy = MaxComponent(reflectance(dielF0, dielF90, SampleGGXLutE(AbsCosTheta(wo), roughness)));
-
-        // Unnormalized weights
         float rawDiffuseFamily = (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
-        float rawMetal    = metallic;
+        float rawMetal = metallic;
         float rawDielSpec = (1.0f - metallic) * sampleGlossy;
-        float rawTrans    = (1.0f - metallic) * (1.0f - sampleGlossy) * transmission;
-        float rawDiffuse  = rawDiffuseFamily * (1.0f - subsurface);
+        float rawTrans = (1.0f - metallic) * (1.0f - sampleGlossy) * transmission;
+        float rawDiffuse = rawDiffuseFamily * diffuseWeight;
 
         this.hasDiffuse  = rawDiffuse  > EPS;
         this.hasTrans    = rawTrans    > EPS;
@@ -389,7 +362,7 @@ public struct PrincipledBSDFLobes {
         this.wDielSpec = rawDielSpec / this.weightSum;
         this.wMetal    = rawMetal    / this.weightSum;
 
-        this.cDiffuse  = (1.0f - metallic) * (1.0f - transmission) * (1.0f - subsurface);
+        this.cDiffuse  = (1.0f - metallic) * (1.0f - transmission) * diffuseWeight;
         this.cTrans    = (1.0f - metallic) * transmission;
         this.cDielSpec = 1.0f - metallic;
         this.cMetal    = metallic;
@@ -401,9 +374,7 @@ public struct PrincipledBSDFLobes {
         this.metallic  = MetallicBSDF(baseColor, roughness, anisotropyStrength, energyCompensation);
     }
 
-    // ----- Evaluate per-lobe f contribution split by AOV category -----
-    // Returns separate f values for diffuse and specular (glossy+metal+glass)
-    public void f_split(float3 wo, float3 wi, TransportMode mode,
+    public void f(float3 wo, float3 wi, TransportMode mode,
                         out float3 fDiffuse, out float3 fSpecular) {
         fDiffuse  = float3(0);
         fSpecular = float3(0);
@@ -413,14 +384,12 @@ public struct PrincipledBSDFLobes {
         if (hasMetal)    fSpecular += cMetal    * metallic.f(wo, wi, mode);
     }
 
-    // Mixture f (sum over all lobes)
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         float3 d, s;
-        f_split(wo, wi, mode, d, s);
+        f(wo, wi, mode, d, s);
         return d + s;
     }
 
-    // Mixture PDF
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
         float result = 0.0f;
         if (hasDiffuse)  result += wDiffuse  * diffuse.PDF(wo, wi, mode, flags);
@@ -430,7 +399,6 @@ public struct PrincipledBSDFLobes {
         return result;
     }
 
-    // Stochastically select a lobe to sample; returns mixture f/pdf and the chosen AOV category
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags,
                                out AOVCategory category) {
         category = AOVCategory::Diffuse;
