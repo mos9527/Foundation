@@ -278,6 +278,8 @@ void LoadGLTF(StringView path, FScene& scene)
             };
             material.subsurfaceScale = mat->subsurface.subsurface_scale;
         }
+        material.hairBetaM = material.roughnessFactor;
+        material.hairBetaN = material.roughnessFactor;
         scene.mMaterials.emplace_back(material);
     }
     /* Textures and Meshes */

@@ -1,6 +1,9 @@
 import IMath;
 public static const uint kMeshWorkGroupSize = 64;
 public static const uint kMeshIndirectPerDrawMeshlets = 65536;
+public static const uint kMaterialShaderBlockAuto = 0;
+public static const uint kMaterialShaderBlockPrincipled = 1;
+public static const uint kMaterialShaderBlockHair = 2;
 // Definitions From C++ sources
 public struct FVertex {
     public float3 position;
@@ -148,6 +151,10 @@ public struct GSMaterial
     public float subsurfaceScale;
     public float3 subsurfaceColor;
     public float3 subsurfaceRadius;
+    public uint32_t shaderBlockID;
+    public float hairBetaM;
+    public float hairBetaN;
+    public float hairAlpha;
 };
 public struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
 {

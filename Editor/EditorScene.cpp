@@ -219,6 +219,10 @@ static void BuildEditorMaterials(Vector<uint32_t> const& textureIDMap)
         dst.subsurfaceScale = src.subsurfaceScale;
         dst.subsurfaceColor = src.subsurfaceColor;
         dst.subsurfaceRadius = src.subsurfaceRadius;
+        dst.shaderBlockID = static_cast<uint32_t>(src.shaderBlockID);
+        dst.hairBetaM = src.hairBetaM;
+        dst.hairBetaN = src.hairBetaN;
+        dst.hairAlpha = src.hairAlpha;
     }
 }
 

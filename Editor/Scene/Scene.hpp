@@ -40,6 +40,13 @@ struct FCamera
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#additional-textures
 // Sentinel value for "no texture bound"
 static constexpr uint32_t kInvalidTexture = UINT32_MAX;
+enum class FMaterialShaderBlock : uint32_t
+{
+    Auto = 0,
+    Principled = 1,
+    Hair = 2,
+};
+
 struct FMaterial
 {
     // sRGB.
@@ -73,6 +80,10 @@ struct FMaterial
     float subsurfaceScale = 0.05f;
     float3 subsurfaceColor{1.0f, 1.0f, 1.0f};
     float3 subsurfaceRadius{1.0f, 0.2f, 0.1f};
+    FMaterialShaderBlock shaderBlockID = FMaterialShaderBlock::Auto;
+    float hairBetaM = 0.3f;
+    float hairBetaN = 0.3f;
+    float hairAlpha = 2.0f;
 };
 enum class FLightType : uint32_t
 {
@@ -124,7 +135,7 @@ struct FCurveSet
 
     FCurveSet(Allocator* alloc) : points(alloc), curveVertexCounts(alloc) {}
 };
-static constexpr uint32_t kSceneMagic = fourCC("FSC3");
+static constexpr uint32_t kSceneMagic = fourCC("FSC4");
 struct FScene
 {
     uint32_t mMagic;

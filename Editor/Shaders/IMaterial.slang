@@ -84,11 +84,13 @@ public struct HairMaterial : IMaterial {
 
     public __init(
         float3 baseColor,
-        float roughness,
-        float specularFactor = 1.0f,
-        float3 specularColorFactor = float3(1.0f))
+        float betaM,
+        float betaN,
+        float h = 0.0f,
+        float eta = 1.55f,
+        float alpha = 2.0f)
     {
-        this.surface = HairBSDF(baseColor, roughness, specularFactor, specularColorFactor);
+        this.surface = HairBSDF(baseColor, betaM, betaN, h, eta, alpha);
         this.subsurface = StubBSSRDF();
     }
 

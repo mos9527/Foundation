@@ -97,6 +97,10 @@ struct GSMaterial
     float subsurfaceScale;
     float3 subsurfaceColor;
     float3 subsurfaceRadius;
+    uint32_t shaderBlockID;
+    float hairBetaM;
+    float hairBetaN;
+    float hairAlpha;
 };
 struct GSLight
 {
@@ -122,7 +126,7 @@ static_assert(sizeof(GSCurveSet) == 24);
 static_assert(sizeof(GSCurvePoint) == 16);
 static_assert(sizeof(GSCurveSegment) == 16);
 static_assert(sizeof(GSCurveInstance) == 52);
-static_assert(sizeof(GSMaterial) == 132);
+static_assert(sizeof(GSMaterial) == 148);
 static_assert(sizeof(GSLight) == 96);
 
 template <typename T>

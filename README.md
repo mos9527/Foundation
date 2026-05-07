@@ -35,6 +35,9 @@ Some time in the future:
     this is no longer NV only I'll have a shot.
   
 Done, awaiting Blog Update:
+- [x] Hair Shading
+  - A Practical and Controllable Hair and Fur Model for Production Path Tracing [Chiang et al. 2016]
+  - Impl based again based on PBRT's https://www.pbr-book.org/4ed/Reflection_Models/Scattering_from_Hair
 - [x] Curve (hair, fur) rendering
   - Beizer Segments via [De Casteljau](https://zh.wikipedia.org/wiki/%E5%BE%B7%E5%8D%A1%E6%96%AF%E7%89%B9%E9%87%8C%E5%A5%A5%E7%AE%97%E6%B3%95), a la PBRT's [Curves](https://www.pbr-book.org/4ed/Shapes/Curves#Curve)
   - Intersected as flat cross-sections with TBN that 'makes it look like a swept cylinder'

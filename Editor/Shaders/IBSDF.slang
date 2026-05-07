@@ -308,9 +308,11 @@ public interface IBSDF {
                                out AOVCategory category);
 };
 
+static const int HairPMax = 3;
+
 public struct HairDirection
 {
-    // Local curve frame: x = longitudinal tangent, y = azimuth bitangent, z = radial normal.
+    // PBRT hair frame: x = strand tangent, y/z = fiber cross-section.
     float sinTheta;
     float cosTheta;
     float phi;
@@ -325,8 +327,8 @@ public HairDirection HairDirectionFromLocal(float3 w)
     dir.cosTheta = SafeSqrt(1.0f - dir.sinTheta * dir.sinTheta);
     if (dir.cosTheta > 1e-7f)
     {
-        dir.sinPhi = clamp(w.y / dir.cosTheta, -1.0f, 1.0f);
-        dir.cosPhi = clamp(w.z / dir.cosTheta, -1.0f, 1.0f);
+        dir.cosPhi = clamp(w.y / dir.cosTheta, -1.0f, 1.0f);
+        dir.sinPhi = clamp(w.z / dir.cosTheta, -1.0f, 1.0f);
     }
     else
     {
@@ -339,73 +341,408 @@ public HairDirection HairDirectionFromLocal(float3 w)
 
 public float3 HairDirectionToLocal(HairDirection dir)
 {
-    return float3(dir.sinTheta, dir.cosTheta * dir.sinPhi, dir.cosTheta * dir.cosPhi);
+    return float3(dir.sinTheta, dir.cosTheta * dir.cosPhi, dir.cosTheta * dir.sinPhi);
 }
 
-public float HairCosAltitude(HairDirection dir)
+float HairI0(float x)
 {
-    return dir.cosTheta * dir.cosPhi;
+    float sum = 1.0f;
+    float term = 1.0f;
+    float x2 = 0.25f * x * x;
+    [unroll]
+    for (int i = 1; i <= 9; ++i)
+    {
+        term *= x2 / float(i * i);
+        sum += term;
+    }
+    return sum;
 }
 
-// Stub curve BSDF: diffuse response, but directions are represented in fiber
-// longitudinal/azimuth coordinates so a real hair closure can replace it later.
+float HairLogI0(float x)
+{
+    return x > 12.0f ? x + 0.5f * (-log(2.0f * Pi * x) + 1.0f / (8.0f * x)) : log(max(HairI0(x), EPS));
+}
+
+float HairMp(float cosThetaI, float cosThetaO, float sinThetaI, float sinThetaO, float v)
+{
+    v = max(v, 1e-4f);
+    float a = cosThetaI * cosThetaO / v;
+    float b = sinThetaI * sinThetaO / v;
+    if (v <= 0.1f)
+        return exp(HairLogI0(a) - b - 1.0f / v + 0.6931f + log(1.0f / (2.0f * v)));
+
+    float sinhInvV = 0.5f * (exp(1.0f / v) - exp(-1.0f / v));
+    return exp(-b) * HairI0(a) / max(sinhInvV * 2.0f * v, EPS);
+}
+
+float HairSafeASin(float x)
+{
+    return asin(clamp(x, -1.0f, 1.0f));
+}
+
+float HairWrapPi(float phi)
+{
+    return phi - 2.0f * Pi * floor((phi + Pi) / (2.0f * Pi));
+}
+
+float HairLogistic(float x, float s)
+{
+    s = max(s, 1e-4f);
+    x = abs(x);
+    float e = exp(-x / s);
+    return e / (s * Sqr(1.0f + e));
+}
+
+float HairLogisticCDF(float x, float s)
+{
+    return 1.0f / (1.0f + exp(-x / max(s, 1e-4f)));
+}
+
+float HairTrimmedLogistic(float x, float s, float a, float b)
+{
+    return HairLogistic(x, s) / max(HairLogisticCDF(b, s) - HairLogisticCDF(a, s), EPS);
+}
+
+float HairSampleTrimmedLogistic(float u, float s, float a, float b)
+{
+    u = clamp(u, 1e-6f, 1.0f - 1e-6f);
+    float k = HairLogisticCDF(b, s) - HairLogisticCDF(a, s);
+    float x = -s * log(1.0f / (u * k + HairLogisticCDF(a, s)) - 1.0f);
+    return clamp(x, a, b);
+}
+
+float HairPhi(int p, float gammaO, float gammaT)
+{
+    return 2.0f * float(p) * gammaT - 2.0f * gammaO + float(p) * Pi;
+}
+
+float HairNp(float phi, int p, float s, float gammaO, float gammaT)
+{
+    float dphi = HairWrapPi(phi - HairPhi(p, gammaO, gammaT));
+    return HairTrimmedLogistic(dphi, s, -Pi, Pi);
+}
+
+float3 HairSigmaAFromReflectance(float3 c, float betaN)
+{
+    c = clamp(c, float3(1e-3f), float3(0.999f));
+    float denom = 5.969f - 0.215f * betaN + 2.532f * Sqr(betaN)
+                - 10.73f * betaN * betaN * betaN
+                + 5.574f * betaN * betaN * betaN * betaN
+                + 0.245f * betaN * betaN * betaN * betaN * betaN;
+    float3 l = log(c) / max(denom, 1e-3f);
+    return l * l;
+}
+
+float HairSpectrumAverage(float3 v)
+{
+    return (v.x + v.y + v.z) * (1.0f / 3.0f);
+}
+
+// https://www.pbr-book.org/4ed/Reflection_Models/Scattering_from_Hair
+// PBRT's implementation of A Practical and Controllable Hair and Fur Model for Production Path Tracing [Chiang et al. 2016]
+// - https://sci-hub.sg/storage/2024/5766/a1c3a0a1d0aeccafa669d9c39f33341d/chiang2016.pdf
 public struct HairBSDF : IBSDF
 {
-    float3 baseColor;
-
-    public __init(float3 baseColor, float roughness, float specularFactor, float3 specularColorFactor)
+    float h;
+    float eta;
+    float3 sigmaA;
+    float v0;
+    float v1;
+    float v2;
+    float v3;
+    float s;
+    float sin2kAlpha0;
+    float sin2kAlpha1;
+    float sin2kAlpha2;
+    float cos2kAlpha0;
+    float cos2kAlpha1;
+    float cos2kAlpha2;
+    // h: the  offset along the curve width where the ray intersected the oriented ribbon.
+    // eta: the index of refraction of the interior of the hair (typically, 1.55).    
+    // beta_m: the longitudinal roughness of the hair, mapped to [0, 1].
+    // beta_n: the azimuthal roughness, also mapped to [0, 1].
+    // alpha: the angle at which the small scales on the surface of hair are offset from the base cylinder, expressed in degrees (typically, 2).
+    public __init(float3 reflectance, float betaM, float betaN, float h = 0.0f, float eta = 1.55f, float alpha = 2.0f)
     {
-        this.baseColor = max(baseColor, float3(0.0f));
+        this.h = clamp(h, -1.0f, 1.0f);
+        this.eta = max(eta, 1.0f + 5e-3f);
+
+        betaM = clamp(betaM, 0.03f, 1.0f);
+        betaN = clamp(betaN, 0.03f, 1.0f);
+        this.sigmaA = HairSigmaAFromReflectance(reflectance, betaN);
+
+        this.v0 = Sqr(0.726f * betaM + 0.812f * Sqr(betaM) + 3.7f * pow(betaM, 20.0f));
+        this.v1 = 0.25f * this.v0;
+        this.v2 = 4.0f * this.v0;
+        this.v3 = this.v2;
+
+        static const float SqrtPiOver8 = 0.626657069f;
+        this.s = SqrtPiOver8 * (0.265f * betaN + 1.194f * Sqr(betaN) + 5.372f * pow(betaN, 22.0f));
+
+        float alphaRadians = alpha * Pi / 180.0f;
+        this.sin2kAlpha0 = sin(alphaRadians);
+        this.cos2kAlpha0 = SafeSqrt(1.0f - Sqr(this.sin2kAlpha0));
+        this.sin2kAlpha1 = 2.0f * this.cos2kAlpha0 * this.sin2kAlpha0;
+        this.cos2kAlpha1 = Sqr(this.cos2kAlpha0) - Sqr(this.sin2kAlpha0);
+        this.sin2kAlpha2 = 2.0f * this.cos2kAlpha1 * this.sin2kAlpha1;
+        this.cos2kAlpha2 = Sqr(this.cos2kAlpha1) - Sqr(this.sin2kAlpha1);
     }
 
-
-    public void f(float3 wo, float3 wi, TransportMode mode, out float3 fDiffuse, out float3 fSpecular)
+    public float V(int p)
     {
-        fDiffuse = float3(0.0f);
-        fSpecular = float3(0.0f);
-        HairDirection woHair = HairDirectionFromLocal(wo);
-        HairDirection wiHair = HairDirectionFromLocal(wi);
-        if (HairCosAltitude(woHair) <= 0.0f || HairCosAltitude(wiHair) <= 0.0f)
-            return;
+        if (p == 0) return v0;
+        if (p == 1) return v1;
+        if (p == 2) return v2;
+        return v3;
+    }
 
-        fDiffuse = baseColor * InvPi;
+    public void AdjustThetaO(int p, HairDirection wo, out float sinThetaOP, out float cosThetaOP)
+    {
+        if (p == 0)
+        {
+            sinThetaOP = wo.sinTheta * cos2kAlpha1 - wo.cosTheta * sin2kAlpha1;
+            cosThetaOP = wo.cosTheta * cos2kAlpha1 + wo.sinTheta * sin2kAlpha1;
+        }
+        else if (p == 1)
+        {
+            sinThetaOP = wo.sinTheta * cos2kAlpha0 + wo.cosTheta * sin2kAlpha0;
+            cosThetaOP = wo.cosTheta * cos2kAlpha0 - wo.sinTheta * sin2kAlpha0;
+        }
+        else if (p == 2)
+        {
+            sinThetaOP = wo.sinTheta * cos2kAlpha2 + wo.cosTheta * sin2kAlpha2;
+            cosThetaOP = wo.cosTheta * cos2kAlpha2 - wo.sinTheta * sin2kAlpha2;
+        }
+        else
+        {
+            sinThetaOP = wo.sinTheta;
+            cosThetaOP = wo.cosTheta;
+        }
+        cosThetaOP = abs(cosThetaOP);
+    }
+
+    public float3 ApValue(int p, float cosThetaO, float3 T)
+    {
+        float cosGammaO = SafeSqrt(1.0f - Sqr(h));
+        float f = FrDielectric(cosThetaO * cosGammaO, eta);
+
+        float3 ap0 = float3(f);
+        float3 ap1 = Sqr(1.0f - f) * T;
+        float3 ap2 = ap1 * T * f;
+        float3 ap3 = ap2 * f * T / max(float3(EPS), 1.0f - T * f);
+
+        if (p == 0) return ap0;
+        if (p == 1) return ap1;
+        if (p == 2) return ap2;
+        return ap3;
+    }
+
+    public void ApPDF(float cosThetaO, out float apPDF0, out float apPDF1, out float apPDF2, out float apPDF3)
+    {
+        float sinThetaO = SafeSqrt(1.0f - Sqr(cosThetaO));
+        float sinThetaT = sinThetaO / eta;
+        float cosThetaT = SafeSqrt(1.0f - Sqr(sinThetaT));
+        float etaP = SafeSqrt(Sqr(eta) - Sqr(sinThetaO)) / max(cosThetaO, EPS);
+        float sinGammaT = h / max(etaP, EPS);
+        float cosGammaT = SafeSqrt(1.0f - Sqr(sinGammaT));
+        float3 T = exp(-sigmaA * (2.0f * cosGammaT / max(cosThetaT, EPS)));
+
+        float a0 = HairSpectrumAverage(ApValue(0, cosThetaO, T));
+        float a1 = HairSpectrumAverage(ApValue(1, cosThetaO, T));
+        float a2 = HairSpectrumAverage(ApValue(2, cosThetaO, T));
+        float a3 = HairSpectrumAverage(ApValue(3, cosThetaO, T));
+        float sumA = max(a0 + a1 + a2 + a3, EPS);
+        apPDF0 = a0 / sumA;
+        apPDF1 = a1 / sumA;
+        apPDF2 = a2 / sumA;
+        apPDF3 = a3 / sumA;
+    }
+
+    public float ApPDFValue(int p, float apPDF0, float apPDF1, float apPDF2, float apPDF3)
+    {
+        if (p == 0) return apPDF0;
+        if (p == 1) return apPDF1;
+        if (p == 2) return apPDF2;
+        return apPDF3;
+    }
+
+    public int SampleLobe(float uc, float apPDF0, float apPDF1, float apPDF2, float apPDF3, out float remappedUc)
+    {
+        float cumulative = apPDF0;
+        if (uc < cumulative)
+        {
+            remappedUc = apPDF0 > EPS ? uc / apPDF0 : 0.0f;
+            return 0;
+        }
+
+        cumulative += apPDF1;
+        if (uc < cumulative)
+        {
+            remappedUc = apPDF1 > EPS ? (uc - apPDF0) / apPDF1 : 0.0f;
+            return 1;
+        }
+
+        cumulative += apPDF2;
+        if (uc < cumulative)
+        {
+            remappedUc = apPDF2 > EPS ? (uc - apPDF0 - apPDF1) / apPDF2 : 0.0f;
+            return 2;
+        }
+
+        remappedUc = apPDF3 > EPS ? (uc - apPDF0 - apPDF1 - apPDF2) / apPDF3 : 0.0f;
+        return 3;
     }
 
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode)
     {
-        float3 fDiffuse, fSpecular;
-        f(wo, wi, mode, fDiffuse, fSpecular);
-        return fDiffuse + fSpecular;
+        HairDirection woHair = HairDirectionFromLocal(wo);
+        HairDirection wiHair = HairDirectionFromLocal(wi);
+
+        float sinThetaT = woHair.sinTheta / eta;
+        float cosThetaT = SafeSqrt(1.0f - Sqr(sinThetaT));
+        float etaP = SafeSqrt(Sqr(eta) - Sqr(woHair.sinTheta)) / max(woHair.cosTheta, EPS);
+        float sinGammaT = h / max(etaP, EPS);
+        float cosGammaT = SafeSqrt(1.0f - Sqr(sinGammaT));
+        float gammaT = HairSafeASin(sinGammaT);
+        float gammaO = HairSafeASin(h);
+        float3 T = exp(-sigmaA * (2.0f * cosGammaT / max(cosThetaT, EPS)));
+
+        float phi = wiHair.phi - woHair.phi;
+        float3 fsum = float3(0.0f);
+        [unroll]
+        for (int p = 0; p < HairPMax; ++p)
+        {
+            float sinThetaOP, cosThetaOP;
+            AdjustThetaO(p, woHair, sinThetaOP, cosThetaOP);
+            fsum += HairMp(wiHair.cosTheta, cosThetaOP, wiHair.sinTheta, sinThetaOP, V(p))
+                  * ApValue(p, woHair.cosTheta, T)
+                  * HairNp(phi, p, s, gammaO, gammaT);
+        }
+        fsum += HairMp(wiHair.cosTheta, woHair.cosTheta, wiHair.sinTheta, woHair.sinTheta, V(HairPMax))
+              * ApValue(HairPMax, woHair.cosTheta, T) * (1.0f / (2.0f * Pi));
+
+        float cosWi = AbsCosTheta(wi);
+        return cosWi > EPS ? fsum / cosWi : float3(0.0f);
+    }
+
+    public void f(float3 wo, float3 wi, TransportMode mode, out float3 fDiffuse, out float3 fSpecular)
+    {
+        fDiffuse = float3(0.0f);
+        fSpecular = this.f(wo, wi, mode);
     }
 
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags)
     {
-        if (!(flags & BxDFReflTransFlags::Reflection) || !SameHemisphere(wo, wi))
+        bool allowReflection = (flags & BxDFReflTransFlags::Reflection);
+        bool allowTransmission = (flags & BxDFReflTransFlags::Transmission);
+        if (!allowReflection && !allowTransmission)
             return 0.0f;
+
+        HairDirection woHair = HairDirectionFromLocal(wo);
         HairDirection wiHair = HairDirectionFromLocal(wi);
-        float cosAltitude = HairCosAltitude(wiHair);
-        return cosAltitude > 0.0f ? CosineHemispherePDF(cosAltitude) : 0.0f;
+        float etaP = SafeSqrt(Sqr(eta) - Sqr(woHair.sinTheta)) / max(woHair.cosTheta, EPS);
+        float sinGammaT = h / max(etaP, EPS);
+        float gammaT = HairSafeASin(sinGammaT);
+        float gammaO = HairSafeASin(h);
+
+        float apPDF0, apPDF1, apPDF2, apPDF3;
+        ApPDF(woHair.cosTheta, apPDF0, apPDF1, apPDF2, apPDF3);
+        if (!allowReflection)
+            apPDF0 = 0.0f;
+        if (!allowTransmission)
+        {
+            apPDF1 = 0.0f;
+            apPDF2 = 0.0f;
+            apPDF3 = 0.0f;
+        }
+        float allowedPDFSum = apPDF0 + apPDF1 + apPDF2 + apPDF3;
+        if (allowedPDFSum <= EPS)
+            return 0.0f;
+        apPDF0 /= allowedPDFSum;
+        apPDF1 /= allowedPDFSum;
+        apPDF2 /= allowedPDFSum;
+        apPDF3 /= allowedPDFSum;
+
+        float phi = wiHair.phi - woHair.phi;
+        float pdf = 0.0f;
+        [unroll]
+        for (int p = 0; p < HairPMax; ++p)
+        {
+            if ((p == 0 && !allowReflection) || (p > 0 && !allowTransmission))
+                continue;
+
+            float sinThetaOP, cosThetaOP;
+            AdjustThetaO(p, woHair, sinThetaOP, cosThetaOP);
+            pdf += HairMp(wiHair.cosTheta, cosThetaOP, wiHair.sinTheta, sinThetaOP, V(p))
+                 * ApPDFValue(p, apPDF0, apPDF1, apPDF2, apPDF3)
+                 * HairNp(phi, p, s, gammaO, gammaT);
+        }
+        if (allowTransmission)
+        {
+            pdf += HairMp(wiHair.cosTheta, woHair.cosTheta, wiHair.sinTheta, woHair.sinTheta, V(HairPMax))
+                 * apPDF3 * (1.0f / (2.0f * Pi));
+        }
+        return pdf;
     }
 
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags,
                                out AOVCategory category)
     {
-        category = AOVCategory::Diffuse;
-        if (!(flags & BxDFReflTransFlags::Reflection))
+        category = AOVCategory::Specular;
+        bool allowReflection = (flags & BxDFReflTransFlags::Reflection);
+        bool allowTransmission = (flags & BxDFReflTransFlags::Transmission);
+        if (!allowReflection && !allowTransmission)
             return BSDFSample();
 
-        float3 wi = SampleCosineHemisphere(u);
         HairDirection woHair = HairDirectionFromLocal(wo);
-        if (HairCosAltitude(woHair) < 0.0f)
+        float apPDF0, apPDF1, apPDF2, apPDF3;
+        ApPDF(woHair.cosTheta, apPDF0, apPDF1, apPDF2, apPDF3);
+        if (!allowReflection)
+            apPDF0 = 0.0f;
+        if (!allowTransmission)
+        {
+            apPDF1 = 0.0f;
+            apPDF2 = 0.0f;
+            apPDF3 = 0.0f;
+        }
+        float allowedPDFSum = apPDF0 + apPDF1 + apPDF2 + apPDF3;
+        if (allowedPDFSum <= EPS)
             return BSDFSample();
-        HairDirection wiHair = HairDirectionFromLocal(wi);
-        wi = HairDirectionToLocal(wiHair);
+        apPDF0 /= allowedPDFSum;
+        apPDF1 /= allowedPDFSum;
+        apPDF2 /= allowedPDFSum;
+        apPDF3 /= allowedPDFSum;
+
+        float remappedUc;
+        int p = SampleLobe(uc, apPDF0, apPDF1, apPDF2, apPDF3, remappedUc);
+
+        float sinThetaOP, cosThetaOP;
+        AdjustThetaO(p, woHair, sinThetaOP, cosThetaOP);
+
+        float v = V(p);
+        float cosTheta = 1.0f + v * log(max(u.x, 1e-5f) + (1.0f - u.x) * exp(-2.0f / max(v, 1e-4f)));
+        float sinTheta = SafeSqrt(1.0f - Sqr(cosTheta));
+        float cosPhi = cos(2.0f * Pi * u.y);
+        float sinThetaI = -cosTheta * sinThetaOP + sinTheta * cosPhi * cosThetaOP;
+        float cosThetaI = SafeSqrt(1.0f - Sqr(sinThetaI));
+
+        float etaP = SafeSqrt(Sqr(eta) - Sqr(woHair.sinTheta)) / max(woHair.cosTheta, EPS);
+        float sinGammaT = h / max(etaP, EPS);
+        float gammaT = HairSafeASin(sinGammaT);
+        float gammaO = HairSafeASin(h);
+
+        float dphi = p < HairPMax
+            ? HairPhi(p, gammaO, gammaT) + HairSampleTrimmedLogistic(remappedUc, s, -Pi, Pi)
+            : 2.0f * Pi * remappedUc;
+        float phiI = woHair.phi + dphi;
+        float3 wi = float3(sinThetaI, cosThetaI * cos(phiI), cosThetaI * sin(phiI));
 
         float pdf = PDF(wo, wi, mode, flags);
         if (pdf <= EPS)
             return BSDFSample();
 
-        return BSDFSample(f(wo, wi, mode), wi, pdf, BxDFFlags::DiffuseReflection);
+        BxDFFlags sampleFlags = p == 0 ? BxDFFlags::GlossyReflection : BxDFFlags::GlossyTransmission;
+        return BSDFSample(f(wo, wi, mode), wi, pdf, sampleFlags);
     }
 };
 

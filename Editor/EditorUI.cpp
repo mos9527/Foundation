@@ -140,6 +140,10 @@ static void SyncMaterialToGPU(uint32_t materialIndex)
     dst.subsurfaceScale = src.subsurfaceScale;
     dst.subsurfaceColor = src.subsurfaceColor;
     dst.subsurfaceRadius = src.subsurfaceRadius;
+    dst.shaderBlockID = static_cast<uint32_t>(src.shaderBlockID);
+    dst.hairBetaM = src.hairBetaM;
+    dst.hairBetaN = src.hairBetaN;
+    dst.hairAlpha = src.hairAlpha;
 }
 
 void EditorDockSpaceAndMenuBar()
@@ -414,6 +418,15 @@ void FHierarchyPanel()
             ImGui::Separator();
 
             bool changed = false;
+            const char* shaderBlockLabels[] = {"Auto", "Principled", "Hair"};
+            int shaderBlock = static_cast<int>(material.shaderBlockID);
+            if (ImGui::Combo("Shader Block", &shaderBlock, shaderBlockLabels, IM_ARRAYSIZE(shaderBlockLabels)))
+            {
+                material.shaderBlockID = static_cast<FMaterialShaderBlock>(shaderBlock);
+                changed = true;
+            }
+
+            ImGui::SeparatorText("Principled");
             changed |= ImGui::ColorEdit4("Base Color", &material.baseColorFactor.x);
             changed |= ImHDRColorEdit("Emissive", reinterpret_cast<float3&>(material.emissiveFactor), material.emissiveFactor.w /* otherwise unused */);
             changed |= ImGui::SliderFloat("Metallic", &material.metallicFactor, 0.0f, 1.0f, "%.3f");
@@ -424,6 +437,11 @@ void FHierarchyPanel()
             changed |= ImGui::DragFloat3("Specular Color", &material.specularColorFactor.x, 0.01f, 0.0f, FLT_MAX, "%.3f");
             changed |= ImGui::SliderFloat("Anisotropy Strength", &material.anisotropyStrength, 0.0f, 1.0f, "%.3f");
             changed |= ImGui::DragFloat("Anisotropy Rotation", &material.anisotropyRotation, 0.01f, -FLT_MAX, FLT_MAX, "%.3f rad");
+
+            ImGui::SeparatorText("Hair");
+            changed |= ImGui::SliderFloat("Beta M", &material.hairBetaM, 0.0f, 1.0f, "%.3f");
+            changed |= ImGui::SliderFloat("Beta N", &material.hairBetaN, 0.0f, 1.0f, "%.3f");
+            changed |= ImGui::DragFloat("Alpha", &material.hairAlpha, 0.1f, -20.0f, 20.0f, "%.2f deg");
 
             ImGui::SeparatorText("Subsurface");
             changed |= ImGui::SliderFloat("Weight", &material.subsurfaceFactor, 0.0f, 1.0f, "%.3f");

@@ -480,6 +480,10 @@ struct Payload
     float subsurfaceScale;
     float3 subsurfaceColor;
     float3 subsurfaceRadius;
+    uint shaderBlockID;
+    float hairBetaM;
+    float hairBetaN;
+    float hairAlpha;
 };
 
 struct BSSRDFQueryPayload
@@ -555,13 +559,21 @@ struct DirectLightingState
 // Material helpers
 // vvvvv TODO More materials? Custom ones?
 //       One uber shader here is surely insufficent. Need to compile ad-hoc shaders _here_.
+uint ResolveMaterialShaderBlock(uint shaderBlockID, bool isCurve)
+{
+    if (shaderBlockID == kMaterialShaderBlockAuto)
+        return isCurve ? kMaterialShaderBlockHair : kMaterialShaderBlockPrincipled;
+    return shaderBlockID;
+}
+
 IMaterial MakeMaterial(Payload surface, float3 wo, bool isCurve = false)
 {
-    if (isCurve)
+    uint shaderBlockID = ResolveMaterialShaderBlock(surface.shaderBlockID, isCurve);
+    if (shaderBlockID == kMaterialShaderBlockHair)
     {
+        float h = isCurve ? 2.0f * saturate(surface.hit.uv.y) - 1.0f : 0.0f;
         return HairMaterial(
-            surface.baseColor, surface.roughness,
-            surface.specularFactor, surface.specularColorFactor);
+            surface.baseColor, surface.hairBetaM, surface.hairBetaN, h, surface.ior, surface.hairAlpha);
     }
     return PrincipledMaterial(
         surface.baseColor, surface.metallic, surface.roughness,
@@ -642,6 +654,10 @@ Payload SamplePayload(HitPayload payload, RayDesc ray)
     res.subsurfaceScale = material.subsurfaceScale;
     res.subsurfaceColor = material.subsurfaceColor;
     res.subsurfaceRadius = material.subsurfaceRadius;
+    res.shaderBlockID = material.shaderBlockID;
+    res.hairBetaM = material.hairBetaM;
+    res.hairBetaN = material.hairBetaN;
+    res.hairAlpha = material.hairAlpha;
     return res;
 }
 
@@ -672,6 +688,10 @@ Payload SampleCurvePayload(HitPayload payload, RayDesc ray)
     res.subsurfaceScale = material.subsurfaceScale;
     res.subsurfaceColor = material.subsurfaceColor;
     res.subsurfaceRadius = material.subsurfaceRadius;
+    res.shaderBlockID = material.shaderBlockID;
+    res.hairBetaM = material.hairBetaM;
+    res.hairBetaN = material.hairBetaN;
+    res.hairAlpha = material.hairAlpha;
     return res;
 }
 
@@ -759,6 +779,10 @@ uint SERHashCombine(uint hash, uint value)
 
 uint GetSERMaterialFamily(GSMaterial material, bool isCurve)
 {
+    uint shaderBlockID = ResolveMaterialShaderBlock(material.shaderBlockID, isCurve);
+    if (shaderBlockID == kMaterialShaderBlockHair)
+        return 4u;
+
     if (!isCurve &&
         material.subsurfaceFactor > EPS &&
         material.subsurfaceScale > EPS &&
@@ -799,6 +823,7 @@ uint GetSERMaterialFeatureFlags(GSMaterial material)
 uint BuildSERMaterialKey(uint materialIndex, GSMaterial material, bool isCurve, uint bounce)
 {
     uint hash = 17u;
+    hash = SERHashCombine(hash, ResolveMaterialShaderBlock(material.shaderBlockID, isCurve));
     hash = SERHashCombine(hash, GetSERMaterialFamily(material, isCurve));
     hash = SERHashCombine(hash, GetSERMaterialFeatureFlags(material));
     hash = SERHashCombine(hash, min(bounce, 3u));
