@@ -42,9 +42,8 @@ struct FCamera
 static constexpr uint32_t kInvalidTexture = UINT32_MAX;
 enum class FMaterialShaderBlock : uint32_t
 {
-    Auto = 0,
-    Principled = 1,
-    Hair = 2,
+    Principled = 0,
+    Hair = 1,
 };
 
 struct FMaterial
@@ -80,7 +79,7 @@ struct FMaterial
     float subsurfaceScale = 0.05f;
     float3 subsurfaceColor{1.0f, 1.0f, 1.0f};
     float3 subsurfaceRadius{1.0f, 0.2f, 0.1f};
-    FMaterialShaderBlock shaderBlockID = FMaterialShaderBlock::Auto;
+    FMaterialShaderBlock shaderBlockID = FMaterialShaderBlock::Principled;
     float hairBetaM = 0.3f;
     float hairBetaN = 0.3f;
     float hairAlpha = 2.0f;

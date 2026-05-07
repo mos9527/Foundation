@@ -559,17 +559,9 @@ struct DirectLightingState
 // Material helpers
 // vvvvv TODO More materials? Custom ones?
 //       One uber shader here is surely insufficent. Need to compile ad-hoc shaders _here_.
-uint ResolveMaterialShaderBlock(uint shaderBlockID, bool isCurve)
-{
-    if (shaderBlockID == kMaterialShaderBlockAuto)
-        return isCurve ? kMaterialShaderBlockHair : kMaterialShaderBlockPrincipled;
-    return shaderBlockID;
-}
-
 IMaterial MakeMaterial(Payload surface, float3 wo, bool isCurve = false)
 {
-    uint shaderBlockID = ResolveMaterialShaderBlock(surface.shaderBlockID, isCurve);
-    if (shaderBlockID == kMaterialShaderBlockHair)
+    if (surface.shaderBlockID == kMaterialShaderBlockHair)
     {
         float h = isCurve ? 2.0f * saturate(surface.hit.uv.y) - 1.0f : 0.0f;
         return HairMaterial(
@@ -779,8 +771,7 @@ uint SERHashCombine(uint hash, uint value)
 
 uint GetSERMaterialFamily(GSMaterial material, bool isCurve)
 {
-    uint shaderBlockID = ResolveMaterialShaderBlock(material.shaderBlockID, isCurve);
-    if (shaderBlockID == kMaterialShaderBlockHair)
+    if (material.shaderBlockID == kMaterialShaderBlockHair)
         return 4u;
 
     if (!isCurve &&
@@ -823,7 +814,7 @@ uint GetSERMaterialFeatureFlags(GSMaterial material)
 uint BuildSERMaterialKey(uint materialIndex, GSMaterial material, bool isCurve, uint bounce)
 {
     uint hash = 17u;
-    hash = SERHashCombine(hash, ResolveMaterialShaderBlock(material.shaderBlockID, isCurve));
+    hash = SERHashCombine(hash, material.shaderBlockID);
     hash = SERHashCombine(hash, GetSERMaterialFamily(material, isCurve));
     hash = SERHashCombine(hash, GetSERMaterialFeatureFlags(material));
     hash = SERHashCombine(hash, min(bounce, 3u));

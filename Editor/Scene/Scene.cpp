@@ -4,11 +4,114 @@
 #include <Math/Decompose.hpp>
 #include <algorithm>
 #include <cgltf.h>
+#include <cctype>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <numbers>
+#include <string>
+#include <string_view>
 #include "Mesh.hpp"
+
+namespace
+{
+constexpr char kExtFoundationMaterials[] = "EXT_foundation_materials";
+
+cgltf_extension const* FindExtension(cgltf_extension const* extensions, cgltf_size extensionCount, char const* name)
+{
+    for (cgltf_size i = 0; i < extensionCount; ++i)
+    {
+        if (extensions[i].name && std::strcmp(extensions[i].name, name) == 0)
+            return &extensions[i];
+    }
+    return nullptr;
+}
+
+std::string_view FindJSONValue(std::string_view json, std::string_view key)
+{
+    std::string pattern;
+    pattern.reserve(key.size() + 2);
+    pattern.push_back('"');
+    pattern.append(key);
+    pattern.push_back('"');
+
+    size_t keyPos = json.find(pattern);
+    if (keyPos == std::string_view::npos)
+        return {};
+
+    size_t colon = json.find(':', keyPos + pattern.size());
+    if (colon == std::string_view::npos)
+        return {};
+
+    size_t value = colon + 1;
+    while (value < json.size() && std::isspace(static_cast<unsigned char>(json[value])))
+        value++;
+    return json.substr(value);
+}
+
+bool ReadJSONString(std::string_view json, std::string_view key, std::string_view& value)
+{
+    std::string_view tail = FindJSONValue(json, key);
+    if (tail.empty() || tail.front() != '"')
+        return false;
+
+    size_t end = tail.find('"', 1);
+    if (end == std::string_view::npos)
+        return false;
+
+    value = tail.substr(1, end - 1);
+    return true;
+}
+
+bool ReadJSONFloat(std::string_view json, std::string_view key, float& value)
+{
+    std::string_view tail = FindJSONValue(json, key);
+    if (tail.empty())
+        return false;
+
+    char* end = nullptr;
+    float parsed = std::strtof(tail.data(), &end);
+    if (end == tail.data())
+        return false;
+
+    value = parsed;
+    return true;
+}
+
+void LoadFoundationMaterialExtension(cgltf_material const* src, FMaterial& material)
+{
+    cgltf_extension const* ext = FindExtension(src->extensions, src->extensions_count, kExtFoundationMaterials);
+    if (!ext || !ext->data)
+        return;
+
+    std::string_view json(ext->data);
+    std::string_view shaderBlock;
+    if (ReadJSONString(json, "shaderBlock", shaderBlock))
+    {
+        if (shaderBlock == "principled")
+            material.shaderBlockID = FMaterialShaderBlock::Principled;
+        else if (shaderBlock == "hair")
+            material.shaderBlockID = FMaterialShaderBlock::Hair;
+        else
+            CHECK_MSG(false, "EXT_foundation_materials has unsupported shaderBlock");
+    }
+
+    if (material.shaderBlockID == FMaterialShaderBlock::Hair)
+    {
+        std::string_view model;
+        if (ReadJSONString(json, "model", model))
+            CHECK_MSG(model == "chiang", "EXT_foundation_materials hair supports only model 'chiang'");
+
+        ReadJSONFloat(json, "betaM", material.hairBetaM);
+        ReadJSONFloat(json, "betaN", material.hairBetaN);
+        ReadJSONFloat(json, "alpha", material.hairAlpha);
+        ReadJSONFloat(json, "ior", material.ior);
+    }
+}
+}
+
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#meshes
 FMesh loadGLTFSubmesh(cgltf_primitive* submesh)
 {
@@ -280,6 +383,7 @@ void LoadGLTF(StringView path, FScene& scene)
         }
         material.hairBetaM = material.roughnessFactor;
         material.hairBetaN = material.roughnessFactor;
+        LoadFoundationMaterialExtension(mat, material);
         scene.mMaterials.emplace_back(material);
     }
     /* Textures and Meshes */

@@ -1,9 +1,8 @@
 import IMath;
 public static const uint kMeshWorkGroupSize = 64;
 public static const uint kMeshIndirectPerDrawMeshlets = 65536;
-public static const uint kMaterialShaderBlockAuto = 0;
-public static const uint kMaterialShaderBlockPrincipled = 1;
-public static const uint kMaterialShaderBlockHair = 2;
+public static const uint kMaterialShaderBlockPrincipled = 0;
+public static const uint kMaterialShaderBlockHair = 1;
 // Definitions From C++ sources
 public struct FVertex {
     public float3 position;

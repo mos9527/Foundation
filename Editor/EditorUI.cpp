@@ -418,7 +418,7 @@ void FHierarchyPanel()
             ImGui::Separator();
 
             bool changed = false;
-            const char* shaderBlockLabels[] = {"Auto", "Principled", "Hair"};
+            const char* shaderBlockLabels[] = {"Principled", "Hair"};
             int shaderBlock = static_cast<int>(material.shaderBlockID);
             if (ImGui::Combo("Shader Block", &shaderBlock, shaderBlockLabels, IM_ARRAYSIZE(shaderBlockLabels)))
             {
