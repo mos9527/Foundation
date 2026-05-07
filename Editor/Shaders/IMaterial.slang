@@ -43,7 +43,7 @@ public struct PrincipledMaterial : IMaterial {
         this.surface = PrincipledBSDF(
             baseColor, metallic, roughness, ior, specularFactor, transmission,
             energyCompensation, wo, diffuseWeight, anisotropyStrength, specularColorFactor);
-        this.subsurface = DisneyBurleyBSSRDF(baseColor * subsurfaceColor, subsurfaceRadius * subsurfaceScale);
+        this.subsurface = DisneyBurleyBSSRDF(baseColor * subsurfaceColor * activeSubsurface, subsurfaceRadius * subsurfaceScale);
 
         // Weigh surface/subsurface events by energy
         float3 dielF0, dielF90;

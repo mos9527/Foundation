@@ -97,8 +97,8 @@ public struct DisneyBurleyBSSRDF : IBSSRDF
     public __init(float3 reflectance = float3(1.0f), float3 scatterDistance = float3(1.0f))
     {
         this.reflectance = reflectance;
-        // pbrt applies this 0.2 scale based on Burley/Chiang guidance.
-        this.scatterDistance = max(0.2f * scatterDistance, float3(EPS));
+        // Match Cycles' Burley-compatible mean free path scale for Blender-authored radii.
+        this.scatterDistance = max((0.25f * InvPi) * scatterDistance, float3(EPS));
     }
 
     // Exp fit of eq. (5), normalized to 1 over an infinite _surface_...
