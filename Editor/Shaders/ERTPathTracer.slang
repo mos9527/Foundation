@@ -1214,7 +1214,7 @@ bool AddAnalyticLightHitEmission(
         pdfLi = light.PDF_Li(lighting.lastLightCtx, rayDirection, true);
     }
 
-    if (any(Le > 0.0f))
+    if (bounce > 0 /* do not contribute to primary visibility */ && any(Le > 0.0f))
     {
         float pLightSelection = lighting.lightTotalWeight > 0.0f
             ? (gl.selectionWeight / lighting.lightTotalWeight)
@@ -1222,10 +1222,7 @@ bool AddAnalyticLightHitEmission(
         float pdf = pLightSelection * pdfLi;
         float mis = lastSamplePDF > EPS ? BalanceHeuristic(1, lastSamplePDF, 1, pdf) : 1.0f;
         float3 contrib = beta * Le * mis;
-        if (bounce == 0)
-            AddRadiance(radiance.specular, contrib, true);
-        else
-            AddRadianceByCategory(radiance, contrib, bounce, firstBounceCategory, AOVCategory::Specular, false);
+        AddRadianceByCategory(radiance, contrib, bounce, firstBounceCategory, AOVCategory::Specular, false);
     }
 
     return true;
