@@ -311,7 +311,7 @@ void ReplaceScene(StringView path)
     LOG(Editor, LogInfo, "Uploading new scene data to GPU");
     // Upload meshes and textures
     {
-        ImmediateUpload upload(GContext->device.Get(), 128 * (1u << 20));
+        ImmediateUpload upload(GContext->device.Get(), 512 * (1u << 20));
         upload.Begin();
         for (auto& src : GEditor.doc.scene.mMeshes)
         {
