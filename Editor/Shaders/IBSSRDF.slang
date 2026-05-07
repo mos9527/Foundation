@@ -146,7 +146,10 @@ public struct DisneyBurleyBSSRDF : IBSSRDF
 
         float phi = 2.0f * Pi * uPhi;
         float segmentLength = 2.0f * sqrt(max(rMax * rMax - r * r, 0.0f));
-        if (segmentLength <= EPS_TMin)
+        // Too low of a min length introduces bias. One way to check this is to put the 
+        // geometry inside a white furnace (completely diffuse) - changing the subsurface level *must not*
+        // change the appearance of the geometry.
+        if (segmentLength <= EPS) 
             return BSSRDFSampleRaySegment();
 
         float3 origin = po.position +

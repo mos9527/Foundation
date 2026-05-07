@@ -40,16 +40,12 @@ public struct PrincipledMaterial : IMaterial {
         roughness = max(8e-3f, roughness);
         ior = max(1.0f + 5e-3f, ior);
 
-        this.surface = PrincipledBSDF(
-            baseColor, metallic, roughness, ior, specularFactor, transmission,
-            energyCompensation, wo, diffuseWeight, anisotropyStrength, specularColorFactor);
-        this.subsurface = DisneyBurleyBSSRDF(baseColor * subsurfaceColor * activeSubsurface, subsurfaceRadius * subsurfaceScale);
-
-        // Weigh surface/subsurface events by energy
+        // Keep the subsurface closure in the same energy family as diffuse.
+        // Otherwise sampling probability cancels this factor and SSS becomes
+        // too strong relative to the white specular component.
         float3 dielF0, dielF90;
         CalcGlossyFresnel(ior, specularFactor, specularColorFactor, dielF0, dielF90);
         float sampleGlossy = MaxComponent(reflectance(dielF0, dielF90, SampleGGXLutE(AbsCosTheta(wo), roughness)));
-
         float rawDiffuseFamily = (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
         float rawMetal = metallic;
         float rawDielSpec = (1.0f - metallic) * sampleGlossy;
@@ -57,6 +53,14 @@ public struct PrincipledMaterial : IMaterial {
         float rawSubsurface = rawDiffuseFamily * activeSubsurface;
         float eventWeightSum = rawDiffuseFamily + rawTrans + rawDielSpec + rawMetal;
 
+        this.surface = PrincipledBSDF(
+            baseColor, metallic, roughness, ior, specularFactor, transmission,
+            energyCompensation, wo, diffuseWeight, anisotropyStrength, specularColorFactor);
+        this.subsurface = DisneyBurleyBSSRDF(
+            baseColor * subsurfaceColor * activeSubsurface * rawDiffuseFamily,
+            subsurfaceRadius * subsurfaceScale);
+
+        // Weigh surface/subsurface events by energy
         this.pSubsurface = clamp(eventWeightSum > 0.0f ? rawSubsurface / eventWeightSum : 0.0f, 0.0f, 1.0f);
         this.pSurface = 1.0f - this.pSubsurface;
     }

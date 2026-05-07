@@ -559,7 +559,7 @@ struct DirectLightingState
 // Material helpers
 // vvvvv TODO More materials? Custom ones?
 //       One uber shader here is surely insufficent. Need to compile ad-hoc shaders _here_.
-IMaterial MakeMaterial(Payload surface, float3 wo, bool isCurve = false)
+IMaterial MakeMaterial(Payload surface, float3 wo, bool isCurve = false, bool foldSubsurfaceToDiffuse = false)
 {
     if (surface.shaderBlockID == kMaterialShaderBlockHair)
     {
@@ -567,10 +567,16 @@ IMaterial MakeMaterial(Payload surface, float3 wo, bool isCurve = false)
         return HairMaterial(
             surface.baseColor, surface.hairBetaM, surface.hairBetaN, h, surface.ior, surface.hairAlpha);
     }
+    // Cycles does this: After a diffuse ancestor, use diffuse
+    // instead of another non-local subsurface event to keep paths bounded.
+    // Helps to reduces variance by a lot - this is not in PBRT.    
+    // See also https://projects.blender.org/blender/blender/src/commit/4c7492e2193df4fbd079832798553c8943bbb870/intern/cycles/kernel/closure/bssrdf.h#L314
+    // Do note that this is biased, though visual impact is quite minimal.
+    float subsurface = foldSubsurfaceToDiffuse ? 0.0f : surface.subsurface;
     return PrincipledMaterial(
         surface.baseColor, surface.metallic, surface.roughness,
         surface.ior, surface.specularFactor, surface.transmission, true, wo,
-        surface.subsurface, surface.subsurfaceColor, surface.subsurfaceRadius, surface.subsurfaceScale,
+        subsurface, surface.subsurfaceColor, surface.subsurfaceRadius, surface.subsurfaceScale,
         surface.anisotropyStrength, surface.specularColorFactor);
 }
 
@@ -897,7 +903,7 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
     RayDesc queryRay;
     queryRay.Origin = segment.origin;
     queryRay.Direction = segment.direction;
-    queryRay.TMin = EPS_TMin;
+    queryRay.TMin = 0.0f;
     queryRay.TMax = segment.tMax;
 
     BSSRDFQueryPayload queryPayload;
@@ -1339,7 +1345,8 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         }
         // Local frame setup
         float3 wo = WorldToShadingLocal(surface.hit, view);
-        IMaterial material = MakeMaterial(surface, wo, hit.kind == HitKind::Curve);
+        bool foldSubsurfaceToDiffuse = diffuseBounces > 0;
+        IMaterial material = MakeMaterial(surface, wo, hit.kind == HitKind::Curve, foldSubsurfaceToDiffuse);
         // Subsurface events are non-local. The closure picks the event
         // the integrator performs the scene query.
         float pSampleSubsurface = material.ProbSampleSubsurface();
