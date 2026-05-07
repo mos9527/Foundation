@@ -19,6 +19,77 @@ static FTexture2D MakeLUT(const float* data, RHIResourceFormat format, uint32_t 
     return tex;
 }
 
+static uint32_t GetRenderableCurveSegmentCount(FCurveSet const& src)
+{
+    uint32_t segmentCount = 0;
+    for (uint32_t count : src.curveVertexCounts)
+    {
+        switch (src.basis)
+        {
+        case FCurveBasis::Bezier:
+            CHECK_MSG(count >= 4 && (count - 1) % 3 == 0,
+                      "Bezier curve strands must contain 3n + 1 controls, got {}", count);
+            segmentCount += (count - 1) / 3;
+            break;
+        case FCurveBasis::Linear:
+            segmentCount += count > 1 ? count - 1 : 0;
+            break;
+        default:
+            CHECK_MSG(false, "Unsupported curve basis {}", static_cast<uint32_t>(src.basis));
+            break;
+        }
+    }
+    return segmentCount;
+}
+
+static void AddCurveLineSegment(Vector<GSCurveSegment>& segments,
+                                Vector<RHIAccelerationStructureAABB>& aabbs,
+                                Vector<GSCurvePoint> const& points,
+                                uint32_t p0,
+                                uint32_t p1,
+                                float u0,
+                                float u1)
+{
+    segments.push_back(GSCurveSegment{
+        .p0 = p0,
+        .p1 = p1,
+        .u0 = u0,
+        .u1 = u1,
+    });
+
+    const auto& a = points[p0];
+    const auto& b = points[p1];
+    float radius = std::max(a.radius, b.radius);
+    float3 mn = min(a.position, b.position) - float3(radius);
+    float3 mx = max(a.position, b.position) + float3(radius);
+    aabbs.push_back(RHIAccelerationStructureAABB{mn.x, mn.y, mn.z, mx.x, mx.y, mx.z});
+}
+
+static void AddBezierCurveSpan(Vector<GSCurveSegment>& segments,
+                               Vector<RHIAccelerationStructureAABB>& aabbs,
+                               Vector<GSCurvePoint> const& points,
+                               uint32_t p0,
+                               uint32_t p1,
+                               float u0,
+                               float u1)
+{
+    segments.push_back(GSCurveSegment{
+        .p0 = p0,
+        .p1 = p1,
+        .u0 = u0,
+        .u1 = u1,
+    });
+
+    const auto& a = points[p0];
+    const auto& b = points[p0 + 1];
+    const auto& c = points[p0 + 2];
+    const auto& d = points[p1];
+    float radius = std::max(std::max(a.radius, b.radius), std::max(c.radius, d.radius));
+    float3 mn = min(min(a.position, b.position), min(c.position, d.position)) - float3(radius);
+    float3 mx = max(max(a.position, b.position), max(c.position, d.position)) + float3(radius);
+    aabbs.push_back(RHIAccelerationStructureAABB{mn.x, mn.y, mn.z, mx.x, mx.y, mx.z});
+}
+
 GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     mContext(ctx), mInstanceBuffer(ctx->device.Get(), desc.instanceBudget),
     mCurveInstanceBuffer(ctx->device.Get(), desc.instanceBudget),
@@ -359,9 +430,7 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FMesh const& src, GSMesh& outData,
 
 size_t GPUScene::Upload(ImmediateUpload* ctx, FCurveSet const& src, GSCurveSet& outData, uint32_t& outOffset)
 {
-    uint32_t segmentCount = 0;
-    for (uint32_t count : src.curveVertexCounts)
-        segmentCount += count > 1 ? count - 1 : 0;
+    uint32_t segmentCount = GetRenderableCurveSegmentCount(src);
     CHECK_MSG(!src.points.empty() && segmentCount > 0, "Curve set has no renderable segments");
 
     Vector<GSCurvePoint> points(src.points.size(), GLOBAL_ALLOC);
@@ -382,24 +451,38 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FCurveSet const& src, GSCurveSet& 
             pointCursor += count;
             continue;
         }
-        float invSegmentCount = 1.0f / float(count - 1);
-        for (uint32_t i = 0; i + 1 < count; ++i)
+        switch (src.basis)
         {
-            uint32_t p0 = pointCursor + i;
-            uint32_t p1 = pointCursor + i + 1;
-            segments.push_back(GSCurveSegment{
-                .p0 = p0,
-                .p1 = p1,
-                .u0 = float(i) * invSegmentCount,
-                .u1 = float(i + 1) * invSegmentCount,
-            });
-
-            const auto& a = points[p0];
-            const auto& b = points[p1];
-            float radius = std::max(a.radius, b.radius);
-            float3 mn = min(a.position, b.position) - float3(radius);
-            float3 mx = max(a.position, b.position) + float3(radius);
-            aabbs.push_back(RHIAccelerationStructureAABB{mn.x, mn.y, mn.z, mx.x, mx.y, mx.z});
+        case FCurveBasis::Bezier:
+        {
+            CHECK_MSG(count >= 4 && (count - 1) % 3 == 0,
+                      "Bezier curve strands must contain 3n + 1 controls, got {}", count);
+            uint32_t spanCount = (count - 1) / 3;
+            float invSpanCount = 1.0f / float(spanCount);
+            for (uint32_t i = 0; i < spanCount; ++i)
+            {
+                uint32_t p0 = pointCursor + i * 3;
+                uint32_t p1 = pointCursor + (i + 1) * 3;
+                AddBezierCurveSpan(segments, aabbs, points, p0, p1,
+                                   float(i) * invSpanCount, float(i + 1) * invSpanCount);
+            }
+            break;
+        }
+        case FCurveBasis::Linear:
+        {
+            float invSegmentCount = 1.0f / float(count - 1);
+            for (uint32_t i = 0; i + 1 < count; ++i)
+            {
+                uint32_t p0 = pointCursor + i;
+                uint32_t p1 = pointCursor + i + 1;
+                AddCurveLineSegment(segments, aabbs, points, p0, p1,
+                                    float(i) * invSegmentCount, float(i + 1) * invSegmentCount);
+            }
+            break;
+        }
+        default:
+            CHECK_MSG(false, "Unsupported curve basis {}", static_cast<uint32_t>(src.basis));
+            break;
         }
         pointCursor += count;
     }

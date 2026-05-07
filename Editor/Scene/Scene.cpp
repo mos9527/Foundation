@@ -134,6 +134,7 @@ void loadGLTFCurve(cgltf_data* data, cgltf_curve* src, FCurveSet& curve)
     CHECK(src->curve_vertex_counts->type == cgltf_type_scalar);
 
     curve.basis = loadGLTFCurveBasis(src->basis);
+    CHECK_MSG(curve.basis == FCurveBasis::Bezier, "EXT_foundation_curves import currently supports only Bezier curves");
     curve.renderMode = FCurveRenderMode::Capsule;
     curve.materialIndex = src->material ? static_cast<uint32_t>(cgltf_material_index(data, src->material) + 1u) : 0u;
 
@@ -156,9 +157,12 @@ void loadGLTFCurve(cgltf_data* data, cgltf_curve* src, FCurveSet& curve)
         cgltf_uint count = 0;
         CHECK(cgltf_accessor_read_uint(src->curve_vertex_counts, i, &count, 1));
         curve.curveVertexCounts[i] = count;
+        CHECK_MSG(count >= 4 && (count - 1) % 3 == 0,
+                  "Bezier curve strands must contain 3n + 1 controls, got {}", count);
         referencedPoints += count;
     }
-    CHECK(referencedPoints <= pointCount);
+    CHECK_MSG(referencedPoints == pointCount, "Curve strands reference {} points, but points accessor stores {}",
+              referencedPoints, pointCount);
 }
 
 void LoadGLTF(StringView path, FScene& scene)

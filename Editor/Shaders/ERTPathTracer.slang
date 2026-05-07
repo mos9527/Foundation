@@ -273,6 +273,35 @@ HitState GetHitState(uint meshOffset, uint primitive, float2 bary, GSInstance in
     return hit;
 }
 
+float4 LoadCurveControl(GSCurveSet curve, uint32_t pointIndex)
+{
+    GSCurvePoint p = primitives.Load<GSCurvePoint>(curve.pointOffset + pointIndex * sizeof(GSCurvePoint));
+    return float4(p.position, p.radius);
+}
+
+bool IsBezierCurveSegment(GSCurveSet curve, GSCurveSegment segment)
+{
+    return segment.p1 == segment.p0 + 3 && segment.p1 < curve.pointCount;
+}
+
+float4 EvaluateCubicBezier(float4 q0, float4 q1, float4 q2, float4 q3, float u)
+{
+    float4 q01 = lerp(q0, q1, u);
+    float4 q12 = lerp(q1, q2, u);
+    float4 q23 = lerp(q2, q3, u);
+    float4 q012 = lerp(q01, q12, u);
+    float4 q123 = lerp(q12, q23, u);
+    return lerp(q012, q123, u);
+}
+
+float4 EvaluateCubicBezierDerivative(float4 q0, float4 q1, float4 q2, float4 q3, float u)
+{
+    float4 d0 = q1 - q0;
+    float4 d1 = q2 - q1;
+    float4 d2 = q3 - q2;
+    return 3.0f * lerp(lerp(d0, d1, u), lerp(d1, d2, u), u);
+}
+
 HitState GetCurveHitState(uint curveOffset, uint primitive, float2 uv, GSCurveInstance inst,
                           float3 rayOrigin, float3 rayDirection, float hitT)
 {
@@ -285,24 +314,66 @@ HitState GetCurveHitState(uint curveOffset, uint primitive, float2 uv, GSCurveIn
     GSCurvePoint p0 = primitives.Load<GSCurvePoint>(curve.pointOffset + segment.p0 * sizeof(GSCurvePoint));
     GSCurvePoint p1 = primitives.Load<GSCurvePoint>(curve.pointOffset + segment.p1 * sizeof(GSCurvePoint));
 
-    float3 localPosition = inst.rotation.conjugate().rotate(hit.position - inst.transform) / inst.scale;
-    float3 axis = p1.position - p0.position;
-    float axisLen2 = max(dot(axis, axis), 1e-12f);
-    float u = saturate(dot(localPosition - p0.position, axis) / axisLen2);
-    float3 closest = lerp(p0.position, p1.position, u);
-    float3 tangent = normalize(axis);
-    float3 radial = localPosition - closest;
-    radial = LengthSquared(radial) > 1e-12f ? normalize(radial) : normalize(cross(tangent, float3(0.0f, 1.0f, 0.0f)));
-    float radiusSlope = (p1.radius - p0.radius) * rsqrt(axisLen2);
-    float3 localNormal = normalize(radial - tangent * radiusSlope);
+    float3 tangentVector;
+    if (IsBezierCurveSegment(curve, segment))
+    {
+        float localU = saturate((uv.x - segment.u0) / max(segment.u1 - segment.u0, 1e-7f));
+        float4 q0 = float4(p0.position, p0.radius);
+        float4 q1 = LoadCurveControl(curve, segment.p0 + 1);
+        float4 q2 = LoadCurveControl(curve, segment.p0 + 2);
+        float4 q3 = float4(p1.position, p1.radius);
+        float4 dq = EvaluateCubicBezierDerivative(q0, q1, q2, q3, localU);
+        tangentVector = dq.xyz;
+    }
+    else
+    {
+        float3 axis = p1.position - p0.position;
+        tangentVector = axis;
+    }
+    float3 fallbackAxis = p1.position - p0.position;
+    if (LengthSquared(tangentVector) <= 1e-12f)
+        tangentVector = LengthSquared(fallbackAxis) > 1e-12f ? fallbackAxis : float3(0.0f, 1.0f, 0.0f);
+    float3 tangent = normalize(tangentVector);
+
+    float3 localRayDirection = inst.rotation.conjugate().rotate(rayDirection) / inst.scale;
+    if (LengthSquared(localRayDirection) <= 1e-12f)
+        localRayDirection = float3(0.0f, 0.0f, 1.0f);
+    localRayDirection = normalize(localRayDirection);
+
+    float3 projectedTangent = tangent - localRayDirection * dot(tangent, localRayDirection);
+    float3 localBitangent;
+    if (LengthSquared(projectedTangent) > 1e-12f)
+    {
+        projectedTangent = normalize(projectedTangent);
+        localBitangent = normalize(cross(projectedTangent, localRayDirection));
+    }
+    else
+    {
+        buildOrthonormalBasis(localRayDirection, projectedTangent, localBitangent);
+    }
+
+    float3 flatNormal = normalize(cross(tangent, localBitangent));
+    if (dot(flatNormal, localRayDirection) > 0.0f)
+    {
+        localBitangent = -localBitangent;
+        flatNormal = -flatNormal;
+    }
+
+    float theta = (saturate(uv.y) - 0.5f) * Pi;
+    float sinTheta, cosTheta;
+    sincos(theta, sinTheta, cosTheta);
+    float3 localNormal = normalize(cosTheta * flatNormal + sinTheta * localBitangent);
     if (any(isnan(localNormal)))
-        localNormal = float3(1.0f, 0.0f, 0.0f);
+        localNormal = flatNormal;
+    localBitangent = normalize(cross(localNormal, tangent));
+    if (LengthSquared(localBitangent) <= 1e-12f)
+        localBitangent = normalize(cross(flatNormal, tangent));
 
     float3 invScale = 1.0f / inst.scale;
     hit.normal = normalize(inst.rotation.rotate(localNormal * invScale));
     hit.geometryNormal = hit.normal;
     hit.tangent = normalize(inst.rotation.rotate(tangent * inst.scale));
-    hit.bitangent = normalize(cross(hit.normal, hit.tangent));
+    hit.bitangent = normalize(inst.rotation.rotate(localBitangent * inst.scale));
     return hit;
 }
 
@@ -484,8 +555,14 @@ struct DirectLightingState
 // Material helpers
 // vvvvv TODO More materials? Custom ones?
 //       One uber shader here is surely insufficent. Need to compile ad-hoc shaders _here_.
-IMaterial MakeMaterial(Payload surface, float3 wo)
+IMaterial MakeMaterial(Payload surface, float3 wo, bool isCurve = false)
 {
+    if (isCurve)
+    {
+        return HairMaterial(
+            surface.baseColor, surface.roughness,
+            surface.specularFactor, surface.specularColorFactor);
+    }
     return PrincipledMaterial(
         surface.baseColor, surface.metallic, surface.roughness,
         surface.ior, surface.specularFactor, surface.transmission, true, wo,
@@ -1246,7 +1323,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         }
         // Local frame setup
         float3 wo = WorldToShadingLocal(surface.hit, view);
-        IMaterial material = MakeMaterial(surface, wo);
+        IMaterial material = MakeMaterial(surface, wo, hit.kind == HitKind::Curve);
         // Subsurface events are non-local. The closure picks the event
         // the integrator performs the scene query.
         float pSampleSubsurface = material.ProbSampleSubsurface();
@@ -1442,30 +1519,150 @@ struct CurveHitAttributes
     float2 uv;
 };
 
-bool TryUpdateCurveHit(float t, float u, inout float bestT, inout float bestU)
+bool TryUpdateCurveHit(float t, float u, float v, inout float bestT, inout float bestU, inout float bestV)
 {
     if (t < RayTMin() || t > RayTCurrent() || t >= bestT)
         return false;
     bestT = t;
     bestU = u;
+    bestV = v;
     return true;
 }
 
-void TryIntersectCurveCap(float3 ro, float3 rd, float3 center, float radius, float u,
-                          inout float bestT, inout float bestU)
+float3 ProjectPerpendicularToRay(float3 v, float3 rd)
 {
-    float3 oc = ro - center;
-    float a = dot(rd, rd);
-    float b = dot(oc, rd);
-    float c = dot(oc, oc) - radius * radius;
-    float h = b * b - a * c;
-    if (h < 0.0f || a <= 1e-12f)
+    return v - rd * (dot(v, rd) / max(dot(rd, rd), 1e-12f));
+}
+
+void SplitCubicBezier(float4 q0, float4 q1, float4 q2, float4 q3, float u,
+                      out float4 left0, out float4 left1, out float4 left2, out float4 left3,
+                      out float4 right0, out float4 right1, out float4 right2, out float4 right3)
+{
+    float4 q01 = lerp(q0, q1, u);
+    float4 q12 = lerp(q1, q2, u);
+    float4 q23 = lerp(q2, q3, u);
+    float4 q012 = lerp(q01, q12, u);
+    float4 q123 = lerp(q12, q23, u);
+    float4 q0123 = lerp(q012, q123, u);
+
+    left0 = q0;
+    left1 = q01;
+    left2 = q012;
+    left3 = q0123;
+    right0 = q0123;
+    right1 = q123;
+    right2 = q23;
+    right3 = q3;
+}
+
+void ExtractCubicBezierInterval(float4 q0, float4 q1, float4 q2, float4 q3, float u0, float u1,
+                                out float4 out0, out float4 out1, out float4 out2, out float4 out3)
+{
+    float4 l0, l1, l2, l3;
+    float4 r0, r1, r2, r3;
+    SplitCubicBezier(q0, q1, q2, q3, u1, l0, l1, l2, l3, r0, r1, r2, r3);
+    if (u0 <= 0.0f)
+    {
+        out0 = l0;
+        out1 = l1;
+        out2 = l2;
+        out3 = l3;
+        return;
+    }
+
+    float split = saturate(u0 / max(u1, 1e-7f));
+    SplitCubicBezier(l0, l1, l2, l3, split, r0, r1, r2, r3, out0, out1, out2, out3);
+}
+
+void TryIntersectFlatCurveLeaf(float3 ro, float3 rd, float4 q0, float4 q1, float4 q2, float4 q3,
+                               float u0, float u1, inout float bestT, inout float bestU, inout float bestV)
+{
+    if (max(max(q0.w, q1.w), max(q2.w, q3.w)) <= 0.0f)
         return;
 
-    float root = sqrt(h);
-    float t = (-b - root) / a;
-    if (!TryUpdateCurveHit(t, u, bestT, bestU))
-        TryUpdateCurveHit((-b + root) / a, u, bestT, bestU);
+    float3 p0 = ProjectPerpendicularToRay(q0.xyz - ro, rd);
+    float3 p3 = ProjectPerpendicularToRay(q3.xyz - ro, rd);
+    float3 h0 = ProjectPerpendicularToRay(q1.xyz - ro, rd);
+    float3 h1 = ProjectPerpendicularToRay(q2.xyz - ro, rd);
+
+    float startEdge = (h0.y - p0.y) * -p0.y + p0.x * (p0.x - h0.x);
+    if (startEdge < 0.0f)
+        return;
+
+    float endEdge = (h1.y - p3.y) * -p3.y + p3.x * (p3.x - h1.x);
+    if (endEdge < 0.0f)
+        return;
+
+    float3 segment = p3 - p0;
+    float segmentLen2 = dot(segment, segment);
+    if (segmentLen2 <= 1e-12f)
+        return;
+
+    float w = dot(-p0, segment) / segmentLen2;
+    float clampedW = saturate(w);
+    float4 q = EvaluateCubicBezier(q0, q1, q2, q3, clampedW);
+    float3 p = ProjectPerpendicularToRay(q.xyz - ro, rd);
+    float dist2 = dot(p, p);
+    if (dist2 > q.w * q.w)
+        return;
+
+    float t = dot(q.xyz - ro, rd) / max(dot(rd, rd), 1e-12f);
+    float side = p.x * segment.y - p.y * segment.x;
+    float v = 0.5f + (side > 0.0f ? 0.5f : -0.5f) * sqrt(dist2) / max(q.w, 1e-7f);
+    TryUpdateCurveHit(t, lerp(u0, u1, clampedW), saturate(v), bestT, bestU, bestV);
+}
+
+void TryIntersectFlatCurveSegment(float3 ro, float3 rd, float4 q0, float4 q1, float u0, float u1,
+                                  inout float bestT, inout float bestU, inout float bestV)
+{
+    TryIntersectFlatCurveLeaf(ro, rd, q0, lerp(q0, q1, 1.0f / 3.0f), lerp(q0, q1, 2.0f / 3.0f), q1,
+                              u0, u1, bestT, bestU, bestV);
+}
+
+int GetBezierSubdivisionDepth(float4 q0, float4 q1, float4 q2, float4 q3, float3 rd)
+{
+    static const int kCurveMaxSubdivisionDepth = 2;
+    float3 d0 = ProjectPerpendicularToRay(q0.xyz - 2.0f * q1.xyz + q2.xyz, rd);
+    float3 d1 = ProjectPerpendicularToRay(q1.xyz - 2.0f * q2.xyz + q3.xyz, rd);
+    float curvature = max(length(d0), length(d1));
+    float maxRadius = max(max(q0.w, q1.w), max(q2.w, q3.w));
+    float epsilon = max(maxRadius * 0.05f, 1e-5f);
+
+    int depth = 0;
+    [loop]
+    for (int i = 0; i < kCurveMaxSubdivisionDepth; ++i)
+    {
+        if (curvature <= epsilon)
+            break;
+        curvature *= 0.25f;
+        ++depth;
+    }
+    return depth;
+}
+
+void TryIntersectBezierCurve(float3 ro, float3 rd, GSCurveSegment segment,
+                             float4 q0, float4 q1, float4 q2, float4 q3,
+                             inout float bestT, inout float bestU, inout float bestV)
+{
+    float maxRadius = max(max(q0.w, q1.w), max(q2.w, q3.w));
+    if (maxRadius <= 0.0f)
+        return;
+
+    int depth = GetBezierSubdivisionDepth(q0, q1, q2, q3, rd);
+    uint leafCount = 1u << uint(depth);
+    float invLeafCount = 1.0f / float(leafCount);
+
+    [loop]
+    for (uint i = 0; i < leafCount; ++i)
+    {
+        float t0 = float(i) * invLeafCount;
+        float t1 = float(i + 1u) * invLeafCount;
+        float4 l0, l1, l2, l3;
+        ExtractCubicBezierInterval(q0, q1, q2, q3, t0, t1, l0, l1, l2, l3);
+        float u0 = lerp(segment.u0, segment.u1, t0);
+        float u1 = lerp(segment.u0, segment.u1, t1);
+        TryIntersectFlatCurveLeaf(ro, rd, l0, l1, l2, l3, u0, u1, bestT, bestU, bestV);
+    }
 }
 
 [shader("intersection")]
@@ -1477,52 +1674,32 @@ void CurveIntersection()
     GSCurvePoint p0 = primitives.Load<GSCurvePoint>(curve.pointOffset + segment.p0 * sizeof(GSCurvePoint));
     GSCurvePoint p1 = primitives.Load<GSCurvePoint>(curve.pointOffset + segment.p1 * sizeof(GSCurvePoint));
 
-    float maxRadius = max(p0.radius, p1.radius);
-    if (maxRadius <= 0.0f)
-        return;
-
     float3 ro = ObjectRayOrigin();
     float3 rd = ObjectRayDirection();
-    float3 ba = p1.position - p0.position;
-    float3 oa = ro - p0.position;
-    float baba = dot(ba, ba);
-
     float bestT = RayTCurrent();
     float bestU = segment.u0;
+    float bestV = 0.5f;
 
-    if (baba > 1e-12f)
+    if (IsBezierCurveSegment(curve, segment))
     {
-        float bard = dot(ba, rd);
-        float baoa = dot(ba, oa);
-        float3 rdPerp = rd - ba * (bard / baba);
-        float3 oaPerp = oa - ba * (baoa / baba);
-        float r0 = p0.radius;
-        float radiusDelta = p1.radius - p0.radius;
-        float k0 = r0 + radiusDelta * baoa / baba;
-        float k1 = radiusDelta * bard / baba;
-        float a = dot(rdPerp, rdPerp) - k1 * k1;
-        float b = dot(oaPerp, rdPerp) - k0 * k1;
-        float c = dot(oaPerp, oaPerp) - k0 * k0;
-        float h = b * b - a * c;
-        if (h >= 0.0f && abs(a) > 1e-12f)
-        {
-            float t = (-b - sqrt(h)) / a;
-            float y = baoa + t * bard;
-            if (y >= 0.0f && y <= baba)
-            {
-                float u = y / baba;
-                TryUpdateCurveHit(t, lerp(segment.u0, segment.u1, u), bestT, bestU);
-            }
-        }
+        float4 q0 = float4(p0.position, p0.radius);
+        float4 q1 = LoadCurveControl(curve, segment.p0 + 1);
+        float4 q2 = LoadCurveControl(curve, segment.p0 + 2);
+        float4 q3 = float4(p1.position, p1.radius);
+        TryIntersectBezierCurve(ro, rd, segment, q0, q1, q2, q3, bestT, bestU, bestV);
     }
-
-    TryIntersectCurveCap(ro, rd, p0.position, p0.radius, segment.u0, bestT, bestU);
-    TryIntersectCurveCap(ro, rd, p1.position, p1.radius, segment.u1, bestT, bestU);
+    else
+    {
+        TryIntersectFlatCurveSegment(ro, rd,
+                                     float4(p0.position, p0.radius),
+                                     float4(p1.position, p1.radius),
+                                     segment.u0, segment.u1, bestT, bestU, bestV);
+    }
 
     if (bestT < RayTCurrent())
     {
         CurveHitAttributes attr;
-        attr.uv = float2(bestU, 0.0f);
+        attr.uv = float2(bestU, bestV);
         ReportHit(bestT, 0, attr);
     }
 }

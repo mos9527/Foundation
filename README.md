@@ -36,7 +36,8 @@ Some time in the future:
   
 Done, awaiting Blog Update:
 - [x] Curve (hair, fur) rendering
-  - Line segments as capsules
+  - Beizer Segments via [De Casteljau](https://zh.wikipedia.org/wiki/%E5%BE%B7%E5%8D%A1%E6%96%AF%E7%89%B9%E9%87%8C%E5%A5%A5%E7%AE%97%E6%B3%95), a la PBRT's [Curves](https://www.pbr-book.org/4ed/Shapes/Curves#Curve)
+  - Intersected as flat cross-sections with TBN that 'makes it look like a swept cylinder'
   - Procedurally traced, data exchange done via our own Blender IO (https://github.com/mos9527/Foundation-Blender-IO)
 - [x] Path Traced Skin BSSRDF
   - Disney BSSRDF from [PBRTv3](https://github.com/mmp/pbrt-v3/blob/master/src/materials/disney.cpp)

@@ -59,6 +59,35 @@ public interface IBSSRDF
     public float Pdf_Sp(BSSRDFSurfaceInteraction po, BSSRDFSurfaceInteraction pi);
 }
 
+public struct StubBSSRDF : IBSSRDF
+{
+    public float3 Sr(float r)
+    {
+        return float3(0.0f);
+    }
+    public float3 Sp(BSSRDFSurfaceInteraction po, BSSRDFSurfaceInteraction pi)
+    {
+        return float3(0.0f);
+    }
+    public BSSRDFSampleRaySegment Sample_SpRay(
+        BSSRDFSurfaceInteraction po, float uAxis, float uChannel, float uRadius, float uPhi)
+    {
+        return BSSRDFSampleRaySegment();
+    }
+    public float Sample_Sr(uint channel, float u)
+    {
+        return 0.0f;
+    }
+    public float Pdf_Sr(uint channel, float r)
+    {
+        return 0.0f;
+    }
+    public float Pdf_Sp(BSSRDFSurfaceInteraction po, BSSRDFSurfaceInteraction pi)
+    {
+        return 0.0f;
+    }
+}
+
 // 2.4 Subsurface diffusion [Burley15]
 public struct DisneyBurleyBSSRDF : IBSSRDF
 {

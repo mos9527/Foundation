@@ -308,6 +308,107 @@ public interface IBSDF {
                                out AOVCategory category);
 };
 
+public struct HairDirection
+{
+    // Local curve frame: x = longitudinal tangent, y = azimuth bitangent, z = radial normal.
+    float sinTheta;
+    float cosTheta;
+    float phi;
+    float sinPhi;
+    float cosPhi;
+};
+
+public HairDirection HairDirectionFromLocal(float3 w)
+{
+    HairDirection dir;
+    dir.sinTheta = clamp(w.x, -1.0f, 1.0f);
+    dir.cosTheta = SafeSqrt(1.0f - dir.sinTheta * dir.sinTheta);
+    if (dir.cosTheta > 1e-7f)
+    {
+        dir.sinPhi = clamp(w.y / dir.cosTheta, -1.0f, 1.0f);
+        dir.cosPhi = clamp(w.z / dir.cosTheta, -1.0f, 1.0f);
+    }
+    else
+    {
+        dir.sinPhi = 0.0f;
+        dir.cosPhi = 1.0f;
+    }
+    dir.phi = atan2(dir.sinPhi, dir.cosPhi);
+    return dir;
+}
+
+public float3 HairDirectionToLocal(HairDirection dir)
+{
+    return float3(dir.sinTheta, dir.cosTheta * dir.sinPhi, dir.cosTheta * dir.cosPhi);
+}
+
+public float HairCosAltitude(HairDirection dir)
+{
+    return dir.cosTheta * dir.cosPhi;
+}
+
+// Stub curve BSDF: diffuse response, but directions are represented in fiber
+// longitudinal/azimuth coordinates so a real hair closure can replace it later.
+public struct HairBSDF : IBSDF
+{
+    float3 baseColor;
+
+    public __init(float3 baseColor, float roughness, float specularFactor, float3 specularColorFactor)
+    {
+        this.baseColor = max(baseColor, float3(0.0f));
+    }
+
+
+    public void f(float3 wo, float3 wi, TransportMode mode, out float3 fDiffuse, out float3 fSpecular)
+    {
+        fDiffuse = float3(0.0f);
+        fSpecular = float3(0.0f);
+        HairDirection woHair = HairDirectionFromLocal(wo);
+        HairDirection wiHair = HairDirectionFromLocal(wi);
+        if (HairCosAltitude(woHair) <= 0.0f || HairCosAltitude(wiHair) <= 0.0f)
+            return;
+
+        fDiffuse = baseColor * InvPi;
+    }
+
+    public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode)
+    {
+        float3 fDiffuse, fSpecular;
+        f(wo, wi, mode, fDiffuse, fSpecular);
+        return fDiffuse + fSpecular;
+    }
+
+    public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags)
+    {
+        if (!(flags & BxDFReflTransFlags::Reflection) || !SameHemisphere(wo, wi))
+            return 0.0f;
+        HairDirection wiHair = HairDirectionFromLocal(wi);
+        float cosAltitude = HairCosAltitude(wiHair);
+        return cosAltitude > 0.0f ? CosineHemispherePDF(cosAltitude) : 0.0f;
+    }
+
+    public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags,
+                               out AOVCategory category)
+    {
+        category = AOVCategory::Diffuse;
+        if (!(flags & BxDFReflTransFlags::Reflection))
+            return BSDFSample();
+
+        float3 wi = SampleCosineHemisphere(u);
+        HairDirection woHair = HairDirectionFromLocal(wo);
+        if (HairCosAltitude(woHair) < 0.0f)
+            return BSDFSample();
+        HairDirection wiHair = HairDirectionFromLocal(wi);
+        wi = HairDirectionToLocal(wiHair);
+
+        float pdf = PDF(wo, wi, mode, flags);
+        if (pdf <= EPS)
+            return BSDFSample();
+
+        return BSDFSample(f(wo, wi, mode), wi, pdf, BxDFFlags::DiffuseReflection);
+    }
+};
+
 public struct PrincipledBSDF : IBSDF {
     // Lobe instances
     DiffuseBSDF   diffuse;

@@ -77,3 +77,34 @@ public struct PrincipledMaterial : IMaterial {
         return pSubsurface;
     }
 };
+
+public struct HairMaterial : IMaterial {
+    HairBSDF surface;
+    StubBSSRDF subsurface;
+
+    public __init(
+        float3 baseColor,
+        float roughness,
+        float specularFactor = 1.0f,
+        float3 specularColorFactor = float3(1.0f))
+    {
+        this.surface = HairBSDF(baseColor, roughness, specularFactor, specularColorFactor);
+        this.subsurface = StubBSSRDF();
+    }
+
+    public IBSDF GetSurface() {
+        return surface;
+    }
+
+    public IBSSRDF GetSubsurface() {
+        return subsurface;
+    }
+
+    public float ProbSampleSurface() {
+        return 1.0f;
+    }
+
+    public float ProbSampleSubsurface() {
+        return 0.0f;
+    }
+};
