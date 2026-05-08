@@ -7,9 +7,36 @@ public static const float3x3 BT709_BT2020 = float3x3(
     0.069097289f, 0.919540395f, 0.011362316f,
     0.016391439f, 0.088013308f, 0.895595253f);
 
+// Linear BT.709/D65 -> AP1/D60 with Bradford chromatic adaptation.
+// Derived in Scripts/ColorPrimaries.ipynb; matches Scripts/OCIOBakeLUTs.py.
+public static const float3x3 BT709_AP1_BFD = float3x3(
+    0.613097429f, 0.339523137f, 0.047379453f,
+    0.070193723f, 0.916353881f, 0.013452398f,
+    0.020615593f, 0.109569773f, 0.869814634f);
+
+// ACEScct log encoding with linear toe near black.
+// https://docs.acescentral.com/encodings/acescct/#encoding-function
+public float3 ACEScctEncode(float3 x) {
+    float3 toe = 10.5402377416545f * x + 0.0729055341958355f;
+    float3 logp = (log2(max(x, 0x1p-16f)) + 9.72f) / 17.52f;
+    float3 sel = float3(x > float3(0.0078125f));
+    return lerp(toe, logp, sel);
+}
+
+// Map exposed linear BT.709 RGB into the OCIO-baked 3D LUT input domain.
+// LUT input is raw ACEScct in [0,1]. See Scripts/OCIOBakeLUTs.py.
+public float3 LinearBT709ToAcescctCoord(float3 rgbBT709) {
+    float3 ap1 = mul(BT709_AP1_BFD, rgbBT709);
+    return saturate(ACEScctEncode(ap1));
+}
+
 public struct TonemapInfo
 {
     public float HdrPaperWhiteNits;
+    // OCIO-baked ACES view LUT for the active display (SDR or HDR), ACEScct domain.
+    // Output is encoded display RGB ready for present.
+    public Texture3D<float4> viewLut;
+    public SamplerState lutSampler;
 }
 
 
@@ -101,3 +128,15 @@ public struct Tonemapper<OO, EO> : ITonemapper
 
 public typealias StandardSrgbTonemapper = Tonemapper<SrgbOOTF, SrgbEOTF> ;
 public typealias StandardPqTonemapper = Tonemapper<PqOOTF, PqEOTF> ;
+
+// ACES color management via OCIO-baked 3D LUT.
+// Replaces the entire OOTF + inverse EOTF stage; the LUT outputs encoded display RGB.
+// See Scripts/OCIOBakeLUTs.py for the bake. The runtime shaper here must match
+// Scripts/ColorPrimaries.ipynb's BT.709/D65 -> AP1/D60 Bradford derivation.
+public struct AcesLutTonemapper : ITonemapper
+{
+    float3 Perform(TonemapInfo info, float3 L /* scene-linear BT.709, post-exposure */) {
+        float3 coord = LinearBT709ToAcescctCoord(L);
+        return info.viewLut.SampleLevel(info.lutSampler, coord, 0).rgb;
+    }
+}

@@ -9,6 +9,10 @@ Texture2D diffuseTex;
 Texture2D specularTex;
 Texture2D<uint32_t> pickIDBuffer; // Instance ID map (R32_UINT), ~0u = no object
 RWStructuredBuffer<uint32_t> pickResult; // [0] written when fragCoord == pickPixel
+// ACES OCIO-baked view LUTs. Input domain: ACEScct in [0,1].
+Texture3D<float4> viewLutSdr;
+Texture3D<float4> viewLutHdr;
+SamplerState lutSampler;
 uniform UBO globalParams;
 
 struct PickPC { int px; int py; };
@@ -27,6 +31,9 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     pp.Exposure = globalParams.camEV;
     pp.HdrEnabled = globalParams.enableHDR;
     pp.HdrPaperWhiteNits = globalParams.paperWhiteNits;
+    pp.viewLutSdr = viewLutSdr;
+    pp.viewLutHdr = viewLutHdr;
+    pp.lutSampler = lutSampler;
     float4 result;
     if ((flags & (kViewAOVDiffuse | kViewAOVSpecular)) != 0) {
         // Per-lobe AOV isolation views (tone mapped)
@@ -35,7 +42,7 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
         if ((flags & kViewAOVSpecular) != 0) aov = specularTex.Load(coord).xyz;
         result = float4(Postprocess(aov, pp), 1.0f);
     } else {
-        // Composite lighting = diffuse + specular (already averaged), then tone map
+        // Composite lighting = diffuse + specular (already averaged), then ACES grade
         float3 diffuse  = diffuseTex.Load(coord).xyz;
         float3 specular = specularTex.Load(coord).xyz;
         float3 Lpix = diffuse + specular;

@@ -5,22 +5,30 @@ public struct PostprocessInfo
     public float Exposure;
     public uint  HdrEnabled;
     public float HdrPaperWhiteNits;
+    // OCIO-baked ACES view LUTs (3D, RGBA32F, ACEScct in [0,1]).
+    public Texture3D<float4> viewLutSdr;
+    public Texture3D<float4> viewLutHdr;
+    public SamplerState lutSampler;
 }
 
-public float3 Tonemap(float3 L,PostprocessInfo pp) {
-    L *= exp2(pp.Exposure);
+// BT.709/sRGB RGB -> XYZ Y row.
+public static const float3 BT709_S = float3(0.212639006f, 0.715168679f, 0.072192315f);
+
+// Luminance-preserving EV exposure. Keeps chroma stable across changes in EV
+// without per-channel hue shifts.
+public float3 ApplyExposureEV(float3 L, float ev) {
+    float Y = max(dot(L, BT709_S), 1e-6f);
+    float Yp = Y * exp2(ev);
+    return L * (Yp / Y);
+}
+
+// L: BT709 Linear primaries content
+public float3 Postprocess(float3 L /* Linear */, PostprocessInfo pp) {
+    L = ApplyExposureEV(L, pp.Exposure);
     TonemapInfo info;
     info.HdrPaperWhiteNits = pp.HdrPaperWhiteNits;
-    ITonemapper op;
-    if (pp.HdrEnabled) {
-        op = StandardPqTonemapper();
-    } else {
-        op = StandardSrgbTonemapper();
-    }
+    info.lutSampler = pp.lutSampler;
+    info.viewLut = (pp.HdrEnabled != 0) ? pp.viewLutHdr : pp.viewLutSdr;
+    AcesLutTonemapper op;
     return op.Perform(info, L);
-}
-
-public float3 Postprocess(float3 L /* Linear */, PostprocessInfo pp) {
-    L = Tonemap(L, pp);
-    return L;
 }

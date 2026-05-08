@@ -1,5 +1,6 @@
 #include "../Render/Precompute.hpp"
 #include "../Render/Tables.hpp"
+#include "../Render/ACESLuts.hpp"
 #include <Core/AllocatorStack.hpp>
 #include <Math/Quantize.hpp>
 #include "Scene.hpp"
@@ -17,6 +18,61 @@ static FTexture2D MakeLUT(const float* data, RHIResourceFormat format, uint32_t 
     const auto* bytes = reinterpret_cast<const unsigned char*>(data);
     tex.data.assign(bytes, bytes + tex.GetSize());
     return tex;
+}
+
+static uint32_t Upload3DLut(FContext* ctx, BindlessPool& pool, ImmediateUpload& upload,
+                                    const float* data, uint32_t side, const char* debugName)
+{
+    constexpr auto kFormat = RHIResourceFormat::R32G32B32A32SignedFloat;
+    const size_t bytes = static_cast<size_t>(side) * side * side * 4 * sizeof(float);
+
+    auto texture = ctx->device->CreateTexture(RHITextureDesc{
+        .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
+        .dimension = RHITextureDimension::E3D,
+        .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
+        .extent = {side, side, side},
+        .format = kFormat,
+    });
+    texture->DebugSetObjectName(debugName);
+
+    auto range = RHITextureSubresourceRange::Create();
+    auto* cmd = upload.ctx.Get();
+
+    cmd->BeginTransition();
+    cmd->SetImageTransition(texture.Get(), {.dstImgLayout = RHITextureLayout::TransferDst, .srcImgRange = range});
+    cmd->EndTransition();
+
+    if (!upload.Align(sizeof(float)))
+        return UINT32_MAX;
+    if (upload.ptr + bytes > upload.end)
+        return UINT32_MAX;
+    char* dstStaging = upload.ptr;
+    const uint32_t srcOffset = static_cast<uint32_t>(dstStaging - upload.begin);
+    std::memcpy(dstStaging, data, bytes);
+    upload.ptr += bytes;
+
+    cmd->CopyBufferToImage(upload.staging.Get(), texture.Get(), RHITextureLayout::TransferDst,
+                           {{{
+                               .srcBufferOffset = srcOffset,
+                               .dstLayer = {.aspect = RHITextureAspectFlagBits::Color},
+                               .dstOffset = {0, 0, 0},
+                               .extent = {side, side, side},
+                           }}});
+
+    cmd->BeginTransition();
+    cmd->SetImageTransition(texture.Get(), {
+                                .srcImgLayout = RHITextureLayout::TransferDst,
+                                .dstImgLayout = RHITextureLayout::ShaderReadOnly,
+                                .srcImgRange = range,
+                            });
+    cmd->EndTransition();
+
+    auto view = texture->CreateTextureView({
+        .format = kFormat,
+        .dimension = RHITextureDimension::E3D,
+        .range = RHITextureSubresourceRange::Create(),
+    });
+    return pool.Allocate(std::move(texture), view.Release().Get());
 }
 
 static uint32_t GetRenderableCurveSegmentCount(FCurveSet const& src)
@@ -279,13 +335,20 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     {
         auto lutE = MakeLUT(kGGXlutE, RHIResourceFormat::R32G32SignedFloat, 32, 32);
         auto lutEavg = MakeLUT(kGGXlutEavg, RHIResourceFormat::R32SignedFloat, 32, 1);
-        const size_t budget = lutE.GetSize() + lutEavg.GetSize() + sizeof(kSobolMatrices32);
+        const size_t acesLutBytes = static_cast<size_t>(kAcesLutFloatCount) * sizeof(float);
+        const size_t budget = lutE.GetSize() + lutEavg.GetSize() + sizeof(kSobolMatrices32) + 2 * acesLutBytes;
         ImmediateUpload upload(mContext->device.Get(), budget);
         upload.Begin();
         Upload(&upload, lutE, mGGXlutEIndex);
         Upload(&upload, lutEavg, mGGXlutEavgIndex);
         char* ptr = upload.Upload(mSobolMatricesBuffer.Get(), sizeof(kSobolMatrices32), 0);
         std::memcpy(ptr, kSobolMatrices32, sizeof(kSobolMatrices32));
+        mAcesLutSdrIndex = Upload3DLut(mContext, mTexturePool, upload,
+                                               kAcesLutSdrRec709, kAcesLutSize, "ACES LUT SDR Rec.709");
+        mAcesLutHdrIndex = Upload3DLut(mContext, mTexturePool, upload,
+                                               kAcesLutHdrRec2020Pq1000Nits, kAcesLutSize, "ACES LUT HDR Rec.2020 PQ");
+        CHECK_MSG(mAcesLutSdrIndex != UINT32_MAX && mAcesLutHdrIndex != UINT32_MAX,
+                  "ACES LUT staging budget exhausted");
         upload.End();
         upload.WaitIdle();
     }
@@ -1043,6 +1106,16 @@ RHITexture* GPUScene::GetGGXlutE() const
 RHITexture* GPUScene::GetGGXlutEavg() const
 {
     return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mGGXlutEavgIndex);
+}
+
+RHITexture* GPUScene::GetAcesLutSdr() const
+{
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mAcesLutSdrIndex);
+}
+
+RHITexture* GPUScene::GetAcesLutHdr() const
+{
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mAcesLutHdrIndex);
 }
 
 RHITexture* GPUScene::GetEnvMapConditionalCDF() const

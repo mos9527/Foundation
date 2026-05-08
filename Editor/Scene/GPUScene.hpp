@@ -187,6 +187,8 @@ class GPUScene
     BindlessPool mTexturePool;
     // Precomputed LUTs (stored in texture pool)
     uint32_t mGGXlutEIndex{UINT32_MAX}, mGGXlutEavgIndex{UINT32_MAX};
+    // ACES color management 3D LUTs (RGBA32F, ACEScct [0,1] domain)
+    uint32_t mAcesLutSdrIndex{UINT32_MAX}, mAcesLutHdrIndex{UINT32_MAX};
     // Environment map (stored in texture pool)
     uint32_t mEnvMapIndex{UINT32_MAX};
     RHIDeviceScopedHandle<RHIBuffer> mEnvMapMarginalCDF;
@@ -286,6 +288,9 @@ public:
     [[nodiscard]] BindlessPool* GetTexturePool() { return &mTexturePool; }
     [[nodiscard]] RHITexture* GetGGXlutE() const;
     [[nodiscard]] RHITexture* GetGGXlutEavg() const;
+    // ACES view LUTs (3D textures, RGBA32F, ACEScct [0,1] domain).
+    [[nodiscard]] RHITexture* GetAcesLutSdr() const;
+    [[nodiscard]] RHITexture* GetAcesLutHdr() const;
     // Environment map
     void UploadEnvMap(ImmediateUpload* ctx, FTexture2D const& source);
     [[nodiscard]] RHITexture* GetEnvMap() const;

@@ -45,6 +45,8 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
     
     auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
     auto GGXlutEavg = renderer->CreateResource("GGX LUT Eavg", gpu->GetGGXlutEavg());
+    auto AcesLutSdr = renderer->CreateResource("ACES LUT SDR Rec.709", gpu->GetAcesLutSdr());
+    auto AcesLutHdr = renderer->CreateResource("ACES LUT HDR Rec.2020 PQ", gpu->GetAcesLutHdr());
     ResourceHandle EnvMapTex;
     if (gpu->GetEnvMap()) {
         EnvMapTex = renderer->CreateResource("Env Map", gpu->GetEnvMap());
@@ -251,6 +253,16 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             r->BindBufferUnordered(self, PickResultBuffer, RHIPipelineStageBits::FragmentShader, "pickResult");
             r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(int2));
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
+            // ACES color management LUTs (3D, RGBA32F, ACEScct [0,1] domain).
+            r->BindTextureSRV(self, AcesLutSdr, "viewLutSdr", RHIPipelineStageBits::FragmentShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                                 .dimension = RHITextureDimension::E3D,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSRV(self, AcesLutHdr, "viewLutHdr", RHIPipelineStageBits::FragmentShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                                 .dimension = RHITextureDimension::E3D,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSampler(self, LUTSampler, "lutSampler");
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         { r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Fragment, 0, scene.picking->pendingPixel); });

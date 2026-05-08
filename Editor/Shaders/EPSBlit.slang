@@ -8,6 +8,10 @@ Texture2D<uint32_t> overdraw;
 Texture2D<uint32_t> pickIDBuffer; // Instance ID map (R32_UINT), ~0u = no object
 RWStructuredBuffer<uint32_t> pickResult; // [0] written when fragCoord == pickPixel
 Texture2D lighting;
+// ACES OCIO-baked view LUTs. Input domain: ACEScct in [0,1].
+Texture3D<float4> viewLutSdr;
+Texture3D<float4> viewLutHdr;
+SamplerState lutSampler;
 uniform UBO globalParams;
 
 struct BlitPC { 
@@ -47,6 +51,9 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     pp.Exposure = globalParams.camEV;
     pp.HdrEnabled = globalParams.enableHDR;
     pp.HdrPaperWhiteNits = globalParams.paperWhiteNits;
+    pp.viewLutSdr = viewLutSdr;
+    pp.viewLutHdr = viewLutHdr;
+    pp.lutSampler = lutSampler;
 
     float4 result;
     if (flags & kViewOverdraw){
@@ -56,12 +63,9 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
         // Do not post process these
         result = lighting.Load(coord);
     } else {
-        // Main postprocess routine
+        // Main postprocess routine: exposure + BT.709->AP1 BFD + ACEScct shaper + 3D LUT
         float3 Lpix = lighting.Load(coord).xyz;
-        // Manual EV exposure
-        float4 L = float4(Lpix * exp2(globalParams.camEV), 1.0f);
-        L.xyz = Postprocess(L.xyz, pp);
-        result = L;
+        result = float4(Postprocess(Lpix, pp), 1.0f);
     }
 
     // Cross filter for a simple outline

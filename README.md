@@ -11,10 +11,6 @@ TODO (Editor)
 Good to have, not necessary.
 - [ ] Scene Graph, instead of AoS to represent instances.
 
-Already done.
-- [x] HDR Display Output (Standard PQ OOTF+EOTF)
-
-
 TODO (Path Tracer)
 ---
 Also w/ blog post series update on:
@@ -35,6 +31,11 @@ Some time in the future:
     this is no longer NV only I'll have a shot.
   
 Done, awaiting Blog Update:
+- [x] LUT-based ACES implementation
+  - Linear BT709 Scene Space (D65), converted to D60 via [Bradford CAT](http://www.brucelindbloom.com/index.html?Eqn_ChromAdapt.html) and encoded as [AP1](https://docs.acescentral.com/encodings/aces2065-1/#transfer-function) 
+  - Transform then encodes as [ACEScct](https://docs.acescentral.com/encodings/acescct/#encoding-function)
+  - Rest of the transform handled by LUTs in ACEScct log space, incl. EOTF. See `Scripts/OCIOBakeLUTs.py`
+  - Both SDR/HDR displays accounted for. Again, refer to the script for exact transforms used.
 - [x] Hair Shading
   - A Practical and Controllable Hair and Fur Model for Production Path Tracing [Chiang et al. 2016]
   - Impl based again based on PBRT's https://www.pbr-book.org/4ed/Reflection_Models/Scattering_from_Hair
