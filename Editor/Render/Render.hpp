@@ -52,8 +52,6 @@ struct UBO
     float ptFireflyClamp{1.0f}; // 10^x
     uint32_t ptSamplesPerPixel{1u}; // Always >= 1; fractional SPP uses ptDispatchTileSide instead.
     uint32_t ptDispatchTileSide{5u}; // 1 = full dispatch, n > 1 = 1/(n*n) tile dispatch.
-    // -- Display
-    uint32_t enableHDR{0u};
     // -- Debug
     uint32_t postShowOutline{0u};
 };

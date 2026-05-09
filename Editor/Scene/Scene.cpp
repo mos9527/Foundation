@@ -1,6 +1,7 @@
 #define CGLTF_IMPLEMENTATION
 #define CGLTF_VALIDATE_ENABLE_ASSERTS 1
 #include "Scene.hpp"
+#include "../Render/ViewLUTs.hpp"
 #include <Math/Decompose.hpp>
 #include <algorithm>
 #include <cgltf.h>
@@ -17,6 +18,7 @@
 
 namespace
 {
+constexpr char kExtFoundationColorManagement[] = "EXT_foundation_colormanagement";
 constexpr char kExtFoundationMaterials[] = "EXT_foundation_materials";
 
 cgltf_extension const* FindExtension(cgltf_extension const* extensions, cgltf_size extensionCount, char const* name)
@@ -78,6 +80,113 @@ bool ReadJSONFloat(std::string_view json, std::string_view key, float& value)
 
     value = parsed;
     return true;
+}
+
+static std::string_view Trim(std::string_view value)
+{
+    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())))
+        value.remove_prefix(1);
+    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())))
+        value.remove_suffix(1);
+    return value;
+}
+
+static bool ParseLUTTuple(std::string_view tuple, std::string_view expectedKind,
+                          std::string_view& outView, std::string_view& outLook)
+{
+    size_t first = tuple.find(" / ");
+    if (first == std::string_view::npos)
+        return false;
+    size_t second = tuple.find(" / ", first + 3);
+    if (second == std::string_view::npos)
+        return false;
+
+    std::string_view kind = Trim(tuple.substr(0, first));
+    if (kind != expectedKind)
+        return false;
+
+    outView = Trim(tuple.substr(first + 3, second - (first + 3)));
+    outLook = Trim(tuple.substr(second + 3));
+    return !outView.empty() && !outLook.empty();
+}
+
+static Pair<std::string_view, std::string_view> SplitViewLUTLabel(std::string_view label)
+{
+    size_t split = label.find(" / ");
+    if (split == std::string_view::npos)
+        return {Trim(label), std::string_view{}};
+    return {Trim(label.substr(0, split)), Trim(label.substr(split + 3))};
+}
+
+static bool ViewLUTLabelGreaterEqual(Pair<std::string_view, std::string_view> const& lhs,
+                                     Pair<std::string_view, std::string_view> const& rhs)
+{
+    int viewCompare = lhs.first.compare(rhs.first);
+    if (viewCompare != 0)
+        return viewCompare > 0;
+    return lhs.second.compare(rhs.second) >= 0;
+}
+
+static bool ViewLUTLabelLess(Pair<std::string_view, std::string_view> const& lhs,
+                             Pair<std::string_view, std::string_view> const& rhs)
+{
+    int viewCompare = lhs.first.compare(rhs.first);
+    if (viewCompare != 0)
+        return viewCompare < 0;
+    return lhs.second.compare(rhs.second) < 0;
+}
+
+template <size_t N>
+static uint32_t MatchViewLUTIndex(const ViewLUTEntry (&entries)[N], std::string_view view,
+                                  std::string_view look, uint32_t defaultIndex)
+{
+    if (view.empty())
+        return defaultIndex;
+
+    Optional<uint32_t> viewNoLook;
+    Optional<uint32_t> lexicographic;
+    Pair<std::string_view, std::string_view> lexicographicLabel;
+    Pair<std::string_view, std::string_view> target{view, look};
+
+    for (uint32_t i = 0; i < N; ++i)
+    {
+        Pair<std::string_view, std::string_view> candidate = SplitViewLUTLabel(entries[i].label);
+        if (candidate.first == view && candidate.second == look)
+            return i;
+        if (candidate.first == view && candidate.second == "No Look")
+            viewNoLook = i;
+        if (ViewLUTLabelGreaterEqual(candidate, target) &&
+            (!lexicographic.has_value() || ViewLUTLabelLess(candidate, lexicographicLabel)))
+        {
+            lexicographic = i;
+            lexicographicLabel = candidate;
+        }
+    }
+
+    if (viewNoLook.has_value())
+        return *viewNoLook;
+    if (lexicographic.has_value())
+        return *lexicographic;
+    return defaultIndex;
+}
+
+void LoadFoundationColorManagementExtension(cgltf_data const* data, FScene& scene)
+{
+    cgltf_extension const* ext = FindExtension(
+        data->data_extensions, data->data_extensions_count, kExtFoundationColorManagement);
+    if (!ext || !ext->data)
+        return;
+
+    std::string_view json(ext->data);
+    ReadJSONFloat(json, "postExposure", scene.mColorManagement.postExposure);
+
+    std::string_view tuple;
+    std::string_view view;
+    std::string_view look;
+    if (ReadJSONString(json, "sdr", tuple) && ParseLUTTuple(tuple, "SDR", view, look))
+        scene.mColorManagement.viewLutSdrIndex = MatchViewLUTIndex(kViewLUTsSdr, view, look, kDefaultViewLUTSdr);
+    if (ReadJSONString(json, "hdr", tuple) && ParseLUTTuple(tuple, "HDR", view, look))
+        scene.mColorManagement.viewLutHdrIndex = MatchViewLUTIndex(kViewLUTsHdr, view, look, kDefaultViewLUTHdr);
 }
 
 void LoadFoundationMaterialExtension(cgltf_material const* src, FMaterial& material)
@@ -280,6 +389,7 @@ void LoadGLTF(StringView path, FScene& scene)
     CHECK_MSG(result == cgltf_result_success, "Buffer load failure: {}", static_cast<int>(result));
     result = cgltf_validate(data);
     CHECK_MSG(result == cgltf_result_success, "Scene validate failure: {}", static_cast<int>(result));
+    LoadFoundationColorManagementExtension(data, scene);
     /* Materials */
     // NOTE: Material 0 is reserved as the default material:
     // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#default-material

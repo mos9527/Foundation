@@ -187,8 +187,6 @@ static void FRunning()
     GEditor.shaderGlobals.fbWidth = static_cast<float>(renderExtent.x);
     GEditor.shaderGlobals.fbHeight = static_cast<float>(renderExtent.y);
     
-    // Sync HDR parameters
-    GEditor.shaderGlobals.enableHDR = GContext->enableHDR ? 1 : 0;
     if (GEditor.cameraUpdated)
         GEditor.shaderGlobals.ptAccumulatedFrames = 0, GEditor.cameraUpdated = false;
     renderer->ExecuteFrame();

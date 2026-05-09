@@ -3,6 +3,7 @@
 #include <Core/Paths.hpp>
 #include <RenderCore/ImmediateContext.hpp>
 #include <algorithm>
+#include <cstring>
 #include <filesystem>
 #include <numbers>
 
@@ -89,17 +90,21 @@ static FTexture LoadViewLUT(StringView path)
     return texture;
 }
 
-void ApplyViewLUTSelection()
+static void UploadSelectedViewLUTs(ImmediateUpload* upload)
 {
     GEditor.viewLUTSdrIndex = std::clamp(GEditor.viewLUTSdrIndex, 0, kViewLUTSdrCount - 1);
     GEditor.viewLUTHdrIndex = std::clamp(GEditor.viewLUTHdrIndex, 0, kViewLUTHdrCount - 1);
 
     FTexture sdr = LoadViewLUT(kViewLUTsSdr[GEditor.viewLUTSdrIndex].path);
     FTexture hdr = LoadViewLUT(kViewLUTsHdr[GEditor.viewLUTHdrIndex].path);
+    GContext->gpuScene->UploadViewLUTs(upload, sdr, hdr);
+}
 
-    ImmediateUpload upload(GContext->device.Get(), sdr.GetSize() + hdr.GetSize());
+void ApplyViewLUTSelection()
+{
+    ImmediateUpload upload(GContext->device.Get(), 16 * (1u << 20));
     upload.Begin();
-    GContext->gpuScene->UploadViewLUTs(&upload, sdr, hdr);
+    UploadSelectedViewLUTs(&upload);
     upload.End();
     upload.WaitIdle();
 
@@ -196,18 +201,62 @@ static Vector<float> ReadbackAndCombineFloatRTs(RHITexture* const* sourceTexture
     return combined;
 }
 
-static void SaveSDRPNG(float const* data, uint32_t width, uint32_t height, StringView path)
+static Vector<unsigned char> ReadbackRGBA8RT(RHITexture* sourceTexture, uint32_t& outWidth, uint32_t& outHeight)
 {
-    Vector<unsigned char> rgba(static_cast<size_t>(width) * height * 4, GLOBAL_ALLOC);
-    const size_t pixelCount = static_cast<size_t>(width) * height;
-    for (size_t i = 0; i < pixelCount; ++i)
+    CHECK_MSG(sourceTexture->mDesc.format == RHIResourceFormat::R8G8B8A8Unorm,
+              "SDR readback expects R8G8B8A8Unorm, got {}", sourceTexture->mDesc.format);
+    uint32_t w = sourceTexture->mDesc.extent.x;
+    uint32_t h = sourceTexture->mDesc.extent.y;
+    outWidth = w;
+    outHeight = h;
+
+    const size_t pixelCount = static_cast<size_t>(w) * h;
+    const size_t imageBytes = pixelCount * 4;
+    auto readbackBuf = GContext->device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Readback,
+                                                                    .hostAccess = RHIResourceHostAccess::ReadWrite,
+                                                                    .coherent = true},
+                                                       .usage = RHIBufferUsageBits::TransferDestination,
+                                                       .size = imageBytes});
+
     {
-        rgba[i * 4 + 0] = static_cast<unsigned char>(std::clamp(data[i * 4 + 0], 0.0f, 1.0f) * 255.0f + 0.5f);
-        rgba[i * 4 + 1] = static_cast<unsigned char>(std::clamp(data[i * 4 + 1], 0.0f, 1.0f) * 255.0f + 0.5f);
-        rgba[i * 4 + 2] = static_cast<unsigned char>(std::clamp(data[i * 4 + 2], 0.0f, 1.0f) * 255.0f + 0.5f);
-        rgba[i * 4 + 3] = static_cast<unsigned char>(std::clamp(data[i * 4 + 3], 0.0f, 1.0f) * 255.0f + 0.5f);
+        ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
+        auto* cmd = ctx.Get();
+        cmd->Begin();
+        cmd->BeginTransition();
+        cmd->SetImageTransition(sourceTexture,
+                                {.srcAccess = RHIResourceAccessBits::ShaderRead,
+                                 .dstAccess = RHIResourceAccessBits::TransferRead,
+                                 .srcStage = RHIPipelineStageBits::FragmentShader,
+                                 .dstStage = RHIPipelineStageBits::Transfer,
+                                 .srcImgLayout = RHITextureLayout::ShaderReadOnly,
+                                 .dstImgLayout = RHITextureLayout::TransferSrc,
+                                 .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        cmd->EndTransition();
+        cmd->CopyImageToBuffer(
+            sourceTexture, RHITextureLayout::TransferSrc, readbackBuf.Get(),
+            {{{.dstBufferOffset = 0,
+               .srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
+               .extent = {w, h, 1}}}});
+        cmd->BeginTransition();
+        cmd->SetImageTransition(sourceTexture,
+                                {.srcAccess = RHIResourceAccessBits::TransferRead,
+                                 .dstAccess = RHIResourceAccessBits::ShaderRead,
+                                 .srcStage = RHIPipelineStageBits::Transfer,
+                                 .dstStage = RHIPipelineStageBits::FragmentShader,
+                                 .srcImgLayout = RHITextureLayout::TransferSrc,
+                                 .dstImgLayout = RHITextureLayout::ShaderReadOnly,
+                                 .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        cmd->EndTransition();
+        cmd->End();
+        ctx.Submit();
+        ctx.WaitIdle();
     }
-    SavePNG(rgba.data(), static_cast<int>(width), static_cast<int>(height), path);
+
+    auto* mapped = readbackBuf->Map<unsigned char>();
+    Vector<unsigned char> rgba(imageBytes, GLOBAL_ALLOC);
+    std::memcpy(rgba.data(), mapped, imageBytes);
+    readbackBuf->Unmap();
+    return rgba;
 }
 
 void DoRenderReadback(RendererHandles const& handles)
@@ -235,10 +284,10 @@ void DoRenderReadback(RendererHandles const& handles)
 
     CHECK_MSG(handles.sdrRT != kInvalidHandle, "Invalid SDR readback texture");
     RHITexture* sdrTexture = renderer->DerefResource(handles.sdrRT).Get<RHITexture*>();
-    Vector<float> sdr = ReadbackAndCombineFloatRTs(&sdrTexture, 1u, w, h);
+    Vector<unsigned char> sdr = ReadbackRGBA8RT(sdrTexture, w, h);
     const char* sdrPath =
         GEditor.renderTask.outputPath.empty() ? "render_output.png" : GEditor.renderTask.outputPath.c_str();
-    SaveSDRPNG(sdr.data(), w, h, sdrPath);
+    SavePNG(sdr.data(), static_cast<int>(w), static_cast<int>(h), sdrPath);
     LOG(Editor, LogInfo, "{} SDR image saved to {} ({}x{}, {} frames)",
         GEditor.rendererMode == ERendererMode::PathTracer ? "Path tracer" : "Raster", sdrPath, w, h,
         GEditor.shaderGlobals.ptAccumulatedFrames);
@@ -377,6 +426,9 @@ void ReplaceScene(StringView path)
     GEditor.doc.selectedCurveInstance = -1;
     GEditor.doc.selectedMaterial = -1;
     GEditor.doc.selectedLight = -1;
+    GEditor.shaderGlobals.camEV = GEditor.doc.scene.mColorManagement.postExposure;
+    GEditor.viewLUTSdrIndex = static_cast<int>(GEditor.doc.scene.mColorManagement.viewLutSdrIndex);
+    GEditor.viewLUTHdrIndex = static_cast<int>(GEditor.doc.scene.mColorManagement.viewLutHdrIndex);
 
     auto* gpu = GContext->gpuScene;
     gpu->Reset();
@@ -435,6 +487,10 @@ void ReplaceScene(StringView path)
             CHECK_MSG(GEditor.doc.scene.mViewLutSdr.IsValid() && GEditor.doc.scene.mViewLutHdr.IsValid(),
                       "Scene view LUT override must provide both SDR and HDR LUTs");
             gpu->UploadViewLUTs(&upload, GEditor.doc.scene.mViewLutSdr, GEditor.doc.scene.mViewLutHdr);
+        }
+        else
+        {
+            UploadSelectedViewLUTs(&upload);
         }
         upload.End(), upload.WaitIdle();
     }

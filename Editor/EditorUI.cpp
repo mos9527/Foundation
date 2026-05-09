@@ -253,7 +253,7 @@ void EditorDockSpaceAndMenuBar()
                         NFD_FreePathU8(outPath);
                     }
                 }
-                if (ImGui::MenuItem("Render SDR..."))
+                if (ImGui::MenuItem("Render SDR...", nullptr, false, !GContext->enableHDR))
                 {
                     nfdu8filteritem_t filters[] = {{"PNG Image", "png"}};
                     nfdsavedialogu8args_t args = {0};
@@ -268,6 +268,8 @@ void EditorDockSpaceAndMenuBar()
                         NFD_FreePathU8(outPath);
                     }
                 }
+                if (GContext->enableHDR && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                    ImGui::SetTooltip("Disable HDR output before rendering SDR PNGs.");
             }
             ImGui::EndMenu();
         }
@@ -304,8 +306,6 @@ void EditorDockSpaceAndMenuBar()
                 GEditor.renderTask.targetSamples = pathTracerRender ? GEditor.renderTask.samplePopupInput : 1;
                 GEditor.renderTask.renderPaused = false;
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
-                if (GEditor.renderTask.format == ERenderFormat::SDR)
-                    GEditor.shaderGlobals.enableHDR = 0u;
                 GEditor.state = FERendering;
                 ImGui::CloseCurrentPopup();
             }
@@ -942,7 +942,6 @@ void FRunningImGui()
         if (ImGui::Checkbox("Enable HDR", &GContext->enableHDR))
         {
             GEditor.state = FERunningEnter;
-            GEditor.shaderGlobals.enableHDR = GContext->enableHDR ? 1 : 0;
             changed = true;
         }
         if (GEditor.rendererMode == ERendererMode::PathTracer)

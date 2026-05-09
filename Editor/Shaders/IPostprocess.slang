@@ -3,7 +3,6 @@ import ITonemapping;
 public struct PostprocessInfo
 {
     public float Exposure;
-    public uint  HdrEnabled;
 }
 
 // BT.709/sRGB RGB -> XYZ Y row.
@@ -19,12 +18,9 @@ public float3 ApplyExposureEV(float3 L, float ev) {
 
 // L: BT709 Linear primaries content
 public float3 Postprocess(float3 L /* Linear */, PostprocessInfo pp,
-                          Texture3D<float4> viewLutSdr, Texture3D<float4> viewLutHdr,
-                          SamplerState lutSampler) {
+                          Texture3D<float4> viewLut, SamplerState lutSampler) {
     L = ApplyExposureEV(L, pp.Exposure);
     TonemapInfo info;
     ViewLutTonemapper op;
-    if (pp.HdrEnabled != 0)
-        return op.Perform(info, L, viewLutHdr, lutSampler);
-    return op.Perform(info, L, viewLutSdr, lutSampler);
+    return op.Perform(info, L, viewLut, lutSampler);
 }

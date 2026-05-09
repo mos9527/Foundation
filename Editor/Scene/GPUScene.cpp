@@ -1036,9 +1036,10 @@ static void CheckViewLUT(FTexture const& source, StringView name)
     CHECK_MSG(source.GetDimension() == RHITextureDimension::E3D,
               "{} view LUT must be a 3D texture, got {}", name, static_cast<uint32_t>(source.GetDimension()));
     const RHIResourceFormat format = source.GetFormat();
-    CHECK_MSG(format == RHIResourceFormat::R16G16B16A16SignedFloat ||
+    CHECK_MSG(format == RHIResourceFormat::A2B10G10R10Unorm ||
+                  format == RHIResourceFormat::R16G16B16A16SignedFloat ||
                   format == RHIResourceFormat::R32G32B32A32SignedFloat,
-              "{} view LUT must be RGBA16F or RGBA32F, got {}", name, format);
+              "{} view LUT must be RGB10A2, RGBA16F, or RGBA32F, got {}", name, format);
 }
 
 void GPUScene::UploadViewLUTs(ImmediateUpload* ctx, FTexture const& sdr, FTexture const& hdr)

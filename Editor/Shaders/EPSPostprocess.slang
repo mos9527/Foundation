@@ -6,9 +6,8 @@
 StructuredBuffer<uint32_t> globalMax;
 Texture2D<uint32_t> overdraw;
 Texture2D<float4> lighting;
-// OCIO-baked view LUTs. Input domain: ACEScct in [0,1].
-Texture3D<float4> viewLutSdr;
-Texture3D<float4> viewLutHdr;
+// OCIO-baked view LUT. Input domain: ACEScct in [0,1].
+Texture3D<float4> viewLut;
 SamplerState lutSampler;
 uniform UBO globalParams;
 
@@ -46,6 +45,5 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
 
     PostprocessInfo pp;
     pp.Exposure = globalParams.camEV;
-    pp.HdrEnabled = globalParams.enableHDR;
-    return float4(Postprocess(src.xyz, pp, viewLutSdr, viewLutHdr, lutSampler), 1.0f);
+    return float4(Postprocess(src.xyz, pp, viewLut, lutSampler), 1.0f);
 }

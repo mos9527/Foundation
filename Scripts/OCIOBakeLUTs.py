@@ -97,7 +97,7 @@ DDS_HEADER_FLAGS_VOLUME = 0x00800000
 DDS_SURFACE_FLAGS_TEXTURE = 0x00001000
 DDS_FLAGS_VOLUME = 0x00200000
 DDS_DX10_FOURCC = 0x30315844
-DXGI_FORMAT_R16G16B16A16_FLOAT = 10
+DXGI_FORMAT_R10G10B10A2_UNORM = 24
 DDS_DIMENSION_TEXTURE3D = 4
 
 def create_config() -> ocio.Config:
@@ -218,15 +218,23 @@ def bake_lut_rgba(processor: ocio.CPUProcessor, size: int) -> np.ndarray:
     return out
 
 
+def pack_rgb10a2_unorm(lut: np.ndarray) -> bytes:
+    rgba = np.clip(lut, 0.0, 1.0).reshape(-1, 4)
+    rgb = np.rint(rgba[:, :3] * 1023.0).astype(np.uint32)
+    alpha = np.rint(rgba[:, 3] * 3.0).astype(np.uint32)
+    packed = rgb[:, 0] | (rgb[:, 1] << 10) | (rgb[:, 2] << 20) | (alpha << 30)
+    return packed.astype(np.dtype("<u4"), copy=False).tobytes(order="C")
+
+
 def write_lut_dds(path: Path, lut: np.ndarray, size: int) -> None:
-    """Write a single-mip 3D DDS using DXGI_FORMAT_R16G16B16A16_FLOAT."""
+    """Write a single-mip 3D DDS using DXGI_FORMAT_R10G10B10A2_UNORM."""
     texels = size * size * size
     expected_values = texels * 4
     if lut.size != expected_values:
         raise ValueError(f"Expected {expected_values} float values for {size}^3 RGBA LUT, got {lut.size}")
 
-    payload = lut.astype(np.dtype("<f2"), copy=False).tobytes(order="C")
-    expected_payload_size = texels * 4 * 2
+    payload = pack_rgb10a2_unorm(lut)
+    expected_payload_size = texels * 4
     if len(payload) != expected_payload_size:
         raise ValueError(f"Expected {expected_payload_size} DDS payload bytes, got {len(payload)}")
 
@@ -259,7 +267,7 @@ def write_lut_dds(path: Path, lut: np.ndarray, size: int) -> None:
     )
     header10 = struct.pack(
         "<5I",
-        DXGI_FORMAT_R16G16B16A16_FLOAT,
+        DXGI_FORMAT_R10G10B10A2_UNORM,
         DDS_DIMENSION_TEXTURE3D,
         0,
         1,
@@ -383,7 +391,7 @@ def main() -> None:
     print(f"Scene input:     {SCENE_INPUT_SPACE}")
     print(f"Processor input: {PROCESSOR_INPUT_SPACE}")
     print("Shaper: BT.709/D65 -> AP1/D60 Bradford -> ACEScct (raw [0,1] LUT domain)")
-    print(f"Size:   {LUT_SIZE}^3, baked RGBA32F, DDS RGBA16F")
+    print(f"Size:   {LUT_SIZE}^3, baked RGBA32F, DDS RGB10A2 UNORM")
     print(f"Views:  {len(views)} ({sum(1 for view in views if view['kind'] == 'sdr')} SDR, "
           f"{sum(1 for view in views if view['kind'] == 'hdr')} HDR)")
 

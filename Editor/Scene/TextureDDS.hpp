@@ -471,6 +471,9 @@ inline void ddsSetFormat(DDS_HEADER& header, DDS_HEADER_DXT10& header10, uint32_
     case R8G8B8A8Srgb:
         header10.dxgiFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
         break;
+    case A2B10G10R10Unorm:
+        header10.dxgiFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
+        break;
     case R16G16B16A16SignedFloat:
         header10.dxgiFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
         break;

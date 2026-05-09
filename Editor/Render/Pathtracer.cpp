@@ -45,8 +45,9 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
     auto SobolMatricesBuffer = renderer->CreateResource("Sobol Matrices Buffer", gpu->GetSobolMatricesBuffer());
     
     auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
-    auto ViewLutSdr = renderer->CreateResource("View LUT SDR", gpu->GetViewLutSdr());
-    auto ViewLutHdr = renderer->CreateResource("View LUT HDR", gpu->GetViewLutHdr());
+    RHITexture* viewLutTexture = context->enableHDR ? gpu->GetViewLutHdr() : gpu->GetViewLutSdr();
+    RHIResourceFormat viewLutFormat = viewLutTexture->mDesc.format;
+    auto ViewLut = renderer->CreateResource(context->enableHDR ? "View LUT HDR" : "View LUT SDR", viewLutTexture);
     ResourceHandle EnvMapTex;
     if (gpu->GetEnvMap()) {
         EnvMapTex = renderer->CreateResource("Env Map", gpu->GetEnvMap());
@@ -73,13 +74,16 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
                                                                 RHITextureUsageBits::TransferSource,
                                                             .extent = {w, h, 1},
                                                             .format = RHIResourceFormat::R32G32B32A32SignedFloat});
+    const RHIResourceFormat postprocessFormat = context->enableHDR
+        ? RHIResourceFormat::A2B10G10R10Unorm
+        : RHIResourceFormat::R8G8B8A8Unorm;
     auto PostprocessBuffer = renderer->CreateResource(
         "Postprocess",
         RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
                                   RHITextureUsageBits::SampledImage |
                                   RHITextureUsageBits::TransferSource,
                        .extent = {w, h, 1},
-                       .format = RHIResourceFormat::R32G32B32A32SignedFloat});
+                       .format = postprocessFormat});
     // Instance ID map: R32_UINT, written every frame on primary hit (no accumulation)
     auto PickIDBuffer = renderer->CreateResource(
         "Pick ID Buffer",
@@ -238,7 +242,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
 
     createPSFullscreenPassRTV(
         renderer, "Postprocess", PostprocessBuffer,
-        RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+        RHITextureViewDesc{.format = postprocessFormat,
                            .range = RHITextureSubresourceRange::Create()},
         {w, h},
         [=](PassHandle self, Renderer* r)
@@ -254,12 +258,8 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             bindSRV(Diffuse, "diffuseTex");
             bindSRV(Specular, "specularTex");
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
-            r->BindTextureSRV(self, ViewLutSdr, "viewLutSdr", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
-                                                 .dimension = RHITextureDimension::E3D,
-                                                 .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureSRV(self, ViewLutHdr, "viewLutHdr", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
+            r->BindTextureSRV(self, ViewLut, "viewLut", RHIPipelineStageBits::FragmentShader,
+                              RHITextureViewDesc{.format = viewLutFormat,
                                                  .dimension = RHITextureDimension::E3D,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSampler(self, LUTSampler, "lutSampler");
@@ -272,7 +272,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
         {
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Paths::Resolve("data/shaders/EPSBlitPT.spv"));
             r->BindTextureSRV(self, PostprocessBuffer, "displayImage", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                              RHITextureViewDesc{.format = postprocessFormat,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSRV(self, PickIDBuffer, "pickIDBuffer", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
