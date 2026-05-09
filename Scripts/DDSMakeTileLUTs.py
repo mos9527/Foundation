@@ -91,7 +91,7 @@ def unpack_rgb10a2_unorm(packed: int) -> tuple[float, float, float]:
     return r, g, b
 
 
-def build_u_tiled_bgr(lut: Dds3DLut, linear_input: bool) -> tuple[int, int, bytes]:
+def build_u_tiled_bgr(lut: Dds3DLut, linear_input: bool, flip_u: bool, flip_v: bool) -> tuple[int, int, bytes]:
     output_width = lut.width * lut.depth
     output_height = lut.height
     if output_width > 65535 or output_height > 65535:
@@ -110,8 +110,10 @@ def build_u_tiled_bgr(lut: Dds3DLut, linear_input: bool) -> tuple[int, int, byte
                     g = srgb_encode(g)
                     b = srgb_encode(b)
 
-                dst_x = slice_z * lut.width + x
-                dst = (y * output_width + dst_x) * 3
+                local_x = lut.width - 1 - x if flip_u else x
+                local_y = lut.height - 1 - y if flip_v else y
+                dst_x = slice_z * lut.width + local_x
+                dst = (local_y * output_width + dst_x) * 3
                 pixels[dst + 0] = unorm8(b)
                 pixels[dst + 1] = unorm8(g)
                 pixels[dst + 2] = unorm8(r)
@@ -161,13 +163,20 @@ def parse_args() -> argparse.Namespace:
             "from OCIOBakeLUTs.py, which are already display-encoded"
         ),
     )
+    parser.add_argument("--flip-u", action="store_true", help="flip X/U within each slice tile")
+    parser.add_argument("--flip-v", action="store_true", help="flip Y/V within each slice tile (NOTE: Needed for Unity)")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     lut = read_rgb10a2_3d_dds(args.input)
-    width, height, bgr_pixels = build_u_tiled_bgr(lut, linear_input=args.linear_input)
+    width, height, bgr_pixels = build_u_tiled_bgr(
+        lut,
+        linear_input=args.linear_input,
+        flip_u=args.flip_u,
+        flip_v=args.flip_v,
+    )
     write_tga(args.output, width, height, bgr_pixels)
     print(f"Read  {args.input} ({lut.width}x{lut.height}x{lut.depth} RGB10A2 3D DDS)")
     print(f"Wrote {args.output} ({width}x{height} U-tiled 24-bit TGA)")

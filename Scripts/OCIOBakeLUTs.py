@@ -84,8 +84,7 @@ LUT_SELECTIONS: dict[str, list[tuple[str, list[str | None]]]] = {
     ],
 }
 
-# Small enough to iterate quickly while testing the pipeline. Use 64 for production.
-LUT_SIZE = 33
+LUT_SIZE = 32
 DDS_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "Editor" / "Render" / "Data"
 VIEW_LUTS_HEADER_PATH = Path(__file__).resolve().parent.parent / "Editor" / "Render" / "ViewLUTs.hpp"
 WRITE_CPP_HEADER = False
