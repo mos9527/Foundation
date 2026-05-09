@@ -17,9 +17,7 @@ from pathlib import Path
 import numpy as np
 import PyOpenColorIO as ocio  # type: ignore[reportMissingImports]
 
-DEFAULT_BLENDER_OCIO_CONFIG = Path(
-    r"C:\Program Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\colormanagement\config.ocio"
-)
+DEFAULT_BLENDER_OCIO_CONFIG = Path(__file__).resolve().parent / "blender-5-1-colormanagement" / "config.ocio"
 BLENDER_OCIO_CONFIG = Path(os.environ.get("FOUNDATION_BLENDER_OCIO_CONFIG", DEFAULT_BLENDER_OCIO_CONFIG))
 CONFIG_NAME = str(BLENDER_OCIO_CONFIG)
 PROCESSOR_INPUT_SPACE = "ACEScct"
