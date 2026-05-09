@@ -445,6 +445,13 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                                   RHITextureUsageBits::TransferSource,
                        .extent = {w, h, 1},
                        .format = RHIResourceFormat::R32G32B32A32SignedFloat});
+    auto PostprocessBuffer = renderer->CreateResource(
+        "Postprocess",
+        RHITextureDesc{.usage = RHITextureUsageBits::RenderTarget |
+                                  RHITextureUsageBits::SampledImage |
+                                  RHITextureUsageBits::TransferSource,
+                       .extent = {w, h, 1},
+                       .format = RHIResourceFormat::R32G32B32A32SignedFloat});
 
     auto LUTSampler = renderer->CreateSampler({
     .addressMode = {
@@ -500,12 +507,15 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
             r->CmdDispatch(self, cmd, {w, h, 1});
         });
 
-    createPSFullscreenPass(
-        renderer, "Blit Image",
+    createPSFullscreenPassRTV(
+        renderer, "Postprocess", PostprocessBuffer,
+        RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                           .range = RHITextureSubresourceRange::Create()},
+        {w, h},
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Paths::Resolve("data/shaders/EPSBlit.spv"),
-                          AsBytes(AsSpan(cfg.viewFlags)));
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
+                          Paths::Resolve("data/shaders/EPSPostprocess.spv"), AsBytes(AsSpan(cfg.viewFlags)));
             r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create(
@@ -513,14 +523,8 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
             r->BindTextureSRV(self, OverdrawBuffer, "overdraw", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                  .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureSRV(self, PickIDBuffer, "pickIDBuffer", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
-                                                 .range = RHITextureSubresourceRange::Create()});
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
             r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader, "globalMax");
-            r->BindBufferUnordered(self, PickResultBuffer, RHIPipelineStageBits::FragmentShader, "pickResult");
-            r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(int2));
-            // Display transform LUTs (3D, RGBA32F).
             r->BindTextureSRV(self, ViewLutSdr, "viewLutSdr", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                  .dimension = RHITextureDimension::E3D,
@@ -531,6 +535,24 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSampler(self, LUTSampler, "lutSampler");
         },
+        [](PassHandle, Renderer*, RHICommandList*) {});
+
+    createPSFullscreenPass(
+        renderer, "Blit Image",
+        [=](PassHandle self, Renderer* r)
+        {
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Paths::Resolve("data/shaders/EPSBlit.spv"));
+            r->BindTextureSRV(self, PostprocessBuffer, "displayImage", RHIPipelineStageBits::FragmentShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                                 .range = RHITextureSubresourceRange::Create(
+                                                     RHITextureAspectFlagBits::Color, 0, 1)});
+            r->BindTextureSRV(self, PickIDBuffer, "pickIDBuffer", RHIPipelineStageBits::FragmentShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
+            r->BindBufferUnordered(self, PickResultBuffer, RHIPipelineStageBits::FragmentShader, "pickResult");
+            r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(int2));
+        },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             // Push pick pixel coordinate every frame; (-1,-1) = no pending pick
@@ -538,5 +560,6 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
         });
     outHandles.hdrRT[0] = LightingBuffer;
     outHandles.numHdrRT = 1u;
+    outHandles.sdrRT = PostprocessBuffer;
     outHandles.pickBuffer = PickResultBuffer;
 }

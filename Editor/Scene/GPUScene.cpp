@@ -1,5 +1,6 @@
 #include "../Render/Precompute.hpp"
 #include "../Render/Tables.hpp"
+#include "../Render/ViewLUTs.hpp"
 #include <Core/AllocatorStack.hpp>
 #include <Core/Paths.hpp>
 #include <Math/Quantize.hpp>
@@ -283,9 +284,9 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     {
         auto lutE = MakeLUT(kGGXlutE, RHIResourceFormat::R32G32SignedFloat, 32, 32);
         auto defaultViewLutSdr =
-            LoadLUT(mContext->allocator, "data/assets/aces_sdr_rec709.dds");
+            LoadLUT(mContext->allocator, kViewLUTsSdr[kDefaultViewLUTSdr].path);
         auto defaultViewLutHdr =
-            LoadLUT(mContext->allocator, "data/assets/aces_hdr_rec2020_pq_1000nits.dds");
+            LoadLUT(mContext->allocator, kViewLUTsHdr[kDefaultViewLUTHdr].path);
         const size_t budget =
             lutE.GetSize() + sizeof(kSobolMatrices32) + defaultViewLutSdr.GetSize() + defaultViewLutHdr.GetSize();
         ImmediateUpload upload(mContext->device.Get(), budget);

@@ -1,5 +1,6 @@
 #pragma once
 #include "Editor.hpp"
+#include "Render/ViewLUTs.hpp"
 #include "Scene/Texture.hpp"
 #include <ImGuizmo.h>
 #include <algorithm>
@@ -195,6 +196,8 @@ struct EditorState
     EditorViewportState viewport;
     RendererConfig  rendererConfig;
     ERendererMode   rendererMode = ERendererMode::PathTracer;
+    int             viewLUTSdrIndex = kDefaultViewLUTSdr;
+    int             viewLUTHdrIndex = kDefaultViewLUTHdr;
 
     UBO             shaderGlobals;
     FArcballCamera  camera{
@@ -217,6 +220,7 @@ void UpdateSceneLights();
 void ReplaceScene(StringView path);
 void SaveScene(StringView path);
 void LoadEnvMap(StringView path);
+void ApplyViewLUTSelection();
 void HandleFile(const char* filePath);
 
 void EditorDockSpaceAndMenuBar();
@@ -224,5 +228,5 @@ void FHierarchyPanel();
 void FLightingPanel();
 void FRunningImGui();
 
-void DoHDRReadback(RendererHandles const& handles);
+void DoRenderReadback(RendererHandles const& handles);
 void FRendering(RendererHandles const& handles);

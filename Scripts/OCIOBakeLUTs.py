@@ -6,27 +6,10 @@
 # ]
 # ///
 
-CONFIG_NAME = "cg-config-v2.2.0_aces-v1.3_ocio-v2.4"
-PROCESSOR_INPUT_SPACE = "ACEScct"
-SCENE_INPUT_SPACE = "Linear Rec.709 (sRGB)"
-
-VIEWS = [
-    {
-        "name": "sdr_rec709",
-        "ident": "kAcesLutSdrRec709",
-        "display": "sRGB - Display",
-        "view": "ACES 1.0 - SDR Video",
-    },
-    {
-        "name": "hdr_rec2020_pq_1000nits",
-        "ident": "kAcesLutHdrRec2020Pq1000Nits",
-        "display": "Rec.2100-PQ - Display",
-        "view": "ACES 1.1 - HDR Video (1000 nits & Rec.2020 lim)",
-    },
-]
-
 from __future__ import annotations
 
+import os
+import re
 import struct
 import time
 from pathlib import Path
@@ -34,12 +17,78 @@ from pathlib import Path
 import numpy as np
 import PyOpenColorIO as ocio  # type: ignore[reportMissingImports]
 
+DEFAULT_BLENDER_OCIO_CONFIG = Path(
+    r"C:\Program Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\colormanagement\config.ocio"
+)
+BLENDER_OCIO_CONFIG = Path(os.environ.get("FOUNDATION_BLENDER_OCIO_CONFIG", DEFAULT_BLENDER_OCIO_CONFIG))
+CONFIG_NAME = str(BLENDER_OCIO_CONFIG)
+PROCESSOR_INPUT_SPACE = "ACEScct"
+SCENE_INPUT_SPACE = "Linear Rec.709 (sRGB)"
 
+LUT_OUTPUTS = [
+    {
+        "kind": "sdr",
+        "display": "sRGB",
+        "default_view": "ACES 1.3",
+        "default_look": None,
+        "array_name": "kViewLUTsSdr",
+        "count_name": "kViewLUTSdrCount",
+        "default_name": "kDefaultViewLUTSdr",
+    },
+    {
+        "kind": "hdr",
+        "display": "Rec.2100-PQ",
+        "default_view": "ACES 1.3 - HDR 1000 nits",
+        "default_look": None,
+        "array_name": "kViewLUTsHdr",
+        "count_name": "kViewLUTHdrCount",
+        "default_name": "kDefaultViewLUTHdr",
+    },
+]
 
+FILMIC_LOOKS = [
+    "Very High Contrast",
+    "High Contrast",
+    "Medium High Contrast",
+    "Medium Contrast",
+    "Medium Low Contrast",
+    "Low Contrast",
+    "Very Low Contrast",
+]
+
+AGX_LOOKS = [
+    "AgX - Punchy",
+    "AgX - Greyscale",
+    "AgX - Very High Contrast",
+    "AgX - High Contrast",
+    "AgX - Medium High Contrast",
+    "AgX - Base Contrast",
+    "AgX - Medium Low Contrast",
+    "AgX - Low Contrast",
+    "AgX - Very Low Contrast",
+]
+
+LUT_SELECTIONS: dict[str, list[tuple[str, list[str | None]]]] = {
+    "sdr": [
+        ("Standard", [None]),
+        ("ACES 1.3", [None, "ACES 1.3 - Reference Gamut Compression"]),
+        ("ACES 2.0", [None, "ACES 2.0 - Reference Gamut Compression"]),
+        ("AgX", [None, *AGX_LOOKS]),
+        ("Filmic", [None, *FILMIC_LOOKS]),
+    ],
+    "hdr": [
+        ("Standard", [None]),
+        ("ACES 1.3 - HDR 1000 nits", [None, "ACES 1.3 - Reference Gamut Compression"]),
+        ("ACES 2.0 - HDR 1000 nits", [None, "ACES 2.0 - Reference Gamut Compression"]),
+        ("AgX - HDR 1000 nits", [None, *AGX_LOOKS]),
+    ],
+}
 
 # Small enough to iterate quickly while testing the pipeline. Use 64 for production.
 LUT_SIZE = 33
 DDS_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "Editor" / "Render" / "Data"
+VIEW_LUTS_HEADER_PATH = Path(__file__).resolve().parent.parent / "Editor" / "Render" / "ViewLUTs.hpp"
+WRITE_CPP_HEADER = False
 
 DDS_MAGIC = b"DDS "
 DDS_FOURCC = 0x00000004
@@ -53,20 +102,91 @@ DDS_DIMENSION_TEXTURE3D = 4
 
 def create_config() -> ocio.Config:
     try:
-        return ocio.Config.CreateFromBuiltinConfig(CONFIG_NAME)
+        return ocio.Config.CreateFromFile(str(BLENDER_OCIO_CONFIG))
     except Exception as exc:
-        builtins = [name for name, *_ in ocio.BuiltinConfigRegistry().getBuiltinConfigs()]
         raise RuntimeError(
-            f"OCIO built-in config '{CONFIG_NAME}' is unavailable. Available configs: {builtins}"
+            f"Blender OCIO config '{BLENDER_OCIO_CONFIG}' is unavailable. "
+            "Set FOUNDATION_BLENDER_OCIO_CONFIG to Blender's datafiles/colormanagement/config.ocio."
         ) from exc
 
 
-def create_processor(config: ocio.Config, display: str, view: str) -> ocio.CPUProcessor:
-    transform = ocio.DisplayViewTransform(
+def _slug(value: str) -> str:
+    return re.sub(r"_+", "_", re.sub(r"[^a-z0-9]+", "_", value.lower())).strip("_")
+
+
+def _ident(value: str) -> str:
+    return "".join(part.capitalize() for part in _slug(value).split("_"))
+
+
+def _cpp_string(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def build_view_specs(config: ocio.Config) -> list[dict]:
+    available_looks = {look.getName() for look in config.getLooks()}
+    specs: list[dict] = []
+    seen_names: set[str] = set()
+
+    for output in LUT_OUTPUTS:
+        display = output["display"]
+        available_views = set(config.getViews(display))
+        for view, looks in LUT_SELECTIONS[output["kind"]]:
+            if view not in available_views:
+                raise ValueError(f"Display '{display}' has no view '{view}'. Available views: {sorted(available_views)}")
+            for look in looks:
+                if look is not None and look not in available_looks:
+                    raise ValueError(f"OCIO config has no look '{look}'. Available looks: {sorted(available_looks)}")
+
+                look_slug = "no_look" if look is None else f"look_{_slug(look)}"
+                name = f"view_lut_{output['kind']}_{_slug(view)}_{look_slug}"
+                if name in seen_names:
+                    raise ValueError(f"Duplicate LUT name generated: {name}")
+                seen_names.add(name)
+
+                label = f"{view} / {'No Look' if look is None else look}"
+                specs.append({
+                    "kind": output["kind"],
+                    "display": display,
+                    "view": view,
+                    "look": look,
+                    "name": name,
+                    "ident": f"kViewLut{_ident(output['kind'])}{_ident(view)}{_ident(look_slug)}",
+                    "label": label,
+                    "path": f"data/assets/{name}.dds",
+                })
+
+    return specs
+
+
+def create_processor(config: ocio.Config, view_spec: dict) -> ocio.CPUProcessor:
+    display = view_spec["display"]
+    view = view_spec["view"]
+    look = view_spec.get("look")
+
+    available_views = set(config.getViews(display))
+    if view not in available_views:
+        raise ValueError(f"Display '{display}' has no view '{view}'. Available views: {sorted(available_views)}")
+
+    display_transform = ocio.DisplayViewTransform(
         src=PROCESSOR_INPUT_SPACE,
         display=display,
         view=view,
     )
+    if look is None:
+        return config.getProcessor(display_transform).getDefaultCPUProcessor()
+
+    available_looks = {config_look.getName() for config_look in config.getLooks()}
+    if look not in available_looks:
+        raise ValueError(f"OCIO config has no look '{look}'. Available looks: {sorted(available_looks)}")
+
+    look_transform = ocio.LookTransform(
+        src=PROCESSOR_INPUT_SPACE,
+        dst=PROCESSOR_INPUT_SPACE,
+        looks=look,
+    )
+    transform = ocio.GroupTransform()
+    transform.appendTransform(look_transform)
+    transform.appendTransform(display_transform)
     return config.getProcessor(transform).getDefaultCPUProcessor()
 
 
@@ -208,10 +328,55 @@ def write_aces_luts_header(path: Path, baked: list[tuple[dict, np.ndarray]]) -> 
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def write_view_luts_header(path: Path, views: list[dict]) -> None:
+    lines: list[str] = []
+    lines.append(f"// Generated by Scripts/{Path(__file__).name}")
+    lines.append(f"// OCIO config: {CONFIG_NAME}")
+    lines.append("#pragma once")
+    lines.append("#include <cstdint>")
+    lines.append("")
+    lines.append("struct ViewLUTEntry")
+    lines.append("{")
+    lines.append("    const char* label;")
+    lines.append("    const char* path;")
+    lines.append("};")
+    lines.append("")
+
+    for output in LUT_OUTPUTS:
+        output_views = [view for view in views if view["kind"] == output["kind"]]
+        if not output_views:
+            raise ValueError(f"No LUTs generated for {output['kind']}")
+
+        lines.append(f"inline constexpr ViewLUTEntry {output['array_name']}[] = {{")
+        for view in output_views:
+            lines.append(f"    {{\"{_cpp_string(view['label'])}\", \"{_cpp_string(view['path'])}\"}},")
+        lines.append("};")
+        lines.append("")
+
+        lines.append(
+            f"inline constexpr int {output['count_name']} = "
+            f"static_cast<int>(sizeof({output['array_name']}) / sizeof({output['array_name']}[0]));"
+        )
+        default_index = next(
+            (
+                index for index, view in enumerate(output_views)
+                if view["view"] == output["default_view"] and view["look"] == output["default_look"]
+            ),
+            None,
+        )
+        if default_index is None:
+            raise ValueError(f"Default LUT not found for {output['kind']}")
+        lines.append(f"inline constexpr int {output['default_name']} = {default_index};")
+        lines.append("")
+
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def main() -> None:
     header_path = Path(__file__).resolve().parent.parent / "Editor" / "Render" / "ACESLuts.hpp"
 
     config = create_config()
+    views = build_view_specs(config)
 
     print(f"Using OCIO {ocio.__version__}")
     print(f"Config: {CONFIG_NAME}")
@@ -219,11 +384,18 @@ def main() -> None:
     print(f"Processor input: {PROCESSOR_INPUT_SPACE}")
     print("Shaper: BT.709/D65 -> AP1/D60 Bradford -> ACEScct (raw [0,1] LUT domain)")
     print(f"Size:   {LUT_SIZE}^3, baked RGBA32F, DDS RGBA16F")
+    print(f"Views:  {len(views)} ({sum(1 for view in views if view['kind'] == 'sdr')} SDR, "
+          f"{sum(1 for view in views if view['kind'] == 'hdr')} HDR)")
+
+    DDS_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    for stale in DDS_OUTPUT_DIR.glob("view_lut_*.dds"):
+        stale.unlink()
 
     baked: list[tuple[dict, np.ndarray]] = []
-    for view in VIEWS:
-        print(f"\nBaking {view['name']}: {view['display']} / {view['view']}")
-        processor = create_processor(config, view["display"], view["view"])
+    for view in views:
+        look = "No Look" if view["look"] is None else view["look"]
+        print(f"\nBaking {view['name']}: {view['display']} / {view['view']} / {look}")
+        processor = create_processor(config, view)
 
         start = time.perf_counter()
         lut = bake_lut_rgba(processor, LUT_SIZE)
@@ -231,13 +403,18 @@ def main() -> None:
 
         size_kb = lut.nbytes / 1024.0
         print(f"    {lut.size} floats, {size_kb:.1f} KiB, {elapsed:.2f}s")
-        dds_path = DDS_OUTPUT_DIR / f"aces_{view['name']}.dds"
+        dds_path = DDS_OUTPUT_DIR / f"{view['name']}.dds"
         write_lut_dds(dds_path, lut, LUT_SIZE)
         print(f"    wrote {dds_path}")
-        baked.append((view, lut))
+        if WRITE_CPP_HEADER:
+            baked.append((view, lut))
 
-    write_aces_luts_header(header_path, baked)
-    print(f"\nwrote {header_path}")
+    write_view_luts_header(VIEW_LUTS_HEADER_PATH, views)
+    print(f"\nwrote {VIEW_LUTS_HEADER_PATH}")
+
+    if WRITE_CPP_HEADER:
+        write_aces_luts_header(header_path, baked)
+        print(f"\nwrote {header_path}")
 
 
 if __name__ == "__main__":

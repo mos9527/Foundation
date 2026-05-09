@@ -1,18 +1,8 @@
 import IFlags;
 import ICommon;
-import IPostprocess;
-import IMath;
-import glsl;
-[[SpecializationConstant]] int flags;
-// Buffers (Welford online mean — already averaged)
-Texture2D diffuseTex;
-Texture2D specularTex;
 Texture2D<uint32_t> pickIDBuffer; // Instance ID map (R32_UINT), ~0u = no object
 RWStructuredBuffer<uint32_t> pickResult; // [0] written when fragCoord == pickPixel
-// OCIO-baked view LUTs. Input domain: ACEScct in [0,1].
-Texture3D<float4> viewLutSdr;
-Texture3D<float4> viewLutHdr;
-SamplerState lutSampler;
+Texture2D<float4> displayImage;
 uniform UBO globalParams;
 
 struct PickPC { int px; int py; };
@@ -27,23 +17,7 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     if (pickPC.px >= 0 && int(fragCoord.x) == pickPC.px && int(fragCoord.y) == pickPC.py)
         pickResult[0] = instanceID;
 
-    PostprocessInfo pp;
-    pp.Exposure = globalParams.camEV;
-    pp.HdrEnabled = globalParams.enableHDR;
-    float4 result;
-    if ((flags & (kViewAOVDiffuse | kViewAOVSpecular)) != 0) {
-        // Per-lobe AOV isolation views (tone mapped)
-        float3 aov = float3(0);
-        if ((flags & kViewAOVDiffuse) != 0)  aov = diffuseTex.Load(coord).xyz;
-        if ((flags & kViewAOVSpecular) != 0) aov = specularTex.Load(coord).xyz;
-        result = float4(Postprocess(aov, pp, viewLutSdr, viewLutHdr, lutSampler), 1.0f);
-    } else {
-        // Composite lighting = diffuse + specular (already averaged), then view LUT grade
-        float3 diffuse  = diffuseTex.Load(coord).xyz;
-        float3 specular = specularTex.Load(coord).xyz;
-        float3 Lpix = diffuse + specular;
-        result = float4(Postprocess(Lpix, pp, viewLutSdr, viewLutHdr, lutSampler), 1.0f);
-    }
+    float4 result = displayImage.Load(coord);
 
     // Cross filter for a simple outline
     if (globalParams.postShowOutline != 0 && pickID != ~0u) {

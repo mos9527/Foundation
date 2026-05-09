@@ -155,6 +155,7 @@ struct RendererHandles
 {
     ResourceHandle hdrRT[2]{kInvalidHandle, kInvalidHandle};
     uint32_t numHdrRT{0u};
+    ResourceHandle sdrRT{kInvalidHandle};
     ResourceHandle pickBuffer{kInvalidHandle}; // R32_UINT, 4 bytes, persistently mapped
 
 };

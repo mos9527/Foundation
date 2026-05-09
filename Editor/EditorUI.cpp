@@ -253,6 +253,21 @@ void EditorDockSpaceAndMenuBar()
                         NFD_FreePathU8(outPath);
                     }
                 }
+                if (ImGui::MenuItem("Render SDR..."))
+                {
+                    nfdu8filteritem_t filters[] = {{"PNG Image", "png"}};
+                    nfdsavedialogu8args_t args = {0};
+                    args.filterList = filters;
+                    args.filterCount = 1;
+                    nfdu8char_t* outPath = nullptr;
+                    if (NFD_SaveDialogU8_With(&outPath, &args) == NFD_OKAY)
+                    {
+                        GEditor.renderTask.outputPath = outPath;
+                        GEditor.renderTask.format = ERenderFormat::SDR;
+                        GEditor.renderTask.openRenderPopup = true;
+                        NFD_FreePathU8(outPath);
+                    }
+                }
             }
             ImGui::EndMenu();
         }
@@ -266,7 +281,8 @@ void EditorDockSpaceAndMenuBar()
         if (ImGui::BeginPopupModal("Render Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
             const bool pathTracerRender = GEditor.rendererMode == ERendererMode::PathTracer;
-            ImGui::Text("Configure %s HDR render:", pathTracerRender ? "path tracer" : "raster");
+            const char* formatLabel = GEditor.renderTask.format == ERenderFormat::HDR ? "HDR" : "SDR";
+            ImGui::Text("Configure %s %s render:", pathTracerRender ? "path tracer" : "raster", formatLabel);
             ImGui::Text("Output: %s", GEditor.renderTask.outputPath.c_str());
             ImGui::Separator();
             if (pathTracerRender)
@@ -288,6 +304,8 @@ void EditorDockSpaceAndMenuBar()
                 GEditor.renderTask.targetSamples = pathTracerRender ? GEditor.renderTask.samplePopupInput : 1;
                 GEditor.renderTask.renderPaused = false;
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                if (GEditor.renderTask.format == ERenderFormat::SDR)
+                    GEditor.shaderGlobals.enableHDR = 0u;
                 GEditor.state = FERendering;
                 ImGui::CloseCurrentPopup();
             }
@@ -892,6 +910,35 @@ void FRunningImGui()
     {
         bool changed = false;
         ImGui::SeparatorText("Display");
+        bool viewLUTChanged = false;
+        auto viewLUTCombo = [](const char* label, int& index, const ViewLUTEntry* entries, int count)
+        {
+            index = std::clamp(index, 0, count - 1);
+            bool selected = false;
+            if (ImGui::BeginCombo(label, entries[index].label))
+            {
+                for (int i = 0; i < count; ++i)
+                {
+                    const bool isSelected = i == index;
+                    if (ImGui::Selectable(entries[i].label, isSelected))
+                    {
+                        index = i;
+                        selected = true;
+                    }
+                    if (isSelected)
+                        ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+            return selected;
+        };
+        viewLUTChanged |= viewLUTCombo("SDR LUT", GEditor.viewLUTSdrIndex, kViewLUTsSdr, kViewLUTSdrCount);
+        viewLUTChanged |= viewLUTCombo("HDR LUT", GEditor.viewLUTHdrIndex, kViewLUTsHdr, kViewLUTHdrCount);
+        if (viewLUTChanged)
+        {
+            ApplyViewLUTSelection();
+            changed = true;
+        }
         if (ImGui::Checkbox("Enable HDR", &GContext->enableHDR))
         {
             GEditor.state = FERunningEnter;
@@ -1207,8 +1254,7 @@ void FRendering(RendererHandles const& handles)
     }
     else if (GEditor.shaderGlobals.ptAccumulatedFrames >= targetFrames)
     {
-        if (handles.numHdrRT > 0u)
-            DoHDRReadback(handles);
+        DoRenderReadback(handles);
         GEditor.state = FERunning;
     }
 }

@@ -290,6 +290,15 @@ void LoadGLTF(StringView path, FScene& scene)
     // Extra texture flags. Mostly used for sRGB to linear conversion
     constexpr unsigned kTextureInSRGB = 1 << 0;
     Vector<unsigned> textureFlags(data->textures_count, 0, GLOBAL_ALLOC);
+    auto assignTextureIndex = [&](cgltf_texture_view const& view, unsigned flags = 0u) -> uint32_t
+    {
+        if (!view.texture)
+            return kInvalidTexture;
+        size_t index = cgltf_texture_index(data, view.texture);
+        CHECK_MSG(index < data->textures_count, "glTF texture index out of range");
+        textureFlags[index] |= flags;
+        return static_cast<uint32_t>(index);
+    };
     for (size_t i = 0; i < data->materials_count; i++)
     {
         const cgltf_material* mat = &data->materials[i];
@@ -302,14 +311,9 @@ void LoadGLTF(StringView path, FScene& scene)
             material.metallicFactor = mat->pbr_metallic_roughness.metallic_factor;
             material.roughnessFactor = mat->pbr_metallic_roughness.roughness_factor;
             if (mat->pbr_metallic_roughness.base_color_texture.texture)
-            {
-                size_t index = cgltf_texture_index(data, mat->pbr_metallic_roughness.base_color_texture.texture);
-                textureFlags[index] |= kTextureInSRGB;
-                material.baseColorTexture = static_cast<uint32_t>(index);
-            }
+                material.baseColorTexture = assignTextureIndex(mat->pbr_metallic_roughness.base_color_texture, kTextureInSRGB);
             if (mat->pbr_metallic_roughness.metallic_roughness_texture.texture)
-                material.metallicRoughnessTexture =
-                    static_cast<uint32_t>(cgltf_texture_index(data, mat->pbr_metallic_roughness.metallic_roughness_texture.texture));
+                material.metallicRoughnessTexture = assignTextureIndex(mat->pbr_metallic_roughness.metallic_roughness_texture);
         }
         if (mat->has_pbr_specular_glossiness)
         {
@@ -325,21 +329,17 @@ void LoadGLTF(StringView path, FScene& scene)
             material.metallicFactor = std::clamp((specLuminance - kDielectricF0) / (1.0f - kDielectricF0), 0.0f, 1.0f);
             // Diffuse texture → base color texture (sRGB)
             if (sg.diffuse_texture.texture)
-            {
-                size_t index = cgltf_texture_index(data, sg.diffuse_texture.texture);
-                textureFlags[index] |= kTextureInSRGB;
-                material.baseColorTexture = static_cast<uint32_t>(index);
-            }
+                material.baseColorTexture = assignTextureIndex(sg.diffuse_texture, kTextureInSRGB);
             // NOTE: specular_glossiness_texture is not mapped — no separate metallic/roughness texture slot for it
         }
         if (mat->normal_texture.texture)
-            material.normalTexture = static_cast<uint32_t>(cgltf_texture_index(data, mat->normal_texture.texture));
+            material.normalTexture = assignTextureIndex(mat->normal_texture);
         if (mat->emissive_texture.texture)
-            material.emissiveTexture = static_cast<uint32_t>(cgltf_texture_index(data, mat->emissive_texture.texture));
+            material.emissiveTexture = assignTextureIndex(mat->emissive_texture, kTextureInSRGB);
         material.emissiveFactor = {mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2], 1.0f};
         material.transmissionFactor = mat->has_transmission ? mat->transmission.transmission_factor : 0.0f;
         if (mat->has_transmission && mat->transmission.transmission_texture.texture)
-            material.transmissionTexture = static_cast<uint32_t>(cgltf_texture_index(data, mat->transmission.transmission_texture.texture));
+            material.transmissionTexture = assignTextureIndex(mat->transmission.transmission_texture);
         material.ior = mat->has_ior ? mat->ior.ior : 1.5f;
         material.specularFactor = mat->has_specular ? mat->specular.specular_factor : 1.0f;
         if (mat->has_specular)
@@ -350,20 +350,16 @@ void LoadGLTF(StringView path, FScene& scene)
                 mat->specular.specular_color_factor[2]
             };
             if (mat->specular.specular_texture.texture)
-                material.specularTexture = static_cast<uint32_t>(cgltf_texture_index(data, mat->specular.specular_texture.texture));
+                material.specularTexture = assignTextureIndex(mat->specular.specular_texture);
             if (mat->specular.specular_color_texture.texture)
-            {
-                size_t index = cgltf_texture_index(data, mat->specular.specular_color_texture.texture);
-                textureFlags[index] |= kTextureInSRGB;
-                material.specularColorTexture = static_cast<uint32_t>(index);
-            }
+                material.specularColorTexture = assignTextureIndex(mat->specular.specular_color_texture, kTextureInSRGB);
         }
         if (mat->has_anisotropy)
         {
             material.anisotropyStrength = std::clamp(mat->anisotropy.anisotropy_strength, 0.0f, 1.0f);
             material.anisotropyRotation = mat->anisotropy.anisotropy_rotation;
             if (mat->anisotropy.anisotropy_texture.texture)
-                material.anisotropyTexture = static_cast<uint32_t>(cgltf_texture_index(data, mat->anisotropy.anisotropy_texture.texture));
+                material.anisotropyTexture = assignTextureIndex(mat->anisotropy.anisotropy_texture);
         }
         material.subsurfaceFactor = 0.0f;
         material.subsurfaceColor = {1.0f, 1.0f, 1.0f};

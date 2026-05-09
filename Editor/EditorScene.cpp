@@ -1,6 +1,8 @@
 #include "EditorState.hpp"
 #include "Scene/Mesh.hpp"
+#include <Core/Paths.hpp>
 #include <RenderCore/ImmediateContext.hpp>
+#include <algorithm>
 #include <filesystem>
 #include <numbers>
 
@@ -80,16 +82,45 @@ void CommitSceneToGPU(bool resetAccumulation)
         GEditor.shaderGlobals.ptAccumulatedFrames = 0;
 }
 
-void DoHDRReadback(RendererHandles const& handles)
+static FTexture LoadViewLUT(StringView path)
 {
-    auto* renderer = GContext->renderer;
+    FTexture texture(GLOBAL_ALLOC);
+    LoadDDS(texture, PathsResolve(path));
+    return texture;
+}
 
-    CHECK_MSG(handles.numHdrRT > 0u && handles.numHdrRT <= 2u, "Invalid HDR readback texture count");
-    RHITexture* hdrTextures[2]{nullptr, nullptr};
-    for (uint32_t i = 0; i < handles.numHdrRT; ++i)
-        hdrTextures[i] = renderer->DerefResource(handles.hdrRT[i]).Get<RHITexture*>();
-    uint32_t w = hdrTextures[0]->mDesc.extent.x;
-    uint32_t h = hdrTextures[0]->mDesc.extent.y;
+void ApplyViewLUTSelection()
+{
+    GEditor.viewLUTSdrIndex = std::clamp(GEditor.viewLUTSdrIndex, 0, kViewLUTSdrCount - 1);
+    GEditor.viewLUTHdrIndex = std::clamp(GEditor.viewLUTHdrIndex, 0, kViewLUTHdrCount - 1);
+
+    FTexture sdr = LoadViewLUT(kViewLUTsSdr[GEditor.viewLUTSdrIndex].path);
+    FTexture hdr = LoadViewLUT(kViewLUTsHdr[GEditor.viewLUTHdrIndex].path);
+
+    ImmediateUpload upload(GContext->device.Get(), sdr.GetSize() + hdr.GetSize());
+    upload.Begin();
+    GContext->gpuScene->UploadViewLUTs(&upload, sdr, hdr);
+    upload.End();
+    upload.WaitIdle();
+
+    GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+    GEditor.state = FERunningEnter;
+}
+
+static Vector<float> ReadbackAndCombineFloatRTs(RHITexture* const* sourceTextures, uint32_t sourceCount,
+                                                uint32_t& outWidth, uint32_t& outHeight)
+{
+    CHECK_MSG(sourceCount > 0u, "Invalid render readback texture count");
+    uint32_t w = sourceTextures[0]->mDesc.extent.x;
+    uint32_t h = sourceTextures[0]->mDesc.extent.y;
+    for (uint32_t i = 1; i < sourceCount; ++i)
+    {
+        CHECK_MSG(sourceTextures[i]->mDesc.extent.x == w && sourceTextures[i]->mDesc.extent.y == h,
+                  "Mismatched render readback texture extents");
+    }
+    outWidth = w;
+    outHeight = h;
+
     const size_t pixelCount = static_cast<size_t>(w) * h;
     const size_t imageBytes = pixelCount * 4 * sizeof(float); // RGBA32F
 
@@ -97,16 +128,16 @@ void DoHDRReadback(RendererHandles const& handles)
                                                                     .hostAccess = RHIResourceHostAccess::ReadWrite,
                                                                     .coherent = true},
                                                        .usage = RHIBufferUsageBits::TransferDestination,
-                                                       .size = imageBytes * handles.numHdrRT});
+                                                       .size = imageBytes * sourceCount});
 
     {
         ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
         auto* cmd = ctx.Get();
         cmd->Begin();
         cmd->BeginTransition();
-        for (uint32_t i = 0; i < handles.numHdrRT; ++i)
+        for (uint32_t i = 0; i < sourceCount; ++i)
         {
-            cmd->SetImageTransition(hdrTextures[i],
+            cmd->SetImageTransition(sourceTextures[i],
                                     {.srcAccess = RHIResourceAccessBits::ShaderRead,
                                      .dstAccess = RHIResourceAccessBits::TransferRead,
                                      .srcStage = RHIPipelineStageBits::FragmentShader,
@@ -116,18 +147,18 @@ void DoHDRReadback(RendererHandles const& handles)
                                      .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
         }
         cmd->EndTransition();
-        for (uint32_t i = 0; i < handles.numHdrRT; ++i)
+        for (uint32_t i = 0; i < sourceCount; ++i)
         {
             cmd->CopyImageToBuffer(
-                hdrTextures[i], RHITextureLayout::TransferSrc, readbackBuf.Get(),
+                sourceTextures[i], RHITextureLayout::TransferSrc, readbackBuf.Get(),
                 {{{.dstBufferOffset = static_cast<uint32_t>(i * imageBytes),
                    .srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
                    .extent = {w, h, 1}}}});
         }
         cmd->BeginTransition();
-        for (uint32_t i = 0; i < handles.numHdrRT; ++i)
+        for (uint32_t i = 0; i < sourceCount; ++i)
         {
-            cmd->SetImageTransition(hdrTextures[i],
+            cmd->SetImageTransition(sourceTextures[i],
                                     {.srcAccess = RHIResourceAccessBits::TransferRead,
                                      .dstAccess = RHIResourceAccessBits::ShaderRead,
                                      .srcStage = RHIPipelineStageBits::Transfer,
@@ -151,7 +182,7 @@ void DoHDRReadback(RendererHandles const& handles)
         combined[i * 4 + 2] = 0.0f;
         combined[i * 4 + 3] = 1.0f;
     }
-    for (uint32_t sourceIndex = 0; sourceIndex < handles.numHdrRT; ++sourceIndex)
+    for (uint32_t sourceIndex = 0; sourceIndex < sourceCount; ++sourceIndex)
     {
         const float* sourceData = mapped + sourceIndex * pixelCount * 4;
         for (size_t i = 0; i < pixelCount; ++i)
@@ -162,12 +193,54 @@ void DoHDRReadback(RendererHandles const& handles)
         }
     }
     readbackBuf->Unmap();
+    return combined;
+}
 
-    const char* hdrPath =
-        GEditor.renderTask.outputPath.empty() ? "render_output.hdr" : GEditor.renderTask.outputPath.c_str();
-    SaveHDR(combined.data(), static_cast<int>(w), static_cast<int>(h), hdrPath);
-    LOG(Editor, LogInfo, "{} HDR image saved to {} ({}x{}, {} frames)",
-        GEditor.rendererMode == ERendererMode::PathTracer ? "Path tracer" : "Raster", hdrPath, w, h,
+static void SaveSDRPNG(float const* data, uint32_t width, uint32_t height, StringView path)
+{
+    Vector<unsigned char> rgba(static_cast<size_t>(width) * height * 4, GLOBAL_ALLOC);
+    const size_t pixelCount = static_cast<size_t>(width) * height;
+    for (size_t i = 0; i < pixelCount; ++i)
+    {
+        rgba[i * 4 + 0] = static_cast<unsigned char>(std::clamp(data[i * 4 + 0], 0.0f, 1.0f) * 255.0f + 0.5f);
+        rgba[i * 4 + 1] = static_cast<unsigned char>(std::clamp(data[i * 4 + 1], 0.0f, 1.0f) * 255.0f + 0.5f);
+        rgba[i * 4 + 2] = static_cast<unsigned char>(std::clamp(data[i * 4 + 2], 0.0f, 1.0f) * 255.0f + 0.5f);
+        rgba[i * 4 + 3] = static_cast<unsigned char>(std::clamp(data[i * 4 + 3], 0.0f, 1.0f) * 255.0f + 0.5f);
+    }
+    SavePNG(rgba.data(), static_cast<int>(width), static_cast<int>(height), path);
+}
+
+void DoRenderReadback(RendererHandles const& handles)
+{
+    auto* renderer = GContext->renderer;
+    uint32_t w = 0;
+    uint32_t h = 0;
+
+    if (GEditor.renderTask.format == ERenderFormat::HDR)
+    {
+        CHECK_MSG(handles.numHdrRT > 0u && handles.numHdrRT <= 2u, "Invalid HDR readback texture count");
+        RHITexture* hdrTextures[2]{nullptr, nullptr};
+        for (uint32_t i = 0; i < handles.numHdrRT; ++i)
+            hdrTextures[i] = renderer->DerefResource(handles.hdrRT[i]).Get<RHITexture*>();
+        Vector<float> combined = ReadbackAndCombineFloatRTs(hdrTextures, handles.numHdrRT, w, h);
+
+        const char* hdrPath =
+            GEditor.renderTask.outputPath.empty() ? "render_output.hdr" : GEditor.renderTask.outputPath.c_str();
+        SaveHDR(combined.data(), static_cast<int>(w), static_cast<int>(h), hdrPath);
+        LOG(Editor, LogInfo, "{} HDR image saved to {} ({}x{}, {} frames)",
+            GEditor.rendererMode == ERendererMode::PathTracer ? "Path tracer" : "Raster", hdrPath, w, h,
+            GEditor.shaderGlobals.ptAccumulatedFrames);
+        return;
+    }
+
+    CHECK_MSG(handles.sdrRT != kInvalidHandle, "Invalid SDR readback texture");
+    RHITexture* sdrTexture = renderer->DerefResource(handles.sdrRT).Get<RHITexture*>();
+    Vector<float> sdr = ReadbackAndCombineFloatRTs(&sdrTexture, 1u, w, h);
+    const char* sdrPath =
+        GEditor.renderTask.outputPath.empty() ? "render_output.png" : GEditor.renderTask.outputPath.c_str();
+    SaveSDRPNG(sdr.data(), w, h, sdrPath);
+    LOG(Editor, LogInfo, "{} SDR image saved to {} ({}x{}, {} frames)",
+        GEditor.rendererMode == ERendererMode::PathTracer ? "Path tracer" : "Raster", sdrPath, w, h,
         GEditor.shaderGlobals.ptAccumulatedFrames);
 }
 
