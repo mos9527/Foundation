@@ -1534,11 +1534,6 @@ void FillProceduralLightHit(inout HitPayload payload, ProceduralHitAttributes at
     payload.hitT = RayTCurrent();
 }
 
-struct CurveHitAttributes
-{
-    float2 uv;
-};
-
 bool TryUpdateCurveHit(float t, float u, float v, inout float bestT, inout float bestU, inout float bestV)
 {
     if (t < RayTMin() || t > RayTCurrent() || t >= bestT)
@@ -1718,8 +1713,8 @@ void CurveIntersection()
 
     if (bestT < RayTCurrent())
     {
-        CurveHitAttributes attr;
-        attr.uv = float2(bestU, bestV);
+        ProceduralHitAttributes attr;
+        attr.localPosition = float2(bestU, bestV);
         ReportHit(bestT, 0, attr);
     }
 }
@@ -1737,16 +1732,16 @@ void DiskLightClosestHit(inout HitPayload payload, in ProceduralHitAttributes at
 }
 
 [shader("closesthit")]
-void CurveClosestHit(inout HitPayload payload, in CurveHitAttributes attr)
+void CurveClosestHit(inout HitPayload payload, in ProceduralHitAttributes attr)
 {
     payload.instance = InstanceID();
     payload.primitive = PrimitiveIndex();
-    payload.bary = attr.uv;
+    payload.bary = attr.localPosition;
     payload.hitT = RayTCurrent();
 }
 
 [shader("anyhit")]
-void CurveShadowAnyHit(inout ShadowPayload payload, in CurveHitAttributes attr)
+void CurveShadowAnyHit(inout ShadowPayload payload, in ProceduralHitAttributes attr)
 {
     payload.hit = true;
     AcceptHitAndEndSearch();
@@ -1801,7 +1796,8 @@ void BSSRDFQueryAnyHit(inout BSSRDFQueryPayload payload, in BuiltInTriangleInter
 [shader("closesthit")] // Hit Group 0
 void RayClosestHit(inout HitPayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
-    payload.instance = InstanceID();
+    uint instance = InstanceID();
+    payload.instance = instance;
     payload.primitive = PrimitiveIndex();
     payload.bary = attr.barycentrics.xy;
     payload.hitT = RayTCurrent();
