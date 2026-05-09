@@ -370,8 +370,9 @@ constexpr size_t DDS_MIN_HEADER_SIZE = sizeof(uint32_t) + sizeof(DDS_HEADER);
 constexpr size_t DDS_DX10_HEADER_SIZE = sizeof(uint32_t) + sizeof(DDS_HEADER) + sizeof(DDS_HEADER_DXT10);
 static_assert(DDS_DX10_HEADER_SIZE > DDS_MIN_HEADER_SIZE, "DDS DX10 Header should be larger than standard header");
 
-inline void ddsCreateHeader(DDS_HEADER& header, uint32_t width, uint32_t height, uint32_t mipCount)
+inline void ddsCreateHeader(DDS_HEADER& header, uint32_t width, uint32_t height, uint32_t mipCount, uint32_t depth = 1)
 {
+    header = {};
     header.size = sizeof(DDS_HEADER);
     header.flags = DDS_HEADER_FLAGS_TEXTURE;
     header.height = height;
@@ -379,17 +380,45 @@ inline void ddsCreateHeader(DDS_HEADER& header, uint32_t width, uint32_t height,
     if (mipCount > 1)
         header.flags |= DDS_HEADER_FLAGS_MIPMAP;
     header.mipMapCount = mipCount;
-    header.depth = 0;
+    header.depth = depth;
+    if (depth > 1)
+        header.flags |= DDS_HEADER_FLAGS_VOLUME;
     header.caps = DDS_SURFACE_FLAGS_TEXTURE;
     if (mipCount > 1)
         header.caps |= DDS_SURFACE_FLAGS_MIPMAP;
+    if (depth > 1)
+        header.caps2 |= DDS_FLAGS_VOLUME;
 }
 
-inline void ddsSetFormat(DDS_HEADER& header, DDS_HEADER_DXT10& header10, uint32_t layerCount, Foundation::RHI::RHIResourceFormat format)
+inline void ddsSetFormat(DDS_HEADER& header, DDS_HEADER_DXT10& header10, uint32_t layerCount,
+                         Foundation::RHI::RHIResourceFormat format,
+                         Foundation::RHI::RHITextureDimension dimension = Foundation::RHI::RHITextureDimension::E2D)
 {
     header.ddspf = DDSPF_DX10;
-    header10.arraySize = layerCount;
-    header10.resourceDimension = DDS_RESOURCE_DIMENSION::DDS_DIMENSION_TEXTURE2D;
+    header10 = {};
+    header10.arraySize = dimension == Foundation::RHI::RHITextureDimension::E3D ? 1 : layerCount;
+    switch (dimension)
+    {
+    case Foundation::RHI::RHITextureDimension::E1D:
+    case Foundation::RHI::RHITextureDimension::E1DArray:
+        header10.resourceDimension = DDS_RESOURCE_DIMENSION::DDS_DIMENSION_TEXTURE1D;
+        break;
+    case Foundation::RHI::RHITextureDimension::E3D:
+        header10.resourceDimension = DDS_RESOURCE_DIMENSION::DDS_DIMENSION_TEXTURE3D;
+        header.flags |= DDS_HEADER_FLAGS_VOLUME;
+        header.caps2 |= DDS_FLAGS_VOLUME;
+        break;
+    case Foundation::RHI::RHITextureDimension::ECube:
+    case Foundation::RHI::RHITextureDimension::ECubeArray:
+        header10.resourceDimension = DDS_RESOURCE_DIMENSION::DDS_DIMENSION_TEXTURE2D;
+        header10.miscFlag = DDS_RESOURCE_MISC_FLAG::DDS_RESOURCE_MISC_TEXTURECUBE;
+        header.caps |= DDS_SURFACE_FLAGS_CUBEMAP;
+        header.caps2 |= DDS_CUBEMAP | DDS_CUBEMAP_ALLFACES;
+        break;
+    default:
+        header10.resourceDimension = DDS_RESOURCE_DIMENSION::DDS_DIMENSION_TEXTURE2D;
+        break;
+    }
     using enum DXGI_FORMAT;
     using enum Foundation::RHI::RHIResourceFormat;
     switch (format)

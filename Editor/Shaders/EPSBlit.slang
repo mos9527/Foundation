@@ -8,7 +8,7 @@ Texture2D<uint32_t> overdraw;
 Texture2D<uint32_t> pickIDBuffer; // Instance ID map (R32_UINT), ~0u = no object
 RWStructuredBuffer<uint32_t> pickResult; // [0] written when fragCoord == pickPixel
 Texture2D lighting;
-// ACES OCIO-baked view LUTs. Input domain: ACEScct in [0,1].
+// OCIO-baked view LUTs. Input domain: ACEScct in [0,1].
 Texture3D<float4> viewLutSdr;
 Texture3D<float4> viewLutHdr;
 SamplerState lutSampler;
@@ -40,7 +40,7 @@ float3 heatmapGradient(float t) {
 
 [shader("fragment")]
 float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGET {
-    int3 coord = int3(fragCoord.x, fragCoord.y, 0);
+    int3 coord = int3(int(fragCoord.x), int(fragCoord.y), 0);
     uint32_t instanceID = pickIDBuffer.Load(coord);
     uint32_t pickID = pickResult[0];
     // GPU picking: if this pixel is the clicked one, write instanceID to result buffer
@@ -53,10 +53,10 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     pp.HdrPaperWhiteNits = globalParams.paperWhiteNits;
 
     float4 result;
-    if (flags & kViewOverdraw){
+    if ((flags & kViewOverdraw) != 0){
         uint32_t draws = overdraw.Load(coord);
         result = float4(heatmapGradient((float)draws / globalMax[0]), 1.0);
-    } else if (flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewMeshlet)) {
+    } else if ((flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewMeshlet)) != 0) {
         // Do not post process these
         result = lighting.Load(coord);
     } else {

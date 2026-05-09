@@ -3,6 +3,7 @@
 #include <RenderUtils/PSFullscreen.hpp>
 #include <algorithm>
 #include "../Paths.hpp"
+#include "../Scene/GPUScene.hpp"
 #include "Render.hpp"
 using namespace RenderUtils;
 
@@ -44,9 +45,8 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
     auto SobolMatricesBuffer = renderer->CreateResource("Sobol Matrices Buffer", gpu->GetSobolMatricesBuffer());
     
     auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
-    auto GGXlutEavg = renderer->CreateResource("GGX LUT Eavg", gpu->GetGGXlutEavg());
-    auto AcesLutSdr = renderer->CreateResource("ACES LUT SDR Rec.709", gpu->GetAcesLutSdr());
-    auto AcesLutHdr = renderer->CreateResource("ACES LUT HDR Rec.2020 PQ", gpu->GetAcesLutHdr());
+    auto ViewLutSdr = renderer->CreateResource("View LUT SDR", gpu->GetViewLutSdr());
+    auto ViewLutHdr = renderer->CreateResource("View LUT HDR", gpu->GetViewLutHdr());
     ResourceHandle EnvMapTex;
     if (gpu->GetEnvMap()) {
         EnvMapTex = renderer->CreateResource("Env Map", gpu->GetEnvMap());
@@ -149,28 +149,28 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             r->BindShader(self, RHIShaderStageBits::RayMiss, "BSSRDFQueryMiss",
                           pathTracerShader, AsBytes(AsSpan(ptCompileOptions)));
             r->BindShader(self, RHIShaderStageBits::RayIntersection, "RectLightIntersection",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 3,
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kRectLightSBTOffset,
                           RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RectLightClosestHit",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 3,
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kRectLightSBTOffset,
                           RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayIntersection, "DiskLightIntersection",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 4,
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kDiskLightSBTOffset,
                           RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "DiskLightClosestHit",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 4,
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kDiskLightSBTOffset,
                           RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayIntersection, "CurveIntersection",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 5,
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset,
                           RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "CurveClosestHit",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 5,
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset,
                           RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayIntersection, "CurveIntersection",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 6,
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset + 1u,
                           RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayAnyHit, "CurveShadowAnyHit",
-                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 6,
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), kCurveSBTOffset + 1u,
                           RTHitGroupType::Procedural);
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitives");
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
@@ -190,9 +190,6 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             r->BindBufferStorageRead(self, SobolMatricesBuffer, RHIPipelineStageBits::ComputeShader, "sobolMatrices");
             r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
-                                                .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureSRV(self, GGXlutEavg, "ggxLutEavg", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
                                                 .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSampler(self, TexSampler, "textureSampler");
             r->BindTextureSampler(self, LUTSampler, "lutSampler");
@@ -252,12 +249,12 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             r->BindBufferUnordered(self, PickResultBuffer, RHIPipelineStageBits::FragmentShader, "pickResult");
             r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(int2));
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
-            // ACES color management LUTs (3D, RGBA32F, ACEScct [0,1] domain).
-            r->BindTextureSRV(self, AcesLutSdr, "viewLutSdr", RHIPipelineStageBits::FragmentShader,
+            // Display transform LUTs (3D, RGBA32F).
+            r->BindTextureSRV(self, ViewLutSdr, "viewLutSdr", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .dimension = RHITextureDimension::E3D,
                                                  .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureSRV(self, AcesLutHdr, "viewLutHdr", RHIPipelineStageBits::FragmentShader,
+            r->BindTextureSRV(self, ViewLutHdr, "viewLutHdr", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .dimension = RHITextureDimension::E3D,
                                                  .range = RHITextureSubresourceRange::Create()});

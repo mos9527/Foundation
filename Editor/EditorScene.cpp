@@ -356,6 +356,13 @@ void ReplaceScene(StringView path)
             }
             id++;
         }
+        const bool hasCustomViewLUT = GEditor.doc.scene.mViewLutSdr.IsValid() || GEditor.doc.scene.mViewLutHdr.IsValid();
+        if (hasCustomViewLUT)
+        {
+            CHECK_MSG(GEditor.doc.scene.mViewLutSdr.IsValid() && GEditor.doc.scene.mViewLutHdr.IsValid(),
+                      "Scene view LUT override must provide both SDR and HDR LUTs");
+            gpu->UploadViewLUTs(&upload, GEditor.doc.scene.mViewLutSdr, GEditor.doc.scene.mViewLutHdr);
+        }
         upload.End(), upload.WaitIdle();
     }
 
@@ -416,7 +423,7 @@ void LoadEnvMap(StringView path)
     auto* gpu = GContext->gpuScene;
     try
     {
-        FTexture2D tex(GLOBAL_ALLOC);
+        FTexture tex(GLOBAL_ALLOC);
         LoadHDR(tex, path);
         ImmediateUpload upload(GContext->device.Get(), 256 * (1u << 20));
         upload.Begin();

@@ -8,6 +8,11 @@
 using namespace Math;
 struct FCurveSet;
 
+// Must match the procedural hit-group bindings in Render/Pathtracer.cpp.
+inline constexpr uint32_t kRectLightSBTOffset = 3u;
+inline constexpr uint32_t kDiskLightSBTOffset = 4u;
+inline constexpr uint32_t kCurveSBTOffset = 5u;
+
 BITMASK_ENUM_BEGIN(GSData, uint8_t)
     Mesh = 1 << 0
 BITMASK_ENUM_END()
@@ -186,9 +191,9 @@ class GPUScene
     /* Textures */
     BindlessPool mTexturePool;
     // Precomputed LUTs (stored in texture pool)
-    uint32_t mGGXlutEIndex{UINT32_MAX}, mGGXlutEavgIndex{UINT32_MAX};
-    // ACES color management 3D LUTs (RGBA32F, ACEScct [0,1] domain)
-    uint32_t mAcesLutSdrIndex{UINT32_MAX}, mAcesLutHdrIndex{UINT32_MAX};
+    uint32_t mLUTGGXEIndex{UINT32_MAX};
+    // Display transform 3D LUTs (stored in texture pool)
+    uint32_t mLUTViewSdrIndex{UINT32_MAX}, mLUTViewHdrIndex{UINT32_MAX};
     // Environment map (stored in texture pool)
     uint32_t mEnvMapIndex{UINT32_MAX};
     RHIDeviceScopedHandle<RHIBuffer> mEnvMapMarginalCDF;
@@ -271,7 +276,7 @@ public:
 
     size_t Upload(ImmediateUpload* ctx, FMesh const& source, GSMesh& outData, uint32_t& outOffset);
     size_t Upload(ImmediateUpload* ctx, FCurveSet const& source, GSCurveSet& outData, uint32_t& outOffset);
-    size_t Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t& outIndex);
+    size_t Upload(ImmediateUpload* ctx, FTexture const& source, uint32_t& outIndex, const char* debugName = nullptr);
 
     void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices);
     void BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curves, Span<uint32_t> outBLASIndices);
@@ -287,12 +292,11 @@ public:
     /* Textures */
     [[nodiscard]] BindlessPool* GetTexturePool() { return &mTexturePool; }
     [[nodiscard]] RHITexture* GetGGXlutE() const;
-    [[nodiscard]] RHITexture* GetGGXlutEavg() const;
-    // ACES view LUTs (3D textures, RGBA32F, ACEScct [0,1] domain).
-    [[nodiscard]] RHITexture* GetAcesLutSdr() const;
-    [[nodiscard]] RHITexture* GetAcesLutHdr() const;
+    void UploadViewLUTs(ImmediateUpload* ctx, FTexture const& sdr, FTexture const& hdr);
+    [[nodiscard]] RHITexture* GetViewLutSdr() const;
+    [[nodiscard]] RHITexture* GetViewLutHdr() const;
     // Environment map
-    void UploadEnvMap(ImmediateUpload* ctx, FTexture2D const& source);
+    void UploadEnvMap(ImmediateUpload* ctx, FTexture const& source);
     [[nodiscard]] RHITexture* GetEnvMap() const;
     [[nodiscard]] RHIBuffer* GetEnvMapMarginalCDF() const { return mEnvMapMarginalCDF.Get(); }
     [[nodiscard]] RHITexture* GetEnvMapConditionalCDF() const;

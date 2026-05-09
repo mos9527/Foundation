@@ -5,74 +5,14 @@
 #include <Math/Quantize.hpp>
 #include "Scene.hpp"
 
-// Must match the procedural light hit-group bindings in Render/Pathtracer.cpp.
-static constexpr uint32_t kRectLightSBTOffset = 3u;
-static constexpr uint32_t kDiskLightSBTOffset = 4u;
-static constexpr uint32_t kCurveSBTOffset = 5u;
-
-static FTexture2D MakeLUT(const float* data, RHIResourceFormat format, uint32_t width, uint32_t height)
+static FTexture MakeLUT(const float* data, RHIResourceFormat format, uint32_t width, uint32_t height = 1,
+                          uint32_t depth = 1, RHITextureDimension dimension = RHITextureDimension::E2D)
 {
-    FTexture2D tex(GLOBAL_ALLOC);
-    ddsCreateHeader(tex.header, width, height, 1);
-    ddsSetFormat(tex.header, tex.header10, 1, format);
+    FTexture tex(GLOBAL_ALLOC);
+    tex.Initialize(format, dimension, width, height, depth);
     const auto* bytes = reinterpret_cast<const unsigned char*>(data);
     tex.data.assign(bytes, bytes + tex.GetSize());
     return tex;
-}
-
-static uint32_t Upload3DLut(FContext* ctx, BindlessPool& pool, ImmediateUpload& upload,
-                                    const float* data, uint32_t side, const char* debugName)
-{
-    constexpr auto kFormat = RHIResourceFormat::R32G32B32A32SignedFloat;
-    const size_t bytes = static_cast<size_t>(side) * side * side * 4 * sizeof(float);
-
-    auto texture = ctx->device->CreateTexture(RHITextureDesc{
-        .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
-        .dimension = RHITextureDimension::E3D,
-        .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
-        .extent = {side, side, side},
-        .format = kFormat,
-    });
-    texture->DebugSetObjectName(debugName);
-
-    auto range = RHITextureSubresourceRange::Create();
-    auto* cmd = upload.ctx.Get();
-
-    cmd->BeginTransition();
-    cmd->SetImageTransition(texture.Get(), {.dstImgLayout = RHITextureLayout::TransferDst, .srcImgRange = range});
-    cmd->EndTransition();
-
-    if (!upload.Align(sizeof(float)))
-        return UINT32_MAX;
-    if (upload.ptr + bytes > upload.end)
-        return UINT32_MAX;
-    char* dstStaging = upload.ptr;
-    const uint32_t srcOffset = static_cast<uint32_t>(dstStaging - upload.begin);
-    std::memcpy(dstStaging, data, bytes);
-    upload.ptr += bytes;
-
-    cmd->CopyBufferToImage(upload.staging.Get(), texture.Get(), RHITextureLayout::TransferDst,
-                           {{{
-                               .srcBufferOffset = srcOffset,
-                               .dstLayer = {.aspect = RHITextureAspectFlagBits::Color},
-                               .dstOffset = {0, 0, 0},
-                               .extent = {side, side, side},
-                           }}});
-
-    cmd->BeginTransition();
-    cmd->SetImageTransition(texture.Get(), {
-                                .srcImgLayout = RHITextureLayout::TransferDst,
-                                .dstImgLayout = RHITextureLayout::ShaderReadOnly,
-                                .srcImgRange = range,
-                            });
-    cmd->EndTransition();
-
-    auto view = texture->CreateTextureView({
-        .format = kFormat,
-        .dimension = RHITextureDimension::E3D,
-        .range = RHITextureSubresourceRange::Create(),
-    });
-    return pool.Allocate(std::move(texture), view.Release().Get());
 }
 
 static uint32_t GetRenderableCurveSegmentCount(FCurveSet const& src)
@@ -331,24 +271,21 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
         ctx.Submit();
         ctx.WaitIdle();
     }
-
+    // Upload precomputed LUTs
     {
         auto lutE = MakeLUT(kGGXlutE, RHIResourceFormat::R32G32SignedFloat, 32, 32);
-        auto lutEavg = MakeLUT(kGGXlutEavg, RHIResourceFormat::R32SignedFloat, 32, 1);
-        const size_t acesLutBytes = static_cast<size_t>(kAcesLutFloatCount) * sizeof(float);
-        const size_t budget = lutE.GetSize() + lutEavg.GetSize() + sizeof(kSobolMatrices32) + 2 * acesLutBytes;
+        auto defaultViewLutSdr = MakeLUT(kAcesLutSdrRec709, RHIResourceFormat::R32G32B32A32SignedFloat,
+                                         kAcesLutSize, kAcesLutSize, kAcesLutSize, RHITextureDimension::E3D);
+        auto defaultViewLutHdr = MakeLUT(kAcesLutHdrRec2020Pq1000Nits, RHIResourceFormat::R32G32B32A32SignedFloat,
+                                         kAcesLutSize, kAcesLutSize, kAcesLutSize, RHITextureDimension::E3D);
+        const size_t budget =
+            lutE.GetSize() + sizeof(kSobolMatrices32) + defaultViewLutSdr.GetSize() + defaultViewLutHdr.GetSize();
         ImmediateUpload upload(mContext->device.Get(), budget);
         upload.Begin();
-        Upload(&upload, lutE, mGGXlutEIndex);
-        Upload(&upload, lutEavg, mGGXlutEavgIndex);
+        Upload(&upload, lutE, mLUTGGXEIndex);
         char* ptr = upload.Upload(mSobolMatricesBuffer.Get(), sizeof(kSobolMatrices32), 0);
         std::memcpy(ptr, kSobolMatrices32, sizeof(kSobolMatrices32));
-        mAcesLutSdrIndex = Upload3DLut(mContext, mTexturePool, upload,
-                                               kAcesLutSdrRec709, kAcesLutSize, "ACES LUT SDR Rec.709");
-        mAcesLutHdrIndex = Upload3DLut(mContext, mTexturePool, upload,
-                                               kAcesLutHdrRec2020Pq1000Nits, kAcesLutSize, "ACES LUT HDR Rec.2020 PQ");
-        CHECK_MSG(mAcesLutSdrIndex != UINT32_MAX && mAcesLutHdrIndex != UINT32_MAX,
-                  "ACES LUT staging budget exhausted");
+        UploadViewLUTs(&upload, defaultViewLutSdr, defaultViewLutHdr);
         upload.End();
         upload.WaitIdle();
     }
@@ -590,14 +527,16 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FCurveSet const& src, GSCurveSet& 
     return written + aabbSize;
 }
 
-size_t GPUScene::Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t& outIndex)
+size_t GPUScene::Upload(ImmediateUpload* ctx, FTexture const& source, uint32_t& outIndex, const char* debugName)
 {
     auto texture = mContext->device->CreateTexture(source.GetDesc());
+    if (debugName)
+        texture->DebugSetObjectName(debugName);
     size_t written = 0;
     auto range = RHITextureSubresourceRange::Create(
         RHITextureAspectFlagBits::Color,
         0, source.GetNumMips(),
-        0, source.GetNumLayers());
+        0, texture->mDesc.arrayLayers);
     auto* cmd = ctx->ctx.Get();
     cmd->BeginTransition();
     cmd->SetImageTransition(texture.Get(), {
@@ -617,8 +556,7 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t
                                         .aspect = RHITextureAspectFlagBits::Color,
                                         .mipLevel = mip, .baseArrayLayer = layer, .layerCount = 1
                                     },
-                                    {0, 0}, {std::max(1u, source.GetWidth() >> mip),
-                                             std::max(1u, source.GetHeight() >> mip)});
+                                    {0, 0, 0}, source.GetMipExtent(mip));
             if (ptr == nullptr) // XXX: Pessimistic, we can't resume from a partial upload this way. Though
                 return 0; // overhead should be minimal for most textures.
             std::memcpy(ptr, subresource.data(), subresource.size_bytes());
@@ -632,14 +570,15 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FTexture2D const& source, uint32_t
                                 .srcImgRange = range
                             });
     cmd->EndTransition();
-    outIndex = mTexturePool.Allocate(std::move(texture), texture->CreateTextureView({
-                                         .format = source.GetFormat(),
-                                         .dimension = RHITextureDimension::E2D,
-                                         .range = RHITextureSubresourceRange::Create(
-                                             RHITextureAspectFlagBits::Color,
-                                             0, source.GetNumMips(),
-                                             0, source.GetNumLayers())
-                                     }).Release().Get());
+    auto view = texture->CreateTextureView({
+        .format = source.GetFormat(),
+        .dimension = source.GetViewDimension(),
+        .range = RHITextureSubresourceRange::Create(
+            RHITextureAspectFlagBits::Color,
+            0, source.GetNumMips(),
+            0, texture->mDesc.arrayLayers)
+    });
+    outIndex = mTexturePool.Allocate(std::move(texture), view.Release().Get());
     return written;
 }
 
@@ -1025,7 +964,7 @@ void GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, 
     cmd->BuildAccelerationStructure({{{desc}}});
 }
 
-void GPUScene::UploadEnvMap(ImmediateUpload* ctx, FTexture2D const& source)
+void GPUScene::UploadEnvMap(ImmediateUpload* ctx, FTexture const& source)
 {
     Upload(ctx, source, mEnvMapIndex);
 
@@ -1063,9 +1002,9 @@ void GPUScene::UploadEnvMap(ImmediateUpload* ctx, FTexture2D const& source)
     std::memcpy(marginalPtr, cdf.mMarginal->mCDF.data(), marginalSize);
     
     // Upload Conditional CDF as Texture2D
-    FTexture2D conditionalTex(mContext->allocator);
-    ddsCreateHeader(conditionalTex.header, cdf.mConditional[0]->mCDF.size(), height, 1);
-    ddsSetFormat(conditionalTex.header, conditionalTex.header10, 1, RHIResourceFormat::R32SignedFloat);
+    FTexture conditionalTex(mContext->allocator);
+    conditionalTex.Initialize(RHIResourceFormat::R32SignedFloat, RHITextureDimension::E2D,
+                              cdf.mConditional[0]->mCDF.size(), height);
     
     size_t conditionalSize = height * cdf.mConditional[0]->mCDF.size() * sizeof(float);
     conditionalTex.data.resize(conditionalSize);
@@ -1080,6 +1019,24 @@ void GPUScene::UploadEnvMap(ImmediateUpload* ctx, FTexture2D const& source)
     Upload(ctx, conditionalTex, mEnvMapConditionalCDFIndex);
 
     LOG(GPUScene, LogInfo, "Environment map uploaded: {}x{}", source.GetWidth(), source.GetHeight());
+}
+
+static void CheckViewLUT(FTexture const& source, StringView name)
+{
+    CHECK_MSG(source.IsValid(), "{} view LUT is invalid", name);
+    CHECK_MSG(source.GetDimension() == RHITextureDimension::E3D,
+              "{} view LUT must be a 3D texture, got {}", name, static_cast<uint32_t>(source.GetDimension()));
+    CHECK_MSG(source.GetFormat() == RHIResourceFormat::R32G32B32A32SignedFloat,
+              "{} view LUT must be RGBA32F, got {}", name, source.GetFormat());
+}
+
+void GPUScene::UploadViewLUTs(ImmediateUpload* ctx, FTexture const& sdr, FTexture const& hdr)
+{
+    CheckViewLUT(sdr, "SDR");
+    CheckViewLUT(hdr, "HDR");
+    CHECK_MSG(Upload(ctx, sdr, mLUTViewSdrIndex, "View LUT SDR") &&
+              Upload(ctx, hdr, mLUTViewHdrIndex, "View LUT HDR"),
+              "View LUT staging budget exhausted");
 }
 
 static RHITexture* ResolvePoolTexture(BindlessPool& pool, uint32_t index)
@@ -1100,22 +1057,17 @@ RHITexture* GPUScene::GetEnvMap() const
 
 RHITexture* GPUScene::GetGGXlutE() const
 {
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mGGXlutEIndex);
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mLUTGGXEIndex);
 }
 
-RHITexture* GPUScene::GetGGXlutEavg() const
+RHITexture* GPUScene::GetViewLutSdr() const
 {
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mGGXlutEavgIndex);
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mLUTViewSdrIndex);
 }
 
-RHITexture* GPUScene::GetAcesLutSdr() const
+RHITexture* GPUScene::GetViewLutHdr() const
 {
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mAcesLutSdrIndex);
-}
-
-RHITexture* GPUScene::GetAcesLutHdr() const
-{
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mAcesLutHdrIndex);
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mLUTViewHdrIndex);
 }
 
 RHITexture* GPUScene::GetEnvMapConditionalCDF() const

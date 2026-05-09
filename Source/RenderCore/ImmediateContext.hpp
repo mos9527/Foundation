@@ -79,6 +79,8 @@ namespace Foundation::RenderCore
                      RHITextureSubresourceLayer dstLayer = {.aspect = RHITextureAspectFlagBits::Color},
                      RHIOffset2D dstOffset = {},
                      RHIExtent2D dstExtent = {});
+        char* Upload(RHITexture* dst, size_t dataSize, RHITextureSubresourceLayer dstLayer, RHIOffset3D dstOffset,
+                     RHIExtent3D dstExtent);
 
         bool Align(uint32_t alignment);
         /**

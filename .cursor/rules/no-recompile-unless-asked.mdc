@@ -1,0 +1,10 @@
+---
+description: Avoid build or recompilation commands unless requested
+alwaysApply: true
+---
+
+# Recompilation
+
+- Do not run `cmake --build`, `ninja`, direct compiler commands, or other recompilation/build commands unless the user explicitly asks.
+- It is still okay to run read-only checks, searches, lint diagnostics, or formatting/whitespace checks that do not compile code.
+- If verification would normally require a build, mention that it was skipped because no rebuild was requested.

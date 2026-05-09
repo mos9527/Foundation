@@ -20,7 +20,7 @@ int main_scene(StringView srcPath, StringView dstPath)
 }
 int main_texture(StringView srcImagePath, StringView dstDDSPath)
 {
-    FTexture2D texture(GLOBAL_ALLOC);
+    FTexture texture(GLOBAL_ALLOC);
     LoadRGBA8(texture, srcImagePath);
     texture.GenerateMips();
     texture = texture.EncodeBC7();

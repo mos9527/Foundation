@@ -2,13 +2,63 @@
 #include <bc7enc.h>
 #include <stb_image_write.h>
 using namespace Foundation::RHI;
-FTexture2D::FTexture2D(Allocator* alloc) : magic(DDS_MAGIC), data(alloc)
+FTexture::FTexture(Allocator* alloc) : magic(DDS_MAGIC), data(alloc)
 {
     static bool bc7encInitialized = false;
     if (!bc7encInitialized)
         bc7enc_compress_block_init(), bc7encInitialized = true;
 }
-RHIResourceFormat FTexture2D::GetFormat() const
+void FTexture::Initialize(RHIResourceFormat format, RHITextureDimension dimension, uint32_t width, uint32_t height,
+                            uint32_t depth, uint32_t mipCount, uint32_t layerCount)
+{
+    CHECK_MSG(width && height && depth && mipCount && layerCount,
+              "Texture dimensions, mip count, and layer count must be non-zero");
+    CHECK_MSG(dimension != RHITextureDimension::E1D || (height == 1 && depth == 1),
+              "1D textures must have height/depth of 1");
+    CHECK_MSG(dimension != RHITextureDimension::E2D || depth == 1, "2D textures must have depth of 1");
+    CHECK_MSG(dimension != RHITextureDimension::E3D || layerCount == 1, "3D texture arrays are not supported");
+
+    ddsCreateHeader(header, width, height, mipCount, depth);
+    ddsSetFormat(header, header10, layerCount, format, dimension);
+    data.clear();
+}
+RHITextureDimension FTexture::GetDimension() const
+{
+    if (header.ddspf.fourCC == DDSPF_DX10.fourCC)
+    {
+        switch (header10.resourceDimension)
+        {
+        case DDS_RESOURCE_DIMENSION::DDS_DIMENSION_TEXTURE1D:
+            return RHITextureDimension::E1D;
+        case DDS_RESOURCE_DIMENSION::DDS_DIMENSION_TEXTURE3D:
+            return RHITextureDimension::E3D;
+        default:
+            return RHITextureDimension::E2D;
+        }
+    }
+    if ((header.flags & DDS_HEADER_FLAGS_VOLUME) || (header.caps2 & DDS_FLAGS_VOLUME))
+        return RHITextureDimension::E3D;
+    return RHITextureDimension::E2D;
+}
+RHITextureDimension FTexture::GetViewDimension() const
+{
+    if (header.caps2 & DDS_CUBEMAP)
+        return GetNumLayers() > 6 ? RHITextureDimension::ECubeArray : RHITextureDimension::ECube;
+    RHITextureDimension dimension = GetDimension();
+    if (GetNumLayers() > 1)
+    {
+        if (dimension == RHITextureDimension::E1D)
+            return RHITextureDimension::E1DArray;
+        if (dimension == RHITextureDimension::E2D)
+            return RHITextureDimension::E2DArray;
+    }
+    return dimension;
+}
+uint32_t FTexture::GetDepth() const
+{
+    return GetDimension() == RHITextureDimension::E3D ? std::max(1u, header.depth) : 1u;
+}
+RHIResourceFormat FTexture::GetFormat() const
 {
     using enum RHIResourceFormat;
     switch (header.ddspf.fourCC)
@@ -85,17 +135,18 @@ RHIResourceFormat FTexture2D::GetFormat() const
     }
 }
 // https://learn.microsoft.com/en-us/windows/win32/direct3ddds/dx-graphics-dds-pguide
-uint32_t getImageSize(uint32_t width, uint32_t height, uint32_t mipLevels, uint32_t blockSize, uint32_t blockDim)
+uint32_t getImageSize(uint32_t width, uint32_t height, uint32_t depth, uint32_t mipLevels, uint32_t blockSize,
+                      uint32_t blockDim)
 {
     uint32_t res = 0;
     while (mipLevels--)
     {
-        res += ((width + blockDim - 1) / blockDim) * ((height + blockDim - 1) / blockDim) * blockSize;
-        width = std::max(1u, width / 2), height = std::max(1u, height / 2);
+        res += ((width + blockDim - 1) / blockDim) * ((height + blockDim - 1) / blockDim) * depth * blockSize;
+        width = std::max(1u, width / 2), height = std::max(1u, height / 2), depth = std::max(1u, depth / 2);
     }
     return res;
 }
-uint32_t FTexture2D::GetBlockSize() const
+uint32_t FTexture::GetBlockSize() const
 {
     using enum RHIResourceFormat;
     switch (GetFormat())
@@ -124,7 +175,7 @@ uint32_t FTexture2D::GetBlockSize() const
         return 0;
     }
 }
-uint32_t FTexture2D::GetBpp() const
+uint32_t FTexture::GetBpp() const
 {
     using enum RHIResourceFormat;
     switch (GetFormat())
@@ -144,44 +195,55 @@ uint32_t FTexture2D::GetBpp() const
         return 0;
     }
 }
-uint32_t FTexture2D::GetSize() const
+uint32_t FTexture::GetSize() const
 {
     uint32_t blockSize = GetBlockSize(), blockDim = 4;
     if (!blockSize)
         blockSize = GetBpp() / 8, blockDim = 1;
-    return getImageSize(GetWidth(), GetHeight(), GetNumMips(), blockSize, blockDim) * GetNumLayers();
+    return getImageSize(GetWidth(), GetHeight(), GetDepth(), GetNumMips(), blockSize, blockDim) * GetNumLayers();
 }
-RHITextureDesc FTexture2D::GetDesc() const
+RHIExtent3D FTexture::GetMipExtent(uint32_t mipLevel) const
+{
+    return {
+        std::max(1u, GetWidth() >> mipLevel),
+        GetDimension() == RHITextureDimension::E1D ? 1u : std::max(1u, GetHeight() >> mipLevel),
+        GetDimension() == RHITextureDimension::E3D ? std::max(1u, GetDepth() >> mipLevel) : 1u,
+    };
+}
+RHITextureDesc FTexture::GetDesc() const
 {
     return RHITextureDesc{
         .resource = { .shared = true },
-        .dimension = RHITextureDimension::E2D,
+        .dimension = GetDimension(),
         .usage = RHITextureUsageBits::TransferDestination | RHITextureUsageBits::SampledImage,
-        .extent = { GetWidth(), GetHeight(), 1 },
+        .extent = GetMipExtent(0),
         .format = GetFormat(),
         .mipLevels = GetNumMips(),
-        .arrayLayers = GetNumLayers()
+        .arrayLayers = GetDimension() == RHITextureDimension::E3D ? 1u : GetNumLayers()
     };
 }
 // https://learn.microsoft.com/en-us/windows/win32/direct3ddds/dx-graphics-dds-pguide#using-texture-arrays-in-direct3d-1011
 // [Layer 0 Mip 0][Layer 0 Mip 1]...[Layer 0 Mip N][Layer 1 Mip 0]...[Layer 1 Mip N]...
-Span<unsigned char> FTexture2D::GetSubresource(uint32_t mipLevel, uint32_t arrayLayer) const
+Span<unsigned char> FTexture::GetSubresource(uint32_t mipLevel, uint32_t arrayLayer) const
 {
     uint32_t blockSize = GetBlockSize(), blockDim = 4;
     if (!blockSize)
         blockSize = GetBpp() / 8, blockDim = 1;
     CHECK_MSG(blockSize && blockDim, "Unsupported texture format {}", GetFormat());
-    uint32_t layerOffset = arrayLayer * getImageSize(GetWidth(), GetHeight(), GetNumMips(), blockSize, blockDim);
-    uint32_t mipOffset = getImageSize(GetWidth(), GetHeight(), mipLevel, blockSize, blockDim);
-    uint32_t mipWidth = std::max(1u, GetWidth() >> mipLevel), mipHeight = std::max(1u, GetHeight() >> mipLevel);
-    uint32_t mipSize = getImageSize(mipWidth, mipHeight, 1u, blockSize, blockDim);
+    CHECK_MSG(arrayLayer < GetNumLayers(), "Texture array layer out of range: {} of {}", arrayLayer, GetNumLayers());
+    CHECK_MSG(mipLevel < GetNumMips(), "Texture mip level out of range: {} of {}", mipLevel, GetNumMips());
+    uint32_t layerOffset =
+        arrayLayer * getImageSize(GetWidth(), GetHeight(), GetDepth(), GetNumMips(), blockSize, blockDim);
+    uint32_t mipOffset = getImageSize(GetWidth(), GetHeight(), GetDepth(), mipLevel, blockSize, blockDim);
+    RHIExtent3D mipExtent = GetMipExtent(mipLevel);
+    uint32_t mipSize = getImageSize(mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
     uint32_t offset = layerOffset + mipOffset;
     uint32_t offsetEnd = offset + mipSize;
     CHECK_MSG(offsetEnd <= data.size(), "Subresource out of range: layer {}, mip {} (size {}), data size {}",
               arrayLayer, mipLevel, mipSize, data.size());
     return {data.data() + offset, data.data() + offsetEnd};
 }
-void FTexture2D::GenerateMips()
+void FTexture::GenerateMips()
 {
     CHECK_MSG(GetNumMips() == 1, "Texture already has mipmaps");
     CHECK_MSG(GetFormat() == RHIResourceFormat::R8G8B8A8Unorm || GetFormat() == RHIResourceFormat::R8G8B8A8Srgb,
@@ -190,7 +252,11 @@ void FTexture2D::GenerateMips()
     numMips = 1 + static_cast<uint32_t>(std::floor(std::log2(numMips)));
     if (numMips <= GetNumMips())
         return;
-    ddsCreateHeader(header, GetWidth(), GetHeight(), numMips);
+    RHIResourceFormat format = GetFormat();
+    RHITextureDimension dimension = GetDimension();
+    uint32_t width = GetWidth(), height = GetHeight(), depth = GetDepth(), layerCount = GetNumLayers();
+    ddsCreateHeader(header, width, height, numMips, depth);
+    ddsSetFormat(header, header10, layerCount, format, dimension);
     data.resize(GetSize());
     // Gamma correct. Mip generation should only be done in linear space.
     auto SrgbToLinear = [&](bool inverse = false /* linear to gamma */)
@@ -262,26 +328,25 @@ void FTexture2D::GenerateMips()
     if (GetFormat() == RHIResourceFormat::R8G8B8A8Srgb)
         SrgbToLinear(true);
 }
-void LoadDDS(FTexture2D& texture, StringView path)
+void LoadDDS(FTexture& texture, StringView path)
 {
     FileReader reader(path);
     FDeserialize(reader, texture);
 }
 #include <stb_image.h>
 #include <tinyexr.h>
-void LoadRGBA8(FTexture2D& texture, StringView path, bool gamma)
+void LoadRGBA8(FTexture& texture, StringView path, bool gamma)
 {
     int width, height, channels;
     stbi_uc* imgData = stbi_load(path.data(), &width, &height, &channels, STBI_rgb_alpha);
     UniquePtr<stbi_uc, decltype(&stbi_image_free)> raii(imgData, &stbi_image_free);
     CHECK_MSG(imgData != nullptr, "Failed to load image {}", path);
 
-    ddsCreateHeader(texture.header, width, height, 1);
-    ddsSetFormat(texture.header, texture.header10, 1,
-                 gamma ? RHIResourceFormat::R8G8B8A8Srgb : RHIResourceFormat::R8G8B8A8Unorm);
+    texture.Initialize(gamma ? RHIResourceFormat::R8G8B8A8Srgb : RHIResourceFormat::R8G8B8A8Unorm,
+                       RHITextureDimension::E2D, width, height);
     texture.data.assign(imgData, imgData + width * height * 4);
 }
-void LoadRGBA8(FTexture2D& texture, Span<const unsigned char> data, bool gamma)
+void LoadRGBA8(FTexture& texture, Span<const unsigned char> data, bool gamma)
 {
     int width, height, channels;
     stbi_uc* imgData =
@@ -289,12 +354,11 @@ void LoadRGBA8(FTexture2D& texture, Span<const unsigned char> data, bool gamma)
     UniquePtr<stbi_uc, decltype(&stbi_image_free)> raii(imgData, &stbi_image_free);
     CHECK_MSG(imgData != nullptr, "Failed to load image from memory");
 
-    ddsCreateHeader(texture.header, width, height, 1);
-    ddsSetFormat(texture.header, texture.header10, 1,
-                 gamma ? RHIResourceFormat::R8G8B8A8Srgb : RHIResourceFormat::R8G8B8A8Unorm);
+    texture.Initialize(gamma ? RHIResourceFormat::R8G8B8A8Srgb : RHIResourceFormat::R8G8B8A8Unorm,
+                       RHITextureDimension::E2D, width, height);
     texture.data.assign(imgData, imgData + width * height * 4);
 }
-void LoadHDR(FTexture2D& texture, StringView path)
+void LoadHDR(FTexture& texture, StringView path)
 {
     // Case-insensitive ".exr" suffix check
     auto endsWithExr = [](StringView s)
@@ -328,8 +392,7 @@ void LoadHDR(FTexture2D& texture, StringView path)
             CHECK_MSG(false, "Failed to load EXR image {}: {}", path, msg);
         }
 
-        ddsCreateHeader(texture.header, width, height, 1);
-        ddsSetFormat(texture.header, texture.header10, 1, RHIResourceFormat::R32G32B32A32SignedFloat);
+        texture.Initialize(RHIResourceFormat::R32G32B32A32SignedFloat, RHITextureDimension::E2D, width, height);
         const size_t size = static_cast<size_t>(width) * height * 4 * sizeof(float);
         const auto* bytes = reinterpret_cast<const unsigned char*>(imgData);
         texture.data.assign(bytes, bytes + size);
@@ -341,8 +404,7 @@ void LoadHDR(FTexture2D& texture, StringView path)
     UniquePtr<float, decltype(&stbi_image_free)> raii(imgData, reinterpret_cast<void(*)(void*)>(&stbi_image_free));
     CHECK_MSG(imgData != nullptr, "Failed to load HDR image {}", path);
 
-    ddsCreateHeader(texture.header, width, height, 1);
-    ddsSetFormat(texture.header, texture.header10, 1, RHIResourceFormat::R32G32B32A32SignedFloat);
+    texture.Initialize(RHIResourceFormat::R32G32B32A32SignedFloat, RHITextureDimension::E2D, width, height);
     const size_t size = width * height * 4 * sizeof(float);
     const auto* bytes = reinterpret_cast<const unsigned char*>(imgData);
     texture.data.assign(bytes, bytes + size);
@@ -401,15 +463,14 @@ void SavePNG(const unsigned char* data, int width, int height, StringView path)
     CHECK_MSG(stbi_write_png(path.data(), width, height, 4, data, width * 4),
               "Failed to write PNG image to {}", path);
 }
-FTexture2D FTexture2D::EncodeBC7() const
+FTexture FTexture::EncodeBC7() const
 {
     CHECK_MSG(GetFormat() == RHIResourceFormat::R8G8B8A8Unorm || GetFormat() == RHIResourceFormat::R8G8B8A8Srgb,
               "Source texture must be R8G8B8A8 format. Got {}", GetFormat());
-    FTexture2D res(GLOBAL_ALLOC);
-    ddsCreateHeader(res.header, GetWidth(), GetHeight(), GetNumMips());
+    FTexture res(GLOBAL_ALLOC);
     RHIResourceFormat dstFormat =
         (GetFormat() == RHIResourceFormat::R8G8B8A8Srgb) ? RHIResourceFormat::Bc7Srgb : RHIResourceFormat::Bc7Unorm;
-    ddsSetFormat(res.header, res.header10, GetNumLayers(), dstFormat);
+    res.Initialize(dstFormat, GetDimension(), GetWidth(), GetHeight(), GetDepth(), GetNumMips(), GetNumLayers());
     res.data.resize(res.GetSize());
 
     bc7enc_compress_block_params pack_params;

@@ -96,8 +96,8 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                                                .size = AlignUp(kMaxMeshletCount, 32) / 32 * sizeof(uint32_t)});
     
     auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
-    auto AcesLutSdr = renderer->CreateResource("ACES LUT SDR Rec.709", gpu->GetAcesLutSdr());
-    auto AcesLutHdr = renderer->CreateResource("ACES LUT HDR Rec.2020 PQ", gpu->GetAcesLutHdr());
+    auto ViewLutSdr = renderer->CreateResource("View LUT SDR", gpu->GetViewLutSdr());
+    auto ViewLutHdr = renderer->CreateResource("View LUT HDR", gpu->GetViewLutHdr());
     ResourceHandle EnvMapTex;
     if (gpu->GetEnvMap()) {
         EnvMapTex = renderer->CreateResource("Env Map", gpu->GetEnvMap());
@@ -520,12 +520,12 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
             r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader, "globalMax");
             r->BindBufferUnordered(self, PickResultBuffer, RHIPipelineStageBits::FragmentShader, "pickResult");
             r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(int2));
-            // ACES color management LUTs (3D, RGBA32F, ACEScct [0,1] domain).
-            r->BindTextureSRV(self, AcesLutSdr, "viewLutSdr", RHIPipelineStageBits::FragmentShader,
+            // Display transform LUTs (3D, RGBA32F).
+            r->BindTextureSRV(self, ViewLutSdr, "viewLutSdr", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .dimension = RHITextureDimension::E3D,
                                                  .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureSRV(self, AcesLutHdr, "viewLutHdr", RHIPipelineStageBits::FragmentShader,
+            r->BindTextureSRV(self, ViewLutHdr, "viewLutHdr", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .dimension = RHITextureDimension::E3D,
                                                  .range = RHITextureSubresourceRange::Create()});

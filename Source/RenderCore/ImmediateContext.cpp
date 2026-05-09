@@ -31,15 +31,24 @@ namespace Foundation::RenderCore
     char* ImmediateUpload::Upload(RHITexture* dst, size_t dataSize, RHITextureSubresourceLayer dstLayer,
                                   RHIOffset2D dstOffset, RHIExtent2D dstExtent)
     {
-        if (ptr + dataSize > end)
-            return nullptr;
         RHIExtent3D maxExtent = dst->mDesc.extent;
         RHIOffset3D offset{dstOffset.x, dstOffset.y, 0};
         RHIExtent3D extent{dstExtent.x ? dstExtent.x : maxExtent.x, dstExtent.y ? dstExtent.y : maxExtent.y, 1};
+        return Upload(dst, dataSize, dstLayer, offset, extent);
+    }
+    char* ImmediateUpload::Upload(RHITexture* dst, size_t dataSize, RHITextureSubresourceLayer dstLayer,
+                                  RHIOffset3D dstOffset, RHIExtent3D dstExtent)
+    {
+        if (ptr + dataSize > end)
+            return nullptr;
+        RHIExtent3D maxExtent = dst->mDesc.extent;
+        RHIExtent3D extent{dstExtent.x ? dstExtent.x : maxExtent.x,
+                           dstExtent.y ? dstExtent.y : maxExtent.y,
+                           dstExtent.z ? dstExtent.z : maxExtent.z};
         ctx->CopyBufferToImage(staging.Get(), dst, RHITextureLayout::TransferDst,
                                {{{.srcBufferOffset = static_cast<uint32_t>(ptr - begin),
                                   .dstLayer = dstLayer,
-                                  .dstOffset = offset,
+                                  .dstOffset = dstOffset,
                                   .extent = extent}}});
         char* res = ptr;
         ptr += dataSize;

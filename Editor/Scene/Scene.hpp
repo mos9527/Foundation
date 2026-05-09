@@ -134,7 +134,7 @@ struct FCurveSet
 
     FCurveSet(Allocator* alloc) : points(alloc), curveVertexCounts(alloc) {}
 };
-static constexpr uint32_t kSceneMagic = fourCC("FSC4");
+static constexpr uint32_t kSceneMagic = fourCC("FSC5");
 struct FScene
 {
     uint32_t mMagic;
@@ -145,11 +145,14 @@ struct FScene
     Vector<FMaterial> mMaterials;
     Vector<FMesh> mMeshes;
     Vector<FCurveSet> mCurves;
-    Vector<FTexture2D> mTextures;
+    Vector<FTexture> mTextures;
+    FTexture mViewLutSdr;
+    FTexture mViewLutHdr;
     Vector<FLight> mLights;
 
     FScene(Allocator* alloc) :
-        mMagic(kSceneMagic), mCameras(alloc), mInstances(alloc), mCurveInstances(alloc), mMaterials(alloc), mMeshes(alloc), mCurves(alloc), mTextures(alloc), mLights(alloc)
+        mMagic(kSceneMagic), mCameras(alloc), mInstances(alloc), mCurveInstances(alloc), mMaterials(alloc),
+        mMeshes(alloc), mCurves(alloc), mTextures(alloc), mViewLutSdr(alloc), mViewLutHdr(alloc), mLights(alloc)
     {
     }
 };
@@ -197,6 +200,8 @@ inline void FSerialize(FWriter& w, FScene const& obj)
     FSerialize(w, obj.mMeshes);
     FSerialize(w, obj.mCurves);
     FSerialize(w, obj.mTextures);
+    FSerialize(w, obj.mViewLutSdr);
+    FSerialize(w, obj.mViewLutHdr);
     FSerialize(w, obj.mLights);
 }
 template <>
@@ -211,5 +216,7 @@ inline void FDeserialize(FReader& r, FScene& obj)
     FDeserialize(r, obj.mMeshes, obj.mMeshes.get_allocator().mResource);
     FDeserialize(r, obj.mCurves, obj.mCurves.get_allocator().mResource);
     FDeserialize(r, obj.mTextures, obj.mTextures.get_allocator().mResource);
+    FDeserialize(r, obj.mViewLutSdr);
+    FDeserialize(r, obj.mViewLutHdr);
     FDeserialize(r, obj.mLights);
 }

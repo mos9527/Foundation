@@ -125,11 +125,11 @@ public struct Tonemapper<OO, EO> : ITonemapper
 public typealias StandardSrgbTonemapper = Tonemapper<SrgbOOTF, SrgbEOTF> ;
 public typealias StandardPqTonemapper = Tonemapper<PqOOTF, PqEOTF> ;
 
-// ACES color management via OCIO-baked 3D LUT.
+// Display transform via OCIO-baked 3D LUT.
 // Replaces the entire OOTF + inverse EOTF stage; the LUT outputs encoded display RGB.
 // See Scripts/OCIOBakeLUTs.py for the bake. The runtime shaper here must match
 // Scripts/ColorPrimaries.ipynb's BT.709/D65 -> AP1/D60 Bradford derivation.
-public struct AcesLutTonemapper : ITonemapper
+public struct ViewLutTonemapper : ITonemapper
 {
     float3 Perform(TonemapInfo info, float3 L /* scene-linear BT.709, post-exposure */,
                    Texture3D<float4> viewLut, SamplerState lutSampler) {

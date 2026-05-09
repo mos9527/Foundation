@@ -25,7 +25,7 @@ public float3 Postprocess(float3 L /* Linear */, PostprocessInfo pp,
     L = ApplyExposureEV(L, pp.Exposure);
     TonemapInfo info;
     info.HdrPaperWhiteNits = pp.HdrPaperWhiteNits;
-    AcesLutTonemapper op;
+    ViewLutTonemapper op;
     if (pp.HdrEnabled != 0)
         return op.Perform(info, L, viewLutHdr, lutSampler);
     return op.Perform(info, L, viewLutSdr, lutSampler);

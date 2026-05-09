@@ -169,13 +169,13 @@ FMesh loadGLTFSubmesh(cgltf_primitive* submesh)
 }
 
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#images
-Optional<FTexture2D> loadGLTFTexture(cgltf_texture* texture, StringView scenePath, bool gamma = false)
+Optional<FTexture> loadGLTFTexture(cgltf_texture* texture, StringView scenePath, bool gamma = false)
 {
     if (texture->image)
     {
         if (auto* buf = texture->image->buffer_view)
         {
-            FTexture2D res(GLOBAL_ALLOC);
+            FTexture res(GLOBAL_ALLOC);
             Span<const unsigned char> imgData = {static_cast<const unsigned char*>(buf->buffer->data) + buf->offset, buf->size};
             return LoadRGBA8(res, imgData, gamma), res;
         }
@@ -193,7 +193,7 @@ Optional<FTexture2D> loadGLTFTexture(cgltf_texture* texture, StringView scenePat
             auto imagePath = dir / (imageNameWE + ext);
             if (std::filesystem::exists(imagePath))
             {
-                FTexture2D res(GLOBAL_ALLOC);
+                FTexture res(GLOBAL_ALLOC);
                 return LoadRGBA8(res, imagePath.string(), gamma), res;
             }
         }
@@ -202,7 +202,7 @@ Optional<FTexture2D> loadGLTFTexture(cgltf_texture* texture, StringView scenePat
             auto imagePath = dir / (imageNameWE + ".dds");
             if (std::filesystem::exists(imagePath))
             {
-                FTexture2D res(GLOBAL_ALLOC);
+                FTexture res(GLOBAL_ALLOC);
                 return LoadDDS(res, imagePath.string()), res;
             }
         }
@@ -395,7 +395,7 @@ void LoadGLTF(StringView path, FScene& scene)
     ThreadPool pool(std::thread::hardware_concurrency(), ThreadPool::getTaskSize(jobCount), GLOBAL_ALLOC);
     for (size_t i = 0; i < data->textures_count; i++)
         pool.Push(
-            [&](cgltf_texture* src, FTexture2D* dst, StringView basePath)
+            [&](cgltf_texture* src, FTexture* dst, StringView basePath)
             {
                 size_t index = cgltf_texture_index(data, src);
                 String name = src->name ? src->name : fmt::format("{}_{}", basePath, index);

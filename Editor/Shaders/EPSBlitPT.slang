@@ -9,7 +9,7 @@ Texture2D diffuseTex;
 Texture2D specularTex;
 Texture2D<uint32_t> pickIDBuffer; // Instance ID map (R32_UINT), ~0u = no object
 RWStructuredBuffer<uint32_t> pickResult; // [0] written when fragCoord == pickPixel
-// ACES OCIO-baked view LUTs. Input domain: ACEScct in [0,1].
+// OCIO-baked view LUTs. Input domain: ACEScct in [0,1].
 Texture3D<float4> viewLutSdr;
 Texture3D<float4> viewLutHdr;
 SamplerState lutSampler;
@@ -39,7 +39,7 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
         if ((flags & kViewAOVSpecular) != 0) aov = specularTex.Load(coord).xyz;
         result = float4(Postprocess(aov, pp, viewLutSdr, viewLutHdr, lutSampler), 1.0f);
     } else {
-        // Composite lighting = diffuse + specular (already averaged), then ACES grade
+        // Composite lighting = diffuse + specular (already averaged), then view LUT grade
         float3 diffuse  = diffuseTex.Load(coord).xyz;
         float3 specular = specularTex.Load(coord).xyz;
         float3 Lpix = diffuse + specular;
