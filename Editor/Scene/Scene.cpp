@@ -82,6 +82,27 @@ bool ReadJSONFloat(std::string_view json, std::string_view key, float& value)
     return true;
 }
 
+static String DecodeURI(std::string_view encoded)
+{
+    String uri(encoded);
+    uri.resize(cgltf_decode_uri(uri.data()));
+    return uri;
+}
+
+static String LowerExtension(std::filesystem::path const& path)
+{
+    String ext = path.extension().string();
+    for (char& c : ext)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return ext;
+}
+
+static bool IsRadianceHDRPath(std::filesystem::path const& path)
+{
+    String ext = LowerExtension(path);
+    return ext == ".hdr" || ext == ".hdri";
+}
+
 static std::string_view Trim(std::string_view value)
 {
     while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())))
@@ -187,6 +208,46 @@ void LoadFoundationColorManagementExtension(cgltf_data const* data, FScene& scen
         scene.mColorManagement.viewLutSdrIndex = MatchViewLUTIndex(kViewLUTsSdr, view, look, kDefaultViewLUTSdr);
     if (ReadJSONString(json, "hdr", tuple) && ParseLUTTuple(tuple, "HDR", view, look))
         scene.mColorManagement.viewLutHdrIndex = MatchViewLUTIndex(kViewLUTsHdr, view, look, kDefaultViewLUTHdr);
+}
+
+void LoadFoundationEnvironmentExtension(cgltf_data const* data, StringView scenePath, FScene& scene)
+{
+    cgltf_scene const* gltfScene = data->scene ? data->scene : (data->scenes_count > 0 ? &data->scenes[0] : nullptr);
+    if (!gltfScene || !gltfScene->has_foundation_environment)
+        return;
+
+    cgltf_foundation_environment const& environment = gltfScene->foundation_environment;
+    if (environment.type == cgltf_foundation_environment_type_color)
+    {
+        scene.mEnvironment = {
+            .type = FSceneEnvironmentType::Color,
+            .color = {environment.color[0], environment.color[1], environment.color[2]},
+            .strength = environment.strength,
+        };
+        return;
+    }
+
+    if (environment.type == cgltf_foundation_environment_type_hdri)
+    {
+        CHECK_MSG(environment.projection == cgltf_foundation_environment_projection_longlat,
+                  "EXT_foundation_environment supports only longlat/equirectangular HDRI projection");
+        CHECK_MSG(environment.uri, "EXT_foundation_environment HDRI requires uri");
+
+        String uri = DecodeURI(environment.uri);
+        std::filesystem::path hdriPath = std::filesystem::path(scenePath.data()).parent_path() / uri;
+        CHECK_MSG(IsRadianceHDRPath(hdriPath), "EXT_foundation_environment HDRI must reference .hdr/.hdri, got {}",
+                  hdriPath.string());
+
+        scene.mEnvironment = {
+            .type = FSceneEnvironmentType::EnvMap,
+            .strength = environment.strength,
+            .azimuthOffset = environment.azimuth_offset,
+        };
+        LoadHDR(scene.mEnvironmentMap, hdriPath.string());
+        return;
+    }
+
+    CHECK_MSG(false, "EXT_foundation_environment has unsupported type");
 }
 
 void LoadFoundationMaterialExtension(cgltf_material const* src, FMaterial& material)
@@ -390,6 +451,7 @@ void LoadGLTF(StringView path, FScene& scene)
     result = cgltf_validate(data);
     CHECK_MSG(result == cgltf_result_success, "Scene validate failure: {}", static_cast<int>(result));
     LoadFoundationColorManagementExtension(data, scene);
+    LoadFoundationEnvironmentExtension(data, path, scene);
     /* Materials */
     // NOTE: Material 0 is reserved as the default material:
     // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#default-material

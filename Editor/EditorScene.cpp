@@ -7,6 +7,7 @@
 #include <exception>
 #include <filesystem>
 #include <numbers>
+#include <utility>
 
 static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamplerType sampler)
 {
@@ -432,6 +433,17 @@ static void ApplySceneCamera()
     }
 }
 
+static void ApplySceneEnvironment()
+{
+    auto const& environment = GEditor.doc.scene.mEnvironment;
+    GEditor.shaderGlobals.ambientColor = environment.color;
+    GEditor.shaderGlobals.ambientPower = environment.strength;
+    GEditor.shaderGlobals.envMapScale =
+        environment.type == FSceneEnvironmentType::EnvMap ? environment.strength : 1.0f;
+    GEditor.shaderGlobals.envAzimuthOffset = environment.azimuthOffset;
+    GEditor.shaderGlobals.useEnvMap = 0u;
+}
+
 void ReplaceScene(StringView path)
 {
     LOG(Editor, LogInfo, "Loading scene: {}", path);
@@ -465,6 +477,7 @@ void ReplaceScene(StringView path)
     GEditor.viewLUTHdrIndex = static_cast<int>(GEditor.doc.scene.mColorManagement.viewLutHdrIndex);
     GEditor.viewLUTSdrExternalPath.clear();
     GEditor.viewLUTHdrExternalPath.clear();
+    ApplySceneEnvironment();
 
     auto* gpu = GContext->gpuScene;
     gpu->Reset();
@@ -530,6 +543,12 @@ void ReplaceScene(StringView path)
             FTexture hdr(GLOBAL_ALLOC);
             LoadSelectedViewLUTs(sdr, hdr);
             gpu->UploadViewLUTs(&upload, sdr, hdr);
+        }
+        if (GEditor.doc.scene.mEnvironment.type == FSceneEnvironmentType::EnvMap)
+        {
+            CHECK_MSG(GEditor.doc.scene.mEnvironmentMap.IsValid(), "Scene environment map is invalid");
+            gpu->UploadEnvMap(&upload, GEditor.doc.scene.mEnvironmentMap);
+            GEditor.shaderGlobals.useEnvMap = 1u;
         }
         upload.End(), upload.WaitIdle();
     }
@@ -597,6 +616,13 @@ void LoadEnvMap(StringView path)
         upload.Begin();
         gpu->UploadEnvMap(&upload, tex);
         upload.End(), upload.WaitIdle();
+        GEditor.doc.scene.mEnvironment = {
+            .type = FSceneEnvironmentType::EnvMap,
+            .color = GEditor.shaderGlobals.ambientColor,
+            .strength = GEditor.shaderGlobals.envMapScale,
+            .azimuthOffset = GEditor.shaderGlobals.envAzimuthOffset,
+        };
+        GEditor.doc.scene.mEnvironmentMap = std::move(tex);
         GEditor.shaderGlobals.useEnvMap = 1u;
         GEditor.shaderGlobals.ptAccumulatedFrames = 0;
         // Renderer must be rebuilt to rebind the environment map resource
@@ -641,10 +667,8 @@ void HandleFile(const char* filePath)
             LoadEnvMap(hdriPath + ".hdr");
         else if (std::filesystem::exists(hdriPath + ".hdri"))
             LoadEnvMap(hdriPath + ".hdri");
-        else if (std::filesystem::exists(hdriPath + ".exr"))
-            LoadEnvMap(hdriPath + ".exr");
     }
-    else if (ext == ".hdr" || ext == ".hdri" || ext == ".exr")
+    else if (ext == ".hdr" || ext == ".hdri")
     {
         LoadEnvMap(filePath);
     }

@@ -274,6 +274,19 @@ typedef enum cgltf_curve_render_mode {
 	cgltf_curve_render_mode_max_enum
 } cgltf_curve_render_mode;
 
+typedef enum cgltf_foundation_environment_type {
+	cgltf_foundation_environment_type_invalid,
+	cgltf_foundation_environment_type_color,
+	cgltf_foundation_environment_type_hdri,
+	cgltf_foundation_environment_type_max_enum
+} cgltf_foundation_environment_type;
+
+typedef enum cgltf_foundation_environment_projection {
+	cgltf_foundation_environment_projection_invalid,
+	cgltf_foundation_environment_projection_longlat,
+	cgltf_foundation_environment_projection_max_enum
+} cgltf_foundation_environment_projection;
+
 typedef enum cgltf_data_free_method {
 	cgltf_data_free_method_none,
 	cgltf_data_free_method_file_release,
@@ -748,6 +761,15 @@ typedef struct cgltf_curve {
 	cgltf_extras extras;
 } cgltf_curve;
 
+typedef struct cgltf_foundation_environment {
+	cgltf_foundation_environment_type type;
+	cgltf_float color[3];
+	cgltf_float strength;
+	char* uri;
+	cgltf_foundation_environment_projection projection;
+	cgltf_float azimuth_offset;
+} cgltf_foundation_environment;
+
 struct cgltf_node {
 	char* name;
 	cgltf_node* parent;
@@ -780,6 +802,8 @@ typedef struct cgltf_scene {
 	char* name;
 	cgltf_node** nodes;
 	cgltf_size nodes_count;
+	cgltf_bool has_foundation_environment;
+	cgltf_foundation_environment foundation_environment;
 	cgltf_extras extras;
 	cgltf_size extensions_count;
 	cgltf_extension* extensions;
@@ -2160,6 +2184,7 @@ void cgltf_free(cgltf_data* data)
 	{
 		data->memory.free_func(data->memory.user_data, data->scenes[i].name);
 		data->memory.free_func(data->memory.user_data, data->scenes[i].nodes);
+		data->memory.free_func(data->memory.user_data, data->scenes[i].foundation_environment.uri);
 
 		cgltf_free_extensions(data, data->scenes[i].extensions, data->scenes[i].extensions_count);
 		cgltf_free_extras(data, &data->scenes[i].extras);
@@ -6429,6 +6454,85 @@ static int cgltf_parse_json_nodes(cgltf_options* options, jsmntok_t const* token
 	return i;
 }
 
+static int cgltf_parse_json_foundation_environment(cgltf_options* options, jsmntok_t const* tokens, int i, const uint8_t* json_chunk, cgltf_foundation_environment* out_environment)
+{
+	CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
+
+	out_environment->type = cgltf_foundation_environment_type_invalid;
+	out_environment->color[0] = 1.0f;
+	out_environment->color[1] = 1.0f;
+	out_environment->color[2] = 1.0f;
+	out_environment->strength = 1.0f;
+	out_environment->projection = cgltf_foundation_environment_projection_longlat;
+	out_environment->azimuth_offset = 0.0f;
+
+	int size = tokens[i].size;
+	++i;
+
+	for (int j = 0; j < size; ++j)
+	{
+		CGLTF_CHECK_KEY(tokens[i]);
+
+		if (cgltf_json_strcmp(tokens + i, json_chunk, "type") == 0)
+		{
+			++i;
+			if (cgltf_json_strcmp(tokens + i, json_chunk, "color") == 0)
+			{
+				out_environment->type = cgltf_foundation_environment_type_color;
+			}
+			else if (cgltf_json_strcmp(tokens + i, json_chunk, "hdri") == 0 || cgltf_json_strcmp(tokens + i, json_chunk, "envMap") == 0)
+			{
+				out_environment->type = cgltf_foundation_environment_type_hdri;
+			}
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "color") == 0)
+		{
+			i = cgltf_parse_json_float_array(tokens, i + 1, json_chunk, out_environment->color, 3);
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "strength") == 0)
+		{
+			++i;
+			out_environment->strength = cgltf_json_to_float(tokens + i, json_chunk);
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "uri") == 0)
+		{
+			i = cgltf_parse_json_string(options, tokens, i + 1, json_chunk, &out_environment->uri);
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "projection") == 0)
+		{
+			++i;
+			if (cgltf_json_strcmp(tokens + i, json_chunk, "longlat") == 0 || cgltf_json_strcmp(tokens + i, json_chunk, "equirectangular") == 0)
+			{
+				out_environment->projection = cgltf_foundation_environment_projection_longlat;
+			}
+			else
+			{
+				out_environment->projection = cgltf_foundation_environment_projection_invalid;
+			}
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "azimuthOffset") == 0)
+		{
+			++i;
+			out_environment->azimuth_offset = cgltf_json_to_float(tokens + i, json_chunk);
+			++i;
+		}
+		else
+		{
+			i = cgltf_skip_json(tokens, i + 1);
+		}
+
+		if (i < 0)
+		{
+			return i;
+		}
+	}
+
+	return i;
+}
+
 static int cgltf_parse_json_scene(cgltf_options* options, jsmntok_t const* tokens, int i, const uint8_t* json_chunk, cgltf_scene* out_scene)
 {
 	CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
@@ -6464,7 +6568,44 @@ static int cgltf_parse_json_scene(cgltf_options* options, jsmntok_t const* token
 		}
 		else if (cgltf_json_strcmp(tokens + i, json_chunk, "extensions") == 0)
 		{
-			i = cgltf_parse_json_unprocessed_extensions(options, tokens, i, json_chunk, &out_scene->extensions_count, &out_scene->extensions);
+			++i;
+
+			CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
+			if(out_scene->extensions)
+			{
+				return CGLTF_ERROR_JSON;
+			}
+
+			int extensions_size = tokens[i].size;
+			out_scene->extensions_count = 0;
+			out_scene->extensions = (cgltf_extension*)cgltf_calloc(options, sizeof(cgltf_extension), extensions_size);
+
+			if (!out_scene->extensions)
+			{
+				return CGLTF_ERROR_NOMEM;
+			}
+
+			++i;
+
+			for (int k = 0; k < extensions_size; ++k)
+			{
+				CGLTF_CHECK_KEY(tokens[i]);
+
+				if (cgltf_json_strcmp(tokens+i, json_chunk, "EXT_foundation_environment") == 0)
+				{
+					out_scene->has_foundation_environment = 1;
+					i = cgltf_parse_json_foundation_environment(options, tokens, i + 1, json_chunk, &out_scene->foundation_environment);
+				}
+				else
+				{
+					i = cgltf_parse_json_unprocessed_extension(options, tokens, i, json_chunk, &(out_scene->extensions[out_scene->extensions_count++]));
+				}
+
+				if (i < 0)
+				{
+					return i;
+				}
+			}
 		}
 		else
 		{

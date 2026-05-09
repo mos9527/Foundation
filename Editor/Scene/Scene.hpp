@@ -140,7 +140,19 @@ struct FSceneColorManagement
     uint32_t viewLutSdrIndex{1u};
     uint32_t viewLutHdrIndex{1u};
 };
-static constexpr uint32_t kSceneMagic = fourCC("FSC6");
+enum class FSceneEnvironmentType : uint32_t
+{
+    Color = 0,
+    EnvMap = 1,
+};
+struct FSceneEnvironment
+{
+    FSceneEnvironmentType type{FSceneEnvironmentType::Color};
+    float3 color{1.0f, 1.0f, 1.0f};
+    float strength{0.05f};
+    float azimuthOffset{0.0f};
+};
+static constexpr uint32_t kSceneMagic = fourCC("FSC7");
 struct FScene
 {
     uint32_t mMagic;
@@ -155,11 +167,14 @@ struct FScene
     FTexture mViewLutSdr;
     FTexture mViewLutHdr;
     FSceneColorManagement mColorManagement;
+    FSceneEnvironment mEnvironment;
+    FTexture mEnvironmentMap;
     Vector<FLight> mLights;
 
     FScene(Allocator* alloc) :
         mMagic(kSceneMagic), mCameras(alloc), mInstances(alloc), mCurveInstances(alloc), mMaterials(alloc),
-        mMeshes(alloc), mCurves(alloc), mTextures(alloc), mViewLutSdr(alloc), mViewLutHdr(alloc), mLights(alloc)
+        mMeshes(alloc), mCurves(alloc), mTextures(alloc), mViewLutSdr(alloc), mViewLutHdr(alloc),
+        mEnvironmentMap(alloc), mLights(alloc)
     {
     }
 };
@@ -210,6 +225,8 @@ inline void FSerialize(FWriter& w, FScene const& obj)
     FSerialize(w, obj.mViewLutSdr);
     FSerialize(w, obj.mViewLutHdr);
     FSerialize(w, obj.mColorManagement);
+    FSerialize(w, obj.mEnvironment);
+    FSerialize(w, obj.mEnvironmentMap);
     FSerialize(w, obj.mLights);
 }
 template <>
@@ -227,5 +244,7 @@ inline void FDeserialize(FReader& r, FScene& obj)
     FDeserialize(r, obj.mViewLutSdr);
     FDeserialize(r, obj.mViewLutHdr);
     FDeserialize(r, obj.mColorManagement);
+    FDeserialize(r, obj.mEnvironment);
+    FDeserialize(r, obj.mEnvironmentMap);
     FDeserialize(r, obj.mLights);
 }

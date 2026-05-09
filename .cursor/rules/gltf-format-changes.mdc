@@ -1,0 +1,10 @@
+---
+description: glTF extension and format changes must be implemented in vendored cgltf
+alwaysApply: true
+---
+
+# glTF Format Changes
+
+- Foundation vendors and owns its `cgltf` integration. When adding or changing glTF extensions, schemas, or format-level fields, update the vendored `cgltf` definitions/parser first.
+- Do not manually scrape extension JSON strings in Foundation import code for data that belongs in `cgltf` structs.
+- Prefer clean typed fields in `cgltf` and consume those typed fields from Foundation, Blender IO, and related tooling.
