@@ -30,7 +30,6 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     PostprocessInfo pp;
     pp.Exposure = globalParams.camEV;
     pp.HdrEnabled = globalParams.enableHDR;
-    pp.HdrPaperWhiteNits = globalParams.paperWhiteNits;
     float4 result;
     if ((flags & (kViewAOVDiffuse | kViewAOVSpecular)) != 0) {
         // Per-lobe AOV isolation views (tone mapped)

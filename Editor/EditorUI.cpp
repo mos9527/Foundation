@@ -898,10 +898,6 @@ void FRunningImGui()
             GEditor.shaderGlobals.enableHDR = GContext->enableHDR ? 1 : 0;
             changed = true;
         }
-        if (GContext->enableHDR)
-        {
-            ImGui::SliderFloat("Paper White Nits", &GEditor.shaderGlobals.paperWhiteNits, 50.0f, 500.0f, "%.0f");
-        }
         if (GEditor.rendererMode == ERendererMode::PathTracer)
         {
             ImGui::SeparatorText("Path Tracer");

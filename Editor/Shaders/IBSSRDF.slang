@@ -173,6 +173,7 @@ public struct DisneyBurleyBSSRDF : IBSSRDF
     // Or go with MIS. Indivdual Exp 'lobes' are nice to invert:
     //  - [0.25 part] r = d * log(1 / (1 - u))
     //  - [0.75 part] r = 3d * log(1 / (1 - u))
+    // See also https://projects.blender.org/blender/cycles/issues/47
     public float Sample_Sr(uint channel, float u)
     {
         float d = scatterDistance[channel];

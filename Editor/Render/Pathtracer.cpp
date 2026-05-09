@@ -251,11 +251,11 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
             // Display transform LUTs (3D, RGBA32F).
             r->BindTextureSRV(self, ViewLutSdr, "viewLutSdr", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                  .dimension = RHITextureDimension::E3D,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSRV(self, ViewLutHdr, "viewLutHdr", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                  .dimension = RHITextureDimension::E3D,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSampler(self, LUTSampler, "lutSampler");

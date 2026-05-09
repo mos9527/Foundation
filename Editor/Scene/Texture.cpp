@@ -116,6 +116,8 @@ RHIResourceFormat FTexture::GetFormat() const
                 return R8G8B8A8Unorm;
             case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
                 return R8G8B8A8Srgb;
+            case DXGI_FORMAT_R16G16B16A16_FLOAT:
+                return R16G16B16A16SignedFloat;
             case DXGI_FORMAT_B8G8R8A8_UNORM:
                 return B8G8R8A8Unrom;
             case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
@@ -188,6 +190,8 @@ uint32_t FTexture::GetBpp() const
     case R32SignedFloat:
         return 32;
     case R32G32SignedFloat:
+        return 64;
+    case R16G16B16A16SignedFloat:
         return 64;
     case R32G32B32A32SignedFloat:
         return 128;

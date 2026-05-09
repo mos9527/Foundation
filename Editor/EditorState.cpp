@@ -189,8 +189,6 @@ static void FRunning()
     
     // Sync HDR parameters
     GEditor.shaderGlobals.enableHDR = GContext->enableHDR ? 1 : 0;
-    // paperWhiteNits is updated directly in EditorUI.cpp
-
     if (GEditor.cameraUpdated)
         GEditor.shaderGlobals.ptAccumulatedFrames = 0, GEditor.cameraUpdated = false;
     renderer->ExecuteFrame();

@@ -4,7 +4,6 @@ public struct PostprocessInfo
 {
     public float Exposure;
     public uint  HdrEnabled;
-    public float HdrPaperWhiteNits;
 }
 
 // BT.709/sRGB RGB -> XYZ Y row.
@@ -24,7 +23,6 @@ public float3 Postprocess(float3 L /* Linear */, PostprocessInfo pp,
                           SamplerState lutSampler) {
     L = ApplyExposureEV(L, pp.Exposure);
     TonemapInfo info;
-    info.HdrPaperWhiteNits = pp.HdrPaperWhiteNits;
     ViewLutTonemapper op;
     if (pp.HdrEnabled != 0)
         return op.Perform(info, L, viewLutHdr, lutSampler);

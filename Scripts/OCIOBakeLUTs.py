@@ -6,29 +6,9 @@
 # ]
 # ///
 
-from __future__ import annotations
-
-import time
-from pathlib import Path
-
-import numpy as np
-import PyOpenColorIO as ocio  # type: ignore[reportMissingImports]
-
-
 CONFIG_NAME = "cg-config-v2.2.0_aces-v1.3_ocio-v2.4"
 PROCESSOR_INPUT_SPACE = "ACEScct"
 SCENE_INPUT_SPACE = "Linear Rec.709 (sRGB)"
-
-# Small enough to iterate quickly while testing the pipeline. Use 64 for production.
-LUT_SIZE = 33
-
-# Linear BT.709/D65 -> AP1/D60 with Bradford chromatic adaptation.
-# See Scripts/ColorPrimaries.ipynb for the derivation.
-BT709_TO_AP1_BFD = np.array([
-    [0.613097402, 0.339523146, 0.047379451],
-    [0.070193722, 0.916353879, 0.013452398],
-    [0.020615593, 0.109569773, 0.869814634],
-], dtype=np.float32)
 
 VIEWS = [
     {
@@ -45,6 +25,31 @@ VIEWS = [
     },
 ]
 
+from __future__ import annotations
+
+import struct
+import time
+from pathlib import Path
+
+import numpy as np
+import PyOpenColorIO as ocio  # type: ignore[reportMissingImports]
+
+
+
+
+# Small enough to iterate quickly while testing the pipeline. Use 64 for production.
+LUT_SIZE = 33
+DDS_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "Editor" / "Render" / "Data"
+
+DDS_MAGIC = b"DDS "
+DDS_FOURCC = 0x00000004
+DDS_HEADER_FLAGS_TEXTURE = 0x00001007
+DDS_HEADER_FLAGS_VOLUME = 0x00800000
+DDS_SURFACE_FLAGS_TEXTURE = 0x00001000
+DDS_FLAGS_VOLUME = 0x00200000
+DDS_DX10_FOURCC = 0x30315844
+DXGI_FORMAT_R16G16B16A16_FLOAT = 10
+DDS_DIMENSION_TEXTURE3D = 4
 
 def create_config() -> ocio.Config:
     try:
@@ -91,6 +96,63 @@ def bake_lut_rgba(processor: ocio.CPUProcessor, size: int) -> np.ndarray:
                 out[write + 3] = 1.0
                 write += 4
     return out
+
+
+def write_lut_dds(path: Path, lut: np.ndarray, size: int) -> None:
+    """Write a single-mip 3D DDS using DXGI_FORMAT_R16G16B16A16_FLOAT."""
+    texels = size * size * size
+    expected_values = texels * 4
+    if lut.size != expected_values:
+        raise ValueError(f"Expected {expected_values} float values for {size}^3 RGBA LUT, got {lut.size}")
+
+    payload = lut.astype(np.dtype("<f2"), copy=False).tobytes(order="C")
+    expected_payload_size = texels * 4 * 2
+    if len(payload) != expected_payload_size:
+        raise ValueError(f"Expected {expected_payload_size} DDS payload bytes, got {len(payload)}")
+
+    dds_pixel_format = struct.pack(
+        "<8I",
+        32,  # DDS_PIXELFORMAT size
+        DDS_FOURCC,
+        DDS_DX10_FOURCC,
+        0, 0, 0, 0, 0,
+    )
+    header = struct.pack(
+        "<7I11I",
+        124,  # DDS_HEADER size
+        DDS_HEADER_FLAGS_TEXTURE | DDS_HEADER_FLAGS_VOLUME,
+        size,
+        size,
+        0,
+        size,
+        1,
+        *([0] * 11),
+    )
+    header += dds_pixel_format
+    header += struct.pack(
+        "<5I",
+        DDS_SURFACE_FLAGS_TEXTURE,
+        DDS_FLAGS_VOLUME,
+        0,
+        0,
+        0,
+    )
+    header10 = struct.pack(
+        "<5I",
+        DXGI_FORMAT_R16G16B16A16_FLOAT,
+        DDS_DIMENSION_TEXTURE3D,
+        0,
+        1,
+        0,
+    )
+
+    if len(header) != 124:
+        raise AssertionError(f"DDS_HEADER must be 124 bytes, got {len(header)}")
+    if len(header10) != 20:
+        raise AssertionError(f"DDS_HEADER_DXT10 must be 20 bytes, got {len(header10)}")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(DDS_MAGIC + header + header10 + payload)
 
 
 def _format_floats(values: np.ndarray, per_line: int = 8, indent: str = "    ") -> str:
@@ -156,7 +218,7 @@ def main() -> None:
     print(f"Scene input:     {SCENE_INPUT_SPACE}")
     print(f"Processor input: {PROCESSOR_INPUT_SPACE}")
     print("Shaper: BT.709/D65 -> AP1/D60 Bradford -> ACEScct (raw [0,1] LUT domain)")
-    print(f"Size:   {LUT_SIZE}^3, RGBA32F")
+    print(f"Size:   {LUT_SIZE}^3, baked RGBA32F, DDS RGBA16F")
 
     baked: list[tuple[dict, np.ndarray]] = []
     for view in VIEWS:
@@ -169,6 +231,9 @@ def main() -> None:
 
         size_kb = lut.nbytes / 1024.0
         print(f"    {lut.size} floats, {size_kb:.1f} KiB, {elapsed:.2f}s")
+        dds_path = DDS_OUTPUT_DIR / f"aces_{view['name']}.dds"
+        write_lut_dds(dds_path, lut, LUT_SIZE)
+        print(f"    wrote {dds_path}")
         baked.append((view, lut))
 
     write_aces_luts_header(header_path, baked)

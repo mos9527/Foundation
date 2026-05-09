@@ -10,6 +10,17 @@ FetchContent_MakeAvailable(bc7enc)
 FetchContent_MakeAvailable(argh)
 
 add_subdirectory(Shaders)
+
+add_custom_target(
+        Editor_Data
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${ASSET_BUILD_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+                "${CMAKE_CURRENT_LIST_DIR}/Render/Data"
+                "${ASSET_BUILD_DIR}"
+        COMMENT "Copying editor data to ${ASSET_BUILD_DIR}"
+        VERBATIM
+)
+
 add_library(Editor_Assets STATIC)
 target_sources(Editor_Assets PUBLIC
         Scene/Mesh.cpp Scene/Scene.cpp Scene/Texture.cpp
@@ -68,6 +79,7 @@ target_link_libraries(
 add_dependencies(
         Editor
         Editor_Shaders
+        Editor_Data
 )
 
 add_executable(Editor_Util)

@@ -32,7 +32,6 @@ public float3 LinearBT709ToAcescctCoord(float3 rgbBT709) {
 
 public struct TonemapInfo
 {
-    public float HdrPaperWhiteNits;
 }
 
 
@@ -84,7 +83,7 @@ public struct PqOOTF : IOOTF {
         float3 Ep = 1.099 * pow((59.5208f * x), 0.45f) - 0.099;
         float3 sel = float3(x > float3(0.0003024));
         Ep = lerp(267.84 * x, Ep, sel);
-        float3 Fd = info.HdrPaperWhiteNits * pow(Ep, 2.4f); // NOTE: default paper white=100nits by the doc
+        float3 Fd = 100.0f * pow(Ep, 2.4f); // NOTE: default paper white=100nits by the doc
         return Fd;
     }
 }

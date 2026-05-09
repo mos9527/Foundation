@@ -54,7 +54,6 @@ struct UBO
     uint32_t ptDispatchTileSide{5u}; // 1 = full dispatch, n > 1 = 1/(n*n) tile dispatch.
     // -- Display
     uint32_t enableHDR{0u};
-    float paperWhiteNits{100.0f};
     // -- Debug
     uint32_t postShowOutline{0u};
 };

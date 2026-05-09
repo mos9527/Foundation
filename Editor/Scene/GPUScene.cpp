@@ -1,9 +1,17 @@
 #include "../Render/Precompute.hpp"
 #include "../Render/Tables.hpp"
-#include "../Render/ACESLuts.hpp"
 #include <Core/AllocatorStack.hpp>
+#include <Core/Paths.hpp>
 #include <Math/Quantize.hpp>
 #include "Scene.hpp"
+
+static FTexture LoadLUT(Allocator* allocator, StringView path)
+{
+    FTexture tex(allocator);
+    String resolvedPath = PathsResolve(path);
+    LoadDDS(tex, resolvedPath);
+    return tex;
+}
 
 static FTexture MakeLUT(const float* data, RHIResourceFormat format, uint32_t width, uint32_t height = 1,
                           uint32_t depth = 1, RHITextureDimension dimension = RHITextureDimension::E2D)
@@ -274,10 +282,10 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     // Upload precomputed LUTs
     {
         auto lutE = MakeLUT(kGGXlutE, RHIResourceFormat::R32G32SignedFloat, 32, 32);
-        auto defaultViewLutSdr = MakeLUT(kAcesLutSdrRec709, RHIResourceFormat::R32G32B32A32SignedFloat,
-                                         kAcesLutSize, kAcesLutSize, kAcesLutSize, RHITextureDimension::E3D);
-        auto defaultViewLutHdr = MakeLUT(kAcesLutHdrRec2020Pq1000Nits, RHIResourceFormat::R32G32B32A32SignedFloat,
-                                         kAcesLutSize, kAcesLutSize, kAcesLutSize, RHITextureDimension::E3D);
+        auto defaultViewLutSdr =
+            LoadLUT(mContext->allocator, "data/assets/aces_sdr_rec709.dds");
+        auto defaultViewLutHdr =
+            LoadLUT(mContext->allocator, "data/assets/aces_hdr_rec2020_pq_1000nits.dds");
         const size_t budget =
             lutE.GetSize() + sizeof(kSobolMatrices32) + defaultViewLutSdr.GetSize() + defaultViewLutHdr.GetSize();
         ImmediateUpload upload(mContext->device.Get(), budget);
@@ -1026,8 +1034,10 @@ static void CheckViewLUT(FTexture const& source, StringView name)
     CHECK_MSG(source.IsValid(), "{} view LUT is invalid", name);
     CHECK_MSG(source.GetDimension() == RHITextureDimension::E3D,
               "{} view LUT must be a 3D texture, got {}", name, static_cast<uint32_t>(source.GetDimension()));
-    CHECK_MSG(source.GetFormat() == RHIResourceFormat::R32G32B32A32SignedFloat,
-              "{} view LUT must be RGBA32F, got {}", name, source.GetFormat());
+    const RHIResourceFormat format = source.GetFormat();
+    CHECK_MSG(format == RHIResourceFormat::R16G16B16A16SignedFloat ||
+                  format == RHIResourceFormat::R32G32B32A32SignedFloat,
+              "{} view LUT must be RGBA16F or RGBA32F, got {}", name, format);
 }
 
 void GPUScene::UploadViewLUTs(ImmediateUpload* ctx, FTexture const& sdr, FTexture const& hdr)
