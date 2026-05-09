@@ -19,6 +19,15 @@ struct FContext
     UniquePtr<AllocatorStack> editorFrameScratch;
 
     SDL_Window* window{};
+    struct WindowHDRState
+    {
+        bool propertiesAvailable{false};
+        bool enabled{false};
+        float sdrWhiteLevel{1.0f};
+        float sdrWhiteNits{80.0f};
+        float headroom{1.0f};
+        float peakNits{80.0f};
+    } windowHDR;
 
     RHIApplication* application{};
     RHIApplicationScopedHandle<RHIDevice> device;
@@ -35,6 +44,7 @@ struct FContext
 
 extern FContext* GContext;
 
+extern bool UpdateWindowHDRState(FContext* context);
 extern void UpdateSwapchain(FContext* context);
 extern void ResetEditorFrameScratch(FContext* context);
 extern void DestroyEditorRenderer(FContext* context = nullptr);

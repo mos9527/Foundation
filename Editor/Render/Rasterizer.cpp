@@ -226,7 +226,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                                                                   RHITextureUsageBits::StorageImage |
                                                                   RHITextureUsageBits::SampledImage,
                                                               .extent = {w, h, 1},
-                                                              .format = RHIResourceFormat::R8G8B8A8Unorm});
+                                                              .format = RHIResourceFormat::R16G16B16A16SignedFloat});
     // Instance ID map: R32_UINT, one uint per pixel storing the absolute instance index.
     // ~0u means "no object" (cleared each frame).
     auto PickIDBuffer = renderer->CreateResource("Pick ID Buffer",
@@ -354,7 +354,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                                       {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                     r->BindTextureRTV(self, GBufferRT2,
-                                      {.format = RHIResourceFormat::R8G8B8A8Unorm,
+                                      {.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
                     r->BindTextureRTV(self, PickIDBuffer,
                                       {.format = RHIResourceFormat::R32Uint,
@@ -482,7 +482,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                               RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSRV(self, GBufferRT2, "RT2", RHIPipelineStageBits::ComputeShader,
-                              RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R16G16B16A16SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSRV(
                 self, ZBuffer, "depth", RHIPipelineStageBits::ComputeShader,

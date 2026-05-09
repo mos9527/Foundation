@@ -257,7 +257,11 @@ bool EditorProcessEvent(SDL_Event* event)
             HandleFile(droppedFile);
         }
     }
-    if (event->type == SDL_EVENT_WINDOW_RESIZED)
+    bool windowOutputChanged = event->type == SDL_EVENT_WINDOW_RESIZED;
+#if SDL_VERSION_ATLEAST(3, 2, 0)
+    windowOutputChanged = windowOutputChanged || event->type == SDL_EVENT_WINDOW_HDR_STATE_CHANGED;
+#endif
+    if (windowOutputChanged)
     {
         switch (GEditor.state)
         {

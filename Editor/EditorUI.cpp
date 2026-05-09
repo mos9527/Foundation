@@ -973,10 +973,30 @@ void FRunningImGui()
         {
             changed |= ApplyViewLUTSelection();
         }
-        if (ImGui::Checkbox("Enable HDR", &GContext->enableHDR))
+        if (GContext->windowHDR.propertiesAvailable)
+        {
+            bool hdrOutput = GContext->enableHDR;
+            ImGui::BeginDisabled();
+            ImGui::Checkbox("Enable HDR", &hdrOutput);
+            ImGui::EndDisabled();
+            ImGui::TextDisabled("HDR output follows SDL window HDR state");
+        }
+        else if (ImGui::Checkbox("Enable HDR", &GContext->enableHDR))
         {
             GEditor.state = FERunningEnter;
             changed = true;
+        }
+        if (GContext->windowHDR.propertiesAvailable)
+        {
+            ImGui::Text("SDL HDR: %s", GContext->windowHDR.enabled ? "enabled" : "disabled");
+            ImGui::Text("SDR white: %.3f linear (~%.1f nits)", GContext->windowHDR.sdrWhiteLevel,
+                        GContext->windowHDR.sdrWhiteNits);
+            ImGui::Text("HDR headroom: %.2fx (~%.1f nits peak)", GContext->windowHDR.headroom,
+                        GContext->windowHDR.peakNits);
+        }
+        else
+        {
+            ImGui::TextDisabled("SDL HDR window properties unavailable");
         }
         if (GEditor.rendererMode == ERendererMode::PathTracer)
         {
