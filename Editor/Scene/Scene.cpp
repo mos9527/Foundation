@@ -337,7 +337,6 @@ void LoadGLTF(StringView path, FScene& scene)
         if (mat->emissive_texture.texture)
             material.emissiveTexture = static_cast<uint32_t>(cgltf_texture_index(data, mat->emissive_texture.texture));
         material.emissiveFactor = {mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2], 1.0f};
-        material.emissiveFactor *= mat->emissive_strength.emissive_strength;
         material.transmissionFactor = mat->has_transmission ? mat->transmission.transmission_factor : 0.0f;
         if (mat->has_transmission && mat->transmission.transmission_texture.texture)
             material.transmissionTexture = static_cast<uint32_t>(cgltf_texture_index(data, mat->transmission.transmission_texture.texture));
