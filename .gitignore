@@ -11,3 +11,5 @@ docs/
 /CMakeSettings.json
 .claude/
 .codebuddy/
+*.pyc
+dist/
