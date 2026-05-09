@@ -31,6 +31,23 @@ static constexpr PTSPPOption kPTSPPOptions[] = {
     {"5",    5u, 1u},
 };
 static constexpr int kPTSPPOptionCount = static_cast<int>(sizeof(kPTSPPOptions) / sizeof(kPTSPPOptions[0]));
+static constexpr const char* kExternalViewLUTLabel = "<external>";
+
+static bool OpenViewLUTDialog(String& outPath)
+{
+    nfdu8filteritem_t filters[] = {{"DDS LUT", "dds"}};
+    nfdopendialogu8args_t args = {0};
+    args.filterList = filters;
+    args.filterCount = 1;
+
+    nfdu8char_t* selectedPath = nullptr;
+    if (NFD_OpenDialogU8_With(&selectedPath, &args) != NFD_OKAY)
+        return false;
+
+    outPath = selectedPath;
+    NFD_FreePathU8(selectedPath);
+    return true;
+}
 
 static int PTSPPOptionIndex(UBO const& ubo)
 {
@@ -911,11 +928,19 @@ void FRunningImGui()
         bool changed = false;
         ImGui::SeparatorText("Display");
         bool viewLUTChanged = false;
-        auto viewLUTCombo = [](const char* label, int& index, const ViewLUTEntry* entries, int count)
+        auto viewLUTCombo = [](const char* label, int& index, String& externalPath,
+                               const ViewLUTEntry* entries, int count)
         {
-            index = std::clamp(index, 0, count - 1);
+            const int externalIndex = count;
+            if (index < 0 || index > externalIndex || (index == externalIndex && externalPath.empty()))
+                index = std::clamp(index, 0, count - 1);
+
             bool selected = false;
-            if (ImGui::BeginCombo(label, entries[index].label))
+            const char* preview = index == externalIndex ? kExternalViewLUTLabel : entries[index].label;
+            bool comboOpen = ImGui::BeginCombo(label, preview);
+            if (index == externalIndex && !externalPath.empty() && ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", externalPath.c_str());
+            if (comboOpen)
             {
                 for (int i = 0; i < count; ++i)
                 {
@@ -928,16 +953,30 @@ void FRunningImGui()
                     if (isSelected)
                         ImGui::SetItemDefaultFocus();
                 }
+                const bool isExternalSelected = index == externalIndex;
+                if (ImGui::Selectable(kExternalViewLUTLabel, isExternalSelected))
+                {
+                    String selectedPath;
+                    if (OpenViewLUTDialog(selectedPath))
+                    {
+                        externalPath = selectedPath;
+                        index = externalIndex;
+                        selected = true;
+                    }
+                }
+                if (isExternalSelected)
+                    ImGui::SetItemDefaultFocus();
                 ImGui::EndCombo();
             }
             return selected;
         };
-        viewLUTChanged |= viewLUTCombo("SDR LUT", GEditor.viewLUTSdrIndex, kViewLUTsSdr, kViewLUTSdrCount);
-        viewLUTChanged |= viewLUTCombo("HDR LUT", GEditor.viewLUTHdrIndex, kViewLUTsHdr, kViewLUTHdrCount);
+        viewLUTChanged |= viewLUTCombo("SDR LUT", GEditor.viewLUTSdrIndex, GEditor.viewLUTSdrExternalPath,
+                                       kViewLUTsSdr, kViewLUTSdrCount);
+        viewLUTChanged |= viewLUTCombo("HDR LUT", GEditor.viewLUTHdrIndex, GEditor.viewLUTHdrExternalPath,
+                                       kViewLUTsHdr, kViewLUTHdrCount);
         if (viewLUTChanged)
         {
-            ApplyViewLUTSelection();
-            changed = true;
+            changed |= ApplyViewLUTSelection();
         }
         if (ImGui::Checkbox("Enable HDR", &GContext->enableHDR))
         {

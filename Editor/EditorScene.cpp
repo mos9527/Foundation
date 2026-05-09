@@ -4,6 +4,7 @@
 #include <RenderCore/ImmediateContext.hpp>
 #include <algorithm>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <numbers>
 
@@ -90,26 +91,59 @@ static FTexture LoadViewLUT(StringView path)
     return texture;
 }
 
-static void UploadSelectedViewLUTs(ImmediateUpload* upload)
+static String ResolveSelectedViewLUTPath(int& index, ViewLUTEntry const* entries, int count,
+                                         int defaultIndex, String const& externalPath)
 {
-    GEditor.viewLUTSdrIndex = std::clamp(GEditor.viewLUTSdrIndex, 0, kViewLUTSdrCount - 1);
-    GEditor.viewLUTHdrIndex = std::clamp(GEditor.viewLUTHdrIndex, 0, kViewLUTHdrCount - 1);
+    const int externalIndex = count;
+    if (index == externalIndex && !externalPath.empty())
+        return externalPath;
 
-    FTexture sdr = LoadViewLUT(kViewLUTsSdr[GEditor.viewLUTSdrIndex].path);
-    FTexture hdr = LoadViewLUT(kViewLUTsHdr[GEditor.viewLUTHdrIndex].path);
-    GContext->gpuScene->UploadViewLUTs(upload, sdr, hdr);
+    if (index < 0 || index >= count)
+        index = std::clamp(defaultIndex, 0, count - 1);
+    return entries[index].path;
 }
 
-void ApplyViewLUTSelection()
+static void LoadSelectedViewLUTs(FTexture& sdr, FTexture& hdr)
 {
-    ImmediateUpload upload(GContext->device.Get(), 16 * (1u << 20));
-    upload.Begin();
-    UploadSelectedViewLUTs(&upload);
-    upload.End();
-    upload.WaitIdle();
+    String sdrPath = ResolveSelectedViewLUTPath(GEditor.viewLUTSdrIndex, kViewLUTsSdr, kViewLUTSdrCount,
+                                                kDefaultViewLUTSdr, GEditor.viewLUTSdrExternalPath);
+    String hdrPath = ResolveSelectedViewLUTPath(GEditor.viewLUTHdrIndex, kViewLUTsHdr, kViewLUTHdrCount,
+                                                kDefaultViewLUTHdr, GEditor.viewLUTHdrExternalPath);
+
+    sdr = LoadViewLUT(sdrPath);
+    hdr = LoadViewLUT(hdrPath);
+}
+
+bool ApplyViewLUTSelection()
+{
+    try
+    {
+        FTexture sdr(GLOBAL_ALLOC);
+        FTexture hdr(GLOBAL_ALLOC);
+        LoadSelectedViewLUTs(sdr, hdr);
+
+        const size_t uploadBudget = static_cast<size_t>(sdr.GetSize()) + static_cast<size_t>(hdr.GetSize()) +
+                                    (1u << 20);
+        ImmediateUpload upload(GContext->device.Get(), uploadBudget);
+        upload.Begin();
+        GContext->gpuScene->UploadViewLUTs(&upload, sdr, hdr);
+        upload.End();
+        upload.WaitIdle();
+    }
+    catch (std::exception const& e)
+    {
+        LOG(Editor, LogError, "Failed to apply view LUT selection: {}", e.what());
+        return false;
+    }
+    catch (...)
+    {
+        LOG(Editor, LogError, "Failed to apply view LUT selection");
+        return false;
+    }
 
     GEditor.shaderGlobals.ptAccumulatedFrames = 0;
     GEditor.state = FERunningEnter;
+    return true;
 }
 
 static Vector<float> ReadbackAndCombineFloatRTs(RHITexture* const* sourceTextures, uint32_t sourceCount,
@@ -429,6 +463,8 @@ void ReplaceScene(StringView path)
     GEditor.shaderGlobals.camEV = GEditor.doc.scene.mColorManagement.postExposure;
     GEditor.viewLUTSdrIndex = static_cast<int>(GEditor.doc.scene.mColorManagement.viewLutSdrIndex);
     GEditor.viewLUTHdrIndex = static_cast<int>(GEditor.doc.scene.mColorManagement.viewLutHdrIndex);
+    GEditor.viewLUTSdrExternalPath.clear();
+    GEditor.viewLUTHdrExternalPath.clear();
 
     auto* gpu = GContext->gpuScene;
     gpu->Reset();
@@ -490,7 +526,10 @@ void ReplaceScene(StringView path)
         }
         else
         {
-            UploadSelectedViewLUTs(&upload);
+            FTexture sdr(GLOBAL_ALLOC);
+            FTexture hdr(GLOBAL_ALLOC);
+            LoadSelectedViewLUTs(sdr, hdr);
+            gpu->UploadViewLUTs(&upload, sdr, hdr);
         }
         upload.End(), upload.WaitIdle();
     }

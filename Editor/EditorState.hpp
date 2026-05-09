@@ -198,6 +198,8 @@ struct EditorState
     ERendererMode   rendererMode = ERendererMode::PathTracer;
     int             viewLUTSdrIndex = kDefaultViewLUTSdr;
     int             viewLUTHdrIndex = kDefaultViewLUTHdr;
+    String          viewLUTSdrExternalPath;
+    String          viewLUTHdrExternalPath;
 
     UBO             shaderGlobals;
     FArcballCamera  camera{
@@ -220,7 +222,7 @@ void UpdateSceneLights();
 void ReplaceScene(StringView path);
 void SaveScene(StringView path);
 void LoadEnvMap(StringView path);
-void ApplyViewLUTSelection();
+bool ApplyViewLUTSelection();
 void HandleFile(const char* filePath);
 
 void EditorDockSpaceAndMenuBar();
