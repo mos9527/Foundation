@@ -31,7 +31,7 @@ Some time in the future:
     this is no longer NV only I'll have a shot.
   
 Done, awaiting Blog Update:
-- [x] LUT-based ACES implementation
+- [x] LUT-based color management implementation
   - Linear BT709 Scene Space (D65), converted to D60 via [Bradford CAT](http://www.brucelindbloom.com/index.html?Eqn_ChromAdapt.html) and encoded as [AP1](https://docs.acescentral.com/encodings/aces2065-1/#transfer-function) 
   - Transform then encodes as [ACEScct](https://docs.acescentral.com/encodings/acescct/#encoding-function)
   - Rest of the transform handled by LUTs in ACEScct log space, incl. EOTF. See `Scripts/OCIOBakeLUTs.py`

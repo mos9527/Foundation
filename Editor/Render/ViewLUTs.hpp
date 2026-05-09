@@ -42,6 +42,8 @@ inline constexpr ViewLUTEntry kViewLUTsHdr[] = {
     {"Standard / No Look", "data/assets/view_lut_hdr_standard_no_look.dds"},
     {"ACES 1.3 - HDR 1000 nits / No Look", "data/assets/view_lut_hdr_aces_1_3_hdr_1000_nits_no_look.dds"},
     {"ACES 1.3 - HDR 1000 nits / ACES 1.3 - Reference Gamut Compression", "data/assets/view_lut_hdr_aces_1_3_hdr_1000_nits_look_aces_1_3_reference_gamut_compression.dds"},
+    {"ACES 2.0 - HDR 500 nits / No Look", "data/assets/view_lut_hdr_aces_2_0_hdr_500_nits_no_look.dds"},
+    {"ACES 2.0 - HDR 500 nits / ACES 2.0 - Reference Gamut Compression", "data/assets/view_lut_hdr_aces_2_0_hdr_500_nits_look_aces_2_0_reference_gamut_compression.dds"},
     {"ACES 2.0 - HDR 1000 nits / No Look", "data/assets/view_lut_hdr_aces_2_0_hdr_1000_nits_no_look.dds"},
     {"ACES 2.0 - HDR 1000 nits / ACES 2.0 - Reference Gamut Compression", "data/assets/view_lut_hdr_aces_2_0_hdr_1000_nits_look_aces_2_0_reference_gamut_compression.dds"},
     {"AgX - HDR 1000 nits / No Look", "data/assets/view_lut_hdr_agx_hdr_1000_nits_no_look.dds"},
@@ -57,4 +59,4 @@ inline constexpr ViewLUTEntry kViewLUTsHdr[] = {
 };
 
 inline constexpr int kViewLUTHdrCount = static_cast<int>(sizeof(kViewLUTsHdr) / sizeof(kViewLUTsHdr[0]));
-inline constexpr int kDefaultViewLUTHdr = 1;
+inline constexpr int kDefaultViewLUTHdr = 3;

@@ -33,7 +33,7 @@ LUT_OUTPUTS = [
     {
         "kind": "hdr",
         "display": "Rec.2100-PQ",
-        "default_view": "ACES 1.3 - HDR 1000 nits",
+        "default_view": "ACES 2.0 - HDR 500 nits",
         "default_look": None,
         "array_name": "kViewLUTsHdr",
         "count_name": "kViewLUTHdrCount",
@@ -74,6 +74,7 @@ LUT_SELECTIONS: dict[str, list[tuple[str, list[str | None]]]] = {
     "hdr": [
         ("Standard", [None]),
         ("ACES 1.3 - HDR 1000 nits", [None, "ACES 1.3 - Reference Gamut Compression"]),
+        ("ACES 2.0 - HDR 500 nits", [None, "ACES 2.0 - Reference Gamut Compression"]),
         ("ACES 2.0 - HDR 1000 nits", [None, "ACES 2.0 - Reference Gamut Compression"]),
         ("AgX - HDR 1000 nits", [None, *AGX_LOOKS]),
     ],
