@@ -1,3 +1,5 @@
+#include <algorithm>
+
 FContext* GContext = nullptr;
 
 void ResetEditorFrameScratch(FContext* context)
@@ -66,8 +68,11 @@ FContext* CreateContext(SDL_Window* window, Allocator* allocator, RHIDevice::Dev
     context->application = ConstructBase<RHIApplication, VulkanApplication>(allocator, allocator);
     context->device = context->application->CreateDevice(deviceDesc, window);
     context->psoCache = context->device->CreatePipelineCache({});
+    const size_t requestedPrimitiveBudget = 2048ull * (1ull << 20); // 2048 MB
+    const size_t primitiveBudget = std::min(requestedPrimitiveBudget,
+                                            context->device->GetCapabilities().maxStorageBufferRange) & ~size_t(3);
     context->gpuScene = Construct<GPUScene>(allocator, context, GPUScene::GPUSceneDesc{
-        .primitiveBudget = 2048 * (1u << 20), // 2048 MB
+        .primitiveBudget = static_cast<uint32_t>(primitiveBudget),
         .curveAABBBudget = 512 * (1u << 20) // 512 MB
     });
     UpdateSwapchain(context);

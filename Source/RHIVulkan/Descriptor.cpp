@@ -39,9 +39,18 @@ void VulkanDeviceDescriptorSet::Update(UpdateDesc const& desc)
     for (size_t i = 0; i < desc.buffers.size(); ++i)
     {
         auto const& b = desc.buffers[i];
+        CHECK_MSG(b.offset <= b.buffer->mDesc.size, "Descriptor buffer offset {} exceeds buffer size {}", b.offset,
+                  b.buffer->mDesc.size);
+        size_t range = b.size == kFullSize ? b.buffer->mDesc.size - b.offset : b.size;
+        CHECK_MSG(b.offset + range <= b.buffer->mDesc.size, "Descriptor buffer range [{}, {}) exceeds buffer size {}",
+                  b.offset, b.offset + range, b.buffer->mDesc.size);
+        CHECK_MSG(desc.type != RHIDescriptorType::StorageBuffer ||
+                      range <= mPool.GetDevice().GetCapabilities().maxStorageBufferRange,
+                  "Storage buffer descriptor range {} exceeds device maxStorageBufferRange {}", range,
+                  mPool.GetDevice().GetCapabilities().maxStorageBufferRange);
         buffers[i] = vk::DescriptorBufferInfo{.buffer = static_cast<VulkanBuffer*>(b.buffer)->GetVkBuffer(),
                                               .offset = b.offset,
-                                              .range = b.size == kFullSize ? VK_WHOLE_SIZE : b.size};
+                                              .range = range};
     }
     Vector<vk::DescriptorImageInfo> images(desc.images.size(), alloc.Ptr());
     for (size_t i = 0; i < desc.images.size(); ++i)

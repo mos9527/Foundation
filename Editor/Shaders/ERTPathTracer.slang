@@ -45,6 +45,10 @@ static const uint kPTCompileOptionSamplerSobol = 1u << 1;
 static const uint kPTCompileOptionSamplerPCG = 1u << 2;
 [[SpecializationConstant]] uint ptCompileOptions;
 
+#ifndef PT_ENABLE_SER
+#define PT_ENABLE_SER 0
+#endif
+
 static const uint kRayTypeSurface = 0u;
 static const uint kRayTypeShadow = 1u;
 static const uint kRayTypeBSSRDFQuery = 2u;
@@ -762,6 +766,7 @@ RayDesc GenerateCameraRay<S : ISampler>(uint2 pixel, inout S rng)
 
 // -- Main Shader Routines
 
+#if PT_ENABLE_SER
 // TraceRay via HitObject — returns a hit object without invoking closest hit.
 // Used by SER to reorder threads before shading.
 HitObject TraceHitObject(RayDesc ray)
@@ -859,6 +864,7 @@ uint BuildSERCoherenceHint(HitObject hitObj, uint bounce)
     uint hitClass = isCurve ? 3u : 2u;
     return (hitClass << 6) | BuildSERMaterialKey(materialIndex, material, isCurve, bounce);
 }
+#endif
 
 // -- Light Sampling
 
@@ -1301,6 +1307,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     RayDesc ray = GenerateCameraRay(pix, rng);
     for (uint bounce = 0; ; bounce++) {
         HitPayload payload;
+#if PT_ENABLE_SER
         if ((ptCompileOptions & kPTCompileOptionShaderExecutionReordering) != 0 /* SER */) {
             // SER
             // https://www.khronos.org/blog/boosting-ray-tracing-performance-with-shader-execution-reordering-introducing-vk-ext-ray-tracing-invocation-reorder
@@ -1311,6 +1318,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             // Invoke closest hit / miss to populate the payload
             HitObject::Invoke(AS, hitObj, payload);
         } else
+#endif
             TraceRay(AS, 0, 0xFF, kRayTypeSurface, 0, 0, ray, payload);
         // Outgoing direction
         float3 view = -ray.Direction;

@@ -17,5 +17,18 @@ foreach(SlangFile IN LISTS SLANG_FILES)
             OUTPUT_DIR      "${SHADER_BUILD_DIR}"
     )
     add_dependencies(Editor_Shaders "Shader_${ShaderName}")
+
+    if(ShaderName STREQUAL "ERTPathTracer")
+        slangc_compile(
+                "Shader_${ShaderName}_SER"
+                SOURCE          "${SlangFile}"
+                OUTPUT_DIR      "${SHADER_BUILD_DIR}"
+                OUTPUT_NAME     "${ShaderName}_SER"
+                DEFINES         PT_ENABLE_SER=1
+                # Otherwise Slang emits VK_NV_ray_tracing_invocation_reorder. Eugh.
+                CAPABILITIES    spvShaderInvocationReorderEXT
+        )
+        add_dependencies(Editor_Shaders "Shader_${ShaderName}_SER")
+    endif()
 endforeach()
 

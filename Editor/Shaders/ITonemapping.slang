@@ -33,10 +33,6 @@ public float3 LinearBT709ToAcescctCoord(float3 rgbBT709) {
 public struct TonemapInfo
 {
     public float HdrPaperWhiteNits;
-    // OCIO-baked ACES view LUT for the active display (SDR or HDR), ACEScct domain.
-    // Output is encoded display RGB ready for present.
-    public Texture3D<float4> viewLut;
-    public SamplerState lutSampler;
 }
 
 
@@ -49,7 +45,7 @@ public interface IEOTF {
 }
 
 public interface ITonemapper {
-    float3 Perform(TonemapInfo info, float3 L);
+    float3 Perform(TonemapInfo info, float3 L, Texture3D<float4> viewLut, SamplerState lutSampler);
 }
 
 // BT709->BT709
@@ -117,7 +113,7 @@ public struct Tonemapper<OO, EO> : ITonemapper
     where OO : IOOTF
     where EO : IEOTF
 {
-    float3 Perform(TonemapInfo info, float3 L /* linear */){
+    float3 Perform(TonemapInfo info, float3 L /* linear */, Texture3D<float4> viewLut, SamplerState lutSampler){
         OO o = OO();
         EO e = EO();
         L = o.Transfer(info, L);
@@ -135,8 +131,9 @@ public typealias StandardPqTonemapper = Tonemapper<PqOOTF, PqEOTF> ;
 // Scripts/ColorPrimaries.ipynb's BT.709/D65 -> AP1/D60 Bradford derivation.
 public struct AcesLutTonemapper : ITonemapper
 {
-    float3 Perform(TonemapInfo info, float3 L /* scene-linear BT.709, post-exposure */) {
+    float3 Perform(TonemapInfo info, float3 L /* scene-linear BT.709, post-exposure */,
+                   Texture3D<float4> viewLut, SamplerState lutSampler) {
         float3 coord = LinearBT709ToAcescctCoord(L);
-        return info.viewLut.SampleLevel(info.lutSampler, coord, 0).rgb;
+        return viewLut.SampleLevel(lutSampler, coord, 0).rgb;
     }
 }

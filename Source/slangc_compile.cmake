@@ -11,7 +11,7 @@ endif()
 function(slangc_compile TARGET)
     set(options)
     set(oneValueArgs SOURCE OUTPUT_DIR OUTPUT_NAME)
-    set(multiValueArgs DEFINES INCLUDE_DIRS)
+    set(multiValueArgs DEFINES INCLUDE_DIRS CAPABILITIES)
     cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     get_filename_component(SOURCE_FILENAME ${ARG_SOURCE} NAME_WE)
@@ -34,10 +34,12 @@ function(slangc_compile TARGET)
             -fvk-use-scalar-layout # Dense packing
             -depfile "${OUTPUT_DEPNAME}"
             -g # Debug info
-            -capability spvShaderInvocationReorderEXT # Otherwise emits VK_NV_ray_tracing_invocation_reorder. Eugh.
     )
     foreach(DEFINE ${ARG_DEFINES})
         list(APPEND SLANGC_ARGS -D${DEFINE})
+    endforeach()
+    foreach(CAPABILITY ${ARG_CAPABILITIES})
+        list(APPEND SLANGC_ARGS -capability ${CAPABILITY})
     endforeach()
     foreach(INCLUDE_DIR ${ARG_INCLUDE_DIRS})
         list(APPEND SLANGC_ARGS -I"${INCLUDE_DIR}")

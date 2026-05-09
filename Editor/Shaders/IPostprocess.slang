@@ -5,10 +5,6 @@ public struct PostprocessInfo
     public float Exposure;
     public uint  HdrEnabled;
     public float HdrPaperWhiteNits;
-    // OCIO-baked ACES view LUTs (3D, RGBA32F, ACEScct in [0,1]).
-    public Texture3D<float4> viewLutSdr;
-    public Texture3D<float4> viewLutHdr;
-    public SamplerState lutSampler;
 }
 
 // BT.709/sRGB RGB -> XYZ Y row.
@@ -23,12 +19,14 @@ public float3 ApplyExposureEV(float3 L, float ev) {
 }
 
 // L: BT709 Linear primaries content
-public float3 Postprocess(float3 L /* Linear */, PostprocessInfo pp) {
+public float3 Postprocess(float3 L /* Linear */, PostprocessInfo pp,
+                          Texture3D<float4> viewLutSdr, Texture3D<float4> viewLutHdr,
+                          SamplerState lutSampler) {
     L = ApplyExposureEV(L, pp.Exposure);
     TonemapInfo info;
     info.HdrPaperWhiteNits = pp.HdrPaperWhiteNits;
-    info.lutSampler = pp.lutSampler;
-    info.viewLut = (pp.HdrEnabled != 0) ? pp.viewLutHdr : pp.viewLutSdr;
     AcesLutTonemapper op;
-    return op.Perform(info, L);
+    if (pp.HdrEnabled != 0)
+        return op.Perform(info, L, viewLutHdr, lutSampler);
+    return op.Perform(info, L, viewLutSdr, lutSampler);
 }

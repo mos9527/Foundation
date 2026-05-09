@@ -31,22 +31,19 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     pp.Exposure = globalParams.camEV;
     pp.HdrEnabled = globalParams.enableHDR;
     pp.HdrPaperWhiteNits = globalParams.paperWhiteNits;
-    pp.viewLutSdr = viewLutSdr;
-    pp.viewLutHdr = viewLutHdr;
-    pp.lutSampler = lutSampler;
     float4 result;
     if ((flags & (kViewAOVDiffuse | kViewAOVSpecular)) != 0) {
         // Per-lobe AOV isolation views (tone mapped)
         float3 aov = float3(0);
         if ((flags & kViewAOVDiffuse) != 0)  aov = diffuseTex.Load(coord).xyz;
         if ((flags & kViewAOVSpecular) != 0) aov = specularTex.Load(coord).xyz;
-        result = float4(Postprocess(aov, pp), 1.0f);
+        result = float4(Postprocess(aov, pp, viewLutSdr, viewLutHdr, lutSampler), 1.0f);
     } else {
         // Composite lighting = diffuse + specular (already averaged), then ACES grade
         float3 diffuse  = diffuseTex.Load(coord).xyz;
         float3 specular = specularTex.Load(coord).xyz;
         float3 Lpix = diffuse + specular;
-        result = float4(Postprocess(Lpix, pp), 1.0f);
+        result = float4(Postprocess(Lpix, pp, viewLutSdr, viewLutHdr, lutSampler), 1.0f);
     }
 
     // Cross filter for a simple outline

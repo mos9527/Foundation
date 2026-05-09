@@ -129,50 +129,49 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             const bool shaderExecutionReordering =
                 cfg.ptShaderExecutionReordering && context->device->GetCapabilities().shaderExecutionReordering;
             const uint ptCompileOptions = PTPackCompileOptions(shaderExecutionReordering, cfg.ptSampler);
-            r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)));
+            const auto pathTracerShader = Paths::Resolve(shaderExecutionReordering
+                                                             ? "data/shaders/ERTPathTracer_SER.spv"
+                                                             : "data/shaders/ERTPathTracer.spv");
+            r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", pathTracerShader,
+                          AsBytes(AsSpan(ptCompileOptions)));
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RayClosestHit",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)),
-                          /*hit group*/ 0);
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 0);
             r->BindShader(self, RHIShaderStageBits::RayAnyHit, "RayOpacityAnyHit",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)),
-                          /*hit group*/ 0);
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 0);
             r->BindShader(self, RHIShaderStageBits::RayMiss, "RayMiss",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)));
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)));
             r->BindShader(self, RHIShaderStageBits::RayAnyHit, "ShadowRayAnyHit",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)),
-                          /*hit group*/ 1);
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 1);
             r->BindShader(self, RHIShaderStageBits::RayMiss, "ShadowRayMiss",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)));
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)));
             r->BindShader(self, RHIShaderStageBits::RayAnyHit, "BSSRDFQueryAnyHit",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)),
-                          /*hit group*/ 2);
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 2);
             r->BindShader(self, RHIShaderStageBits::RayMiss, "BSSRDFQueryMiss",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)));
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)));
             r->BindShader(self, RHIShaderStageBits::RayIntersection, "RectLightIntersection",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)),
-                          /*hit group*/ 3, RTHitGroupType::Procedural);
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 3,
+                          RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RectLightClosestHit",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)),
-                          /*hit group*/ 3, RTHitGroupType::Procedural);
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 3,
+                          RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayIntersection, "DiskLightIntersection",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)),
-                          /*hit group*/ 4, RTHitGroupType::Procedural);
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 4,
+                          RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "DiskLightClosestHit",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)),
-                          /*hit group*/ 4, RTHitGroupType::Procedural);
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 4,
+                          RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayIntersection, "CurveIntersection",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)),
-                          /*hit group*/ 5, RTHitGroupType::Procedural);
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 5,
+                          RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "CurveClosestHit",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)),
-                          /*hit group*/ 5, RTHitGroupType::Procedural);
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 5,
+                          RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayIntersection, "CurveIntersection",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)),
-                          /*hit group*/ 6, RTHitGroupType::Procedural);
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 6,
+                          RTHitGroupType::Procedural);
             r->BindShader(self, RHIShaderStageBits::RayAnyHit, "CurveShadowAnyHit",
-                          Paths::Resolve("data/shaders/ERTPathTracer.spv"), AsBytes(AsSpan(ptCompileOptions)),
-                          /*hit group*/ 6, RTHitGroupType::Procedural);
+                          pathTracerShader, AsBytes(AsSpan(ptCompileOptions)), /*hit group*/ 6,
+                          RTHitGroupType::Procedural);
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitives");
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
             r->BindBufferStorageRead(self, CurveInstanceBuffer, RHIPipelineStageBits::ComputeShader, "curveInstances");

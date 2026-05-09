@@ -51,9 +51,6 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     pp.Exposure = globalParams.camEV;
     pp.HdrEnabled = globalParams.enableHDR;
     pp.HdrPaperWhiteNits = globalParams.paperWhiteNits;
-    pp.viewLutSdr = viewLutSdr;
-    pp.viewLutHdr = viewLutHdr;
-    pp.lutSampler = lutSampler;
 
     float4 result;
     if (flags & kViewOverdraw){
@@ -65,7 +62,7 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     } else {
         // Main postprocess routine: exposure + BT.709->AP1 BFD + ACEScct shaper + 3D LUT
         float3 Lpix = lighting.Load(coord).xyz;
-        result = float4(Postprocess(Lpix, pp), 1.0f);
+        result = float4(Postprocess(Lpix, pp, viewLutSdr, viewLutHdr, lutSampler), 1.0f);
     }
 
     // Cross filter for a simple outline

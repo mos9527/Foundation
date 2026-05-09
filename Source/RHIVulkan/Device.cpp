@@ -229,8 +229,12 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         REQUEST_FEATURE(vk::PhysicalDeviceRayTracingPipelineFeaturesKHR, rayTracingPipeline)
     }
 
+    bool shaderExecutionReordering = false;
     if (hasRayTracingInvocationReorder) {
         REQUEST_FEATURE(vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT, rayTracingInvocationReorder)
+        shaderExecutionReordering =
+            featureChain.get<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT>().rayTracingInvocationReorder ==
+            VK_TRUE;
     }
 
     vk::DeviceCreateInfo device_info{.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
@@ -318,14 +322,16 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
             }
         }
     }
+    auto properties = mPhysicalDevice.getProperties();
     // Fill in device capabilities
     mDeviceCaps = {
         .dedicatedCompute = mQueues->graphics != mQueues->compute,
         .dedicatedTransfer = mQueues->graphics != mQueues->transfer,
-        .shaderExecutionReordering = hasRayTracingInvocationReorder,
+        .shaderExecutionReordering = shaderExecutionReordering,
         .meshShaders = hasMeshShader,
         .raytracingInline = hasRayQuery,
         .raytracingPipeline = hasRayTracingPipeline,
+        .maxStorageBufferRange = properties.limits.maxStorageBufferRange,
     };
 }
 
