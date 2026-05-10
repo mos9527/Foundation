@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - vulkan
+      - dev
 
 permissions:
   contents: read
