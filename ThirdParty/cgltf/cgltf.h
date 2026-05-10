@@ -287,6 +287,19 @@ typedef enum cgltf_foundation_environment_projection {
 	cgltf_foundation_environment_projection_max_enum
 } cgltf_foundation_environment_projection;
 
+typedef enum cgltf_foundation_material_shader_block {
+	cgltf_foundation_material_shader_block_invalid,
+	cgltf_foundation_material_shader_block_principled,
+	cgltf_foundation_material_shader_block_hair,
+	cgltf_foundation_material_shader_block_max_enum
+} cgltf_foundation_material_shader_block;
+
+typedef enum cgltf_foundation_material_hair_model {
+	cgltf_foundation_material_hair_model_invalid,
+	cgltf_foundation_material_hair_model_chiang,
+	cgltf_foundation_material_hair_model_max_enum
+} cgltf_foundation_material_hair_model;
+
 typedef enum cgltf_data_free_method {
 	cgltf_data_free_method_none,
 	cgltf_data_free_method_file_release,
@@ -579,6 +592,21 @@ typedef struct cgltf_dispersion
 	cgltf_float dispersion;
 } cgltf_dispersion;
 
+typedef struct cgltf_foundation_materials
+{
+	cgltf_bool has_shader_block;
+	cgltf_foundation_material_shader_block shader_block;
+	cgltf_foundation_material_hair_model hair_model;
+	cgltf_bool has_hair_beta_m;
+	cgltf_float hair_beta_m;
+	cgltf_bool has_hair_beta_n;
+	cgltf_float hair_beta_n;
+	cgltf_bool has_hair_alpha;
+	cgltf_float hair_alpha;
+	cgltf_bool has_ior;
+	cgltf_float ior;
+} cgltf_foundation_materials;
+
 typedef struct cgltf_material
 {
 	char* name;
@@ -596,6 +624,7 @@ typedef struct cgltf_material
 	cgltf_bool has_subsurface;
 	cgltf_bool has_anisotropy;
 	cgltf_bool has_dispersion;
+	cgltf_bool has_foundation_materials;
 	cgltf_pbr_metallic_roughness pbr_metallic_roughness;
 	cgltf_pbr_specular_glossiness pbr_specular_glossiness;
 	cgltf_clearcoat clearcoat;
@@ -610,6 +639,7 @@ typedef struct cgltf_material
 	cgltf_subsurface subsurface;
 	cgltf_anisotropy anisotropy;
 	cgltf_dispersion dispersion;
+	cgltf_foundation_materials foundation_materials;
 	cgltf_texture_view normal_texture;
 	cgltf_texture_view occlusion_texture;
 	cgltf_texture_view emissive_texture;
@@ -770,6 +800,13 @@ typedef struct cgltf_foundation_environment {
 	cgltf_float azimuth_offset;
 } cgltf_foundation_environment;
 
+typedef struct cgltf_foundation_color_management {
+	cgltf_bool has_post_exposure;
+	cgltf_float post_exposure;
+	char* sdr;
+	char* hdr;
+} cgltf_foundation_color_management;
+
 struct cgltf_node {
 	char* name;
 	cgltf_node* parent;
@@ -918,6 +955,8 @@ typedef struct cgltf_data
 
 	cgltf_size data_extensions_count;
 	cgltf_extension* data_extensions;
+	cgltf_bool has_foundation_color_management;
+	cgltf_foundation_color_management foundation_color_management;
 
 	char** extensions_used;
 	cgltf_size extensions_used_count;
@@ -2224,6 +2263,8 @@ void cgltf_free(cgltf_data* data)
 
 	data->memory.free_func(data->memory.user_data, data->variants);
 
+	data->memory.free_func(data->memory.user_data, data->foundation_color_management.sdr);
+	data->memory.free_func(data->memory.user_data, data->foundation_color_management.hdr);
 	cgltf_free_extensions(data, data->data_extensions, data->data_extensions_count);
 	cgltf_free_extras(data, &data->extras);
 
@@ -4616,6 +4657,89 @@ static int cgltf_parse_json_dispersion(jsmntok_t const* tokens, int i, const uin
 	return i;
 }
 
+static int cgltf_parse_json_foundation_materials(jsmntok_t const* tokens, int i, const uint8_t* json_chunk, cgltf_foundation_materials* out_materials)
+{
+	CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
+
+	out_materials->shader_block = cgltf_foundation_material_shader_block_invalid;
+	out_materials->hair_model = cgltf_foundation_material_hair_model_chiang;
+
+	int size = tokens[i].size;
+	++i;
+
+	for (int j = 0; j < size; ++j)
+	{
+		CGLTF_CHECK_KEY(tokens[i]);
+
+		if (cgltf_json_strcmp(tokens + i, json_chunk, "shaderBlock") == 0)
+		{
+			++i;
+			out_materials->has_shader_block = 1;
+			if (cgltf_json_strcmp(tokens + i, json_chunk, "principled") == 0)
+			{
+				out_materials->shader_block = cgltf_foundation_material_shader_block_principled;
+			}
+			else if (cgltf_json_strcmp(tokens + i, json_chunk, "hair") == 0)
+			{
+				out_materials->shader_block = cgltf_foundation_material_shader_block_hair;
+			}
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "model") == 0)
+		{
+			++i;
+			if (cgltf_json_strcmp(tokens + i, json_chunk, "chiang") == 0)
+			{
+				out_materials->hair_model = cgltf_foundation_material_hair_model_chiang;
+			}
+			else
+			{
+				out_materials->hair_model = cgltf_foundation_material_hair_model_invalid;
+			}
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "betaM") == 0)
+		{
+			++i;
+			out_materials->has_hair_beta_m = 1;
+			out_materials->hair_beta_m = cgltf_json_to_float(tokens + i, json_chunk);
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "betaN") == 0)
+		{
+			++i;
+			out_materials->has_hair_beta_n = 1;
+			out_materials->hair_beta_n = cgltf_json_to_float(tokens + i, json_chunk);
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "alpha") == 0)
+		{
+			++i;
+			out_materials->has_hair_alpha = 1;
+			out_materials->hair_alpha = cgltf_json_to_float(tokens + i, json_chunk);
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "ior") == 0)
+		{
+			++i;
+			out_materials->has_ior = 1;
+			out_materials->ior = cgltf_json_to_float(tokens + i, json_chunk);
+			++i;
+		}
+		else
+		{
+			i = cgltf_skip_json(tokens, i + 1);
+		}
+
+		if (i < 0)
+		{
+			return i;
+		}
+	}
+
+	return i;
+}
+
 static int cgltf_parse_json_image(cgltf_options* options, jsmntok_t const* tokens, int i, const uint8_t* json_chunk, cgltf_image* out_image)
 {
 	CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
@@ -5051,6 +5175,11 @@ static int cgltf_parse_json_material(cgltf_options* options, jsmntok_t const* to
 				{
 					out_material->has_dispersion = 1;
 					i = cgltf_parse_json_dispersion(tokens, i + 1, json_chunk, &out_material->dispersion);
+				}
+				else if (cgltf_json_strcmp(tokens + i, json_chunk, "EXT_foundation_materials") == 0)
+				{
+					out_material->has_foundation_materials = 1;
+					i = cgltf_parse_json_foundation_materials(tokens, i + 1, json_chunk, &out_material->foundation_materials);
 				}
 				else
 				{
@@ -6454,6 +6583,46 @@ static int cgltf_parse_json_nodes(cgltf_options* options, jsmntok_t const* token
 	return i;
 }
 
+static int cgltf_parse_json_foundation_color_management(cgltf_options* options, jsmntok_t const* tokens, int i, const uint8_t* json_chunk, cgltf_foundation_color_management* out_color_management)
+{
+	CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
+
+	int size = tokens[i].size;
+	++i;
+
+	for (int j = 0; j < size; ++j)
+	{
+		CGLTF_CHECK_KEY(tokens[i]);
+
+		if (cgltf_json_strcmp(tokens + i, json_chunk, "postExposure") == 0)
+		{
+			++i;
+			out_color_management->has_post_exposure = 1;
+			out_color_management->post_exposure = cgltf_json_to_float(tokens + i, json_chunk);
+			++i;
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "sdr") == 0)
+		{
+			i = cgltf_parse_json_string(options, tokens, i + 1, json_chunk, &out_color_management->sdr);
+		}
+		else if (cgltf_json_strcmp(tokens + i, json_chunk, "hdr") == 0)
+		{
+			i = cgltf_parse_json_string(options, tokens, i + 1, json_chunk, &out_color_management->hdr);
+		}
+		else
+		{
+			i = cgltf_skip_json(tokens, i + 1);
+		}
+
+		if (i < 0)
+		{
+			return i;
+		}
+	}
+
+	return i;
+}
+
 static int cgltf_parse_json_foundation_environment(cgltf_options* options, jsmntok_t const* tokens, int i, const uint8_t* json_chunk, cgltf_foundation_environment* out_environment)
 {
 	CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
@@ -7148,7 +7317,12 @@ static int cgltf_parse_json_root(cgltf_options* options, jsmntok_t const* tokens
 			{
 				CGLTF_CHECK_KEY(tokens[i]);
 
-				if (cgltf_json_strcmp(tokens+i, json_chunk, "KHR_lights_punctual") == 0)
+				if (cgltf_json_strcmp(tokens+i, json_chunk, "EXT_foundation_colormanagement") == 0)
+				{
+					out_data->has_foundation_color_management = 1;
+					i = cgltf_parse_json_foundation_color_management(options, tokens, i + 1, json_chunk, &out_data->foundation_color_management);
+				}
+				else if (cgltf_json_strcmp(tokens+i, json_chunk, "KHR_lights_punctual") == 0)
 				{
 					++i;
 

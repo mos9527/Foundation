@@ -7,81 +7,14 @@
 #include <cgltf.h>
 #include <cctype>
 #include <cmath>
-#include <cstdlib>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <numbers>
-#include <string>
 #include <string_view>
 #include "Mesh.hpp"
 
 namespace
 {
-constexpr char kExtFoundationColorManagement[] = "EXT_foundation_colormanagement";
-constexpr char kExtFoundationMaterials[] = "EXT_foundation_materials";
-
-cgltf_extension const* FindExtension(cgltf_extension const* extensions, cgltf_size extensionCount, char const* name)
-{
-    for (cgltf_size i = 0; i < extensionCount; ++i)
-    {
-        if (extensions[i].name && std::strcmp(extensions[i].name, name) == 0)
-            return &extensions[i];
-    }
-    return nullptr;
-}
-
-std::string_view FindJSONValue(std::string_view json, std::string_view key)
-{
-    std::string pattern;
-    pattern.reserve(key.size() + 2);
-    pattern.push_back('"');
-    pattern.append(key);
-    pattern.push_back('"');
-
-    size_t keyPos = json.find(pattern);
-    if (keyPos == std::string_view::npos)
-        return {};
-
-    size_t colon = json.find(':', keyPos + pattern.size());
-    if (colon == std::string_view::npos)
-        return {};
-
-    size_t value = colon + 1;
-    while (value < json.size() && std::isspace(static_cast<unsigned char>(json[value])))
-        value++;
-    return json.substr(value);
-}
-
-bool ReadJSONString(std::string_view json, std::string_view key, std::string_view& value)
-{
-    std::string_view tail = FindJSONValue(json, key);
-    if (tail.empty() || tail.front() != '"')
-        return false;
-
-    size_t end = tail.find('"', 1);
-    if (end == std::string_view::npos)
-        return false;
-
-    value = tail.substr(1, end - 1);
-    return true;
-}
-
-bool ReadJSONFloat(std::string_view json, std::string_view key, float& value)
-{
-    std::string_view tail = FindJSONValue(json, key);
-    if (tail.empty())
-        return false;
-
-    char* end = nullptr;
-    float parsed = std::strtof(tail.data(), &end);
-    if (end == tail.data())
-        return false;
-
-    value = parsed;
-    return true;
-}
-
 static String DecodeURI(std::string_view encoded)
 {
     String uri(encoded);
@@ -193,20 +126,18 @@ static uint32_t MatchViewLUTIndex(const ViewLUTEntry (&entries)[N], std::string_
 
 void LoadFoundationColorManagementExtension(cgltf_data const* data, FScene& scene)
 {
-    cgltf_extension const* ext = FindExtension(
-        data->data_extensions, data->data_extensions_count, kExtFoundationColorManagement);
-    if (!ext || !ext->data)
+    if (!data->has_foundation_color_management)
         return;
 
-    std::string_view json(ext->data);
-    ReadJSONFloat(json, "postExposure", scene.mColorManagement.postExposure);
+    cgltf_foundation_color_management const& colorManagement = data->foundation_color_management;
+    if (colorManagement.has_post_exposure)
+        scene.mColorManagement.postExposure = colorManagement.post_exposure;
 
-    std::string_view tuple;
     std::string_view view;
     std::string_view look;
-    if (ReadJSONString(json, "sdr", tuple) && ParseLUTTuple(tuple, "SDR", view, look))
+    if (colorManagement.sdr && ParseLUTTuple(colorManagement.sdr, "SDR", view, look))
         scene.mColorManagement.viewLutSdrIndex = MatchViewLUTIndex(kViewLUTsSdr, view, look, kDefaultViewLUTSdr);
-    if (ReadJSONString(json, "hdr", tuple) && ParseLUTTuple(tuple, "HDR", view, look))
+    if (colorManagement.hdr && ParseLUTTuple(colorManagement.hdr, "HDR", view, look))
         scene.mColorManagement.viewLutHdrIndex = MatchViewLUTIndex(kViewLUTsHdr, view, look, kDefaultViewLUTHdr);
 }
 
@@ -252,32 +183,39 @@ void LoadFoundationEnvironmentExtension(cgltf_data const* data, StringView scene
 
 void LoadFoundationMaterialExtension(cgltf_material const* src, FMaterial& material)
 {
-    cgltf_extension const* ext = FindExtension(src->extensions, src->extensions_count, kExtFoundationMaterials);
-    if (!ext || !ext->data)
+    if (!src->has_foundation_materials)
         return;
 
-    std::string_view json(ext->data);
-    std::string_view shaderBlock;
-    if (ReadJSONString(json, "shaderBlock", shaderBlock))
+    cgltf_foundation_materials const& foundationMaterials = src->foundation_materials;
+    if (foundationMaterials.has_shader_block)
     {
-        if (shaderBlock == "principled")
+        switch (foundationMaterials.shader_block)
+        {
+        case cgltf_foundation_material_shader_block_principled:
             material.shaderBlockID = FMaterialShaderBlock::Principled;
-        else if (shaderBlock == "hair")
+            break;
+        case cgltf_foundation_material_shader_block_hair:
             material.shaderBlockID = FMaterialShaderBlock::Hair;
-        else
+            break;
+        default:
             CHECK_MSG(false, "EXT_foundation_materials has unsupported shaderBlock");
+            break;
+        }
     }
 
     if (material.shaderBlockID == FMaterialShaderBlock::Hair)
     {
-        std::string_view model;
-        if (ReadJSONString(json, "model", model))
-            CHECK_MSG(model == "chiang", "EXT_foundation_materials hair supports only model 'chiang'");
+        CHECK_MSG(foundationMaterials.hair_model == cgltf_foundation_material_hair_model_chiang,
+                  "EXT_foundation_materials hair supports only model 'chiang'");
 
-        ReadJSONFloat(json, "betaM", material.hairBetaM);
-        ReadJSONFloat(json, "betaN", material.hairBetaN);
-        ReadJSONFloat(json, "alpha", material.hairAlpha);
-        ReadJSONFloat(json, "ior", material.ior);
+        if (foundationMaterials.has_hair_beta_m)
+            material.hairBetaM = foundationMaterials.hair_beta_m;
+        if (foundationMaterials.has_hair_beta_n)
+            material.hairBetaN = foundationMaterials.hair_beta_n;
+        if (foundationMaterials.has_hair_alpha)
+            material.hairAlpha = foundationMaterials.hair_alpha;
+        if (foundationMaterials.has_ior)
+            material.ior = foundationMaterials.ior;
     }
 }
 }
@@ -509,6 +447,8 @@ void LoadGLTF(StringView path, FScene& scene)
         if (mat->emissive_texture.texture)
             material.emissiveTexture = assignTextureIndex(mat->emissive_texture, kTextureInSRGB);
         material.emissiveFactor = {mat->emissive_factor[0], mat->emissive_factor[1], mat->emissive_factor[2], 1.0f};
+        if (mat->emissive_strength.emissive_strength)
+            material.emissiveFactor *= mat->emissive_strength.emissive_strength;
         material.transmissionFactor = mat->has_transmission ? mat->transmission.transmission_factor : 0.0f;
         if (mat->has_transmission && mat->transmission.transmission_texture.texture)
             material.transmissionTexture = assignTextureIndex(mat->transmission.transmission_texture);
