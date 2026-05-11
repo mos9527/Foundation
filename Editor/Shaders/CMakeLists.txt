@@ -18,6 +18,7 @@ foreach(SlangFile IN LISTS SLANG_FILES)
     )
     add_dependencies(Editor_Shaders "Shader_${ShaderName}")
 
+    # TODO - figure out a way for us to build shader variants _cleanly_
     if(ShaderName STREQUAL "ERTPathTracer")
         slangc_compile(
                 "Shader_${ShaderName}_SER"

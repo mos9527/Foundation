@@ -70,6 +70,9 @@ static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamp
 
 void CommitSceneToGPU(bool resetAccumulation)
 {
+    if (!GContext->gpuScene)
+        return;
+
     auto res = GContext->gpuScene->UpdateGPUScene(GEditor.doc.instances, GEditor.doc.curveInstances,
                                                   GEditor.doc.materials, GEditor.doc.lights);
     GEditor.shaderGlobals.firstInstance = res.firstInstance;
@@ -117,6 +120,11 @@ static void LoadSelectedViewLUTs(FTexture& sdr, FTexture& hdr)
 
 bool ApplyViewLUTSelection()
 {
+    if (!GContext->gpuScene)
+    {
+        LOG(Editor, LogWarn, "Ignoring view LUT selection before a scene is loaded");
+        return false;
+    }
     try
     {
         FTexture sdr(GLOBAL_ALLOC);
@@ -335,10 +343,13 @@ void UpdateSceneLights()
 
     GEditor.doc.lights.clear();
     GEditor.doc.lights.resize(count);
+    auto lightSamplerType = GContext->gpuScene
+        ? GContext->gpuScene->mLightSamplerType
+        : GPUScene::LightSamplerType::Power;
     for (uint32_t i = 0; i < count; i++)
     {
         auto& src = GEditor.doc.scene.mLights[i];
-        FLightToGSLight(src, GEditor.doc.lights[i], GContext->gpuScene->mLightSamplerType);
+        FLightToGSLight(src, GEditor.doc.lights[i], lightSamplerType);
     }
 
     CommitSceneToGPU(false);
@@ -444,6 +455,45 @@ static void ApplySceneEnvironment()
     GEditor.shaderGlobals.useEnvMap = 0u;
 }
 
+static GPUScene* RecreateGPUSceneForLoadedScene()
+{
+    const auto estimatedBudget = GPUScene::CalculateSceneBudget(GEditor.doc.scene, GContext->device->GetCapabilities());
+    LOG(Editor, LogDebug,
+        "Estimated GPUScene budget: primitive {} MB, curve AABB {} MB, instances {}, materials {}, lights {}, textures {}",
+        estimatedBudget.primitiveBudget / (1u << 20),
+        estimatedBudget.curveAABBBudget / (1u << 20),
+        estimatedBudget.instanceBudget,
+        estimatedBudget.materialBudget,
+        estimatedBudget.lightBudget,
+        estimatedBudget.texturesBudget);
+
+    auto lightSamplerType = GPUScene::LightSamplerType::Power;
+    if (GContext->gpuScene)
+        lightSamplerType = GContext->gpuScene->mLightSamplerType;
+
+    GContext->device->WaitIdle();
+    DestroyEditorRenderer(GContext);
+    if (GContext->gpuScene)
+    {
+        Destruct(GContext->allocator, GContext->gpuScene);
+        GContext->gpuScene = nullptr;
+    }
+
+    auto* gpu = Construct<GPUScene>(GContext->allocator, GContext, estimatedBudget);
+    gpu->mLightSamplerType = lightSamplerType;
+    GContext->gpuScene = gpu;
+    return gpu;
+}
+
+static void PrepareSceneMeshesForGPUUpload()
+{
+    for (auto& mesh : GEditor.doc.scene.mMeshes)
+    {
+        CHECK(mesh.EnsureQuantized());
+        CHECK(mesh.EnsureRaw());
+    }
+}
+
 void ReplaceScene(StringView path)
 {
     LOG(Editor, LogInfo, "Loading scene: {}", path);
@@ -479,8 +529,8 @@ void ReplaceScene(StringView path)
     GEditor.viewLUTHdrExternalPath.clear();
     ApplySceneEnvironment();
 
-    auto* gpu = GContext->gpuScene;
-    gpu->Reset();
+    PrepareSceneMeshesForGPUUpload();
+    auto* gpu = RecreateGPUSceneForLoadedScene();
 
     Vector<uint32_t> meshOffsets(GLOBAL_ALLOC);
     Vector<uint32_t> curveOffsets(GLOBAL_ALLOC);
@@ -493,14 +543,16 @@ void ReplaceScene(StringView path)
         upload.Begin();
         for (auto& src : GEditor.doc.scene.mMeshes)
         {
-            CHECK(src.EnsureQuantized());
-            CHECK(src.EnsureRaw());
             auto& dst = GEditor.doc.meshes.emplace_back();
             auto& offset = meshOffsets.emplace_back();
             if (!gpu->Upload(&upload, src, dst, offset))
             {
+                LOG(Editor, LogDebug, "Scene upload staging exhausted by mesh upload ({} bytes); flushing",
+                    GPUScene::CalculateMeshPrimitiveSize(src));
                 upload.End(), upload.WaitIdle(), upload.Begin();
-                CHECK_MSG(gpu->Upload(&upload, src, dst, offset), "Staging buffer too small for single mesh upload");
+                CHECK_MSG(gpu->Upload(&upload, src, dst, offset),
+                          "Staging buffer too small for single mesh upload ({} bytes)",
+                          GPUScene::CalculateMeshPrimitiveSize(src));
             }
         }
         for (auto& src : GEditor.doc.scene.mCurves)
@@ -509,8 +561,15 @@ void ReplaceScene(StringView path)
             auto& offset = curveOffsets.emplace_back();
             if (!gpu->Upload(&upload, src, dst, offset))
             {
+                LOG(Editor, LogDebug,
+                    "Scene upload staging exhausted by curve upload ({} primitive bytes, {} AABB bytes); flushing",
+                    GPUScene::CalculateCurvePrimitiveSize(src),
+                    GPUScene::CalculateCurveAABBSize(src));
                 upload.End(), upload.WaitIdle(), upload.Begin();
-                CHECK_MSG(gpu->Upload(&upload, src, dst, offset), "Staging buffer too small for single curve upload");
+                CHECK_MSG(gpu->Upload(&upload, src, dst, offset),
+                          "Staging buffer too small for single curve upload ({} primitive bytes, {} AABB bytes)",
+                          GPUScene::CalculateCurvePrimitiveSize(src),
+                          GPUScene::CalculateCurveAABBSize(src));
             }
         }
         for (int id = 0; auto& src : GEditor.doc.scene.mTextures)
@@ -523,9 +582,12 @@ void ReplaceScene(StringView path)
             {
                 if (!gpu->Upload(&upload, src, textureIDMap[id]))
                 {
+                    LOG(Editor, LogDebug, "Scene upload staging exhausted by texture {} upload ({} bytes); flushing",
+                        id, src.GetSize());
                     upload.End(), upload.WaitIdle(), upload.Begin();
                     CHECK_MSG(gpu->Upload(&upload, src, textureIDMap[id]),
-                              "Staging buffer too small for single texture upload");
+                              "Staging buffer too small for single texture upload (texture {}, {} bytes)",
+                              id, src.GetSize());
                 }
             }
             id++;
@@ -608,6 +670,11 @@ void LoadEnvMap(StringView path)
 {
     LOG(Editor, LogInfo, "Loading HDRI env map: {}", path);
     auto* gpu = GContext->gpuScene;
+    if (!gpu)
+    {
+        LOG(Editor, LogWarn, "Ignoring HDRI env map load before a scene is loaded");
+        return;
+    }
     try
     {
         FTexture tex(GLOBAL_ALLOC);

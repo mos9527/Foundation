@@ -4,6 +4,7 @@
 #include <Core/AllocatorStack.hpp>
 #include <Core/Paths.hpp>
 #include <Math/Quantize.hpp>
+#include <algorithm>
 #include "Scene.hpp"
 
 static FTexture LoadLUT(Allocator* allocator, StringView path)
@@ -45,6 +46,119 @@ static uint32_t GetRenderableCurveSegmentCount(FCurveSet const& src)
         }
     }
     return segmentCount;
+}
+
+static constexpr uint32_t kGPUSceneRingFrameSlack = 3u;
+static constexpr uint32_t kGPUScenePersistentTextureBindings = 3u; // GGX + default SDR/HDR view LUTs.
+static constexpr uint32_t kGPUSceneSceneViewLUTBindings = 2u;
+static constexpr uint32_t kGPUSceneEnvMapBindings = 2u; // Env map + conditional CDF texture.
+static constexpr uint32_t kGPUSceneTextureBindingSlack = 8u;
+static constexpr size_t kGPUSceneByteBudgetSlack = 64u << 10u;
+
+static size_t GetQuantizedVertexCount(FMesh const& src)
+{
+    if (!src.verticesQuantized.empty())
+        return src.verticesQuantized.size();
+    if (src.verticesCompressedCount != 0)
+        return src.verticesCompressedCount;
+    return src.vertices.size();
+}
+
+static size_t GetLOD0IndexCount(FMesh const& src)
+{
+    CHECK_MSG(!src.lods.empty(), "Mesh has no LODs");
+    auto const& lod = src.lods[0];
+    if (!lod.indices.empty())
+        return lod.indices.size();
+    return lod.indicesCompressedCount;
+}
+
+static uint32_t CountBudget(size_t count)
+{
+    count = std::max<size_t>(count, 1u);
+    CHECK_MSG(count <= UINT32_MAX, "GPUScene count budget {} exceeds uint32_t range", count);
+    return static_cast<uint32_t>(count);
+}
+
+static uint32_t RingBudget(size_t count)
+{
+    return CountBudget(count * kGPUSceneRingFrameSlack);
+}
+
+static uint32_t ByteBudget(size_t bytes, size_t minBytes, size_t alignment, size_t maxBytes = UINT32_MAX)
+{
+    if (bytes != 0)
+        bytes += kGPUSceneByteBudgetSlack;
+    size_t budget = AlignUp(std::max(bytes, minBytes), alignment);
+    CHECK_MSG(budget <= maxBytes, "GPUScene byte budget {} exceeds maximum {}", budget, maxBytes);
+    CHECK_MSG(budget <= UINT32_MAX, "GPUScene byte budget {} exceeds uint32_t range", budget);
+    return static_cast<uint32_t>(budget);
+}
+
+size_t GPUScene::CalculateMeshPrimitiveSize(FMesh const& src)
+{
+    return sizeof(GSMesh) +
+        sizeof(FQVertex) * GetQuantizedVertexCount(src) +
+        sizeof(uint32_t) * GetLOD0IndexCount(src) +
+        sizeof(FLODGroup) * src.dag.groups.size() +
+        sizeof(FMeshlet) * src.dag.meshlets.size() +
+        sizeof(uint32_t) * src.dag.meshletVtx.size() +
+        sizeof(uint8_t) * src.dag.meshletTri.size();
+}
+
+size_t GPUScene::CalculateCurvePrimitiveSize(FCurveSet const& src)
+{
+    return sizeof(GSCurveSet) +
+        sizeof(GSCurvePoint) * src.points.size() +
+        sizeof(GSCurveSegment) * GetRenderableCurveSegmentCount(src);
+}
+
+size_t GPUScene::CalculateCurveAABBSize(FCurveSet const& src)
+{
+    return sizeof(RHIAccelerationStructureAABB) * GetRenderableCurveSegmentCount(src);
+}
+
+GPUScene::GPUSceneDesc GPUScene::CalculateSceneBudget(FScene const& scene, RHIDeviceCapabilities const& caps)
+{
+    GPUSceneDesc desc{};
+    size_t primitiveBytes = 0;
+    for (auto const& mesh : scene.mMeshes)
+    {
+        primitiveBytes = AlignUp(primitiveBytes, size_t(4));
+        primitiveBytes += CalculateMeshPrimitiveSize(mesh);
+    }
+    size_t curveAABBBytes = 0;
+    for (auto const& curve : scene.mCurves)
+    {
+        primitiveBytes = AlignUp(primitiveBytes, size_t(4));
+        primitiveBytes += CalculateCurvePrimitiveSize(curve);
+
+        curveAABBBytes = AlignUp(curveAABBBytes, alignof(RHIAccelerationStructureAABB));
+        curveAABBBytes += CalculateCurveAABBSize(curve);
+    }
+
+    const size_t maxStorageBufferRange = std::min<size_t>(caps.maxStorageBufferRange, UINT32_MAX);
+    desc.primitiveBudget = ByteBudget(primitiveBytes, desc.primitiveBudget, size_t(4), maxStorageBufferRange);
+    desc.curveAABBBudget = ByteBudget(curveAABBBytes, desc.curveAABBBudget, alignof(RHIAccelerationStructureAABB));
+
+    size_t areaLightCount = 0;
+    for (auto const& light : scene.mLights)
+    {
+        if (light.type == FLightType::Disk || light.type == FLightType::Rect)
+            areaLightCount++;
+    }
+    const size_t tlasInstanceCount = scene.mInstances.size() + scene.mCurveInstances.size() + areaLightCount;
+    desc.instanceBudget = RingBudget(std::max({scene.mInstances.size(), scene.mCurveInstances.size(), tlasInstanceCount}));
+    desc.materialBudget = RingBudget(scene.mMaterials.size());
+    desc.lightBudget = RingBudget(scene.mLights.size());
+
+    size_t textureBindings = kGPUScenePersistentTextureBindings + kGPUSceneSceneViewLUTBindings + kGPUSceneTextureBindingSlack;
+    for (auto const& texture : scene.mTextures)
+        textureBindings += texture.IsValid() ? 1u : 0u;
+    if (scene.mEnvironment.type == FSceneEnvironmentType::EnvMap && scene.mEnvironmentMap.IsValid())
+        textureBindings += kGPUSceneEnvMapBindings;
+    desc.texturesBudget = CountBudget(textureBindings);
+    return desc;
 }
 
 static void AddCurveLineSegment(Vector<GSCurveSegment>& segments,
@@ -390,15 +504,14 @@ String GPUScene::DbgGetBufferStatistics() const
 size_t GPUScene::Upload(ImmediateUpload* ctx, FMesh const& src, GSMesh& outData, uint32_t& outOffset)
 {
     // Only upload DAG data
-    const size_t size = sizeof(GSMesh) + src.CalculateQuantizedBound(true, true);
+    const size_t size = CalculateMeshPrimitiveSize(src);
     // We need to ensure the *worst* alignment case fits per DXC docs
     // https://github.com/microsoft/DirectXShaderCompiler/wiki/ByteAddressBuffer-Load-Store-Additions
     // We can consider the GSMesh, FVertex, etc. as one struct - aligning to its largest member
     // uint32_t, in this case - would be sufficient.
     constexpr size_t kAlign = 4;
     outOffset = AlignUp(mPrimitiveOffset, kAlign);
-    CHECK_MSG(outOffset + size <= mPrimitiveBuffer->mDesc.size, "GPUScene primitive buffer overflow");
-    mPrimitiveOffset = outOffset + size;
+    CHECK_MSG(outOffset + size <= mPrimitiveBuffer->mDesc.size, "GPUScene primitive buffer overflow for FMesh. Need {} bytes more, have {} left", size, mPrimitiveBuffer->mDesc.size - outOffset);
     // Allocate staging memory to upload into
     char *ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset), *dst = ptr;
     if (ptr == nullptr)
@@ -429,11 +542,12 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FMesh const& src, GSMesh& outData,
     outData.meshletTriOffset = outOffset +
         Write(src.dag.meshletTri.data(), sizeof(uint8_t) * src.dag.meshletTri.size());
     outData.meshletGlobalIndex = mMeshletGlobalCounter;
-    mMeshletGlobalCounter += outData.meshletCount;
     // GSMesh (data)
     std::memcpy(ptr, &outData, sizeof(GSMesh));
     size_t written = dst - ptr;
     CHECK_MSG(written == size, "Write mismatch: expected {} got {}", size, written);
+    mPrimitiveOffset = outOffset + size;
+    mMeshletGlobalCounter += outData.meshletCount;
     return dst - ptr;
 }
 
@@ -496,11 +610,12 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FCurveSet const& src, GSCurveSet& 
         pointCursor += count;
     }
 
-    const size_t size = sizeof(GSCurveSet) + sizeof(GSCurvePoint) * points.size() + sizeof(GSCurveSegment) * segments.size();
+    const size_t size = CalculateCurvePrimitiveSize(src);
     constexpr size_t kAlign = 4;
     outOffset = AlignUp(mPrimitiveOffset, kAlign);
-    CHECK_MSG(outOffset + size <= mPrimitiveBuffer->mDesc.size, "GPUScene primitive buffer overflow");
-    mPrimitiveOffset = outOffset + size;
+    CHECK_MSG(outOffset + size <= mPrimitiveBuffer->mDesc.size,
+              "GPUScene primitive buffer overflow for FCurveSet. Need {} bytes more, have {} left",
+              size, mPrimitiveBuffer->mDesc.size - outOffset);
 
     char* ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset);
     if (ptr == nullptr)
@@ -521,10 +636,11 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FCurveSet const& src, GSCurveSet& 
     outData.segmentOffset = outOffset + Write(segments.data(), sizeof(GSCurveSegment) * segments.size());
     outData.materialIndex = src.materialIndex;
 
-    const size_t aabbSize = sizeof(RHIAccelerationStructureAABB) * aabbs.size();
+    const size_t aabbSize = CalculateCurveAABBSize(src);
     outData.aabbOffset = static_cast<uint32_t>(AlignUp(mCurveAABBOffset, alignof(RHIAccelerationStructureAABB)));
-    CHECK_MSG(outData.aabbOffset + aabbSize <= mCurveAABBBuffer->mDesc.size, "GPUScene curve AABB buffer overflow");
-    mCurveAABBOffset = outData.aabbOffset + aabbSize;
+    CHECK_MSG(outData.aabbOffset + aabbSize <= mCurveAABBBuffer->mDesc.size,
+              "GPUScene curve AABB buffer overflow. Need {} bytes more, have {} left",
+              aabbSize, mCurveAABBBuffer->mDesc.size - outData.aabbOffset);
     char* aabbPtr = ctx->Upload(mCurveAABBBuffer.Get(), aabbSize, outData.aabbOffset);
     if (aabbPtr == nullptr)
         return 0;
@@ -533,6 +649,8 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FCurveSet const& src, GSCurveSet& 
     std::memcpy(ptr, &outData, sizeof(GSCurveSet));
     size_t written = dst - ptr;
     CHECK_MSG(written == size, "Write mismatch: expected {} got {}", size, written);
+    mPrimitiveOffset = outOffset + size;
+    mCurveAABBOffset = outData.aabbOffset + aabbSize;
     return written + aabbSize;
 }
 

@@ -7,6 +7,7 @@
 #include "Texture.hpp"
 using namespace Math;
 struct FCurveSet;
+struct FScene;
 
 // Must match the procedural hit-group bindings in Render/Pathtracer.cpp.
 inline constexpr uint32_t kRectLightSBTOffset = 3u;
@@ -241,6 +242,11 @@ public:
         uint32_t tlasBudget = 16 * (1u << 20); // 16MB
         uint32_t tlasScratchBudget = 32 * (1u << 20); // 32MB (ring)
     };
+    [[nodiscard]] static GPUSceneDesc CalculateSceneBudget(FScene const& scene, RHIDeviceCapabilities const& caps);
+    [[nodiscard]] static size_t CalculateMeshPrimitiveSize(FMesh const& src);
+    [[nodiscard]] static size_t CalculateCurvePrimitiveSize(FCurveSet const& src);
+    [[nodiscard]] static size_t CalculateCurveAABBSize(FCurveSet const& src);
+
     GPUScene(FContext* ctx, GPUSceneDesc const& desc);
 
     Pair<GSInstance*, uint32_t> AllocateInstance(uint32_t count);

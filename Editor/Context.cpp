@@ -1,5 +1,3 @@
-#include <algorithm>
-
 FContext* GContext = nullptr;
 
 static bool WindowHDRStateEqual(FContext::WindowHDRState const& lhs, FContext::WindowHDRState const& rhs)
@@ -124,13 +122,6 @@ FContext* CreateContext(SDL_Window* window, Allocator* allocator, RHIDevice::Dev
     context->application = ConstructBase<RHIApplication, VulkanApplication>(allocator, allocator);
     context->device = context->application->CreateDevice(deviceDesc, window);
     context->psoCache = context->device->CreatePipelineCache({});
-    const size_t requestedPrimitiveBudget = 2048ull * (1ull << 20); // 2048 MB
-    const size_t primitiveBudget = std::min(requestedPrimitiveBudget,
-                                            context->device->GetCapabilities().maxStorageBufferRange) & ~size_t(3);
-    context->gpuScene = Construct<GPUScene>(allocator, context, GPUScene::GPUSceneDesc{
-        .primitiveBudget = static_cast<uint32_t>(primitiveBudget),
-        .curveAABBBudget = 512 * (1u << 20) // 512 MB
-    });
     UpdateSwapchain(context);
     return GContext = context;
 }
@@ -143,7 +134,11 @@ void DestroyContext(FContext* context)
     context->device->WaitIdle();
     SDL_DestroyWindow(context->window);
     Destruct(context->allocator, context->renderer);
-    Destruct(context->allocator, context->gpuScene);
+    if (context->gpuScene)
+    {
+        Destruct(context->allocator, context->gpuScene);
+        context->gpuScene = nullptr;
+    }
     context->psoCache.Reset();
     context->swapchain.Reset();
     context->device.Reset();
