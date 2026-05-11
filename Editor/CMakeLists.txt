@@ -58,12 +58,19 @@ target_link_libraries(
         Foundation_RenderCore
         Foundation_RenderUtils
 )
+
+set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc"
+        PROPERTIES HEADER_FILE_ONLY TRUE)
+target_sources(Editor_Context PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc")
+
 # https://cmake.org/cmake/help/latest/command/target_precompile_headers.html#:~:text=generator%20expressions
-target_precompile_headers(
-        Editor_Context
-        PUBLIC
-        "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc>"
-)
+if (FOUNDATION_USE_PCH)
+    target_precompile_headers(
+            Editor_Context
+            PUBLIC
+            "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc>"
+    )
+endif()
 add_executable(Editor)
 target_sources(Editor PRIVATE
         SDLMain.cpp ImGui.cpp

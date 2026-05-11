@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.26)
 file(
-    GLOB_RECURSE INCLUDES 
+    GLOB_RECURSE INCLUDES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
 )
 add_library(Foundation_RHICore INTERFACE ${INCLUDES})

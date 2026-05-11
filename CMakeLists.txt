@@ -12,6 +12,7 @@ option(FOUNDATION_WITH_EXAMPLES "Build examples" ON)
 option(FOUNDATION_WITH_PROFILING "Build with profiling (Tracy) enabled" ON)
 option(FOUNDATION_CORE_USES_OS_ALLOC "Use OS allocator instead of mimalloc for HeapAllocator" OFF)
 option(FOUNDATION_RHIVULKAN_VALIDATION_LAYER "[RHIVulkan] Build with Vulkan Validation Layer (VVL)" ON)
+option(FOUNDATION_USE_PCH "Build with target_precompile_headers (turn off to bisect stale-PCH issues)" ON)
 
 if (FOUNDATION_WITH_PROFILING)
     add_compile_definitions(TRACY_ENABLE)    

@@ -19,8 +19,35 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
-set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-set(SDL_STATIC ON CACHE BOOL "" FORCE)
+# Foundation only uses SDL for windowing + Vulkan surface. Disable every
+# subsystem we don't touch so SDL's per-subsystem platform probes (DirectX,
+# WASAPI, HIDAPI, OpenGL/EGL/GLX, Media Foundation, ...) are skipped at
+# configure time. Keep VIDEO (mouse/keyboard arrive via video events);
+# SDL_VULKAN is auto-enabled because VIDEO is on.
+set(SDL_SHARED               OFF CACHE BOOL "" FORCE)
+set(SDL_STATIC               ON  CACHE BOOL "" FORCE)
+set(SDL_TEST_LIBRARY         OFF CACHE BOOL "" FORCE)
+set(SDL_TESTS                OFF CACHE BOOL "" FORCE)
+set(SDL_INSTALL              OFF CACHE BOOL "" FORCE)
+set(SDL_INSTALL_TESTS        OFF CACHE BOOL "" FORCE)
+set(SDL_DISABLE_INSTALL      ON  CACHE BOOL "" FORCE)
+set(SDL_DISABLE_INSTALL_DOCS ON  CACHE BOOL "" FORCE)
+
+set(SDL_AUDIO   OFF CACHE BOOL "" FORCE)
+set(SDL_RENDER  OFF CACHE BOOL "" FORCE)   # we render via Vulkan ourselves
+set(SDL_GPU     OFF CACHE BOOL "" FORCE)   # ditto
+set(SDL_CAMERA  OFF CACHE BOOL "" FORCE)
+set(SDL_JOYSTICK OFF CACHE BOOL "" FORCE)
+set(SDL_HAPTIC  OFF CACHE BOOL "" FORCE)
+set(SDL_HIDAPI  OFF CACHE BOOL "" FORCE)
+set(SDL_POWER   OFF CACHE BOOL "" FORCE)
+set(SDL_SENSOR  OFF CACHE BOOL "" FORCE)
+set(SDL_DIALOG  OFF CACHE BOOL "" FORCE)   # we use nfd
+set(SDL_OPENGL  OFF CACHE BOOL "" FORCE)
+set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)
+set(SDL_DIRECTX OFF CACHE BOOL "" FORCE)   # kills D3D/WASAPI SDK probes on Windows
+set(SDL_DUMMYAUDIO OFF CACHE BOOL "" FORCE)
+set(SDL_OFFSCREEN  OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
     SDL3

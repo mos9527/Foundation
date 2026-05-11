@@ -1,14 +1,20 @@
 cmake_minimum_required(VERSION 3.26)
 file(
-    GLOB_RECURSE SOURCES
+    GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
 )
 file(
-    GLOB_RECURSE INCLUDES
+    GLOB_RECURSE INCLUDES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp"
 )
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCES} ${INCLUDES})
 add_library(Foundation_Core ${SOURCES} ${INCLUDES})
+
+# Track Precompiled.inc as a real listed source so any edit forces a PCH
+# rebuild even if the .ninja_deps depfile is missing/stale.
+set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc"
+    PROPERTIES HEADER_FILE_ONLY TRUE)
+target_sources(Foundation_Core PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc")
 
 include(FetchContent)
 FetchContent_MakeAvailable(fmt)
@@ -38,11 +44,13 @@ target_include_directories(
         ${mimalloc_SOURCE_DIR}/include
 )
 
-target_precompile_headers(
-    Foundation_Core
-    PUBLIC
-    "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc>"
-)
+if (FOUNDATION_USE_PCH)
+    target_precompile_headers(
+        Foundation_Core
+        PUBLIC
+        "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/Precompiled.inc>"
+    )
+endif()
 
 if (WIN32)
     target_link_libraries(Foundation_Core PUBLIC ws2_32 dbghelp)
