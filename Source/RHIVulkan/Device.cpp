@@ -323,6 +323,10 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         }
     }
     auto properties = mPhysicalDevice.getProperties();
+    // Assume supported if and only if all queues can do timestamp queries
+    const bool timestampQueries = properties.limits.timestampPeriod != 0.0f &&
+        families[graphics.first].timestampValidBits != 0 &&
+        families[compute.first].timestampValidBits != 0;
     // Fill in device capabilities
     mDeviceCaps = {
         .dedicatedCompute = mQueues->graphics != mQueues->compute,
@@ -331,6 +335,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         .meshShaders = hasMeshShader,
         .raytracingInline = hasRayQuery,
         .raytracingPipeline = hasRayTracingPipeline,
+        .timestampQueries = timestampQueries,
         .maxStorageBufferRange = properties.limits.maxStorageBufferRange,
     };
 }

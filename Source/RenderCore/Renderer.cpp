@@ -31,6 +31,13 @@ Renderer::Renderer(RendererDesc const& desc, RHIApplicationHandle<RHIDevice> dev
             mComputeQueue->DebugSetObjectName("Compute Queue");
         }
     }
+    if (mDesc.profilePasses && !mDevice->GetCapabilities().timestampQueries)
+    {
+        LOG(Renderer, LogWarn,
+            "Per-pass profiling requested, but the device does not support timestamp queries on the rendering "
+            "queues (timestampValidBits == 0). Disabling profilePasses.");
+        mDesc.profilePasses = false;
+    }
     LOG(Renderer, LogDebug, "** Renderer Init **");
     LOG(Renderer, LogDebug, "Async Compute:\t{}", mDesc.asyncCompute);
     LOG(Renderer, LogDebug, "Presentation:\t{}", mDesc.present);

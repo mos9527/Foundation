@@ -193,6 +193,7 @@ namespace Foundation::RHI
         bool meshShaders;
         bool raytracingInline;
         bool raytracingPipeline;
+        bool timestampQueries;
         size_t maxStorageBufferRange;
     };
     class RHIDevice : public RHIObject
