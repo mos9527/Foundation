@@ -53,6 +53,7 @@ namespace Foundation::RHI
         RHIBufferScopedHandle<RHIBuffer> CreateAliasedBuffer(RHIBufferDesc const& desc, size_t offset) override;
         RHIBuffer* GetAliasedBuffer(Handle handle) const override;
         void DestroyAliasedBuffer(Handle handle) override;
+        [[nodiscard]] size_t GetAllocationSize() const override;
 
         void DebugSetObjectName(const char* name) override;
     };
@@ -87,6 +88,7 @@ namespace Foundation::RHI
         RHITextureScopedHandle<RHITexture> CreateAliasedTexture(RHITextureDesc const& desc, size_t offset) override;
         RHITexture* GetAliasedTexture(Handle handle) const override;
         void DestroyAliasedTexture(Handle handle) override;
+        [[nodiscard]] size_t GetAllocationSize() const override;
 
         void DebugSetObjectName(const char* name) override;
 

@@ -109,6 +109,7 @@ namespace Foundation::RHI
                                                                                    size_t offset = 0) = 0;
         [[nodiscard]] virtual RHIBuffer* GetAliasedBuffer(Handle handle) const = 0;
         virtual void DestroyAliasedBuffer(Handle handle) = 0;
+        [[nodiscard]] virtual size_t GetAllocationSize() const = 0;
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };
@@ -204,6 +205,7 @@ namespace Foundation::RHI
                                                                                       size_t offset = 0) = 0;
         [[nodiscard]] virtual RHITexture* GetAliasedTexture(Handle handle) const = 0;
         virtual void DestroyAliasedTexture(Handle handle) = 0;
+        [[nodiscard]] virtual size_t GetAllocationSize() const = 0;
 
         virtual void DebugSetObjectName(const char* name) = 0;
     };

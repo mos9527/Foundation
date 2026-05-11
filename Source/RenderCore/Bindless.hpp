@@ -35,14 +35,28 @@ namespace Foundation::RenderCore
         RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet> mDescSet;
 
         Mutex mDescMutex;
+        uint32_t mActiveBindings{0};
+        uint32_t mOwnedTextureBindings{0};
+        size_t mReferencedTextureBytes{0};
+        size_t mOwnedTextureBytes{0};
 
         RHIDeviceIdleGuard mIdleGuard;
 
         uint32_t Update(uint32_t id, RHITextureView* view);
+        void AddStats(Binding const& binding);
+        void RemoveStats(Binding const& binding);
     public:
         struct BindlessPoolDesc
         {
             uint32_t maxBindings = 1024;
+        };
+        struct Stats
+        {
+            uint32_t activeBindings{};
+            uint32_t capacity{};
+            uint32_t ownedTextureBindings{};
+            size_t referencedTextureBytes{};
+            size_t ownedTextureBytes{};
         };
         const BindlessPoolDesc mDesc;
         BindlessPool(RHIDevice* device, Allocator * allocator, BindlessPoolDesc const& desc);
@@ -62,6 +76,7 @@ namespace Foundation::RenderCore
 
         Resource& GetResource(uint32_t id) { return mBindings.At(id)->resource; }
         View& GetView(uint32_t id) { return mBindings.At(id)->view; }
+        [[nodiscard]] Stats GetStats() const;
 
         RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout() const { return mDescLayout.Get(); }
         RHIDeviceDescriptorSet* GetDescriptorSet() const { return mDescSet.Get(); }

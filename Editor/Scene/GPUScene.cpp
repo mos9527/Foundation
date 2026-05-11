@@ -487,17 +487,90 @@ GPUScene::UpdateResult GPUScene::UpdateGPUScene(Span<const GSInstance> instances
     return res;
 }
 
+void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
+{
+    auto AddBufferSize = [&](RHIDeviceScopedHandle<RHIBuffer> const& buffer) -> size_t
+    {
+        if (!buffer)
+            return 0;
+        return buffer->GetAllocationSize();
+    };
+    auto AddRingBufferSize = [&](auto const& buffer) -> size_t
+    {
+        return buffer.mBuffer->GetAllocationSize();
+    };
+    auto SumBuffers = [&](auto const& buffers) -> size_t
+    {
+        size_t bytes = 0;
+        for (auto const& buffer : buffers)
+            bytes += AddBufferSize(buffer);
+        return bytes;
+    };
+
+    size_t primitiveBytes = AddBufferSize(mPrimitiveBuffer);
+    size_t curveAABBBytes = AddBufferSize(mCurveAABBBuffer);
+    auto textureStats = mTexturePool.GetStats();
+    size_t instanceBytes = AddRingBufferSize(mInstanceBuffer);
+    size_t curveInstanceBytes = AddRingBufferSize(mCurveInstanceBuffer);
+    size_t materialBytes = AddRingBufferSize(mMaterialBuffer);
+    size_t lightBytes = AddRingBufferSize(mLightBuffer);
+    size_t lightAliasBytes = AddRingBufferSize(mLightAliasTableBuffer);
+    size_t tlasInstanceBytes = AddRingBufferSize(mTLASInstances);
+    size_t blasBytes = SumBuffers(mBLASBuffers);
+    size_t curveBLASBytes = SumBuffers(mCurveBLASBuffers);
+    size_t tlasBytes = AddBufferSize(mTLASBuffer);
+    size_t tlasScratchBytes = AddBufferSize(mScratchBufferTLAS);
+    size_t lightBLASBytes = AddBufferSize(mLightBLASBuffer);
+    size_t lightGeometryBytes = AddBufferSize(mLightGeometryBuffer);
+    size_t sobolBytes = AddBufferSize(mSobolMatricesBuffer);
+    size_t envCDFBytes = AddBufferSize(mEnvMapMarginalCDF);
+
+    outStats.push_back({"Primitive Buffer", primitiveBytes});
+    outStats.push_back({"Curve AABB Buffer", curveAABBBytes});
+    outStats.push_back({"Texture Pool (Owned)", textureStats.ownedTextureBytes});
+    outStats.push_back({"Instance Buffer", instanceBytes});
+    outStats.push_back({"Dynamic Upload Buffers",
+                        curveInstanceBytes + materialBytes + lightBytes + lightAliasBytes + tlasInstanceBytes});
+    outStats.push_back({"Mesh BLAS", blasBytes});
+    outStats.push_back({"Curve BLAS", curveBLASBytes});
+    outStats.push_back({"TLAS", tlasBytes});
+    outStats.push_back({"TLAS Scratch", tlasScratchBytes});
+    outStats.push_back({"Light AS", lightBLASBytes});
+    outStats.push_back({"Other GPUScene Buffers", lightGeometryBytes + sobolBytes + envCDFBytes});
+}
+
 String GPUScene::DbgGetBufferStatistics() const
 {
     String res;
-    fmt::format_to(std::back_inserter(res), "Primitive Buffer: Used {} / {} MB\n",
+    Vector<MemoryStat> stats(GLOBAL_ALLOC);
+    DbgGetMemoryStatistics(stats);
+    size_t totalBytes = 0;
+    for (auto const& stat : stats)
+        totalBytes += stat.bytes;
+
+    auto textureStats = mTexturePool.GetStats();
+    fmt::format_to(std::back_inserter(res), "Primitive Buffer: {:.1f} MB allocated, used {:.1f} / {:.1f} MB\n",
+                   mPrimitiveBuffer->GetAllocationSize() / static_cast<float>(1 << 20u),
                    mPrimitiveOffset / static_cast<float>(1 << 20u),
                    mPrimitiveBuffer->mDesc.size / static_cast<float>(1 << 20u));
-    fmt::format_to(std::back_inserter(res), "Curve AABB Buffer: Used {} / {} MB\n",
+    fmt::format_to(std::back_inserter(res), "Curve AABB Buffer: {:.1f} MB allocated, used {:.1f} / {:.1f} MB\n",
+                   mCurveAABBBuffer->GetAllocationSize() / static_cast<float>(1 << 20u),
                    mCurveAABBOffset / static_cast<float>(1 << 20u),
                    mCurveAABBBuffer->mDesc.size / static_cast<float>(1 << 20u));
-    fmt::format_to(std::back_inserter(res), "Instance Buffer: Used {} / {} instances",
+    fmt::format_to(std::back_inserter(res), "Texture Pool: {:.1f} MB owned, {:.1f} MB referenced, used {} / {} bindings, owned {} textures\n",
+                   textureStats.ownedTextureBytes / static_cast<float>(1 << 20u),
+                   textureStats.referencedTextureBytes / static_cast<float>(1 << 20u),
+                   textureStats.activeBindings,
+                   textureStats.capacity,
+                   textureStats.ownedTextureBindings);
+    fmt::format_to(std::back_inserter(res), "Instance Buffer: {:.1f} MB allocated, used {} / {} instances\n",
+                   mInstanceBuffer.mBuffer->GetAllocationSize() / static_cast<float>(1 << 20u),
                    mInstanceBuffer.Used(), mInstanceBuffer.Capacity());
+    for (auto const& stat : stats)
+        fmt::format_to(std::back_inserter(res), "{}: {:.1f} MB\n", stat.type,
+                       stat.bytes / static_cast<float>(1 << 20u));
+    fmt::format_to(std::back_inserter(res), "GPUScene Tracked Total: {:.1f} MB",
+                   totalBytes / static_cast<float>(1 << 20u));
     return res;
 }
 

@@ -139,6 +139,14 @@ void VulkanBuffer::Unmap()
         vmaUnmapMemory(mDevice.GetVkAllocator(), mAllocation);
     mMapped = nullptr;
 }
+size_t VulkanBuffer::GetAllocationSize() const
+{
+    if (!mAllocation)
+        return 0;
+    VmaAllocationInfo info{};
+    vmaGetAllocationInfo(mDevice.GetVkAllocator(), mAllocation, &info);
+    return static_cast<size_t>(info.size);
+}
 vk::DeviceAddress VulkanBuffer::GetBufferAddress() const
 {
     return mDevice.GetVkDevice().getBufferAddress({.buffer = mBuffer});
@@ -190,6 +198,14 @@ VulkanTexture::~VulkanTexture()
         auto allocator = mDevice.GetVkAllocator();
         vmaDestroyImage(allocator, mImage.release(), mAllocation);
     }
+}
+size_t VulkanTexture::GetAllocationSize() const
+{
+    if (!mAllocation)
+        return 0;
+    VmaAllocationInfo info{};
+    vmaGetAllocationInfo(mDevice.GetVkAllocator(), mAllocation, &info);
+    return static_cast<size_t>(info.size);
 }
 
 RHITextureScopedHandle<RHITextureView> VulkanTexture::CreateTextureView(RHITextureViewDesc const& desc)

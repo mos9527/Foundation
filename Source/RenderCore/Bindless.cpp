@@ -21,20 +21,71 @@ namespace Foundation::RenderCore
                                                           .updateAfterBind = true});
         mDescSet = mDescPool->CreateDescriptorSet(mDescLayout, desc.maxBindings);
     }
+    void BindlessPool::AddStats(Binding const& binding)
+    {
+        const size_t bytes = binding.resource.Visit(
+            [](RHITexture* texture) -> size_t { return texture ? texture->GetAllocationSize() : 0; },
+            [](RHIDeviceScopedHandle<RHITexture> const& texture) -> size_t
+            {
+                RHITexture* ptr = texture.Get();
+                return ptr ? ptr->GetAllocationSize() : 0;
+            });
+        mActiveBindings++;
+        mReferencedTextureBytes += bytes;
+        if (binding.resource.GetIf<RHIDeviceScopedHandle<RHITexture>>())
+        {
+            mOwnedTextureBindings++;
+            mOwnedTextureBytes += bytes;
+        }
+    }
+    void BindlessPool::RemoveStats(Binding const& binding)
+    {
+        const size_t bytes = binding.resource.Visit(
+            [](RHITexture* texture) -> size_t { return texture ? texture->GetAllocationSize() : 0; },
+            [](RHIDeviceScopedHandle<RHITexture> const& texture) -> size_t
+            {
+                RHITexture* ptr = texture.Get();
+                return ptr ? ptr->GetAllocationSize() : 0;
+            });
+        mActiveBindings--;
+        mReferencedTextureBytes -= bytes;
+        if (binding.resource.GetIf<RHIDeviceScopedHandle<RHITexture>>())
+        {
+            mOwnedTextureBindings--;
+            mOwnedTextureBytes -= bytes;
+        }
+    }
     uint32_t BindlessPool::Allocate(RHITextureView* view)
     {
         Binding* binding = mBindings.Construct(Binding{0uLL, {view->GetTexture()}, {view}});
-        return Update(binding->id = mBindings.Index(binding), view);
+        binding->id = mBindings.Index(binding);
+        AddStats(*binding);
+        return Update(binding->id, view);
     }
     uint32_t BindlessPool::Allocate(RHIDeviceScopedHandle<RHITexture>&& texture, RHITextureView* view)
     {
         Binding* binding = mBindings.Construct(Binding{0uLL, {std::move(texture)}, {view}});
-        return Update(binding->id = mBindings.Index(binding), view);
+        binding->id = mBindings.Index(binding);
+        AddStats(*binding);
+        return Update(binding->id, view);
     }
     void BindlessPool::Free(uint32_t id)
     {
         Binding* ptr = mBindings.At(id);
         if (ptr)
+        {
+            RemoveStats(*ptr);
             mBindings.Destruct(ptr);
+        }
+    }
+    BindlessPool::Stats BindlessPool::GetStats() const
+    {
+        return {
+            .activeBindings = mActiveBindings,
+            .capacity = mDesc.maxBindings,
+            .ownedTextureBindings = mOwnedTextureBindings,
+            .referencedTextureBytes = mReferencedTextureBytes,
+            .ownedTextureBytes = mOwnedTextureBytes,
+        };
     }
 } // namespace Foundation::RenderCore

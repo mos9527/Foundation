@@ -1,6 +1,8 @@
 #include <cmath>
 #include <cfloat>
 #include <algorithm>
+#include <cstdio>
+#include <cstring>
 #include <nfd.h>
 #include <Math/Decompose.hpp>
 #include <imgui_internal.h>
@@ -1139,7 +1141,60 @@ void FRunningImGui()
             }
             if (ImGui::TreeNodeEx("GPU Scene", ImGuiTreeNodeFlags_DefaultOpen))
             {
-                ImGui::Text("%s", GContext->gpuScene->DbgGetBufferStatistics().c_str());
+                if (GContext->gpuScene)
+                {
+                    Allocator* scratch = GContext->editorFrameScratch ? GContext->editorFrameScratch.get() : GLOBAL_ALLOC;
+                    Vector<GPUScene::MemoryStat> stats(scratch);
+                    GContext->gpuScene->DbgGetMemoryStatistics(stats);
+
+                    size_t totalBytes = 0;
+                    for (auto const& stat : stats)
+                        totalBytes += stat.bytes;
+
+                    ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                        ImGuiTableFlags_Resizable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SizingStretchProp;
+                    if (ImGui::BeginTable("##GPUSceneMemoryTable", 3, flags))
+                    {
+                        ImGui::TableSetupColumn("Type");
+                        ImGui::TableSetupColumn("Usage",
+                                                ImGuiTableColumnFlags_DefaultSort |
+                                                ImGuiTableColumnFlags_PreferSortDescending);
+                        ImGui::TableSetupColumn("Ratio", ImGuiTableColumnFlags_PreferSortDescending);
+                        ImGui::TableHeadersRow();
+
+                        if (ImGuiTableSortSpecs* sortSpecs = ImGui::TableGetSortSpecs();
+                            sortSpecs && sortSpecs->SpecsCount > 0)
+                        {
+                            ImGuiTableColumnSortSpecs const& spec = sortSpecs->Specs[0];
+                            std::sort(stats.begin(), stats.end(), [&](auto const& lhs, auto const& rhs)
+                            {
+                                int cmp = 0;
+                                if (spec.ColumnIndex == 0)
+                                    cmp = std::strcmp(lhs.type, rhs.type);
+                                else
+                                    cmp = lhs.bytes == rhs.bytes ? 0 : (lhs.bytes < rhs.bytes ? -1 : 1);
+                                return spec.SortDirection == ImGuiSortDirection_Ascending ? cmp < 0 : cmp > 0;
+                            });
+                        }
+
+                        for (auto const& stat : stats)
+                        {
+                            float ratio = totalBytes ? static_cast<float>(stat.bytes) / static_cast<float>(totalBytes) : 0.0f;
+                            ImGui::TableNextRow();
+                            ImGui::TableNextColumn();
+                            ImGui::TextUnformatted(stat.type);
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%.1f MB", stat.bytes / static_cast<float>(1 << 20u));
+                            ImGui::TableNextColumn();
+                            char overlay[32];
+                            std::snprintf(overlay, sizeof(overlay), "%.1f%%", ratio * 100.0f);
+                            ImGui::ProgressBar(ratio, ImVec2(-FLT_MIN, 0.0f), overlay);
+                        }
+
+                        ImGui::EndTable();
+                    }
+                    ImGui::Text("Tracked Total: %.1f MB", totalBytes / static_cast<float>(1 << 20u));
+                }
                 ImGui::TreePop();
             }
             if (ImGui::TreeNodeEx("Frametime", ImGuiTreeNodeFlags_DefaultOpen))
