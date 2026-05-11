@@ -3,10 +3,10 @@
 #include "Examples.hpp"
 #include <stb_image.h>
 using namespace RenderUtils;
-int main()
+int main(int argc, char** argv)
 {
     SDL_Window* window = SDL_CreateWindow("MipGeneration Example", 512, 512, Examples_SDLWindowFlagsVulkan);
-    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window,
+    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv,
                                                                   {
                                                                       .asyncCompute = false, /* Nothing to overlap */
                                                                       .threadCount = 0, /* ST recording */

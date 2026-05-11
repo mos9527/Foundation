@@ -1,11 +1,11 @@
 #include "Examples.hpp"
 #include <RenderUtils/CSDebugText.hpp>
 using namespace RenderUtils;
-int main()
+int main(int argc, char** argv)
 {
     SDL_Window* window = SDL_CreateWindow("Mesh Shader Hello World", 800, 600, Examples_SDLWindowFlagsVulkan);
     CSDebugTextData data{ .x = 16, .y = 16 };
-    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, {});
+    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, {});
     renderer->BeginSetup();
     renderer->CreatePass(
         "Mesh Task", RHIDeviceQueueType::Graphics, 0u,

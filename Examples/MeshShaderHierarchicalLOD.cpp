@@ -13,13 +13,13 @@ struct UBO
     GSMesh mesh;
 };
 #pragma pack(pop)
-int main()
+int main(int argc, char** argv)
 {
     SDL_Window* window = SDL_CreateWindow("Mesh Shader Hierarchical LOD", 800, 600, Examples_SDLWindowFlagsVulkan);
     UBO ubo{ .threshold = 0.01f};
     CSDebugTextData lines[3]{};
     /* Setup */
-    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window);
+    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, {});
     auto meshData = device->CreateBuffer({
         .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer,
         .size = 16u * (1u << 20) // 16 MB

@@ -30,6 +30,12 @@ Framework
       - Raster looks good with up-to-date Mesh Shader support. Practically _no_ VK compat layers support them yet. [2026/05/10]
       - Raytracing - No native SBTs. No SER. Metal can do inline queries only.  
       - [ ] TODO iOS builds?
+  - [x] Lavapipe
+    - https://www.vulkan.org/user/pages/09.events/vulkanised-2025/T5-Lucas-Fryzek-Igalia.pdf
+    - Small Guide on Windows usage:
+      - Get build from https://github.com/pal1000/mesa-dist-win/releases
+      - Set environment variable VK_ADD_DRIVER_FILES to fullpath pointing to `lvp_icd.x86_64.json` (per [Driver Discovery](https://github.com/KhronosGroup/Vulkan-Loader/blob/main/docs/LoaderDriverInterface.md#driver-discovery))
+      - Run stuff from the shell.
 
 Editor
 ---

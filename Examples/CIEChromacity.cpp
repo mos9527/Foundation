@@ -154,10 +154,10 @@ static MeshRange AppendXYZCurves(Vector<CIEVertex>& vertices)
     range.vertexCount = static_cast<uint32_t>(vertices.size()) - range.firstVertex;
     return range;
 }
-int main()
+int main(int argc, char** argv)
 {
     SDL_Window* window = SDL_CreateWindow("CIE Chromaticity Example", 1024, 768, Examples_SDLWindowFlagsVulkan);
-    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, {
+    auto [renderer, app, device, swapchain] = Examples_InitVulkan(window, argc, argv, {
         .threadCount = 0 /* ST recording */
     });
 

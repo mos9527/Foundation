@@ -4,6 +4,7 @@
 #include <RenderCore/Renderer.hpp>
 #include <Math/Math.hpp>
 #include <Math/ModelViewProjection.hpp>
+#include <argh.h>
 using namespace Foundation;
 using namespace Core;
 using namespace Math;
@@ -49,11 +50,35 @@ namespace details
 }
 // [renderer, app, device, swapchain]
 constexpr int Examples_SDLWindowFlagsVulkan = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_VULKAN;
-inline auto Examples_InitVulkan(SDL_Window* window, RendererDesc const& desc = {})
+// Common command-line options shared by all examples (mirrors Editor::SDLMain):
+//   -h, --help        Show usage and exit
+//   -g, --gpu <id>    Select GPU device index
+//   -l, --list-gpus   List available GPU devices and exit
+inline auto Examples_InitVulkan(SDL_Window* window, int argc, char** argv, RendererDesc const& desc = {})
 {
+    argh::parser cmdl(argc, argv, argh::parser::PREFER_PARAM_FOR_UNREG_OPTION);
+    if (cmdl[{"-h", "--help"}])
+    {
+        fmt::println("Usage: {} [options]", argv[0]);
+        fmt::println("Options:");
+        fmt::println("\t-h, --help\t\tShow this help message");
+        fmt::println("\t-g, --gpu <id>\t\tSpecify GPU device index");
+        fmt::println("\t-l, --list-gpus\t\tList available GPU devices");
+        std::exit(0);
+    }
+    if (cmdl[{"-l", "--list-gpus"}])
+    {
+        auto* app = Construct<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC);
+        for (auto const& d : app->EnumerateDevices())
+            fmt::println("[{}] {}", d.id, d.name);
+        Destruct(GLOBAL_ALLOC, app);
+        std::exit(0);
+    }
+    int gpuId = 0;
+    cmdl({"-g", "--gpu"}, 0) >> gpuId;
     PathsInitFromDir(SDL_GetBasePath());
     auto app = Construct<VulkanApplication>(GLOBAL_ALLOC, GLOBAL_ALLOC);
-    auto device = app->CreateDevice({}, window);
+    auto device = app->CreateDevice({.id = static_cast<uint32_t>(gpuId)}, window);
     RHIDeviceScopedHandle<RHISwapchain> swap;
     details::CreateSwapchain(window, *device, swap);
     auto renderer = Construct<Renderer>(GLOBAL_ALLOC, desc, device, swap, GLOBAL_ALLOC);

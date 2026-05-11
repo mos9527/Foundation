@@ -1,10 +1,12 @@
 cmake_minimum_required(VERSION 3.26)
 
+FetchContent_MakeAvailable(argh)
+
 add_subdirectory(Shaders)
 add_subdirectory(Samples)
 
 add_library(Example_Common INTERFACE)
-target_link_libraries(Example_Common INTERFACE Foundation_RenderCore Foundation_RHIVulkan Foundation_RenderUtils)
+target_link_libraries(Example_Common INTERFACE Foundation_RenderCore Foundation_RHIVulkan Foundation_RenderUtils argh)
 
 add_executable(Example_Triangle "Triangle.cpp")
 target_link_libraries(Example_Triangle PUBLIC Example_Common)
