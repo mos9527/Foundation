@@ -56,8 +56,7 @@ public interface ILight {
 };
 // -- Lights
 
-// Module-level env map resources — bound by the integrator.
-// When no env map is loaded a 1×1 black fallback is bound so sampling is always safe.
+// Module-level env map resources — bound only when the path tracer env-map specialization is enabled.
 public Texture2D<float4> envMapTexture;
 public SamplerState        envMapSampler;
 public StructuredBuffer<float> envMapMarginalCDF;

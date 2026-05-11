@@ -805,6 +805,12 @@ void Renderer::BuildPipelineState(PassHandle pass)
     bindings.reserve(var_types.size());
     for (auto& [name, bind] : refl_var_bind_points)
     {
+        if (!var_ext_sets.contains(name) && !var_types.contains(name))
+        {
+            LOG(BuildPipelineState, LogDebug,
+                "Shader binding {} in pass {} has no reflected descriptor type; skipping.", name, tracked.name);
+            continue;
+        }
         if (!var_ext_sets.contains(name))
             bindings.emplace_back(bind, name);
     }
@@ -820,9 +826,13 @@ void Renderer::BuildPipelineState(PassHandle pass)
             num_elems += var_samplers.find(binding)->second.size();
         if (var_handles.contains(binding))
             num_elems += var_handles.find(binding)->second.size();
-        CHECK_MSG(num_elems > 0 || var_ext_sets.contains(binding),
-                  "Binding {} is bound with zero elements in pass {}, but is used by one of its shaders.", binding,
-                  tracked.name);
+        if (num_elems == 0 && !var_ext_sets.contains(binding))
+        {
+            LOG(BuildPipelineState, LogDebug,
+                "Binding {} is reflected in pass {} but left inactive; reserving one descriptor slot.",
+                binding, tracked.name);
+            num_elems = 1;
+        }
         set_bindings.push_back({.count = num_elems, .stage = RHIShaderStageBits::All, .type = var_types[binding]});
     }
     // Check if our first set is not 0
@@ -876,8 +886,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
             {
             case Sampler:
             {
-                CHECK_MSG(var_samplers.contains(name),
-                          "Shader expects a Sampler at {}, but it's not bound by pass {}", name, tracked.name);
+                if (!var_samplers.contains(name))
+                    break;
                 auto samplers = var_samplers.find(name)->second;
                 for (uint e = 0; e < samplers.size(); e++)
                 {
@@ -891,8 +901,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
             case SampledImage:
             case StorageImage:
             {
-                CHECK_MSG(var_handles.contains(name),
-                          "Shader expects an Image at {}, but it's not bound by pass {}", name, tracked.name);
+                if (!var_handles.contains(name))
+                    break;
                 auto images = var_handles.find(name)->second;
                 for (uint e = 0; e < images.size(); e++)
                 {
@@ -910,8 +920,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
             case UniformBuffer:
             case StorageBuffer:
             {
-                CHECK_MSG(var_handles.contains(name),
-                          "Shader expects an Buffer at {}, but it's not bound by pass {}", name, tracked.name);
+                if (!var_handles.contains(name))
+                    break;
                 auto buffers = var_handles.find(name)->second;
                 for (uint e = 0; e < buffers.size(); e++)
                 {
@@ -922,9 +932,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
             }
             case AccelerationStructure:
             {
-                CHECK_MSG(var_handles.contains(name),
-                          "Shader expects an Acceleration Structure at {}, but it's not bound by pass {}", name,
-                          tracked.name);
+                if (!var_handles.contains(name))
+                    break;
                 auto asses = var_handles.find(name)->second;
                 for (uint e = 0; e < asses.size(); e++)
                 {
@@ -1143,6 +1152,44 @@ void Renderer::FinalizeResources()
         res.lastBufferState.reset();
         for (auto& sta : res.lastSubresourceStates)
             sta.reset();
+    }
+}
+
+void Renderer::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
+{
+    if (!mSetup || !mResources)
+        return;
+
+    for (auto const& entry : mSetup->activeResources)
+    {
+        ResourceHandle handle = entry.first;
+        if (handle >= mSetup->trackedResources.size() || handle >= mResources->resources.size())
+            continue;
+
+        auto const& tracked = mSetup->trackedResources[handle];
+        // Keep this renderer-owned so the render graph total does not double-count imported GPUScene/backbuffer resources.
+        const bool isBuffer = tracked.desc.GetIf<RHIBufferDesc>() != nullptr;
+        const bool isTexture = tracked.desc.GetIf<RHITextureDesc>() != nullptr;
+        const bool owned = isBuffer || isTexture;
+        if (!owned)
+            continue;
+
+        size_t bytes = mResources->resources[handle].Visit(
+            [](RHIBuffer* buffer) -> size_t { return buffer ? buffer->GetAllocationSize() : 0; },
+            [](RHIDeviceScopedHandle<RHIBuffer> const& buffer) -> size_t
+            {
+                RHIBuffer* ptr = buffer.Get();
+                return ptr ? ptr->GetAllocationSize() : 0;
+            },
+            [](RHITexture* texture) -> size_t { return texture ? texture->GetAllocationSize() : 0; },
+            [](RHIDeviceScopedHandle<RHITexture> const& texture) -> size_t
+            {
+                RHITexture* ptr = texture.Get();
+                return ptr ? ptr->GetAllocationSize() : 0;
+            },
+            [](RHIAccelerationStructure*) -> size_t { return 0; });
+        if (bytes != 0)
+            outStats.push_back({fmt::format("{} ({})", tracked.name, isTexture ? "Texture" : "Buffer"), bytes});
     }
 }
 

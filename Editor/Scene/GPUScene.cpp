@@ -525,18 +525,18 @@ void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     size_t sobolBytes = AddBufferSize(mSobolMatricesBuffer);
     size_t envCDFBytes = AddBufferSize(mEnvMapMarginalCDF);
 
-    outStats.push_back({"Primitive Buffer", primitiveBytes});
-    outStats.push_back({"Curve AABB Buffer", curveAABBBytes});
-    outStats.push_back({"Texture Pool (Owned)", textureStats.ownedTextureBytes});
-    outStats.push_back({"Instance Buffer", instanceBytes});
-    outStats.push_back({"Dynamic Upload Buffers",
+    outStats.push_back({"Primitive Buffer (Buffer)", primitiveBytes});
+    outStats.push_back({"Curve AABB Buffer (Buffer)", curveAABBBytes});
+    outStats.push_back({"Texture Pool (Texture)", textureStats.ownedTextureBytes});
+    outStats.push_back({"Instance Buffer (Buffer)", instanceBytes});
+    outStats.push_back({"Dynamic Upload Buffers (Buffer)",
                         curveInstanceBytes + materialBytes + lightBytes + lightAliasBytes + tlasInstanceBytes});
-    outStats.push_back({"Mesh BLAS", blasBytes});
-    outStats.push_back({"Curve BLAS", curveBLASBytes});
-    outStats.push_back({"TLAS", tlasBytes});
-    outStats.push_back({"TLAS Scratch", tlasScratchBytes});
-    outStats.push_back({"Light AS", lightBLASBytes});
-    outStats.push_back({"Other GPUScene Buffers", lightGeometryBytes + sobolBytes + envCDFBytes});
+    outStats.push_back({"Mesh BLAS (Buffer)", blasBytes});
+    outStats.push_back({"Curve BLAS (Buffer)", curveBLASBytes});
+    outStats.push_back({"TLAS (Buffer)", tlasBytes});
+    outStats.push_back({"TLAS Scratch (Buffer)", tlasScratchBytes});
+    outStats.push_back({"Light AS (Buffer)", lightBLASBytes});
+    outStats.push_back({"Other GPUScene Buffers (Buffer)", lightGeometryBytes + sobolBytes + envCDFBytes});
 }
 
 String GPUScene::DbgGetBufferStatistics() const
@@ -567,7 +567,7 @@ String GPUScene::DbgGetBufferStatistics() const
                    mInstanceBuffer.mBuffer->GetAllocationSize() / static_cast<float>(1 << 20u),
                    mInstanceBuffer.Used(), mInstanceBuffer.Capacity());
     for (auto const& stat : stats)
-        fmt::format_to(std::back_inserter(res), "{}: {:.1f} MB\n", stat.type,
+        fmt::format_to(std::back_inserter(res), "{}: {:.1f} MB\n", stat.name,
                        stat.bytes / static_cast<float>(1 << 20u));
     fmt::format_to(std::back_inserter(res), "GPUScene Tracked Total: {:.1f} MB",
                    totalBytes / static_cast<float>(1 << 20u));

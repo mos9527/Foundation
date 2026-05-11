@@ -99,15 +99,6 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
     RHITexture* viewLutTexture = context->enableHDR ? gpu->GetViewLutHdr() : gpu->GetViewLutSdr();
     RHIResourceFormat viewLutFormat = viewLutTexture->mDesc.format;
     auto ViewLut = renderer->CreateResource(context->enableHDR ? "View LUT HDR" : "View LUT SDR", viewLutTexture);
-    ResourceHandle EnvMapTex;
-    if (gpu->GetEnvMap()) {
-        EnvMapTex = renderer->CreateResource("Env Map", gpu->GetEnvMap());
-    } else {
-        EnvMapTex = renderer->CreateResource("Env Map Fallback", RHITextureDesc{
-            .usage = RHITextureUsageBits::SampledImage | RHITextureUsageBits::TransferDestination,
-            .extent = {1, 1, 1},
-            .format = RHIResourceFormat::R8G8B8A8Unorm});
-    }
 
     // NOTE: Lambda captures
     // NONE of the handle values outlive the renderer. Therefore, ALWAYS capture by value.
@@ -464,10 +455,6 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
         .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
     }
 });
-    auto EnvMapSampler = renderer->CreateSampler({
-        .filter = {RHIDeviceSampler::SamplerDesc::Filter::Linear,
-                   RHIDeviceSampler::SamplerDesc::Filter::Linear},
-    });
     renderer->CreatePass(
         "Lighting", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
@@ -494,12 +481,6 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
             r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::ComputeShader,
                   RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
                                      .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureSRV(self, EnvMapTex, "envMapTexture", RHIPipelineStageBits::RayTracingShader,
-                              RHITextureViewDesc{.format = gpu->GetEnvMap()
-                                                     ? RHIResourceFormat::R32G32B32A32SignedFloat
-                                                     : RHIResourceFormat::R8G8B8A8Unorm,
-                                                 .range = RHITextureSubresourceRange::Create()});
-            r->BindTextureSampler(self, EnvMapSampler, "envMapSampler");
             r->BindTextureUAV(self, LightingBuffer, "output", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});

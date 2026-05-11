@@ -280,7 +280,7 @@ public:
 
     struct MemoryStat
     {
-        const char* type;
+        String name;
         size_t bytes;
     };
     void DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const;

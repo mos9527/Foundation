@@ -35,6 +35,58 @@ static constexpr PTSPPOption kPTSPPOptions[] = {
 static constexpr int kPTSPPOptionCount = static_cast<int>(sizeof(kPTSPPOptions) / sizeof(kPTSPPOptions[0]));
 static constexpr const char* kExternalViewLUTLabel = "<external>";
 
+template <typename T>
+static size_t DrawMemoryStatsTable(const char* tableId, Vector<T>& stats)
+{
+    size_t totalBytes = 0;
+    for (auto const& stat : stats)
+        totalBytes += stat.bytes;
+
+    ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+        ImGuiTableFlags_Resizable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SizingStretchProp;
+    if (ImGui::BeginTable(tableId, 3, flags))
+    {
+        ImGui::TableSetupColumn("Name");
+        ImGui::TableSetupColumn("Usage",
+                                ImGuiTableColumnFlags_DefaultSort |
+                                ImGuiTableColumnFlags_PreferSortDescending);
+        ImGui::TableSetupColumn("Ratio", ImGuiTableColumnFlags_PreferSortDescending);
+        ImGui::TableHeadersRow();
+
+        if (ImGuiTableSortSpecs* sortSpecs = ImGui::TableGetSortSpecs();
+            sortSpecs && sortSpecs->SpecsCount > 0)
+        {
+            ImGuiTableColumnSortSpecs const& spec = sortSpecs->Specs[0];
+            std::sort(stats.begin(), stats.end(), [&](auto const& lhs, auto const& rhs)
+            {
+                int cmp = 0;
+                if (spec.ColumnIndex == 0)
+                    cmp = std::strcmp(lhs.name.c_str(), rhs.name.c_str());
+                else
+                    cmp = lhs.bytes == rhs.bytes ? 0 : (lhs.bytes < rhs.bytes ? -1 : 1);
+                return spec.SortDirection == ImGuiSortDirection_Ascending ? cmp < 0 : cmp > 0;
+            });
+        }
+
+        for (auto const& stat : stats)
+        {
+            float ratio = totalBytes ? static_cast<float>(stat.bytes) / static_cast<float>(totalBytes) : 0.0f;
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(stat.name.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%.1f MB", stat.bytes / static_cast<float>(1 << 20u));
+            ImGui::TableNextColumn();
+            char overlay[32];
+            std::snprintf(overlay, sizeof(overlay), "%.1f%%", ratio * 100.0f);
+            ImGui::ProgressBar(ratio, ImVec2(-FLT_MIN, 0.0f), overlay);
+        }
+
+        ImGui::EndTable();
+    }
+    return totalBytes;
+}
+
 static bool OpenViewLUTDialog(String& outPath)
 {
     nfdu8filteritem_t filters[] = {{"DDS LUT", "dds"}};
@@ -840,7 +892,7 @@ void FLightingPanel()
             anyChanged |= ImHDRColorEdit("Ambient", GEditor.shaderGlobals.ambientColor, GEditor.shaderGlobals.ambientPower);
 
             ImGui::Separator();
-            bool hasEnv = GEditor.shaderGlobals.useEnvMap != 0u;
+            bool hasEnv = GContext->gpuScene && GContext->gpuScene->GetEnvMap();
             ImGui::Text(hasEnv ? "HDRI Loaded" : "No HDRI");
             if (hasEnv)
             {
@@ -853,6 +905,7 @@ void FLightingPanel()
                 if (ImGui::Checkbox("Enable Env Map", &envEnabled))
                 {
                     GEditor.shaderGlobals.useEnvMap = envEnabled ? 1u : 0u;
+                    GEditor.state = FERunningEnter;
                     envChanged = true;
                 }
                 if (envChanged)
@@ -1146,54 +1199,20 @@ void FRunningImGui()
                     Allocator* scratch = GContext->editorFrameScratch ? GContext->editorFrameScratch.get() : GLOBAL_ALLOC;
                     Vector<GPUScene::MemoryStat> stats(scratch);
                     GContext->gpuScene->DbgGetMemoryStatistics(stats);
-
-                    size_t totalBytes = 0;
-                    for (auto const& stat : stats)
-                        totalBytes += stat.bytes;
-
-                    ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
-                        ImGuiTableFlags_Resizable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SizingStretchProp;
-                    if (ImGui::BeginTable("##GPUSceneMemoryTable", 3, flags))
-                    {
-                        ImGui::TableSetupColumn("Type");
-                        ImGui::TableSetupColumn("Usage",
-                                                ImGuiTableColumnFlags_DefaultSort |
-                                                ImGuiTableColumnFlags_PreferSortDescending);
-                        ImGui::TableSetupColumn("Ratio", ImGuiTableColumnFlags_PreferSortDescending);
-                        ImGui::TableHeadersRow();
-
-                        if (ImGuiTableSortSpecs* sortSpecs = ImGui::TableGetSortSpecs();
-                            sortSpecs && sortSpecs->SpecsCount > 0)
-                        {
-                            ImGuiTableColumnSortSpecs const& spec = sortSpecs->Specs[0];
-                            std::sort(stats.begin(), stats.end(), [&](auto const& lhs, auto const& rhs)
-                            {
-                                int cmp = 0;
-                                if (spec.ColumnIndex == 0)
-                                    cmp = std::strcmp(lhs.type, rhs.type);
-                                else
-                                    cmp = lhs.bytes == rhs.bytes ? 0 : (lhs.bytes < rhs.bytes ? -1 : 1);
-                                return spec.SortDirection == ImGuiSortDirection_Ascending ? cmp < 0 : cmp > 0;
-                            });
-                        }
-
-                        for (auto const& stat : stats)
-                        {
-                            float ratio = totalBytes ? static_cast<float>(stat.bytes) / static_cast<float>(totalBytes) : 0.0f;
-                            ImGui::TableNextRow();
-                            ImGui::TableNextColumn();
-                            ImGui::TextUnformatted(stat.type);
-                            ImGui::TableNextColumn();
-                            ImGui::Text("%.1f MB", stat.bytes / static_cast<float>(1 << 20u));
-                            ImGui::TableNextColumn();
-                            char overlay[32];
-                            std::snprintf(overlay, sizeof(overlay), "%.1f%%", ratio * 100.0f);
-                            ImGui::ProgressBar(ratio, ImVec2(-FLT_MIN, 0.0f), overlay);
-                        }
-
-                        ImGui::EndTable();
-                    }
+                    size_t totalBytes = DrawMemoryStatsTable("##GPUSceneMemoryTable", stats);
                     ImGui::Text("Tracked Total: %.1f MB", totalBytes / static_cast<float>(1 << 20u));
+                }
+                ImGui::TreePop();
+            }
+            if (ImGui::TreeNodeEx("Render Graph", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                if (GContext->renderer)
+                {
+                    Allocator* scratch = GContext->editorFrameScratch ? GContext->editorFrameScratch.get() : GLOBAL_ALLOC;
+                    Vector<Renderer::MemoryStat> stats(scratch);
+                    GContext->renderer->DbgGetMemoryStatistics(stats);
+                    size_t totalBytes = DrawMemoryStatsTable("##RenderGraphMemoryTable", stats);
+                    ImGui::Text("Renderer-Owned Total: %.1f MB", totalBytes / static_cast<float>(1 << 20u));
                 }
                 ImGui::TreePop();
             }

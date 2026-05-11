@@ -43,6 +43,7 @@ static const uint kSERCoherenceHintBits = 8u;
 static const uint kPTCompileOptionShaderExecutionReordering = 1u << 0;
 static const uint kPTCompileOptionSamplerSobol = 1u << 1;
 static const uint kPTCompileOptionSamplerPCG = 1u << 2;
+static const uint kPTCompileOptionUseEnvMap = 1u << 3;
 [[SpecializationConstant]] uint ptCompileOptions;
 
 #ifndef PT_ENABLE_SER
@@ -945,7 +946,7 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
 
 float GetEnvLightSelectionWeight()
 {
-    return globalParams.useEnvMap != 0u ? globalParams.envMapScale : globalParams.ambientPower;
+    return (ptCompileOptions & kPTCompileOptionUseEnvMap) != 0 ? globalParams.envMapScale : globalParams.ambientPower;
 }
 
 LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
@@ -1296,7 +1297,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     InfiniteLight env = InfiniteLight(
         SampledSpectrum(globalParams.ambientColor * globalParams.ambientPower),
         globalParams.envMapScale,
-        globalParams.useEnvMap != 0u,
+        (ptCompileOptions & kPTCompileOptionUseEnvMap) != 0,
         globalParams.envAzimuthOffset
     );
     float lightTotalWeight = globalParams.sceneLightWeightSum + GetEnvLightSelectionWeight();

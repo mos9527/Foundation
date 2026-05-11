@@ -662,6 +662,14 @@ namespace Foundation::RenderCore
          */
         void EndSetup();
 #pragma endregion
+#pragma region Diagnostics
+        struct MemoryStat
+        {
+            String name;
+            size_t bytes;
+        };
+        void DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const;
+#pragma endregion
 #pragma region Swapchain
         /**
          * @brief Get the current swapchain extents.
