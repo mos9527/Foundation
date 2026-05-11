@@ -361,6 +361,18 @@ void VulkanDevice::QueryBudget(size_t& used, size_t& budget) const
         used += b.usage, budget += b.budget;
 }
 
+void VulkanDevice::QueryAllocationStats(size_t& blockBytes, size_t& allocationBytes) const
+{
+    VmaBudget budgets[VK_MAX_MEMORY_HEAPS]{};
+    vmaGetHeapBudgets(mVkAllocator, budgets);
+    blockBytes = 0, allocationBytes = 0;
+    for (const auto& b : budgets)
+    {
+        blockBytes += b.statistics.blockBytes;
+        allocationBytes += b.statistics.allocationBytes;
+    }
+}
+
 String VulkanDevice::QueryDeviceString() const
 {
     auto properties = mPhysicalDevice.getProperties();

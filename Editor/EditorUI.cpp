@@ -1179,16 +1179,24 @@ void FRunningImGui()
                 {
                     size_t used, budget;
                     GContext->device->QueryBudget(used, budget);
+                    size_t blockBytes, allocationBytes;
+                    GContext->device->QueryAllocationStats(blockBytes, allocationBytes);
                     static String name;
                     if (name.empty())
                         name = GContext->device->QueryDeviceString();
                     ImGui::Text("%s", name.c_str());
-                    ImGui::Text("GPU Memory Usage: %.2f MB / %.2f MB", used / 1e6f, budget / 1e6f);
+                    ImGui::Text("GPU Memory Usage: %.1f MB / %.1f MB", used / static_cast<float>(1 << 20u),
+                                budget / static_cast<float>(1 << 20u));
+                    ImGui::Text("GPU Allocator Blocks: %.1f MB, allocations: %.1f MB, slack: %.1f MB, external/driver: %.1f MB",
+                                blockBytes / static_cast<float>(1 << 20u),
+                                allocationBytes / static_cast<float>(1 << 20u),
+                                (blockBytes - allocationBytes) / static_cast<float>(1 << 20u),
+                                (used > blockBytes ? used - blockBytes : 0u) / static_cast<float>(1 << 20u));
                 }
                 {
                     size_t used, budget;
                     GLOBAL_ALLOC->QueryBudget(used, budget);
-                    ImGui::Text("CPU RSS Memory: %.2f MB", used / 1e6f);
+                    ImGui::Text("CPU RSS Memory: %.1f MB", used / static_cast<float>(1 << 20u));
                 }
                 ImGui::TreePop();
             }
