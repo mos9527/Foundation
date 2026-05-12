@@ -195,6 +195,10 @@ class GPUScene
     uint32_t mLUTGGXEIndex{UINT32_MAX};
     // Display transform 3D LUTs (stored in texture pool)
     uint32_t mLUTViewSdrIndex{UINT32_MAX}, mLUTViewHdrIndex{UINT32_MAX};
+    // Shared default resources (stored in texture pool).
+    uint32_t mFoundationDefaultTexture2DIndex{UINT32_MAX};
+    uint32_t mFoundationDefaultTexture2DFloatIndex{UINT32_MAX};
+    RHIDeviceScopedHandle<RHIBuffer> mFoundationDefaultBufferFloat;
     // Environment map (stored in texture pool)
     uint32_t mEnvMapIndex{UINT32_MAX};
     RHIDeviceScopedHandle<RHIBuffer> mEnvMapMarginalCDF;
@@ -307,6 +311,9 @@ public:
     void UploadViewLUTs(ImmediateUpload* ctx, FTexture const& sdr, FTexture const& hdr);
     [[nodiscard]] RHITexture* GetViewLutSdr() const;
     [[nodiscard]] RHITexture* GetViewLutHdr() const;
+    [[nodiscard]] RHITexture* GetFoundationDefaultTexture2D() const;
+    [[nodiscard]] RHITexture* GetFoundationDefaultTexture2DFloat() const;
+    [[nodiscard]] RHIBuffer* GetFoundationDefaultBufferFloat() const { return mFoundationDefaultBufferFloat.Get(); }
     // Environment map
     void UploadEnvMap(ImmediateUpload* ctx, FTexture const& source);
     [[nodiscard]] RHITexture* GetEnvMap() const;

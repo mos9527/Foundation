@@ -56,7 +56,7 @@ public interface ILight {
 };
 // -- Lights
 
-// Module-level env map resources — bound only when the path tracer env-map specialization is enabled.
+// Module-level env map resources. GPUScene binds tiny default resources when no HDRI is loaded.
 public Texture2D<float4> envMapTexture;
 public SamplerState        envMapSampler;
 public StructuredBuffer<float> envMapMarginalCDF;

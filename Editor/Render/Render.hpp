@@ -117,13 +117,11 @@ static constexpr uint32_t kPTSamplerSobol = 1u;
 static constexpr uint32_t kPTCompileOptionShaderExecutionReordering = 1u << 0;
 static constexpr uint32_t kPTCompileOptionSamplerSobol = 1u << 1;
 static constexpr uint32_t kPTCompileOptionSamplerPCG = 1u << 2;
-static constexpr uint32_t kPTCompileOptionUseEnvMap = 1u << 3;
 
-inline uint32_t PTPackCompileOptions(bool shaderExecutionReordering, uint32_t sampler, bool useEnvMap)
+inline uint32_t PTPackCompileOptions(bool shaderExecutionReordering, uint32_t sampler)
 {
     uint32_t options = shaderExecutionReordering ? kPTCompileOptionShaderExecutionReordering : 0u;
     options |= sampler == kPTSamplerPCG ? kPTCompileOptionSamplerPCG : kPTCompileOptionSamplerSobol;
-    options |= useEnvMap ? kPTCompileOptionUseEnvMap : 0u;
     return options;
 }
 

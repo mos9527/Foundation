@@ -805,12 +805,6 @@ void Renderer::BuildPipelineState(PassHandle pass)
     bindings.reserve(var_types.size());
     for (auto& [name, bind] : refl_var_bind_points)
     {
-        if (!var_ext_sets.contains(name) && !var_types.contains(name))
-        {
-            LOG(BuildPipelineState, LogDebug,
-                "Shader binding {} in pass {} has no reflected descriptor type; skipping.", name, tracked.name);
-            continue;
-        }
         if (!var_ext_sets.contains(name))
             bindings.emplace_back(bind, name);
     }
@@ -826,13 +820,9 @@ void Renderer::BuildPipelineState(PassHandle pass)
             num_elems += var_samplers.find(binding)->second.size();
         if (var_handles.contains(binding))
             num_elems += var_handles.find(binding)->second.size();
-        if (num_elems == 0 && !var_ext_sets.contains(binding))
-        {
-            LOG(BuildPipelineState, LogDebug,
-                "Binding {} is reflected in pass {} but left inactive; reserving one descriptor slot.",
-                binding, tracked.name);
-            num_elems = 1;
-        }
+        CHECK_MSG(num_elems > 0 || var_ext_sets.contains(binding),
+                  "Binding {} is bound with zero elements in pass {}, but is used by one of its shaders.", binding,
+                  tracked.name);
         set_bindings.push_back({.count = num_elems, .stage = RHIShaderStageBits::All, .type = var_types[binding]});
     }
     // Check if our first set is not 0
@@ -886,8 +876,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
             {
             case Sampler:
             {
-                if (!var_samplers.contains(name))
-                    break;
+                CHECK_MSG(var_samplers.contains(name),
+                          "Shader expects a Sampler at {}, but it's not bound by pass {}", name, tracked.name);
                 auto samplers = var_samplers.find(name)->second;
                 for (uint e = 0; e < samplers.size(); e++)
                 {
@@ -901,8 +891,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
             case SampledImage:
             case StorageImage:
             {
-                if (!var_handles.contains(name))
-                    break;
+                CHECK_MSG(var_handles.contains(name),
+                          "Shader expects an Image at {}, but it's not bound by pass {}", name, tracked.name);
                 auto images = var_handles.find(name)->second;
                 for (uint e = 0; e < images.size(); e++)
                 {
@@ -920,8 +910,8 @@ void Renderer::BuildPipelineState(PassHandle pass)
             case UniformBuffer:
             case StorageBuffer:
             {
-                if (!var_handles.contains(name))
-                    break;
+                CHECK_MSG(var_handles.contains(name),
+                          "Shader expects an Buffer at {}, but it's not bound by pass {}", name, tracked.name);
                 auto buffers = var_handles.find(name)->second;
                 for (uint e = 0; e < buffers.size(); e++)
                 {
@@ -932,8 +922,9 @@ void Renderer::BuildPipelineState(PassHandle pass)
             }
             case AccelerationStructure:
             {
-                if (!var_handles.contains(name))
-                    break;
+                CHECK_MSG(var_handles.contains(name),
+                          "Shader expects an Acceleration Structure at {}, but it's not bound by pass {}", name,
+                          tracked.name);
                 auto asses = var_handles.find(name)->second;
                 for (uint e = 0; e < asses.size(); e++)
                 {

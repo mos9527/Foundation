@@ -85,8 +85,6 @@ enum class ERendererMode
 
 enum class ERenderFormat { HDR, SDR };
 
-/* -- Grouped editor state structs -- */
-
 // Scene-lifetime data: created in ReplaceScene, read everywhere, reset together
 struct EditorDocument
 {
@@ -186,7 +184,6 @@ inline float ApertureRadiusFromFStop(float fStop, float sensorHeight, float fovY
     return focalLength / (2.0f * fStop);
 }
 
-/* -- Grouped editor state structs -- */
 struct EditorState
 {
     EditorDocument  doc;
@@ -213,14 +210,11 @@ struct EditorState
     bool            cameraUpdated = true;
 };
 
-/* -- Extern globals (defined in EditorState.cpp) -- */
 extern EditorState GEditor;
 
-/* -- Cross-file editor functions -- */
 void CommitSceneToGPU(bool resetAccumulation = true);
 void UpdateSceneLights();
 void ReplaceScene(StringView path);
-void SaveScene(StringView path);
 void LoadEnvMap(StringView path);
 bool ApplyViewLUTSelection();
 void HandleFile(const char* filePath);

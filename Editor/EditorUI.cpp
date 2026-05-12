@@ -283,25 +283,6 @@ void EditorDockSpaceAndMenuBar()
                 }
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Save", "Ctrl+S"))
-            {
-                if (!GEditor.doc.currentSavePath.empty())
-                    SaveScene(GEditor.doc.currentSavePath);
-            }
-            if (ImGui::MenuItem("Save As..."))
-            {
-                nfdu8filteritem_t filters[] = {{"Scene Files", "fscn"}};
-                nfdsavedialogu8args_t args = {0};
-                args.filterList = filters;
-                args.filterCount = 1;
-                nfdu8char_t* outPath = nullptr;
-                if (NFD_SaveDialogU8_With(&outPath, &args) == NFD_OKAY)
-                {
-                    SaveScene(outPath);
-                    NFD_FreePathU8(outPath);
-                }
-            }
-            ImGui::Separator();
             if (!GEditor.doc.instances.empty())
             {
                 if (ImGui::MenuItem("Render HDR..."))
@@ -905,7 +886,6 @@ void FLightingPanel()
                 if (ImGui::Checkbox("Enable Env Map", &envEnabled))
                 {
                     GEditor.shaderGlobals.useEnvMap = envEnabled ? 1u : 0u;
-                    GEditor.state = FERunningEnter;
                     envChanged = true;
                 }
                 if (envChanged)

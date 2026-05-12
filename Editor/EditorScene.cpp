@@ -488,10 +488,7 @@ static GPUScene* RecreateGPUSceneForLoadedScene()
 static void PrepareSceneMeshesForGPUUpload()
 {
     for (auto& mesh : GEditor.doc.scene.mMeshes)
-    {
         CHECK(mesh.EnsureQuantized());
-        CHECK(mesh.EnsureRaw());
-    }
 }
 
 void ReplaceScene(StringView path)
@@ -530,6 +527,11 @@ void ReplaceScene(StringView path)
     ApplySceneEnvironment();
 
     PrepareSceneMeshesForGPUUpload();
+    const size_t sceneMeshCount = GEditor.doc.scene.mMeshes.size();
+    const size_t sceneInstanceCount = GEditor.doc.scene.mInstances.size();
+    const size_t sceneCurveCount = GEditor.doc.scene.mCurves.size();
+    const size_t sceneCurveInstanceCount = GEditor.doc.scene.mCurveInstances.size();
+    const size_t sceneMaterialCount = GEditor.doc.scene.mMaterials.size();
     auto* gpu = RecreateGPUSceneForLoadedScene();
 
     Vector<uint32_t> meshOffsets(GLOBAL_ALLOC);
@@ -659,8 +661,7 @@ void ReplaceScene(StringView path)
     }
 
     LOG(Editor, LogInfo, "Scene load complete: {} meshes, {} mesh instances, {} curves, {} curve instances, {} materials",
-        GEditor.doc.scene.mMeshes.size(), GEditor.doc.scene.mInstances.size(),
-        GEditor.doc.scene.mCurves.size(), GEditor.doc.scene.mCurveInstances.size(), GEditor.doc.scene.mMaterials.size());
+        sceneMeshCount, sceneInstanceCount, sceneCurveCount, sceneCurveInstanceCount, sceneMaterialCount);
 
     // Trigger renderer reconfiguration
     GEditor.state = FERunningEnter;
@@ -689,7 +690,6 @@ void LoadEnvMap(StringView path)
             .strength = GEditor.shaderGlobals.envMapScale,
             .azimuthOffset = GEditor.shaderGlobals.envAzimuthOffset,
         };
-        GEditor.doc.scene.mEnvironmentMap = std::move(tex);
         GEditor.shaderGlobals.useEnvMap = 1u;
         GEditor.shaderGlobals.ptAccumulatedFrames = 0;
         // Renderer must be rebuilt to rebind the environment map resource
@@ -699,22 +699,6 @@ void LoadEnvMap(StringView path)
     catch (...)
     {
         LOG(Editor, LogError, "Failed to load HDRI env map: {}", path);
-    }
-}
-
-void SaveScene(StringView path)
-{
-    LOG(Editor, LogInfo, "Saving scene to: {}", path);
-    try
-    {
-        FileWriter writer(path);
-        FSerialize(writer, GEditor.doc.scene);
-        GEditor.doc.currentSavePath = String(path);
-        LOG(Editor, LogInfo, "Scene saved successfully");
-    }
-    catch (...)
-    {
-        LOG(Editor, LogError, "Failed to save scene to: {}", path);
     }
 }
 

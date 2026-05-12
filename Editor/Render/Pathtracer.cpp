@@ -48,8 +48,14 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
     RHITexture* viewLutTexture = context->enableHDR ? gpu->GetViewLutHdr() : gpu->GetViewLutSdr();
     RHIResourceFormat viewLutFormat = viewLutTexture->mDesc.format;
     auto ViewLut = renderer->CreateResource(context->enableHDR ? "View LUT HDR" : "View LUT SDR", viewLutTexture);
-    const bool useEnvMap = gpu->GetEnvMap() && scene.gsGlobals->useEnvMap != 0u;
-    ResourceHandle EnvMapTex = useEnvMap ? renderer->CreateResource("Env Map", gpu->GetEnvMap()) : kInvalidHandle;
+    RHITexture* envMapTexture = gpu->GetEnvMap() ? gpu->GetEnvMap() : gpu->GetFoundationDefaultTexture2D();
+    RHIBuffer* envMapMarginalCDF = gpu->GetEnvMapMarginalCDF()
+        ? gpu->GetEnvMapMarginalCDF()
+        : gpu->GetFoundationDefaultBufferFloat();
+    RHITexture* envMapConditionalCDF = gpu->GetEnvMapConditionalCDF()
+        ? gpu->GetEnvMapConditionalCDF()
+        : gpu->GetFoundationDefaultTexture2DFloat();
+    ResourceHandle EnvMapTex = renderer->CreateResource("Env Map", envMapTexture);
     auto TexSampler = renderer->CreateSampler({});
     uint32_t w = std::max(renderExtent.x, 1u);
     uint32_t h = std::max(renderExtent.y, 1u);
@@ -98,16 +104,11 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
     outHandles.sdrRT = PostprocessBuffer;
     outHandles.pickBuffer = PickResultBuffer;
 
-    ResourceHandle EnvMapMarginalCDF = kInvalidHandle;
-    ResourceHandle EnvMapConditionalCDF = kInvalidHandle;
-    if (useEnvMap)
-    {
-        EnvMapMarginalCDF = renderer->CreateResource("Env Map Marginal CDF", gpu->GetEnvMapMarginalCDF());
-        EnvMapConditionalCDF = renderer->CreateResource("Env Map Conditional CDF", gpu->GetEnvMapConditionalCDF());
-    }
-    ResourceHandle EnvMapSampler = useEnvMap ? renderer->CreateSampler({
+    ResourceHandle EnvMapMarginalCDF = renderer->CreateResource("Env Map Marginal CDF", envMapMarginalCDF);
+    ResourceHandle EnvMapConditionalCDF = renderer->CreateResource("Env Map Conditional CDF", envMapConditionalCDF);
+    ResourceHandle EnvMapSampler = renderer->CreateSampler({
         .filter = {RHIDeviceSampler::SamplerDesc::Filter::Linear, RHIDeviceSampler::SamplerDesc::Filter::Linear},
-    }) : kInvalidHandle;
+    });
     auto LUTSampler = renderer->CreateSampler({.addressMode = {
                                                    .u = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
                                                    .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
@@ -122,7 +123,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::RayTracingShader, "AS");
             const bool shaderExecutionReordering =
                 cfg.ptShaderExecutionReordering && context->device->GetCapabilities().shaderExecutionReordering;
-            const uint ptCompileOptions = PTPackCompileOptions(shaderExecutionReordering, cfg.ptSampler, useEnvMap);
+            const uint ptCompileOptions = PTPackCompileOptions(shaderExecutionReordering, cfg.ptSampler);
             const auto pathTracerShader = Paths::Resolve(shaderExecutionReordering
                                                              ? "data/shaders/ERTPathTracer_SER.spv"
                                                              : "data/shaders/ERTPathTracer.spv");
@@ -172,16 +173,13 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::ComputeShader, "materials");
             r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
             r->BindBufferStorageRead(self, LightAliasTableBuffer, RHIPipelineStageBits::ComputeShader, "lightAliasTable");
-            if (useEnvMap)
-            {
-                r->BindTextureSRV(self, EnvMapTex, "envMap", RHIPipelineStageBits::ComputeShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
-                                                     .range = RHITextureSubresourceRange::Create()});
-                r->BindTextureSRV(self, EnvMapConditionalCDF, "envMapConditionalCDF", RHIPipelineStageBits::ComputeShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
-                                                    .range = RHITextureSubresourceRange::Create()});
-                r->BindBufferStorageRead(self, EnvMapMarginalCDF, RHIPipelineStageBits::ComputeShader, "envMapMarginalCDF");
-            }
+            r->BindTextureSRV(self, EnvMapTex, "envMap", RHIPipelineStageBits::ComputeShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSRV(self, EnvMapConditionalCDF, "envMapConditionalCDF", RHIPipelineStageBits::ComputeShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindBufferStorageRead(self, EnvMapMarginalCDF, RHIPipelineStageBits::ComputeShader, "envMapMarginalCDF");
             r->BindBufferStorageRead(self, SobolMatricesBuffer, RHIPipelineStageBits::ComputeShader, "sobolMatrices");
             r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
@@ -201,17 +199,14 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::RayTracingShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
-            if (useEnvMap)
-            {
-                r->BindTextureSRV(self, EnvMapTex, "envMapTexture", RHIPipelineStageBits::RayTracingShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
-                                                     .range = RHITextureSubresourceRange::Create()});
-                r->BindTextureSampler(self, EnvMapSampler, "envMapSampler");
-                r->BindBufferStorageRead(self, EnvMapMarginalCDF, RHIPipelineStageBits::RayTracingShader, "envMapMarginalCDF");
-                r->BindTextureSRV(self, EnvMapConditionalCDF, "envMapConditionalCDF", RHIPipelineStageBits::RayTracingShader,
-                                  RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
-                                                     .range = RHITextureSubresourceRange::Create()});
-            }
+            r->BindTextureSRV(self, EnvMapTex, "envMapTexture", RHIPipelineStageBits::RayTracingShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindTextureSampler(self, EnvMapSampler, "envMapSampler");
+            r->BindBufferStorageRead(self, EnvMapMarginalCDF, RHIPipelineStageBits::RayTracingShader, "envMapMarginalCDF");
+            r->BindTextureSRV(self, EnvMapConditionalCDF, "envMapConditionalCDF", RHIPipelineStageBits::RayTracingShader,
+                              RHITextureViewDesc{.format = RHIResourceFormat::R32SignedFloat,
+                                                 .range = RHITextureSubresourceRange::Create()});
             r->BindDescriptorSet(self, "textures", gpu->GetTexturePool()->GetDescriptorSetLayout());
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)

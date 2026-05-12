@@ -51,6 +51,7 @@ static uint32_t GetRenderableCurveSegmentCount(FCurveSet const& src)
 static constexpr uint32_t kGPUSceneRingFrameSlack = 3u;
 static constexpr uint32_t kGPUScenePersistentTextureBindings = 3u; // GGX + default SDR/HDR view LUTs.
 static constexpr uint32_t kGPUSceneSceneViewLUTBindings = 2u;
+static constexpr uint32_t kGPUSceneDefaultTextureBindings = 2u; // _FoundationDefault Texture2D + Texture2DFloat.
 static constexpr uint32_t kGPUSceneEnvMapBindings = 2u; // Env map + conditional CDF texture.
 static constexpr uint32_t kGPUSceneTextureBindingSlack = 8u;
 static constexpr size_t kGPUSceneByteBudgetSlack = 64u << 10u;
@@ -152,7 +153,8 @@ GPUScene::GPUSceneDesc GPUScene::CalculateSceneBudget(FScene const& scene, RHIDe
     desc.materialBudget = RingBudget(scene.mMaterials.size());
     desc.lightBudget = RingBudget(scene.mLights.size());
 
-    size_t textureBindings = kGPUScenePersistentTextureBindings + kGPUSceneSceneViewLUTBindings + kGPUSceneTextureBindingSlack;
+    size_t textureBindings = kGPUScenePersistentTextureBindings + kGPUSceneSceneViewLUTBindings +
+        kGPUSceneDefaultTextureBindings + kGPUSceneTextureBindingSlack;
     for (auto const& texture : scene.mTextures)
         textureBindings += texture.IsValid() ? 1u : 0u;
     if (scene.mEnvironment.type == FSceneEnvironmentType::EnvMap && scene.mEnvironmentMap.IsValid())
@@ -397,15 +399,35 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     // Upload precomputed LUTs
     {
         auto lutE = MakeLUT(kGGXlutE, RHIResourceFormat::R32G32SignedFloat, 32, 32);
+        FTexture foundationDefaultTexture2D(mContext->allocator);
+        foundationDefaultTexture2D.Initialize(RHIResourceFormat::R32G32B32A32SignedFloat, RHITextureDimension::E2D, 1, 1);
+        foundationDefaultTexture2D.data.assign(foundationDefaultTexture2D.GetSize(), 0u);
+        FTexture foundationDefaultTexture2DFloat(mContext->allocator);
+        foundationDefaultTexture2DFloat.Initialize(RHIResourceFormat::R32SignedFloat, RHITextureDimension::E2D, 1, 1);
+        foundationDefaultTexture2DFloat.data.resize(sizeof(float));
+        *reinterpret_cast<float*>(foundationDefaultTexture2DFloat.data.data()) = 1.0f;
         auto defaultViewLutSdr =
             LoadLUT(mContext->allocator, kViewLUTsSdr[kDefaultViewLUTSdr].path);
         auto defaultViewLutHdr =
             LoadLUT(mContext->allocator, kViewLUTsHdr[kDefaultViewLUTHdr].path);
-        const size_t budget =
-            lutE.GetSize() + sizeof(kSobolMatrices32) + defaultViewLutSdr.GetSize() + defaultViewLutHdr.GetSize();
+        const size_t foundationDefaultBufferFloatSize = sizeof(float);
+        mFoundationDefaultBufferFloat = mContext->device->CreateBuffer({
+            .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
+            .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
+            .size = foundationDefaultBufferFloatSize
+        });
+        const size_t budget = lutE.GetSize() + foundationDefaultTexture2D.GetSize() +
+            foundationDefaultTexture2DFloat.GetSize() + sizeof(kSobolMatrices32) + foundationDefaultBufferFloatSize +
+            defaultViewLutSdr.GetSize() + defaultViewLutHdr.GetSize();
         ImmediateUpload upload(mContext->device.Get(), budget);
         upload.Begin();
         Upload(&upload, lutE, mLUTGGXEIndex);
+        Upload(&upload, foundationDefaultTexture2D, mFoundationDefaultTexture2DIndex, "_FoundationDefaultTexture2D");
+        Upload(&upload, foundationDefaultTexture2DFloat, mFoundationDefaultTexture2DFloatIndex,
+               "_FoundationDefaultTexture2DFloat");
+        float foundationDefaultBufferFloat = 1.0f;
+        char* defaultBufferPtr = upload.Upload(mFoundationDefaultBufferFloat.Get(), foundationDefaultBufferFloatSize, 0);
+        std::memcpy(defaultBufferPtr, &foundationDefaultBufferFloat, foundationDefaultBufferFloatSize);
         char* ptr = upload.Upload(mSobolMatricesBuffer.Get(), sizeof(kSobolMatrices32), 0);
         std::memcpy(ptr, kSobolMatrices32, sizeof(kSobolMatrices32));
         UploadViewLUTs(&upload, defaultViewLutSdr, defaultViewLutHdr);
@@ -523,6 +545,7 @@ void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     size_t lightBLASBytes = AddBufferSize(mLightBLASBuffer);
     size_t lightGeometryBytes = AddBufferSize(mLightGeometryBuffer);
     size_t sobolBytes = AddBufferSize(mSobolMatricesBuffer);
+    size_t defaultBufferBytes = AddBufferSize(mFoundationDefaultBufferFloat);
     size_t envCDFBytes = AddBufferSize(mEnvMapMarginalCDF);
 
     outStats.push_back({"Primitive Buffer (Buffer)", primitiveBytes});
@@ -536,7 +559,7 @@ void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     outStats.push_back({"TLAS (Buffer)", tlasBytes});
     outStats.push_back({"TLAS Scratch (Buffer)", tlasScratchBytes});
     outStats.push_back({"Light AS (Buffer)", lightBLASBytes});
-    outStats.push_back({"Other GPUScene Buffers (Buffer)", lightGeometryBytes + sobolBytes + envCDFBytes});
+    outStats.push_back({"Other GPUScene Buffers (Buffer)", lightGeometryBytes + sobolBytes + defaultBufferBytes + envCDFBytes});
 }
 
 String GPUScene::DbgGetBufferStatistics() const
@@ -1271,6 +1294,16 @@ RHITexture* GPUScene::GetViewLutSdr() const
 RHITexture* GPUScene::GetViewLutHdr() const
 {
     return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mLUTViewHdrIndex);
+}
+
+RHITexture* GPUScene::GetFoundationDefaultTexture2D() const
+{
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mFoundationDefaultTexture2DIndex);
+}
+
+RHITexture* GPUScene::GetFoundationDefaultTexture2DFloat() const
+{
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mFoundationDefaultTexture2DFloatIndex);
 }
 
 RHITexture* GPUScene::GetEnvMapConditionalCDF() const
