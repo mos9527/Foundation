@@ -5,11 +5,13 @@
 using namespace Foundation;
 using namespace Core;
 using namespace Math;
+#pragma pack(push, 1)
 struct FCurvePoint
 {
     float3 position;
     float radius;
 };
+#pragma pack(pop)
 enum class FCurveBasis : uint32_t
 {
     Linear = 0,

@@ -2,11 +2,14 @@
 #define CGLTF_VALIDATE_ENABLE_ASSERTS 1
 #include "Scene.hpp"
 #include "../Render/ViewLUTs.hpp"
+#include <Core/ThreadPool.hpp>
 #include <Math/Decompose.hpp>
 #include <algorithm>
 #include <cgltf.h>
 #include <cctype>
+#include <climits>
 #include <filesystem>
+#include <lz4.h>
 #include <string_view>
 #include <type_traits>
 #include "Mesh.hpp"
@@ -552,15 +555,184 @@ void LoadGLTFCurve(const cgltf_data* data, const cgltf_curve* src, FCurveSet& cu
               referencedPoints, pointCount);
 }
 
-FSerializedTexture SerializeTexture(FBlobSerializer& blobSerializer, FTexture const& texture);
-FSerializedMesh SerializeMesh(FBlobSerializer& blobSerializer, FMesh const& mesh);
-FSerializedCurve SerializeCurve(FBlobSerializer& blobSerializer, FCurveSet const& curve);
+size_t GetSceneWorkerCount()
+{
+    return std::max<size_t>(1u, std::thread::hardware_concurrency());
+}
+
+size_t GetSceneTaskQueueSize(size_t taskCount)
+{
+    CHECK(taskCount > 0);
+    return ThreadPool::getTaskSize(taskCount);
+}
+
+struct FBlobJob
+{
+    Vector<unsigned char> bytes;
+    uint32_t count{0};
+    uint32_t stride{0};
+    uint64_t alignment{16};
+    FBlobCodec requestedCodec{FBlobCodec::None};
+    FBlobRef* outRef{nullptr};
+
+    explicit FBlobJob(Allocator* alloc = GLOBAL_ALLOC)
+        : bytes(alloc)
+    {
+    }
+};
+
+struct FPreparedBlob
+{
+    Span<const unsigned char> storedBytes;
+    uint64_t decodedSize{0};
+    uint32_t count{0};
+    uint32_t stride{0};
+    uint64_t alignment{16};
+    FBlobCodec codec{FBlobCodec::None};
+    FBlobRef* outRef{nullptr};
+    Vector<unsigned char> ownedStorage;
+
+    explicit FPreparedBlob(Allocator* alloc = GLOBAL_ALLOC)
+        : ownedStorage(alloc)
+    {
+    }
+};
+
+struct FResourceBlobJobs
+{
+    Vector<FBlobJob> jobs;
+
+    explicit FResourceBlobJobs(Allocator* alloc = GLOBAL_ALLOC)
+        : jobs(alloc)
+    {
+    }
+};
+
+void AppendBytesBlobJob(Vector<FBlobJob>& jobs, Vector<unsigned char>&& bytes, uint32_t count, uint32_t stride,
+                        FBlobCodec codec, FBlobRef& outRef, uint64_t alignment = 16)
+{
+    CHECK(stride != 0);
+    uint64_t decodedSize = uint64_t(count) * stride;
+    CHECK_MSG(decodedSize == bytes.size(), "Blob size mismatch: {} bytes for {} elements with stride {}",
+              bytes.size(), count, stride);
+
+    FBlobJob job(GLOBAL_ALLOC);
+    job.bytes = std::move(bytes);
+    job.count = count;
+    job.stride = stride;
+    job.alignment = alignment;
+    job.requestedCodec = codec;
+    job.outRef = &outRef;
+    jobs.push_back(std::move(job));
+}
+
+template <typename T>
+void AppendArrayBlobJob(Vector<FBlobJob>& jobs, Vector<T> const& values, FBlobCodec codec, FBlobRef& outRef,
+                        uint64_t alignment = 16)
+{
+    static_assert(std::is_trivially_copyable_v<T>);
+    CHECK_MSG(values.size() <= UINT32_MAX, "FScene blob count exceeds uint32_t");
+    CHECK_MSG(values.size() <= SIZE_MAX / sizeof(T), "FScene blob byte size exceeds size_t");
+
+    FBlobJob job(GLOBAL_ALLOC);
+    size_t byteSize = values.size() * sizeof(T);
+    job.bytes.resize(byteSize);
+    if (byteSize != 0)
+        std::memcpy(job.bytes.data(), values.data(), byteSize);
+    job.count = static_cast<uint32_t>(values.size());
+    job.stride = sizeof(T);
+    job.alignment = alignment;
+    job.requestedCodec = codec;
+    job.outRef = &outRef;
+    jobs.push_back(std::move(job));
+}
+
+void PrepareBlobJob(FBlobJob const& job, FPreparedBlob& prepared)
+{
+    CHECK(job.outRef != nullptr);
+    CHECK(job.stride != 0);
+
+    prepared.storedBytes = {job.bytes.data(), job.bytes.size()};
+    prepared.decodedSize = uint64_t(job.count) * job.stride;
+    prepared.count = job.count;
+    prepared.stride = job.stride;
+    prepared.alignment = job.alignment;
+    prepared.codec = FBlobCodec::None;
+    prepared.outRef = job.outRef;
+    prepared.ownedStorage.clear();
+    CHECK_MSG(prepared.decodedSize == job.bytes.size(),
+              "Blob size mismatch: {} bytes for {} elements with stride {}", job.bytes.size(), job.count, job.stride);
+
+    if (job.requestedCodec == FBlobCodec::None || job.bytes.empty())
+        return;
+
+    CHECK_MSG(job.requestedCodec == FBlobCodec::LZ4, "Unsupported blob codec {}",
+              static_cast<uint32_t>(job.requestedCodec));
+    CHECK_MSG(job.bytes.size() <= static_cast<size_t>(INT_MAX), "LZ4 blob too large: {} bytes", job.bytes.size());
+    int maxCompressedSize = LZ4_compressBound(static_cast<int>(job.bytes.size()));
+    CHECK_MSG(maxCompressedSize > 0, "LZ4 compression bound failed for {} bytes", job.bytes.size());
+    prepared.ownedStorage.resize(static_cast<size_t>(maxCompressedSize));
+    int compressedSize = LZ4_compress_default(reinterpret_cast<const char*>(job.bytes.data()),
+                                              reinterpret_cast<char*>(prepared.ownedStorage.data()),
+                                              static_cast<int>(job.bytes.size()), maxCompressedSize);
+    CHECK_MSG(compressedSize > 0, "LZ4 compression failed for {} bytes", job.bytes.size());
+    if (static_cast<size_t>(compressedSize) < job.bytes.size())
+    {
+        prepared.ownedStorage.resize(static_cast<size_t>(compressedSize));
+        prepared.storedBytes = {prepared.ownedStorage.data(), prepared.ownedStorage.size()};
+        prepared.codec = FBlobCodec::LZ4;
+    }
+    else
+    {
+        prepared.ownedStorage.clear();
+    }
+}
+
+FBlobRef CommitPreparedBlob(FBlobSerializer& blobSerializer, FPreparedBlob const& blob)
+{
+    CHECK(blob.outRef != nullptr);
+    CHECK(blob.stride != 0);
+
+    FBlobRef ref{};
+    ref.decodedSize = blob.decodedSize;
+    ref.storedSize = blob.storedBytes.size();
+    ref.count = blob.count;
+    ref.stride = blob.stride;
+    ref.codec = blob.codec;
+    if (blob.storedBytes.empty())
+        return ref;
+
+    uint64_t payloadOffset = 0;
+    Span<unsigned char> dst = blobSerializer.Allocate(blob.storedBytes.size(), blob.alignment, payloadOffset);
+    ref.offset = payloadOffset;
+    std::memcpy(dst.data(), blob.storedBytes.data(), blob.storedBytes.size());
+    return ref;
+}
+
+void CommitPreparedBlobJobs(FBlobSerializer& blobSerializer, Vector<FPreparedBlob> const& preparedBlobs)
+{
+    for (FPreparedBlob const& blob : preparedBlobs)
+        *blob.outRef = CommitPreparedBlob(blobSerializer, blob);
+}
+
+void AppendResourceBlobJobs(Vector<FBlobJob>& blobJobs, FResourceBlobJobs& resourceBlobJobs)
+{
+    blobJobs.reserve(blobJobs.size() + resourceBlobJobs.jobs.size());
+    for (FBlobJob& job : resourceBlobJobs.jobs)
+        blobJobs.push_back(std::move(job));
+    resourceBlobJobs.jobs.clear();
+}
+
+void BuildTextureBlobJobs(FSerializedTexture& desc, Vector<FBlobJob>& blobJobs, FTexture&& texture);
+void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FMesh const& mesh);
+void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FCurveSet const& curve);
 
 void BuildGLTFSerializedScene(StringView path, FScene& scene)
 {
     LOG(Scene, LogInfo, "Load GLTF Scene {}", path);
-    CHECK(scene.mWriter != nullptr);
-    FBlobSerializer blobSerializer(*scene.mWriter, scene.mHeader.payloadOffset);
+    CHECK(scene.mWriting);
+    CHECK(scene.mFile != nullptr);
+    FBlobSerializer blobSerializer(*scene.mFile, scene.mWriteOffset, scene.mHeader.payloadOffset);
     cgltf_options options = {};
     cgltf_data* data = nullptr;
     cgltf_result result = cgltf_parse_file(&options, path.data(), &data);
@@ -672,75 +844,149 @@ void BuildGLTFSerializedScene(StringView path, FScene& scene)
         scene.Add(material);
     }
 
+    Vector<FBlobJob> blobJobs(GLOBAL_ALLOC);
+
     /* Textures */
-    for (size_t i = 0; i < data->textures_count; i++)
+    FTexture textureCodecInit(GLOBAL_ALLOC);
+    scene.mTables.textures.resize(data->textures_count);
+    Vector<FResourceBlobJobs> textureBlobJobs(data->textures_count, GLOBAL_ALLOC);
+    if (data->textures_count != 0)
     {
-        cgltf_texture* src = &data->textures[i];
-        String name = src->name ? src->name : fmt::format("{}_{}", path, i);
-        unsigned flags = textureFlags[i];
-        FTexture texture(GLOBAL_ALLOC);
-        LOG(Scene, LogInfo, "Loading texture {}", name);
-        auto loaded = LoadGLTFTexture(src, path, flags & kTextureInSRGB);
-        if (loaded.has_value())
+        ThreadPool pool(GetSceneWorkerCount(), GetSceneTaskQueueSize(data->textures_count), GLOBAL_ALLOC, "SceneTexture");
+        Vector<Future<void>> futures(GLOBAL_ALLOC);
+        futures.reserve(data->textures_count);
+        for (size_t i = 0; i < data->textures_count; i++)
         {
-            if (loaded->GetFormat() == RHIResourceFormat::R8G8B8A8Unorm ||
-                loaded->GetFormat() == RHIResourceFormat::R8G8B8A8Srgb)
-            {
-                loaded->GenerateMips();
-                texture = loaded->EncodeBC7();
-            }
-            else
-                texture = loaded.value();
-            LOG(Scene, LogInfo, "Loaded texture {}", name);
+            futures.push_back(pool.Push(
+                [&, i]
+                {
+                    cgltf_texture* src = &data->textures[i];
+                    String name = src->name ? src->name : fmt::format("{}_{}", path, i);
+                    unsigned flags = textureFlags[i];
+                    FTexture texture(GLOBAL_ALLOC);
+                    LOG(Scene, LogInfo, "Loading texture {}", name);
+                    auto loaded = LoadGLTFTexture(src, path, flags & kTextureInSRGB);
+                    if (loaded.has_value())
+                    {
+                        if (loaded->GetFormat() == RHIResourceFormat::R8G8B8A8Unorm ||
+                            loaded->GetFormat() == RHIResourceFormat::R8G8B8A8Srgb)
+                        {
+                            loaded->GenerateMips();
+                            texture = loaded->EncodeBC7();
+                        }
+                        else
+                            texture = loaded.value();
+                        LOG(Scene, LogInfo, "Loaded texture {}", name);
+                    }
+                    else
+                    {
+                        LOG(Scene, LogWarn, "No texture loaded for {}", name);
+                    }
+                    BuildTextureBlobJobs(scene.mTables.textures[i], textureBlobJobs[i].jobs, std::move(texture));
+                }));
         }
-        else
-        {
-            LOG(Scene, LogWarn, "No texture loaded for {}", name);
-        }
-        uint32_t textureIndex = static_cast<uint32_t>(scene.GetTextures().size());
-        scene.Add(SerializeTexture(blobSerializer, texture));
-        CHECK_MSG(textureIndex == i, "Serialized texture index mismatch");
+        pool.Join();
+        for (Future<void>& future : futures)
+            future.get();
+        for (FResourceBlobJobs& jobs : textureBlobJobs)
+            AppendResourceBlobJobs(blobJobs, jobs);
     }
 
     /* Meshes */
     size_t numSubmeshes = 0;
     for (size_t i = 0; i < data->meshes_count; i++)
         numSubmeshes += data->meshes[i].primitives_count;
+    scene.mTables.meshes.resize(numSubmeshes);
+    Vector<FResourceBlobJobs> meshBlobJobs(numSubmeshes, GLOBAL_ALLOC);
     Vector<Pair<size_t, size_t>> submeshIndices(GLOBAL_ALLOC);
     submeshIndices.reserve(data->meshes_count);
     uint32_t nextSubmesh = 0;
-    for (size_t i = 0; i < data->meshes_count; i++)
+    if (numSubmeshes != 0)
     {
-        auto& mesh = data->meshes[i];
-        auto& [mmin, mmax] = submeshIndices.emplace_back(nextSubmesh, nextSubmesh);
-        for (size_t p = 0; p < mesh.primitives_count; p++)
+        ThreadPool pool(GetSceneWorkerCount(), GetSceneTaskQueueSize(numSubmeshes), GLOBAL_ALLOC, "SceneMesh");
+        Vector<Future<void>> futures(GLOBAL_ALLOC);
+        futures.reserve(numSubmeshes);
+        for (size_t i = 0; i < data->meshes_count; i++)
         {
-            auto* sub = mesh.primitives + p;
-            CHECK(sub->type == cgltf_primitive_type_triangles);
-            FMesh submesh = LoadGLTFSubmesh(sub);
-            LOG(Meshopt, LogInfo, "Optimizing submesh {}, vtx: {}, idx: {}", nextSubmesh, submesh.vertices.size(),
-                submesh.lods[0].indices.size());
-            submesh.Optimize();
-            submesh.ClusterizeDAG();
-            submesh.Quantize();
-            LOG(Meshopt, LogInfo, "Optimized {}", nextSubmesh);
-            uint32_t meshIndex = static_cast<uint32_t>(scene.GetMeshes().size());
-            scene.Add(SerializeMesh(blobSerializer, submesh));
-            CHECK_MSG(meshIndex == nextSubmesh, "Serialized mesh index mismatch");
-            nextSubmesh++;
+            auto& mesh = data->meshes[i];
+            auto& [mmin, mmax] = submeshIndices.emplace_back(nextSubmesh, nextSubmesh);
+            for (size_t p = 0; p < mesh.primitives_count; p++)
+            {
+                auto* sub = mesh.primitives + p;
+                CHECK(sub->type == cgltf_primitive_type_triangles);
+                uint32_t meshIndex = nextSubmesh++;
+                futures.push_back(pool.Push(
+                    [&, meshIndex, sub]
+                    {
+                        FMesh submesh = LoadGLTFSubmesh(sub);
+                        LOG(Meshopt, LogInfo, "Optimizing submesh {}, vtx: {}, idx: {}", meshIndex,
+                            submesh.vertices.size(), submesh.lods[0].indices.size());
+                        submesh.Optimize();
+                        submesh.ClusterizeDAG();
+                        submesh.Quantize();
+                        LOG(Meshopt, LogInfo, "Optimized {}", meshIndex);
+                        BuildMeshBlobJobs(scene.mTables.meshes[meshIndex], meshBlobJobs[meshIndex].jobs, submesh);
+                    }));
+            }
+            mmax = nextSubmesh;
         }
-        mmax = nextSubmesh;
+        pool.Join();
+        for (Future<void>& future : futures)
+            future.get();
+        for (FResourceBlobJobs& jobs : meshBlobJobs)
+            AppendResourceBlobJobs(blobJobs, jobs);
+    }
+    else
+    {
+        for (size_t i = 0; i < data->meshes_count; i++)
+            submeshIndices.emplace_back(nextSubmesh, nextSubmesh);
     }
     CHECK_MSG(nextSubmesh == numSubmeshes, "Serialized mesh count mismatch");
 
     /* Curves */
-    for (size_t i = 0; i < data->curves_count; i++)
+    scene.mTables.curves.resize(data->curves_count);
+    Vector<FResourceBlobJobs> curveBlobJobs(data->curves_count, GLOBAL_ALLOC);
+    if (data->curves_count != 0)
     {
-        FCurveSet curve(GLOBAL_ALLOC);
-        LoadGLTFCurve(data, &data->curves[i], curve);
-        uint32_t curveIndex = static_cast<uint32_t>(scene.GetCurves().size());
-        scene.Add(SerializeCurve(blobSerializer, curve));
-        CHECK_MSG(curveIndex == i, "Serialized curve index mismatch");
+        ThreadPool pool(GetSceneWorkerCount(), GetSceneTaskQueueSize(data->curves_count), GLOBAL_ALLOC, "SceneCurve");
+        Vector<Future<void>> futures(GLOBAL_ALLOC);
+        futures.reserve(data->curves_count);
+        for (size_t i = 0; i < data->curves_count; i++)
+        {
+            futures.push_back(pool.Push(
+                [&, i]
+                {
+                    FCurveSet curve(GLOBAL_ALLOC);
+                    LoadGLTFCurve(data, &data->curves[i], curve);
+                    BuildCurveBlobJobs(scene.mTables.curves[i], curveBlobJobs[i].jobs, curve);
+                }));
+        }
+        pool.Join();
+        for (Future<void>& future : futures)
+            future.get();
+        for (FResourceBlobJobs& jobs : curveBlobJobs)
+            AppendResourceBlobJobs(blobJobs, jobs);
+    }
+
+    /* Blob compression and commit */
+    Vector<FPreparedBlob> preparedBlobs(blobJobs.size(), GLOBAL_ALLOC);
+    if (!blobJobs.empty())
+    {
+        ThreadPool pool(GetSceneWorkerCount(), GetSceneTaskQueueSize(blobJobs.size()), GLOBAL_ALLOC, "SceneBlob");
+        Vector<Future<void>> futures(GLOBAL_ALLOC);
+        futures.reserve(blobJobs.size());
+        for (size_t i = 0; i < blobJobs.size(); i++)
+        {
+            futures.push_back(pool.Push(
+                [&, i]
+                {
+                    PrepareBlobJob(blobJobs[i], preparedBlobs[i]);
+                }));
+        }
+        pool.Join();
+        for (Future<void>& future : futures)
+            future.get();
+        CommitPreparedBlobJobs(blobSerializer, preparedBlobs);
     }
 
     /* Instances / Cameras / Light */
@@ -859,12 +1105,13 @@ static_assert(std::is_trivially_copyable_v<FSerializedMeshLOD>);
 static_assert(std::is_trivially_copyable_v<FSerializedCurve>);
 static_assert(std::is_trivially_copyable_v<FSerializedTexture>);
 
-FSerializedTexture SerializeTexture(FBlobSerializer& blobSerializer, FTexture const& texture)
+void BuildTextureBlobJobs(FSerializedTexture& desc, Vector<FBlobJob>& blobJobs, FTexture&& texture)
 {
     CHECK_MSG(texture.bytes.size() <= UINT32_MAX, "FScene texture blob too large");
-    FBlobRef blob = blobSerializer.AppendBytes(texture.bytes.data(), texture.bytes.size(),
-                                               static_cast<uint32_t>(texture.bytes.size()), sizeof(unsigned char));
-    return texture.ToSerializedTexture(blob);
+    desc = texture.ToSerializedTexture();
+    uint32_t byteCount = static_cast<uint32_t>(texture.bytes.size());
+    AppendBytesBlobJob(blobJobs, std::move(texture.bytes), byteCount, sizeof(unsigned char), FBlobCodec::None,
+                       desc.data);
 }
 
 uint32_t CalculateRenderableCurveSegmentCount(FCurveSet const& curve)
@@ -890,59 +1137,70 @@ uint32_t CalculateRenderableCurveSegmentCount(FCurveSet const& curve)
     return segmentCount;
 }
 
-FSerializedMesh SerializeMesh(FBlobSerializer& blobSerializer, FMesh const& mesh)
+void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FMesh const& mesh)
 {
     CHECK_MSG(!mesh.verticesQuantized.empty(), "FScene mesh is not quantized");
-    FSerializedMesh desc(GLOBAL_ALLOC);
-    desc.vertices = blobSerializer.AppendArray(mesh.verticesQuantized, FBlobCodec::LZ4);
+    desc.vertices = {};
     desc.vertexCount = static_cast<uint32_t>(mesh.verticesQuantized.size());
+    desc.lods.clear();
+    desc.dagGroups = {};
+    desc.dagMeshlets = {};
+    desc.dagMeshletTri = {};
+    desc.dagMeshletVtx = {};
+
+    AppendArrayBlobJob(blobJobs, mesh.verticesQuantized, FBlobCodec::LZ4, desc.vertices);
 
     desc.lods.reserve(mesh.lods.size());
     for (auto const& lod : mesh.lods)
     {
-        FSerializedMeshLOD lodDesc{};
-        lodDesc.indices = blobSerializer.AppendArray(lod.indices, FBlobCodec::LZ4);
+        FSerializedMeshLOD& lodDesc = desc.lods.emplace_back();
         lodDesc.indexCount = static_cast<uint32_t>(lod.indices.size());
-        desc.lods.push_back(lodDesc);
+        AppendArrayBlobJob(blobJobs, lod.indices, FBlobCodec::LZ4, lodDesc.indices);
     }
 
-    desc.dagGroups = blobSerializer.AppendArray(mesh.dag.groups, FBlobCodec::LZ4);
-    desc.dagMeshlets = blobSerializer.AppendArray(mesh.dag.meshlets, FBlobCodec::LZ4);
-    desc.dagMeshletTri = blobSerializer.AppendArray(mesh.dag.meshletTri, FBlobCodec::LZ4);
-    desc.dagMeshletVtx = blobSerializer.AppendArray(mesh.dag.meshletVtx, FBlobCodec::LZ4);
-    return desc;
+    AppendArrayBlobJob(blobJobs, mesh.dag.groups, FBlobCodec::LZ4, desc.dagGroups);
+    AppendArrayBlobJob(blobJobs, mesh.dag.meshlets, FBlobCodec::LZ4, desc.dagMeshlets);
+    AppendArrayBlobJob(blobJobs, mesh.dag.meshletTri, FBlobCodec::LZ4, desc.dagMeshletTri);
+    AppendArrayBlobJob(blobJobs, mesh.dag.meshletVtx, FBlobCodec::LZ4, desc.dagMeshletVtx);
 }
 
-FSerializedCurve SerializeCurve(FBlobSerializer& blobSerializer, FCurveSet const& curve)
+void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FCurveSet const& curve)
 {
-    FSerializedCurve desc{};
-    desc.points = blobSerializer.AppendArray(curve.points, FBlobCodec::LZ4);
-    desc.curveVertexCounts = blobSerializer.AppendArray(curve.curveVertexCounts, FBlobCodec::LZ4);
+    desc = {};
     desc.numSegments = CalculateRenderableCurveSegmentCount(curve);
     desc.basis = curve.basis;
     desc.renderMode = curve.renderMode;
     desc.materialIndex = curve.materialIndex;
-    return desc;
+    AppendArrayBlobJob(blobJobs, curve.points, FBlobCodec::LZ4, desc.points);
+    AppendArrayBlobJob(blobJobs, curve.curveVertexCounts, FBlobCodec::LZ4, desc.curveVertexCounts);
 }
 
-FScene::FScene(FWriter& writer)
-    : mWriter(&writer)
+FScene::FScene(MemoryMappedFile& file)
+    : mFile(&file), mWriting(file.IsWritable())
 {
-    mHeader.headerSize = sizeof(FSceneHeader);
-    mHeader.payloadOffset = AlignUpU64(sizeof(FSceneHeader), mHeader.payloadAlignment);
-    CHECK(mWriter->write(&mHeader, sizeof(mHeader)) == sizeof(mHeader));
-    WriteZeroBytes(*mWriter, mHeader.payloadOffset - mWriter->tell());
+    if (mWriting)
+    {
+        mHeader.headerSize = sizeof(FSceneHeader);
+        mHeader.payloadOffset = AlignUpU64(sizeof(FSceneHeader), mHeader.payloadAlignment);
+        mWriteOffset = mHeader.payloadOffset;
+        EnsureMappedFileSize(file, mWriteOffset);
+        std::memcpy(file.MutableData(), &mHeader, sizeof(mHeader));
+        if (mHeader.payloadOffset > sizeof(mHeader))
+            std::memset(file.MutableData() + sizeof(mHeader), 0, static_cast<size_t>(mHeader.payloadOffset - sizeof(mHeader)));
+    }
 }
 
-FScene::FScene(FReader& reader)
-    : mReader(&reader)
+Span<const unsigned char> FScene::GetPayloadBytes() const
 {
+    CHECK(mFile != nullptr);
+    CHECK(!mWriting);
+    CHECK_MSG(mHeader.payloadOffset <= mHeader.metadataOffset, "FScene payload range is invalid");
+    return {mFile->Data() + mHeader.payloadOffset, static_cast<size_t>(mHeader.metadataOffset - mHeader.payloadOffset)};
 }
 
 FBlobDeserializer FScene::GetBlobDeserializer() const
 {
-    CHECK(mReader != nullptr);
-    return FBlobDeserializer(*mReader, mHeader.payloadOffset);
+    return FBlobDeserializer(GetPayloadBytes());
 }
 
 bool FScene::ReadBlob(FBlobRef const& blob, void* dst, size_t size) const
@@ -957,8 +1215,9 @@ bool FScene::ReadBlobRange(FBlobRef const& blob, uint64_t srcOffset, void* dst, 
 
 void FinalizeSceneWriter(FScene& scene)
 {
-    CHECK(scene.mWriter != nullptr);
-    uint64_t payloadFileEnd = scene.mWriter->tell();
+    CHECK(scene.mWriting);
+    CHECK(scene.mFile != nullptr);
+    uint64_t payloadFileEnd = scene.mWriteOffset;
     CHECK_MSG(payloadFileEnd >= scene.mHeader.payloadOffset, "FScene writer is before payload offset");
 
     Vector<unsigned char> metadata(GLOBAL_ALLOC);
@@ -969,44 +1228,42 @@ void FinalizeSceneWriter(FScene& scene)
     scene.mHeader.metadataSize = metadata.size();
     scene.mHeader.fileSize = scene.mHeader.metadataOffset + scene.mHeader.metadataSize;
 
-    CHECK(scene.mWriter->seek(payloadFileEnd));
-    WriteZeroBytes(*scene.mWriter, scene.mHeader.metadataOffset - payloadFileEnd);
-    CHECK(scene.mWriter->write(metadata.data(), metadata.size()) == metadata.size());
-    CHECK(scene.mWriter->tell() == scene.mHeader.fileSize);
-
-    CHECK(scene.mWriter->seek(0));
-    CHECK(scene.mWriter->write(&scene.mHeader, sizeof(scene.mHeader)) == sizeof(scene.mHeader));
-    CHECK(scene.mWriter->seek(scene.mHeader.fileSize));
-    scene.mWriter = nullptr;
+    EnsureMappedFileSize(*scene.mFile, scene.mHeader.fileSize);
+    if (scene.mHeader.metadataOffset > payloadFileEnd)
+        std::memset(scene.mFile->MutableData() + payloadFileEnd, 0,
+                    static_cast<size_t>(scene.mHeader.metadataOffset - payloadFileEnd));
+    std::memcpy(scene.mFile->MutableData() + scene.mHeader.metadataOffset, metadata.data(), metadata.size());
+    std::memcpy(scene.mFile->MutableData(), &scene.mHeader, sizeof(scene.mHeader));
+    scene.mFile->Flush(0, scene.mHeader.fileSize);
+    scene.mFile->Resize(scene.mHeader.fileSize);
+    scene.mWriteOffset = scene.mHeader.fileSize;
+    scene.mWriting = false;
 }
 
 FScene::~FScene()
 {
-    if (mWriter)
+    if (mWriting)
         FinalizeSceneWriter(*this);
 }
 
 void LoadGLTF(StringView path, FScene& scene)
 {
-    CHECK(scene.mWriter != nullptr);
+    CHECK(scene.mWriting);
     BuildGLTFSerializedScene(path, scene);
 }
 
-void LoadFSCN(FReader& reader, FScene& scene)
+void LoadFSCN(FScene& scene)
 {
-    uint32_t magic = 0;
-    CHECK(reader.read(&magic, sizeof(magic)) == sizeof(magic));
-    CHECK(reader.seek(0));
-    CHECK_MSG(magic == kSceneMagic, "Unsupported FSCN scene magic");
-    scene.mReader = &reader;
-    scene.mWriter = nullptr;
-    CHECK(reader.seek(0));
-    CHECK(reader.read(&scene.mHeader, sizeof(scene.mHeader)) == sizeof(scene.mHeader));
+    CHECK(scene.mFile != nullptr);
+    CHECK(!scene.mWriting);
+    Span<const unsigned char> bytes = scene.mFile->Bytes();
+    CHECK_MSG(bytes.size() >= sizeof(FSceneHeader), "FSCN file is smaller than its header");
+    std::memcpy(&scene.mHeader, bytes.data(), sizeof(scene.mHeader));
     ValidateSceneHeader(scene.mHeader);
+    CHECK_MSG(scene.mHeader.fileSize <= bytes.size(), "FScene header file size exceeds mapped file size");
 
-    Vector<unsigned char> metadata(static_cast<size_t>(scene.mHeader.metadataSize), GLOBAL_ALLOC);
-    CHECK(reader.seek(scene.mHeader.metadataOffset));
-    CHECK(reader.read(metadata.data(), metadata.size()) == metadata.size());
+    Span<const unsigned char> metadata(bytes.data() + scene.mHeader.metadataOffset,
+                                       static_cast<size_t>(scene.mHeader.metadataSize));
     MemoryReader metadataReader(metadata);
     FDeserialize(metadataReader, scene.mTables);
     CHECK_MSG(metadataReader.tell() == metadata.size(), "FScene metadata has trailing or unread bytes");
@@ -1018,12 +1275,13 @@ String LoadScene(StringView path, FScene& scene)
     auto ext = LowerExtension(std::filesystem::path(path.data()));
     if (ext == ".fscn")
     {
-        CHECK(scene.mReader != nullptr);
-        LoadFSCN(*scene.mReader, scene);
+        CHECK(scene.mFile != nullptr);
+        CHECK(!scene.mWriting);
+        LoadFSCN(scene);
         return String(path);
     }
 
-    CHECK(scene.mWriter != nullptr);
+    CHECK(scene.mWriting);
     LoadGLTF(path, scene);
     return String(path);
 }

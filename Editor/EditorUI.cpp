@@ -1050,11 +1050,10 @@ void FRunningImGui()
                     ImGui::Text("%s", name.c_str());
                     ImGui::Text("GPU Memory Usage: %.1f MB / %.1f MB", used / static_cast<float>(1 << 20u),
                                 budget / static_cast<float>(1 << 20u));
-                    ImGui::Text("GPU Allocator Blocks: %.1f MB, allocations: %.1f MB, slack: %.1f MB, external/driver: %.1f MB",
-                                blockBytes / static_cast<float>(1 << 20u),
+                    ImGui::Text("GPU Allocator Allocations: %.1f MB, Blocks: %.1f MB, Slack: %.1f MB",
                                 allocationBytes / static_cast<float>(1 << 20u),
-                                (blockBytes - allocationBytes) / static_cast<float>(1 << 20u),
-                                (used > blockBytes ? used - blockBytes : 0u) / static_cast<float>(1 << 20u));
+                                blockBytes / static_cast<float>(1 << 20u),
+                                (blockBytes - allocationBytes) / static_cast<float>(1 << 20u));
                 }
                 {
                     size_t used, budget;

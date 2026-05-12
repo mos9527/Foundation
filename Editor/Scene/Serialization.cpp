@@ -10,17 +10,6 @@ uint64_t AlignUpU64(uint64_t value, uint64_t alignment)
     return (value + alignment - 1) / alignment * alignment;
 }
 
-void WriteZeroBytes(FWriter& writer, uint64_t bytes)
-{
-    static constexpr unsigned char kZeroes[4096]{};
-    while (bytes != 0)
-    {
-        size_t chunk = static_cast<size_t>(std::min<uint64_t>(bytes, sizeof(kZeroes)));
-        CHECK(writer.write(kZeroes, chunk) == chunk);
-        bytes -= chunk;
-    }
-}
-
 MemoryWriter::MemoryWriter(Vector<unsigned char>& data, uint64_t offset)
     : data(data), offset(offset)
 {
@@ -85,9 +74,74 @@ bool MemoryReader::seek(uint64_t newOffset)
     return true;
 }
 
-FBlobSerializer::FBlobSerializer(FWriter& writer, uint64_t baseOffset)
-    : writer(writer), baseOffset(baseOffset)
+void EnsureMappedFileSize(MemoryMappedFile& file, uint64_t requiredSize)
 {
+    CHECK(file.IsWritable());
+    if (requiredSize <= file.Size())
+        return;
+
+    uint64_t newSize = file.Size() != 0 ? file.Size() : 1;
+    while (newSize < requiredSize)
+    {
+        CHECK_MSG(newSize <= UINT64_MAX / 2, "Mapped file size overflow while growing to {} bytes", requiredSize);
+        newSize *= 2;
+    }
+    file.Resize(newSize);
+}
+
+SpanWriter::SpanWriter(Span<unsigned char> data, uint64_t offset)
+    : data(data), offset(offset)
+{
+    CHECK_MSG(offset <= data.size(), "SpanWriter offset is out of bounds");
+}
+
+size_t SpanWriter::write(const void* src, size_t size)
+{
+    if (size == 0)
+        return 0;
+
+    CHECK(src != nullptr);
+    CHECK_MSG(offset <= data.size(), "SpanWriter offset is out of bounds");
+    size_t begin = static_cast<size_t>(offset);
+    size_t writeSize = std::min(size, data.size() - begin);
+    std::memcpy(data.data() + begin, src, writeSize);
+    offset += writeSize;
+    return writeSize;
+}
+
+bool SpanWriter::seek(uint64_t newOffset)
+{
+    if (newOffset > data.size())
+        return false;
+    offset = newOffset;
+    return true;
+}
+
+FBlobSerializer::FBlobSerializer(MemoryMappedFile& file, uint64_t& writeOffset, uint64_t baseOffset)
+    : file(file), writeOffset(writeOffset), baseOffset(baseOffset)
+{
+    CHECK(file.IsWritable());
+    CHECK_MSG(writeOffset >= baseOffset, "Blob writer is before its payload base offset");
+}
+
+Span<unsigned char> FBlobSerializer::Allocate(uint64_t size, uint64_t alignment, uint64_t& outPayloadOffset)
+{
+    CHECK(alignment != 0);
+    CHECK_MSG(writeOffset >= baseOffset, "Blob writer is before its payload base offset");
+    uint64_t currentPayloadOffset = writeOffset - baseOffset;
+    uint64_t alignedPayloadOffset = AlignUpU64(currentPayloadOffset, alignment);
+    CHECK_MSG(baseOffset <= UINT64_MAX - alignedPayloadOffset, "Blob absolute offset overflows");
+    uint64_t absoluteOffset = baseOffset + alignedPayloadOffset;
+    CHECK_MSG(size <= UINT64_MAX - absoluteOffset, "Blob write range overflows");
+    uint64_t endOffset = absoluteOffset + size;
+
+    EnsureMappedFileSize(file, endOffset);
+    if (absoluteOffset > writeOffset)
+        std::memset(file.MutableData() + writeOffset, 0, static_cast<size_t>(absoluteOffset - writeOffset));
+
+    outPayloadOffset = alignedPayloadOffset;
+    writeOffset = endOffset;
+    return {file.MutableData() + absoluteOffset, static_cast<size_t>(size)};
 }
 
 FBlobRef FBlobSerializer::AppendBytes(const void* data, size_t size, uint32_t count, uint32_t stride,
@@ -126,22 +180,23 @@ FBlobRef FBlobSerializer::AppendBytes(const void* data, size_t size, uint32_t co
     }
 
     ref.storedSize = writeSize;
-    CHECK_MSG(writer.tell() >= baseOffset, "Blob writer is before its payload base offset");
-    uint64_t currentPayloadOffset = writer.tell() - baseOffset;
-    uint64_t aligned = AlignUpU64(currentPayloadOffset, alignment);
-    if (aligned > currentPayloadOffset)
-        WriteZeroBytes(writer, aligned - currentPayloadOffset);
-
-    uint64_t fileOffset = writer.tell();
-    CHECK_MSG(fileOffset >= baseOffset, "Blob write before payload base offset");
-    ref.offset = fileOffset - baseOffset;
-    CHECK(writer.write(writeData, writeSize) == writeSize);
+    uint64_t payloadOffset = 0;
+    Span<unsigned char> dst = Allocate(writeSize, alignment, payloadOffset);
+    ref.offset = payloadOffset;
+    std::memcpy(dst.data(), writeData, writeSize);
     return ref;
 }
 
-FBlobDeserializer::FBlobDeserializer(FReader& reader, uint64_t baseOffset)
-    : reader(reader), baseOffset(baseOffset)
+FBlobDeserializer::FBlobDeserializer(Span<const unsigned char> payload)
+    : payload(payload)
 {
+}
+
+Span<const unsigned char> FBlobDeserializer::StoredBytes(FBlobRef const& blob) const
+{
+    CHECK_MSG(blob.offset <= payload.size(), "Blob offset exceeds payload size");
+    CHECK_MSG(blob.storedSize <= payload.size() - blob.offset, "Blob exceeds payload size");
+    return {payload.data() + blob.offset, static_cast<size_t>(blob.storedSize)};
 }
 
 bool FBlobDeserializer::ReadBytes(FBlobRef const& blob, void* dst, size_t size) const
@@ -151,21 +206,19 @@ bool FBlobDeserializer::ReadBytes(FBlobRef const& blob, void* dst, size_t size) 
         return true;
 
     CHECK(dst != nullptr);
-    CHECK(reader.seek(baseOffset + blob.offset));
+    Span<const unsigned char> stored = StoredBytes(blob);
     switch (blob.codec)
     {
     case FBlobCodec::None:
         CHECK(blob.storedSize == size);
-        return reader.read(dst, size) == size;
+        std::memcpy(dst, stored.data(), size);
+        return true;
     case FBlobCodec::LZ4:
     {
         CHECK_MSG(blob.storedSize <= static_cast<uint64_t>(INT_MAX), "LZ4 blob too large: {} bytes", blob.storedSize);
         CHECK_MSG(size <= static_cast<size_t>(INT_MAX), "LZ4 decoded blob too large: {} bytes", size);
-        Vector<char> compressed(static_cast<size_t>(blob.storedSize), GLOBAL_ALLOC);
-        if (reader.read(compressed.data(), compressed.size()) != compressed.size())
-            return false;
-        int decodedSize = LZ4_decompress_safe(compressed.data(), static_cast<char*>(dst),
-                                              static_cast<int>(compressed.size()), static_cast<int>(size));
+        int decodedSize = LZ4_decompress_safe(reinterpret_cast<const char*>(stored.data()), static_cast<char*>(dst),
+                                              static_cast<int>(stored.size()), static_cast<int>(size));
         return decodedSize == static_cast<int>(size);
     }
     default:
@@ -185,10 +238,7 @@ bool FBlobDeserializer::ReadBytesRange(FBlobRef const& blob, uint64_t srcOffset,
         return true;
 
     CHECK(dst != nullptr);
-    CHECK_MSG(srcOffset <= UINT64_MAX - blob.offset, "Blob range file offset overflows");
-    uint64_t blobFileOffset = blob.offset + srcOffset;
-    CHECK_MSG(baseOffset <= UINT64_MAX - blobFileOffset, "Blob range absolute offset overflows");
-    CHECK(reader.seek(baseOffset + blobFileOffset));
-    return reader.read(dst, size) == size;
+    Span<const unsigned char> stored = StoredBytes(blob);
+    std::memcpy(dst, stored.data() + srcOffset, size);
+    return true;
 }
-

@@ -1,7 +1,7 @@
 #pragma once
 #include <Core/Container.hpp>
+#include <Core/MemoryMapped.hpp>
 #include <concepts>
-#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
@@ -74,15 +74,30 @@ struct MemoryReader : FReader
     uint64_t tell() const override { return offset; }
 };
 
+struct SpanWriter : FWriter
+{
+    Span<unsigned char> data;
+    uint64_t offset{0};
+
+    explicit SpanWriter(Span<unsigned char> data, uint64_t offset = 0);
+
+    size_t write(const void* src, size_t size) override;
+    bool seek(uint64_t offset) override;
+    uint64_t tell() const override { return offset; }
+};
+
 uint64_t AlignUpU64(uint64_t value, uint64_t alignment);
-void WriteZeroBytes(FWriter& writer, uint64_t bytes);
+void EnsureMappedFileSize(MemoryMappedFile& file, uint64_t requiredSize);
 
 struct FBlobSerializer
 {
-    FWriter& writer;
+    MemoryMappedFile& file;
+    uint64_t& writeOffset;
     uint64_t baseOffset{0};
 
-    explicit FBlobSerializer(FWriter& writer, uint64_t baseOffset = 0);
+    explicit FBlobSerializer(MemoryMappedFile& file, uint64_t& writeOffset, uint64_t baseOffset = 0);
+
+    Span<unsigned char> Allocate(uint64_t size, uint64_t alignment, uint64_t& outPayloadOffset);
 
     FBlobRef AppendBytes(const void* data, size_t size, uint32_t count, uint32_t stride,
                          FBlobCodec codec = FBlobCodec::None, uint64_t alignment = 16);
@@ -99,11 +114,11 @@ struct FBlobSerializer
 
 struct FBlobDeserializer
 {
-    FReader& reader;
-    uint64_t baseOffset{0};
+    Span<const unsigned char> payload;
 
-    explicit FBlobDeserializer(FReader& reader, uint64_t baseOffset = 0);
+    explicit FBlobDeserializer(Span<const unsigned char> payload);
 
+    Span<const unsigned char> StoredBytes(FBlobRef const& blob) const;
     bool ReadBytes(FBlobRef const& blob, void* dst, size_t size) const;
     bool ReadBytesRange(FBlobRef const& blob, uint64_t srcOffset, void* dst, size_t size) const;
 
@@ -204,58 +219,3 @@ void FDeserialize(FReader& reader, Optional<T>& opt, Args const&... args)
         opt = std::nullopt;
     }
 }
-// File IO
-struct FileWriter : FWriter
-{
-    FILE* fp;
-    FileWriter(StringView path)
-    {
-        fp = fopen(path.data(), "wb");
-        CHECK_MSG(fp != nullptr, "Can't open {}", path);
-    }
-    ~FileWriter() override { fflush(fp), fclose(fp); }
-    size_t write(const void* data, size_t size) override { return fwrite(data, 1, size, fp); }
-    bool seek(uint64_t offset) override
-    {
-#if defined(_WIN32)
-        return _fseeki64(fp, static_cast<__int64>(offset), SEEK_SET) == 0;
-#else
-        return fseeko(fp, static_cast<off_t>(offset), SEEK_SET) == 0;
-#endif
-    }
-    uint64_t tell() const override
-    {
-#if defined(_WIN32)
-        return static_cast<uint64_t>(_ftelli64(fp));
-#else
-        return static_cast<uint64_t>(ftello(fp));
-#endif
-    }
-};
-struct FileReader : FReader
-{
-    FILE* fp{};
-    FileReader(StringView path)
-    {
-        fp = fopen(path.data(), "rb");
-        CHECK_MSG(fp != nullptr, "Can't open {}", path);
-    }
-    ~FileReader() override { fclose(fp); }
-    size_t read(void* dest, size_t size) override { return fread(dest, 1, size, fp); }
-    bool seek(uint64_t offset) override
-    {
-#if defined(_WIN32)
-        return _fseeki64(fp, static_cast<__int64>(offset), SEEK_SET) == 0;
-#else
-        return fseeko(fp, static_cast<off_t>(offset), SEEK_SET) == 0;
-#endif
-    }
-    uint64_t tell() const override
-    {
-#if defined(_WIN32)
-        return static_cast<uint64_t>(_ftelli64(fp));
-#else
-        return static_cast<uint64_t>(ftello(fp));
-#endif
-    }
-};

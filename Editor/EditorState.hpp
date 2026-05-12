@@ -96,7 +96,7 @@ struct EditorDocument
     Vector<GSCurveSet> curves{GLOBAL_ALLOC};
     Vector<uint32_t>   curveBlases{GLOBAL_ALLOC};
     Vector<GSLight>    lights{GLOBAL_ALLOC};
-    Optional<FileReader> sceneReader;
+    Optional<MemoryMappedFile> sceneFile;
     Optional<FScene>     scene;
     String             currentSavePath;
     int                selectedInstance = -1;
@@ -114,12 +114,13 @@ struct EditorDocument
         CHECK(scene.has_value());
         return *scene;
     }
-    void OpenSceneReader(StringView path)
+    void OpenSceneFile(StringView path)
     {
         scene.reset();
-        sceneReader.reset();
-        sceneReader.emplace(path);
-        scene.emplace(*sceneReader);
+        sceneFile.reset();
+        sceneFile.emplace(path, MemoryMappedAccess::ReadOnly);
+        scene.emplace(*sceneFile);
+        LoadFSCN(*scene);
         currentSavePath = path;
     }
 };

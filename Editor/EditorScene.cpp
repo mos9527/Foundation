@@ -511,13 +511,12 @@ void ReplaceScene(StringView path)
         {
             scenePayloadPath = (std::filesystem::path("last.fscn")).string();
             {
-                FileWriter writer(scenePayloadPath);
-                FScene writeScene(writer);
+                MemoryMappedFile sceneFile(scenePayloadPath, 64ull * 1024ull * 1024ull);
+                FScene writeScene(sceneFile);
                 LoadScene(path, writeScene);
             }
         }
-        GEditor.doc.OpenSceneReader(scenePayloadPath);
-        LoadFSCN(*GEditor.doc.sceneReader, GEditor.doc.Scene());
+        GEditor.doc.OpenSceneFile(scenePayloadPath);
     }
     catch (...)
     {

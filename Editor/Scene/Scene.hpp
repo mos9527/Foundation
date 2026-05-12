@@ -206,59 +206,57 @@ struct FSceneHeader
 
 struct FScene
 {
-    // Resident metadata in memory. Payload blobs stay in the external reader/writer.
+    // Resident metadata in memory. Payload blobs stay in the external mapped file.
     FSceneHeader mHeader{};
     FSceneTables mTables{};
-    // Non-owning IO view where payload blobs are stored. Reader/writer lifetime is owned by the caller.
-    // Mutually exclusive.
-    FReader* mReader{nullptr};
-    FWriter* mWriter{nullptr};
+    // Non-owning mapped file view where payload blobs are stored. Lifetime is owned by the caller.
+    MemoryMappedFile* mFile{nullptr};
+    uint64_t mWriteOffset{0};
+    bool mWriting{false};
 
-    // Constructs append-only FScene view over a writer. The writer must outlive this scene.
-    FScene(FWriter& writer);
-    // Constructs read-only FScene view over a reader. The reader must outlive this scene.
-    FScene(FReader& reader);
+    // Constructs FScene view over a mapped file. Writable mappings start a new append-only scene.
+    explicit FScene(MemoryMappedFile& file);
     ~FScene();
 
     // Append-only operations
     void Set(FSceneGlobals const& globals)
     {
-        CHECK(mWriter != nullptr || mReader != nullptr);
+        CHECK(mFile != nullptr);
         mTables.globals = globals;
     }
     void Add(FCamera const& camera)
     {
-        CHECK(mWriter != nullptr);
+        CHECK(mWriting);
         mTables.cameras.push_back(camera);
     }
     void Add(FLight const& light)
     {
-        CHECK(mWriter != nullptr);
+        CHECK(mWriting);
         mTables.lights.push_back(light);
     }
     void Add(FInstance const& instance)
     {
-        CHECK(mWriter != nullptr);
+        CHECK(mWriting);
         mTables.instances.push_back(instance);
     }
     void Add(FMaterial const& material)
     {
-        CHECK(mWriter != nullptr);
+        CHECK(mWriting);
         mTables.materials.push_back(material);
     }
     void Add(FSerializedMesh const& mesh)
     {
-        CHECK(mWriter != nullptr);
+        CHECK(mWriting);
         mTables.meshes.push_back(mesh);
     }
     void Add(FSerializedCurve const& curve)
     {
-        CHECK(mWriter != nullptr);
+        CHECK(mWriting);
         mTables.curves.push_back(curve);
     }
     void Add(FSerializedTexture const& texture)
     {
-        CHECK(mWriter != nullptr);
+        CHECK(mWriting);
         mTables.textures.push_back(texture);
     }
 
@@ -283,6 +281,7 @@ struct FScene
     Span<FSerializedCurve const> GetCurves() const { return {mTables.curves.data(), mTables.curves.size()}; }
     Span<FSerializedTexture const> GetTextures() const { return {mTables.textures.data(), mTables.textures.size()}; }
 
+    Span<const unsigned char> GetPayloadBytes() const;
     FBlobDeserializer GetBlobDeserializer() const;
     bool ReadBlob(FBlobRef const& blob, void* dst, size_t size) const;
     bool ReadBlobRange(FBlobRef const& blob, uint64_t srcOffset, void* dst, size_t size) const;
@@ -295,7 +294,7 @@ struct FScene
 };
 
 void LoadGLTF(StringView path, FScene& scene);
-void LoadFSCN(FReader& reader, FScene& scene);
+void LoadFSCN(FScene& scene);
 
 /**
  * Loads a scene from a path, inferring format from extension.

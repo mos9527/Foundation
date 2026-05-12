@@ -341,7 +341,8 @@ void FTexture::GenerateMips()
 }
 void LoadDDS(FTexture& texture, StringView path)
 {
-    FileReader reader(path);
+    MemoryMappedFile file(path, MemoryMappedAccess::ReadOnly);
+    MemoryReader reader(file.Bytes());
     FDeserialize(reader, texture);
 }
 #include <stb_image.h>

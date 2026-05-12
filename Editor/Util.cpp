@@ -1,10 +1,9 @@
-#include <fstream>
 #include "Scene/Scene.hpp"
 #include "Scene/Texture.hpp"
 int main_scene(StringView srcPath, StringView dstPath)
 {
-    FileWriter writer(dstPath);
-    FScene scene(writer);
+    MemoryMappedFile file(dstPath, 64ull * 1024ull * 1024ull);
+    FScene scene(file);
     LOG(Util, LogDebug, "Saving");
     LoadGLTF(srcPath, scene);
     return 0;
@@ -15,8 +14,14 @@ int main_texture(StringView srcImagePath, StringView dstDDSPath)
     LoadRGBA8(texture, srcImagePath);
     texture.GenerateMips();
     texture = texture.EncodeBC7();
-    FileWriter writer(dstDDSPath);
+    uint64_t fileSize = sizeof(texture.magic) + sizeof(texture.header) +
+                        (texture.header.ddspf.fourCC == DDSPF_DX10.fourCC ? sizeof(texture.header10) : 0) +
+                        texture.bytes.size();
+    MemoryMappedFile file(dstDDSPath, fileSize);
+    SpanWriter writer(file.MutableBytes());
     FSerialize(writer, texture);
+    CHECK(writer.tell() == fileSize);
+    file.Flush();
     return 0;
 }
 int main(int argc, const char** argv)
