@@ -1,6 +1,7 @@
 #include "EditorState.hpp"
 #include "Scene/Mesh.hpp"
 #include <Core/Paths.hpp>
+#include <Core/ThreadPool.hpp>
 #include <RenderCore/ImmediateContext.hpp>
 #include <algorithm>
 #include <cctype>
@@ -464,6 +465,16 @@ static void ApplySceneEnvironment()
     GEditor.shaderGlobals.useEnvMap = 0u;
 }
 
+static size_t GetSceneUploadWorkerCount()
+{
+    return std::max<size_t>(1u, std::thread::hardware_concurrency());
+}
+
+static size_t GetSceneUploadTaskQueueSize(size_t taskCount)
+{
+    return ThreadPool::getTaskSize(std::max<size_t>(taskCount, 1u));
+}
+
 static GPUScene* RecreateGPUSceneForLoadedScene()
 {
     const auto estimatedBudget = GPUScene::CalculateSceneBudget(GEditor.doc.Scene(), GContext->device->GetCapabilities());
@@ -557,38 +568,83 @@ void ReplaceScene(StringView path)
     LOG(Editor, LogInfo, "Uploading new scene data to GPU");
     // Upload meshes and textures
     {
+        size_t stagedTaskCount = 0;
+        stagedTaskCount += GEditor.doc.Scene().GetMeshes().size() * 7u;
+        stagedTaskCount += GEditor.doc.Scene().GetCurves().size();
+        for (auto const& srcDesc : GEditor.doc.Scene().GetTextures())
+        {
+            if (srcDesc.IsValid())
+                stagedTaskCount += size_t(srcDesc.GetNumLayers()) * srcDesc.GetNumMips();
+        }
+
+        ThreadPool uploadPool(GetSceneUploadWorkerCount(), GetSceneUploadTaskQueueSize(stagedTaskCount),
+                              GLOBAL_ALLOC, "SceneUpload");
+        Vector<Future<void>> stagedFutures(GLOBAL_ALLOC);
+        stagedFutures.reserve(stagedTaskCount);
+        Vector<GPUScene::StagedUploadJob> stagedJobs(GLOBAL_ALLOC);
+
+        auto ScheduleStagedJobs = [&]
+        {
+            for (GPUScene::StagedUploadJob const& job : stagedJobs)
+            {
+                stagedFutures.push_back(uploadPool.Push(
+                    [job]
+                    {
+                        job.Write();
+                    }));
+            }
+            stagedJobs.clear();
+        };
+        auto DrainStagedJobs = [&]
+        {
+            uploadPool.Join();
+            for (Future<void>& future : stagedFutures)
+                future.get();
+            stagedFutures.clear();
+        };
+
         ImmediateUpload upload(GContext->device.Get(), 512 * (1u << 20));
         upload.Begin();
+        auto FlushUpload = [&]
+        {
+            DrainStagedJobs();
+            upload.End(), upload.WaitIdle(), upload.Begin();
+        };
+
         for (auto const& srcDesc : GEditor.doc.Scene().GetMeshes())
         {
             auto& dst = GEditor.doc.meshes.emplace_back();
             auto& offset = meshOffsets.emplace_back();
-            if (!gpu->Upload(&upload, GEditor.doc.Scene(), srcDesc, dst, offset))
+            stagedJobs.clear();
+            if (!gpu->BeginUpload(&upload, GEditor.doc.Scene(), srcDesc, dst, offset, stagedJobs))
             {
                 LOG(Editor, LogDebug, "Scene upload staging exhausted by mesh upload ({} bytes); flushing",
                     GPUScene::CalculateMeshPrimitiveSize(srcDesc));
-                upload.End(), upload.WaitIdle(), upload.Begin();
-                CHECK_MSG(gpu->Upload(&upload, GEditor.doc.Scene(), srcDesc, dst, offset),
+                FlushUpload();
+                CHECK_MSG(gpu->BeginUpload(&upload, GEditor.doc.Scene(), srcDesc, dst, offset, stagedJobs),
                           "Staging buffer too small for single mesh upload ({} bytes)",
                           GPUScene::CalculateMeshPrimitiveSize(srcDesc));
             }
+            ScheduleStagedJobs();
         }
         for (auto const& srcDesc : GEditor.doc.Scene().GetCurves())
         {
             auto& dst = GEditor.doc.curves.emplace_back();
             auto& offset = curveOffsets.emplace_back();
-            if (!gpu->Upload(&upload, GEditor.doc.Scene(), srcDesc, dst, offset))
+            stagedJobs.clear();
+            if (!gpu->BeginUpload(&upload, GEditor.doc.Scene(), srcDesc, dst, offset, stagedJobs))
             {
                 LOG(Editor, LogDebug,
                     "Scene upload staging exhausted by curve upload ({} primitive bytes, {} AABB bytes); flushing",
                     GPUScene::CalculateCurvePrimitiveSize(srcDesc),
                     GPUScene::CalculateCurveAABBSize(srcDesc));
-                upload.End(), upload.WaitIdle(), upload.Begin();
-                CHECK_MSG(gpu->Upload(&upload, GEditor.doc.Scene(), srcDesc, dst, offset),
+                FlushUpload();
+                CHECK_MSG(gpu->BeginUpload(&upload, GEditor.doc.Scene(), srcDesc, dst, offset, stagedJobs),
                           "Staging buffer too small for single curve upload ({} primitive bytes, {} AABB bytes)",
                           GPUScene::CalculateCurvePrimitiveSize(srcDesc),
                           GPUScene::CalculateCurveAABBSize(srcDesc));
             }
+            ScheduleStagedJobs();
         }
         for (int id = 0; auto const& srcDesc : GEditor.doc.Scene().GetTextures())
         {
@@ -598,15 +654,17 @@ void ReplaceScene(StringView path)
             }
             else
             {
-                if (!gpu->Upload(&upload, GEditor.doc.Scene(), srcDesc, textureIDMap[id]))
+                stagedJobs.clear();
+                if (!gpu->BeginUpload(&upload, GEditor.doc.Scene(), srcDesc, textureIDMap[id], stagedJobs))
                 {
                     LOG(Editor, LogDebug, "Scene upload staging exhausted by texture {} upload ({} bytes); flushing",
                         id, srcDesc.data.decodedSize);
-                    upload.End(), upload.WaitIdle(), upload.Begin();
-                    CHECK_MSG(gpu->Upload(&upload, GEditor.doc.Scene(), srcDesc, textureIDMap[id]),
+                    FlushUpload();
+                    CHECK_MSG(gpu->BeginUpload(&upload, GEditor.doc.Scene(), srcDesc, textureIDMap[id], stagedJobs),
                               "Staging buffer too small for single texture upload (texture {}, {} bytes)",
                               id, srcDesc.data.decodedSize);
                 }
+                ScheduleStagedJobs();
             }
             id++;
         }
@@ -614,6 +672,7 @@ void ReplaceScene(StringView path)
         FTexture hdr(GLOBAL_ALLOC);
         LoadSelectedViewLUTs(sdr, hdr);
         gpu->UploadViewLUTs(&upload, sdr, hdr);
+        DrainStagedJobs();
         upload.End(), upload.WaitIdle();
     }
 

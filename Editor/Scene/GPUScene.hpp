@@ -3,12 +3,11 @@
 #include <RenderCore/ImmediateContext.hpp>
 #include "../Context.hpp"
 #include "../Render/Precompute.hpp"
+#include "Curve.hpp"
 #include "Mesh.hpp"
 #include "Texture.hpp"
 using namespace Math;
-struct FCurveSet;
 struct FScene;
-struct FSerializedCurve;
 
 // Must match the procedural hit-group bindings in Render/Pathtracer.cpp.
 inline constexpr uint32_t kRectLightSBTOffset = 3u;
@@ -283,13 +282,44 @@ public:
     void DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const;
     [[nodiscard]] String DbgGetBufferStatistics() const;
 
+    struct StagedUploadJob
+    {
+        const FScene* scene{nullptr};
+        enum class Kind : uint32_t
+        {
+            None,
+            MeshHeader,
+            Blob,
+            BlobRange,
+            SerializedCurve,
+        } kind{Kind::None};
+        FBlobRef blob{};
+        uint64_t blobOffset{0};
+        char* ptr{nullptr};
+        size_t size{0};
+        GSMesh meshData{};
+        FSerializedCurve curve{};
+        GSCurveSet curveData{};
+        uint32_t curvePrimitiveOffset{0};
+        char* curveAABBPtr{nullptr};
+        size_t curveAABBSize{0};
+
+        void Write() const;
+    };
+
     size_t Upload(ImmediateUpload* ctx, FMesh const& source, GSMesh& outData, uint32_t& outOffset);
     size_t Upload(ImmediateUpload* ctx, FScene const& scene, FSerializedMesh const& source, GSMesh& outData, uint32_t& outOffset);
+    size_t BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedMesh const& source, GSMesh& outData,
+                       uint32_t& outOffset, Vector<StagedUploadJob>& outJobs);
     size_t Upload(ImmediateUpload* ctx, FCurveSet const& source, GSCurveSet& outData, uint32_t& outOffset);
     size_t Upload(ImmediateUpload* ctx, FScene const& scene, FSerializedCurve const& source, GSCurveSet& outData, uint32_t& outOffset);
+    size_t BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedCurve const& source,
+                       GSCurveSet& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs);
     size_t Upload(ImmediateUpload* ctx, FTextureHeader const& metadata, Span<const unsigned char> data, uint32_t& outIndex, const char* debugName = nullptr);
     size_t Upload(ImmediateUpload* ctx, FTexture const& source, uint32_t& outIndex, const char* debugName = nullptr);
     size_t Upload(ImmediateUpload* ctx, FScene const& scene, FSerializedTexture const& source, uint32_t& outIndex, const char* debugName = nullptr);
+    size_t BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedTexture const& source, uint32_t& outIndex,
+                       Vector<StagedUploadJob>& outJobs, const char* debugName = nullptr);
 
     void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices);
     void BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curves, Span<uint32_t> outBLASIndices);

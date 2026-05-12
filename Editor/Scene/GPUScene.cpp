@@ -1,3 +1,4 @@
+#include "GPUScene.hpp"
 #include "../Render/Precompute.hpp"
 #include "../Render/Tables.hpp"
 #include "../Render/ViewLUTs.hpp"
@@ -229,6 +230,142 @@ static void AddBezierCurveSpan(Vector<GSCurveSegment>& segments,
     float3 mn = min(min(a.position, b.position), min(c.position, d.position)) - float3(radius);
     float3 mx = max(max(a.position, b.position), max(c.position, d.position)) + float3(radius);
     aabbs.push_back(RHIAccelerationStructureAABB{mn.x, mn.y, mn.z, mx.x, mx.y, mx.z});
+}
+
+void GPUScene::StagedUploadJob::Write() const
+{
+    switch (kind)
+    {
+    case Kind::None:
+        return;
+    case Kind::MeshHeader:
+        CHECK(ptr != nullptr);
+        CHECK(size == sizeof(GSMesh));
+        std::memcpy(ptr, &meshData, sizeof(GSMesh));
+        return;
+    case Kind::Blob:
+        CHECK(scene != nullptr);
+        CHECK(ptr != nullptr || size == 0);
+        CHECK(size == static_cast<size_t>(blob.decodedSize));
+        CHECK(scene->ReadBlob(blob, ptr, size));
+        return;
+    case Kind::BlobRange:
+        CHECK(scene != nullptr);
+        CHECK(ptr != nullptr || size == 0);
+        CHECK(scene->ReadBlobRange(blob, blobOffset, ptr, size));
+        return;
+    case Kind::SerializedCurve:
+    {
+        static_assert(sizeof(FCurvePoint) == sizeof(GSCurvePoint));
+        static_assert(alignof(FCurvePoint) == alignof(GSCurvePoint));
+
+        CHECK(scene != nullptr);
+        CHECK(ptr != nullptr);
+        CHECK(curveAABBPtr != nullptr || curveAABBSize == 0);
+        CHECK_MSG(curve.points.decodedSize != 0 && curve.numSegments > 0, "Curve set has no renderable segments");
+        CHECK_MSG(curve.points.stride == sizeof(GSCurvePoint), "Serialized curve point stride mismatch");
+        CHECK_MSG(curve.points.decodedSize % sizeof(GSCurvePoint) == 0, "Serialized curve point blob size mismatch");
+        CHECK_MSG(curveData.pointOffset >= curvePrimitiveOffset, "Serialized curve point offset underflow");
+        CHECK_MSG(curveData.segmentOffset >= curvePrimitiveOffset, "Serialized curve segment offset underflow");
+
+        Vector<uint32_t> curveVertexCounts = scene->ReadBlobArray<uint32_t>(curve.curveVertexCounts);
+        const size_t pointCount = static_cast<size_t>(curve.points.decodedSize / sizeof(GSCurvePoint));
+        auto* pointsData = reinterpret_cast<GSCurvePoint*>(ptr + curveData.pointOffset - curvePrimitiveOffset);
+        CHECK(scene->ReadBlob(curve.points, pointsData, static_cast<size_t>(curve.points.decodedSize)));
+        Span<const GSCurvePoint> points(pointsData, pointCount);
+        auto* segmentsData = reinterpret_cast<GSCurveSegment*>(ptr + curveData.segmentOffset - curvePrimitiveOffset);
+
+        uint32_t segmentCursor = 0;
+        auto WriteAABB = [&](RHIAccelerationStructureAABB const& aabb)
+        {
+            std::memcpy(curveAABBPtr + sizeof(RHIAccelerationStructureAABB) * segmentCursor,
+                        &aabb, sizeof(RHIAccelerationStructureAABB));
+        };
+        auto WriteLineSegment = [&](uint32_t p0, uint32_t p1, float u0, float u1)
+        {
+            CHECK(segmentCursor < curveData.segmentCount);
+            segmentsData[segmentCursor] = GSCurveSegment{.p0 = p0, .p1 = p1, .u0 = u0, .u1 = u1};
+
+            const auto& a = points[p0];
+            const auto& b = points[p1];
+            float radius = std::max(a.radius, b.radius);
+            float3 mn = min(a.position, b.position) - float3(radius);
+            float3 mx = max(a.position, b.position) + float3(radius);
+            WriteAABB(RHIAccelerationStructureAABB{mn.x, mn.y, mn.z, mx.x, mx.y, mx.z});
+            segmentCursor++;
+        };
+        auto WriteBezierSpan = [&](uint32_t p0, uint32_t p1, float u0, float u1)
+        {
+            CHECK(segmentCursor < curveData.segmentCount);
+            segmentsData[segmentCursor] = GSCurveSegment{.p0 = p0, .p1 = p1, .u0 = u0, .u1 = u1};
+
+            const auto& a = points[p0];
+            const auto& b = points[p0 + 1];
+            const auto& c = points[p0 + 2];
+            const auto& d = points[p1];
+            float radius = std::max(std::max(a.radius, b.radius), std::max(c.radius, d.radius));
+            float3 mn = min(min(a.position, b.position), min(c.position, d.position)) - float3(radius);
+            float3 mx = max(max(a.position, b.position), max(c.position, d.position)) + float3(radius);
+            WriteAABB(RHIAccelerationStructureAABB{mn.x, mn.y, mn.z, mx.x, mx.y, mx.z});
+            segmentCursor++;
+        };
+
+        uint32_t pointCursor = 0;
+        for (uint32_t count : curveVertexCounts)
+        {
+            CHECK_MSG(pointCursor + count <= points.size(), "Curve set references more points than it stores");
+            if (count <= 1)
+            {
+                pointCursor += count;
+                continue;
+            }
+            switch (curve.basis)
+            {
+            case FCurveBasis::Bezier:
+            {
+                CHECK_MSG(count >= 4 && (count - 1) % 3 == 0,
+                          "Bezier curve strands must contain 3n + 1 controls, got {}", count);
+                uint32_t spanCount = (count - 1) / 3;
+                float invSpanCount = 1.0f / float(spanCount);
+                for (uint32_t i = 0; i < spanCount; ++i)
+                {
+                    uint32_t p0 = pointCursor + i * 3;
+                    uint32_t p1 = pointCursor + (i + 1) * 3;
+                    WriteBezierSpan(p0, p1, float(i) * invSpanCount, float(i + 1) * invSpanCount);
+                }
+                break;
+            }
+            case FCurveBasis::Linear:
+            {
+                float invSegmentCount = 1.0f / float(count - 1);
+                for (uint32_t i = 0; i + 1 < count; ++i)
+                {
+                    uint32_t p0 = pointCursor + i;
+                    uint32_t p1 = pointCursor + i + 1;
+                    WriteLineSegment(p0, p1, float(i) * invSegmentCount, float(i + 1) * invSegmentCount);
+                }
+                break;
+            }
+            default:
+                CHECK_MSG(false, "Unsupported curve basis {}", static_cast<uint32_t>(curve.basis));
+                break;
+            }
+            pointCursor += count;
+        }
+
+        CHECK_MSG(segmentCursor == curveData.segmentCount, "Curve segment count mismatch: expected {} got {}",
+                  curveData.segmentCount, segmentCursor);
+        CHECK_MSG(size == sizeof(GSCurveSet) + curve.points.decodedSize + sizeof(GSCurveSegment) * segmentCursor,
+                  "Curve primitive staging size mismatch");
+        CHECK_MSG(curveAABBSize == sizeof(RHIAccelerationStructureAABB) * segmentCursor,
+                  "Curve AABB staging size mismatch");
+        std::memcpy(ptr, &curveData, sizeof(GSCurveSet));
+        return;
+    }
+    default:
+        CHECK_MSG(false, "Unsupported staged upload job kind {}", static_cast<uint32_t>(kind));
+        return;
+    }
 }
 
 GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
@@ -704,6 +841,79 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FScene const& scene, FSerializedMe
     return written;
 }
 
+size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedMesh const& src,
+                             GSMesh& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs)
+{
+    CHECK_MSG(!src.lods.empty(), "Serialized mesh has no LODs");
+    auto const& lod0 = src.lods[0];
+    const size_t size = CalculateMeshPrimitiveSize(src);
+    constexpr size_t kAlign = 4;
+    outOffset = AlignUp(mPrimitiveOffset, kAlign);
+    CHECK_MSG(outOffset + size <= mPrimitiveBuffer->mDesc.size,
+              "GPUScene primitive buffer overflow for serialized mesh. Need {} bytes more, have {} left",
+              size, mPrimitiveBuffer->mDesc.size - outOffset);
+    if (ctx->ptr + size > ctx->end)
+        return 0;
+
+    char* ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset);
+    CHECK(ptr != nullptr);
+    char* dst = ptr;
+    auto Skip = [&](size_t bytes)
+    {
+        uint32_t off = static_cast<uint32_t>(dst - ptr);
+        dst += bytes;
+        return off;
+    };
+    auto AppendBlobJob = [&](FBlobRef const& blob, char* dstPtr)
+    {
+        StagedUploadJob job{};
+        job.scene = &scene;
+        job.kind = StagedUploadJob::Kind::Blob;
+        job.blob = blob;
+        job.ptr = dstPtr;
+        job.size = static_cast<size_t>(blob.decodedSize);
+        outJobs.push_back(job);
+    };
+
+    Skip(sizeof(GSMesh));
+    outData.vtxCount = src.vertexCount;
+    uint32_t vtxOffset = Skip(static_cast<size_t>(src.vertices.decodedSize));
+    outData.vtxOffset = outOffset + vtxOffset;
+    AppendBlobJob(src.vertices, ptr + vtxOffset);
+    outData.idxCount = lod0.indexCount;
+    uint32_t idxOffset = Skip(static_cast<size_t>(lod0.indices.decodedSize));
+    outData.idxOffset = outOffset + idxOffset;
+    AppendBlobJob(lod0.indices, ptr + idxOffset);
+    outData.groupCount = src.dagGroups.count;
+    uint32_t groupOffset = Skip(static_cast<size_t>(src.dagGroups.decodedSize));
+    outData.groupOffset = outOffset + groupOffset;
+    AppendBlobJob(src.dagGroups, ptr + groupOffset);
+    outData.meshletCount = src.dagMeshlets.count;
+    uint32_t meshletOffset = Skip(static_cast<size_t>(src.dagMeshlets.decodedSize));
+    outData.meshletOffset = outOffset + meshletOffset;
+    AppendBlobJob(src.dagMeshlets, ptr + meshletOffset);
+    uint32_t meshletVtxOffset = Skip(static_cast<size_t>(src.dagMeshletVtx.decodedSize));
+    outData.meshletVtxOffset = outOffset + meshletVtxOffset;
+    AppendBlobJob(src.dagMeshletVtx, ptr + meshletVtxOffset);
+    uint32_t meshletTriOffset = Skip(static_cast<size_t>(src.dagMeshletTri.decodedSize));
+    outData.meshletTriOffset = outOffset + meshletTriOffset;
+    AppendBlobJob(src.dagMeshletTri, ptr + meshletTriOffset);
+    outData.meshletGlobalIndex = mMeshletGlobalCounter;
+
+    StagedUploadJob headerJob{};
+    headerJob.kind = StagedUploadJob::Kind::MeshHeader;
+    headerJob.ptr = ptr;
+    headerJob.size = sizeof(GSMesh);
+    headerJob.meshData = outData;
+    outJobs.push_back(headerJob);
+
+    size_t written = dst - ptr;
+    CHECK_MSG(written == size, "Write mismatch: expected {} got {}", size, written);
+    mPrimitiveOffset = outOffset + size;
+    mMeshletGlobalCounter += outData.meshletCount;
+    return written;
+}
+
 size_t GPUScene::Upload(ImmediateUpload* ctx, FCurveSet const& src, GSCurveSet& outData, uint32_t& outOffset)
 {
     uint32_t segmentCount = GetRenderableCurveSegmentCount(src);
@@ -923,6 +1133,72 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FScene const& scene, FSerializedCu
     return written + aabbSize;
 }
 
+size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedCurve const& src,
+                             GSCurveSet& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs)
+{
+    static_assert(sizeof(FCurvePoint) == sizeof(GSCurvePoint));
+    static_assert(alignof(FCurvePoint) == alignof(GSCurvePoint));
+
+    CHECK_MSG(src.points.decodedSize != 0 && src.numSegments > 0, "Curve set has no renderable segments");
+    CHECK_MSG(src.points.stride == sizeof(GSCurvePoint), "Serialized curve point stride mismatch");
+    CHECK_MSG(src.points.decodedSize % sizeof(GSCurvePoint) == 0, "Serialized curve point blob size mismatch");
+
+    const size_t pointCount = static_cast<size_t>(src.points.decodedSize / sizeof(GSCurvePoint));
+    const size_t size = CalculateCurvePrimitiveSize(src);
+    constexpr size_t kAlign = 4;
+    outOffset = AlignUp(mPrimitiveOffset, kAlign);
+    CHECK_MSG(outOffset + size <= mPrimitiveBuffer->mDesc.size,
+              "GPUScene primitive buffer overflow for serialized curve. Need {} bytes more, have {} left",
+              size, mPrimitiveBuffer->mDesc.size - outOffset);
+
+    const size_t aabbSize = CalculateCurveAABBSize(src);
+    uint32_t aabbOffset = static_cast<uint32_t>(AlignUp(mCurveAABBOffset, alignof(RHIAccelerationStructureAABB)));
+    CHECK_MSG(aabbOffset + aabbSize <= mCurveAABBBuffer->mDesc.size,
+              "GPUScene curve AABB buffer overflow. Need {} bytes more, have {} left",
+              aabbSize, mCurveAABBBuffer->mDesc.size - aabbOffset);
+    if (ctx->ptr + size + aabbSize > ctx->end)
+        return 0;
+
+    char* ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset);
+    CHECK(ptr != nullptr);
+    char* aabbPtr = ctx->Upload(mCurveAABBBuffer.Get(), aabbSize, aabbOffset);
+    CHECK(aabbPtr != nullptr);
+
+    char* dst = ptr;
+    auto Skip = [&](size_t bytes)
+    {
+        uint32_t off = static_cast<uint32_t>(dst - ptr);
+        dst += bytes;
+        return off;
+    };
+
+    Skip(sizeof(GSCurveSet));
+    outData.pointCount = static_cast<uint32_t>(pointCount);
+    outData.pointOffset = outOffset + Skip(static_cast<size_t>(src.points.decodedSize));
+    outData.segmentCount = src.numSegments;
+    outData.segmentOffset = outOffset + Skip(sizeof(GSCurveSegment) * src.numSegments);
+    outData.materialIndex = src.materialIndex;
+    outData.aabbOffset = aabbOffset;
+
+    StagedUploadJob job{};
+    job.scene = &scene;
+    job.kind = StagedUploadJob::Kind::SerializedCurve;
+    job.ptr = ptr;
+    job.size = size;
+    job.curve = src;
+    job.curveData = outData;
+    job.curvePrimitiveOffset = outOffset;
+    job.curveAABBPtr = aabbPtr;
+    job.curveAABBSize = aabbSize;
+    outJobs.push_back(job);
+
+    size_t written = dst - ptr;
+    CHECK_MSG(written == size, "Write mismatch: expected {} got {}", size, written);
+    mPrimitiveOffset = outOffset + size;
+    mCurveAABBOffset = outData.aabbOffset + aabbSize;
+    return written + aabbSize;
+}
+
 size_t GPUScene::Upload(ImmediateUpload* ctx, FTexture const& source, uint32_t& outIndex, const char* debugName)
 {
     return Upload(ctx, static_cast<FTextureHeader const&>(source),
@@ -1077,6 +1353,112 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FScene const& scene, FSerializedTe
             if (ptr == nullptr)
                 return 0;
             CHECK(scene.ReadBlobRange(source.data, subresourceOffset, ptr, mipSize));
+            written += mipSize;
+        }
+    }
+    cmd->BeginTransition();
+    cmd->SetImageTransition(texture.Get(), {
+                                .srcImgLayout = RHITextureLayout::TransferDst,
+                                .dstImgLayout = RHITextureLayout::ShaderReadOnly,
+                                .srcImgRange = range
+                            });
+    cmd->EndTransition();
+    auto view = texture->CreateTextureView({
+        .format = metadata.GetFormat(),
+        .dimension = metadata.GetViewDimension(),
+        .range = RHITextureSubresourceRange::Create(
+            RHITextureAspectFlagBits::Color,
+            0, metadata.GetNumMips(),
+            0, texture->mDesc.arrayLayers)
+    });
+    outIndex = mTexturePool.Allocate(std::move(texture), view.Release().Get());
+    return written;
+}
+
+size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedTexture const& source,
+                             uint32_t& outIndex, Vector<StagedUploadJob>& outJobs, const char* debugName)
+{
+    CHECK_MSG(source.IsValid(), "Serialized texture is invalid");
+    CHECK_MSG(source.data.codec == FBlobCodec::None, "Serialized texture data must not use LZ4 blob compression");
+    CHECK_MSG(source.data.decodedSize == source.GetSize(), "Serialized texture size mismatch: descriptor {} header {}",
+              source.data.decodedSize, source.GetSize());
+
+    FTextureHeader const& metadata = static_cast<FTextureHeader const&>(source);
+    uint32_t blockSize = metadata.GetBlockSize(), blockDim = 4;
+    if (!blockSize)
+        blockSize = metadata.GetBpp() / 8, blockDim = 1;
+    CHECK_MSG(blockSize && blockDim, "Unsupported texture format {}", metadata.GetFormat());
+
+    uint32_t alignment = std::max(metadata.GetBpp() / 8, metadata.GetBlockSize());
+    char* preflight = ctx->ptr;
+    for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
+    {
+        uint64_t layerOffset =
+            uint64_t(layer) * CalculateTextureImageSize(metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
+                                                        metadata.GetNumMips(), blockSize, blockDim);
+        for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
+        {
+            uint64_t mipOffset = CalculateTextureImageSize(metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
+                                                           mip, blockSize, blockDim);
+            RHIExtent3D mipExtent = metadata.GetMipExtent(mip);
+            uint32_t mipSize = CalculateTextureImageSize(mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
+            uint64_t subresourceOffset = layerOffset + mipOffset;
+            uint64_t subresourceEnd = subresourceOffset + mipSize;
+            CHECK_MSG(subresourceEnd <= source.data.decodedSize,
+                      "Texture subresource out of range: layer {}, mip {} (size {}), data size {}",
+                      layer, mip, mipSize, source.data.decodedSize);
+            preflight = reinterpret_cast<char*>(AlignUp(reinterpret_cast<uintptr_t>(preflight), alignment));
+            if (preflight >= ctx->end || static_cast<size_t>(ctx->end - preflight) < mipSize)
+                return 0;
+            preflight += mipSize;
+        }
+    }
+
+    auto texture = mContext->device->CreateTexture(metadata.GetDesc());
+    if (debugName)
+        texture->DebugSetObjectName(debugName);
+    size_t written = 0;
+    auto range = RHITextureSubresourceRange::Create(
+        RHITextureAspectFlagBits::Color,
+        0, metadata.GetNumMips(),
+        0, texture->mDesc.arrayLayers);
+    auto* cmd = ctx->ctx.Get();
+    cmd->BeginTransition();
+    cmd->SetImageTransition(texture.Get(), {
+                                .dstImgLayout = RHITextureLayout::TransferDst,
+                                .srcImgRange = range
+                            });
+    cmd->EndTransition();
+
+    for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
+    {
+        uint64_t layerOffset =
+            uint64_t(layer) * CalculateTextureImageSize(metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
+                                                        metadata.GetNumMips(), blockSize, blockDim);
+        for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
+        {
+            uint64_t mipOffset = CalculateTextureImageSize(metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
+                                                           mip, blockSize, blockDim);
+            RHIExtent3D mipExtent = metadata.GetMipExtent(mip);
+            uint32_t mipSize = CalculateTextureImageSize(mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
+            uint64_t subresourceOffset = layerOffset + mipOffset;
+            CHECK(ctx->Align(alignment));
+            char* ptr = ctx->Upload(texture.Get(), mipSize,
+                                    {
+                                        .aspect = RHITextureAspectFlagBits::Color,
+                                        .mipLevel = mip, .baseArrayLayer = layer, .layerCount = 1
+                                    },
+                                    {0, 0, 0}, mipExtent);
+            CHECK(ptr != nullptr);
+
+            StagedUploadJob job{};
+            job.scene = &scene;
+            job.kind = StagedUploadJob::Kind::BlobRange;
+            job.blob = source.data;
+            job.blobOffset = subresourceOffset;
+            job.ptr = ptr;
+            job.size = mipSize;
+            outJobs.push_back(job);
             written += mipSize;
         }
     }
