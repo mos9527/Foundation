@@ -1,6 +1,7 @@
 #pragma once
 #include "Editor.hpp"
 #include "Render/ViewLUTs.hpp"
+#include "Scene/Scene.hpp"
 #include "Scene/Texture.hpp"
 #include <ImGuizmo.h>
 #include <algorithm>
@@ -89,19 +90,38 @@ enum class ERenderFormat { HDR, SDR };
 struct EditorDocument
 {
     Vector<GSInstance> instances{GLOBAL_ALLOC};
-    Vector<GSCurveInstance> curveInstances{GLOBAL_ALLOC};
     Vector<GSMaterial> materials{GLOBAL_ALLOC};
     Vector<GSMesh>     meshes{GLOBAL_ALLOC};
     Vector<uint32_t>   blases{GLOBAL_ALLOC};
     Vector<GSCurveSet> curves{GLOBAL_ALLOC};
     Vector<uint32_t>   curveBlases{GLOBAL_ALLOC};
     Vector<GSLight>    lights{GLOBAL_ALLOC};
-    FScene             scene{GLOBAL_ALLOC};
+    Optional<FileReader> sceneReader;
+    Optional<FScene>     scene;
     String             currentSavePath;
     int                selectedInstance = -1;
-    int                selectedCurveInstance = -1;
     int                selectedMaterial = -1;
     int                selectedLight    = -1;
+
+    [[nodiscard]] bool HasScene() const { return scene.has_value(); }
+    FScene& Scene()
+    {
+        CHECK(scene.has_value());
+        return *scene;
+    }
+    FScene const& Scene() const
+    {
+        CHECK(scene.has_value());
+        return *scene;
+    }
+    void OpenSceneReader(StringView path)
+    {
+        scene.reset();
+        sceneReader.reset();
+        sceneReader.emplace(path);
+        scene.emplace(*sceneReader);
+        currentSavePath = path;
+    }
 };
 
 // Offline render workflow state: flows from file dialog → popup → readback

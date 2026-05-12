@@ -165,37 +165,40 @@ static void DrawAperturePreview(uint32_t blades, float rotation, float ratio)
 
 static bool IsSelectedInstanceValid()
 {
-    return GEditor.doc.selectedInstance >= 0 &&
+    return GEditor.doc.HasScene() &&
+           GEditor.doc.selectedInstance >= 0 &&
            GEditor.doc.selectedInstance < static_cast<int>(GEditor.doc.instances.size()) &&
-           GEditor.doc.selectedInstance < static_cast<int>(GEditor.doc.scene.mInstances.size());
+           GEditor.doc.selectedInstance < static_cast<int>(GEditor.doc.Scene().GetInstances().size());
 }
 
-static bool IsSelectedCurveInstanceValid()
+static FInstance& SelectedSceneInstance()
 {
-    return GEditor.doc.selectedCurveInstance >= 0 &&
-           GEditor.doc.selectedCurveInstance < static_cast<int>(GEditor.doc.curveInstances.size()) &&
-           GEditor.doc.selectedCurveInstance < static_cast<int>(GEditor.doc.scene.mCurveInstances.size());
+    return GEditor.doc.Scene().GetInstances()[GEditor.doc.selectedInstance];
+}
+
+static const char* InstanceTypeName(uint32_t type)
+{
+    return type == kGSInstanceTypeCurve ? "Curve" : "Mesh";
 }
 
 static int GetSelectedMaterialIndex()
 {
     if (IsSelectedInstanceValid())
         return static_cast<int>(GEditor.doc.instances[GEditor.doc.selectedInstance].materialIndex);
-    if (IsSelectedCurveInstanceValid())
-        return static_cast<int>(GEditor.doc.curveInstances[GEditor.doc.selectedCurveInstance].materialIndex);
     return GEditor.doc.selectedMaterial;
 }
 
 static bool IsMaterialIndexValid(int materialIndex)
 {
-    return materialIndex >= 0 &&
+    return GEditor.doc.HasScene() &&
+           materialIndex >= 0 &&
            materialIndex < static_cast<int>(GEditor.doc.materials.size()) &&
-           materialIndex < static_cast<int>(GEditor.doc.scene.mMaterials.size());
+           materialIndex < static_cast<int>(GEditor.doc.Scene().GetMaterials().size());
 }
 
 static void SyncMaterialToGPU(uint32_t materialIndex)
 {
-    auto& src = GEditor.doc.scene.mMaterials[materialIndex];
+    auto& src = GEditor.doc.Scene().GetMaterials()[materialIndex];
     auto& dst = GEditor.doc.materials[materialIndex];
     dst.baseColorFactor = src.baseColorFactor;
     dst.emissiveFactor = src.emissiveFactor * src.emissiveFactor.w;
@@ -421,42 +424,26 @@ void FHierarchyPanel()
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Hierarchy"))
     {
-        if (GEditor.doc.instances.empty() && GEditor.doc.curveInstances.empty())
+        if (GEditor.doc.instances.empty())
         {
             ImGui::TextDisabled("No instances loaded");
         }
         else
         {
-            ImGui::Text("%zu mesh instances, %zu curve instances", GEditor.doc.instances.size(), GEditor.doc.curveInstances.size());
+            ImGui::Text("%zu instances", GEditor.doc.instances.size());
             ImGui::Separator();
             for (size_t i = 0; i < GEditor.doc.instances.size(); i++)
             {
                 auto& inst = GEditor.doc.instances[i];
                 char label[128];
-                snprintf(label, sizeof(label), "Instance %zu -- Mesh %u, Mat %u", i, inst.meshIndex,
-                         inst.materialIndex);
+                snprintf(label, sizeof(label), "%s %zu -- Resource %u, Mat %u",
+                         InstanceTypeName(inst.type), i, inst.resourceIndex, inst.materialIndex);
                 bool selected = (GEditor.doc.selectedInstance == static_cast<int>(i));
                 if (ImGui::Selectable(label, selected))
                 {
                     GEditor.doc.selectedInstance = static_cast<int>(i);
-                    GEditor.doc.selectedCurveInstance = -1;
                     GEditor.doc.selectedMaterial = static_cast<int>(inst.materialIndex);
                     GEditor.doc.selectedLight = -1; // deselect light when selecting instance
-                }
-            }
-            for (size_t i = 0; i < GEditor.doc.curveInstances.size(); i++)
-            {
-                auto& inst = GEditor.doc.curveInstances[i];
-                char label[128];
-                snprintf(label, sizeof(label), "Curve %zu -- Curve %u, Mat %u", i, inst.curveIndex,
-                         inst.materialIndex);
-                bool selected = (GEditor.doc.selectedCurveInstance == static_cast<int>(i));
-                if (ImGui::Selectable(label, selected))
-                {
-                    GEditor.doc.selectedInstance = -1;
-                    GEditor.doc.selectedCurveInstance = static_cast<int>(i);
-                    GEditor.doc.selectedMaterial = static_cast<int>(inst.materialIndex);
-                    GEditor.doc.selectedLight = -1;
                 }
             }
         }
@@ -473,13 +460,11 @@ void FHierarchyPanel()
         {
             GEditor.doc.selectedMaterial = materialIndex;
 
-            auto& material = GEditor.doc.scene.mMaterials[materialIndex];
+            auto& material = GEditor.doc.Scene().GetMaterials()[materialIndex];
             auto& gpuMaterial = GEditor.doc.materials[materialIndex];
             ImGui::Text("Material %d", materialIndex);
             if (IsSelectedInstanceValid())
                 ImGui::Text("From Instance %d", GEditor.doc.selectedInstance);
-            else if (IsSelectedCurveInstanceValid())
-                ImGui::Text("From Curve %d", GEditor.doc.selectedCurveInstance);
             ImGui::Separator();
 
             bool changed = false;
@@ -534,10 +519,6 @@ void FHierarchyPanel()
         {
             ImGui::TextDisabled("Selected instance has invalid material index");
         }
-        else if (IsSelectedCurveInstanceValid())
-        {
-            ImGui::TextDisabled("Selected curve has invalid material index");
-        }
         else
         {
             ImGui::TextDisabled("No instance selected");
@@ -550,10 +531,11 @@ void FHierarchyPanel()
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Inspector"))
     {
-        if (GEditor.doc.selectedInstance >= 0 && GEditor.doc.selectedInstance < static_cast<int>(GEditor.doc.scene.mInstances.size()))
+        if (IsSelectedInstanceValid())
         {
-            auto& pi = GEditor.doc.scene.mInstances[GEditor.doc.selectedInstance];
-            ImGui::Text("Instance %d", GEditor.doc.selectedInstance);
+            auto& pi = SelectedSceneInstance();
+            auto& inst = GEditor.doc.instances[GEditor.doc.selectedInstance];
+            ImGui::Text("%s Instance %d", InstanceTypeName(inst.type), GEditor.doc.selectedInstance);
             ImGui::Separator();
             bool changed = false;
             changed |= ImGui::DragFloat3("Position", &pi.transform.transform.x, 0.01f);
@@ -609,83 +591,16 @@ void FHierarchyPanel()
             if (changed)
             {
                 // Sync CPU scene to GPU-side data
-                auto& inst = GEditor.doc.instances[GEditor.doc.selectedInstance];
                 inst.transform = pi.transform.transform;
                 inst.rotation = pi.transform.rotation;
                 inst.scale = pi.transform.scale;
                 CommitSceneToGPU(true);
             }
             ImGui::Separator();
-            auto& inst = GEditor.doc.instances[GEditor.doc.selectedInstance];
-            ImGui::Text("Mesh Offset: %u", inst.meshOffset);
+            ImGui::Text("Type: %s", InstanceTypeName(inst.type));
+            ImGui::Text("Resource Offset: %u", inst.resourceOffset);
             ImGui::Text("Material Index: %u", inst.materialIndex);
-            ImGui::Text("Mesh Index: %u", inst.meshIndex);
-        }
-        else if (GEditor.doc.selectedCurveInstance >= 0 &&
-                 GEditor.doc.selectedCurveInstance < static_cast<int>(GEditor.doc.scene.mCurveInstances.size()))
-        {
-            auto& pi = GEditor.doc.scene.mCurveInstances[GEditor.doc.selectedCurveInstance];
-            ImGui::Text("Curve %d", GEditor.doc.selectedCurveInstance);
-            ImGui::Separator();
-            bool changed = false;
-            changed |= ImGui::DragFloat3("Position", &pi.transform.transform.x, 0.01f);
-            changed |= ImGui::DragFloat4("Rotation", &pi.transform.rotation.x, 0.001f);
-            changed |= ImGui::DragFloat3("Scale", &pi.transform.scale.x, 0.01f);
-
-            ImGui::Separator();
-            if (ImGui::RadioButton("Translate (G)", GEditor.gizmo.op == ImGuizmo::TRANSLATE))
-                GEditor.gizmo.op = ImGuizmo::TRANSLATE;
-            ImGui::SameLine();
-            if (ImGui::RadioButton("Rotate (R)", GEditor.gizmo.op == ImGuizmo::ROTATE))
-                GEditor.gizmo.op = ImGuizmo::ROTATE;
-            ImGui::SameLine();
-            if (ImGui::RadioButton("Scale (Q)", GEditor.gizmo.op == ImGuizmo::SCALE))
-                GEditor.gizmo.op = ImGuizmo::SCALE;
-            if (GEditor.gizmo.op != ImGuizmo::SCALE)
-            {
-                if (ImGui::RadioButton("Local", GEditor.gizmo.mode == ImGuizmo::LOCAL))
-                    GEditor.gizmo.mode = ImGuizmo::LOCAL;
-                ImGui::SameLine();
-                if (ImGui::RadioButton("World", GEditor.gizmo.mode == ImGuizmo::WORLD))
-                    GEditor.gizmo.mode = ImGuizmo::WORLD;
-            }
-
-            mat4 modelMatrix = translate(mat4(1.0f), vec3(pi.transform.transform)) * mat4_cast(pi.transform.rotation) *
-                glm::scale(mat4(1.0f), vec3(pi.transform.scale));
-
-            if (GEditor.doc.selectedLight < 0 && GEditor.viewport.HasRect())
-            {
-                ImGuizmo::BeginFrame();
-                ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
-                ImVec2 viewportSize = GEditor.viewport.Size();
-                ImGuizmo::SetRect(GEditor.viewport.contentMin.x, GEditor.viewport.contentMin.y,
-                                  viewportSize.x, viewportSize.y);
-                if (ImGuizmo::Manipulate(&GEditor.camera.view[0][0], &GEditor.camera.proj[0][0], GEditor.gizmo.op, GEditor.gizmo.mode,
-                                         &modelMatrix[0][0]))
-                {
-                    float3 newTranslation;
-                    quat newRotation;
-                    float3 newScale;
-                    Math::decompose(modelMatrix, newScale, newRotation, newTranslation);
-                    pi.transform.transform = newTranslation;
-                    pi.transform.rotation = newRotation;
-                    pi.transform.scale = newScale;
-                    changed = true;
-                }
-            }
-            if (changed)
-            {
-                auto& inst = GEditor.doc.curveInstances[GEditor.doc.selectedCurveInstance];
-                inst.transform = pi.transform.transform;
-                inst.rotation = pi.transform.rotation;
-                inst.scale = pi.transform.scale;
-                CommitSceneToGPU(true);
-            }
-            ImGui::Separator();
-            auto& inst = GEditor.doc.curveInstances[GEditor.doc.selectedCurveInstance];
-            ImGui::Text("Curve Offset: %u", inst.curveOffset);
-            ImGui::Text("Material Index: %u", inst.materialIndex);
-            ImGui::Text("Curve Index: %u", inst.curveIndex);
+            ImGui::Text("Resource Index: %u", inst.resourceIndex);
         }
         else
         {
@@ -708,28 +623,11 @@ void FLightingPanel()
         // ---- Scene Lights ----
         if (ImGui::CollapsingHeader("Scene Lights", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            // Add light button
-            if (GEditor.doc.scene.mLights.size() < kMaxSceneLights)
+            auto lights = GEditor.doc.HasScene() ? GEditor.doc.Scene().GetLights() : Span<FLight>{};
+            ImGui::TextDisabled("Light count is fixed by the loaded FSCN metadata");
+            for (int i = 0; i < static_cast<int>(lights.size()); i++)
             {
-                if (ImGui::Button("+ Add Light"))
-                {
-                    FLight newLight{};
-                    newLight.type = FLightType::Directional;
-                    newLight.color = {1, 1, 1};
-                    newLight.power = 1.0f;
-                    newLight.transform.rotation = quat(1, 0, 0, 0);
-                    newLight.transform.scale = {1, 1, 1};
-                    GEditor.doc.scene.mLights.emplace_back(newLight);
-                    anyChanged = true;
-                }
-            }
-            else
-                ImGui::TextDisabled("Max %u lights reached", kMaxSceneLights);
-
-            int removeIndex = -1;
-            for (int i = 0; i < static_cast<int>(GEditor.doc.scene.mLights.size()); i++)
-            {
-                auto& light = GEditor.doc.scene.mLights[i];
+                auto& light = lights[i];
                 ImGui::PushID(i);
 
                 char header[64];
@@ -743,7 +641,6 @@ void FLightingPanel()
                 {
                     GEditor.doc.selectedLight = i;
                     GEditor.doc.selectedInstance = -1; // deselect instance when selecting light
-                    GEditor.doc.selectedCurveInstance = -1;
                     GEditor.doc.selectedMaterial = -1;
                 }
                 if (headerOpen)
@@ -844,26 +741,12 @@ void FLightingPanel()
                         lightChanged |= ImGui::Checkbox("Normalize", &light.normalize);
                     }
 
-                    if (ImGui::SmallButton("Remove"))
-                        removeIndex = i;
-
                     if (lightChanged)
                         anyChanged = true;
 
                     ImGui::Separator();
                 }
                 ImGui::PopID();
-            }
-
-            if (removeIndex >= 0)
-            {
-                GEditor.doc.scene.mLights.erase(GEditor.doc.scene.mLights.begin() + removeIndex);
-                // Fix up light selection after removal
-                if (GEditor.doc.selectedLight == removeIndex)
-                    GEditor.doc.selectedLight = -1;
-                else if (GEditor.doc.selectedLight > removeIndex)
-                    GEditor.doc.selectedLight--;
-                anyChanged = true;
             }
         }
 
@@ -1545,7 +1428,9 @@ static void DrawRectOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl,
 
 static void DrawLightGizmos()
 {
-    auto& lights = GEditor.doc.scene.mLights;
+    if (!GEditor.doc.HasScene())
+        return;
+    auto lights = GEditor.doc.Scene().GetLights();
     if (lights.empty() || !GEditor.viewport.HasRect())
         return;
 

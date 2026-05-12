@@ -70,18 +70,35 @@ struct FMeshlet // @ref meshopt_Meshlet
 };
 static_assert(sizeof(FMeshlet) == 68);
 
+struct FSerializedMeshLOD
+{
+    FBlobRef indices;
+    uint32_t indexCount{0};
+};
+struct FSerializedMesh
+{
+    FBlobRef vertices;
+    uint32_t vertexCount{0};
+    Vector<FSerializedMeshLOD> lods;
+    FBlobRef dagGroups;
+    FBlobRef dagMeshlets;
+    FBlobRef dagMeshletTri;
+    FBlobRef dagMeshletVtx;
+
+    explicit FSerializedMesh(Allocator* alloc = GLOBAL_ALLOC)
+        : lods(alloc)
+    {
+    }
+};
+
 struct FMesh
 {
     Vector<FVertex> vertices; // Full precision, raw vertices. Used by importers.
     Vector<FQVertex> verticesQuantized; // Quantized vertex data for GPU upload.
-    Vector<unsigned char> verticesCompressed; // Compressed, quantized post-optimization vertex data for disk.
-    uint32_t verticesCompressedCount = 0; // Number of vertices in compressed data
     struct LOD
     {
         Vector<uint32_t> indices; // Full precision triangle indices
-        Vector<unsigned char> indicesCompressed; // Compressed index data for disk
-        uint32_t indicesCompressedCount = 0; // Number of indices in compressed data
-        LOD(Allocator* alloc) : indices(alloc), indicesCompressed(alloc) {}
+        LOD(Allocator* alloc) : indices(alloc) {}
     };
     Vector<LOD> lods;
     struct DAG
@@ -118,25 +135,11 @@ struct FMesh
      */
     void Dequantize();
     /**
-     * @brief Compresses quantized vertex and index data for disk storage
-     */
-    void Compress();
-    /**
-     * @brief Decompresses quantized vertex and index data from disk storage
-     */
-    void Decompress();
-    /**
      * @brief Prepares quantized GPU data buffers from possibly full-precision, or compressed data.
      * @return `true` when quantized and other buffers are available to be uploaded
      */
     bool EnsureQuantized();
     [[nodiscard]] bool IsQuantized() const { return !verticesQuantized.empty(); }
-    /**
-     * @brief Prepares compressed buffers for saving to disk.
-     * @note  A compressed mesh implies quantized data.
-     */
-    bool EnsureCompressed();
-    [[nodiscard]] bool IsCompressed() const { return !verticesCompressed.empty(); }
     /**
      * @brief Prepares full-precision data for CPU access
      */
@@ -155,56 +158,8 @@ struct FMesh
  */
 void LoadObj(FMesh& mesh, StringView path);
 
-/* -- Serialization -- */
-template <>
-inline void FSerialize(FWriter& w, FMesh::LOD const& obj)
-{
-    FSerialize(w, obj.indicesCompressed);
-    FSerialize(w, obj.indicesCompressedCount);
-}
-template <>
-inline void FDeserialize(FReader& r, FMesh::LOD& obj)
-{
-    FDeserialize(r, obj.indicesCompressed);
-    FDeserialize(r, obj.indicesCompressedCount);
-}
-template <>
-inline void FSerialize(FWriter& w, FMesh::DAG const& obj)
-{
-    FSerialize(w, obj.groups);
-    FSerialize(w, obj.meshlets);
-    FSerialize(w, obj.meshletTri);
-    FSerialize(w, obj.meshletVtx);
-}
-template <>
-inline void FDeserialize(FReader& r, FMesh::DAG& obj)
-{
-    FDeserialize(r, obj.groups);
-    FDeserialize(r, obj.meshlets);
-    FDeserialize(r, obj.meshletTri);
-    FDeserialize(r, obj.meshletVtx);
-}
-template <>
-inline void FSerialize(FWriter& w, FMesh const& obj)
-{
-    CHECK_MSG(obj.IsCompressed(), "Mesh not compressed");
-    FSerialize(w, obj.verticesCompressed);
-    FSerialize(w, obj.verticesCompressedCount);
-    FSerialize(w, obj.lods);
-    FSerialize(w, obj.dag);
-}
-template <>
-inline void FDeserialize(FReader& r, FMesh& obj)
-{
-    FDeserialize(r, obj.verticesCompressed);
-    FDeserialize(r, obj.verticesCompressedCount);
-    FDeserialize(r, obj.lods, obj.lods.get_allocator().mResource);
-    FDeserialize(r, obj.dag);
-    CHECK_MSG(obj.IsCompressed(), "Mesh not compressed");
-}
-
 /* -- Math Exports -- */
-void buildOrthonormalBasis(const float3 n, float3& b1, float3& b2);
+void buildOrthonormalBasis(float3 n, float3& b1, float3& b2);
 float2 packUnitOctahedralSnorm(float3 v);
 float3 unpackUnitOctahedralSnorm(float2 v);
 float packUnitCircleSnorm(float2 v);

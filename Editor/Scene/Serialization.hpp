@@ -1,8 +1,13 @@
 #pragma once
 #include <Core/Container.hpp>
 #include <concepts>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <type_traits>
+#if !defined(_WIN32)
+#include <sys/types.h>
+#endif
 using namespace Foundation::Core;
 constexpr uint32_t fourCC(const char a, const char b, const char c, const char d)
 {
@@ -12,19 +17,116 @@ constexpr uint32_t fourCC(char const str[5])
 {
     return fourCC(str[0], str[1], str[2], str[3]);
 }
+enum class FBlobCodec : uint32_t
+{
+    None = 0,
+    LZ4 = 1,
+};
+struct FBlobRef
+{
+    uint64_t offset{0};
+    uint64_t storedSize{0};
+    uint64_t decodedSize{0};
+    uint32_t count{0};
+    uint32_t stride{0};
+    FBlobCodec codec{FBlobCodec::None};
+};
 // RW primitives
 struct FWriter
 {
     virtual ~FWriter() = default;
     virtual size_t write(const void* data, size_t size) = 0;
+    virtual bool seek(uint64_t offset) { return false; }
+    virtual uint64_t tell() const { return 0; }
     virtual size_t operator()(const void* data, size_t size) { return write(data, size); }
 };
 struct FReader
 {
     virtual ~FReader() = default;
     virtual size_t read(void* dest, size_t size) = 0;
+    virtual bool seek(uint64_t offset) { return false; }
+    virtual uint64_t tell() const { return 0; }
     virtual size_t operator()(void* dest, size_t size) { return read(dest, size); }
 };
+
+struct MemoryWriter : FWriter
+{
+    Vector<unsigned char>& data;
+    uint64_t offset{0};
+
+    explicit MemoryWriter(Vector<unsigned char>& data, uint64_t offset = 0);
+
+    size_t write(const void* src, size_t size) override;
+    bool seek(uint64_t offset) override;
+    uint64_t tell() const override { return offset; }
+};
+
+struct MemoryReader : FReader
+{
+    Span<const unsigned char> data;
+    uint64_t offset{0};
+
+    explicit MemoryReader(Span<const unsigned char> data, uint64_t offset = 0);
+    explicit MemoryReader(Vector<unsigned char> const& data, uint64_t offset = 0);
+
+    size_t read(void* dest, size_t size) override;
+    bool seek(uint64_t offset) override;
+    uint64_t tell() const override { return offset; }
+};
+
+uint64_t AlignUpU64(uint64_t value, uint64_t alignment);
+void WriteZeroBytes(FWriter& writer, uint64_t bytes);
+
+struct FBlobSerializer
+{
+    FWriter& writer;
+    uint64_t baseOffset{0};
+
+    explicit FBlobSerializer(FWriter& writer, uint64_t baseOffset = 0);
+
+    FBlobRef AppendBytes(const void* data, size_t size, uint32_t count, uint32_t stride,
+                         FBlobCodec codec = FBlobCodec::None, uint64_t alignment = 16);
+
+    template <typename T>
+    FBlobRef AppendArray(Vector<T> const& values, FBlobCodec codec = FBlobCodec::None)
+    {
+        static_assert(std::is_trivially_copyable_v<T>);
+        CHECK_MSG(values.size() <= UINT32_MAX, "FScene blob count exceeds uint32_t");
+        return AppendBytes(values.data(), values.size() * sizeof(T),
+                           static_cast<uint32_t>(values.size()), sizeof(T), codec);
+    }
+};
+
+struct FBlobDeserializer
+{
+    FReader& reader;
+    uint64_t baseOffset{0};
+
+    explicit FBlobDeserializer(FReader& reader, uint64_t baseOffset = 0);
+
+    bool ReadBytes(FBlobRef const& blob, void* dst, size_t size) const;
+    bool ReadBytesRange(FBlobRef const& blob, uint64_t srcOffset, void* dst, size_t size) const;
+
+    template <typename T>
+    bool ReadArray(FBlobRef const& blob, Vector<T>& values) const
+    {
+        static_assert(std::is_trivially_copyable_v<T>);
+        CHECK(blob.stride == sizeof(T));
+        CHECK_MSG(blob.count <= SIZE_MAX / sizeof(T), "FScene blob count exceeds size_t");
+        values.resize(static_cast<size_t>(blob.count));
+        return ReadBytes(blob, values.data(), values.size() * sizeof(T));
+    }
+
+    template <typename T>
+    Vector<T> ReadArray(FBlobRef const& blob, Allocator* alloc = GLOBAL_ALLOC) const
+    {
+        Vector<T> values(alloc);
+        CHECK(ReadArray(blob, values));
+        return values;
+    }
+};
+
+// Serialize
 template <typename T>
 void FSerialize(FWriter& w, const T& obj);
 template <typename T>
@@ -61,13 +163,21 @@ void FDeserialize(FReader& reader, Vector<T>& vec, Args const&... args)
 {
     uint64_t count = 0;
     reader(&count, sizeof(uint64_t));
-    vec.resize(count, args...);
-    if constexpr (std::is_trivially_copyable_v<T>)
-        reader(vec.data(), count * sizeof(T));
+    CHECK_MSG(count <= SIZE_MAX, "Vector is too large for this platform");
+    vec.clear();
+    vec.reserve(static_cast<size_t>(count));
+    if constexpr (std::is_trivially_copyable_v<T> && sizeof...(Args) == 0)
+    {
+        vec.resize(static_cast<size_t>(count));
+        reader(vec.data(), static_cast<size_t>(count) * sizeof(T));
+    }
     else
     {
-        for (size_t i = 0; i < count; i++)
-            FDeserialize(reader, vec[i]);
+        for (size_t i = 0; i < static_cast<size_t>(count); i++)
+        {
+            T& item = vec.emplace_back(args...);
+            FDeserialize(reader, item);
+        }
     }
 }
 // Optional<T>
@@ -105,14 +215,47 @@ struct FileWriter : FWriter
     }
     ~FileWriter() override { fflush(fp), fclose(fp); }
     size_t write(const void* data, size_t size) override { return fwrite(data, 1, size, fp); }
+    bool seek(uint64_t offset) override
+    {
+#if defined(_WIN32)
+        return _fseeki64(fp, static_cast<__int64>(offset), SEEK_SET) == 0;
+#else
+        return fseeko(fp, static_cast<off_t>(offset), SEEK_SET) == 0;
+#endif
+    }
+    uint64_t tell() const override
+    {
+#if defined(_WIN32)
+        return static_cast<uint64_t>(_ftelli64(fp));
+#else
+        return static_cast<uint64_t>(ftello(fp));
+#endif
+    }
 };
 struct FileReader : FReader
 {
-    FILE* fp;
+    FILE* fp{};
     FileReader(StringView path)
     {
         fp = fopen(path.data(), "rb");
         CHECK_MSG(fp != nullptr, "Can't open {}", path);
     }
+    ~FileReader() override { fclose(fp); }
     size_t read(void* dest, size_t size) override { return fread(dest, 1, size, fp); }
+    bool seek(uint64_t offset) override
+    {
+#if defined(_WIN32)
+        return _fseeki64(fp, static_cast<__int64>(offset), SEEK_SET) == 0;
+#else
+        return fseeko(fp, static_cast<off_t>(offset), SEEK_SET) == 0;
+#endif
+    }
+    uint64_t tell() const override
+    {
+#if defined(_WIN32)
+        return static_cast<uint64_t>(_ftelli64(fp));
+#else
+        return static_cast<uint64_t>(ftello(fp));
+#endif
+    }
 };

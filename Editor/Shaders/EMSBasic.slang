@@ -31,7 +31,7 @@ void main(
         uint2 indices = inMeshletIndices[drawID];
         group.meshletID = indices.x;
         group.instance = instances[indices.y];
-        group.mesh = primitive.Load<GSMesh>(group.instance.meshOffset);
+        group.mesh = primitive.Load<GSMesh>(group.instance.resourceOffset);
         group.meshlet = primitive.Load<FMeshlet>(group.mesh.meshletOffset + group.meshletID * sizeof(FMeshlet));
     }
     GroupMemoryBarrierWithGroupSync();

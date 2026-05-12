@@ -8,11 +8,14 @@
 using namespace Math;
 struct FCurveSet;
 struct FScene;
+struct FSerializedCurve;
 
 // Must match the procedural hit-group bindings in Render/Pathtracer.cpp.
 inline constexpr uint32_t kRectLightSBTOffset = 3u;
 inline constexpr uint32_t kDiskLightSBTOffset = 4u;
 inline constexpr uint32_t kCurveSBTOffset = 5u;
+inline constexpr uint32_t kGSInstanceTypeMesh = 0u;
+inline constexpr uint32_t kGSInstanceTypeCurve = 1u;
 
 BITMASK_ENUM_BEGIN(GSData, uint8_t)
     Mesh = 1 << 0
@@ -45,9 +48,10 @@ struct GSInstance
     float3 transform{0, 0, 0};
     quat rotation{0, 0, 0, 1};
     float3 scale{1, 1, 1};
-    uint32_t meshOffset; // In Primitive buffer (bytes)
+    uint32_t resourceOffset; // Mesh or curve set offset in Primitive buffer (bytes)
     uint32_t materialIndex; // In Material buffer (offset)
-    uint32_t meshIndex; // Debug use
+    uint32_t resourceIndex; // Debug use
+    uint32_t type{kGSInstanceTypeMesh};
 };
 struct GSCurveSet
 {
@@ -69,15 +73,6 @@ struct GSCurveSegment
     uint32_t p1;
     float u0;
     float u1;
-};
-struct GSCurveInstance
-{
-    float3 transform{0, 0, 0};
-    quat rotation{0, 0, 0, 1};
-    float3 scale{1, 1, 1};
-    uint32_t curveOffset; // GSCurveSet, in Primitive buffer (bytes)
-    uint32_t materialIndex;
-    uint32_t curveIndex; // Debug use
 };
 struct GSMaterial
 {
@@ -127,11 +122,10 @@ struct GSLight
 };
 #pragma pack(pop)
 static_assert(sizeof(GSMesh) == 44);
-static_assert(sizeof(GSInstance) == 52);
+static_assert(sizeof(GSInstance) == 56);
 static_assert(sizeof(GSCurveSet) == 24);
 static_assert(sizeof(GSCurvePoint) == 16);
 static_assert(sizeof(GSCurveSegment) == 16);
-static_assert(sizeof(GSCurveInstance) == 52);
 static_assert(sizeof(GSMaterial) == 148);
 static_assert(sizeof(GSLight) == 96);
 
@@ -185,7 +179,6 @@ class GPUScene
     // For @ref meshletGlobalIndex
     uint32_t mMeshletGlobalCounter{0};
     UploadGPURingBuffer<GSInstance> mInstanceBuffer;
-    UploadGPURingBuffer<GSCurveInstance> mCurveInstanceBuffer;
     UploadGPURingBuffer<GSMaterial> mMaterialBuffer;
     UploadGPURingBuffer<GSLight> mLightBuffer;
     UploadGPURingBuffer<Alias> mLightAliasTableBuffer;
@@ -248,13 +241,15 @@ public:
     };
     [[nodiscard]] static GPUSceneDesc CalculateSceneBudget(FScene const& scene, RHIDeviceCapabilities const& caps);
     [[nodiscard]] static size_t CalculateMeshPrimitiveSize(FMesh const& src);
+    [[nodiscard]] static size_t CalculateMeshPrimitiveSize(FSerializedMesh const& src);
     [[nodiscard]] static size_t CalculateCurvePrimitiveSize(FCurveSet const& src);
+    [[nodiscard]] static size_t CalculateCurvePrimitiveSize(FSerializedCurve const& src);
     [[nodiscard]] static size_t CalculateCurveAABBSize(FCurveSet const& src);
+    [[nodiscard]] static size_t CalculateCurveAABBSize(FSerializedCurve const& src);
 
     GPUScene(FContext* ctx, GPUSceneDesc const& desc);
 
     Pair<GSInstance*, uint32_t> AllocateInstance(uint32_t count);
-    Pair<GSCurveInstance*, uint32_t> AllocateCurveInstance(uint32_t count);
     Pair<GSMaterial*, uint32_t> AllocateMaterial(uint32_t count);
     Pair<GSLight*, uint32_t> AllocateLight(uint32_t count);
     Pair<Alias*, uint32_t> AllocateLightAliasTable(uint32_t count);
@@ -267,8 +262,6 @@ public:
     {
         uint32_t firstInstance;
         uint32_t numInstances;
-        uint32_t firstCurveInstance;
-        uint32_t numCurveInstances;
         uint32_t firstMaterial;
         uint32_t numMaterials;
         uint32_t firstLight;
@@ -280,7 +273,7 @@ public:
      * @brief Bulk-copies GS instance and material arrays into the GPU ring buffers.
      * @return Offsets / counts to populate the UBO with.
      */
-    UpdateResult UpdateGPUScene(Span<const GSInstance> instances, Span<const GSCurveInstance> curveInstances, Span<const GSMaterial> materials, Span<const GSLight> lights);
+    UpdateResult UpdateGPUScene(Span<const GSInstance> instances, Span<const GSMaterial> materials, Span<const GSLight> lights);
 
     struct MemoryStat
     {
@@ -291,17 +284,20 @@ public:
     [[nodiscard]] String DbgGetBufferStatistics() const;
 
     size_t Upload(ImmediateUpload* ctx, FMesh const& source, GSMesh& outData, uint32_t& outOffset);
+    size_t Upload(ImmediateUpload* ctx, FScene const& scene, FSerializedMesh const& source, GSMesh& outData, uint32_t& outOffset);
     size_t Upload(ImmediateUpload* ctx, FCurveSet const& source, GSCurveSet& outData, uint32_t& outOffset);
+    size_t Upload(ImmediateUpload* ctx, FScene const& scene, FSerializedCurve const& source, GSCurveSet& outData, uint32_t& outOffset);
+    size_t Upload(ImmediateUpload* ctx, FTextureHeader const& metadata, Span<const unsigned char> data, uint32_t& outIndex, const char* debugName = nullptr);
     size_t Upload(ImmediateUpload* ctx, FTexture const& source, uint32_t& outIndex, const char* debugName = nullptr);
+    size_t Upload(ImmediateUpload* ctx, FScene const& scene, FSerializedTexture const& source, uint32_t& outIndex, const char* debugName = nullptr);
 
     void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices);
     void BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curves, Span<uint32_t> outBLASIndices);
-    void BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, Span<const GSCurveInstance> curveInstances, Span<const uint32_t> curveBLASIndices, Span<const GSLight> lights, bool update = false);
+    void BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, Span<const uint32_t> curveBLASIndices, Span<const GSLight> lights, bool update = false);
 
     /* Geometry */
     [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetInstanceBuffer() const { return mInstanceBuffer.mBuffer.Get(); }
-    [[nodiscard]] RHIBuffer* GetCurveInstanceBuffer() const { return mCurveInstanceBuffer.mBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetMaterialBuffer() const { return mMaterialBuffer.mBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetLightBuffer() const { return mLightBuffer.mBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetLightAliasTableBuffer() const { return mLightAliasTableBuffer.mBuffer.Get(); }

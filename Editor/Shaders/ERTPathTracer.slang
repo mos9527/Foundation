@@ -22,7 +22,6 @@ struct Alias {
 // -- Scene
 RaytracingAccelerationStructure AS;
 StructuredBuffer<GSInstance> instances;
-StructuredBuffer<GSCurveInstance> curveInstances;
 ByteAddressBuffer primitives;
 StructuredBuffer<GSMaterial> materials;
 StructuredBuffer<GSLight> lights;
@@ -53,7 +52,8 @@ static const uint kRayTypeSurface = 0u;
 static const uint kRayTypeShadow = 1u;
 static const uint kRayTypeBSSRDFQuery = 2u;
 static const uint32_t kLightInstanceBit = 1u << 23;
-static const uint32_t kCurveInstanceBit = 1u << 22;
+static const uint32_t kGSInstanceTypeMesh = 0u;
+static const uint32_t kGSInstanceTypeCurve = 1u;
 static const uint kMeshMask = 0x01;
 static const uint kCurveMask = 0x04;
 
@@ -179,11 +179,6 @@ uint GetInstanceBufferIndex(uint localInstanceIndex)
     return globalParams.firstInstance + localInstanceIndex;
 }
 
-uint GetCurveInstanceBufferIndex(uint localCurveInstanceIndex)
-{
-    return globalParams.firstCurveInstance + localCurveInstanceIndex;
-}
-
 uint GetMaterialBufferIndex(uint localMaterialIndex)
 {
     return globalParams.firstMaterial + localMaterialIndex;
@@ -194,19 +189,9 @@ bool IsLightInstance(uint instance)
     return (instance & kLightInstanceBit) != 0u;
 }
 
-bool IsCurveInstance(uint instance)
-{
-    return (instance & kCurveInstanceBit) != 0u;
-}
-
 uint GetLightIndex(uint lightInstance)
 {
     return lightInstance & ~kLightInstanceBit;
-}
-
-uint GetCurveIndex(uint curveInstance)
-{
-    return curveInstance & ~kCurveInstanceBit;
 }
 
 GSInstance LoadSceneInstance(uint localInstanceIndex)
@@ -214,9 +199,9 @@ GSInstance LoadSceneInstance(uint localInstanceIndex)
     return instances[NonUniformResourceIndex(GetInstanceBufferIndex(localInstanceIndex))];
 }
 
-GSCurveInstance LoadSceneCurveInstance(uint localCurveInstanceIndex)
+bool IsCurveInstance(uint instance)
 {
-    return curveInstances[NonUniformResourceIndex(GetCurveInstanceBufferIndex(localCurveInstanceIndex))];
+    return LoadSceneInstance(instance).type == kGSInstanceTypeCurve;
 }
 
 GSMaterial LoadMaterial(uint localMaterialIndex)
@@ -306,7 +291,7 @@ float4 EvaluateCubicBezierDerivative(float4 q0, float4 q1, float4 q2, float4 q3,
     return 3.0f * lerp(lerp(d0, d1, u), lerp(d1, d2, u), u);
 }
 
-HitState GetCurveHitState(uint curveOffset, uint primitive, float2 uv, GSCurveInstance inst,
+HitState GetCurveHitState(uint curveOffset, uint primitive, float2 uv, GSInstance inst,
                           float3 rayOrigin, float3 rayDirection, float hitT)
 {
     HitState hit;
@@ -637,7 +622,7 @@ Payload SamplePayload(HitPayload payload, RayDesc ray)
     GSInstance inst = LoadSceneInstance(payload.instance);
     Payload res;
     res.materialID = inst.materialIndex;
-    res.hit = GetHitState(inst.meshOffset, payload.primitive, payload.bary, inst, ray.Origin, ray.Direction, payload.hitT);
+    res.hit = GetHitState(inst.resourceOffset, payload.primitive, payload.bary, inst, ray.Origin, ray.Direction, payload.hitT);
     GSMaterial material = LoadMaterial(res.materialID);
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
     float2 anisotropyDirection;
@@ -668,10 +653,10 @@ Payload SampleCurvePayload(HitPayload payload, RayDesc ray)
     if (!payload.IsHit())
         return {};
 
-    GSCurveInstance inst = LoadSceneCurveInstance(GetCurveIndex(payload.instance));
+    GSInstance inst = LoadSceneInstance(payload.instance);
     Payload res;
     res.materialID = inst.materialIndex;
-    res.hit = GetCurveHitState(inst.curveOffset, payload.primitive, payload.bary, inst,
+    res.hit = GetCurveHitState(inst.resourceOffset, payload.primitive, payload.bary, inst,
                                ray.Origin, ray.Direction, payload.hitT);
     GSMaterial material = LoadMaterial(res.materialID);
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
@@ -851,7 +836,7 @@ uint BuildSERCoherenceHint(HitObject hitObj, uint bounce)
     uint materialIndex;
     if (isCurve)
     {
-        GSCurveInstance inst = LoadSceneCurveInstance(GetCurveIndex(instanceID));
+        GSInstance inst = LoadSceneInstance(instanceID);
         materialIndex = inst.materialIndex;
     }
     else
@@ -1469,7 +1454,7 @@ bool AnyHitOpacityIgnore<S : ISampler>(inout S rng, uint instance, uint primitiv
     GSMaterial material = LoadMaterial(inst.materialIndex);
     float4 baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u) {
-        HitState hs = GetHitState(inst.meshOffset, primitive, attr.barycentrics.xy, inst, WorldRayOrigin(), WorldRayDirection(), RayTCurrent());
+        HitState hs = GetHitState(inst.resourceOffset, primitive, attr.barycentrics.xy, inst, WorldRayOrigin(), WorldRayDirection(), RayTCurrent());
         baseColor *= textures[NonUniformResourceIndex(material.baseColorTexture)].SampleLevel(textureSampler, hs.uv, 0);
     }
     float opacity = baseColor.a;
@@ -1691,8 +1676,8 @@ void TryIntersectBezierCurve(float3 ro, float3 rd, GSCurveSegment segment,
 [shader("intersection")]
 void CurveIntersection()
 {
-    GSCurveInstance inst = LoadSceneCurveInstance(GetCurveIndex(InstanceID()));
-    GSCurveSet curve = primitives.Load<GSCurveSet>(inst.curveOffset);
+    GSInstance inst = LoadSceneInstance(InstanceID());
+    GSCurveSet curve = primitives.Load<GSCurveSet>(inst.resourceOffset);
     GSCurveSegment segment = primitives.Load<GSCurveSegment>(curve.segmentOffset + PrimitiveIndex() * sizeof(GSCurveSegment));
     GSCurvePoint p0 = primitives.Load<GSCurvePoint>(curve.pointOffset + segment.p0 * sizeof(GSCurvePoint));
     GSCurvePoint p1 = primitives.Load<GSCurvePoint>(curve.pointOffset + segment.p1 * sizeof(GSCurvePoint));

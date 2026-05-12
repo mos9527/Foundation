@@ -11,7 +11,7 @@
 constexpr float EPS = 1e-6;
 // Building an Orthonormal Basis from a 3D Unit Vector Without Normalization - Frisvad, 2012
 // https://backend.orbit.dtu.dk/ws/portalfiles/portal/126824972/onb_frisvad_jgt2012_v2.pdf
-void buildOrthonormalBasis(const float3 n, float3& b1, float3& b2)
+void buildOrthonormalBasis(float3 n, float3& b1, float3& b2)
 {
     if (n.z < -0.9999999)
     {
@@ -120,44 +120,6 @@ void FMesh::Dequantize()
     vertices.resize(verticesQuantized.size());
     for (size_t i = 0; i < verticesQuantized.size(); i++)
         vertices[i] = FQVertex::Unpack(verticesQuantized[i]);
-}
-void FMesh::Compress()
-{
-    CHECK_MSG(!verticesQuantized.empty(), "Mesh not quantized yet");
-    // Vertex data
-    verticesCompressedCount = static_cast<uint32_t>(verticesQuantized.size());
-    verticesCompressed.resize(
-        meshopt_encodeVertexBufferBound(verticesCompressedCount, sizeof(FQVertex)));
-    size_t vtxSize =
-        meshopt_encodeVertexBuffer(verticesCompressed.data(), verticesCompressed.size(),
-                                   verticesQuantized.data(), verticesCompressedCount, sizeof(FQVertex));
-    verticesCompressed.resize(vtxSize);
-    // Index data
-    for (auto& lod : lods)
-    {
-        lod.indicesCompressedCount = lod.indices.size();
-        lod.indicesCompressed.resize(
-            meshopt_encodeIndexBufferBound(lod.indicesCompressedCount, verticesCompressedCount));
-        size_t idxSize = meshopt_encodeIndexBuffer(lod.indicesCompressed.data(), lod.indicesCompressed.size(),
-                                                   lod.indices.data(), lod.indicesCompressedCount);
-        lod.indicesCompressed.resize(idxSize);
-    }
-}
-void FMesh::Decompress()
-{
-    // Vertex data
-    CHECK_MSG(verticesCompressedCount > 0, "No compressed vertex data");
-    verticesQuantized.resize(verticesCompressedCount);
-    CHECK(meshopt_decodeVertexBuffer(verticesQuantized.data(), verticesCompressedCount, sizeof(FQVertex),
-                               verticesCompressed.data(), verticesCompressed.size()) == 0);
-    // Index data
-    for (auto& lod : lods)
-    {
-        CHECK_MSG(lod.indicesCompressedCount > 0, "No compressed index data");
-        lod.indices.resize(lod.indicesCompressedCount);
-        CHECK(meshopt_decodeIndexBuffer(lod.indices.data(), lod.indicesCompressedCount, lod.indicesCompressed.data(),
-                                  lod.indicesCompressed.size()) == 0);
-    }
 }
 // -- optimize
 template <typename Vertex, typename Index>
@@ -345,23 +307,7 @@ bool FMesh::EnsureQuantized()
         Quantize();
         return true;
     }
-    // Not quantized. Compressed data available has quantized data
-    if (!verticesCompressed.empty())
-    {
-        Decompress();
-        return true;
-    }
     return false;
-}
-bool FMesh::EnsureCompressed()
-{
-    if (!verticesCompressed.empty())
-        return true;
-    if (!EnsureQuantized())
-        return false;
-    // Not compressed, but guaranteed to be quantized.
-    Compress();
-    return true;
 }
 bool FMesh::EnsureRaw()
 {
@@ -373,19 +319,12 @@ bool FMesh::EnsureRaw()
         Dequantize();
         return true;
     }
-    // Not decoded. But has compressed data - which is quantized
-    if (!verticesCompressed.empty())
-    {
-        Decompress();
-        Dequantize();
-        return true;
-    }
     return false;
 }
 
 void FMesh::Optimize() { OptimizeVertexIndex(vertices, lods[0].indices); }
 FMesh::FMesh(Allocator* alloc) :
-    vertices(alloc), verticesQuantized(alloc), verticesCompressed(alloc), lods(alloc), dag(alloc)
+    vertices(alloc), verticesQuantized(alloc), lods(alloc), dag(alloc)
 {
     lods.resize(1u, alloc);
 }

@@ -8,7 +8,6 @@ static RendererHandles sRenderReadback;
 static RHIBuffer*        sPickResultBuffer = nullptr;
 static RendererPicking   sPicking;
 static float             sIdleTimeSeconds = 0.0f;
-static constexpr uint32_t kCurveInstanceBit = 1u << 22;
 
 static RHIExtent2D ClampViewportExtent(RHIExtent2D extent)
 {
@@ -98,7 +97,7 @@ static void FInitEnter()
 static void FInit()
 {
     // Transition to FERunningEnter when scene data is available
-    if (!GEditor.doc.instances.empty() || !GEditor.doc.curveInstances.empty())
+    if (!GEditor.doc.instances.empty())
         GEditor.state = FERunningEnter;
     else
     {
@@ -140,7 +139,6 @@ static void FRunningEnter()
         .gsGlobals = &GEditor.shaderGlobals,
         .gsInstances = &GEditor.doc.instances,
         .gsBLASes = &GEditor.doc.blases,
-        .gsCurveInstances = &GEditor.doc.curveInstances,
         .gsCurveBLASes = &GEditor.doc.curveBlases,
         .gsLights = &GEditor.doc.lights,
         .picking = &sPicking
@@ -197,19 +195,8 @@ static void FRunning()
     {
         uint32_t id = *sPickResultBuffer->Map<uint32_t>();
         GEditor.doc.selectedInstance = -1;
-        GEditor.doc.selectedCurveInstance = -1;
         GEditor.doc.selectedMaterial = -1;
-        if (id != ~0u && (id & kCurveInstanceBit) != 0u)
-        {
-            int curveIndex = static_cast<int>(id & ~kCurveInstanceBit);
-            if (curveIndex >= 0 && curveIndex < static_cast<int>(GEditor.doc.curveInstances.size()))
-            {
-                GEditor.doc.selectedCurveInstance = curveIndex;
-                GEditor.doc.selectedMaterial = static_cast<int>(GEditor.doc.curveInstances[curveIndex].materialIndex);
-                GEditor.doc.selectedLight = -1;
-            }
-        }
-        else if (id != ~0u && id < GEditor.doc.instances.size())
+        if (id != ~0u && id < GEditor.doc.instances.size())
         {
             GEditor.doc.selectedInstance = static_cast<int>(id);
             GEditor.doc.selectedMaterial = static_cast<int>(GEditor.doc.instances[GEditor.doc.selectedInstance].materialIndex);

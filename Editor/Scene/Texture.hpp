@@ -9,17 +9,13 @@ using namespace RHI;
 using namespace Core;
 using namespace Math;
 
-struct FTexture
+struct FTextureHeader
 {
-    uint32_t magic;
+    uint32_t magic{DDS_MAGIC};
     DDS_HEADER header{};
     DDS_HEADER_DXT10 header10{};
-    mutable Vector<unsigned char> data;
 
-    FTexture(Allocator* alloc);
-    void Initialize(RHIResourceFormat format, RHITextureDimension dimension, uint32_t width, uint32_t height = 1,
-                    uint32_t depth = 1, uint32_t mipCount = 1, uint32_t layerCount = 1);
-    [[nodiscard]] bool IsValid() const { return magic == DDS_MAGIC && GetSize(); }
+    [[nodiscard]] bool IsValid() const { return magic == DDS_MAGIC && GetSize() != 0; }
     [[nodiscard]] uint32_t GetWidth() const { return header.width; }
     [[nodiscard]] uint32_t GetHeight() const { return header.height; }
     [[nodiscard]] uint32_t GetDepth() const;
@@ -35,14 +31,28 @@ struct FTexture
     }
     [[nodiscard]] uint32_t GetNumMips() const { return header.mipMapCount > 0 ? header.mipMapCount : 1; }
     [[nodiscard]] RHIResourceFormat GetFormat() const;
-    // BYTES per BC block. NOTE: 0 for non-block-compressed formats
     [[nodiscard]] uint32_t GetBlockSize() const;
-    // Bits per pixel. NOTE: 0 for block-compressed formats
     [[nodiscard]] uint32_t GetBpp() const;
     [[nodiscard]] uint32_t GetSize() const;
     [[nodiscard]] RHIExtent3D GetMipExtent(uint32_t mipLevel) const;
-
     [[nodiscard]] RHITextureDesc GetDesc() const;
+};
+
+struct FSerializedTexture : FTextureHeader
+{
+    FBlobRef data;
+
+    [[nodiscard]] bool IsValid() const { return FTextureHeader::IsValid() && data.storedSize != 0; }
+};
+
+struct FTexture : FTextureHeader
+{
+    mutable Vector<unsigned char> bytes;
+
+    FTexture(Allocator* alloc);
+    void Initialize(RHIResourceFormat format, RHITextureDimension dimension, uint32_t width, uint32_t height = 1,
+                    uint32_t depth = 1, uint32_t mipCount = 1, uint32_t layerCount = 1);
+    [[nodiscard]] bool IsValid() const { return FTextureHeader::IsValid() && bytes.size() == GetSize(); }
     // Get raw subresource slice that can be uploaded to the GPU directly
     [[nodiscard]] Span<unsigned char> GetSubresource(uint32_t mipLevel = 0, uint32_t arrayLayer = 0) const;
 
@@ -54,6 +64,16 @@ struct FTexture
      * Encodes the current, uncompressed R8G8B8A8 texture into BC7 format
      */
     FTexture EncodeBC7() const;
+
+    [[nodiscard]] FSerializedTexture ToSerializedTexture(FBlobRef blob = {}) const
+    {
+        FSerializedTexture texture;
+        texture.magic = magic;
+        texture.header = header;
+        texture.header10 = header10;
+        texture.data = blob;
+        return texture;
+    }
 };
 
 /**
@@ -103,7 +123,7 @@ inline void FSerialize(FWriter& w, FTexture const& obj)
     FSerialize(w, obj.header);
     if (obj.header.ddspf.fourCC == DDSPF_DX10.fourCC)
         FSerialize(w, obj.header10);
-    CHECK(w.write(obj.data.data(), obj.data.size()) == obj.data.size());
+    CHECK(w.write(obj.bytes.data(), obj.bytes.size()) == obj.bytes.size());
 }
 template <>
 inline void FDeserialize(FReader& r, FTexture& obj)
@@ -113,6 +133,6 @@ inline void FDeserialize(FReader& r, FTexture& obj)
     FDeserialize(r, obj.header);
     if (obj.header.ddspf.fourCC == DDSPF_DX10.fourCC)
         FDeserialize(r, obj.header10);
-    obj.data.resize(obj.GetSize());
-    CHECK(r.read(obj.data.data(), obj.data.size()) == obj.data.size());
+    obj.bytes.resize(obj.GetSize());
+    CHECK(r.read(obj.bytes.data(), obj.bytes.size()) == obj.bytes.size());
 }

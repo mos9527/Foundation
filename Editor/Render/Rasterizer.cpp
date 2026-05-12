@@ -131,7 +131,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
             {
                 if (scene.gsInstances->empty() && scene.gsLights->empty())
                     return;
-                gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, {}, {}, *scene.gsLights, true);
+                gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsCurveBLASes, *scene.gsLights, true);
             });
     }
     renderer->CreatePass(

@@ -92,9 +92,10 @@ public struct GSInstance
     public float3 transform;
     public quat rotation;
     public float3 scale;
-    public uint32_t meshOffset; // In Primitive buffer (bytes)
+    public uint32_t resourceOffset; // Mesh or curve set offset in Primitive buffer (bytes)
     public uint32_t materialIndex; // In Material buffer (offset)
-    public uint32_t meshIndex; // Debug use
+    public uint32_t resourceIndex; // Debug use
+    public uint32_t type; // 0=Mesh, 1=Curve
 };
 public struct GSCurveSet
 {
@@ -116,15 +117,6 @@ public struct GSCurveSegment
     public uint32_t p1;
     public float u0;
     public float u1;
-};
-public struct GSCurveInstance
-{
-    public float3 transform;
-    public quat rotation;
-    public float3 scale;
-    public uint32_t curveOffset;
-    public uint32_t materialIndex;
-    public uint32_t curveIndex;
 };
 public struct GSMaterial
 {
@@ -194,8 +186,6 @@ public struct UBO
     public uint32_t frameNumber;
     public uint32_t firstInstance;
     public uint32_t numInstances;
-    public uint32_t firstCurveInstance;
-    public uint32_t numCurveInstances;
     public uint32_t firstMaterial;
     public uint32_t numMaterials;
     public float lodThreshold;

@@ -2,14 +2,15 @@
 #include <bc7enc.h>
 #include <stb_image_write.h>
 using namespace Foundation::RHI;
-FTexture::FTexture(Allocator* alloc) : magic(DDS_MAGIC), data(alloc)
+FTexture::FTexture(Allocator* alloc) : bytes(alloc)
 {
+    magic = DDS_MAGIC;
     static bool bc7encInitialized = false;
     if (!bc7encInitialized)
         bc7enc_compress_block_init(), bc7encInitialized = true;
 }
 void FTexture::Initialize(RHIResourceFormat format, RHITextureDimension dimension, uint32_t width, uint32_t height,
-                            uint32_t depth, uint32_t mipCount, uint32_t layerCount)
+                          uint32_t depth, uint32_t mipCount, uint32_t layerCount)
 {
     CHECK_MSG(width && height && depth && mipCount && layerCount,
               "Texture dimensions, mip count, and layer count must be non-zero");
@@ -20,9 +21,9 @@ void FTexture::Initialize(RHIResourceFormat format, RHITextureDimension dimensio
 
     ddsCreateHeader(header, width, height, mipCount, depth);
     ddsSetFormat(header, header10, layerCount, format, dimension);
-    data.clear();
+    bytes.clear();
 }
-RHITextureDimension FTexture::GetDimension() const
+RHITextureDimension FTextureHeader::GetDimension() const
 {
     if (header.ddspf.fourCC == DDSPF_DX10.fourCC)
     {
@@ -40,7 +41,7 @@ RHITextureDimension FTexture::GetDimension() const
         return RHITextureDimension::E3D;
     return RHITextureDimension::E2D;
 }
-RHITextureDimension FTexture::GetViewDimension() const
+RHITextureDimension FTextureHeader::GetViewDimension() const
 {
     if (header.caps2 & DDS_CUBEMAP)
         return GetNumLayers() > 6 ? RHITextureDimension::ECubeArray : RHITextureDimension::ECube;
@@ -54,11 +55,11 @@ RHITextureDimension FTexture::GetViewDimension() const
     }
     return dimension;
 }
-uint32_t FTexture::GetDepth() const
+uint32_t FTextureHeader::GetDepth() const
 {
     return GetDimension() == RHITextureDimension::E3D ? std::max(1u, header.depth) : 1u;
 }
-RHIResourceFormat FTexture::GetFormat() const
+RHIResourceFormat FTextureHeader::GetFormat() const
 {
     using enum RHIResourceFormat;
     switch (header.ddspf.fourCC)
@@ -150,7 +151,7 @@ uint32_t getImageSize(uint32_t width, uint32_t height, uint32_t depth, uint32_t 
     }
     return res;
 }
-uint32_t FTexture::GetBlockSize() const
+uint32_t FTextureHeader::GetBlockSize() const
 {
     using enum RHIResourceFormat;
     switch (GetFormat())
@@ -179,7 +180,7 @@ uint32_t FTexture::GetBlockSize() const
         return 0;
     }
 }
-uint32_t FTexture::GetBpp() const
+uint32_t FTextureHeader::GetBpp() const
 {
     using enum RHIResourceFormat;
     switch (GetFormat())
@@ -205,14 +206,14 @@ uint32_t FTexture::GetBpp() const
         return 0;
     }
 }
-uint32_t FTexture::GetSize() const
+uint32_t FTextureHeader::GetSize() const
 {
     uint32_t blockSize = GetBlockSize(), blockDim = 4;
     if (!blockSize)
         blockSize = GetBpp() / 8, blockDim = 1;
     return getImageSize(GetWidth(), GetHeight(), GetDepth(), GetNumMips(), blockSize, blockDim) * GetNumLayers();
 }
-RHIExtent3D FTexture::GetMipExtent(uint32_t mipLevel) const
+RHIExtent3D FTextureHeader::GetMipExtent(uint32_t mipLevel) const
 {
     return {
         std::max(1u, GetWidth() >> mipLevel),
@@ -220,7 +221,7 @@ RHIExtent3D FTexture::GetMipExtent(uint32_t mipLevel) const
         GetDimension() == RHITextureDimension::E3D ? std::max(1u, GetDepth() >> mipLevel) : 1u,
     };
 }
-RHITextureDesc FTexture::GetDesc() const
+RHITextureDesc FTextureHeader::GetDesc() const
 {
     return RHITextureDesc{
         .resource = { .shared = true },
@@ -249,9 +250,9 @@ Span<unsigned char> FTexture::GetSubresource(uint32_t mipLevel, uint32_t arrayLa
     uint32_t mipSize = getImageSize(mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
     uint32_t offset = layerOffset + mipOffset;
     uint32_t offsetEnd = offset + mipSize;
-    CHECK_MSG(offsetEnd <= data.size(), "Subresource out of range: layer {}, mip {} (size {}), data size {}",
-              arrayLayer, mipLevel, mipSize, data.size());
-    return {data.data() + offset, data.data() + offsetEnd};
+    CHECK_MSG(offsetEnd <= bytes.size(), "Subresource out of range: layer {}, mip {} (size {}), data size {}",
+              arrayLayer, mipLevel, mipSize, bytes.size());
+    return {bytes.data() + offset, bytes.data() + offsetEnd};
 }
 void FTexture::GenerateMips()
 {
@@ -267,16 +268,16 @@ void FTexture::GenerateMips()
     uint32_t width = GetWidth(), height = GetHeight(), depth = GetDepth(), layerCount = GetNumLayers();
     ddsCreateHeader(header, width, height, numMips, depth);
     ddsSetFormat(header, header10, layerCount, format, dimension);
-    data.resize(GetSize());
+    bytes.resize(GetSize());
     // Gamma correct. Mip generation should only be done in linear space.
     auto SrgbToLinear = [&](bool inverse = false /* linear to gamma */)
     {
-        for (size_t i = 0; i < data.size(); i += 4)
+        for (size_t i = 0; i < bytes.size(); i += 4)
         {
-            float r = data[i + 0] / 255.0f;
-            float g = data[i + 1] / 255.0f;
-            float b = data[i + 2] / 255.0f;
-            float a = data[i + 3] / 255.0f;
+            float r = bytes[i + 0] / 255.0f;
+            float g = bytes[i + 1] / 255.0f;
+            float b = bytes[i + 2] / 255.0f;
+            float a = bytes[i + 3] / 255.0f;
             // https://en.wikipedia.org/wiki/SRGB#Definition
             if (inverse)
             {
@@ -290,10 +291,10 @@ void FTexture::GenerateMips()
                 g = (g <= 0.04045f) ? (g / 12.92f) : std::pow((g + 0.055f) / 1.055f, 2.4f);
                 b = (b <= 0.04045f) ? (b / 12.92f) : std::pow((b + 0.055f) / 1.055f, 2.4f);
             }
-            data[i + 0] = static_cast<unsigned char>(std::clamp(r * 255.0f, 0.0f, 255.0f));
-            data[i + 1] = static_cast<unsigned char>(std::clamp(g * 255.0f, 0.0f, 255.0f));
-            data[i + 2] = static_cast<unsigned char>(std::clamp(b * 255.0f, 0.0f, 255.0f));
-            data[i + 3] = static_cast<unsigned char>(std::clamp(a * 255.0f, 0.0f, 255.0f));
+            bytes[i + 0] = static_cast<unsigned char>(std::clamp(r * 255.0f, 0.0f, 255.0f));
+            bytes[i + 1] = static_cast<unsigned char>(std::clamp(g * 255.0f, 0.0f, 255.0f));
+            bytes[i + 2] = static_cast<unsigned char>(std::clamp(b * 255.0f, 0.0f, 255.0f));
+            bytes[i + 3] = static_cast<unsigned char>(std::clamp(a * 255.0f, 0.0f, 255.0f));
         }
     };
     if (GetFormat() == RHIResourceFormat::R8G8B8A8Srgb)
@@ -353,7 +354,7 @@ void LoadRGBA8(FTexture& texture, StringView path, bool gamma)
 
     texture.Initialize(gamma ? RHIResourceFormat::R8G8B8A8Srgb : RHIResourceFormat::R8G8B8A8Unorm,
                        RHITextureDimension::E2D, width, height);
-    texture.data.assign(imgData, imgData + width * height * 4);
+    texture.bytes.assign(imgData, imgData + width * height * 4);
 }
 void LoadRGBA8(FTexture& texture, Span<const unsigned char> data, bool gamma)
 {
@@ -365,7 +366,7 @@ void LoadRGBA8(FTexture& texture, Span<const unsigned char> data, bool gamma)
 
     texture.Initialize(gamma ? RHIResourceFormat::R8G8B8A8Srgb : RHIResourceFormat::R8G8B8A8Unorm,
                        RHITextureDimension::E2D, width, height);
-    texture.data.assign(imgData, imgData + width * height * 4);
+    texture.bytes.assign(imgData, imgData + width * height * 4);
 }
 void LoadHDR(FTexture& texture, StringView path)
 {
@@ -378,7 +379,7 @@ void LoadHDR(FTexture& texture, StringView path)
     texture.Initialize(RHIResourceFormat::R32G32B32A32SignedFloat, RHITextureDimension::E2D, width, height);
     const size_t size = width * height * 4 * sizeof(float);
     const auto* bytes = reinterpret_cast<const unsigned char*>(imgData);
-    texture.data.assign(bytes, bytes + size);
+    texture.bytes.assign(bytes, bytes + size);
 }
 
 void SaveHDR(const float* data, int width, int height, StringView path)
@@ -409,7 +410,7 @@ FTexture FTexture::EncodeBC7() const
     RHIResourceFormat dstFormat =
         (GetFormat() == RHIResourceFormat::R8G8B8A8Srgb) ? RHIResourceFormat::Bc7Srgb : RHIResourceFormat::Bc7Unorm;
     res.Initialize(dstFormat, GetDimension(), GetWidth(), GetHeight(), GetDepth(), GetNumMips(), GetNumLayers());
-    res.data.resize(res.GetSize());
+    res.bytes.resize(res.GetSize());
 
     bc7enc_compress_block_params pack_params;
     bc7enc_compress_block_params_init(&pack_params);

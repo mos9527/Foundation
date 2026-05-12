@@ -87,7 +87,7 @@ void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
     if (groupIndex >= work.numMeshlets)
         return; // Inactive
     GSInstance inst = instances[work.instanceID];
-    GSMesh mesh = primitive.Load<GSMesh>(inst.meshOffset);
+    GSMesh mesh = primitive.Load<GSMesh>(inst.resourceOffset);
     uint32_t meshletID = work.firstMeshlet + groupIndex;
     float scale = max(max(inst.scale.x,inst.scale.y),inst.scale.z);
     // -- LOD selection --

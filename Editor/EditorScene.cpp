@@ -3,6 +3,7 @@
 #include <Core/Paths.hpp>
 #include <RenderCore/ImmediateContext.hpp>
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <exception>
 #include <filesystem>
@@ -73,12 +74,9 @@ void CommitSceneToGPU(bool resetAccumulation)
     if (!GContext->gpuScene)
         return;
 
-    auto res = GContext->gpuScene->UpdateGPUScene(GEditor.doc.instances, GEditor.doc.curveInstances,
-                                                  GEditor.doc.materials, GEditor.doc.lights);
+    auto res = GContext->gpuScene->UpdateGPUScene(GEditor.doc.instances, GEditor.doc.materials, GEditor.doc.lights);
     GEditor.shaderGlobals.firstInstance = res.firstInstance;
     GEditor.shaderGlobals.numInstances  = res.numInstances;
-    GEditor.shaderGlobals.firstCurveInstance = res.firstCurveInstance;
-    GEditor.shaderGlobals.numCurveInstances  = res.numCurveInstances;
     GEditor.shaderGlobals.firstMaterial = res.firstMaterial;
     GEditor.shaderGlobals.numMaterials  = res.numMaterials;
     GEditor.shaderGlobals.firstLight    = res.firstLight;
@@ -338,7 +336,8 @@ void DoRenderReadback(RendererHandles const& handles)
 
 void UpdateSceneLights()
 {
-    uint32_t count = static_cast<uint32_t>(GEditor.doc.scene.mLights.size());
+    auto lights = GEditor.doc.Scene().GetLights();
+    uint32_t count = static_cast<uint32_t>(lights.size());
     GEditor.shaderGlobals.numSceneLights = count;
 
     GEditor.doc.lights.clear();
@@ -348,7 +347,7 @@ void UpdateSceneLights()
         : GPUScene::LightSamplerType::Power;
     for (uint32_t i = 0; i < count; i++)
     {
-        auto& src = GEditor.doc.scene.mLights[i];
+        auto& src = lights[i];
         FLightToGSLight(src, GEditor.doc.lights[i], lightSamplerType);
     }
 
@@ -362,7 +361,7 @@ static uint32_t RemapTextureIndex(Vector<uint32_t> const& textureIDMap, uint32_t
 
 static void BuildEditorMaterials(Vector<uint32_t> const& textureIDMap)
 {
-    for (auto& src : GEditor.doc.scene.mMaterials)
+    for (auto& src : GEditor.doc.Scene().GetMaterials())
     {
         auto& dst = GEditor.doc.materials.emplace_back();
         dst.baseColorFactor = src.baseColorFactor;
@@ -394,40 +393,51 @@ static void BuildEditorMaterials(Vector<uint32_t> const& textureIDMap)
     }
 }
 
-static void BuildEditorInstances(Vector<uint32_t> const& meshOffsets)
+static void BuildEditorInstances(Vector<uint32_t> const& meshOffsets, Vector<uint32_t> const& curveOffsets)
 {
-    for (auto& src : GEditor.doc.scene.mInstances)
+    auto instances = GEditor.doc.Scene().GetInstances();
+    CHECK_MSG(instances.size() <= UINT32_MAX, "Too many scene instances");
+    for (size_t i = 0; i < instances.size(); i++)
     {
-        auto& dst = GEditor.doc.instances.emplace_back();
-        dst.transform = src.transform.transform;
-        dst.rotation = src.transform.rotation;
-        dst.scale = src.transform.scale;
-        dst.meshOffset = meshOffsets[src.meshIndex];
-        dst.materialIndex = src.materialIndex;
-        dst.meshIndex = src.meshIndex;
-    }
-}
-
-static void BuildEditorCurveInstances(Vector<uint32_t> const& curveOffsets)
-{
-    for (auto& src : GEditor.doc.scene.mCurveInstances)
-    {
-        auto& dst = GEditor.doc.curveInstances.emplace_back();
-        dst.transform = src.transform.transform;
-        dst.rotation = src.transform.rotation;
-        dst.scale = src.transform.scale;
-        dst.curveOffset = curveOffsets[src.curveIndex];
-        dst.materialIndex = src.materialIndex;
-        dst.curveIndex = src.curveIndex;
+        auto const& src = instances[i];
+        if (src.type == FInstanceType::Mesh)
+        {
+            CHECK_MSG(src.resourceIndex < meshOffsets.size(), "Mesh instance references invalid mesh {}", src.resourceIndex);
+            auto& dst = GEditor.doc.instances.emplace_back();
+            dst.transform = src.transform.transform;
+            dst.rotation = src.transform.rotation;
+            dst.scale = src.transform.scale;
+            dst.resourceOffset = meshOffsets[src.resourceIndex];
+            dst.materialIndex = src.materialIndex;
+            dst.resourceIndex = src.resourceIndex;
+            dst.type = kGSInstanceTypeMesh;
+        }
+        else if (src.type == FInstanceType::Curve)
+        {
+            CHECK_MSG(src.resourceIndex < curveOffsets.size(), "Curve instance references invalid curve {}", src.resourceIndex);
+            auto& dst = GEditor.doc.instances.emplace_back();
+            dst.transform = src.transform.transform;
+            dst.rotation = src.transform.rotation;
+            dst.scale = src.transform.scale;
+            dst.resourceOffset = curveOffsets[src.resourceIndex];
+            dst.materialIndex = src.materialIndex;
+            dst.resourceIndex = src.resourceIndex;
+            dst.type = kGSInstanceTypeCurve;
+        }
+        else
+        {
+            CHECK_MSG(false, "Unknown scene instance type {}", static_cast<uint32_t>(src.type));
+        }
     }
 }
 
 static void ApplySceneCamera()
 {
-    if (GEditor.doc.scene.mCameras.empty())
+    auto cameras = GEditor.doc.Scene().GetCameras();
+    if (cameras.empty())
         return;
 
-    auto& camera = GEditor.doc.scene.mCameras.front();
+    auto& camera = cameras.front();
     vec3 dir = camera.transform.rotation * vec3(0, 0, 1);
     GEditor.camera.center = camera.transform.transform - dir * GEditor.camera.radius;
     GEditor.camera.rot = camera.transform.rotation;
@@ -446,18 +456,17 @@ static void ApplySceneCamera()
 
 static void ApplySceneEnvironment()
 {
-    auto const& environment = GEditor.doc.scene.mEnvironment;
+    auto const& environment = GEditor.doc.Scene().GetSceneGlobals();
     GEditor.shaderGlobals.ambientColor = environment.color;
     GEditor.shaderGlobals.ambientPower = environment.strength;
-    GEditor.shaderGlobals.envMapScale =
-        environment.type == FSceneEnvironmentType::EnvMap ? environment.strength : 1.0f;
+    GEditor.shaderGlobals.envMapScale = environment.strength;
     GEditor.shaderGlobals.envAzimuthOffset = environment.azimuthOffset;
     GEditor.shaderGlobals.useEnvMap = 0u;
 }
 
 static GPUScene* RecreateGPUSceneForLoadedScene()
 {
-    const auto estimatedBudget = GPUScene::CalculateSceneBudget(GEditor.doc.scene, GContext->device->GetCapabilities());
+    const auto estimatedBudget = GPUScene::CalculateSceneBudget(GEditor.doc.Scene(), GContext->device->GetCapabilities());
     LOG(Editor, LogDebug,
         "Estimated GPUScene budget: primitive {} MB, curve AABB {} MB, instances {}, materials {}, lights {}, textures {}",
         estimatedBudget.primitiveBudget / (1u << 20),
@@ -485,19 +494,30 @@ static GPUScene* RecreateGPUSceneForLoadedScene()
     return gpu;
 }
 
-static void PrepareSceneMeshesForGPUUpload()
-{
-    for (auto& mesh : GEditor.doc.scene.mMeshes)
-        CHECK(mesh.EnsureQuantized());
-}
-
 void ReplaceScene(StringView path)
 {
     LOG(Editor, LogInfo, "Loading scene: {}", path);
-    GEditor.doc.scene = FScene(GLOBAL_ALLOC);
+    String scenePayloadPath;
     try
     {
-        LoadScene(path, GEditor.doc.scene);
+        auto ext = std::filesystem::path(path.data()).extension().string();
+        for (auto& c : ext)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (ext == ".fscn")
+        {
+            scenePayloadPath = String(path);
+        }
+        else
+        {
+            scenePayloadPath = (std::filesystem::path("last.fscn")).string();
+            {
+                FileWriter writer(scenePayloadPath);
+                FScene writeScene(writer);
+                LoadScene(path, writeScene);
+            }
+        }
+        GEditor.doc.OpenSceneReader(scenePayloadPath);
+        LoadFSCN(*GEditor.doc.sceneReader, GEditor.doc.Scene());
     }
     catch (...)
     {
@@ -510,116 +530,96 @@ void ReplaceScene(StringView path)
     GEditor.doc.materials.clear();
     GEditor.doc.meshes.clear();
     GEditor.doc.blases.clear();
-    GEditor.doc.curveInstances.clear();
     GEditor.doc.curves.clear();
     GEditor.doc.curveBlases.clear();
     GEditor.doc.lights.clear();
     
     GEditor.doc.selectedInstance = -1;
-    GEditor.doc.selectedCurveInstance = -1;
     GEditor.doc.selectedMaterial = -1;
     GEditor.doc.selectedLight = -1;
-    GEditor.shaderGlobals.camEV = GEditor.doc.scene.mColorManagement.postExposure;
-    GEditor.viewLUTSdrIndex = static_cast<int>(GEditor.doc.scene.mColorManagement.viewLutSdrIndex);
-    GEditor.viewLUTHdrIndex = static_cast<int>(GEditor.doc.scene.mColorManagement.viewLutHdrIndex);
+    auto const& sceneGlobals = GEditor.doc.Scene().GetSceneGlobals();
+    GEditor.shaderGlobals.camEV = sceneGlobals.postExposure;
+    GEditor.viewLUTSdrIndex = static_cast<int>(sceneGlobals.viewLutSdrIndex);
+    GEditor.viewLUTHdrIndex = static_cast<int>(sceneGlobals.viewLutHdrIndex);
     GEditor.viewLUTSdrExternalPath.clear();
     GEditor.viewLUTHdrExternalPath.clear();
     ApplySceneEnvironment();
 
-    PrepareSceneMeshesForGPUUpload();
-    const size_t sceneMeshCount = GEditor.doc.scene.mMeshes.size();
-    const size_t sceneInstanceCount = GEditor.doc.scene.mInstances.size();
-    const size_t sceneCurveCount = GEditor.doc.scene.mCurves.size();
-    const size_t sceneCurveInstanceCount = GEditor.doc.scene.mCurveInstances.size();
-    const size_t sceneMaterialCount = GEditor.doc.scene.mMaterials.size();
+    const size_t sceneMeshCount = GEditor.doc.Scene().GetMeshes().size();
+    const size_t sceneInstanceCount = GEditor.doc.Scene().GetInstances().size();
+    const size_t sceneCurveCount = GEditor.doc.Scene().GetCurves().size();
+    const size_t sceneMaterialCount = GEditor.doc.Scene().GetMaterials().size();
     auto* gpu = RecreateGPUSceneForLoadedScene();
 
     Vector<uint32_t> meshOffsets(GLOBAL_ALLOC);
     Vector<uint32_t> curveOffsets(GLOBAL_ALLOC);
-    Vector<uint32_t> textureIDMap(GEditor.doc.scene.mTextures.size(), GLOBAL_ALLOC);
+    Vector<uint32_t> textureIDMap(GEditor.doc.Scene().GetTextures().size(), GLOBAL_ALLOC);
 
     LOG(Editor, LogInfo, "Uploading new scene data to GPU");
     // Upload meshes and textures
     {
         ImmediateUpload upload(GContext->device.Get(), 512 * (1u << 20));
         upload.Begin();
-        for (auto& src : GEditor.doc.scene.mMeshes)
+        for (auto const& srcDesc : GEditor.doc.Scene().GetMeshes())
         {
             auto& dst = GEditor.doc.meshes.emplace_back();
             auto& offset = meshOffsets.emplace_back();
-            if (!gpu->Upload(&upload, src, dst, offset))
+            if (!gpu->Upload(&upload, GEditor.doc.Scene(), srcDesc, dst, offset))
             {
                 LOG(Editor, LogDebug, "Scene upload staging exhausted by mesh upload ({} bytes); flushing",
-                    GPUScene::CalculateMeshPrimitiveSize(src));
+                    GPUScene::CalculateMeshPrimitiveSize(srcDesc));
                 upload.End(), upload.WaitIdle(), upload.Begin();
-                CHECK_MSG(gpu->Upload(&upload, src, dst, offset),
+                CHECK_MSG(gpu->Upload(&upload, GEditor.doc.Scene(), srcDesc, dst, offset),
                           "Staging buffer too small for single mesh upload ({} bytes)",
-                          GPUScene::CalculateMeshPrimitiveSize(src));
+                          GPUScene::CalculateMeshPrimitiveSize(srcDesc));
             }
         }
-        for (auto& src : GEditor.doc.scene.mCurves)
+        for (auto const& srcDesc : GEditor.doc.Scene().GetCurves())
         {
             auto& dst = GEditor.doc.curves.emplace_back();
             auto& offset = curveOffsets.emplace_back();
-            if (!gpu->Upload(&upload, src, dst, offset))
+            if (!gpu->Upload(&upload, GEditor.doc.Scene(), srcDesc, dst, offset))
             {
                 LOG(Editor, LogDebug,
                     "Scene upload staging exhausted by curve upload ({} primitive bytes, {} AABB bytes); flushing",
-                    GPUScene::CalculateCurvePrimitiveSize(src),
-                    GPUScene::CalculateCurveAABBSize(src));
+                    GPUScene::CalculateCurvePrimitiveSize(srcDesc),
+                    GPUScene::CalculateCurveAABBSize(srcDesc));
                 upload.End(), upload.WaitIdle(), upload.Begin();
-                CHECK_MSG(gpu->Upload(&upload, src, dst, offset),
+                CHECK_MSG(gpu->Upload(&upload, GEditor.doc.Scene(), srcDesc, dst, offset),
                           "Staging buffer too small for single curve upload ({} primitive bytes, {} AABB bytes)",
-                          GPUScene::CalculateCurvePrimitiveSize(src),
-                          GPUScene::CalculateCurveAABBSize(src));
+                          GPUScene::CalculateCurvePrimitiveSize(srcDesc),
+                          GPUScene::CalculateCurveAABBSize(srcDesc));
             }
         }
-        for (int id = 0; auto& src : GEditor.doc.scene.mTextures)
+        for (int id = 0; auto const& srcDesc : GEditor.doc.Scene().GetTextures())
         {
-            if (!src.IsValid())
+            if (!srcDesc.IsValid())
             {
                 textureIDMap[id] = UINT32_MAX;
             }
             else
             {
-                if (!gpu->Upload(&upload, src, textureIDMap[id]))
+                if (!gpu->Upload(&upload, GEditor.doc.Scene(), srcDesc, textureIDMap[id]))
                 {
                     LOG(Editor, LogDebug, "Scene upload staging exhausted by texture {} upload ({} bytes); flushing",
-                        id, src.GetSize());
+                        id, srcDesc.data.decodedSize);
                     upload.End(), upload.WaitIdle(), upload.Begin();
-                    CHECK_MSG(gpu->Upload(&upload, src, textureIDMap[id]),
+                    CHECK_MSG(gpu->Upload(&upload, GEditor.doc.Scene(), srcDesc, textureIDMap[id]),
                               "Staging buffer too small for single texture upload (texture {}, {} bytes)",
-                              id, src.GetSize());
+                              id, srcDesc.data.decodedSize);
                 }
             }
             id++;
         }
-        const bool hasCustomViewLUT = GEditor.doc.scene.mViewLutSdr.IsValid() || GEditor.doc.scene.mViewLutHdr.IsValid();
-        if (hasCustomViewLUT)
-        {
-            CHECK_MSG(GEditor.doc.scene.mViewLutSdr.IsValid() && GEditor.doc.scene.mViewLutHdr.IsValid(),
-                      "Scene view LUT override must provide both SDR and HDR LUTs");
-            gpu->UploadViewLUTs(&upload, GEditor.doc.scene.mViewLutSdr, GEditor.doc.scene.mViewLutHdr);
-        }
-        else
-        {
-            FTexture sdr(GLOBAL_ALLOC);
-            FTexture hdr(GLOBAL_ALLOC);
-            LoadSelectedViewLUTs(sdr, hdr);
-            gpu->UploadViewLUTs(&upload, sdr, hdr);
-        }
-        if (GEditor.doc.scene.mEnvironment.type == FSceneEnvironmentType::EnvMap)
-        {
-            CHECK_MSG(GEditor.doc.scene.mEnvironmentMap.IsValid(), "Scene environment map is invalid");
-            gpu->UploadEnvMap(&upload, GEditor.doc.scene.mEnvironmentMap);
-            GEditor.shaderGlobals.useEnvMap = 1u;
-        }
+        FTexture sdr(GLOBAL_ALLOC);
+        FTexture hdr(GLOBAL_ALLOC);
+        LoadSelectedViewLUTs(sdr, hdr);
+        gpu->UploadViewLUTs(&upload, sdr, hdr);
         upload.End(), upload.WaitIdle();
     }
 
     BuildEditorMaterials(textureIDMap);
-    BuildEditorInstances(meshOffsets);
-    BuildEditorCurveInstances(curveOffsets);
+    BuildEditorInstances(meshOffsets, curveOffsets);
 
     // Apply camera and lighting data (needs to be done before UpdateGPUScene to have lights ready)
     {
@@ -656,12 +656,12 @@ void ReplaceScene(StringView path)
         LOG(Editor, LogDebug, "Rebuilding TLAS");
         ctx->Begin();
         gpu->BuildTLAS(ctx.Get(), GEditor.doc.instances, GEditor.doc.blases,
-                       GEditor.doc.curveInstances, GEditor.doc.curveBlases, GEditor.doc.lights, false);
+                       GEditor.doc.curveBlases, GEditor.doc.lights, false);
         ctx->End(), ctx.Submit(), ctx.WaitIdle();
     }
 
-    LOG(Editor, LogInfo, "Scene load complete: {} meshes, {} mesh instances, {} curves, {} curve instances, {} materials",
-        sceneMeshCount, sceneInstanceCount, sceneCurveCount, sceneCurveInstanceCount, sceneMaterialCount);
+    LOG(Editor, LogInfo, "Scene load complete: {} meshes, {} instances, {} curves, {} materials",
+        sceneMeshCount, sceneInstanceCount, sceneCurveCount, sceneMaterialCount);
 
     // Trigger renderer reconfiguration
     GEditor.state = FERunningEnter;
@@ -684,7 +684,7 @@ void LoadEnvMap(StringView path)
         upload.Begin();
         gpu->UploadEnvMap(&upload, tex);
         upload.End(), upload.WaitIdle();
-        GEditor.doc.scene.mEnvironment = {
+        GEditor.doc.Scene().GetSceneGlobals() = {
             .type = FSceneEnvironmentType::EnvMap,
             .color = GEditor.shaderGlobals.ambientColor,
             .strength = GEditor.shaderGlobals.envMapScale,

@@ -3,19 +3,10 @@
 #include "Scene/Texture.hpp"
 int main_scene(StringView srcPath, StringView dstPath)
 {
-    FScene scene(GLOBAL_ALLOC);
-    LoadGLTF(srcPath, scene);
-    LOG(Util, LogDebug, "Compressing Mesh Data");
-    {
-        ThreadPool pool(std::thread::hardware_concurrency(), ThreadPool::getTaskSize(scene.mMeshes.size()), GLOBAL_ALLOC);
-        // Compress all meshes
-        for (auto& mesh : scene.mMeshes)
-            pool.Push([&] { mesh.EnsureCompressed(); });
-        pool.Join();
-    }
-    LOG(Util, LogDebug, "Saving");
     FileWriter writer(dstPath);
-    FSerialize(writer, scene);
+    FScene scene(writer);
+    LOG(Util, LogDebug, "Saving");
+    LoadGLTF(srcPath, scene);
     return 0;
 }
 int main_texture(StringView srcImagePath, StringView dstDDSPath)

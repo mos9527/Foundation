@@ -14,13 +14,15 @@ RWStructuredBuffer<MeshletTaskDispatch> outTasksDispatch;
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void main(uint tid: SV_DispatchThreadID, uint gid: SV_GroupIndex) {
-    if (tid > globalParams.numInstances)
+    if (tid >= globalParams.numInstances)
         return;
     uint iid = tid + globalParams.firstInstance;
     GSInstance inst = instances[iid];
+    if (inst.type != 0u) // Mesh
+        return;
     // TODO: Culling instance
     // Would require AABB update on the CPU side. Not implemented yet.
-    GSMesh mesh = primitive.Load<GSMesh>(inst.meshOffset);
+    GSMesh mesh = primitive.Load<GSMesh>(inst.resourceOffset);
     uint groups = alignUp(mesh.meshletCount, kMeshWorkGroupSize) / kMeshWorkGroupSize;
     uint taskIndex = outTasksCounter[0].add(groups);
     for (uint group = 0; group < groups; group++) {

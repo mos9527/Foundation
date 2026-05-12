@@ -32,13 +32,11 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
         "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
         { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
         {
-            gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes,
-                           *scene.gsCurveInstances, *scene.gsCurveBLASes, *scene.gsLights, true);
+            gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsCurveBLASes, *scene.gsLights, true);
         });
     /* Instance and Primitive buffers */
     auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
     auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
-    auto CurveInstanceBuffer = renderer->CreateResource("Curve Instance Buffer", gpu->GetCurveInstanceBuffer());
     auto MaterialBuffer = renderer->CreateResource("Material Buffer", gpu->GetMaterialBuffer());
     auto LightBuffer = renderer->CreateResource("Light Buffer", gpu->GetLightBuffer());
     auto LightAliasTableBuffer = renderer->CreateResource("Light Alias Table Buffer", gpu->GetLightAliasTableBuffer());
@@ -169,7 +167,6 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
                           RTHitGroupType::Procedural);
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitives");
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
-            r->BindBufferStorageRead(self, CurveInstanceBuffer, RHIPipelineStageBits::ComputeShader, "curveInstances");
             r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::ComputeShader, "materials");
             r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
             r->BindBufferStorageRead(self, LightAliasTableBuffer, RHIPipelineStageBits::ComputeShader, "lightAliasTable");

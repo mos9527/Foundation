@@ -23,7 +23,7 @@ add_custom_target(
 
 add_library(Editor_Assets STATIC)
 target_sources(Editor_Assets PUBLIC
-        Scene/Mesh.cpp Scene/Scene.cpp Scene/Texture.cpp
+        Scene/Mesh.cpp Scene/Scene.cpp Scene/Serialization.cpp Scene/Texture.cpp
         Render/Precompute.cpp
         "${lz4_SOURCE_DIR}/lib/lz4.c"
         "${lz4_SOURCE_DIR}/lib/xxhash.c"
