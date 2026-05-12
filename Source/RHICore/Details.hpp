@@ -140,7 +140,6 @@ namespace Foundation::RHI
                 RHIObjectTraits<Factory, T>::Destroy(mFactory, mHandle);
         }
     };
-    static constexpr size_t kRHIObjectPoolMaxSize = 65536;
     /**
      * @brief Thread-safe type-erased handle dereference facility for RHI Objects
      */
@@ -150,10 +149,10 @@ namespace Foundation::RHI
         using PointerType = Core::UniquePtr<Base>;
 
         Core::Allocator* mAllocator;
-        Core::AtomicPool<PointerType> mPool;
+        Core::DynamicPool<PointerType> mPool;
 
     public:
-        RHIObjectPool(Core::Allocator* allocator) : mAllocator(allocator), mPool(kRHIObjectPoolMaxSize, allocator) {}
+        RHIObjectPool(Core::Allocator* allocator) : mAllocator(allocator), mPool(allocator) {}
         /**
          * @brief Creates specified RHIObject of derived type T and retrieves its handle
          * @returns A handle to the newly created object.
@@ -162,7 +161,8 @@ namespace Foundation::RHI
         Handle CreateObject(Args&&... args)
         {
             Base* obj = Core::ConstructBase<Base, U>(mAllocator, std::forward<Args>(args)...);
-            PointerType* pointer = mPool.Construct(obj, Core::StlDeleter<Base>(mAllocator));
+            PointerType owned(obj, Core::StlDeleter<Base>(mAllocator));
+            PointerType* pointer = mPool.Construct(std::move(owned));
             return reinterpret_cast<Handle>(pointer);
         }
         /**

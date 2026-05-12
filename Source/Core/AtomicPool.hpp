@@ -1,7 +1,13 @@
 #pragma once
+#include <cstddef>
 #include <cstring>
+#include <memory>
+#include <mutex>
+#include <utility>
 #include "Allocator.hpp"
 #include "Atomic.hpp"
+#include "Container.hpp"
+#include "Thread.hpp"
 namespace Foundation::Core
 {
     /**
@@ -139,5 +145,84 @@ namespace Foundation::Core
                     mNodes[i].used = false, mNodes[i].data.~T();
         }
         ~AtomicPool() { Collect(); }
+    };
+
+    /**
+     * @brief Mutex-protected, dynamically sized object pool with stable object pointers.
+     * @note Unlike @ref AtomicPool, this pool does not reserve a fixed arena. Each live object
+     *       occupies one @ref Core::List node and releases that node back to the allocator on
+     *       destruction, so memory usage tracks the number of live objects.
+     * @note Construction, destruction, and collection are thread-safe. Pointer dereference is not
+     *       synchronized; callers must still avoid using handles concurrently with destruction.
+     */
+    template <typename T>
+    class DynamicPool
+    {
+        Allocator* mAllocator;
+        List<T> mObjects;
+        mutable Mutex mMutex;
+
+    public:
+        explicit DynamicPool(Allocator* alloc) : mAllocator(alloc), mObjects(alloc) {}
+
+        DynamicPool(DynamicPool const&) = delete;
+        DynamicPool& operator=(DynamicPool const&) = delete;
+        DynamicPool(DynamicPool&&) = delete;
+        DynamicPool& operator=(DynamicPool&&) = delete;
+
+        /**
+         * @brief Constructs an object of type T in the pool with the given arguments.
+         * @return Pointer to the constructed object.
+         * @note User must NOT use `delete` to free the returned pointer as it is managed by the pool.
+         *       The destructor of T should NOT be manually called - handle both with @ref Destruct.
+         */
+        template <typename... Args>
+        T* Construct(Args&&... args)
+        {
+            std::unique_lock lock(mMutex);
+            return &mObjects.emplace_back(std::forward<Args>(args)...);
+        }
+
+        /**
+         * @brief Destructs the object pointed to by ptr and releases its storage.
+         */
+        void Destruct(T* ptr)
+        {
+            if (!ptr)
+                return;
+
+            List<T> removed(mAllocator);
+            {
+                std::unique_lock lock(mMutex);
+                for (auto it = mObjects.begin(); it != mObjects.end(); ++it)
+                {
+                    if (&*it == ptr)
+                    {
+                        removed.splice(removed.end(), mObjects, it);
+                        break;
+                    }
+                }
+            }          
+        }
+
+        /**
+         * @brief Destructs all allocated objects in the pool.
+         */
+        void Collect()
+        {
+            List<T> removed(mAllocator);
+            {
+                std::unique_lock lock(mMutex);
+                removed.splice(removed.end(), mObjects);
+            }            
+        }
+
+        [[nodiscard]] size_t Size() const
+        {
+            std::unique_lock lock(mMutex);
+            return mObjects.size();
+        }
+
+        ~DynamicPool() { Collect(); }
     };
 } // namespace Foundation::Core

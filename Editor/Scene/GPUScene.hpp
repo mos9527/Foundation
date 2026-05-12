@@ -317,10 +317,10 @@ public:
     // Environment map
     void UploadEnvMap(ImmediateUpload* ctx, FTexture const& source);
     [[nodiscard]] RHITexture* GetEnvMap() const;
-    [[nodiscard]] RHIBuffer* GetEnvMapMarginalCDF() const { return mEnvMapMarginalCDF.Get(); }
+    [[nodiscard]] RHIBuffer* GetEnvMapMarginalCDF() const { return mEnvMapMarginalCDF.IsValid() ? mEnvMapMarginalCDF.Get() : nullptr; }
     [[nodiscard]] RHITexture* GetEnvMapConditionalCDF() const;
     /* AS */
-    [[nodiscard]] RHIAccelerationStructure* GetTLAS() const { return mTLAS.Get(); }
+    [[nodiscard]] RHIAccelerationStructure* GetTLAS() const { return mTLAS.IsValid() ? mTLAS.Get() : nullptr; }
     /* Samplers */
     [[nodiscard]] RHIBuffer* GetSobolMatricesBuffer() const;
 
