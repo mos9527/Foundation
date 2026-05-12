@@ -1231,8 +1231,11 @@ void FRunningImGui()
                     ClearHistogramData();
                 if (!pause)
                 {
+                    const size_t passCount = timings.size() / 2;
                     samples.clear();
-                    for (size_t i = 0; i < timings.size() / 2; i++)
+                    samples.reserve(passCount);
+                    histograms.reserve(passCount);
+                    for (size_t i = 0; i < passCount; i++)
                     {
                         auto const& pass = renderer->GetTrackedPass(i);
                         ImProfilerSample sample{

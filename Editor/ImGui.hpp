@@ -5,16 +5,41 @@ struct ImProfilerHistogram
 {
     const size_t capacity;
     float mean = 0, m2 = 0;
+    size_t head = 0;
+    Allocator* allocator;
 
-    Deque<unsigned> samples;
+    Vector<unsigned> samples;
 
 
-    ImProfilerHistogram(size_t capacity, Allocator* alloc) : capacity(capacity), samples(alloc), sorted(alloc) {};
+    ImProfilerHistogram(size_t capacity, Allocator* alloc) : capacity(capacity), allocator(alloc), samples(alloc), sorted(alloc)
+    {
+        samples.reserve(capacity);
+    };
+    ImProfilerHistogram(ImProfilerHistogram const& other) :
+        capacity(other.capacity),
+        mean(other.mean),
+        m2(other.m2),
+        head(other.head),
+        allocator(other.allocator),
+        samples(other.allocator),
+        sorted(other.allocator),
+        mode(other.mode),
+        median(other.median),
+        maxCount(other.maxCount)
+    {
+        samples.reserve(capacity);
+        samples.assign(other.samples.begin(), other.samples.end());
+        sorted.assign(other.sorted.begin(), other.sorted.end());
+    }
+    ImProfilerHistogram(ImProfilerHistogram&& other) : ImProfilerHistogram(static_cast<ImProfilerHistogram const&>(other)) {}
+
+    ImProfilerHistogram& operator=(ImProfilerHistogram const&) = delete;
+    ImProfilerHistogram& operator=(ImProfilerHistogram&&) = delete;
 
     void push(unsigned data);
-    void clear() { samples.clear(), mean = m2 = .0f; }
+    void clear() { samples.clear(), mean = m2 = .0f, head = 0; }
 
-    float variance() const { return mean * m2 / samples.size(); }
+    float variance() const { return samples.empty() ? 0.0f : m2 / samples.size(); }
     float stddev() const { return sqrtf(variance()); }
 
     Vector<unsigned> sorted;

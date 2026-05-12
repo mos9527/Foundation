@@ -11,19 +11,34 @@ Tuple<ImVec2, ImVec2, ImDrawList*> ImWindowDrawOffsetRegionList()
 }
 void ImProfilerHistogram::push(unsigned data)
 {
-    // Pop ring buffer
+    if (!capacity)
+        return;
+
+    const size_t count = samples.size();
     if (samples.size() >= capacity)
     {
-        unsigned old = samples.front();
-        samples.pop_front();
-        // Welford mean/std remove
-        float d = old - mean;
-        mean -= d / samples.size();
-        m2 -= d * (old - mean);
+        unsigned old = samples[head];
+        if (count > 1)
+        {
+            float oldMean = mean;
+            mean = (mean * count - old) / (count - 1);
+            m2 -= (old - oldMean) * (old - mean);
+        }
+        else
+        {
+            mean = m2 = 0.0f;
+        }
+
+        float d = data - mean;
+        mean += d / count;
+        m2 += d * (data - mean);
+        samples[head] = data;
+        head = (head + 1) % capacity;
+        return;
     }
-    // Welford mean/std update
+
     float d = data - mean;
-    mean += d / (samples.size() + 1);
+    mean += d / (count + 1);
     m2 += d * (data - mean);
     samples.push_back(data);
 }
@@ -42,13 +57,17 @@ const size_t ImProfilerTimestampLog(size_t min, size_t max, size_t binCount, siz
 }
 void ImProfilerHistogram::bin(Vector<unsigned>& bins, size_t binCount, bool logOrLinear)
 {
+    bins.clear(), bins.resize(binCount, 0);
+    maxCount = mode = median = 0;
+    if (samples.empty() || !binCount)
+        return;
+
     sorted.resize(samples.size());
-    Ranges::copy(samples, sorted.begin());
+    for (size_t i = 0; i < samples.size(); i++)
+        sorted[i] = samples[(head + i) % samples.size()];
     Ranges::sort(sorted);
     size_t min = sorted.front(), max = sorted.back();
     median = sorted[sorted.size() / 2];
-    bins.clear(), bins.resize(binCount, 0);
-    maxCount = 0;
     auto it0 = sorted.begin();
     for (size_t b = 1; b <= binCount; b++)
     {
