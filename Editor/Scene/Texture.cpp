@@ -403,11 +403,12 @@ void SavePNG(const unsigned char* data, int width, int height, StringView path)
     CHECK_MSG(stbi_write_png(path.data(), width, height, 4, data, width * 4),
               "Failed to write PNG image to {}", path);
 }
-FTexture FTexture::EncodeBC7() const
+FTexture FTexture::EncodeBC7(Allocator* alloc) const
 {
+    CHECK(alloc != nullptr);
     CHECK_MSG(GetFormat() == RHIResourceFormat::R8G8B8A8Unorm || GetFormat() == RHIResourceFormat::R8G8B8A8Srgb,
               "Source texture must be R8G8B8A8 format. Got {}", GetFormat());
-    FTexture res(GLOBAL_ALLOC);
+    FTexture res(alloc);
     RHIResourceFormat dstFormat =
         (GetFormat() == RHIResourceFormat::R8G8B8A8Srgb) ? RHIResourceFormat::Bc7Srgb : RHIResourceFormat::Bc7Unorm;
     res.Initialize(dstFormat, GetDimension(), GetWidth(), GetHeight(), GetDepth(), GetNumMips(), GetNumLayers());

@@ -117,10 +117,12 @@ bool SpanWriter::seek(uint64_t newOffset)
     return true;
 }
 
-FBlobSerializer::FBlobSerializer(MemoryMappedFile& file, uint64_t& writeOffset, uint64_t baseOffset)
-    : file(file), writeOffset(writeOffset), baseOffset(baseOffset)
+FBlobSerializer::FBlobSerializer(MemoryMappedFile& file, uint64_t& writeOffset, uint64_t baseOffset,
+                                   Allocator* scratchAlloc)
+    : file(file), writeOffset(writeOffset), baseOffset(baseOffset), scratchAlloc(scratchAlloc)
 {
     CHECK(file.IsWritable());
+    CHECK(scratchAlloc != nullptr);
     CHECK_MSG(writeOffset >= baseOffset, "Blob writer is before its payload base offset");
 }
 
@@ -161,7 +163,7 @@ FBlobRef FBlobSerializer::AppendBytes(const void* data, size_t size, uint32_t co
 
     const void* writeData = data;
     size_t writeSize = size;
-    Vector<char> compressed(GLOBAL_ALLOC);
+    Vector<char> compressed(scratchAlloc);
     if (codec == FBlobCodec::LZ4)
     {
         CHECK_MSG(size <= static_cast<size_t>(INT_MAX), "LZ4 blob too large: {} bytes", size);
@@ -199,7 +201,7 @@ Span<const unsigned char> FBlobDeserializer::StoredBytes(FBlobRef const& blob) c
     return {payload.data() + blob.offset, static_cast<size_t>(blob.storedSize)};
 }
 
-bool FBlobDeserializer::ReadBytes(FBlobRef const& blob, void* dst, size_t size) const
+bool FBlobDeserializer::ReadBytes(FBlobRef const& blob, void* dst, size_t size, Allocator* scratchAlloc) const
 {
     CHECK(blob.decodedSize == size);
     if (size == 0)
@@ -215,11 +217,20 @@ bool FBlobDeserializer::ReadBytes(FBlobRef const& blob, void* dst, size_t size) 
         return true;
     case FBlobCodec::LZ4:
     {
+        CHECK(scratchAlloc != nullptr);
         CHECK_MSG(blob.storedSize <= static_cast<uint64_t>(INT_MAX), "LZ4 blob too large: {} bytes", blob.storedSize);
         CHECK_MSG(size <= static_cast<size_t>(INT_MAX), "LZ4 decoded blob too large: {} bytes", size);
-        int decodedSize = LZ4_decompress_safe(reinterpret_cast<const char*>(stored.data()), static_cast<char*>(dst),
+        // We'd like to decompress on the CPU since otherwise we'd assume that dst is RW
+        // With ReBAR devices this _is_ true - without cache. Avoid it for now.
+        // TODO: GDeflate?
+        Vector<char> decoded(scratchAlloc);
+        decoded.resize(size);
+        int decodedSize = LZ4_decompress_safe(reinterpret_cast<const char*>(stored.data()), decoded.data(),
                                               static_cast<int>(stored.size()), static_cast<int>(size));
-        return decodedSize == static_cast<int>(size);
+        if (decodedSize != static_cast<int>(size))
+            return false;
+        std::memcpy(dst, decoded.data(), size);
+        return true;
     }
     default:
         CHECK_MSG(false, "Unsupported blob codec {}", static_cast<uint32_t>(blob.codec));

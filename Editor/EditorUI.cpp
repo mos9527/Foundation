@@ -1056,7 +1056,7 @@ void FRunningImGui()
                     ImGui::Text("%s", name.c_str());
                     ImGui::Text("GPU Memory Usage: %.1f MB / %.1f MB", used / static_cast<float>(1 << 20u),
                                 budget / static_cast<float>(1 << 20u));
-                    ImGui::Text("GPU Allocator Allocations: %.1f MB, Blocks: %.1f MB, Slack: %.1f MB",
+                    ImGui::Text("GPU Heap: %.1f MB, Blocks: %.1f MB, Slack: %.1f MB",
                                 allocationBytes / static_cast<float>(1 << 20u),
                                 blockBytes / static_cast<float>(1 << 20u),
                                 (blockBytes - allocationBytes) / static_cast<float>(1 << 20u));
@@ -1064,7 +1064,9 @@ void FRunningImGui()
                 {
                     size_t used, budget;
                     GLOBAL_ALLOC->QueryBudget(used, budget);
+                    size_t heapUsage = GLOBAL_ALLOC->QueryHeapUsage();
                     ImGui::Text("CPU RSS Memory: %.1f MB", used / static_cast<float>(1 << 20u));
+                    ImGui::Text("CPU Heap Usage: %.1f MB", heapUsage / static_cast<float>(1 << 20u));
                 }
                 ImGui::TreePop();
             }

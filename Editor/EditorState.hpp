@@ -114,12 +114,13 @@ struct EditorDocument
         CHECK(scene.has_value());
         return *scene;
     }
-    void OpenSceneFile(StringView path)
+    void OpenSceneFile(StringView path, Allocator* scratchAlloc = GLOBAL_ALLOC)
     {
+        CHECK(scratchAlloc != nullptr);
         scene.reset();
         sceneFile.reset();
         sceneFile.emplace(path, MemoryMappedAccess::ReadOnly);
-        scene.emplace(*sceneFile);
+        scene.emplace(*sceneFile, scratchAlloc);
         LoadFSCN(*scene);
         currentSavePath = path;
     }

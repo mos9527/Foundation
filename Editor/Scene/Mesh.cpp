@@ -230,7 +230,7 @@ void FMesh::ClusterizeDAG()
                   .vertex_attributes_stride = sizeof(FVertex),
                   .attribute_weights = attribute_weights,
                   .attribute_count = 9};
-    Vector<DAGCluster> dagClusters(GLOBAL_ALLOC);
+    Vector<DAGCluster> dagClusters(vertices.get_allocator().mResource);
     clodBuild(config, mesh,
               [&](clodGroup group, const clodCluster* clusters, size_t cluster_count) -> int
               {

@@ -323,6 +323,26 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         }
     }
     auto properties = mPhysicalDevice.getProperties();
+    auto memoryProperties = mPhysicalDevice.getMemoryProperties();
+    bool deviceLocalHostVisibleBuffers = false;
+    size_t deviceLocalHostVisibleHeapSize = 0;
+    Bitset<VK_MAX_MEMORY_HEAPS> deviceLocalHostVisibleHeaps{};
+    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; ++i)
+    {
+        auto const& memoryType = memoryProperties.memoryTypes[i];
+        auto flags = memoryType.propertyFlags;
+        if ((flags & vk::MemoryPropertyFlagBits::eDeviceLocal) &&
+            (flags & vk::MemoryPropertyFlagBits::eHostVisible))
+        {
+            deviceLocalHostVisibleBuffers = true;
+            deviceLocalHostVisibleHeaps[memoryType.heapIndex] = true;
+        }
+    }
+    for (uint32_t i = 0; i < memoryProperties.memoryHeapCount; ++i)
+    {
+        if (deviceLocalHostVisibleHeaps[i])
+            deviceLocalHostVisibleHeapSize += memoryProperties.memoryHeaps[i].size;
+    }
     // Assume supported if and only if all queues can do timestamp queries
     const bool timestampQueries = properties.limits.timestampPeriod != 0.0f &&
         families[graphics.first].timestampValidBits != 0 &&
@@ -336,6 +356,8 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         .raytracingInline = hasRayQuery,
         .raytracingPipeline = hasRayTracingPipeline,
         .timestampQueries = timestampQueries,
+        .deviceLocalHostVisibleBuffers = deviceLocalHostVisibleBuffers,
+        .deviceLocalHostVisibleHeapSize = deviceLocalHostVisibleHeapSize,
         .maxStorageBufferRange = properties.limits.maxStorageBufferRange,
     };
 }

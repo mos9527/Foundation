@@ -125,6 +125,7 @@ struct FSceneGlobals
     uint32_t viewLutHdrIndex{1u};
 };
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
+static constexpr uint32_t kSceneVersion = 2;
 struct FSceneTables
 {
     FSceneGlobals globals;
@@ -201,21 +202,22 @@ struct FSceneHeader
     uint64_t payloadOffset{0};
     uint64_t fileSize{0};
     uint32_t payloadAlignment{16};
-    uint32_t reserved{0};
+    uint32_t version{kSceneVersion};
 };
 
 struct FScene
 {
     // Resident metadata in memory. Payload blobs stay in the external mapped file.
     FSceneHeader mHeader{};
-    FSceneTables mTables{};
+    FSceneTables mTables;
     // Non-owning mapped file view where payload blobs are stored. Lifetime is owned by the caller.
     MemoryMappedFile* mFile{nullptr};
+    Allocator* mScratchAlloc{GLOBAL_ALLOC};
     uint64_t mWriteOffset{0};
     bool mWriting{false};
 
     // Constructs FScene view over a mapped file. Writable mappings start a new append-only scene.
-    explicit FScene(MemoryMappedFile& file);
+    explicit FScene(MemoryMappedFile& file, Allocator* scratchAlloc = GLOBAL_ALLOC);
     ~FScene();
 
     // Append-only operations
@@ -283,7 +285,7 @@ struct FScene
 
     Span<const unsigned char> GetPayloadBytes() const;
     FBlobDeserializer GetBlobDeserializer() const;
-    bool ReadBlob(FBlobRef const& blob, void* dst, size_t size) const;
+    bool ReadBlob(FBlobRef const& blob, void* dst, size_t size, Allocator* scratchAlloc) const;
     bool ReadBlobRange(FBlobRef const& blob, uint64_t srcOffset, void* dst, size_t size) const;
 
     template <typename T>
@@ -293,11 +295,11 @@ struct FScene
     }
 };
 
-void LoadGLTF(StringView path, FScene& scene);
+void LoadGLTF(StringView path, FScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC);
 void LoadFSCN(FScene& scene);
 
 /**
  * Loads a scene from a path, inferring format from extension.
  * Returns the FSCN path that backs payload blob reads.
  */
-String LoadScene(StringView path, FScene& scene);
+String LoadScene(StringView path, FScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC);

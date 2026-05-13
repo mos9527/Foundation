@@ -11,7 +11,19 @@ struct FCurvePoint
     float3 position;
     float radius;
 };
+struct FSerializedCurveSegment
+{
+    uint32_t p0;
+    uint32_t p1;
+    float u0;
+    float u1;
+};
 #pragma pack(pop)
+struct FSerializedCurveAABB
+{
+    float minX, minY, minZ;
+    float maxX, maxY, maxZ;
+};
 enum class FCurveBasis : uint32_t
 {
     Linear = 0,
@@ -36,27 +48,7 @@ struct FCurveSet
 struct FSerializedCurve
 {
     FBlobRef points;
-    FBlobRef curveVertexCounts;
-    uint32_t numSegments{0};
-    FCurveBasis basis{FCurveBasis::Linear};
-    FCurveRenderMode renderMode{FCurveRenderMode::Capsule};
+    FBlobRef segments;
+    FBlobRef aabbs;
     uint32_t materialIndex{0};
 };
-template <>
-inline void FSerialize(FWriter& w, FCurveSet const& obj)
-{
-    FSerialize(w, obj.points);
-    FSerialize(w, obj.curveVertexCounts);
-    FSerialize(w, obj.basis);
-    FSerialize(w, obj.renderMode);
-    FSerialize(w, obj.materialIndex);
-}
-template <>
-inline void FDeserialize(FReader& r, FCurveSet& obj)
-{
-    FDeserialize(r, obj.points);
-    FDeserialize(r, obj.curveVertexCounts);
-    FDeserialize(r, obj.basis);
-    FDeserialize(r, obj.renderMode);
-    FDeserialize(r, obj.materialIndex);
-}

@@ -1,5 +1,6 @@
 #pragma once
 #include "Allocator.hpp"
+#include "Atomic.hpp"
 
 namespace Foundation::Core {
 	/**
@@ -19,5 +20,8 @@ namespace Foundation::Core {
 	     * @note Queried values will reflect the global state of the underlying allocator.
 	     */
         void QueryBudget(size_t& used, size_t& budget) const override;
+        size_t QueryHeapUsage() const override;
+    private:
+        Atomic<size_t> mHeapUsage{0};
 	};
 }

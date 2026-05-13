@@ -173,6 +173,8 @@ class GPUScene
     FContext* mContext;
     /* Geometry */
     RHIDeviceScopedHandle<RHIBuffer> mPrimitiveBuffer;
+    char* mPrimitiveMapped{nullptr};
+    bool mDirectGeometryUpload{false};
     // XXX: Linear allocation. GPA would be needed if we'd upload & free
     //      at will. Not needed for Editor use-case currently.
     size_t mPrimitiveOffset{0};
@@ -205,6 +207,7 @@ class GPUScene
     Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mCurveBLASes;
     Vector<RHIDeviceScopedHandle<RHIBuffer>> mCurveBLASBuffers;
     RHIDeviceScopedHandle<RHIBuffer> mCurveAABBBuffer;
+    char* mCurveAABBMapped{nullptr};
     size_t mCurveAABBOffset{0};
     // TLAS
     uint32_t mTLASInstanceStride{0}; // In bytes, read only once
@@ -282,6 +285,8 @@ public:
     };
     void DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const;
     [[nodiscard]] String DbgGetBufferStatistics() const;
+    [[nodiscard]] bool UsesDirectGeometryUpload() const { return mDirectGeometryUpload; }
+    void FlushDirectGeometryUpload();
 
     struct StagedUploadJob
     {
@@ -290,32 +295,26 @@ public:
         {
             None,
             MeshHeader,
+            CurveHeader,
             Blob,
             BlobRange,
-            SerializedCurve,
         } kind{Kind::None};
         FBlobRef blob{};
         uint64_t blobOffset{0};
         char* ptr{nullptr};
         size_t size{0};
+        Allocator* scratchAlloc{nullptr};
         GSMesh meshData{};
-        FBlobRef curvePoints{};
-        FBlobRef curveVertexCounts{};
-        uint32_t curvePointStride{0};
-        uint32_t curvePointBytes{0};
-        FCurveBasis curveBasis{FCurveBasis::Linear};
         GSCurveSet curveData{};
-        uint32_t curvePrimitiveOffset{0};
-        char* curveAABBPtr{nullptr};
-        size_t curveAABBSize{0};
 
         void Write() const;
     };
 
     size_t BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedMesh const& source, GSMesh& outData,
-                       uint32_t& outOffset, Vector<StagedUploadJob>& outJobs);
+                       uint32_t& outOffset, Vector<StagedUploadJob>& outJobs, Allocator* scratchAlloc);
     size_t BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedCurve const& source,
-                       GSCurveSet& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs);
+                       GSCurveSet& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs,
+                       Allocator* scratchAlloc);
     size_t Upload(ImmediateUpload* ctx, FTextureHeader const& metadata, Span<const unsigned char> data, uint32_t& outIndex, const char* debugName = nullptr);
     size_t Upload(ImmediateUpload* ctx, FTexture const& source, uint32_t& outIndex, const char* debugName = nullptr);
     size_t BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedTexture const& source, uint32_t& outIndex,

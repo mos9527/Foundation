@@ -194,6 +194,8 @@ namespace Foundation::RHI
         bool raytracingInline;
         bool raytracingPipeline;
         bool timestampQueries;
+        bool deviceLocalHostVisibleBuffers;
+        size_t deviceLocalHostVisibleHeapSize;
         size_t maxStorageBufferRange;
     };
     class RHIDevice : public RHIObject

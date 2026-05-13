@@ -85,10 +85,12 @@ VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc
     if (desc.resource.staging)
         flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT,
             flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+    VkMemoryPropertyFlags requiredFlags = desc.resource.coherent ? VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : 0;
+    if (desc.resource.heap == RHIDeviceHeapType::Local && desc.resource.hostAccess != RHIResourceHostAccess::Invisible)
+        requiredFlags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
     VmaAllocationCreateInfo allocInfo = {.flags = flags,
                                          .usage = vmaMemoryUsageFlagsFromResource(desc.resource),
-                                         .requiredFlags = static_cast<VkMemoryPropertyFlags>(
-                                             desc.resource.coherent ? VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : 0)};
+                                         .requiredFlags = requiredFlags};
     auto allocator = device.GetVkAllocator();
     VkBuffer buffer;
     auto res = vmaCreateBufferWithAlignment(allocator, &*bufferInfo, &allocInfo, desc.alignment, &buffer, &mAllocation,

@@ -94,8 +94,10 @@ struct FBlobSerializer
     MemoryMappedFile& file;
     uint64_t& writeOffset;
     uint64_t baseOffset{0};
+    Allocator* scratchAlloc{GLOBAL_ALLOC};
 
-    explicit FBlobSerializer(MemoryMappedFile& file, uint64_t& writeOffset, uint64_t baseOffset = 0);
+    explicit FBlobSerializer(MemoryMappedFile& file, uint64_t& writeOffset, uint64_t baseOffset = 0,
+                             Allocator* scratchAlloc = GLOBAL_ALLOC);
 
     Span<unsigned char> Allocate(uint64_t size, uint64_t alignment, uint64_t& outPayloadOffset);
 
@@ -119,24 +121,24 @@ struct FBlobDeserializer
     explicit FBlobDeserializer(Span<const unsigned char> payload);
 
     Span<const unsigned char> StoredBytes(FBlobRef const& blob) const;
-    bool ReadBytes(FBlobRef const& blob, void* dst, size_t size) const;
+    bool ReadBytes(FBlobRef const& blob, void* dst, size_t size, Allocator* scratchAlloc) const;
     bool ReadBytesRange(FBlobRef const& blob, uint64_t srcOffset, void* dst, size_t size) const;
 
     template <typename T>
-    bool ReadArray(FBlobRef const& blob, Vector<T>& values) const
+    bool ReadArray(FBlobRef const& blob, Vector<T>& values, Allocator* scratchAlloc) const
     {
         static_assert(std::is_trivially_copyable_v<T>);
         CHECK(blob.stride == sizeof(T));
         CHECK_MSG(blob.count <= SIZE_MAX / sizeof(T), "FScene blob count exceeds size_t");
         values.resize(static_cast<size_t>(blob.count));
-        return ReadBytes(blob, values.data(), values.size() * sizeof(T));
+        return ReadBytes(blob, values.data(), values.size() * sizeof(T), scratchAlloc);
     }
 
     template <typename T>
     Vector<T> ReadArray(FBlobRef const& blob, Allocator* alloc = GLOBAL_ALLOC) const
     {
         Vector<T> values(alloc);
-        CHECK(ReadArray(blob, values));
+        CHECK(ReadArray(blob, values, alloc));
         return values;
     }
 };

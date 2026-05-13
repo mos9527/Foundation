@@ -28,6 +28,7 @@ static FTexture MakeLUT(const float* data, RHIResourceFormat format, uint32_t wi
 }
 
 static constexpr uint32_t kGPUSceneRingFrameSlack = 3u;
+static constexpr size_t kMinDirectGeometryUploadHeapSize = 512ull * (1ull << 20);
 static constexpr uint32_t kGPUScenePersistentTextureBindings = 3u; // GGX + default SDR/HDR view LUTs.
 static constexpr uint32_t kGPUSceneSceneViewLUTBindings = 2u;
 static constexpr uint32_t kGPUSceneDefaultTextureBindings = 2u; // _FoundationDefault Texture2D + Texture2DFloat.
@@ -71,14 +72,12 @@ size_t GPUScene::CalculateMeshPrimitiveSize(FSerializedMesh const& src)
 
 size_t GPUScene::CalculateCurvePrimitiveSize(FSerializedCurve const& src)
 {
-    return sizeof(GSCurveSet) +
-        src.points.decodedSize +
-        sizeof(GSCurveSegment) * src.numSegments;
+    return sizeof(GSCurveSet) + src.points.decodedSize + src.segments.decodedSize;
 }
 
 size_t GPUScene::CalculateCurveAABBSize(FSerializedCurve const& src)
 {
-    return sizeof(RHIAccelerationStructureAABB) * src.numSegments;
+    return src.aabbs.decodedSize;
 }
 
 GPUScene::GPUSceneDesc GPUScene::CalculateSceneBudget(FScene const& scene, RHIDeviceCapabilities const& caps)
@@ -137,129 +136,41 @@ void GPUScene::StagedUploadJob::Write() const
         CHECK(size == sizeof(GSMesh));
         std::memcpy(ptr, &meshData, sizeof(GSMesh));
         return;
+    case Kind::CurveHeader:
+        CHECK(ptr != nullptr);
+        CHECK(size == sizeof(GSCurveSet));
+        std::memcpy(ptr, &curveData, sizeof(GSCurveSet));
+        return;
     case Kind::Blob:
+    {
         CHECK(scene != nullptr);
         CHECK(ptr != nullptr || size == 0);
+        CHECK(scratchAlloc != nullptr);
         CHECK(size == static_cast<size_t>(blob.decodedSize));
-        CHECK(scene->ReadBlob(blob, ptr, size));
+        CHECK(scene->ReadBlob(blob, ptr, size, scratchAlloc));
         return;
+    }
     case Kind::BlobRange:
+    {
         CHECK(scene != nullptr);
         CHECK(ptr != nullptr || size == 0);
         CHECK(scene->ReadBlobRange(blob, blobOffset, ptr, size));
-        return;
-    case Kind::SerializedCurve:
-    {
-        static_assert(sizeof(FCurvePoint) == sizeof(GSCurvePoint));
-        static_assert(alignof(FCurvePoint) == alignof(GSCurvePoint));
-
-        CHECK(scene != nullptr);
-        CHECK(ptr != nullptr);
-        CHECK(curveAABBPtr != nullptr || curveAABBSize == 0);
-        CHECK_MSG(curvePointBytes != 0 && curveData.segmentCount > 0, "Curve set has no renderable segments");
-        CHECK_MSG(curvePointStride == sizeof(GSCurvePoint), "Serialized curve point stride mismatch");
-        CHECK_MSG(curvePointBytes % sizeof(GSCurvePoint) == 0, "Serialized curve point blob size mismatch");
-        CHECK_MSG(curveData.pointOffset >= curvePrimitiveOffset, "Serialized curve point offset underflow");
-        CHECK_MSG(curveData.segmentOffset >= curvePrimitiveOffset, "Serialized curve segment offset underflow");
-
-        Vector<uint32_t> strandVertexCounts = scene->ReadBlobArray<uint32_t>(curveVertexCounts);
-        const size_t pointCount = static_cast<size_t>(curvePointBytes / sizeof(GSCurvePoint));
-        auto* pointsData = reinterpret_cast<GSCurvePoint*>(ptr + curveData.pointOffset - curvePrimitiveOffset);
-        CHECK(scene->ReadBlob(curvePoints, pointsData, static_cast<size_t>(curvePointBytes)));
-        Span<const GSCurvePoint> points(pointsData, pointCount);
-        auto* segmentsData = reinterpret_cast<GSCurveSegment*>(ptr + curveData.segmentOffset - curvePrimitiveOffset);
-
-        uint32_t segmentCursor = 0;
-        auto WriteAABB = [&](RHIAccelerationStructureAABB const& aabb)
-        {
-            std::memcpy(curveAABBPtr + sizeof(RHIAccelerationStructureAABB) * segmentCursor,
-                        &aabb, sizeof(RHIAccelerationStructureAABB));
-        };
-        auto WriteLineSegment = [&](uint32_t p0, uint32_t p1, float u0, float u1)
-        {
-            CHECK(segmentCursor < curveData.segmentCount);
-            segmentsData[segmentCursor] = GSCurveSegment{.p0 = p0, .p1 = p1, .u0 = u0, .u1 = u1};
-
-            const auto& a = points[p0];
-            const auto& b = points[p1];
-            float radius = std::max(a.radius, b.radius);
-            float3 mn = min(a.position, b.position) - float3(radius);
-            float3 mx = max(a.position, b.position) + float3(radius);
-            WriteAABB(RHIAccelerationStructureAABB{mn.x, mn.y, mn.z, mx.x, mx.y, mx.z});
-            segmentCursor++;
-        };
-        auto WriteBezierSpan = [&](uint32_t p0, uint32_t p1, float u0, float u1)
-        {
-            CHECK(segmentCursor < curveData.segmentCount);
-            segmentsData[segmentCursor] = GSCurveSegment{.p0 = p0, .p1 = p1, .u0 = u0, .u1 = u1};
-
-            const auto& a = points[p0];
-            const auto& b = points[p0 + 1];
-            const auto& c = points[p0 + 2];
-            const auto& d = points[p1];
-            float radius = std::max(std::max(a.radius, b.radius), std::max(c.radius, d.radius));
-            float3 mn = min(min(a.position, b.position), min(c.position, d.position)) - float3(radius);
-            float3 mx = max(max(a.position, b.position), max(c.position, d.position)) + float3(radius);
-            WriteAABB(RHIAccelerationStructureAABB{mn.x, mn.y, mn.z, mx.x, mx.y, mx.z});
-            segmentCursor++;
-        };
-
-        uint32_t pointCursor = 0;
-        for (uint32_t count : strandVertexCounts)
-        {
-            CHECK_MSG(pointCursor + count <= points.size(), "Curve set references more points than it stores");
-            if (count <= 1)
-            {
-                pointCursor += count;
-                continue;
-            }
-            switch (curveBasis)
-            {
-            case FCurveBasis::Bezier:
-            {
-                CHECK_MSG(count >= 4 && (count - 1) % 3 == 0,
-                          "Bezier curve strands must contain 3n + 1 controls, got {}", count);
-                uint32_t spanCount = (count - 1) / 3;
-                float invSpanCount = 1.0f / float(spanCount);
-                for (uint32_t i = 0; i < spanCount; ++i)
-                {
-                    uint32_t p0 = pointCursor + i * 3;
-                    uint32_t p1 = pointCursor + (i + 1) * 3;
-                    WriteBezierSpan(p0, p1, float(i) * invSpanCount, float(i + 1) * invSpanCount);
-                }
-                break;
-            }
-            case FCurveBasis::Linear:
-            {
-                float invSegmentCount = 1.0f / float(count - 1);
-                for (uint32_t i = 0; i + 1 < count; ++i)
-                {
-                    uint32_t p0 = pointCursor + i;
-                    uint32_t p1 = pointCursor + i + 1;
-                    WriteLineSegment(p0, p1, float(i) * invSegmentCount, float(i + 1) * invSegmentCount);
-                }
-                break;
-            }
-            default:
-                CHECK_MSG(false, "Unsupported curve basis {}", static_cast<uint32_t>(curveBasis));
-                break;
-            }
-            pointCursor += count;
-        }
-
-        CHECK_MSG(segmentCursor == curveData.segmentCount, "Curve segment count mismatch: expected {} got {}",
-                  curveData.segmentCount, segmentCursor);
-        CHECK_MSG(size == sizeof(GSCurveSet) + curvePointBytes + sizeof(GSCurveSegment) * segmentCursor,
-                  "Curve primitive staging size mismatch");
-        CHECK_MSG(curveAABBSize == sizeof(RHIAccelerationStructureAABB) * segmentCursor,
-                  "Curve AABB staging size mismatch");
-        std::memcpy(ptr, &curveData, sizeof(GSCurveSet));
         return;
     }
     default:
         CHECK_MSG(false, "Unsupported staged upload job kind {}", static_cast<uint32_t>(kind));
         return;
     }
+}
+
+void GPUScene::FlushDirectGeometryUpload()
+{
+    if (!mDirectGeometryUpload)
+        return;
+    if (mPrimitiveOffset)
+        mPrimitiveBuffer->Flush(0, mPrimitiveOffset);
+    if (mCurveAABBOffset)
+        mCurveAABBBuffer->Flush(0, mCurveAABBOffset);
 }
 
 GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
@@ -273,16 +184,34 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     mTLASInstanceStride(mContext->device->WriteAccelerationStructureInstanceData({}, nullptr)),
     mTLASInstances(ctx->device.Get(), desc.tlasInstanceBudget * mTLASInstanceStride)
 {
+    auto caps = mContext->device->GetCapabilities();
+    size_t directGeometryBudget = static_cast<size_t>(desc.primitiveBudget) + desc.curveAABBBudget;
+    size_t minDirectGeometryHeapSize = std::max(directGeometryBudget, kMinDirectGeometryUploadHeapSize);
+    mDirectGeometryUpload = caps.deviceLocalHostVisibleBuffers &&
+                            caps.deviceLocalHostVisibleHeapSize >= minDirectGeometryHeapSize;
+    RHIResourceDesc geometryResource{
+        .heap = RHIDeviceHeapType::Local,
+        .hostAccess = mDirectGeometryUpload ? RHIResourceHostAccess::WriteOnly : RHIResourceHostAccess::Invisible,
+        .shared = true,
+    };
     mPrimitiveBuffer = mContext->device->CreateBuffer(
-    {.resource = {.heap = RHIDeviceHeapType::Local, .shared = true},
+    {.resource = geometryResource,
      .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
      RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
      .size = desc.primitiveBudget});
+    geometryResource.shared = false;
     mCurveAABBBuffer = mContext->device->CreateBuffer(
-    {.resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
+    {.resource = geometryResource,
      .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
      RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
      .size = desc.curveAABBBudget});
+    if (mDirectGeometryUpload)
+    {
+        mPrimitiveMapped = mPrimitiveBuffer->Map<char>();
+        mCurveAABBMapped = mCurveAABBBuffer->Map<char>();
+        LOG(GPUScene, LogInfo, "ReBAR available ({} MB budget used). Uploading via direct copy.",
+            directGeometryBudget / 1000000.0);
+    }
     mTLASBuffer = mContext->device->CreateBuffer(
     {
         .resource = {
@@ -638,8 +567,10 @@ String GPUScene::DbgGetBufferStatistics() const
 }
 
 size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedMesh const& src,
-                             GSMesh& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs)
+                             GSMesh& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs,
+                             Allocator* scratchAlloc)
 {
+    CHECK(scratchAlloc != nullptr);
     CHECK_MSG(!src.lods.empty(), "Serialized mesh has no LODs");
     auto const& lod0 = src.lods[0];
     const size_t size = CalculateMeshPrimitiveSize(src);
@@ -648,11 +579,20 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSeriali
     CHECK_MSG(outOffset + size <= mPrimitiveBuffer->mDesc.size,
               "GPUScene primitive buffer overflow for serialized mesh. Need {} bytes more, have {} left",
               size, mPrimitiveBuffer->mDesc.size - outOffset);
-    if (ctx->ptr + size > ctx->end)
-        return 0;
+    char* ptr = nullptr;
+    if (mDirectGeometryUpload)
+    {
+        CHECK(mPrimitiveMapped != nullptr);
+        ptr = mPrimitiveMapped + outOffset;
+    }
+    else
+    {
+        if (ctx->ptr + size > ctx->end)
+            return 0;
 
-    char* ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset);
-    CHECK(ptr != nullptr);
+        ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset);
+        CHECK(ptr != nullptr);
+    }
     char* dst = ptr;
     auto Skip = [&](size_t bytes)
     {
@@ -668,6 +608,7 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSeriali
         job.blob = blob;
         job.ptr = dstPtr;
         job.size = static_cast<size_t>(blob.decodedSize);
+        job.scratchAlloc = scratchAlloc;
         outJobs.push_back(job);
     };
 
@@ -711,16 +652,30 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSeriali
 }
 
 size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedCurve const& src,
-                             GSCurveSet& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs)
+                             GSCurveSet& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs,
+                             Allocator* scratchAlloc)
 {
+    CHECK(scratchAlloc != nullptr);
     static_assert(sizeof(FCurvePoint) == sizeof(GSCurvePoint));
     static_assert(alignof(FCurvePoint) == alignof(GSCurvePoint));
+    static_assert(sizeof(FSerializedCurveSegment) == sizeof(GSCurveSegment));
+    static_assert(alignof(FSerializedCurveSegment) == alignof(GSCurveSegment));
+    static_assert(sizeof(FSerializedCurveAABB) == sizeof(RHIAccelerationStructureAABB));
+    static_assert(alignof(FSerializedCurveAABB) == alignof(RHIAccelerationStructureAABB));
 
-    CHECK_MSG(src.points.decodedSize != 0 && src.numSegments > 0, "Curve set has no renderable segments");
+    CHECK_MSG(src.points.decodedSize != 0 && src.segments.count > 0, "Curve set has no renderable segments");
     CHECK_MSG(src.points.stride == sizeof(GSCurvePoint), "Serialized curve point stride mismatch");
+    CHECK_MSG(src.segments.stride == sizeof(GSCurveSegment), "Serialized curve segment stride mismatch");
+    CHECK_MSG(src.aabbs.stride == sizeof(RHIAccelerationStructureAABB), "Serialized curve AABB stride mismatch");
     CHECK_MSG(src.points.decodedSize % sizeof(GSCurvePoint) == 0, "Serialized curve point blob size mismatch");
+    CHECK_MSG(src.segments.decodedSize == sizeof(GSCurveSegment) * src.segments.count,
+              "Serialized curve segment blob size mismatch");
+    CHECK_MSG(src.aabbs.count == src.segments.count, "Serialized curve AABB count mismatch");
+    CHECK_MSG(src.aabbs.decodedSize == sizeof(RHIAccelerationStructureAABB) * src.aabbs.count,
+              "Serialized curve AABB blob size mismatch");
 
     const size_t pointCount = static_cast<size_t>(src.points.decodedSize / sizeof(GSCurvePoint));
+    const size_t segmentCount = src.segments.count;
     const size_t size = CalculateCurvePrimitiveSize(src);
     constexpr size_t kAlign = 4;
     outOffset = AlignUp(mPrimitiveOffset, kAlign);
@@ -733,13 +688,25 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSeriali
     CHECK_MSG(aabbOffset + aabbSize <= mCurveAABBBuffer->mDesc.size,
               "GPUScene curve AABB buffer overflow. Need {} bytes more, have {} left",
               aabbSize, mCurveAABBBuffer->mDesc.size - aabbOffset);
-    if (ctx->ptr + size + aabbSize > ctx->end)
-        return 0;
+    char* ptr = nullptr;
+    char* aabbPtr = nullptr;
+    if (mDirectGeometryUpload)
+    {
+        CHECK(mPrimitiveMapped != nullptr);
+        CHECK(mCurveAABBMapped != nullptr);
+        ptr = mPrimitiveMapped + outOffset;
+        aabbPtr = mCurveAABBMapped + aabbOffset;
+    }
+    else
+    {
+        if (ctx->ptr + size + aabbSize > ctx->end)
+            return 0;
 
-    char* ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset);
-    CHECK(ptr != nullptr);
-    char* aabbPtr = ctx->Upload(mCurveAABBBuffer.Get(), aabbSize, aabbOffset);
-    CHECK(aabbPtr != nullptr);
+        ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset);
+        CHECK(ptr != nullptr);
+        aabbPtr = ctx->Upload(mCurveAABBBuffer.Get(), aabbSize, aabbOffset);
+        CHECK(aabbPtr != nullptr);
+    }
 
     char* dst = ptr;
     auto Skip = [&](size_t bytes)
@@ -748,30 +715,37 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSeriali
         dst += bytes;
         return off;
     };
+    auto AppendBlobJob = [&](FBlobRef const& blob, char* dstPtr)
+    {
+        StagedUploadJob job{};
+        job.scene = &scene;
+        job.kind = StagedUploadJob::Kind::Blob;
+        job.blob = blob;
+        job.ptr = dstPtr;
+        job.size = static_cast<size_t>(blob.decodedSize);
+        job.scratchAlloc = scratchAlloc;
+        outJobs.push_back(job);
+    };
 
     Skip(sizeof(GSCurveSet));
     outData.pointCount = static_cast<uint32_t>(pointCount);
-    outData.pointOffset = outOffset + Skip(static_cast<size_t>(src.points.decodedSize));
-    outData.segmentCount = src.numSegments;
-    outData.segmentOffset = outOffset + Skip(sizeof(GSCurveSegment) * src.numSegments);
+    uint32_t pointOffset = Skip(static_cast<size_t>(src.points.decodedSize));
+    outData.pointOffset = outOffset + pointOffset;
+    AppendBlobJob(src.points, ptr + pointOffset);
+    outData.segmentCount = static_cast<uint32_t>(segmentCount);
+    uint32_t segmentOffset = Skip(static_cast<size_t>(src.segments.decodedSize));
+    outData.segmentOffset = outOffset + segmentOffset;
+    AppendBlobJob(src.segments, ptr + segmentOffset);
     outData.materialIndex = src.materialIndex;
     outData.aabbOffset = aabbOffset;
+    AppendBlobJob(src.aabbs, aabbPtr);
 
-    StagedUploadJob job{};
-    job.scene = &scene;
-    job.kind = StagedUploadJob::Kind::SerializedCurve;
-    job.ptr = ptr;
-    job.size = size;
-    job.curvePoints = src.points;
-    job.curveVertexCounts = src.curveVertexCounts;
-    job.curvePointStride = src.points.stride;
-    job.curvePointBytes = src.points.decodedSize;
-    job.curveBasis = src.basis;
-    job.curveData = outData;
-    job.curvePrimitiveOffset = outOffset;
-    job.curveAABBPtr = aabbPtr;
-    job.curveAABBSize = aabbSize;
-    outJobs.push_back(job);
+    StagedUploadJob headerJob{};
+    headerJob.kind = StagedUploadJob::Kind::CurveHeader;
+    headerJob.ptr = ptr;
+    headerJob.size = sizeof(GSCurveSet);
+    headerJob.curveData = outData;
+    outJobs.push_back(headerJob);
 
     size_t written = dst - ptr;
     CHECK_MSG(written == size, "Write mismatch: expected {} got {}", size, written);

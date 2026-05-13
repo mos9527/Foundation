@@ -49,6 +49,7 @@ namespace Foundation::Core
             used = mCurrent - reinterpret_cast<size_type>(mMemory);
             budget = mEnd - reinterpret_cast<size_type>(mMemory);
         }
+        size_t QueryHeapUsage() const override { return 0; }
     private:
         pointer mMemory{nullptr};
         Atomic<size_type> mCurrent{};
