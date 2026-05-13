@@ -1,3 +1,4 @@
+import IBindless2D;
 import ICommon;
 import IFlags;
 import IMath;
@@ -6,7 +7,6 @@ uniform UBO globalParams;
 [[vk_binding(5,0)]] StructuredBuffer<GSMaterial> materials;
 [[vk_binding(6,0)]] SamplerState textureSampler;
 [[vk_binding(7,0)]] RWTexture2D<uint32_t> overdraw;
-[[vk_binding(0,1)]] Texture2D<float4> textures[];
 
 struct Fragment
 {

@@ -894,9 +894,7 @@ void FRunningImGui()
         viewLUTChanged |= viewLUTCombo("HDR LUT", GEditor.viewLUTHdrIndex, GEditor.viewLUTHdrExternalPath,
                                        kViewLUTsHdr, kViewLUTHdrCount);
         if (viewLUTChanged)
-        {
-            changed |= ApplyViewLUTSelection();
-        }
+            ApplyViewLUTSelection();
         if (GContext->windowHDR.propertiesAvailable)
         {
             bool hdrOutput = GContext->enableHDR;

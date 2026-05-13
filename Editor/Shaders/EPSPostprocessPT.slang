@@ -1,4 +1,5 @@
 import IFlags;
+import IBindless3D;
 import ICommon;
 import IPostprocess;
 [[SpecializationConstant]] int flags;
@@ -6,8 +7,6 @@ import IPostprocess;
 // Buffers (Welford online mean - already averaged)
 Texture2D<float4> diffuseTex;
 Texture2D<float4> specularTex;
-// OCIO-baked view LUT. Input domain: ACEScct in [0,1].
-Texture3D<float4> viewLut;
 SamplerState lutSampler;
 uniform UBO globalParams;
 
@@ -25,5 +24,5 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
 
     PostprocessInfo pp;
     pp.Exposure = globalParams.camEV;
-    return float4(Postprocess(src, pp, viewLut, lutSampler), 1.0f);
+    return float4(Postprocess(src, pp, textures3D[NonUniformResourceIndex(globalParams.viewLutIndex)], lutSampler), 1.0f);
 }

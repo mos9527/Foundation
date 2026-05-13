@@ -35,6 +35,12 @@ struct UBO
     float ambientPower{1.0f};
     uint32_t useEnvMap{0u};
     float envAzimuthOffset{0.0f}; // [-180, 180]
+    uint32_t ggxLutEIndex{UINT32_MAX};
+    uint32_t viewLutIndex{UINT32_MAX};
+    uint32_t envMapTextureIndex{UINT32_MAX};
+    uint32_t envMapMarginalCDFIndex{UINT32_MAX};
+    uint32_t envMapConditionalCDFIndex{UINT32_MAX};
+    uint32_t _envTexturePad0{0u};
     // Scene lights
     uint32_t firstLight{0u};
     uint32_t firstLightAliasTable{0u};

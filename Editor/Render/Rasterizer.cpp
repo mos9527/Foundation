@@ -51,6 +51,11 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
     auto* renderer = context->renderer;
     CHECK(renderer);
     auto* gpu = context->gpuScene;
+    scene.gsGlobals->ggxLutEIndex = gpu->GetGGXLutEIndex();
+    scene.gsGlobals->viewLutIndex = context->enableHDR ? gpu->GetViewLutHdrIndex() : gpu->GetViewLutSdrIndex();
+    scene.gsGlobals->envMapTextureIndex = gpu->GetEnvMapIndexOrDefault();
+    scene.gsGlobals->envMapMarginalCDFIndex = gpu->GetEnvMapMarginalCDFIndexOrDefault();
+    scene.gsGlobals->envMapConditionalCDFIndex = gpu->GetEnvMapConditionalCDFIndexOrDefault();
     /* UBO for everyone */
     auto GlobalUBO = renderer->CreateResource(
         "Global UBO",
@@ -98,11 +103,6 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                                  RHIBufferDesc{.usage = StorageBuffer | TransferDestination,
                                                .size = AlignUp(kMaxMeshletCount, 32) / 32 * sizeof(uint32_t)});
     
-    auto GGXlutE = renderer->CreateResource("GGX LUT E", gpu->GetGGXlutE());
-    RHITexture* viewLutTexture = context->enableHDR ? gpu->GetViewLutHdr() : gpu->GetViewLutSdr();
-    RHIResourceFormat viewLutFormat = viewLutTexture->mDesc.format;
-    auto ViewLut = renderer->CreateResource(context->enableHDR ? "View LUT HDR" : "View LUT SDR", viewLutTexture);
-
     // NOTE: Lambda captures
     // NONE of the handle values outlive the renderer. Therefore, ALWAYS capture by value.
     renderer->CreatePass(
@@ -341,9 +341,6 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                     r->BindBufferStorageRead(self, MaterialBuffer, RHIPipelineStageBits::AllGraphics, "materials");
                     r->BindBufferStorageRead(self, IndirectMeshletCounter, RHIPipelineStageBits::AllGraphics, "inMeshletCounter");
                     r->BindBufferStorageRead(self, IndirectMeshlets, RHIPipelineStageBits::AllGraphics, "inMeshletIndices");
-                    r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::AllGraphics,
-                                      RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
-                                                         .range = RHITextureSubresourceRange::Create()});
                     r->BindTextureRTV(self, GBufferRT0,
                                       {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
@@ -365,7 +362,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                     r->BindBufferIndirectRead(self, IndirectMeshletDispatch);
                     r->BindTextureSampler(self, TexSampler, "textureSampler");
                     r->BindDescriptorSet(self, "textures",
-                                         context->gpuScene->GetTexturePool()->GetDescriptorSetLayout());
+                                         gpu->GetTexture2DPool()->GetDescriptorSetLayout());
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
                 {
@@ -387,7 +384,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                     r->CmdSetPipeline(self, cmd);
                     cmd->SetViewport(0, 0, w, h, 0, 1, true).SetScissor(0, 0, w, h);
                     r->CmdBindDescriptorSet(self, cmd, "textures",
-                                            context->gpuScene->GetTexturePool()->GetDescriptorSet());
+                                            gpu->GetTexture2DPool()->GetDescriptorSet());
                     auto* dispatchBuffer = r->DerefResource(IndirectMeshletDispatch).Get<RHIBuffer*>();
                     cmd->DrawMeshTasksIndirect(dispatchBuffer, 0, 1, sizeof(MeshletTaskDispatch));
                     cmd->EndGraphics();
@@ -485,9 +482,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                 r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
             r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
             r->BindTextureSampler(self, LUTSampler, "lutSampler");
-            r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::ComputeShader,
-                  RHITextureViewDesc{.format = RHIResourceFormat::R32G32SignedFloat,
-                                     .range = RHITextureSubresourceRange::Create()});
+            r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());
             r->BindTextureUAV(self, LightingBuffer, "output", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create()});
@@ -498,6 +493,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
             if (useRTShadows && scene.rendererRebuildRequested && *scene.rendererRebuildRequested)
                 return;
             r->CmdSetPipeline(self, cmd);
+            r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexture2DPool()->GetDescriptorSet());
             r->CmdDispatch(self, cmd, {w, h, 1});
         });
 
@@ -519,13 +515,13 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::FragmentShader, "globalParams");
             r->BindBufferStorageRead(self, ReduceBuffer, RHIPipelineStageBits::FragmentShader, "globalMax");
-            r->BindTextureSRV(self, ViewLut, "viewLut", RHIPipelineStageBits::FragmentShader,
-                              RHITextureViewDesc{.format = viewLutFormat,
-                                                 .dimension = RHITextureDimension::E3D,
-                                                 .range = RHITextureSubresourceRange::Create()});
+            r->BindDescriptorSet(self, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSetLayout());
             r->BindTextureSampler(self, LUTSampler, "lutSampler");
         },
-        [](PassHandle, Renderer*, RHICommandList*) {});
+        [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+        {
+            r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSet());
+        });
 
     createPSFullscreenPass(
         renderer, "Blit Image",

@@ -1,13 +1,12 @@
 #include "IFlags.slang"
 #include "ICommon.slang"
 #include "IPostprocess.slang"
+import IBindless3D;
 [[SpecializationConstant]] int flags;
 
 StructuredBuffer<uint32_t> globalMax;
 Texture2D<uint32_t> overdraw;
 Texture2D<float4> lighting;
-// OCIO-baked view LUT. Input domain: ACEScct in [0,1].
-Texture3D<float4> viewLut;
 SamplerState lutSampler;
 uniform UBO globalParams;
 
@@ -45,5 +44,5 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
 
     PostprocessInfo pp;
     pp.Exposure = globalParams.camEV;
-    return float4(Postprocess(src.xyz, pp, viewLut, lutSampler), 1.0f);
+    return float4(Postprocess(src.xyz, pp, textures3D[NonUniformResourceIndex(globalParams.viewLutIndex)], lutSampler), 1.0f);
 }

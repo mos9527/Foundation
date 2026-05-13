@@ -30,7 +30,8 @@ public struct PrincipledMaterial : IMaterial {
         float3 subsurfaceRadius = float3(1.0f, 0.2f, 0.1f),
         float subsurfaceScale = 0.05f,
         float anisotropyStrength = 0.0f,
-        float3 specularColorFactor = float3(1.0f))
+        float3 specularColorFactor = float3(1.0f),
+        uint32_t ggxLutEIndex = ~0u)
     {
         bool hasSubsurfaceProfile = MaxComponent(subsurfaceRadius * subsurfaceScale) > EPS &&
                                     MaxComponent(baseColor * subsurfaceColor) > EPS;
@@ -45,7 +46,8 @@ public struct PrincipledMaterial : IMaterial {
         // too strong relative to the white specular component.
         float3 dielF0, dielF90;
         CalcGlossyFresnel(ior, specularFactor, specularColorFactor, dielF0, dielF90);
-        float sampleGlossy = MaxComponent(reflectance(dielF0, dielF90, SampleGGXLutE(AbsCosTheta(wo), roughness)));
+        float sampleGlossy = MaxComponent(reflectance(dielF0, dielF90,
+            SampleGGXLutE(ggxLutEIndex, AbsCosTheta(wo), roughness)));
         float rawDiffuseFamily = (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
         float rawMetal = metallic;
         float rawDielSpec = (1.0f - metallic) * sampleGlossy;
@@ -55,7 +57,7 @@ public struct PrincipledMaterial : IMaterial {
 
         this.surface = PrincipledBSDF(
             baseColor, metallic, roughness, ior, specularFactor, transmission,
-            energyCompensation, wo, diffuseWeight, anisotropyStrength, specularColorFactor);
+            energyCompensation, wo, diffuseWeight, anisotropyStrength, specularColorFactor, ggxLutEIndex);
         this.subsurface = DisneyBurleyBSSRDF(
             baseColor * subsurfaceColor * activeSubsurface * rawDiffuseFamily,
             subsurfaceRadius * subsurfaceScale);

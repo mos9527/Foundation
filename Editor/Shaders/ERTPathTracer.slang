@@ -4,6 +4,7 @@
 // - https://github.com/boksajak/referencePT/blob/master/shaders/PathTracer.hlsl
 // - https://github.com/nvpro-samples/vk_gltf_renderer/blob/master/shaders/gltf_pathtrace.slang
 // And many more. Respective includes will tell.
+import IBindless2D;
 import IFlags;
 import ICommon;
 import ILight;
@@ -32,7 +33,6 @@ StructuredBuffer<uint> sobolMatrices;
 RWTexture2D<float4> diffuse;   // Diffuse lobe radiance
 RWTexture2D<float4> specular;  // Specular lobe radiance (incl. transmission)
 RWTexture2D<uint32_t> pickIDBuffer; // Instance ID map, ~0u = no object (written on primary hit only)
-[[vk_binding(0,2)]] Texture2D<float4> textures[];
 
 // SER coherence hint layout:
 //   [7:6] hit class (miss, analytic light, triangle, curve)
@@ -566,7 +566,7 @@ IMaterial MakeMaterial(Payload surface, float3 wo, bool isCurve = false, bool fo
         surface.baseColor, surface.metallic, surface.roughness,
         surface.ior, surface.specularFactor, surface.transmission, true, wo,
         subsurface, surface.subsurfaceColor, surface.subsurfaceRadius, surface.subsurfaceScale,
-        surface.anisotropyStrength, surface.specularColorFactor);
+        surface.anisotropyStrength, surface.specularColorFactor, globalParams.ggxLutEIndex);
 }
 
 
@@ -1284,7 +1284,10 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         SampledSpectrum(globalParams.ambientColor),
         globalParams.ambientPower,
         globalParams.useEnvMap != 0u,
-        globalParams.envAzimuthOffset
+        globalParams.envAzimuthOffset,
+        globalParams.envMapTextureIndex,
+        globalParams.envMapMarginalCDFIndex,
+        globalParams.envMapConditionalCDFIndex
     );
     float lightTotalWeight = globalParams.sceneLightWeightSum + GetEnvLightSelectionWeight();
     DirectLightingState lighting = DirectLightingState(env, lightTotalWeight);

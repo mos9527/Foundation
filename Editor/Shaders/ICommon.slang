@@ -214,6 +214,12 @@ public struct UBO
     public float ambientPower;
     public uint32_t useEnvMap;
     public float envAzimuthOffset;
+    public uint32_t ggxLutEIndex;
+    public uint32_t viewLutIndex;
+    public uint32_t envMapTextureIndex;
+    public uint32_t envMapMarginalCDFIndex;
+    public uint32_t envMapConditionalCDFIndex;
+    public uint32_t _envTexturePad0;
     // Scene lights
     public uint32_t firstLight;
     public uint32_t firstLightAliasTable;

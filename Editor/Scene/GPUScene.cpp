@@ -29,10 +29,10 @@ static FTexture MakeLUT(const float* data, RHIResourceFormat format, uint32_t wi
 
 static constexpr uint32_t kGPUSceneRingFrameSlack = 3u;
 static constexpr size_t kMinDirectGeometryUploadHeapSize = 512ull * (1ull << 20);
-static constexpr uint32_t kGPUScenePersistentTextureBindings = 3u; // GGX + default SDR/HDR view LUTs.
-static constexpr uint32_t kGPUSceneSceneViewLUTBindings = 2u;
+static constexpr uint32_t kGPUScenePersistentTexture2DBindings = 1u; // GGX LUT.
+static constexpr uint32_t kGPUScenePersistentTexture3DBindings = 2u; // default SDR/HDR view LUTs.
 static constexpr uint32_t kGPUSceneDefaultTextureBindings = 2u; // _FoundationDefault Texture2D + Texture2DFloat.
-static constexpr uint32_t kGPUSceneEnvMapBindings = 2u; // Env map + conditional CDF texture.
+static constexpr uint32_t kGPUSceneEnvMapBindings = 3u; // Env map + marginal/conditional CDF textures.
 static constexpr uint32_t kGPUSceneTextureBindingSlack = 8u;
 static constexpr size_t kGPUSceneByteBudgetSlack = 64u << 10u;
 
@@ -115,12 +115,13 @@ GPUScene::GPUSceneDesc GPUScene::CalculateSceneBudget(FScene const& scene, RHIDe
     desc.materialBudget = RingBudget(scene.GetMaterials().size());
     desc.lightBudget = RingBudget(scene.GetLights().size());
 
-    size_t textureBindings = kGPUScenePersistentTextureBindings + kGPUSceneSceneViewLUTBindings +
-        kGPUSceneDefaultTextureBindings + kGPUSceneTextureBindingSlack;
+    size_t textureBindings = kGPUScenePersistentTexture2DBindings + kGPUSceneDefaultTextureBindings +
+        kGPUSceneTextureBindingSlack;
     for (auto const& texture : scene.GetTextures())
         textureBindings += texture.IsValid() ? 1u : 0u;
     if (scene.GetSceneGlobals().type == FSceneEnvironmentType::EnvMap)
         textureBindings += kGPUSceneEnvMapBindings;
+    textureBindings += kGPUScenePersistentTexture3DBindings;
     desc.texturesBudget = CountBudget(textureBindings);
     return desc;
 }
@@ -178,7 +179,10 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     mMaterialBuffer(ctx->device.Get(), desc.materialBudget),
     mLightBuffer(ctx->device.Get(), desc.lightBudget),
     mLightAliasTableBuffer(ctx->device.Get(), desc.lightBudget),
-    mTexturePool(ctx->device.Get(), ctx->allocator, {.maxBindings = desc.texturesBudget}), mBLASes(ctx->allocator),
+    mTexture2DPool(ctx->device.Get(), ctx->allocator, {.maxBindings = desc.texturesBudget}),
+    mTexture3DPool(ctx->device.Get(), ctx->allocator,
+                   {.maxBindings = kGPUScenePersistentTexture3DBindings + kGPUSceneTextureBindingSlack}),
+    mBLASes(ctx->allocator),
     mBLASBuffers(ctx->allocator),
     mCurveBLASes(ctx->allocator), mCurveBLASBuffers(ctx->allocator),
     mTLASInstanceStride(mContext->device->WriteAccelerationStructureInstanceData({}, nullptr)),
@@ -500,7 +504,8 @@ void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
 
     size_t primitiveBytes = AddBufferSize(mPrimitiveBuffer);
     size_t curveAABBBytes = AddBufferSize(mCurveAABBBuffer);
-    auto textureStats = mTexturePool.GetStats();
+    auto texture2DStats = mTexture2DPool.GetStats();
+    auto texture3DStats = mTexture3DPool.GetStats();
     size_t instanceBytes = AddRingBufferSize(mInstanceBuffer);
     size_t materialBytes = AddRingBufferSize(mMaterialBuffer);
     size_t lightBytes = AddRingBufferSize(mLightBuffer);
@@ -514,11 +519,11 @@ void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     size_t lightGeometryBytes = AddBufferSize(mLightGeometryBuffer);
     size_t sobolBytes = AddBufferSize(mSobolMatricesBuffer);
     size_t defaultBufferBytes = AddBufferSize(mFoundationDefaultBufferFloat);
-    size_t envCDFBytes = AddBufferSize(mEnvMapMarginalCDF);
 
     outStats.push_back({"Primitive Buffer (Buffer)", primitiveBytes});
     outStats.push_back({"Curve AABB Buffer (Buffer)", curveAABBBytes});
-    outStats.push_back({"Texture Pool (Texture)", textureStats.ownedTextureBytes});
+    outStats.push_back({"Texture2D Pool (Texture)", texture2DStats.ownedTextureBytes});
+    outStats.push_back({"Texture3D Pool (Texture)", texture3DStats.ownedTextureBytes});
     outStats.push_back({"Instance Buffer (Buffer)", instanceBytes});
     outStats.push_back({"TLAS Instance Buffer (Buffer)", tlasInstanceBytes});
     outStats.push_back({"Dynamic Upload Buffers (Buffer)",
@@ -528,7 +533,7 @@ void GPUScene::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     outStats.push_back({"TLAS (Buffer)", tlasBytes});
     outStats.push_back({"TLAS Scratch (Buffer)", tlasScratchBytes});
     outStats.push_back({"Light AS (Buffer)", lightBLASBytes});
-    outStats.push_back({"Other GPUScene Buffers (Buffer)", lightGeometryBytes + sobolBytes + defaultBufferBytes + envCDFBytes});
+    outStats.push_back({"Other GPUScene Buffers (Buffer)", lightGeometryBytes + sobolBytes + defaultBufferBytes});
 }
 
 String GPUScene::DbgGetBufferStatistics() const
@@ -540,7 +545,8 @@ String GPUScene::DbgGetBufferStatistics() const
     for (auto const& stat : stats)
         totalBytes += stat.bytes;
 
-    auto textureStats = mTexturePool.GetStats();
+    auto texture2DStats = mTexture2DPool.GetStats();
+    auto texture3DStats = mTexture3DPool.GetStats();
     fmt::format_to(std::back_inserter(res), "Primitive Buffer: {:.1f} MB allocated, used {:.1f} / {:.1f} MB\n",
                    mPrimitiveBuffer->GetAllocationSize() / static_cast<float>(1 << 20u),
                    mPrimitiveOffset / static_cast<float>(1 << 20u),
@@ -549,12 +555,18 @@ String GPUScene::DbgGetBufferStatistics() const
                    mCurveAABBBuffer->GetAllocationSize() / static_cast<float>(1 << 20u),
                    mCurveAABBOffset / static_cast<float>(1 << 20u),
                    mCurveAABBBuffer->mDesc.size / static_cast<float>(1 << 20u));
-    fmt::format_to(std::back_inserter(res), "Texture Pool: {:.1f} MB owned, {:.1f} MB referenced, used {} / {} bindings, owned {} textures\n",
-                   textureStats.ownedTextureBytes / static_cast<float>(1 << 20u),
-                   textureStats.referencedTextureBytes / static_cast<float>(1 << 20u),
-                   textureStats.activeBindings,
-                   textureStats.capacity,
-                   textureStats.ownedTextureBindings);
+    fmt::format_to(std::back_inserter(res), "Texture2D Pool: {:.1f} MB owned, {:.1f} MB referenced, used {} / {} bindings, owned {} textures\n",
+                   texture2DStats.ownedTextureBytes / static_cast<float>(1 << 20u),
+                   texture2DStats.referencedTextureBytes / static_cast<float>(1 << 20u),
+                   texture2DStats.activeBindings,
+                   texture2DStats.capacity,
+                   texture2DStats.ownedTextureBindings);
+    fmt::format_to(std::back_inserter(res), "Texture3D Pool: {:.1f} MB owned, {:.1f} MB referenced, used {} / {} bindings, owned {} textures\n",
+                   texture3DStats.ownedTextureBytes / static_cast<float>(1 << 20u),
+                   texture3DStats.referencedTextureBytes / static_cast<float>(1 << 20u),
+                   texture3DStats.activeBindings,
+                   texture3DStats.capacity,
+                   texture3DStats.ownedTextureBindings);
     fmt::format_to(std::back_inserter(res), "Instance Buffer: {:.1f} MB allocated, used {} / {} instances\n",
                    mInstanceBuffer.mBuffer->GetAllocationSize() / static_cast<float>(1 << 20u),
                    mInstanceBuffer.Used(), mInstanceBuffer.Capacity());
@@ -776,6 +788,25 @@ static uint64_t CalculateTextureImageSize(uint32_t width, uint32_t height, uint3
     return res;
 }
 
+static bool IsTexture3DView(RHITextureDimension dimension)
+{
+    return dimension == RHITextureDimension::E3D;
+}
+
+BindlessPool& GPUScene::SelectTexturePool(RHITextureDimension viewDimension)
+{
+    if (IsTexture3DView(viewDimension))
+        return mTexture3DPool;
+    CHECK_MSG(viewDimension != RHITextureDimension::E1D && viewDimension != RHITextureDimension::E1DArray,
+              "Unsupported bindless texture view dimension {}", static_cast<uint32_t>(viewDimension));
+    return mTexture2DPool;
+}
+
+BindlessPool const& GPUScene::SelectTexturePool(RHITextureDimension viewDimension) const
+{
+    return const_cast<GPUScene*>(this)->SelectTexturePool(viewDimension);
+}
+
 size_t GPUScene::UploadOrUpdateTexture(ImmediateUpload* ctx, FTexture const& source, uint32_t& index,
                                        const char* debugName)
 {
@@ -852,10 +883,11 @@ size_t GPUScene::UploadOrUpdateTexture(ImmediateUpload* ctx, FTexture const& sou
             0, metadata.GetNumMips(),
             0, texture->mDesc.arrayLayers)
     });
+    BindlessPool& texturePool = SelectTexturePool(metadata.GetViewDimension());
     if (index == UINT32_MAX)
-        index = mTexturePool.Allocate(std::move(texture), std::move(view));
+        index = texturePool.Allocate(std::move(texture), std::move(view));
     else
-        mTexturePool.Update(index, std::move(texture), std::move(view));
+        texturePool.Update(index, std::move(texture), std::move(view));
     return written;
 }
 
@@ -934,7 +966,7 @@ CHECK_MSG(mipSize64 <= std::numeric_limits<size_t>::max(), "Texture subresource 
             0, metadata.GetNumMips(),
             0, texture->mDesc.arrayLayers)
     });
-    outIndex = mTexturePool.Allocate(std::move(texture), std::move(view));
+    outIndex = SelectTexturePool(metadata.GetViewDimension()).Allocate(std::move(texture), std::move(view));
     return written;
 }
 
@@ -1044,7 +1076,7 @@ CHECK_MSG(mipSize64 <= std::numeric_limits<size_t>::max(), "Texture subresource 
             0, metadata.GetNumMips(),
             0, texture->mDesc.arrayLayers)
     });
-    outIndex = mTexturePool.Allocate(std::move(texture), std::move(view));
+    outIndex = SelectTexturePool(metadata.GetViewDimension()).Allocate(std::move(texture), std::move(view));
     return written;
 }
 
@@ -1542,15 +1574,15 @@ void GPUScene::UploadEnvMap(ImmediateUpload* ctx, FTexture const& source)
     
     PiecewiseConstant2D cdf(f, width, height, mContext->allocator);
     
-    // Upload Marginal CDF
-    size_t marginalSize = cdf.mMarginal->mCDF.size() * sizeof(float);
-    mEnvMapMarginalCDF = mContext->device->CreateBuffer({
-        .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
-        .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
-        .size = marginalSize
-    });
-    char* marginalPtr = ctx->Upload(mEnvMapMarginalCDF.Get(), marginalSize, 0);
-    std::memcpy(marginalPtr, cdf.mMarginal->mCDF.data(), marginalSize);
+    // Upload Marginal CDF as Texture2D
+    FTexture marginalTex(mContext->allocator);
+    marginalTex.Initialize(RHIResourceFormat::R32SignedFloat, RHITextureDimension::E2D,
+                           cdf.mMarginal->mCDF.size(), 1);
+    const size_t marginalSize = cdf.mMarginal->mCDF.size() * sizeof(float);
+    marginalTex.bytes.resize(marginalSize);
+    std::memcpy(marginalTex.bytes.data(), cdf.mMarginal->mCDF.data(), marginalSize);
+    CHECK_MSG(UploadOrUpdateTexture(ctx, marginalTex, mEnvMapMarginalCDFIndex, "Environment Map Marginal CDF"),
+              "Environment map marginal CDF staging budget exhausted");
     
     // Upload Conditional CDF as Texture2D
     FTexture conditionalTex(mContext->allocator);
@@ -1607,37 +1639,42 @@ static RHITexture* ResolvePoolTexture(BindlessPool& pool, uint32_t index)
 
 RHITexture* GPUScene::GetEnvMap() const
 {
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mEnvMapIndex);
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mEnvMapIndex);
 }
 
 RHITexture* GPUScene::GetGGXlutE() const
 {
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mLUTGGXEIndex);
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mLUTGGXEIndex);
 }
 
 RHITexture* GPUScene::GetViewLutSdr() const
 {
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mLUTViewSdrIndex);
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture3DPool), mLUTViewSdrIndex);
 }
 
 RHITexture* GPUScene::GetViewLutHdr() const
 {
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mLUTViewHdrIndex);
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture3DPool), mLUTViewHdrIndex);
 }
 
 RHITexture* GPUScene::GetFoundationDefaultTexture2D() const
 {
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mFoundationDefaultTexture2DIndex);
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mFoundationDefaultTexture2DIndex);
 }
 
 RHITexture* GPUScene::GetFoundationDefaultTexture2DFloat() const
 {
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mFoundationDefaultTexture2DFloatIndex);
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mFoundationDefaultTexture2DFloatIndex);
+}
+
+RHITexture* GPUScene::GetEnvMapMarginalCDF() const
+{
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mEnvMapMarginalCDFIndex);
 }
 
 RHITexture* GPUScene::GetEnvMapConditionalCDF() const
 {
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexturePool), mEnvMapConditionalCDFIndex);
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mEnvMapConditionalCDFIndex);
 }
 
 RHIBuffer* GPUScene::GetSobolMatricesBuffer() const
@@ -1659,6 +1696,6 @@ void GPUScene::Reset()
     mInstanceBuffer.Reset();
     mLightBuffer.Reset();
     mLightAliasTableBuffer.Reset();
-    // NOTE: mTexturePool is append-only; old bindings become dead entries.
+    // NOTE: texture pools are append-only; old bindings become dead entries.
     //       mTLAS is kept alive and rebuilt in-place by BuildTLAS.
 }

@@ -3,6 +3,7 @@
 */
 import IMath;
 import IBxDF;
+import IBindless2D;
 public enum class LightType {
     DeltaPosition,  // Point light
     DeltaDirection, // Directional light
@@ -57,14 +58,16 @@ public interface ILight {
 // -- Lights
 
 // Module-level env map resources. GPUScene binds tiny default resources when no HDRI is loaded.
-public Texture2D<float4> envMapTexture;
-public SamplerState        envMapSampler;
-public StructuredBuffer<float> envMapMarginalCDF;
-public Texture2D<float> envMapConditionalCDF;
+public SamplerState envMapSampler;
 
 // See also Render/Precompute.cpp
-// Helper: Binary search on a 1D CDF buffer
-uint FindInterval(StructuredBuffer<float> cdf, uint baseIdx, uint numBins, float u) 
+// Helper: Binary search on a 1D CDF texture
+float LoadCDF(uint32_t cdfIndex, uint x, uint y)
+{
+    return textures[NonUniformResourceIndex(cdfIndex)].Load(int3(x, y, 0)).x;
+}
+
+uint FindInterval(uint32_t cdfIndex, uint baseIdx, uint numBins, float u) 
 {
     uint first = 0;
     uint len = numBins;
@@ -73,7 +76,7 @@ uint FindInterval(StructuredBuffer<float> cdf, uint baseIdx, uint numBins, float
         uint half_len = len >> 1;
         uint middle = first + half_len;
         
-        if (cdf[baseIdx + middle] <= u) {
+        if (LoadCDF(cdfIndex, baseIdx + middle, 0) <= u) {
             first = middle + 1;
             len -= half_len + 1;
         } else {
@@ -85,12 +88,12 @@ uint FindInterval(StructuredBuffer<float> cdf, uint baseIdx, uint numBins, float
 }
 
 // 1D Sampling Function
-float Sample1D(StructuredBuffer<float> cdf, uint baseIdx, uint numBins, float u, out float pdf, out uint offset) 
+float Sample1D(uint32_t cdfIndex, uint baseIdx, uint numBins, float u, out float pdf, out uint offset) 
 {
-    offset = FindInterval(cdf, baseIdx, numBins, u);
+    offset = FindInterval(cdfIndex, baseIdx, numBins, u);
     
-    float cdf0 = offset == 0 ? 0.0 : cdf[baseIdx + offset - 1];
-    float cdf1 = cdf[baseIdx + offset];
+    float cdf0 = offset == 0 ? 0.0 : LoadCDF(cdfIndex, baseIdx + offset - 1, 0);
+    float cdf1 = LoadCDF(cdfIndex, baseIdx + offset, 0);
     
     pdf = (cdf1 - cdf0) * numBins;
     
@@ -100,13 +103,13 @@ float Sample1D(StructuredBuffer<float> cdf, uint baseIdx, uint numBins, float u,
 }
 
 // 2D Sampling Function
-float2 Sample2D(StructuredBuffer<float> marginalCDF, uint sizeY, 
-                Texture2D<float> conditionalCDF, uint sizeX, 
+float2 Sample2D(uint32_t marginalCDFIndex, uint sizeY, 
+                uint32_t conditionalCDFIndex, uint sizeX, 
                 float2 u, out float pdf, out uint2 offset) 
 {
     float pdfY, pdfX;
     
-    float v = Sample1D(marginalCDF, 0, sizeY, u.y, pdfY, offset.y);
+    float v = Sample1D(marginalCDFIndex, 0, sizeY, u.y, pdfY, offset.y);
     
     // Binary search on the texture row
     uint first = 0;
@@ -116,7 +119,7 @@ float2 Sample2D(StructuredBuffer<float> marginalCDF, uint sizeY,
         uint half_len = len >> 1;
         uint middle = first + half_len;
         
-        if (conditionalCDF.Load(int3(middle, offset.y, 0)) <= u.x) {
+        if (LoadCDF(conditionalCDFIndex, middle, offset.y) <= u.x) {
             first = middle + 1;
             len -= half_len + 1;
         } else {
@@ -126,8 +129,8 @@ float2 Sample2D(StructuredBuffer<float> marginalCDF, uint sizeY,
     
     offset.x = clamp(first, 0, sizeX - 1);
     
-    float cdfX0 = offset.x == 0 ? 0.0 : conditionalCDF.Load(int3(offset.x - 1, offset.y, 0));
-    float cdfX1 = conditionalCDF.Load(int3(offset.x, offset.y, 0));
+    float cdfX0 = offset.x == 0 ? 0.0 : LoadCDF(conditionalCDFIndex, offset.x - 1, offset.y);
+    float cdfX1 = LoadCDF(conditionalCDFIndex, offset.x, offset.y);
     
     pdfX = (cdfX1 - cdfX0) * sizeX;
     
@@ -139,18 +142,18 @@ float2 Sample2D(StructuredBuffer<float> marginalCDF, uint sizeY,
     return float2(u_coord, v);
 }
 
-float PDF2D(StructuredBuffer<float> marginalCDF, uint sizeY, 
-            Texture2D<float> conditionalCDF, uint sizeX, 
+float PDF2D(uint32_t marginalCDFIndex, uint sizeY, 
+            uint32_t conditionalCDFIndex, uint sizeX, 
             float2 uv)
 {
     uint2 offset = uint2(clamp(uint(uv.x * sizeX), 0, sizeX - 1), clamp(uint(uv.y * sizeY), 0, sizeY - 1));
     
-    float cdfY0 = offset.y == 0 ? 0.0 : marginalCDF[offset.y - 1];
-    float cdfY1 = marginalCDF[offset.y];
+    float cdfY0 = offset.y == 0 ? 0.0 : LoadCDF(marginalCDFIndex, offset.y - 1, 0);
+    float cdfY1 = LoadCDF(marginalCDFIndex, offset.y, 0);
     float pdfY = (cdfY1 - cdfY0) * sizeY;
     
-    float cdfX0 = offset.x == 0 ? 0.0 : conditionalCDF.Load(int3(offset.x - 1, offset.y, 0));
-    float cdfX1 = conditionalCDF.Load(int3(offset.x, offset.y, 0));
+    float cdfX0 = offset.x == 0 ? 0.0 : LoadCDF(conditionalCDFIndex, offset.x - 1, offset.y);
+    float cdfX1 = LoadCDF(conditionalCDFIndex, offset.x, offset.y);
     float pdfX = (cdfX1 - cdfX0) * sizeX;
     
     return pdfX * pdfY;
@@ -166,11 +169,20 @@ public struct InfiniteLight : ILight {
     bool  hasEnvMap;
 
     float azimuthOffset; // For rotating the env map, in radians
-    public __init(SampledSpectrum fallbackColor, float scale, bool hasEnvMap = false, float azimuthOffset = 0.0f) {
+    uint32_t envMapTextureIndex;
+    uint32_t envMapMarginalCDFIndex;
+    uint32_t envMapConditionalCDFIndex;
+
+    public __init(SampledSpectrum fallbackColor, float scale, bool hasEnvMap = false, float azimuthOffset = 0.0f,
+                  uint32_t envMapTextureIndex = ~0u, uint32_t envMapMarginalCDFIndex = ~0u,
+                  uint32_t envMapConditionalCDFIndex = ~0u) {
         this.fallbackColor = fallbackColor;
         this.scale         = scale;
         this.hasEnvMap     = hasEnvMap;
         this.azimuthOffset = azimuthOffset / 180.0f * Pi; // radians
+        this.envMapTextureIndex = envMapTextureIndex;
+        this.envMapMarginalCDFIndex = envMapMarginalCDFIndex;
+        this.envMapConditionalCDFIndex = envMapConditionalCDFIndex;
     }
 
     // Direction → equirectangular UV (azimuth-elevation mapping)
@@ -183,7 +195,7 @@ public struct InfiniteLight : ILight {
     }
 
     float3 SampleEnvMapTexture(float3 dir) {
-        return envMapTexture.SampleLevel(envMapSampler, EnvMapDirToUV(dir), 0).xyz;
+        return textures[NonUniformResourceIndex(envMapTextureIndex)].SampleLevel(envMapSampler, EnvMapDirToUV(dir), 0).xyz;
     }
 
     public LightType Type() {
@@ -205,10 +217,10 @@ public struct InfiniteLight : ILight {
     public LightLiSample Sample_Li(LightSampleContext ctx, float2 u) {
         if (hasEnvMap) {
             uint width, height;
-            envMapTexture.GetDimensions(width, height);
+            textures[NonUniformResourceIndex(envMapTextureIndex)].GetDimensions(width, height);
             float pdf;
             uint2 offset;
-            float2 uv = Sample2D(envMapMarginalCDF, height, envMapConditionalCDF, width, u, pdf, offset);
+            float2 uv = Sample2D(envMapMarginalCDFIndex, height, envMapConditionalCDFIndex, width, u, pdf, offset);
 
             float phi = (uv.x - 0.5f) * 2.0f * Pi; // radians
             float theta = uv.y * Pi;
@@ -250,9 +262,9 @@ public struct InfiniteLight : ILight {
     public float PDF_Li(LightSampleContext ctx, float3 w, bool allowIncompletePDF) {
         if (hasEnvMap) {
             uint width, height;
-            envMapTexture.GetDimensions(width, height);
+            textures[NonUniformResourceIndex(envMapTextureIndex)].GetDimensions(width, height);
             float2 uv = EnvMapDirToUV(w);
-            float pdf = PDF2D(envMapMarginalCDF, height, envMapConditionalCDF, width, uv);
+            float pdf = PDF2D(envMapMarginalCDFIndex, height, envMapConditionalCDFIndex, width, uv);
             
             float theta = uv.y * Pi;
             float sinTheta = sin(theta);

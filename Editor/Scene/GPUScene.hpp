@@ -185,19 +185,22 @@ class GPUScene
     UploadGPURingBuffer<GSLight> mLightBuffer;
     UploadGPURingBuffer<Alias> mLightAliasTableBuffer;
     /* Textures */
-    BindlessPool mTexturePool;
-    // Precomputed LUTs (stored in texture pool)
+    BindlessPool mTexture2DPool;
+    BindlessPool mTexture3DPool;
+    // Precomputed LUTs (stored in texture2D pool)
     uint32_t mLUTGGXEIndex{UINT32_MAX};
-    // Display transform 3D LUTs (stored in texture pool)
+    // Display transform 3D LUTs (stored in texture3D pool)
     uint32_t mLUTViewSdrIndex{UINT32_MAX}, mLUTViewHdrIndex{UINT32_MAX};
-    // Shared default resources (stored in texture pool).
+    // Shared default resources (stored in texture2D pool).
     uint32_t mFoundationDefaultTexture2DIndex{UINT32_MAX};
     uint32_t mFoundationDefaultTexture2DFloatIndex{UINT32_MAX};
     RHIDeviceScopedHandle<RHIBuffer> mFoundationDefaultBufferFloat;
-    // Environment map (stored in texture pool)
+    // Environment map (stored in texture2D pool)
     uint32_t mEnvMapIndex{UINT32_MAX};
-    RHIDeviceScopedHandle<RHIBuffer> mEnvMapMarginalCDF;
+    uint32_t mEnvMapMarginalCDFIndex{UINT32_MAX};
     uint32_t mEnvMapConditionalCDFIndex{UINT32_MAX};
+    [[nodiscard]] BindlessPool& SelectTexturePool(RHITextureDimension viewDimension);
+    [[nodiscard]] BindlessPool const& SelectTexturePool(RHITextureDimension viewDimension) const;
     size_t UploadOrUpdateTexture(ImmediateUpload* ctx, FTexture const& source, uint32_t& index,
                                  const char* debugName = nullptr);
     /* AS */
@@ -338,9 +341,14 @@ public:
     [[nodiscard]] RHIBuffer* GetLightBuffer() const { return mLightBuffer.mBuffer.Get(); }
     [[nodiscard]] RHIBuffer* GetLightAliasTableBuffer() const { return mLightAliasTableBuffer.mBuffer.Get(); }
     /* Textures */
-    [[nodiscard]] BindlessPool* GetTexturePool() { return &mTexturePool; }
+    [[nodiscard]] BindlessPool* GetTexture2DPool() { return &mTexture2DPool; }
+    [[nodiscard]] BindlessPool* GetTexture3DPool() { return &mTexture3DPool; }
+    [[nodiscard]] BindlessPool* GetTexturePool() { return GetTexture2DPool(); }
+    [[nodiscard]] uint32_t GetGGXLutEIndex() const { return mLUTGGXEIndex; }
     [[nodiscard]] RHITexture* GetGGXlutE() const;
     void UploadViewLUTs(ImmediateUpload* ctx, FTexture const& sdr, FTexture const& hdr);
+    [[nodiscard]] uint32_t GetViewLutSdrIndex() const { return mLUTViewSdrIndex; }
+    [[nodiscard]] uint32_t GetViewLutHdrIndex() const { return mLUTViewHdrIndex; }
     [[nodiscard]] RHITexture* GetViewLutSdr() const;
     [[nodiscard]] RHITexture* GetViewLutHdr() const;
     [[nodiscard]] RHITexture* GetFoundationDefaultTexture2D() const;
@@ -348,8 +356,21 @@ public:
     [[nodiscard]] RHIBuffer* GetFoundationDefaultBufferFloat() const { return mFoundationDefaultBufferFloat.Get(); }
     // Environment map
     void UploadEnvMap(ImmediateUpload* ctx, FTexture const& source);
+    [[nodiscard]] bool HasEnvMap() const { return mEnvMapIndex != UINT32_MAX; }
+    [[nodiscard]] uint32_t GetEnvMapIndexOrDefault() const
+    {
+        return HasEnvMap() ? mEnvMapIndex : mFoundationDefaultTexture2DIndex;
+    }
+    [[nodiscard]] uint32_t GetEnvMapMarginalCDFIndexOrDefault() const
+    {
+        return mEnvMapMarginalCDFIndex != UINT32_MAX ? mEnvMapMarginalCDFIndex : mFoundationDefaultTexture2DFloatIndex;
+    }
+    [[nodiscard]] uint32_t GetEnvMapConditionalCDFIndexOrDefault() const
+    {
+        return mEnvMapConditionalCDFIndex != UINT32_MAX ? mEnvMapConditionalCDFIndex : mFoundationDefaultTexture2DFloatIndex;
+    }
     [[nodiscard]] RHITexture* GetEnvMap() const;
-    [[nodiscard]] RHIBuffer* GetEnvMapMarginalCDF() const { return mEnvMapMarginalCDF.IsValid() ? mEnvMapMarginalCDF.Get() : nullptr; }
+    [[nodiscard]] RHITexture* GetEnvMapMarginalCDF() const;
     [[nodiscard]] RHITexture* GetEnvMapConditionalCDF() const;
     /* AS */
     [[nodiscard]] RHIAccelerationStructure* GetTLAS() const
