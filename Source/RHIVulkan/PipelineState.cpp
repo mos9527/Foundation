@@ -7,7 +7,7 @@ VulkanPipelineStateCache::VulkanPipelineStateCache(const VulkanDevice& device, P
         vk::raii::PipelineCache(device.GetVkDevice(), vk::PipelineCacheCreateInfo{
                                     .initialDataSize = desc.initialData.size_bytes(),
                                     .pInitialData = desc.initialData.data()
-                                }, nullptr);
+                                }, device.GetVkAllocationCallbacks());
 }
 
 size_t VulkanPipelineStateCache::GetCachedData(void* dstBuffer) const
@@ -48,7 +48,7 @@ void VulkanPipelineState::InitializePipelineLayout()
                                      .pSetLayouts = p_set_layouts.data(),
                                      .pushConstantRangeCount = static_cast<uint32_t>(push_constants.size()),
                                      .pPushConstantRanges = push_constants.data()},
-        nullptr);
+        mDevice.GetVkAllocationCallbacks());
 }
 
 void VulkanPipelineState::InitializeGraphics()
@@ -204,7 +204,8 @@ void VulkanPipelineState::InitializeGraphics()
         auto* vkCache = static_cast<VulkanPipelineStateCache*>(mDesc.psoCache);
         pPSOCache = &vkCache->GetVkPipelineCache();
     }
-    mPipeline = vk::raii::Pipeline(mDevice.GetVkDevice(), *pPSOCache, pipelineInfo, nullptr);
+    mPipeline = vk::raii::Pipeline(mDevice.GetVkDevice(), *pPSOCache, pipelineInfo,
+                                   mDevice.GetVkAllocationCallbacks());
 }
 
 void VulkanPipelineState::InitializeCompute()
@@ -240,7 +241,8 @@ void VulkanPipelineState::InitializeCompute()
         auto* vkCache = static_cast<VulkanPipelineStateCache*>(mDesc.psoCache);
         pPSOCache = &vkCache->GetVkPipelineCache();
     }
-    mPipeline = vk::raii::Pipeline(mDevice.GetVkDevice(), *pPSOCache, pipelineInfo, nullptr);
+    mPipeline = vk::raii::Pipeline(mDevice.GetVkDevice(), *pPSOCache, pipelineInfo,
+                                   mDevice.GetVkAllocationCallbacks());
 }
 
 void VulkanPipelineState::InitializeRayTracing()
@@ -391,7 +393,7 @@ void VulkanPipelineState::InitializeRayTracing()
     }
     mPipeline = vk::raii::Pipeline(mDevice.GetVkDevice(), nullptr, *pPSOCache,
                                    pipelineInfo,
-                                   nullptr);
+                                   mDevice.GetVkAllocationCallbacks());
     const uint32_t handleSize = rtProps.shaderGroupHandleSize;
     const uint32_t handleAlignment = rtProps.shaderGroupHandleAlignment;
     const uint32_t baseAlignment = rtProps.shaderGroupBaseAlignment;

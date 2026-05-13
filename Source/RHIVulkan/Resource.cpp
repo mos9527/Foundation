@@ -96,7 +96,7 @@ VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc
     auto res = vmaCreateBufferWithAlignment(allocator, &*bufferInfo, &allocInfo, desc.alignment, &buffer, &mAllocation,
                                             nullptr);
     CHECK(res == VK_SUCCESS && "failed to create Vulkan buffer");
-    mBuffer = vk::raii::Buffer(device.GetVkDevice(), vk::Buffer(buffer), nullptr);
+    mBuffer = vk::raii::Buffer(device.GetVkDevice(), vk::Buffer(buffer), device.GetVkAllocationCallbacks());
 }
 VulkanBuffer::VulkanBuffer(VulkanDevice const& device, RHIBufferDesc const& desc, vk::raii::Buffer&& buffer,
                            bool shared) :
@@ -178,7 +178,7 @@ VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& d
     VkImage image;
     auto res = vmaCreateImage(allocator, &*imageInfo, &allocInfo, &image, &mAllocation, nullptr);
     CHECK_MSG(res == VK_SUCCESS, "failed to create Vulkan image");
-    mImage = vk::raii::Image(device.GetVkDevice(), vk::Image(image), nullptr);
+    mImage = vk::raii::Image(device.GetVkDevice(), vk::Image(image), device.GetVkAllocationCallbacks());
 }
 
 VulkanTexture::VulkanTexture(VulkanDevice const& device, RHITextureDesc const& desc, vk::raii::Image&& image,
@@ -249,7 +249,7 @@ RHITextureScopedHandle<RHITextureView> VulkanTexture::CreateTextureView(RHITextu
                                           .levelCount = desc.range.mipCount,
                                           .baseArrayLayer = desc.range.layer.baseArrayLayer,
                                           .layerCount = desc.range.layer.layerCount}},
-        nullptr);
+        mDevice.GetVkAllocationCallbacks());
     return {this, mViews.CreateObject<VulkanTextureView>(*this, desc, std::move(image_view))};
 }
 RHITextureView* VulkanTexture::GetImageView(Handle handle) const { return mViews.GetObjectPtr<RHITextureView>(handle); }
@@ -266,7 +266,9 @@ RHIBufferScopedHandle<RHIBuffer> VulkanBuffer::CreateAliasedBuffer(RHIBufferDesc
     vk::BufferCreateInfo buffer_info = vkBufferCreateInfoFromRHIBufferDesc(desc);
     vmaCreateAliasingBuffer2(mDevice.GetVkAllocator(), mAllocation, offset, &*buffer_info, &aliased);
     return {this,
-            mAliases.CreateObject<VulkanBuffer>(mDevice, desc, vk::raii::Buffer(mDevice.GetVkDevice(), aliased),
+            mAliases.CreateObject<VulkanBuffer>(mDevice, desc,
+                                                vk::raii::Buffer(mDevice.GetVkDevice(), aliased,
+                                                                 mDevice.GetVkAllocationCallbacks()),
                                                 false /* shared=false */)};
 }
 RHIBuffer* VulkanBuffer::GetAliasedBuffer(Handle handle) const { return mAliases.GetObjectPtr<RHIBuffer>(handle); }
@@ -286,7 +288,9 @@ RHITextureScopedHandle<RHITexture> VulkanTexture::CreateAliasedTexture(RHITextur
     vk::ImageCreateInfo image_info = vkImageCreateInfoFromRHITextureDesc(desc);
     vmaCreateAliasingImage2(mDevice.GetVkAllocator(), mAllocation, offset, &*image_info, &aliased);
     return {this,
-            mAliases.CreateObject<VulkanTexture>(mDevice, desc, vk::raii::Image(mDevice.GetVkDevice(), aliased),
+            mAliases.CreateObject<VulkanTexture>(mDevice, desc,
+                                                 vk::raii::Image(mDevice.GetVkDevice(), aliased,
+                                                                 mDevice.GetVkAllocationCallbacks()),
                                                  false /* shared=false */)};
 }
 RHITexture* VulkanTexture::GetAliasedTexture(Handle handle) const { return mAliases.GetObjectPtr<RHITexture>(handle); }
@@ -320,7 +324,7 @@ VulkanAccelerationStructure::VulkanAccelerationStructure(VulkanDevice const& dev
             .type = desc.type == RHIAccelerationStructureType::TopLevel
                 ? vk::AccelerationStructureTypeKHR::eTopLevel
                 : vk::AccelerationStructureTypeKHR::eBottomLevel},
-        nullptr);
+        device.GetVkAllocationCallbacks());
     mASAddress = mDevice.GetVkDevice().getAccelerationStructureAddressKHR({.accelerationStructure = mAS});
 }
 vk::DeviceAddress VulkanAccelerationStructure::GetVkAccelerationStructureAddress() const

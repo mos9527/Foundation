@@ -112,7 +112,7 @@ VulkanDeviceDescriptorPool::VulkanDeviceDescriptorPool(const VulkanDevice& devic
                                                               .maxSets = static_cast<uint32_t>(max_sets),
                                                               .poolSizeCount = static_cast<uint32_t>(pool_sizes.size()),
                                                               .pPoolSizes = pool_sizes.data()},
-                                 nullptr);
+                                 mDevice.GetVkAllocationCallbacks());
     CHECK(mPool != nullptr && "failed to create Vulkan descriptor pool");
 }
 RHIDeviceDescriptorPoolScopedHandle<RHIDeviceDescriptorSet>

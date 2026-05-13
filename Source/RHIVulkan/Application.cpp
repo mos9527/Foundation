@@ -15,7 +15,7 @@ VkDebugLayerCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::Debu
 }
 VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, const char* engineName,
                                      const uint32_t apiVersion) :
-    mAllocator(allocator),
+    mAllocator(allocator), mVkAllocationCallbacks(allocator),
     mDevices(allocator), mStorage(allocator), mName(appName), mVulkanApiVersion(apiVersion)
 {
     auto vkAppInfo = vk::ApplicationInfo{
@@ -55,7 +55,7 @@ VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, 
     validation_features.pEnabledValidationFeatures = &validation_feature_enables;
     instanceInfo.setPNext(&validation_features);
 #endif
-    mInstance = vk::raii::Instance(mContext, instanceInfo);
+    mInstance = vk::raii::Instance(mContext, instanceInfo, GetVkAllocationCallbacks());
     mPhysicalDevices = vk::raii::PhysicalDevices(mInstance);
     mDevices.clear();
     for (uint32_t id = 0; id < mPhysicalDevices.size(); ++id)
@@ -71,7 +71,15 @@ VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, 
              vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
          .messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
              vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
-         .pfnUserCallback = &VkDebugLayerCallback});
+         .pfnUserCallback = &VkDebugLayerCallback},
+        GetVkAllocationCallbacks());
+}
+
+VulkanApplication::~VulkanApplication()
+{
+    mStorage.Destroy();
+    mDebugHandler = nullptr;
+    mInstance = nullptr;
 }
 
 Span<const RHIDevice::DeviceDesc> VulkanApplication::EnumerateDevices() const

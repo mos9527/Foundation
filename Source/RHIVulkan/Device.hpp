@@ -103,6 +103,7 @@ namespace Foundation::RHI
         const VulkanApplication& mApp;
 
         SDL_Window* mWindow;
+        VulkanAllocationCallbacks mVkAllocationCallbacks;
 
         vk::raii::PhysicalDevice mPhysicalDevice{nullptr};
         vk::raii::Device mDevice{nullptr};
@@ -221,6 +222,8 @@ namespace Foundation::RHI
         auto const& GetVkSurface() const { return mSurface; }
         auto const& GetVkPhysicalDevice() const { return mPhysicalDevice; }
         auto const& GetVkAllocator() const { return mVkAllocator; }
+        [[nodiscard]] vk::AllocationCallbacks const* GetVkAllocationCallbacks() const { return mVkAllocationCallbacks.Get(); }
+        [[nodiscard]] VkAllocationCallbacks const* GetVkAllocationCallbacksNative() const { return mVkAllocationCallbacks.GetNative(); }
 
         void DebugSetObjectName(const char* name) override;
     };

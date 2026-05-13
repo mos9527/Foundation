@@ -5,6 +5,83 @@
 
 #include <RHICore/Common.hpp>
 namespace Foundation::RHI {
+    struct VulkanAllocationCallbacks
+    {
+        Allocator* allocator{nullptr};
+        vk::AllocationCallbacks callbacks{};
+
+        explicit VulkanAllocationCallbacks(Allocator* allocator = nullptr)
+        {
+            Reset(allocator);
+        }
+
+        void Reset(Allocator* newAllocator)
+        {
+            allocator = newAllocator;
+            callbacks = vk::AllocationCallbacks{
+                .pUserData = allocator,
+                .pfnAllocation = &VulkanAllocationCallbacks::Allocate,
+                .pfnReallocation = &VulkanAllocationCallbacks::Reallocate,
+                .pfnFree = &VulkanAllocationCallbacks::Free,
+            };
+        }
+
+        [[nodiscard]] vk::AllocationCallbacks const* Get() const
+        {
+            return allocator ? &callbacks : nullptr;
+        }
+
+        [[nodiscard]] VkAllocationCallbacks const* GetNative() const
+        {
+            return allocator ? &*callbacks : nullptr;
+        }
+
+    private:
+        static void* VKAPI_PTR Allocate(void* userData, size_t size, size_t alignment,
+                                        vk::SystemAllocationScope)
+        {
+            if (!userData || size == 0)
+                return nullptr;
+            try
+            {
+                return static_cast<Allocator*>(userData)->Allocate(size, alignment ? alignment : alignof(std::max_align_t));
+            }
+            catch (...)
+            {
+                return nullptr;
+            }
+        }
+
+        static void* VKAPI_PTR Reallocate(void* userData, void* original, size_t size, size_t alignment,
+                                          vk::SystemAllocationScope)
+        {
+            if (!userData)
+                return nullptr;
+            auto* allocator = static_cast<Allocator*>(userData);
+            try
+            {
+                if (size == 0)
+                {
+                    allocator->Deallocate(original);
+                    return nullptr;
+                }
+                if (!original)
+                    return allocator->Allocate(size, alignment ? alignment : alignof(std::max_align_t));
+                return allocator->Reallocate(original, size, alignment ? alignment : alignof(std::max_align_t));
+            }
+            catch (...)
+            {
+                return nullptr;
+            }
+        }
+
+        static void VKAPI_PTR Free(void* userData, void* memory)
+        {
+            if (userData && memory)
+                static_cast<Allocator*>(userData)->Deallocate(memory);
+        }
+    };
+
     template<typename Bits> Bits vkFlagsToBits(vk::Flags<Bits> flags) {
         return static_cast<Bits>(static_cast<std::underlying_type_t<Bits>>(flags));
     }

@@ -22,7 +22,8 @@ const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "
 Allocator* VulkanDevice::GetAllocator() const { return mApp.GetAllocator(); }
 
 VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice, SDL_Window* window) :
-    RHIDevice(app), mApp(app), mWindow(window), mPhysicalDevice(std::move(physicalDevice)),
+    RHIDevice(app), mApp(app), mWindow(window), mVkAllocationCallbacks(GetAllocator()),
+    mPhysicalDevice(std::move(physicalDevice)),
     mSwapchainFormats(GetAllocator()), mSwapchainPresentModes(GetAllocator()), mStorage(GetAllocator())
 {
     auto families = mPhysicalDevice.getQueueFamilyProperties();
@@ -92,9 +93,9 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         // Check for a present queue
         VkSurfaceKHR surface;
         CHECK_MSG(SDL_Vulkan_CreateSurface(window, *mApp.GetVkInstance(),
-                      nullptr /* Doesn't work well with SDL_DestroyWindow */, &surface),
+                      mApp.GetVkAllocationCallbacksNative(), &surface),
                   "failed to create window surface: {}", SDL_GetError());
-        mSurface = vk::raii::SurfaceKHR(mApp.GetVkInstance(), surface);
+        mSurface = vk::raii::SurfaceKHR(mApp.GetVkInstance(), surface, mApp.GetVkAllocationCallbacks());
         // Having present and graphics queues as the same avoids copies and is typically the case
         // - https://github.com/KhronosGroup/Vulkan-Hpp/blob/main/RAII_Samples/05_InitSwapchain/05_InitSwapchain.cpp#L45
         // - https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/blob/master/src/VulkanSample.cpp#L1850
@@ -242,7 +243,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
                                      .pQueueCreateInfos = queueInfos.data(),
                                      .enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size()),
                                      .ppEnabledExtensionNames = enabledExtensions.data()};
-    mDevice = vk::raii::Device(mPhysicalDevice, device_info, nullptr);
+    mDevice = vk::raii::Device(mPhysicalDevice, device_info, GetVkAllocationCallbacks());
     CHECK(mDevice != nullptr && "failed to create Vulkan device");
     // Allocate the queues
     mQueues = ConstructUnique<VulkanDeviceQueues>(GetAllocator(), GetAllocator());
@@ -254,7 +255,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
         .physicalDevice = *mPhysicalDevice,
         .device = *mDevice,
-        .pAllocationCallbacks = nullptr,
+        .pAllocationCallbacks = GetVkAllocationCallbacksNative(),
         .instance = *mApp.GetVkInstance(),
         .vulkanApiVersion = mApp.mVulkanApiVersion};
     CHECK(vmaCreateAllocator(&allocator_info, &mVkAllocator) == VK_SUCCESS && "failed to create VMA for Vulkan device");
@@ -370,6 +371,10 @@ VulkanDevice::~VulkanDevice()
         vmaDestroyAllocator(mVkAllocator);
         mVkAllocator = nullptr;
     }
+    mQueues.reset();
+    mSurface = nullptr;
+    mDevice = nullptr;
+    mPhysicalDevice = nullptr;
 }
 
 void VulkanDevice::WaitIdle() const { mDevice.waitIdle(); }
@@ -501,7 +506,7 @@ VulkanDeviceSemaphore::VulkanDeviceSemaphore(const VulkanDevice& device, bool is
     vk::SemaphoreTypeCreateInfo tinfo{.semaphoreType = vk::SemaphoreType::eTimeline, .initialValue = 0};
     if (is_timeline)
         info.setPNext(&tinfo);
-    mSemaphore = vk::raii::Semaphore(mDevice.GetVkDevice(), info, nullptr);
+    mSemaphore = vk::raii::Semaphore(mDevice.GetVkDevice(), info, mDevice.GetVkAllocationCallbacks());
 }
 
 void VulkanDeviceSemaphore::DebugSetObjectName(const char* name)
@@ -517,7 +522,7 @@ VulkanDeviceFence::VulkanDeviceFence(const VulkanDevice& device, bool signaled) 
     mFence(vk::raii::Fence(
         device.GetVkDevice(),
         vk::FenceCreateInfo{.flags = signaled ? vk::FenceCreateFlagBits::eSignaled : vk::FenceCreateFlags{}},
-        nullptr))
+        device.GetVkAllocationCallbacks()))
 {
 }
 
@@ -842,7 +847,7 @@ VulkanDeviceDescriptorSetLayout::VulkanDeviceDescriptorSetLayout(const VulkanDev
                                           : vk::DescriptorSetLayoutCreateFlagBits{},
                                           .bindingCount = static_cast<uint32_t>(bindings.size()),
                                           .pBindings = bindings.data()},
-        nullptr);
+        mDevice.GetVkAllocationCallbacks());
     CHECK_MSG(mLayout != nullptr, "failed to create Vulkan descriptor set layout");
 }
 
@@ -899,7 +904,7 @@ VulkanDeviceQueryPool::VulkanDeviceQueryPool(const VulkanDevice& device, QueryPo
         break;
     }
     mResults.resize(desc.count);
-    mQueryPool = vk::raii::QueryPool(mDevice.GetVkDevice(), createInfo, nullptr);
+    mQueryPool = vk::raii::QueryPool(mDevice.GetVkDevice(), createInfo, mDevice.GetVkAllocationCallbacks());
     CHECK_MSG(mQueryPool != nullptr, "failed to create Vulkan query pool");
 }
 
@@ -991,7 +996,7 @@ VulkanDeviceSampler::VulkanDeviceSampler(const VulkanDevice& device, SamplerDesc
                                   .minLod = desc.lod.min,
                                   .maxLod = desc.lod.max};
     sampler.setPNext(&reduction);
-    mSampler = vk::raii::Sampler(mDevice.GetVkDevice(), sampler, nullptr);
+    mSampler = vk::raii::Sampler(mDevice.GetVkDevice(), sampler, mDevice.GetVkAllocationCallbacks());
     CHECK_MSG(mSampler != nullptr, "failed to create Vulkan sampler");
 }
 
