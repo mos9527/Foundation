@@ -26,29 +26,6 @@ static FTexture MakeLUT(const float* data, RHIResourceFormat format, uint32_t wi
     return tex;
 }
 
-static uint32_t GetRenderableCurveSegmentCount(FCurveSet const& src)
-{
-    uint32_t segmentCount = 0;
-    for (uint32_t count : src.curveVertexCounts)
-    {
-        switch (src.basis)
-        {
-        case FCurveBasis::Bezier:
-            CHECK_MSG(count >= 4 && (count - 1) % 3 == 0,
-                      "Bezier curve strands must contain 3n + 1 controls, got {}", count);
-            segmentCount += (count - 1) / 3;
-            break;
-        case FCurveBasis::Linear:
-            segmentCount += count > 1 ? count - 1 : 0;
-            break;
-        default:
-            CHECK_MSG(false, "Unsupported curve basis {}", static_cast<uint32_t>(src.basis));
-            break;
-        }
-    }
-    return segmentCount;
-}
-
 static constexpr uint32_t kGPUSceneRingFrameSlack = 3u;
 static constexpr uint32_t kGPUScenePersistentTextureBindings = 3u; // GGX + default SDR/HDR view LUTs.
 static constexpr uint32_t kGPUSceneSceneViewLUTBindings = 2u;
@@ -56,20 +33,6 @@ static constexpr uint32_t kGPUSceneDefaultTextureBindings = 2u; // _FoundationDe
 static constexpr uint32_t kGPUSceneEnvMapBindings = 2u; // Env map + conditional CDF texture.
 static constexpr uint32_t kGPUSceneTextureBindingSlack = 8u;
 static constexpr size_t kGPUSceneByteBudgetSlack = 64u << 10u;
-
-static size_t GetQuantizedVertexCount(FMesh const& src)
-{
-    if (!src.verticesQuantized.empty())
-        return src.verticesQuantized.size();
-    return src.vertices.size();
-}
-
-static size_t GetLOD0IndexCount(FMesh const& src)
-{
-    CHECK_MSG(!src.lods.empty(), "Mesh has no LODs");
-    auto const& lod = src.lods[0];
-    return lod.indices.size();
-}
 
 static uint32_t CountBudget(size_t count)
 {
@@ -93,17 +56,6 @@ static uint32_t ByteBudget(size_t bytes, size_t minBytes, size_t alignment, size
     return static_cast<uint32_t>(budget);
 }
 
-size_t GPUScene::CalculateMeshPrimitiveSize(FMesh const& src)
-{
-    return sizeof(GSMesh) +
-        sizeof(FQVertex) * GetQuantizedVertexCount(src) +
-        sizeof(uint32_t) * GetLOD0IndexCount(src) +
-        sizeof(FLODGroup) * src.dag.groups.size() +
-        sizeof(FMeshlet) * src.dag.meshlets.size() +
-        sizeof(uint32_t) * src.dag.meshletVtx.size() +
-        sizeof(uint8_t) * src.dag.meshletTri.size();
-}
-
 size_t GPUScene::CalculateMeshPrimitiveSize(FSerializedMesh const& src)
 {
     uint64_t lod0Size = src.lods.empty() ? 0 : src.lods[0].indices.decodedSize;
@@ -116,23 +68,11 @@ size_t GPUScene::CalculateMeshPrimitiveSize(FSerializedMesh const& src)
         src.dagMeshletTri.decodedSize;
 }
 
-size_t GPUScene::CalculateCurvePrimitiveSize(FCurveSet const& src)
-{
-    return sizeof(GSCurveSet) +
-        sizeof(GSCurvePoint) * src.points.size() +
-        sizeof(GSCurveSegment) * GetRenderableCurveSegmentCount(src);
-}
-
 size_t GPUScene::CalculateCurvePrimitiveSize(FSerializedCurve const& src)
 {
     return sizeof(GSCurveSet) +
         src.points.decodedSize +
         sizeof(GSCurveSegment) * src.numSegments;
-}
-
-size_t GPUScene::CalculateCurveAABBSize(FCurveSet const& src)
-{
-    return sizeof(RHIAccelerationStructureAABB) * GetRenderableCurveSegmentCount(src);
 }
 
 size_t GPUScene::CalculateCurveAABBSize(FSerializedCurve const& src)
@@ -182,54 +122,6 @@ GPUScene::GPUSceneDesc GPUScene::CalculateSceneBudget(FScene const& scene, RHIDe
         textureBindings += kGPUSceneEnvMapBindings;
     desc.texturesBudget = CountBudget(textureBindings);
     return desc;
-}
-
-static void AddCurveLineSegment(Vector<GSCurveSegment>& segments,
-                                Vector<RHIAccelerationStructureAABB>& aabbs,
-                                Span<const GSCurvePoint> points,
-                                uint32_t p0,
-                                uint32_t p1,
-                                float u0,
-                                float u1)
-{
-    segments.push_back(GSCurveSegment{
-        .p0 = p0,
-        .p1 = p1,
-        .u0 = u0,
-        .u1 = u1,
-    });
-
-    const auto& a = points[p0];
-    const auto& b = points[p1];
-    float radius = std::max(a.radius, b.radius);
-    float3 mn = min(a.position, b.position) - float3(radius);
-    float3 mx = max(a.position, b.position) + float3(radius);
-    aabbs.push_back(RHIAccelerationStructureAABB{mn.x, mn.y, mn.z, mx.x, mx.y, mx.z});
-}
-
-static void AddBezierCurveSpan(Vector<GSCurveSegment>& segments,
-                               Vector<RHIAccelerationStructureAABB>& aabbs,
-                               Span<const GSCurvePoint> points,
-                               uint32_t p0,
-                               uint32_t p1,
-                               float u0,
-                               float u1)
-{
-    segments.push_back(GSCurveSegment{
-        .p0 = p0,
-        .p1 = p1,
-        .u0 = u0,
-        .u1 = u1,
-    });
-
-    const auto& a = points[p0];
-    const auto& b = points[p0 + 1];
-    const auto& c = points[p0 + 2];
-    const auto& d = points[p1];
-    float radius = std::max(std::max(a.radius, b.radius), std::max(c.radius, d.radius));
-    float3 mn = min(min(a.position, b.position), min(c.position, d.position)) - float3(radius);
-    float3 mx = max(max(a.position, b.position), max(c.position, d.position)) + float3(radius);
-    aabbs.push_back(RHIAccelerationStructureAABB{mn.x, mn.y, mn.z, mx.x, mx.y, mx.z});
 }
 
 void GPUScene::StagedUploadJob::Write() const
@@ -741,106 +633,6 @@ String GPUScene::DbgGetBufferStatistics() const
     return res;
 }
 
-size_t GPUScene::Upload(ImmediateUpload* ctx, FMesh const& src, GSMesh& outData, uint32_t& outOffset)
-{
-    // Only upload DAG data
-    const size_t size = CalculateMeshPrimitiveSize(src);
-    // We need to ensure the *worst* alignment case fits per DXC docs
-    // https://github.com/microsoft/DirectXShaderCompiler/wiki/ByteAddressBuffer-Load-Store-Additions
-    // We can consider the GSMesh, FVertex, etc. as one struct - aligning to its largest member
-    // uint32_t, in this case - would be sufficient.
-    constexpr size_t kAlign = 4;
-    outOffset = AlignUp(mPrimitiveOffset, kAlign);
-    CHECK_MSG(outOffset + size <= mPrimitiveBuffer->mDesc.size, "GPUScene primitive buffer overflow for FMesh. Need {} bytes more, have {} left", size, mPrimitiveBuffer->mDesc.size - outOffset);
-    // Allocate staging memory to upload into
-    char *ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset), *dst = ptr;
-    if (ptr == nullptr)
-        return 0;
-    auto Write = [&](const void* pData, size_t bytes)
-    {
-        std::memcpy(dst, pData, bytes);
-        uint32_t off = dst - ptr;
-        dst += bytes;
-        return off;
-    };
-    // GSMesh (stub)
-    Write(&outData, sizeof(GSMesh));
-    // Vertex data
-    outData.vtxCount = src.verticesQuantized.size();
-    outData.vtxOffset = outOffset + Write(src.verticesQuantized.data(),
-                                          sizeof(FQVertex) * src.verticesQuantized.size());
-    outData.idxCount = src.lods[0].indices.size();
-    outData.idxOffset = outOffset + Write(src.lods[0].indices.data(), sizeof(uint32_t) * src.lods[0].indices.size());
-    // LOD Group data
-    outData.groupCount = src.dag.groups.size();
-    outData.groupOffset = outOffset + Write(src.dag.groups.data(), sizeof(FLODGroup) * src.dag.groups.size());
-    // Meshlet data
-    outData.meshletCount = src.dag.meshlets.size();
-    outData.meshletOffset = outOffset + Write(src.dag.meshlets.data(), sizeof(FMeshlet) * src.dag.meshlets.size());
-    outData.meshletVtxOffset = outOffset + Write(src.dag.meshletVtx.data(),
-                                                 sizeof(uint32_t) * src.dag.meshletVtx.size());
-    outData.meshletTriOffset = outOffset +
-        Write(src.dag.meshletTri.data(), sizeof(uint8_t) * src.dag.meshletTri.size());
-    outData.meshletGlobalIndex = mMeshletGlobalCounter;
-    // GSMesh (data)
-    std::memcpy(ptr, &outData, sizeof(GSMesh));
-    size_t written = dst - ptr;
-    CHECK_MSG(written == size, "Write mismatch: expected {} got {}", size, written);
-    mPrimitiveOffset = outOffset + size;
-    mMeshletGlobalCounter += outData.meshletCount;
-    return dst - ptr;
-}
-
-size_t GPUScene::Upload(ImmediateUpload* ctx, FScene const& scene, FSerializedMesh const& src,
-                         GSMesh& outData, uint32_t& outOffset)
-{
-    CHECK_MSG(!src.lods.empty(), "Serialized mesh has no LODs");
-    auto const& lod0 = src.lods[0];
-    const size_t size = CalculateMeshPrimitiveSize(src);
-    constexpr size_t kAlign = 4;
-    outOffset = AlignUp(mPrimitiveOffset, kAlign);
-    CHECK_MSG(outOffset + size <= mPrimitiveBuffer->mDesc.size,
-              "GPUScene primitive buffer overflow for serialized mesh. Need {} bytes more, have {} left",
-              size, mPrimitiveBuffer->mDesc.size - outOffset);
-
-    char *ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset), *dst = ptr;
-    if (ptr == nullptr)
-        return 0;
-    auto Write = [&](const void* pData, size_t bytes)
-    {
-        std::memcpy(dst, pData, bytes);
-        uint32_t off = static_cast<uint32_t>(dst - ptr);
-        dst += bytes;
-        return off;
-    };
-    auto Read = [&](FBlobRef const& blob)
-    {
-        uint32_t off = static_cast<uint32_t>(dst - ptr);
-        CHECK(scene.ReadBlob(blob, dst, static_cast<size_t>(blob.decodedSize)));
-        dst += static_cast<size_t>(blob.decodedSize);
-        return off;
-    };
-
-    Write(&outData, sizeof(GSMesh));
-    outData.vtxCount = src.vertexCount;
-    outData.vtxOffset = outOffset + Read(src.vertices);
-    outData.idxCount = lod0.indexCount;
-    outData.idxOffset = outOffset + Read(lod0.indices);
-    outData.groupCount = src.dagGroups.count;
-    outData.groupOffset = outOffset + Read(src.dagGroups);
-    outData.meshletCount = src.dagMeshlets.count;
-    outData.meshletOffset = outOffset + Read(src.dagMeshlets);
-    outData.meshletVtxOffset = outOffset + Read(src.dagMeshletVtx);
-    outData.meshletTriOffset = outOffset + Read(src.dagMeshletTri);
-    outData.meshletGlobalIndex = mMeshletGlobalCounter;
-    std::memcpy(ptr, &outData, sizeof(GSMesh));
-    size_t written = dst - ptr;
-    CHECK_MSG(written == size, "Write mismatch: expected {} got {}", size, written);
-    mPrimitiveOffset = outOffset + size;
-    mMeshletGlobalCounter += outData.meshletCount;
-    return written;
-}
-
 size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedMesh const& src,
                              GSMesh& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs)
 {
@@ -912,225 +704,6 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSeriali
     mPrimitiveOffset = outOffset + size;
     mMeshletGlobalCounter += outData.meshletCount;
     return written;
-}
-
-size_t GPUScene::Upload(ImmediateUpload* ctx, FCurveSet const& src, GSCurveSet& outData, uint32_t& outOffset)
-{
-    uint32_t segmentCount = GetRenderableCurveSegmentCount(src);
-    CHECK_MSG(!src.points.empty() && segmentCount > 0, "Curve set has no renderable segments");
-
-    Vector<GSCurvePoint> points(src.points.size(), GLOBAL_ALLOC);
-    for (size_t i = 0; i < src.points.size(); ++i)
-        points[i] = GSCurvePoint{.position = src.points[i].position, .radius = src.points[i].radius};
-
-    Vector<GSCurveSegment> segments(GLOBAL_ALLOC);
-    segments.reserve(segmentCount);
-    Vector<RHIAccelerationStructureAABB> aabbs(GLOBAL_ALLOC);
-    aabbs.reserve(segmentCount);
-
-    uint32_t pointCursor = 0;
-    for (uint32_t count : src.curveVertexCounts)
-    {
-        CHECK_MSG(pointCursor + count <= points.size(), "Curve set references more points than it stores");
-        if (count <= 1)
-        {
-            pointCursor += count;
-            continue;
-        }
-        switch (src.basis)
-        {
-        case FCurveBasis::Bezier:
-        {
-            CHECK_MSG(count >= 4 && (count - 1) % 3 == 0,
-                      "Bezier curve strands must contain 3n + 1 controls, got {}", count);
-            uint32_t spanCount = (count - 1) / 3;
-            float invSpanCount = 1.0f / float(spanCount);
-            for (uint32_t i = 0; i < spanCount; ++i)
-            {
-                uint32_t p0 = pointCursor + i * 3;
-                uint32_t p1 = pointCursor + (i + 1) * 3;
-                AddBezierCurveSpan(segments, aabbs, points, p0, p1,
-                                   float(i) * invSpanCount, float(i + 1) * invSpanCount);
-            }
-            break;
-        }
-        case FCurveBasis::Linear:
-        {
-            float invSegmentCount = 1.0f / float(count - 1);
-            for (uint32_t i = 0; i + 1 < count; ++i)
-            {
-                uint32_t p0 = pointCursor + i;
-                uint32_t p1 = pointCursor + i + 1;
-                AddCurveLineSegment(segments, aabbs, points, p0, p1,
-                                    float(i) * invSegmentCount, float(i + 1) * invSegmentCount);
-            }
-            break;
-        }
-        default:
-            CHECK_MSG(false, "Unsupported curve basis {}", static_cast<uint32_t>(src.basis));
-            break;
-        }
-        pointCursor += count;
-    }
-
-    const size_t size = CalculateCurvePrimitiveSize(src);
-    constexpr size_t kAlign = 4;
-    outOffset = AlignUp(mPrimitiveOffset, kAlign);
-    CHECK_MSG(outOffset + size <= mPrimitiveBuffer->mDesc.size,
-              "GPUScene primitive buffer overflow for FCurveSet. Need {} bytes more, have {} left",
-              size, mPrimitiveBuffer->mDesc.size - outOffset);
-
-    char* ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset);
-    if (ptr == nullptr)
-        return 0;
-    char* dst = ptr;
-    auto Write = [&](const void* pData, size_t bytes)
-    {
-        std::memcpy(dst, pData, bytes);
-        uint32_t off = static_cast<uint32_t>(dst - ptr);
-        dst += bytes;
-        return off;
-    };
-
-    Write(&outData, sizeof(GSCurveSet));
-    outData.pointCount = static_cast<uint32_t>(points.size());
-    outData.pointOffset = outOffset + Write(points.data(), sizeof(GSCurvePoint) * points.size());
-    outData.segmentCount = static_cast<uint32_t>(segments.size());
-    outData.segmentOffset = outOffset + Write(segments.data(), sizeof(GSCurveSegment) * segments.size());
-    outData.materialIndex = src.materialIndex;
-
-    const size_t aabbSize = CalculateCurveAABBSize(src);
-    outData.aabbOffset = static_cast<uint32_t>(AlignUp(mCurveAABBOffset, alignof(RHIAccelerationStructureAABB)));
-    CHECK_MSG(outData.aabbOffset + aabbSize <= mCurveAABBBuffer->mDesc.size,
-              "GPUScene curve AABB buffer overflow. Need {} bytes more, have {} left",
-              aabbSize, mCurveAABBBuffer->mDesc.size - outData.aabbOffset);
-    char* aabbPtr = ctx->Upload(mCurveAABBBuffer.Get(), aabbSize, outData.aabbOffset);
-    if (aabbPtr == nullptr)
-        return 0;
-    std::memcpy(aabbPtr, aabbs.data(), aabbSize);
-
-    std::memcpy(ptr, &outData, sizeof(GSCurveSet));
-    size_t written = dst - ptr;
-    CHECK_MSG(written == size, "Write mismatch: expected {} got {}", size, written);
-    mPrimitiveOffset = outOffset + size;
-    mCurveAABBOffset = outData.aabbOffset + aabbSize;
-    return written + aabbSize;
-}
-
-size_t GPUScene::Upload(ImmediateUpload* ctx, FScene const& scene, FSerializedCurve const& src,
-                         GSCurveSet& outData, uint32_t& outOffset)
-{
-    static_assert(sizeof(FCurvePoint) == sizeof(GSCurvePoint));
-    static_assert(alignof(FCurvePoint) == alignof(GSCurvePoint));
-
-    Vector<uint32_t> curveVertexCounts = scene.ReadBlobArray<uint32_t>(src.curveVertexCounts);
-    CHECK_MSG(src.points.decodedSize != 0 && src.numSegments > 0, "Curve set has no renderable segments");
-    CHECK_MSG(src.points.stride == sizeof(GSCurvePoint), "Serialized curve point stride mismatch");
-    CHECK_MSG(src.points.decodedSize % sizeof(GSCurvePoint) == 0, "Serialized curve point blob size mismatch");
-
-    const size_t pointCount = static_cast<size_t>(src.points.decodedSize / sizeof(GSCurvePoint));
-    const size_t size = CalculateCurvePrimitiveSize(src);
-    constexpr size_t kAlign = 4;
-    outOffset = AlignUp(mPrimitiveOffset, kAlign);
-    CHECK_MSG(outOffset + size <= mPrimitiveBuffer->mDesc.size,
-              "GPUScene primitive buffer overflow for serialized curve. Need {} bytes more, have {} left",
-              size, mPrimitiveBuffer->mDesc.size - outOffset);
-
-    char* ptr = ctx->Upload(mPrimitiveBuffer.Get(), size, outOffset);
-    if (ptr == nullptr)
-        return 0;
-    char* dst = ptr;
-    auto Write = [&](const void* pData, size_t bytes)
-    {
-        std::memcpy(dst, pData, bytes);
-        uint32_t off = static_cast<uint32_t>(dst - ptr);
-        dst += bytes;
-        return off;
-    };
-    auto Skip = [&](size_t bytes)
-    {
-        uint32_t off = static_cast<uint32_t>(dst - ptr);
-        dst += bytes;
-        return off;
-    };
-
-    Write(&outData, sizeof(GSCurveSet));
-    outData.pointCount = static_cast<uint32_t>(pointCount);
-    outData.pointOffset = outOffset + Skip(src.points.decodedSize);
-    GSCurvePoint* pointsData = reinterpret_cast<GSCurvePoint*>(ptr + outData.pointOffset - outOffset);
-    CHECK(scene.ReadBlob(src.points, pointsData, static_cast<size_t>(src.points.decodedSize)));
-    Span<const GSCurvePoint> points(pointsData, pointCount);
-
-    Vector<GSCurveSegment> segments(GLOBAL_ALLOC);
-    segments.reserve(src.numSegments);
-    Vector<RHIAccelerationStructureAABB> aabbs(GLOBAL_ALLOC);
-    aabbs.reserve(src.numSegments);
-
-    uint32_t pointCursor = 0;
-    for (uint32_t count : curveVertexCounts)
-    {
-        CHECK_MSG(pointCursor + count <= points.size(), "Curve set references more points than it stores");
-        if (count <= 1)
-        {
-            pointCursor += count;
-            continue;
-        }
-        switch (src.basis)
-        {
-        case FCurveBasis::Bezier:
-        {
-            CHECK_MSG(count >= 4 && (count - 1) % 3 == 0,
-                      "Bezier curve strands must contain 3n + 1 controls, got {}", count);
-            uint32_t spanCount = (count - 1) / 3;
-            float invSpanCount = 1.0f / float(spanCount);
-            for (uint32_t i = 0; i < spanCount; ++i)
-            {
-                uint32_t p0 = pointCursor + i * 3;
-                uint32_t p1 = pointCursor + (i + 1) * 3;
-                AddBezierCurveSpan(segments, aabbs, points, p0, p1,
-                                   float(i) * invSpanCount, float(i + 1) * invSpanCount);
-            }
-            break;
-        }
-        case FCurveBasis::Linear:
-        {
-            float invSegmentCount = 1.0f / float(count - 1);
-            for (uint32_t i = 0; i + 1 < count; ++i)
-            {
-                uint32_t p0 = pointCursor + i;
-                uint32_t p1 = pointCursor + i + 1;
-                AddCurveLineSegment(segments, aabbs, points, p0, p1,
-                                    float(i) * invSegmentCount, float(i + 1) * invSegmentCount);
-            }
-            break;
-        }
-        default:
-            CHECK_MSG(false, "Unsupported curve basis {}", static_cast<uint32_t>(src.basis));
-            break;
-        }
-        pointCursor += count;
-    }
-
-    outData.segmentCount = static_cast<uint32_t>(segments.size());
-    outData.segmentOffset = outOffset + Write(segments.data(), sizeof(GSCurveSegment) * segments.size());
-    outData.materialIndex = src.materialIndex;
-
-    const size_t aabbSize = CalculateCurveAABBSize(src);
-    outData.aabbOffset = static_cast<uint32_t>(AlignUp(mCurveAABBOffset, alignof(RHIAccelerationStructureAABB)));
-    CHECK_MSG(outData.aabbOffset + aabbSize <= mCurveAABBBuffer->mDesc.size,
-              "GPUScene curve AABB buffer overflow. Need {} bytes more, have {} left",
-              aabbSize, mCurveAABBBuffer->mDesc.size - outData.aabbOffset);
-    char* aabbPtr = ctx->Upload(mCurveAABBBuffer.Get(), aabbSize, outData.aabbOffset);
-    if (aabbPtr == nullptr)
-        return 0;
-    std::memcpy(aabbPtr, aabbs.data(), aabbSize);
-
-    std::memcpy(ptr, &outData, sizeof(GSCurveSet));
-    size_t written = dst - ptr;
-    CHECK_MSG(written == size, "Write mismatch: expected {} got {}", size, written);
-    mPrimitiveOffset = outOffset + size;
-    mCurveAABBOffset = outData.aabbOffset + aabbSize;
-    return written + aabbSize;
 }
 
 size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedCurve const& src,
@@ -1274,85 +847,6 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FTextureHeader const& metadata, Sp
             if (ptr == nullptr)
                 return 0;
             std::memcpy(ptr, data.data() + subresourceOffset, mipSize);
-            written += mipSize;
-        }
-    }
-    cmd->BeginTransition();
-    cmd->SetImageTransition(texture.Get(), {
-                                .srcImgLayout = RHITextureLayout::TransferDst,
-                                .dstImgLayout = RHITextureLayout::ShaderReadOnly,
-                                .srcImgRange = range
-                            });
-    cmd->EndTransition();
-    auto view = texture->CreateTextureView({
-        .format = metadata.GetFormat(),
-        .dimension = metadata.GetViewDimension(),
-        .range = RHITextureSubresourceRange::Create(
-            RHITextureAspectFlagBits::Color,
-            0, metadata.GetNumMips(),
-            0, texture->mDesc.arrayLayers)
-    });
-    outIndex = mTexturePool.Allocate(std::move(texture), view.Release().Get());
-    return written;
-}
-
-size_t GPUScene::Upload(ImmediateUpload* ctx, FScene const& scene, FSerializedTexture const& source,
-                        uint32_t& outIndex, const char* debugName)
-{
-    CHECK_MSG(source.IsValid(), "Serialized texture is invalid");
-    CHECK_MSG(source.data.codec == FBlobCodec::None, "Serialized texture data must not use LZ4 blob compression");
-    CHECK_MSG(source.data.decodedSize == source.GetSize(), "Serialized texture size mismatch: descriptor {} header {}",
-              source.data.decodedSize, source.GetSize());
-
-    FTextureHeader const& metadata = static_cast<FTextureHeader const&>(source);
-    auto texture = mContext->device->CreateTexture(metadata.GetDesc());
-    if (debugName)
-        texture->DebugSetObjectName(debugName);
-    size_t written = 0;
-    auto range = RHITextureSubresourceRange::Create(
-        RHITextureAspectFlagBits::Color,
-        0, metadata.GetNumMips(),
-        0, texture->mDesc.arrayLayers);
-    auto* cmd = ctx->ctx.Get();
-    cmd->BeginTransition();
-    cmd->SetImageTransition(texture.Get(), {
-                                .dstImgLayout = RHITextureLayout::TransferDst,
-                                .srcImgRange = range
-                            });
-    cmd->EndTransition();
-
-    uint32_t blockSize = metadata.GetBlockSize(), blockDim = 4;
-    if (!blockSize)
-        blockSize = metadata.GetBpp() / 8, blockDim = 1;
-    CHECK_MSG(blockSize && blockDim, "Unsupported texture format {}", metadata.GetFormat());
-
-    for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
-    {
-        uint64_t layerOffset =
-            uint64_t(layer) * CalculateTextureImageSize(metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
-                                                        metadata.GetNumMips(), blockSize, blockDim);
-        for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
-        {
-            uint64_t mipOffset = CalculateTextureImageSize(metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
-                                                           mip, blockSize, blockDim);
-            RHIExtent3D mipExtent = metadata.GetMipExtent(mip);
-            uint32_t mipSize = CalculateTextureImageSize(mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
-            uint64_t subresourceOffset = layerOffset + mipOffset;
-            uint64_t subresourceEnd = subresourceOffset + mipSize;
-            CHECK_MSG(subresourceEnd <= source.data.decodedSize,
-                      "Texture subresource out of range: layer {}, mip {} (size {}), data size {}",
-                      layer, mip, mipSize, source.data.decodedSize);
-            if (!ctx->Align(std::max(metadata.GetBpp() / 8, metadata.GetBlockSize())))
-                return 0;
-            char* ptr = ctx->Upload(texture.Get(), mipSize,
-                                    {
-                                        .aspect = RHITextureAspectFlagBits::Color,
-                                        .mipLevel = mip, .baseArrayLayer = layer, .layerCount = 1
-                                    },
-                                    {0, 0, 0}, mipExtent);
-            if (ptr == nullptr)
-                return 0;
-            CHECK(scene.ReadBlobRange(source.data, subresourceOffset, ptr, mipSize));
             written += mipSize;
         }
     }

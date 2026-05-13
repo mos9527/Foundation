@@ -668,11 +668,13 @@ void ReplaceScene(StringView path)
             }
             id++;
         }
+        DrainStagedJobs();
+        upload.End(), upload.WaitIdle();
         FTexture sdr(GLOBAL_ALLOC);
         FTexture hdr(GLOBAL_ALLOC);
+        upload.Begin();
         LoadSelectedViewLUTs(sdr, hdr);
         gpu->UploadViewLUTs(&upload, sdr, hdr);
-        DrainStagedJobs();
         upload.End(), upload.WaitIdle();
     }
 

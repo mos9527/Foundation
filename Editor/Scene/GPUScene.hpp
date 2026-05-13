@@ -239,11 +239,8 @@ public:
         uint32_t tlasScratchBudget = 32 * (1u << 20); // 32MB (ring)
     };
     [[nodiscard]] static GPUSceneDesc CalculateSceneBudget(FScene const& scene, RHIDeviceCapabilities const& caps);
-    [[nodiscard]] static size_t CalculateMeshPrimitiveSize(FMesh const& src);
     [[nodiscard]] static size_t CalculateMeshPrimitiveSize(FSerializedMesh const& src);
-    [[nodiscard]] static size_t CalculateCurvePrimitiveSize(FCurveSet const& src);
     [[nodiscard]] static size_t CalculateCurvePrimitiveSize(FSerializedCurve const& src);
-    [[nodiscard]] static size_t CalculateCurveAABBSize(FCurveSet const& src);
     [[nodiscard]] static size_t CalculateCurveAABBSize(FSerializedCurve const& src);
 
     GPUScene(FContext* ctx, GPUSceneDesc const& desc);
@@ -307,17 +304,12 @@ public:
         void Write() const;
     };
 
-    size_t Upload(ImmediateUpload* ctx, FMesh const& source, GSMesh& outData, uint32_t& outOffset);
-    size_t Upload(ImmediateUpload* ctx, FScene const& scene, FSerializedMesh const& source, GSMesh& outData, uint32_t& outOffset);
     size_t BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedMesh const& source, GSMesh& outData,
                        uint32_t& outOffset, Vector<StagedUploadJob>& outJobs);
-    size_t Upload(ImmediateUpload* ctx, FCurveSet const& source, GSCurveSet& outData, uint32_t& outOffset);
-    size_t Upload(ImmediateUpload* ctx, FScene const& scene, FSerializedCurve const& source, GSCurveSet& outData, uint32_t& outOffset);
     size_t BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedCurve const& source,
                        GSCurveSet& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs);
     size_t Upload(ImmediateUpload* ctx, FTextureHeader const& metadata, Span<const unsigned char> data, uint32_t& outIndex, const char* debugName = nullptr);
     size_t Upload(ImmediateUpload* ctx, FTexture const& source, uint32_t& outIndex, const char* debugName = nullptr);
-    size_t Upload(ImmediateUpload* ctx, FScene const& scene, FSerializedTexture const& source, uint32_t& outIndex, const char* debugName = nullptr);
     size_t BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedTexture const& source, uint32_t& outIndex,
                        Vector<StagedUploadJob>& outJobs, const char* debugName = nullptr);
 
