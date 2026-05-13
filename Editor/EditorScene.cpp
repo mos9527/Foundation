@@ -1,21 +1,11 @@
-#include "EditorState.hpp"
-#include "Scene/Mesh.hpp"
-#include <Core/AllocatorStack.hpp>
 #include <Core/Paths.hpp>
-#include <Core/ThreadPool.hpp>
-#include <RenderCore/ImmediateContext.hpp>
-#include <algorithm>
-#include <chrono>
-#include <cctype>
-#include <exception>
 #include <filesystem>
 #include <numbers>
-#include <utility>
+
+#include "EditorState.hpp"
+#include "Scene/Mesh.hpp"
 
 static constexpr const char* kTempScenePath = "last.fscn";
-// For non-ReBAR devices. Staging is required
-// Also serves as a lower bound for the GPU buffer
-static constexpr size_t kDefaultSceneUploadStagingBudget = 128ull * (1ull << 20);
 static constexpr size_t kDefaultSceneLoadScratchBudget = 64ull * (1ull << 20);
 // Accounts for alignment, etc...
 static constexpr size_t kBudgetSlack = 4ull * (1ull << 20);
@@ -61,7 +51,7 @@ static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamp
                 area = std::numbers::pi_v<float> * areaWidth * areaHeight;
             else
                 area = 4.0f * areaWidth * areaHeight;
-            
+
             float totalArea = src.twoSided ? (2.0f * area) : area;
             // For a Lambertian emitter, total flux Phi = L * A * pi per emitting side.
             dst.power = src.power / (totalArea * std::numbers::pi_v<float>);
@@ -151,8 +141,14 @@ static double MillisecondsSince(std::chrono::steady_clock::time_point start)
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 }
 
+static uint64_t MicrosecondsSince(std::chrono::steady_clock::time_point start)
+{
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - start).count());
+}
+
 // Max memory required for uploading the scene to the GPU
-static size_t SceneStagingBufferBudget(FScene const& scene, bool directGeometryUpload, bool includeTextures)
+static size_t SceneStagingBufferBudget(FScene const& scene, bool directGeometryUpload)
 {
     size_t budget = 0ull;
     if (!directGeometryUpload)
@@ -165,12 +161,11 @@ static size_t SceneStagingBufferBudget(FScene const& scene, bool directGeometryU
             budget = std::max(budget, GPUScene::CalculateCurvePrimitiveSize(curve) +
                                       GPUScene::CalculateCurveAABBSize(curve) + kBudgetSlack);
     }
-    if (includeTextures)
-        for (FSerializedTexture const& texture : scene.GetTextures())
-        {
-            if (texture.IsValid())
-                budget = std::max(budget, static_cast<size_t>(texture.data.decodedSize) + kBudgetSlack);
-        }
+    for (FSerializedTexture const& texture : scene.GetTextures())
+    {
+        if (texture.IsValid())
+            budget = std::max(budget, static_cast<size_t>(texture.data.decodedSize) + kBudgetSlack);
+    }
     return budget + kBudgetSlack;
 }
 
@@ -567,11 +562,6 @@ static void ApplySceneEnvironment(EditorDocument const& doc, UBO& globals)
     globals.useEnvMap = 0u;
 }
 
-static size_t GetSceneUploadWorkerCount()
-{
-    return std::max<size_t>(1u, std::thread::hardware_concurrency());
-}
-
 static size_t GetSceneUploadTaskQueueSize(size_t taskCount)
 {
     return ThreadPool::getTaskSize(std::max<size_t>(taskCount, 1u));
@@ -627,7 +617,7 @@ static double BuildAccelerationStructuresForScene(GPUScene* gpu, EditorDocument&
     CHECK(gpu);
 
     auto const buildStart = std::chrono::steady_clock::now();
-    ImmediateContext ctx(RHIDeviceQueueType::Graphics, GContext->device.Get());
+    ImmediateContext ctx(RHIDeviceQueueType::Compute, GContext->device.Get());
     doc.blases.resize(doc.meshes.size());
     doc.curveBlases.resize(doc.curves.size());
     // Drivers can parallelize multiple AS builds in one command buffer, but keep each submit bounded to avoid TDR.
@@ -703,15 +693,6 @@ void ReplaceScene(StringView path)
         // - Working allocator for ThreadPool
         ScopedArena sceneArena(GLOBAL_ALLOC, kDefaultSceneLoadScratchBudget);
         AllocatorStack sceneAlloc(sceneArena);
-        size_t loadScratchPeak = 0;
-        auto TrackLoadScratchPeak = [&]
-        {
-            size_t used = 0;
-            size_t budget = 0;
-            sceneAlloc.QueryBudget(used, budget);
-            loadScratchPeak = std::max(loadScratchPeak, used);
-        };
-
         EditorDocument newDoc;
         newDoc.OpenSceneFile(scenePayloadPath, &sceneAlloc);
         newDoc.selectedInstance = -1;
@@ -741,12 +722,16 @@ void ReplaceScene(StringView path)
         Vector<uint32_t> textureIDMap(newDoc.Scene().GetTextures().size(), &sceneAlloc);
 
         LOG(Editor, LogInfo, "Uploading new scene data to GPU");
-        double uploadMs = 0.0;
+        double bufferUploadMs = 0.0;
+        double textureUploadMs = 0.0;
+        double blasMs = 0.0;
         size_t blobBudget = 0;
         size_t blobLaneBudget = 0;
         size_t blobWorkerCount = 0;
+        auto const uploadStart = std::chrono::steady_clock::now();
         {
-            auto const uploadStart = std::chrono::steady_clock::now();
+            std::atomic<uint64_t> bufferUploadEndUs{0};
+            std::atomic<uint64_t> textureUploadEndUs{0};
             size_t stagedTaskCount = 0;
             stagedTaskCount += newDoc.Scene().GetMeshes().size() * 7u;
             stagedTaskCount += newDoc.Scene().GetCurves().size() * 4u;
@@ -779,9 +764,17 @@ void ReplaceScene(StringView path)
                 GPUScene::StagedUploadJob job;
                 Span<Arena> scratchArenas;
                 Span<AllocatorStack> scratchAllocators;
+                std::atomic<size_t>* batchCounter;
+                std::atomic<size_t>* dependencyCounter;
+                std::atomic<uint64_t>* uploadEndUs;
+                std::chrono::steady_clock::time_point uploadStatStart;
                 SceneUploadJob(GPUScene::StagedUploadJob const& job, Span<Arena> scratchArenas,
-                               Span<AllocatorStack> scratchAllocators) :
-                    job(job), scratchArenas(scratchArenas), scratchAllocators(scratchAllocators)
+                               Span<AllocatorStack> scratchAllocators, std::atomic<size_t>* batchCounter,
+                               std::atomic<size_t>* dependencyCounter, std::atomic<uint64_t>* uploadEndUs,
+                               std::chrono::steady_clock::time_point uploadStatStart) :
+                    job(job), scratchArenas(scratchArenas), scratchAllocators(scratchAllocators),
+                    batchCounter(batchCounter), dependencyCounter(dependencyCounter),
+                    uploadEndUs(uploadEndUs), uploadStatStart(uploadStatStart)
                 {
                 }
 
@@ -795,17 +788,96 @@ void ReplaceScene(StringView path)
                     }
                     else
                         job.Write();
+
+                    if (uploadEndUs)
+                        InterlockedMax(*uploadEndUs, MicrosecondsSince(uploadStatStart),
+                                                         std::memory_order_release);
+
+                    auto CompleteCounter = [](std::atomic<size_t>* counter)
+                    {
+                        if (!counter)
+                            return;
+                        size_t const previous = counter->fetch_sub(1, std::memory_order_release);
+                        CHECK_MSG(previous > 0, "Scene upload pending job counter underflow");
+                        if (previous == 1)
+                            counter->notify_all();
+                    };
+                    CompleteCounter(batchCounter);
+                    if (dependencyCounter != batchCounter)
+                        CompleteCounter(dependencyCounter);
+                }
+            };
+
+            struct TextureUploadWaitJob : ThreadPoolJob
+            {
+                ImmediateUpload* upload;
+                RHIDevice* device;
+                RHIDeviceFence* completionFence;
+                std::atomic<size_t>* stagedJobCounter;
+                std::atomic<uint64_t>* uploadEndUs;
+                std::chrono::steady_clock::time_point uploadStatStart;
+
+                TextureUploadWaitJob(ImmediateUpload* upload, RHIDevice* device, RHIDeviceFence* completionFence,
+                                     std::atomic<size_t>* stagedJobCounter, std::atomic<uint64_t>* uploadEndUs,
+                                     std::chrono::steady_clock::time_point uploadStatStart) :
+                    upload(upload), device(device), completionFence(completionFence), stagedJobCounter(stagedJobCounter),
+                    uploadEndUs(uploadEndUs), uploadStatStart(uploadStatStart)
+                {
+                }
+
+                void Execute(size_t) noexcept override
+                {
+                    size_t pending = stagedJobCounter->load(std::memory_order_acquire);
+                    while (pending != 0)
+                    {
+                        stagedJobCounter->wait(pending, std::memory_order_relaxed);
+                        pending = stagedJobCounter->load(std::memory_order_acquire);
+                    }
+
+                    upload->End(completionFence);
+                    RHIDeviceFence* waitFence = completionFence;
+                    device->WaitForFences(Span<RHIDeviceFence* const>(&waitFence, 1), true, -1);
+                    InterlockedMax(*uploadEndUs, MicrosecondsSince(uploadStatStart), std::memory_order_release);
                 }
             };
 
             ThreadPool uploadPool(blobWorkerCount, GetSceneUploadTaskQueueSize(stagedTaskCount),
                                   &sceneAlloc, "SceneUpload");
             Vector<GPUScene::StagedUploadJob> stagedJobs(&sceneAlloc);
-            auto ScheduleStagedJobs = [&]
+            std::atomic<size_t> uploadBatchStagedJobs{0};
+            std::atomic<size_t> geometryStagedJobs{0};
+            auto ScheduleStagedJobs = [&](std::atomic<size_t>* dependencyCounter,
+                                          std::atomic<uint64_t>* uploadEndUs,
+                                          std::chrono::steady_clock::time_point uploadStatStart)
             {
+                size_t const jobCount = stagedJobs.size();
+                if (jobCount == 0)
+                    return;
+                uploadBatchStagedJobs.fetch_add(jobCount, std::memory_order_relaxed);
+                if (dependencyCounter)
+                    dependencyCounter->fetch_add(jobCount, std::memory_order_relaxed);
                 for (GPUScene::StagedUploadJob const& job : stagedJobs)
-                    uploadPool.PushImpl<SceneUploadJob>(job, blobScratchArenas, blobScratchAllocators);
+                    uploadPool.PushImpl<SceneUploadJob>(job, blobScratchArenas, blobScratchAllocators,
+                                                        &uploadBatchStagedJobs, dependencyCounter,
+                                                        uploadEndUs, uploadStatStart);
                 stagedJobs.clear();
+            };
+            auto WaitForPendingJobs = [](std::atomic<size_t>& pendingCounter)
+            {
+                size_t pending = pendingCounter.load(std::memory_order_acquire);
+                while (pending != 0)
+                {
+                    pendingCounter.wait(pending, std::memory_order_relaxed);
+                    pending = pendingCounter.load(std::memory_order_acquire);
+                }
+            };
+            auto WaitForUploadBatchStagedJobs = [&]
+            {
+                WaitForPendingJobs(uploadBatchStagedJobs);
+            };
+            auto WaitForGeometryStagedJobs = [&]
+            {
+                WaitForPendingJobs(geometryStagedJobs);
             };
             auto FenceStagedJobs = [&]
             {
@@ -813,13 +885,13 @@ void ReplaceScene(StringView path)
                 for (size_t i = 0; i < blobScratchAllocators.size(); ++i)
                     blobScratchAllocators[i].Reset(blobScratchArenas[i]);
             };
-            const size_t uploadStaging = SceneStagingBufferBudget(newDoc.Scene(), directGeometryUpload, true);
+            const size_t uploadStaging = SceneStagingBufferBudget(newDoc.Scene(), directGeometryUpload);
             LOG(Editor, LogInfo, "Scene CPU Staging Budget: {} bytes", uploadStaging);
-            ImmediateUpload upload(GContext->device.Get(), uploadStaging);
+            ImmediateUpload upload(GContext->device.Get(), uploadStaging, RHIDeviceQueueType::Transfer);
             upload.Begin();
             auto FlushUpload = [&]
             {
-                FenceStagedJobs();
+                WaitForUploadBatchStagedJobs();
                 upload.End(), upload.WaitIdle(), upload.Begin();
             };
             // Geometry Upload
@@ -839,7 +911,7 @@ void ReplaceScene(StringView path)
                               "Staging buffer too small for single mesh upload ({} bytes)",
                               GPUScene::CalculateMeshPrimitiveSize(srcDesc));
                 }
-                ScheduleStagedJobs();
+                ScheduleStagedJobs(&geometryStagedJobs, &bufferUploadEndUs, uploadStart);
             }
             for (auto const& srcDesc : newDoc.Scene().GetCurves())
             {
@@ -859,8 +931,20 @@ void ReplaceScene(StringView path)
                               GPUScene::CalculateCurvePrimitiveSize(srcDesc),
                               GPUScene::CalculateCurveAABBSize(srcDesc));
                 }
-                ScheduleStagedJobs();
+                ScheduleStagedJobs(&geometryStagedJobs, &bufferUploadEndUs, uploadStart);
             }
+            WaitForGeometryStagedJobs();
+            if (newGPUScene->UsesDirectGeometryUpload())
+                newGPUScene->FlushDirectGeometryUpload();
+            upload.End(), upload.WaitIdle();
+            if (geometryResourceCount != 0)
+                InterlockedMax(bufferUploadEndUs, MicrosecondsSince(uploadStart),
+                                                 std::memory_order_release);
+            upload.Begin();
+            bufferUploadMs = double(bufferUploadEndUs.load(std::memory_order_acquire)) / 1000.0;
+            auto const textureUploadStart = std::chrono::steady_clock::now();
+            bool anyTextureUpload = false;
+
             // Texture Upload
             // Always memcpy'd since these are block-compressed.
             for (int id = 0; auto const& srcDesc : newDoc.Scene().GetTextures())
@@ -882,14 +966,31 @@ void ReplaceScene(StringView path)
                                   "Staging buffer too small for single texture upload (texture {}, {} bytes)",
                                   id, srcDesc.data.decodedSize);
                     }
-                    ScheduleStagedJobs();
+                    anyTextureUpload = true;
+                    ScheduleStagedJobs(nullptr, &textureUploadEndUs, textureUploadStart);
                 }
                 id++;
             }
+            auto textureUploadFence = GContext->device->CreateFence(false);
+            ThreadPool textureWaitPool(1u, GetSceneUploadTaskQueueSize(1u), &sceneAlloc, "TextureUploadWait");
+            if (anyTextureUpload)
+            {
+                textureWaitPool.PushImpl<TextureUploadWaitJob>(&upload, GContext->device.Get(), textureUploadFence.Get(),
+                                                               &uploadBatchStagedJobs, &textureUploadEndUs,
+                                                               textureUploadStart);
+            }
+            else
+            {
+                upload.End(), upload.WaitIdle();
+            }
+
+            BuildEditorInstances(newDoc, meshOffsets, curveOffsets);
+            BuildSceneLights(newDoc, newGlobals, newGPUScene->mLightSamplerType);
+            blasMs = BuildAccelerationStructuresForScene(newGPUScene, newDoc);
+
             FenceStagedJobs();
-            if (newGPUScene->UsesDirectGeometryUpload())
-                newGPUScene->FlushDirectGeometryUpload();
-            upload.End(), upload.WaitIdle();
+            textureWaitPool.Join();
+            textureUploadMs = double(textureUploadEndUs.load(std::memory_order_acquire)) / 1000.0;
             FTexture sdr(&sceneAlloc);
             FTexture hdr(&sceneAlloc);
             upload.Begin();
@@ -897,16 +998,15 @@ void ReplaceScene(StringView path)
                                  newViewLUTSdrExternalPath, newViewLUTHdrExternalPath, &sceneAlloc);
             newGPUScene->UploadViewLUTs(&upload, sdr, hdr);
             upload.End(), upload.WaitIdle();
-            uploadMs = MillisecondsSince(uploadStart);
         }
-        LOG(Editor, LogInfo, "Scene GPU upload complete in {:.2f} ms (blob scratch {:.2f} MB, total {:.2f} MB across {} workers)",
-            uploadMs, double(blobLaneBudget) / double(1u << 20),
+        double uploadWallMs = MillisecondsSince(uploadStart);
+        LOG(Editor, LogInfo, "Scene GPU upload complete (wall {:.2f} ms, buffer upload {:.2f} ms, texture upload {:.2f} ms, BLAS {:.2f} ms, diff sum {:.2f} ms blob scratch {:.2f} MB, total {:.2f} MB across {} workers)",
+            uploadWallMs, bufferUploadMs, textureUploadMs, blasMs,
+            uploadWallMs - (bufferUploadMs + textureUploadMs + blasMs), double(blobLaneBudget) / double(1u << 20),
             double(blobBudget) / double(1u << 20), blobWorkerCount);
 
         BuildEditorMaterials(newDoc, textureIDMap);
-        BuildEditorInstances(newDoc, meshOffsets, curveOffsets);
         ApplySceneCamera(newDoc, newCamera, newAperture, newGlobals);
-        BuildSceneLights(newDoc, newGlobals, newGPUScene->mLightSamplerType);
         CommitSceneToGPU(newGPUScene, newDoc, newGlobals, true);
         newGlobals.ggxLutEIndex = newGPUScene->GetGGXLutEIndex();
         newGlobals.viewLutIndex = GContext->enableHDR
@@ -915,7 +1015,6 @@ void ReplaceScene(StringView path)
         newGlobals.envMapTextureIndex = newGPUScene->GetEnvMapIndexOrDefault();
         newGlobals.envMapMarginalCDFIndex = newGPUScene->GetEnvMapMarginalCDFIndexOrDefault();
         newGlobals.envMapConditionalCDFIndex = newGPUScene->GetEnvMapConditionalCDFIndexOrDefault();
-        double const blasMs = BuildAccelerationStructuresForScene(newGPUScene, newDoc);
 
         EditorDocument commitDoc;
         commitDoc.OpenSceneFile(scenePayloadPath, &sceneAlloc);
@@ -956,16 +1055,15 @@ void ReplaceScene(StringView path)
         GEditor.cameraUpdated = true;
         GEditor.state = FERunningEnter;
 
-        TrackLoadScratchPeak();
         size_t currentLoadScratchUsed = 0;
         size_t loadScratchBudget = 0;
         sceneAlloc.QueryBudget(currentLoadScratchUsed, loadScratchBudget);
         double const loadMs = MillisecondsSince(loadStart);
         double const gpuRateMbS = loadMs > 0.0 ?
             (double(sceneGpuBudget) / double(1u << 20)) / (loadMs * 1e-3) : 0.0;
-        LOG(Editor, LogInfo, "Scene load complete in {:.2f} ms (build {:.2f} ms, upload {:.2f} ms, BLAS {:.2f} ms, avg GPU rate {:.2f} MB/s, load scratch peak {:.2f} / {:.2f} MB): {} meshes, {} instances, {} curves, {} materials",
-            loadMs, sceneBuildMs, uploadMs, blasMs, gpuRateMbS,
-            double(loadScratchPeak) / double(1u << 20), double(loadScratchBudget) / double(1u << 20),
+        LOG(Editor, LogInfo, "Scene load complete in {:.2f} ms (build {:.2f} ms, buffer upload {:.2f} ms, texture upload {:.2f} ms, BLAS {:.2f} ms, avg GPU rate {:.2f} MB/s, load scratch {:.2f} MB): {} meshes, {} instances, {} curves, {} materials",
+            loadMs, sceneBuildMs, bufferUploadMs, textureUploadMs, blasMs, gpuRateMbS,
+            loadScratchBudget / static_cast<double>(1u << 20),
             sceneMeshCount, sceneInstanceCount, sceneCurveCount, sceneMaterialCount);
     }
     catch (std::exception const& e)

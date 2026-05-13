@@ -24,4 +24,24 @@ namespace Foundation::Core
      * @brief Alias of `std::atomic<T>`.
      */
     template<typename T> using Atomic = std::atomic<T>;
+
+    template<typename T>
+    T InterlockedMin(Atomic<T>& atomic, T value, std::memory_order order = std::memory_order_seq_cst)
+    {
+        T previous = atomic.load(std::memory_order_relaxed);
+        while (value < previous && !atomic.compare_exchange_weak(previous, value, order, std::memory_order_relaxed))
+        {
+        }
+        return previous;
+    }
+
+    template<typename T>
+    T InterlockedMax(Atomic<T>& atomic, T value, std::memory_order order = std::memory_order_seq_cst)
+    {
+        T previous = atomic.load(std::memory_order_relaxed);
+        while (previous < value && !atomic.compare_exchange_weak(previous, value, order, std::memory_order_relaxed))
+        {
+        }
+        return previous;
+    }
 }

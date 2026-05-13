@@ -2,26 +2,20 @@
 #include "Scene/Texture.hpp"
 #include <Core/AllocatorStack.hpp>
 
-static constexpr size_t kUtilScratchBudget = 512ull * (1ull << 20);
-
 int main_scene(StringView srcPath, StringView dstPath)
 {
-    ScopedArena scratchArena(GLOBAL_ALLOC, kUtilScratchBudget);
-    AllocatorStack scratch(scratchArena);
-    MemoryMappedFile file(dstPath, 64ull * 1024ull * 1024ull);
-    FScene scene(file, &scratch);
+    MemoryMappedFile file(dstPath, 64ull * 1024ull * 1024ull /* grows on demand */);
+    FScene scene(file, GLOBAL_ALLOC);
     LOG(Util, LogDebug, "Saving");
-    LoadGLTF(srcPath, scene, &scratch);
+    LoadGLTF(srcPath, scene, GLOBAL_ALLOC);
     return 0;
 }
 int main_texture(StringView srcImagePath, StringView dstDDSPath)
 {
-    ScopedArena scratchArena(GLOBAL_ALLOC, kUtilScratchBudget);
-    AllocatorStack scratch(scratchArena);
-    FTexture texture(&scratch);
+    FTexture texture(GLOBAL_ALLOC);
     LoadRGBA8(texture, srcImagePath);
     texture.GenerateMips();
-    texture = texture.EncodeBC7(&scratch);
+    texture = texture.EncodeBC7(GLOBAL_ALLOC);
     uint64_t fileSize = sizeof(texture.magic) + sizeof(texture.header) +
                         (texture.header.ddspf.fourCC == DDSPF_DX10.fourCC ? sizeof(texture.header10) : 0) +
                         texture.bytes.size();

@@ -40,8 +40,8 @@ namespace Foundation::RenderCore
         RHIDeviceScopedHandle<RHIBuffer> staging;
 
         char *begin, *ptr, *end;
-        ImmediateUpload(RHIDevice* device, size_t capacity) :
-            ctx(RHIDeviceQueueType::Graphics, device),
+        ImmediateUpload(RHIDevice* device, size_t capacity, RHIDeviceQueueType type = RHIDeviceQueueType::Graphics) :
+            ctx(type, device),
             staging(device->CreateBuffer({.resource =
                                               {
                                                   .heap = RHIDeviceHeapType::Upload,

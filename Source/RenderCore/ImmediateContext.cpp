@@ -10,7 +10,7 @@ namespace Foundation::RenderCore
     {
         mQueue->Submit({{{.cmdLists = {{mCommandList.Get()}}}}}, completionFence);
     }
-    void ImmediateContext::WaitIdle() { mDevice->WaitIdle(); }
+    void ImmediateContext::WaitIdle() { mQueue->WaitIdle(); }
     void ImmediateUpload::Begin()
     {
         ctx->Reset();
