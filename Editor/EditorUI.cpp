@@ -753,16 +753,13 @@ void FLightingPanel()
         // ---- Ambient / Environment ----
         if (ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            anyChanged |= ImHDRColorEdit("Ambient", GEditor.shaderGlobals.ambientColor, GEditor.shaderGlobals.ambientPower);
+            bool envChanged = ImHDRColorEdit("Ambient", GEditor.shaderGlobals.ambientColor, GEditor.shaderGlobals.ambientPower);
 
             ImGui::Separator();
             bool hasEnv = GContext->gpuScene && GContext->gpuScene->GetEnvMap();
             ImGui::Text(hasEnv ? "HDRI Loaded" : "No HDRI");
             if (hasEnv)
             {
-                bool envChanged = false;
-                envChanged |= ImGui::SliderFloat("Env Scale", &GEditor.shaderGlobals.envMapScale, 0.0f, 10.0f, "%.3f",
-                                                 ImGuiSliderFlags_Logarithmic);
                 envChanged |= ImGui::SliderFloat("Azimuth Offset", &GEditor.shaderGlobals.envAzimuthOffset, -180.0f, 180.0f,
                                               "%.1f deg");
                 bool envEnabled = GEditor.shaderGlobals.useEnvMap != 0u;
@@ -771,8 +768,17 @@ void FLightingPanel()
                     GEditor.shaderGlobals.useEnvMap = envEnabled ? 1u : 0u;
                     envChanged = true;
                 }
-                if (envChanged)
-                    anyChanged = true;
+            }
+            if (envChanged)
+            {
+                if (GEditor.doc.HasScene())
+                {
+                    auto& globals = GEditor.doc.Scene().GetSceneGlobals();
+                    globals.color = GEditor.shaderGlobals.ambientColor;
+                    globals.strength = GEditor.shaderGlobals.ambientPower;
+                    globals.azimuthOffset = GEditor.shaderGlobals.envAzimuthOffset;
+                }
+                anyChanged = true;
             }
             ImGui::TextDisabled("Drag & drop .hdr/.hdri to load");
         }

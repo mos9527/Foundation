@@ -117,8 +117,8 @@ enum class FSceneEnvironmentType : uint32_t
 struct FSceneGlobals
 {
     FSceneEnvironmentType type{FSceneEnvironmentType::Color};
-    float3 color{1.0f, 1.0f, 1.0f};
-    float strength{0.05f};
+    float3 color{0.05f, 0.05f, 0.05f};
+    float strength{1.0f};
     float azimuthOffset{0.0f};
     float postExposure{0.0f};
     uint32_t viewLutSdrIndex{1u};

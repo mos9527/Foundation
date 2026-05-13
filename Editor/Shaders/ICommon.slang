@@ -213,7 +213,6 @@ public struct UBO
     public float3 ambientColor;
     public float ambientPower;
     public uint32_t useEnvMap;
-    public float envMapScale;
     public float envAzimuthOffset;
     // Scene lights
     public uint32_t firstLight;

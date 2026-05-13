@@ -930,7 +930,9 @@ bool SeparableBSSRDF_SampleSp<S : ISampler>(
 
 float GetEnvLightSelectionWeight()
 {
-    return globalParams.useEnvMap != 0u ? globalParams.envMapScale : globalParams.ambientPower;
+    return globalParams.useEnvMap != 0u
+        ? globalParams.ambientPower
+        : MaxComponent(globalParams.ambientColor) * globalParams.ambientPower;
 }
 
 LightLiSample SampleSceneLight(GSLight gl, LightSampleContext ctx, float2 u)
@@ -1279,8 +1281,8 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     float frameCount = float(GetPTPixelSampleCount(subSample));    
     float lastSamplePDF = 0.0f;
     InfiniteLight env = InfiniteLight(
-        SampledSpectrum(globalParams.ambientColor * globalParams.ambientPower),
-        globalParams.envMapScale,
+        SampledSpectrum(globalParams.ambientColor),
+        globalParams.ambientPower,
         globalParams.useEnvMap != 0u,
         globalParams.envAzimuthOffset
     );

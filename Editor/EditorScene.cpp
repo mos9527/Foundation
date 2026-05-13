@@ -460,7 +460,6 @@ static void ApplySceneEnvironment()
     auto const& environment = GEditor.doc.Scene().GetSceneGlobals();
     GEditor.shaderGlobals.ambientColor = environment.color;
     GEditor.shaderGlobals.ambientPower = environment.strength;
-    GEditor.shaderGlobals.envMapScale = environment.strength;
     GEditor.shaderGlobals.envAzimuthOffset = environment.azimuthOffset;
     GEditor.shaderGlobals.useEnvMap = 0u;
 }
@@ -747,7 +746,7 @@ void LoadEnvMap(StringView path)
         GEditor.doc.Scene().GetSceneGlobals() = {
             .type = FSceneEnvironmentType::EnvMap,
             .color = GEditor.shaderGlobals.ambientColor,
-            .strength = GEditor.shaderGlobals.envMapScale,
+            .strength = GEditor.shaderGlobals.ambientPower,
             .azimuthOffset = GEditor.shaderGlobals.envAzimuthOffset,
         };
         GEditor.shaderGlobals.useEnvMap = 1u;

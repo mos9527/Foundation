@@ -31,10 +31,9 @@ struct UBO
     float4 camPosition;
     float4 camDirection;
     // Environment light
-    float3 ambientColor{1,1,1};
-    float ambientPower{0.05f};
+    float3 ambientColor{0.05f, 0.05f, 0.05f};
+    float ambientPower{1.0f};
     uint32_t useEnvMap{0u};
-    float envMapScale{1.0f};
     float envAzimuthOffset{0.0f}; // [-180, 180]
     // Scene lights
     uint32_t firstLight{0u};
