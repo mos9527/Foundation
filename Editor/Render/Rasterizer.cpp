@@ -57,7 +57,10 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
         RHIBufferDesc{.usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::UniformBuffer,
                       .size = sizeof(UBO)});
     /* Instance and Primitive buffers */
-    auto TLAS = renderer->CreateResource("Scene TLAS", gpu->GetTLAS());
+    bool hasTLAS = gpu->GetTLAS() != nullptr;
+    ResourceHandle TLAS = kInvalidHandle;
+    if (hasTLAS)
+        TLAS = renderer->CreateResource("Scene TLAS", gpu->GetTLAS());
     auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
 
     auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
@@ -122,16 +125,19 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
             cmd->FillBuffer(counter, 0u);
         });
     bool kDebugViewUnlit = cfg.viewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewMeshlet);
+    bool useRTShadows = (cfg.viewFlags & kEnableRasterRTShadows) && !kDebugViewUnlit && hasTLAS;
+    uint32_t lightingViewFlags = useRTShadows ? cfg.viewFlags : (cfg.viewFlags & ~kEnableRasterRTShadows);
     // Raytracing
-    if (cfg.viewFlags & kEnableRasterRTShadows && !kDebugViewUnlit)
+    if (useRTShadows)
     {
         renderer->CreatePass(
             "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
             { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
             {
-                if (scene.gsInstances->empty() && scene.gsLights->empty())
-                    return;
-                gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsCurveBLASes, *scene.gsLights, true);
+                auto result = gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsCurveBLASes,
+                                             *scene.gsLights, true);
+                if (result == GPUScene::TLASBuildResult::NeedsRendererRebuild && scene.rendererRebuildRequested)
+                    *scene.rendererRebuildRequested = true;
             });
     }
     renderer->CreatePass(
@@ -460,7 +466,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSLighting.spv"),
-                          AsBytes(AsSpan(cfg.viewFlags)));
+                          AsBytes(AsSpan(lightingViewFlags)));
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindTextureSRV(self, GBufferRT0, "RT0", RHIPipelineStageBits::ComputeShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R8G8B8A8Unorm,
@@ -475,7 +481,8 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                 self, ZBuffer, "depth", RHIPipelineStageBits::ComputeShader,
                 RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
-            r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
+            if (useRTShadows)
+                r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
             r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
             r->BindTextureSampler(self, LUTSampler, "lutSampler");
             r->BindTextureSRV(self, GGXlutE, "ggxLutE", RHIPipelineStageBits::ComputeShader,
@@ -488,6 +495,8 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
+            if (useRTShadows && scene.rendererRebuildRequested && *scene.rendererRebuildRequested)
+                return;
             r->CmdSetPipeline(self, cmd);
             r->CmdDispatch(self, cmd, {w, h, 1});
         });

@@ -67,17 +67,17 @@ void main(uint2 tid: SV_DispatchThreadID) {
     float roughness = color2.w;
     float3 emissive = color2.xyz;
 
-    if (flags & (kViewBaseColor | kViewMeshlet)) {
+    if ((flags & (kViewBaseColor | kViewMeshlet)) != 0) {
         // Meshlet passed down to GBuffer RT0
         output[tid] = float4(baseColor, 1.0f);
         return;
-    } else if (flags & kViewMaterialID) {
+    } else if ((flags & kViewMaterialID) != 0) {
         output[tid] = float4(unpackUnorm4x8ToFloat(hash(materialID)).xyz, 1.0f);
         return;
-    } else if (flags & kViewNormal) {
+    } else if ((flags & kViewNormal) != 0) {
         output[tid] = float4(n * 0.5f + 0.5f, 1.0f);
         return;
-    } else if (flags & kViewPosition) {
+    } else if ((flags & kViewPosition) != 0) {
         output[tid] = float4(p.xyz, 1.0f);
         return;
     } else {
@@ -126,7 +126,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
             float3 wi = toLocal.rotate(l);
             float3 f = bsdf.f(wo, wi, TransportMode::Radiance);
             float vis;
-            if (flags & kEnableRasterRTShadows) {
+            if ((flags & kEnableRasterRTShadows) != 0) {
                 float3 shadowNormalFF = dot(l, n) < 0.0f ? -n : n;
                 float3 shadowOrigin = OffsetRay(p, n);
                 vis = shadow(shadowOrigin, l, lightDist) ? 0.0f : 1.0f;

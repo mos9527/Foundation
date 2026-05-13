@@ -42,7 +42,7 @@ namespace Foundation::RenderCore
 
         RHIDeviceIdleGuard mIdleGuard;
 
-        uint32_t Update(uint32_t id, RHITextureView* view);
+        uint32_t UpdateDescriptor(uint32_t id, RHITextureView* view);
         void AddStats(Binding const& binding);
         void RemoveStats(Binding const& binding);
     public:
@@ -68,7 +68,11 @@ namespace Foundation::RenderCore
         /**
          * @brief Takes ownership of the texture, and creates a binding for it.
          */
-        uint32_t Allocate(RHIDeviceScopedHandle<RHITexture>&& texture, RHITextureView* view);
+        uint32_t Allocate(RHIDeviceScopedHandle<RHITexture>&& texture, RHITextureScopedHandle<RHITextureView>&& view);
+        /**
+         * @brief Replaces an owned texture binding in-place while keeping the same bindless id.
+         */
+        uint32_t Update(uint32_t id, RHIDeviceScopedHandle<RHITexture>&& texture, RHITextureScopedHandle<RHITextureView>&& view);
         /**
          * @brief Free a binding, and - with it - the owned resource (if any).
          */

@@ -143,6 +143,7 @@ struct RendererScene
     Vector<uint32_t>* gsCurveBLASes;
     Vector<GSLight>* gsLights;
     RendererPicking* picking;
+    bool* rendererRebuildRequested{nullptr};
 };
 
 struct RendererHandles

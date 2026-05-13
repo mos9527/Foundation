@@ -153,16 +153,17 @@ struct UploadGPURingBuffer
      */
     Pair<T*, uint32_t> Allocate(uint32_t count)
     {
+        CHECK_MSG(count <= Capacity(), "GPU upload ring allocation overflow: requested {} elements, capacity {}", count, Capacity());
         T* begin = mRing;
-        if (begin + count >= mEnd) // Wrap
+        if (static_cast<size_t>(mEnd - begin) < count) // Wrap
             begin = mRing = mBegin;
-        uint32_t offset = mRing - mBegin;
-        mPrevRing = mRing, mRing += count;
+        uint32_t offset = static_cast<uint32_t>(begin - mBegin);
+        mPrevRing = begin, mRing = begin + count;
         return {begin, offset};
     }
     void Reset() { mRing = mBegin; }
     [[nodiscard]] uint32_t Used() const { return mRing - mPrevRing; }
-    [[nodiscard]] uint32_t Capacity() const { return mEnd - mBegin; }
+    [[nodiscard]] uint32_t Capacity() const { return static_cast<uint32_t>(mEnd - mBegin); }
 };
 /**
  * @brief Async GPU scene data storage for Editor.
@@ -195,11 +196,12 @@ class GPUScene
     uint32_t mEnvMapIndex{UINT32_MAX};
     RHIDeviceScopedHandle<RHIBuffer> mEnvMapMarginalCDF;
     uint32_t mEnvMapConditionalCDFIndex{UINT32_MAX};
+    size_t UploadOrUpdateTexture(ImmediateUpload* ctx, FTexture const& source, uint32_t& index,
+                                 const char* debugName = nullptr);
     /* AS */
     // BLAS
     Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mBLASes;
     Vector<RHIDeviceScopedHandle<RHIBuffer>> mBLASBuffers;
-    size_t blasOffset{0};
     Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> mCurveBLASes;
     Vector<RHIDeviceScopedHandle<RHIBuffer>> mCurveBLASBuffers;
     RHIDeviceScopedHandle<RHIBuffer> mCurveAABBBuffer;
@@ -210,6 +212,8 @@ class GPUScene
     RHIDeviceScopedHandle<RHIBuffer> mTLASBuffer, mScratchBufferTLAS;
     RHIDeviceScopedHandle<RHIAccelerationStructure> mTLAS;
     UploadGPURingBuffer<char> mTLASInstances;
+    uint32_t CountTLASInstances(Span<const GSInstance> instances, Span<const GSLight> lights) const;
+    bool EnsureTLASCapacity(uint32_t totalInstances, bool allowRecreate);
     // Samplers
     RHIDeviceScopedHandle<RHIBuffer> mSobolMatricesBuffer;
     
@@ -230,11 +234,11 @@ public:
     {
         uint32_t primitiveBudget = 16 * (1u << 20); // 16MB
         uint32_t curveAABBBudget = 16 * (1u << 20); // 16MB
-        uint32_t instanceBudget = static_cast<uint32_t>(1e4); // # of instances (ring)
+        uint32_t instanceBudget = static_cast<uint32_t>(1e4); // # of GSInstance elements (ring)
         uint32_t materialBudget = static_cast<uint32_t>(1e3); // # of materials (ring)
         uint32_t lightBudget = static_cast<uint32_t>(1e4); // # of lights (ring)
         uint32_t texturesBudget = static_cast<uint32_t>(1e3); // # of textures
-        uint32_t blasBudget = 64 * (1u << 20); // 64MB
+        uint32_t tlasInstanceBudget = static_cast<uint32_t>(1e4); // # of TLAS instances (ring)
         uint32_t tlasBudget = 16 * (1u << 20); // 16MB
         uint32_t tlasScratchBudget = 32 * (1u << 20); // 32MB (ring)
     };
@@ -295,7 +299,11 @@ public:
         char* ptr{nullptr};
         size_t size{0};
         GSMesh meshData{};
-        FSerializedCurve curve{};
+        FBlobRef curvePoints{};
+        FBlobRef curveVertexCounts{};
+        uint32_t curvePointStride{0};
+        uint32_t curvePointBytes{0};
+        FCurveBasis curveBasis{FCurveBasis::Linear};
         GSCurveSet curveData{};
         uint32_t curvePrimitiveOffset{0};
         char* curveAABBPtr{nullptr};
@@ -315,7 +323,14 @@ public:
 
     void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices);
     void BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curves, Span<uint32_t> outBLASIndices);
-    void BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, Span<const uint32_t> curveBLASIndices, Span<const GSLight> lights, bool update = false);
+    enum class TLASBuildResult
+    {
+        Built,
+        Empty,
+        NeedsRendererRebuild
+    };
+    [[nodiscard]] bool EnsureTLASCapacity(Span<const GSInstance> instances, Span<const GSLight> lights);
+    [[nodiscard]] TLASBuildResult BuildTLAS(RHICommandList* cmd, Span<const GSInstance> instances, Span<const uint32_t> blasIndices, Span<const uint32_t> curveBLASIndices, Span<const GSLight> lights, bool update = false);
 
     /* Geometry */
     [[nodiscard]] RHIBuffer* GetPrimitiveBuffer() const { return mPrimitiveBuffer.Get(); }
@@ -338,7 +353,10 @@ public:
     [[nodiscard]] RHIBuffer* GetEnvMapMarginalCDF() const { return mEnvMapMarginalCDF.IsValid() ? mEnvMapMarginalCDF.Get() : nullptr; }
     [[nodiscard]] RHITexture* GetEnvMapConditionalCDF() const;
     /* AS */
-    [[nodiscard]] RHIAccelerationStructure* GetTLAS() const { return mTLAS.IsValid() ? mTLAS.Get() : nullptr; }
+    [[nodiscard]] RHIAccelerationStructure* GetTLAS() const
+    {
+        return mTLAS.IsValid() && mLastTLASInstancesCount > 0 ? mTLAS.Get() : nullptr;
+    }
     /* Samplers */
     [[nodiscard]] RHIBuffer* GetSobolMatricesBuffer() const;
 

@@ -11,10 +11,34 @@ foreach(SlangFile IN LISTS SLANG_FILES)
         continue()
     endif()
 
+    if(ShaderName STREQUAL "ERTPathTracer" OR ShaderName STREQUAL "EPSGBuffer")
+        set(ShaderCapabilities
+            SPV_GOOGLE_user_type
+            spvDerivativeControl
+            spvImageQuery
+            spvImageGatherExtended
+            spvSparseResidency
+            spvMinLod
+            spvFragmentFullyCoveredEXT
+        )
+    elseif(ShaderName STREQUAL "ECSLighting")
+        set(ShaderCapabilities
+            spvRayQueryKHR
+        )
+    elseif(ShaderName STREQUAL "ECSCullInstances" OR ShaderName STREQUAL "ECSCullMeshlets")
+        set(ShaderCapabilities
+            spvGroupNonUniformBallot
+            spvGroupNonUniformArithmetic
+        )
+    else()
+        set(ShaderCapabilities)
+    endif()
+
     slangc_compile(
             "Shader_${ShaderName}"
             SOURCE          "${SlangFile}"
             OUTPUT_DIR      "${SHADER_BUILD_DIR}"
+            CAPABILITIES    ${ShaderCapabilities}
     )
     add_dependencies(Editor_Shaders "Shader_${ShaderName}")
 
@@ -27,7 +51,9 @@ foreach(SlangFile IN LISTS SLANG_FILES)
                 OUTPUT_NAME     "${ShaderName}_SER"
                 DEFINES         PT_ENABLE_SER=1
                 # Otherwise Slang emits VK_NV_ray_tracing_invocation_reorder. Eugh.
-                CAPABILITIES    spvShaderInvocationReorderEXT
+                CAPABILITIES    ${ShaderCapabilities}
+                                spvShaderInvocationReorderEXT
+                                spvShaderInvocationReorderNV
         )
         add_dependencies(Editor_Shaders "Shader_${ShaderName}_SER")
     endif()

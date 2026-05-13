@@ -89,7 +89,7 @@ void ImGui_ImplFoundation_ImplUpdateTexture(ImTextureData* tex)
              .format = RHIResourceFormat::R8G8B8A8Unorm});
         auto view = hdl->CreateTextureView(
             {.format = RHIResourceFormat::R8G8B8A8Unorm, .range = RHITextureSubresourceRange::Create()});
-        auto handle = gImGuiTexturePool->Allocate(std::move(hdl), view.Release().Get());
+        auto handle = gImGuiTexturePool->Allocate(std::move(hdl), std::move(view));
         tex->SetTexID(ImGui_ImplFoundation_EncodeImTextureID(handle));
         tex->BackendUserData = gImGuiTexturePool.get();
     }

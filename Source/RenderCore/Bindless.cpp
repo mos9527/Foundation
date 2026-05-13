@@ -1,6 +1,6 @@
 namespace Foundation::RenderCore
 {
-    uint32_t BindlessPool::Update(uint32_t id, RHITextureView* view)
+    uint32_t BindlessPool::UpdateDescriptor(uint32_t id, RHITextureView* view)
     {
         std::unique_lock lock(mDescMutex);
         mDescSet->Update({.binding = 0,
@@ -60,14 +60,29 @@ namespace Foundation::RenderCore
         Binding* binding = mBindings.Construct(Binding{0uLL, {view->GetTexture()}, {view}});
         binding->id = mBindings.Index(binding);
         AddStats(*binding);
-        return Update(binding->id, view);
+        return UpdateDescriptor(binding->id, view);
     }
-    uint32_t BindlessPool::Allocate(RHIDeviceScopedHandle<RHITexture>&& texture, RHITextureView* view)
+    uint32_t BindlessPool::Allocate(RHIDeviceScopedHandle<RHITexture>&& texture, RHITextureScopedHandle<RHITextureView>&& view)
     {
-        Binding* binding = mBindings.Construct(Binding{0uLL, {std::move(texture)}, {view}});
+        RHITextureView* rawView = view.Get();
+        Binding* binding = mBindings.Construct(Binding{0uLL, {std::move(texture)}, {std::move(view)}});
         binding->id = mBindings.Index(binding);
         AddStats(*binding);
-        return Update(binding->id, view);
+        return UpdateDescriptor(binding->id, rawView);
+    }
+    uint32_t BindlessPool::Update(uint32_t id, RHIDeviceScopedHandle<RHITexture>&& texture, RHITextureScopedHandle<RHITextureView>&& view)
+    {
+        Binding* binding = mBindings.At(id);
+        CHECK_MSG(binding, "Cannot update invalid bindless texture binding {}", id);
+        RHITextureView* rawView = view.Get();
+        UpdateDescriptor(id, rawView);
+        mIdleGuard.WaitIdle();
+        RemoveStats(*binding);
+        std::destroy_at(binding);
+        std::construct_at(binding, Binding{0uLL, {std::move(texture)}, {std::move(view)}});
+        binding->id = id;
+        AddStats(*binding);
+        return id;
     }
     void BindlessPool::Free(uint32_t id)
     {

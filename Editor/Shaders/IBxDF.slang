@@ -162,8 +162,11 @@ public bool Refract(
     }
     float sin2Theta_i = 1 - Sqr(cosTheta_i);
     float sin2Theta_t = sin2Theta_i / Sqr(eta);
-    if (sin2Theta_t >= 1) // Total internal reflection - transmission impossible
+    if (sin2Theta_t >= 1) { // Total internal reflection - transmission impossible
+        wt = float3(0.0f);
+        etap = eta;
         return false;
+    }
     float cosTheta_t = SafeSqrt(1 - sin2Theta_t);
     float invEta = 1.0f / eta;
     wt = invEta * -wi + (invEta * cosTheta_i - cosTheta_t) * n;

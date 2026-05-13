@@ -60,11 +60,11 @@ import glsl; // https://github.com/shader-slang/slang/issues/4120
 Fragment main(V2F input, float2 fragCoord : SV_Position /* pixel space */)
 {
     Fragment output;
-    if (flags & kViewMeshlet)
+    if ((flags & kViewMeshlet) != 0)
         output = drawMeshlet(input);
     else
         output = drawGBuffer(input);
-    if (flags & kViewOverdraw)
+    if ((flags & kViewOverdraw) != 0)
         imageAtomicAdd(overdraw, int2(fragCoord), 1);
     return output;
 }

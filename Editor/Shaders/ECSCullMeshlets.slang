@@ -46,8 +46,10 @@ bool projSphereAABB(float3 c /* view */, float r /* scaled */, float P00, float 
 {
     // f = 1 / tan(fovY / 2), a = aspect ratio
     // P00 = f/a, P11 = f
-	if (c.z + r > -zNear) // clipping near plane
+	if (c.z + r > -zNear) { // clipping near plane
+		aabb = float4(0.0f);
 		return false;
+	}
 
 	float3 cr = c * r;
 	float czr2 = c.z * c.z - r * r;
@@ -71,10 +73,10 @@ bool projSphereAABB(float3 c /* view */, float r /* scaled */, float P00, float 
 [shader("compute")]
 [numthreads(kMeshWorkGroupSize, 1, 1)]
 void main(uint groupIndex: SV_GroupIndex, uint2 groupID: SV_GroupID) {
-    const bool early = cullFlags & kCullStageFirst;
-    const bool late = cullFlags & kCullStageLate;
-    const bool cullFrustum = cullFlags & kCullFrustum;
-    const bool cullOcclusion = cullFlags & kCullOcclusion;
+    const bool early = (cullFlags & kCullStageFirst) != 0;
+    const bool late = (cullFlags & kCullStageLate) != 0;
+    const bool cullFrustum = (cullFlags & kCullFrustum) != 0;
+    const bool cullOcclusion = (cullFlags & kCullOcclusion) != 0;
     // -- Global Load --
     uint count = inTasksCounter[0];
     uint dispatchIndex = dot(groupID, uint2(kMeshWorkGroupSize, 1)); // ID of this group, flattened    

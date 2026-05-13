@@ -27,13 +27,21 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             auto* ubo = r->DerefResource(GlobalUBO).Get<RHIBuffer*>();
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(*scene.gsGlobals)));
         });
-    auto TLAS = renderer->CreateResource("Scene TLAS", gpu->GetTLAS());
-    renderer->CreatePass(
-        "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
-        { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
-        {
-            gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsCurveBLASes, *scene.gsLights, true);
-        });
+    bool hasTLAS = gpu->GetTLAS() != nullptr;
+    ResourceHandle TLAS = kInvalidHandle;
+    if (hasTLAS)
+    {
+        TLAS = renderer->CreateResource("Scene TLAS", gpu->GetTLAS());
+        renderer->CreatePass(
+            "TLAS Update", RHIDeviceQueueType::Graphics, 0u, [=](PassHandle self, Renderer* r)
+            { r->BindAccelerationStructureWrite(self, TLAS); }, [=](PassHandle, Renderer* r, RHICommandList* cmd)
+            {
+                auto result = gpu->BuildTLAS(cmd, *scene.gsInstances, *scene.gsBLASes, *scene.gsCurveBLASes,
+                                             *scene.gsLights, true);
+                if (result == GPUScene::TLASBuildResult::NeedsRendererRebuild && scene.rendererRebuildRequested)
+                    *scene.rendererRebuildRequested = true;
+            });
+    }
     /* Instance and Primitive buffers */
     auto PrimitiveBuffer = renderer->CreateResource("Primitive Buffer", gpu->GetPrimitiveBuffer());
     auto InstanceBuffer = renderer->CreateResource("Instance Buffer", gpu->GetInstanceBuffer());
@@ -112,13 +120,16 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
                                                    .v = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
                                                    .w = RHIDeviceSampler::SamplerDesc::AddressMode::ClampToEdge,
                                                }});
-    renderer->CreatePass(
-        "Trace", RHIDeviceQueueType::Graphics, 0u,
-        [=](PassHandle self, Renderer* r)
+    if (hasTLAS)
+    {
+        renderer->CreatePass(
+            "Trace", RHIDeviceQueueType::Graphics, 0u,
+            [=](PassHandle self, Renderer* r)
         {
             using RTHitGroupType = RHIPipelineState::PipelineStateDesc::RayTracingHitGroupType;
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::RayTracingShader, "globalParams");
-            r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::RayTracingShader, "AS");
+            if (hasTLAS)
+                r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::RayTracingShader, "AS");
             const bool shaderExecutionReordering =
                 cfg.ptShaderExecutionReordering && context->device->GetCapabilities().shaderExecutionReordering;
             const uint ptCompileOptions = PTPackCompileOptions(shaderExecutionReordering, cfg.ptSampler);
@@ -210,12 +221,57 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
         {
             r->CmdSetPipeline(self, cmd);
             r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexturePool()->GetDescriptorSet());
-            if (!renderPaused || !*renderPaused)
+            bool canTrace = (!renderPaused || !*renderPaused) &&
+                (!scene.rendererRebuildRequested || !*scene.rendererRebuildRequested);
+            if (canTrace)
             {
                 uint32_t tileSide = PTDispatchTileSide(*scene.gsGlobals);
                 cmd->TraceRays((w - 1u) / tileSide + 1u, (h - 1u) / tileSide + 1u, 1);
             }
         });
+    }
+    else
+    {
+        auto CreateClearRGBA = [=](StringView name, ResourceHandle texture)
+        {
+            renderer->CreatePass(
+                name, RHIDeviceQueueType::Compute, 0u,
+                [=](PassHandle self, Renderer* r)
+                {
+                    r->BindTextureUAV(self, texture, "texture", RHIPipelineStageBits::ComputeShader,
+                                      {.format = RHIResourceFormat::R32G32B32A32SignedFloat,
+                                       .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                    r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/CSClearBuffer.spv"));
+                    r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
+                },
+                [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+                {
+                    CSClearBufferData cdata{float4{}, w, h};
+                    r->CmdSetPipeline(self, cmd);
+                    r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, cdata);
+                    r->CmdDispatch(self, cmd, {cdata.w, cdata.h, 1});
+                });
+        };
+        CreateClearRGBA("Clear Diffuse", Diffuse);
+        CreateClearRGBA("Clear Specular", Specular);
+        renderer->CreatePass(
+            "Clear Pick ID", RHIDeviceQueueType::Compute, 0u,
+            [=](PassHandle self, Renderer* r)
+            {
+                r->BindTextureUAV(self, PickIDBuffer, "texture", RHIPipelineStageBits::ComputeShader,
+                                  {.format = RHIResourceFormat::R32Uint,
+                                   .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSPickIDClear.spv"));
+                r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
+            },
+            [=](PassHandle self, Renderer* r, RHICommandList* cmd)
+            {
+                CSClearBufferData cdata{float4{}, w, h};
+                r->CmdSetPipeline(self, cmd);
+                r->CmdSetPushConstant(self, cmd, RHIShaderStageBits::Compute, 0, cdata);
+                r->CmdDispatch(self, cmd, {cdata.w, cdata.h, 1});
+            });
+    }
 
     createPSFullscreenPassRTV(
         renderer, "Postprocess", PostprocessBuffer,

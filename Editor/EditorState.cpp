@@ -7,6 +7,7 @@ EditorState GEditor;
 static RendererHandles sRenderReadback;
 static RHIBuffer*        sPickResultBuffer = nullptr;
 static RendererPicking   sPicking;
+static bool              sRendererRebuildRequested = false;
 static float             sIdleTimeSeconds = 0.0f;
 
 static RHIExtent2D ClampViewportExtent(RHIExtent2D extent)
@@ -130,18 +131,22 @@ static void FRunningEnter()
 {
     sPickResultBuffer = nullptr;
     sPicking.pendingPixel = {-1, -1};
+    sRendererRebuildRequested = false;
     // The old renderer owns views into the current swapchain; release them before recreating the swapchain.
     DestroyEditorRenderer(GContext);
     UpdateSwapchain(GContext);
     // Invalidate stale readback handles before rebuilding the renderer
     sRenderReadback = {};
+    if (GContext->gpuScene)
+        GContext->gpuScene->EnsureTLASCapacity(GEditor.doc.instances, GEditor.doc.lights);
     RendererScene scene{
         .gsGlobals = &GEditor.shaderGlobals,
         .gsInstances = &GEditor.doc.instances,
         .gsBLASes = &GEditor.doc.blases,
         .gsCurveBLASes = &GEditor.doc.curveBlases,
         .gsLights = &GEditor.doc.lights,
-        .picking = &sPicking
+        .picking = &sPicking,
+        .rendererRebuildRequested = &sRendererRebuildRequested
     };
     SetupSceneRenderer(GContext, scene, sRenderReadback);
     sPickResultBuffer = GContext->renderer->DerefResource(sRenderReadback.pickBuffer).Get<RHIBuffer*>();
@@ -189,6 +194,12 @@ static void FRunning()
         GEditor.shaderGlobals.ptAccumulatedFrames = 0, GEditor.cameraUpdated = false;
     renderer->ExecuteFrame();
     renderer->EndExecute();
+    if (sRendererRebuildRequested)
+    {
+        GEditor.state = FERunningEnter;
+        GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+        return;
+    }
     // GPU picking: Blit PS wrote pickResult[0] this frame if a click was pending.
     // Readback buffer is coherent+persistently mapped — just read it directly.
     if (sPicking.pendingPixel.x >= 0 && sPickResultBuffer)
