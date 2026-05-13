@@ -306,18 +306,16 @@ public:
         uint64_t blobOffset{0};
         char* ptr{nullptr};
         size_t size{0};
-        Allocator* scratchAlloc{nullptr};
         GSMesh meshData{};
         GSCurveSet curveData{};
 
-        void Write() const;
+        void Write(Allocator* scratchAlloc = nullptr) const;
     };
 
     size_t BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedMesh const& source, GSMesh& outData,
-                       uint32_t& outOffset, Vector<StagedUploadJob>& outJobs, Allocator* scratchAlloc);
+                       uint32_t& outOffset, Vector<StagedUploadJob>& outJobs);
     size_t BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedCurve const& source,
-                       GSCurveSet& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs,
-                       Allocator* scratchAlloc);
+                       GSCurveSet& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs);
     size_t Upload(ImmediateUpload* ctx, FTextureHeader const& metadata, Span<const unsigned char> data, uint32_t& outIndex, const char* debugName = nullptr);
     size_t Upload(ImmediateUpload* ctx, FTexture const& source, uint32_t& outIndex, const char* debugName = nullptr);
     size_t BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedTexture const& source, uint32_t& outIndex,

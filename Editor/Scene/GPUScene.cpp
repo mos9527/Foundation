@@ -126,7 +126,7 @@ GPUScene::GPUSceneDesc GPUScene::CalculateSceneBudget(FScene const& scene, RHIDe
     return desc;
 }
 
-void GPUScene::StagedUploadJob::Write() const
+void GPUScene::StagedUploadJob::Write(Allocator* scratchAlloc) const
 {
     switch (kind)
     {
@@ -579,10 +579,8 @@ String GPUScene::DbgGetBufferStatistics() const
 }
 
 size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedMesh const& src,
-                             GSMesh& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs,
-                             Allocator* scratchAlloc)
+                             GSMesh& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs)
 {
-    CHECK(scratchAlloc != nullptr);
     CHECK_MSG(!src.lods.empty(), "Serialized mesh has no LODs");
     auto const& lod0 = src.lods[0];
     const size_t size = CalculateMeshPrimitiveSize(src);
@@ -620,7 +618,6 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSeriali
         job.blob = blob;
         job.ptr = dstPtr;
         job.size = static_cast<size_t>(blob.decodedSize);
-        job.scratchAlloc = scratchAlloc;
         outJobs.push_back(job);
     };
 
@@ -664,10 +661,8 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSeriali
 }
 
 size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedCurve const& src,
-                             GSCurveSet& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs,
-                             Allocator* scratchAlloc)
+                             GSCurveSet& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs)
 {
-    CHECK(scratchAlloc != nullptr);
     static_assert(sizeof(FCurvePoint) == sizeof(GSCurvePoint));
     static_assert(alignof(FCurvePoint) == alignof(GSCurvePoint));
     static_assert(sizeof(FSerializedCurveSegment) == sizeof(GSCurveSegment));
@@ -735,7 +730,6 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSeriali
         job.blob = blob;
         job.ptr = dstPtr;
         job.size = static_cast<size_t>(blob.decodedSize);
-        job.scratchAlloc = scratchAlloc;
         outJobs.push_back(job);
     };
 
