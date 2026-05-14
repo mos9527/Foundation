@@ -125,7 +125,7 @@ struct FSceneGlobals
     uint32_t viewLutHdrIndex{1u};
 };
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 2;
+static constexpr uint32_t kSceneVersion = 3;
 struct FSceneTables
 {
     FSceneGlobals globals;
@@ -190,7 +190,7 @@ inline void FDeserialize(FReader& reader, FSceneTables& tables)
     FDeserialize(reader, tables.materials);
     FDeserialize(reader, tables.meshes, tables.meshes.get_allocator().mResource);
     FDeserialize(reader, tables.curves);
-    FDeserialize(reader, tables.textures);
+    FDeserialize(reader, tables.textures, tables.textures.get_allocator().mResource);
 }
 
 struct FSceneHeader
@@ -286,7 +286,6 @@ struct FScene
     Span<const unsigned char> GetPayloadBytes() const;
     FBlobDeserializer GetBlobDeserializer() const;
     bool ReadBlob(FBlobRef const& blob, void* dst, size_t size, Allocator* scratchAlloc) const;
-    bool ReadBlobRange(FBlobRef const& blob, uint64_t srcOffset, void* dst, size_t size) const;
 
     template <typename T>
     Vector<T> ReadBlobArray(FBlobRef const& blob, Allocator* alloc = GLOBAL_ALLOC) const

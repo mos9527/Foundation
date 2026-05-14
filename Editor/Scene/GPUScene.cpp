@@ -126,6 +126,11 @@ GPUScene::GPUSceneDesc GPUScene::CalculateSceneBudget(FScene const& scene, RHIDe
     return desc;
 }
 
+bool GPUScene::StagedUploadJob::NeedsScratch() const
+{
+    return kind == Kind::Blob && blob.codec != FBlobCodec::None;
+}
+
 void GPUScene::StagedUploadJob::Write(Allocator* scratchAlloc) const
 {
     switch (kind)
@@ -146,16 +151,10 @@ void GPUScene::StagedUploadJob::Write(Allocator* scratchAlloc) const
     {
         CHECK(scene != nullptr);
         CHECK(ptr != nullptr || size == 0);
-        CHECK(scratchAlloc != nullptr);
+        if (NeedsScratch())
+            CHECK(scratchAlloc != nullptr);
         CHECK(size == static_cast<size_t>(blob.decodedSize));
         CHECK(scene->ReadBlob(blob, ptr, size, scratchAlloc));
-        return;
-    }
-    case Kind::BlobRange:
-    {
-        CHECK(scene != nullptr);
-        CHECK(ptr != nullptr || size == 0);
-        CHECK(scene->ReadBlobRange(blob, blobOffset, ptr, size));
         return;
     }
     default:
@@ -766,22 +765,6 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FTexture const& source, uint32_t& 
                   Span<const unsigned char>(source.bytes.data(), source.bytes.size()), outIndex, debugName);
 }
 
-static uint64_t CalculateTextureImageSize(uint32_t width, uint32_t height, uint32_t depth, uint32_t mipLevels,
-                                          uint32_t blockSize, uint32_t blockDim)
-{
-    uint64_t res = 0;
-    while (mipLevels--)
-    {
-        uint64_t blocksX = (uint64_t(width) + blockDim - 1) / blockDim;
-        uint64_t blocksY = (uint64_t(height) + blockDim - 1) / blockDim;
-        res += blocksX * blocksY * depth * blockSize;
-        width = std::max(1u, width / 2);
-        height = std::max(1u, height / 2);
-        depth = std::max(1u, depth / 2);
-    }
-    return res;
-}
-
 static bool IsTexture3DView(RHITextureDimension dimension)
 {
     return dimension == RHITextureDimension::E3D;
@@ -799,6 +782,13 @@ BindlessPool& GPUScene::SelectTexturePool(RHITextureDimension viewDimension)
 BindlessPool const& GPUScene::SelectTexturePool(RHITextureDimension viewDimension) const
 {
     return const_cast<GPUScene*>(this)->SelectTexturePool(viewDimension);
+}
+
+static uint32_t GetTextureUploadAlignment(FTextureHeader const& metadata)
+{
+    uint32_t const alignment = std::max(metadata.GetBpp() / 8, metadata.GetBlockSize());
+    CHECK_MSG(alignment != 0, "Unsupported texture format {}", metadata.GetFormat());
+    return alignment;
 }
 
 size_t GPUScene::UploadOrUpdateTexture(ImmediateUpload* ctx, FTexture const& source, uint32_t& index,
@@ -833,15 +823,18 @@ size_t GPUScene::UploadOrUpdateTexture(ImmediateUpload* ctx, FTexture const& sou
     for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
     {
         uint64_t layerOffset =
-            uint64_t(layer) * CalculateTextureImageSize(metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
-                                                        metadata.GetNumMips(), blockSize, blockDim);
+            uint64_t(layer) * FTextureHeader::CalculateTextureImageSize(
+                                  metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
+                                  metadata.GetNumMips(), blockSize, blockDim);
         for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
         {
-            uint64_t mipOffset = CalculateTextureImageSize(metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
-                                                           mip, blockSize, blockDim);
+            uint64_t mipOffset = FTextureHeader::CalculateTextureImageSize(
+                metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(), mip, blockSize, blockDim);
             RHIExtent3D mipExtent = metadata.GetMipExtent(mip);
-            uint64_t mipSize64 = CalculateTextureImageSize(mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
-            CHECK_MSG(mipSize64 <= std::numeric_limits<size_t>::max(), "Texture subresource size {} exceeds addressable range", mipSize64);
+            uint64_t mipSize64 = FTextureHeader::CalculateTextureImageSize(
+                mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
+            CHECK_MSG(mipSize64 <= std::numeric_limits<size_t>::max(),
+                      "Texture subresource size {} exceeds addressable range", mipSize64);
             size_t mipSize = static_cast<size_t>(mipSize64);
             uint64_t subresourceOffset = layerOffset + mipOffset;
             uint64_t subresourceEnd = subresourceOffset + mipSize64;
@@ -916,15 +909,18 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FTextureHeader const& metadata, Sp
     for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
     {
         uint64_t layerOffset =
-            uint64_t(layer) * CalculateTextureImageSize(metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
-                                                        metadata.GetNumMips(), blockSize, blockDim);
+            uint64_t(layer) * FTextureHeader::CalculateTextureImageSize(
+                                  metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
+                                  metadata.GetNumMips(), blockSize, blockDim);
         for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
         {
-            uint64_t mipOffset = CalculateTextureImageSize(metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
-                                                           mip, blockSize, blockDim);
+            uint64_t mipOffset = FTextureHeader::CalculateTextureImageSize(
+                metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(), mip, blockSize, blockDim);
             RHIExtent3D mipExtent = metadata.GetMipExtent(mip);
-            uint64_t mipSize64 = CalculateTextureImageSize(mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
-CHECK_MSG(mipSize64 <= std::numeric_limits<size_t>::max(), "Texture subresource size {} exceeds addressable range", mipSize64);
+            uint64_t mipSize64 = FTextureHeader::CalculateTextureImageSize(
+                mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
+            CHECK_MSG(mipSize64 <= std::numeric_limits<size_t>::max(),
+                      "Texture subresource size {} exceeds addressable range", mipSize64);
             size_t mipSize = static_cast<size_t>(mipSize64);
             uint64_t subresourceOffset = layerOffset + mipOffset;
             uint64_t subresourceEnd = subresourceOffset + mipSize64;
@@ -964,44 +960,122 @@ CHECK_MSG(mipSize64 <= std::numeric_limits<size_t>::max(), "Texture subresource 
     return written;
 }
 
+GPUScene::TextureUpload GPUScene::BeginTextureUpload(ImmediateUpload* ctx, FSerializedTexture const& source,
+                                                     const char* debugName)
+{
+    CHECK_MSG(source.IsValid(), "Serialized texture is invalid");
+
+    FTextureHeader const& metadata = static_cast<FTextureHeader const&>(source);
+    TextureUpload upload{};
+    upload.metadata = metadata;
+    upload.texture = mContext->device->CreateTexture(metadata.GetDesc());
+    if (debugName)
+        upload.texture->DebugSetObjectName(debugName);
+
+    auto range = RHITextureSubresourceRange::Create(
+        RHITextureAspectFlagBits::Color,
+        0, metadata.GetNumMips(),
+        0, upload.texture->mDesc.arrayLayers);
+    auto* cmd = ctx->ctx.Get();
+    cmd->BeginTransition();
+    cmd->SetImageTransition(upload.texture.Get(), {
+                                .dstImgLayout = RHITextureLayout::TransferDst,
+                                .srcImgRange = range
+                            });
+    cmd->EndTransition();
+    return upload;
+}
+
+size_t GPUScene::BeginTextureSubresourceUpload(ImmediateUpload* ctx, FScene const& scene,
+                                               FSerializedTexture const& source, TextureUpload& upload,
+                                               uint32_t layer, uint32_t mip,
+                                               Vector<StagedUploadJob>& outJobs)
+{
+    CHECK(upload.IsValid());
+    CHECK_MSG(source.IsValid(), "Serialized texture is invalid");
+
+    FTextureHeader const& metadata = static_cast<FTextureHeader const&>(source);
+    CHECK_MSG(upload.metadata.GetSize() == metadata.GetSize(), "Texture upload metadata mismatch");
+    FBlobRef const& subresourceBlob = source.GetSubresourceBlob(layer, mip);
+    size_t const subresourceSize = metadata.GetSubresourceSize(layer, mip);
+    CHECK_MSG(subresourceBlob.decodedSize == subresourceSize,
+              "Serialized texture subresource size mismatch: layer {}, mip {}, blob {}, expected {}",
+              layer, mip, subresourceBlob.decodedSize, subresourceSize);
+
+    uint32_t const alignment = GetTextureUploadAlignment(metadata);
+    char* preflight = reinterpret_cast<char*>(AlignUp(reinterpret_cast<uintptr_t>(ctx->ptr), alignment));
+    if (preflight >= ctx->end || static_cast<size_t>(ctx->end - preflight) < subresourceSize)
+        return 0;
+
+    CHECK(ctx->Align(alignment));
+    RHIExtent3D const mipExtent = metadata.GetMipExtent(mip);
+    char* ptr = ctx->Upload(upload.texture.Get(), subresourceSize,
+                            {
+                                .aspect = RHITextureAspectFlagBits::Color,
+                                .mipLevel = mip, .baseArrayLayer = layer, .layerCount = 1
+                            },
+                            {0, 0, 0}, mipExtent);
+    CHECK(ptr != nullptr);
+
+    StagedUploadJob job{};
+    job.scene = &scene;
+    job.kind = StagedUploadJob::Kind::Blob;
+    job.blob = subresourceBlob;
+    job.ptr = ptr;
+    job.size = subresourceSize;
+    outJobs.push_back(job);
+    return subresourceSize;
+}
+
+void GPUScene::EndTextureUpload(ImmediateUpload* ctx, TextureUpload&& upload, uint32_t& outIndex)
+{
+    CHECK(upload.IsValid());
+    FTextureHeader const& metadata = upload.metadata;
+    auto range = RHITextureSubresourceRange::Create(
+        RHITextureAspectFlagBits::Color,
+        0, metadata.GetNumMips(),
+        0, upload.texture->mDesc.arrayLayers);
+    auto* cmd = ctx->ctx.Get();
+    cmd->BeginTransition();
+    cmd->SetImageTransition(upload.texture.Get(), {
+                                .srcImgLayout = RHITextureLayout::TransferDst,
+                                .dstImgLayout = RHITextureLayout::ShaderReadOnly,
+                                .srcImgRange = range
+                            });
+    cmd->EndTransition();
+
+    auto view = upload.texture->CreateTextureView({
+        .format = metadata.GetFormat(),
+        .dimension = metadata.GetViewDimension(),
+        .range = RHITextureSubresourceRange::Create(
+            RHITextureAspectFlagBits::Color,
+            0, metadata.GetNumMips(),
+            0, upload.texture->mDesc.arrayLayers)
+    });
+    outIndex = SelectTexturePool(metadata.GetViewDimension()).Allocate(std::move(upload.texture), std::move(view));
+}
+
 size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedTexture const& source,
                              uint32_t& outIndex, Vector<StagedUploadJob>& outJobs, const char* debugName)
 {
     CHECK_MSG(source.IsValid(), "Serialized texture is invalid");
-    CHECK_MSG(source.data.codec == FBlobCodec::None, "Serialized texture data must not use LZ4 blob compression");
-    CHECK_MSG(source.data.decodedSize == source.GetSize(), "Serialized texture size mismatch: descriptor {} header {}",
-              source.data.decodedSize, source.GetSize());
 
     FTextureHeader const& metadata = static_cast<FTextureHeader const&>(source);
-    uint32_t blockSize = metadata.GetBlockSize(), blockDim = 4;
-    if (!blockSize)
-        blockSize = metadata.GetBpp() / 8, blockDim = 1;
-    CHECK_MSG(blockSize && blockDim, "Unsupported texture format {}", metadata.GetFormat());
-
-    uint32_t alignment = std::max(metadata.GetBpp() / 8, metadata.GetBlockSize());
+    uint32_t alignment = GetTextureUploadAlignment(metadata);
     char* preflight = ctx->ptr;
     for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
     {
-        uint64_t layerOffset =
-            uint64_t(layer) * CalculateTextureImageSize(metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
-                                                        metadata.GetNumMips(), blockSize, blockDim);
         for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
         {
-            uint64_t mipOffset = CalculateTextureImageSize(metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
-                                                           mip, blockSize, blockDim);
-            RHIExtent3D mipExtent = metadata.GetMipExtent(mip);
-            uint64_t mipSize64 = CalculateTextureImageSize(mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
-CHECK_MSG(mipSize64 <= std::numeric_limits<size_t>::max(), "Texture subresource size {} exceeds addressable range", mipSize64);
-            size_t mipSize = static_cast<size_t>(mipSize64);
-            uint64_t subresourceOffset = layerOffset + mipOffset;
-            uint64_t subresourceEnd = subresourceOffset + mipSize64;
-            CHECK_MSG(subresourceEnd <= source.data.decodedSize,
-                      "Texture subresource out of range: layer {}, mip {} (size {}), data size {}",
-                      layer, mip, mipSize, source.data.decodedSize);
+            FBlobRef const& subresourceBlob = source.GetSubresourceBlob(layer, mip);
+            size_t const subresourceSize = metadata.GetSubresourceSize(layer, mip);
+            CHECK_MSG(subresourceBlob.decodedSize == subresourceSize,
+                      "Serialized texture subresource size mismatch: layer {}, mip {}, blob {}, expected {}",
+                      layer, mip, subresourceBlob.decodedSize, subresourceSize);
             preflight = reinterpret_cast<char*>(AlignUp(reinterpret_cast<uintptr_t>(preflight), alignment));
-            if (preflight >= ctx->end || static_cast<size_t>(ctx->end - preflight) < mipSize)
+            if (preflight >= ctx->end || static_cast<size_t>(ctx->end - preflight) < subresourceSize)
                 return 0;
-            preflight += mipSize;
+            preflight += subresourceSize;
         }
     }
 
@@ -1023,20 +1097,13 @@ CHECK_MSG(mipSize64 <= std::numeric_limits<size_t>::max(), "Texture subresource 
 
     for (uint32_t layer = 0; layer < metadata.GetNumLayers(); ++layer)
     {
-        uint64_t layerOffset =
-            uint64_t(layer) * CalculateTextureImageSize(metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
-                                                        metadata.GetNumMips(), blockSize, blockDim);
         for (uint32_t mip = 0; mip < metadata.GetNumMips(); ++mip)
         {
-            uint64_t mipOffset = CalculateTextureImageSize(metadata.GetWidth(), metadata.GetHeight(), metadata.GetDepth(),
-                                                           mip, blockSize, blockDim);
-            RHIExtent3D mipExtent = metadata.GetMipExtent(mip);
-            uint64_t mipSize64 = CalculateTextureImageSize(mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
-CHECK_MSG(mipSize64 <= std::numeric_limits<size_t>::max(), "Texture subresource size {} exceeds addressable range", mipSize64);
-            size_t mipSize = static_cast<size_t>(mipSize64);
-            uint64_t subresourceOffset = layerOffset + mipOffset;
+            FBlobRef const& subresourceBlob = source.GetSubresourceBlob(layer, mip);
+            size_t const subresourceSize = metadata.GetSubresourceSize(layer, mip);
             CHECK(ctx->Align(alignment));
-            char* ptr = ctx->Upload(texture.Get(), mipSize,
+            RHIExtent3D mipExtent = metadata.GetMipExtent(mip);
+            char* ptr = ctx->Upload(texture.Get(), subresourceSize,
                                     {
                                         .aspect = RHITextureAspectFlagBits::Color,
                                         .mipLevel = mip, .baseArrayLayer = layer, .layerCount = 1
@@ -1046,13 +1113,12 @@ CHECK_MSG(mipSize64 <= std::numeric_limits<size_t>::max(), "Texture subresource 
 
             StagedUploadJob job{};
             job.scene = &scene;
-            job.kind = StagedUploadJob::Kind::BlobRange;
-            job.blob = source.data;
-            job.blobOffset = subresourceOffset;
+            job.kind = StagedUploadJob::Kind::Blob;
+            job.blob = subresourceBlob;
             job.ptr = ptr;
-            job.size = mipSize;
+            job.size = subresourceSize;
             outJobs.push_back(job);
-            written += mipSize;
+            written += subresourceSize;
         }
     }
     cmd->BeginTransition();
@@ -1078,7 +1144,8 @@ CHECK_MSG(mipSize64 <= std::numeric_limits<size_t>::max(), "Texture subresource 
 // - https://github.com/zeux/niagara/blob/master/src/scenert.cpp
 // - https://docs.vulkan.org/tutorial/latest/courses/18_Ray_tracing/02_Acceleration_structures.html
 // - https://docs.vulkan.org/tutorial/latest/courses/18_Ray_tracing/04_TLAS_animation.html
-void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices)
+void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices,
+                         ImmediateSubmitDesc const& firstSubmitDesc)
 {
     CHECK_MSG(meshes.size() == outBLASIndices.size(), "Mismatched BLAS indices size");
     if (meshes.empty())
@@ -1188,7 +1255,7 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
         cmd->BuildAccelerationStructure({{{desc}}});
     }
     cmd->End();
-    ctx->Submit(), ctx->WaitIdle();
+    ctx->Submit(firstSubmitDesc), ctx->WaitIdle();
     // Compact
     auto queryPool = device->CreateQueryPool({
         .type = RHIDeviceQueryPool::QueryPoolDesc::AccelerationStructureCompactedSize,
@@ -1238,7 +1305,8 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
         blasOffset / 1e6);
 }
 
-void GPUScene::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curves, Span<uint32_t> outBLASIndices)
+void GPUScene::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curves, Span<uint32_t> outBLASIndices,
+                              ImmediateSubmitDesc const& firstSubmitDesc)
 {
     CHECK_MSG(curves.size() == outBLASIndices.size(), "Mismatched curve BLAS indices size");
     if (curves.empty())
@@ -1317,7 +1385,7 @@ void GPUScene::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curv
         desc.dstAS = blas.Get();
         cmd->BuildAccelerationStructure({{{desc}}});
     }
-    cmd->End(), ctx->Submit(), ctx->WaitIdle();
+    cmd->End(), ctx->Submit(firstSubmitDesc), ctx->WaitIdle();
     LOG(GPUScene, LogDebug, "Curve BLAS Upload Complete: {} BLASes, {} MB used",
         curves.size(), blasOffset / 1e6);
 }

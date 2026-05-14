@@ -289,6 +289,7 @@ public:
     void DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const;
     [[nodiscard]] String DbgGetBufferStatistics() const;
     [[nodiscard]] bool UsesDirectGeometryUpload() const { return mDirectGeometryUpload; }
+    [[nodiscard]] uint32_t GetLightCapacity() const { return mLightBuffer.Capacity(); }
     void FlushDirectGeometryUpload();
 
     struct StagedUploadJob
@@ -300,16 +301,23 @@ public:
             MeshHeader,
             CurveHeader,
             Blob,
-            BlobRange,
         } kind{Kind::None};
         FBlobRef blob{};
-        uint64_t blobOffset{0};
         char* ptr{nullptr};
         size_t size{0};
         GSMesh meshData{};
         GSCurveSet curveData{};
 
+        [[nodiscard]] bool NeedsScratch() const;
         void Write(Allocator* scratchAlloc = nullptr) const;
+    };
+
+    struct TextureUpload
+    {
+        FTextureHeader metadata{};
+        RHIDeviceScopedHandle<RHITexture> texture;
+
+        [[nodiscard]] bool IsValid() const { return texture.IsValid(); }
     };
 
     size_t BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedMesh const& source, GSMesh& outData,
@@ -318,11 +326,19 @@ public:
                        GSCurveSet& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs);
     size_t Upload(ImmediateUpload* ctx, FTextureHeader const& metadata, Span<const unsigned char> data, uint32_t& outIndex, const char* debugName = nullptr);
     size_t Upload(ImmediateUpload* ctx, FTexture const& source, uint32_t& outIndex, const char* debugName = nullptr);
+    TextureUpload BeginTextureUpload(ImmediateUpload* ctx, FSerializedTexture const& source,
+                                     const char* debugName = nullptr);
+    size_t BeginTextureSubresourceUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedTexture const& source,
+                                         TextureUpload& upload, uint32_t layer, uint32_t mip,
+                                         Vector<StagedUploadJob>& outJobs);
+    void EndTextureUpload(ImmediateUpload* ctx, TextureUpload&& upload, uint32_t& outIndex);
     size_t BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSerializedTexture const& source, uint32_t& outIndex,
                        Vector<StagedUploadJob>& outJobs, const char* debugName = nullptr);
 
-    void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices);
-    void BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curves, Span<uint32_t> outBLASIndices);
+    void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices,
+                   ImmediateSubmitDesc const& firstSubmitDesc = {});
+    void BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curves, Span<uint32_t> outBLASIndices,
+                        ImmediateSubmitDesc const& firstSubmitDesc = {});
     enum class TLASBuildResult
     {
         Built,

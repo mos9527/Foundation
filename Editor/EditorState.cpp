@@ -98,7 +98,7 @@ static void FInitEnter()
 static void FInit()
 {
     // Transition to FERunningEnter when scene data is available
-    if (!GEditor.doc.instances.empty())
+    if (!GEditor.instances.empty())
         GEditor.state = FERunningEnter;
     else
     {
@@ -138,13 +138,13 @@ static void FRunningEnter()
     // Invalidate stale readback handles before rebuilding the renderer
     sRenderReadback = {};
     if (GContext->gpuScene)
-        GContext->gpuScene->EnsureTLASCapacity(GEditor.doc.instances, GEditor.doc.lights);
+        GContext->gpuScene->EnsureTLASCapacity(GEditor.instances, GEditor.lights);
     RendererScene scene{
         .gsGlobals = &GEditor.shaderGlobals,
-        .gsInstances = &GEditor.doc.instances,
-        .gsBLASes = &GEditor.doc.blases,
-        .gsCurveBLASes = &GEditor.doc.curveBlases,
-        .gsLights = &GEditor.doc.lights,
+        .gsInstances = &GEditor.instances,
+        .gsBLASes = &GEditor.blases,
+        .gsCurveBLASes = &GEditor.curveBlases,
+        .gsLights = &GEditor.lights,
         .picking = &sPicking,
         .rendererRebuildRequested = &sRendererRebuildRequested
     };
@@ -205,13 +205,13 @@ static void FRunning()
     if (sPicking.pendingPixel.x >= 0 && sPickResultBuffer)
     {
         uint32_t id = *sPickResultBuffer->Map<uint32_t>();
-        GEditor.doc.selectedInstance = -1;
-        GEditor.doc.selectedMaterial = -1;
-        if (id != ~0u && id < GEditor.doc.instances.size())
+        GEditor.selectedInstance = -1;
+        GEditor.selectedMaterial = -1;
+        if (id != ~0u && id < GEditor.instances.size())
         {
-            GEditor.doc.selectedInstance = static_cast<int>(id);
-            GEditor.doc.selectedMaterial = static_cast<int>(GEditor.doc.instances[GEditor.doc.selectedInstance].materialIndex);
-            GEditor.doc.selectedLight = -1;
+            GEditor.selectedInstance = static_cast<int>(id);
+            GEditor.selectedMaterial = static_cast<int>(GEditor.instances[GEditor.selectedInstance].materialIndex);
+            GEditor.selectedLight = -1;
         }
         sPicking.pendingPixel = {-1, -1};
     }

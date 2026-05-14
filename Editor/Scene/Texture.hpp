@@ -33,16 +33,44 @@ struct FTextureHeader
     [[nodiscard]] RHIResourceFormat GetFormat() const;
     [[nodiscard]] uint32_t GetBlockSize() const;
     [[nodiscard]] uint32_t GetBpp() const;
+    [[nodiscard]] static uint64_t CalculateTextureImageSize(uint32_t width, uint32_t height, uint32_t depth,
+                                                            uint32_t mipLevels, uint32_t blockSize,
+                                                            uint32_t blockDim);
     [[nodiscard]] uint32_t GetSize() const;
+    [[nodiscard]] size_t GetSubresourceSize(uint32_t layer, uint32_t mip) const;
     [[nodiscard]] RHIExtent3D GetMipExtent(uint32_t mipLevel) const;
     [[nodiscard]] RHITextureDesc GetDesc() const;
 };
 
 struct FSerializedTexture : FTextureHeader
 {
-    FBlobRef data;
+    Vector<FBlobRef> subresources;
 
-    [[nodiscard]] bool IsValid() const { return FTextureHeader::IsValid() && data.storedSize != 0; }
+    explicit FSerializedTexture(Allocator* alloc = GLOBAL_ALLOC)
+        : subresources(alloc)
+    {
+    }
+
+    [[nodiscard]] uint32_t GetSubresourceCount() const { return GetNumLayers() * GetNumMips(); }
+
+    [[nodiscard]] uint32_t GetSubresourceIndex(uint32_t layer, uint32_t mip) const
+    {
+        CHECK_MSG(layer < GetNumLayers(), "Texture layer {} out of range {}", layer, GetNumLayers());
+        CHECK_MSG(mip < GetNumMips(), "Texture mip {} out of range {}", mip, GetNumMips());
+        return layer * GetNumMips() + mip;
+    }
+
+    [[nodiscard]] FBlobRef const& GetSubresourceBlob(uint32_t layer, uint32_t mip) const
+    {
+        uint32_t const index = GetSubresourceIndex(layer, mip);
+        CHECK_MSG(index < subresources.size(), "Texture subresource {} missing from serialized texture", index);
+        return subresources[index];
+    }
+
+    [[nodiscard]] bool IsValid() const
+    {
+        return FTextureHeader::IsValid() && subresources.size() == GetSubresourceCount() && !subresources.empty();
+    }
 };
 
 struct FTexture : FTextureHeader
@@ -65,13 +93,20 @@ struct FTexture : FTextureHeader
      */
     FTexture EncodeBC7(Allocator* alloc = GLOBAL_ALLOC) const;
 
-    [[nodiscard]] FSerializedTexture ToSerializedTexture(FBlobRef blob = {}) const
+    [[nodiscard]] static Vector<float> ReadbackAndCombineRGBA32F(RHIDevice* device, RHITexture* const* sourceTextures,
+                                                                  uint32_t sourceCount, uint32_t& outWidth,
+                                                                  uint32_t& outHeight,
+                                                                  Allocator* alloc = GLOBAL_ALLOC);
+    [[nodiscard]] static Vector<unsigned char> ReadbackRGBA8(RHIDevice* device, RHITexture* sourceTexture,
+                                                             uint32_t& outWidth, uint32_t& outHeight,
+                                                             Allocator* alloc = GLOBAL_ALLOC);
+
+    [[nodiscard]] FSerializedTexture ToSerializedTexture(Allocator* alloc = GLOBAL_ALLOC) const
     {
-        FSerializedTexture texture;
+        FSerializedTexture texture(alloc);
         texture.magic = magic;
         texture.header = header;
         texture.header10 = header10;
-        texture.data = blob;
         return texture;
     }
 };
@@ -116,6 +151,26 @@ void SaveHDR(const float* data, int width, int height, StringView path);
  */
 void SavePNG(const unsigned char* data, int width, int height, StringView path);
 /* -- Serialization -- */
+template <>
+inline void FSerialize(FWriter& w, FSerializedTexture const& obj)
+{
+    FTextureHeader const& header = obj;
+    FSerialize(w, header.magic);
+    FSerialize(w, header.header);
+    FSerialize(w, header.header10);
+    FSerialize(w, obj.subresources);
+}
+
+template <>
+inline void FDeserialize(FReader& r, FSerializedTexture& obj)
+{
+    FTextureHeader& header = obj;
+    FDeserialize(r, header.magic);
+    FDeserialize(r, header.header);
+    FDeserialize(r, header.header10);
+    FDeserialize(r, obj.subresources);
+}
+
 template <>
 inline void FSerialize(FWriter& w, FTexture const& obj)
 {

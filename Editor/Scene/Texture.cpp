@@ -1,7 +1,10 @@
 #include "Texture.hpp"
+#include <RenderCore/ImmediateContext.hpp>
 #include <bc7enc.h>
+#include <limits>
 #include <stb_image_write.h>
 using namespace Foundation::RHI;
+using namespace Foundation::RenderCore;
 FTexture::FTexture(Allocator* alloc) : bytes(alloc)
 {
     magic = DDS_MAGIC;
@@ -140,14 +143,18 @@ RHIResourceFormat FTextureHeader::GetFormat() const
     }
 }
 // https://learn.microsoft.com/en-us/windows/win32/direct3ddds/dx-graphics-dds-pguide
-uint32_t getImageSize(uint32_t width, uint32_t height, uint32_t depth, uint32_t mipLevels, uint32_t blockSize,
-                      uint32_t blockDim)
+uint64_t FTextureHeader::CalculateTextureImageSize(uint32_t width, uint32_t height, uint32_t depth,
+                                                   uint32_t mipLevels, uint32_t blockSize, uint32_t blockDim)
 {
-    uint32_t res = 0;
+    uint64_t res = 0;
     while (mipLevels--)
     {
-        res += ((width + blockDim - 1) / blockDim) * ((height + blockDim - 1) / blockDim) * depth * blockSize;
-        width = std::max(1u, width / 2), height = std::max(1u, height / 2), depth = std::max(1u, depth / 2);
+        uint64_t blocksX = (uint64_t(width) + blockDim - 1) / blockDim;
+        uint64_t blocksY = (uint64_t(height) + blockDim - 1) / blockDim;
+        res += blocksX * blocksY * depth * blockSize;
+        width = std::max(1u, width / 2);
+        height = std::max(1u, height / 2);
+        depth = std::max(1u, depth / 2);
     }
     return res;
 }
@@ -211,7 +218,24 @@ uint32_t FTextureHeader::GetSize() const
     uint32_t blockSize = GetBlockSize(), blockDim = 4;
     if (!blockSize)
         blockSize = GetBpp() / 8, blockDim = 1;
-    return getImageSize(GetWidth(), GetHeight(), GetDepth(), GetNumMips(), blockSize, blockDim) * GetNumLayers();
+    uint64_t size = CalculateTextureImageSize(GetWidth(), GetHeight(), GetDepth(), GetNumMips(), blockSize, blockDim) *
+                    GetNumLayers();
+    CHECK_MSG(size <= std::numeric_limits<uint32_t>::max(), "Texture size {} exceeds addressable range", size);
+    return static_cast<uint32_t>(size);
+}
+size_t FTextureHeader::GetSubresourceSize(uint32_t layer, uint32_t mip) const
+{
+    CHECK_MSG(layer < GetNumLayers(), "Texture array layer out of range: {} of {}", layer, GetNumLayers());
+    CHECK_MSG(mip < GetNumMips(), "Texture mip level out of range: {} of {}", mip, GetNumMips());
+    uint32_t blockSize = GetBlockSize(), blockDim = 4;
+    if (!blockSize)
+        blockSize = GetBpp() / 8, blockDim = 1;
+    CHECK_MSG(blockSize && blockDim, "Unsupported texture format {}", GetFormat());
+    RHIExtent3D mipExtent = GetMipExtent(mip);
+    uint64_t mipSize = CalculateTextureImageSize(mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
+    CHECK_MSG(mipSize <= std::numeric_limits<size_t>::max(),
+              "Texture subresource size {} exceeds addressable range", mipSize);
+    return static_cast<size_t>(mipSize);
 }
 RHIExtent3D FTextureHeader::GetMipExtent(uint32_t mipLevel) const
 {
@@ -243,13 +267,13 @@ Span<unsigned char> FTexture::GetSubresource(uint32_t mipLevel, uint32_t arrayLa
     CHECK_MSG(blockSize && blockDim, "Unsupported texture format {}", GetFormat());
     CHECK_MSG(arrayLayer < GetNumLayers(), "Texture array layer out of range: {} of {}", arrayLayer, GetNumLayers());
     CHECK_MSG(mipLevel < GetNumMips(), "Texture mip level out of range: {} of {}", mipLevel, GetNumMips());
-    uint32_t layerOffset =
-        arrayLayer * getImageSize(GetWidth(), GetHeight(), GetDepth(), GetNumMips(), blockSize, blockDim);
-    uint32_t mipOffset = getImageSize(GetWidth(), GetHeight(), GetDepth(), mipLevel, blockSize, blockDim);
+    uint64_t layerOffset =
+        uint64_t(arrayLayer) * CalculateTextureImageSize(GetWidth(), GetHeight(), GetDepth(), GetNumMips(), blockSize, blockDim);
+    uint64_t mipOffset = CalculateTextureImageSize(GetWidth(), GetHeight(), GetDepth(), mipLevel, blockSize, blockDim);
     RHIExtent3D mipExtent = GetMipExtent(mipLevel);
-    uint32_t mipSize = getImageSize(mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
-    uint32_t offset = layerOffset + mipOffset;
-    uint32_t offsetEnd = offset + mipSize;
+    uint64_t mipSize = CalculateTextureImageSize(mipExtent.x, mipExtent.y, mipExtent.z, 1u, blockSize, blockDim);
+    uint64_t offset = layerOffset + mipOffset;
+    uint64_t offsetEnd = offset + mipSize;
     CHECK_MSG(offsetEnd <= bytes.size(), "Subresource out of range: layer {}, mip {} (size {}), data size {}",
               arrayLayer, mipLevel, mipSize, bytes.size());
     return {bytes.data() + offset, bytes.data() + offsetEnd};
@@ -403,6 +427,168 @@ void SavePNG(const unsigned char* data, int width, int height, StringView path)
     CHECK_MSG(stbi_write_png(path.data(), width, height, 4, data, width * 4),
               "Failed to write PNG image to {}", path);
 }
+
+Vector<float> FTexture::ReadbackAndCombineRGBA32F(RHIDevice* device, RHITexture* const* sourceTextures,
+                                                  uint32_t sourceCount, uint32_t& outWidth, uint32_t& outHeight,
+                                                  Allocator* alloc)
+{
+    CHECK(device != nullptr);
+    CHECK(alloc != nullptr);
+    CHECK_MSG(sourceCount > 0u, "Invalid render readback texture count");
+    uint32_t w = sourceTextures[0]->mDesc.extent.x;
+    uint32_t h = sourceTextures[0]->mDesc.extent.y;
+    for (uint32_t i = 0; i < sourceCount; ++i)
+    {
+        CHECK(sourceTextures[i] != nullptr);
+        CHECK_MSG(sourceTextures[i]->mDesc.format == RHIResourceFormat::R32G32B32A32SignedFloat,
+                  "HDR readback expects R32G32B32A32SignedFloat, got {}", sourceTextures[i]->mDesc.format);
+        CHECK_MSG(sourceTextures[i]->mDesc.extent.x == w && sourceTextures[i]->mDesc.extent.y == h,
+                  "Mismatched render readback texture extents");
+    }
+    outWidth = w;
+    outHeight = h;
+
+    size_t const pixelCount = static_cast<size_t>(w) * h;
+    size_t const imageBytes = pixelCount * 4 * sizeof(float);
+    CHECK_MSG(imageBytes <= std::numeric_limits<uint32_t>::max(), "Readback image too large: {} bytes", imageBytes);
+    CHECK_MSG(sourceCount <= std::numeric_limits<size_t>::max() / imageBytes,
+              "Readback image set too large: {} images of {} bytes", sourceCount, imageBytes);
+
+    auto readbackBuf = device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Readback,
+                                                          .hostAccess = RHIResourceHostAccess::ReadWrite,
+                                                          .coherent = true},
+                                             .usage = RHIBufferUsageBits::TransferDestination,
+                                             .size = imageBytes * sourceCount});
+
+    {
+        ImmediateContext ctx(RHIDeviceQueueType::Graphics, device);
+        auto* cmd = ctx.Get();
+        cmd->Begin();
+        cmd->BeginTransition();
+        for (uint32_t i = 0; i < sourceCount; ++i)
+        {
+            cmd->SetImageTransition(sourceTextures[i],
+                                    {.srcAccess = RHIResourceAccessBits::ShaderRead,
+                                     .dstAccess = RHIResourceAccessBits::TransferRead,
+                                     .srcStage = RHIPipelineStageBits::FragmentShader,
+                                     .dstStage = RHIPipelineStageBits::Transfer,
+                                     .srcImgLayout = RHITextureLayout::ShaderReadOnly,
+                                     .dstImgLayout = RHITextureLayout::TransferSrc,
+                                     .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        }
+        cmd->EndTransition();
+        for (uint32_t i = 0; i < sourceCount; ++i)
+        {
+            cmd->CopyImageToBuffer(
+                sourceTextures[i], RHITextureLayout::TransferSrc, readbackBuf.Get(),
+                {{{.dstBufferOffset = static_cast<uint32_t>(i * imageBytes),
+                   .srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
+                   .extent = {w, h, 1}}}});
+        }
+        cmd->BeginTransition();
+        for (uint32_t i = 0; i < sourceCount; ++i)
+        {
+            cmd->SetImageTransition(sourceTextures[i],
+                                    {.srcAccess = RHIResourceAccessBits::TransferRead,
+                                     .dstAccess = RHIResourceAccessBits::ShaderRead,
+                                     .srcStage = RHIPipelineStageBits::Transfer,
+                                     .dstStage = RHIPipelineStageBits::FragmentShader,
+                                     .srcImgLayout = RHITextureLayout::TransferSrc,
+                                     .dstImgLayout = RHITextureLayout::ShaderReadOnly,
+                                     .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        }
+        cmd->EndTransition();
+        cmd->End();
+        ctx.Submit();
+        ctx.WaitIdle();
+    }
+
+    auto* mapped = readbackBuf->Map<float>();
+    Vector<float> combined(pixelCount * 4, alloc);
+    for (size_t i = 0; i < pixelCount; ++i)
+    {
+        combined[i * 4 + 0] = 0.0f;
+        combined[i * 4 + 1] = 0.0f;
+        combined[i * 4 + 2] = 0.0f;
+        combined[i * 4 + 3] = 1.0f;
+    }
+    for (uint32_t sourceIndex = 0; sourceIndex < sourceCount; ++sourceIndex)
+    {
+        float const* sourceData = mapped + sourceIndex * pixelCount * 4;
+        for (size_t i = 0; i < pixelCount; ++i)
+        {
+            combined[i * 4 + 0] += sourceData[i * 4 + 0];
+            combined[i * 4 + 1] += sourceData[i * 4 + 1];
+            combined[i * 4 + 2] += sourceData[i * 4 + 2];
+        }
+    }
+    readbackBuf->Unmap();
+    return combined;
+}
+
+Vector<unsigned char> FTexture::ReadbackRGBA8(RHIDevice* device, RHITexture* sourceTexture,
+                                              uint32_t& outWidth, uint32_t& outHeight, Allocator* alloc)
+{
+    CHECK(device != nullptr);
+    CHECK(alloc != nullptr);
+    CHECK(sourceTexture != nullptr);
+    CHECK_MSG(sourceTexture->mDesc.format == RHIResourceFormat::R8G8B8A8Unorm,
+              "SDR readback expects R8G8B8A8Unorm, got {}", sourceTexture->mDesc.format);
+    uint32_t w = sourceTexture->mDesc.extent.x;
+    uint32_t h = sourceTexture->mDesc.extent.y;
+    outWidth = w;
+    outHeight = h;
+
+    size_t const pixelCount = static_cast<size_t>(w) * h;
+    size_t const imageBytes = pixelCount * 4;
+    CHECK_MSG(imageBytes <= std::numeric_limits<uint32_t>::max(), "Readback image too large: {} bytes", imageBytes);
+    auto readbackBuf = device->CreateBuffer({.resource = {.heap = RHIDeviceHeapType::Readback,
+                                                          .hostAccess = RHIResourceHostAccess::ReadWrite,
+                                                          .coherent = true},
+                                             .usage = RHIBufferUsageBits::TransferDestination,
+                                             .size = imageBytes});
+
+    {
+        ImmediateContext ctx(RHIDeviceQueueType::Graphics, device);
+        auto* cmd = ctx.Get();
+        cmd->Begin();
+        cmd->BeginTransition();
+        cmd->SetImageTransition(sourceTexture,
+                                {.srcAccess = RHIResourceAccessBits::ShaderRead,
+                                 .dstAccess = RHIResourceAccessBits::TransferRead,
+                                 .srcStage = RHIPipelineStageBits::FragmentShader,
+                                 .dstStage = RHIPipelineStageBits::Transfer,
+                                 .srcImgLayout = RHITextureLayout::ShaderReadOnly,
+                                 .dstImgLayout = RHITextureLayout::TransferSrc,
+                                 .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        cmd->EndTransition();
+        cmd->CopyImageToBuffer(
+            sourceTexture, RHITextureLayout::TransferSrc, readbackBuf.Get(),
+            {{{.dstBufferOffset = 0,
+               .srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
+               .extent = {w, h, 1}}}});
+        cmd->BeginTransition();
+        cmd->SetImageTransition(sourceTexture,
+                                {.srcAccess = RHIResourceAccessBits::TransferRead,
+                                 .dstAccess = RHIResourceAccessBits::ShaderRead,
+                                 .srcStage = RHIPipelineStageBits::Transfer,
+                                 .dstStage = RHIPipelineStageBits::FragmentShader,
+                                 .srcImgLayout = RHITextureLayout::TransferSrc,
+                                 .dstImgLayout = RHITextureLayout::ShaderReadOnly,
+                                 .srcImgRange = {.layer = {.aspect = RHITextureAspectFlagBits::Color}, .mipCount = 1}});
+        cmd->EndTransition();
+        cmd->End();
+        ctx.Submit();
+        ctx.WaitIdle();
+    }
+
+    auto* mapped = readbackBuf->Map<unsigned char>();
+    Vector<unsigned char> rgba(imageBytes, alloc);
+    std::memcpy(rgba.data(), mapped, imageBytes);
+    readbackBuf->Unmap();
+    return rgba;
+}
+
 FTexture FTexture::EncodeBC7(Allocator* alloc) const
 {
     CHECK(alloc != nullptr);

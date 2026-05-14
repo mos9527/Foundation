@@ -8,7 +8,16 @@ namespace Foundation::RenderCore
     }
     void ImmediateContext::Submit(RHIDeviceFence* completionFence)
     {
-        mQueue->Submit({{{.cmdLists = {{mCommandList.Get()}}}}}, completionFence);
+        Submit(ImmediateSubmitDesc{.completionFence = completionFence});
+    }
+    void ImmediateContext::Submit(ImmediateSubmitDesc const& desc)
+    {
+        RHICommandList* cmd = mCommandList.Get();
+        mQueue->Submit({{{.timelineWaits = desc.timelineWaits,
+                          .timelineSignals = desc.timelineSignals,
+                          .waitsStages = desc.waitStages,
+                          .cmdLists = {&cmd, 1}}}},
+                       desc.completionFence);
     }
     void ImmediateContext::WaitIdle() { mQueue->WaitIdle(); }
     void ImmediateUpload::Begin()
@@ -64,8 +73,12 @@ namespace Foundation::RenderCore
     }
     void ImmediateUpload::End(RHIDeviceFence* completionFence)
     {
+        End(ImmediateSubmitDesc{.completionFence = completionFence});
+    }
+    void ImmediateUpload::End(ImmediateSubmitDesc const& desc)
+    {
         ctx->End();
-        ctx.Submit(completionFence);
+        ctx.Submit(desc);
     }
     void ImmediateUpload::WaitIdle() { ctx.WaitIdle(); }
 } // namespace Foundation::RenderCore

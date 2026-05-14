@@ -165,15 +165,15 @@ static void DrawAperturePreview(uint32_t blades, float rotation, float ratio)
 
 static bool IsSelectedInstanceValid()
 {
-    return GEditor.doc.HasScene() &&
-           GEditor.doc.selectedInstance >= 0 &&
-           GEditor.doc.selectedInstance < static_cast<int>(GEditor.doc.instances.size()) &&
-           GEditor.doc.selectedInstance < static_cast<int>(GEditor.doc.Scene().GetInstances().size());
+    return GEditor.HasScene() &&
+           GEditor.selectedInstance >= 0 &&
+           GEditor.selectedInstance < static_cast<int>(GEditor.instances.size()) &&
+           GEditor.selectedInstance < static_cast<int>(GEditor.Scene().GetInstances().size());
 }
 
 static FInstance& SelectedSceneInstance()
 {
-    return GEditor.doc.Scene().GetInstances()[GEditor.doc.selectedInstance];
+    return GEditor.Scene().GetInstances()[GEditor.selectedInstance];
 }
 
 static const char* InstanceTypeName(uint32_t type)
@@ -184,22 +184,22 @@ static const char* InstanceTypeName(uint32_t type)
 static int GetSelectedMaterialIndex()
 {
     if (IsSelectedInstanceValid())
-        return static_cast<int>(GEditor.doc.instances[GEditor.doc.selectedInstance].materialIndex);
-    return GEditor.doc.selectedMaterial;
+        return static_cast<int>(GEditor.instances[GEditor.selectedInstance].materialIndex);
+    return GEditor.selectedMaterial;
 }
 
 static bool IsMaterialIndexValid(int materialIndex)
 {
-    return GEditor.doc.HasScene() &&
+    return GEditor.HasScene() &&
            materialIndex >= 0 &&
-           materialIndex < static_cast<int>(GEditor.doc.materials.size()) &&
-           materialIndex < static_cast<int>(GEditor.doc.Scene().GetMaterials().size());
+           materialIndex < static_cast<int>(GEditor.materials.size()) &&
+           materialIndex < static_cast<int>(GEditor.Scene().GetMaterials().size());
 }
 
 static void SyncMaterialToGPU(uint32_t materialIndex)
 {
-    auto& src = GEditor.doc.Scene().GetMaterials()[materialIndex];
-    auto& dst = GEditor.doc.materials[materialIndex];
+    auto& src = GEditor.Scene().GetMaterials()[materialIndex];
+    auto& dst = GEditor.materials[materialIndex];
     dst.baseColorFactor = src.baseColorFactor;
     dst.emissiveFactor = src.emissiveFactor * src.emissiveFactor.w;
     dst.metallicFactor = src.metallicFactor;
@@ -286,7 +286,7 @@ void EditorDockSpaceAndMenuBar()
                 }
             }
             ImGui::Separator();
-            if (!GEditor.doc.instances.empty())
+            if (!GEditor.instances.empty())
             {
                 if (ImGui::MenuItem("Render HDR..."))
                 {
@@ -366,7 +366,7 @@ void EditorDockSpaceAndMenuBar()
         }
 
         // Right-aligned PT / Raster toggle
-        if (!GEditor.doc.instances.empty())
+        if (!GEditor.instances.empty())
         {
             float btnW_PT = ImGui::CalcTextSize("######").x + ImGui::GetStyle().FramePadding.x * 2.0f;
             float btnW_R = ImGui::CalcTextSize("######").x + ImGui::GetStyle().FramePadding.x * 2.0f;
@@ -424,26 +424,26 @@ void FHierarchyPanel()
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Hierarchy"))
     {
-        if (GEditor.doc.instances.empty())
+        if (GEditor.instances.empty())
         {
             ImGui::TextDisabled("No instances loaded");
         }
         else
         {
-            ImGui::Text("%zu instances", GEditor.doc.instances.size());
+            ImGui::Text("%zu instances", GEditor.instances.size());
             ImGui::Separator();
-            for (size_t i = 0; i < GEditor.doc.instances.size(); i++)
+            for (size_t i = 0; i < GEditor.instances.size(); i++)
             {
-                auto& inst = GEditor.doc.instances[i];
+                auto& inst = GEditor.instances[i];
                 char label[128];
                 snprintf(label, sizeof(label), "%s %zu -- Resource %u, Mat %u",
                          InstanceTypeName(inst.type), i, inst.resourceIndex, inst.materialIndex);
-                bool selected = (GEditor.doc.selectedInstance == static_cast<int>(i));
+                bool selected = (GEditor.selectedInstance == static_cast<int>(i));
                 if (ImGui::Selectable(label, selected))
                 {
-                    GEditor.doc.selectedInstance = static_cast<int>(i);
-                    GEditor.doc.selectedMaterial = static_cast<int>(inst.materialIndex);
-                    GEditor.doc.selectedLight = -1; // deselect light when selecting instance
+                    GEditor.selectedInstance = static_cast<int>(i);
+                    GEditor.selectedMaterial = static_cast<int>(inst.materialIndex);
+                    GEditor.selectedLight = -1; // deselect light when selecting instance
                 }
             }
         }
@@ -458,13 +458,13 @@ void FHierarchyPanel()
         int materialIndex = GetSelectedMaterialIndex();
         if (IsMaterialIndexValid(materialIndex))
         {
-            GEditor.doc.selectedMaterial = materialIndex;
+            GEditor.selectedMaterial = materialIndex;
 
-            auto& material = GEditor.doc.Scene().GetMaterials()[materialIndex];
-            auto& gpuMaterial = GEditor.doc.materials[materialIndex];
+            auto& material = GEditor.Scene().GetMaterials()[materialIndex];
+            auto& gpuMaterial = GEditor.materials[materialIndex];
             ImGui::Text("Material %d", materialIndex);
             if (IsSelectedInstanceValid())
-                ImGui::Text("From Instance %d", GEditor.doc.selectedInstance);
+                ImGui::Text("From Instance %d", GEditor.selectedInstance);
             ImGui::Separator();
 
             bool changed = false;
@@ -534,8 +534,8 @@ void FHierarchyPanel()
         if (IsSelectedInstanceValid())
         {
             auto& pi = SelectedSceneInstance();
-            auto& inst = GEditor.doc.instances[GEditor.doc.selectedInstance];
-            ImGui::Text("%s Instance %d", InstanceTypeName(inst.type), GEditor.doc.selectedInstance);
+            auto& inst = GEditor.instances[GEditor.selectedInstance];
+            ImGui::Text("%s Instance %d", InstanceTypeName(inst.type), GEditor.selectedInstance);
             ImGui::Separator();
             bool changed = false;
             changed |= ImGui::DragFloat3("Position", &pi.transform.transform.x, 0.01f);
@@ -566,7 +566,7 @@ void FHierarchyPanel()
                 glm::scale(mat4(1.0f), vec3(pi.transform.scale));
 
             // ImGuizmo rendering — only when no light is selected (mutual exclusion)
-            if (GEditor.doc.selectedLight < 0 && GEditor.viewport.HasRect())
+            if (GEditor.selectedLight < 0 && GEditor.viewport.HasRect())
             {
                 ImGuizmo::BeginFrame();
                 ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
@@ -616,6 +616,14 @@ void FLightingPanel()
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Lighting"))
     {
+        if (!GEditor.HasScene())
+        {
+            ImGui::TextDisabled("No scene loaded");
+            ImGui::End();
+            ImGui::PopStyleColor();
+            return;
+        }
+
         bool anyChanged = false;
         static const char* kLightTypeNames[] = {"Directional", "Point", "Spot", "Disk", "Rect"};
         static constexpr int kLightTypeCount = 5;
@@ -623,8 +631,45 @@ void FLightingPanel()
         // ---- Scene Lights ----
         if (ImGui::CollapsingHeader("Scene Lights", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            auto lights = GEditor.doc.HasScene() ? GEditor.doc.Scene().GetLights() : Span<FLight>{};
-            ImGui::TextDisabled("Light count is fixed by the loaded FSCN metadata");
+            auto& lights = GEditor.Scene().mTables.lights;
+            uint32_t lightCapacity = GContext->gpuScene ? GContext->gpuScene->GetLightCapacity() : 0u;
+            bool canAddLight = GContext->gpuScene && lights.size() < lightCapacity;
+            ImGui::TextDisabled("Editor-only light edits update the resident scene and GPU state; the FSCN file is unchanged.");
+            if (!canAddLight)
+                ImGui::BeginDisabled();
+            if (ImGui::Button("Add Test Light"))
+            {
+                FLight light{};
+                light.type = FLightType::Point;
+                light.transform.transform = GEditor.camera.center;
+                light.transform.rotation = GEditor.camera.rot;
+                light.color = float3{1.0f, 0.92f, 0.78f};
+                light.power = 10.0f;
+                light.range = 10.0f;
+                lights.push_back(light);
+                GEditor.selectedLight = static_cast<int>(lights.size()) - 1;
+                GEditor.selectedInstance = -1;
+                GEditor.selectedMaterial = -1;
+                anyChanged = true;
+            }
+            if (!canAddLight)
+                ImGui::EndDisabled();
+            if (!canAddLight && GContext->gpuScene)
+                ImGui::SetItemTooltip("GPU light buffer capacity reached (%u lights)", lightCapacity);
+            ImGui::SameLine();
+            bool canDeleteLight = GEditor.selectedLight >= 0 && GEditor.selectedLight < static_cast<int>(lights.size());
+            if (!canDeleteLight)
+                ImGui::BeginDisabled();
+            if (ImGui::Button("Delete Selected Light"))
+            {
+                lights.erase(lights.begin() + GEditor.selectedLight);
+                if (GEditor.selectedLight >= static_cast<int>(lights.size()))
+                    GEditor.selectedLight = static_cast<int>(lights.size()) - 1;
+                anyChanged = true;
+            }
+            if (!canDeleteLight)
+                ImGui::EndDisabled();
+            ImGui::Separator();
             for (int i = 0; i < static_cast<int>(lights.size()); i++)
             {
                 auto& light = lights[i];
@@ -632,16 +677,16 @@ void FLightingPanel()
 
                 char header[64];
                 snprintf(header, sizeof(header), "Light %d (%s)", i, kLightTypeNames[static_cast<int>(light.type)]);
-                bool isLightSelected = (GEditor.doc.selectedLight == i);
+                bool isLightSelected = (GEditor.selectedLight == i);
                 ImGuiTreeNodeFlags headerFlags = ImGuiTreeNodeFlags_DefaultOpen;
                 if (isLightSelected)
                     headerFlags |= ImGuiTreeNodeFlags_Selected;
                 bool headerOpen = ImGui::CollapsingHeader(header, headerFlags);
                 if (ImGui::IsItemClicked())
                 {
-                    GEditor.doc.selectedLight = i;
-                    GEditor.doc.selectedInstance = -1; // deselect instance when selecting light
-                    GEditor.doc.selectedMaterial = -1;
+                    GEditor.selectedLight = i;
+                    GEditor.selectedInstance = -1; // deselect instance when selecting light
+                    GEditor.selectedMaterial = -1;
                 }
                 if (headerOpen)
                 {
@@ -771,9 +816,9 @@ void FLightingPanel()
             }
             if (envChanged)
             {
-                if (GEditor.doc.HasScene())
+                if (GEditor.HasScene())
                 {
-                    auto& globals = GEditor.doc.Scene().GetSceneGlobals();
+                    auto& globals = GEditor.Scene().GetSceneGlobals();
                     globals.color = GEditor.shaderGlobals.ambientColor;
                     globals.strength = GEditor.shaderGlobals.ambientPower;
                     globals.azimuthOffset = GEditor.shaderGlobals.envAzimuthOffset;
@@ -1433,9 +1478,9 @@ static void DrawRectOverlay(FLight const& light, mat4 const& vp, ImDrawList* dl,
 
 static void DrawLightGizmos()
 {
-    if (!GEditor.doc.HasScene())
+    if (!GEditor.HasScene())
         return;
-    auto lights = GEditor.doc.Scene().GetLights();
+    auto lights = GEditor.Scene().GetLights();
     if (lights.empty() || !GEditor.viewport.HasRect())
         return;
 
@@ -1446,7 +1491,7 @@ static void DrawLightGizmos()
     // -- Shape overlays for all lights --
     for (int i = 0; i < static_cast<int>(lights.size()); i++)
     {
-        bool selected = (i == GEditor.doc.selectedLight);
+        bool selected = (i == GEditor.selectedLight);
         ImU32 color = selected ? IM_COL32(255, 200, 50, 255)   // gold for selected
                                : IM_COL32(255, 255, 100, 100); // dim yellow for others
 
@@ -1462,10 +1507,10 @@ static void DrawLightGizmos()
     }
 
     // -- ImGuizmo manipulator for the selected light --
-    if (GEditor.doc.selectedLight < 0 || GEditor.doc.selectedLight >= static_cast<int>(lights.size()))
+    if (GEditor.selectedLight < 0 || GEditor.selectedLight >= static_cast<int>(lights.size()))
         return;
 
-    auto& light = lights[GEditor.doc.selectedLight];
+    auto& light = lights[GEditor.selectedLight];
     bool hasPosition = (light.type != FLightType::Directional);
 
     // Build model matrix from light transform (no scale — lights don't scale)

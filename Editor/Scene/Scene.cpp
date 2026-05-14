@@ -376,13 +376,26 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
 
     for (auto const& texture : tables.textures)
     {
-        ValidateBlobArray<unsigned char>(header, texture.data, "texture.data");
-        CHECK_MSG(texture.data.codec == FBlobCodec::None,
-                  "FScene texture data must not use LZ4 blob compression");
-        if (texture.data.decodedSize != 0)
+        if (!static_cast<FTextureHeader const&>(texture).IsValid())
         {
-            CHECK_MSG(static_cast<FTextureHeader const&>(texture).IsValid(), "FScene texture header is invalid");
-            CHECK_MSG(texture.data.decodedSize == texture.GetSize(), "FScene texture blob size mismatch");
+            CHECK_MSG(texture.subresources.empty(), "Invalid FScene texture must not carry subresource blobs");
+            continue;
+        }
+
+        CHECK_MSG(texture.subresources.size() == texture.GetSubresourceCount(),
+                  "FScene texture subresource count mismatch: {} blobs for {} expected subresources",
+                  texture.subresources.size(), texture.GetSubresourceCount());
+        for (uint32_t layer = 0; layer < texture.GetNumLayers(); ++layer)
+        {
+            for (uint32_t mip = 0; mip < texture.GetNumMips(); ++mip)
+            {
+                FBlobRef const& blob = texture.GetSubresourceBlob(layer, mip);
+                ValidateBlobArray<unsigned char>(header, blob, "texture.subresources");
+                size_t const expectedSize = texture.GetSubresourceSize(layer, mip);
+                CHECK_MSG(blob.decodedSize == expectedSize,
+                          "FScene texture subresource blob size mismatch: layer {}, mip {}, blob {}, expected {}",
+                          layer, mip, blob.decodedSize, expectedSize);
+            }
         }
     }
 }
@@ -841,7 +854,10 @@ void BuildGLTFSerializedScene(StringView path, FScene& scene, Allocator* scratch
 
     /* Textures */
     FTexture textureCodecInit(scratchAlloc);
-    scene.mTables.textures.resize(data->textures_count);
+    scene.mTables.textures.clear();
+    scene.mTables.textures.reserve(data->textures_count);
+    for (size_t i = 0; i < data->textures_count; i++)
+        scene.mTables.textures.emplace_back(scratchAlloc);
     Vector<FResourceBlobJobs> textureBlobJobs(scratchAlloc);
     textureBlobJobs.reserve(data->textures_count);
     for (size_t i = 0; i < data->textures_count; i++)
@@ -1110,15 +1126,36 @@ void BuildGLTFSerializedScene(StringView path, FScene& scene, Allocator* scratch
 static_assert(std::is_trivially_copyable_v<FSceneHeader>);
 static_assert(std::is_trivially_copyable_v<FSerializedMeshLOD>);
 static_assert(std::is_trivially_copyable_v<FSerializedCurve>);
-static_assert(std::is_trivially_copyable_v<FSerializedTexture>);
 
 void BuildTextureBlobJobs(FSerializedTexture& desc, Vector<FBlobJob>& blobJobs, FTexture&& texture)
 {
+    Allocator* alloc = desc.subresources.get_allocator().mResource;
+    desc.magic = DDS_MAGIC;
+    desc.header = {};
+    desc.header10 = {};
+    desc.subresources.clear();
+    if (!texture.IsValid())
+        return;
+
     CHECK_MSG(texture.bytes.size() <= UINT32_MAX, "FScene texture blob too large");
-    desc = texture.ToSerializedTexture();
-    uint32_t byteCount = static_cast<uint32_t>(texture.bytes.size());
-    AppendBytesBlobJob(blobJobs, std::move(texture.bytes), byteCount, sizeof(unsigned char), FBlobCodec::None,
-                       desc.data);
+    desc.magic = texture.magic;
+    desc.header = texture.header;
+    desc.header10 = texture.header10;
+    desc.subresources.resize(desc.GetSubresourceCount());
+
+    for (uint32_t layer = 0; layer < desc.GetNumLayers(); ++layer)
+    {
+        for (uint32_t mip = 0; mip < desc.GetNumMips(); ++mip)
+        {
+            Span<const unsigned char> subresource = texture.GetSubresource(mip, layer);
+            CHECK_MSG(subresource.size_bytes() <= UINT32_MAX, "FScene texture subresource blob too large");
+            Vector<unsigned char> bytes(alloc);
+            bytes.assign(subresource.begin(), subresource.end());
+            FBlobRef& blob = desc.subresources[desc.GetSubresourceIndex(layer, mip)];
+            AppendBytesBlobJob(blobJobs, std::move(bytes), static_cast<uint32_t>(subresource.size_bytes()),
+                               sizeof(unsigned char), FBlobCodec::LZ4, blob);
+        }
+    }
 }
 
 uint32_t CalculateRenderableCurveSegmentCount(FCurveSet const& curve)
@@ -1312,11 +1349,6 @@ FBlobDeserializer FScene::GetBlobDeserializer() const
 bool FScene::ReadBlob(FBlobRef const& blob, void* dst, size_t size, Allocator* scratchAlloc) const
 {
     return GetBlobDeserializer().ReadBytes(blob, dst, size, scratchAlloc);
-}
-
-bool FScene::ReadBlobRange(FBlobRef const& blob, uint64_t srcOffset, void* dst, size_t size) const
-{
-    return GetBlobDeserializer().ReadBytesRange(blob, srcOffset, dst, size);
 }
 
 void FinalizeSceneWriter(FScene& scene)

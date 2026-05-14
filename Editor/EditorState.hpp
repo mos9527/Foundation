@@ -86,46 +86,6 @@ enum class ERendererMode
 
 enum class ERenderFormat { HDR, SDR };
 
-// Scene-lifetime data: created in ReplaceScene, read everywhere, reset together
-struct EditorDocument
-{
-    Vector<GSInstance> instances{GLOBAL_ALLOC};
-    Vector<GSMaterial> materials{GLOBAL_ALLOC};
-    Vector<GSMesh>     meshes{GLOBAL_ALLOC};
-    Vector<uint32_t>   blases{GLOBAL_ALLOC};
-    Vector<GSCurveSet> curves{GLOBAL_ALLOC};
-    Vector<uint32_t>   curveBlases{GLOBAL_ALLOC};
-    Vector<GSLight>    lights{GLOBAL_ALLOC};
-    Optional<MemoryMappedFile> sceneFile;
-    Optional<FScene>     scene;
-    String             currentSavePath;
-    int                selectedInstance = -1;
-    int                selectedMaterial = -1;
-    int                selectedLight    = -1;
-
-    [[nodiscard]] bool HasScene() const { return scene.has_value(); }
-    FScene& Scene()
-    {
-        CHECK(scene.has_value());
-        return *scene;
-    }
-    FScene const& Scene() const
-    {
-        CHECK(scene.has_value());
-        return *scene;
-    }
-    void OpenSceneFile(StringView path, Allocator* scratchAlloc = GLOBAL_ALLOC)
-    {
-        CHECK(scratchAlloc != nullptr);
-        scene.reset();
-        sceneFile.reset();
-        sceneFile.emplace(path, MemoryMappedAccess::ReadOnly);
-        scene.emplace(*sceneFile, scratchAlloc);
-        LoadFSCN(*scene);
-        currentSavePath = path;
-    }
-};
-
 // Offline render workflow state: flows from file dialog → popup → readback
 struct RenderWorkflow
 {
@@ -208,7 +168,19 @@ inline float ApertureRadiusFromFStop(float fStop, float sensorHeight, float fovY
 
 struct EditorState
 {
-    EditorDocument  doc;
+    Vector<GSInstance> instances{GLOBAL_ALLOC};
+    Vector<GSMaterial> materials{GLOBAL_ALLOC};
+    Vector<GSMesh>     meshes{GLOBAL_ALLOC};
+    Vector<uint32_t>   blases{GLOBAL_ALLOC};
+    Vector<GSCurveSet> curves{GLOBAL_ALLOC};
+    Vector<uint32_t>   curveBlases{GLOBAL_ALLOC};
+    Vector<GSLight>    lights{GLOBAL_ALLOC};
+    Optional<MemoryMappedFile> sceneFile;
+    Optional<FScene>     scene;
+    String             currentSavePath;
+    int                selectedInstance = -1;
+    int                selectedMaterial = -1;
+    int                selectedLight    = -1;
     RenderWorkflow  renderTask;
     GizmoState      gizmo;
     CameraApertureState aperture;
@@ -230,6 +202,28 @@ struct EditorState
     bool            showImGui = false;
     FEditorState    state = FEInitEnter;
     bool            cameraUpdated = true;
+
+    [[nodiscard]] bool HasScene() const { return scene.has_value(); }
+    FScene& Scene()
+    {
+        CHECK(scene.has_value());
+        return *scene;
+    }
+    FScene const& Scene() const
+    {
+        CHECK(scene.has_value());
+        return *scene;
+    }
+    void OpenSceneFile(StringView path, Allocator* scratchAlloc = GLOBAL_ALLOC)
+    {
+        CHECK(scratchAlloc != nullptr);
+        scene.reset();
+        sceneFile.reset();
+        sceneFile.emplace(path, MemoryMappedAccess::ReadOnly);
+        scene.emplace(*sceneFile, scratchAlloc);
+        LoadFSCN(*scene);
+        currentSavePath = path;
+    }
 };
 
 extern EditorState GEditor;

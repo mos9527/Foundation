@@ -237,19 +237,3 @@ bool FBlobDeserializer::ReadBytes(FBlobRef const& blob, void* dst, size_t size, 
         return false;
     }
 }
-
-bool FBlobDeserializer::ReadBytesRange(FBlobRef const& blob, uint64_t srcOffset, void* dst, size_t size) const
-{
-    CHECK_MSG(blob.codec == FBlobCodec::None, "Blob range reads require uncompressed blobs");
-    CHECK_MSG(srcOffset <= blob.decodedSize, "Blob range offset {} exceeds decoded size {}", srcOffset, blob.decodedSize);
-    CHECK_MSG(static_cast<uint64_t>(size) <= blob.decodedSize - srcOffset,
-              "Blob range size {} at offset {} exceeds decoded size {}", size, srcOffset, blob.decodedSize);
-    CHECK_MSG(blob.storedSize == blob.decodedSize, "Uncompressed blob stored size mismatch");
-    if (size == 0)
-        return true;
-
-    CHECK(dst != nullptr);
-    Span<const unsigned char> stored = StoredBytes(blob);
-    std::memcpy(dst, stored.data() + srcOffset, size);
-    return true;
-}

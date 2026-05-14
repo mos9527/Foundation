@@ -122,7 +122,6 @@ struct FBlobDeserializer
 
     Span<const unsigned char> StoredBytes(FBlobRef const& blob) const;
     bool ReadBytes(FBlobRef const& blob, void* dst, size_t size, Allocator* scratchAlloc) const;
-    bool ReadBytesRange(FBlobRef const& blob, uint64_t srcOffset, void* dst, size_t size) const;
 
     template <typename T>
     bool ReadArray(FBlobRef const& blob, Vector<T>& values, Allocator* scratchAlloc) const

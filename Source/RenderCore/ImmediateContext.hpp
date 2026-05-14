@@ -2,10 +2,20 @@
 #include <Core/AtomicPool.hpp>
 #include <Core/Variant.hpp>
 #include <RHICore/Command.hpp>
+#include <RHICore/Device.hpp>
 #include <RHICore/Resource.hpp>
 namespace Foundation::RenderCore
 {
     using namespace RHI;
+
+    struct ImmediateSubmitDesc
+    {
+        Span<const RHIDeviceQueue::TimelinePair> timelineWaits{};
+        Span<const RHIDeviceQueue::TimelinePair> timelineSignals{};
+        Span<const RHIPipelineStage> waitStages{};
+        RHIDeviceFence* completionFence{nullptr};
+    };
+
     /**
      * @brief Single persistent command list for immediate submissions.
      * @note  This is primarily intended for quick one-shot commands, e.g. resource transitions, copies, etc.
@@ -27,6 +37,7 @@ namespace Foundation::RenderCore
         RHICommandList* operator->() { return mCommandList.Get(); }
 
         void Submit(RHIDeviceFence* completionFence = nullptr);
+        void Submit(ImmediateSubmitDesc const& desc);
 
         void WaitIdle();
     };
@@ -88,6 +99,7 @@ namespace Foundation::RenderCore
          * @param completionFence Optional fence to signal upon completion.
          */
         void End(RHIDeviceFence* completionFence = nullptr);
+        void End(ImmediateSubmitDesc const& desc);
 
         void WaitIdle();
     };
