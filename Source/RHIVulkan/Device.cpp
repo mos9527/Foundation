@@ -356,6 +356,7 @@ VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevic
         .raytracingInline = hasRayQuery,
         .raytracingPipeline = hasRayTracingPipeline,
         .timestampQueries = timestampQueries,
+        .integratedGPU = properties.deviceType == vk::PhysicalDeviceType::eIntegratedGpu,
         .deviceLocalHostVisibleBuffers = deviceLocalHostVisibleBuffers,
         .deviceLocalHostVisibleHeapSize = deviceLocalHostVisibleHeapSize,
         .maxStorageBufferRange = properties.limits.maxStorageBufferRange,

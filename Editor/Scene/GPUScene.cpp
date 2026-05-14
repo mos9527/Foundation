@@ -191,7 +191,7 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     auto caps = mContext->device->GetCapabilities();
     size_t directGeometryBudget = static_cast<size_t>(desc.primitiveBudget) + desc.curveAABBBudget;
     size_t minDirectGeometryHeapSize = std::max(directGeometryBudget, kMinDirectGeometryUploadHeapSize);
-    mDirectGeometryUpload = caps.deviceLocalHostVisibleBuffers &&
+    mDirectGeometryUpload = caps.integratedGPU && caps.deviceLocalHostVisibleBuffers &&
                             caps.deviceLocalHostVisibleHeapSize >= minDirectGeometryHeapSize;
     RHIResourceDesc geoDesc{
         .heap = RHIDeviceHeapType::Local,
@@ -213,7 +213,7 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     {
         mPrimitiveMapped = mPrimitiveBuffer->Map<char>();
         mCurveAABBMapped = mCurveAABBBuffer->Map<char>();
-        LOG(GPUScene, LogInfo, "ReBAR available ({} MiB budget used). Uploading via direct copy.",
+        LOG(GPUScene, LogInfo, "Direct GPU Memory Access available ({} MiB budget used). Uploading via direct copy.",
             directGeometryBudget / (1u << 20));
     }
     mTLASBuffer = mContext->device->CreateBuffer(

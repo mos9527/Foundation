@@ -194,6 +194,7 @@ namespace Foundation::RHI
         bool raytracingInline;
         bool raytracingPipeline;
         bool timestampQueries;
+        bool integratedGPU;
         bool deviceLocalHostVisibleBuffers;
         // Direct GPU memory access thanks to either UMA or ReBAR
         // https://asawicki.info/news_1740_vulkan_memory_types_on_pc_and_how_to_use_them
