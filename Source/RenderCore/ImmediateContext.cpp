@@ -20,18 +20,120 @@ namespace Foundation::RenderCore
                        desc.completionFence);
     }
     void ImmediateContext::WaitIdle() { mQueue->WaitIdle(); }
+
+    ImmediateUpload::UploadLane::UploadLane(RHIDevice* device, size_t capacity, RHIDeviceQueueType type) :
+        ctx(type, device),
+        staging(device->CreateBuffer({.resource =
+                                          {
+                                              .heap = RHIDeviceHeapType::Upload,
+                                              .shared = false, /* Transfer only */
+                                              .coherent = true, /* No flush required */
+                                              .staging = true,
+                                          },
+                                      .usage = RHIBufferUsageBits::TransferSource,
+                                      .size = capacity}))
+    {
+        begin = staging->Map<char>();
+        end = begin + capacity;
+    }
+
+    ImmediateUpload::ImmediateUpload(RHIDevice* device, size_t capacity, RHIDeviceQueueType type, size_t buffers) :
+        ctx(type, device),
+        staging(device->CreateBuffer({.resource =
+                                          {
+                                              .heap = RHIDeviceHeapType::Upload,
+                                              .shared = false, /* Transfer only */
+                                              .coherent = true, /* No flush required */
+                                              .staging = true,
+                                          },
+                                      .usage = RHIBufferUsageBits::TransferSource,
+                                      .size = capacity})),
+        mDevice(device),
+        mLaneCount(std::max<size_t>(buffers, 1u)),
+        mLanes(GLOBAL_ALLOC),
+        mSubmitSignals(GLOBAL_ALLOC)
+    {
+        mLane0Begin = staging->Map<char>();
+        mLane0End = mLane0Begin + capacity;
+        begin = ptr = mLane0Begin;
+        end = mLane0End;
+        mCompletionTimeline = device->CreateSemaphore(true);
+        if (mLaneCount > 1)
+        {
+            mLanes.reserve(mLaneCount - 1u);
+            for (size_t i = 1; i < mLaneCount; ++i)
+                mLanes.emplace_back(Core::ConstructUnique<UploadLane>(GLOBAL_ALLOC, device, capacity, type));
+        }
+        mSubmitSignals.reserve(mLaneCount + 1u);
+    }
+
+    ImmediateContext& ImmediateUpload::CurrentContext()
+    {
+        return mCurrentLane == 0 ? ctx : mLanes[mCurrentLane - 1u]->ctx;
+    }
+
+    ImmediateContext const& ImmediateUpload::CurrentContext() const
+    {
+        return mCurrentLane == 0 ? ctx : mLanes[mCurrentLane - 1u]->ctx;
+    }
+
+    RHIBuffer* ImmediateUpload::CurrentStaging() const
+    {
+        return mCurrentLane == 0 ? staging.Get() : mLanes[mCurrentLane - 1u]->staging.Get();
+    }
+
+    char* ImmediateUpload::CurrentBegin() const
+    {
+        return mCurrentLane == 0 ? mLane0Begin : mLanes[mCurrentLane - 1u]->begin;
+    }
+
+    char* ImmediateUpload::CurrentEnd() const
+    {
+        return mCurrentLane == 0 ? mLane0End : mLanes[mCurrentLane - 1u]->end;
+    }
+
+    size_t& ImmediateUpload::CurrentSignalValue()
+    {
+        return mCurrentLane == 0 ? mLane0SignalValue : mLanes[mCurrentLane - 1u]->signalValue;
+    }
+
+    RHICommandList* ImmediateUpload::Get() const
+    {
+        return CurrentContext().Get();
+    }
+
+    void ImmediateUpload::WaitCurrentLaneReusable()
+    {
+        if (!mCompletionTimeline)
+            return;
+        size_t const signalValue = CurrentSignalValue();
+        if (signalValue == 0)
+            return;
+        RHIDeviceQueue::TimelinePair wait{mCompletionTimeline.Get(), signalValue};
+        mDevice->WaitForTimelineSemaphores(Span<const RHIDeviceQueue::TimelinePair>(&wait, 1), -1);
+        CurrentSignalValue() = 0;
+    }
+
+    void ImmediateUpload::SelectCurrentLane()
+    {
+        begin = CurrentBegin();
+        ptr = begin;
+        end = CurrentEnd();
+    }
+
     void ImmediateUpload::Begin()
     {
-        ctx->Reset();
-        ctx->Begin();
-        ptr = begin;
+        WaitCurrentLaneReusable();
+        CurrentContext()->Reset();
+        CurrentContext()->Begin();
+        SelectCurrentLane();
     }
     char* ImmediateUpload::Upload(RHIBuffer* dst, size_t dataSize, size_t dstOffset)
     {
         if (ptr + dataSize > end)
             return nullptr;
-        ctx->CopyBuffer(
-            staging.Get(), dst,
+        CurrentContext()->CopyBuffer(
+            CurrentStaging(), dst,
             {{{.srcOffset = static_cast<uint32_t>(ptr - begin), .dstOffset = dstOffset, .size = dataSize}}});
         char* res = ptr;
         ptr += dataSize;
@@ -54,7 +156,7 @@ namespace Foundation::RenderCore
         RHIExtent3D extent{dstExtent.x ? dstExtent.x : maxExtent.x,
                            dstExtent.y ? dstExtent.y : maxExtent.y,
                            dstExtent.z ? dstExtent.z : maxExtent.z};
-        ctx->CopyBufferToImage(staging.Get(), dst, RHITextureLayout::TransferDst,
+        CurrentContext()->CopyBufferToImage(CurrentStaging(), dst, RHITextureLayout::TransferDst,
                                {{{.srcBufferOffset = static_cast<uint32_t>(ptr - begin),
                                   .dstLayer = dstLayer,
                                   .dstOffset = dstOffset,
@@ -77,10 +179,41 @@ namespace Foundation::RenderCore
     }
     void ImmediateUpload::End(ImmediateSubmitDesc const& desc)
     {
-        ctx->End();
-        ctx.Submit(desc);
+        CurrentContext()->End();
+        if (mCompletionTimeline)
+        {
+            size_t& signalValue = CurrentSignalValue();
+            signalValue = mNextSignalValue++;
+            mSubmitSignals.clear();
+            mSubmitSignals.insert(mSubmitSignals.end(), desc.timelineSignals.begin(), desc.timelineSignals.end());
+            mSubmitSignals.push_back({mCompletionTimeline.Get(), signalValue});
+            ImmediateSubmitDesc submitDesc = desc;
+            submitDesc.timelineSignals = mSubmitSignals;
+            CurrentContext().Submit(submitDesc);
+            mCurrentLane = (mCurrentLane + 1u) % mLaneCount;
+            SelectCurrentLane();
+        }
+        else
+        {
+            CurrentContext().Submit(desc);
+        }
     }
-    void ImmediateUpload::WaitIdle() { ctx.WaitIdle(); }
+    void ImmediateUpload::WaitIdle()
+    {
+        if (!mCompletionTimeline)
+        {
+            CurrentContext().WaitIdle();
+            return;
+        }
+        if (mNextSignalValue > 1u)
+        {
+            RHIDeviceQueue::TimelinePair wait{mCompletionTimeline.Get(), mNextSignalValue - 1u};
+            mDevice->WaitForTimelineSemaphores(Span<const RHIDeviceQueue::TimelinePair>(&wait, 1), -1);
+        }
+        mLane0SignalValue = 0;
+        for (Core::UniquePtr<UploadLane> const& lane : mLanes)
+            lane->signalValue = 0;
+    }
     void ImmediateReadback::Begin()
     {
         ctx->Reset();

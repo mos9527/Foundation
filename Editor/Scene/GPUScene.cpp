@@ -808,7 +808,7 @@ size_t GPUScene::UploadOrUpdateTexture(ImmediateUpload* ctx, FTexture const& sou
         RHITextureAspectFlagBits::Color,
         0, metadata.GetNumMips(),
         0, texture->mDesc.arrayLayers);
-    auto* cmd = ctx->ctx.Get();
+    auto* cmd = ctx->Get();
     cmd->BeginTransition();
     cmd->SetImageTransition(texture.Get(), {
                                 .dstImgLayout = RHITextureLayout::TransferDst,
@@ -894,7 +894,7 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FTextureHeader const& metadata, Sp
         RHITextureAspectFlagBits::Color,
         0, metadata.GetNumMips(),
         0, texture->mDesc.arrayLayers);
-    auto* cmd = ctx->ctx.Get();
+    auto* cmd = ctx->Get();
     cmd->BeginTransition();
     cmd->SetImageTransition(texture.Get(), {
                                 .dstImgLayout = RHITextureLayout::TransferDst,
@@ -977,7 +977,7 @@ GPUScene::TextureUpload GPUScene::BeginTextureUpload(ImmediateUpload* ctx, FSeri
         RHITextureAspectFlagBits::Color,
         0, metadata.GetNumMips(),
         0, upload.texture->mDesc.arrayLayers);
-    auto* cmd = ctx->ctx.Get();
+    auto* cmd = ctx->Get();
     cmd->BeginTransition();
     cmd->SetImageTransition(upload.texture.Get(), {
                                 .dstImgLayout = RHITextureLayout::TransferDst,
@@ -1036,7 +1036,7 @@ void GPUScene::EndTextureUpload(ImmediateUpload* ctx, TextureUpload&& upload, ui
         RHITextureAspectFlagBits::Color,
         0, metadata.GetNumMips(),
         0, upload.texture->mDesc.arrayLayers);
-    auto* cmd = ctx->ctx.Get();
+    auto* cmd = ctx->Get();
     cmd->BeginTransition();
     cmd->SetImageTransition(upload.texture.Get(), {
                                 .srcImgLayout = RHITextureLayout::TransferDst,
@@ -1088,7 +1088,7 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FScene const& scene, FSeriali
         RHITextureAspectFlagBits::Color,
         0, metadata.GetNumMips(),
         0, texture->mDesc.arrayLayers);
-    auto* cmd = ctx->ctx.Get();
+    auto* cmd = ctx->Get();
     cmd->BeginTransition();
     cmd->SetImageTransition(texture.Get(), {
                                 .dstImgLayout = RHITextureLayout::TransferDst,

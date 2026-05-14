@@ -10,6 +10,7 @@ static constexpr const char* kTempScenePath = "last.fscn";
 static constexpr size_t kDefaultSceneLoadScratchBudget = 64ull * (1ull << 20);
 // Accounts for alignment, etc...
 static constexpr size_t kBudgetSlack = 1ull * (1ull << 20);
+static constexpr size_t kStagingBudgetSlack = 32ull * (1ull << 20);
 
 static GPUScene::UpdateResult CommitSceneToGPU(GPUScene* gpu, Span<GSInstance> instances,
                                                 Span<GSMaterial> materials, Span<GSLight> lights,
@@ -117,7 +118,7 @@ static size_t SceneStagingBufferBudget(FScene const& scene, bool directGeometryU
             for (uint32_t mip = 0; mip < texture.GetNumMips(); ++mip)
                 budget = std::max(budget, TextureSubresourceUploadStagingFootprint(texture, layer, mip) + kBudgetSlack);
     }
-    return budget + kBudgetSlack;
+    return budget + kStagingBudgetSlack;
 }
 
 static size_t SceneBlobScratchBudget(FScene const& scene)
@@ -957,15 +958,19 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* gpu, SceneLoadStats&
         };
         constexpr size_t kGeometryUploadReadyValue = 1u;
         constexpr size_t kTextureUploadReadyValue = 2u;
+        constexpr size_t kSceneUploadStagingBuffers = 3u;
         auto uploadTimeline = GContext->device->CreateSemaphore(true);
         const size_t uploadStaging = SceneStagingBufferBudget(scene, directGeometryUpload);
-        LOG(Editor, LogInfo, "Scene CPU Staging Budget: {} bytes", uploadStaging);
-        ImmediateUpload upload(GContext->device.Get(), uploadStaging, RHIDeviceQueueType::Transfer);
+        LOG(Editor, LogInfo, "Scene CPU Staging Budget: {} bytes per lane ({} lanes, {} bytes total)",
+            uploadStaging, kSceneUploadStagingBuffers, uploadStaging * kSceneUploadStagingBuffers);
+        ImmediateUpload upload(GContext->device.Get(), uploadStaging, RHIDeviceQueueType::Transfer,
+                               kSceneUploadStagingBuffers);
         upload.Begin();
         auto FlushUpload = [&]
         {
             WaitForUploadBatchStagedJobs();
-            upload.End(), upload.WaitIdle(), upload.Begin();
+            upload.End();
+            upload.Begin();
         };
 
         // Geometry Upload
@@ -1051,8 +1056,6 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* gpu, SceneLoadStats&
                 ImmediateSubmitDesc{.timelineWaits = {&wait, 1}, .waitStages = {&waitStage, 1}});
             blasDurationMs.store(buildMs, std::memory_order_release);
         });
-        GContext->device->WaitForTimelineSemaphores(
-            Span<const RHIDeviceQueue::TimelinePair>(&geometryUploadSignal, 1), -1);
         if (geometryResourceCount != 0)
             InterlockedMax(bufferUploadEndMs, MillisecondsSince(uploadStart), std::memory_order_release);
         upload.Begin();
@@ -1173,8 +1176,6 @@ void LoadScene(StringView path)
     try
     {
         String scenePayloadPath = PrepareScenePayloadFile(path);
-        double const sceneBuildMs = MillisecondsSince(loadStart);
-
         // Scratch memory for scene loading.
         // Do note that from here on out, it's all FSCN loading, where
         // the few places that intermediate allocation is required are:

@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/AtomicPool.hpp>
+#include <Core/Container.hpp>
 #include <Core/Variant.hpp>
 #include <RHICore/Command.hpp>
 #include <RHICore/Device.hpp>
@@ -43,29 +44,35 @@ namespace Foundation::RenderCore
     };
 
     /**
-     * @brief Single persistent staging buffer + immediate context for quick, batchable uploads.
+     * @brief Persistent staging buffer(s) + immediate context(s) for quick, batchable uploads.
+     * @note  When constructed with more than one buffer, End() advances to the next staging lane and Begin()
+     *        only waits when the next lane is still in flight.
      */
     struct ImmediateUpload
     {
+        struct UploadLane
+        {
+            ImmediateContext ctx;
+            RHIDeviceScopedHandle<RHIBuffer> staging;
+            char* begin;
+            char* end;
+            size_t signalValue{0};
+
+            UploadLane(RHIDevice* device, size_t capacity, RHIDeviceQueueType type);
+        };
+
         ImmediateContext ctx;
         RHIDeviceScopedHandle<RHIBuffer> staging;
 
         char *begin, *ptr, *end;
-        ImmediateUpload(RHIDevice* device, size_t capacity, RHIDeviceQueueType type = RHIDeviceQueueType::Graphics) :
-            ctx(type, device),
-            staging(device->CreateBuffer({.resource =
-                                              {
-                                                  .heap = RHIDeviceHeapType::Upload,
-                                                  .shared = false, /* Transfer only */
-                                                  .coherent = true, /* No flush required */
-                                                  .staging = true,
-                                              },
-                                          .usage = RHIBufferUsageBits::TransferSource,
-                                          .size = capacity}))
-        {
-            begin = ptr = staging->Map<char>();
-            end = ptr + capacity;
-        }
+        ImmediateUpload(RHIDevice* device, size_t capacity,
+                        RHIDeviceQueueType type = RHIDeviceQueueType::Graphics,
+                        size_t buffers = 1);
+
+        /**
+         * @return Command list for the current upload lane.
+         */
+        [[nodiscard]] RHICommandList* Get() const;
 
         /**
          * Resets the upload context for a new series of uploads.
@@ -76,14 +83,14 @@ namespace Foundation::RenderCore
         /**
          * Uploads data to `dst` buffer with a staging copy.
          * @return nullptr when upload fails (out of staging memory).
-         *         At which point, a flush with End() -> WaitIdle() -> Begin() is required.
+         *         At which point, a flush with End() -> Begin() is required.
          *         A mapped, writable pointer to the staging memory where the buffer data is expected to be written otherwise.
          */
         char* Upload(RHIBuffer* dst, size_t dataSize, size_t dstOffset);
         /**
          * Uploads data to `dst` texture with a staging copy.
          * @return nullptr when upload fails (out of staging memory).
-         *         At which point, a flush with End() -> WaitIdle() -> Begin() is required.
+         *         At which point, a flush with End() -> Begin() is required.
          *         A mapped, writable pointer to the staging memory where the texture data is expected to be written otherwise.
          */
         char* Upload(RHITexture* dst, size_t dataSize,
@@ -102,6 +109,27 @@ namespace Foundation::RenderCore
         void End(ImmediateSubmitDesc const& desc);
 
         void WaitIdle();
+
+    private:
+        RHIDevice* mDevice;
+        size_t mLaneCount{1};
+        size_t mCurrentLane{0};
+        size_t mNextSignalValue{1};
+        size_t mLane0SignalValue{0};
+        char* mLane0Begin{nullptr};
+        char* mLane0End{nullptr};
+        RHIDeviceScopedHandle<RHIDeviceSemaphore> mCompletionTimeline;
+        Core::Vector<Core::UniquePtr<UploadLane>> mLanes;
+        Core::Vector<RHIDeviceQueue::TimelinePair> mSubmitSignals;
+
+        [[nodiscard]] ImmediateContext& CurrentContext();
+        [[nodiscard]] ImmediateContext const& CurrentContext() const;
+        [[nodiscard]] RHIBuffer* CurrentStaging() const;
+        [[nodiscard]] char* CurrentBegin() const;
+        [[nodiscard]] char* CurrentEnd() const;
+        [[nodiscard]] size_t& CurrentSignalValue();
+        void WaitCurrentLaneReusable();
+        void SelectCurrentLane();
     };
 
     /**
