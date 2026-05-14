@@ -87,6 +87,137 @@ static size_t DrawMemoryStatsTable(const char* tableId, Vector<T>& stats)
     return totalBytes;
 }
 
+static float BytesToMiB(size_t bytes)
+{
+    return bytes / static_cast<float>(1 << 20u);
+}
+
+static void AppendMemoryFlag(char* buffer, size_t bufferSize, const char* flag)
+{
+    size_t len = std::strlen(buffer);
+    if (len >= bufferSize - 1)
+        return;
+    if (len != 0)
+    {
+        std::snprintf(buffer + len, bufferSize - len, " | ");
+        len = std::strlen(buffer);
+        if (len >= bufferSize - 1)
+            return;
+    }
+    std::snprintf(buffer + len, bufferSize - len, "%s", flag);
+}
+
+static const char* MemoryTypeFlagsText(RHIDeviceMemoryTypeStat const& stat, char (&buffer)[128])
+{
+    buffer[0] = '\0';
+    if (stat.deviceLocal)
+        AppendMemoryFlag(buffer, sizeof(buffer), "Device Local");
+    if (stat.hostVisible)
+        AppendMemoryFlag(buffer, sizeof(buffer), "Host Visible");
+    if (stat.hostCoherent)
+        AppendMemoryFlag(buffer, sizeof(buffer), "Host Coherent");
+    if (stat.hostCached)
+        AppendMemoryFlag(buffer, sizeof(buffer), "Host Cached");
+    if (stat.lazilyAllocated)
+        AppendMemoryFlag(buffer, sizeof(buffer), "Lazy");
+    if (stat.protectedMemory)
+        AppendMemoryFlag(buffer, sizeof(buffer), "Protected");
+    if (buffer[0] == '\0')
+        std::snprintf(buffer, sizeof(buffer), "None");
+    return buffer;
+}
+
+static void DrawRHIDeviceHeapStatsTable(RHIDeviceMemoryStats const& stats)
+{
+    ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+        ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp;
+    if (!ImGui::BeginTable("##RHIDeviceHeapStatsTable", 8, flags))
+        return;
+
+    ImGui::TableSetupColumn("Heap");
+    ImGui::TableSetupColumn("Flags");
+    ImGui::TableSetupColumn("Size");
+    ImGui::TableSetupColumn("Used/Avail");
+    ImGui::TableSetupColumn("VAlloc");
+    ImGui::TableSetupColumn("VBlocks");
+    ImGui::TableSetupColumn("Slack");
+    ImGui::TableSetupColumn("Allocs");
+    ImGui::TableHeadersRow();
+
+    for (auto const& heap : stats.heaps)
+    {
+        size_t slack = heap.blockBytes >= heap.allocationBytes ? heap.blockBytes - heap.allocationBytes : 0;
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", heap.heapIndex);
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(heap.deviceLocal ? "Device Local" : "Host/System");
+        ImGui::TableNextColumn();
+        ImGui::Text("%.1f MB", BytesToMiB(heap.heapSize));
+        ImGui::TableNextColumn();
+        ImGui::Text("%.1f / %.1f MB", BytesToMiB(heap.usage), BytesToMiB(heap.budget));
+        ImGui::TableNextColumn();
+        ImGui::Text("%.1f MB", BytesToMiB(heap.allocationBytes));
+        ImGui::TableNextColumn();
+        ImGui::Text("%.1f MB", BytesToMiB(heap.blockBytes));
+        ImGui::TableNextColumn();
+        ImGui::Text("%.1f MB", BytesToMiB(slack));
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", heap.allocationCount);
+    }
+
+    ImGui::EndTable();
+}
+
+static void DrawRHIDeviceMemoryTypeStatsTable(RHIDeviceMemoryStats const& stats)
+{
+    ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+        ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp;
+    if (!ImGui::BeginTable("##RHIDeviceMemoryTypeStatsTable", 10, flags))
+        return;
+
+    ImGui::TableSetupColumn("Type");
+    ImGui::TableSetupColumn("Heap");
+    ImGui::TableSetupColumn("Flags");
+    ImGui::TableSetupColumn("VAlloc");
+    ImGui::TableSetupColumn("VBlocks");
+    ImGui::TableSetupColumn("Slack");
+    ImGui::TableSetupColumn("Allocs");
+    ImGui::TableSetupColumn("Blocks");
+    ImGui::TableSetupColumn("Free");
+    ImGui::TableSetupColumn("Max");
+    ImGui::TableHeadersRow();
+
+    for (auto const& type : stats.memoryTypes)
+    {
+        size_t slack = type.blockBytes >= type.allocationBytes ? type.blockBytes - type.allocationBytes : 0;
+        char flagText[128];
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", type.typeIndex);
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", type.heapIndex);
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(MemoryTypeFlagsText(type, flagText));
+        ImGui::TableNextColumn();
+        ImGui::Text("%.1f MB", BytesToMiB(type.allocationBytes));
+        ImGui::TableNextColumn();
+        ImGui::Text("%.1f MB", BytesToMiB(type.blockBytes));
+        ImGui::TableNextColumn();
+        ImGui::Text("%.1f MB", BytesToMiB(slack));
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", type.allocationCount);
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", type.blockCount);
+        ImGui::TableNextColumn();
+        ImGui::Text("%u", type.unusedRangeCount);
+        ImGui::TableNextColumn();
+        ImGui::Text("%.1f MB", BytesToMiB(type.allocationSizeMax));
+    }
+
+    ImGui::EndTable();
+}
+
 static bool OpenViewLUTDialog(String& outPath)
 {
     nfdu8filteritem_t filters[] = {{"DDS LUT", "dds"}};
@@ -1097,19 +1228,35 @@ void FRunningImGui()
                     if (name.empty())
                         name = GContext->device->QueryDeviceString();
                     ImGui::Text("%s", name.c_str());
-                    ImGui::Text("GPU Memory Usage: %.1f MB / %.1f MB", used / static_cast<float>(1 << 20u),
-                                budget / static_cast<float>(1 << 20u));
+                    ImGui::Text("GPU Memory Usage: %.1f MB / %.1f MB", BytesToMiB(used), BytesToMiB(budget));
                     ImGui::Text("GPU Heap: %.1f MB, Blocks: %.1f MB, Slack: %.1f MB",
-                                allocationBytes / static_cast<float>(1 << 20u),
-                                blockBytes / static_cast<float>(1 << 20u),
-                                (blockBytes - allocationBytes) / static_cast<float>(1 << 20u));
+                                BytesToMiB(allocationBytes), BytesToMiB(blockBytes),
+                                BytesToMiB(blockBytes >= allocationBytes ? blockBytes - allocationBytes : 0));
+                }
+                {
+                    Allocator* scratch = GContext->editorFrameScratch ? GContext->editorFrameScratch.get() : GLOBAL_ALLOC;
+                    RHIDeviceMemoryStats memoryStats(scratch);
+                    GContext->device->QueryMemoryStats(memoryStats);
+                    ImGui::Text("VMA Total: %.1f MB alloc, %.1f MB blocks, %u allocations",
+                                BytesToMiB(memoryStats.total.allocationBytes),
+                                BytesToMiB(memoryStats.total.blockBytes), memoryStats.total.allocationCount);
+                    if (ImGui::TreeNodeEx("VMA Heaps", ImGuiTreeNodeFlags_DefaultOpen))
+                    {
+                        DrawRHIDeviceHeapStatsTable(memoryStats);
+                        ImGui::TreePop();
+                    }
+                    if (ImGui::TreeNodeEx("VMA Memory Types", ImGuiTreeNodeFlags_DefaultOpen))
+                    {
+                        DrawRHIDeviceMemoryTypeStatsTable(memoryStats);
+                        ImGui::TreePop();
+                    }
                 }
                 {
                     size_t used, budget;
                     GLOBAL_ALLOC->QueryBudget(used, budget);
                     size_t heapUsage = GLOBAL_ALLOC->QueryHeapUsage();
-                    ImGui::Text("CPU RSS Memory: %.1f MB", used / static_cast<float>(1 << 20u));
-                    ImGui::Text("CPU Heap Usage: %.1f MB", heapUsage / static_cast<float>(1 << 20u));
+                    ImGui::Text("CPU RSS Memory: %.1f MB", BytesToMiB(used));
+                    ImGui::Text("CPU Heap Usage: %.1f MB", BytesToMiB(heapUsage));
                 }
                 ImGui::TreePop();
             }

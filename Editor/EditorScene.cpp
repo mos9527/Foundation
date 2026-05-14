@@ -568,7 +568,7 @@ static size_t GPUSceneBudgetBytes(GPUScene::GPUSceneDesc const& desc)
 
 static GPUScene* CreateGPUScene(FScene const& scene, size_t& outBudgetBytes)
 {
-    const auto estimatedBudget = GPUScene::CalculateSceneBudget(scene, GContext->device->GetCapabilities());
+    auto estimatedBudget = GPUScene::CalculateSceneBudget(scene, GContext->device->GetCapabilities());
     LOG(Editor, LogDebug,
         "Estimated GPUScene budget: primitive {} MB, curve AABB {} MB, instances {}, TLAS instances {}, materials {}, lights {}, textures {}",
         estimatedBudget.primitiveBudget / (1u << 20),

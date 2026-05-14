@@ -399,6 +399,73 @@ void VulkanDevice::QueryAllocationStats(size_t& blockBytes, size_t& allocationBy
     }
 }
 
+void VulkanDevice::QueryMemoryStats(RHIDeviceMemoryStats& outStats) const
+{
+    outStats.heaps.clear();
+    outStats.memoryTypes.clear();
+    outStats.total = {};
+
+    auto memoryProperties = mPhysicalDevice.getMemoryProperties();
+
+    VmaBudget budgets[VK_MAX_MEMORY_HEAPS]{};
+    vmaGetHeapBudgets(mVkAllocator, budgets);
+
+    VmaTotalStatistics stats{};
+    vmaCalculateStatistics(mVkAllocator, &stats);
+
+    auto FillDetailedStats = [](RHIDeviceMemoryTypeStat& dst, VmaDetailedStatistics const& src)
+    {
+        dst.blockCount = src.statistics.blockCount;
+        dst.allocationCount = src.statistics.allocationCount;
+        dst.unusedRangeCount = src.unusedRangeCount;
+        dst.blockBytes = static_cast<size_t>(src.statistics.blockBytes);
+        dst.allocationBytes = static_cast<size_t>(src.statistics.allocationBytes);
+        dst.allocationSizeMin = src.statistics.allocationCount ? static_cast<size_t>(src.allocationSizeMin) : 0;
+        dst.allocationSizeMax = static_cast<size_t>(src.allocationSizeMax);
+        dst.unusedRangeSizeMin = src.unusedRangeCount ? static_cast<size_t>(src.unusedRangeSizeMin) : 0;
+        dst.unusedRangeSizeMax = static_cast<size_t>(src.unusedRangeSizeMax);
+    };
+
+    outStats.heaps.reserve(memoryProperties.memoryHeapCount);
+    for (uint32_t i = 0; i < memoryProperties.memoryHeapCount; ++i)
+    {
+        auto const& heap = memoryProperties.memoryHeaps[i];
+        auto const& budget = budgets[i];
+        outStats.heaps.push_back({
+            .heapIndex = i,
+            .deviceLocal = static_cast<bool>(heap.flags & vk::MemoryHeapFlagBits::eDeviceLocal),
+            .heapSize = static_cast<size_t>(heap.size),
+            .usage = static_cast<size_t>(budget.usage),
+            .budget = static_cast<size_t>(budget.budget),
+            .blockCount = budget.statistics.blockCount,
+            .allocationCount = budget.statistics.allocationCount,
+            .blockBytes = static_cast<size_t>(budget.statistics.blockBytes),
+            .allocationBytes = static_cast<size_t>(budget.statistics.allocationBytes),
+        });
+    }
+
+    outStats.memoryTypes.reserve(memoryProperties.memoryTypeCount);
+    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; ++i)
+    {
+        auto const& memoryType = memoryProperties.memoryTypes[i];
+        auto flags = memoryType.propertyFlags;
+        RHIDeviceMemoryTypeStat stat{
+            .typeIndex = i,
+            .heapIndex = memoryType.heapIndex,
+            .deviceLocal = static_cast<bool>(flags & vk::MemoryPropertyFlagBits::eDeviceLocal),
+            .hostVisible = static_cast<bool>(flags & vk::MemoryPropertyFlagBits::eHostVisible),
+            .hostCoherent = static_cast<bool>(flags & vk::MemoryPropertyFlagBits::eHostCoherent),
+            .hostCached = static_cast<bool>(flags & vk::MemoryPropertyFlagBits::eHostCached),
+            .lazilyAllocated = static_cast<bool>(flags & vk::MemoryPropertyFlagBits::eLazilyAllocated),
+            .protectedMemory = static_cast<bool>(flags & vk::MemoryPropertyFlagBits::eProtected),
+        };
+        FillDetailedStats(stat, stats.memoryType[i]);
+        outStats.memoryTypes.push_back(stat);
+    }
+
+    FillDetailedStats(outStats.total, stats.total);
+}
+
 String VulkanDevice::QueryDeviceString() const
 {
     auto properties = mPhysicalDevice.getProperties();

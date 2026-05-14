@@ -193,19 +193,19 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     size_t minDirectGeometryHeapSize = std::max(directGeometryBudget, kMinDirectGeometryUploadHeapSize);
     mDirectGeometryUpload = caps.deviceLocalHostVisibleBuffers &&
                             caps.deviceLocalHostVisibleHeapSize >= minDirectGeometryHeapSize;
-    RHIResourceDesc geometryResource{
+    RHIResourceDesc geoDesc{
         .heap = RHIDeviceHeapType::Local,
         .hostAccess = mDirectGeometryUpload ? RHIResourceHostAccess::WriteOnly : RHIResourceHostAccess::Invisible,
         .shared = true,
     };
     mPrimitiveBuffer = mContext->device->CreateBuffer(
-    {.resource = geometryResource,
-     .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
-     RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
-     .size = desc.primitiveBudget});
-    geometryResource.shared = false;
+    {.resource = geoDesc,
+             .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
+             RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
+             .size = desc.primitiveBudget});
+    geoDesc.shared = false;
     mCurveAABBBuffer = mContext->device->CreateBuffer(
-    {.resource = geometryResource,
+    {.resource = geoDesc,
      .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
      RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
      .size = desc.curveAABBBudget});
@@ -213,8 +213,8 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     {
         mPrimitiveMapped = mPrimitiveBuffer->Map<char>();
         mCurveAABBMapped = mCurveAABBBuffer->Map<char>();
-        LOG(GPUScene, LogInfo, "ReBAR available ({} MB budget used). Uploading via direct copy.",
-            directGeometryBudget / 1000000.0);
+        LOG(GPUScene, LogInfo, "ReBAR available ({} MiB budget used). Uploading via direct copy.",
+            directGeometryBudget / (1u << 20));
     }
     mTLASBuffer = mContext->device->CreateBuffer(
     {

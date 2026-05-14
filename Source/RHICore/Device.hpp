@@ -195,8 +195,50 @@ namespace Foundation::RHI
         bool raytracingPipeline;
         bool timestampQueries;
         bool deviceLocalHostVisibleBuffers;
+        // Direct GPU memory access thanks to either UMA or ReBAR
+        // https://asawicki.info/news_1740_vulkan_memory_types_on_pc_and_how_to_use_them
         size_t deviceLocalHostVisibleHeapSize;
         size_t maxStorageBufferRange;
+    };
+    struct RHIDeviceMemoryHeapStat
+    {
+        uint32_t heapIndex{};
+        bool deviceLocal{};
+        size_t heapSize{};
+        size_t usage{};
+        size_t budget{};
+        uint32_t blockCount{};
+        uint32_t allocationCount{};
+        size_t blockBytes{};
+        size_t allocationBytes{};
+    };
+    struct RHIDeviceMemoryTypeStat
+    {
+        uint32_t typeIndex{};
+        uint32_t heapIndex{};
+        bool deviceLocal{};
+        bool hostVisible{};
+        bool hostCoherent{};
+        bool hostCached{};
+        bool lazilyAllocated{};
+        bool protectedMemory{};
+        uint32_t blockCount{};
+        uint32_t allocationCount{};
+        uint32_t unusedRangeCount{};
+        size_t blockBytes{};
+        size_t allocationBytes{};
+        size_t allocationSizeMin{};
+        size_t allocationSizeMax{};
+        size_t unusedRangeSizeMin{};
+        size_t unusedRangeSizeMax{};
+    };
+    struct RHIDeviceMemoryStats
+    {
+        Vector<RHIDeviceMemoryHeapStat> heaps;
+        Vector<RHIDeviceMemoryTypeStat> memoryTypes;
+        RHIDeviceMemoryTypeStat total{};
+
+        explicit RHIDeviceMemoryStats(Allocator* allocator) : heaps(allocator), memoryTypes(allocator) {}
     };
     class RHIDevice : public RHIObject
     {
@@ -315,6 +357,7 @@ namespace Foundation::RHI
 
         virtual void QueryBudget(size_t& used, size_t& budget) const = 0;
         virtual void QueryAllocationStats(size_t& blockBytes, size_t& allocationBytes) const = 0;
+        virtual void QueryMemoryStats(RHIDeviceMemoryStats& outStats) const = 0;
         virtual String QueryDeviceString() const = 0;
 
         virtual void DebugSetObjectName(const char* name) = 0;
