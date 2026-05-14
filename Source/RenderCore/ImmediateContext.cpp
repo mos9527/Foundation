@@ -81,4 +81,65 @@ namespace Foundation::RenderCore
         ctx.Submit(desc);
     }
     void ImmediateUpload::WaitIdle() { ctx.WaitIdle(); }
+    void ImmediateReadback::Begin()
+    {
+        ctx->Reset();
+        ctx->Begin();
+        ptr = begin;
+    }
+    char* ImmediateReadback::Readback(RHIBuffer* src, size_t dataSize, size_t srcOffset)
+    {
+        if (ptr + dataSize > end)
+            return nullptr;
+        ctx->CopyBuffer(
+            src, staging.Get(),
+            {{{.srcOffset = srcOffset, .dstOffset = static_cast<uint32_t>(ptr - begin), .size = dataSize}}});
+        char* res = ptr;
+        ptr += dataSize;
+        return res;
+    }
+    char* ImmediateReadback::Readback(RHITexture* src, size_t dataSize, RHITextureSubresourceLayer srcLayer,
+                                      RHIOffset2D srcOffset, RHIExtent2D srcExtent)
+    {
+        RHIExtent3D maxExtent = src->mDesc.extent;
+        RHIOffset3D offset{srcOffset.x, srcOffset.y, 0};
+        RHIExtent3D extent{srcExtent.x ? srcExtent.x : maxExtent.x, srcExtent.y ? srcExtent.y : maxExtent.y, 1};
+        return Readback(src, dataSize, srcLayer, offset, extent);
+    }
+    char* ImmediateReadback::Readback(RHITexture* src, size_t dataSize, RHITextureSubresourceLayer srcLayer,
+                                      RHIOffset3D srcOffset, RHIExtent3D srcExtent)
+    {
+        if (ptr + dataSize > end)
+            return nullptr;
+        RHIExtent3D maxExtent = src->mDesc.extent;
+        RHIExtent3D extent{srcExtent.x ? srcExtent.x : maxExtent.x,
+                           srcExtent.y ? srcExtent.y : maxExtent.y,
+                           srcExtent.z ? srcExtent.z : maxExtent.z};
+        ctx->CopyImageToBuffer(src, RHITextureLayout::TransferSrc, staging.Get(),
+                               {{{.dstBufferOffset = static_cast<uint32_t>(ptr - begin),
+                                  .srcLayer = srcLayer,
+                                  .srcOffset = srcOffset,
+                                  .extent = extent}}});
+        char* res = ptr;
+        ptr += dataSize;
+        return res;
+    }
+    bool ImmediateReadback::Align(uint32_t alignment)
+    {
+        auto* pup = reinterpret_cast<char*>(AlignUp(reinterpret_cast<uintptr_t>(ptr), alignment));
+        if (pup >= end)
+            return false;
+        ptr = pup;
+        return true;
+    }
+    void ImmediateReadback::End(RHIDeviceFence* completionFence)
+    {
+        End(ImmediateSubmitDesc{.completionFence = completionFence});
+    }
+    void ImmediateReadback::End(ImmediateSubmitDesc const& desc)
+    {
+        ctx->End();
+        ctx.Submit(desc);
+    }
+    void ImmediateReadback::WaitIdle() { ctx.WaitIdle(); }
 } // namespace Foundation::RenderCore

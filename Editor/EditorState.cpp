@@ -77,7 +77,7 @@ static void SetupSceneRenderer(FContext* context, RendererScene scene, RendererH
     if (GEditor.rendererMode == ERendererMode::PathTracer)
         BuildPathTracerRenderGraph(context, GEditor.rendererConfig, scene, renderExtent, outHandles,
                                    &GEditor.renderTask.renderPaused);
-    else
+    if (GEditor.rendererMode == ERendererMode::Raster)
         BuildRasterRenderGraph(context, GEditor.rendererConfig, scene, renderExtent, outHandles);
     EndEditorRendererSetup(renderer);
 }
@@ -138,7 +138,7 @@ static void FRunningEnter()
     // Invalidate stale readback handles before rebuilding the renderer
     sRenderReadback = {};
     if (GContext->gpuScene)
-        GContext->gpuScene->EnsureTLASCapacity(GEditor.instances, GEditor.lights);
+        CHECK(GContext->gpuScene->EnsureTLASCapacity(GEditor.instances, GEditor.lights));
     RendererScene scene{
         .gsGlobals = &GEditor.shaderGlobals,
         .gsInstances = &GEditor.instances,

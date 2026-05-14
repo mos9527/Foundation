@@ -9,7 +9,7 @@
 static constexpr const char* kTempScenePath = "last.fscn";
 static constexpr size_t kDefaultSceneLoadScratchBudget = 64ull * (1ull << 20);
 // Accounts for alignment, etc...
-static constexpr size_t kBudgetSlack = 4ull * (1ull << 20);
+static constexpr size_t kBudgetSlack = 1ull * (1ull << 20);
 
 static GPUScene::UpdateResult CommitSceneToGPU(GPUScene* gpu, Span<GSInstance> instances,
                                                 Span<GSMaterial> materials, Span<GSLight> lights,
@@ -82,12 +82,6 @@ static void LoadSelectedViewLUTs(FTexture& sdr, FTexture& hdr)
 static double MillisecondsSince(std::chrono::steady_clock::time_point start)
 {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-}
-
-static uint64_t MicrosecondsSince(std::chrono::steady_clock::time_point start)
-{
-    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now() - start).count());
 }
 
 static size_t TextureSubresourceUploadStagingFootprint(FTextureHeader const& metadata,
@@ -208,6 +202,119 @@ bool ApplyViewLUTSelection()
     return true;
 }
 
+FTexture ReadbackRenderTexture(RHITexture* source, Allocator* alloc)
+{
+    CHECK(source != nullptr);
+    CHECK(alloc != nullptr);
+    RHITextureDesc const& desc = source->mDesc;
+    CHECK_MSG(desc.format != RHIResourceFormat::Undefined, "Cannot read back texture with undefined format");
+    CHECK_MSG(desc.sampleCount == RHIMultisampleCount::E1, "Cannot read back multisampled texture");
+
+    FTexture texture(alloc);
+    texture.Initialize(desc.format, desc.dimension, desc.extent.x, desc.extent.y, desc.extent.z,
+                       desc.mipLevels, desc.arrayLayers);
+    texture.bytes.resize(texture.GetSize());
+
+    uint32_t const alignment = std::max(texture.GetBpp() / 8, texture.GetBlockSize());
+    CHECK_MSG(alignment != 0, "Unsupported texture format {}", texture.GetFormat());
+    CHECK_MSG(texture.bytes.size() <= std::numeric_limits<size_t>::max() - (alignment - 1u),
+              "Texture readback staging capacity exceeds addressable range");
+    size_t const readbackCapacity = texture.bytes.size() + alignment - 1u;
+
+    ImmediateReadback readback(GContext->device.Get(), readbackCapacity);
+    readback.Begin();
+    auto* cmd = readback.ctx.Get();
+    auto range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color, 0, desc.mipLevels,
+                                                    0, desc.arrayLayers);
+    cmd->BeginTransition();
+    cmd->SetImageTransition(source,
+                            {.srcAccess = RHIResourceAccessBits::ShaderRead,
+                             .dstAccess = RHIResourceAccessBits::TransferRead,
+                             .srcStage = RHIPipelineStageBits::FragmentShader,
+                             .dstStage = RHIPipelineStageBits::Transfer,
+                             .srcImgLayout = RHITextureLayout::ShaderReadOnly,
+                             .dstImgLayout = RHITextureLayout::TransferSrc,
+                             .srcImgRange = range});
+    cmd->EndTransition();
+
+    struct ReadbackSlice
+    {
+        char* data;
+        size_t offset;
+        size_t size;
+    };
+    Vector<ReadbackSlice> slices(alloc);
+    slices.reserve(static_cast<size_t>(desc.arrayLayers) * desc.mipLevels);
+    for (uint32_t layer = 0; layer < desc.arrayLayers; ++layer)
+    {
+        for (uint32_t mip = 0; mip < desc.mipLevels; ++mip)
+        {
+            if (!readback.Align(alignment))
+                CHECK_MSG(false, "Readback staging alignment failed");
+            Span<unsigned char> subresource = texture.GetSubresource(mip, layer);
+            RHIExtent3D mipExtent = texture.GetMipExtent(mip);
+            char* data = readback.Readback(source, subresource.size(),
+                                           {.aspect = RHITextureAspectFlagBits::Color,
+                                            .mipLevel = mip,
+                                            .baseArrayLayer = layer,
+                                            .layerCount = 1},
+                                           {}, mipExtent);
+            CHECK_MSG(data != nullptr, "Readback staging buffer exhausted");
+            slices.push_back({data, static_cast<size_t>(subresource.data() - texture.bytes.data()), subresource.size()});
+        }
+    }
+
+    cmd->BeginTransition();
+    cmd->SetImageTransition(source,
+                            {.srcAccess = RHIResourceAccessBits::TransferRead,
+                             .dstAccess = RHIResourceAccessBits::ShaderRead,
+                             .srcStage = RHIPipelineStageBits::Transfer,
+                             .dstStage = RHIPipelineStageBits::FragmentShader,
+                             .srcImgLayout = RHITextureLayout::TransferSrc,
+                             .dstImgLayout = RHITextureLayout::ShaderReadOnly,
+                             .srcImgRange = range});
+    cmd->EndTransition();
+    readback.End();
+    readback.WaitIdle();
+
+    for (ReadbackSlice const& slice : slices)
+        std::memcpy(texture.bytes.data() + slice.offset, slice.data, slice.size);
+    return texture;
+}
+
+static void ValidateRenderReadbackTexture(FTexture const& texture, RHIResourceFormat expectedFormat,
+                                          uint32_t& outWidth, uint32_t& outHeight)
+{
+    CHECK(texture.IsValid());
+    CHECK_MSG(texture.GetFormat() == expectedFormat,
+              "Render readback expects {}, got {}", expectedFormat, texture.GetFormat());
+    outWidth = texture.GetWidth();
+    outHeight = texture.GetHeight();
+}
+
+static Vector<float> CombineRenderTextures(Span<const FTexture> textures, uint32_t& outWidth, uint32_t& outHeight,
+                                         Allocator* alloc = GLOBAL_ALLOC)
+{
+    CHECK(alloc != nullptr);
+    CHECK_MSG(!textures.empty(), "Invalid render texture count");
+    ValidateRenderReadbackTexture(textures[0], RHIResourceFormat::R32G32B32A32SignedFloat, outWidth, outHeight);
+    for (FTexture const& texture : textures)
+    {
+        uint32_t width = 0;
+        uint32_t height = 0;
+        ValidateRenderReadbackTexture(texture, RHIResourceFormat::R32G32B32A32SignedFloat, width, height);
+        CHECK_MSG(width == outWidth && height == outHeight, "Mismatched render readback texture extents");
+    }
+    size_t const rgba = static_cast<size_t>(outWidth) * outHeight;
+    Vector<float> combined(rgba, alloc);
+    for (FTexture const& texture : textures)
+        for (size_t i = 0; i < rgba; ++i)
+            combined[i] += reinterpret_cast<const float*>(texture.bytes.data())[i];
+    for (size_t i = 0; i < rgba / 4; ++i)
+        combined[i * 4 + 3] = 1.0f;
+    return combined;
+}
+
 void DoRenderReadback(RendererHandles const& handles)
 {
     auto* renderer = GContext->renderer;
@@ -216,31 +323,33 @@ void DoRenderReadback(RendererHandles const& handles)
 
     if (GEditor.renderTask.format == ERenderFormat::HDR)
     {
-        CHECK_MSG(handles.numHdrRT > 0u && handles.numHdrRT <= 2u, "Invalid HDR readback texture count");
-        RHITexture* hdrTextures[2]{nullptr, nullptr};
+        CHECK_MSG(handles.numHdrRT, "Invalid HDR readback texture count");
+        Vector<FTexture> hdrTextures(GLOBAL_ALLOC);
+        hdrTextures.reserve(handles.numHdrRT);
         for (uint32_t i = 0; i < handles.numHdrRT; ++i)
-            hdrTextures[i] = renderer->DerefResource(handles.hdrRT[i]).Get<RHITexture*>();
-        Vector<float> combined = FTexture::ReadbackAndCombineRGBA32F(GContext->device.Get(), hdrTextures,
-                                                                      handles.numHdrRT, w, h);
-
-        const char* hdrPath =
-            GEditor.renderTask.outputPath.empty() ? "render_output.hdr" : GEditor.renderTask.outputPath.c_str();
+        {
+            auto* texture = renderer->DerefResource(handles.hdrRT[i]).Get<RHITexture*>();
+            hdrTextures.push_back(ReadbackRenderTexture(texture, GLOBAL_ALLOC));
+        }
+        // AOVs are provided (without alpha), combine them into one HDR buffer
+        const Vector<float> combined = CombineRenderTextures(hdrTextures, w, h);
+        const char* hdrPath = GEditor.renderTask.outputPath.c_str();
         SaveHDR(combined.data(), static_cast<int>(w), static_cast<int>(h), hdrPath);
         LOG(Editor, LogInfo, "{} HDR image saved to {} ({}x{}, {} frames)",
             GEditor.rendererMode == ERendererMode::PathTracer ? "Path tracer" : "Raster", hdrPath, w, h,
             GEditor.shaderGlobals.ptAccumulatedFrames);
-        return;
+    } else
+    {
+        CHECK_MSG(handles.sdrRT != kInvalidHandle, "Invalid SDR readback texture");
+        auto sdrTexture = renderer->DerefResource(handles.sdrRT).Get<RHITexture*>();
+        const FTexture sdr = ReadbackRenderTexture(sdrTexture, GLOBAL_ALLOC);
+        const char* sdrPath = GEditor.renderTask.outputPath.c_str();
+        // Output as is
+        SavePNG(sdr.bytes.data(), static_cast<int>(w), static_cast<int>(h), sdrPath);
+        LOG(Editor, LogInfo, "{} SDR image saved to {} ({}x{}, {} frames)",
+            GEditor.rendererMode == ERendererMode::PathTracer ? "Path tracer" : "Raster", sdrPath, w, h,
+            GEditor.shaderGlobals.ptAccumulatedFrames);
     }
-
-    CHECK_MSG(handles.sdrRT != kInvalidHandle, "Invalid SDR readback texture");
-    RHITexture* sdrTexture = renderer->DerefResource(handles.sdrRT).Get<RHITexture*>();
-    Vector<unsigned char> sdr = FTexture::ReadbackRGBA8(GContext->device.Get(), sdrTexture, w, h);
-    const char* sdrPath =
-        GEditor.renderTask.outputPath.empty() ? "render_output.png" : GEditor.renderTask.outputPath.c_str();
-    SavePNG(sdr.data(), static_cast<int>(w), static_cast<int>(h), sdrPath);
-    LOG(Editor, LogInfo, "{} SDR image saved to {} ({}x{}, {} frames)",
-        GEditor.rendererMode == ERendererMode::PathTracer ? "Path tracer" : "Raster", sdrPath, w, h,
-        GEditor.shaderGlobals.ptAccumulatedFrames);
 }
 
 static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamplerType sampler)
@@ -334,14 +443,14 @@ void UpdateSceneLights()
     CommitSceneToGPU(false);
 }
 
-static uint32_t RemapTextureIndex(Vector<uint32_t> const& textureIDMap, uint32_t sourceIndex)
-{
-    return sourceIndex != kInvalidTexture ? textureIDMap[sourceIndex] : UINT32_MAX;
-}
-
 static void BuildEditorMaterials(FScene& scene, Vector<GSMaterial>& dstMaterials,
                                  Vector<uint32_t> const& textureIDMap)
 {
+    auto RemapTextureIndex = [&textureIDMap](uint32_t index) {
+        if (index == UINT32_MAX)
+            return UINT32_MAX;
+        return textureIDMap[index];
+    };
     dstMaterials.clear();
     for (auto& src : scene.GetMaterials())
     {
@@ -350,14 +459,14 @@ static void BuildEditorMaterials(FScene& scene, Vector<GSMaterial>& dstMaterials
         dst.emissiveFactor = src.emissiveFactor;
         dst.metallicFactor = src.metallicFactor;
         dst.roughnessFactor = src.roughnessFactor;
-        dst.baseColorTexture = RemapTextureIndex(textureIDMap, src.baseColorTexture);
-        dst.emissiveTexture = RemapTextureIndex(textureIDMap, src.emissiveTexture);
-        dst.metallicRoughnessTexture = RemapTextureIndex(textureIDMap, src.metallicRoughnessTexture);
-        dst.normalTexture = RemapTextureIndex(textureIDMap, src.normalTexture);
-        dst.transmissionTexture = RemapTextureIndex(textureIDMap, src.transmissionTexture);
-        dst.specularTexture = RemapTextureIndex(textureIDMap, src.specularTexture);
-        dst.specularColorTexture = RemapTextureIndex(textureIDMap, src.specularColorTexture);
-        dst.anisotropyTexture = RemapTextureIndex(textureIDMap, src.anisotropyTexture);
+        dst.baseColorTexture = RemapTextureIndex(src.baseColorTexture);
+        dst.emissiveTexture = RemapTextureIndex(src.emissiveTexture);
+        dst.metallicRoughnessTexture = RemapTextureIndex(src.metallicRoughnessTexture);
+        dst.normalTexture = RemapTextureIndex(src.normalTexture);
+        dst.transmissionTexture = RemapTextureIndex(src.transmissionTexture);
+        dst.specularTexture = RemapTextureIndex(src.specularTexture);
+        dst.specularColorTexture = RemapTextureIndex(src.specularColorTexture);
+        dst.anisotropyTexture = RemapTextureIndex(src.anisotropyTexture);
         dst.transmissionFactor = src.transmissionFactor;
         dst.ior = src.ior;
         dst.specularFactor = src.specularFactor;
@@ -439,16 +548,6 @@ static void ApplySceneCamera(FScene const& scene, FArcballCamera& cameraState,
     }
 }
 
-
-static void ApplySceneEnvironment(FScene const& scene, UBO& globals)
-{
-    auto const& environment = scene.GetSceneGlobals();
-    globals.ambientColor = environment.color;
-    globals.ambientPower = environment.strength;
-    globals.envAzimuthOffset = environment.azimuthOffset;
-    globals.useEnvMap = 0u;
-}
-
 static size_t GetSceneUploadTaskQueueSize(size_t taskCount)
 {
     return ThreadPool::getTaskSize(std::max<size_t>(taskCount, 1u));
@@ -467,7 +566,7 @@ static size_t GPUSceneBudgetBytes(GPUScene::GPUSceneDesc const& desc)
            size_t(desc.tlasScratchBudget);
 }
 
-static GPUScene* CreateGPUSceneForLoadedScene(FScene const& scene, size_t& outBudgetBytes)
+static GPUScene* CreateGPUScene(FScene const& scene, size_t& outBudgetBytes)
 {
     const auto estimatedBudget = GPUScene::CalculateSceneBudget(scene, GContext->device->GetCapabilities());
     LOG(Editor, LogDebug,
@@ -609,13 +708,16 @@ static void InitializeSceneLoad(FScene& scene, SceneLoadStats& stats, GPUScene*&
     GEditor.viewLUTHdrIndex = static_cast<int>(sceneGlobals.viewLutHdrIndex);
     GEditor.viewLUTSdrExternalPath.clear();
     GEditor.viewLUTHdrExternalPath.clear();
-    ApplySceneEnvironment(scene, GEditor.shaderGlobals);
-
+    auto const& environment = scene.GetSceneGlobals();
+    GEditor.shaderGlobals.ambientColor = environment.color;
+    GEditor.shaderGlobals.ambientPower = environment.strength;
+    GEditor.shaderGlobals.envAzimuthOffset = environment.azimuthOffset;
+    GEditor.shaderGlobals.useEnvMap = 0u;
     stats.sceneMeshCount = scene.GetMeshes().size();
     stats.sceneInstanceCount = scene.GetInstances().size();
     stats.sceneCurveCount = scene.GetCurves().size();
     stats.sceneMaterialCount = scene.GetMaterials().size();
-    newGPUScene = CreateGPUSceneForLoadedScene(scene, stats.sceneGpuBudget);
+    newGPUScene = CreateGPUScene(scene, stats.sceneGpuBudget);
 }
 
 static void CompleteSceneUploadCounter(std::atomic<size_t>* counter)
@@ -698,6 +800,7 @@ static void ScheduleSceneUpload(Set<Pair<size_t, size_t>>& pendingResources, con
     while (!pendingResources.empty())
     {
         size_t remainingStaging = getRemainingStaging();
+        // Take largest job we can fit (best-fit) to staging
         auto it = pendingResources.upper_bound({remainingStaging, std::numeric_limits<size_t>::max()});
         if (it == pendingResources.begin())
         {
@@ -734,15 +837,15 @@ struct SceneUploadJob : ThreadPoolJob
     Span<AllocatorStack> scratchAllocators;
     std::atomic<size_t>* batchCounter;
     std::atomic<size_t>* dependencyCounter;
-    std::atomic<uint64_t>* uploadEndUs;
+    std::atomic<double>* uploadEndMs;
     std::chrono::steady_clock::time_point uploadStatStart;
 
     SceneUploadJob(GPUScene::StagedUploadJob const& job, Span<Arena> scratchArenas,
                    Span<AllocatorStack> scratchAllocators, std::atomic<size_t>* batchCounter,
-                   std::atomic<size_t>* dependencyCounter, std::atomic<uint64_t>* uploadEndUs,
+                   std::atomic<size_t>* dependencyCounter, std::atomic<double>* uploadEndMs,
                    std::chrono::steady_clock::time_point uploadStatStart) :
         job(job), scratchArenas(scratchArenas), scratchAllocators(scratchAllocators),
-        batchCounter(batchCounter), dependencyCounter(dependencyCounter), uploadEndUs(uploadEndUs),
+        batchCounter(batchCounter), dependencyCounter(dependencyCounter), uploadEndMs(uploadEndMs),
         uploadStatStart(uploadStatStart)
     {
     }
@@ -760,8 +863,8 @@ struct SceneUploadJob : ThreadPoolJob
             job.Write();
         }
 
-        if (uploadEndUs)
-            InterlockedMax(*uploadEndUs, MicrosecondsSince(uploadStatStart), std::memory_order_release);
+        if (uploadEndMs)
+            InterlockedMax(*uploadEndMs, MillisecondsSince(uploadStatStart), std::memory_order_release);
 
         CompleteSceneUploadCounter(batchCounter);
         if (dependencyCounter != batchCounter)
@@ -769,7 +872,7 @@ struct SceneUploadJob : ThreadPoolJob
     }
 };
 
-static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* newGPUScene, SceneLoadStats& stats,
+static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* gpu, SceneLoadStats& stats,
                                    AllocatorStack& sceneAlloc)
 {
     Vector<uint32_t> meshOffsets(scene.GetMeshes().size(), &sceneAlloc);
@@ -782,9 +885,9 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* newGPUScene, SceneLo
     size_t blobWorkerCount = 0;
     auto const uploadStart = std::chrono::steady_clock::now();
     {
-        std::atomic<uint64_t> bufferUploadEndUs{0};
-        std::atomic<uint64_t> textureUploadEndUs{0};
-        std::atomic<uint64_t> blasDurationUs{0};
+        std::atomic<double> bufferUploadEndMs{0};
+        std::atomic<double> textureUploadEndMs{0};
+        std::atomic<double> blasDurationMs{0};
         size_t stagedTaskCount = 0;
         stagedTaskCount += scene.GetMeshes().size() * 7u;
         stagedTaskCount += scene.GetCurves().size() * 4u;
@@ -797,7 +900,7 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* newGPUScene, SceneLo
         stagedTaskCount += textureSubresourceCount;
 
         // Scratch memory for blob decode. Each upload worker gets one lane, large enough for the largest decoded blob.
-        const bool directGeometryUpload = newGPUScene->UsesDirectGeometryUpload();
+        const bool directGeometryUpload = gpu->UsesDirectGeometryUpload();
         const size_t geometryResourceCount = stats.sceneMeshCount + stats.sceneCurveCount;
         constexpr size_t kUploadBlockingTaskCount = 2u; // BLAS build + final texture wait
         const size_t hardwareThreadCount = std::max<size_t>(1u, std::thread::hardware_concurrency());
@@ -823,7 +926,7 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* newGPUScene, SceneLo
         std::atomic<size_t> uploadBatchStagedJobs{0};
         std::atomic<size_t> geometryStagedJobs{0};
         auto ScheduleStagedJobs = [&](std::atomic<size_t>* dependencyCounter,
-                                      std::atomic<uint64_t>* uploadEndUs,
+                                      std::atomic<double>* uploadEndMs,
                                       std::chrono::steady_clock::time_point uploadStatStart)
         {
             size_t const jobCount = stagedJobs.size();
@@ -835,7 +938,7 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* newGPUScene, SceneLo
             for (GPUScene::StagedUploadJob const& job : stagedJobs)
                 uploadPool.PushImpl<SceneUploadJob>(job, blobScratchArenas, blobScratchAllocators,
                                                     &uploadBatchStagedJobs, dependencyCounter,
-                                                    uploadEndUs, uploadStatStart);
+                                                    uploadEndMs, uploadStatStart);
             stagedJobs.clear();
         };
         auto WaitForUploadBatchStagedJobs = [&]
@@ -885,9 +988,9 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* newGPUScene, SceneLo
                 auto& dst = GEditor.meshes[meshIndex];
                 auto& offset = meshOffsets[meshIndex];
                 stagedJobs.clear();
-                bool const uploaded = newGPUScene->BeginUpload(&upload, scene, srcDesc, dst, offset, stagedJobs) != 0;
+                bool const uploaded = gpu->BeginUpload(&upload, scene, srcDesc, dst, offset, stagedJobs) != 0;
                 if (uploaded)
-                    ScheduleStagedJobs(&geometryStagedJobs, &bufferUploadEndUs, uploadStart);
+                    ScheduleStagedJobs(&geometryStagedJobs, &bufferUploadEndMs, uploadStart);
                 else
                     stagedJobs.clear();
                 return uploaded;
@@ -918,9 +1021,9 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* newGPUScene, SceneLo
                 auto& dst = GEditor.curves[curveIndex];
                 auto& offset = curveOffsets[curveIndex];
                 stagedJobs.clear();
-                bool const uploaded = newGPUScene->BeginUpload(&upload, scene, srcDesc, dst, offset, stagedJobs) != 0;
+                bool const uploaded = gpu->BeginUpload(&upload, scene, srcDesc, dst, offset, stagedJobs) != 0;
                 if (uploaded)
-                    ScheduleStagedJobs(&geometryStagedJobs, &bufferUploadEndUs, uploadStart);
+                    ScheduleStagedJobs(&geometryStagedJobs, &bufferUploadEndMs, uploadStart);
                 else
                     stagedJobs.clear();
                 return uploaded;
@@ -931,29 +1034,29 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* newGPUScene, SceneLo
                 return static_cast<size_t>(upload.end - upload.ptr);
             });
         WaitForGeometryStagedJobs();
-        if (newGPUScene->UsesDirectGeometryUpload())
-            newGPUScene->FlushDirectGeometryUpload();
+        if (gpu->UsesDirectGeometryUpload())
+            gpu->FlushDirectGeometryUpload();
         RHIDeviceQueue::TimelinePair geometryUploadSignal{uploadTimeline.Get(), kGeometryUploadReadyValue};
         upload.End(ImmediateSubmitDesc{.timelineSignals = {&geometryUploadSignal, 1}});
 
         // Once we have geometry (waited with timeline) and instances, overlap BLAS build on another thread (job).
         BuildEditorInstances(scene, GEditor.instances, meshOffsets, curveOffsets);
-        BuildSceneLights(scene, GEditor.lights, GEditor.shaderGlobals, newGPUScene->mLightSamplerType);
+        BuildSceneLights(scene, GEditor.lights, GEditor.shaderGlobals, gpu->mLightSamplerType);
         uploadPool.Push([&]
         {
             RHIDeviceQueue::TimelinePair wait{uploadTimeline.Get(), kGeometryUploadReadyValue};
             RHIPipelineStage waitStage = RHIPipelineStageBits::AccelerationBuild;
             double const buildMs = BuildAccelerationStructuresForScene(
-                newGPUScene, GEditor.instances, GEditor.meshes, GEditor.blases, GEditor.curves, GEditor.curveBlases, GEditor.lights,
+                gpu, GEditor.instances, GEditor.meshes, GEditor.blases, GEditor.curves, GEditor.curveBlases, GEditor.lights,
                 ImmediateSubmitDesc{.timelineWaits = {&wait, 1}, .waitStages = {&waitStage, 1}});
-            blasDurationUs.store(static_cast<uint64_t>(buildMs * 1000.0), std::memory_order_release);
+            blasDurationMs.store(buildMs, std::memory_order_release);
         });
         GContext->device->WaitForTimelineSemaphores(
             Span<const RHIDeviceQueue::TimelinePair>(&geometryUploadSignal, 1), -1);
         if (geometryResourceCount != 0)
-            InterlockedMax(bufferUploadEndUs, MicrosecondsSince(uploadStart), std::memory_order_release);
+            InterlockedMax(bufferUploadEndMs, MillisecondsSince(uploadStart), std::memory_order_release);
         upload.Begin();
-        stats.bufferUploadMs = double(bufferUploadEndUs.load(std::memory_order_acquire)) / 1000.0;
+        stats.bufferUploadMs = bufferUploadEndMs;
         auto const textureUploadStart = std::chrono::steady_clock::now();
         bool anyTextureUpload = false;
 
@@ -972,14 +1075,14 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* newGPUScene, SceneLo
                 FSerializedTexture const& srcDesc = scene.GetTextures()[textureIndex];
                 auto& textureUpload = textureUploads[textureIndex];
                 if (!textureUpload)
-                    textureUpload.emplace(newGPUScene->BeginTextureUpload(&upload, srcDesc));
+                    textureUpload.emplace(gpu->BeginTextureUpload(&upload, srcDesc));
                 stagedJobs.clear();
-                bool const uploaded = newGPUScene->BeginTextureSubresourceUpload(
+                bool const uploaded = gpu->BeginTextureSubresourceUpload(
                     &upload, scene, srcDesc, *textureUpload, job.layer, job.mip, stagedJobs) != 0;
                 if (uploaded)
                 {
                     anyTextureUpload = true;
-                    ScheduleStagedJobs(nullptr, &textureUploadEndUs, textureUploadStart);
+                    ScheduleStagedJobs(nullptr, &textureUploadEndMs, textureUploadStart);
                 }
                 else
                 {
@@ -995,7 +1098,7 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* newGPUScene, SceneLo
         for (size_t textureIndex = 0; textureIndex < textureUploads.size(); ++textureIndex)
         {
             if (textureUploads[textureIndex])
-                newGPUScene->EndTextureUpload(&upload, std::move(*textureUploads[textureIndex]), textureIDMap[textureIndex]);
+                gpu->EndTextureUpload(&upload, std::move(*textureUploads[textureIndex]), textureIDMap[textureIndex]);
         }
         if (anyTextureUpload)
         {
@@ -1006,7 +1109,7 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* newGPUScene, SceneLo
                 RHIDeviceQueue::TimelinePair signal{uploadTimeline.Get(), kTextureUploadReadyValue};
                 upload.End(ImmediateSubmitDesc{.timelineSignals = {&signal, 1}});
                 GContext->device->WaitForTimelineSemaphores(Span<const RHIDeviceQueue::TimelinePair>(&signal, 1), -1);
-                InterlockedMax(textureUploadEndUs, MicrosecondsSince(textureUploadStart), std::memory_order_release);
+                InterlockedMax(textureUploadEndMs, MillisecondsSince(textureUploadStart), std::memory_order_release);
             });
         }
         else
@@ -1015,32 +1118,34 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* newGPUScene, SceneLo
         }
 
         FenceStagedJobs();
-        stats.blasMs = double(blasDurationUs.load(std::memory_order_acquire)) / 1000.0;
-        stats.textureUploadMs = double(textureUploadEndUs.load(std::memory_order_acquire)) / 1000.0;
+        stats.blasMs = blasDurationMs;
+        stats.textureUploadMs = textureUploadEndMs;
         FTexture sdr(&sceneAlloc);
         FTexture hdr(&sceneAlloc);
         upload.Begin();
         LoadSelectedViewLUTs(sdr, hdr, GEditor.viewLUTSdrIndex, GEditor.viewLUTHdrIndex,
                              GEditor.viewLUTSdrExternalPath, GEditor.viewLUTHdrExternalPath, &sceneAlloc);
-        newGPUScene->UploadViewLUTs(&upload, sdr, hdr);
+        gpu->UploadViewLUTs(&upload, sdr, hdr);
         upload.End(), upload.WaitIdle();
     }
     double uploadWallMs = MillisecondsSince(uploadStart);
-    LOG(Editor, LogInfo, "Scene GPU upload complete (wall {:.2f} ms, buffer upload {:.2f} ms, texture upload {:.2f} ms, BLAS {:.2f} ms, diff sum {:.2f} ms blob scratch {:.2f} MB, total {:.2f} MB across {} workers)",
-        uploadWallMs, stats.bufferUploadMs, stats.textureUploadMs, stats.blasMs,
+    LOG(Editor, LogInfo, "Scene GPU upload complete (wall {:.2f} ms, buffer upload {:.2f} ms, texture upload {:.2f} ms, TX {:.2f} MB/s, BLAS {:.2f} ms, wall - sum {:.2f} ms, scratch per lane {:.2f} MB, total {:.2f} MB across {} workers)",
+        uploadWallMs, stats.bufferUploadMs, stats.textureUploadMs,
+        stats.sceneGpuBudget / (1 << 20) / ((stats.bufferUploadMs + stats.textureUploadMs)  / 1000.0),
+        stats.blasMs,
         uploadWallMs - (stats.bufferUploadMs + stats.textureUploadMs + stats.blasMs),
         double(blobLaneBudget) / double(1u << 20), double(blobBudget) / double(1u << 20), blobWorkerCount);
 
     BuildEditorMaterials(scene, GEditor.materials, textureIDMap);
     ApplySceneCamera(scene, GEditor.camera, GEditor.aperture, GEditor.shaderGlobals);
-    CommitSceneToGPU(newGPUScene, GEditor.instances, GEditor.materials, GEditor.lights, GEditor.shaderGlobals, true);
-    GEditor.shaderGlobals.ggxLutEIndex = newGPUScene->GetGGXLutEIndex();
+    CommitSceneToGPU(gpu, GEditor.instances, GEditor.materials, GEditor.lights, GEditor.shaderGlobals, true);
+    GEditor.shaderGlobals.ggxLutEIndex = gpu->GetGGXLutEIndex();
     GEditor.shaderGlobals.viewLutIndex = GContext->enableHDR
-        ? newGPUScene->GetViewLutHdrIndex()
-        : newGPUScene->GetViewLutSdrIndex();
-    GEditor.shaderGlobals.envMapTextureIndex = newGPUScene->GetEnvMapIndexOrDefault();
-    GEditor.shaderGlobals.envMapMarginalCDFIndex = newGPUScene->GetEnvMapMarginalCDFIndexOrDefault();
-    GEditor.shaderGlobals.envMapConditionalCDFIndex = newGPUScene->GetEnvMapConditionalCDFIndexOrDefault();
+        ? gpu->GetViewLutHdrIndex()
+        : gpu->GetViewLutSdrIndex();
+    GEditor.shaderGlobals.envMapTextureIndex = gpu->GetEnvMapIndexOrDefault();
+    GEditor.shaderGlobals.envMapMarginalCDFIndex = gpu->GetEnvMapMarginalCDFIndexOrDefault();
+    GEditor.shaderGlobals.envMapConditionalCDFIndex = gpu->GetEnvMapConditionalCDFIndexOrDefault();
 }
 
 static void InstallLoadedScene(String const& scenePayloadPath, GPUScene*& newGPUScene)
@@ -1058,13 +1163,13 @@ static void InstallLoadedScene(String const& scenePayloadPath, GPUScene*& newGPU
     GEditor.state = FERunningEnter;
 }
 
-void ReplaceScene(StringView path)
+void LoadScene(StringView path)
 {
     LOG(Editor, LogInfo, "Loading scene: {}", path);
 
     auto const loadStart = std::chrono::steady_clock::now();
 
-    GPUScene* newGPUScene = nullptr;
+    GPUScene* gpu = nullptr;
     try
     {
         String scenePayloadPath = PrepareScenePayloadFile(path);
@@ -1083,29 +1188,26 @@ void ReplaceScene(StringView path)
         LoadFSCN(scene);
 
         SceneLoadStats loadedScene;
-        InitializeSceneLoad(scene, loadedScene, newGPUScene);
-        UploadLoadedSceneToGPU(scene, newGPUScene, loadedScene, sceneAlloc);
-        InstallLoadedScene(scenePayloadPath, newGPUScene);
+        InitializeSceneLoad(scene, loadedScene, gpu);
+        UploadLoadedSceneToGPU(scene, gpu, loadedScene, sceneAlloc);
+        InstallLoadedScene(scenePayloadPath, gpu);
 
         size_t currentLoadScratchUsed = 0;
         size_t loadScratchBudget = 0;
         sceneAlloc.QueryBudget(currentLoadScratchUsed, loadScratchBudget);
         double const loadMs = MillisecondsSince(loadStart);
-        double const gpuRateMbS = loadMs > 0.0 ?
-            (double(loadedScene.sceneGpuBudget) / double(1u << 20)) / (loadMs * 1e-3) : 0.0;
-        LOG(Editor, LogInfo, "Scene load complete in {:.2f} ms (build {:.2f} ms, buffer upload {:.2f} ms, texture upload {:.2f} ms, BLAS {:.2f} ms, avg GPU rate {:.2f} MB/s, load scratch {:.2f} MB): {} meshes, {} instances, {} curves, {} materials",
-            loadMs, sceneBuildMs, loadedScene.bufferUploadMs, loadedScene.textureUploadMs, loadedScene.blasMs,
-            gpuRateMbS, loadScratchBudget / static_cast<double>(1u << 20), loadedScene.sceneMeshCount,
+        LOG(Editor, LogInfo, "Scene load complete in {:.2f} ms, {} meshes, {} instances, {} curves, {} materials",
+            loadMs, loadedScene.sceneMeshCount,
             loadedScene.sceneInstanceCount, loadedScene.sceneCurveCount, loadedScene.sceneMaterialCount);
     }
     catch (std::exception const& e)
     {
-        DestroyGPUScene(newGPUScene);
+        DestroyGPUScene(gpu);
         LOG(Editor, LogError, "Failed to load scene: {} ({})", path, e.what());
     }
     catch (...)
     {
-        DestroyGPUScene(newGPUScene);
+        DestroyGPUScene(gpu);
         LOG(Editor, LogError, "Failed to load scene: {}", path);
     }
 }
@@ -1155,7 +1257,7 @@ void HandleFile(const char* filePath)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     if (ext == ".gltf" || ext == ".glb" || ext == ".fscn")
     {
-        ReplaceScene(filePath);
+        LoadScene(filePath);
         // And, with HDRIs sharing the same filename (if any), load them up too
         String hdriPath = path.string().substr(0, path.string().length() - ext.length());
         if (std::filesystem::exists(hdriPath + ".hdr"))

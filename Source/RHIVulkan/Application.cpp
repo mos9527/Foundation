@@ -15,7 +15,7 @@ VkDebugLayerCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::Debu
 }
 VulkanApplication::VulkanApplication(Allocator* allocator, const char* appName, const char* engineName,
                                      const uint32_t apiVersion) :
-    mAllocator(allocator), mVkAllocationCallbacks(allocator),
+    mAllocator(allocator), mVkAllocationCallbacks(nullptr /* NOTE: Many drivers do not like this roundtrip to our own code. Disabled for sanity. */),
     mDevices(allocator), mStorage(allocator), mName(appName), mVulkanApiVersion(apiVersion)
 {
     auto vkAppInfo = vk::ApplicationInfo{

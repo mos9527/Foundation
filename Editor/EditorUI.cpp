@@ -268,7 +268,7 @@ void EditorDockSpaceAndMenuBar()
                 nfdu8char_t* outPath = nullptr;
                 if (NFD_OpenDialogU8_With(&outPath, &args) == NFD_OKAY)
                 {
-                    ReplaceScene(outPath);
+                    LoadScene(outPath);
                     NFD_FreePathU8(outPath);
                 }
             }

@@ -22,8 +22,7 @@ const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "
 Allocator* VulkanDevice::GetAllocator() const { return mApp.GetAllocator(); }
 
 VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice, SDL_Window* window) :
-    RHIDevice(app), mApp(app), mWindow(window), mVkAllocationCallbacks(GetAllocator()),
-    mPhysicalDevice(std::move(physicalDevice)),
+    RHIDevice(app), mApp(app), mWindow(window), mPhysicalDevice(std::move(physicalDevice)),
     mSwapchainFormats(GetAllocator()), mSwapchainPresentModes(GetAllocator()), mStorage(GetAllocator())
 {
     auto families = mPhysicalDevice.getQueueFamilyProperties();
@@ -617,6 +616,14 @@ bool VulkanDevice::WaitForTimelineSemaphores(Span<const Pair<RHIDeviceSemaphore*
     CHECK_MSG(false, "failed to wait for semaphores. result={}", vk::to_string(res));
 }
 
+vk::AllocationCallbacks const* VulkanDevice::GetVkAllocationCallbacks() const
+{
+    return mApp.GetVkAllocationCallbacks();
+}
+VkAllocationCallbacks const* VulkanDevice::GetVkAllocationCallbacksNative() const
+{
+    return mApp.GetVkAllocationCallbacksNative();
+}
 void VulkanDevice::DebugSetObjectName(const char* name)
 {
     VkDevice handle = *mDevice;

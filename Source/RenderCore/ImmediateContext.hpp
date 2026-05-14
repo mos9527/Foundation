@@ -104,4 +104,67 @@ namespace Foundation::RenderCore
         void WaitIdle();
     };
 
+    /**
+     * @brief Single persistent staging buffer + immediate context for quick, batchable readbacks.
+     */
+    struct ImmediateReadback
+    {
+        ImmediateContext ctx;
+        RHIDeviceScopedHandle<RHIBuffer> staging;
+
+        char *begin, *ptr, *end;
+        ImmediateReadback(RHIDevice* device, size_t capacity, RHIDeviceQueueType type = RHIDeviceQueueType::Graphics) :
+            ctx(type, device),
+            staging(device->CreateBuffer({.resource =
+                                              {
+                                                  .heap = RHIDeviceHeapType::Readback,
+                                                  .hostAccess = RHIResourceHostAccess::ReadWrite,
+                                                  .shared = false, /* Transfer only */
+                                                  .coherent = true, /* No invalidate required */
+                                                  .staging = true,
+                                              },
+                                          .usage = RHIBufferUsageBits::TransferDestination,
+                                          .size = capacity}))
+        {
+            begin = ptr = staging->Map<char>();
+            end = ptr + capacity;
+        }
+
+        /**
+         * Resets the readback context for a new series of readbacks.
+         * This MUST be called before any Readback calls.
+         */
+        void Begin();
+
+        /**
+         * Reads data from `src` buffer with a staging copy.
+         * @return nullptr when readback fails (out of staging memory).
+         *         At which point, a flush with End() -> WaitIdle() -> Begin() is required.
+         *         A mapped, readable pointer to the staging memory where the buffer data will be available after End() and WaitIdle().
+         */
+        char* Readback(RHIBuffer* src, size_t dataSize, size_t srcOffset = 0);
+        /**
+         * Reads data from `src` texture with a staging copy.
+         * @return nullptr when readback fails (out of staging memory).
+         *         At which point, a flush with End() -> WaitIdle() -> Begin() is required.
+         *         A mapped, readable pointer to the staging memory where the texture data will be available after End() and WaitIdle().
+         */
+        char* Readback(RHITexture* src, size_t dataSize,
+                       RHITextureSubresourceLayer srcLayer = {.aspect = RHITextureAspectFlagBits::Color},
+                       RHIOffset2D srcOffset = {},
+                       RHIExtent2D srcExtent = {});
+        char* Readback(RHITexture* src, size_t dataSize, RHITextureSubresourceLayer srcLayer, RHIOffset3D srcOffset,
+                       RHIExtent3D srcExtent);
+
+        bool Align(uint32_t alignment);
+        /**
+         * Finalizes the readback context, submitting the copy commands.
+         * @param completionFence Optional fence to signal upon completion.
+         */
+        void End(RHIDeviceFence* completionFence = nullptr);
+        void End(ImmediateSubmitDesc const& desc);
+
+        void WaitIdle();
+    };
+
 } // namespace Foundation::RenderCore

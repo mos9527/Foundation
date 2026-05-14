@@ -6,6 +6,7 @@
 #include <Core/Paths.hpp>
 #include <Math/Quantize.hpp>
 #include <algorithm>
+#include <cstring>
 #include <limits>
 #include "Scene.hpp"
 

@@ -93,14 +93,6 @@ struct FTexture : FTextureHeader
      */
     FTexture EncodeBC7(Allocator* alloc = GLOBAL_ALLOC) const;
 
-    [[nodiscard]] static Vector<float> ReadbackAndCombineRGBA32F(RHIDevice* device, RHITexture* const* sourceTextures,
-                                                                  uint32_t sourceCount, uint32_t& outWidth,
-                                                                  uint32_t& outHeight,
-                                                                  Allocator* alloc = GLOBAL_ALLOC);
-    [[nodiscard]] static Vector<unsigned char> ReadbackRGBA8(RHIDevice* device, RHITexture* sourceTexture,
-                                                             uint32_t& outWidth, uint32_t& outHeight,
-                                                             Allocator* alloc = GLOBAL_ALLOC);
-
     [[nodiscard]] FSerializedTexture ToSerializedTexture(Allocator* alloc = GLOBAL_ALLOC) const
     {
         FSerializedTexture texture(alloc);

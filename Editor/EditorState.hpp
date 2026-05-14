@@ -230,7 +230,7 @@ extern EditorState GEditor;
 
 void CommitSceneToGPU(bool resetAccumulation = true);
 void UpdateSceneLights();
-void ReplaceScene(StringView path);
+void LoadScene(StringView path);
 void LoadEnvMap(StringView path);
 bool ApplyViewLUTSelection();
 void HandleFile(const char* filePath);
