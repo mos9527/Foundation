@@ -6628,9 +6628,9 @@ static int cgltf_parse_json_foundation_environment(cgltf_options* options, jsmnt
 	CGLTF_CHECK_TOKTYPE(tokens[i], JSMN_OBJECT);
 
 	out_environment->type = cgltf_foundation_environment_type_invalid;
-	out_environment->color[0] = 0.05f;
-	out_environment->color[1] = 0.05f;
-	out_environment->color[2] = 0.05f;
+	out_environment->color[0] = 0.25f;
+	out_environment->color[1] = 0.25f;
+	out_environment->color[2] = 0.25f;
 	out_environment->strength = 1.0f;
 	out_environment->projection = cgltf_foundation_environment_projection_longlat;
 	out_environment->azimuth_offset = 0.0f;
