@@ -402,7 +402,7 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
         });
         const size_t budget = lutE.GetSize() + foundationDefaultTexture2D.GetSize() +
             foundationDefaultTexture2DFloat.GetSize() + sizeof(kSobolMatrices32) + foundationDefaultBufferFloatSize +
-            defaultViewLutSdr.GetSize() + defaultViewLutHdr.GetSize();
+            defaultViewLutSdr.GetSize() + defaultViewLutHdr.GetSize() + kGPUSceneByteBudgetSlack;
         ImmediateUpload upload(mContext->device.Get(), budget);
         upload.Begin();
         Upload(&upload, lutE, mLUTGGXEIndex);

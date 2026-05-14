@@ -1132,7 +1132,7 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* gpu, SceneLoadStats&
         upload.End(), upload.WaitIdle();
     }
     double uploadWallMs = MillisecondsSince(uploadStart);
-    LOG(Editor, LogInfo, "Scene GPU upload complete (wall {:.2f} ms, buffer upload {:.2f} ms, texture upload {:.2f} ms, TX {:.2f} MB/s, BLAS {:.2f} ms, wall - sum {:.2f} ms, scratch per lane {:.2f} MB, total {:.2f} MB across {} workers)",
+    LOG(Editor, LogInfo, "Scene GPU upload complete (wall {:.2f} ms, buffer upload {:.2f} ms, texture upload {:.2f} ms, TX {:.2f} MB/s, BLAS {:.2f} ms, wall-sum {:.2f} ms, scratch per lane {:.2f} MB, total {:.2f} MB across {} workers)",
         uploadWallMs, stats.bufferUploadMs, stats.textureUploadMs,
         stats.sceneGpuBudget / (1 << 20) / ((stats.bufferUploadMs + stats.textureUploadMs)  / 1000.0),
         stats.blasMs,
