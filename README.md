@@ -1,6 +1,9 @@
 Foundation
 ===
 
+[![Build](https://github.com/mos9527/Foundation/actions/workflows/build.yml/badge.svg)](https://github.com/mos9527/Foundation/actions/workflows/build.yml)
+[![Nightly Builds](https://img.shields.io/badge/dev-builds-cyan)](https://nightly.link/mos9527/Foundation/workflows/build/dev?preview)
+
 Docs are available at: https://mos9527.com/Foundation
 
 Blog Posts 

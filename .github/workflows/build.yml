@@ -1,0 +1,150 @@
+name: Build
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: RelWithDebInfo
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-latest
+            gcc: 14
+            artifact: Foundation-linux-x64
+          - name: Windows x64
+            os: windows-latest
+            artifact: Foundation-win-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # ── System packages (Linux) ──
+    # SDL3 (VIDEO on) needs X11/Wayland headers; nfd needs GTK3
+    - name: Install system packages (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+          libxinerama-dev libxkbcommon-dev \
+          libwayland-dev wayland-protocols \
+          libdbus-1-dev \
+          libgtk-3-dev
+
+    # ── Vulkan SDK ──
+    # LunarG discontinued Ubuntu packages (May 2025). Use the tarball.
+    - name: Install Vulkan SDK (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        set -euo pipefail
+        VK_VER="1.4.313.0"
+        curl -fsSL -o /tmp/vulkansdk.tar.xz \
+          "https://sdk.lunarg.com/sdk/download/$VK_VER/linux/vulkansdk-linux-x86_64-$VK_VER.tar.xz"
+        sudo mkdir -p /opt/vulkan
+        sudo tar xf /tmp/vulkansdk.tar.xz -C /opt/vulkan --strip-components=1
+        # The SDK's setup-env.sh sets VULKAN_SDK + PATH
+        echo "VULKAN_SDK=/opt/vulkan/x86_64" >> "$GITHUB_ENV"
+        echo "/opt/vulkan/x86_64/bin"         >> "$GITHUB_PATH"
+        # Ensure the loader can find headers/libs
+        echo "CMAKE_PREFIX_PATH=/opt/vulkan/x86_64" >> "$GITHUB_ENV"
+
+    - name: Install Vulkan SDK (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $ver = "1.4.313.0"
+        $url = "https://sdk.lunarg.com/sdk/download/$ver/windows/VulkanSDK-$ver-Installer.exe"
+        Write-Host "Downloading Vulkan SDK $ver ..."
+        Invoke-WebRequest -Uri $url -OutFile VulkanSDK.exe
+        Write-Host "Installing (silent) ..."
+        Start-Process -FilePath .\VulkanSDK.exe `
+          -ArgumentList "--accept-licenses","--default-answer","--confirm-command","install" `
+          -Wait -NoNewWindow
+        $sdkPath = "C:\VulkanSDK\$ver"
+        echo "VULKAN_SDK=$sdkPath"       >> $env:GITHUB_ENV
+        echo "$sdkPath\Bin"              >> $env:GITHUB_PATH
+
+    # ── Slang shader compiler ──
+    # Uses `gh` (preinstalled on runners) to grab the latest release.
+    - name: Install slangc (Linux)
+      if: runner.os == 'Linux'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        gh release download --repo shader-slang/slang \
+          -p "*linux-x86_64.tar.gz" -D /tmp/slang-dl
+        mkdir -p "${{ github.workspace }}/slang"
+        tar xzf /tmp/slang-dl/*.tar.gz -C "${{ github.workspace }}/slang" --strip-components=1
+        # Fallback: slangc might be at root or in bin/
+        for d in "${{ github.workspace }}/slang/bin" "${{ github.workspace }}/slang"; do
+          [ -x "$d/slangc" ] && { echo "$d" >> "$GITHUB_PATH"; break; }
+        done
+        slangc -v || echo "WARNING: slangc not yet on PATH"
+
+    - name: Install slangc (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh release download --repo shader-slang/slang `
+          -p "*windows-x86_64.zip" -D slang-dl
+        $zip = Get-ChildItem slang-dl\*.zip | Select-Object -First 1
+        Expand-Archive $zip.FullName -DestinationPath slang
+        # Find slangc.exe wherever it landed
+        $slangc = Get-ChildItem -Recurse slang -Filter slangc.exe | Select-Object -First 1
+        echo $slangc.DirectoryName >> $env:GITHUB_PATH
+        & $slangc.FullName -v
+
+    # ── Configure & Build ──
+    - name: Create build directory
+      run: cmake -E make_directory ${{ github.workspace }}/build
+
+    - name: Configure CMake (Linux)
+      if: runner.os == 'Linux'
+      working-directory: ${{ github.workspace }}/build
+      env:
+        CC: gcc-${{ matrix.gcc }}
+        CXX: g++-${{ matrix.gcc }}
+      run: |
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+          -DFOUNDATION_WITH_EXAMPLES=OFF \
+          -DFOUNDATION_WITH_PROFILING=OFF \
+          -DFOUNDATION_RHIVULKAN_VALIDATION_LAYER=OFF
+
+    - name: Configure CMake (Windows)
+      if: runner.os == 'Windows'
+      working-directory: ${{ github.workspace }}/build
+      run: >
+        cmake ..
+        -A x64
+        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+        -DFOUNDATION_WITH_EXAMPLES=OFF
+        -DFOUNDATION_WITH_PROFILING=OFF
+        -DFOUNDATION_RHIVULKAN_VALIDATION_LAYER=OFF
+
+    - name: Build
+      working-directory: ${{ github.workspace }}/build
+      shell: bash
+      run: cmake --build . --config ${{ env.BUILD_TYPE }} --target EditorWithUtil
+
+    # ── Upload ──
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact }}
+        path: ${{ github.workspace }}/build/bin/
