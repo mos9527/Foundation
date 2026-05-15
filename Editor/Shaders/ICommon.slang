@@ -128,6 +128,10 @@ public struct GSMaterial
     public uint32_t specularTexture;
     public uint32_t specularColorTexture;
     public uint32_t anisotropyTexture;
+    public uint32_t sheenColorTexture;
+    public uint32_t sheenRoughnessTexture;
+    public uint32_t clearcoatTexture;
+    public uint32_t clearcoatRoughnessTexture;
     public float4 baseColorFactor;
     public float3 emissiveFactor;
     public float metallicFactor;
@@ -138,6 +142,10 @@ public struct GSMaterial
     public float3 specularColorFactor;
     public float anisotropyStrength;
     public float anisotropyRotation;
+    public float3 sheenColorFactor;
+    public float sheenRoughnessFactor;
+    public float clearcoatFactor;
+    public float clearcoatRoughnessFactor;
     public float subsurfaceFactor;
     public float subsurfaceScale;
     public float3 subsurfaceColor;
@@ -215,6 +223,7 @@ public struct UBO
     public uint32_t useEnvMap;
     public float envAzimuthOffset;
     public uint32_t ggxLutEIndex;
+    public uint32_t sheenLtcIndex;
     public uint32_t viewLutIndex;
     public uint32_t envMapTextureIndex;
     public uint32_t envMapMarginalCDFIndex;

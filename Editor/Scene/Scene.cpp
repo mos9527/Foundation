@@ -329,6 +329,8 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
         ValidateTextureIndex(material.specularTexture, tables.textures.size(), "material.specularTexture");
         ValidateTextureIndex(material.specularColorTexture, tables.textures.size(), "material.specularColorTexture");
         ValidateTextureIndex(material.anisotropyTexture, tables.textures.size(), "material.anisotropyTexture");
+        ValidateTextureIndex(material.clearcoatTexture, tables.textures.size(), "material.clearcoatTexture");
+        ValidateTextureIndex(material.clearcoatRoughnessTexture, tables.textures.size(), "material.clearcoatRoughnessTexture");
     }
 
     for (auto const& instance : tables.instances)
@@ -829,6 +831,28 @@ void BuildGLTFSerializedScene(StringView path, FScene& scene, Allocator* scratch
             material.anisotropyRotation = mat->anisotropy.anisotropy_rotation;
             if (mat->anisotropy.anisotropy_texture.texture)
                 material.anisotropyTexture = assignTextureIndex(mat->anisotropy.anisotropy_texture);
+        }
+        if (mat->has_sheen)
+        {
+            material.sheenColorFactor = {
+                mat->sheen.sheen_color_factor[0],
+                mat->sheen.sheen_color_factor[1],
+                mat->sheen.sheen_color_factor[2]
+            };
+            material.sheenRoughnessFactor = std::clamp(mat->sheen.sheen_roughness_factor, 0.0f, 1.0f);
+            if (mat->sheen.sheen_color_texture.texture)
+                material.sheenColorTexture = assignTextureIndex(mat->sheen.sheen_color_texture, kTextureInSRGB);
+            if (mat->sheen.sheen_roughness_texture.texture)
+                material.sheenRoughnessTexture = assignTextureIndex(mat->sheen.sheen_roughness_texture);
+        }
+        if (mat->has_clearcoat)
+        {
+            material.clearcoatFactor = std::clamp(mat->clearcoat.clearcoat_factor, 0.0f, 1.0f);
+            material.clearcoatRoughnessFactor = std::clamp(mat->clearcoat.clearcoat_roughness_factor, 0.0f, 1.0f);
+            if (mat->clearcoat.clearcoat_texture.texture)
+                material.clearcoatTexture = assignTextureIndex(mat->clearcoat.clearcoat_texture);
+            if (mat->clearcoat.clearcoat_roughness_texture.texture)
+                material.clearcoatRoughnessTexture = assignTextureIndex(mat->clearcoat.clearcoat_roughness_texture);
         }
         material.subsurfaceFactor = 0.0f;
         material.subsurfaceColor = {1.0f, 1.0f, 1.0f};

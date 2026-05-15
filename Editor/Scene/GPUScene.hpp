@@ -83,6 +83,10 @@ struct GSMaterial
     uint32_t specularTexture = UINT32_MAX;
     uint32_t specularColorTexture = UINT32_MAX;
     uint32_t anisotropyTexture = UINT32_MAX;
+    uint32_t sheenColorTexture = UINT32_MAX;
+    uint32_t sheenRoughnessTexture = UINT32_MAX;
+    uint32_t clearcoatTexture = UINT32_MAX;
+    uint32_t clearcoatRoughnessTexture = UINT32_MAX;
     float4 baseColorFactor;
     float3 emissiveFactor;
     float metallicFactor;
@@ -93,6 +97,10 @@ struct GSMaterial
     float3 specularColorFactor;
     float anisotropyStrength;
     float anisotropyRotation;
+    float3 sheenColorFactor;
+    float sheenRoughnessFactor;
+    float clearcoatFactor;
+    float clearcoatRoughnessFactor;
     float subsurfaceFactor;
     float subsurfaceScale;
     float3 subsurfaceColor;
@@ -125,7 +133,7 @@ static_assert(sizeof(GSInstance) == 56);
 static_assert(sizeof(GSCurveSet) == 24);
 static_assert(sizeof(GSCurvePoint) == 16);
 static_assert(sizeof(GSCurveSegment) == 16);
-static_assert(sizeof(GSMaterial) == 148);
+static_assert(sizeof(GSMaterial) == 188);
 static_assert(sizeof(GSLight) == 96);
 
 template <typename T>
@@ -189,6 +197,7 @@ class GPUScene
     BindlessPool mTexture3DPool;
     // Precomputed LUTs (stored in texture2D pool)
     uint32_t mLUTGGXEIndex{UINT32_MAX};
+    uint32_t mLUTSheenLTCIndex{UINT32_MAX};
     // Display transform 3D LUTs (stored in texture3D pool)
     uint32_t mLUTViewSdrIndex{UINT32_MAX}, mLUTViewHdrIndex{UINT32_MAX};
     // Shared default resources (stored in texture2D pool).
@@ -359,7 +368,9 @@ public:
     [[nodiscard]] BindlessPool* GetTexture3DPool() { return &mTexture3DPool; }
     [[nodiscard]] BindlessPool* GetTexturePool() { return GetTexture2DPool(); }
     [[nodiscard]] uint32_t GetGGXLutEIndex() const { return mLUTGGXEIndex; }
+    [[nodiscard]] uint32_t GetSheenLtcIndex() const { return mLUTSheenLTCIndex; }
     [[nodiscard]] RHITexture* GetGGXlutE() const;
+    [[nodiscard]] RHITexture* GetSheenLtc() const;
     void UploadViewLUTs(ImmediateUpload* ctx, FTexture const& sdr, FTexture const& hdr);
     [[nodiscard]] uint32_t GetViewLutSdrIndex() const { return mLUTViewSdrIndex; }
     [[nodiscard]] uint32_t GetViewLutHdrIndex() const { return mLUTViewHdrIndex; }

@@ -2,40 +2,55 @@ Foundation {#mainpage}
 ===
 [Foundation](https://github.com/mos9527/Foundation/) is a work-in-progress cross-platform rendering framework.
 
-Heavily inspired by Arseny Kapoulkine's [niagara](https://github.com/zeux/niagara),
-[bgfx](https://github.com/bkaradzic/bgfx), and [Unreal Engine](https://www.unrealengine.com/en-US/),
-this project aims to provide a high-performance, low overhead rendering framework for *extremely*
-fast prototyping of various GPU workloads.
-
-Features
+Editor
 ---
-- Low-level modern API (Vulkan 1.3) as first-class citizen
-- Modern C++20 codebase with minimal dependencies 
-- Modern lock-free data structures at @ref Foundation::Atomics for low-contention, high-concurrency workloads
-- Explict thread safe guarantees - you pay for what you use
-- Arena allocation strategies for minimal fragmentation and latency in hot paths
-- Optional profiling integration with [Tracy Profiler](https://github.com/wolfpld/tracy)
+![fatguy](https://github.com/user-attachments/assets/233fc6d8-f3c4-4e68-b4c3-b458f142475f)
 
-Renderer
----
-- Full SPIR-V shader reflection support with automatic pipeline binding and generation
-- Slang as the primary shading language 
-- Frame Graph/Frame Pass architecture with optimized resource barrier placement
-- Async Compute support for modern GPUs with automatic release/acquire and synchronization
-- Multithreaded command recording with automatic command buffer merging
-- [Unreal Render Dependency Graph](https://dev.epicgames.com/documentation/en-us/unreal-engine/render-dependency-graph-in-unreal-engine) inspired
-  syntax without esoteric macros
+Editor houses our implementation of the Reference Unidirectional Path Tracer `PT` and Rasterizer `RASTER`.
 
+### Foundation Material Model
+#### Principled Material
+Layered PBR material interface based on the [OpenPBR model](https://academysoftwarefoundation.github.io/OpenPBR) (as seen in Blender's [Principled BSDF](https://docs.blender.org/manual/en/latest/render/shader_nodes/shader/principled.html)), offering full support with the exception of [3.8 Thin-film iridescence](https://academysoftwarefoundation.github.io/OpenPBR/#model/thin-filmiridescence)
+![Blender BSDF](https://docs.blender.org/manual/en/latest/_images/render_shader-nodes_principled_layers.svg)
+#### Principled Hair Material
+[Principled Hair BSDF](https://docs.blender.org/manual/en/latest/render/shader_nodes/shader/hair_principled.html)'s Chiang single-scattering model implementation. Many bounces may be required to derive accurate hair scattering phenomena.
 
-Quickstart
----
-A comprehensive Examples section is provided below for quickstarts and reference.
+### Color Pipeline
+- OCIO-based SDR & HDR color pipeline
+- Linear BT.709 scene space (D65), converted to D60 via Bradford CAT and encoded as AP1
+- ACEScct log-space encoding for grading and display transforms
+- LUT-based output transforms for SDR/HDR — ACES 1.3, ACES 2.0, AgX, Standard (sRGB and PQ)
+- 1-to-1 match with Blender OCIO output
 
-You can also check out the @ref Editor application for an advanced usage of the framework.
+### Path Tracer
+- **Full Foundation Material support**
+- Unidirectional integrator with tiled sampling
+- Sobol & PCG samplers
+- Path-traced Subsurface scattering
+- Path-traced Chiang Hair/fur shading
+- Curve rendering for hair/fur, etc
+- Importance sampled environment maps
+- Anamorphic physical lens
+- Area, point, spot, and directional lights
+- Uniform/Power light sampling with alias tables
+- Runs entirely in your Vulkan GPU :)
+
+### Rasterizer
+- GPU-driven mesh shader pipeline with hierarchical continuous LOD
+- Two-phase meshlet occlusion culling
+- Optional RT Shadows
+
+### Scene
+- Extended glTF support & Blender data exchange via https://github.com/mos9527/Foundation-Blender-IO/tree/main
+- Custom binary scene format `FSCN` with excellent serialization/loading (memory-mapped) performance
 
 Examples
 ---
-All examples can also be found at <a href="examples.html">The Examples</a> directory.
+Smaller examples, using the framework as a library, are provided for reference and testing purposes.
+
+These be found in <a href="examples.html">The Examples</a> directory.
+
+TODO SCREENSHOTS
 
 Building
 ---
@@ -61,6 +76,12 @@ Refer to https://docs.vulkan.org/tutorial/latest/02_Development_environment.html
 sudo pacman -S vulkan-validation-layers vulkan-tools vulkan-radeon vulkan-headers
 ```
 
+### macOS
+Install the official [Vulkan SDK](https://vulkan.lunarg.com/).
+
+The Editor will build but not run on this platform, due to our extensive usage of Shader Binding Tables and Mesh Shaders,
+which are not sup
+
 ### Building from command line
 The following commands will create a build directory, generate the build system files, and build all targets with 8 parallel jobs.
 Binary artifacts will be located in `build/bin/`.
@@ -74,6 +95,7 @@ cmake --build . -j8
 
 ### Build Options
 The following CMake options are available:
+
 | Option | Description | Default |
 |--------|-------------|---------|
 | FOUNDATION_WITH_ASAN | Build with Address Sanitizer enabled | OFF |
@@ -106,7 +128,6 @@ Third party
 
 Debugging
 ---
-Or, notes to self. If you are *here*, well ...thanks a lot for the interest^^
 ### Vulkan
 - [VVL Timeline resource tracking](https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/2441) has been an issue - though should be resolved
 by [now](https://github.com/KhronosGroup/Vulkan-ValidationLayers/pull/10316). Always update the SDK to the latest version.

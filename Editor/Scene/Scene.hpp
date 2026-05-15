@@ -65,6 +65,14 @@ struct FMaterial
     uint32_t specularColorTexture = kInvalidTexture;
     // Linear. RG direction in tangent space, B strength.
     uint32_t anisotropyTexture = kInvalidTexture;
+    // sRGB. RGB channels.
+    uint32_t sheenColorTexture = kInvalidTexture;
+    // Linear. A channel per KHR_materials_sheen.
+    uint32_t sheenRoughnessTexture = kInvalidTexture;
+    // Linear. R channel per KHR_materials_clearcoat.
+    uint32_t clearcoatTexture = kInvalidTexture;
+    // Linear. G channel per KHR_materials_clearcoat.
+    uint32_t clearcoatRoughnessTexture = kInvalidTexture;
     float4 baseColorFactor;
     float4 emissiveFactor;
     float metallicFactor;
@@ -75,6 +83,10 @@ struct FMaterial
     float3 specularColorFactor{1.0f, 1.0f, 1.0f};
     float anisotropyStrength = 0.0f;
     float anisotropyRotation = 0.0f;
+    float3 sheenColorFactor{0.0f, 0.0f, 0.0f};
+    float sheenRoughnessFactor = 0.0f;
+    float clearcoatFactor = 0.0f;
+    float clearcoatRoughnessFactor = 0.0f;
     float subsurfaceFactor = 0.0f;
     float subsurfaceScale = 0.05f;
     float3 subsurfaceColor{1.0f, 1.0f, 1.0f};
@@ -125,7 +137,7 @@ struct FSceneGlobals
     uint32_t viewLutHdrIndex{1u};
 };
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 3;
+static constexpr uint32_t kSceneVersion = 5;
 struct FSceneTables
 {
     FSceneGlobals globals;

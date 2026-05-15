@@ -7,9 +7,14 @@ SamplerState lutSampler;
 public float2 SampleGGXLutE(uint32_t ggxLutEIndex, float mu, float roughness) {
     return textures[NonUniformResourceIndex(ggxLutEIndex)].SampleLevel(lutSampler, float2(mu, roughness), 0).xy;
 }
+public float4 SampleSheenLTC(uint32_t sheenLtcIndex, float mu, float roughness) {
+    if (sheenLtcIndex == ~0u) return float4(0.0f);
+    return textures[NonUniformResourceIndex(sheenLtcIndex)].SampleLevel(lutSampler, float2(mu, roughness), 0);
+}
 // -- OSL stdlib routines
 import glsl;
 // Directional Albedo
+// Compensation a la [Turquin 2019] https://blog.selfshadow.com/publications/turquin/ms_comp_final.pdf
 public float reflectance(float F0, float F90, float2 lutE) {
     return F0 * lutE.x + (F90 - F0) * lutE.y;
 }
@@ -21,6 +26,26 @@ public void CalcGlossyFresnel(float ior, float specularFactor, float3 specularCo
     specularFactor = clamp(specularFactor, 0.0f, 1.0f);
     F0 = clamp(F0FromIor(ior) * max(specularColorFactor, float3(0.0f)), float3(0.0f), float3(1.0f)) * specularFactor;
     F90 = float3(specularFactor);
+}
+
+public void CalcCoatFresnel(out float3 F0, out float3 F90) {
+    F0 = float3(F0FromIor(1.5f));
+    F90 = float3(1.0f);
+}
+
+public float3 CoatReflectance(float coatWeight, float coatRoughness, float3 wo, uint32_t ggxLutEIndex) {
+    coatWeight = saturate(coatWeight);
+    if (coatWeight <= EPS) return float3(0.0f);
+    coatRoughness = max(8e-3f, coatRoughness);
+
+    float3 coatF0, coatF90;
+    CalcCoatFresnel(coatF0, coatF90);
+    return coatWeight * reflectance(coatF0, coatF90,
+        SampleGGXLutE(ggxLutEIndex, AbsCosTheta(wo), coatRoughness));
+}
+
+public float CoatEscape(float coatWeight, float coatRoughness, float3 wo, uint32_t ggxLutEIndex) {
+    return max(1.0f - MaxComponent(CoatReflectance(coatWeight, coatRoughness, wo, ggxLutEIndex)), 0.0f);
 }
 
 public void CalcAnisotropicAlpha(float roughness, float anisotropyStrength, out float alphaX, out float alphaY) {
@@ -296,6 +321,82 @@ public struct MetallicBSDF : IBxDF {
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
         if (!(flags & BxDFReflTransFlags::Reflection) || !SameHemisphere(wo, wi)) return 0.0f;
         return PDFGlossy(wo, wi, mfDistrib);
+    }
+};
+
+public float SheenLTCDensity(float3 wi, float transformA, float transformB) {
+    float lenSqr = Sqr(transformA * wi.x + transformB * wi.z) +
+                   Sqr(transformA * wi.y) + Sqr(wi.z);
+    if (lenSqr <= EPS) return 0.0f;
+    return InvPi * max(wi.z, 0.0f) * Sqr(transformA / lenSqr);
+}
+
+public float SheenPhi(float3 w) {
+    float p = atan2(w.y, w.x);
+    return p < 0.0f ? p + 2.0f * Pi : p;
+}
+
+public float3 RotateAroundZ(float3 v, float angle) {
+    float s = sin(angle);
+    float c = cos(angle);
+    return float3(c * v.x - s * v.y, s * v.x + c * v.y, v.z);
+}
+
+public struct SheenBSDF : IBxDF {
+    float  weight;
+    float  roughness;
+    float3 tint;
+    float  transformA;
+    float  transformB;
+    float  albedo;
+
+    public __init(float weight, float roughness, float3 tint, uint32_t sheenLtcIndex, float3 wo = float3(0.0f, 0.0f, 1.0f)) {
+        this.weight = saturate(weight);
+        this.roughness = clamp(roughness, 1e-3f, 1.0f);
+        this.tint = saturate(tint);
+        float4 coeffs = SampleSheenLTC(sheenLtcIndex, AbsCosTheta(wo), this.roughness);
+        this.transformA = coeffs.x;
+        this.transformB = coeffs.y;
+        this.albedo = coeffs.z;
+    }
+
+    public BxDFFlags Flags() { return BxDFFlags::DiffuseReflection; }
+
+    public float3 Reflectance() {
+        return weight * tint * albedo;
+    }
+
+    public bool IsValid() {
+        return weight > EPS && MaxComponent(tint) > EPS && abs(transformA) > 1e-5f && albedo > 1e-5f;
+    }
+
+    public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
+        if (!SameHemisphere(wo, wi) || !IsValid()) return 0.0f;
+        float3 wiStd = RotateAroundZ(wi, -SheenPhi(wo));
+        float pdf = SheenLTCDensity(wiStd, transformA, transformB);
+        float cosWi = AbsCosTheta(wi);
+        return cosWi > EPS ? weight * tint * albedo * pdf / cosWi : float3(0.0f);
+    }
+
+    public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
+        if (!(flags & BxDFReflTransFlags::Reflection) || !IsValid()) return BSDFSample();
+        float2 disk = SampleConcentricDisk(u);
+        float diskZ = sqrt(max(1.0f - dot(disk, disk), 0.0f));
+        float3 wiStd = normalize(float3(disk.x - diskZ * transformB,
+                                        disk.y,
+                                        diskZ * transformA));
+        float3 wi = RotateAroundZ(wiStd, SheenPhi(wo));
+        wi = FaceForward(wi, float3(0.0f, 0.0f, 1.0f));
+        if (!SameHemisphere(wo, wi)) return BSDFSample();
+        float pdf = SheenLTCDensity(wiStd, transformA, transformB);
+        if (pdf < 1e-7f) return BSDFSample();
+        return BSDFSample(this.f(wo, wi, mode), wi, pdf, BxDFFlags::DiffuseReflection);
+    }
+
+    public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
+        if (!(flags & BxDFReflTransFlags::Reflection) || !SameHemisphere(wo, wi) || !IsValid()) return 0.0f;
+        float3 wiStd = RotateAroundZ(wi, -SheenPhi(wo));
+        return SheenLTCDensity(wiStd, transformA, transformB);
     }
 };
 
@@ -762,58 +863,92 @@ public struct PrincipledBSDF : IBSDF {
     GlassBSDF     glass;
     GlossyBSDF    glossy;
     MetallicBSDF  metallic;
+    SheenBSDF     sheen;
+    GlossyBSDF    coat;
 
     // Normalized weights
     float wDiffuse;
     float wTrans;
     float wDielSpec;
     float wMetal;
+    float wSheen;
+    float wCoat;
 
     // Structural weights
     float cDiffuse;
     float cTrans;
     float cDielSpec;
     float cMetal;
+    float cBase;
+    float cSheen;
+    float cCoat;
+    float cCoatWeight;
+    float cUnderCoat;
 
     // Active flags
     bool hasDiffuse;
     bool hasTrans;
     bool hasDielSpec;
     bool hasMetal;
+    bool hasSheen;
+    bool hasCoat;
 
     float weightSum;
 
     public __init(float3 baseColor, float metallic, float roughness, float ior, float specularFactor = 1.0f,
                   float transmission = 0.0f, bool energyCompensation = true, float3 wo = float3(0,0,1),
                   float diffuseWeight = 1.0f, float anisotropyStrength = 0.0f,
-                  float3 specularColorFactor = float3(1.0f), uint32_t ggxLutEIndex = ~0u) {
+                  float3 specularColorFactor = float3(1.0f), uint32_t ggxLutEIndex = ~0u,
+                  float sheenWeight = 0.0f, float sheenRoughness = 0.0f, float3 sheenTint = float3(1.0f),
+                  uint32_t sheenLtcIndex = ~0u,
+                  float coatWeight = 0.0f, float coatRoughness = 0.0f) {
         float3 dielF0, dielF90;
         CalcGlossyFresnel(ior, specularFactor, specularColorFactor, dielF0, dielF90);
 
+        float3 coatF0, coatF90;
+        CalcCoatFresnel(coatF0, coatF90);
+        this.cCoatWeight = saturate(coatWeight);
+        coatRoughness = max(8e-3f, coatRoughness);
+        float coatReflectance = MaxComponent(CoatReflectance(this.cCoatWeight, coatRoughness, wo, ggxLutEIndex));
+        this.cCoat = clamp(coatReflectance, 0.0f, 1.0f);
+        this.cUnderCoat = max(1.0f - this.cCoat, 0.0f);
+
+        this.sheen = SheenBSDF(sheenWeight, sheenRoughness, sheenTint, sheenLtcIndex, wo);
+        bool sheenValid = this.sheen.IsValid();
+        float sheenReflectance = sheenValid ? MaxComponent(this.sheen.Reflectance()) : 0.0f;
+        this.cSheen = this.cUnderCoat * clamp(sheenReflectance, 0.0f, 1.0f);
+        this.cBase = max(this.cUnderCoat - this.cSheen, 0.0f);
+
         float sampleGlossy = MaxComponent(reflectance(dielF0, dielF90, SampleGGXLutE(ggxLutEIndex, AbsCosTheta(wo), roughness)));
-        float rawDiffuseFamily = (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
-        float rawMetal = metallic;
-        float rawDielSpec = (1.0f - metallic) * sampleGlossy;
-        float rawTrans = (1.0f - metallic) * (1.0f - sampleGlossy) * transmission;
+        float rawDiffuseFamily = this.cBase * (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
+        float rawMetal = this.cBase * metallic;
+        float rawDielSpec = this.cBase * (1.0f - metallic) * sampleGlossy;
+        float rawTrans = this.cBase * (1.0f - metallic) * (1.0f - sampleGlossy) * transmission;
         float rawDiffuse = rawDiffuseFamily * diffuseWeight;
+        float rawSheen = this.cSheen;
+        float rawCoat = this.cCoat;
 
         this.hasDiffuse  = rawDiffuse  > EPS;
         this.hasTrans    = rawTrans    > EPS;
         this.hasDielSpec = rawDielSpec > EPS;
         this.hasMetal    = rawMetal    > EPS;
+        this.hasSheen    = rawSheen    > EPS && sheenValid;
+        this.hasCoat     = rawCoat     > EPS;
 
-        this.weightSum = rawDiffuse + rawTrans + rawDielSpec + rawMetal;
+        this.weightSum = rawDiffuse + rawTrans + rawDielSpec + rawMetal + rawSheen + rawCoat;
         if (this.weightSum <= 0.0f) this.weightSum = 1.0f;
 
         this.wDiffuse  = rawDiffuse  / this.weightSum;
         this.wTrans    = rawTrans    / this.weightSum;
         this.wDielSpec = rawDielSpec / this.weightSum;
         this.wMetal    = rawMetal    / this.weightSum;
+        this.wSheen    = rawSheen    / this.weightSum;
+        this.wCoat     = rawCoat     / this.weightSum;
 
-        this.cDiffuse  = (1.0f - metallic) * (1.0f - transmission) * diffuseWeight;
-        this.cTrans    = (1.0f - metallic) * transmission;
-        this.cDielSpec = 1.0f - metallic;
-        this.cMetal    = metallic;
+        this.cDiffuse  = this.cBase * (1.0f - metallic) * (1.0f - transmission) * diffuseWeight;
+        this.cTrans    = this.cBase * (1.0f - metallic) * transmission;
+        this.cDielSpec = this.cBase * (1.0f - metallic);
+        this.cMetal    = this.cBase * metallic;
 
         // Construct each lobe
         this.diffuse  = DiffuseBSDF(baseColor, dielF0, dielF90, roughness, ggxLutEIndex);
@@ -822,6 +957,7 @@ public struct PrincipledBSDF : IBSDF {
         this.glossy    = GlossyBSDF(dielF0, dielF90, roughness, anisotropyStrength, energyCompensation,
                                     ggxLutEIndex);
         this.metallic  = MetallicBSDF(baseColor, roughness, anisotropyStrength, energyCompensation, ggxLutEIndex);
+        this.coat      = GlossyBSDF(coatF0, coatF90, coatRoughness, 0.0f, energyCompensation, ggxLutEIndex);
     }
 
     public void f(float3 wo, float3 wi, TransportMode mode,
@@ -829,9 +965,11 @@ public struct PrincipledBSDF : IBSDF {
         fDiffuse  = float3(0);
         fSpecular = float3(0);
         if (hasDiffuse)  fDiffuse   = cDiffuse  * diffuse.f(wo, wi, mode);
+        if (hasSheen)    fDiffuse  += cUnderCoat * sheen.f(wo, wi, mode);
         if (hasTrans)    fSpecular += cTrans    * glass.f(wo, wi, mode);
         if (hasDielSpec) fSpecular += cDielSpec * glossy.f(wo, wi, mode);
         if (hasMetal)    fSpecular += cMetal    * metallic.f(wo, wi, mode);
+        if (hasCoat)     fSpecular += cCoatWeight * coat.f(wo, wi, mode);
     }
 
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
@@ -843,9 +981,11 @@ public struct PrincipledBSDF : IBSDF {
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
         float result = 0.0f;
         if (hasDiffuse)  result += wDiffuse  * diffuse.PDF(wo, wi, mode, flags);
+        if (hasSheen)    result += wSheen    * sheen.PDF(wo, wi, mode, flags);
         if (hasTrans)    result += wTrans    * glass.PDF(wo, wi, mode, flags);
         if (hasDielSpec) result += wDielSpec * glossy.PDF(wo, wi, mode, flags);
         if (hasMetal)    result += wMetal    * metallic.PDF(wo, wi, mode, flags);
+        if (hasCoat)     result += wCoat     * coat.PDF(wo, wi, mode, flags);
         return result;
     }
 
@@ -866,6 +1006,15 @@ public struct PrincipledBSDF : IBSDF {
                 category = AOVCategory::Diffuse; found = true;
             }
         }
+        if (hasSheen) {
+            cumulative += wSheen;
+            if (!found && uc < cumulative) {
+                float lo = cumulative - wSheen;
+                uc = (cumulative > lo) ? clamp((uc - lo) / (cumulative - lo), 0.0f, 1.0f) : 0.0f;
+                chosen = sheen;
+                category = AOVCategory::Diffuse; found = true;
+            }
+        }
         if (hasTrans) {
             cumulative += wTrans;
             if (!found && uc < cumulative) {
@@ -881,6 +1030,15 @@ public struct PrincipledBSDF : IBSDF {
                 float lo = cumulative - wDielSpec;
                 uc = (cumulative > lo) ? clamp((uc - lo) / (cumulative - lo), 0.0f, 1.0f) : 0.0f;
                 chosen = glossy;
+                category = AOVCategory::Specular; found = true;
+            }
+        }
+        if (hasCoat) {
+            cumulative += wCoat;
+            if (!found && uc < cumulative) {
+                float lo = cumulative - wCoat;
+                uc = (cumulative > lo) ? clamp((uc - lo) / (cumulative - lo), 0.0f, 1.0f) : 0.0f;
+                chosen = coat;
                 category = AOVCategory::Specular; found = true;
             }
         }

@@ -341,6 +341,10 @@ static void SyncMaterialToGPU(uint32_t materialIndex)
     dst.specularColorFactor = src.specularColorFactor;
     dst.anisotropyStrength = src.anisotropyStrength;
     dst.anisotropyRotation = src.anisotropyRotation;
+    dst.sheenColorFactor = src.sheenColorFactor;
+    dst.sheenRoughnessFactor = src.sheenRoughnessFactor;
+    dst.clearcoatFactor = src.clearcoatFactor;
+    dst.clearcoatRoughnessFactor = src.clearcoatRoughnessFactor;
     dst.subsurfaceFactor = src.subsurfaceFactor;
     dst.subsurfaceScale = src.subsurfaceScale;
     dst.subsurfaceColor = src.subsurfaceColor;
@@ -619,6 +623,23 @@ void FHierarchyPanel()
             changed |= ImGui::SliderFloat("Anisotropy Strength", &material.anisotropyStrength, 0.0f, 1.0f, "%.3f");
             changed |= ImGui::DragFloat("Anisotropy Rotation", &material.anisotropyRotation, 0.01f, -FLT_MAX, FLT_MAX, "%.3f rad");
 
+            ImGui::SeparatorText("Sheen");
+            float sheenWeight = std::clamp(std::max({material.sheenColorFactor.x, material.sheenColorFactor.y, material.sheenColorFactor.z}), 0.0f, 1.0f);
+            float3 sheenTint = sheenWeight > 1e-6f ? material.sheenColorFactor / sheenWeight : float3{1.0f, 1.0f, 1.0f};
+            bool sheenChanged = false;
+            sheenChanged |= ImGui::SliderFloat("Sheen Weight", &sheenWeight, 0.0f, 1.0f, "%.3f");
+            sheenChanged |= ImGui::ColorEdit3("Sheen Tint", &sheenTint.x);
+            if (sheenChanged)
+            {
+                material.sheenColorFactor = std::clamp(sheenWeight, 0.0f, 1.0f) * Math::clamp(sheenTint, float3{0.0f, 0.0f, 0.0f}, float3{1.0f, 1.0f, 1.0f});
+                changed = true;
+            }
+            changed |= ImGui::SliderFloat("Sheen Roughness", &material.sheenRoughnessFactor, 0.0f, 1.0f, "%.3f");
+
+            ImGui::SeparatorText("Clearcoat");
+            changed |= ImGui::SliderFloat("Clearcoat Weight", &material.clearcoatFactor, 0.0f, 1.0f, "%.3f");
+            changed |= ImGui::SliderFloat("Clearcoat Roughness", &material.clearcoatRoughnessFactor, 0.0f, 1.0f, "%.3f");
+
             ImGui::SeparatorText("Hair");
             changed |= ImGui::SliderFloat("Beta M", &material.hairBetaM, 0.0f, 1.0f, "%.3f");
             changed |= ImGui::SliderFloat("Beta N", &material.hairBetaN, 0.0f, 1.0f, "%.3f");
@@ -639,6 +660,10 @@ void FHierarchyPanel()
             ImGui::Text("Specular: %u", gpuMaterial.specularTexture);
             ImGui::Text("Specular Color: %u", gpuMaterial.specularColorTexture);
             ImGui::Text("Anisotropy: %u", gpuMaterial.anisotropyTexture);
+            ImGui::Text("Sheen Color: %u", gpuMaterial.sheenColorTexture);
+            ImGui::Text("Sheen Roughness: %u", gpuMaterial.sheenRoughnessTexture);
+            ImGui::Text("Clearcoat: %u", gpuMaterial.clearcoatTexture);
+            ImGui::Text("Clearcoat Roughness: %u", gpuMaterial.clearcoatRoughnessTexture);
 
             if (changed)
             {

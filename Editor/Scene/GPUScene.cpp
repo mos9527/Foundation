@@ -1,5 +1,6 @@
 #include "GPUScene.hpp"
 #include "../Render/Precompute.hpp"
+#include "../Render/SheenLTCTable.hpp"
 #include "../Render/Tables.hpp"
 #include "../Render/ViewLUTs.hpp"
 #include <Core/AllocatorStack.hpp>
@@ -30,7 +31,7 @@ static FTexture MakeLUT(const float* data, RHIResourceFormat format, uint32_t wi
 
 static constexpr uint32_t kGPUSceneRingFrameSlack = 3u;
 static constexpr size_t kMinDirectGeometryUploadHeapSize = 512ull * (1ull << 20);
-static constexpr uint32_t kGPUScenePersistentTexture2DBindings = 1u; // GGX LUT.
+static constexpr uint32_t kGPUScenePersistentTexture2DBindings = 2u; // GGX LUT + Sheen LTC LUT.
 static constexpr uint32_t kGPUScenePersistentTexture3DBindings = 2u; // default SDR/HDR view LUTs.
 static constexpr uint32_t kGPUSceneDefaultTextureBindings = 2u; // _FoundationDefault Texture2D + Texture2DFloat.
 static constexpr uint32_t kGPUSceneEnvMapBindings = 3u; // Env map + marginal/conditional CDF textures.
@@ -383,6 +384,7 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     // Upload precomputed LUTs
     {
         auto lutE = MakeLUT(kGGXlutE, RHIResourceFormat::R32G32SignedFloat, 32, 32);
+        auto sheenLtc = MakeLUT(kSheenLTCLut, RHIResourceFormat::R32G32B32A32SignedFloat, 32, 32);
         FTexture foundationDefaultTexture2D(mContext->allocator);
         foundationDefaultTexture2D.Initialize(RHIResourceFormat::R32G32B32A32SignedFloat, RHITextureDimension::E2D, 1, 1);
         foundationDefaultTexture2D.bytes.assign(foundationDefaultTexture2D.GetSize(), 0u);
@@ -400,12 +402,13 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
             .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
             .size = foundationDefaultBufferFloatSize
         });
-        const size_t budget = lutE.GetSize() + foundationDefaultTexture2D.GetSize() +
+        const size_t budget = lutE.GetSize() + sheenLtc.GetSize() + foundationDefaultTexture2D.GetSize() +
             foundationDefaultTexture2DFloat.GetSize() + sizeof(kSobolMatrices32) + foundationDefaultBufferFloatSize +
             defaultViewLutSdr.GetSize() + defaultViewLutHdr.GetSize() + kGPUSceneByteBudgetSlack;
         ImmediateUpload upload(mContext->device.Get(), budget);
         upload.Begin();
         Upload(&upload, lutE, mLUTGGXEIndex);
+        Upload(&upload, sheenLtc, mLUTSheenLTCIndex);
         Upload(&upload, foundationDefaultTexture2D, mFoundationDefaultTexture2DIndex, "_FoundationDefaultTexture2D");
         Upload(&upload, foundationDefaultTexture2DFloat, mFoundationDefaultTexture2DFloatIndex,
                "_FoundationDefaultTexture2DFloat");
@@ -1708,6 +1711,11 @@ RHITexture* GPUScene::GetEnvMap() const
 RHITexture* GPUScene::GetGGXlutE() const
 {
     return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mLUTGGXEIndex);
+}
+
+RHITexture* GPUScene::GetSheenLtc() const
+{
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mLUTSheenLTCIndex);
 }
 
 RHITexture* GPUScene::GetViewLutSdr() const

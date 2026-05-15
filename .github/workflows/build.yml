@@ -9,6 +9,7 @@ on:
 
 env:
   BUILD_TYPE: RelWithDebInfo
+  VULKAN_SDK_VERSION: "1.4.350.0"
 
 jobs:
   build:
@@ -43,29 +44,32 @@ jobs:
           libdbus-1-dev \
           libgtk-3-dev
 
-    # ── Vulkan SDK ──
+    # ── Vulkan SDK (includes slangc) ──
     # LunarG discontinued Ubuntu packages (May 2025). Use the tarball.
+    # The SDK bundles slangc, so no separate Slang install needed.
     - name: Install Vulkan SDK (Linux)
       if: runner.os == 'Linux'
       run: |
         set -euo pipefail
-        VK_VER="1.4.313.0"
+        VK_VER="${{ env.VULKAN_SDK_VERSION }}"
         curl -fsSL -o /tmp/vulkansdk.tar.xz \
           "https://sdk.lunarg.com/sdk/download/$VK_VER/linux/vulkansdk-linux-x86_64-$VK_VER.tar.xz"
         sudo mkdir -p /opt/vulkan
         sudo tar xf /tmp/vulkansdk.tar.xz -C /opt/vulkan --strip-components=1
-        # The SDK's setup-env.sh sets VULKAN_SDK + PATH
-        echo "VULKAN_SDK=/opt/vulkan/x86_64" >> "$GITHUB_ENV"
-        echo "/opt/vulkan/x86_64/bin"         >> "$GITHUB_PATH"
-        # Ensure the loader can find headers/libs
-        echo "CMAKE_PREFIX_PATH=/opt/vulkan/x86_64" >> "$GITHUB_ENV"
+        # Mirror what setup-env.sh does
+        VSDK="/opt/vulkan/x86_64"
+        echo "VULKAN_SDK=$VSDK"                                          >> "$GITHUB_ENV"
+        echo "$VSDK/bin"                                                 >> "$GITHUB_PATH"
+        echo "LD_LIBRARY_PATH=$VSDK/lib/VulkanLoader/lib"               >> "$GITHUB_ENV"
+        echo "CMAKE_PREFIX_PATH=$VSDK:$VSDK/lib/VulkanLoader"           >> "$GITHUB_ENV"
+        slangc -v
 
     - name: Install Vulkan SDK (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        $ver = "1.4.313.0"
-        $url = "https://sdk.lunarg.com/sdk/download/$ver/windows/VulkanSDK-$ver-Installer.exe"
+        $ver = "${{ env.VULKAN_SDK_VERSION }}"
+        $url = "https://sdk.lunarg.com/sdk/download/$ver/windows/vulkansdk-windows-X64-$ver.exe"
         Write-Host "Downloading Vulkan SDK $ver ..."
         Invoke-WebRequest -Uri $url -OutFile VulkanSDK.exe
         Write-Host "Installing (silent) ..."
@@ -75,39 +79,7 @@ jobs:
         $sdkPath = "C:\VulkanSDK\$ver"
         echo "VULKAN_SDK=$sdkPath"       >> $env:GITHUB_ENV
         echo "$sdkPath\Bin"              >> $env:GITHUB_PATH
-
-    # ── Slang shader compiler ──
-    # Uses `gh` (preinstalled on runners) to grab the latest release.
-    - name: Install slangc (Linux)
-      if: runner.os == 'Linux'
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        set -euo pipefail
-        gh release download --repo shader-slang/slang \
-          -p "*linux-x86_64.tar.gz" -D /tmp/slang-dl
-        mkdir -p "${{ github.workspace }}/slang"
-        tar xzf /tmp/slang-dl/*.tar.gz -C "${{ github.workspace }}/slang" --strip-components=1
-        # Fallback: slangc might be at root or in bin/
-        for d in "${{ github.workspace }}/slang/bin" "${{ github.workspace }}/slang"; do
-          [ -x "$d/slangc" ] && { echo "$d" >> "$GITHUB_PATH"; break; }
-        done
-        slangc -v || echo "WARNING: slangc not yet on PATH"
-
-    - name: Install slangc (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        gh release download --repo shader-slang/slang `
-          -p "*windows-x86_64.zip" -D slang-dl
-        $zip = Get-ChildItem slang-dl\*.zip | Select-Object -First 1
-        Expand-Archive $zip.FullName -DestinationPath slang
-        # Find slangc.exe wherever it landed
-        $slangc = Get-ChildItem -Recurse slang -Filter slangc.exe | Select-Object -First 1
-        echo $slangc.DirectoryName >> $env:GITHUB_PATH
-        & $slangc.FullName -v
+        & "$sdkPath\Bin\slangc.exe" -v
 
     # ── Configure & Build ──
     - name: Create build directory

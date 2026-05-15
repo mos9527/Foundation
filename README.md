@@ -2,10 +2,15 @@ Foundation
 ===
 
 [![Build](https://github.com/mos9527/Foundation/actions/workflows/build.yml/badge.svg)](https://github.com/mos9527/Foundation/actions/workflows/build.yml)
-[![Nightly Builds](https://img.shields.io/badge/dev-builds-cyan)](https://nightly.link/mos9527/Foundation/workflows/build/dev?preview)
+[![Nightly Builds](https://img.shields.io/badge/editor-builds-cyan)](https://nightly.link/mos9527/Foundation/workflows/build/dev?preview)
+[![Docs](https://img.shields.io/badge/foundation-docs-orange)](https://mos9527.com/Foundation)
 
-Docs are available at: https://mos9527.com/Foundation
-
+Editor Links
+---
+- Demo scenes are available https://github.com/mos9527/Foundation-Resources
+  - Scenes are authored with  https://github.com/mos9527/Foundation-Blender-IO
+  - Compatible with canonical glTF assets
+ 
 Blog Posts 
 ---
 - https://mos9527.com/posts/foundation/pt-1-mesh-shader-continous-lod/
@@ -15,7 +20,6 @@ Blog Posts
 - https://mos9527.com/posts/foundation/pt-5-texture-compression-and-gbuffer/
 - https://mos9527.com/posts/foundation/pt-6-path-tracing-adventures/
 
-- [Foundation-Resources](https://github.com/mos9527/Foundation-Resources)
 
 Framework
 ---
@@ -70,12 +74,11 @@ Also w/ blog post series update on:
   - [ ] *Complete* Multiscatter Energy Compensation 
     - See also `Scripts/LUTPrecomputeGGX.ipynb`
     - [x] Dielectrics Reflection
-      - [ ] Approximate aniso materials with the same LUT    
+      - Approximate aniso materials with the same LUT    
     - [ ] Dielectrics Transmission
       - Implies another dimension on IOR
-  - [ ] Coat BSDF
-  - [ ] Sheen BSDF
-    - https://blog.selfshadow.com/publications/s2017-shading-course/imageworks/s2017_pbs_imageworks_sheen.pdf
+- [ ] Thin Film Iridescence
+  - "A Practical Extension to Microfacet Theory for the Modeling of Varying Iridescence" https://dl.acm.org/doi/pdf/10.1145/3072959.3073620
 
 Done, awaiting Blog Update:
 - [x] Hair Shading
@@ -97,9 +100,14 @@ Done, awaiting Blog Update:
     - Conversion to small disk lights is feasible, or another O(N) loop to evaluate all of those inline w/o going through scene BVH
     - Not worth it nonetheless. This is merely brute-forcing.
 - [x] Alias Sampling scene lights
-- [x] PCG (Independent), Sobol Samplers
 - [x] Importance sampling Infinite Image Lights
 
+Done:
+- [x] Coat BSDF
+- [x] Sheen BSDF/SGGX approx.
+  - LTC Sheen "Practical Multiple-Scattering Sheen Using Linearly Transformed Cosines" https://github.com/tizian/ltc-sheen
+  - ~~https://blog.selfshadow.com/publications/s2017-shading-course/imageworks/s2017_pbs_imageworks_sheen.pdf~~
+- [x] PCG (Independent), Sobol Samplers
 Raster
 ---
 Unfortunately not the favourite child. Maybe one day.

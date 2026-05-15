@@ -16,6 +16,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
     auto* gpu = context->gpuScene;
     scene.gsGlobals->ptAccumulatedFrames = 0u;
     scene.gsGlobals->ggxLutEIndex = gpu->GetGGXLutEIndex();
+    scene.gsGlobals->sheenLtcIndex = gpu->GetSheenLtcIndex();
     scene.gsGlobals->viewLutIndex = context->enableHDR ? gpu->GetViewLutHdrIndex() : gpu->GetViewLutSdrIndex();
     scene.gsGlobals->envMapTextureIndex = gpu->GetEnvMapIndexOrDefault();
     scene.gsGlobals->envMapMarginalCDFIndex = gpu->GetEnvMapMarginalCDFIndexOrDefault();

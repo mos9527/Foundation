@@ -465,6 +465,11 @@ struct Payload
     float specularFactor;
     float3 specularColorFactor;
     float anisotropyStrength;
+    float sheenWeight;
+    float sheenRoughness;
+    float3 sheenTint;
+    float clearcoatFactor;
+    float clearcoatRoughness;
     float subsurface;
     float subsurfaceScale;
     float3 subsurfaceColor;
@@ -553,8 +558,9 @@ IMaterial MakeMaterial(Payload surface, float3 wo, bool isCurve = false, bool fo
     if (surface.shaderBlockID == kMaterialShaderBlockHair)
     {
         float h = isCurve ? 2.0f * saturate(surface.hit.uv.y) - 1.0f : 0.0f;
-        return HairMaterial(
-            surface.baseColor, surface.hairBetaM, surface.hairBetaN, h, surface.ior, surface.hairAlpha);
+        return PrincipledHairMaterial(
+            surface.baseColor, surface.hairBetaM, surface.hairBetaN, h, surface.ior, surface.hairAlpha,
+            surface.emissive);
     }
     // Cycles does this: After a diffuse ancestor, use diffuse
     // instead of another non-local subsurface event to keep paths bounded.
@@ -566,14 +572,19 @@ IMaterial MakeMaterial(Payload surface, float3 wo, bool isCurve = false, bool fo
         surface.baseColor, surface.metallic, surface.roughness,
         surface.ior, surface.specularFactor, surface.transmission, true, wo,
         subsurface, surface.subsurfaceColor, surface.subsurfaceRadius, surface.subsurfaceScale,
-        surface.anisotropyStrength, surface.specularColorFactor, globalParams.ggxLutEIndex);
+        surface.anisotropyStrength, surface.specularColorFactor, globalParams.ggxLutEIndex,
+        surface.sheenWeight, surface.sheenRoughness, surface.sheenTint, globalParams.sheenLtcIndex,
+        surface.clearcoatFactor, surface.clearcoatRoughness,
+        surface.emissive);
 }
 
 
 void SampleMaterials(GSMaterial material, float2 uv,
     out float4 baseColor, out float4 normalTBN, out float4 pbrMetalRough, out float4 emissive,
     out float transmission, out float specularFactor, out float3 specularColorFactor,
-    out float anisotropyStrength, out float2 anisotropyDirection)
+    out float anisotropyStrength, out float2 anisotropyDirection,
+    out float sheenWeight, out float sheenRoughness, out float3 sheenTint,
+    out float clearcoatFactor, out float clearcoatRoughness)
 {
     baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u)
@@ -613,6 +624,28 @@ void SampleMaterials(GSMaterial material, float2 uv,
                                      s * texDirection.x + c * texDirection.y);
         anisotropyStrength *= anisotropyTex.b;
     }
+
+    float3 sheenColor = material.sheenColorFactor;
+    if (material.sheenColorTexture != ~0u)
+        sheenColor *= textures[NonUniformResourceIndex(material.sheenColorTexture)].SampleLevel(textureSampler, uv, 0).rgb;
+
+    sheenWeight = saturate(MaxComponent(sheenColor));
+    sheenTint = sheenWeight > EPS ? saturate(sheenColor / sheenWeight) : float3(1.0f);
+
+    sheenRoughness = material.sheenRoughnessFactor;
+    if (material.sheenRoughnessTexture != ~0u)
+        sheenRoughness *= textures[NonUniformResourceIndex(material.sheenRoughnessTexture)].SampleLevel(textureSampler, uv, 0).a;
+    sheenRoughness = saturate(sheenRoughness);
+
+    clearcoatFactor = material.clearcoatFactor;
+    if (material.clearcoatTexture != ~0u)
+        clearcoatFactor *= textures[NonUniformResourceIndex(material.clearcoatTexture)].SampleLevel(textureSampler, uv, 0).r;
+    clearcoatFactor = saturate(clearcoatFactor);
+
+    clearcoatRoughness = material.clearcoatRoughnessFactor;
+    if (material.clearcoatRoughnessTexture != ~0u)
+        clearcoatRoughness *= textures[NonUniformResourceIndex(material.clearcoatRoughnessTexture)].SampleLevel(textureSampler, uv, 0).g;
+    clearcoatRoughness = saturate(clearcoatRoughness);
 }
 
 Payload SamplePayload(HitPayload payload, RayDesc ray)
@@ -628,7 +661,9 @@ Payload SamplePayload(HitPayload payload, RayDesc ray)
     float2 anisotropyDirection;
     SampleMaterials(material, res.hit.uv, baseColor4, normalTBN, pbrMetalRough, emissive4,
                     res.transmission, res.specularFactor, res.specularColorFactor,
-                    res.anisotropyStrength, anisotropyDirection);
+                    res.anisotropyStrength, anisotropyDirection,
+                    res.sheenWeight, res.sheenRoughness, res.sheenTint,
+                    res.clearcoatFactor, res.clearcoatRoughness);
     res.baseColor = baseColor4.xyz;
     res.emissive = emissive4.xyz;
     res.roughness = pbrMetalRough.y;
@@ -663,7 +698,9 @@ Payload SampleCurvePayload(HitPayload payload, RayDesc ray)
     float2 anisotropyDirection;
     SampleMaterials(material, res.hit.uv, baseColor4, normalTBN, pbrMetalRough, emissive4,
                     res.transmission, res.specularFactor, res.specularColorFactor,
-                    res.anisotropyStrength, anisotropyDirection);
+                    res.anisotropyStrength, anisotropyDirection,
+                    res.sheenWeight, res.sheenRoughness, res.sheenTint,
+                    res.clearcoatFactor, res.clearcoatRoughness);
     res.baseColor = baseColor4.xyz;
     res.emissive = emissive4.xyz;
     res.roughness = pbrMetalRough.y;
@@ -783,7 +820,9 @@ uint GetSERMaterialFamily(GSMaterial material, bool isCurve)
         material.roughnessFactor < 0.25f ||
         material.specularFactor > 1.25f ||
         material.anisotropyStrength > EPS ||
-        material.anisotropyTexture != ~0u)
+        material.anisotropyTexture != ~0u ||
+        material.clearcoatFactor > EPS ||
+        material.clearcoatTexture != ~0u)
         return 1u;
 
     return 0u;
@@ -796,7 +835,9 @@ uint GetSERMaterialFeatureFlags(GSMaterial material)
         material.metallicRoughnessTexture != ~0u ||
         material.transmissionTexture != ~0u ||
         material.specularTexture != ~0u ||
-        material.specularColorTexture != ~0u)
+        material.specularColorTexture != ~0u ||
+        material.clearcoatTexture != ~0u ||
+        material.clearcoatRoughnessTexture != ~0u)
         flags |= 1u;
     if (material.normalTexture != ~0u)
         flags |= 2u;
@@ -1140,13 +1181,14 @@ void AddDiffuseDirectLighting<S : ISampler>(
 }
 
 void AddSurfaceEmissive(
-    Payload surface,
+    IMaterial material,
+    float3 wo,
     float3 beta,
     uint bounce,
     AOVCategory firstBounceCategory,
     inout PathRadiance radiance)
 {
-    AddRadianceByCategory(radiance, beta * surface.emissive,
+    AddRadianceByCategory(radiance, beta * material.Le(wo),
                           bounce, firstBounceCategory, AOVCategory::Diffuse, bounce == 0);
 }
 
@@ -1388,7 +1430,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             IBSDF bsdf = material.GetSurface();
             AddLocalDirectLighting(surface, bsdf, wo, localBeta,
                                    bounce, firstBounceCategory, rng, lighting, radiance);
-            AddSurfaceEmissive(surface, localBeta, bounce, firstBounceCategory, radiance);
+            AddSurfaceEmissive(material, wo, localBeta, bounce, firstBounceCategory, radiance);
 
             AOVCategory sampleCategory;
             BSDFSample sample = BSDF_SampleF(bsdf, wo, rng.sample(), rng.sample2D(),

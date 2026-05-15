@@ -52,6 +52,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
     CHECK(renderer);
     auto* gpu = context->gpuScene;
     scene.gsGlobals->ggxLutEIndex = gpu->GetGGXLutEIndex();
+    scene.gsGlobals->sheenLtcIndex = gpu->GetSheenLtcIndex();
     scene.gsGlobals->viewLutIndex = context->enableHDR ? gpu->GetViewLutHdrIndex() : gpu->GetViewLutSdrIndex();
     scene.gsGlobals->envMapTextureIndex = gpu->GetEnvMapIndexOrDefault();
     scene.gsGlobals->envMapMarginalCDFIndex = gpu->GetEnvMapMarginalCDFIndexOrDefault();

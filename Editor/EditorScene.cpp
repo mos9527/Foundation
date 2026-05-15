@@ -468,12 +468,20 @@ static void BuildEditorMaterials(FScene& scene, Vector<GSMaterial>& dstMaterials
         dst.specularTexture = RemapTextureIndex(src.specularTexture);
         dst.specularColorTexture = RemapTextureIndex(src.specularColorTexture);
         dst.anisotropyTexture = RemapTextureIndex(src.anisotropyTexture);
+        dst.sheenColorTexture = RemapTextureIndex(src.sheenColorTexture);
+        dst.sheenRoughnessTexture = RemapTextureIndex(src.sheenRoughnessTexture);
+        dst.clearcoatTexture = RemapTextureIndex(src.clearcoatTexture);
+        dst.clearcoatRoughnessTexture = RemapTextureIndex(src.clearcoatRoughnessTexture);
         dst.transmissionFactor = src.transmissionFactor;
         dst.ior = src.ior;
         dst.specularFactor = src.specularFactor;
         dst.specularColorFactor = src.specularColorFactor;
         dst.anisotropyStrength = src.anisotropyStrength;
         dst.anisotropyRotation = src.anisotropyRotation;
+        dst.sheenColorFactor = src.sheenColorFactor;
+        dst.sheenRoughnessFactor = src.sheenRoughnessFactor;
+        dst.clearcoatFactor = src.clearcoatFactor;
+        dst.clearcoatRoughnessFactor = src.clearcoatRoughnessFactor;
         dst.subsurfaceFactor = src.subsurfaceFactor;
         dst.subsurfaceScale = src.subsurfaceScale;
         dst.subsurfaceColor = src.subsurfaceColor;
@@ -1143,6 +1151,7 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* gpu, SceneLoadStats&
     ApplySceneCamera(scene, GEditor.camera, GEditor.aperture, GEditor.shaderGlobals);
     CommitSceneToGPU(gpu, GEditor.instances, GEditor.materials, GEditor.lights, GEditor.shaderGlobals, true);
     GEditor.shaderGlobals.ggxLutEIndex = gpu->GetGGXLutEIndex();
+    GEditor.shaderGlobals.sheenLtcIndex = gpu->GetSheenLtcIndex();
     GEditor.shaderGlobals.viewLutIndex = GContext->enableHDR
         ? gpu->GetViewLutHdrIndex()
         : gpu->GetViewLutSdrIndex();
