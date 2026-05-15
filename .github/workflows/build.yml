@@ -13,59 +13,14 @@ env:
 
 jobs:
   build:
-    name: ${{ matrix.name }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Linux x64
-            os: ubuntu-latest
-            gcc: 14
-            artifact: Foundation-linux-x64
-          - name: Windows x64
-            os: windows-latest
-            artifact: Foundation-win-x64
-
-    runs-on: ${{ matrix.os }}
+    name: Windows x64
+    runs-on: windows-latest
 
     steps:
     - uses: actions/checkout@v4
 
-    # ── System packages (Linux) ──
-    # SDL3 (VIDEO on) needs X11/Wayland headers; nfd needs GTK3
-    - name: Install system packages (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
-          libxinerama-dev libxkbcommon-dev \
-          libwayland-dev wayland-protocols \
-          libdbus-1-dev \
-          libgtk-3-dev
-
-    # ── Vulkan SDK (includes slangc) ──
-    # LunarG discontinued Ubuntu packages (May 2025). Use the tarball.
-    # The SDK bundles slangc, so no separate Slang install needed.
-    - name: Install Vulkan SDK (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        set -euo pipefail
-        VK_VER="${{ env.VULKAN_SDK_VERSION }}"
-        curl -fsSL -o /tmp/vulkansdk.tar.xz \
-          "https://sdk.lunarg.com/sdk/download/$VK_VER/linux/vulkansdk-linux-x86_64-$VK_VER.tar.xz"
-        sudo mkdir -p /opt/vulkan
-        sudo tar xf /tmp/vulkansdk.tar.xz -C /opt/vulkan --strip-components=1
-        # Mirror what setup-env.sh does
-        VSDK="/opt/vulkan/x86_64"
-        echo "VULKAN_SDK=$VSDK"                                          >> "$GITHUB_ENV"
-        echo "$VSDK/bin"                                                 >> "$GITHUB_PATH"
-        echo "LD_LIBRARY_PATH=$VSDK/lib/VulkanLoader/lib"               >> "$GITHUB_ENV"
-        echo "CMAKE_PREFIX_PATH=$VSDK:$VSDK/lib/VulkanLoader"           >> "$GITHUB_ENV"
-        slangc -v
-
-    - name: Install Vulkan SDK (Windows)
-      if: runner.os == 'Windows'
+    # ── Vulkan SDK ──
+    - name: Install Vulkan SDK
       shell: pwsh
       run: |
         $ver = "${{ env.VULKAN_SDK_VERSION }}"
@@ -85,21 +40,7 @@ jobs:
     - name: Create build directory
       run: cmake -E make_directory ${{ github.workspace }}/build
 
-    - name: Configure CMake (Linux)
-      if: runner.os == 'Linux'
-      working-directory: ${{ github.workspace }}/build
-      env:
-        CC: gcc-${{ matrix.gcc }}
-        CXX: g++-${{ matrix.gcc }}
-      run: |
-        cmake .. \
-          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-          -DFOUNDATION_WITH_EXAMPLES=OFF \
-          -DFOUNDATION_WITH_PROFILING=OFF \
-          -DFOUNDATION_RHIVULKAN_VALIDATION_LAYER=OFF
-
-    - name: Configure CMake (Windows)
-      if: runner.os == 'Windows'
+    - name: Configure CMake
       working-directory: ${{ github.workspace }}/build
       run: >
         cmake ..
@@ -114,9 +55,24 @@ jobs:
       shell: bash
       run: cmake --build . --config ${{ env.BUILD_TYPE }} --target EditorWithUtil
 
+    - name: Stage artifacts
+      shell: pwsh
+      run: |
+        $package = "${{ github.workspace }}/package"
+        $bin = "${{ github.workspace }}/build/bin"
+        $configBin = Join-Path $bin "${{ env.BUILD_TYPE }}"
+
+        if (Test-Path $package) {
+          Remove-Item $package -Recurse -Force
+        }
+
+        New-Item -ItemType Directory -Path $package | Out-Null
+        Copy-Item -Path (Join-Path $configBin "*") -Destination $package -Recurse -Force
+        Copy-Item -Path (Join-Path $bin "data") -Destination $package -Recurse -Force
+
     # ── Upload ──
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.artifact }}
-        path: ${{ github.workspace }}/build/bin/
+        name: Foundation-win-x64
+        path: ${{ github.workspace }}/package/
