@@ -306,12 +306,16 @@ static Vector<float> CombineRenderTextures(Span<const FTexture> textures, uint32
         ValidateRenderReadbackTexture(texture, RHIResourceFormat::R32G32B32A32SignedFloat, width, height);
         CHECK_MSG(width == outWidth && height == outHeight, "Mismatched render readback texture extents");
     }
-    size_t const rgba = static_cast<size_t>(outWidth) * outHeight;
-    Vector<float> combined(rgba, alloc);
+    size_t const pixelCount = static_cast<size_t>(outWidth) * outHeight;
+    size_t const componentCount = pixelCount * 4;
+    Vector<float> combined(componentCount, alloc);
     for (FTexture const& texture : textures)
-        for (size_t i = 0; i < rgba; ++i)
-            combined[i] += reinterpret_cast<const float*>(texture.bytes.data())[i];
-    for (size_t i = 0; i < rgba / 4; ++i)
+    {
+        auto const* rgba = reinterpret_cast<const float*>(texture.bytes.data());
+        for (size_t i = 0; i < componentCount; ++i)
+            combined[i] += rgba[i];
+    }
+    for (size_t i = 0; i < pixelCount; ++i)
         combined[i * 4 + 3] = 1.0f;
     return combined;
 }
@@ -344,6 +348,7 @@ void DoRenderReadback(RendererHandles const& handles)
         CHECK_MSG(handles.sdrRT != kInvalidHandle, "Invalid SDR readback texture");
         auto sdrTexture = renderer->DerefResource(handles.sdrRT).Get<RHITexture*>();
         const FTexture sdr = ReadbackRenderTexture(sdrTexture, GLOBAL_ALLOC);
+        ValidateRenderReadbackTexture(sdr, RHIResourceFormat::R8G8B8A8Unorm, w, h);
         const char* sdrPath = GEditor.renderTask.outputPath.c_str();
         // Output as is
         SavePNG(sdr.bytes.data(), static_cast<int>(w), static_cast<int>(h), sdrPath);
