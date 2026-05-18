@@ -23,41 +23,29 @@ namespace Foundation::RenderCore
     }
     void BindlessPool::AddStats(Binding const& binding)
     {
-        const size_t bytes = binding.resource.Visit(
-            [](RHITexture* texture) -> size_t { return texture ? texture->GetAllocationSize() : 0; },
-            [](RHIDeviceScopedHandle<RHITexture> const& texture) -> size_t
-            {
-                RHITexture* ptr = texture.Get();
-                return ptr ? ptr->GetAllocationSize() : 0;
-            });
         mActiveBindings++;
-        mReferencedTextureBytes += bytes;
+        mReferencedTextureBytes += binding.referencedTextureBytes;
         if (binding.resource.GetIf<RHIDeviceScopedHandle<RHITexture>>())
         {
             mOwnedTextureBindings++;
-            mOwnedTextureBytes += bytes;
+            mOwnedTextureBytes += binding.ownedTextureBytes;
         }
     }
     void BindlessPool::RemoveStats(Binding const& binding)
     {
-        const size_t bytes = binding.resource.Visit(
-            [](RHITexture* texture) -> size_t { return texture ? texture->GetAllocationSize() : 0; },
-            [](RHIDeviceScopedHandle<RHITexture> const& texture) -> size_t
-            {
-                RHITexture* ptr = texture.Get();
-                return ptr ? ptr->GetAllocationSize() : 0;
-            });
         mActiveBindings--;
-        mReferencedTextureBytes -= bytes;
+        mReferencedTextureBytes -= binding.referencedTextureBytes;
         if (binding.resource.GetIf<RHIDeviceScopedHandle<RHITexture>>())
         {
             mOwnedTextureBindings--;
-            mOwnedTextureBytes -= bytes;
+            mOwnedTextureBytes -= binding.ownedTextureBytes;
         }
     }
     uint32_t BindlessPool::Allocate(RHITextureView* view)
     {
-        Binding* binding = mBindings.Construct(Binding{0uLL, {view->GetTexture()}, {view}});
+        RHITexture* texture = view ? view->GetTexture() : nullptr;
+        size_t referencedTextureBytes = texture ? texture->GetAllocationSize() : 0;
+        Binding* binding = mBindings.Construct(Binding{0uLL, {texture}, {view}, referencedTextureBytes, 0});
         binding->id = mBindings.Index(binding);
         AddStats(*binding);
         return UpdateDescriptor(binding->id, view);
@@ -65,7 +53,10 @@ namespace Foundation::RenderCore
     uint32_t BindlessPool::Allocate(RHIDeviceScopedHandle<RHITexture>&& texture, RHITextureScopedHandle<RHITextureView>&& view)
     {
         RHITextureView* rawView = view.Get();
-        Binding* binding = mBindings.Construct(Binding{0uLL, {std::move(texture)}, {std::move(view)}});
+        RHITexture* rawTexture = texture.Get();
+        size_t ownedTextureBytes = rawTexture ? rawTexture->GetAllocationSize() : 0;
+        Binding* binding = mBindings.Construct(Binding{0uLL, {std::move(texture)}, {std::move(view)},
+                                                       ownedTextureBytes, ownedTextureBytes});
         binding->id = mBindings.Index(binding);
         AddStats(*binding);
         return UpdateDescriptor(binding->id, rawView);
@@ -75,11 +66,14 @@ namespace Foundation::RenderCore
         Binding* binding = mBindings.At(id);
         CHECK_MSG(binding, "Cannot update invalid bindless texture binding {}", id);
         RHITextureView* rawView = view.Get();
+        RHITexture* rawTexture = texture.Get();
+        size_t ownedTextureBytes = rawTexture ? rawTexture->GetAllocationSize() : 0;
         UpdateDescriptor(id, rawView);
         mIdleGuard.WaitIdle();
         RemoveStats(*binding);
         std::destroy_at(binding);
-        std::construct_at(binding, Binding{0uLL, {std::move(texture)}, {std::move(view)}});
+        std::construct_at(binding, Binding{0uLL, {std::move(texture)}, {std::move(view)}, ownedTextureBytes,
+                                           ownedTextureBytes});
         binding->id = id;
         AddStats(*binding);
         return id;

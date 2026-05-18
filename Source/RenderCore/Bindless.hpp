@@ -23,6 +23,8 @@ namespace Foundation::RenderCore
             uint32_t id;
             Resource resource;
             View view;
+            size_t referencedTextureBytes{};
+            size_t ownedTextureBytes{};
         };
 
         RHIDevice* const mDevice;

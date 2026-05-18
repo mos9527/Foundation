@@ -371,14 +371,27 @@ struct TexturePreviewImage
 {
     ImTextureID textureID{};
     RHITextureView* view{};
+    uint32_t width{};
+    uint32_t height{};
+};
+
+enum class TexturePreviewSource
+{
+    None,
+    GPUSceneTexture,
+    RendererTextureView,
 };
 
 struct TexturePreviewModalState
 {
     bool pendingOpen{};
     char title[128]{};
-    ImTextureID textureID{};
-    RHITextureView* view{};
+    TexturePreviewSource source{TexturePreviewSource::None};
+    GPUScene* gpuScene{};
+    Renderer* renderer{};
+    uint32_t textureIndex{UINT32_MAX};
+    ResourceHandle viewHandle{kInvalidHandle};
+    ImGui_ImplFoundation_ImageSampler sampler{ImGuiImplFoundationImageSamplerLinear};
     float zoom{1.0f};
     ImVec2 pan{};
 };
@@ -408,8 +421,12 @@ static void ResetTexturePreviewModal()
     auto& state = TexturePreviewModal();
     state.pendingOpen = false;
     state.title[0] = '\0';
-    state.textureID = 0;
-    state.view = nullptr;
+    state.source = TexturePreviewSource::None;
+    state.gpuScene = nullptr;
+    state.renderer = nullptr;
+    state.textureIndex = UINT32_MAX;
+    state.viewHandle = kInvalidHandle;
+    state.sampler = ImGuiImplFoundationImageSamplerLinear;
     state.zoom = 1.0f;
     state.pan = {};
 }
@@ -431,9 +448,12 @@ static TexturePreviewImage GetTexturePreviewImage(uint32_t textureIndex, ImGui_I
 
     auto* pool = GContext->gpuScene->GetTexture2DPool();
     RHITextureView* view = pool ? pool->GetView(textureIndex) : nullptr;
-    if (!view)
+    RHITexture* texture = view ? view->GetTexture() : nullptr;
+    if (!texture)
         return {};
 
+    uint32_t width = texture->mDesc.extent.x;
+    uint32_t height = texture->mDesc.extent.y;
     auto& cache = TexturePreviewCache();
     for (auto& entry : cache)
     {
@@ -442,13 +462,13 @@ static TexturePreviewImage GetTexturePreviewImage(uint32_t textureIndex, ImGui_I
             continue;
 
         if (entry.view == view)
-            return {entry.textureID, view};
+            return {entry.textureID, view, width, height};
 
         if (entry.textureID != 0)
             ImGui_ImplFoundation_RemoveImage(entry.textureID);
         entry.view = view;
         entry.textureID = ImGui_ImplFoundation_AddImage(view, sampler);
-        return {entry.textureID, view};
+        return {entry.textureID, view, width, height};
     }
 
     ImTextureID textureID = ImGui_ImplFoundation_AddImage(view, sampler);
@@ -459,7 +479,7 @@ static TexturePreviewImage GetTexturePreviewImage(uint32_t textureIndex, ImGui_I
         .view = view,
         .textureID = textureID,
     });
-    return {textureID, view};
+    return {textureID, view, width, height};
 }
 
 static TexturePreviewImage GetTexturePreviewImage(Renderer* renderer, ResourceHandle viewHandle, RHITextureView* view,
@@ -468,6 +488,12 @@ static TexturePreviewImage GetTexturePreviewImage(Renderer* renderer, ResourceHa
     if (!renderer || viewHandle == kInvalidHandle || !view)
         return {};
 
+    RHITexture* texture = view->GetTexture();
+    if (!texture)
+        return {};
+
+    uint32_t width = texture->mDesc.extent.x;
+    uint32_t height = texture->mDesc.extent.y;
     uint64_t frame = TexturePreviewFrame();
     auto& cache = TexturePreviewCache();
     for (auto& entry : cache)
@@ -477,13 +503,13 @@ static TexturePreviewImage GetTexturePreviewImage(Renderer* renderer, ResourceHa
 
         entry.lastSeenFrame = frame;
         if (entry.view == view)
-            return {entry.textureID, view};
+            return {entry.textureID, view, width, height};
 
         if (entry.textureID != 0)
             ImGui_ImplFoundation_RemoveImage(entry.textureID);
         entry.view = view;
         entry.textureID = ImGui_ImplFoundation_AddImage(view, sampler);
-        return {entry.textureID, view};
+        return {entry.textureID, view, width, height};
     }
 
     ImTextureID textureID = ImGui_ImplFoundation_AddImage(view, sampler);
@@ -495,7 +521,7 @@ static TexturePreviewImage GetTexturePreviewImage(Renderer* renderer, ResourceHa
         .textureID = textureID,
         .lastSeenFrame = frame,
     });
-    return {textureID, view};
+    return {textureID, view, width, height};
 }
 
 static void PruneTexturePreviewCache(uint64_t frame)
@@ -516,25 +542,80 @@ static void PruneTexturePreviewCache(uint64_t frame)
     }
 }
 
-static void OpenTexturePreviewModal(const char* title, TexturePreviewImage const& preview)
+static bool IsTexturePreviewFormatSupported(RHIResourceFormat format);
+
+static TexturePreviewImage ResolveTexturePreviewModalImage(TexturePreviewModalState const& state)
 {
-    if (preview.textureID == 0 || !preview.view)
+    switch (state.source)
+    {
+    case TexturePreviewSource::GPUSceneTexture:
+        if (!GContext || state.gpuScene != GContext->gpuScene || state.textureIndex == UINT32_MAX)
+            return {};
+        return GetTexturePreviewImage(state.textureIndex, state.sampler);
+    case TexturePreviewSource::RendererTextureView:
+    {
+        if (!GContext || state.renderer != GContext->renderer || state.viewHandle == kInvalidHandle)
+            return {};
+
+        Vector<Renderer::TexturePreviewStat> previews(GLOBAL_ALLOC);
+        state.renderer->DbgGetTexturePreviews(previews);
+        auto it = Ranges::find_if(previews,
+                                  [&state](auto const& item) { return item.viewHandle == state.viewHandle; });
+        if (it == previews.end() || !it->view || !IsTexturePreviewFormatSupported(it->format))
+            return {};
+
+        return GetTexturePreviewImage(state.renderer, state.viewHandle, it->view, state.sampler);
+    }
+    case TexturePreviewSource::None:
+    default:
+        return {};
+    }
+}
+
+static void OpenTexturePreviewModal(const char* title, GPUScene* gpuScene, uint32_t textureIndex,
+                                    ImGui_ImplFoundation_ImageSampler sampler, TexturePreviewImage const& preview)
+{
+    if (preview.textureID == 0 || preview.width == 0 || preview.height == 0)
         return;
 
     auto& state = TexturePreviewModal();
     state.pendingOpen = true;
     std::snprintf(state.title, sizeof(state.title), "%s", title);
-    state.textureID = preview.textureID;
-    state.view = preview.view;
+    state.source = TexturePreviewSource::GPUSceneTexture;
+    state.gpuScene = gpuScene;
+    state.renderer = nullptr;
+    state.textureIndex = textureIndex;
+    state.viewHandle = kInvalidHandle;
+    state.sampler = sampler;
     state.zoom = 1.0f;
     state.pan = {};
 }
 
-static void OpenTexturePreviewModal(const char* label, uint32_t textureIndex, TexturePreviewImage const& preview)
+static void OpenTexturePreviewModal(const char* label, uint32_t textureIndex,
+                                    ImGui_ImplFoundation_ImageSampler sampler, TexturePreviewImage const& preview)
 {
     char title[128];
     std::snprintf(title, sizeof(title), "%s #%u", label, textureIndex);
-    OpenTexturePreviewModal(title, preview);
+    OpenTexturePreviewModal(title, GContext ? GContext->gpuScene : nullptr, textureIndex, sampler, preview);
+}
+
+static void OpenTexturePreviewModal(const char* title, Renderer* renderer, ResourceHandle viewHandle,
+                                    ImGui_ImplFoundation_ImageSampler sampler, TexturePreviewImage const& preview)
+{
+    if (preview.textureID == 0 || preview.width == 0 || preview.height == 0)
+        return;
+
+    auto& state = TexturePreviewModal();
+    state.pendingOpen = true;
+    std::snprintf(state.title, sizeof(state.title), "%s", title);
+    state.source = TexturePreviewSource::RendererTextureView;
+    state.gpuScene = nullptr;
+    state.renderer = renderer;
+    state.textureIndex = UINT32_MAX;
+    state.viewHandle = viewHandle;
+    state.sampler = sampler;
+    state.zoom = 1.0f;
+    state.pan = {};
 }
 
 static void DrawTexturePreviewModal()
@@ -560,8 +641,8 @@ static void DrawTexturePreviewModal()
         return;
     }
 
-    RHITexture* texture = state.view ? state.view->GetTexture() : nullptr;
-    if (!texture || state.textureID == 0)
+    TexturePreviewImage preview = ResolveTexturePreviewModalImage(state);
+    if (preview.textureID == 0 || preview.width == 0 || preview.height == 0)
     {
         ImGui::TextUnformatted("Texture is unavailable.");
         if (ImGui::Button("Close"))
@@ -573,8 +654,8 @@ static void DrawTexturePreviewModal()
         return;
     }
 
-    float textureWidth = static_cast<float>(std::max(1u, texture->mDesc.extent.x));
-    float textureHeight = static_cast<float>(std::max(1u, texture->mDesc.extent.y));
+    float textureWidth = static_cast<float>(std::max(1u, preview.width));
+    float textureHeight = static_cast<float>(std::max(1u, preview.height));
     ImGui::Text("%s  (%.0fx%.0f)", state.title, textureWidth, textureHeight);
     ImGui::SameLine();
     ImGui::TextDisabled("Mouse wheel: zoom at cursor, drag: pan");
@@ -642,7 +723,7 @@ static void DrawTexturePreviewModal()
     ImVec2 center{canvasCenter.x + state.pan.x, canvasCenter.y + state.pan.y};
     ImVec2 imageMin{center.x - imageSize.x * 0.5f, center.y - imageSize.y * 0.5f};
     ImVec2 imageMax{center.x + imageSize.x * 0.5f, center.y + imageSize.y * 0.5f};
-    drawList->AddImage(state.textureID, imageMin, imageMax);
+    drawList->AddImage(preview.textureID, imageMin, imageMax);
     drawList->AddRect(imageMin, imageMax, IM_COL32(255, 255, 255, 64));
 
     ImGui::EndChild();
@@ -658,7 +739,7 @@ static void DrawTexturePreview(const char* label, uint32_t textureIndex,
     if (preview.textureID != 0)
     {
         if (ImGui::ImageButton("Preview", preview.textureID, previewSize))
-            OpenTexturePreviewModal(label, textureIndex, preview);
+            OpenTexturePreviewModal(label, textureIndex, sampler, preview);
     }
     else
     {
@@ -762,7 +843,8 @@ static void DrawRenderGraphTexturePreviews(Renderer* renderer, Allocator* scratc
                 char title[128];
                 std::snprintf(title, sizeof(title), "RenderGraph %s view #%zu", item.name.c_str(),
                               static_cast<size_t>(item.viewHandle));
-                OpenTexturePreviewModal(title, preview);
+                OpenTexturePreviewModal(title, renderer, item.viewHandle, ImGuiImplFoundationImageSamplerLinear,
+                                        preview);
             }
         }
         else
