@@ -479,8 +479,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                 self, ZBuffer, "depth", RHIPipelineStageBits::ComputeShader,
                 RHITextureViewDesc{.format = RHIResourceFormat::D32SignedFloat,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
-            if (useRTShadows)
-                r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
+            r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::ComputeShader, "AS");
             r->BindBufferStorageRead(self, LightBuffer, RHIPipelineStageBits::ComputeShader, "lights");
             r->BindTextureSampler(self, LUTSampler, "lutSampler");
             r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());

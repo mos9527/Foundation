@@ -1,5 +1,6 @@
 #include "ImGui.hpp"
 #include "Paths.hpp"
+#include "EditorState.hpp"
 #include <argh.h>
 #include <nfd.h>
 extern bool EditorProcessEvent(SDL_Event*);
@@ -85,6 +86,7 @@ int main(int argc, char** argv)
 
     while (!mainLoop()) {}
     LOG(SDLMain, LogInfo, "Quitting...");
+    ClearMaterialTexturePreviewCache();
     NFD_Quit();
     ImGui_ImplFoundation_Shutdown();
     DestroyContext();

@@ -608,6 +608,8 @@ static void DestroyGPUScene(GPUScene*& gpu)
 {
     if (!gpu)
         return;
+    if (gpu == GContext->gpuScene)
+        ClearMaterialTexturePreviewCache();
     Destruct(GContext->allocator, gpu);
     gpu = nullptr;
 }

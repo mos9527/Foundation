@@ -1696,11 +1696,7 @@ static RHITexture* ResolvePoolTexture(BindlessPool& pool, uint32_t index)
 {
     if (index == UINT32_MAX)
         return nullptr;
-    auto& res = pool.GetResource(index);
-    return res.Visit(
-        [](RHITexture* tex) -> RHITexture* { return tex; },
-        [](RHIDeviceScopedHandle<RHITexture> const& tex) -> RHITexture* { return tex.Get(); }
-    );
+    return pool.GetResource(index);
 }
 
 RHITexture* GPUScene::GetEnvMap() const

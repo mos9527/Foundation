@@ -355,6 +355,439 @@ static void SyncMaterialToGPU(uint32_t materialIndex)
     dst.hairAlpha = src.hairAlpha;
 }
 
+struct TexturePreviewEntry
+{
+    GPUScene* gpuScene{};
+    Renderer* renderer{};
+    uint32_t textureIndex{UINT32_MAX};
+    ResourceHandle viewHandle{kInvalidHandle};
+    ImGui_ImplFoundation_ImageSampler sampler{ImGuiImplFoundationImageSamplerLinear};
+    RHITextureView* view{};
+    ImTextureID textureID{};
+    uint64_t lastSeenFrame{};
+};
+
+struct TexturePreviewImage
+{
+    ImTextureID textureID{};
+    RHITextureView* view{};
+};
+
+struct TexturePreviewModalState
+{
+    bool pendingOpen{};
+    char title[128]{};
+    ImTextureID textureID{};
+    RHITextureView* view{};
+    float zoom{1.0f};
+    ImVec2 pan{};
+};
+
+static constexpr const char* kTexturePreviewModalName = "Texture Preview";
+
+static uint64_t& TexturePreviewFrame()
+{
+    static uint64_t frame = 0;
+    return frame;
+}
+
+static Vector<TexturePreviewEntry>& TexturePreviewCache()
+{
+    static Vector<TexturePreviewEntry> cache(GLOBAL_ALLOC);
+    return cache;
+}
+
+static TexturePreviewModalState& TexturePreviewModal()
+{
+    static TexturePreviewModalState state;
+    return state;
+}
+
+static void ResetTexturePreviewModal()
+{
+    auto& state = TexturePreviewModal();
+    state.pendingOpen = false;
+    state.title[0] = '\0';
+    state.textureID = 0;
+    state.view = nullptr;
+    state.zoom = 1.0f;
+    state.pan = {};
+}
+
+void ClearMaterialTexturePreviewCache()
+{
+    auto& cache = TexturePreviewCache();
+    for (auto& entry : cache)
+        if (entry.textureID != 0)
+            ImGui_ImplFoundation_RemoveImage(entry.textureID);
+    cache.clear();
+    ResetTexturePreviewModal();
+}
+
+static TexturePreviewImage GetTexturePreviewImage(uint32_t textureIndex, ImGui_ImplFoundation_ImageSampler sampler)
+{
+    if (!GContext || !GContext->gpuScene || textureIndex == UINT32_MAX)
+        return {};
+
+    auto* pool = GContext->gpuScene->GetTexture2DPool();
+    RHITextureView* view = pool ? pool->GetView(textureIndex) : nullptr;
+    if (!view)
+        return {};
+
+    auto& cache = TexturePreviewCache();
+    for (auto& entry : cache)
+    {
+        if (entry.gpuScene != GContext->gpuScene || entry.renderer != nullptr ||
+            entry.textureIndex != textureIndex || entry.sampler != sampler)
+            continue;
+
+        if (entry.view == view)
+            return {entry.textureID, view};
+
+        if (entry.textureID != 0)
+            ImGui_ImplFoundation_RemoveImage(entry.textureID);
+        entry.view = view;
+        entry.textureID = ImGui_ImplFoundation_AddImage(view, sampler);
+        return {entry.textureID, view};
+    }
+
+    ImTextureID textureID = ImGui_ImplFoundation_AddImage(view, sampler);
+    cache.push_back(TexturePreviewEntry{
+        .gpuScene = GContext->gpuScene,
+        .textureIndex = textureIndex,
+        .sampler = sampler,
+        .view = view,
+        .textureID = textureID,
+    });
+    return {textureID, view};
+}
+
+static TexturePreviewImage GetTexturePreviewImage(Renderer* renderer, ResourceHandle viewHandle, RHITextureView* view,
+                                                  ImGui_ImplFoundation_ImageSampler sampler)
+{
+    if (!renderer || viewHandle == kInvalidHandle || !view)
+        return {};
+
+    uint64_t frame = TexturePreviewFrame();
+    auto& cache = TexturePreviewCache();
+    for (auto& entry : cache)
+    {
+        if (entry.renderer != renderer || entry.viewHandle != viewHandle || entry.sampler != sampler)
+            continue;
+
+        entry.lastSeenFrame = frame;
+        if (entry.view == view)
+            return {entry.textureID, view};
+
+        if (entry.textureID != 0)
+            ImGui_ImplFoundation_RemoveImage(entry.textureID);
+        entry.view = view;
+        entry.textureID = ImGui_ImplFoundation_AddImage(view, sampler);
+        return {entry.textureID, view};
+    }
+
+    ImTextureID textureID = ImGui_ImplFoundation_AddImage(view, sampler);
+    cache.push_back(TexturePreviewEntry{
+        .renderer = renderer,
+        .viewHandle = viewHandle,
+        .sampler = sampler,
+        .view = view,
+        .textureID = textureID,
+        .lastSeenFrame = frame,
+    });
+    return {textureID, view};
+}
+
+static void PruneTexturePreviewCache(uint64_t frame)
+{
+    auto& cache = TexturePreviewCache();
+    for (auto it = cache.begin(); it != cache.end();)
+    {
+        bool prune = it->renderer != nullptr && it->lastSeenFrame + 1 < frame;
+        if (!prune)
+        {
+            ++it;
+            continue;
+        }
+
+        if (it->textureID != 0)
+            ImGui_ImplFoundation_RemoveImage(it->textureID);
+        it = cache.erase(it);
+    }
+}
+
+static void OpenTexturePreviewModal(const char* title, TexturePreviewImage const& preview)
+{
+    if (preview.textureID == 0 || !preview.view)
+        return;
+
+    auto& state = TexturePreviewModal();
+    state.pendingOpen = true;
+    std::snprintf(state.title, sizeof(state.title), "%s", title);
+    state.textureID = preview.textureID;
+    state.view = preview.view;
+    state.zoom = 1.0f;
+    state.pan = {};
+}
+
+static void OpenTexturePreviewModal(const char* label, uint32_t textureIndex, TexturePreviewImage const& preview)
+{
+    char title[128];
+    std::snprintf(title, sizeof(title), "%s #%u", label, textureIndex);
+    OpenTexturePreviewModal(title, preview);
+}
+
+static void DrawTexturePreviewModal()
+{
+    auto& state = TexturePreviewModal();
+    if (state.pendingOpen)
+    {
+        ImGui::OpenPopup(kTexturePreviewModalName);
+        state.pendingOpen = false;
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(760.0f, 560.0f), ImGuiCond_FirstUseEver);
+    bool modalOpen = true;
+    if (!ImGui::BeginPopupModal(kTexturePreviewModalName, &modalOpen,
+                                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+        return;
+
+    if (!modalOpen)
+    {
+        ResetTexturePreviewModal();
+        ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        return;
+    }
+
+    RHITexture* texture = state.view ? state.view->GetTexture() : nullptr;
+    if (!texture || state.textureID == 0)
+    {
+        ImGui::TextUnformatted("Texture is unavailable.");
+        if (ImGui::Button("Close"))
+        {
+            ResetTexturePreviewModal();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+        return;
+    }
+
+    float textureWidth = static_cast<float>(std::max(1u, texture->mDesc.extent.x));
+    float textureHeight = static_cast<float>(std::max(1u, texture->mDesc.extent.y));
+    ImGui::Text("%s  (%.0fx%.0f)", state.title, textureWidth, textureHeight);
+    ImGui::SameLine();
+    ImGui::TextDisabled("Mouse wheel: zoom at cursor, drag: pan");
+
+    ImGui::SetNextItemWidth(180.0f);
+    ImGui::SliderFloat("Zoom", &state.zoom, 0.05f, 16.0f, "%.2fx");
+    ImGui::SameLine();
+    if (ImGui::Button("Reset"))
+    {
+        state.zoom = 1.0f;
+        state.pan = {};
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Close"))
+    {
+        ResetTexturePreviewModal();
+        ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        return;
+    }
+
+    ImVec2 canvasSize = ImGui::GetContentRegionAvail();
+    canvasSize.x = std::max(canvasSize.x, 1.0f);
+    canvasSize.y = std::max(canvasSize.y, 1.0f);
+    ImGui::BeginChild("TexturePreviewCanvas", canvasSize, true,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+    ImVec2 canvasPos = ImGui::GetCursorScreenPos();
+    ImVec2 innerSize = ImGui::GetContentRegionAvail();
+    innerSize.x = std::max(innerSize.x, 1.0f);
+    innerSize.y = std::max(innerSize.y, 1.0f);
+    ImGui::InvisibleButton("TexturePreviewDragSurface", innerSize,
+                           ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonMiddle);
+
+    bool hovered = ImGui::IsItemHovered();
+    ImGuiIO& io = ImGui::GetIO();
+    ImVec2 canvasCenter{canvasPos.x + innerSize.x * 0.5f, canvasPos.y + innerSize.y * 0.5f};
+    if (hovered && io.MouseWheel != 0.0f)
+    {
+        float oldZoom = state.zoom;
+        float newZoom = std::clamp(oldZoom * (io.MouseWheel > 0.0f ? 1.1f : 1.0f / 1.1f), 0.05f, 16.0f);
+        if (newZoom != oldZoom)
+        {
+            float zoomRatio = newZoom / oldZoom;
+            ImVec2 mouseFromImageCenter{io.MousePos.x - canvasCenter.x - state.pan.x,
+                                        io.MousePos.y - canvasCenter.y - state.pan.y};
+            state.pan.x += mouseFromImageCenter.x * (1.0f - zoomRatio);
+            state.pan.y += mouseFromImageCenter.y * (1.0f - zoomRatio);
+            state.zoom = newZoom;
+        }
+    }
+    if (hovered && (ImGui::IsMouseDragging(ImGuiMouseButton_Left) || ImGui::IsMouseDragging(ImGuiMouseButton_Middle)))
+    {
+        state.pan.x += io.MouseDelta.x;
+        state.pan.y += io.MouseDelta.y;
+    }
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    ImVec2 canvasMax{canvasPos.x + innerSize.x, canvasPos.y + innerSize.y};
+    drawList->AddRectFilled(canvasPos, canvasMax, IM_COL32(18, 18, 18, 255));
+
+    float fitScale = std::min(innerSize.x / textureWidth, innerSize.y / textureHeight);
+    fitScale = std::max(fitScale, 0.001f);
+    ImVec2 imageSize{textureWidth * fitScale * state.zoom, textureHeight * fitScale * state.zoom};
+    ImVec2 center{canvasCenter.x + state.pan.x, canvasCenter.y + state.pan.y};
+    ImVec2 imageMin{center.x - imageSize.x * 0.5f, center.y - imageSize.y * 0.5f};
+    ImVec2 imageMax{center.x + imageSize.x * 0.5f, center.y + imageSize.y * 0.5f};
+    drawList->AddImage(state.textureID, imageMin, imageMax);
+    drawList->AddRect(imageMin, imageMax, IM_COL32(255, 255, 255, 64));
+
+    ImGui::EndChild();
+    ImGui::EndPopup();
+}
+
+static void DrawTexturePreview(const char* label, uint32_t textureIndex,
+                               ImGui_ImplFoundation_ImageSampler sampler = ImGuiImplFoundationImageSamplerLinear)
+{
+    ImGui::PushID(label);
+    ImVec2 previewSize{48.0f, 48.0f};
+    TexturePreviewImage preview = GetTexturePreviewImage(textureIndex, sampler);
+    if (preview.textureID != 0)
+    {
+        if (ImGui::ImageButton("Preview", preview.textureID, previewSize))
+            OpenTexturePreviewModal(label, textureIndex, preview);
+    }
+    else
+    {
+        ImGui::BeginDisabled();
+        ImGui::Button("None", previewSize);
+        ImGui::EndDisabled();
+    }
+
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    if (textureIndex == UINT32_MAX)
+        ImGui::Text("%s: none", label);
+    else if (preview.textureID == 0)
+        ImGui::Text("%s: %u (unavailable)", label, textureIndex);
+    else
+        ImGui::Text("%s: %u", label, textureIndex);
+    ImGui::PopID();
+}
+
+static bool IsTexturePreviewFormatSupported(RHIResourceFormat format)
+{
+    switch (format)
+    {
+    case RHIResourceFormat::R8G8B8A8Unorm:
+    case RHIResourceFormat::R8G8B8A8Srgb:
+    case RHIResourceFormat::B8G8R8A8Unrom:
+    case RHIResourceFormat::B8G8R8A8Srgb:
+    case RHIResourceFormat::A2R10G10B10Unorm:
+    case RHIResourceFormat::A2B10G10R10Unorm:
+    case RHIResourceFormat::B10G11R11Ufloat:
+    case RHIResourceFormat::R32SignedFloat:
+    case RHIResourceFormat::R32G32SignedFloat:
+    case RHIResourceFormat::R32G32B32SignedFloat:
+    case RHIResourceFormat::R32G32B32A32SignedFloat:
+    case RHIResourceFormat::R16SignedFloat:
+    case RHIResourceFormat::R16G16SignedFloat:
+    case RHIResourceFormat::R16G16B16SignedFloat:
+    case RHIResourceFormat::R16G16B16A16SignedFloat:
+    case RHIResourceFormat::R16Unorm:
+    case RHIResourceFormat::Bc1RgbUnorm:
+    case RHIResourceFormat::Bc1RgbSrgb:
+    case RHIResourceFormat::Bc1RgbaUnorm:
+    case RHIResourceFormat::Bc1RgbaSrgb:
+    case RHIResourceFormat::Bc2Unorm:
+    case RHIResourceFormat::Bc2Srgb:
+    case RHIResourceFormat::Bc3Unorm:
+    case RHIResourceFormat::Bc3Srgb:
+    case RHIResourceFormat::Bc4Unorm:
+    case RHIResourceFormat::Bc4Snorm:
+    case RHIResourceFormat::Bc5Unorm:
+    case RHIResourceFormat::Bc5Snorm:
+    case RHIResourceFormat::Bc6HUfloat:
+    case RHIResourceFormat::Bc6HSfloat:
+    case RHIResourceFormat::Bc7Unorm:
+    case RHIResourceFormat::Bc7Srgb:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static void DrawRenderGraphTexturePreviews(Renderer* renderer, Allocator* scratch)
+{
+    Vector<Renderer::TexturePreviewStat> previews(scratch);
+    renderer->DbgGetTexturePreviews(previews);
+    ImGui::SeparatorText("Texture Views");
+    if (previews.empty())
+    {
+        ImGui::TextDisabled("No texture views available");
+        return;
+    }
+
+    ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable |
+        ImGuiTableFlags_SizingStretchProp;
+    if (!ImGui::BeginTable("##RenderGraphTexturePreviewTable", 5, flags))
+        return;
+
+    ImGui::TableSetupColumn("Preview", ImGuiTableColumnFlags_WidthFixed, 58.0f);
+    ImGui::TableSetupColumn("Name");
+    ImGui::TableSetupColumn("Resource", ImGuiTableColumnFlags_WidthFixed, 72.0f);
+    ImGui::TableSetupColumn("View", ImGuiTableColumnFlags_WidthFixed, 72.0f);
+    ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 96.0f);
+    ImGui::TableHeadersRow();
+
+    ImVec2 previewSize{48.0f, 48.0f};
+    for (auto const& item : previews)
+    {
+        RHITexture* texture = item.view ? item.view->GetTexture() : nullptr;
+        bool supported = texture && IsTexturePreviewFormatSupported(item.format);
+        TexturePreviewImage preview = supported ? GetTexturePreviewImage(renderer, item.viewHandle, item.view,
+                                                                         ImGuiImplFoundationImageSamplerLinear)
+                                               : TexturePreviewImage{};
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        char previewId[32];
+        std::snprintf(previewId, sizeof(previewId), "Preview##%zu", static_cast<size_t>(item.viewHandle));
+        if (preview.textureID != 0)
+        {
+            if (ImGui::ImageButton(previewId, preview.textureID, previewSize))
+            {
+                char title[128];
+                std::snprintf(title, sizeof(title), "RenderGraph %s view #%zu", item.name.c_str(),
+                              static_cast<size_t>(item.viewHandle));
+                OpenTexturePreviewModal(title, preview);
+            }
+        }
+        else
+        {
+            ImGui::BeginDisabled();
+            ImGui::Button(supported ? "N/A" : "Skip", previewSize);
+            ImGui::EndDisabled();
+        }
+
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(item.name.c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%zu", static_cast<size_t>(item.resourceHandle));
+        ImGui::TableNextColumn();
+        ImGui::Text("%zu", static_cast<size_t>(item.viewHandle));
+        ImGui::TableNextColumn();
+        if (texture)
+            ImGui::Text("%ux%u", texture->mDesc.extent.x, texture->mDesc.extent.y);
+        else
+            ImGui::TextUnformatted("unavailable");
+    }
+
+    ImGui::EndTable();
+}
+
 void EditorDockSpaceAndMenuBar()
 {
     // Semi-transparent window background
@@ -652,18 +1085,18 @@ void FHierarchyPanel()
             changed |= ImGui::SliderFloat("Scale", &material.subsurfaceScale, 0.0f, 1.0f, "%.4f");
 
             ImGui::SeparatorText("Textures");
-            ImGui::Text("Base Color: %u", gpuMaterial.baseColorTexture);
-            ImGui::Text("Emissive: %u", gpuMaterial.emissiveTexture);
-            ImGui::Text("Metallic/Roughness: %u", gpuMaterial.metallicRoughnessTexture);
-            ImGui::Text("Normal: %u", gpuMaterial.normalTexture);
-            ImGui::Text("Transmission: %u", gpuMaterial.transmissionTexture);
-            ImGui::Text("Specular: %u", gpuMaterial.specularTexture);
-            ImGui::Text("Specular Color: %u", gpuMaterial.specularColorTexture);
-            ImGui::Text("Anisotropy: %u", gpuMaterial.anisotropyTexture);
-            ImGui::Text("Sheen Color: %u", gpuMaterial.sheenColorTexture);
-            ImGui::Text("Sheen Roughness: %u", gpuMaterial.sheenRoughnessTexture);
-            ImGui::Text("Clearcoat: %u", gpuMaterial.clearcoatTexture);
-            ImGui::Text("Clearcoat Roughness: %u", gpuMaterial.clearcoatRoughnessTexture);
+            DrawTexturePreview("Base Color", gpuMaterial.baseColorTexture);
+            DrawTexturePreview("Emissive", gpuMaterial.emissiveTexture);
+            DrawTexturePreview("Metallic/Roughness", gpuMaterial.metallicRoughnessTexture);
+            DrawTexturePreview("Normal", gpuMaterial.normalTexture, ImGuiImplFoundationImageSamplerNearest);
+            DrawTexturePreview("Transmission", gpuMaterial.transmissionTexture);
+            DrawTexturePreview("Specular", gpuMaterial.specularTexture);
+            DrawTexturePreview("Specular Color", gpuMaterial.specularColorTexture);
+            DrawTexturePreview("Anisotropy", gpuMaterial.anisotropyTexture);
+            DrawTexturePreview("Sheen Color", gpuMaterial.sheenColorTexture);
+            DrawTexturePreview("Sheen Roughness", gpuMaterial.sheenRoughnessTexture);
+            DrawTexturePreview("Clearcoat", gpuMaterial.clearcoatTexture);
+            DrawTexturePreview("Clearcoat Roughness", gpuMaterial.clearcoatRoughnessTexture);
 
             if (changed)
             {
@@ -961,6 +1394,7 @@ void FLightingPanel()
             ImGui::Text(hasEnv ? "HDRI Loaded" : "No HDRI");
             if (hasEnv)
             {
+                DrawTexturePreview("HDRI", GContext->gpuScene->GetEnvMapIndexOrDefault());
                 envChanged |= ImGui::SliderFloat("Azimuth Offset", &GEditor.shaderGlobals.envAzimuthOffset, -180.0f, 180.0f,
                                               "%.1f deg");
                 bool envEnabled = GEditor.shaderGlobals.useEnvMap != 0u;
@@ -999,6 +1433,7 @@ void FLightingPanel()
 
 void FRunningImGui()
 {
+    uint64_t texturePreviewFrame = ++TexturePreviewFrame();
     auto* renderer = GContext->renderer;
     float gpuTimingRes;
     auto timings = renderer->DbgProfilePassTiming(renderer->GetSync(), gpuTimingRes);
@@ -1306,6 +1741,7 @@ void FRunningImGui()
                     GContext->renderer->DbgGetMemoryStatistics(stats);
                     size_t totalBytes = DrawMemoryStatsTable("##RenderGraphMemoryTable", stats);
                     ImGui::Text("Renderer-Owned Total: %.1f MB", totalBytes / static_cast<float>(1 << 20u));
+                    DrawRenderGraphTexturePreviews(GContext->renderer, scratch);
                 }
                 ImGui::TreePop();
             }
@@ -1406,6 +1842,8 @@ void FRunningImGui()
         }
     }
     ImGui::End();
+    DrawTexturePreviewModal();
+    PruneTexturePreviewCache(texturePreviewFrame);
     ImGui::PopStyleColor();
 }
 

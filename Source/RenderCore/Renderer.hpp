@@ -668,7 +668,16 @@ namespace Foundation::RenderCore
             String name;
             size_t bytes;
         };
+        struct TexturePreviewStat
+        {
+            String name;
+            ResourceHandle resourceHandle{kInvalidHandle};
+            ResourceHandle viewHandle{kInvalidHandle};
+            RHIResourceFormat format{RHIResourceFormat::Undefined};
+            RHITextureView* view{};
+        };
         void DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const;
+        void DbgGetTexturePreviews(Vector<TexturePreviewStat>& outStats) const;
 #pragma endregion
 #pragma region Swapchain
         /**

@@ -78,8 +78,8 @@ namespace Foundation::RenderCore
          */
         void Free(uint32_t id);
 
-        Resource& GetResource(uint32_t id) { return mBindings.At(id)->resource; }
-        View& GetView(uint32_t id) { return mBindings.At(id)->view; }
+        RHITexture* GetResource(uint32_t id);
+        RHITextureView* GetView(uint32_t id);
         [[nodiscard]] Stats GetStats() const;
 
         RHIDeviceDescriptorSetLayout* GetDescriptorSetLayout() const { return mDescLayout.Get(); }

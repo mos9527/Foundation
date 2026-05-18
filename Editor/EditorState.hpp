@@ -239,6 +239,7 @@ void EditorDockSpaceAndMenuBar();
 void FHierarchyPanel();
 void FLightingPanel();
 void FRunningImGui();
+void ClearMaterialTexturePreviewCache();
 
 void DoRenderReadback(RendererHandles const& handles);
 void FRendering(RendererHandles const& handles);

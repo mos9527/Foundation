@@ -93,6 +93,26 @@ namespace Foundation::RenderCore
             mBindings.Destruct(ptr);
         }
     }
+    RHITexture* BindlessPool::GetResource(uint32_t id)
+    {
+        Binding* binding = mBindings.At(id);
+        if (!binding)
+            return nullptr;
+
+        return binding->resource.Visit(
+            [](RHITexture* texture) -> RHITexture* { return texture; },
+            [](RHIDeviceScopedHandle<RHITexture> const& texture) -> RHITexture* { return texture.Get(); });
+    }
+    RHITextureView* BindlessPool::GetView(uint32_t id)
+    {
+        Binding* binding = mBindings.At(id);
+        if (!binding)
+            return nullptr;
+
+        return binding->view.Visit(
+            [](RHITextureView* view) -> RHITextureView* { return view; },
+            [](RHITextureScopedHandle<RHITextureView> const& view) -> RHITextureView* { return view.Get(); });
+    }
     BindlessPool::Stats BindlessPool::GetStats() const
     {
         return {

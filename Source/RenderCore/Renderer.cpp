@@ -1184,6 +1184,32 @@ void Renderer::DbgGetMemoryStatistics(Vector<MemoryStat>& outStats) const
     }
 }
 
+void Renderer::DbgGetTexturePreviews(Vector<TexturePreviewStat>& outStats) const
+{
+    if (!mSetup || !mResources)
+        return;
+
+    for (ResourceHandle viewHandle = 0; viewHandle < mSetup->trackedViews.size(); viewHandle++)
+    {
+        if (viewHandle >= mResources->views.size())
+            continue;
+
+        auto const& [resourceHandle, desc] = mSetup->trackedViews[viewHandle];
+        if (resourceHandle >= mSetup->trackedResources.size())
+            continue;
+
+        RHITextureView* view = mResources->views[viewHandle].Visit([](auto const& handle) -> RHITextureView*
+        {
+            return handle.Get();
+        });
+        if (!view)
+            continue;
+
+        auto const& tracked = mSetup->trackedResources[resourceHandle];
+        outStats.push_back({tracked.name, resourceHandle, viewHandle, desc.format, view});
+    }
+}
+
 void Renderer::SetFrameSyncObjects()
 {
     while (mSwaps.size() < mFrameSwaps)
