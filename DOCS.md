@@ -1,8 +1,7 @@
 Foundation {#mainpage}
 ===
-[Foundation](https://github.com/mos9527/Foundation/) is a work-in-progress cross-platform rendering framework/renderer.
 
-TODO SCREENSHOTS 
+[Foundation](https://github.com/mos9527/Foundation/) is a work-in-progress cross-platform rendering framework/renderer.
 
 Editor
 ---
@@ -17,7 +16,9 @@ Sample scene and resources can be found at https://github.com/mos9527/Foundation
 ### Material Models
 #### Principled Material
 Layered PBR material interface based on the [OpenPBR model](https://academysoftwarefoundation.github.io/OpenPBR) (as seen in Blender's [Principled BSDF](https://docs.blender.org/manual/en/latest/render/shader_nodes/shader/principled.html)), offering full support with the exception of [3.8 Thin-film iridescence](https://academysoftwarefoundation.github.io/OpenPBR/#model/thin-filmiridescence)
-![Blender BSDF](https://raw.githubusercontent.com/mos9527/Foundation/refs/heads/dev/Images/render_shader-nodes_principled_layers.svg)
+
+<img src="https://raw.githubusercontent.com/mos9527/Foundation/refs/heads/dev/Images/blender-principled-bsdf-layers.svg" alt="Blender Principled BSDF" style="width:100%;max-width:100%;display:block;">
+
 #### Principled Hair Material
 [Principled Hair BSDF](https://docs.blender.org/manual/en/latest/render/shader_nodes/shader/hair_principled.html)'s Chiang single-scattering model implementation. Many bounces may be required to derive accurate hair scattering phenomena.
 
