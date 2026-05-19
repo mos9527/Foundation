@@ -1,14 +1,15 @@
 #include "GPUScene.hpp"
-#include "../Render/Precompute.hpp"
-#include "../Render/SheenLTCTable.hpp"
-#include "../Render/Tables.hpp"
-#include "../Render/ViewLUTs.hpp"
 #include <Core/AllocatorStack.hpp>
 #include <Core/Paths.hpp>
 #include <Math/Quantize.hpp>
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include "../Render/Precompute.hpp"
+#include "../Render/Tables/GGX.hpp"
+#include "../Render/Tables/LTCSheen.hpp"
+#include "../Render/Tables/Sobol.hpp"
+#include "../Render/Tables/ViewLUTs.hpp"
 #include "Scene.hpp"
 
 static FTexture LoadLUT(Allocator* allocator, StringView path)

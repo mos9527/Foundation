@@ -14,6 +14,7 @@ add_subdirectory(Shaders)
 add_custom_target(
         Editor_Data
         COMMAND ${CMAKE_COMMAND} -E make_directory "${ASSET_BUILD_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${ASSET_BUILD_DIR}/ViewLUTs"
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
                 "${CMAKE_CURRENT_LIST_DIR}/Render/Data"
                 "${ASSET_BUILD_DIR}"

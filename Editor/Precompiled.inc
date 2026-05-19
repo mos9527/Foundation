@@ -6,3 +6,4 @@
 #include "Scene/Serialization.hpp"
 #include "Scene/Texture.hpp"
 #include "Render/Render.hpp"
+#include "Render/Tables.hpp"

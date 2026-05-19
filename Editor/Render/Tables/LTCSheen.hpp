@@ -1,8 +1,7 @@
-#pragma once
-
 // Sheen LTC coefficients from Zeltner/Burley/Chiang 2022, volume fit.
 // https://github.com/tizian/ltc-sheen/blob/master/fitting/python/data/ltc_table_sheen_volume.cpp
 // Layout: RGBA32F, x = cos(theta_i), y = roughness, xyz = (transformA, transformB, albedo).
+#pragma once
 constexpr float kSheenLTCLut[32 * 32 * 4] = {
     0.01415f, 0.00060f, 0.00001f, 0.0f,
     0.00000f, 0.00000f, 0.00000f, 0.0f,

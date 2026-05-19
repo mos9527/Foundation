@@ -1,17 +1,17 @@
 #define CGLTF_IMPLEMENTATION
 #define CGLTF_VALIDATE_ENABLE_ASSERTS 1
 #include "Scene.hpp"
-#include "../Render/ViewLUTs.hpp"
 #include <Core/ThreadPool.hpp>
 #include <Math/Decompose.hpp>
 #include <algorithm>
-#include <cgltf.h>
 #include <cctype>
+#include <cgltf.h>
 #include <climits>
 #include <filesystem>
 #include <lz4.h>
 #include <string_view>
 #include <type_traits>
+#include "../Render/Tables/ViewLUTs.hpp"
 #include "Mesh.hpp"
 
 namespace

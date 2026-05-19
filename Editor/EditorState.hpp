@@ -1,11 +1,11 @@
 #pragma once
-#include "Editor.hpp"
-#include "Render/ViewLUTs.hpp"
-#include "Scene/Scene.hpp"
-#include "Scene/Texture.hpp"
-#include <ImGuizmo.h>
 #include <algorithm>
 #include <cmath>
+#include "Editor.hpp"
+#include <ImGuizmo.h>
+#include "Render/Tables/ViewLUTs.hpp"
+#include "Scene/Scene.hpp"
+#include "Scene/Texture.hpp"
 
 struct FArcballCamera
 {
