@@ -1344,6 +1344,9 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
             // SER
             // https://www.khronos.org/blog/boosting-ray-tracing-performance-with-shader-execution-reordering-introducing-vk-ext-ray-tracing-invocation-reorder
             // https://docs.vulkan.org/samples/latest/samples/extensions/ray_tracing_invocation_reorder/README.html
+            // And beware. AMD treats this as stub even on RDNA4 offerings.
+            // Sigh... Work Graphs, then?
+            // https://devblogs.microsoft.com/directx/shader-model-6-9-retail-and-more/#appendix
             HitObject hitObj = TraceHitObject(ray);
             uint coherenceHint = BuildSERCoherenceHint(hitObj, bounce);
             ReorderThread(hitObj, coherenceHint, kSERCoherenceHintBits);

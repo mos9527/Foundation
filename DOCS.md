@@ -31,7 +31,7 @@ Layered PBR material interface based on the [OpenPBR model](https://academysoftw
 
 ### Path Tracer
 - **Full Foundation Material support**
-- Unidirectional integrator with tiled sampling
+- Unidirectional megakernel integrator with tiled sampling
 - Sobol & PCG samplers
 - Path-traced Subsurface scattering
 - Path-traced Chiang Hair/fur shading
@@ -39,7 +39,7 @@ Layered PBR material interface based on the [OpenPBR model](https://academysoftw
 - Importance sampled environment maps
 - Anamorphic physical lens
 - Area, point, spot, and directional lights
-- Uniform/Power light sampling with alias tables
+- Uniform/Power light sampling with alias tables 
 - Runs entirely in your Vulkan GPU :)
 
 ### Rasterizer
