@@ -261,3 +261,22 @@ public struct V2F
     public uint32_t materialIndex : MATID;
     public uint32_t instanceID : INSTID;
 };
+
+public float ApproximateMipLevelFromUVGradient(float2 uvDX, float2 uvDY, uint width, uint height)
+{
+    float2 textureSize = float2(float(max(width, 1u)), float(max(height, 1u)));
+    float2 dx = uvDX * textureSize;
+    float2 dy = uvDY * textureSize;
+    float rho2 = max(dot(dx, dx), dot(dy, dy));
+    return max(0.0f, 0.5f * log2(max(rho2, 1e-12f)));
+}
+
+public float3 VisualizeApproximateMipLevel(float mipLevel)
+{
+    // False-color over mip levels [0, 8]. Black/blue means sharp, yellow/red means coarse.
+    float x = saturate(mipLevel / 8.0f);
+    return saturate(float3(
+        1.5f - abs(4.0f * x - 3.0f),
+        1.5f - abs(4.0f * x - 2.0f),
+        1.5f - abs(4.0f * x - 1.0f)));
+}

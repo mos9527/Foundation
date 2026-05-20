@@ -68,8 +68,8 @@ void main(uint2 tid: SV_DispatchThreadID) {
     float roughness = color2.w;
     float3 emissive = color2.xyz;
 
-    if ((flags & (kViewBaseColor | kViewMeshlet)) != 0) {
-        // Meshlet passed down to GBuffer RT0
+    if ((flags & (kViewBaseColor | kViewMeshlet | kViewTextureLOD)) != 0) {
+        // Meshlet and Texture LOD are passed down to GBuffer RT0.
         output[tid] = float4(baseColor, 1.0f);
         return;
     } else if ((flags & kViewMaterialID) != 0) {

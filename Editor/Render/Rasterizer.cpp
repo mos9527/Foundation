@@ -125,9 +125,10 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
             cmd->UpdateBuffer(ubo, 0, AsBytes(AsSpan(*scene.gsGlobals)));
             cmd->FillBuffer(counter, 0u);
         });
-    bool kDebugViewUnlit = cfg.viewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewMeshlet);
+    bool kDebugViewUnlit = cfg.viewFlags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewMeshlet | kViewTextureLOD);
     bool useRTShadows = (cfg.viewFlags & kEnableRasterRTShadows) && !kDebugViewUnlit && hasTLAS;
     uint32_t lightingViewFlags = useRTShadows ? cfg.viewFlags : (cfg.viewFlags & ~kEnableRasterRTShadows);
+    uint32_t gbufferFlags = cfg.viewFlags | (cfg.forceTextureLOD0 ? kForceTextureLOD0 : 0u);
     // Raytracing
     if (useRTShadows)
     {
@@ -335,7 +336,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                     // AsBytes(AsSpan(TSFlags)));
                     r->BindShader(self, RHIShaderStageBits::Mesh, "main", Paths::Resolve("data/shaders/EMSBasic.spv"));
                     r->BindShader(self, RHIShaderStageBits::Fragment, "main", Paths::Resolve("data/shaders/EPSGBuffer.spv"),
-                                  AsBytes(AsSpan(cfg.viewFlags)));
+                                  AsBytes(AsSpan(gbufferFlags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
                     r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::AllGraphics, "instances");

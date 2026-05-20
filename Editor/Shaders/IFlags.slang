@@ -8,9 +8,10 @@ public static const int kViewPosition = 1 << 5;
 // Per-lobe AOV view flags (Diffuse / Specular)
 public static const int kViewAOVDiffuse  = 1 << 7;
 public static const int kViewAOVSpecular = 1 << 8;
-public static const int kViewPTRayDX     = 1 << 9;
+public static const int kViewTextureLOD = 1 << 9;
 
 public static const int kEnableRasterRTShadows = 1 << 16;
+public static const int kForceTextureLOD0 = 1 << 24;
 
 public static const int kCullFrustum = 1 << 0;
 public static const int kCullOcclusion = 1 << 1;

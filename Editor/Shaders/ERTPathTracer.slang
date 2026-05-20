@@ -42,6 +42,7 @@ static const uint kSERCoherenceHintBits = 8u;
 static const uint kPTCompileOptionShaderExecutionReordering = 1u << 0;
 static const uint kPTCompileOptionSamplerSobol = 1u << 1;
 static const uint kPTCompileOptionSamplerPCG = 1u << 2;
+static const uint kPTCompileOptionForceTextureLOD0 = 1u << 3;
 [[SpecializationConstant]] uint ptCompileOptions;
 
 static const uint kRayTypeSurface = 0u;
@@ -138,7 +139,6 @@ struct HitState
     float3 tangent;
     float3 bitangent;
     float2 uv;
-    bool hasUVGradient;
     float2 uvDX;
     float2 uvDY;
 };
@@ -303,7 +303,6 @@ void ApplyPrimaryRayDifferential(inout HitState hit, GSInstance inst,
 
     hit.uvDX = uvDX;
     hit.uvDY = uvDY;
-    hit.hasUVGradient = true;
 }
 
 HitState GetHitState(uint meshOffset, uint primitive, float2 bary, GSInstance inst,
@@ -311,7 +310,6 @@ HitState GetHitState(uint meshOffset, uint primitive, float2 bary, GSInstance in
                      RayDifferential differential)
 {
     HitState hit;
-    hit.hasUVGradient = false;
     hit.uvDX = float2(0.0f);
     hit.uvDY = float2(0.0f);
 
@@ -398,7 +396,6 @@ HitState GetCurveHitState(uint curveOffset, uint primitive, float2 uv, GSInstanc
                           float3 rayOrigin, float3 rayDirection, float hitT)
 {
     HitState hit;
-    hit.hasUVGradient = false;
     hit.uvDX = float2(0.0f);
     hit.uvDY = float2(0.0f);
     hit.position = rayOrigin + rayDirection * hitT;
@@ -685,14 +682,14 @@ IMaterial MakeMaterial(Payload surface, float3 wo, bool isCurve = false, bool fo
 }
 
 
-float4 SampleMaterialTexture(uint textureIndex, float2 uv, bool hasUVGradient, float2 uvDX, float2 uvDY)
+float4 SampleMaterialTexture(uint textureIndex, float2 uv, float2 uvDX, float2 uvDY)
 {
-    if (hasUVGradient)
-        return textures[NonUniformResourceIndex(textureIndex)].SampleGrad(textureSampler, uv, uvDX, uvDY);
-    return textures[NonUniformResourceIndex(textureIndex)].SampleLevel(textureSampler, uv, 0);
+    if ((ptCompileOptions & kPTCompileOptionForceTextureLOD0) != 0)
+        return textures[NonUniformResourceIndex(textureIndex)].SampleLevel(textureSampler, uv, 0);
+    return textures[NonUniformResourceIndex(textureIndex)].SampleGrad(textureSampler, uv, uvDX, uvDY);
 }
 
-void SampleMaterials(GSMaterial material, float2 uv, bool hasUVGradient, float2 uvDX, float2 uvDY,
+void SampleMaterials(GSMaterial material, float2 uv, float2 uvDX, float2 uvDY,
     out float4 baseColor, out float4 normalTBN, out float4 pbrMetalRough, out float4 emissive,
     out float transmission, out float specularFactor, out float3 specularColorFactor,
     out float anisotropyStrength, out float2 anisotropyDirection,
@@ -701,28 +698,28 @@ void SampleMaterials(GSMaterial material, float2 uv, bool hasUVGradient, float2 
 {
     baseColor = material.baseColorFactor;
     if (material.baseColorTexture != ~0u)
-        baseColor *= SampleMaterialTexture(material.baseColorTexture, uv, hasUVGradient, uvDX, uvDY);
+        baseColor *= SampleMaterialTexture(material.baseColorTexture, uv, uvDX, uvDY);
     normalTBN = float4(0, 0, 1, 0);
     if (material.normalTexture != ~0u)
-        normalTBN = SampleMaterialTexture(material.normalTexture, uv, hasUVGradient, uvDX, uvDY) * 2 - float4(1);
+        normalTBN = SampleMaterialTexture(material.normalTexture, uv, uvDX, uvDY) * 2 - float4(1);
     pbrMetalRough = float4(1, material.roughnessFactor, material.metallicFactor, 1);
     if (material.metallicRoughnessTexture != ~0u)
-        pbrMetalRough *= SampleMaterialTexture(material.metallicRoughnessTexture, uv, hasUVGradient, uvDX, uvDY);
+        pbrMetalRough *= SampleMaterialTexture(material.metallicRoughnessTexture, uv, uvDX, uvDY);
     emissive = float4(material.emissiveFactor, 0);
     if (material.emissiveTexture != ~0u)
-        emissive *= SampleMaterialTexture(material.emissiveTexture, uv, hasUVGradient, uvDX, uvDY);
+        emissive *= SampleMaterialTexture(material.emissiveTexture, uv, uvDX, uvDY);
 
     transmission = material.transmissionFactor;
     if (material.transmissionTexture != ~0u)
-        transmission *= SampleMaterialTexture(material.transmissionTexture, uv, hasUVGradient, uvDX, uvDY).r;
+        transmission *= SampleMaterialTexture(material.transmissionTexture, uv, uvDX, uvDY).r;
 
     specularFactor = material.specularFactor;
     if (material.specularTexture != ~0u)
-        specularFactor *= SampleMaterialTexture(material.specularTexture, uv, hasUVGradient, uvDX, uvDY).a;
+        specularFactor *= SampleMaterialTexture(material.specularTexture, uv, uvDX, uvDY).a;
 
     specularColorFactor = material.specularColorFactor;
     if (material.specularColorTexture != ~0u)
-        specularColorFactor *= SampleMaterialTexture(material.specularColorTexture, uv, hasUVGradient, uvDX, uvDY).rgb;
+        specularColorFactor *= SampleMaterialTexture(material.specularColorTexture, uv, uvDX, uvDY).rgb;
 
     float c = cos(material.anisotropyRotation);
     float s = sin(material.anisotropyRotation);
@@ -730,7 +727,7 @@ void SampleMaterials(GSMaterial material, float2 uv, bool hasUVGradient, float2 
     anisotropyDirection = float2(c, s);
     if (material.anisotropyTexture != ~0u)
     {
-        float3 anisotropyTex = SampleMaterialTexture(material.anisotropyTexture, uv, hasUVGradient, uvDX, uvDY).rgb;
+        float3 anisotropyTex = SampleMaterialTexture(material.anisotropyTexture, uv, uvDX, uvDY).rgb;
         float2 texDirection = anisotropyTex.rg * 2.0f - float2(1.0f);
         texDirection = LengthSquared(texDirection) > 1e-8f ? normalize(texDirection) : float2(1.0f, 0.0f);
         anisotropyDirection = float2(c * texDirection.x - s * texDirection.y,
@@ -740,24 +737,24 @@ void SampleMaterials(GSMaterial material, float2 uv, bool hasUVGradient, float2 
 
     float3 sheenColor = material.sheenColorFactor;
     if (material.sheenColorTexture != ~0u)
-        sheenColor *= SampleMaterialTexture(material.sheenColorTexture, uv, hasUVGradient, uvDX, uvDY).rgb;
+        sheenColor *= SampleMaterialTexture(material.sheenColorTexture, uv, uvDX, uvDY).rgb;
 
     sheenWeight = saturate(MaxComponent(sheenColor));
     sheenTint = sheenWeight > EPS ? saturate(sheenColor / sheenWeight) : float3(1.0f);
 
     sheenRoughness = material.sheenRoughnessFactor;
     if (material.sheenRoughnessTexture != ~0u)
-        sheenRoughness *= SampleMaterialTexture(material.sheenRoughnessTexture, uv, hasUVGradient, uvDX, uvDY).a;
+        sheenRoughness *= SampleMaterialTexture(material.sheenRoughnessTexture, uv, uvDX, uvDY).a;
     sheenRoughness = saturate(sheenRoughness);
 
     clearcoatFactor = material.clearcoatFactor;
     if (material.clearcoatTexture != ~0u)
-        clearcoatFactor *= SampleMaterialTexture(material.clearcoatTexture, uv, hasUVGradient, uvDX, uvDY).r;
+        clearcoatFactor *= SampleMaterialTexture(material.clearcoatTexture, uv, uvDX, uvDY).r;
     clearcoatFactor = saturate(clearcoatFactor);
 
     clearcoatRoughness = material.clearcoatRoughnessFactor;
     if (material.clearcoatRoughnessTexture != ~0u)
-        clearcoatRoughness *= SampleMaterialTexture(material.clearcoatRoughnessTexture, uv, hasUVGradient, uvDX, uvDY).g;
+        clearcoatRoughness *= SampleMaterialTexture(material.clearcoatRoughnessTexture, uv, uvDX, uvDY).g;
     clearcoatRoughness = saturate(clearcoatRoughness);
 }
 
@@ -772,7 +769,7 @@ Payload SamplePayload(HitPayload payload, RayDesc ray, RayDifferential different
     GSMaterial material = LoadMaterial(res.materialID);
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
     float2 anisotropyDirection;
-    SampleMaterials(material, res.hit.uv, res.hit.hasUVGradient, res.hit.uvDX, res.hit.uvDY,
+    SampleMaterials(material, res.hit.uv, res.hit.uvDX, res.hit.uvDY,
                     baseColor4, normalTBN, pbrMetalRough, emissive4,
                     res.transmission, res.specularFactor, res.specularColorFactor,
                     res.anisotropyStrength, anisotropyDirection,
@@ -815,7 +812,7 @@ Payload SampleCurvePayload(HitPayload payload, RayDesc ray)
     GSMaterial material = LoadMaterial(res.materialID);
     float4 baseColor4, normalTBN, pbrMetalRough, emissive4;
     float2 anisotropyDirection;
-    SampleMaterials(material, res.hit.uv, res.hit.hasUVGradient, res.hit.uvDX, res.hit.uvDY,
+    SampleMaterials(material, res.hit.uv, res.hit.uvDX, res.hit.uvDY,
                     baseColor4, normalTBN, pbrMetalRough, emissive4,
                     res.transmission, res.specularFactor, res.specularColorFactor,
                     res.anisotropyStrength, anisotropyDirection,
@@ -920,39 +917,35 @@ CameraRay GenerateCameraRay<S : ISampler>(uint2 pixel, inout S rng)
 
     CameraRay cameraRay;
     cameraRay.ray = MakeCameraRay(GeneratePrimaryRayDirection(pixelSample), lensSample);
+    if ((ptCompileOptions & kPTCompileOptionForceTextureLOD0) != 0)
+    {
+        cameraRay.differential = InvalidRayDifferential();
+        return cameraRay;
+    }
     cameraRay.differential.valid = true;
     cameraRay.differential.rayDX = MakeCameraRay(GeneratePrimaryRayDirection(pixelSample + float2(1.0f, 0.0f)), lensSample);
     cameraRay.differential.rayDY = MakeCameraRay(GeneratePrimaryRayDirection(pixelSample + float2(0.0f, 1.0f)), lensSample);
     return cameraRay;
 }
 
-bool IsPTRayDXDebugView()
+bool IsPTTextureLODDebugView()
 {
-    return (globalParams.ptViewFlags & kViewPTRayDX) != 0;
+    return (globalParams.ptViewFlags & kViewTextureLOD) != 0;
 }
 
-float3 VisualizeRayDXMagnitude(float magnitude)
+float3 VisualizeTextureLOD(Payload surface)
 {
-    // Log false-color over roughly 2^-12 .. 2^4 scene units per pixel.
-    float x = saturate((log2(max(magnitude, 1e-8f)) + 12.0f) / 16.0f);
-    return saturate(float3(
-        1.5f - abs(4.0f * x - 3.0f),
-        1.5f - abs(4.0f * x - 2.0f),
-        1.5f - abs(4.0f * x - 1.0f)));
-}
+    GSMaterial material = LoadMaterial(surface.materialID);
+    if (material.baseColorTexture == ~0u)
+        return float3(0.0f);
 
-float3 VisualizeRayDX(CameraRay cameraRay, HitState hit)
-{
-    float3 hitDX;
-    if (!cameraRay.differential.valid ||
-        !IntersectRayDifferentialPlane(cameraRay.differential.rayDX, hit.position, hit.geometryNormal, hitDX))
-        return float3(1.0f, 0.0f, 1.0f);
+    if ((ptCompileOptions & kPTCompileOptionForceTextureLOD0) != 0)
+        return VisualizeApproximateMipLevel(0.0f);
 
-    float magnitude = length(hitDX - hit.position);
-    if (isnan(magnitude) || isinf(magnitude))
-        return float3(1.0f, 0.0f, 1.0f);
-
-    return VisualizeRayDXMagnitude(magnitude);
+    uint width, height;
+    textures[NonUniformResourceIndex(material.baseColorTexture)].GetDimensions(width, height);
+    float mipLevel = ApproximateMipLevelFromUVGradient(surface.hit.uvDX, surface.hit.uvDY, width, height);
+    return VisualizeApproximateMipLevel(mipLevel);
 }
 
 // -- Main Shader Routines
@@ -1504,7 +1497,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
     uint specularBounces = 0;
     uint transmissionBounces = 0;
     CameraRay cameraRay = GenerateCameraRay(pix, rng);
-    bool rayDXDebugView = IsPTRayDXDebugView();
+    bool textureLODDebugView = IsPTTextureLODDebugView();
     RayDesc ray = cameraRay.ray;
     for (uint bounce = 0; ; bounce++) {
         HitPayload payload;
@@ -1530,7 +1523,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         if (AddAnalyticLightHitEmission(hit, ray.Direction, view, beta, bounce, firstBounceCategory,
                                         lastSamplePDF, lighting, radiance, hitPoint))
         {
-            if (rayDXDebugView && bounce == 0)
+            if (textureLODDebugView && bounce == 0)
             {
                 diffuse[pix] = float4(0.0f);
                 specular[pix] = float4(0.0f);
@@ -1544,7 +1537,7 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
 
         if (hit.kind == HitKind::None)
         {
-            if (rayDXDebugView && bounce == 0)
+            if (textureLODDebugView && bounce == 0)
             {
                 diffuse[pix] = float4(0.0f);
                 specular[pix] = float4(0.0f);
@@ -1561,9 +1554,9 @@ void PathTrace<S : ISampler>(uint2 pix, uint subSample, inout S rng)
         if (bounce == 0 && hit.kind == HitKind::Triangle)
             materialDifferential = cameraRay.differential;
         Payload surface = hit.kind == HitKind::Curve ? SampleCurvePayload(hit.raw, ray) : SamplePayload(hit.raw, ray, materialDifferential);
-        if (rayDXDebugView && bounce == 0)
+        if (textureLODDebugView && bounce == 0)
         {
-            diffuse[pix] = float4(VisualizeRayDX(cameraRay, surface.hit), 1.0f);
+            diffuse[pix] = float4(VisualizeTextureLOD(surface), 1.0f);
             specular[pix] = float4(0.0f);
             WritePrimaryPickID(pix, hit.raw.instance);
             return;

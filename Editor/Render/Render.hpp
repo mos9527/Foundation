@@ -106,9 +106,10 @@ static const int kViewPTDirect = 1 << 6;
 // Per-lobe AOV view flags (Diffuse / Specular)
 static const int kViewAOVDiffuse  = 1 << 7;
 static const int kViewAOVSpecular = 1 << 8;
-static const int kViewPTRayDX     = 1 << 9;
+static const int kViewTextureLOD = 1 << 9;
 
 static const int kEnableRasterRTShadows = 1 << 16;
+static const int kForceTextureLOD0 = 1 << 24;
 
 static const int kCullFrustum = 1 << 0;
 static const int kCullOcclusion = 1 << 1;
@@ -123,11 +124,13 @@ static constexpr uint32_t kPTSamplerSobol = 1u;
 static constexpr uint32_t kPTCompileOptionShaderExecutionReordering = 1u << 0;
 static constexpr uint32_t kPTCompileOptionSamplerSobol = 1u << 1;
 static constexpr uint32_t kPTCompileOptionSamplerPCG = 1u << 2;
+static constexpr uint32_t kPTCompileOptionForceTextureLOD0 = 1u << 3;
 
-inline uint32_t PTPackCompileOptions(bool shaderExecutionReordering, uint32_t sampler)
+inline uint32_t PTPackCompileOptions(bool shaderExecutionReordering, uint32_t sampler, bool forceTextureLOD0)
 {
     uint32_t options = shaderExecutionReordering ? kPTCompileOptionShaderExecutionReordering : 0u;
     options |= sampler == kPTSamplerPCG ? kPTCompileOptionSamplerPCG : kPTCompileOptionSamplerSobol;
+    options |= forceTextureLOD0 ? kPTCompileOptionForceTextureLOD0 : 0u;
     return options;
 }
 
@@ -137,6 +140,7 @@ struct RendererConfig
     unsigned cullFlags{kCullFrustum | kCullOcclusion | kCullBackface};
     uint32_t ptSampler{kPTSamplerSobol};
     bool ptShaderExecutionReordering{true};
+    bool forceTextureLOD0{false};
 };
 
 struct RendererPicking

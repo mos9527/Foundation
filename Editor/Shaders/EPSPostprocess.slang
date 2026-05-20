@@ -39,7 +39,7 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     }
 
     float4 src = lighting.Load(coord);
-    if ((flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewMeshlet)) != 0)
+    if ((flags & (kViewBaseColor | kViewNormal | kViewMaterialID | kViewPosition | kViewMeshlet | kViewTextureLOD)) != 0)
         return src;
 
     PostprocessInfo pp;

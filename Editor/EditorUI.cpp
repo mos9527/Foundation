@@ -1678,6 +1678,11 @@ void FRunningImGui()
             ImGui::EndDisabled();
             if (!serSupported)
                 ImGui::TextDisabled("SER is not supported by this device.");
+            if (ImGui::Checkbox("Force Texture LOD 0", &GEditor.rendererConfig.forceTextureLOD0))
+            {
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.state = FERunningEnter;
+            }
             ImGui::SeparatorText("Ray Bounce");
             ImGui::SliderInt("Diffuse", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesDiffuse), 0, 64);
             ImGui::SliderInt("Specular", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesSpecular), 0, 64);
@@ -1709,9 +1714,11 @@ void FRunningImGui()
             static float lodLogThreshold = 3;
             ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
             GEditor.shaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
+            ImGui::SeparatorText("Performance");
+            changed |= ImGui::Checkbox("Force Texture LOD 0", &GEditor.rendererConfig.forceTextureLOD0);
             {
-                const char* items[] = {"Overdraw", "Meshlet", "Material ID"};
-                const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID};
+                const char* items[] = {"Overdraw", "Meshlet", "Material ID", "Texture LOD"};
+                const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID, kViewTextureLOD};
                 ImGui::SeparatorText("Debug View");
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
             }
@@ -1731,10 +1738,24 @@ void FRunningImGui()
         if (GEditor.rendererMode == ERendererMode::PathTracer)
         {
             {
-                const char* items[] = {"Diffuse Buffer", "Specular Buffer", "Ray dX"};
-                const unsigned values[] = {kViewAOVDiffuse, kViewAOVSpecular, kViewPTRayDX};
+                const char* items[] = {"Diffuse Buffer", "Specular Buffer"};
+                const unsigned values[] = {kViewAOVDiffuse, kViewAOVSpecular};
                 ImGui::SeparatorText("AOV View");
-                changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
+                if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
+                {
+                    GEditor.rendererConfig.viewFlags &= ~kViewTextureLOD;
+                    changed = true;
+                }
+            }
+            {
+                const char* items[] = {"Texture LOD"};
+                const unsigned values[] = {kViewTextureLOD};
+                ImGui::SeparatorText("Debug View");
+                if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
+                {
+                    GEditor.rendererConfig.viewFlags &= ~(kViewAOVDiffuse | kViewAOVSpecular);
+                    changed = true;
+                }
             }
         }
         if (GEditor.rendererMode == ERendererMode::Raster)
