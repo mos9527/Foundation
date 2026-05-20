@@ -124,9 +124,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             const bool shaderExecutionReordering =
                 cfg.ptShaderExecutionReordering && context->device->GetCapabilities().shaderExecutionReordering;
             const uint ptCompileOptions = PTPackCompileOptions(shaderExecutionReordering, cfg.ptSampler);
-            const auto pathTracerShader = Paths::Resolve(shaderExecutionReordering
-                                                             ? "data/shaders/ERTPathTracer_SER.spv"
-                                                             : "data/shaders/ERTPathTracer.spv");
+            const auto pathTracerShader = Paths::Resolve("data/shaders/ERTPathTracer.spv");
             r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", pathTracerShader,
                           AsBytes(AsSpan(ptCompileOptions)));
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RayClosestHit",

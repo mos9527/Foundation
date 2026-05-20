@@ -21,6 +21,12 @@ foreach(SlangFile IN LISTS SLANG_FILES)
             spvMinLod
             spvFragmentFullyCoveredEXT
         )
+        if(ShaderName STREQUAL "ERTPathTracer")
+            list(APPEND ShaderCapabilities
+                # Otherwise Slang emits VK_NV_ray_tracing_invocation_reorder. Eugh.
+                spvShaderInvocationReorderEXT
+            )
+        endif()
     elseif(ShaderName STREQUAL "ECSLighting")
         set(ShaderCapabilities
             spvRayQueryKHR
@@ -41,21 +47,4 @@ foreach(SlangFile IN LISTS SLANG_FILES)
             CAPABILITIES    ${ShaderCapabilities}
     )
     add_dependencies(Editor_Shaders "Shader_${ShaderName}")
-
-    # TODO - figure out a way for us to build shader variants _cleanly_
-    if(ShaderName STREQUAL "ERTPathTracer")
-        slangc_compile(
-                "Shader_${ShaderName}_SER"
-                SOURCE          "${SlangFile}"
-                OUTPUT_DIR      "${SHADER_BUILD_DIR}"
-                OUTPUT_NAME     "${ShaderName}_SER"
-                DEFINES         PT_ENABLE_SER=1
-
-                CAPABILITIES    ${ShaderCapabilities}
-                                # Otherwise Slang emits VK_NV_ray_tracing_invocation_reorder. Eugh.
-                                spvShaderInvocationReorderEXT
-        )
-        add_dependencies(Editor_Shaders "Shader_${ShaderName}_SER")
-    endif()
 endforeach()
-
