@@ -90,6 +90,8 @@ float4 fragMain(float2 uv: TEXCOORD0, float2 fragCoord : SV_Position) : SV_TARGE
     int3 coord = int3(int(sourcePixel.x), int(sourcePixel.y), 0);
 
     float3 src = LoadPTPostprocessRadiance(coord);
+    if ((flags & kViewPTRayDX) != 0)
+        return float4(saturate(src), 1.0f);
 
     PostprocessInfo pp;
     pp.Exposure = globalParams.camEV;

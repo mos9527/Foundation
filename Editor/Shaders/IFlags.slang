@@ -8,6 +8,7 @@ public static const int kViewPosition = 1 << 5;
 // Per-lobe AOV view flags (Diffuse / Specular)
 public static const int kViewAOVDiffuse  = 1 << 7;
 public static const int kViewAOVSpecular = 1 << 8;
+public static const int kViewPTRayDX     = 1 << 9;
 
 public static const int kEnableRasterRTShadows = 1 << 16;
 

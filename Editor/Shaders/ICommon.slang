@@ -245,6 +245,7 @@ public struct UBO
     public uint32_t ptDispatchTileSide; // 1 = full dispatch, n > 1 = 1/(n*n) tile dispatch.
     // -- Debug
     public uint32_t postShowOutline;
+    public uint32_t ptViewFlags;
 };
 // ^^^
 

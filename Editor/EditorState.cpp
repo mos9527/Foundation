@@ -189,6 +189,7 @@ static void FRunning()
         : 0.0f;
     GEditor.shaderGlobals.fbWidth = static_cast<float>(renderExtent.x);
     GEditor.shaderGlobals.fbHeight = static_cast<float>(renderExtent.y);
+    GEditor.shaderGlobals.ptViewFlags = GEditor.rendererConfig.viewFlags;
     
     if (GEditor.cameraUpdated)
         GEditor.shaderGlobals.ptAccumulatedFrames = 0, GEditor.cameraUpdated = false;

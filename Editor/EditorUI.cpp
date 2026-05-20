@@ -32,7 +32,7 @@ static constexpr PTSPPOption kPTSPPOptions[] = {
     {"4",    4u, 1u},
     {"5",    5u, 1u},
 };
-static constexpr int kPTSPPOptionCount = static_cast<int>(sizeof(kPTSPPOptions) / sizeof(kPTSPPOptions[0]));
+static constexpr int kPTSPPOptionCount = std::size(kPTSPPOptions);
 static constexpr const char* kExternalViewLUTLabel = "<external>";
 
 template <typename T>
@@ -1731,8 +1731,8 @@ void FRunningImGui()
         if (GEditor.rendererMode == ERendererMode::PathTracer)
         {
             {
-                const char* items[] = {"Diffuse Buffer", "Specular Buffer"};
-                const unsigned values[] = {kViewAOVDiffuse, kViewAOVSpecular};
+                const char* items[] = {"Diffuse Buffer", "Specular Buffer", "Ray dX"};
+                const unsigned values[] = {kViewAOVDiffuse, kViewAOVSpecular, kViewPTRayDX};
                 ImGui::SeparatorText("AOV View");
                 changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
             }

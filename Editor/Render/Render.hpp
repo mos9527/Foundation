@@ -55,9 +55,10 @@ struct UBO
     uint32_t ptMaxBouncesTransmission{12u};
     float ptFireflyClamp{1.0f}; // 10^x
     uint32_t ptSamplesPerPixel{1u}; // Always >= 1; fractional SPP uses ptDispatchTileSide instead.
-    uint32_t ptDispatchTileSide{5u}; // 1 = full dispatch, n > 1 = 1/(n*n) tile dispatch.
+    uint32_t ptDispatchTileSide{3u}; // 1 = full dispatch, n > 1 = 1/(n*n) tile dispatch.
     // -- Debug
     uint32_t postShowOutline{0u};
+    uint32_t ptViewFlags{0u};
 };
 #pragma pack(pop)
 
@@ -105,6 +106,7 @@ static const int kViewPTDirect = 1 << 6;
 // Per-lobe AOV view flags (Diffuse / Specular)
 static const int kViewAOVDiffuse  = 1 << 7;
 static const int kViewAOVSpecular = 1 << 8;
+static const int kViewPTRayDX     = 1 << 9;
 
 static const int kEnableRasterRTShadows = 1 << 16;
 

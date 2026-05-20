@@ -193,8 +193,6 @@ Also w/ blog post series update on:
 - [ ] Spatial Reuse ([SHaRC](https://github.com/NVIDIA-RTX/SHARC)?)
 - [ ] MNEE (Manifold NEE) for *much* better caustics convergence
   - https://jo.dreggn.org/home/2015_mnee_talk.pdf
-- [ ] Texture sampling rate via ray differentials
-  - Easy for camera rays, not so much for ones bouncing off BSDFs
 - [ ] Volume rendering
 - [Revisiting Physically Based Shading at Imageworks - Kulla & Conty 2017](https://blog.selfshadow.com/publications/s2017-shading-course/imageworks/s2017_pbs_imageworks_slides_v2.pdf)
   - [ ] *Complete* Multiscatter Energy Compensation
@@ -229,6 +227,8 @@ Done, awaiting Blog Update:
 - [x] Importance sampling Infinite Image Lights
 
 Done:
+- [x] Texture sampling rate via ray differentials for primary rays
+  - Easy for camera rays, not so much for ones bouncing off BSDFs 
 - [x] Coat BSDF
 - [x] Sheen BSDF/SGGX approx.
   - LTC Sheen "Practical Multiple-Scattering Sheen Using Linearly Transformed Cosines" https://github.com/tizian/ltc-sheen
