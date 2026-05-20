@@ -18,7 +18,7 @@ int main(int argc, char** argv)
         "Mandelbrot", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Compute, "csMain", Foundation::Core::PathsResolve("data/shaders/MandelbrotCompute.spv"));
+            r->BindShader(self, RHIShaderStageBits::Compute, "csMain", Foundation::Core::PathsResolve("Data/Shaders/MandelbrotCompute.spv"));
             r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(PushConstant));
             r->BindBackbufferUAV(self, 0);
         },

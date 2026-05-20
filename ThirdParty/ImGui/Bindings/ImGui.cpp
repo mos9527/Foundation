@@ -198,8 +198,8 @@ void ImGui_ImplFoundation_ImplPassSetup(PassHandle self, Renderer* r, ResourceHa
     r->BindBufferCopyDst(self, vtxBuffer);
     r->BindBufferCopyDst(self, idxBuffer);
     r->BindPushConstant(self, RHIShaderStageBits::Vertex, 0, sizeof(PushConstants));
-    r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", Foundation::Core::PathsResolve("data/shaders/ImGui.spv"));
-    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("data/shaders/ImGui.spv"));
+    r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", Foundation::Core::PathsResolve("Data/Shaders/ImGui.spv"));
+    r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("Data/Shaders/ImGui.spv"));
     r->BindDescriptorSet(self, "textures", gImGuiTexturePool->GetDescriptorSetLayout());
     // We have fixed samplers for ImGui - quite enough for UI elements
     r->BindTextureSampler(self, linSampler, "linSampler");

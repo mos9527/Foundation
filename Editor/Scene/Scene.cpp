@@ -142,21 +142,22 @@ void LoadFoundationColorManagementExtension(cgltf_data const* data, FSceneGlobal
         result.viewLutHdrIndex = MatchViewLUTIndex(kViewLUTsHdr, view, look, kDefaultViewLUTHdr);
 }
 
-void LoadFoundationEnvironmentExtension(cgltf_data const* data, StringView scenePath, FScene& scene)
+Optional<String> LoadFoundationEnvironmentExtension(cgltf_data const* data, StringView scenePath, FScene& scene)
 {
     cgltf_scene const* gltfScene = data->scene ? data->scene : (data->scenes_count > 0 ? &data->scenes[0] : nullptr);
     if (!gltfScene || !gltfScene->has_foundation_environment)
-        return;
+        return {};
 
     cgltf_foundation_environment const& environment = gltfScene->foundation_environment;
     FSceneGlobals globals = scene.GetSceneGlobals();
+    globals.environmentTexture = kInvalidTexture;
     if (environment.type == cgltf_foundation_environment_type_color)
     {
         globals.type = FSceneEnvironmentType::Color;
         globals.color = {environment.color[0], environment.color[1], environment.color[2]};
         globals.strength = environment.strength;
         scene.Set(globals);
-        return;
+        return {};
     }
 
     if (environment.type == cgltf_foundation_environment_type_hdri)
@@ -174,10 +175,11 @@ void LoadFoundationEnvironmentExtension(cgltf_data const* data, StringView scene
         globals.strength = environment.strength;
         globals.azimuthOffset = environment.azimuth_offset;
         scene.Set(globals);
-        return;
+        return hdriPath.string();
     }
 
     CHECK_MSG(false, "EXT_foundation_environment has unsupported type");
+    return {};
 }
 
 void LoadFoundationMaterialExtension(cgltf_material const* src, FMaterial& material)
@@ -292,6 +294,21 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
     CHECK_MSG(tables.meshes.size() <= UINT32_MAX, "FScene mesh table is too large");
     CHECK_MSG(tables.curves.size() <= UINT32_MAX, "FScene curve table is too large");
     CHECK_MSG(tables.textures.size() <= UINT32_MAX, "FScene texture table is too large");
+
+    switch (tables.globals.type)
+    {
+    case FSceneEnvironmentType::Color:
+        break;
+    case FSceneEnvironmentType::EnvMap:
+        CHECK_MSG(tables.globals.environmentTexture != kInvalidTexture,
+                  "FScene EnvMap environment requires globals.environmentTexture");
+        ValidateTextureIndex(tables.globals.environmentTexture, tables.textures.size(), "globals.environmentTexture");
+        break;
+    default:
+        CHECK_MSG(false, "FScene globals have unsupported environment type {}",
+                  static_cast<uint32_t>(tables.globals.type));
+        break;
+    }
 
     for (auto const& light : tables.lights)
     {
@@ -754,7 +771,7 @@ void BuildGLTFSerializedScene(StringView path, FScene& scene, Allocator* scratch
     FSceneGlobals globals = scene.GetSceneGlobals();
     LoadFoundationColorManagementExtension(data, globals);
     scene.Set(globals);
-    LoadFoundationEnvironmentExtension(data, path, scene);
+    Optional<String> environmentTexturePath = LoadFoundationEnvironmentExtension(data, path, scene);
 
     /* Materials */
     // NOTE: Material 0 is reserved as the default material:
@@ -878,13 +895,20 @@ void BuildGLTFSerializedScene(StringView path, FScene& scene, Allocator* scratch
 
     /* Textures */
     FTexture textureCodecInit(scratchAlloc);
+    CHECK_MSG(data->textures_count <= UINT32_MAX, "glTF texture count exceeds uint32_t");
+    CHECK_MSG(!environmentTexturePath.has_value() || data->textures_count < UINT32_MAX,
+              "glTF texture count leaves no room for environment texture");
+    size_t const sceneTextureCount = data->textures_count + (environmentTexturePath.has_value() ? 1u : 0u);
+    uint32_t const environmentTextureIndex = environmentTexturePath.has_value()
+        ? static_cast<uint32_t>(data->textures_count)
+        : kInvalidTexture;
     scene.mTables.textures.clear();
-    scene.mTables.textures.reserve(data->textures_count);
-    for (size_t i = 0; i < data->textures_count; i++)
+    scene.mTables.textures.reserve(sceneTextureCount);
+    for (size_t i = 0; i < sceneTextureCount; i++)
         scene.mTables.textures.emplace_back(scratchAlloc);
     Vector<FResourceBlobJobs> textureBlobJobs(scratchAlloc);
-    textureBlobJobs.reserve(data->textures_count);
-    for (size_t i = 0; i < data->textures_count; i++)
+    textureBlobJobs.reserve(sceneTextureCount);
+    for (size_t i = 0; i < sceneTextureCount; i++)
         textureBlobJobs.emplace_back(scratchAlloc);
     if (data->textures_count != 0)
     {
@@ -924,8 +948,21 @@ void BuildGLTFSerializedScene(StringView path, FScene& scene, Allocator* scratch
         pool.Join();
         for (Future<void>& future : futures)
             future.get();
-        for (FResourceBlobJobs& jobs : textureBlobJobs)
-            AppendResourceBlobJobs(blobJobs, jobs);
+        for (size_t i = 0; i < data->textures_count; ++i)
+            AppendResourceBlobJobs(blobJobs, textureBlobJobs[i]);
+    }
+    if (environmentTexturePath.has_value())
+    {
+        CHECK_MSG(environmentTextureIndex != kInvalidTexture, "Invalid environment texture index");
+        FTexture environmentTexture(scratchAlloc);
+        LOG(Scene, LogInfo, "Loading environment HDRI {}", *environmentTexturePath);
+        LoadHDR(environmentTexture, *environmentTexturePath);
+        BuildTextureBlobJobs(scene.mTables.textures[environmentTextureIndex],
+                             textureBlobJobs[environmentTextureIndex].jobs, std::move(environmentTexture));
+        AppendResourceBlobJobs(blobJobs, textureBlobJobs[environmentTextureIndex]);
+        FSceneGlobals environmentGlobals = scene.GetSceneGlobals();
+        environmentGlobals.environmentTexture = environmentTextureIndex;
+        scene.Set(environmentGlobals);
     }
 
     /* Meshes */

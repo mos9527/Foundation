@@ -15,7 +15,7 @@ int main(int argc, char** argv)
     lines[0].x = lines[0].y = 16, lines[0].SetText("Mip Generation");
     {
         int x, y, n;
-        stbi_uc* data = stbi_load(Foundation::Core::PathsResolve("data/assets/cameraman.jpg").c_str(), &x, &y, &n, 4u);
+        stbi_uc* data = stbi_load(Foundation::Core::PathsResolve("Data/Assets/cameraman.jpg").c_str(), &x, &y, &n, 4u);
         CHECK_MSG(data, "Image did not load.");
         auto numMips = static_cast<uint32_t>(std::ceil(std::log2(std::max(x, y)))) + 1;
         auto texture =
@@ -73,8 +73,8 @@ int main(int argc, char** argv)
             "Draw Blurred", RHIDeviceQueueType::Graphics, 0u,
             [&](PassHandle self, Renderer* r)
             {
-                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", Foundation::Core::PathsResolve("data/shaders/VSFullscreen.spv"));
-                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("data/shaders/MipGenerationBlur.spv"));
+                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", Foundation::Core::PathsResolve("Data/Shaders/VSFullscreen.spv"));
+                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("Data/Shaders/MipGenerationBlur.spv"));
                 r->BindTextureSRV(self, hdl, "srcTexture", RHIPipelineStageBits::FragmentShader,
                                   {.format = RHIResourceFormat::R8G8B8A8Unorm,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color, 0,

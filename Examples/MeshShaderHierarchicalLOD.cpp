@@ -27,7 +27,7 @@ int main(int argc, char** argv)
     /* Loads and computes DAG LODs and upload immediately */
     {
         FMesh src(GLOBAL_ALLOC);
-        LoadObj(src, Foundation::Core::PathsResolve("data/assets/bunny.obj"));
+        LoadObj(src, Foundation::Core::PathsResolve("Data/Assets/bunny.obj"));
         src.Optimize();
         src.ClusterizeDAG();
         auto staging = device->CreateBuffer(RHIBufferDesc::CreateStagingDesc(meshData->mDesc.size));
@@ -95,8 +95,8 @@ int main(int argc, char** argv)
                               {.format = RHIResourceFormat::D32SignedFloat,
                                .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Depth)});
             // No task shader required. See below.
-            r->BindShader(self, RHIShaderStageBits::Mesh, "meshMain", Foundation::Core::PathsResolve("data/shaders/MeshShaderHierarchicalLODMesh.spv"));
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("data/shaders/MeshShaderBasicFrag.spv"));
+            r->BindShader(self, RHIShaderStageBits::Mesh, "meshMain", Foundation::Core::PathsResolve("Data/Shaders/MeshShaderHierarchicalLODMesh.spv"));
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("Data/Shaders/MeshShaderBasicFrag.spv"));
             // NOTE: globalParams is introduced by slang compiler and is currently not customizable
             //       for uniform storage members
             r->BindBufferUniform(self, uboHandle, RHIPipelineStageBits::MeshShader, "globalParams");

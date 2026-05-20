@@ -120,9 +120,16 @@ GPUScene::GPUSceneDesc GPUScene::CalculateSceneBudget(FScene const& scene, RHIDe
 
     size_t textureBindings = kGPUScenePersistentTexture2DBindings + kGPUSceneDefaultTextureBindings +
         kGPUSceneTextureBindingSlack;
-    for (auto const& texture : scene.GetTextures())
+    auto const& sceneGlobals = scene.GetSceneGlobals();
+    for (size_t textureIndex = 0; textureIndex < scene.GetTextures().size(); ++textureIndex)
+    {
+        if (sceneGlobals.type == FSceneEnvironmentType::EnvMap &&
+            sceneGlobals.environmentTexture != kInvalidTexture && textureIndex == sceneGlobals.environmentTexture)
+            continue;
+        FSerializedTexture const& texture = scene.GetTextures()[textureIndex];
         textureBindings += texture.IsValid() ? 1u : 0u;
-    if (scene.GetSceneGlobals().type == FSceneEnvironmentType::EnvMap)
+    }
+    if (sceneGlobals.type == FSceneEnvironmentType::EnvMap)
         textureBindings += kGPUSceneEnvMapBindings;
     textureBindings += kGPUScenePersistentTexture3DBindings;
     desc.texturesBudget = CountBudget(textureBindings);

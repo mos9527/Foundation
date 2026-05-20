@@ -14,7 +14,7 @@ int main(int argc, char** argv)
     createPSFullscreenPass(
         renderer, "SDF2D",
         [=](PassHandle self, Renderer* r) {
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("data/shaders/SDF2D.spv"));
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("Data/Shaders/SDF2D.spv"));
             r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(float));
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd) {

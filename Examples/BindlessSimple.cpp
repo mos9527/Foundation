@@ -89,7 +89,7 @@ int main(int argc, char** argv)
             renderer, "Atlas Display",
             [&](PassHandle self, Renderer* r)
             {
-                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("data/shaders/BindlessSimple.spv"));
+                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("Data/Shaders/BindlessSimple.spv"));
                 r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(PushConstant));
                 r->BindTextureSampler(self, linSampler, "sampler");
                 r->BindDescriptorSet(self, "textures",  bindings.GetDescriptorSetLayout());

@@ -19,7 +19,7 @@ namespace Foundation::RenderUtils {
         return r->CreatePass(name, RHIDeviceQueueType::Graphics, 0u,
             [=](PassHandle self, Renderer* r) {
                 r->BindBackbufferRTV(self);
-                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", Foundation::Core::PathsResolve("data/shaders/VSFullscreen.spv"));
+                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", Foundation::Core::PathsResolve("Data/Shaders/VSFullscreen.spv"));
                 setup(self, r);
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -65,7 +65,7 @@ namespace Foundation::RenderUtils {
         return r->CreatePass(name, RHIDeviceQueueType::Graphics, 0u,
             [=](PassHandle self, Renderer* r) {
                 r->BindTextureRTV(self, rtvTexture, rtvViewDesc);
-                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", Foundation::Core::PathsResolve("data/shaders/VSFullscreen.spv"));
+                r->BindShader(self, RHIShaderStageBits::Vertex, "vertMain", Foundation::Core::PathsResolve("Data/Shaders/VSFullscreen.spv"));
                 setup(self, r);
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -112,7 +112,7 @@ namespace Foundation::RenderUtils {
                     .format = srcFormat,
                     .range = RHITextureSubresourceRange::Create()
                 });
-                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("data/shaders/PSCopy.spv"));
+                r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Foundation::Core::PathsResolve("Data/Shaders/PSCopy.spv"));
             },
             [](PassHandle, Renderer*, RHICommandList*) {}
         );

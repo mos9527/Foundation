@@ -135,9 +135,10 @@ struct FSceneGlobals
     float postExposure{0.0f};
     uint32_t viewLutSdrIndex{1u};
     uint32_t viewLutHdrIndex{1u};
+    uint32_t environmentTexture{kInvalidTexture};
 };
 static constexpr uint32_t kSceneMagic = fourCC("FSCN");
-static constexpr uint32_t kSceneVersion = 5;
+static constexpr uint32_t kSceneVersion = 6;
 struct FSceneTables
 {
     FSceneGlobals globals;

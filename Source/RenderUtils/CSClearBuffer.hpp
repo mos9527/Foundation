@@ -19,7 +19,7 @@ namespace Foundation::RenderUtils
             [=](PassHandle self, Renderer* r)
             {
                 r->BindBackbufferUAV(self, 0u);
-                r->BindShader(self, RHIShaderStageBits::Compute, "main", Foundation::Core::PathsResolve("data/shaders/CSClearBuffer.spv"));
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", Foundation::Core::PathsResolve("Data/Shaders/CSClearBuffer.spv"));
                 r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -38,7 +38,7 @@ namespace Foundation::RenderUtils
             [=](PassHandle self, Renderer* r)
             {
                 r->BindTextureUAV(self, resource, "texture", RHIPipelineStageBits::ComputeShader, viewDesc);
-                r->BindShader(self, RHIShaderStageBits::Compute, "main", Foundation::Core::PathsResolve("data/shaders/CSClearBuffer.spv"));
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", Foundation::Core::PathsResolve("Data/Shaders/CSClearBuffer.spv"));
                 r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)

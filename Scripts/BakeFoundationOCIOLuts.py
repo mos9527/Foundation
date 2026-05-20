@@ -123,7 +123,7 @@ def build_view_specs(config: ocio.Config) -> list[dict]:
                     "name": name,
                     "ident": f"kViewLut{_ident(output['kind'])}{_ident(view)}{_ident(look_slug)}",
                     "label": label,
-                    "path": f"data/assets/ViewLUTs/{name}.dds",
+                    "path": f"Data/Assets/ViewLUTs/{name}.dds",
                 })
 
     return specs

@@ -124,7 +124,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             const bool shaderExecutionReordering =
                 cfg.ptShaderExecutionReordering && context->device->GetCapabilities().shaderExecutionReordering;
             const uint ptCompileOptions = PTPackCompileOptions(shaderExecutionReordering, cfg.ptSampler, cfg.forceTextureLOD0);
-            const auto pathTracerShader = Paths::Resolve("data/shaders/ERTPathTracer.spv");
+            const auto pathTracerShader = Paths::Resolve("Data/Shaders/ERTPathTracer.spv");
             r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", pathTracerShader,
                           AsBytes(AsSpan(ptCompileOptions)));
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RayClosestHit",
@@ -210,7 +210,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
                     r->BindTextureUAV(self, texture, "texture", RHIPipelineStageBits::ComputeShader,
                                       {.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                    r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/CSClearBuffer.spv"));
+                    r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("Data/Shaders/CSClearBuffer.spv"));
                     r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -230,7 +230,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
                 r->BindTextureUAV(self, PickIDBuffer, "texture", RHIPipelineStageBits::ComputeShader,
                                   {.format = RHIResourceFormat::R32Uint,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSPickIDClear.spv"));
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("Data/Shaders/ECSPickIDClear.spv"));
                 r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -250,7 +250,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                          Paths::Resolve("data/shaders/EPSPostprocessPT.spv"), AsBytes(AsSpan(cfg.viewFlags)));
+                          Paths::Resolve("Data/Shaders/EPSPostprocessPT.spv"), AsBytes(AsSpan(cfg.viewFlags)));
             auto bindSRV = [&](ResourceHandle h, const char* name)
             {
                 r->BindTextureSRV(self, h, name, RHIPipelineStageBits::FragmentShader,
@@ -272,7 +272,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
         renderer, "Blit Image",
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Paths::Resolve("data/shaders/EPSBlitPT.spv"));
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Paths::Resolve("Data/Shaders/EPSBlitPT.spv"));
             r->BindTextureSRV(self, PostprocessBuffer, "displayImage", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = postprocessFormat,
                                                  .range = RHITextureSubresourceRange::Create()});

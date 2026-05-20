@@ -6,7 +6,7 @@
 #include "EditorState.hpp"
 #include "Scene/Mesh.hpp"
 
-static constexpr const char* kTempScenePath = "last.fscn";
+static constexpr const char* kTempScenePath = "Cache/Last.fscn";
 static constexpr size_t kDefaultSceneLoadScratchBudget = 64ull * (1ull << 20);
 // Accounts for alignment, etc...
 static constexpr size_t kBudgetSlack = 1ull * (1ull << 20);
@@ -96,6 +96,14 @@ static size_t TextureSubresourceUploadStagingFootprint(FTextureHeader const& met
     return size + alignment - 1u;
 }
 
+static bool IsSceneEnvironmentTexture(FScene const& scene, size_t textureIndex)
+{
+    auto const& environment = scene.GetSceneGlobals();
+    return environment.type == FSceneEnvironmentType::EnvMap &&
+        environment.environmentTexture != kInvalidTexture &&
+        textureIndex == environment.environmentTexture;
+}
+
 // Max memory required for uploading the scene to the GPU
 static size_t SceneStagingBufferBudget(FScene const& scene, bool directGeometryUpload)
 {
@@ -110,13 +118,27 @@ static size_t SceneStagingBufferBudget(FScene const& scene, bool directGeometryU
             budget = std::max(budget, GPUScene::CalculateCurvePrimitiveSize(curve) +
                                       GPUScene::CalculateCurveAABBSize(curve) + kBudgetSlack);
     }
-    for (FSerializedTexture const& texture : scene.GetTextures())
+    for (size_t textureIndex = 0; textureIndex < scene.GetTextures().size(); ++textureIndex)
     {
-        if (!texture.IsValid())
+        FSerializedTexture const& texture = scene.GetTextures()[textureIndex];
+        if (!texture.IsValid() || IsSceneEnvironmentTexture(scene, textureIndex))
             continue;
         for (uint32_t layer = 0; layer < texture.GetNumLayers(); ++layer)
             for (uint32_t mip = 0; mip < texture.GetNumMips(); ++mip)
                 budget = std::max(budget, TextureSubresourceUploadStagingFootprint(texture, layer, mip) + kBudgetSlack);
+    }
+
+    auto const& environment = scene.GetSceneGlobals();
+    if (environment.type == FSceneEnvironmentType::EnvMap && environment.environmentTexture != kInvalidTexture)
+    {
+        CHECK_MSG(environment.environmentTexture < scene.GetTextures().size(),
+                  "Scene environment texture index out of range");
+        FSerializedTexture const& texture = scene.GetTextures()[environment.environmentTexture];
+        CHECK_MSG(texture.IsValid(), "Scene environment texture is invalid");
+        const size_t envMapBytes = static_cast<size_t>(texture.GetSize());
+        const size_t conditionalCDFBytes = static_cast<size_t>(texture.GetWidth()) * texture.GetHeight() * sizeof(float);
+        const size_t marginalCDFBytes = static_cast<size_t>(texture.GetHeight()) * sizeof(float);
+        budget = std::max(budget, envMapBytes + conditionalCDFBytes + marginalCDFBytes + kBudgetSlack);
     }
     return budget + kStagingBudgetSlack;
 }
@@ -146,8 +168,11 @@ static size_t SceneBlobScratchBudget(FScene const& scene)
         IncludeBlob(curve.segments);
         IncludeBlob(curve.aabbs);
     }
-    for (FSerializedTexture const& texture : scene.GetTextures())
+    for (size_t textureIndex = 0; textureIndex < scene.GetTextures().size(); ++textureIndex)
     {
+        if (IsSceneEnvironmentTexture(scene, textureIndex))
+            continue;
+        FSerializedTexture const& texture = scene.GetTextures()[textureIndex];
         for (FBlobRef const& blob : texture.subresources)
             IncludeBlob(blob);
     }
@@ -162,6 +187,43 @@ static size_t EnvMapUploadStagingBudget(FTexture const& source)
     const size_t conditionalCDFBytes = static_cast<size_t>(source.GetWidth()) * source.GetHeight() * sizeof(float);
     const size_t marginalCDFBytes = static_cast<size_t>(source.GetHeight()) * sizeof(float);
     return envMapBytes + conditionalCDFBytes + marginalCDFBytes + kBudgetSlack;
+}
+
+static size_t SceneTextureReadBudget(FSerializedTexture const& source)
+{
+    CHECK_MSG(source.IsValid(), "Serialized texture is invalid");
+    size_t budget = static_cast<size_t>(source.GetSize());
+    for (FBlobRef const& blob : source.subresources)
+    {
+        if (blob.codec != FBlobCodec::None)
+            budget += static_cast<size_t>(blob.decodedSize);
+    }
+    return std::max<size_t>(AlignUp(budget + kBudgetSlack, alignof(std::max_align_t)), alignof(std::max_align_t));
+}
+
+static FTexture ReadSceneTexture(FScene const& scene, FSerializedTexture const& source, Allocator* alloc)
+{
+    CHECK(alloc != nullptr);
+    CHECK_MSG(source.IsValid(), "Serialized texture is invalid");
+
+    FTexture texture(alloc);
+    texture.magic = source.magic;
+    texture.header = source.header;
+    texture.header10 = source.header10;
+    texture.bytes.resize(texture.GetSize());
+    for (uint32_t layer = 0; layer < source.GetNumLayers(); ++layer)
+    {
+        for (uint32_t mip = 0; mip < source.GetNumMips(); ++mip)
+        {
+            Span<unsigned char> dst = texture.GetSubresource(mip, layer);
+            FBlobRef const& blob = source.GetSubresourceBlob(layer, mip);
+            CHECK_MSG(blob.decodedSize == dst.size_bytes(),
+                      "Serialized texture subresource size mismatch: layer {}, mip {}, blob {}, expected {}",
+                      layer, mip, blob.decodedSize, dst.size_bytes());
+            CHECK(scene.ReadBlob(blob, dst.data(), dst.size_bytes(), alloc));
+        }
+    }
+    return texture;
 }
 
 bool ApplyViewLUTSelection()
@@ -689,7 +751,10 @@ static String PrepareScenePayloadFile(StringView path)
     // GLTF import would commit to a file first too.
     // In this way we don't need to have the whole scene allocated in memory
     // explicitly - and works the same way as loading from FSCN.
-    String scenePayloadPath = (std::filesystem::path(kTempScenePath)).string();
+    String scenePayloadPath = PathsResolve(kTempScenePath);
+    std::filesystem::path scenePayloadDir = std::filesystem::path(scenePayloadPath).parent_path();
+    if (!scenePayloadDir.empty())
+        std::filesystem::create_directories(scenePayloadDir);
     Allocator* importScratch = GLOBAL_ALLOC;
     MemoryMappedFile sceneFile(scenePayloadPath, 64ull * 1024ull * 1024ull /* grows on demand */);
     FScene writeScene(sceneFile, importScratch);
@@ -728,7 +793,8 @@ static void InitializeSceneLoad(FScene& scene, SceneLoadStats& stats, GPUScene*&
     GEditor.shaderGlobals.ambientColor = environment.color;
     GEditor.shaderGlobals.ambientPower = environment.strength;
     GEditor.shaderGlobals.envAzimuthOffset = environment.azimuthOffset;
-    GEditor.shaderGlobals.useEnvMap = 0u;
+    GEditor.shaderGlobals.useEnvMap = environment.type == FSceneEnvironmentType::EnvMap &&
+        environment.environmentTexture != kInvalidTexture ? 1u : 0u;
     stats.sceneMeshCount = scene.GetMeshes().size();
     stats.sceneInstanceCount = scene.GetInstances().size();
     stats.sceneCurveCount = scene.GetCurves().size();
@@ -778,7 +844,7 @@ static Set<Pair<size_t, size_t>> EnqueueTextureSubresourceUpload(
     for (size_t textureIndex = 0; textureIndex < scene.GetTextures().size(); ++textureIndex)
     {
         FSerializedTexture const& srcDesc = scene.GetTextures()[textureIndex];
-        if (!srcDesc.IsValid())
+        if (!srcDesc.IsValid() || IsSceneEnvironmentTexture(scene, textureIndex))
         {
             textureIDMap[textureIndex] = UINT32_MAX;
             continue;
@@ -894,6 +960,9 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* gpu, SceneLoadStats&
     Vector<uint32_t> meshOffsets(scene.GetMeshes().size(), &sceneAlloc);
     Vector<uint32_t> curveOffsets(scene.GetCurves().size(), &sceneAlloc);
     Vector<uint32_t> textureIDMap(scene.GetTextures().size(), UINT32_MAX, &sceneAlloc);
+    auto const& environment = scene.GetSceneGlobals();
+    bool const hasEnvironmentTexture = environment.type == FSceneEnvironmentType::EnvMap &&
+        environment.environmentTexture != kInvalidTexture;
 
     LOG(Editor, LogInfo, "Uploading new scene data to GPU");
     size_t blobBudget = 0;
@@ -908,9 +977,10 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* gpu, SceneLoadStats&
         stagedTaskCount += scene.GetMeshes().size() * 7u;
         stagedTaskCount += scene.GetCurves().size() * 4u;
         size_t textureSubresourceCount = 0;
-        for (auto const& srcDesc : scene.GetTextures())
+        for (size_t textureIndex = 0; textureIndex < scene.GetTextures().size(); ++textureIndex)
         {
-            if (srcDesc.IsValid())
+            FSerializedTexture const& srcDesc = scene.GetTextures()[textureIndex];
+            if (srcDesc.IsValid() && !IsSceneEnvironmentTexture(scene, textureIndex))
                 textureSubresourceCount += size_t(srcDesc.GetNumLayers()) * srcDesc.GetNumMips();
         }
         stagedTaskCount += textureSubresourceCount;
@@ -1141,6 +1211,19 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* gpu, SceneLoadStats&
         FTexture sdr(&sceneAlloc);
         FTexture hdr(&sceneAlloc);
         upload.Begin();
+        if (hasEnvironmentTexture)
+        {
+            CHECK_MSG(environment.environmentTexture < scene.GetTextures().size(),
+                      "Scene environment texture index out of range");
+            FSerializedTexture const& environmentTextureDesc = scene.GetTextures()[environment.environmentTexture];
+            ScopedArena environmentArena(GLOBAL_ALLOC, SceneTextureReadBudget(environmentTextureDesc));
+            CHECK(environmentArena);
+            AllocatorStack environmentAlloc(environmentArena);
+            FTexture environmentTexture = ReadSceneTexture(scene, environmentTextureDesc, &environmentAlloc);
+            CHECK_MSG(environmentTexture.GetFormat() == RHIResourceFormat::R32G32B32A32SignedFloat,
+                      "Scene environment texture must be RGBA32F, got {}", environmentTexture.GetFormat());
+            gpu->UploadEnvMap(&upload, environmentTexture);
+        }
         LoadSelectedViewLUTs(sdr, hdr, GEditor.viewLUTSdrIndex, GEditor.viewLUTHdrIndex,
                              GEditor.viewLUTSdrExternalPath, GEditor.viewLUTHdrExternalPath, &sceneAlloc);
         gpu->UploadViewLUTs(&upload, sdr, hdr);
@@ -1156,7 +1239,6 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* gpu, SceneLoadStats&
 
     BuildEditorMaterials(scene, GEditor.materials, textureIDMap);
     ApplySceneCamera(scene, GEditor.camera, GEditor.aperture, GEditor.shaderGlobals);
-    CommitSceneToGPU(gpu, GEditor.instances, GEditor.materials, GEditor.lights, GEditor.shaderGlobals, true);
     GEditor.shaderGlobals.ggxLutEIndex = gpu->GetGGXLutEIndex();
     GEditor.shaderGlobals.sheenLtcIndex = gpu->GetSheenLtcIndex();
     GEditor.shaderGlobals.viewLutIndex = GContext->enableHDR
@@ -1165,6 +1247,7 @@ static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* gpu, SceneLoadStats&
     GEditor.shaderGlobals.envMapTextureIndex = gpu->GetEnvMapIndexOrDefault();
     GEditor.shaderGlobals.envMapMarginalCDFIndex = gpu->GetEnvMapMarginalCDFIndexOrDefault();
     GEditor.shaderGlobals.envMapConditionalCDFIndex = gpu->GetEnvMapConditionalCDFIndexOrDefault();
+    CommitSceneToGPU(gpu, GEditor.instances, GEditor.materials, GEditor.lights, GEditor.shaderGlobals, true);
 }
 
 static void InstallLoadedScene(String const& scenePayloadPath, GPUScene*& newGPUScene)

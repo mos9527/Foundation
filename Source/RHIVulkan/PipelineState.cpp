@@ -126,7 +126,7 @@ size_t VulkanPipelineStateCache::WriteSerializedData(Span<unsigned char> dstBuff
     size_t payloadCapacity = dstBuffer.size_bytes() - sizeof(RHIPipelineCacheBlobHeader);
     void* payloadDst = dstBuffer.data() + sizeof(RHIPipelineCacheBlobHeader);
     VkResult res = vkGetPipelineCacheData(*mDevice.GetVkDevice(), *mCache, &payloadCapacity, payloadDst);
-    CHECK_MSG(res == VK_SUCCESS || res == VK_INCOMPLETE, "Failed to export Vulkan pipeline cache data: {}", res);
+    CHECK_MSG(res == VK_SUCCESS || res == VK_INCOMPLETE, "Failed to export Vulkan pipeline cache data: {}", static_cast<int>(res));
     if (res == VK_INCOMPLETE)
         return 0;
 

@@ -34,7 +34,7 @@ void BuildIdleRenderGraph(FContext* context, float const* timeSeconds)
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                          Paths::Resolve("data/shaders/EPSIdle.spv"));
+                          Paths::Resolve("Data/Shaders/EPSIdle.spv"));
             r->BindPushConstant(self, RHIShaderStageBits::Fragment, 0, sizeof(float2));
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -157,7 +157,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
         "Indirect Meshlet Cull Generation", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSCullInstances.spv"));
+            r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("Data/Shaders/ECSCullInstances.spv"));
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindBufferStorageRead(self, InstanceBuffer, RHIPipelineStageBits::ComputeShader, "instances");
             r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::ComputeShader, "primitive");
@@ -252,7 +252,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                 r->BindTextureUAV(self, OverdrawBuffer, "texture", RHIPipelineStageBits::ComputeShader,
                                   {.format = RHIResourceFormat::R32Uint,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSOverdrawClear.spv"));
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("Data/Shaders/ECSOverdrawClear.spv"));
                 r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
                 r->BindBufferCopyDst(self, ReduceBuffer);
             },
@@ -299,7 +299,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                         flags |= kCullStageEarly;
                     else
                         flags |= kCullStageLate;
-                    r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSCullMeshlets.spv"),
+                    r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("Data/Shaders/ECSCullMeshlets.spv"),
                                   AsBytes(AsSpan(flags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
                     r->BindBufferIndirectRead(self, IndirectTaskDispatch);
@@ -332,10 +332,10 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
                 {
                     // This is what we could've had. Instead of AddCullPass if it actually works on all platforms.
                     // It should. But it doesn't.
-                    // r->BindShader(self, RHIShaderStageBits::Task, "main", Paths::Resolve("data/shaders/ETSMeshletCull.spv"),
+                    // r->BindShader(self, RHIShaderStageBits::Task, "main", Paths::Resolve("Data/Shaders/ETSMeshletCull.spv"),
                     // AsBytes(AsSpan(TSFlags)));
-                    r->BindShader(self, RHIShaderStageBits::Mesh, "main", Paths::Resolve("data/shaders/EMSBasic.spv"));
-                    r->BindShader(self, RHIShaderStageBits::Fragment, "main", Paths::Resolve("data/shaders/EPSGBuffer.spv"),
+                    r->BindShader(self, RHIShaderStageBits::Mesh, "main", Paths::Resolve("Data/Shaders/EMSBasic.spv"));
+                    r->BindShader(self, RHIShaderStageBits::Fragment, "main", Paths::Resolve("Data/Shaders/EPSGBuffer.spv"),
                                   AsBytes(AsSpan(gbufferFlags)));
                     r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::AllGraphics, "globalParams");
                     r->BindBufferStorageRead(self, PrimitiveBuffer, RHIPipelineStageBits::AllGraphics, "primitive");
@@ -420,7 +420,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
             "Overdraw CS Reduce", RHIDeviceQueueType::Compute, 0u,
             [=](PassHandle self, Renderer* r)
             {
-                r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSOverdrawReduce.spv"));
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("Data/Shaders/ECSOverdrawReduce.spv"));
                 r->BindTextureSRV(self, OverdrawBuffer, "texture", RHIPipelineStageBits::ComputeShader,
                                   RHITextureViewDesc{.format = RHIResourceFormat::R32Uint,
                                                      .range = RHITextureSubresourceRange::Create()});
@@ -464,7 +464,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
         "Lighting", RHIDeviceQueueType::Graphics, 0u,
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("data/shaders/ECSLighting.spv"),
+            r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("Data/Shaders/ECSLighting.spv"),
                           AsBytes(AsSpan(lightingViewFlags)));
             r->BindBufferUniform(self, GlobalUBO, RHIPipelineStageBits::ComputeShader, "globalParams");
             r->BindTextureSRV(self, GBufferRT0, "RT0", RHIPipelineStageBits::ComputeShader,
@@ -506,7 +506,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                          Paths::Resolve("data/shaders/EPSPostprocess.spv"), AsBytes(AsSpan(cfg.viewFlags)));
+                          Paths::Resolve("Data/Shaders/EPSPostprocess.spv"), AsBytes(AsSpan(cfg.viewFlags)));
             r->BindTextureSRV(self, LightingBuffer, "lighting", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                                  .range = RHITextureSubresourceRange::Create(
@@ -528,7 +528,7 @@ void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene
         renderer, "Blit Image",
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Paths::Resolve("data/shaders/EPSBlit.spv"));
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Paths::Resolve("Data/Shaders/EPSBlit.spv"));
             r->BindTextureSRV(self, PostprocessBuffer, "displayImage", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = postprocessFormat,
                                                  .range = RHITextureSubresourceRange::Create(
