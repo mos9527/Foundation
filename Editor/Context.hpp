@@ -33,6 +33,7 @@ struct FContext
     RHIApplicationScopedHandle<RHIDevice> device;
     RHIDeviceScopedHandle<RHISwapchain> swapchain;
     RHIDeviceScopedHandle<RHIPipelineStateCache> psoCache;
+    String psoCachePath;
 
     GPUScene* gpuScene{};
     Renderer* renderer{};

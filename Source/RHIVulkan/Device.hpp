@@ -120,6 +120,8 @@ namespace Foundation::RHI
         // Queues
         UniquePtr<VulkanDeviceQueues> mQueues{nullptr};
 
+        vk::PhysicalDeviceProperties mPhysicalDeviceProperties{};
+        RHIPipelineStateCacheKey mPipelineCacheKey{};
         RHIDeviceCapabilities mDeviceCaps{};
     public:
         VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice,
@@ -127,6 +129,7 @@ namespace Foundation::RHI
         ~VulkanDevice() override;
 
         RHIDeviceCapabilities GetCapabilities() const override { return mDeviceCaps; }
+        RHIPipelineStateCacheKey GetPipelineCacheKey() const override { return mPipelineCacheKey; }
 
         RHIDeviceQueue* GetDeviceQueue(RHIDeviceQueueType type) const override;
 
@@ -223,6 +226,7 @@ namespace Foundation::RHI
         auto const& GetVkDevice() const { return mDevice; }
         auto const& GetVkSurface() const { return mSurface; }
         auto const& GetVkPhysicalDevice() const { return mPhysicalDevice; }
+        auto const& GetVkPhysicalDeviceProperties() const { return mPhysicalDeviceProperties; }
         auto const& GetVkAllocator() const { return mVkAllocator; }
         [[nodiscard]] vk::AllocationCallbacks const* GetVkAllocationCallbacks() const;
         [[nodiscard]] VkAllocationCallbacks const* GetVkAllocationCallbacksNative() const;

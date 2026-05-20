@@ -1,9 +1,9 @@
 #define VMA_IMPLEMENTATION
-#include "RHICore/Device.hpp"
-
+#include "Device.hpp"
 
 #include <queue>
 #include <string_view>
+#include <type_traits>
 #include <vk_mem_alloc.h>
 
 using namespace Foundation::Core;
@@ -19,12 +19,52 @@ const char* kVulkanDesiredDeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 
 const char* kVulkanDeviceTypes[] = {"Other", "Integrated GPU", "Discrete GPU", "Virtual GPU", "CPU"};
 
+namespace
+{
+    constexpr uint64_t kFnvPrime = 1099511628211ull;
+
+    void HashBytes(uint64_t& hash, const void* data, size_t size)
+    {
+        const auto* bytes = static_cast<const unsigned char*>(data);
+        for (size_t i = 0; i < size; ++i)
+            hash = (hash ^ bytes[i]) * kFnvPrime;
+    }
+
+    template <typename T>
+    void HashValue(uint64_t& hash, T const& value)
+    {
+        static_assert(std::is_trivially_copyable_v<T>);
+        HashBytes(hash, &value, sizeof(T));
+    }
+
+    RHIPipelineStateCacheKey MakePipelineCacheKey(vk::PhysicalDeviceProperties const& properties)
+    {
+        uint64_t high = 14695981039346656037ull;
+        uint64_t low = 1099511628211ull;
+        constexpr auto backend = RHIPipelineStateCacheBackend::Vulkan;
+        constexpr auto cacheVersion = RHIPipelineStateCache::kSerializedDataVersion;
+        HashValue(high, backend);
+        HashValue(high, properties.vendorID);
+        HashValue(high, properties.deviceID);
+        HashBytes(high, properties.pipelineCacheUUID, VK_UUID_SIZE);
+        HashValue(high, cacheVersion);
+        HashValue(low, cacheVersion);
+        HashBytes(low, properties.pipelineCacheUUID, VK_UUID_SIZE);
+        HashValue(low, properties.deviceID);
+        HashValue(low, properties.vendorID);
+        HashValue(low, backend);
+        return {.high = high, .low = low};
+    }
+}
+
 Allocator* VulkanDevice::GetAllocator() const { return mApp.GetAllocator(); }
 
 VulkanDevice::VulkanDevice(VulkanApplication const& app, vk::raii::PhysicalDevice physicalDevice, SDL_Window* window) :
     RHIDevice(app), mApp(app), mWindow(window), mPhysicalDevice(std::move(physicalDevice)),
     mSwapchainFormats(GetAllocator()), mSwapchainPresentModes(GetAllocator()), mStorage(GetAllocator())
 {
+    mPhysicalDeviceProperties = mPhysicalDevice.getProperties();
+    mPipelineCacheKey = MakePipelineCacheKey(mPhysicalDeviceProperties);
     auto families = mPhysicalDevice.getQueueFamilyProperties();
     // Find queues
     // Graphics, Compute, Transfer should be preferably mutually exclusive

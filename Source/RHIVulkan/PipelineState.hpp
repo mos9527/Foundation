@@ -76,12 +76,15 @@ namespace Foundation::RHI {
         const VulkanDevice& mDevice;
 
         vk::raii::PipelineCache mCache{nullptr};
+        RHIPipelineStateCacheImportStatus mImportStatus{RHIPipelineStateCacheImportStatus::Empty};
     public:
         VulkanPipelineStateCache(const VulkanDevice& device, PipelineStateCacheDesc const& desc);
 
-        [[nodiscard]] auto const& GetVkPipelineCache() { return mCache; }
+        [[nodiscard]] auto const& GetVkPipelineCache() const { return mCache; }
 
-        [[nodiscard]] size_t GetCachedData(void* dstBuffer) const override;
+        [[nodiscard]] RHIPipelineStateCacheImportStatus GetImportStatus() const override { return mImportStatus; }
+        [[nodiscard]] size_t GetSerializedDataSize() const override;
+        [[nodiscard]] size_t WriteSerializedData(Span<unsigned char> dstBuffer) const override;
         void DebugSetObjectName(const char* name) override;
     };
     struct VulkanPipelineRayTracingSBT

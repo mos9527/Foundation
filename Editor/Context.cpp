@@ -1,4 +1,101 @@
+#include "Context.hpp"
+#include "Paths.hpp"
+
+#include <RHIVulkan/Application.hpp>
+
+#include <filesystem>
+#include <fstream>
+
 FContext* GContext = nullptr;
+
+static const char* PipelineCacheImportStatusName(RHIPipelineStateCacheImportStatus status)
+{
+    switch (status)
+    {
+    case RHIPipelineStateCacheImportStatus::Empty:
+        return "empty";
+    case RHIPipelineStateCacheImportStatus::Imported:
+        return "imported";
+    case RHIPipelineStateCacheImportStatus::IncompatibleBackend:
+        return "incompatible backend";
+    case RHIPipelineStateCacheImportStatus::IncompatibleDevice:
+        return "incompatible device";
+    case RHIPipelineStateCacheImportStatus::IncompatibleEngineVersion:
+        return "incompatible engine version";
+    case RHIPipelineStateCacheImportStatus::CorruptData:
+        return "corrupt data";
+    case RHIPipelineStateCacheImportStatus::BackendRejected:
+        return "backend rejected";
+    default:
+        return "unknown";
+    }
+}
+
+static String PipelineCachePathForDevice(RHIDevice const& device)
+{
+    auto key = device.GetPipelineCacheKey();
+    return Paths::Resolve(fmt::format("Cache/PipelineCache/Vulkan/pso-cache-{:016x}-{:016x}.bin", key.high, key.low));
+}
+
+static Vector<unsigned char> LoadPipelineCacheBytes(StringView path, Allocator* allocator)
+{
+    Vector<unsigned char> data(allocator);
+    if (!std::filesystem::exists(path.data()))
+        return data;
+
+    std::ifstream file(path.data(), std::ios::binary | std::ios::ate);
+    if (!file)
+    {
+        LOG(Editor, LogWarn, "Failed to open pipeline cache file for reading: {}", path);
+        return data;
+    }
+
+    auto fileSize = file.tellg();
+    if (fileSize <= std::streampos(0))
+        return data;
+    auto size = static_cast<size_t>(fileSize);
+    data.resize(size);
+    file.seekg(0, std::ios::beg);
+    if (!file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(size)))
+    {
+        LOG(Editor, LogWarn, "Failed to read pipeline cache file: {}", path);
+        data.clear();
+    }
+    return data;
+}
+
+static void SavePipelineCache(FContext const& context)
+{
+    if (!context.psoCache || context.psoCachePath.empty())
+        return;
+
+    size_t size = context.psoCache->GetSerializedDataSize();
+    if (size == 0)
+        return;
+
+    Vector<unsigned char> data(size, context.allocator);
+    size_t written = context.psoCache->WriteSerializedData(data);
+    if (written == 0)
+        return;
+    data.resize(written);
+    std::filesystem::path path(context.psoCachePath);
+    std::filesystem::create_directories(path.parent_path());
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    if (!file)
+    {
+        LOG(Editor, LogWarn, "Failed to open pipeline cache file for writing: {}", context.psoCachePath);
+        return;
+    }
+    file.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+    if (!file)
+    {
+        LOG(Editor, LogWarn, "Failed to write pipeline cache file: {}", context.psoCachePath);
+    }
+    else
+    {
+        LOG(Editor, LogInfo, "Saved pipeline cache: {} ({} bytes)", context.psoCachePath, data.size());
+    }
+}
 
 static bool WindowHDRStateEqual(FContext::WindowHDRState const& lhs, FContext::WindowHDRState const& rhs)
 {
@@ -121,7 +218,15 @@ FContext* CreateContext(SDL_Window* window, Allocator* allocator, RHIDevice::Dev
     UpdateWindowHDRState(context);
     context->application = ConstructBase<RHIApplication, VulkanApplication>(allocator, allocator);
     context->device = context->application->CreateDevice(deviceDesc, window);
-    context->psoCache = context->device->CreatePipelineCache({});
+    context->psoCachePath = PipelineCachePathForDevice(*context->device.Get());
+    auto psoCacheBytes = LoadPipelineCacheBytes(context->psoCachePath, allocator);
+    context->psoCache = context->device->CreatePipelineCache({
+        .initialData = Span<const unsigned char>(psoCacheBytes.data(), psoCacheBytes.size())
+    });
+    LOG(Editor, LogInfo, "Pipeline cache {}: {} ({} bytes)",
+        PipelineCacheImportStatusName(context->psoCache->GetImportStatus()),
+        context->psoCachePath,
+        psoCacheBytes.size());
     UpdateSwapchain(context);
     return GContext = context;
 }
@@ -132,6 +237,7 @@ void DestroyContext(FContext* context)
     if (!context)
         return;
     context->device->WaitIdle();
+    SavePipelineCache(*context);
     SDL_DestroyWindow(context->window);
     Destruct(context->allocator, context->renderer);
     if (context->gpuScene)

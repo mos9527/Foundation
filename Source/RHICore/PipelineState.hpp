@@ -4,19 +4,42 @@
 #include "Descriptor.hpp"
 namespace Foundation::RHI {
     class RHIDevice;
+    enum class RHIPipelineStateCacheBackend : uint32_t
+    {
+        Unknown = 0,
+        Vulkan = 1,
+    };
+    struct RHIPipelineStateCacheKey
+    {
+        uint64_t high{};
+        uint64_t low{};
+    };
+    enum class RHIPipelineStateCacheImportStatus
+    {
+        Empty,
+        Imported,
+        IncompatibleBackend,
+        IncompatibleDevice,
+        IncompatibleEngineVersion,
+        CorruptData,
+        BackendRejected,
+    };
     class RHIPipelineStateCache : public RHIObject
     {
     protected:
         const RHIDevice& mDevice;
     public:
+        static constexpr uint32_t kSerializedDataMagic = 0x43535046; // FPSC
+        static constexpr uint32_t kSerializedDataVersion = 1;
         struct PipelineStateCacheDesc
         {
-            Span<const char> initialData{};
+            Span<const unsigned char> initialData{};
         };
-        const PipelineStateCacheDesc mDesc;
-        RHIPipelineStateCache(RHIDevice const& device, PipelineStateCacheDesc const& desc) : mDevice(device), mDesc(desc) {}
+        RHIPipelineStateCache(RHIDevice const& device, PipelineStateCacheDesc const&) : mDevice(device) {}
 
-        [[nodiscard]] virtual size_t GetCachedData(void* dstBuffer = nullptr) const = 0;
+        [[nodiscard]] virtual RHIPipelineStateCacheImportStatus GetImportStatus() const = 0;
+        [[nodiscard]] virtual size_t GetSerializedDataSize() const = 0;
+        [[nodiscard]] virtual size_t WriteSerializedData(Span<unsigned char> dstBuffer) const = 0;
         virtual void DebugSetObjectName(const char* name) = 0;
     };
     class RHIPipelineState : public RHIObject {

@@ -255,6 +255,7 @@ namespace Foundation::RHI
         RHIDevice(RHIApplication const& app) : mApp(app) {}
 
         [[nodiscard]] virtual RHIDeviceCapabilities GetCapabilities() const = 0;
+        [[nodiscard]] virtual RHIPipelineStateCacheKey GetPipelineCacheKey() const = 0;
         [[nodiscard]] virtual Span<RHISurfaceFormat const> GetSwapchainSupportedFormats() const = 0;
         [[nodiscard]] virtual Span<RHISwapchainPresentMode const> GetSwapchainSupportedPresentModes() const = 0;
         [[nodiscard]] virtual RHIDeviceScopedHandle<RHISwapchain>

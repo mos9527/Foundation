@@ -1,20 +1,146 @@
+#include "PipelineState.hpp"
+#include "Descriptor.hpp"
+#include "Device.hpp"
+#include "Resource.hpp"
+#include "Shader.hpp"
+
+#include <cstring>
+
 using namespace Foundation::RHI;
+
+namespace
+{
+    struct VulkanPipelineCacheHeader
+    {
+        uint32_t headerSize{};
+        uint32_t headerVersion{};
+        uint32_t vendorID{};
+        uint32_t deviceID{};
+        uint8_t pipelineCacheUUID[VK_UUID_SIZE]{};
+    };
+
+    struct RHIPipelineCacheBlobHeader
+    {
+        uint32_t magic{};
+        uint32_t version{};
+        RHIPipelineStateCacheBackend backend{RHIPipelineStateCacheBackend::Unknown};
+        uint32_t reserved{};
+        RHIPipelineStateCacheKey key{};
+        uint64_t payloadSize{};
+        uint64_t payloadChecksum{};
+    };
+
+    static_assert(sizeof(VulkanPipelineCacheHeader) == 32);
+
+    uint64_t HashBytes(const void* data, size_t size)
+    {
+        uint64_t hash = 14695981039346656037ull;
+        const auto* bytes = static_cast<const unsigned char*>(data);
+        for (size_t i = 0; i < size; ++i)
+            hash = (hash ^ bytes[i]) * 1099511628211ull;
+        return hash;
+    }
+
+    bool IsVulkanNativePipelineCacheCompatible(Span<const unsigned char> payload,
+                                               vk::PhysicalDeviceProperties const& properties)
+    {
+        if (payload.size_bytes() < sizeof(VulkanPipelineCacheHeader))
+            return false;
+
+        VulkanPipelineCacheHeader header{};
+        std::memcpy(&header, payload.data(), sizeof(header));
+        if (header.headerSize < sizeof(VulkanPipelineCacheHeader) || header.headerSize > payload.size_bytes())
+            return false;
+        if (header.headerVersion != VK_PIPELINE_CACHE_HEADER_VERSION_ONE)
+            return false;
+        if (header.vendorID != properties.vendorID || header.deviceID != properties.deviceID)
+            return false;
+        return std::memcmp(header.pipelineCacheUUID, properties.pipelineCacheUUID, VK_UUID_SIZE) == 0;
+    }
+
+    Pair<Span<const unsigned char>, RHIPipelineStateCacheImportStatus>
+    GetCompatibleVulkanPipelineCachePayload(Span<const unsigned char> data, RHIPipelineStateCacheKey expectedKey,
+                                            vk::PhysicalDeviceProperties const& properties)
+    {
+        if (data.empty())
+            return {{}, RHIPipelineStateCacheImportStatus::Empty};
+        if (data.size_bytes() < sizeof(RHIPipelineCacheBlobHeader))
+            return {{}, RHIPipelineStateCacheImportStatus::CorruptData};
+
+        RHIPipelineCacheBlobHeader header{};
+        std::memcpy(&header, data.data(), sizeof(header));
+        if (header.magic != RHIPipelineStateCache::kSerializedDataMagic ||
+            header.version != RHIPipelineStateCache::kSerializedDataVersion)
+            return {{}, RHIPipelineStateCacheImportStatus::IncompatibleEngineVersion};
+        if (header.backend != RHIPipelineStateCacheBackend::Vulkan)
+            return {{}, RHIPipelineStateCacheImportStatus::IncompatibleBackend};
+        if (header.key.high != expectedKey.high || header.key.low != expectedKey.low)
+            return {{}, RHIPipelineStateCacheImportStatus::IncompatibleDevice};
+        if (header.payloadSize > data.size_bytes() - sizeof(RHIPipelineCacheBlobHeader))
+            return {{}, RHIPipelineStateCacheImportStatus::CorruptData};
+
+        auto payload = data.subspan(sizeof(RHIPipelineCacheBlobHeader), static_cast<size_t>(header.payloadSize));
+        if (HashBytes(payload.data(), payload.size_bytes()) != header.payloadChecksum)
+            return {{}, RHIPipelineStateCacheImportStatus::CorruptData};
+        if (!IsVulkanNativePipelineCacheCompatible(payload, properties))
+            return {{}, RHIPipelineStateCacheImportStatus::IncompatibleDevice};
+        return {payload, RHIPipelineStateCacheImportStatus::Imported};
+    }
+}
 
 VulkanPipelineStateCache::VulkanPipelineStateCache(const VulkanDevice& device, PipelineStateCacheDesc const& desc) :
     RHIPipelineStateCache(device, desc), mDevice(device)
 {
-    mCache =
-        vk::raii::PipelineCache(device.GetVkDevice(), vk::PipelineCacheCreateInfo{
-                                    .initialDataSize = desc.initialData.size_bytes(),
-                                    .pInitialData = desc.initialData.data()
-                                }, device.GetVkAllocationCallbacks());
+    auto [initialPayload, importStatus] = GetCompatibleVulkanPipelineCachePayload(
+        desc.initialData, device.GetPipelineCacheKey(), device.GetVkPhysicalDeviceProperties());
+    mImportStatus = importStatus;
+
+    vk::PipelineCacheCreateInfo createInfo{
+        .initialDataSize = initialPayload.size_bytes(),
+        .pInitialData = initialPayload.data()
+    };
+    try
+    {
+        mCache = vk::raii::PipelineCache(device.GetVkDevice(), createInfo, device.GetVkAllocationCallbacks());
+    }
+    catch (...)
+    {
+        mImportStatus = RHIPipelineStateCacheImportStatus::BackendRejected;
+        createInfo.initialDataSize = 0;
+        createInfo.pInitialData = nullptr;
+        mCache = vk::raii::PipelineCache(device.GetVkDevice(), createInfo, device.GetVkAllocationCallbacks());
+    }
 }
 
-size_t VulkanPipelineStateCache::GetCachedData(void* dstBuffer) const
+size_t VulkanPipelineStateCache::GetSerializedDataSize() const
 {
-    size_t size = 0;
-    CHECK(vkGetPipelineCacheData(*mDevice.GetVkDevice(), *mCache, &size, dstBuffer) == VK_SUCCESS);
-    return size;
+    size_t payloadSize = 0;
+    CHECK(vkGetPipelineCacheData(*mDevice.GetVkDevice(), *mCache, &payloadSize, nullptr) == VK_SUCCESS);
+    return sizeof(RHIPipelineCacheBlobHeader) + payloadSize;
+}
+
+size_t VulkanPipelineStateCache::WriteSerializedData(Span<unsigned char> dstBuffer) const
+{
+    CHECK_MSG(dstBuffer.size_bytes() >= sizeof(RHIPipelineCacheBlobHeader),
+              "Pipeline cache output buffer is too small for the RHI header");
+    size_t payloadCapacity = dstBuffer.size_bytes() - sizeof(RHIPipelineCacheBlobHeader);
+    void* payloadDst = dstBuffer.data() + sizeof(RHIPipelineCacheBlobHeader);
+    VkResult res = vkGetPipelineCacheData(*mDevice.GetVkDevice(), *mCache, &payloadCapacity, payloadDst);
+    CHECK_MSG(res == VK_SUCCESS || res == VK_INCOMPLETE, "Failed to export Vulkan pipeline cache data: {}", res);
+    if (res == VK_INCOMPLETE)
+        return 0;
+
+    RHIPipelineCacheBlobHeader header{
+        .magic = RHIPipelineStateCache::kSerializedDataMagic,
+        .version = RHIPipelineStateCache::kSerializedDataVersion,
+        .backend = RHIPipelineStateCacheBackend::Vulkan,
+        .reserved = 0,
+        .key = mDevice.GetPipelineCacheKey(),
+        .payloadSize = payloadCapacity,
+        .payloadChecksum = HashBytes(payloadDst, payloadCapacity),
+    };
+    std::memcpy(dstBuffer.data(), &header, sizeof(header));
+    return sizeof(RHIPipelineCacheBlobHeader) + payloadCapacity;
 }
 
 void VulkanPipelineStateCache::DebugSetObjectName(const char* name)
