@@ -176,7 +176,7 @@ struct EditorState
     Vector<uint32_t>   curveBlases{GLOBAL_ALLOC};
     Vector<GSLight>    lights{GLOBAL_ALLOC};
     Optional<MemoryMappedFile> sceneFile;
-    Optional<FScene>     scene;
+    Optional<FImportedScene>     scene;
     String             currentSavePath;
     int                selectedInstance = -1;
     int                selectedMaterial = -1;
@@ -204,12 +204,12 @@ struct EditorState
     bool            cameraUpdated = true;
 
     [[nodiscard]] bool HasScene() const { return scene.has_value(); }
-    FScene& Scene()
+    FImportedScene& Scene()
     {
         CHECK(scene.has_value());
         return *scene;
     }
-    FScene const& Scene() const
+    FImportedScene const& Scene() const
     {
         CHECK(scene.has_value());
         return *scene;

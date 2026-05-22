@@ -142,7 +142,7 @@ void LoadFoundationColorManagementExtension(cgltf_data const* data, FSceneGlobal
         result.viewLutHdrIndex = MatchViewLUTIndex(kViewLUTsHdr, view, look, kDefaultViewLUTHdr);
 }
 
-Optional<String> LoadFoundationEnvironmentExtension(cgltf_data const* data, StringView scenePath, FScene& scene)
+Optional<String> LoadFoundationEnvironmentExtension(cgltf_data const* data, StringView scenePath, FImportedScene& scene)
 {
     cgltf_scene const* gltfScene = data->scene ? data->scene : (data->scenes_count > 0 ? &data->scenes[0] : nullptr);
     if (!gltfScene || !gltfScene->has_foundation_environment)
@@ -421,11 +421,11 @@ void ValidateSceneTables(FSceneHeader const& header, FSceneTables const& tables)
 }
 
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#meshes
-FMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratchAlloc)
+FImportedMesh LoadGLTFSubmesh(const cgltf_primitive* submesh, Allocator* scratchAlloc)
 {
     CHECK(submesh->type == cgltf_primitive_type_triangles);
     CHECK(scratchAlloc != nullptr);
-    FMesh mesh(scratchAlloc);
+    FImportedMesh mesh(scratchAlloc);
     // Vertex count would be the same across POSITION, NORMAL, etc. Getting any of those would be enough.
     // Worst storage case is VEC4
     {
@@ -538,7 +538,7 @@ FCurveBasis LoadGLTFCurveBasis(cgltf_curve_basis basis)
     }
 }
 
-void LoadGLTFCurve(const cgltf_data* data, const cgltf_curve* src, FCurveSet& curve, Allocator* scratchAlloc)
+void LoadGLTFCurve(const cgltf_data* data, const cgltf_curve* src, FImportedCurve& curve, Allocator* scratchAlloc)
 {
     CHECK(scratchAlloc != nullptr);
     CHECK(src->points);
@@ -748,10 +748,10 @@ void AppendResourceBlobJobs(Vector<FBlobJob>& blobJobs, FResourceBlobJobs& resou
 }
 
 void BuildTextureBlobJobs(FSerializedTexture& desc, Vector<FBlobJob>& blobJobs, FTexture&& texture);
-void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FMesh const& mesh);
-void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FCurveSet const& curve);
+void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh);
+void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FImportedCurve const& curve);
 
-void BuildGLTFSerializedScene(StringView path, FScene& scene, Allocator* scratchAlloc)
+void BuildGLTFSerializedScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc)
 {
     LOG(Scene, LogInfo, "Load GLTF Scene {}", path);
     CHECK(scene.mWriting);
@@ -996,7 +996,7 @@ void BuildGLTFSerializedScene(StringView path, FScene& scene, Allocator* scratch
                 futures.push_back(pool.Push(
                     [&, meshIndex, sub]
                     {
-                        FMesh submesh = LoadGLTFSubmesh(sub, scratchAlloc);
+                        FImportedMesh submesh = LoadGLTFSubmesh(sub, scratchAlloc);
                         LOG(Meshopt, LogInfo, "Optimizing submesh {}, vtx: {}, idx: {}", meshIndex,
                             submesh.vertices.size(), submesh.lods[0].indices.size());
                         submesh.Optimize();
@@ -1037,7 +1037,7 @@ void BuildGLTFSerializedScene(StringView path, FScene& scene, Allocator* scratch
             futures.push_back(pool.Push(
                 [&, i]
                 {
-                    FCurveSet curve(scratchAlloc);
+                    FImportedCurve curve(scratchAlloc);
                     LoadGLTFCurve(data, &data->curves[i], curve, scratchAlloc);
                     BuildCurveBlobJobs(scene.mTables.curves[i], curveBlobJobs[i].jobs, curve);
                 }));
@@ -1219,7 +1219,7 @@ void BuildTextureBlobJobs(FSerializedTexture& desc, Vector<FBlobJob>& blobJobs, 
     }
 }
 
-uint32_t CalculateRenderableCurveSegmentCount(FCurveSet const& curve)
+uint32_t CalculateRenderableCurveSegmentCount(FImportedCurve const& curve)
 {
     uint32_t segmentCount = 0;
     for (uint32_t count : curve.curveVertexCounts)
@@ -1247,7 +1247,7 @@ FSerializedCurveAABB BuildCurveAABB(float3 const& mn, float3 const& mx)
     return FSerializedCurveAABB{mn.x, mn.y, mn.z, mx.x, mx.y, mx.z};
 }
 
-void BuildCurveGeometry(FCurveSet const& curve, Span<FSerializedCurveSegment> segments,
+void BuildCurveGeometry(FImportedCurve const& curve, Span<FSerializedCurveSegment> segments,
                         Span<FSerializedCurveAABB> aabbs)
 {
     CHECK_MSG(segments.size() == aabbs.size(), "Curve geometry output size mismatch");
@@ -1332,7 +1332,7 @@ void BuildCurveGeometry(FCurveSet const& curve, Span<FSerializedCurveSegment> se
               segments.size(), segmentCursor);
 }
 
-void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FMesh const& mesh)
+void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FImportedMesh const& mesh)
 {
     CHECK_MSG(!mesh.verticesQuantized.empty(), "FScene mesh is not quantized");
     desc.vertices = {};
@@ -1359,7 +1359,7 @@ void BuildMeshBlobJobs(FSerializedMesh& desc, Vector<FBlobJob>& blobJobs, FMesh 
     AppendArrayBlobJob(blobJobs, mesh.dag.meshletVtx, FBlobCodec::LZ4, desc.dagMeshletVtx);
 }
 
-void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FCurveSet const& curve)
+void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FImportedCurve const& curve)
 {
     desc = {};
     desc.materialIndex = curve.materialIndex;
@@ -1378,7 +1378,7 @@ void BuildCurveBlobJobs(FSerializedCurve& desc, Vector<FBlobJob>& blobJobs, FCur
     AppendArrayBlobJob(blobJobs, aabbs, FBlobCodec::LZ4, desc.aabbs, alignof(FSerializedCurveAABB));
 }
 
-FScene::FScene(MemoryMappedFile& file, Allocator* scratchAlloc)
+FImportedScene::FImportedScene(MemoryMappedFile& file, Allocator* scratchAlloc)
     : mTables(scratchAlloc), mFile(&file), mScratchAlloc(scratchAlloc), mWriting(file.IsWritable())
 {
     CHECK(scratchAlloc != nullptr);
@@ -1394,7 +1394,7 @@ FScene::FScene(MemoryMappedFile& file, Allocator* scratchAlloc)
     }
 }
 
-Span<const unsigned char> FScene::GetPayloadBytes() const
+Span<const unsigned char> FImportedScene::GetPayloadBytes() const
 {
     CHECK(mFile != nullptr);
     CHECK(!mWriting);
@@ -1402,17 +1402,17 @@ Span<const unsigned char> FScene::GetPayloadBytes() const
     return {mFile->Data() + mHeader.payloadOffset, static_cast<size_t>(mHeader.metadataOffset - mHeader.payloadOffset)};
 }
 
-FBlobDeserializer FScene::GetBlobDeserializer() const
+FBlobDeserializer FImportedScene::GetBlobDeserializer() const
 {
     return FBlobDeserializer(GetPayloadBytes());
 }
 
-bool FScene::ReadBlob(FBlobRef const& blob, void* dst, size_t size, Allocator* scratchAlloc) const
+bool FImportedScene::ReadBlob(FBlobRef const& blob, void* dst, size_t size, Allocator* scratchAlloc) const
 {
     return GetBlobDeserializer().ReadBytes(blob, dst, size, scratchAlloc);
 }
 
-void FinalizeSceneWriter(FScene& scene)
+void FinalizeSceneWriter(FImportedScene& scene)
 {
     CHECK(scene.mWriting);
     CHECK(scene.mFile != nullptr);
@@ -1439,20 +1439,20 @@ void FinalizeSceneWriter(FScene& scene)
     scene.mWriting = false;
 }
 
-FScene::~FScene()
+FImportedScene::~FImportedScene()
 {
     if (mWriting)
         FinalizeSceneWriter(*this);
 }
 
-void LoadGLTF(StringView path, FScene& scene, Allocator* scratchAlloc)
+void LoadGLTF(StringView path, FImportedScene& scene, Allocator* scratchAlloc)
 {
     CHECK(scene.mWriting);
     CHECK(scratchAlloc != nullptr);
     BuildGLTFSerializedScene(path, scene, scratchAlloc);
 }
 
-void LoadFSCN(FScene& scene)
+void LoadFSCN(FImportedScene& scene)
 {
     CHECK(scene.mFile != nullptr);
     CHECK(!scene.mWriting);
@@ -1470,7 +1470,7 @@ void LoadFSCN(FScene& scene)
     ValidateSceneTables(scene.mHeader, scene.mTables);
 }
 
-String LoadScene(StringView path, FScene& scene, Allocator* scratchAlloc)
+String LoadScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc)
 {
     CHECK(scratchAlloc != nullptr);
     auto ext = LowerExtension(std::filesystem::path(path.data()));

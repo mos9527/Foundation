@@ -96,7 +96,7 @@ static size_t TextureSubresourceUploadStagingFootprint(FTextureHeader const& met
     return size + alignment - 1u;
 }
 
-static bool IsSceneEnvironmentTexture(FScene const& scene, size_t textureIndex)
+static bool IsSceneEnvironmentTexture(FImportedScene const& scene, size_t textureIndex)
 {
     auto const& environment = scene.GetSceneGlobals();
     return environment.type == FSceneEnvironmentType::EnvMap &&
@@ -105,7 +105,7 @@ static bool IsSceneEnvironmentTexture(FScene const& scene, size_t textureIndex)
 }
 
 // Max memory required for uploading the scene to the GPU
-static size_t SceneStagingBufferBudget(FScene const& scene, bool directGeometryUpload)
+static size_t SceneStagingBufferBudget(FImportedScene const& scene, bool directGeometryUpload)
 {
     size_t budget = 0ull;
     if (!directGeometryUpload)
@@ -143,7 +143,7 @@ static size_t SceneStagingBufferBudget(FScene const& scene, bool directGeometryU
     return budget + kStagingBudgetSlack;
 }
 
-static size_t SceneBlobScratchBudget(FScene const& scene)
+static size_t SceneBlobScratchBudget(FImportedScene const& scene)
 {
     size_t budget = 0ull;
     auto IncludeBlob = [&](FBlobRef const& blob)
@@ -201,7 +201,7 @@ static size_t SceneTextureReadBudget(FSerializedTexture const& source)
     return std::max<size_t>(AlignUp(budget + kBudgetSlack, alignof(std::max_align_t)), alignof(std::max_align_t));
 }
 
-static FTexture ReadSceneTexture(FScene const& scene, FSerializedTexture const& source, Allocator* alloc)
+static FTexture ReadSceneTexture(FImportedScene const& scene, FSerializedTexture const& source, Allocator* alloc)
 {
     CHECK(alloc != nullptr);
     CHECK_MSG(source.IsValid(), "Serialized texture is invalid");
@@ -481,7 +481,7 @@ static void FLightToGSLight(FLight const& src, GSLight& dst, GPUScene::LightSamp
     dst.selectionWeight = std::max(0.0f, weight);
 }
 
-static void BuildSceneLights(FScene& scene, Vector<GSLight>& dstLights, UBO& globals,
+static void BuildSceneLights(FImportedScene& scene, Vector<GSLight>& dstLights, UBO& globals,
                              GPUScene::LightSamplerType lightSamplerType)
 {
     auto lights = scene.GetLights();
@@ -511,7 +511,7 @@ void UpdateSceneLights()
     CommitSceneToGPU(false);
 }
 
-static void BuildEditorMaterials(FScene& scene, Vector<GSMaterial>& dstMaterials,
+static void BuildEditorMaterials(FImportedScene& scene, Vector<GSMaterial>& dstMaterials,
                                  Vector<uint32_t> const& textureIDMap)
 {
     auto RemapTextureIndex = [&textureIDMap](uint32_t index) {
@@ -560,7 +560,7 @@ static void BuildEditorMaterials(FScene& scene, Vector<GSMaterial>& dstMaterials
     }
 }
 
-static void BuildEditorInstances(FScene& scene, Vector<GSInstance>& dstInstances,
+static void BuildEditorInstances(FImportedScene& scene, Vector<GSInstance>& dstInstances,
                                  Vector<uint32_t> const& meshOffsets, Vector<uint32_t> const& curveOffsets)
 {
     auto instances = scene.GetInstances();
@@ -600,7 +600,7 @@ static void BuildEditorInstances(FScene& scene, Vector<GSInstance>& dstInstances
     }
 }
 
-static void ApplySceneCamera(FScene const& scene, FArcballCamera& cameraState,
+static void ApplySceneCamera(FImportedScene const& scene, FArcballCamera& cameraState,
                              CameraApertureState& apertureState, UBO& globals)
 {
     auto cameras = scene.GetCameras();
@@ -642,7 +642,7 @@ static size_t GPUSceneBudgetBytes(GPUScene::GPUSceneDesc const& desc)
            size_t(desc.tlasScratchBudget);
 }
 
-static GPUScene* CreateGPUScene(FScene const& scene, size_t& outBudgetBytes)
+static GPUScene* CreateGPUScene(FImportedScene const& scene, size_t& outBudgetBytes)
 {
     auto estimatedBudget = GPUScene::CalculateSceneBudget(scene, GContext->device->GetCapabilities());
     LOG(Editor, LogDebug,
@@ -757,7 +757,7 @@ static String PrepareScenePayloadFile(StringView path)
         std::filesystem::create_directories(scenePayloadDir);
     Allocator* importScratch = GLOBAL_ALLOC;
     MemoryMappedFile sceneFile(scenePayloadPath, 64ull * 1024ull * 1024ull /* grows on demand */);
-    FScene writeScene(sceneFile, importScratch);
+    FImportedScene writeScene(sceneFile, importScratch);
     LoadScene(path, writeScene, importScratch);
     return scenePayloadPath;
 }
@@ -781,7 +781,7 @@ struct TextureSubresourceUploadJob
     uint32_t mip = 0;
 };
 
-static void InitializeSceneLoad(FScene& scene, SceneLoadStats& stats, GPUScene*& newGPUScene)
+static void InitializeSceneLoad(FImportedScene& scene, SceneLoadStats& stats, GPUScene*& newGPUScene)
 {
     auto const& sceneGlobals = scene.GetSceneGlobals();
     GEditor.shaderGlobals.camEV = sceneGlobals.postExposure;
@@ -837,7 +837,7 @@ static Set<Pair<size_t, size_t>> EnqueueSceneUpload(size_t resourceCount, TGetFo
 }
 
 static Set<Pair<size_t, size_t>> EnqueueTextureSubresourceUpload(
-    FScene const& scene, Vector<TextureSubresourceUploadJob>& jobs, Vector<uint32_t>& textureIDMap,
+    FImportedScene const& scene, Vector<TextureSubresourceUploadJob>& jobs, Vector<uint32_t>& textureIDMap,
     Allocator* alloc)
 {
     Set<Pair<size_t, size_t>> pendingResources(alloc); // (footprint, job index)
@@ -954,7 +954,7 @@ struct SceneUploadJob : ThreadPoolJob
     }
 };
 
-static void UploadLoadedSceneToGPU(FScene& scene, GPUScene* gpu, SceneLoadStats& stats,
+static void UploadLoadedSceneToGPU(FImportedScene& scene, GPUScene* gpu, SceneLoadStats& stats,
                                    AllocatorStack& sceneAlloc)
 {
     Vector<uint32_t> meshOffsets(scene.GetMeshes().size(), &sceneAlloc);
@@ -1284,7 +1284,7 @@ void LoadScene(StringView path)
         ScopedArena sceneArena(GLOBAL_ALLOC, kDefaultSceneLoadScratchBudget);
         AllocatorStack sceneAlloc(sceneArena);
         MemoryMappedFile loadSceneFile(scenePayloadPath, MemoryMappedAccess::ReadOnly);
-        FScene scene(loadSceneFile, &sceneAlloc);
+        FImportedScene scene(loadSceneFile, &sceneAlloc);
         LoadFSCN(scene);
 
         SceneLoadStats loadedScene;

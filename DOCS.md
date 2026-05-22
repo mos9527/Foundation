@@ -3,9 +3,7 @@ Foundation {#mainpage}
 
 [Foundation](https://github.com/mos9527/Foundation/) is a work-in-progress cross-platform rendering framework/renderer.
 
-Editor
----
-The Editor includes a Path Tracer `PT` *based* on [Physically Based Rendering:From Theory To Implementation](https://www.pbr-book.org/), and a bespoke continuous LOD meshlet (Nanite-like) Rasterizer `RASTER`.
+Foundation includes two bespoke renderers - The Path Tracer `PT` *based* on [Physically Based Rendering:From Theory To Implementation](https://www.pbr-book.org/), and a Continuous LOD Meshlet (Nanite-like) Rasterizer `RASTER`.
 
 Please note that the Path Tracer is not a faithful recreation of PBRT - however heavily referenced against, with outputs extensively verified against results from [Blender Cycles](https://projects.blender.org/blender/cycles/) et al. `PT` outputs can be considered reference in this context.
 

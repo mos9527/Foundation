@@ -218,7 +218,7 @@ struct FSceneHeader
     uint32_t version{kSceneVersion};
 };
 
-struct FScene
+struct FImportedScene
 {
     // Resident metadata in memory. Payload blobs stay in the external mapped file.
     FSceneHeader mHeader{};
@@ -229,9 +229,9 @@ struct FScene
     uint64_t mWriteOffset{0};
     bool mWriting{false};
 
-    // Constructs FScene view over a mapped file. Writable mappings start a new append-only scene.
-    explicit FScene(MemoryMappedFile& file, Allocator* scratchAlloc = GLOBAL_ALLOC);
-    ~FScene();
+    // Constructs FImportedScene view over a mapped file. Writable mappings start a new append-only scene.
+    explicit FImportedScene(MemoryMappedFile& file, Allocator* scratchAlloc = GLOBAL_ALLOC);
+    ~FImportedScene();
 
     // Append-only operations
     void Set(FSceneGlobals const& globals)
@@ -307,11 +307,11 @@ struct FScene
     }
 };
 
-void LoadGLTF(StringView path, FScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC);
-void LoadFSCN(FScene& scene);
+void LoadGLTF(StringView path, FImportedScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC);
+void LoadFSCN(FImportedScene& scene);
 
 /**
  * Loads a scene from a path, inferring format from extension.
  * Returns the FSCN path that backs payload blob reads.
  */
-String LoadScene(StringView path, FScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC);
+String LoadScene(StringView path, FImportedScene& scene, Allocator* scratchAlloc = GLOBAL_ALLOC);

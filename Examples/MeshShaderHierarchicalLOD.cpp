@@ -26,7 +26,7 @@ int main(int argc, char** argv)
     });
     /* Loads and computes DAG LODs and upload immediately */
     {
-        FMesh src(GLOBAL_ALLOC);
+        FImportedMesh src(GLOBAL_ALLOC);
         LoadObj(src, Foundation::Core::PathsResolve("Data/Assets/bunny.obj"));
         src.Optimize();
         src.ClusterizeDAG();

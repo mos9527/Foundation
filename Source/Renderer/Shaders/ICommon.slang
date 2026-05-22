@@ -1,0 +1,282 @@
+import IMath;
+public static const uint kMeshWorkGroupSize = 64;
+public static const uint kMeshIndirectPerDrawMeshlets = 65536;
+public static const uint kMaterialShaderBlockPrincipled = 0;
+public static const uint kMaterialShaderBlockHair = 1;
+// Definitions From C++ sources
+public struct FVertex {
+    public float3 position;
+    public float3 normal;
+    public float3 tangent;
+    public float bitangentSign;
+    public float2 uv;
+};
+public struct FQVertex {
+    public half4 position;
+    public uint32_t tbn32;
+    public half2 uv;
+};
+public void FQDecode(in FQVertex v, out float3 position, out float3 normal, out float3 tangent, out float bitangentSign, out float2 uv) {
+    position = float3(v.position.xyz);
+    unpackTBN(v.tbn32, normal, tangent, bitangentSign);
+    uv = float2(v.uv);
+}
+public void FQDecode(in FQVertex v, out float3 normal, out float3 tangent, out float bitangentSign, out float2 uv) {
+    unpackTBN(v.tbn32, normal, tangent, bitangentSign);
+    uv = float2(v.uv);
+}
+public struct FLODGroup // @ref clodGroup
+{
+    // DAG level the group was generated at
+    public int depth;
+
+    // sphere bounds, in mesh coordinate space
+    public float3 center;
+    public float radius;
+
+    // combined simplification error, in mesh coordinate space
+    // FLT_MAX for terminal groups
+    public float error;
+};
+public struct FMeshlet // @ref meshopt_Meshlet
+{
+    /* meshlet group */
+    /* ID of the @ref FLODGroup this meshlet belongs to in a hierarchy */
+    public uint32_t group;
+    /* ID of the @ref FLODGroup (with more triangles) that produced this meshlet during simplification (parent). ~0u if original geometry */
+    public uint32_t refined;
+
+    /* meshlet */
+    /* offsets within meshletVtx and meshletTri arrays with meshlet data */
+    public uint32_t vtxOffset; // in vertices
+    public uint32_t triOffset; // in indices (3*triangles)
+    /* number of vertices and triangles used in the meshlet; data is stored in consecutive range defined by offset and
+     * count */
+    public uint32_t vtxCount;
+    public uint32_t triCount;
+
+    /* bounds */
+    public float4 centerRadius; // (x,y,z,r)
+    public float4 coneAxisAngle; // (x,y,z,cos(half solid angle))
+    public float3 coneApex; // (x,y,z)
+};
+// NOTE: GS -> GPU Scene
+public struct GSMesh
+{
+    // Offsets are absolute, and are in Primitive buffer (bytes).
+    // @ref FVertex
+    public uint32_t vtxOffset;
+    public uint32_t vtxCount;
+    // LOD0 UINT32 indices
+    public uint32_t idxOffset;
+    public uint32_t idxCount;
+    // -- DAG LOD Group @ref FLODGroup
+    public uint32_t groupOffset;
+    public uint32_t groupCount;
+    // -- DAG Meshlets @ref FMeshlet
+    public uint32_t meshletOffset;
+    public uint32_t meshletCount;
+    public uint32_t meshletVtxOffset;
+    public uint32_t meshletTriOffset;
+    // -- Global index (amongst all loaded meshes)
+    public uint32_t meshletGlobalIndex;
+};
+public struct MIndex {
+    public uint8_t v0;
+    public uint8_t v1;
+    public uint8_t v2;
+}
+public struct GSInstance
+{
+    // TRS
+    public float3 transform;
+    public quat rotation;
+    public float3 scale;
+    public uint32_t resourceOffset; // Mesh or curve set offset in Primitive buffer (bytes)
+    public uint32_t materialIndex; // In Material buffer (offset)
+    public uint32_t resourceIndex; // Debug use
+    public uint32_t type; // 0=Mesh, 1=Curve
+};
+public struct GSCurveSet
+{
+    public uint32_t pointOffset;
+    public uint32_t pointCount;
+    public uint32_t segmentOffset;
+    public uint32_t segmentCount;
+    public uint32_t aabbOffset;
+    public uint32_t materialIndex;
+};
+public struct GSCurvePoint
+{
+    public float3 position;
+    public float radius;
+};
+public struct GSCurveSegment
+{
+    public uint32_t p0;
+    public uint32_t p1;
+    public float u0;
+    public float u1;
+};
+public struct GSMaterial
+{
+    public uint32_t baseColorTexture;
+    public uint32_t emissiveTexture;
+    public uint32_t metallicRoughnessTexture;
+    public uint32_t normalTexture;
+    public uint32_t transmissionTexture;
+    public uint32_t specularTexture;
+    public uint32_t specularColorTexture;
+    public uint32_t anisotropyTexture;
+    public uint32_t sheenColorTexture;
+    public uint32_t sheenRoughnessTexture;
+    public uint32_t clearcoatTexture;
+    public uint32_t clearcoatRoughnessTexture;
+    public float4 baseColorFactor;
+    public float3 emissiveFactor;
+    public float metallicFactor;
+    public float roughnessFactor;
+    public float transmissionFactor;
+    public float ior;
+    public float specularFactor;
+    public float3 specularColorFactor;
+    public float anisotropyStrength;
+    public float anisotropyRotation;
+    public float3 sheenColorFactor;
+    public float sheenRoughnessFactor;
+    public float clearcoatFactor;
+    public float clearcoatRoughnessFactor;
+    public float subsurfaceFactor;
+    public float subsurfaceScale;
+    public float3 subsurfaceColor;
+    public float3 subsurfaceRadius;
+    public uint32_t shaderBlockID;
+    public float hairBetaM;
+    public float hairBetaN;
+    public float hairAlpha;
+};
+public struct MeshletTaskDispatch // VkDrawMeshTasksIndirectCommandEXT
+{
+    public uint32_t groupCountX;
+    public uint32_t groupCountY;
+    public uint32_t groupCountZ;
+};
+public struct MeshletTaskWork
+{
+    public uint32_t instanceID; // Absolute
+    // We're not using task shaders - but with a dedicated compute shader
+    // to further cull meshlets and generate indirect meshlet dispatches.
+    // In principle they work the same, however with no GS memory woes and
+    // actually works on AMD proprietary drivers.
+    // Sigh.
+    public uint32_t firstMeshlet;
+    public uint32_t numMeshlets;
+};
+public struct GSLight
+{
+    public uint32_t type;       // 0=Directional, 1=Point, 2=Spot, 3=Disk, 4=Rect
+    public float3 color;        // Normalized RGB color
+    public float power;         // Radiant power (type-dependent unit)
+    public float3 position;
+    public float3 direction;
+    public float range;
+    public float spotInnerCosAngle;
+    public float spotOuterCosAngle;
+    // Area lights (Disk / Rect)
+    public float3 dpdu;         // tangent u-axis (Rect: half-extent u)
+    public float3 dpdv;         // tangent v-axis (Rect: half-extent v)
+    public float2 radius;       // Disk radius (x, y for ellipse)
+    public uint32_t twoSided;
+    public float selectionWeight;
+};
+public struct UBO
+{
+    public uint32_t frameNumber;
+    public uint32_t firstInstance;
+    public uint32_t numInstances;
+    public uint32_t firstMaterial;
+    public uint32_t numMaterials;
+    public float lodThreshold;
+    public float zNear;
+    public float4x4 view;
+    public float4x4 proj;
+    public float4x4 inverseView;
+    public float4x4 inverseViewProj;
+    public float4 projPlanes; // ij:left, kl:top
+    public float aperture;
+    public float focalDistance;
+    public uint32_t apertureBlades;
+    public float apertureRotation;
+    public float apertureRatio;
+    public float fbWidth;
+    public float fbHeight;
+    public uint32_t hizLevels;
+    public uint32_t hizWidth;
+    public uint32_t hizHeight;
+    // -- Lighting
+    public float camEV;
+    public float4 camPosition;
+    public float4 camDirection;
+    // Environment light
+    public float3 ambientColor;
+    public float ambientPower;
+    public uint32_t useEnvMap;
+    public float envAzimuthOffset;
+    public uint32_t ggxLutEIndex;
+    public uint32_t sheenLtcIndex;
+    public uint32_t viewLutIndex;
+    public uint32_t envMapTextureIndex;
+    public uint32_t envMapMarginalCDFIndex;
+    public uint32_t envMapConditionalCDFIndex;
+    public uint32_t _envTexturePad0;
+    // Scene lights
+    public uint32_t firstLight;
+    public uint32_t firstLightAliasTable;
+    public uint32_t numSceneLights;
+    public float sceneLightWeightSum;
+    public uint32_t _lightPad0;
+    // -- Path Tracing
+    public uint32_t ptAccumulatedFrames;
+    public uint32_t ptMaxBouncesDiffuse;
+    public uint32_t ptMaxBouncesSpecular;
+    public uint32_t ptMaxBouncesTransmission;
+    public float ptFireflyClamp;
+    public uint32_t ptSamplesPerPixel; // Always >= 1; fractional SPP uses ptDispatchTileSide instead.
+    public uint32_t ptDispatchTileSide; // 1 = full dispatch, n > 1 = 1/(n*n) tile dispatch.
+    // -- Debug
+    public uint32_t postShowOutline;
+    public uint32_t ptViewFlags;
+};
+// ^^^
+
+public struct V2F
+{
+    public float4 pos : SV_POSITION;
+    public float3 normal : NORMAL;
+    public float3 tangent : TANGENT;
+    public float3 bitangent : BITANGENT;
+    public float bitangentSign : BITSIGN;
+    public float2 uv : TEXCOORD0;
+    public uint32_t meshlet : ID;
+    public uint32_t materialIndex : MATID;
+    public uint32_t instanceID : INSTID;
+};
+
+public float ApproximateMipLevelFromUVGradient(float2 uvDX, float2 uvDY, uint width, uint height)
+{
+    float2 textureSize = float2(float(max(width, 1u)), float(max(height, 1u)));
+    float2 dx = uvDX * textureSize;
+    float2 dy = uvDY * textureSize;
+    float rho2 = max(dot(dx, dx), dot(dy, dy));
+    return max(0.0f, 0.5f * log2(max(rho2, 1e-12f)));
+}
+
+public float3 VisualizeApproximateMipLevel(float mipLevel)
+{
+    // False-color over mip levels [0, 8]. Black/blue means sharp, yellow/red means coarse.
+    float x = saturate(mipLevel / 8.0f);
+    return saturate(float3(
+        1.5f - abs(4.0f * x - 3.0f),
+        1.5f - abs(4.0f * x - 2.0f),
+        1.5f - abs(4.0f * x - 1.0f)));
+}

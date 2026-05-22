@@ -109,13 +109,13 @@ FVertex FQVertex::Unpack(FQVertex const& vertex)
     result.uv[1] = dequantizeFP16(vertex.uv[1]);
     return result;
 }
-void FMesh::Quantize()
+void FImportedMesh::Quantize()
 {
     verticesQuantized.resize(vertices.size());
     for (size_t i = 0; i < vertices.size(); i++)
         verticesQuantized[i] = FQVertex::Pack(vertices[i]);
 }
-void FMesh::Dequantize()
+void FImportedMesh::Dequantize()
 {
     vertices.resize(verticesQuantized.size());
     for (size_t i = 0; i < verticesQuantized.size(); i++)
@@ -199,7 +199,7 @@ void BuildMeshlets(Vector<FMeshlet>& outMeshlet, Vector<Index>& outMeshletVertic
     }
 }
 
-void FMesh::SimplifyLOD(int levels, float scale)
+void FImportedMesh::SimplifyLOD(int levels, float scale)
 {
     CHECK_MSG(lods.size() == 1, "LOD already populated");
     for (int i = 1; i < levels; i++)
@@ -216,7 +216,7 @@ struct DAGCluster
     Vector<uint32_t> indices;
     DAGCluster(Allocator* alloc) : indices(alloc) {}
 };
-void FMesh::ClusterizeDAG()
+void FImportedMesh::ClusterizeDAG()
 {
     clodConfig config = clodDefaultConfig(kMeshletMaxTriangles);
     const float attribute_weights[9] = {/* normal */ 0.5f, 0.5f, 0.5f, /* tangent */ 0.5f, 0.5f, 0.5f,
@@ -282,7 +282,7 @@ void FMesh::ClusterizeDAG()
     }
     dagClusters = {}; // No longer needed
 }
-size_t FMesh::CalculateQuantizedBound(bool incLod, bool incDag) const
+size_t FImportedMesh::CalculateQuantizedBound(bool incLod, bool incDag) const
 {
     size_t size = verticesQuantized.size() * sizeof(FQVertex);
     if (incLod)
@@ -297,7 +297,7 @@ size_t FMesh::CalculateQuantizedBound(bool incLod, bool incDag) const
     }
     return size;
 }
-bool FMesh::EnsureQuantized()
+bool FImportedMesh::EnsureQuantized()
 {
     if (!verticesQuantized.empty())
         return true;
@@ -309,7 +309,7 @@ bool FMesh::EnsureQuantized()
     }
     return false;
 }
-bool FMesh::EnsureRaw()
+bool FImportedMesh::EnsureRaw()
 {
     if (!vertices.empty())
         return true;
@@ -322,14 +322,14 @@ bool FMesh::EnsureRaw()
     return false;
 }
 
-void FMesh::Optimize() { OptimizeVertexIndex(vertices, lods[0].indices); }
-FMesh::FMesh(Allocator* alloc) :
+void FImportedMesh::Optimize() { OptimizeVertexIndex(vertices, lods[0].indices); }
+FImportedMesh::FImportedMesh(Allocator* alloc) :
     vertices(alloc), verticesQuantized(alloc), lods(alloc), dag(alloc)
 {
     lods.resize(1u, alloc);
 }
 // -- loading
-void LoadObj(FMesh& outMesh, StringView path)
+void LoadObj(FImportedMesh& outMesh, StringView path)
 {
     fastObjMesh* mesh = fast_obj_read(path.data());
     UniquePtr<fastObjMesh, decltype(&fast_obj_destroy)> raii(mesh, &fast_obj_destroy);

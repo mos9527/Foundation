@@ -5,7 +5,7 @@
 int main_scene(StringView srcPath, StringView dstPath)
 {
     MemoryMappedFile file(dstPath, 64ull * 1024ull * 1024ull /* grows on demand */);
-    FScene scene(file, GLOBAL_ALLOC);
+    FImportedScene scene(file, GLOBAL_ALLOC);
     LOG(Util, LogDebug, "Saving");
     LoadGLTF(srcPath, scene, GLOBAL_ALLOC);
     return 0;
