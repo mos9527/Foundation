@@ -1004,6 +1004,7 @@ void EditorDockSpaceAndMenuBar()
             {
                 GEditor.renderTask.targetSamples = pathTracerRender ? GEditor.renderTask.samplePopupInput : 1;
                 GEditor.renderTask.renderPaused = false;
+                GEditor.renderTask.renderAutoPaused = false;
                 GEditor.shaderGlobals.ptAccumulatedFrames = 0;
                 GEditor.state = FERendering;
                 ImGui::CloseCurrentPopup();
@@ -1029,18 +1030,39 @@ void EditorDockSpaceAndMenuBar()
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
             else
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_Button]);
-            const char* labelPTPause[] = {"  PT  ", "", "PAUSED", ""};
-            if (ImGui::Button(labelPTPause[GEditor.renderTask.renderPaused ? (SDL_GetTicks() >> 9 & 3) : 0],
-                              ImVec2(btnW_PT, 0)))
+            // Three pause states drive the PT button label:
+            //   Running       -> "  PT  "
+            //   ManualPaused  -> blinking "PAUSED" (sticky; only PT click clears)
+            //   AutoPaused    -> blinking "AUTO"   (cleared by any user operation)
+            const char* labelPTPause[]   = {"  PT  ", "", "PAUSED", ""};
+            const char* labelPTAuto[]    = {"  PT  ", "", " AUTO ", ""};
+            int blink = (SDL_GetTicks() >> 9) & 3;
+            const char* ptLabel = "  PT  ";
+            if (GEditor.renderTask.renderAutoPaused)
+                ptLabel = labelPTAuto[blink];
+            else if (GEditor.renderTask.renderPaused)
+                ptLabel = labelPTPause[blink];
+            if (ImGui::Button(ptLabel, ImVec2(btnW_PT, 0)))
             {
                 if (GEditor.rendererMode != ERendererMode::PathTracer)
                 {
                     GEditor.rendererMode = ERendererMode::PathTracer;
                     GEditor.state = FERunningEnter;
                     GEditor.renderTask.renderPaused = false;
+                    GEditor.renderTask.renderAutoPaused = false;
+                }
+                else if (GEditor.renderTask.renderAutoPaused)
+                {
+                    // Clicking while AutoPaused -> resume rendering. Treat as user op.
+                    GEditor.renderTask.renderPaused = false;
+                    GEditor.renderTask.renderAutoPaused = false;
                 }
                 else
+                {
+                    // Manual toggle. Always sticky - never auto.
                     GEditor.renderTask.renderPaused ^= 1;
+                    GEditor.renderTask.renderAutoPaused = false;
+                }
             }
             ImGui::PopStyleColor();
 
@@ -1559,218 +1581,6 @@ void FRunningImGui()
     ImGui::End();
     ImGui::PopStyleColor();
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
-    if (ImGui::Begin("Rendering"))
-    {
-        bool changed = false;
-        ImGui::SeparatorText("Display");
-        bool viewLUTChanged = false;
-        auto viewLUTCombo = [](const char* label, int& index, String& externalPath,
-                               const ViewLUTEntry* entries, int count)
-        {
-            const int externalIndex = count;
-            if (index < 0 || index > externalIndex || (index == externalIndex && externalPath.empty()))
-                index = std::clamp(index, 0, count - 1);
-
-            bool selected = false;
-            const char* preview = index == externalIndex ? kExternalViewLUTLabel : entries[index].label;
-            bool comboOpen = ImGui::BeginCombo(label, preview);
-            if (index == externalIndex && !externalPath.empty() && ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s", externalPath.c_str());
-            if (comboOpen)
-            {
-                for (int i = 0; i < count; ++i)
-                {
-                    const bool isSelected = i == index;
-                    if (ImGui::Selectable(entries[i].label, isSelected))
-                    {
-                        index = i;
-                        selected = true;
-                    }
-                    if (isSelected)
-                        ImGui::SetItemDefaultFocus();
-                }
-                const bool isExternalSelected = index == externalIndex;
-                if (ImGui::Selectable(kExternalViewLUTLabel, isExternalSelected))
-                {
-                    String selectedPath;
-                    if (OpenViewLUTDialog(selectedPath))
-                    {
-                        externalPath = selectedPath;
-                        index = externalIndex;
-                        selected = true;
-                    }
-                }
-                if (isExternalSelected)
-                    ImGui::SetItemDefaultFocus();
-                ImGui::EndCombo();
-            }
-            return selected;
-        };
-        viewLUTChanged |= viewLUTCombo("SDR LUT", GEditor.viewLUTSdrIndex, GEditor.viewLUTSdrExternalPath,
-                                       kViewLUTsSdr, kViewLUTSdrCount);
-        viewLUTChanged |= viewLUTCombo("HDR LUT", GEditor.viewLUTHdrIndex, GEditor.viewLUTHdrExternalPath,
-                                       kViewLUTsHdr, kViewLUTHdrCount);
-        if (viewLUTChanged)
-            ApplyViewLUTSelection();
-        if (GContext->windowHDR.propertiesAvailable)
-        {
-            bool hdrOutput = GContext->enableHDR;
-            ImGui::BeginDisabled();
-            ImGui::Checkbox("Enable HDR", &hdrOutput);
-            ImGui::EndDisabled();
-            ImGui::TextDisabled("HDR output follows SDL window HDR state");
-        }
-        else if (ImGui::Checkbox("Enable HDR", &GContext->enableHDR))
-        {
-            GEditor.state = FERunningEnter;
-            changed = true;
-        }
-        if (GContext->windowHDR.propertiesAvailable)
-        {
-            ImGui::Text("SDL HDR: %s", GContext->windowHDR.enabled ? "enabled" : "disabled");
-            ImGui::Text("SDR white: %.3f linear (~%.1f nits)", GContext->windowHDR.sdrWhiteLevel,
-                        GContext->windowHDR.sdrWhiteNits);
-            ImGui::Text("HDR headroom: %.2fx (~%.1f nits peak)", GContext->windowHDR.headroom,
-                        GContext->windowHDR.peakNits);
-        }
-        else
-        {
-            ImGui::TextDisabled("SDL HDR window properties unavailable");
-        }
-        if (GEditor.rendererMode == ERendererMode::PathTracer)
-        {
-            ImGui::SeparatorText("Path Tracer");
-            if (ImModalButton("Fast", 0, 3))
-            {
-                GEditor.shaderGlobals.ptMaxBouncesDiffuse = 4;
-                GEditor.shaderGlobals.ptMaxBouncesSpecular = 4;
-                GEditor.shaderGlobals.ptMaxBouncesTransmission = 12;
-                GEditor.shaderGlobals.ptFireflyClamp = 1.0f;
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
-            }
-            if (ImModalButton("Full", 1, 3))
-            {
-                GEditor.shaderGlobals.ptMaxBouncesDiffuse = 32;
-                GEditor.shaderGlobals.ptMaxBouncesSpecular = 32;
-                GEditor.shaderGlobals.ptMaxBouncesTransmission = 32;
-                GEditor.shaderGlobals.ptFireflyClamp = 2.0f;
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
-            }
-            if (ImModalButton("Über", 2, 3))
-            {
-                GEditor.shaderGlobals.ptMaxBouncesDiffuse = 32;
-                GEditor.shaderGlobals.ptMaxBouncesSpecular = 32;
-                GEditor.shaderGlobals.ptMaxBouncesTransmission = 32;
-                GEditor.shaderGlobals.ptFireflyClamp = 100.0f;
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
-            }
-            ImGui::SeparatorText("Performance");
-            const bool serSupported = GContext->device->GetCapabilities().shaderExecutionReordering;
-            bool serEnabled = serSupported && GEditor.rendererConfig.ptShaderExecutionReordering;
-            ImGui::BeginDisabled(!serSupported);
-            if (ImGui::Checkbox("Shader Execution Reordering", &serEnabled))
-            {
-                GEditor.rendererConfig.ptShaderExecutionReordering = serEnabled;
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
-                GEditor.state = FERunningEnter;
-            }
-            ImGui::EndDisabled();
-            if (!serSupported)
-                ImGui::TextDisabled("SER is not supported by this device.");
-            if (ImGui::Checkbox("Force Texture LOD 0", &GEditor.rendererConfig.forceTextureLOD0))
-            {
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
-                GEditor.state = FERunningEnter;
-            }
-            ImGui::SeparatorText("Ray Bounce");
-            ImGui::SliderInt("Diffuse", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesDiffuse), 0, 64);
-            ImGui::SliderInt("Specular", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesSpecular), 0, 64);
-            ImGui::SliderInt("Transmission", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesTransmission), 0, 64);
-            ImGui::SeparatorText("Sampling");
-            ImGui::SliderFloat("Max Energy", &GEditor.shaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
-            static int ptSPPIndex = 3; // 1/25 SPP
-            ptSPPIndex = PTSPPOptionIndex(GEditor.shaderGlobals);
-            if (ImGui::SliderInt("SPP", &ptSPPIndex, 0, kPTSPPOptionCount - 1,
-                                 kPTSPPOptions[ptSPPIndex].label, ImGuiSliderFlags_AlwaysClamp))
-                SetPTSPPOption(ptSPPIndex);
-            const char* samplerItems[] = {"PCG (Independent)", "Sobol (Quasi-Monte Carlo)"};
-            int ptSampler = static_cast<int>(GEditor.rendererConfig.ptSampler);
-            if (ImGui::Combo("Sampler", &ptSampler, samplerItems, 2))
-            {
-                GEditor.rendererConfig.ptSampler = static_cast<uint32_t>(ptSampler);
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
-                GEditor.state = FERunningEnter;
-            }
-            const char* lightSamplerItems[] = { "Uniform", "Power" };
-            if (ImGui::Combo("Light Sampler", reinterpret_cast<int*>(&GContext->gpuScene->mLightSamplerType), lightSamplerItems, 2))
-            {
-                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
-            }
-        }
-        if (GEditor.rendererMode == ERendererMode::Raster)
-        {
-            ImGui::SeparatorText("Rasterizer");
-            static float lodLogThreshold = 3;
-            ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
-            GEditor.shaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
-            ImGui::SeparatorText("Performance");
-            changed |= ImGui::Checkbox("Force Texture LOD 0", &GEditor.rendererConfig.forceTextureLOD0);
-            {
-                const char* items[] = {"Overdraw", "Meshlet", "Material ID", "Texture LOD"};
-                const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID, kViewTextureLOD};
-                ImGui::SeparatorText("Debug View");
-                changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
-            }
-            {
-                const char* items[] = {"RT Shadows"};
-                const unsigned values[] = {kEnableRasterRTShadows};
-                ImGui::SeparatorText("Options");
-                changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values);
-            }
-            {
-                const char* items[] = {"Frustum", "Occlusion"};
-                const unsigned values[] = {kCullFrustum, kCullOcclusion};
-                ImGui::SeparatorText("Culling");
-                changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.cullFlags, items, values);
-            }
-        }
-        if (GEditor.rendererMode == ERendererMode::PathTracer)
-        {
-            {
-                const char* items[] = {"Diffuse Buffer", "Specular Buffer"};
-                const unsigned values[] = {kViewAOVDiffuse, kViewAOVSpecular};
-                ImGui::SeparatorText("AOV View");
-                if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
-                {
-                    GEditor.rendererConfig.viewFlags &= ~kViewTextureLOD;
-                    changed = true;
-                }
-            }
-            {
-                const char* items[] = {"Texture LOD"};
-                const unsigned values[] = {kViewTextureLOD};
-                ImGui::SeparatorText("Debug View");
-                if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
-                {
-                    GEditor.rendererConfig.viewFlags &= ~(kViewAOVDiffuse | kViewAOVSpecular);
-                    changed = true;
-                }
-            }
-        }
-        if (GEditor.rendererMode == ERendererMode::Raster)
-        {
-            const char* items[] = {"Position", "BaseColor", "Normal"};
-            const unsigned values[] = {kViewPosition, kViewBaseColor, kViewNormal};
-            ImGui::SeparatorText("GBuffer View");
-            changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
-        }
-        if (changed)
-            GEditor.state = FERunningEnter;
-    }
-    ImGui::End();
-    ImGui::PopStyleColor();
-    FLightingPanel();
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
     if (ImGui::Begin("Profiler"))
     {
         if (timings.empty())
@@ -1942,6 +1752,269 @@ void FRunningImGui()
                 ImGui::TreePop();
             }
         }
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+    FLightingPanel();
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 0.70f));
+    if (ImGui::Begin("Rendering"))
+    {
+        bool changed = false;
+        ImGui::SeparatorText("Display");
+        bool viewLUTChanged = false;
+        auto viewLUTCombo = [](const char* label, int& index, String& externalPath,
+                               const ViewLUTEntry* entries, int count)
+        {
+            const int externalIndex = count;
+            if (index < 0 || index > externalIndex || (index == externalIndex && externalPath.empty()))
+                index = std::clamp(index, 0, count - 1);
+
+            bool selected = false;
+            const char* preview = index == externalIndex ? kExternalViewLUTLabel : entries[index].label;
+            bool comboOpen = ImGui::BeginCombo(label, preview);
+            if (index == externalIndex && !externalPath.empty() && ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", externalPath.c_str());
+            if (comboOpen)
+            {
+                for (int i = 0; i < count; ++i)
+                {
+                    const bool isSelected = i == index;
+                    if (ImGui::Selectable(entries[i].label, isSelected))
+                    {
+                        index = i;
+                        selected = true;
+                    }
+                    if (isSelected)
+                        ImGui::SetItemDefaultFocus();
+                }
+                const bool isExternalSelected = index == externalIndex;
+                if (ImGui::Selectable(kExternalViewLUTLabel, isExternalSelected))
+                {
+                    String selectedPath;
+                    if (OpenViewLUTDialog(selectedPath))
+                    {
+                        externalPath = selectedPath;
+                        index = externalIndex;
+                        selected = true;
+                    }
+                }
+                if (isExternalSelected)
+                    ImGui::SetItemDefaultFocus();
+                ImGui::EndCombo();
+            }
+            return selected;
+        };
+        viewLUTChanged |= viewLUTCombo("SDR LUT", GEditor.viewLUTSdrIndex, GEditor.viewLUTSdrExternalPath,
+                                       kViewLUTsSdr, kViewLUTSdrCount);
+        viewLUTChanged |= viewLUTCombo("HDR LUT", GEditor.viewLUTHdrIndex, GEditor.viewLUTHdrExternalPath,
+                                       kViewLUTsHdr, kViewLUTHdrCount);
+        if (viewLUTChanged)
+            ApplyViewLUTSelection();
+        if (GContext->windowHDR.propertiesAvailable)
+        {
+            bool hdrOutput = GContext->enableHDR;
+            ImGui::BeginDisabled();
+            ImGui::Checkbox("Enable HDR", &hdrOutput);
+            ImGui::EndDisabled();
+            ImGui::TextDisabled("HDR output follows SDL window HDR state");
+        }
+        else if (ImGui::Checkbox("Enable HDR", &GContext->enableHDR))
+        {
+            GEditor.state = FERunningEnter;
+            changed = true;
+        }
+        if (GContext->windowHDR.propertiesAvailable)
+        {
+            ImGui::Text("SDL HDR: %s", GContext->windowHDR.enabled ? "enabled" : "disabled");
+            ImGui::Text("SDR white: %.3f linear (~%.1f nits)", GContext->windowHDR.sdrWhiteLevel,
+                        GContext->windowHDR.sdrWhiteNits);
+            ImGui::Text("HDR headroom: %.2fx (~%.1f nits peak)", GContext->windowHDR.headroom,
+                        GContext->windowHDR.peakNits);
+        }
+        else
+        {
+            ImGui::TextDisabled("SDL HDR window properties unavailable");
+        }
+        if (GEditor.rendererMode == ERendererMode::PathTracer)
+        {
+            ImGui::SeparatorText("Stats");
+            // Throughput: measure delta on the *frame* (dispatch) counter every ~250ms,
+            // then derive samples/sec from frames/sec via the spp/tile ratio.
+            //   frames  = ptAccumulatedFrames / PTSamplesPerDispatch   (dispatch count)
+            //   samples = frames * PTSamplesPerDispatch / PTTileSampleCount
+            //           = ptAccumulatedFrames / PTTileSampleCount      (== PTCompletedPixelSamples)
+            // i.e. one dispatch advances `spp / tile^2` pixel-samples; spp>1 and tiled
+            // dispatch are both handled by this single ratio.
+            static double   sLastSampleTime  = ImGui::GetTime();
+            static uint32_t sLastFrameCount  = 0u;
+            static float    sFramesPerSec    = 0.0f;
+            uint32_t samplesPerDispatch = PTSamplesPerDispatch(GEditor.shaderGlobals);
+            uint32_t tileSampleCount    = PTTileSampleCount(GEditor.shaderGlobals);
+            uint32_t frameCount         = GEditor.shaderGlobals.ptAccumulatedFrames / samplesPerDispatch;
+            uint32_t completedSamples   = PTCompletedPixelSamples(GEditor.shaderGlobals);
+            double now = ImGui::GetTime();
+            double dt  = now - sLastSampleTime;
+            if (dt >= 0.25)
+            {
+                int   deltaFrames = static_cast<int>(frameCount) - static_cast<int>(sLastFrameCount);
+                float instFps     = deltaFrames > 0 ? static_cast<float>(deltaFrames) / static_cast<float>(dt) : 0.0f;
+                // Light EMA smoothing
+                sFramesPerSec   = sFramesPerSec * 0.6f + instFps * 0.4f;
+                sLastSampleTime = now;
+                sLastFrameCount = frameCount;
+            }
+            // Reset measurement when accumulation got reset (camera/UI op).
+            if (frameCount < sLastFrameCount)
+            {
+                sLastFrameCount = frameCount;
+                sLastSampleTime = now;
+                sFramesPerSec   = 0.0f;
+            }
+            float samplesPerSec = sFramesPerSec * static_cast<float>(samplesPerDispatch) /
+                                  static_cast<float>(tileSampleCount);
+            ImGui::Text("samples: %u (%.2f sps), frames: %u (%.1f fps)",
+                        completedSamples, samplesPerSec, frameCount, sFramesPerSec);
+            // Auto-Pause sample limit slider. 0 = disabled.
+            int limit = GEditor.renderTask.autoPauseSampleLimit;
+            if (ImGui::SliderInt("Auto-Pause Samples", &limit, 0, 65536, limit > 0 ? "%d" : "Off",
+                                 ImGuiSliderFlags_Logarithmic))
+            {
+                GEditor.renderTask.autoPauseSampleLimit = std::max(0, limit);
+                // Re-arm auto-pause if user raised the limit above current count
+                if (GEditor.renderTask.renderAutoPaused &&
+                    GEditor.renderTask.autoPauseSampleLimit > static_cast<int>(completedSamples))
+                {
+                    GEditor.renderTask.renderAutoPaused = false;
+                    GEditor.renderTask.renderPaused = false;
+                }
+            }
+            ImGui::SeparatorText("Path Tracer");
+            if (ImModalButton("Fast", 0, 3))
+            {
+                GEditor.shaderGlobals.ptMaxBouncesDiffuse = 4;
+                GEditor.shaderGlobals.ptMaxBouncesSpecular = 4;
+                GEditor.shaderGlobals.ptMaxBouncesTransmission = 12;
+                GEditor.shaderGlobals.ptFireflyClamp = 1.0f;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
+            if (ImModalButton("Full", 1, 3))
+            {
+                GEditor.shaderGlobals.ptMaxBouncesDiffuse = 32;
+                GEditor.shaderGlobals.ptMaxBouncesSpecular = 32;
+                GEditor.shaderGlobals.ptMaxBouncesTransmission = 32;
+                GEditor.shaderGlobals.ptFireflyClamp = 2.0f;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
+            if (ImModalButton("Über", 2, 3))
+            {
+                GEditor.shaderGlobals.ptMaxBouncesDiffuse = 32;
+                GEditor.shaderGlobals.ptMaxBouncesSpecular = 32;
+                GEditor.shaderGlobals.ptMaxBouncesTransmission = 32;
+                GEditor.shaderGlobals.ptFireflyClamp = 100.0f;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
+            ImGui::SeparatorText("Performance");
+            const bool serSupported = GContext->device->GetCapabilities().shaderExecutionReordering;
+            bool serEnabled = serSupported && GEditor.rendererConfig.ptShaderExecutionReordering;
+            ImGui::BeginDisabled(!serSupported);
+            if (ImGui::Checkbox("Shader Execution Reordering", &serEnabled))
+            {
+                GEditor.rendererConfig.ptShaderExecutionReordering = serEnabled;
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.state = FERunningEnter;
+            }
+            ImGui::EndDisabled();
+            if (!serSupported)
+                ImGui::TextDisabled("SER is not supported by this device.");
+            if (ImGui::Checkbox("Force Texture LOD 0", &GEditor.rendererConfig.forceTextureLOD0))
+            {
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.state = FERunningEnter;
+            }
+            ImGui::SeparatorText("Ray Bounce");
+            ImGui::SliderInt("Diffuse", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesDiffuse), 0, 64);
+            ImGui::SliderInt("Specular", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesSpecular), 0, 64);
+            ImGui::SliderInt("Transmission", reinterpret_cast<int*>(&GEditor.shaderGlobals.ptMaxBouncesTransmission), 0, 64);
+            ImGui::SeparatorText("Sampling");
+            ImGui::SliderFloat("Max Energy", &GEditor.shaderGlobals.ptFireflyClamp, 1.0f, 100.0f, "%.1f");
+            static int ptSPPIndex = 3; // 1/25 SPP
+            ptSPPIndex = PTSPPOptionIndex(GEditor.shaderGlobals);
+            if (ImGui::SliderInt("SPP", &ptSPPIndex, 0, kPTSPPOptionCount - 1,
+                                 kPTSPPOptions[ptSPPIndex].label, ImGuiSliderFlags_AlwaysClamp))
+                SetPTSPPOption(ptSPPIndex);
+            const char* samplerItems[] = {"PCG (Independent)", "Sobol (Quasi-Monte Carlo)"};
+            int ptSampler = static_cast<int>(GEditor.rendererConfig.ptSampler);
+            if (ImGui::Combo("Sampler", &ptSampler, samplerItems, 2))
+            {
+                GEditor.rendererConfig.ptSampler = static_cast<uint32_t>(ptSampler);
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+                GEditor.state = FERunningEnter;
+            }
+            const char* lightSamplerItems[] = { "Uniform", "Power" };
+            if (ImGui::Combo("Light Sampler", reinterpret_cast<int*>(&GContext->gpuScene->mLightSamplerType), lightSamplerItems, 2))
+            {
+                GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+            }
+        }
+        if (GEditor.rendererMode == ERendererMode::Raster)
+        {
+            ImGui::SeparatorText("Rasterizer");
+            static float lodLogThreshold = 3;
+            ImGui::SliderFloat("LOD ", &lodLogThreshold, 0, 8);
+            GEditor.shaderGlobals.lodThreshold = std::pow(10.0f, -lodLogThreshold);
+            ImGui::SeparatorText("Performance");
+            changed |= ImGui::Checkbox("Force Texture LOD 0", &GEditor.rendererConfig.forceTextureLOD0);
+            {
+                const char* items[] = {"Overdraw", "Meshlet", "Material ID", "Texture LOD"};
+                const unsigned values[] = {kViewOverdraw, kViewMeshlet, kViewMaterialID, kViewTextureLOD};
+                ImGui::SeparatorText("Debug View");
+                changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
+            }
+            {
+                const char* items[] = {"RT Shadows"};
+                const unsigned values[] = {kEnableRasterRTShadows};
+                ImGui::SeparatorText("Options");
+                changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values);
+            }
+            {
+                const char* items[] = {"Frustum", "Occlusion"};
+                const unsigned values[] = {kCullFrustum, kCullOcclusion};
+                ImGui::SeparatorText("Culling");
+                changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.cullFlags, items, values);
+            }
+        }
+        if (GEditor.rendererMode == ERendererMode::PathTracer)
+        {
+            {
+                const char* items[] = {"Diffuse Buffer", "Specular Buffer"};
+                const unsigned values[] = {kViewAOVDiffuse, kViewAOVSpecular};
+                ImGui::SeparatorText("AOV View");
+                if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
+                {
+                    GEditor.rendererConfig.viewFlags &= ~kViewTextureLOD;
+                    changed = true;
+                }
+            }
+            {
+                const char* items[] = {"Texture LOD"};
+                const unsigned values[] = {kViewTextureLOD};
+                ImGui::SeparatorText("Debug View");
+                if (ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */))
+                {
+                    GEditor.rendererConfig.viewFlags &= ~(kViewAOVDiffuse | kViewAOVSpecular);
+                    changed = true;
+                }
+            }
+        }
+        if (GEditor.rendererMode == ERendererMode::Raster)
+        {
+            const char* items[] = {"Position", "BaseColor", "Normal"};
+            const unsigned values[] = {kViewPosition, kViewBaseColor, kViewNormal};
+            ImGui::SeparatorText("GBuffer View");
+            changed |= ImBitmaskOptionPicker(GEditor.rendererConfig.viewFlags, items, values, true /* solo */);
+        }
+        if (changed)
+            GEditor.state = FERunningEnter;
     }
     ImGui::End();
     DrawTexturePreviewModal();

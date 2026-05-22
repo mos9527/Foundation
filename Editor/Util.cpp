@@ -1,5 +1,5 @@
 #include "Scene/Scene.hpp"
-#include "Scene/Texture.hpp"
+#include <Renderer/Texture.hpp>
 #include <Core/AllocatorStack.hpp>
 
 int main_scene(StringView srcPath, StringView dstPath)

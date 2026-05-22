@@ -192,7 +192,20 @@ static void FRunning()
     GEditor.shaderGlobals.fbWidth = static_cast<float>(renderExtent.x);
     GEditor.shaderGlobals.fbHeight = static_cast<float>(renderExtent.y);
     GEditor.shaderGlobals.ptViewFlags = GEditor.rendererConfig.viewFlags;
-    
+
+    // -- AutoPause: any "user operation" exits AutoPaused. We define a user operation
+    //    as anything that resets the path-tracer accumulation, which covers camera
+    //    movement (cameraUpdated) and any UI control change that sets
+    //    ptAccumulatedFrames = 0 (PT settings, light edits, etc.). A drop in
+    //    ptAccumulatedFrames since the last frame is the canonical signal.
+    static uint32_t sPrevPTAccumulatedFrames = 0u;
+    bool ptAccumWasReset = GEditor.shaderGlobals.ptAccumulatedFrames < sPrevPTAccumulatedFrames;
+    bool userOperation = GEditor.cameraUpdated || ptAccumWasReset || sRendererRebuildRequested;
+    if (userOperation && GEditor.renderTask.renderAutoPaused)
+    {
+        GEditor.renderTask.renderAutoPaused = false;
+        GEditor.renderTask.renderPaused = false;
+    }
     if (GEditor.cameraUpdated)
         GEditor.shaderGlobals.ptAccumulatedFrames = 0, GEditor.cameraUpdated = false;
     renderer->ExecuteFrame();
@@ -201,6 +214,7 @@ static void FRunning()
     {
         GEditor.state = FERunningEnter;
         GEditor.shaderGlobals.ptAccumulatedFrames = 0;
+        sPrevPTAccumulatedFrames = 0u;
         return;
     }
     // GPU picking: Blit PS wrote pickResult[0] this frame if a click was pending.
@@ -220,6 +234,22 @@ static void FRunning()
     }
     if (!GEditor.renderTask.renderPaused)
         GEditor.shaderGlobals.ptAccumulatedFrames += PTSamplesPerDispatch(GEditor.shaderGlobals);
+
+    // -- AutoPause trigger: only meaningful in PathTracer mode with a positive limit.
+    //    Once enough pixel samples have accumulated, transition Running -> AutoPaused.
+    //    (Manual pause is left untouched.)
+    if (GEditor.rendererMode == ERendererMode::PathTracer &&
+        !GEditor.renderTask.renderPaused &&
+        GEditor.renderTask.autoPauseSampleLimit > 0)
+    {
+        uint32_t completed = PTCompletedPixelSamples(GEditor.shaderGlobals);
+        if (completed >= static_cast<uint32_t>(GEditor.renderTask.autoPauseSampleLimit))
+        {
+            GEditor.renderTask.renderAutoPaused = true;
+            GEditor.renderTask.renderPaused = true;
+        }
+    }
+    sPrevPTAccumulatedFrames = GEditor.shaderGlobals.ptAccumulatedFrames;
 }
 
 static ImVec2 EventMousePosition(SDL_Event const& event)

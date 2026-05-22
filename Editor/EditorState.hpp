@@ -92,7 +92,15 @@ struct RenderWorkflow
     int           targetSamples     = 0;
     int           samplePopupInput  = 4096;
     bool          openRenderPopup   = false;
+    // Pause state - kept here so the Path Tracer pass setup can read it via pointer.
+    // renderPaused is true whenever rendering should NOT progress (manual OR auto).
+    // renderAutoPaused distinguishes the auto-pause state, which is auto-cleared on
+    // any user operation. Manual pause (PT button) does NOT auto-clear.
     bool          renderPaused      = false;
+    bool          renderAutoPaused  = false;
+    // Auto-pause: when > 0, rendering auto-pauses once this many pixel samples
+    // have accumulated. Set via Rendering window slider.
+    int           autoPauseSampleLimit = 0;
     String        outputPath;
 };
 

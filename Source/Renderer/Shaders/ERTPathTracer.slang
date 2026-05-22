@@ -29,7 +29,7 @@ StructuredBuffer<GSLight> lights;
 StructuredBuffer<Alias> lightAliasTable;
 SamplerState textureSampler;
 StructuredBuffer<uint> sobolMatrices;
-// -- Path radiance accumulation buffers (Welford online mean)
+// -- Path radiance accumulation buffers
 RWTexture2D<float4> diffuse;   // Diffuse lobe radiance
 RWTexture2D<float4> specular;  // Specular lobe radiance (incl. transmission)
 RWTexture2D<uint32_t> pickIDBuffer; // Instance ID map, ~0u = no object (written on primary hit only)
