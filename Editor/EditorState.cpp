@@ -1,5 +1,6 @@
 #include <cmath>
 #include "EditorState.hpp"
+#include <ImGuizmo.h>
 
 EditorState GEditor;
 
@@ -65,7 +66,7 @@ static void EndEditorRendererSetup(Renderer* renderer)
 static void SetupIdleRenderer(FContext* context)
 {
     auto* renderer = BeginEditorRendererSetup(context, 0u);
-    BuildIdleRenderGraph(context, &sIdleTimeSeconds);
+    BuildIdleRenderGraph(renderer, &sIdleTimeSeconds);
     EndEditorRendererSetup(renderer);
 }
 
@@ -74,11 +75,12 @@ static void SetupSceneRenderer(FContext* context, RendererScene scene, RendererH
     auto* renderer = BeginEditorRendererSetup(context, 4u);
     RHIExtent2D renderExtent = ClampViewportExtent(renderer->GetSwapchainExtent());
     GEditor.viewport.renderExtent = renderExtent;
+    GEditor.rendererConfig.enableHDR = context->enableHDR;
     if (GEditor.rendererMode == ERendererMode::PathTracer)
-        BuildPathTracerRenderGraph(context, GEditor.rendererConfig, scene, renderExtent, outHandles,
+        BuildPathTracerRenderGraph(renderer, context->gpuScene, GEditor.rendererConfig, scene, renderExtent, outHandles,
                                    &GEditor.renderTask.renderPaused);
     if (GEditor.rendererMode == ERendererMode::Raster)
-        BuildRasterRenderGraph(context, GEditor.rendererConfig, scene, renderExtent, outHandles);
+        BuildRasterRenderGraph(renderer, context->gpuScene, GEditor.rendererConfig, scene, renderExtent, outHandles);
     EndEditorRendererSetup(renderer);
 }
 

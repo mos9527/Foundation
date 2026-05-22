@@ -1,16 +1,14 @@
 #include "GPUScene.hpp"
+#include "Precompute.hpp"
+#include "Tables/GGX.hpp"
+#include "Tables/LTCSheen.hpp"
+#include "Tables/Sobol.hpp"
+#include "Tables/ViewLUTs.hpp"
 #include <Core/AllocatorStack.hpp>
 #include <Core/Paths.hpp>
 #include <Math/Quantize.hpp>
 #include <algorithm>
-#include <cstring>
 #include <limits>
-#include "../Render/Precompute.hpp"
-#include "../Render/Tables/GGX.hpp"
-#include "../Render/Tables/LTCSheen.hpp"
-#include "../Render/Tables/Sobol.hpp"
-#include "../Render/Tables/ViewLUTs.hpp"
-#include "Scene.hpp"
 
 static FTexture LoadLUT(Allocator* allocator, StringView path)
 {
@@ -30,36 +28,10 @@ static FTexture MakeLUT(const float* data, RHIResourceFormat format, uint32_t wi
     return tex;
 }
 
-static constexpr uint32_t kGPUSceneRingFrameSlack = 3u;
 static constexpr size_t kMinDirectGeometryUploadHeapSize = 512ull * (1ull << 20);
-static constexpr uint32_t kGPUScenePersistentTexture2DBindings = 2u; // GGX LUT + Sheen LTC LUT.
 static constexpr uint32_t kGPUScenePersistentTexture3DBindings = 2u; // default SDR/HDR view LUTs.
-static constexpr uint32_t kGPUSceneDefaultTextureBindings = 2u; // _FoundationDefault Texture2D + Texture2DFloat.
-static constexpr uint32_t kGPUSceneEnvMapBindings = 3u; // Env map + marginal/conditional CDF textures.
 static constexpr uint32_t kGPUSceneTextureBindingSlack = 8u;
 static constexpr size_t kGPUSceneByteBudgetSlack = 64u << 10u;
-
-static uint32_t CountBudget(size_t count)
-{
-    count = std::max<size_t>(count, 1u);
-    CHECK_MSG(count <= UINT32_MAX, "GPUScene count budget {} exceeds uint32_t range", count);
-    return static_cast<uint32_t>(count);
-}
-
-static uint32_t RingBudget(size_t count)
-{
-    return CountBudget(count * kGPUSceneRingFrameSlack);
-}
-
-static uint32_t ByteBudget(size_t bytes, size_t minBytes, size_t alignment, size_t maxBytes = UINT32_MAX)
-{
-    if (bytes != 0)
-        bytes += kGPUSceneByteBudgetSlack;
-    size_t budget = AlignUp(std::max(bytes, minBytes), alignment);
-    CHECK_MSG(budget <= maxBytes, "GPUScene byte budget {} exceeds maximum {}", budget, maxBytes);
-    CHECK_MSG(budget <= UINT32_MAX, "GPUScene byte budget {} exceeds uint32_t range", budget);
-    return static_cast<uint32_t>(budget);
-}
 
 size_t GPUScene::CalculateMeshPrimitiveSize(FSerializedMesh const& src)
 {
@@ -83,65 +55,12 @@ size_t GPUScene::CalculateCurveAABBSize(FSerializedCurve const& src)
     return src.aabbs.decodedSize;
 }
 
-GPUScene::GPUSceneDesc GPUScene::CalculateSceneBudget(FImportedScene const& scene, RHIDeviceCapabilities const& caps)
-{
-    GPUSceneDesc desc{};
-    size_t primitiveBytes = 0;
-    for (auto const& mesh : scene.GetMeshes())
-    {
-        primitiveBytes = AlignUp(primitiveBytes, size_t(4));
-        primitiveBytes += CalculateMeshPrimitiveSize(mesh);
-    }
-    size_t curveAABBBytes = 0;
-    for (auto const& curve : scene.GetCurves())
-    {
-        primitiveBytes = AlignUp(primitiveBytes, size_t(4));
-        primitiveBytes += CalculateCurvePrimitiveSize(curve);
-
-        curveAABBBytes = AlignUp(curveAABBBytes, alignof(RHIAccelerationStructureAABB));
-        curveAABBBytes += CalculateCurveAABBSize(curve);
-    }
-
-    const size_t maxStorageBufferRange = std::min<size_t>(caps.maxStorageBufferRange, UINT32_MAX);
-    desc.primitiveBudget = ByteBudget(primitiveBytes, desc.primitiveBudget, size_t(4), maxStorageBufferRange);
-    desc.curveAABBBudget = ByteBudget(curveAABBBytes, desc.curveAABBBudget, alignof(RHIAccelerationStructureAABB));
-
-    size_t areaLightCount = 0;
-    for (auto const& light : scene.GetLights())
-    {
-        if (light.type == FLightType::Disk || light.type == FLightType::Rect)
-            areaLightCount++;
-    }
-    const size_t tlasInstanceCount = scene.GetInstances().size() + areaLightCount;
-    desc.instanceBudget = RingBudget(scene.GetInstances().size());
-    desc.tlasInstanceBudget = RingBudget(tlasInstanceCount);
-    desc.materialBudget = RingBudget(scene.GetMaterials().size());
-    desc.lightBudget = RingBudget(scene.GetLights().size());
-
-    size_t textureBindings = kGPUScenePersistentTexture2DBindings + kGPUSceneDefaultTextureBindings +
-        kGPUSceneTextureBindingSlack;
-    auto const& sceneGlobals = scene.GetSceneGlobals();
-    for (size_t textureIndex = 0; textureIndex < scene.GetTextures().size(); ++textureIndex)
-    {
-        if (sceneGlobals.type == FSceneEnvironmentType::EnvMap &&
-            sceneGlobals.environmentTexture != kInvalidTexture && textureIndex == sceneGlobals.environmentTexture)
-            continue;
-        FSerializedTexture const& texture = scene.GetTextures()[textureIndex];
-        textureBindings += texture.IsValid() ? 1u : 0u;
-    }
-    if (sceneGlobals.type == FSceneEnvironmentType::EnvMap)
-        textureBindings += kGPUSceneEnvMapBindings;
-    textureBindings += kGPUScenePersistentTexture3DBindings;
-    desc.texturesBudget = CountBudget(textureBindings);
-    return desc;
-}
-
 bool GPUScene::StagedUploadJob::NeedsScratch() const
 {
     return kind == Kind::Blob && blob.codec != FBlobCodec::None;
 }
 
-void GPUScene::StagedUploadJob::Write(Allocator* scratchAlloc) const
+void GPUScene::StagedUploadJob::Write(FBlobDeserializer const& blobs, Allocator* scratchAlloc) const
 {
     switch (kind)
     {
@@ -159,12 +78,11 @@ void GPUScene::StagedUploadJob::Write(Allocator* scratchAlloc) const
         return;
     case Kind::Blob:
     {
-        CHECK(scene != nullptr);
         CHECK(ptr != nullptr || size == 0);
         if (NeedsScratch())
             CHECK(scratchAlloc != nullptr);
         CHECK(size == static_cast<size_t>(blob.decodedSize));
-        CHECK(scene->ReadBlob(blob, ptr, size, scratchAlloc));
+        CHECK(blobs.ReadBytes(blob, ptr, size, scratchAlloc));
         return;
     }
     default:
@@ -183,21 +101,25 @@ void GPUScene::FlushDirectGeometryUpload()
         mCurveAABBBuffer->Flush(0, mCurveAABBOffset);
 }
 
-GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
-    mContext(ctx), mInstanceBuffer(ctx->device.Get(), desc.instanceBudget),
-    mMaterialBuffer(ctx->device.Get(), desc.materialBudget),
-    mLightBuffer(ctx->device.Get(), desc.lightBudget),
-    mLightAliasTableBuffer(ctx->device.Get(), desc.lightBudget),
-    mTexture2DPool(ctx->device.Get(), ctx->allocator, {.maxBindings = desc.texturesBudget}),
-    mTexture3DPool(ctx->device.Get(), ctx->allocator,
+GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc,
+                   AllocatorStack* frameScratch) :
+    mDevice(device), mAllocator(allocator), mFrameScratch(frameScratch),
+    mInstanceBuffer(device, desc.instanceBudget),
+    mMaterialBuffer(device, desc.materialBudget),
+    mLightBuffer(device, desc.lightBudget),
+    mLightAliasTableBuffer(device, desc.lightBudget),
+    mTexture2DPool(device, allocator, {.maxBindings = desc.texturesBudget}),
+    mTexture3DPool(device, allocator,
                    {.maxBindings = kGPUScenePersistentTexture3DBindings + kGPUSceneTextureBindingSlack}),
-    mBLASes(ctx->allocator),
-    mBLASBuffers(ctx->allocator),
-    mCurveBLASes(ctx->allocator), mCurveBLASBuffers(ctx->allocator),
-    mTLASInstanceStride(mContext->device->WriteAccelerationStructureInstanceData({}, nullptr)),
-    mTLASInstances(ctx->device.Get(), desc.tlasInstanceBudget * mTLASInstanceStride)
+    mBLASes(allocator),
+    mBLASBuffers(allocator),
+    mCurveBLASes(allocator), mCurveBLASBuffers(allocator),
+    mTLASInstanceStride(mDevice->WriteAccelerationStructureInstanceData({}, nullptr)),
+    mTLASInstances(device, desc.tlasInstanceBudget * mTLASInstanceStride)
 {
-    auto caps = mContext->device->GetCapabilities();
+    CHECK(mDevice != nullptr);
+    CHECK(mAllocator != nullptr);
+    auto caps = mDevice->GetCapabilities();
     size_t directGeometryBudget = static_cast<size_t>(desc.primitiveBudget) + desc.curveAABBBudget;
     size_t minDirectGeometryHeapSize = std::max(directGeometryBudget, kMinDirectGeometryUploadHeapSize);
     mDirectGeometryUpload = caps.integratedGPU && caps.deviceLocalHostVisibleBuffers &&
@@ -207,13 +129,13 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
         .hostAccess = mDirectGeometryUpload ? RHIResourceHostAccess::WriteOnly : RHIResourceHostAccess::Invisible,
         .shared = true,
     };
-    mPrimitiveBuffer = mContext->device->CreateBuffer(
+    mPrimitiveBuffer = mDevice->CreateBuffer(
     {.resource = geoDesc,
              .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
              RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
              .size = desc.primitiveBudget});
     geoDesc.shared = false;
-    mCurveAABBBuffer = mContext->device->CreateBuffer(
+    mCurveAABBBuffer = mDevice->CreateBuffer(
     {.resource = geoDesc,
      .usage = RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::StorageBuffer |
      RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
@@ -225,7 +147,7 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
         LOG(GPUScene, LogInfo, "Direct GPU Memory Access available ({} MiB budget used). Uploading via direct copy.",
             directGeometryBudget / (1u << 20));
     }
-    mTLASBuffer = mContext->device->CreateBuffer(
+    mTLASBuffer = mDevice->CreateBuffer(
     {
         .resource = {
             .heap = RHIDeviceHeapType::Local,
@@ -235,7 +157,7 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
         RHIBufferUsageBits::AccelerationStructureStorage,
         .size = desc.tlasBudget
     });
-    mScratchBufferTLAS = mContext->device->CreateBuffer(
+    mScratchBufferTLAS = mDevice->CreateBuffer(
     {
         .resource = {
             .heap = RHIDeviceHeapType::Local,
@@ -251,9 +173,9 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
         .buffer = mTLASBuffer.Get(),
         .size = static_cast<uint32_t>(mTLASBuffer->mDesc.size)
     };
-    mTLAS = mContext->device->CreateAccelerationStructure(tlasDesc);
+    mTLAS = mDevice->CreateAccelerationStructure(tlasDesc);
     
-    mSobolMatricesBuffer = mContext->device->CreateBuffer(
+    mSobolMatricesBuffer = mDevice->CreateBuffer(
     {
         .resource = {
             .heap = RHIDeviceHeapType::Local,
@@ -276,13 +198,13 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
                                                  1.0f,  1.0f,  kLightAABBThickness};
         geo.disk = geo.rect;
 
-        mLightGeometryBuffer = mContext->device->CreateBuffer({
+        mLightGeometryBuffer = mDevice->CreateBuffer({
             .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
             .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureBuildReadOnly,
             .size = sizeof(LightAABBs)
         });
 
-        ImmediateUpload upload(mContext->device.Get(), sizeof(LightAABBs));
+        ImmediateUpload upload(mDevice, sizeof(LightAABBs));
         upload.Begin();
         char* ptr = upload.Upload(mLightGeometryBuffer.Get(), sizeof(LightAABBs), 0);
         std::memcpy(ptr, &geo, sizeof(LightAABBs));
@@ -329,42 +251,42 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
 
         StackArena<4096> sizeInfoArena;
         AllocatorStack sizeInfoScratch(sizeInfoArena);
-        auto rectSize = mContext->device->GetAccelerationStructureSizeInfo(rectDesc, sizeInfoScratch.Ptr());
+        auto rectSize = mDevice->GetAccelerationStructureSizeInfo(rectDesc, sizeInfoScratch.Ptr());
         sizeInfoScratch.Reset(sizeInfoArena);
-        auto diskSize = mContext->device->GetAccelerationStructureSizeInfo(diskDesc, sizeInfoScratch.Ptr());
+        auto diskSize = mDevice->GetAccelerationStructureSizeInfo(diskDesc, sizeInfoScratch.Ptr());
 
         uint32_t rectOffset = 0;
         uint32_t diskOffset = AlignUp(rectSize.accelerationStructureSize, 256u);
         uint32_t totalSize = diskOffset + diskSize.accelerationStructureSize;
 
-        mLightBLASBuffer = mContext->device->CreateBuffer({
+        mLightBLASBuffer = mDevice->CreateBuffer({
             .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
             .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress | RHIBufferUsageBits::AccelerationStructureStorage,
             .size = totalSize
         });
 
         uint32_t scratchSize = std::max(rectSize.buildScratchSize, diskSize.buildScratchSize);
-        auto scratch = mContext->device->CreateBuffer({
+        auto scratch = mDevice->CreateBuffer({
             .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
             .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress,
             .size = scratchSize,
             .alignment = 256
         });
 
-        mRectBLAS = mContext->device->CreateAccelerationStructure({
+        mRectBLAS = mDevice->CreateAccelerationStructure({
             .type = RHIAccelerationStructureType::BottomLevel,
             .buffer = mLightBLASBuffer.Get(),
             .offset = rectOffset,
             .size = rectSize.accelerationStructureSize
         });
-        mDiskBLAS = mContext->device->CreateAccelerationStructure({
+        mDiskBLAS = mDevice->CreateAccelerationStructure({
             .type = RHIAccelerationStructureType::BottomLevel,
             .buffer = mLightBLASBuffer.Get(),
             .offset = diskOffset,
             .size = diskSize.accelerationStructureSize
         });
 
-        ImmediateContext ctx(mContext->device.Get());
+        ImmediateContext ctx(mDevice);
         auto* cmd = ctx.Get();
         cmd->Begin();
         
@@ -393,19 +315,19 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
     {
         auto lutE = MakeLUT(kGGXlutE, RHIResourceFormat::R32G32SignedFloat, 32, 32);
         auto sheenLtc = MakeLUT(kSheenLTCLut, RHIResourceFormat::R32G32B32A32SignedFloat, 32, 32);
-        FTexture foundationDefaultTexture2D(mContext->allocator);
+        FTexture foundationDefaultTexture2D(mAllocator);
         foundationDefaultTexture2D.Initialize(RHIResourceFormat::R32G32B32A32SignedFloat, RHITextureDimension::E2D, 1, 1);
         foundationDefaultTexture2D.bytes.assign(foundationDefaultTexture2D.GetSize(), 0u);
-        FTexture foundationDefaultTexture2DFloat(mContext->allocator);
+        FTexture foundationDefaultTexture2DFloat(mAllocator);
         foundationDefaultTexture2DFloat.Initialize(RHIResourceFormat::R32SignedFloat, RHITextureDimension::E2D, 1, 1);
         foundationDefaultTexture2DFloat.bytes.resize(sizeof(float));
         *reinterpret_cast<float*>(foundationDefaultTexture2DFloat.bytes.data()) = 1.0f;
         auto defaultViewLutSdr =
-            LoadLUT(mContext->allocator, kViewLUTsSdr[kDefaultViewLUTSdr].path);
+            LoadLUT(mAllocator, kViewLUTsSdr[kDefaultViewLUTSdr].path);
         auto defaultViewLutHdr =
-            LoadLUT(mContext->allocator, kViewLUTsHdr[kDefaultViewLUTHdr].path);
+            LoadLUT(mAllocator, kViewLUTsHdr[kDefaultViewLUTHdr].path);
         const size_t foundationDefaultBufferFloatSize = sizeof(float);
-        mFoundationDefaultBufferFloat = mContext->device->CreateBuffer({
+        mFoundationDefaultBufferFloat = mDevice->CreateBuffer({
             .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
             .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
             .size = foundationDefaultBufferFloatSize
@@ -413,7 +335,7 @@ GPUScene::GPUScene(FContext* ctx, GPUSceneDesc const& desc) :
         const size_t budget = lutE.GetSize() + sheenLtc.GetSize() + foundationDefaultTexture2D.GetSize() +
             foundationDefaultTexture2DFloat.GetSize() + sizeof(kSobolMatrices32) + foundationDefaultBufferFloatSize +
             defaultViewLutSdr.GetSize() + defaultViewLutHdr.GetSize() + kGPUSceneByteBudgetSlack;
-        ImmediateUpload upload(mContext->device.Get(), budget);
+        ImmediateUpload upload(mDevice, budget);
         upload.Begin();
         Upload(&upload, lutE, mLUTGGXEIndex);
         Upload(&upload, sheenLtc, mLUTSheenLTCIndex);
@@ -469,7 +391,7 @@ GPUScene::UpdateResult GPUScene::UpdateGPUScene(Span<const GSInstance> instances
     if (!lights.empty()) {
         auto [ptr, off] = AllocateLight(static_cast<uint32_t>(lights.size()));
         auto [aliasPtr, aliasOff] = AllocateLightAliasTable(static_cast<uint32_t>(lights.size()));
-        Allocator* scratch = mContext->editorFrameScratch ? mContext->editorFrameScratch.get() : mContext->allocator;
+        Allocator* scratch = mFrameScratch ? mFrameScratch : mAllocator;
 
         // Alias table
         Vector<float> powers(lights.size(), scratch);
@@ -589,7 +511,7 @@ String GPUScene::DbgGetBufferStatistics() const
     return res;
 }
 
-size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FImportedScene const& scene, FSerializedMesh const& src,
+size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FSerializedMesh const& src,
                              GSMesh& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs)
 {
     CHECK_MSG(!src.lods.empty(), "Serialized mesh has no LODs");
@@ -624,8 +546,7 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FImportedScene const& scene, 
     auto AppendBlobJob = [&](FBlobRef const& blob, char* dstPtr)
     {
         StagedUploadJob job{};
-        job.scene = &scene;
-        job.kind = StagedUploadJob::Kind::Blob;
+            job.kind = StagedUploadJob::Kind::Blob;
         job.blob = blob;
         job.ptr = dstPtr;
         job.size = static_cast<size_t>(blob.decodedSize);
@@ -671,7 +592,7 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FImportedScene const& scene, 
     return written;
 }
 
-size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FImportedScene const& scene, FSerializedCurve const& src,
+size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FSerializedCurve const& src,
                              GSCurveSet& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs)
 {
     static_assert(sizeof(FCurvePoint) == sizeof(GSCurvePoint));
@@ -736,8 +657,7 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FImportedScene const& scene, 
     auto AppendBlobJob = [&](FBlobRef const& blob, char* dstPtr)
     {
         StagedUploadJob job{};
-        job.scene = &scene;
-        job.kind = StagedUploadJob::Kind::Blob;
+            job.kind = StagedUploadJob::Kind::Blob;
         job.blob = blob;
         job.ptr = dstPtr;
         job.size = static_cast<size_t>(blob.decodedSize);
@@ -811,7 +731,7 @@ size_t GPUScene::UploadOrUpdateTexture(ImmediateUpload* ctx, FTexture const& sou
     CHECK_MSG(source.bytes.size() == metadata.GetSize(), "Texture data size mismatch: data {} header {}",
               source.bytes.size(), metadata.GetSize());
 
-    auto texture = mContext->device->CreateTexture(metadata.GetDesc());
+    auto texture = mDevice->CreateTexture(metadata.GetDesc());
     if (debugName)
         texture->DebugSetObjectName(debugName);
     size_t written = 0;
@@ -897,7 +817,7 @@ size_t GPUScene::Upload(ImmediateUpload* ctx, FTextureHeader const& metadata, Sp
     CHECK_MSG(data.size_bytes() == metadata.GetSize(), "Texture data size mismatch: data {} header {}",
               data.size_bytes(), metadata.GetSize());
 
-    auto texture = mContext->device->CreateTexture(metadata.GetDesc());
+    auto texture = mDevice->CreateTexture(metadata.GetDesc());
     if (debugName)
         texture->DebugSetObjectName(debugName);
     size_t written = 0;
@@ -980,7 +900,7 @@ GPUScene::TextureUpload GPUScene::BeginTextureUpload(ImmediateUpload* ctx, FSeri
     FTextureHeader const& metadata = static_cast<FTextureHeader const&>(source);
     TextureUpload upload{};
     upload.metadata = metadata;
-    upload.texture = mContext->device->CreateTexture(metadata.GetDesc());
+    upload.texture = mDevice->CreateTexture(metadata.GetDesc());
     if (debugName)
         upload.texture->DebugSetObjectName(debugName);
 
@@ -998,8 +918,7 @@ GPUScene::TextureUpload GPUScene::BeginTextureUpload(ImmediateUpload* ctx, FSeri
     return upload;
 }
 
-size_t GPUScene::BeginTextureSubresourceUpload(ImmediateUpload* ctx, FImportedScene const& scene,
-                                               FSerializedTexture const& source, TextureUpload& upload,
+size_t GPUScene::BeginTextureSubresourceUpload(ImmediateUpload* ctx, FSerializedTexture const& source, TextureUpload& upload,
                                                uint32_t layer, uint32_t mip,
                                                Vector<StagedUploadJob>& outJobs)
 {
@@ -1030,7 +949,6 @@ size_t GPUScene::BeginTextureSubresourceUpload(ImmediateUpload* ctx, FImportedSc
     CHECK(ptr != nullptr);
 
     StagedUploadJob job{};
-    job.scene = &scene;
     job.kind = StagedUploadJob::Kind::Blob;
     job.blob = subresourceBlob;
     job.ptr = ptr;
@@ -1067,7 +985,7 @@ void GPUScene::EndTextureUpload(ImmediateUpload* ctx, TextureUpload&& upload, ui
     outIndex = SelectTexturePool(metadata.GetViewDimension()).Allocate(std::move(upload.texture), std::move(view));
 }
 
-size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FImportedScene const& scene, FSerializedTexture const& source,
+size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FSerializedTexture const& source,
                              uint32_t& outIndex, Vector<StagedUploadJob>& outJobs, const char* debugName)
 {
     CHECK_MSG(source.IsValid(), "Serialized texture is invalid");
@@ -1091,7 +1009,7 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FImportedScene const& scene, 
         }
     }
 
-    auto texture = mContext->device->CreateTexture(metadata.GetDesc());
+    auto texture = mDevice->CreateTexture(metadata.GetDesc());
     if (debugName)
         texture->DebugSetObjectName(debugName);
     size_t written = 0;
@@ -1124,8 +1042,7 @@ size_t GPUScene::BeginUpload(ImmediateUpload* ctx, FImportedScene const& scene, 
             CHECK(ptr != nullptr);
 
             StagedUploadJob job{};
-            job.scene = &scene;
-            job.kind = StagedUploadJob::Kind::Blob;
+                    job.kind = StagedUploadJob::Kind::Blob;
             job.blob = subresourceBlob;
             job.ptr = ptr;
             job.size = subresourceSize;
@@ -1163,14 +1080,14 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
     if (meshes.empty())
         return;
 
-    auto* device = mContext->device.Get();
+    auto* device = mDevice;
     // Build
-    Vector<RHIAccelerationStructureGeometryInfo> geometries(meshes.size(), mContext->allocator);
-    Vector<RHIAccelerationStructureBuildRangeInfo> buildRanges(meshes.size(), mContext->allocator);
-    Vector<RHIAccelerationStructureBuildDesc> buildDesc(meshes.size(), mContext->allocator);
-    Vector<RHIAccelerationStructureSizeInfo> sizeInfo(meshes.size(), mContext->allocator);
-    Vector<uint32_t> blasOffsets(meshes.size(), mContext->allocator);
-    Vector<uint32_t> scratchOffsets(meshes.size(), mContext->allocator);
+    Vector<RHIAccelerationStructureGeometryInfo> geometries(meshes.size(), mAllocator);
+    Vector<RHIAccelerationStructureBuildRangeInfo> buildRanges(meshes.size(), mAllocator);
+    Vector<RHIAccelerationStructureBuildDesc> buildDesc(meshes.size(), mAllocator);
+    Vector<RHIAccelerationStructureSizeInfo> sizeInfo(meshes.size(), mAllocator);
+    Vector<uint32_t> blasOffsets(meshes.size(), mAllocator);
+    Vector<uint32_t> scratchOffsets(meshes.size(), mAllocator);
     StackArena<4096> sizeInfoArena;
     AllocatorStack sizeInfoScratch(sizeInfoArena);
     auto* primitiveBuffer = mPrimitiveBuffer.Get();
@@ -1214,7 +1131,7 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
         scratchOffsets[i] = scratchOffset;
         scratchOffset = AlignUp(scratchOffset + sizeInfo[i].buildScratchSize, 256u);
     }
-    auto scratch = mContext->device->CreateBuffer(
+    auto scratch = mDevice->CreateBuffer(
     {
         .resource = {
             .heap = RHIDeviceHeapType::Local,
@@ -1224,7 +1141,7 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
         .size = scratchOffset,
         .alignment = 256 // Aligned to Vulkan spec. Should be large enough for other APIs as well?
     });
-    auto buffer = mContext->device->CreateBuffer(
+    auto buffer = mDevice->CreateBuffer(
     {
         .resource = {
             .heap = RHIDeviceHeapType::Local,
@@ -1234,8 +1151,8 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
         RHIBufferUsageBits::AccelerationStructureStorage,
         .size = blasOffset
     });
-    Vector<RHIDeviceHandle<RHIAccelerationStructure>> newBLASHandles(mContext->allocator);
-    Vector<RHIAccelerationStructure*> newBLASPtrs(mContext->allocator);
+    Vector<RHIDeviceHandle<RHIAccelerationStructure>> newBLASHandles(mAllocator);
+    Vector<RHIAccelerationStructure*> newBLASPtrs(mAllocator);
     newBLASHandles.reserve(meshes.size());
     newBLASPtrs.reserve(meshes.size());
     auto* cmd = ctx->Get();
@@ -1278,7 +1195,7 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
     cmd->WriteAccelerationStructureCompactedSize(newBLASPtrs, queryPool.Get(), 0);
     cmd->End(), ctx->Submit(), ctx->WaitIdle();
     uint32_t compactOffset = 0;
-    Vector<uint32_t> compactOffsets(meshes.size(), mContext->allocator);
+    Vector<uint32_t> compactOffsets(meshes.size(), mAllocator);
     auto compactSizes = queryPool->GetResults();
     for (size_t i = 0; i < meshes.size(); i++)
     {
@@ -1286,7 +1203,7 @@ void GPUScene::BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<
         compactOffsets[i] = compactOffset;
         compactOffset = AlignUp(compactOffset + static_cast<uint32_t>(compactedSize), 256u);
     }
-    auto& compactBuffer = mBLASBuffers.emplace_back(mContext->device->CreateBuffer(
+    auto& compactBuffer = mBLASBuffers.emplace_back(mDevice->CreateBuffer(
     {
         .resource = {.heap = RHIDeviceHeapType::Local, .shared = false},
         .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::DeviceAddress |
@@ -1324,13 +1241,13 @@ void GPUScene::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curv
     if (curves.empty())
         return;
 
-    auto* device = mContext->device.Get();
-    Vector<RHIAccelerationStructureGeometryInfo> geometries(curves.size(), mContext->allocator);
-    Vector<RHIAccelerationStructureBuildRangeInfo> buildRanges(curves.size(), mContext->allocator);
-    Vector<RHIAccelerationStructureBuildDesc> buildDesc(curves.size(), mContext->allocator);
-    Vector<RHIAccelerationStructureSizeInfo> sizeInfo(curves.size(), mContext->allocator);
-    Vector<uint32_t> blasOffsets(curves.size(), mContext->allocator);
-    Vector<uint32_t> scratchOffsets(curves.size(), mContext->allocator);
+    auto* device = mDevice;
+    Vector<RHIAccelerationStructureGeometryInfo> geometries(curves.size(), mAllocator);
+    Vector<RHIAccelerationStructureBuildRangeInfo> buildRanges(curves.size(), mAllocator);
+    Vector<RHIAccelerationStructureBuildDesc> buildDesc(curves.size(), mAllocator);
+    Vector<RHIAccelerationStructureSizeInfo> sizeInfo(curves.size(), mAllocator);
+    Vector<uint32_t> blasOffsets(curves.size(), mAllocator);
+    Vector<uint32_t> scratchOffsets(curves.size(), mAllocator);
     StackArena<4096> sizeInfoArena;
     AllocatorStack sizeInfoScratch(sizeInfoArena);
     uint32_t scratchOffset = 0, blasOffset = 0;
@@ -1377,7 +1294,7 @@ void GPUScene::BuildCurveBLAS(ImmediateContext* ctx, Span<const GSCurveSet> curv
     });
 
     RHIBuffer* blasBuffer = mCurveBLASBuffers.back().Get();
-    Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> newBLASes(curves.size(), mContext->allocator);
+    Vector<RHIDeviceScopedHandle<RHIAccelerationStructure>> newBLASes(curves.size(), mAllocator);
     auto* cmd = ctx->Get();
     cmd->Begin();
     for (size_t i = 0; i < curves.size(); i++)
@@ -1444,7 +1361,7 @@ bool GPUScene::EnsureTLASCapacity(uint32_t totalInstances, bool allowRecreate)
     };
     StackArena<4096> sizeInfoArena;
     AllocatorStack sizeInfoScratch(sizeInfoArena);
-    auto* device = mContext->device.Get();
+    auto* device = mDevice;
     auto size = device->GetAccelerationStructureSizeInfo(desc, sizeInfoScratch.Ptr());
     size_t requiredTLASSize = static_cast<size_t>(AlignUp(size.accelerationStructureSize, 256u));
     size_t requiredScratchSize = static_cast<size_t>(AlignUp(std::max(size.buildScratchSize, size.updateScratchSize), 256u));
@@ -1583,14 +1500,14 @@ GPUScene::TLASBuildResult GPUScene::BuildTLAS(RHICommandList* cmd, Span<const GS
                       instance.resourceIndex);
             data.blas = mBLASes[blasIndices[instance.resourceIndex]].Get();
         }
-        pInstances += mContext->device->WriteAccelerationStructureInstanceData(data, pInstances);
+        pInstances += mDevice->WriteAccelerationStructureInstanceData(data, pInstances);
     }
     for (const auto & light : lights)
     {
         if (light.type == 3 || light.type == 4)
         {
             auto data = ConvertLight(&light);
-            pInstances += mContext->device->WriteAccelerationStructureInstanceData(data, pInstances);
+            pInstances += mDevice->WriteAccelerationStructureInstanceData(data, pInstances);
         }
     }
     RHIAccelerationStructureGeometryInstanceData instance{
@@ -1632,7 +1549,7 @@ void GPUScene::UploadEnvMap(ImmediateUpload* ctx, FTexture const& source)
     Span<const unsigned char> data = source.GetSubresource(0, 0);
     const float4* pixels = reinterpret_cast<const float4*>(data.data());
     
-    Vector<float> f(width * height, mContext->allocator);
+    Vector<float> f(width * height, mAllocator);
     for (uint32_t y = 0; y < height; ++y)
     {
         float v = (y + 0.5f) / height;
@@ -1646,10 +1563,10 @@ void GPUScene::UploadEnvMap(ImmediateUpload* ctx, FTexture const& source)
         }
     }
     
-    PiecewiseConstant2D cdf(f, width, height, mContext->allocator);
+    PiecewiseConstant2D cdf(f, width, height, mAllocator);
     
     // Upload Marginal CDF as Texture2D
-    FTexture marginalTex(mContext->allocator);
+    FTexture marginalTex(mAllocator);
     marginalTex.Initialize(RHIResourceFormat::R32SignedFloat, RHITextureDimension::E2D,
                            cdf.mMarginal->mCDF.size(), 1);
     const size_t marginalSize = cdf.mMarginal->mCDF.size() * sizeof(float);
@@ -1659,7 +1576,7 @@ void GPUScene::UploadEnvMap(ImmediateUpload* ctx, FTexture const& source)
               "Environment map marginal CDF staging budget exhausted");
     
     // Upload Conditional CDF as Texture2D
-    FTexture conditionalTex(mContext->allocator);
+    FTexture conditionalTex(mAllocator);
     conditionalTex.Initialize(RHIResourceFormat::R32SignedFloat, RHITextureDimension::E2D,
                               cdf.mConditional[0]->mCDF.size(), height);
     

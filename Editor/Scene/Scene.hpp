@@ -1,8 +1,11 @@
 #pragma once
-#include "Mesh.hpp"
-#include "Curve.hpp"
-#include "Serialization.hpp"
-#include "Texture.hpp"
+#include <Renderer/Mesh.hpp>
+#include <Renderer/Curve.hpp>
+#include <Renderer/Serialization.hpp>
+#include <Renderer/Texture.hpp>
+
+namespace Foundation::RHI { struct RHIDeviceCapabilities; }
+struct GPUSceneDesc;
 
 // Components
 struct FTransform
@@ -299,6 +302,7 @@ struct FImportedScene
     Span<const unsigned char> GetPayloadBytes() const;
     FBlobDeserializer GetBlobDeserializer() const;
     bool ReadBlob(FBlobRef const& blob, void* dst, size_t size, Allocator* scratchAlloc) const;
+    [[nodiscard]] GPUSceneDesc CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCapabilities const& caps) const;
 
     template <typename T>
     Vector<T> ReadBlobArray(FBlobRef const& blob, Allocator* alloc = GLOBAL_ALLOC) const

@@ -629,7 +629,7 @@ static size_t GetSceneUploadTaskQueueSize(size_t taskCount)
     return ThreadPool::getTaskSize(std::max<size_t>(taskCount, 1u));
 }
 
-static size_t GPUSceneBudgetBytes(GPUScene::GPUSceneDesc const& desc)
+static size_t GPUSceneBudgetBytes(GPUSceneDesc const& desc)
 {
     return size_t(desc.primitiveBudget) +
            size_t(desc.curveAABBBudget) +
@@ -644,7 +644,7 @@ static size_t GPUSceneBudgetBytes(GPUScene::GPUSceneDesc const& desc)
 
 static GPUScene* CreateGPUScene(FImportedScene const& scene, size_t& outBudgetBytes)
 {
-    auto estimatedBudget = GPUScene::CalculateSceneBudget(scene, GContext->device->GetCapabilities());
+    auto estimatedBudget = scene.CalculateGPUSceneDesc(GContext->device->GetCapabilities());
     LOG(Editor, LogDebug,
         "Estimated GPUScene budget: primitive {} MB, curve AABB {} MB, instances {}, TLAS instances {}, materials {}, lights {}, textures {}",
         estimatedBudget.primitiveBudget / (1u << 20),
@@ -661,7 +661,8 @@ static GPUScene* CreateGPUScene(FImportedScene const& scene, size_t& outBudgetBy
     if (GContext->gpuScene)
         lightSamplerType = GContext->gpuScene->mLightSamplerType;
 
-    auto* gpu = Construct<GPUScene>(GContext->allocator, GContext, estimatedBudget);
+    auto* gpu = Construct<GPUScene>(GContext->allocator, GContext->device.Get(), GContext->allocator,
+                                    estimatedBudget, GContext->editorFrameScratch.get());
     gpu->mLightSamplerType = lightSamplerType;
     return gpu;
 }
@@ -915,6 +916,7 @@ static void ScheduleSceneUpload(Set<Pair<size_t, size_t>>& pendingResources, con
 struct SceneUploadJob : ThreadPoolJob
 {
     GPUScene::StagedUploadJob job;
+    FBlobDeserializer blobs;
     Span<Arena> scratchArenas;
     Span<AllocatorStack> scratchAllocators;
     std::atomic<size_t>* batchCounter;
@@ -922,11 +924,12 @@ struct SceneUploadJob : ThreadPoolJob
     std::atomic<double>* uploadEndMs;
     std::chrono::steady_clock::time_point uploadStatStart;
 
-    SceneUploadJob(GPUScene::StagedUploadJob const& job, Span<Arena> scratchArenas,
-                   Span<AllocatorStack> scratchAllocators, std::atomic<size_t>* batchCounter,
+    SceneUploadJob(GPUScene::StagedUploadJob const& job, FBlobDeserializer const& blobs,
+                   Span<Arena> scratchArenas, Span<AllocatorStack> scratchAllocators,
+                   std::atomic<size_t>* batchCounter,
                    std::atomic<size_t>* dependencyCounter, std::atomic<double>* uploadEndMs,
                    std::chrono::steady_clock::time_point uploadStatStart) :
-        job(job), scratchArenas(scratchArenas), scratchAllocators(scratchAllocators),
+        job(job), blobs(blobs), scratchArenas(scratchArenas), scratchAllocators(scratchAllocators),
         batchCounter(batchCounter), dependencyCounter(dependencyCounter), uploadEndMs(uploadEndMs),
         uploadStatStart(uploadStatStart)
     {
@@ -938,11 +941,11 @@ struct SceneUploadJob : ThreadPoolJob
         {
             AllocatorStack& scratch = scratchAllocators[workerID];
             scratch.Reset(scratchArenas[workerID]);
-            job.Write(&scratch);
+            job.Write(blobs, &scratch);
         }
         else
         {
-            job.Write();
+            job.Write(blobs);
         }
 
         if (uploadEndMs)
@@ -1008,6 +1011,7 @@ static void UploadLoadedSceneToGPU(FImportedScene& scene, GPUScene* gpu, SceneLo
 
         ThreadPool uploadPool(blobWorkerCount, GetSceneUploadTaskQueueSize(stagedTaskCount + kUploadBlockingTaskCount),
                               &sceneAlloc, "SceneUpload");
+        FBlobDeserializer blobs = scene.GetBlobDeserializer();
         Vector<GPUScene::StagedUploadJob> stagedJobs(&sceneAlloc);
         std::atomic<size_t> uploadBatchStagedJobs{0};
         std::atomic<size_t> geometryStagedJobs{0};
@@ -1022,7 +1026,7 @@ static void UploadLoadedSceneToGPU(FImportedScene& scene, GPUScene* gpu, SceneLo
             if (dependencyCounter)
                 dependencyCounter->fetch_add(jobCount, std::memory_order_relaxed);
             for (GPUScene::StagedUploadJob const& job : stagedJobs)
-                uploadPool.PushImpl<SceneUploadJob>(job, blobScratchArenas, blobScratchAllocators,
+                uploadPool.PushImpl<SceneUploadJob>(job, blobs, blobScratchArenas, blobScratchAllocators,
                                                     &uploadBatchStagedJobs, dependencyCounter,
                                                     uploadEndMs, uploadStatStart);
             stagedJobs.clear();
@@ -1078,7 +1082,7 @@ static void UploadLoadedSceneToGPU(FImportedScene& scene, GPUScene* gpu, SceneLo
                 auto& dst = GEditor.meshes[meshIndex];
                 auto& offset = meshOffsets[meshIndex];
                 stagedJobs.clear();
-                bool const uploaded = gpu->BeginUpload(&upload, scene, srcDesc, dst, offset, stagedJobs) != 0;
+                bool const uploaded = gpu->BeginUpload(&upload, srcDesc, dst, offset, stagedJobs) != 0;
                 if (uploaded)
                     ScheduleStagedJobs(&geometryStagedJobs, &bufferUploadEndMs, uploadStart);
                 else
@@ -1111,7 +1115,7 @@ static void UploadLoadedSceneToGPU(FImportedScene& scene, GPUScene* gpu, SceneLo
                 auto& dst = GEditor.curves[curveIndex];
                 auto& offset = curveOffsets[curveIndex];
                 stagedJobs.clear();
-                bool const uploaded = gpu->BeginUpload(&upload, scene, srcDesc, dst, offset, stagedJobs) != 0;
+                bool const uploaded = gpu->BeginUpload(&upload, srcDesc, dst, offset, stagedJobs) != 0;
                 if (uploaded)
                     ScheduleStagedJobs(&geometryStagedJobs, &bufferUploadEndMs, uploadStart);
                 else
@@ -1166,7 +1170,7 @@ static void UploadLoadedSceneToGPU(FImportedScene& scene, GPUScene* gpu, SceneLo
                     textureUpload.emplace(gpu->BeginTextureUpload(&upload, srcDesc));
                 stagedJobs.clear();
                 bool const uploaded = gpu->BeginTextureSubresourceUpload(
-                    &upload, scene, srcDesc, *textureUpload, job.layer, job.mip, stagedJobs) != 0;
+                    &upload, srcDesc, *textureUpload, job.layer, job.mip, stagedJobs) != 0;
                 if (uploaded)
                 {
                     anyTextureUpload = true;

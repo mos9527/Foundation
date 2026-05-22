@@ -681,6 +681,10 @@ namespace Foundation::RenderCore
 #pragma endregion
 #pragma region Swapchain
         /**
+         * @brief Get the device this renderer was constructed with.
+         */
+        [[nodiscard]] RHIDevice* GetDevice() const { return mDevice.Get(); }
+        /**
          * @brief Get the current swapchain extents.
          */
         [[nodiscard]] RHIExtent2D GetSwapchainExtent() const

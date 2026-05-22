@@ -1,6 +1,6 @@
 // Reference: https://projects.blender.org/blender/blender/src/commit/00546eb2f34cc95976a640d268deb371b7ca9210/intern/cycles/app/cycles_precompute.cpp
-import "../Editor/Shaders/IMath";
-import "../Editor/Shaders/IBxDF";
+import "../Source/Renderer/Shaders/IMath";
+import "../Source/Renderer/Shaders/IBxDF";
 RWStructuredBuffer<float2> ggxE;
 
 float sampleGGX_E(float rough, float cosTheta, float uc, float2 u, out float VdotH){

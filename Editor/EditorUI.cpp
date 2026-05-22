@@ -1,11 +1,10 @@
 #include <cmath>
 #include <cfloat>
 #include <algorithm>
-#include <cstdio>
-#include <cstring>
 #include <nfd.h>
 #include <Math/Decompose.hpp>
 #include <imgui_internal.h>
+#include <ImGuizmo.h>
 #include "EditorState.hpp"
 #include "Scene/Mesh.hpp"
 
@@ -1245,7 +1244,7 @@ void FHierarchyPanel()
                 ImGuizmo::SetRect(GEditor.viewport.contentMin.x, GEditor.viewport.contentMin.y,
                                   viewportSize.x, viewportSize.y);
                 // Note: ImGuizmo uses column-major float[16], matching GLM mat4 memory layout
-                if (ImGuizmo::Manipulate(&GEditor.camera.view[0][0], &GEditor.camera.proj[0][0], GEditor.gizmo.op, GEditor.gizmo.mode,
+                if (ImGuizmo::Manipulate(&GEditor.camera.view[0][0], &GEditor.camera.proj[0][0], static_cast<ImGuizmo::OPERATION>(GEditor.gizmo.op), static_cast<ImGuizmo::MODE>(GEditor.gizmo.mode),
                                          &modelMatrix[0][0]))
                 {
                     // Decompose back to TRS
@@ -2236,12 +2235,12 @@ static void DrawLightGizmos()
                       displaySize.x, displaySize.y);
 
     // Directional: rotate only. Others: translate + rotate (never scale).
-    ImGuizmo::OPERATION op = hasPosition ? GEditor.gizmo.op : ImGuizmo::ROTATE;
+    ImGuizmo::OPERATION op = static_cast<ImGuizmo::OPERATION>(hasPosition ? GEditor.gizmo.op : ImGuizmo::ROTATE);
     if (op == ImGuizmo::SCALE)
         op = ImGuizmo::TRANSLATE; // lights don't have meaningful uniform scale
 
     if (ImGuizmo::Manipulate(&GEditor.camera.view[0][0], &GEditor.camera.proj[0][0],
-                             op, GEditor.gizmo.mode, &modelMatrix[0][0]))
+                             op, static_cast<ImGuizmo::MODE>(GEditor.gizmo.mode), &modelMatrix[0][0]))
     {
         float3 newTranslation;
         quat newRotation;

@@ -1,23 +1,23 @@
+#include <Core/Paths.hpp>
 #include <RenderUtils/CSClearBuffer.hpp>
 #include <RenderUtils/CSMipGeneration.hpp>
-#include <RenderUtils/PSFullscreen.hpp>
 #include <algorithm>
-#include "../Paths.hpp"
-#include "../Scene/GPUScene.hpp"
-#include "Render.hpp"
+#include "GPUScene.hpp"
+#include "RenderUtils/PSFullscreen.hpp"
+#include "Renderer.hpp"
 using namespace RenderUtils;
+using Foundation::Core::PathsResolve;
 
-void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererScene scene, RHIExtent2D renderExtent,
-                                RendererHandles& outHandles, bool const* renderPaused)
+void BuildPathTracerRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cfg, RendererScene scene,
+                                RHIExtent2D renderExtent, RendererHandles& outHandles, bool const* renderPaused)
 {
-    CHECK(context->device->GetCapabilities().raytracingPipeline);
-    auto* renderer = context->renderer;
     CHECK(renderer);
-    auto* gpu = context->gpuScene;
+    CHECK(gpu);
+    CHECK(renderer->GetDevice()->GetCapabilities().raytracingPipeline);
     scene.gsGlobals->ptAccumulatedFrames = 0u;
     scene.gsGlobals->ggxLutEIndex = gpu->GetGGXLutEIndex();
     scene.gsGlobals->sheenLtcIndex = gpu->GetSheenLtcIndex();
-    scene.gsGlobals->viewLutIndex = context->enableHDR ? gpu->GetViewLutHdrIndex() : gpu->GetViewLutSdrIndex();
+    scene.gsGlobals->viewLutIndex = cfg.enableHDR ? gpu->GetViewLutHdrIndex() : gpu->GetViewLutSdrIndex();
     scene.gsGlobals->envMapTextureIndex = gpu->GetEnvMapIndexOrDefault();
     scene.gsGlobals->envMapMarginalCDFIndex = gpu->GetEnvMapMarginalCDFIndexOrDefault();
     scene.gsGlobals->envMapConditionalCDFIndex = gpu->GetEnvMapConditionalCDFIndexOrDefault();
@@ -72,7 +72,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
                                                                 RHITextureUsageBits::TransferSource,
                                                             .extent = {w, h, 1},
                                                             .format = RHIResourceFormat::R32G32B32A32SignedFloat});
-    const RHIResourceFormat postprocessFormat = context->enableHDR
+    const RHIResourceFormat postprocessFormat = cfg.enableHDR
         ? RHIResourceFormat::A2B10G10R10Unorm
         : RHIResourceFormat::R8G8B8A8Unorm;
     auto PostprocessBuffer = renderer->CreateResource(
@@ -122,9 +122,9 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
             if (hasTLAS)
                 r->BindAccelerationStructureSRV(self, TLAS, RHIPipelineStageBits::RayTracingShader, "AS");
             const bool shaderExecutionReordering =
-                cfg.ptShaderExecutionReordering && context->device->GetCapabilities().shaderExecutionReordering;
+                cfg.ptShaderExecutionReordering && r->GetDevice()->GetCapabilities().shaderExecutionReordering;
             const uint ptCompileOptions = PTPackCompileOptions(shaderExecutionReordering, cfg.ptSampler, cfg.forceTextureLOD0);
-            const auto pathTracerShader = Paths::Resolve("Data/Shaders/ERTPathTracer.spv");
+            const auto pathTracerShader = PathsResolve("Data/Shaders/ERTPathTracer.spv");
             r->BindShader(self, RHIShaderStageBits::RayGeneration, "RayGeneration", pathTracerShader,
                           AsBytes(AsSpan(ptCompileOptions)));
             r->BindShader(self, RHIShaderStageBits::RayClosestHit, "RayClosestHit",
@@ -210,7 +210,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
                     r->BindTextureUAV(self, texture, "texture", RHIPipelineStageBits::ComputeShader,
                                       {.format = RHIResourceFormat::R32G32B32A32SignedFloat,
                                        .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                    r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("Data/Shaders/CSClearBuffer.spv"));
+                    r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/CSClearBuffer.spv"));
                     r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
                 },
                 [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -230,7 +230,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
                 r->BindTextureUAV(self, PickIDBuffer, "texture", RHIPipelineStageBits::ComputeShader,
                                   {.format = RHIResourceFormat::R32Uint,
                                    .range = RHITextureSubresourceRange::Create(RHITextureAspectFlagBits::Color)});
-                r->BindShader(self, RHIShaderStageBits::Compute, "main", Paths::Resolve("Data/Shaders/ECSPickIDClear.spv"));
+                r->BindShader(self, RHIShaderStageBits::Compute, "main", PathsResolve("Data/Shaders/ECSPickIDClear.spv"));
                 r->BindPushConstant(self, RHIShaderStageBits::Compute, 0, sizeof(CSClearBufferData));
             },
             [=](PassHandle self, Renderer* r, RHICommandList* cmd)
@@ -250,7 +250,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
         [=](PassHandle self, Renderer* r)
         {
             r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain",
-                          Paths::Resolve("Data/Shaders/EPSPostprocessPT.spv"), AsBytes(AsSpan(cfg.viewFlags)));
+                          PathsResolve("Data/Shaders/EPSPostprocessPT.spv"), AsBytes(AsSpan(cfg.viewFlags)));
             auto bindSRV = [&](ResourceHandle h, const char* name)
             {
                 r->BindTextureSRV(self, h, name, RHIPipelineStageBits::FragmentShader,
@@ -272,7 +272,7 @@ void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererS
         renderer, "Blit Image",
         [=](PassHandle self, Renderer* r)
         {
-            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", Paths::Resolve("Data/Shaders/EPSBlitPT.spv"));
+            r->BindShader(self, RHIShaderStageBits::Fragment, "fragMain", PathsResolve("Data/Shaders/EPSBlitPT.spv"));
             r->BindTextureSRV(self, PostprocessBuffer, "displayImage", RHIPipelineStageBits::FragmentShader,
                               RHITextureViewDesc{.format = postprocessFormat,
                                                  .range = RHITextureSubresourceRange::Create()});

@@ -9,14 +9,12 @@ FetchContent_MakeAvailable(lz4)
 FetchContent_MakeAvailable(bc7enc)
 FetchContent_MakeAvailable(argh)
 
-add_subdirectory(Shaders)
-
 add_custom_target(
         Editor_Data
         COMMAND ${CMAKE_COMMAND} -E make_directory "${ASSET_BUILD_DIR}"
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${ASSET_BUILD_DIR}/ViewLUTs"
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-                "${CMAKE_CURRENT_LIST_DIR}/Render/Data"
+                "${CMAKE_SOURCE_DIR}/Source/Renderer/Data"
                 "${ASSET_BUILD_DIR}"
         COMMENT "Copying editor data to ${ASSET_BUILD_DIR}"
         VERBATIM
@@ -24,37 +22,30 @@ add_custom_target(
 
 add_library(Editor_Assets STATIC)
 target_sources(Editor_Assets PUBLIC
-        Scene/Mesh.cpp Scene/Scene.cpp Scene/Serialization.cpp Scene/Texture.cpp
-        Render/Precompute.cpp
-        "${lz4_SOURCE_DIR}/lib/lz4.c"
-        "${lz4_SOURCE_DIR}/lib/xxhash.c"
-        "${bc7enc_SOURCE_DIR}/bc7enc.c"
+        Scene/Mesh.cpp Scene/Scene.cpp
 )
 target_link_libraries(
         Editor_Assets PUBLIC
-        ThirdParty_STB
+        Foundation_GPUScene
         Foundation_Math
         Foundation_Core
         meshoptimizer
 )
 target_include_directories(
         Editor_Assets PUBLIC
-        "${stb_SOURCE_DIR}"
         "${fast_obj_SOURCE_DIR}"
         "${cgltf_SOURCE_DIR}"
         "${meshoptimizer_SOURCE_DIR}/demo"
-        "${lz4_SOURCE_DIR}/lib"
-        "${bc7enc_SOURCE_DIR}"
         ..
 )
 add_library(Editor_Context)
 target_sources(Editor_Context PRIVATE
         Context.cpp
-        Scene/GPUScene.cpp
 )
 target_link_libraries(
         Editor_Context PUBLIC
         Editor_Assets
+        Foundation_GPUScene
         Foundation_RHIVulkan
         Foundation_RenderCore
         Foundation_RenderUtils
@@ -76,16 +67,20 @@ add_executable(Editor)
 target_sources(Editor PRIVATE
         SDLMain.cpp ImGui.cpp
         EditorState.cpp EditorScene.cpp EditorUI.cpp
-        Render/Rasterizer.cpp Render/Pathtracer.cpp
 )
 target_link_libraries(
-        Editor PRIVATE Editor_Context Foundation_RHIVulkan ThirdParty_ImGui argh nfd
+        Editor PRIVATE
+        Editor_Context
+        Foundation_PathTrace
+        Foundation_Rasterizer
+        Foundation_RHIVulkan
+        ThirdParty_ImGui argh nfd
 )
 
 
 add_dependencies(
         Editor
-        Editor_Shaders
+        Foundation_Shaders
         Editor_Data
 )
 

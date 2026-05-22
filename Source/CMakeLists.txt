@@ -13,6 +13,7 @@ add_subdirectory(RenderCore)
 add_subdirectory(RenderUtils)
 add_subdirectory(RHICore)
 add_subdirectory(RHIVulkan)
+add_subdirectory(Renderer)
 
 add_library(Foundation INTERFACE)
 target_link_libraries(Foundation INTERFACE

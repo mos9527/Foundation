@@ -5,6 +5,7 @@
 namespace Foundation::RenderUtils
 {
     using namespace RenderCore;
+    using namespace Math;
 #pragma pack(push,1)
     struct CSClearBufferData
     {

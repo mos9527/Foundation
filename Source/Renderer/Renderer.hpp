@@ -1,5 +1,10 @@
 #pragma once
+#include <Core/Container.hpp>
+#include <Math/Math.hpp>
 #include <RenderCore/RenderPass.hpp>
+#include "GPUScene.hpp"
+using namespace Foundation;
+using namespace Foundation::RenderCore;
 #pragma pack(push, 4)
 struct UBO
 {
@@ -141,7 +146,10 @@ struct RendererConfig
     uint32_t ptSampler{kPTSamplerSobol};
     bool ptShaderExecutionReordering{true};
     bool forceTextureLOD0{false};
+    bool enableHDR{false}; // Output color space: A2B10G10R10 vs R8G8B8A8
 };
+
+class GPUScene;
 
 struct RendererPicking
 {
@@ -168,8 +176,8 @@ struct RendererHandles
 
 };
 
-extern void BuildIdleRenderGraph(FContext* context, float const* timeSeconds);
-extern void BuildRasterRenderGraph(FContext* context, RendererConfig cfg, RendererScene scene, RHIExtent2D renderExtent,
-                                   RendererHandles& outHandles);
-extern void BuildPathTracerRenderGraph(FContext* context, RendererConfig cfg, RendererScene scene, RHIExtent2D renderExtent,
-                                       RendererHandles& outHandles, bool const* renderPaused);
+extern void BuildIdleRenderGraph(Renderer* renderer, float const* timeSeconds);
+extern void BuildRasterRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cfg, RendererScene scene,
+                                   RHIExtent2D renderExtent, RendererHandles& outHandles);
+extern void BuildPathTracerRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfig cfg, RendererScene scene,
+                                       RHIExtent2D renderExtent, RendererHandles& outHandles, bool const* renderPaused);

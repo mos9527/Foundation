@@ -1,11 +1,10 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
+#include <Renderer/Tables/ViewLUTs.hpp>
 #include "Editor.hpp"
-#include <ImGuizmo.h>
-#include "Render/Tables/ViewLUTs.hpp"
 #include "Scene/Scene.hpp"
-#include "Scene/Texture.hpp"
+
 
 struct FArcballCamera
 {
@@ -97,11 +96,10 @@ struct RenderWorkflow
     String        outputPath;
 };
 
-// Gizmo UI state
+// Gizmo UI state (matches ImGuizmo::OPERATION and ImGuizmo::MODE)
 struct GizmoState
 {
-    ImGuizmo::OPERATION op   = ImGuizmo::TRANSLATE;
-    ImGuizmo::MODE      mode = ImGuizmo::LOCAL;
+    int op, mode;
 };
 
 struct CameraApertureState

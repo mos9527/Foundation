@@ -1,4 +1,4 @@
-#include <Editor/Scene/GPUScene.hpp>
+#include <Renderer/GPUScene.hpp>
 #include <Editor/Scene/Mesh.hpp>
 #include <RenderUtils/CSDebugText.hpp>
 #include "Examples.hpp"

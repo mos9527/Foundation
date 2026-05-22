@@ -11,8 +11,11 @@
 #include <lz4.h>
 #include <string_view>
 #include <type_traits>
-#include "../Render/Tables/ViewLUTs.hpp"
+#include <RHICore/Device.hpp>
+#include <Renderer/Tables/ViewLUTs.hpp>
+#include <Renderer/GPUScene.hpp>
 #include "Mesh.hpp"
+#include "Curve.hpp"
 
 namespace
 {
@@ -1188,6 +1191,36 @@ static_assert(std::is_trivially_copyable_v<FSceneHeader>);
 static_assert(std::is_trivially_copyable_v<FSerializedMeshLOD>);
 static_assert(std::is_trivially_copyable_v<FSerializedCurve>);
 
+static constexpr uint32_t kGPUSceneRingFrameSlack = 3u;
+static constexpr uint32_t kGPUScenePersistentTexture2DBindings = 2u; // GGX LUT + Sheen LTC LUT.
+static constexpr uint32_t kGPUScenePersistentTexture3DBindings = 2u; // default SDR/HDR view LUTs.
+static constexpr uint32_t kGPUSceneDefaultTextureBindings = 2u; // _FoundationDefault Texture2D + Texture2DFloat.
+static constexpr uint32_t kGPUSceneEnvMapBindings = 3u; // Env map + marginal/conditional CDF textures.
+static constexpr uint32_t kGPUSceneTextureBindingSlack = 8u;
+static constexpr size_t kGPUSceneByteBudgetSlack = 64u << 10u;
+
+uint32_t CountGPUSceneBudget(size_t count)
+{
+    count = std::max<size_t>(count, 1u);
+    CHECK_MSG(count <= UINT32_MAX, "GPUScene count budget {} exceeds uint32_t range", count);
+    return static_cast<uint32_t>(count);
+}
+
+uint32_t RingGPUSceneBudget(size_t count)
+{
+    return CountGPUSceneBudget(count * kGPUSceneRingFrameSlack);
+}
+
+uint32_t ByteGPUSceneBudget(size_t bytes, size_t minBytes, size_t alignment, size_t maxBytes = UINT32_MAX)
+{
+    if (bytes != 0)
+        bytes += kGPUSceneByteBudgetSlack;
+    size_t budget = AlignUp(std::max(bytes, minBytes), alignment);
+    CHECK_MSG(budget <= maxBytes, "GPUScene byte budget {} exceeds maximum {}", budget, maxBytes);
+    CHECK_MSG(budget <= UINT32_MAX, "GPUScene byte budget {} exceeds uint32_t range", budget);
+    return static_cast<uint32_t>(budget);
+}
+
 void BuildTextureBlobJobs(FSerializedTexture& desc, Vector<FBlobJob>& blobJobs, FTexture&& texture)
 {
     Allocator* alloc = desc.subresources.get_allocator().mResource;
@@ -1410,6 +1443,59 @@ FBlobDeserializer FImportedScene::GetBlobDeserializer() const
 bool FImportedScene::ReadBlob(FBlobRef const& blob, void* dst, size_t size, Allocator* scratchAlloc) const
 {
     return GetBlobDeserializer().ReadBytes(blob, dst, size, scratchAlloc);
+}
+
+GPUSceneDesc FImportedScene::CalculateGPUSceneDesc(Foundation::RHI::RHIDeviceCapabilities const& caps) const
+{
+    GPUSceneDesc desc{};
+    size_t primitiveBytes = 0;
+    for (auto const& mesh : GetMeshes())
+    {
+        primitiveBytes = AlignUp(primitiveBytes, size_t(4));
+        primitiveBytes += GPUScene::CalculateMeshPrimitiveSize(mesh);
+    }
+    size_t curveAABBBytes = 0;
+    for (auto const& curve : GetCurves())
+    {
+        primitiveBytes = AlignUp(primitiveBytes, size_t(4));
+        primitiveBytes += GPUScene::CalculateCurvePrimitiveSize(curve);
+
+        curveAABBBytes = AlignUp(curveAABBBytes, alignof(Foundation::RHI::RHIAccelerationStructureAABB));
+        curveAABBBytes += GPUScene::CalculateCurveAABBSize(curve);
+    }
+
+    const size_t maxStorageBufferRange = std::min<size_t>(caps.maxStorageBufferRange, UINT32_MAX);
+    desc.primitiveBudget = ByteGPUSceneBudget(primitiveBytes, desc.primitiveBudget, size_t(4), maxStorageBufferRange);
+    desc.curveAABBBudget = ByteGPUSceneBudget(curveAABBBytes, desc.curveAABBBudget, alignof(Foundation::RHI::RHIAccelerationStructureAABB));
+
+    size_t areaLightCount = 0;
+    for (auto const& light : GetLights())
+    {
+        if (light.type == FLightType::Disk || light.type == FLightType::Rect)
+            areaLightCount++;
+    }
+    const size_t tlasInstanceCount = GetInstances().size() + areaLightCount;
+    desc.instanceBudget = RingGPUSceneBudget(GetInstances().size());
+    desc.tlasInstanceBudget = RingGPUSceneBudget(tlasInstanceCount);
+    desc.materialBudget = RingGPUSceneBudget(GetMaterials().size());
+    desc.lightBudget = RingGPUSceneBudget(GetLights().size());
+
+    size_t textureBindings = kGPUScenePersistentTexture2DBindings + kGPUSceneDefaultTextureBindings +
+        kGPUSceneTextureBindingSlack;
+    auto const& sceneGlobals = GetSceneGlobals();
+    for (size_t textureIndex = 0; textureIndex < GetTextures().size(); ++textureIndex)
+    {
+        if (sceneGlobals.type == FSceneEnvironmentType::EnvMap &&
+            sceneGlobals.environmentTexture != kInvalidTexture && textureIndex == sceneGlobals.environmentTexture)
+            continue;
+        FSerializedTexture const& texture = GetTextures()[textureIndex];
+        textureBindings += texture.IsValid() ? 1u : 0u;
+    }
+    if (sceneGlobals.type == FSceneEnvironmentType::EnvMap)
+        textureBindings += kGPUSceneEnvMapBindings;
+    textureBindings += kGPUScenePersistentTexture3DBindings;
+    desc.texturesBudget = CountGPUSceneBudget(textureBindings);
+    return desc;
 }
 
 void FinalizeSceneWriter(FImportedScene& scene)

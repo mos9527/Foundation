@@ -1,13 +1,16 @@
 #pragma once
 #include <RenderCore/Bindless.hpp>
 #include <RenderCore/ImmediateContext.hpp>
-#include "../Context.hpp"
-#include "../Render/Precompute.hpp"
+#include "Precompute.hpp"
 #include "Curve.hpp"
 #include "Mesh.hpp"
 #include "Texture.hpp"
 using namespace Math;
-struct FImportedScene;
+using Foundation::RenderCore::BindlessPool;
+using Foundation::RenderCore::ImmediateContext;
+using Foundation::RenderCore::ImmediateSubmitDesc;
+using Foundation::RenderCore::ImmediateUpload;
+namespace Foundation::Core { class AllocatorStack; }
 
 // Must match the procedural hit-group bindings in Render/Pathtracer.cpp.
 inline constexpr uint32_t kRectLightSBTOffset = 3u;
@@ -136,6 +139,19 @@ static_assert(sizeof(GSCurveSegment) == 16);
 static_assert(sizeof(GSMaterial) == 188);
 static_assert(sizeof(GSLight) == 96);
 
+struct GPUSceneDesc
+{
+    uint32_t primitiveBudget = 16 * (1u << 20); // 16MB
+    uint32_t curveAABBBudget = 16 * (1u << 20); // 16MB
+    uint32_t instanceBudget = static_cast<uint32_t>(1e4); // # of GSInstance elements (ring)
+    uint32_t materialBudget = static_cast<uint32_t>(1e3); // # of materials (ring)
+    uint32_t lightBudget = static_cast<uint32_t>(1e4); // # of lights (ring)
+    uint32_t texturesBudget = static_cast<uint32_t>(1e3); // # of textures
+    uint32_t tlasInstanceBudget = static_cast<uint32_t>(1e4); // # of TLAS instances (ring)
+    uint32_t tlasBudget = 16 * (1u << 20); // 16MB
+    uint32_t tlasScratchBudget = 32 * (1u << 20); // 32MB (ring)
+};
+
 template <typename T>
 struct UploadGPURingBuffer
 {
@@ -178,7 +194,9 @@ struct UploadGPURingBuffer
  */
 class GPUScene
 {
-    FContext* mContext;
+    RHIDevice* mDevice{nullptr};
+    Allocator* mAllocator{GLOBAL_ALLOC};
+    AllocatorStack* mFrameScratch{nullptr};
     /* Geometry */
     RHIDeviceScopedHandle<RHIBuffer> mPrimitiveBuffer;
     char* mPrimitiveMapped{nullptr};
@@ -245,24 +263,12 @@ public:
     };
     LightSamplerType mLightSamplerType = LightSamplerType::Power;
 
-    struct GPUSceneDesc
-    {
-        uint32_t primitiveBudget = 16 * (1u << 20); // 16MB
-        uint32_t curveAABBBudget = 16 * (1u << 20); // 16MB
-        uint32_t instanceBudget = static_cast<uint32_t>(1e4); // # of GSInstance elements (ring)
-        uint32_t materialBudget = static_cast<uint32_t>(1e3); // # of materials (ring)
-        uint32_t lightBudget = static_cast<uint32_t>(1e4); // # of lights (ring)
-        uint32_t texturesBudget = static_cast<uint32_t>(1e3); // # of textures
-        uint32_t tlasInstanceBudget = static_cast<uint32_t>(1e4); // # of TLAS instances (ring)
-        uint32_t tlasBudget = 16 * (1u << 20); // 16MB
-        uint32_t tlasScratchBudget = 32 * (1u << 20); // 32MB (ring)
-    };
-    [[nodiscard]] static GPUSceneDesc CalculateSceneBudget(FImportedScene const& scene, RHIDeviceCapabilities const& caps);
     [[nodiscard]] static size_t CalculateMeshPrimitiveSize(FSerializedMesh const& src);
     [[nodiscard]] static size_t CalculateCurvePrimitiveSize(FSerializedCurve const& src);
     [[nodiscard]] static size_t CalculateCurveAABBSize(FSerializedCurve const& src);
 
-    GPUScene(FContext* ctx, GPUSceneDesc const& desc);
+    GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& desc,
+             AllocatorStack* frameScratch = nullptr);
 
     Pair<GSInstance*, uint32_t> AllocateInstance(uint32_t count);
     Pair<GSMaterial*, uint32_t> AllocateMaterial(uint32_t count);
@@ -303,7 +309,6 @@ public:
 
     struct StagedUploadJob
     {
-        const FImportedScene* scene{nullptr};
         enum class Kind : uint32_t
         {
             None,
@@ -318,7 +323,7 @@ public:
         GSCurveSet curveData{};
 
         [[nodiscard]] bool NeedsScratch() const;
-        void Write(Allocator* scratchAlloc = nullptr) const;
+        void Write(FBlobDeserializer const& blobs, Allocator* scratchAlloc = nullptr) const;
     };
 
     struct TextureUpload
@@ -329,19 +334,19 @@ public:
         [[nodiscard]] bool IsValid() const { return texture.IsValid(); }
     };
 
-    size_t BeginUpload(ImmediateUpload* ctx, FImportedScene const& scene, FSerializedMesh const& source, GSMesh& outData,
+    size_t BeginUpload(ImmediateUpload* ctx, FSerializedMesh const& source, GSMesh& outData,
                        uint32_t& outOffset, Vector<StagedUploadJob>& outJobs);
-    size_t BeginUpload(ImmediateUpload* ctx, FImportedScene const& scene, FSerializedCurve const& source,
+    size_t BeginUpload(ImmediateUpload* ctx, FSerializedCurve const& source,
                        GSCurveSet& outData, uint32_t& outOffset, Vector<StagedUploadJob>& outJobs);
     size_t Upload(ImmediateUpload* ctx, FTextureHeader const& metadata, Span<const unsigned char> data, uint32_t& outIndex, const char* debugName = nullptr);
     size_t Upload(ImmediateUpload* ctx, FTexture const& source, uint32_t& outIndex, const char* debugName = nullptr);
     TextureUpload BeginTextureUpload(ImmediateUpload* ctx, FSerializedTexture const& source,
                                      const char* debugName = nullptr);
-    size_t BeginTextureSubresourceUpload(ImmediateUpload* ctx, FImportedScene const& scene, FSerializedTexture const& source,
+    size_t BeginTextureSubresourceUpload(ImmediateUpload* ctx, FSerializedTexture const& source,
                                          TextureUpload& upload, uint32_t layer, uint32_t mip,
                                          Vector<StagedUploadJob>& outJobs);
     void EndTextureUpload(ImmediateUpload* ctx, TextureUpload&& upload, uint32_t& outIndex);
-    size_t BeginUpload(ImmediateUpload* ctx, FImportedScene const& scene, FSerializedTexture const& source, uint32_t& outIndex,
+    size_t BeginUpload(ImmediateUpload* ctx, FSerializedTexture const& source, uint32_t& outIndex,
                        Vector<StagedUploadJob>& outJobs, const char* debugName = nullptr);
 
     void BuildBLAS(ImmediateContext* ctx, Span<const GSMesh> meshes, Span<uint32_t> outBLASIndices,

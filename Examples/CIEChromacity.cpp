@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <cstring>
 
-#include "../Editor/Render/Tables.hpp"
+#include <Renderer/Tables.hpp>
 using namespace RenderUtils;
 
 struct CIEPrimaries {
