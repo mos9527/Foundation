@@ -1244,6 +1244,7 @@ static void UploadLoadedSceneToGPU(FImportedScene& scene, GPUScene* gpu, SceneLo
     BuildEditorMaterials(scene, GEditor.materials, textureIDMap);
     ApplySceneCamera(scene, GEditor.camera, GEditor.aperture, GEditor.shaderGlobals);
     GEditor.shaderGlobals.ggxLutEIndex = gpu->GetGGXLutEIndex();
+    GEditor.shaderGlobals.ggxLutEIORIndex = gpu->GetGGXLutEIORIndex();
     GEditor.shaderGlobals.sheenLtcIndex = gpu->GetSheenLtcIndex();
     GEditor.shaderGlobals.viewLutIndex = GContext->enableHDR
         ? gpu->GetViewLutHdrIndex()

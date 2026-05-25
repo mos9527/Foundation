@@ -223,6 +223,7 @@ public struct UBO
     public uint32_t useEnvMap;
     public float envAzimuthOffset;
     public uint32_t ggxLutEIndex;
+    public uint32_t ggxLutEIORIndex;
     public uint32_t sheenLtcIndex;
     public uint32_t viewLutIndex;
     public uint32_t envMapTextureIndex;

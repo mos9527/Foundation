@@ -675,7 +675,7 @@ IMaterial MakeMaterial(Payload surface, float3 wo, bool isCurve = false, bool fo
         surface.baseColor, surface.metallic, surface.roughness,
         surface.ior, surface.specularFactor, surface.transmission, true, wo,
         subsurface, surface.subsurfaceColor, surface.subsurfaceRadius, surface.subsurfaceScale,
-        surface.anisotropyStrength, surface.specularColorFactor, globalParams.ggxLutEIndex,
+        surface.anisotropyStrength, surface.specularColorFactor, globalParams.ggxLutEIndex, globalParams.ggxLutEIORIndex,
         surface.sheenWeight, surface.sheenRoughness, surface.sheenTint, globalParams.sheenLtcIndex,
         surface.clearcoatFactor, surface.clearcoatRoughness,
         surface.emissive);

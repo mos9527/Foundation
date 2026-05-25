@@ -43,6 +43,7 @@ public struct PrincipledMaterial : IMaterial {
         float anisotropyStrength = 0.0f,
         float3 specularColorFactor = float3(1.0f),
         uint32_t ggxLutEIndex = ~0u,
+        uint32_t ggxLutEIORIndex = ~0u,
         float sheenWeight = 0.0f,
         float sheenRoughness = 0.0f,
         float3 sheenTint = float3(1.0f),
@@ -66,6 +67,7 @@ public struct PrincipledMaterial : IMaterial {
         CalcGlossyFresnel(ior, specularFactor, specularColorFactor, dielF0, dielF90);
         float sampleGlossy = MaxComponent(reflectance(dielF0, dielF90,
             SampleGGXLutE(ggxLutEIndex, AbsCosTheta(wo), roughness)));
+        float sampleGlossyIOR = SampleGGXLutEIOR(ggxLutEIORIndex, AbsCosTheta(wo), roughness, ior);
         float rawCoat = clamp(MaxComponent(CoatReflectance(clearcoatFactor, clearcoatRoughness, wo, ggxLutEIndex)), 0.0f, 1.0f);
         float rawUnderCoat = max(1.0f - rawCoat, 0.0f);
         SheenBSDF sampleSheen = SheenBSDF(sheenWeight, sheenRoughness, sheenTint, sheenLtcIndex, wo);
@@ -74,13 +76,13 @@ public struct PrincipledMaterial : IMaterial {
         float rawDiffuseFamily = rawBase * (1.0f - metallic) * (1.0f - sampleGlossy) * (1.0f - transmission);
         float rawMetal = rawBase * metallic;
         float rawDielSpec = rawBase * (1.0f - metallic) * sampleGlossy;
-        float rawTrans = rawBase * (1.0f - metallic) * (1.0f - sampleGlossy) * transmission;
+        float rawTrans = rawBase * (1.0f - metallic) * (1.0f - sampleGlossyIOR) * transmission;
         float rawSubsurface = rawDiffuseFamily * activeSubsurface;
         float eventWeightSum = rawDiffuseFamily + rawTrans + rawDielSpec + rawMetal + rawSheen + rawCoat;
 
         this.surface = PrincipledBSDF(
             baseColor, metallic, roughness, ior, specularFactor, transmission,
-            energyCompensation, wo, diffuseWeight, anisotropyStrength, specularColorFactor, ggxLutEIndex,
+            energyCompensation, wo, diffuseWeight, anisotropyStrength, specularColorFactor, ggxLutEIndex, ggxLutEIORIndex,
             sheenWeight, sheenRoughness, sheenTint, sheenLtcIndex,
             clearcoatFactor, clearcoatRoughness);
         this.subsurface = DisneyBurleyBSSRDF(

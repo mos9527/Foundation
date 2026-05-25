@@ -215,6 +215,7 @@ class GPUScene
     BindlessPool mTexture3DPool;
     // Precomputed LUTs (stored in texture2D pool)
     uint32_t mLUTGGXEIndex{UINT32_MAX};
+    uint32_t mLUTGGXEIORIndex{UINT32_MAX};
     uint32_t mLUTSheenLTCIndex{UINT32_MAX};
     // Display transform 3D LUTs (stored in texture3D pool)
     uint32_t mLUTViewSdrIndex{UINT32_MAX}, mLUTViewHdrIndex{UINT32_MAX};
@@ -372,9 +373,9 @@ public:
     [[nodiscard]] BindlessPool* GetTexture2DPool() { return &mTexture2DPool; }
     [[nodiscard]] BindlessPool* GetTexture3DPool() { return &mTexture3DPool; }
     [[nodiscard]] BindlessPool* GetTexturePool() { return GetTexture2DPool(); }
-    [[nodiscard]] uint32_t GetGGXLutEIndex() const { return mLUTGGXEIndex; }
-    [[nodiscard]] uint32_t GetSheenLtcIndex() const { return mLUTSheenLTCIndex; }
+    [[nodiscard]] uint32_t GetGGXLutEIndex() const { return mLUTGGXEIndex; }    [[nodiscard]] uint32_t GetGGXLutEIORIndex() const { return mLUTGGXEIORIndex; }    [[nodiscard]] uint32_t GetSheenLtcIndex() const { return mLUTSheenLTCIndex; }
     [[nodiscard]] RHITexture* GetGGXlutE() const;
+    [[nodiscard]] RHITexture* GetGGXlutEIOR() const;
     [[nodiscard]] RHITexture* GetSheenLtc() const;
     void UploadViewLUTs(ImmediateUpload* ctx, FTexture const& sdr, FTexture const& hdr);
     [[nodiscard]] uint32_t GetViewLutSdrIndex() const { return mLUTViewSdrIndex; }

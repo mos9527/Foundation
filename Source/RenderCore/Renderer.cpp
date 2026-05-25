@@ -782,7 +782,7 @@ void Renderer::BuildPipelineState(PassHandle pass)
             auto bind = refl_var_bind_points[binding];
             CHECK_MSG(bind.second < desc_set_layout->mDesc.bindings.size(),
                       "Shader binding {} at set {} exceeded declared layout binding {} size {} in pass {}.", binding,
-                      binding, bind.first, desc_set_layout->mDesc.bindings.size(), pass);
+                      binding, bind.first, desc_set_layout->mDesc.bindings.size(), tracked.name);
             set = bind.first, tracked.pExternalDescriptorSets.emplace_back(set, desc_set_layout);
         }
         else

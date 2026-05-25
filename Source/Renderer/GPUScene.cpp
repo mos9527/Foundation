@@ -1,6 +1,7 @@
 #include "GPUScene.hpp"
 #include "Precompute.hpp"
 #include "Tables/GGX.hpp"
+#include "Tables/GGX_IOR.hpp"
 #include "Tables/LTCSheen.hpp"
 #include "Tables/Sobol.hpp"
 #include "Tables/ViewLUTs.hpp"
@@ -314,6 +315,7 @@ GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& 
     // Upload precomputed LUTs
     {
         auto lutE = MakeLUT(kGGXlutE, RHIResourceFormat::R32G32SignedFloat, 32, 32);
+        auto lutEIOR = MakeLUT(kGGXlutEIOR, RHIResourceFormat::R32SignedFloat, 16, 16, 16, RHITextureDimension::E3D);
         auto sheenLtc = MakeLUT(kSheenLTCLut, RHIResourceFormat::R32G32B32A32SignedFloat, 32, 32);
         FTexture foundationDefaultTexture2D(mAllocator);
         foundationDefaultTexture2D.Initialize(RHIResourceFormat::R32G32B32A32SignedFloat, RHITextureDimension::E2D, 1, 1);
@@ -332,12 +334,13 @@ GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& 
             .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
             .size = foundationDefaultBufferFloatSize
         });
-        const size_t budget = lutE.GetSize() + sheenLtc.GetSize() + foundationDefaultTexture2D.GetSize() +
+        const size_t budget = lutE.GetSize() + lutEIOR.GetSize() + sheenLtc.GetSize() + foundationDefaultTexture2D.GetSize() +
             foundationDefaultTexture2DFloat.GetSize() + sizeof(kSobolMatrices32) + foundationDefaultBufferFloatSize +
             defaultViewLutSdr.GetSize() + defaultViewLutHdr.GetSize() + kGPUSceneByteBudgetSlack;
         ImmediateUpload upload(mDevice, budget);
         upload.Begin();
         Upload(&upload, lutE, mLUTGGXEIndex);
+        Upload(&upload, lutEIOR, mLUTGGXEIORIndex);
         Upload(&upload, sheenLtc, mLUTSheenLTCIndex);
         Upload(&upload, foundationDefaultTexture2D, mFoundationDefaultTexture2DIndex, "_FoundationDefaultTexture2D");
         Upload(&upload, foundationDefaultTexture2DFloat, mFoundationDefaultTexture2DFloatIndex,
@@ -1632,6 +1635,11 @@ RHITexture* GPUScene::GetEnvMap() const
 RHITexture* GPUScene::GetGGXlutE() const
 {
     return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mLUTGGXEIndex);
+}
+
+RHITexture* GPUScene::GetGGXlutEIOR() const
+{
+    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture3DPool), mLUTGGXEIORIndex);
 }
 
 RHITexture* GPUScene::GetSheenLtc() const

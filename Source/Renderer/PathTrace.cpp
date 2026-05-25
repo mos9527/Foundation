@@ -185,11 +185,13 @@ void BuildPathTracerRenderGraph(Renderer* renderer, GPUScene* gpu, RendererConfi
                                                  .range = RHITextureSubresourceRange::Create()});
             r->BindTextureSampler(self, EnvMapSampler, "envMapSampler");
             r->BindDescriptorSet(self, "textures", gpu->GetTexture2DPool()->GetDescriptorSetLayout());
+            r->BindDescriptorSet(self, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSetLayout());
         },
         [=](PassHandle self, Renderer* r, RHICommandList* cmd)
         {
             r->CmdSetPipeline(self, cmd);
             r->CmdBindDescriptorSet(self, cmd, "textures", gpu->GetTexture2DPool()->GetDescriptorSet());
+            r->CmdBindDescriptorSet(self, cmd, "textures3D", gpu->GetTexture3DPool()->GetDescriptorSet());
             bool canTrace = (!renderPaused || !*renderPaused) &&
                 (!scene.rendererRebuildRequested || !*scene.rendererRebuildRequested);
             if (canTrace)
