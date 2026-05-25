@@ -87,11 +87,12 @@ float3 TorranceSparrowReflection(
 
 // Torrance-Sparrow transmittance with Schlick Fresnel (no energy compensation)
 // TODO: Pre-integrate IOR multi-scatter
-float3 TorranceSparrowTransmittance(
+public float3 TorranceSparrowTransmittance(
     float3 wo, float3 wi,
     float3 F0, float3 F90,
     float eta,
-    TrowbridgeReitzDistribution mfDistrib)
+    TrowbridgeReitzDistribution mfDistrib,
+    bool energyCompensation)
 {
     float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
     // Note: our Refract() uses eta = eta_t/eta_i. The corresponding transmission half-vector is
@@ -106,7 +107,7 @@ float3 TorranceSparrowTransmittance(
 }
 
 // Glossy reflection PDF (Torrance-Sparrow Jacobian)
-float PDFGlossy(float3 wo, float3 wi, TrowbridgeReitzDistribution mfDistrib) {
+public float PDFGlossy(float3 wo, float3 wi, TrowbridgeReitzDistribution mfDistrib) {
     float3 wm = normalize(wo + wi);
     float denom = 4.0f * AbsDot(wo, wm);
     if (denom < EPS) return 0.0f;
@@ -114,7 +115,7 @@ float PDFGlossy(float3 wo, float3 wi, TrowbridgeReitzDistribution mfDistrib) {
 }
 
 // Transmittance PDF (rough dielectric Jacobian)
-float PDFTransmittance(float3 wo, float3 wi, float eta, TrowbridgeReitzDistribution mfDistrib) {
+public float PDFTransmittance(float3 wo, float3 wi, float eta, TrowbridgeReitzDistribution mfDistrib) {
     float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
     // Must match Refract()'s eta convention (eta_t/eta_i)
     float3 wm = normalize(wo + wi * etap);
@@ -201,7 +202,7 @@ public struct GlassBSDF : IBxDF {
             float3 wm = normalize(wo + wi);
             return baseColor * mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4.0f * cosWo * cosWi);
         } else {
-            float3 val = baseColor * TorranceSparrowTransmittance(wo, wi, transmittanceF0, transmittanceF90, eta, mfDistrib);
+            float3 val = baseColor * TorranceSparrowTransmittance(wo, wi, transmittanceF0, transmittanceF90, eta, mfDistrib, energyCompensation);
             if (mode == TransportMode::Radiance)
                 val *= Sqr(etap);
             return val;

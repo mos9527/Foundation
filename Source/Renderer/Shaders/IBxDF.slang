@@ -756,6 +756,11 @@ public float F0FromIor(float ior)
 {
     return Sqr((ior - 1.0F) / (ior + 1.0F));
 }
+public float IorFromF0(float f0)
+{
+    float sqrt_f0 = clamp(sqrt(f0), 0.0f, 0.99f);
+    return (1.0f + sqrt_f0) / (1.0f - sqrt_f0);
+}
 // Schlick Fresnel approximation for float
 public float SchlickFresnel(float ior, float cosTheta)
 {
