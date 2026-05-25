@@ -189,48 +189,30 @@ public struct GlassBSDF : IBxDF {
         this.mfDistrib = TrowbridgeReitzDistribution(alphaX, alphaY);
     }
 
-    public BxDFFlags Flags() { return BxDFFlags::GlossyReflection | BxDFFlags::GlossyTransmission; }
+    public BxDFFlags Flags() { return BxDFFlags::GlossyTransmission; }
 
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
-        bool reflected = SameHemisphere(wo, wi);
+        if (SameHemisphere(wo, wi)) return 0.0f;
         float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
-        if (reflected) {
-            // TIR contribution
-            if (!IsTIR(wo, wi, eta)) return 0.0f;
-            float cosWo = AbsCosTheta(wo), cosWi = AbsCosTheta(wi);
-            if (cosWo < EPS || cosWi < EPS) return 0.0f;
-            float3 wm = normalize(wo + wi);
-            return baseColor * mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4.0f * cosWo * cosWi);
-        } else {
-            float3 val = baseColor * TorranceSparrowTransmittance(wo, wi, transmittanceF0, transmittanceF90, eta, mfDistrib, energyCompensation);
-            if (mode == TransportMode::Radiance)
-                val *= Sqr(etap);
-            return val;
-        }
+        float3 val = baseColor * TorranceSparrowTransmittance(wo, wi, transmittanceF0, transmittanceF90, eta, mfDistrib, energyCompensation);
+        if (mode == TransportMode::Radiance)
+            val *= Sqr(etap);
+        return val;
     }
 
     public BSDFSample Sample_f(float3 wo, float uc, float2 u, TransportMode mode, BxDFReflTransFlags flags) {
+        if (!(flags & BxDFReflTransFlags::Transmission)) return BSDFSample();
         float3 wm = mfDistrib.Sample_wm(wo, u);
         float etap;
         float3 wi;
         bool tir = !Refract(wo, wm, eta, wi, etap);
-        if (tir) {
-            // TIR: fall back to reflection
-            wi = Reflect(wo, wm);
-            return BSDFSample(this.f(wo, wi, mode), wi, PDFGlossy(wo, wi, mfDistrib), BxDFFlags::GlossyReflection);
-        }
-        if (SameHemisphere(wo, wi) || wi.z == 0) return BSDFSample();
+        if (tir || SameHemisphere(wo, wi) || wi.z == 0) return BSDFSample();
         float pdf = PDFTransmittance(wo, wi, eta, mfDistrib);
         return BSDFSample(this.f(wo, wi, mode), wi, pdf, BxDFFlags::GlossyTransmission, etap);
     }
 
     public float PDF(float3 wo, float3 wi, TransportMode mode, BxDFReflTransFlags flags) {
-        bool reflected = SameHemisphere(wo, wi);
-        if (reflected) {
-            // TIR reflection PDF
-            if (!IsTIR(wo, wi, eta)) return 0.0f;
-            return PDFGlossy(wo, wi, mfDistrib);
-        }
+        if (!(flags & BxDFReflTransFlags::Transmission) || SameHemisphere(wo, wi)) return 0.0f;
         return PDFTransmittance(wo, wi, eta, mfDistrib);
     }
 };

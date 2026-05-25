@@ -25,55 +25,15 @@ float sampleGGX_E(float rough, float cosTheta, float uc, float2 u, out float Vdo
     return f * AbsCosTheta(wi) / pdf;
 }
 
-public float3 TorranceSparrowTransmittance(
-    float3 wo, float3 wi,
-    float3 F0, float3 F90,
-    float eta,
-    TrowbridgeReitzDistribution mfDistrib,
-    bool energyCompensation)
-{
-    float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
-    // Note: our Refract() uses eta = eta_t/eta_i. The corresponding transmission half-vector is
-    // wm = normalize(wo + eta * wi), not normalize(eta * wo + wi).
-    float3 wm = normalize(wo + wi * etap);
-    wm = FaceForward(wm, float3(0, 0, 1));
-    float3 Fss = SchlickFresnel(F0, F90, AbsDot(wo, wm));
-    float3 T = max(1.0f - Fss, 0.0f);
-    float denom = Sqr(dot(wo, wm) + dot(wi, wm) * etap) * abs(CosTheta(wi) * CosTheta(wo));
-    if (denom < EPS) return 0.0f;
-    return T * mfDistrib.D(wm) * mfDistrib.G(wo, wi) * abs(dot(wi, wm) * dot(wo, wm) / denom);
-}
-
-// Transmittance PDF (rough dielectric Jacobian)
-public float PDFTransmittance(float3 wo, float3 wi, float eta, TrowbridgeReitzDistribution mfDistrib) {
-    float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
-    // Must match Refract()'s eta convention (eta_t/eta_i)
-    float3 wm = normalize(wo + wi * etap);
-    wm = FaceForward(wm, float3(0, 0, 1));
-    float denom = Sqr(dot(wo, wm) + dot(wi, wm) * etap);
-    if (denom < EPS) return 0.0f;
-    return mfDistrib.PDF(wo, wm) * AbsDot(wi, wm) * Sqr(etap) / denom;
-}
-
-float sampleGGX_E_IOR(float rough, float cosTheta, float ior, float uc, float2 u){
+float sampleGGX_E_IOR(float rough, float cosTheta, float eta, float uc, float2 u){
     float alpha = Sqr(rough);
     TrowbridgeReitzDistribution mfDistrib = TrowbridgeReitzDistribution(alpha, alpha);
     float3 wo = float3(sqrt(1.0 - cosTheta * cosTheta), 0.0, cosTheta);
     if (mfDistrib.EffectivelySmooth())
         return 1.0f; 
     float3 wm = mfDistrib.Sample_wm(wo, u);
-    float etap;
-    float3 wi;
-    bool tir = !Refract(wo, wm, ior, wi, etap);
-    if (tir) {
-        wi = Reflect(wo, wm);
-        float pdf = mfDistrib.PDF(wo, wm) / (4 * AbsDot(wo, wm));
-        float f = mfDistrib.D(wm)  * mfDistrib.G(wo, wi) / (4 * AbsCosTheta(wi) * AbsCosTheta(wo));
-        return f * AbsCosTheta(wi) / pdf;
-    }
-   float pdf = PDFTransmittance(wo, wi, ior, mfDistrib);
-   float f = TorranceSparrowTransmittance(wo, wi, F0FromIor(ior), 1.0f, ior, mfDistrib, false).x;
-   return f * AbsCosTheta(wi) / pdf;
+    float R = FrDielectric(dot(wo, wm), eta), T = 1 - R;
+    float pr = R, pt = T;
 }
 
 [shader("compute")]
@@ -133,7 +93,7 @@ void integrateGGX_IOR_E(uint3 p : SV_DispatchThreadID)
     for (uint i = 0; i < kSamples;i++) {
         float cosTheta = clamp(u, 1e-4, 1.0f);
         float rough = clamp(v, 1e-4, 1.0f);
-        float ior = clamp(IorFromZ(w), 1.0f + 5e-3f, 10.0f);
+        float ior =  IorFromZ(clamp(w, 1e-4, 0.99f));
         float sample = sampleGGX_E_IOR(rough, cosTheta, ior, rng.sample(), rng.sample2D());
         E += sample;
         samples += 1.0f;
