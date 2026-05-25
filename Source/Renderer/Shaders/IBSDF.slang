@@ -89,7 +89,7 @@ float3 TorranceSparrowReflection(
     return (Fss + Fms) * mfDistrib.D(wm) * mfDistrib.G(wo, wi) / (4.0f * cosWo * cosWi);
 }
 
-// Torrance-Sparrow transmittance with Schlick Fresnel (no energy compensation)
+// Torrance-Sparrow transmittance with Schlick Fresnel
 public float3 TorranceSparrowTransmittance(
     float3 wo, float3 wi,
     float3 F0, float3 F90,

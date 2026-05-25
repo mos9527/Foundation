@@ -10,10 +10,23 @@ foreach(SlangFile IN LISTS SLANG_FILES)
     if(ShaderName MATCHES "^I")
         continue()
     endif()
+    set(ShaderCapabilities
+            SPV_GOOGLE_user_type
+            spvDerivativeControl
+            spvImageQuery
+            spvImageGatherExtended
+            spvSparseResidency
+            spvMinLod
+            spvFragmentFullyCoveredEXT
+            spvShaderInvocationReorderEXT
+            spvGroupNonUniformBallot
+            spvGroupNonUniformArithmetic
+    )
     slangc_compile(
             "Shader_${ShaderName}"
             SOURCE          "${SlangFile}"
             OUTPUT_DIR      "${SHADER_BUILD_DIR}"
+            CAPABILITIES    ${ShaderCapabilities}
     )
     add_dependencies(Foundation_Shaders "Shader_${ShaderName}")
 endforeach()
