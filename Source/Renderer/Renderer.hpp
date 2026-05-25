@@ -42,6 +42,7 @@ struct UBO
     float envAzimuthOffset{0.0f}; // [-180, 180]
     uint32_t ggxLutEIndex{UINT32_MAX};
     uint32_t ggxLutEIORIndex{UINT32_MAX};
+    uint32_t ggxLutEIORInvIndex{UINT32_MAX};
     uint32_t sheenLtcIndex{UINT32_MAX};
     uint32_t viewLutIndex{UINT32_MAX};
     uint32_t envMapTextureIndex{UINT32_MAX};

@@ -92,7 +92,7 @@ void main(uint2 tid: SV_DispatchThreadID) {
         float3 wo = toLocal.rotate(v);
 
         PrincipledBSDF bsdf = PrincipledBSDF(baseColor, metallic, roughness, 1.5f, 1.0f, 0.0f, true, wo,
-                                             1.0f, 0.0f, float3(1.0f), globalParams.ggxLutEIndex, globalParams.ggxLutEIORIndex,
+                                             1.0f, 0.0f, float3(1.0f), globalParams.ggxLutEIndex, globalParams.ggxLutEIORIndex, globalParams.ggxLutEIORInvIndex,
                                              0.0f, 0.0f, float3(1.0f), globalParams.sheenLtcIndex);
 
         // TODO: Area lights.

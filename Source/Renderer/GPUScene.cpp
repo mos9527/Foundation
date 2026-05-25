@@ -316,6 +316,7 @@ GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& 
     {
         auto lutE = MakeLUT(kGGXlutE, RHIResourceFormat::R32G32SignedFloat, 32, 32);
         auto lutEIOR = MakeLUT(kGGXlutEIOR, RHIResourceFormat::R32SignedFloat, 16, 16, 16, RHITextureDimension::E3D);
+        auto lutEIORInv = MakeLUT(kGGXlutEIORavg, RHIResourceFormat::R32SignedFloat, 16, 16, 16, RHITextureDimension::E3D);
         auto sheenLtc = MakeLUT(kSheenLTCLut, RHIResourceFormat::R32G32B32A32SignedFloat, 32, 32);
         FTexture foundationDefaultTexture2D(mAllocator);
         foundationDefaultTexture2D.Initialize(RHIResourceFormat::R32G32B32A32SignedFloat, RHITextureDimension::E2D, 1, 1);
@@ -334,13 +335,14 @@ GPUScene::GPUScene(RHIDevice* device, Allocator* allocator, GPUSceneDesc const& 
             .usage = RHIBufferUsageBits::StorageBuffer | RHIBufferUsageBits::TransferDestination,
             .size = foundationDefaultBufferFloatSize
         });
-        const size_t budget = lutE.GetSize() + lutEIOR.GetSize() + sheenLtc.GetSize() + foundationDefaultTexture2D.GetSize() +
+        const size_t budget = lutE.GetSize() + lutEIOR.GetSize() + lutEIORInv.GetSize() + sheenLtc.GetSize() + foundationDefaultTexture2D.GetSize() +
             foundationDefaultTexture2DFloat.GetSize() + sizeof(kSobolMatrices32) + foundationDefaultBufferFloatSize +
             defaultViewLutSdr.GetSize() + defaultViewLutHdr.GetSize() + kGPUSceneByteBudgetSlack;
         ImmediateUpload upload(mDevice, budget);
         upload.Begin();
         Upload(&upload, lutE, mLUTGGXEIndex);
         Upload(&upload, lutEIOR, mLUTGGXEIORIndex);
+        Upload(&upload, lutEIORInv, mLUTGGXEIORInvIndex);
         Upload(&upload, sheenLtc, mLUTSheenLTCIndex);
         Upload(&upload, foundationDefaultTexture2D, mFoundationDefaultTexture2DIndex, "_FoundationDefaultTexture2D");
         Upload(&upload, foundationDefaultTexture2DFloat, mFoundationDefaultTexture2DFloatIndex,
@@ -1627,36 +1629,6 @@ static RHITexture* ResolvePoolTexture(BindlessPool& pool, uint32_t index)
     return pool.GetResource(index);
 }
 
-RHITexture* GPUScene::GetEnvMap() const
-{
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mEnvMapIndex);
-}
-
-RHITexture* GPUScene::GetGGXlutE() const
-{
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mLUTGGXEIndex);
-}
-
-RHITexture* GPUScene::GetGGXlutEIOR() const
-{
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture3DPool), mLUTGGXEIORIndex);
-}
-
-RHITexture* GPUScene::GetSheenLtc() const
-{
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mLUTSheenLTCIndex);
-}
-
-RHITexture* GPUScene::GetViewLutSdr() const
-{
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture3DPool), mLUTViewSdrIndex);
-}
-
-RHITexture* GPUScene::GetViewLutHdr() const
-{
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture3DPool), mLUTViewHdrIndex);
-}
-
 RHITexture* GPUScene::GetFoundationDefaultTexture2D() const
 {
     return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mFoundationDefaultTexture2DIndex);
@@ -1665,16 +1637,6 @@ RHITexture* GPUScene::GetFoundationDefaultTexture2D() const
 RHITexture* GPUScene::GetFoundationDefaultTexture2DFloat() const
 {
     return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mFoundationDefaultTexture2DFloatIndex);
-}
-
-RHITexture* GPUScene::GetEnvMapMarginalCDF() const
-{
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mEnvMapMarginalCDFIndex);
-}
-
-RHITexture* GPUScene::GetEnvMapConditionalCDF() const
-{
-    return ResolvePoolTexture(const_cast<BindlessPool&>(mTexture2DPool), mEnvMapConditionalCDFIndex);
 }
 
 RHIBuffer* GPUScene::GetSobolMatricesBuffer() const

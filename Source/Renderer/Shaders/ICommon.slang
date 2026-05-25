@@ -224,6 +224,7 @@ public struct UBO
     public float envAzimuthOffset;
     public uint32_t ggxLutEIndex;
     public uint32_t ggxLutEIORIndex;
+    public uint32_t ggxLutEIORInvIndex;
     public uint32_t sheenLtcIndex;
     public uint32_t viewLutIndex;
     public uint32_t envMapTextureIndex;

@@ -8,8 +8,8 @@ SamplerState lutSampler;
 public float2 SampleGGXLutE(uint32_t ggxLutEIndex, float mu, float roughness) {
     return textures[NonUniformResourceIndex(ggxLutEIndex)].SampleLevel(lutSampler, float2(mu, roughness), 0).xy;
 }
-public float SampleGGXLutEIOR(uint32_t ggxLutEIORIndex, float mu, float roughness, float ior) {
-    return textures3D[NonUniformResourceIndex(ggxLutEIORIndex)].SampleLevel(lutSampler, float3(mu, roughness, ZFromIor(ior)), 0).x;
+public float SampleGGXLutEIOR(uint32_t ggxLutEIORIndex, uint32_t ggxLutEIORInvIndex, float mu, float roughness, float ior) {
+    return textures3D[NonUniformResourceIndex(ior > 1.0f ? ggxLutEIORIndex : ggxLutEIORInvIndex)].SampleLevel(lutSampler, float3(mu, roughness, ZFromIor(ior)), 0).x;
 }
 public float4 SampleSheenLTC(uint32_t sheenLtcIndex, float mu, float roughness) {
     if (sheenLtcIndex == ~0u) return float4(0.0f);
@@ -94,10 +94,9 @@ public float3 TorranceSparrowTransmittance(
     float3 wo, float3 wi,
     float3 F0, float3 F90,
     float eta,
-    TrowbridgeReitzDistribution mfDistrib,
-    bool energyCompensation,
     float lutEIOR,
-    float roughness)
+    TrowbridgeReitzDistribution mfDistrib,
+    bool energyCompensation)
 {
     float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
     // Note: our Refract() uses eta = eta_t/eta_i. The corresponding transmission half-vector is
@@ -184,9 +183,10 @@ public struct GlassBSDF : IBxDF {
     TrowbridgeReitzDistribution mfDistrib;
     uint32_t ggxLutEIndex;
     uint32_t ggxLutEIORIndex;
+    uint32_t ggxLutEIORInvIndex;
 
     public __init(float3 baseColor, float eta, float3 transmittanceF0, float3 transmittanceF90,
-                  float roughness, float anisotropyStrength, bool energyCompensation, uint32_t ggxLutEIndex, uint32_t ggxLutEIORIndex) {
+                  float roughness, float anisotropyStrength, bool energyCompensation, uint32_t ggxLutEIndex, uint32_t ggxLutEIORIndex, uint32_t ggxLutEIORInvIndex) {
         this.baseColor          = baseColor;
         this.eta                = eta;
         this.transmittanceF0    = transmittanceF0;
@@ -196,6 +196,7 @@ public struct GlassBSDF : IBxDF {
         this.energyCompensation = energyCompensation;
         this.ggxLutEIndex       = ggxLutEIndex;
         this.ggxLutEIORIndex    = ggxLutEIORIndex;
+        this.ggxLutEIORInvIndex = ggxLutEIORInvIndex;
         float alphaX, alphaY;
         CalcAnisotropicAlpha(roughness, anisotropyStrength, alphaX, alphaY);
         this.mfDistrib = TrowbridgeReitzDistribution(alphaX, alphaY);
@@ -206,8 +207,8 @@ public struct GlassBSDF : IBxDF {
     public SampledSpectrum f(float3 wo, float3 wi, TransportMode mode) {
         if (SameHemisphere(wo, wi)) return 0.0f;
         float etap = (CosTheta(wo) > 0) ? eta : 1.0f / eta;
-        float lutEIOR = SampleGGXLutEIOR(ggxLutEIORIndex, AbsCosTheta(wo), roughness, eta);
-        float3 val = baseColor * TorranceSparrowTransmittance(wo, wi, transmittanceF0, transmittanceF90, eta, mfDistrib, energyCompensation, lutEIOR, roughness);
+        float lutEIOR = SampleGGXLutEIOR(ggxLutEIORIndex, ggxLutEIORInvIndex, AbsCosTheta(wo), roughness, eta);
+        float3 val = baseColor * TorranceSparrowTransmittance(wo, wi, transmittanceF0, transmittanceF90, eta, lutEIOR, mfDistrib, energyCompensation);
         if (mode == TransportMode::Radiance)
             val *= Sqr(etap);
         return val;
@@ -894,7 +895,7 @@ public struct PrincipledBSDF : IBSDF {
     public __init(float3 baseColor, float metallic, float roughness, float ior, float specularFactor = 1.0f,
                   float transmission = 0.0f, bool energyCompensation = true, float3 wo = float3(0,0,1),
                   float diffuseWeight = 1.0f, float anisotropyStrength = 0.0f,
-                  float3 specularColorFactor = float3(1.0f), uint32_t ggxLutEIndex = ~0u, uint32_t ggxLutEIORIndex = ~0u,
+                  float3 specularColorFactor = float3(1.0f), uint32_t ggxLutEIndex = ~0u, uint32_t ggxLutEIORIndex = ~0u, uint32_t ggxLutEIORInvIndex = ~0u,
                   float sheenWeight = 0.0f, float sheenRoughness = 0.0f, float3 sheenTint = float3(1.0f),
                   uint32_t sheenLtcIndex = ~0u,
                   float coatWeight = 0.0f, float coatRoughness = 0.0f) {
@@ -949,7 +950,7 @@ public struct PrincipledBSDF : IBSDF {
         // Construct each lobe
         this.diffuse  = DiffuseBSDF(baseColor, dielF0, dielF90, roughness, ggxLutEIndex);
         this.glass     = GlassBSDF(baseColor, ior, dielF0, dielF90, roughness, anisotropyStrength, energyCompensation,
-                                   ggxLutEIndex, ggxLutEIORIndex);
+                                   ggxLutEIndex, ggxLutEIORIndex, ggxLutEIORInvIndex);
         this.glossy    = GlossyBSDF(dielF0, dielF90, roughness, anisotropyStrength, energyCompensation,
                                     ggxLutEIndex);
         this.metallic  = MetallicBSDF(baseColor, roughness, anisotropyStrength, energyCompensation, ggxLutEIndex);

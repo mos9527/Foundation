@@ -1493,7 +1493,7 @@ void FLightingPanel()
             bool envChanged = ImHDRColorEdit("Ambient", GEditor.shaderGlobals.ambientColor, GEditor.shaderGlobals.ambientPower);
 
             ImGui::Separator();
-            bool hasEnv = GContext->gpuScene && GContext->gpuScene->GetEnvMap();
+            bool hasEnv = GContext->gpuScene && GContext->gpuScene->HasEnvMap();
             ImGui::Text(hasEnv ? "HDRI Loaded" : "No HDRI");
             if (hasEnv)
             {

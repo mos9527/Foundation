@@ -103,6 +103,8 @@ float IorFromZ(float ior){
 }
 
 RWStructuredBuffer<float> ggxEIOR;
+uniform bool inverse;
+
 [shader("compute")]
 [numthreads(16,16,1)] // Dispatch with 1,1,16; D3D spec requires x*y*z <= 1024
 void integrateGGX_IOR_E(uint3 p : SV_DispatchThreadID)
@@ -114,7 +116,8 @@ void integrateGGX_IOR_E(uint3 p : SV_DispatchThreadID)
     for (uint i = 0; i < kSamples;i++) {
         float cosTheta = clamp(u, 1e-4, 1.0f);
         float rough = clamp(v, 1e-4, 1.0f);
-        float ior =  IorFromZ(clamp(w, 1e-4, 0.99f));
+        float ior = IorFromZ(clamp(w, 1e-4, 0.99f));
+        ior = inverse ? 1.0f / ior : ior;
         float sample = sampleGGX_E_IOR(rough, cosTheta, ior, rng.sample(), rng.sample2D());
         E += sample;
         samples += 1.0f;
@@ -135,6 +138,7 @@ void integrateGGX_IOR_Eavg(uint2 p : SV_DispatchThreadID)
         float cosTheta = rng.sample();
         float rough = clamp(u, 1e-4, 1.0f);
         float ior = IorFromZ(clamp(v, 1e-4, 0.99f));
+        ior = inverse ? 1.0f / ior : ior;
         sum += 2 * cosTheta * sampleGGX_E_IOR(rough, cosTheta, ior, rng.sample(), rng.sample2D());
         samples += 1.0f;
     }

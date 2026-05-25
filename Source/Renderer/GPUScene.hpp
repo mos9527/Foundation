@@ -215,7 +215,9 @@ class GPUScene
     BindlessPool mTexture3DPool;
     // Precomputed LUTs (stored in texture2D pool)
     uint32_t mLUTGGXEIndex{UINT32_MAX};
+    // Precomputed LUTs (stored in texture3D pool)
     uint32_t mLUTGGXEIORIndex{UINT32_MAX};
+    uint32_t mLUTGGXEIORInvIndex{UINT32_MAX};
     uint32_t mLUTSheenLTCIndex{UINT32_MAX};
     // Display transform 3D LUTs (stored in texture3D pool)
     uint32_t mLUTViewSdrIndex{UINT32_MAX}, mLUTViewHdrIndex{UINT32_MAX};
@@ -373,15 +375,13 @@ public:
     [[nodiscard]] BindlessPool* GetTexture2DPool() { return &mTexture2DPool; }
     [[nodiscard]] BindlessPool* GetTexture3DPool() { return &mTexture3DPool; }
     [[nodiscard]] BindlessPool* GetTexturePool() { return GetTexture2DPool(); }
-    [[nodiscard]] uint32_t GetGGXLutEIndex() const { return mLUTGGXEIndex; }    [[nodiscard]] uint32_t GetGGXLutEIORIndex() const { return mLUTGGXEIORIndex; }    [[nodiscard]] uint32_t GetSheenLtcIndex() const { return mLUTSheenLTCIndex; }
-    [[nodiscard]] RHITexture* GetGGXlutE() const;
-    [[nodiscard]] RHITexture* GetGGXlutEIOR() const;
-    [[nodiscard]] RHITexture* GetSheenLtc() const;
+    [[nodiscard]] uint32_t GetGGXLutEIndex() const { return mLUTGGXEIndex; }
+    [[nodiscard]] uint32_t GetGGXLutEIORIndex() const { return mLUTGGXEIORIndex; }
+    [[nodiscard]] uint32_t GetGGXLutEIORInvIndex() const { return mLUTGGXEIORInvIndex; }
+    [[nodiscard]] uint32_t GetSheenLtcIndex() const { return mLUTSheenLTCIndex; }
     void UploadViewLUTs(ImmediateUpload* ctx, FTexture const& sdr, FTexture const& hdr);
     [[nodiscard]] uint32_t GetViewLutSdrIndex() const { return mLUTViewSdrIndex; }
     [[nodiscard]] uint32_t GetViewLutHdrIndex() const { return mLUTViewHdrIndex; }
-    [[nodiscard]] RHITexture* GetViewLutSdr() const;
-    [[nodiscard]] RHITexture* GetViewLutHdr() const;
     [[nodiscard]] RHITexture* GetFoundationDefaultTexture2D() const;
     [[nodiscard]] RHITexture* GetFoundationDefaultTexture2DFloat() const;
     [[nodiscard]] RHIBuffer* GetFoundationDefaultBufferFloat() const { return mFoundationDefaultBufferFloat.Get(); }
@@ -400,9 +400,6 @@ public:
     {
         return mEnvMapConditionalCDFIndex != UINT32_MAX ? mEnvMapConditionalCDFIndex : mFoundationDefaultTexture2DFloatIndex;
     }
-    [[nodiscard]] RHITexture* GetEnvMap() const;
-    [[nodiscard]] RHITexture* GetEnvMapMarginalCDF() const;
-    [[nodiscard]] RHITexture* GetEnvMapConditionalCDF() const;
     /* AS */
     [[nodiscard]] RHIAccelerationStructure* GetTLAS() const
     {
